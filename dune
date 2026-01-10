@@ -6,4 +6,5 @@
  sarek-vulkan
  sarek-metal
  tools
- test_verification)
+ test_verification
+ benchmarks)

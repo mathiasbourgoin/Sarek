@@ -1,0 +1,75 @@
+; Benchmark suite for Sarek
+; Produces standalone JSON files for multi-machine aggregation
+
+(library
+ (name benchmark_common)
+ (modules common system_info output)
+ (libraries spoc_core yojson unix))
+
+; Backend loader with conditional GPU backend support
+
+(library
+ (name benchmark_backends)
+ (modules
+  backend_loader
+  backend_cuda
+  backend_opencl
+  backend_vulkan
+  backend_metal)
+ (libraries
+  spoc_core
+  sarek_native
+  sarek_interpreter
+  ; Conditionally include GPU backends if available
+  (select
+   backend_cuda.ml
+   from
+   (sarek_cuda -> backend_cuda.available.ml)
+   (-> backend_cuda.unavailable.ml))
+  (select
+   backend_opencl.ml
+   from
+   (sarek_opencl -> backend_opencl.available.ml)
+   (-> backend_opencl.unavailable.ml))
+  (select
+   backend_vulkan.ml
+   from
+   (sarek_vulkan -> backend_vulkan.available.ml)
+   (-> backend_vulkan.unavailable.ml))
+  (select
+   backend_metal.ml
+   from
+   (sarek_metal -> backend_metal.available.ml)
+   (-> backend_metal.unavailable.ml))
+  unix))
+
+(executable
+ (name bench_matrix_mul)
+ (modules bench_matrix_mul)
+ (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
+ (preprocess
+  (pps sarek_ppx)))
+
+; Data aggregation and analysis tools
+
+(executable
+ (name aggregate)
+ (modules aggregate)
+ (libraries benchmark_common yojson unix))
+
+(executable
+ (name to_csv)
+ (modules to_csv)
+ (libraries yojson unix))
+
+(executable
+ (name to_web)
+ (modules to_web)
+ (libraries yojson unix))
+
+; Main benchmark runner (to be implemented)
+; (executable
+;  (name bench_runner)
+;  (modules bench_runner)
+;  (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
+;  (preprocess (pps sarek_ppx)))

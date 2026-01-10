@@ -1,0 +1,151 @@
+name: Deploy PR Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'gh-pages/**'
+      - 'benchmarks/results/**'
+      - 'benchmarks/*.ml'
+      - 'benchmarks/dune'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  deploy-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v2
+        with:
+          ocaml-compiler: 5.4.x
+          dune-cache: true
+      
+      - name: Install dependencies
+        run: |
+          opam install -y yojson
+      
+      - name: Build benchmark tools
+        run: |
+          opam exec -- dune build benchmarks/to_web.exe
+      
+      - name: Convert benchmark results to web format
+        run: |
+          # Check if there are any benchmark result files
+          if ls benchmarks/results/*.json 1> /dev/null 2>&1; then
+            echo "Found benchmark results, converting to web format..."
+            opam exec -- dune exec benchmarks/to_web.exe -- \
+              gh-pages/benchmarks/data/latest.json \
+              benchmarks/results/*.json
+            echo "✅ Conversion complete"
+          else
+            echo "ℹ️  No benchmark results found in benchmarks/results/"
+            # Create empty results file for preview
+            echo '{"results":[],"updated_at":"'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"}' > gh-pages/benchmarks/data/latest.json
+          fi
+      
+      - name: Deploy preview to gh-pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: gh-pages
+          target-folder: preview/pr-${{ github.event.pull_request.number }}
+          clean: false
+          commit-message: "Deploy preview for PR #${{ github.event.pull_request.number }}"
+      
+      - name: Comment preview URL on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.issue.number;
+            const previewUrl = `https://mathiasbourgoin.github.io/Sarek/preview/pr-${prNumber}/`;
+            const benchmarkUrl = `${previewUrl}benchmarks/`;
+            
+            // Check if we already commented
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('Preview your changes')
+            );
+            
+            const commentBody = `## 🔍 Preview Deployment
+            
+            Your changes are ready to preview:
+            
+            - **Main page:** ${previewUrl}
+            - **Benchmarks:** ${benchmarkUrl}
+            
+            <details>
+            <summary>📊 Benchmark Results</summary>
+            
+            ${await getBenchmarkSummary()}
+            
+            </details>
+            
+            ---
+            
+            *This preview updates automatically when you push new commits.*
+            *Preview deployments are cleaned up after the PR is closed.*`;
+            
+            async function getBenchmarkSummary() {
+              try {
+                const fs = require('fs');
+                const dataFile = 'gh-pages/benchmarks/data/latest.json';
+                
+                if (!fs.existsSync(dataFile)) {
+                  return 'No benchmark results found in this PR.';
+                }
+                
+                const data = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+                
+                if (!data.results || data.results.length === 0) {
+                  return 'No benchmark results found in this PR.';
+                }
+                
+                let summary = '**Benchmark Results Found:**\n\n';
+                
+                data.results.forEach(result => {
+                  const benchmark = result.benchmark;
+                  const system = result.system;
+                  const deviceCount = result.results.length;
+                  
+                  summary += `- **${benchmark.name}** (size ${benchmark.parameters.size})\n`;
+                  summary += `  - System: ${system.hostname} - ${system.cpu.model}\n`;
+                  summary += `  - Devices tested: ${deviceCount}\n`;
+                  summary += `  - Timestamp: ${benchmark.timestamp}\n\n`;
+                });
+                
+                return summary;
+              } catch (err) {
+                return `Error reading benchmark data: ${err.message}`;
+              }
+            }
+            
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: commentBody
+              });
+            }
