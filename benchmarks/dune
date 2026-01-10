@@ -50,6 +50,13 @@
  (preprocess
   (pps sarek_ppx)))
 
+(executable
+ (name bench_vector_add)
+ (modules bench_vector_add)
+ (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
+ (preprocess
+  (pps sarek_ppx)))
+
 ; Data aggregation and analysis tools
 
 (executable
