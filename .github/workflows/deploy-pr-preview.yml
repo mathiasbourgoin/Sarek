@@ -56,6 +56,8 @@ jobs:
           # Update baseurl in _config.yml to match preview path
           sed -i 's|baseurl: /Sarek|baseurl: /Sarek/preview/pr-${{ github.event.pull_request.number }}|' gh-pages/_config.yml
           echo "✅ Updated _config.yml baseurl for preview"
+          echo "Verification: _config.yml content:"
+          cat gh-pages/_config.yml
       
       - name: Deploy preview to gh-pages
         uses: JamesIves/github-pages-deploy-action@v4
