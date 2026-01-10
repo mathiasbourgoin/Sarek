@@ -56,13 +56,28 @@ jobs:
           # Update baseurl in _config.yml to match preview path
           sed -i 's|baseurl: /Sarek|baseurl: /Sarek/preview/pr-${{ github.event.pull_request.number }}|' gh-pages/_config.yml
           echo "✅ Updated _config.yml baseurl for preview"
-          echo "Verification: _config.yml content:"
-          cat gh-pages/_config.yml
+      
+      - name: Setup Ruby for Jekyll
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.1'
+          bundler-cache: false
+      
+      - name: Install Jekyll
+        run: |
+          gem install jekyll bundler
+          cd gh-pages && bundle install
+      
+      - name: Build Jekyll site
+        run: |
+          cd gh-pages
+          bundle exec jekyll build --destination _site
+          echo "✅ Jekyll site built successfully"
       
       - name: Deploy preview to gh-pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          folder: gh-pages
+          folder: gh-pages/_site
           target-folder: preview/pr-${{ github.event.pull_request.number }}
           clean: false
           commit-message: "Deploy preview for PR #${{ github.event.pull_request.number }}"
