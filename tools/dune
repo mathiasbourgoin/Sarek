@@ -1,0 +1,42 @@
+; Device info utility with optional backend support
+
+(library
+ (name backend_init)
+ (modules
+  backend_init
+  backend_cuda
+  backend_opencl
+  backend_vulkan
+  backend_metal)
+ (libraries
+  sarek
+  sarek_native
+  sarek_interpreter
+  ; Optionally include GPU backends if available
+  (select
+   backend_cuda.ml
+   from
+   (sarek_cuda -> backend_cuda.available.ml)
+   (-> backend_cuda.unavailable.ml))
+  (select
+   backend_opencl.ml
+   from
+   (sarek_opencl -> backend_opencl.available.ml)
+   (-> backend_opencl.unavailable.ml))
+  (select
+   backend_vulkan.ml
+   from
+   (sarek_vulkan -> backend_vulkan.available.ml)
+   (-> backend_vulkan.unavailable.ml))
+  (select
+   backend_metal.ml
+   from
+   (sarek_metal -> backend_metal.available.ml)
+   (-> backend_metal.unavailable.ml))))
+
+(executable
+ (name device_info)
+ (public_name sarek-device-info)
+ (package sarek)
+ (libraries sarek backend_init)
+ (modules device_info))

@@ -5,4 +5,5 @@
  sarek-opencl
  sarek-vulkan
  sarek-metal
+ tools
  test_verification)

@@ -90,12 +90,26 @@ GPU Backends:
 - OCaml 5.4.0+ (local opam switch included in repository)
 - dune 3.20+
 - GPU backends (optional):
-  - **CUDA**: NVIDIA driver + CUDA toolkit
+  - **CUDA**: NVIDIA driver + CUDA toolkit (see CUDA requirements below)
   - **OpenCL**: OpenCL implementation for your device
   - **Vulkan**: Vulkan SDK + glslangValidator or Shaderc
   - **Metal**: macOS 10.13+ (included with Xcode)
 
 The Native (CPU parallel) and Interpreter (CPU sequential) backends work without any GPU drivers.
+
+#### CUDA Requirements
+
+For NVIDIA GPUs, especially newer architectures:
+
+- **CUDA Toolkit**: 12.9 or later recommended
+- **Driver Version**: 
+  - CUDA 12.9 requires driver 575+
+  - CUDA 13.1+ requires driver 580+
+- **Blackwell GPUs** (RTX 5000 series, compute capability 12.0):
+  - Minimum: CUDA 12.9 + driver 575
+  - Recommended: CUDA 13.1 + driver 580+
+
+**Note**: The "CUDA Version" shown by `nvidia-smi` indicates the maximum CUDA runtime API version your driver supports. This may differ from your installed CUDA toolkit version, which is normal. For example, driver 575 with CUDA toolkit 12.9 will show "CUDA Version: 12.9" in `nvidia-smi`.
 
 ### Installing via OPAM
 
@@ -140,6 +154,9 @@ The framework uses dynamic linking, so you can build without GPU drivers install
 ### Verifying Installation
 
 ```bash
+# List all available devices
+dune exec -- sarek-device-info
+
 # Run unit tests
 dune runtest
 
@@ -212,6 +229,48 @@ SAREK_BACKEND=cuda dune runtest
 ```
 
 See [COVERAGE.md](COVERAGE.md) for coverage measurement instructions.
+
+## Troubleshooting
+
+### CUDA Issues
+
+**Error: `CUDA_ERROR_UNKNOWN(222)` when loading PTX on new GPUs**
+
+This error typically occurs on newer GPU architectures (e.g., Blackwell/RTX 5000 series) with mismatched CUDA versions:
+
+- **Solution**: Ensure you have CUDA 12.9+ installed with driver 575+
+- **Check versions**:
+  ```bash
+  nvidia-smi                    # Shows driver version and API level
+  nvcc --version                # Shows installed CUDA toolkit version
+  ```
+- **Common cause**: CUDA 13.1 requires driver 580+. If you have driver 575, use CUDA 12.9 instead.
+
+#### PTX compilation succeeds but module loading fails
+
+Sarek automatically handles forward compatibility by compiling PTX for `compute_90` on compute capability 9.0+ devices. The CUDA driver then JIT-compiles for your actual hardware (e.g., sm_120 for RTX 5070 Ti). This requires:
+- CUDA toolkit 12.9+ (for Blackwell GPU support)
+- Compatible driver version (see requirements above)
+
+#### Verifying CUDA setup
+
+```bash
+# Check if CUDA devices are detected
+nvidia-smi
+
+# Verify Sarek can find devices
+dune exec -- sarek-device-info
+
+# Check driver API compatibility
+cat /proc/driver/nvidia/version
+```
+
+### OpenCL Issues
+
+If OpenCL is not detecting your device, ensure you have the appropriate ICD (Installable Client Driver) installed:
+- **NVIDIA**: Install NVIDIA driver with OpenCL support
+- **AMD**: Install ROCm or AMDGPU-PRO driver
+- **Intel**: Install Intel OpenCL runtime
 
 ## Documentation
 
