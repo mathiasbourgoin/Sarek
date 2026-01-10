@@ -230,8 +230,8 @@ Interactive performance results for Sarek across different GPUs and backends. Yo
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="/Sarek/javascripts/benchmark-viewer.js"></script>
+<script src="{{ site.baseurl }}/javascripts/benchmark-viewer.js"></script>
 <script>
     // Load benchmark data and initialize
-    loadBenchmarkData('/Sarek/benchmarks/data/latest.json');
+    loadBenchmarkData('{{ site.baseurl }}/benchmarks/data/latest.json');
 </script>
