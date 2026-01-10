@@ -267,19 +267,19 @@ function markdownToHtml(markdown) {
     html = html.replace(/^## (.*$)/gim, '<h3>$1</h3>');
     html = html.replace(/^# (.*$)/gim, '<h2 style="color: var(--link-color);">$1</h2>');
     
-    // Bold and italic
-    html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-    
-    // Code blocks
+    // Code blocks FIRST (before bold/italic to avoid issues with comments)
     html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, function(match, lang, code) {
         const language = lang || 'ocaml';
         return `<pre style="margin: 15px 0; padding: 15px; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 4px; overflow-x: auto; font-size: 0.85em; line-height: 1.4;"><code class="language-${language}">${escapeHtml(code.trim())}</code></pre>`;
     });
     
-    // Inline code
+    // Inline code (before bold/italic)
     html = html.replace(/`([^`]+)`/g, '<code style="background: var(--code-bg); padding: 2px 6px; border-radius: 3px; font-size: 0.9em;">$1</code>');
+    
+    // Bold and italic (after code)
+    html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
     
     // Images
     html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width: 100%; height: auto; border-radius: 8px; margin: 15px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />');
