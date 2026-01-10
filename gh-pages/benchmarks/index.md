@@ -8,33 +8,32 @@ title: Benchmark Results
     margin: 40px 0 20px 0;
 }
 
-.benchmark-tabs {
+.benchmark-selector {
+    margin: 20px 0;
     display: flex;
+    align-items: center;
     gap: 10px;
-    margin-bottom: 20px;
-    border-bottom: 2px solid var(--border-color);
-    flex-wrap: wrap;
 }
 
-.benchmark-tab {
-    padding: 10px 20px;
-    background: none;
-    border: none;
-    border-bottom: 3px solid transparent;
-    cursor: pointer;
-    font-size: 16px;
-    font-weight: 500;
+.benchmark-selector label {
+    font-weight: 600;
     color: var(--text-color);
-    transition: all 0.2s;
 }
 
-.benchmark-tab:hover {
-    background: var(--hover-bg);
+.benchmark-selector select {
+    padding: 8px 12px;
+    font-size: 1em;
+    border: 2px solid var(--link-color);
+    border-radius: 4px;
+    background: var(--bg-color);
+    color: var(--text-color);
+    cursor: pointer;
+    min-width: 250px;
 }
 
-.benchmark-tab.active {
-    border-bottom-color: var(--link-color);
-    color: var(--link-color);
+.benchmark-selector select:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(var(--link-color-rgb), 0.2);
 }
 
 .filter-controls {
@@ -95,6 +94,7 @@ title: Benchmark Results
 .info-box {
     padding: 15px;
     background: var(--highlight-bg, #fff3cd);
+    color: var(--text-color, #333);
     border-left: 4px solid var(--link-color);
     margin: 20px 0;
     border-radius: 4px;
@@ -157,11 +157,14 @@ Interactive performance results for Sarek across different GPUs and backends. Yo
 
 ## Benchmark Suite
 
-<div class="benchmark-tabs">
-    <button class="benchmark-tab active" data-benchmark="matrix_mul">Matrix Multiplication</button>
-    <button class="benchmark-tab" data-benchmark="vector_add">Vector Add (Coming Soon)</button>
-    <button class="benchmark-tab" data-benchmark="reduction">Reduction (Coming Soon)</button>
-    <button class="benchmark-tab" data-benchmark="transpose">Transpose (Coming Soon)</button>
+<div class="benchmark-selector">
+    <label for="benchmark-select">Select Benchmark:</label>
+    <select id="benchmark-select">
+        <option value="matrix_mul">Matrix Multiplication (Naive)</option>
+        <option value="vector_add">Vector Addition (Memory Bandwidth)</option>
+        <option value="reduction" disabled>Reduction (Coming Soon)</option>
+        <option value="transpose" disabled>Matrix Transpose (Coming Soon)</option>
+    </select>
 </div>
 
 <!-- Matrix Multiplication Benchmark -->

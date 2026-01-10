@@ -21,7 +21,7 @@ async function loadBenchmarkData(dataUrl) {
         const response = await fetch(dataUrl);
         benchmarkData = await response.json();
         
-        initializeTabs();
+        initializeBenchmarkSelector();
         initializeFilters();
         updateChart();
         updateSystemInfo();
@@ -32,25 +32,14 @@ async function loadBenchmarkData(dataUrl) {
     }
 }
 
-// Initialize tab switching
-function initializeTabs() {
-    const tabs = document.querySelectorAll('.benchmark-tab');
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            // Update active tab
-            tabs.forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            
-            // Update active content
-            const benchmarkId = tab.dataset.benchmark;
-            document.querySelectorAll('.benchmark-content').forEach(content => {
-                content.classList.remove('active');
-            });
-            document.getElementById(benchmarkId).classList.add('active');
-            
-            currentBenchmark = benchmarkId;
-            updateChart();
-        });
+// Initialize benchmark selector
+function initializeBenchmarkSelector() {
+    const selector = document.getElementById('benchmark-select');
+    if (!selector) return;
+    
+    selector.addEventListener('change', (e) => {
+        currentBenchmark = e.target.value;
+        updateChart();
     });
 }
 
@@ -90,6 +79,24 @@ function updateChart() {
         currentChart.destroy();
     }
     
+    // Get benchmark-specific labels
+    const benchmarkConfig = {
+        'matrix_mul': {
+            title: 'Matrix Multiplication Performance (Naive Kernel)',
+            xLabel: 'Matrix Size (elements)',
+            yLabel: 'Throughput (GFLOPS)',
+            yUnit: 'GFLOPS'
+        },
+        'vector_add': {
+            title: 'Vector Addition Performance (Memory Bandwidth)',
+            xLabel: 'Vector Size (elements)',
+            yLabel: 'Memory Bandwidth (GB/s)',
+            yUnit: 'GB/s'
+        }
+    };
+    
+    const config = benchmarkConfig[currentBenchmark] || benchmarkConfig['matrix_mul'];
+    
     // Create new chart
     const ctx = canvas.getContext('2d');
     currentChart = new Chart(ctx, {
@@ -107,7 +114,7 @@ function updateChart() {
             plugins: {
                 title: {
                     display: true,
-                    text: 'Matrix Multiplication Performance',
+                    text: config.title,
                     font: {
                         size: 16,
                         weight: 'bold'
@@ -124,7 +131,7 @@ function updateChart() {
                             if (label) {
                                 label += ': ';
                             }
-                            label += context.parsed.y.toFixed(2) + ' GFLOPS';
+                            label += context.parsed.y.toFixed(2) + ' ' + config.yUnit;
                             return label;
                         }
                     }
@@ -135,7 +142,7 @@ function updateChart() {
                     type: 'linear',
                     title: {
                         display: true,
-                        text: 'Matrix Size (N×N)'
+                        text: config.xLabel
                     },
                     ticks: {
                         callback: function(value) {
@@ -146,7 +153,7 @@ function updateChart() {
                 y: {
                     title: {
                         display: true,
-                        text: 'Throughput (GFLOPS)'
+                        text: config.yLabel
                     },
                     beginAtZero: true
                 }
@@ -164,9 +171,18 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
     const datasets = [];
     const deviceData = new Map(); // device_name -> {framework, data: [{x, y}]}
     
+    // Map benchmark tab names to JSON benchmark names
+    const benchmarkNameMap = {
+        'matrix_mul': 'matrix_mul_naive',
+        'vector_add': 'vector_add'
+    };
+    
+    const targetBenchmark = benchmarkNameMap[benchmarkName];
+    if (!targetBenchmark) return [];
+    
     // Process all results
     benchmarkData.results.forEach(result => {
-        if (result.benchmark.name !== 'matrix_mul_naive') return;
+        if (result.benchmark.name !== targetBenchmark) return;
         
         result.results.forEach(deviceResult => {
             const framework = deviceResult.framework;
