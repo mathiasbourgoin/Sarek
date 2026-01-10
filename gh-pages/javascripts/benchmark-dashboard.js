@@ -6,7 +6,8 @@ let charts = {
     scaling: null,
     comparison: null,
     backends: null,
-    speedup: null
+    speedup: null,
+    ranking: null
 };
 let currentBenchmark = 'transpose';
 let currentView = 'comparison';
@@ -113,6 +114,8 @@ function updateDashboard() {
         showDetailedView(config);
     } else if (currentView === 'device-matrix') {
         showDeviceMatrix(config);
+    } else if (currentView === 'system-ranking') {
+        showSystemRanking(config);
     }
 }
 
@@ -714,6 +717,136 @@ function createDeviceMatrix(config) {
     
     html += '</tbody></table>';
     container.innerHTML = html;
+}
+
+// Show system ranking view - sorts systems by peak performance
+function showSystemRanking(config) {
+    const grid = document.getElementById('dashboard-grid');
+    grid.className = 'dashboard-grid-1';
+    grid.innerHTML = `
+        <div class="chart-card large">
+            <h4>System Ranking: ${config.title}</h4>
+            <p style="color: var(--text-color); opacity: 0.8; margin-bottom: 15px;">
+                Systems ranked by peak performance across all problem sizes. 
+                Shows best performance for each system/backend/algorithm combination.
+            </p>
+            <canvas id="chart-ranking"></canvas>
+        </div>
+    `;
+    
+    createRankingChart(config);
+}
+
+// Create ranking bar chart
+function createRankingChart(config) {
+    const ctx = document.getElementById('chart-ranking');
+    if (!ctx) return;
+    
+    const variants = config.variants;
+    
+    // Collect all system/device/backend/algorithm combinations with their peak performance
+    const systemPerformances = [];
+    
+    benchmarkData.results
+        .filter(r => r.benchmark && variants.includes(r.benchmark.name))
+        .forEach(result => {
+            const systemName = result.system?.hostname || 'Unknown';
+            const deviceName = getDeviceName(result);
+            const backend = result.results[0]?.framework || 'Unknown';
+            const algoName = formatAlgoName(result.benchmark.name);
+            const throughput = result.results[0]?.throughput_gflops || 0;
+            
+            if (throughput === 0) return;
+            
+            // Create unique key for this combination
+            const key = `${systemName}|${deviceName}|${backend}|${algoName}`;
+            
+            // Find existing entry or create new one
+            let entry = systemPerformances.find(e => e.key === key);
+            if (!entry) {
+                entry = {
+                    key: key,
+                    systemName: systemName,
+                    deviceName: deviceName,
+                    backend: backend,
+                    algoName: algoName,
+                    peakPerformance: throughput,
+                    label: `${deviceName} @ ${systemName} (${backend}, ${algoName})`
+                };
+                systemPerformances.push(entry);
+            } else {
+                // Update peak if this is better
+                entry.peakPerformance = Math.max(entry.peakPerformance, throughput);
+            }
+        });
+    
+    // Sort by peak performance descending
+    systemPerformances.sort((a, b) => b.peakPerformance - a.peakPerformance);
+    
+    // Take top 20 to avoid overcrowding
+    const topSystems = systemPerformances.slice(0, 20);
+    
+    // Prepare data for horizontal bar chart
+    const labels = topSystems.map(s => {
+        // Truncate long labels
+        const label = s.label;
+        return label.length > 50 ? label.substring(0, 47) + '...' : label;
+    });
+    const data = topSystems.map(s => s.peakPerformance);
+    const colors = topSystems.map(s => BACKEND_COLORS[s.backend] || '#666666');
+    
+    charts.ranking = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: config.throughputLabel,
+                data: data,
+                backgroundColor: colors,
+                borderColor: colors.map(c => c),
+                borderWidth: 1
+            }]
+        },
+        options: {
+            indexAxis: 'y',  // Horizontal bars
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        title: (context) => {
+                            const idx = context[0].dataIndex;
+                            const entry = topSystems[idx];
+                            return entry.label;
+                        },
+                        label: (context) => {
+                            return `Peak: ${context.parsed.x.toFixed(2)} ${config.throughputLabel}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: `Peak ${config.throughputLabel}`
+                    }
+                },
+                y: {
+                    ticks: {
+                        autoSkip: false,
+                        font: {
+                            size: 10
+                        }
+                    }
+                }
+            }
+        }
+    });
 }
 
 // Helper functions

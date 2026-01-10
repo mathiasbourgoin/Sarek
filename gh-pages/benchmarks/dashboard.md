@@ -186,6 +186,7 @@ title: Benchmark Dashboard
             <option value="comparison" selected>4-Chart Comparison</option>
             <option value="detailed">Detailed Scaling</option>
             <option value="device-matrix">Device Matrix</option>
+            <option value="system-ranking">System Ranking</option>
         </select>
     </div>
 </div>
@@ -203,6 +204,7 @@ title: Benchmark Dashboard
 - **4-Chart Comparison**: See performance scaling, algorithm comparison, backend comparison, and speedup analysis all at once
 - **Detailed Scaling**: Large chart showing all devices, backends, and algorithms together
 - **Device Matrix**: Table view comparing all devices across algorithm variants
+- **System Ranking**: Bar chart ranking systems from fastest to slowest based on peak performance
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
 <script src="../javascripts/benchmark-dashboard.js"></script>
