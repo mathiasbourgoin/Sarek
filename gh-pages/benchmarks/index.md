@@ -142,6 +142,99 @@ title: Benchmark Results
     color: white;
     text-decoration: underline;
 }
+
+/* Multi-chart dashboard layouts */
+.dashboard-grid-4 {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+    margin: 30px 0;
+}
+
+.dashboard-grid-1 {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+    margin: 30px 0;
+}
+
+@media (max-width: 768px) {
+    .dashboard-grid-4 {
+        grid-template-columns: 1fr;
+    }
+}
+
+.chart-card {
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.chart-card.large {
+    min-height: 500px;
+}
+
+.chart-card h4 {
+    margin: 0 0 15px 0;
+    color: var(--text-color);
+    font-size: 1.1em;
+    border-bottom: 2px solid var(--link-color);
+    padding-bottom: 8px;
+}
+
+.chart-card canvas {
+    max-height: 300px;
+}
+
+.chart-card.large canvas {
+    max-height: 450px;
+}
+
+.perf-matrix {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+}
+
+.perf-matrix th,
+.perf-matrix td {
+    padding: 12px;
+    text-align: center;
+    border: 1px solid var(--border-color);
+}
+
+.perf-matrix th {
+    background: var(--link-color);
+    color: white;
+    font-weight: 600;
+}
+
+.perf-matrix .device-name {
+    text-align: left;
+    font-weight: 600;
+    background: var(--code-bg);
+}
+
+.perf-matrix .perf-cell {
+    font-family: monospace;
+    font-size: 1.1em;
+}
+
+.perf-matrix .perf-cell.no-data {
+    color: var(--text-color);
+    opacity: 0.3;
+}
+
+.no-data {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-color);
+    opacity: 0.6;
+    font-style: italic;
+}
+
 </style>
 
 # Performance Benchmarks
@@ -151,11 +244,6 @@ title: Benchmark Results
 </div>
 
 Interactive performance results for Sarek across different GPUs and backends. You can filter by backend and device to compare performance.
-
-<p style="margin: 20px 0; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; text-align: center;">
-    <strong>🎨 Try the new <a href="dashboard.html" style="color: white; text-decoration: underline; font-weight: bold;">Multi-Chart Dashboard</a>!</strong><br>
-    View 4 charts simultaneously: scaling, comparison, backends, and speedup analysis.
-</p>
 
 <div class="contribute-box">
     <h3>📊 Contribute Your Benchmarks!</h3>
@@ -181,7 +269,15 @@ Interactive performance results for Sarek across different GPUs and backends. Yo
 ## Benchmark Suite
 
 <div class="benchmark-selector">
-    <label for="benchmark-select">Select Benchmark:</label>
+    <label for="view-mode-select">View Mode:</label>
+    <select id="view-mode-select">
+        <option value="single" selected>Single Chart View</option>
+        <option value="comparison">4-Panel Comparison</option>
+        <option value="ranking">System Ranking</option>
+        <option value="matrix">Device Matrix</option>
+    </select>
+    
+    <label for="benchmark-select" style="margin-left: 30px;">Benchmark:</label>
     <select id="benchmark-select">
         <option value="matrix_mul">Matrix Multiplication (Naive)</option>
         <option value="vector_add">Vector Addition (Memory Bandwidth)</option>
@@ -239,11 +335,14 @@ Interactive performance results for Sarek across different GPUs and backends. Yo
         </div>
     </div>
     
-    <div class="chart-container">
-        <canvas id="matrixMulChart"></canvas>
-        <div id="no-data-message" style="display: none; text-align: center; padding: 100px 20px; color: var(--text-muted, #666);">
-            <p style="font-size: 1.2em; margin-bottom: 10px;">📊 No benchmark data available yet</p>
-            <p>Submit your benchmark results via PR to see them displayed here!</p>
+    <!-- Dynamic chart area - changes based on view mode -->
+    <div id="chart-area">
+        <div class="chart-container">
+            <canvas id="matrixMulChart"></canvas>
+            <div id="no-data-message" style="display: none; text-align: center; padding: 100px 20px; color: var(--text-muted, #666);">
+                <p style="font-size: 1.2em; margin-bottom: 10px;">📊 No benchmark data available yet</p>
+                <p>Submit your benchmark results via PR to see them displayed here!</p>
+            </div>
         </div>
     </div>
     
