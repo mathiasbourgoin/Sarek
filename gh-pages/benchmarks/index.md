@@ -287,6 +287,12 @@ Interactive performance results for Sarek across different GPUs and backends. Yo
     </select>
 </div>
 
+## Benchmark Details
+
+<div id="benchmark-description" style="margin: 30px 0; padding: 20px; background: var(--code-bg); border-radius: 8px; border-left: 4px solid var(--link-color);">
+    <!-- Dynamically filled by JavaScript -->
+</div>
+
 <!-- Matrix Multiplication Benchmark -->
 <div id="matrix_mul" class="benchmark-content active">
     <h3>Matrix Multiplication (Naive)</h3>

@@ -39,31 +39,36 @@ const BENCHMARK_CONFIGS = {
         title: 'Matrix Multiplication',
         xLabel: 'Matrix Size (N×N)',
         throughputLabel: 'GFLOPS',
-        variants: ['matrix_mul_naive']
+        variants: ['matrix_mul_naive'],
+        readme: 'descriptions/matrix_mul.md'
     },
     'vector_add': {
         title: 'Vector Addition',
         xLabel: 'Vector Size (elements)',
         throughputLabel: 'GB/s',
-        variants: ['vector_add']
+        variants: ['vector_add'],
+        readme: 'descriptions/vector_add.md'
     },
     'reduction': {
         title: 'Parallel Reduction',
         xLabel: 'Array Size (elements)',
         throughputLabel: 'GB/s',
-        variants: ['reduction_sum']
+        variants: ['reduction_sum'],
+        readme: 'descriptions/reduction.md'
     },
     'transpose': {
         title: 'Matrix Transpose',
         xLabel: 'Matrix Size (N×N)',
         throughputLabel: 'GB/s',
-        variants: ['transpose_naive', 'transpose_tiled']
+        variants: ['transpose_naive', 'transpose_tiled'],
+        readme: 'descriptions/transpose.md'
     },
     'transpose_tiled': {
         title: 'Matrix Transpose (Tiled)',
         xLabel: 'Matrix Size (N×N)',
         throughputLabel: 'GB/s',
-        variants: ['transpose_tiled']
+        variants: ['transpose_tiled'],
+        readme: 'descriptions/transpose.md'
     }
 };
 
@@ -207,8 +212,114 @@ function initializeBenchmarkSelector() {
     
     selector.addEventListener('change', (e) => {
         currentBenchmark = e.target.value;
+        updateBenchmarkDescription();
         updateView();
     });
+    
+    // Show initial description
+    updateBenchmarkDescription();
+}
+
+// Update benchmark description panel
+async function updateBenchmarkDescription() {
+    const descDiv = document.getElementById('benchmark-description');
+    if (!descDiv) return;
+    
+    const config = BENCHMARK_CONFIGS[currentBenchmark];
+    if (!config) return;
+    
+    // Show loading state
+    descDiv.innerHTML = '<p style="color: #888;"><em>Loading description...</em></p>';
+    
+    try {
+        // Fetch the markdown file
+        const response = await fetch(config.readme);
+        if (!response.ok) {
+            throw new Error(`Failed to load: ${response.statusText}`);
+        }
+        const markdown = await response.text();
+        
+        // Convert markdown to HTML (simple conversion)
+        const html = markdownToHtml(markdown);
+        descDiv.innerHTML = html;
+    } catch (error) {
+        console.error('Error loading benchmark description:', error);
+        descDiv.innerHTML = `
+            <h3 style="margin-top: 0; color: var(--link-color);">${config.title}</h3>
+            <p style="color: #888;"><em>Description not available yet.</em></p>
+        `;
+    }
+}
+
+// Simple markdown to HTML converter
+function markdownToHtml(markdown) {
+    let html = markdown;
+    
+    // Headers
+    html = html.replace(/^### (.*$)/gim, '<h4>$1</h4>');
+    html = html.replace(/^## (.*$)/gim, '<h3>$1</h3>');
+    html = html.replace(/^# (.*$)/gim, '<h2 style="color: var(--link-color);">$1</h2>');
+    
+    // Bold and italic
+    html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    
+    // Code blocks
+    html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, function(match, lang, code) {
+        const language = lang || 'ocaml';
+        return `<pre style="margin: 15px 0; padding: 15px; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 4px; overflow-x: auto; font-size: 0.85em; line-height: 1.4;"><code class="language-${language}">${escapeHtml(code.trim())}</code></pre>`;
+    });
+    
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, '<code style="background: var(--code-bg); padding: 2px 6px; border-radius: 3px; font-size: 0.9em;">$1</code>');
+    
+    // Images
+    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width: 100%; height: auto; border-radius: 8px; margin: 15px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />');
+    
+    // Links
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color: var(--link-color); text-decoration: underline;">$1</a>');
+    
+    // Tables
+    html = html.replace(/\n\|(.+)\|\n\|[-\s|]+\|\n((?:\|.+\|\n?)+)/g, function(match, header, rows) {
+        let table = '<table style="width: 100%; border-collapse: collapse; margin: 15px 0;">';
+        table += '<thead><tr>';
+        header.split('|').slice(1, -1).forEach(cell => {
+            table += `<th style="padding: 10px; text-align: left; border: 1px solid var(--border-color); background: var(--code-bg); font-weight: 600;">${cell.trim()}</th>`;
+        });
+        table += '</tr></thead><tbody>';
+        rows.trim().split('\n').forEach(row => {
+            table += '<tr>';
+            row.split('|').slice(1, -1).forEach(cell => {
+                table += `<td style="padding: 10px; border: 1px solid var(--border-color);">${cell.trim()}</td>`;
+            });
+            table += '</tr>';
+        });
+        table += '</tbody></table>';
+        return table;
+    });
+    
+    // Lists
+    html = html.replace(/^\- (.+)$/gim, '<li>$1</li>');
+    html = html.replace(/^\d+\. (.+)$/gim, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>)/s, '<ul style="margin: 10px 0; padding-left: 30px;">$1</ul>');
+    
+    // Paragraphs
+    html = html.split('\n\n').map(para => {
+        para = para.trim();
+        if (!para) return '';
+        if (para.startsWith('<')) return para; // Already HTML
+        return `<p style="margin: 12px 0; line-height: 1.6;">${para}</p>`;
+    }).join('\n');
+    
+    return html;
+}
+
+// Helper to escape HTML in code
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 // Initialize filter controls
