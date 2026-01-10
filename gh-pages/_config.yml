@@ -1,3 +1,5 @@
 markdown: kramdown
 path: http://mathiasbourgoin.github.io/Sarek
 baseurl: /Sarek
+include: ['benchmarks/data']
+keep_files: ['benchmarks/data']
