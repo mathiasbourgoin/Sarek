@@ -152,6 +152,11 @@ title: Benchmark Results
 
 Interactive performance results for Sarek across different GPUs and backends. You can filter by backend and device to compare performance.
 
+<p style="margin: 20px 0; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; text-align: center;">
+    <strong>🎨 Try the new <a href="dashboard.html" style="color: white; text-decoration: underline; font-weight: bold;">Multi-Chart Dashboard</a>!</strong><br>
+    View 4 charts simultaneously: scaling, comparison, backends, and speedup analysis.
+</p>
+
 <div class="contribute-box">
     <h3>📊 Contribute Your Benchmarks!</h3>
     <p>Help build a comprehensive performance database by running benchmarks on your hardware:</p>
