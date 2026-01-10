@@ -63,6 +63,8 @@ jobs:
           # Copy odoc output to spoc_docs subfolder
           mkdir -p _site/spoc_docs
           cp -r _build/default/_doc/_html/* _site/spoc_docs/
+          # Add .nojekyll to tell GitHub Pages not to process with Jekyll
+          touch _site/.nojekyll
 
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
