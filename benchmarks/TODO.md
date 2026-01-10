@@ -84,11 +84,14 @@ This document tracks the implementation status of the Sarek benchmark suite.
   - Kernel exists in tests/e2e - adapt for benchmarking
 
 ### Data Movement
-- [ ] **Transpose** - Memory access pattern benchmark
-  - Matrix transpose with/without shared memory
-  - Measure impact of coalesced access
-  - Square and rectangular matrices
-  - Already exists in tests/e2e - adapt for benchmarking
+- [x] **Transpose** - Memory access pattern benchmark
+  - ✅ Implemented in bench_transpose.ml
+  - ✅ Naive transpose kernel (1D thread indexing)
+  - ✅ Measures memory bandwidth (GB/s)
+  - ✅ Default sizes: 256, 512, 1024, 2048 (NxN matrices)
+  - ✅ Verification against CPU baseline
+  - Results: Arc GPU 12.8 GB/s @ 2048x2048 (slower than vector_add due to strided writes)
+  - Future: Add tiled/shared memory version for comparison
   
 - [ ] **Scan (Prefix Sum)** - Parallel scan algorithms
   - Inclusive and exclusive scan
