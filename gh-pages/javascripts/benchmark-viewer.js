@@ -122,6 +122,14 @@ function updateChart() {
             throughputUnit: 'GB/s',
             timeLabel: 'Execution Time (ms)',
             timeUnit: 'ms'
+        },
+        'transpose_tiled': {
+            title: 'Matrix Transpose Performance (Tiled with Shared Memory)',
+            xLabel: 'Matrix Size (NxN)',
+            throughputLabel: 'Memory Bandwidth (GB/s)',
+            throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
         }
     };
     
@@ -210,7 +218,8 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
         'matrix_mul': 'matrix_mul_naive',
         'vector_add': 'vector_add',
         'reduction': 'reduction_sum',
-        'transpose': 'transpose_naive'
+        'transpose': 'transpose_naive',
+        'transpose_tiled': 'transpose_tiled'
     };
     
     const targetBenchmark = benchmarkNameMap[benchmarkName];

@@ -17,7 +17,8 @@ Results are published on our [interactive benchmarks page](https://mathiasbourgo
 ```bash
 # Build all benchmarks
 dune build benchmarks/bench_matrix_mul.exe benchmarks/bench_vector_add.exe \
-           benchmarks/bench_reduction.exe benchmarks/bench_transpose.exe
+           benchmarks/bench_reduction.exe benchmarks/bench_transpose.exe \
+           benchmarks/bench_transpose_tiled.exe
 
 # Run matrix multiplication benchmark (default: 256, 512, 1024, 2048 elements)
 dune exec benchmarks/bench_matrix_mul.exe
@@ -28,8 +29,9 @@ dune exec benchmarks/bench_vector_add.exe
 # Run reduction benchmark (default: 1M, 10M, 50M, 100M elements)
 dune exec benchmarks/bench_reduction.exe
 
-# Run transpose benchmark (default: 256, 512, 1024, 2048 - NxN matrices)
-dune exec benchmarks/bench_transpose.exe
+# Run transpose benchmarks (default: 256, 512, 1024, 2048, 4096, 8192 - NxN matrices)
+dune exec benchmarks/bench_transpose.exe          # Naive version
+dune exec benchmarks/bench_transpose_tiled.exe    # Optimized with shared memory
 
 # Custom sizes and iterations
 dune exec benchmarks/bench_matrix_mul.exe -- \
@@ -44,6 +46,7 @@ dune exec benchmarks/bench_matrix_mul.exe -- --output results/$(hostname)/
 dune exec benchmarks/bench_vector_add.exe -- --output results/$(hostname)/
 dune exec benchmarks/bench_reduction.exe -- --output results/$(hostname)/
 dune exec benchmarks/bench_transpose.exe -- --output results/$(hostname)/
+dune exec benchmarks/bench_transpose_tiled.exe -- --output results/$(hostname)/
 ```
 
 ### Publishing Results to Web Viewer
@@ -139,6 +142,7 @@ dune exec benchmarks/bench_matrix_mul.exe -- --output results/nvidia-rtx3090/
 dune exec benchmarks/bench_vector_add.exe -- --output results/nvidia-rtx3090/
 dune exec benchmarks/bench_reduction.exe -- --output results/nvidia-rtx3090/
 dune exec benchmarks/bench_transpose.exe -- --output results/nvidia-rtx3090/
+dune exec benchmarks/bench_transpose_tiled.exe -- --output results/nvidia-rtx3090/
 
 # Machine 2 (AMD GPU)
 mkdir -p results/amd-rx7900
@@ -146,6 +150,7 @@ dune exec benchmarks/bench_matrix_mul.exe -- --output results/amd-rx7900/
 dune exec benchmarks/bench_vector_add.exe -- --output results/amd-rx7900/
 dune exec benchmarks/bench_reduction.exe -- --output results/amd-rx7900/
 dune exec benchmarks/bench_transpose.exe -- --output results/amd-rx7900/
+dune exec benchmarks/bench_transpose_tiled.exe -- --output results/amd-rx7900/
 
 # Machine 3 (Apple Silicon)
 mkdir -p results/apple-m3
@@ -153,6 +158,7 @@ dune exec benchmarks/bench_matrix_mul.exe -- --output results/apple-m3/
 dune exec benchmarks/bench_vector_add.exe -- --output results/apple-m3/
 dune exec benchmarks/bench_reduction.exe -- --output results/apple-m3/
 dune exec benchmarks/bench_transpose.exe -- --output results/apple-m3/
+dune exec benchmarks/bench_transpose_tiled.exe -- --output results/apple-m3/
 ```
 
 ### Step 2: Aggregate and Publish
