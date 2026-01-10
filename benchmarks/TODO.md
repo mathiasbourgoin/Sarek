@@ -65,18 +65,23 @@ This document tracks the implementation status of the Sarek benchmark suite.
   - Matrix sizes from 128x128 to 8192x8192
 
 ### Parallel Reduction
-- [ ] **Sum Reduction** - Basic parallel reduction
-  - Various reduction strategies (tree, sequential addressing)
-  - Warp-level primitives where available
-  - Size sweep: 1K to 1B elements
+- [x] **Sum Reduction** - Basic parallel reduction
+  - ✅ Implemented in bench_reduction.ml
+  - ✅ Tree-based reduction with shared memory
+  - ✅ Logarithmic reduction pattern (256 -> 128 -> 64 -> ... -> 1)
+  - ✅ Default sizes: 1M, 10M, 50M, 100M elements
+  - ✅ Verification passing on all sizes
+  - ✅ Measures memory bandwidth (GB/s)
   
 - [ ] **Min/Max Reduction** - Comparison-based reduction
   - Find minimum/maximum in array
   - Compare different reduction patterns
+  - Kernel exists in tests/e2e - adapt for benchmarking
   
 - [ ] **Dot Product** - Combined multiply-reduce
   - `sum(A[i] * B[i])`
   - Common in scientific computing
+  - Kernel exists in tests/e2e - adapt for benchmarking
 
 ### Data Movement
 - [ ] **Transpose** - Memory access pattern benchmark

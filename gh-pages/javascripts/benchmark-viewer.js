@@ -209,7 +209,19 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
     
     // Process all results
     benchmarkData.results.forEach(result => {
+        // Skip malformed results
+        if (!result || !result.benchmark || !result.benchmark.name) {
+            console.warn('Skipping malformed result:', result);
+            return;
+        }
+        
         if (result.benchmark.name !== targetBenchmark) return;
+        
+        // Skip if no results array
+        if (!result.results || !Array.isArray(result.results)) {
+            console.warn('Result has no results array:', result);
+            return;
+        }
         
         result.results.forEach(deviceResult => {
             const framework = deviceResult.framework;
