@@ -177,15 +177,21 @@ let timestamp_filename () =
     - Synchronized timing of computation only
     - Data download and verification (D2H)
 
+    IMPORTANT: The init function should always create fresh vectors from host
+    data. Data must exist on host before calling this function. This avoids
+    issues with vector memory reuse, especially with Intel CPU OpenCL zero-copy
+    buffers.
+
     @param dev Device to benchmark on
     @param warmup Number of warmup iterations (after compilation)
     @param iterations Number of benchmark iterations
-    @param init Function that prepares data and returns kernel arguments
+    @param init
+      Function that creates fresh device vectors from host data (called twice)
     @param compute Function that runs kernel(s) with the prepared arguments
     @param verify Function that downloads results and verifies correctness
     @return (times array, verification result) *)
 let benchmark_gpu ~dev ~warmup ~iterations ~init ~compute ~verify =
-  (* Prepare data and upload to device *)
+  (* Create fresh vectors from host data for warmup *)
   let kernel_args = init () in
 
   (* First run to trigger kernel compilation *)
@@ -197,6 +203,10 @@ let benchmark_gpu ~dev ~warmup ~iterations ~init ~compute ~verify =
     compute kernel_args ;
     Device.synchronize dev
   done ;
+
+  (* Create fresh vectors from host data for benchmark *)
+  (* This avoids issues with vector memory reuse in drivers *)
+  let kernel_args = init () in
 
   (* Benchmark - time only computation *)
   let times =

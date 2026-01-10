@@ -120,7 +120,7 @@ let benchmark_device dev size config =
     Execute.run_vectors
       ~device:dev
       ~ir
-      ~args:[Vec va; Vec vb; Vec vc; Int (m * n); Int n; Int k]
+      ~args:[Vec va; Vec vb; Vec vc; Int m; Int n; Int k]
       ~block
       ~grid
       ()
