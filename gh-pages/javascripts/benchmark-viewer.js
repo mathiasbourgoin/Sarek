@@ -5,6 +5,7 @@ let benchmarkData = null;
 let currentChart = null;
 let currentBenchmark = 'matrix_mul';
 let currentMetric = 'throughput'; // 'time' or 'throughput'
+let currentSystem = 'all'; // 'all' or specific hostname
 
 // Color palette for different backends
 const BACKEND_COLORS = {
@@ -23,6 +24,7 @@ async function loadBenchmarkData(dataUrl) {
         benchmarkData = await response.json();
         
         initializeBenchmarkSelector();
+        populateSystemFilter();
         initializeFilters();
         updateChart();
         updateSystemInfo();
@@ -31,6 +33,37 @@ async function loadBenchmarkData(dataUrl) {
         document.getElementById('system-info').textContent = 
             'Error loading benchmark data. Please check console for details.';
     }
+}
+
+// Populate system filter dropdown
+function populateSystemFilter() {
+    const systemSelect = document.getElementById('system-select');
+    if (!systemSelect || !benchmarkData) return;
+    
+    // Collect unique hostnames
+    const hostnames = new Set();
+    benchmarkData.results.forEach(result => {
+        if (result.system && result.system.hostname) {
+            hostnames.add(result.system.hostname);
+        }
+    });
+    
+    // Clear existing options except "All Systems"
+    systemSelect.innerHTML = '<option value="all">All Systems</option>';
+    
+    // Add each system
+    Array.from(hostnames).sort().forEach(hostname => {
+        const option = document.createElement('option');
+        option.value = hostname;
+        option.textContent = hostname;
+        systemSelect.appendChild(option);
+    });
+    
+    // Add event listener
+    systemSelect.addEventListener('change', (e) => {
+        currentSystem = e.target.value;
+        updateChart();
+    });
 }
 
 // Initialize benchmark selector
@@ -235,6 +268,13 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
         
         if (result.benchmark.name !== targetBenchmark) return;
         
+        // Filter by system if not "all"
+        if (currentSystem !== 'all') {
+            if (!result.system || result.system.hostname !== currentSystem) {
+                return;
+            }
+        }
+        
         // Skip if no results array
         if (!result.results || !Array.isArray(result.results)) {
             console.warn('Result has no results array:', result);
@@ -253,7 +293,10 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
             }
             
             const deviceName = deviceResult.device_name;
-            const key = `${deviceName} (${framework})`;
+            const systemSuffix = (currentSystem === 'all' && result.system && result.system.hostname) 
+                ? ` [${result.system.hostname}]` 
+                : '';
+            const key = `${deviceName} (${framework})${systemSuffix}`;
             
             if (!deviceData.has(key)) {
                 deviceData.set(key, {
@@ -310,41 +353,63 @@ function updateSystemInfo() {
     const infoDiv = document.getElementById('system-info');
     if (!infoDiv) return;
     
-    // Get system info from first result (skip aggregated results)
-    const firstResult = benchmarkData.results.find(r => r.system && r.benchmark);
-    if (!firstResult || !firstResult.system || !firstResult.benchmark) {
-        infoDiv.innerHTML = '<p style="color: #888;">System information not available for aggregated data.</p>';
+    // Collect all unique systems from results
+    const systemsMap = new Map();
+    benchmarkData.results.forEach(result => {
+        if (result.system && result.system.hostname) {
+            const hostname = result.system.hostname;
+            if (!systemsMap.has(hostname)) {
+                systemsMap.set(hostname, {
+                    system: result.system,
+                    benchmark: result.benchmark,
+                    count: 0
+                });
+            }
+            systemsMap.get(hostname).count++;
+        }
+    });
+    
+    if (systemsMap.size === 0) {
+        infoDiv.innerHTML = '<p style="color: #888;">System information not available.</p>';
         return;
     }
     
-    const system = firstResult.system;
-    const benchmark = firstResult.benchmark;
+    let html = '<h4>Test Systems</h4>';
+    html += `<p style="color: #666; font-size: 0.9em;">Data collected from ${systemsMap.size} system${systemsMap.size > 1 ? 's' : ''}</p>`;
     
-    let html = '<h4>Test Configuration</h4>';
-    html += '<table style="width: 100%; font-family: monospace;">';
-    html += `<tr><td><strong>Hostname:</strong></td><td>${system.hostname || 'N/A'}</td></tr>`;
-    html += `<tr><td><strong>OS:</strong></td><td>${system.os || 'N/A'} ${system.kernel || ''}</td></tr>`;
-    html += `<tr><td><strong>CPU:</strong></td><td>${system.cpu?.model || 'N/A'} (${system.cpu?.cores || 'N/A'} cores)</td></tr>`;
-    html += `<tr><td><strong>Memory:</strong></td><td>${system.memory_gb ? system.memory_gb.toFixed(1) : 'N/A'} GB</td></tr>`;
-    html += `<tr><td><strong>Git Commit:</strong></td><td><code>${benchmark.git_commit ? benchmark.git_commit.substring(0, 8) : 'N/A'}</code></td></tr>`;
-    html += `<tr><td><strong>Timestamp:</strong></td><td>${benchmark.timestamp || 'N/A'}</td></tr>`;
-    html += '</table>';
-    
-    if (system.devices && system.devices.length > 0) {
-        html += '<h4>Detected Devices</h4>';
-        html += '<ul>';
-        system.devices.forEach(device => {
-            html += `<li><strong>${device.name || 'Unknown'}</strong> (${device.framework || 'N/A'})`;
-            if (device.memory_gb) {
-                html += ` - ${device.memory_gb.toFixed(1)} GB`;
-            }
-            if (device.compute_capability) {
-                html += ` - Compute ${device.compute_capability}`;
-            }
-            html += '</li>';
-        });
-        html += '</ul>';
-    }
+    // Show each system
+    Array.from(systemsMap.entries()).forEach(([hostname, data], index) => {
+        const system = data.system;
+        const benchmark = data.benchmark;
+        
+        if (index > 0) html += '<hr style="margin: 20px 0; border: none; border-top: 1px solid #ddd;">';
+        
+        html += '<table style="width: 100%; font-family: monospace; font-size: 0.9em;">';
+        html += `<tr><td><strong>Hostname:</strong></td><td>${system.hostname || 'N/A'}</td></tr>`;
+        html += `<tr><td><strong>OS:</strong></td><td>${system.os || 'N/A'} ${system.kernel || ''}</td></tr>`;
+        html += `<tr><td><strong>CPU:</strong></td><td>${system.cpu?.model || 'N/A'} (${system.cpu?.cores || 'N/A'} cores)</td></tr>`;
+        html += `<tr><td><strong>Memory:</strong></td><td>${system.memory_gb ? system.memory_gb.toFixed(1) : 'N/A'} GB</td></tr>`;
+        if (benchmark) {
+            html += `<tr><td><strong>Results:</strong></td><td>${data.count} benchmark${data.count > 1 ? 's' : ''}</td></tr>`;
+        }
+        html += '</table>';
+        
+        if (system.devices && system.devices.length > 0) {
+            html += '<p style="margin: 10px 0 5px 0;"><strong>Devices:</strong></p>';
+            html += '<ul style="margin: 5px 0;">';
+            system.devices.forEach(device => {
+                html += `<li><strong>${device.name || 'Unknown'}</strong> (${device.framework || 'N/A'})`;
+                if (device.memory_gb) {
+                    html += ` - ${device.memory_gb.toFixed(1)} GB`;
+                }
+                if (device.compute_capability) {
+                    html += ` - Compute ${device.compute_capability}`;
+                }
+                html += '</li>';
+            });
+            html += '</ul>';
+        }
+    });
     
     infoDiv.innerHTML = html;
 }

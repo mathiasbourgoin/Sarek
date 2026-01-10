@@ -199,6 +199,12 @@ Interactive performance results for Sarek across different GPUs and backends. Yo
     
     <div class="filter-controls">
         <div class="filter-group">
+            <label>System:</label>
+            <select id="system-select" class="metric-selector">
+                <option value="all">All Systems</option>
+            </select>
+        </div>
+        <div class="filter-group">
             <label>Metric:</label>
             <select id="metric-select" class="metric-selector">
                 <option value="time">Time (ms)</option>
