@@ -1,5 +1,5 @@
 ---
-layout: default
+layout: page
 title: Benchmark Results
 ---
 
@@ -201,6 +201,10 @@ Interactive performance results for Sarek across different GPUs and backends. Yo
     
     <div class="chart-container">
         <canvas id="matrixMulChart"></canvas>
+        <div id="no-data-message" style="display: none; text-align: center; padding: 100px 20px; color: var(--text-muted, #666);">
+            <p style="font-size: 1.2em; margin-bottom: 10px;">📊 No benchmark data available yet</p>
+            <p>Submit your benchmark results via PR to see them displayed here!</p>
+        </div>
     </div>
     
     <div class="system-info" id="system-info">
