@@ -2,7 +2,7 @@
 
 Generates the famous Mandelbrot fractal using iterative complex arithmetic on the GPU.
 
-![Mandelbrot Set Visualization](images/mandelbrot_example.png)
+![Mandelbrot Set Visualization](descriptions/images/mandelbrot_example.png)
 
 ## Description
 
