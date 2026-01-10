@@ -51,6 +51,11 @@ jobs:
             echo '{"results":[],"updated_at":"'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"}' > gh-pages/benchmarks/data/latest.json
           fi
       
+      - name: Create .nojekyll file for preview
+        run: |
+          # Disable Jekyll processing for preview directory
+          touch gh-pages/.nojekyll
+      
       - name: Deploy preview to gh-pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
