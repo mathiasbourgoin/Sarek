@@ -111,10 +111,20 @@ let benchmark_device dev size config =
     Execute.dims1d (((m * n) + config.block_size - 1) / config.block_size)
   in
 
-  (* Ensure device is ready and kernel is compiled *)
+  (* Ensure device is ready *)
   Device.synchronize dev ;
 
-  (* Warmup runs to ensure kernel is compiled and cached *)
+  (* First run to trigger kernel compilation *)
+  Execute.run_vectors
+    ~device:dev
+    ~ir
+    ~args:[Vec va; Vec vb; Vec vc; Int (m * n); Int n; Int k]
+    ~block
+    ~grid
+    () ;
+  Device.synchronize dev ;
+
+  (* Warmup runs with compiled kernel *)
   for _ = 1 to config.warmup do
     Execute.run_vectors
       ~device:dev
