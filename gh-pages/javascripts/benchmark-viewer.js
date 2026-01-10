@@ -40,35 +40,79 @@ function populateSystemFilter() {
     const systemSelect = document.getElementById('system-select');
     if (!systemSelect || !benchmarkData) return;
     
-    // Collect unique systems with descriptive names
+    // Collect unique systems with full identification
     const systemsMap = new Map();
+    const systemCounts = new Map(); // Track duplicates
+    
     benchmarkData.results.forEach(result => {
         if (result.system && result.system.hostname) {
             const hostname = result.system.hostname;
-            if (!systemsMap.has(hostname)) {
+            
+            // Create unique system ID based on hostname + all GPUs
+            let systemId = hostname;
+            let gpuNames = [];
+            
+            if (result.system.devices && result.system.devices.length > 0) {
+                // Get all GPU devices
+                const gpuDevices = result.system.devices.filter(d => 
+                    d.framework !== 'Native' && d.framework !== 'Interpreter'
+                );
+                
+                gpuNames = gpuDevices.map(d => {
+                    let name = d.name || 'Unknown';
+                    // Shorten GPU name
+                    return name
+                        .replace('Intel(R) ', '')
+                        .replace('NVIDIA ', '')
+                        .replace('AMD ', '')
+                        .replace('(R)', '')
+                        .replace('(TM)', '')
+                        .replace('(tm)', '')
+                        .replace(' Graphics', '')
+                        .replace('GeForce ', '')
+                        .trim();
+                });
+                
+                // Create unique ID including GPU info
+                if (gpuNames.length > 0) {
+                    systemId = `${hostname}_${gpuNames.join('_')}`;
+                }
+            }
+            
+            if (!systemsMap.has(systemId)) {
                 // Create descriptive label
                 let label = hostname;
                 
-                // Add primary GPU info
-                if (result.system.devices && result.system.devices.length > 0) {
-                    const gpuDevice = result.system.devices.find(d => 
-                        d.framework !== 'Native' && d.framework !== 'Interpreter'
-                    );
-                    if (gpuDevice) {
-                        // Shorten GPU name for display
-                        let gpuName = gpuDevice.name || 'Unknown GPU';
-                        gpuName = gpuName
-                            .replace('Intel(R) ', '')
-                            .replace('(R)', '')
-                            .replace('(TM)', '')
-                            .replace('(tm)', '')
-                            .replace(' Graphics', '')
-                            .trim();
-                        label += ` (${gpuName})`;
+                if (gpuNames.length > 0) {
+                    if (gpuNames.length === 1) {
+                        label += ` (${gpuNames[0]})`;
+                    } else {
+                        // Multiple GPUs
+                        label += ` (${gpuNames.join(' + ')})`;
                     }
                 }
                 
-                systemsMap.set(hostname, label);
+                // Track if this label already exists (same hostname + GPU combo)
+                const baseLabel = label;
+                const labelCount = systemCounts.get(baseLabel) || 0;
+                systemCounts.set(baseLabel, labelCount + 1);
+                
+                if (labelCount > 0) {
+                    // Add date suffix for duplicates
+                    const timestamp = result.benchmark?.timestamp;
+                    if (timestamp) {
+                        const date = new Date(timestamp);
+                        const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
+                        label = `${baseLabel} [${dateStr}]`;
+                    } else {
+                        label = `${baseLabel} #${labelCount + 1}`;
+                    }
+                }
+                
+                systemsMap.set(systemId, {
+                    hostname: hostname,
+                    label: label
+                });
             }
         }
     });
@@ -77,12 +121,15 @@ function populateSystemFilter() {
     systemSelect.innerHTML = '<option value="all">All Systems</option>';
     
     // Add each system with descriptive label
-    Array.from(systemsMap.entries()).sort((a, b) => a[1].localeCompare(b[1])).forEach(([hostname, label]) => {
-        const option = document.createElement('option');
-        option.value = hostname;
-        option.textContent = label;
-        systemSelect.appendChild(option);
-    });
+    Array.from(systemsMap.entries())
+        .sort((a, b) => a[1].label.localeCompare(b[1].label))
+        .forEach(([systemId, info]) => {
+            const option = document.createElement('option');
+            option.value = info.hostname; // Still use hostname as value for filtering
+            option.textContent = info.label;
+            option.dataset.systemId = systemId; // Store full ID for reference
+            systemSelect.appendChild(option);
+        });
     
     // Add event listener
     systemSelect.addEventListener('change', (e) => {
