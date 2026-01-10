@@ -40,22 +40,47 @@ function populateSystemFilter() {
     const systemSelect = document.getElementById('system-select');
     if (!systemSelect || !benchmarkData) return;
     
-    // Collect unique hostnames
-    const hostnames = new Set();
+    // Collect unique systems with descriptive names
+    const systemsMap = new Map();
     benchmarkData.results.forEach(result => {
         if (result.system && result.system.hostname) {
-            hostnames.add(result.system.hostname);
+            const hostname = result.system.hostname;
+            if (!systemsMap.has(hostname)) {
+                // Create descriptive label
+                let label = hostname;
+                
+                // Add primary GPU info
+                if (result.system.devices && result.system.devices.length > 0) {
+                    const gpuDevice = result.system.devices.find(d => 
+                        d.framework !== 'Native' && d.framework !== 'Interpreter'
+                    );
+                    if (gpuDevice) {
+                        // Shorten GPU name for display
+                        let gpuName = gpuDevice.name || 'Unknown GPU';
+                        gpuName = gpuName
+                            .replace('Intel(R) ', '')
+                            .replace('(R)', '')
+                            .replace('(TM)', '')
+                            .replace('(tm)', '')
+                            .replace(' Graphics', '')
+                            .trim();
+                        label += ` (${gpuName})`;
+                    }
+                }
+                
+                systemsMap.set(hostname, label);
+            }
         }
     });
     
     // Clear existing options except "All Systems"
     systemSelect.innerHTML = '<option value="all">All Systems</option>';
     
-    // Add each system
-    Array.from(hostnames).sort().forEach(hostname => {
+    // Add each system with descriptive label
+    Array.from(systemsMap.entries()).sort((a, b) => a[1].localeCompare(b[1])).forEach(([hostname, label]) => {
         const option = document.createElement('option');
         option.value = hostname;
-        option.textContent = hostname;
+        option.textContent = label;
         systemSelect.appendChild(option);
     });
     
@@ -293,9 +318,21 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
             }
             
             const deviceName = deviceResult.device_name;
-            const systemSuffix = (currentSystem === 'all' && result.system && result.system.hostname) 
-                ? ` [${result.system.hostname}]` 
-                : '';
+            
+            // Create system suffix for "All Systems" view
+            let systemSuffix = '';
+            if (currentSystem === 'all' && result.system && result.system.hostname) {
+                // Shorten GPU name for compact display
+                let gpuName = deviceName
+                    .replace('Intel(R) ', '')
+                    .replace('(R)', '')
+                    .replace('(TM)', '')
+                    .replace('(tm)', '')
+                    .replace(' Graphics', '')
+                    .trim();
+                systemSuffix = ` @ ${result.system.hostname}`;
+            }
+            
             const key = `${deviceName} (${framework})${systemSuffix}`;
             
             if (!deviceData.has(key)) {
