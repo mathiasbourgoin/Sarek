@@ -187,6 +187,34 @@ module Device = struct
      for the same physical device, which would prevent sharing resources. *)
   let device_cache : (int, t) Hashtbl.t = Hashtbl.create 4
 
+  (** Calculate total device memory from memory heaps
+
+      Sums all memory heaps that have VK_MEMORY_HEAP_DEVICE_LOCAL_BIT set. This
+      gives us the actual GPU memory for discrete GPUs, or the largest
+      device-accessible heap for integrated GPUs (which may be shared system
+      RAM).
+
+      VK_MEMORY_HEAP_DEVICE_LOCAL_BIT = 0x00000001 per Vulkan spec. *)
+  let get_total_device_memory
+      (props : vk_physical_device_memory_properties structure) : int64 =
+    let heap_count =
+      Unsigned.UInt32.to_int (getf props mem_props_memoryHeapCount)
+    in
+    let heaps_arr = getf props mem_props_memoryHeaps in
+    let vk_memory_heap_device_local_bit = 0x00000001 in
+
+    let total = ref 0L in
+    for i = 0 to heap_count - 1 do
+      let heap = CArray.get heaps_arr i in
+      let size = Unsigned.UInt64.to_int64 (getf heap mem_heap_size) in
+      let flags = Unsigned.UInt32.to_int (getf heap mem_heap_flags) in
+
+      (* Include heap if it has DEVICE_LOCAL_BIT set *)
+      if flags land vk_memory_heap_device_local_bit <> 0 then
+        total := Int64.add !total size
+    done ;
+    !total
+
   let init () =
     if not !initialized then begin
       if not (is_available ()) then
