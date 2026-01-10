@@ -1,0 +1,4 @@
+hostname,timestamp,size,iterations,benchmark,device,framework,mean_ms,stddev_ms,median_ms,min_ms,max_ms,verified,throughput_gflops
+cachyos,2026-01-10T14:33:55Z,256,5,matrix_mul_naive,Intel(R) Arc(TM) Graphics,OpenCL,0.543594,0.106625,0.506163,0.458002,0.726938,true,0.015070
+cachyos,2026-01-10T14:33:55Z,256,5,matrix_mul_naive,Intel(R) Core(TM) Ultra 9 185H,OpenCL,0.051212,0.005343,0.051022,0.046015,0.057936,true,0.159962
+cachyos,2026-01-10T14:33:55Z,256,5,matrix_mul_naive,Intel(R) Arc(tm) Graphics (MTL),Vulkan,0.307226,0.071416,0.282049,0.254154,0.432968,true,0.026664

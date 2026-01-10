@@ -111,8 +111,11 @@ let benchmark_device dev size config =
     Execute.dims1d (((m * n) + config.block_size - 1) / config.block_size)
   in
 
-  (* Benchmark function *)
-  let run_kernel () =
+  (* Ensure device is ready and kernel is compiled *)
+  Device.synchronize dev ;
+
+  (* Warmup runs to ensure kernel is compiled and cached *)
+  for _ = 1 to config.warmup do
     Execute.run_vectors
       ~device:dev
       ~ir
@@ -120,18 +123,30 @@ let benchmark_device dev size config =
       ~block
       ~grid
       () ;
-    (* Synchronize to measure actual execution time *)
-    Vector.to_array vc
+    Device.synchronize dev
+  done ;
+
+  (* Benchmark - time only kernel execution, not transfers *)
+  let times =
+    Array.init config.iterations (fun _ ->
+        Device.synchronize dev ;
+        (* Ensure previous work is done *)
+        let t0 = Unix.gettimeofday () in
+        Execute.run_vectors
+          ~device:dev
+          ~ir
+          ~args:[Vec va; Vec vb; Vec vc; Int (m * n); Int n; Int k]
+          ~block
+          ~grid
+          () ;
+        Device.synchronize dev ;
+        (* Wait for kernel completion *)
+        let t1 = Unix.gettimeofday () in
+        (t1 -. t0) *. 1000.0)
   in
 
-  (* Run benchmark *)
-  let times =
-    Common.time_iterations
-      ~warmup:config.warmup
-      ~iterations:config.iterations
-      run_kernel
-  in
-  let result_array = run_kernel () in
+  (* Get results for verification - this happens outside timing *)
+  let result_array = Vector.to_array vc in
 
   (* Compute throughput (GFLOPS) *)
   let ops = float_of_int (2 * m * n * k) in
