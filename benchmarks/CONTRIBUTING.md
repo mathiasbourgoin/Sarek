@@ -2,26 +2,35 @@
 
 We welcome benchmark contributions from the community! Your results help build a comprehensive performance database for Sarek across different hardware.
 
-## Quick Start
+## Quick Start (Recommended)
 
-### 1. Run Benchmarks
+### 1. Run All Benchmarks
+
+The easiest way to contribute is to run all benchmarks at once:
 
 ```bash
 # Clone the repository
 git clone https://github.com/mathiasbourgoin/SPOC.git
 cd SPOC
 
-# Build benchmarks
+# Install dependencies
 opam install --deps-only -y .
-dune build benchmarks/bench_matrix_mul.exe
 
-# Run benchmarks (output to results directory)
-dune exec benchmarks/bench_matrix_mul.exe -- \
-  --sizes 256,512,1024,2048 \
-  --iterations 20 \
-  --warmup 5 \
-  --output benchmarks/results/
+# Run ALL benchmarks (recommended!)
+eval $(opam env)
+./benchmarks/run_all_benchmarks.sh
+
+# Or using make:
+make benchmarks
 ```
+
+This single command will:
+- Build all benchmark executables
+- Run 5 benchmarks: matrix_mul, vector_add, reduction, transpose, transpose_tiled
+- Save results to `results/run_TIMESTAMP/`
+- Update the web viewer data automatically
+
+**Estimated time:** 5-15 minutes depending on your hardware.
 
 ### 2. Submit Your Results
 
@@ -29,16 +38,19 @@ dune exec benchmarks/bench_matrix_mul.exe -- \
 # Create a new branch
 git checkout -b benchmark-results-$(hostname)
 
-# Add your result files
-git add benchmarks/results/*.json
+# Add your result files (from the timestamped directory)
+git add results/run_*/
+git add gh-pages/benchmarks/data/latest.json
 
 # Commit with descriptive message
 git commit -m "Add benchmark results for $(hostname)
 
 Hardware:
-- GPU: [Your GPU model]
-- CPU: [Your CPU model]
-- Backend: [CUDA/OpenCL/Vulkan/Metal]"
+- GPU: [Your GPU model, e.g., NVIDIA RTX 4090]
+- CPU: [Your CPU model, e.g., AMD Ryzen 9 7950X]
+- RAM: [Memory size, e.g., 64GB DDR5-6000]
+- Backend: [CUDA/OpenCL/Vulkan/Metal]
+- OS: [e.g., Ubuntu 24.04, Windows 11, macOS 14]"
 
 # Push and create PR
 git push origin benchmark-results-$(hostname)

@@ -157,9 +157,11 @@ Interactive performance results for Sarek across different GPUs and backends. Yo
     <p>Help build a comprehensive performance database by running benchmarks on your hardware:</p>
     <ol>
         <li>Clone the repository: <code>git clone https://github.com/mathiasbourgoin/SPOC.git</code></li>
-        <li>Build and run benchmarks: <code>dune exec benchmarks/bench_matrix_mul.exe -- --output results/</code></li>
-        <li>Submit results as a PR with files in <code>benchmarks/results/</code></li>
+        <li>Install dependencies: <code>opam install --deps-only -y .</code></li>
+        <li>Run all benchmarks: <code>eval $(opam env) && ./benchmarks/run_all_benchmarks.sh</code></li>
+        <li>Submit results as a PR (takes ~5-15 minutes)</li>
     </ol>
+    <p><strong>One script runs all 5 benchmarks:</strong> matrix multiplication, vector addition, reduction, transpose (naive + tiled)</p>
     <p>We're especially interested in results from:</p>
     <ul>
         <li>NVIDIA GPUs (RTX 40xx, 30xx, Tesla, etc.)</li>
@@ -168,7 +170,7 @@ Interactive performance results for Sarek across different GPUs and backends. Yo
         <li>Apple Silicon (M1, M2, M3, M4 series)</li>
         <li>Mobile GPUs (Qualcomm, Mali, PowerVR)</li>
     </ul>
-    <p>See <a href="https://github.com/mathiasbourgoin/SPOC/tree/main/benchmarks">benchmarks/README.md</a> for detailed instructions.</p>
+    <p>See <a href="https://github.com/mathiasbourgoin/SPOC/blob/main/benchmarks/CONTRIBUTING.md">CONTRIBUTING.md</a> for detailed instructions.</p>
 </div>
 
 ## Benchmark Suite

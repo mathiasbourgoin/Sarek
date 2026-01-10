@@ -154,7 +154,23 @@ Each benchmark run produces a **self-contained JSON file** with all metadata:
 
 ## Example Workflow
 
-### Step 1: Collect Data on Each Machine
+### Step 1: Collect Data on Each Machine (Easy Method)
+
+```bash
+# Machine 1 (NVIDIA GPU) - Run all benchmarks at once!
+./benchmarks/run_all_benchmarks.sh
+# Results saved to: results/run_TIMESTAMP/
+
+# Machine 2 (AMD GPU)
+./benchmarks/run_all_benchmarks.sh
+# Results saved to: results/run_TIMESTAMP/
+
+# Machine 3 (Apple Silicon)
+./benchmarks/run_all_benchmarks.sh
+# Results saved to: results/run_TIMESTAMP/
+```
+
+### Step 1 Alternative: Run Benchmarks Individually
 
 ```bash
 # Machine 1 (NVIDIA GPU)
