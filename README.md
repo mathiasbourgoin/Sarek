@@ -274,12 +274,22 @@ If OpenCL is not detecting your device, ensure you have the appropriate ICD (Ins
 
 ## Documentation
 
+- [GitHub Pages](http://mathiasbourgoin.github.io/Sarek/) - User guides, tutorials, and API docs
 - [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture and design
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
 - [PROJECT_STATUS.md](PROJECT_STATUS.md) - Current project status
 - [Backend Documentation](sarek-cuda/) - Individual backend READMEs
 
 For API documentation, see inline comments and README files in each package directory.
+
+### Contributing to Documentation
+
+Documentation sources are in `gh-pages/` directory:
+- User guides: `gh-pages/docs/*.md`
+- Jekyll layouts: `gh-pages/_layouts/`
+- API docs: Auto-generated from code comments via `odoc`
+
+Changes merged to `main` branch automatically deploy to GitHub Pages via CI.
 
 ## Requirements
 

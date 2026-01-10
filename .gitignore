@@ -2,8 +2,11 @@
 ocp-buid.root*
 *.root
 _site
+gh-pages/_site
 Gemfile.lock
 serve.sh
+.bundle
+vendor/
 *.byte
 *.asm
 _build

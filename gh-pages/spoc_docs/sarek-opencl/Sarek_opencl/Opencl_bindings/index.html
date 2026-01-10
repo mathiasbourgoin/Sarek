@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Opencl_bindings (sarek-opencl.Sarek_opencl.Opencl_bindings)</title><meta charset="utf-8"/><link rel="stylesheet" href="../../../odoc.support/odoc.css"/><meta name="generator" content="odoc 3.1.0"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><script src="../../../odoc.support/highlight.pack.js"></script><script>hljs.initHighlightingOnLoad();</script></head><body class="odoc"><nav class="odoc-nav"><a href="../index.html">Up</a> – <a href="../../../index.html">Index</a> &#x00BB; <a href="../../index.html">sarek-opencl</a> &#x00BB; <a href="../index.html">Sarek_opencl</a> &#x00BB; Opencl_bindings</nav><header class="odoc-preamble"><h1>Module <code><span>Sarek_opencl.Opencl_bindings</span></code></h1></header><div class="odoc-tocs"><nav class="odoc-toc odoc-local-toc"><ul><li><a href="#library-loading">Library Loading</a></li><li><a href="#platform-api">Platform API</a></li><li><a href="#device-api">Device API</a></li><li><a href="#context-api">Context API</a></li><li><a href="#command-queue-api">Command Queue API</a></li><li><a href="#memory-object-api">Memory Object API</a></li><li><a href="#enqueue-operations">Enqueue Operations</a></li><li><a href="#program-api">Program API</a></li><li><a href="#kernel-api">Kernel API</a></li><li><a href="#event-api">Event API</a></li><li><a href="#synchronization">Synchronization</a></li></ul></nav></div><div class="odoc-content"><h2 id="library-loading"><a href="#library-loading" class="anchor"></a>Library Loading</h2><div class="odoc-spec"><div class="spec value anchored" id="val-opencl_lib"><a href="#val-opencl_lib" class="anchor"></a><code><span><span class="keyword">val</span> opencl_lib : <span><span><span class="xref-unresolved">Dl</span>.library option</span> <span class="xref-unresolved">Stdlib</span>.Lazy.t</span></span></code></div><div class="spec-doc"><p>Load OpenCL library dynamically (lazy)</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-is_available"><a href="#val-is_available" class="anchor"></a><code><span><span class="keyword">val</span> is_available : <span>unit <span class="arrow">&#45;&gt;</span></span> bool</span></code></div><div class="spec-doc"><p>Check if OpenCL library is available</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-get_opencl_lib"><a href="#val-get_opencl_lib" class="anchor"></a><code><span><span class="keyword">val</span> get_opencl_lib : <span>unit <span class="arrow">&#45;&gt;</span></span> <span class="xref-unresolved">Dl</span>.library</span></code></div><div class="spec-doc"><p>Get OpenCL library, raising if not available</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-foreign_cl_lazy"><a href="#val-foreign_cl_lazy" class="anchor"></a><code><span><span class="keyword">val</span> foreign_cl_lazy : <span>string <span class="arrow">&#45;&gt;</span></span> <span><span><span>(<span><span class="type-var">'a</span> <span class="arrow">&#45;&gt;</span></span> <span class="type-var">'b</span>)</span> <span class="xref-unresolved">Ctypes</span>.fn</span> <span class="arrow">&#45;&gt;</span></span> <span><span>(<span><span class="type-var">'a</span> <span class="arrow">&#45;&gt;</span></span> <span class="type-var">'b</span>)</span> lazy_t</span></span></code></div><div class="spec-doc"><p>Create a lazy foreign binding to OpenCL</p></div></div><h2 id="platform-api"><a href="#platform-api" class="anchor"></a>Platform API</h2><div class="odoc-spec"><div class="spec value anchored" id="val-clGetPlatformIDs_lazy"><a href="#val-clGetPlatformIDs_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clGetPlatformIDs_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_platform_id">Opencl_types.cl_platform_id</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetPlatformIDs"><a href="#val-clGetPlatformIDs" class="anchor"></a><code><span><span class="keyword">val</span> clGetPlatformIDs : 
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_platform_id">Opencl_types.cl_platform_id</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetPlatformInfo_lazy"><a href="#val-clGetPlatformInfo_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clGetPlatformInfo_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_platform_id">Opencl_types.cl_platform_id</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetPlatformInfo"><a href="#val-clGetPlatformInfo" class="anchor"></a><code><span><span class="keyword">val</span> clGetPlatformInfo : 
+  <span><a href="../Opencl_types/index.html#type-cl_platform_id">Opencl_types.cl_platform_id</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><h2 id="device-api"><a href="#device-api" class="anchor"></a>Device API</h2><div class="odoc-spec"><div class="spec value anchored" id="val-clGetDeviceIDs_lazy"><a href="#val-clGetDeviceIDs_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clGetDeviceIDs_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_platform_id">Opencl_types.cl_platform_id</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_bitfield">Opencl_types.cl_bitfield</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetDeviceIDs"><a href="#val-clGetDeviceIDs" class="anchor"></a><code><span><span class="keyword">val</span> clGetDeviceIDs : 
+  <span><a href="../Opencl_types/index.html#type-cl_platform_id">Opencl_types.cl_platform_id</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_bitfield">Opencl_types.cl_bitfield</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetDeviceInfo_lazy"><a href="#val-clGetDeviceInfo_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clGetDeviceInfo_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetDeviceInfo"><a href="#val-clGetDeviceInfo" class="anchor"></a><code><span><span class="keyword">val</span> clGetDeviceInfo : 
+  <span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><h2 id="context-api"><a href="#context-api" class="anchor"></a>Context API</h2><div class="odoc-spec"><div class="spec value anchored" id="val-clCreateContext_lazy"><a href="#val-clCreateContext_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clCreateContext_lazy : 
+  <span><span>(<span><span><a href="../Opencl_types/index.html#type-cl_ulong">Opencl_types.cl_ulong</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clCreateContext"><a href="#val-clCreateContext" class="anchor"></a><code><span><span class="keyword">val</span> clCreateContext : 
+  <span><span><a href="../Opencl_types/index.html#type-cl_ulong">Opencl_types.cl_ulong</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clCreateContextFromType_lazy"><a href="#val-clCreateContextFromType_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clCreateContextFromType_lazy : 
+  <span><span>(<span><span><a href="../Opencl_types/index.html#type-cl_ulong">Opencl_types.cl_ulong</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_bitfield">Opencl_types.cl_bitfield</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clCreateContextFromType"><a href="#val-clCreateContextFromType" class="anchor"></a><code><span><span class="keyword">val</span> clCreateContextFromType : 
+  <span><span><a href="../Opencl_types/index.html#type-cl_ulong">Opencl_types.cl_ulong</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_bitfield">Opencl_types.cl_bitfield</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clRetainContext_lazy"><a href="#val-clRetainContext_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clRetainContext_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span> lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clRetainContext"><a href="#val-clRetainContext" class="anchor"></a><code><span><span class="keyword">val</span> clRetainContext : <span><a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clReleaseContext_lazy"><a href="#val-clReleaseContext_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clReleaseContext_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span> lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clReleaseContext"><a href="#val-clReleaseContext" class="anchor"></a><code><span><span class="keyword">val</span> clReleaseContext : <span><a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetContextInfo_lazy"><a href="#val-clGetContextInfo_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clGetContextInfo_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetContextInfo"><a href="#val-clGetContextInfo" class="anchor"></a><code><span><span class="keyword">val</span> clGetContextInfo : 
+  <span><a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><h2 id="command-queue-api"><a href="#command-queue-api" class="anchor"></a>Command Queue API</h2><div class="odoc-spec"><div class="spec value anchored" id="val-clCreateCommandQueueWithProperties_lazy"><a href="#val-clCreateCommandQueueWithProperties_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clCreateCommandQueueWithProperties_lazy : 
+  <span><span><span>(<span><a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_ulong">Opencl_types.cl_ulong</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a>)</span>
+    option</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clCreateCommandQueueWithProperties"><a href="#val-clCreateCommandQueueWithProperties" class="anchor"></a><code><span><span class="keyword">val</span> clCreateCommandQueueWithProperties : 
+  <span><a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_ulong">Opencl_types.cl_ulong</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> option</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clCreateCommandQueue_lazy"><a href="#val-clCreateCommandQueue_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clCreateCommandQueue_lazy : 
+  <span><span><span>(<span><a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_bitfield">Opencl_types.cl_bitfield</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a>)</span>
+    option</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clCreateCommandQueue"><a href="#val-clCreateCommandQueue" class="anchor"></a><code><span><span class="keyword">val</span> clCreateCommandQueue : 
+  <span><a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_bitfield">Opencl_types.cl_bitfield</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clRetainCommandQueue_lazy"><a href="#val-clRetainCommandQueue_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clRetainCommandQueue_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span> lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clRetainCommandQueue"><a href="#val-clRetainCommandQueue" class="anchor"></a><code><span><span class="keyword">val</span> clRetainCommandQueue : <span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clReleaseCommandQueue_lazy"><a href="#val-clReleaseCommandQueue_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clReleaseCommandQueue_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span> lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clReleaseCommandQueue"><a href="#val-clReleaseCommandQueue" class="anchor"></a><code><span><span class="keyword">val</span> clReleaseCommandQueue : 
+  <span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clFlush_lazy"><a href="#val-clFlush_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clFlush_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span> lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clFlush"><a href="#val-clFlush" class="anchor"></a><code><span><span class="keyword">val</span> clFlush : <span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clFinish_lazy"><a href="#val-clFinish_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clFinish_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span> lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clFinish"><a href="#val-clFinish" class="anchor"></a><code><span><span class="keyword">val</span> clFinish : <span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><h2 id="memory-object-api"><a href="#memory-object-api" class="anchor"></a>Memory Object API</h2><div class="odoc-spec"><div class="spec value anchored" id="val-clCreateBuffer_lazy"><a href="#val-clCreateBuffer_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clCreateBuffer_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_bitfield">Opencl_types.cl_bitfield</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clCreateBuffer"><a href="#val-clCreateBuffer" class="anchor"></a><code><span><span class="keyword">val</span> clCreateBuffer : 
+  <span><a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_bitfield">Opencl_types.cl_bitfield</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clRetainMemObject_lazy"><a href="#val-clRetainMemObject_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clRetainMemObject_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span> lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clRetainMemObject"><a href="#val-clRetainMemObject" class="anchor"></a><code><span><span class="keyword">val</span> clRetainMemObject : <span><a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clReleaseMemObject_lazy"><a href="#val-clReleaseMemObject_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clReleaseMemObject_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span> lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clReleaseMemObject"><a href="#val-clReleaseMemObject" class="anchor"></a><code><span><span class="keyword">val</span> clReleaseMemObject : <span><a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetMemObjectInfo_lazy"><a href="#val-clGetMemObjectInfo_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clGetMemObjectInfo_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetMemObjectInfo"><a href="#val-clGetMemObjectInfo" class="anchor"></a><code><span><span class="keyword">val</span> clGetMemObjectInfo : 
+  <span><a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><h2 id="enqueue-operations"><a href="#enqueue-operations" class="anchor"></a>Enqueue Operations</h2><div class="odoc-spec"><div class="spec value anchored" id="val-clEnqueueReadBuffer_lazy"><a href="#val-clEnqueueReadBuffer_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clEnqueueReadBuffer_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_bool">Opencl_types.cl_bool</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clEnqueueReadBuffer"><a href="#val-clEnqueueReadBuffer" class="anchor"></a><code><span><span class="keyword">val</span> clEnqueueReadBuffer : 
+  <span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_bool">Opencl_types.cl_bool</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clEnqueueWriteBuffer_lazy"><a href="#val-clEnqueueWriteBuffer_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clEnqueueWriteBuffer_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_bool">Opencl_types.cl_bool</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clEnqueueWriteBuffer"><a href="#val-clEnqueueWriteBuffer" class="anchor"></a><code><span><span class="keyword">val</span> clEnqueueWriteBuffer : 
+  <span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_bool">Opencl_types.cl_bool</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clEnqueueCopyBuffer_lazy"><a href="#val-clEnqueueCopyBuffer_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clEnqueueCopyBuffer_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clEnqueueCopyBuffer"><a href="#val-clEnqueueCopyBuffer" class="anchor"></a><code><span><span class="keyword">val</span> clEnqueueCopyBuffer : 
+  <span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clEnqueueFillBuffer_lazy"><a href="#val-clEnqueueFillBuffer_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clEnqueueFillBuffer_lazy : 
+  <span><span><span>(<span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    option</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clEnqueueFillBuffer"><a href="#val-clEnqueueFillBuffer" class="anchor"></a><code><span><span class="keyword">val</span> clEnqueueFillBuffer : 
+  <span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_mem">Opencl_types.cl_mem</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><h2 id="program-api"><a href="#program-api" class="anchor"></a>Program API</h2><div class="odoc-spec"><div class="spec value anchored" id="val-clCreateProgramWithSource_lazy"><a href="#val-clCreateProgramWithSource_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clCreateProgramWithSource_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span>string <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_program">Opencl_types.cl_program</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clCreateProgramWithSource"><a href="#val-clCreateProgramWithSource" class="anchor"></a><code><span><span class="keyword">val</span> clCreateProgramWithSource : 
+  <span><a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>string <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_program">Opencl_types.cl_program</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clCreateProgramWithBinary_lazy"><a href="#val-clCreateProgramWithBinary_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clCreateProgramWithBinary_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><span><span class="xref-unresolved">Unsigned</span>.uchar <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_program">Opencl_types.cl_program</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clCreateProgramWithBinary"><a href="#val-clCreateProgramWithBinary" class="anchor"></a><code><span><span class="keyword">val</span> clCreateProgramWithBinary : 
+  <span><a href="../Opencl_types/index.html#type-cl_context">Opencl_types.cl_context</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span><span class="xref-unresolved">Unsigned</span>.uchar <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_program">Opencl_types.cl_program</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clBuildProgram_lazy"><a href="#val-clBuildProgram_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clBuildProgram_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_program">Opencl_types.cl_program</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span>string <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clBuildProgram"><a href="#val-clBuildProgram" class="anchor"></a><code><span><span class="keyword">val</span> clBuildProgram : 
+  <span><a href="../Opencl_types/index.html#type-cl_program">Opencl_types.cl_program</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span>string <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetProgramBuildInfo_lazy"><a href="#val-clGetProgramBuildInfo_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clGetProgramBuildInfo_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_program">Opencl_types.cl_program</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetProgramBuildInfo"><a href="#val-clGetProgramBuildInfo" class="anchor"></a><code><span><span class="keyword">val</span> clGetProgramBuildInfo : 
+  <span><a href="../Opencl_types/index.html#type-cl_program">Opencl_types.cl_program</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clRetainProgram_lazy"><a href="#val-clRetainProgram_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clRetainProgram_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_program">Opencl_types.cl_program</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span> lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clRetainProgram"><a href="#val-clRetainProgram" class="anchor"></a><code><span><span class="keyword">val</span> clRetainProgram : <span><a href="../Opencl_types/index.html#type-cl_program">Opencl_types.cl_program</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clReleaseProgram_lazy"><a href="#val-clReleaseProgram_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clReleaseProgram_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_program">Opencl_types.cl_program</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span> lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clReleaseProgram"><a href="#val-clReleaseProgram" class="anchor"></a><code><span><span class="keyword">val</span> clReleaseProgram : <span><a href="../Opencl_types/index.html#type-cl_program">Opencl_types.cl_program</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><h2 id="kernel-api"><a href="#kernel-api" class="anchor"></a>Kernel API</h2><div class="odoc-spec"><div class="spec value anchored" id="val-clCreateKernel_lazy"><a href="#val-clCreateKernel_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clCreateKernel_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_program">Opencl_types.cl_program</a> <span class="arrow">&#45;&gt;</span></span>
+    <span>string <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_kernel">Opencl_types.cl_kernel</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clCreateKernel"><a href="#val-clCreateKernel" class="anchor"></a><code><span><span class="keyword">val</span> clCreateKernel : 
+  <span><a href="../Opencl_types/index.html#type-cl_program">Opencl_types.cl_program</a> <span class="arrow">&#45;&gt;</span></span>
+  <span>string <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_kernel">Opencl_types.cl_kernel</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clSetKernelArg_lazy"><a href="#val-clSetKernelArg_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clSetKernelArg_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_kernel">Opencl_types.cl_kernel</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clSetKernelArg"><a href="#val-clSetKernelArg" class="anchor"></a><code><span><span class="keyword">val</span> clSetKernelArg : 
+  <span><a href="../Opencl_types/index.html#type-cl_kernel">Opencl_types.cl_kernel</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clRetainKernel_lazy"><a href="#val-clRetainKernel_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clRetainKernel_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_kernel">Opencl_types.cl_kernel</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span> lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clRetainKernel"><a href="#val-clRetainKernel" class="anchor"></a><code><span><span class="keyword">val</span> clRetainKernel : <span><a href="../Opencl_types/index.html#type-cl_kernel">Opencl_types.cl_kernel</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clReleaseKernel_lazy"><a href="#val-clReleaseKernel_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clReleaseKernel_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_kernel">Opencl_types.cl_kernel</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span> lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clReleaseKernel"><a href="#val-clReleaseKernel" class="anchor"></a><code><span><span class="keyword">val</span> clReleaseKernel : <span><a href="../Opencl_types/index.html#type-cl_kernel">Opencl_types.cl_kernel</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetKernelInfo_lazy"><a href="#val-clGetKernelInfo_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clGetKernelInfo_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_kernel">Opencl_types.cl_kernel</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetKernelInfo"><a href="#val-clGetKernelInfo" class="anchor"></a><code><span><span class="keyword">val</span> clGetKernelInfo : 
+  <span><a href="../Opencl_types/index.html#type-cl_kernel">Opencl_types.cl_kernel</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetKernelWorkGroupInfo_lazy"><a href="#val-clGetKernelWorkGroupInfo_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clGetKernelWorkGroupInfo_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_kernel">Opencl_types.cl_kernel</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetKernelWorkGroupInfo"><a href="#val-clGetKernelWorkGroupInfo" class="anchor"></a><code><span><span class="keyword">val</span> clGetKernelWorkGroupInfo : 
+  <span><a href="../Opencl_types/index.html#type-cl_kernel">Opencl_types.cl_kernel</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_device_id">Opencl_types.cl_device_id</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clEnqueueNDRangeKernel_lazy"><a href="#val-clEnqueueNDRangeKernel_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clEnqueueNDRangeKernel_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_kernel">Opencl_types.cl_kernel</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clEnqueueNDRangeKernel"><a href="#val-clEnqueueNDRangeKernel" class="anchor"></a><code><span><span class="keyword">val</span> clEnqueueNDRangeKernel : 
+  <span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_kernel">Opencl_types.cl_kernel</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><h2 id="event-api"><a href="#event-api" class="anchor"></a>Event API</h2><div class="odoc-spec"><div class="spec value anchored" id="val-clWaitForEvents_lazy"><a href="#val-clWaitForEvents_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clWaitForEvents_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clWaitForEvents"><a href="#val-clWaitForEvents" class="anchor"></a><code><span><span class="keyword">val</span> clWaitForEvents : 
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clRetainEvent_lazy"><a href="#val-clRetainEvent_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clRetainEvent_lazy : <span><span>(<span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span> lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clRetainEvent"><a href="#val-clRetainEvent" class="anchor"></a><code><span><span class="keyword">val</span> clRetainEvent : <span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clReleaseEvent_lazy"><a href="#val-clReleaseEvent_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clReleaseEvent_lazy : <span><span>(<span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span> lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clReleaseEvent"><a href="#val-clReleaseEvent" class="anchor"></a><code><span><span class="keyword">val</span> clReleaseEvent : <span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="arrow">&#45;&gt;</span></span> <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetEventInfo_lazy"><a href="#val-clGetEventInfo_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clGetEventInfo_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetEventInfo"><a href="#val-clGetEventInfo" class="anchor"></a><code><span><span class="keyword">val</span> clGetEventInfo : 
+  <span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetEventProfilingInfo_lazy"><a href="#val-clGetEventProfilingInfo_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clGetEventProfilingInfo_lazy : 
+  <span><span>(<span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+    <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clGetEventProfilingInfo"><a href="#val-clGetEventProfilingInfo" class="anchor"></a><code><span><span class="keyword">val</span> clGetEventProfilingInfo : 
+  <span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="xref-unresolved">Unsigned</span>.size_t <span class="arrow">&#45;&gt;</span></span>
+  <span><span>unit <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span class="xref-unresolved">Unsigned</span>.size_t <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><h2 id="synchronization"><a href="#synchronization" class="anchor"></a>Synchronization</h2><div class="odoc-spec"><div class="spec value anchored" id="val-clEnqueueMarkerWithWaitList_lazy"><a href="#val-clEnqueueMarkerWithWaitList_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clEnqueueMarkerWithWaitList_lazy : 
+  <span><span><span>(<span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    option</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clEnqueueMarkerWithWaitList"><a href="#val-clEnqueueMarkerWithWaitList" class="anchor"></a><code><span><span class="keyword">val</span> clEnqueueMarkerWithWaitList : 
+  <span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clEnqueueBarrierWithWaitList_lazy"><a href="#val-clEnqueueBarrierWithWaitList_lazy" class="anchor"></a><code><span><span class="keyword">val</span> clEnqueueBarrierWithWaitList_lazy : 
+  <span><span><span>(<span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+    <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a>)</span>
+    option</span>
+    lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-clEnqueueBarrierWithWaitList"><a href="#val-clEnqueueBarrierWithWaitList" class="anchor"></a><code><span><span class="keyword">val</span> clEnqueueBarrierWithWaitList : 
+  <span><a href="../Opencl_types/index.html#type-cl_command_queue">Opencl_types.cl_command_queue</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Opencl_types/index.html#type-cl_uint">Opencl_types.cl_uint</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../Opencl_types/index.html#type-cl_event">Opencl_types.cl_event</a> <span class="xref-unresolved">Ctypes_static</span>.ptr</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../Opencl_types/index.html#type-cl_int">Opencl_types.cl_int</a></span></code></div></div></div></body></html>

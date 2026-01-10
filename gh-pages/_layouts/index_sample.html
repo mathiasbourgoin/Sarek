@@ -1,0 +1,177 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <link rel="icon" href="{{ site.baseurl }}/favicon.ico" />
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
+    <script src="{{ site.baseurl }}/javascripts/process-rel-links.js" type="text/javascript"></script>
+    <title>Sarek - Documentation</title>
+
+    <link rel="stylesheet" href='{{ site.baseurl }}/stylesheets/modern.css'>
+    <link rel="stylesheet" href='{{ site.baseurl }}/stylesheets/pygment_trac.css'>
+    <style>
+      /* Documentation specific tweaks to modern.css */
+      .doc-wrapper {
+        display: flex;
+        max-width: 1200px;
+        margin: 40px auto;
+        padding: 0 20px;
+      }
+      .sidebar {
+        width: 250px;
+        flex-shrink: 0;
+        padding-right: 40px;
+        border-right: 1px solid var(--border-color);
+      }
+      .doc-content {
+        flex-grow: 1;
+        padding-left: 40px;
+        min-width: 0; /* Prevents overflow in flexbox */
+      }
+      .sidebar img {
+        width: 100%;
+        max-width: 200px;
+        display: block;
+        margin: 0 auto 20px;
+      }
+      .sidebar-nav {
+        list-style: none;
+        padding: 0;
+      }
+      .sidebar-nav li {
+        margin-bottom: 10px;
+      }
+      .sidebar-nav a {
+        font-weight: 600;
+        color: var(--secondary-color);
+      }
+      @media (max-width: 768px) {
+        .doc-wrapper { flex-direction: column; }
+        .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border-color); padding-bottom: 20px; margin-bottom: 40px; }
+        .doc-content { padding-left: 0; }
+      }
+    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  </head>
+  <body>
+    
+    <!-- Top Navigation Bar -->
+    <nav class="navbar">
+      <div class="container">
+        <a href="{{ site.baseurl }}/" class="nav-brand">
+          <img src="{{ site.baseurl }}/pres_resources/logo_sarek.png" alt="Sarek Logo">
+          Sarek
+        </a>
+        <div class="nav-links">
+          <a href="{{ site.baseurl }}/">Home</a>
+          <a href="{{ site.baseurl }}/docs/getting_started.html">Getting Started</a>
+          <a href="{{ site.baseurl }}/docs/concepts.html">Concepts</a>
+          <a href="{{ site.baseurl }}/spoc_docs/index.html">API Docs</a>
+          <a href="https://github.com/mathiasbourgoin/Sarek">GitHub</a>
+          <button id="theme-toggle" title="Toggle Dark/Light Mode">
+            <span>🌙</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="doc-wrapper">
+      <nav class="sidebar">
+        <ul class="sidebar-nav">
+          <li><strong>Overview</strong></li>
+          <li><a href="{{ site.baseurl }}/docs/getting_started.html">Getting Started</a></li>
+          <li><a href="{{ site.baseurl }}/docs/concepts.html">Concepts</a></li>
+          <li><a href="{{ site.baseurl }}/docs/interactive.html">Interactive (Jupyter)</a></li>
+          <li><a href="{{ site.baseurl }}/docs/binder.html">Try Online (Binder)</a></li>
+          <li style="margin-top: 10px; margin-left: 10px;"><a href="{{ site.baseurl }}/docs/live_mandelbrot.html">✨ Live Mandelbrot</a></li>
+          <li style="margin-left: 10px;"><a href="{{ site.baseurl }}/docs/live_transpiler.html">✨ Live Transpiler</a></li>
+          <li><a href="{{ site.baseurl }}/docs/transpiler.html">Inspector</a></li>
+          <li><a href="{{ site.baseurl }}/docs/architecture.html">Architecture</a></li>
+          <li><a href="{{ site.baseurl }}/docs/backends.html">Backends</a></li>
+          <li><a href="{{ site.baseurl }}/docs/faq.html">FAQ</a></li>
+          
+          <li style="margin-top: 20px;"><strong>Examples</strong></li>
+          <li><a href="{{ site.baseurl }}/docs/vector_add.html">Vector Addition</a></li>
+          <li><a href="{{ site.baseurl }}/docs/matrix_mul.html">Matrix Multiplication</a></li>
+          <li><a href="{{ site.baseurl }}/docs/transpose.html">Matrix Transpose</a></li>
+          <li><a href="{{ site.baseurl }}/docs/reduction.html">Parallel Reduction</a></li>
+          <li><a href="{{ site.baseurl }}/docs/mandelbrot.html">Mandelbrot Set</a></li>
+          
+          <li style="margin-top: 20px;"><strong>Development</strong></li>
+          <li><a href="{{ site.baseurl }}/docs/build_guide.html">Build Guide</a></li>
+          <li><a href="{{ site.baseurl }}/docs/new_backend.html">Building a Backend</a></li>
+          
+          <li style="margin-top: 20px;"><strong>Resources</strong></li>
+          <li><a href="{{ site.baseurl }}/spoc_docs/index.html">API Reference</a></li>
+          <li><a href="{{ site.baseurl }}/docs/publications.html">Publications</a></li>
+          <li><a href="{{ site.baseurl }}/docs/history.html">History</a></li>
+        </ul>
+      </nav>
+
+      <main class="doc-content">
+        {{ content }}
+      </main>
+    </div>
+
+    <footer>
+      <div class="container">
+        <p>Sarek is maintained by <a href="https://github.com/mathiasbourgoin">mathiasbourgoin</a></p>
+      </div>
+    </footer>
+
+    <script src="{{ site.baseurl }}/javascripts/scale.fix.js"></script>
+    <script src="{{ site.baseurl }}/javascripts/copy-code.js"></script>
+    <script src="{{ site.baseurl }}/javascripts/theme-toggle.js"></script>
+    <script src="{{ site.baseurl }}/javascripts/syntax-sarek.js"></script>
+    <script src="{{ site.baseurl }}/javascripts/code-tabs.js"></script>
+    <script src="{{ site.baseurl }}/javascripts/init-mermaid.js"></script>
+    
+    <!-- Thebe for Live Execution -->
+    <link rel="stylesheet" href="https://unpkg.com/thebe@latest/lib/index.css">
+    <script src="https://unpkg.com/thebe@latest/lib/index.js"></script>
+    <script>
+      window.bootstrapThebe = function() {
+        const btn = document.getElementById('thebe-activate');
+        btn.innerText = "⏳ Connecting to Binder...";
+        btn.disabled = true;
+
+        thebe.bootstrap({
+          binderOptions: {
+            repo: "mathiasbourgoin/Sarek",
+            ref: "1d135f38f6d475740126a0d5ea77e9317b825226",
+          },
+          kernelOptions: {
+            name: "ocaml-jupyter",
+          },
+          selector: "[data-executable]",
+          requestKernel: true,
+        }).then(kernel => {
+            btn.innerText = "✅ Live Environment Active";
+            console.log("Thebe kernel initialized:", kernel);
+        }).catch(err => {
+            btn.innerText = "❌ Connection Failed";
+            console.error("Thebe error:", err);
+            btn.disabled = false;
+        });
+      }
+    </script>
+
+    <script type="module">
+      import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+      
+      // Transform code blocks to divs
+      if (window.transformMermaidBlocks) {
+        window.transformMermaidBlocks();
+      }
+
+      // Initialize and render
+      mermaid.initialize({ 
+        startOnLoad: false, 
+        theme: 'neutral',
+        securityLevel: 'loose'
+      });
+      await mermaid.run();
+    </script>
+  </body>
+</html>
