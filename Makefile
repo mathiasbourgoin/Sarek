@@ -364,3 +364,16 @@ release:
 	dune-release publish
 	dune-release opam pkg
 	dune-release opam submit
+
+# Benchmark targets
+.PHONY: benchmarks bench-all bench-update
+
+benchmarks: bench-all
+
+bench-all:
+@./benchmarks/run_all_benchmarks.sh
+
+bench-update:
+@echo "Running benchmarks and updating web data..."
+@./benchmarks/run_all_benchmarks.sh results
+@echo "Benchmark data updated. Review and commit changes."

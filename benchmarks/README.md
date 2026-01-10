@@ -12,7 +12,28 @@ Results are published on our [interactive benchmarks page](https://mathiasbourgo
 
 ## Quick Start
 
-### Running Benchmarks
+### Running All Benchmarks (Recommended)
+
+The easiest way to run all benchmarks and update the web viewer:
+
+```bash
+# Run all benchmarks and update web data
+make benchmarks
+
+# Or directly:
+./benchmarks/run_all_benchmarks.sh
+
+# Results saved to results/run_TIMESTAMP/ and web data updated
+```
+
+This script will:
+1. Build all benchmark executables
+2. Run all 5 benchmarks with default sizes
+3. Generate timestamped result files
+4. Update `gh-pages/benchmarks/data/latest.json`
+5. Provide instructions for committing results
+
+### Running Individual Benchmarks
 
 ```bash
 # Build all benchmarks
