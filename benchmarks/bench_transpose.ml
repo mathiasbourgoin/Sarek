@@ -37,7 +37,7 @@ type config = {
 
 let default_config =
   {
-    sizes = [256; 512; 1024; 2048];
+    sizes = [256; 512; 1024; 2048; 4096; 8192];
     iterations = 20;
     warmup = 5;
     block_size = 256;
@@ -142,17 +142,21 @@ let benchmark_device dev size config =
     let result = Vector.to_array output in
     let expected = Array.make n 0.0 in
     cpu_transpose input_data expected m m ;
-    let tolerance = 0.001 in
+    (* Dynamic tolerance: allow for float32 precision limits
+       For values beyond 2^24, float32 has ULP > 1
+       At 8192x8192 (67M elements), ULP ~= 4 *)
+    let tolerance = if n > 16_777_216 then 10.0 else 0.001 in
     let errors = ref 0 in
     for i = 0 to n - 1 do
       let diff = abs_float (result.(i) -. expected.(i)) in
       if diff > tolerance then begin
         if !errors < 5 then
           Printf.printf
-            "  Mismatch at %d: expected %.2f, got %.2f\n"
+            "  Mismatch at %d: expected %.2f, got %.2f (diff: %.2f)\n"
             i
             expected.(i)
-            result.(i) ;
+            result.(i)
+            diff ;
         incr errors
       end
     done ;
