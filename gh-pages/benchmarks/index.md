@@ -58,6 +58,22 @@ title: Benchmark Results
     color: var(--text-color);
 }
 
+.metric-selector {
+    padding: 6px 10px;
+    font-size: 0.95em;
+    border: 2px solid var(--link-color);
+    border-radius: 4px;
+    background: var(--bg-color);
+    color: var(--text-color);
+    cursor: pointer;
+    min-width: 180px;
+}
+
+.metric-selector:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(var(--link-color-rgb), 0.2);
+}
+
 .filter-checkbox {
     display: flex;
     align-items: center;
@@ -162,7 +178,7 @@ Interactive performance results for Sarek across different GPUs and backends. Yo
     <select id="benchmark-select">
         <option value="matrix_mul">Matrix Multiplication (Naive)</option>
         <option value="vector_add">Vector Addition (Memory Bandwidth)</option>
-        <option value="reduction" disabled>Reduction (Coming Soon)</option>
+        <option value="reduction">Parallel Reduction (Sum)</option>
         <option value="transpose" disabled>Matrix Transpose (Coming Soon)</option>
     </select>
 </div>
@@ -174,6 +190,13 @@ Interactive performance results for Sarek across different GPUs and backends. Yo
     <p><strong>Metric:</strong> GFLOPS (billions of floating-point operations per second)</p>
     
     <div class="filter-controls">
+        <div class="filter-group">
+            <label>Metric:</label>
+            <select id="metric-select" class="metric-selector">
+                <option value="time">Time (ms)</option>
+                <option value="throughput">Throughput (GFLOPS/GB/s)</option>
+            </select>
+        </div>
         <div class="filter-group">
             <label>Backends:</label>
             <label class="filter-checkbox">

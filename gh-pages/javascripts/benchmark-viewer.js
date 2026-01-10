@@ -4,6 +4,7 @@
 let benchmarkData = null;
 let currentChart = null;
 let currentBenchmark = 'matrix_mul';
+let currentMetric = 'throughput'; // 'time' or 'throughput'
 
 // Color palette for different backends
 const BACKEND_COLORS = {
@@ -56,6 +57,15 @@ function initializeFilters() {
     if (cpuFilter) {
         cpuFilter.addEventListener('change', updateChart);
     }
+    
+    // Metric selector
+    const metricSelector = document.getElementById('metric-select');
+    if (metricSelector) {
+        metricSelector.addEventListener('change', (e) => {
+            currentMetric = e.target.value;
+            updateChart();
+        });
+    }
 }
 
 // Update chart based on current filters
@@ -79,23 +89,39 @@ function updateChart() {
         currentChart.destroy();
     }
     
-    // Get benchmark-specific labels
+    // Get benchmark-specific labels and units
     const benchmarkConfig = {
         'matrix_mul': {
             title: 'Matrix Multiplication Performance (Naive Kernel)',
             xLabel: 'Matrix Size (elements)',
-            yLabel: 'Throughput (GFLOPS)',
-            yUnit: 'GFLOPS'
+            throughputLabel: 'Throughput (GFLOPS)',
+            throughputUnit: 'GFLOPS',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
         },
         'vector_add': {
             title: 'Vector Addition Performance (Memory Bandwidth)',
             xLabel: 'Vector Size (elements)',
-            yLabel: 'Memory Bandwidth (GB/s)',
-            yUnit: 'GB/s'
+            throughputLabel: 'Memory Bandwidth (GB/s)',
+            throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
+        },
+        'reduction': {
+            title: 'Parallel Reduction Performance (Sum)',
+            xLabel: 'Array Size (elements)',
+            throughputLabel: 'Memory Bandwidth (GB/s)',
+            throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
         }
     };
     
     const config = benchmarkConfig[currentBenchmark] || benchmarkConfig['matrix_mul'];
+    
+    // Determine labels based on current metric
+    const yLabel = currentMetric === 'time' ? config.timeLabel : config.throughputLabel;
+    const yUnit = currentMetric === 'time' ? config.timeUnit : config.throughputUnit;
     
     // Create new chart
     const ctx = canvas.getContext('2d');
@@ -131,7 +157,7 @@ function updateChart() {
                             if (label) {
                                 label += ': ';
                             }
-                            label += context.parsed.y.toFixed(2) + ' ' + config.yUnit;
+                            label += context.parsed.y.toFixed(2) + ' ' + yUnit;
                             return label;
                         }
                     }
@@ -153,7 +179,7 @@ function updateChart() {
                 y: {
                     title: {
                         display: true,
-                        text: config.yLabel
+                        text: yLabel
                     },
                     beginAtZero: true
                 }
@@ -174,7 +200,8 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
     // Map benchmark tab names to JSON benchmark names
     const benchmarkNameMap = {
         'matrix_mul': 'matrix_mul_naive',
-        'vector_add': 'vector_add'
+        'vector_add': 'vector_add',
+        'reduction': 'reduction_sum'
     };
     
     const targetBenchmark = benchmarkNameMap[benchmarkName];
@@ -206,11 +233,20 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
             }
             
             const size = result.benchmark.parameters.size;
-            const throughput = deviceResult.throughput_gflops;
+            
+            // Get the appropriate metric value
+            let yValue;
+            if (currentMetric === 'time') {
+                // Use minimum time for best performance representation
+                yValue = deviceResult.min_ms;
+            } else {
+                // Use throughput (GFLOPS or GB/s depending on benchmark)
+                yValue = deviceResult.throughput_gflops || deviceResult.throughput || 0;
+            }
             
             deviceData.get(key).data.push({
                 x: size,
-                y: throughput
+                y: yValue
             });
         });
     });
