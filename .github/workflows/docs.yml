@@ -42,10 +42,31 @@ jobs:
             exit 1
           fi
 
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: gh-pages
+
+      - name: Build Jekyll site
+        run: |
+          cd gh-pages
+          bundle install
+          bundle exec jekyll build
+
+      - name: Combine documentation
+        run: |
+          # Copy Jekyll output to deployment directory
+          mkdir -p _site
+          cp -r gh-pages/_site/* _site/
+          # Copy odoc output to spoc_docs subfolder
+          mkdir -p _site/spoc_docs
+          cp -r _build/default/_doc/_html/* _site/spoc_docs/
+
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          folder: _build/default/_doc/_html
-          target-folder: spoc_docs
+          folder: _site
           branch: gh-pages
-          clean: false # Don't wipe the rest of the site (Jekyll sources)
+          clean: true # Clean the branch since we're deploying everything
