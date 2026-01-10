@@ -243,7 +243,14 @@ title: Benchmark Results
     <strong>🚧 Work in Progress:</strong> This page shows preliminary benchmark results. More benchmarks and devices are being added continuously.
 </div>
 
-Interactive performance results for Sarek across different GPUs and backends. You can filter by backend and device to compare performance.
+Interactive performance results for Sarek across different GPUs and backends. 
+
+**6 comprehensive benchmarks** test different aspects of GPU performance:
+- 🔢 **Compute-bound**: Matrix multiplication, Mandelbrot fractals
+- 💾 **Memory-bound**: Vector addition, parallel reduction
+- ⚡ **Optimization showcase**: Transpose (naive vs tiled)
+
+Switch between **4 view modes**: Single Chart, 4-Panel Comparison, System Ranking, or Device Matrix. Each benchmark includes detailed descriptions with Sarek kernel code.
 
 <div class="contribute-box">
     <h3>📊 Contribute Your Benchmarks!</h3>
@@ -254,7 +261,7 @@ Interactive performance results for Sarek across different GPUs and backends. Yo
         <li>Run all benchmarks: <code>eval $(opam env) && ./benchmarks/run_all_benchmarks.sh</code></li>
         <li>Submit results as a PR (takes ~5-15 minutes)</li>
     </ol>
-    <p><strong>One script runs all 5 benchmarks:</strong> matrix multiplication, vector addition, reduction, transpose (naive + tiled)</p>
+    <p><strong>One script runs all 6 benchmarks:</strong> matrix multiplication, vector addition, reduction, transpose (naive + tiled), and Mandelbrot fractal generation</p>
     <p>We're especially interested in results from:</p>
     <ul>
         <li>NVIDIA GPUs (RTX 40xx, 30xx, Tesla, etc.)</li>

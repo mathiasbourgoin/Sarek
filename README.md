@@ -169,6 +169,8 @@ make benchmarks
 
 The fast benchmarks use small problem sizes and complete in ~20 seconds, while the full benchmark suite exercises all backends with larger datasets.
 
+**Benchmark Suite**: 6 comprehensive benchmarks covering compute-bound (matrix multiplication, Mandelbrot), memory-bound (vector addition, reduction), and optimization patterns (transpose naive vs tiled). Results are published to an [interactive web viewer](https://mathiasbourgoin.github.io/Sarek/benchmarks/) with multiple visualization modes.
+
 ## Usage
 
 ### Basic Example

@@ -28,10 +28,21 @@ make benchmarks
 
 This script will:
 1. Build all benchmark executables
-2. Run all 5 benchmarks with default sizes
-3. Generate timestamped result files
+2. Run all 6 benchmarks with default sizes
+3. Generate timestamped result files (including PPM images for Mandelbrot)
 4. Update `gh-pages/benchmarks/data/latest.json`
 5. Provide instructions for committing results
+
+## Available Benchmarks
+
+| Benchmark | Description | Metric | What It Tests |
+|-----------|-------------|--------|---------------|
+| **Matrix Multiplication** | Dense matrix multiply (naive) | GFLOPS | Compute-bound arithmetic intensity |
+| **Vector Addition** | Element-wise addition | GB/s | Memory bandwidth ceiling |
+| **Parallel Reduction** | Sum all array elements | GB/s | Shared memory & synchronization |
+| **Transpose (Naive)** | Matrix transpose | GB/s | Memory access patterns baseline |
+| **Transpose (Tiled)** | Optimized with shared memory | GB/s | Memory optimization impact (2-5× speedup) |
+| **Mandelbrot Set** | Fractal generation | Mpixels/s | Arithmetic intensity & branch divergence |
 
 ### Running Individual Benchmarks
 
@@ -39,7 +50,7 @@ This script will:
 # Build all benchmarks
 dune build benchmarks/bench_matrix_mul.exe benchmarks/bench_vector_add.exe \
            benchmarks/bench_reduction.exe benchmarks/bench_transpose.exe \
-           benchmarks/bench_transpose_tiled.exe
+           benchmarks/bench_transpose_tiled.exe benchmarks/bench_mandelbrot.exe
 
 # Run matrix multiplication benchmark (default: 256, 512, 1024, 2048 elements)
 dune exec benchmarks/bench_matrix_mul.exe
@@ -53,6 +64,10 @@ dune exec benchmarks/bench_reduction.exe
 # Run transpose benchmarks (default: 256, 512, 1024, 2048, 4096, 8192 - NxN matrices)
 dune exec benchmarks/bench_transpose.exe          # Naive version
 dune exec benchmarks/bench_transpose_tiled.exe    # Optimized with shared memory
+
+# Run Mandelbrot benchmark (default: 512, 1024, 2048, 4096 - square images)
+dune exec benchmarks/bench_mandelbrot.exe         # Generates PPM images
+dune exec benchmarks/bench_mandelbrot.exe -- --no-images  # Skip image generation
 
 # Custom sizes and iterations
 dune exec benchmarks/bench_matrix_mul.exe -- \
@@ -68,6 +83,7 @@ dune exec benchmarks/bench_vector_add.exe -- --output results/$(hostname)/
 dune exec benchmarks/bench_reduction.exe -- --output results/$(hostname)/
 dune exec benchmarks/bench_transpose.exe -- --output results/$(hostname)/
 dune exec benchmarks/bench_transpose_tiled.exe -- --output results/$(hostname)/
+dune exec benchmarks/bench_mandelbrot.exe -- --output results/$(hostname)/
 ```
 
 ### Publishing Results to Web Viewer

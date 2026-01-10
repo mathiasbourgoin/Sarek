@@ -26,8 +26,8 @@ make benchmarks
 
 This single command will:
 - Build all benchmark executables
-- Run 5 benchmarks: matrix_mul, vector_add, reduction, transpose, transpose_tiled
-- Save results to `results/run_TIMESTAMP/`
+- Run 6 benchmarks: matrix_mul, vector_add, reduction, transpose (naive + tiled), mandelbrot
+- Save results to `results/run_TIMESTAMP/` (including fractal images!)
 - Update the web viewer data automatically
 
 **Estimated time:** 5-15 minutes depending on your hardware.

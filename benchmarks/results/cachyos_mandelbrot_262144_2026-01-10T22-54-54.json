@@ -1,0 +1,101 @@
+{
+  "benchmark": {
+    "name": "mandelbrot",
+    "timestamp": "2026-01-10T22:54:54Z",
+    "git_commit": "15513a04c92922263bd56b9d20d7bb07bb31af04",
+    "parameters": {
+      "size": 262144,
+      "block_size": 16,
+      "iterations": 20,
+      "warmup": 5
+    }
+  },
+  "system": {
+    "hostname": "cachyos",
+    "os": "Linux",
+    "kernel": "6.19.0-rc1-1-cachyos-rc",
+    "cpu": {
+      "model": "Intel(R) Core(TM) Ultra 9 185H",
+      "cores": 22,
+      "threads": 22
+    },
+    "memory_gb": 30.70641326904297,
+    "devices": [
+      {
+        "id": 0,
+        "name": "Intel(R) Arc(TM) Graphics",
+        "framework": "OpenCL",
+        "memory_gb": 28.424571990966797
+      },
+      {
+        "id": 1,
+        "name": "Intel(R) Core(TM) Ultra 9 185H",
+        "framework": "OpenCL",
+        "memory_gb": 30.70641326904297
+      },
+      {
+        "compute_capability": "1.4",
+        "id": 2,
+        "name": "Intel(R) Arc(tm) Graphics (MTL)",
+        "framework": "Vulkan",
+        "memory_gb": 23.029809951782227
+      }
+    ]
+  },
+  "results": [
+    {
+      "verified": false,
+      "device_id": 0,
+      "device_name": "Intel(R) Arc(TM) Graphics",
+      "framework": "OpenCL",
+      "iterations": [],
+      "mean_ms": 0.0,
+      "stddev_ms": 0.0,
+      "median_ms": 0.0,
+      "min_ms": 0.0,
+      "max_ms": 0.0
+    },
+    {
+      "verified": true,
+      "throughput_gflops": 233.50392944539422,
+      "device_id": 1,
+      "device_name": "Intel(R) Core(TM) Ultra 9 185H",
+      "framework": "OpenCL",
+      "iterations": [
+        1.2090206146240234, 1.1081695556640625, 0.9889602661132812,
+        0.9779930114746094, 1.5609264373779297, 0.9050369262695312,
+        0.8718967437744141, 1.0988712310791016, 1.0139942169189453,
+        1.013040542602539, 0.9169578552246094, 0.9021759033203125,
+        0.9660720825195312, 0.9558200836181641, 0.9620189666748047,
+        1.0671615600585938, 1.0390281677246094, 1.0068416595458984,
+        1.4719963073730469, 2.4170875549316406
+      ],
+      "mean_ms": 1.1226534843444824,
+      "stddev_ms": 0.35268419106737803,
+      "median_ms": 1.0099411010742188,
+      "min_ms": 0.8718967437744141,
+      "max_ms": 2.4170875549316406
+    },
+    {
+      "verified": true,
+      "throughput_gflops": 350.1685147139286,
+      "device_id": 2,
+      "device_name": "Intel(R) Arc(tm) Graphics (MTL)",
+      "framework": "Vulkan",
+      "iterations": [
+        1.318216323852539, 0.6220340728759766, 0.6051063537597656,
+        0.6010532379150391, 0.6041526794433594, 0.7681846618652344,
+        0.6539821624755859, 0.6330013275146484, 0.6368160247802734,
+        1.6620159149169922, 0.637054443359375, 1.5549659729003906,
+        0.6520748138427734, 0.5879402160644531, 0.5772113800048828,
+        0.579833984375, 0.5669593811035156, 0.5648136138916016,
+        0.576019287109375, 0.5710124969482422
+      ],
+      "mean_ms": 0.7486224174499512,
+      "stddev_ms": 0.3369347892792811,
+      "median_ms": 0.6135702133178711,
+      "min_ms": 0.5648136138916016,
+      "max_ms": 1.6620159149169922
+    }
+  ]
+}
