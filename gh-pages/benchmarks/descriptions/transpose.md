@@ -40,6 +40,8 @@ More importantly, transpose is a **teaching benchmark** that demonstrates:
     end]
 ```
 
+<!-- GENERATED_CODE_TABS: transpose_naive -->
+
 **Problem**: Input reads are coalesced, but output writes are strided (non-coalesced), causing poor memory performance.
 
 ## Tiled Kernel
@@ -75,6 +77,8 @@ More importantly, transpose is a **teaching benchmark** that demonstrates:
           tile.((tx * (tile_size + 1l)) + ty)
     in]
 ```
+
+<!-- GENERATED_CODE_TABS: transpose_tiled -->
 
 **Solution**: 
 1. Load 16×16 tile into shared memory (coalesced reads)

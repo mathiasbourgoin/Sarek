@@ -227,6 +227,126 @@ function initializeBenchmarkSelector() {
     updateBenchmarkDescription();
 }
 
+// Process generated code tabs markers in markdown
+async function processGeneratedCodeTabs(markdown) {
+    // Find all markers like <!-- GENERATED_CODE_TABS: benchmark_name -->
+    const markerRegex = /<!--\s*GENERATED_CODE_TABS:\s*(\w+)\s*-->/g;
+    const matches = [...markdown.matchAll(markerRegex)];
+    
+    for (const match of matches) {
+        const benchmarkName = match[1];
+        const marker = match[0];
+        
+        try {
+            // Fetch the generated code file
+            const generatedFile = `descriptions/generated/${benchmarkName}_generated.md`;
+            const response = await fetch(generatedFile);
+            
+            if (response.ok) {
+                const generatedMarkdown = await response.text();
+                const tabsHtml = createGeneratedCodeTabs(generatedMarkdown);
+                markdown = markdown.replace(marker, tabsHtml);
+            } else {
+                // Replace with error message if file not found
+                markdown = markdown.replace(marker, '*Generated code not available yet.*');
+            }
+        } catch (error) {
+            console.error(`Error loading generated code for ${benchmarkName}:`, error);
+            markdown = markdown.replace(marker, '*Error loading generated code.*');
+        }
+    }
+    
+    return markdown;
+}
+
+// Create tabbed interface from generated code markdown
+function createGeneratedCodeTabs(generatedMarkdown) {
+    // Parse the generated markdown to extract code sections
+    const backends = ['CUDA C', 'OpenCL C', 'Vulkan GLSL', 'Metal'];
+    const codeBlocks = {};
+    const languages = {
+        'CUDA C': 'cuda',
+        'OpenCL C': 'opencl',
+        'Vulkan GLSL': 'glsl',
+        'Metal': 'metal'
+    };
+    
+    backends.forEach(backend => {
+        const regex = new RegExp(`## ${backend}\\s*\\n\\s*\`\`\`\\w*\\n([\\s\\S]*?)\`\`\``, 'i');
+        const match = generatedMarkdown.match(regex);
+        if (match) {
+            codeBlocks[backend] = match[1].trim();
+        }
+    });
+    
+    // Generate unique ID for this tabs instance
+    const tabsId = `tabs-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Create tabs HTML
+    let html = '<div class="code-tabs-container" style="margin: 20px 0;">';
+    html += '<h3 style="color: var(--link-color); margin-bottom: 10px;">Generated Backend Code</h3>';
+    html += `<div class="code-tabs" style="display: flex; gap: 5px; margin-bottom: 0; border-bottom: 2px solid var(--border-color);">`;
+    
+    backends.forEach((backend, index) => {
+        const tabId = `${tabsId}-${index}`;
+        const isActive = index === 0 ? ' active' : '';
+        html += `<button class="code-tab${isActive}" data-tabs-id="${tabsId}" data-tab-index="${index}" 
+                 style="padding: 10px 20px; border: none; background: ${index === 0 ? 'var(--link-color)' : 'transparent'}; 
+                 color: ${index === 0 ? 'white' : 'var(--text-color)'}; cursor: pointer; font-weight: 600; 
+                 border-radius: 4px 4px 0 0; transition: all 0.2s;"
+                 onmouseover="if(!this.classList.contains('active')) this.style.background='var(--code-bg)';"
+                 onmouseout="if(!this.classList.contains('active')) this.style.background='transparent';">
+            ${backend}
+        </button>`;
+    });
+    
+    html += '</div>';
+    html += '<div class="code-panels">';
+    
+    backends.forEach((backend, index) => {
+        const isActive = index === 0 ? 'block' : 'none';
+        const code = codeBlocks[backend] || '// Code not available';
+        const lang = languages[backend];
+        html += `<div class="code-panel" data-tabs-id="${tabsId}" data-panel-index="${index}" style="display: ${isActive};">`;
+        html += `<pre style="margin: 0; padding: 15px; background: var(--bg-color); border: 1px solid var(--border-color); border-top: none; border-radius: 0 0 4px 4px; overflow-x: auto; font-size: 0.85em; line-height: 1.4;"><code class="language-${lang}">${escapeHtml(code)}</code></pre>`;
+        html += '</div>';
+    });
+    
+    html += '</div></div>';
+    
+    return html;
+}
+
+// Handle tab clicks (will be set up after DOM loads)
+function setupTabClickHandlers() {
+    document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('code-tab')) {
+            const tabsId = e.target.dataset.tabsId;
+            const tabIndex = e.target.dataset.tabIndex;
+            
+            // Update tabs
+            const tabs = document.querySelectorAll(`[data-tabs-id="${tabsId}"].code-tab`);
+            tabs.forEach((tab, index) => {
+                if (index == tabIndex) {
+                    tab.classList.add('active');
+                    tab.style.background = 'var(--link-color)';
+                    tab.style.color = 'white';
+                } else {
+                    tab.classList.remove('active');
+                    tab.style.background = 'transparent';
+                    tab.style.color = 'var(--text-color)';
+                }
+            });
+            
+            // Update panels
+            const panels = document.querySelectorAll(`[data-tabs-id="${tabsId}"].code-panel`);
+            panels.forEach((panel, index) => {
+                panel.style.display = index == tabIndex ? 'block' : 'none';
+            });
+        }
+    });
+}
+
 // Update benchmark description panel
 async function updateBenchmarkDescription() {
     const descDiv = document.getElementById('benchmark-description');
@@ -244,7 +364,10 @@ async function updateBenchmarkDescription() {
         if (!response.ok) {
             throw new Error(`Failed to load: ${response.statusText}`);
         }
-        const markdown = await response.text();
+        let markdown = await response.text();
+        
+        // Process generated code tabs markers
+        markdown = await processGeneratedCodeTabs(markdown);
         
         // Convert markdown to HTML (simple conversion)
         const html = markdownToHtml(markdown);
@@ -1545,4 +1668,5 @@ function formatSize(size) {
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
     loadBenchmarkData('data/latest.json');
+    setupTabClickHandlers();
 });

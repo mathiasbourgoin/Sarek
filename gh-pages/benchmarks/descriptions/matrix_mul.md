@@ -37,6 +37,8 @@ This is a **compute-bound** operation that tests the raw arithmetic throughput o
     end]
 ```
 
+<!-- GENERATED_CODE_TABS: matrix_mul -->
+
 ## Key Features
 
 - **Mutable accumulator**: Uses `mut` for the running sum

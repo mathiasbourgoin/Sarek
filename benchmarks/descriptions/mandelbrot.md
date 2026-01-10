@@ -60,6 +60,8 @@ This tests:
     end]
 ```
 
+<!-- GENERATED_CODE_TABS: mandelbrot -->
+
 ## Key Features
 
 - **Mutable variables**: Uses `mut` for x, y, and iteration counter

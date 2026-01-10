@@ -30,6 +30,8 @@ This benchmark directly measures how fast data can be moved between GPU memory a
       c.(tid) <- a.(tid) +. b.(tid)]
 ```
 
+<!-- GENERATED_CODE_TABS: vector_add -->
+
 ## Key Features
 
 - **Ultra-simple**: Just 4 lines of actual computation

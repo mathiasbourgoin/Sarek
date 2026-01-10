@@ -52,6 +52,8 @@ This benchmark tests:
     if tid = 0l then output.(block_idx_x) <- sdata.(0l)]
 ```
 
+<!-- GENERATED_CODE_TABS: reduction -->
+
 ## Key Features
 
 - **Shared memory**: Uses `let%shared` for on-chip fast storage
