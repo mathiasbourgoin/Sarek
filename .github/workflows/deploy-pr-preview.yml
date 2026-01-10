@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   deploy-preview:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # Use 22.04 where darcs is available
     steps:
       - name: Checkout PR
         uses: actions/checkout@v4
