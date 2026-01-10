@@ -9,19 +9,23 @@ This document tracks the implementation status of the Sarek benchmark suite.
 - [x] JSON output format with full system metadata
 - [x] CSV conversion tool
 - [x] Aggregation tool for multi-machine results
+- [x] Web viewer (to_web.ml) for GitHub Pages
+- [x] Interactive Chart.js visualization
+- [x] PR preview deployment workflow
 - [ ] Plotting tools (gnuplot or OCaml-based)
 - [ ] LaTeX table generation
 - [ ] Unified benchmark runner (bench_runner.exe)
 - [ ] CI integration for performance regression tracking
-- [ ] Results database/web dashboard
 
 ## Core Performance Benchmarks
 
 ### Memory Bandwidth
-- [ ] **Vector Add** - Pure memory bandwidth test
-  - Simple element-wise addition: `C[i] = A[i] + B[i]`
-  - Measures memory bandwidth limits
-  - Size sweep: 1K to 1GB
+- [x] **Vector Add** - Pure memory bandwidth test
+  - ✅ Implemented in bench_vector_add.ml
+  - ✅ Element-wise addition: `C[i] = A[i] + B[i]`
+  - ✅ Measures memory bandwidth (GB/s)
+  - ✅ Default sizes: 1M, 10M, 50M, 100M elements
+  - ✅ CPU baseline verification
   
 - [ ] **Vector Copy** - Memory transfer baseline
   - Simple copy: `B[i] = A[i]`
@@ -36,11 +40,19 @@ This document tracks the implementation status of the Sarek benchmark suite.
   - ✅ Implemented in bench_matrix_mul.ml
   - ✅ CPU baseline verification
   - ✅ Throughput calculation (GFLOPS)
+  - ✅ Bug fixed: correct kernel arguments (m, n, k)
+  - ✅ Default sizes: 256, 512, 1024, 2048 elements
   
 - [ ] **Matrix Multiplication (tiled)** - Shared memory optimization
   - Use shared memory for tiling
   - Show optimization impact
   - Compare naive vs tiled performance
+  - Kernel exists in tests/e2e - adapt for benchmarking
+  
+- [ ] **Matrix Multiplication (optimized)** - Register blocking
+  - Advanced optimizations
+  - Multiple tile sizes
+  - Compare against cuBLAS/clBLAS
   
 - [ ] **Matrix Multiplication (optimized)** - Register blocking
   - Advanced optimizations
