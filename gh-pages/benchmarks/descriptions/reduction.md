@@ -47,7 +47,21 @@ This benchmark tests:
     let%superstep reduce32 =
       if tid < 32l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 32l)
     in
-    (* ... continues through reduce16, reduce8, reduce4, reduce2, reduce1 ... *)
+    let%superstep reduce16 =
+      if tid < 16l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 16l)
+    in
+    let%superstep reduce8 =
+      if tid < 8l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 8l)
+    in
+    let%superstep reduce4 =
+      if tid < 4l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 4l)
+    in
+    let%superstep reduce2 =
+      if tid < 2l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 2l)
+    in
+    let%superstep reduce1 =
+      if tid < 1l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 1l)
+    in
     
     if tid = 0l then output.(block_idx_x) <- sdata.(0l)]
 ```

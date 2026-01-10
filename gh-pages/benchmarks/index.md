@@ -276,15 +276,7 @@ Switch between **4 view modes**: Single Chart, 4-Panel Comparison, System Rankin
 ## Benchmark Suite
 
 <div class="benchmark-selector">
-    <label for="view-mode-select">View Mode:</label>
-    <select id="view-mode-select">
-        <option value="single" selected>Single Chart View</option>
-        <option value="comparison">4-Panel Comparison</option>
-        <option value="ranking">System Ranking</option>
-        <option value="matrix">Device Matrix</option>
-    </select>
-    
-    <label for="benchmark-select" style="margin-left: 30px;">Benchmark:</label>
+    <label for="benchmark-select">Select Benchmark:</label>
     <select id="benchmark-select">
         <option value="matrix_mul">Matrix Multiplication (Naive)</option>
         <option value="vector_add">Vector Addition (Memory Bandwidth)</option>
@@ -299,6 +291,16 @@ Switch between **4 view modes**: Single Chart, 4-Panel Comparison, System Rankin
 
 <div id="benchmark-description" style="margin: 30px 0; padding: 20px; background: var(--code-bg); border-radius: 8px; border-left: 4px solid var(--link-color);">
     <!-- Dynamically filled by JavaScript -->
+</div>
+
+<div class="view-mode-selector" style="margin: 20px 0;">
+    <label for="view-mode-select">View Mode:</label>
+    <select id="view-mode-select">
+        <option value="single" selected>Single Chart View</option>
+        <option value="comparison">4-Panel Comparison</option>
+        <option value="ranking">System Ranking</option>
+        <option value="matrix">Device Matrix</option>
+    </select>
 </div>
 
 <!-- Matrix Multiplication Benchmark -->
@@ -387,6 +389,11 @@ Switch between **4 view modes**: Single Chart, 4-Panel Comparison, System Rankin
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-ocaml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-glsl.min.js"></script>
 <script src="{{ site.baseurl }}/javascripts/benchmark-viewer.js"></script>
 <script>
     // Load benchmark data and initialize

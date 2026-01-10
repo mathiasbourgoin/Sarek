@@ -372,6 +372,11 @@ async function updateBenchmarkDescription() {
         // Convert markdown to HTML (simple conversion)
         const html = markdownToHtml(markdown);
         descDiv.innerHTML = html;
+        
+        // Apply syntax highlighting if Prism is available
+        if (typeof Prism !== 'undefined') {
+            Prism.highlightAllUnder(descDiv);
+        }
     } catch (error) {
         console.error('Error loading benchmark description:', error);
         descDiv.innerHTML = `
@@ -399,10 +404,11 @@ function markdownToHtml(markdown) {
     // Inline code (before bold/italic)
     html = html.replace(/`([^`]+)`/g, '<code style="background: var(--code-bg); padding: 2px 6px; border-radius: 3px; font-size: 0.9em;">$1</code>');
     
-    // Bold and italic (after code)
-    html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    // Bold and italic (after code) - more restrictive to avoid matching comment syntax
+    html = html.replace(/\*\*\*([^\*\n]+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    html = html.replace(/\*\*([^\*\n]+?)\*\*/g, '<strong>$1</strong>');
+    // Only match italic if not preceded by ( or followed by ) to avoid (* comments *)
+    html = html.replace(/(?<!\()\*([^\*\n]+?)\*(?!\))/g, '<em>$1</em>');
     
     // Images
     html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width: 100%; height: auto; border-radius: 8px; margin: 15px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />');
@@ -678,6 +684,12 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
             if (!result.system || result.system.hostname !== currentSystem) {
                 return;
             }
+        } else {
+            // When showing "all systems", filter out test systems
+            if (result.system && result.system.hostname && 
+                result.system.hostname.toLowerCase().includes('test')) {
+                return;
+            }
         }
         
         // Skip if no results array
@@ -917,7 +929,7 @@ function showDeviceMatrix() {
         </div>
     `;
     
-    createDeviceMatrixTable(config);
+    createDeviceMatrix(config);
 }
 
 // Restore single chart view
@@ -946,7 +958,7 @@ function createScalingChart(config) {
     
     variants.forEach((variantName, idx) => {
         const variantResults = benchmarkData.results.filter(r => 
-            r.benchmark && r.benchmark.name === variantName
+            r.benchmark && r.benchmark.name === variantName && shouldIncludeResult(r)
         );
         
         if (variantResults.length === 0) return;
@@ -1038,7 +1050,7 @@ function createComparisonChart(config) {
     const allSizes = new Set();
     variants.forEach(variantName => {
         const results = benchmarkData.results.filter(r => 
-            r.benchmark && r.benchmark.name === variantName
+            r.benchmark && r.benchmark.name === variantName && shouldIncludeResult(r)
         );
         results.forEach(r => {
             const size = getProblemSize(r.benchmark);
@@ -1061,7 +1073,8 @@ function createComparisonChart(config) {
         const results = benchmarkData.results.filter(r => 
             r.benchmark && 
             r.benchmark.name === variantName &&
-            getProblemSize(r.benchmark) === targetSize
+            getProblemSize(r.benchmark) === targetSize &&
+            shouldIncludeResult(r)
         );
         
         results.forEach(result => {
@@ -1133,7 +1146,7 @@ function createBackendChart(config) {
     // Use first variant
     const variantName = config.variants[0];
     const results = benchmarkData.results.filter(r => 
-        r.benchmark && r.benchmark.name === variantName
+        r.benchmark && r.benchmark.name === variantName && shouldIncludeResult(r)
     );
     
     if (results.length === 0) {
@@ -1156,38 +1169,50 @@ function createBackendChart(config) {
     const sizes = Array.from(allSizes).sort((a, b) => a - b);
     const targetSize = sizes[Math.floor(sizes.length * 0.7)] || sizes[sizes.length - 1];
     
-    // Group by backend
+    // Group by backend and device - FIXED: iterate through ALL device results
     const backendData = {};
-    const devices = new Set();
+    const deviceLabels = [];
+    const deviceBackendMap = new Map(); // Track which devices have which backends
     
     results
         .filter(r => getProblemSize(r.benchmark) === targetSize)
         .forEach(result => {
-            const backend = result.results[0]?.framework || 'Unknown';
-            const device = getDeviceName(result);
-            devices.add(device);
+            // Iterate through ALL device results, not just results[0]
+            if (!result.results || !Array.isArray(result.results)) return;
             
-            if (!backendData[backend]) {
-                backendData[backend] = {
-                    label: backend,
-                    data: [],
-                    backgroundColor: BACKEND_COLORS[backend] || '#999999',
-                    borderWidth: 1
-                };
-            }
+            result.results.forEach(deviceResult => {
+                const backend = deviceResult.framework || 'Unknown';
+                const device = deviceResult.device_name || 'Unknown Device';
+                
+                // Track unique device-backend combinations
+                const deviceKey = `${device}`;
+                if (!deviceLabels.includes(deviceKey)) {
+                    deviceLabels.push(deviceKey);
+                    deviceBackendMap.set(deviceKey, new Map());
+                }
+                
+                // Store performance for this device-backend combination
+                const deviceMap = deviceBackendMap.get(deviceKey);
+                deviceMap.set(backend, deviceResult.throughput_gflops || 0);
+                
+                // Initialize backend dataset if not exists
+                if (!backendData[backend]) {
+                    backendData[backend] = {
+                        label: backend,
+                        data: [],
+                        backgroundColor: BACKEND_COLORS[backend] || '#999999',
+                        borderWidth: 1
+                    };
+                }
+            });
         });
     
-    const deviceLabels = Array.from(devices);
-    
-    // Fill data for each backend
+    // Fill data arrays for each backend across all devices
     Object.keys(backendData).forEach(backend => {
         deviceLabels.forEach(device => {
-            const result = results.find(r => 
-                getProblemSize(r.benchmark) === targetSize &&
-                r.results[0]?.framework === backend &&
-                getDeviceName(r) === device
-            );
-            backendData[backend].data.push(result?.results[0]?.throughput_gflops || 0);
+            const deviceMap = deviceBackendMap.get(device);
+            const value = deviceMap && deviceMap.has(backend) ? deviceMap.get(backend) : 0;
+            backendData[backend].data.push(value);
         });
     });
     
@@ -1246,10 +1271,10 @@ function createSpeedupChart(config) {
     const optimizedVariant = variants.find(v => v.includes('tiled') || v.includes('optimized')) || variants[1];
     
     const baselineResults = benchmarkData.results.filter(r => 
-        r.benchmark && r.benchmark.name === baselineVariant
+        r.benchmark && r.benchmark.name === baselineVariant && shouldIncludeResult(r)
     );
     const optimizedResults = benchmarkData.results.filter(r => 
-        r.benchmark && r.benchmark.name === optimizedVariant
+        r.benchmark && r.benchmark.name === optimizedVariant && shouldIncludeResult(r)
     );
     
     if (baselineResults.length === 0 || optimizedResults.length === 0) {
@@ -1349,7 +1374,7 @@ function createDetailedChart(config) {
     
     variants.forEach((variantName) => {
         const variantResults = benchmarkData.results.filter(r => 
-            r.benchmark && r.benchmark.name === variantName
+            r.benchmark && r.benchmark.name === variantName && shouldIncludeResult(r)
         );
         
         // Group by device and backend
@@ -1440,13 +1465,28 @@ function createDeviceMatrix(config) {
     
     // Build a table showing device × algorithm performance
     const variants = config.variants;
-    const deviceSet = new Set();
+    const deviceBackendSet = new Map(); // Map device+backend to unique key
     
+    // FIXED: Iterate through ALL device results, not just results[0]
     benchmarkData.results
-        .filter(r => r.benchmark && variants.includes(r.benchmark.name))
-        .forEach(r => deviceSet.add(getDeviceName(r)));
+        .filter(r => r.benchmark && variants.includes(r.benchmark.name) && shouldIncludeResult(r))
+        .forEach(result => {
+            if (!result.results || !Array.isArray(result.results)) return;
+            
+            result.results.forEach(deviceResult => {
+                const deviceName = deviceResult.device_name || 'Unknown Device';
+                const backend = deviceResult.framework || 'Unknown';
+                const key = `${deviceName} (${backend})`;
+                deviceBackendSet.set(key, { device: deviceName, backend: backend });
+            });
+        });
     
-    const devices = Array.from(deviceSet);
+    const devices = Array.from(deviceBackendSet.keys());
+    
+    if (devices.length === 0) {
+        container.innerHTML = '<p class="no-data">No device data available</p>';
+        return;
+    }
     
     let html = '<table class="perf-matrix"><thead><tr><th>Device</th>';
     variants.forEach(v => {
@@ -1454,18 +1494,32 @@ function createDeviceMatrix(config) {
     });
     html += '</tr></thead><tbody>';
     
-    devices.forEach(device => {
-        html += `<tr><td class="device-name">${device}</td>`;
+    devices.forEach(deviceKey => {
+        const { device, backend } = deviceBackendSet.get(deviceKey);
+        html += `<tr><td class="device-name">${deviceKey}</td>`;
+        
         variants.forEach(variantName => {
-            const results = benchmarkData.results.filter(r => 
+            // Find all results for this variant
+            const matchingResults = benchmarkData.results.filter(r => 
                 r.benchmark && 
                 r.benchmark.name === variantName &&
-                getDeviceName(r) === device
+                r.results && 
+                Array.isArray(r.results) &&
+                shouldIncludeResult(r)
             );
             
-            if (results.length > 0) {
-                // Get max performance across all sizes
-                const maxPerf = Math.max(...results.map(r => r.results[0]?.throughput_gflops || 0));
+            // Find the specific device result
+            let maxPerf = 0;
+            matchingResults.forEach(r => {
+                r.results.forEach(deviceResult => {
+                    if (deviceResult.device_name === device && deviceResult.framework === backend) {
+                        const perf = deviceResult.throughput_gflops || 0;
+                        maxPerf = Math.max(maxPerf, perf);
+                    }
+                });
+            });
+            
+            if (maxPerf > 0) {
                 html += `<td class="perf-cell">${maxPerf.toFixed(2)}</td>`;
             } else {
                 html += `<td class="perf-cell no-data">—</td>`;
@@ -1504,40 +1558,53 @@ function createRankingChart(config) {
     const variants = config.variants;
     
     // Collect all system/device/backend/algorithm combinations with their peak performance
+    // FIXED: Iterate through ALL device results, not just results[0]
     const systemPerformances = [];
     
     benchmarkData.results
-        .filter(r => r.benchmark && variants.includes(r.benchmark.name))
+        .filter(r => r.benchmark && variants.includes(r.benchmark.name) && shouldIncludeResult(r))
         .forEach(result => {
             const systemName = result.system?.hostname || 'Unknown';
-            const deviceName = getDeviceName(result);
-            const backend = result.results[0]?.framework || 'Unknown';
-            const algoName = formatAlgoName(result.benchmark.name);
-            const throughput = result.results[0]?.throughput_gflops || 0;
             
-            if (throughput === 0) return;
+            // Iterate through ALL device results
+            if (!result.results || !Array.isArray(result.results)) return;
             
-            // Create unique key for this combination
-            const key = `${systemName}|${deviceName}|${backend}|${algoName}`;
-            
-            // Find existing entry or create new one
-            let entry = systemPerformances.find(e => e.key === key);
-            if (!entry) {
-                entry = {
-                    key: key,
-                    systemName: systemName,
-                    deviceName: deviceName,
-                    backend: backend,
-                    algoName: algoName,
-                    peakPerformance: throughput,
-                    label: `${deviceName} @ ${systemName} (${backend}, ${algoName})`
-                };
-                systemPerformances.push(entry);
-            } else {
-                // Update peak if this is better
-                entry.peakPerformance = Math.max(entry.peakPerformance, throughput);
-            }
+            result.results.forEach(deviceResult => {
+                const deviceName = deviceResult.device_name || 'Unknown Device';
+                const backend = deviceResult.framework || 'Unknown';
+                const algoName = formatAlgoName(result.benchmark.name);
+                const throughput = deviceResult.throughput_gflops || 0;
+                
+                if (throughput === 0) return;
+                
+                // Create unique key for this combination
+                const key = `${systemName}|${deviceName}|${backend}|${algoName}`;
+                
+                // Find existing entry or create new one
+                let entry = systemPerformances.find(e => e.key === key);
+                if (!entry) {
+                    entry = {
+                        key: key,
+                        systemName: systemName,
+                        deviceName: deviceName,
+                        backend: backend,
+                        algoName: algoName,
+                        peakPerformance: throughput,
+                        label: `${deviceName} @ ${systemName} (${backend}, ${algoName})`
+                    };
+                    systemPerformances.push(entry);
+                } else {
+                    // Update peak if this is better
+                    entry.peakPerformance = Math.max(entry.peakPerformance, throughput);
+                }
+            });
         });
+    
+    // Check if we have data
+    if (systemPerformances.length === 0) {
+        ctx.parentElement.innerHTML = '<p class="no-data">No ranking data available</p>';
+        return;
+    }
     
     // Sort by peak performance descending
     systemPerformances.sort((a, b) => b.peakPerformance - a.peakPerformance);
@@ -1609,6 +1676,22 @@ function createRankingChart(config) {
 }
 
 // Helper functions
+function shouldIncludeResult(result) {
+    // Filter by currentSystem
+    if (currentSystem !== 'all') {
+        if (!result.system || result.system.hostname !== currentSystem) {
+            return false;
+        }
+    } else {
+        // When showing "all systems", filter out test systems
+        if (result.system && result.system.hostname && 
+            result.system.hostname.toLowerCase().includes('test')) {
+            return false;
+        }
+    }
+    return true;
+}
+
 function groupByDevice(results) {
     const groups = {};
     results.forEach(result => {
