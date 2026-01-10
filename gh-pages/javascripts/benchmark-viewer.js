@@ -114,6 +114,14 @@ function updateChart() {
             throughputUnit: 'GB/s',
             timeLabel: 'Execution Time (ms)',
             timeUnit: 'ms'
+        },
+        'transpose': {
+            title: 'Matrix Transpose Performance (Naive Kernel)',
+            xLabel: 'Matrix Size (NxN)',
+            throughputLabel: 'Memory Bandwidth (GB/s)',
+            throughputUnit: 'GB/s',
+            timeLabel: 'Execution Time (ms)',
+            timeUnit: 'ms'
         }
     };
     
@@ -201,7 +209,8 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
     const benchmarkNameMap = {
         'matrix_mul': 'matrix_mul_naive',
         'vector_add': 'vector_add',
-        'reduction': 'reduction_sum'
+        'reduction': 'reduction_sum',
+        'transpose': 'transpose_naive'
     };
     
     const targetBenchmark = benchmarkNameMap[benchmarkName];

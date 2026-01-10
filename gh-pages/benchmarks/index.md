@@ -179,7 +179,7 @@ Interactive performance results for Sarek across different GPUs and backends. Yo
         <option value="matrix_mul">Matrix Multiplication (Naive)</option>
         <option value="vector_add">Vector Addition (Memory Bandwidth)</option>
         <option value="reduction">Parallel Reduction (Sum)</option>
-        <option value="transpose" disabled>Matrix Transpose (Coming Soon)</option>
+        <option value="transpose">Matrix Transpose (Naive)</option>
     </select>
 </div>
 
