@@ -51,10 +51,11 @@ jobs:
             echo '{"results":[],"updated_at":"'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"}' > gh-pages/benchmarks/data/latest.json
           fi
       
-      - name: Create .nojekyll file for preview
+      - name: Update _config.yml for preview
         run: |
-          # Disable Jekyll processing for preview directory
-          touch gh-pages/.nojekyll
+          # Update baseurl in _config.yml to match preview path
+          sed -i 's|baseurl: /Sarek|baseurl: /Sarek/preview/pr-${{ github.event.pull_request.number }}|' gh-pages/_config.yml
+          echo "✅ Updated _config.yml baseurl for preview"
       
       - name: Deploy preview to gh-pages
         uses: JamesIves/github-pages-deploy-action@v4
