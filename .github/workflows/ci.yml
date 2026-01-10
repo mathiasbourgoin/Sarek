@@ -113,3 +113,79 @@ jobs:
           path: _coverage/unit-report
           retention-days: 30
           if-no-files-found: ignore
+
+  check-generated-code:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache key
+        run: echo "CACHE_WEEK=$(date +%G-%V)" >> $GITHUB_ENV
+
+      - name: Build CI image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: spoc-ci:latest
+          load: true
+          build-args: |
+            CACHEBUST=${{ env.CACHE_WEEK }}
+          cache-from: type=gha,scope=spoc-ci-${{ hashFiles('ci/Dockerfile') }}
+          cache-to: type=gha,scope=spoc-ci-${{ hashFiles('ci/Dockerfile') }},mode=max
+
+      - name: Cache opam root
+        uses: actions/cache@v4
+        with:
+          path: .opam-ci
+          key: opam-${{ runner.os }}-5.4.0-${{ hashFiles('*.opam') }}
+          restore-keys: |
+            opam-${{ runner.os }}-5.4.0-
+
+      - name: Setup and generate backend code
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            spoc-ci:latest \
+            bash -lc 'git config --global --add safe.directory /work && \
+              export OPAMROOT=/work/.opam-ci && \
+              if [ ! -d "$OPAMROOT" ]; then \
+                opam init --compiler=5.4.0 --disable-sandboxing --no-setup; \
+              else \
+                opam switch set 5.4.0 || opam switch create 5.4.0; \
+              fi && \
+              eval $(opam env --switch=5.4.0) && \
+              opam repo add alpha git+https://github.com/kit-ty-kate/opam-alpha-repository.git --set-default || true && \
+              opam update && \
+              opam install -y ctypes ctypes-foreign ppxlib && \
+              dune build benchmarks/generate_backend_code.exe && \
+              dune exec benchmarks/generate_backend_code.exe'
+
+      - name: Check for generated code changes
+        run: |
+          if ! git diff --quiet benchmarks/descriptions/generated/; then
+            echo "❌ Generated backend code is out of sync!"
+            echo ""
+            echo "The generated backend code has changed. This could indicate:"
+            echo "  1. The generator tool was modified"
+            echo "  2. A kernel was changed but generated code wasn't updated"
+            echo "  3. Backend code generators have been updated"
+            echo ""
+            echo "Changes detected:"
+            git diff --stat benchmarks/descriptions/generated/
+            echo ""
+            echo "To fix this, run locally:"
+            echo "  dune exec benchmarks/generate_backend_code.exe"
+            echo "  git add benchmarks/descriptions/generated/"
+            echo "  git commit -m 'Update generated backend code'"
+            echo ""
+            exit 1
+          else
+            echo "✅ Generated backend code is up to date"
+          fi

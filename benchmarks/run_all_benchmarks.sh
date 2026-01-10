@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run all benchmarks and update web data
-# Usage: ./run_all_benchmarks.sh [output_dir]
+# Usage: ./run_all_benchmarks.sh [output_dir] [--generate-backend-code]
 
 set -e
 
@@ -9,18 +9,20 @@ if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
   cat <<EOF
 SAREK Benchmark Suite Runner
 
-Usage: $0 [output_dir]
+Usage: $0 [output_dir] [--generate-backend-code]
 
 Runs all benchmarks and updates web viewer data.
 
 Arguments:
-  output_dir    Base directory for results (default: results)
-                Results saved to output_dir/run_TIMESTAMP/
+  output_dir              Base directory for results (default: results)
+                          Results saved to output_dir/run_TIMESTAMP/
+  --generate-backend-code Also regenerate backend code for all benchmarks
 
 Examples:
-  $0                    # Save to results/run_TIMESTAMP/
-  $0 my_results         # Save to my_results/run_TIMESTAMP/
-  make benchmarks       # Same as running script directly
+  $0                              # Save to results/run_TIMESTAMP/
+  $0 my_results                   # Save to my_results/run_TIMESTAMP/
+  $0 --generate-backend-code      # Also regenerate CUDA/OpenCL/Vulkan/Metal code
+  make benchmarks                 # Same as running script directly
 
 After running:
   1. Review results in the timestamped directory
@@ -30,7 +32,24 @@ EOF
   exit 0
 fi
 
-OUTPUT_DIR="${1:-results}"
+# Parse arguments
+OUTPUT_DIR="results"
+GENERATE_CODE=false
+
+for arg in "$@"; do
+  case $arg in
+    --generate-backend-code)
+      GENERATE_CODE=true
+      shift
+      ;;
+    *)
+      if [[ ! "$arg" == --* ]]; then
+        OUTPUT_DIR="$arg"
+        shift
+      fi
+      ;;
+  esac
+done
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RUN_DIR="${OUTPUT_DIR}/run_${TIMESTAMP}"
 
@@ -110,11 +129,31 @@ dune exec benchmarks/to_web.exe -- "${WEB_OUTPUT}" "${RUN_DIR}"/*.json
 echo "  ✓ Updated ${WEB_OUTPUT}"
 echo ""
 
+# Generate backend code if requested
+if [ "$GENERATE_CODE" = true ]; then
+  echo "================================================"
+  echo "Regenerating backend code for all benchmarks..."
+  dune build benchmarks/generate_backend_code.exe
+  dune exec benchmarks/generate_backend_code.exe
+  
+  # Copy to gh-pages
+  echo "Copying generated code to gh-pages..."
+  mkdir -p gh-pages/benchmarks/descriptions/generated
+  cp benchmarks/descriptions/generated/*.md gh-pages/benchmarks/descriptions/generated/
+  
+  echo "  ✓ Backend code regenerated"
+  echo ""
+fi
+
 echo "================================================"
 echo "Next steps:"
 echo "  1. Review results in ${RUN_DIR}/"
 echo "  2. Commit updated web data:"
 echo "     git add ${WEB_OUTPUT}"
+if [ "$GENERATE_CODE" = true ]; then
+  echo "     git add benchmarks/descriptions/generated/"
+  echo "     git add gh-pages/benchmarks/descriptions/generated/"
+fi
 echo "     git commit -m \"Update benchmark results ($(date +%Y-%m-%d))\""
 echo "     git push"
 echo "  3. View at: https://mathiasbourgoin.github.io/Sarek/benchmarks/"
