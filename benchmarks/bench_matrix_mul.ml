@@ -85,17 +85,11 @@ let benchmark_device dev size config =
   let dim = int_of_float (sqrt (float_of_int size)) in
   let m, n, k = (dim, dim, dim) in
 
-  (* Initialize data *)
+  (* Prepare host data *)
   let a = Array.init (m * k) (fun i -> float_of_int (i mod 10) /. 10.0) in
   let b = Array.init (k * n) (fun i -> float_of_int ((i + 1) mod 10) /. 10.0) in
-
-  (* Create vectors *)
-  let va = Vector.create Vector.float32 (m * k) in
-  let vb = Vector.create Vector.float32 (k * n) in
-  let vc = Vector.create Vector.float32 (m * n) in
-
-  Array.iteri (fun i x -> Vector.set va i x) a ;
-  Array.iteri (fun i x -> Vector.set vb i x) b ;
+  let expected = Array.make (m * n) 0.0 in
+  ocaml_matmul a b expected m n k ;
 
   (* Get kernel IR *)
   let _, kirc = matmul_naive_kernel in
@@ -105,14 +99,24 @@ let benchmark_device dev size config =
     | None -> failwith "No IR"
   in
 
-  (* Setup execution *)
+  (* Setup execution parameters *)
   let block = Execute.dims1d config.block_size in
   let grid =
     Execute.dims1d (((m * n) + config.block_size - 1) / config.block_size)
   in
 
-  (* Kernel execution function - no transfers, just computation *)
-  let kernel_fn () =
+  (* Benchmark using the new API *)
+  let init () =
+    (* Create and upload device vectors *)
+    let va = Vector.create Vector.float32 (m * k) in
+    let vb = Vector.create Vector.float32 (k * n) in
+    let vc = Vector.create Vector.float32 (m * n) in
+    Array.iteri (fun i x -> Vector.set va i x) a ;
+    Array.iteri (fun i x -> Vector.set vb i x) b ;
+    (va, vb, vc)
+  in
+
+  let compute (va, vb, vc) =
     Execute.run_vectors
       ~device:dev
       ~ir
@@ -122,28 +126,26 @@ let benchmark_device dev size config =
       ()
   in
 
-  (* Benchmark with proper compilation and warmup handling *)
-  let times =
-    Common.benchmark_kernel_on_device
+  let verify (_va, _vb, vc) =
+    let result_array = Vector.to_array vc in
+    Common.arrays_equal ~epsilon:0.001 result_array expected
+  in
+
+  let times, verified =
+    Common.benchmark_gpu
       ~dev
       ~warmup:config.warmup
       ~iterations:config.iterations
-      kernel_fn
+      ~init
+      ~compute
+      ~verify
   in
-
-  (* Get results for verification - happens outside timing *)
-  let result_array = Vector.to_array vc in
 
   (* Compute throughput (GFLOPS) *)
   let ops = float_of_int (2 * m * n * k) in
   (* multiply-add per element *)
   let mean_s = Common.mean times /. 1000.0 in
   let gflops = ops /. mean_s /. 1e9 in
-
-  (* Verification against CPU *)
-  let expected = Array.make (m * n) 0.0 in
-  ocaml_matmul a b expected m n k ;
-  let verified = Common.arrays_equal ~epsilon:0.001 result_array expected in
 
   (* Create result *)
   Output.

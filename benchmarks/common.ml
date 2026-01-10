@@ -168,16 +168,58 @@ let timestamp_filename () =
     tm.tm_min
     tm.tm_sec
 
-(** GPU-aware benchmarking with proper synchronization
+(** GPU-aware benchmarking with automatic data management
 
-    Handles the complete benchmark protocol: 1. First run to trigger compilation
-    2. Warmup iterations 3. Synchronized timing of kernel execution only
+    High-level benchmarking API that handles:
+    - Data preparation and upload (H2D)
+    - Kernel compilation trigger
+    - Warmup iterations
+    - Synchronized timing of computation only
+    - Data download and verification (D2H)
 
     @param dev Device to benchmark on
     @param warmup Number of warmup iterations (after compilation)
     @param iterations Number of benchmark iterations
-    @param kernel_fn Function that executes the kernel (not including transfers)
-    @return Array of execution times in milliseconds *)
+    @param init Function that prepares data and returns kernel arguments
+    @param compute Function that runs kernel(s) with the prepared arguments
+    @param verify Function that downloads results and verifies correctness
+    @return (times array, verification result) *)
+let benchmark_gpu ~dev ~warmup ~iterations ~init ~compute ~verify =
+  (* Prepare data and upload to device *)
+  let kernel_args = init () in
+
+  (* First run to trigger kernel compilation *)
+  compute kernel_args ;
+  Device.synchronize dev ;
+
+  (* Warmup runs with compiled kernel *)
+  for _ = 1 to warmup do
+    compute kernel_args ;
+    Device.synchronize dev
+  done ;
+
+  (* Benchmark - time only computation *)
+  let times =
+    Array.init iterations (fun _ ->
+        Device.synchronize dev ;
+        (* Ensure previous work is done *)
+        let t0 = Unix.gettimeofday () in
+        compute kernel_args ;
+        Device.synchronize dev ;
+        (* Wait for completion *)
+        let t1 = Unix.gettimeofday () in
+        (t1 -. t0) *. 1000.0)
+  in
+
+  (* Download and verify results - outside timing *)
+  let verified = verify kernel_args in
+
+  (times, verified)
+
+(** Simplified version: benchmark single kernel execution
+
+    Legacy API for simple cases. Use benchmark_gpu for more complex scenarios.
+*)
 let benchmark_kernel_on_device ~dev ~warmup ~iterations kernel_fn =
   (* Ensure device is ready *)
   Device.synchronize dev ;

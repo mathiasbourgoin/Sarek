@@ -64,17 +64,11 @@ let benchmark_device dev size config =
     size ;
   flush stdout ;
 
-  (* Initialize vectors *)
+  (* Prepare host data *)
   let a = Array.init size (fun i -> float_of_int i *. 0.001) in
   let b = Array.init size (fun i -> float_of_int i *. 0.002) in
-
-  (* Create device vectors *)
-  let vec_a = Vector.create Vector.float32 size in
-  let vec_b = Vector.create Vector.float32 size in
-  let vec_c = Vector.create Vector.float32 size in
-
-  Array.iteri (fun i x -> Vector.set vec_a i x) a ;
-  Array.iteri (fun i x -> Vector.set vec_b i x) b ;
+  let expected = Array.make size 0.0 in
+  ocaml_vector_add a b expected size ;
 
   (* Get kernel IR *)
   let _, kirc = vector_add_kernel in
@@ -84,12 +78,22 @@ let benchmark_device dev size config =
     | None -> failwith "No IR"
   in
 
-  (* Setup execution *)
+  (* Setup execution parameters *)
   let block = Execute.dims1d 256 in
   let grid = Execute.dims1d ((size + 255) / 256) in
 
-  (* Kernel execution function - no transfers, just computation *)
-  let kernel_fn () =
+  (* Benchmark using the new API *)
+  let init () =
+    (* Create and upload device vectors *)
+    let vec_a = Vector.create Vector.float32 size in
+    let vec_b = Vector.create Vector.float32 size in
+    let vec_c = Vector.create Vector.float32 size in
+    Array.iteri (fun i x -> Vector.set vec_a i x) a ;
+    Array.iteri (fun i x -> Vector.set vec_b i x) b ;
+    (vec_a, vec_b, vec_c)
+  in
+
+  let compute (vec_a, vec_b, vec_c) =
     Execute.run_vectors
       ~device:dev
       ~ir
@@ -99,22 +103,20 @@ let benchmark_device dev size config =
       ()
   in
 
-  (* Benchmark with proper compilation and warmup handling *)
-  let times =
-    Common.benchmark_kernel_on_device
+  let verify (_vec_a, _vec_b, vec_c) =
+    let c = Vector.to_array vec_c in
+    Common.arrays_equal ~epsilon:0.001 c expected
+  in
+
+  let times, verified =
+    Common.benchmark_gpu
       ~dev
       ~warmup:config.warmup
       ~iterations:config.iterations
-      kernel_fn
+      ~init
+      ~compute
+      ~verify
   in
-
-  (* Get results for verification - happens outside timing *)
-  let c = Vector.to_array vec_c in
-
-  (* Verify *)
-  let expected = Array.make size 0.0 in
-  ocaml_vector_add a b expected size ;
-  let verified = Common.arrays_equal ~epsilon:0.001 c expected in
 
   (* Calculate bandwidth (GB/s)
      We read 2 vectors and write 1 vector = 3 * size * 4 bytes *)
