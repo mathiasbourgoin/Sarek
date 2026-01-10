@@ -278,8 +278,16 @@ function createComparisonChart(config) {
         const results = benchmarkData.results.filter(r => 
             r.benchmark && r.benchmark.name === variantName
         );
-        results.forEach(r => allSizes.add(getProblemSize(r.benchmark)));
+        results.forEach(r => {
+            const size = getProblemSize(r.benchmark);
+            if (size > 0) allSizes.add(size);
+        });
     });
+    
+    if (allSizes.size === 0) {
+        ctx.parentElement.innerHTML = '<p class="no-data">No data available for comparison</p>';
+        return;
+    }
     
     const sizes = Array.from(allSizes).sort((a, b) => a - b);
     const targetSize = sizes[Math.floor(sizes.length * 0.7)] || sizes[sizes.length - 1]; // Use ~70% of max size
@@ -373,7 +381,16 @@ function createBackendChart(config) {
     
     // Find common size
     const allSizes = new Set();
-    results.forEach(r => allSizes.add(getProblemSize(r.benchmark)));
+    results.forEach(r => {
+        const size = getProblemSize(r.benchmark);
+        if (size > 0) allSizes.add(size);
+    });
+    
+    if (allSizes.size === 0) {
+        ctx.parentElement.innerHTML = '<p class="no-data">No valid sizes found in data</p>';
+        return;
+    }
+    
     const sizes = Array.from(allSizes).sort((a, b) => a - b);
     const targetSize = sizes[Math.floor(sizes.length * 0.7)] || sizes[sizes.length - 1];
     
@@ -384,7 +401,7 @@ function createBackendChart(config) {
     results
         .filter(r => getProblemSize(r.benchmark) === targetSize)
         .forEach(result => {
-            const backend = result.results[0]?.backend || 'Unknown';
+            const backend = result.results[0]?.framework || 'Unknown';
             const device = getDeviceName(result);
             devices.add(device);
             
@@ -405,7 +422,7 @@ function createBackendChart(config) {
         deviceLabels.forEach(device => {
             const result = results.find(r => 
                 getProblemSize(r.benchmark) === targetSize &&
-                r.results[0]?.backend === backend &&
+                r.results[0]?.framework === backend &&
                 getDeviceName(r) === device
             );
             backendData[backend].data.push(result?.results[0]?.throughput_gflops || 0);
@@ -576,11 +593,11 @@ function createDetailedChart(config) {
         // Group by device and backend
         const deviceGroups = {};
         variantResults.forEach(result => {
-            const key = `${getDeviceName(result)}_${result.results[0]?.backend || 'Unknown'}`;
+            const key = `${getDeviceName(result)}_${result.results[0]?.framework || 'Unknown'}`;
             if (!deviceGroups[key]) {
                 deviceGroups[key] = {
                     device: getDeviceName(result),
-                    backend: result.results[0]?.backend || 'Unknown',
+                    backend: result.results[0]?.framework || 'Unknown',
                     data: []
                 };
             }
@@ -726,6 +743,7 @@ function getDeviceName(result) {
 }
 
 function getProblemSize(benchmark) {
+    if (!benchmark || !benchmark.parameters) return 0;
     const params = benchmark.parameters;
     if (params.n !== undefined) return params.n;
     if (params.size !== undefined) return params.size;
@@ -744,6 +762,7 @@ function formatAlgoName(name) {
 }
 
 function formatSize(size) {
+    if (size === undefined || size === null || size === 0) return 'N/A';
     if (size >= 1e9) return (size / 1e9).toFixed(1) + 'B';
     if (size >= 1e6) return (size / 1e6).toFixed(1) + 'M';
     if (size >= 1e3) return (size / 1e3).toFixed(1) + 'K';
