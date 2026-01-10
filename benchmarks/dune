@@ -57,6 +57,13 @@
  (preprocess
   (pps sarek_ppx)))
 
+(executable
+ (name bench_reduction)
+ (modules bench_reduction)
+ (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
+ (preprocess
+  (pps sarek_ppx)))
+
 ; Data aggregation and analysis tools
 
 (executable
