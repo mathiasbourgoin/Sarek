@@ -284,6 +284,7 @@ Interactive performance results for Sarek across different GPUs and backends. Yo
         <option value="reduction">Parallel Reduction (Sum)</option>
         <option value="transpose">Matrix Transpose (Naive)</option>
         <option value="transpose_tiled">Matrix Transpose (Tiled - Optimized)</option>
+        <option value="mandelbrot">Mandelbrot Set (Fractal Generation)</option>
     </select>
 </div>
 

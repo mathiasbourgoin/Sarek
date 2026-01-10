@@ -51,6 +51,7 @@ dune build \
   benchmarks/bench_reduction.exe \
   benchmarks/bench_transpose.exe \
   benchmarks/bench_transpose_tiled.exe \
+  benchmarks/bench_mandelbrot.exe \
   benchmarks/to_web.exe
 
 echo ""
@@ -85,6 +86,12 @@ echo ""
 # Transpose (tiled)
 echo "▶ Matrix Transpose (tiled)..."
 dune exec benchmarks/bench_transpose_tiled.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+# Mandelbrot
+echo "▶ Mandelbrot Set (with image generation)..."
+dune exec benchmarks/bench_mandelbrot.exe -- --output "${RUN_DIR}"
 echo "  ✓ Complete"
 echo ""
 

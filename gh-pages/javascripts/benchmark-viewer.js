@@ -69,6 +69,13 @@ const BENCHMARK_CONFIGS = {
         throughputLabel: 'GB/s',
         variants: ['transpose_tiled'],
         readme: 'descriptions/transpose.md'
+    },
+    'mandelbrot': {
+        title: 'Mandelbrot Set',
+        xLabel: 'Resolution (pixels)',
+        throughputLabel: 'Mpixels/s',
+        variants: ['mandelbrot'],
+        readme: 'descriptions/mandelbrot.md'
     }
 };
 
