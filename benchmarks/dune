@@ -102,6 +102,20 @@
  (modules to_web)
  (libraries yojson unix))
 
+(executable
+ (name generate_backend_code)
+ (modules generate_backend_code)
+ (libraries
+  sarek
+  sarek_stdlib
+  sarek_cuda
+  sarek_opencl
+  sarek_vulkan
+  sarek_metal
+  unix)
+ (preprocess
+  (pps sarek_ppx)))
+
 ; Main benchmark runner (to be implemented)
 ; (executable
 ;  (name bench_runner)
