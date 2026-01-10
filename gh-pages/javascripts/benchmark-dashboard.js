@@ -728,6 +728,12 @@ function groupByDevice(results) {
 }
 
 function getDeviceName(result) {
+    // First, try to get the actual device that ran this benchmark from the results
+    if (result.results && result.results.length > 0 && result.results[0].device_name) {
+        return result.results[0].device_name;
+    }
+    
+    // Fallback: use system devices list
     if (result.system && result.system.devices && result.system.devices.length > 0) {
         // Use first GPU device (not CPU)
         const gpuDevice = result.system.devices.find(d => d.framework !== 'Native' && d.framework !== 'Interpreter');
@@ -736,9 +742,7 @@ function getDeviceName(result) {
         }
         return result.system.devices[0].name || 'Unknown Device';
     }
-    if (result.results && result.results.length > 0 && result.results[0].device_name) {
-        return result.results[0].device_name;
-    }
+    
     return 'Unknown Device';
 }
 
