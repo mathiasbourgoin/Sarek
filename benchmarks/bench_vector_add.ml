@@ -123,6 +123,12 @@ let benchmark_device dev size config =
   let min_time_s = Common.min times /. 1000.0 in
   let bandwidth_gbps = bytes /. min_time_s /. 1e9 in
 
+  Printf.printf
+    "    Min time: %.3f ms, Bandwidth: %.3f GB/s\n"
+    (Common.min times)
+    bandwidth_gbps ;
+  flush stdout ;
+
   (* Create result *)
   Output.
     {
