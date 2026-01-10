@@ -88,51 +88,27 @@ let benchmark_device dev size config =
   let block = Execute.dims1d 256 in
   let grid = Execute.dims1d ((size + 255) / 256) in
 
-  (* Ensure device is ready *)
-  Device.synchronize dev ;
-
-  (* First run to trigger kernel compilation *)
-  Execute.run_vectors
-    ~device:dev
-    ~ir
-    ~args:[Vec vec_a; Vec vec_b; Vec vec_c; Int size]
-    ~block
-    ~grid
-    () ;
-  Device.synchronize dev ;
-
-  (* Warmup runs with compiled kernel *)
-  for _ = 1 to config.warmup do
+  (* Kernel execution function - no transfers, just computation *)
+  let kernel_fn () =
     Execute.run_vectors
       ~device:dev
       ~ir
       ~args:[Vec vec_a; Vec vec_b; Vec vec_c; Int size]
       ~block
       ~grid
-      () ;
-    Device.synchronize dev
-  done ;
-
-  (* Benchmark - time only kernel execution, not transfers *)
-  let times =
-    Array.init config.iterations (fun _ ->
-        Device.synchronize dev ;
-        (* Ensure previous work is done *)
-        let t0 = Unix.gettimeofday () in
-        Execute.run_vectors
-          ~device:dev
-          ~ir
-          ~args:[Vec vec_a; Vec vec_b; Vec vec_c; Int size]
-          ~block
-          ~grid
-          () ;
-        Device.synchronize dev ;
-        (* Wait for kernel completion *)
-        let t1 = Unix.gettimeofday () in
-        (t1 -. t0) *. 1000.0)
+      ()
   in
 
-  (* Get results for verification - this happens outside timing *)
+  (* Benchmark with proper compilation and warmup handling *)
+  let times =
+    Common.benchmark_kernel_on_device
+      ~dev
+      ~warmup:config.warmup
+      ~iterations:config.iterations
+      kernel_fn
+  in
+
+  (* Get results for verification - happens outside timing *)
   let c = Vector.to_array vec_c in
 
   (* Verify *)

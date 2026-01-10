@@ -5,6 +5,8 @@
 
 (** Common utilities for benchmarks *)
 
+open Spoc_core
+
 (** Statistical functions for timing data *)
 
 let mean values =
@@ -165,3 +167,38 @@ let timestamp_filename () =
     tm.tm_hour
     tm.tm_min
     tm.tm_sec
+
+(** GPU-aware benchmarking with proper synchronization
+
+    Handles the complete benchmark protocol: 1. First run to trigger compilation
+    2. Warmup iterations 3. Synchronized timing of kernel execution only
+
+    @param dev Device to benchmark on
+    @param warmup Number of warmup iterations (after compilation)
+    @param iterations Number of benchmark iterations
+    @param kernel_fn Function that executes the kernel (not including transfers)
+    @return Array of execution times in milliseconds *)
+let benchmark_kernel_on_device ~dev ~warmup ~iterations kernel_fn =
+  (* Ensure device is ready *)
+  Device.synchronize dev ;
+
+  (* First run to trigger kernel compilation *)
+  kernel_fn () ;
+  Device.synchronize dev ;
+
+  (* Warmup runs with compiled kernel *)
+  for _ = 1 to warmup do
+    kernel_fn () ;
+    Device.synchronize dev
+  done ;
+
+  (* Benchmark - time only kernel execution *)
+  Array.init iterations (fun _ ->
+      Device.synchronize dev ;
+      (* Ensure previous work is done *)
+      let t0 = Unix.gettimeofday () in
+      kernel_fn () ;
+      Device.synchronize dev ;
+      (* Wait for kernel completion *)
+      let t1 = Unix.gettimeofday () in
+      (t1 -. t0) *. 1000.0)
