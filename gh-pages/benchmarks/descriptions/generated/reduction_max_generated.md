@@ -1,4 +1,4 @@
-# Generated Backend Code: reduction
+# Generated Backend Code: reduction_max
 
 This file is auto-generated. Do not edit manually.
 
@@ -17,55 +17,87 @@ __global__ void sarek_kern(float* __restrict__ input, int sarek_input_length, fl
     if ((gid < n)) {
       sdata[tid] = input[gid];
     } else {
-      sdata[tid] = 0.0f;
+      sdata[tid] = -1000000.0f;
     }
   }
   __syncthreads();
   {
     if ((tid < 128)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 128)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 128)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   __syncthreads();
   {
     if ((tid < 64)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 64)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 64)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   __syncthreads();
   {
     if ((tid < 32)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 32)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 32)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   __syncthreads();
   {
     if ((tid < 16)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 16)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 16)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   __syncthreads();
   {
     if ((tid < 8)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 8)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 8)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   __syncthreads();
   {
     if ((tid < 4)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 4)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 4)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   __syncthreads();
   {
     if ((tid < 2)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 2)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 2)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   __syncthreads();
   {
     if ((tid < 1)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 1)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 1)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   __syncthreads();
@@ -90,55 +122,87 @@ __kernel void sarek_kern(__global float* restrict input, int sarek_input_length,
     if ((gid < n)) {
       sdata[tid] = input[gid];
     } else {
-      sdata[tid] = 0.0f;
+      sdata[tid] = -1000000.0f;
     }
   }
   barrier(CLK_LOCAL_MEM_FENCE);
   {
     if ((tid < 128)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 128)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 128)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   barrier(CLK_LOCAL_MEM_FENCE);
   {
     if ((tid < 64)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 64)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 64)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   barrier(CLK_LOCAL_MEM_FENCE);
   {
     if ((tid < 32)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 32)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 32)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   barrier(CLK_LOCAL_MEM_FENCE);
   {
     if ((tid < 16)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 16)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 16)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   barrier(CLK_LOCAL_MEM_FENCE);
   {
     if ((tid < 8)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 8)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 8)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   barrier(CLK_LOCAL_MEM_FENCE);
   {
     if ((tid < 4)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 4)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 4)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   barrier(CLK_LOCAL_MEM_FENCE);
   {
     if ((tid < 2)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 2)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 2)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   barrier(CLK_LOCAL_MEM_FENCE);
   {
     if ((tid < 1)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 1)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 1)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   barrier(CLK_LOCAL_MEM_FENCE);
@@ -185,55 +249,87 @@ void main() {
     if ((gid < n)) {
       sdata[tid] = inputv[gid];
     } else {
-      sdata[tid] = 0.0;
+      sdata[tid] = -1000000.0;
     }
   }
   barrier();
   {
     if ((tid < 128)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 128)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 128)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   barrier();
   {
     if ((tid < 64)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 64)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 64)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   barrier();
   {
     if ((tid < 32)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 32)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 32)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   barrier();
   {
     if ((tid < 16)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 16)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 16)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   barrier();
   {
     if ((tid < 8)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 8)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 8)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   barrier();
   {
     if ((tid < 4)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 4)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 4)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   barrier();
   {
     if ((tid < 2)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 2)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 2)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   barrier();
   {
     if ((tid < 1)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 1)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 1)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   barrier();
@@ -265,55 +361,87 @@ kernel void sarek_kern(device float* input [[buffer(0)]], constant int &sarek_in
     if ((gid < n)) {
       sdata[tid] = input[gid];
     } else {
-      sdata[tid] = 0.0f;
+      sdata[tid] = -1000000.0f;
     }
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
   {
     if ((tid < 128)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 128)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 128)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
   {
     if ((tid < 64)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 64)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 64)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
   {
     if ((tid < 32)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 32)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 32)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
   {
     if ((tid < 16)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 16)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 16)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
   {
     if ((tid < 8)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 8)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 8)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
   {
     if ((tid < 4)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 4)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 4)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
   {
     if ((tid < 2)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 2)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 2)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
   {
     if ((tid < 1)) {
-      sdata[tid] = (sdata[tid] + sdata[(tid + 1)]);
+      float a = sdata[tid];
+      float b = sdata[(tid + 1)];
+      if ((b > a)) {
+        sdata[tid] = b;
+      }
     }
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);

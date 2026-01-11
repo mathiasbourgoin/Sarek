@@ -143,3 +143,10 @@
 ;  (modules bench_runner)
 ;  (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
 ;  (preprocess (pps sarek_ppx)))
+
+(executable
+ (name bench_reduction_max)
+ (modules bench_reduction_max)
+ (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
+ (preprocess
+  (pps sarek_ppx)))

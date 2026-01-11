@@ -151,6 +151,79 @@ let reduction_kernel =
       ()]
 [@@warning "-33"]
 
+(** Max reduction kernel *)
+let reduction_max_kernel =
+  [%kernel
+    fun (input : float32 vector) (output : float32 vector) (n : int32) ->
+      let%shared (sdata : float32) = 256l in
+      let tid = thread_idx_x in
+      let gid = thread_idx_x + (block_dim_x * block_idx_x) in
+      let%superstep load =
+        if gid < n then sdata.(tid) <- input.(gid)
+        else sdata.(tid) <- -1000000.0
+      in
+      let%superstep reduce128 =
+        if tid < 128l then begin
+          let a = sdata.(tid) in
+          let b = sdata.(tid + 128l) in
+          if b > a then sdata.(tid) <- b
+        end
+      in
+      let%superstep reduce64 =
+        if tid < 64l then begin
+          let a = sdata.(tid) in
+          let b = sdata.(tid + 64l) in
+          if b > a then sdata.(tid) <- b
+        end
+      in
+      let%superstep reduce32 =
+        if tid < 32l then begin
+          let a = sdata.(tid) in
+          let b = sdata.(tid + 32l) in
+          if b > a then sdata.(tid) <- b
+        end
+      in
+      let%superstep reduce16 =
+        if tid < 16l then begin
+          let a = sdata.(tid) in
+          let b = sdata.(tid + 16l) in
+          if b > a then sdata.(tid) <- b
+        end
+      in
+      let%superstep reduce8 =
+        if tid < 8l then begin
+          let a = sdata.(tid) in
+          let b = sdata.(tid + 8l) in
+          if b > a then sdata.(tid) <- b
+        end
+      in
+      let%superstep reduce4 =
+        if tid < 4l then begin
+          let a = sdata.(tid) in
+          let b = sdata.(tid + 4l) in
+          if b > a then sdata.(tid) <- b
+        end
+      in
+      let%superstep reduce2 =
+        if tid < 2l then begin
+          let a = sdata.(tid) in
+          let b = sdata.(tid + 2l) in
+          if b > a then sdata.(tid) <- b
+        end
+      in
+      let%superstep reduce1 =
+        if tid < 1l then begin
+          let a = sdata.(tid) in
+          let b = sdata.(tid + 1l) in
+          if b > a then sdata.(tid) <- b
+        end
+      in
+      let%superstep write =
+        if tid = 0l then output.(block_idx_x) <- sdata.(0l)
+      in
+      ()]
+[@@warning "-33"]
+
 (** Transpose kernel (naive) *)
 let transpose_naive_kernel =
   [%kernel
@@ -353,6 +426,7 @@ let () =
   generate_backend_code "matrix_mul" matrix_mul_kernel !output_dir ;
   generate_backend_code "matrix_mul_tiled" matrix_mul_tiled_kernel !output_dir ;
   generate_backend_code "reduction" reduction_kernel !output_dir ;
+  generate_backend_code "reduction_max" reduction_max_kernel !output_dir ;
   generate_backend_code "transpose_naive" transpose_naive_kernel !output_dir ;
   generate_backend_code "transpose_tiled" transpose_tiled_kernel !output_dir ;
   generate_backend_code "mandelbrot" mandelbrot_kernel !output_dir ;
