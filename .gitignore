@@ -25,3 +25,8 @@ a.out
 *.log
 bisect*.coverage
 benchmark_output.txt
+
+# Benchmark results
+results/
+*.ppm
+*.csv
