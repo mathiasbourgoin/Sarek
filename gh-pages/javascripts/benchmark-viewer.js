@@ -290,12 +290,20 @@ function createGeneratedCodeTabs(generatedMarkdown) {
     backends.forEach((backend, index) => {
         const tabId = `${tabsId}-${index}`;
         const isActive = index === 0 ? ' active' : '';
+        // Fixed colors for better light/dark mode compatibility
+        const activeBg = 'var(--link-color)';
+        const activeColor = 'white';
+        const inactiveBg = 'var(--code-bg)';
+        const inactiveColor = 'var(--text-color)';
+        const hoverBg = 'var(--highlight-bg, #e8e8e8)';
+        
         html += `<button class="code-tab${isActive}" data-tabs-id="${tabsId}" data-tab-index="${index}" 
-                 style="padding: 10px 20px; border: none; background: ${index === 0 ? 'var(--link-color)' : 'transparent'}; 
-                 color: ${index === 0 ? 'white' : 'var(--text-color)'}; cursor: pointer; font-weight: 600; 
+                 style="padding: 10px 20px; border: 1px solid var(--border-color); border-bottom: none;
+                 background: ${index === 0 ? activeBg : inactiveBg}; 
+                 color: ${index === 0 ? activeColor : inactiveColor}; cursor: pointer; font-weight: 600; 
                  border-radius: 4px 4px 0 0; transition: all 0.2s;"
-                 onmouseover="if(!this.classList.contains('active')) this.style.background='var(--code-bg)';"
-                 onmouseout="if(!this.classList.contains('active')) this.style.background='transparent';">
+                 onmouseover="if(!this.classList.contains('active')) { this.style.background='${hoverBg}'; }"
+                 onmouseout="if(!this.classList.contains('active')) { this.style.background='${inactiveBg}'; }">
             ${backend}
         </button>`;
     });
@@ -308,7 +316,7 @@ function createGeneratedCodeTabs(generatedMarkdown) {
         const code = codeBlocks[backend] || '// Code not available';
         const lang = languages[backend];
         html += `<div class="code-panel" data-tabs-id="${tabsId}" data-panel-index="${index}" style="display: ${isActive};">`;
-        html += `<pre style="margin: 0; padding: 15px; background: var(--bg-color); border: 1px solid var(--border-color); border-top: none; border-radius: 0 0 4px 4px; overflow-x: auto; font-size: 0.85em; line-height: 1.4;"><code class="language-${lang}">${escapeHtml(code)}</code></pre>`;
+        html += `<pre style="margin: 0; padding: 15px; background: var(--code-bg); border: 1px solid var(--border-color); border-top: none; border-radius: 0 0 4px 4px; overflow-x: auto; font-size: 0.85em; line-height: 1.4;"><code class="language-${lang}">${escapeHtml(code)}</code></pre>`;
         html += '</div>';
     });
     
@@ -333,7 +341,7 @@ function setupTabClickHandlers() {
                     tab.style.color = 'white';
                 } else {
                     tab.classList.remove('active');
-                    tab.style.background = 'transparent';
+                    tab.style.background = 'var(--code-bg)';
                     tab.style.color = 'var(--text-color)';
                 }
             });
@@ -398,7 +406,7 @@ function markdownToHtml(markdown) {
     // Code blocks FIRST (before bold/italic to avoid issues with comments)
     html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, function(match, lang, code) {
         const language = lang || 'ocaml';
-        return `<pre style="margin: 15px 0; padding: 15px; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 4px; overflow-x: auto; font-size: 0.85em; line-height: 1.4;"><code class="language-${language}">${escapeHtml(code.trim())}</code></pre>`;
+        return `<pre style="margin: 15px 0; padding: 15px; background: var(--code-bg); border: 1px solid var(--border-color); border-radius: 4px; overflow-x: auto; font-size: 0.85em; line-height: 1.4;"><code class="language-${language}">${escapeHtml(code.trim())}</code></pre>`;
     });
     
     // Inline code (before bold/italic)
@@ -1568,24 +1576,6 @@ function createDeviceMatrix(config) {
     
     html += '</tbody></table>';
     container.innerHTML = html;
-}
-
-// Show system ranking view - sorts systems by peak performance
-function showSystemRanking(config) {
-    const grid = document.getElementById('dashboard-grid');
-    grid.className = 'dashboard-grid-1';
-    grid.innerHTML = `
-        <div class="chart-card large">
-            <h4>System Ranking: ${config.title}</h4>
-            <p style="color: var(--text-color); opacity: 0.8; margin-bottom: 15px;">
-                Systems ranked by peak performance across all problem sizes. 
-                Shows best performance for each system/backend/algorithm combination.
-            </p>
-            <canvas id="chart-ranking"></canvas>
-        </div>
-    `;
-    
-    createRankingChart(config);
 }
 
 // Create ranking bar chart

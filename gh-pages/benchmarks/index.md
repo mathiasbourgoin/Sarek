@@ -36,6 +36,34 @@ title: Benchmark Results
     box-shadow: 0 0 0 3px rgba(var(--link-color-rgb), 0.2);
 }
 
+.view-mode-selector {
+    margin: 20px 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.view-mode-selector label {
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.view-mode-selector select {
+    padding: 8px 12px;
+    font-size: 1em;
+    border: 2px solid var(--link-color);
+    border-radius: 4px;
+    background: var(--bg-color);
+    color: var(--text-color);
+    cursor: pointer;
+    min-width: 250px;
+}
+
+.view-mode-selector select:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(var(--link-color-rgb), 0.2);
+}
+
 .filter-controls {
     display: flex;
     gap: 20px;
