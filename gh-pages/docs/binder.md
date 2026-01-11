@@ -1,5 +1,5 @@
 ---
-layout: index_sample
+layout: page
 title: Launch Sarek on Binder
 ---
 

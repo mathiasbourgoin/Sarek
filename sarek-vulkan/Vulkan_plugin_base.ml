@@ -39,15 +39,18 @@ module Vulkan = struct
     let name dev = dev.Vulkan_api.Device.name
 
     let capabilities dev : Framework_sig.capabilities =
-      (* Query Vulkan limits - for now return defaults *)
+      (* Query Vulkan device properties and memory *)
       let major, minor, _ = dev.Vulkan_api.Device.api_version in
+      let total_mem =
+        Vulkan_api.Device.get_total_device_memory
+          dev.Vulkan_api.Device.memory_properties
+      in
       {
         max_threads_per_block = 1024;
         max_block_dims = (1024, 1024, 64);
         max_grid_dims = (65535, 65535, 65535);
         shared_mem_per_block = 49152;
-        total_global_mem = Int64.of_int (1024 * 1024 * 1024);
-        (* Would need to query *)
+        total_global_mem = total_mem;
         compute_capability = (major, minor);
         supports_fp64 = true;
         supports_atomics = true;

@@ -364,3 +364,29 @@ release:
 	dune-release publish
 	dune-release opam pkg
 	dune-release opam submit
+
+# Benchmark targets
+.PHONY: benchmarks bench-all bench-update bench-generate-code
+
+benchmarks: bench-all
+
+bench-all:
+	@./benchmarks/run_all_benchmarks.sh
+
+bench-update:
+	@echo "Running benchmarks and updating web data..."
+	@./benchmarks/run_all_benchmarks.sh results
+	@echo "Benchmark data updated. Review and commit changes."
+
+bench-generate-code:
+	@echo "Regenerating backend code for all benchmarks..."
+	@dune build benchmarks/generate_backend_code.exe
+	@dune exec benchmarks/generate_backend_code.exe
+	@echo "Copying to gh-pages..."
+	@mkdir -p gh-pages/benchmarks/descriptions/generated
+	@cp benchmarks/descriptions/generated/*.md gh-pages/benchmarks/descriptions/generated/
+	@echo "✓ Backend code regenerated"
+	@echo ""
+	@echo "Review changes:"
+	@git diff --stat benchmarks/descriptions/generated/ gh-pages/benchmarks/descriptions/generated/
+

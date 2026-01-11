@@ -112,6 +112,56 @@ body {
   text-decoration: none;
 }
 
+/* Dropdown Navigation */
+.nav-dropdown {
+  position: relative;
+}
+
+.nav-dropdown .dropdown-toggle {
+  color: var(--nav-text);
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: color 0.2s;
+  cursor: pointer;
+}
+
+.nav-dropdown .dropdown-toggle:hover {
+  color: var(--primary-color);
+}
+
+.dropdown-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 180px;
+  padding: 8px 0;
+  margin-top: 8px;
+  z-index: 1000;
+}
+
+.nav-dropdown:hover .dropdown-menu {
+  display: block;
+}
+
+.dropdown-menu a {
+  display: block;
+  padding: 10px 20px;
+  color: var(--text-color);
+  font-size: 0.9rem;
+  transition: background 0.2s;
+}
+
+.dropdown-menu a:hover {
+  background: var(--highlight-bg, #f0f0f0);
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
 /* Theme Toggle Button */
 #theme-toggle {
   background: transparent;

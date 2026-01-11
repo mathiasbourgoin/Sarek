@@ -36,7 +36,7 @@ You can install the core Sarek ecosystem via Opam:
 opam install sarek spoc
 ```
 
-Check out the [Getting Started](docs/getting_started.html) guide to write your first GPU kernel in minutes.
+Check out the [Getting Started](docs/getting_started.html) guide to write your first GPU kernel in minutes, or browse the [Examples](examples/) to see common patterns.
 
 ## How it works
 

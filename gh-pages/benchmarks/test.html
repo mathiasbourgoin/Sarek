@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Benchmark Viewer Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+        }
+        #status {
+            padding: 15px;
+            margin: 20px 0;
+            background: #fff;
+            border-left: 4px solid #4CAF50;
+            border-radius: 4px;
+        }
+        .chart-container {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        canvas {
+            max-height: 400px;
+        }
+        pre {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Benchmark Data Test</h1>
+    
+    <div id="status">
+        <strong>Status:</strong> Loading data...
+    </div>
+    
+    <div class="chart-container">
+        <h2>Data Summary</h2>
+        <div id="summary"></div>
+    </div>
+    
+    <div class="chart-container">
+        <h2>Transpose Benchmarks</h2>
+        <canvas id="chart"></canvas>
+    </div>
+    
+    <div class="chart-container">
+        <h2>Raw Data Sample</h2>
+        <pre id="rawData"></pre>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <script>
+        async function loadAndDisplayData() {
+            try {
+                const response = await fetch('data/latest.json');
+                const data = await response.json();
+                
+                // Update status
+                document.getElementById('status').innerHTML = `
+                    <strong>Status:</strong> ✅ Data loaded successfully!<br>
+                    <strong>Updated:</strong> ${data.updated_at || 'Unknown'}<br>
+                    <strong>Total results:</strong> ${data.results.length}
+                `;
+                
+                // Summary
+                const byBenchmark = {};
+                data.results.forEach(r => {
+                    if (!r.benchmark) return;
+                    const name = r.benchmark.name;
+                    if (!byBenchmark[name]) byBenchmark[name] = 0;
+                    byBenchmark[name]++;
+                });
+                
+                let summaryHtml = '<ul>';
+                Object.keys(byBenchmark).sort().forEach(name => {
+                    summaryHtml += `<li><strong>${name}</strong>: ${byBenchmark[name]} results</li>`;
+                });
+                summaryHtml += '</ul>';
+                document.getElementById('summary').innerHTML = summaryHtml;
+                
+                // Check for Vulkan memory
+                const vulkanResult = data.results.find(r => 
+                    r.system && r.system.devices && 
+                    r.system.devices.some(d => d.framework === 'Vulkan')
+                );
+                if (vulkanResult) {
+                    const vulkanDevice = vulkanResult.system.devices.find(d => d.framework === 'Vulkan');
+                    summaryHtml += `<p><strong>Vulkan memory:</strong> ${vulkanDevice.memory_gb.toFixed(2)} GB ✅</p>`;
+                    document.getElementById('summary').innerHTML = summaryHtml;
+                }
+                
+                // Create simple chart for transpose benchmarks
+                const transposeNaive = data.results.filter(r => r.benchmark && r.benchmark.name === 'transpose_naive');
+                const transposeTiled = data.results.filter(r => r.benchmark && r.benchmark.name === 'transpose_tiled');
+                
+                if (transposeNaive.length > 0 || transposeTiled.length > 0) {
+                    // Get OpenCL GPU results
+                    const naiveData = transposeNaive
+                        .filter(r => r.results && r.results[0] && r.results[0].framework === 'OpenCL' && r.results[0].device_name.includes('Arc'))
+                        .map(r => ({
+                            x: r.benchmark.parameters.size,
+                            y: r.results[0].throughput_gflops
+                        }))
+                        .sort((a, b) => a.x - b.x);
+                    
+                    const tiledData = transposeTiled
+                        .filter(r => r.results && r.results[0] && r.results[0].framework === 'OpenCL' && r.results[0].device_name.includes('Arc'))
+                        .map(r => ({
+                            x: r.benchmark.parameters.size,
+                            y: r.results[0].throughput_gflops
+                        }))
+                        .sort((a, b) => a.x - b.x);
+                    
+                    const ctx = document.getElementById('chart');
+                    new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            datasets: [
+                                {
+                                    label: 'Transpose Naive',
+                                    data: naiveData,
+                                    borderColor: '#dc3545',
+                                    backgroundColor: '#dc354520',
+                                    borderWidth: 2
+                                },
+                                {
+                                    label: 'Transpose Tiled',
+                                    data: tiledData,
+                                    borderColor: '#28a745',
+                                    backgroundColor: '#28a74520',
+                                    borderWidth: 2
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: 'Matrix Transpose Performance (Arc GPU, OpenCL)'
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    type: 'linear',
+                                    title: {
+                                        display: true,
+                                        text: 'Matrix Size (N×N)'
+                                    }
+                                },
+                                y: {
+                                    beginAtZero: true,
+                                    title: {
+                                        display: true,
+                                        text: 'Bandwidth (GB/s)'
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+                
+                // Show raw data sample
+                document.getElementById('rawData').textContent = JSON.stringify(data.results[0], null, 2);
+                
+            } catch (error) {
+                document.getElementById('status').innerHTML = `
+                    <strong>Status:</strong> ❌ Error loading data<br>
+                    <strong>Error:</strong> ${error.message}
+                `;
+                console.error('Error:', error);
+            }
+        }
+        
+        loadAndDisplayData();
+    </script>
+</body>
+</html>
