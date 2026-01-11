@@ -85,6 +85,15 @@
  (preprocess
   (pps sarek_ppx)))
 
+(executable
+ (name bench_scan)
+ (modules bench_scan)
+ (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
+ (flags
+  (:standard -w -33))
+ (preprocess
+  (pps sarek_ppx)))
+
 ; Data aggregation and analysis tools
 
 (executable
