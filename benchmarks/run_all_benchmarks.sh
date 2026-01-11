@@ -68,6 +68,7 @@ dune build \
   benchmarks/bench_matrix_mul.exe \
   benchmarks/bench_matrix_mul_tiled.exe \
   benchmarks/bench_vector_add.exe \
+  benchmarks/bench_vector_copy.exe \
   benchmarks/bench_reduction.exe \
   benchmarks/bench_transpose.exe \
   benchmarks/bench_transpose_tiled.exe \
@@ -94,6 +95,12 @@ echo ""
 # Vector Addition
 echo "▶ Vector Addition..."
 dune exec benchmarks/bench_vector_add.exe -- --output "${RUN_DIR}"
+echo "  ✓ Complete"
+echo ""
+
+# Vector Copy
+echo "▶ Vector Copy..."
+dune exec benchmarks/bench_vector_copy.exe -- --output "${RUN_DIR}"
 echo "  ✓ Complete"
 echo ""
 

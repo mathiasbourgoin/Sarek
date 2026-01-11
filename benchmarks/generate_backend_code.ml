@@ -24,6 +24,15 @@ let vector_add_kernel =
       if tid < n then c.(tid) <- a.(tid) +. b.(tid)]
 [@@warning "-33"]
 
+(** Vector copy kernel *)
+let vector_copy_kernel =
+  [%kernel
+    fun (a : float32 vector) (b : float32 vector) (n : int32) ->
+      let open Std in
+      let tid = global_thread_id in
+      if tid < n then b.(tid) <- a.(tid)]
+[@@warning "-33"]
+
 (** Matrix multiplication kernel (naive) *)
 let matrix_mul_kernel =
   [%kernel
@@ -326,6 +335,7 @@ let () =
 
   (* Generate for each benchmark kernel *)
   generate_backend_code "vector_add" vector_add_kernel !output_dir ;
+  generate_backend_code "vector_copy" vector_copy_kernel !output_dir ;
   generate_backend_code "matrix_mul" matrix_mul_kernel !output_dir ;
   generate_backend_code "matrix_mul_tiled" matrix_mul_tiled_kernel !output_dir ;
   generate_backend_code "reduction" reduction_kernel !output_dir ;
