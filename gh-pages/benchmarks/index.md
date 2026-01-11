@@ -266,15 +266,6 @@ title: Benchmark Results
 
 </style>
 
-Interactive performance results for Sarek across different GPUs and backends. 
-
-**6 comprehensive benchmarks** test different aspects of GPU performance:
-- 🔢 **Compute-bound**: Matrix multiplication, Mandelbrot fractals
-- 💾 **Memory-bound**: Vector addition, parallel reduction
-- ⚡ **Optimization showcase**: Transpose (naive vs tiled)
-
-Switch between **4 view modes**: Single Chart, 4-Panel Comparison, System Ranking, or Device Matrix. Each benchmark includes detailed descriptions with Sarek kernel code.
-
 <details class="contribute-box">
     <summary>📊 Contribute Your Benchmarks!</summary>
     <div class="contribute-content">
@@ -418,7 +409,14 @@ Switch between **4 view modes**: Single Chart, 4-Panel Comparison, System Rankin
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-ocaml.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-glsl.min.js"></script>
+<script>
+// Map language aliases to Prism.js supported languages
+Prism.languages.cuda = Prism.languages.cpp;
+Prism.languages.opencl = Prism.languages.c;
+Prism.languages.metal = Prism.languages.cpp;
+</script>
 <script src="{{ site.baseurl }}/javascripts/benchmark-viewer.js"></script>
 <script>
     // Load benchmark data and initialize

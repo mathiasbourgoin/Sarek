@@ -861,18 +861,22 @@ function showComparisonView() {
         <div class="dashboard-grid-4">
             <div class="chart-card">
                 <h4>Performance Scaling</h4>
+                <p style="font-size: 0.85em; color: #888; margin: 5px 0;">All sizes, all backends</p>
                 <canvas id="chart-scaling"></canvas>
             </div>
             <div class="chart-card">
                 <h4>Algorithm Comparison</h4>
+                <p style="font-size: 0.85em; color: #888; margin: 5px 0;">At target size (shown in chart)</p>
                 <canvas id="chart-comparison"></canvas>
             </div>
             <div class="chart-card">
                 <h4>Backend Comparison</h4>
+                <p style="font-size: 0.85em; color: #888; margin: 5px 0;">At target size (shown in chart)</p>
                 <canvas id="chart-backends"></canvas>
             </div>
             <div class="chart-card">
                 <h4>Speedup Analysis</h4>
+                <p style="font-size: 0.85em; color: #888; margin: 5px 0;">Optimized vs baseline across sizes</p>
                 <canvas id="chart-speedup"></canvas>
             </div>
         </div>
@@ -956,36 +960,61 @@ function createScalingChart(config) {
     const datasets = [];
     const variants = config.variants;
     
-    variants.forEach((variantName, idx) => {
+    // Collect data for ALL device/backend combinations
+    const deviceBackendMap = new Map(); // Key: "deviceName|backend|variantName"
+    
+    variants.forEach((variantName) => {
         const variantResults = benchmarkData.results.filter(r => 
             r.benchmark && r.benchmark.name === variantName && shouldIncludeResult(r)
         );
         
         if (variantResults.length === 0) return;
         
-        // Group by device
-        const deviceGroups = groupByDevice(variantResults);
-        
-        // Take first device for simplicity (or we could show multiple)
-        const firstDevice = Object.keys(deviceGroups)[0];
-        if (!firstDevice) return;
-        
-        const data = deviceGroups[firstDevice]
-            .sort((a, b) => {
-                const sizeA = getProblemSize(a.benchmark);
-                const sizeB = getProblemSize(b.benchmark);
-                return sizeA - sizeB;
-            })
-            .map(result => ({
-                x: getProblemSize(result.benchmark),
-                y: result.results[0]?.throughput_gflops || 0
-            }));
+        // Process all device results for this variant
+        variantResults.forEach(result => {
+            if (!result.results || !Array.isArray(result.results)) return;
+            
+            result.results.forEach(deviceResult => {
+                const deviceName = deviceResult.device_name || 'Unknown';
+                const backend = deviceResult.framework || 'Unknown';
+                const key = `${deviceName}|${backend}|${variantName}`;
+                
+                if (!deviceBackendMap.has(key)) {
+                    deviceBackendMap.set(key, {
+                        deviceName,
+                        backend,
+                        variantName,
+                        data: []
+                    });
+                }
+                
+                const size = getProblemSize(result.benchmark);
+                const throughput = deviceResult.throughput_gflops || 0;
+                
+                deviceBackendMap.get(key).data.push({ x: size, y: throughput });
+            });
+        });
+    });
+    
+    // Create datasets from collected data
+    deviceBackendMap.forEach(({ deviceName, backend, variantName, data }) => {
+        // Sort by size
+        data.sort((a, b) => a.x - b.x);
         
         const algoType = variantName.includes('tiled') ? 'tiled' : 
                          variantName.includes('naive') ? 'naive' : 'baseline';
         
+        // Shorten device name
+        const shortDevice = deviceName
+            .replace('Intel(R) ', '')
+            .replace('(R)', '')
+            .replace('(TM)', '')
+            .replace('(tm)', '')
+            .replace(' Graphics', '')
+            .trim();
+        
         datasets.push({
-            label: formatAlgoName(variantName),
+            label: `${formatAlgoName(variantName)} - ${shortDevice} (${backend})`,
             data: data,
             borderColor: ALGO_COLORS[algoType],
             backgroundColor: ALGO_COLORS[algoType] + '20',
@@ -994,6 +1023,11 @@ function createScalingChart(config) {
             fill: false
         });
     });
+    
+    if (datasets.length === 0) {
+        ctx.parentElement.innerHTML = '<p class="no-data">No scaling data available</p>';
+        return;
+    }
     
     charts.scaling = new Chart(ctx, {
         type: 'line',
@@ -1004,7 +1038,10 @@ function createScalingChart(config) {
             plugins: {
                 legend: {
                     display: true,
-                    position: 'top'
+                    position: 'top',
+                    labels: {
+                        font: { size: 10 }
+                    }
                 },
                 tooltip: {
                     callbacks: {
@@ -1488,7 +1525,8 @@ function createDeviceMatrix(config) {
         return;
     }
     
-    let html = '<table class="perf-matrix"><thead><tr><th>Device</th>';
+    let html = '<p style="font-size: 0.9em; color: #888; margin-bottom: 15px;">Peak performance across all problem sizes (in ${config.throughputLabel})</p>';
+    html += '<table class="perf-matrix"><thead><tr><th>Device</th>';
     variants.forEach(v => {
         html += `<th>${formatAlgoName(v)}</th>`;
     });
@@ -1602,7 +1640,9 @@ function createRankingChart(config) {
     
     // Check if we have data
     if (systemPerformances.length === 0) {
-        ctx.parentElement.innerHTML = '<p class="no-data">No ranking data available</p>';
+        console.warn('System ranking: No performances collected');
+        console.log('Filtered results count:', benchmarkData.results.filter(r => r.benchmark && variants.includes(r.benchmark.name) && shouldIncludeResult(r)).length);
+        ctx.parentElement.innerHTML = '<p class="no-data">No ranking data available for selected system. Try selecting "All Systems" in the filter.</p>';
         return;
     }
     
