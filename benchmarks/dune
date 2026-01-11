@@ -150,3 +150,10 @@
  (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
  (preprocess
   (pps sarek_ppx)))
+
+(executable
+ (name bench_dot_product)
+ (modules bench_dot_product)
+ (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
+ (preprocess
+  (pps sarek_ppx)))

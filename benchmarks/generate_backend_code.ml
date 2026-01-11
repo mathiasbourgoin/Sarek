@@ -224,6 +224,47 @@ let reduction_max_kernel =
       ()]
 [@@warning "-33"]
 
+(** Dot product kernel *)
+let dot_product_kernel =
+  [%kernel
+    fun (a : float32 vector)
+        (b : float32 vector)
+        (output : float32 vector)
+        (n : int32) ->
+      let%shared (sdata : float32) = 256l in
+      let tid = thread_idx_x in
+      let gid = thread_idx_x + (block_dim_x * block_idx_x) in
+      let%superstep load =
+        if gid < n then sdata.(tid) <- a.(gid) *. b.(gid)
+        else sdata.(tid) <- 0.0
+      in
+      let%superstep reduce128 =
+        if tid < 128l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 128l)
+      in
+      let%superstep reduce64 =
+        if tid < 64l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 64l)
+      in
+      let%superstep reduce32 =
+        if tid < 32l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 32l)
+      in
+      let%superstep reduce16 =
+        if tid < 16l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 16l)
+      in
+      let%superstep reduce8 =
+        if tid < 8l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 8l)
+      in
+      let%superstep reduce4 =
+        if tid < 4l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 4l)
+      in
+      let%superstep reduce2 =
+        if tid < 2l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 2l)
+      in
+      let%superstep reduce1 =
+        if tid < 1l then sdata.(tid) <- sdata.(tid) +. sdata.(tid + 1l)
+      in
+      if tid = 0l then output.(block_idx_x) <- sdata.(0l)]
+[@@warning "-33"]
+
 (** Transpose kernel (naive) *)
 let transpose_naive_kernel =
   [%kernel
@@ -427,6 +468,7 @@ let () =
   generate_backend_code "matrix_mul_tiled" matrix_mul_tiled_kernel !output_dir ;
   generate_backend_code "reduction" reduction_kernel !output_dir ;
   generate_backend_code "reduction_max" reduction_max_kernel !output_dir ;
+  generate_backend_code "dot_product" dot_product_kernel !output_dir ;
   generate_backend_code "transpose_naive" transpose_naive_kernel !output_dir ;
   generate_backend_code "transpose_tiled" transpose_tiled_kernel !output_dir ;
   generate_backend_code "mandelbrot" mandelbrot_kernel !output_dir ;
