@@ -99,6 +99,13 @@
  (preprocess
   (pps sarek_ppx)))
 
+(executable
+ (name bench_stream_triad)
+ (modules bench_stream_triad)
+ (libraries benchmark_common benchmark_backends sarek sarek_stdlib spoc_core)
+ (preprocess
+  (pps sarek_ppx)))
+
 ; Data aggregation and analysis tools
 
 (executable
