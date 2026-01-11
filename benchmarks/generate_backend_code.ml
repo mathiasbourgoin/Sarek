@@ -46,6 +46,49 @@ let matrix_mul_kernel =
       end]
 [@@warning "-33"]
 
+(** Matrix multiplication kernel (tiled with shared memory) *)
+let matrix_mul_tiled_kernel =
+  [%kernel
+    fun (a : float32 vector)
+        (b : float32 vector)
+        (c : float32 vector)
+        (m : int32)
+        (n : int32)
+        (k : int32) ->
+      let%shared (tile_a : float32) = 256l in
+      let%shared (tile_b : float32) = 256l in
+      let tx = thread_idx_x in
+      let ty = thread_idx_y in
+      let row = ty + (block_dim_y * block_idx_y) in
+      let col = tx + (block_dim_x * block_idx_x) in
+      let tile_size = 16l in
+      let num_tiles = (k + tile_size - 1l) / tile_size in
+      let sum = mut 0.0 in
+      for t = 0 to num_tiles - 1l do
+        let%superstep load_a =
+          let a_col = (t * tile_size) + tx in
+          if row < m && a_col < k then
+            tile_a.((ty * tile_size) + tx) <- a.((row * k) + a_col)
+          else tile_a.((ty * tile_size) + tx) <- 0.0
+        in
+        let%superstep load_b =
+          let b_row = (t * tile_size) + ty in
+          if b_row < k && col < n then
+            tile_b.((ty * tile_size) + tx) <- b.((b_row * n) + col)
+          else tile_b.((ty * tile_size) + tx) <- 0.0
+        in
+        let%superstep _compute =
+          for i = 0 to tile_size - 1l do
+            sum :=
+              sum
+              +. (tile_a.((ty * tile_size) + i) *. tile_b.((i * tile_size) + tx))
+          done
+        in
+        ()
+      done ;
+      if row < m && col < n then c.((row * n) + col) <- sum]
+[@@warning "-33"]
+
 (** Reduction kernel *)
 let reduction_kernel =
   [%kernel
@@ -284,6 +327,7 @@ let () =
   (* Generate for each benchmark kernel *)
   generate_backend_code "vector_add" vector_add_kernel !output_dir ;
   generate_backend_code "matrix_mul" matrix_mul_kernel !output_dir ;
+  generate_backend_code "matrix_mul_tiled" matrix_mul_tiled_kernel !output_dir ;
   generate_backend_code "reduction" reduction_kernel !output_dir ;
   generate_backend_code "transpose_naive" transpose_naive_kernel !output_dir ;
   generate_backend_code "transpose_tiled" transpose_tiled_kernel !output_dir ;
