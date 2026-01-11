@@ -127,19 +127,48 @@ title: Benchmark Results
 
 .contribute-box {
     margin: 40px 0;
-    padding: 20px;
+    border-radius: 8px;
+    border: 2px solid var(--link-color);
+}
+
+.contribute-box summary {
+    padding: 15px 20px;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
-    border-radius: 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 1.1em;
+    user-select: none;
+    list-style: none;
 }
 
-.contribute-box h3 {
-    margin-top: 0;
-    color: white;
+.contribute-box summary::-webkit-details-marker {
+    display: none;
 }
 
-.contribute-box a {
-    color: white;
+.contribute-box summary::before {
+    content: '▶ ';
+    display: inline-block;
+    transition: transform 0.2s;
+}
+
+.contribute-box[open] summary::before {
+    transform: rotate(90deg);
+}
+
+.contribute-box summary:hover {
+    opacity: 0.9;
+}
+
+.contribute-content {
+    padding: 20px;
+    background: var(--code-bg);
+    border-radius: 0 0 6px 6px;
+}
+
+.contribute-content a {
+    color: var(--link-color);
     text-decoration: underline;
 }
 
@@ -237,12 +266,6 @@ title: Benchmark Results
 
 </style>
 
-# Performance Benchmarks
-
-<div class="info-box">
-    <strong>🚧 Work in Progress:</strong> This page shows preliminary benchmark results. More benchmarks and devices are being added continuously.
-</div>
-
 Interactive performance results for Sarek across different GPUs and backends. 
 
 **6 comprehensive benchmarks** test different aspects of GPU performance:
@@ -252,26 +275,28 @@ Interactive performance results for Sarek across different GPUs and backends.
 
 Switch between **4 view modes**: Single Chart, 4-Panel Comparison, System Ranking, or Device Matrix. Each benchmark includes detailed descriptions with Sarek kernel code.
 
-<div class="contribute-box">
-    <h3>📊 Contribute Your Benchmarks!</h3>
-    <p>Help build a comprehensive performance database by running benchmarks on your hardware:</p>
-    <ol>
-        <li>Clone the repository: <code>git clone https://github.com/mathiasbourgoin/SPOC.git</code></li>
-        <li>Install dependencies: <code>opam install --deps-only -y .</code></li>
-        <li>Run all benchmarks: <code>eval $(opam env) && ./benchmarks/run_all_benchmarks.sh</code></li>
-        <li>Submit results as a PR (takes ~5-15 minutes)</li>
-    </ol>
-    <p><strong>One script runs all 6 benchmarks:</strong> matrix multiplication, vector addition, reduction, transpose (naive + tiled), and Mandelbrot fractal generation</p>
-    <p>We're especially interested in results from:</p>
-    <ul>
-        <li>NVIDIA GPUs (RTX 40xx, 30xx, Tesla, etc.)</li>
-        <li>AMD GPUs (RX 7000, 6000 series, MI series)</li>
-        <li>Intel Arc GPUs (A770, A750, A380)</li>
-        <li>Apple Silicon (M1, M2, M3, M4 series)</li>
-        <li>Mobile GPUs (Qualcomm, Mali, PowerVR)</li>
-    </ul>
-    <p>See <a href="https://github.com/mathiasbourgoin/SPOC/blob/main/benchmarks/CONTRIBUTING.md">CONTRIBUTING.md</a> for detailed instructions.</p>
-</div>
+<details class="contribute-box">
+    <summary>📊 Contribute Your Benchmarks!</summary>
+    <div class="contribute-content">
+        <p>Help build a comprehensive performance database by running benchmarks on your hardware:</p>
+        <ol>
+            <li>Clone the repository: <code>git clone https://github.com/mathiasbourgoin/SPOC.git</code></li>
+            <li>Install dependencies: <code>opam install --deps-only -y .</code></li>
+            <li>Run all benchmarks: <code>eval $(opam env) && ./benchmarks/run_all_benchmarks.sh</code></li>
+            <li>Submit results as a PR (takes ~5-15 minutes)</li>
+        </ol>
+        <p><strong>One script runs all 6 benchmarks:</strong> matrix multiplication, vector addition, reduction, transpose (naive + tiled), and Mandelbrot fractal generation</p>
+        <p>We're especially interested in results from:</p>
+        <ul>
+            <li>NVIDIA GPUs (RTX 40xx, 30xx, Tesla, etc.)</li>
+            <li>AMD GPUs (RX 7000, 6000 series, MI series)</li>
+            <li>Intel Arc GPUs (A770, A750, A380)</li>
+            <li>Apple Silicon (M1, M2, M3, M4 series)</li>
+            <li>Mobile GPUs (Qualcomm, Mali, PowerVR)</li>
+        </ul>
+        <p>See <a href="https://github.com/mathiasbourgoin/SPOC/blob/main/benchmarks/CONTRIBUTING.md">CONTRIBUTING.md</a> for detailed instructions.</p>
+    </div>
+</details>
 
 ## Benchmark Suite
 
