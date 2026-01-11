@@ -1,5 +1,5 @@
 ---
-layout: index_sample
+layout: page
 title: Building a New Backend
 ---
 

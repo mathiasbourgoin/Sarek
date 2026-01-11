@@ -1,5 +1,5 @@
 --- 
-layout: index_sample
+layout: page
 title: Getting Started with Sarek
 ---
 
@@ -131,5 +131,8 @@ dune exec ./my_program.exe
 
 ## Next Steps
 
-- Explore the [Backends](backends.html) to see what hardware is supported.
-- Check out the [API Documentation](spoc_docs/index.html) for detailed reference.
+- **[Examples](../examples/)** - Learn through practical examples (vector add, matrix multiply, reduction, transpose, mandelbrot)
+- **[Concepts](concepts.html)** - Understand Sarek's design and programming model
+- **[Benchmarks](../benchmarks/)** - See performance data across different GPUs and backends
+- **[Backends](backends.html)** - Learn about CUDA, OpenCL, Vulkan, and Metal support
+- **[API Documentation](../spoc_docs/index.html)** - Complete API reference
