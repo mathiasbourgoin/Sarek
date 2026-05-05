@@ -68,7 +68,7 @@ jobs:
               eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
               opam repo add alpha git+https://github.com/kit-ty-kate/opam-alpha-repository.git --set-default || true && \
               opam update && \
-              opam install -y ctypes ctypes-foreign ppxlib alcotest bisect_ppx.2.8.3.1~alpha-repo && \
+              opam install -y ctypes ctypes-foreign ppxlib alcotest && \
               dune build @install'
 
       - name: Run unit tests

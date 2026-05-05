@@ -4,6 +4,7 @@
   test_kernel
   test_device
   test_vector
+  test_vector_transfer
   test_kernel_arg
   test_gpu_memory)
  (libraries spoc_core ctypes))

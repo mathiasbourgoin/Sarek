@@ -225,6 +225,25 @@ let ensure_buffer (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
 
 (** {1 Transfer Operations} *)
 
+(** Copy vector data from a device buffer to CPU storage. *)
+let copy_device_to_host (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
+    unit =
+  match Vector.get_buffer vec dev with
+  | None -> failwith "to_cpu: no device buffer to transfer from"
+  | Some buf -> (
+      let (module B : Vector.DEVICE_BUFFER) = buf in
+      Log.debugf
+        Log.Transfer
+        "to_cpu: got buffer ptr=%Ld size=%d"
+        (Int64.of_nativeint B.device_ptr)
+        B.size ;
+      match vec.host with
+      | Vector.Bigarray_storage ba ->
+          let ptr, byte_size = Vector_transfer.bigarray_to_ptr ba B.elem_size in
+          B.device_to_host_ptr ptr ~byte_size
+      | Vector.Custom_storage {ptr; custom; length} ->
+          B.device_to_host_ptr ptr ~byte_size:(length * custom.elem_size))
+
 (** Transfer vector data to a device *)
 let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
   let loc_str =
@@ -236,6 +255,11 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
     | Vector.Stale_GPU _ -> "Stale_GPU"
   in
   Log.debugf Log.Transfer "to_device: location=%s dev=%d" loc_str dev.id ;
+  (match vec.location with
+  | (Vector.GPU d | Vector.Stale_CPU d) when d.id <> dev.id ->
+      copy_device_to_host vec d ;
+      vec.location <- Vector.Both d
+  | _ -> ()) ;
   (* Check if already up-to-date on this device *)
   match vec.location with
   | Vector.GPU d when d.id = dev.id -> Log.debug Log.Transfer "-> skip (GPU)"
@@ -303,21 +327,8 @@ let to_cpu ?(force = false) (type a b) (vec : (a, b) Vector.t) : unit =
       force ;
     match Vector.get_buffer vec dev with
     | None -> failwith "to_cpu: no device buffer to transfer from"
-    | Some buf ->
-        let (module B : Vector.DEVICE_BUFFER) = buf in
-        Log.debugf
-          Log.Transfer
-          "to_cpu: got buffer ptr=%Ld size=%d"
-          (Int64.of_nativeint B.device_ptr)
-          B.size ;
-        (match vec.host with
-        | Vector.Bigarray_storage ba ->
-            let ptr, byte_size =
-              Vector_transfer.bigarray_to_ptr ba B.elem_size
-            in
-            B.device_to_host_ptr ptr ~byte_size
-        | Vector.Custom_storage {ptr; custom; length} ->
-            B.device_to_host_ptr ptr ~byte_size:(length * custom.elem_size)) ;
+    | Some _ ->
+        copy_device_to_host vec dev ;
         vec.location <- Vector.Both dev
   end
   else
@@ -354,6 +365,11 @@ let free_buffer (vec : (_, _) Vector.t) (dev : Device.t) : unit =
   match Vector.get_buffer vec dev with
   | None -> ()
   | Some buf -> (
+      (match vec.location with
+      | (Vector.GPU d | Vector.Stale_CPU d) when d.id = dev.id ->
+          copy_device_to_host vec dev ;
+          vec.location <- Vector.Both dev
+      | _ -> ()) ;
       let (module B : Vector.DEVICE_BUFFER) = buf in
       B.free () ;
       Gpu_memory.track_free (B.size * B.elem_size) ;
@@ -368,6 +384,11 @@ let free_buffer (vec : (_, _) Vector.t) (dev : Device.t) : unit =
 
 (** Free all device buffers for a vector *)
 let free_all_buffers (vec : (_, _) Vector.t) : unit =
+  (match vec.location with
+  | Vector.GPU d | Vector.Stale_CPU d ->
+      copy_device_to_host vec d ;
+      vec.location <- Vector.CPU
+  | _ -> ()) ;
   Hashtbl.iter
     (fun _ buf ->
       let (module B : Vector.DEVICE_BUFFER) = buf in

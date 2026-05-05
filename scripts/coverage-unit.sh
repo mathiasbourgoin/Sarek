@@ -17,10 +17,10 @@ mkdir -p _coverage
 # Try to install bisect_ppx if not already installed
 echo "Checking for bisect_ppx..."
 if ! opam list bisect_ppx --installed --short 2>/dev/null; then
-  echo "Installing bisect_ppx from alpha repository..."
+  echo "Installing bisect_ppx..."
   opam repo add alpha git+https://github.com/kit-ty-kate/opam-alpha-repository.git || true
   opam update
-  opam install -y bisect_ppx.2.8.3.1~alpha-repo || {
+  opam install -y bisect_ppx || {
     echo "Warning: Failed to install bisect_ppx, coverage will be skipped"
     exit 0
   }
