@@ -695,8 +695,7 @@ and eval_composite_expr state env = function
       match eval_expr state env e with
       | VRecord (type_name, fields) as vrec -> (
           match Sarek_type_helpers.lookup type_name with
-          | Some h ->
-              h.get_field vrec field
+          | Some h -> h.get_field vrec field
           | None ->
               let field_infos = Sarek_registry.record_fields type_name in
               let rec find_idx i = function
@@ -1270,8 +1269,8 @@ let run_kernel (k : kernel) ~block:(bx, by, bz) ~grid:(gx, gy, gz)
 
 (** {1 V2 Vector Support}
 
-    These functions work with typed Kernel_arg.t values. This
-    is the preferred interface for Native/Interpreter backends. *)
+    These functions work with typed Kernel_arg.t values. This is the preferred
+    interface for Native/Interpreter backends. *)
 
 (** Convert V2 Vector to interpreter value array. Uses the vector's element type
     to create properly typed values. *)
@@ -1360,10 +1359,7 @@ let array_to_vector : type a b. value array -> (a, b) Spoc_core.Vector.t -> unit
       done
   | Spoc_core.Vector.Scalar Spoc_core.Vector.Char ->
       for i = 0 to len - 1 do
-        Spoc_core.Vector.set
-          vec
-          i
-          (Char.chr (Int32.to_int (to_int32 arr.(i))))
+        Spoc_core.Vector.set vec i (Char.chr (Int32.to_int (to_int32 arr.(i))))
       done
   | Spoc_core.Vector.Scalar Spoc_core.Vector.Complex32 ->
       Interp_error.raise_error
@@ -1379,7 +1375,9 @@ type writeback =
   | Writeback : (('a, 'b) Spoc_core.Vector.t * value array) -> writeback
 
 type exec_writeback =
-  | Exec_writeback : (module Spoc_framework.Typed_value.EXEC_VECTOR) * value array -> exec_writeback
+  | Exec_writeback :
+      (module Spoc_framework.Typed_value.EXEC_VECTOR) * value array
+      -> exec_writeback
 
 let value_of_typed_value (tv : Spoc_framework.Typed_value.typed_value) : value =
   match tv with
@@ -1387,26 +1385,22 @@ let value_of_typed_value (tv : Spoc_framework.Typed_value.typed_value) : value =
       match S.to_primitive x with
       | PInt32 n -> VInt32 n
       | PInt64 n -> VInt64 n
-      | PFloat f ->
-          if S.name = "float64" then VFloat64 f else VFloat32 f
+      | PFloat f -> if S.name = "float64" then VFloat64 f else VFloat32 f
       | PBool b -> VBool b
       | PBytes _ ->
           Interp_error.raise_error
             (Unsupported_operation
                {operation = "value_of_typed_value"; reason = "PBytes scalar"}))
-  | TV_Composite (CV ((module C), _x)) ->
-      VRecord (C.name, [||])
+  | TV_Composite (CV ((module C), _x)) -> VRecord (C.name, [||])
 
 let typed_value_of_value (type a)
     (module V : Spoc_framework.Typed_value.EXEC_VECTOR with type elt = a)
     (v : value) : Spoc_framework.Typed_value.typed_value option =
   match v with
   | VInt32 n ->
-      Some
-        (TV_Scalar (SV ((module Spoc_framework.Typed_value.Int32_type), n)))
+      Some (TV_Scalar (SV ((module Spoc_framework.Typed_value.Int32_type), n)))
   | VInt64 n ->
-      Some
-        (TV_Scalar (SV ((module Spoc_framework.Typed_value.Int64_type), n)))
+      Some (TV_Scalar (SV ((module Spoc_framework.Typed_value.Int64_type), n)))
   | VFloat32 f ->
       Some
         (TV_Scalar (SV ((module Spoc_framework.Typed_value.Float32_type), f)))
@@ -1424,8 +1418,7 @@ let exec_vector_to_array (module V : Spoc_framework.Typed_value.EXEC_VECTOR) :
       | Some (module H) -> H.to_value (V.get_typed i)
       | None -> value_of_typed_value (V.get i))
 
-let array_to_exec_vector
-    (module V : Spoc_framework.Typed_value.EXEC_VECTOR)
+let array_to_exec_vector (module V : Spoc_framework.Typed_value.EXEC_VECTOR)
     (arr : value array) : unit =
   let len = min (Array.length arr) V.length in
   for i = 0 to len - 1 do
@@ -1445,7 +1438,9 @@ let args_from_exec_args (k : kernel)
     (string * arg) list * exec_writeback list =
   let writebacks = ref [] in
   let idx = ref 0 in
-  let arg_at i = if i >= List.length exec_args then None else Some (List.nth exec_args i) in
+  let arg_at i =
+    if i >= List.length exec_args then None else Some (List.nth exec_args i)
+  in
   let args =
     List.filter_map
       (fun decl ->

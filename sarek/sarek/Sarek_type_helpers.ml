@@ -73,12 +73,12 @@ let lookup_typed (type a) (type_id : a Sarek_ir_types.Type_id.t) :
         | Some _ -> acc
         | None -> (
             match helpers with
-            | AnyHelpers h ->
+            | AnyHelpers h -> (
                 let (module H) = h in
                 match Sarek_ir_types.Type_id.equal type_id H.type_id with
                 | Some Sarek_ir_types.Type_id.Refl ->
-                    Some ((module H : HELPERS with type t = a))
-                | None -> None))
+                    Some (module H : HELPERS with type t = a)
+                | None -> None)))
       registry
       None
   in

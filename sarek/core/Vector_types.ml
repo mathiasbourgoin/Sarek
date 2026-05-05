@@ -244,8 +244,8 @@ let char_type_id : char Sarek_ir_types.Type_id.t =
 let complex32_type_id : Complex.t Sarek_ir_types.Type_id.t =
   Sarek_ir_types.Type_id.create ()
 
-let scalar_type_id : type a b. (a, b) scalar_kind -> a Sarek_ir_types.Type_id.t =
-  function
+let scalar_type_id : type a b. (a, b) scalar_kind -> a Sarek_ir_types.Type_id.t
+    = function
   | Float32 -> float32_type_id
   | Float64 -> float64_type_id
   | Int32 -> int32_type_id
@@ -281,8 +281,8 @@ let complex32_vector_type_id :
     (Complex.t, Bigarray.complex32_elt) t Sarek_ir_types.Type_id.t =
   Sarek_ir_types.Type_id.create ()
 
-let vector_type_id : type a b.
-    (a, b) kind -> (a, b) t Sarek_ir_types.Type_id.t = function
+let vector_type_id : type a b. (a, b) kind -> (a, b) t Sarek_ir_types.Type_id.t
+    = function
   | Scalar Float32 -> float32_vector_type_id
   | Scalar Float64 -> float64_vector_type_id
   | Scalar Int32 -> int32_vector_type_id

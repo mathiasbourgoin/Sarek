@@ -420,24 +420,24 @@ let test_vec_length () =
   let na =
     NA_Vec
       (NV
-      {
-        length = 1024;
-        elem_size = 4;
-        type_name = "float32";
-        type_id = Type_id.create ();
-        get_f32 = (fun _ -> 0.0);
-        set_f32 = (fun _ _ -> ());
-        get_f64 = (fun _ -> 0.0);
-        set_f64 = (fun _ _ -> ());
-        get_i32 = (fun _ -> 0l);
-        set_i32 = (fun _ _ -> ());
-        get_i64 = (fun _ -> 0L);
-        set_i64 = (fun _ _ -> ());
-        get_typed = (fun _ -> 0.0);
-        set_typed = (fun _ _ -> ());
-        underlying_type_id = Type_id.create ();
-        underlying = ();
-      })
+         {
+           length = 1024;
+           elem_size = 4;
+           type_name = "float32";
+           type_id = Type_id.create ();
+           get_f32 = (fun _ -> 0.0);
+           set_f32 = (fun _ _ -> ());
+           get_f64 = (fun _ -> 0.0);
+           set_f64 = (fun _ _ -> ());
+           get_i32 = (fun _ -> 0l);
+           set_i32 = (fun _ _ -> ());
+           get_i64 = (fun _ -> 0L);
+           set_i64 = (fun _ _ -> ());
+           get_typed = (fun _ -> 0.0);
+           set_typed = (fun _ _ -> ());
+           underlying_type_id = Type_id.create ();
+           underlying = ();
+         })
   in
   let len = vec_length na in
   assert (len = 1024) ;

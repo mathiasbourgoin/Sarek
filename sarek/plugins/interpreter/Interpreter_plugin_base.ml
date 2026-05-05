@@ -411,12 +411,12 @@ end = struct
         src:(a, b, Bigarray.c_layout) Bigarray.Array1.t -> dst:a buffer -> unit
         =
      fun ~src ~dst ->
-	      match dst.storage with
-	      | Bigarray_storage dst_arr ->
-	          let len = min (Bigarray.Array1.dim src) dst.size in
-	          for i = 0 to len - 1 do
-	            Bigarray.Array1.set dst_arr i (Bigarray.Array1.get src i)
-	          done
+      match dst.storage with
+      | Bigarray_storage dst_arr ->
+          let len = min (Bigarray.Array1.dim src) dst.size in
+          for i = 0 to len - 1 do
+            Bigarray.Array1.set dst_arr i (Bigarray.Array1.get src i)
+          done
       | Ctypes_storage _ ->
           invalid_arg "host_to_device: destination is ctypes buffer"
 
@@ -424,12 +424,12 @@ end = struct
         src:a buffer -> dst:(a, b, Bigarray.c_layout) Bigarray.Array1.t -> unit
         =
      fun ~src ~dst ->
-	      match src.storage with
-	      | Bigarray_storage src_arr ->
-	          let len = min src.size (Bigarray.Array1.dim dst) in
-	          for i = 0 to len - 1 do
-	            Bigarray.Array1.set dst i (Bigarray.Array1.get src_arr i)
-	          done
+      match src.storage with
+      | Bigarray_storage src_arr ->
+          let len = min src.size (Bigarray.Array1.dim dst) in
+          for i = 0 to len - 1 do
+            Bigarray.Array1.set dst i (Bigarray.Array1.get src_arr i)
+          done
       | Ctypes_storage _ ->
           invalid_arg "device_to_host: source is ctypes buffer"
 
@@ -461,12 +461,12 @@ end = struct
 
     let device_to_device : type a. src:a buffer -> dst:a buffer -> unit =
      fun ~src ~dst ->
-	      match (src.storage, dst.storage) with
-	      | Bigarray_storage src_arr, Bigarray_storage dst_arr ->
-	          let len = min src.size dst.size in
-	          for i = 0 to len - 1 do
-	            Bigarray.Array1.set dst_arr i (Bigarray.Array1.get src_arr i)
-	          done
+      match (src.storage, dst.storage) with
+      | Bigarray_storage src_arr, Bigarray_storage dst_arr ->
+          let len = min src.size dst.size in
+          for i = 0 to len - 1 do
+            Bigarray.Array1.set dst_arr i (Bigarray.Array1.get src_arr i)
+          done
       | Ctypes_storage src_ptr, Ctypes_storage dst_ptr ->
           let src_char_ptr = Ctypes.from_voidp Ctypes.char src_ptr in
           let dst_char_ptr = Ctypes.from_voidp Ctypes.char dst_ptr in
@@ -541,9 +541,10 @@ end = struct
               (feature_not_supported
                  "unsupported buffer kind/storage for argument"))) ;
       (* Wrap buffer in EXEC_VECTOR for exec_arg *)
-      let module EV : Typed_value.EXEC_VECTOR
-        with type elt = a
-         and type underlying = a Memory.buffer = struct
+      let module EV :
+        Typed_value.EXEC_VECTOR
+          with type elt = a
+           and type underlying = a Memory.buffer = struct
         type elt = a
 
         type underlying = a Memory.buffer
@@ -567,21 +568,30 @@ end = struct
 
         let get i =
           match (buf.Memory.kind, buf.Memory.storage) with
-          | Memory.Scalar_kind Spoc_core.Vector_types.Int32, Bigarray_storage ba ->
+          | Memory.Scalar_kind Spoc_core.Vector_types.Int32, Bigarray_storage ba
+            ->
               Typed_value.TV_Scalar
-                (Typed_value.SV ((module Typed_value.Int32_type), Bigarray.Array1.get ba i))
-          | Memory.Scalar_kind Spoc_core.Vector_types.Int64, Bigarray_storage ba ->
+                (Typed_value.SV
+                   ((module Typed_value.Int32_type), Bigarray.Array1.get ba i))
+          | Memory.Scalar_kind Spoc_core.Vector_types.Int64, Bigarray_storage ba
+            ->
               Typed_value.TV_Scalar
-                (Typed_value.SV ((module Typed_value.Int64_type), Bigarray.Array1.get ba i))
-          | Memory.Scalar_kind Spoc_core.Vector_types.Float32, Bigarray_storage ba ->
+                (Typed_value.SV
+                   ((module Typed_value.Int64_type), Bigarray.Array1.get ba i))
+          | ( Memory.Scalar_kind Spoc_core.Vector_types.Float32,
+              Bigarray_storage ba ) ->
               Typed_value.TV_Scalar
-                (Typed_value.SV ((module Typed_value.Float32_type), Bigarray.Array1.get ba i))
-          | Memory.Scalar_kind Spoc_core.Vector_types.Float64, Bigarray_storage ba ->
+                (Typed_value.SV
+                   ((module Typed_value.Float32_type), Bigarray.Array1.get ba i))
+          | ( Memory.Scalar_kind Spoc_core.Vector_types.Float64,
+              Bigarray_storage ba ) ->
               Typed_value.TV_Scalar
-                (Typed_value.SV ((module Typed_value.Float64_type), Bigarray.Array1.get ba i))
+                (Typed_value.SV
+                   ((module Typed_value.Float64_type), Bigarray.Array1.get ba i))
           | _ ->
               Interpreter_error.(
-                raise_error (feature_not_supported "buffer element get accessor"))
+                raise_error
+                  (feature_not_supported "buffer element get accessor"))
 
         let set i tv =
           match (tv, buf.Memory.kind, buf.Memory.storage) with
@@ -592,7 +602,8 @@ end = struct
               | Typed_value.PInt32 n -> Bigarray.Array1.set ba i n
               | _ ->
                   Interpreter_error.(
-                    raise_error (feature_not_supported "int32 buffer set conversion")))
+                    raise_error
+                      (feature_not_supported "int32 buffer set conversion")))
           | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
               Memory.Scalar_kind Spoc_core.Vector_types.Int64,
               Bigarray_storage ba ) -> (
@@ -600,7 +611,8 @@ end = struct
               | Typed_value.PInt64 n -> Bigarray.Array1.set ba i n
               | _ ->
                   Interpreter_error.(
-                    raise_error (feature_not_supported "int64 buffer set conversion")))
+                    raise_error
+                      (feature_not_supported "int64 buffer set conversion")))
           | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
               Memory.Scalar_kind Spoc_core.Vector_types.Float32,
               Bigarray_storage ba ) -> (
@@ -608,7 +620,8 @@ end = struct
               | Typed_value.PFloat f -> Bigarray.Array1.set ba i f
               | _ ->
                   Interpreter_error.(
-                    raise_error (feature_not_supported "float32 buffer set conversion")))
+                    raise_error
+                      (feature_not_supported "float32 buffer set conversion")))
           | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
               Memory.Scalar_kind Spoc_core.Vector_types.Float64,
               Bigarray_storage ba ) -> (
@@ -616,10 +629,12 @@ end = struct
               | Typed_value.PFloat f -> Bigarray.Array1.set ba i f
               | _ ->
                   Interpreter_error.(
-                    raise_error (feature_not_supported "float64 buffer set conversion")))
+                    raise_error
+                      (feature_not_supported "float64 buffer set conversion")))
           | _ ->
               Interpreter_error.(
-                raise_error (feature_not_supported "buffer element set accessor"))
+                raise_error
+                  (feature_not_supported "buffer element set accessor"))
 
         let get_typed _i =
           Interpreter_error.(

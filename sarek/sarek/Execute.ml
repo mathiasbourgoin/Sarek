@@ -68,9 +68,10 @@ let custom_value_of_bytes : type a. a Vector.custom_type -> bytes -> a =
     EXEC_VECTOR wrappers for vectors. *)
 let exec_arg_of_vector : type a b. (a, b) Vector.t -> Framework_sig.exec_arg =
  fun v ->
-  let module EV : Typed_value.EXEC_VECTOR
-    with type elt = a
-     and type underlying = (a, b) Vector.t = struct
+  let module EV :
+    Typed_value.EXEC_VECTOR
+      with type elt = a
+       and type underlying = (a, b) Vector.t = struct
     type elt = a
 
     type underlying = (a, b) Vector.t
@@ -96,10 +97,12 @@ let exec_arg_of_vector : type a b. (a, b) Vector.t -> Framework_sig.exec_arg =
           | None ->
               Execute_error.raise_error
                 (Transfer_failed
-                   {vector = "unknown"; reason = "Vector has no device buffer"}))
+                   {vector = "unknown"; reason = "Vector has no device buffer"})
+          )
       | Vector.CPU | Vector.Stale_GPU _ ->
           Execute_error.raise_error
-            (Transfer_failed {vector = "unknown"; reason = "Vector not on device"})
+            (Transfer_failed
+               {vector = "unknown"; reason = "Vector not on device"})
 
     let get i =
       (* Convert element to typed_value based on vector kind *)
@@ -139,7 +142,8 @@ let exec_arg_of_vector : type a b. (a, b) Vector.t -> Framework_sig.exec_arg =
     let set i tv =
       let type_error expected actual =
         Execute_error.raise_error
-          (Type_mismatch {expected; actual; context = "vector element assignment"})
+          (Type_mismatch
+             {expected; actual; context = "vector element assignment"})
       in
       match (tv, Vector.kind v) with
       | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
@@ -182,7 +186,10 @@ let exec_arg_of_vector : type a b. (a, b) Vector.t -> Framework_sig.exec_arg =
       | _ ->
           Execute_error.raise_error
             (Unsupported_argument
-               {arg_type = "unknown combination"; context = "vector element assignment"})
+               {
+                 arg_type = "unknown combination";
+                 context = "vector element assignment";
+               })
 
     let get_typed i = Vector.get v i
 

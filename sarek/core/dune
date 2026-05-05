@@ -7,10 +7,10 @@
  (libraries
   spoc_framework
   spoc_framework_registry
- ctypes
- unix
+  ctypes
+  unix
   sarek_ir
- sarek_registry)
+  sarek_registry)
  (modules
   Log
   Device

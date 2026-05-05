@@ -331,9 +331,13 @@ let test_alloc_shared_custom () =
 let test_alloc_shared_custom_reuse () =
   let shared = create_shared () in
   let default = {x = 0; y = 0.0} in
-  let arr1 = alloc_shared_with_key shared custom_record_key "custom" 4 default in
+  let arr1 =
+    alloc_shared_with_key shared custom_record_key "custom" 4 default
+  in
   arr1.(1) <- {x = 7; y = 2.5} ;
-  let arr2 = alloc_shared_with_key shared custom_record_key "custom" 4 default in
+  let arr2 =
+    alloc_shared_with_key shared custom_record_key "custom" 4 default
+  in
   check int "reused custom x" 7 arr2.(1).x ;
   check (float 0.0001) "reused custom y" 2.5 arr2.(1).y
 
@@ -346,8 +350,7 @@ let test_alloc_shared_custom_type_mismatch () =
     "same shared name with different custom type"
     (Invalid_argument "alloc_shared: type mismatch for custom")
     (fun () ->
-      ignore
-        (alloc_shared_with_key shared other_record_key "custom" 4 {z = 0l}))
+      ignore (alloc_shared_with_key shared other_record_key "custom" 4 {z = 0l}))
 
 (** Test shared memory isolation between blocks *)
 let test_shared_memory_isolation () =

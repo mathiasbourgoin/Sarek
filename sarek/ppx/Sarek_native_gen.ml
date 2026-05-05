@@ -748,7 +748,11 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
       gen_intrinsic_fun ~loc ~gen_mode:ctx.gen_mode ref args_e
   (* Parallel constructs *)
   | TELetShared _ | TESuperstep _ | TELetRec _ ->
-      gen_parallel_construct ?current_module:ctx.current_module ~loc ~gen_expr te
+      gen_parallel_construct
+        ?current_module:ctx.current_module
+        ~loc
+        ~gen_expr
+        te
 
 (** Generate pattern from typed pattern. Takes context to detect same-module
     types that shouldn't be qualified. *)
@@ -1091,7 +1095,8 @@ let gen_mode_of_exec_strategy : Sarek_convergence.exec_strategy -> gen_mode =
     match on NA_Int32/NA_Float32/etc and extract the value.
 
     Uses typed native_arg for type safety. *)
-let gen_arg_cast ?current_module ~loc (param : tparam) (idx : int) : expression =
+let gen_arg_cast ?current_module ~loc (param : tparam) (idx : int) : expression
+    =
   let arr_access =
     [%expr Array.get __args [%e Ast_builder.Default.eint ~loc idx]]
   in

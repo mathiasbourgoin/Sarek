@@ -253,24 +253,24 @@ let exec_arg_to_native_arg (arg : Framework_sig.exec_arg) :
       in
       Sarek_ir_types.NA_Vec
         (Sarek_ir_types.NV
-        {
-          length = V.length;
-          elem_size = V.elem_size;
-          type_name = V.type_name;
-          type_id = V.type_id;
-          get_f32 = get_as_f32;
-          set_f32 = set_as_f32;
-          get_f64 = get_as_f64;
-          set_f64 = set_as_f64;
-          get_i32 = get_as_i32;
-          set_i32 = set_as_i32;
-          get_i64 = get_as_i64;
-          set_i64 = set_as_i64;
-          get_typed = V.get_typed;
-          set_typed = V.set_typed;
-          underlying_type_id = V.underlying_type_id;
-          underlying = V.underlying;
-        })
+           {
+             length = V.length;
+             elem_size = V.elem_size;
+             type_name = V.type_name;
+             type_id = V.type_id;
+             get_f32 = get_as_f32;
+             set_f32 = set_as_f32;
+             get_f64 = get_as_f64;
+             set_f64 = set_as_f64;
+             get_i32 = get_as_i32;
+             set_i32 = set_as_i32;
+             get_i64 = get_as_i64;
+             set_i64 = set_as_i64;
+             get_typed = V.get_typed;
+             set_typed = V.set_typed;
+             underlying_type_id = V.underlying_type_id;
+             underlying = V.underlying;
+           })
 
 (** {1 Execution} *)
 

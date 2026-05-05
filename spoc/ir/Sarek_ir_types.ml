@@ -10,8 +10,8 @@
 
 (** Runtime type identities with equality proofs.
 
-    This uses generative extensible GADT constructors, so equality can be checked
-    without unsafe casts. *)
+    This uses generative extensible GADT constructors, so equality can be
+    checked without unsafe casts. *)
 module Type_id = struct
   type _ witness = ..
 
@@ -181,8 +181,7 @@ and helper_func = {
 }
 
 (** Native argument type for kernel execution. Typed arguments with runtime type
-    witnesses -
-    used by PPX-generated native functions. *)
+    witnesses - used by PPX-generated native functions. *)
 and native_arg =
   | NA_Int32 of int32
   | NA_Int64 of int64
@@ -190,27 +189,26 @@ and native_arg =
   | NA_Float64 of float
   | NA_Vec of native_vec
 
-and native_vec =
-  | NV : ('elt, 'underlying) native_vec_ops -> native_vec
+and native_vec = NV : ('elt, 'underlying) native_vec_ops -> native_vec
 
 and ('elt, 'underlying) native_vec_ops = {
-      length : int;
-      elem_size : int;
-      type_name : string;
-      type_id : 'elt Type_id.t;
-      get_f32 : int -> float;
-      set_f32 : int -> float -> unit;
-      get_f64 : int -> float;
-      set_f64 : int -> float -> unit;
-      get_i32 : int -> int32;
-      set_i32 : int -> int32 -> unit;
-      get_i64 : int -> int64;
-      set_i64 : int -> int64 -> unit;
-      get_typed : int -> 'elt;
-      set_typed : int -> 'elt -> unit;
-      underlying_type_id : 'underlying Type_id.t;
-      underlying : 'underlying;
-    }
+  length : int;
+  elem_size : int;
+  type_name : string;
+  type_id : 'elt Type_id.t;
+  get_f32 : int -> float;
+  set_f32 : int -> float -> unit;
+  get_f64 : int -> float;
+  set_f64 : int -> float -> unit;
+  get_i32 : int -> int32;
+  set_i32 : int -> int32 -> unit;
+  get_i64 : int -> int64;
+  set_i64 : int -> int64 -> unit;
+  get_typed : int -> 'elt;
+  set_typed : int -> 'elt -> unit;
+  underlying_type_id : 'underlying Type_id.t;
+  underlying : 'underlying;
+}
 
 and ocaml_closure = {
   run :

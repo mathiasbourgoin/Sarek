@@ -1245,18 +1245,16 @@ let generate_interp_helpers ~loc (td : type_declaration) : structure_item list =
              ~expr:
                (Ast_builder.Default.pmod_structure
                   ~loc
-	                  [
-	                    [%stri
-	                      type t =
-	                        [%t Ast_builder.Default.ptyp_constr ~loc type_lid []]];
-	                    [%stri
-	                      let type_id =
-	                        [%e
-	                          Ast_builder.Default.evar
-	                            ~loc
-	                            (type_name ^ "_custom")]
-	                          .Spoc_core.Vector.type_id];
-	                    [%stri let from_values = [%e from_values_fn]];
+                  [
+                    [%stri
+                      type t =
+                        [%t Ast_builder.Default.ptyp_constr ~loc type_lid []]];
+                    [%stri
+                      let type_id =
+                        [%e
+                          Ast_builder.Default.evar ~loc (type_name ^ "_custom")]
+                          .Spoc_core.Vector.type_id];
+                    [%stri let from_values = [%e from_values_fn]];
                     [%stri let to_values = [%e to_values_fn]];
                     [%stri let get_field = [%e get_field_fn]];
                     [%stri
