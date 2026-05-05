@@ -14,7 +14,7 @@
  * - Custom: User-defined ctypes structures with custom get/set
  *
  * Design principles:
- * - Type-safe: Uses GADTs and existentials instead of Obj.t
+ * - Type-safe: Uses GADTs and existentials
  * - Location-aware: Tracks where data resides (CPU, GPU, or both)
  * - Lazy allocation: GPU memory allocated on first device use
  * - Auto-sync: Element access triggers sync when needed

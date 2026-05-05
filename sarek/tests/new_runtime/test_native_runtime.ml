@@ -54,33 +54,35 @@ let transform_points_kirc =
           dst.(tid) <- {x = p.x +. 1.0; y = p.y *. 2.0}]
 
 (* A simple kernel function that adds vectors: c[i] = a[i] + b[i] *)
+let get_float32_arg args arg_idx elem_idx =
+  let open Spoc_framework.Framework_sig in
+  match args.(arg_idx) with
+  | EA_Vec (module V) -> (
+      match V.get elem_idx with
+      | Spoc_framework.Typed_value.TV_Scalar
+          (Spoc_framework.Typed_value.SV ((module S), x)) -> (
+          match S.to_primitive x with
+          | Spoc_framework.Typed_value.PFloat f when S.name = "float32" -> f
+          | Spoc_framework.Typed_value.PFloat _ ->
+              failwith "Expected float32 scalar, got non-float32 float"
+          | _ -> failwith "Expected float32 scalar")
+      | _ -> failwith "Expected scalar vector element")
+  | _ -> failwith (Printf.sprintf "Expected vector for arg %d" arg_idx)
+
+let set_float32_arg args arg_idx elem_idx value =
+  let open Spoc_framework.Framework_sig in
+  match args.(arg_idx) with
+  | EA_Vec (module V) ->
+      V.set
+        elem_idx
+        (Spoc_framework.Typed_value.TV_Scalar
+           (Spoc_framework.Typed_value.SV
+              ((module Spoc_framework.Typed_value.Float32_type), value)))
+  | _ -> failwith (Printf.sprintf "Expected vector for arg %d" arg_idx)
+
 let vector_add_kernel args (gx, _gy, _gz) (bx, _by, _bz) =
   (* Extract arguments from exec_arg array *)
   let open Spoc_framework.Framework_sig in
-  let a =
-    match args.(0) with
-    | EA_Vec (module V) ->
-        let vec = Obj.obj (V.internal_get_vector_obj ()) in
-        (vec
-          : (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t)
-    | _ -> failwith "Expected vector for arg 0"
-  in
-  let b =
-    match args.(1) with
-    | EA_Vec (module V) ->
-        let vec = Obj.obj (V.internal_get_vector_obj ()) in
-        (vec
-          : (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t)
-    | _ -> failwith "Expected vector for arg 1"
-  in
-  let c =
-    match args.(2) with
-    | EA_Vec (module V) ->
-        let vec = Obj.obj (V.internal_get_vector_obj ()) in
-        (vec
-          : (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t)
-    | _ -> failwith "Expected vector for arg 2"
-  in
   let n =
     match args.(3) with
     | EA_Int32 n -> Int32.to_int n
@@ -91,10 +93,11 @@ let vector_add_kernel args (gx, _gy, _gz) (bx, _by, _bz) =
   let total_threads = gx * bx in
   for tid = 0 to total_threads - 1 do
     if tid < n then
-      Bigarray.Array1.set
-        c
+      set_float32_arg
+        args
+        2
         tid
-        (Bigarray.Array1.get a tid +. Bigarray.Array1.get b tid)
+        (get_float32_arg args 0 tid +. get_float32_arg args 1 tid)
   done
 
 (* Register the kernel *)

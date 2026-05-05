@@ -53,13 +53,16 @@ let evar ~loc name =
 
 (** Helper to create a qualified identifier expression *)
 let evar_qualified ~loc path name =
-  let lid =
-    List.fold_left
-      (fun acc m -> Ldot (acc, m))
-      (Lident (List.hd path))
-      (List.tl path @ [name])
-  in
-  Ast_builder.Default.pexp_ident ~loc {txt = lid; loc}
+  match path with
+  | [] -> evar ~loc name
+  | first :: rest ->
+      let lid =
+        List.fold_left
+          (fun acc m -> Ldot (acc, m))
+          (Lident first)
+          (rest @ [name])
+      in
+      Ast_builder.Default.pexp_ident ~loc {txt = lid; loc}
 
 (** {1 Variable Naming} *)
 

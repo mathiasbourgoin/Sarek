@@ -6,7 +6,7 @@
 (******************************************************************************
  * Typed_value - Extensible typed value system
  *
- * Provides type-safe value representation without Obj.t for:
+ * Provides type-safe value representation for:
  * - Kernel argument passing (execute_direct)
  * - Interpreter value storage
  * - Vector element access
@@ -143,7 +143,7 @@ end
 
 (** {1 Execution Arguments}
 
-    Type-safe kernel arguments for execute_direct. No Obj.t - fully typed. *)
+    Type-safe kernel arguments for execute_direct. *)
 
 type exec_arg =
   | EA_Int32 of int32

@@ -1270,7 +1270,7 @@ let run_kernel (k : kernel) ~block:(bx, by, bz) ~grid:(gx, gy, gz)
 
 (** {1 V2 Vector Support}
 
-    These functions work with typed Kernel_arg.t values instead of Obj.t. This
+    These functions work with typed Kernel_arg.t values. This
     is the preferred interface for Native/Interpreter backends. *)
 
 (** Convert V2 Vector to interpreter value array. Uses the vector's element type

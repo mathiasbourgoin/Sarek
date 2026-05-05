@@ -380,6 +380,19 @@ let test_parse_kernel_two_params () =
   | EUnit -> Alcotest.(check pass) "body is EUnit" () ()
   | _ -> Alcotest.fail "body should be EUnit"
 
+let test_parse_kernel_shared_body () =
+  let kernel_expr =
+    Ppxlib.Parse.expression
+      (Lexing.from_string
+         "fun (input : float32 vector) -> let%shared (tile : float32) = () in \
+          ()")
+  in
+  let kernel = parse_kernel_function kernel_expr in
+  match kernel.kern_body.e with
+  | ELetShared ("tile", TEConstr ("float32", []), None, {e = EUnit; _}) ->
+      Alcotest.(check pass) "shared body preserved" () ()
+  | _ -> Alcotest.fail "body should be ELetShared"
+
 let test_parse_kernel_no_annotation () =
   let loc = Location.none in
   let open Ppxlib.Ast_builder.Default in
@@ -496,6 +509,22 @@ let test_parse_expr_let () =
       Alcotest.(check pass) "let x = 42 in x parses" () ()
   | _ -> Alcotest.fail "let should parse correctly"
 
+let test_parse_expr_lambda_rejected () =
+  let loc = Location.none in
+  let open Ppxlib.Ast_builder.Default in
+  let param =
+    ppat_constraint
+      ~loc
+      (ppat_var ~loc {txt = "x"; loc})
+      (ptyp_constr ~loc {txt = Lident "int32"; loc} [])
+  in
+  let expr = pexp_fun ~loc Nolabel None param (evar ~loc "x") in
+  try
+    ignore (parse_expression expr) ;
+    Alcotest.fail "standalone lambda should be rejected"
+  with Parse_error_exn (msg, _) ->
+    Alcotest.(check bool) "has useful error message" true (String.length msg > 0)
+
 (* Test suite *)
 let () =
   Alcotest.run
@@ -532,6 +561,7 @@ let () =
         [
           Alcotest.test_case "simple" `Quick test_parse_kernel_simple;
           Alcotest.test_case "two params" `Quick test_parse_kernel_two_params;
+          Alcotest.test_case "shared body" `Quick test_parse_kernel_shared_body;
           Alcotest.test_case
             "no annotation"
             `Quick
@@ -560,5 +590,9 @@ let () =
           Alcotest.test_case "binop" `Quick test_parse_expr_binop;
           Alcotest.test_case "if" `Quick test_parse_expr_if;
           Alcotest.test_case "let" `Quick test_parse_expr_let;
+          Alcotest.test_case
+            "lambda rejected"
+            `Quick
+            test_parse_expr_lambda_rejected;
         ] );
     ]

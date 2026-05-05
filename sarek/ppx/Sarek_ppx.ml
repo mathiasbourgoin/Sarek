@@ -271,8 +271,7 @@ let scan_file_for_sarek_types path =
                   let ty = Sarek_parse.extract_type_from_pattern vb.pvb_pat in
                   let item =
                     match Sarek_parse.collect_fun_params vb.pvb_expr with
-                    | params, Some (Pfunction_body body_expr) when params <> []
-                      ->
+                    | params, Some (Fun_body body_expr) when params <> [] ->
                         let params =
                           List.map
                             (fun p ->
@@ -282,7 +281,7 @@ let scan_file_for_sarek_types path =
                         in
                         let body = Sarek_parse.parse_expression body_expr in
                         Sarek_ast.MFun (name, is_rec, params, body)
-                    | _, Some (Pfunction_cases _) ->
+                    | _, Some (Fun_cases _) ->
                         Location.raise_errorf
                           ~loc:vb.pvb_expr.pexp_loc
                           "Pattern-matching functions are not supported for \
@@ -1641,7 +1640,7 @@ let process_structure_for_module_items (str : structure) : structure =
       let ty = Sarek_parse.extract_type_from_pattern vb.pvb_pat in
       let item =
         match Sarek_parse.collect_fun_params vb.pvb_expr with
-        | params, Some (Pfunction_body body_expr) when params <> [] ->
+        | params, Some (Fun_body body_expr) when params <> [] ->
             let params =
               List.map
                 (fun p ->
@@ -1651,7 +1650,7 @@ let process_structure_for_module_items (str : structure) : structure =
             in
             let body = Sarek_parse.parse_expression body_expr in
             Sarek_ast.MFun (name, is_rec, params, body)
-        | _, Some (Pfunction_cases _) ->
+        | _, Some (Fun_cases _) ->
             Location.raise_errorf
               ~loc:vb.pvb_expr.pexp_loc
               "Pattern-matching functions are not supported for [@sarek.module]"

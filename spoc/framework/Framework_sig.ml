@@ -78,7 +78,7 @@ type source_lang =
 
 (** Extensible type for backend-specific kernel arguments. Each backend extends
     this type with its own variant. This allows type-safe passing of kernel args
-    across the framework boundary without Obj.t. *)
+    across the framework boundary with typed witnesses. *)
 type kargs = ..
 
 (** Placeholder kargs for testing - not associated with any backend *)
@@ -301,7 +301,7 @@ module type BACKEND = sig
       @param ir Sarek IR kernel (for interpretation)
       @param block Block dimensions
       @param grid Grid dimensions
-      @param args Kernel arguments - fully typed, no Obj.t *)
+      @param args Kernel arguments - fully typed *)
   val execute_direct :
     native_fn:(block:dims -> grid:dims -> exec_arg array -> unit) option ->
     ir:Sarek_ir_types.kernel option ->

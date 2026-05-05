@@ -9,7 +9,7 @@
  * Provides explicit and async data transfer API with stream management.
  * Phase 2 of runtime V2 feature parity roadmap.
  *
- * Uses the framework plugin system directly - no Obj.t.
+ * Uses the framework plugin system directly.
  ******************************************************************************)
 
 open Spoc_framework

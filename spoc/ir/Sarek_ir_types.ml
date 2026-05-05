@@ -180,7 +180,8 @@ and helper_func = {
   hf_body : stmt;
 }
 
-(** Native argument type for kernel execution. Typed arguments without Obj.t -
+(** Native argument type for kernel execution. Typed arguments with runtime type
+    witnesses -
     used by PPX-generated native functions. *)
 and native_arg =
   | NA_Int32 of int32

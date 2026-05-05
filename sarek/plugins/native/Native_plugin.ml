@@ -379,9 +379,12 @@ let find_intrinsic = Native_intrinsics.find
 
 (** Execute a kernel directly with the registered function *)
 let run_kernel_direct ~name
-    ~(native_fn : Obj.t array -> int * int * int -> int * int * int -> unit)
-    ~(args : Obj.t array) ~(grid : int * int * int) ~(block : int * int * int) :
-    unit =
+    ~(native_fn :
+       Framework_sig.exec_arg array ->
+       int * int * int ->
+       int * int * int ->
+       unit) ~(args : Framework_sig.exec_arg array) ~(grid : int * int * int)
+    ~(block : int * int * int) : unit =
   (* Use the existing Native_plugin kernel registry *)
   ignore name ;
   native_fn args grid block

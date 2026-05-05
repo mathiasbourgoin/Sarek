@@ -7,7 +7,7 @@
  * Sarek Runtime - Kernel Execution
  *
  * Provides unified kernel compilation and execution across backends.
- * Uses first-class modules to wrap backend-specific handles - no Obj.t.
+ * Uses first-class modules to wrap backend-specific handles.
  ******************************************************************************)
 
 open Spoc_framework

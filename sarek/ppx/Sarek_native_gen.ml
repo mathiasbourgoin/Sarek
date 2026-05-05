@@ -146,13 +146,20 @@ let gen_variable ~loc ~ctx (name : string) (id : int) : expression =
     [%expr ![%e var_e]]
   else var_e
 
-let custom_descriptor_expr ~loc type_name =
+let custom_descriptor_expr ?current_module ~loc type_name =
   let parts = String.split_on_char '.' type_name in
   match List.rev parts with
-  | name :: modules -> evar_qualified ~loc (List.rev modules) (name ^ "_custom")
+  | name :: modules ->
+      let modules = List.rev modules in
+      let modules =
+        match (current_module, modules) with
+        | Some current, [m] when String.equal current m -> []
+        | _ -> modules
+      in
+      evar_qualified ~loc modules (name ^ "_custom")
   | [] -> failwith "custom_descriptor_expr: empty type name"
 
-let vector_type_id_expr ~loc elem_ty =
+let vector_type_id_expr ?current_module ~loc elem_ty =
   match repr elem_ty with
   | TReg Float32 -> [%expr Spoc_core.Vector.float32_vector_type_id]
   | TReg Float64 -> [%expr Spoc_core.Vector.float64_vector_type_id]
@@ -161,13 +168,16 @@ let vector_type_id_expr ~loc elem_ty =
   | TReg Char -> [%expr Spoc_core.Vector.char_vector_type_id]
   | TRecord (type_name, _) | TVariant (type_name, _) ->
       [%expr
-        [%e custom_descriptor_expr ~loc type_name].Spoc_core.Vector.vector_type_id]
+        [%e custom_descriptor_expr ?current_module ~loc type_name]
+          .Spoc_core.Vector.vector_type_id]
   | _ -> [%expr Sarek_ir_types.Type_id.create ()]
 
-let custom_type_id_expr ~loc elem_ty =
+let custom_type_id_expr ?current_module ~loc elem_ty =
   match repr elem_ty with
   | TRecord (type_name, _) | TVariant (type_name, _) ->
-      [%expr [%e custom_descriptor_expr ~loc type_name].Spoc_core.Vector.type_id]
+      [%expr
+        [%e custom_descriptor_expr ?current_module ~loc type_name]
+          .Spoc_core.Vector.type_id]
   | _ -> [%expr Sarek_ir_types.Type_id.create ()]
 
 (** Generate memory access operations (vectors, arrays, record fields) *)
@@ -531,7 +541,8 @@ let gen_special_expr ~loc ~gen_expr (te : texpr) : expression =
   | _ -> failwith "gen_special_expr: not a special expression"
 
 (** Generate BSP parallel constructs (let%shared, let%superstep, let rec) *)
-let gen_parallel_construct ~loc ~gen_expr (te : texpr) : expression =
+let gen_parallel_construct ?current_module ~loc ~gen_expr (te : texpr) :
+    expression =
   match te.te with
   (* BSP let%shared - allocate shared memory using OCaml arrays *)
   | TELetShared (name, _id, elem_ty, size_opt, body) ->
@@ -590,7 +601,7 @@ let gen_parallel_construct ~loc ~gen_expr (te : texpr) : expression =
               match repr elem_ty with
               | TRecord (type_name, _) | TVariant (type_name, _) ->
                   [%expr
-                    [%e custom_descriptor_expr ~loc type_name]
+                    [%e custom_descriptor_expr ?current_module ~loc type_name]
                       .Spoc_core.Vector.type_id]
               | _ -> [%expr Sarek_ir_types.Type_id.create ()]
             in
@@ -737,7 +748,7 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
       gen_intrinsic_fun ~loc ~gen_mode:ctx.gen_mode ref args_e
   (* Parallel constructs *)
   | TELetShared _ | TESuperstep _ | TELetRec _ ->
-      gen_parallel_construct ~loc ~gen_expr te
+      gen_parallel_construct ?current_module:ctx.current_module ~loc ~gen_expr te
 
 (** Generate pattern from typed pattern. Takes context to detect same-module
     types that shouldn't be qualified. *)
@@ -1080,7 +1091,7 @@ let gen_mode_of_exec_strategy : Sarek_convergence.exec_strategy -> gen_mode =
     match on NA_Int32/NA_Float32/etc and extract the value.
 
     Uses typed native_arg for type safety. *)
-let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
+let gen_arg_cast ?current_module ~loc (param : tparam) (idx : int) : expression =
   let arr_access =
     [%expr Array.get __args [%e Ast_builder.Default.eint ~loc idx]]
   in
@@ -1104,7 +1115,7 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
 
                   method underlying =
                     Sarek_ir_types.vec_as_vector
-                      [%e vector_type_id_expr ~loc elem_ty]
+                      [%e vector_type_id_expr ?current_module ~loc elem_ty]
                       [%e vec_arg]
                 end
             | _ -> failwith "Expected NA_Vec"]
@@ -1121,7 +1132,7 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
 
                   method underlying =
                     Sarek_ir_types.vec_as_vector
-                      [%e vector_type_id_expr ~loc elem_ty]
+                      [%e vector_type_id_expr ?current_module ~loc elem_ty]
                       [%e vec_arg]
                 end
             | _ -> failwith "Expected NA_Vec"]
@@ -1138,7 +1149,7 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
 
                   method underlying =
                     Sarek_ir_types.vec_as_vector
-                      [%e vector_type_id_expr ~loc elem_ty]
+                      [%e vector_type_id_expr ?current_module ~loc elem_ty]
                       [%e vec_arg]
                 end
             | _ -> failwith "Expected NA_Vec"]
@@ -1155,7 +1166,7 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
 
                   method underlying =
                     Sarek_ir_types.vec_as_vector
-                      [%e vector_type_id_expr ~loc elem_ty]
+                      [%e vector_type_id_expr ?current_module ~loc elem_ty]
                       [%e vec_arg]
                 end
             | _ -> failwith "Expected NA_Vec"]
@@ -1166,13 +1177,13 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
             object
               method get i =
                 Sarek_ir_types.vec_get_custom
-                  [%e custom_type_id_expr ~loc elem_ty]
+                  [%e custom_type_id_expr ?current_module ~loc elem_ty]
                   [%e vec_arg]
                   i
 
               method set i x =
                 Sarek_ir_types.vec_set_custom
-                  [%e custom_type_id_expr ~loc elem_ty]
+                  [%e custom_type_id_expr ?current_module ~loc elem_ty]
                   [%e vec_arg]
                   i
                   x
@@ -1181,7 +1192,7 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
 
               method underlying =
                 Sarek_ir_types.vec_as_vector
-                  [%e vector_type_id_expr ~loc elem_ty]
+                  [%e vector_type_id_expr ?current_module ~loc elem_ty]
                   [%e vec_arg]
             end])
   | TReg Float32 ->
@@ -1567,13 +1578,14 @@ let gen_cpu_kern_native_wrapper ~loc (kernel : tkernel) : expression =
   let has_barriers_expr = Ast_builder.Default.ebool ~loc has_barriers in
 
   (* Generate argument extraction bindings - use parameter names *)
+  let current_module = Some (module_name_of_sarek_loc kernel.tkern_loc) in
   let arg_bindings =
     List.mapi
       (fun i param ->
         let var_pat =
           Ast_builder.Default.ppat_var ~loc {txt = param.tparam_name; loc}
         in
-        let cast_expr = gen_arg_cast ~loc param i in
+        let cast_expr = gen_arg_cast ?current_module ~loc param i in
         (var_pat, cast_expr))
       kernel.tkern_params
   in

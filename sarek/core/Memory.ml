@@ -7,7 +7,7 @@
  * Sarek Runtime - Unified Memory Abstraction
  *
  * Provides a unified interface for GPU memory allocation and data transfer.
- * Uses first-class modules to wrap backend-specific buffers - no Obj.t.
+ * Uses first-class modules to wrap backend-specific buffers.
  ******************************************************************************)
 
 open Spoc_framework

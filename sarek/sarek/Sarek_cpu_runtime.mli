@@ -181,7 +181,7 @@ val flush_fission : unit -> unit
     and just pass the global index directly.
 
     This eliminates:
-    - 6 Obj.set_field calls per element
+    - six thread-state field updates per element
     - 6 integer divisions/modulos
     - Function call overhead through thread_state
 

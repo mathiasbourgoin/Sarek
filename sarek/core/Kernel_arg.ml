@@ -6,7 +6,7 @@
 (******************************************************************************
  * Kernel_arg - Type-safe kernel arguments
  *
- * Provides a GADT for kernel arguments that avoids Obj.t. Backends consume
+ * Provides a GADT for kernel arguments. Backends consume
  * these via pattern matching or the fold interface.
  ******************************************************************************)
 

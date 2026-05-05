@@ -20,7 +20,7 @@ open Spoc_framework
 (** Registry for native kernel functions.
 
     Kernels are registered by name. The function signature uses exec_arg array
-    for type-safe argument passing (no Obj.t):
+    for type-safe argument passing:
     - args: Framework_sig.exec_arg array (typed kernel arguments)
     - grid: (gx, gy, gz) grid dimensions
     - block: (bx, by, bz) block dimensions
@@ -603,13 +603,61 @@ end = struct
 
         let device_ptr () = Memory.device_ptr buf
 
-        let get _i =
-          Native_error.(
-            raise_error (feature_not_supported "buffer element get accessor"))
+        let get i =
+          match (buf.Memory.kind, buf.Memory.storage) with
+          | Memory.Scalar_kind Spoc_core.Vector_types.Int32, Bigarray_storage ba ->
+              Typed_value.TV_Scalar
+                (Typed_value.SV ((module Typed_value.Int32_type), Bigarray.Array1.get ba i))
+          | Memory.Scalar_kind Spoc_core.Vector_types.Int64, Bigarray_storage ba ->
+              Typed_value.TV_Scalar
+                (Typed_value.SV ((module Typed_value.Int64_type), Bigarray.Array1.get ba i))
+          | Memory.Scalar_kind Spoc_core.Vector_types.Float32, Bigarray_storage ba ->
+              Typed_value.TV_Scalar
+                (Typed_value.SV ((module Typed_value.Float32_type), Bigarray.Array1.get ba i))
+          | Memory.Scalar_kind Spoc_core.Vector_types.Float64, Bigarray_storage ba ->
+              Typed_value.TV_Scalar
+                (Typed_value.SV ((module Typed_value.Float64_type), Bigarray.Array1.get ba i))
+          | _ ->
+              Native_error.(
+                raise_error (feature_not_supported "buffer element get accessor"))
 
-        let set _i _v =
-          Native_error.(
-            raise_error (feature_not_supported "buffer element set accessor"))
+        let set i tv =
+          match (tv, buf.Memory.kind, buf.Memory.storage) with
+          | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+              Memory.Scalar_kind Spoc_core.Vector_types.Int32,
+              Bigarray_storage ba ) -> (
+              match S.to_primitive x with
+              | Typed_value.PInt32 n -> Bigarray.Array1.set ba i n
+              | _ ->
+                  Native_error.(
+                    raise_error (feature_not_supported "int32 buffer set conversion")))
+          | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+              Memory.Scalar_kind Spoc_core.Vector_types.Int64,
+              Bigarray_storage ba ) -> (
+              match S.to_primitive x with
+              | Typed_value.PInt64 n -> Bigarray.Array1.set ba i n
+              | _ ->
+                  Native_error.(
+                    raise_error (feature_not_supported "int64 buffer set conversion")))
+          | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+              Memory.Scalar_kind Spoc_core.Vector_types.Float32,
+              Bigarray_storage ba ) -> (
+              match S.to_primitive x with
+              | Typed_value.PFloat f -> Bigarray.Array1.set ba i f
+              | _ ->
+                  Native_error.(
+                    raise_error (feature_not_supported "float32 buffer set conversion")))
+          | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+              Memory.Scalar_kind Spoc_core.Vector_types.Float64,
+              Bigarray_storage ba ) -> (
+              match S.to_primitive x with
+              | Typed_value.PFloat f -> Bigarray.Array1.set ba i f
+              | _ ->
+                  Native_error.(
+                    raise_error (feature_not_supported "float64 buffer set conversion")))
+          | _ ->
+              Native_error.(
+                raise_error (feature_not_supported "buffer element set accessor"))
 
         let get_typed _i =
           match (buf.Memory.kind, buf.Memory.storage) with
@@ -706,7 +754,7 @@ let init () = ()
     This is called by PPX-generated code at module load time to register the
     pre-compiled OCaml kernel function. The function signature matches what
     Sarek_cpu_runtime expects:
-    - args: Obj.t array of kernel arguments
+    - args: Framework_sig.exec_arg array of kernel arguments
     - grid: (gx, gy, gz) grid dimensions
     - block: (bx, by, bz) block dimensions
 
