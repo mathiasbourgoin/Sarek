@@ -140,7 +140,7 @@ let rec type_of_type_expr_ctx env (ctx : tvar_ctx) te =
     Creates fresh type variables for each TEVar - use type_of_type_expr_ctx when
     type variable names need to be preserved across multiple types. *)
 let type_of_type_expr_env env te =
-  type_of_type_expr_ctx env (fresh_tvar_ctx ()) te
+  type_of_type_expr_ctx env (fresh_tvar_ctx ~level:env.current_level ()) te
 
 (** Infer type of a binary operation *)
 let infer_binop op t1 t2 loc =

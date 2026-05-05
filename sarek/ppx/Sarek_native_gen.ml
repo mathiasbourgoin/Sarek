@@ -159,26 +159,65 @@ let custom_descriptor_expr ?current_module ~loc type_name =
       evar_qualified ~loc modules (name ^ "_custom")
   | [] -> failwith "custom_descriptor_expr: empty type name"
 
-let vector_type_id_expr ?current_module ~loc elem_ty =
+let is_inline_type inline_types type_name =
+  match inline_types with
+  | Some names -> StringSet.mem type_name names
+  | None -> false
+
+let sanitize_ident s =
+  String.map
+    (function
+      | ('a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_') as c -> c | _ -> '_')
+    s
+
+let inline_type_id_method type_name = "type_id_" ^ sanitize_ident type_name
+
+let inline_vector_type_id_method type_name =
+  "vector_type_id_" ^ sanitize_ident type_name
+
+let inline_type_id_expr ~loc ~ids_var type_name =
+  Ast_builder.Default.pexp_send
+    ~loc
+    (evar ~loc ids_var)
+    {txt = inline_type_id_method type_name; loc}
+
+let inline_vector_type_id_expr ~loc ~ids_var type_name =
+  Ast_builder.Default.pexp_send
+    ~loc
+    (evar ~loc ids_var)
+    {txt = inline_vector_type_id_method type_name; loc}
+
+let vector_type_id_expr ?current_module ?inline_types
+    ?(inline_ids_var = types_module_var) ~loc elem_ty =
   match repr elem_ty with
   | TReg Float32 -> [%expr Spoc_core.Vector.float32_vector_type_id]
   | TReg Float64 -> [%expr Spoc_core.Vector.float64_vector_type_id]
   | TReg Int | TPrim TInt32 -> [%expr Spoc_core.Vector.int32_vector_type_id]
   | TReg Int64 -> [%expr Spoc_core.Vector.int64_vector_type_id]
   | TReg Char -> [%expr Spoc_core.Vector.char_vector_type_id]
+  | TReg (Custom "complex32") ->
+      [%expr Spoc_core.Vector.complex32_vector_type_id]
   | TRecord (type_name, _) | TVariant (type_name, _) ->
-      [%expr
-        [%e custom_descriptor_expr ?current_module ~loc type_name]
-          .Spoc_core.Vector.vector_type_id]
-  | _ -> [%expr Sarek_ir_types.Type_id.create ()]
+      if is_inline_type inline_types type_name then
+        inline_vector_type_id_expr ~loc ~ids_var:inline_ids_var type_name
+      else
+        [%expr
+          [%e custom_descriptor_expr ?current_module ~loc type_name]
+            .Spoc_core.Vector.vector_type_id]
+  | _ -> [%expr failwith "unsupported vector type identity"]
 
-let custom_type_id_expr ?current_module ~loc elem_ty =
+let custom_type_id_expr ?current_module ?inline_types
+    ?(inline_ids_var = types_module_var) ~loc elem_ty =
   match repr elem_ty with
+  | TReg (Custom "complex32") -> [%expr Spoc_core.Vector.complex32_type_id]
   | TRecord (type_name, _) | TVariant (type_name, _) ->
-      [%expr
-        [%e custom_descriptor_expr ?current_module ~loc type_name]
-          .Spoc_core.Vector.type_id]
-  | _ -> [%expr Sarek_ir_types.Type_id.create ()]
+      if is_inline_type inline_types type_name then
+        inline_type_id_expr ~loc ~ids_var:inline_ids_var type_name
+      else
+        [%expr
+          [%e custom_descriptor_expr ?current_module ~loc type_name]
+            .Spoc_core.Vector.type_id]
+  | _ -> [%expr failwith "unsupported custom type identity"]
 
 (** Generate memory access operations (vectors, arrays, record fields) *)
 let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
@@ -541,8 +580,8 @@ let gen_special_expr ~loc ~gen_expr (te : texpr) : expression =
   | _ -> failwith "gen_special_expr: not a special expression"
 
 (** Generate BSP parallel constructs (let%shared, let%superstep, let rec) *)
-let gen_parallel_construct ?current_module ~loc ~gen_expr (te : texpr) :
-    expression =
+let gen_parallel_construct ?current_module ?inline_types ~loc ~gen_expr
+    (te : texpr) : expression =
   match te.te with
   (* BSP let%shared - allocate shared memory using OCaml arrays *)
   | TELetShared (name, _id, elem_ty, size_opt, body) ->
@@ -600,10 +639,13 @@ let gen_parallel_construct ?current_module ~loc ~gen_expr (te : texpr) :
             let key_expr =
               match repr elem_ty with
               | TRecord (type_name, _) | TVariant (type_name, _) ->
-                  [%expr
-                    [%e custom_descriptor_expr ?current_module ~loc type_name]
-                      .Spoc_core.Vector.type_id]
-              | _ -> [%expr Sarek_ir_types.Type_id.create ()]
+                  if is_inline_type inline_types type_name then
+                    inline_type_id_expr ~loc ~ids_var:types_module_var type_name
+                  else
+                    [%expr
+                      [%e custom_descriptor_expr ?current_module ~loc type_name]
+                        .Spoc_core.Vector.type_id]
+              | _ -> [%expr failwith "unsupported shared memory type identity"]
             in
             [%expr
               Sarek.Sarek_cpu_runtime.alloc_shared_with_key
@@ -750,6 +792,7 @@ let rec gen_expr_impl ~loc:_ ~ctx (te : texpr) : expression =
   | TELetShared _ | TESuperstep _ | TELetRec _ ->
       gen_parallel_construct
         ?current_module:ctx.current_module
+        ~inline_types:ctx.inline_types
         ~loc
         ~gen_expr
         te
@@ -1095,8 +1138,9 @@ let gen_mode_of_exec_strategy : Sarek_convergence.exec_strategy -> gen_mode =
     match on NA_Int32/NA_Float32/etc and extract the value.
 
     Uses typed native_arg for type safety. *)
-let gen_arg_cast ?current_module ~loc (param : tparam) (idx : int) : expression
-    =
+let gen_arg_cast ?current_module ?inline_types
+    ?(inline_ids_var = types_module_var) ~loc (param : tparam) (idx : int) :
+    expression =
   let arr_access =
     [%expr Array.get __args [%e Ast_builder.Default.eint ~loc idx]]
   in
@@ -1120,7 +1164,13 @@ let gen_arg_cast ?current_module ~loc (param : tparam) (idx : int) : expression
 
                   method underlying =
                     Sarek_ir_types.vec_as_vector
-                      [%e vector_type_id_expr ?current_module ~loc elem_ty]
+                      [%e
+                        vector_type_id_expr
+                          ?current_module
+                          ?inline_types
+                          ~inline_ids_var
+                          ~loc
+                          elem_ty]
                       [%e vec_arg]
                 end
             | _ -> failwith "Expected NA_Vec"]
@@ -1137,7 +1187,13 @@ let gen_arg_cast ?current_module ~loc (param : tparam) (idx : int) : expression
 
                   method underlying =
                     Sarek_ir_types.vec_as_vector
-                      [%e vector_type_id_expr ?current_module ~loc elem_ty]
+                      [%e
+                        vector_type_id_expr
+                          ?current_module
+                          ?inline_types
+                          ~inline_ids_var
+                          ~loc
+                          elem_ty]
                       [%e vec_arg]
                 end
             | _ -> failwith "Expected NA_Vec"]
@@ -1154,7 +1210,13 @@ let gen_arg_cast ?current_module ~loc (param : tparam) (idx : int) : expression
 
                   method underlying =
                     Sarek_ir_types.vec_as_vector
-                      [%e vector_type_id_expr ?current_module ~loc elem_ty]
+                      [%e
+                        vector_type_id_expr
+                          ?current_module
+                          ?inline_types
+                          ~inline_ids_var
+                          ~loc
+                          elem_ty]
                       [%e vec_arg]
                 end
             | _ -> failwith "Expected NA_Vec"]
@@ -1171,7 +1233,13 @@ let gen_arg_cast ?current_module ~loc (param : tparam) (idx : int) : expression
 
                   method underlying =
                     Sarek_ir_types.vec_as_vector
-                      [%e vector_type_id_expr ?current_module ~loc elem_ty]
+                      [%e
+                        vector_type_id_expr
+                          ?current_module
+                          ?inline_types
+                          ~inline_ids_var
+                          ~loc
+                          elem_ty]
                       [%e vec_arg]
                 end
             | _ -> failwith "Expected NA_Vec"]
@@ -1182,13 +1250,25 @@ let gen_arg_cast ?current_module ~loc (param : tparam) (idx : int) : expression
             object
               method get i =
                 Sarek_ir_types.vec_get_custom
-                  [%e custom_type_id_expr ?current_module ~loc elem_ty]
+                  [%e
+                    custom_type_id_expr
+                      ?current_module
+                      ?inline_types
+                      ~inline_ids_var
+                      ~loc
+                      elem_ty]
                   [%e vec_arg]
                   i
 
               method set i x =
                 Sarek_ir_types.vec_set_custom
-                  [%e custom_type_id_expr ?current_module ~loc elem_ty]
+                  [%e
+                    custom_type_id_expr
+                      ?current_module
+                      ?inline_types
+                      ~inline_ids_var
+                      ~loc
+                      elem_ty]
                   [%e vec_arg]
                   i
                   x
@@ -1197,7 +1277,13 @@ let gen_arg_cast ?current_module ~loc (param : tparam) (idx : int) : expression
 
               method underlying =
                 Sarek_ir_types.vec_as_vector
-                  [%e vector_type_id_expr ?current_module ~loc elem_ty]
+                  [%e
+                    vector_type_id_expr
+                      ?current_module
+                      ?inline_types
+                      ~inline_ids_var
+                      ~loc
+                      elem_ty]
                   [%e vec_arg]
             end])
   | TReg Float32 ->
@@ -1238,101 +1324,141 @@ let gen_arg_cast ?current_module ~loc (param : tparam) (idx : int) : expression
 
     Using an object avoids needing to define a record type for the accessors. *)
 let gen_types_object ~loc (decls : ttype_decl list) : expression =
-  let methods =
+  let id_bindings =
     List.concat_map
       (fun decl ->
-        match decl with
-        | TTypeRecord {tdecl_name; tdecl_fields; _} ->
-            (* Getters *)
-            let getters =
+        let type_name =
+          match decl with
+          | TTypeRecord {tdecl_name; _} -> tdecl_name
+          | TTypeVariant {tdecl_name; _} -> tdecl_name
+        in
+        [
+          ( inline_type_id_method type_name,
+            "__" ^ inline_type_id_method type_name );
+          ( inline_vector_type_id_method type_name,
+            "__" ^ inline_vector_type_id_method type_name );
+        ])
+      decls
+  in
+  let id_methods =
+    List.map
+      (fun (method_name, binding_name) ->
+        Ast_builder.Default.pcf_method
+          ~loc
+          ( {txt = method_name; loc},
+            Public,
+            Cfk_concrete (Fresh, evar ~loc binding_name) ))
+      id_bindings
+  in
+  let methods =
+    id_methods
+    @ List.concat_map
+        (fun decl ->
+          match decl with
+          | TTypeRecord {tdecl_name; tdecl_fields; _} ->
+              (* Getters *)
+              let getters =
+                List.map
+                  (fun (fname, _fty, _is_mut) ->
+                    let fn_name = field_getter_name tdecl_name fname in
+                    let field_lid = {txt = Lident fname; loc} in
+                    let fn_expr =
+                      [%expr
+                        fun __r ->
+                          [%e
+                            Ast_builder.Default.pexp_field
+                              ~loc
+                              [%expr __r]
+                              field_lid]]
+                    in
+                    Ast_builder.Default.pcf_method
+                      ~loc
+                      ( {txt = fn_name; loc},
+                        Public,
+                        Cfk_concrete (Fresh, fn_expr) ))
+                  tdecl_fields
+              in
+              (* Maker *)
+              let maker =
+                let fn_name = record_maker_name tdecl_name in
+                let param_pats =
+                  List.map
+                    (fun (fname, _fty, _) ->
+                      ( Labelled fname,
+                        Ast_builder.Default.ppat_var ~loc {txt = fname; loc} ))
+                    tdecl_fields
+                in
+                let record_fields =
+                  List.map
+                    (fun (fname, _, _) ->
+                      ( {txt = Lident fname; loc},
+                        Ast_builder.Default.pexp_ident
+                          ~loc
+                          {txt = Lident fname; loc} ))
+                    tdecl_fields
+                in
+                let record_expr =
+                  Ast_builder.Default.pexp_record ~loc record_fields None
+                in
+                let fn_expr =
+                  List.fold_right
+                    (fun (lbl, pat) body ->
+                      Ast_builder.Default.pexp_fun ~loc lbl None pat body)
+                    param_pats
+                    record_expr
+                in
+                Ast_builder.Default.pcf_method
+                  ~loc
+                  ({txt = fn_name; loc}, Public, Cfk_concrete (Fresh, fn_expr))
+              in
+              getters @ [maker]
+          | TTypeVariant {tdecl_name; tdecl_constructors; _} ->
+              (* Constructor functions *)
               List.map
-                (fun (fname, _fty, _is_mut) ->
-                  let fn_name = field_getter_name tdecl_name fname in
-                  let field_lid = {txt = Lident fname; loc} in
+                (fun (cname, arg_opt) ->
+                  let fn_name = variant_ctor_name tdecl_name cname in
+                  let ctor_lid = {txt = Lident cname; loc} in
                   let fn_expr =
-                    [%expr
-                      fun __r ->
-                        [%e
-                          Ast_builder.Default.pexp_field
-                            ~loc
-                            [%expr __r]
-                            field_lid]]
+                    match arg_opt with
+                    | None ->
+                        [%expr
+                          fun () ->
+                            [%e
+                              Ast_builder.Default.pexp_construct
+                                ~loc
+                                ctor_lid
+                                None]]
+                    | Some _ ->
+                        [%expr
+                          fun __x ->
+                            [%e
+                              Ast_builder.Default.pexp_construct
+                                ~loc
+                                ctor_lid
+                                (Some [%expr __x])]]
                   in
                   Ast_builder.Default.pcf_method
                     ~loc
                     ({txt = fn_name; loc}, Public, Cfk_concrete (Fresh, fn_expr)))
-                tdecl_fields
-            in
-            (* Maker *)
-            let maker =
-              let fn_name = record_maker_name tdecl_name in
-              let param_pats =
-                List.map
-                  (fun (fname, _fty, _) ->
-                    ( Labelled fname,
-                      Ast_builder.Default.ppat_var ~loc {txt = fname; loc} ))
-                  tdecl_fields
-              in
-              let record_fields =
-                List.map
-                  (fun (fname, _, _) ->
-                    ( {txt = Lident fname; loc},
-                      Ast_builder.Default.pexp_ident
-                        ~loc
-                        {txt = Lident fname; loc} ))
-                  tdecl_fields
-              in
-              let record_expr =
-                Ast_builder.Default.pexp_record ~loc record_fields None
-              in
-              let fn_expr =
-                List.fold_right
-                  (fun (lbl, pat) body ->
-                    Ast_builder.Default.pexp_fun ~loc lbl None pat body)
-                  param_pats
-                  record_expr
-              in
-              Ast_builder.Default.pcf_method
-                ~loc
-                ({txt = fn_name; loc}, Public, Cfk_concrete (Fresh, fn_expr))
-            in
-            getters @ [maker]
-        | TTypeVariant {tdecl_name; tdecl_constructors; _} ->
-            (* Constructor functions *)
-            List.map
-              (fun (cname, arg_opt) ->
-                let fn_name = variant_ctor_name tdecl_name cname in
-                let ctor_lid = {txt = Lident cname; loc} in
-                let fn_expr =
-                  match arg_opt with
-                  | None ->
-                      [%expr
-                        fun () ->
-                          [%e
-                            Ast_builder.Default.pexp_construct
-                              ~loc
-                              ctor_lid
-                              None]]
-                  | Some _ ->
-                      [%expr
-                        fun __x ->
-                          [%e
-                            Ast_builder.Default.pexp_construct
-                              ~loc
-                              ctor_lid
-                              (Some [%expr __x])]]
-                in
-                Ast_builder.Default.pcf_method
-                  ~loc
-                  ({txt = fn_name; loc}, Public, Cfk_concrete (Fresh, fn_expr)))
-              tdecl_constructors)
-      decls
+                tdecl_constructors)
+        decls
   in
-  Ast_builder.Default.pexp_object
-    ~loc
-    (Ast_builder.Default.class_structure
-       ~self:(Ast_builder.Default.ppat_any ~loc)
-       ~fields:methods)
+  let object_expr =
+    Ast_builder.Default.pexp_object
+      ~loc
+      (Ast_builder.Default.class_structure
+         ~self:(Ast_builder.Default.ppat_any ~loc)
+         ~fields:methods)
+  in
+  List.fold_right
+    (fun (_method_name, binding_name) body ->
+      [%expr
+        let [%p Ast_builder.Default.pvar ~loc binding_name] =
+          Sarek_ir_types.Type_id.create ()
+        in
+        [%e body]])
+    id_bindings
+    object_expr
 
 (** Generate V2 cpu_kern - uses Spoc_core.Vector.get/set instead of Spoc.Mem.
 
@@ -1573,6 +1699,20 @@ let gen_simple_cpu_kern_native ~loc ~exec_strategy (kernel : tkernel) :
     wrapped in accessor objects with get/set/length/underlying. *)
 let gen_cpu_kern_native_wrapper ~loc (kernel : tkernel) : expression =
   let use_fcm = has_inline_types kernel in
+  let inline_type_names =
+    if use_fcm then
+      List.fold_left
+        (fun acc decl ->
+          let name =
+            match decl with
+            | TTypeRecord {tdecl_name; _} -> tdecl_name
+            | TTypeVariant {tdecl_name; _} -> tdecl_name
+          in
+          if not (String.contains name '.') then StringSet.add name acc else acc)
+        StringSet.empty
+        kernel.tkern_type_decls
+    else StringSet.empty
+  in
   let native_kern = gen_cpu_kern_native ~loc kernel in
 
   (* Detect execution strategy for optimization *)
@@ -1590,7 +1730,15 @@ let gen_cpu_kern_native_wrapper ~loc (kernel : tkernel) : expression =
         let var_pat =
           Ast_builder.Default.ppat_var ~loc {txt = param.tparam_name; loc}
         in
-        let cast_expr = gen_arg_cast ?current_module ~loc param i in
+        let cast_expr =
+          gen_arg_cast
+            ?current_module
+            ~inline_types:inline_type_names
+            ~inline_ids_var:"__types_rec"
+            ~loc
+            param
+            i
+        in
         (var_pat, cast_expr))
       kernel.tkern_params
   in
