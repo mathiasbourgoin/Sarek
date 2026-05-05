@@ -258,6 +258,8 @@ end = struct
       | Scalar_kind k -> Spoc_core.Vector_types.scalar_elem_size k
       | Custom_kind c -> c.elem_size
 
+    let buffer_byte_size buf = buf.size * elem_size buf.kind
+
     let alloc : type a b. Device.t -> int -> (a, b) Bigarray.kind -> a buffer =
      fun device size kind ->
       let arr = Bigarray.Array1.create kind Bigarray.c_layout size in
@@ -409,15 +411,12 @@ end = struct
         src:(a, b, Bigarray.c_layout) Bigarray.Array1.t -> dst:a buffer -> unit
         =
      fun ~src ~dst ->
-      match dst.storage with
-      | Bigarray_storage dst_arr ->
-          let len = min (Bigarray.Array1.dim src) dst.size in
-          let dst_arr_typed =
-            (Obj.magic dst_arr : (a, b, Bigarray.c_layout) Bigarray.Array1.t)
-          in
-          Bigarray.Array1.blit
-            (Bigarray.Array1.sub src 0 len)
-            (Bigarray.Array1.sub dst_arr_typed 0 len)
+	      match dst.storage with
+	      | Bigarray_storage dst_arr ->
+	          let len = min (Bigarray.Array1.dim src) dst.size in
+	          for i = 0 to len - 1 do
+	            Bigarray.Array1.set dst_arr i (Bigarray.Array1.get src i)
+	          done
       | Ctypes_storage _ ->
           invalid_arg "host_to_device: destination is ctypes buffer"
 
@@ -425,20 +424,18 @@ end = struct
         src:a buffer -> dst:(a, b, Bigarray.c_layout) Bigarray.Array1.t -> unit
         =
      fun ~src ~dst ->
-      match src.storage with
-      | Bigarray_storage src_arr ->
-          let len = min src.size (Bigarray.Array1.dim dst) in
-          let src_arr_typed =
-            (Obj.magic src_arr : (a, b, Bigarray.c_layout) Bigarray.Array1.t)
-          in
-          Bigarray.Array1.blit
-            (Bigarray.Array1.sub src_arr_typed 0 len)
-            (Bigarray.Array1.sub dst 0 len)
+	      match src.storage with
+	      | Bigarray_storage src_arr ->
+	          let len = min src.size (Bigarray.Array1.dim dst) in
+	          for i = 0 to len - 1 do
+	            Bigarray.Array1.set dst i (Bigarray.Array1.get src_arr i)
+	          done
       | Ctypes_storage _ ->
           invalid_arg "device_to_host: source is ctypes buffer"
 
     let host_ptr_to_device ~src_ptr ~byte_size ~dst =
       let open Ctypes in
+      let byte_size = min byte_size (buffer_byte_size dst) in
       match dst.storage with
       | Ctypes_storage dst_ptr ->
           let dst_char_ptr = from_voidp char dst_ptr in
@@ -451,6 +448,7 @@ end = struct
 
     let device_to_host_ptr ~src ~dst_ptr ~byte_size =
       let open Ctypes in
+      let byte_size = min byte_size (buffer_byte_size src) in
       match src.storage with
       | Ctypes_storage src_ptr ->
           let src_char_ptr = from_voidp char src_ptr in
@@ -463,18 +461,12 @@ end = struct
 
     let device_to_device : type a. src:a buffer -> dst:a buffer -> unit =
      fun ~src ~dst ->
-      match (src.storage, dst.storage) with
-      | Bigarray_storage src_arr, Bigarray_storage dst_arr ->
-          let len = min src.size dst.size in
-          let src_typed =
-            (Obj.magic src_arr : (a, _, Bigarray.c_layout) Bigarray.Array1.t)
-          in
-          let dst_typed =
-            (Obj.magic dst_arr : (a, _, Bigarray.c_layout) Bigarray.Array1.t)
-          in
-          Bigarray.Array1.blit
-            (Bigarray.Array1.sub src_typed 0 len)
-            (Bigarray.Array1.sub dst_typed 0 len)
+	      match (src.storage, dst.storage) with
+	      | Bigarray_storage src_arr, Bigarray_storage dst_arr ->
+	          let len = min src.size dst.size in
+	          for i = 0 to len - 1 do
+	            Bigarray.Array1.set dst_arr i (Bigarray.Array1.get src_arr i)
+	          done
       | Ctypes_storage src_ptr, Ctypes_storage dst_ptr ->
           let src_char_ptr = Ctypes.from_voidp Ctypes.char src_ptr in
           let dst_char_ptr = Ctypes.from_voidp Ctypes.char dst_ptr in
@@ -537,6 +529,17 @@ end = struct
 
     let set_arg_buffer : type a. args -> int -> a Memory.buffer -> unit =
      fun args _idx buf ->
+      (match (buf.Memory.kind, buf.Memory.storage) with
+      | Memory.Scalar_kind Spoc_core.Vector_types.Int32, Bigarray_storage _
+      | Memory.Scalar_kind Spoc_core.Vector_types.Int64, Bigarray_storage _
+      | Memory.Scalar_kind Spoc_core.Vector_types.Float32, Bigarray_storage _
+      | Memory.Scalar_kind Spoc_core.Vector_types.Float64, Bigarray_storage _ ->
+          ()
+      | _ ->
+          Interpreter_error.(
+            raise_error
+              (feature_not_supported
+                 "unsupported buffer kind/storage for argument"))) ;
       (* Wrap buffer in EXEC_VECTOR for exec_arg *)
       let module EV : Typed_value.EXEC_VECTOR
         with type elt = a
