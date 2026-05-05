@@ -407,7 +407,7 @@ let test_run_parallel_simple () =
     let idx = Int32.to_int (global_idx_x state) in
     results.(idx) <- Int32.mul state.thread_idx_x 2l
   in
-  run_parallel ~block:(16, 1, 1) ~grid:(1, 1, 1) kernel () ;
+  run_parallel ~has_barriers:false ~block:(16, 1, 1) ~grid:(1, 1, 1) kernel () ;
   for i = 0 to size - 1 do
     check
       int32
@@ -431,7 +431,7 @@ let test_run_parallel_shared () =
     let next_tid = (tid + 1) mod size in
     results.(tid) <- arr.(next_tid)
   in
-  run_parallel ~block:(size, 1, 1) ~grid:(1, 1, 1) kernel () ;
+  run_parallel ~has_barriers:true ~block:(size, 1, 1) ~grid:(1, 1, 1) kernel () ;
   for i = 0 to size - 1 do
     let expected = ((i + 1) mod size) + 1 in
     check int (Printf.sprintf "parallel shared %d" i) expected results.(i)
@@ -498,6 +498,33 @@ let test_multiple_barriers () =
     check int (Printf.sprintf "multi-barrier %d" i) 3 results.(i)
   done
 
+(** Test barrier metadata fallback does not execute user code for detection *)
+let test_barrier_detection_non_mutating () =
+  let size = 4 in
+  let side_effects = Atomic.make 0 in
+  let results = Array.make size 0 in
+  let kernel state _shared _args =
+    let tid = Int32.to_int state.thread_idx_x in
+    let count = Atomic.fetch_and_add side_effects 1 + 1 in
+    results.(tid) <- count ;
+    state.barrier () ;
+    results.(tid) <- results.(tid) + 10
+  in
+  run_parallel ~block:(size, 1, 1) ~grid:(1, 1, 1) kernel () ;
+  check int "side effects occur once per thread" size (Atomic.get side_effects) ;
+  for i = 0 to size - 1 do
+    check bool (Printf.sprintf "thread %d ran once" i) true (results.(i) > 10)
+  done
+
+exception Test_parallel_failure
+
+let test_parallel_default_propagates_worker_exception () =
+  let kernel _state _shared _args = raise Test_parallel_failure in
+  check_raises
+    "worker exception propagates through default barrier-safe path"
+    Test_parallel_failure
+    (fun () -> run_parallel ~block:(4, 1, 1) ~grid:(1, 1, 1) kernel ())
+
 (** {1 Test Suite} *)
 
 let thread_state_tests =
@@ -550,6 +577,10 @@ let barrier_tests =
     ("sequential no-op", `Quick, test_barrier_sequential);
     ("parallel sync", `Quick, test_barrier_parallel_sync);
     ("multiple barriers", `Quick, test_multiple_barriers);
+    ("non-mutating detection", `Quick, test_barrier_detection_non_mutating);
+    ( "default exception propagation",
+      `Quick,
+      test_parallel_default_propagates_worker_exception );
   ]
 
 let () =

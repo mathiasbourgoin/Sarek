@@ -24,12 +24,15 @@
   test_mono
   test_ir_interp
   test_execute
-  test_kirc_kernel
-  test_cpu_runtime)
+  test_kirc_kernel)
  ; Link sarek_stdlib to trigger auto-registration of intrinsics
  (libraries sarek_ppx_lib sarek_stdlib sarek alcotest ppxlib str)
  (preprocess
   (pps ppxlib.metaquot)))
+
+(test
+ (name test_cpu_runtime)
+ (libraries sarek alcotest))
 
 ; Fusion tests use sarek library directly (no ppx needed)
 

@@ -314,6 +314,15 @@ let run_block_with_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
   in
   let num_waiting = ref 0 in
   let num_completed = ref 0 in
+  let first_error = ref None in
+
+  let record_error tid exn =
+    if !first_error = None then first_error := Some exn ;
+    if status.(tid) <> 2 then begin
+      status.(tid) <- 2 ;
+      incr num_completed
+    end
+  in
 
   (* Pre-compute int32 values *)
   let bx32 = Int32.of_int bx in
@@ -359,9 +368,11 @@ let run_block_with_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     {
       Effect.Shallow.retc =
         (fun () ->
-          status.(tid) <- 2 ;
-          incr num_completed);
-      exnc = raise;
+          if status.(tid) <> 2 then begin
+            status.(tid) <- 2 ;
+            incr num_completed
+          end);
+      exnc = (fun exn -> record_error tid exn);
       effc =
         (fun (type a) (eff : a Effect.t) ->
           match eff with
@@ -379,7 +390,9 @@ let run_block_with_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
   (* Create fibers for all threads *)
   let fibers =
     Array.init num_threads (fun tid ->
-        Effect.Shallow.fiber (fun () -> kernel states.(tid) shared args))
+        Effect.Shallow.fiber (fun () ->
+            try kernel states.(tid) shared args
+            with exn -> record_error tid exn))
   in
 
   (* Initial run: start all threads with shallow continue_with *)
@@ -400,7 +413,8 @@ let run_block_with_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
         | None -> ()
       end
     done
-  done
+  done ;
+  match !first_error with Some exn -> raise exn | None -> ()
 
 (** Global domain pool for parallel execution *)
 module DomainPool = struct
@@ -414,6 +428,7 @@ module DomainPool = struct
     mutable shutdown : bool;
     domains : unit Domain.t array;
     mutable active_tasks : int;
+    mutable first_error : exn option;
     done_cond : Condition.t;
   }
 
@@ -431,8 +446,16 @@ module DomainPool = struct
         let task = Queue.pop pool.task_queue in
         pool.active_tasks <- pool.active_tasks + 1 ;
         Mutex.unlock pool.mutex ;
-        (try task () with _ -> ()) ;
+        let task_error =
+          try
+            task () ;
+            None
+          with exn -> Some exn
+        in
         Mutex.lock pool.mutex ;
+        (match (pool.first_error, task_error) with
+        | None, Some exn -> pool.first_error <- Some exn
+        | _ -> ()) ;
         pool.active_tasks <- pool.active_tasks - 1 ;
         if pool.active_tasks = 0 && Queue.is_empty pool.task_queue then
           Condition.broadcast pool.done_cond ;
@@ -452,6 +475,7 @@ module DomainPool = struct
         shutdown = false;
         domains = [||];
         active_tasks = 0;
+        first_error = None;
         done_cond = Condition.create ();
       }
     in
@@ -471,7 +495,10 @@ module DomainPool = struct
     while pool.active_tasks > 0 || not (Queue.is_empty pool.task_queue) do
       Condition.wait pool.done_cond pool.mutex
     done ;
-    Mutex.unlock pool.mutex
+    let first_error = pool.first_error in
+    pool.first_error <- None ;
+    Mutex.unlock pool.mutex ;
+    match first_error with Some exn -> raise exn | None -> ()
 
   let shutdown pool =
     Mutex.lock pool.mutex ;
@@ -590,43 +617,15 @@ let run_parallel_with_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
   done ;
   DomainPool.wait_all pool
 
-(** Detect if kernel uses barriers by running one block and checking. *)
-let kernel_uses_barriers ~block:(bx, by, bz) ~grid:(gx, gy, gz)
-    (kernel : thread_state -> shared_mem -> 'a -> unit) (args : 'a) : bool =
-  let barrier_called = ref false in
-  let shared = create_shared () in
-  (* Run just one thread to detect barrier usage *)
-  let state =
-    {
-      thread_idx_x = 0l;
-      thread_idx_y = 0l;
-      thread_idx_z = 0l;
-      block_idx_x = 0l;
-      block_idx_y = 0l;
-      block_idx_z = 0l;
-      block_dim_x = Int32.of_int bx;
-      block_dim_y = Int32.of_int by;
-      block_dim_z = Int32.of_int bz;
-      grid_dim_x = Int32.of_int gx;
-      grid_dim_y = Int32.of_int gy;
-      grid_dim_z = Int32.of_int gz;
-      barrier =
-        (fun () ->
-          barrier_called := true ;
-          (* Don't actually block - just detect *)
-          ());
-    }
-  in
-  kernel state shared args ;
-  !barrier_called
-
-(** Run kernel in parallel. Auto-detects barrier usage:
-    - No barriers: uses simple work partitioning (fastest)
-    - With barriers: uses fiber-based scheduling *)
-let run_parallel ~block ~grid kernel args =
-  if kernel_uses_barriers ~block ~grid kernel args then
-    run_parallel_with_barriers ~block ~grid kernel args
-  else run_parallel_simple ~block ~grid kernel args
+(** Run kernel in parallel. Barrier metadata must come from the compiler or
+    caller; the runtime must not execute user code to discover it. When metadata
+    is unavailable, use the sequential barrier-capable path to preserve
+    correctness without broadening worker-pool exception swallowing. *)
+let run_parallel ?has_barriers ~block ~grid kernel args =
+  match has_barriers with
+  | None -> run_sequential ~block ~grid kernel args
+  | Some true -> run_parallel_with_barriers ~block ~grid kernel args
+  | Some false -> run_parallel_simple ~block ~grid kernel args
 
 (** {1 Persistent Thread Pool for Fission Mode}
 

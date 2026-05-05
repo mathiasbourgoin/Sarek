@@ -97,9 +97,16 @@ val run_sequential :
   unit
 
 (** Run kernel in parallel. Threads within each block run in parallel using
-    OCaml 5 Domains. Barriers properly synchronize all threads within a block
-    using Mutex/Condition. Blocks run sequentially. *)
+    OCaml 5 Domains.
+
+    @param has_barriers
+      Static barrier metadata from the compiler or caller. [true] uses the BSP
+      barrier-capable path; [false] uses the faster barrier-free path. When
+      omitted, the runtime uses the sequential barrier-capable path so barrier
+      detection never executes user kernel code before launch and worker-pool
+      exception behavior is not broadened. *)
 val run_parallel :
+  ?has_barriers:bool ->
   block:int * int * int ->
   grid:int * int * int ->
   (thread_state -> shared_mem -> 'a -> unit) ->
