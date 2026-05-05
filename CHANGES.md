@@ -1,3 +1,19 @@
+## Unreleased
+
+### Changed
+
+- Breaking: removed first-party `Obj` escape hatches from Sarek/SPOC execution
+  paths.
+  - Kernel vector arguments now cross framework/plugin boundaries through typed
+    existential accessors and runtime type witnesses.
+  - Custom value conversion now uses typed helper lookup instead of raw runtime
+    representation casts.
+  - Native and interpreter plugin buffer copies use typed Bigarray operations.
+  - Custom shared-memory arrays are keyed by typed witnesses to reject
+    mismatched reuse.
+  - Legacy native direct execution now accepts typed `Framework_sig.exec_arg`
+    arrays.
+
 ## 2026-01
 
 ### Changed
