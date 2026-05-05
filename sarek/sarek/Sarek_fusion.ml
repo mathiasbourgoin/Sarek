@@ -419,7 +419,8 @@ let can_fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
       ( List.assoc_opt intermediate prod_info.writes,
         List.assoc_opt intermediate cons_info.reads )
     with
-    | Some (OneToOne _), Some (OneToOne _) -> true
+    | Some (OneToOne prod_idx), Some (OneToOne cons_idx) ->
+        expr_equal prod_idx cons_idx
     | _ -> false
   in
 
@@ -548,54 +549,87 @@ let fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
 
 (** {1 High-level interface} *)
 
-(** Fuse a pipeline of kernels sequentially.
+(** Find arrays written by [producer] and read by [consumer]. *)
+let candidate_intermediates (producer : kernel) (consumer : kernel) :
+    string list =
+  let prod_info = analyze producer in
+  let cons_info = analyze consumer in
+  let prod_writes = List.map fst prod_info.writes in
+  let cons_reads = List.map fst cons_info.reads in
+  List.filter (fun arr -> List.mem arr cons_reads) prod_writes
+
+(** Fuse a pipeline of kernels sequentially, preserving unfused stages.
 
     Attempts to fuse each consecutive kernel pair, eliminating intermediate
     arrays. Processes left-to-right, greedily fusing when possible.
 
-    Algorithm: 1. Start with first kernel as current 2. For each subsequent
-    kernel:
-    - Find arrays that current writes and next reads (candidates)
-    - If fusable, inline current into next and eliminate intermediate
-    - Otherwise, advance to next kernel 3. Return final fused kernel and list of
-      eliminated arrays
+    Algorithm: 1. Start with the first kernel as the current stage. 2. For each
+    subsequent kernel:
+    - Find arrays that current writes and next reads (candidates).
+    - If fusable, replace the current stage and next stage with their fused
+      kernel.
+    - Otherwise, append the current stage to the result pipeline and continue
+      from the next kernel. 3. Append the final current stage.
+
+    Every input kernel is preserved unless it is replaced by a proven fused
+    kernel. The returned kernel list is therefore the complete optimized
+    pipeline in execution order.
 
     Note: This is greedy and may not find optimal fusion. For example, fusing
-    A→B might prevent better fusion of B→C. Use auto_fuse_pipeline for
+    A→B might prevent better fusion of B→C. Use auto_fuse_pipeline_list for
     heuristic-based fusion that considers these tradeoffs.
 
     @param kernels List of kernels to fuse (must be non-empty)
-    @return (fused_kernel, eliminated_intermediates)
+    @return (optimized_pipeline, eliminated_intermediates)
     @raise Empty_pipeline if kernel list is empty *)
-let fuse_pipeline (kernels : kernel list) : kernel * string list =
+let fuse_pipeline_list (kernels : kernel list) : kernel list * string list =
   match kernels with
   | [] ->
       Fusion_error.raise_error
-        (Fusion_error.Empty_pipeline {function_name = "fuse_pipeline"})
-  | [k] -> (k, [])
+        (Fusion_error.Empty_pipeline {function_name = "fuse_pipeline_list"})
+  | [k] -> ([k], [])
   | k1 :: rest ->
-      let rec loop current eliminated = function
-        | [] -> (current, eliminated)
+      let rec loop acc current eliminated = function
+        | [] -> (List.rev (current :: acc), List.rev eliminated)
         | k :: ks -> (
-            (* Find intermediate: array that current writes and k reads *)
-            let curr_info = analyze current in
-            let k_info = analyze k in
-            let curr_writes = List.map fst curr_info.writes in
-            let k_reads = List.map fst k_info.reads in
-            let intermediates =
-              List.filter
-                (fun arr -> List.mem arr curr_writes && List.mem arr k_reads)
-                curr_writes
-            in
+            let intermediates = candidate_intermediates current k in
             match intermediates with
             | inter :: _ when can_fuse current k inter ->
                 let fused = fuse current k inter in
-                loop fused (inter :: eliminated) ks
+                loop acc fused (inter :: eliminated) ks
             | _ ->
-                (* Can't fuse, just use k as new current *)
-                loop k eliminated ks)
+                (* Can't fuse this pair; keep the current stage. *)
+                loop (current :: acc) k eliminated ks)
       in
-      loop k1 [] rest
+      loop [] k1 [] rest
+
+(** Fuse a pipeline that is expected to collapse to one kernel.
+
+    Prefer {!fuse_pipeline_list} for general pipeline optimization. This legacy
+    wrapper returns a single kernel only when every preserved stage has fused
+    into one result. If any unfused kernel remains, it raises [Invalid_fusion]
+    instead of silently dropping stages.
+
+    @param kernels List of kernels to fuse (must be non-empty)
+    @return (fused_kernel, eliminated_intermediates)
+    @raise Empty_pipeline if kernel list is empty
+    @raise Invalid_fusion if the optimized pipeline still has multiple kernels
+*)
+let fuse_pipeline (kernels : kernel list) : kernel * string list =
+  let pipeline, eliminated = fuse_pipeline_list kernels in
+  match pipeline with
+  | [kernel] -> (kernel, eliminated)
+  | _ ->
+      Fusion_error.raise_error
+        (Fusion_error.Invalid_fusion
+           {
+             kernel = "fuse_pipeline";
+             reason =
+               Printf.sprintf
+                 "optimized pipeline contains %d kernels; use \
+                  fuse_pipeline_list to preserve unfused stages"
+                 (List.length pipeline);
+           })
 
 (** {1 Reduction Fusion}
 
@@ -1079,8 +1113,14 @@ let should_fuse (producer : kernel) (consumer : kernel) (intermediate : string)
       ( List.assoc_opt intermediate prod_info.writes,
         List.assoc_opt intermediate cons_info.reads )
     with
-    | Some (OneToOne _), Some (OneToOne _) ->
+    | Some (OneToOne prod_idx), Some (OneToOne cons_idx)
+      when expr_equal prod_idx cons_idx ->
         {decision = Fuse; reason = "Element-wise producer/consumer"}
+    | Some (OneToOne _), Some (OneToOne _) ->
+        {
+          decision = DontFuse;
+          reason = "Producer and consumer use different element indices";
+        }
     (* Rule 3: Map -> Reduction is always good *)
     | Some (OneToOne _), Some (Reduction _) ->
         {decision = Fuse; reason = "Map-reduce pattern"}
@@ -1097,21 +1137,21 @@ let should_fuse (producer : kernel) (consumer : kernel) (intermediate : string)
     | _ ->
         {decision = MaybeFuse; reason = "Unknown pattern - profile to decide"}
 
-(** Auto-fuse a pipeline using heuristics.
+(** Auto-fuse a pipeline using heuristics, preserving unfused stages.
 
-    Similar to fuse_pipeline, but uses should_fuse heuristics to decide which
-    fusions to apply. This prevents harmful fusions while still eliminating
-    obvious intermediates.
+    Similar to fuse_pipeline_list, but uses should_fuse heuristics to decide
+    which fusions to apply. This prevents harmful fusions while still
+    eliminating obvious intermediates.
 
     Decision process for each candidate fusion:
     - **Fuse**: Apply fusion, eliminate intermediate
-    - **DontFuse**: Skip this pair, keep intermediate
+    - **DontFuse**: Skip this pair and preserve both kernels
     - **MaybeFuse**: Conservative - skip (user can manually fuse if profiling
-      shows benefit)
+      shows benefit), preserving both kernels
 
     This is the recommended entry point for automatic optimization. Manual
-    fusion (via fuse_pipeline) is available for expert users who have profiled
-    specific fusion decisions.
+    fusion (via fuse_pipeline_list) is available for expert users who have
+    profiled specific fusion decisions.
 
     Example usage:
     {[
@@ -1119,50 +1159,94 @@ let should_fuse (producer : kernel) (consumer : kernel) (intermediate : string)
       let kernels = [map_kernel; filter_kernel; reduce_kernel] in
 
       (* Auto-fuse with heuristics *)
-      let fused, eliminated, skipped =
-        Sarek_fusion.auto_fuse_pipeline kernels
+      let pipeline, eliminated, skipped =
+        Sarek_fusion.auto_fuse_pipeline_list kernels
       in
 
-      (* Execute fused kernel (1 launch instead of 3) *)
-      Execute.run_vectors ~device ~ir:fused ~args ~block ~grid ()
+      (* Execute each kernel in optimized pipeline order. *)
+      List.iter
+        (fun ir -> Execute.run_vectors ~device ~ir ~args ~block ~grid ())
+        pipeline
     ]}
 
     @param kernels Pipeline to optimize (must be non-empty)
-    @return (fused_kernel, eliminated_arrays, skipped_reasons)
+    @return (optimized_pipeline, eliminated_arrays, skipped_reasons)
     @raise Empty_pipeline if kernel list is empty *)
-let auto_fuse_pipeline (kernels : kernel list) :
-    kernel * string list * string list =
+let auto_fuse_pipeline_list (kernels : kernel list) :
+    kernel list * string list * string list =
   match kernels with
   | [] ->
       Fusion_error.raise_error
-        (Fusion_error.Empty_pipeline {function_name = "auto_fuse_pipeline"})
-  | [k] -> (k, [], [])
+        (Fusion_error.Empty_pipeline {function_name = "auto_fuse_pipeline_list"})
+  | [k] -> ([k], [], [])
   | k1 :: rest ->
-      let rec loop current eliminated skipped = function
-        | [] -> (current, eliminated, skipped)
+      let rec loop acc current eliminated skipped = function
+        | [] ->
+            (List.rev (current :: acc), List.rev eliminated, List.rev skipped)
         | k :: ks -> (
-            let curr_info = analyze current in
-            let k_info = analyze k in
-            let curr_writes = List.map fst curr_info.writes in
-            let k_reads = List.map fst k_info.reads in
-            let candidates =
-              List.filter (fun arr -> List.mem arr k_reads) curr_writes
-            in
+            let candidates = candidate_intermediates current k in
             match candidates with
-            | [] -> loop k eliminated skipped ks
+            | [] -> loop (current :: acc) k eliminated skipped ks
             | inter :: _ -> (
                 let hint = should_fuse current k inter in
                 match hint.decision with
                 | Fuse -> (
                     match try_fuse current k inter with
-                    | Some fused -> loop fused (inter :: eliminated) skipped ks
-                    | None -> loop k eliminated (hint.reason :: skipped) ks)
-                | DontFuse -> loop k eliminated (hint.reason :: skipped) ks
+                    | Some fused ->
+                        loop acc fused (inter :: eliminated) skipped ks
+                    | None ->
+                        loop
+                          (current :: acc)
+                          k
+                          eliminated
+                          (hint.reason :: skipped)
+                          ks)
+                | DontFuse ->
+                    loop
+                      (current :: acc)
+                      k
+                      eliminated
+                      (hint.reason :: skipped)
+                      ks
                 | MaybeFuse ->
                     (* Conservative: don't auto-fuse uncertain cases *)
-                    loop k eliminated (hint.reason :: skipped) ks))
+                    loop
+                      (current :: acc)
+                      k
+                      eliminated
+                      (hint.reason :: skipped)
+                      ks))
       in
-      loop k1 [] [] rest
+      loop [] k1 [] [] rest
+
+(** Auto-fuse a pipeline that is expected to collapse to one kernel.
+
+    Prefer {!auto_fuse_pipeline_list} for general pipeline optimization. This
+    legacy wrapper returns a single kernel only when every preserved stage has
+    fused into one result. If any unfused kernel remains, it raises
+    [Invalid_fusion] instead of silently dropping stages.
+
+    @param kernels Pipeline to optimize (must be non-empty)
+    @return (fused_kernel, eliminated_arrays, skipped_reasons)
+    @raise Empty_pipeline if kernel list is empty
+    @raise Invalid_fusion if the optimized pipeline still has multiple kernels
+*)
+let auto_fuse_pipeline (kernels : kernel list) :
+    kernel * string list * string list =
+  let pipeline, eliminated, skipped = auto_fuse_pipeline_list kernels in
+  match pipeline with
+  | [kernel] -> (kernel, eliminated, skipped)
+  | _ ->
+      Fusion_error.raise_error
+        (Fusion_error.Invalid_fusion
+           {
+             kernel = "auto_fuse_pipeline";
+             reason =
+               Printf.sprintf
+                 "optimized pipeline contains %d kernels; use \
+                  auto_fuse_pipeline_list to preserve unfused stages"
+                 (List.length pipeline);
+           })
 
 (** Print fusion analysis for a pipeline.
 
@@ -1173,8 +1257,8 @@ let auto_fuse_pipeline (kernels : kernel list) :
     - Fusion decision and reasoning
     - Potential benefits or risks
 
-    Useful for understanding why auto_fuse_pipeline made specific decisions or
-    for identifying manual fusion opportunities.
+    Useful for understanding why auto_fuse_pipeline_list made specific decisions
+    or for identifying manual fusion opportunities.
 
     @param kernels Pipeline to analyze *)
 let analyze_pipeline (kernels : kernel list) : unit =

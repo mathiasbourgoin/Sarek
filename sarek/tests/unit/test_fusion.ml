@@ -17,6 +17,21 @@ let mk_var name id typ =
 (** Helper to create thread_idx_x intrinsic *)
 let thread_idx_x = EIntrinsic (["Gpu"], "thread_idx_x", [])
 
+(** Helper to create a minimal kernel record *)
+let mk_kernel name body =
+  {
+    kern_name = name;
+    kern_params = [];
+    kern_locals = [];
+    kern_body = body;
+    kern_types = [];
+    kern_funcs = [];
+    kern_native_fn = None;
+    kern_variants = [];
+  }
+
+let kernel_names kernels = List.map (fun k -> k.kern_name) kernels
+
 (** Test: analyze simple kernel with OneToOne access pattern *)
 let test_analyze_one_to_one () =
   (* output[thread_idx_x] = input[thread_idx_x] * 2 *)
@@ -265,6 +280,102 @@ let test_fuse_pipeline () =
   Printf.printf
     "test_fuse_pipeline: PASSED (eliminated: %s)\n"
     (String.concat ", " eliminated)
+
+(** Test: fuse_pipeline_list preserves a pipeline with no fusible pairs *)
+let test_fuse_pipeline_list_preserves_unfused () =
+  let k1 =
+    mk_kernel
+      "k1"
+      (SAssign
+         ( LArrayElem ("a", thread_idx_x),
+           EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
+         ))
+  in
+  let k2 =
+    mk_kernel
+      "k2"
+      (SAssign
+         ( LArrayElem ("b", thread_idx_x),
+           EBinop (Add, EArrayRead ("other", thread_idx_x), EConst (CInt32 1l))
+         ))
+  in
+  let k3 =
+    mk_kernel
+      "k3"
+      (SAssign
+         ( LArrayElem ("output", thread_idx_x),
+           EBinop (Mul, EArrayRead ("third", thread_idx_x), EConst (CInt32 3l))
+         ))
+  in
+  let fused, eliminated = fuse_pipeline_list [k1; k2; k3] in
+  assert (kernel_names fused = ["k1"; "k2"; "k3"]) ;
+  assert (eliminated = []) ;
+  Printf.printf "test_fuse_pipeline_list_preserves_unfused: PASSED\n"
+
+(** Test: fuse_pipeline_list preserves order around a fused pair *)
+let test_fuse_pipeline_list_mixed_order () =
+  let pre =
+    mk_kernel
+      "pre"
+      (SAssign
+         ( LArrayElem ("pre_out", thread_idx_x),
+           EArrayRead ("pre_in", thread_idx_x) ))
+  in
+  let producer =
+    mk_kernel
+      "producer"
+      (SAssign
+         ( LArrayElem ("temp", thread_idx_x),
+           EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
+         ))
+  in
+  let consumer =
+    mk_kernel
+      "consumer"
+      (SAssign
+         ( LArrayElem ("mid", thread_idx_x),
+           EBinop (Add, EArrayRead ("temp", thread_idx_x), EConst (CInt32 1l))
+         ))
+  in
+  let post =
+    mk_kernel
+      "post"
+      (SAssign
+         ( LArrayElem ("output", thread_idx_x),
+           EArrayRead ("post_in", thread_idx_x) ))
+  in
+  let fused, eliminated = fuse_pipeline_list [pre; producer; consumer; post] in
+  assert (kernel_names fused = ["pre"; "consumer_fused"; "post"]) ;
+  assert (eliminated = ["temp"]) ;
+  let fused_pair = List.nth fused 1 in
+  let info = analyze fused_pair in
+  assert (List.mem_assoc "input" info.reads) ;
+  assert (not (List.mem_assoc "temp" info.reads)) ;
+  assert (List.mem_assoc "mid" info.writes) ;
+  Printf.printf "test_fuse_pipeline_list_mixed_order: PASSED\n"
+
+(** Test: fuse_pipeline_list preserves producer when indices differ *)
+let test_fuse_pipeline_list_preserves_mismatched_indices () =
+  let shifted_idx = EBinop (Add, thread_idx_x, EConst (CInt32 1l)) in
+  let producer =
+    mk_kernel
+      "producer"
+      (SAssign
+         ( LArrayElem ("temp", thread_idx_x),
+           EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
+         ))
+  in
+  let consumer =
+    mk_kernel
+      "consumer"
+      (SAssign
+         ( LArrayElem ("output", thread_idx_x),
+           EBinop (Add, EArrayRead ("temp", shifted_idx), EConst (CInt32 1l)) ))
+  in
+  let fused, eliminated = fuse_pipeline_list [producer; consumer] in
+  assert (kernel_names fused = ["producer"; "consumer"]) ;
+  assert (eliminated = []) ;
+  Printf.printf "test_fuse_pipeline_list_preserves_mismatched_indices: PASSED\n"
 
 (** Test: expr_equal *)
 let test_expr_equal () =
@@ -934,13 +1045,111 @@ let test_auto_fuse_pipeline_skip_stencil () =
       kern_variants = [];
     }
   in
-  let _fused, eliminated, skipped = auto_fuse_pipeline [k1; k2] in
+  let fused, eliminated, skipped = auto_fuse_pipeline_list [k1; k2] in
   (* Should skip because stencil is MaybeFuse *)
+  assert (kernel_names fused = ["k1"; "k2"]) ;
   assert (List.length eliminated = 0) ;
   assert (List.length skipped = 1) ;
   Printf.printf
     "test_auto_fuse_pipeline_skip_stencil: PASSED (skipped: %s)\n"
     (String.concat ", " skipped)
+
+(** Test: auto_fuse_pipeline_list preserves kernels when heuristics skip fusion
+*)
+let test_auto_fuse_pipeline_list_preserves_dont_fuse () =
+  let producer =
+    mk_kernel
+      "barrier_producer"
+      (SSeq
+         [
+           SAssign
+             ( LArrayElem ("temp", thread_idx_x),
+               EArrayRead ("input", thread_idx_x) );
+           SBarrier;
+         ])
+  in
+  let consumer =
+    mk_kernel
+      "consumer"
+      (SAssign
+         ( LArrayElem ("output", thread_idx_x),
+           EBinop (Add, EArrayRead ("temp", thread_idx_x), EConst (CInt32 1l))
+         ))
+  in
+  let fused, eliminated, skipped =
+    auto_fuse_pipeline_list [producer; consumer]
+  in
+  assert (kernel_names fused = ["barrier_producer"; "consumer"]) ;
+  assert (eliminated = []) ;
+  assert (skipped = ["Barrier prevents fusion"]) ;
+  Printf.printf "test_auto_fuse_pipeline_list_preserves_dont_fuse: PASSED\n"
+
+(** Test: auto_fuse_pipeline_list preserves order around a fused pair *)
+let test_auto_fuse_pipeline_list_mixed_order () =
+  let pre =
+    mk_kernel
+      "pre"
+      (SAssign
+         ( LArrayElem ("pre_out", thread_idx_x),
+           EArrayRead ("pre_in", thread_idx_x) ))
+  in
+  let producer =
+    mk_kernel
+      "producer"
+      (SAssign
+         ( LArrayElem ("temp", thread_idx_x),
+           EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
+         ))
+  in
+  let consumer =
+    mk_kernel
+      "consumer"
+      (SAssign
+         ( LArrayElem ("mid", thread_idx_x),
+           EBinop (Add, EArrayRead ("temp", thread_idx_x), EConst (CInt32 1l))
+         ))
+  in
+  let post =
+    mk_kernel
+      "post"
+      (SAssign
+         ( LArrayElem ("output", thread_idx_x),
+           EArrayRead ("post_in", thread_idx_x) ))
+  in
+  let fused, eliminated, skipped =
+    auto_fuse_pipeline_list [pre; producer; consumer; post]
+  in
+  assert (kernel_names fused = ["pre"; "consumer_fused"; "post"]) ;
+  assert (eliminated = ["temp"]) ;
+  assert (skipped = []) ;
+  Printf.printf "test_auto_fuse_pipeline_list_mixed_order: PASSED\n"
+
+(** Test: auto_fuse_pipeline_list preserves producer when indices differ *)
+let test_auto_fuse_pipeline_list_preserves_mismatched_indices () =
+  let shifted_idx = EBinop (Add, thread_idx_x, EConst (CInt32 1l)) in
+  let producer =
+    mk_kernel
+      "producer"
+      (SAssign
+         ( LArrayElem ("temp", thread_idx_x),
+           EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
+         ))
+  in
+  let consumer =
+    mk_kernel
+      "consumer"
+      (SAssign
+         ( LArrayElem ("output", thread_idx_x),
+           EBinop (Add, EArrayRead ("temp", shifted_idx), EConst (CInt32 1l)) ))
+  in
+  let fused, eliminated, skipped =
+    auto_fuse_pipeline_list [producer; consumer]
+  in
+  assert (kernel_names fused = ["producer"; "consumer"]) ;
+  assert (eliminated = []) ;
+  assert (skipped = ["Producer and consumer use different element indices"]) ;
+  Printf.printf
+    "test_auto_fuse_pipeline_list_preserves_mismatched_indices: PASSED\n"
 
 let () =
   Printf.printf "=== Fusion Unit Tests ===\n" ;
@@ -952,6 +1161,9 @@ let () =
   test_can_fuse_with_barrier () ;
   test_fuse_simple () ;
   test_fuse_pipeline () ;
+  test_fuse_pipeline_list_preserves_unfused () ;
+  test_fuse_pipeline_list_mixed_order () ;
+  test_fuse_pipeline_list_preserves_mismatched_indices () ;
   Printf.printf "\n=== Reduction Fusion Tests ===\n" ;
   test_detect_reduction_pattern () ;
   test_is_reduction_kernel () ;
@@ -970,4 +1182,7 @@ let () =
   test_should_fuse_small_stencil () ;
   test_auto_fuse_pipeline () ;
   test_auto_fuse_pipeline_skip_stencil () ;
+  test_auto_fuse_pipeline_list_preserves_dont_fuse () ;
+  test_auto_fuse_pipeline_list_mixed_order () ;
+  test_auto_fuse_pipeline_list_preserves_mismatched_indices () ;
   Printf.printf "=== All tests passed! ===\n"

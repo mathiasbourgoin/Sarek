@@ -92,9 +92,18 @@ val should_fuse : kernel -> kernel -> string -> fusion_hint
 
 (* Fusion *)
 val fuse : kernel -> kernel -> string -> kernel
+val fuse_pipeline_list : kernel list -> kernel list * string list
+val auto_fuse_pipeline_list : kernel list -> kernel list * string list * string list
+
+(* Legacy wrappers for pipelines that fully collapse to one kernel.
+   They raise Invalid_fusion if unfused stages remain. *)
 val fuse_pipeline : kernel list -> kernel * string list
 val auto_fuse_pipeline : kernel list -> kernel * string list * string list
 ```
+
+`fuse_pipeline_list` and `auto_fuse_pipeline_list` preserve every kernel in the
+input pipeline unless it is replaced by a fused kernel. The returned kernel list
+is the optimized pipeline in execution order.
 
 ## Auto-Fusion Heuristics
 
@@ -109,7 +118,8 @@ The `should_fuse` function returns a decision and reason:
 | OneToOne → Gather | DontFuse | Gather pattern - keep separate |
 | With barriers | DontFuse | Barrier prevents fusion |
 
-`auto_fuse_pipeline` only fuses when decision is `Fuse` (conservative).
+`auto_fuse_pipeline_list` only fuses when decision is `Fuse` (conservative).
+Skipped pairs remain in the returned pipeline.
 
 ## Constraints
 
