@@ -336,6 +336,8 @@ end = struct
       let custom =
         {
           Spoc_core.Vector_types.elem_size;
+          type_id = Sarek_ir_types.Type_id.create ();
+          vector_type_id = Sarek_ir_types.Type_id.create ();
           get =
             (fun _ _ ->
               Native_error.(
@@ -565,16 +567,30 @@ end = struct
 
     let create_args () = {list = []}
 
-    let set_arg_buffer args _idx buf =
+    let set_arg_buffer : type a. args -> int -> a Memory.buffer -> unit =
+     fun args _idx buf ->
       (* Wrap buffer in EXEC_VECTOR for exec_arg *)
-      let module EV : Typed_value.EXEC_VECTOR = struct
+      let module EV : Typed_value.EXEC_VECTOR
+        with type elt = a
+         and type underlying = a Memory.buffer = struct
+        type elt = a
+
+        type underlying = a Memory.buffer
+
         let length = Memory.size buf
 
         let type_name = "buffer"
 
         let elem_size = Memory.elem_size buf.Memory.kind
 
-        let internal_get_vector_obj () = Obj.repr buf
+        let type_id =
+          match buf.Memory.kind with
+          | Memory.Scalar_kind k -> Spoc_core.Vector_types.scalar_type_id k
+          | Memory.Custom_kind c -> c.type_id
+
+        let underlying_type_id = Sarek_ir_types.Type_id.create ()
+
+        let underlying = buf
 
         let device_ptr () = Memory.device_ptr buf
 
@@ -585,6 +601,14 @@ end = struct
         let set _i _v =
           Native_error.(
             raise_error (feature_not_supported "buffer element set accessor"))
+
+        let get_typed _i =
+          Native_error.(
+            raise_error (feature_not_supported "buffer typed get accessor"))
+
+        let set_typed _i _v =
+          Native_error.(
+            raise_error (feature_not_supported "buffer typed set accessor"))
       end in
       args.list <- Framework_sig.EA_Vec (module EV) :: args.list
 

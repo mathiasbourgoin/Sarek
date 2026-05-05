@@ -13,6 +13,8 @@ open Sarek_type_helpers
 module Mock_point_helpers : HELPERS with type t = float * float = struct
   type t = float * float
 
+  let type_id = Sarek_ir_types.Type_id.create ()
+
   let from_values arr =
     match arr with
     | [| VFloat64 x; VFloat64 y |] -> (x, y)

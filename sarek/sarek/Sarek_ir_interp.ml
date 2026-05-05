@@ -13,6 +13,7 @@
  ******************************************************************************)
 
 open Sarek_ir_types
+open Spoc_framework.Typed_value
 module F32 = Sarek_float32
 
 (** Re-export value type from Sarek_value for convenience *)
@@ -695,8 +696,7 @@ and eval_composite_expr state env = function
       | VRecord (type_name, fields) as vrec -> (
           match Sarek_type_helpers.lookup type_name with
           | Some h ->
-              let native_record = h.from_value vrec in
-              h.get_field native_record field
+              h.get_field vrec field
           | None ->
               let field_infos = Sarek_registry.record_fields type_name in
               let rec find_idx i = function
@@ -1290,17 +1290,24 @@ let vector_to_array : type a b. (a, b) Spoc_core.Vector.t -> value array =
   | Spoc_core.Vector.Custom custom -> (
       (* Custom types: use helpers to convert to VRecord *)
       let type_name = custom.Spoc_core.Vector.name in
-      match Sarek_type_helpers.lookup type_name with
-      | Some h ->
+      match Sarek_type_helpers.lookup_typed custom.Spoc_core.Vector.type_id with
+      | Some (module H) ->
           Array.init len (fun i ->
               let native_record = Spoc_core.Vector.get vec i in
-              h.to_value native_record)
+              H.to_value native_record)
       | None ->
           (* Fallback: wrap in VRecord with empty fields - shouldn't happen *)
           Array.init len (fun _i -> VRecord (type_name, [||])))
-  | _ ->
-      (* Fallback for any other type (e.g., Char) - treat as int32 *)
-      Array.init len (fun i -> VInt32 (Obj.magic (Spoc_core.Vector.get vec i)))
+  | Spoc_core.Vector.Scalar Spoc_core.Vector.Char ->
+      Array.init len (fun i ->
+          VInt32 (Int32.of_int (Char.code (Spoc_core.Vector.get vec i))))
+  | Spoc_core.Vector.Scalar Spoc_core.Vector.Complex32 ->
+      Interp_error.raise_error
+        (Unsupported_operation
+           {
+             operation = "vector_to_array";
+             reason = "Complex32 vectors are not supported by the interpreter";
+           })
 
 (** Write interpreter value array back to V2 Vector *)
 let array_to_vector : type a b. value array -> (a, b) Spoc_core.Vector.t -> unit
@@ -1330,10 +1337,13 @@ let array_to_vector : type a b. value array -> (a, b) Spoc_core.Vector.t -> unit
         match arr.(i) with
         | VRecord (type_name, _fields) as vrec -> (
             (* All [@@sarek.type] records have helpers - this should always succeed *)
-            match Sarek_type_helpers.lookup type_name with
-            | Some h ->
+            match
+              Sarek_type_helpers.lookup_typed
+                (Spoc_core.Vector.type_id (Spoc_core.Vector.kind vec))
+            with
+            | Some (module H) ->
                 (* Use generated helper for type-safe conversion *)
-                let native_record = h.from_value vrec in
+                let native_record = H.from_value vrec in
                 Spoc_core.Vector.set vec i native_record
             | None ->
                 Interp_error.raise_error
@@ -1348,16 +1358,154 @@ let array_to_vector : type a b. value array -> (a, b) Spoc_core.Vector.t -> unit
                      }))
         | _ -> () (* Skip other values *)
       done
-  | _ ->
-      (* Fallback for any other type (e.g., Char) *)
+  | Spoc_core.Vector.Scalar Spoc_core.Vector.Char ->
       for i = 0 to len - 1 do
-        Spoc_core.Vector.set vec i (Obj.magic (to_int32 arr.(i)))
+        Spoc_core.Vector.set
+          vec
+          i
+          (Char.chr (Int32.to_int (to_int32 arr.(i))))
       done
+  | Spoc_core.Vector.Scalar Spoc_core.Vector.Complex32 ->
+      Interp_error.raise_error
+        (Unsupported_operation
+           {
+             operation = "array_to_vector";
+             reason = "Complex32 vectors are not supported by the interpreter";
+           })
 
 (** Existential wrapper to track V2 Vector + its interpreter array for writeback
 *)
 type writeback =
   | Writeback : (('a, 'b) Spoc_core.Vector.t * value array) -> writeback
+
+type exec_writeback =
+  | Exec_writeback : (module Spoc_framework.Typed_value.EXEC_VECTOR) * value array -> exec_writeback
+
+let value_of_typed_value (tv : Spoc_framework.Typed_value.typed_value) : value =
+  match tv with
+  | TV_Scalar (SV ((module S), x)) -> (
+      match S.to_primitive x with
+      | PInt32 n -> VInt32 n
+      | PInt64 n -> VInt64 n
+      | PFloat f ->
+          if S.name = "float64" then VFloat64 f else VFloat32 f
+      | PBool b -> VBool b
+      | PBytes _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "value_of_typed_value"; reason = "PBytes scalar"}))
+  | TV_Composite (CV ((module C), _x)) ->
+      VRecord (C.name, [||])
+
+let typed_value_of_value (type a)
+    (module V : Spoc_framework.Typed_value.EXEC_VECTOR with type elt = a)
+    (v : value) : Spoc_framework.Typed_value.typed_value option =
+  match v with
+  | VInt32 n ->
+      Some
+        (TV_Scalar (SV ((module Spoc_framework.Typed_value.Int32_type), n)))
+  | VInt64 n ->
+      Some
+        (TV_Scalar (SV ((module Spoc_framework.Typed_value.Int64_type), n)))
+  | VFloat32 f ->
+      Some
+        (TV_Scalar (SV ((module Spoc_framework.Typed_value.Float32_type), f)))
+  | VFloat64 f ->
+      Some
+        (TV_Scalar (SV ((module Spoc_framework.Typed_value.Float64_type), f)))
+  | VBool b ->
+      Some (TV_Scalar (SV ((module Spoc_framework.Typed_value.Bool_type), b)))
+  | VUnit | VArray _ | VRecord _ | VVariant _ -> None
+
+let exec_vector_to_array (module V : Spoc_framework.Typed_value.EXEC_VECTOR) :
+    value array =
+  Array.init V.length (fun i ->
+      match Sarek_type_helpers.lookup_typed V.type_id with
+      | Some (module H) -> H.to_value (V.get_typed i)
+      | None -> value_of_typed_value (V.get i))
+
+let array_to_exec_vector
+    (module V : Spoc_framework.Typed_value.EXEC_VECTOR)
+    (arr : value array) : unit =
+  let len = min (Array.length arr) V.length in
+  for i = 0 to len - 1 do
+    match arr.(i) with
+    | VRecord _ as vrec -> (
+        match Sarek_type_helpers.lookup_typed V.type_id with
+        | Some (module H) -> V.set_typed i (H.from_value vrec)
+        | None -> ())
+    | scalar -> (
+        match typed_value_of_value (module V) scalar with
+        | Some tv -> V.set i tv
+        | None -> ())
+  done
+
+let args_from_exec_args (k : kernel)
+    (exec_args : Spoc_framework.Framework_sig.exec_arg list) :
+    (string * arg) list * exec_writeback list =
+  let writebacks = ref [] in
+  let idx = ref 0 in
+  let arg_at i = if i >= List.length exec_args then None else Some (List.nth exec_args i) in
+  let args =
+    List.filter_map
+      (fun decl ->
+        match decl with
+        | DParam (v, Some _arr_info) -> (
+            match arg_at !idx with
+            | None -> None
+            | Some karg -> (
+                incr idx ;
+                match karg with
+                | Spoc_framework.Framework_sig.EA_Vec vec ->
+                    let arr = exec_vector_to_array vec in
+                    writebacks := Exec_writeback (vec, arr) :: !writebacks ;
+                    Some (v.var_name, ArgArray arr)
+                | _ ->
+                    Interp_error.raise_error
+                      (Type_conversion_error
+                         {
+                           from_type = "scalar";
+                           to_type = "Vec";
+                           context = "param " ^ v.var_name;
+                         })))
+        | DParam (v, None) -> (
+            match arg_at !idx with
+            | None -> None
+            | Some karg ->
+                incr idx ;
+                let value =
+                  match karg with
+                  | Spoc_framework.Framework_sig.EA_Int32 n -> VInt32 n
+                  | Spoc_framework.Framework_sig.EA_Int64 n -> VInt64 n
+                  | Spoc_framework.Framework_sig.EA_Float32 f -> VFloat32 f
+                  | Spoc_framework.Framework_sig.EA_Float64 f -> VFloat64 f
+                  | Spoc_framework.Framework_sig.EA_Scalar ((module S), x) ->
+                      value_of_typed_value (TV_Scalar (SV ((module S), x)))
+                  | Spoc_framework.Framework_sig.EA_Composite ((module C), x) ->
+                      value_of_typed_value (TV_Composite (CV ((module C), x)))
+                  | Spoc_framework.Framework_sig.EA_Vec _ ->
+                      Interp_error.raise_error
+                        (Type_conversion_error
+                           {
+                             from_type = "non-scalar";
+                             to_type = "scalar";
+                             context = "param " ^ v.var_name;
+                           })
+                in
+                Some (v.var_name, ArgScalar value))
+        | DShared _ | DLocal _ -> None)
+      k.kern_params
+  in
+  (args, List.rev !writebacks)
+
+let run_kernel_with_exec_args (k : kernel) ~(block : int * int * int)
+    ~(grid : int * int * int)
+    (exec_args : Spoc_framework.Framework_sig.exec_arg list) : unit =
+  let args, writebacks = args_from_exec_args k exec_args in
+  run_kernel k ~block ~grid args ;
+  List.iter
+    (fun (Exec_writeback (vec, arr)) -> array_to_exec_vector vec arr)
+    writebacks
 
 (** Convert Kernel_arg.t list to interpreter args, tracking vectors for
     writeback *)

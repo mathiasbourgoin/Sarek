@@ -129,6 +129,7 @@ let exec_arg_to_native_arg (arg : Framework_sig.exec_arg) :
             match S.to_primitive x with
             | Typed_value.PFloat f -> f
             | Typed_value.PInt32 n -> Int32.to_float n
+            | Typed_value.PInt64 n -> Int64.to_float n
             | prim ->
                 Kirc_error.raise_error
                   (Kirc_error.Type_conversion_failed
@@ -159,6 +160,8 @@ let exec_arg_to_native_arg (arg : Framework_sig.exec_arg) :
         | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> (
             match S.to_primitive x with
             | Typed_value.PFloat f -> f
+            | Typed_value.PInt32 n -> Int32.to_float n
+            | Typed_value.PInt64 n -> Int64.to_float n
             | prim ->
                 Kirc_error.raise_error
                   (Kirc_error.Type_conversion_failed
@@ -189,6 +192,7 @@ let exec_arg_to_native_arg (arg : Framework_sig.exec_arg) :
         | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> (
             match S.to_primitive x with
             | Typed_value.PInt32 n -> n
+            | Typed_value.PInt64 n -> Int64.to_int32 n
             | Typed_value.PFloat f -> Int32.of_float f
             | prim ->
                 Kirc_error.raise_error
@@ -221,6 +225,7 @@ let exec_arg_to_native_arg (arg : Framework_sig.exec_arg) :
             match S.to_primitive x with
             | Typed_value.PInt64 n -> n
             | Typed_value.PInt32 n -> Int64.of_int32 n
+            | Typed_value.PFloat f -> Int64.of_float f
             | prim ->
                 Kirc_error.raise_error
                   (Kirc_error.Type_conversion_failed
@@ -246,22 +251,13 @@ let exec_arg_to_native_arg (arg : Framework_sig.exec_arg) :
           (Typed_value.TV_Scalar
              (Typed_value.SV ((module Typed_value.Int64_type), n)))
       in
-      (* For custom types: use underlying Vector.t with Obj.t *)
-      let get_any i =
-        let vec = Obj.obj (V.internal_get_vector_obj ()) in
-        Obj.repr (Vector.get vec i)
-      in
-      let set_any i v =
-        let vec = Obj.obj (V.internal_get_vector_obj ()) in
-        Vector.kernel_set vec i (Obj.obj v)
-      in
-      (* Get underlying Vector.t for passing to intrinsics/functions that expect it *)
-      let get_vec () = V.internal_get_vector_obj () in
       Sarek_ir_types.NA_Vec
+        (Sarek_ir_types.NV
         {
           length = V.length;
           elem_size = V.elem_size;
           type_name = V.type_name;
+          type_id = V.type_id;
           get_f32 = get_as_f32;
           set_f32 = set_as_f32;
           get_f64 = get_as_f64;
@@ -270,10 +266,11 @@ let exec_arg_to_native_arg (arg : Framework_sig.exec_arg) :
           set_i32 = set_as_i32;
           get_i64 = get_as_i64;
           set_i64 = set_as_i64;
-          get_any;
-          set_any;
-          get_vec;
-        }
+          get_typed = V.get_typed;
+          set_typed = V.set_typed;
+          underlying_type_id = V.underlying_type_id;
+          underlying = V.underlying;
+        })
 
 (** {1 Execution} *)
 

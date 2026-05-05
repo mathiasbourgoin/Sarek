@@ -16,6 +16,8 @@ open Sarek_value
 module type HELPERS = sig
   type t
 
+  val type_id : t Sarek_ir_types.Type_id.t
+
   val from_values : value array -> t
 
   val to_values : t -> value array
@@ -46,8 +48,6 @@ type helpers = {
   from_values : value array -> value;  (** Construct VRecord from field array *)
   to_values : value -> value array;  (** Deconstruct VRecord to field array *)
   get_field : value -> string -> value;  (** Field access from VRecord *)
-  to_value : 'a. 'a -> value;  (** Convert native record to VRecord *)
-  from_value : 'a. value -> 'a;  (** Convert VRecord to native record *)
 }
 
 (** Look up helpers for a type. Returns None if not registered. *)
@@ -62,9 +62,27 @@ let lookup (type_name : string) : helpers option =
           from_values = (fun arr -> H.to_value (H.from_values arr));
           to_values = (fun v -> H.to_values (H.from_value v));
           get_field = (fun v field -> H.get_field (H.from_value v) field);
-          to_value = (fun record -> H.to_value (Obj.obj (Obj.repr record)));
-          from_value = (fun v -> Obj.obj (Obj.repr (H.from_value v)));
         }
+
+let lookup_typed (type a) (type_id : a Sarek_ir_types.Type_id.t) :
+    (module HELPERS with type t = a) option =
+  let found =
+    Hashtbl.fold
+      (fun _ helpers acc ->
+        match acc with
+        | Some _ -> acc
+        | None -> (
+            match helpers with
+            | AnyHelpers h ->
+                let (module H) = h in
+                match Sarek_ir_types.Type_id.equal type_id H.type_id with
+                | Some Sarek_ir_types.Type_id.Refl ->
+                    Some ((module H : HELPERS with type t = a))
+                | None -> None))
+      registry
+      None
+  in
+  found
 
 (** Check if a type has registered helpers *)
 let has_helpers (type_name : string) : bool = Hashtbl.mem registry type_name

@@ -53,6 +53,103 @@ let test_native_function_args () =
   fn ~block:(Framework_sig.dims_1d 1) ~grid:(Framework_sig.dims_1d 1) dummy_args ;
   check int "args passed" 2 !arg_count
 
+(** {1 Tests for exec_arg conversion} *)
+
+let int64_exec_vector value =
+  let stored = ref value in
+  let module V :
+    Typed_value.EXEC_VECTOR with type elt = int64 and type underlying = unit =
+  struct
+    type elt = int64
+
+    type underlying = unit
+
+    let length = 1
+
+    let type_name = "int64"
+
+    let elem_size = 8
+
+    let get _ =
+      Typed_value.TV_Scalar
+        (Typed_value.SV ((module Typed_value.Int64_type), !stored))
+
+    let set _ = function
+      | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> (
+          match S.to_primitive x with
+          | Typed_value.PInt64 n -> stored := n
+          | _ -> failwith "expected int64")
+      | _ -> failwith "expected scalar"
+
+    let get_typed _ = !stored
+
+    let set_typed _ x = stored := x
+
+    let type_id = Sarek_ir_types.Type_id.create ()
+
+    let underlying_type_id = Sarek_ir_types.Type_id.create ()
+
+    let underlying = ()
+
+    let device_ptr () = Nativeint.zero
+  end in
+  Framework_sig.EA_Vec (module V)
+
+let float32_exec_vector value =
+  let stored = ref value in
+  let module V :
+    Typed_value.EXEC_VECTOR with type elt = float and type underlying = unit =
+  struct
+    type elt = float
+
+    type underlying = unit
+
+    let length = 1
+
+    let type_name = "float32"
+
+    let elem_size = 4
+
+    let get _ =
+      Typed_value.TV_Scalar
+        (Typed_value.SV ((module Typed_value.Float32_type), !stored))
+
+    let set _ = function
+      | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> (
+          match S.to_primitive x with
+          | Typed_value.PFloat f -> stored := f
+          | _ -> failwith "expected float")
+      | _ -> failwith "expected scalar"
+
+    let get_typed _ = !stored
+
+    let set_typed _ x = stored := x
+
+    let type_id = Sarek_ir_types.Type_id.create ()
+
+    let underlying_type_id = Sarek_ir_types.Type_id.create ()
+
+    let underlying = ()
+
+    let device_ptr () = Nativeint.zero
+  end in
+  Framework_sig.EA_Vec (module V)
+
+let test_exec_vector_numeric_conversions () =
+  (match exec_arg_to_native_arg (int64_exec_vector 42L) with
+  | Sarek_ir_types.NA_Vec (Sarek_ir_types.NV v) ->
+      check (float 0.001) "int64 to f32" 42.0 (v.get_f32 0) ;
+      check (float 0.001) "int64 to f64" 42.0 (v.get_f64 0) ;
+      check int32 "int64 to i32" 42l (v.get_i32 0) ;
+      check int64 "int64 to i64" 42L (v.get_i64 0)
+  | _ -> fail "expected native vector") ;
+  match exec_arg_to_native_arg (float32_exec_vector 42.75) with
+  | Sarek_ir_types.NA_Vec (Sarek_ir_types.NV v) ->
+      check int32 "float to i32" 42l (v.get_i32 0) ;
+      check int64 "float to i64" 42L (v.get_i64 0) ;
+      check (float 0.001) "float to f64" 42.75 (v.get_f64 0)
+  | _ -> fail "expected native vector"
+
 (** {1 Test suite} *)
 
 let () =
@@ -70,5 +167,12 @@ let () =
         [
           test_case "call_native" `Quick test_native_function_call;
           test_case "pass_args" `Quick test_native_function_args;
+        ] );
+      ( "exec_arg_conversion",
+        [
+          test_case
+            "numeric vector conversions"
+            `Quick
+            test_exec_vector_numeric_conversions;
         ] );
     ]

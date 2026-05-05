@@ -72,6 +72,22 @@ let rec flatten_longident = function
   | Ldot (li, s) -> flatten_longident li @ [s]
   | Lapply _ -> []
 
+let custom_descriptor_expr_of_lid ~loc lid =
+  match List.rev (flatten_longident lid) with
+  | name :: modules ->
+      let modules = List.rev modules in
+      let ident =
+        match modules with
+        | [] -> Lident (name ^ "_custom")
+        | first :: rest ->
+            List.fold_left
+              (fun acc m -> Ldot (acc, m))
+              (Lident first)
+              (rest @ [name ^ "_custom"])
+      in
+      Ast_builder.Default.pexp_ident ~loc {txt = ident; loc}
+  | [] -> Ast_builder.Default.evar ~loc "unknown_custom"
+
 let rec core_type_to_sarek_type_expr ~loc (ct : core_type) =
   match ct.ptyp_desc with
   | Ptyp_constr ({txt; _}, args) ->
@@ -446,28 +462,15 @@ let gen_field_read ~loc (ftype : core_type) (byte_off_expr : expression) :
         Spoc_core.Vector.Custom_helpers.read_int
           raw_ptr
           (base_off + [%e byte_off_expr])]
-  | Ptyp_constr ({txt = Lident type_name; _}, _) ->
+  | Ptyp_constr ({txt; _}, _) ->
       (* Nested custom type - call its _custom.get directly with adjusted pointer *)
       let custom_get =
         Ast_builder.Default.pexp_field
           ~loc
-          (Ast_builder.Default.evar ~loc (type_name ^ "_custom"))
+          (custom_descriptor_expr_of_lid ~loc txt)
           {txt = Lident "get"; loc}
       in
       (* Adjust pointer to field offset, then read at index 0 *)
-      [%expr
-        let field_ptr =
-          let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t raw_ptr in
-          Ctypes.to_voidp Ctypes.(byte_ptr +@ (base_off + [%e byte_off_expr]))
-        in
-        [%e custom_get] field_ptr 0]
-  | Ptyp_constr ({txt = Ldot (_, type_name); _}, _) ->
-      let custom_get =
-        Ast_builder.Default.pexp_field
-          ~loc
-          (Ast_builder.Default.evar ~loc (type_name ^ "_custom"))
-          {txt = Lident "get"; loc}
-      in
       [%expr
         let field_ptr =
           let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t raw_ptr in
@@ -515,25 +518,12 @@ let gen_field_write ~loc (ftype : core_type) (byte_off_expr : expression)
           raw_ptr
           (base_off + [%e byte_off_expr])
           [%e value_expr]]
-  | Ptyp_constr ({txt = Lident type_name; _}, _) ->
+  | Ptyp_constr ({txt; _}, _) ->
       (* Nested custom type - call its _custom.set directly with adjusted pointer *)
       let custom_set =
         Ast_builder.Default.pexp_field
           ~loc
-          (Ast_builder.Default.evar ~loc (type_name ^ "_custom"))
-          {txt = Lident "set"; loc}
-      in
-      [%expr
-        let field_ptr =
-          let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t raw_ptr in
-          Ctypes.to_voidp Ctypes.(byte_ptr +@ (base_off + [%e byte_off_expr]))
-        in
-        [%e custom_set] field_ptr 0 [%e value_expr]]
-  | Ptyp_constr ({txt = Ldot (_, type_name); _}, _) ->
-      let custom_set =
-        Ast_builder.Default.pexp_field
-          ~loc
-          (Ast_builder.Default.evar ~loc (type_name ^ "_custom"))
+          (custom_descriptor_expr_of_lid ~loc txt)
           {txt = Lident "set"; loc}
       in
       [%expr
@@ -591,6 +581,16 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
          This avoids the value restriction since it's a function definition. *)
       let make_fn_name = type_name ^ "_make_custom" in
       let make_fn_pat = Ast_builder.Default.pvar ~loc make_fn_name in
+      let type_id_name = type_name ^ "_type_id" in
+      let type_id_pat = Ast_builder.Default.pvar ~loc type_id_name in
+      let type_id_expr = Ast_builder.Default.evar ~loc type_id_name in
+      let vector_type_id_name = type_name ^ "_vector_type_id" in
+      let vector_type_id_pat =
+        Ast_builder.Default.pvar ~loc vector_type_id_name
+      in
+      let vector_type_id_expr =
+        Ast_builder.Default.evar ~loc vector_type_id_name
+      in
       let make_fn_call =
         Ast_builder.Default.eapply
           ~loc
@@ -652,12 +652,16 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
       in
 
       [
+        [%stri let [%p type_id_pat] = Sarek_ir_types.Type_id.create ()];
+        [%stri let [%p vector_type_id_pat] = Sarek_ir_types.Type_id.create ()];
         (* Generate: let point_make_custom = fun () -> { ... } *)
         [%stri
           let [%p make_fn_pat] =
            fun () ->
             ({
                Spoc_core.Vector.elem_size = [%e size_expr];
+               type_id = [%e type_id_expr];
+               vector_type_id = [%e vector_type_id_expr];
                name = [%e name_expr];
                get = [%e get_fn];
                set = [%e set_fn];
@@ -934,6 +938,16 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
 
       let make_fn_name = type_name ^ "_make_custom" in
       let make_fn_pat = Ast_builder.Default.pvar ~loc make_fn_name in
+      let type_id_name = type_name ^ "_type_id" in
+      let type_id_pat = Ast_builder.Default.pvar ~loc type_id_name in
+      let type_id_expr = Ast_builder.Default.evar ~loc type_id_name in
+      let vector_type_id_name = type_name ^ "_vector_type_id" in
+      let vector_type_id_pat =
+        Ast_builder.Default.pvar ~loc vector_type_id_name
+      in
+      let vector_type_id_expr =
+        Ast_builder.Default.evar ~loc vector_type_id_name
+      in
       let make_fn_call =
         Ast_builder.Default.eapply
           ~loc
@@ -943,11 +957,15 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
       let _ = type_annot in
 
       [
+        [%stri let [%p type_id_pat] = Sarek_ir_types.Type_id.create ()];
+        [%stri let [%p vector_type_id_pat] = Sarek_ir_types.Type_id.create ()];
         [%stri
           let [%p make_fn_pat] =
            fun () ->
             ({
                Spoc_core.Vector.elem_size = [%e size_expr];
+               type_id = [%e type_id_expr];
+               vector_type_id = [%e vector_type_id_expr];
                name = [%e name_expr];
                get = [%e get_fn];
                set = [%e set_fn];
@@ -1036,16 +1054,18 @@ let generate_interp_helpers ~loc (td : type_declaration) : structure_item list =
                             Ast_builder.Default.estring
                               ~loc
                               ("Field '" ^ field_name ^ "' expected bool")]]
-              | Ptyp_constr ({txt = Lident custom_type; _}, _) ->
+              | Ptyp_constr ({txt; _}, _) ->
                   (* Nested custom type - recursively call its helper *)
+                  let custom_type = String.concat "." (flatten_longident txt) in
+                  let custom_expr = custom_descriptor_expr_of_lid ~loc txt in
                   [%expr
                     match [%e array_access] with
                     | Sarek.Sarek_value.VRecord _ as nested_vrec -> (
                         match
-                          Sarek.Sarek_type_helpers.lookup
-                            [%e Ast_builder.Default.estring ~loc custom_type]
+                          Sarek.Sarek_type_helpers.lookup_typed
+                            [%e custom_expr].Spoc_core.Vector.type_id
                         with
-                        | Some h -> h.from_value nested_vrec
+                        | Some (module H) -> H.from_value nested_vrec
                         | None ->
                             failwith
                               [%e
@@ -1100,14 +1120,18 @@ let generate_interp_helpers ~loc (td : type_declaration) : structure_item list =
                     [%expr Sarek.Sarek_value.VInt64 [%e field_access]]
                 | Ptyp_constr ({txt = Lident "bool"; _}, _) ->
                     [%expr Sarek.Sarek_value.VBool [%e field_access]]
-                | Ptyp_constr ({txt = Lident custom_type; _}, _) ->
+                | Ptyp_constr ({txt; _}, _) ->
                     (* Nested custom type - use helper to convert *)
+                    let custom_type =
+                      String.concat "." (flatten_longident txt)
+                    in
+                    let custom_expr = custom_descriptor_expr_of_lid ~loc txt in
                     [%expr
                       match
-                        Sarek.Sarek_type_helpers.lookup
-                          [%e Ast_builder.Default.estring ~loc custom_type]
+                        Sarek.Sarek_type_helpers.lookup_typed
+                          [%e custom_expr].Spoc_core.Vector.type_id
                       with
-                      | Some h -> h.to_value [%e field_access]
+                      | Some (module H) -> H.to_value [%e field_access]
                       | None ->
                           failwith
                             [%e
@@ -1155,13 +1179,15 @@ let generate_interp_helpers ~loc (td : type_declaration) : structure_item list =
                   [%expr Sarek.Sarek_value.VInt64 [%e field_access]]
               | Ptyp_constr ({txt = Lident "bool"; _}, _) ->
                   [%expr Sarek.Sarek_value.VBool [%e field_access]]
-              | Ptyp_constr ({txt = Lident custom_type; _}, _) ->
+              | Ptyp_constr ({txt; _}, _) ->
+                  let custom_type = String.concat "." (flatten_longident txt) in
+                  let custom_expr = custom_descriptor_expr_of_lid ~loc txt in
                   [%expr
                     match
-                      Sarek.Sarek_type_helpers.lookup
-                        [%e Ast_builder.Default.estring ~loc custom_type]
+                      Sarek.Sarek_type_helpers.lookup_typed
+                        [%e custom_expr].Spoc_core.Vector.type_id
                     with
-                    | Some h -> h.to_value [%e field_access]
+                    | Some (module H) -> H.to_value [%e field_access]
                     | None ->
                         failwith
                           [%e
@@ -1220,11 +1246,18 @@ let generate_interp_helpers ~loc (td : type_declaration) : structure_item list =
              ~expr:
                (Ast_builder.Default.pmod_structure
                   ~loc
-                  [
-                    [%stri
-                      type t =
-                        [%t Ast_builder.Default.ptyp_constr ~loc type_lid []]];
-                    [%stri let from_values = [%e from_values_fn]];
+	                  [
+	                    [%stri
+	                      type t =
+	                        [%t Ast_builder.Default.ptyp_constr ~loc type_lid []]];
+	                    [%stri
+	                      let type_id =
+	                        [%e
+	                          Ast_builder.Default.evar
+	                            ~loc
+	                            (type_name ^ "_custom")]
+	                          .Spoc_core.Vector.type_id];
+	                    [%stri let from_values = [%e from_values_fn]];
                     [%stri let to_values = [%e to_values_fn]];
                     [%stri let get_field = [%e get_field_fn]];
                     [%stri

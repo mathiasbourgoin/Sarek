@@ -34,122 +34,168 @@ type vector_arg =
   | Float32 : float -> vector_arg  (** 32-bit float scalar *)
   | Float64 : float -> vector_arg  (** 64-bit float scalar *)
 
+let custom_value_to_bytes : type a. a Vector.custom_type -> a -> bytes =
+ fun custom value ->
+  let size = custom.Vector.elem_size in
+  let bytes = Bytes.create size in
+  let raw = Ctypes.allocate_n Ctypes.char ~count:size in
+  custom.Vector.set (Ctypes.to_voidp raw) 0 value ;
+  for i = 0 to size - 1 do
+    let cell = Ctypes.( +@ ) raw i in
+    Bytes.set bytes i Ctypes.(!@cell)
+  done ;
+  bytes
+
+let custom_value_of_bytes : type a. a Vector.custom_type -> bytes -> a =
+ fun custom bytes ->
+  let size = custom.Vector.elem_size in
+  if Bytes.length bytes < size then
+    Execute_error.raise_error
+      (Type_mismatch
+         {
+           expected = Printf.sprintf "%s bytes" custom.Vector.name;
+           actual = Printf.sprintf "%d bytes" (Bytes.length bytes);
+           context = "custom vector element assignment";
+         }) ;
+  let raw = Ctypes.allocate_n Ctypes.char ~count:size in
+  for i = 0 to size - 1 do
+    let cell = Ctypes.( +@ ) raw i in
+    Ctypes.(cell <-@ Bytes.get bytes i)
+  done ;
+  custom.Vector.get (Ctypes.to_voidp raw) 0
+
 (** Convert vector_arg list to exec_arg array (new typed interface). Creates
     EXEC_VECTOR wrappers for vectors. *)
+let exec_arg_of_vector : type a b. (a, b) Vector.t -> Framework_sig.exec_arg =
+ fun v ->
+  let module EV : Typed_value.EXEC_VECTOR
+    with type elt = a
+     and type underlying = (a, b) Vector.t = struct
+    type elt = a
+
+    type underlying = (a, b) Vector.t
+
+    let length = Vector.length v
+
+    let type_name = Vector.kind_name (Vector.kind v)
+
+    let elem_size = Vector.elem_size (Vector.kind v)
+
+    let type_id = Vector.type_id (Vector.kind v)
+
+    let underlying_type_id = Vector.vector_type_id (Vector.kind v)
+
+    let underlying = v
+
+    let device_ptr () =
+      (* Get device pointer from location-based buffer *)
+      match Vector.location v with
+      | Vector.GPU dev | Vector.Both dev | Vector.Stale_CPU dev -> (
+          match Vector.get_buffer v dev with
+          | Some (module B : Vector.DEVICE_BUFFER) -> B.device_ptr
+          | None ->
+              Execute_error.raise_error
+                (Transfer_failed
+                   {vector = "unknown"; reason = "Vector has no device buffer"}))
+      | Vector.CPU | Vector.Stale_GPU _ ->
+          Execute_error.raise_error
+            (Transfer_failed {vector = "unknown"; reason = "Vector not on device"})
+
+    let get i =
+      (* Convert element to typed_value based on vector kind *)
+      match Vector.kind v with
+      | Vector.Scalar Vector.Int32 ->
+          Typed_value.TV_Scalar
+            (Typed_value.SV ((module Typed_value.Int32_type), Vector.get v i))
+      | Vector.Scalar Vector.Int64 ->
+          Typed_value.TV_Scalar
+            (Typed_value.SV ((module Typed_value.Int64_type), Vector.get v i))
+      | Vector.Scalar Vector.Float32 ->
+          Typed_value.TV_Scalar
+            (Typed_value.SV ((module Typed_value.Float32_type), Vector.get v i))
+      | Vector.Scalar Vector.Float64 ->
+          Typed_value.TV_Scalar
+            (Typed_value.SV ((module Typed_value.Float64_type), Vector.get v i))
+      | Vector.Custom custom ->
+          let module C : Typed_value.COMPOSITE_TYPE with type t = a = struct
+            type t = a
+
+            let name = custom.Vector.name
+
+            let size = custom.Vector.elem_size
+
+            let fields = []
+
+            let to_bytes = custom_value_to_bytes custom
+
+            let of_bytes = custom_value_of_bytes custom
+          end in
+          Typed_value.TV_Composite (Typed_value.CV ((module C), Vector.get v i))
+      | Vector.Scalar (Vector.Char | Vector.Complex32) ->
+          Execute_error.raise_error
+            (Unsupported_argument
+               {arg_type = type_name; context = "vector element access"})
+
+    let set i tv =
+      let type_error expected actual =
+        Execute_error.raise_error
+          (Type_mismatch {expected; actual; context = "vector element assignment"})
+      in
+      match (tv, Vector.kind v) with
+      | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+          Vector.Scalar Vector.Int32 ) -> (
+          match S.to_primitive x with
+          | Typed_value.PInt32 n -> Vector.set v i n
+          | Typed_value.PInt64 _ -> type_error "int32" "int64"
+          | Typed_value.PFloat _ -> type_error "int32" "float"
+          | Typed_value.PBool _ -> type_error "int32" "bool"
+          | Typed_value.PBytes _ -> type_error "int32" "bytes")
+      | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+          Vector.Scalar Vector.Int64 ) -> (
+          match S.to_primitive x with
+          | Typed_value.PInt64 n -> Vector.set v i n
+          | Typed_value.PInt32 _ -> type_error "int64" "int32"
+          | Typed_value.PFloat _ -> type_error "int64" "float"
+          | Typed_value.PBool _ -> type_error "int64" "bool"
+          | Typed_value.PBytes _ -> type_error "int64" "bytes")
+      | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+          Vector.Scalar Vector.Float32 ) -> (
+          match S.to_primitive x with
+          | Typed_value.PFloat f -> Vector.set v i f
+          | Typed_value.PInt32 _ -> type_error "float" "int32"
+          | Typed_value.PInt64 _ -> type_error "float" "int64"
+          | Typed_value.PBool _ -> type_error "float" "bool"
+          | Typed_value.PBytes _ -> type_error "float" "bytes")
+      | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+          Vector.Scalar Vector.Float64 ) -> (
+          match S.to_primitive x with
+          | Typed_value.PFloat f -> Vector.set v i f
+          | Typed_value.PInt32 _ -> type_error "float" "int32"
+          | Typed_value.PInt64 _ -> type_error "float" "int64"
+          | Typed_value.PBool _ -> type_error "float" "bool"
+          | Typed_value.PBytes _ -> type_error "float" "bytes")
+      | ( Typed_value.TV_Composite (Typed_value.CV ((module C), x)),
+          Vector.Custom custom ) ->
+          if C.name <> custom.Vector.name || C.size <> custom.Vector.elem_size
+          then type_error custom.Vector.name C.name
+          else Vector.set v i (custom_value_of_bytes custom (C.to_bytes x))
+      | _ ->
+          Execute_error.raise_error
+            (Unsupported_argument
+               {arg_type = "unknown combination"; context = "vector element assignment"})
+
+    let get_typed i = Vector.get v i
+
+    let set_typed i x = Vector.kernel_set v i x
+  end in
+  Framework_sig.EA_Vec (module EV)
+
 let vector_args_to_exec_array (args : vector_arg list) :
     Framework_sig.exec_arg array =
   Array.of_list
     (List.map
        (function
-         | Vec v ->
-             (* Create an EXEC_VECTOR module wrapping the vector *)
-             let module EV : Typed_value.EXEC_VECTOR = struct
-               let length = Vector.length v
-
-               let type_name = Vector.kind_name (Vector.kind v)
-
-               let elem_size = Vector.elem_size (Vector.kind v)
-
-               let internal_get_vector_obj () = Obj.repr v
-
-               let device_ptr () =
-                 (* Get device pointer from location-based buffer *)
-                 match Vector.location v with
-                 | Vector.GPU dev | Vector.Both dev | Vector.Stale_CPU dev -> (
-                     match Vector.get_buffer v dev with
-                     | Some (module B : Vector.DEVICE_BUFFER) -> B.device_ptr
-                     | None ->
-                         Execute_error.raise_error
-                           (Transfer_failed
-                              {
-                                vector = "unknown";
-                                reason = "Vector has no device buffer";
-                              }))
-                 | Vector.CPU | Vector.Stale_GPU _ ->
-                     Execute_error.raise_error
-                       (Transfer_failed
-                          {vector = "unknown"; reason = "Vector not on device"})
-
-               let get i =
-                 (* Convert element to typed_value based on vector kind *)
-                 match Vector.kind v with
-                 | Vector.Scalar Vector.Int32 ->
-                     Typed_value.TV_Scalar
-                       (Typed_value.SV
-                          ((module Typed_value.Int32_type), Vector.get v i))
-                 | Vector.Scalar Vector.Int64 ->
-                     Typed_value.TV_Scalar
-                       (Typed_value.SV
-                          ((module Typed_value.Int64_type), Vector.get v i))
-                 | Vector.Scalar Vector.Float32 ->
-                     Typed_value.TV_Scalar
-                       (Typed_value.SV
-                          ((module Typed_value.Float32_type), Vector.get v i))
-                 | Vector.Scalar Vector.Float64 ->
-                     Typed_value.TV_Scalar
-                       (Typed_value.SV
-                          ((module Typed_value.Float64_type), Vector.get v i))
-                 | _ ->
-                     (* Custom types: serialize to bytes *)
-                     let _bytes =
-                       Bytes.create (Vector.elem_size (Vector.kind v))
-                     in
-                     (* TODO: proper serialization for custom types *)
-                     Typed_value.TV_Scalar
-                       (Typed_value.SV ((module Typed_value.Float32_type), 0.0))
-
-               let set i tv =
-                 let type_error expected actual =
-                   Execute_error.raise_error
-                     (Type_mismatch
-                        {
-                          expected;
-                          actual;
-                          context = "vector element assignment";
-                        })
-                 in
-                 match (tv, Vector.kind v) with
-                 | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
-                     Vector.Scalar Vector.Int32 ) -> (
-                     match S.to_primitive x with
-                     | Typed_value.PInt32 n -> Vector.set v i n
-                     | Typed_value.PInt64 _ -> type_error "int32" "int64"
-                     | Typed_value.PFloat _ -> type_error "int32" "float"
-                     | Typed_value.PBool _ -> type_error "int32" "bool"
-                     | Typed_value.PBytes _ -> type_error "int32" "bytes")
-                 | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
-                     Vector.Scalar Vector.Int64 ) -> (
-                     match S.to_primitive x with
-                     | Typed_value.PInt64 n -> Vector.set v i n
-                     | Typed_value.PInt32 _ -> type_error "int64" "int32"
-                     | Typed_value.PFloat _ -> type_error "int64" "float"
-                     | Typed_value.PBool _ -> type_error "int64" "bool"
-                     | Typed_value.PBytes _ -> type_error "int64" "bytes")
-                 | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
-                     Vector.Scalar Vector.Float32 ) -> (
-                     match S.to_primitive x with
-                     | Typed_value.PFloat f -> Vector.set v i f
-                     | Typed_value.PInt32 _ -> type_error "float" "int32"
-                     | Typed_value.PInt64 _ -> type_error "float" "int64"
-                     | Typed_value.PBool _ -> type_error "float" "bool"
-                     | Typed_value.PBytes _ -> type_error "float" "bytes")
-                 | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
-                     Vector.Scalar Vector.Float64 ) -> (
-                     match S.to_primitive x with
-                     | Typed_value.PFloat f -> Vector.set v i f
-                     | Typed_value.PInt32 _ -> type_error "float" "int32"
-                     | Typed_value.PInt64 _ -> type_error "float" "int64"
-                     | Typed_value.PBool _ -> type_error "float" "bool"
-                     | Typed_value.PBytes _ -> type_error "float" "bytes")
-                 | _ ->
-                     Execute_error.raise_error
-                       (Unsupported_argument
-                          {
-                            arg_type = "unknown combination";
-                            context = "vector element assignment";
-                          })
-             end in
-             Framework_sig.EA_Vec (module EV)
+         | Vec v -> exec_arg_of_vector v
          | Int n -> Framework_sig.EA_Int32 (Int32.of_int n)
          | Int32 n -> Framework_sig.EA_Int32 n
          | Int64 n -> Framework_sig.EA_Int64 n
@@ -361,11 +407,11 @@ let vector_to_interp_array : type a b.
   | Vector.Custom custom -> (
       (* Custom types: use helpers to convert to VRecord *)
       let type_name = custom.Vector.name in
-      match Sarek_type_helpers.lookup type_name with
-      | Some h ->
+      match Sarek_type_helpers.lookup_typed custom.Vector.type_id with
+      | Some (module H) ->
           Array.init len (fun i ->
               let native_record = Vector.get vec i in
-              h.to_value native_record)
+              H.to_value native_record)
       | None ->
           (* Fallback: wrap in VRecord with empty fields *)
           Array.init len (fun _i -> Sarek_ir_interp.VRecord (type_name, [||])))
@@ -406,14 +452,14 @@ let interp_array_to_vector : type a b.
       for i = 0 to len - 1 do
         Vector.set vec i (Sarek_ir_interp.to_float64 arr.(i))
       done
-  | Vector.Custom _ ->
+  | Vector.Custom custom ->
       (* Custom types: convert VRecord to native OCaml values using helpers *)
       for i = 0 to len - 1 do
         match arr.(i) with
         | Sarek_ir_interp.VRecord (type_name, _fields) as vrec -> (
-            match Sarek_type_helpers.lookup type_name with
-            | Some h ->
-                let native_record = h.from_value vrec in
+            match Sarek_type_helpers.lookup_typed custom.Vector.type_id with
+            | Some (module H) ->
+                let native_record = H.from_value vrec in
                 Vector.set vec i native_record
             | None ->
                 Execute_error.raise_error

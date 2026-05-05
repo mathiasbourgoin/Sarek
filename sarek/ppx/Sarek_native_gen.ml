@@ -146,6 +146,30 @@ let gen_variable ~loc ~ctx (name : string) (id : int) : expression =
     [%expr ![%e var_e]]
   else var_e
 
+let custom_descriptor_expr ~loc type_name =
+  let parts = String.split_on_char '.' type_name in
+  match List.rev parts with
+  | name :: modules -> evar_qualified ~loc (List.rev modules) (name ^ "_custom")
+  | [] -> failwith "custom_descriptor_expr: empty type name"
+
+let vector_type_id_expr ~loc elem_ty =
+  match repr elem_ty with
+  | TReg Float32 -> [%expr Spoc_core.Vector.float32_vector_type_id]
+  | TReg Float64 -> [%expr Spoc_core.Vector.float64_vector_type_id]
+  | TReg Int | TPrim TInt32 -> [%expr Spoc_core.Vector.int32_vector_type_id]
+  | TReg Int64 -> [%expr Spoc_core.Vector.int64_vector_type_id]
+  | TReg Char -> [%expr Spoc_core.Vector.char_vector_type_id]
+  | TRecord (type_name, _) | TVariant (type_name, _) ->
+      [%expr
+        [%e custom_descriptor_expr ~loc type_name].Spoc_core.Vector.vector_type_id]
+  | _ -> [%expr Sarek_ir_types.Type_id.create ()]
+
+let custom_type_id_expr ~loc elem_ty =
+  match repr elem_ty with
+  | TRecord (type_name, _) | TVariant (type_name, _) ->
+      [%expr [%e custom_descriptor_expr ~loc type_name].Spoc_core.Vector.type_id]
+  | _ -> [%expr Sarek_ir_types.Type_id.create ()]
+
 (** Generate memory access operations (vectors, arrays, record fields) *)
 let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
   match te.te with
@@ -1060,7 +1084,7 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
       | TReg Float32 ->
           [%expr
             match [%e arr_access] with
-            | Sarek_ir_types.NA_Vec __v ->
+            | Sarek_ir_types.NA_Vec (Sarek_ir_types.NV __v) ->
                 object
                   method get i = __v.get_f32 i
 
@@ -1068,13 +1092,16 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
 
                   method length = __v.length
 
-                  method underlying = Sarek_ir_types.vec_as_vector [%e vec_arg]
+                  method underlying =
+                    Sarek_ir_types.vec_as_vector
+                      [%e vector_type_id_expr ~loc elem_ty]
+                      [%e vec_arg]
                 end
             | _ -> failwith "Expected NA_Vec"]
       | TReg Float64 ->
           [%expr
             match [%e arr_access] with
-            | Sarek_ir_types.NA_Vec __v ->
+            | Sarek_ir_types.NA_Vec (Sarek_ir_types.NV __v) ->
                 object
                   method get i = __v.get_f64 i
 
@@ -1082,13 +1109,16 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
 
                   method length = __v.length
 
-                  method underlying = Sarek_ir_types.vec_as_vector [%e vec_arg]
+                  method underlying =
+                    Sarek_ir_types.vec_as_vector
+                      [%e vector_type_id_expr ~loc elem_ty]
+                      [%e vec_arg]
                 end
             | _ -> failwith "Expected NA_Vec"]
       | TReg Int | TPrim TInt32 ->
           [%expr
             match [%e arr_access] with
-            | Sarek_ir_types.NA_Vec __v ->
+            | Sarek_ir_types.NA_Vec (Sarek_ir_types.NV __v) ->
                 object
                   method get i = __v.get_i32 i
 
@@ -1096,13 +1126,16 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
 
                   method length = __v.length
 
-                  method underlying = Sarek_ir_types.vec_as_vector [%e vec_arg]
+                  method underlying =
+                    Sarek_ir_types.vec_as_vector
+                      [%e vector_type_id_expr ~loc elem_ty]
+                      [%e vec_arg]
                 end
             | _ -> failwith "Expected NA_Vec"]
       | TReg Int64 ->
           [%expr
             match [%e arr_access] with
-            | Sarek_ir_types.NA_Vec __v ->
+            | Sarek_ir_types.NA_Vec (Sarek_ir_types.NV __v) ->
                 object
                   method get i = __v.get_i64 i
 
@@ -1110,7 +1143,10 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
 
                   method length = __v.length
 
-                  method underlying = Sarek_ir_types.vec_as_vector [%e vec_arg]
+                  method underlying =
+                    Sarek_ir_types.vec_as_vector
+                      [%e vector_type_id_expr ~loc elem_ty]
+                      [%e vec_arg]
                 end
             | _ -> failwith "Expected NA_Vec"]
       | _ ->
@@ -1118,13 +1154,25 @@ let gen_arg_cast ~loc (param : tparam) (idx : int) : expression =
               The helpers encapsulate the type conversion internally. *)
           [%expr
             object
-              method get i = Sarek_ir_types.vec_get_custom [%e vec_arg] i
+              method get i =
+                Sarek_ir_types.vec_get_custom
+                  [%e custom_type_id_expr ~loc elem_ty]
+                  [%e vec_arg]
+                  i
 
-              method set i x = Sarek_ir_types.vec_set_custom [%e vec_arg] i x
+              method set i x =
+                Sarek_ir_types.vec_set_custom
+                  [%e custom_type_id_expr ~loc elem_ty]
+                  [%e vec_arg]
+                  i
+                  x
 
               method length = Sarek_ir_types.vec_length [%e vec_arg]
 
-              method underlying = Sarek_ir_types.vec_as_vector [%e vec_arg]
+              method underlying =
+                Sarek_ir_types.vec_as_vector
+                  [%e vector_type_id_expr ~loc elem_ty]
+                  [%e vec_arg]
             end])
   | TReg Float32 ->
       [%expr

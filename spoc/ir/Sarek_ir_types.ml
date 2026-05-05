@@ -8,6 +8,37 @@
     This module contains only type definitions with no external dependencies.
     Used by spoc_framework for typed generate_source signature. *)
 
+(** Runtime type identities with equality proofs.
+
+    This uses generative extensible GADT constructors, so equality can be checked
+    without unsafe casts. *)
+module Type_id = struct
+  type _ witness = ..
+
+  module type ID = sig
+    type t
+
+    type _ witness += Id : t witness
+  end
+
+  type 'a t = (module ID with type t = 'a)
+
+  type (_, _) eq = Refl : ('a, 'a) eq
+
+  let create (type a) () : a t =
+    let module M = struct
+      type t = a
+
+      type _ witness += Id : t witness
+    end in
+    (module M)
+
+  let equal (type a b) (id_a : a t) (id_b : b t) : (a, b) eq option =
+    let module A = (val id_a : ID with type t = a) in
+    let module B = (val id_b : ID with type t = b) in
+    match A.Id with B.Id -> Some Refl | _ -> None
+end
+
 (** Memory spaces *)
 type memspace = Global | Shared | Local
 
@@ -156,10 +187,16 @@ and native_arg =
   | NA_Int64 of int64
   | NA_Float32 of float
   | NA_Float64 of float
-  | NA_Vec of {
+  | NA_Vec of native_vec
+
+and native_vec =
+  | NV : ('elt, 'underlying) native_vec_ops -> native_vec
+
+and ('elt, 'underlying) native_vec_ops = {
       length : int;
       elem_size : int;
       type_name : string;
+      type_id : 'elt Type_id.t;
       get_f32 : int -> float;
       set_f32 : int -> float -> unit;
       get_f64 : int -> float;
@@ -168,12 +205,10 @@ and native_arg =
       set_i32 : int -> int32 -> unit;
       get_i64 : int -> int64;
       set_i64 : int -> int64 -> unit;
-      (* For custom types (records/variants): type-erased access.
-         Internal use only - callers should use vec_get_custom/vec_set_custom. *)
-      get_any : int -> Obj.t;
-      set_any : int -> Obj.t -> unit;
-      (* Get underlying Vector.t for passing to functions/intrinsics *)
-      get_vec : unit -> Obj.t;
+      get_typed : int -> 'elt;
+      set_typed : int -> 'elt -> unit;
+      underlying_type_id : 'underlying Type_id.t;
+      underlying : 'underlying;
     }
 
 and ocaml_closure = {
@@ -181,40 +216,43 @@ and ocaml_closure = {
     block:int * int * int -> grid:int * int * int -> native_arg array -> unit;
 }
 
-(** {2 Typed Helpers for Custom Types}
+(** {2 Typed Helpers for Custom Types} *)
 
-    These functions encapsulate the Obj operations so that PPX-generated code
-    doesn't need to use Obj directly. The type parameter is inferred from
-    context. *)
-
-(** Get element from NA_Vec as custom type. Type is inferred from usage. *)
-let vec_get_custom : type a. native_arg -> int -> a =
- fun arg i ->
+(** Get element from NA_Vec as a type checked custom value. *)
+let vec_get_custom : type a. a Type_id.t -> native_arg -> int -> a =
+ fun type_id arg i ->
   match arg with
-  | NA_Vec v -> Obj.magic (v.get_any i)
+  | NA_Vec (NV v) -> (
+      match Type_id.equal type_id v.type_id with
+      | Some Type_id.Refl -> v.get_typed i
+      | None -> failwith "vec_get_custom: vector element type mismatch")
   | _ -> failwith "vec_get_custom: expected NA_Vec"
 
-(** Set element in NA_Vec from custom type. Type is inferred from usage. *)
-let vec_set_custom : type a. native_arg -> int -> a -> unit =
- fun arg i x ->
+(** Set element in NA_Vec from a type checked custom value. *)
+let vec_set_custom : type a. a Type_id.t -> native_arg -> int -> a -> unit =
+ fun type_id arg i x ->
   match arg with
-  | NA_Vec v -> v.set_any i (Obj.magic x)
+  | NA_Vec (NV v) -> (
+      match Type_id.equal type_id v.type_id with
+      | Some Type_id.Refl -> v.set_typed i x
+      | None -> failwith "vec_set_custom: vector element type mismatch")
   | _ -> failwith "vec_set_custom: expected NA_Vec"
 
 (** Get length from NA_Vec *)
 let vec_length : native_arg -> int =
  fun arg ->
   match arg with
-  | NA_Vec v -> v.length
+  | NA_Vec (NV v) -> v.length
   | _ -> failwith "vec_length: expected NA_Vec"
 
-(** Get underlying vector. Used when passing vectors to functions/intrinsics
-    that need the actual Vector.t type. Returns type-erased value that the
-    caller casts to the appropriate Vector.t type. *)
-let vec_as_vector : type a. native_arg -> a =
- fun arg ->
+(** Get the checked underlying vector/buffer value. *)
+let vec_as_vector : type a. a Type_id.t -> native_arg -> a =
+ fun type_id arg ->
   match arg with
-  | NA_Vec v -> Obj.magic (v.get_vec ())
+  | NA_Vec (NV v) -> (
+      match Type_id.equal type_id v.underlying_type_id with
+      | Some Type_id.Refl -> v.underlying
+      | None -> failwith "vec_as_vector: underlying type mismatch")
   | _ -> failwith "vec_as_vector: expected NA_Vec"
 
 (** Native function type for V2 execution. Uses typed native_arg. *)

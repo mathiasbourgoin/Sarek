@@ -106,6 +106,10 @@ type typed_value = TV_Scalar of scalar_value | TV_Composite of composite_value
     contents without depending on the full Vector module. *)
 
 module type EXEC_VECTOR = sig
+  type elt
+
+  type underlying
+
   (** Number of elements *)
   val length : int
 
@@ -118,16 +122,23 @@ module type EXEC_VECTOR = sig
   (** Set element from typed_value *)
   val set : int -> typed_value -> unit
 
+  (** Type-preserving element access for direct backends. *)
+  val get_typed : int -> elt
+
+  val set_typed : int -> elt -> unit
+
+  (** Runtime identity for element and underlying vector/buffer types. *)
+  val type_id : elt Sarek_ir_types.Type_id.t
+
+  val underlying_type_id : underlying Sarek_ir_types.Type_id.t
+
+  val underlying : underlying
+
   (** Get raw device pointer (for kernel binding) *)
   val device_ptr : unit -> nativeint
 
   (** Element size in bytes *)
   val elem_size : int
-
-  (** INTERNAL: Get underlying vector as Obj.t. Only for use by interpreter
-      backend which needs access to the typed Vector.t. This is marked internal
-      to discourage general use - prefer the typed get/set interface. *)
-  val internal_get_vector_obj : unit -> Obj.t
 end
 
 (** {1 Execution Arguments}

@@ -186,6 +186,7 @@ module Backend : Framework_sig.BACKEND = struct
               match S.to_primitive x with
               | Typed_value.PFloat f -> f
               | Typed_value.PInt32 n -> Int32.to_float n
+              | Typed_value.PInt64 n -> Int64.to_float n
               | _ ->
                   Native_error.(
                     raise_error
@@ -205,6 +206,8 @@ module Backend : Framework_sig.BACKEND = struct
           | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> (
               match S.to_primitive x with
               | Typed_value.PFloat f -> f
+              | Typed_value.PInt32 n -> Int32.to_float n
+              | Typed_value.PInt64 n -> Int64.to_float n
               | _ ->
                   Native_error.(
                     raise_error
@@ -224,6 +227,7 @@ module Backend : Framework_sig.BACKEND = struct
           | Typed_value.TV_Scalar (Typed_value.SV ((module S), x)) -> (
               match S.to_primitive x with
               | Typed_value.PInt32 n -> n
+              | Typed_value.PInt64 n -> Int64.to_int32 n
               | Typed_value.PFloat f -> Int32.of_float f
               | _ ->
                   Native_error.(
@@ -245,6 +249,7 @@ module Backend : Framework_sig.BACKEND = struct
               match S.to_primitive x with
               | Typed_value.PInt64 n -> n
               | Typed_value.PInt32 n -> Int64.of_int32 n
+              | Typed_value.PFloat f -> Int64.of_float f
               | _ ->
                   Native_error.(
                     raise_error
@@ -259,21 +264,13 @@ module Backend : Framework_sig.BACKEND = struct
             (Typed_value.TV_Scalar
                (Typed_value.SV ((module Typed_value.Int64_type), n)))
         in
-        (* For custom types: use underlying Vector.t with Obj.t *)
-        let get_any i =
-          let vec = Obj.obj (V.internal_get_vector_obj ()) in
-          Obj.repr (Spoc_core.Vector.get vec i)
-        in
-        let set_any i v =
-          let vec = Obj.obj (V.internal_get_vector_obj ()) in
-          Spoc_core.Vector.kernel_set vec i (Obj.obj v)
-        in
-        let get_vec () = V.internal_get_vector_obj () in
         Sarek_ir_types.NA_Vec
+          (Sarek_ir_types.NV
           {
             length = V.length;
             elem_size = V.elem_size;
             type_name = V.type_name;
+            type_id = V.type_id;
             get_f32 = get_as_f32;
             set_f32 = set_as_f32;
             get_f64 = get_as_f64;
@@ -282,10 +279,11 @@ module Backend : Framework_sig.BACKEND = struct
             set_i32 = set_as_i32;
             get_i64 = get_as_i64;
             set_i64 = set_as_i64;
-            get_any;
-            set_any;
-            get_vec;
-          }
+            get_typed = V.get_typed;
+            set_typed = V.set_typed;
+            underlying_type_id = V.underlying_type_id;
+            underlying = V.underlying;
+          })
 
   (** Convert exec_arg array to native_arg array *)
   let exec_args_to_native (args : Framework_sig.exec_arg array) :

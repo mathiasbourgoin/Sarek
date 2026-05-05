@@ -419,10 +419,12 @@ let test_vec_length () =
      no-op implementations for unused fields. *)
   let na =
     NA_Vec
+      (NV
       {
         length = 1024;
         elem_size = 4;
         type_name = "float32";
+        type_id = Type_id.create ();
         get_f32 = (fun _ -> 0.0);
         set_f32 = (fun _ _ -> ());
         get_f64 = (fun _ -> 0.0);
@@ -431,13 +433,11 @@ let test_vec_length () =
         set_i32 = (fun _ _ -> ());
         get_i64 = (fun _ -> 0L);
         set_i64 = (fun _ _ -> ());
-        get_any =
-          (fun _ -> failwith "get_any should not be called in this test");
-        set_any =
-          (fun _ _ -> failwith "set_any should not be called in this test");
-        get_vec =
-          (fun () -> failwith "get_vec should not be called in this test");
-      }
+        get_typed = (fun _ -> 0.0);
+        set_typed = (fun _ _ -> ());
+        underlying_type_id = Type_id.create ();
+        underlying = ();
+      })
   in
   let len = vec_length na in
   assert (len = 1024) ;

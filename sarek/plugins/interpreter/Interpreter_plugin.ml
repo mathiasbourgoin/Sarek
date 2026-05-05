@@ -76,26 +76,6 @@ module Backend : Framework_sig.BACKEND = struct
   let generate_source ?block:_ (_ir : Sarek_ir_types.kernel) : string option =
     None
 
-  (** Convert exec_arg array to Kernel_arg.t list for typed interpreter path *)
-  let exec_args_to_kernel_args (args : Framework_sig.exec_arg array) :
-      Spoc_core.Kernel_arg.t list =
-    Array.to_list args
-    |> List.map (fun arg ->
-        match arg with
-        | Framework_sig.EA_Int32 n -> Spoc_core.Kernel_arg.Int32 n
-        | Framework_sig.EA_Int64 n -> Spoc_core.Kernel_arg.Int64 n
-        | Framework_sig.EA_Float32 f -> Spoc_core.Kernel_arg.Float32 f
-        | Framework_sig.EA_Float64 f -> Spoc_core.Kernel_arg.Float64 f
-        | Framework_sig.EA_Vec (module V) ->
-            (* For interpreter, we need to recover the typed Vector.t.
-               Use internal_get_vector_obj which is marked for internal backend use only. *)
-            let vec_obj = V.internal_get_vector_obj () in
-            Spoc_core.Kernel_arg.Vec (Obj.magic vec_obj)
-        | Framework_sig.EA_Scalar _ | Framework_sig.EA_Composite _ ->
-            (* Custom scalars/composites not yet supported by Kernel_arg.t *)
-            Interpreter_error.(
-              raise_error (feature_not_supported "custom types in exec_arg")))
-
   (** Execute directly by interpreting the IR. Interpreter always interprets,
       ignoring native_fn (use Native backend for compiled execution). Uses
       parallel or sequential mode based on current device. *)
@@ -119,13 +99,11 @@ module Backend : Framework_sig.BACKEND = struct
     match ir with
     | Some kernel ->
         Sarek.Sarek_ir_interp.parallel_mode := use_parallel ;
-        (* Convert exec_args to Kernel_arg.t and use typed interpreter path *)
-        let kargs = exec_args_to_kernel_args args in
-        Sarek.Sarek_ir_interp.run_kernel_with_args
+        Sarek.Sarek_ir_interp.run_kernel_with_exec_args
           kernel
           ~block:(block.x, block.y, block.z)
           ~grid:(grid.x, grid.y, grid.z)
-          kargs
+          (Array.to_list args)
     | None ->
         Interpreter_error.(
           raise_error (compilation_failed "" "kernel IR required"))

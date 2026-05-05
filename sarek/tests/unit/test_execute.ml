@@ -10,6 +10,36 @@ open Spoc_core
 open Spoc_framework
 open Alcotest
 
+type point = {x : float; y : float}
+
+let point_type_id : point Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
+
+let point_vector_type_id : (point, unit) Vector.t Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
+
+let point_custom : point Vector.custom_type =
+  let get ptr i =
+    let off = i * 8 in
+    {
+      x = Vector.Custom_helpers.read_float32 ptr off;
+      y = Vector.Custom_helpers.read_float32 ptr (off + 4);
+    }
+  in
+  let set ptr i p =
+    let off = i * 8 in
+    Vector.Custom_helpers.write_float32 ptr off p.x ;
+    Vector.Custom_helpers.write_float32 ptr (off + 4) p.y
+  in
+  {
+    elem_size = 8;
+    type_id = point_type_id;
+    vector_type_id = point_vector_type_id;
+    get;
+    set;
+    name = "point";
+  }
+
 (** {1 Tests for vector argument types} *)
 
 let test_vec_arg_int () =
@@ -103,6 +133,24 @@ let test_multiple_args () =
   let args = [Vec v1; Int 42; Vec v2; Float32 3.14] in
   check int "arg list length" 4 (List.length args)
 
+let test_custom_exec_vector_get_set () =
+  let v = Vector.create_custom point_custom 2 in
+  Vector.set v 0 {x = 1.5; y = 2.5} ;
+  Vector.set v 1 {x = 0.0; y = 0.0} ;
+  match vector_args_to_exec_array [Vec v] with
+  | [|Framework_sig.EA_Vec (module V)|] -> (
+      match V.get 0 with
+      | Typed_value.TV_Composite (Typed_value.CV ((module C), p)) ->
+          check string "custom type name" "point" C.name ;
+          check int "custom byte size" 8 C.size ;
+          check int "serialized length" 8 (Bytes.length (C.to_bytes p)) ;
+          V.set 1 (Typed_value.TV_Composite (Typed_value.CV ((module C), p))) ;
+          let got = Vector.get v 1 in
+          check (float 0.001) "custom set x" 1.5 got.x ;
+          check (float 0.001) "custom set y" 2.5 got.y
+      | _ -> fail "expected composite typed value")
+  | _ -> fail "expected single exec vector"
+
 (** {1 Test suite} *)
 
 let () =
@@ -138,5 +186,9 @@ let () =
         [
           test_case "vec_wrapper" `Quick test_vec_wrapper;
           test_case "multiple_args" `Quick test_multiple_args;
+          test_case
+            "custom_exec_vector_get_set"
+            `Quick
+            test_custom_exec_vector_get_set;
         ] );
     ]

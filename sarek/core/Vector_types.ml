@@ -22,12 +22,65 @@ type (_, _) scalar_kind =
   | Char : (char, Bigarray.int8_unsigned_elt) scalar_kind
   | Complex32 : (Complex.t, Bigarray.complex32_elt) scalar_kind
 
+(** {1 Location Tracking} *)
+
+(** Where the authoritative copy of data resides *)
+type location =
+  | CPU  (** Data only on host *)
+  | GPU of Device.t  (** Data only on specific device *)
+  | Both of Device.t  (** Synced on host and device *)
+  | Stale_CPU of Device.t  (** GPU is authoritative, CPU outdated *)
+  | Stale_GPU of Device.t  (** CPU is authoritative, GPU outdated *)
+
+(** {1 Device Buffer Abstraction} *)
+
+(** Device buffer reuses Memory.BUFFER module type. We use the raw module type
+    here (not the phantom-typed Memory.buffer) because the hashtable stores
+    buffers for a single vector type, and the type safety comes from the
+    Vector's ('a, 'b) t type parameter. *)
+module type DEVICE_BUFFER = Memory.BUFFER
+
+type device_buffer = (module DEVICE_BUFFER)
+
+(** Device buffer storage - maps device ID to buffer *)
+type device_buffers = (int, device_buffer) Hashtbl.t
+
 (** Custom type descriptor for ctypes-based structures *)
 type 'a custom_type = {
   elem_size : int;  (** Size of each element in bytes *)
+  type_id : 'a Sarek_ir_types.Type_id.t;  (** Runtime element type identity *)
+  vector_type_id : ('a, unit) t Sarek_ir_types.Type_id.t;
+      (** Runtime identity for the vector type carrying this element type *)
   get : unit Ctypes.ptr -> int -> 'a;  (** Read element at index *)
   set : unit Ctypes.ptr -> int -> 'a -> unit;  (** Write element at index *)
   name : string;  (** Type name for debugging *)
+}
+
+(** Unified kind type supporting both scalar and custom types *)
+and (_, _) kind =
+  | Scalar : ('a, 'b) scalar_kind -> ('a, 'b) kind
+  | Custom : 'a custom_type -> ('a, unit) kind
+
+and (_, _) host_storage =
+  | Bigarray_storage :
+      ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t
+      -> ('a, 'b) host_storage
+  | Custom_storage : {
+      ptr : unit Ctypes.ptr;
+      custom : 'a custom_type;
+      length : int;
+    }
+      -> ('a, unit) host_storage
+
+(** High-level vector with location tracking *)
+and ('a, 'b) t = {
+  host : ('a, 'b) host_storage;
+  device_buffers : device_buffers;
+  length : int;
+  kind : ('a, 'b) kind;
+  mutable location : location;
+  mutable auto_sync : bool;  (** Enable automatic CPU sync on get *)
+  id : int;  (** Unique vector ID for debugging *)
 }
 
 (** Helper functions for custom type implementations. These wrap Ctypes
@@ -135,11 +188,6 @@ module Custom_helpers = struct
     custom.set target_ptr 0 v
 end
 
-(** Unified kind type supporting both scalar and custom types *)
-type (_, _) kind =
-  | Scalar : ('a, 'b) scalar_kind -> ('a, 'b) kind
-  | Custom : 'a custom_type -> ('a, unit) kind
-
 (** {1 Kind Helpers} *)
 
 (** Convert scalar kind to Bigarray.kind *)
@@ -178,52 +226,67 @@ let kind_name : type a b. (a, b) kind -> string = function
   | Scalar k -> scalar_kind_name k
   | Custom c -> "Custom(" ^ c.name ^ ")"
 
-(** {1 Host Storage (GADT)} *)
+let float32_type_id : float Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
 
-(** CPU-side storage - either Bigarray or raw ctypes pointer *)
-type (_, _) host_storage =
-  | Bigarray_storage :
-      ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t
-      -> ('a, 'b) host_storage
-  | Custom_storage : {
-      ptr : unit Ctypes.ptr;
-      custom : 'a custom_type;
-      length : int;
-    }
-      -> ('a, unit) host_storage
+let float64_type_id : float Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
 
-(** {1 Location Tracking} *)
+let int32_type_id : int32 Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
 
-(** Where the authoritative copy of data resides *)
-type location =
-  | CPU  (** Data only on host *)
-  | GPU of Device.t  (** Data only on specific device *)
-  | Both of Device.t  (** Synced on host and device *)
-  | Stale_CPU of Device.t  (** GPU is authoritative, CPU outdated *)
-  | Stale_GPU of Device.t  (** CPU is authoritative, GPU outdated *)
+let int64_type_id : int64 Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
 
-(** {1 Device Buffer Abstraction} *)
+let char_type_id : char Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
 
-(** Device buffer reuses Memory.BUFFER module type. We use the raw module type
-    here (not the phantom-typed Memory.buffer) because the hashtable stores
-    buffers for a single vector type, and the type safety comes from the
-    Vector's ('a, 'b) t type parameter. *)
-module type DEVICE_BUFFER = Memory.BUFFER
+let complex32_type_id : Complex.t Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
 
-type device_buffer = (module DEVICE_BUFFER)
+let scalar_type_id : type a b. (a, b) scalar_kind -> a Sarek_ir_types.Type_id.t =
+  function
+  | Float32 -> float32_type_id
+  | Float64 -> float64_type_id
+  | Int32 -> int32_type_id
+  | Int64 -> int64_type_id
+  | Char -> char_type_id
+  | Complex32 -> complex32_type_id
 
-(** Device buffer storage - maps device ID to buffer *)
-type device_buffers = (int, device_buffer) Hashtbl.t
+let type_id : type a b. (a, b) kind -> a Sarek_ir_types.Type_id.t = function
+  | Scalar k -> scalar_type_id k
+  | Custom c -> c.type_id
 
-(** {1 Vector Type} *)
+let float32_vector_type_id :
+    (float, Bigarray.float32_elt) t Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
 
-(** High-level vector with location tracking *)
-type ('a, 'b) t = {
-  host : ('a, 'b) host_storage;
-  device_buffers : device_buffers;
-  length : int;
-  kind : ('a, 'b) kind;
-  mutable location : location;
-  mutable auto_sync : bool;  (** Enable automatic CPU sync on get *)
-  id : int;  (** Unique vector ID for debugging *)
-}
+let float64_vector_type_id :
+    (float, Bigarray.float64_elt) t Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
+
+let int32_vector_type_id :
+    (int32, Bigarray.int32_elt) t Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
+
+let int64_vector_type_id :
+    (int64, Bigarray.int64_elt) t Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
+
+let char_vector_type_id :
+    (char, Bigarray.int8_unsigned_elt) t Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
+
+let complex32_vector_type_id :
+    (Complex.t, Bigarray.complex32_elt) t Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
+
+let vector_type_id : type a b.
+    (a, b) kind -> (a, b) t Sarek_ir_types.Type_id.t = function
+  | Scalar Float32 -> float32_vector_type_id
+  | Scalar Float64 -> float64_vector_type_id
+  | Scalar Int32 -> int32_vector_type_id
+  | Scalar Int64 -> int64_vector_type_id
+  | Scalar Char -> char_vector_type_id
+  | Scalar Complex32 -> complex32_vector_type_id
+  | Custom c -> c.vector_type_id
