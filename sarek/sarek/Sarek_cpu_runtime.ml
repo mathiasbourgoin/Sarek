@@ -68,8 +68,9 @@ let global_size_z st = Int32.mul st.grid_dim_z st.block_dim_z
     Implementation: We use separate hashtables for each primitive type to avoid
     boxing, and an existential wrapper for custom types. *)
 
-(** Existential wrapper for custom type arrays - type-safe alternative *)
-type any_array = AnyArray : 'a array -> any_array
+(** Existential wrapper for custom type arrays with a runtime type witness. *)
+type any_array =
+  | AnyArray : 'a Sarek_ir_types.Type_id.t * 'a array -> any_array
 
 type shared_mem = {
   int_arrays : (string, int array) Hashtbl.t;
@@ -128,15 +129,16 @@ let alloc_shared_int64 (shared : shared_mem) name size (default : int64) :
 
 (** Generic allocator for custom types. The caller must ensure they use
     consistent types for each name. *)
-let alloc_shared (type a) (shared : shared_mem) name size (default : a) :
-    a array =
+let alloc_shared_with_key (type a) (shared : shared_mem)
+    (key : a Sarek_ir_types.Type_id.t) name size (default : a) : a array =
   match Hashtbl.find_opt shared.custom_arrays name with
-  | Some (AnyArray arr) ->
-      (* Pattern match extracts the array, but we need unsafe coercion to recover type *)
-      (Obj.obj (Obj.repr arr) : a array)
+  | Some (AnyArray (stored_key, arr)) -> (
+      match Sarek_ir_types.Type_id.equal key stored_key with
+      | Some Sarek_ir_types.Type_id.Refl -> arr
+      | None -> invalid_arg ("alloc_shared: type mismatch for " ^ name))
   | None ->
       let arr = Array.make size default in
-      Hashtbl.add shared.custom_arrays name (AnyArray arr) ;
+      Hashtbl.add shared.custom_arrays name (AnyArray (key, arr)) ;
       arr
 
 (** {1 Sequential Execution}

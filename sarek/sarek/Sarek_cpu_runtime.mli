@@ -81,8 +81,10 @@ val alloc_shared_int64 : shared_mem -> string -> int -> int64 -> int64 array
 
 (** {2 Generic Allocator}
 
-    For custom types not covered by typed allocators. Uses Obj.t internally. *)
-val alloc_shared : shared_mem -> string -> int -> 'a -> 'a array
+    For custom types not covered by typed allocators. *)
+
+val alloc_shared_with_key :
+  shared_mem -> 'a Sarek_ir_types.Type_id.t -> string -> int -> 'a -> 'a array
 
 (** {1 Execution Modes} *)
 

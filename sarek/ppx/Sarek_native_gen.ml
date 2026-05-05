@@ -577,17 +577,27 @@ let gen_parallel_construct ~loc ~gen_expr (te : texpr) : expression =
                 0L]
         | TReg Char ->
             [%expr
-              Sarek.Sarek_cpu_runtime.alloc_shared
+              Sarek.Sarek_cpu_runtime.alloc_shared_with_key
                 [%e shared]
+                Spoc_core.Vector.char_type_id
                 [%e name_e]
                 [%e size_e]
                 '\000']
         | _ ->
             (* For custom types, generate proper default value *)
             let default_val = default_value_for_type ~loc elem_ty in
+            let key_expr =
+              match repr elem_ty with
+              | TRecord (type_name, _) | TVariant (type_name, _) ->
+                  [%expr
+                    [%e custom_descriptor_expr ~loc type_name]
+                      .Spoc_core.Vector.type_id]
+              | _ -> [%expr Sarek_ir_types.Type_id.create ()]
+            in
             [%expr
-              Sarek.Sarek_cpu_runtime.alloc_shared
+              Sarek.Sarek_cpu_runtime.alloc_shared_with_key
                 [%e shared]
+                [%e key_expr]
                 [%e name_e]
                 [%e size_e]
                 [%e default_val]]

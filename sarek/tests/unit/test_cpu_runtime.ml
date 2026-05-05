@@ -310,15 +310,44 @@ let test_alloc_shared_multiple () =
 (** Test generic allocator for custom type *)
 type custom_record = {x : int; y : float}
 
+let custom_record_key : custom_record Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
+
+type other_record = {z : int32} [@@warning "-69"]
+
+let other_record_key : other_record Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
+
 let test_alloc_shared_custom () =
   let shared = create_shared () in
   let default = {x = 0; y = 0.0} in
-  let arr = alloc_shared shared "custom" 4 default in
+  let arr = alloc_shared_with_key shared custom_record_key "custom" 4 default in
   check int "array length" 4 (Array.length arr) ;
   check int "default x" 0 arr.(0).x ;
   arr.(2) <- {x = 42; y = 3.14} ;
   check int "custom x" 42 arr.(2).x ;
   check (float 0.0001) "custom y" 3.14 arr.(2).y
+
+let test_alloc_shared_custom_reuse () =
+  let shared = create_shared () in
+  let default = {x = 0; y = 0.0} in
+  let arr1 = alloc_shared_with_key shared custom_record_key "custom" 4 default in
+  arr1.(1) <- {x = 7; y = 2.5} ;
+  let arr2 = alloc_shared_with_key shared custom_record_key "custom" 4 default in
+  check int "reused custom x" 7 arr2.(1).x ;
+  check (float 0.0001) "reused custom y" 2.5 arr2.(1).y
+
+let test_alloc_shared_custom_type_mismatch () =
+  let shared = create_shared () in
+  let _ =
+    alloc_shared_with_key shared custom_record_key "custom" 4 {x = 0; y = 0.0}
+  in
+  check_raises
+    "same shared name with different custom type"
+    (Invalid_argument "alloc_shared: type mismatch for custom")
+    (fun () ->
+      ignore
+        (alloc_shared_with_key shared other_record_key "custom" 4 {z = 0l}))
 
 (** Test shared memory isolation between blocks *)
 let test_shared_memory_isolation () =
@@ -555,6 +584,8 @@ let shared_memory_tests =
     ("reuse array", `Quick, test_alloc_shared_reuse);
     ("multiple arrays", `Quick, test_alloc_shared_multiple);
     ("custom type", `Quick, test_alloc_shared_custom);
+    ("custom reuse", `Quick, test_alloc_shared_custom_reuse);
+    ("custom mismatch", `Quick, test_alloc_shared_custom_type_mismatch);
     ("isolation", `Quick, test_shared_memory_isolation);
   ]
 
