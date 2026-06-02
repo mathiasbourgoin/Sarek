@@ -348,3 +348,146 @@ module type BACKEND = sig
   *)
   val unwrap_kargs : kargs -> Kernel.args option
 end
+
+(** Low-level backend implementation interface shared by the CUDA, OpenCL, and
+    Metal plugin-base modules. This is the device/memory/stream/event/kernel
+    core that each backend's [*_plugin_base.ml] implements directly on top of
+    its FFI bindings; the full {!BACKEND} interface (source generation, direct
+    execution, intrinsics, external-kernel execution, kargs wrapping) is
+    assembled on top of it in each backend's [*_plugin.ml].
+
+    [args] and [buffer] are abstract: callers construct args via
+    {!Kernel.create_args} and the [set_arg_*] functions, never by relying on the
+    underlying representation. *)
+module type PLUGIN_BASE = sig
+  val name : string
+
+  val version : int * int * int
+
+  module Device : sig
+    type t
+
+    type id = int
+
+    val init : unit -> unit
+
+    val count : unit -> int
+
+    val get : int -> t
+
+    val id : t -> id
+
+    val name : t -> string
+
+    val capabilities : t -> capabilities
+
+    val set_current : t -> unit
+
+    val get_current_device : unit -> t option
+
+    val synchronize : t -> unit
+  end
+
+  module Memory : sig
+    type 'a buffer
+
+    val alloc : Device.t -> int -> ('a, 'b) Bigarray.kind -> 'a buffer
+
+    val alloc_custom : Device.t -> size:int -> elem_size:int -> 'a buffer
+
+    val alloc_zero_copy :
+      Device.t ->
+      ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t ->
+      ('a, 'b) Bigarray.kind ->
+      'a buffer option
+
+    val is_zero_copy : 'a buffer -> bool
+
+    val free : 'a buffer -> unit
+
+    val host_to_device :
+      src:('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> dst:'a buffer -> unit
+
+    val device_to_host :
+      src:'a buffer -> dst:('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> unit
+
+    val host_ptr_to_device :
+      src_ptr:unit Ctypes.ptr -> byte_size:int -> dst:'a buffer -> unit
+
+    val device_to_host_ptr :
+      src:'a buffer -> dst_ptr:unit Ctypes.ptr -> byte_size:int -> unit
+
+    val device_to_device : src:'a buffer -> dst:'a buffer -> unit
+
+    val size : 'a buffer -> int
+
+    val device_ptr : 'a buffer -> nativeint
+  end
+
+  module Stream : sig
+    type t
+
+    val create : Device.t -> t
+
+    val destroy : t -> unit
+
+    val synchronize : t -> unit
+
+    val default : Device.t -> t
+  end
+
+  module Event : sig
+    type t
+
+    val create : unit -> t
+
+    val destroy : t -> unit
+
+    val record : t -> Stream.t -> unit
+
+    val synchronize : t -> unit
+
+    val elapsed : start:t -> stop:t -> float
+  end
+
+  module Kernel : sig
+    type t
+
+    type args
+
+    val compile : Device.t -> name:string -> source:string -> t
+
+    val compile_cached : Device.t -> name:string -> source:string -> t
+
+    val clear_cache : unit -> unit
+
+    val create_args : unit -> args
+
+    val set_arg_buffer : args -> int -> _ Memory.buffer -> unit
+
+    val set_arg_int32 : args -> int -> int32 -> unit
+
+    val set_arg_int64 : args -> int -> int64 -> unit
+
+    val set_arg_float32 : args -> int -> float -> unit
+
+    val set_arg_float64 : args -> int -> float -> unit
+
+    val set_arg_ptr : args -> int -> nativeint -> unit
+
+    val launch :
+      t ->
+      args:args ->
+      grid:dims ->
+      block:dims ->
+      shared_mem:int ->
+      stream:Stream.t option ->
+      unit
+  end
+
+  val enable_profiling : unit -> unit
+
+  val disable_profiling : unit -> unit
+
+  val is_available : unit -> bool
+end
