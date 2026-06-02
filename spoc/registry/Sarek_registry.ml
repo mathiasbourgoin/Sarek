@@ -42,7 +42,7 @@
 (** Information about a primitive/intrinsic type (float32, int64, etc.) *)
 type type_info = {
   ti_name : string;
-  ti_device : Spoc_framework.Device_type.t -> string;
+  ti_device : string -> string;
   ti_size : int; (* bytes *)
 }
 
@@ -70,7 +70,7 @@ type variant_info = {vi_name : string; vi_constructors : constructor_info list}
 type fun_info = {
   fi_name : string;
   fi_arity : int;
-  fi_device : Spoc_framework.Device_type.t -> string;
+  fi_device : string -> string;
   fi_arg_types : string list;
   fi_ret_type : string;
 }
@@ -167,33 +167,9 @@ let fun_device_code ?(module_path = []) name dev =
 let fun_device_template ?(module_path = []) name =
   match find_fun ~module_path name with
   | Some fi ->
-      (* Most intrinsics ignore the device parameter, so pass a minimal device.
-         If an intrinsic needs the device, it should be handled specially. *)
-      let minimal_dev =
-        {
-          Spoc_framework.Device_type.id = 0;
-          backend_id = 0;
-          name = "minimal";
-          framework = "generic";
-          capabilities =
-            {
-              max_threads_per_block = 1024;
-              max_block_dims = (1024, 1024, 64);
-              max_grid_dims = (65535, 65535, 65535);
-              shared_mem_per_block = 49152;
-              total_global_mem = 1073741824L;
-              compute_capability = (0, 0);
-              supports_fp64 = false;
-              supports_atomics = false;
-              warp_size = 1;
-              max_registers_per_block = 32768;
-              clock_rate_khz = 1000000;
-              multiprocessor_count = 1;
-              is_cpu = false;
-            };
-        }
-      in
-      Some (fi.fi_device minimal_dev)
+      (* Pass "generic" as the framework string: cuda_or_opencl maps
+         "generic" to the CUDA/default branch, preserving byte-identical output. *)
+      Some (fi.fi_device "generic")
   | None -> None
 
 (** Find a record by short name (last component after '.'). This handles cases
@@ -249,8 +225,8 @@ let () =
  * Helper function for device-specific code
  ******************************************************************************)
 
-let cuda_or_opencl (dev : Spoc_framework.Device_type.t) cuda_code opencl_code =
-  match dev.framework with
+let cuda_or_opencl (framework : string) cuda_code opencl_code =
+  match framework with
   | "OpenCL" -> opencl_code
   | "CUDA" | "Native" | "Interpreter" | _ -> cuda_code
 (* Use CUDA syntax for CUDA, interpreter, and native *)

@@ -41,34 +41,7 @@ let test_find_type () =
 
 let test_type_device_code () =
   register_type "test_double" ~device:(fun _ -> "double") ~size:8 ;
-  (* Create a dummy device to test device code generation *)
-  let dummy_caps : Spoc_framework.Framework_sig.capabilities =
-    {
-      max_threads_per_block = 256;
-      max_block_dims = (256, 256, 64);
-      max_grid_dims = (65535, 65535, 65535);
-      shared_mem_per_block = 16384;
-      total_global_mem = 2147483648L;
-      compute_capability = (0, 0);
-      supports_fp64 = true;
-      supports_atomics = true;
-      warp_size = 32;
-      max_registers_per_block = 16384;
-      clock_rate_khz = 1000000;
-      multiprocessor_count = 8;
-      is_cpu = false;
-    }
-  in
-  let dummy_dev : Spoc_framework.Device_type.t =
-    {
-      id = 0;
-      backend_id = 0;
-      name = "Test Device";
-      framework = "CUDA";
-      capabilities = dummy_caps;
-    }
-  in
-  let code = type_device_code "test_double" dummy_dev in
+  let code = type_device_code "test_double" "CUDA" in
   assert (code = "double") ;
   print_endline "  type_device_code: OK"
 
@@ -237,33 +210,7 @@ let test_fun_device_code () =
     ~device:(fun _ -> "min")
     ~arg_types:["int32"; "int32"]
     ~ret_type:"int32" ;
-  let dummy_caps : Spoc_framework.Framework_sig.capabilities =
-    {
-      max_threads_per_block = 256;
-      max_block_dims = (256, 256, 64);
-      max_grid_dims = (65535, 65535, 65535);
-      shared_mem_per_block = 16384;
-      total_global_mem = 2147483648L;
-      compute_capability = (0, 0);
-      supports_fp64 = true;
-      supports_atomics = true;
-      warp_size = 32;
-      max_registers_per_block = 16384;
-      clock_rate_khz = 1000000;
-      multiprocessor_count = 8;
-      is_cpu = false;
-    }
-  in
-  let dummy_dev : Spoc_framework.Device_type.t =
-    {
-      id = 0;
-      backend_id = 0;
-      name = "Test Device";
-      framework = "CUDA";
-      capabilities = dummy_caps;
-    }
-  in
-  let code = fun_device_code "test_min" dummy_dev in
+  let code = fun_device_code "test_min" "CUDA" in
   assert (code = "min") ;
   print_endline "  fun_device_code: OK"
 
@@ -284,53 +231,9 @@ let test_fun_device_template () =
 (** {1 cuda_or_opencl Helper Tests} *)
 
 let test_cuda_or_opencl () =
-  let dummy_caps : Spoc_framework.Framework_sig.capabilities =
-    {
-      max_threads_per_block = 256;
-      max_block_dims = (256, 256, 64);
-      max_grid_dims = (65535, 65535, 65535);
-      shared_mem_per_block = 16384;
-      total_global_mem = 2147483648L;
-      compute_capability = (0, 0);
-      supports_fp64 = true;
-      supports_atomics = true;
-      warp_size = 32;
-      max_registers_per_block = 16384;
-      clock_rate_khz = 1000000;
-      multiprocessor_count = 8;
-      is_cpu = false;
-    }
-  in
-  let cuda_dev : Spoc_framework.Device_type.t =
-    {
-      id = 0;
-      backend_id = 0;
-      name = "CUDA Device";
-      framework = "CUDA";
-      capabilities = dummy_caps;
-    }
-  in
-  let opencl_dev : Spoc_framework.Device_type.t =
-    {
-      id = 1;
-      backend_id = 0;
-      name = "OpenCL Device";
-      framework = "OpenCL";
-      capabilities = dummy_caps;
-    }
-  in
-  let native_dev : Spoc_framework.Device_type.t =
-    {
-      id = 2;
-      backend_id = 0;
-      name = "Native Device";
-      framework = "Native";
-      capabilities = dummy_caps;
-    }
-  in
-  assert (cuda_or_opencl cuda_dev "cuda_code" "opencl_code" = "cuda_code") ;
-  assert (cuda_or_opencl opencl_dev "cuda_code" "opencl_code" = "opencl_code") ;
-  assert (cuda_or_opencl native_dev "cuda_code" "opencl_code" = "cuda_code") ;
+  assert (cuda_or_opencl "CUDA" "cuda_code" "opencl_code" = "cuda_code") ;
+  assert (cuda_or_opencl "OpenCL" "cuda_code" "opencl_code" = "opencl_code") ;
+  assert (cuda_or_opencl "Native" "cuda_code" "opencl_code" = "cuda_code") ;
   print_endline "  cuda_or_opencl: OK"
 
 (** {1 Main} *)

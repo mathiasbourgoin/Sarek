@@ -4,7 +4,7 @@
 (library
  (name sarek_registry)
  (public_name spoc.registry)
- (libraries spoc_framework)
+ (libraries)
  (modules Sarek_registry)
  (preprocess no_preprocessing)
  (instrumentation
