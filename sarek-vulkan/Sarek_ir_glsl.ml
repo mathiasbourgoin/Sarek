@@ -29,8 +29,7 @@ let helper_vec_param_indices : (string, int list) Hashtbl.t = Hashtbl.create 16
 
 (** {1 Type Mapping} *)
 
-(** Mangle OCaml type name to valid GLSL identifier *)
-let mangle_name name = String.map (fun c -> if c = '.' then '_' else c) name
+let mangle_name = Sarek_ir_codegen.mangle_name
 
 (** GLSL reserved keywords that cannot be used as identifiers *)
 let glsl_reserved_keywords =
@@ -966,74 +965,11 @@ let gen_record_def buf (name, fields) =
   Buffer.add_string buf "};\n\n"
 
 (** Generate GLSL variant type definition *)
-let gen_variant_def buf (name, constrs) =
-  let mangled = mangle_name name in
-  (* Enum constants *)
-  List.iteri
-    (fun i (cname, _) ->
-      Buffer.add_string buf (Printf.sprintf "const int %s = %d;\n" cname i))
-    constrs ;
-  Buffer.add_char buf '\n' ;
-  (* Struct with tag and union-like data *)
-  Buffer.add_string buf (Printf.sprintf "struct %s {\n  int tag;\n" mangled) ;
-  let has_payload = List.exists (fun (_, args) -> args <> []) constrs in
-  if has_payload then begin
-    (* GLSL doesn't have unions, so we use the largest payload type *)
-    List.iter
-      (fun (cname, args) ->
-        match args with
-        | [] -> ()
-        | [ty] ->
-            Buffer.add_string
-              buf
-              (Printf.sprintf "  %s %s_v;\n" (glsl_type_of_elttype ty) cname)
-        | _ ->
-            (* Multiple args - generate struct *)
-            Buffer.add_string buf (Printf.sprintf "  struct { ") ;
-            List.iteri
-              (fun i ty ->
-                if i > 0 then Buffer.add_string buf " " ;
-                Buffer.add_string
-                  buf
-                  (Printf.sprintf "%s _%d;" (glsl_type_of_elttype ty) i))
-              args ;
-            Buffer.add_string buf (Printf.sprintf " } %s_v;\n" cname))
-      constrs
-  end ;
-  Buffer.add_string buf "};\n\n" ;
-  (* Constructor functions *)
-  List.iteri
-    (fun _i (cname, args) ->
-      Buffer.add_string
-        buf
-        (Printf.sprintf "%s make_%s_%s(" mangled mangled cname) ;
-      (match args with
-      | [] -> ()
-      | [ty] ->
-          Buffer.add_string buf (glsl_type_of_elttype ty) ;
-          Buffer.add_string buf " v"
-      | _ ->
-          List.iteri
-            (fun j ty ->
-              if j > 0 then Buffer.add_string buf ", " ;
-              Buffer.add_string buf (glsl_type_of_elttype ty) ;
-              Buffer.add_string buf (Printf.sprintf " v%d" j))
-            args) ;
-      Buffer.add_string buf ") {\n" ;
-      Buffer.add_string buf (Printf.sprintf "  %s r;\n" mangled) ;
-      Buffer.add_string buf (Printf.sprintf "  r.tag = %s;\n" cname) ;
-      (match args with
-      | [] -> ()
-      | [_] -> Buffer.add_string buf (Printf.sprintf "  r.%s_v = v;\n" cname)
-      | _ ->
-          List.iteri
-            (fun j _ ->
-              Buffer.add_string
-                buf
-                (Printf.sprintf "  r.%s_v._%d = v%d;\n" cname j j))
-            args) ;
-      Buffer.add_string buf "  return r;\n}\n\n")
-    constrs
+let gen_variant_def buf v =
+  Sarek_ir_codegen.gen_variant_def_glsl
+    ~type_of_elttype:glsl_type_of_elttype
+    buf
+    v
 
 (** Generate GLSL source with custom type definitions.
     @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.

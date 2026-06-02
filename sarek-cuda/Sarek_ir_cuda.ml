@@ -28,9 +28,7 @@ let current_variants : (string * (string * elttype list) list) list ref = ref []
 
 (** {1 Type Mapping} *)
 
-(** Mangle OCaml type name to valid C identifier (e.g., "Module.point" ->
-    "Module_point") *)
-let mangle_name name = String.map (fun c -> if c = '.' then '_' else c) name
+let mangle_name = Sarek_ir_codegen.mangle_name
 
 (** Map Sarek IR element type to CUDA C type string *)
 let rec cuda_type_of_elttype = function
@@ -793,79 +791,12 @@ let generate_for_device ~(device : Device.t) (k : kernel) : string =
   result
 
 (** Generate CUDA variant type definition *)
-let gen_variant_def buf (name, constrs) =
-  let mangled = mangle_name name in
-  (* Enum for tags - use simple names for switch case labels *)
-  Buffer.add_string buf "enum { " ;
-  List.iteri
-    (fun i (cname, _) ->
-      if i > 0 then Buffer.add_string buf ", " ;
-      Buffer.add_string buf cname ;
-      Buffer.add_string buf " = " ;
-      Buffer.add_string buf (string_of_int i))
-    constrs ;
-  Buffer.add_string buf " };\n" ;
-  (* Struct with tag and union *)
-  Buffer.add_string buf "typedef struct {\n  int tag;\n" ;
-  (* Generate union if any constructor has payload *)
-  let has_payload = List.exists (fun (_, args) -> args <> []) constrs in
-  if has_payload then begin
-    Buffer.add_string buf "  union {\n" ;
-    List.iter
-      (fun (cname, args) ->
-        match args with
-        | [] -> () (* No payload for this constructor *)
-        | [ty] ->
-            Buffer.add_string buf "    " ;
-            Buffer.add_string buf (cuda_type_of_elttype ty) ;
-            Buffer.add_string buf (" " ^ cname ^ "_v;\n")
-        | _ ->
-            (* Multiple args - generate struct *)
-            Buffer.add_string buf "    struct { " ;
-            List.iteri
-              (fun i ty ->
-                if i > 0 then Buffer.add_string buf " " ;
-                Buffer.add_string buf (cuda_type_of_elttype ty) ;
-                Buffer.add_string buf (Printf.sprintf " _%d;" i))
-              args ;
-            Buffer.add_string buf (" } " ^ cname ^ "_v;\n"))
-      constrs ;
-    Buffer.add_string buf "  } data;\n"
-  end ;
-  Buffer.add_string buf ("} " ^ mangled ^ ";\n\n") ;
-  (* Constructor functions *)
-  List.iteri
-    (fun _i (cname, args) ->
-      Buffer.add_string
-        buf
-        ("__device__ __host__ inline " ^ mangled ^ " make_" ^ mangled ^ "_"
-       ^ cname ^ "(") ;
-      (match args with
-      | [] -> ()
-      | [ty] ->
-          Buffer.add_string buf (cuda_type_of_elttype ty) ;
-          Buffer.add_string buf " v"
-      | _ ->
-          List.iteri
-            (fun j ty ->
-              if j > 0 then Buffer.add_string buf ", " ;
-              Buffer.add_string buf (cuda_type_of_elttype ty) ;
-              Buffer.add_string buf (Printf.sprintf " v%d" j))
-            args) ;
-      Buffer.add_string buf (") {\n  " ^ mangled ^ " r;\n") ;
-      Buffer.add_string buf ("  r.tag = " ^ cname ^ ";\n") ;
-      (match args with
-      | [] -> ()
-      | [_] -> Buffer.add_string buf ("  r.data." ^ cname ^ "_v = v;\n")
-      | _ ->
-          List.iteri
-            (fun j _ ->
-              Buffer.add_string
-                buf
-                (Printf.sprintf "  r.data.%s_v._%d = v%d;\n" cname j j))
-            args) ;
-      Buffer.add_string buf "  return r;\n}\n\n")
-    constrs
+let gen_variant_def buf v =
+  Sarek_ir_codegen.gen_variant_def
+    ~type_of_elttype:cuda_type_of_elttype
+    ~constructor_prefix:"__device__ __host__ inline"
+    buf
+    v
 
 (** Generate CUDA source with custom type definitions *)
 let generate_with_types ~(types : (string * (string * elttype) list) list)

@@ -5,7 +5,7 @@
  (name sarek_ir)
  (public_name spoc.ir)
  (wrapped false)
- (modules Sarek_ir_types Sarek_ir_pp Sarek_ir_analysis)
+ (modules Sarek_ir_types Sarek_ir_pp Sarek_ir_analysis Sarek_ir_codegen)
  (preprocess no_preprocessing)
  (instrumentation
   (backend bisect_ppx)))
