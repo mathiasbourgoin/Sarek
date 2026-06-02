@@ -118,6 +118,12 @@ body {
 }
 
 .nav-dropdown .dropdown-toggle {
+  /* Rendered as a <button> for keyboard/touch/ARIA support; reset native chrome
+     so it matches the surrounding nav links. */
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
   color: var(--nav-text);
   font-weight: 500;
   font-size: 0.95rem;
@@ -126,6 +132,12 @@ body {
 }
 
 .nav-dropdown .dropdown-toggle:hover {
+  color: var(--primary-color);
+}
+
+.nav-dropdown .dropdown-toggle:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 3px;
   color: var(--primary-color);
 }
 
@@ -156,7 +168,10 @@ body {
   height: 8px;
 }
 
-.nav-dropdown:hover .dropdown-menu {
+/* Mouse hover (desktop) and the JS-managed `.open` state (click / keyboard / touch)
+   both reveal the menu. */
+.nav-dropdown:hover .dropdown-menu,
+.nav-dropdown.open .dropdown-menu {
   display: block;
 }
 

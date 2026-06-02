@@ -27,11 +27,12 @@
           <a href="{{ site.baseurl }}/benchmarks/">Benchmarks</a>
           <a href="{{ site.baseurl }}/examples/">Examples</a>
           <div class="nav-dropdown">
-            <a href="#" class="dropdown-toggle">Docs ▾</a>
-            <div class="dropdown-menu">
+            <button type="button" class="dropdown-toggle" aria-haspopup="true" aria-expanded="false" aria-controls="docs-menu">Docs ▾</button>
+            <div class="dropdown-menu" id="docs-menu">
               <a href="{{ site.baseurl }}/docs/concepts.html">Concepts</a>
               <a href="{{ site.baseurl }}/docs/architecture.html">Architecture</a>
               <a href="{{ site.baseurl }}/docs/backends.html">Backends</a>
+              <a href="{{ site.baseurl }}/docs/device_selection.html">Device Selection</a>
               <a href="{{ site.baseurl }}/docs/build_guide.html">Build Guide</a>
               <a href="{{ site.baseurl }}/docs/faq.html">FAQ</a>
               <a href="{{ site.baseurl }}/docs/publications.html">Publications</a>
@@ -62,6 +63,7 @@
     <script src="{{ site.baseurl }}/javascripts/scale.fix.js"></script>
     <script src="{{ site.baseurl }}/javascripts/copy-code.js"></script>
     <script src="{{ site.baseurl }}/javascripts/theme-toggle.js"></script>
+    <script src="{{ site.baseurl }}/javascripts/dropdown.js"></script>
     <script src="{{ site.baseurl }}/javascripts/syntax-sarek.js"></script>
   </body>
 </html>
