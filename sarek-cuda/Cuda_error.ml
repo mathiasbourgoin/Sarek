@@ -11,12 +11,12 @@
  ******************************************************************************)
 
 (** Instantiate shared backend error module for CUDA *)
-include Spoc_framework.Backend_error.Make (struct
+include Sarek_backend_error.Backend_error.Make (struct
   let name = "CUDA"
 end)
 
 (** Backward compatibility: re-export exception type *)
-exception Cuda_error = Spoc_framework.Backend_error.Backend_error
+exception Cuda_error = Sarek_backend_error.Backend_error.Backend_error
 
 (** Backward compatibility: module_load_failed used 'ptx_size' parameter name *)
 let module_load_failed ptx_size reason = module_load_failed ptx_size reason

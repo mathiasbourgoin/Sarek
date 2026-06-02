@@ -16,6 +16,7 @@
   spoc_framework_registry
   sarek_ir
   sarek_registry
+  sarek_backend_error
   (re_export spoc_core))
  (modules
   Opencl_error

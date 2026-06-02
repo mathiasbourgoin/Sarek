@@ -20,6 +20,7 @@
   sarek_ir
   str
   sarek_registry
+  sarek_backend_error
   (re_export spoc_core))
  (modules
   Vulkan_error

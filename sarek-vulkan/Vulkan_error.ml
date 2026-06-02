@@ -11,9 +11,9 @@
  ******************************************************************************)
 
 (** Instantiate shared backend error module for Vulkan *)
-include Spoc_framework.Backend_error.Make (struct
+include Sarek_backend_error.Backend_error.Make (struct
   let name = "Vulkan"
 end)
 
 (** Exception type for Vulkan errors *)
-exception Vulkan_error = Spoc_framework.Backend_error.Backend_error
+exception Vulkan_error = Sarek_backend_error.Backend_error.Backend_error

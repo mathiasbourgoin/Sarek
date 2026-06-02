@@ -11,9 +11,9 @@
  ******************************************************************************)
 
 (** Instantiate shared backend error module for OpenCL *)
-include Spoc_framework.Backend_error.Make (struct
+include Sarek_backend_error.Backend_error.Make (struct
   let name = "OpenCL"
 end)
 
 (** Exception type for OpenCL errors *)
-exception Opencl_error = Spoc_framework.Backend_error.Backend_error
+exception Opencl_error = Sarek_backend_error.Backend_error.Backend_error
