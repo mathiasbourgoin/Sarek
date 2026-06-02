@@ -1,0 +1,14 @@
+; sarek_codegen - Pure backend code generators (no ctypes, no spoc_core)
+;
+; Contains the 4 IR-to-source generators: CUDA, OpenCL, Metal, GLSL.
+; Depends only on the ctypes-free IR, registry, and error libraries.
+; This enables OCaml IR → GPU source compilation without any FFI link.
+
+(library
+ (name sarek_codegen)
+ (public_name sarek.codegen)
+ (libraries sarek_ir sarek_registry sarek_backend_error)
+ (modules Sarek_ir_cuda Sarek_ir_opencl Sarek_ir_metal Sarek_ir_glsl)
+ (preprocess no_preprocessing)
+ (instrumentation
+  (backend bisect_ppx)))
