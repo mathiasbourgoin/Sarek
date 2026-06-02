@@ -3,10 +3,10 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(** Thin adapter for OpenCL generator in golden tests *)
+(** Thin adapter for OpenCL generator in golden tests — uses pure sarek_codegen *)
 
 open Sarek_ir_types
-open Sarek_opencl
+open Sarek_codegen
 
 let reset_state () =
   Sarek_ir_opencl.current_framework := None ;
