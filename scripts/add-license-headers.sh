@@ -75,8 +75,13 @@ add_ocaml_header() {
     
     # Check if header already exists
     if head -10 "$file" | grep -q "SPDX-License-Identifier"; then
-        # Header exists - check if we need to update it
-        local header_end_line=$(head -20 "$file" | grep -n '^\(\*\*\**\*\*\*)$' | tail -1 | cut -d: -f1)
+        # Header exists - check if we need to update it.
+        # Match the closing delimiter line "(****...****)" (literal '(', one or
+        # more '*', literal ')').
+        local header_end_line=$(head -20 "$file" | grep -nE '^\(\*+\)$' | tail -1 | cut -d: -f1)
+        # Fall back to a safe window if no delimiter is found, so the head/sed
+        # calls below never receive an empty or invalid line number.
+        [ -z "$header_end_line" ] && header_end_line=10
         
         # Check if this contributor already has a copyright line
         if head -"$header_end_line" "$file" 2>/dev/null | grep "SPDX-FileCopyrightText:" | grep -q "$contributor_email"; then
