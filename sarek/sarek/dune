@@ -19,6 +19,9 @@
   Sarek_ir
   Sarek_ir_interp
   Sarek_fusion
+  Sarek_cpu_runtime_types
+  Sarek_cpu_runtime_exec
+  Sarek_cpu_runtime_pools
   Sarek_cpu_runtime
   Sarek_float32
   Kirc_kernel
