@@ -12,7 +12,6 @@
 (* Force stdlib initialization *)
 let () = Sarek_stdlib.force_init ()
 
-
 let dummy_loc =
   Sarek_ast.
     {

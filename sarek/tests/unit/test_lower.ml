@@ -278,8 +278,7 @@ let test_lower_intrinsic_const () =
   (* Use a simple module path for testing *)
   let te =
     mk_texpr
-      (TEIntrinsicConst
-         (Sarek_env.IntrinsicRef (["Gpu"], "thread_idx_x")))
+      (TEIntrinsicConst (Sarek_env.IntrinsicRef (["Gpu"], "thread_idx_x")))
       t_int32
   in
   let state = create_state (empty_fun_map ()) in

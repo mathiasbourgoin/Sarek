@@ -28,11 +28,7 @@ let dummy_loc =
 let test_register_find_type () =
   let type_info =
     Sarek_ppx_registry.
-      {
-        ti_name = "test_type";
-        ti_size = 4;
-        ti_sarek_type = TPrim TInt32;
-      }
+      {ti_name = "test_type"; ti_size = 4; ti_sarek_type = TPrim TInt32}
   in
   Sarek_ppx_registry.register_type type_info ;
   match Sarek_ppx_registry.find_type "test_type" with
@@ -259,11 +255,7 @@ let test_all_types () =
   let initial_count = List.length (Sarek_ppx_registry.all_types ()) in
   let type_info =
     Sarek_ppx_registry.
-      {
-        ti_name = "test_all_types";
-        ti_size = 8;
-        ti_sarek_type = TReg Int64;
-      }
+      {ti_name = "test_all_types"; ti_size = 8; ti_sarek_type = TReg Int64}
   in
   Sarek_ppx_registry.register_type type_info ;
   let new_count = List.length (Sarek_ppx_registry.all_types ()) in

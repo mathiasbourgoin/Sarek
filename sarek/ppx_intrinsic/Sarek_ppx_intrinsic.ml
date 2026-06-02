@@ -341,9 +341,7 @@ let expand_sarek_intrinsic_fun ~ctxt payload =
       [
         (* Expose the device function for extensions to chain to.
            The user provides the device function directly. *)
-        [%stri
-          let [%p device_fun_pat] : string -> string =
-            [%e device_expr]];
+        [%stri let [%p device_fun_pat] : string -> string = [%e device_expr]];
         (* Mutable ref for extension chaining *)
         [%stri
           let [%p device_fun_ref_pat] : (string -> string) ref =

@@ -84,9 +84,7 @@ let check_infer_ok msg env expr expected_typ =
       Alcotest.failf
         "%s: type error: %s"
         msg
-        (String.concat
-           ", "
-           (List.map Sarek_error.error_to_string errors))
+        (String.concat ", " (List.map Sarek_error.error_to_string errors))
 
 let check_infer_error msg env expr =
   reset_tvar_counter () ;
@@ -163,9 +161,7 @@ let test_kernel_module_const () =
   | Error errs ->
       Alcotest.failf
         "kernel with module const failed: %s"
-        (String.concat
-           ", "
-           (List.map Sarek_error.error_to_string errs))
+        (String.concat ", " (List.map Sarek_error.error_to_string errs))
 
 let test_kernel_module_fun () =
   reset_tvar_counter () ;
@@ -222,9 +218,7 @@ let test_kernel_module_fun () =
   | Error errs ->
       Alcotest.failf
         "kernel with module fun failed: %s"
-        (String.concat
-           ", "
-           (List.map Sarek_error.error_to_string errs))
+        (String.concat ", " (List.map Sarek_error.error_to_string errs))
 
 let test_kernel_module_fun_with_variant () =
   reset_tvar_counter () ;
@@ -323,9 +317,7 @@ let test_kernel_module_fun_with_variant () =
   | Error errs ->
       Alcotest.failf
         "kernel with variant helper failed: %s"
-        (String.concat
-           ", "
-           (List.map Sarek_error.error_to_string errs))
+        (String.concat ", " (List.map Sarek_error.error_to_string errs))
 
 let test_kernel_module_fun_with_record () =
   reset_tvar_counter () ;
@@ -406,9 +398,7 @@ let test_kernel_module_fun_with_record () =
   | Error errs ->
       Alcotest.failf
         "kernel with record helper failed: %s"
-        (String.concat
-           ", "
-           (List.map Sarek_error.error_to_string errs))
+        (String.concat ", " (List.map Sarek_error.error_to_string errs))
 
 let test_kernel_type_decl_record () =
   reset_tvar_counter () ;
@@ -461,9 +451,7 @@ let test_kernel_type_decl_record () =
   | Error errs ->
       Alcotest.failf
         "kernel with type decl failed: %s"
-        (String.concat
-           ", "
-           (List.map Sarek_error.error_to_string errs))
+        (String.concat ", " (List.map Sarek_error.error_to_string errs))
 
 (* Test variable type inference *)
 let test_var_lookup () =

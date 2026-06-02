@@ -191,12 +191,22 @@ let make_type_info ~name ~size ~sarek_type : type_info =
 (** Helper: create intrinsic_info *)
 let make_intrinsic_info ~name ~module_path ~typ : intrinsic_info =
   let qualified = String.concat "." (module_path @ [name]) in
-  {ii_name = name; ii_qualified_name = qualified; ii_type = typ; ii_module = module_path}
+  {
+    ii_name = name;
+    ii_qualified_name = qualified;
+    ii_type = typ;
+    ii_module = module_path;
+  }
 
 (** Helper: create const_info *)
 let make_const_info ~name ~module_path ~typ : const_info =
   let qualified = String.concat "." (module_path @ [name]) in
-  {ci_name = name; ci_qualified_name = qualified; ci_type = typ; ci_module = module_path}
+  {
+    ci_name = name;
+    ci_qualified_name = qualified;
+    ci_type = typ;
+    ci_module = module_path;
+  }
 
 (** Helper: create module_item_info *)
 let make_module_item_info ~name ~module_name ~item : module_item_info =
