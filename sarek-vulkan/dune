@@ -25,6 +25,12 @@
   Vulkan_error
   Vulkan_types
   Vulkan_bindings
+  Vulkan_api_base
+  Vulkan_api_device
+  Vulkan_api_memory
+  Vulkan_api_stream
+  Vulkan_api_event
+  Vulkan_api_kernel
   Vulkan_api
   Vulkan_plugin_base
   Vulkan_plugin
