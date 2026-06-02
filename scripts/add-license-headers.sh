@@ -15,6 +15,11 @@ cd "$PROJECT_ROOT"
 # Default license
 LICENSE="CECILL-B"
 
+# Canonical copyright holder for this project. Headers use this single identity
+# rather than the git commit author, so the header set stays stable regardless of
+# which machine/identity authored a change (avoids accruing per-committer lines).
+MAINTAINER="Mathias Bourgoin <mathias.bourgoin@gmail.com>"
+
 # Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -49,20 +54,10 @@ get_copyright_years() {
     fi
 }
 
-# Get primary contributor (most commits)
+# Primary contributor. Fixed to the canonical project maintainer so headers carry
+# one stable identity rather than a line per git committer.
 get_primary_contributor() {
-    local file="$1"
-    
-    # Get contributor with most commits
-    local contributor=$(git log --follow --format="%an <%ae>" "$file" 2>/dev/null | \
-        sort | uniq -c | sort -rn | head -1 | sed 's/^[[:space:]]*[0-9]*[[:space:]]*//')
-    
-    # Default if git info not available
-    if [ -z "$contributor" ]; then
-        contributor="$(git config user.name) <$(git config user.email)>"
-    fi
-    
-    echo "$contributor"
+    echo "$MAINTAINER"
 }
 
 # Add or update header in OCaml file
