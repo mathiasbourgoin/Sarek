@@ -16,8 +16,8 @@
  * - Registry entry for JIT code generation
  ******************************************************************************)
 
-let dev cuda opencl (d : Spoc_core.Device.t) =
-  match d.framework with "CUDA" -> cuda | _ -> opencl
+let dev cuda opencl (framework : string) =
+  match framework with "CUDA" -> cuda | _ -> opencl
 
 (******************************************************************************
  * Thread indices within the block

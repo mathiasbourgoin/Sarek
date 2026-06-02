@@ -89,9 +89,7 @@ let sarek_type_of_simple_name ~loc (name : string) : expression =
   | _ ->
       (* For unknown types, use TReg (Custom name) *)
       let name_expr = Ast_builder.Default.estring ~loc name in
-      [%expr
-        Sarek_types.TReg
-          (Sarek_types.Custom [%e name_expr])]
+      [%expr Sarek_types.TReg (Sarek_types.Custom [%e name_expr])]
 
 (** Flatten a parsed arrow type into (arg_types, return_type). E.g., PTArrow(a,
     PTArrow(b, c)) becomes ([a; b], c) *)
@@ -109,9 +107,7 @@ let rec sarek_type_of_simple_parsed ~loc (pt : parsed_type) : expression =
   | PTArray elem_type ->
       let elem_expr = sarek_type_of_simple_parsed ~loc elem_type in
       (* Use Local memory space for intrinsic array args (shared memory) *)
-      [%expr
-        Sarek_types.TArr
-          ([%e elem_expr], Sarek_types.Local)]
+      [%expr Sarek_types.TArr ([%e elem_expr], Sarek_types.Local)]
   | PTVec elem_type ->
       let elem_expr = sarek_type_of_simple_parsed ~loc elem_type in
       (* Vector is global memory *)
@@ -145,9 +141,7 @@ let sarek_type_of_name ~loc (name : string) : expression =
   then
     let elem_name = String.sub name 0 (String.length name - 6) in
     let elem_expr = sarek_type_of_simple_name ~loc elem_name in
-    [%expr
-      Sarek_types.TArr
-        ([%e elem_expr], Sarek_types.Local)]
+    [%expr Sarek_types.TArr ([%e elem_expr], Sarek_types.Local)]
   else if
     String.length name > 7
     && String.sub name (String.length name - 7) 7 = " vector"
@@ -348,11 +342,11 @@ let expand_sarek_intrinsic_fun ~ctxt payload =
         (* Expose the device function for extensions to chain to.
            The user provides the device function directly. *)
         [%stri
-          let [%p device_fun_pat] : Spoc_core.Device.t -> string =
+          let [%p device_fun_pat] : string -> string =
             [%e device_expr]];
         (* Mutable ref for extension chaining *)
         [%stri
-          let [%p device_fun_ref_pat] : (Spoc_core.Device.t -> string) ref =
+          let [%p device_fun_ref_pat] : (string -> string) ref =
             ref [%e Ast_builder.Default.evar ~loc device_fun_name]];
         (* Runtime registration for JIT - uses the ref for extensibility *)
         [%stri
