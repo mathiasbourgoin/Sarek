@@ -10,7 +10,7 @@ open Sarek_cuda
 
 let reset_state () =
   (* Reset mutable refs before each run *)
-  Sarek_ir_cuda.current_device := None ;
+  Sarek_ir_cuda.current_framework := None ;
   Sarek_ir_cuda.current_variants := []
 
 let generate_with_types ~types (k : kernel) =
