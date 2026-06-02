@@ -3,7 +3,8 @@
 # SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
 #
 # Automatically add or update SPDX license headers in source files
-# Uses git history to determine copyright years and contributors
+# Uses git history to determine copyright years
+# Uses a canonical maintainer identity (MAINTAINER) for contributor attribution
 
 set -e
 
