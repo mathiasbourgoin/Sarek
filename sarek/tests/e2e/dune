@@ -187,6 +187,15 @@
  (preprocess
   (pps sarek_ppx)))
 
+; PR-2 Float32.sin pure-registry GPU e2e test
+; Run with: dune exec sarek/tests/e2e/test_float32_sin_pure.exe -- --vulkan
+
+(executable
+ (name test_float32_sin_pure)
+ (modules test_float32_sin_pure)
+ (libraries sarek sarek_ir spoc_core test_helpers unix)
+ (preprocess no_preprocessing))
+
 ; External kernel test - works with any available backend
 
 (executable
