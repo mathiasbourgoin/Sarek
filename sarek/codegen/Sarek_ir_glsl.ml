@@ -19,7 +19,8 @@
 
 open Sarek_ir_types
 
-(** Local error module — same raised exception as the package-level [Vulkan_error]. *)
+(** Local error module — same raised exception as the package-level
+    [Vulkan_error]. *)
 module Codegen_error = Sarek_backend_error.Backend_error.Make (struct
   let name = "Vulkan"
 end)

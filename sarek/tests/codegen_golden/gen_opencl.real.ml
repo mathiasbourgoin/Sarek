@@ -3,7 +3,8 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(** Thin adapter for OpenCL generator in golden tests — uses pure sarek_codegen *)
+(** Thin adapter for OpenCL generator in golden tests — uses pure sarek_codegen
+*)
 
 open Sarek_ir_types
 open Sarek_codegen

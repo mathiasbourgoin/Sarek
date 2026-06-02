@@ -18,7 +18,8 @@
 
 open Sarek_ir_types
 
-(** Local error module — same raised exception as the package-level [Opencl_error]. *)
+(** Local error module — same raised exception as the package-level
+    [Opencl_error]. *)
 module Codegen_error = Sarek_backend_error.Backend_error.Make (struct
   let name = "OpenCL"
 end)
@@ -34,8 +35,8 @@ let large_buffer_size = 4096
 (** Format float with full precision (17 digits for double precision) *)
 let format_float f = Printf.sprintf "%.17g" f
 
-(** Current framework string for SNative code generation. Always [None]
-    in normal use; SNative branches check this ref and error if None. *)
+(** Current framework string for SNative code generation. Always [None] in
+    normal use; SNative branches check this ref and error if None. *)
 let current_framework : string option ref = ref None
 
 (** Current kernel's variant definitions (set during generate) *)
@@ -582,7 +583,8 @@ let rec gen_stmt buf indent = function
           Codegen_error.raise_error
             (Codegen_error.unsupported_construct
                "SNative"
-               "SNative requires device context (set current_framework before calling generate)"))
+               "SNative requires device context (set current_framework before \
+                calling generate)"))
   | SExpr e ->
       Buffer.add_string buf indent ;
       gen_expr buf e ;
@@ -807,7 +809,6 @@ let generate (k : kernel) : string =
   Buffer.add_string buf "}\n" ;
 
   Buffer.contents buf
-
 
 (** Generate variant type definition for OpenCL *)
 let gen_variant_def buf v =

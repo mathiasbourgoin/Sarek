@@ -18,13 +18,14 @@
 
 open Sarek_ir_types
 
-(** Local error module — same raised exception as the package-level [Metal_error]. *)
+(** Local error module — same raised exception as the package-level
+    [Metal_error]. *)
 module Codegen_error = Sarek_backend_error.Backend_error.Make (struct
   let name = "Metal"
 end)
 
-(** Current framework string for SNative code generation. Always [None]
-    in normal use; SNative branches check this ref and error if None. *)
+(** Current framework string for SNative code generation. Always [None] in
+    normal use; SNative branches check this ref and error if None. *)
 let current_framework : string option ref = ref None
 
 (** Current kernel's variant definitions (set during generate) *)
@@ -693,7 +694,8 @@ let rec gen_stmt buf indent = function
       | None ->
           Codegen_error.raise_error
             (Codegen_error.no_device_selected
-               "SNative requires device context (set current_framework before calling generate)"))
+               "SNative requires device context (set current_framework before \
+                calling generate)"))
   | SExpr e ->
       Buffer.add_string buf indent ;
       gen_expr buf e ;
@@ -772,7 +774,9 @@ let gen_param_metal buf atomic_vars idx = function
       idx + 2
   | DLocal _ | DShared _ ->
       Codegen_error.raise_error
-        (Codegen_error.unsupported_construct "gen_param_metal" "expected DParam")
+        (Codegen_error.unsupported_construct
+           "gen_param_metal"
+           "expected DParam")
 
 let gen_param buf = function
   | DParam (v, None) ->
@@ -1033,7 +1037,6 @@ let generate (k : kernel) : string =
   Buffer.add_string buf "}\n" ;
 
   pretty_print_metal (Buffer.contents buf)
-
 
 (** Generate variant type definition for Metal *)
 let gen_variant_def buf v =
