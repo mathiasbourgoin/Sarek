@@ -236,7 +236,6 @@ let expand_sarek_intrinsic_type ~ctxt payload =
             Sarek_ppx_lib.Sarek_ppx_registry.register_type
               (Sarek_ppx_lib.Sarek_ppx_registry.make_type_info
                  ~name:[%e type_name_str]
-                 ~device:[%e device_expr]
                  ~size:(Ctypes.sizeof [%e ctype_expr])
                  ~sarek_type:[%e sarek_type])];
       ]
@@ -374,8 +373,7 @@ let expand_sarek_intrinsic_fun ~ctxt payload =
               (Sarek_ppx_lib.Sarek_ppx_registry.make_intrinsic_info
                  ~name:[%e fun_name_str]
                  ~module_path:[%e module_path_expr]
-                 ~typ:[%e sarek_fun_type]
-                 ~device:(fun dev -> ![%e device_fun_ref_expr] dev))];
+                 ~typ:[%e sarek_fun_type])];
         (* Expose the OCaml implementation for host-side use *)
         [%stri let [%p fun_name_pat] = [%e ocaml_expr]];
       ]

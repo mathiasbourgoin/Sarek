@@ -25,16 +25,12 @@ let dummy_loc =
       loc_end_col = 10;
     }
 
-(* Helper: create a test device string generator *)
-let test_device_gen _dev = "test_device_code"
-
 (* Test: register and find type *)
 let test_register_find_type () =
   let type_info =
     Sarek_ppx_registry.
       {
         ti_name = "test_type";
-        ti_device = test_device_gen;
         ti_size = 4;
         ti_sarek_type = TPrim TInt32;
       }
@@ -59,7 +55,6 @@ let test_register_find_intrinsic () =
         ii_name = "test_sin";
         ii_qualified_name = "Test.sin";
         ii_type = TFun ([TReg Float32], TReg Float32);
-        ii_device = test_device_gen;
         ii_module = ["Test"];
       }
   in
@@ -78,7 +73,6 @@ let test_find_intrinsic_qualified () =
         ii_name = "test_cos";
         ii_qualified_name = "Math.Trig.cos";
         ii_type = TFun ([TReg Float32], TReg Float32);
-        ii_device = test_device_gen;
         ii_module = ["Math"; "Trig"];
       }
   in
@@ -104,7 +98,6 @@ let test_is_intrinsic () =
         ii_name = "test_sqrt";
         ii_qualified_name = "Test.sqrt";
         ii_type = TFun ([TReg Float32], TReg Float32);
-        ii_device = test_device_gen;
         ii_module = ["Test"];
       }
   in
@@ -126,7 +119,6 @@ let test_register_find_const () =
         ci_name = "test_const";
         ci_qualified_name = "Test.const";
         ci_type = TPrim TInt32;
-        ci_device = test_device_gen;
         ci_module = ["Test"];
       }
   in
@@ -147,7 +139,6 @@ let test_is_const () =
         ci_name = "test_pi";
         ci_qualified_name = "Test.pi";
         ci_type = TReg Float32;
-        ci_device = test_device_gen;
         ci_module = ["Test"];
       }
   in
@@ -271,7 +262,6 @@ let test_all_types () =
     Sarek_ppx_registry.
       {
         ti_name = "test_all_types";
-        ti_device = test_device_gen;
         ti_size = 8;
         ti_sarek_type = TReg Int64;
       }
@@ -291,7 +281,6 @@ let test_all_intrinsics_dedup () =
         ii_name = "test_dedup";
         ii_qualified_name = "Test.dedup";
         ii_type = TFun ([TPrim TInt32], TPrim TInt32);
-        ii_device = test_device_gen;
         ii_module = ["Test"];
       }
   in
