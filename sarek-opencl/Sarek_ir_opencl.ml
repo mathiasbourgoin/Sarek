@@ -29,8 +29,8 @@ let large_buffer_size = 4096
 (** Format float with full precision (17 digits for double precision) *)
 let format_float f = Printf.sprintf "%.17g" f
 
-(** Current framework string for SNative code generation. Set by
-    [generate_for_device]; [generate] leaves this as [None]. *)
+(** Current framework string for SNative code generation. Always [None]
+    in normal use; SNative branches check this ref and error if None. *)
 let current_framework : string option ref = ref None
 
 (** Current kernel's variant definitions (set during generate) *)
@@ -577,7 +577,7 @@ let rec gen_stmt buf indent = function
           Opencl_error.raise_error
             (Opencl_error.unsupported_construct
                "SNative"
-               "requires device context - use generate_for_device"))
+               "SNative requires device context (set current_framework before calling generate)"))
   | SExpr e ->
       Buffer.add_string buf indent ;
       gen_expr buf e ;
@@ -803,13 +803,6 @@ let generate (k : kernel) : string =
 
   Buffer.contents buf
 
-(** Generate complete OpenCL source with device context for SNative. Extracts
-    only the framework string from [device]. *)
-let generate_for_device ~(device : Spoc_core.Device.t) (k : kernel) : string =
-  current_framework := Some device.Spoc_core.Device.framework ;
-  let result = generate k in
-  current_framework := None ;
-  result
 
 (** Generate variant type definition for OpenCL *)
 let gen_variant_def buf v =

@@ -18,8 +18,8 @@
 
 open Sarek_ir_types
 
-(** Current framework string for SNative code generation. Set by
-    [generate_for_device]; [generate] leaves this as [None]. *)
+(** Current framework string for SNative code generation. Always [None]
+    in normal use; SNative branches check this ref and error if None. *)
 let current_framework : string option ref = ref None
 
 (** Current kernel's variant definitions (set during generate) *)
@@ -688,7 +688,7 @@ let rec gen_stmt buf indent = function
       | None ->
           Metal_error.raise_error
             (Metal_error.no_device_selected
-               "SNative (use generate_for_device instead of generate)"))
+               "SNative requires device context (set current_framework before calling generate)"))
   | SExpr e ->
       Buffer.add_string buf indent ;
       gen_expr buf e ;
@@ -1029,13 +1029,6 @@ let generate (k : kernel) : string =
 
   pretty_print_metal (Buffer.contents buf)
 
-(** Generate complete Metal source with device context for SNative. Extracts
-    only the framework string from [device]. *)
-let generate_for_device ~(device : Spoc_core.Device.t) (k : kernel) : string =
-  current_framework := Some device.Spoc_core.Device.framework ;
-  let result = generate k in
-  current_framework := None ;
-  result
 
 (** Generate variant type definition for Metal *)
 let gen_variant_def buf v =
