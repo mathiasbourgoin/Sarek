@@ -171,6 +171,11 @@ let () =
   reg_math32 "fma" "fmaf" "fma" ;
   reg_math32 "min" "fminf" "min" ;
   reg_math32 "max" "fmaxf" "max" ;
+  reg_math32 "abs_float" "fabsf" "fabs" ;
+  reg_math32 "expm1" "expm1f" "expm1" ;
+  reg_math32 "log1p" "log1pf" "log1p" ;
+  reg_math32 "hypot" "hypotf" "hypot" ;
+  reg_math32 "copysign" "copysignf" "copysign" ;
   (* ---- Math.Float64 ---- *)
   let reg_math64 name =
     register_fun

@@ -29,12 +29,15 @@ let () = Test_helpers.Benchmarks.init_backends ()
     fun (a : float32 vec) (b : float32 vec) -> let idx = global_thread_id in
     b.[idx] <- Float32.sin a.[idx] *)
 let make_float32_sin_ir () : kernel =
-  let make_var name ty =
-    {var_name = name; var_id = 0; var_type = ty; var_mutable = false}
+  let make_var id name ty =
+    {var_name = name; var_id = id; var_type = ty; var_mutable = false}
   in
-  let a = make_var "a" (TVec TFloat32) in
-  let b = make_var "b" (TVec TFloat32) in
-  let idx = make_var "idx" TInt32 in
+  (* Distinct var_ids: the interpreter keys env.vars by var_id and fusion
+     compares EVar by var_id, so duplicate ids are fragile even when (as here)
+     only idx is referenced via EVar. *)
+  let a = make_var 0 "a" (TVec TFloat32) in
+  let b = make_var 1 "b" (TVec TFloat32) in
+  let idx = make_var 2 "idx" TInt32 in
   let body =
     SLet
       ( idx,
@@ -92,7 +95,7 @@ let verify_result result =
     let x = Float.pi *. 2.0 *. (float_of_int i /. float_of_int n) in
     let expected = sin x in
     let diff = abs_float (result.(i) -. expected) in
-    (* sin(float) should be accurate to ~1e-5 for float32 *)
+    (* Allow 1e-4 absolute tolerance for GPU float32 sin variation *)
     if diff > 1e-4 then begin
       if !errors < 5 then
         Printf.printf
@@ -130,8 +133,10 @@ let () =
       exit 1
     end
   with
-  | Spoc_framework.Backend_error.Backend_error _msg ->
-      Printf.printf "SKIPPED: backend error\n%!" ;
+  | Spoc_framework.Backend_error.Backend_error err ->
+      Printf.printf
+        "SKIPPED: backend error: %s\n%!"
+        (Spoc_framework.Backend_error.to_string err) ;
       exit 0
   | e ->
       Printf.printf "ERROR: %s\n%!" (Printexc.to_string e) ;
