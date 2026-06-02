@@ -897,7 +897,8 @@ let gen_shared_decls buf (decls : (string * elttype * expr) list) =
 (** Generate complete GLSL source for a kernel.
     @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.
 *)
-let generate ?block (k : kernel) : string =
+let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
+    =
   (* Clear per-kernel state *)
   Hashtbl.clear helper_vec_param_indices ;
   let buf = Buffer.create 1024 in
@@ -944,10 +945,7 @@ let generate ?block (k : kernel) : string =
   Buffer.add_string buf "}\n" ;
 
   let shader = Buffer.contents buf in
-  Spoc_core.Log.debugf
-    Spoc_core.Log.Device
-    "[GLSL] Generated shader:\n%s"
-    shader ;
+  log (Printf.sprintf "[GLSL] Generated shader:\n%s" shader) ;
   shader
 
 (** Generate GLSL record type definition - simple struct without tag *)
@@ -974,7 +972,7 @@ let gen_variant_def buf v =
 (** Generate GLSL source with custom type definitions.
     @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.
 *)
-let generate_with_types ?block
+let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
   (* Clear per-kernel state *)
   Hashtbl.clear helper_vec_param_indices ;
@@ -1031,8 +1029,5 @@ let generate_with_types ?block
   Buffer.add_string buf "}\n" ;
 
   let shader = Buffer.contents buf in
-  Spoc_core.Log.debugf
-    Spoc_core.Log.Device
-    "[GLSL] Generated shader:\n%s"
-    shader ;
+  log (Printf.sprintf "[GLSL] Generated shader:\n%s" shader) ;
   shader

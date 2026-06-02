@@ -188,6 +188,7 @@ module Backend : Framework_sig.BACKEND = struct
       Some
         (Sarek_ir_glsl.generate_with_types
            ?block:block_tuple
+           ~log:(fun s -> Spoc_core.Log.debugf Spoc_core.Log.Device "%s" s)
            ~types:ir.kern_types
            ir)
     with _ -> None

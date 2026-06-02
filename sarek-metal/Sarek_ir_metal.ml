@@ -17,11 +17,10 @@
  ******************************************************************************)
 
 open Sarek_ir_types
-open Spoc_core
 
-(** Current device for SNative code generation (set during generate_for_device)
-*)
-let current_device : Device.t option ref = ref None
+(** Current framework string for SNative code generation. Set by
+    [generate_for_device]; [generate] leaves this as [None]. *)
+let current_framework : string option ref = ref None
 
 (** Current kernel's variant definitions (set during generate) *)
 let current_variants : (string * (string * elttype list) list) list ref = ref []
@@ -641,9 +640,9 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf indent ;
       Buffer.add_string buf "threadgroup_barrier(mem_flags::mem_device);\n"
   | SNative {gpu; ocaml = _} -> (
-      match !current_device with
-      | Some dev ->
-          let code = gpu ~framework:dev.framework in
+      match !current_framework with
+      | Some framework ->
+          let code = gpu ~framework in
           Buffer.add_string buf indent ;
           Buffer.add_string buf code ;
           if not (String.length code > 0 && code.[String.length code - 1] = '\n')
@@ -992,11 +991,12 @@ let generate (k : kernel) : string =
 
   pretty_print_metal (Buffer.contents buf)
 
-(** Generate complete Metal source with device context for SNative *)
-let generate_for_device ~(device : Device.t) (k : kernel) : string =
-  current_device := Some device ;
+(** Generate complete Metal source with device context for SNative. Extracts
+    only the framework string from [device]. *)
+let generate_for_device ~(device : Spoc_core.Device.t) (k : kernel) : string =
+  current_framework := Some device.Spoc_core.Device.framework ;
   let result = generate k in
-  current_device := None ;
+  current_framework := None ;
   result
 
 (** Generate variant type definition for Metal *)
