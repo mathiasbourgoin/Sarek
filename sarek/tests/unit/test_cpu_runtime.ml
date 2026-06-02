@@ -557,6 +557,25 @@ let test_parallel_default_propagates_worker_exception () =
     Test_parallel_failure
     (fun () -> run_parallel ~block:(4, 1, 1) ~grid:(1, 1, 1) kernel ())
 
+(** Test that a BSP barrier kernel which raises propagates the exception and
+    does not hang (regression for run_block_bsp exnc=raise bug). run_threadpool
+    with has_barriers=true exercises run_block_bsp via the fission ThreadPool.
+*)
+exception Test_bsp_failure
+
+let test_bsp_worker_exception_propagates () =
+  let kernel _state _shared _args = raise Test_bsp_failure in
+  check_raises
+    "BSP worker exception propagates through run_block_bsp"
+    Test_bsp_failure
+    (fun () ->
+      run_threadpool
+        ~has_barriers:true
+        ~block:(4, 1, 1)
+        ~grid:(1, 1, 1)
+        kernel
+        ())
+
 (** {1 Test Suite} *)
 
 let thread_state_tests =
@@ -615,6 +634,7 @@ let barrier_tests =
     ( "default exception propagation",
       `Quick,
       test_parallel_default_propagates_worker_exception );
+    ("bsp exception propagation", `Quick, test_bsp_worker_exception_propagates);
   ]
 
 let () =

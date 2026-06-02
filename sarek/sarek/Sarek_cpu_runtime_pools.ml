@@ -102,13 +102,25 @@ end
 (** Global pool - lazily initialized *)
 let global_pool : DomainPool.t option ref = ref None
 
+let global_pool_mutex = Mutex.create ()
+
 let get_pool () =
   match !global_pool with
   | Some pool -> pool
   | None ->
-      let num_cores = try Domain.recommended_domain_count () with _ -> 4 in
-      let pool = DomainPool.create num_cores in
-      global_pool := Some pool ;
+      Mutex.lock global_pool_mutex ;
+      let pool =
+        match !global_pool with
+        | Some p -> p
+        | None ->
+            let num_cores =
+              try Domain.recommended_domain_count () with _ -> 4
+            in
+            let p = DomainPool.create num_cores in
+            global_pool := Some p ;
+            p
+      in
+      Mutex.unlock global_pool_mutex ;
       pool
 
 (** {1 Persistent Thread Pool for Fission Mode}
@@ -163,6 +175,7 @@ module ThreadPool = struct
     mutable pending_workers : int;
     mutable shutdown : bool;
     mutable generation : int; (* Incremented each kernel launch *)
+    mutable first_error : exn option; (* First error across all workers *)
   }
 
   (** Run a single block with BSP barriers using Effect.Shallow fibers *)
@@ -182,6 +195,7 @@ module ThreadPool = struct
     in
     let num_waiting = ref 0 in
     let num_completed = ref 0 in
+    let first_error = ref None in
     (* Pre-compute int32 values *)
     let bx32 = Int32.of_int bx in
     let by32 = Int32.of_int by in
@@ -224,9 +238,17 @@ module ThreadPool = struct
       {
         Effect.Shallow.retc =
           (fun () ->
-            status.(tid) <- 2 ;
-            incr num_completed);
-        exnc = raise;
+            if status.(tid) <> 2 then begin
+              status.(tid) <- 2 ;
+              incr num_completed
+            end);
+        exnc =
+          (fun exn ->
+            if !first_error = None then first_error := Some exn ;
+            if status.(tid) <> 2 then begin
+              status.(tid) <- 2 ;
+              incr num_completed
+            end);
         effc =
           (fun (type a) (eff : a Effect.t) ->
             match eff with
@@ -262,7 +284,8 @@ module ThreadPool = struct
           | None -> ()
         end
       done
-    done
+    done ;
+    match !first_error with Some exn -> raise exn | None -> ()
 
   (** Run a range of global threads directly - for barrier-free kernels. More
       efficient than block distribution when no barriers are needed. *)
@@ -336,33 +359,41 @@ module ThreadPool = struct
         last_gen := pool.generation ;
         Mutex.unlock pool.mutex ;
         (* Get our work item - only signal completion if we had work *)
-        let had_work =
+        let had_work, work_error =
           match Atomic.get pool.work.(worker_id) with
-          | None -> false
+          | None -> (false, None)
           | Some w ->
-              if w.uses_barriers then begin
-                (* Block distribution - required for BSP barriers *)
-                for block_id = w.start_block to w.end_block - 1 do
-                  let block_x = block_id mod w.gx in
-                  let block_y = block_id / w.gx mod w.gy in
-                  let block_z = block_id / (w.gx * w.gy) in
-                  run_block_bsp
-                    ~block:(w.bx, w.by, w.bz)
-                    ~grid:(w.gx, w.gy, w.gz)
-                    ~block_idx:(block_x, block_y, block_z)
-                    w.kernel
-                    w.args
-                done
-              end
-              else
-                (* Thread distribution - more granular, faster *)
-                run_threads w ;
+              let err =
+                try
+                  if w.uses_barriers then begin
+                    (* Block distribution - required for BSP barriers *)
+                    for block_id = w.start_block to w.end_block - 1 do
+                      let block_x = block_id mod w.gx in
+                      let block_y = block_id / w.gx mod w.gy in
+                      let block_z = block_id / (w.gx * w.gy) in
+                      run_block_bsp
+                        ~block:(w.bx, w.by, w.bz)
+                        ~grid:(w.gx, w.gy, w.gz)
+                        ~block_idx:(block_x, block_y, block_z)
+                        w.kernel
+                        w.args
+                    done
+                  end
+                  else
+                    (* Thread distribution - more granular, faster *)
+                    run_threads w ;
+                  None
+                with exn -> Some exn
+              in
               Atomic.set pool.work.(worker_id) None ;
-              true
+              (true, err)
         in
-        (* Signal completion only if we had work *)
+        (* Signal completion only if we had work - always decrement even on error *)
         if had_work then begin
           Mutex.lock pool.mutex ;
+          (match (pool.first_error, work_error) with
+          | None, Some exn -> pool.first_error <- Some exn
+          | _ -> ()) ;
           pool.pending_workers <- pool.pending_workers - 1 ;
           if pool.pending_workers = 0 then Condition.broadcast pool.work_done ;
           Mutex.unlock pool.mutex
@@ -386,6 +417,7 @@ module ThreadPool = struct
         pending_workers = 0;
         shutdown = false;
         generation = 0;
+        first_error = None;
       }
     in
     (* Spawn workers - they all reference the same pool record *)
@@ -482,7 +514,10 @@ module ThreadPool = struct
     while pool.pending_workers > 0 do
       Condition.wait pool.work_done pool.mutex
     done ;
-    Mutex.unlock pool.mutex
+    let first_error = pool.first_error in
+    pool.first_error <- None ;
+    Mutex.unlock pool.mutex ;
+    match first_error with Some exn -> raise exn | None -> ()
 
   let shutdown pool =
     Mutex.lock pool.mutex ;

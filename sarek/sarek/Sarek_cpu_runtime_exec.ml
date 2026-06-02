@@ -123,7 +123,7 @@ let run_block_sequential_bsp ~block:(bx, by, bz) ~grid:(gx, gy, gz)
              message =
                Printf.sprintf
                  "No progress made: %d threads waiting, %d completed (context: \
-                  run_block_parallel_bsp)"
+                  run_block_sequential_bsp)"
                  !num_waiting
                  !num_completed;
            })
