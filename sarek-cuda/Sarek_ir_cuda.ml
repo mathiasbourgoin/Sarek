@@ -231,6 +231,30 @@ and gen_intrinsic buf path name args =
   let full_name =
     match path with [] -> name | _ -> String.concat "." path ^ "." ^ name
   in
+  (* For path-qualified intrinsics, query the pure registry first.
+     This handles Float32.sin -> sinf on CUDA, sin on others, etc. *)
+  let pure_registry_hit =
+    match path with
+    | [] -> None
+    | _ ->
+        let framework = Option.value ~default:"CUDA" !current_framework in
+        (match
+           Sarek_pure_registry.fun_device_template ~module_path:path name
+         with
+        | Some f -> Some (f ~framework)
+        | None -> None)
+  in
+  match pure_registry_hit with
+  | Some device_name ->
+      Buffer.add_string buf device_name ;
+      Buffer.add_char buf '(' ;
+      List.iteri
+        (fun i e ->
+          if i > 0 then Buffer.add_string buf ", " ;
+          gen_expr buf e)
+        args ;
+      Buffer.add_char buf ')'
+  | None ->
   (* Try thread intrinsics *)
   if
     List.mem
