@@ -27,11 +27,12 @@
           <a href="/Sarek/benchmarks/">Benchmarks</a>
           <a href="/Sarek/examples/">Examples</a>
           <div class="nav-dropdown">
-            <a href="#" class="dropdown-toggle">Docs ▾</a>
-            <div class="dropdown-menu">
+            <button type="button" class="dropdown-toggle" aria-haspopup="true" aria-expanded="false" aria-controls="docs-menu">Docs ▾</button>
+            <div class="dropdown-menu" id="docs-menu">
               <a href="/Sarek/docs/concepts.html">Concepts</a>
               <a href="/Sarek/docs/architecture.html">Architecture</a>
               <a href="/Sarek/docs/backends.html">Backends</a>
+              <a href="/Sarek/docs/device_selection.html">Device Selection</a>
               <a href="/Sarek/docs/build_guide.html">Build Guide</a>
               <a href="/Sarek/docs/faq.html">FAQ</a>
               <a href="/Sarek/docs/publications.html">Publications</a>
@@ -117,6 +118,65 @@ nvcc <span class="nt">--version</span>    <span class="c"># Shows CUDA toolkit v
 
 <p>This shows all detected devices across all backends (CUDA, OpenCL, Vulkan, Metal, Native, Interpreter) with their capabilities.</p>
 
+<h2 id="troubleshooting">Troubleshooting</h2>
+
+<h3 id="a-kernel-crashes-with-the-context-is-lost--soft-recovery-amdgpu">A kernel crashes with “the context is lost” / “soft recovery” (amdgpu)</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>amdgpu: The CS has cancelled because the context is lost. This context is
+guilty of a soft recovery.
+</code></pre></div></div>
+
+<p>This is a <strong>GPU-level fault</strong> reported by the driver, not a Sarek error — the OpenCL
+runtime submitted work the driver couldn’t complete, so it reset the GPU. On integrated
+AMD GPUs (e.g. Renoir APUs) driven by Mesa’s legacy <strong>clover</strong> OpenCL, this happens even
+for tiny workloads.</p>
+
+<p>What to do, in order:</p>
+
+<ol>
+  <li><strong>Confirm it’s the driver, not your kernel</strong> — run on the CPU backend:
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>dune <span class="nb">exec </span>sarek/tests/e2e/test_vector_add.exe <span class="nt">--</span> <span class="nt">--native</span>
+</code></pre></div>    </div>
+    <p>If that passes, your kernel is fine and the OpenCL stack is the problem.</p>
+  </li>
+  <li><strong>Switch OpenCL implementation</strong> from clover to the maintained <strong>rusticl</strong>:
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">RUSTICL_ENABLE</span><span class="o">=</span>radeonsi dune <span class="nb">exec</span> <span class="nt">--</span> your_program.exe
+</code></pre></div>    </div>
+  </li>
+  <li><strong>Use the Vulkan backend instead</strong> (more robust than clover on APUs):
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>dune <span class="nb">exec </span>sarek/tests/e2e/test_vector_add.exe <span class="nt">--</span> <span class="nt">--vulkan</span>
+</code></pre></div>    </div>
+  </li>
+  <li>Or disable the failing backend entirely — see
+<a href="device_selection.html">Device &amp; Backend Selection</a> (<code class="language-plaintext highlighter-rouge">SPOC_DISABLE_OPENCL=1</code>).</li>
+</ol>
+
+<p>Note: ROCm does not support most integrated APUs, so installing it will not fix this.</p>
+
+<h3 id="no-devices-available--a-backend-doesnt-appear">“No devices available” / a backend doesn’t appear</h3>
+
+<ul>
+  <li>Run <code class="language-plaintext highlighter-rouge">dune exec -- sarek-device-info</code> to see what is actually detected.</li>
+  <li>Check the backend’s loader is installed (OpenCL ICD, Vulkan loader, CUDA driver).</li>
+  <li>Make sure you haven’t left a <code class="language-plaintext highlighter-rouge">SPOC_DISABLE_*</code> variable set (see
+<a href="device_selection.html">Device &amp; Backend Selection</a>).</li>
+</ul>
+
+<h3 id="a-specific-backend-hangs-or-faults">A specific backend hangs or faults</h3>
+
+<p>Isolate it with the disable variables, then run only the others:</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">SPOC_DISABLE_OPENCL</span><span class="o">=</span>1 dune <span class="nb">exec</span> <span class="nt">--</span> your_program.exe   <span class="c"># skip OpenCL</span>
+<span class="nv">SPOC_DISABLE_GPU</span><span class="o">=</span>1     dune <span class="nb">exec</span> <span class="nt">--</span> your_program.exe   <span class="c"># CPU only</span>
+</code></pre></div></div>
+
+<h3 id="results-differ-slightly-between-backends">Results differ slightly between backends</h3>
+
+<p>Floating-point results can differ across backends (different rounding, fused
+multiply-add, math-library implementations). The e2e tests compare against a CPU baseline
+with a tolerance rather than exact equality. If a backend’s result is wildly wrong (not
+just last-bit differences), file an issue with the device, driver version, and kernel.</p>
+
       </div>
     </main>
 
@@ -130,6 +190,7 @@ nvcc <span class="nt">--version</span>    <span class="c"># Shows CUDA toolkit v
     <script src="/Sarek/javascripts/scale.fix.js"></script>
     <script src="/Sarek/javascripts/copy-code.js"></script>
     <script src="/Sarek/javascripts/theme-toggle.js"></script>
+    <script src="/Sarek/javascripts/dropdown.js"></script>
     <script src="/Sarek/javascripts/syntax-sarek.js"></script>
   </body>
 </html>
