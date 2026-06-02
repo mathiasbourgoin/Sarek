@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Sarek_native_gen_expr (sarek.Sarek_ppx_lib.Sarek_native_gen_expr)</title><meta charset="utf-8"/><link rel="stylesheet" href="../../../odoc.support/odoc.css"/><meta name="generator" content="odoc 3.2.1"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><script src="../../../odoc.support/highlight.pack.js"></script><script>hljs.initHighlightingOnLoad();</script></head><body class="odoc"><nav class="odoc-nav"><a href="../index.html">Up</a> – <a href="../../../index.html">Index</a> &#x00BB; <a href="../../index.html">sarek</a> &#x00BB; <a href="../index.html">Sarek_ppx_lib</a> &#x00BB; Sarek_native_gen_expr</nav><header class="odoc-preamble"><h1>Module <code><span>Sarek_ppx_lib.Sarek_native_gen_expr</span></code></h1></header><div class="odoc-content"><div class="odoc-spec"><div class="spec value anchored" id="val-gen_memory_access"><a href="#val-gen_memory_access" class="anchor"></a><code><span><span class="keyword">val</span> gen_memory_access : 
+  <span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib</span>.location <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ctx</span>:<a href="../Sarek_native_gen_base/index.html#type-gen_context">Sarek_native_gen_base.gen_context</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">gen_expr</span>:
+    <span>(<span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib</span>.location <span class="arrow">&#45;&gt;</span></span> <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span> <span class="xref-unresolved">Ppxlib_ast</span>.Ast.expression)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span class="xref-unresolved">Ppxlib</span>.expression</span></code></div><div class="spec-doc"><p>Generate memory access operations (vectors, arrays, record fields)</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-gen_let_binding"><a href="#val-gen_let_binding" class="anchor"></a><code><span><span class="keyword">val</span> gen_let_binding : 
+  <span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib__</span>.Location.t <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ctx</span>:<a href="../Sarek_native_gen_base/index.html#type-gen_context">Sarek_native_gen_base.gen_context</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">gen_expr</span>:
+    <span>(<span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib__</span>.Location.t <span class="arrow">&#45;&gt;</span></span>
+      <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span>
+      <span class="xref-unresolved">Ppxlib_ast</span>.Ast.expression)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">gen_expr_impl</span>:
+    <span>(<span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib__</span>.Location.t <span class="arrow">&#45;&gt;</span></span>
+      <span><span class="label">ctx</span>:<a href="../Sarek_native_gen_base/index.html#type-gen_context">Sarek_native_gen_base.gen_context</a> <span class="arrow">&#45;&gt;</span></span>
+      <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span>
+      <span class="xref-unresolved">Ppxlib_ast</span>.Ast.expression)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span class="xref-unresolved">Ppxlib</span>.expression</span></code></div><div class="spec-doc"><p>Generate let bindings (let, let mut, assignment)</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-gen_control_flow"><a href="#val-gen_control_flow" class="anchor"></a><code><span><span class="keyword">val</span> gen_control_flow : 
+  <span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib</span>.location <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">gen_expr</span>:
+    <span>(<span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib</span>.location <span class="arrow">&#45;&gt;</span></span> <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span> <span class="xref-unresolved">Ppxlib_ast</span>.Ast.expression)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span class="xref-unresolved">Ppxlib</span>.expression</span></code></div><div class="spec-doc"><p>Generate control flow (if, for, while)</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-gen_data_structure"><a href="#val-gen_data_structure" class="anchor"></a><code><span><span class="keyword">val</span> gen_data_structure : 
+  <span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib</span>.location <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ctx</span>:<a href="../Sarek_native_gen_base/index.html#type-gen_context">Sarek_native_gen_base.gen_context</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">gen_expr</span>:
+    <span>(<span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib</span>.location <span class="arrow">&#45;&gt;</span></span>
+      <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span>
+      <span class="xref-unresolved">Ppxlib__</span>.Import.expression)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span class="xref-unresolved">Ppxlib</span>.expression</span></code></div><div class="spec-doc"><p>Generate data structures (records, variants, tuples, arrays)</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-gen_special_expr"><a href="#val-gen_special_expr" class="anchor"></a><code><span><span class="keyword">val</span> gen_special_expr : 
+  <span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib__</span>.Location.t <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">gen_expr</span>:
+    <span>(<span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib__</span>.Location.t <span class="arrow">&#45;&gt;</span></span> <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span> <span class="xref-unresolved">Ppxlib</span>.expression)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span class="xref-unresolved">Ppxlib</span>.expression</span></code></div><div class="spec-doc"><p>Generate special expressions (return, global ref, native, pragma, open)</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-gen_parallel_construct"><a href="#val-gen_parallel_construct" class="anchor"></a><code><span><span class="keyword">val</span> gen_parallel_construct : 
+  <span><span class="optlabel">?current_module</span>:<span class="xref-unresolved">Stdlib</span>.String.t <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="optlabel">?inline_types</span>:<a href="../Sarek_native_gen_base/StringSet/index.html#type-t">Sarek_native_gen_base.StringSet.t</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib</span>.location <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">gen_expr</span>:
+    <span>(<span><span class="label">loc</span>:<span class="xref-unresolved">Ppxlib</span>.location <span class="arrow">&#45;&gt;</span></span> <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span> <span class="xref-unresolved">Ppxlib_ast</span>.Ast.expression)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Sarek_typed_ast/index.html#type-texpr">Sarek_typed_ast.texpr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span class="xref-unresolved">Ppxlib</span>.expression</span></code></div><div class="spec-doc"><p>Generate BSP parallel constructs (let%shared, let%superstep, let rec)</p></div></div></div></body></html>
