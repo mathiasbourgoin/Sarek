@@ -18,6 +18,11 @@
 
 open Sarek_ir_types
 
+(** Local error module — same raised exception as the package-level [Cuda_error]. *)
+module Codegen_error = Sarek_backend_error.Backend_error.Make (struct
+  let name = "CUDA"
+end)
+
 (** Current framework string for SNative code generation. Always [None]
     in normal use; SNative branches check this ref and error if None. *)
 let current_framework : string option ref = ref None
@@ -70,7 +75,7 @@ let cuda_thread_intrinsic name =
   | "global_idx_y" -> "(threadIdx.y + blockIdx.y * blockDim.y)"
   | "global_idx_z" -> "(threadIdx.z + blockIdx.z * blockDim.z)"
   | "global_size" -> "(blockDim.x * gridDim.x)"
-  | name -> Cuda_error.raise_error (Cuda_error.unknown_intrinsic name)
+  | name -> Codegen_error.raise_error (Codegen_error.unknown_intrinsic name)
 
 (** {1 Expression Generation} *)
 
@@ -160,8 +165,8 @@ let rec gen_expr buf = function
       Buffer.add_char buf ')'
   | EArrayLen arr -> Buffer.add_string buf ("sarek_" ^ arr ^ "_length")
   | EArrayCreate _ ->
-      Cuda_error.raise_error
-        (Cuda_error.unsupported_construct
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
            "EArrayCreate"
            "should be handled in gen_stmt SLet")
   | EIf (cond, then_, else_) ->
@@ -174,8 +179,8 @@ let rec gen_expr buf = function
       gen_expr buf else_ ;
       Buffer.add_char buf ')'
   | EMatch (_, []) ->
-      Cuda_error.raise_error
-        (Cuda_error.unsupported_construct "EMatch" "empty match expression")
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct "EMatch" "empty match expression")
   | EMatch (_, [(_, body)]) ->
       (* Single case - just emit the body *)
       gen_expr buf body
@@ -183,8 +188,8 @@ let rec gen_expr buf = function
       (* Multi-case match as nested ternary - check tag field *)
       let rec gen_cases = function
         | [] ->
-            Cuda_error.raise_error
-              (Cuda_error.unsupported_construct
+            Codegen_error.raise_error
+              (Codegen_error.unsupported_construct
                  "EMatch"
                  "empty match cases after filtering")
         | [(_, body)] -> gen_expr buf body
@@ -328,8 +333,8 @@ and gen_intrinsic buf path name args =
                 Buffer.add_string buf "], " ;
                 gen_expr buf value
             | _ ->
-                Cuda_error.raise_error
-                  (Cuda_error.invalid_arg_count
+                Codegen_error.raise_error
+                  (Codegen_error.invalid_arg_count
                      "atomic_add"
                      3
                      (List.length args))) ;
@@ -343,8 +348,8 @@ and gen_intrinsic buf path name args =
                 Buffer.add_string buf ", " ;
                 gen_expr buf value
             | _ ->
-                Cuda_error.raise_error
-                  (Cuda_error.invalid_arg_count
+                Codegen_error.raise_error
+                  (Codegen_error.invalid_arg_count
                      "atomic_sub"
                      2
                      (List.length args))) ;
@@ -358,8 +363,8 @@ and gen_intrinsic buf path name args =
                 Buffer.add_string buf ", " ;
                 gen_expr buf value
             | _ ->
-                Cuda_error.raise_error
-                  (Cuda_error.invalid_arg_count
+                Codegen_error.raise_error
+                  (Codegen_error.invalid_arg_count
                      "atomic_min"
                      2
                      (List.length args))) ;
@@ -373,8 +378,8 @@ and gen_intrinsic buf path name args =
                 Buffer.add_string buf ", " ;
                 gen_expr buf value
             | _ ->
-                Cuda_error.raise_error
-                  (Cuda_error.invalid_arg_count
+                Codegen_error.raise_error
+                  (Codegen_error.invalid_arg_count
                      "atomic_max"
                      2
                      (List.length args))) ;
@@ -415,8 +420,8 @@ and gen_intrinsic buf path name args =
                           arg
                     | _ ->
                         (* This should never happen due to length check above *)
-                        Cuda_error.raise_error
-                          (Cuda_error.type_error
+                        Codegen_error.raise_error
+                          (Codegen_error.type_error
                              "intrinsic template"
                              "1 placeholder, 1 argument"
                              "unexpected list state")
@@ -567,8 +572,8 @@ let rec gen_stmt buf indent = function
           if not (String.length code > 0 && code.[String.length code - 1] = '\n')
           then Buffer.add_char buf '\n'
       | None ->
-          Cuda_error.raise_error
-            (Cuda_error.unsupported_construct
+          Codegen_error.raise_error
+            (Codegen_error.unsupported_construct
                "SNative"
                "SNative requires device context (set current_framework before calling generate)"))
   | SExpr e ->
@@ -668,8 +673,8 @@ and gen_match_case buf indent scrutinee pattern body =
             (List.combine vars types)
       | [], _ | _, None | _, Some [] -> () (* No bindings needed *)
       | _ ->
-          Cuda_error.raise_error
-            (Cuda_error.type_error
+          Codegen_error.raise_error
+            (Codegen_error.type_error
                "pattern match"
                "matching bindings and constructor"
                "mismatched bindings/args"))
@@ -713,8 +718,8 @@ let gen_param buf = function
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf "_length"
   | DLocal _ | DShared _ ->
-      Cuda_error.raise_error
-        (Cuda_error.invalid_memory_space "gen_param" "DLocal or DShared")
+      Codegen_error.raise_error
+        (Codegen_error.invalid_memory_space "gen_param" "DLocal or DShared")
 
 let gen_local buf indent = function
   | DLocal (v, None) ->
@@ -748,8 +753,8 @@ let gen_local buf indent = function
       gen_expr buf size ;
       Buffer.add_string buf "];\n"
   | DParam _ ->
-      Cuda_error.raise_error
-        (Cuda_error.invalid_memory_space "gen_local" "DParam")
+      Codegen_error.raise_error
+        (Codegen_error.invalid_memory_space "gen_local" "DParam")
 
 (** {1 Helper Function Generation} *)
 

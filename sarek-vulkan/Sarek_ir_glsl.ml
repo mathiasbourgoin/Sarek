@@ -19,6 +19,11 @@
 
 open Sarek_ir_types
 
+(** Local error module — same raised exception as the package-level [Vulkan_error]. *)
+module Codegen_error = Sarek_backend_error.Backend_error.Make (struct
+  let name = "Vulkan"
+end)
+
 (** Current kernel's variant definitions (set during generate) *)
 let current_variants : (string * (string * elttype list) list) list ref = ref []
 
@@ -174,7 +179,7 @@ let glsl_thread_intrinsic = function
   | "global_idx_y" -> "int(gl_GlobalInvocationID.y)"
   | "global_idx_z" -> "int(gl_GlobalInvocationID.z)"
   | "global_size" -> "int(gl_WorkGroupSize.x * gl_NumWorkGroups.x)"
-  | name -> Vulkan_error.raise_error (Vulkan_error.unknown_intrinsic name)
+  | name -> Codegen_error.raise_error (Codegen_error.unknown_intrinsic name)
 
 (** {1 Expression Generation} *)
 
@@ -285,8 +290,8 @@ let rec gen_expr buf = function
   | EArrayLen arr ->
       Buffer.add_string buf ("sarek_" ^ escape_glsl_name arr ^ "_length")
   | EArrayCreate _ ->
-      Vulkan_error.raise_error
-        (Vulkan_error.unsupported_construct
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
            "EArrayCreate"
            "should be handled in gen_stmt SLet")
   | EIf (cond, then_, else_) ->
@@ -298,14 +303,14 @@ let rec gen_expr buf = function
       gen_expr buf else_ ;
       Buffer.add_char buf ')'
   | EMatch (_, []) ->
-      Vulkan_error.raise_error
-        (Vulkan_error.unsupported_construct "match" "empty match expression")
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct "match" "empty match expression")
   | EMatch (_, [(_, body)]) -> gen_expr buf body
   | EMatch (e, cases) ->
       let rec gen_cases = function
         | [] ->
-            Vulkan_error.raise_error
-              (Vulkan_error.unsupported_construct "match" "empty match cases")
+            Codegen_error.raise_error
+              (Codegen_error.unsupported_construct "match" "empty match cases")
         | [(_, body)] -> gen_expr buf body
         | (pat, body) :: rest ->
             Buffer.add_char buf '(' ;
@@ -470,8 +475,8 @@ and gen_intrinsic buf path name args =
                 Buffer.add_string buf "], " ;
                 gen_expr buf value
             | args ->
-                Vulkan_error.raise_error
-                  (Vulkan_error.invalid_arg_count
+                Codegen_error.raise_error
+                  (Codegen_error.invalid_arg_count
                      "atomic_add"
                      2
                      (List.length args))) ;
@@ -484,8 +489,8 @@ and gen_intrinsic buf path name args =
                 Buffer.add_string buf ", " ;
                 gen_expr buf value
             | args ->
-                Vulkan_error.raise_error
-                  (Vulkan_error.invalid_arg_count
+                Codegen_error.raise_error
+                  (Codegen_error.invalid_arg_count
                      "atomic_min"
                      2
                      (List.length args))) ;
@@ -498,8 +503,8 @@ and gen_intrinsic buf path name args =
                 Buffer.add_string buf ", " ;
                 gen_expr buf value
             | args ->
-                Vulkan_error.raise_error
-                  (Vulkan_error.invalid_arg_count
+                Codegen_error.raise_error
+                  (Codegen_error.invalid_arg_count
                      "atomic_max"
                      2
                      (List.length args))) ;
@@ -580,8 +585,8 @@ and gen_match_pattern buf indent scrutinee cname bindings find_constr_types =
         (List.combine vars types)
   | [], _ | _, None | _, Some [] -> ()
   | _ ->
-      Vulkan_error.raise_error
-        (Vulkan_error.unsupported_construct
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
            "pattern"
            "mismatch between pattern bindings and constructor args")
 

@@ -18,6 +18,11 @@
 
 open Sarek_ir_types
 
+(** Local error module — same raised exception as the package-level [Metal_error]. *)
+module Codegen_error = Sarek_backend_error.Backend_error.Make (struct
+  let name = "Metal"
+end)
+
 (** Current framework string for SNative code generation. Always [None]
     in normal use; SNative branches check this ref and error if None. *)
 let current_framework : string option ref = ref None
@@ -90,7 +95,7 @@ let metal_thread_intrinsic = function
   | "global_idx_y" -> "__metal_gid.y"
   | "global_idx_z" -> "__metal_gid.z"
   | "global_size" -> "__metal_tpg.x * __metal_num_groups.x"
-  | name -> Metal_error.raise_error (Metal_error.unknown_intrinsic name)
+  | name -> Codegen_error.raise_error (Codegen_error.unknown_intrinsic name)
 
 (** {1 Expression Generation} *)
 
@@ -182,8 +187,8 @@ let rec gen_expr buf = function
       Buffer.add_char buf ')'
   | EArrayLen arr -> Buffer.add_string buf ("sarek_" ^ arr ^ "_length")
   | EArrayCreate _ ->
-      Metal_error.raise_error
-        (Metal_error.unsupported_construct
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
            "EArrayCreate"
            "should be handled in gen_stmt SLet")
   | EIf (cond, then_, else_) ->
@@ -196,8 +201,8 @@ let rec gen_expr buf = function
       gen_expr buf else_ ;
       Buffer.add_char buf ')'
   | EMatch (_, []) ->
-      Metal_error.raise_error
-        (Metal_error.unsupported_construct "match" "empty match expression")
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct "match" "empty match expression")
   | EMatch (_, [(_, body)]) ->
       (* Single case - just emit the body *)
       gen_expr buf body
@@ -205,8 +210,8 @@ let rec gen_expr buf = function
       (* Multi-case match as nested ternary - check tag field *)
       let rec gen_cases = function
         | [] ->
-            Metal_error.raise_error
-              (Metal_error.unsupported_construct "match" "empty match cases")
+            Codegen_error.raise_error
+              (Codegen_error.unsupported_construct "match" "empty match cases")
         | [(_, body)] -> gen_expr buf body
         | (pat, body) :: rest ->
             Buffer.add_char buf '(' ;
@@ -351,8 +356,8 @@ and gen_intrinsic buf path name args =
                 Buffer.add_string buf "], " ;
                 gen_expr buf value
             | args ->
-                Metal_error.raise_error
-                  (Metal_error.invalid_arg_count
+                Codegen_error.raise_error
+                  (Codegen_error.invalid_arg_count
                      "atomic_add"
                      2
                      (List.length args))) ;
@@ -375,8 +380,8 @@ and gen_intrinsic buf path name args =
                 Buffer.add_string buf "], " ;
                 gen_expr buf value
             | args ->
-                Metal_error.raise_error
-                  (Metal_error.invalid_arg_count
+                Codegen_error.raise_error
+                  (Codegen_error.invalid_arg_count
                      "atomic_add_global"
                      2
                      (List.length args))) ;
@@ -391,8 +396,8 @@ and gen_intrinsic buf path name args =
                 Buffer.add_string buf ", " ;
                 gen_expr buf value
             | args ->
-                Metal_error.raise_error
-                  (Metal_error.invalid_arg_count
+                Codegen_error.raise_error
+                  (Codegen_error.invalid_arg_count
                      "atomic_sub"
                      2
                      (List.length args))) ;
@@ -406,8 +411,8 @@ and gen_intrinsic buf path name args =
                 Buffer.add_string buf ", " ;
                 gen_expr buf value
             | args ->
-                Metal_error.raise_error
-                  (Metal_error.invalid_arg_count
+                Codegen_error.raise_error
+                  (Codegen_error.invalid_arg_count
                      "atomic_min"
                      2
                      (List.length args))) ;
@@ -421,8 +426,8 @@ and gen_intrinsic buf path name args =
                 Buffer.add_string buf ", " ;
                 gen_expr buf value
             | args ->
-                Metal_error.raise_error
-                  (Metal_error.invalid_arg_count
+                Codegen_error.raise_error
+                  (Codegen_error.invalid_arg_count
                      "atomic_max"
                      2
                      (List.length args))) ;
@@ -542,8 +547,8 @@ and gen_match_pattern buf indent scrutinee cname bindings find_constr_types =
         (List.combine vars types)
   | [], _ | _, None | _, Some [] -> () (* No bindings needed *)
   | _ ->
-      Metal_error.raise_error
-        (Metal_error.unsupported_construct
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
            "pattern"
            "mismatch between pattern bindings and constructor args")
 
@@ -686,8 +691,8 @@ let rec gen_stmt buf indent = function
           if not (String.length code > 0 && code.[String.length code - 1] = '\n')
           then Buffer.add_char buf '\n'
       | None ->
-          Metal_error.raise_error
-            (Metal_error.no_device_selected
+          Codegen_error.raise_error
+            (Codegen_error.no_device_selected
                "SNative requires device context (set current_framework before calling generate)"))
   | SExpr e ->
       Buffer.add_string buf indent ;
@@ -766,8 +771,8 @@ let gen_param_metal buf atomic_vars idx = function
       Buffer.add_string buf ")]]" ;
       idx + 2
   | DLocal _ | DShared _ ->
-      Metal_error.raise_error
-        (Metal_error.unsupported_construct "gen_param_metal" "expected DParam")
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct "gen_param_metal" "expected DParam")
 
 let gen_param buf = function
   | DParam (v, None) ->
@@ -791,8 +796,8 @@ let gen_param buf = function
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf "_length"
   | DLocal _ | DShared _ ->
-      Metal_error.raise_error
-        (Metal_error.unsupported_construct "gen_param" "expected DParam")
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct "gen_param" "expected DParam")
 
 (** Collect variable names used in atomic operations *)
 let rec collect_atomic_vars_expr = function
@@ -913,8 +918,8 @@ let gen_local buf indent atomic_vars = function
       gen_expr buf size ;
       Buffer.add_string buf "];\n"
   | DParam _ ->
-      Metal_error.raise_error
-        (Metal_error.unsupported_construct
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
            "gen_local"
            "expected DLocal or DShared")
 
