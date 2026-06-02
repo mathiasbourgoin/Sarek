@@ -55,6 +55,7 @@
 ; Facade: re-export both sub-libraries.
 ; NOTE: (modules) is empty; (wrapped true) so Sarek_ppx_lib.Foo aliases are
 ; created for all re-exported modules, preserving consumer source compatibility.
+
 (library
  (name sarek_ppx_lib)
  (public_name sarek.ppx.lib)
