@@ -69,7 +69,11 @@ and eval_array_expr state env = function
               (Not_an_array {expr = "EArrayReadExpr base"})
       in
       let i = to_int (eval_expr state env idx) in
-      a.(i)
+      if i < 0 || i >= Array.length a then
+        Interp_error.raise_error
+          (Array_bounds_error
+             {array_name = "EArrayReadExpr"; index = i; length = Array.length a})
+      else a.(i)
   | EArrayLen arr ->
       let a = get_array env arr in
       VInt32 (Int32.of_int (Array.length a))
@@ -360,7 +364,11 @@ and assign_lvalue state env lv value =
               (Not_an_array {expr = "LArrayElemExpr base"})
       in
       let i = to_int (eval_expr state env idx_expr) in
-      a.(i) <- value
+      if i < 0 || i >= Array.length a then
+        Interp_error.raise_error
+          (Array_bounds_error
+             {array_name = "LArrayElemExpr"; index = i; length = Array.length a})
+      else a.(i) <- value
   | LRecordField (base_lv, _field) ->
       (* Record field assignment is complex - simplified here *)
       ignore base_lv ;
