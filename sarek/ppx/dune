@@ -24,6 +24,7 @@
   Sarek_ir_ppx
   Sarek_lower_ir
   Sarek_quote_ir
+  Sarek_parse_helpers
   Sarek_parse
   Sarek_quote
   Sarek_native_helpers
