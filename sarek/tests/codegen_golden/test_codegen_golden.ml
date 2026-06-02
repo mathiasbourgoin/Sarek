@@ -138,8 +138,8 @@ let variant_kernel () =
   in
   {k with kern_variants = [("Opt", opt_constrs)]}
 
-(** Kernel 4: Float32.sin intrinsic call. fun (a : float32 vec) (b : float32
-    vec) -> let idx = global_thread_id in b.[idx] <- sin a.[idx] *)
+(** Kernel 4: Float32.sin intrinsic call (unqualified path=[]).
+    fun (a : float32 vec) (b : float32 vec) -> ... b.[idx] <- sin a.[idx] *)
 let sin_kernel () =
   let a = make_var "a" (TVec TFloat32) in
   let b = make_var "b" (TVec TFloat32) in
@@ -154,6 +154,30 @@ let sin_kernel () =
   in
   empty_kernel
     "sin_kernel"
+    [
+      DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat32; arr_memspace = Global});
+    ]
+    []
+    body
+
+(** Kernel 5: Float32.sin path-qualified intrinsic (path=["Float32"]).
+    CUDA must emit sinf(); OpenCL/Metal/GLSL emit sin().
+    This is the PR-2 sinf-fix test kernel. *)
+let float32_sin_path_kernel () =
+  let a = make_var "a" (TVec TFloat32) in
+  let b = make_var "b" (TVec TFloat32) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("b", EVar idx),
+            EIntrinsic (["Float32"], "sin", [EArrayRead ("a", EVar idx)]) ) )
+  in
+  empty_kernel
+    "float32_sin_path"
     [
       DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
       DParam (b, Some {arr_elttype = TFloat32; arr_memspace = Global});
@@ -576,6 +600,72 @@ let () =
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  b[idx] = sin(a[idx]);\n\
+     }\n" ;
+
+  (* ---- float32_sin_path goldens (PR-2 sinf-fix kernel) ---- *)
+  (* CUDA: sinf (f-suffix for Float32 path-qualified math) *)
+  register_golden
+    "cuda"
+    "float32_sin_path"
+    "\n\
+     extern \"C\" {\n\
+     __global__ void float32_sin_path(float* __restrict__ a, int \
+     sarek_a_length, float* __restrict__ b, int sarek_b_length) {\n\
+    \  int idx = (threadIdx.x + blockIdx.x * blockDim.x);\n\
+    \  b[idx] = sinf(a[idx]);\n\
+     }\n\
+     }\n" ;
+
+  (* OpenCL: sin (un-suffixed for Float32) *)
+  register_golden
+    "opencl"
+    "float32_sin_path"
+    "__kernel void float32_sin_path(__global float* restrict a, int \
+     sarek_a_length, __global float* restrict b, int sarek_b_length) {\n\
+    \  int idx = get_global_id(0);\n\
+    \  b[idx] = sin(a[idx]);\n\
+     }\n" ;
+
+  (* Metal: sin (un-suffixed for Float32) *)
+  register_golden
+    "metal"
+    "float32_sin_path"
+    "#include <metal_stdlib>\n\
+     using namespace metal;\n\n\
+     kernel void float32_sin_path(device float* a [[buffer(0)]], constant int \
+     &sarek_a_length [[buffer(1)]], device float* b [[buffer(2)]], constant \
+     int &sarek_b_length [[buffer(3)]],\n\
+     uint3 __metal_gid [[thread_position_in_grid]],\n\
+     uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
+     uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
+     uint3 __metal_tpg [[threads_per_threadgroup]],\n\
+     uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
+    \  int idx = __metal_gid.x;\n\
+    \  b[idx] = sin(a[idx]);\n\
+     }\n\n" ;
+
+  (* GLSL: sin (un-suffixed for Float32) *)
+  register_golden
+    "glsl"
+    "float32_sin_path"
+    "#version 450\n\n\
+     // Sarek-generated compute shader: float32_sin_path\n\
+     layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;\n\n\
+     layout(std430, set=0, binding = 0) buffer Buffer_a {\n\
+    \  float a[];\n\
+     };\n\
+     layout(std430, set=0, binding = 1) buffer Buffer_b {\n\
+    \  float b[];\n\
+     };\n\
+     layout(push_constant) uniform PushConstants {\n\
+    \  int a_len;\n\
+    \  int b_len;\n\
+     } pc;\n\n\
+     #define a_len pc.a_len\n\
+     #define b_len pc.b_len\n\n\
+     void main() {\n\
+    \  int idx = int(gl_GlobalInvocationID.x);\n\
+    \  b[idx] = sin(a[idx]);\n\
      }\n"
 
 (** {1 Kernel list for test iteration} *)
@@ -586,6 +676,7 @@ let test_kernels () =
     ("record_kernel", record_kernel ());
     ("variant_kernel", variant_kernel ());
     ("sin_kernel", sin_kernel ());
+    ("float32_sin_path", float32_sin_path_kernel ());
   ]
 
 (** {1 Test helpers} *)
