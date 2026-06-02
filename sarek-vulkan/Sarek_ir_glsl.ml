@@ -371,148 +371,157 @@ and gen_intrinsic buf path name args =
           gen_expr buf e)
         args ;
       Buffer.add_char buf ')'
-  | None ->
-  (* Try thread intrinsics *)
-  if
-    List.mem
-      name
-      [
-        "thread_id_x";
-        "thread_idx_x";
-        "thread_id_y";
-        "thread_idx_y";
-        "thread_id_z";
-        "thread_idx_z";
-        "block_id_x";
-        "block_idx_x";
-        "block_id_y";
-        "block_idx_y";
-        "block_id_z";
-        "block_idx_z";
-        "block_dim_x";
-        "block_dim_y";
-        "block_dim_z";
-        "grid_dim_x";
-        "grid_dim_y";
-        "grid_dim_z";
-        "global_thread_id";
-        "global_idx";
-        "global_idx_x";
-        "global_idx_y";
-        "global_idx_z";
-        "global_size";
-      ]
-  then Buffer.add_string buf (glsl_thread_intrinsic name)
-  else
-    (* Standard math intrinsics - GLSL versions *)
-    match name with
-    | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh"
-    | "tanh" | "exp" | "exp2" | "log" | "log2" | "sqrt" | "floor" | "ceil"
-    | "round" | "trunc" | "abs" ->
-        Buffer.add_string buf name ;
-        Buffer.add_char buf '(' ;
-        List.iteri
-          (fun i e ->
-            if i > 0 then Buffer.add_string buf ", " ;
-            gen_expr buf e)
-          args ;
-        Buffer.add_char buf ')'
-    | "fabs" ->
-        Buffer.add_string buf "abs" ;
-        Buffer.add_char buf '(' ;
-        List.iteri
-          (fun i e ->
-            if i > 0 then Buffer.add_string buf ", " ;
-            gen_expr buf e)
-          args ;
-        Buffer.add_char buf ')'
-    | "rsqrt" ->
-        Buffer.add_string buf "inversesqrt" ;
-        Buffer.add_char buf '(' ;
-        List.iteri
-          (fun i e ->
-            if i > 0 then Buffer.add_string buf ", " ;
-            gen_expr buf e)
-          args ;
-        Buffer.add_char buf ')'
-    | "atan2" | "pow" | "min" | "max" ->
-        Buffer.add_string buf name ;
-        Buffer.add_char buf '(' ;
-        List.iteri
-          (fun i e ->
-            if i > 0 then Buffer.add_string buf ", " ;
-            gen_expr buf e)
-          args ;
-        Buffer.add_char buf ')'
-    | "fma" ->
-        Buffer.add_string buf "fma" ;
-        Buffer.add_char buf '(' ;
-        List.iteri
-          (fun i e ->
-            if i > 0 then Buffer.add_string buf ", " ;
-            gen_expr buf e)
-          args ;
-        Buffer.add_char buf ')'
-    (* Barrier synchronization *)
-    | "block_barrier" -> Buffer.add_string buf "barrier()"
-    (* Atomic operations - GLSL uses atomicAdd etc. *)
-    | "atomic_add" | "atomic_add_int32" | "atomic_add_global_int32" ->
-        Buffer.add_string buf "atomicAdd(" ;
-        (match args with
-        | [addr; value] ->
-            gen_expr buf addr ;
-            Buffer.add_string buf ", " ;
-            gen_expr buf value
-        | [arr; idx; value] ->
-            gen_expr buf arr ;
-            Buffer.add_char buf '[' ;
-            gen_expr buf idx ;
-            Buffer.add_string buf "], " ;
-            gen_expr buf value
-        | args ->
-            Vulkan_error.raise_error
-              (Vulkan_error.invalid_arg_count "atomic_add" 2 (List.length args))) ;
-        Buffer.add_char buf ')'
-    | "atomic_min" ->
-        Buffer.add_string buf "atomicMin(" ;
-        (match args with
-        | [addr; value] ->
-            gen_expr buf addr ;
-            Buffer.add_string buf ", " ;
-            gen_expr buf value
-        | args ->
-            Vulkan_error.raise_error
-              (Vulkan_error.invalid_arg_count "atomic_min" 2 (List.length args))) ;
-        Buffer.add_char buf ')'
-    | "atomic_max" ->
-        Buffer.add_string buf "atomicMax(" ;
-        (match args with
-        | [addr; value] ->
-            gen_expr buf addr ;
-            Buffer.add_string buf ", " ;
-            gen_expr buf value
-        | args ->
-            Vulkan_error.raise_error
-              (Vulkan_error.invalid_arg_count "atomic_max" 2 (List.length args))) ;
-        Buffer.add_char buf ')'
-    | "float" ->
-        Buffer.add_string buf "float(" ;
-        (match args with [e] -> gen_expr buf e | _ -> ()) ;
-        Buffer.add_char buf ')'
-    | "int_of_float" ->
-        Buffer.add_string buf "int(" ;
-        (match args with [e] -> gen_expr buf e | _ -> ()) ;
-        Buffer.add_char buf ')'
-    | _ ->
-        (* Unknown intrinsic - emit as function call *)
-        Buffer.add_string buf full_name ;
-        Buffer.add_char buf '(' ;
-        List.iteri
-          (fun i e ->
-            if i > 0 then Buffer.add_string buf ", " ;
-            gen_expr buf e)
-          args ;
-        Buffer.add_char buf ')'
+  | None -> (
+      if
+        (* Try thread intrinsics *)
+        List.mem
+          name
+          [
+            "thread_id_x";
+            "thread_idx_x";
+            "thread_id_y";
+            "thread_idx_y";
+            "thread_id_z";
+            "thread_idx_z";
+            "block_id_x";
+            "block_idx_x";
+            "block_id_y";
+            "block_idx_y";
+            "block_id_z";
+            "block_idx_z";
+            "block_dim_x";
+            "block_dim_y";
+            "block_dim_z";
+            "grid_dim_x";
+            "grid_dim_y";
+            "grid_dim_z";
+            "global_thread_id";
+            "global_idx";
+            "global_idx_x";
+            "global_idx_y";
+            "global_idx_z";
+            "global_size";
+          ]
+      then Buffer.add_string buf (glsl_thread_intrinsic name)
+      else
+        (* Standard math intrinsics - GLSL versions *)
+        match name with
+        | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh"
+        | "tanh" | "exp" | "exp2" | "log" | "log2" | "sqrt" | "floor" | "ceil"
+        | "round" | "trunc" | "abs" ->
+            Buffer.add_string buf name ;
+            Buffer.add_char buf '(' ;
+            List.iteri
+              (fun i e ->
+                if i > 0 then Buffer.add_string buf ", " ;
+                gen_expr buf e)
+              args ;
+            Buffer.add_char buf ')'
+        | "fabs" ->
+            Buffer.add_string buf "abs" ;
+            Buffer.add_char buf '(' ;
+            List.iteri
+              (fun i e ->
+                if i > 0 then Buffer.add_string buf ", " ;
+                gen_expr buf e)
+              args ;
+            Buffer.add_char buf ')'
+        | "rsqrt" ->
+            Buffer.add_string buf "inversesqrt" ;
+            Buffer.add_char buf '(' ;
+            List.iteri
+              (fun i e ->
+                if i > 0 then Buffer.add_string buf ", " ;
+                gen_expr buf e)
+              args ;
+            Buffer.add_char buf ')'
+        | "atan2" | "pow" | "min" | "max" ->
+            Buffer.add_string buf name ;
+            Buffer.add_char buf '(' ;
+            List.iteri
+              (fun i e ->
+                if i > 0 then Buffer.add_string buf ", " ;
+                gen_expr buf e)
+              args ;
+            Buffer.add_char buf ')'
+        | "fma" ->
+            Buffer.add_string buf "fma" ;
+            Buffer.add_char buf '(' ;
+            List.iteri
+              (fun i e ->
+                if i > 0 then Buffer.add_string buf ", " ;
+                gen_expr buf e)
+              args ;
+            Buffer.add_char buf ')'
+        (* Barrier synchronization *)
+        | "block_barrier" -> Buffer.add_string buf "barrier()"
+        (* Atomic operations - GLSL uses atomicAdd etc. *)
+        | "atomic_add" | "atomic_add_int32" | "atomic_add_global_int32" ->
+            Buffer.add_string buf "atomicAdd(" ;
+            (match args with
+            | [addr; value] ->
+                gen_expr buf addr ;
+                Buffer.add_string buf ", " ;
+                gen_expr buf value
+            | [arr; idx; value] ->
+                gen_expr buf arr ;
+                Buffer.add_char buf '[' ;
+                gen_expr buf idx ;
+                Buffer.add_string buf "], " ;
+                gen_expr buf value
+            | args ->
+                Vulkan_error.raise_error
+                  (Vulkan_error.invalid_arg_count
+                     "atomic_add"
+                     2
+                     (List.length args))) ;
+            Buffer.add_char buf ')'
+        | "atomic_min" ->
+            Buffer.add_string buf "atomicMin(" ;
+            (match args with
+            | [addr; value] ->
+                gen_expr buf addr ;
+                Buffer.add_string buf ", " ;
+                gen_expr buf value
+            | args ->
+                Vulkan_error.raise_error
+                  (Vulkan_error.invalid_arg_count
+                     "atomic_min"
+                     2
+                     (List.length args))) ;
+            Buffer.add_char buf ')'
+        | "atomic_max" ->
+            Buffer.add_string buf "atomicMax(" ;
+            (match args with
+            | [addr; value] ->
+                gen_expr buf addr ;
+                Buffer.add_string buf ", " ;
+                gen_expr buf value
+            | args ->
+                Vulkan_error.raise_error
+                  (Vulkan_error.invalid_arg_count
+                     "atomic_max"
+                     2
+                     (List.length args))) ;
+            Buffer.add_char buf ')'
+        | "float" ->
+            Buffer.add_string buf "float(" ;
+            (match args with [e] -> gen_expr buf e | _ -> ()) ;
+            Buffer.add_char buf ')'
+        | "int_of_float" ->
+            Buffer.add_string buf "int(" ;
+            (match args with [e] -> gen_expr buf e | _ -> ()) ;
+            Buffer.add_char buf ')'
+        | _ ->
+            (* Unknown intrinsic - emit as function call *)
+            Buffer.add_string buf full_name ;
+            Buffer.add_char buf '(' ;
+            List.iteri
+              (fun i e ->
+                if i > 0 then Buffer.add_string buf ", " ;
+                gen_expr buf e)
+              args ;
+            Buffer.add_char buf ')')
 
 (** {1 L-value Generation} *)
 

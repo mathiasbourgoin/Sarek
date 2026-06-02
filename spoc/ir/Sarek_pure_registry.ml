@@ -25,16 +25,15 @@ let fun_registry : (string list * string, framework:string -> string) Hashtbl.t
     =
   Hashtbl.create 64
 
-(** Register a pure intrinsic function.
-    [module_path] is the qualified path, e.g. [["Float32"]] for Float32.sin.
-    [name] is the unqualified function name.
+(** Register a pure intrinsic function. [module_path] is the qualified path,
+    e.g. [["Float32"]] for Float32.sin. [name] is the unqualified function name.
     [device] is a closure [~framework:string -> string] returning the
     device-code name to emit for a given backend framework string. *)
 let register_fun ?(module_path = []) name ~device =
   Hashtbl.replace fun_registry (module_path, name) device
 
-(** Look up device-code name for a path-qualified function.
-    Returns [None] if not found. *)
+(** Look up device-code name for a path-qualified function. Returns [None] if
+    not found. *)
 let fun_device_template ?(module_path = []) name =
   Hashtbl.find_opt fun_registry (module_path, name)
 
@@ -42,12 +41,12 @@ let fun_device_template ?(module_path = []) name =
  * Helpers
  ******************************************************************************)
 
-(** Build a framework-dispatching closure for float32 math functions.
-    CUDA uses the [f]-suffixed form (sinf, cosf, …);
-    OpenCL, Metal, and GLSL use the un-suffixed form. *)
+(** Build a framework-dispatching closure for float32 math functions. CUDA uses
+    the [f]-suffixed form (sinf, cosf, …); OpenCL, Metal, and GLSL use the
+    un-suffixed form. *)
 let float32_math_template ~cuda_name ~generic_name =
-  fun ~framework ->
-   match framework with "CUDA" -> cuda_name | _ -> generic_name
+ fun ~framework ->
+  match framework with "CUDA" -> cuda_name | _ -> generic_name
 
 (******************************************************************************
  * Standard stdlib registrations (static table — PR-2 design)
@@ -108,7 +107,8 @@ let () =
   reg32 "copysign" "copysignf" "copysign" ;
   (* ---- Float64 math (same name on all backends) ---- *)
   let reg64 name =
-    register_fun ~module_path:["Float64"] name ~device:(fun ~framework:_ -> name)
+    register_fun ~module_path:["Float64"] name ~device:(fun ~framework:_ ->
+        name)
   in
   reg64 "sin" ;
   reg64 "cos" ;

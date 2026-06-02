@@ -18,7 +18,6 @@
 
 open Sarek_ir_types
 open Sarek
-
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
@@ -26,11 +25,9 @@ module Transfer = Spoc_core.Transfer
 (* Force backend registration *)
 let () = Test_helpers.Benchmarks.init_backends ()
 
-(** Build the Float32.sin kernel IR directly — no PPX dependency.
-    Equivalent to:
-      fun (a : float32 vec) (b : float32 vec) ->
-        let idx = global_thread_id in
-        b.[idx] <- Float32.sin a.[idx]   *)
+(** Build the Float32.sin kernel IR directly — no PPX dependency. Equivalent to:
+    fun (a : float32 vec) (b : float32 vec) -> let idx = global_thread_id in
+    b.[idx] <- Float32.sin a.[idx] *)
 let make_float32_sin_ir () : kernel =
   let make_var name ty =
     {var_name = name; var_id = 0; var_type = ty; var_mutable = false}
@@ -121,19 +118,21 @@ let () =
   let dev = Test_helpers.get_device cfg devs in
   Printf.printf "Using device: %s (%s)\n%!" dev.Device.name dev.Device.framework ;
   Printf.printf "Running Float32.sin pure-registry kernel (n=%d)...\n%!" n ;
-  (try
-     let result = run_kernel_on_device dev in
-     if verify_result result then begin
-       Printf.printf "PASSED: Float32.sin pure-registry e2e on %s\n%!"
-         dev.Device.framework
-     end else begin
-       Printf.printf "FAILED: numerical mismatch\n%!" ;
-       exit 1
-     end
-   with
+  try
+    let result = run_kernel_on_device dev in
+    if verify_result result then begin
+      Printf.printf
+        "PASSED: Float32.sin pure-registry e2e on %s\n%!"
+        dev.Device.framework
+    end
+    else begin
+      Printf.printf "FAILED: numerical mismatch\n%!" ;
+      exit 1
+    end
+  with
   | Spoc_framework.Backend_error.Backend_error _msg ->
       Printf.printf "SKIPPED: backend error\n%!" ;
       exit 0
   | e ->
       Printf.printf "ERROR: %s\n%!" (Printexc.to_string e) ;
-      exit 1)
+      exit 1

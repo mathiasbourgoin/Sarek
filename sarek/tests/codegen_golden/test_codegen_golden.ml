@@ -138,8 +138,8 @@ let variant_kernel () =
   in
   {k with kern_variants = [("Opt", opt_constrs)]}
 
-(** Kernel 4: Float32.sin intrinsic call (unqualified path=[]).
-    fun (a : float32 vec) (b : float32 vec) -> ... b.[idx] <- sin a.[idx] *)
+(** Kernel 4: Float32.sin intrinsic call (unqualified path=[]). fun (a : float32
+    vec) (b : float32 vec) -> ... b.[idx] <- sin a.[idx] *)
 let sin_kernel () =
   let a = make_var "a" (TVec TFloat32) in
   let b = make_var "b" (TVec TFloat32) in
@@ -161,9 +161,9 @@ let sin_kernel () =
     []
     body
 
-(** Kernel 5: Float32.sin path-qualified intrinsic (path=["Float32"]).
-    CUDA must emit sinf(); OpenCL/Metal/GLSL emit sin().
-    This is the PR-2 sinf-fix test kernel. *)
+(** Kernel 5: Float32.sin path-qualified intrinsic (path=["Float32"]). CUDA must
+    emit sinf(); OpenCL/Metal/GLSL emit sin(). This is the PR-2 sinf-fix test
+    kernel. *)
 let float32_sin_path_kernel () =
   let a = make_var "a" (TVec TFloat32) in
   let b = make_var "b" (TVec TFloat32) in

@@ -236,11 +236,11 @@ and gen_intrinsic buf path name args =
   let pure_registry_hit =
     match path with
     | [] -> None
-    | _ ->
+    | _ -> (
         let framework = Option.value ~default:"CUDA" !current_framework in
-        (match
-           Sarek_pure_registry.fun_device_template ~module_path:path name
-         with
+        match
+          Sarek_pure_registry.fun_device_template ~module_path:path name
+        with
         | Some f -> Some (f ~framework)
         | None -> None)
   in
@@ -254,184 +254,198 @@ and gen_intrinsic buf path name args =
           gen_expr buf e)
         args ;
       Buffer.add_char buf ')'
-  | None ->
-  (* Try thread intrinsics *)
-  if
-    List.mem
-      name
-      [
-        "thread_id_x";
-        "thread_idx_x";
-        "thread_id_y";
-        "thread_idx_y";
-        "thread_id_z";
-        "thread_idx_z";
-        "block_id_x";
-        "block_idx_x";
-        "block_id_y";
-        "block_idx_y";
-        "block_id_z";
-        "block_idx_z";
-        "block_dim_x";
-        "block_dim_y";
-        "block_dim_z";
-        "grid_dim_x";
-        "grid_dim_y";
-        "grid_dim_z";
-        "global_thread_id";
-        "global_idx";
-        "global_idx_x";
-        "global_idx_y";
-        "global_idx_z";
-        "global_size";
-      ]
-  then Buffer.add_string buf (cuda_thread_intrinsic name)
-  else
-    (* Standard math intrinsics *)
-    match name with
-    | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh"
-    | "tanh" | "exp" | "exp2" | "log" | "log2" | "log10" | "sqrt" | "rsqrt"
-    | "cbrt" | "floor" | "ceil" | "round" | "trunc" | "fabs" ->
-        Buffer.add_string buf name ;
-        Buffer.add_char buf '(' ;
-        List.iteri
-          (fun i e ->
-            if i > 0 then Buffer.add_string buf ", " ;
-            gen_expr buf e)
-          args ;
-        Buffer.add_char buf ')'
-    | "atan2" | "pow" | "fma" | "min" | "max" ->
-        Buffer.add_string buf name ;
-        Buffer.add_char buf '(' ;
-        List.iteri
-          (fun i e ->
-            if i > 0 then Buffer.add_string buf ", " ;
-            gen_expr buf e)
-          args ;
-        Buffer.add_char buf ')'
-    (* Barrier synchronization *)
-    | "block_barrier" -> Buffer.add_string buf "__syncthreads()"
-    | "atomic_add" | "atomic_add_int32" | "atomic_add_global_int32" ->
-        Buffer.add_string buf "atomicAdd(" ;
-        (match args with
-        | [addr; value] ->
-            Buffer.add_char buf '&' ;
-            gen_expr buf addr ;
-            Buffer.add_string buf ", " ;
-            gen_expr buf value
-        | [arr; idx; value] ->
-            (* Array element atomic: atomicAdd(&arr[idx], value) *)
-            Buffer.add_char buf '&' ;
-            gen_expr buf arr ;
-            Buffer.add_char buf '[' ;
-            gen_expr buf idx ;
-            Buffer.add_string buf "], " ;
-            gen_expr buf value
-        | _ ->
-            Cuda_error.raise_error
-              (Cuda_error.invalid_arg_count "atomic_add" 3 (List.length args))) ;
-        Buffer.add_char buf ')'
-    | "atomic_sub" ->
-        Buffer.add_string buf "atomicSub(" ;
-        (match args with
-        | [addr; value] ->
-            Buffer.add_char buf '&' ;
-            gen_expr buf addr ;
-            Buffer.add_string buf ", " ;
-            gen_expr buf value
-        | _ ->
-            Cuda_error.raise_error
-              (Cuda_error.invalid_arg_count "atomic_sub" 2 (List.length args))) ;
-        Buffer.add_char buf ')'
-    | "atomic_min" ->
-        Buffer.add_string buf "atomicMin(" ;
-        (match args with
-        | [addr; value] ->
-            Buffer.add_char buf '&' ;
-            gen_expr buf addr ;
-            Buffer.add_string buf ", " ;
-            gen_expr buf value
-        | _ ->
-            Cuda_error.raise_error
-              (Cuda_error.invalid_arg_count "atomic_min" 2 (List.length args))) ;
-        Buffer.add_char buf ')'
-    | "atomic_max" ->
-        Buffer.add_string buf "atomicMax(" ;
-        (match args with
-        | [addr; value] ->
-            Buffer.add_char buf '&' ;
-            gen_expr buf addr ;
-            Buffer.add_string buf ", " ;
-            gen_expr buf value
-        | _ ->
-            Cuda_error.raise_error
-              (Cuda_error.invalid_arg_count "atomic_max" 2 (List.length args))) ;
-        Buffer.add_char buf ')'
-    | _ -> (
-        (* Try registry lookup for intrinsics like float, int_of_float, etc. *)
-        match Sarek_registry.fun_device_template ~module_path:path name with
-        | Some template ->
-            (* Generate argument strings *)
-            let arg_strs =
-              List.map
-                (fun e ->
-                  let b = Buffer.create 64 in
-                  gen_expr b e ;
-                  Buffer.contents b)
-                args
-            in
-            (* Count %s placeholders in template *)
-            let count_placeholders s =
-              let rec count i acc =
-                if i >= String.length s - 1 then acc
-                else if s.[i] = '%' && s.[i + 1] = 's' then
-                  count (i + 2) (acc + 1)
-                else count (i + 1) acc
-              in
-              count 0 0
-            in
-            let num_placeholders = count_placeholders template in
-            let result =
-              if num_placeholders = 0 then
-                (* Plain function/cast like "(float)" -> call as function *)
-                template ^ "(" ^ String.concat ", " arg_strs ^ ")"
-              else if num_placeholders = 1 && List.length arg_strs = 1 then
-                match arg_strs with
-                | [arg] ->
-                    Printf.sprintf (Scanf.format_from_string template "%s") arg
-                | _ ->
-                    (* This should never happen due to length check above *)
-                    Cuda_error.raise_error
-                      (Cuda_error.type_error
-                         "intrinsic template"
-                         "1 placeholder, 1 argument"
-                         "unexpected list state")
-              else if num_placeholders = 2 && List.length arg_strs = 2 then
-                Printf.sprintf
-                  (Scanf.format_from_string template "%s%s")
-                  (List.nth arg_strs 0)
-                  (List.nth arg_strs 1)
-              else if num_placeholders = 3 && List.length arg_strs = 3 then
-                Printf.sprintf
-                  (Scanf.format_from_string template "%s%s%s")
-                  (List.nth arg_strs 0)
-                  (List.nth arg_strs 1)
-                  (List.nth arg_strs 2)
-              else
-                (* Fallback: treat as function call *)
-                template ^ "(" ^ String.concat ", " arg_strs ^ ")"
-            in
-            Buffer.add_string buf result
-        | None ->
-            (* Unknown intrinsic - emit as function call *)
-            Buffer.add_string buf full_name ;
+  | None -> (
+      if
+        (* Try thread intrinsics *)
+        List.mem
+          name
+          [
+            "thread_id_x";
+            "thread_idx_x";
+            "thread_id_y";
+            "thread_idx_y";
+            "thread_id_z";
+            "thread_idx_z";
+            "block_id_x";
+            "block_idx_x";
+            "block_id_y";
+            "block_idx_y";
+            "block_id_z";
+            "block_idx_z";
+            "block_dim_x";
+            "block_dim_y";
+            "block_dim_z";
+            "grid_dim_x";
+            "grid_dim_y";
+            "grid_dim_z";
+            "global_thread_id";
+            "global_idx";
+            "global_idx_x";
+            "global_idx_y";
+            "global_idx_z";
+            "global_size";
+          ]
+      then Buffer.add_string buf (cuda_thread_intrinsic name)
+      else
+        (* Standard math intrinsics *)
+        match name with
+        | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh"
+        | "tanh" | "exp" | "exp2" | "log" | "log2" | "log10" | "sqrt" | "rsqrt"
+        | "cbrt" | "floor" | "ceil" | "round" | "trunc" | "fabs" ->
+            Buffer.add_string buf name ;
             Buffer.add_char buf '(' ;
             List.iteri
               (fun i e ->
                 if i > 0 then Buffer.add_string buf ", " ;
                 gen_expr buf e)
               args ;
-            Buffer.add_char buf ')')
+            Buffer.add_char buf ')'
+        | "atan2" | "pow" | "fma" | "min" | "max" ->
+            Buffer.add_string buf name ;
+            Buffer.add_char buf '(' ;
+            List.iteri
+              (fun i e ->
+                if i > 0 then Buffer.add_string buf ", " ;
+                gen_expr buf e)
+              args ;
+            Buffer.add_char buf ')'
+        (* Barrier synchronization *)
+        | "block_barrier" -> Buffer.add_string buf "__syncthreads()"
+        | "atomic_add" | "atomic_add_int32" | "atomic_add_global_int32" ->
+            Buffer.add_string buf "atomicAdd(" ;
+            (match args with
+            | [addr; value] ->
+                Buffer.add_char buf '&' ;
+                gen_expr buf addr ;
+                Buffer.add_string buf ", " ;
+                gen_expr buf value
+            | [arr; idx; value] ->
+                (* Array element atomic: atomicAdd(&arr[idx], value) *)
+                Buffer.add_char buf '&' ;
+                gen_expr buf arr ;
+                Buffer.add_char buf '[' ;
+                gen_expr buf idx ;
+                Buffer.add_string buf "], " ;
+                gen_expr buf value
+            | _ ->
+                Cuda_error.raise_error
+                  (Cuda_error.invalid_arg_count
+                     "atomic_add"
+                     3
+                     (List.length args))) ;
+            Buffer.add_char buf ')'
+        | "atomic_sub" ->
+            Buffer.add_string buf "atomicSub(" ;
+            (match args with
+            | [addr; value] ->
+                Buffer.add_char buf '&' ;
+                gen_expr buf addr ;
+                Buffer.add_string buf ", " ;
+                gen_expr buf value
+            | _ ->
+                Cuda_error.raise_error
+                  (Cuda_error.invalid_arg_count
+                     "atomic_sub"
+                     2
+                     (List.length args))) ;
+            Buffer.add_char buf ')'
+        | "atomic_min" ->
+            Buffer.add_string buf "atomicMin(" ;
+            (match args with
+            | [addr; value] ->
+                Buffer.add_char buf '&' ;
+                gen_expr buf addr ;
+                Buffer.add_string buf ", " ;
+                gen_expr buf value
+            | _ ->
+                Cuda_error.raise_error
+                  (Cuda_error.invalid_arg_count
+                     "atomic_min"
+                     2
+                     (List.length args))) ;
+            Buffer.add_char buf ')'
+        | "atomic_max" ->
+            Buffer.add_string buf "atomicMax(" ;
+            (match args with
+            | [addr; value] ->
+                Buffer.add_char buf '&' ;
+                gen_expr buf addr ;
+                Buffer.add_string buf ", " ;
+                gen_expr buf value
+            | _ ->
+                Cuda_error.raise_error
+                  (Cuda_error.invalid_arg_count
+                     "atomic_max"
+                     2
+                     (List.length args))) ;
+            Buffer.add_char buf ')'
+        | _ -> (
+            (* Try registry lookup for intrinsics like float, int_of_float, etc. *)
+            match Sarek_registry.fun_device_template ~module_path:path name with
+            | Some template ->
+                (* Generate argument strings *)
+                let arg_strs =
+                  List.map
+                    (fun e ->
+                      let b = Buffer.create 64 in
+                      gen_expr b e ;
+                      Buffer.contents b)
+                    args
+                in
+                (* Count %s placeholders in template *)
+                let count_placeholders s =
+                  let rec count i acc =
+                    if i >= String.length s - 1 then acc
+                    else if s.[i] = '%' && s.[i + 1] = 's' then
+                      count (i + 2) (acc + 1)
+                    else count (i + 1) acc
+                  in
+                  count 0 0
+                in
+                let num_placeholders = count_placeholders template in
+                let result =
+                  if num_placeholders = 0 then
+                    (* Plain function/cast like "(float)" -> call as function *)
+                    template ^ "(" ^ String.concat ", " arg_strs ^ ")"
+                  else if num_placeholders = 1 && List.length arg_strs = 1 then
+                    match arg_strs with
+                    | [arg] ->
+                        Printf.sprintf
+                          (Scanf.format_from_string template "%s")
+                          arg
+                    | _ ->
+                        (* This should never happen due to length check above *)
+                        Cuda_error.raise_error
+                          (Cuda_error.type_error
+                             "intrinsic template"
+                             "1 placeholder, 1 argument"
+                             "unexpected list state")
+                  else if num_placeholders = 2 && List.length arg_strs = 2 then
+                    Printf.sprintf
+                      (Scanf.format_from_string template "%s%s")
+                      (List.nth arg_strs 0)
+                      (List.nth arg_strs 1)
+                  else if num_placeholders = 3 && List.length arg_strs = 3 then
+                    Printf.sprintf
+                      (Scanf.format_from_string template "%s%s%s")
+                      (List.nth arg_strs 0)
+                      (List.nth arg_strs 1)
+                      (List.nth arg_strs 2)
+                  else
+                    (* Fallback: treat as function call *)
+                    template ^ "(" ^ String.concat ", " arg_strs ^ ")"
+                in
+                Buffer.add_string buf result
+            | None ->
+                (* Unknown intrinsic - emit as function call *)
+                Buffer.add_string buf full_name ;
+                Buffer.add_char buf '(' ;
+                List.iteri
+                  (fun i e ->
+                    if i > 0 then Buffer.add_string buf ", " ;
+                    gen_expr buf e)
+                  args ;
+                Buffer.add_char buf ')'))
 
 (** {1 L-value Generation} *)
 
