@@ -661,7 +661,10 @@ let quote_kernel ~loc ?(native_kernel : tkernel option)
     let _intrinsic_check = [%e generate_intrinsic_check ~loc kernel] in
     (* Native function for host execution (uses Spoc_core.Vector) *)
     let native_fn =
-      [%e Sarek_native_gen.gen_cpu_kern_native_wrapper ~loc kernel_for_native]
+      [%e
+        Sarek_native_gen_kernel.gen_cpu_kern_native_wrapper
+          ~loc
+          kernel_for_native]
     in
     let body_ir_ir =
       Some

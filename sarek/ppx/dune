@@ -28,7 +28,10 @@
   Sarek_quote
   Sarek_native_helpers
   Sarek_native_intrinsics
+  Sarek_native_gen_base
+  Sarek_native_gen_expr
   Sarek_native_gen
+  Sarek_native_gen_kernel
   Sarek_tailrec_analysis
   Sarek_tailrec_elim
   Sarek_tailrec_bounded
