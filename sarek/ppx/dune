@@ -52,9 +52,10 @@
   Sarek_native_gen
   Sarek_native_gen_kernel))
 
-; Facade: re-export both sub-libraries.
-; NOTE: (modules) is empty; (wrapped true) so Sarek_ppx_lib.Foo aliases are
-; created for all re-exported modules, preserving consumer source compatibility.
+; Facade: empty (modules), re-exports both sub-libraries. Both sub-libs are
+; (wrapped false), so their modules are exposed at top level (e.g. Sarek_typer,
+; Sarek_quote) via re_export — consumers reference them unqualified, not as
+; Sarek_ppx_lib.Foo.
 
 (library
  (name sarek_ppx_lib)
