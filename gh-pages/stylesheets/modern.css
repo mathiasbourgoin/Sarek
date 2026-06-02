@@ -144,6 +144,18 @@ body {
   z-index: 1000;
 }
 
+/* Transparent bridge spanning the 8px margin gap above the menu, so the cursor
+   can travel from the toggle to the items without leaving the hover area (which
+   would hide the menu mid-move and make the subpages unreachable). */
+.dropdown-menu::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: 0;
+  right: 0;
+  height: 8px;
+}
+
 .nav-dropdown:hover .dropdown-menu {
   display: block;
 }
