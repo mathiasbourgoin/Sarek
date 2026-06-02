@@ -17,6 +17,9 @@
  (modules
   Kirc_types
   Sarek_ir
+  Sarek_ir_interp_value
+  Sarek_ir_interp_intrinsics
+  Sarek_ir_interp_eval
   Sarek_ir_interp
   Sarek_fusion
   Sarek_cpu_runtime_types
