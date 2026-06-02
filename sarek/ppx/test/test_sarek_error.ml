@@ -6,9 +6,9 @@
 (** Unit tests for Sarek_error module *)
 
 open Alcotest
-open Sarek_ppx_lib.Sarek_ast
-open Sarek_ppx_lib.Sarek_types
-open Sarek_ppx_lib.Sarek_error
+open Sarek_ast
+open Sarek_types
+open Sarek_error
 
 (** Helper to create a dummy location *)
 let dummy_loc =

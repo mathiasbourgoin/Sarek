@@ -6,7 +6,6 @@
 (** Unit tests for Sarek_debug module *)
 
 open Alcotest
-open Sarek_ppx_lib
 
 (** Test that debug functions don't crash *)
 let test_log_disabled () =

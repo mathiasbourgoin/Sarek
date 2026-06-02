@@ -10,7 +10,7 @@
  * to verify that old and new implementations produce identical IR.
  ******************************************************************************)
 
-open Sarek_ppx_lib.Kirc_Ast
+open Kirc_Ast
 
 (** Difference found between two IR trees *)
 type ir_diff =

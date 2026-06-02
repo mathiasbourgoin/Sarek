@@ -13,8 +13,8 @@
  ******************************************************************************)
 
 open Alcotest
-open Sarek_ppx_lib.Sarek_types
-open Sarek_ppx_lib.Sarek_mono
+open Sarek_types
+open Sarek_mono
 
 (** Test has_type_vars on primitives *)
 let test_has_type_vars_prim () =

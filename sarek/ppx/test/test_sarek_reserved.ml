@@ -6,7 +6,6 @@
 (** Unit tests for Sarek_reserved module *)
 
 open Alcotest
-open Sarek_ppx_lib
 
 (** Test C keywords *)
 let test_c_keyword_if () =

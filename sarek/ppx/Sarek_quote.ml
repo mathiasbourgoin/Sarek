@@ -695,7 +695,7 @@ let quote_kernel ~loc ?(native_kernel : tkernel option)
 let quote_sarek_loc ~loc (l : Sarek_ast.loc) : expression =
   [%expr
     {
-      Sarek_ppx_lib.Sarek_ast.loc_file = [%e quote_string ~loc l.loc_file];
+      Sarek_ast.loc_file = [%e quote_string ~loc l.loc_file];
       loc_line = [%e quote_int ~loc l.loc_line];
       loc_col = [%e quote_int ~loc l.loc_col];
       loc_end_line = [%e quote_int ~loc l.loc_end_line];
@@ -705,85 +705,85 @@ let quote_sarek_loc ~loc (l : Sarek_ast.loc) : expression =
 (** Quote a Sarek_ast.memspace *)
 let quote_sarek_memspace ~loc (m : Sarek_ast.memspace) : expression =
   match m with
-  | Sarek_ast.Local -> [%expr Sarek_ppx_lib.Sarek_ast.Local]
-  | Sarek_ast.Shared -> [%expr Sarek_ppx_lib.Sarek_ast.Shared]
-  | Sarek_ast.Global -> [%expr Sarek_ppx_lib.Sarek_ast.Global]
+  | Sarek_ast.Local -> [%expr Sarek_ast.Local]
+  | Sarek_ast.Shared -> [%expr Sarek_ast.Shared]
+  | Sarek_ast.Global -> [%expr Sarek_ast.Global]
 
 (** Quote a Sarek_ast.type_expr *)
 let rec quote_sarek_type_expr ~loc (te : Sarek_ast.type_expr) : expression =
   match te with
   | Sarek_ast.TEVar s ->
-      [%expr Sarek_ppx_lib.Sarek_ast.TEVar [%e quote_string ~loc s]]
+      [%expr Sarek_ast.TEVar [%e quote_string ~loc s]]
   | Sarek_ast.TEConstr (name, args) ->
       [%expr
-        Sarek_ppx_lib.Sarek_ast.TEConstr
+        Sarek_ast.TEConstr
           ( [%e quote_string ~loc name],
             [%e quote_list ~loc quote_sarek_type_expr args] )]
   | Sarek_ast.TEArrow (a, b) ->
       [%expr
-        Sarek_ppx_lib.Sarek_ast.TEArrow
+        Sarek_ast.TEArrow
           ([%e quote_sarek_type_expr ~loc a], [%e quote_sarek_type_expr ~loc b])]
   | Sarek_ast.TETuple ts ->
       [%expr
-        Sarek_ppx_lib.Sarek_ast.TETuple
+        Sarek_ast.TETuple
           [%e quote_list ~loc quote_sarek_type_expr ts]]
 
 (** Quote a Sarek_ast.binop *)
 let quote_sarek_binop ~loc (op : Sarek_ast.binop) : expression =
   match op with
-  | Sarek_ast.Add -> [%expr Sarek_ppx_lib.Sarek_ast.Add]
-  | Sarek_ast.Sub -> [%expr Sarek_ppx_lib.Sarek_ast.Sub]
-  | Sarek_ast.Mul -> [%expr Sarek_ppx_lib.Sarek_ast.Mul]
-  | Sarek_ast.Div -> [%expr Sarek_ppx_lib.Sarek_ast.Div]
-  | Sarek_ast.Mod -> [%expr Sarek_ppx_lib.Sarek_ast.Mod]
-  | Sarek_ast.And -> [%expr Sarek_ppx_lib.Sarek_ast.And]
-  | Sarek_ast.Or -> [%expr Sarek_ppx_lib.Sarek_ast.Or]
-  | Sarek_ast.Eq -> [%expr Sarek_ppx_lib.Sarek_ast.Eq]
-  | Sarek_ast.Ne -> [%expr Sarek_ppx_lib.Sarek_ast.Ne]
-  | Sarek_ast.Lt -> [%expr Sarek_ppx_lib.Sarek_ast.Lt]
-  | Sarek_ast.Le -> [%expr Sarek_ppx_lib.Sarek_ast.Le]
-  | Sarek_ast.Gt -> [%expr Sarek_ppx_lib.Sarek_ast.Gt]
-  | Sarek_ast.Ge -> [%expr Sarek_ppx_lib.Sarek_ast.Ge]
-  | Sarek_ast.Land -> [%expr Sarek_ppx_lib.Sarek_ast.Land]
-  | Sarek_ast.Lor -> [%expr Sarek_ppx_lib.Sarek_ast.Lor]
-  | Sarek_ast.Lxor -> [%expr Sarek_ppx_lib.Sarek_ast.Lxor]
-  | Sarek_ast.Lsl -> [%expr Sarek_ppx_lib.Sarek_ast.Lsl]
-  | Sarek_ast.Lsr -> [%expr Sarek_ppx_lib.Sarek_ast.Lsr]
-  | Sarek_ast.Asr -> [%expr Sarek_ppx_lib.Sarek_ast.Asr]
+  | Sarek_ast.Add -> [%expr Sarek_ast.Add]
+  | Sarek_ast.Sub -> [%expr Sarek_ast.Sub]
+  | Sarek_ast.Mul -> [%expr Sarek_ast.Mul]
+  | Sarek_ast.Div -> [%expr Sarek_ast.Div]
+  | Sarek_ast.Mod -> [%expr Sarek_ast.Mod]
+  | Sarek_ast.And -> [%expr Sarek_ast.And]
+  | Sarek_ast.Or -> [%expr Sarek_ast.Or]
+  | Sarek_ast.Eq -> [%expr Sarek_ast.Eq]
+  | Sarek_ast.Ne -> [%expr Sarek_ast.Ne]
+  | Sarek_ast.Lt -> [%expr Sarek_ast.Lt]
+  | Sarek_ast.Le -> [%expr Sarek_ast.Le]
+  | Sarek_ast.Gt -> [%expr Sarek_ast.Gt]
+  | Sarek_ast.Ge -> [%expr Sarek_ast.Ge]
+  | Sarek_ast.Land -> [%expr Sarek_ast.Land]
+  | Sarek_ast.Lor -> [%expr Sarek_ast.Lor]
+  | Sarek_ast.Lxor -> [%expr Sarek_ast.Lxor]
+  | Sarek_ast.Lsl -> [%expr Sarek_ast.Lsl]
+  | Sarek_ast.Lsr -> [%expr Sarek_ast.Lsr]
+  | Sarek_ast.Asr -> [%expr Sarek_ast.Asr]
 
 (** Quote a Sarek_ast.unop *)
 let quote_sarek_unop ~loc (op : Sarek_ast.unop) : expression =
   match op with
-  | Sarek_ast.Neg -> [%expr Sarek_ppx_lib.Sarek_ast.Neg]
-  | Sarek_ast.Not -> [%expr Sarek_ppx_lib.Sarek_ast.Not]
-  | Sarek_ast.Lnot -> [%expr Sarek_ppx_lib.Sarek_ast.Lnot]
+  | Sarek_ast.Neg -> [%expr Sarek_ast.Neg]
+  | Sarek_ast.Not -> [%expr Sarek_ast.Not]
+  | Sarek_ast.Lnot -> [%expr Sarek_ast.Lnot]
 
 (** Quote a Sarek_ast.for_dir *)
 let quote_sarek_for_dir ~loc (d : Sarek_ast.for_dir) : expression =
   match d with
-  | Sarek_ast.Upto -> [%expr Sarek_ppx_lib.Sarek_ast.Upto]
-  | Sarek_ast.Downto -> [%expr Sarek_ppx_lib.Sarek_ast.Downto]
+  | Sarek_ast.Upto -> [%expr Sarek_ast.Upto]
+  | Sarek_ast.Downto -> [%expr Sarek_ast.Downto]
 
 (** Quote a Sarek_ast.pattern *)
 let rec quote_sarek_pattern ~loc (p : Sarek_ast.pattern) : expression =
   let desc =
     match p.pat with
-    | Sarek_ast.PAny -> [%expr Sarek_ppx_lib.Sarek_ast.PAny]
+    | Sarek_ast.PAny -> [%expr Sarek_ast.PAny]
     | Sarek_ast.PVar s ->
-        [%expr Sarek_ppx_lib.Sarek_ast.PVar [%e quote_string ~loc s]]
+        [%expr Sarek_ast.PVar [%e quote_string ~loc s]]
     | Sarek_ast.PConstr (name, arg) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.PConstr
+          Sarek_ast.PConstr
             ( [%e quote_string ~loc name],
               [%e quote_option ~loc quote_sarek_pattern arg] )]
     | Sarek_ast.PTuple ps ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.PTuple
+          Sarek_ast.PTuple
             [%e quote_list ~loc quote_sarek_pattern ps]]
   in
   [%expr
     {
-      Sarek_ppx_lib.Sarek_ast.pat = [%e desc];
+      Sarek_ast.pat = [%e desc];
       pat_loc = [%e quote_sarek_loc ~loc p.pat_loc];
     }]
 
@@ -791,7 +791,7 @@ let rec quote_sarek_pattern ~loc (p : Sarek_ast.pattern) : expression =
 let quote_sarek_param ~loc (p : Sarek_ast.param) : expression =
   [%expr
     {
-      Sarek_ppx_lib.Sarek_ast.param_name = [%e quote_string ~loc p.param_name];
+      Sarek_ast.param_name = [%e quote_string ~loc p.param_name];
       param_type = [%e quote_sarek_type_expr ~loc p.param_type];
       param_loc = [%e quote_sarek_loc ~loc p.param_loc];
     }]
@@ -800,88 +800,88 @@ let quote_sarek_param ~loc (p : Sarek_ast.param) : expression =
 let rec quote_sarek_expr ~loc (e : Sarek_ast.expr) : expression =
   let desc =
     match e.e with
-    | Sarek_ast.EUnit -> [%expr Sarek_ppx_lib.Sarek_ast.EUnit]
+    | Sarek_ast.EUnit -> [%expr Sarek_ast.EUnit]
     | Sarek_ast.EBool b ->
-        [%expr Sarek_ppx_lib.Sarek_ast.EBool [%e quote_bool ~loc b]]
+        [%expr Sarek_ast.EBool [%e quote_bool ~loc b]]
     | Sarek_ast.EInt i ->
-        [%expr Sarek_ppx_lib.Sarek_ast.EInt [%e quote_int ~loc i]]
+        [%expr Sarek_ast.EInt [%e quote_int ~loc i]]
     | Sarek_ast.EInt32 i ->
         let i_int = Int32.to_int i in
-        [%expr Sarek_ppx_lib.Sarek_ast.EInt32 [%e quote_int32 ~loc i]]
+        [%expr Sarek_ast.EInt32 [%e quote_int32 ~loc i]]
         |> fun _ ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EInt32
+          Sarek_ast.EInt32
             (Int32.of_int [%e quote_int ~loc i_int])]
     | Sarek_ast.EInt64 i ->
         let i_int = Int64.to_int i in
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EInt64
+          Sarek_ast.EInt64
             (Int64.of_int [%e quote_int ~loc i_int])]
     | Sarek_ast.EFloat f ->
-        [%expr Sarek_ppx_lib.Sarek_ast.EFloat [%e quote_float ~loc f]]
+        [%expr Sarek_ast.EFloat [%e quote_float ~loc f]]
     | Sarek_ast.EDouble f ->
-        [%expr Sarek_ppx_lib.Sarek_ast.EDouble [%e quote_float ~loc f]]
+        [%expr Sarek_ast.EDouble [%e quote_float ~loc f]]
     | Sarek_ast.EVar s ->
-        [%expr Sarek_ppx_lib.Sarek_ast.EVar [%e quote_string ~loc s]]
+        [%expr Sarek_ast.EVar [%e quote_string ~loc s]]
     | Sarek_ast.EVecGet (v, i) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EVecGet
+          Sarek_ast.EVecGet
             ([%e quote_sarek_expr ~loc v], [%e quote_sarek_expr ~loc i])]
     | Sarek_ast.EVecSet (v, i, x) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EVecSet
+          Sarek_ast.EVecSet
             ( [%e quote_sarek_expr ~loc v],
               [%e quote_sarek_expr ~loc i],
               [%e quote_sarek_expr ~loc x] )]
     | Sarek_ast.EArrGet (a, i) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EArrGet
+          Sarek_ast.EArrGet
             ([%e quote_sarek_expr ~loc a], [%e quote_sarek_expr ~loc i])]
     | Sarek_ast.EArrSet (a, i, x) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EArrSet
+          Sarek_ast.EArrSet
             ( [%e quote_sarek_expr ~loc a],
               [%e quote_sarek_expr ~loc i],
               [%e quote_sarek_expr ~loc x] )]
     | Sarek_ast.EFieldGet (e, f) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EFieldGet
+          Sarek_ast.EFieldGet
             ([%e quote_sarek_expr ~loc e], [%e quote_string ~loc f])]
     | Sarek_ast.EFieldSet (e, f, v) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EFieldSet
+          Sarek_ast.EFieldSet
             ( [%e quote_sarek_expr ~loc e],
               [%e quote_string ~loc f],
               [%e quote_sarek_expr ~loc v] )]
     | Sarek_ast.EBinop (op, a, b) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EBinop
+          Sarek_ast.EBinop
             ( [%e quote_sarek_binop ~loc op],
               [%e quote_sarek_expr ~loc a],
               [%e quote_sarek_expr ~loc b] )]
     | Sarek_ast.EUnop (op, e) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EUnop
+          Sarek_ast.EUnop
             ([%e quote_sarek_unop ~loc op], [%e quote_sarek_expr ~loc e])]
     | Sarek_ast.EApp (f, args) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EApp
+          Sarek_ast.EApp
             ( [%e quote_sarek_expr ~loc f],
               [%e quote_list ~loc quote_sarek_expr args] )]
     | Sarek_ast.EAssign (name, e) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EAssign
+          Sarek_ast.EAssign
             ([%e quote_string ~loc name], [%e quote_sarek_expr ~loc e])]
     | Sarek_ast.ELet (name, ty, value, body) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.ELet
+          Sarek_ast.ELet
             ( [%e quote_string ~loc name],
               [%e quote_option ~loc quote_sarek_type_expr ty],
               [%e quote_sarek_expr ~loc value],
               [%e quote_sarek_expr ~loc body] )]
     | Sarek_ast.ELetRec (name, params, ret_ty, fn_body, cont) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.ELetRec
+          Sarek_ast.ELetRec
             ( [%e quote_string ~loc name],
               [%e quote_list ~loc quote_sarek_param params],
               [%e quote_option ~loc quote_sarek_type_expr ret_ty],
@@ -889,20 +889,20 @@ let rec quote_sarek_expr ~loc (e : Sarek_ast.expr) : expression =
               [%e quote_sarek_expr ~loc cont] )]
     | Sarek_ast.ELetMut (name, ty, value, body) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.ELetMut
+          Sarek_ast.ELetMut
             ( [%e quote_string ~loc name],
               [%e quote_option ~loc quote_sarek_type_expr ty],
               [%e quote_sarek_expr ~loc value],
               [%e quote_sarek_expr ~loc body] )]
     | Sarek_ast.EIf (cond, then_e, else_e) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EIf
+          Sarek_ast.EIf
             ( [%e quote_sarek_expr ~loc cond],
               [%e quote_sarek_expr ~loc then_e],
               [%e quote_option ~loc quote_sarek_expr else_e] )]
     | Sarek_ast.EFor (var, lo, hi, dir, body) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EFor
+          Sarek_ast.EFor
             ( [%e quote_string ~loc var],
               [%e quote_sarek_expr ~loc lo],
               [%e quote_sarek_expr ~loc hi],
@@ -910,18 +910,18 @@ let rec quote_sarek_expr ~loc (e : Sarek_ast.expr) : expression =
               [%e quote_sarek_expr ~loc body] )]
     | Sarek_ast.EWhile (cond, body) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EWhile
+          Sarek_ast.EWhile
             ([%e quote_sarek_expr ~loc cond], [%e quote_sarek_expr ~loc body])]
     | Sarek_ast.ESeq (a, b) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.ESeq
+          Sarek_ast.ESeq
             ([%e quote_sarek_expr ~loc a], [%e quote_sarek_expr ~loc b])]
     | Sarek_ast.EMatch (scrutinee, cases) ->
         let quote_case ~loc (p, e) =
           [%expr [%e quote_sarek_pattern ~loc p], [%e quote_sarek_expr ~loc e]]
         in
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EMatch
+          Sarek_ast.EMatch
             ( [%e quote_sarek_expr ~loc scrutinee],
               [%e quote_list ~loc quote_case cases] )]
     | Sarek_ast.ERecord (ty_name, fields) ->
@@ -929,55 +929,55 @@ let rec quote_sarek_expr ~loc (e : Sarek_ast.expr) : expression =
           [%expr [%e quote_string ~loc name], [%e quote_sarek_expr ~loc e]]
         in
         [%expr
-          Sarek_ppx_lib.Sarek_ast.ERecord
+          Sarek_ast.ERecord
             ( [%e quote_option ~loc quote_string ty_name],
               [%e quote_list ~loc quote_field fields] )]
     | Sarek_ast.EConstr (name, arg) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EConstr
+          Sarek_ast.EConstr
             ( [%e quote_string ~loc name],
               [%e quote_option ~loc quote_sarek_expr arg] )]
     | Sarek_ast.ETuple es ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.ETuple
+          Sarek_ast.ETuple
             [%e quote_list ~loc quote_sarek_expr es]]
     | Sarek_ast.EReturn e ->
-        [%expr Sarek_ppx_lib.Sarek_ast.EReturn [%e quote_sarek_expr ~loc e]]
+        [%expr Sarek_ast.EReturn [%e quote_sarek_expr ~loc e]]
     | Sarek_ast.ECreateArray (size, ty, memspace) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.ECreateArray
+          Sarek_ast.ECreateArray
             ( [%e quote_sarek_expr ~loc size],
               [%e quote_sarek_type_expr ~loc ty],
               [%e quote_sarek_memspace ~loc memspace] )]
     | Sarek_ast.EGlobalRef name ->
-        [%expr Sarek_ppx_lib.Sarek_ast.EGlobalRef [%e quote_string ~loc name]]
+        [%expr Sarek_ast.EGlobalRef [%e quote_string ~loc name]]
     | Sarek_ast.ENative _ ->
         (* ENative contains Ppxlib expressions which can't be quoted at runtime *)
         failwith "Cannot quote ENative expressions"
     | Sarek_ast.EPragma (hints, body) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EPragma
+          Sarek_ast.EPragma
             ( [%e quote_list ~loc quote_string hints],
               [%e quote_sarek_expr ~loc body] )]
     | Sarek_ast.ETyped (e, ty) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.ETyped
+          Sarek_ast.ETyped
             ([%e quote_sarek_expr ~loc e], [%e quote_sarek_type_expr ~loc ty])]
     | Sarek_ast.EOpen (path, body) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.EOpen
+          Sarek_ast.EOpen
             ( [%e quote_list ~loc quote_string path],
               [%e quote_sarek_expr ~loc body] )]
     | Sarek_ast.ELetShared (name, ty, size, body) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.ELetShared
+          Sarek_ast.ELetShared
             ( [%e quote_string ~loc name],
               [%e quote_sarek_type_expr ~loc ty],
               [%e quote_option ~loc quote_sarek_expr size],
               [%e quote_sarek_expr ~loc body] )]
     | Sarek_ast.ESuperstep (name, divergent, step_body, cont) ->
         [%expr
-          Sarek_ppx_lib.Sarek_ast.ESuperstep
+          Sarek_ast.ESuperstep
             ( [%e quote_string ~loc name],
               [%e quote_bool ~loc divergent],
               [%e quote_sarek_expr ~loc step_body],
@@ -985,7 +985,7 @@ let rec quote_sarek_expr ~loc (e : Sarek_ast.expr) : expression =
   in
   [%expr
     {
-      Sarek_ppx_lib.Sarek_ast.e = [%e desc];
+      Sarek_ast.e = [%e desc];
       expr_loc = [%e quote_sarek_loc ~loc e.expr_loc];
     }]
 
@@ -994,13 +994,13 @@ let quote_sarek_module_item ~loc (item : Sarek_ast.module_item) : expression =
   match item with
   | Sarek_ast.MConst (name, ty, value) ->
       [%expr
-        Sarek_ppx_lib.Sarek_ast.MConst
+        Sarek_ast.MConst
           ( [%e quote_string ~loc name],
             [%e quote_sarek_type_expr ~loc ty],
             [%e quote_sarek_expr ~loc value] )]
   | Sarek_ast.MFun (name, is_rec, params, body) ->
       [%expr
-        Sarek_ppx_lib.Sarek_ast.MFun
+        Sarek_ast.MFun
           ( [%e quote_string ~loc name],
             [%e quote_bool ~loc is_rec],
             [%e quote_list ~loc quote_sarek_param params],
@@ -1017,7 +1017,7 @@ let quote_sarek_type_decl ~loc (td : Sarek_ast.type_decl) : expression =
           [%e quote_sarek_type_expr ~loc ty]]
       in
       [%expr
-        Sarek_ppx_lib.Sarek_ast.Type_record
+        Sarek_ast.Type_record
           {
             tdecl_name = [%e quote_string ~loc tdecl_name];
             tdecl_module = [%e quote_option ~loc quote_string tdecl_module];
@@ -1032,7 +1032,7 @@ let quote_sarek_type_decl ~loc (td : Sarek_ast.type_decl) : expression =
           [%e quote_option ~loc quote_sarek_type_expr ty_opt]]
       in
       [%expr
-        Sarek_ppx_lib.Sarek_ast.Type_variant
+        Sarek_ast.Type_variant
           {
             tdecl_name = [%e quote_string ~loc tdecl_name];
             tdecl_module = [%e quote_option ~loc quote_string tdecl_module];

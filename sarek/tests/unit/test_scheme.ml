@@ -13,8 +13,8 @@
  ******************************************************************************)
 
 open Alcotest
-open Sarek_ppx_lib.Sarek_types
-open Sarek_ppx_lib.Sarek_scheme
+open Sarek_types
+open Sarek_scheme
 
 (** Helper to create a fresh type variable at a given level *)
 let fresh_at level =

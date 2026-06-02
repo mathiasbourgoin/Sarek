@@ -14,13 +14,13 @@
 (* Force stdlib initialization *)
 let () = Sarek_stdlib.force_init ()
 
-open Sarek_ppx_lib.Sarek_ast
-open Sarek_ppx_lib.Sarek_types
-open Sarek_ppx_lib.Sarek_typed_ast
-open Sarek_ppx_lib.Sarek_tailrec_analysis
+open Sarek_ast
+open Sarek_types
+open Sarek_typed_ast
+open Sarek_tailrec_analysis
 
 (* Import for_dir type without shadowing other types *)
-type for_dir = Sarek_ppx_lib.Sarek_ir_ppx.for_dir = Upto | Downto
+type for_dir = Sarek_ir_ppx.for_dir = Upto | Downto
 
 let dummy_loc =
   {

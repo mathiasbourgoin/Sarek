@@ -9,7 +9,7 @@
  * Tests type representation and unification.
  ******************************************************************************)
 
-open Sarek_ppx_lib.Sarek_types
+open Sarek_types
 
 (* Test helpers *)
 let check_ok msg = function Ok () -> () | Error _ -> Alcotest.fail msg

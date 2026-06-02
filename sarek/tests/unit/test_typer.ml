@@ -12,11 +12,11 @@
 (* Force stdlib initialization to register intrinsics *)
 let () = Sarek_stdlib.force_init ()
 
-open Sarek_ppx_lib.Sarek_ast
-open Sarek_ppx_lib.Sarek_types
-open Sarek_ppx_lib.Sarek_env
-open Sarek_ppx_lib.Sarek_typer
-open Sarek_ppx_lib.Sarek_typed_ast
+open Sarek_ast
+open Sarek_types
+open Sarek_env
+open Sarek_typer
+open Sarek_typed_ast
 
 let dummy_loc =
   {
@@ -86,7 +86,7 @@ let check_infer_ok msg env expr expected_typ =
         msg
         (String.concat
            ", "
-           (List.map Sarek_ppx_lib.Sarek_error.error_to_string errors))
+           (List.map Sarek_error.error_to_string errors))
 
 let check_infer_error msg env expr =
   reset_tvar_counter () ;
@@ -165,7 +165,7 @@ let test_kernel_module_const () =
         "kernel with module const failed: %s"
         (String.concat
            ", "
-           (List.map Sarek_ppx_lib.Sarek_error.error_to_string errs))
+           (List.map Sarek_error.error_to_string errs))
 
 let test_kernel_module_fun () =
   reset_tvar_counter () ;
@@ -224,7 +224,7 @@ let test_kernel_module_fun () =
         "kernel with module fun failed: %s"
         (String.concat
            ", "
-           (List.map Sarek_ppx_lib.Sarek_error.error_to_string errs))
+           (List.map Sarek_error.error_to_string errs))
 
 let test_kernel_module_fun_with_variant () =
   reset_tvar_counter () ;
@@ -325,7 +325,7 @@ let test_kernel_module_fun_with_variant () =
         "kernel with variant helper failed: %s"
         (String.concat
            ", "
-           (List.map Sarek_ppx_lib.Sarek_error.error_to_string errs))
+           (List.map Sarek_error.error_to_string errs))
 
 let test_kernel_module_fun_with_record () =
   reset_tvar_counter () ;
@@ -408,7 +408,7 @@ let test_kernel_module_fun_with_record () =
         "kernel with record helper failed: %s"
         (String.concat
            ", "
-           (List.map Sarek_ppx_lib.Sarek_error.error_to_string errs))
+           (List.map Sarek_error.error_to_string errs))
 
 let test_kernel_type_decl_record () =
   reset_tvar_counter () ;
@@ -463,7 +463,7 @@ let test_kernel_type_decl_record () =
         "kernel with type decl failed: %s"
         (String.concat
            ", "
-           (List.map Sarek_ppx_lib.Sarek_error.error_to_string errs))
+           (List.map Sarek_error.error_to_string errs))
 
 (* Test variable type inference *)
 let test_var_lookup () =
@@ -582,13 +582,13 @@ let test_let_simple () =
 
 let test_let_with_annotation () =
   let env = with_stdlib empty in
-  let ty_annot = Sarek_ppx_lib.Sarek_ast.TEConstr ("int32", []) in
+  let ty_annot = Sarek_ast.TEConstr ("int32", []) in
   let expr = let_expr "x" (Some ty_annot) (int_expr 42) (var_expr "x") in
   check_infer_ok "let x : int32 = 42 in x" env expr t_int32
 
 let test_let_annotation_mismatch () =
   let env = with_stdlib empty in
-  let ty_annot = Sarek_ppx_lib.Sarek_ast.TEConstr ("float32", []) in
+  let ty_annot = Sarek_ast.TEConstr ("float32", []) in
   let expr = let_expr "x" (Some ty_annot) (int_expr 42) (var_expr "x") in
   check_infer_error "let x : float32 = 42 should fail" env expr
 

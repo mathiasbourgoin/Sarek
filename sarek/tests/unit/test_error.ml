@@ -8,7 +8,6 @@
  * Tests error types, location extraction, formatting, and monadic operations
  ******************************************************************************)
 
-open Sarek_ppx_lib
 
 let dummy_loc =
   Sarek_ast.

@@ -1,15 +1,13 @@
 (library
- (name sarek_ppx_lib)
- (public_name sarek.ppx.lib)
- (libraries ppxlib spoc_core) ; spoc removed - V2 codegen only
+ (name sarek_frontend)
+ (public_name sarek.frontend)
+ (wrapped false)
+ (libraries ppxlib sarek_ir)
  (flags
   (:standard -w +8-4))
- ; Enable exhaustiveness warnings, disable fragile pattern
  (preprocess
   (pps ppxlib.metaquot))
  (modules
-  Kirc_Ast
-  Sarek_ast
   Sarek_types
   Sarek_scheme
   Sarek_core_primitives
@@ -17,29 +15,53 @@
   Sarek_env
   Sarek_error
   Sarek_reserved
+  Sarek_parse
+  Sarek_parse_helpers
+  Sarek_ast
   Sarek_typed_ast
   Sarek_typer
   Sarek_convergence
-  Sarek_lower
-  Sarek_ir_ppx
   Sarek_lower_ir
   Sarek_quote_ir
-  Sarek_parse_helpers
-  Sarek_parse
+  Sarek_ir_ppx
+  Sarek_mono
+  Sarek_debug
+  Sarek_tailrec_analysis
+  Sarek_tailrec_elim
+  Sarek_tailrec_bounded
+  Sarek_tailrec_pragma
+  Sarek_tailrec))
+
+(library
+ (name sarek_native_gen)
+ (public_name sarek.native_gen)
+ (wrapped false)
+ (libraries ppxlib spoc_core sarek_ir sarek_frontend)
+ (flags
+  (:standard -w +8-4))
+ (preprocess
+  (pps ppxlib.metaquot))
+ (modules
+  Kirc_Ast
+  Sarek_lower
   Sarek_quote
   Sarek_native_helpers
   Sarek_native_intrinsics
   Sarek_native_gen_base
   Sarek_native_gen_expr
   Sarek_native_gen
-  Sarek_native_gen_kernel
-  Sarek_tailrec_analysis
-  Sarek_tailrec_elim
-  Sarek_tailrec_bounded
-  Sarek_tailrec_pragma
-  Sarek_tailrec
-  Sarek_mono
-  Sarek_debug))
+  Sarek_native_gen_kernel))
+
+; Facade: re-export both sub-libraries.
+; NOTE: (modules) is empty; (wrapped true) so Sarek_ppx_lib.Foo aliases are
+; created for all re-exported modules, preserving consumer source compatibility.
+(library
+ (name sarek_ppx_lib)
+ (public_name sarek.ppx.lib)
+ (libraries
+  (re_export sarek_frontend)
+  (re_export sarek_native_gen))
+ (modules))
 
 (library
  (name sarek_ppx)

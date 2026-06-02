@@ -10,8 +10,8 @@
  * Note: These tests use ppxlib's Ast_builder to create test expressions.
  ******************************************************************************)
 
-open Sarek_ppx_lib.Sarek_ast
-open Sarek_ppx_lib.Sarek_parse
+open Sarek_ast
+open Sarek_parse
 
 (* We'll test the parsing functions indirectly by checking the output AST *)
 

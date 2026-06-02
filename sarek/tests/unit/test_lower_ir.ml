@@ -14,7 +14,6 @@
 (* Force stdlib initialization *)
 let () = Sarek_stdlib.force_init ()
 
-open Sarek_ppx_lib
 module Ir = Sarek_ir_ppx
 
 (* Test: mangle_type_name converts dots to underscores *)

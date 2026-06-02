@@ -12,7 +12,6 @@
 (* Force stdlib initialization *)
 let () = Sarek_stdlib.force_init ()
 
-open Sarek_ppx_lib
 open Sarek_types
 
 let dummy_loc =

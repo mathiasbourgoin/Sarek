@@ -6,7 +6,7 @@
 (** Unit tests for Sarek_core_primitives *)
 
 open Alcotest
-open Sarek_ppx_lib.Sarek_core_primitives
+open Sarek_core_primitives
 
 (* === Lookup tests === *)
 

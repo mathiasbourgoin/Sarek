@@ -13,10 +13,10 @@
 let () = Sarek_stdlib.force_init ()
 
 open Ppxlib
-open Sarek_ppx_lib.Sarek_types
-open Sarek_ppx_lib.Sarek_native_helpers
+open Sarek_types
+open Sarek_native_helpers
 
-let dummy_sarek_loc : Sarek_ppx_lib.Sarek_ast.loc =
+let dummy_sarek_loc : Sarek_ast.loc =
   {
     loc_file = "test.ml";
     loc_line = 42;

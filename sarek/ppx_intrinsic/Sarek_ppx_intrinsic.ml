@@ -12,7 +12,7 @@
  *
  * It generates both:
  * 1. Runtime registration (Sarek_registry) for JIT code generation
- * 2. PPX-time registration (Sarek_ppx_lib.Sarek_ppx_registry) for compile-time type checking
+ * 2. PPX-time registration (Sarek_ppx_registry) for compile-time type checking
  *
  * This is kept separate from the main kernel PPX to break the circular dependency:
  * - sarek_stdlib uses sarek_ppx_intrinsic (to process %sarek_intrinsic)
@@ -78,20 +78,20 @@ let module_path_of_loc loc =
 (** Convert simple type name to Sarek_types representation *)
 let sarek_type_of_simple_name ~loc (name : string) : expression =
   match name with
-  | "unit" -> [%expr Sarek_ppx_lib.Sarek_types.t_unit]
-  | "bool" -> [%expr Sarek_ppx_lib.Sarek_types.t_bool]
-  | "int" -> [%expr Sarek_ppx_lib.Sarek_types.t_int]
-  | "int32" -> [%expr Sarek_ppx_lib.Sarek_types.t_int32]
-  | "int64" -> [%expr Sarek_ppx_lib.Sarek_types.t_int64]
-  | "float32" -> [%expr Sarek_ppx_lib.Sarek_types.t_float32]
-  | "float" | "float64" -> [%expr Sarek_ppx_lib.Sarek_types.t_float64]
-  | "char" -> [%expr Sarek_ppx_lib.Sarek_types.t_char]
+  | "unit" -> [%expr Sarek_types.t_unit]
+  | "bool" -> [%expr Sarek_types.t_bool]
+  | "int" -> [%expr Sarek_types.t_int]
+  | "int32" -> [%expr Sarek_types.t_int32]
+  | "int64" -> [%expr Sarek_types.t_int64]
+  | "float32" -> [%expr Sarek_types.t_float32]
+  | "float" | "float64" -> [%expr Sarek_types.t_float64]
+  | "char" -> [%expr Sarek_types.t_char]
   | _ ->
       (* For unknown types, use TReg (Custom name) *)
       let name_expr = Ast_builder.Default.estring ~loc name in
       [%expr
-        Sarek_ppx_lib.Sarek_types.TReg
-          (Sarek_ppx_lib.Sarek_types.Custom [%e name_expr])]
+        Sarek_types.TReg
+          (Sarek_types.Custom [%e name_expr])]
 
 (** Flatten a parsed arrow type into (arg_types, return_type). E.g., PTArrow(a,
     PTArrow(b, c)) becomes ([a; b], c) *)
@@ -110,12 +110,12 @@ let rec sarek_type_of_simple_parsed ~loc (pt : parsed_type) : expression =
       let elem_expr = sarek_type_of_simple_parsed ~loc elem_type in
       (* Use Local memory space for intrinsic array args (shared memory) *)
       [%expr
-        Sarek_ppx_lib.Sarek_types.TArr
-          ([%e elem_expr], Sarek_ppx_lib.Sarek_types.Local)]
+        Sarek_types.TArr
+          ([%e elem_expr], Sarek_types.Local)]
   | PTVec elem_type ->
       let elem_expr = sarek_type_of_simple_parsed ~loc elem_type in
       (* Vector is global memory *)
-      [%expr Sarek_ppx_lib.Sarek_types.TVec [%e elem_expr]]
+      [%expr Sarek_types.TVec [%e elem_expr]]
   | PTArrow _ ->
       (* Should not happen after flattening, but handle gracefully *)
       sarek_type_of_simple_name ~loc "unknown"
@@ -132,7 +132,7 @@ let sarek_type_of_parsed ~loc (pt : parsed_type) : expression =
           (List.map (sarek_type_of_simple_parsed ~loc) args)
       in
       let ret_expr = sarek_type_of_simple_parsed ~loc ret in
-      [%expr Sarek_ppx_lib.Sarek_types.TFun ([%e arg_exprs], [%e ret_expr])]
+      [%expr Sarek_types.TFun ([%e arg_exprs], [%e ret_expr])]
   | _ -> sarek_type_of_simple_parsed ~loc pt
 
 (** Convert type name string to Sarek_types representation (for backward compat)
@@ -146,15 +146,15 @@ let sarek_type_of_name ~loc (name : string) : expression =
     let elem_name = String.sub name 0 (String.length name - 6) in
     let elem_expr = sarek_type_of_simple_name ~loc elem_name in
     [%expr
-      Sarek_ppx_lib.Sarek_types.TArr
-        ([%e elem_expr], Sarek_ppx_lib.Sarek_types.Local)]
+      Sarek_types.TArr
+        ([%e elem_expr], Sarek_types.Local)]
   else if
     String.length name > 7
     && String.sub name (String.length name - 7) 7 = " vector"
   then
     let elem_name = String.sub name 0 (String.length name - 7) in
     let elem_expr = sarek_type_of_simple_name ~loc elem_name in
-    [%expr Sarek_ppx_lib.Sarek_types.TVec [%e elem_expr]]
+    [%expr Sarek_types.TVec [%e elem_expr]]
   else sarek_type_of_simple_name ~loc name
 
 (** Build a function type from argument types and return type *)
@@ -167,7 +167,7 @@ let build_sarek_fun_type ~loc (arg_types : string list) (ret_type : string) :
         Ast_builder.Default.elist ~loc (List.map (sarek_type_of_name ~loc) args)
       in
       let ret_expr = sarek_type_of_name ~loc ret_type in
-      [%expr Sarek_ppx_lib.Sarek_types.TFun ([%e arg_exprs], [%e ret_expr])]
+      [%expr Sarek_types.TFun ([%e arg_exprs], [%e ret_expr])]
 
 (** Extension for type%sarek_intrinsic - handles type registration *)
 let expand_sarek_intrinsic_type ~ctxt payload =
@@ -233,8 +233,8 @@ let expand_sarek_intrinsic_type ~ctxt payload =
         (* PPX-time registration for compile-time type checking *)
         [%stri
           let () =
-            Sarek_ppx_lib.Sarek_ppx_registry.register_type
-              (Sarek_ppx_lib.Sarek_ppx_registry.make_type_info
+            Sarek_ppx_registry.register_type
+              (Sarek_ppx_registry.make_type_info
                  ~name:[%e type_name_str]
                  ~size:(Ctypes.sizeof [%e ctype_expr])
                  ~sarek_type:[%e sarek_type])];
@@ -369,8 +369,8 @@ let expand_sarek_intrinsic_fun ~ctxt payload =
            The ref is dereferenced at lookup time, allowing %sarek_extend to work. *)
         [%stri
           let () =
-            Sarek_ppx_lib.Sarek_ppx_registry.register_intrinsic
-              (Sarek_ppx_lib.Sarek_ppx_registry.make_intrinsic_info
+            Sarek_ppx_registry.register_intrinsic
+              (Sarek_ppx_registry.make_intrinsic_info
                  ~name:[%e fun_name_str]
                  ~module_path:[%e module_path_expr]
                  ~typ:[%e sarek_fun_type])];

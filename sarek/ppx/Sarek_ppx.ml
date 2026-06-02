@@ -16,7 +16,6 @@
  ******************************************************************************)
 
 open Ppxlib
-open Sarek_ppx_lib
 
 (* Force stdlib module initialization to populate the PPX registry.
    This must happen before any kernel expansion uses Sarek_env.with_stdlib(). *)
@@ -1676,8 +1675,8 @@ let process_structure_for_module_items (str : structure) : structure =
         Some
           [%stri
             let () =
-              Sarek_ppx_lib.Sarek_ppx_registry.register_module_item
-                (Sarek_ppx_lib.Sarek_ppx_registry.make_module_item_info
+              Sarek_ppx_registry.register_module_item
+                (Sarek_ppx_registry.make_module_item_info
                    ~name:[%e name_str]
                    ~module_name:[%e module_name_str]
                    ~item:[%e item_expr])])

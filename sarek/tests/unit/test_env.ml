@@ -12,8 +12,8 @@
 (* Force stdlib initialization to register intrinsics *)
 let () = Sarek_stdlib.force_init ()
 
-open Sarek_ppx_lib.Sarek_types
-open Sarek_ppx_lib.Sarek_env
+open Sarek_types
+open Sarek_env
 
 (* Test adding and finding variables *)
 let test_add_find_var () =

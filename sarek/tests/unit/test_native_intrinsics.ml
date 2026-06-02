@@ -13,9 +13,9 @@
 let () = Sarek_stdlib.force_init ()
 
 open Ppxlib
-open Sarek_ppx_lib.Sarek_types
-open Sarek_ppx_lib.Sarek_env
-open Sarek_ppx_lib.Sarek_native_intrinsics
+open Sarek_types
+open Sarek_env
+open Sarek_native_intrinsics
 
 let dummy_loc = Location.none
 

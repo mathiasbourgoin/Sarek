@@ -15,7 +15,6 @@
 let () = Sarek_stdlib.force_init ()
 
 open Ppxlib
-open Sarek_ppx_lib
 
 let dummy_loc : Location.t = Location.none
 

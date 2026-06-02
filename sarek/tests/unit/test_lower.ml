@@ -9,11 +9,11 @@
  * Tests lowering from typed AST to Kirc_Ast.
  ******************************************************************************)
 
-open Sarek_ppx_lib.Sarek_ast
-open Sarek_ppx_lib.Sarek_types
-open Sarek_ppx_lib.Sarek_typed_ast
-open Sarek_ppx_lib.Sarek_lower
-open Sarek_ppx_lib.Kirc_Ast
+open Sarek_ast
+open Sarek_types
+open Sarek_typed_ast
+open Sarek_lower
+open Kirc_Ast
 
 let dummy_loc =
   {
@@ -279,7 +279,7 @@ let test_lower_intrinsic_const () =
   let te =
     mk_texpr
       (TEIntrinsicConst
-         (Sarek_ppx_lib.Sarek_env.IntrinsicRef (["Gpu"], "thread_idx_x")))
+         (Sarek_env.IntrinsicRef (["Gpu"], "thread_idx_x")))
       t_int32
   in
   let state = create_state (empty_fun_map ()) in
