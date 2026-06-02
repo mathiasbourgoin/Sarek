@@ -50,10 +50,10 @@ let compile_glsl_to_spirv_cli ~(entry_point : string) (glsl_source : string) :
   (* Compile with glslangValidator *)
   (* NOTE: Don't use --target-env vulkan1.1 - it changes storage classes from
      Uniform to StorageBuffer which may cause issues with some drivers *)
-  let _entry_point = entry_point in
   let cmd =
     Printf.sprintf
-      "glslangValidator -V -S comp -o %s %s 2>&1"
+      "glslangValidator -V -S comp -e %s -o %s %s 2>&1"
+      entry_point
       spirv_file
       glsl_file
   in

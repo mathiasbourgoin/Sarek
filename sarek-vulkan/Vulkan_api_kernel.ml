@@ -366,24 +366,44 @@ let ensure_push_constants args =
 let set_arg_int32 args _idx n =
   let pc = ensure_push_constants args in
   let offset = args.push_constant_offset in
+  if offset + 4 > 128 then
+    Vulkan_error.raise_error
+      (Vulkan_error.context_error
+         "push constant"
+         "push constant block overflow: exceeded 128-byte limit") ;
   Bytes.set_int32_le pc offset n ;
   args.push_constant_offset <- offset + 4
 
 let set_arg_int64 args _idx n =
   let pc = ensure_push_constants args in
   let offset = args.push_constant_offset in
+  if offset + 8 > 128 then
+    Vulkan_error.raise_error
+      (Vulkan_error.context_error
+         "push constant"
+         "push constant block overflow: exceeded 128-byte limit") ;
   Bytes.set_int64_le pc offset n ;
   args.push_constant_offset <- offset + 8
 
 let set_arg_float32 args _idx f =
   let pc = ensure_push_constants args in
   let offset = args.push_constant_offset in
+  if offset + 4 > 128 then
+    Vulkan_error.raise_error
+      (Vulkan_error.context_error
+         "push constant"
+         "push constant block overflow: exceeded 128-byte limit") ;
   Bytes.set_int32_le pc offset (Int32.bits_of_float f) ;
   args.push_constant_offset <- offset + 4
 
 let set_arg_float64 args _idx f =
   let pc = ensure_push_constants args in
   let offset = args.push_constant_offset in
+  if offset + 8 > 128 then
+    Vulkan_error.raise_error
+      (Vulkan_error.context_error
+         "push constant"
+         "push constant block overflow: exceeded 128-byte limit") ;
   Bytes.set_int64_le pc offset (Int64.bits_of_float f) ;
   args.push_constant_offset <- offset + 8
 

@@ -260,48 +260,61 @@ let alloc device size kind =
                      "Failed to find suitable memory type")))
   in
 
-  (* Allocate memory *)
-  let alloc_info = make vk_memory_allocate_info in
-  setf alloc_info mem_alloc_sType (u32 vk_structure_type_memory_allocate_info) ;
-  setf alloc_info mem_alloc_pNext null ;
-  setf alloc_info mem_alloc_allocationSize (getf mem_reqs mem_req_size) ;
-  setf
-    alloc_info
-    mem_alloc_memoryTypeIndex
-    (Unsigned.UInt32.of_int mem_type_idx) ;
-
-  let memory = allocate vk_device_memory vk_null_handle in
-  check
-    "vkAllocateMemory"
-    (vkAllocateMemory device.Device.device (addr alloc_info) null memory) ;
-
-  (* Bind memory to buffer *)
-  check
-    "vkBindBufferMemory"
-    (vkBindBufferMemory
-       device.Device.device
-       !@buffer
-       !@memory
-       (Unsigned.UInt64.of_int 0)) ;
-
-  (* Map memory persistently only if mappable (HOST_VISIBLE) *)
-  let mapped_ptr =
-    if is_mappable then (
-      let data_ptr = allocate (ptr void) null in
-      check
-        "vkMapMemory (persistent)"
-        (vkMapMemory
-           device.Device.device
-           !@memory
-           (Unsigned.UInt64.of_int 0)
-           vk_whole_size
-           (Unsigned.UInt32.of_int 0)
-           data_ptr) ;
-      Some !@data_ptr)
-    else None
+  (* Track allocated resources for cleanup on partial failure *)
+  let memory_ref = ref vk_null_handle in
+  let cleanup () =
+    if !memory_ref <> vk_null_handle then
+      vkFreeMemory device.Device.device !memory_ref null ;
+    vkDestroyBuffer device.Device.device !@buffer null
   in
 
-  {buffer = !@buffer; memory = !@memory; size; elem_size; device; mapped_ptr}
+  try
+    (* Allocate memory *)
+    let alloc_info = make vk_memory_allocate_info in
+    setf alloc_info mem_alloc_sType (u32 vk_structure_type_memory_allocate_info) ;
+    setf alloc_info mem_alloc_pNext null ;
+    setf alloc_info mem_alloc_allocationSize (getf mem_reqs mem_req_size) ;
+    setf
+      alloc_info
+      mem_alloc_memoryTypeIndex
+      (Unsigned.UInt32.of_int mem_type_idx) ;
+
+    let memory = allocate vk_device_memory vk_null_handle in
+    check
+      "vkAllocateMemory"
+      (vkAllocateMemory device.Device.device (addr alloc_info) null memory) ;
+    memory_ref := !@memory ;
+
+    (* Bind memory to buffer *)
+    check
+      "vkBindBufferMemory"
+      (vkBindBufferMemory
+         device.Device.device
+         !@buffer
+         !@memory
+         (Unsigned.UInt64.of_int 0)) ;
+
+    (* Map memory persistently only if mappable (HOST_VISIBLE) *)
+    let mapped_ptr =
+      if is_mappable then (
+        let data_ptr = allocate (ptr void) null in
+        check
+          "vkMapMemory (persistent)"
+          (vkMapMemory
+             device.Device.device
+             !@memory
+             (Unsigned.UInt64.of_int 0)
+             vk_whole_size
+             (Unsigned.UInt32.of_int 0)
+             data_ptr) ;
+        Some !@data_ptr)
+      else None
+    in
+
+    {buffer = !@buffer; memory = !@memory; size; elem_size; device; mapped_ptr}
+  with e ->
+    cleanup () ;
+    raise e
 
 let alloc_custom device ~size ~elem_size =
   let byte_size = size * elem_size in
@@ -357,39 +370,52 @@ let alloc_custom device ~size ~elem_size =
     mem_alloc_memoryTypeIndex
     (Unsigned.UInt32.of_int mem_type_idx) ;
 
-  let memory = allocate vk_device_memory vk_null_handle in
-  check
-    "vkAllocateMemory"
-    (vkAllocateMemory device.Device.device (addr alloc_info) null memory) ;
+  (* Track allocated resources for cleanup on partial failure *)
+  let memory_ref = ref vk_null_handle in
+  let cleanup () =
+    if !memory_ref <> vk_null_handle then
+      vkFreeMemory device.Device.device !memory_ref null ;
+    vkDestroyBuffer device.Device.device !@buffer null
+  in
 
-  check
-    "vkBindBufferMemory"
-    (vkBindBufferMemory
-       device.Device.device
-       !@buffer
-       !@memory
-       (Unsigned.UInt64.of_int 0)) ;
+  try
+    let memory = allocate vk_device_memory vk_null_handle in
+    check
+      "vkAllocateMemory"
+      (vkAllocateMemory device.Device.device (addr alloc_info) null memory) ;
+    memory_ref := !@memory ;
 
-  (* Map memory persistently *)
-  let data_ptr = allocate (ptr void) null in
-  check
-    "vkMapMemory (persistent custom)"
-    (vkMapMemory
-       device.Device.device
-       !@memory
-       (Unsigned.UInt64.of_int 0)
-       vk_whole_size
-       (Unsigned.UInt32.of_int 0)
-       data_ptr) ;
+    check
+      "vkBindBufferMemory"
+      (vkBindBufferMemory
+         device.Device.device
+         !@buffer
+         !@memory
+         (Unsigned.UInt64.of_int 0)) ;
 
-  {
-    buffer = !@buffer;
-    memory = !@memory;
-    size;
-    elem_size;
-    device;
-    mapped_ptr = Some !@data_ptr;
-  }
+    (* Map memory persistently *)
+    let data_ptr = allocate (ptr void) null in
+    check
+      "vkMapMemory (persistent custom)"
+      (vkMapMemory
+         device.Device.device
+         !@memory
+         (Unsigned.UInt64.of_int 0)
+         vk_whole_size
+         (Unsigned.UInt32.of_int 0)
+         data_ptr) ;
+
+    {
+      buffer = !@buffer;
+      memory = !@memory;
+      size;
+      elem_size;
+      device;
+      mapped_ptr = Some !@data_ptr;
+    }
+  with e ->
+    cleanup () ;
+    raise e
 
 let free buf =
   (match buf.mapped_ptr with

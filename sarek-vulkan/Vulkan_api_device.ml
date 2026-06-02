@@ -309,5 +309,6 @@ let set_current _dev = ()
 let synchronize dev = check "vkDeviceWaitIdle" (vkDeviceWaitIdle dev.device)
 
 let destroy dev =
+  Hashtbl.remove device_cache dev.id ;
   vkDestroyCommandPool dev.device dev.command_pool null ;
   vkDestroyDevice dev.device null

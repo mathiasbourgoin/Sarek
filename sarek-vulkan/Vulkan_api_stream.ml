@@ -67,7 +67,10 @@ let create device =
 
   {command_pool = !@pool; command_buffer = !@cmd_buf; fence = !@fence; device}
 
+let default_streams : (int, t) Hashtbl.t = Hashtbl.create 4
+
 let destroy stream =
+  Hashtbl.remove default_streams stream.device.Device.id ;
   vkDestroyFence stream.device.Device.device stream.fence null ;
   vkDestroyCommandPool stream.device.Device.device stream.command_pool null
 
@@ -82,8 +85,6 @@ let synchronize stream =
        vk_true
        (Unsigned.UInt64.of_int64 Int64.max_int)) ;
   ignore fence_ptr
-
-let default_streams : (int, t) Hashtbl.t = Hashtbl.create 4
 
 let default device =
   match Hashtbl.find_opt default_streams device.Device.id with
