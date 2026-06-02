@@ -167,14 +167,8 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
     (* Mutable assignment: x := v *)
     | Pexp_apply
         ( {pexp_desc = Pexp_ident {txt = Lident ":="; _}; _},
-          [(Nolabel, lhs); (Nolabel, rhs)] ) -> (
-        match lhs.pexp_desc with
-        | Pexp_ident {txt = Lident name; _} ->
-            Sarek_ast.EAssign (name, parse_expression rhs)
-        | _ ->
-            raise
-              (Parse_error_exn
-                 ("Expected variable on left-hand side of :=", lhs.pexp_loc)))
+          [(Nolabel, lhs); (Nolabel, rhs)] ) ->
+        parse_assign_form lhs rhs
     (* a.(i) syntax - array access *)
     | Pexp_apply (arr, [(Nolabel, idx)]) when is_array_access expr ->
         Sarek_ast.EArrGet (parse_expression arr, parse_expression idx)
@@ -182,65 +176,19 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
     | Pexp_apply
         ( {pexp_desc = Pexp_ident {txt = Lident "pragma"; _}; _},
           [(Nolabel, opts_expr); (Nolabel, body)] ) ->
-        let rec collect_strings acc expr =
-          match expr.pexp_desc with
-          | Pexp_construct ({txt = Lident "[]"; _}, None) -> List.rev acc
-          | Pexp_construct
-              ({txt = Lident "::"; _}, Some {pexp_desc = Pexp_tuple [hd; tl]; _})
-            -> (
-              match hd.pexp_desc with
-              | Pexp_constant (Pconst_string (s, _, _)) ->
-                  collect_strings (s :: acc) tl
-              | _ ->
-                  raise
-                    (Parse_error_exn
-                       ("pragma options must be strings", hd.pexp_loc)))
-          | _ ->
-              raise
-                (Parse_error_exn
-                   ("pragma expects a list of strings", opts_expr.pexp_loc))
-        in
-        let opts = collect_strings [] opts_expr in
-        Sarek_ast.EPragma (opts, parse_expression body)
+        parse_pragma_form opts_expr body
     (* create_array size memspace - special form for local/shared arrays
        Must come before binary operators since it has 2 arguments *)
     | Pexp_apply
         ( {pexp_desc = Pexp_ident {txt = Lident "create_array"; _}; _},
           [(Nolabel, size_expr); (Nolabel, mem_expr)] ) ->
-        let size = parse_expression size_expr in
-        let mem =
-          match mem_expr.pexp_desc with
-          | Pexp_construct ({txt = Lident "Local"; _}, None) -> Sarek_ast.Local
-          | Pexp_construct ({txt = Lident "Shared"; _}, None) ->
-              Sarek_ast.Shared
-          | Pexp_construct ({txt = Lident "Global"; _}, None) ->
-              Sarek_ast.Global
-          | _ ->
-              raise
-                (Parse_error_exn
-                   ( "create_array expects Local, Shared, or Global as memspace",
-                     mem_expr.pexp_loc ))
-        in
-        (* Type comes from let binding annotation, use type variable for inference *)
-        Sarek_ast.ECreateArray (size, Sarek_ast.TEVar "_infer", mem)
+        parse_create_array_form size_expr mem_expr
     (* Binary operators - exclude create_array which is handled above *)
     | Pexp_apply
         ( {pexp_desc = Pexp_ident {txt = Lident op; _}; _},
           [(Nolabel, e1); (Nolabel, e2)] )
-      when op <> "create_array" -> (
-        match parse_binop op with
-        | Some binop ->
-            Sarek_ast.EBinop (binop, parse_expression e1, parse_expression e2)
-        | None ->
-            (* Regular function application with infix *)
-            Sarek_ast.EApp
-              ( parse_expression
-                  {
-                    expr with
-                    pexp_desc =
-                      Pexp_ident {txt = Lident op; loc = expr.pexp_loc};
-                  },
-                [parse_expression e1; parse_expression e2] ))
+      when op <> "create_array" ->
+        parse_binop_or_app_form expr op e1 e2
     (* Unary operators *)
     | Pexp_apply
         ({pexp_desc = Pexp_ident {txt = Lident op; _}; _}, [(Nolabel, e)])
@@ -260,54 +208,7 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
         Sarek_ast.EApp (fn_expr, arg_exprs)
     (* Let binding *)
     | Pexp_let (Nonrecursive, [{pvb_pat; pvb_expr; _}], body) ->
-        let name =
-          match extract_name_from_pattern pvb_pat with
-          | Some n -> n
-          | None ->
-              raise
-                (Parse_error_exn ("Expected variable pattern", pvb_pat.ppat_loc))
-        in
-        let ty = extract_type_from_pattern pvb_pat in
-        (* Detect function definitions and emit ELetRec for local functions *)
-        let fun_params, fun_body = collect_fun_params pvb_expr in
-        if fun_params <> [] then
-          match fun_body with
-          | Some (Fun_body body_expr) ->
-              let parsed_params =
-                List.map
-                  (fun p -> extract_param_from_pattern (pattern_of_param p))
-                  fun_params
-              in
-              let fn_body = parse_expression body_expr in
-              Sarek_ast.ELetRec
-                (name, parsed_params, ty, fn_body, parse_expression body)
-          | Some (Fun_cases _) ->
-              raise
-                (Parse_error_exn
-                   ( "Pattern-matching functions not supported in let bindings",
-                     pvb_expr.pexp_loc ))
-          | None ->
-              raise
-                (Parse_error_exn ("Expected function body", pvb_expr.pexp_loc))
-        else
-          let mut_expr =
-            match pvb_expr.pexp_desc with
-            | Pexp_apply
-                ( {pexp_desc = Pexp_ident {txt = Lident "mut"; _}; _},
-                  [(Nolabel, inner)] ) ->
-                Some inner
-            | _ -> None
-          in
-          let is_mutable = Option.is_some mut_expr in
-          let value_expr =
-            match mut_expr with Some inner -> inner | None -> pvb_expr
-          in
-          if is_mutable then
-            Sarek_ast.ELetMut
-              (name, ty, parse_expression value_expr, parse_expression body)
-          else
-            Sarek_ast.ELet
-              (name, ty, parse_expression value_expr, parse_expression body)
+        parse_let_form pvb_pat pvb_expr body
     (* If-then-else *)
     | Pexp_ifthenelse (cond, then_e, else_opt) ->
         Sarek_ast.EIf
@@ -426,6 +327,123 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
     | _ -> raise (Parse_error_exn ("Unsupported expression", expr.pexp_loc))
   in
   {Sarek_ast.e; Sarek_ast.expr_loc = loc}
+
+(** Extract body for mutable assignment: x := v *)
+and parse_assign_form (lhs : expression) (rhs : expression) :
+    Sarek_ast.expr_desc =
+  match lhs.pexp_desc with
+  | Pexp_ident {txt = Lident name; _} ->
+      Sarek_ast.EAssign (name, parse_expression rhs)
+  | _ ->
+      raise
+        (Parse_error_exn
+           ("Expected variable on left-hand side of :=", lhs.pexp_loc))
+
+(** Extract body for pragma form: pragma ["opt1"; "opt2"] body *)
+and parse_pragma_form (opts_expr : expression) (body : expression) :
+    Sarek_ast.expr_desc =
+  let rec collect_strings acc expr =
+    match expr.pexp_desc with
+    | Pexp_construct ({txt = Lident "[]"; _}, None) -> List.rev acc
+    | Pexp_construct
+        ({txt = Lident "::"; _}, Some {pexp_desc = Pexp_tuple [hd; tl]; _}) -> (
+        match hd.pexp_desc with
+        | Pexp_constant (Pconst_string (s, _, _)) ->
+            collect_strings (s :: acc) tl
+        | _ ->
+            raise
+              (Parse_error_exn ("pragma options must be strings", hd.pexp_loc)))
+    | _ ->
+        raise
+          (Parse_error_exn
+             ("pragma expects a list of strings", opts_expr.pexp_loc))
+  in
+  let opts = collect_strings [] opts_expr in
+  Sarek_ast.EPragma (opts, parse_expression body)
+
+(** Extract body for create_array form: create_array size memspace *)
+and parse_create_array_form (size_expr : expression) (mem_expr : expression) :
+    Sarek_ast.expr_desc =
+  let size = parse_expression size_expr in
+  let mem =
+    match mem_expr.pexp_desc with
+    | Pexp_construct ({txt = Lident "Local"; _}, None) -> Sarek_ast.Local
+    | Pexp_construct ({txt = Lident "Shared"; _}, None) -> Sarek_ast.Shared
+    | Pexp_construct ({txt = Lident "Global"; _}, None) -> Sarek_ast.Global
+    | _ ->
+        raise
+          (Parse_error_exn
+             ( "create_array expects Local, Shared, or Global as memspace",
+               mem_expr.pexp_loc ))
+  in
+  (* Type comes from let binding annotation, use type variable for inference *)
+  Sarek_ast.ECreateArray (size, Sarek_ast.TEVar "_infer", mem)
+
+(** Extract body for binary operator or function application arm *)
+and parse_binop_or_app_form (expr : expression) (op : string) (e1 : expression)
+    (e2 : expression) : Sarek_ast.expr_desc =
+  match parse_binop op with
+  | Some binop ->
+      Sarek_ast.EBinop (binop, parse_expression e1, parse_expression e2)
+  | None ->
+      (* Regular function application with infix *)
+      Sarek_ast.EApp
+        ( parse_expression
+            {
+              expr with
+              pexp_desc = Pexp_ident {txt = Lident op; loc = expr.pexp_loc};
+            },
+          [parse_expression e1; parse_expression e2] )
+
+(** Extract body for let binding arm *)
+and parse_let_form (pvb_pat : pattern) (pvb_expr : expression)
+    (body : expression) : Sarek_ast.expr_desc =
+  let name =
+    match extract_name_from_pattern pvb_pat with
+    | Some n -> n
+    | None ->
+        raise (Parse_error_exn ("Expected variable pattern", pvb_pat.ppat_loc))
+  in
+  let ty = extract_type_from_pattern pvb_pat in
+  (* Detect function definitions and emit ELetRec for local functions *)
+  let fun_params, fun_body = collect_fun_params pvb_expr in
+  if fun_params <> [] then
+    match fun_body with
+    | Some (Fun_body body_expr) ->
+        let parsed_params =
+          List.map
+            (fun p -> extract_param_from_pattern (pattern_of_param p))
+            fun_params
+        in
+        let fn_body = parse_expression body_expr in
+        Sarek_ast.ELetRec
+          (name, parsed_params, ty, fn_body, parse_expression body)
+    | Some (Fun_cases _) ->
+        raise
+          (Parse_error_exn
+             ( "Pattern-matching functions not supported in let bindings",
+               pvb_expr.pexp_loc ))
+    | None ->
+        raise (Parse_error_exn ("Expected function body", pvb_expr.pexp_loc))
+  else
+    let mut_expr =
+      match pvb_expr.pexp_desc with
+      | Pexp_apply
+          ( {pexp_desc = Pexp_ident {txt = Lident "mut"; _}; _},
+            [(Nolabel, inner)] ) ->
+          Some inner
+      | _ -> None
+    in
+    let is_mutable = Option.is_some mut_expr in
+    let value_expr =
+      match mut_expr with Some inner -> inner | None -> pvb_expr
+    in
+    if is_mutable then
+      Sarek_ast.ELetMut
+        (name, ty, parse_expression value_expr, parse_expression body)
+    else
+      Sarek_ast.ELet
+        (name, ty, parse_expression value_expr, parse_expression body)
 
 (** Check if an expression is an array access *)
 and is_array_access (_expr : expression) : bool =
