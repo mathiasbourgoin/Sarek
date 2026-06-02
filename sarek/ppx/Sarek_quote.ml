@@ -331,7 +331,7 @@ and quote_k_ext ~loc (k : Kirc_Ast.k_ext) : expression =
       [%expr Sarek.Kirc_Ast.GFloat64 (fun () -> ![%e var_expr])]
   | Kirc_Ast.Native _ ->
       (* This shouldn't be reached in PPX - we use NativeWithFallback instead *)
-      [%expr Sarek.Kirc_Ast.Native (fun _dev -> "")]
+      [%expr Sarek.Kirc_Ast.Native (fun _framework -> "")]
   | Kirc_Ast.NativeWithFallback {gpu; ocaml} ->
       (* Native code with GPU expression and OCaml fallback function.
          The GPU expression is (fun dev -> "code").

@@ -119,7 +119,7 @@ type k_ext =
       (** Global float32 variable by name - for PPX quoting *)
   | GFloat64Var of string
       (** Global float64 variable by name - for PPX quoting *)
-  | Native of (Spoc_core.Device.t -> string)
+  | Native of (string -> string)
   | NativeWithFallback of {
       gpu : Ppxlib.expression;  (** fun dev -> "cuda/opencl code" *)
       ocaml : Ppxlib.expression;  (** OCaml fallback for interpreter/native *)
