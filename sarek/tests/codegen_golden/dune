@@ -1,0 +1,39 @@
+; Golden-snapshot harness for code generators (Phase 0A spike)
+;
+; Uses (select ...) to conditionally include backend generators.
+; When a backend is unavailable its stub emits a fixed "(* ... unavailable *)"
+; string, and no golden is registered for it - the test skips gracefully.
+
+(library
+ (name codegen_golden_backends)
+ (wrapped false)
+ (modules gen_cuda gen_opencl gen_metal gen_glsl)
+ (libraries
+  sarek_ir
+  (select
+   gen_cuda.ml
+   from
+   (sarek_cuda -> gen_cuda.real.ml)
+   (-> gen_cuda.stub.ml))
+  (select
+   gen_opencl.ml
+   from
+   (sarek_opencl -> gen_opencl.real.ml)
+   (-> gen_opencl.stub.ml))
+  (select
+   gen_metal.ml
+   from
+   (sarek_metal -> gen_metal.real.ml)
+   (-> gen_metal.stub.ml))
+  (select
+   gen_glsl.ml
+   from
+   (sarek_vulkan -> gen_glsl.real.ml)
+   (-> gen_glsl.stub.ml))))
+
+(test
+ (name test_codegen_golden)
+ (modules test_codegen_golden)
+ (libraries codegen_golden_backends sarek_ir alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
