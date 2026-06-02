@@ -16,6 +16,7 @@
   sarek_ir
   sarek_registry
   sarek_backend_error
+  sarek_codegen
   (re_export spoc_core))
  (modules
   Metal_error

@@ -21,6 +21,7 @@
   str
   sarek_registry
   sarek_backend_error
+  sarek_codegen
   (re_export spoc_core))
  (modules
   Vulkan_error
