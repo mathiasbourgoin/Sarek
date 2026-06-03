@@ -185,6 +185,36 @@ let float32_sin_path_kernel () =
     []
     body
 
+(** Kernel 6: bounds-check with if-expression. WGSL-specific: exercises EIf
+    which must emit [select(else, then, cond)] (no ternary in WGSL). fun (a :
+    float32 vec) (b : float32 vec) (n : int32) -> let i = global_thread_id in
+    b.(i) <- if i < n then a.(i) else 0.0 *)
+let bounds_check_kernel () =
+  let a = make_var "a" (TVec TFloat32) in
+  let b = make_var "b" (TVec TFloat32) in
+  let n = make_var "n" TInt32 in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("b", EVar idx),
+            EIf
+              ( EBinop (Lt, EVar idx, EVar n),
+                EArrayRead ("a", EVar idx),
+                EConst (CFloat32 0.0) ) ) )
+  in
+  empty_kernel
+    "bounds_check"
+    [
+      DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (n, None);
+    ]
+    []
+    body
+
 (** {1 Backend Adapter Type} *)
 
 type backend = {
@@ -691,7 +721,12 @@ let () =
      @group(0) @binding(3) var<uniform> params : Params;\n\n\
      // Sarek-generated compute shader: scalar_vec_add\n\
      @compute @workgroup_size(256, 1, 1)\n\
-     fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n\
+     fn main(\n\
+    \  @builtin(global_invocation_id) gid : vec3<u32>,\n\
+    \  @builtin(local_invocation_id) lid : vec3<u32>,\n\
+    \  @builtin(workgroup_id) wid : vec3<u32>,\n\
+    \  @builtin(num_workgroups) nwg : vec3<u32>\n\
+     ) {\n\
     \  let idx : i32 = i32(gid.x);\n\
     \  c[idx] = (a[idx] + b[idx]);\n\
      }\n" ;
@@ -710,7 +745,12 @@ let () =
      @group(0) @binding(1) var<uniform> params : Params;\n\n\
      // Sarek-generated compute shader: record_kernel\n\
      @compute @workgroup_size(256, 1, 1)\n\
-     fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n\
+     fn main(\n\
+    \  @builtin(global_invocation_id) gid : vec3<u32>,\n\
+    \  @builtin(local_invocation_id) lid : vec3<u32>,\n\
+    \  @builtin(workgroup_id) wid : vec3<u32>,\n\
+    \  @builtin(num_workgroups) nwg : vec3<u32>\n\
+     ) {\n\
     \  let idx : i32 = i32(gid.x);\n\
     \  let p : Point2 = pts[idx];\n\
     \  pts[idx] = Point2((p.x * 2.0f), (p.y * 2.0f));\n\
@@ -745,7 +785,12 @@ let () =
      @group(0) @binding(2) var<uniform> params : Params;\n\n\
      // Sarek-generated compute shader: variant_kernel\n\
      @compute @workgroup_size(256, 1, 1)\n\
-     fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n\
+     fn main(\n\
+    \  @builtin(global_invocation_id) gid : vec3<u32>,\n\
+    \  @builtin(local_invocation_id) lid : vec3<u32>,\n\
+    \  @builtin(workgroup_id) wid : vec3<u32>,\n\
+    \  @builtin(num_workgroups) nwg : vec3<u32>\n\
+     ) {\n\
     \  let idx : i32 = i32(gid.x);\n\
     \  let flag : i32 = flags[idx];\n\
     \  if ((flag != 0i)) {\n\
@@ -767,7 +812,12 @@ let () =
      @group(0) @binding(2) var<uniform> params : Params;\n\n\
      // Sarek-generated compute shader: sin_kernel\n\
      @compute @workgroup_size(256, 1, 1)\n\
-     fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n\
+     fn main(\n\
+    \  @builtin(global_invocation_id) gid : vec3<u32>,\n\
+    \  @builtin(local_invocation_id) lid : vec3<u32>,\n\
+    \  @builtin(workgroup_id) wid : vec3<u32>,\n\
+    \  @builtin(num_workgroups) nwg : vec3<u32>\n\
+     ) {\n\
     \  let idx : i32 = i32(gid.x);\n\
     \  b[idx] = sin(a[idx]);\n\
      }\n" ;
@@ -785,7 +835,12 @@ let () =
      @group(0) @binding(2) var<uniform> params : Params;\n\n\
      // Sarek-generated compute shader: float32_sin_path\n\
      @compute @workgroup_size(256, 1, 1)\n\
-     fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n\
+     fn main(\n\
+    \  @builtin(global_invocation_id) gid : vec3<u32>,\n\
+    \  @builtin(local_invocation_id) lid : vec3<u32>,\n\
+    \  @builtin(workgroup_id) wid : vec3<u32>,\n\
+    \  @builtin(num_workgroups) nwg : vec3<u32>\n\
+     ) {\n\
     \  let idx : i32 = i32(gid.x);\n\
     \  b[idx] = sin(a[idx]);\n\
      }\n"
@@ -861,5 +916,55 @@ let make_backend_tests backend =
   in
   (backend.name, tests)
 
+(** {1 WGSL-only golden tests}
+
+    These kernels exercise WGSL-specific correctness fixes (select, thread ids,
+    etc.) that are not applicable or observable on other backends. They are
+    tested only against the wgsl backend to keep the cross-backend loop clean.
+*)
+
 let () =
-  Alcotest.run "codegen_golden" (List.map make_backend_tests all_backends)
+  (* WGSL bounds_check: EIf must emit select(else, then, cond) — no ternary in
+     WGSL. This golden is WGSL-only because other backends do support ternary. *)
+  register_golden
+    "wgsl"
+    "bounds_check"
+    "@group(0) @binding(0) var<storage, read_write> a : array<f32>;\n\
+     @group(0) @binding(1) var<storage, read_write> b : array<f32>;\n\
+     struct Params {\n\
+    \  sarek_a_length : i32,\n\
+    \  sarek_b_length : i32,\n\
+    \  n : i32,\n\
+     }\n\
+     @group(0) @binding(2) var<uniform> params : Params;\n\n\
+     // Sarek-generated compute shader: bounds_check\n\
+     @compute @workgroup_size(256, 1, 1)\n\
+     fn main(\n\
+    \  @builtin(global_invocation_id) gid : vec3<u32>,\n\
+    \  @builtin(local_invocation_id) lid : vec3<u32>,\n\
+    \  @builtin(workgroup_id) wid : vec3<u32>,\n\
+    \  @builtin(num_workgroups) nwg : vec3<u32>\n\
+     ) {\n\
+    \  let idx : i32 = i32(gid.x);\n\
+    \  b[idx] = select(0.0f, a[idx], (idx < params.n));\n\
+     }\n"
+
+let wgsl_only_kernels () = [("bounds_check", bounds_check_kernel ())]
+
+let wgsl_only_tests () =
+  List.map
+    (fun (kernel_name, k) ->
+      Alcotest.test_case
+        (Printf.sprintf "wgsl/%s" kernel_name)
+        `Quick
+        (fun () ->
+          Gen_wgsl.reset_state () ;
+          let actual = Gen_wgsl.generate_with_types ~types:[] k in
+          check_golden "wgsl" kernel_name actual))
+    (wgsl_only_kernels ())
+
+let () =
+  Alcotest.run
+    "codegen_golden"
+    (List.map make_backend_tests all_backends
+    @ [("wgsl_only", wgsl_only_tests ())])

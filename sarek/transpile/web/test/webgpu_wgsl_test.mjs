@@ -54,6 +54,8 @@ if (!hasAdapter) { await browser.close(); server.close(); skip('no WebGPU adapte
 
 const result = await page.evaluate(async () => {
   const N=256;
+  // Run a WGSL kernel. bufs entries: {name, binding, data (TypedArray), out?, uniform?}
+  // uniform:true → GPUBufferUsage.UNIFORM (no STORAGE); used for Params struct.
   async function runWGSL(wgsl, bufs){
     const ad=await navigator.gpu.requestAdapter({powerPreference:'high-performance'});
     const dev=await ad.requestDevice();
@@ -63,7 +65,14 @@ const result = await page.evaluate(async () => {
     if(es.length) return {err:'compile: '+es.map(e=>e.message+' @line'+e.lineNum).join(' | ')};
     const pipe=dev.createComputePipeline({layout:'auto',compute:{module:mod,entryPoint:'main'}});
     const gb={}, rb={};
-    for(const b of bufs){ gb[b.binding]=dev.createBuffer({size:b.data.byteLength,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST|GPUBufferUsage.COPY_SRC}); dev.queue.writeBuffer(gb[b.binding],0,b.data); if(b.out) rb[b.binding]=dev.createBuffer({size:b.data.byteLength,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ}); }
+    for(const b of bufs){
+      const usage = b.uniform
+        ? GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST
+        : GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST|GPUBufferUsage.COPY_SRC;
+      gb[b.binding]=dev.createBuffer({size:b.data.byteLength,usage});
+      dev.queue.writeBuffer(gb[b.binding],0,b.data);
+      if(b.out) rb[b.binding]=dev.createBuffer({size:b.data.byteLength,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+    }
     const bg=dev.createBindGroup({layout:pipe.getBindGroupLayout(0),entries:bufs.map(b=>({binding:b.binding,resource:{buffer:gb[b.binding]}}))});
     const enc=dev.createCommandEncoder(); const p=enc.beginComputePass(); p.setPipeline(pipe); p.setBindGroup(0,bg); p.dispatchWorkgroups(1); p.end();
     for(const b of bufs) if(b.out) enc.copyBufferToBuffer(gb[b.binding],0,rb[b.binding],0,b.data.byteLength);
@@ -75,11 +84,25 @@ const result = await page.evaluate(async () => {
   const a=new Float32Array(N), b=new Float32Array(N);
   for(let i=0;i<N;i++){a[i]=i*0.5; b[i]=i*2.0;}
   const out=[];
+  // Set up scalar uniform data for bounds_check (Params struct: 3 × i32)
+  // Layout: sarek_a_length, sarek_b_length, n  (each i32 = 4 bytes = 12 bytes total)
+  const BC_N = N/2; // half array in-bounds
+  const paramsBC = new Int32Array([N, N, BC_N]); // a_len=N, b_len=N, n=BC_N
   const cases=[
     {k:'vector_add', src:"fun (a:float32 vector)(b:float32 vector)(c:float32 vector) -> let i = global_thread_id in c.(i) <- a.(i) +. b.(i)",
      bufs:[{name:'a',binding:0,data:a.slice()},{name:'b',binding:1,data:b.slice()},{name:'c',binding:2,data:new Float32Array(N),out:true}], ref:i=>a[i]+b[i], outName:'c'},
     {k:'sin', src:"fun (a:float32 vector)(b:float32 vector) -> let i = global_thread_id in b.(i) <- Float32.sin a.(i)",
      bufs:[{name:'a',binding:0,data:a.slice()},{name:'b',binding:1,data:new Float32Array(N),out:true}], ref:i=>Math.sin(a[i]), outName:'b'},
+    // bounds_check: exercises EIf → select(else,then,cond) fix.
+    // Kernel: b.(i) <- if i < n then a.(i) else 0.0
+    // Expected: b[i] = a[i] for i < BC_N, else 0.0
+    {k:'bounds_check',
+     src:"fun (a:float32 vector)(b:float32 vector)(n:int32) -> let i = global_thread_id in b.(i) <- (if i < n then a.(i) else 0.0)",
+     bufs:[
+       {name:'a',binding:0,data:a.slice()},
+       {name:'b',binding:1,data:new Float32Array(N),out:true},
+       {name:'params',binding:2,data:paramsBC,uniform:true}
+     ], ref:i=>(i<BC_N?a[i]:0.0), outName:'b'},
   ];
   for(const c of cases){
     const r=T(c.src,"wgsl");

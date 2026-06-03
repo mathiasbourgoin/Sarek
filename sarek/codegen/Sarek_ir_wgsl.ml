@@ -119,7 +119,11 @@ let escape_wgsl_name name =
     function and raise [Codegen_error.unsupported_construct]. *)
 let rec wgsl_type_of_elttype = function
   | TInt32 -> "i32"
-  | TInt64 -> "i64"
+  | TInt64 ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "i64"
+           "WGSL: 64-bit integers unsupported in core WebGPU")
   | TFloat32 -> "f32"
   | TFloat64 ->
       Codegen_error.raise_error
@@ -144,21 +148,27 @@ let rec has_float64 = function
 
 (** {1 Thread Intrinsics}
 
-    [global_invocation_id] is [vec3<u32>], so all components need [i32(…)]
-    conversion to stay consistent with how the IR types thread ids as i32. *)
+    WGSL uses three distinct builtins:
+    - [local_invocation_id] (lid) — thread within workgroup
+    - [workgroup_id] (wid) — workgroup index in the dispatch grid
+    - [global_invocation_id] (gid) — globally unique thread index
+
+    All are [vec3<u32>]; we cast to i32 to match the IR's i32 type for thread
+    ids. The entry point declares all three builtins; unused ones are harmless
+    (WGSL permits unused builtin params). *)
 let wgsl_thread_intrinsic = function
-  | "thread_id_x" | "thread_idx_x" -> "i32(gid.x)"
-  | "thread_id_y" | "thread_idx_y" -> "i32(gid.y)"
-  | "thread_id_z" | "thread_idx_z" -> "i32(gid.z)"
-  | "block_id_x" | "block_idx_x" -> "i32(gid.x)"
-  | "block_id_y" | "block_idx_y" -> "i32(gid.y)"
-  | "block_id_z" | "block_idx_z" -> "i32(gid.z)"
+  | "thread_id_x" | "thread_idx_x" -> "i32(lid.x)"
+  | "thread_id_y" | "thread_idx_y" -> "i32(lid.y)"
+  | "thread_id_z" | "thread_idx_z" -> "i32(lid.z)"
+  | "block_id_x" | "block_idx_x" -> "i32(wid.x)"
+  | "block_id_y" | "block_idx_y" -> "i32(wid.y)"
+  | "block_id_z" | "block_idx_z" -> "i32(wid.z)"
   | "block_dim_x" -> "256i"
   | "block_dim_y" -> "1i"
   | "block_dim_z" -> "1i"
-  | "grid_dim_x" -> "0i"
-  | "grid_dim_y" -> "0i"
-  | "grid_dim_z" -> "0i"
+  | "grid_dim_x" -> "i32(nwg.x)"
+  | "grid_dim_y" -> "i32(nwg.y)"
+  | "grid_dim_z" -> "i32(nwg.z)"
   | "global_thread_id" | "global_idx" | "global_idx_x" -> "i32(gid.x)"
   | "global_idx_y" -> "i32(gid.y)"
   | "global_idx_z" -> "i32(gid.z)"
@@ -172,7 +182,11 @@ let scalar_param_names : string list ref = ref []
 
 let rec gen_expr buf = function
   | EConst (CInt32 n) -> Buffer.add_string buf (Int32.to_string n ^ "i")
-  | EConst (CInt64 n) -> Buffer.add_string buf (Int64.to_string n ^ "i")
+  | EConst (CInt64 _) ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "i64 literal"
+           "WGSL: 64-bit integers unsupported in core WebGPU")
   | EConst (CFloat32 f) ->
       let s = Printf.sprintf "%.17g" f in
       let s =
@@ -270,36 +284,61 @@ let rec gen_expr buf = function
            "EArrayCreate"
            "should be handled in gen_stmt SLet")
   | EIf (cond, then_, else_) ->
-      Buffer.add_char buf '(' ;
-      gen_expr buf cond ;
-      Buffer.add_string buf " ? " ;
-      gen_expr buf then_ ;
-      Buffer.add_string buf " : " ;
+      (* WGSL has no ternary operator — use select(false_val, true_val, cond) *)
+      Buffer.add_string buf "select(" ;
       gen_expr buf else_ ;
+      Buffer.add_string buf ", " ;
+      gen_expr buf then_ ;
+      Buffer.add_string buf ", " ;
+      gen_expr buf cond ;
       Buffer.add_char buf ')'
   | EMatch (_, []) ->
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct "match" "empty match expression")
   | EMatch (_, [(_, body)]) -> gen_expr buf body
   | EMatch (e, cases) ->
+      (* Nest select() calls: select(else_result, then_result, condition) *)
       let rec gen_cases = function
         | [] ->
             Codegen_error.raise_error
               (Codegen_error.unsupported_construct "match" "empty match cases")
         | [(_, body)] -> gen_expr buf body
         | (pat, body) :: rest ->
-            Buffer.add_char buf '(' ;
+            Buffer.add_string buf "select(" ;
+            (* false branch comes first in select() *)
+            let rest_buf = Buffer.create 64 in
+            gen_cases_into rest_buf rest ;
+            Buffer.add_buffer buf rest_buf ;
+            Buffer.add_string buf ", " ;
+            gen_expr buf body ;
+            Buffer.add_string buf ", " ;
             (match pat with
             | PConstr (name, _) ->
                 Buffer.add_char buf '(' ;
                 gen_expr buf e ;
                 Buffer.add_string buf (".tag == " ^ name ^ ")")
             | PWild -> Buffer.add_string buf "true") ;
-            Buffer.add_string buf " ? " ;
-            gen_expr buf body ;
-            Buffer.add_string buf " : " ;
-            gen_cases rest ;
             Buffer.add_char buf ')'
+      and gen_cases_into buf2 = function
+        | [] ->
+            Codegen_error.raise_error
+              (Codegen_error.unsupported_construct "match" "empty match cases")
+        | [(_, body)] -> gen_expr buf2 body
+        | (pat, body) :: rest ->
+            Buffer.add_string buf2 "select(" ;
+            let rest_buf = Buffer.create 64 in
+            gen_cases_into rest_buf rest ;
+            Buffer.add_buffer buf2 rest_buf ;
+            Buffer.add_string buf2 ", " ;
+            gen_expr buf2 body ;
+            Buffer.add_string buf2 ", " ;
+            (match pat with
+            | PConstr (name, _) ->
+                Buffer.add_char buf2 '(' ;
+                gen_expr buf2 e ;
+                Buffer.add_string buf2 (".tag == " ^ name ^ ")")
+            | PWild -> Buffer.add_string buf2 "true") ;
+            Buffer.add_char buf2 ')'
       in
       gen_cases cases
 
@@ -687,19 +726,23 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf indent ;
       gen_expr buf e ;
       Buffer.add_string buf ";\n"
-  | SLet (_v, EArrayCreate (_, _, Shared), body) -> gen_stmt buf indent body
-  | SLet (v, EArrayCreate (elem_ty, size, _), body) ->
-      (* Workgroup array — emitted inline inside function scope *)
-      let vn = escape_wgsl_name v.var_name in
-      Buffer.add_string buf indent ;
-      Buffer.add_string buf "var<workgroup> " ;
-      Buffer.add_string buf vn ;
-      Buffer.add_string buf " : array<" ;
-      Buffer.add_string buf (wgsl_type_of_elttype elem_ty) ;
-      Buffer.add_string buf ", " ;
-      gen_expr buf size ;
-      Buffer.add_string buf ">;\n" ;
+  | SLet (_v, EArrayCreate (_, _, Shared), body) ->
+      (* Shared arrays are hoisted to module scope by collect_workgroup_decls;
+         only the body continuation needs to be emitted here. *)
       gen_stmt buf indent body
+  | SLet (_v, EArrayCreate (_, _, Local), _) ->
+      (* WGSL has no function-local dynamic arrays. Raise rather than emit
+         invalid WGSL. Use Shared memspace for workgroup-scoped arrays. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "EArrayCreate(Local)"
+           "WGSL: local dynamic arrays unsupported; use Shared for workgroup \
+            arrays")
+  | SLet (_v, EArrayCreate (_, _, Global), _) ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "EArrayCreate(Global)"
+           "WGSL: global dynamic array creation not supported in kernel body")
   | SLet (v, e, body) ->
       gen_var_decl buf indent ~mutable_:false v.var_name v.var_type e ;
       gen_stmt buf indent body
@@ -928,7 +971,12 @@ let wgsl_header ~kernel_name ?(block = (256, 1, 1)) () =
   let bx, by, bz = block in
   Printf.sprintf
     "@compute @workgroup_size(%d, %d, %d)\n\
-     fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n"
+     fn main(\n\
+    \  @builtin(global_invocation_id) gid : vec3<u32>,\n\
+    \  @builtin(local_invocation_id) lid : vec3<u32>,\n\
+    \  @builtin(workgroup_id) wid : vec3<u32>,\n\
+    \  @builtin(num_workgroups) nwg : vec3<u32>\n\
+     ) {\n"
     bx
     by
     bz
