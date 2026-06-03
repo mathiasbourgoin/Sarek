@@ -14,7 +14,7 @@
 *)
 
 (** GPU backend selector. *)
-type backend = CUDA | OpenCL | Metal | GLSL
+type backend = CUDA | OpenCL | Metal | GLSL | WGSL
 
 (** Structured error type. Every frontend failure is converted to one of these
     variants; no exception escapes {!of_source}. *)

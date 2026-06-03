@@ -13,7 +13,7 @@
  ******************************************************************************)
 
 (** GPU backend selector *)
-type backend = CUDA | OpenCL | Metal | GLSL
+type backend = CUDA | OpenCL | Metal | GLSL | WGSL
 
 (** Structured error: every frontend failure is converted here — no exception
     escapes [of_source]. *)
@@ -222,10 +222,12 @@ let set_framework backend =
     | OpenCL -> "OpenCL"
     | Metal -> "Metal"
     | GLSL -> "GLSL"
+    | WGSL -> "WGSL"
   in
   Sarek_ir_cuda.current_framework := Some name ;
   Sarek_ir_opencl.current_framework := Some name ;
-  Sarek_ir_metal.current_framework := Some name
+  Sarek_ir_metal.current_framework := Some name ;
+  Sarek_ir_wgsl.current_framework := Some name
 
 let emit_backend backend (k : Sarek_ir_ppx.kernel) =
   let k_types = Sarek_ir_conv.conv_kernel k in
@@ -234,6 +236,7 @@ let emit_backend backend (k : Sarek_ir_ppx.kernel) =
   | OpenCL -> Sarek_ir_opencl.generate k_types
   | Metal -> Sarek_ir_metal.generate k_types
   | GLSL -> Sarek_ir_glsl.generate k_types
+  | WGSL -> Sarek_ir_wgsl.generate k_types
 
 (******************************************************************************)
 (* Main pipeline                                                              *)
