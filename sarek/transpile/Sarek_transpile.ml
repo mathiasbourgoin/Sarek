@@ -27,6 +27,14 @@ type error =
       (** Kernel contains [%native] which cannot be transpiled purely *)
   | Internal_error of string  (** Unexpected exception (should not occur) *)
 
+(** Format one frontend error, prefixing its source line when known. *)
+let format_frontend_error (e : Sarek_error.error) : string =
+  let loc = Sarek_error.error_loc e in
+  let body = Sarek_error.error_to_string e in
+  if loc.Sarek_ast.loc_line > 0 then
+    Printf.sprintf "line %d: %s" loc.Sarek_ast.loc_line body
+  else body
+
 (** Convert [error] to a human-readable string. *)
 let string_of_error = function
   | Parse_error (msg, loc) ->
@@ -38,17 +46,32 @@ let string_of_error = function
   | Type_error errs ->
       Printf.sprintf
         "type error: %s"
-        (String.concat "; " (List.map Sarek_error.error_to_string errs))
+        (String.concat "; " (List.map format_frontend_error errs))
   | Convergence_error errs ->
       Printf.sprintf
         "convergence error: %s"
-        (String.concat "; " (List.map Sarek_error.error_to_string errs))
+        (String.concat "; " (List.map format_frontend_error errs))
   | Unsupported_native loc ->
       Printf.sprintf
         "[%%native] at %s:%d cannot be transpiled purely"
         loc.Sarek_ast.loc_file
         loc.Sarek_ast.loc_line
   | Internal_error msg -> Printf.sprintf "internal error: %s" msg
+
+(** Human-readable message for an OCaml [Syntaxerr.error]. The default
+    [Printexc.to_string] renders the unhelpful "Syntaxerr.Error(_)"; this
+    surfaces what the parser actually expected (e.g. an unclosed [begin]). *)
+let string_of_syntaxerr (se : Syntaxerr.error) : string =
+  match se with
+  | Syntaxerr.Unclosed (_, opening, _, closing) ->
+      Printf.sprintf "unclosed \"%s\" (expected \"%s\")" opening closing
+  | Syntaxerr.Expecting (_, nonterm) ->
+      Printf.sprintf "syntax error, expecting %s" nonterm
+  | Syntaxerr.Not_expecting (_, nonterm) ->
+      Printf.sprintf "syntax error, unexpected %s" nonterm
+  | Syntaxerr.Variable_in_scope (_, var) ->
+      Printf.sprintf "scope error on variable %S" var
+  | _ -> "syntax error"
 
 (******************************************************************************)
 (* [%native] detection - walk the kernel body looking for ENative nodes.     *)
@@ -243,9 +266,7 @@ let of_source (backend : backend) (src : string) : (string, error) result =
     | Syntaxerr.Error se ->
         let loc = Syntaxerr.location_of_error se in
         Error
-          (Parse_error
-             ( Printexc.to_string (Syntaxerr.Error se),
-               loc_of_lexing loc.loc_start ))
+          (Parse_error (string_of_syntaxerr se, loc_of_lexing loc.loc_start))
     | exn -> Error (Parse_error (Printexc.to_string exn, dummy_loc))
   with
   | Error _ as err -> err
