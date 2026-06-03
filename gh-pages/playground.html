@@ -1,5 +1,5 @@
 ---
-layout: default
+layout: page
 title: Playground
 ---
 <style>
@@ -16,7 +16,8 @@ title: Playground
   }
   .playground-container p.subtitle {
     margin-top: 0;
-    color: #666;
+    color: var(--text-color);
+    opacity: 0.7;
   }
   .controls {
     display: flex;
@@ -29,8 +30,10 @@ title: Playground
   .controls select {
     padding: 0.3rem 0.6rem;
     font-size: 1rem;
-    border: 1px solid #ccc;
+    border: 1px solid var(--border-color);
     border-radius: 4px;
+    background: var(--card-bg);
+    color: var(--text-color);
   }
   .editor-pane {
     display: flex;
@@ -47,14 +50,16 @@ title: Playground
     font-family: monospace;
     font-size: 0.9rem;
     padding: 0.6rem;
-    border: 1px solid #ccc;
+    border: 1px solid var(--border-color);
     border-radius: 4px;
     resize: vertical;
     box-sizing: border-box;
+    background: var(--code-bg);
+    color: var(--text-color);
   }
   pre#output-pane {
-    background: #1e1e1e;
-    color: #d4d4d4;
+    background: var(--code-bg);
+    color: var(--text-color);
     padding: 1rem;
     border-radius: 4px;
     font-size: 0.85rem;
@@ -62,13 +67,15 @@ title: Playground
     word-break: break-all;
     min-height: 80px;
     margin: 0;
+    border: 1px solid var(--border-color);
   }
   pre#output-pane.error-output {
-    color: #f48771;
+    color: #e05252;
   }
   .status-bar {
     font-size: 0.8rem;
-    color: #888;
+    color: var(--text-color);
+    opacity: 0.6;
     height: 1.2em;
   }
 </style>
