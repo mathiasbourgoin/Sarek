@@ -38,3 +38,6 @@ _bmad
 _bmad-output
 # Generated jsoo bundle (built by CI, never committed)
 gh-pages/javascripts/sarek_transpile.js
+
+# Roster pipeline per-PR scaffolding — durable plans live in docs/plans/
+briefs/
