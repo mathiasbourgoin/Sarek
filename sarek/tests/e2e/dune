@@ -203,3 +203,13 @@
  (modules test_external_kernel)
  (optional)
  (libraries sarek spoc_core test_helpers unix))
+
+; PR-5a proof: FFI-free stdlib metadata population
+; Asserts that sarek_stdlib_meta populates Sarek_ppx_registry without
+; any Ctypes or Spoc_core dependency (sarek_frontend + sarek_stdlib_meta only).
+; Run with: dune exec sarek/tests/e2e/test_stdlib_meta_proof.exe
+
+(executable
+ (name test_stdlib_meta_proof)
+ (modules test_stdlib_meta_proof)
+ (libraries sarek_frontend sarek_stdlib_meta))
