@@ -10,13 +10,14 @@
     emits GPU source code for the requested backend.
 
     The library is FFI-free: it does not depend on [spoc_core] or [ctypes] and
-    therefore links cleanly as bytecode and (with polyfills) under js_of_ocaml. *)
+    therefore links cleanly as bytecode and (with polyfills) under js_of_ocaml.
+*)
 
 (** GPU backend selector. *)
 type backend = CUDA | OpenCL | Metal | GLSL
 
-(** Structured error type.  Every frontend failure is converted to one of
-    these variants; no exception escapes {!of_source}. *)
+(** Structured error type. Every frontend failure is converted to one of these
+    variants; no exception escapes {!of_source}. *)
 type error =
   | Parse_error of string * Sarek_ast.loc
       (** OCaml parser or Sarek parse error with message and location. *)
@@ -29,21 +30,19 @@ type error =
   | Internal_error of string
       (** Unexpected exception — indicates a bug, not a user error. *)
 
-(** [string_of_error e] returns a human-readable representation of [e].
-    Intended for debugging and test output. *)
+(** [string_of_error e] returns a human-readable representation of [e]. Intended
+    for debugging and test output. *)
 val string_of_error : error -> string
 
-(** [of_source backend src] parses [src] as an OCaml kernel expression and
-    runs the full frontend pipeline:
-    {ol
-    {li OCaml parse → ppxlib expression}
-    {li Sarek parse → [Sarek_ast.kernel]}
-    {li [[%native]] rejection}
-    {li Type inference ([Sarek_typer.infer_kernel])}
-    {li Convergence check ([Sarek_convergence.check_kernel])}
-    {li Monomorphisation, tail-recursion transform, IR lowering}
-    {li Code generation via [sarek_codegen]}
-    }
+(** [of_source backend src] parses [src] as an OCaml kernel expression and runs
+    the full frontend pipeline:
+    + OCaml parse → ppxlib expression
+    + Sarek parse → [Sarek_ast.kernel]
+    + [[%native]] rejection
+    + Type inference ([Sarek_typer.infer_kernel])
+    + Convergence check ([Sarek_convergence.check_kernel])
+    + Monomorphisation, tail-recursion transform, IR lowering
+    + Code generation via [sarek_codegen]
 
     Returns [Ok gpu_source] on success, or [Error e] with a structured
     description of the first failure encountered.

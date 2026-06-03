@@ -7,11 +7,7 @@
 (library
  (name sarek_transpile)
  (public_name sarek.transpile)
- (libraries
-  ppxlib
-  sarek_frontend
-  sarek_codegen
-  sarek_stdlib_meta)
+ (libraries ppxlib sarek_frontend sarek_codegen sarek_stdlib_meta)
  (modules Sarek_transpile Sarek_ir_conv)
  (preprocess no_preprocessing)
  (instrumentation

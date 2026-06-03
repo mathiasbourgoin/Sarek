@@ -20,7 +20,8 @@ type backend = CUDA | OpenCL | Metal | GLSL
 type error =
   | Parse_error of string * Sarek_ast.loc
       (** OCaml parser or Sarek parse error *)
-  | Type_error of Sarek_error.error list  (** Typer / constraint-solving error *)
+  | Type_error of Sarek_error.error list
+      (** Typer / constraint-solving error *)
   | Convergence_error of Sarek_error.error list  (** Barrier-safety error *)
   | Unsupported_native of Sarek_ast.loc
       (** Kernel contains [%native] which cannot be transpiled purely *)
@@ -29,31 +30,38 @@ type error =
 (** Convert [error] to a human-readable string. *)
 let string_of_error = function
   | Parse_error (msg, loc) ->
-      Printf.sprintf "parse error at %s:%d: %s" loc.Sarek_ast.loc_file
-        loc.Sarek_ast.loc_line msg
+      Printf.sprintf
+        "parse error at %s:%d: %s"
+        loc.Sarek_ast.loc_file
+        loc.Sarek_ast.loc_line
+        msg
   | Type_error errs ->
-      Printf.sprintf "type error: %s"
+      Printf.sprintf
+        "type error: %s"
         (String.concat "; " (List.map Sarek_error.error_to_string errs))
   | Convergence_error errs ->
-      Printf.sprintf "convergence error: %s"
+      Printf.sprintf
+        "convergence error: %s"
         (String.concat "; " (List.map Sarek_error.error_to_string errs))
   | Unsupported_native loc ->
-      Printf.sprintf "[%%native] at %s:%d cannot be transpiled purely"
-        loc.Sarek_ast.loc_file loc.Sarek_ast.loc_line
+      Printf.sprintf
+        "[%%native] at %s:%d cannot be transpiled purely"
+        loc.Sarek_ast.loc_file
+        loc.Sarek_ast.loc_line
   | Internal_error msg -> Printf.sprintf "internal error: %s" msg
 
 (******************************************************************************)
 (* [%native] detection - walk the kernel body looking for ENative nodes.     *)
 (******************************************************************************)
 
-let rec check_expr_no_native (e : Sarek_ast.expr) :
-    (unit, Sarek_ast.loc) result =
+let rec check_expr_no_native (e : Sarek_ast.expr) : (unit, Sarek_ast.loc) result
+    =
   match e.Sarek_ast.e with
   | Sarek_ast.ENative _ -> Error e.Sarek_ast.expr_loc
   (* Leaf nodes *)
-  | Sarek_ast.EUnit | Sarek_ast.EBool _ | Sarek_ast.EInt _
-  | Sarek_ast.EInt32 _ | Sarek_ast.EInt64 _ | Sarek_ast.EFloat _
-  | Sarek_ast.EDouble _ | Sarek_ast.EVar _ | Sarek_ast.EGlobalRef _
+  | Sarek_ast.EUnit | Sarek_ast.EBool _ | Sarek_ast.EInt _ | Sarek_ast.EInt32 _
+  | Sarek_ast.EInt64 _ | Sarek_ast.EFloat _ | Sarek_ast.EDouble _
+  | Sarek_ast.EVar _ | Sarek_ast.EGlobalRef _
   | Sarek_ast.EConstr (_, None) ->
       Ok ()
   (* One child *)
@@ -108,8 +116,7 @@ let rec check_expr_no_native (e : Sarek_ast.expr) :
       | Error _ as err -> err
       | Ok () -> check_exprs_no_native args)
   (* ERecord: module_name option * (field * expr) list *)
-  | Sarek_ast.ERecord (_, fields) ->
-      check_exprs_no_native (List.map snd fields)
+  | Sarek_ast.ERecord (_, fields) -> check_exprs_no_native (List.map snd fields)
   | Sarek_ast.ETuple es -> check_exprs_no_native es
   (* EMatch: discriminant * (pattern * body) list *)
   | Sarek_ast.EMatch (e, cases) -> (
@@ -121,7 +128,8 @@ let rec check_expr_no_native (e : Sarek_ast.expr) :
               match acc with
               | Error _ as err -> err
               | Ok () -> check_expr_no_native body)
-            (Ok ()) cases)
+            (Ok ())
+            cases)
   (* ELetShared: string * type_expr * size option * body *)
   | Sarek_ast.ELetShared (_, _, sz_opt, body) -> (
       match sz_opt with
@@ -134,10 +142,9 @@ let rec check_expr_no_native (e : Sarek_ast.expr) :
 and check_exprs_no_native exprs =
   List.fold_left
     (fun acc e ->
-      match acc with
-      | Error _ as err -> err
-      | Ok () -> check_expr_no_native e)
-    (Ok ()) exprs
+      match acc with Error _ as err -> err | Ok () -> check_expr_no_native e)
+    (Ok ())
+    exprs
 
 let check_kernel_no_native (kernel : Sarek_ast.kernel) :
     (unit, Sarek_ast.loc) result =
@@ -148,10 +155,9 @@ let check_kernel_no_native (kernel : Sarek_ast.kernel) :
   match
     List.fold_left
       (fun acc item ->
-        match acc with
-        | Error _ as err -> err
-        | Ok () -> check_module_item item)
-      (Ok ()) kernel.Sarek_ast.kern_module_items
+        match acc with Error _ as err -> err | Ok () -> check_module_item item)
+      (Ok ())
+      kernel.Sarek_ast.kern_module_items
   with
   | Error _ as err -> err
   | Ok () -> check_expr_no_native kernel.Sarek_ast.kern_body
@@ -160,12 +166,12 @@ let check_kernel_no_native (kernel : Sarek_ast.kernel) :
 (* String -> ppxlib expression bridge                                         *)
 (******************************************************************************)
 
-(** Parse an OCaml expression string into a ppxlib expression.
-    Uses [Ppxlib.Parse.expression] which yields a ppxlib-typed AST directly. *)
+(** Parse an OCaml expression string into a ppxlib expression. Uses
+    [Ppxlib.Parse.expression] which yields a ppxlib-typed AST directly. *)
 let expr_of_string src =
   let lexbuf = Lexing.from_string src in
   lexbuf.Lexing.lex_curr_p <-
-    {lexbuf.Lexing.lex_curr_p with Lexing.pos_fname = "<transpile>"};
+    {lexbuf.Lexing.lex_curr_p with Lexing.pos_fname = "<transpile>"} ;
   Ppxlib.Parse.expression lexbuf
 
 (******************************************************************************)
@@ -194,8 +200,8 @@ let set_framework backend =
     | Metal -> "Metal"
     | GLSL -> "GLSL"
   in
-  Sarek_ir_cuda.current_framework := Some name;
-  Sarek_ir_opencl.current_framework := Some name;
+  Sarek_ir_cuda.current_framework := Some name ;
+  Sarek_ir_opencl.current_framework := Some name ;
   Sarek_ir_metal.current_framework := Some name
 
 let emit_backend backend (k : Sarek_ir_ppx.kernel) =
@@ -220,37 +226,36 @@ let loc_of_lexing (p : Lexing.position) : Sarek_ast.loc =
       loc_end_col = p.pos_cnum - p.pos_bol;
     }
 
-(** [of_source backend src] parses [src] as an OCaml kernel expression, runs
-    the full frontend pipeline
-      parse -> [%native] check -> type -> convergence -> mono -> tailrec
-      -> lower -> codegen
-    and returns the GPU source for [backend].
+(** [of_source backend src] parses [src] as an OCaml kernel expression, runs the
+    full frontend pipeline parse -> [%native] check -> type -> convergence ->
+    mono -> tailrec -> lower -> codegen and returns the GPU source for
+    [backend].
 
     All frontend errors are converted to [error]; no exception escapes. *)
 let of_source (backend : backend) (src : string) : (string, error) result =
   (* Ensure stdlib_meta intrinsics are registered before running the pipeline.
      This is idempotent - multiple calls are safe. *)
-  Sarek_stdlib_meta.force_init ();
-  set_framework backend;
+  Sarek_stdlib_meta.force_init () ;
+  set_framework backend ;
   (* Step 1: OCaml parser -> ppxlib expression *)
   match
-    (try Ok (expr_of_string src) with
+    try Ok (expr_of_string src) with
     | Syntaxerr.Error se ->
         let loc = Syntaxerr.location_of_error se in
         Error
           (Parse_error
              ( Printexc.to_string (Syntaxerr.Error se),
                loc_of_lexing loc.loc_start ))
-    | exn -> Error (Parse_error (Printexc.to_string exn, dummy_loc)))
+    | exn -> Error (Parse_error (Printexc.to_string exn, dummy_loc))
   with
   | Error _ as err -> err
   | Ok ppxlib_expr -> (
       (* Step 2: Sarek parse -> Sarek_ast.kernel *)
       match
-        (try Ok (Sarek_parse.parse_payload ppxlib_expr) with
+        try Ok (Sarek_parse.parse_payload ppxlib_expr) with
         | Sarek_parse_helpers.Parse_error_exn (msg, loc) ->
             Error (Parse_error (msg, Sarek_ast.loc_of_ppxlib loc))
-        | exn -> Error (Internal_error (Printexc.to_string exn)))
+        | exn -> Error (Internal_error (Printexc.to_string exn))
       with
       | Error _ as err -> err
       | Ok kernel -> (

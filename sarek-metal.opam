@@ -11,7 +11,7 @@ homepage: "https://github.com/mathiasbourgoin/Sarek"
 bug-reports: "https://github.com/mathiasbourgoin/Sarek/issues"
 depends: [
   "ocaml" {>= "5.4.0"}
-  "dune" {>= "3.15" & >= "2.9"}
+  "dune" {>= "3.15"}
   "sarek" {= version}
   "ctypes"
   "ctypes-foreign"

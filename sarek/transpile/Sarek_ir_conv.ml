@@ -93,8 +93,7 @@ let conv_pattern : P.pattern -> T.pattern = function
 let rec conv_expr : P.expr -> T.expr = function
   | P.EConst c -> T.EConst (conv_const c)
   | P.EVar v -> T.EVar (conv_var v)
-  | P.EBinop (op, a, b) ->
-      T.EBinop (conv_binop op, conv_expr a, conv_expr b)
+  | P.EBinop (op, a, b) -> T.EBinop (conv_binop op, conv_expr a, conv_expr b)
   | P.EUnop (op, e) -> T.EUnop (conv_unop op, conv_expr e)
   | P.EArrayRead (name, idx) -> T.EArrayRead (name, conv_expr idx)
   | P.EArrayReadExpr (base, idx) ->
@@ -134,7 +133,11 @@ and conv_stmt : P.stmt -> T.stmt = function
   | P.SWhile (c, body) -> T.SWhile (conv_expr c, conv_stmt body)
   | P.SFor (v, start_, end_, dir, body) ->
       T.SFor
-        (conv_var v, conv_expr start_, conv_expr end_, conv_for_dir dir, conv_stmt body)
+        ( conv_var v,
+          conv_expr start_,
+          conv_expr end_,
+          conv_for_dir dir,
+          conv_stmt body )
   | P.SMatch (e, cases) ->
       T.SMatch
         ( conv_expr e,
@@ -145,10 +148,8 @@ and conv_stmt : P.stmt -> T.stmt = function
   | P.SWarpBarrier -> T.SWarpBarrier
   | P.SExpr e -> T.SExpr (conv_expr e)
   | P.SEmpty -> T.SEmpty
-  | P.SLet (v, e, body) ->
-      T.SLet (conv_var v, conv_expr e, conv_stmt body)
-  | P.SLetMut (v, e, body) ->
-      T.SLetMut (conv_var v, conv_expr e, conv_stmt body)
+  | P.SLet (v, e, body) -> T.SLet (conv_var v, conv_expr e, conv_stmt body)
+  | P.SLetMut (v, e, body) -> T.SLetMut (conv_var v, conv_expr e, conv_stmt body)
   | P.SPragma (opts, body) -> T.SPragma (opts, conv_stmt body)
   | P.SMemFence -> T.SMemFence
   | P.SBlock body -> T.SBlock (conv_stmt body)
@@ -156,8 +157,8 @@ and conv_stmt : P.stmt -> T.stmt = function
       (* [%native] is rejected before lowering in of_source — should never
          reach here. *)
       invalid_arg
-        "Sarek_ir_conv: SNative reached converter; [%native] must be \
-         rejected before lowering"
+        "Sarek_ir_conv: SNative reached converter; [%native] must be rejected \
+         before lowering"
 
 let conv_decl : P.decl -> T.decl = function
   | P.DParam (v, arr_opt) ->
@@ -183,9 +184,9 @@ let conv_helper_func (hf : P.helper_func) : T.helper_func =
     T.hf_body = conv_stmt hf.P.hf_body;
   }
 
-(** Convert a [Sarek_ir_ppx.kernel] to a [Sarek_ir_types.kernel].
-    The [kern_native_fn] field is set to [None] — transpiled kernels never
-    carry a native CPU function. *)
+(** Convert a [Sarek_ir_ppx.kernel] to a [Sarek_ir_types.kernel]. The
+    [kern_native_fn] field is set to [None] — transpiled kernels never carry a
+    native CPU function. *)
 let conv_kernel (k : P.kernel) : T.kernel =
   {
     T.kern_name = k.P.kern_name;
@@ -195,8 +196,7 @@ let conv_kernel (k : P.kernel) : T.kernel =
     T.kern_types =
       List.map
         (fun (tname, fields) ->
-          ( tname,
-            List.map (fun (fname, et) -> (fname, conv_elttype et)) fields ))
+          (tname, List.map (fun (fname, et) -> (fname, conv_elttype et)) fields))
         k.P.kern_types;
     T.kern_variants =
       List.map
