@@ -2,6 +2,7 @@
 layout: page
 title: Playground
 ---
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.css">
 <style>
   :root {
     --playground-error-color: #c0392b;
@@ -57,17 +58,54 @@ title: Playground
   }
   textarea#kernel-source {
     width: 100%;
-    height: 120px;
     font-family: monospace;
     font-size: 0.9rem;
     padding: 0.6rem;
     border: 1px solid var(--border-color);
     border-radius: 4px;
-    resize: vertical;
     box-sizing: border-box;
     background: var(--code-bg);
     color: var(--text-color);
   }
+  /* CodeMirror: auto-height + site CSS-variable theming */
+  .CodeMirror {
+    height: auto;
+    min-height: 14em;
+    font-family: monospace;
+    font-size: 0.9rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--code-bg);
+    color: var(--text-color);
+  }
+  .CodeMirror-gutters {
+    background: var(--code-bg);
+    border-right: 1px solid var(--border-color);
+  }
+  .CodeMirror-linenumber {
+    color: var(--text-color);
+    opacity: 0.5;
+  }
+  .CodeMirror-cursor {
+    border-left-color: var(--text-color);
+  }
+  .CodeMirror-selected {
+    background: var(--primary-color) !important;
+    opacity: 0.25;
+  }
+  /* OCaml syntax token colours — contrast-safe on both light and dark --code-bg */
+  .cm-keyword    { color: var(--primary-color); font-weight: bold; }
+  .cm-builtin    { color: var(--primary-color); }
+  .cm-def        { color: var(--text-color); }
+  .cm-variable   { color: var(--text-color); }
+  .cm-variable-2 { color: var(--text-color); }
+  .cm-type       { color: #4caf50; }
+  .cm-string     { color: #e67e22; }
+  .cm-string-2   { color: #e67e22; }
+  .cm-number     { color: #8e44ad; }
+  .cm-comment    { color: var(--text-color); opacity: 0.55; font-style: italic; }
+  .cm-operator   { color: var(--primary-color); }
+  .cm-meta       { color: var(--text-color); opacity: 0.7; }
   pre#output-pane {
     background: var(--code-bg);
     color: var(--text-color);
@@ -120,6 +158,8 @@ title: Playground
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/mode/mllike/mllike.min.js"></script>
 <script src="javascripts/sarek_transpile.js"></script>
 <script>
 (function () {
@@ -129,8 +169,24 @@ title: Playground
   var statusEl = document.getElementById('status-bar');
   var debounceTimer = null;
 
+  // Upgrade textarea to CodeMirror 5 if available; degrade gracefully on CDN failure.
+  var cm = null;
+  if (typeof CodeMirror !== 'undefined') {
+    cm = CodeMirror.fromTextArea(sourceEl, {
+      mode: 'text/x-ocaml',
+      lineNumbers: true,
+      lineWrapping: true,
+      viewportMargin: Infinity,
+      tabSize: 2,
+    });
+  }
+
+  function getSource() {
+    return cm ? cm.getValue() : sourceEl.value;
+  }
+
   function runTranspile() {
-    var source = sourceEl.value;
+    var source = getSource();
     var backend = backendEl.value;
     if (typeof globalThis.SarekTranspile === 'undefined') {
       outputEl.textContent = 'Transpiler not loaded yet. Please wait or reload.';
@@ -156,7 +212,11 @@ title: Playground
     debounceTimer = setTimeout(runTranspile, 400);
   }
 
-  sourceEl.addEventListener('input', scheduleTranspile);
+  if (cm) {
+    cm.on('change', scheduleTranspile);
+  } else {
+    sourceEl.addEventListener('input', scheduleTranspile);
+  }
   backendEl.addEventListener('change', runTranspile);
 
   // Run once the bundle is loaded
