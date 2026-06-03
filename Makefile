@@ -388,6 +388,13 @@ benchmarks: bench-all
 bench-all:
 	@./benchmarks/run_all_benchmarks.sh
 
+# GPU benchmark regression check: run the self-verifying suite on the available
+# GPU backends and fail on any "verified": false (or crash). Correctness gate
+# for the nightly local GPU run; not a performance threshold.
+# Override size/iters: make bench-gpu-check SIZE=4096 ITERS=5
+bench-gpu-check:
+	@SIZE=$(or $(SIZE),2048) ITERS=$(or $(ITERS),3) ./scripts/gpu-bench-check.sh
+
 bench-update:
 	@echo "Running benchmarks and updating web data..."
 	@./benchmarks/run_all_benchmarks.sh results
