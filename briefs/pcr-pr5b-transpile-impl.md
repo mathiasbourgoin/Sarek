@@ -73,7 +73,7 @@ raise `Invalid_argument` (unreachable since `[%native]` is rejected before lower
 
 ## dune Libraries (FFI-free proof)
 
-```
+```dune
 ; sarek_transpile library
 (libraries ppxlib sarek_frontend sarek_codegen sarek_stdlib_meta)
 
@@ -87,7 +87,7 @@ No `spoc_core`, no `ctypes`, no `nvrtc`. The native exe links only:
 
 ## Proof Exe Output
 
-```
+```text
 === PR-5b proof: FFI-free Float32.sin transpile ===
 [INFO] CUDA output:
 extern "C" {
@@ -135,5 +135,5 @@ this PR since the hard proof uses Float32.
 | `dune build sarek_transpile` | PASS (pure, no FFI) |
 | `dune exec sarek/transpile/test/test_transpile_proof.exe` | PASS (all 4 backends + [%native] rejection) |
 | `dune build sarek/transpile/test/test_transpile_proof.bc` | PASS (bytecode FFI-free) |
-| `dune build` (full) | PASS (only -lnvrtc pre-existing fail) |
+| `dune build` (full) | PASS for all PR targets; the only failure is the pre-existing, unrelated `-lnvrtc` link error (CUDA nvrtc absent on this host) |
 | `dune build @fmt` | PASS (clean) |

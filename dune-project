@@ -95,7 +95,7 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (description "Enables execution of Sarek kernels on Apple GPUs via Metal framework (macOS/iOS).")
  (depends
   (ocaml (>= 5.4.0))
-  (dune (>= 2.9))
+  (dune (>= 3.15))
   (sarek (= :version))
   ctypes
   ctypes-foreign))
