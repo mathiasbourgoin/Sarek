@@ -271,12 +271,16 @@ let of_source (backend : backend) (src : string) : (string, error) result =
                   (* Step 5: convergence *)
                   match Sarek_convergence.check_kernel tkernel with
                   | Error errs -> Error (Convergence_error errs)
-                  | Ok () ->
-                      (* Step 6: mono -> tailrec -> lower *)
-                      let mono = Sarek_mono.monomorphize tkernel in
-                      let tr = Sarek_tailrec.transform_kernel mono in
-                      let ir_kernel, _warnings =
-                        Sarek_lower_ir.lower_kernel tr
-                      in
-                      (* Step 7: emit *)
-                      Ok (emit_backend backend ir_kernel)))))
+                  | Ok () -> (
+                      (* Steps 6-7: mono -> tailrec -> lower -> emit.
+                         Guarded so any internal raise maps to Internal_error
+                         rather than escaping of_source (per the .mli contract). *)
+                      try
+                        let mono = Sarek_mono.monomorphize tkernel in
+                        let tr = Sarek_tailrec.transform_kernel mono in
+                        let ir_kernel, _warnings =
+                          Sarek_lower_ir.lower_kernel tr
+                        in
+                        Ok (emit_backend backend ir_kernel)
+                      with exn ->
+                        Error (Internal_error (Printexc.to_string exn)))))))
