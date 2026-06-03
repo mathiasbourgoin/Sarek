@@ -6,7 +6,7 @@
 (library
  (name codegen_golden_backends)
  (wrapped false)
- (modules gen_cuda gen_opencl gen_metal gen_glsl)
+ (modules gen_cuda gen_opencl gen_metal gen_glsl gen_wgsl)
  (libraries sarek_ir sarek_codegen))
 
 (rule
@@ -24,6 +24,10 @@
 (rule
  (action
   (copy gen_glsl.real.ml gen_glsl.ml)))
+
+(rule
+ (action
+  (copy gen_wgsl.real.ml gen_wgsl.ml)))
 
 (test
  (name test_codegen_golden)

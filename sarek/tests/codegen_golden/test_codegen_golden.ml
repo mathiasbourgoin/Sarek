@@ -221,7 +221,15 @@ let glsl_backend =
     generate = Gen_glsl.generate_with_types;
   }
 
-let all_backends = [cuda_backend; opencl_backend; metal_backend; glsl_backend]
+let wgsl_backend =
+  {
+    name = "wgsl";
+    reset = Gen_wgsl.reset_state;
+    generate = Gen_wgsl.generate_with_types;
+  }
+
+let all_backends =
+  [cuda_backend; opencl_backend; metal_backend; glsl_backend; wgsl_backend]
 
 (** {1 Golden Registry} *)
 
@@ -665,6 +673,120 @@ let () =
      #define b_len pc.b_len\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
+    \  b[idx] = sin(a[idx]);\n\
+     }\n" ;
+
+  (* ---- WGSL goldens ---- *)
+  register_golden
+    "wgsl"
+    "scalar_vec_add"
+    "@group(0) @binding(0) var<storage, read_write> a : array<f32>;\n\
+     @group(0) @binding(1) var<storage, read_write> b : array<f32>;\n\
+     @group(0) @binding(2) var<storage, read_write> c : array<f32>;\n\
+     struct Params {\n\
+    \  sarek_a_length : i32,\n\
+    \  sarek_b_length : i32,\n\
+    \  sarek_c_length : i32,\n\
+     }\n\
+     @group(0) @binding(3) var<uniform> params : Params;\n\n\
+     // Sarek-generated compute shader: scalar_vec_add\n\
+     @compute @workgroup_size(256, 1, 1)\n\
+     fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n\
+    \  let idx : i32 = i32(gid.x);\n\
+    \  c[idx] = (a[idx] + b[idx]);\n\
+     }\n" ;
+
+  register_golden
+    "wgsl"
+    "record_kernel"
+    "struct Point2 {\n\
+    \  x : f32,\n\
+    \  y : f32,\n\
+     }\n\n\
+     @group(0) @binding(0) var<storage, read_write> pts : array<Point2>;\n\
+     struct Params {\n\
+    \  sarek_pts_length : i32,\n\
+     }\n\
+     @group(0) @binding(1) var<uniform> params : Params;\n\n\
+     // Sarek-generated compute shader: record_kernel\n\
+     @compute @workgroup_size(256, 1, 1)\n\
+     fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n\
+    \  let idx : i32 = i32(gid.x);\n\
+    \  let p : Point2 = pts[idx];\n\
+    \  pts[idx] = Point2((p.x * 2.0f), (p.y * 2.0f));\n\
+     }\n" ;
+
+  register_golden
+    "wgsl"
+    "variant_kernel"
+    "const OptNone : i32 = 0i;\n\
+     const OptSome : i32 = 1i;\n\n\
+     struct Opt {\n\
+    \  tag : i32,\n\
+    \  OptSome_v : f32,\n\
+     }\n\n\
+     fn make_Opt_OptNone() -> Opt {\n\
+    \  var r : Opt;\n\
+    \  r.tag = OptNone;\n\
+    \  return r;\n\
+     }\n\n\
+     fn make_Opt_OptSome(v : f32) -> Opt {\n\
+    \  var r : Opt;\n\
+    \  r.tag = OptSome;\n\
+    \  r.OptSome_v = v;\n\
+    \  return r;\n\
+     }\n\n\
+     @group(0) @binding(0) var<storage, read_write> flags : array<i32>;\n\
+     @group(0) @binding(1) var<storage, read_write> out : array<Opt>;\n\
+     struct Params {\n\
+    \  sarek_flags_length : i32,\n\
+    \  sarek_out_length : i32,\n\
+     }\n\
+     @group(0) @binding(2) var<uniform> params : Params;\n\n\
+     // Sarek-generated compute shader: variant_kernel\n\
+     @compute @workgroup_size(256, 1, 1)\n\
+     fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n\
+    \  let idx : i32 = i32(gid.x);\n\
+    \  let flag : i32 = flags[idx];\n\
+    \  if ((flag != 0i)) {\n\
+    \    out[idx] = make_Opt_OptSome(1.0f);\n\
+    \  } else {\n\
+    \    out[idx] = make_Opt_OptNone();\n\
+    \  }\n\
+     }\n" ;
+
+  register_golden
+    "wgsl"
+    "sin_kernel"
+    "@group(0) @binding(0) var<storage, read_write> a : array<f32>;\n\
+     @group(0) @binding(1) var<storage, read_write> b : array<f32>;\n\
+     struct Params {\n\
+    \  sarek_a_length : i32,\n\
+    \  sarek_b_length : i32,\n\
+     }\n\
+     @group(0) @binding(2) var<uniform> params : Params;\n\n\
+     // Sarek-generated compute shader: sin_kernel\n\
+     @compute @workgroup_size(256, 1, 1)\n\
+     fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n\
+    \  let idx : i32 = i32(gid.x);\n\
+    \  b[idx] = sin(a[idx]);\n\
+     }\n" ;
+
+  (* WGSL: sin (un-suffixed for Float32, matching GLSL/OpenCL/Metal) *)
+  register_golden
+    "wgsl"
+    "float32_sin_path"
+    "@group(0) @binding(0) var<storage, read_write> a : array<f32>;\n\
+     @group(0) @binding(1) var<storage, read_write> b : array<f32>;\n\
+     struct Params {\n\
+    \  sarek_a_length : i32,\n\
+    \  sarek_b_length : i32,\n\
+     }\n\
+     @group(0) @binding(2) var<uniform> params : Params;\n\n\
+     // Sarek-generated compute shader: float32_sin_path\n\
+     @compute @workgroup_size(256, 1, 1)\n\
+     fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n\
+    \  let idx : i32 = i32(gid.x);\n\
     \  b[idx] = sin(a[idx]);\n\
      }\n"
 
