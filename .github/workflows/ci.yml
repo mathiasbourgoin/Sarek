@@ -68,8 +68,18 @@ jobs:
               eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
               opam repo add alpha git+https://github.com/kit-ty-kate/opam-alpha-repository.git --set-default || true && \
               opam update && \
-              opam install -y ctypes ctypes-foreign ppxlib alcotest && \
+              opam install -y ctypes ctypes-foreign ppxlib alcotest js_of_ocaml-compiler && \
               dune build @install'
+      - name: jsoo-compat gate
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            spoc-ci:latest \
+            bash -lc 'git config --global --add safe.directory /work && \
+              export OPAMROOT=/work/.opam-ci && \
+              eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
+              dune build sarek/transpile/web/transpile_js.bc.js'
 
       - name: Run unit tests
         run: |
