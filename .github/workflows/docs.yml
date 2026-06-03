@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           opam install . --deps-only --with-doc
-          opam install odoc ppxlib dune
+          opam install odoc ppxlib dune js_of_ocaml-compiler
 
       - name: Build Documentation
         run: |
@@ -48,6 +48,11 @@ jobs:
           ruby-version: '3.3'
           bundler-cache: true
           working-directory: gh-pages
+
+      - name: Build transpiler JS bundle
+        run: |
+          opam exec -- dune build sarek/transpile/web/transpile_js.bc.js
+          cp _build/default/sarek/transpile/web/transpile_js.bc.js gh-pages/javascripts/sarek_transpile.js
 
       - name: Build Jekyll site
         run: |

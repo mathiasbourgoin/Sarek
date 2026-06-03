@@ -36,3 +36,5 @@ gh-pages/static/services/kernels/js/*.js
 .gemini
 _bmad
 _bmad-output
+# Generated jsoo bundle (built by CI, never committed)
+gh-pages/javascripts/sarek_transpile.js
