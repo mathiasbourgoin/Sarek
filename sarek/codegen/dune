@@ -8,7 +8,12 @@
  (name sarek_codegen)
  (public_name sarek.codegen)
  (libraries sarek_ir sarek_registry sarek_backend_error)
- (modules Sarek_ir_cuda Sarek_ir_opencl Sarek_ir_metal Sarek_ir_glsl Sarek_ir_wgsl)
+ (modules
+  Sarek_ir_cuda
+  Sarek_ir_opencl
+  Sarek_ir_metal
+  Sarek_ir_glsl
+  Sarek_ir_wgsl)
  (preprocess no_preprocessing)
  (instrumentation
   (backend bisect_ppx)))

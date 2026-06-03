@@ -28,9 +28,9 @@ end)
 (** Current kernel's variant definitions (set during generate) *)
 let current_variants : (string * (string * elttype list) list) list ref = ref []
 
-(** Current framework name — mirrors the other generators so [set_framework]
-    in Sarek_transpile can set it, and the pure registry resolves Float32 math
-    with framework="WGSL" (falls through to the generic [sin] spelling). *)
+(** Current framework name — mirrors the other generators so [set_framework] in
+    Sarek_transpile can set it, and the pure registry resolves Float32 math with
+    framework="WGSL" (falls through to the generic [sin] spelling). *)
 let current_framework : string option ref = ref None
 
 (** {1 Type Mapping} *)
@@ -114,10 +114,9 @@ let wgsl_reserved_keywords =
 let escape_wgsl_name name =
   if List.mem name wgsl_reserved_keywords then name ^ "v" else name
 
-(** Map Sarek IR element type to WGSL type string.
-    Float64 (f64) is not supported in WebGPU — callers must check for TFloat64
-    before reaching this function and raise [Codegen_error.unsupported_construct].
-*)
+(** Map Sarek IR element type to WGSL type string. Float64 (f64) is not
+    supported in WebGPU — callers must check for TFloat64 before reaching this
+    function and raise [Codegen_error.unsupported_construct]. *)
 let rec wgsl_type_of_elttype = function
   | TInt32 -> "i32"
   | TInt64 -> "i64"
@@ -193,7 +192,8 @@ let rec gen_expr buf = function
       if List.mem v.var_name !scalar_param_names then begin
         Buffer.add_string buf "params." ;
         Buffer.add_string buf vn
-      end else Buffer.add_string buf vn
+      end
+      else Buffer.add_string buf vn
   | EBinop (op, e1, e2) ->
       Buffer.add_char buf '(' ;
       gen_expr buf e1 ;
@@ -609,11 +609,9 @@ let rec gen_stmt buf indent = function
       let op, step_expr =
         match dir with
         | Upto ->
-            ( "<=",
-              Printf.sprintf " = %s + 1i" (escape_wgsl_name v.var_name) )
+            ("<=", Printf.sprintf " = %s + 1i" (escape_wgsl_name v.var_name))
         | Downto ->
-            ( ">=",
-              Printf.sprintf " = %s - 1i" (escape_wgsl_name v.var_name) )
+            (">=", Printf.sprintf " = %s - 1i" (escape_wgsl_name v.var_name))
       in
       let loop_var = escape_wgsl_name v.var_name in
       Buffer.add_string buf indent ;
@@ -689,8 +687,7 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf indent ;
       gen_expr buf e ;
       Buffer.add_string buf ";\n"
-  | SLet (_v, EArrayCreate (_, _, Shared), body) ->
-      gen_stmt buf indent body
+  | SLet (_v, EArrayCreate (_, _, Shared), body) -> gen_stmt buf indent body
   | SLet (v, EArrayCreate (elem_ty, size, _), body) ->
       (* Workgroup array — emitted inline inside function scope *)
       let vn = escape_wgsl_name v.var_name in
@@ -756,12 +753,10 @@ let gen_record_def buf (name, fields) =
     fields ;
   Buffer.add_string buf "}\n\n"
 
-(** Emit a WGSL variant type.
-    WGSL has no enums or unions. We emit:
+(** Emit a WGSL variant type. WGSL has no enums or unions. We emit:
     - [const <CNAME> : i32 = N;] for each constructor tag
     - a struct with [tag : i32] and flat payload fields
-    - [fn make_<Type>_<Constr>(...) -> <Type>] constructors
-*)
+    - [fn make_<Type>_<Constr>(...) -> <Type>] constructors *)
 let gen_variant_def buf (name, constrs) =
   let mangled = mangle_name name in
   List.iteri
@@ -908,19 +903,14 @@ let gen_bindings buf params =
     List.iter
       (fun (v : var) ->
         let name = escape_wgsl_name v.var_name in
-        Buffer.add_string
-          buf
-          (Printf.sprintf "  sarek_%s_length : i32,\n" name))
+        Buffer.add_string buf (Printf.sprintf "  sarek_%s_length : i32,\n" name))
       vectors ;
     List.iter
       (fun (v : var) ->
         let name = escape_wgsl_name v.var_name in
         Buffer.add_string
           buf
-          (Printf.sprintf
-             "  %s : %s,\n"
-             name
-             (wgsl_type_of_elttype v.var_type)))
+          (Printf.sprintf "  %s : %s,\n" name (wgsl_type_of_elttype v.var_type)))
       scalars ;
     Buffer.add_string buf "}\n" ;
     Buffer.add_string
@@ -937,11 +927,13 @@ let gen_bindings buf params =
 let wgsl_header ~kernel_name ?(block = (256, 1, 1)) () =
   let bx, by, bz = block in
   Printf.sprintf
-    "@compute @workgroup_size(%d, %d, %d)\nfn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n"
+    "@compute @workgroup_size(%d, %d, %d)\n\
+     fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n"
     bx
     by
     bz
-  |> fun s -> Printf.sprintf "// Sarek-generated compute shader: %s\n%s" kernel_name s
+  |> fun s ->
+  Printf.sprintf "// Sarek-generated compute shader: %s\n%s" kernel_name s
 
 (** Check if any kernel param uses Float64. *)
 let params_have_float64 params =
