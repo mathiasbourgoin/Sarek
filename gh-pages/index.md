@@ -39,7 +39,7 @@ opam install . --deps-only -y
 dune build
 ```
 
-Check out the [Getting Started](docs/getting_started.html) guide to write your first GPU kernel in minutes, or browse the [Examples](examples/) to see common patterns.
+Check out the [Getting Started](docs/getting_started.html) guide to write your first GPU kernel in minutes, browse the [Examples](examples/) to see common patterns, or try the [Playground](playground.html) to transpile kernels live in your browser.
 
 ## How it works
 

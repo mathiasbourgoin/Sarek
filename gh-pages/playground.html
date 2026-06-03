@@ -1,0 +1,149 @@
+---
+layout: default
+title: Playground
+---
+<style>
+  .playground-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1rem;
+  }
+  .playground-container h1 {
+    margin-bottom: 0.25rem;
+  }
+  .playground-container p.subtitle {
+    margin-top: 0;
+    color: #666;
+  }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .controls label {
+    font-weight: bold;
+  }
+  .controls select {
+    padding: 0.3rem 0.6rem;
+    font-size: 1rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+  }
+  .editor-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .editor-pane label {
+    font-weight: bold;
+    font-size: 0.9rem;
+  }
+  textarea#kernel-source {
+    width: 100%;
+    height: 120px;
+    font-family: monospace;
+    font-size: 0.9rem;
+    padding: 0.6rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    resize: vertical;
+    box-sizing: border-box;
+  }
+  pre#output-pane {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 1rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    word-break: break-all;
+    min-height: 80px;
+    margin: 0;
+  }
+  pre#output-pane.error-output {
+    color: #f48771;
+  }
+  .status-bar {
+    font-size: 0.8rem;
+    color: #888;
+    height: 1.2em;
+  }
+</style>
+
+<div class="playground-container">
+  <h1>Sarek Transpiler Playground</h1>
+  <p class="subtitle">
+    Write an OCaml kernel expression and see the GPU source output.
+    The transpiler runs entirely in your browser.
+  </p>
+
+  <div class="editor-pane">
+    <label for="kernel-source">Kernel source</label>
+    <textarea id="kernel-source">fun (a : float32 vector) (b : float32 vector) -> let i = global_thread_id in b.(i) <- Float32.sin a.(i)</textarea>
+  </div>
+
+  <div class="controls">
+    <label for="backend-select">Backend:</label>
+    <select id="backend-select">
+      <option value="cuda">CUDA</option>
+      <option value="opencl">OpenCL</option>
+      <option value="metal">Metal</option>
+      <option value="glsl">GLSL</option>
+    </select>
+    <span class="status-bar" id="status-bar"></span>
+  </div>
+
+  <div class="editor-pane">
+    <label>Output</label>
+    <pre id="output-pane">Loading transpiler...</pre>
+  </div>
+</div>
+
+<script src="javascripts/sarek_transpile.js"></script>
+<script>
+(function () {
+  var sourceEl = document.getElementById('kernel-source');
+  var backendEl = document.getElementById('backend-select');
+  var outputEl = document.getElementById('output-pane');
+  var statusEl = document.getElementById('status-bar');
+  var debounceTimer = null;
+
+  function runTranspile() {
+    var source = sourceEl.value;
+    var backend = backendEl.value;
+    if (typeof globalThis.SarekTranspile === 'undefined') {
+      outputEl.textContent = 'Transpiler not loaded yet. Please wait or reload.';
+      outputEl.className = 'error-output';
+      return;
+    }
+    var t0 = Date.now();
+    var result = globalThis.SarekTranspile.transpile(source, backend);
+    var elapsed = Date.now() - t0;
+    if (result.ok) {
+      outputEl.textContent = result.code;
+      outputEl.className = '';
+      statusEl.textContent = backend.toUpperCase() + ' — ' + elapsed + 'ms';
+    } else {
+      outputEl.textContent = result.error || 'Unknown error';
+      outputEl.className = 'error-output';
+      statusEl.textContent = 'Error';
+    }
+  }
+
+  function scheduleTranspile() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(runTranspile, 400);
+  }
+
+  sourceEl.addEventListener('input', scheduleTranspile);
+  backendEl.addEventListener('change', runTranspile);
+
+  // Run once the bundle is loaded
+  window.addEventListener('load', function () {
+    runTranspile();
+  });
+})();
+</script>
