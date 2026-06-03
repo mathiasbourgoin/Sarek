@@ -1,0 +1,192 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <link rel="icon" href="/Sarek/preview/pr-160/favicon.ico" />
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
+    <script src="/Sarek/preview/pr-160/javascripts/process-rel-links.js" type="text/javascript"></script>
+    <title>Sarek Backends - Sarek</title>
+    
+    <link rel="stylesheet" href='/Sarek/preview/pr-160/stylesheets/modern.css'>
+    <link rel="stylesheet" href='/Sarek/preview/pr-160/stylesheets/pygment_trac.css'>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  </head>
+  <body>
+
+    <!-- Top Navigation Bar -->
+    <nav class="navbar">
+      <div class="container">
+        <a href="/Sarek/preview/pr-160/" class="nav-brand">
+          <img src="/Sarek/preview/pr-160/pres_resources/logo_sarek.png" alt="Sarek Logo">
+          Sarek
+        </a>
+        <div class="nav-links">
+          <a href="/Sarek/preview/pr-160/">Home</a>
+          <a href="/Sarek/preview/pr-160/docs/getting_started.html">Getting Started</a>
+          <a href="/Sarek/preview/pr-160/benchmarks/">Benchmarks</a>
+          <a href="/Sarek/preview/pr-160/examples/">Examples</a>
+          <a href="/Sarek/preview/pr-160/playground.html">Playground</a>
+          <div class="nav-dropdown">
+            <button type="button" class="dropdown-toggle" aria-haspopup="true" aria-expanded="false" aria-controls="docs-menu">Docs ▾</button>
+            <div class="dropdown-menu" id="docs-menu">
+              <a href="/Sarek/preview/pr-160/docs/concepts.html">Concepts</a>
+              <a href="/Sarek/preview/pr-160/docs/architecture.html">Architecture</a>
+              <a href="/Sarek/preview/pr-160/docs/backends.html">Backends</a>
+              <a href="/Sarek/preview/pr-160/docs/device_selection.html">Device Selection</a>
+              <a href="/Sarek/preview/pr-160/docs/build_guide.html">Build Guide</a>
+              <a href="/Sarek/preview/pr-160/docs/faq.html">FAQ</a>
+              <a href="/Sarek/preview/pr-160/docs/publications.html">Publications</a>
+            </div>
+          </div>
+          <a href="/Sarek/preview/pr-160/spoc_docs/index.html">API</a>
+          <a href="https://github.com/mathiasbourgoin/Sarek">GitHub</a>
+          <button id="theme-toggle" title="Toggle Dark/Light Mode">
+            <span>🌙</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main-content">
+      <div class="container">
+        <h1 id="supported-backends">Supported Backends</h1>
+
+<p>Sarek is designed to be backend-agnostic. You write your kernel once in OCaml, and Sarek compiles it to the appropriate shading language (CUDA C, OpenCL C, GLSL, MSL) or executes it natively on the CPU.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Backend</th>
+      <th>Target</th>
+      <th>Status</th>
+      <th>Requirements</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>CUDA</strong></td>
+      <td>NVIDIA GPUs</td>
+      <td>Stable</td>
+      <td>NVIDIA Driver + CUDA Toolkit</td>
+    </tr>
+    <tr>
+      <td><strong>OpenCL</strong></td>
+      <td>Multi-vendor (AMD, Intel, NVIDIA)</td>
+      <td>Stable</td>
+      <td>OpenCL Runtime / ICD</td>
+    </tr>
+    <tr>
+      <td><strong>Vulkan</strong></td>
+      <td>Cross-platform (Linux, Windows, Android)</td>
+      <td>Stable</td>
+      <td>Vulkan SDK + glslangValidator</td>
+    </tr>
+    <tr>
+      <td><strong>Metal</strong></td>
+      <td>Apple Silicon &amp; Intel Macs</td>
+      <td>Stable</td>
+      <td>macOS 10.13+</td>
+    </tr>
+    <tr>
+      <td><strong>Native</strong></td>
+      <td>CPU (Multicore)</td>
+      <td>Stable</td>
+      <td>OCaml 5.4.0+</td>
+    </tr>
+    <tr>
+      <td><strong>Interpreter</strong></td>
+      <td>CPU (Debug)</td>
+      <td>Stable</td>
+      <td>None</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="cuda-backend-sarek-cuda">CUDA Backend (<code class="language-plaintext highlighter-rouge">sarek-cuda</code>)</h2>
+
+<p>Targets NVIDIA GPUs using the CUDA Driver API and NVRTC (Runtime Compilation).</p>
+
+<ul>
+  <li><strong>Features</strong>: Shared memory, atomics, warp intrinsics, dynamic parallelism.</li>
+  <li><strong>Performance</strong>: Native CUDA performance; uses JIT compilation to optimize for the specific GPU architecture.</li>
+  <li><strong>Setup</strong>: Requires <code class="language-plaintext highlighter-rouge">libcuda.so</code> and <code class="language-plaintext highlighter-rouge">libnvrtc.so</code> in your library path.</li>
+</ul>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>opam <span class="nb">install </span>sarek-cuda
+</code></pre></div></div>
+
+<h2 id="opencl-backend-sarek-opencl">OpenCL Backend (<code class="language-plaintext highlighter-rouge">sarek-opencl</code>)</h2>
+
+<p>Targets a wide range of devices including AMD GPUs, Intel integrated graphics, and FPGAs.</p>
+
+<ul>
+  <li><strong>Features</strong>: Work-group barriers, local memory, math intrinsics.</li>
+  <li><strong>Compatibility</strong>: Tested on NVIDIA, AMD, and Intel platforms.</li>
+  <li><strong>Setup</strong>: Requires an OpenCL ICD loader (e.g., <code class="language-plaintext highlighter-rouge">ocl-icd-libopencl1</code> on Linux).</li>
+</ul>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>opam <span class="nb">install </span>sarek-opencl
+</code></pre></div></div>
+
+<h2 id="vulkan-backend-sarek-vulkan">Vulkan Backend (<code class="language-plaintext highlighter-rouge">sarek-vulkan</code>)</h2>
+
+<p>Uses GLSL compute shaders and SPIR-V for modern cross-platform GPU support.</p>
+
+<ul>
+  <li><strong>Pipeline</strong>: Generates GLSL -&gt; Compiles to SPIR-V (via <code class="language-plaintext highlighter-rouge">glslang</code> or <code class="language-plaintext highlighter-rouge">shaderc</code>) -&gt; Executes on Vulkan.</li>
+  <li><strong>Features</strong>: Push constants, SSBOs (Storage Buffers), specialization constants.</li>
+  <li><strong>Platform</strong>: Ideal for modern Linux desktops, Android devices, and Windows.</li>
+</ul>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>opam <span class="nb">install </span>sarek-vulkan
+</code></pre></div></div>
+
+<h2 id="metal-backend-sarek-metal">Metal Backend (<code class="language-plaintext highlighter-rouge">sarek-metal</code>)</h2>
+
+<p>Native support for Apple hardware (M1/M2/M3 chips) using Metal Shading Language (MSL).</p>
+
+<ul>
+  <li><strong>Features</strong>: Threatgroup memory, SIMD-group functions.</li>
+  <li><strong>Limitations</strong>: No double precision (<code class="language-plaintext highlighter-rouge">float64</code>) support on most Apple hardware.</li>
+  <li><strong>Platform</strong>: macOS and iOS only.</li>
+</ul>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>opam <span class="nb">install </span>sarek-metal
+</code></pre></div></div>
+
+<h2 id="native-cpu-backend-sareknative">Native CPU Backend (<code class="language-plaintext highlighter-rouge">sarek.native</code>)</h2>
+
+<p>Executes kernels directly on the host CPU without GPU compilation.</p>
+
+<ul>
+  <li><strong>Mechanism</strong>: Uses OCaml 5 Domains for parallel execution.</li>
+  <li><strong>Use Case</strong>: High-performance fallback when no GPU is available, or for debugging logic with standard debuggers.</li>
+</ul>
+
+<h2 id="interpreter-backend-sarekinterpreter">Interpreter Backend (<code class="language-plaintext highlighter-rouge">sarek.interpreter</code>)</h2>
+
+<p>Walks through the Sarek IR (Intermediate Representation) step-by-step.</p>
+
+<ul>
+  <li><strong>Use Case</strong>: Deep debugging of kernel logic, verification of IR transformations, and educational purposes.</li>
+  <li><strong>Performance</strong>: Slow (interpreted), but provides full visibility into execution.</li>
+</ul>
+
+      </div>
+    </main>
+
+    <footer>
+      <div class="container">
+        <p>Sarek is maintained by <a href="https://github.com/mathiasbourgoin">mathiasbourgoin</a></p>
+        <p>Hosted on GitHub Pages</p>
+      </div>
+    </footer>
+
+    <script src="/Sarek/preview/pr-160/javascripts/scale.fix.js"></script>
+    <script src="/Sarek/preview/pr-160/javascripts/copy-code.js"></script>
+    <script src="/Sarek/preview/pr-160/javascripts/theme-toggle.js"></script>
+    <script src="/Sarek/preview/pr-160/javascripts/dropdown.js"></script>
+    <script src="/Sarek/preview/pr-160/javascripts/syntax-sarek.js"></script>
+  </body>
+</html>
