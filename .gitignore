@@ -41,3 +41,6 @@ gh-pages/javascripts/sarek_transpile.js
 
 # Roster pipeline per-PR scaffolding — durable plans live in docs/plans/
 briefs/
+
+# Playwright MCP session artifacts
+.playwright-mcp/

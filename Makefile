@@ -395,6 +395,13 @@ bench-all:
 bench-gpu-check:
 	@SIZE=$(or $(SIZE),2048) ITERS=$(or $(ITERS),3) ./scripts/gpu-bench-check.sh
 
+# WGSL backend GPU acceptance: transpile kernels to WGSL and run them on a real
+# GPU via WebGPU (Playwright + flagged Chrome -> Dawn/Vulkan). Skips where
+# playwright/chrome/WebGPU are unavailable; fails on a wrong GPU result.
+wgsl-gpu-test:
+	@dune build sarek/transpile/web/transpile_js.bc.js
+	@node sarek/transpile/web/test/webgpu_wgsl_test.mjs _build/default/sarek/transpile/web/transpile_js.bc.js
+
 bench-update:
 	@echo "Running benchmarks and updating web data..."
 	@./benchmarks/run_all_benchmarks.sh results
