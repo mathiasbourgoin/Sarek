@@ -3,6 +3,17 @@ layout: page
 title: Playground
 ---
 <style>
+  :root {
+    --playground-error-color: #c0392b;
+  }
+  .dark-theme {
+    --playground-error-color: #f48771;
+  }
+  @media (prefers-color-scheme: dark) {
+    body:not(.light-theme) {
+      --playground-error-color: #f48771;
+    }
+  }
   .playground-container {
     display: flex;
     flex-direction: column;
@@ -70,7 +81,7 @@ title: Playground
     border: 1px solid var(--border-color);
   }
   pre#output-pane.error-output {
-    color: #e05252;
+    color: var(--playground-error-color);
   }
   .status-bar {
     font-size: 0.8rem;
