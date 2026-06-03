@@ -163,11 +163,11 @@ let build_sarek_fun_type ~loc (arg_types : string list) (ret_type : string) :
       let ret_expr = sarek_type_of_name ~loc ret_type in
       [%expr Sarek_types.TFun ([%e arg_exprs], [%e ret_expr])]
 
-(** Derive the size (in bytes) of a sarek type from its name alone.
-    This avoids the Ctypes dependency for the pure metadata path.
-    Sizes match the Ctypes.sizeof values for the corresponding C types:
-    float32=4, float64=8, int32=4, int64=8, bool=4, char=1, int=4 (GPU int). *)
-let size_of_type_name (name : string) : int =
+(** Derive the size (in bytes) of a sarek type from its name alone. This avoids
+    the Ctypes dependency for the pure metadata path. Sizes match the
+    Ctypes.sizeof values for the corresponding C types: float32=4, float64=8,
+    int32=4, int64=8, bool=4, char=1, int=4 (GPU int). *)
+let size_of_type_name ~loc (name : string) : int =
   match name with
   | "float32" | "float" -> 4
   | "float64" -> 8
@@ -176,14 +176,20 @@ let size_of_type_name (name : string) : int =
   | "bool" -> 4
   | "char" -> 1
   | "unit" -> 0
-  | _ -> 8
+  | _ ->
+      Location.raise_errorf
+        ~loc
+        "type%%sarek_intrinsic: cannot derive a byte size for unknown type %S \
+         in the pure (ctype-absent) path. Add a `ctype` field (authoritative \
+         size via Ctypes.sizeof) or extend size_of_type_name."
+        name
 
-(** Extension for type%%sarek_intrinsic - handles type registration.
-    The [ctype] field is OPTIONAL.
+(** Extension for type%%sarek_intrinsic - handles type registration. The [ctype]
+    field is OPTIONAL.
     - When present: emits both Sarek_registry (JIT/FFI) and Sarek_ppx_registry
       registrations using Ctypes.sizeof for the authoritative byte-size.
-    - When absent: emits only Sarek_ppx_registry registration using a
-      pure size derived from the type name. No Ctypes dependency. *)
+    - When absent: emits only Sarek_ppx_registry registration using a pure size
+      derived from the type name. No Ctypes dependency. *)
 let expand_sarek_intrinsic_type ~ctxt payload =
   let loc = Expansion_context.Extension.extension_point_loc ctxt in
   match payload with
@@ -202,11 +208,11 @@ let expand_sarek_intrinsic_type ~ctxt payload =
                 ] );
           _;
         };
-      ] ->
+      ] -> (
       (* Extract device and optional ctype fields from the record expression *)
       let device_expr, ctype_expr_opt =
         match record_expr.pexp_desc with
-        | Pexp_record (fields, None) -> (
+        | Pexp_record (fields, None) ->
             let find_field name =
               List.find_map
                 (fun (lid, expr) ->
@@ -221,7 +227,7 @@ let expand_sarek_intrinsic_type ~ctxt payload =
                   Location.raise_errorf
                     ~loc
                     "sarek_intrinsic type requires 'device' field"),
-              find_field "ctype" ))
+              find_field "ctype" )
         | _ ->
             Location.raise_errorf
               ~loc
@@ -231,7 +237,7 @@ let expand_sarek_intrinsic_type ~ctxt payload =
       let type_name_str = Ast_builder.Default.estring ~loc type_name in
       let _module_path = module_path_of_loc loc in
       let sarek_type = sarek_type_of_name ~loc type_name in
-      (match ctype_expr_opt with
+      match ctype_expr_opt with
       | Some ctype_expr ->
           (* FFI path: ctype present - emit both JIT and PPX-time registrations
              using Ctypes.sizeof for the authoritative byte-size. *)
@@ -255,7 +261,7 @@ let expand_sarek_intrinsic_type ~ctxt payload =
       | None ->
           (* Pure metadata path: ctype absent - emit only the PPX-time
              registration, deriving size from the type name. No Ctypes used. *)
-          let size_int = size_of_type_name type_name in
+          let size_int = size_of_type_name ~loc type_name in
           let size_expr = Ast_builder.Default.eint ~loc size_int in
           [
             [%stri
@@ -270,8 +276,9 @@ let expand_sarek_intrinsic_type ~ctxt payload =
   | _ ->
       Location.raise_errorf
         ~loc
-        "type%%sarek_intrinsic expects: let%%sarek_intrinsic name = { device =          ...; ctype = ... }"
-
+        "type%%sarek_intrinsic expects: let%%sarek_intrinsic name = { device = \
+         ...; ctype = ... } (ctype optional: omit it for the pure metadata \
+         path, where the size is derived from the type name)"
 
 (** Extract argument types and return type from a function type *)
 let rec extract_fun_types (ct : core_type) : string list * string =

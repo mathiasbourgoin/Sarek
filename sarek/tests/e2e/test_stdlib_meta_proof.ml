@@ -30,6 +30,33 @@ let check name =
       Printf.printf "[FAIL] %s NOT found in registry\n" name ;
       exit 1
 
+(* The transpile typer keys intrinsics as <last-module-component>.<name>
+   (Sarek_env.short_module_name). Assert the module path is recorded so a
+   user-written `Float32.sin` resolves — not merely the bare short name. *)
+let check_qualified short_name expected_mod =
+  match Sarek_ppx_registry.find_intrinsic short_name with
+  | Some info ->
+      let last_mod =
+        match List.rev info.ii_module with m :: _ -> m | [] -> "<none>"
+      in
+      if last_mod = expected_mod then
+        Printf.printf
+          "[PASS] %s resolves qualified as %s.%s\n"
+          short_name
+          expected_mod
+          short_name
+      else begin
+        Printf.printf
+          "[FAIL] %s module last component=%s, expected %s\n"
+          short_name
+          last_mod
+          expected_mod ;
+        exit 1
+      end
+  | None ->
+      Printf.printf "[FAIL] %s NOT found in registry\n" short_name ;
+      exit 1
+
 let check_type name =
   match Sarek_ppx_registry.find_type name with
   | Some info ->
@@ -91,6 +118,14 @@ let () =
   check "thread_idx_x" ;
   check "block_idx_x" ;
   check "global_thread_id" ;
+
+  (* Qualified resolution — the actual PR-5b contract (Float32.sin, not bare sin) *)
+  Printf.printf "\n--- qualified-name resolution (typer key form) ---\n" ;
+  check_qualified "sin" "Float32" ;
+  check_qualified "add_int32" "Int32" ;
+  check_qualified "add_int64" "Int64" ;
+  check_qualified "xor" "Math" ;
+  check_qualified "thread_idx_x" "Gpu" ;
 
   let total = List.length (Sarek_ppx_registry.all_intrinsics ()) in
   Printf.printf
