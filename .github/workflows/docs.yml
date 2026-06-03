@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           opam install . --deps-only --with-doc
-          opam install odoc ppxlib dune js_of_ocaml-compiler
+          opam install odoc ppxlib dune js_of_ocaml js_of_ocaml-ppx js_of_ocaml-compiler
 
       - name: Build Documentation
         run: |

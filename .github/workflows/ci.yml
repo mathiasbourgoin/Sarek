@@ -68,7 +68,7 @@ jobs:
               eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
               opam repo add alpha git+https://github.com/kit-ty-kate/opam-alpha-repository.git --set-default || true && \
               opam update && \
-              opam install -y ctypes ctypes-foreign ppxlib alcotest js_of_ocaml-compiler && \
+              opam install -y ctypes ctypes-foreign ppxlib alcotest js_of_ocaml js_of_ocaml-ppx js_of_ocaml-compiler && \
               dune build @install'
       - name: jsoo-compat gate
         run: |
