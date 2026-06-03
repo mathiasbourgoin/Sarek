@@ -17,6 +17,7 @@ let backend_of_string s =
   | "opencl" -> Some Sarek_transpile.OpenCL
   | "metal" -> Some Sarek_transpile.Metal
   | "glsl" -> Some Sarek_transpile.GLSL
+  | "wgsl" -> Some Sarek_transpile.WGSL
   | _ -> None
 
 let transpile source backend_str =
@@ -33,7 +34,7 @@ let transpile source backend_str =
         (Js.some
            (Js.string
               (Printf.sprintf
-                 "unknown backend %S; expected cuda|opencl|metal|glsl"
+                 "unknown backend %S; expected cuda|opencl|metal|glsl|wgsl"
                  backend_str)))
   | Some backend -> (
       match Sarek_transpile.of_source backend source with
@@ -65,5 +66,6 @@ let () =
          Js.string "opencl";
          Js.string "metal";
          Js.string "glsl";
+         Js.string "wgsl";
        |]) ;
   Js.Unsafe.set Js.Unsafe.global "SarekTranspile" module_obj
