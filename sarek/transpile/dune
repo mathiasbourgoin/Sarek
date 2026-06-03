@@ -1,0 +1,18 @@
+; sarek_transpile - Pure OCaml-kernel-source to GPU-source transpiler
+;
+; Orchestrates the full frontend pipeline (parse -> type -> convergence ->
+; mono -> tailrec -> lower -> codegen) without any FFI dependency.
+; No spoc_core, no ctypes.  Links as pure bytecode.
+
+(library
+ (name sarek_transpile)
+ (public_name sarek.transpile)
+ (libraries
+  ppxlib
+  sarek_frontend
+  sarek_codegen
+  sarek_stdlib_meta)
+ (modules Sarek_transpile Sarek_ir_conv)
+ (preprocess no_preprocessing)
+ (instrumentation
+  (backend bisect_ppx)))
