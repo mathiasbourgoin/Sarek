@@ -1,0 +1,131 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <link rel="icon" href="/Sarek/preview/pr-155/favicon.ico" />
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
+    <script src="/Sarek/preview/pr-155/javascripts/process-rel-links.js" type="text/javascript"></script>
+    <title>Live Mandelbrot - Sarek</title>
+    
+    <link rel="stylesheet" href='/Sarek/preview/pr-155/stylesheets/modern.css'>
+    <link rel="stylesheet" href='/Sarek/preview/pr-155/stylesheets/pygment_trac.css'>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  </head>
+  <body>
+
+    <!-- Top Navigation Bar -->
+    <nav class="navbar">
+      <div class="container">
+        <a href="/Sarek/preview/pr-155/" class="nav-brand">
+          <img src="/Sarek/preview/pr-155/pres_resources/logo_sarek.png" alt="Sarek Logo">
+          Sarek
+        </a>
+        <div class="nav-links">
+          <a href="/Sarek/preview/pr-155/">Home</a>
+          <a href="/Sarek/preview/pr-155/docs/getting_started.html">Getting Started</a>
+          <a href="/Sarek/preview/pr-155/benchmarks/">Benchmarks</a>
+          <a href="/Sarek/preview/pr-155/examples/">Examples</a>
+          <div class="nav-dropdown">
+            <button type="button" class="dropdown-toggle" aria-haspopup="true" aria-expanded="false" aria-controls="docs-menu">Docs ▾</button>
+            <div class="dropdown-menu" id="docs-menu">
+              <a href="/Sarek/preview/pr-155/docs/concepts.html">Concepts</a>
+              <a href="/Sarek/preview/pr-155/docs/architecture.html">Architecture</a>
+              <a href="/Sarek/preview/pr-155/docs/backends.html">Backends</a>
+              <a href="/Sarek/preview/pr-155/docs/device_selection.html">Device Selection</a>
+              <a href="/Sarek/preview/pr-155/docs/build_guide.html">Build Guide</a>
+              <a href="/Sarek/preview/pr-155/docs/faq.html">FAQ</a>
+              <a href="/Sarek/preview/pr-155/docs/publications.html">Publications</a>
+            </div>
+          </div>
+          <a href="/Sarek/preview/pr-155/spoc_docs/index.html">API</a>
+          <a href="https://github.com/mathiasbourgoin/Sarek">GitHub</a>
+          <button id="theme-toggle" title="Toggle Dark/Light Mode">
+            <span>🌙</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main-content">
+      <div class="container">
+        <h1 id="live-mandelbrot">Live Mandelbrot</h1>
+
+<p>Experiment with Sarek kernels in real-time. Modify the code below and run it to see the results.</p>
+
+<p><button id="thebe-activate" class="btn btn-primary" onclick="bootstrapThebe()">🚀 Activate Live Demo</button></p>
+
+<hr />
+
+<h2 id="1-setup-and-kernel-definition">1. Setup and Kernel Definition</h2>
+
+<p>First, we load Sarek and define the Mandelbrot kernel. You can modify the escape condition or the coloring logic here.</p>
+
+<pre data-executable="true">
+(* Load Sarek *)
+#require "sarek";;
+#require "sarek.ppx";;
+open Sarek;;
+
+let%kernel mandelbrot (output : int32 vector) (width : int32) (height : int32) (max_iter : int32) =
+  let px = get_global_id 0 in
+  let py = get_global_id 1 in
+  
+  if px &lt; width &amp;&amp; py &lt; height then begin
+    let x0 = (4.0 *. (float px /. float width)) -. 2.5 in
+    let y0 = (3.0 *. (float py /. float height)) -. 1.5 in
+    
+    let x = mut 0.0 in
+    let y = mut 0.0 in
+    let iter = mut 0l in
+    
+    while (x *. x) +. (y *. y) &lt;= 4.0 &amp;&amp; iter &lt; max_iter do
+      let xtemp = (x *. x) -. (y *. y) +. x0 in
+      y := (2.0 *. x *. y) +. y0;
+      x := xtemp;
+      iter := iter + 1l
+    done;
+    
+    output.((py * width) + px) &lt;- iter
+  end
+</pre>
+
+<h2 id="2-execute-and-display">2. Execute and Display</h2>
+
+<p>Run the kernel using the <strong>Native Parallel</strong> backend and display the result.</p>
+
+<pre data-executable="true">
+let width, height = 400, 300 in
+let max_iter = 128l in
+let output = Vector.create Int32 (width * height) in
+let dev = Device.get_device_by_name "Native Parallel" in
+
+Execute.run mandelbrot
+  ~device:dev
+  ~block:(16, 16, 1)
+  ~grid:((width+15)/16, (height+15)/16, 1)
+  [Vec output; Int32 (Int32.of_int width); Int32 (Int32.of_int height); Int32 max_iter];;
+
+(* Display Logic (Pseudo-code, requires jupyter display support) *)
+print_endline "Kernel Execution Complete!";;
+</pre>
+
+<p><em>(Note: Rich image display requires standard Jupyter image libraries to be configured in the Binder environment.)</em></p>
+
+      </div>
+    </main>
+
+    <footer>
+      <div class="container">
+        <p>Sarek is maintained by <a href="https://github.com/mathiasbourgoin">mathiasbourgoin</a></p>
+        <p>Hosted on GitHub Pages</p>
+      </div>
+    </footer>
+
+    <script src="/Sarek/preview/pr-155/javascripts/scale.fix.js"></script>
+    <script src="/Sarek/preview/pr-155/javascripts/copy-code.js"></script>
+    <script src="/Sarek/preview/pr-155/javascripts/theme-toggle.js"></script>
+    <script src="/Sarek/preview/pr-155/javascripts/dropdown.js"></script>
+    <script src="/Sarek/preview/pr-155/javascripts/syntax-sarek.js"></script>
+  </body>
+</html>
