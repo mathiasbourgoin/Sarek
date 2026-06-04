@@ -48,8 +48,27 @@
       );
     }
 
+    // Build an EXPLICIT bind group / pipeline layout from the ABI rather than
+    // layout:'auto'. Auto-layout omits any binding the shader does not
+    // statically reference (e.g. the Params uniform for a kernel that uses no
+    // lengths/scalars), which would make our bind-group entry for that binding
+    // invalid and silently drop the dispatch. An explicit layout keeps every
+    // declared binding, so the bind group always matches the shader.
+    const layoutEntries = abi.buffers.map(buf => ({
+      binding: buf.binding,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: { type: buf.access === 'read' ? 'read-only-storage' : 'storage' },
+    }));
+    if (abi.params !== null && abi.params !== undefined) {
+      layoutEntries.push({
+        binding: abi.params.binding,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: { type: 'uniform' },
+      });
+    }
+    const bindGroupLayout = device.createBindGroupLayout({ entries: layoutEntries });
     const pipeline = device.createComputePipeline({
-      layout: 'auto',
+      layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
       compute: { module: shaderModule, entryPoint: 'main' },
     });
 
@@ -140,7 +159,7 @@
 
     // Create bind group and dispatch.
     const bindGroup = device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(0),
+      layout: bindGroupLayout,
       entries: bindGroupEntries,
     });
 
