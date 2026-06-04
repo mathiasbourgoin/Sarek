@@ -1,0 +1,100 @@
+---
+layout: page
+title: "Lesson 4 — Control flow and bounds"
+---
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.css">
+<link rel="stylesheet" href="{{ site.baseurl }}/stylesheets/learn.css">
+
+<div class="lesson-container">
+
+  <h1>Lesson 4 — Control flow and bounds</h1>
+
+  <p>
+    GPU kernels are dispatched in <strong>workgroups</strong> of fixed size
+    (256 threads by default in Sarek's WGSL backend). If your array length is
+    not a multiple of the workgroup size, some threads at the end of the last
+    workgroup will be assigned an out-of-bounds index. Accessing the array at
+    that index is a GPU error; you must guard against it.
+  </p>
+
+  <h2>if expressions in Sarek</h2>
+  <p>
+    Sarek kernels support <code>if / then / else</code> as expressions
+    (they return a value). Example:
+  </p>
+  <pre style="background:var(--code-bg);padding:0.5rem 0.75rem;border-radius:4px;border:1px solid var(--border-color);">b.(i) &lt;- (if i &lt; n then a.(i) else 0.0)</pre>
+  <p>
+    The WGSL backend compiles this to a <code>select()</code> intrinsic,
+    which is branch-free on most GPU architectures — so bounds-checking is
+    essentially free.
+  </p>
+  <p>
+    <code>n</code> is a scalar <code>int32</code> argument. In this lesson
+    <code>n = 128</code> (half the array), so the second half of
+    <code>b</code> should be zero.
+  </p>
+
+  <h2>Your task</h2>
+  <p>
+    Complete the kernel: write <code>a.(i)</code> into <code>b.(i)</code>
+    when <code>i &lt; n</code>, and <code>0.0</code> otherwise.
+  </p>
+
+  <label class="lesson-editor-label" for="kernel-source">Kernel source</label>
+  <textarea id="kernel-source">fun (a : float32 vector) (b : float32 vector) (n : int32) ->
+  let i = global_thread_id in
+  b.(i) <- (* TODO *)</textarea>
+
+  <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+    <button class="lesson-run-btn" id="run-btn">Run on my GPU</button>
+    <button class="wgsl-toggle-btn" id="wgsl-toggle">Show generated WGSL</button>
+    <span class="lesson-status" id="status-bar"></span>
+  </div>
+
+  <pre class="lesson-output" id="output-pane">Click "Run on my GPU" to execute your kernel.</pre>
+  <pre class="lesson-wgsl-pre" id="wgsl-pane" style="display:none;"></pre>
+
+  <details>
+    <summary>Hint</summary>
+    <p>
+      <code>(if i &lt; n then a.(i) else 0.0)</code> — use <code>&lt;</code>
+      for integer comparison. The parentheses keep the expression unambiguous.
+    </p>
+  </details>
+
+  <div class="lesson-nav">
+    <a href="{{ site.baseurl }}/learn/03-map-square.html">&larr; Lesson 3 — Elementwise map</a>
+    <a href="{{ site.baseurl }}/learn/">Back to course overview &rarr;</a>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/mode/mllike/mllike.min.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_transpile.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_webgpu_runner.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_lesson.js"></script>
+<script>
+SarekLesson.init({
+  editorId:     'kernel-source',
+  runButtonId:  'run-btn',
+  outputId:     'output-pane',
+  statusId:     'status-bar',
+  wgslId:       'wgsl-pane',
+  wgslToggleId: 'wgsl-toggle',
+  n: 256,
+  starter:
+    'fun (a : float32 vector) (b : float32 vector) (n : int32) ->\n' +
+    '  let i = global_thread_id in\n' +
+    '  b.(i) <- (* TODO *)',
+  buffers: {
+    a: { role: 'input',  elementType: 'f32', gen: function(i){ return i * 0.5; } },
+    b: { role: 'output', elementType: 'f32' },
+  },
+  scalars:   { n: 128 },
+  outName:   'b',
+  reference: function(i, inputs, scalars) {
+    return i < scalars.n ? inputs.a[i] : 0.0;
+  },
+});
+</script>

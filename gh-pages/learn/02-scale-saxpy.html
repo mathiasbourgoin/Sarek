@@ -1,0 +1,96 @@
+---
+layout: page
+title: "Lesson 2 — Scalar parameters (SAXPY)"
+---
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.css">
+<link rel="stylesheet" href="{{ site.baseurl }}/stylesheets/learn.css">
+
+<div class="lesson-container">
+
+  <h1>Lesson 2 — Scalar parameters (SAXPY)</h1>
+
+  <p>
+    <strong>SAXPY</strong> (<em>Single-precision A times X Plus Y</em>) is the
+    canonical BLAS-1 operation: <code>y[i] = alpha * x[i] + y[i]</code>.
+    It is a staple benchmark because it is memory-bandwidth-bound — the GPU
+    must stream every element through its caches at least twice.
+  </p>
+
+  <h2>Scalar uniforms</h2>
+  <p>
+    Scalars like <code>alpha</code> are not per-thread arrays; they are the
+    same value for every thread. In Sarek you declare them as plain typed
+    arguments (e.g., <code>(alpha : float32)</code>), and the transpiler
+    automatically packs them into a uniform buffer that every thread can read.
+  </p>
+  <p>
+    For this lesson <code>alpha = 2.0</code> is injected automatically — you
+    can see it in <em>Show generated WGSL</em> as a field of the
+    <code>Params</code> uniform struct.
+  </p>
+
+  <h2>Your task</h2>
+  <p>
+    Complete the kernel so that <code>y.(i)</code> is updated in-place:
+    <code>y[i] &larr; alpha * x[i] + y[i]</code>.
+  </p>
+
+  <label class="lesson-editor-label" for="kernel-source">Kernel source</label>
+  <textarea id="kernel-source">fun (x : float32 vector) (y : float32 vector) (alpha : float32) ->
+  let i = global_thread_id in
+  y.(i) <- (* TODO *)</textarea>
+
+  <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+    <button class="lesson-run-btn" id="run-btn">Run on my GPU</button>
+    <button class="wgsl-toggle-btn" id="wgsl-toggle">Show generated WGSL</button>
+    <span class="lesson-status" id="status-bar"></span>
+  </div>
+
+  <pre class="lesson-output" id="output-pane">Click "Run on my GPU" to execute your kernel.</pre>
+  <pre class="lesson-wgsl-pre" id="wgsl-pane" style="display:none;"></pre>
+
+  <details>
+    <summary>Hint</summary>
+    <p>
+      Float multiplication in OCaml is <code>*.</code> and addition is
+      <code>+.</code>. Read <code>alpha</code> directly — it is a scalar
+      argument available in every thread.
+    </p>
+  </details>
+
+  <div class="lesson-nav">
+    <a href="{{ site.baseurl }}/learn/01-vector-add.html">&larr; Lesson 1 — Vector addition</a>
+    <a href="{{ site.baseurl }}/learn/03-map-square.html">Lesson 3 — Elementwise map &rarr;</a>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/mode/mllike/mllike.min.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_transpile.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_webgpu_runner.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_lesson.js"></script>
+<script>
+SarekLesson.init({
+  editorId:     'kernel-source',
+  runButtonId:  'run-btn',
+  outputId:     'output-pane',
+  statusId:     'status-bar',
+  wgslId:       'wgsl-pane',
+  wgslToggleId: 'wgsl-toggle',
+  n: 256,
+  starter:
+    'fun (x : float32 vector) (y : float32 vector) (alpha : float32) ->\n' +
+    '  let i = global_thread_id in\n' +
+    '  y.(i) <- (* TODO *)',
+  buffers: {
+    x: { role: 'input',  elementType: 'f32', gen: function(i){ return i * 0.5; } },
+    y: { role: 'input',  elementType: 'f32', gen: function(i){ return i * 1.0; } },
+  },
+  scalars:   { alpha: 2.0 },
+  outName:   'y',
+  reference: function(i, inputs, scalars) {
+    return scalars.alpha * inputs.x[i] + inputs.y[i];
+  },
+});
+</script>

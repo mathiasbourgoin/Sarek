@@ -1,0 +1,91 @@
+---
+layout: page
+title: "Lesson 1 — Vector addition"
+---
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.css">
+<link rel="stylesheet" href="{{ site.baseurl }}/stylesheets/learn.css">
+
+<div class="lesson-container">
+
+  <h1>Lesson 1 — Vector addition</h1>
+
+  <p>
+    The GPU data-parallel hello world: given two arrays <code>a</code> and
+    <code>b</code> of the same length, produce a third array <code>c</code>
+    where every element is the sum of the corresponding elements.
+    Mathematically, <code>c[i] = a[i] + b[i]</code> for every index
+    <code>i</code>.
+  </p>
+
+  <p>
+    On a GPU this is trivially parallel: thread <code>i</code> reads
+    <code>a[i]</code> and <code>b[i]</code>, adds them, and writes the result
+    to <code>c[i]</code>. No thread depends on another thread's output.
+  </p>
+
+  <h2>Your task</h2>
+  <p>
+    The kernel below reads buffers <code>a</code> and <code>b</code> and is
+    supposed to write their sum into <code>c</code>. Replace the
+    <code>(* TODO *)</code> with the correct expression, then click
+    <strong>Run on my GPU</strong>.
+  </p>
+
+  <label class="lesson-editor-label" for="kernel-source">Kernel source</label>
+  <textarea id="kernel-source">fun (a : float32 vector) (b : float32 vector) (c : float32 vector) ->
+  let i = global_thread_id in
+  c.(i) <- (* TODO *)</textarea>
+
+  <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+    <button class="lesson-run-btn" id="run-btn">Run on my GPU</button>
+    <button class="wgsl-toggle-btn" id="wgsl-toggle">Show generated WGSL</button>
+    <span class="lesson-status" id="status-bar"></span>
+  </div>
+
+  <pre class="lesson-output" id="output-pane">Click "Run on my GPU" to execute your kernel.</pre>
+  <pre class="lesson-wgsl-pre" id="wgsl-pane" style="display:none;"></pre>
+
+  <details>
+    <summary>Hint</summary>
+    <p>
+      Use the float addition operator <code>+.</code> (note the dot — OCaml
+      uses <code>+.</code> for floats and <code>+</code> for ints).
+      Access array elements with <code>a.(i)</code>.
+    </p>
+  </details>
+
+  <div class="lesson-nav">
+    <span></span>
+    <a href="{{ site.baseurl }}/learn/02-scale-saxpy.html">Lesson 2 — Scalar params (SAXPY) &rarr;</a>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/mode/mllike/mllike.min.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_transpile.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_webgpu_runner.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_lesson.js"></script>
+<script>
+SarekLesson.init({
+  editorId:     'kernel-source',
+  runButtonId:  'run-btn',
+  outputId:     'output-pane',
+  statusId:     'status-bar',
+  wgslId:       'wgsl-pane',
+  wgslToggleId: 'wgsl-toggle',
+  n: 256,
+  starter:
+    'fun (a : float32 vector) (b : float32 vector) (c : float32 vector) ->\n' +
+    '  let i = global_thread_id in\n' +
+    '  c.(i) <- (* TODO *)',
+  buffers: {
+    a: { role: 'input',  elementType: 'f32', gen: function(i){ return i * 0.5; } },
+    b: { role: 'input',  elementType: 'f32', gen: function(i){ return i * 2.0; } },
+    c: { role: 'output', elementType: 'f32' },
+  },
+  scalars:   {},
+  outName:   'c',
+  reference: function(i, inputs) { return inputs.a[i] + inputs.b[i]; },
+});
+</script>
