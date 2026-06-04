@@ -5,7 +5,9 @@ title: Building a New Backend
 
 # Building a New Backend Plugin
 
-Sarek is designed to be extensible. Adding a new target (e.g., WebGPU, HIP, or a custom FPGA backend) involves implementing the standard `BACKEND` signature.
+Sarek is designed to be extensible. Adding a new target (e.g., HIP, SYCL, Level Zero, or a custom FPGA backend) involves implementing the standard `BACKEND` signature.
+
+> **Note**: A WGSL/WebGPU codegen target already exists (`sarek/codegen/Sarek_ir_wgsl.ml`). It is a transpiler-only output (not a runtime device plugin), so it does not implement the `BACKEND` signature described here — it is a standalone IR-to-WGSL pass.
 
 ## 1. Choosing an Execution Model
 

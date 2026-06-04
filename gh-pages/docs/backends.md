@@ -56,7 +56,7 @@ opam install sarek-vulkan
 
 Native support for Apple hardware (M1/M2/M3 chips) using Metal Shading Language (MSL).
 
-- **Features**: Threatgroup memory, SIMD-group functions.
+- **Features**: Threadgroup memory, SIMD-group functions.
 - **Limitations**: No double precision (`float64`) support on most Apple hardware.
 - **Platform**: macOS and iOS only.
 
@@ -77,3 +77,12 @@ Walks through the Sarek IR (Intermediate Representation) step-by-step.
 
 - **Use Case**: Deep debugging of kernel logic, verification of IR transformations, and educational purposes.
 - **Performance**: Slow (interpreted), but provides full visibility into execution.
+
+## WebGPU / WGSL Codegen Target
+
+Sarek includes a **WGSL** (WebGPU Shading Language) code-generation backend that emits compute shaders for browser-side execution via the WebGPU API.
+
+- **Output**: WGSL source (`@compute @workgroup_size(...)` entry points)
+- **Deployment**: Runs in any modern browser with WebGPU support (Chrome/Chromium 113+)
+- **Note**: WGSL is a *transpiler target*, not a runtime device plugin — it does not appear in the device enumeration table above. Use it to ship kernel logic to the browser, combined with a JavaScript WebGPU host.
+- **Try it**: The live [Playground](/Sarek/playground.html) lets you transpile any Sarek kernel to WGSL instantly, and the [Learn course](/Sarek/learn/) runs kernels directly on your GPU via WebGPU.

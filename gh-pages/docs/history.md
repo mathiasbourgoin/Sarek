@@ -15,6 +15,7 @@ This work originated as part of **Mathias Bourgoin's PhD thesis** at the UPMC-LI
 - **2014 - 2015**: Continued research at the [Verimag](http://www-verimag.imag.fr) laboratory (Grenoble, France).
 - **2015 - 2018**: Extended development at the [LIFO](http://www.univ-orleans.fr/lifo/) laboratory (Orléans, France).
 - **2024 - Present**: Significant modernization for OCaml 5 and new GPU backends.
+- **2026**: WGSL/WebGPU codegen backend, in-browser [Playground](/Sarek/playground.html), and interactive [Learn course](/Sarek/learn/) (run kernels on your GPU from the browser).
 
 ## Current Status
 I currently work at [Nomadic Labs](https://nomadic-labs.com) and continue to maintain Sarek as an open-source project. 
