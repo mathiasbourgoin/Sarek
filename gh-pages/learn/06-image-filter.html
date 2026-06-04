@@ -187,6 +187,16 @@ title: "Lesson 6 — Image filter"
         IMG = { r: r, g: g, b: b };
         URL.revokeObjectURL(url);
         drawRGB(document.getElementById('input-canvas'));
+        // Clear the stale filtered result until the kernel is re-run.
+        var outCanvas = document.getElementById('output-canvas');
+        if (outCanvas) {
+          var octx2 = outCanvas.getContext('2d');
+          if (octx2) octx2.clearRect(0, 0, W, H);
+        }
+        var outPane = document.getElementById('output-pane');
+        if (outPane) { outPane.className = 'lesson-output'; outPane.textContent = 'Image loaded — click "Run on my GPU" to filter it.'; }
+        var stBar = document.getElementById('status-bar');
+        if (stBar) stBar.textContent = '';
       };
       im.src = url;
     });
