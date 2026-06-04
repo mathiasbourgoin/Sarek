@@ -10,7 +10,7 @@ While most users should install Sarek via Opam, you can also build the framework
 ## Prerequisites
 
 - **OCaml** >= 5.4.0
-- **Dune** >= 3.0
+- **Dune** >= 3.15
 - **ocamlfind**
 - **ctypes** & **ctypes-foreign**
 - **ppxlib**
