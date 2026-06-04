@@ -1,0 +1,176 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <link rel="icon" href="/Sarek/preview/pr-165/favicon.ico" />
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
+    <script src="/Sarek/preview/pr-165/javascripts/process-rel-links.js" type="text/javascript"></script>
+    <title>Sarek - GPGPU Programming for OCaml</title>
+    
+    <link rel="stylesheet" href='/Sarek/preview/pr-165/stylesheets/modern.css'>
+    <link rel="stylesheet" href='/Sarek/preview/pr-165/stylesheets/pygment_trac.css'>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  </head>
+  <body>
+
+    <!-- Top Navigation Bar -->
+    <nav class="navbar">
+      <div class="container">
+        <a href="/Sarek/preview/pr-165/" class="nav-brand">
+          <img src="/Sarek/preview/pr-165/pres_resources/logo_sarek.png" alt="Sarek Logo">
+          Sarek
+        </a>
+        <div class="nav-links">
+          <a href="/Sarek/preview/pr-165/">Home</a>
+          <a href="/Sarek/preview/pr-165/docs/getting_started.html">Getting Started</a>
+          <a href="/Sarek/preview/pr-165/benchmarks/">Benchmarks</a>
+          <a href="/Sarek/preview/pr-165/examples/">Examples</a>
+          <a href="/Sarek/preview/pr-165/playground.html">Playground</a>
+          <a href="/Sarek/preview/pr-165/learn/">Learn</a>
+          <div class="nav-dropdown">
+            <button type="button" class="dropdown-toggle" aria-haspopup="true" aria-expanded="false" aria-controls="docs-menu">Docs ▾</button>
+            <div class="dropdown-menu" id="docs-menu">
+              <a href="/Sarek/preview/pr-165/docs/concepts.html">Concepts</a>
+              <a href="/Sarek/preview/pr-165/docs/architecture.html">Architecture</a>
+              <a href="/Sarek/preview/pr-165/docs/backends.html">Backends</a>
+              <a href="/Sarek/preview/pr-165/docs/device_selection.html">Device Selection</a>
+              <a href="/Sarek/preview/pr-165/docs/build_guide.html">Build Guide</a>
+              <a href="/Sarek/preview/pr-165/docs/faq.html">FAQ</a>
+              <a href="/Sarek/preview/pr-165/docs/publications.html">Publications</a>
+            </div>
+          </div>
+          <a href="/Sarek/preview/pr-165/spoc_docs/index.html">API</a>
+          <a href="https://github.com/mathiasbourgoin/Sarek">GitHub</a>
+          <button id="theme-toggle" title="Toggle Dark/Light Mode">
+            <span>🌙</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Split Hero Section -->
+    <header class="hero">
+      <div class="container">
+        <div class="hero-content">
+          <h1>Parallel Programming with OCaml</h1>
+          <p class="tagline">A high-performance framework for GPGPU programming. Express kernels directly in OCaml and run them on CUDA, OpenCL, and more.</p>
+          
+          <div style="margin-bottom: 30px;">
+             <a href="https://github.com/mathiasbourgoin/Sarek/actions/workflows/ci.yml">
+               <img src="https://github.com/mathiasbourgoin/Sarek/actions/workflows/ci.yml/badge.svg" alt="CI Status" style="max-width: 150px;">
+             </a>
+          </div>
+
+          <div class="btn-group">
+            <a href="/Sarek/preview/pr-165/docs/getting_started.html" class="btn btn-primary">Get Started</a>
+            <a href="/Sarek/preview/pr-165/learn/" class="btn btn-primary">Run kernels on your GPU</a>
+            <a href="/Sarek/preview/pr-165/playground.html" class="btn btn-outline">Playground</a>
+            <a href="/Sarek/preview/pr-165/spoc_docs/index.html" class="btn btn-outline">API Docs</a>
+          </div>
+        </div>
+
+        <div class="hero-visual">
+          <img src="/Sarek/preview/pr-165/pres_resources/logo_sarek_spoc.png" alt="Sarek and SPOC Logo"/>
+        </div>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <div class="container">
+        <div class="features-grid">
+  <div class="feature-item">
+    <h3>Sarek DSL</h3>
+    <p>Write high-performance GPU kernels directly in OCaml syntax using a type-safe PPX. No need to learn CUDA C or OpenCL C for your logic.</p>
+  </div>
+  <div class="feature-item">
+    <h3>Unified Runtime</h3>
+    <p>The SPOC framework manages memory transfers, device detection, and kernel execution across multiple hardware backends seamlessly.</p>
+  </div>
+  <div class="feature-item">
+    <h3>Modern Architecture</h3>
+    <p>Optimized for OCaml 5 with support for <strong>CUDA</strong>, <strong>OpenCL</strong>, <strong>Vulkan</strong>, <strong>Metal</strong>, and parallel CPU execution via Domains.</p>
+  </div>
+</div>
+
+<hr style="margin: 50px 0; border: 0; border-top: 1px solid var(--border-color);" />
+
+<h2 id="recent-developments-2024-2026">Recent Developments (2024-2026)</h2>
+
+<p>Sarek has been recently modernized to leverage the latest OCaml features and modern GPU APIs:</p>
+
+<ul>
+  <li><strong>OCaml 5.4 Integration</strong>: Full support for effects and domains, providing high-performance CPU parallel execution.</li>
+  <li><strong>Cross-Platform GPU</strong>: Newly added <strong>Vulkan</strong> and <strong>Apple Metal</strong> backends for modern desktop and mobile hardware.</li>
+  <li><strong>Improved Reliability</strong>: A new structured error handling system and comprehensive test coverage.</li>
+  <li><strong>Modular Design</strong>: Backend implementations are now dynamic plugins, allowing for lightweight and extensible builds.</li>
+</ul>
+
+<h2 id="quick-start">Quick Start</h2>
+
+<p>Sarek is not yet in the official opam repository. Install from source:</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>git clone https://github.com/mathiasbourgoin/Sarek.git
+<span class="nb">cd </span>Sarek
+opam <span class="nb">install</span> <span class="nb">.</span> <span class="nt">--deps-only</span> <span class="nt">-y</span>
+dune build
+</code></pre></div></div>
+
+<p>Check out the <a href="docs/getting_started.html">Getting Started</a> guide to write your first GPU kernel in minutes, browse the <a href="examples/">Examples</a> to see common patterns, or try the <a href="playground.html">Playground</a> to transpile kernels live in your browser.</p>
+
+<p>New to GPU programming? The interactive <a href="learn/"><strong>Learn</strong> course</a> teaches it from scratch — you edit a Sarek kernel and <strong>run it on your own GPU</strong> straight from the page (via WebGPU), with automatic checking. It builds up from vector addition through generating a Mandelbrot image and writing an image filter.</p>
+
+<h2 id="how-it-works">How it works</h2>
+
+<p>Sarek allows you to express parallel logic as standard OCaml functions. These are compiled to native GPU code at runtime.</p>
+
+<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">(* A simple vector addition kernel *)</span>
+<span class="k">let</span><span class="o">%</span><span class="n">kernel</span> <span class="n">vector_add</span> <span class="p">(</span><span class="n">a</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">b</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">c</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="o">=</span>
+  <span class="k">let</span> <span class="n">idx</span> <span class="o">=</span> <span class="n">get_global_id</span> <span class="mi">0</span> <span class="k">in</span>
+  <span class="n">c</span><span class="o">.</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">a</span><span class="o">.</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">+.</span> <span class="n">b</span><span class="o">.</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+</code></pre></div></div>
+
+<hr style="margin: 50px 0; border: 0; border-top: 1px solid var(--border-color);" />
+
+<h2 id="project-info">Project Info</h2>
+
+<p>Sarek is the result of over a decade of academic research into high-level parallel programming abstractions. It is currently maintained by <strong>Mathias Bourgoin</strong>.</p>
+
+<ul>
+  <li><a href="docs/history.html">Full Project History</a></li>
+  <li><a href="docs/publications.html">Publications &amp; Talks</a></li>
+  <li><a href="docs/faq.html">Frequently Asked Questions</a></li>
+</ul>
+
+      </div>
+    </main>
+
+    <footer>
+      <div class="container">
+        <p>Sarek is maintained by <a href="https://github.com/mathiasbourgoin">mathiasbourgoin</a></p>
+        <p>Hosted on GitHub Pages</p>
+      </div>
+    </footer>
+
+    <script src="/Sarek/preview/pr-165/javascripts/scale.fix.js"></script>
+    <script src="/Sarek/preview/pr-165/javascripts/copy-code.js"></script>
+    <script src="/Sarek/preview/pr-165/javascripts/theme-toggle.js"></script>
+    <script src="/Sarek/preview/pr-165/javascripts/dropdown.js"></script>
+    <script src="/Sarek/preview/pr-165/javascripts/syntax-sarek.js"></script>
+    <script src="/Sarek/preview/pr-165/javascripts/init-mermaid.js"></script>
+    <script type="module">
+      import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+      
+      if (window.transformMermaidBlocks) {
+        window.transformMermaidBlocks();
+      }
+
+      mermaid.initialize({ 
+        startOnLoad: false, 
+        theme: 'neutral',
+        securityLevel: 'loose'
+      });
+      await mermaid.run();
+    </script>
+  </body>
+</html>
