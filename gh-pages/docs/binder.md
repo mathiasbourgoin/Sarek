@@ -3,35 +3,15 @@ layout: page
 title: Launch Sarek on Binder
 ---
 
-# Try Sarek in your Browser
+# Try Sarek in Your Browser
 
-You can experiment with Sarek without installing anything on your local machine using **Binder**. 
+> **This page describes a superseded approach.** The Binder/Jupyter environment described here has been replaced by a native browser experience that requires no setup.
 
-Binder provides a temporary cloud environment with OCaml 5.4, the Sarek framework, and a Jupyter notebook interface already configured.
+## Live Options — No Installation Required
 
-## Launch the Environment
+Sarek now runs directly in the browser via WebGPU:
 
-Click the button below to start your private Sarek playground:
+- **[Playground](/Sarek/playground.html)** — Transpile any Sarek kernel to GPU source code (WGSL, CUDA, OpenCL, GLSL, MSL) instantly. Runs the full Sarek compiler in-browser.
+- **[Interactive Learn Course](/Sarek/learn/)** — Write and run Sarek kernels on your own GPU from the page. Covers vector addition, Mandelbrot generation, image filters, and more.
 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/mathiasbourgoin/Sarek/main?urlpath=lab/tree/notebooks/Introduction_to_Sarek.ipynb)
-
-*(Note: It may take a few minutes to build the environment the first time you click this link.)*
-
-## What's included?
-
-- **OCaml 5.4.0**: Fully utilizing the modern multicore runtime.
-- **Sarek Framework**: The core DSL and the Native Parallel backend.
-- **Interactive Notebooks**: Real-world examples you can edit and run immediately.
-
-## Why Binder?
-
-Since GPGPU programming typically requires specialized hardware (NVIDIA/AMD GPUs), it can be difficult to try out for the first time. 
-
-By using the **Native CPU Backend**, Sarek allows you to run parallel kernels on standard cloud CPUs. The code you write here is **identical** to the code you would run on a high-end data-center GPU.
-
-## Next Steps
-
-Once the notebook launches:
-1. Open `Introduction_to_Sarek.ipynb`.
-2. Run the cells to initialize the library.
-3. Modify the kernel logic to see how it affects the results!
+Unlike the Binder approach, these options run the actual GPU workloads on your hardware via WebGPU — not on a cloud CPU. The code you write is identical to the code you would compile natively with OCaml.

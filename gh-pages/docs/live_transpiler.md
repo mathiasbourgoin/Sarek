@@ -5,34 +5,14 @@ title: Live Transpiler
 
 # Live Transpiler
 
-Write an OCaml kernel and see the generated GPU source code immediately.
+> **This page describes a superseded approach.** The Thebe-based interactive environment has been replaced by the native browser Playground.
 
-<button id="thebe-activate" class="btn btn-primary" onclick="bootstrapThebe()">🚀 Activate Transpiler</button>
+## Transpile Kernels Live in Your Browser
 
-<hr>
+The **[Playground](/Sarek/playground.html)** lets you write a Sarek kernel and see the generated GPU source code (WGSL, CUDA, OpenCL, GLSL, MSL) immediately — no installation, no account.
 
-## Define and Inspect
+```
+[Playground →](/Sarek/playground.html)
+```
 
-Enter your Sarek kernel below. We use the internal `Kirc` modules to display the generated source code for different backends.
-
-<pre data-executable="true">
-#require "sarek";;
-#require "sarek.ppx";;
-open Sarek;;
-
-let my_kernel = [%kernel fun (a : float32 vector) ->
-  let idx = get_global_id 0 in
-  a.(idx) <- a.(idx) *. 2.0
-];;
-
-(* Access the internal IR and generate CUDA source *)
-let _, kirc = my_kernel in
-match kirc.Sarek.Kirc_types.body_ir with
-| Some ir -> 
-    print_endline "--- Generated CUDA Source ---";
-    (* Note: This requires Sarek_ir_cuda to be available in the environment *)
-    print_endline "Source generated for CUDA..."
-| None -> print_endline "No IR found";;
-</pre>
-
-*(Note: We are exposing the internal code generators to the interactive environment to make this possible.)*
+The Playground runs the full Sarek transpiler pipeline compiled to WebAssembly (via js_of_ocaml) directly in your browser. Every backend output tab is generated in real time as you type.
