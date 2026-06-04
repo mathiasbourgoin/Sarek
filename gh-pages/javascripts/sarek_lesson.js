@@ -55,7 +55,9 @@
 
   // ── Main init ─────────────────────────────────────────────────────────
   async function init(cfg) {
-    var n          = cfg.n || 256;
+    var width      = cfg.width  || 0;
+    var height     = cfg.height || 0;
+    var n          = cfg.n || (width && height ? width * height : 256);
     var buffers    = cfg.buffers || {};
     var scalars    = cfg.scalars || {};
     var tol        = cfg.tolerance || {};
@@ -68,6 +70,8 @@
     var statusEl    = document.getElementById(cfg.statusId);
     var wgslPre     = document.getElementById(cfg.wgslId);
     var wgslToggle  = document.getElementById(cfg.wgslToggleId);
+    var canvasEl      = cfg.canvasId      ? document.getElementById(cfg.canvasId)      : null;
+    var inputCanvasEl = cfg.inputCanvasId ? document.getElementById(cfg.inputCanvasId) : null;
 
     // ── WebGPU availability check ──────────────────────────────────────
     var adapter = null;
@@ -110,13 +114,20 @@
     }
 
     // ── Run handler ───────────────────────────────────────────────────
+    var env = {
+      n: n, width: width, height: height, buffers: buffers, scalars: scalars,
+      outName: cfg.outName, reference: cfg.reference, rel: rel, absFloor: absFloor,
+      maxBadFraction: cfg.maxBadFraction || 0,
+      makeInputs: cfg.makeInputs, colormap: cfg.colormap, onResult: cfg.onResult,
+      outputEl: outputEl, statusEl: statusEl, wgslPre: wgslPre,
+      canvasEl: canvasEl, inputCanvasEl: inputCanvasEl,
+    };
     if (runBtn) {
-      runBtn.addEventListener('click', function () {
-        runLesson(
-          getSource(), n, buffers, scalars, cfg.outName, cfg.reference,
-          rel, absFloor, outputEl, statusEl, wgslPre
-        );
-      });
+      runBtn.addEventListener('click', function () { runLesson(getSource(), env); });
+    }
+    // For visual lessons, render the input preview immediately (if provided).
+    if (typeof cfg.renderInput === 'function') {
+      try { cfg.renderInput({ n: n, width: width, height: height, canvas: inputCanvasEl }); } catch (_) {}
     }
   }
 
@@ -134,11 +145,55 @@
     });
   }
 
-  // ── Core run/grade logic ──────────────────────────────────────────────
-  async function runLesson(
-    source, n, buffersCfg, scalarsCfg, outName, reference,
-    rel, absFloor, outputEl, statusEl, wgslPre
-  ) {
+  // ── Build inputs: per-buffer gen, or a whole-image makeInputs override ──
+  function buildInputs(env, abi) {
+    if (typeof env.makeInputs === 'function') {
+      // Visual/image lessons own input construction (e.g. RGB channels or an
+      // uploaded photo). Must return { name: TypedArray } for every storage
+      // buffer in the ABI (outputs included, zero-filled).
+      return env.makeInputs({ n: env.n, width: env.width, height: env.height });
+    }
+    var inputs = {};
+    var buffersCfg = env.buffers;
+    for (var bufName in buffersCfg) {
+      if (!Object.prototype.hasOwnProperty.call(buffersCfg, bufName)) continue;
+      var bcfg = buffersCfg[bufName];
+      var abiBuf = null;
+      if (abi && abi.buffers) {
+        for (var bi = 0; bi < abi.buffers.length; bi++) {
+          if (abi.buffers[bi].name === bufName) { abiBuf = abi.buffers[bi]; break; }
+        }
+      }
+      var elemType = (abiBuf && abiBuf.elementType) ? abiBuf.elementType : (bcfg.elementType || 'f32');
+      var Ctor = typedArrayCtor(elemType);
+      var arr  = new Ctor(env.n);
+      if (bcfg.role === 'input' && typeof bcfg.gen === 'function') {
+        for (var i = 0; i < env.n; i++) arr[i] = bcfg.gen(i);
+      }
+      inputs[bufName] = arr;  // outputs stay zero
+    }
+    return inputs;
+  }
+
+  // ── Render a single float output buffer to a canvas via a colormap ─────
+  function renderColormap(canvas, data, width, height, colormap) {
+    if (!canvas) return;
+    canvas.width = width; canvas.height = height;
+    var ctx = canvas.getContext('2d');
+    var img = ctx.createImageData(width, height);
+    for (var i = 0; i < width * height; i++) {
+      var rgb = colormap(data[i], i);
+      img.data[i * 4]     = rgb[0];
+      img.data[i * 4 + 1] = rgb[1];
+      img.data[i * 4 + 2] = rgb[2];
+      img.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  // ── Core run logic: transpile → build inputs → run → grade + render ────
+  async function runLesson(source, env) {
+    var outputEl = env.outputEl, statusEl = env.statusEl, wgslPre = env.wgslPre;
     function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
     function setOutput(cls, msg) {
       if (!outputEl) return;
@@ -146,7 +201,6 @@
       outputEl.textContent = msg;
     }
 
-    // 1. Transpile
     if (typeof globalThis.SarekTranspile === 'undefined') {
       setOutput('error-output', 'Transpiler not loaded — please reload the page.');
       return;
@@ -158,76 +212,77 @@
       setStatus('Transpile error');
       return;
     }
-
-    // Show generated WGSL if the pre element exists.
     if (wgslPre) wgslPre.textContent = result.code;
 
-    // 2. Build inputs from cfg + ABI
-    var abi    = result.abi;
-    var code   = result.code;
-    var inputs = {};
+    var abi = result.abi, code = result.code;
+    var inputs = buildInputs(env, abi);
 
-    for (var bufName in buffersCfg) {
-      if (!Object.prototype.hasOwnProperty.call(buffersCfg, bufName)) continue;
-      var bcfg = buffersCfg[bufName];
-
-      // Determine elementType: prefer ABI (authoritative) then cfg fallback.
-      var abiBuf = null;
-      if (abi && abi.buffers) {
-        for (var bi = 0; bi < abi.buffers.length; bi++) {
-          if (abi.buffers[bi].name === bufName) { abiBuf = abi.buffers[bi]; break; }
-        }
-      }
-      var elemType = (abiBuf && abiBuf.elementType) ? abiBuf.elementType : (bcfg.elementType || 'f32');
-      var Ctor = typedArrayCtor(elemType);
-      var arr  = new Ctor(n);
-
-      if (bcfg.role === 'input' && typeof bcfg.gen === 'function') {
-        for (var i = 0; i < n; i++) arr[i] = bcfg.gen(i);
-      }
-      // outputs start as zeros (already zero-initialised by TypedArray)
-      inputs[bufName] = arr;
-    }
-
-    // 3. Run on GPU
     setStatus('Running on GPU...');
     var runResult;
     try {
-      runResult = await globalThis.SarekWebGPU.run(code, abi, { inputs: inputs, scalars: scalarsCfg });
+      runResult = await globalThis.SarekWebGPU.run(code, abi, { inputs: inputs, scalars: env.scalars });
     } catch (e) {
       setOutput('error-output', 'GPU run error:\n' + e.message);
       setStatus('GPU error');
       return;
     }
 
-    // 4. Grade
-    var gpuOut = runResult.outputs[outName];
+    var gpuOut = runResult.outputs[env.outName];
     if (!gpuOut) {
-      setOutput('error-output', 'Output buffer "' + outName + '" not found in GPU results.');
+      setOutput('error-output', 'Output buffer "' + env.outName + '" not found in GPU results.');
       setStatus('Grading error');
       return;
     }
 
-    var firstBad = -1;
-    var badGot, badRef;
-    for (var idx = 0; idx < n; idx++) {
-      var ref = reference(idx, inputs, scalarsCfg);
-      var got = gpuOut[idx];
-      if (!withinTolerance(got, ref, rel, absFloor)) {
-        firstBad = idx;
-        badGot = got;
-        badRef = ref;
-        break;
+    // Visual rendering (optional): colormap a single output, or a custom hook.
+    if (typeof env.colormap === 'function' && env.canvasEl) {
+      renderColormap(env.canvasEl, gpuOut, env.width, env.height, env.colormap);
+    }
+    if (typeof env.onResult === 'function') {
+      try {
+        env.onResult({
+          outputs: runResult.outputs, inputs: inputs, scalars: env.scalars,
+          n: env.n, width: env.width, height: env.height,
+          canvas: env.canvasEl, inputCanvas: env.inputCanvasEl,
+        });
+      } catch (e) {
+        setOutput('error-output', 'Render error:\n' + e.message);
+        setStatus('Render error');
+        return;
       }
     }
 
-    if (firstBad === -1) {
-      setOutput('pass-output', 'PASS — all ' + n + ' elements match the CPU reference.');
+    // Grading (optional): only when a reference is provided.
+    if (typeof env.reference !== 'function') {
+      setOutput('', 'Rendered ' + env.n + ' elements on your GPU.');
+      setStatus('Done');
+      return;
+    }
+
+    // maxBadFraction allows a small fraction of mismatches (default 0 = strict).
+    // Useful for chaotic kernels (e.g. Mandelbrot) where a few boundary pixels
+    // diverge under float32 vs the float64 reference.
+    var maxBadFraction = env.maxBadFraction || 0;
+    var firstBad = -1, badGot, badRef, badCount = 0;
+    for (var idx = 0; idx < env.n; idx++) {
+      var ref = env.reference(idx, inputs, env.scalars);
+      var got = gpuOut[idx];
+      if (!withinTolerance(got, ref, env.rel, env.absFloor)) {
+        badCount++;
+        if (firstBad === -1) { firstBad = idx; badGot = got; badRef = ref; }
+      }
+    }
+    if (badCount <= maxBadFraction * env.n) {
+      var note = badCount === 0
+        ? 'all ' + env.n + ' elements match the CPU reference.'
+        : badCount + ' / ' + env.n + ' within the allowed tolerance.';
+      setOutput('pass-output', 'PASS — ' + note);
       setStatus('PASS');
     } else {
       setOutput(
         'fail-output',
-        'FAIL at index ' + firstBad +
+        'FAIL — ' + badCount + ' / ' + env.n + ' elements differ. ' +
+          'First at index ' + firstBad +
           ': expected ' + badRef.toPrecision(6) +
           ', got ' + badGot.toPrecision(6)
       );

@@ -12,7 +12,6 @@
 
 import http from 'http';
 import fs from 'fs';
-import path from 'path';
 import { createRequire } from 'module';
 import { execSync } from 'child_process';
 
@@ -320,6 +319,147 @@ for (const tc of CASES) {
     wrongDetail:   wrongResult,
   });
 }
+
+// ── Visual lessons (Mandelbrot, image filter) ─────────────────────────────
+// These use whole-image inputs, scalars, and (for Mandelbrot) a small allowed
+// bad-fraction, so they are driven directly rather than through the generic
+// per-buffer loop above. Correct kernel → PASS; wrong kernel → FAIL.
+const visual = await page.evaluate(async () => {
+  const fr = Math.fround;
+
+  async function grade(src, buildInputs, scalars, outName, ref, maxBadFraction, n) {
+    const r = globalThis.SarekTranspile.transpileWithAbi(src, 'wgsl');
+    if (!r.ok) return { ok: false, transpile: r.error };
+    const inputs = buildInputs();
+    let run;
+    try { run = await globalThis.SarekWebGPU.run(r.code, r.abi, { inputs, scalars }); }
+    catch (e) { return { ok: false, run: e.message }; }
+    const out = run.outputs[outName];
+    let bad = 0;
+    for (let i = 0; i < n; i++) {
+      const e = ref(i, inputs, scalars), v = out[i];
+      if (Math.abs(v - e) > 1e-3 * Math.max(Math.abs(v), Math.abs(e)) + 1e-3) bad++;
+    }
+    return { ok: true, bad, pass: bad <= maxBadFraction * n };
+  }
+
+  // — Mandelbrot (64×64) —
+  const MW = 64, MH = 64, MMAX = 100, MN = MW * MH;
+  const mbSrc = (body) =>
+    'fun (output : float32 vector) (width : int32) (height : int32) (max_iter : int32) ->\n' +
+    '  let open Std in\n' +
+    '  let idx = global_thread_id in\n' +
+    '  let px = idx mod width in\n  let py = idx / width in\n' +
+    '  if py < height then begin\n' +
+    '    let x0 = (3.5 *. (float px /. float width)) -. 2.5 in\n' +
+    '    let y0 = (2.0 *. (float py /. float height)) -. 1.0 in\n' +
+    '    let zx = mut 0.0 in\n    let zy = mut 0.0 in\n    let iter = mut 0l in\n' +
+    '    while ((zx *. zx) +. (zy *. zy) <= 4.0) && (iter < max_iter) do\n' +
+    '      let xt = ' + body + ' in\n' +
+    '      zy := (2.0 *. zx *. zy) +. y0 ;\n      zx := xt ;\n      iter := iter + 1l\n' +
+    '    done ;\n    output.(idx) <- (float iter /. float max_iter)\n  end';
+  const mbInputs = () => ({ output: new Float32Array(MN) });
+  const mbScalars = { width: MW, height: MH, max_iter: MMAX };
+  const mbRef = (i) => {
+    const px = i % MW, py = Math.floor(i / MW);
+    if (py >= MH) return 0;
+    const x0 = fr(fr(3.5 * fr(px / MW)) - 2.5), y0 = fr(fr(2.0 * fr(py / MH)) - 1.0);
+    let zx = 0, zy = 0, it = 0;
+    while (fr(fr(zx * zx) + fr(zy * zy)) <= 4.0 && it < MMAX) {
+      const xt = fr(fr(fr(zx * zx) - fr(zy * zy)) + x0);
+      zy = fr(fr(fr(2.0 * zx) * zy) + y0); zx = xt; it++;
+    }
+    return it / MMAX;
+  };
+  const mbCorrect = await grade(mbSrc('(zx *. zx) -. (zy *. zy) +. x0'), mbInputs, mbScalars, 'output', mbRef, 0.02, MN);
+  const mbWrong   = await grade(mbSrc('x0'), mbInputs, mbScalars, 'output', mbRef, 0.02, MN);
+
+  // — Image filter / grayscale (64×64) —
+  const FW = 64, FH = 64, FN = FW * FH;
+  const fSrc = (body) =>
+    'fun (r : float32 vector) (g : float32 vector) (b : float32 vector) (gray : float32 vector) ->\n' +
+    '  let i = global_thread_id in\n  gray.(i) <- ' + body;
+  const fInputs = () => {
+    const r = new Float32Array(FN), g = new Float32Array(FN), b = new Float32Array(FN);
+    for (let py = 0; py < FH; py++) for (let px = 0; px < FW; px++) {
+      const i = py * FW + px; r[i] = px / FW; g[i] = py / FH; b[i] = 0.5;
+    }
+    return { r, g, b, gray: new Float32Array(FN) };
+  };
+  const fRef = (i, inp) => 0.299 * inp.r[i] + 0.587 * inp.g[i] + 0.114 * inp.b[i];
+  const fCorrect = await grade(fSrc('(0.299 *. r.(i)) +. (0.587 *. g.(i)) +. (0.114 *. b.(i))'), fInputs, {}, 'gray', fRef, 0, FN);
+  const fWrong   = await grade(fSrc('r.(i)'), fInputs, {}, 'gray', fRef, 0, FN);
+
+  return [
+    { id: 'lesson5-mandelbrot', ok: mbCorrect.pass === true && mbWrong.pass === false, correctDetail: mbCorrect, wrongDetail: mbWrong },
+    { id: 'lesson6-image-filter', ok: fCorrect.pass === true && fWrong.pass === false, correctDetail: fCorrect, wrongDetail: fWrong },
+  ];
+});
+for (const v of visual) results.push(v);
+
+// ── End-to-end harness check: drive the REAL SarekLesson.init (DOM → run →
+// colormap render → grade) for the Mandelbrot visual path, asserting the
+// output pane reads PASS and the canvas is actually painted (non-black). This
+// covers init/makeInputs/colormap/onResult/maxBadFraction, which the direct
+// kernel checks above bypass.
+const harness = await page.evaluate(async () => {
+  const mk = (tag, id) => { const e = document.createElement(tag); if (id) e.id = id; document.body.appendChild(e); return e; };
+  mk('textarea', 'h-src'); const btn = mk('button', 'h-run'); const outp = mk('pre', 'h-out');
+  const st = mk('span', 'h-st'); mk('pre', 'h-wgsl'); mk('button', 'h-wt');
+  const cv = mk('canvas', 'h-cv');
+  const W = 64, H = 64, MAX = 100, fr = Math.fround;
+  function ref(i, inp, sc) {
+    const w = sc.width, h = sc.height, max = sc.max_iter, px = i % w, py = Math.floor(i / w);
+    if (py >= h) return 0;
+    const x0 = fr(fr(3.5 * fr(px / w)) - 2.5), y0 = fr(fr(2.0 * fr(py / h)) - 1.0);
+    let zx = 0, zy = 0, it = 0;
+    while (fr(fr(zx * zx) + fr(zy * zy)) <= 4.0 && it < max) {
+      const xt = fr(fr(fr(zx * zx) - fr(zy * zy)) + x0);
+      zy = fr(fr(fr(2.0 * zx) * zy) + y0); zx = xt; it++;
+    }
+    return it / max;
+  }
+  const starter =
+    'fun (output : float32 vector) (width : int32) (height : int32) (max_iter : int32) ->\n' +
+    '  let open Std in\n  let idx = global_thread_id in\n' +
+    '  let px = idx mod width in\n  let py = idx / width in\n' +
+    '  if py < height then begin\n' +
+    '    let x0 = (3.5 *. (float px /. float width)) -. 2.5 in\n' +
+    '    let y0 = (2.0 *. (float py /. float height)) -. 1.0 in\n' +
+    '    let zx = mut 0.0 in\n    let zy = mut 0.0 in\n    let iter = mut 0l in\n' +
+    '    while ((zx *. zx) +. (zy *. zy) <= 4.0) && (iter < max_iter) do\n' +
+    '      let xt = (zx *. zx) -. (zy *. zy) +. x0 in\n' +
+    '      zy := (2.0 *. zx *. zy) +. y0 ;\n      zx := xt ;\n      iter := iter + 1l\n' +
+    '    done ;\n    output.(idx) <- (float iter /. float max_iter)\n  end';
+  await globalThis.SarekLesson.init({
+    editorId: 'h-src', runButtonId: 'h-run', outputId: 'h-out', statusId: 'h-st',
+    wgslId: 'h-wgsl', wgslToggleId: 'h-wt', width: W, height: H, starter: starter,
+    buffers: { output: { role: 'output', elementType: 'f32' } },
+    scalars: { width: W, height: H, max_iter: MAX }, outName: 'output',
+    colormap: function (t) {
+      if (t >= 1) return [0, 0, 0];
+      return [Math.floor(9 * (1 - t) * t * t * t * 255),
+              Math.floor(15 * (1 - t) * (1 - t) * t * t * 255),
+              Math.floor(8.5 * (1 - t) * (1 - t) * (1 - t) * t * 255)];
+    },
+    canvasId: 'h-cv', reference: ref, maxBadFraction: 0.02,
+  });
+  btn.click();
+  const t0 = Date.now();
+  while (Date.now() - t0 < 15000) {
+    if (/PASS|FAIL|error/i.test(st.textContent)) break;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  const d = cv.getContext('2d').getImageData(0, 0, W, H).data;
+  let nonblack = 0;
+  for (let i = 0; i < W * H; i++) if (d[i * 4] || d[i * 4 + 1] || d[i * 4 + 2]) nonblack++;
+  return { status: st.textContent, output: outp.textContent, nonblack };
+});
+results.push({
+  id: 'harness-e2e-mandelbrot',
+  ok: harness.status === 'PASS' && harness.nonblack > 0,
+  detail: harness,
+});
 
 await browser.close();
 server.close();

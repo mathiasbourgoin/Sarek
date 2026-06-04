@@ -177,3 +177,43 @@
 }
 .lesson-nav a { color: var(--primary-color); text-decoration: none; }
 .lesson-nav a:hover { text-decoration: underline; }
+
+/* ── Visual lessons: canvases, upload, disclaimer ───────────────────────── */
+.lesson-canvas-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin: 1rem 0;
+}
+.lesson-canvas-row figure {
+  margin: 0;
+  text-align: center;
+}
+.lesson-canvas-row figcaption {
+  font-size: 0.8rem;
+  opacity: 0.7;
+  margin-top: 0.35rem;
+}
+.lesson-canvas {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--code-bg);
+  image-rendering: pixelated;
+  max-width: 100%;
+  height: auto;
+}
+.lesson-upload {
+  font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+.lesson-upload input[type="file"] { font-size: 0.8rem; }
+.lesson-disclaimer {
+  font-size: 0.85rem;
+  opacity: 0.75;
+  border-left: 3px solid var(--primary-color);
+  padding-left: 0.75rem;
+  margin: 1rem 0;
+}

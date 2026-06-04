@@ -1,0 +1,195 @@
+---
+layout: page
+title: "Lesson 6 — Image filter"
+---
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.css">
+<link rel="stylesheet" href="{{ site.baseurl }}/stylesheets/learn.css">
+
+<div class="lesson-container">
+
+  <h1>Lesson 6 — Image filter</h1>
+
+  <p>
+    An image is just arrays of numbers: one value per pixel per colour channel.
+    A <em>filter</em> is a kernel that reads those channels and writes new ones —
+    one thread per pixel. Here you will write a <strong>grayscale</strong>
+    filter: collapse the red, green and blue channels into a single brightness
+    value using the standard luminance weights
+    <code>0.299·R + 0.587·G + 0.114·B</code>.
+  </p>
+
+  <h2>Your task</h2>
+  <p>
+    The kernel reads buffers <code>r</code>, <code>g</code>, <code>b</code>
+    (each one value per pixel, in <code>0..1</code>) and writes the brightness
+    into <code>gray</code>. Replace the <code>(* TODO *)</code> with the
+    weighted sum, then click <strong>Run on my GPU</strong>. The original and
+    the filtered image appear side by side.
+  </p>
+
+  <label class="lesson-editor-label" for="kernel-source">Kernel source</label>
+  <textarea id="kernel-source">fun (r : float32 vector) (g : float32 vector) (b : float32 vector) (gray : float32 vector) ->
+  let i = global_thread_id in
+  gray.(i) <- (* TODO *)</textarea>
+
+  <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+    <button class="lesson-run-btn" id="run-btn">Run on my GPU</button>
+    <button class="wgsl-toggle-btn" id="wgsl-toggle">Show generated WGSL</button>
+    <label class="lesson-upload">
+      Use your own photo
+      <input type="file" id="photo-input" accept="image/*">
+    </label>
+    <span class="lesson-status" id="status-bar"></span>
+  </div>
+
+  <div class="lesson-canvas-row">
+    <figure>
+      <canvas class="lesson-canvas" id="input-canvas" width="200" height="200"></canvas>
+      <figcaption>Original</figcaption>
+    </figure>
+    <figure>
+      <canvas class="lesson-canvas" id="output-canvas" width="200" height="200"></canvas>
+      <figcaption>Filtered (your GPU)</figcaption>
+    </figure>
+  </div>
+
+  <pre class="lesson-output" id="output-pane">Fill in the TODO and click "Run on my GPU".</pre>
+  <pre class="lesson-wgsl-pre" id="wgsl-pane" style="display:none;"></pre>
+
+  <details>
+    <summary>Hint</summary>
+    <p>
+      <code>(0.299 *. r.(i)) +. (0.587 *. g.(i)) +. (0.114 *. b.(i))</code>.
+      Once it works, try other filters: invert is <code>1.0 -. r.(i)</code>
+      (per channel), or boost a channel by multiplying it.
+    </p>
+  </details>
+
+  <p class="lesson-disclaimer">
+    A small 200&times;200 image keeps this instant. Your uploaded photo is
+    resized to 200&times;200 and processed entirely in your browser on your GPU —
+    nothing is uploaded anywhere. Larger images cost proportionally more.
+  </p>
+
+  <div class="lesson-nav">
+    <a href="{{ site.baseurl }}/learn/05-mandelbrot.html">&larr; Lesson 5 — Mandelbrot</a>
+    <a href="{{ site.baseurl }}/learn/">Back to course overview &rarr;</a>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/mode/mllike/mllike.min.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_transpile.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_webgpu_runner.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_lesson.js"></script>
+<script>
+(function () {
+  var W = 200, H = 200, N = W * H;
+
+  // Procedural default image: smooth colour gradients + a radial — stands in
+  // for a photo so the lesson works immediately and offline.
+  function genImage() {
+    var r = new Float32Array(N), g = new Float32Array(N), b = new Float32Array(N);
+    var cx = W / 2, cy = H / 2, maxd = Math.sqrt(cx * cx + cy * cy);
+    for (var py = 0; py < H; py++) {
+      for (var px = 0; px < W; px++) {
+        var i = py * W + px;
+        var d = Math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy)) / maxd;
+        r[i] = px / W;
+        g[i] = py / H;
+        b[i] = 1 - d;
+      }
+    }
+    return { r: r, g: g, b: b };
+  }
+
+  var IMG = genImage();  // current source; replaced by an upload if used
+
+  function drawRGB(canvas) {
+    if (!canvas) return;
+    canvas.width = W; canvas.height = H;
+    var ctx = canvas.getContext('2d');
+    var img = ctx.createImageData(W, H);
+    for (var i = 0; i < N; i++) {
+      img.data[i * 4]     = Math.round(IMG.r[i] * 255);
+      img.data[i * 4 + 1] = Math.round(IMG.g[i] * 255);
+      img.data[i * 4 + 2] = Math.round(IMG.b[i] * 255);
+      img.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  function drawGray(gray, canvas) {
+    if (!canvas) return;
+    canvas.width = W; canvas.height = H;
+    var ctx = canvas.getContext('2d');
+    var img = ctx.createImageData(W, H);
+    for (var i = 0; i < N; i++) {
+      var v = Math.max(0, Math.min(255, Math.round(gray[i] * 255)));
+      img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v;
+      img.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  SarekLesson.init({
+    editorId:     'kernel-source',
+    runButtonId:  'run-btn',
+    outputId:     'output-pane',
+    statusId:     'status-bar',
+    wgslId:       'wgsl-pane',
+    wgslToggleId: 'wgsl-toggle',
+    width: W, height: H,
+    starter:
+      'fun (r : float32 vector) (g : float32 vector) (b : float32 vector) (gray : float32 vector) ->\n' +
+      '  let i = global_thread_id in\n' +
+      '  gray.(i) <- (* TODO *)',
+    buffers: {
+      r:    { role: 'input',  elementType: 'f32' },
+      g:    { role: 'input',  elementType: 'f32' },
+      b:    { role: 'input',  elementType: 'f32' },
+      gray: { role: 'output', elementType: 'f32' },
+    },
+    scalars: {},
+    outName: 'gray',
+    // Image lessons own input construction (current source image + zeroed output).
+    makeInputs: function () {
+      return { r: IMG.r.slice(), g: IMG.g.slice(), b: IMG.b.slice(), gray: new Float32Array(N) };
+    },
+    reference: function (i, inputs) {
+      return 0.299 * inputs.r[i] + 0.587 * inputs.g[i] + 0.114 * inputs.b[i];
+    },
+    renderInput: function (o) { drawRGB(o.canvas); },
+    onResult:    function (o) { drawGray(o.outputs.gray, o.canvas); },
+    canvasId:      'output-canvas',
+    inputCanvasId: 'input-canvas',
+  });
+
+  // Progressive enhancement: let the learner filter their own photo.
+  var fileInput = document.getElementById('photo-input');
+  if (fileInput) {
+    fileInput.addEventListener('change', function (ev) {
+      var file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      var url = URL.createObjectURL(file);
+      var im = new Image();
+      im.onload = function () {
+        var off = document.createElement('canvas');
+        off.width = W; off.height = H;
+        var octx = off.getContext('2d');
+        octx.drawImage(im, 0, 0, W, H);
+        var d = octx.getImageData(0, 0, W, H).data;
+        var r = new Float32Array(N), g = new Float32Array(N), b = new Float32Array(N);
+        for (var i = 0; i < N; i++) {
+          r[i] = d[i * 4] / 255; g[i] = d[i * 4 + 1] / 255; b[i] = d[i * 4 + 2] / 255;
+        }
+        IMG = { r: r, g: g, b: b };
+        URL.revokeObjectURL(url);
+        drawRGB(document.getElementById('input-canvas'));
+      };
+      im.src = url;
+    });
+  }
+})();
+</script>

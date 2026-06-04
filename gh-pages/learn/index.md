@@ -101,3 +101,5 @@ the Run button will be disabled with an explanatory message.
 2. [Lesson 2 — Scalar parameters (SAXPY)]({{ site.baseurl }}/learn/02-scale-saxpy.html) — passing a scalar into a kernel
 3. [Lesson 3 — Elementwise map]({{ site.baseurl }}/learn/03-map-square.html) — mapping a function over every element
 4. [Lesson 4 — Control flow and bounds]({{ site.baseurl }}/learn/04-bounds-if.html) — `if` expressions and index guarding
+5. [Lesson 5 — Mandelbrot]({{ site.baseurl }}/learn/05-mandelbrot.html) — a per-pixel loop that **generates an image** on your GPU
+6. [Lesson 6 — Image filter]({{ site.baseurl }}/learn/06-image-filter.html) — a grayscale **photo filter** rendered in the page (bring your own photo)
