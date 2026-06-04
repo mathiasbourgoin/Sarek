@@ -110,6 +110,15 @@
       const count = inputData.byteLength / typedArrayCtor(buf.elementType).BYTES_PER_ELEMENT;
       if (count > maxElements) maxElements = count;
     }
+    // This runner issues a 1D dispatch (uses workgroupSize[0] only). The WGSL
+    // backend currently always emits (256,1,1); fail fast rather than silently
+    // under-dispatch a future kernel that needs Y/Z.
+    if (abi.workgroupSize[1] !== 1 || abi.workgroupSize[2] !== 1) {
+      throw new Error(
+        'SarekWebGPU: only 1D workgroups are supported (got workgroupSize ' +
+          JSON.stringify(abi.workgroupSize) + ')'
+      );
+    }
     const workgroupX = abi.workgroupSize[0];
     const dispatchCount = Math.ceil(maxElements / workgroupX);
 
@@ -119,6 +128,7 @@
       resource: { buffer: gpuBuffers[buf.name] },
     }));
 
+    let uniformBuf = null;
     if (abi.params !== null && abi.params !== undefined) {
       const params = abi.params;
       const uniformData = new ArrayBuffer(params.byteSize);
@@ -149,7 +159,7 @@
           }
         }
       }
-      const uniformBuf = device.createBuffer({
+      uniformBuf = device.createBuffer({
         size: params.byteSize,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
@@ -178,13 +188,25 @@
 
     device.queue.submit([encoder.finish()]);
 
-    // Read back results.
+    // Read back results, then release every transient GPU resource. The mapped
+    // bytes are copied out (slice) before unmapping; the finally guarantees we
+    // unmap + destroy even if a mapAsync rejects, so repeated runs in a
+    // long-lived page (e.g. the course pages) do not leak GPU memory.
     const outputs = {};
-    for (const buf of abi.buffers) {
-      const rb = readbackBuffers[buf.name];
-      await rb.buffer.mapAsync(GPUMapMode.READ);
-      const Ctor = typedArrayCtor(rb.elementType);
-      outputs[buf.name] = new Ctor(rb.buffer.getMappedRange().slice(0));
+    try {
+      for (const buf of abi.buffers) {
+        const rb = readbackBuffers[buf.name];
+        await rb.buffer.mapAsync(GPUMapMode.READ);
+        const Ctor = typedArrayCtor(rb.elementType);
+        outputs[buf.name] = new Ctor(rb.buffer.getMappedRange().slice(0));
+        rb.buffer.unmap();
+      }
+    } finally {
+      for (const buf of abi.buffers) {
+        readbackBuffers[buf.name].buffer.destroy();
+        gpuBuffers[buf.name].destroy();
+      }
+      if (uniformBuf) uniformBuf.destroy();
     }
 
     return { outputs };
