@@ -73,6 +73,23 @@
     var canvasEl      = cfg.canvasId      ? document.getElementById(cfg.canvasId)      : null;
     var inputCanvasEl = cfg.inputCanvasId ? document.getElementById(cfg.inputCanvasId) : null;
 
+    // ── Dependency check: the runner script must have loaded ───────────
+    // (Distinct from "no adapter" — a missing asset is a page error, not a
+    // browser-capability message.)
+    if (typeof globalThis.SarekWebGPU === 'undefined' ||
+        typeof globalThis.SarekWebGPU.getAdapter !== 'function') {
+      if (outputEl) {
+        outputEl.className = 'lesson-output error-output';
+        outputEl.textContent =
+          'Failed to load the WebGPU runner (sarek_webgpu_runner.js) — ' +
+          'please reload the page.';
+      }
+      if (runBtn) runBtn.disabled = true;
+      if (statusEl) statusEl.textContent = 'Runner failed to load';
+      setupEditor(editorEl, cfg.starter);
+      return;
+    }
+
     // ── WebGPU availability check ──────────────────────────────────────
     var adapter = null;
     try {
@@ -123,7 +140,14 @@
       canvasEl: canvasEl, inputCanvasEl: inputCanvasEl,
     };
     if (runBtn) {
-      runBtn.addEventListener('click', function () { runLesson(getSource(), env); });
+      // Serialize runs: disable the button while one is in flight so a slower
+      // stale run cannot overwrite a newer PASS/FAIL result.
+      runBtn.addEventListener('click', async function () {
+        if (runBtn.disabled) return;
+        runBtn.disabled = true;
+        try { await runLesson(getSource(), env); }
+        finally { runBtn.disabled = false; }
+      });
     }
     // For visual lessons, render the input preview immediately (if provided).
     if (typeof cfg.renderInput === 'function') {
