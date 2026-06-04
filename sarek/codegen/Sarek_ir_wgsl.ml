@@ -1037,3 +1037,111 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   let shader = Buffer.contents buf in
   log (Printf.sprintf "[WGSL] Generated shader:\n%s" shader) ;
   shader
+
+(** {1 ABI descriptor} *)
+
+(** Build the ABI descriptor for a kernel. Reuses [split_params] and
+    [escape_wgsl_name] / [wgsl_type_of_elttype] so the descriptor cannot
+    drift from [gen_bindings].
+
+    Raises [Codegen_error.unsupported_construct] for f64 parameters (same
+    error as [generate]). *)
+let abi ?(block = (256, 1, 1)) (k : kernel) : Sarek_wgsl_abi.t =
+  if params_have_float64 k.kern_params then
+    Codegen_error.raise_error
+      (Codegen_error.unsupported_construct
+         "f64 parameter"
+         "WGSL: f64 unsupported — WebGPU has no float64 type") ;
+  let vectors, scalars = split_params k.kern_params in
+  (* Storage buffer descriptors — one per vector, binding 0..k-1. *)
+  let buffers =
+    List.mapi
+      (fun i (v : var) ->
+        let elt =
+          match v.var_type with
+          | TVec e -> e
+          | _ -> assert false
+        in
+        let element_type =
+          match wgsl_type_of_elttype elt with
+          | "f32" -> Sarek_wgsl_abi.F32
+          | "i32" -> Sarek_wgsl_abi.I32
+          | "u32" -> Sarek_wgsl_abi.U32
+          | other ->
+              Codegen_error.raise_error
+                (Codegen_error.unsupported_construct
+                   other
+                   "WGSL ABI: unsupported element type")
+        in
+        Sarek_wgsl_abi.
+          {
+            name = escape_wgsl_name v.var_name;
+            binding = i;
+            element_type;
+            access = "read_write";
+          })
+      vectors
+  in
+  let num_vectors = List.length vectors in
+  (* Params struct — present when there are any vectors or scalars. *)
+  let params_opt =
+    if vectors = [] && scalars = [] then None
+    else begin
+      (* Fields: one length i32 per vector, then each scalar. *)
+      let length_fields =
+        List.mapi
+          (fun j (v : var) ->
+            let vec_name = escape_wgsl_name v.var_name in
+            Sarek_wgsl_abi.
+              {
+                name = Printf.sprintf "sarek_%s_length" vec_name;
+                field_type = I32;
+                offset = 4 * j;
+                kind = Length vec_name;
+              })
+          vectors
+      in
+      let scalar_fields =
+        List.mapi
+          (fun j (v : var) ->
+            let field_type =
+              match wgsl_type_of_elttype v.var_type with
+              | "f32" -> Sarek_wgsl_abi.F32
+              | "i32" -> Sarek_wgsl_abi.I32
+              | "u32" -> Sarek_wgsl_abi.U32
+              | other ->
+                  Codegen_error.raise_error
+                    (Codegen_error.unsupported_construct
+                       other
+                       "WGSL ABI: unsupported scalar type")
+            in
+            Sarek_wgsl_abi.
+              {
+                name = escape_wgsl_name v.var_name;
+                field_type;
+                offset = 4 * (num_vectors + j);
+                kind = Scalar;
+              })
+          scalars
+      in
+      let all_fields = length_fields @ scalar_fields in
+      let num_fields = List.length all_fields in
+      (* byteSize = total bytes rounded up to multiple of 16. *)
+      let raw = num_fields * 4 in
+      let byte_size = if raw mod 16 = 0 then raw else raw + (16 - (raw mod 16)) in
+      Some
+        Sarek_wgsl_abi.
+          {
+            binding = num_vectors;
+            byte_size;
+            fields = all_fields;
+          }
+    end
+  in
+  Sarek_wgsl_abi.
+    {
+      kernel_name = k.kern_name;
+      workgroup_size = block;
+      buffers;
+      params = params_opt;
+    }
