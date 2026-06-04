@@ -402,6 +402,13 @@ wgsl-gpu-test:
 	@dune build sarek/transpile/web/transpile_js.bc.js
 	@node sarek/transpile/web/test/webgpu_wgsl_test.mjs _build/default/sarek/transpile/web/transpile_js.bc.js
 
+# Interactive GPU course page acceptance test: for each lesson inject correct
+# and wrong kernel bodies and assert PASS/FAIL. Skips where playwright/chrome/
+# WebGPU are unavailable; fails on a real wrong GPU result.
+lessons-gpu-test:
+	@dune build sarek/transpile/web/transpile_js.bc.js
+	@node gh-pages/learn/test/lessons_gpu_test.mjs _build/default/sarek/transpile/web/transpile_js.bc.js
+
 bench-update:
 	@echo "Running benchmarks and updating web data..."
 	@./benchmarks/run_all_benchmarks.sh results
