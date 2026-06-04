@@ -19,20 +19,15 @@
     FFI-free. *)
 
 (** WGSL scalar type of a storage-buffer element or uniform field. *)
-type element_type =
-  | F32
-  | I32
-  | U32
+type element_type = F32 | I32 | U32
 
-(** A storage buffer binding (one per vector parameter, in declaration order). *)
+(** A storage buffer binding (one per vector parameter, in declaration order).
+*)
 type buffer = {
-  name : string;
-      (** Escaped WGSL identifier. *)
-  binding : int;
-      (** [@binding] index (0-based, vector order). *)
+  name : string;  (** Escaped WGSL identifier. *)
+  binding : int;  (** [@binding] index (0-based, vector order). *)
   element_type : element_type;
-  access : string;
-      (** Always ["read_write"] for storage buffers. *)
+  access : string;  (** Always ["read_write"] for storage buffers. *)
 }
 
 (** Kind of a field inside the Params uniform struct. *)
@@ -55,11 +50,7 @@ type field = {
     [gen_bindings]). The [binding] index equals the number of vector buffers.
     [byte_size] is the total number of fields × 4 rounded up to 16 (WebGPU
     minimum uniform buffer binding-size alignment). *)
-type params = {
-  binding : int;
-  byte_size : int;
-  fields : field list;
-}
+type params = {binding : int; byte_size : int; fields : field list}
 
 (** Complete ABI descriptor for one kernel. *)
 type t = {

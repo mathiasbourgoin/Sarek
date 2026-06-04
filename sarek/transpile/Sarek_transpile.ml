@@ -257,8 +257,7 @@ let loc_of_lexing (p : Lexing.position) : Sarek_ast.loc =
 
     This helper is the common prefix for both [of_source] and
     [of_source_with_abi]. All frontend exceptions are caught here. *)
-let run_pipeline (src : string) :
-    (Sarek_ir_ppx.kernel, error) result =
+let run_pipeline (src : string) : (Sarek_ir_ppx.kernel, error) result =
   (* Step 1: OCaml parser -> ppxlib expression *)
   match
     try Ok (expr_of_string src) with
@@ -329,10 +328,10 @@ let of_source (backend : backend) (src : string) : (string, error) result =
 let of_source_with_abi (backend : backend) (src : string) :
     (string * string, error) result =
   match backend with
-  | WGSL ->
+  | WGSL -> (
       Sarek_stdlib_meta.force_init () ;
       set_framework backend ;
-      (match run_pipeline src with
+      match run_pipeline src with
       | Error _ as err -> err
       | Ok ppx_kernel -> (
           try
@@ -342,6 +341,4 @@ let of_source_with_abi (backend : backend) (src : string) :
             let abi_json = Sarek_wgsl_abi.to_json abi_t in
             Ok (code, abi_json)
           with exn -> Error (Internal_error (Printexc.to_string exn))))
-  | _ ->
-      Error
-        (Internal_error "ABI is only defined for the WGSL backend")
+  | _ -> Error (Internal_error "ABI is only defined for the WGSL backend")

@@ -8,8 +8,8 @@
     Exports [globalThis.SarekTranspile] with:
     - [transpile(source, backend)] -> [{ok, code|null, error|null}]
     - [transpileWithAbi(source, backend)] ->
-        [{ok, code|null, abi|null, error|null}]
-      On WGSL success [abi] is a parsed JS object (JSON.parse of the ABI JSON).
+      [{ok, code|null, abi|null, error|null}] On WGSL success [abi] is a parsed
+      JS object (JSON.parse of the ABI JSON).
     - [backends] array of supported backend names *)
 
 open Js_of_ocaml
@@ -79,7 +79,7 @@ let transpile_with_abi source backend_str =
               (Js.Unsafe.get
                  (Js.Unsafe.get Js.Unsafe.global (Js.string "JSON"))
                  (Js.string "parse"))
-              [| Js.Unsafe.inject (Js.string abi_json) |]
+              [|Js.Unsafe.inject (Js.string abi_json)|]
           in
           Js.Unsafe.set result_obj "ok" Js._true ;
           Js.Unsafe.set result_obj "code" (Js.some (Js.string code)) ;

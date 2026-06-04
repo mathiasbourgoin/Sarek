@@ -1041,11 +1041,11 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
 (** {1 ABI descriptor} *)
 
 (** Build the ABI descriptor for a kernel. Reuses [split_params] and
-    [escape_wgsl_name] / [wgsl_type_of_elttype] so the descriptor cannot
-    drift from [gen_bindings].
+    [escape_wgsl_name] / [wgsl_type_of_elttype] so the descriptor cannot drift
+    from [gen_bindings].
 
-    Raises [Codegen_error.unsupported_construct] for f64 parameters (same
-    error as [generate]). *)
+    Raises [Codegen_error.unsupported_construct] for f64 parameters (same error
+    as [generate]). *)
 let abi ?(block = (256, 1, 1)) (k : kernel) : Sarek_wgsl_abi.t =
   if params_have_float64 k.kern_params then
     Codegen_error.raise_error
@@ -1057,11 +1057,7 @@ let abi ?(block = (256, 1, 1)) (k : kernel) : Sarek_wgsl_abi.t =
   let buffers =
     List.mapi
       (fun i (v : var) ->
-        let elt =
-          match v.var_type with
-          | TVec e -> e
-          | _ -> assert false
-        in
+        let elt = match v.var_type with TVec e -> e | _ -> assert false in
         let element_type =
           match wgsl_type_of_elttype elt with
           | "f32" -> Sarek_wgsl_abi.F32
@@ -1128,14 +1124,11 @@ let abi ?(block = (256, 1, 1)) (k : kernel) : Sarek_wgsl_abi.t =
       let num_fields = List.length all_fields in
       (* byteSize = total bytes rounded up to multiple of 16. *)
       let raw = num_fields * 4 in
-      let byte_size = if raw mod 16 = 0 then raw else raw + (16 - (raw mod 16)) in
+      let byte_size =
+        if raw mod 16 = 0 then raw else raw + (16 - (raw mod 16))
+      in
       Some
-        Sarek_wgsl_abi.
-          {
-            binding = num_vectors;
-            byte_size;
-            fields = all_fields;
-          }
+        Sarek_wgsl_abi.{binding = num_vectors; byte_size; fields = all_fields}
     end
   in
   Sarek_wgsl_abi.

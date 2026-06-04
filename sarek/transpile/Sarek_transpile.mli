@@ -54,8 +54,9 @@ val of_source : backend -> string -> (string, error) result
     {!of_source} and additionally returns the ABI descriptor as a JSON string.
 
     - For the [WGSL] backend: returns [Ok (wgsl_code, abi_json)] on success.
-    - For all other backends: returns [Error (Internal_error "ABI is only
-      defined for the WGSL backend")] without running the pipeline.
+    - For all other backends: returns
+      [Error (Internal_error "ABI is only defined for the WGSL backend")]
+      without running the pipeline.
 
     All frontend exceptions are caught and converted to {!error} values. *)
 val of_source_with_abi : backend -> string -> (string * string, error) result

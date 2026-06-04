@@ -10,10 +10,7 @@
  * No yojson/ctypes — sarek_codegen stays FFI-free.
  ******************************************************************************)
 
-type element_type =
-  | F32
-  | I32
-  | U32
+type element_type = F32 | I32 | U32
 
 type buffer = {
   name : string;
@@ -22,9 +19,7 @@ type buffer = {
   access : string;
 }
 
-type field_kind =
-  | Length of string
-  | Scalar
+type field_kind = Length of string | Scalar
 
 type field = {
   name : string;
@@ -33,11 +28,7 @@ type field = {
   kind : field_kind;
 }
 
-type params = {
-  binding : int;
-  byte_size : int;
-  fields : field list;
-}
+type params = {binding : int; byte_size : int; fields : field list}
 
 type t = {
   kernel_name : string;
@@ -85,9 +76,7 @@ let json_field (f : field) =
   let kind_part =
     match f.kind with
     | Length vec_name ->
-        Printf.sprintf
-          {|,"kind":"length","of":%s|}
-          (json_string vec_name)
+        Printf.sprintf {|,"kind":"length","of":%s|} (json_string vec_name)
     | Scalar -> {|,"kind":"scalar"|}
   in
   Printf.sprintf
@@ -98,9 +87,7 @@ let json_field (f : field) =
     kind_part
 
 let json_params (p : params) =
-  let fields_json =
-    String.concat "," (List.map json_field p.fields)
-  in
+  let fields_json = String.concat "," (List.map json_field p.fields) in
   Printf.sprintf
     {|{"binding":%d,"byteSize":%d,"fields":[%s]}|}
     p.binding
@@ -109,13 +96,9 @@ let json_params (p : params) =
 
 let to_json (abi : t) =
   let bx, by, bz = abi.workgroup_size in
-  let buffers_json =
-    String.concat "," (List.map json_buffer abi.buffers)
-  in
+  let buffers_json = String.concat "," (List.map json_buffer abi.buffers) in
   let params_json =
-    match abi.params with
-    | None -> "null"
-    | Some p -> json_params p
+    match abi.params with None -> "null" | Some p -> json_params p
   in
   Printf.sprintf
     {|{"kernelName":%s,"workgroupSize":[%d,%d,%d],"buffers":[%s],"params":%s}|}
