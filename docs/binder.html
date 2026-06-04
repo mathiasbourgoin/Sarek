@@ -51,42 +51,22 @@
 
     <main class="main-content">
       <div class="container">
-        <h1 id="try-sarek-in-your-browser">Try Sarek in your Browser</h1>
+        <h1 id="try-sarek-in-your-browser">Try Sarek in Your Browser</h1>
 
-<p>You can experiment with Sarek without installing anything on your local machine using <strong>Binder</strong>.</p>
+<blockquote>
+  <p><strong>This page describes a superseded approach.</strong> The Binder/Jupyter environment described here has been replaced by a native browser experience that requires no setup.</p>
+</blockquote>
 
-<p>Binder provides a temporary cloud environment with OCaml 5.4, the Sarek framework, and a Jupyter notebook interface already configured.</p>
+<h2 id="live-options--no-installation-required">Live Options — No Installation Required</h2>
 
-<h2 id="launch-the-environment">Launch the Environment</h2>
-
-<p>Click the button below to start your private Sarek playground:</p>
-
-<p><a href="https://mybinder.org/v2/gh/mathiasbourgoin/Sarek/main?urlpath=lab/tree/notebooks/Introduction_to_Sarek.ipynb"><img src="https://mybinder.org/badge_logo.svg" alt="Binder" /></a></p>
-
-<p><em>(Note: It may take a few minutes to build the environment the first time you click this link.)</em></p>
-
-<h2 id="whats-included">What’s included?</h2>
+<p>Sarek now runs directly in the browser via WebGPU:</p>
 
 <ul>
-  <li><strong>OCaml 5.4.0</strong>: Fully utilizing the modern multicore runtime.</li>
-  <li><strong>Sarek Framework</strong>: The core DSL and the Native Parallel backend.</li>
-  <li><strong>Interactive Notebooks</strong>: Real-world examples you can edit and run immediately.</li>
+  <li><strong><a href="/Sarek/playground.html">Playground</a></strong> — Transpile any Sarek kernel to GPU source code (WGSL, CUDA, OpenCL, GLSL, MSL) instantly. Runs the full Sarek compiler in-browser.</li>
+  <li><strong><a href="/Sarek/learn/">Interactive Learn Course</a></strong> — Write and run Sarek kernels on your own GPU from the page. Covers vector addition, Mandelbrot generation, image filters, and more.</li>
 </ul>
 
-<h2 id="why-binder">Why Binder?</h2>
-
-<p>Since GPGPU programming typically requires specialized hardware (NVIDIA/AMD GPUs), it can be difficult to try out for the first time.</p>
-
-<p>By using the <strong>Native CPU Backend</strong>, Sarek allows you to run parallel kernels on standard cloud CPUs. The code you write here is <strong>identical</strong> to the code you would run on a high-end data-center GPU.</p>
-
-<h2 id="next-steps">Next Steps</h2>
-
-<p>Once the notebook launches:</p>
-<ol>
-  <li>Open <code class="language-plaintext highlighter-rouge">Introduction_to_Sarek.ipynb</code>.</li>
-  <li>Run the cells to initialize the library.</li>
-  <li>Modify the kernel logic to see how it affects the results!</li>
-</ol>
+<p>Unlike the Binder approach, these options run the actual GPU workloads on your hardware via WebGPU — not on a cloud CPU. The code you write is identical to the code you would compile natively with OCaml.</p>
 
       </div>
     </main>

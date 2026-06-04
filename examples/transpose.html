@@ -85,16 +85,22 @@
 <h3 id="for-basic-types-float32-int32">For Basic Types (<code class="language-plaintext highlighter-rouge">float32</code>, <code class="language-plaintext highlighter-rouge">int32</code>)</h3>
 
 <div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">(* Kernel specialized for Float32 *)</span>
-<span class="k">let</span><span class="o">%</span><span class="n">kernel</span> <span class="n">transpose_float32</span> <span class="p">(</span><span class="n">input</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">output</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span>
-                             <span class="p">(</span><span class="n">width</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="p">(</span><span class="n">height</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">=</span>
-  <span class="k">let</span> <span class="n">tid</span> <span class="o">=</span> <span class="n">get_global_id</span> <span class="mi">0</span> <span class="k">in</span>
-  <span class="n">do_transpose</span> <span class="n">input</span> <span class="n">output</span> <span class="n">width</span> <span class="n">height</span> <span class="n">tid</span>
+<span class="k">let</span> <span class="n">transpose_float32</span> <span class="o">=</span>
+  <span class="p">[</span><span class="o">%</span><span class="n">kernel</span>
+    <span class="k">fun</span> <span class="p">(</span><span class="n">input</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">output</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span>
+        <span class="p">(</span><span class="n">width</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="p">(</span><span class="n">height</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">-&gt;</span>
+      <span class="k">let</span> <span class="k">open</span> <span class="nn">Sarek_stdlib</span><span class="p">.</span><span class="nc">Std</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">tid</span> <span class="o">=</span> <span class="n">global_thread_id</span> <span class="k">in</span>
+      <span class="n">do_transpose</span> <span class="n">input</span> <span class="n">output</span> <span class="n">width</span> <span class="n">height</span> <span class="n">tid</span><span class="p">]</span>
 
 <span class="c">(* Kernel specialized for Int32 *)</span>
-<span class="k">let</span><span class="o">%</span><span class="n">kernel</span> <span class="n">transpose_int32</span> <span class="p">(</span><span class="n">input</span> <span class="o">:</span> <span class="n">int32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">output</span> <span class="o">:</span> <span class="n">int32</span> <span class="n">vector</span><span class="p">)</span>
-                           <span class="p">(</span><span class="n">width</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="p">(</span><span class="n">height</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">=</span>
-  <span class="k">let</span> <span class="n">tid</span> <span class="o">=</span> <span class="n">get_global_id</span> <span class="mi">0</span> <span class="k">in</span>
-  <span class="n">do_transpose</span> <span class="n">input</span> <span class="n">output</span> <span class="n">width</span> <span class="n">height</span> <span class="n">tid</span>
+<span class="k">let</span> <span class="n">transpose_int32</span> <span class="o">=</span>
+  <span class="p">[</span><span class="o">%</span><span class="n">kernel</span>
+    <span class="k">fun</span> <span class="p">(</span><span class="n">input</span> <span class="o">:</span> <span class="n">int32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">output</span> <span class="o">:</span> <span class="n">int32</span> <span class="n">vector</span><span class="p">)</span>
+        <span class="p">(</span><span class="n">width</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="p">(</span><span class="n">height</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">-&gt;</span>
+      <span class="k">let</span> <span class="k">open</span> <span class="nn">Sarek_stdlib</span><span class="p">.</span><span class="nc">Std</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">tid</span> <span class="o">=</span> <span class="n">global_thread_id</span> <span class="k">in</span>
+      <span class="n">do_transpose</span> <span class="n">input</span> <span class="n">output</span> <span class="n">width</span> <span class="n">height</span> <span class="n">tid</span><span class="p">]</span>
 </code></pre></div></div>
 
 <h3 id="for-custom-records-structs">For Custom Records (<code class="language-plaintext highlighter-rouge">structs</code>)</h3>
@@ -109,44 +115,60 @@
 <span class="p">}</span> <span class="p">[</span><span class="o">@@</span><span class="n">sarek</span><span class="o">.</span><span class="k">type</span><span class="p">]</span>
 
 <span class="c">(* Kernel specialized for Point3D records *)</span>
-<span class="k">let</span><span class="o">%</span><span class="n">kernel</span> <span class="n">transpose_point3d</span> <span class="p">(</span><span class="n">input</span> <span class="o">:</span> <span class="n">point3d</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">output</span> <span class="o">:</span> <span class="n">point3d</span> <span class="n">vector</span><span class="p">)</span>
-                             <span class="p">(</span><span class="n">width</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="p">(</span><span class="n">height</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">=</span>
-  <span class="k">let</span> <span class="n">tid</span> <span class="o">=</span> <span class="n">get_global_id</span> <span class="mi">0</span> <span class="k">in</span>
-  <span class="c">(* Sarek automatically handles the structure layout and memory copying *)</span>
-  <span class="n">do_transpose</span> <span class="n">input</span> <span class="n">output</span> <span class="n">width</span> <span class="n">height</span> <span class="n">tid</span>
+<span class="k">let</span> <span class="n">transpose_point3d</span> <span class="o">=</span>
+  <span class="p">[</span><span class="o">%</span><span class="n">kernel</span>
+    <span class="k">fun</span> <span class="p">(</span><span class="n">input</span> <span class="o">:</span> <span class="n">point3d</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">output</span> <span class="o">:</span> <span class="n">point3d</span> <span class="n">vector</span><span class="p">)</span>
+        <span class="p">(</span><span class="n">width</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="p">(</span><span class="n">height</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">-&gt;</span>
+      <span class="k">let</span> <span class="k">open</span> <span class="nn">Sarek_stdlib</span><span class="p">.</span><span class="nc">Std</span> <span class="k">in</span>
+      <span class="k">let</span> <span class="n">tid</span> <span class="o">=</span> <span class="n">global_thread_id</span> <span class="k">in</span>
+      <span class="c">(* Sarek automatically handles the structure layout and memory copying *)</span>
+      <span class="n">do_transpose</span> <span class="n">input</span> <span class="n">output</span> <span class="n">width</span> <span class="n">height</span> <span class="n">tid</span><span class="p">]</span>
 </code></pre></div></div>
 
 <h2 id="3-host-code">3. Host Code</h2>
 
 <p>The host code looks standard, but notice how we handle the custom <code class="language-plaintext highlighter-rouge">point3d</code> vector.</p>
 
-<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">let</span> <span class="n">run_polymorphic_tests</span> <span class="bp">()</span> <span class="o">=</span>
+<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">module</span> <span class="nc">Device</span> <span class="o">=</span> <span class="nn">Spoc_core</span><span class="p">.</span><span class="nc">Device</span>
+<span class="k">module</span> <span class="nc">Vector</span> <span class="o">=</span> <span class="nn">Spoc_core</span><span class="p">.</span><span class="nc">Vector</span>
+
+<span class="k">let</span> <span class="n">run_polymorphic_tests</span> <span class="bp">()</span> <span class="o">=</span>
   <span class="k">let</span> <span class="n">width</span><span class="o">,</span> <span class="n">height</span> <span class="o">=</span> <span class="mi">1024</span><span class="o">,</span> <span class="mi">1024</span> <span class="k">in</span>
   <span class="k">let</span> <span class="n">n</span> <span class="o">=</span> <span class="n">width</span> <span class="o">*</span> <span class="n">height</span> <span class="k">in</span>
-  <span class="k">let</span> <span class="n">device</span> <span class="o">=</span> <span class="nn">Device</span><span class="p">.</span><span class="n">get_default</span> <span class="bp">()</span> <span class="k">in</span>
-  <span class="k">let</span> <span class="n">block</span> <span class="o">=</span> <span class="p">(</span><span class="mi">256</span><span class="o">,</span> <span class="mi">1</span><span class="o">,</span> <span class="mi">1</span><span class="p">)</span> <span class="k">in</span>
-  <span class="k">let</span> <span class="n">grid</span> <span class="o">=</span> <span class="p">((</span><span class="n">n</span> <span class="o">+</span> <span class="mi">255</span><span class="p">)</span><span class="o">/</span><span class="mi">256</span><span class="o">,</span> <span class="mi">1</span><span class="o">,</span> <span class="mi">1</span><span class="p">)</span> <span class="k">in</span>
+  <span class="k">let</span> <span class="n">dev</span> <span class="o">=</span> <span class="nn">Device</span><span class="p">.</span><span class="n">best</span> <span class="bp">()</span> <span class="k">in</span>
+  <span class="k">let</span> <span class="n">block</span> <span class="o">=</span> <span class="nn">Execute</span><span class="p">.</span><span class="n">dims1d</span> <span class="mi">256</span> <span class="k">in</span>
+  <span class="k">let</span> <span class="n">grid</span>  <span class="o">=</span> <span class="nn">Execute</span><span class="p">.</span><span class="n">dims1d</span> <span class="p">((</span><span class="n">n</span> <span class="o">+</span> <span class="mi">255</span><span class="p">)</span><span class="o">/</span><span class="mi">256</span><span class="p">)</span> <span class="k">in</span>
+
+  <span class="c">(* Get IR from float32 kernel *)</span>
+  <span class="k">let</span> <span class="n">_</span><span class="o">,</span> <span class="n">kirc_f</span> <span class="o">=</span> <span class="n">transpose_float32</span> <span class="k">in</span>
+  <span class="k">let</span> <span class="n">ir_f</span> <span class="o">=</span> <span class="k">match</span> <span class="n">kirc_f</span><span class="o">.</span><span class="nn">Sarek</span><span class="p">.</span><span class="nn">Kirc_types</span><span class="p">.</span><span class="n">body_ir</span> <span class="k">with</span>
+    <span class="o">|</span> <span class="nc">Some</span> <span class="n">ir</span> <span class="o">-&gt;</span> <span class="n">ir</span> <span class="o">|</span> <span class="nc">None</span> <span class="o">-&gt;</span> <span class="n">failwith</span> <span class="s2">"No IR"</span> <span class="k">in</span>
 
   <span class="c">(* 1. Run Float32 Transpose *)</span>
-  <span class="k">let</span> <span class="n">a</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create</span> <span class="nc">Float32</span> <span class="n">n</span> <span class="k">in</span>
-  <span class="k">let</span> <span class="n">b</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create</span> <span class="nc">Float32</span> <span class="n">n</span> <span class="k">in</span>
+  <span class="k">let</span> <span class="n">a</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">float32</span> <span class="n">n</span> <span class="k">in</span>
+  <span class="k">let</span> <span class="n">b</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">float32</span> <span class="n">n</span> <span class="k">in</span>
   <span class="c">(* ... init a ... *)</span>
-  <span class="nn">Execute</span><span class="p">.</span><span class="n">run</span> <span class="n">transpose_float32</span> <span class="o">~</span><span class="n">device</span> <span class="o">~</span><span class="n">grid</span> <span class="o">~</span><span class="n">block</span> 
-    <span class="p">[</span><span class="nc">Vec</span> <span class="n">a</span><span class="p">;</span> <span class="nc">Vec</span> <span class="n">b</span><span class="p">;</span> <span class="nc">Int32</span> <span class="n">width</span><span class="p">;</span> <span class="nc">Int32</span> <span class="n">height</span><span class="p">];</span>
+  <span class="nn">Execute</span><span class="p">.</span><span class="n">run_vectors</span> <span class="o">~</span><span class="n">device</span><span class="o">:</span><span class="n">dev</span> <span class="o">~</span><span class="n">ir</span><span class="o">:</span><span class="n">ir_f</span> <span class="o">~</span><span class="n">block</span> <span class="o">~</span><span class="n">grid</span>
+    <span class="o">~</span><span class="n">args</span><span class="o">:</span><span class="p">[</span><span class="nc">Vec</span> <span class="n">a</span><span class="p">;</span> <span class="nc">Vec</span> <span class="n">b</span><span class="p">;</span> <span class="nc">Int</span> <span class="n">width</span><span class="p">;</span> <span class="nc">Int</span> <span class="n">height</span><span class="p">]</span> <span class="bp">()</span><span class="p">;</span>
 
   <span class="c">(* 2. Run Custom Struct Transpose *)</span>
   <span class="c">(* Create a vector for our custom type *)</span>
-  <span class="k">let</span> <span class="n">points_in</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create_custom</span> 
+  <span class="k">let</span> <span class="n">points_in</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create_custom</span>
     <span class="p">(</span><span class="k">module</span> <span class="k">struct</span> <span class="k">type</span> <span class="n">t</span> <span class="o">=</span> <span class="n">point3d</span> <span class="k">let</span> <span class="n">size</span> <span class="o">=</span> <span class="mi">12</span> <span class="k">end</span><span class="p">)</span> <span class="n">n</span> <span class="k">in</span>
-  <span class="k">let</span> <span class="n">points_out</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create_custom</span> 
+  <span class="k">let</span> <span class="n">points_out</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create_custom</span>
     <span class="p">(</span><span class="k">module</span> <span class="k">struct</span> <span class="k">type</span> <span class="n">t</span> <span class="o">=</span> <span class="n">point3d</span> <span class="k">let</span> <span class="n">size</span> <span class="o">=</span> <span class="mi">12</span> <span class="k">end</span><span class="p">)</span> <span class="n">n</span> <span class="k">in</span>
-    
+
   <span class="c">(* Initialize with OCaml records *)</span>
   <span class="nn">Vector</span><span class="p">.</span><span class="n">set</span> <span class="n">points_in</span> <span class="mi">0</span> <span class="p">{</span> <span class="n">x</span><span class="o">=</span><span class="mi">1</span><span class="o">.</span><span class="mi">0</span><span class="p">;</span> <span class="n">y</span><span class="o">=</span><span class="mi">2</span><span class="o">.</span><span class="mi">0</span><span class="p">;</span> <span class="n">z</span><span class="o">=</span><span class="mi">3</span><span class="o">.</span><span class="mi">0</span> <span class="p">};</span>
-  
+
+  <span class="c">(* Get IR from point3d kernel *)</span>
+  <span class="k">let</span> <span class="n">_</span><span class="o">,</span> <span class="n">kirc_p</span> <span class="o">=</span> <span class="n">transpose_point3d</span> <span class="k">in</span>
+  <span class="k">let</span> <span class="n">ir_p</span> <span class="o">=</span> <span class="k">match</span> <span class="n">kirc_p</span><span class="o">.</span><span class="nn">Sarek</span><span class="p">.</span><span class="nn">Kirc_types</span><span class="p">.</span><span class="n">body_ir</span> <span class="k">with</span>
+    <span class="o">|</span> <span class="nc">Some</span> <span class="n">ir</span> <span class="o">-&gt;</span> <span class="n">ir</span> <span class="o">|</span> <span class="nc">None</span> <span class="o">-&gt;</span> <span class="n">failwith</span> <span class="s2">"No IR"</span> <span class="k">in</span>
+
   <span class="c">(* Run the same logic on structs! *)</span>
-  <span class="nn">Execute</span><span class="p">.</span><span class="n">run</span> <span class="n">transpose_point3d</span> <span class="o">~</span><span class="n">device</span> <span class="o">~</span><span class="n">grid</span> <span class="o">~</span><span class="n">block</span> 
-    <span class="p">[</span><span class="nc">Vec</span> <span class="n">points_in</span><span class="p">;</span> <span class="nc">Vec</span> <span class="n">points_out</span><span class="p">;</span> <span class="nc">Int32</span> <span class="n">width</span><span class="p">;</span> <span class="nc">Int32</span> <span class="n">height</span><span class="p">]</span>
+  <span class="nn">Execute</span><span class="p">.</span><span class="n">run_vectors</span> <span class="o">~</span><span class="n">device</span><span class="o">:</span><span class="n">dev</span> <span class="o">~</span><span class="n">ir</span><span class="o">:</span><span class="n">ir_p</span> <span class="o">~</span><span class="n">block</span> <span class="o">~</span><span class="n">grid</span>
+    <span class="o">~</span><span class="n">args</span><span class="o">:</span><span class="p">[</span><span class="nc">Vec</span> <span class="n">points_in</span><span class="p">;</span> <span class="nc">Vec</span> <span class="n">points_out</span><span class="p">;</span> <span class="nc">Int</span> <span class="n">width</span><span class="p">;</span> <span class="nc">Int</span> <span class="n">height</span><span class="p">]</span> <span class="bp">()</span>
 </code></pre></div></div>
 
 <h2 id="why-this-matters">Why this matters</h2>

@@ -108,56 +108,49 @@
 
 <h2 id="host-code">Host Code</h2>
 
-<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">open</span> <span class="nc">Sarek</span>
-<span class="k">module</span> <span class="nc">Device</span> <span class="o">=</span> <span class="nn">Spoc_core</span><span class="p">.</span><span class="nc">Device</span>
-<span class="k">module</span> <span class="nc">Vector</span> <span class="o">=</span> <span class="nn">Spoc_core</span><span class="p">.</span><span class="nc">Vector</span>
+<p>```ocaml
+open Sarek
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector</p>
 
-<span class="k">let</span> <span class="n">run_reduction</span> <span class="bp">()</span> <span class="o">=</span>
-  <span class="k">let</span> <span class="n">n</span> <span class="o">=</span> <span class="mi">1_000_000</span> <span class="k">in</span>
-  <span class="k">let</span> <span class="n">block_size</span> <span class="o">=</span> <span class="mi">256</span> <span class="k">in</span>
-  <span class="k">let</span> <span class="n">num_blocks</span> <span class="o">=</span> <span class="p">(</span><span class="n">n</span> <span class="o">+</span> <span class="n">block_size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">block_size</span> <span class="k">in</span>
-  
-  <span class="c">(* Compile kernel to IR *)</span>
-  <span class="k">let</span> <span class="n">ir</span> <span class="o">=</span> <span class="nn">Sarek</span><span class="p">.</span><span class="nn">Compile</span><span class="p">.</span><span class="n">kernel</span> <span class="n">reduce_sum_kernel</span> <span class="k">in</span>
-  
-  <span class="c">(* Create input and output vectors *)</span>
-  <span class="k">let</span> <span class="n">input</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">float32</span> <span class="n">n</span> <span class="k">in</span>
-  <span class="k">let</span> <span class="n">output</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">float32</span> <span class="n">num_blocks</span> <span class="k">in</span>
-  
-  <span class="c">(* Initialize input data *)</span>
-  <span class="k">for</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">to</span> <span class="n">n</span> <span class="o">-</span> <span class="mi">1</span> <span class="k">do</span>
-    <span class="nn">Vector</span><span class="p">.</span><span class="n">set</span> <span class="n">input</span> <span class="n">i</span> <span class="mi">1</span><span class="o">.</span><span class="mi">0</span><span class="p">;</span>
-  <span class="k">done</span><span class="p">;</span>
-  
-  <span class="c">(* Calculate grid dimensions *)</span>
-  <span class="k">let</span> <span class="n">block</span> <span class="o">=</span> <span class="nn">Execute</span><span class="p">.</span><span class="n">dims1d</span> <span class="n">block_size</span> <span class="k">in</span>
-  <span class="k">let</span> <span class="n">grid</span> <span class="o">=</span> <span class="nn">Execute</span><span class="p">.</span><span class="n">dims1d</span> <span class="n">num_blocks</span> <span class="k">in</span>
-  <span class="k">let</span> <span class="n">device</span> <span class="o">=</span> <span class="nn">Device</span><span class="p">.</span><span class="n">get_default</span> <span class="bp">()</span> <span class="k">in</span>
-  
-  <span class="c">(* First pass: Reduce array to num_blocks partial sums *)</span>
-  <span class="nn">Execute</span><span class="p">.</span><span class="n">run_vectors</span>
-    <span class="o">~</span><span class="n">device</span>
-    <span class="o">~</span><span class="n">ir</span>
-    <span class="o">~</span><span class="n">args</span><span class="o">:</span><span class="p">[</span><span class="nc">Vec</span> <span class="n">input</span><span class="p">;</span> <span class="nc">Vec</span> <span class="n">output</span><span class="p">;</span> <span class="nc">Int</span> <span class="n">n</span><span class="p">]</span>
-    <span class="o">~</span><span class="n">block</span>
-    <span class="o">~</span><span class="n">grid</span>
-    <span class="bp">()</span><span class="p">;</span>
-  
-  <span class="c">(* Second pass: Sum the partial results on CPU *)</span>
-  <span class="k">let</span> <span class="n">partial_sums</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">to_array</span> <span class="n">output</span> <span class="k">in</span>
-  <span class="k">let</span> <span class="n">final_sum</span> <span class="o">=</span> <span class="nn">Array</span><span class="p">.</span><span class="n">fold_left</span> <span class="p">(</span><span class="o">+.</span><span class="p">)</span> <span class="mi">0</span><span class="o">.</span><span class="mi">0</span> <span class="n">partial_sums</span> <span class="k">in</span>
-  
-  <span class="nn">Printf</span><span class="p">.</span><span class="n">printf</span> <span class="s2">"Sum of %d elements: %f</span><span class="se">\n</span><span class="s2">"</span> <span class="n">n</span> <span class="n">final_sum</span>
-</code></pre></div></div>
-<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>~block:(256, 1, 1)
-~grid:(num_blocks, 1, 1)
-[Vec input; Vec output; Int32 n];
-</code></pre></div></div>
+<p>let run_reduction () =
+  let n = 1_000_000 in
+  let block_size = 256 in
+  let num_blocks = (n + block_size - 1) / block_size in</p>
 
-<p>(* Second pass: Sum the partial results (on CPU for simplicity here) *)
-  let partials = Vector.to_array output in
-  let total = Array.fold_left (+.) 0.0 partials
-```</p>
+<p>(* Get IR from kernel *)
+  let _, kirc = reduce_sum_kernel in
+  let ir = match kirc.Sarek.Kirc_types.body_ir with
+    | Some ir -&gt; ir | None -&gt; failwith “No IR” in</p>
+
+<p>(* Create input and output vectors *)
+  let input = Vector.create Vector.float32 n in
+  let output = Vector.create Vector.float32 num_blocks in</p>
+
+<p>(* Initialize input data *)
+  for i = 0 to n - 1 do
+    Vector.set input i 1.0;
+  done;</p>
+
+<p>(* Calculate grid dimensions *)
+  let block = Execute.dims1d block_size in
+  let grid = Execute.dims1d num_blocks in
+  let dev = Device.best () in</p>
+
+<p>(* First pass: Reduce array to num_blocks partial sums *)
+  Execute.run_vectors
+    ~device:dev
+    ~ir
+    ~args:[Vec input; Vec output; Int n]
+    ~block
+    ~grid
+    ();</p>
+
+<p>(* Second pass: Sum the partial results on CPU *)
+  let partial_sums = Vector.to_array output in
+  let final_sum = Array.fold_left (+.) 0.0 partial_sums in</p>
+
+<p>Printf.printf “Sum of %d elements: %f\n” n final_sum</p>
 
       </div>
     </main>

@@ -148,7 +148,7 @@
 <p>Native support for Apple hardware (M1/M2/M3 chips) using Metal Shading Language (MSL).</p>
 
 <ul>
-  <li><strong>Features</strong>: Threatgroup memory, SIMD-group functions.</li>
+  <li><strong>Features</strong>: Threadgroup memory, SIMD-group functions.</li>
   <li><strong>Limitations</strong>: No double precision (<code class="language-plaintext highlighter-rouge">float64</code>) support on most Apple hardware.</li>
   <li><strong>Platform</strong>: macOS and iOS only.</li>
 </ul>
@@ -172,6 +172,17 @@
 <ul>
   <li><strong>Use Case</strong>: Deep debugging of kernel logic, verification of IR transformations, and educational purposes.</li>
   <li><strong>Performance</strong>: Slow (interpreted), but provides full visibility into execution.</li>
+</ul>
+
+<h2 id="webgpu--wgsl-codegen-target">WebGPU / WGSL Codegen Target</h2>
+
+<p>Sarek includes a <strong>WGSL</strong> (WebGPU Shading Language) code-generation backend that emits compute shaders for browser-side execution via the WebGPU API.</p>
+
+<ul>
+  <li><strong>Output</strong>: WGSL source (<code class="language-plaintext highlighter-rouge">@compute @workgroup_size(...)</code> entry points)</li>
+  <li><strong>Deployment</strong>: Runs in any modern browser with WebGPU support (Chrome/Chromium 113+)</li>
+  <li><strong>Note</strong>: WGSL is a <em>transpiler target</em>, not a runtime device plugin — it does not appear in the device enumeration table above. Use it to ship kernel logic to the browser, combined with a JavaScript WebGPU host.</li>
+  <li><strong>Try it</strong>: The live <a href="/Sarek/playground.html">Playground</a> lets you transpile any Sarek kernel to WGSL instantly, and the <a href="/Sarek/learn/">Learn course</a> runs kernels directly on your GPU via WebGPU.</li>
 </ul>
 
       </div>

@@ -125,9 +125,11 @@ dune build
 <p>Sarek allows you to express parallel logic as standard OCaml functions. These are compiled to native GPU code at runtime.</p>
 
 <div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">(* A simple vector addition kernel *)</span>
-<span class="k">let</span><span class="o">%</span><span class="n">kernel</span> <span class="n">vector_add</span> <span class="p">(</span><span class="n">a</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">b</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">c</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="o">=</span>
-  <span class="k">let</span> <span class="n">idx</span> <span class="o">=</span> <span class="n">get_global_id</span> <span class="mi">0</span> <span class="k">in</span>
-  <span class="n">c</span><span class="o">.</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">a</span><span class="o">.</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">+.</span> <span class="n">b</span><span class="o">.</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+<span class="k">let</span> <span class="n">vector_add</span> <span class="o">=</span>
+  <span class="p">[</span><span class="o">%</span><span class="n">kernel</span>
+    <span class="k">fun</span> <span class="p">(</span><span class="n">a</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">b</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">c</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="o">-&gt;</span>
+      <span class="k">let</span> <span class="n">idx</span> <span class="o">=</span> <span class="n">get_global_id</span> <span class="mi">0</span> <span class="k">in</span>
+      <span class="n">c</span><span class="o">.</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">a</span><span class="o">.</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">+</span> <span class="n">b</span><span class="o">.</span><span class="p">(</span><span class="n">idx</span><span class="p">)]</span>
 </code></pre></div></div>
 
 <hr style="margin: 50px 0; border: 0; border-top: 1px solid var(--border-color);" />

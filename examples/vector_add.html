@@ -70,7 +70,7 @@
         <span class="p">(</span><span class="n">n</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">-&gt;</span>
       <span class="k">let</span> <span class="k">open</span> <span class="nc">Std</span> <span class="k">in</span>
       <span class="k">let</span> <span class="n">tid</span> <span class="o">=</span> <span class="n">global_thread_id</span> <span class="k">in</span>
-      <span class="k">if</span> <span class="n">tid</span> <span class="o">&lt;</span> <span class="n">n</span> <span class="k">then</span> <span class="n">c</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">a</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span> <span class="o">+.</span> <span class="n">b</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)]</span>
+      <span class="k">if</span> <span class="n">tid</span> <span class="o">&lt;</span> <span class="n">n</span> <span class="k">then</span> <span class="n">c</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">a</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span> <span class="o">+</span> <span class="n">b</span><span class="o">.</span><span class="p">(</span><span class="n">tid</span><span class="p">)]</span>
 </code></pre></div></div>
 
 <h2 id="host-code">Host Code</h2>
@@ -85,8 +85,10 @@
   <span class="c">(* Problem size *)</span>
   <span class="k">let</span> <span class="n">n</span> <span class="o">=</span> <span class="mi">1_000_000</span> <span class="k">in</span>
   
-  <span class="c">(* Compile kernel to IR *)</span>
-  <span class="k">let</span> <span class="n">ir</span> <span class="o">=</span> <span class="nn">Sarek</span><span class="p">.</span><span class="nn">Compile</span><span class="p">.</span><span class="n">kernel</span> <span class="n">vector_add_kernel</span> <span class="k">in</span>
+  <span class="c">(* Get IR from kernel *)</span>
+  <span class="k">let</span> <span class="n">_</span><span class="o">,</span> <span class="n">kirc</span> <span class="o">=</span> <span class="n">vector_add_kernel</span> <span class="k">in</span>
+  <span class="k">let</span> <span class="n">ir</span> <span class="o">=</span> <span class="k">match</span> <span class="n">kirc</span><span class="o">.</span><span class="nn">Sarek</span><span class="p">.</span><span class="nn">Kirc_types</span><span class="p">.</span><span class="n">body_ir</span> <span class="k">with</span>
+    <span class="o">|</span> <span class="nc">Some</span> <span class="n">ir</span> <span class="o">-&gt;</span> <span class="n">ir</span> <span class="o">|</span> <span class="nc">None</span> <span class="o">-&gt;</span> <span class="n">failwith</span> <span class="s2">"No IR"</span> <span class="k">in</span>
   
   <span class="c">(* Create vectors *)</span>
   <span class="k">let</span> <span class="n">a</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">float32</span> <span class="n">n</span> <span class="k">in</span>
@@ -100,7 +102,7 @@
   <span class="k">done</span><span class="p">;</span>
   
   <span class="c">(* Select device *)</span>
-  <span class="k">let</span> <span class="n">device</span> <span class="o">=</span> <span class="nn">Device</span><span class="p">.</span><span class="n">get_default</span> <span class="bp">()</span> <span class="k">in</span>
+  <span class="k">let</span> <span class="n">dev</span> <span class="o">=</span> <span class="nn">Device</span><span class="p">.</span><span class="n">best</span> <span class="bp">()</span> <span class="k">in</span>
   
   <span class="c">(* Calculate grid dimensions *)</span>
   <span class="k">let</span> <span class="n">block_size</span> <span class="o">=</span> <span class="mi">256</span> <span class="k">in</span>
@@ -110,7 +112,7 @@
   
   <span class="c">(* Run kernel *)</span>
   <span class="nn">Execute</span><span class="p">.</span><span class="n">run_vectors</span>
-    <span class="o">~</span><span class="n">device</span>
+    <span class="o">~</span><span class="n">device</span><span class="o">:</span><span class="n">dev</span>
     <span class="o">~</span><span class="n">ir</span>
     <span class="o">~</span><span class="n">args</span><span class="o">:</span><span class="p">[</span><span class="nc">Vec</span> <span class="n">a</span><span class="p">;</span> <span class="nc">Vec</span> <span class="n">b</span><span class="p">;</span> <span class="nc">Vec</span> <span class="n">c</span><span class="p">;</span> <span class="nc">Int</span> <span class="n">n</span><span class="p">]</span>
     <span class="o">~</span><span class="n">block</span>
@@ -122,7 +124,6 @@
   <span class="nn">Printf</span><span class="p">.</span><span class="n">printf</span> <span class="s2">"c[10] = %f (expected 30.0)</span><span class="se">\n</span><span class="s2">"</span> <span class="n">result</span>
 </code></pre></div></div>
 
-<p>```</p>
 
       </div>
     </main>

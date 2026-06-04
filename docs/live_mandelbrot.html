@@ -53,66 +53,18 @@
       <div class="container">
         <h1 id="live-mandelbrot">Live Mandelbrot</h1>
 
-<p>Experiment with Sarek kernels in real-time. Modify the code below and run it to see the results.</p>
+<blockquote>
+  <p><strong>This page describes a superseded approach.</strong> The Thebe/Binder-based live demo has been replaced by the native browser Learn course.</p>
+</blockquote>
 
-<p><button id="thebe-activate" class="btn btn-primary" onclick="bootstrapThebe()">🚀 Activate Live Demo</button></p>
+<h2 id="run-the-mandelbrot-kernel-in-your-browser">Run the Mandelbrot Kernel in Your Browser</h2>
 
-<hr />
+<p>The <strong><a href="/Sarek/learn/">Interactive Learn Course</a></strong> includes a hands-on Mandelbrot lesson where you modify the kernel and see the rendered image update — running on your own GPU via WebGPU, straight from the browser.</p>
 
-<h2 id="1-setup-and-kernel-definition">1. Setup and Kernel Definition</h2>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[Learn Course →](/Sarek/learn/)
+</code></pre></div></div>
 
-<p>First, we load Sarek and define the Mandelbrot kernel. You can modify the escape condition or the coloring logic here.</p>
-
-<pre data-executable="true">
-(* Load Sarek *)
-#require "sarek";;
-#require "sarek.ppx";;
-open Sarek;;
-
-let%kernel mandelbrot (output : int32 vector) (width : int32) (height : int32) (max_iter : int32) =
-  let px = get_global_id 0 in
-  let py = get_global_id 1 in
-  
-  if px &lt; width &amp;&amp; py &lt; height then begin
-    let x0 = (4.0 *. (float px /. float width)) -. 2.5 in
-    let y0 = (3.0 *. (float py /. float height)) -. 1.5 in
-    
-    let x = mut 0.0 in
-    let y = mut 0.0 in
-    let iter = mut 0l in
-    
-    while (x *. x) +. (y *. y) &lt;= 4.0 &amp;&amp; iter &lt; max_iter do
-      let xtemp = (x *. x) -. (y *. y) +. x0 in
-      y := (2.0 *. x *. y) +. y0;
-      x := xtemp;
-      iter := iter + 1l
-    done;
-    
-    output.((py * width) + px) &lt;- iter
-  end
-</pre>
-
-<h2 id="2-execute-and-display">2. Execute and Display</h2>
-
-<p>Run the kernel using the <strong>Native Parallel</strong> backend and display the result.</p>
-
-<pre data-executable="true">
-let width, height = 400, 300 in
-let max_iter = 128l in
-let output = Vector.create Int32 (width * height) in
-let dev = Device.get_device_by_name "Native Parallel" in
-
-Execute.run mandelbrot
-  ~device:dev
-  ~block:(16, 16, 1)
-  ~grid:((width+15)/16, (height+15)/16, 1)
-  [Vec output; Int32 (Int32.of_int width); Int32 (Int32.of_int height); Int32 max_iter];;
-
-(* Display Logic (Pseudo-code, requires jupyter display support) *)
-print_endline "Kernel Execution Complete!";;
-</pre>
-
-<p><em>(Note: Rich image display requires standard Jupyter image libraries to be configured in the Binder environment.)</em></p>
+<p>The course covers: vector addition, image filters, and the Mandelbrot set — each with an editable Sarek kernel, automatic correctness checking, and GPU execution via WebGPU.</p>
 
       </div>
     </main>

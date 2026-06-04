@@ -51,67 +51,22 @@
 
     <main class="main-content">
       <div class="container">
-        <h1 id="interactive-sarek-with-jupyter">Interactive Sarek with Jupyter</h1>
+        <h1 id="interactive-sarek">Interactive Sarek</h1>
 
-<p>You can use Sarek interactively using the <a href="https://github.com/akabe/ocaml-jupyter">ocaml-jupyter</a> kernel. This is an excellent way to prototype kernels, visualize GPU data, and document your experiments.</p>
+<blockquote>
+  <p><strong>This page describes a superseded approach.</strong> The Jupyter/Binder integration described here has been replaced by a native browser experience.</p>
+</blockquote>
 
-<h2 id="setup">Setup</h2>
+<h2 id="try-sarek-in-the-browser--no-installation-required">Try Sarek in the Browser — No Installation Required</h2>
 
-<ol>
-  <li><strong>Install Jupyter and the OCaml Kernel</strong>:
-    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>pip <span class="nb">install </span>jupyterlab
-opam <span class="nb">install </span>jupyter
-ocaml-jupyter-interpreter <span class="nb">install</span>
-</code></pre></div>    </div>
-  </li>
-  <li><strong>Install Sarek</strong>:
-Ensure Sarek and its PPX are installed in your current switch:
-    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>opam <span class="nb">install </span>sarek sarek-cuda  <span class="c"># or your preferred backend</span>
-</code></pre></div>    </div>
-  </li>
-  <li><strong>Launch Jupyter</strong>:
-    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>jupyter lab
-</code></pre></div>    </div>
-  </li>
-</ol>
+<p>Sarek now runs directly in your browser via WebGPU:</p>
 
-<h2 id="using-the-native-parallel-backend">Using the Native Parallel Backend</h2>
+<ul>
+  <li><strong><a href="/Sarek/playground.html">Playground</a></strong> — Paste any Sarek kernel and instantly see the generated WGSL/CUDA/OpenCL/GLSL/MSL source code. No account, no install, runs on your GPU.</li>
+  <li><strong><a href="/Sarek/learn/">Interactive Learn Course</a></strong> — Step-by-step GPU programming lessons where you edit a Sarek kernel and run it on your own GPU straight from the page. Covers vector addition, Mandelbrot generation, image filters, and more.</li>
+</ul>
 
-<p>A major advantage of Sarek’s modern architecture is the <strong>Native CPU backend</strong>. This is perfect for Jupyter environments (like Binder or local laptops) where a GPU might not be available.</p>
-
-<p>You can still experiment with parallel algorithms by targeting your CPU’s multiple cores:</p>
-
-<div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">(* 1. Initialize Sarek *)</span>
-<span class="o">#</span><span class="n">require</span> <span class="s2">"sarek"</span><span class="p">;;</span>
-<span class="o">#</span><span class="n">require</span> <span class="s2">"sarek.ppx"</span><span class="p">;;</span>
-<span class="k">open</span> <span class="nc">Sarek</span><span class="p">;;</span>
-
-<span class="c">(* 2. Define your parallel kernel *)</span>
-<span class="k">let</span><span class="o">%</span><span class="n">kernel</span> <span class="n">compute_pi</span> <span class="p">(</span><span class="n">out</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">n</span> <span class="o">:</span> <span class="n">int32</span><span class="p">)</span> <span class="o">=</span>
-  <span class="k">let</span> <span class="n">gid</span> <span class="o">=</span> <span class="n">get_global_id</span> <span class="mi">0</span> <span class="k">in</span>
-  <span class="k">if</span> <span class="n">gid</span> <span class="o">&lt;</span> <span class="n">n</span> <span class="k">then</span>
-    <span class="k">let</span> <span class="n">x</span> <span class="o">=</span> <span class="p">(</span><span class="kt">float</span> <span class="n">gid</span> <span class="o">+.</span> <span class="mi">0</span><span class="o">.</span><span class="mi">5</span><span class="p">)</span> <span class="o">/.</span> <span class="kt">float</span> <span class="n">n</span> <span class="k">in</span>
-    <span class="n">out</span><span class="o">.</span><span class="p">(</span><span class="n">gid</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="mi">4</span><span class="o">.</span><span class="mi">0</span> <span class="o">/.</span> <span class="p">(</span><span class="mi">1</span><span class="o">.</span><span class="mi">0</span> <span class="o">+.</span> <span class="n">x</span> <span class="o">*.</span> <span class="n">x</span><span class="p">)</span>
-
-<span class="c">(* 3. Select the Native Parallel Device *)</span>
-<span class="k">let</span> <span class="n">dev</span> <span class="o">=</span> <span class="nn">Device</span><span class="p">.</span><span class="n">get_device_by_name</span> <span class="s2">"Native Parallel"</span> <span class="k">in</span>
-<span class="nn">Printf</span><span class="p">.</span><span class="n">printf</span> <span class="s2">"Running on: %s</span><span class="se">\n</span><span class="s2">"</span> <span class="p">(</span><span class="nn">Device</span><span class="p">.</span><span class="n">name</span> <span class="n">dev</span><span class="p">);;</span>
-
-<span class="c">(* 4. Execute (Runs across all available OCaml 5 Domains) *)</span>
-<span class="k">let</span> <span class="n">n</span> <span class="o">=</span> <span class="mi">1000000</span> <span class="k">in</span>
-<span class="k">let</span> <span class="n">results</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create</span> <span class="nc">Float32</span> <span class="n">n</span> <span class="k">in</span>
-<span class="nn">Execute</span><span class="p">.</span><span class="n">run</span> <span class="n">compute_pi</span> <span class="o">~</span><span class="n">device</span><span class="o">:</span><span class="n">dev</span> <span class="o">~</span><span class="n">grid</span><span class="o">:</span><span class="p">(</span><span class="n">n</span><span class="o">/</span><span class="mi">256</span><span class="o">,</span> <span class="mi">1</span><span class="o">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">~</span><span class="n">block</span><span class="o">:</span><span class="p">(</span><span class="mi">256</span><span class="o">,</span> <span class="mi">1</span><span class="o">,</span> <span class="mi">1</span><span class="p">)</span> <span class="p">[</span><span class="nc">Vec</span> <span class="n">results</span><span class="p">;</span> <span class="nc">Int</span> <span class="n">n</span><span class="p">];;</span>
-</code></pre></div></div>
-
-<p>This allows you to prototype and verify the <strong>exact same logic</strong> that will later run on a high-end NVIDIA or AMD GPU.</p>
-
-<h2 id="visualizing-results">Visualizing Results</h2>
-
-<p>One of the big advantages of using Jupyter is the ability to render GPU results immediately. For example, after running a Mandelbrot kernel, you can use OCaml libraries to display the resulting <code class="language-plaintext highlighter-rouge">Vector</code> as an image directly in the notebook.</p>
-
-<h2 id="try-it-online-binder">Try it Online (Binder)</h2>
-
-<p><em>Coming Soon: We are working on a pre-configured Binder environment so you can test Sarek kernels in your browser with zero installation.</em></p>
+<p>Both options use the same kernel DSL and type system as the OCaml library — code you write in the browser is identical to code you would run natively.</p>
 
       </div>
     </main>

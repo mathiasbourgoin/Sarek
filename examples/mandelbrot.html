@@ -105,8 +105,10 @@
   <span class="k">let</span> <span class="n">width</span><span class="o">,</span> <span class="n">height</span> <span class="o">=</span> <span class="mi">1024</span><span class="o">,</span> <span class="mi">1024</span> <span class="k">in</span>
   <span class="k">let</span> <span class="n">max_iter</span> <span class="o">=</span> <span class="mi">256</span><span class="n">l</span> <span class="k">in</span>
   
-  <span class="c">(* Compile kernel to IR *)</span>
-  <span class="k">let</span> <span class="n">ir</span> <span class="o">=</span> <span class="nn">Sarek</span><span class="p">.</span><span class="nn">Compile</span><span class="p">.</span><span class="n">kernel</span> <span class="n">mandelbrot_kernel</span> <span class="k">in</span>
+  <span class="c">(* Get IR from kernel *)</span>
+  <span class="k">let</span> <span class="n">_</span><span class="o">,</span> <span class="n">kirc</span> <span class="o">=</span> <span class="n">mandelbrot_kernel</span> <span class="k">in</span>
+  <span class="k">let</span> <span class="n">ir</span> <span class="o">=</span> <span class="k">match</span> <span class="n">kirc</span><span class="o">.</span><span class="nn">Sarek</span><span class="p">.</span><span class="nn">Kirc_types</span><span class="p">.</span><span class="n">body_ir</span> <span class="k">with</span>
+    <span class="o">|</span> <span class="nc">Some</span> <span class="n">ir</span> <span class="o">-&gt;</span> <span class="n">ir</span> <span class="o">|</span> <span class="nc">None</span> <span class="o">-&gt;</span> <span class="n">failwith</span> <span class="s2">"No IR"</span> <span class="k">in</span>
   
   <span class="c">(* Create output vector *)</span>
   <span class="k">let</span> <span class="n">output</span> <span class="o">=</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">create</span> <span class="nn">Vector</span><span class="p">.</span><span class="n">int32</span> <span class="p">(</span><span class="n">width</span> <span class="o">*</span> <span class="n">height</span><span class="p">)</span> <span class="k">in</span>
@@ -114,11 +116,11 @@
   <span class="c">(* Calculate grid dimensions - using 16x16 blocks *)</span>
   <span class="k">let</span> <span class="n">block</span> <span class="o">=</span> <span class="nn">Execute</span><span class="p">.</span><span class="n">dims2d</span> <span class="mi">16</span> <span class="mi">16</span> <span class="k">in</span>
   <span class="k">let</span> <span class="n">grid</span> <span class="o">=</span> <span class="nn">Execute</span><span class="p">.</span><span class="n">dims2d</span> <span class="p">((</span><span class="n">width</span> <span class="o">+</span> <span class="mi">15</span><span class="p">)</span> <span class="o">/</span> <span class="mi">16</span><span class="p">)</span> <span class="p">((</span><span class="n">height</span> <span class="o">+</span> <span class="mi">15</span><span class="p">)</span> <span class="o">/</span> <span class="mi">16</span><span class="p">)</span> <span class="k">in</span>
-  <span class="k">let</span> <span class="n">device</span> <span class="o">=</span> <span class="nn">Device</span><span class="p">.</span><span class="n">get_default</span> <span class="bp">()</span> <span class="k">in</span>
+  <span class="k">let</span> <span class="n">dev</span> <span class="o">=</span> <span class="nn">Device</span><span class="p">.</span><span class="n">best</span> <span class="bp">()</span> <span class="k">in</span>
   
   <span class="c">(* Run kernel *)</span>
   <span class="nn">Execute</span><span class="p">.</span><span class="n">run_vectors</span>
-    <span class="o">~</span><span class="n">device</span>
+    <span class="o">~</span><span class="n">device</span><span class="o">:</span><span class="n">dev</span>
     <span class="o">~</span><span class="n">ir</span>
     <span class="o">~</span><span class="n">args</span><span class="o">:</span><span class="p">[</span><span class="nc">Vec</span> <span class="n">output</span><span class="p">;</span> <span class="nc">Int</span> <span class="n">width</span><span class="p">;</span> <span class="nc">Int</span> <span class="n">height</span><span class="p">;</span> <span class="nc">Int</span> <span class="p">(</span><span class="nn">Int32</span><span class="p">.</span><span class="n">to_int</span> <span class="n">max_iter</span><span class="p">)]</span>
     <span class="o">~</span><span class="n">block</span>

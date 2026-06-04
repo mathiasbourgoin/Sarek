@@ -53,37 +53,18 @@
       <div class="container">
         <h1 id="live-transpiler">Live Transpiler</h1>
 
-<p>Write an OCaml kernel and see the generated GPU source code immediately.</p>
+<blockquote>
+  <p><strong>This page describes a superseded approach.</strong> The Thebe-based interactive environment has been replaced by the native browser Playground.</p>
+</blockquote>
 
-<p><button id="thebe-activate" class="btn btn-primary" onclick="bootstrapThebe()">🚀 Activate Transpiler</button></p>
+<h2 id="transpile-kernels-live-in-your-browser">Transpile Kernels Live in Your Browser</h2>
 
-<hr />
+<p>The <strong><a href="/Sarek/playground.html">Playground</a></strong> lets you write a Sarek kernel and see the generated GPU source code (WGSL, CUDA, OpenCL, GLSL, MSL) immediately — no installation, no account.</p>
 
-<h2 id="define-and-inspect">Define and Inspect</h2>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[Playground →](/Sarek/playground.html)
+</code></pre></div></div>
 
-<p>Enter your Sarek kernel below. We use the internal <code class="language-plaintext highlighter-rouge">Kirc</code> modules to display the generated source code for different backends.</p>
-
-<pre data-executable="true">
-#require "sarek";;
-#require "sarek.ppx";;
-open Sarek;;
-
-let my_kernel = [%kernel fun (a : float32 vector) -&gt;
-  let idx = get_global_id 0 in
-  a.(idx) &lt;- a.(idx) *. 2.0
-];;
-
-(* Access the internal IR and generate CUDA source *)
-let _, kirc = my_kernel in
-match kirc.Sarek.Kirc_types.body_ir with
-| Some ir -&gt; 
-    print_endline "--- Generated CUDA Source ---";
-    (* Note: This requires Sarek_ir_cuda to be available in the environment *)
-    print_endline "Source generated for CUDA..."
-| None -&gt; print_endline "No IR found";;
-</pre>
-
-<p><em>(Note: We are exposing the internal code generators to the interactive environment to make this possible.)</em></p>
+<p>The Playground runs the full Sarek transpiler pipeline compiled to WebAssembly (via js_of_ocaml) directly in your browser. Every backend output tab is generated in real time as you type.</p>
 
       </div>
     </main>
