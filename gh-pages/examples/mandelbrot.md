@@ -59,8 +59,10 @@ let run_mandelbrot () =
   let width, height = 1024, 1024 in
   let max_iter = 256l in
   
-  (* Compile kernel to IR *)
-  let ir = Sarek.Compile.kernel mandelbrot_kernel in
+  (* Get IR from kernel *)
+  let _, kirc = mandelbrot_kernel in
+  let ir = match kirc.Sarek.Kirc_types.body_ir with
+    | Some ir -> ir | None -> failwith "No IR" in
   
   (* Create output vector *)
   let output = Vector.create Vector.int32 (width * height) in
@@ -68,11 +70,11 @@ let run_mandelbrot () =
   (* Calculate grid dimensions - using 16x16 blocks *)
   let block = Execute.dims2d 16 16 in
   let grid = Execute.dims2d ((width + 15) / 16) ((height + 15) / 16) in
-  let device = Device.get_default () in
+  let dev = Device.best () in
   
   (* Run kernel *)
   Execute.run_vectors
-    ~device
+    ~device:dev
     ~ir
     ~args:[Vec output; Int width; Int height; Int (Int32.to_int max_iter)]
     ~block

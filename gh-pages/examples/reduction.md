@@ -71,8 +71,10 @@ let run_reduction () =
   let block_size = 256 in
   let num_blocks = (n + block_size - 1) / block_size in
   
-  (* Compile kernel to IR *)
-  let ir = Sarek.Compile.kernel reduce_sum_kernel in
+  (* Get IR from kernel *)
+  let _, kirc = reduce_sum_kernel in
+  let ir = match kirc.Sarek.Kirc_types.body_ir with
+    | Some ir -> ir | None -> failwith "No IR" in
   
   (* Create input and output vectors *)
   let input = Vector.create Vector.float32 n in
@@ -86,11 +88,11 @@ let run_reduction () =
   (* Calculate grid dimensions *)
   let block = Execute.dims1d block_size in
   let grid = Execute.dims1d num_blocks in
-  let device = Device.get_default () in
+  let dev = Device.best () in
   
   (* First pass: Reduce array to num_blocks partial sums *)
   Execute.run_vectors
-    ~device
+    ~device:dev
     ~ir
     ~args:[Vec input; Vec output; Int n]
     ~block
@@ -102,12 +104,3 @@ let run_reduction () =
   let final_sum = Array.fold_left (+.) 0.0 partial_sums in
   
   Printf.printf "Sum of %d elements: %f\n" n final_sum
-```
-    ~block:(256, 1, 1)
-    ~grid:(num_blocks, 1, 1)
-    [Vec input; Vec output; Int32 n];
-    
-  (* Second pass: Sum the partial results (on CPU for simplicity here) *)
-  let partials = Vector.to_array output in
-  let total = Array.fold_left (+.) 0.0 partials
-```

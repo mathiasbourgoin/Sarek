@@ -23,7 +23,7 @@ let vector_add_kernel =
         (n : int32) ->
       let open Std in
       let tid = global_thread_id in
-      if tid < n then c.(tid) <- a.(tid) +. b.(tid)]
+      if tid < n then c.(tid) <- a.(tid) + b.(tid)]
 ```
 
 ## Host Code
@@ -39,8 +39,10 @@ let () =
   (* Problem size *)
   let n = 1_000_000 in
   
-  (* Compile kernel to IR *)
-  let ir = Sarek.Compile.kernel vector_add_kernel in
+  (* Get IR from kernel *)
+  let _, kirc = vector_add_kernel in
+  let ir = match kirc.Sarek.Kirc_types.body_ir with
+    | Some ir -> ir | None -> failwith "No IR" in
   
   (* Create vectors *)
   let a = Vector.create Vector.float32 n in
@@ -54,7 +56,7 @@ let () =
   done;
   
   (* Select device *)
-  let device = Device.get_default () in
+  let dev = Device.best () in
   
   (* Calculate grid dimensions *)
   let block_size = 256 in
@@ -64,7 +66,7 @@ let () =
   
   (* Run kernel *)
   Execute.run_vectors
-    ~device
+    ~device:dev
     ~ir
     ~args:[Vec a; Vec b; Vec c; Int n]
     ~block
@@ -76,4 +78,3 @@ let () =
   Printf.printf "c[10] = %f (expected 30.0)\n" result
 ```
 
-```

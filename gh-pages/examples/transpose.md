@@ -39,16 +39,22 @@ We can now define specific kernels that "monomorphize" (specialize) the generic 
 
 ```ocaml
 (* Kernel specialized for Float32 *)
-let%kernel transpose_float32 (input : float32 vector) (output : float32 vector)
-                             (width : int32) (height : int32) =
-  let tid = get_global_id 0 in
-  do_transpose input output width height tid
+let transpose_float32 =
+  [%kernel
+    fun (input : float32 vector) (output : float32 vector)
+        (width : int32) (height : int32) ->
+      let open Sarek_stdlib.Std in
+      let tid = global_thread_id in
+      do_transpose input output width height tid]
 
 (* Kernel specialized for Int32 *)
-let%kernel transpose_int32 (input : int32 vector) (output : int32 vector)
-                           (width : int32) (height : int32) =
-  let tid = get_global_id 0 in
-  do_transpose input output width height tid
+let transpose_int32 =
+  [%kernel
+    fun (input : int32 vector) (output : int32 vector)
+        (width : int32) (height : int32) ->
+      let open Sarek_stdlib.Std in
+      let tid = global_thread_id in
+      do_transpose input output width height tid]
 ```
 
 ### For Custom Records (`structs`)
@@ -64,11 +70,14 @@ type point3d = {
 } [@@sarek.type]
 
 (* Kernel specialized for Point3D records *)
-let%kernel transpose_point3d (input : point3d vector) (output : point3d vector)
-                             (width : int32) (height : int32) =
-  let tid = get_global_id 0 in
-  (* Sarek automatically handles the structure layout and memory copying *)
-  do_transpose input output width height tid
+let transpose_point3d =
+  [%kernel
+    fun (input : point3d vector) (output : point3d vector)
+        (width : int32) (height : int32) ->
+      let open Sarek_stdlib.Std in
+      let tid = global_thread_id in
+      (* Sarek automatically handles the structure layout and memory copying *)
+      do_transpose input output width height tid]
 ```
 
 ## 3. Host Code
@@ -76,33 +85,46 @@ let%kernel transpose_point3d (input : point3d vector) (output : point3d vector)
 The host code looks standard, but notice how we handle the custom `point3d` vector.
 
 ```ocaml
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+
 let run_polymorphic_tests () =
   let width, height = 1024, 1024 in
   let n = width * height in
-  let device = Device.get_default () in
-  let block = (256, 1, 1) in
-  let grid = ((n + 255)/256, 1, 1) in
+  let dev = Device.best () in
+  let block = Execute.dims1d 256 in
+  let grid  = Execute.dims1d ((n + 255)/256) in
+
+  (* Get IR from float32 kernel *)
+  let _, kirc_f = transpose_float32 in
+  let ir_f = match kirc_f.Sarek.Kirc_types.body_ir with
+    | Some ir -> ir | None -> failwith "No IR" in
 
   (* 1. Run Float32 Transpose *)
-  let a = Vector.create Float32 n in
-  let b = Vector.create Float32 n in
+  let a = Vector.create Vector.float32 n in
+  let b = Vector.create Vector.float32 n in
   (* ... init a ... *)
-  Execute.run transpose_float32 ~device ~grid ~block 
-    [Vec a; Vec b; Int32 width; Int32 height];
+  Execute.run_vectors ~device:dev ~ir:ir_f ~block ~grid
+    ~args:[Vec a; Vec b; Int width; Int height] ();
 
   (* 2. Run Custom Struct Transpose *)
   (* Create a vector for our custom type *)
-  let points_in = Vector.create_custom 
+  let points_in = Vector.create_custom
     (module struct type t = point3d let size = 12 end) n in
-  let points_out = Vector.create_custom 
+  let points_out = Vector.create_custom
     (module struct type t = point3d let size = 12 end) n in
-    
+
   (* Initialize with OCaml records *)
   Vector.set points_in 0 { x=1.0; y=2.0; z=3.0 };
-  
+
+  (* Get IR from point3d kernel *)
+  let _, kirc_p = transpose_point3d in
+  let ir_p = match kirc_p.Sarek.Kirc_types.body_ir with
+    | Some ir -> ir | None -> failwith "No IR" in
+
   (* Run the same logic on structs! *)
-  Execute.run transpose_point3d ~device ~grid ~block 
-    [Vec points_in; Vec points_out; Int32 width; Int32 height]
+  Execute.run_vectors ~device:dev ~ir:ir_p ~block ~grid
+    ~args:[Vec points_in; Vec points_out; Int width; Int height] ()
 ```
 
 ## Why this matters

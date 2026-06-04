@@ -22,10 +22,13 @@ This codebase has undergone significant modernization (2024-2026):
 - **Plugin-based architecture** for extensible backend support
 - **Test coverage** with unit and end-to-end tests
 - **Documentation** for all major components
+- **WGSL/WebGPU codegen** — a 5th transpiler backend emitting WGSL for browser-side execution
+- **In-browser Playground** — live kernel transpiler at [mathiasbourgoin.github.io/Sarek/playground.html](https://mathiasbourgoin.github.io/Sarek/playground.html)
+- **Interactive Learn course** — edit and run Sarek kernels on your GPU in the browser at [mathiasbourgoin.github.io/Sarek/learn/](https://mathiasbourgoin.github.io/Sarek/learn/)
 
 The framework is actively maintained and uses modern OCaml features while preserving compatibility with existing SPOC code.
 
-**Note**: This recent rework was completed with assistance from AI agents. Feedback, bug reports, and contributions are welcome via [GitHub Issues](https://github.com/mathiasbourgoin/SPOC/issues).
+**Note**: This recent rework was completed with assistance from AI agents. Feedback, bug reports, and contributions are welcome via [GitHub Issues](https://github.com/mathiasbourgoin/Sarek/issues).
 
 ## Features
 
@@ -34,9 +37,12 @@ The framework is actively maintained and uses modern OCaml features while preser
 Write GPU kernels in OCaml syntax using the `[%kernel ...]` PPX extension:
 
 ```ocaml
-let%kernel vector_add (a : float32 vector) (b : float32 vector) (c : float32 vector) =
-  let idx = get_global_id 0 in
-  c.(idx) <- a.(idx) + b.(idx)
+let vector_add =
+  [%kernel
+    fun (a : float32 vector) (b : float32 vector) (c : float32 vector) (n : int32) ->
+      let open Sarek_stdlib.Std in
+      let tid = global_thread_id in
+      if tid < n then c.(tid) <- a.(tid) + b.(tid)]
 ```
 
 Kernels compile to multiple backends automatically without code changes.
@@ -88,7 +94,7 @@ GPU Backends:
 ### Prerequisites
 
 - OCaml 5.4.0+ (local opam switch included in repository)
-- dune 3.20+
+- dune 3.15+
 - GPU backends (optional):
   - **CUDA**: NVIDIA driver + CUDA toolkit (see CUDA requirements below)
   - **OpenCL**: OpenCL implementation for your device
@@ -117,8 +123,8 @@ SPOC is not yet published to the OPAM repository, but you can use OPAM to instal
 
 ```bash
 # Clone repository
-git clone https://github.com/mathiasbourgoin/SPOC.git
-cd SPOC
+git clone https://github.com/mathiasbourgoin/Sarek.git
+cd Sarek
 
 # Install dependencies via OPAM (OCaml 5.4+)
 opam update
@@ -177,41 +183,55 @@ The fast benchmarks use small problem sizes and complete in ~20 seconds, while t
 
 ```ocaml
 open Sarek
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
 
 (* Define a kernel *)
-let%kernel saxpy (a : float32 vector) (x : float32 vector) 
-                  (y : float32 vector) (alpha : float) =
-  let i = get_global_id 0 in
-  y.(i) <- alpha *. x.(i) +. a.(i)
+let saxpy =
+  [%kernel
+    fun (a : float32 vector) (x : float32 vector)
+        (y : float32 vector) (alpha : float32) (n : int32) ->
+      let open Sarek_stdlib.Std in
+      let i = global_thread_id in
+      if i < n then y.(i) <- alpha *. x.(i) +. a.(i)]
 
 let () =
   (* Initialize framework *)
-  let device = Device.get_device 0 in
-  
+  let devs = Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] () in
+  let dev = devs.(0) in
+
+  (* Get IR from kernel *)
+  let _, kirc = saxpy in
+  let ir = match kirc.Sarek.Kirc_types.body_ir with
+    | Some ir -> ir | None -> failwith "No IR" in
+
   (* Create vectors *)
   let n = 1024 in
-  let a = Vector.create Float32 n in
-  let x = Vector.create Float32 n in
-  let y = Vector.create Float32 n in
-  
+  let a = Vector.create Vector.float32 n in
+  let x = Vector.create Vector.float32 n in
+  let y = Vector.create Vector.float32 n in
+
   (* Execute kernel *)
-  saxpy ~grid:(n/256, 1, 1) ~block:(256, 1, 1) a x y 2.5
+  let block = Execute.dims1d 256 in
+  let grid  = Execute.dims1d ((n + 255) / 256) in
+  Execute.run_vectors ~device:dev ~ir ~args:[Vec a; Vec x; Vec y; Float 2.5; Int n]
+    ~block ~grid ()
 ```
 
 ### Backend Selection
 
 ```ocaml
 (* List available devices *)
-let devices = Device.list_devices () in
-List.iter (fun dev ->
-  Printf.printf "%s (%s)\n" 
-    (Device.name dev) 
-    (Device.backend_name dev)
+let devices = Device.all () in
+Array.iter (fun dev ->
+  Printf.printf "%s (%s)\n"
+    dev.Device.name
+    dev.Device.framework
 ) devices
 
 (* Select specific backend *)
-let cuda_device = Device.get_device_by_backend "CUDA" in
-let opencl_device = Device.get_device_by_backend "OpenCL" in
+let cuda_device = Device.by_framework "CUDA" in
+let opencl_device = Device.by_framework "OpenCL" in
 ```
 
 See [sarek/sarek/README.md](sarek/sarek/README.md) for comprehensive usage documentation.
@@ -311,6 +331,6 @@ See [LICENSE.md](LICENSE.md) for license information.
 
 ## Resources
 
-- **GitHub Pages**: [http://mathiasbourgoin.github.io/SPOC/](http://mathiasbourgoin.github.io/SPOC/)
-- **GitHub Actions**: [Build status and CI](https://github.com/mathiasbourgoin/SPOC/actions)
-- **Issues**: [Bug reports and feature requests](https://github.com/mathiasbourgoin/SPOC/issues)
+- **GitHub Pages**: [http://mathiasbourgoin.github.io/Sarek/](http://mathiasbourgoin.github.io/Sarek/)
+- **GitHub Actions**: [Build status and CI](https://github.com/mathiasbourgoin/Sarek/actions)
+- **Issues**: [Bug reports and feature requests](https://github.com/mathiasbourgoin/Sarek/issues)

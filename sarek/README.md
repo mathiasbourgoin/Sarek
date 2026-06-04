@@ -88,24 +88,36 @@ Sarek sits on top of the SPOC framework and provides:
 
 ```ocaml
 open Sarek
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
 
 (* Define a kernel *)
-let%kernel vector_add (a : float32 vector) (b : float32 vector) (c : float32 vector) =
-  let idx = get_global_id 0 in
-  c.(idx) <- a.(idx) + b.(idx)
+let vector_add =
+  [%kernel
+    fun (a : float32 vector) (b : float32 vector) (c : float32 vector) (n : int32) ->
+      let open Sarek_stdlib.Std in
+      let tid = global_thread_id in
+      if tid < n then c.(tid) <- a.(tid) + b.(tid)]
 
 (* Use it *)
 let () =
-  let device = Device.get_device 0 in
+  let devs = Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] () in
+  let dev = devs.(0) in
   let n = 1024 in
-  let a = Vector.create Float32 n in
-  let b = Vector.create Float32 n in
-  let c = Vector.create Float32 n in
-  
+  let a = Vector.create Vector.float32 n in
+  let b = Vector.create Vector.float32 n in
+  let c = Vector.create Vector.float32 n in
+
   (* Initialize a and b... *)
-  
-  (* Execute on GPU *)
-  vector_add ~grid:(n/256, 1, 1) ~block:(256, 1, 1) a b c
+
+  (* Get IR and execute on GPU *)
+  let _, kirc = vector_add in
+  let ir = match kirc.Sarek.Kirc_types.body_ir with
+    | Some ir -> ir | None -> failwith "No IR" in
+  let block = Execute.dims1d 256 in
+  let grid  = Execute.dims1d ((n + 255) / 256) in
+  Execute.run_vectors ~device:dev ~ir ~args:[Vec a; Vec b; Vec c; Int n]
+    ~block ~grid ()
 ```
 
 ### Available Intrinsics
@@ -185,11 +197,14 @@ Sarek enforces GPU-safe type constraints at compile time:
 The PPX performs full type inference with unification:
 
 ```ocaml
-let%kernel inferred (v : float32 vector) =
-  let idx = get_global_id 0 in  (* inferred as int32 *)
-  let x = v.(idx) in            (* inferred as float *)
-  let y = sin x in              (* inferred as float *)
-  v.(idx) <- y +. 1.0           (* type checked *)
+let inferred =
+  [%kernel
+    fun (v : float32 vector) ->
+      let open Sarek_stdlib.Std in
+      let idx = global_thread_id in  (* inferred as int32 *)
+      let x = v.(idx) in             (* inferred as float *)
+      let y = sin x in               (* inferred as float *)
+      v.(idx) <- y +. 1.0]           (* type checked *)
 ```
 
 Type errors are reported at compile time with helpful messages.
