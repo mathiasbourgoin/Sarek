@@ -252,17 +252,13 @@ let loc_of_lexing (p : Lexing.position) : Sarek_ast.loc =
       loc_end_col = p.pos_cnum - p.pos_bol;
     }
 
-(** [of_source backend src] parses [src] as an OCaml kernel expression, runs the
-    full frontend pipeline parse -> [%native] check -> type -> convergence ->
-    mono -> tailrec -> lower -> codegen and returns the GPU source for
-    [backend].
+(** Run the shared parse→native-check→type→convergence→mono→tailrec→lower
+    stages. Returns the lowered IR kernel, or a structured error.
 
-    All frontend errors are converted to [error]; no exception escapes. *)
-let of_source (backend : backend) (src : string) : (string, error) result =
-  (* Ensure stdlib_meta intrinsics are registered before running the pipeline.
-     This is idempotent - multiple calls are safe. *)
-  Sarek_stdlib_meta.force_init () ;
-  set_framework backend ;
+    This helper is the common prefix for both [of_source] and
+    [of_source_with_abi]. All frontend exceptions are caught here. *)
+let run_pipeline (src : string) :
+    (Sarek_ir_ppx.kernel, error) result =
   (* Step 1: OCaml parser -> ppxlib expression *)
   match
     try Ok (expr_of_string src) with
@@ -296,15 +292,56 @@ let of_source (backend : backend) (src : string) : (string, error) result =
                   match Sarek_convergence.check_kernel tkernel with
                   | Error errs -> Error (Convergence_error errs)
                   | Ok () -> (
-                      (* Steps 6-7: mono -> tailrec -> lower -> emit.
-                         Guarded so any internal raise maps to Internal_error
-                         rather than escaping of_source (per the .mli contract). *)
+                      (* Steps 6-7: mono -> tailrec -> lower.
+                         Guarded so any internal raise maps to Internal_error. *)
                       try
                         let mono = Sarek_mono.monomorphize tkernel in
                         let tr = Sarek_tailrec.transform_kernel mono in
                         let ir_kernel, _warnings =
                           Sarek_lower_ir.lower_kernel tr
                         in
-                        Ok (emit_backend backend ir_kernel)
+                        Ok ir_kernel
                       with exn ->
                         Error (Internal_error (Printexc.to_string exn)))))))
+
+(** [of_source backend src] parses [src] as an OCaml kernel expression, runs the
+    full frontend pipeline parse -> [%native] check -> type -> convergence ->
+    mono -> tailrec -> lower -> codegen and returns the GPU source for
+    [backend].
+
+    All frontend errors are converted to [error]; no exception escapes. *)
+let of_source (backend : backend) (src : string) : (string, error) result =
+  (* Ensure stdlib_meta intrinsics are registered before running the pipeline.
+     This is idempotent - multiple calls are safe. *)
+  Sarek_stdlib_meta.force_init () ;
+  set_framework backend ;
+  match run_pipeline src with
+  | Error _ as err -> err
+  | Ok ir_kernel -> (
+      try Ok (emit_backend backend ir_kernel)
+      with exn -> Error (Internal_error (Printexc.to_string exn)))
+
+(** [of_source_with_abi backend src] runs the same pipeline as [of_source] and
+    additionally returns the ABI descriptor as a JSON string.
+
+    Only defined for the WGSL backend; returns [Error (Internal_error …)] for
+    all others. *)
+let of_source_with_abi (backend : backend) (src : string) :
+    (string * string, error) result =
+  match backend with
+  | WGSL ->
+      Sarek_stdlib_meta.force_init () ;
+      set_framework backend ;
+      (match run_pipeline src with
+      | Error _ as err -> err
+      | Ok ppx_kernel -> (
+          try
+            let ir_kernel = Sarek_ir_conv.conv_kernel ppx_kernel in
+            let code = Sarek_ir_wgsl.generate ir_kernel in
+            let abi_t = Sarek_ir_wgsl.abi ir_kernel in
+            let abi_json = Sarek_wgsl_abi.to_json abi_t in
+            Ok (code, abi_json)
+          with exn -> Error (Internal_error (Printexc.to_string exn))))
+  | _ ->
+      Error
+        (Internal_error "ABI is only defined for the WGSL backend")
