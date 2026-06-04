@@ -64,7 +64,8 @@
 
           <div class="btn-group">
             <a href="/Sarek/docs/getting_started.html" class="btn btn-primary">Get Started</a>
-            <a href="/Sarek/playground.html" class="btn btn-outline">Try Online</a>
+            <a href="/Sarek/learn/" class="btn btn-primary">Run kernels on your GPU</a>
+            <a href="/Sarek/playground.html" class="btn btn-outline">Playground</a>
             <a href="/Sarek/spoc_docs/index.html" class="btn btn-outline">API Docs</a>
           </div>
         </div>
@@ -117,6 +118,8 @@ dune build
 
 <p>Check out the <a href="docs/getting_started.html">Getting Started</a> guide to write your first GPU kernel in minutes, browse the <a href="examples/">Examples</a> to see common patterns, or try the <a href="playground.html">Playground</a> to transpile kernels live in your browser.</p>
 
+<p>New to GPU programming? The interactive <a href="learn/"><strong>Learn</strong> course</a> teaches it from scratch — you edit a Sarek kernel and <strong>run it on your own GPU</strong> straight from the page (via WebGPU), with automatic checking. It builds up from vector addition through generating a Mandelbrot image and writing an image filter.</p>
+
 <h2 id="how-it-works">How it works</h2>
 
 <p>Sarek allows you to express parallel logic as standard OCaml functions. These are compiled to native GPU code at runtime.</p>
@@ -124,7 +127,7 @@ dune build
 <div class="language-ocaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">(* A simple vector addition kernel *)</span>
 <span class="k">let</span><span class="o">%</span><span class="n">kernel</span> <span class="n">vector_add</span> <span class="p">(</span><span class="n">a</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">b</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="p">(</span><span class="n">c</span> <span class="o">:</span> <span class="n">float32</span> <span class="n">vector</span><span class="p">)</span> <span class="o">=</span>
   <span class="k">let</span> <span class="n">idx</span> <span class="o">=</span> <span class="n">get_global_id</span> <span class="mi">0</span> <span class="k">in</span>
-  <span class="n">c</span><span class="o">.</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">a</span><span class="o">.</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">+</span> <span class="n">b</span><span class="o">.</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+  <span class="n">c</span><span class="o">.</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">&lt;-</span> <span class="n">a</span><span class="o">.</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">+.</span> <span class="n">b</span><span class="o">.</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
 </code></pre></div></div>
 
 <hr style="margin: 50px 0; border: 0; border-top: 1px solid var(--border-color);" />
