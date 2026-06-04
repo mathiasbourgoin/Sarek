@@ -49,9 +49,11 @@ Sarek allows you to express parallel logic as standard OCaml functions. These ar
 
 ```ocaml
 (* A simple vector addition kernel *)
-let%kernel vector_add (a : float32 vector) (b : float32 vector) (c : float32 vector) =
-  let idx = get_global_id 0 in
-  c.(idx) <- a.(idx) + b.(idx)
+let vector_add =
+  [%kernel
+    fun (a : float32 vector) (b : float32 vector) (c : float32 vector) ->
+      let idx = get_global_id 0 in
+      c.(idx) <- a.(idx) + b.(idx)]
 ```
 
 <hr style="margin: 50px 0; border: 0; border-top: 1px solid var(--border-color);">
