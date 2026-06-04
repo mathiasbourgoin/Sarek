@@ -13,7 +13,8 @@
   Sarek_ir_opencl
   Sarek_ir_metal
   Sarek_ir_glsl
-  Sarek_ir_wgsl)
+  Sarek_ir_wgsl
+  Sarek_wgsl_abi)
  (preprocess no_preprocessing)
  (instrumentation
   (backend bisect_ppx)))
