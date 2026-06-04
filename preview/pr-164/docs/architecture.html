@@ -1,0 +1,128 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <link rel="icon" href="/Sarek/preview/pr-164/favicon.ico" />
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
+    <script src="/Sarek/preview/pr-164/javascripts/process-rel-links.js" type="text/javascript"></script>
+    <title>Sarek Architecture - Sarek</title>
+    
+    <link rel="stylesheet" href='/Sarek/preview/pr-164/stylesheets/modern.css'>
+    <link rel="stylesheet" href='/Sarek/preview/pr-164/stylesheets/pygment_trac.css'>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  </head>
+  <body>
+
+    <!-- Top Navigation Bar -->
+    <nav class="navbar">
+      <div class="container">
+        <a href="/Sarek/preview/pr-164/" class="nav-brand">
+          <img src="/Sarek/preview/pr-164/pres_resources/logo_sarek.png" alt="Sarek Logo">
+          Sarek
+        </a>
+        <div class="nav-links">
+          <a href="/Sarek/preview/pr-164/">Home</a>
+          <a href="/Sarek/preview/pr-164/docs/getting_started.html">Getting Started</a>
+          <a href="/Sarek/preview/pr-164/benchmarks/">Benchmarks</a>
+          <a href="/Sarek/preview/pr-164/examples/">Examples</a>
+          <a href="/Sarek/preview/pr-164/playground.html">Playground</a>
+          <a href="/Sarek/preview/pr-164/learn/">Learn</a>
+          <div class="nav-dropdown">
+            <button type="button" class="dropdown-toggle" aria-haspopup="true" aria-expanded="false" aria-controls="docs-menu">Docs ▾</button>
+            <div class="dropdown-menu" id="docs-menu">
+              <a href="/Sarek/preview/pr-164/docs/concepts.html">Concepts</a>
+              <a href="/Sarek/preview/pr-164/docs/architecture.html">Architecture</a>
+              <a href="/Sarek/preview/pr-164/docs/backends.html">Backends</a>
+              <a href="/Sarek/preview/pr-164/docs/device_selection.html">Device Selection</a>
+              <a href="/Sarek/preview/pr-164/docs/build_guide.html">Build Guide</a>
+              <a href="/Sarek/preview/pr-164/docs/faq.html">FAQ</a>
+              <a href="/Sarek/preview/pr-164/docs/publications.html">Publications</a>
+            </div>
+          </div>
+          <a href="/Sarek/preview/pr-164/spoc_docs/index.html">API</a>
+          <a href="https://github.com/mathiasbourgoin/Sarek">GitHub</a>
+          <button id="theme-toggle" title="Toggle Dark/Light Mode">
+            <span>🌙</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main-content">
+      <div class="container">
+        <h1 id="sarek--spoc-architecture">Sarek &amp; SPOC Architecture</h1>
+
+<p>The project is structured into two main layers: <strong>Sarek</strong> (the high-level DSL and compiler) and <strong>SPOC</strong> (the low-level runtime and plugin framework).</p>
+
+<h2 id="high-level-overview">High-Level Overview</h2>
+
+<pre><code class="language-mermaid">graph TD
+    User[User OCaml Code] --&gt; PPX[Sarek PPX Compiler]
+    PPX --&gt; IR[Sarek Intermediate Representation]
+    IR --&gt; Dispatcher[Unified Execution Dispatcher]
+    
+    subgraph "Backend Plugins"
+        Dispatcher --&gt; CUDA[CUDA Plugin]
+        Dispatcher --&gt; OpenCL[OpenCL Plugin]
+        Dispatcher --&gt; Vulkan[Vulkan Plugin]
+        Dispatcher --&gt; Native[Native CPU Plugin]
+    end
+    
+    CUDA --&gt; NVRTC[NVRTC Compiler]
+    OpenCL --&gt; OCL_Comp[OpenCL Driver]
+    Native --&gt; Domains[OCaml 5 Domains]
+</code></pre>
+
+<h2 id="1-sarek-the-dsl-layer">1. Sarek: The DSL Layer</h2>
+<p>Sarek is responsible for the developer-facing experience. It uses a <strong>PPX (Pre-Processor Extension)</strong> to allow writing GPU code in standard OCaml syntax.</p>
+
+<ul>
+  <li><strong>Frontend</strong>: The PPX parses <code class="language-plaintext highlighter-rouge">[%kernel ...]</code> blocks.</li>
+  <li><strong>Typing</strong>: It performs a second typing pass to ensure the OCaml code is compatible with GPU constraints (no closures, no arbitrary heap allocation).</li>
+  <li><strong>Lowering</strong>: The typed AST is lowered into a specialized <strong>Sarek IR (Intermediate Representation)</strong>.</li>
+  <li><strong>Code Generation</strong>: The IR is either translated into C-like GPU source code (for JIT backends) or converted into an OCaml function (for the Native backend).</li>
+</ul>
+
+<h2 id="2-spoc-the-runtime-layer">2. SPOC: The Runtime Layer</h2>
+<p>SPOC (<em>SIMT Programming for OCaml</em>) provides the infrastructure to manage hardware.</p>
+
+<ul>
+  <li><strong>Unified API</strong>: A backend-agnostic interface for device detection, memory allocation, and kernel launching.</li>
+  <li><strong>Memory Management</strong>: Handles <code class="language-plaintext highlighter-rouge">Vector.t</code> objects, which bridge OCaml’s GC-managed heap and the GPU’s private memory.</li>
+  <li><strong>Plugin System</strong>: Every backend (CUDA, OpenCL, etc.) is a standalone plugin that registers itself with the central SPOC registry at runtime.</li>
+</ul>
+
+<h2 id="3-execution-pipeline">3. Execution Pipeline</h2>
+
+<p>When you call <code class="language-plaintext highlighter-rouge">Execute.run kernel</code>, the following happens:</p>
+
+<ol>
+  <li><strong>Discovery</strong>: SPOC checks which backends are available on your system.</li>
+  <li><strong>Selection</strong>: It selects the best available device (prioritizing GPU over CPU).</li>
+  <li><strong>Monomorphization</strong>: If the kernel uses polymorphic types, Sarek specializes the IR for the concrete types of the arguments.</li>
+  <li><strong>JIT Compilation</strong>: For GPU backends, the IR is translated to source code (e.g., CUDA C) and compiled by the driver’s JIT compiler.</li>
+  <li><strong>Caching</strong>: Compiled kernels are cached in memory (and sometimes on disk for Vulkan) to avoid recompilation on subsequent calls.</li>
+  <li><strong>Execution</strong>: The kernel is launched on the GPU asynchronously. SPOC manages the streams and events to ensure data consistency.</li>
+</ol>
+
+<h2 id="4-the-bsp-model-supersteps">4. The BSP Model (Supersteps)</h2>
+<p>Sarek implements the <strong>Bulk Synchronous Parallel (BSP)</strong> model. This allows developers to write complex algorithms using <code class="language-plaintext highlighter-rouge">let%superstep</code> blocks. The runtime ensures that all threads reach a synchronization barrier between supersteps, providing a clear and safe way to manage data dependencies in parallel code.</p>
+
+      </div>
+    </main>
+
+    <footer>
+      <div class="container">
+        <p>Sarek is maintained by <a href="https://github.com/mathiasbourgoin">mathiasbourgoin</a></p>
+        <p>Hosted on GitHub Pages</p>
+      </div>
+    </footer>
+
+    <script src="/Sarek/preview/pr-164/javascripts/scale.fix.js"></script>
+    <script src="/Sarek/preview/pr-164/javascripts/copy-code.js"></script>
+    <script src="/Sarek/preview/pr-164/javascripts/theme-toggle.js"></script>
+    <script src="/Sarek/preview/pr-164/javascripts/dropdown.js"></script>
+    <script src="/Sarek/preview/pr-164/javascripts/syntax-sarek.js"></script>
+  </body>
+</html>

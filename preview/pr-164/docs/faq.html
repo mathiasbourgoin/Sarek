@@ -1,0 +1,198 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <link rel="icon" href="/Sarek/preview/pr-164/favicon.ico" />
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
+    <script src="/Sarek/preview/pr-164/javascripts/process-rel-links.js" type="text/javascript"></script>
+    <title>FAQ - Sarek</title>
+    
+    <link rel="stylesheet" href='/Sarek/preview/pr-164/stylesheets/modern.css'>
+    <link rel="stylesheet" href='/Sarek/preview/pr-164/stylesheets/pygment_trac.css'>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  </head>
+  <body>
+
+    <!-- Top Navigation Bar -->
+    <nav class="navbar">
+      <div class="container">
+        <a href="/Sarek/preview/pr-164/" class="nav-brand">
+          <img src="/Sarek/preview/pr-164/pres_resources/logo_sarek.png" alt="Sarek Logo">
+          Sarek
+        </a>
+        <div class="nav-links">
+          <a href="/Sarek/preview/pr-164/">Home</a>
+          <a href="/Sarek/preview/pr-164/docs/getting_started.html">Getting Started</a>
+          <a href="/Sarek/preview/pr-164/benchmarks/">Benchmarks</a>
+          <a href="/Sarek/preview/pr-164/examples/">Examples</a>
+          <a href="/Sarek/preview/pr-164/playground.html">Playground</a>
+          <a href="/Sarek/preview/pr-164/learn/">Learn</a>
+          <div class="nav-dropdown">
+            <button type="button" class="dropdown-toggle" aria-haspopup="true" aria-expanded="false" aria-controls="docs-menu">Docs ▾</button>
+            <div class="dropdown-menu" id="docs-menu">
+              <a href="/Sarek/preview/pr-164/docs/concepts.html">Concepts</a>
+              <a href="/Sarek/preview/pr-164/docs/architecture.html">Architecture</a>
+              <a href="/Sarek/preview/pr-164/docs/backends.html">Backends</a>
+              <a href="/Sarek/preview/pr-164/docs/device_selection.html">Device Selection</a>
+              <a href="/Sarek/preview/pr-164/docs/build_guide.html">Build Guide</a>
+              <a href="/Sarek/preview/pr-164/docs/faq.html">FAQ</a>
+              <a href="/Sarek/preview/pr-164/docs/publications.html">Publications</a>
+            </div>
+          </div>
+          <a href="/Sarek/preview/pr-164/spoc_docs/index.html">API</a>
+          <a href="https://github.com/mathiasbourgoin/Sarek">GitHub</a>
+          <button id="theme-toggle" title="Toggle Dark/Light Mode">
+            <span>🌙</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main-content">
+      <div class="container">
+        <h1 id="frequently-asked-questions">Frequently Asked Questions</h1>
+
+<h2 id="general-questions">General Questions</h2>
+
+<h3 id="do-i-need-an-nvidia-gpu-to-use-sarek">Do I need an NVIDIA GPU to use Sarek?</h3>
+<p>No. While Sarek supports <strong>CUDA</strong> for NVIDIA hardware, it also supports <strong>OpenCL</strong> and <strong>Vulkan</strong>, which work on AMD GPUs, Intel Integrated Graphics, and even some FPGAs. If no GPU is available, Sarek can fall back to the <strong>Native CPU</strong> backend.</p>
+
+<h3 id="can-i-run-sarek-on-macos">Can I run Sarek on macOS?</h3>
+<p>Yes. Sarek has a dedicated <strong>Metal</strong> backend for Apple Silicon (M1/M2/M3) and Intel-based Macs. It also supports OpenCL on macOS.</p>
+
+<h3 id="does-sarek-work-on-windows">Does Sarek work on Windows?</h3>
+<p>Sarek has limited testing on Windows, but it should work via the OpenCL and Vulkan backends. Using <strong>WSL2</strong> is recommended for the best experience.</p>
+
+<h2 id="technical-questions">Technical Questions</h2>
+
+<h3 id="what-is-the-overhead-of-using-ocaml-for-gpu-programming">What is the overhead of using OCaml for GPU programming?</h3>
+<p>Sarek uses a JIT compilation approach for GPU backends. The logic you write in OCaml is compiled into native GPU code (CUDA C, GLSL, etc.). Once the kernel is compiled and cached, the execution performance is comparable to hand-written C/CUDA code.</p>
+
+<h3 id="does-the-ocaml-garbage-collector-interfere-with-the-gpu">Does the OCaml Garbage Collector interfere with the GPU?</h3>
+<p>No. The GPU has its own memory. Data is explicitly transferred between the OCaml heap and the GPU memory via <code class="language-plaintext highlighter-rouge">Vector</code> objects. The GC manages the OCaml “handle” to the GPU memory, but does not touch the data residing on the device.</p>
+
+<h3 id="can-i-use-custom-ocaml-types-in-my-kernels">Can I use custom OCaml types in my kernels?</h3>
+<p>Yes. By using the <code class="language-plaintext highlighter-rouge">[@@sarek.type]</code> attribute on record definitions, Sarek automatically generates the corresponding C structures for the GPU and handles the memory layout.</p>
+
+<h3 id="is-ocaml-5-required">Is OCaml 5 required?</h3>
+<p>Yes. The latest version of Sarek leverages <strong>OCaml 5 Effects and Domains</strong> for the Native CPU backend to provide high-performance parallel execution on multi-core processors.</p>
+
+<h2 id="cuda-backend-questions">CUDA Backend Questions</h2>
+
+<h3 id="what-cuda-version-do-i-need-for-newer-gpus">What CUDA version do I need for newer GPUs?</h3>
+<p>For <strong>Blackwell architecture</strong> GPUs (RTX 5000 series, compute capability 12.0):</p>
+<ul>
+  <li><strong>Minimum</strong>: CUDA 12.9 with driver 575+</li>
+  <li><strong>Recommended</strong>: CUDA 13.1 with driver 580+</li>
+</ul>
+
+<p>Sarek automatically handles forward compatibility by compiling PTX for <code class="language-plaintext highlighter-rouge">compute_90</code> and letting the driver JIT-compile for newer architectures.</p>
+
+<h3 id="i-get-cuda_error_unknown222-when-loading-kernels-whats-wrong">I get <code class="language-plaintext highlighter-rouge">CUDA_ERROR_UNKNOWN(222)</code> when loading kernels. What’s wrong?</h3>
+<p>This error typically occurs with newer GPU architectures when there’s a version mismatch:</p>
+
+<ol>
+  <li><strong>Check your versions</strong>:
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>nvidia-smi        <span class="c"># Shows driver version and API level</span>
+nvcc <span class="nt">--version</span>    <span class="c"># Shows CUDA toolkit version</span>
+</code></pre></div>    </div>
+  </li>
+  <li><strong>Common causes</strong>:
+    <ul>
+      <li>CUDA 13.1 with driver &lt; 580 (downgrade to CUDA 12.9)</li>
+      <li>CUDA toolkit older than 12.9 on Blackwell GPUs (upgrade toolkit)</li>
+    </ul>
+  </li>
+  <li><strong>Verify your setup</strong>:
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>dune <span class="nb">exec</span> <span class="nt">--</span> sarek-device-info
+</code></pre></div>    </div>
+  </li>
+</ol>
+
+<h3 id="what-does-cuda-version-in-nvidia-smi-mean">What does “CUDA Version” in nvidia-smi mean?</h3>
+<p>The “CUDA Version” shown by <code class="language-plaintext highlighter-rouge">nvidia-smi</code> (e.g., “12.9”) is the maximum CUDA runtime API version your <strong>driver</strong> supports, not your installed toolkit version. It’s normal and expected for these to differ. For example, driver 575 supports CUDA API 12.9, even if you have CUDA toolkit 13.1 installed (though it won’t work fully without driver 580+).</p>
+
+<h3 id="how-do-i-list-available-cuda-devices">How do I list available CUDA devices?</h3>
+<p>Use the device info utility:</p>
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>dune <span class="nb">exec</span> <span class="nt">--</span> sarek-device-info
+</code></pre></div></div>
+
+<p>This shows all detected devices across all backends (CUDA, OpenCL, Vulkan, Metal, Native, Interpreter) with their capabilities.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+
+<h3 id="a-kernel-crashes-with-the-context-is-lost--soft-recovery-amdgpu">A kernel crashes with “the context is lost” / “soft recovery” (amdgpu)</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>amdgpu: The CS has cancelled because the context is lost. This context is
+guilty of a soft recovery.
+</code></pre></div></div>
+
+<p>This is a <strong>GPU-level fault</strong> reported by the driver, not a Sarek error — the OpenCL
+runtime submitted work the driver couldn’t complete, so it reset the GPU. On integrated
+AMD GPUs (e.g. Renoir APUs) driven by Mesa’s legacy <strong>clover</strong> OpenCL, this happens even
+for tiny workloads.</p>
+
+<p>What to do, in order:</p>
+
+<ol>
+  <li><strong>Confirm it’s the driver, not your kernel</strong> — run on the CPU backend:
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>dune <span class="nb">exec </span>sarek/tests/e2e/test_vector_add.exe <span class="nt">--</span> <span class="nt">--native</span>
+</code></pre></div>    </div>
+    <p>If that passes, your kernel is fine and the OpenCL stack is the problem.</p>
+  </li>
+  <li><strong>Switch OpenCL implementation</strong> from clover to the maintained <strong>rusticl</strong>:
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">RUSTICL_ENABLE</span><span class="o">=</span>radeonsi dune <span class="nb">exec</span> <span class="nt">--</span> your_program.exe
+</code></pre></div>    </div>
+  </li>
+  <li><strong>Use the Vulkan backend instead</strong> (more robust than clover on APUs):
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>dune <span class="nb">exec </span>sarek/tests/e2e/test_vector_add.exe <span class="nt">--</span> <span class="nt">--vulkan</span>
+</code></pre></div>    </div>
+  </li>
+  <li>Or disable the failing backend entirely — see
+<a href="device_selection.html">Device &amp; Backend Selection</a> (<code class="language-plaintext highlighter-rouge">SPOC_DISABLE_OPENCL=1</code>).</li>
+</ol>
+
+<p>Note: ROCm does not support most integrated APUs, so installing it will not fix this.</p>
+
+<h3 id="no-devices-available--a-backend-doesnt-appear">“No devices available” / a backend doesn’t appear</h3>
+
+<ul>
+  <li>Run <code class="language-plaintext highlighter-rouge">dune exec -- sarek-device-info</code> to see what is actually detected.</li>
+  <li>Check the backend’s loader is installed (OpenCL ICD, Vulkan loader, CUDA driver).</li>
+  <li>Make sure you haven’t left a <code class="language-plaintext highlighter-rouge">SPOC_DISABLE_*</code> variable set (see
+<a href="device_selection.html">Device &amp; Backend Selection</a>).</li>
+</ul>
+
+<h3 id="a-specific-backend-hangs-or-faults">A specific backend hangs or faults</h3>
+
+<p>Isolate it with the disable variables, then run only the others:</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">SPOC_DISABLE_OPENCL</span><span class="o">=</span>1 dune <span class="nb">exec</span> <span class="nt">--</span> your_program.exe   <span class="c"># skip OpenCL</span>
+<span class="nv">SPOC_DISABLE_GPU</span><span class="o">=</span>1     dune <span class="nb">exec</span> <span class="nt">--</span> your_program.exe   <span class="c"># CPU only</span>
+</code></pre></div></div>
+
+<h3 id="results-differ-slightly-between-backends">Results differ slightly between backends</h3>
+
+<p>Floating-point results can differ across backends (different rounding, fused
+multiply-add, math-library implementations). The e2e tests compare against a CPU baseline
+with a tolerance rather than exact equality. If a backend’s result is wildly wrong (not
+just last-bit differences), file an issue with the device, driver version, and kernel.</p>
+
+      </div>
+    </main>
+
+    <footer>
+      <div class="container">
+        <p>Sarek is maintained by <a href="https://github.com/mathiasbourgoin">mathiasbourgoin</a></p>
+        <p>Hosted on GitHub Pages</p>
+      </div>
+    </footer>
+
+    <script src="/Sarek/preview/pr-164/javascripts/scale.fix.js"></script>
+    <script src="/Sarek/preview/pr-164/javascripts/copy-code.js"></script>
+    <script src="/Sarek/preview/pr-164/javascripts/theme-toggle.js"></script>
+    <script src="/Sarek/preview/pr-164/javascripts/dropdown.js"></script>
+    <script src="/Sarek/preview/pr-164/javascripts/syntax-sarek.js"></script>
+  </body>
+</html>

@@ -1,0 +1,175 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <link rel="icon" href="/Sarek/preview/pr-164/favicon.ico" />
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
+    <script src="/Sarek/preview/pr-164/javascripts/process-rel-links.js" type="text/javascript"></script>
+    <title>Learn GPU programming with Sarek - Sarek</title>
+    
+    <link rel="stylesheet" href='/Sarek/preview/pr-164/stylesheets/modern.css'>
+    <link rel="stylesheet" href='/Sarek/preview/pr-164/stylesheets/pygment_trac.css'>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  </head>
+  <body>
+
+    <!-- Top Navigation Bar -->
+    <nav class="navbar">
+      <div class="container">
+        <a href="/Sarek/preview/pr-164/" class="nav-brand">
+          <img src="/Sarek/preview/pr-164/pres_resources/logo_sarek.png" alt="Sarek Logo">
+          Sarek
+        </a>
+        <div class="nav-links">
+          <a href="/Sarek/preview/pr-164/">Home</a>
+          <a href="/Sarek/preview/pr-164/docs/getting_started.html">Getting Started</a>
+          <a href="/Sarek/preview/pr-164/benchmarks/">Benchmarks</a>
+          <a href="/Sarek/preview/pr-164/examples/">Examples</a>
+          <a href="/Sarek/preview/pr-164/playground.html">Playground</a>
+          <a href="/Sarek/preview/pr-164/learn/">Learn</a>
+          <div class="nav-dropdown">
+            <button type="button" class="dropdown-toggle" aria-haspopup="true" aria-expanded="false" aria-controls="docs-menu">Docs ▾</button>
+            <div class="dropdown-menu" id="docs-menu">
+              <a href="/Sarek/preview/pr-164/docs/concepts.html">Concepts</a>
+              <a href="/Sarek/preview/pr-164/docs/architecture.html">Architecture</a>
+              <a href="/Sarek/preview/pr-164/docs/backends.html">Backends</a>
+              <a href="/Sarek/preview/pr-164/docs/device_selection.html">Device Selection</a>
+              <a href="/Sarek/preview/pr-164/docs/build_guide.html">Build Guide</a>
+              <a href="/Sarek/preview/pr-164/docs/faq.html">FAQ</a>
+              <a href="/Sarek/preview/pr-164/docs/publications.html">Publications</a>
+            </div>
+          </div>
+          <a href="/Sarek/preview/pr-164/spoc_docs/index.html">API</a>
+          <a href="https://github.com/mathiasbourgoin/Sarek">GitHub</a>
+          <button id="theme-toggle" title="Toggle Dark/Light Mode">
+            <span>🌙</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main-content">
+      <div class="container">
+        <h1 id="learn-gpu-programming-with-sarek">Learn GPU programming with Sarek</h1>
+
+<p>These interactive lessons teach the data-parallel programming model through
+short, runnable exercises. Each lesson lets you edit a Sarek kernel, click
+<strong>Run on my GPU</strong>, and instantly see whether your answer is correct — graded
+against a CPU reference running in the same browser tab.</p>
+
+<hr />
+
+<h2 id="what-is-gpgpu-and-what-is-a-kernel">What is GPGPU and what is a kernel?</h2>
+
+<p>A <strong>GPU</strong> (Graphics Processing Unit) has thousands of small cores that run in
+parallel. <strong>GPGPU</strong> (General-Purpose GPU computing) uses those cores to
+accelerate arbitrary numeric computation — not just graphics.</p>
+
+<p>The central concept is the <strong>kernel</strong>: a function that runs once per element
+of your dataset, each invocation handling exactly one element identified by
+its <strong>thread index</strong> (<code class="language-plaintext highlighter-rouge">global_thread_id</code> in Sarek). If you have an array of
+256 floats, the GPU launches 256 threads simultaneously, each computing one
+output value independently. This is the <em>data-parallel</em> model.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Thread 0:  reads a[0], b[0]  → writes c[0]
+Thread 1:  reads a[1], b[1]  → writes c[1]
+...
+Thread 255: reads a[255], b[255] → writes c[255]
+</code></pre></div></div>
+
+<p>No thread needs to wait for another — all 256 compute at once.</p>
+
+<hr />
+
+<h2 id="how-sarek--spoc-works">How Sarek / SPOC works</h2>
+
+<p><strong>Sarek</strong> lets you write GPU kernels in OCaml syntax. The compiler
+(<em>transpiler</em>) reads your kernel expression and emits GPU source code for
+multiple backends: CUDA, OpenCL, Metal, GLSL, and <strong>WGSL</strong>.</p>
+
+<p>In these lessons, Sarek transpiles to <strong>WGSL</strong> (WebGPU Shading Language) and
+runs the shader on <strong>your own GPU</strong> directly in your browser via the
+<a href="https://www.w3.org/TR/webgpu/">WebGPU API</a>. The transpiler itself is a
+WebAssembly + JavaScript bundle loaded from this page — no server is involved.</p>
+
+<hr />
+
+<h2 id="how-to-read-a-sarek-kernel">How to read a Sarek kernel</h2>
+
+<p>A minimal kernel looks like:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>fun (a : float32 vector) (b : float32 vector) -&gt;
+  let i = global_thread_id in
+  b.(i) &lt;- Float32.sin a.(i)
+</code></pre></div></div>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">fun (a : float32 vector) ...</code> — the kernel’s typed arguments. Buffers
+(arrays on the GPU) are <code class="language-plaintext highlighter-rouge">elementType vector</code>. Scalar values (ints, floats)
+are plain <code class="language-plaintext highlighter-rouge">int32</code> / <code class="language-plaintext highlighter-rouge">float32</code>.</li>
+  <li><code class="language-plaintext highlighter-rouge">let i = global_thread_id in</code> — binds the thread index. Each of the N
+threads gets a unique value of <code class="language-plaintext highlighter-rouge">i</code> from 0 to N-1.</li>
+  <li><code class="language-plaintext highlighter-rouge">b.(i) &lt;- expr</code> — writes <code class="language-plaintext highlighter-rouge">expr</code> into output buffer <code class="language-plaintext highlighter-rouge">b</code> at position <code class="language-plaintext highlighter-rouge">i</code>.
+Read accesses use <code class="language-plaintext highlighter-rouge">a.(i)</code> without the <code class="language-plaintext highlighter-rouge">&lt;-</code>.</li>
+</ul>
+
+<hr />
+
+<h2 id="how-the-interactive-checker-works">How the interactive checker works</h2>
+
+<ol>
+  <li>You edit the kernel starter in the editor.</li>
+  <li>Click <strong>Run on my GPU</strong> — the page calls
+<code class="language-plaintext highlighter-rouge">SarekTranspile.transpileWithAbi(source, "wgsl")</code> to compile your kernel
+to WGSL, then <code class="language-plaintext highlighter-rouge">SarekWebGPU.run(...)</code> to dispatch it on your GPU.</li>
+  <li>The result is compared element-by-element against a CPU reference
+(JavaScript). A relative tolerance of ±0.1 % is allowed for floating-point
+rounding. You see <strong>PASS</strong> (green) or <strong>FAIL</strong> with the first mismatching
+index.</li>
+  <li>Use <strong>Show generated WGSL</strong> to inspect the shader the transpiler produced.</li>
+</ol>
+
+<p>All datasets use <strong>N = 256</strong> for instant iteration. Larger datasets (N ≥ 64 K)
+would show more realistic GPU speedups but take several seconds to grade in
+the browser.</p>
+
+<hr />
+
+<h2 id="browser-requirements">Browser requirements</h2>
+
+<p>WebGPU requires a <strong>recent Chrome or Edge</strong> (version 113+). Firefox Nightly
+also works with the <code class="language-plaintext highlighter-rouge">dom.webgpu.enabled</code> flag. If your browser does not
+support WebGPU the lesson text still renders and you can read the kernel, but
+the Run button will be disabled with an explanatory message.</p>
+
+<hr />
+
+<h2 id="lessons">Lessons</h2>
+
+<ol>
+  <li><a href="/Sarek/preview/pr-164/learn/01-vector-add.html">Lesson 1 — Vector addition</a> — the data-parallel hello world</li>
+  <li><a href="/Sarek/preview/pr-164/learn/02-scale-saxpy.html">Lesson 2 — Scalar parameters (SAXPY)</a> — passing a scalar into a kernel</li>
+  <li><a href="/Sarek/preview/pr-164/learn/03-map-square.html">Lesson 3 — Elementwise map</a> — mapping a function over every element</li>
+  <li><a href="/Sarek/preview/pr-164/learn/04-bounds-if.html">Lesson 4 — Control flow and bounds</a> — <code class="language-plaintext highlighter-rouge">if</code> expressions and index guarding</li>
+  <li><a href="/Sarek/preview/pr-164/learn/05-mandelbrot.html">Lesson 5 — Mandelbrot</a> — a per-pixel loop that <strong>generates an image</strong> on your GPU</li>
+  <li><a href="/Sarek/preview/pr-164/learn/06-image-filter.html">Lesson 6 — Image filter</a> — a grayscale <strong>photo filter</strong> rendered in the page (bring your own photo)</li>
+</ol>
+
+      </div>
+    </main>
+
+    <footer>
+      <div class="container">
+        <p>Sarek is maintained by <a href="https://github.com/mathiasbourgoin">mathiasbourgoin</a></p>
+        <p>Hosted on GitHub Pages</p>
+      </div>
+    </footer>
+
+    <script src="/Sarek/preview/pr-164/javascripts/scale.fix.js"></script>
+    <script src="/Sarek/preview/pr-164/javascripts/copy-code.js"></script>
+    <script src="/Sarek/preview/pr-164/javascripts/theme-toggle.js"></script>
+    <script src="/Sarek/preview/pr-164/javascripts/dropdown.js"></script>
+    <script src="/Sarek/preview/pr-164/javascripts/syntax-sarek.js"></script>
+  </body>
+</html>
