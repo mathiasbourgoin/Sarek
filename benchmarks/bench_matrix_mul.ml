@@ -128,7 +128,9 @@ let benchmark_device dev size config =
 
   let verify (_va, _vb, vc) =
     let result_array = Vector.to_array vc in
-    Common.arrays_equal ~epsilon:0.001 result_array expected
+    (* Relative tolerance: float32 GPU result vs float64 reference, error grows
+       with K. See Common.arrays_close. *)
+    Common.arrays_close ~rel:1e-3 ~abs_floor:1e-3 result_array expected
   in
 
   let times, verified =

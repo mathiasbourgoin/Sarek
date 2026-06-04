@@ -190,12 +190,18 @@ let benchmark_device dev size config =
   (* Copy result back *)
   let result = Vector.to_array vc in
 
-  (* Verify correctness *)
-  let tolerance = 0.001 in
+  (* Verify correctness with a relative tolerance: the float32 GPU result is
+     compared against a float64 reference and the rounding error grows with K
+     (a fixed absolute epsilon fails at large sizes). *)
+  let rel = 1e-3 and abs_floor = 1e-3 in
   let verify_result () =
     try
       for i = 0 to (m * n) - 1 do
         let diff = abs_float (result.(i) -. expected.(i)) in
+        let tolerance =
+          (rel *. Float.max (abs_float result.(i)) (abs_float expected.(i)))
+          +. abs_floor
+        in
         if diff > tolerance then
           failwith
             (Printf.sprintf

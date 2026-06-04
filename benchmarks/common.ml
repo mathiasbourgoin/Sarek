@@ -111,6 +111,29 @@ let arrays_equal ~epsilon a b =
       a ;
     !errors = 0
 
+(** Relative-tolerance comparison: element [i] passes when
+    [|a.(i) -. b.(i)| <= rel *. max |a.(i)| |b.(i)| +. abs_floor].
+
+    Use this for reductions / matrix products, where the float32 GPU result is
+    compared against a float64 reference and the absolute rounding error grows
+    with the accumulation length (≈ K·2⁻²⁴·|value| for a K-term dot product). A
+    fixed absolute epsilon cannot hold across sizes; a relative tolerance can.
+    [abs_floor] keeps near-zero entries from requiring impossible precision. *)
+let arrays_close ~rel ~abs_floor a b =
+  if Array.length a <> Array.length b then false
+  else begin
+    let ok = ref true in
+    Array.iteri
+      (fun i va ->
+        let vb = b.(i) in
+        let tol =
+          (rel *. Float.max (abs_float va) (abs_float vb)) +. abs_floor
+        in
+        if abs_float (va -. vb) > tol then ok := false)
+      a ;
+    !ok
+  end
+
 let arrays_equal_verbose ~epsilon a b =
   if Array.length a <> Array.length b then (
     Printf.printf
