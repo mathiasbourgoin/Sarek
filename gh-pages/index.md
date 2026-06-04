@@ -41,6 +41,8 @@ dune build
 
 Check out the [Getting Started](docs/getting_started.html) guide to write your first GPU kernel in minutes, browse the [Examples](examples/) to see common patterns, or try the [Playground](playground.html) to transpile kernels live in your browser.
 
+New to GPU programming? The interactive [**Learn** course](learn/) teaches it from scratch — you edit a Sarek kernel and **run it on your own GPU** straight from the page (via WebGPU), with automatic checking. It builds up from vector addition through generating a Mandelbrot image and writing an image filter.
+
 ## How it works
 
 Sarek allows you to express parallel logic as standard OCaml functions. These are compiled to native GPU code at runtime.
@@ -49,7 +51,7 @@ Sarek allows you to express parallel logic as standard OCaml functions. These ar
 (* A simple vector addition kernel *)
 let%kernel vector_add (a : float32 vector) (b : float32 vector) (c : float32 vector) =
   let idx = get_global_id 0 in
-  c.(idx) <- a.(idx) + b.(idx)
+  c.(idx) <- a.(idx) +. b.(idx)
 ```
 
 <hr style="margin: 50px 0; border: 0; border-top: 1px solid var(--border-color);">
