@@ -1,0 +1,179 @@
+/* SPDX-License-Identifier: CECILL-B */
+/* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> */
+/*
+ * learn.css — styles for the interactive GPU course pages.
+ * Uses CSS variables from modern.css so light/dark themes work automatically.
+ */
+
+/* ── Error/pass colours for dark mode (mirrors playground.html) ─────────── */
+:root {
+  --learn-error-color: #c0392b;
+  --learn-pass-color:  #27ae60;
+  --learn-fail-color:  #c0392b;
+}
+.dark-theme {
+  --learn-error-color: #f48771;
+  --learn-pass-color:  #2ecc71;
+  --learn-fail-color:  #f48771;
+}
+@media (prefers-color-scheme: dark) {
+  body:not(.light-theme) {
+    --learn-error-color: #f48771;
+    --learn-pass-color:  #2ecc71;
+    --learn-fail-color:  #f48771;
+  }
+}
+
+/* ── Lesson container ───────────────────────────────────────────────────── */
+.lesson-container {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 1rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* ── WebGPU unavailable notice ──────────────────────────────────────────── */
+.webgpu-unavailable {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--text-color);
+  font-size: 0.9rem;
+}
+
+/* ── Fallback textarea (when CodeMirror CDN fails) ──────────────────────── */
+.lesson-container textarea {
+  width: 100%;
+  font-family: monospace;
+  font-size: 0.9rem;
+  padding: 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  box-sizing: border-box;
+  background: var(--code-bg);
+  color: var(--text-color);
+  min-height: 10em;
+  resize: vertical;
+}
+
+/* ── CodeMirror: auto-height + CSS-var theming (mirrors playground.html) ── */
+.lesson-container .CodeMirror {
+  height: auto;
+  min-height: 10em;
+  font-family: monospace;
+  font-size: 0.9rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--code-bg);
+  color: var(--text-color);
+}
+.lesson-container .CodeMirror-gutters {
+  background: var(--code-bg);
+  border-right: 1px solid var(--border-color);
+}
+.lesson-container .CodeMirror-linenumber {
+  color: var(--text-color);
+  opacity: 0.5;
+}
+.lesson-container .CodeMirror-cursor {
+  border-left-color: var(--text-color);
+}
+.lesson-container .CodeMirror-selected {
+  background: var(--primary-color) !important;
+  opacity: 0.25;
+}
+
+/* OCaml token colours — contrast-safe on both light and dark --code-bg */
+.lesson-container .cm-keyword    { color: var(--primary-color); font-weight: bold; }
+.lesson-container .cm-builtin    { color: var(--primary-color); }
+.lesson-container .cm-def        { color: var(--text-color); }
+.lesson-container .cm-variable   { color: var(--text-color); }
+.lesson-container .cm-variable-2 { color: var(--text-color); }
+.lesson-container .cm-type       { color: #4caf50; }
+.lesson-container .cm-string     { color: #e67e22; }
+.lesson-container .cm-string-2   { color: #e67e22; }
+.lesson-container .cm-number     { color: #8e44ad; }
+.lesson-container .cm-comment    { color: var(--text-color); opacity: 0.55; font-style: italic; }
+.lesson-container .cm-operator   { color: var(--primary-color); }
+.lesson-container .cm-meta       { color: var(--text-color); opacity: 0.7; }
+
+/* ── Run button ─────────────────────────────────────────────────────────── */
+.lesson-run-btn {
+  align-self: flex-start;
+  padding: 0.45rem 1.25rem;
+  font-size: 1rem;
+  font-weight: bold;
+  background: var(--primary-color);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.lesson-run-btn:hover:not(:disabled) { opacity: 0.85; }
+.lesson-run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Status bar ─────────────────────────────────────────────────────────── */
+.lesson-status {
+  font-size: 0.8rem;
+  color: var(--text-color);
+  opacity: 0.65;
+  min-height: 1.2em;
+}
+
+/* ── Result / output pane ───────────────────────────────────────────────── */
+.lesson-output {
+  background: var(--code-bg);
+  color: var(--text-color);
+  padding: 0.85rem 1rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-family: monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  min-height: 60px;
+  border: 1px solid var(--border-color);
+}
+.lesson-output.pass-output  { color: var(--learn-pass-color); border-color: var(--learn-pass-color); }
+.lesson-output.fail-output  { color: var(--learn-fail-color); border-color: var(--learn-fail-color); }
+.lesson-output.error-output { color: var(--learn-error-color); }
+
+/* ── WGSL toggle ────────────────────────────────────────────────────────── */
+.wgsl-toggle-btn {
+  font-size: 0.85rem;
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0.25rem 0.6rem;
+  color: var(--text-color);
+  cursor: pointer;
+}
+.wgsl-toggle-btn:hover { background: var(--card-bg); }
+.lesson-wgsl-pre {
+  background: var(--code-bg);
+  color: var(--text-color);
+  padding: 0.85rem 1rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-family: monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  border: 1px solid var(--border-color);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* ── Lesson prev/next nav ───────────────────────────────────────────────── */
+.lesson-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.9rem;
+}
+.lesson-nav a { color: var(--primary-color); text-decoration: none; }
+.lesson-nav a:hover { text-decoration: underline; }
