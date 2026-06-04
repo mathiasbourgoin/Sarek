@@ -44,7 +44,7 @@ SPOC (*SIMT Programming for OCaml*) provides the infrastructure to manage hardwa
 
 ## 3. Execution Pipeline
 
-When you call `Execute.run kernel`, the following happens:
+When you call `Execute.run_vectors`, the following happens:
 
 1. **Discovery**: SPOC checks which backends are available on your system.
 2. **Selection**: It selects the best available device (prioritizing GPU over CPU).
