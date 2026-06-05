@@ -147,9 +147,9 @@ let time (name : string) (dev : Device.t) (f : unit -> 'a) : 'a =
 
 (** {1 CPU-Side Timing} *)
 
-(** Injectable wall-clock source. Defaults to [Unix.gettimeofday].
-    Replace in environments without Unix (e.g. jsoo) before calling
-    [cpu_timed] or [cpu_time]. *)
+(** Injectable wall-clock source. Defaults to [Unix.gettimeofday]. Replace in
+    environments without Unix (e.g. jsoo) before calling [cpu_timed] or
+    [cpu_time]. *)
 let clock : (unit -> float) ref = ref Unix.gettimeofday
 
 (** Simple wall-clock timing for CPU operations *)

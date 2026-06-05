@@ -15,9 +15,9 @@ open Spoc_framework_registry
 
 (** {1 Pure element-size helper} *)
 
-(** Byte size of each Bigarray element kind on a 64-bit target.
-    Replaces [Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind)] so that
-    the numeric-only path is free of ctypes. Sizes are identical to what ctypes
+(** Byte size of each Bigarray element kind on a 64-bit target. Replaces
+    [Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind)] so that the
+    numeric-only path is free of ctypes. Sizes are identical to what ctypes
     sizeof returns on 64-bit: the underlying C representation widths. *)
 let bigarray_elem_size : type a b. (a, b) Bigarray.kind -> int = function
   | Bigarray.Float16 -> 2

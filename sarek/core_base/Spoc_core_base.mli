@@ -13,18 +13,18 @@
 
 (** {1 Custom-ops module type} *)
 
-(** Abstraction over the raw pointer, device type, and device-buffer type.
-    The pure Bigarray path never calls any of these operations. *)
+(** Abstraction over the raw pointer, device type, and device-buffer type. The
+    pure Bigarray path never calls any of these operations. *)
 module type CUSTOM_OPS = sig
   (** Opaque handle replacing [unit Ctypes.ptr] in custom storage. *)
   type handle
 
-  (** Opaque device type replacing [Device.t].
-      Native: [Spoc_core.Device.t].  Stub: [unit]. *)
+  (** Opaque device type replacing [Device.t]. Native: [Spoc_core.Device.t].
+      Stub: [unit]. *)
   type device_t
 
   (** Opaque device-buffer type stored in the per-vector device_buffers table.
-      Native: [(module Memory.BUFFER)].  Stub: [unit]. *)
+      Native: [(module Memory.BUFFER)]. Stub: [unit]. *)
   type device_buf
 
   (** Allocate storage for [length] elements of [elem_size] bytes each. *)
@@ -44,12 +44,12 @@ module type CUSTOM_OPS = sig
 
   (** Copy [elem_count] elements using the provided get/set pair. *)
   val copy_elems :
-       src:handle
-    -> dst:handle
-    -> elem_count:int
-    -> get:(handle -> int -> 'a)
-    -> set:(handle -> int -> 'a -> unit)
-    -> unit
+    src:handle ->
+    dst:handle ->
+    elem_count:int ->
+    get:(handle -> int -> 'a) ->
+    set:(handle -> int -> 'a -> unit) ->
+    unit
 
   (** Wrap a Bigarray as a handle (native-only; may [failwith]). *)
   val bigarray_to_handle :
@@ -172,8 +172,7 @@ module Make (Ops : CUSTOM_OPS) : sig
 
   val create : ('a, 'b) kind -> ?dev:Ops.device_t -> int -> ('a, 'b) t
 
-  val create_custom :
-    'a custom_type -> ?dev:Ops.device_t -> int -> ('a, unit) t
+  val create_custom : 'a custom_type -> ?dev:Ops.device_t -> int -> ('a, unit) t
 
   val of_bigarray :
     ('a, 'b) scalar_kind ->
@@ -184,8 +183,7 @@ module Make (Ops : CUSTOM_OPS) : sig
 
   (** {2 Accessors} *)
 
-  val to_bigarray :
-    ('a, 'b) t -> ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t
+  val to_bigarray : ('a, 'b) t -> ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t
 
   val has_buffer : ('a, 'b) t -> Ops.device_t -> bool
 

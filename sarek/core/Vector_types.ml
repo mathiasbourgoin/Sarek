@@ -20,8 +20,6 @@ module type DEVICE_BUFFER = Memory.BUFFER
 (** Device buffer type alias *)
 type device_buffer = (module DEVICE_BUFFER)
 
-
-
 (** Helper functions for custom type implementations. These wrap Ctypes
     operations to provide simpler APIs for PPX-generated code.
 
@@ -37,29 +35,29 @@ module Custom_helpers = struct
       unit =
     let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
     let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
-    Ctypes.((Ctypes.from_voidp Ctypes.float (Ctypes.to_voidp target_ptr)) <-@ v)
+    Ctypes.(Ctypes.from_voidp Ctypes.float (Ctypes.to_voidp target_ptr) <-@ v)
 
   let read_int32 (ptr : unit Ctypes.ptr) (byte_offset : int) : int32 =
     let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
     let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
     Ctypes.(!@(Ctypes.from_voidp Ctypes.int32_t (Ctypes.to_voidp target_ptr)))
 
-  let write_int32 (ptr : unit Ctypes.ptr) (byte_offset : int) (v : int32) :
-      unit =
+  let write_int32 (ptr : unit Ctypes.ptr) (byte_offset : int) (v : int32) : unit
+      =
     let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
     let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
-    Ctypes.((Ctypes.from_voidp Ctypes.int32_t (Ctypes.to_voidp target_ptr)) <-@ v)
+    Ctypes.(Ctypes.from_voidp Ctypes.int32_t (Ctypes.to_voidp target_ptr) <-@ v)
 
   let read_int64 (ptr : unit Ctypes.ptr) (byte_offset : int) : int64 =
     let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
     let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
     Ctypes.(!@(Ctypes.from_voidp Ctypes.int64_t (Ctypes.to_voidp target_ptr)))
 
-  let write_int64 (ptr : unit Ctypes.ptr) (byte_offset : int) (v : int64) :
-      unit =
+  let write_int64 (ptr : unit Ctypes.ptr) (byte_offset : int) (v : int64) : unit
+      =
     let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
     let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
-    Ctypes.((Ctypes.from_voidp Ctypes.int64_t (Ctypes.to_voidp target_ptr)) <-@ v)
+    Ctypes.(Ctypes.from_voidp Ctypes.int64_t (Ctypes.to_voidp target_ptr) <-@ v)
 
   let read_float64 (ptr : unit Ctypes.ptr) (byte_offset : int) : float =
     let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
@@ -70,7 +68,7 @@ module Custom_helpers = struct
       unit =
     let byte_ptr = Ctypes.from_voidp Ctypes.uint8_t ptr in
     let target_ptr = Ctypes.(byte_ptr +@ byte_offset) in
-    Ctypes.((Ctypes.from_voidp Ctypes.double (Ctypes.to_voidp target_ptr)) <-@ v)
+    Ctypes.(Ctypes.from_voidp Ctypes.double (Ctypes.to_voidp target_ptr) <-@ v)
 
   let read_int (ptr : unit Ctypes.ptr) (byte_offset : int) : int =
     Int32.to_int (read_int32 ptr byte_offset)

@@ -40,8 +40,8 @@ let copy_elems ~(src : handle) ~(dst : handle) ~(elem_count : int)
     set dst i (get src i)
   done
 
-let bigarray_to_handle :
-    type a b. (a, b, Bigarray.c_layout) Bigarray.Array1.t -> handle =
+let bigarray_to_handle : type a b.
+    (a, b, Bigarray.c_layout) Bigarray.Array1.t -> handle =
  fun ba -> Ctypes.(bigarray_start array1 ba |> to_voidp)
 
 let device_id (dev : device_t) : int = dev.id

@@ -20,12 +20,12 @@ module type CUSTOM_OPS = sig
   (** Opaque handle replacing [unit Ctypes.ptr] in custom storage. *)
   type handle
 
-  (** Opaque device type replacing [Device.t].
-      Native: [Spoc_core.Device.t].  Stub: [unit]. *)
+  (** Opaque device type replacing [Device.t]. Native: [Spoc_core.Device.t].
+      Stub: [unit]. *)
   type device_t
 
   (** Opaque device-buffer type stored in the per-vector device_buffers table.
-      Native: [(module Memory.BUFFER)].  Stub: [unit]. *)
+      Native: [(module Memory.BUFFER)]. Stub: [unit]. *)
   type device_buf
 
   (** Allocate storage for [length] elements of [elem_size] bytes each. *)
@@ -45,12 +45,12 @@ module type CUSTOM_OPS = sig
 
   (** Copy [elem_count] elements using the provided get/set pair. *)
   val copy_elems :
-       src:handle
-    -> dst:handle
-    -> elem_count:int
-    -> get:(handle -> int -> 'a)
-    -> set:(handle -> int -> 'a -> unit)
-    -> unit
+    src:handle ->
+    dst:handle ->
+    elem_count:int ->
+    get:(handle -> int -> 'a) ->
+    set:(handle -> int -> 'a -> unit) ->
+    unit
 
   (** Wrap a Bigarray as a handle (native-only; may [failwith]). *)
   val bigarray_to_handle :
@@ -167,20 +167,26 @@ module Make (Ops : CUSTOM_OPS) = struct
 
   (** {2 Type-id helpers} *)
 
-  let float32_type_id : float Sarek_ir_types.Type_id.t = Sarek_ir_types.Type_id.create ()
+  let float32_type_id : float Sarek_ir_types.Type_id.t =
+    Sarek_ir_types.Type_id.create ()
 
-  let float64_type_id : float Sarek_ir_types.Type_id.t = Sarek_ir_types.Type_id.create ()
+  let float64_type_id : float Sarek_ir_types.Type_id.t =
+    Sarek_ir_types.Type_id.create ()
 
-  let int32_type_id : int32 Sarek_ir_types.Type_id.t = Sarek_ir_types.Type_id.create ()
+  let int32_type_id : int32 Sarek_ir_types.Type_id.t =
+    Sarek_ir_types.Type_id.create ()
 
-  let int64_type_id : int64 Sarek_ir_types.Type_id.t = Sarek_ir_types.Type_id.create ()
+  let int64_type_id : int64 Sarek_ir_types.Type_id.t =
+    Sarek_ir_types.Type_id.create ()
 
-  let char_type_id : char Sarek_ir_types.Type_id.t = Sarek_ir_types.Type_id.create ()
+  let char_type_id : char Sarek_ir_types.Type_id.t =
+    Sarek_ir_types.Type_id.create ()
 
-  let complex32_type_id : Complex.t Sarek_ir_types.Type_id.t = Sarek_ir_types.Type_id.create ()
+  let complex32_type_id : Complex.t Sarek_ir_types.Type_id.t =
+    Sarek_ir_types.Type_id.create ()
 
-  let scalar_type_id : type a b. (a, b) scalar_kind -> a Sarek_ir_types.Type_id.t
-      = function
+  let scalar_type_id : type a b.
+      (a, b) scalar_kind -> a Sarek_ir_types.Type_id.t = function
     | Float32 -> float32_type_id
     | Float64 -> float64_type_id
     | Int32 -> int32_type_id
@@ -192,20 +198,32 @@ module Make (Ops : CUSTOM_OPS) = struct
     | Scalar k -> scalar_type_id k
     | Custom c -> c.type_id
 
-  let float32_vector_type_id : (float, Bigarray.float32_elt) t Sarek_ir_types.Type_id.t = Sarek_ir_types.Type_id.create ()
+  let float32_vector_type_id :
+      (float, Bigarray.float32_elt) t Sarek_ir_types.Type_id.t =
+    Sarek_ir_types.Type_id.create ()
 
-  let float64_vector_type_id : (float, Bigarray.float64_elt) t Sarek_ir_types.Type_id.t = Sarek_ir_types.Type_id.create ()
+  let float64_vector_type_id :
+      (float, Bigarray.float64_elt) t Sarek_ir_types.Type_id.t =
+    Sarek_ir_types.Type_id.create ()
 
-  let int32_vector_type_id : (int32, Bigarray.int32_elt) t Sarek_ir_types.Type_id.t = Sarek_ir_types.Type_id.create ()
+  let int32_vector_type_id :
+      (int32, Bigarray.int32_elt) t Sarek_ir_types.Type_id.t =
+    Sarek_ir_types.Type_id.create ()
 
-  let int64_vector_type_id : (int64, Bigarray.int64_elt) t Sarek_ir_types.Type_id.t = Sarek_ir_types.Type_id.create ()
+  let int64_vector_type_id :
+      (int64, Bigarray.int64_elt) t Sarek_ir_types.Type_id.t =
+    Sarek_ir_types.Type_id.create ()
 
-  let char_vector_type_id : (char, Bigarray.int8_unsigned_elt) t Sarek_ir_types.Type_id.t = Sarek_ir_types.Type_id.create ()
+  let char_vector_type_id :
+      (char, Bigarray.int8_unsigned_elt) t Sarek_ir_types.Type_id.t =
+    Sarek_ir_types.Type_id.create ()
 
-  let complex32_vector_type_id : (Complex.t, Bigarray.complex32_elt) t Sarek_ir_types.Type_id.t = Sarek_ir_types.Type_id.create ()
+  let complex32_vector_type_id :
+      (Complex.t, Bigarray.complex32_elt) t Sarek_ir_types.Type_id.t =
+    Sarek_ir_types.Type_id.create ()
 
-  let vector_type_id :
-      type a b. (a, b) kind -> (a, b) t Sarek_ir_types.Type_id.t = function
+  let vector_type_id : type a b.
+      (a, b) kind -> (a, b) t Sarek_ir_types.Type_id.t = function
     | Scalar Float32 -> float32_vector_type_id
     | Scalar Float64 -> float64_vector_type_id
     | Scalar Int32 -> int32_vector_type_id
@@ -301,8 +319,8 @@ module Make (Ops : CUSTOM_OPS) = struct
   let has_buffer (vec : ('a, 'b) t) (dev : Ops.device_t) : bool =
     Hashtbl.mem vec.device_buffers (Ops.device_id dev)
 
-  let get_buffer (vec : ('a, 'b) t) (dev : Ops.device_t) :
-      Ops.device_buf option =
+  let get_buffer (vec : ('a, 'b) t) (dev : Ops.device_t) : Ops.device_buf option
+      =
     Hashtbl.find_opt vec.device_buffers (Ops.device_id dev)
 
   (** {2 Subvector metadata} *)
@@ -326,7 +344,9 @@ module Make (Ops : CUSTOM_OPS) = struct
     match get_sub_meta vec with Some meta -> meta.depth | None -> 0
 
   let parent_id (vec : ('a, 'b) t) : int option =
-    match get_sub_meta vec with Some meta -> Some meta.parent_id | None -> None
+    match get_sub_meta vec with
+    | Some meta -> Some meta.parent_id
+    | None -> None
 
   let sub_start (vec : ('a, 'b) t) : int option =
     match get_sub_meta vec with Some meta -> Some meta.start | None -> None
@@ -354,8 +374,12 @@ module Make (Ops : CUSTOM_OPS) = struct
           Bigarray_storage new_ba
       | Custom_storage {ptr = handle; custom; length} ->
           let new_handle = Ops.alloc ~elem_size:custom.elem_size ~length in
-          Ops.copy_elems ~src:handle ~dst:new_handle ~elem_count:length
-            ~get:custom.get ~set:custom.set ;
+          Ops.copy_elems
+            ~src:handle
+            ~dst:new_handle
+            ~elem_count:length
+            ~get:custom.get
+            ~set:custom.set ;
           Custom_storage {ptr = new_handle; custom; length}
     in
     {
