@@ -123,10 +123,30 @@ async seam is written once by the lesson author, so **A + B1 fully suffice and C
    to feed the native FFI backends and must also be isolated for a *link-clean* build (it's never reached on
    the WebGPU/typed-array path).
 
-## Remaining decisions (for the reviewer)
+## Decisions (locked 2026-06-05)
 
-- Confirm the **5-step phasing** and the **B1 (async read-back seam) + precompiled** direction before the decouple.
-- The decouple's exact module boundary: a `spoc_core_ctypes` companion lib vs a `Custom` functor for the
-  custom-type + FFI-transfer surface — to be settled at the start of the Core-decouple PR.
-- **Scope of this first PR:** still just the skeleton + these two spikes — no behaviour/decouple yet.
+- **Phasing:** the 5-step plan above — approved.
+- **Async bridge:** **B1** (synchronous `Execute`, async read-back seam `Vector.to_array_async`) +
+  **precompiled** lessons. Option C (workers + SharedArrayBuffer) not needed now.
+- **Decouple boundary: hidden functor.** Functorise the `Vector_*` trio over a `CUSTOM_OPS` signature in a
+  new pure `spoc_core_base` (no ctypes; `type handle` replaces `unit Ctypes.ptr`; alloc/get/set/free +
+  FFI-transfer as functor params). The native `spoc_core` (same name/path) defines `Ctypes_ops` and
+  re-exports `module Vector = Spoc_core_base.Make (Ctypes_ops)` so **`Spoc_core.Vector` is byte-identical
+  for every caller/test/plugin**. The browser build (`spoc_core_js`) instantiates `Make (Stub_ops)`
+  (custom-type ops raise "not supported in browser"; DataView-backed later). **No user/test/plugin/course
+  author ever writes `Make(...)`** — only the two maintainer instantiation lines do.
+
+## Core-decouple PR — proposed build order (safe → invasive)
+
+1. **Non-boundary shims + the FFI-free gate (tiny, low risk, additive):** replace `Memory.ml:61`
+   `Ctypes_static.sizeof` with `elem_size_of_kind` (Spike 2); make `Profiling`'s clock an injectable ref;
+   exclude the futures `Unix.sleepf` from the numeric path. Add the **FFI-free bytecode/jsoo build target**
+   for the numeric slice now, so it guards the rest. Goldens/e2e unchanged.
+2. **Functorise the `Vector_*` trio** into `spoc_core_base` over `CUSTOM_OPS`; native `spoc_core`
+   re-exports `Make (Ctypes_ops)`. Move the ctypes leaf code (`Custom_helpers`, `allocate_n`,
+   `of_ctypes_ptr`, `bigarray_start`/`to_voidp` FFI-transfer) behind `Ctypes_ops`. Gate: goldens
+   byte-identical + e2e green + the FFI-free target builds `spoc_core_base` with **no ctypes in its deps**.
+3. **`spoc_core_js`** = `Make (Stub_ops)`, plus an FFI-free jsoo smoke build.
+
+(These remain on `feature/spoc-web-backend` / future PRs — none auto-merged.)
 </content>
