@@ -1,0 +1,12 @@
+; spoc_core_base — FFI-free numeric vector core
+; This library must NOT list ctypes, unix, or spoc_framework in its
+; (libraries ...) stanza. The FFI-free gate test enforces this at build time.
+
+(library
+ (name spoc_core_base)
+ (public_name sarek.core_base)
+ (libraries sarek_ir)
+ (modules Spoc_core_base)
+ (preprocess no_preprocessing)
+ (instrumentation
+  (backend bisect_ppx)))

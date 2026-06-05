@@ -7,6 +7,7 @@
  (libraries
   spoc_framework
   spoc_framework_registry
+  spoc_core_base
   ctypes
   unix
   sarek_ir
@@ -26,7 +27,8 @@
   Transfer
   Profiling
   Error
-  Advanced)
+  Advanced
+  Ctypes_ops)
  (preprocess no_preprocessing)
  (instrumentation
   (backend bisect_ppx)))
