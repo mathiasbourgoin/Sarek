@@ -1,0 +1,9 @@
+; spoc_core_js smoke test — bytecode and js_of_ocaml targets.
+; No ctypes, no unix.
+
+(executable
+ (name smoke)
+ (modes byte js)
+ (modules smoke)
+ (libraries spoc_core_js)
+ (preprocess no_preprocessing))

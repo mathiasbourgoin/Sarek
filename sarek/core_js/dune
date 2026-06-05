@@ -1,0 +1,12 @@
+; spoc_core_js — browser-targeted instantiation of the FFI-free numeric vector core.
+; Dependencies: sarek_ir and spoc_core_base only.
+; NO ctypes, NO unix.
+
+(library
+ (name spoc_core_js)
+ (public_name sarek.core_js)
+ (libraries sarek_ir spoc_core_base)
+ (modules Js_ops Spoc_core_js)
+ (preprocess no_preprocessing)
+ (instrumentation
+  (backend bisect_ppx)))
