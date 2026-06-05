@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: CECILL-B
+# SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
 # gpu-bench-check.sh — GPU benchmark regression check for SPOC/Sarek.
 #
 # Runs the self-verifying benchmark suite on whatever GPU/accelerator backends
