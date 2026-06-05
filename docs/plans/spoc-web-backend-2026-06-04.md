@@ -72,13 +72,61 @@ shape with `execution_model = JIT` and `generate_source` = the WGSL backend alre
    run multiple composed kernels over shared buffers, and read back — using the actual SPOC API in the
    browser (impossible with the canned runner).
 
-## Risks / open questions (for the reviewer)
+## Risk mitigation
 
-- **WebGPU async vs SPOC's synchronous API.** WebGPU is promise-based; SPOC's `Execute.run_vectors` is
-  synchronous. The jsoo runtime must bridge this (Lwt, or a synchronous-looking façade over a
-  pre-warmed device). **This is the main design risk** and should be settled before Phase 3.
-- **Custom types in-browser:** deferred (stub `failwith`). Acceptable for courses? 
-- **Toplevel vs precompiled:** do we need `js_of_ocaml-toplevel` for learners to type host code, or do
-  we ship precompiled lesson programs and only let them edit the kernel? (Start with precompiled.)
-- **Scope of this first PR:** intentionally just the skeleton — confirm the phasing before the decouple.
+### Risk 1 — WebGPU async vs SPOC's synchronous API  →  **mitigated (measured)**
+
+The risk is narrower than "async vs sync". In WebGPU **almost everything is synchronous** —
+`createBuffer`/`writeBuffer`/`createShaderModule`/`createComputePipeline`/`createBindGroup`/the
+encoder/`dispatchWorkgroups`/`queue.submit` are all sync. Only **two** ops are promises:
+**device acquisition** (`requestAdapter`/`requestDevice`, one-time) and **read-back** (`buffer.mapAsync`).
+
+Mitigations, cheapest → most thorough:
+
+| | Approach | Cost |
+|---|---|---|
+| **A** | **Pre-warm the device**: acquire adapter+device once at init; the harness awaits it before enabling "Run", so in-browser `Device.init` returns the handle synchronously. Removes async (1). | trivial |
+| **B1** *(chosen)* | **Async read-back seam**: `Execute.run_vectors` stays synchronous (all sync WebGPU calls); only read-back is async in the browser — `Vector.to_array_async : 'a vector -> 'a array Lwt.t` (native keeps sync `to_array`). The one async point a lesson hits is "read results, then check". | small |
+| **C** | **Fully-synchronous façade**: jsoo in a Web Worker, GPU service on the main thread, sync RPC over `SharedArrayBuffer` + `Atomics.wait`, COOP/COEP via a coi-service-worker on GitHub Pages. SPOC's host API stays byte-identical/synchronous (needed only for a future toplevel). | heavy |
+
+Scoping the courses to **precompiled lesson programs** (the learner edits the kernel, as today) means the
+async seam is written once by the lesson author, so **A + B1 fully suffice and C is unneeded now.**
+
+### Risks 2–5 — mitigation
+
+- **Custom types (`Ctypes.ptr`):** out of v1 scope (stub `failwith`; courses use numeric vectors). Later,
+  back `Custom_storage` with an `ArrayBuffer`/`DataView` (no ctypes); `Custom_helpers.read_float32`/
+  `write_int64` map 1:1 to `DataView.getFloat32`/`setBigInt64`. The byte-identical golden gate protects
+  the numeric path during the decouple.
+- **`Ctypes_static.sizeof` + `Unix`:** fully removable — pure `elem_size_of_kind` lookup (proven by the
+  spike) and an injectable clock ref (native default / jsoo `performance.now`); the futures `Unix.sleepf`
+  is excluded from the numeric build.
+- **jsoo won't no-op ctypes-foreign:** don't compile the FFI plugins to jsoo; route through the
+  `Spoc_webgpu` BACKEND. Add a `dune` bytecode/jsoo target that builds only the numeric slice and **fails
+  the build if ctypes re-enters the link** (Phase-0B FFI-free gate) — converts the latent risk into CI.
+- **Toplevel vs precompiled:** start **precompiled** (avoids `js_of_ocaml-toplevel`, neutralizes most of Risk 1).
+
+## De-risking spikes — RESULTS (both passed; on this branch under `sarek/plugins/webgpu/spike/`)
+
+1. **jsoo ↔ WebGPU binding** (`spike/webgpu_binding/`) — an OCaml program compiled with js_of_ocaml drives a
+   full WebGPU `vector_add` **from OCaml** (`Js.Unsafe` bindings: `requestAdapter`→`requestDevice`→buffers→
+   WGSL `createShaderModule`→pipeline→dispatch→`mapAsync`), returning the result to OCaml via the **B1 async
+   callback seam**. **Verified correct for all 256 elements on the real RX 7900 XTX** (Playwright + flagged
+   Chrome). ⟹ Risk 1's chosen path is proven end-to-end.
+2. **FFI-free numeric core** (`spike/numeric_core/`) — a Bigarray-backed numeric vector (`create/get/set/
+   to_array`, `elem_size_of_kind`, injectable clock) **builds to both bytecode and js_of_ocaml with deps =
+   `bigarray` only** (no ctypes/unix); the bytecode test PASSes. The gap analysis classified every
+   `Ctypes`/`Unix` occurrence in the seven `spoc_core` numeric-path files and returned **GO**: the scalar
+   path is FFI-free once (i) `Memory.ml:61 sizeof` is shimmed, (ii) the custom-type branch is gated behind
+   a boundary, (iii) `Unix` is shimmed. One refinement over the original audit: the **FFI-transfer pointer
+   plumbing** (`Memory.ml` 130/141/172, `Vector_transfer.ml` 15–36 — `bigarray_start`/`to_voidp`) exists only
+   to feed the native FFI backends and must also be isolated for a *link-clean* build (it's never reached on
+   the WebGPU/typed-array path).
+
+## Remaining decisions (for the reviewer)
+
+- Confirm the **5-step phasing** and the **B1 (async read-back seam) + precompiled** direction before the decouple.
+- The decouple's exact module boundary: a `spoc_core_ctypes` companion lib vs a `Custom` functor for the
+  custom-type + FFI-transfer surface — to be settled at the start of the Core-decouple PR.
+- **Scope of this first PR:** still just the skeleton + these two spikes — no behaviour/decouple yet.
 </content>
