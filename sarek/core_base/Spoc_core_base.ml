@@ -135,8 +135,9 @@ module Make (Ops : CUSTOM_OPS) = struct
     | Bigarray.Int16_unsigned -> 2
     | Bigarray.Int32 -> 4
     | Bigarray.Int64 -> 8
-    | Bigarray.Int -> 8
-    | Bigarray.Nativeint -> 8
+    (* word-sized: 8 on 64-bit, 4 on 32-bit — matches Ctypes sizeof per platform *)
+    | Bigarray.Int -> Sys.word_size / 8
+    | Bigarray.Nativeint -> Sys.word_size / 8
     | Bigarray.Complex32 -> 8
     | Bigarray.Complex64 -> 16
     | Bigarray.Char -> 1
