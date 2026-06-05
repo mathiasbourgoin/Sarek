@@ -13,6 +13,28 @@
 open Spoc_framework
 open Spoc_framework_registry
 
+(** {1 Pure element-size helper} *)
+
+(** Byte size of each Bigarray element kind on a 64-bit target.
+    Replaces [Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind)] so that
+    the numeric-only path is free of ctypes. Sizes are identical to what ctypes
+    sizeof returns on 64-bit: the underlying C representation widths. *)
+let bigarray_elem_size : type a b. (a, b) Bigarray.kind -> int = function
+  | Bigarray.Float16 -> 2
+  | Bigarray.Float32 -> 4
+  | Bigarray.Float64 -> 8
+  | Bigarray.Int8_signed -> 1
+  | Bigarray.Int8_unsigned -> 1
+  | Bigarray.Int16_signed -> 2
+  | Bigarray.Int16_unsigned -> 2
+  | Bigarray.Int32 -> 4
+  | Bigarray.Int64 -> 8
+  | Bigarray.Int -> 8
+  | Bigarray.Nativeint -> 8
+  | Bigarray.Complex32 -> 8
+  | Bigarray.Complex64 -> 16
+  | Bigarray.Char -> 1
+
 (** {1 Buffer Module Type} *)
 
 (** A buffer packages backend-specific buffer with its operations. All transfers
@@ -58,7 +80,7 @@ let alloc (device : Device.t) (size : int) (kind : ('a, 'b) Bigarray.kind) :
   | Some (module B : Framework_sig.BACKEND) ->
       let dev = B.Device.get device.backend_id in
       let buf = B.Memory.alloc dev size kind in
-      let elem_size = Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind) in
+      let elem_size = bigarray_elem_size kind in
       Buffer
         (module struct
           let device = device
