@@ -385,6 +385,19 @@ let on_adapter ctx adapter =
         ctx.on_error ("SpocRT: requestDevice failed: " ^ js_err err)) ;
     then_ dp (on_device ctx)
 
+(* Requested output names that are not storage buffers in the ABI. *)
+let missing_outputs buffers_js n_bufs outputs_wanted =
+  let names =
+    List.init n_bufs (fun i -> js_str (js_arr_get buffers_js i) "name")
+  in
+  List.filter (fun o -> not (List.mem o names)) outputs_wanted
+
+let start_run ctx =
+  let ap = request_adapter_high_perf () in
+  catch_ ap (fun err ->
+      ctx.on_error ("SpocRT: requestAdapter failed: " ^ js_err err)) ;
+  then_ ap (on_adapter ctx)
+
 let run ~wgsl ~abi_json ~inputs ~scalars ~outputs_wanted ~on_done ~on_error () =
   (* Guarantee on_done/on_error fire at most once, even if multiple output
      read-backs or a rejection race (relevant once multi-output is supported). *)
@@ -414,23 +427,26 @@ let run ~wgsl ~abi_json ~inputs ~scalars ~outputs_wanted ~on_done ~on_error () =
            wg1
            wg2)
     else
-      let ctx =
-        {
-          device = Js.Unsafe.inject Js.null;
-          buffers_js = js_get abi "buffers";
-          n_bufs = js_arr_len (js_get abi "buffers");
-          params_js = js_get abi "params";
-          has_params = not (js_is_null_or_undef (js_get abi "params"));
-          workgroup_x = js_to_int (js_arr_get wg 0);
-          wgsl;
-          inputs;
-          scalars;
-          outputs_wanted;
-          on_done;
-          on_error;
-        }
-      in
-      let ap = request_adapter_high_perf () in
-      catch_ ap (fun err ->
-          on_error ("SpocRT: requestAdapter failed: " ^ js_err err)) ;
-      then_ ap (on_adapter ctx)
+      let buffers_js = js_get abi "buffers" in
+      let n_bufs = js_arr_len buffers_js in
+      match missing_outputs buffers_js n_bufs outputs_wanted with
+      | _ :: _ as missing ->
+          on_error
+            ("SpocRT: unknown requested output(s): "
+           ^ String.concat ", " missing)
+      | [] ->
+          start_run
+            {
+              device = Js.Unsafe.inject Js.null;
+              buffers_js;
+              n_bufs;
+              params_js = js_get abi "params";
+              has_params = not (js_is_null_or_undef (js_get abi "params"));
+              workgroup_x = js_to_int (js_arr_get wg 0);
+              wgsl;
+              inputs;
+              scalars;
+              outputs_wanted;
+              on_done;
+              on_error;
+            }
