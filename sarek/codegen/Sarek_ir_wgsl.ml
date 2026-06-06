@@ -149,29 +149,29 @@ let rec has_float64 = function
 (** {1 Thread Intrinsics}
 
     WGSL uses three distinct builtins:
-    - [local_invocation_id] (lid) — thread within workgroup
-    - [workgroup_id] (wid) — workgroup index in the dispatch grid
-    - [global_invocation_id] (gid) — globally unique thread index
+    - [local_invocation_id] (sarek_lid) — thread within workgroup
+    - [workgroup_id] (sarek_wid) — workgroup index in the dispatch grid
+    - [global_invocation_id] (sarek_gid) — globally unique thread index
 
     All are [vec3<u32>]; we cast to i32 to match the IR's i32 type for thread
     ids. The entry point declares all three builtins; unused ones are harmless
     (WGSL permits unused builtin params). *)
 let wgsl_thread_intrinsic = function
-  | "thread_id_x" | "thread_idx_x" -> "i32(lid.x)"
-  | "thread_id_y" | "thread_idx_y" -> "i32(lid.y)"
-  | "thread_id_z" | "thread_idx_z" -> "i32(lid.z)"
-  | "block_id_x" | "block_idx_x" -> "i32(wid.x)"
-  | "block_id_y" | "block_idx_y" -> "i32(wid.y)"
-  | "block_id_z" | "block_idx_z" -> "i32(wid.z)"
+  | "thread_id_x" | "thread_idx_x" -> "i32(sarek_lid.x)"
+  | "thread_id_y" | "thread_idx_y" -> "i32(sarek_lid.y)"
+  | "thread_id_z" | "thread_idx_z" -> "i32(sarek_lid.z)"
+  | "block_id_x" | "block_idx_x" -> "i32(sarek_wid.x)"
+  | "block_id_y" | "block_idx_y" -> "i32(sarek_wid.y)"
+  | "block_id_z" | "block_idx_z" -> "i32(sarek_wid.z)"
   | "block_dim_x" -> "256i"
   | "block_dim_y" -> "1i"
   | "block_dim_z" -> "1i"
-  | "grid_dim_x" -> "i32(nwg.x)"
-  | "grid_dim_y" -> "i32(nwg.y)"
-  | "grid_dim_z" -> "i32(nwg.z)"
-  | "global_thread_id" | "global_idx" | "global_idx_x" -> "i32(gid.x)"
-  | "global_idx_y" -> "i32(gid.y)"
-  | "global_idx_z" -> "i32(gid.z)"
+  | "grid_dim_x" -> "i32(sarek_nwg.x)"
+  | "grid_dim_y" -> "i32(sarek_nwg.y)"
+  | "grid_dim_z" -> "i32(sarek_nwg.z)"
+  | "global_thread_id" | "global_idx" | "global_idx_x" -> "i32(sarek_gid.x)"
+  | "global_idx_y" -> "i32(sarek_gid.y)"
+  | "global_idx_z" -> "i32(sarek_gid.z)"
   | "global_size" -> "0i"
   | name -> Codegen_error.raise_error (Codegen_error.unknown_intrinsic name)
 
@@ -972,10 +972,10 @@ let wgsl_header ~kernel_name ?(block = (256, 1, 1)) () =
   Printf.sprintf
     "@compute @workgroup_size(%d, %d, %d)\n\
      fn main(\n\
-    \  @builtin(global_invocation_id) gid : vec3<u32>,\n\
-    \  @builtin(local_invocation_id) lid : vec3<u32>,\n\
-    \  @builtin(workgroup_id) wid : vec3<u32>,\n\
-    \  @builtin(num_workgroups) nwg : vec3<u32>\n\
+    \  @builtin(global_invocation_id) sarek_gid : vec3<u32>,\n\
+    \  @builtin(local_invocation_id) sarek_lid : vec3<u32>,\n\
+    \  @builtin(workgroup_id) sarek_wid : vec3<u32>,\n\
+    \  @builtin(num_workgroups) sarek_nwg : vec3<u32>\n\
      ) {\n"
     bx
     by

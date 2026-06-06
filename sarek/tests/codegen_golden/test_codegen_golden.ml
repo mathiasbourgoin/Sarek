@@ -722,12 +722,12 @@ let () =
      // Sarek-generated compute shader: scalar_vec_add\n\
      @compute @workgroup_size(256, 1, 1)\n\
      fn main(\n\
-    \  @builtin(global_invocation_id) gid : vec3<u32>,\n\
-    \  @builtin(local_invocation_id) lid : vec3<u32>,\n\
-    \  @builtin(workgroup_id) wid : vec3<u32>,\n\
-    \  @builtin(num_workgroups) nwg : vec3<u32>\n\
+    \  @builtin(global_invocation_id) sarek_gid : vec3<u32>,\n\
+    \  @builtin(local_invocation_id) sarek_lid : vec3<u32>,\n\
+    \  @builtin(workgroup_id) sarek_wid : vec3<u32>,\n\
+    \  @builtin(num_workgroups) sarek_nwg : vec3<u32>\n\
      ) {\n\
-    \  let idx : i32 = i32(gid.x);\n\
+    \  let idx : i32 = i32(sarek_gid.x);\n\
     \  c[idx] = (a[idx] + b[idx]);\n\
      }\n" ;
 
@@ -746,12 +746,12 @@ let () =
      // Sarek-generated compute shader: record_kernel\n\
      @compute @workgroup_size(256, 1, 1)\n\
      fn main(\n\
-    \  @builtin(global_invocation_id) gid : vec3<u32>,\n\
-    \  @builtin(local_invocation_id) lid : vec3<u32>,\n\
-    \  @builtin(workgroup_id) wid : vec3<u32>,\n\
-    \  @builtin(num_workgroups) nwg : vec3<u32>\n\
+    \  @builtin(global_invocation_id) sarek_gid : vec3<u32>,\n\
+    \  @builtin(local_invocation_id) sarek_lid : vec3<u32>,\n\
+    \  @builtin(workgroup_id) sarek_wid : vec3<u32>,\n\
+    \  @builtin(num_workgroups) sarek_nwg : vec3<u32>\n\
      ) {\n\
-    \  let idx : i32 = i32(gid.x);\n\
+    \  let idx : i32 = i32(sarek_gid.x);\n\
     \  let p : Point2 = pts[idx];\n\
     \  pts[idx] = Point2((p.x * 2.0f), (p.y * 2.0f));\n\
      }\n" ;
@@ -786,12 +786,12 @@ let () =
      // Sarek-generated compute shader: variant_kernel\n\
      @compute @workgroup_size(256, 1, 1)\n\
      fn main(\n\
-    \  @builtin(global_invocation_id) gid : vec3<u32>,\n\
-    \  @builtin(local_invocation_id) lid : vec3<u32>,\n\
-    \  @builtin(workgroup_id) wid : vec3<u32>,\n\
-    \  @builtin(num_workgroups) nwg : vec3<u32>\n\
+    \  @builtin(global_invocation_id) sarek_gid : vec3<u32>,\n\
+    \  @builtin(local_invocation_id) sarek_lid : vec3<u32>,\n\
+    \  @builtin(workgroup_id) sarek_wid : vec3<u32>,\n\
+    \  @builtin(num_workgroups) sarek_nwg : vec3<u32>\n\
      ) {\n\
-    \  let idx : i32 = i32(gid.x);\n\
+    \  let idx : i32 = i32(sarek_gid.x);\n\
     \  let flag : i32 = flags[idx];\n\
     \  if ((flag != 0i)) {\n\
     \    out[idx] = make_Opt_OptSome(1.0f);\n\
@@ -813,12 +813,12 @@ let () =
      // Sarek-generated compute shader: sin_kernel\n\
      @compute @workgroup_size(256, 1, 1)\n\
      fn main(\n\
-    \  @builtin(global_invocation_id) gid : vec3<u32>,\n\
-    \  @builtin(local_invocation_id) lid : vec3<u32>,\n\
-    \  @builtin(workgroup_id) wid : vec3<u32>,\n\
-    \  @builtin(num_workgroups) nwg : vec3<u32>\n\
+    \  @builtin(global_invocation_id) sarek_gid : vec3<u32>,\n\
+    \  @builtin(local_invocation_id) sarek_lid : vec3<u32>,\n\
+    \  @builtin(workgroup_id) sarek_wid : vec3<u32>,\n\
+    \  @builtin(num_workgroups) sarek_nwg : vec3<u32>\n\
      ) {\n\
-    \  let idx : i32 = i32(gid.x);\n\
+    \  let idx : i32 = i32(sarek_gid.x);\n\
     \  b[idx] = sin(a[idx]);\n\
      }\n" ;
 
@@ -836,12 +836,12 @@ let () =
      // Sarek-generated compute shader: float32_sin_path\n\
      @compute @workgroup_size(256, 1, 1)\n\
      fn main(\n\
-    \  @builtin(global_invocation_id) gid : vec3<u32>,\n\
-    \  @builtin(local_invocation_id) lid : vec3<u32>,\n\
-    \  @builtin(workgroup_id) wid : vec3<u32>,\n\
-    \  @builtin(num_workgroups) nwg : vec3<u32>\n\
+    \  @builtin(global_invocation_id) sarek_gid : vec3<u32>,\n\
+    \  @builtin(local_invocation_id) sarek_lid : vec3<u32>,\n\
+    \  @builtin(workgroup_id) sarek_wid : vec3<u32>,\n\
+    \  @builtin(num_workgroups) sarek_nwg : vec3<u32>\n\
      ) {\n\
-    \  let idx : i32 = i32(gid.x);\n\
+    \  let idx : i32 = i32(sarek_gid.x);\n\
     \  b[idx] = sin(a[idx]);\n\
      }\n"
 
@@ -940,12 +940,12 @@ let () =
      // Sarek-generated compute shader: bounds_check\n\
      @compute @workgroup_size(256, 1, 1)\n\
      fn main(\n\
-    \  @builtin(global_invocation_id) gid : vec3<u32>,\n\
-    \  @builtin(local_invocation_id) lid : vec3<u32>,\n\
-    \  @builtin(workgroup_id) wid : vec3<u32>,\n\
-    \  @builtin(num_workgroups) nwg : vec3<u32>\n\
+    \  @builtin(global_invocation_id) sarek_gid : vec3<u32>,\n\
+    \  @builtin(local_invocation_id) sarek_lid : vec3<u32>,\n\
+    \  @builtin(workgroup_id) sarek_wid : vec3<u32>,\n\
+    \  @builtin(num_workgroups) sarek_nwg : vec3<u32>\n\
      ) {\n\
-    \  let idx : i32 = i32(gid.x);\n\
+    \  let idx : i32 = i32(sarek_gid.x);\n\
     \  b[idx] = select(0.0f, a[idx], (idx < params.n));\n\
      }\n"
 
