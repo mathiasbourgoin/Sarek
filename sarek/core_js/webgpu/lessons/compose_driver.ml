@@ -117,6 +117,10 @@ let run_kernel_a wgsl_a abi_a wgsl_b abi_b n a_arr b_arr cb =
     called as [cb(resultArray, null)] on success or [cb(null, errorString)] on
     any failure. *)
 let run_fn kernel_a_src kernel_b_src inputs_obj cb =
+  (* Clear stale WGSL from any previous successful run. *)
+  let m = Js.Unsafe.get Js.Unsafe.global (Js.string "SpocCompose") in
+  Js.Unsafe.set m "lastWgslA" (Js.string "") ;
+  Js.Unsafe.set m "lastWgslB" (Js.string "") ;
   let src_a = Js.to_string kernel_a_src in
   let src_b = Js.to_string kernel_b_src in
   let a_arr = js_get_float_array inputs_obj "a" in
@@ -129,7 +133,6 @@ let run_fn kernel_a_src kernel_b_src inputs_obj cb =
       | None -> ()
       | Some (wgsl_b, abi_b) ->
           (* Expose generated WGSL so the lesson page can populate panes. *)
-          let m = Js.Unsafe.get Js.Unsafe.global (Js.string "SpocCompose") in
           Js.Unsafe.set m "lastWgslA" (Js.string wgsl_a) ;
           Js.Unsafe.set m "lastWgslB" (Js.string wgsl_b) ;
           run_kernel_a wgsl_a abi_a wgsl_b abi_b n a_arr b_arr cb)
