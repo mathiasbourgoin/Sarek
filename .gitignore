@@ -42,5 +42,12 @@ gh-pages/javascripts/sarek_transpile.js
 # Roster pipeline per-PR scaffolding — durable plans live in docs/plans/
 briefs/
 
+# Local harness / roster infrastructure — not part of the published repo
+.agents/
+.harness/
+skills-meta/
+kb/
+docs/team-proposal-2026-05-29.md
+
 # Playwright MCP session artifacts
 .playwright-mcp/
