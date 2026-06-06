@@ -24,7 +24,10 @@ const pw = resolvePlaywright();
 if (!pw) skip('playwright not resolvable');
 const { chromium } = pw;
 
-const root = '/home/mathias/dev/SPOC';
+// Repo root, resolved from this file's location (portable across machines/CI):
+// spike-worker -> webgpu -> core_js -> sarek -> repo root (4 levels up).
+const dir = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(dir, '../../../..');
 const workerBc = fs.readFileSync(path.join(root, '_build/default/sarek/core_js/webgpu/spike-worker/worker_spike.bc.js'));
 const driverBc = fs.readFileSync(path.join(root, '_build/default/sarek/core_js/webgpu/test/runtime_driver.bc.js'));
 
