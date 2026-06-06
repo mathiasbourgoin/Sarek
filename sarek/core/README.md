@@ -234,12 +234,13 @@ Core type definitions for vectors:
 - `location` - Where data resides
 - `host_storage` - Bigarray or Custom storage
 
-#### `Vector_storage.ml` - Storage Management (267 lines)
+#### Storage Management — `Spoc_core_base.Make(Ctypes_ops)`
 
-Internal storage operations:
-- Vector creation and initialization
-- Storage allocation and copying
-- Deep copy operations
+Vector creation, allocation, copying, and sub-vector operations live in the pure
+`spoc_core_base` functor (`sarek/core_base/Spoc_core_base.ml`), instantiated
+natively as `Vector_types = Spoc_core_base.Make(Ctypes_ops)` and re-exported
+through `Vector`. (The numeric path is FFI-free; the browser build instantiates
+the same functor with `Js_ops`.)
 
 #### `Vector_transfer.ml` - Sync Callbacks (48 lines)
 
