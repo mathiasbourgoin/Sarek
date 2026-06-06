@@ -1,0 +1,17 @@
+; spoc_webgpu_runtime — jsoo OCaml WebGPU compute runtime for Sarek WGSL kernels.
+;
+; Depends on js_of_ocaml and sarek_transpile (for the driver). No ctypes, no unix.
+;
+; Only built explicitly; not included in @install or dune runtest by default.
+;   dune build sarek/core_js/webgpu/
+;   dune build sarek/core_js/webgpu/test/runtime_driver.bc.js
+
+(library
+ (name spoc_webgpu_runtime)
+ (public_name sarek.webgpu_runtime)
+ (libraries js_of_ocaml)
+ (modules Webgpu_runtime)
+ (preprocess
+  (pps js_of_ocaml-ppx))
+ (instrumentation
+  (backend bisect_ppx)))

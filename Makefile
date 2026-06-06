@@ -409,6 +409,14 @@ lessons-gpu-test:
 	@dune build sarek/transpile/web/transpile_js.bc.js
 	@node gh-pages/learn/test/lessons_gpu_test.mjs _build/default/sarek/transpile/web/transpile_js.bc.js
 
+
+# SpocRT WebGPU runtime acceptance test: compile kernels via OCaml jsoo runtime
+# driver and run on a real GPU (Playwright + flagged Chrome -> Dawn/Vulkan).
+# Skips where playwright/chrome/WebGPU are unavailable; fails on wrong GPU result.
+webgpu-runtime-test:
+	@dune build sarek/core_js/webgpu/test/runtime_driver.bc.js
+	@node sarek/core_js/webgpu/test/webgpu_runtime_test.mjs _build/default/sarek/core_js/webgpu/test/runtime_driver.bc.js
+
 bench-update:
 	@echo "Running benchmarks and updating web data..."
 	@./benchmarks/run_all_benchmarks.sh results
