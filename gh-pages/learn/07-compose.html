@@ -1,0 +1,250 @@
+---
+layout: page
+title: "Lesson 7 — Composing kernels"
+---
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.css">
+<link rel="stylesheet" href="{{ site.baseurl }}/stylesheets/learn.css">
+
+<div class="lesson-container">
+
+  <h1>Lesson 7 — Composing kernels</h1>
+
+  <p>
+    A single kernel maps over one array at a time, but many algorithms are
+    naturally expressed as a <strong>pipeline</strong> of kernels: the output of
+    one kernel becomes the input of the next. This lesson shows how to chain two
+    kernels — <em>square</em> and <em>add</em> — to compute
+    <code>out[i] = a[i]² + b[i]</code> in two GPU passes.
+  </p>
+
+  <p>
+    What makes this different from the earlier lessons: there is now an OCaml
+    <strong>host program</strong> (compiled to JavaScript with
+    <a href="https://ocsigen.org/js_of_ocaml/">js_of_ocaml</a>) that
+    orchestrates the two GPU dispatches. The host transpiles each kernel source,
+    runs Kernel A to produce a temporary buffer <code>tmp</code>, then runs
+    Kernel B with <code>tmp</code> and <code>b</code> to produce the final
+    result.
+  </p>
+
+  <h2>Host orchestration (OCaml)</h2>
+  <pre class="lesson-output" style="margin-bottom:1rem;">
+(* Host program (runs in the browser via js_of_ocaml) *)
+let run kA_src kB_src ~a ~b ~cb =
+  match of_source_with_abi WGSL kA_src with
+  | Error e -> cb_err cb e
+  | Ok (wgslA, abiA) ->
+    Webgpu_runtime.run ~wgsl:wgslA ~abi_json:abiA
+      ~inputs:[("a", a); ("tmp", zeros)]
+      ~outputs_wanted:["tmp"]
+      ~on_done:(fun [{tmp}] ->
+        match of_source_with_abi WGSL kB_src with
+        | Error e -> cb_err cb e
+        | Ok (wgslB, abiB) ->
+          Webgpu_runtime.run ~wgsl:wgslB ~abi_json:abiB
+            ~inputs:[("tmp", tmp); ("b", b); ("out", zeros)]
+            ~outputs_wanted:["out"]
+            ~on_done:(fun [{out}] -> cb_ok cb out) ())
+      ()</pre>
+
+  <p>
+    <em>Note:</em> the two kernels currently round-trip through the host between
+    stages (tmp is read back from the GPU before being re-uploaded for Kernel B).
+    True GPU-side buffer persistence — avoiding the round-trip — is a planned
+    runtime enhancement.
+  </p>
+
+  <h2>Your task</h2>
+  <p>
+    Fill in the two kernels below and click <strong>Run on my GPU</strong>.
+    Both editors use the same OCaml kernel syntax you have seen in earlier
+    lessons. The host program above glues them together automatically.
+  </p>
+
+  <label class="lesson-editor-label" for="kernel-a-source">Kernel A — square (writes <code>tmp[i] = a[i] * a[i]</code>)</label>
+  <textarea id="kernel-a-source">fun (a : float32 vector) (tmp : float32 vector) ->
+  let i = global_thread_id in
+  tmp.(i) <- (* TODO: a[i] squared *)</textarea>
+
+  <label class="lesson-editor-label" for="kernel-b-source" style="margin-top:1rem;display:block;">Kernel B — add (writes <code>out[i] = tmp[i] + b[i]</code>)</label>
+  <textarea id="kernel-b-source">fun (tmp : float32 vector) (b : float32 vector) (out : float32 vector) ->
+  let i = global_thread_id in
+  out.(i) <- (* TODO: tmp[i] + b[i] *)</textarea>
+
+  <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;">
+    <button class="lesson-run-btn" id="run-btn">Run on my GPU</button>
+    <button class="wgsl-toggle-btn" id="wgsl-toggle-a">Show WGSL (Kernel A)</button>
+    <button class="wgsl-toggle-btn" id="wgsl-toggle-b">Show WGSL (Kernel B)</button>
+    <span class="lesson-status" id="status-bar"></span>
+  </div>
+
+  <pre class="lesson-output" id="output-pane">Fill in the TODOs and click "Run on my GPU".</pre>
+  <pre class="lesson-wgsl-pre" id="wgsl-pane-a" style="display:none;"></pre>
+  <pre class="lesson-wgsl-pre" id="wgsl-pane-b" style="display:none;"></pre>
+
+  <details>
+    <summary>Hint</summary>
+    <p>
+      Kernel A: <code>a.(i) *. a.(i)</code> (OCaml uses <code>*.</code> for
+      float multiplication). Kernel B: <code>tmp.(i) +. b.(i)</code>.
+    </p>
+  </details>
+
+  <div class="lesson-nav">
+    <a href="{{ site.baseurl }}/learn/06-image-filter.html">&larr; Lesson 6 — Image filter</a>
+    <a href="{{ site.baseurl }}/learn/">Back to course overview &rarr;</a>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/mode/mllike/mllike.min.js"></script>
+<script src="{{ site.baseurl }}/javascripts/spoc_compose.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var N = 256;
+
+  // Default kernel sources shown in the editors.
+  var STARTER_A =
+    'fun (a : float32 vector) (tmp : float32 vector) ->\n' +
+    '  let i = global_thread_id in\n' +
+    '  tmp.(i) <- (* TODO: a[i] squared *)';
+
+  var STARTER_B =
+    'fun (tmp : float32 vector) (b : float32 vector) (out : float32 vector) ->\n' +
+    '  let i = global_thread_id in\n' +
+    '  out.(i) <- (* TODO: tmp[i] + b[i] *)';
+
+  // CodeMirror editors.
+  var editorA = CodeMirror.fromTextArea(
+    document.getElementById('kernel-a-source'),
+    { mode: 'mllike', lineNumbers: true, theme: 'default' }
+  );
+  editorA.setValue(STARTER_A);
+
+  var editorB = CodeMirror.fromTextArea(
+    document.getElementById('kernel-b-source'),
+    { mode: 'mllike', lineNumbers: true, theme: 'default' }
+  );
+  editorB.setValue(STARTER_B);
+
+  // DOM references.
+  var runBtn    = document.getElementById('run-btn');
+  var statusBar = document.getElementById('status-bar');
+  var outputPane = document.getElementById('output-pane');
+  var wgslPaneA  = document.getElementById('wgsl-pane-a');
+  var wgslPaneB  = document.getElementById('wgsl-pane-b');
+  var wgslToggleA = document.getElementById('wgsl-toggle-a');
+  var wgslToggleB = document.getElementById('wgsl-toggle-b');
+
+  // WGSL toggle buttons.
+  wgslToggleA.addEventListener('click', function () {
+    var hidden = wgslPaneA.style.display === 'none';
+    wgslPaneA.style.display = hidden ? 'block' : 'none';
+    wgslToggleA.textContent = hidden ? 'Hide WGSL (Kernel A)' : 'Show WGSL (Kernel A)';
+  });
+  wgslToggleB.addEventListener('click', function () {
+    var hidden = wgslPaneB.style.display === 'none';
+    wgslPaneB.style.display = hidden ? 'block' : 'none';
+    wgslToggleB.textContent = hidden ? 'Hide WGSL (Kernel B)' : 'Show WGSL (Kernel B)';
+  });
+
+  // Build input data: a[i] = i * 0.5, b[i] = i * 2.0.
+  function buildInputs() {
+    var a = new Float32Array(N);
+    var b = new Float32Array(N);
+    for (var i = 0; i < N; i++) {
+      a[i] = i * 0.5;
+      b[i] = i * 2.0;
+    }
+    return { a: a, b: b };
+  }
+
+  // Check result against reference: out[i] == a[i]^2 + b[i] within 1e-3.
+  function checkResult(out, inputs) {
+    var bad = [];
+    for (var i = 0; i < N; i++) {
+      var expected = inputs.a[i] * inputs.a[i] + inputs.b[i];
+      if (Math.abs(out[i] - expected) > 1e-3) {
+        bad.push({ i: i, got: out[i], expected: expected });
+      }
+    }
+    return bad;
+  }
+
+  function setStatus(msg) { statusBar.textContent = msg; }
+
+  function showPass(msg) {
+    outputPane.className = 'lesson-output pass-output';
+    outputPane.textContent = msg;
+    setStatus('PASS');
+  }
+
+  function showFail(msg) {
+    outputPane.className = 'lesson-output fail-output';
+    outputPane.textContent = msg;
+    setStatus('FAIL');
+  }
+
+  function showError(msg) {
+    outputPane.className = 'lesson-output fail-output';
+    outputPane.textContent = msg;
+    setStatus('error');
+  }
+
+  // Check WebGPU availability before running.
+  function checkWebGPU(cb) {
+    if (!navigator.gpu) {
+      showError('WebGPU is not available in this browser.\n' +
+        'Try Chrome 113+ or Edge 113+ with WebGPU enabled.');
+      return;
+    }
+    navigator.gpu.requestAdapter().then(function (adapter) {
+      if (!adapter) {
+        showError('No WebGPU adapter found.\n' +
+          'Your GPU may not support WebGPU or the driver is missing.');
+        return;
+      }
+      cb();
+    });
+  }
+
+  runBtn.addEventListener('click', function () {
+    var srcA = editorA.getValue();
+    var srcB = editorB.getValue();
+    var inputs = buildInputs();
+
+    setStatus('running...');
+    outputPane.className = 'lesson-output';
+    outputPane.textContent = 'Running on your GPU...';
+
+    checkWebGPU(function () {
+      SpocCompose.run(srcA, srcB, { a: inputs.a, b: inputs.b },
+        function (result, err) {
+          if (err) {
+            showError('Error: ' + err);
+            return;
+          }
+
+          // Populate WGSL panes if available via SpocCompose internals.
+          // (The driver does not expose WGSL; panes stay empty unless filled.)
+
+          var bad = checkResult(Array.from(result), inputs);
+          if (bad.length === 0) {
+            showPass('PASS — all ' + N + ' elements correct.\n' +
+              'out[i] = a[i]² + b[i] for every i.');
+          } else {
+            var first = bad[0];
+            showFail('FAIL — ' + bad.length + ' mismatches.\n' +
+              'First mismatch at i=' + first.i +
+              ': got ' + first.got.toFixed(6) +
+              ', expected ' + first.expected.toFixed(6));
+          }
+        }
+      );
+    });
+  });
+})();
+</script>

@@ -53,6 +53,8 @@ jobs:
         run: |
           opam exec -- dune build sarek/transpile/web/transpile_js.bc.js
           cp _build/default/sarek/transpile/web/transpile_js.bc.js gh-pages/javascripts/sarek_transpile.js
+          opam exec -- dune build sarek/core_js/webgpu/lessons/compose_driver.bc.js
+          cp _build/default/sarek/core_js/webgpu/lessons/compose_driver.bc.js gh-pages/javascripts/spoc_compose.js
 
       - name: Build Jekyll site
         run: |

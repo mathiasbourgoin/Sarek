@@ -103,3 +103,4 @@ the Run button will be disabled with an explanatory message.
 4. [Lesson 4 — Control flow and bounds]({{ site.baseurl }}/learn/04-bounds-if.html) — `if` expressions and index guarding
 5. [Lesson 5 — Mandelbrot]({{ site.baseurl }}/learn/05-mandelbrot.html) — a per-pixel loop that **generates an image** on your GPU
 6. [Lesson 6 — Image filter]({{ site.baseurl }}/learn/06-image-filter.html) — a grayscale **photo filter** rendered in the page (bring your own photo)
+7. [Lesson 7 — Composing kernels]({{ site.baseurl }}/learn/07-compose.html) — chain two kernels with an OCaml host: square then add, in two GPU passes

@@ -417,6 +417,14 @@ webgpu-runtime-test:
 	@dune build sarek/core_js/webgpu/test/runtime_driver.bc.js
 	@node sarek/core_js/webgpu/test/webgpu_runtime_test.mjs _build/default/sarek/core_js/webgpu/test/runtime_driver.bc.js
 
+# Kernel-composition course lesson GPU acceptance test: run two chained kernels
+# via the OCaml jsoo compose driver on a real GPU (Playwright + flagged Chrome).
+# Skips where playwright/chrome/WebGPU are unavailable; fails on wrong GPU result.
+compose-gpu-test:
+	@dune build sarek/core_js/webgpu/lessons/compose_driver.bc.js
+	@node gh-pages/learn/test/compose_gpu_test.mjs _build/default/sarek/core_js/webgpu/lessons/compose_driver.bc.js
+
+
 bench-update:
 	@echo "Running benchmarks and updating web data..."
 	@./benchmarks/run_all_benchmarks.sh results
