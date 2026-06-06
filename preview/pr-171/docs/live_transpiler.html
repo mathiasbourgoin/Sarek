@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <link rel="icon" href="/Sarek/preview/pr-171/favicon.ico" />
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
+    <script src="/Sarek/preview/pr-171/javascripts/process-rel-links.js" type="text/javascript"></script>
+    <title>Live Transpiler - Sarek</title>
+    
+    <link rel="stylesheet" href='/Sarek/preview/pr-171/stylesheets/modern.css'>
+    <link rel="stylesheet" href='/Sarek/preview/pr-171/stylesheets/pygment_trac.css'>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  </head>
+  <body>
+
+    <!-- Top Navigation Bar -->
+    <nav class="navbar">
+      <div class="container">
+        <a href="/Sarek/preview/pr-171/" class="nav-brand">
+          <img src="/Sarek/preview/pr-171/pres_resources/logo_sarek.png" alt="Sarek Logo">
+          Sarek
+        </a>
+        <div class="nav-links">
+          <a href="/Sarek/preview/pr-171/">Home</a>
+          <a href="/Sarek/preview/pr-171/docs/getting_started.html">Getting Started</a>
+          <a href="/Sarek/preview/pr-171/benchmarks/">Benchmarks</a>
+          <a href="/Sarek/preview/pr-171/examples/">Examples</a>
+          <a href="/Sarek/preview/pr-171/playground.html">Playground</a>
+          <a href="/Sarek/preview/pr-171/learn/">Learn</a>
+          <div class="nav-dropdown">
+            <button type="button" class="dropdown-toggle" aria-haspopup="true" aria-expanded="false" aria-controls="docs-menu">Docs ▾</button>
+            <div class="dropdown-menu" id="docs-menu">
+              <a href="/Sarek/preview/pr-171/docs/concepts.html">Concepts</a>
+              <a href="/Sarek/preview/pr-171/docs/architecture.html">Architecture</a>
+              <a href="/Sarek/preview/pr-171/docs/backends.html">Backends</a>
+              <a href="/Sarek/preview/pr-171/docs/device_selection.html">Device Selection</a>
+              <a href="/Sarek/preview/pr-171/docs/build_guide.html">Build Guide</a>
+              <a href="/Sarek/preview/pr-171/docs/faq.html">FAQ</a>
+              <a href="/Sarek/preview/pr-171/docs/publications.html">Publications</a>
+            </div>
+          </div>
+          <a href="/Sarek/preview/pr-171/spoc_docs/index.html">API</a>
+          <a href="https://github.com/mathiasbourgoin/Sarek">GitHub</a>
+          <button id="theme-toggle" title="Toggle Dark/Light Mode">
+            <span>🌙</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main-content">
+      <div class="container">
+        <h1 id="live-transpiler">Live Transpiler</h1>
+
+<blockquote>
+  <p><strong>This page describes a superseded approach.</strong> The Thebe-based interactive environment has been replaced by the native browser Playground.</p>
+</blockquote>
+
+<h2 id="transpile-kernels-live-in-your-browser">Transpile Kernels Live in Your Browser</h2>
+
+<p>The <strong><a href="/Sarek/playground.html">Playground</a></strong> lets you write a Sarek kernel and see the generated GPU source code (WGSL, CUDA, OpenCL, GLSL, MSL) immediately — no installation, no account.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[Playground →](/Sarek/playground.html)
+</code></pre></div></div>
+
+<p>The Playground runs the full Sarek transpiler pipeline compiled to WebAssembly (via js_of_ocaml) directly in your browser. Every backend output tab is generated in real time as you type.</p>
+
+      </div>
+    </main>
+
+    <footer>
+      <div class="container">
+        <p>Sarek is maintained by <a href="https://github.com/mathiasbourgoin">mathiasbourgoin</a></p>
+        <p>Hosted on GitHub Pages</p>
+      </div>
+    </footer>
+
+    <script src="/Sarek/preview/pr-171/javascripts/scale.fix.js"></script>
+    <script src="/Sarek/preview/pr-171/javascripts/copy-code.js"></script>
+    <script src="/Sarek/preview/pr-171/javascripts/theme-toggle.js"></script>
+    <script src="/Sarek/preview/pr-171/javascripts/dropdown.js"></script>
+    <script src="/Sarek/preview/pr-171/javascripts/syntax-sarek.js"></script>
+  </body>
+</html>
