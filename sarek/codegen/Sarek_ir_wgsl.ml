@@ -108,6 +108,12 @@ let wgsl_reserved_keywords =
     (* Params struct name we emit *)
     "Params";
     "params";
+    (* Internal builtin parameter names emitted by wgsl_header; must not
+       be shadowed by user variable declarations in the kernel body. *)
+    "sarek_gid";
+    "sarek_lid";
+    "sarek_wid";
+    "sarek_nwg";
   ]
 
 (** Escape reserved WGSL keywords by adding 'v' suffix. *)
