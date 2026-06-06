@@ -85,10 +85,9 @@ let run_kernel_b wgsl_b abi_b n tmp b_arr cb =
     ~scalars:[]
     ~outputs_wanted:["out"]
     ~on_done:(fun results ->
-      let out =
-        match List.assoc_opt "out" results with None -> [||] | Some a -> a
-      in
-      cb_ok cb out)
+      match List.assoc_opt "out" results with
+      | None -> cb_err cb "kernel B: output buffer 'out' missing from results"
+      | Some out -> cb_ok cb out)
     ~on_error:(fun msg -> cb_err cb ("kernel B GPU error: " ^ msg))
     ()
 
@@ -104,10 +103,9 @@ let run_kernel_a wgsl_a abi_a wgsl_b abi_b n a_arr b_arr cb =
     ~scalars:[]
     ~outputs_wanted:["tmp"]
     ~on_done:(fun results ->
-      let tmp =
-        match List.assoc_opt "tmp" results with None -> [||] | Some a -> a
-      in
-      run_kernel_b wgsl_b abi_b n tmp b_arr cb)
+      match List.assoc_opt "tmp" results with
+      | None -> cb_err cb "kernel A: output buffer 'tmp' missing from results"
+      | Some tmp -> run_kernel_b wgsl_b abi_b n tmp b_arr cb)
     ~on_error:(fun msg -> cb_err cb ("kernel A GPU error: " ^ msg))
     ()
 
