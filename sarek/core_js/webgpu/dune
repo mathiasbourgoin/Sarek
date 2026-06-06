@@ -10,7 +10,7 @@
  (name spoc_webgpu_runtime)
  (public_name sarek.webgpu_runtime)
  (libraries js_of_ocaml)
- (modules Webgpu_runtime)
+ (modules Webgpu_js Webgpu_runtime)
  (preprocess
   (pps js_of_ocaml-ppx))
  (instrumentation
