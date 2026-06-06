@@ -22,16 +22,8 @@
 
 include Vector_types
 
-(* Creation helpers are factored into Vector_storage *)
-let create_scalar = Vector_storage.create_scalar
-
-let create = Vector_storage.create
-
-let create_custom = Vector_storage.create_custom
-
-let of_bigarray = Vector_storage.of_bigarray
-
-let of_ctypes_ptr = Vector_storage.of_ctypes_ptr
+(** Wrap an existing ctypes pointer as a custom-storage vector (shares memory). *)
+let of_ctypes_ptr c ptr len = of_raw_handle c (Ctypes.raw_address_of_ptr ptr) len
 
 (** {1 Accessors} *)
 
@@ -172,11 +164,7 @@ let needs_cpu_update (vec : ('a, 'b) t) : bool =
 
 (** {1 Device Buffer Management} *)
 
-(** Check if vector has buffer on specific device *)
-let has_buffer = Vector_storage.has_buffer
-
-(** Get device buffer if allocated *)
-let get_buffer = Vector_storage.get_buffer
+(** [has_buffer] and [get_buffer] are provided by Vector_types via the functor. *)
 
 (** {1 Pretty Printing} *)
 
@@ -246,15 +234,10 @@ let init : type a b. (a, b) kind -> int -> (int -> a) -> (a, b) t =
 let copy : type a b. (a, b) t -> (a, b) t =
  fun vec ->
   ensure_cpu_sync vec ;
-  Vector_storage.copy_host_only vec
+  copy_host_only vec
 
 (** {1 Subvector Support} *)
 
-type sub_meta = Vector_storage.sub_meta
-
-let is_sub = Vector_storage.is_sub
-
-let get_sub_meta = Vector_storage.get_sub_meta
 
 (** Create a subvector that shares CPU memory with parent.
     @param vec Parent vector
@@ -264,7 +247,7 @@ let get_sub_meta = Vector_storage.get_sub_meta
     @param ko_range Elements to avoid writing (default: 0) *)
 let sub_vector (type a b) (vec : (a, b) t) ~(start : int) ~(len : int)
     ?(ok_range : int = len) ?(ko_range : int = 0) () : (a, b) t =
-  Vector_storage.sub_vector vec ~start ~len ~ok_range ~ko_range
+  sub_vector vec ~start ~len ~ok_range ~ko_range
 
 (** {1 Multi-GPU Helpers} *)
 
@@ -272,7 +255,7 @@ let sub_vector (type a b) (vec : (a, b) t) ~(start : int) ~(len : int)
     device, that together cover the full vector. *)
 let partition (type a b) (vec : (a, b) t) (devices : Device.t array) :
     (a, b) t array =
-  let subs = Vector_storage.partition_host vec devices in
+  let subs = partition_host vec devices in
   Array.iteri
     (fun i sub ->
       if i < Array.length devices then sub.location <- Stale_GPU devices.(i))
@@ -294,25 +277,6 @@ let gather (subs : (_, _) t array) : unit =
           | None -> ())
       | _ -> ())
     subs
-
-(** {1 Subvector Queries} *)
-
-(** Get subvector depth (0 = root, 1 = child, 2 = grandchild, ...) *)
-let depth (vec : ('a, 'b) t) : int = Vector_storage.depth vec
-
-(** Get parent vector ID if this is a subvector *)
-let parent_id (vec : ('a, 'b) t) : int option = Vector_storage.parent_id vec
-
-(** Get start offset relative to immediate parent *)
-let sub_start (vec : ('a, 'b) t) : int option = Vector_storage.sub_start vec
-
-(** Get ok_range (safe read range) *)
-let sub_ok_range (vec : ('a, 'b) t) : int option =
-  Vector_storage.sub_ok_range vec
-
-(** Get ko_range (unsafe write range) *)
-let sub_ko_range (vec : ('a, 'b) t) : int option =
-  Vector_storage.sub_ko_range vec
 
 (** {1 Phase 6: Vector Utilities} *)
 
@@ -477,9 +441,6 @@ let to_list : type a b. (a, b) t -> a list =
  fun vec ->
   fold_right (fun x acc -> x :: acc) vec [] (* fold_right already syncs *)
 
-(** Create from OCaml list *)
-let of_list = Vector_storage.of_list
-
 (** Convert to OCaml array *)
 let to_array : type a b. (a, b) t -> a array =
  fun vec ->
@@ -492,9 +453,6 @@ let to_array : type a b. (a, b) t -> a array =
     done ;
     arr
   end
-
-(** Create from OCaml array *)
-let of_array = Vector_storage.of_array
 
 (** {2 Blitting} *)
 
