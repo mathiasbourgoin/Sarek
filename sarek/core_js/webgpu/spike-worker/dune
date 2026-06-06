@@ -1,0 +1,11 @@
+; SPIKE (throwaway) — worker-side jsoo program for the worker+SAB de-risk (PR 1).
+; SEPARATE target: not in @install or default runtest. Build explicitly:
+;   dune build sarek/core_js/webgpu/spike-worker/worker_spike.bc.js
+
+(executable
+ (name worker_spike)
+ (modules worker_spike)
+ (libraries js_of_ocaml)
+ (preprocess
+  (pps js_of_ocaml-ppx))
+ (modes js))
