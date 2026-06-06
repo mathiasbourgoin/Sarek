@@ -1,0 +1,199 @@
+---
+layout: page
+title: "Lesson 9 — Tree reduction"
+---
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.css">
+<link rel="stylesheet" href="{{ site.baseurl }}/stylesheets/learn.css">
+
+<div class="lesson-container">
+
+  <h1>Lesson 9 — Tree reduction</h1>
+
+  <p>
+    Adding N numbers on the GPU is not as simple as it looks. You cannot just
+    let every thread accumulate into the same variable &mdash; concurrent writes
+    would race. Instead, GPU reduction uses a <strong>tree</strong>: in each
+    round, half the active threads each add <em>one pair</em> of values, halving
+    the working set. After log&sub;2;(N) rounds only one value remains:
+    the total sum.
+  </p>
+
+  <p>
+    The pattern, for a single workgroup of 256 threads:
+  </p>
+  <ol>
+    <li>Load each element into shared memory (<code>sdata</code>), initialising
+        out-of-bounds threads to <code>0.0</code>.</li>
+    <li>Barrier &mdash; ensure all loads are complete.</li>
+    <li>Set stride <code>s = 128</code>. While <code>s &gt; 0</code>:
+      <ul>
+        <li>Thread <code>tid &lt; s</code> adds <code>sdata.(tid + s)</code>
+            into <code>sdata.(tid)</code>.</li>
+        <li>Barrier after each round.</li>
+        <li>Halve the stride: <code>s := s / 2</code>.</li>
+      </ul>
+    </li>
+    <li>Thread 0 writes <code>sdata.(0)</code> to <code>output.(block_idx_x)</code>.</li>
+  </ol>
+
+  <p>
+    After 7 rounds (128 → 64 → 32 → 16 → 8 → 4 → 2 → 1) the full sum of all
+    256 elements lives in <code>sdata.(0)</code>, then in <code>output.(0)</code>.
+  </p>
+
+  <h2>Your task</h2>
+  <p>
+    The inner accumulation expression is missing. Replace
+    <code>(* TODO *)</code> &mdash; currently the placeholder <code>0.0</code>
+    &mdash; with the correct expression, then click
+    <strong>Run on my GPU</strong>. The auto-checker compares
+    <code>output.(0)</code> against the expected sum of all 256 input elements.
+  </p>
+
+  <label class="lesson-editor-label" for="kernel-source">Kernel source</label>
+  <textarea id="kernel-source">fun (input : float32 vector) (output : float32 vector) (n : int32) ->
+  let open Std in
+  let%shared (sdata : float32) = 256l in
+  let tid = thread_idx_x in
+  sdata.(tid) <- (if global_thread_id < n then input.(global_thread_id) else 0.0) ;
+  block_barrier () ;
+  let s = mut 128l in
+  while s > 0l do
+    (if tid < s then sdata.(tid) <- sdata.(tid) +. (* TODO *) 0.0) ;
+    block_barrier () ;
+    s := s / 2l
+  done ;
+  (if tid = 0l then output.(block_idx_x) <- sdata.(0))</textarea>
+
+  <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+    <button class="lesson-run-btn" id="run-btn">Run on my GPU</button>
+    <button class="wgsl-toggle-btn" id="wgsl-toggle">Show generated WGSL</button>
+    <span class="lesson-status" id="status-bar"></span>
+  </div>
+
+  <pre class="lesson-output" id="output-pane">Fill in the TODO and click "Run on my GPU".</pre>
+  <pre class="lesson-wgsl-pre" id="wgsl-pane" style="display:none;"></pre>
+
+  <div id="result-panel" style="display:none;margin-top:0.75rem;padding:0.75rem 1rem;border-radius:4px;font-family:monospace;font-size:0.9rem;"></div>
+
+  <details>
+    <summary>Hint</summary>
+    <p>
+      Each active thread (those with <code>tid &lt; s</code>) should add the
+      element at distance <code>s</code> from itself. The slot to add is
+      <code>sdata.(tid + s)</code>.
+    </p>
+    <p>
+      Replace <code>(* TODO *) 0.0</code> with <code>sdata.(tid + s)</code>.
+      The full accumulation line becomes:
+    </p>
+    <pre>  sdata.(tid) &lt;- sdata.(tid) +. sdata.(tid + s)</pre>
+  </details>
+
+  <details>
+    <summary>How the tree works step by step (N=8 example)</summary>
+    <p>
+      With <code>sdata = [3, 1, 4, 1, 5, 9, 2, 6]</code> and starting
+      stride <code>s = 4</code>:
+    </p>
+    <pre>Round s=4:  sdata[0]+=sdata[4]  →  3+5=8
+            sdata[1]+=sdata[5]  →  1+9=10
+            sdata[2]+=sdata[6]  →  4+2=6
+            sdata[3]+=sdata[7]  →  1+6=7
+            sdata = [8, 10, 6, 7, ...]
+
+Round s=2:  sdata[0]+=sdata[2]  →  8+6=14
+            sdata[1]+=sdata[3]  →  10+7=17
+            sdata = [14, 17, ...]
+
+Round s=1:  sdata[0]+=sdata[1]  →  14+17=31
+            sdata = [31, ...]   ✓  (3+1+4+1+5+9+2+6 = 31)</pre>
+  </details>
+
+  <div class="lesson-nav">
+    <a href="{{ site.baseurl }}/learn/08-shared-barrier.html">&larr; Lesson 8 &mdash; Shared memory &amp; barriers</a>
+    <a href="{{ site.baseurl }}/learn/">Back to course overview &rarr;</a>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/mode/mllike/mllike.min.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_transpile.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_webgpu_runner.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_lesson.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var N = 256;
+  // Expected sum: input[i] = i * 0.5, so sum = 0.5 * (0+1+...+255) = 0.5 * 255*256/2 = 16320.0
+  var EXPECTED_SUM = 0;
+  for (var i = 0; i < N; i++) { EXPECTED_SUM += i * 0.5; }
+
+  var resultPanel = document.getElementById('result-panel');
+
+  function showResultPanel(cls, msg) {
+    resultPanel.style.display = 'block';
+    resultPanel.style.background = cls === 'pass' ? '#d4edda' : '#f8d7da';
+    resultPanel.style.color      = cls === 'pass' ? '#155724' : '#721c24';
+    resultPanel.style.border     = '1px solid ' + (cls === 'pass' ? '#c3e6cb' : '#f5c6cb');
+    resultPanel.textContent = msg;
+  }
+
+  SarekLesson.init({
+    editorId:     'kernel-source',
+    runButtonId:  'run-btn',
+    outputId:     'output-pane',
+    statusId:     'status-bar',
+    wgslId:       'wgsl-pane',
+    wgslToggleId: 'wgsl-toggle',
+    n: N,
+    starter:
+      'fun (input : float32 vector) (output : float32 vector) (n : int32) ->\n' +
+      '  let open Std in\n' +
+      '  let%shared (sdata : float32) = 256l in\n' +
+      '  let tid = thread_idx_x in\n' +
+      '  sdata.(tid) <- (if global_thread_id < n then input.(global_thread_id) else 0.0) ;\n' +
+      '  block_barrier () ;\n' +
+      '  let s = mut 128l in\n' +
+      '  while s > 0l do\n' +
+      '    (if tid < s then sdata.(tid) <- sdata.(tid) +. (* TODO *) 0.0) ;\n' +
+      '    block_barrier () ;\n' +
+      '    s := s / 2l\n' +
+      '  done ;\n' +
+      '  (if tid = 0l then output.(block_idx_x) <- sdata.(0))',
+    buffers: {
+      input:  { role: 'input',  elementType: 'f32', gen: function(i) { return i * 0.5; } },
+      output: { role: 'output', elementType: 'f32' },
+    },
+    scalars: { n: N },
+    outName: 'output',
+    // No reference function — custom check via onResult to avoid grading indices 1..255
+    // (which hold partial sums, not the final sum).
+    onResult: function(ctx) {
+      var got = ctx.outputs.output[0];
+      var diff = Math.abs(got - EXPECTED_SUM);
+      // Allow 0.1% relative error plus 1.0 absolute floor for float32 accumulation.
+      var tol = 1e-3 * Math.max(Math.abs(got), Math.abs(EXPECTED_SUM)) + 1.0;
+      if (diff <= tol) {
+        showResultPanel('pass',
+          'PASS — output[0] = ' + got.toFixed(2) +
+          ' (expected ' + EXPECTED_SUM.toFixed(2) + ').' +
+          ' All 256 elements summed correctly on your GPU.');
+        if (ctx.n) {
+          var statusEl = document.getElementById('status-bar');
+          if (statusEl) statusEl.textContent = 'PASS';
+        }
+      } else {
+        showResultPanel('fail',
+          'FAIL — output[0] = ' + got.toFixed(2) +
+          ', expected ' + EXPECTED_SUM.toFixed(2) +
+          '. Check that you replaced (* TODO *) 0.0 with sdata.(tid + s).');
+        var statusEl = document.getElementById('status-bar');
+        if (statusEl) statusEl.textContent = 'FAIL';
+      }
+    },
+  });
+})();
+</script>
