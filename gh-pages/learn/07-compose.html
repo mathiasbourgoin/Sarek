@@ -228,8 +228,9 @@ let run kA_src kB_src ~a ~b ~cb =
             return;
           }
 
-          // Populate WGSL panes if available via SpocCompose internals.
-          // (The driver does not expose WGSL; panes stay empty unless filled.)
+          // Populate the WGSL panes from the driver's stored WGSL strings.
+          if (wgslPaneA) wgslPaneA.textContent = SpocCompose.lastWgslA || '';
+          if (wgslPaneB) wgslPaneB.textContent = SpocCompose.lastWgslB || '';
 
           var bad = checkResult(Array.from(result), inputs);
           if (bad.length === 0) {

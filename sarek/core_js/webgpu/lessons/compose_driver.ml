@@ -128,10 +128,16 @@ let run_fn kernel_a_src kernel_b_src inputs_obj cb =
       match transpile_or_err cb "kernel B" src_b with
       | None -> ()
       | Some (wgsl_b, abi_b) ->
+          (* Expose generated WGSL so the lesson page can populate panes. *)
+          let m = Js.Unsafe.get Js.Unsafe.global (Js.string "SpocCompose") in
+          Js.Unsafe.set m "lastWgslA" (Js.string wgsl_a) ;
+          Js.Unsafe.set m "lastWgslB" (Js.string wgsl_b) ;
           run_kernel_a wgsl_a abi_a wgsl_b abi_b n a_arr b_arr cb)
 
 let () =
   let module_obj = Js.Unsafe.obj [||] in
+  Js.Unsafe.set module_obj "lastWgslA" (Js.string "") ;
+  Js.Unsafe.set module_obj "lastWgslB" (Js.string "") ;
   Js.Unsafe.set
     module_obj
     "run"
