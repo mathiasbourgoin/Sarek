@@ -6,7 +6,7 @@
  (name spoc_core_base)
  (public_name sarek.core_base)
  (libraries sarek_ir)
- (modules Spoc_core_base)
+ (modules Spoc_core_base Spoc_core_base_scalar)
  (preprocess no_preprocessing)
  (instrumentation
   (backend bisect_ppx)))

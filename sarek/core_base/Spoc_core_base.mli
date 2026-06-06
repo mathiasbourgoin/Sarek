@@ -64,7 +64,7 @@ end
 module Make (Ops : CUSTOM_OPS) : sig
   (** {2 Element types} *)
 
-  type (_, _) scalar_kind =
+  type ('a, 'b) scalar_kind = ('a, 'b) Spoc_core_base_scalar.scalar_kind =
     | Float32 : (float, Bigarray.float32_elt) scalar_kind
     | Float64 : (float, Bigarray.float64_elt) scalar_kind
     | Int32 : (int32, Bigarray.int32_elt) scalar_kind

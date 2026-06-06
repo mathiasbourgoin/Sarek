@@ -65,7 +65,9 @@ end
 module Make (Ops : CUSTOM_OPS) = struct
   (** {2 Element types} *)
 
-  type (_, _) scalar_kind =
+  (** Re-export scalar_kind with constructors so [Make(Ops).Float32] etc.
+      resolve. The underlying type is [Spoc_core_base_scalar.scalar_kind]. *)
+  type ('a, 'b) scalar_kind = ('a, 'b) Spoc_core_base_scalar.scalar_kind =
     | Float32 : (float, Bigarray.float32_elt) scalar_kind
     | Float64 : (float, Bigarray.float64_elt) scalar_kind
     | Int32 : (int32, Bigarray.int32_elt) scalar_kind
@@ -114,86 +116,39 @@ module Make (Ops : CUSTOM_OPS) = struct
     id : int;
   }
 
-  (** {2 Kind helpers — pure} *)
+  (** {2 Kind helpers — delegated to Spoc_core_base_scalar} *)
 
-  let to_bigarray_kind : type a b. (a, b) scalar_kind -> (a, b) Bigarray.kind =
-    function
-    | Float32 -> Bigarray.Float32
-    | Float64 -> Bigarray.Float64
-    | Int32 -> Bigarray.Int32
-    | Int64 -> Bigarray.Int64
-    | Char -> Bigarray.Char
-    | Complex32 -> Bigarray.Complex32
+  let to_bigarray_kind = Spoc_core_base_scalar.to_bigarray_kind
 
-  let bigarray_elem_size : type a b. (a, b) Bigarray.kind -> int = function
-    | Bigarray.Float16 -> 2
-    | Bigarray.Float32 -> 4
-    | Bigarray.Float64 -> 8
-    | Bigarray.Int8_signed -> 1
-    | Bigarray.Int8_unsigned -> 1
-    | Bigarray.Int16_signed -> 2
-    | Bigarray.Int16_unsigned -> 2
-    | Bigarray.Int32 -> 4
-    | Bigarray.Int64 -> 8
-    (* word-sized: 8 on 64-bit, 4 on 32-bit — matches Ctypes sizeof per platform *)
-    | Bigarray.Int -> Sys.word_size / 8
-    | Bigarray.Nativeint -> Sys.word_size / 8
-    | Bigarray.Complex32 -> 8
-    | Bigarray.Complex64 -> 16
-    | Bigarray.Char -> 1
+  let bigarray_elem_size = Spoc_core_base_scalar.bigarray_elem_size
 
-  let scalar_elem_size : type a b. (a, b) scalar_kind -> int = function
-    | Float32 -> 4
-    | Float64 -> 8
-    | Int32 -> 4
-    | Int64 -> 8
-    | Char -> 1
-    | Complex32 -> 8
+  let scalar_elem_size = Spoc_core_base_scalar.scalar_elem_size
 
   let elem_size : type a b. (a, b) kind -> int = function
     | Scalar k -> scalar_elem_size k
     | Custom c -> c.elem_size
 
-  let scalar_kind_name : type a b. (a, b) scalar_kind -> string = function
-    | Float32 -> "Float32"
-    | Float64 -> "Float64"
-    | Int32 -> "Int32"
-    | Int64 -> "Int64"
-    | Char -> "Char"
-    | Complex32 -> "Complex32"
+  let scalar_kind_name = Spoc_core_base_scalar.scalar_kind_name
 
   let kind_name : type a b. (a, b) kind -> string = function
     | Scalar k -> scalar_kind_name k
     | Custom c -> "Custom(" ^ c.name ^ ")"
 
-  (** {2 Type-id helpers} *)
+  (** {2 Type-id helpers — delegated to Spoc_core_base_scalar} *)
 
-  let float32_type_id : float Sarek_ir_types.Type_id.t =
-    Sarek_ir_types.Type_id.create ()
+  let float32_type_id = Spoc_core_base_scalar.float32_type_id
 
-  let float64_type_id : float Sarek_ir_types.Type_id.t =
-    Sarek_ir_types.Type_id.create ()
+  let float64_type_id = Spoc_core_base_scalar.float64_type_id
 
-  let int32_type_id : int32 Sarek_ir_types.Type_id.t =
-    Sarek_ir_types.Type_id.create ()
+  let int32_type_id = Spoc_core_base_scalar.int32_type_id
 
-  let int64_type_id : int64 Sarek_ir_types.Type_id.t =
-    Sarek_ir_types.Type_id.create ()
+  let int64_type_id = Spoc_core_base_scalar.int64_type_id
 
-  let char_type_id : char Sarek_ir_types.Type_id.t =
-    Sarek_ir_types.Type_id.create ()
+  let char_type_id = Spoc_core_base_scalar.char_type_id
 
-  let complex32_type_id : Complex.t Sarek_ir_types.Type_id.t =
-    Sarek_ir_types.Type_id.create ()
+  let complex32_type_id = Spoc_core_base_scalar.complex32_type_id
 
-  let scalar_type_id : type a b.
-      (a, b) scalar_kind -> a Sarek_ir_types.Type_id.t = function
-    | Float32 -> float32_type_id
-    | Float64 -> float64_type_id
-    | Int32 -> int32_type_id
-    | Int64 -> int64_type_id
-    | Char -> char_type_id
-    | Complex32 -> complex32_type_id
+  let scalar_type_id = Spoc_core_base_scalar.scalar_type_id
 
   let type_id : type a b. (a, b) kind -> a Sarek_ir_types.Type_id.t = function
     | Scalar k -> scalar_type_id k
