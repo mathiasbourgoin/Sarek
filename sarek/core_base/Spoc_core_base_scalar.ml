@@ -85,8 +85,8 @@ let char_type_id : char Sarek_ir_types.Type_id.t =
 let complex32_type_id : Complex.t Sarek_ir_types.Type_id.t =
   Sarek_ir_types.Type_id.create ()
 
-let scalar_type_id : type a b.
-    (a, b) scalar_kind -> a Sarek_ir_types.Type_id.t = function
+let scalar_type_id : type a b. (a, b) scalar_kind -> a Sarek_ir_types.Type_id.t
+    = function
   | Float32 -> float32_type_id
   | Float64 -> float64_type_id
   | Int32 -> int32_type_id

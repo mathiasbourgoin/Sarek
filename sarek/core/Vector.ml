@@ -22,8 +22,10 @@
 
 include Vector_types
 
-(** Wrap an existing ctypes pointer as a custom-storage vector (shares memory). *)
-let of_ctypes_ptr c ptr len = of_raw_handle c (Ctypes.raw_address_of_ptr ptr) len
+(** Wrap an existing ctypes pointer as a custom-storage vector (shares memory).
+*)
+let of_ctypes_ptr c ptr len =
+  of_raw_handle c (Ctypes.raw_address_of_ptr ptr) len
 
 (** {1 Accessors} *)
 
@@ -164,7 +166,8 @@ let needs_cpu_update (vec : ('a, 'b) t) : bool =
 
 (** {1 Device Buffer Management} *)
 
-(** [has_buffer] and [get_buffer] are provided by Vector_types via the functor. *)
+(** [has_buffer] and [get_buffer] are provided by Vector_types via the functor.
+*)
 
 (** {1 Pretty Printing} *)
 
@@ -237,7 +240,6 @@ let copy : type a b. (a, b) t -> (a, b) t =
   copy_host_only vec
 
 (** {1 Subvector Support} *)
-
 
 (** Create a subvector that shares CPU memory with parent.
     @param vec Parent vector
