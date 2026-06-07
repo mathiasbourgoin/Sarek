@@ -1,0 +1,21 @@
+; Execute and Execute_error — extracted from sarek/sarek so that a jsoo target
+; can link sarek_execute against a ctypes-free spoc_core instance.
+; -open Sarek_interp exposes Sarek_interp's modules unqualified so Execute.ml
+; can reference Sarek_ir_interp.* / Sarek_type_helpers.* without changes.
+
+(library
+ (name sarek_execute)
+ (public_name sarek.execute)
+ (flags
+  (:standard -open Sarek_interp))
+ (libraries
+  spoc_framework
+  spoc_framework_registry
+  spoc_core
+  sarek_ir
+  sarek_registry
+  sarek_interp)
+ (modules Execute Execute_error)
+ (preprocess no_preprocessing)
+ (instrumentation
+  (backend bisect_ppx)))

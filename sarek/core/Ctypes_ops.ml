@@ -45,3 +45,21 @@ let bigarray_to_handle : type a b.
  fun ba -> Ctypes.(bigarray_start array1 ba |> to_voidp)
 
 let device_id (dev : device_t) : int = dev.id
+
+let custom_to_bytes (type a) ~(set : handle -> int -> a -> unit)
+    ~(elem_size : int) (value : a) : bytes =
+  let bytes = Bytes.create elem_size in
+  let raw = Ctypes.allocate_n Ctypes.char ~count:elem_size in
+  set (Ctypes.to_voidp raw) 0 value ;
+  for i = 0 to elem_size - 1 do
+    Bytes.set bytes i Ctypes.(!@(Ctypes.( +@ ) raw i))
+  done ;
+  bytes
+
+let custom_of_bytes (type a) ~(get : handle -> int -> a) ~(elem_size : int)
+    (bytes : bytes) : a =
+  let raw = Ctypes.allocate_n Ctypes.char ~count:elem_size in
+  for i = 0 to elem_size - 1 do
+    Ctypes.(Ctypes.( +@ ) raw i <-@ Bytes.get bytes i)
+  done ;
+  get (Ctypes.to_voidp raw) 0

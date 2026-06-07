@@ -33,3 +33,9 @@ let copy_elems ~src:_ ~dst:_ ~elem_count:_ ~get:_ ~set:_ =
 let bigarray_to_handle _ = failwith "Stub_ops.bigarray_to_handle: not available"
 
 let device_id _ = failwith "Stub_ops.device_id: not available"
+
+let custom_to_bytes ~set:_ ~elem_size:_ _ =
+  failwith "Stub_ops.custom_to_bytes: not available"
+
+let custom_of_bytes ~get:_ ~elem_size:_ _ =
+  failwith "Stub_ops.custom_of_bytes: not available"

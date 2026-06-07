@@ -47,3 +47,7 @@ let copy_elems ~src:_ ~dst:_ ~elem_count:_ ~get:_ ~set:_ =
 let bigarray_to_handle _ = _not_supported "bigarray_to_handle"
 
 let device_id _ = _not_supported "device_id"
+
+let custom_to_bytes ~set:_ ~elem_size:_ _ = _not_supported "custom_to_bytes"
+
+let custom_of_bytes ~get:_ ~elem_size:_ _ = _not_supported "custom_of_bytes"
