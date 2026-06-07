@@ -16,5 +16,9 @@
   (pps sarek_ppx))
  (enabled_if
   (<> %{env:CUDA_PATH=} ""))
+ ; NVRTC + the CUDA driver are loaded lazily via Dl.dlopen at runtime
+ ; (see Cuda_nvrtc.ml / Cuda_bindings.ml), so no static -lnvrtc link is
+ ; needed. Linking it forced an unnecessary build-time dependency that
+ ; broke `dune build` on machines with CUDA_PATH set but libnvrtc absent.
  (flags
-  (:standard -w -33 -ccopt -L/opt/cuda/lib64 -cclib -lnvrtc)))
+  (:standard -w -33)))
