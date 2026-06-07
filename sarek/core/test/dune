@@ -8,3 +8,7 @@
   test_kernel_arg
   test_gpu_memory)
  (libraries spoc_core ctypes))
+
+(test
+ (name test_nativeint_round_trip)
+ (libraries spoc_core ctypes sarek_native sarek_interpreter))

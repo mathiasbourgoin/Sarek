@@ -205,14 +205,20 @@ module type BACKEND = sig
     val device_to_host :
       src:'a buffer -> dst:('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> unit
 
-    (** Transfer from raw pointer to device (for custom types). src_ptr should
-        be obtained via Ctypes from a customarray. *)
+    (** Transfer from raw pointer to device (for custom types). [src_ptr] is a
+        raw machine address (as produced by [raw_address_of_ptr]); a [nativeint]
+        is NOT a GC root, so the CALLER must keep the pointed-to allocation live
+        across this call. Transfers are synchronous today (a live source on the
+        caller's stack suffices); an async backend (e.g. the worker+SAB readback
+        planned for the jsoo path) must root the source explicitly. *)
     val host_ptr_to_device :
-      src_ptr:unit Ctypes.ptr -> byte_size:int -> dst:'a buffer -> unit
+      src_ptr:nativeint -> byte_size:int -> dst:'a buffer -> unit
 
-    (** Transfer from device to raw pointer (for custom types) *)
+    (** Transfer from device to raw pointer (for custom types). Same keep-alive
+        contract as {!host_ptr_to_device}: the caller owns [dst_ptr]'s liveness.
+    *)
     val device_to_host_ptr :
-      src:'a buffer -> dst_ptr:unit Ctypes.ptr -> byte_size:int -> unit
+      src:'a buffer -> dst_ptr:nativeint -> byte_size:int -> unit
 
     val device_to_device : src:'a buffer -> dst:'a buffer -> unit
 
@@ -412,10 +418,10 @@ module type PLUGIN_BASE = sig
       src:'a buffer -> dst:('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> unit
 
     val host_ptr_to_device :
-      src_ptr:unit Ctypes.ptr -> byte_size:int -> dst:'a buffer -> unit
+      src_ptr:nativeint -> byte_size:int -> dst:'a buffer -> unit
 
     val device_to_host_ptr :
-      src:'a buffer -> dst_ptr:unit Ctypes.ptr -> byte_size:int -> unit
+      src:'a buffer -> dst_ptr:nativeint -> byte_size:int -> unit
 
     val device_to_device : src:'a buffer -> dst:'a buffer -> unit
 

@@ -47,9 +47,6 @@ module type SCALAR_TYPE = sig
 
   (** Deserialize from primitive storage *)
   val of_primitive : primitive -> t
-
-  (** Ctypes representation for FFI *)
-  val ctype : t Ctypes.typ
 end
 
 (** {1 Composite Type Interface}
@@ -195,8 +192,6 @@ module Int32_type : SCALAR_TYPE with type t = int32 = struct
 
   let size = 4
 
-  let ctype = Ctypes.int32_t
-
   let to_primitive v = PInt32 v
 
   let of_primitive = function
@@ -210,8 +205,6 @@ module Int64_type : SCALAR_TYPE with type t = int64 = struct
   let name = "int64"
 
   let size = 8
-
-  let ctype = Ctypes.int64_t
 
   let to_primitive v = PInt64 v
 
@@ -227,8 +220,6 @@ module Float32_type : SCALAR_TYPE with type t = float = struct
 
   let size = 4
 
-  let ctype = Ctypes.float
-
   let to_primitive v = PFloat v
 
   let of_primitive = function
@@ -243,8 +234,6 @@ module Float64_type : SCALAR_TYPE with type t = float = struct
 
   let size = 8
 
-  let ctype = Ctypes.double
-
   let to_primitive v = PFloat v
 
   let of_primitive = function
@@ -258,8 +247,6 @@ module Bool_type : SCALAR_TYPE with type t = bool = struct
   let name = "bool"
 
   let size = 1
-
-  let ctype = Ctypes.bool
 
   let to_primitive v = PBool v
 

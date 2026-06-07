@@ -8,4 +8,6 @@
   (:e2e
    (alias e2e/runtest))
   (:codegen_golden
-   (alias codegen_golden/runtest))))
+   (alias codegen_golden/runtest))
+  (:core
+   (alias ../core/test/runtest))))

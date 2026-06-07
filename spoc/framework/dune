@@ -2,7 +2,7 @@
  (name spoc_framework)
  (public_name spoc.framework)
  (modules Framework_sig Device_type Typed_value Backend_error)
- (libraries ctypes sarek_ir sarek_backend_error)
+ (libraries sarek_ir sarek_backend_error)
  (preprocess no_preprocessing)
  (instrumentation
   (backend bisect_ppx)))

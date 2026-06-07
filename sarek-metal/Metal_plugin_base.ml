@@ -142,10 +142,16 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
         ~size:byte_size
 
     let host_ptr_to_device ~src_ptr ~byte_size ~dst =
-      Metal_api.memcpy ~dst:dst.buf.contents ~src:src_ptr ~size:byte_size
+      Metal_api.memcpy
+        ~dst:dst.buf.contents
+        ~src:(Ctypes.ptr_of_raw_address src_ptr)
+        ~size:byte_size
 
     let device_to_host_ptr ~src ~dst_ptr ~byte_size =
-      Metal_api.memcpy ~dst:dst_ptr ~src:src.buf.contents ~size:byte_size
+      Metal_api.memcpy
+        ~dst:(Ctypes.ptr_of_raw_address dst_ptr)
+        ~src:src.buf.contents
+        ~size:byte_size
 
     let device_to_device ~src ~dst =
       let byte_size =

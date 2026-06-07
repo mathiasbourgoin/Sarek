@@ -94,10 +94,16 @@ let alloc (device : Device.t) (size : int) (kind : ('a, 'b) Bigarray.kind) :
           let device_ptr = B.Memory.device_ptr buf
 
           let host_ptr_to_device src_ptr ~byte_size =
-            B.Memory.host_ptr_to_device ~src_ptr ~byte_size ~dst:buf
+            B.Memory.host_ptr_to_device
+              ~src_ptr:(Ctypes.raw_address_of_ptr src_ptr)
+              ~byte_size
+              ~dst:buf
 
           let device_to_host_ptr dst_ptr ~byte_size =
-            B.Memory.device_to_host_ptr ~src:buf ~dst_ptr ~byte_size
+            B.Memory.device_to_host_ptr
+              ~src:buf
+              ~dst_ptr:(Ctypes.raw_address_of_ptr dst_ptr)
+              ~byte_size
 
           let bind_to_kargs kargs idx =
             match B.unwrap_kargs kargs with
@@ -126,10 +132,16 @@ let alloc_custom (device : Device.t) ~(size : int) ~(elem_size : int) :
           let device_ptr = B.Memory.device_ptr buf
 
           let host_ptr_to_device src_ptr ~byte_size =
-            B.Memory.host_ptr_to_device ~src_ptr ~byte_size ~dst:buf
+            B.Memory.host_ptr_to_device
+              ~src_ptr:(Ctypes.raw_address_of_ptr src_ptr)
+              ~byte_size
+              ~dst:buf
 
           let device_to_host_ptr dst_ptr ~byte_size =
-            B.Memory.device_to_host_ptr ~src:buf ~dst_ptr ~byte_size
+            B.Memory.device_to_host_ptr
+              ~src:buf
+              ~dst_ptr:(Ctypes.raw_address_of_ptr dst_ptr)
+              ~byte_size
 
           let bind_to_kargs kargs idx =
             match B.unwrap_kargs kargs with

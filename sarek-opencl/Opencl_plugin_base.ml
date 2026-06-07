@@ -137,7 +137,7 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
       let state = get_state dst.device_id in
       Opencl_api.Memory.host_ptr_to_device
         state.queue
-        ~src_ptr
+        ~src_ptr:(Ctypes.ptr_of_raw_address src_ptr)
         ~byte_size
         ~dst:dst.buf
 
@@ -146,7 +146,7 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
       Opencl_api.Memory.device_to_host_ptr
         state.queue
         ~src:src.buf
-        ~dst_ptr
+        ~dst_ptr:(Ctypes.ptr_of_raw_address dst_ptr)
         ~byte_size
 
     let device_to_device ~src ~dst =

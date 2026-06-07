@@ -89,7 +89,6 @@ module type SCALAR_TYPE = sig
   val size : int
   val to_primitive : t -> primitive
   val of_primitive : primitive -> t
-  val ctype : t Ctypes.typ
 end
 
 (* Values are wrapped with their type module *)
@@ -229,6 +228,4 @@ Tests are located in each subpackage:
 
 ## Dependencies
 
-- `ctypes` - For FFI type descriptions (used in SCALAR_TYPE.ctype)
-
-No GPU runtime dependencies.
+No GPU runtime dependencies. No ctypes dependency.

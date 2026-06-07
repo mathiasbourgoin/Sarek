@@ -71,11 +71,19 @@ let alloc_scalar_buffer (type a b) (dev : Device.t) (length : int)
             (Int64.of_nativeint device_ptr)
             byte_size ;
           if B.Memory.is_zero_copy buf then () (* Skip for zero-copy *)
-          else B.Memory.host_ptr_to_device ~src_ptr ~byte_size ~dst:buf
+          else
+            B.Memory.host_ptr_to_device
+              ~src_ptr:(Ctypes.raw_address_of_ptr src_ptr)
+              ~byte_size
+              ~dst:buf
 
         let device_to_host_ptr dst_ptr ~byte_size =
           if B.Memory.is_zero_copy buf then () (* Skip for zero-copy *)
-          else B.Memory.device_to_host_ptr ~src:buf ~dst_ptr ~byte_size
+          else
+            B.Memory.device_to_host_ptr
+              ~src:buf
+              ~dst_ptr:(Ctypes.raw_address_of_ptr dst_ptr)
+              ~byte_size
 
         let free () = B.Memory.free buf
       end : Vector.DEVICE_BUFFER)
@@ -157,10 +165,16 @@ let alloc_custom_buffer (dev : Device.t) (length : int) (elem_sz : int) :
           | None -> failwith "bind_to_kargs: backend mismatch"
 
         let host_ptr_to_device src_ptr ~byte_size =
-          B.Memory.host_ptr_to_device ~src_ptr ~byte_size ~dst:buf
+          B.Memory.host_ptr_to_device
+            ~src_ptr:(Ctypes.raw_address_of_ptr src_ptr)
+            ~byte_size
+            ~dst:buf
 
         let device_to_host_ptr dst_ptr ~byte_size =
-          B.Memory.device_to_host_ptr ~src:buf ~dst_ptr ~byte_size
+          B.Memory.device_to_host_ptr
+            ~src:buf
+            ~dst_ptr:(Ctypes.raw_address_of_ptr dst_ptr)
+            ~byte_size
 
         let free () = B.Memory.free buf
       end : Vector.DEVICE_BUFFER)

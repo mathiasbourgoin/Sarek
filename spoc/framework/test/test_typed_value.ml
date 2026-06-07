@@ -130,8 +130,6 @@ let test_registry_custom_scalar () =
 
     let size = 4
 
-    let ctype = Ctypes.int
-
     let to_primitive v = PInt32 (Int32.of_int v)
 
     let of_primitive = function

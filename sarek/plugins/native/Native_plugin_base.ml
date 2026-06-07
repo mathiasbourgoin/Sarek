@@ -85,10 +85,10 @@ module Native : sig
       src:'a buffer -> dst:('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> unit
 
     val host_ptr_to_device :
-      src_ptr:unit Ctypes.ptr -> byte_size:int -> dst:'a buffer -> unit
+      src_ptr:nativeint -> byte_size:int -> dst:'a buffer -> unit
 
     val device_to_host_ptr :
-      src:'a buffer -> dst_ptr:unit Ctypes.ptr -> byte_size:int -> unit
+      src:'a buffer -> dst_ptr:nativeint -> byte_size:int -> unit
 
     val device_to_device : src:'a buffer -> dst:'a buffer -> unit
 
@@ -455,6 +455,7 @@ end = struct
     (** Transfer from raw pointer to native buffer (for custom types). For
         native, this is a memcpy using ctypes. *)
     let host_ptr_to_device ~src_ptr ~byte_size ~dst =
+      let src_ptr = Ctypes.ptr_of_raw_address src_ptr in
       let open Ctypes in
       let byte_size = min byte_size (buffer_byte_size dst) in
       match dst.storage with
@@ -474,6 +475,7 @@ end = struct
 
     (** Transfer from native buffer to raw pointer (for custom types). *)
     let device_to_host_ptr ~src ~dst_ptr ~byte_size =
+      let dst_ptr = Ctypes.ptr_of_raw_address dst_ptr in
       let open Ctypes in
       let byte_size = min byte_size (buffer_byte_size src) in
       match src.storage with

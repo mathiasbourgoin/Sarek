@@ -99,9 +99,17 @@ module Vulkan = struct
 
     let device_to_host = Vulkan_api.Memory.device_to_host
 
-    let host_ptr_to_device = Vulkan_api.Memory.host_ptr_to_device
+    let host_ptr_to_device ~src_ptr ~byte_size ~dst =
+      Vulkan_api.Memory.host_ptr_to_device
+        ~src_ptr:(Ctypes.ptr_of_raw_address src_ptr)
+        ~byte_size
+        ~dst
 
-    let device_to_host_ptr = Vulkan_api.Memory.device_to_host_ptr
+    let device_to_host_ptr ~src ~dst_ptr ~byte_size =
+      Vulkan_api.Memory.device_to_host_ptr
+        ~src
+        ~dst_ptr:(Ctypes.ptr_of_raw_address dst_ptr)
+        ~byte_size
 
     let device_to_device = Vulkan_api.Memory.device_to_device
 
