@@ -3,6 +3,9 @@
 (dirs ir_extract)
 
 ; Main sarek library - V2 path, no SPOC dependency
+; sarek_interp (FFI-free) provides Sarek_float32/Sarek_value/type helpers.
+; sarek_execute provides Execute/Execute_error.
+; Sarek_ir_interp.ml is kept here because it depends on spoc_core.Vector.
 
 (library
  (name sarek)
@@ -13,27 +16,26 @@
   spoc_framework_registry
   sarek_ir
   spoc_core
+  sarek_interp
+  sarek_execute
   (re_export sarek_registry))
  (modules
   Kirc_types
   Sarek_ir
-  Sarek_ir_interp_value
-  Sarek_ir_interp_intrinsics
-  Sarek_ir_interp_eval
-  Sarek_ir_interp
   Sarek_fusion
   Sarek_cpu_runtime_types
   Sarek_cpu_runtime_exec
   Sarek_cpu_runtime_pools
   Sarek_cpu_runtime
-  Sarek_float32
   Kirc_kernel
-  Execute
-  Execute_error
-  Interp_error
   Kirc_error
   Fusion_error
+  Sarek_ir_interp
+  Sarek_float32
   Sarek_value
-  Sarek_type_helpers)
+  Interp_error
+  Sarek_type_helpers
+  Execute
+  Execute_error)
  (instrumentation
   (backend bisect_ppx)))

@@ -58,6 +58,18 @@ module type CUSTOM_OPS = sig
 
   (** Extract the integer device-ID from a device (used as hashtable key). *)
   val device_id : device_t -> int
+
+  (** Serialize a custom-type value to a byte string using the provided [set].
+      The native implementation allocates a temporary ctypes char buffer; the
+      jsoo stub raises. *)
+  val custom_to_bytes :
+    set:(handle -> int -> 'a -> unit) -> elem_size:int -> 'a -> bytes
+
+  (** Deserialize a byte string to a custom-type value using the provided [get].
+      The native implementation allocates a temporary ctypes char buffer; the
+      jsoo stub raises. *)
+  val custom_of_bytes :
+    get:(handle -> int -> 'a) -> elem_size:int -> bytes -> 'a
 end
 
 (** {1 Hidden functor} *)
@@ -189,6 +201,18 @@ module Make (Ops : CUSTOM_OPS) : sig
   val has_buffer : ('a, 'b) t -> Ops.device_t -> bool
 
   val get_buffer : ('a, 'b) t -> Ops.device_t -> Ops.device_buf option
+
+  (** {2 Custom-type marshal helpers} *)
+
+  (** Serialize a custom-type value to bytes. Delegates to
+      [Ops.custom_to_bytes]. Raises on jsoo builds (custom-type device path not
+      yet implemented). *)
+  val custom_to_bytes : 'a custom_type -> 'a -> bytes
+
+  (** Deserialize bytes to a custom-type value. Delegates to
+      [Ops.custom_of_bytes]. Raises on jsoo builds (custom-type device path not
+      yet implemented). *)
+  val custom_of_bytes : 'a custom_type -> bytes -> 'a
 
   (** {2 Subvector metadata} *)
 

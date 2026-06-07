@@ -59,6 +59,18 @@ module type CUSTOM_OPS = sig
 
   (** Extract the integer device-ID from a device (used as hashtable key). *)
   val device_id : device_t -> int
+
+  (** Serialize a custom-type value to a byte string using the provided [set].
+      The native implementation allocates a temporary ctypes char buffer; the
+      jsoo stub raises. *)
+  val custom_to_bytes :
+    set:(handle -> int -> 'a -> unit) -> elem_size:int -> 'a -> bytes
+
+  (** Deserialize a byte string to a custom-type value using the provided [get].
+      The native implementation allocates a temporary ctypes char buffer; the
+      jsoo stub raises. *)
+  val custom_of_bytes :
+    get:(handle -> int -> 'a) -> elem_size:int -> bytes -> 'a
 end
 
 (** {1 Hidden functor} *)
@@ -279,6 +291,16 @@ module Make (Ops : CUSTOM_OPS) = struct
   let get_buffer (vec : ('a, 'b) t) (dev : Ops.device_t) : Ops.device_buf option
       =
     Hashtbl.find_opt vec.device_buffers (Ops.device_id dev)
+
+  (** {2 Custom-type marshal helpers — delegated to Ops} *)
+
+  (** Serialize a custom-type value to bytes via [Ops.custom_to_bytes]. *)
+  let custom_to_bytes (type a) (c : a custom_type) (v : a) : bytes =
+    Ops.custom_to_bytes ~set:c.set ~elem_size:c.elem_size v
+
+  (** Deserialize bytes to a custom-type value via [Ops.custom_of_bytes]. *)
+  let custom_of_bytes (type a) (c : a custom_type) (b : bytes) : a =
+    Ops.custom_of_bytes ~get:c.get ~elem_size:c.elem_size b
 
   (** {2 Subvector metadata} *)
 

@@ -1,0 +1,22 @@
+; Sarek interpreter and type helpers.
+;
+; Provides Sarek_ir_interp (uses spoc_core.Vector for native execute path)
+; plus FFI-free value types and type helpers.
+; No ctypes directly, but spoc_core is a transitive dep.
+
+(library
+ (name sarek_interp)
+ (public_name sarek.interp)
+ (libraries sarek_ir spoc_core spoc_framework sarek_registry)
+ (modules
+  Sarek_float32
+  Sarek_value
+  Sarek_ir_interp_value
+  Sarek_ir_interp_intrinsics
+  Sarek_ir_interp_eval
+  Sarek_ir_interp
+  Sarek_type_helpers
+  Interp_error)
+ (preprocess no_preprocessing)
+ (instrumentation
+  (backend bisect_ppx)))
