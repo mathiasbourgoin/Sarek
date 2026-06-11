@@ -7,4 +7,5 @@
  sarek-metal
  tools
  test_verification
- benchmarks)
+ benchmarks
+ formal)

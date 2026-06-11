@@ -1,0 +1,381 @@
+% ConvergenceSafetySpec.tex — LaTeX source of truth for the convergence-safety formal specification
+% Bootstrapped from the formal-apparatus at Phase 3 (LaTeX elicitation)
+% Co-evolves with theories/ConvergenceSpec.v pre-lock; LaTeX is canonical post-lock.
+% Status: LOCKED v0.1 (2026-06-11) — matches coqchk-passing ConvergenceSpec.v
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath, amssymb, amsthm, mathtools}
+\usepackage{stmaryrd}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{cleveref}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{notation}{Notation}[section]
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}[section]
+
+% Project-specific macros
+\newcommand{\Converged}{\mathsf{Converged}}
+\newcommand{\Diverged}{\mathsf{Diverged}}
+\newcommand{\check}[2]{\mathtt{check}(#1,\,#2)}
+\newcommand{\isvarying}[1]{\mathtt{is\_varying}(#1)}
+\newcommand{\barrierfree}[1]{\mathtt{barrier\_free}(#1)}
+\newcommand{\cdcf}[1]{\mathtt{has\_diverging\_cf}(#1)}
+\newcommand{\mergedim}{\mathbin{\sqcup}}
+\newcommand{\emptydim}{\bot_d}
+\newcommand{\incl}{\subseteq}
+
+\title{Convergence Safety --- A Formal Specification\\
+  \large \textit{Sarek GPU barrier safety analysis}}
+\author{Sarek formal apparatus}
+\date{2026-06-11 (v0.1 LOCKED)}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We give a formal specification of the convergence-safety analysis pass in
+\texttt{Sarek\_convergence.ml}, the GPU barrier-safety checker for the Sarek
+OCaml GPU DSL. The analysis tracks an \emph{execution mode} ($\Converged$ or
+$\Diverged$) through an abstract expression type and collects barrier errors
+when a synchronisation point is reached inside diverged control flow.
+We prove eleven properties: five join-semilattice laws for the dimension-usage
+monoid, one homomorphism law for sequential composition, and five T1 safety
+theorems about the mode-tracking state machine.
+\end{abstract}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Overview}
+\label{sec:overview}
+
+\subsection*{Target component}
+
+\texttt{Sarek\_convergence.ml} in \texttt{sarek/ppx/}. Functions of interest:
+\begin{itemize}
+  \item \texttt{is\_thread\_varying : texpr -> bool} --- conservative check for
+        thread-varying subexpressions.
+  \item \texttt{check\_expr : convergence\_ctx -> texpr -> error list} ---
+        barrier-safety error collector.
+  \item \texttt{contains\_diverging\_control\_flow : texpr -> bool} ---
+        superstep analysis predicate.
+\end{itemize}
+
+\subsection*{Properties claimed}
+
+\begin{enumerate}
+  \item[\textbf{T0}] Dimension-usage forms a join-semilattice (\cref{sec:dimmerge}).
+  \item[\textbf{T0}] Sequential composition of checks is homomorphic (\cref{thm:seqhom}).
+  \item[\textbf{T1}] \emph{Diverged-clean iff barrier-free} (\cref{thm:div-clean}).
+  \item[\textbf{T1}] Mode strengthening is monotone (\cref{thm:monotone}).
+  \item[\textbf{T1}] Non-varying-condition implies clean check (\cref{thm:cdcf-clean}).
+  \item[\textbf{T1}] Varying condition on non-barrier-free body always flags an error
+        (\cref{thm:varying-flags}).
+\end{enumerate}
+
+\subsection*{Out of scope (T2/T3)}
+
+Semantic soundness of \texttt{is\_varying} (needs $\texttt{texpr}$ execution
+semantics), deadlock freedom (needs lockstep execution model),
+\texttt{TESuperstep} implicit barrier safety, and warp divergence errors.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Notation and types}
+\label{sec:notation}
+
+\begin{definition}[Execution mode]
+$\mathsf{ExecMode} ::= \Converged \mid \Diverged$
+\end{definition}
+
+\begin{definition}[Error]
+$\mathsf{Error} ::= \mathsf{BarrierError}$
+\end{definition}
+
+\begin{definition}[Abstract expression]
+\label{def:expr}
+\[
+  e ::=
+    \mathsf{ELit} \mid \mathsf{EVary} \mid \mathsf{EBarrier}
+  \mid \mathsf{EBinop}(e_1, e_2)
+  \mid \mathsf{EUnop}(e)
+  \mid \mathsf{EIf}(e_c, e_t, e_f)
+  \mid \mathsf{EWhile}(e_c, e_b)
+  \mid \mathsf{EFor}(e_{lo}, e_{hi}, e_b)
+  \mid \mathsf{ESeq}(\bar{e})
+  \mid \mathsf{ELet}(e_v, e_b)
+  \mid \mathsf{EApp}(\bar{e})
+\]
+where $\bar{e}$ ranges over $\mathsf{expr}^*$.
+\end{definition}
+
+\begin{notation}
+$\isvarying{e}$ denotes the Boolean predicate that returns $\mathsf{true}$
+when $e$ contains a thread-varying leaf.
+$\barrierfree{e}$ denotes the Boolean predicate that returns $\mathsf{true}$
+when $e$ contains no $\mathsf{EBarrier}$ leaf.
+$\cdcf{e}$ denotes the Boolean predicate that returns $\mathsf{true}$
+when $e$ contains a diverging control-flow sub-expression.
+$\check{m}{e}$ denotes the list of errors emitted when checking $e$ in
+execution mode $m$.
+\end{notation}
+
+\begin{definition}[Dimension-usage record]
+\label{def:dimuse}
+\[
+  d ::= \{\, \mathsf{uses\_x},\, \mathsf{uses\_y},\, \mathsf{uses\_z},\,
+            \mathsf{uses\_block\_dim},\, \mathsf{uses\_grid\_dim},\,
+            \mathsf{uses\_thread\_idx},\, \mathsf{uses\_block\_idx},\,
+            \mathsf{uses\_shared\_mem} \,\}
+\]
+Each field is a Boolean.
+$\emptydim$ denotes the all-false record.
+$\mergedim$ denotes field-wise disjunction.
+\end{definition}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Semantic rules}
+\label{sec:semantics}
+
+\subsection{$\isvarying{e}$}
+
+\[
+  \isvarying{\mathsf{EVary}} = \top
+  \quad
+  \isvarying{\mathsf{ELit}} = \bot
+  \quad
+  \isvarying{\mathsf{EBarrier}} = \bot
+\]
+\[
+  \isvarying{\mathsf{EBinop}(a,b)} = \isvarying{a} \lor \isvarying{b}
+  \qquad
+  \isvarying{\mathsf{EUnop}(e)} = \isvarying{e}
+\]
+\[
+  \isvarying{\mathsf{EIf}(c,t,f)} = \isvarying{c} \lor \isvarying{t} \lor \isvarying{f}
+  \qquad
+  \isvarying{\mathsf{EWhile}(c,b)} = \isvarying{c} \lor \isvarying{b}
+\]
+\[
+  \isvarying{\mathsf{EFor}(lo,hi,b)} = \isvarying{lo} \lor \isvarying{hi} \lor \isvarying{b}
+\]
+\[
+  \isvarying{\mathsf{ESeq}(\bar{e})} = \exists\, e_i \in \bar{e}.\;\isvarying{e_i}
+  \qquad
+  \isvarying{\mathsf{EApp}(\bar{e})} = \exists\, e_i \in \bar{e}.\;\isvarying{e_i}
+\]
+\[
+  \isvarying{\mathsf{ELet}(v,b)} = \isvarying{v} \lor \isvarying{b}
+\]
+
+\subsection{$\check{m}{e}$ — the barrier-error collector}
+
+\[
+  \check{m}{\mathsf{ELit}} = []
+  \qquad
+  \check{m}{\mathsf{EVary}} = []
+\]
+\[
+  \check{m}{\mathsf{EBarrier}} =
+  \begin{cases}
+    [\mathsf{BarrierError}] & \text{if } m = \Diverged \\
+    [] & \text{if } m = \Converged
+  \end{cases}
+\]
+\[
+  \check{m}{\mathsf{EBinop}(a,b)} = \check{m}{a} \mathbin{++} \check{m}{b}
+  \qquad
+  \check{m}{\mathsf{EUnop}(e)} = \check{m}{e}
+\]
+\[
+  \check{m}{\mathsf{ELet}(v,b)} = \check{m}{v} \mathbin{++} \check{m}{b}
+\]
+Let $m' = \text{if } \isvarying{c} \text{ then } \Diverged \text{ else } m$.
+\[
+  \check{m}{\mathsf{EIf}(c,t,f)} = \check{m'}{c} \mathbin{++} \check{m'}{t} \mathbin{++} \check{m'}{f}
+\]
+\[
+  \check{m}{\mathsf{EWhile}(c,b)} = \check{m'}{c} \mathbin{++} \check{m'}{b}
+  \qquad
+  \check{m}{\mathsf{EFor}(lo,hi,b)} = \check{m''}{lo} \mathbin{++} \check{m''}{hi} \mathbin{++} \check{m''}{b}
+\]
+where $m'' = \text{if } \isvarying{lo} \lor \isvarying{hi} \text{ then } \Diverged \text{ else } m$.
+\[
+  \check{m}{\mathsf{ESeq}(\bar{e})} = \mathbin{++}_{e_i \in \bar{e}} \check{m}{e_i}
+  \qquad
+  \check{m}{\mathsf{EApp}(\bar{e})} = \mathbin{++}_{e_i \in \bar{e}} \check{m}{e_i}
+\]
+
+\subsection{$\cdcf{e}$}
+
+\begin{align*}
+  &\cdcf{\mathsf{EIf}(c,t,f)} = \isvarying{c} \lor \cdcf{t} \lor \cdcf{f} \\
+  &\cdcf{\mathsf{EWhile}(c,b)} = \isvarying{c} \lor \cdcf{b} \\
+  &\cdcf{\mathsf{EFor}(lo,hi,b)} = \isvarying{lo} \lor \isvarying{hi} \lor \cdcf{b} \\
+  &\cdcf{e} = \mathsf{false} \quad \text{(all other constructors)}
+\end{align*}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Properties}
+\label{sec:properties}
+
+\subsection{T0 --- Dimension-usage semilattice}
+\label{sec:dimmerge}
+
+\begin{theorem}[Merge commutativity]
+  \label{thm:merge-comm}
+  For all $d_1, d_2$: $d_1 \mergedim d_2 = d_2 \mergedim d_1$.
+\end{theorem}
+
+\begin{theorem}[Merge associativity]
+  \label{thm:merge-assoc}
+  For all $d_1, d_2, d_3$: $(d_1 \mergedim d_2) \mergedim d_3 = d_1 \mergedim (d_2 \mergedim d_3)$.
+\end{theorem}
+
+\begin{theorem}[Merge idempotence]
+  \label{thm:merge-idem}
+  For all $d$: $d \mergedim d = d$.
+\end{theorem}
+
+\begin{theorem}[Right identity]
+  \label{thm:merge-empty-r}
+  For all $d$: $d \mergedim \emptydim = d$.
+\end{theorem}
+
+\begin{theorem}[Left identity]
+  \label{thm:merge-empty-l}
+  For all $d$: $\emptydim \mergedim d = d$.
+\end{theorem}
+
+\subsection{T0 --- Sequential composition homomorphism}
+
+\begin{theorem}[Check-seq homomorphism]
+  \label{thm:seqhom}
+  For any mode $m$ and expression lists $\bar{e}_1, \bar{e}_2$:
+  \[
+    \check{m}{\mathsf{ESeq}(\bar{e}_1 \mathbin{++} \bar{e}_2)}
+    = \check{m}{\mathsf{ESeq}(\bar{e}_1)} \mathbin{++} \check{m}{\mathsf{ESeq}(\bar{e}_2)}.
+  \]
+\end{theorem}
+
+\subsection{T1 --- Barrier-safety invariants}
+
+\begin{theorem}[Diverged-clean iff barrier-free]
+  \label{thm:div-clean}
+  For all $e$:
+  \[
+    \check{\Diverged}{e} = []
+    \;\iff\;
+    \barrierfree{e} = \mathsf{true}.
+  \]
+\end{theorem}
+
+\begin{theorem}[Mode monotonicity]
+  \label{thm:monotone}
+  For all $e$:
+  \[
+    \check{\Converged}{e} \incl \check{\Diverged}{e}.
+  \]
+  (Strengthening the execution context never removes errors.)
+\end{theorem}
+
+\begin{lemma}[Non-varying implies clean in converged mode]
+  \label{thm:nonvar-clean}
+  For all $e$:
+  \[
+    \isvarying{e} = \mathsf{false}
+    \;\Rightarrow\;
+    \check{\Converged}{e} = [].
+  \]
+\end{lemma}
+
+\begin{theorem}[CDCF agreement]
+  \label{thm:cdcf-clean}
+  For all $e$:
+  \[
+    \cdcf{e} = \mathsf{false}
+    \;\Rightarrow\;
+    \check{\Converged}{e} = [].
+  \]
+\end{theorem}
+
+\begin{theorem}[Varying condition flags barriers]
+  \label{thm:varying-flags}
+  For all $e_c, e_t, e_f$:
+  \[
+    \isvarying{e_c} = \mathsf{true}
+    \;\land\;
+    \barrierfree{e_t} = \mathsf{false}
+    \;\Rightarrow\;
+    \check{\Converged}{\mathsf{EIf}(e_c, e_t, e_f)} \ne [].
+  \]
+\end{theorem}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Refinement to \texttt{sarek/ppx/}}
+\label{sec:refinement}
+
+\subsection*{Type correspondence}
+
+The abstract \texttt{expr} type maps to the real \texttt{texpr} AST as follows
+(see \texttt{ASSUMPTIONS.md} for the full table and elided constructors):
+
+\begin{center}
+\begin{tabular}{l l l}
+\hline
+Abstract & Real & Notes \\
+\hline
+\texttt{EVary} & \texttt{TEVar} (varying), \texttt{TEIntrinsicConst} (varying) & \texttt{is\_thread\_varying} recurses \\
+\texttt{EBarrier} & \texttt{TEIntrinsicFun \_ (Some ConvergencePoint) \_} & error when mode=Diverged \\
+\texttt{ELit} & all uniform literals + \texttt{TEUnit}/\texttt{TEBool}/\texttt{TEInt}/... & \\
+\texttt{EIf} & \texttt{TEIf}, \texttt{TEMatch} & \\
+\texttt{EFor} & \texttt{TEFor} & lo/hi checked for variation \\
+\texttt{ESeq} & \texttt{TESeq} & \\
+\texttt{ELet} & \texttt{TELet}, \texttt{TELetMut} & no dataflow tracking \\
+\texttt{EApp} & \texttt{TEApp}, \texttt{TETuple}, \texttt{TERecord} & \\
+\texttt{EBinop} & \texttt{TEBinop}, \texttt{TEVecSet}, \texttt{TEArrSet}, \texttt{TEAssign} & \\
+\texttt{EUnop} & \texttt{TEUnop}, \texttt{TEFieldGet}, \texttt{TEReturn}, \texttt{TECreateArray} & \\
+\hline
+\end{tabular}
+\end{center}
+
+\subsection*{Conformance claim}
+
+For all \texttt{texpr} inputs $t$ that map to an abstract expression
+$e = \mathtt{texpr\_to\_expr}(t)$ (i.e.\ $t$ does not contain any elided
+constructor), and for each mode $m$:
+\[
+  \mathtt{normalize}(\mathtt{real\_check\_expr}(\{mode=m\}, t))
+  = \check{m}{e}
+\]
+where $\mathtt{normalize}$ strips metadata from \texttt{texpr}-level errors and
+projects to the abstract \texttt{error} type.
+
+\subsection*{Elided constructors (out of scope)}
+
+\texttt{TESuperstep}, \texttt{TELetShared}, \texttt{TELetRec},
+\texttt{TEPragma}, \texttt{TEOpen}, \texttt{TENative}, \texttt{TEGlobalRef},
+and the \texttt{WarpConvergence} error class.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{References}
+\label{sec:references}
+
+\begin{itemize}
+  \item SPOC source: \url{https://github.com/mathiasbourgoin/SPOC}
+  \item \texttt{sarek/ppx/Sarek\_convergence.ml} --- target implementation
+  \item \texttt{ASSUMPTIONS.md} --- elided-constructor rationale
+  \item Sarek formal apparatus memory: \texttt{~/.claude/projects/.../memory/sarek-convergence-formal.md}
+\end{itemize}
+
+\end{document}

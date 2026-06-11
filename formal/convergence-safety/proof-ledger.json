@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "host": "SPOC/sarek",
+  "spec_file": "theories/ConvergenceSpec.v",
+  "vo_sha256": "3596248068522ad07e477caffe111252b6fc361a18027237eccd61e94af46dd9",
+  "rocq_version": "9.1.1",
+  "coqchk_result": "PASS",
+  "generated": "2026-06-11",
+  "theorems": [
+    {"name": "merge_dim_comm",        "status": "PROVEN", "tier": "T0", "admits": 0, "axioms": []},
+    {"name": "merge_dim_assoc",       "status": "PROVEN", "tier": "T0", "admits": 0, "axioms": []},
+    {"name": "merge_dim_idempotent",  "status": "PROVEN", "tier": "T0", "admits": 0, "axioms": []},
+    {"name": "merge_dim_empty_r",     "status": "PROVEN", "tier": "T0", "admits": 0, "axioms": []},
+    {"name": "merge_dim_empty_l",     "status": "PROVEN", "tier": "T0", "admits": 0, "axioms": []},
+    {"name": "check_seq_hom",         "status": "PROVEN", "tier": "T0", "admits": 0, "axioms": [],
+     "note": "trivial: simpl unfolds ESeq to concat(map), then map_app + concat_app closes by reflexivity"},
+    {"name": "diverged_clean_iff_barrier_free", "status": "PROVEN", "tier": "T1", "admits": 0, "axioms": [],
+     "note": "key: diverged_absorbing — (if X then D else D) = D — makes Diverged mode absorbing; proof by expr_list_rect with Plist for ESeq/EApp"},
+    {"name": "mode_monotone",         "status": "PROVEN", "tier": "T1", "admits": 0, "axioms": [],
+     "note": "EIf/EWhile/EFor case-split on is_varying cond; varying → inner stays Diverged in both (incl_refl); non-varying → apply IH for inner exprs"},
+    {"name": "not_varying_converged_clean", "status": "PROVEN", "tier": "T1", "admits": 0, "axioms": [],
+     "note": "helper for cdcf_check_agreement: is_varying e = false → all inner modes stay Converged → EBarrier gives []"},
+    {"name": "cdcf_check_agreement",  "status": "PROVEN", "tier": "T1", "admits": 0, "axioms": [],
+     "note": "is_varying cond = false (from cdcf=false) → not_varying_converged_clean clears cond; then IH on body"},
+    {"name": "varying_if_flags_barriers", "status": "PROVEN", "tier": "T1", "admits": 0, "axioms": [],
+     "note": "is_varying cond → inner=Diverged; then diverged_clean_iff_barrier_free: ¬barrier_free → check Diverged ≠ [] → contradiction"}
+  ],
+  "summary": {
+    "total": 11,
+    "proven_clean": 11,
+    "proven_under_assumption": 0,
+    "assumed": 0,
+    "falsified": 0,
+    "out_of_scope": 0
+  },
+  "falsified": [],
+  "open_assumptions": []
+}

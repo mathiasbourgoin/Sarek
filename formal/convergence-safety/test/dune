@@ -1,0 +1,13 @@
+(include_subdirs no)
+
+(test
+ (name test_convergence_conformance)
+ (libraries qcheck-core qcheck-core.runner))
+
+(test
+ (name test_convergence_extraction)
+ (libraries convergence_model qcheck-core qcheck-core.runner))
+
+(test
+ (name test_convergence_live)
+ (libraries sarek_frontend))
