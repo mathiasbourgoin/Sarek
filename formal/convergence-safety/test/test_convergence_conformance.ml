@@ -7,6 +7,8 @@
  * inspection of Sarek_convergence.ml:check_expr / is_thread_varying.
  *
  * Correspondence is documented in ASSUMPTIONS.md.
+ * Phase 2 (T2-F02): EVar and nat-tagged ELet added; env-threaded
+ *   is_varying_env / check_env added; F-02 let-alias QCheck property added.
  ******************************************************************************)
 
 (* ===== Abstract model (mirrors ConvergenceSpec.v) ===== *)
@@ -15,13 +17,15 @@ type expr =
   | ELit
   | EVary
   | EBarrier
+  | EVar of int                         (* variable reference by id *)
   | EBinop of expr * expr
   | EUnop of expr
-  | EIf of expr * expr * expr   (* cond, then, else *)
-  | EWhile of expr * expr       (* cond, body *)
-  | EFor of expr * expr * expr  (* lo, hi, body *)
+  | EIf of expr * expr * expr           (* cond, then, else *)
+  | EWhile of expr * expr               (* cond, body *)
+  | EFor of expr * expr * expr          (* lo, hi, body *)
   | ESeq of expr list
-  | ELet of expr * expr
+  | ELet of int * expr * expr           (* var_id, value, body *)
+  | ESuperstep of bool * expr * expr    (* divergent_flag, body, cont *)
   | EApp of expr list
 
 type exec_mode = Converged | Diverged
@@ -55,43 +59,47 @@ let merge_dim_usage a b = {
 
 let rec is_varying = function
   | EVary -> true
-  | ELit | EBarrier -> false
+  | ELit | EBarrier | EVar _ -> false
   | EBinop (a, b)  -> is_varying a || is_varying b
   | EUnop e        -> is_varying e
   | EIf (c, t, el) -> is_varying c || is_varying t || is_varying el
   | EWhile (c, b)  -> is_varying c || is_varying b
   | EFor (lo, hi, b) -> is_varying lo || is_varying hi || is_varying b
   | ESeq es        -> List.exists is_varying es
-  | ELet (v, b)    -> is_varying v || is_varying b
+  | ELet (_, v, b) -> is_varying v || is_varying b
+  | ESuperstep (_, body, cont) -> is_varying body || is_varying cont
   | EApp args      -> List.exists is_varying args
 
 let rec barrier_free = function
   | EBarrier       -> false
-  | ELit | EVary   -> true
+  | ELit | EVary | EVar _ -> true
   | EBinop (a, b)  -> barrier_free a && barrier_free b
   | EUnop e        -> barrier_free e
   | EIf (c, t, el) -> barrier_free c && barrier_free t && barrier_free el
   | EWhile (c, b)  -> barrier_free c && barrier_free b
   | EFor (lo, hi, b) -> barrier_free lo && barrier_free hi && barrier_free b
   | ESeq es        -> List.for_all barrier_free es
-  | ELet (v, b)    -> barrier_free v && barrier_free b
+  | ELet (_, v, b) -> barrier_free v && barrier_free b
+  | ESuperstep (divergent, body, cont) ->
+      divergent && barrier_free body && barrier_free cont
   | EApp args      -> List.for_all barrier_free args
 
 let rec has_diverging_cf = function
   | EIf (c, t, el)   -> is_varying c || has_diverging_cf t || has_diverging_cf el
-  | EWhile (c, b)     -> is_varying c || has_diverging_cf b
+  | EWhile (c, b)    -> is_varying c || has_diverging_cf b
   | EFor (lo, hi, b) -> is_varying lo || is_varying hi || has_diverging_cf b
   | EBinop (a, b)    -> has_diverging_cf a || has_diverging_cf b
   | EUnop e          -> has_diverging_cf e
   | ESeq es          -> List.exists has_diverging_cf es
-  | ELet (v, b)      -> has_diverging_cf v || has_diverging_cf b
+  | ELet (_, v, b)   -> has_diverging_cf v || has_diverging_cf b
+  | ESuperstep (_, body, cont) -> has_diverging_cf body || has_diverging_cf cont
   | EApp args        -> List.exists has_diverging_cf args
   | _                -> false
 
 let rec check m = function
   | EBarrier       ->
       (match m with Diverged -> [BarrierError] | Converged -> [])
-  | ELit | EVary   -> []
+  | ELit | EVary | EVar _ -> []
   | EBinop (a, b)  -> check m a @ check m b
   | EUnop e        -> check m e
   | EIf (cond, t, el) ->
@@ -104,14 +112,90 @@ let rec check m = function
       let inner = if is_varying lo || is_varying hi then Diverged else m in
       check m lo @ check m hi @ check inner b
   | ESeq es        -> List.concat_map (check m) es
-  | ELet (v, b)    -> check m v @ check m b
+  | ELet (_, v, b) -> check m v @ check m b
+  | ESuperstep (divergent, body, cont) ->
+      let entry_errors =
+        match m, divergent with
+        | Diverged, false -> [BarrierError]
+        | _,        _     -> []
+      in
+      entry_errors @ check m body @ check m cont
   | EApp args      -> List.concat_map (check m) args
+
+(* ===== Env-threaded model (T2-F02) ===== *)
+
+(* Env: association list mapping variable id to is_varying flag *)
+type env = (int * bool) list
+
+let env_lookup (env : env) (x : int) : bool =
+  match List.find_opt (fun (id, _) -> id = x) env with
+  | Some (_, v) -> v
+  | None        -> false
+
+let env_extend (env : env) (x : int) (v : bool) : env = (x, v) :: env
+
+let rec is_varying_env (env : env) = function
+  | EVary     -> true
+  | ELit | EBarrier -> false
+  | EVar x    -> env_lookup env x
+  | EBinop (a, b)     -> is_varying_env env a || is_varying_env env b
+  | EUnop e           -> is_varying_env env e
+  | EIf (c, t, el)    ->
+      is_varying_env env c ||
+      is_varying_env env t ||
+      is_varying_env env el
+  | EWhile (c, b)     -> is_varying_env env c || is_varying_env env b
+  | EFor (lo, hi, b)  ->
+      is_varying_env env lo ||
+      is_varying_env env hi ||
+      is_varying_env env b
+  | ESeq es           -> List.exists (is_varying_env env) es
+  | ELet (x, v, b)   ->
+      let vv = is_varying_env env v in
+      is_varying_env (env_extend env x vv) b
+  | ESuperstep (_, body, cont) ->
+      is_varying_env env body || is_varying_env env cont
+  | EApp args         -> List.exists (is_varying_env env) args
+
+let rec check_env m (env : env) = function
+  | EBarrier   -> (match m with Diverged -> [BarrierError] | Converged -> [])
+  | ELit | EVary | EVar _ -> []
+  | EBinop (a, b)     -> check_env m env a @ check_env m env b
+  | EUnop e           -> check_env m env e
+  | EIf (cond, t, el) ->
+      let inner = if is_varying_env env cond then Diverged else m in
+      check_env m env cond @ check_env inner env t @ check_env inner env el
+  | EWhile (cond, b)  ->
+      let inner = if is_varying_env env cond then Diverged else m in
+      check_env m env cond @ check_env inner env b
+  | EFor (lo, hi, b)  ->
+      let inner =
+        if is_varying_env env lo || is_varying_env env hi
+        then Diverged else m
+      in
+      check_env m env lo @ check_env m env hi @ check_env inner env b
+  | ESeq es           -> List.concat_map (check_env m env) es
+  | ELet (x, v, b)   ->
+      let vv   = is_varying_env env v in
+      let env' = env_extend env x vv in
+      check_env m env v @ check_env m env' b
+  | ESuperstep (divergent, body, cont) ->
+      let entry_errors =
+        match m, divergent with
+        | Diverged, false -> [BarrierError]
+        | _,        _     -> []
+      in
+      entry_errors @ check_env m env body @ check_env m env cont
+  | EApp args         -> List.concat_map (check_env m env) args
 
 (* ===== QCheck generators ===== *)
 
 open QCheck2
 
 let gen_mode : exec_mode Gen.t = Gen.oneof_list [Converged; Diverged]
+
+(* small var id generator — keep ids in range 0..3 so aliases are plausible *)
+let gen_var_id : int Gen.t = Gen.int_range 0 3
 
 (* bounded-depth generator to avoid size explosion *)
 let gen_expr : expr Gen.t =
@@ -126,14 +210,18 @@ let gen_expr : expr Gen.t =
         Gen.return ELit;
         Gen.return EVary;
         Gen.return EBarrier;
-        Gen.map  (fun (a, b) -> EBinop (a, b)) sub2;
-        Gen.map  (fun e      -> EUnop e)        sub;
+        Gen.map  (fun x      -> EVar x)          gen_var_id;
+        Gen.map  (fun (a, b) -> EBinop (a, b))   sub2;
+        Gen.map  (fun e      -> EUnop e)          sub;
         Gen.map  (fun (c, t, el) -> EIf (c, t, el)) sub3;
-        Gen.map  (fun (c, b) -> EWhile (c, b))  sub2;
+        Gen.map  (fun (c, b) -> EWhile (c, b))   sub2;
         Gen.map  (fun (lo, hi, b) -> EFor (lo, hi, b)) sub3;
-        Gen.map  (fun es     -> ESeq es)        sublist;
-        Gen.map  (fun (v, b) -> ELet (v, b))    sub2;
-        Gen.map  (fun args   -> EApp args)       sublist;
+        Gen.map  (fun es     -> ESeq es)          sublist;
+        Gen.map  (fun (x, (v, b)) -> ELet (x, v, b))
+                 (Gen.pair gen_var_id sub2);
+        Gen.map  (fun (dv, (body, cont)) -> ESuperstep (dv, body, cont))
+                 (Gen.pair Gen.bool sub2);
+        Gen.map  (fun args   -> EApp args)        sublist;
       ])
 
 let gen_dim : dim_usage Gen.t =
@@ -223,6 +311,33 @@ let test_cdcf_agreement =
        if not (has_diverging_cf e) then check Converged e = []
        else true)
 
+(* 7. F-02 let-alias: env-threaded check catches barrier inside a let-alias.
+ *
+ * For any varying expression v and any fresh var id x, the pattern
+ *   ELet x v (EIf (EVar x) EBarrier ELit)
+ * must be flagged by check_env (since x is varying in the extended env).
+ * This mirrors the theorem env_check_let_alias_catches in ConvergenceSpec.v.
+ *)
+let test_f02_let_alias_env =
+  Test.make ~name:"f02_let_alias_env_catches_barrier" ~count:2000
+    (Gen.pair gen_var_id gen_expr)
+    (fun (x, v) ->
+       (* Only test when v is varying in empty env *)
+       if not (is_varying_env [] v) then true
+       else
+         (* ELet x v (EIf (EVar x) EBarrier ELit) must produce errors *)
+         let prog = ELet (x, v, EIf (EVar x, EBarrier, ELit)) in
+         check_env Converged [] prog <> [])
+
+(* 8. F-02 env monotone: check_env Converged ⊆ check_env Diverged *)
+let test_f02_env_mode_monotone =
+  Test.make ~name:"f02_env_mode_monotone" ~count:2000
+    gen_expr
+    (fun e ->
+       let cv = check_env Converged [] e in
+       let dv = check_env Diverged  [] e in
+       List.for_all (fun err -> List.mem err dv) cv)
+
 let () =
   let suite = [
     test_merge_dim_comm;
@@ -235,6 +350,8 @@ let () =
     test_mode_monotone;
     test_varying_if_flags;
     test_cdcf_agreement;
+    test_f02_let_alias_env;
+    test_f02_env_mode_monotone;
   ] in
   let passed = QCheck_base_runner.run_tests ~verbose:true suite in
   exit passed

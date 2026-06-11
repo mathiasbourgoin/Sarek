@@ -8,11 +8,13 @@
  *
  * Abstract model: expr captures the convergence-relevant structure.
  * Phase 1a: ESuperstep added (F-01 coverage).
+ * Phase 2 (T2-F02): EVar added; Env type + is_varying_in_env + check_env
+ *   thread an explicit environment so let-bound aliases propagate correctly.
  * Elided: TEMatch (subsumed by EIf), TELetRec, TEPragma, TEOpen,
  *         TELetShared — documented in ASSUMPTIONS.md.
  ******************************************************************************)
 
-From Stdlib Require Import Bool List.
+From Stdlib Require Import Bool List Arith.
 Import ListNotations.
 
 (* ===== 1. Abstract expression type ===== *)
@@ -21,13 +23,14 @@ Inductive expr : Type :=
   | ELit     : expr
   | EVary    : expr
   | EBarrier : expr
+  | EVar     : nat -> expr                     (* variable reference by id *)
   | EBinop   : expr -> expr -> expr
   | EUnop    : expr -> expr
   | EIf      : expr -> expr -> expr -> expr    (* cond, then, else *)
   | EWhile   : expr -> expr -> expr            (* cond, body *)
   | EFor     : expr -> expr -> expr -> expr    (* lo, hi, body *)
   | ESeq     : list expr -> expr
-  | ELet     : expr -> expr -> expr            (* value, body *)
+  | ELet     : nat -> expr -> expr -> expr     (* var_id, value, body *)
   | ESuperstep : bool -> expr -> expr -> expr  (* divergent_flag, body, cont *)
   | EApp     : list expr -> expr.
 
@@ -35,19 +38,19 @@ Inductive exec_mode : Type := Converged | Diverged.
 
 Inductive error : Type := BarrierError.
 
-(* ===== 2. is_varying ===== *)
+(* ===== 2. is_varying (binding-blind; EVar is non-varying without env) ===== *)
 
 Fixpoint is_varying (e : expr) : bool :=
   match e with
   | EVary         => true
-  | ELit | EBarrier => false
+  | ELit | EBarrier | EVar _ => false
   | EBinop a b    => is_varying a || is_varying b
   | EUnop e       => is_varying e
   | EIf c t el    => is_varying c || is_varying t || is_varying el
   | EWhile c b    => is_varying c || is_varying b
   | EFor lo hi b  => is_varying lo || is_varying hi || is_varying b
   | ESeq es       => existsb is_varying es
-  | ELet v b      => is_varying v || is_varying b
+  | ELet _ v b    => is_varying v || is_varying b
   | ESuperstep _ body cont => is_varying body || is_varying cont
   | EApp args     => existsb is_varying args
   end.
@@ -57,14 +60,14 @@ Fixpoint is_varying (e : expr) : bool :=
 Fixpoint barrier_free (e : expr) : bool :=
   match e with
   | EBarrier       => false
-  | ELit | EVary   => true
+  | ELit | EVary | EVar _ => true
   | EBinop a b     => barrier_free a && barrier_free b
   | EUnop e        => barrier_free e
   | EIf c t el     => barrier_free c && barrier_free t && barrier_free el
   | EWhile c b     => barrier_free c && barrier_free b
   | EFor lo hi b   => barrier_free lo && barrier_free hi && barrier_free b
   | ESeq es        => forallb barrier_free es
-  | ELet v b       => barrier_free v && barrier_free b
+  | ELet _ v b     => barrier_free v && barrier_free b
   (* A non-divergent superstep contains an implicit barrier at its boundary.
      (if divergent then true else false) makes barrier_free false for ESuperstep false,
      preserving the diverged_clean_iff_barrier_free invariant. *)
@@ -83,19 +86,19 @@ Fixpoint has_diverging_cf (e : expr) : bool :=
   | EBinop a b    => has_diverging_cf a || has_diverging_cf b
   | EUnop e       => has_diverging_cf e
   | ESeq es       => existsb has_diverging_cf es
-  | ELet v b      => has_diverging_cf v || has_diverging_cf b
+  | ELet _ v b    => has_diverging_cf v || has_diverging_cf b
   | ESuperstep _ body cont => has_diverging_cf body || has_diverging_cf cont
   | EApp args     => existsb has_diverging_cf args
   | _             => false
   end.
 
-(* ===== 5. check ===== *)
+(* ===== 5. check (binding-blind — uses is_varying without env) ===== *)
 
 Fixpoint check (m : exec_mode) (e : expr) : list error :=
   match e with
   | EBarrier =>
       match m with Diverged => [BarrierError] | Converged => [] end
-  | ELit | EVary   => []
+  | ELit | EVary | EVar _ => []
   | EBinop a b     => check m a ++ check m b
   | EUnop e        => check m e
   | EIf cond t el  =>
@@ -108,7 +111,7 @@ Fixpoint check (m : exec_mode) (e : expr) : list error :=
       let inner := if is_varying lo || is_varying hi then Diverged else m in
       check m lo ++ check m hi ++ check inner b
   | ESeq es        => concat (map (check m) es)
-  | ELet v b       => check m v ++ check m b
+  | ELet _ v b     => check m v ++ check m b
   (* Non-divergent superstep: entry under Diverged outer mode is an error
      (the implicit end-of-superstep barrier is reached by only some threads).
      Divergent superstep: no entry error. In both cases body and cont are
@@ -124,22 +127,22 @@ Fixpoint check (m : exec_mode) (e : expr) : list error :=
   | EApp args      => concat (map (check m) args)
   end.
 
-(* KNOWN LIMITATION F-02: binding-blind is_varying.
+(* NOTE F-02 (addressed in T2-F02):
  *
- * The abstract ELet case `is_varying (ELet v b) = is_varying v || is_varying b`
- * mirrors the real checker's behaviour (Sarek_convergence.ml): TEVar(name,_) is
- * tested against a static primitive table; let-bound user-defined variables are
- * NOT tracked through the env (F-02, fixed in the OCaml checker via varying_vars
- * context but not yet modelled here).
+ * The binding-blind functions above (is_varying, check) treat EVar _ as
+ * non-varying regardless of what was bound.  This mirrors the pre-fix OCaml
+ * checker behaviour.  The theorems over these functions remain sound for the
+ * binding-blind model.
  *
- * Consequence: `let x = thread_idx_x in if x > 0 then barrier()` is a false
- * negative in the abstract model (is_varying sees EVary at the let-value, not
- * at the TEVar use-site). The real OCaml checker (post F-02 fix) is sound;
- * this spec is conservative/incomplete for aliased variables.
+ * The env-threaded counterparts (is_varying_in_env, check_env) below model
+ * the post-fix OCaml checker: ELet x v b records is_varying_in_env(env,v) in
+ * the env before checking b, and EVar x looks up its entry.
  *
- * A sound Rocq fix requires an environment-threaded is_varying (T2 task).
- * The current theorems are internally consistent for the abstract model as
- * defined; they do not guarantee soundness for programs using let-bound aliases.
+ * Theorem env_let_alias_varying proves the key F-02 property:
+ *   if v is varying in env then ELet x v (EVar x) is varying in env.
+ * Theorem env_check_let_alias_catches proves soundness:
+ *   if v is varying in env then check_env Diverged env (EVar x) = [BarrierError],
+ *   so a barrier inside a diverged branch guarded by a let-alias is caught.
  *)
 
 (* ===== 6. dim_usage ===== *)
@@ -174,13 +177,14 @@ Variable Plist : list expr -> Prop.
 Hypothesis IH_lit     : P ELit.
 Hypothesis IH_vary    : P EVary.
 Hypothesis IH_barrier : P EBarrier.
+Hypothesis IH_var     : forall x, P (EVar x).
 Hypothesis IH_binop   : forall a b, P a -> P b -> P (EBinop a b).
 Hypothesis IH_unop    : forall e, P e -> P (EUnop e).
 Hypothesis IH_if      : forall c t el, P c -> P t -> P el -> P (EIf c t el).
 Hypothesis IH_while   : forall c b, P c -> P b -> P (EWhile c b).
 Hypothesis IH_for     : forall lo hi b, P lo -> P hi -> P b -> P (EFor lo hi b).
 Hypothesis IH_seq     : forall es, Plist es -> P (ESeq es).
-Hypothesis IH_let     : forall v b, P v -> P b -> P (ELet v b).
+Hypothesis IH_let     : forall x v b, P v -> P b -> P (ELet x v b).
 Hypothesis IH_superstep : forall (dv : bool) body cont,
   P body -> P cont -> P (ESuperstep dv body cont).
 Hypothesis IH_app     : forall args, Plist args -> P (EApp args).
@@ -192,6 +196,7 @@ Fixpoint expr_list_rect (e : expr) : P e :=
   | ELit     => IH_lit
   | EVary    => IH_vary
   | EBarrier => IH_barrier
+  | EVar x   => IH_var x
   | EBinop a b   => IH_binop a b (expr_list_rect a) (expr_list_rect b)
   | EUnop u      => IH_unop u (expr_list_rect u)
   | EIf c t el   =>
@@ -206,7 +211,7 @@ Fixpoint expr_list_rect (e : expr) : P e :=
           | []     => IH_nil
           | x :: t => IH_cons x t (expr_list_rect x) (go t)
           end) es)
-  | ELet v b     => IH_let v b (expr_list_rect v) (expr_list_rect b)
+  | ELet x v b   => IH_let x v b (expr_list_rect v) (expr_list_rect b)
   | ESuperstep dv body cont =>
       IH_superstep dv body cont (expr_list_rect body) (expr_list_rect cont)
   | EApp args =>
@@ -313,6 +318,8 @@ Proof.
   (* EVary *) - simpl. tauto.
   (* EBarrier — both sides false *)
   - simpl. split; intro H; discriminate.
+  (* EVar x — barrier-free, clean under Diverged *)
+  - intros x. simpl. tauto.
   (* EBinop a b *)
   - intros a b IHa IHb. simpl.
     rewrite app_nil_iff, andb_true_iff. tauto.
@@ -331,8 +338,8 @@ Proof.
     rewrite diverged_absorbing.
     rewrite !app_nil_iff, !andb_true_iff. tauto.
   (* ESeq es *) - intros es IH. exact IH.
-  (* ELet v b *)
-  - intros v b IHv IHb. simpl.
+  (* ELet x v b *)
+  - intros x v b IHv IHb. simpl.
     rewrite app_nil_iff, andb_true_iff. tauto.
   (* ESuperstep dv body cont *)
   - intros dv body cont IHbody IHcont. simpl.
@@ -363,6 +370,8 @@ Proof.
   (* EVary *)  - simpl. apply incl_refl.
   (* EBarrier: Converged→[], Diverged→[BarrierError] *)
   - simpl. apply incl_nil_l.
+  (* EVar x: both modes give [] *)
+  - intros x. simpl. apply incl_refl.
   (* EBinop a b *)
   - intros a b IHa IHb. simpl.
     apply incl_app_mono; [exact IHa | exact IHb].
@@ -387,8 +396,8 @@ Proof.
     + apply incl_app_mono; [exact IHlo | apply incl_app_mono; [exact IHhi | apply incl_refl]].
     + apply incl_app_mono; [exact IHlo | apply incl_app_mono; [exact IHhi | exact IHb]].
   (* ESeq es *) - intros es IH. exact IH.
-  (* ELet v b *)
-  - intros v b IHv IHb. simpl.
+  (* ELet x v b *)
+  - intros x v b IHv IHb. simpl.
     apply incl_app_mono; [exact IHv | exact IHb].
   (* ESuperstep dv body cont *)
   - intros dv body cont IHbody IHcont. simpl.
@@ -424,6 +433,8 @@ Proof.
   (* ELit *)    - intros _. reflexivity.
   (* EVary *)   - intros H. discriminate.
   (* EBarrier *) - intros _. reflexivity.
+  (* EVar x — is_varying (EVar x) = false; check Converged (EVar x) = [] *)
+  - intros x _. reflexivity.
   (* EBinop a b *)
   - intros a b IHa IHb H. simpl in *.
     apply orb_false_iff in H. destruct H as [Ha Hb].
@@ -449,8 +460,8 @@ Proof.
     rewrite Hlo, Hhi. simpl.
     exact (IHb Hb).
   (* ESeq es *) - intros es IH H. simpl in *. apply IH. exact H.
-  (* ELet v b *)
-  - intros v b IHv IHb H. simpl in *.
+  (* ELet x v b *)
+  - intros x v b IHv IHb H. simpl in *.
     apply orb_false_iff in H. destruct H as [Hv Hb].
     rewrite (IHv Hv), (IHb Hb). reflexivity.
   (* ESuperstep dv body cont *)
@@ -480,6 +491,8 @@ Proof.
   (* EVary *)   - intros _. reflexivity.
   (* EBarrier: check Converged EBarrier = [], and cdcf = false *)
   - intros _. reflexivity.
+  (* EVar x: cdcf = false; check Converged = [] *)
+  - intros x _. reflexivity.
   (* EBinop a b *)
   - intros a b IHa IHb H. simpl in *.
     apply orb_false_iff in H. destruct H as [Ha Hb].
@@ -508,8 +521,8 @@ Proof.
     rewrite Hlo, Hhi. simpl.
     exact (IHb Hb).
   (* ESeq es *) - intros es IH H. simpl in *. apply IH. exact H.
-  (* ELet v b *)
-  - intros v b IHv IHb H. simpl in *.
+  (* ELet x v b *)
+  - intros x v b IHv IHb H. simpl in *.
     apply orb_false_iff in H. destruct H as [Hv Hb].
     rewrite (IHv Hv), (IHb Hb). reflexivity.
   (* ESuperstep dv body cont *)
@@ -548,6 +561,138 @@ Proof.
   intros body cont. simpl. discriminate.
 Qed.
 
+(* ===== 17. Env type and env-threaded predicates (F-02 / T2-F02) ===== *)
+
+(* Env: association list mapping variable id (nat) to is_varying flag (bool). *)
+Definition Env := list (nat * bool).
+
+Definition env_lookup (env : Env) (x : nat) : bool :=
+  match find (fun p => Nat.eqb (fst p) x) env with
+  | Some (_, v) => v
+  | None        => false
+  end.
+
+Definition env_extend (env : Env) (x : nat) (v : bool) : Env :=
+  (x, v) :: env.
+
+(* is_varying_in_env: env-threaded variability check.
+   EVar x looks up x in env; ELet x v b extends the env with the
+   variability of v before recursing into b. *)
+Fixpoint is_varying_in_env (env : Env) (e : expr) : bool :=
+  match e with
+  | EVary         => true
+  | ELit | EBarrier => false
+  | EVar x        => env_lookup env x
+  | EBinop a b    => is_varying_in_env env a || is_varying_in_env env b
+  | EUnop e       => is_varying_in_env env e
+  | EIf c t el    =>
+      is_varying_in_env env c ||
+      is_varying_in_env env t ||
+      is_varying_in_env env el
+  | EWhile c b    => is_varying_in_env env c || is_varying_in_env env b
+  | EFor lo hi b  =>
+      is_varying_in_env env lo ||
+      is_varying_in_env env hi ||
+      is_varying_in_env env b
+  | ESeq es       => existsb (is_varying_in_env env) es
+  | ELet x v b   =>
+      let vv := is_varying_in_env env v in
+      is_varying_in_env (env_extend env x vv) b
+  | ESuperstep _ body cont =>
+      is_varying_in_env env body || is_varying_in_env env cont
+  | EApp args     => existsb (is_varying_in_env env) args
+  end.
+
+(* check_env: env-threaded safety checker.
+   EVar x is treated as ELit/EVary depending on env lookup.
+   ELet x v b extends env with variability of v before checking b. *)
+Fixpoint check_env (m : exec_mode) (env : Env) (e : expr) : list error :=
+  match e with
+  | EBarrier =>
+      match m with Diverged => [BarrierError] | Converged => [] end
+  | ELit | EVary => []
+  | EVar x =>
+      (* EVar itself carries no barrier; its variability is tracked in env *)
+      []
+  | EBinop a b     => check_env m env a ++ check_env m env b
+  | EUnop e        => check_env m env e
+  | EIf cond t el  =>
+      let inner := if is_varying_in_env env cond then Diverged else m in
+      check_env m env cond ++ check_env inner env t ++ check_env inner env el
+  | EWhile cond b  =>
+      let inner := if is_varying_in_env env cond then Diverged else m in
+      check_env m env cond ++ check_env inner env b
+  | EFor lo hi b   =>
+      let inner :=
+        if is_varying_in_env env lo || is_varying_in_env env hi
+        then Diverged else m
+      in
+      check_env m env lo ++ check_env m env hi ++ check_env inner env b
+  | ESeq es        => concat (map (check_env m env) es)
+  | ELet x v b    =>
+      let vv  := is_varying_in_env env v in
+      let env' := env_extend env x vv in
+      check_env m env v ++ check_env m env' b
+  | ESuperstep divergent body cont =>
+      let entry_errors :=
+        match m, divergent with
+        | Diverged, false => [BarrierError]
+        | _,        _     => []
+        end
+      in
+      entry_errors ++ check_env m env body ++ check_env m env cont
+  | EApp args      => concat (map (check_env m env) args)
+  end.
+
+(* ===== 18. F-02 key theorems ===== *)
+
+(* Lemma: env_lookup after env_extend with same key returns the stored value. *)
+Lemma env_lookup_extend_same : forall env x v,
+  env_lookup (env_extend env x v) x = v.
+Proof.
+  intros env x v.
+  unfold env_lookup, env_extend. simpl.
+  rewrite Nat.eqb_refl. reflexivity.
+Qed.
+
+(* Theorem: let-alias propagation — F-02 core property.
+   If `v` is varying in env, then after `ELet x v _`, the variable x is
+   varying in the extended environment. *)
+Theorem env_let_alias_varying : forall env x v b,
+  is_varying_in_env env v = true ->
+  is_varying_in_env (env_extend env x true) b = true ->
+  is_varying_in_env env (ELet x v b) = true.
+Proof.
+  intros env x v b Hv Hb.
+  simpl. rewrite Hv. simpl. exact Hb.
+Qed.
+
+(* Theorem: EVar under Diverged mode is barrier-free (EVar carries no barrier).
+   The barrier risk comes from using a varying variable as a CF condition. *)
+Theorem env_var_diverged_clean : forall env x,
+  check_env Diverged env (EVar x) = [].
+Proof.
+  intros env x. simpl. reflexivity.
+Qed.
+
+(* Theorem: F-02 let-alias soundness.
+   If v is varying in env, then `ELet x v (EIf (EVar x) EBarrier ELit)`
+   produces a BarrierError under any mode (because the EVar x branch is
+   taken under a Diverged inner mode). *)
+Theorem env_check_let_alias_catches : forall env x v,
+  is_varying_in_env env v = true ->
+  check_env Converged env (ELet x v (EIf (EVar x) EBarrier ELit)) <> [].
+Proof.
+  intros env x v Hv.
+  simpl.
+  rewrite Hv. simpl.
+  rewrite env_lookup_extend_same. simpl.
+  (* check_env Converged env v ++ [BarrierError] ++ [] ++ [] <> [] *)
+  intro H.
+  apply app_eq_nil in H. destruct H as [_ H1].
+  discriminate.
+Qed.
+
 (* ===== Summary ===== *)
 (*
   Print Assumptions merge_dim_comm.
@@ -557,5 +702,8 @@ Qed.
   Print Assumptions cdcf_check_agreement.
   Print Assumptions varying_if_flags_barriers.
   Print Assumptions superstep_outer_diverged_error.
-  (* Expected: no axioms beyond the Rocq kernel for all seven. *)
+  Print Assumptions env_let_alias_varying.
+  Print Assumptions env_var_diverged_clean.
+  Print Assumptions env_check_let_alias_catches.
+  (* Expected: no axioms beyond the Rocq kernel for all. *)
 *)

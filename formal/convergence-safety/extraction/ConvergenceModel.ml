@@ -34,13 +34,15 @@ type expr =
 | ELit
 | EVary
 | EBarrier
+| EVar of int
 | EBinop of expr * expr
 | EUnop of expr
 | EIf of expr * expr * expr
 | EWhile of expr * expr
 | EFor of expr * expr * expr
 | ESeq of expr list
-| ELet of expr * expr
+| ELet of int * expr * expr
+| ESuperstep of bool * expr * expr
 | EApp of expr list
 
 type exec_mode =
@@ -61,7 +63,8 @@ let rec is_varying = function
 | EFor (lo, hi, b) ->
   (||) ((||) (is_varying lo) (is_varying hi)) (is_varying b)
 | ESeq es -> existsb is_varying es
-| ELet (v, b) -> (||) (is_varying v) (is_varying b)
+| ELet (_, v, b) -> (||) (is_varying v) (is_varying b)
+| ESuperstep (_, body, cont) -> (||) (is_varying body) (is_varying cont)
 | EApp args -> existsb is_varying args
 | _ -> false
 
@@ -77,7 +80,9 @@ let rec barrier_free = function
 | EFor (lo, hi, b) ->
   (&&) ((&&) (barrier_free lo) (barrier_free hi)) (barrier_free b)
 | ESeq es -> forallb barrier_free es
-| ELet (v, b) -> (&&) (barrier_free v) (barrier_free b)
+| ELet (_, v, b) -> (&&) (barrier_free v) (barrier_free b)
+| ESuperstep (divergent, body, cont) ->
+  (&&) ((&&) divergent (barrier_free body)) (barrier_free cont)
 | EApp args -> forallb barrier_free args
 | _ -> true
 
@@ -92,7 +97,9 @@ let rec has_diverging_cf = function
 | EFor (lo, hi, b) ->
   (||) ((||) (is_varying lo) (is_varying hi)) (has_diverging_cf b)
 | ESeq es -> existsb has_diverging_cf es
-| ELet (v, b) -> (||) (has_diverging_cf v) (has_diverging_cf b)
+| ELet (_, v, b) -> (||) (has_diverging_cf v) (has_diverging_cf b)
+| ESuperstep (_, body, cont) ->
+  (||) (has_diverging_cf body) (has_diverging_cf cont)
 | EApp args -> existsb has_diverging_cf args
 | _ -> false
 
@@ -114,7 +121,14 @@ let rec check m = function
   let inner = if (||) (is_varying lo) (is_varying hi) then Diverged else m in
   app (check m lo) (app (check m hi) (check inner b))
 | ESeq es -> concat (map (check m) es)
-| ELet (v, b) -> app (check m v) (check m b)
+| ELet (_, v, b) -> app (check m v) (check m b)
+| ESuperstep (divergent, body, cont) ->
+  let entry_errors =
+    match m with
+    | Converged -> []
+    | Diverged -> if divergent then [] else BarrierError :: []
+  in
+  app entry_errors (app (check m body) (check m cont))
 | EApp args -> concat (map (check m) args)
 | _ -> []
 

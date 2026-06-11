@@ -13,13 +13,15 @@ type expr =
 | ELit
 | EVary
 | EBarrier
+| EVar of int
 | EBinop of expr * expr
 | EUnop of expr
 | EIf of expr * expr * expr
 | EWhile of expr * expr
 | EFor of expr * expr * expr
 | ESeq of expr list
-| ELet of expr * expr
+| ELet of int * expr * expr
+| ESuperstep of bool * expr * expr
 | EApp of expr list
 
 type exec_mode =
