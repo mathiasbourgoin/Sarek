@@ -9,7 +9,7 @@
 
 ## Project
 
-ConvergenceSafety is a formal Rocq specification of the GPU barrier safety analysis for the Sarek frontend of SPOC. It proves correctness properties of `Sarek_convergence.check_expr`, which statically detects barriers placed inside diverged control flow on the abstract `expr` AST. The project covers 15 theorems at Tiers 0–1 (lattice laws through control-flow monotonicity), including the F-01 safety property for `ESuperstep` (Phase 1a) and 3 new env-threaded F-02 theorems (T2-F02). Validated by 12 QCheck conformance properties against an abstract OCaml model (including 2 new F-02 env-threaded properties) and 6 extraction tests exercising the extracted `ConvergenceModel` module.
+ConvergenceSafety is a formal Rocq specification of the GPU barrier safety analysis for the Sarek frontend of SPOC. It proves correctness properties of `Sarek_convergence.check_expr`, which statically detects barriers placed inside diverged control flow on the abstract `expr` AST. The project covers 16 theorems at Tiers 0–1 (lattice laws through control-flow monotonicity) — 14 Theorems + 2 named Lemmas (`env_lookup_extend_same`, `env_let_alias_varying`) — including the F-01 safety property for `ESuperstep` (Phase 1a) and 3 new env-threaded F-02 theorems (T2-F02). Validated by 12 QCheck conformance properties against an abstract OCaml model (including 2 new F-02 env-threaded properties) and 6 extraction tests exercising the extracted `ConvergenceModel` module.
 
 ## Trust root
 

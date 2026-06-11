@@ -1,4 +1,4 @@
-DIGEST 293ee6bdbe9cb8c4911e33015ba99a14
+DIGEST 6471876fed62cefdba8e178dd45ef25f
 FConvergenceSpec.ConvergenceSpec
 R915:918 Stdlib.Bool.Bool <> <> lib
 R920:923 Stdlib.Lists.List <> <> lib
@@ -1581,31 +1581,31 @@ R25501:25503 ConvergenceSpec.ConvergenceSpec <> env:181 var
 R25506:25509 ConvergenceSpec.ConvergenceSpec <> EVar constr
 R25511:25511 ConvergenceSpec.ConvergenceSpec <> x:182 var
 R25516:25517 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
-prf 25801:25827 <> env_check_let_alias_catches
-binder 25838:25840 <> env:183
-binder 25842:25842 <> x:184
-binder 25844:25844 <> v:185
-R25879:25884 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R25872:25874 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R25849:25865 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env def
-R25867:25869 ConvergenceSpec.ConvergenceSpec <> env:183 var
-R25871:25871 ConvergenceSpec.ConvergenceSpec <> v:185 var
-R25875:25878 Corelib.Init.Datatypes <> true constr
-R25948:25951 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
-R25885:25893 ConvergenceSpec.ConvergenceSpec <> check_env def
-R25895:25903 ConvergenceSpec.ConvergenceSpec <> Converged constr
-R25905:25907 ConvergenceSpec.ConvergenceSpec <> env:183 var
-R25910:25913 ConvergenceSpec.ConvergenceSpec <> ELet constr
-R25915:25915 ConvergenceSpec.ConvergenceSpec <> x:184 var
-R25917:25917 ConvergenceSpec.ConvergenceSpec <> v:185 var
-R25920:25922 ConvergenceSpec.ConvergenceSpec <> EIf constr
-R25925:25928 ConvergenceSpec.ConvergenceSpec <> EVar constr
-R25930:25930 ConvergenceSpec.ConvergenceSpec <> x:184 var
-R25933:25940 ConvergenceSpec.ConvergenceSpec <> EBarrier constr
-R25942:25945 ConvergenceSpec.ConvergenceSpec <> ELit constr
-R25952:25953 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
-R26024:26045 ConvergenceSpec.ConvergenceSpec <> env_lookup_extend_same thm
-R26024:26045 ConvergenceSpec.ConvergenceSpec <> env_lookup_extend_same thm
-R26024:26045 ConvergenceSpec.ConvergenceSpec <> env_lookup_extend_same thm
-R26144:26153 Stdlib.Lists.List <> app_eq_nil thm
-R26144:26153 Stdlib.Lists.List <> app_eq_nil thm
+prf 25846:25872 <> env_check_let_alias_catches
+binder 25883:25885 <> env:183
+binder 25887:25887 <> x:184
+binder 25889:25889 <> v:185
+R25924:25929 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R25917:25919 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R25894:25910 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env def
+R25912:25914 ConvergenceSpec.ConvergenceSpec <> env:183 var
+R25916:25916 ConvergenceSpec.ConvergenceSpec <> v:185 var
+R25920:25923 Corelib.Init.Datatypes <> true constr
+R25993:25996 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R25930:25938 ConvergenceSpec.ConvergenceSpec <> check_env def
+R25940:25948 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R25950:25952 ConvergenceSpec.ConvergenceSpec <> env:183 var
+R25955:25958 ConvergenceSpec.ConvergenceSpec <> ELet constr
+R25960:25960 ConvergenceSpec.ConvergenceSpec <> x:184 var
+R25962:25962 ConvergenceSpec.ConvergenceSpec <> v:185 var
+R25965:25967 ConvergenceSpec.ConvergenceSpec <> EIf constr
+R25970:25973 ConvergenceSpec.ConvergenceSpec <> EVar constr
+R25975:25975 ConvergenceSpec.ConvergenceSpec <> x:184 var
+R25978:25985 ConvergenceSpec.ConvergenceSpec <> EBarrier constr
+R25987:25990 ConvergenceSpec.ConvergenceSpec <> ELit constr
+R25997:25998 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R26069:26090 ConvergenceSpec.ConvergenceSpec <> env_lookup_extend_same thm
+R26069:26090 ConvergenceSpec.ConvergenceSpec <> env_lookup_extend_same thm
+R26069:26090 ConvergenceSpec.ConvergenceSpec <> env_lookup_extend_same thm
+R26189:26198 Stdlib.Lists.List <> app_eq_nil thm
+R26189:26198 Stdlib.Lists.List <> app_eq_nil thm

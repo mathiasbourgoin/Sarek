@@ -677,8 +677,8 @@ Qed.
 
 (* Theorem: F-02 let-alias soundness.
    If v is varying in env, then `ELet x v (EIf (EVar x) EBarrier ELit)`
-   produces a BarrierError under any mode (because the EVar x branch is
-   taken under a Diverged inner mode). *)
+   produces a BarrierError under Converged mode (the harder case; Diverged
+   not separately proven — no mode-monotonicity theorem exists for check_env). *)
 Theorem env_check_let_alias_catches : forall env x v,
   is_varying_in_env env v = true ->
   check_env Converged env (ELet x v (EIf (EVar x) EBarrier ELit)) <> [].
