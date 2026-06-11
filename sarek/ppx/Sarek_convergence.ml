@@ -32,6 +32,8 @@
 open Sarek_typed_ast
 open Sarek_env
 
+module StringSet = Set.Make (String)
+
 (** Execution mode for convergence analysis *)
 type exec_mode =
   | Converged  (** All threads in workgroup execute this code *)
@@ -40,14 +42,15 @@ type exec_mode =
 (** Analysis context *)
 type ctx = {
   mode : exec_mode;
-      (* Future: varying_vars : StringSet.t for dataflow analysis *)
+  varying_vars : StringSet.t;
+      (** Variables known to carry thread-varying values at this point *)
 }
 
 (** Initial context - start converged *)
-let init_ctx = {mode = Converged}
+let init_ctx = {mode = Converged; varying_vars = StringSet.empty}
 
-(** Enter diverged mode *)
-let diverge _ctx = {mode = Diverged}
+(** Enter diverged mode, preserving known-varying variable set *)
+let diverge ctx = {ctx with mode = Diverged}
 
 (** Check if an intrinsic ref is thread-varying using core primitives *)
 let is_thread_varying_intrinsic (ref : intrinsic_ref) : bool =
@@ -76,49 +79,55 @@ let is_barrier_ref (ref : intrinsic_ref) : bool =
     - block_idx_x/y/z (same for whole block)
     - block_dim_x/y/z, grid_dim_x/y/z
     - Expressions derived only from uniform values *)
-let rec is_thread_varying (te : texpr) : bool =
+let rec is_thread_varying_env (env : StringSet.t) (te : texpr) : bool =
   match te.te with
   (* Literals are uniform *)
   | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
     ->
       false
-  (* Check if variable is a thread-varying intrinsic *)
-  | TEVar (name, _) -> Sarek_core_primitives.is_thread_varying name
+  (* Variable: check static intrinsics table AND locally-inferred varying set *)
+  | TEVar (name, _) ->
+      Sarek_core_primitives.is_thread_varying name || StringSet.mem name env
   (* Intrinsic constants - check if thread-varying *)
   | TEIntrinsicConst ref -> is_thread_varying_intrinsic ref
   (* Binary ops: varying if either operand varies *)
-  | TEBinop (_, e1, e2) -> is_thread_varying e1 || is_thread_varying e2
+  | TEBinop (_, e1, e2) ->
+      is_thread_varying_env env e1 || is_thread_varying_env env e2
   (* Unary ops: varying if operand varies *)
-  | TEUnop (_, e) -> is_thread_varying e
+  | TEUnop (_, e) -> is_thread_varying_env env e
   (* Array/vector access: varying if index varies *)
-  | TEVecGet (_, idx) | TEArrGet (_, idx) -> is_thread_varying idx
+  | TEVecGet (_, idx) | TEArrGet (_, idx) -> is_thread_varying_env env idx
   (* Field access: varying if record varies *)
-  | TEFieldGet (e, _, _) -> is_thread_varying e
+  | TEFieldGet (e, _, _) -> is_thread_varying_env env e
   (* Application: varying if any argument varies *)
-  | TEApp (_, args) -> List.exists is_thread_varying args
+  | TEApp (_, args) -> List.exists (is_thread_varying_env env) args
   (* Intrinsic function: varying if any argument varies *)
-  | TEIntrinsicFun (_, _, args) -> List.exists is_thread_varying args
+  | TEIntrinsicFun (_, _, args) -> List.exists (is_thread_varying_env env) args
   (* Tuple: varying if any element varies *)
-  | TETuple es -> List.exists is_thread_varying es
-  (* Let binding: check the bound expression and body *)
-  | TELet (_, _, value, body) | TELetMut (_, _, value, body) ->
-      is_thread_varying value || is_thread_varying body
-  (* Typed expression: shouldn't appear but check inner *)
-  | TESeq es -> List.exists is_thread_varying es
+  | TETuple es -> List.exists (is_thread_varying_env env) es
+  (* Let binding: propagate variance of bound value into the body *)
+  | TELet (name, _, value, body) | TELetMut (name, _, value, body) ->
+      let v = is_thread_varying_env env value in
+      let env' = if v then StringSet.add name env else env in
+      v || is_thread_varying_env env' body
+  | TESeq es -> List.exists (is_thread_varying_env env) es
   (* BSP constructs: check body/continuation *)
   | TELetShared (_, _, _, size_opt, body) ->
       (match size_opt with
-        | Some size -> is_thread_varying size
+        | Some size -> is_thread_varying_env env size
         | None -> false)
-      || is_thread_varying body
+      || is_thread_varying_env env body
   | TESuperstep (_, _, step_body, cont) ->
-      is_thread_varying step_body || is_thread_varying cont
-  | TEOpen (_, body) -> is_thread_varying body
+      is_thread_varying_env env step_body || is_thread_varying_env env cont
+  | TEOpen (_, body) -> is_thread_varying_env env body
   (* Default: assume uniform (minimize false positives) *)
   | TEIf _ | TEFor _ | TEWhile _ | TEMatch _ | TERecord _ | TEConstr _
   | TEReturn _ | TECreateArray _ | TEGlobalRef _ | TENative _ | TEPragma _
   | TEVecSet _ | TEArrSet _ | TEFieldSet _ | TEAssign _ | TELetRec _ ->
       false
+
+(** Backward-compatible wrapper using an empty environment *)
+let is_thread_varying = is_thread_varying_env StringSet.empty
 
 (** Check if an intrinsic reference is a barrier *)
 let is_barrier_intrinsic (ref : intrinsic_ref) : bool = is_barrier_ref ref
@@ -150,7 +159,9 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   (* If expression - diverge if condition is thread-varying *)
   | TEIf (cond, then_e, else_opt) ->
       let cond_errors = check_expr ctx cond in
-      let inner_ctx = if is_thread_varying cond then diverge ctx else ctx in
+      let inner_ctx =
+        if is_thread_varying_env ctx.varying_vars cond then diverge ctx else ctx
+      in
       let then_errors = check_expr inner_ctx then_e in
       let else_errors =
         match else_opt with
@@ -161,7 +172,9 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   (* While loop - diverge if condition is thread-varying *)
   | TEWhile (cond, body) ->
       let cond_errors = check_expr ctx cond in
-      let inner_ctx = if is_thread_varying cond then diverge ctx else ctx in
+      let inner_ctx =
+        if is_thread_varying_env ctx.varying_vars cond then diverge ctx else ctx
+      in
       let body_errors = check_expr inner_ctx body in
       cond_errors @ body_errors
   (* For loop - check if bounds are thread-varying *)
@@ -169,7 +182,9 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
       let lo_errors = check_expr ctx lo in
       let hi_errors = check_expr ctx hi in
       let inner_ctx =
-        if is_thread_varying lo || is_thread_varying hi then diverge ctx
+        if is_thread_varying_env ctx.varying_vars lo
+           || is_thread_varying_env ctx.varying_vars hi
+        then diverge ctx
         else ctx
       in
       let body_errors = check_expr inner_ctx body in
@@ -177,7 +192,9 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   (* Match - diverge if scrutinee is thread-varying *)
   | TEMatch (scrut, cases) ->
       let scrut_errors = check_expr ctx scrut in
-      let inner_ctx = if is_thread_varying scrut then diverge ctx else ctx in
+      let inner_ctx =
+        if is_thread_varying_env ctx.varying_vars scrut then diverge ctx else ctx
+      in
       let case_errors =
         List.concat_map (fun (_, e) -> check_expr inner_ctx e) cases
       in
@@ -196,8 +213,14 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   | TEUnop (_, e) -> check_expr ctx e
   | TEApp (f, args) -> check_expr ctx f @ List.concat_map (check_expr ctx) args
   | TEAssign (_, _, e) -> check_expr ctx e
-  | TELet (_, _, value, body) | TELetMut (_, _, value, body) ->
-      check_expr ctx value @ check_expr ctx body
+  | TELet (name, _, value, body) | TELetMut (name, _, value, body) ->
+      let value_errors = check_expr ctx value in
+      let ctx' =
+        if is_thread_varying_env ctx.varying_vars value
+        then {ctx with varying_vars = StringSet.add name ctx.varying_vars}
+        else ctx
+      in
+      value_errors @ check_expr ctx' body
   | TESeq es -> List.concat_map (check_expr ctx) es
   | TERecord (_, fields) ->
       List.concat_map (fun (_, e) -> check_expr ctx e) fields
@@ -214,107 +237,114 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
       in
       size_errors @ check_expr ctx body
   | TESuperstep (_, divergent, step_body, cont) ->
-      (* For non-divergent supersteps, check that the body doesn't contain
-         any diverging control flow (thread-varying conditions).
-         The implicit barrier at the end requires all threads to reach it. *)
       let body_errors =
         if divergent then
-          (* Divergent flag set: allow any control flow, just check for nested barriers *)
+          (* Divergent flag set: allow any control flow inside. *)
           check_expr ctx step_body
-        else
-          (* Non-divergent: check for any divergence in the body.
-             We do this by checking in Converged mode - if there's an if/while
-             with thread-varying condition followed by a barrier, that's caught.
-             But we also need to catch the implicit barrier at the end.
-             So if the body ends in diverged mode (any thread-varying branch taken),
-             that's an error because the implicit barrier would be in diverged flow. *)
-          let body_errs = check_expr {mode = Converged} step_body in
-          (* Also check: does the body contain any diverging conditions?
-             If so, the implicit barrier at the end is in diverged flow. *)
-          if contains_diverging_control_flow step_body then
-            Sarek_error.Barrier_in_diverged_flow te.te_loc :: body_errs
-          else body_errs
+        else begin
+          (* Non-divergent superstep has an implicit barrier at the end.
+             F-01 fix: if the outer context is already Diverged, some threads
+             won't enter this superstep → the implicit barrier fires under
+             diverged outer flow → flag the superstep site. *)
+          let outer_errors =
+            if ctx.mode = Diverged then
+              [Sarek_error.Barrier_in_diverged_flow te.te_loc]
+            else []
+          in
+          (* Check the body in Converged mode, preserving known-varying vars.
+             check_expr now correctly propagates let-bound variance (F-02 fix),
+             so any explicit barrier in diverged flow inside the body is caught
+             here — contains_diverging_control_flow is no longer needed. *)
+          let body_ctx = {mode = Converged; varying_vars = ctx.varying_vars} in
+          outer_errors @ check_expr body_ctx step_body
+        end
       in
-      (* After the implicit barrier, we're back to converged *)
-      let cont_errors = check_expr {mode = Converged} cont in
+      (* After the implicit barrier all threads are converged again;
+         preserve the known-varying variable set (barrier doesn't reset locals). *)
+      let cont_ctx = {mode = Converged; varying_vars = ctx.varying_vars} in
+      let cont_errors = check_expr cont_ctx cont in
       body_errors @ cont_errors
   | TEOpen (_, body) -> check_expr ctx body
   | TELetRec (_, _, _, fn_body, cont) ->
       check_expr ctx fn_body @ check_expr ctx cont
 
 (** Check if an expression contains any control flow with thread-varying
-    conditions. This is used for superstep analysis - the implicit barrier at
-    the end of a superstep requires that no divergence occurs within the body.
-*)
-and contains_diverging_control_flow (te : texpr) : bool =
+    conditions (env-aware: let-bound aliases to varying values are tracked). *)
+and contains_diverging_control_flow_env (env : StringSet.t) (te : texpr) : bool =
   match te.te with
-  | TEIf (cond, then_e, else_opt) -> (
-      is_thread_varying cond
-      || contains_diverging_control_flow then_e
-      ||
-      match else_opt with
-      | None -> false
-      | Some e -> contains_diverging_control_flow e)
+  | TEIf (cond, then_e, else_opt) ->
+      is_thread_varying_env env cond
+      || contains_diverging_control_flow_env env then_e
+      || (match else_opt with
+          | None -> false
+          | Some e -> contains_diverging_control_flow_env env e)
   | TEWhile (cond, body) ->
-      is_thread_varying cond || contains_diverging_control_flow body
+      is_thread_varying_env env cond
+      || contains_diverging_control_flow_env env body
   | TEFor (_, _, lo, hi, _, body) ->
-      is_thread_varying lo || is_thread_varying hi
-      || contains_diverging_control_flow body
+      is_thread_varying_env env lo
+      || is_thread_varying_env env hi
+      || contains_diverging_control_flow_env env body
   | TEMatch (scrut, cases) ->
-      is_thread_varying scrut
-      || List.exists (fun (_, e) -> contains_diverging_control_flow e) cases
-  (* Recursively check subexpressions *)
-  | TELet (_, _, v, b) | TELetMut (_, _, v, b) ->
-      contains_diverging_control_flow v || contains_diverging_control_flow b
-  | TESeq es -> List.exists contains_diverging_control_flow es
+      is_thread_varying_env env scrut
+      || List.exists (fun (_, e) -> contains_diverging_control_flow_env env e) cases
+  | TELet (name, _, v, b) | TELetMut (name, _, v, b) ->
+      let env' =
+        if is_thread_varying_env env v then StringSet.add name env else env
+      in
+      contains_diverging_control_flow_env env v
+      || contains_diverging_control_flow_env env' b
+  | TESeq es -> List.exists (contains_diverging_control_flow_env env) es
   | TEBinop (_, a, b) ->
-      contains_diverging_control_flow a || contains_diverging_control_flow b
-  | TEUnop (_, e) -> contains_diverging_control_flow e
-  | TEApp (_, args) -> List.exists contains_diverging_control_flow args
+      contains_diverging_control_flow_env env a
+      || contains_diverging_control_flow_env env b
+  | TEUnop (_, e) -> contains_diverging_control_flow_env env e
+  | TEApp (_, args) -> List.exists (contains_diverging_control_flow_env env) args
   | TEIntrinsicFun (_, _, args) ->
-      List.exists contains_diverging_control_flow args
+      List.exists (contains_diverging_control_flow_env env) args
   | TEVecGet (v, i) ->
-      contains_diverging_control_flow v || contains_diverging_control_flow i
+      contains_diverging_control_flow_env env v
+      || contains_diverging_control_flow_env env i
   | TEVecSet (v, i, x) ->
-      contains_diverging_control_flow v
-      || contains_diverging_control_flow i
-      || contains_diverging_control_flow x
+      contains_diverging_control_flow_env env v
+      || contains_diverging_control_flow_env env i
+      || contains_diverging_control_flow_env env x
   | TEArrGet (a, i) ->
-      contains_diverging_control_flow a || contains_diverging_control_flow i
+      contains_diverging_control_flow_env env a
+      || contains_diverging_control_flow_env env i
   | TEArrSet (a, i, x) ->
-      contains_diverging_control_flow a
-      || contains_diverging_control_flow i
-      || contains_diverging_control_flow x
-  | TEFieldGet (e, _, _) -> contains_diverging_control_flow e
+      contains_diverging_control_flow_env env a
+      || contains_diverging_control_flow_env env i
+      || contains_diverging_control_flow_env env x
+  | TEFieldGet (e, _, _) -> contains_diverging_control_flow_env env e
   | TEFieldSet (e, _, _, x) ->
-      contains_diverging_control_flow e || contains_diverging_control_flow x
+      contains_diverging_control_flow_env env e
+      || contains_diverging_control_flow_env env x
   | TERecord (_, fields) ->
-      List.exists (fun (_, e) -> contains_diverging_control_flow e) fields
-  | TETuple es -> List.exists contains_diverging_control_flow es
-  | TEReturn e -> contains_diverging_control_flow e
-  | TEPragma (_, body) -> contains_diverging_control_flow body
-  | TEAssign (_, _, e) -> contains_diverging_control_flow e
-  | TECreateArray (size, _, _) -> contains_diverging_control_flow size
-  | TEConstr (_, _, arg) -> (
-      match arg with
-      | None -> false
-      | Some e -> contains_diverging_control_flow e)
+      List.exists (fun (_, e) -> contains_diverging_control_flow_env env e) fields
+  | TETuple es -> List.exists (contains_diverging_control_flow_env env) es
+  | TEReturn e -> contains_diverging_control_flow_env env e
+  | TEPragma (_, body) -> contains_diverging_control_flow_env env body
+  | TEAssign (_, _, e) -> contains_diverging_control_flow_env env e
+  | TECreateArray (size, _, _) -> contains_diverging_control_flow_env env size
+  | TEConstr (_, _, arg) ->
+      (match arg with None -> false | Some e -> contains_diverging_control_flow_env env e)
   | TELetShared (_, _, _, size_opt, body) ->
-      (match size_opt with
-        | None -> false
-        | Some s -> contains_diverging_control_flow s)
-      || contains_diverging_control_flow body
+      (match size_opt with None -> false | Some s -> contains_diverging_control_flow_env env s)
+      || contains_diverging_control_flow_env env body
   | TESuperstep (_, _, step_body, cont) ->
-      contains_diverging_control_flow step_body
-      || contains_diverging_control_flow cont
-  | TEOpen (_, body) -> contains_diverging_control_flow body
+      contains_diverging_control_flow_env env step_body
+      || contains_diverging_control_flow_env env cont
+  | TEOpen (_, body) -> contains_diverging_control_flow_env env body
   | TELetRec (_, _, _, fn_body, cont) ->
-      contains_diverging_control_flow fn_body
-      || contains_diverging_control_flow cont
-  (* Terminal cases - no nested control flow *)
+      contains_diverging_control_flow_env env fn_body
+      || contains_diverging_control_flow_env env cont
   | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
   | TEVar _ | TEGlobalRef _ | TENative _ | TEIntrinsicConst _ ->
       false
+
+and contains_diverging_control_flow te =
+  contains_diverging_control_flow_env StringSet.empty te
 
 (** Check a module item *)
 let check_module_item ctx (item : tmodule_item) : Sarek_error.error list =

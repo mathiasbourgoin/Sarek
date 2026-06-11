@@ -115,7 +115,7 @@ let test_check_expr_barrier_diverged () =
       (TEIntrinsicFun (ref, Some Sarek_core_primitives.ConvergencePoint, []))
       typ_unit
   in
-  let ctx = Sarek_convergence.{mode = Diverged} in
+  let ctx = {Sarek_convergence.init_ctx with mode = Diverged} in
   let errors = Sarek_convergence.check_expr ctx e in
   Alcotest.(check bool)
     "error for barrier in diverged"
@@ -201,7 +201,7 @@ let test_check_expr_warp_collective_diverged () =
       (TEIntrinsicFun (ref, Some Sarek_core_primitives.WarpConvergence, [arg]))
       typ_int32
   in
-  let ctx = Sarek_convergence.{mode = Diverged} in
+  let ctx = {Sarek_convergence.init_ctx with mode = Diverged} in
   let errors = Sarek_convergence.check_expr ctx e in
   Alcotest.(check bool)
     "error for warp collective in diverged"
@@ -618,7 +618,11 @@ let test_superstep_divergent_with_control_flow () =
     (List.length errors)
 
 let test_superstep_non_divergent_with_varying_control () =
-  (* Non-divergent superstep with varying control flow should fail *)
+  (* Non-divergent superstep with varying-branched body but NO barrier inside.
+     The implicit end-of-superstep barrier is safe: all threads complete the body
+     (each taking their own branch) and then all reach the implicit barrier.
+     The old contains_diverging_control_flow check incorrectly flagged this — the
+     correct behaviour is: no error. *)
   let tid_x = mk_texpr (TEVar ("thread_idx_x", 0)) typ_int32 in
   let const = mk_texpr (TEInt 16) typ_int32 in
   let cond = mk_texpr (TEBinop (Sarek_ast.Gt, tid_x, const)) typ_bool in
@@ -628,8 +632,8 @@ let test_superstep_non_divergent_with_varying_control () =
   let e = mk_texpr (TESuperstep ("test", false, step, cont)) typ_int32 in
   let errors = Sarek_convergence.check_expr Sarek_convergence.init_ctx e in
   Alcotest.(check bool)
-    "error for non-divergent superstep with varying flow"
-    true
+    "no error: varying branching inside superstep body without a nested barrier is safe"
+    false
     (List.length errors > 0)
 
 (** {1 Test Suite} *)
