@@ -3,10 +3,12 @@
  *
  * Target: ~/dev/SPOC/sarek/ppx/Sarek_convergence.ml
  * Properties: dim_merge_monoid, check_seq_hom, diverged_clean_iff_barrier_free,
- *             mode_monotone, varying_if_flags_barriers, cdcf_check_agreement
+ *             mode_monotone, varying_if_flags_barriers, cdcf_check_agreement,
+ *             superstep_outer_diverged_error
  *
  * Abstract model: expr captures the convergence-relevant structure.
- * Elided: TEMatch (subsumed by EIf), TESuperstep, TELetRec, TEPragma, TEOpen,
+ * Phase 1a: ESuperstep added (F-01 coverage).
+ * Elided: TEMatch (subsumed by EIf), TELetRec, TEPragma, TEOpen,
  *         TELetShared — documented in ASSUMPTIONS.md.
  ******************************************************************************)
 
@@ -26,6 +28,7 @@ Inductive expr : Type :=
   | EFor     : expr -> expr -> expr -> expr    (* lo, hi, body *)
   | ESeq     : list expr -> expr
   | ELet     : expr -> expr -> expr            (* value, body *)
+  | ESuperstep : bool -> expr -> expr -> expr  (* divergent_flag, body, cont *)
   | EApp     : list expr -> expr.
 
 Inductive exec_mode : Type := Converged | Diverged.
@@ -45,6 +48,7 @@ Fixpoint is_varying (e : expr) : bool :=
   | EFor lo hi b  => is_varying lo || is_varying hi || is_varying b
   | ESeq es       => existsb is_varying es
   | ELet v b      => is_varying v || is_varying b
+  | ESuperstep _ body cont => is_varying body || is_varying cont
   | EApp args     => existsb is_varying args
   end.
 
@@ -61,6 +65,11 @@ Fixpoint barrier_free (e : expr) : bool :=
   | EFor lo hi b   => barrier_free lo && barrier_free hi && barrier_free b
   | ESeq es        => forallb barrier_free es
   | ELet v b       => barrier_free v && barrier_free b
+  (* A non-divergent superstep contains an implicit barrier at its boundary.
+     (if divergent then true else false) makes barrier_free false for ESuperstep false,
+     preserving the diverged_clean_iff_barrier_free invariant. *)
+  | ESuperstep divergent body cont =>
+      (if divergent then true else false) && barrier_free body && barrier_free cont
   | EApp args      => forallb barrier_free args
   end.
 
@@ -75,6 +84,7 @@ Fixpoint has_diverging_cf (e : expr) : bool :=
   | EUnop e       => has_diverging_cf e
   | ESeq es       => existsb has_diverging_cf es
   | ELet v b      => has_diverging_cf v || has_diverging_cf b
+  | ESuperstep _ body cont => has_diverging_cf body || has_diverging_cf cont
   | EApp args     => existsb has_diverging_cf args
   | _             => false
   end.
@@ -99,8 +109,38 @@ Fixpoint check (m : exec_mode) (e : expr) : list error :=
       check m lo ++ check m hi ++ check inner b
   | ESeq es        => concat (map (check m) es)
   | ELet v b       => check m v ++ check m b
+  (* Non-divergent superstep: entry under Diverged outer mode is an error
+     (the implicit end-of-superstep barrier is reached by only some threads).
+     Divergent superstep: no entry error. In both cases body and cont are
+     checked with mode m (conservative over-approximation of reachable mode). *)
+  | ESuperstep divergent body cont =>
+      let entry_errors :=
+        match m, divergent with
+        | Diverged, false => [BarrierError]
+        | _,        _     => []
+        end
+      in
+      entry_errors ++ check m body ++ check m cont
   | EApp args      => concat (map (check m) args)
   end.
+
+(* KNOWN LIMITATION F-02: binding-blind is_varying.
+ *
+ * The abstract ELet case `is_varying (ELet v b) = is_varying v || is_varying b`
+ * mirrors the real checker's behaviour (Sarek_convergence.ml): TEVar(name,_) is
+ * tested against a static primitive table; let-bound user-defined variables are
+ * NOT tracked through the env (F-02, fixed in the OCaml checker via varying_vars
+ * context but not yet modelled here).
+ *
+ * Consequence: `let x = thread_idx_x in if x > 0 then barrier()` is a false
+ * negative in the abstract model (is_varying sees EVary at the let-value, not
+ * at the TEVar use-site). The real OCaml checker (post F-02 fix) is sound;
+ * this spec is conservative/incomplete for aliased variables.
+ *
+ * A sound Rocq fix requires an environment-threaded is_varying (T2 task).
+ * The current theorems are internally consistent for the abstract model as
+ * defined; they do not guarantee soundness for programs using let-bound aliases.
+ *)
 
 (* ===== 6. dim_usage ===== *)
 
@@ -141,6 +181,8 @@ Hypothesis IH_while   : forall c b, P c -> P b -> P (EWhile c b).
 Hypothesis IH_for     : forall lo hi b, P lo -> P hi -> P b -> P (EFor lo hi b).
 Hypothesis IH_seq     : forall es, Plist es -> P (ESeq es).
 Hypothesis IH_let     : forall v b, P v -> P b -> P (ELet v b).
+Hypothesis IH_superstep : forall (dv : bool) body cont,
+  P body -> P cont -> P (ESuperstep dv body cont).
 Hypothesis IH_app     : forall args, Plist args -> P (EApp args).
 Hypothesis IH_nil     : Plist [].
 Hypothesis IH_cons    : forall e es, P e -> Plist es -> Plist (e :: es).
@@ -165,6 +207,8 @@ Fixpoint expr_list_rect (e : expr) : P e :=
           | x :: t => IH_cons x t (expr_list_rect x) (go t)
           end) es)
   | ELet v b     => IH_let v b (expr_list_rect v) (expr_list_rect b)
+  | ESuperstep dv body cont =>
+      IH_superstep dv body cont (expr_list_rect body) (expr_list_rect cont)
   | EApp args =>
       IH_app args
         ((fix go (xs : list expr) : Plist xs :=
@@ -290,6 +334,13 @@ Proof.
   (* ELet v b *)
   - intros v b IHv IHb. simpl.
     rewrite app_nil_iff, andb_true_iff. tauto.
+  (* ESuperstep dv body cont *)
+  - intros dv body cont IHbody IHcont. simpl.
+    destruct dv; simpl.
+    + (* dv = true: entry_errors = []; barrier_free = barrier_free body && barrier_free cont *)
+      rewrite app_nil_iff, andb_true_iff. tauto.
+    + (* dv = false: check Diverged starts with [BarrierError]; barrier_free = false *)
+      split; intro H; discriminate.
   (* EApp args *) - intros args IH. exact IH.
   (* nil *)
   - simpl. tauto.
@@ -312,21 +363,17 @@ Proof.
   (* EVary *)  - simpl. apply incl_refl.
   (* EBarrier: Converged→[], Diverged→[BarrierError] *)
   - simpl. apply incl_nil_l.
-  (* EBinop a b: ++ is right-assoc; one incl_app_mono per level *)
+  (* EBinop a b *)
   - intros a b IHa IHb. simpl.
     apply incl_app_mono; [exact IHa | exact IHb].
   (* EUnop e *)
   - intros e IH. exact IH.
-  (* EIf c t el
-     - Diverged side: rewrite (if X then D else D) → D with diverged_absorbing
-     - Then: varying c → inner stays D; non-varying → inner upgrades C→D *)
+  (* EIf c t el *)
   - intros c t el IHc IHt IHel. simpl.
     rewrite (diverged_absorbing (is_varying c)).
     destruct (is_varying c).
-    + (* true: cv-inner=D, dv-inner=D, so t/el parts are identical *)
-      apply incl_app_mono; [exact IHc | apply incl_refl].
-    + (* false: cv-inner=C, dv-inner=D; need IH for t and el *)
-      apply incl_app_mono; [exact IHc | apply incl_app_mono; [exact IHt | exact IHel]].
+    + apply incl_app_mono; [exact IHc | apply incl_refl].
+    + apply incl_app_mono; [exact IHc | apply incl_app_mono; [exact IHt | exact IHel]].
   (* EWhile c b *)
   - intros c b IHc IHb. simpl.
     rewrite (diverged_absorbing (is_varying c)).
@@ -343,6 +390,20 @@ Proof.
   (* ELet v b *)
   - intros v b IHv IHb. simpl.
     apply incl_app_mono; [exact IHv | exact IHb].
+  (* ESuperstep dv body cont *)
+  - intros dv body cont IHbody IHcont. simpl.
+    destruct dv; simpl.
+    + (* dv = true: both modes give entry_errors = [] *)
+      apply incl_app_mono; [exact IHbody | exact IHcont].
+    + (* dv = false: Converged entry_errors = []; Diverged gives BarrierError :: ...
+         incl (check C body ++ check C cont) (BarrierError :: check D body ++ check D cont) *)
+      intros x Hx.
+      apply in_app_iff in Hx.
+      right.
+      apply in_app_iff.
+      destruct Hx as [Hb | Hc].
+      * left.  exact (IHbody x Hb).
+      * right. exact (IHcont x Hc).
   (* EApp args *) - intros args IH. exact IH.
   (* nil *)   - simpl. apply incl_refl.
   (* cons e es *)
@@ -371,7 +432,6 @@ Proof.
   - intros e IH H. simpl in *. apply IH. exact H.
   (* EIf c t el *)
   - intros c t el IHc IHt IHel H. simpl in *.
-    (* H : (is_varying c || is_varying t) || is_varying el = false *)
     apply orb_false_iff in H. destruct H as [Hct Hel].
     apply orb_false_iff in Hct. destruct Hct as [Hc Ht].
     rewrite (IHc Hc). simpl. rewrite Hc. simpl.
@@ -383,7 +443,6 @@ Proof.
     exact (IHb Hb).
   (* EFor lo hi b *)
   - intros lo hi b IHlo IHhi IHb H. simpl in *.
-    (* H : (is_varying lo || is_varying hi) || is_varying b = false *)
     apply orb_false_iff in H. destruct H as [Hlohi Hb].
     apply orb_false_iff in Hlohi. destruct Hlohi as [Hlo Hhi].
     rewrite (IHlo Hlo), (IHhi Hhi). simpl.
@@ -394,6 +453,11 @@ Proof.
   - intros v b IHv IHb H. simpl in *.
     apply orb_false_iff in H. destruct H as [Hv Hb].
     rewrite (IHv Hv), (IHb Hb). reflexivity.
+  (* ESuperstep dv body cont *)
+  - intros dv body cont IHbody IHcont H. simpl in *.
+    apply orb_false_iff in H. destruct H as [Hbody Hcont].
+    rewrite (IHbody Hbody), (IHcont Hcont).
+    destruct dv; reflexivity.
   (* EApp args *) - intros args IH H. simpl in *. apply IH. exact H.
   (* nil *) - intros _. reflexivity.
   (* cons e es *)
@@ -424,7 +488,6 @@ Proof.
   - intros e IH H. simpl in *. apply IH. exact H.
   (* EIf c t el *)
   - intros c t el IHc IHt IHel H. simpl in *.
-    (* H : (is_varying c || has_diverging_cf t) || has_diverging_cf el = false *)
     apply orb_false_iff in H. destruct H as [Hct Hel].
     apply orb_false_iff in Hct. destruct Hct as [Hc Ht].
     rewrite (not_varying_converged_clean c Hc). simpl.
@@ -438,7 +501,6 @@ Proof.
     exact (IHb Hb).
   (* EFor lo hi b *)
   - intros lo hi b IHlo IHhi IHb H. simpl in *.
-    (* H : (is_varying lo || is_varying hi) || has_diverging_cf b = false *)
     apply orb_false_iff in H. destruct H as [Hlohi Hb].
     apply orb_false_iff in Hlohi. destruct Hlohi as [Hlo Hhi].
     rewrite (not_varying_converged_clean lo Hlo),
@@ -450,6 +512,11 @@ Proof.
   - intros v b IHv IHb H. simpl in *.
     apply orb_false_iff in H. destruct H as [Hv Hb].
     rewrite (IHv Hv), (IHb Hb). reflexivity.
+  (* ESuperstep dv body cont *)
+  - intros dv body cont IHbody IHcont H. simpl in *.
+    apply orb_false_iff in H. destruct H as [Hbody Hcont].
+    rewrite (IHbody Hbody), (IHcont Hcont).
+    destruct dv; reflexivity.
   (* EApp args *) - intros args IH H. simpl in *. apply IH. exact H.
   (* nil *) - intros _. reflexivity.
   (* cons e es *)
@@ -467,11 +534,18 @@ Theorem varying_if_flags_barriers : forall cond then_ else_ ctx,
 Proof.
   intros cond then_ else_ ctx Hv Hnbf Hempty.
   simpl in Hempty. rewrite Hv in Hempty. simpl in Hempty.
-  (* Hempty : check ctx cond ++ check Diverged then_ ++ check Diverged else_ = [] *)
   apply app_eq_nil in Hempty. destruct Hempty as [_ H1].
   apply app_eq_nil in H1. destruct H1 as [H2 _].
   apply diverged_clean_iff_barrier_free in H2.
   congruence.
+Qed.
+
+(* ===== 16. Property 7: superstep_outer_diverged_error (F-01) ===== *)
+
+Theorem superstep_outer_diverged_error : forall body cont,
+  check Diverged (ESuperstep false body cont) <> [].
+Proof.
+  intros body cont. simpl. discriminate.
 Qed.
 
 (* ===== Summary ===== *)
@@ -482,5 +556,6 @@ Qed.
   Print Assumptions mode_monotone.
   Print Assumptions cdcf_check_agreement.
   Print Assumptions varying_if_flags_barriers.
-  (* Expected: no axioms beyond the Rocq kernel for all six. *)
+  Print Assumptions superstep_outer_diverged_error.
+  (* Expected: no axioms beyond the Rocq kernel for all seven. *)
 *)
