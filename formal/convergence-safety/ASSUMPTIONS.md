@@ -22,7 +22,7 @@ operates on `texpr` — a large, typed AST with ~35 constructors. The correspond
 
 | Constructor | Reason |
 |---|---|
-| `TESuperstep` | Implicit barrier + cdcf interaction; different semantics layer |
+| `TESuperstep` | **MODELED as of Phase 1a** — `ESuperstep : bool -> expr -> expr -> expr` added to `ConvergenceSpec.v`; `superstep_outer_diverged_error` proves F-01. See §Updates below. |
 | `TELetShared` | Shared memory allocation; barrier semantics not modeled |
 | `TELetRec` | Recursive function definitions; requires interprocedural analysis |
 | `TEPragma` | Compiler pragma; no barrier semantics |
@@ -42,6 +42,7 @@ operates on `texpr` — a large, typed AST with ~35 constructors. The correspond
 | `not_varying_converged_clean` | PROVEN | Helper: `is_varying e = false → check Converged e = []` |
 | `cdcf_check_agreement` | PROVEN | `has_diverging_cf e = false → check Converged e = []` |
 | `varying_if_flags_barriers` | PROVEN | Varying cond + non-barrier-free body → always an error |
+| `superstep_outer_diverged_error` | PROVEN (Phase 1a) | `check Diverged (ESuperstep false body cont) ≠ []` — F-01 formal statement |
 
 ## Assumed / unmodeled
 
@@ -60,7 +61,7 @@ operates on `texpr` — a large, typed AST with ~35 constructors. The correspond
 | `is_varying_semantic_soundness` | T2 | Requires an execution semantics for `texpr` (eval relation); `EVary` must be axiomatized as "value differs across threads" |
 | `deadlock_freedom` | T3 | Requires lockstep execution model, workgroup synchronization semantics, and a whole-kernel correctness theorem |
 | Warp divergence sub-properties | T2 | `WarpConvergence` error class, warp size parameterization |
-| `TESuperstep` implicit barrier safety | T2 | Separate analysis for BSP superstep boundaries |
+| `TESuperstep` implicit barrier safety (outer-mode F-01) | **PROVEN Phase 1a** | `superstep_outer_diverged_error` — entering ESuperstep false under Diverged always errors |
 | `TEReturn` early-return barrier skip | T2 | Early return inside a divergent branch that precedes a barrier in the surrounding sequence will cause some threads to skip the barrier. The abstract model has no `EReturn` node; it is mapped to `EUnop` in the abstract correspondence table. Whether `Sarek_convergence.ml` handles this path correctly is unaudited. |
 
 ## Updates from ground-truth audit (2026-06-11)
