@@ -481,39 +481,116 @@ if (taskResult.status === 'complete' || taskResult.status === 'partial') {
 
 log(`Gate: ${gateVerdict}`)
 
-// Commit only on GO
+// ── CMBT bug-fix step: run live tests + extraction tests; fix any bugs found ─
+// Runs after gate verdict is decided so it only fires on GO paths.
+// Bugs in the OCaml checker exposed by tests are fixed here and committed
+// SEPARATELY from the Rocq/spec commit (separate commit, separate label).
+let cmbtBugFixChanges = []
+let cmbtBugFixCommitSha = null
+
+if (gateVerdict === 'GO') {
+  const cmbtCheck = await agent(
+    `Run the full live CMBT test suite and extraction tests; fix any bugs found in the
+    OCaml checker or related code.
+
+    Run:
+    \`cd ${SPOC} && dune runtest formal/convergence-safety/ 2>&1; echo "dune:$?"\`
+    \`cd ${SPOC}/formal/convergence-safety && ocamlfind ocamlopt -package sarek -linkpkg test/test_convergence_live.ml -o /tmp/live_test 2>&1 && /tmp/live_test; echo "live:$?"\` || true
+
+    If ALL tests pass: return { bugsfound: false, changes: [], commitMessage: "" }
+
+    If any test FAILS:
+    1. Identify root cause — is it in the OCaml checker (sarek/ppx/Sarek_convergence.ml),
+       the conformance test model (test_convergence_conformance.ml), or the extraction
+       (extraction/ConvergenceModel.ml)?
+    2. Fix the bug in the relevant file(s)
+    3. Re-run all tests to confirm they pass
+    4. Do NOT commit — report what changed
+
+    Return { bugsfound: bool, changes: string[], commitMessage: "fix(scope): description" }`,
+    { phase: 'Gate', label: 'cmbt-bugfix', schema: {
+      type: 'object', required: ['bugsfound', 'changes', 'commitMessage'],
+      properties: {
+        bugsfound:     { type: 'boolean' },
+        changes:       { type: 'array', items: { type: 'string' } },
+        commitMessage: { type: 'string' },
+      }
+    }}
+  )
+
+  cmbtBugFixChanges = cmbtCheck.changes
+  if (cmbtCheck.bugsfound) log(`CMBT bugs found + fixed: ${cmbtCheck.changes.length} file(s)`)
+  else log('CMBT: all tests pass, no bugs')
+}
+
+// ── Commit: always on GO, always split by file class ─────────────────────────
+// Commit 1 — Rocq / spec files (theories/, extraction/*.v, *.vo, *.glob, *.aux)
+// Commit 2 — CMBT bug fixes (OCaml checker, conformance model) — only if bugs found
+// Commit 3 — Docs / infra (STATUS.md, ASSUMPTIONS.md, PLAN.md, LaTeX, proof-ledger)
+// All three are always pushed at the end.
+
 let committed = false
 let commitSha = null
 
 if (gateVerdict === 'GO') {
   const commitResult = await agent(
-    `Commit and push the gate-cleared formal verification changes.
+    `Commit and push all gate-cleared changes. Use SEPARATE commits by file class.
 
     SPOC root: ${SPOC}
-    Branch: formal/convergence-safety-phase1a (confirm with git branch --show-current)
+    Branch: confirm with \`cd ${SPOC} && git branch --show-current\`
 
-    1. Stage ONLY convergence-safety files (never .opam-ci/, never test_dft.ml):
-       \`cd ${SPOC} && git status --short | grep "formal/convergence-safety" | grep -v "test_dft"\`
-       Stage each modified file individually.
-    2. Commit with exactly this message (include Co-Authored-By):
-    \`\`\`
-    cd ${SPOC} && git commit -m "$(cat <<'CMSG'
-${taskResult.commitMessage}
+    First, see what is modified:
+    \`cd ${SPOC} && git status --short | grep "formal/convergence-safety" | grep -v "test_dft"\`
 
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
-CMSG
-)"
-    \`\`\`
-    3. Push: \`cd ${SPOC} && git push 2>&1 | tail -3\`
-    4. Return { committed: true/false, sha: "short-sha", pushOk: true/false }`,
+    Then make UP TO THREE commits in this order (skip any class with no changes):
+
+    ── COMMIT 1 — Rocq / spec files ──
+    Stage ONLY: theories/ConvergenceSpec.v  theories/ConvergenceSpec.vo
+                theories/ConvergenceSpec.glob  theories/.ConvergenceSpec.aux
+                extraction/ConvergenceSafetyExtraction.v
+                extraction/ConvergenceSafetyExtraction.vo
+                extraction/.ConvergenceSafetyExtraction.aux
+                extraction/ConvergenceSafetyExtraction.glob
+    Commit message: "${taskResult.commitMessage}"
+    (append "\\n\\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>")
+
+    ── COMMIT 2 — OCaml / CMBT bug fixes (ONLY if CMBT bugs were found this tick) ──
+    CMBT bugs found: ${cmbtBugFixChanges.length > 0}
+    Files to stage (if any): ${JSON.stringify(cmbtBugFixChanges)}
+    Commit message: "${cmbtBugFixChanges.length > 0 ? 'fix(cmbt): repair tests/checker after T' + tick + ' spec changes' : 'SKIP'}"
+    (append "\\n\\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>")
+    SKIP this commit if no CMBT changes.
+
+    ── COMMIT 3 — Docs / infra ──
+    Stage ONLY: STATUS.md  ASSUMPTIONS.md  PLAN.md
+                ConvergenceSafetySpec.tex  proof-ledger.json
+                formal-verif-autopilot.workflow.js
+                extraction/ConvergenceModel.ml  extraction/ConvergenceModel.mli
+                test/test_convergence_conformance.ml  test/test_convergence_live.ml
+                test/test_convergence_extraction.ml
+                report/WORKFLOW_FEEDBACK.md
+    (only stage files that git status shows as modified)
+    Commit message: "docs(convergence-safety): sync STATUS/docs/tests for tick ${tick}"
+    (append "\\n\\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>")
+    SKIP this commit if none of those files are modified.
+
+    After all commits:
+    \`cd ${SPOC} && git push 2>&1 | tail -3\`
+
+    Return { committed: true, sha: "<sha of first commit>", commitCount: N, pushOk: bool }`,
     { phase: 'Gate', label: 'commit', schema: {
       type: 'object', required: ['committed'],
-      properties: { committed: { type: 'boolean' }, sha: { type: 'string' }, pushOk: { type: 'boolean' } }
+      properties: {
+        committed:   { type: 'boolean' },
+        sha:         { type: 'string' },
+        commitCount: { type: 'number' },
+        pushOk:      { type: 'boolean' },
+      }
     }}
   )
   committed = commitResult.committed
   commitSha = commitResult.sha
-  log(`Commit: ${committed ? 'OK sha=' + (commitSha || '?') : 'FAILED'}`)
+  log(`Commit: ${committed ? `OK (${commitResult.commitCount || '?'} commits) sha=${commitSha || '?'}` : 'FAILED'}`)
 }
 
 // ── Phase 4: Evolve ───────────────────────────────────────────────────────────
@@ -531,6 +608,8 @@ const frictionData = {
   reviewPositives:  reviewResult ? (reviewResult.positives || []) : [],
   latexInSync:      gateCheck ? gateCheck.latexInSync : null,
   statusInSync:     gateCheck ? gateCheck.statusInSync : null,
+  cmbtBugsFound:    cmbtBugFixChanges.length > 0,
+  cmbtBugFiles:     cmbtBugFixChanges,
   committed,
 }
 
@@ -752,11 +831,12 @@ const verdict =
 return {
   tick,
   verdict,
-  taskId:       planState.currentTask.id,
-  taskStatus:   taskResult.status,
+  taskId:         planState.currentTask.id,
+  taskStatus:     taskResult.status,
   gateVerdict,
   committed,
   commitSha,
+  cmbtBugsFixed:  cmbtBugFixChanges.length > 0,
   evolveVerdict:  evolveProposal.verdict,
   evolveType:     evolveProposal.changeType,
   scriptAdapted:  selfAdapt.changed,
