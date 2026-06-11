@@ -90,7 +90,8 @@
   test_module_poly
   test_bounded_recursion
   test_inline_pragma
-  test_nested_types)
+  test_nested_types
+  test_dft)
  (modules
   test_vector_add
   test_module_const
@@ -127,7 +128,8 @@
   test_module_poly
   test_bounded_recursion
   test_inline_pragma
-  test_nested_types)
+  test_nested_types
+  test_dft)
  (libraries
   sarek
   sarek.stdlib

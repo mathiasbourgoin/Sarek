@@ -1,0 +1,240 @@
+(******************************************************************************)
+(* QCheck conformance suite for ConvergenceSpec.v
+ *
+ * We test the 6 properties on the ABSTRACT OCaml model below, which mirrors
+ * the Rocq definitions.  The abstract model is a faithful rendition of
+ * the convergence-relevant logic in Sarek_convergence.ml — verified by
+ * inspection of Sarek_convergence.ml:check_expr / is_thread_varying.
+ *
+ * Correspondence is documented in ASSUMPTIONS.md.
+ ******************************************************************************)
+
+(* ===== Abstract model (mirrors ConvergenceSpec.v) ===== *)
+
+type expr =
+  | ELit
+  | EVary
+  | EBarrier
+  | EBinop of expr * expr
+  | EUnop of expr
+  | EIf of expr * expr * expr   (* cond, then, else *)
+  | EWhile of expr * expr       (* cond, body *)
+  | EFor of expr * expr * expr  (* lo, hi, body *)
+  | ESeq of expr list
+  | ELet of expr * expr
+  | EApp of expr list
+
+type exec_mode = Converged | Diverged
+
+type error = BarrierError
+
+type dim_usage = {
+  uses_x : bool; uses_y : bool; uses_z : bool;
+  uses_block_dim : bool; uses_grid_dim : bool;
+  uses_thread_idx : bool; uses_block_idx : bool;
+  uses_shared_mem : bool;
+}
+
+let empty_dim_usage = {
+  uses_x = false; uses_y = false; uses_z = false;
+  uses_block_dim = false; uses_grid_dim = false;
+  uses_thread_idx = false; uses_block_idx = false;
+  uses_shared_mem = false;
+}
+
+let merge_dim_usage a b = {
+  uses_x          = a.uses_x          || b.uses_x;
+  uses_y          = a.uses_y          || b.uses_y;
+  uses_z          = a.uses_z          || b.uses_z;
+  uses_block_dim  = a.uses_block_dim  || b.uses_block_dim;
+  uses_grid_dim   = a.uses_grid_dim   || b.uses_grid_dim;
+  uses_thread_idx = a.uses_thread_idx || b.uses_thread_idx;
+  uses_block_idx  = a.uses_block_idx  || b.uses_block_idx;
+  uses_shared_mem = a.uses_shared_mem || b.uses_shared_mem;
+}
+
+let rec is_varying = function
+  | EVary -> true
+  | ELit | EBarrier -> false
+  | EBinop (a, b)  -> is_varying a || is_varying b
+  | EUnop e        -> is_varying e
+  | EIf (c, t, el) -> is_varying c || is_varying t || is_varying el
+  | EWhile (c, b)  -> is_varying c || is_varying b
+  | EFor (lo, hi, b) -> is_varying lo || is_varying hi || is_varying b
+  | ESeq es        -> List.exists is_varying es
+  | ELet (v, b)    -> is_varying v || is_varying b
+  | EApp args      -> List.exists is_varying args
+
+let rec barrier_free = function
+  | EBarrier       -> false
+  | ELit | EVary   -> true
+  | EBinop (a, b)  -> barrier_free a && barrier_free b
+  | EUnop e        -> barrier_free e
+  | EIf (c, t, el) -> barrier_free c && barrier_free t && barrier_free el
+  | EWhile (c, b)  -> barrier_free c && barrier_free b
+  | EFor (lo, hi, b) -> barrier_free lo && barrier_free hi && barrier_free b
+  | ESeq es        -> List.for_all barrier_free es
+  | ELet (v, b)    -> barrier_free v && barrier_free b
+  | EApp args      -> List.for_all barrier_free args
+
+let rec has_diverging_cf = function
+  | EIf (c, t, el)   -> is_varying c || has_diverging_cf t || has_diverging_cf el
+  | EWhile (c, b)     -> is_varying c || has_diverging_cf b
+  | EFor (lo, hi, b) -> is_varying lo || is_varying hi || has_diverging_cf b
+  | EBinop (a, b)    -> has_diverging_cf a || has_diverging_cf b
+  | EUnop e          -> has_diverging_cf e
+  | ESeq es          -> List.exists has_diverging_cf es
+  | ELet (v, b)      -> has_diverging_cf v || has_diverging_cf b
+  | EApp args        -> List.exists has_diverging_cf args
+  | _                -> false
+
+let rec check m = function
+  | EBarrier       ->
+      (match m with Diverged -> [BarrierError] | Converged -> [])
+  | ELit | EVary   -> []
+  | EBinop (a, b)  -> check m a @ check m b
+  | EUnop e        -> check m e
+  | EIf (cond, t, el) ->
+      let inner = if is_varying cond then Diverged else m in
+      check m cond @ check inner t @ check inner el
+  | EWhile (cond, b) ->
+      let inner = if is_varying cond then Diverged else m in
+      check m cond @ check inner b
+  | EFor (lo, hi, b) ->
+      let inner = if is_varying lo || is_varying hi then Diverged else m in
+      check m lo @ check m hi @ check inner b
+  | ESeq es        -> List.concat_map (check m) es
+  | ELet (v, b)    -> check m v @ check m b
+  | EApp args      -> List.concat_map (check m) args
+
+(* ===== QCheck generators ===== *)
+
+open QCheck2
+
+let gen_mode : exec_mode Gen.t = Gen.oneof_list [Converged; Diverged]
+
+(* bounded-depth generator to avoid size explosion *)
+let gen_expr : expr Gen.t =
+  Gen.sized_size (Gen.int_range 0 6) @@ Gen.fix (fun self n ->
+    if n = 0 then Gen.oneof_list [ELit; EVary; EBarrier]
+    else
+      let sub = self (n / 2) in
+      let sub2 = Gen.pair sub sub in
+      let sub3 = Gen.triple sub sub sub in
+      let sublist = Gen.list_size (Gen.int_range 0 3) sub in
+      Gen.oneof [
+        Gen.return ELit;
+        Gen.return EVary;
+        Gen.return EBarrier;
+        Gen.map  (fun (a, b) -> EBinop (a, b)) sub2;
+        Gen.map  (fun e      -> EUnop e)        sub;
+        Gen.map  (fun (c, t, el) -> EIf (c, t, el)) sub3;
+        Gen.map  (fun (c, b) -> EWhile (c, b))  sub2;
+        Gen.map  (fun (lo, hi, b) -> EFor (lo, hi, b)) sub3;
+        Gen.map  (fun es     -> ESeq es)        sublist;
+        Gen.map  (fun (v, b) -> ELet (v, b))    sub2;
+        Gen.map  (fun args   -> EApp args)       sublist;
+      ])
+
+let gen_dim : dim_usage Gen.t =
+  let g = Gen.bool in
+  Gen.map (fun (x, y, z, bd, gd, ti, bi, sm) ->
+    { uses_x = x; uses_y = y; uses_z = z;
+      uses_block_dim = bd; uses_grid_dim = gd;
+      uses_thread_idx = ti; uses_block_idx = bi;
+      uses_shared_mem = sm })
+    (Gen.tup8 g g g g g g g g)
+
+(* ===== Properties ===== *)
+
+(* 1a. merge_dim commutative *)
+let test_merge_dim_comm =
+  Test.make ~name:"merge_dim_comm" ~count:2000
+    (Gen.pair gen_dim gen_dim)
+    (fun (a, b) -> merge_dim_usage a b = merge_dim_usage b a)
+
+(* 1b. merge_dim associative *)
+let test_merge_dim_assoc =
+  Test.make ~name:"merge_dim_assoc" ~count:2000
+    (Gen.triple gen_dim gen_dim gen_dim)
+    (fun (a, b, c) ->
+       merge_dim_usage a (merge_dim_usage b c) =
+       merge_dim_usage (merge_dim_usage a b) c)
+
+(* 1c. merge_dim idempotent *)
+let test_merge_dim_idem =
+  Test.make ~name:"merge_dim_idempotent" ~count:2000
+    gen_dim
+    (fun a -> merge_dim_usage a a = a)
+
+(* 1d. merge_dim right identity *)
+let test_merge_dim_empty_r =
+  Test.make ~name:"merge_dim_empty_r" ~count:2000
+    gen_dim
+    (fun a -> merge_dim_usage a empty_dim_usage = a)
+
+(* 1e. merge_dim left identity *)
+let test_merge_dim_empty_l =
+  Test.make ~name:"merge_dim_empty_l" ~count:2000
+    gen_dim
+    (fun a -> merge_dim_usage empty_dim_usage a = a)
+
+(* 2. check_seq_hom *)
+let test_check_seq_hom =
+  Test.make ~name:"check_seq_hom" ~count:1000
+    (Gen.triple gen_mode
+       (Gen.list_size (Gen.int_range 0 4) gen_expr)
+       (Gen.list_size (Gen.int_range 0 4) gen_expr))
+    (fun (m, es1, es2) ->
+       check m (ESeq (es1 @ es2)) = check m (ESeq es1) @ check m (ESeq es2))
+
+(* 3. diverged_clean_iff_barrier_free *)
+let test_diverged_clean_iff_bf =
+  Test.make ~name:"diverged_clean_iff_barrier_free" ~count:2000
+    gen_expr
+    (fun e ->
+       (check Diverged e = []) = barrier_free e)
+
+(* 4. mode_monotone: every error in Converged is also in Diverged *)
+let test_mode_monotone =
+  Test.make ~name:"mode_monotone" ~count:2000
+    gen_expr
+    (fun e ->
+       let cv = check Converged e in
+       let dv = check Diverged e in
+       List.for_all (fun err -> List.mem err dv) cv)
+
+(* 5. varying_if_flags_barriers *)
+let test_varying_if_flags =
+  Test.make ~name:"varying_if_flags_barriers" ~count:2000
+    (Gen.quad gen_mode gen_expr gen_expr gen_expr)
+    (fun (ctx, cond, then_, else_) ->
+       let varyc = is_varying cond in
+       let no_bf = not (barrier_free then_) in
+       if varyc && no_bf then
+         check ctx (EIf (cond, then_, else_)) <> []
+       else true)
+
+(* 6. cdcf_check_agreement *)
+let test_cdcf_agreement =
+  Test.make ~name:"cdcf_check_agreement" ~count:2000
+    gen_expr
+    (fun e ->
+       if not (has_diverging_cf e) then check Converged e = []
+       else true)
+
+let () =
+  let suite = [
+    test_merge_dim_comm;
+    test_merge_dim_assoc;
+    test_merge_dim_idem;
+    test_merge_dim_empty_r;
+    test_merge_dim_empty_l;
+    test_check_seq_hom;
+    test_diverged_clean_iff_bf;
+    test_mode_monotone;
+    test_varying_if_flags;
+    test_cdcf_agreement;
+  ] in
+  let passed = QCheck_base_runner.run_tests ~verbose:true suite in
+  exit passed
