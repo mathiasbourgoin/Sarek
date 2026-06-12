@@ -436,6 +436,10 @@ if (taskResult.status === 'complete' || taskResult.status === 'partial') {
       { phase: 'Gate', label: 'fable-review-1', model: 'fable', schema: REVIEW_SCHEMA }
     )
 
+    if (!reviewResult) {
+      log('Fable review 1: null (spend limit?) — gate BLOCK')
+      gateVerdict = 'BLOCK'
+    } else {
     log(`Fable review 1: ${reviewResult.verdict} — ${reviewResult.issues.length} issue(s)`)
 
     if (reviewResult.verdict === 'GO') {
@@ -456,6 +460,10 @@ if (taskResult.status === 'complete' || taskResult.status === 'partial') {
       )
 
       // Second Fable review — no more REVISE after this
+      if (!fixResult) {
+        log('fix-revise: null (spend limit?) — gate BLOCK')
+        gateVerdict = 'BLOCK'
+      } else {
       const review2 = await agent(
         `Independent Rocq reviewer — second pass. Cold review.
         Prior issues: ${JSON.stringify(reviewResult.issues)}
@@ -464,13 +472,20 @@ if (taskResult.status === 'complete' || taskResult.status === 'partial') {
         GO if resolved. BLOCK if any remain (no further REVISE rounds).`,
         { phase: 'Gate', label: 'fable-review-2', model: 'fable', schema: REVIEW_SCHEMA }
       )
+      if (!review2) {
+        log('Fable review 2: null (spend limit?) — gate BLOCK')
+        gateVerdict = 'BLOCK'
+      } else {
       log(`Fable review 2: ${review2.verdict}`)
       reviewResult = review2
       gateVerdict = review2.verdict === 'GO' ? 'GO' : 'BLOCK'
+      }
+      } // end else (fixResult non-null)
 
     } else {
       gateVerdict = 'BLOCK'
     }
+    } // end else (reviewResult non-null)
   }
 
 } else if (taskResult.status === 'blocked') {
@@ -518,9 +533,13 @@ if (gateVerdict === 'GO') {
     }}
   )
 
-  cmbtBugFixChanges = cmbtCheck.changes
-  if (cmbtCheck.bugsfound) log(`CMBT bugs found + fixed: ${cmbtCheck.changes.length} file(s)`)
-  else log('CMBT: all tests pass, no bugs')
+  if (!cmbtCheck) {
+    log('CMBT bugfix: null (spend limit?) — skipping, treating as no bugs')
+  } else {
+    cmbtBugFixChanges = cmbtCheck.changes
+    if (cmbtCheck.bugsfound) log(`CMBT bugs found + fixed: ${cmbtCheck.changes.length} file(s)`)
+    else log('CMBT: all tests pass, no bugs')
+  }
 }
 
 // ── Commit: always on GO, always split by file class ─────────────────────────
@@ -588,9 +607,13 @@ if (gateVerdict === 'GO') {
       }
     }}
   )
-  committed = commitResult.committed
-  commitSha = commitResult.sha
-  log(`Commit: ${committed ? `OK (${commitResult.commitCount || '?'} commits) sha=${commitSha || '?'}` : 'FAILED'}`)
+  if (!commitResult) {
+    log('Commit agent: null (spend limit?) — commit status unknown')
+  } else {
+    committed = commitResult.committed
+    commitSha = commitResult.sha
+    log(`Commit: ${committed ? `OK (${commitResult.commitCount || '?'} commits) sha=${commitSha || '?'}` : 'FAILED'}`)
+  }
 }
 
 // ── Phase 4: Evolve ───────────────────────────────────────────────────────────
@@ -656,6 +679,10 @@ const evolveProposal = await agent(
   { phase: 'Evolve', label: 'evolve-propose', schema: EVOLVE_SCHEMA }
 )
 
+if (!evolveProposal) {
+  log('Evolve-propose: null (spend limit?) — skipping evolve phase')
+} else {
+
 log(`Evolve: ${evolveProposal.verdict}${evolveProposal.skillFile ? ' → ' + evolveProposal.skillFile : ''}${evolveProposal.changeType === 'methodology-backlog' ? ' [backlog fold-in]' : ''}`)
 
 if (evolveProposal.verdict === 'CHANGE') {
@@ -695,6 +722,7 @@ if (evolveProposal.verdict === 'CHANGE') {
       { phase: 'Evolve', label: `evolve-review-${attempt}`, model: 'fable', schema: REVIEW_SCHEMA }
     )
 
+    if (!evolveReview) { log(`evolve-review-${attempt}: null (spend limit?) — stopping`); break }
     log(`Evolve Fable review ${attempt}: ${evolveReview.verdict}`)
 
     if (evolveReview.verdict === 'GO') {
@@ -737,7 +765,8 @@ if (evolveProposal.verdict === 'CHANGE') {
         { phase: 'Evolve', label: `evolve-revise-${attempt}`,
           schema: { type: 'object', required: ['content'], properties: { content: { type: 'string' } } } }
       )
-      currentContent = revised.content
+      if (revised) currentContent = revised.content
+      else { log(`evolve-revise-${attempt}: null (spend limit?) — stopping`); break }
     } else {
       log(`Skill update blocked at attempt ${attempt}`)
       break
@@ -746,6 +775,7 @@ if (evolveProposal.verdict === 'CHANGE') {
 
   if (!approvedContent) log(`Evolve: no skill change applied this tick`)
 }
+} // end if (evolveProposal)
 
 // ── Phase 5: Feedback + Self-Adaptation ──────────────────────────────────────
 phase('Feedback')
@@ -760,7 +790,7 @@ const feedback = await agent(
   - Gate: ${gateVerdict}
   - Committed: ${committed}
   - Review issues: ${JSON.stringify(reviewResult ? reviewResult.issues : [])}
-  - Evolve: ${evolveProposal.verdict} ${evolveProposal.changeType === 'methodology-backlog' ? '[backlog fold-in]' : ''}
+  - Evolve: ${evolveProposal ? evolveProposal.verdict + (evolveProposal.changeType === 'methodology-backlog' ? ' [backlog fold-in]' : '') : 'SKIPPED'}
   - Blockers: ${JSON.stringify(planState.blockers)}
 
   EXPERIMENT CONTEXT: the workflow and apparatus skill co-evolve. Feedback should be actionable:
@@ -773,6 +803,10 @@ const feedback = await agent(
   { phase: 'Feedback', label: 'feedback', schema: FEEDBACK_SCHEMA }
 )
 
+if (!feedback) {
+  log('Feedback agent: null (spend limit?) — skipping feedback-write and self-adapt')
+} else {
+
 // Append to feedback log
 await agent(
   `Append this tick's feedback entry to ${FEEDBACK_LOG}.
@@ -781,7 +815,7 @@ await agent(
   Append:
 
   ## Tick ${tick} — [${planState.currentTask.id}] ${planState.currentTask.title}
-  **${new Date().toISOString().slice(0,10)}** | Gate: ${gateVerdict} | Committed: ${committed} | Evolve: ${evolveProposal.verdict}
+  **${new Date().toISOString().slice(0,10)}** | Gate: ${gateVerdict} | Committed: ${committed} | Evolve: ${evolveProposal ? evolveProposal.verdict : 'SKIPPED'}
 
   **Baseline issues**: ${baselineCheck.passed ? 'none' : JSON.stringify(Object.entries(baselineCheck.links || {}).filter(([,v])=>v==='FAIL').map(([k])=>k))}
 
@@ -818,8 +852,10 @@ const selfAdapt = (feedback.scriptChangesNeeded && scriptPath && feedback.script
   )
   : { changed: false, rationale: scriptPath ? 'no concrete script change requested' : 'no scriptPath provided' }
 
-log(`Self-adapt: ${selfAdapt.changed ? 'updated — ' + selfAdapt.rationale : 'no change'}`)
+log(`Self-adapt: ${selfAdapt ? (selfAdapt.changed ? 'updated — ' + selfAdapt.rationale : 'no change') : 'skipped (null)'}`)
 log(`Done: ${feedback.workflowImprovements.length} workflow + ${feedback.skillImprovements.length} skill suggestions`)
+
+} // end if (feedback)
 
 // ── Return ────────────────────────────────────────────────────────────────────
 const verdict =
@@ -837,15 +873,15 @@ return {
   committed,
   commitSha,
   cmbtBugsFixed:  cmbtBugFixChanges.length > 0,
-  evolveVerdict:  evolveProposal.verdict,
-  evolveType:     evolveProposal.changeType,
-  scriptAdapted:  selfAdapt.changed,
-  nextTaskId:     taskResult.nextTaskId,
+  evolveVerdict:  evolveProposal ? evolveProposal.verdict : 'SKIPPED',
+  evolveType:     evolveProposal ? evolveProposal.changeType : null,
+  scriptAdapted:  selfAdapt ? selfAdapt.changed : false,
+  nextTaskId:     taskResult ? taskResult.nextTaskId : null,
   baselineLinks:  baselineCheck.links,
   gateLinks:      gateCheck ? gateCheck.links : {},
-  feedback: {
+  feedback: feedback ? {
     workflow: feedback.workflowImprovements.length,
     skill:    feedback.skillImprovements.length,
     friction: feedback.frictionPoints.length,
-  },
+  } : { workflow: 0, skill: 0, friction: 0 },
 }
