@@ -51,7 +51,12 @@ let rec elttype_of_typ (ty : typ) : Ir.elttype =
             constrs )
   | TTuple _ -> Ir.TInt32
   | TFun _ -> Ir.TInt32
-  | TVar _ -> Ir.TInt32
+  | TVar _ ->
+      Ppxlib.Location.raise_errorf
+        ~loc:Ppxlib.Location.none
+        "Kernel parameter type is a type variable — polymorphic kernels are \
+         not supported. Annotate the parameter with a concrete type (e.g. \
+         float32, int32)."
 
 (** Convert Sarek_types.memspace to Sarek_ir_ppx.memspace *)
 let memspace_of_memspace (mem : Sarek_types.memspace) : Ir.memspace =
