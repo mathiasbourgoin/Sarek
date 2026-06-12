@@ -237,5 +237,4 @@ let () =
       expected = got);
 
   ] in
-  let _results = QCheck_base_runner.run_tests ~verbose:true tests in
-  ()
+  exit (QCheck_base_runner.run_tests ~verbose:true tests)
