@@ -24,5 +24,6 @@ Extraction "ConvergenceModel.ml"
   barrier_free
   has_diverging_cf
   check
+  check_warp
   merge_dim_usage
   empty_dim_usage.
