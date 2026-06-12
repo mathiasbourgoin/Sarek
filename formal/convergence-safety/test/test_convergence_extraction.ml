@@ -18,7 +18,7 @@ open QCheck2
 (* ===== Inline abstract model (mirrors ConvergenceSpec.v) ===== *)
 
 type expr =
-  | ELit | EVary | EBarrier
+  | ELit | EVary | EBarrier | EWarpPoint
   | EVar of int
   | EBinop of expr * expr
   | EUnop of expr
@@ -29,12 +29,13 @@ type expr =
   | ELet of int * expr * expr
   | ESuperstep of bool * expr * expr
   | EApp of expr list
+  | EReturn of expr
 
 type exec_mode = Converged | Diverged
-type error = BarrierError
+type error = BarrierError | WarpError
 
 let rec is_varying_inline = function
-  | EVary -> true | ELit | EBarrier | EVar _ -> false
+  | EVary -> true | ELit | EBarrier | EWarpPoint | EVar _ -> false
   | EBinop (a, b)             -> is_varying_inline a || is_varying_inline b
   | EUnop e                   -> is_varying_inline e
   | EIf (c, t, el)            -> is_varying_inline c || is_varying_inline t || is_varying_inline el
@@ -44,9 +45,10 @@ let rec is_varying_inline = function
   | ELet (_, v, b)            -> is_varying_inline v || is_varying_inline b
   | ESuperstep (_, body, cont) -> is_varying_inline body || is_varying_inline cont
   | EApp args                 -> List.exists is_varying_inline args
+  | EReturn e                 -> is_varying_inline e
 
 let rec barrier_free_inline = function
-  | EBarrier -> false | ELit | EVary | EVar _ -> true
+  | EBarrier -> false | ELit | EVary | EWarpPoint | EVar _ -> true
   | EBinop (a, b)             -> barrier_free_inline a && barrier_free_inline b
   | EUnop e                   -> barrier_free_inline e
   | EIf (c, t, el)            -> barrier_free_inline c && barrier_free_inline t && barrier_free_inline el
@@ -57,6 +59,7 @@ let rec barrier_free_inline = function
   | ESuperstep (dv, body, cont) ->
       dv && barrier_free_inline body && barrier_free_inline cont
   | EApp args                 -> List.for_all barrier_free_inline args
+  | EReturn e                 -> barrier_free_inline e
 
 let rec has_diverging_cf_inline = function
   | EIf (c, t, el)    -> is_varying_inline c || has_diverging_cf_inline t || has_diverging_cf_inline el
@@ -68,12 +71,13 @@ let rec has_diverging_cf_inline = function
   | ELet (_, v, b)    -> has_diverging_cf_inline v || has_diverging_cf_inline b
   | ESuperstep (_, body, cont) -> has_diverging_cf_inline body || has_diverging_cf_inline cont
   | EApp args         -> List.exists has_diverging_cf_inline args
+  | EReturn e         -> has_diverging_cf_inline e
   | _                 -> false
 
 let rec check_inline m e =
   match e with
   | EBarrier -> (match m with Diverged -> [BarrierError] | Converged -> [])
-  | ELit | EVary | EVar _ -> []
+  | ELit | EVary | EWarpPoint | EVar _ -> []
   | EBinop (a, b)    -> check_inline m a @ check_inline m b
   | EUnop e          -> check_inline m e
   | EIf (c, t, el)   ->
@@ -95,6 +99,35 @@ let rec check_inline m e =
     in
     entry_errors @ check_inline m body @ check_inline m cont
   | EApp args        -> List.concat_map (check_inline m) args
+  | EReturn e        -> check_inline m e
+
+let rec check_warp_inline m e =
+  match e with
+  | EWarpPoint -> (match m with Diverged -> [WarpError] | Converged -> [])
+  | EBarrier   -> (match m with Diverged -> [BarrierError] | Converged -> [])
+  | ELit | EVary | EVar _ -> []
+  | EBinop (a, b)    -> check_warp_inline m a @ check_warp_inline m b
+  | EUnop e          -> check_warp_inline m e
+  | EIf (c, t, el)   ->
+    let inner = if is_varying_inline c then Diverged else m in
+    check_warp_inline m c @ check_warp_inline inner t @ check_warp_inline inner el
+  | EWhile (c, b)    ->
+    let inner = if is_varying_inline c then Diverged else m in
+    check_warp_inline m c @ check_warp_inline inner b
+  | EFor (lo, hi, b) ->
+    let inner = if is_varying_inline lo || is_varying_inline hi then Diverged else m in
+    check_warp_inline m lo @ check_warp_inline m hi @ check_warp_inline inner b
+  | ESeq es          -> List.concat_map (check_warp_inline m) es
+  | ELet (_, v, b)   -> check_warp_inline m v @ check_warp_inline m b
+  | ESuperstep (divergent, body, cont) ->
+    let entry_errors =
+      match m, divergent with
+      | Diverged, false -> [BarrierError]
+      | _,        _     -> []
+    in
+    entry_errors @ check_warp_inline m body @ check_warp_inline m cont
+  | EApp args        -> List.concat_map (check_warp_inline m) args
+  | EReturn e        -> check_warp_inline m e
 
 (* ===== Translation: inline types → extracted types ===== *)
 
@@ -104,6 +137,7 @@ let rec to_extracted : expr -> M.expr = function
   | ELit              -> ELit
   | EVary             -> EVary
   | EBarrier          -> EBarrier
+  | EWarpPoint        -> EWarpPoint
   | EVar x            -> EVar x
   | EBinop (a, b)     -> EBinop (to_extracted a, to_extracted b)
   | EUnop e           -> EUnop (to_extracted e)
@@ -115,13 +149,14 @@ let rec to_extracted : expr -> M.expr = function
   | ESuperstep (dv, body, cont) ->
       ESuperstep (dv, to_extracted body, to_extracted cont)
   | EApp args         -> EApp (List.map to_extracted args)
+  | EReturn e         -> EReturn (to_extracted e)
 
 let to_extracted_mode : exec_mode -> M.exec_mode = function
   | Converged -> Converged
   | Diverged  -> Diverged
 
 let normalize_errors (errs : M.error list) : error list =
-  List.map (fun M.BarrierError -> BarrierError) errs
+  List.map (function M.BarrierError -> BarrierError | M.WarpError -> WarpError) errs
 
 (* ===== Generator (same pattern as test_convergence_conformance) ===== *)
 
@@ -131,7 +166,7 @@ let gen_var_id : int Gen.t = Gen.int_range 0 3
 
 let gen_expr : expr Gen.t =
   Gen.sized_size (Gen.int_range 0 6) @@ Gen.fix (fun self n ->
-    if n = 0 then Gen.oneof_list [ELit; EVary; EBarrier]
+    if n = 0 then Gen.oneof_list [ELit; EVary; EBarrier; EWarpPoint]
     else
       let sub     = self (n / 2) in
       let sub2    = Gen.pair sub sub in
@@ -141,6 +176,7 @@ let gen_expr : expr Gen.t =
         Gen.return ELit;
         Gen.return EVary;
         Gen.return EBarrier;
+        Gen.return EWarpPoint;
         Gen.map (fun x            -> EVar x)               gen_var_id;
         Gen.map (fun (a, b)       -> EBinop (a, b))        sub2;
         Gen.map (fun e            -> EUnop e)               sub;
@@ -153,6 +189,7 @@ let gen_expr : expr Gen.t =
         Gen.map (fun (dv, (body, cont)) -> ESuperstep (dv, body, cont))
                 (Gen.pair Gen.bool sub2);
         Gen.map (fun args         -> EApp args)             sublist;
+        Gen.map (fun e            -> EReturn e)             sub;
       ])
 
 (* ===== Properties: inline vs extracted must agree ===== *)
@@ -189,6 +226,14 @@ let () =
       ~count:1500 (Gen.pair gen_expr gen_mode) (fun (e, m) ->
       let expected = check_inline m e in
       let got = normalize_errors (M.check (to_extracted_mode m) (to_extracted e)) in
+      expected = got);
+
+    (* CMBT link for check_warp: inline model must agree with extracted M.check_warp
+     * over random (mode, expr) pairs. *)
+    Test.make ~name:"extr:check_warp_agrees"
+      ~count:1500 (Gen.pair gen_expr gen_mode) (fun (e, m) ->
+      let expected = check_warp_inline m e in
+      let got = normalize_errors (M.check_warp (to_extracted_mode m) (to_extracted e)) in
       expected = got);
 
   ] in

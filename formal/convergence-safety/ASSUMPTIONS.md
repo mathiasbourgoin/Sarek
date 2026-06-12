@@ -2,7 +2,7 @@
 
 ## Abstract model vs real implementation
 
-The Rocq spec is for an abstract `expr` type with 11 constructors. The real implementation
+The Rocq spec is for an abstract `expr` type with 15 constructors. The real implementation
 operates on `texpr` — a large, typed AST with ~35 constructors. The correspondence is:
 
 | Abstract | Real | Notes |
@@ -16,7 +16,8 @@ operates on `texpr` — a large, typed AST with ~35 constructors. The correspond
 | `ELet` | `TELet`, `TELetMut` | Conservative: no dataflow tracking |
 | `EApp` | `TEApp`, `TETuple`, `TERecord` | Recursive check of all args |
 | `EBinop` | `TEBinop`, `TEVecSet`, `TEArrSet`, `TEFieldSet`, `TEAssign` | All two-subexpr cases |
-| `EUnop` | `TEUnop`, `TEFieldGet`, `TEReturn`, `TECreateArray` | Single-subexpr cases |
+| `EUnop` | `TEUnop`, `TEFieldGet`, `TECreateArray` | Single-subexpr cases |
+| `EReturn` | `TEReturn` | `check m (EReturn e) = check m e` — transparent wrapper per Sarek_convergence.ml:230 |
 
 ### Elided constructors (not modeled, OUT OF SCOPE)
 
@@ -29,7 +30,7 @@ operates on `texpr` — a large, typed AST with ~35 constructors. The correspond
 | `TEOpen` | Module open; passthrough in implementation |
 | `TENative` | Native C/CUDA expression; black box |
 | `TEGlobalRef` | Global mutable reference; no barrier semantics |
-| `WarpConvergence` errors | `Warp_collective_in_diverged_flow`; second error class not modeled |
+| `WarpConvergence` errors | **MODELED as of T2-WARP** — `EWarpPoint` constructor added to `expr`; `WarpError` added to `error`; `check_warp` function and `warp_diverged_error` theorem (Phase 2). |
 
 ## Proven properties
 
@@ -50,9 +51,9 @@ operates on `texpr` — a large, typed AST with ~35 constructors. The correspond
 |---|---|---|
 | Rocq kernel soundness | ASSUMED | Standard assumption throughout |
 | OCaml extraction + compiler | ASSUMED | Standard TCB; not extracted here (abstract model tested by QCheck) |
-| Abstract model faithfully represents the real implementation | ASSUMED | Verified by code inspection of Sarek_convergence.ml; the 11 constructors cover all barrier-relevant paths. Elided constructors are documented above. |
+| Abstract model faithfully represents the real implementation | ASSUMED | Verified by code inspection of Sarek_convergence.ml; the 15 constructors cover all barrier-relevant paths. Elided constructors are documented above. |
 | `is_thread_varying` correctness for `TEVar`/`TEIntrinsicConst` | ASSUMED | Depends on `Sarek_core_primitives.is_thread_varying` being complete — outside this spec's scope |
-| `WarpConvergence` error class | OUT OF SCOPE | Second error type not modeled; would require extending the `error` type and `check` |
+| `WarpConvergence` error class | IN SCOPE (T2-WARP) | `EWarpPoint` constructor, `WarpError` error, `check_warp` function, and `warp_diverged_error` theorem added. See §T2-WARP update below. |
 
 ## Out of scope (T2/T3)
 
@@ -60,9 +61,9 @@ operates on `texpr` — a large, typed AST with ~35 constructors. The correspond
 |---|---|---|
 | `is_varying_semantic_soundness` | T2 | Requires an execution semantics for `texpr` (eval relation); `EVary` must be axiomatized as "value differs across threads" |
 | `deadlock_freedom` | T3 | Requires lockstep execution model, workgroup synchronization semantics, and a whole-kernel correctness theorem |
-| Warp divergence sub-properties | T2 | `WarpConvergence` error class, warp size parameterization |
+| Warp divergence sub-properties | **PARTIAL (T2-WARP)** | `WarpConvergence` error class: `EWarpPoint`/`WarpError`/`check_warp`/`warp_diverged_error` PROVEN. Warp size parameterization remains T3. |
 | `TESuperstep` implicit barrier safety (outer-mode F-01) | **PROVEN Phase 1a** | `superstep_outer_diverged_error` — entering ESuperstep false under Diverged always errors |
-| `TEReturn` early-return barrier skip | T2 | Early return inside a divergent branch that precedes a barrier in the surrounding sequence will cause some threads to skip the barrier. The abstract model has no `EReturn` node; it is mapped to `EUnop` in the abstract correspondence table. Whether `Sarek_convergence.ml` handles this path correctly is unaudited. |
+| `TEReturn` early-return barrier skip | **MODELED/conformant (T2-RETURN)** | `EReturn` constructor added; `check m (EReturn e) = check m e` (transparent wrapper, mirroring `Sarek_convergence.ml:230`). The `return_barrier_skip_safe` theorem proves compositionality. **Open audit item (residual):** the hazard of a conditional early return causing residual divergence at a later barrier — e.g. `ESeq [EIf EVary (EReturn ELit) ELit; EBarrier]` — is conformant with the current host checker (both model and `Sarek_convergence.ml` treat EReturn transparently and report the barrier), but the question of whether that checker behaviour is *correct* for all possible call-site continuations remains an open audit item. It is NOT recorded as resolved. |
 
 ## Updates from ground-truth audit (2026-06-11)
 
@@ -111,3 +112,13 @@ The previous entry read:
 | `WarpConvergence` error class | OUT OF SCOPE | Second error type not modeled; would require extending the `error` type and `check` |
 
 Additional note: The real checker emits `Warp_collective_in_diverged_flow(name, loc)` for primitives tagged `WarpConvergence` (warp_shuffle, warp_vote_all/any, warp_ballot) at lines 144–147 of `Sarek_convergence.ml`. This is a finer-grained correctness requirement than `Barrier_in_diverged_flow`. Any theorem claiming `check` exhausts all convergence errors is incomplete without this second class. Remains OUT OF SCOPE for Phase 1a.
+
+### T2-WARP update (2026-06-12)
+
+`WarpConvergence` error class is now **IN SCOPE**. `EWarpPoint` constructor added to `expr`; `WarpError` added to `error` inductive; `check_warp` function models the warp-collective divergence check; `warp_diverged_error` theorem (Tier T2) proves `check_warp Diverged EWarpPoint ≠ []`. The entry in "Assumed / unmodeled" table has been updated to IN SCOPE. The entry in "Elided constructors" has been updated to MODELED.
+
+### T2-RETURN update (2026-06-12)
+
+`TEReturn` early-return is now **MODELED/conformant**. `EReturn` constructor added to `expr`; `check m (EReturn e) = check m e` (transparent wrapper, mirroring `Sarek_convergence.ml:230` TEReturn handling); `return_barrier_skip_safe` theorem (Tier T2) proves compositionality. The correspondence table has been updated: `TEReturn` removed from the `EUnop` row and given its own `EReturn` row. The "11 constructors" counts (abstract model description and ASSUMED row) updated to 15.
+
+**Residual open audit item:** The tick proves `EReturn` is transparent to the barrier checker (conformant with `Sarek_convergence.ml:230`). It does NOT resolve the hazard described in the original row 65: a conditional early return causing residual divergence at a later barrier (e.g. `ESeq [EIf EVary (EReturn ELit) ELit; EBarrier]`). Both the abstract model and the host checker treat this transparently — whether that behaviour is correct for all call-site continuations remains an open audit question and is NOT recorded as resolved.

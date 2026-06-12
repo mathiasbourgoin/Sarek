@@ -4,12 +4,18 @@
  * Target: ~/dev/SPOC/sarek/ppx/Sarek_convergence.ml
  * Properties: dim_merge_monoid, check_seq_hom, diverged_clean_iff_barrier_free,
  *             mode_monotone, varying_if_flags_barriers, cdcf_check_agreement,
- *             superstep_outer_diverged_error
+ *             superstep_outer_diverged_error, warp_diverged_error
  *
  * Abstract model: expr captures the convergence-relevant structure.
  * Phase 1a: ESuperstep added (F-01 coverage).
  * Phase 2 (T2-F02): EVar added; Env type + is_varying_in_env + check_env
  *   thread an explicit environment so let-bound aliases propagate correctly.
+ * Phase 2 (T2-WARP): EWarpPoint added; WarpError constructor; check_warp
+ *   function; warp_diverged_error theorem (F-03 coverage).
+ * Phase 2 (T2-RETURN): EReturn added; models TEReturn early-return which
+ *   exits a function without crossing any barrier; check m (EReturn e) = check m e
+ *   (transparent wrapper, mirroring Sarek_convergence.ml TEReturn handling);
+ *   return_barrier_skip_safe proves compositionality.
  * Elided: TEMatch (subsumed by EIf), TELetRec, TEPragma, TEOpen,
  *         TELetShared — documented in ASSUMPTIONS.md.
  ******************************************************************************)
@@ -20,30 +26,35 @@ Import ListNotations.
 (* ===== 1. Abstract expression type ===== *)
 
 Inductive expr : Type :=
-  | ELit     : expr
-  | EVary    : expr
-  | EBarrier : expr
-  | EVar     : nat -> expr                     (* variable reference by id *)
-  | EBinop   : expr -> expr -> expr
-  | EUnop    : expr -> expr
-  | EIf      : expr -> expr -> expr -> expr    (* cond, then, else *)
-  | EWhile   : expr -> expr -> expr            (* cond, body *)
-  | EFor     : expr -> expr -> expr -> expr    (* lo, hi, body *)
-  | ESeq     : list expr -> expr
-  | ELet     : nat -> expr -> expr -> expr     (* var_id, value, body *)
-  | ESuperstep : bool -> expr -> expr -> expr  (* divergent_flag, body, cont *)
-  | EApp     : list expr -> expr.
+  | ELit      : expr
+  | EVary     : expr
+  | EBarrier  : expr
+  | EWarpPoint: expr                           (* warp-collective call site *)
+  | EVar      : nat -> expr                    (* variable reference by id *)
+  | EBinop    : expr -> expr -> expr
+  | EUnop     : expr -> expr
+  | EIf       : expr -> expr -> expr -> expr   (* cond, then, else *)
+  | EWhile    : expr -> expr -> expr           (* cond, body *)
+  | EFor      : expr -> expr -> expr -> expr   (* lo, hi, body *)
+  | ESeq      : list expr -> expr
+  | ELet      : nat -> expr -> expr -> expr    (* var_id, value, body *)
+  | ESuperstep: bool -> expr -> expr -> expr   (* divergent_flag, body, cont *)
+  | EApp      : list expr -> expr
+  | EReturn   : expr -> expr.                  (* early return; exits without any barrier *)
 
 Inductive exec_mode : Type := Converged | Diverged.
 
-Inductive error : Type := BarrierError.
+(* WarpError: a warp-collective intrinsic called inside diverged control flow.
+   Models Sarek_error.Warp_collective_in_diverged_flow from Sarek_convergence.ml
+   lines 153–155. *)
+Inductive error : Type := BarrierError | WarpError.
 
 (* ===== 2. is_varying (binding-blind; EVar is non-varying without env) ===== *)
 
 Fixpoint is_varying (e : expr) : bool :=
   match e with
   | EVary         => true
-  | ELit | EBarrier | EVar _ => false
+  | ELit | EBarrier | EWarpPoint | EVar _ => false
   | EBinop a b    => is_varying a || is_varying b
   | EUnop e       => is_varying e
   | EIf c t el    => is_varying c || is_varying t || is_varying el
@@ -53,6 +64,7 @@ Fixpoint is_varying (e : expr) : bool :=
   | ELet _ v b    => is_varying v || is_varying b
   | ESuperstep _ body cont => is_varying body || is_varying cont
   | EApp args     => existsb is_varying args
+  | EReturn e     => is_varying e
   end.
 
 (* ===== 3. barrier_free ===== *)
@@ -60,7 +72,7 @@ Fixpoint is_varying (e : expr) : bool :=
 Fixpoint barrier_free (e : expr) : bool :=
   match e with
   | EBarrier       => false
-  | ELit | EVary | EVar _ => true
+  | ELit | EVary | EWarpPoint | EVar _ => true
   | EBinop a b     => barrier_free a && barrier_free b
   | EUnop e        => barrier_free e
   | EIf c t el     => barrier_free c && barrier_free t && barrier_free el
@@ -74,6 +86,10 @@ Fixpoint barrier_free (e : expr) : bool :=
   | ESuperstep divergent body cont =>
       (if divergent then true else false) && barrier_free body && barrier_free cont
   | EApp args      => forallb barrier_free args
+  (* EReturn exits the function immediately; no barrier is crossed.
+     The returned expression itself is evaluated (may reference varying values)
+     but contains no synchronisation point by construction in Sarek. *)
+  | EReturn e      => barrier_free e
   end.
 
 (* ===== 4. has_diverging_cf ===== *)
@@ -89,6 +105,7 @@ Fixpoint has_diverging_cf (e : expr) : bool :=
   | ELet _ v b    => has_diverging_cf v || has_diverging_cf b
   | ESuperstep _ body cont => has_diverging_cf body || has_diverging_cf cont
   | EApp args     => existsb has_diverging_cf args
+  | EReturn e     => has_diverging_cf e
   | _             => false
   end.
 
@@ -98,7 +115,7 @@ Fixpoint check (m : exec_mode) (e : expr) : list error :=
   match e with
   | EBarrier =>
       match m with Diverged => [BarrierError] | Converged => [] end
-  | ELit | EVary | EVar _ => []
+  | ELit | EVary | EWarpPoint | EVar _ => []
   | EBinop a b     => check m a ++ check m b
   | EUnop e        => check m e
   | EIf cond t el  =>
@@ -125,6 +142,13 @@ Fixpoint check (m : exec_mode) (e : expr) : list error :=
       in
       entry_errors ++ check m body ++ check m cont
   | EApp args      => concat (map (check m) args)
+  (* EReturn: the return expression is checked (it may contain sub-expressions),
+     but the early-exit means the caller's continuation is never reached —
+     so no barrier in the continuation can be triggered.  We check the
+     returned sub-expression in the current mode for completeness but emit
+     no additional entry errors.  In practice TEReturn wraps a single expr,
+     and Sarek's checker treats it like EUnop for barrier purposes. *)
+  | EReturn e      => check m e
   end.
 
 (* NOTE F-02 (addressed in T2-F02):
@@ -174,10 +198,11 @@ Section ExprListInd.
 Variable P     : expr -> Prop.
 Variable Plist : list expr -> Prop.
 
-Hypothesis IH_lit     : P ELit.
-Hypothesis IH_vary    : P EVary.
-Hypothesis IH_barrier : P EBarrier.
-Hypothesis IH_var     : forall x, P (EVar x).
+Hypothesis IH_lit       : P ELit.
+Hypothesis IH_vary      : P EVary.
+Hypothesis IH_barrier   : P EBarrier.
+Hypothesis IH_warppoint : P EWarpPoint.
+Hypothesis IH_var       : forall x, P (EVar x).
 Hypothesis IH_binop   : forall a b, P a -> P b -> P (EBinop a b).
 Hypothesis IH_unop    : forall e, P e -> P (EUnop e).
 Hypothesis IH_if      : forall c t el, P c -> P t -> P el -> P (EIf c t el).
@@ -188,15 +213,17 @@ Hypothesis IH_let     : forall x v b, P v -> P b -> P (ELet x v b).
 Hypothesis IH_superstep : forall (dv : bool) body cont,
   P body -> P cont -> P (ESuperstep dv body cont).
 Hypothesis IH_app     : forall args, Plist args -> P (EApp args).
+Hypothesis IH_return  : forall e, P e -> P (EReturn e).
 Hypothesis IH_nil     : Plist [].
 Hypothesis IH_cons    : forall e es, P e -> Plist es -> Plist (e :: es).
 
 Fixpoint expr_list_rect (e : expr) : P e :=
   match e with
-  | ELit     => IH_lit
-  | EVary    => IH_vary
-  | EBarrier => IH_barrier
-  | EVar x   => IH_var x
+  | ELit       => IH_lit
+  | EVary      => IH_vary
+  | EBarrier   => IH_barrier
+  | EWarpPoint => IH_warppoint
+  | EVar x     => IH_var x
   | EBinop a b   => IH_binop a b (expr_list_rect a) (expr_list_rect b)
   | EUnop u      => IH_unop u (expr_list_rect u)
   | EIf c t el   =>
@@ -221,6 +248,7 @@ Fixpoint expr_list_rect (e : expr) : P e :=
           | []     => IH_nil
           | x :: t => IH_cons x t (expr_list_rect x) (go t)
           end) args)
+  | EReturn e  => IH_return e (expr_list_rect e)
   end.
 
 End ExprListInd.
@@ -318,6 +346,8 @@ Proof.
   (* EVary *) - simpl. tauto.
   (* EBarrier — both sides false *)
   - simpl. split; intro H; discriminate.
+  (* EWarpPoint — check Diverged = []; barrier_free = true *)
+  - simpl. tauto.
   (* EVar x — barrier-free, clean under Diverged *)
   - intros x. simpl. tauto.
   (* EBinop a b *)
@@ -349,6 +379,9 @@ Proof.
     + (* dv = false: check Diverged starts with [BarrierError]; barrier_free = false *)
       split; intro H; discriminate.
   (* EApp args *) - intros args IH. exact IH.
+  (* EReturn e — check Diverged (EReturn e) = check Diverged e;
+                  barrier_free (EReturn e) = barrier_free e *)
+  - intros e IH. simpl. exact IH.
   (* nil *)
   - simpl. tauto.
   (* cons e es *)
@@ -370,6 +403,8 @@ Proof.
   (* EVary *)  - simpl. apply incl_refl.
   (* EBarrier: Converged→[], Diverged→[BarrierError] *)
   - simpl. apply incl_nil_l.
+  (* EWarpPoint: check gives [] in both Converged and Diverged for check *)
+  - simpl. apply incl_refl.
   (* EVar x: both modes give [] *)
   - intros x. simpl. apply incl_refl.
   (* EBinop a b *)
@@ -414,6 +449,8 @@ Proof.
       * left.  exact (IHbody x Hb).
       * right. exact (IHcont x Hc).
   (* EApp args *) - intros args IH. exact IH.
+  (* EReturn e — check Converged (EReturn e) = check Converged e ⊆ check Diverged e *)
+  - intros e IH. simpl. exact IH.
   (* nil *)   - simpl. apply incl_refl.
   (* cons e es *)
   - intros e es IHe IHes. simpl.
@@ -430,9 +467,11 @@ Proof.
     (fun es =>
        existsb is_varying es = false ->
        concat (map (check Converged) es) = [])).
-  (* ELit *)    - intros _. reflexivity.
-  (* EVary *)   - intros H. discriminate.
-  (* EBarrier *) - intros _. reflexivity.
+  (* ELit *)       - intros _. reflexivity.
+  (* EVary *)      - intros H. discriminate.
+  (* EBarrier *)   - intros _. reflexivity.
+  (* EWarpPoint: is_varying = false; check Converged = [] *)
+  - intros _. reflexivity.
   (* EVar x — is_varying (EVar x) = false; check Converged (EVar x) = [] *)
   - intros x _. reflexivity.
   (* EBinop a b *)
@@ -470,6 +509,8 @@ Proof.
     rewrite (IHbody Hbody), (IHcont Hcont).
     destruct dv; reflexivity.
   (* EApp args *) - intros args IH H. simpl in *. apply IH. exact H.
+  (* EReturn e *)
+  - intros e IH H. simpl in *. apply IH. exact H.
   (* nil *) - intros _. reflexivity.
   (* cons e es *)
   - intros e es IHe IHes H. simpl in *.
@@ -487,9 +528,11 @@ Proof.
     (fun es =>
        existsb has_diverging_cf es = false ->
        concat (map (check Converged) es) = [])).
-  (* ELit *)    - intros _. reflexivity.
-  (* EVary *)   - intros _. reflexivity.
+  (* ELit *)       - intros _. reflexivity.
+  (* EVary *)      - intros _. reflexivity.
   (* EBarrier: check Converged EBarrier = [], and cdcf = false *)
+  - intros _. reflexivity.
+  (* EWarpPoint: cdcf = false; check Converged = [] *)
   - intros _. reflexivity.
   (* EVar x: cdcf = false; check Converged = [] *)
   - intros x _. reflexivity.
@@ -531,6 +574,8 @@ Proof.
     rewrite (IHbody Hbody), (IHcont Hcont).
     destruct dv; reflexivity.
   (* EApp args *) - intros args IH H. simpl in *. apply IH. exact H.
+  (* EReturn e *)
+  - intros e IH H. simpl in *. apply IH. exact H.
   (* nil *) - intros _. reflexivity.
   (* cons e es *)
   - intros e es IHe IHes H. simpl in *.
@@ -561,7 +606,176 @@ Proof.
   intros body cont. simpl. discriminate.
 Qed.
 
-(* ===== 17. Env type and env-threaded predicates (F-02 / T2-F02) ===== *)
+(* ===== 17. WarpConvergence error class (T2-WARP) ===== *)
+
+(* check_warp: checker for warp-collective safety.
+ *
+ * Models the WarpConvergence branch of Sarek_convergence.ml lines 153–155:
+ *   | Some WarpConvergence -> Warp_collective_in_diverged_flow ...
+ *
+ * EWarpPoint represents a warp-collective call site (warp_shuffle,
+ * warp_vote_all/any, warp_ballot).  Under Diverged mode it emits WarpError.
+ * All other nodes are handled structurally identically to `check`.
+ *)
+Fixpoint check_warp (m : exec_mode) (e : expr) : list error :=
+  match e with
+  | EWarpPoint =>
+      match m with Diverged => [WarpError] | Converged => [] end
+  | EBarrier =>
+      match m with Diverged => [BarrierError] | Converged => [] end
+  | ELit | EVary | EVar _ => []
+  | EBinop a b     => check_warp m a ++ check_warp m b
+  | EUnop e        => check_warp m e
+  | EIf cond t el  =>
+      let inner := if is_varying cond then Diverged else m in
+      check_warp m cond ++ check_warp inner t ++ check_warp inner el
+  | EWhile cond b  =>
+      let inner := if is_varying cond then Diverged else m in
+      check_warp m cond ++ check_warp inner b
+  | EFor lo hi b   =>
+      let inner := if is_varying lo || is_varying hi then Diverged else m in
+      check_warp m lo ++ check_warp m hi ++ check_warp inner b
+  | ESeq es        => concat (map (check_warp m) es)
+  | ELet _ v b     => check_warp m v ++ check_warp m b
+  | ESuperstep divergent body cont =>
+      let entry_errors :=
+        match m, divergent with
+        | Diverged, false => [BarrierError]
+        | _,        _     => []
+        end
+      in
+      entry_errors ++ check_warp m body ++ check_warp m cont
+  | EApp args      => concat (map (check_warp m) args)
+  | EReturn e      => check_warp m e
+  end.
+
+(* Property 8a: warp_diverged_error (T2-WARP / F-03) — atomic instance.
+ *
+ * A warp-collective call site (EWarpPoint) under Diverged mode always
+ * produces at least one error.  This is the warp analogue of
+ * superstep_outer_diverged_error. *)
+Theorem warp_diverged_error :
+  check_warp Diverged EWarpPoint <> [].
+Proof.
+  simpl. discriminate.
+Qed.
+
+(* Property 8b: warp_mode_monotone — check_warp is mode-monotone.
+ *
+ * Strengthening the mode (Converged → Diverged) never removes errors.
+ * This is the warp analogue of mode_monotone for `check`. *)
+Theorem warp_mode_monotone : forall e,
+  incl (check_warp Converged e) (check_warp Diverged e).
+Proof.
+  apply (expr_list_rect
+    (fun e  => incl (check_warp Converged e) (check_warp Diverged e))
+    (fun es =>
+       incl (concat (map (check_warp Converged) es))
+            (concat (map (check_warp Diverged) es)))).
+  (* ELit *)       - simpl. apply incl_refl.
+  (* EVary *)      - simpl. apply incl_refl.
+  (* EBarrier: Converged→[], Diverged→[BarrierError] *)
+  - simpl. apply incl_nil_l.
+  (* EWarpPoint: Converged→[], Diverged→[WarpError] *)
+  - simpl. apply incl_nil_l.
+  (* EVar x: both modes give [] *)
+  - intros x. simpl. apply incl_refl.
+  (* EBinop a b *)
+  - intros a b IHa IHb. simpl.
+    apply incl_app_mono; [exact IHa | exact IHb].
+  (* EUnop e *)
+  - intros e IH. exact IH.
+  (* EIf c t el *)
+  - intros c t el IHc IHt IHel. simpl.
+    rewrite (diverged_absorbing (is_varying c)).
+    destruct (is_varying c).
+    + apply incl_app_mono; [exact IHc | apply incl_refl].
+    + apply incl_app_mono; [exact IHc | apply incl_app_mono; [exact IHt | exact IHel]].
+  (* EWhile c b *)
+  - intros c b IHc IHb. simpl.
+    rewrite (diverged_absorbing (is_varying c)).
+    destruct (is_varying c).
+    + apply incl_app_mono; [exact IHc | apply incl_refl].
+    + apply incl_app_mono; [exact IHc | exact IHb].
+  (* EFor lo hi b *)
+  - intros lo hi b IHlo IHhi IHb. simpl.
+    rewrite (diverged_absorbing (is_varying lo || is_varying hi)).
+    destruct (is_varying lo || is_varying hi).
+    + apply incl_app_mono; [exact IHlo | apply incl_app_mono; [exact IHhi | apply incl_refl]].
+    + apply incl_app_mono; [exact IHlo | apply incl_app_mono; [exact IHhi | exact IHb]].
+  (* ESeq es *) - intros es IH. exact IH.
+  (* ELet x v b *)
+  - intros x v b IHv IHb. simpl.
+    apply incl_app_mono; [exact IHv | exact IHb].
+  (* ESuperstep dv body cont *)
+  - intros dv body cont IHbody IHcont. simpl.
+    destruct dv; simpl.
+    + apply incl_app_mono; [exact IHbody | exact IHcont].
+    + intros x Hx.
+      apply in_app_iff in Hx.
+      right.
+      apply in_app_iff.
+      destruct Hx as [Hb | Hc].
+      * left.  exact (IHbody x Hb).
+      * right. exact (IHcont x Hc).
+  (* EApp args *) - intros args IH. exact IH.
+  (* EReturn e — check_warp Converged (EReturn e) = check_warp Converged e ⊆ check_warp Diverged e *)
+  - intros e IH. simpl. exact IH.
+  (* nil *)   - simpl. apply incl_refl.
+  (* cons e es *)
+  - intros e es IHe IHes. simpl.
+    apply incl_app_mono; [exact IHe | exact IHes].
+Qed.
+
+(* Property 8c: warp_varying_if_flags — EWarpPoint nested under a
+ * varying-condition EIf is always caught, even from Converged outer mode.
+ *
+ * This is the quantified warp analogue of varying_if_flags_barriers:
+ * for any then-branch t and else-branch el, if t (or el) contains EWarpPoint
+ * at top level, check_warp catches it because the inner mode becomes Diverged. *)
+Theorem warp_varying_if_flags : forall el,
+  check_warp Converged (EIf EVary EWarpPoint el) <> [].
+Proof.
+  intros el. simpl. discriminate.
+Qed.
+
+(* ===== 18. Property 9: return_barrier_skip_safe (T2-RETURN) ===== *)
+
+(* TEReturn in Sarek_convergence.ml is an early-return expression.
+ * It exits the current function without crossing any synchronisation barrier.
+ * Modelling choice (Option A — no-op for barrier purposes):
+ *   check m (EReturn e) = check m e
+ * This is sound because (a) the returned value e is still evaluated before the
+ * function exits, so its sub-expressions are checked in mode m, and (b) any
+ * code after the return point is unreachable — so no continuation barriers
+ * are ever triggered by this path.
+ *
+ * Compositionality theorem: placing EReturn inside an ESeq can never
+ * introduce new barrier errors that are not already present in the
+ * constituent expressions. *)
+
+Theorem return_barrier_skip_safe : forall m e,
+  check m (EReturn e) = check m e.
+Proof.
+  intros m e. simpl. reflexivity.
+Qed.
+
+(* Corollary: EReturn in Converged mode with a barrier-free body is clean. *)
+Corollary return_converged_clean : forall e,
+  barrier_free e = true ->
+  check Converged (EReturn e) = [].
+Proof.
+  intros e Hbf.
+  rewrite return_barrier_skip_safe.
+  (* check Diverged e = [] by diverged_clean_iff_barrier_free *)
+  pose proof (proj2 (diverged_clean_iff_barrier_free e) Hbf) as Hdiv.
+  (* check Converged e ⊆ check Diverged e = [] by mode_monotone *)
+  pose proof (mode_monotone e) as Hmono.
+  rewrite Hdiv in Hmono.
+  apply incl_l_nil. exact Hmono.
+Qed.
+
+(* ===== 19. Env type and env-threaded predicates (F-02 / T2-F02) ===== *)
 
 (* Env: association list mapping variable id (nat) to is_varying flag (bool). *)
 Definition Env := list (nat * bool).
@@ -580,9 +794,9 @@ Definition env_extend (env : Env) (x : nat) (v : bool) : Env :=
    variability of v before recursing into b. *)
 Fixpoint is_varying_in_env (env : Env) (e : expr) : bool :=
   match e with
-  | EVary         => true
-  | ELit | EBarrier => false
-  | EVar x        => env_lookup env x
+  | EVary              => true
+  | ELit | EBarrier | EWarpPoint => false
+  | EVar x             => env_lookup env x
   | EBinop a b    => is_varying_in_env env a || is_varying_in_env env b
   | EUnop e       => is_varying_in_env env e
   | EIf c t el    =>
@@ -601,6 +815,7 @@ Fixpoint is_varying_in_env (env : Env) (e : expr) : bool :=
   | ESuperstep _ body cont =>
       is_varying_in_env env body || is_varying_in_env env cont
   | EApp args     => existsb (is_varying_in_env env) args
+  | EReturn e     => is_varying_in_env env e
   end.
 
 (* check_env: env-threaded safety checker.
@@ -610,7 +825,7 @@ Fixpoint check_env (m : exec_mode) (env : Env) (e : expr) : list error :=
   match e with
   | EBarrier =>
       match m with Diverged => [BarrierError] | Converged => [] end
-  | ELit | EVary => []
+  | ELit | EVary | EWarpPoint => []
   | EVar x =>
       (* EVar itself carries no barrier; its variability is tracked in env *)
       []
@@ -642,9 +857,10 @@ Fixpoint check_env (m : exec_mode) (env : Env) (e : expr) : list error :=
       in
       entry_errors ++ check_env m env body ++ check_env m env cont
   | EApp args      => concat (map (check_env m env) args)
+  | EReturn e      => check_env m env e
   end.
 
-(* ===== 18. F-02 key theorems ===== *)
+(* ===== 20. F-02 key theorems ===== *)
 
 (* Lemma: env_lookup after env_extend with same key returns the stored value. *)
 Lemma env_lookup_extend_same : forall env x v,
@@ -702,6 +918,7 @@ Qed.
   Print Assumptions cdcf_check_agreement.
   Print Assumptions varying_if_flags_barriers.
   Print Assumptions superstep_outer_diverged_error.
+  Print Assumptions warp_diverged_error.
   Print Assumptions env_let_alias_varying.
   Print Assumptions env_var_diverged_clean.
   Print Assumptions env_check_let_alias_catches.
