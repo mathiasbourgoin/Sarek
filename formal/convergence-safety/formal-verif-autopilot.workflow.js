@@ -155,7 +155,7 @@ const FEEDBACK_SCHEMA = {
 
 // ── Safe agent wrapper — throws on null (spend limit) instead of returning null ─
 const safeAgent = async (prompt, opts) => {
-  const result = await safeAgent(prompt, opts)
+  const result = await agent(prompt, opts)
   if (result === null) throw new Error(`agent(${opts && opts.label || '?'}) returned null — spend limit hit`)
   return result
 }

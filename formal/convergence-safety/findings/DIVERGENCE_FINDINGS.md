@@ -161,7 +161,40 @@ abstract model and should not be disturbed.
 
 ## Resolved findings
 
-_(none yet)_
+### F-03 — `WarpConvergence` error class not modeled (warp-collective calls in diverged flow)
+
+| Field | Value |
+|---|---|
+| ID | F-03 |
+| Status | RESOLVED |
+| Sub-status | Formally proven |
+| Classification | `a'` — spec gap (abstract model missing `EWarpPoint` constructor and `WarpError` error) |
+| Source | `sarek/ppx/Sarek_convergence.ml` lines 144–147, 153–155 |
+| Regression | `test/test_convergence_conformance.ml` — `test_warp_diverged_error` property; `test/test_convergence_extraction.ml` — `extr:check_warp_agrees` test |
+
+**Description**: The real checker emits `Warp_collective_in_diverged_flow(name, loc)` for
+primitives tagged `WarpConvergence` (`warp_shuffle`, `warp_vote_all/any`, `warp_ballot`)
+at lines 144–147 and 153–155 of `Sarek_convergence.ml`. This is a distinct error class
+from `Barrier_in_diverged_flow`. The original abstract model had only one error constructor
+(`BarrierError`) and no constructor representing warp-collective call sites, so the spec
+was incomplete: any theorem claiming `check` exhausts all convergence errors was missing
+this second class.
+
+**Abstract model impact**: Required extending the abstract model with:
+1. `EWarpPoint` — a new leaf constructor of `expr` representing a warp-collective call site.
+2. `WarpError` — a second constructor of `error` representing `Warp_collective_in_diverged_flow`.
+3. `check_warp (m : exec_mode) (e : expr) : list error` — a checker that emits `WarpError`
+   when `EWarpPoint` is encountered under `Diverged` mode, and is otherwise structurally
+   identical to `check`.
+4. `warp_diverged_error` theorem: `check_warp Diverged EWarpPoint ≠ []`.
+
+**Resolution**: Implemented in T2-WARP (2026-06-12). `EWarpPoint` and `WarpError` added to
+`theories/ConvergenceSpec.v`; `check_warp` function defined; `warp_diverged_error` proven
+by `simpl + discriminate`. Extraction list updated; conformance and extraction tests added.
+The `warp_diverged_error` theorem directly captures the safety invariant that warp-collective
+intrinsics must not appear in diverged control flow.
+
+---
 
 ---
 

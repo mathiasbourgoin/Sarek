@@ -41,3 +41,25 @@
 - The apparatus check prompt in the skill should specify that P4 is a two-part check: (1) theorem count match, (2) sha256sum of the .vo matches the ledger's vo_sha256 field — both must pass for P4 to be PASS.
 
 ---
+
+## Tick 0 — [T2-RETURN] TEReturn early-return barrier-skip
+**(2026-06-12)** | Gate: GO | Committed: true | Evolve: CHANGE
+
+**Baseline issues**: none
+
+**Friction**:
+- proof-ledger.json shipped without a `build_invocation` field despite the apparatus memory explicitly requiring it. The field was added to the memory (feedback_proof_ledger_artifact_integrity.md) during the T2-WARP tick, but the Execute agent for T2-RETURN was not instructed to write it, the P4 apparatus check did not enforce its presence, and the reviewer labeled its absence as Informational rather than a gate gap. Three layers all missed the same enforcement.
+- The first-pass reviewer's `0fdf1107` hash mismatch (vs canonical `41e0d70a`) is a direct consequence of missing `build_invocation`: the reviewer used `-R . ConvergenceSpec` from inside the directory, producing a different `.vo` byte sequence. The tick reached COMMITTED with this unresolved, relying only on the second reviewer's Informational label to not block it. The assurance chain held by luck of reviewer calibration, not by gate enforcement.
+- Issue 3 (circular conformance-test clause) is carried as 'now acceptable' because extraction-side tests independently exercise EReturn. This resolution is correct, but the workflow has no mechanism to record that a known limitation is tracked and the stated remedy is in place — the future reviewer will re-raise it unless it is documented in a findings note or STATUS.md. No friction with the workflow itself here, but a documentation gap for future ticks.
+
+**Workflow improvements**:
+- Phase 3 (Gate) runApparatusCheck P4 check must be upgraded to verify two things: (1) theorem count matches spec (already done), and (2) a `build_invocation` field exists in proof-ledger.json; if absent, P4 must FAIL — the T2-RETURN reviewer correctly identified the missing field, but P4 passed anyway because the script only checks count.
+- Phase 2 (Execute) prompt must explicitly instruct the agent to record a `build_invocation` field in proof-ledger.json alongside `vo_sha256`, stating the exact compiler subcommand (`rocq compile -R theories ConvergenceSpec`), the path-qualifier flags, and the working directory (project root). The T2-RETURN proof-ledger.json shipped without this field, which is the direct cause of the first-pass reviewer's hash mismatch (they used a different mapping).
+- Phase 3 (Gate) independent Fable review prompt should add an explicit checklist item: 'Read the `build_invocation` field from proof-ledger.json. If absent, REVISE — the field is mandatory and its absence is not informational. If present, confirm the hash in `vo_sha256` is reproducible using that exact invocation.' The T2-RETURN reviewer correctly surfaced this but labeled it Informational; the prompt did not guide them to treat absence as a gate-level gap.
+- Phase 1 (Formal-Check) baseline prompt should include a `build_invocation` presence check under P4: grep proof-ledger.json for the `build_invocation` key and report FAIL with message 'ledger missing build_invocation' if absent. This would have surfaced the gap at baseline rather than at review time.
+
+**Skill improvements**:
+- The apparatus skill's `feedback_proof_ledger_artifact_integrity.md` already covers failure mode 4 (build-invocation mismatch) correctly and even documents a `build_invocation` field requirement. The gap is that the apparatus check prompt in the skill (P4 rule in /formal-check) does not yet include the presence check for `build_invocation`. Update the P4 rule in the skill's /formal-check policy to: 'P4 is a two-part check: (1) theorem count in ledger matches `grep -c "^Theorem" spec.v`; (2) `build_invocation` field exists in proof-ledger.json — FAIL if absent, because without it the vo_sha256 cannot be independently reproduced.' The memory is correct; the check procedure needs to be extended to match.
+- The apparatus skill's reviewer guidance should be updated to state that a missing `build_invocation` field is a gate-level failure, not an informational note. The T2-RETURN reviewer found it but labeled it Informational; the skill's reviewer duty section should explicitly say: 'A ledger without build_invocation MUST be returned as REVISE, not Informational — the hash is unreproducible without it and the assurance chain is broken.' This corrects the miscalibrated verdict without requiring a script change.
+
+---
