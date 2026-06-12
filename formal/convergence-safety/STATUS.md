@@ -5,7 +5,7 @@
 **Host profile**: SPOC/sarek
 **Architecture**: 3-layer
 **Built at**: 2026-06-11
-**Last updated**: 2026-06-12 (T2-RETURN: EReturn early-return barrier-skip — 20 theorems, 14 conformance properties, 7 extraction tests)
+**Last updated**: 2026-06-12 (T1A-CONF: 3 dedicated ESuperstep QCheck properties — 20 theorems, 17 conformance properties, 7 extraction tests)
 
 ## Project
 
@@ -49,7 +49,7 @@ Assumptions documented in `ASSUMPTIONS.md`:
 
 ## Test intensity
 
-- **Conformance**: `test/test_convergence_conformance.ml` — 14 properties (`test_convergence_conformance`), 1000–2000 tests each — **14/14 GREEN** (2 new F-02 env-threaded properties added T2-F02; 1 new randomized warp property added T2-WARP+; 1 new return_barrier_skip_safe property added T2-RETURN)
+- **Conformance**: `test/test_convergence_conformance.ml` — 17 properties (`test_convergence_conformance`), 1000–2000 tests each — **17/17 GREEN** (2 new F-02 env-threaded properties added T2-F02; 1 new randomized warp property added T2-WARP+; 1 new return_barrier_skip_safe property added T2-RETURN; 3 new dedicated ESuperstep properties added T1A-CONF: superstep_outer_diverged_error, superstep_no_entry_error_converged, superstep_body_errors_propagate)
 - **Extraction**: `test/test_convergence_extraction.ml` — 7 tests (`test_convergence_extraction`) — **7/7 GREEN** (extr:check_warp_agrees added T2-WARP+)
 - **Live CMBT**: `formal/convergence-safety/test/test_convergence_live.ml` — 10 tests including F-01 + F-02 regressions — **10/10 GREEN**
 
@@ -87,10 +87,11 @@ None yet.
 ```
 Resume ConvergenceSafety (apparatus v1.1.0, grade A).
 State: 20/20 theorems proven, 0 admits, 0 axioms, coqchk passes. T2-RETURN complete.
-Conformance: 14/14 green. Extraction: 7/7 green. Live CMBT: 10/10 green.
+Conformance: 17/17 green. Extraction: 7/7 green. Live CMBT: 10/10 green.
 F-01 RESOLVED (OCaml + Rocq). F-02 RESOLVED (OCaml + Rocq env-threaded model).
 F-03 (WarpConvergence) RESOLVED (Rocq: EWarpPoint/WarpError/check_warp/warp_diverged_error/warp_mode_monotone/warp_varying_if_flags; documented in findings/DIVERGENCE_FINDINGS.md).
 T2-RETURN RESOLVED (Rocq: EReturn/return_barrier_skip_safe/return_converged_clean; TEReturn exits without crossing any barrier).
-Next: T3-GATE (human decision on T3-SEMANTIC).
+T1A-CONF RESOLVED (3 dedicated ESuperstep QCheck properties: superstep_outer_diverged_error, superstep_no_entry_error_converged, superstep_body_errors_propagate; PR #182 merged).
+Next: T3-GATE (human decision on T3-SEMANTIC). All T1+T2 work complete.
 Run /formal-check before any lock or milestone.
 ```

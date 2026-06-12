@@ -14,6 +14,10 @@
  * Phase 2 (T2-RETURN): EReturn added; models TEReturn early-return;
  *   check treats EReturn as check of its body; return_barrier_skip_safe
  *   QCheck property added (property 14).
+ * Phase 3 (T1A-CONF): 3 dedicated ESuperstep QCheck properties added
+ *   (properties 11–13): superstep_outer_diverged_error (F-01 direct),
+ *   superstep_no_entry_error_converged (safe-path complement),
+ *   superstep_body_errors_propagate (monotonicity).
  ******************************************************************************)
 
 (* ===== Abstract model (mirrors ConvergenceSpec.v) ===== *)
@@ -418,6 +422,52 @@ let test_warp_diverged_error =
        List.for_all (fun err -> List.mem err (check_warp Diverged e))
                     (check_warp Converged e))
 
+(* 11. superstep_outer_diverged_error — mirrors Theorem superstep_outer_diverged_error (F-01).
+ *
+ * Property: check Diverged (ESuperstep false body cont) ≠ [] for all body/cont.
+ * The outer-Diverged + non-divergent-flag case always produces a BarrierError at
+ * the superstep boundary (the implicit end-of-superstep barrier is unreachable by
+ * all threads when the outer context is diverged and the superstep is non-divergent).
+ * Directly corresponds to Theorem superstep_outer_diverged_error in ConvergenceSpec.v. *)
+let test_superstep_outer_diverged_error =
+  Test.make ~name:"superstep_outer_diverged_error" ~count:2000
+    (Gen.pair gen_expr gen_expr)
+    (fun (body, cont) ->
+       (* F-01: outer Diverged + divergent_flag = false => always an error *)
+       check Diverged (ESuperstep (false, body, cont)) <> [])
+
+(* 12. superstep_no_entry_error_converged — Converged outer mode never triggers entry error.
+ *
+ * Property: the entry BarrierError is absent when outer mode is Converged, regardless
+ * of the divergent flag.  Specifically, for barrier-free body/cont the total result is
+ * empty from Converged mode with any flag value.
+ * This tests the complement of superstep_outer_diverged_error — the "safe" path. *)
+let test_superstep_no_entry_error_converged =
+  Test.make ~name:"superstep_no_entry_error_converged" ~count:2000
+    (Gen.pair Gen.bool (Gen.pair gen_expr gen_expr))
+    (fun (dv, (body, cont)) ->
+       (* When outer mode is Converged and both body and cont are barrier-free,
+          there must be no errors: entry error is suppressed and no child errors exist *)
+       if barrier_free body && barrier_free cont then
+         check Converged (ESuperstep (dv, body, cont)) = []
+       else true)
+
+(* 13. superstep_body_errors_propagate — body/cont errors propagate through ESuperstep.
+ *
+ * Property (monotonicity): errors found in body or cont are preserved in the superstep.
+ * Specifically check m body ⊆ check m (ESuperstep dv body cont) for all m, dv, body, cont.
+ * This models the structural monotonicity of check over ESuperstep body/cont sub-expressions. *)
+let test_superstep_body_errors_propagate =
+  Test.make ~name:"superstep_body_errors_propagate" ~count:2000
+    (Gen.quad gen_mode Gen.bool gen_expr gen_expr)
+    (fun (m, dv, body, cont) ->
+       let body_errs = check m body in
+       let cont_errs = check m cont in
+       let total_errs = check m (ESuperstep (dv, body, cont)) in
+       (* All body errors and all cont errors must appear in the superstep result *)
+       List.for_all (fun e -> List.mem e total_errs) body_errs &&
+       List.for_all (fun e -> List.mem e total_errs) cont_errs)
+
 (* 10. return_barrier_skip_safe — mirrors Theorem return_barrier_skip_safe.
  *
  * Property: check m (EReturn e) = check m e for all modes m and expressions e.
@@ -456,6 +506,9 @@ let () =
     test_f02_env_mode_monotone;
     test_warp_diverged_error;
     test_return_barrier_skip_safe;
+    test_superstep_outer_diverged_error;
+    test_superstep_no_entry_error_converged;
+    test_superstep_body_errors_propagate;
   ] in
   let passed = QCheck_base_runner.run_tests ~verbose:true suite in
   exit passed
