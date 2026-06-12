@@ -1,7 +1,7 @@
 % ConvergenceSafetySpec.tex — LaTeX source of truth for the convergence-safety formal specification
 % Bootstrapped from the formal-apparatus at Phase 3 (LaTeX elicitation)
 % Co-evolves with theories/ConvergenceSpec.v pre-lock; LaTeX is canonical post-lock.
-% Status: LOCKED v0.2 (2026-06-11) — matches coqchk-passing ConvergenceSpec.v (16 theorems)
+% Status: LOCKED v0.4 (2026-06-12) — matches coqchk-passing ConvergenceSpec.v (20 theorems)
 
 \documentclass[11pt,a4paper]{article}
 
@@ -38,7 +38,7 @@
 \title{Convergence Safety --- A Formal Specification\\
   \large \textit{Sarek GPU barrier safety analysis}}
 \author{Sarek formal apparatus}
-\date{2026-06-11 (v0.2 LOCKED)}
+\date{2026-06-12 (v0.4 LOCKED)}
 
 \begin{document}
 
@@ -50,10 +50,12 @@ We give a formal specification of the convergence-safety analysis pass in
 OCaml GPU DSL. The analysis tracks an \emph{execution mode} ($\Converged$ or
 $\Diverged$) through an abstract expression type and collects barrier errors
 when a synchronisation point is reached inside diverged control flow.
-We prove sixteen properties: five join-semilattice laws for the dimension-usage
+We prove twenty properties: five join-semilattice laws for the dimension-usage
 monoid, one homomorphism law for sequential composition, six T1 safety
 theorems about the mode-tracking state machine (including the F-01
-\texttt{ESuperstep} outer-diverged error property), and four T1 theorems
+\texttt{ESuperstep} outer-diverged error property), three T2-WARP theorems
+for warp-collective safety (F-03), one T2-RETURN compositionality theorem
+for early-return barrier-skip (\texttt{EReturn}), and four T1 theorems
 for the env-threaded model introduced in T2-F02 to handle let-alias
 variability propagation.
 \end{abstract}
@@ -86,6 +88,16 @@ variability propagation.
         (\cref{thm:varying-flags}).
   \item[\textbf{T1}] Outer-diverged \texttt{ESuperstep} always raises a barrier error
         (F-01, \cref{thm:superstep-outer-diverged}).
+  \item[\textbf{T2}] Warp-collective call site (\texttt{EWarpPoint}) under $\Diverged$ mode
+        always raises a warp error (F-03, \cref{thm:warp-diverged-error}).
+  \item[\textbf{T2}] Warp checker is mode-monotone: strengthening never removes errors
+        (\cref{thm:warp-mode-monotone}).
+  \item[\textbf{T2}] \texttt{EWarpPoint} nested under a varying-condition \texttt{EIf} is
+        always caught from $\Converged$ outer mode
+        (\cref{thm:warp-varying-if-flags}).
+  \item[\textbf{T2}] \texttt{EReturn} is a transparent wrapper for barrier analysis:
+        $\mathtt{check}(m, \mathsf{EReturn}(e)) = \mathtt{check}(m, e)$
+        (\cref{thm:return-barrier-skip-safe}).
   \item[\textbf{T1}] Env-lookup after env-extend returns the stored value
         (\cref{thm:env-lookup-extend-same}).
   \item[\textbf{T1}] Let-alias variability is propagated through \texttt{ELet}
@@ -99,8 +111,8 @@ variability propagation.
 \subsection*{Out of scope (T2/T3)}
 
 Semantic soundness of \texttt{is\_varying} (needs $\texttt{texpr}$ execution
-semantics), deadlock freedom (needs lockstep execution model),
-and warp divergence errors.
+semantics) and deadlock freedom (needs lockstep execution model).
+Warp divergence errors are now in scope (T2-WARP, \cref{thm:warp-diverged-error}).
 
 %───────────────────────────────────────────────────────────────────────────────
 \section{Notation and types}
@@ -111,7 +123,13 @@ $\mathsf{ExecMode} ::= \Converged \mid \Diverged$
 \end{definition}
 
 \begin{definition}[Error]
-$\mathsf{Error} ::= \mathsf{BarrierError}$
+$\mathsf{Error} ::= \mathsf{BarrierError} \mid \mathsf{WarpError}$
+
+$\mathsf{BarrierError}$ is emitted when a synchronisation barrier is reached
+inside diverged control flow. $\mathsf{WarpError}$ is emitted when a
+warp-collective intrinsic (\texttt{warp\_shuffle}, \texttt{warp\_vote\_all/any},
+\texttt{warp\_ballot}) is called inside diverged control flow; models
+\texttt{Sarek\_error.Warp\_collective\_in\_diverged\_flow}.
 \end{definition}
 
 \begin{definition}[Abstract expression]
@@ -119,6 +137,7 @@ $\mathsf{Error} ::= \mathsf{BarrierError}$
 \[
   e ::=
     \mathsf{ELit} \mid \mathsf{EVary} \mid \mathsf{EBarrier}
+  \mid \mathsf{EWarpPoint}
   \mid \mathsf{EVar}(x)
   \mid \mathsf{EBinop}(e_1, e_2)
   \mid \mathsf{EUnop}(e)
@@ -129,10 +148,15 @@ $\mathsf{Error} ::= \mathsf{BarrierError}$
   \mid \mathsf{ELet}(x, e_v, e_b)
   \mid \mathsf{ESuperstep}(b, e_{body}, e_{cont})
   \mid \mathsf{EApp}(\bar{e})
+  \mid \mathsf{EReturn}(e)
 \]
 where $\bar{e}$ ranges over $\mathsf{expr}^*$, $x \in \mathbb{N}$ is a
-variable identifier, and $b \in \mathbb{B}$ is a Boolean
-\emph{divergent flag} (\textsf{true} = outer superstep is already divergent).
+variable identifier, $b \in \mathbb{B}$ is a Boolean
+\emph{divergent flag} (\textsf{true} = outer superstep is already divergent),
+$\mathsf{EWarpPoint}$ represents a warp-collective call site
+(\texttt{warp\_shuffle}, \texttt{warp\_vote\_all/any}, \texttt{warp\_ballot}),
+and $\mathsf{EReturn}(e)$ represents an early-return expression that exits
+the current function without crossing any synchronisation barrier.
 \end{definition}
 
 \begin{notation}
@@ -369,6 +393,79 @@ is reached by only some threads.
   unconditionally produces a $\mathsf{BarrierError}$.
 \end{theorem}
 
+\subsection{T2-WARP --- Warp-collective safety (F-03)}
+\label{sec:warp-props}
+
+The warp-collective checker $\mathtt{check\_warp}(m, e)$ extends $\chk{m}{e}$
+with an additional case for $\mathsf{EWarpPoint}$:
+\[
+  \mathtt{check\_warp}(m, \mathsf{EWarpPoint}) =
+  \begin{cases}
+    [\mathsf{WarpError}] & \text{if } m = \Diverged \\
+    [] & \text{if } m = \Converged
+  \end{cases}
+\]
+All other cases are structurally identical to $\chk{m}{\cdot}$.
+
+\begin{theorem}[Warp-diverged error (F-03)]
+  \label{thm:warp-diverged-error}
+  \[
+    \mathtt{check\_warp}(\Diverged,\,\mathsf{EWarpPoint}) \ne [].
+  \]
+  A warp-collective call site inside diverged control flow unconditionally
+  produces a $\mathsf{WarpError}$.
+\end{theorem}
+
+\begin{theorem}[Warp mode monotonicity]
+  \label{thm:warp-mode-monotone}
+  For all $e$:
+  \[
+    \mathtt{check\_warp}(\Converged,\,e) \incl \mathtt{check\_warp}(\Diverged,\,e).
+  \]
+  Strengthening the execution context (Converged $\to$ Diverged) never removes
+  warp-collective errors. This is the warp analogue of \cref{thm:monotone}.
+\end{theorem}
+
+\begin{theorem}[Varying condition flags warp (F-03 context)]
+  \label{thm:warp-varying-if-flags}
+  For all $\mathit{el}$:
+  \[
+    \mathtt{check\_warp}(\Converged,\;\mathsf{EIf}(\mathsf{EVary},\,\mathsf{EWarpPoint},\,\mathit{el})) \ne [].
+  \]
+  A warp-collective call site inside the then-branch of a varying-condition
+  \texttt{EIf} is always caught, even from $\Converged$ outer mode.
+\end{theorem}
+
+\subsection{T2-RETURN --- Early-return barrier-skip}
+\label{sec:return-props}
+
+$\mathsf{EReturn}(e)$ models \texttt{TEReturn} from \texttt{Sarek\_convergence.ml}:
+an early-return expression that exits the current function without crossing any
+synchronisation barrier. The barrier-safety checker treats \texttt{EReturn} as
+a transparent structural wrapper — the returned sub-expression $e$ is checked
+in the current mode, but no continuation barriers can be triggered because
+control flow exits the function at this point.
+
+\begin{theorem}[Return barrier-skip compositionality]
+  \label{thm:return-barrier-skip-safe}
+  For all $m \in \mathsf{ExecMode}$ and $e$:
+  \[
+    \mathtt{check}(m,\;\mathsf{EReturn}(e)) = \mathtt{check}(m,\;e).
+  \]
+  \texttt{EReturn} is a transparent wrapper: it neither introduces nor
+  suppresses barrier errors beyond those already present in its body.
+\end{theorem}
+
+\begin{corollary}[Return in converged mode with barrier-free body is clean]
+  \label{cor:return-converged-clean}
+  For all $e$:
+  \[
+    \barrierfree{e} = \mathsf{true}
+    \;\Rightarrow\;
+    \mathtt{check}(\Converged,\;\mathsf{EReturn}(e)) = [].
+  \]
+\end{corollary}
+
 \subsection{T1 --- Env-threaded model (T2-F02)}
 \label{sec:envthreaded-props}
 
@@ -488,6 +585,7 @@ Abstract & Real & Notes \\
 \texttt{EVary} & \texttt{TEVar} (varying), \texttt{TEIntrinsicConst} (varying) & \texttt{is\_thread\_varying} recurses \\
 \texttt{EVar}($x$) & \texttt{TEVar} (by id) & variability resolved via env (T2-F02) \\
 \texttt{EBarrier} & \texttt{TEIntrinsicFun \_ (Some ConvergencePoint) \_} & error when mode=Diverged \\
+\texttt{EWarpPoint} & \texttt{TEIntrinsicFun \_ (Some WarpConvergence) \_} & WarpError when mode=Diverged (T2-WARP) \\
 \texttt{ELit} & all uniform literals + \texttt{TEUnit}/\texttt{TEBool}/\texttt{TEInt}/... & \\
 \texttt{EIf} & \texttt{TEIf}, \texttt{TEMatch} & \\
 \texttt{EFor} & \texttt{TEFor} & lo/hi checked for variation \\
@@ -496,7 +594,8 @@ Abstract & Real & Notes \\
 \texttt{ESuperstep}($b$,$body$,$cont$) & \texttt{TESuperstep} & F-01: diverged-entry BarrierError (Phase 1a) \\
 \texttt{EApp} & \texttt{TEApp}, \texttt{TETuple}, \texttt{TERecord} & \\
 \texttt{EBinop} & \texttt{TEBinop}, \texttt{TEVecSet}, \texttt{TEArrSet}, \texttt{TEAssign} & \\
-\texttt{EUnop} & \texttt{TEUnop}, \texttt{TEFieldGet}, \texttt{TEReturn}, \texttt{TECreateArray} & \\
+\texttt{EUnop} & \texttt{TEUnop}, \texttt{TEFieldGet}, \texttt{TECreateArray} & \\
+\texttt{EReturn}($e$) & \texttt{TEReturn} & T2-RETURN: early-exit; no barrier crossed (return\_barrier\_skip\_safe) \\
 \hline
 \end{tabular}
 \end{center}
@@ -516,9 +615,11 @@ projects to the abstract \texttt{error} type.
 \subsection*{Elided constructors (out of scope)}
 
 \texttt{TELetShared}, \texttt{TELetRec},
-\texttt{TEPragma}, \texttt{TEOpen}, \texttt{TENative}, \texttt{TEGlobalRef},
-and the \texttt{WarpConvergence} error class.
-(\texttt{TESuperstep} is now in scope as $\mathsf{ESuperstep}$; see type-correspondence table.)
+\texttt{TEPragma}, \texttt{TEOpen}, \texttt{TENative}, \texttt{TEGlobalRef}.
+(\texttt{TESuperstep} is in scope as $\mathsf{ESuperstep}$; the
+\texttt{WarpConvergence} error class is now in scope as $\mathsf{EWarpPoint}$
+(T2-WARP); \texttt{TEReturn} is now in scope as $\mathsf{EReturn}$
+(T2-RETURN); see type-correspondence table.)
 
 %───────────────────────────────────────────────────────────────────────────────
 \section{References}

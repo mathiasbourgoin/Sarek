@@ -34,6 +34,7 @@ type expr =
 | ELit
 | EVary
 | EBarrier
+| EWarpPoint
 | EVar of int
 | EBinop of expr * expr
 | EUnop of expr
@@ -44,6 +45,7 @@ type expr =
 | ELet of int * expr * expr
 | ESuperstep of bool * expr * expr
 | EApp of expr list
+| EReturn of expr
 
 type exec_mode =
 | Converged
@@ -51,6 +53,7 @@ type exec_mode =
 
 type error =
 | BarrierError
+| WarpError
 
 (** val is_varying : expr -> bool **)
 
@@ -66,6 +69,7 @@ let rec is_varying = function
 | ELet (_, v, b) -> (||) (is_varying v) (is_varying b)
 | ESuperstep (_, body, cont) -> (||) (is_varying body) (is_varying cont)
 | EApp args -> existsb is_varying args
+| EReturn e0 -> is_varying e0
 | _ -> false
 
 (** val barrier_free : expr -> bool **)
@@ -84,6 +88,7 @@ let rec barrier_free = function
 | ESuperstep (divergent, body, cont) ->
   (&&) ((&&) divergent (barrier_free body)) (barrier_free cont)
 | EApp args -> forallb barrier_free args
+| EReturn e0 -> barrier_free e0
 | _ -> true
 
 (** val has_diverging_cf : expr -> bool **)
@@ -101,6 +106,7 @@ let rec has_diverging_cf = function
 | ESuperstep (_, body, cont) ->
   (||) (has_diverging_cf body) (has_diverging_cf cont)
 | EApp args -> existsb has_diverging_cf args
+| EReturn e0 -> has_diverging_cf e0
 | _ -> false
 
 (** val check : exec_mode -> expr -> error list **)
@@ -130,6 +136,7 @@ let rec check m = function
   in
   app entry_errors (app (check m body) (check m cont))
 | EApp args -> concat (map (check m) args)
+| EReturn e0 -> check m e0
 | _ -> []
 
 type dim_usage = { uses_x : bool; uses_y : bool; uses_z : bool;
@@ -154,3 +161,36 @@ let merge_dim_usage a b =
     ((||) a.uses_thread_idx b.uses_thread_idx); uses_block_idx =
     ((||) a.uses_block_idx b.uses_block_idx); uses_shared_mem =
     ((||) a.uses_shared_mem b.uses_shared_mem) }
+
+(** val check_warp : exec_mode -> expr -> error list **)
+
+let rec check_warp m = function
+| EBarrier -> (match m with
+               | Converged -> []
+               | Diverged -> BarrierError :: [])
+| EWarpPoint -> (match m with
+                 | Converged -> []
+                 | Diverged -> WarpError :: [])
+| EBinop (a, b) -> app (check_warp m a) (check_warp m b)
+| EUnop e0 -> check_warp m e0
+| EIf (cond, t, el) ->
+  let inner = if is_varying cond then Diverged else m in
+  app (check_warp m cond) (app (check_warp inner t) (check_warp inner el))
+| EWhile (cond, b) ->
+  let inner = if is_varying cond then Diverged else m in
+  app (check_warp m cond) (check_warp inner b)
+| EFor (lo, hi, b) ->
+  let inner = if (||) (is_varying lo) (is_varying hi) then Diverged else m in
+  app (check_warp m lo) (app (check_warp m hi) (check_warp inner b))
+| ESeq es -> concat (map (check_warp m) es)
+| ELet (_, v, b) -> app (check_warp m v) (check_warp m b)
+| ESuperstep (divergent, body, cont) ->
+  let entry_errors =
+    match m with
+    | Converged -> []
+    | Diverged -> if divergent then [] else BarrierError :: []
+  in
+  app entry_errors (app (check_warp m body) (check_warp m cont))
+| EApp args -> concat (map (check_warp m) args)
+| EReturn e0 -> check_warp m e0
+| _ -> []

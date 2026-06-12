@@ -9,6 +9,11 @@
  * Correspondence is documented in ASSUMPTIONS.md.
  * Phase 2 (T2-F02): EVar and nat-tagged ELet added; env-threaded
  *   is_varying_env / check_env added; F-02 let-alias QCheck property added.
+ * Phase 2 (T2-WARP): EWarpPoint added; WarpError constructor; check_warp
+ *   function; warp_diverged_error QCheck property added.
+ * Phase 2 (T2-RETURN): EReturn added; models TEReturn early-return;
+ *   check treats EReturn as check of its body; return_barrier_skip_safe
+ *   QCheck property added (property 14).
  ******************************************************************************)
 
 (* ===== Abstract model (mirrors ConvergenceSpec.v) ===== *)
@@ -17,6 +22,7 @@ type expr =
   | ELit
   | EVary
   | EBarrier
+  | EWarpPoint                          (* warp-collective call site *)
   | EVar of int                         (* variable reference by id *)
   | EBinop of expr * expr
   | EUnop of expr
@@ -27,10 +33,11 @@ type expr =
   | ELet of int * expr * expr           (* var_id, value, body *)
   | ESuperstep of bool * expr * expr    (* divergent_flag, body, cont *)
   | EApp of expr list
+  | EReturn of expr                     (* early-return; exits without any barrier *)
 
 type exec_mode = Converged | Diverged
 
-type error = BarrierError
+type error = BarrierError | WarpError
 
 type dim_usage = {
   uses_x : bool; uses_y : bool; uses_z : bool;
@@ -59,7 +66,7 @@ let merge_dim_usage a b = {
 
 let rec is_varying = function
   | EVary -> true
-  | ELit | EBarrier | EVar _ -> false
+  | ELit | EBarrier | EWarpPoint | EVar _ -> false
   | EBinop (a, b)  -> is_varying a || is_varying b
   | EUnop e        -> is_varying e
   | EIf (c, t, el) -> is_varying c || is_varying t || is_varying el
@@ -69,10 +76,11 @@ let rec is_varying = function
   | ELet (_, v, b) -> is_varying v || is_varying b
   | ESuperstep (_, body, cont) -> is_varying body || is_varying cont
   | EApp args      -> List.exists is_varying args
+  | EReturn e      -> is_varying e
 
 let rec barrier_free = function
   | EBarrier       -> false
-  | ELit | EVary | EVar _ -> true
+  | ELit | EVary | EWarpPoint | EVar _ -> true
   | EBinop (a, b)  -> barrier_free a && barrier_free b
   | EUnop e        -> barrier_free e
   | EIf (c, t, el) -> barrier_free c && barrier_free t && barrier_free el
@@ -83,6 +91,7 @@ let rec barrier_free = function
   | ESuperstep (divergent, body, cont) ->
       divergent && barrier_free body && barrier_free cont
   | EApp args      -> List.for_all barrier_free args
+  | EReturn e      -> barrier_free e
 
 let rec has_diverging_cf = function
   | EIf (c, t, el)   -> is_varying c || has_diverging_cf t || has_diverging_cf el
@@ -94,12 +103,13 @@ let rec has_diverging_cf = function
   | ELet (_, v, b)   -> has_diverging_cf v || has_diverging_cf b
   | ESuperstep (_, body, cont) -> has_diverging_cf body || has_diverging_cf cont
   | EApp args        -> List.exists has_diverging_cf args
+  | EReturn e        -> has_diverging_cf e
   | _                -> false
 
 let rec check m = function
   | EBarrier       ->
       (match m with Diverged -> [BarrierError] | Converged -> [])
-  | ELit | EVary | EVar _ -> []
+  | ELit | EVary | EWarpPoint | EVar _ -> []
   | EBinop (a, b)  -> check m a @ check m b
   | EUnop e        -> check m e
   | EIf (cond, t, el) ->
@@ -121,6 +131,7 @@ let rec check m = function
       in
       entry_errors @ check m body @ check m cont
   | EApp args      -> List.concat_map (check m) args
+  | EReturn e      -> check m e
 
 (* ===== Env-threaded model (T2-F02) ===== *)
 
@@ -136,7 +147,7 @@ let env_extend (env : env) (x : int) (v : bool) : env = (x, v) :: env
 
 let rec is_varying_env (env : env) = function
   | EVary     -> true
-  | ELit | EBarrier -> false
+  | ELit | EBarrier | EWarpPoint -> false
   | EVar x    -> env_lookup env x
   | EBinop (a, b)     -> is_varying_env env a || is_varying_env env b
   | EUnop e           -> is_varying_env env e
@@ -156,10 +167,11 @@ let rec is_varying_env (env : env) = function
   | ESuperstep (_, body, cont) ->
       is_varying_env env body || is_varying_env env cont
   | EApp args         -> List.exists (is_varying_env env) args
+  | EReturn e         -> is_varying_env env e
 
 let rec check_env m (env : env) = function
   | EBarrier   -> (match m with Diverged -> [BarrierError] | Converged -> [])
-  | ELit | EVary | EVar _ -> []
+  | ELit | EVary | EWarpPoint | EVar _ -> []
   | EBinop (a, b)     -> check_env m env a @ check_env m env b
   | EUnop e           -> check_env m env e
   | EIf (cond, t, el) ->
@@ -187,6 +199,41 @@ let rec check_env m (env : env) = function
       in
       entry_errors @ check_env m env body @ check_env m env cont
   | EApp args         -> List.concat_map (check_env m env) args
+  | EReturn e         -> check_env m env e
+
+(* ===== Warp-collective checker (T2-WARP) ===== *)
+
+(* check_warp: mirrors check_warp in ConvergenceSpec.v.
+   EWarpPoint emits WarpError when mode is Diverged;
+   EBarrier still emits BarrierError (both classes coexist). *)
+let rec check_warp m = function
+  | EWarpPoint ->
+      (match m with Diverged -> [WarpError] | Converged -> [])
+  | EBarrier ->
+      (match m with Diverged -> [BarrierError] | Converged -> [])
+  | ELit | EVary | EVar _ -> []
+  | EBinop (a, b)  -> check_warp m a @ check_warp m b
+  | EUnop e        -> check_warp m e
+  | EIf (cond, t, el) ->
+      let inner = if is_varying cond then Diverged else m in
+      check_warp m cond @ check_warp inner t @ check_warp inner el
+  | EWhile (cond, b) ->
+      let inner = if is_varying cond then Diverged else m in
+      check_warp m cond @ check_warp inner b
+  | EFor (lo, hi, b) ->
+      let inner = if is_varying lo || is_varying hi then Diverged else m in
+      check_warp m lo @ check_warp m hi @ check_warp inner b
+  | ESeq es        -> List.concat_map (check_warp m) es
+  | ELet (_, v, b) -> check_warp m v @ check_warp m b
+  | ESuperstep (divergent, body, cont) ->
+      let entry_errors =
+        match m, divergent with
+        | Diverged, false -> [BarrierError]
+        | _,        _     -> []
+      in
+      entry_errors @ check_warp m body @ check_warp m cont
+  | EApp args      -> List.concat_map (check_warp m) args
+  | EReturn e      -> check_warp m e
 
 (* ===== QCheck generators ===== *)
 
@@ -200,7 +247,7 @@ let gen_var_id : int Gen.t = Gen.int_range 0 3
 (* bounded-depth generator to avoid size explosion *)
 let gen_expr : expr Gen.t =
   Gen.sized_size (Gen.int_range 0 6) @@ Gen.fix (fun self n ->
-    if n = 0 then Gen.oneof_list [ELit; EVary; EBarrier]
+    if n = 0 then Gen.oneof_list [ELit; EVary; EBarrier; EWarpPoint]
     else
       let sub = self (n / 2) in
       let sub2 = Gen.pair sub sub in
@@ -210,6 +257,7 @@ let gen_expr : expr Gen.t =
         Gen.return ELit;
         Gen.return EVary;
         Gen.return EBarrier;
+        Gen.return EWarpPoint;
         Gen.map  (fun x      -> EVar x)          gen_var_id;
         Gen.map  (fun (a, b) -> EBinop (a, b))   sub2;
         Gen.map  (fun e      -> EUnop e)          sub;
@@ -222,6 +270,7 @@ let gen_expr : expr Gen.t =
         Gen.map  (fun (dv, (body, cont)) -> ESuperstep (dv, body, cont))
                  (Gen.pair Gen.bool sub2);
         Gen.map  (fun args   -> EApp args)        sublist;
+        Gen.map  (fun e      -> EReturn e)        sub;
       ])
 
 let gen_dim : dim_usage Gen.t =
@@ -338,6 +387,59 @@ let test_f02_env_mode_monotone =
        let dv = check_env Diverged  [] e in
        List.for_all (fun err -> List.mem err dv) cv)
 
+(* 9. warp_diverged_error — randomized property over check_warp.
+ *
+ * Mirrors Theorem warp_diverged_error in ConvergenceSpec.v and its
+ * strengthened analogue warp_mode_monotone.
+ *
+ * Property: for any expression e, if it contains EWarpPoint as a direct
+ * subexpression inside a Diverged context, check_warp will return a
+ * non-empty list.  We test three randomized forms:
+ *
+ * (a) check_warp Diverged (ESeq [e; EWarpPoint]) ≠ []
+ *     — EWarpPoint at the tail of any sequence under Diverged.
+ * (b) check_warp Converged (EIf (EVary, e_with_warp, ELit)) ≠ []
+ *     — EWarpPoint nested inside a varying-condition branch (warp_varying_if_flags).
+ * (c) mode monotonicity: incl (check_warp Converged e) (check_warp Diverged e)
+ *     — strengthening never removes errors (warp_mode_monotone).
+ *)
+let test_warp_diverged_error =
+  Test.make ~name:"warp_diverged_error" ~count:2000
+    gen_expr
+    (fun e ->
+       (* (a) EWarpPoint at end of any sequence under Diverged always errors *)
+       List.mem WarpError (check_warp Diverged (ESeq [e; EWarpPoint]))
+       &&
+       (* (b) EWarpPoint in then-branch of varying EIf is caught from Converged *)
+       (let tree_with_warp = EIf (EVary, EWarpPoint, ELit) in
+        List.mem WarpError (check_warp Converged tree_with_warp))
+       &&
+       (* (c) mode monotonicity: every Converged error is also a Diverged error *)
+       List.for_all (fun err -> List.mem err (check_warp Diverged e))
+                    (check_warp Converged e))
+
+(* 10. return_barrier_skip_safe — mirrors Theorem return_barrier_skip_safe.
+ *
+ * Property: check m (EReturn e) = check m e for all modes m and expressions e.
+ * This confirms that EReturn is a transparent wrapper for barrier analysis:
+ * (a) it does not introduce new barrier errors beyond those in its body, and
+ * (b) it does not suppress errors that exist in its body.
+ * Corresponds to Theorem return_barrier_skip_safe in ConvergenceSpec.v. *)
+let test_return_barrier_skip_safe =
+  Test.make ~name:"return_barrier_skip_safe" ~count:2000
+    (Gen.pair gen_mode gen_expr)
+    (fun (m, e) ->
+       (* check m (EReturn e) = check m e *)
+       check m (EReturn e) = check m e
+       &&
+       (* EReturn wrapping a barrier-free expr is clean in Converged mode *)
+       (if barrier_free e then check Converged (EReturn e) = [] else true)
+       &&
+       (* mode monotonicity is preserved through EReturn *)
+       (let cv = check Converged (EReturn e) in
+        let dv = check Diverged  (EReturn e) in
+        List.for_all (fun err -> List.mem err dv) cv))
+
 let () =
   let suite = [
     test_merge_dim_comm;
@@ -352,6 +454,8 @@ let () =
     test_cdcf_agreement;
     test_f02_let_alias_env;
     test_f02_env_mode_monotone;
+    test_warp_diverged_error;
+    test_return_barrier_skip_safe;
   ] in
   let passed = QCheck_base_runner.run_tests ~verbose:true suite in
   exit passed

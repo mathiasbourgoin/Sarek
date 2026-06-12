@@ -13,6 +13,7 @@ type expr =
 | ELit
 | EVary
 | EBarrier
+| EWarpPoint
 | EVar of int
 | EBinop of expr * expr
 | EUnop of expr
@@ -23,6 +24,7 @@ type expr =
 | ELet of int * expr * expr
 | ESuperstep of bool * expr * expr
 | EApp of expr list
+| EReturn of expr
 
 type exec_mode =
 | Converged
@@ -30,6 +32,7 @@ type exec_mode =
 
 type error =
 | BarrierError
+| WarpError
 
 val is_varying : expr -> bool
 
@@ -47,3 +50,5 @@ type dim_usage = { uses_x : bool; uses_y : bool; uses_z : bool;
 val empty_dim_usage : dim_usage
 
 val merge_dim_usage : dim_usage -> dim_usage -> dim_usage
+
+val check_warp : exec_mode -> expr -> error list

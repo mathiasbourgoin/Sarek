@@ -153,6 +153,13 @@ const FEEDBACK_SCHEMA = {
   },
 }
 
+// ── Safe agent wrapper — throws on null (spend limit) instead of returning null ─
+const safeAgent = async (prompt, opts) => {
+  const result = await safeAgent(prompt, opts)
+  if (result === null) throw new Error(`agent(${opts && opts.label || '?'}) returned null — spend limit hit`)
+  return result
+}
+
 // ── Reusable: full apparatus pipeline check ───────────────────────────────────
 // Mirrors /formal-check. Called both before Execute (baseline) and after (gate).
 const runApparatusCheck = async (label) => agent(
@@ -237,7 +244,7 @@ const lastFeedback = tick > 0
   ? `Also read ${FEEDBACK_LOG} for what the previous tick recommended. Honor those adaptations.`
   : 'Tick 0 — no prior feedback.'
 
-const planState = await agent(
+const planState = await safeAgent(
   `You are the formal verification plan manager for convergence-safety.
 
   Tick: ${tick}
@@ -319,7 +326,7 @@ if (baselineFailedLinks.length) log(`Baseline failing links: ${baselineFailedLin
 // ── Phase 2: Execute ──────────────────────────────────────────────────────────
 phase('Execute')
 
-const taskResult = await agent(
+const taskResult = await safeAgent(
   `You are executing a formal verification task for the convergence-safety project.
 
   Task ID: ${planState.currentTask.id}
@@ -382,7 +389,7 @@ if (taskResult.status === 'complete' || taskResult.status === 'partial') {
 
   if (!gateCheck.passed || !gateCheck.coqchkPass) {
     // One fix attempt for failed links before giving up on this tick
-    const linkFixResult = await agent(
+    const linkFixResult = await safeAgent(
       `The apparatus gate check failed. Fix ALL failing items.
 
       Failed CMBT links: ${JSON.stringify(failedLinks)}
@@ -412,7 +419,7 @@ if (taskResult.status === 'complete' || taskResult.status === 'partial') {
 
   if (gateVerdict !== 'FAIL-PIPELINE') {
     // Step 3b: Independent Fable review — fresh context
-    reviewResult = await agent(
+    reviewResult = await safeAgent(
       `You are an independent Rocq/Coq formal verification reviewer. Cold review — you did NOT write this.
 
       Project: ${FORMAL}
@@ -436,17 +443,13 @@ if (taskResult.status === 'complete' || taskResult.status === 'partial') {
       { phase: 'Gate', label: 'fable-review-1', model: 'fable', schema: REVIEW_SCHEMA }
     )
 
-    if (!reviewResult) {
-      log('Fable review 1: null (spend limit?) — gate BLOCK')
-      gateVerdict = 'BLOCK'
-    } else {
     log(`Fable review 1: ${reviewResult.verdict} — ${reviewResult.issues.length} issue(s)`)
 
     if (reviewResult.verdict === 'GO') {
       gateVerdict = 'GO'
 
     } else if (reviewResult.verdict === 'REVISE') {
-      const fixResult = await agent(
+      const fixResult = await safeAgent(
         `Apply ALL reviewer-required fixes.
 
         Issues: ${JSON.stringify(reviewResult.issues)}
@@ -460,11 +463,7 @@ if (taskResult.status === 'complete' || taskResult.status === 'partial') {
       )
 
       // Second Fable review — no more REVISE after this
-      if (!fixResult) {
-        log('fix-revise: null (spend limit?) — gate BLOCK')
-        gateVerdict = 'BLOCK'
-      } else {
-      const review2 = await agent(
+      const review2 = await safeAgent(
         `Independent Rocq reviewer — second pass. Cold review.
         Prior issues: ${JSON.stringify(reviewResult.issues)}
         Claimed fixes: ${JSON.stringify(fixResult.changes)}
@@ -472,20 +471,13 @@ if (taskResult.status === 'complete' || taskResult.status === 'partial') {
         GO if resolved. BLOCK if any remain (no further REVISE rounds).`,
         { phase: 'Gate', label: 'fable-review-2', model: 'fable', schema: REVIEW_SCHEMA }
       )
-      if (!review2) {
-        log('Fable review 2: null (spend limit?) — gate BLOCK')
-        gateVerdict = 'BLOCK'
-      } else {
       log(`Fable review 2: ${review2.verdict}`)
       reviewResult = review2
       gateVerdict = review2.verdict === 'GO' ? 'GO' : 'BLOCK'
-      }
-      } // end else (fixResult non-null)
 
     } else {
       gateVerdict = 'BLOCK'
     }
-    } // end else (reviewResult non-null)
   }
 
 } else if (taskResult.status === 'blocked') {
@@ -504,7 +496,7 @@ let cmbtBugFixChanges = []
 let cmbtBugFixCommitSha = null
 
 if (gateVerdict === 'GO') {
-  const cmbtCheck = await agent(
+  const cmbtCheck = await safeAgent(
     `Run the full live CMBT test suite and extraction tests; fix any bugs found in the
     OCaml checker or related code.
 
@@ -533,13 +525,9 @@ if (gateVerdict === 'GO') {
     }}
   )
 
-  if (!cmbtCheck) {
-    log('CMBT bugfix: null (spend limit?) — skipping, treating as no bugs')
-  } else {
-    cmbtBugFixChanges = cmbtCheck.changes
-    if (cmbtCheck.bugsfound) log(`CMBT bugs found + fixed: ${cmbtCheck.changes.length} file(s)`)
-    else log('CMBT: all tests pass, no bugs')
-  }
+  cmbtBugFixChanges = cmbtCheck.changes
+  if (cmbtCheck.bugsfound) log(`CMBT bugs found + fixed: ${cmbtCheck.changes.length} file(s)`)
+  else log('CMBT: all tests pass, no bugs')
 }
 
 // ── Commit: always on GO, always split by file class ─────────────────────────
@@ -552,7 +540,7 @@ let committed = false
 let commitSha = null
 
 if (gateVerdict === 'GO') {
-  const commitResult = await agent(
+  const commitResult = await safeAgent(
     `Commit and push all gate-cleared changes. Use SEPARATE commits by file class.
 
     SPOC root: ${SPOC}
@@ -607,13 +595,9 @@ if (gateVerdict === 'GO') {
       }
     }}
   )
-  if (!commitResult) {
-    log('Commit agent: null (spend limit?) — commit status unknown')
-  } else {
-    committed = commitResult.committed
-    commitSha = commitResult.sha
-    log(`Commit: ${committed ? `OK (${commitResult.commitCount || '?'} commits) sha=${commitSha || '?'}` : 'FAILED'}`)
-  }
+  committed = commitResult.committed
+  commitSha = commitResult.sha
+  log(`Commit: ${committed ? `OK (${commitResult.commitCount || '?'} commits) sha=${commitSha || '?'}` : 'FAILED'}`)
 }
 
 // ── Phase 4: Evolve ───────────────────────────────────────────────────────────
@@ -636,7 +620,7 @@ const frictionData = {
   committed,
 }
 
-const evolveProposal = await agent(
+const evolveProposal = await safeAgent(
   `You are a formal-apparatus skill improvement agent for this experiment.
 
   EXPERIMENT GOAL: each tick's friction improves the apparatus skill itself.
@@ -679,10 +663,6 @@ const evolveProposal = await agent(
   { phase: 'Evolve', label: 'evolve-propose', schema: EVOLVE_SCHEMA }
 )
 
-if (!evolveProposal) {
-  log('Evolve-propose: null (spend limit?) — skipping evolve phase')
-} else {
-
 log(`Evolve: ${evolveProposal.verdict}${evolveProposal.skillFile ? ' → ' + evolveProposal.skillFile : ''}${evolveProposal.changeType === 'methodology-backlog' ? ' [backlog fold-in]' : ''}`)
 
 if (evolveProposal.verdict === 'CHANGE') {
@@ -693,7 +673,7 @@ if (evolveProposal.verdict === 'CHANGE') {
   while (!approvedContent && attempt < 3) {
     attempt++
 
-    const evolveReview = await agent(
+    const evolveReview = await safeAgent(
       `You are reviewing a proposed apparatus skill update. COLD REVIEW — you did NOT propose this.
 
       Target file: ${evolveProposal.skillFile}
@@ -722,14 +702,13 @@ if (evolveProposal.verdict === 'CHANGE') {
       { phase: 'Evolve', label: `evolve-review-${attempt}`, model: 'fable', schema: REVIEW_SCHEMA }
     )
 
-    if (!evolveReview) { log(`evolve-review-${attempt}: null (spend limit?) — stopping`); break }
     log(`Evolve Fable review ${attempt}: ${evolveReview.verdict}`)
 
     if (evolveReview.verdict === 'GO') {
       approvedContent = currentContent
 
       // Apply
-      await agent(
+      await safeAgent(
         `Apply the approved apparatus skill update.
 
         Target file: ${evolveProposal.skillFile}
@@ -752,7 +731,7 @@ if (evolveProposal.verdict === 'CHANGE') {
       log(`Skill update applied: ${evolveProposal.skillFile}`)
 
     } else if (evolveReview.verdict === 'REVISE' && attempt < 3) {
-      const revised = await agent(
+      const revised = await safeAgent(
         `Revise the skill update per reviewer feedback.
         Target: ${evolveProposal.skillFile}
         Current content:
@@ -765,8 +744,7 @@ if (evolveProposal.verdict === 'CHANGE') {
         { phase: 'Evolve', label: `evolve-revise-${attempt}`,
           schema: { type: 'object', required: ['content'], properties: { content: { type: 'string' } } } }
       )
-      if (revised) currentContent = revised.content
-      else { log(`evolve-revise-${attempt}: null (spend limit?) — stopping`); break }
+      currentContent = revised.content
     } else {
       log(`Skill update blocked at attempt ${attempt}`)
       break
@@ -775,12 +753,11 @@ if (evolveProposal.verdict === 'CHANGE') {
 
   if (!approvedContent) log(`Evolve: no skill change applied this tick`)
 }
-} // end if (evolveProposal)
 
 // ── Phase 5: Feedback + Self-Adaptation ──────────────────────────────────────
 phase('Feedback')
 
-const feedback = await agent(
+const feedback = await safeAgent(
   `Write workflow feedback for tick ${tick} of the formal-verif-autopilot experiment.
 
   Tick summary:
@@ -803,19 +780,15 @@ const feedback = await agent(
   { phase: 'Feedback', label: 'feedback', schema: FEEDBACK_SCHEMA }
 )
 
-if (!feedback) {
-  log('Feedback agent: null (spend limit?) — skipping feedback-write and self-adapt')
-} else {
-
 // Append to feedback log
-await agent(
+await safeAgent(
   `Append this tick's feedback entry to ${FEEDBACK_LOG}.
   Create if missing with heading: # Formal Verif Autopilot — Workflow Feedback Log
 
   Append:
 
   ## Tick ${tick} — [${planState.currentTask.id}] ${planState.currentTask.title}
-  **${new Date().toISOString().slice(0,10)}** | Gate: ${gateVerdict} | Committed: ${committed} | Evolve: ${evolveProposal ? evolveProposal.verdict : 'SKIPPED'}
+  **${(args && args.date) || '(today)'}** | Gate: ${gateVerdict} | Committed: ${committed} | Evolve: ${evolveProposal ? evolveProposal.verdict : 'SKIPPED'}
 
   **Baseline issues**: ${baselineCheck.passed ? 'none' : JSON.stringify(Object.entries(baselineCheck.links || {}).filter(([,v])=>v==='FAIL').map(([k])=>k))}
 
@@ -833,8 +806,8 @@ await agent(
 )
 
 // Self-adapt script if concrete change identified
-const selfAdapt = (feedback.scriptChangesNeeded && scriptPath && feedback.scriptChangeSummary)
-  ? await agent(
+selfAdapt = (feedback.scriptChangesNeeded && scriptPath && feedback.scriptChangeSummary)
+  ? await safeAgent(
     `Self-adapt the workflow script based on concrete feedback.
     Script: ${scriptPath}
     Feedback: ${feedback.scriptChangeSummary}
@@ -852,10 +825,8 @@ const selfAdapt = (feedback.scriptChangesNeeded && scriptPath && feedback.script
   )
   : { changed: false, rationale: scriptPath ? 'no concrete script change requested' : 'no scriptPath provided' }
 
-log(`Self-adapt: ${selfAdapt ? (selfAdapt.changed ? 'updated — ' + selfAdapt.rationale : 'no change') : 'skipped (null)'}`)
+log(`Self-adapt: ${selfAdapt.changed ? 'updated — ' + selfAdapt.rationale : 'no change'}`)
 log(`Done: ${feedback.workflowImprovements.length} workflow + ${feedback.skillImprovements.length} skill suggestions`)
-
-} // end if (feedback)
 
 // ── Return ────────────────────────────────────────────────────────────────────
 const verdict =
@@ -873,15 +844,15 @@ return {
   committed,
   commitSha,
   cmbtBugsFixed:  cmbtBugFixChanges.length > 0,
-  evolveVerdict:  evolveProposal ? evolveProposal.verdict : 'SKIPPED',
-  evolveType:     evolveProposal ? evolveProposal.changeType : null,
-  scriptAdapted:  selfAdapt ? selfAdapt.changed : false,
-  nextTaskId:     taskResult ? taskResult.nextTaskId : null,
+  evolveVerdict:  evolveProposal.verdict,
+  evolveType:     evolveProposal.changeType,
+  scriptAdapted:  selfAdapt.changed,
+  nextTaskId:     taskResult.nextTaskId,
   baselineLinks:  baselineCheck.links,
   gateLinks:      gateCheck ? gateCheck.links : {},
-  feedback: feedback ? {
+  feedback: {
     workflow: feedback.workflowImprovements.length,
     skill:    feedback.skillImprovements.length,
     friction: feedback.frictionPoints.length,
-  } : { workflow: 0, skill: 0, friction: 0 },
+  },
 }
