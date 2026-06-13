@@ -121,7 +121,89 @@
       "status": "PROVEN",
       "assumptions": [],
       "type": "return_barrier_skip_safe : forall (m : exec_mode) (e : expr), check m (EReturn e) = check m e"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.env_agrees",
+      "status": "DEFINITION",
+      "tier": "T3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "notes": "Uniform-variable agreement predicate between two venvs: all non-varying vars in env map to the same value in both rhos"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.not_varying_uniform",
+      "status": "PROVEN",
+      "tier": "T3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "not_varying_uniform : forall (vary_val : tid -> value) (fuel : nat) (env : Env) (e : expr) (t1 t2 : tid) (rho1 rho2 : venv), env_agrees env rho1 rho2 = true -> is_strongly_uniform env e = true -> eval vary_val fuel t1 rho1 e = eval vary_val fuel t2 rho2 e"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.not_varying_uniform_args",
+      "status": "PROVEN",
+      "tier": "T3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "not_varying_uniform_args : forall (vary_val : tid -> value) (fuel : nat) (env : Env) (es : list expr) (t1 t2 : tid) (rho1 rho2 : venv), env_agrees env rho1 rho2 = true -> forallb (is_strongly_uniform env) es = true -> eval_args vary_val fuel t1 rho1 es = eval_args vary_val fuel t2 rho2 es"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.is_strongly_uniform_impl_is_not_varying",
+      "status": "PROVEN",
+      "tier": "T3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "is_strongly_uniform_impl_is_not_varying : forall (env : Env) (e : expr), is_strongly_uniform env e = true -> is_varying_in_env env e = false"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.var_free_env_irrelevant",
+      "status": "PROVEN",
+      "tier": "T3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "var_free_env_irrelevant : forall (e : expr) (env1 env2 : Env), is_var_free e = true -> is_strongly_uniform env1 e = is_strongly_uniform env2 e"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.is_strongly_uniform_env_irrelevant",
+      "status": "PROVEN",
+      "tier": "T3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "is_strongly_uniform_env_irrelevant : forall (e : expr) (env1 env2 : Env), is_var_free e = true -> is_strongly_uniform env1 e = is_strongly_uniform env2 e",
+      "notes": "Alias name for var_free_env_irrelevant in some proof contexts"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.var_free_is_strongly_uniform_empty",
+      "status": "PROVEN",
+      "tier": "T3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "var_free_is_strongly_uniform_empty : forall (e : expr), is_var_free e = true -> is_varying e = false -> is_strongly_uniform [] e = true"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.closed_uniform",
+      "status": "PROVEN",
+      "tier": "T3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "closed_uniform : forall (e : expr) (vary_val : tid -> value) (fuel : nat) (t1 t2 : tid) (rho1 rho2 : venv), is_var_free e = true -> is_varying e = false -> eval vary_val fuel t1 rho1 e = eval vary_val fuel t2 rho2 e"
     }
   ],
-  "counts": { "admitted": 0 }
+  "counts": { "admitted": 0 },
+  "summary": {
+    "total": 28,
+    "proven": 27,
+    "definitions": 1,
+    "admits": 0,
+    "axioms": [],
+    "generated": "2026-06-13",
+    "files": ["theories/ConvergenceSpec.v", "theories/ConvergenceSemantics.v"]
+  }
 }

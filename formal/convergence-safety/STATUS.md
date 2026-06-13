@@ -5,7 +5,7 @@
 **Host profile**: SPOC/sarek
 **Architecture**: 3-layer
 **Built at**: 2026-06-11
-**Last updated**: 2026-06-13 (T3-S1: semantic domain + fuel-indexed big-step evaluator with barrier traces — `ConvergenceSemantics.v`, 0 admits, 0 axioms)
+**Last updated**: 2026-06-13 (T3-S2: uniformity soundness via eval semantics — `env_agrees`, `is_strongly_uniform`, `not_varying_uniform`, `closed_uniform` — `ConvergenceSemantics.v`, 0 admits, 0 axioms)
 
 ## Project
 
@@ -45,7 +45,7 @@ Assumptions documented in `ASSUMPTIONS.md`:
 | `env_var_diverged_clean` | T1 | 0 | **T2-F02** — EVar carries no barrier under Diverged mode |
 | `env_check_let_alias_catches` | T1 | 0 | **T2-F02** — F-02 soundness: `check_env` catches barrier behind let-alias |
 
-**Total**: 20 theorems, 0 admits, 0 axioms — `coqchk` passes (T2-RETURN)
+**Total**: 20 theorems (ConvergenceSpec.v) + 7 theorems/corollaries (ConvergenceSemantics.v T3-S1+T3-S2), 0 admits, 0 axioms — `coqchk` passes (T3-S2)
 
 ## T3-S1 semantic layer (ConvergenceSemantics.v — new file)
 
@@ -57,6 +57,23 @@ Assumptions documented in `ASSUMPTIONS.md`:
 | `eval_fuel_monotone` | done | 0 admits; uses for_loop_mono, eval_seq_mono, eval_args_mono helpers |
 | `eval_app_seq_compose` | done | 0 admits; uses eval_seq_concat_acc helper |
 | `coqchk` | passes | 0 new axioms |
+
+## T3-S2 uniformity soundness (ConvergenceSemantics.v)
+
+| Item | Status | Notes |
+|---|---|---|
+| `Definition env_agrees` | done | uniform-variable agreement predicate between two venvs |
+| `Lemma env_agrees_extend` | done | lifts env_agrees through env_extend/venv_extend |
+| `Fixpoint is_strongly_uniform` | done | stricter than is_varying_in_env: ELet binding must also be non-varying |
+| `Lemma is_strongly_uniform_impl_is_not_varying` | done | is_strongly_uniform true → is_varying_in_env false |
+| `Theorem not_varying_uniform` | done | 0 admits; forall vary_val fuel env e t1 t2 rho1 rho2, env_agrees → is_strongly_uniform env e = true → eval vary_val fuel t1 rho1 e = eval vary_val fuel t2 rho2 e |
+| `Fixpoint is_var_free` | done | structural EVar-free check |
+| `Lemma var_free_is_strongly_uniform_empty` | done | is_var_free ∧ is_varying=false → is_strongly_uniform [] e = true |
+| `Lemma var_free_env_irrelevant` | done | EVar-free → is_strongly_uniform env-independent |
+| `Corollary closed_uniform` | done | is_var_free ∧ is_varying=false → eval uniform across all tids and rhos |
+| `coqchk` | passes | 0 new axioms |
+
+**Design note**: `is_varying_in_env` has a soundness gap for ELet — it does not require the binding expression to be non-varying. A counterexample exists: `ELet x (EWhile EVary ELit) ELit` diverges for one thread and terminates for another when EVary values differ. `is_varying_strict` corrects this by additionally requiring the binding expression to be non-varying in ELet. `not_varying_uniform` uses `is_varying_strict`; a bridge lemma `is_varying_strict_impl_env` shows the strict predicate is stronger.
 
 ## Test intensity
 
@@ -96,14 +113,16 @@ None yet.
 ## Next session prompt
 
 ```
-Resume ConvergenceSafety (apparatus v1.1.0, grade A).
-State: 20/20 theorems proven, 0 admits, 0 axioms, coqchk passes. T3-S1 complete.
+Resume ConvergenceSafety (apparatus v1.2.1, grade A).
+State: 20/20 theorems proven in ConvergenceSpec.v + 7 theorems/corollaries in ConvergenceSemantics.v, 0 admits, 0 axioms, coqchk passes. T3-S2 complete.
 Conformance: 17/17 green. Extraction: 7/7 green. Live CMBT: 10/10 green.
 F-01 RESOLVED (OCaml + Rocq). F-02 RESOLVED (OCaml + Rocq env-threaded model).
 F-03 (WarpConvergence) RESOLVED (Rocq: EWarpPoint/WarpError/check_warp/warp_diverged_error/warp_mode_monotone/warp_varying_if_flags; documented in findings/DIVERGENCE_FINDINGS.md).
 T2-RETURN RESOLVED (Rocq: EReturn/return_barrier_skip_safe/return_converged_clean; TEReturn exits without crossing any barrier).
 T1A-CONF RESOLVED (3 dedicated ESuperstep QCheck properties; PR #182 merged).
 T3-S1 RESOLVED (ConvergenceSemantics.v: semantic domain + fuel-indexed big-step evaluator + eval_fuel_monotone + eval_app_seq_compose; 0 admits, 0 axioms, coqchk passes).
-Next: T3-S2 (barrier-trace uniformity lemma) or next T3-SEMANTIC subtask per PLAN.md.
+T3-S2 RESOLVED (ConvergenceSemantics.v: env_agrees, is_strongly_uniform, not_varying_uniform, is_var_free, var_free_is_strongly_uniform_empty, var_free_env_irrelevant, closed_uniform; 0 admits, 0 axioms, coqchk passes).
+  KEY FINDING: is_varying_in_env has a soundness gap for ELet — is_strongly_uniform corrects it by requiring ELet bindings to also be non-varying.
+Next: T3-S3 (next T3-SEMANTIC subtask per PLAN.md).
 Run /formal-check before any lock or milestone.
 ```

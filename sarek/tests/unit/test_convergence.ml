@@ -632,7 +632,8 @@ let test_superstep_non_divergent_with_varying_control () =
   let e = mk_texpr (TESuperstep ("test", false, step, cont)) typ_int32 in
   let errors = Sarek_convergence.check_expr Sarek_convergence.init_ctx e in
   Alcotest.(check bool)
-    "no error: varying branching inside superstep body without a nested barrier is safe"
+    "no error: varying branching inside superstep body without a nested \
+     barrier is safe"
     false
     (List.length errors > 0)
 

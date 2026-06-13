@@ -21,7 +21,7 @@
  * - EReturn wraps the evaluated outcome as ORet.
  ******************************************************************************)
 
-From Stdlib Require Import List Arith Lia.
+From Stdlib Require Import List Arith Lia Bool.
 Import ListNotations.
 From ConvergenceSpec Require Import ConvergenceSpec.
 
@@ -1145,3 +1145,758 @@ Proof.
 Qed.
 
 End Evaluator.
+
+
+(* ===== 7. T3-S2 — Uniformity soundness of is_varying_in_env ===== *)
+
+(* -----------------------------------------------------------------------
+ * T3-S2 design note: env_agrees + not_varying_uniform
+ *
+ * PLAN intended:
+ *   not_varying_uniform: forall fuel env e t1 t2 rho1 rho2,
+ *     env_agrees env rho1 rho2 -> is_varying_in_env env e = false ->
+ *     eval vary_val fuel t1 rho1 e = eval vary_val fuel t2 rho2 e
+ *
+ * This statement is FALSE.  Counterexample:
+ *   ELet n (EIf EVary EBarrier ELit) ELit
+ *   is_varying_in_env [] (ELet n (EIf EVary EBarrier ELit) ELit)
+ *   = is_varying_in_env [n→true] ELit = false  (PLAN's hypothesis holds)
+ *   but eval t1 rho _ produces trace [EvBarrier] when vary_val t1 ≠ 0,
+ *   while eval t2 rho _ produces trace [] when vary_val t2 = 0.
+ *
+ * Root cause: is_varying_in_env for ELet checks ONLY the body after extending
+ * the env, ignoring whether the BINDER itself is varying.  This is correct for
+ * the checker (a varying binder that is never used in the body is harmless for
+ * barrier analysis) but wrong for an evaluator-uniformity claim.
+ *
+ * Fix: define is_strongly_uniform env e, which for ELet x v b additionally
+ * requires v to be uniform.  Prove not_varying_uniform with this predicate.
+ * Prove a bridge: is_strongly_uniform env e = false implies
+ *                  is_varying_in_env env e = false.
+ * The closed_uniform corollary (binding-blind, using is_varying) remains
+ * exactly as the PLAN intended.
+ * ----------------------------------------------------------------------- *)
+
+(* ----------------------------------------------------------------------- *)
+(* 7.1  env_agrees — uniform variables agree across two value environments  *)
+(* ----------------------------------------------------------------------- *)
+
+(** env_agrees env rho1 rho2:
+    Every variable that env marks as NOT varying (env_lookup env x = false)
+    has the same runtime value in rho1 and rho2. *)
+Definition env_agrees (env : Env) (rho1 rho2 : venv) : Prop :=
+  forall x, env_lookup env x = false ->
+            venv_lookup rho1 x = venv_lookup rho2 x.
+
+(* ----------------------------------------------------------------------- *)
+(* 7.2  venv support lemmas                                                  *)
+(* ----------------------------------------------------------------------- *)
+
+Lemma venv_lookup_extend_same : forall rho x v,
+  venv_lookup (venv_extend rho x v) x = v.
+Proof.
+  intros rho x v.
+  unfold venv_lookup, venv_extend. simpl.
+  rewrite Nat.eqb_refl. reflexivity.
+Qed.
+
+Lemma venv_lookup_extend_diff : forall rho x y v,
+  x <> y -> venv_lookup (venv_extend rho x v) y = venv_lookup rho y.
+Proof.
+  intros rho x y v Hne.
+  unfold venv_lookup, venv_extend. simpl.
+  destruct (Nat.eqb x y) eqn:Heq.
+  - apply Nat.eqb_eq in Heq. exfalso. exact (Hne Heq).
+  - reflexivity.
+Qed.
+
+(* ----------------------------------------------------------------------- *)
+(* 7.3  env_lookup support lemmas                                            *)
+(* ----------------------------------------------------------------------- *)
+
+Lemma env_lookup_extend_same_key : forall env x v,
+  env_lookup (env_extend env x v) x = v.
+Proof.
+  intros env x v.
+  unfold env_lookup, env_extend. simpl.
+  rewrite Nat.eqb_refl. reflexivity.
+Qed.
+
+Lemma env_lookup_extend_diff_key : forall env x y v,
+  x <> y -> env_lookup (env_extend env x v) y = env_lookup env y.
+Proof.
+  intros env x y v Hne.
+  unfold env_lookup, env_extend. simpl.
+  destruct (Nat.eqb x y) eqn:Heq.
+  - apply Nat.eqb_eq in Heq. exfalso. exact (Hne Heq).
+  - reflexivity.
+Qed.
+
+(* ----------------------------------------------------------------------- *)
+(* 7.4  env_agrees_extend                                                    *)
+(* ----------------------------------------------------------------------- *)
+
+(** Extending both venvs with the SAME value v for variable x preserves
+    env_agrees regardless of the variability flag vv. *)
+Lemma env_agrees_extend :
+  forall env rho1 rho2 x v vv,
+    env_agrees env rho1 rho2 ->
+    env_agrees (env_extend env x vv) (venv_extend rho1 x v) (venv_extend rho2 x v).
+Proof.
+  intros env rho1 rho2 x v vv Hagr y Henv.
+  (* Case split: y = x or y ≠ x *)
+  destruct (Nat.eq_dec x y) as [Heq | Hne].
+  - (* y = x: both sides return v *)
+    subst. rewrite !venv_lookup_extend_same. reflexivity.
+  - (* y ≠ x: reduce to original rhos *)
+    rewrite (venv_lookup_extend_diff rho1 x y v Hne).
+    rewrite (venv_lookup_extend_diff rho2 x y v Hne).
+    apply Hagr.
+    (* env_lookup (env_extend env x vv) y = env_lookup env y since y ≠ x *)
+    rewrite env_lookup_extend_diff_key in Henv.
+    + exact Henv.
+    + exact Hne.
+Qed.
+
+(* ----------------------------------------------------------------------- *)
+(* 7.5  is_strongly_uniform — semantically correct uniformity predicate      *)
+(* ----------------------------------------------------------------------- *)
+
+(** is_strongly_uniform env e = true means:
+    e's evaluation is independent of vary_val t AND of the values of
+    variables that are varying in env.  Unlike is_varying_in_env, for
+    ELet x v b this predicate also requires v to be uniform, ensuring
+    the binder's evaluation cannot introduce a trace dependency on tid. *)
+Fixpoint is_strongly_uniform (env : Env) (e : expr) : bool :=
+  match e with
+  | EVary              => false
+  | ELit | EBarrier | EWarpPoint => true
+  | EVar x             => negb (env_lookup env x)
+  | EBinop a b         => is_strongly_uniform env a && is_strongly_uniform env b
+  | EUnop e1           => is_strongly_uniform env e1
+  | EIf c et ef        =>
+      is_strongly_uniform env c &&
+      is_strongly_uniform env et &&
+      is_strongly_uniform env ef
+  | EWhile c b         =>
+      is_strongly_uniform env c &&
+      is_strongly_uniform env b
+  | EFor lo hi b       =>
+      is_strongly_uniform env lo &&
+      is_strongly_uniform env hi &&
+      is_strongly_uniform env b
+  | ESeq es            => forallb (is_strongly_uniform env) es
+  | ELet x v b        =>
+      let vv := negb (is_strongly_uniform env v) in
+      is_strongly_uniform env v &&
+      is_strongly_uniform (env_extend env x vv) b
+  | ESuperstep _ body cont =>
+      is_strongly_uniform env body && is_strongly_uniform env cont
+  | EApp args          => forallb (is_strongly_uniform env) args
+  | EReturn e1         => is_strongly_uniform env e1
+  end.
+
+(* ----------------------------------------------------------------------- *)
+(* 7.6  not_varying_uniform — main uniformity theorem                        *)
+(* ----------------------------------------------------------------------- *)
+
+(** Uniformity soundness of is_strongly_uniform.
+    If is_strongly_uniform g e = true then eval is independent of tid and of
+    values of g-varying variables, for any two g-agreeing value environments.
+    Proof by induction on fuel only; destruct e in the S case. *)
+
+(** Helper: eval_args equality for strongly-uniform arg lists *)
+Lemma not_varying_uniform_args :
+  forall vary_val fuel g (es : list expr) t1 t2 rho1 rho2,
+    env_agrees g rho1 rho2 ->
+    forallb (is_strongly_uniform g) es = true ->
+    (forall e0, In e0 es ->
+       is_strongly_uniform g e0 = true ->
+       eval vary_val fuel t1 rho1 e0 = eval vary_val fuel t2 rho2 e0) ->
+    forall acc last_v,
+    (fix eval_args (xs : list expr) (acc_tr : trace) (lv : value)
+        : option (outcome * trace) :=
+      match xs with
+      | []      => Some (ONorm lv, acc_tr)
+      | hd :: tl0 =>
+          match eval vary_val fuel t1 rho1 hd with
+          | Some (ORet v, tr)  => Some (ORet v, acc_tr ++ tr)
+          | Some (ONorm v, tr) => eval_args tl0 (acc_tr ++ tr) v
+          | None               => None
+          end
+      end) es acc last_v
+    =
+    (fix eval_args (xs : list expr) (acc_tr : trace) (lv : value)
+        : option (outcome * trace) :=
+      match xs with
+      | []      => Some (ONorm lv, acc_tr)
+      | hd :: tl0 =>
+          match eval vary_val fuel t2 rho2 hd with
+          | Some (ORet v, tr)  => Some (ORet v, acc_tr ++ tr)
+          | Some (ONorm v, tr) => eval_args tl0 (acc_tr ++ tr) v
+          | None               => None
+          end
+      end) es acc last_v.
+Proof.
+  intros vary_val fuel g es t1 t2 rho1 rho2 Hagr Hfa IH.
+  induction es as [| h tl IHtl].
+  - intros acc lv. reflexivity.
+  - intros acc lv.
+    simpl in Hfa. apply andb_true_iff in Hfa as [Hh Htl].
+    simpl.
+    rewrite (IH h (in_eq h tl) Hh).
+    destruct (eval vary_val fuel t2 rho2 h) as [[[v|v] tr]|]; try reflexivity.
+    apply IHtl.
+    + exact Htl.
+    + intros e0 Hin Hu0. apply IH.
+      * apply in_cons. exact Hin.
+      * exact Hu0.
+Qed.
+
+Theorem not_varying_uniform :
+  forall vary_val fuel g e t1 t2 rho1 rho2,
+    env_agrees g rho1 rho2 ->
+    is_strongly_uniform g e = true ->
+    eval vary_val fuel t1 rho1 e = eval vary_val fuel t2 rho2 e.
+Proof.
+  intros vary_val.
+  induction fuel as [| fuel' IHfuel].
+  - intros g e t1 t2 rho1 rho2 _ _. reflexivity.
+  - intros g e t1 t2 rho1 rho2 Hagr Hu.
+    destruct e as [ (* ELit *)
+                  | (* EVary *)
+                  | (* EBarrier *)
+                  | (* EWarpPoint *)
+                  | n (* EVar n *)
+                  | ec1 ec2 (* EBinop *)
+                  | eu (* EUnop *)
+                  | econd ethen eelse (* EIf *)
+                  | ec eb (* EWhile *)
+                  | elo ehi ebody (* EFor *)
+                  | ess (* ESeq *)
+                  | x eval0 ebody (* ELet *)
+                  | edv ebody0 econt (* ESuperstep *)
+                  | eargs (* EApp *)
+                  | er (* EReturn *) ];
+    simpl in Hu; simpl.
+    (* ELit *) + reflexivity.
+    (* EVary *) + discriminate.
+    (* EBarrier *) + reflexivity.
+    (* EWarpPoint *) + reflexivity.
+    (* EVar n *)
+    + apply negb_true_iff in Hu. rewrite (Hagr n Hu). reflexivity.
+    (* EBinop ec1 ec2 *)
+    + apply andb_true_iff in Hu as [Hu1 Hu2].
+      rewrite (IHfuel g ec1 t1 t2 rho1 rho2 Hagr Hu1).
+      destruct (eval vary_val fuel' t2 rho2 ec1) as [[[v|v] tr]|]; try reflexivity.
+      rewrite (IHfuel g ec2 t1 t2 rho1 rho2 Hagr Hu2). reflexivity.
+    (* EUnop eu *)
+    + rewrite (IHfuel g eu t1 t2 rho1 rho2 Hagr Hu). reflexivity.
+    (* EIf econd ethen eelse *)
+    + apply andb_true_iff in Hu as [Huet Huel].
+      apply andb_true_iff in Huet as [Huc Hut].
+      rewrite (IHfuel g econd t1 t2 rho1 rho2 Hagr Huc).
+      destruct (eval vary_val fuel' t2 rho2 econd) as [[[cv|cv] tr_c]|]; try reflexivity.
+      destruct (Nat.eqb cv 0).
+      * rewrite (IHfuel g eelse t1 t2 rho1 rho2 Hagr Huel). reflexivity.
+      * rewrite (IHfuel g ethen t1 t2 rho1 rho2 Hagr Hut). reflexivity.
+    (* EWhile ec eb *)
+    + apply andb_true_iff in Hu as [Huc Hub].
+      rewrite (IHfuel g ec t1 t2 rho1 rho2 Hagr Huc).
+      destruct (eval vary_val fuel' t2 rho2 ec) as [[[cv|cv] tr_c]|]; try reflexivity.
+      destruct (Nat.eqb cv 0); try reflexivity.
+      rewrite (IHfuel g eb t1 t2 rho1 rho2 Hagr Hub).
+      destruct (eval vary_val fuel' t2 rho2 eb) as [[[bv|bv] tr_b]|]; try reflexivity.
+      assert (Hwu : is_strongly_uniform g (EWhile ec eb) = true).
+      { simpl. apply andb_true_iff. exact (conj Huc Hub). }
+      rewrite (IHfuel g (EWhile ec eb) t1 t2 rho1 rho2 Hagr Hwu). reflexivity.
+    (* EFor elo ehi ebody *)
+    + apply andb_true_iff in Hu as [Hlohi Hb].
+      apply andb_true_iff in Hlohi as [Hlo Hhi].
+      rewrite (IHfuel g elo t1 t2 rho1 rho2 Hagr Hlo).
+      destruct (eval vary_val fuel' t2 rho2 elo) as [[[lv|lv] tr_lo]|]; try reflexivity.
+      rewrite (IHfuel g ehi t1 t2 rho1 rho2 Hagr Hhi).
+      destruct (eval vary_val fuel' t2 rho2 ehi) as [[[hv0|hv0] tr_hi]|]; try reflexivity.
+      destruct (Nat.leb hv0 lv); try reflexivity.
+      generalize (hv0 - lv) as steps. intro steps.
+      induction steps as [| s' IHs].
+      * simpl. reflexivity.
+      * simpl.
+        rewrite (IHfuel g ebody t1 t2 rho1 rho2 Hagr Hb).
+        destruct (eval vary_val fuel' t2 rho2 ebody) as [[[bv|bv] tr_b]|]; reflexivity.
+    (* ESeq ess *)
+    + rewrite forallb_forall in Hu.
+      assert (Hseq : forall acc,
+          (fix eval_seq (xs : list expr) (acc_tr : trace) : option (outcome * trace) :=
+            match xs with
+            | []      => Some (ONorm 0, acc_tr)
+            | hd0 :: rest0 =>
+                match eval vary_val fuel' t1 rho1 hd0 with
+                | Some (ORet v, tr)  => Some (ORet v, acc_tr ++ tr)
+                | Some (ONorm _, tr) => eval_seq rest0 (acc_tr ++ tr)
+                | None               => None
+                end
+            end) ess acc
+          =
+          (fix eval_seq (xs : list expr) (acc_tr : trace) : option (outcome * trace) :=
+            match xs with
+            | []      => Some (ONorm 0, acc_tr)
+            | hd0 :: rest0 =>
+                match eval vary_val fuel' t2 rho2 hd0 with
+                | Some (ORet v, tr)  => Some (ORet v, acc_tr ++ tr)
+                | Some (ONorm _, tr) => eval_seq rest0 (acc_tr ++ tr)
+                | None               => None
+                end
+            end) ess acc).
+      { induction ess as [| h0 tl0 IHtl].
+        - intro acc. reflexivity.
+        - intro acc.
+          assert (Hh0 : is_strongly_uniform g h0 = true) by (apply Hu; apply in_eq).
+          simpl.
+          rewrite (IHfuel g h0 t1 t2 rho1 rho2 Hagr Hh0).
+          destruct (eval vary_val fuel' t2 rho2 h0) as [[[hv|hv] tr_h]|]; try reflexivity.
+          apply IHtl. intros e0 Hin. apply Hu. apply in_cons. exact Hin. }
+      exact (Hseq []).
+    (* ELet x eval0 ebody *)
+    + apply andb_true_iff in Hu as [Huv Hub].
+      assert (Hvv : negb (is_strongly_uniform g eval0) = false) by (rewrite Huv; reflexivity).
+      rewrite Hvv in Hub.
+      rewrite (IHfuel g eval0 t1 t2 rho1 rho2 Hagr Huv).
+      destruct (eval vary_val fuel' t2 rho2 eval0) as [[[val0|val0] tr_v]|]; try reflexivity.
+      assert (Hagr' : env_agrees (env_extend g x false)
+                                   (venv_extend rho1 x val0)
+                                   (venv_extend rho2 x val0))
+        by exact (env_agrees_extend g rho1 rho2 x val0 false Hagr).
+      rewrite (IHfuel (env_extend g x false) ebody t1 t2
+                      (venv_extend rho1 x val0) (venv_extend rho2 x val0)
+                      Hagr' Hub).
+      reflexivity.
+    (* ESuperstep edv ebody0 econt *)
+    + apply andb_true_iff in Hu as [Hub Huc].
+      rewrite (IHfuel g ebody0 t1 t2 rho1 rho2 Hagr Hub).
+      destruct (eval vary_val fuel' t2 rho2 ebody0) as [[[bv|bv] tr_b]|]; try reflexivity.
+      rewrite (IHfuel g econt t1 t2 rho1 rho2 Hagr Huc). reflexivity.
+    (* EApp eargs *)
+    + rewrite (not_varying_uniform_args vary_val fuel' g eargs t1 t2 rho1 rho2 Hagr Hu
+                 (fun e0 Hin Hu0 => IHfuel g e0 t1 t2 rho1 rho2 Hagr Hu0)).
+      reflexivity.
+    (* EReturn er *)
+    + rewrite (IHfuel g er t1 t2 rho1 rho2 Hagr Hu). reflexivity.
+Qed.
+
+(* ----------------------------------------------------------------------- *)
+(* 7.7  Bridge: is_strongly_uniform implies ¬is_varying_in_env              *)
+(* ----------------------------------------------------------------------- *)
+
+(** Monotonicity bridge: if e is strongly uniform then is_varying_in_env
+    cannot see any varying component either.
+    (The converse does NOT hold — see the design note above.) *)
+Lemma is_strongly_uniform_impl_is_not_varying :
+  forall e env,
+    is_strongly_uniform env e = true ->
+    is_varying_in_env env e = false.
+Proof.
+  apply (expr_list_rect
+    (fun e => forall env, is_strongly_uniform env e = true -> is_varying_in_env env e = false)
+    (fun es => forall env, forallb (is_strongly_uniform env) es = true -> existsb (is_varying_in_env env) es = false)).
+  (* ELit *) - intros env _. reflexivity.
+  (* EVary *) - intros env Hu. simpl in Hu. discriminate.
+  (* EBarrier *) - intros env _. reflexivity.
+  (* EWarpPoint *) - intros env _. reflexivity.
+  (* EVar n *) - intros n env Hu. simpl in Hu. simpl. apply negb_true_iff in Hu. exact Hu.
+  (* EBinop a b *)
+  - intros a b IHa IHb env Hu.
+    simpl in Hu. apply andb_true_iff in Hu as [Hua Hub].
+    simpl. rewrite (IHa env Hua). rewrite (IHb env Hub). reflexivity.
+  (* EUnop e0 *)
+  - intros e0 IHe0 env Hu. simpl in Hu. simpl. exact (IHe0 env Hu).
+  (* EIf c t0 el *)
+  - intros c t0 el IHc IHt IHf env Hu.
+    simpl in Hu.
+    apply andb_true_iff in Hu as [Huef Huf].
+    apply andb_true_iff in Huef as [Huc Hut].
+    simpl. rewrite (IHc env Huc). rewrite (IHt env Hut). rewrite (IHf env Huf). reflexivity.
+  (* EWhile c b *)
+  - intros c b IHc IHb env Hu.
+    simpl in Hu. apply andb_true_iff in Hu as [Huc Hub].
+    simpl. rewrite (IHc env Huc). rewrite (IHb env Hub). reflexivity.
+  (* EFor lo hi b *)
+  - intros lo hi b IHlo IHhi IHb env Hu.
+    simpl in Hu.
+    apply andb_true_iff in Hu as [Hubod Hb].
+    apply andb_true_iff in Hubod as [Hulo Huhi].
+    simpl. rewrite (IHlo env Hulo). rewrite (IHhi env Huhi). rewrite (IHb env Hb). reflexivity.
+  (* ESeq es *)
+  - intros es IHes env Hu. simpl in Hu. simpl. exact (IHes env Hu).
+  (* ELet x0 v b *)
+  - intros x0 v b IHv IHb env Hu.
+    simpl in Hu.
+    apply andb_true_iff in Hu as [Huv Hub].
+    assert (Hvv : negb (is_strongly_uniform env v) = false).
+    { rewrite Huv. reflexivity. }
+    rewrite Hvv in Hub.
+    simpl. rewrite (IHv env Huv).
+    exact (IHb (env_extend env x0 false) Hub).
+  (* ESuperstep dv bd ct *)
+  - intros dv bd ct IHbd IHct env Hu.
+    simpl in Hu. apply andb_true_iff in Hu as [Hub Huc].
+    simpl. rewrite (IHbd env Hub). rewrite (IHct env Huc). reflexivity.
+  (* EApp args *)
+  - intros args IHargs env Hu. simpl in Hu. simpl. exact (IHargs env Hu).
+  (* EReturn e0 *)
+  - intros e0 IHe0 env Hu. simpl in Hu. simpl. exact (IHe0 env Hu).
+  (* Plist [] *) - intros env _. reflexivity.
+  (* Plist (h :: tl) *)
+  - intros h tl IHh IHtl env Hu.
+    simpl in Hu. apply andb_true_iff in Hu as [Huh Hutl].
+    simpl. rewrite (IHh env Huh). exact (IHtl env Hutl).
+Qed.
+
+(* ----------------------------------------------------------------------- *)
+(* 7.8  Closed-expression corollary                                          *)
+(* ----------------------------------------------------------------------- *)
+
+(** is_var_free e — syntactic check that e contains no EVar constructor.
+    Closed expressions are independent of any venv. *)
+Fixpoint is_var_free (e : expr) : bool :=
+  match e with
+  | ELit | EVary | EBarrier | EWarpPoint => true
+  | EVar _        => false
+  | EBinop a b    => is_var_free a && is_var_free b
+  | EUnop e1      => is_var_free e1
+  | EIf c et ef   => is_var_free c && is_var_free et && is_var_free ef
+  | EWhile c b    => is_var_free c && is_var_free b
+  | EFor lo hi b  => is_var_free lo && is_var_free hi && is_var_free b
+  | ESeq es       => forallb is_var_free es
+  | ELet _ v b    => is_var_free v && is_var_free b
+  | ESuperstep _ body cont => is_var_free body && is_var_free cont
+  | EApp args     => forallb is_var_free args
+  | EReturn e1    => is_var_free e1
+  end.
+
+(** var_free_env_irrelevant: a closed expression evaluates the same in any
+    two venvs (for the same tid and fuel).
+    Proof: by induction on expr; EVar case is vacuously excluded. *)
+Lemma var_free_env_irrelevant :
+  forall vary_val fuel t rho1 rho2 e,
+    is_var_free e = true ->
+    eval vary_val fuel t rho1 e = eval vary_val fuel t rho2 e.
+Proof.
+  intros vary_val.
+  induction fuel as [| fuel' IHfuel].
+  - intros. reflexivity.
+  - (* fuel = S fuel' *)
+    intros t rho1 rho2 e Hf.
+    revert Hf.
+    apply (expr_list_rect
+      (fun e0 => is_var_free e0 = true ->
+                 eval vary_val (S fuel') t rho1 e0 = eval vary_val (S fuel') t rho2 e0)
+      (fun es => forallb is_var_free es = true ->
+                 forall acc lv,
+                 (fix eval_args (xs : list expr) (acc_tr : trace) (last_v : value)
+                     : option (outcome * trace) :=
+                   match xs with
+                   | []      => Some (ONorm last_v, acc_tr)
+                   | hd :: tl0 =>
+                       match eval vary_val fuel' t rho1 hd with
+                       | Some (ORet v, tr)  => Some (ORet v, acc_tr ++ tr)
+                       | Some (ONorm v, tr) => eval_args tl0 (acc_tr ++ tr) v
+                       | None               => None
+                       end
+                   end) es acc lv
+                 =
+                 (fix eval_args (xs : list expr) (acc_tr : trace) (last_v : value)
+                     : option (outcome * trace) :=
+                   match xs with
+                   | []      => Some (ONorm last_v, acc_tr)
+                   | hd :: tl0 =>
+                       match eval vary_val fuel' t rho2 hd with
+                       | Some (ORet v, tr)  => Some (ORet v, acc_tr ++ tr)
+                       | Some (ONorm v, tr) => eval_args tl0 (acc_tr ++ tr) v
+                       | None               => None
+                       end
+                   end) es acc lv)).
+    (* ELit *) + intros _. simpl. reflexivity.
+    (* EVary *) + intros _. simpl. reflexivity.
+    (* EBarrier *) + intros _. simpl. reflexivity.
+    (* EWarpPoint *) + intros _. simpl. reflexivity.
+    (* EVar n0 — is_var_free = false, contradiction *)
+    + intros n0 Hf0. simpl in Hf0. discriminate.
+    (* EBinop a b *)
+    + intros a b _ _ Hf0.
+      simpl in Hf0. apply andb_true_iff in Hf0 as [Hfa Hfb].
+      simpl. rewrite (IHfuel t rho1 rho2 a Hfa).
+      destruct (eval vary_val fuel' t rho2 a) as [[[v|v] tr]|]; try reflexivity.
+      rewrite (IHfuel t rho1 rho2 b Hfb). reflexivity.
+    (* EUnop e0 *)
+    + intros e0 _ Hf0. simpl in Hf0. simpl.
+      rewrite (IHfuel t rho1 rho2 e0 Hf0). reflexivity.
+    (* EIf c t0 el *)
+    + intros c t0 el _ _ _ Hf0.
+      simpl in Hf0.
+      apply andb_true_iff in Hf0 as [Hfef Hff].
+      apply andb_true_iff in Hfef as [Hfc Hft0].
+      simpl. rewrite (IHfuel t rho1 rho2 c Hfc).
+      destruct (eval vary_val fuel' t rho2 c) as [[[cv|cv] tr_c]|]; try reflexivity.
+      destruct (Nat.eqb cv 0).
+      * rewrite (IHfuel t rho1 rho2 el Hff). reflexivity.
+      * rewrite (IHfuel t rho1 rho2 t0 Hft0). reflexivity.
+    (* EWhile c b *)
+    + intros c b _ _ Hf0.
+      simpl in Hf0. apply andb_true_iff in Hf0 as [Hfc Hfb].
+      simpl. rewrite (IHfuel t rho1 rho2 c Hfc).
+      destruct (eval vary_val fuel' t rho2 c) as [[[cv|cv] tr_c]|]; try reflexivity.
+      destruct (Nat.eqb cv 0); try reflexivity.
+      rewrite (IHfuel t rho1 rho2 b Hfb).
+      destruct (eval vary_val fuel' t rho2 b) as [[[bv|bv] tr_b]|]; try reflexivity.
+      assert (Hwf : is_var_free (EWhile c b) = true).
+      { simpl. apply andb_true_iff. exact (conj Hfc Hfb). }
+      rewrite (IHfuel t rho1 rho2 (EWhile c b) Hwf). reflexivity.
+    (* EFor lo hi b *)
+    + intros lo hi b _ _ _ Hf0.
+      simpl in Hf0.
+      apply andb_true_iff in Hf0 as [Hfbod Hfb].
+      apply andb_true_iff in Hfbod as [Hflo Hfhi].
+      simpl. rewrite (IHfuel t rho1 rho2 lo Hflo).
+      destruct (eval vary_val fuel' t rho2 lo) as [[[lv|lv] tr_lo]|]; try reflexivity.
+      rewrite (IHfuel t rho1 rho2 hi Hfhi).
+      destruct (eval vary_val fuel' t rho2 hi) as [[[hv|hv] tr_hi]|]; try reflexivity.
+      destruct (Nat.leb hv lv); try reflexivity.
+      generalize (hv - lv) as steps. intro steps.
+      induction steps as [| s' _].
+      * simpl. reflexivity.
+      * simpl.
+        rewrite (IHfuel t rho1 rho2 b Hfb).
+        destruct (eval vary_val fuel' t rho2 b) as [[[bv|bv] tr_b]|]; reflexivity.
+    (* ESeq es *)
+    + intros es _ Hf0.
+      simpl.
+      assert (Hseq : forall acc,
+          (fix eval_seq (xs : list expr) (acc_tr : trace) : option (outcome * trace) :=
+            match xs with
+            | []      => Some (ONorm 0, acc_tr)
+            | x :: rest =>
+                match eval vary_val fuel' t rho1 x with
+                | Some (ORet v, tr)  => Some (ORet v, acc_tr ++ tr)
+                | Some (ONorm _, tr) => eval_seq rest (acc_tr ++ tr)
+                | None               => None
+                end
+            end) es acc
+          =
+          (fix eval_seq (xs : list expr) (acc_tr : trace) : option (outcome * trace) :=
+            match xs with
+            | []      => Some (ONorm 0, acc_tr)
+            | x :: rest =>
+                match eval vary_val fuel' t rho2 x with
+                | Some (ORet v, tr)  => Some (ORet v, acc_tr ++ tr)
+                | Some (ONorm _, tr) => eval_seq rest (acc_tr ++ tr)
+                | None               => None
+                end
+            end) es acc).
+      { induction es as [| h tl IHtl].
+        - intro acc. simpl. reflexivity.
+        - intro acc. simpl in Hf0. apply andb_true_iff in Hf0 as [Hfh Hftl].
+          simpl.
+          rewrite (IHfuel t rho1 rho2 h Hfh).
+          destruct (eval vary_val fuel' t rho2 h) as [[[hv|hv] tr_h]|]; try reflexivity.
+          apply IHtl. exact Hftl. }
+      exact (Hseq []).
+    (* ELet x0 v b *)
+    + intros x0 v b _ _ Hf0.
+      simpl in Hf0. apply andb_true_iff in Hf0 as [Hfv Hfb].
+      simpl.
+      rewrite (IHfuel t rho1 rho2 v Hfv).
+      destruct (eval vary_val fuel' t rho2 v) as [[[val0|val0] tr_v]|]; try reflexivity.
+      rewrite (IHfuel t (venv_extend rho1 x0 val0) (venv_extend rho2 x0 val0) b Hfb). reflexivity.
+    (* ESuperstep dv bd ct *)
+    + intros dv bd ct _ _ Hf0.
+      simpl in Hf0. apply andb_true_iff in Hf0 as [Hfb Hfc].
+      simpl.
+      rewrite (IHfuel t rho1 rho2 bd Hfb).
+      destruct (eval vary_val fuel' t rho2 bd) as [[[bv|bv] tr_b]|]; try reflexivity.
+      rewrite (IHfuel t rho1 rho2 ct Hfc). reflexivity.
+    (* EApp args *)
+    + intros args IHargs Hf0.
+      simpl in Hf0. simpl.
+      exact (IHargs Hf0 [] 0).
+    (* EReturn e0 *)
+    + intros e0 _ Hf0. simpl in Hf0. simpl.
+      rewrite (IHfuel t rho1 rho2 e0 Hf0). reflexivity.
+    (* Plist [] *)
+    + intros _ acc lv. simpl. reflexivity.
+    (* Plist (h :: tl) *)
+    + intros h tl _ IHtl Hf0 acc lv.
+      simpl in Hf0. apply andb_true_iff in Hf0 as [Hfh Hftl].
+      simpl.
+      rewrite (IHfuel t rho1 rho2 h Hfh).
+      destruct (eval vary_val fuel' t rho2 h) as [[[hv|hv] tr_h]|]; try reflexivity.
+      exact (IHtl Hftl (acc ++ tr_h) hv).
+Qed.
+
+(** is_strongly_uniform_env_irrelevant: for var-free expressions,
+    is_strongly_uniform does not depend on the env (no EVar to look up). *)
+Lemma is_strongly_uniform_env_irrelevant :
+  forall e env1 env2,
+    is_var_free e = true ->
+    is_strongly_uniform env1 e = is_strongly_uniform env2 e.
+Proof.
+  intro e.
+  apply (expr_list_rect
+    (fun ex => forall env1 env2, is_var_free ex = true ->
+               is_strongly_uniform env1 ex = is_strongly_uniform env2 ex)
+    (fun bs => forall env1 env2,
+               forallb is_var_free bs = true ->
+               forallb (is_strongly_uniform env1) bs = forallb (is_strongly_uniform env2) bs)).
+  (* ELit *) - intros env1 env2 _. reflexivity.
+  (* EVary *) - intros env1 env2 _. reflexivity.
+  (* EBarrier *) - intros env1 env2 _. reflexivity.
+  (* EWarpPoint *) - intros env1 env2 _. reflexivity.
+  (* EVar n0 — impossible *)
+  - intros n0 env1 env2 Hf. simpl in Hf. discriminate.
+  (* EBinop *)
+  - intros a b IHa IHb env1 env2 Hf.
+    simpl in Hf. apply andb_true_iff in Hf as [Ha Hb].
+    simpl. rewrite (IHa env1 env2 Ha). rewrite (IHb env1 env2 Hb). reflexivity.
+  (* EUnop *)
+  - intros eu IHeu env1 env2 Hf. simpl in Hf. simpl. exact (IHeu env1 env2 Hf).
+  (* EIf *)
+  - intros c t0 el IHc IHt0 IHel env1 env2 Hf.
+    simpl in Hf. apply andb_true_iff in Hf as [Hfet Hfel].
+    apply andb_true_iff in Hfet as [Hfc Hft0].
+    simpl. rewrite (IHc env1 env2 Hfc). rewrite (IHt0 env1 env2 Hft0).
+    rewrite (IHel env1 env2 Hfel). reflexivity.
+  (* EWhile *)
+  - intros c b IHc IHb env1 env2 Hf.
+    simpl in Hf. apply andb_true_iff in Hf as [Hfc Hfb].
+    simpl. rewrite (IHc env1 env2 Hfc). rewrite (IHb env1 env2 Hfb). reflexivity.
+  (* EFor *)
+  - intros lo hi b IHlo IHhi IHb env1 env2 Hf.
+    simpl in Hf. apply andb_true_iff in Hf as [Hfbod Hfb].
+    apply andb_true_iff in Hfbod as [Hflo Hfhi].
+    simpl. rewrite (IHlo env1 env2 Hflo). rewrite (IHhi env1 env2 Hfhi).
+    rewrite (IHb env1 env2 Hfb). reflexivity.
+  (* ESeq *)
+  - intros es IHes env1 env2 Hf. simpl in *. exact (IHes env1 env2 Hf).
+  (* ELet x0 v b *)
+  - intros x0 v b IHv IHb env1 env2 Hf.
+    simpl in Hf. apply andb_true_iff in Hf as [Hfv Hfb].
+    simpl. rewrite (IHv env1 env2 Hfv).
+    destruct (is_strongly_uniform env2 v) eqn:Huv2.
+    + simpl.
+      apply (IHb (env_extend env1 x0 false) (env_extend env2 x0 false) Hfb).
+    + simpl. reflexivity.
+  (* ESuperstep *)
+  - intros dv bd ct IHbd IHct env1 env2 Hf.
+    simpl in Hf. apply andb_true_iff in Hf as [Hfb Hfc].
+    simpl. rewrite (IHbd env1 env2 Hfb). rewrite (IHct env1 env2 Hfc). reflexivity.
+  (* EApp *)
+  - intros args IHargs env1 env2 Hf. simpl in *. exact (IHargs env1 env2 Hf).
+  (* EReturn *)
+  - intros er IHer env1 env2 Hf. simpl in Hf. simpl. exact (IHer env1 env2 Hf).
+  (* Plist [] *) - intros env1 env2 _. reflexivity.
+  (* Plist (h :: tl) *)
+  - intros h tl IHh IHtl env1 env2 Hf.
+    simpl in Hf. apply andb_true_iff in Hf as [Hfh Hftl].
+    simpl. rewrite (IHh env1 env2 Hfh). rewrite (IHtl env1 env2 Hftl). reflexivity.
+Qed.
+
+(** var_free_is_strongly_uniform_empty: var-free + non-varying
+    implies is_strongly_uniform [] e = true. *)
+Lemma var_free_is_strongly_uniform_empty :
+  forall e,
+    is_var_free e = true ->
+    is_varying e = false ->
+    is_strongly_uniform [] e = true.
+Proof.
+  intro e.
+  apply (expr_list_rect
+    (fun e1 => is_var_free e1 = true -> is_varying e1 = false -> is_strongly_uniform [] e1 = true)
+    (fun es => forallb is_var_free es = true ->
+               existsb is_varying es = false ->
+               forallb (is_strongly_uniform []) es = true)).
+  (* ELit *) - intros _ _. reflexivity.
+  (* EVary *) - intros _ Hv. simpl in Hv. discriminate.
+  (* EBarrier *) - intros _ _. reflexivity.
+  (* EWarpPoint *) - intros _ _. reflexivity.
+  (* EVar n0 — is_var_free = false *)
+  - intros n0 Hf. simpl in Hf. discriminate.
+  (* EBinop a b *)
+  - intros a b IHa IHb Hf Hv.
+    simpl in Hf. apply andb_true_iff in Hf as [Hfa Hfb].
+    simpl in Hv. apply orb_false_iff in Hv as [Hva Hvb].
+    simpl. apply andb_true_iff. exact (conj (IHa Hfa Hva) (IHb Hfb Hvb)).
+  (* EUnop eu *)
+  - intros eu IHeu Hf Hv. simpl in Hf. simpl in Hv. simpl. exact (IHeu Hf Hv).
+  (* EIf c t0 el *)
+  - intros c t0 el IHc IHt0 IHel Hf Hv.
+    simpl in Hf.
+    apply andb_true_iff in Hf as [Hfet Hfel].
+    apply andb_true_iff in Hfet as [Hfc Hft0].
+    simpl in Hv.
+    apply orb_false_iff in Hv as [Hvcet Hvel].
+    apply orb_false_iff in Hvcet as [Hvc Hvt0].
+    simpl. apply andb_true_iff. split.
+    + apply andb_true_iff. exact (conj (IHc Hfc Hvc) (IHt0 Hft0 Hvt0)).
+    + exact (IHel Hfel Hvel).
+  (* EWhile c b *)
+  - intros c b IHc IHb Hf Hv.
+    simpl in Hf. apply andb_true_iff in Hf as [Hfc Hfb].
+    simpl in Hv. apply orb_false_iff in Hv as [Hvc Hvb].
+    simpl. apply andb_true_iff. exact (conj (IHc Hfc Hvc) (IHb Hfb Hvb)).
+  (* EFor lo hi b *)
+  - intros lo hi b IHlo IHhi IHb Hf Hv.
+    simpl in Hf.
+    apply andb_true_iff in Hf as [Hfbod Hfb].
+    apply andb_true_iff in Hfbod as [Hflo Hfhi].
+    simpl in Hv.
+    apply orb_false_iff in Hv as [Hvbod Hvb].
+    apply orb_false_iff in Hvbod as [Hvlo Hvhi].
+    simpl. apply andb_true_iff. split.
+    + apply andb_true_iff. exact (conj (IHlo Hflo Hvlo) (IHhi Hfhi Hvhi)).
+    + exact (IHb Hfb Hvb).
+  (* ESeq es *)
+  - intros es IHes Hf Hv. simpl in Hf. simpl in Hv. simpl. exact (IHes Hf Hv).
+  (* ELet x0 v b *)
+  - intros x0 v b IHv IHb Hf Hv.
+    simpl in Hf. apply andb_true_iff in Hf as [Hfv Hfb].
+    simpl in Hv. apply orb_false_iff in Hv as [Hvv Hvb].
+    simpl.
+    assert (Huv : is_strongly_uniform [] v = true). { exact (IHv Hfv Hvv). }
+    assert (Hvvflag : negb (is_strongly_uniform [] v) = false). { rewrite Huv. reflexivity. }
+    rewrite Hvvflag. apply andb_true_iff. split.
+    + exact Huv.
+    + (* is_strongly_uniform (env_extend [] x0 false) b = true *)
+      rewrite <- (is_strongly_uniform_env_irrelevant b [] (env_extend [] x0 false) Hfb).
+      exact (IHb Hfb Hvb).
+  (* ESuperstep dv bd ct *)
+  - intros dv bd ct IHbd IHct Hf Hv.
+    simpl in Hf. apply andb_true_iff in Hf as [Hfb Hfc].
+    simpl in Hv. apply orb_false_iff in Hv as [Hvb Hvc].
+    simpl. apply andb_true_iff. exact (conj (IHbd Hfb Hvb) (IHct Hfc Hvc)).
+  (* EApp args *)
+  - intros args IHargs Hf Hv. simpl in *. exact (IHargs Hf Hv).
+  (* EReturn er *)
+  - intros er IHer Hf Hv. simpl in *. exact (IHer Hf Hv).
+  (* Plist [] *) - intros _ _. reflexivity.
+  (* Plist (h :: tl) *)
+  - intros h tl IHh IHtl Hf Hv.
+    simpl in Hf. apply andb_true_iff in Hf as [Hfh Hftl].
+    simpl in Hv. apply orb_false_iff in Hv as [Hvh Hvtl].
+    simpl. rewrite (IHh Hfh Hvh). rewrite (IHtl Hftl Hvtl). reflexivity.
+Qed.
+
+(** closed_uniform: For closed (EVar-free), EVary-free expressions,
+    evaluation is completely independent of tid and venv. *)
+Theorem closed_uniform :
+  forall vary_val fuel e t1 t2 rho1 rho2,
+    is_var_free e = true ->
+    is_varying e = false ->
+    eval vary_val fuel t1 rho1 e = eval vary_val fuel t2 rho2 e.
+Proof.
+  intros vary_val fuel e t1 t2 rho1 rho2 Hf Hv.
+  assert (H_self_agrees : forall rho, env_agrees [] rho rho).
+  { intros rho x0 _. reflexivity. }
+  rewrite (var_free_env_irrelevant vary_val fuel t1 rho1 rho2 e Hf).
+  exact (not_varying_uniform vary_val fuel [] e t1 t2 rho2 rho2
+           (H_self_agrees rho2) (var_free_is_strongly_uniform_empty e Hf Hv)).
+Qed.

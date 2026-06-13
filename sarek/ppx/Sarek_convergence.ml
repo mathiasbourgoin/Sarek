@@ -31,7 +31,6 @@
 
 open Sarek_typed_ast
 open Sarek_env
-
 module StringSet = Set.Make (String)
 
 (** Execution mode for convergence analysis *)
@@ -182,8 +181,9 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
       let lo_errors = check_expr ctx lo in
       let hi_errors = check_expr ctx hi in
       let inner_ctx =
-        if is_thread_varying_env ctx.varying_vars lo
-           || is_thread_varying_env ctx.varying_vars hi
+        if
+          is_thread_varying_env ctx.varying_vars lo
+          || is_thread_varying_env ctx.varying_vars hi
         then diverge ctx
         else ctx
       in
@@ -193,7 +193,8 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   | TEMatch (scrut, cases) ->
       let scrut_errors = check_expr ctx scrut in
       let inner_ctx =
-        if is_thread_varying_env ctx.varying_vars scrut then diverge ctx else ctx
+        if is_thread_varying_env ctx.varying_vars scrut then diverge ctx
+        else ctx
       in
       let case_errors =
         List.concat_map (fun (_, e) -> check_expr inner_ctx e) cases
@@ -216,8 +217,8 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   | TELet (name, _, value, body) | TELetMut (name, _, value, body) ->
       let value_errors = check_expr ctx value in
       let ctx' =
-        if is_thread_varying_env ctx.varying_vars value
-        then {ctx with varying_vars = StringSet.add name ctx.varying_vars}
+        if is_thread_varying_env ctx.varying_vars value then
+          {ctx with varying_vars = StringSet.add name ctx.varying_vars}
         else ctx
       in
       value_errors @ check_expr ctx' body

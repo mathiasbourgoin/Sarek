@@ -1,8 +1,8 @@
 # ConvergenceSafety — Work Plan
 
-**Last updated**: 2026-06-13 (tick 3 — T3-GATE resolved: full ladder T3-S1..S8 approved by human)
+**Last updated**: 2026-06-13 (tick 5 — T3-S1 confirmed done; currentTask = T3-S2; DOCS-SYNC clean)
 **Apparatus version**: 1.1.0
-**Phase**: T3-SEMANTIC (full ladder approved; T3-S1 is current task)
+**Phase**: T3-SEMANTIC (full ladder approved; T3-S2 is current task)
 
 ---
 
@@ -17,7 +17,7 @@
 | T2-WARP | WarpConvergence error class: EWarpPoint/WarpError/check_warp/warp_diverged_error/warp_mode_monotone/warp_varying_if_flags | T2 | **done** | — |
 | T2-RETURN | TEReturn early-return barrier-skip: EReturn constructor, model barrier-skip, safety theorem | T2 | **done** (return_barrier_skip_safe, 20 theorems, 17 conformance, 7 extraction) | — |
 | T3-GATE | HUMAN DECISION — approve T3-SEMANTIC scope per the breakdown below (whole ladder, or stop at SEMANTIC-CORE) | T3 | **done** (full ladder approved 2026-06-13) | — |
-| T3-S1 | Semantic domain + fuel-indexed big-step evaluator with barrier traces | T3 | open | — |
+| T3-S1 | Semantic domain + fuel-indexed big-step evaluator with barrier traces | T3 | **done** (ConvergenceSemantics.v: eval + eval_fuel_monotone + eval_app_seq_compose; 22 theorems, 0 admits, 0 axioms, coqchk passes; 2026-06-13) | — |
 | T3-S2 | Uniformity soundness of `is_varying_in_env` (semantic grounding of EVary) | T3 | open | T3-S1 |
 | T3-S3 | Trace silence of barrier-free expressions | T3 | open | T3-S1 |
 | T3-S4 | Core semantic soundness of `check_env` (trace-uniformity theorem) | T3 | open | T3-S2, T3-S3 |
@@ -31,13 +31,19 @@
 
 ## Current task
 
-**T3-S1 — current task.**
+**T3-S2 — current task.**
 
-T3-GATE resolved 2026-06-13: full ladder (T3-S1..S8) approved by human.
-All T1 and T2 work is complete (20 theorems, 0 admits, 0 axioms, coqchk passes;
-conformance 17/17, extraction 7/7, live CMBT 10/10).
+T3-S1 done (commit fbfb3656, 2026-06-13): ConvergenceSemantics.v landed with
+semantic domain (tid/value/venv/event/trace/outcome), Section Variable vary_val,
+Fixpoint eval (fuel-indexed, 15 constructors), eval_fuel_monotone,
+eval_app_seq_compose; 22 theorems total, 0 admits, 0 axioms, coqchk passes.
 
-Current task: T3-S1 — Semantic domain + fuel-indexed big-step evaluator with barrier traces.
+Current task: T3-S2 — Uniformity soundness of `is_varying_in_env` (semantic
+grounding of EVary). Blocked-by T3-S1 is resolved.
+
+Approach: add `env_agrees`, `not_varying_uniform`, and the closed-expression
+corollary to `theories/ConvergenceSemantics.v`. Proof is mechanical induction on
+fuel × expr; large case count, no new technique. 0-axiom invariant must hold.
 
 ---
 
@@ -307,6 +313,15 @@ global decision 4 and is recorded as the T3 trust boundary.
 
 ## Workflow notes
 
+- Tick 5 (2026-06-13): Session re-read. All tasks through T3-S1 confirmed DONE (STATUS.md: 22
+  theorems, 0 admits, 0 axioms, coqchk passes; conformance 17/17 green, extraction 7/7 green,
+  live 10/10 green). PR #182 confirmed merged (gh returns []). DOCS-SYNC clean — no drift
+  detected. currentTask = T3-S2 (unblocked — T3-S1 done, no hard blockers).
+- Tick 4 (2026-06-13): T3-S1 confirmed DONE (commit fbfb3656; ConvergenceSemantics.v:
+  semantic domain + fuel-indexed big-step eval + eval_fuel_monotone + eval_app_seq_compose;
+  22 theorems, 0 admits, 0 axioms, coqchk passes; STATUS.md updated).
+  DOCS-SYNC: PLAN.md drift fixed (T3-S1 was listed as "open"; corrected to done).
+  currentTask = T3-S2 (unblocked — T3-S1 done).
 - Tick 3 (2026-06-13): T3-GATE resolved — full ladder T3-S1..S8 approved by human.
   currentTask = T3-S1 (unblocked). Workflow ready to fire.
 - Tick 2 (2026-06-12): T3-SEMANTIC replanned from a one-line stub into 8 strictly

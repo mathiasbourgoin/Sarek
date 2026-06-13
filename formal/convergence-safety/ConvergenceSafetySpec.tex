@@ -108,11 +108,21 @@ variability propagation.
         (F-02, \cref{thm:env-check-let-alias-catches}).
 \end{enumerate}
 
-\subsection*{Out of scope (T2/T3)}
+\subsection*{T3 --- Uniformity soundness (ConvergenceSemantics.v)}
 
-Semantic soundness of \texttt{is\_varying} (needs $\texttt{texpr}$ execution
-semantics) and deadlock freedom (needs lockstep execution model).
+\begin{enumerate}
+  \item[\textbf{T3}] Non-varying expressions evaluate uniformly across thread ids
+        and variable environments (\cref{thm:not-varying-uniform}).
+  \item[\textbf{T3}] Closed non-varying expressions are fully uniform across all
+        thread ids and environments (\cref{thm:closed-uniform}).
+\end{enumerate}
+
+\subsection*{Out of scope}
+
+Deadlock freedom (needs lockstep execution model).
 Warp divergence errors are now in scope (T2-WARP, \cref{thm:warp-diverged-error}).
+Semantic soundness of \texttt{is\_varying} via eval semantics is now in scope
+(T3-S2, \cref{thm:not-varying-uniform,thm:closed-uniform}).
 
 %───────────────────────────────────────────────────────────────────────────────
 \section{Notation and types}
@@ -508,6 +518,41 @@ control flow exits the function at this point.
   A barrier guarded by a let-aliased varying variable is flagged even in
   $\Converged$ mode.
 \end{theorem}
+
+\subsection{T3-S2 --- Uniformity soundness of \texttt{is\_strongly\_uniform}}
+\label{sec:uniformity-props}
+
+The big-step evaluator $\mathtt{eval}(\mathit{vary\_val},\,\mathit{fuel},\,t,\,\rho,\,e)$
+is defined in \texttt{ConvergenceSemantics.v} with a fuel parameter ensuring
+totality. $\mathtt{is\_strongly\_uniform}(\mathit{env},\,e)$ is a semantically
+correct uniformity predicate that, unlike $\mathtt{is\_varying\_in\_env}$, also
+requires the binding expression of $\mathsf{ELet}$ to be uniform.
+
+\begin{theorem}[Non-varying implies uniform evaluation (T3-S2)]
+  \label{thm:not-varying-uniform}
+  For all $\mathit{vary\_val}$, $\mathit{fuel}$, $\mathit{env}$, $e$, $t_1$,
+  $t_2$, $\rho_1$, $\rho_2$, if
+  $\mathtt{env\_agrees}(\mathit{env},\,\rho_1,\,\rho_2) = \mathsf{true}$ and
+  $\mathtt{is\_strongly\_uniform}(\mathit{env},\,e) = \mathsf{true}$, then
+  \[
+    \mathtt{eval}(\mathit{vary\_val},\,\mathit{fuel},\,t_1,\,\rho_1,\,e)
+    = \mathtt{eval}(\mathit{vary\_val},\,\mathit{fuel},\,t_2,\,\rho_2,\,e).
+  \]
+  ($\mathtt{env\_agrees}(\mathit{env},\,\rho_1,\,\rho_2)$ requires that all
+  variables marked uniform in $\mathit{env}$ map to the same value in $\rho_1$
+  and $\rho_2$.)
+\end{theorem}
+
+\begin{corollary}[Closed non-varying expressions are fully uniform (T3-S2)]
+  \label{thm:closed-uniform}
+  For all $e$, $\mathit{vary\_val}$, $\mathit{fuel}$, $t_1$, $t_2$, $\rho_1$,
+  $\rho_2$, if $\mathtt{is\_var\_free}(e) = \mathsf{true}$ and
+  $\isvarying{e} = \mathsf{false}$, then
+  \[
+    \mathtt{eval}(\mathit{vary\_val},\,\mathit{fuel},\,t_1,\,\rho_1,\,e)
+    = \mathtt{eval}(\mathit{vary\_val},\,\mathit{fuel},\,t_2,\,\rho_2,\,e).
+  \]
+\end{corollary}
 
 %───────────────────────────────────────────────────────────────────────────────
 \section{Env-threaded model}
