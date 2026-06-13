@@ -139,10 +139,24 @@ let test_vector_add () =
     Cuda_api.Memory.free d_c
   end
 
+let test_generate_vector_add () =
+  let generated = Sarek_ir_ptx.demo_vector_add_ptx () in
+  Alcotest.(check string)
+    "demo_vector_add_ptx output matches hardcoded PTX"
+    vector_add_ptx
+    generated
+
 let () =
   Alcotest.run
     "ptx_external"
     [
+      ( "emitter",
+        [
+          Alcotest.test_case
+            "demo_vector_add_ptx matches hardcoded PTX"
+            `Quick
+            test_generate_vector_add;
+        ] );
       ( "vector_add",
         [Alcotest.test_case "ptx load + launch + verify" `Quick test_vector_add]
       );

@@ -52,9 +52,19 @@ type reg_alloc = {
   mutable f64 : int;
   mutable pred : int;
   mutable label : int;
+  arr_elt_types : (string, elttype) Hashtbl.t;
 }
 
-let make_alloc () = {u32 = 0; u64 = 0; f32 = 0; f64 = 0; pred = 0; label = 0}
+let make_alloc () =
+  {
+    u32 = 0;
+    u64 = 0;
+    f32 = 0;
+    f64 = 0;
+    pred = 0;
+    label = 0;
+    arr_elt_types = Hashtbl.create 8;
+  }
 
 let new_u32 a =
   let n = a.u32 in
@@ -127,6 +137,62 @@ let emit buf fmt = Printf.bprintf buf ("    " ^^ fmt ^^ "\n")
 
 let emit_label buf lbl = Printf.bprintf buf "%s:\n" lbl
 
+(** {1 Array load/store helpers}
+
+    Emit a typed array read (ld.global) or write (st.global) into [buf]. The
+    element type determines the stride (2 = 4 bytes, 3 = 8 bytes) and the PTX
+    load/store qualifier. All other element types raise [unsupported]. *)
+
+let elt_shift = function
+  | TFloat32 | TInt32 -> 2
+  | TFloat64 | TInt64 -> 3
+  | t -> unsupported ("array element type " ^ ptx_reg_type_of t)
+
+let emit_array_read buf alloc r_base r_idx elt_type =
+  let r_idx64 = new_u64 alloc in
+  emit buf "cvt.u64.u32 %s, %s;" r_idx64 r_idx ;
+  let r_off = new_u64 alloc in
+  emit buf "shl.b64 %s, %s, %d;" r_off r_idx64 (elt_shift elt_type) ;
+  let r_addr = new_u64 alloc in
+  emit buf "add.u64 %s, %s, %s;" r_addr r_base r_off ;
+  match elt_type with
+  | TFloat32 ->
+      let r = new_f32 alloc in
+      emit buf "ld.global.f32 %s, [%s];" r r_addr ;
+      r
+  | TInt32 ->
+      let r = new_u32 alloc in
+      emit buf "ld.global.s32 %s, [%s];" r r_addr ;
+      r
+  | TFloat64 ->
+      let r = new_f64 alloc in
+      emit buf "ld.global.f64 %s, [%s];" r r_addr ;
+      r
+  | TInt64 ->
+      let r = new_u64 alloc in
+      emit buf "ld.global.s64 %s, [%s];" r r_addr ;
+      r
+  | t -> unsupported ("array read of element type " ^ ptx_reg_type_of t)
+
+let emit_array_write buf alloc r_base r_idx r_val elt_type =
+  let r_idx64 = new_u64 alloc in
+  emit buf "cvt.u64.u32 %s, %s;" r_idx64 r_idx ;
+  let r_off = new_u64 alloc in
+  emit buf "shl.b64 %s, %s, %d;" r_off r_idx64 (elt_shift elt_type) ;
+  let r_addr = new_u64 alloc in
+  emit buf "add.u64 %s, %s, %s;" r_addr r_base r_off ;
+  match elt_type with
+  | TFloat32 -> emit buf "st.global.f32 [%s], %s;" r_addr r_val
+  | TInt32 -> emit buf "st.global.s32 [%s], %s;" r_addr r_val
+  | TFloat64 -> emit buf "st.global.f64 [%s], %s;" r_addr r_val
+  | TInt64 -> emit buf "st.global.s64 [%s], %s;" r_addr r_val
+  | t -> unsupported ("array write of element type " ^ ptx_reg_type_of t)
+
+let infer_elt_type alloc arr_name =
+  match Hashtbl.find_opt alloc.arr_elt_types arr_name with
+  | Some t -> t
+  | None -> TFloat32
+
 (** {1 Expression emitter}
 
     Returns the PTX register name holding the result. Emits instructions into
@@ -186,51 +252,47 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
       emit buf "not.b32 %s, %s;" r r_src ;
       r
   | EArrayRead (arr_name, idx_expr) ->
-      (* Pointer + (idx * 4) address computation, then ld.global.f32.
-         Element size is hardcoded to 4 bytes (float32/int32) for the spike.
-         A full implementation would track element types in the env. *)
       let r_base = env_lookup env arr_name in
       let r_idx = emit_expr buf alloc env idx_expr in
-      let r_idx64 = new_u64 alloc in
-      emit buf "cvt.u64.u32 %s, %s;" r_idx64 r_idx ;
-      let r_off = new_u64 alloc in
-      emit buf "shl.b64 %s, %s, 2;" r_off r_idx64 ;
-      let r_addr = new_u64 alloc in
-      emit buf "add.u64 %s, %s, %s;" r_addr r_base r_off ;
-      let r_val = new_f32 alloc in
-      emit buf "ld.global.f32 %s, [%s];" r_val r_addr ;
-      r_val
+      emit_array_read buf alloc r_base r_idx (infer_elt_type alloc arr_name)
   | EArrayReadExpr (base_expr, idx_expr) ->
       let r_base = emit_expr buf alloc env base_expr in
       let r_idx = emit_expr buf alloc env idx_expr in
-      let r_idx64 = new_u64 alloc in
-      emit buf "cvt.u64.u32 %s, %s;" r_idx64 r_idx ;
-      let r_off = new_u64 alloc in
-      emit buf "shl.b64 %s, %s, 2;" r_off r_idx64 ;
-      let r_addr = new_u64 alloc in
-      emit buf "add.u64 %s, %s, %s;" r_addr r_base r_off ;
-      let r_val = new_f32 alloc in
-      emit buf "ld.global.f32 %s, [%s];" r_val r_addr ;
-      r_val
+      let elt_type =
+        match base_expr with
+        | EVar v -> infer_elt_type alloc v.var_name
+        | _ -> TFloat32
+      in
+      emit_array_read buf alloc r_base r_idx elt_type
   | EIntrinsic (path, name, args) -> emit_intrinsic buf alloc env path name args
   | ECast (ty, e) ->
       let r_src = emit_expr buf alloc env e in
       emit_cast buf alloc r_src ty
   | EIf (cond, then_e, else_e) ->
-      (* Spike: branch-based value-if.  A full implementation would use selp
-         for simple cases (no register liveness issues). *)
       let r_cond = emit_expr buf alloc env cond in
+      let r_then = emit_expr buf alloc env then_e in
+      let r_else = emit_expr buf alloc env else_e in
       let p = new_pred alloc in
       emit buf "setp.ne.u32 %s, %s, 0;" p r_cond ;
-      let l_then = new_label alloc in
-      let l_merge = new_label alloc in
-      emit buf "@%s bra %s;" p l_then ;
-      let _r_else = emit_expr buf alloc env else_e in
-      emit buf "bra %s;" l_merge ;
-      emit_label buf l_then ;
-      let r_then = emit_expr buf alloc env then_e in
-      emit_label buf l_merge ;
-      r_then
+      let is_f64 r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd' in
+      let is_f32 r = String.length r >= 2 && r.[1] = 'f' && not (is_f64 r) in
+      let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
+      if is_f64 r_then then (
+        let r = new_f64 alloc in
+        emit buf "selp.f64 %s, %s, %s, %s;" r r_then r_else p ;
+        r)
+      else if is_f32 r_then then (
+        let r = new_f32 alloc in
+        emit buf "selp.f32 %s, %s, %s, %s;" r r_then r_else p ;
+        r)
+      else if is_u64 r_then then (
+        let r = new_u64 alloc in
+        emit buf "selp.u64 %s, %s, %s, %s;" r r_then r_else p ;
+        r)
+      else
+        let r = new_u32 alloc in
+        emit buf "selp.u32 %s, %s, %s, %s;" r r_then r_else p ;
+        r
   | EArrayLen _ ->
       unsupported "EArrayLen (needs (ptr,len) pair tracking in env)"
   | EArrayCreate _ ->
@@ -386,23 +448,55 @@ and emit_binop buf alloc env op e1 e2 : string =
       r
 
 and emit_cast buf alloc r_src dst_ty : string =
+  let is_f64 r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd' in
+  let is_f32 r = String.length r >= 2 && r.[1] = 'f' && not (is_f64 r) in
+  let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
   match dst_ty with
-  | TInt32 ->
-      let r = new_u32 alloc in
-      emit buf "cvt.s32.f32 %s, %s;" r r_src ;
-      r
   | TFloat32 ->
-      let r = new_f32 alloc in
-      emit buf "cvt.rn.f32.s32 %s, %s;" r r_src ;
-      r
+      if is_f32 r_src then r_src
+      else
+        let r = new_f32 alloc in
+        let cvt =
+          if is_f64 r_src then "cvt.rn.f32.f64"
+          else if is_u64 r_src then "cvt.rn.f32.s64"
+          else "cvt.rn.f32.s32"
+        in
+        emit buf "%s %s, %s;" cvt r r_src ;
+        r
   | TFloat64 ->
-      let r = new_f64 alloc in
-      emit buf "cvt.rn.f64.s32 %s, %s;" r r_src ;
-      r
+      if is_f64 r_src then r_src
+      else
+        let r = new_f64 alloc in
+        let cvt =
+          if is_f32 r_src then "cvt.rn.f64.f32"
+          else if is_u64 r_src then "cvt.rn.f64.s64"
+          else "cvt.rn.f64.s32"
+        in
+        emit buf "%s %s, %s;" cvt r r_src ;
+        r
+  | TInt32 ->
+      if (not (is_f32 r_src)) && (not (is_f64 r_src)) && not (is_u64 r_src) then
+        r_src
+      else
+        let r = new_u32 alloc in
+        let cvt =
+          if is_f64 r_src then "cvt.rzi.s32.f64"
+          else if is_f32 r_src then "cvt.rzi.s32.f32"
+          else "cvt.u32.u64"
+        in
+        emit buf "%s %s, %s;" cvt r r_src ;
+        r
   | TInt64 ->
-      let r = new_u64 alloc in
-      emit buf "cvt.s64.s32 %s, %s;" r r_src ;
-      r
+      if is_u64 r_src then r_src
+      else
+        let r = new_u64 alloc in
+        let cvt =
+          if is_f64 r_src then "cvt.rzi.s64.f64"
+          else if is_f32 r_src then "cvt.rzi.s64.f32"
+          else "cvt.s64.s32"
+        in
+        emit buf "%s %s, %s;" cvt r r_src ;
+        r
   | _ -> unsupported ("ECast to " ^ ptx_reg_type_of dst_ty)
 
 and emit_intrinsic buf alloc env _path name args : string =
@@ -631,36 +725,36 @@ and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
   | LVar v ->
       let r_val = emit_expr buf alloc env e in
       let r_dst = env_lookup env v.var_name in
-      (* Infer PTX type from register name prefix *)
-      if String.length r_dst >= 3 && r_dst.[1] = 'r' && r_dst.[2] = 'd' then
-        emit buf "mov.u64 %s, %s;" r_dst r_val
-      else if String.length r_dst >= 2 && r_dst.[1] = 'f' then
-        emit buf "mov.f32 %s, %s;" r_dst r_val
-      else emit buf "mov.u32 %s, %s;" r_dst r_val
+      let is_f64 r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd' in
+      let mov_op =
+        if String.length r_dst >= 3 && r_dst.[1] = 'r' && r_dst.[2] = 'd' then
+          "mov.u64"
+        else if is_f64 r_dst then "mov.f64"
+        else if String.length r_dst >= 2 && r_dst.[1] = 'f' then "mov.f32"
+        else "mov.u32"
+      in
+      emit buf "%s %s, %s;" mov_op r_dst r_val
   | LArrayElem (arr_name, idx_expr) ->
-      (* Compute byte address = base + idx * 4, then st.global.f32.
-         Element size hardcoded to 4 for the spike; see EArrayRead note. *)
       let r_base = env_lookup env arr_name in
       let r_val = emit_expr buf alloc env e in
       let r_idx = emit_expr buf alloc env idx_expr in
-      let r_idx64 = new_u64 alloc in
-      emit buf "cvt.u64.u32 %s, %s;" r_idx64 r_idx ;
-      let r_off = new_u64 alloc in
-      emit buf "shl.b64 %s, %s, 2;" r_off r_idx64 ;
-      let r_addr = new_u64 alloc in
-      emit buf "add.u64 %s, %s, %s;" r_addr r_base r_off ;
-      emit buf "st.global.f32 [%s], %s;" r_addr r_val
+      emit_array_write
+        buf
+        alloc
+        r_base
+        r_idx
+        r_val
+        (infer_elt_type alloc arr_name)
   | LArrayElemExpr (base_expr, idx_expr) ->
       let r_base = emit_expr buf alloc env base_expr in
       let r_val = emit_expr buf alloc env e in
       let r_idx = emit_expr buf alloc env idx_expr in
-      let r_idx64 = new_u64 alloc in
-      emit buf "cvt.u64.u32 %s, %s;" r_idx64 r_idx ;
-      let r_off = new_u64 alloc in
-      emit buf "shl.b64 %s, %s, 2;" r_off r_idx64 ;
-      let r_addr = new_u64 alloc in
-      emit buf "add.u64 %s, %s, %s;" r_addr r_base r_off ;
-      emit buf "st.global.f32 [%s], %s;" r_addr r_val
+      let elt_type =
+        match base_expr with
+        | EVar v -> infer_elt_type alloc v.var_name
+        | _ -> TFloat32
+      in
+      emit_array_write buf alloc r_base r_idx r_val elt_type
   | LRecordField _ ->
       unsupported "LRecordField assignment (requires struct layout)"
 
@@ -675,7 +769,7 @@ let emit_params buf alloc (env : env) (params : decl list) : string =
   List.iter
     (fun decl ->
       match decl with
-      | DParam (v, _arr_info) -> (
+      | DParam (v, arr_info_opt) -> (
           if not !first then Buffer.add_string param_decls ",\n" ;
           first := false ;
           match v.var_type with
@@ -685,6 +779,13 @@ let emit_params buf alloc (env : env) (params : decl list) : string =
                 (Printf.sprintf "    .param .u64 param_%s" v.var_name) ;
               let r = new_u64 alloc in
               env_bind env v.var_name r ;
+              (match arr_info_opt with
+              | Some info ->
+                  Hashtbl.replace
+                    alloc.arr_elt_types
+                    v.var_name
+                    info.arr_elttype
+              | None -> ()) ;
               emit buf "ld.param.u64 %s, [param_%s];" r v.var_name
           | TInt32 | TBool ->
               Buffer.add_string
@@ -737,7 +838,14 @@ let emit_locals buf alloc (env : env) (locals : decl list) : unit =
           | None -> ()
           | Some e ->
               let r_init = emit_expr buf alloc env e in
-              emit buf "mov.u32 %s, %s;" r r_init)
+              let mov_op =
+                match v.var_type with
+                | TFloat32 -> "mov.f32"
+                | TFloat64 -> "mov.f64"
+                | TInt64 -> "mov.u64"
+                | _ -> "mov.u32"
+              in
+              emit buf "%s %s, %s;" mov_op r r_init)
       | DShared (name, _elt, _size_opt) ->
           (* Shared memory requires .shared address-space allocation and
              cvta.to.global for pointer arithmetic.  Logged as a design gap;

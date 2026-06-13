@@ -26,5 +26,6 @@
   Cuda_api
   Cuda_plugin_base
   Cuda_plugin
-  Sarek_ir_cuda)
+  Sarek_ir_cuda
+  Sarek_ir_ptx)
  (preprocess no_preprocessing))

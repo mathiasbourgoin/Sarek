@@ -14,7 +14,8 @@
   Sarek_ir_metal
   Sarek_ir_glsl
   Sarek_ir_wgsl
-  Sarek_wgsl_abi)
+  Sarek_wgsl_abi
+  Sarek_ir_ptx)
  (preprocess no_preprocessing)
  (instrumentation
   (backend bisect_ppx)))

@@ -17,6 +17,6 @@
 (test
  (name test_ptx_external)
  (modules test_ptx_external)
- (libraries sarek_cuda alcotest)
+ (libraries sarek_cuda sarek.codegen alcotest)
  (instrumentation
   (backend bisect_ppx)))
