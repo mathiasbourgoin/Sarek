@@ -1,0 +1,34 @@
+# Anchor theorems for the proof ledger (convergence-safety).
+# One fully-qualified name per line: Root.Module.theorem
+# Logical root: ConvergenceSpec (-R theories ConvergenceSpec in _CoqProject)
+# Source: theories/ConvergenceSpec.v
+#
+# T0 — decidable / computable lattice laws
+ConvergenceSpec.ConvergenceSpec.merge_dim_comm
+ConvergenceSpec.ConvergenceSpec.merge_dim_assoc
+ConvergenceSpec.ConvergenceSpec.merge_dim_idempotent
+ConvergenceSpec.ConvergenceSpec.merge_dim_empty_r
+ConvergenceSpec.ConvergenceSpec.merge_dim_empty_l
+ConvergenceSpec.ConvergenceSpec.check_seq_hom
+#
+# T1 — first-order / inductive
+ConvergenceSpec.ConvergenceSpec.diverged_clean_iff_barrier_free
+ConvergenceSpec.ConvergenceSpec.mode_monotone
+ConvergenceSpec.ConvergenceSpec.not_varying_converged_clean
+ConvergenceSpec.ConvergenceSpec.cdcf_check_agreement
+ConvergenceSpec.ConvergenceSpec.varying_if_flags_barriers
+ConvergenceSpec.ConvergenceSpec.superstep_outer_diverged_error
+ConvergenceSpec.ConvergenceSpec.env_lookup_extend_same
+ConvergenceSpec.ConvergenceSpec.env_let_alias_varying
+ConvergenceSpec.ConvergenceSpec.env_var_diverged_clean
+ConvergenceSpec.ConvergenceSpec.env_check_let_alias_catches
+#
+# T2 — human-insight / warp + return compositionality
+ConvergenceSpec.ConvergenceSpec.warp_diverged_error
+ConvergenceSpec.ConvergenceSpec.warp_mode_monotone
+ConvergenceSpec.ConvergenceSpec.warp_varying_if_flags
+ConvergenceSpec.ConvergenceSpec.return_barrier_skip_safe
+#
+# T3-S1 — semantic domain + fuel-indexed evaluator (ConvergenceSemantics.v)
+ConvergenceSpec.ConvergenceSemantics.eval_fuel_monotone
+ConvergenceSpec.ConvergenceSemantics.eval_app_seq_compose

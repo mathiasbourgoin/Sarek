@@ -1,0 +1,6 @@
+# Axiom whitelist for convergence-safety.
+# One axiom name per line, exactly as Print Assumptions prints it.
+# Empty (comments only) = zero-axiom policy — apparatus default.
+# All 20 theorems are "Closed under the global context".
+# Any entry added here MUST have a matching row in ASSUMPTIONS.md
+# (check-project.sh C5 enforces this) and a written rationale.

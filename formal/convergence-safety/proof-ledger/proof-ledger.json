@@ -1,0 +1,127 @@
+{
+  "schema": 1,
+  "rocq_version": "9.1.1",
+  "anchors": [
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.merge_dim_comm",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "merge_dim_comm : forall a b : dim_usage, merge_dim_usage a b = merge_dim_usage b a"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.merge_dim_assoc",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "merge_dim_assoc : forall a b c : dim_usage, merge_dim_usage a (merge_dim_usage b c) = merge_dim_usage (merge_dim_usage a b) c"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.merge_dim_idempotent",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "merge_dim_idempotent : forall a : dim_usage, merge_dim_usage a a = a"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.merge_dim_empty_r",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "merge_dim_empty_r : forall a : dim_usage, merge_dim_usage a empty_dim_usage = a"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.merge_dim_empty_l",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "merge_dim_empty_l : forall a : dim_usage, merge_dim_usage empty_dim_usage a = a"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.check_seq_hom",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "check_seq_hom : forall (m : exec_mode) (es1 es2 : list expr), check m (ESeq (es1 ++ es2)) = (check m (ESeq es1) ++ check m (ESeq es2))%list"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.diverged_clean_iff_barrier_free",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "diverged_clean_iff_barrier_free : forall e : expr, check Diverged e = nil <-> barrier_free e = true"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.mode_monotone",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "mode_monotone : forall e : expr, List.incl (check Converged e) (check Diverged e)"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.not_varying_converged_clean",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "not_varying_converged_clean : forall e : expr, is_varying e = false -> check Converged e = nil"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.cdcf_check_agreement",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "cdcf_check_agreement : forall e : expr, has_diverging_cf e = false -> check Converged e = nil"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.varying_if_flags_barriers",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "varying_if_flags_barriers : forall (cond then_ else_ : expr) (ctx : exec_mode), is_varying cond = true -> barrier_free then_ = false -> check ctx (EIf cond then_ else_) <> nil"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.superstep_outer_diverged_error",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "superstep_outer_diverged_error : forall body cont : expr, check Diverged (ESuperstep false body cont) <> nil"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.env_lookup_extend_same",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "env_lookup_extend_same : forall (env : Env) (x : nat) (v : bool), env_lookup (env_extend env x v) x = v"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.env_let_alias_varying",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "env_let_alias_varying : forall (env : Env) (x : nat) (v b : expr), is_varying_in_env env v = true -> is_varying_in_env (env_extend env x true) b = true -> is_varying_in_env env (ELet x v b) = true"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.env_var_diverged_clean",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "env_var_diverged_clean : forall (env : Env) (x : nat), check_env Diverged env (EVar x) = nil"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.env_check_let_alias_catches",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "env_check_let_alias_catches : forall (env : Env) (x : nat) (v : expr), is_varying_in_env env v = true -> check_env Converged env (ELet x v (EIf (EVar x) EBarrier ELit)) <> nil"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.warp_diverged_error",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "warp_diverged_error : check_warp Diverged EWarpPoint <> nil"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.warp_mode_monotone",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "warp_mode_monotone : forall e : expr, List.incl (check_warp Converged e) (check_warp Diverged e)"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.warp_varying_if_flags",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "warp_varying_if_flags : forall el : expr, check_warp Converged (EIf EVary EWarpPoint el) <> nil"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.return_barrier_skip_safe",
+      "status": "PROVEN",
+      "assumptions": [],
+      "type": "return_barrier_skip_safe : forall (m : exec_mode) (e : expr), check m (EReturn e) = check m e"
+    }
+  ],
+  "counts": { "admitted": 0 }
+}

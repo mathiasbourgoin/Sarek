@@ -1,8 +1,8 @@
 # ConvergenceSafety — Work Plan
 
-**Last updated**: 2026-06-12 (tick 2 — T3-SEMANTIC replanned into 8 concrete subtasks; T3-GATE still open)
+**Last updated**: 2026-06-13 (tick 3 — T3-GATE resolved: full ladder T3-S1..S8 approved by human)
 **Apparatus version**: 1.1.0
-**Phase**: Post-T1A-CONF (20 theorems, 0 admits, 0 axioms, coqchk passes; 17 conformance, 7 extraction)
+**Phase**: T3-SEMANTIC (full ladder approved; T3-S1 is current task)
 
 ---
 
@@ -16,8 +16,8 @@
 | T2-F02 | Environment-threaded is_varying in Rocq spec for F-02 | T2 | **done** | — |
 | T2-WARP | WarpConvergence error class: EWarpPoint/WarpError/check_warp/warp_diverged_error/warp_mode_monotone/warp_varying_if_flags | T2 | **done** | — |
 | T2-RETURN | TEReturn early-return barrier-skip: EReturn constructor, model barrier-skip, safety theorem | T2 | **done** (return_barrier_skip_safe, 20 theorems, 17 conformance, 7 extraction) | — |
-| T3-GATE | HUMAN DECISION — approve T3-SEMANTIC scope per the breakdown below (whole ladder, or stop at SEMANTIC-CORE) | T3 | **open (human gate)** | — |
-| T3-S1 | Semantic domain + fuel-indexed big-step evaluator with barrier traces | T3 | open | T3-GATE |
+| T3-GATE | HUMAN DECISION — approve T3-SEMANTIC scope per the breakdown below (whole ladder, or stop at SEMANTIC-CORE) | T3 | **done** (full ladder approved 2026-06-13) | — |
+| T3-S1 | Semantic domain + fuel-indexed big-step evaluator with barrier traces | T3 | open | — |
 | T3-S2 | Uniformity soundness of `is_varying_in_env` (semantic grounding of EVary) | T3 | open | T3-S1 |
 | T3-S3 | Trace silence of barrier-free expressions | T3 | open | T3-S1 |
 | T3-S4 | Core semantic soundness of `check_env` (trace-uniformity theorem) | T3 | open | T3-S2, T3-S3 |
@@ -31,20 +31,13 @@
 
 ## Current task
 
-**T3-GATE — HUMAN DECISION: approve T3-SEMANTIC scope.**
+**T3-S1 — current task.**
 
-All T1 and T2 work is complete (see done rows above; 20 theorems, 0 admits, 0 axioms,
-coqchk passes; conformance 17/17, extraction 7/7, live CMBT 10/10).
+T3-GATE resolved 2026-06-13: full ladder (T3-S1..S8) approved by human.
+All T1 and T2 work is complete (20 theorems, 0 admits, 0 axioms, coqchk passes;
+conformance 17/17, extraction 7/7, live CMBT 10/10).
 
-T3-SEMANTIC has been replanned into the 8 strictly-ordered subtasks below. The gate
-question is now concrete:
-
-> Approve T3-SEMANTIC? Options:
-> (a) full ladder T3-S1 … T3-S8;
-> (b) stop at the **SEMANTIC-CORE milestone** (end of T3-S5) — project is
->     semantically grounded and the open EReturn audit item is formally adjudicated;
-> (c) defer.
-> Estimated total: ~3–5 weeks for (b), ~5–8 weeks for (a). T3-S4 is the long pole.
+Current task: T3-S1 — Semantic domain + fuel-indexed big-step evaluator with barrier traces.
 
 ---
 
@@ -314,6 +307,8 @@ global decision 4 and is recorded as the T3 trust boundary.
 
 ## Workflow notes
 
+- Tick 3 (2026-06-13): T3-GATE resolved — full ladder T3-S1..S8 approved by human.
+  currentTask = T3-S1 (unblocked). Workflow ready to fire.
 - Tick 2 (2026-06-12): T3-SEMANTIC replanned from a one-line stub into 8 strictly
   ordered subtasks (T3-S1..S8) after a ground-truth re-read of
   `Sarek_convergence.ml` and `ConvergenceSpec.v`. Key decisions: fuel-indexed

@@ -1,11 +1,11 @@
 # ConvergenceSafety — Project Status
 
 **Grade**: A (apparatus-native)
-**Apparatus version**: 1.1.0
+**Apparatus version**: 1.2.1
 **Host profile**: SPOC/sarek
 **Architecture**: 3-layer
 **Built at**: 2026-06-11
-**Last updated**: 2026-06-12 (T1A-CONF: 3 dedicated ESuperstep QCheck properties — 20 theorems, 17 conformance properties, 7 extraction tests)
+**Last updated**: 2026-06-13 (T3-S1: semantic domain + fuel-indexed big-step evaluator with barrier traces — `ConvergenceSemantics.v`, 0 admits, 0 axioms)
 
 ## Project
 
@@ -47,6 +47,17 @@ Assumptions documented in `ASSUMPTIONS.md`:
 
 **Total**: 20 theorems, 0 admits, 0 axioms — `coqchk` passes (T2-RETURN)
 
+## T3-S1 semantic layer (ConvergenceSemantics.v — new file)
+
+| Item | Status | Notes |
+|---|---|---|
+| Type definitions (tid, value, venv, event, trace, outcome) | done | New file; ConvergenceSpec.v frozen |
+| `Section Evaluator` / `Variable vary_val` | done | 0-axiom invariant preserved |
+| `Fixpoint eval` (15 constructors) | done | fuel-indexed, total, option-valued |
+| `eval_fuel_monotone` | done | 0 admits; uses for_loop_mono, eval_seq_mono, eval_args_mono helpers |
+| `eval_app_seq_compose` | done | 0 admits; uses eval_seq_concat_acc helper |
+| `coqchk` | passes | 0 new axioms |
+
 ## Test intensity
 
 - **Conformance**: `test/test_convergence_conformance.ml` — 17 properties (`test_convergence_conformance`), 1000–2000 tests each — **17/17 GREEN** (2 new F-02 env-threaded properties added T2-F02; 1 new randomized warp property added T2-WARP+; 1 new return_barrier_skip_safe property added T2-RETURN; 3 new dedicated ESuperstep properties added T1A-CONF: superstep_outer_diverged_error, superstep_no_entry_error_converged, superstep_body_errors_propagate)
@@ -86,12 +97,13 @@ None yet.
 
 ```
 Resume ConvergenceSafety (apparatus v1.1.0, grade A).
-State: 20/20 theorems proven, 0 admits, 0 axioms, coqchk passes. T2-RETURN complete.
+State: 20/20 theorems proven, 0 admits, 0 axioms, coqchk passes. T3-S1 complete.
 Conformance: 17/17 green. Extraction: 7/7 green. Live CMBT: 10/10 green.
 F-01 RESOLVED (OCaml + Rocq). F-02 RESOLVED (OCaml + Rocq env-threaded model).
 F-03 (WarpConvergence) RESOLVED (Rocq: EWarpPoint/WarpError/check_warp/warp_diverged_error/warp_mode_monotone/warp_varying_if_flags; documented in findings/DIVERGENCE_FINDINGS.md).
 T2-RETURN RESOLVED (Rocq: EReturn/return_barrier_skip_safe/return_converged_clean; TEReturn exits without crossing any barrier).
-T1A-CONF RESOLVED (3 dedicated ESuperstep QCheck properties: superstep_outer_diverged_error, superstep_no_entry_error_converged, superstep_body_errors_propagate; PR #182 merged).
-Next: T3-GATE (human decision on T3-SEMANTIC). All T1+T2 work complete.
+T1A-CONF RESOLVED (3 dedicated ESuperstep QCheck properties; PR #182 merged).
+T3-S1 RESOLVED (ConvergenceSemantics.v: semantic domain + fuel-indexed big-step evaluator + eval_fuel_monotone + eval_app_seq_compose; 0 admits, 0 axioms, coqchk passes).
+Next: T3-S2 (barrier-trace uniformity lemma) or next T3-SEMANTIC subtask per PLAN.md.
 Run /formal-check before any lock or milestone.
 ```

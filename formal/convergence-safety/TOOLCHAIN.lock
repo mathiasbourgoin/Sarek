@@ -1,0 +1,20 @@
+# TOOLCHAIN.lock — convergence-safety
+#
+# Pinned proof/extraction toolchain. Filled at apparatus v1.2 retrofit.
+# Checked by scripts/check-project.sh (rocq_exact must satisfy the floor >= 9.1.0).
+#
+# FLOOR RATIONALE — rocq >= 9.1.0:
+#   9.1.0 is the release that FIXED four guard-checker soundness bugs
+#   (rocq-prover/rocq #20415, #20457, #20648, #21050 — "proved False"
+#   class, present in 9.0.x and earlier). Do not build proofs on an
+#   earlier kernel. Newer point releases are fine; record what you use.
+#
+# Honest boundary (record, don't hide): roughly one critical Rocq
+# soundness bug surfaces per year historically. The pin + conformance
+# tests are mitigations, not eliminations — see ASSUMPTIONS.md.
+
+rocq        = >= 9.1.0           # floor; record exact version below
+rocq_exact  = 9.1.1              # from: opam exec -- rocq -- rocq --version
+ocaml_rocq  = 5.4.0              # OCaml in the Rocq switch
+ocaml_host  = 5.3.0              # OCaml in the host build switch
+zarith      = 1.7-1              # from: opam list zarith --short
