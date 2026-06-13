@@ -5,7 +5,7 @@
 **Host profile**: SPOC/sarek
 **Architecture**: 3-layer
 **Built at**: 2026-06-11
-**Last updated**: 2026-06-13 (T3-S2: uniformity soundness via eval semantics — `env_agrees`, `is_strongly_uniform`, `not_varying_uniform`, `closed_uniform` — `ConvergenceSemantics.v`, 0 admits, 0 axioms)
+**Last updated**: 2026-06-13 (T3-S3: trace silence of barrier-free expressions — `no_barrier_event`, `superstep_free`, `barrier_free_no_barriers`, `diverged_clean_no_barriers` — 0 admits, 0 axioms)
 
 ## Project
 

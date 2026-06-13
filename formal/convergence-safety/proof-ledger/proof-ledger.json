@@ -194,13 +194,114 @@
       "axioms": [],
       "source": "theories/ConvergenceSemantics.v",
       "type": "closed_uniform : forall (e : expr) (vary_val : tid -> value) (fuel : nat) (t1 t2 : tid) (rho1 rho2 : venv), is_var_free e = true -> is_varying e = false -> eval vary_val fuel t1 rho1 e = eval vary_val fuel t2 rho2 e"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.no_barrier_event",
+      "status": "DEFINITION",
+      "tier": "T3",
+      "subtask": "T3-S3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "notes": "Boolean predicate on a trace: true iff the trace contains no EvBarrier event"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.superstep_free",
+      "status": "DEFINITION",
+      "tier": "T3",
+      "subtask": "T3-S3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "notes": "Structural Boolean predicate on expr: true iff e contains no ESuperstep constructor"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.eval_seq_from",
+      "status": "DEFINITION",
+      "tier": "T3",
+      "subtask": "T3-S3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "notes": "Helper definition/fixpoint for ESeq inner loop used in eval_seq_no_barrier"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.eval_args_from",
+      "status": "DEFINITION",
+      "tier": "T3",
+      "subtask": "T3-S3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "notes": "Helper definition/fixpoint for EApp inner loop used in eval_args_no_barrier"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.no_barrier_app",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "T3-S3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "no_barrier_app : forall (tr1 tr2 : trace), no_barrier_event tr1 = true -> no_barrier_event tr2 = true -> no_barrier_event (tr1 ++ tr2) = true"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.for_loop_fixed_no_barrier",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "T3-S3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "for_loop_fixed_no_barrier : EFor inner loop helper — no EvBarrier in loop traces when body is barrier_free and superstep_free"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.eval_seq_no_barrier",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "T3-S3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "eval_seq_no_barrier : ESeq inner loop helper — no EvBarrier in concatenated traces when each element is barrier_free and superstep_free"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.eval_args_no_barrier",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "T3-S3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "eval_args_no_barrier : EApp inner loop helper — no EvBarrier in argument traces when each argument is barrier_free and superstep_free"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.barrier_free_no_barriers",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "T3-S3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "barrier_free_no_barriers : forall (vary_val : tid -> value) (fuel : nat) (t : tid) (rho : venv) (e : expr) (o : outcome) (tr : trace), barrier_free e = true -> superstep_free e = true -> eval vary_val fuel t rho e = Some (o, tr) -> no_barrier_event tr = true"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.diverged_clean_no_barriers",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "T3-S3",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "diverged_clean_no_barriers : forall (vary_val : tid -> value) (fuel : nat) (t : tid) (rho : venv) (e : expr) (o : outcome) (tr : trace), check Diverged e = nil -> superstep_free e = true -> eval vary_val fuel t rho e = Some (o, tr) -> no_barrier_event tr = true",
+      "notes": "Corollary of barrier_free_no_barriers via diverged_clean_iff_barrier_free; the T1 flagship theorem acquires semantic content"
     }
   ],
   "counts": { "admitted": 0 },
   "summary": {
-    "total": 28,
-    "proven": 27,
-    "definitions": 1,
+    "total": 38,
+    "proven": 33,
+    "definitions": 5,
     "admits": 0,
     "axioms": [],
     "generated": "2026-06-13",

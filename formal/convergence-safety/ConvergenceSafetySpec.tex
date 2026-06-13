@@ -115,6 +115,12 @@ variability propagation.
         and variable environments (\cref{thm:not-varying-uniform}).
   \item[\textbf{T3}] Closed non-varying expressions are fully uniform across all
         thread ids and environments (\cref{thm:closed-uniform}).
+  \item[\textbf{T3}] Barrier-free, superstep-free expressions produce no
+        $\mathsf{EvBarrier}$ event at runtime
+        (\cref{thm:barrier-free-no-barriers}).
+  \item[\textbf{T3}] Diverged-clean, superstep-free expressions produce no
+        $\mathsf{EvBarrier}$ event at runtime --- the T1 flagship theorem acquires
+        semantic content (\cref{cor:diverged-clean-no-barriers}).
 \end{enumerate}
 
 \subsection*{Out of scope}
@@ -665,6 +671,84 @@ projects to the abstract \texttt{error} type.
 \texttt{WarpConvergence} error class is now in scope as $\mathsf{EWarpPoint}$
 (T2-WARP); \texttt{TEReturn} is now in scope as $\mathsf{EReturn}$
 (T2-RETURN); see type-correspondence table.)
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{T3-S3 --- Trace silence of barrier-free expressions}
+\label{sec:trace-silence}
+
+This section grounds the predicate $\barrierfree{e}$ in the execution semantics:
+a barrier-free, superstep-free expression produces no $\mathsf{EvBarrier}$ event
+at runtime.  The superstep-free side condition is necessary because
+$\mathsf{ESuperstep}$ emits an implicit $\mathsf{EvBarrier}$ event regardless of
+the divergent flag $b$, even when $\barrierfree{\mathsf{ESuperstep}(b,\_,\_)}$
+holds.  The semantic treatment of $\mathsf{ESuperstep}$ is deferred to T3-S6.
+
+\begin{definition}[$\mathtt{no\_barrier\_event}(\mathit{tr})$]
+\label{def:no-barrier-event}
+A Boolean predicate on traces:
+\[
+  \mathtt{no\_barrier\_event}(\mathit{tr}) = \mathsf{true}
+  \;\iff\;
+  \mathsf{EvBarrier} \notin \mathit{tr}.
+\]
+Defined by scanning each event: $\mathtt{no\_barrier\_event}([]) = \mathsf{true}$;
+$\mathtt{no\_barrier\_event}(\mathsf{EvBarrier} :: \_) = \mathsf{false}$;
+$\mathtt{no\_barrier\_event}(\mathsf{EvWarp} :: \mathit{tr'}) = \mathtt{no\_barrier\_event}(\mathit{tr'})$.
+\end{definition}
+
+\begin{definition}[$\mathtt{superstep\_free}(e)$]
+\label{def:superstep-free}
+A structural Boolean predicate: $\mathtt{superstep\_free}(e) = \mathsf{true}$
+iff $e$ contains no $\mathsf{ESuperstep}$ sub-expression.
+\end{definition}
+
+\begin{lemma}[Barrier-event concatenation]
+  \label{lem:no-barrier-app}
+  For all $\mathit{tr}_1$, $\mathit{tr}_2$:
+  \[
+    \mathtt{no\_barrier\_event}(\mathit{tr}_1) = \mathsf{true}
+    \;\land\;
+    \mathtt{no\_barrier\_event}(\mathit{tr}_2) = \mathsf{true}
+    \;\Rightarrow\;
+    \mathtt{no\_barrier\_event}(\mathit{tr}_1 \mathbin{++} \mathit{tr}_2) = \mathsf{true}.
+  \]
+\end{lemma}
+
+\begin{theorem}[Barrier-free implies no barrier events (T3-S3)]
+  \label{thm:barrier-free-no-barriers}
+  For all $\mathit{vary\_val}$, $\mathit{fuel}$, $t$, $\rho$, $e$, $o$, $\mathit{tr}$:
+  \[
+    \barrierfree{e} = \mathsf{true}
+    \;\land\;
+    \mathtt{superstep\_free}(e) = \mathsf{true}
+    \;\land\;
+    \mathtt{eval}(\mathit{vary\_val},\,\mathit{fuel},\,t,\,\rho,\,e)
+      = \mathsf{Some}(o,\,\mathit{tr})
+    \;\Rightarrow\;
+    \mathtt{no\_barrier\_event}(\mathit{tr}) = \mathsf{true}.
+  \]
+  A barrier-free, superstep-free expression cannot produce any
+  $\mathsf{EvBarrier}$ event at runtime.  Proved by structural induction on $e$
+  with a nested fuel induction for $\mathsf{EWhile}$.
+\end{theorem}
+
+\begin{corollary}[Diverged-clean implies no barrier events (T3-S3)]
+  \label{cor:diverged-clean-no-barriers}
+  For all $\mathit{vary\_val}$, $\mathit{fuel}$, $t$, $\rho$, $e$, $o$, $\mathit{tr}$:
+  \[
+    \chk{\Diverged}{e} = []
+    \;\land\;
+    \mathtt{superstep\_free}(e) = \mathsf{true}
+    \;\land\;
+    \mathtt{eval}(\mathit{vary\_val},\,\mathit{fuel},\,t,\,\rho,\,e)
+      = \mathsf{Some}(o,\,\mathit{tr})
+    \;\Rightarrow\;
+    \mathtt{no\_barrier\_event}(\mathit{tr}) = \mathsf{true}.
+  \]
+  Follows from \cref{thm:barrier-free-no-barriers} via the T1 flagship theorem
+  $\chk{\Diverged}{e} = [] \iff \barrierfree{e} = \mathsf{true}$
+  (\cref{thm:div-clean}), which now acquires semantic content.
+\end{corollary}
 
 %───────────────────────────────────────────────────────────────────────────────
 \section{References}

@@ -1900,3 +1900,350 @@ Proof.
   exact (not_varying_uniform vary_val fuel [] e t1 t2 rho2 rho2
            (H_self_agrees rho2) (var_free_is_strongly_uniform_empty e Hf Hv)).
 Qed.
+
+
+(* ===== 8. T3-S3 — Trace silence of barrier-free, superstep-free expressions ===== *)
+
+(*
+ * T3-S3 design note:
+ *
+ * The PLAN stated: barrier_free_silent → tr = [].
+ * This is too strong: EWarpPoint is barrier_free but emits [EvWarp], and
+ * ESuperstep true with barrier_free body emits [EvBarrier].
+ *
+ * Correct statement: barrier_free + superstep_free → no EvBarrier in tr.
+ * The superstep_free side-condition excludes ESuperstep (which emits EvBarrier
+ * for all dv values). EWarpPoint may emit [EvWarp]; this is correct and
+ * intentional. For T3-S4 barrier_safe purposes, EWarpPoint is handled by
+ * T3-S2 (not_varying_uniform covers it since EWarpPoint is not varying).
+ *)
+
+(** no_barrier_event: the trace contains no EvBarrier events. *)
+Definition no_barrier_event (tr : trace) : bool :=
+  forallb (fun ev => match ev with EvBarrier => false | _ => true end) tr.
+
+(** superstep_free: e contains no ESuperstep node at any depth. *)
+Fixpoint superstep_free (e : expr) : bool :=
+  match e with
+  | ELit | EVary | EBarrier | EWarpPoint | EVar _ => true
+  | EBinop a b       => superstep_free a && superstep_free b
+  | EUnop e0         => superstep_free e0
+  | EIf c t0 el      => superstep_free c && superstep_free t0 && superstep_free el
+  | EWhile c b       => superstep_free c && superstep_free b
+  | EFor lo hi b     => superstep_free lo && superstep_free hi && superstep_free b
+  | ESeq es          => forallb superstep_free es
+  | ELet _ v b       => superstep_free v && superstep_free b
+  | ESuperstep _ _ _ => false
+  | EApp args        => forallb superstep_free args
+  | EReturn e0       => superstep_free e0
+  end.
+
+(** no_barrier_app: no_barrier_event distributes over list append. *)
+Lemma no_barrier_app : forall tr1 tr2,
+  no_barrier_event (tr1 ++ tr2) = no_barrier_event tr1 && no_barrier_event tr2.
+Proof.
+  intros tr1 tr2. unfold no_barrier_event. apply forallb_app.
+Qed.
+
+(** for_loop_fixed_no_barrier: the EFor body loop preserves no_barrier_event. *)
+Lemma for_loop_fixed_no_barrier :
+  forall body k acc o tr,
+    no_barrier_event acc = true ->
+    (forall o' tr', body = Some (o', tr') -> no_barrier_event tr' = true) ->
+    for_loop_fixed body k acc = Some (o, tr) ->
+    no_barrier_event tr = true.
+Proof.
+  intros body k.
+  induction k as [| k' IHk].
+  - intros acc o tr Hacc _ H. simpl in H. inversion H. subst. exact Hacc.
+  - intros acc o tr Hacc Hbody H.
+    simpl in H.
+    destruct body as [[[bv | bv] tr_b] |] eqn:Ebody.
+    + (* ONorm bv — recursive case *)
+      apply IHk with (acc := acc ++ tr_b) (o := o) (tr := tr).
+      * rewrite no_barrier_app. apply andb_true_iff; split.
+        { exact Hacc. } { exact (Hbody (ONorm bv) tr_b eq_refl). }
+      * exact Hbody.
+      * exact H.
+    + (* ORet bv — terminal: tr = acc ++ tr_b *)
+      inversion H. subst.
+      rewrite no_barrier_app. apply andb_true_iff; split.
+      * exact Hacc. * exact (Hbody (ORet bv) tr_b eq_refl).
+    + discriminate.
+Qed.
+
+(** eval_seq_no_barrier: the ESeq inner accumulator loop preserves no_barrier_event. *)
+Lemma eval_seq_no_barrier :
+  forall vary_val n t rho,
+    (forall e o tr,
+      superstep_free e = true ->
+      barrier_free e = true ->
+      eval vary_val n t rho e = Some (o, tr) ->
+      no_barrier_event tr = true) ->
+  forall xs acc o tr,
+    no_barrier_event acc = true ->
+    forallb superstep_free xs = true ->
+    forallb barrier_free xs = true ->
+    (fix eval_seq (xs0 : list expr) (acc_tr : trace) : option (outcome * trace) :=
+      match xs0 with
+      | []      => Some (ONorm 0, acc_tr)
+      | x :: rest =>
+          match eval vary_val n t rho x with
+          | Some (ORet v, tr)  => Some (ORet v, acc_tr ++ tr)
+          | Some (ONorm _, tr) => eval_seq rest (acc_tr ++ tr)
+          | None               => None
+          end
+      end) xs acc = Some (o, tr) ->
+    no_barrier_event tr = true.
+Proof.
+  intros vary_val n t rho IHn.
+  induction xs as [| x xs' IHxs].
+  - intros acc o tr Hacc _ _ H. simpl in H. inversion H. subst. exact Hacc.
+  - intros acc o tr Hacc Hsfree Hbfree H.
+    simpl in Hsfree. apply andb_true_iff in Hsfree as [Hsfx Hsfxs].
+    simpl in Hbfree. apply andb_true_iff in Hbfree as [Hbfx Hbfxs].
+    simpl in H.
+    destruct (eval vary_val n t rho x) as [[[xv | xv] xtr] |] eqn:Hx.
+    + (* ONorm — recurse *)
+      apply IHxs with (acc := acc ++ xtr) (o := o) (tr := tr).
+      * rewrite no_barrier_app. apply andb_true_iff; split.
+        { exact Hacc. } { exact (IHn x (ONorm xv) xtr Hsfx Hbfx Hx). }
+      * exact Hsfxs. * exact Hbfxs. * exact H.
+    + (* ORet — terminal: tr = acc ++ xtr *)
+      inversion H. subst.
+      rewrite no_barrier_app. apply andb_true_iff; split.
+      * exact Hacc. * exact (IHn x (ORet xv) xtr Hsfx Hbfx Hx).
+    + discriminate.
+Qed.
+
+(** eval_args_no_barrier: the EApp inner accumulator loop preserves no_barrier_event.
+    Analogous to eval_seq_no_barrier but with a last_v value accumulator. *)
+Lemma eval_args_no_barrier :
+  forall vary_val n t rho,
+    (forall e o tr,
+      superstep_free e = true ->
+      barrier_free e = true ->
+      eval vary_val n t rho e = Some (o, tr) ->
+      no_barrier_event tr = true) ->
+  forall xs acc last_v o tr,
+    no_barrier_event acc = true ->
+    forallb superstep_free xs = true ->
+    forallb barrier_free xs = true ->
+    (fix eval_args (xs0 : list expr) (acc_tr : trace) (lv : value)
+        : option (outcome * trace) :=
+      match xs0 with
+      | []      => Some (ONorm lv, acc_tr)
+      | x :: rest =>
+          match eval vary_val n t rho x with
+          | Some (ORet v, tr)  => Some (ORet v, acc_tr ++ tr)
+          | Some (ONorm v, tr) => eval_args rest (acc_tr ++ tr) v
+          | None               => None
+          end
+      end) xs acc last_v = Some (o, tr) ->
+    no_barrier_event tr = true.
+Proof.
+  intros vary_val n t rho IHn.
+  induction xs as [| x xs' IHxs].
+  - intros acc last_v o tr Hacc _ _ H. simpl in H. inversion H. subst. exact Hacc.
+  - intros acc last_v o tr Hacc Hsfree Hbfree H.
+    simpl in Hsfree. apply andb_true_iff in Hsfree as [Hsfx Hsfxs].
+    simpl in Hbfree. apply andb_true_iff in Hbfree as [Hbfx Hbfxs].
+    simpl in H.
+    destruct (eval vary_val n t rho x) as [[[xv | xv] xtr] |] eqn:Hx.
+    + (* ONorm xv — recurse with new last_v = xv *)
+      apply IHxs with (acc := acc ++ xtr) (last_v := xv) (o := o) (tr := tr).
+      * rewrite no_barrier_app. apply andb_true_iff; split.
+        { exact Hacc. } { exact (IHn x (ONorm xv) xtr Hsfx Hbfx Hx). }
+      * exact Hsfxs. * exact Hbfxs. * exact H.
+    + (* ORet xv — terminal: tr = acc ++ xtr *)
+      inversion H. subst.
+      rewrite no_barrier_app. apply andb_true_iff; split.
+      * exact Hacc. * exact (IHn x (ORet xv) xtr Hsfx Hbfx Hx).
+    + discriminate.
+Qed.
+
+(** barrier_free_no_barriers (T3-S3 main): if e is barrier_free and
+    superstep_free, any completed evaluation emits no EvBarrier events.
+    EWarpPoint may emit [EvWarp] — this is intentional (see design note above). *)
+Theorem barrier_free_no_barriers :
+  forall vary_val fuel t rho e o tr,
+    superstep_free e = true ->
+    barrier_free e = true ->
+    eval vary_val fuel t rho e = Some (o, tr) ->
+    no_barrier_event tr = true.
+Proof.
+  intros vary_val.
+  induction fuel as [| fuel' IHfuel].
+  - intros t rho e o tr _ _ H. simpl in H. discriminate.
+  - intros t rho e o tr Hsf Hbf H.
+    destruct e as [ | | | | n0 | ea eb | eu | econd ethen eelse | ec ebody
+                  | elo ehi ebod | ess | xn eval0 ebody | dv ebod econt | eargs | er ];
+    simpl in Hsf; simpl in Hbf; simpl in H.
+    (* ELit *)     + inversion H. subst. reflexivity.
+    (* EVary *)    + inversion H. subst. reflexivity.
+    (* EBarrier — barrier_free = false *) + discriminate.
+    (* EWarpPoint — emits [EvWarp]; match ev with EvBarrier => false | _ => true end EvWarp = true *)
+    + inversion H. subst. reflexivity.
+    (* EVar n0 *)  + inversion H. subst. reflexivity.
+    (* EBinop ea eb *)
+    + apply andb_true_iff in Hsf as [Hsfa Hsfb].
+      apply andb_true_iff in Hbf as [Hbfa Hbfb].
+      destruct (eval vary_val fuel' t rho ea) as [[[va | va] tra] |] eqn:Hea.
+      * destruct (eval vary_val fuel' t rho eb) as [[[vb | vb] trb] |] eqn:Heb.
+        -- inversion H. subst. rewrite no_barrier_app. apply andb_true_iff; split.
+           ++ exact (IHfuel t rho ea _ tra Hsfa Hbfa Hea).
+           ++ exact (IHfuel t rho eb _ trb Hsfb Hbfb Heb).
+        -- inversion H. subst. rewrite no_barrier_app. apply andb_true_iff; split.
+           ++ exact (IHfuel t rho ea _ tra Hsfa Hbfa Hea).
+           ++ exact (IHfuel t rho eb _ trb Hsfb Hbfb Heb).
+        -- discriminate.
+      * inversion H. subst. exact (IHfuel t rho ea (ORet va) tr Hsfa Hbfa Hea).
+      * discriminate.
+    (* EUnop eu *)
+    + destruct (eval vary_val fuel' t rho eu) as [[[v | v] tr0] |] eqn:Heu.
+      * inversion H. subst. exact (IHfuel t rho eu (ONorm v) tr Hsf Hbf Heu).
+      * inversion H. subst. exact (IHfuel t rho eu (ORet v) tr Hsf Hbf Heu).
+      * discriminate.
+    (* EIf econd ethen eelse *)
+    + apply andb_true_iff in Hsf as [Hsfce Hsfe].
+      apply andb_true_iff in Hsfce as [Hsfc Hsft].
+      apply andb_true_iff in Hbf as [Hbfce Hbfe].
+      apply andb_true_iff in Hbfce as [Hbfc Hbft].
+      destruct (eval vary_val fuel' t rho econd) as [[[cv | cv] tr_c] |] eqn:Hcond.
+      * (* ONorm cv: evaluate selected branch *)
+        destruct (eval vary_val fuel' t rho (if Nat.eqb cv 0 then eelse else ethen))
+              as [[ob tr_b] |] eqn:Hbranch.
+        -- inversion H. subst. rewrite no_barrier_app. apply andb_true_iff; split.
+           ++ exact (IHfuel t rho econd (ONorm cv) tr_c Hsfc Hbfc Hcond).
+           ++ destruct (Nat.eqb cv 0); simpl in Hbranch.
+              ** exact (IHfuel t rho eelse _ tr_b Hsfe Hbfe Hbranch).
+              ** exact (IHfuel t rho ethen _ tr_b Hsft Hbft Hbranch).
+        -- discriminate.
+      * (* ORet cv: short-circuit *)
+        inversion H. subst. exact (IHfuel t rho econd (ORet cv) tr Hsfc Hbfc Hcond).
+      * discriminate.
+    (* EWhile ec ebody *)
+    + apply andb_true_iff in Hsf as [Hsfc Hsfb].
+      apply andb_true_iff in Hbf as [Hbfc Hbfb].
+      destruct (eval vary_val fuel' t rho ec) as [[[cv | cv] tr_c] |] eqn:Hcond.
+      * (* ONorm cv: check loop condition *)
+        destruct (Nat.eqb cv 0).
+        -- (* cv = 0: loop done *)
+           inversion H. subst. exact (IHfuel t rho ec (ONorm cv) tr Hsfc Hbfc Hcond).
+        -- (* cv ≠ 0: loop body *)
+           destruct (eval vary_val fuel' t rho ebody) as [[[bv | bv] tr_b] |] eqn:Hbod.
+           ++ (* ONorm bv — recurse on EWhile *)
+              destruct (eval vary_val fuel' t rho (EWhile ec ebody))
+                  as [[ol tr_l] |] eqn:Hloop.
+              ** inversion H. subst.
+                 rewrite no_barrier_app, no_barrier_app.
+                 apply andb_true_iff; split.
+                 { exact (IHfuel t rho ec (ONorm cv) tr_c Hsfc Hbfc Hcond). }
+                 apply andb_true_iff; split.
+                 { exact (IHfuel t rho ebody (ONorm bv) tr_b Hsfb Hbfb Hbod). }
+                 assert (Hsfw : superstep_free (EWhile ec ebody) = true).
+                 { simpl. rewrite Hsfc, Hsfb. reflexivity. }
+                 assert (Hbfw : barrier_free (EWhile ec ebody) = true).
+                 { simpl. rewrite Hbfc, Hbfb. reflexivity. }
+                 exact (IHfuel t rho (EWhile ec ebody) _ tr_l Hsfw Hbfw Hloop).
+              ** discriminate.
+           ++ (* ORet bv — early return from body *)
+              inversion H. subst. rewrite no_barrier_app. apply andb_true_iff; split.
+              ** exact (IHfuel t rho ec (ONorm cv) tr_c Hsfc Hbfc Hcond).
+              ** exact (IHfuel t rho ebody (ORet bv) tr_b Hsfb Hbfb Hbod).
+           ++ discriminate.
+      * (* ORet cv: short-circuit from condition *)
+        inversion H. subst. exact (IHfuel t rho ec (ORet cv) tr Hsfc Hbfc Hcond).
+      * discriminate.
+    (* EFor elo ehi ebod *)
+    + apply andb_true_iff in Hsf as [Hsflh Hsfb].
+      apply andb_true_iff in Hsflh as [Hsfl Hsfh].
+      apply andb_true_iff in Hbf as [Hbflh Hbfb].
+      apply andb_true_iff in Hbflh as [Hbfl Hbfh].
+      destruct (eval vary_val fuel' t rho elo) as [[[lo_v | lo_v] tr_lo] |] eqn:Hlo.
+      * (* ONorm lo_v: evaluate upper bound *)
+        destruct (eval vary_val fuel' t rho ehi) as [[[hi_v | hi_v] tr_hi] |] eqn:Hhi.
+        -- (* ONorm hi_v: run the loop *)
+           destruct (Nat.leb hi_v lo_v) eqn:Hle.
+           ++ (* empty loop: tr = tr_lo ++ tr_hi *)
+              inversion H. subst. rewrite no_barrier_app. apply andb_true_iff; split.
+              ** exact (IHfuel t rho elo (ONorm lo_v) tr_lo Hsfl Hbfl Hlo).
+              ** exact (IHfuel t rho ehi (ONorm hi_v) tr_hi Hsfh Hbfh Hhi).
+           ++ (* for-loop: rewrite as for_loop_fixed then apply helper *)
+              rewrite (for_loop_eq vary_val fuel' t rho ebod (hi_v - lo_v) (tr_lo ++ tr_hi)) in H.
+              apply for_loop_fixed_no_barrier
+                with (body := eval vary_val fuel' t rho ebod)
+                     (k    := hi_v - lo_v)
+                     (acc  := tr_lo ++ tr_hi)
+                     (o    := o)
+                     (tr   := tr).
+              ** rewrite no_barrier_app. apply andb_true_iff; split.
+                 { exact (IHfuel t rho elo (ONorm lo_v) tr_lo Hsfl Hbfl Hlo). }
+                 { exact (IHfuel t rho ehi (ONorm hi_v) tr_hi Hsfh Hbfh Hhi). }
+              ** intros o' tr' Hbod. exact (IHfuel t rho ebod o' tr' Hsfb Hbfb Hbod).
+              ** exact H.
+        -- (* ORet hi_v: short-circuit from upper bound; tr = tr_lo ++ tr_hi *)
+           inversion H. subst. rewrite no_barrier_app. apply andb_true_iff; split.
+           ++ exact (IHfuel t rho elo (ONorm lo_v) tr_lo Hsfl Hbfl Hlo).
+           ++ exact (IHfuel t rho ehi (ORet hi_v) tr_hi Hsfh Hbfh Hhi).
+        -- discriminate.
+      * (* ORet lo_v: short-circuit from lower bound *)
+        inversion H. subst. exact (IHfuel t rho elo (ORet lo_v) tr Hsfl Hbfl Hlo).
+      * discriminate.
+    (* ESeq ess *)
+    + apply eval_seq_no_barrier
+        with (vary_val := vary_val) (n := fuel') (t := t) (rho := rho)
+             (xs := ess) (acc := []) (o := o) (tr := tr).
+      * intros e0 o' tr' Hsfe Hbfe He.
+        exact (IHfuel t rho e0 o' tr' Hsfe Hbfe He).
+      * reflexivity.
+      * exact Hsf.
+      * exact Hbf.
+      * exact H.
+    (* ELet xn eval0 ebody *)
+    + apply andb_true_iff in Hsf as [Hsfv Hsfb].
+      apply andb_true_iff in Hbf as [Hbfv Hbfb].
+      destruct (eval vary_val fuel' t rho eval0) as [[[vv | vv] tr_v] |] eqn:Hval.
+      * (* ONorm vv — eval body with extended env *)
+        destruct (eval vary_val fuel' t (venv_extend rho xn vv) ebody)
+            as [[ob tr_b] |] eqn:Hbod.
+        -- inversion H. subst. rewrite no_barrier_app. apply andb_true_iff; split.
+           ++ exact (IHfuel t rho eval0 _ tr_v Hsfv Hbfv Hval).
+           ++ exact (IHfuel t (venv_extend rho xn vv) ebody _ tr_b Hsfb Hbfb Hbod).
+        -- discriminate.
+      * inversion H. subst. exact (IHfuel t rho eval0 (ORet vv) tr Hsfv Hbfv Hval).
+      * discriminate.
+    (* ESuperstep — superstep_free = false *) + discriminate.
+    (* EApp eargs *)
+    + apply eval_args_no_barrier
+        with (vary_val := vary_val) (n := fuel') (t := t) (rho := rho)
+             (xs := eargs) (acc := []) (last_v := 0) (o := o) (tr := tr).
+      * intros e0 o' tr' Hsfe Hbfe He.
+        exact (IHfuel t rho e0 o' tr' Hsfe Hbfe He).
+      * reflexivity.
+      * exact Hsf.
+      * exact Hbf.
+      * exact H.
+    (* EReturn er *)
+    + destruct (eval vary_val fuel' t rho er) as [[[v | v] tr0] |] eqn:Her.
+      * inversion H. subst. exact (IHfuel t rho er (ONorm v) tr Hsf Hbf Her).
+      * inversion H. subst. exact (IHfuel t rho er (ORet v) tr Hsf Hbf Her).
+      * discriminate.
+Qed.
+
+(** diverged_clean_no_barriers (T3-S3 corollary): if check Diverged e = [] and e
+    is superstep_free, any completed evaluation emits no EvBarrier events.
+    Follows directly from barrier_free_no_barriers via diverged_clean_iff_barrier_free. *)
+Corollary diverged_clean_no_barriers :
+  forall vary_val fuel t rho e o tr,
+    superstep_free e = true ->
+    check Diverged e = [] ->
+    eval vary_val fuel t rho e = Some (o, tr) ->
+    no_barrier_event tr = true.
+Proof.
+  intros vary_val fuel t rho e o tr Hsf Hclean Heval.
+  apply barrier_free_no_barriers with (vary_val := vary_val) (e := e) (o := o) (fuel := fuel) (t := t) (rho := rho).
+  - exact Hsf.
+  - apply diverged_clean_iff_barrier_free. exact Hclean.
+  - exact Heval.
+Qed.

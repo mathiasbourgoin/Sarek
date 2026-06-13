@@ -1,8 +1,8 @@
 # ConvergenceSafety — Work Plan
 
-**Last updated**: 2026-06-13 (tick 5 — T3-S1 confirmed done; currentTask = T3-S2; DOCS-SYNC clean)
-**Apparatus version**: 1.1.0
-**Phase**: T3-SEMANTIC (full ladder approved; T3-S2 is current task)
+**Last updated**: 2026-06-13 (tick 7 — T3-S3 done; currentTask = T3-S4)
+**Apparatus version**: 1.2.1
+**Phase**: T3-SEMANTIC (full ladder approved; T3-S4 is current task)
 
 ---
 
@@ -18,8 +18,8 @@
 | T2-RETURN | TEReturn early-return barrier-skip: EReturn constructor, model barrier-skip, safety theorem | T2 | **done** (return_barrier_skip_safe, 20 theorems, 17 conformance, 7 extraction) | — |
 | T3-GATE | HUMAN DECISION — approve T3-SEMANTIC scope per the breakdown below (whole ladder, or stop at SEMANTIC-CORE) | T3 | **done** (full ladder approved 2026-06-13) | — |
 | T3-S1 | Semantic domain + fuel-indexed big-step evaluator with barrier traces | T3 | **done** (ConvergenceSemantics.v: eval + eval_fuel_monotone + eval_app_seq_compose; 22 theorems, 0 admits, 0 axioms, coqchk passes; 2026-06-13) | — |
-| T3-S2 | Uniformity soundness of `is_varying_in_env` (semantic grounding of EVary) | T3 | open | T3-S1 |
-| T3-S3 | Trace silence of barrier-free expressions | T3 | open | T3-S1 |
+| T3-S2 | Uniformity soundness of `is_varying_in_env` (semantic grounding of EVary) | T3 | **done** (ConvergenceSemantics.v: env_agrees + not_varying_uniform + closed_uniform; 27 theorems, 0 admits, 0 axioms; 2026-06-13) | T3-S1 |
+| T3-S3 | Trace silence of barrier-free expressions | T3 | **done** (ConvergenceSemantics.v: no_barrier_event + superstep_free + barrier_free_no_barriers + diverged_clean_no_barriers; 33 theorems, 0 admits, 0 axioms; commit af9f6b81354e7c6d7c5779c273315bbd6a295eff; 2026-06-13) | T3-S1 |
 | T3-S4 | Core semantic soundness of `check_env` (trace-uniformity theorem) | T3 | open | T3-S2, T3-S3 |
 | T3-S5 | EReturn residual-divergence verdict (formal counterexample or proof; expected F-04) | T3 | open | T3-S4 |
 | T3-S6 | ESuperstep semantic grounding (implicit-barrier event; semantic F-01) | T3 | open | T3-S4 |
@@ -31,19 +31,19 @@
 
 ## Current task
 
-**T3-S2 — current task.**
+**T3-S4 — current task.**
 
-T3-S1 done (commit fbfb3656, 2026-06-13): ConvergenceSemantics.v landed with
-semantic domain (tid/value/venv/event/trace/outcome), Section Variable vary_val,
-Fixpoint eval (fuel-indexed, 15 constructors), eval_fuel_monotone,
-eval_app_seq_compose; 22 theorems total, 0 admits, 0 axioms, coqchk passes.
+T3-S3 done (commit pending, 2026-06-13): ConvergenceSemantics.v extended with
+no_barrier_event (Definition), superstep_free (Fixpoint), no_barrier_app,
+for_loop_fixed_no_barrier, eval_seq_no_barrier, eval_args_no_barrier (helpers),
+barrier_free_no_barriers (main theorem, fuel induction), diverged_clean_no_barriers
+(corollary via diverged_clean_iff_barrier_free); 33 theorems, 0 admits, 0 axioms.
+Design note: tr = [] was too strong (EWarpPoint is barrier_free but emits [EvWarp]);
+weakened to no_barrier_event tr = true; superstep_free side-condition excludes
+ESuperstep (emits EvBarrier regardless of dv flag).
 
-Current task: T3-S2 — Uniformity soundness of `is_varying_in_env` (semantic
-grounding of EVary). Blocked-by T3-S1 is resolved.
-
-Approach: add `env_agrees`, `not_varying_uniform`, and the closed-expression
-corollary to `theories/ConvergenceSemantics.v`. Proof is mechanical induction on
-fuel × expr; large case count, no new technique. 0-axiom invariant must hold.
+Current task: T3-S4 — Core semantic soundness of check_env (trace-uniformity theorem).
+Blocked-by T3-S2 and T3-S3 are both resolved.
 
 ---
 
@@ -313,6 +313,14 @@ global decision 4 and is recorded as the T3 trust boundary.
 
 ## Workflow notes
 
+- Tick 7 (2026-06-13): T3-S3 confirmed DONE. ConvergenceSemantics.v extended with
+  no_barrier_event, superstep_free, no_barrier_app, for_loop_fixed_no_barrier,
+  eval_seq_no_barrier, eval_args_no_barrier, barrier_free_no_barriers,
+  diverged_clean_no_barriers; 33 theorems, 0 admits, 0 axioms. Key deviation: tr = []
+  weakened to no_barrier_event tr = true (EWarpPoint emits [EvWarp] but is barrier_free).
+  proof-ledger.json updated (total=38, proven=33, definitions=5). STATUS.md updated.
+  PLAN.md promoted to T3-S4. ConvergenceSafetySpec.tex updated with T3-S3 section.
+  currentTask = T3-S4 (unblocked — T3-S2 and T3-S3 both done).
 - Tick 5 (2026-06-13): Session re-read. All tasks through T3-S1 confirmed DONE (STATUS.md: 22
   theorems, 0 admits, 0 axioms, coqchk passes; conformance 17/17 green, extraction 7/7 green,
   live 10/10 green). PR #182 confirmed merged (gh returns []). DOCS-SYNC clean — no drift
