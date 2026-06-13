@@ -3827,3 +3827,73 @@ Proof.
   exact (proj1 (eval_check_uniform vary_val fuel) env e t1 t2 rho1 rho2 o1 o2 tr1 tr2
            Hcf Hagr Hclean Heval1 Heval2).
 Qed.
+
+(* ----------------------------------------------------------------------- *)
+(* 10.  T3-S5 — EReturn residual-divergence verdict (F-04)                  *)
+(* ----------------------------------------------------------------------- *)
+
+(** F-04: EReturn transparency is a kernel-granularity false negative.
+
+    The checker treats EReturn as a transparent wrapper
+    (check_env m env (EReturn e) = check_env m env e), mirroring the real
+    Sarek_convergence.ml TEReturn handling. As a consequence, a thread-varying
+    early return inside an EIf branch — followed by a barrier — passes the
+    static checker with an empty error list, yet is NOT barrier_safe: some
+    threads take the early return (never reaching the barrier) while others
+    fall through to it. The barrier traces diverge.
+
+    hazard models exactly this:
+      ESeq [ EIf EVary (EReturn ELit) ELit ; EBarrier ]
+    - EIf on a thread-varying condition (EVary): branch is e_else (=ELit) when
+      the condition value is 0, e_then (=EReturn ELit) when nonzero.
+    - the early-return branch short-circuits the ESeq (ORet), so EBarrier is
+      never evaluated for those threads (trace []).
+    - the fall-through branch (ONorm) lets ESeq reach EBarrier (trace
+      [EvBarrier]).
+    Because the EReturn sits in a branch under a varying condition, and
+    Converged-mode EBarrier is clean, the checker reports []. *)
+
+Definition hazard : expr :=
+  ESeq [EIf EVary (EReturn ELit) ELit; EBarrier].
+
+(** hazard_checker_blind: the static checker is blind to the hazard.
+    Converged-mode check_env returns no errors on the empty environment. *)
+Lemma hazard_checker_blind :
+  check_env Converged [] hazard = [].
+Proof. reflexivity. Qed.
+
+(** Concrete thread-varying witness: thread 0 takes the early return
+    (vary_val 0 = 1, nonzero -> e_then = EReturn ELit), thread 1 falls
+    through to the barrier (vary_val 1 = 0 -> e_else = ELit). *)
+Definition hazard_vary (n : tid) : value :=
+  match n with O => 1 | S _ => 0 end.
+
+(** Thread 0 completes hazard with the early-return outcome and an empty
+    barrier trace: the EBarrier is never reached. *)
+Lemma hazard_eval_thread0 :
+  eval hazard_vary 6 0 [] hazard = Some (ORet 0, []).
+Proof. reflexivity. Qed.
+
+(** Thread 1 completes hazard by falling through to the barrier, emitting
+    exactly one EvBarrier event. *)
+Lemma hazard_eval_thread1 :
+  eval hazard_vary 6 1 [] hazard = Some (ONorm 0, [EvBarrier]).
+Proof. reflexivity. Qed.
+
+(** hazard_not_barrier_safe: the hazard is NOT barrier_safe, witnessed by the
+    concrete vary_val = hazard_vary and the two threads above. Thread 0 and
+    thread 1 trivially env-agree on the empty environment, yet their barrier
+    traces ([] vs [EvBarrier]) differ. This is a formal counterexample to
+    barrier safety that the checker accepts (hazard_checker_blind). *)
+Theorem hazard_not_barrier_safe :
+  ~ barrier_safe hazard_vary [] hazard.
+Proof.
+  unfold barrier_safe. intro Hsafe.
+  (* Instantiate at the two concrete threads. env_agrees [] holds vacuously. *)
+  assert (Hagr : env_agrees [] [] []).
+  { intros y _. reflexivity. }
+  pose proof (Hsafe 6 0 1 [] [] (ORet 0) (ONorm 0) [] [EvBarrier]
+                Hagr hazard_eval_thread0 hazard_eval_thread1) as Heq.
+  (* Heq : erase_warp [] = erase_warp [EvBarrier], i.e. [] = [EvBarrier] *)
+  unfold erase_warp in Heq. simpl in Heq. discriminate.
+Qed.
