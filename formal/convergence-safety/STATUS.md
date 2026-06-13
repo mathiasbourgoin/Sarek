@@ -5,11 +5,11 @@
 **Host profile**: SPOC/sarek
 **Architecture**: 3-layer
 **Built at**: 2026-06-11
-**Last updated**: 2026-06-13 (T3-S7: warp-collective semantic soundness — `erase_barrier`/`warp_free`/`check_warp_env`, `check_warp_sound_core` parametric in `warp_of : tid -> nat`; warp-size parameterization CLOSED; T3-S4 induction parametrization attempted + flagged infeasible, duplicated as `eval_check_warp_uniform` — 0 admits, 0 axioms, coqchk passes)
+**Last updated**: 2026-06-13 (T3-S8: extraction + differential conformance for the operational semantics — `eval_concrete` (`vary_val := fun t => t`) extracted into `ConvergenceModel`; `eval_concrete_fuel_monotone` + `eval_concrete_barrier_free_silent` Rocq lemmas; new `test/test_convergence_semantics.ml` with 4 differential properties (fuel-monotone, barrier-silence, CMBT `erase_warp` agreement, F-04 hazard regression) — 0 admits, 0 axioms, coqchk passes)
 
 ## Project
 
-ConvergenceSafety is a formal Rocq specification of the GPU barrier safety analysis for the Sarek frontend of SPOC. It proves correctness properties of `Sarek_convergence.check_expr`, which statically detects barriers placed inside diverged control flow on the abstract `expr` AST. The project covers 20 theorems at Tiers 0–2 (lattice laws through control-flow monotonicity, warp-collective safety, and early-return compositionality) — 16 Theorems + 2 named Lemmas (`env_lookup_extend_same`, `not_varying_converged_clean`) + 2 strengthened warp theorems (`warp_mode_monotone`, `warp_varying_if_flags`) — including the F-01 safety property for `ESuperstep` (Phase 1a), 3 env-threaded F-02 theorems (T2-F02), 3 warp theorems for the `WarpConvergence` error class (T2-WARP), and the `return_barrier_skip_safe` compositionality theorem for `EReturn` (T2-RETURN). Validated by 14 QCheck conformance properties against an abstract OCaml model and 7 extraction tests exercising the extracted `ConvergenceModel` module (including `check_warp` CMBT link).
+ConvergenceSafety is a formal Rocq specification of the GPU barrier safety analysis for the Sarek frontend of SPOC. It proves correctness properties of `Sarek_convergence.check_expr`, which statically detects barriers placed inside diverged control flow on the abstract `expr` AST. The project covers 20 theorems at Tiers 0–2 (lattice laws through control-flow monotonicity, warp-collective safety, and early-return compositionality) — 16 Theorems + 2 named Lemmas (`env_lookup_extend_same`, `not_varying_converged_clean`) + 2 strengthened warp theorems (`warp_mode_monotone`, `warp_varying_if_flags`) — including the F-01 safety property for `ESuperstep` (Phase 1a), 3 env-threaded F-02 theorems (T2-F02), 3 warp theorems for the `WarpConvergence` error class (T2-WARP), and the `return_barrier_skip_safe` compositionality theorem for `EReturn` (T2-RETURN). Validated by 17 QCheck conformance properties against an abstract OCaml model, 7 extraction tests exercising the extracted `ConvergenceModel` static checkers (including `check_warp` CMBT link), and 4 differential semantics tests (T3-S8) exercising the extracted operational evaluator `eval_concrete`.
 
 ## Trust root
 
@@ -45,7 +45,7 @@ Assumptions documented in `ASSUMPTIONS.md`:
 | `env_var_diverged_clean` | T1 | 0 | **T2-F02** — EVar carries no barrier under Diverged mode |
 | `env_check_let_alias_catches` | T1 | 0 | **T2-F02** — F-02 soundness: `check_env` catches barrier behind let-alias |
 
-**Total**: 20 theorems (ConvergenceSpec.v) + 7 theorems/corollaries (ConvergenceSemantics.v T3-S1+T3-S2) + 6 items (T3-S3: trace silence) + 4 items (T3-S4: core soundness — `core_frag` def + `eval_check_uniform` + `check_env_nonvarying_uniform` + `check_env_sound_core`) + 5 items (T3-S5: F-04 counterexample — `hazard` def + `hazard_vary` witness + `hazard_checker_blind` + `hazard_eval_thread0/1` + `hazard_not_barrier_safe`) + 11 items (T3-S6: ESuperstep grounding — `core_frag_ss` def + `core_frag_impl_ss` + `core_frag_ss_no_ret` + `eval_while_exits_immediately_ss` + `core_frag_ss_barrier_free_superstep_free` + `check_env_diverged_no_barriers_ss` + `eval_check_uniform_ss` + `check_env_sound_superstep` + `susp_hazard`/`susp_vary`/`susp_eval_thread0/1` + `semantic_f01_flagged` + `semantic_f01_not_barrier_safe` + `semantic_f01_corollary`) + 9 items (T3-S7: warp soundness — `erase_barrier` def + `warp_free` def + `warp_free_no_warps` + `check_warp_env` def + `check_warp_env_diverged_clean_warp_free` + `check_warp_env_diverged_no_warps` + `eval_check_warp_uniform` + `warp_safe` def + `check_warp_sound_core`), 0 admits, 0 axioms — `coqchk` passes (T3-S7)
+**Total**: 20 theorems (ConvergenceSpec.v) + 7 theorems/corollaries (ConvergenceSemantics.v T3-S1+T3-S2) + 6 items (T3-S3: trace silence) + 4 items (T3-S4: core soundness — `core_frag` def + `eval_check_uniform` + `check_env_nonvarying_uniform` + `check_env_sound_core`) + 5 items (T3-S5: F-04 counterexample — `hazard` def + `hazard_vary` witness + `hazard_checker_blind` + `hazard_eval_thread0/1` + `hazard_not_barrier_safe`) + 11 items (T3-S6: ESuperstep grounding — `core_frag_ss` def + `core_frag_impl_ss` + `core_frag_ss_no_ret` + `eval_while_exits_immediately_ss` + `core_frag_ss_barrier_free_superstep_free` + `check_env_diverged_no_barriers_ss` + `eval_check_uniform_ss` + `check_env_sound_superstep` + `susp_hazard`/`susp_vary`/`susp_eval_thread0/1` + `semantic_f01_flagged` + `semantic_f01_not_barrier_safe` + `semantic_f01_corollary`) + 9 items (T3-S7: warp soundness — `erase_barrier` def + `warp_free` def + `warp_free_no_warps` + `check_warp_env` def + `check_warp_env_diverged_clean_warp_free` + `check_warp_env_diverged_no_warps` + `eval_check_warp_uniform` + `warp_safe` def + `check_warp_sound_core`) + 3 items (T3-S8: extraction/operational CMBT — `eval_concrete` def + `eval_concrete_fuel_monotone` + `eval_concrete_barrier_free_silent`), 0 admits, 0 axioms — `coqchk` passes (T3-S8)
 
 ## T3-S1 semantic layer (ConvergenceSemantics.v — new file)
 
@@ -144,10 +144,24 @@ Assumptions documented in `ASSUMPTIONS.md`:
 
 **WARP-SIZE PARAMETERIZATION CLOSED**: `warp_of` is an abstract Section Variable; `check_warp_sound_core` is universally quantified over it. No fixed warp size (32, 64, ...) is baked into the proof. The `ASSUMPTIONS.md` warp-size parameterization item is now closed (§T3-S7).
 
+## T3-S8 Extraction + differential conformance for the semantics (ConvergenceSemantics.v — 2026-06-13)
+
+| Item | Status | Notes |
+|---|---|---|
+| `Definition eval_concrete` | done | `eval` with the abstract per-thread varying value `vary_val` instantiated as the identity `fun th => th`; the extraction witness. Distinct threads receive distinct `EVary` values, so thread-dependent divergence (the F-04 class) is observable in extracted traces. |
+| `Lemma eval_concrete_fuel_monotone` | done | Fuel-monotonicity specialized to the extracted instantiation; direct application of section theorem `eval_fuel_monotone`. Mirrored by QCheck `sem:eval_fuel_monotone`. |
+| `Lemma eval_concrete_barrier_free_silent` | done | Barrier silence specialized to the extracted instantiation; direct application of section theorem `barrier_free_no_barriers`. Mirrored by QCheck `sem:barrier_free_silent`. |
+| `Extraction "ConvergenceModel.ml" ... eval_concrete` | done | `extraction/ConvergenceSafetyExtraction.v` now also requires `ConvergenceSemantics` and emits `eval_concrete` + the operational types (`outcome`, `trace`, `event`, `venv`). Extraction-library dune relaxes warnings on machine-generated code (`-w -a`). |
+| `test/test_convergence_semantics.ml` | done | 4 differential properties against extracted `eval_concrete`: `sem:eval_fuel_monotone`, `sem:barrier_free_silent`, `sem:differential_barrier_safe` (CMBT instance of `check_env_sound_core`: `core_frag ∧ check_env Converged [] = [] ⇒ erase_warp` agreement across two threads), `sem:f04_hazard_counterexample` (F-04 regression: checker-clean hazard still produces differing barrier traces). |
+| `coqchk` | passes | 0 new axioms; `Print Assumptions` of `eval_concrete_fuel_monotone` / `eval_concrete_barrier_free_silent` closed under global context (`* Axioms: <none>`). |
+
+**Design note (CMBT closure)**: T3-S8 closes the operational half of the CMBT chain. Prior extraction tests (`test_convergence_extraction.ml`) exercised only the STATIC checkers. `eval_concrete` makes the fuel-indexed big-step EVALUATOR executable, so the soundness theorems (`eval_fuel_monotone`, `barrier_free_no_barriers`, `check_env_sound_core`, `hazard_not_barrier_safe`) are now each randomized-tested over their concrete instantiation. The F-04 hazard property is a true differential check: it asserts the hazard's barrier traces DIFFER across threads (thread 0 falls through to `EBarrier`, thread 1 early-returns), confirming the counterexample is real in the operational semantics — not an artifact of the static model.
+
 ## Test intensity
 
 - **Conformance**: `test/test_convergence_conformance.ml` — 17 properties (`test_convergence_conformance`), 1000–2000 tests each — **17/17 GREEN** (2 new F-02 env-threaded properties added T2-F02; 1 new randomized warp property added T2-WARP+; 1 new return_barrier_skip_safe property added T2-RETURN; 3 new dedicated ESuperstep properties added T1A-CONF: superstep_outer_diverged_error, superstep_no_entry_error_converged, superstep_body_errors_propagate)
 - **Extraction**: `test/test_convergence_extraction.ml` — 7 tests (`test_convergence_extraction`) — **7/7 GREEN** (extr:check_warp_agrees added T2-WARP+)
+- **Semantics (operational CMBT)**: `test/test_convergence_semantics.ml` — 4 tests (`test_convergence_semantics`) — **4/4 GREEN** (T3-S8: `sem:eval_fuel_monotone`, `sem:barrier_free_silent`, `sem:differential_barrier_safe`, `sem:f04_hazard_counterexample`; exercises extracted `eval_concrete`)
 - **Live CMBT**: `formal/convergence-safety/test/test_convergence_live.ml` — 10 tests including F-01 + F-02 regressions — **10/10 GREEN**
 
 ## Known gates
@@ -172,7 +186,7 @@ See `findings/DIVERGENCE_FINDINGS.md` for full descriptions.
 | 2 | Abstract model in conformance test (`test_convergence_conformance.ml`) | checked |
 | 3 | Integration target (`Sarek_convergence.check_expr`) | checked |
 | 4 | Conformance tests GREEN | checked |
-| 5 | Extraction tests GREEN (incl. check_warp CMBT link) | checked |
+| 5 | Extraction tests GREEN (incl. check_warp CMBT link + operational `eval_concrete` via `test_convergence_semantics.ml`) | checked |
 | 6 | `coqchk` passes (0 axioms) | checked |
 | 7 | Open findings documented in `findings/DIVERGENCE_FINDINGS.md` | checked |
 
@@ -184,8 +198,8 @@ None yet.
 
 ```
 Resume ConvergenceSafety (apparatus v1.2.1, grade A).
-State: 20/20 theorems proven in ConvergenceSpec.v + 38 theorems/defs in ConvergenceSemantics.v (T3-S1..S7), 0 admits, 0 axioms, coqchk passes. T3-S7 complete.
-Conformance: 17/17 green. Extraction: 7/7 green. Live CMBT: 10/10 green.
+State: 20/20 theorems proven in ConvergenceSpec.v + 41 theorems/defs in ConvergenceSemantics.v (T3-S1..S8), 0 admits, 0 axioms, coqchk passes. T3-S8 complete.
+Conformance: 17/17 green. Extraction: 7/7 green. Semantics (operational CMBT): 4/4 green. Live CMBT: 10/10 green.
 F-01 RESOLVED (OCaml + Rocq). F-02 RESOLVED (OCaml + Rocq env-threaded model).
 F-03 (WarpConvergence) RESOLVED (Rocq: EWarpPoint/WarpError/check_warp/warp_diverged_error/warp_mode_monotone/warp_varying_if_flags; documented in findings/DIVERGENCE_FINDINGS.md).
 T2-RETURN RESOLVED (Rocq: EReturn/return_barrier_skip_safe/return_converged_clean; TEReturn exits without crossing any barrier).
@@ -204,6 +218,8 @@ T3-S6 RESOLVED (ConvergenceSemantics.v: core_frag_ss, core_frag_impl_ss, core_fr
 T3-S7 RESOLVED (ConvergenceSemantics.v: erase_barrier, warp_free, warp_free_no_warps, check_warp_env, check_warp_env_diverged_clean_warp_free, check_warp_env_diverged_no_warps, eval_check_warp_uniform, warp_safe, check_warp_sound_core in Section WarpModel with Variable warp_of; 0 admits, 0 axioms, coqchk passes).
   KEY DESIGN: check_warp_sound_core is the warp dual of check_env_sound_core, parametric in warp_of (warp-size parameterization CLOSED, ASSUMPTIONS §T3-S7). warp_safe = erase_barrier-trace agreement restricted to same-warp pairs (warp_of t1 = warp_of t2), which holds a fortiori since eval is independent of warp_of.
   PARAMETRIZATION: attempted making the T3-S4 induction parametric over (event class, agreement domain, checker); flagged INFEASIBLE within budget (concrete checker reductions + per-constructor leaf inversions) and DUPLICATED as eval_check_warp_uniform via mechanical substitution.
-Next: continue T3-SEMANTIC breakdown (T3-S8).
+T3-S8 RESOLVED (ConvergenceSemantics.v: eval_concrete (vary_val := fun t => t), eval_concrete_fuel_monotone, eval_concrete_barrier_free_silent; extraction/ConvergenceSafetyExtraction.v emits eval_concrete; test/test_convergence_semantics.ml with 4 differential properties; 0 admits, 0 axioms, coqchk passes).
+  KEY DESIGN: eval_concrete makes the operational evaluator executable so soundness theorems are randomized-tested over their concrete instantiation. sem:differential_barrier_safe is the CMBT instance of check_env_sound_core; sem:f04_hazard_counterexample is the F-04 regression (hazard barrier traces differ across threads — counterexample real in the operational semantics). Closes the operational half of the CMBT chain.
+Next: continue T3-SEMANTIC breakdown (T3-S9 or milestone lock).
 Run /formal-check before any lock or milestone.
 ```

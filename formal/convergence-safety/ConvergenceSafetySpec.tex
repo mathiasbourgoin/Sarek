@@ -751,6 +751,79 @@ iff $e$ contains no $\mathsf{ESuperstep}$ sub-expression.
 \end{corollary}
 
 %───────────────────────────────────────────────────────────────────────────────
+\section{T3-S8 --- Extraction and differential conformance of the semantics}
+\label{sec:t3s8-extraction}
+
+The static checkers ($\isvarying{\cdot}$, $\barrierfree{\cdot}$, $\chk{m}{\cdot}$,
+$\mathtt{check\_warp}$) are extracted to OCaml
+(\texttt{extraction/ConvergenceModel.ml}) and differentially tested against an
+inline reference (\texttt{test\_convergence\_extraction.ml}).  T3-S8 closes the
+\emph{operational} half of the CMBT chain by extracting the big-step evaluator
+itself.
+
+\begin{definition}[Concrete evaluator]
+  \label{def:eval-concrete}
+  $\mathtt{eval\_concrete}(\mathit{fuel},\,t,\,\rho,\,e) \;:=\;
+   \mathtt{eval}(\lambda\,\mathit{th}.\;\mathit{th},\,\mathit{fuel},\,t,\,\rho,\,e)$,
+  i.e.\ the fuel-indexed evaluator with the abstract per-thread varying value
+  $\mathit{vary\_val}$ instantiated as the identity.  Identity is
+  \emph{maximally discriminating}: distinct thread ids receive distinct
+  $\mathsf{EVary}$ values, so any thread-dependent control-flow divergence is
+  observable in the extracted traces.  All section theorems quantify over every
+  $\mathit{vary\_val}$, so they hold for this instantiation a fortiori.
+\end{definition}
+
+\begin{lemma}[Fuel monotonicity of the concrete evaluator (T3-S8)]
+  \label{lem:eval-concrete-fuel-monotone}
+  For all $n$, $t$, $\rho$, $e$, $r$:
+  \[
+    \mathtt{eval\_concrete}(n,\,t,\,\rho,\,e) = \mathsf{Some}(r)
+    \;\Rightarrow\;
+    \mathtt{eval\_concrete}(\mathsf{S}\,n,\,t,\,\rho,\,e) = \mathsf{Some}(r).
+  \]
+  Mirrored by the QCheck property \texttt{sem:eval\_fuel\_monotone}.
+\end{lemma}
+
+\begin{lemma}[Barrier silence of the concrete evaluator (T3-S8)]
+  \label{lem:eval-concrete-barrier-free-silent}
+  For all $\mathit{fuel}$, $t$, $\rho$, $e$, $o$, $\mathit{tr}$:
+  \[
+    \mathtt{superstep\_free}(e) = \mathsf{true}
+    \;\land\;
+    \barrierfree{e} = \mathsf{true}
+    \;\land\;
+    \mathtt{eval\_concrete}(\mathit{fuel},\,t,\,\rho,\,e) = \mathsf{Some}(o,\,\mathit{tr})
+    \;\Rightarrow\;
+    \mathtt{no\_barrier\_event}(\mathit{tr}) = \mathsf{true}.
+  \]
+  Mirrored by the QCheck property \texttt{sem:barrier\_free\_silent}.
+\end{lemma}
+
+\paragraph{Differential properties.}
+The suite \texttt{test\_convergence\_semantics.ml} runs four randomized
+properties against the extracted $\mathtt{eval\_concrete}$:
+\begin{enumerate}
+  \item \texttt{sem:eval\_fuel\_monotone} ---
+        \cref{lem:eval-concrete-fuel-monotone} over random $(\mathit{fuel},t,e)$.
+  \item \texttt{sem:barrier\_free\_silent} ---
+        \cref{lem:eval-concrete-barrier-free-silent} over random $(t,e)$.
+  \item \texttt{sem:differential\_barrier\_safe} --- the CMBT instance of the
+        core-fragment soundness theorem (T3-S4): for $e$ in the core fragment
+        with $\mathtt{check\_env}(\Converged,\,[],\,e) = []$, the barrier projections
+        $\mathtt{erase\_warp}(\mathit{tr_1}) = \mathtt{erase\_warp}(\mathit{tr_2})$
+        of two distinct threads' traces agree.
+  \item \texttt{sem:f04\_hazard\_counterexample} --- the F-04 regression: the
+        hazard $\mathsf{ESeq}\,[\mathsf{EIf}\,\mathsf{EVary}\,(\mathsf{EReturn}\,\mathsf{ELit})\,\mathsf{ELit};\;\mathsf{EBarrier}]$
+        passes the checker yet its barrier traces \emph{differ} across threads
+        (thread $0$ falls through to the barrier, thread $1$ early-returns),
+        confirming the counterexample is real in the operational semantics.
+\end{enumerate}
+
+The extraction plugin and OCaml compiler remain in the trusted computing base;
+the differential suites corroborate --- but do not prove --- the fidelity of the
+extracted code to the Rocq source.  See \texttt{ASSUMPTIONS.md} \S T3-S8.
+
+%───────────────────────────────────────────────────────────────────────────────
 \section{References}
 \label{sec:references}
 

@@ -50,7 +50,7 @@ operates on `texpr` — a large, typed AST with ~35 constructors. The correspond
 | Component | Status | Rationale |
 |---|---|---|
 | Rocq kernel soundness | ASSUMED | Standard assumption throughout |
-| OCaml extraction + compiler | ASSUMED | Standard TCB; not extracted here (abstract model tested by QCheck) |
+| OCaml extraction + compiler | ASSUMED | Standard TCB. Both the static checkers (`check`, `check_warp`, ...) and the operational evaluator (`eval_concrete`, T3-S8) are extracted to `extraction/ConvergenceModel.ml` via `coqc` and tested by QCheck against inline OCaml references. The extraction mechanism (`Extraction` plugin) and the OCaml compiler are trusted; their fidelity to the Rocq source is corroborated — not proven — by the differential conformance suites (`test_convergence_extraction.ml`, `test_convergence_semantics.ml`). |
 | Abstract model faithfully represents the real implementation | ASSUMED | Verified by code inspection of Sarek_convergence.ml; the 15 constructors cover all barrier-relevant paths. Elided constructors are documented above. |
 | `is_thread_varying` correctness for `TEVar`/`TEIntrinsicConst` | ASSUMED | Depends on `Sarek_core_primitives.is_thread_varying` being complete — outside this spec's scope |
 | `WarpConvergence` error class | IN SCOPE (T2-WARP) | `EWarpPoint` constructor, `WarpError` error, `check_warp` function, and `warp_diverged_error` theorem added. See §T2-WARP update below. |
@@ -129,6 +129,16 @@ Additional note: The real checker emits `Warp_collective_in_diverged_flow(name, 
 - `Section WarpModel` with `Variable warp_of : tid -> nat`, `warp_safe`, and the main theorem **`check_warp_sound_core`**: `core_frag e = true -> check_warp_env Converged env e = [] -> warp_safe env e`.
 
 **Warp-size parameterization is CLOSED.** `warp_of` is an abstract `Section Variable`; the soundness theorem is universally quantified over it. No fixed warp size (32, 64, ...) is baked into the proof — `warp_safe` is the same-warp restriction `warp_of t1 = warp_of t2` for any partition. 0 admits, 0 axioms (`Closed under the global context`), coqchk clean.
+
+### T3-S8 update (2026-06-13) — extraction + differential conformance for the operational semantics
+
+The operational evaluator is now **extracted and differentially tested** (CMBT closure). New in `theories/ConvergenceSemantics.v`:
+
+- **`eval_concrete`** — `eval` with the abstract per-thread varying value `vary_val` instantiated as the **identity** `fun th => th`. This is the concrete witness extracted to `extraction/ConvergenceModel.ml` (`eval_concrete : nat -> tid -> venv -> expr -> option (outcome * trace)`). `extraction/ConvergenceSafetyExtraction.v` now also `Require`s `ConvergenceSemantics` and emits `eval_concrete` plus the operational types (`outcome`, `trace`, `event`, `venv`).
+- **`eval_concrete_fuel_monotone`** / **`eval_concrete_barrier_free_silent`** — the headline sanity + silence properties specialized to the extracted instantiation (direct applications of the section theorems `eval_fuel_monotone` and `barrier_free_no_barriers`).
+- `test/test_convergence_semantics.ml` — 4 QCheck properties exercising the extracted `eval_concrete` against inline OCaml references: `sem:eval_fuel_monotone`, `sem:barrier_free_silent`, `sem:differential_barrier_safe` (CMBT instance of `check_env_sound_core`), `sem:f04_hazard_counterexample` (F-04 regression).
+
+**TRUST BOUNDARY — choice of `vary_val := identity`.** The section theorems quantify over *every* `vary_val : tid -> value`, so the soundness results hold for any instantiation; the extracted `eval_concrete` therefore inherits them a fortiori. Identity is chosen for the executable witness because it is *maximally discriminating*: distinct thread ids yield distinct `EVary` values (`t1 <> t2 ⇒ vary_val t1 <> vary_val t2`), so any thread-dependent control-flow divergence becomes observable in the extracted traces. The differential tests run `eval_concrete` only — they do NOT (and cannot, by extraction-of-a-single-instance) corroborate the universal quantification over `vary_val`; that universality is established solely by the Rocq proofs. The extraction plugin and OCaml compiler remain in the TCB (see the "OCaml extraction + compiler" row above).
 
 ### T2-RETURN update (2026-06-12)
 

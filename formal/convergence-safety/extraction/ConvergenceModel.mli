@@ -1,4 +1,12 @@
+val fst : 'a1 * 'a2 -> 'a1
+
 val app : 'a1 list -> 'a1 list -> 'a1 list
+
+val add : int -> int -> int
+
+val sub : int -> int -> int
+
+module Nat : sig end
 
 val map : ('a1 -> 'a2) -> 'a1 list -> 'a2 list
 
@@ -7,6 +15,8 @@ val concat : 'a1 list list -> 'a1 list
 val existsb : ('a1 -> bool) -> 'a1 list -> bool
 
 val forallb : ('a1 -> bool) -> 'a1 list -> bool
+
+val find : ('a1 -> bool) -> 'a1 list -> 'a1 option
 
 type expr =
   | ELit
@@ -53,3 +63,24 @@ val empty_dim_usage : dim_usage
 val merge_dim_usage : dim_usage -> dim_usage -> dim_usage
 
 val check_warp : exec_mode -> expr -> error list
+
+type tid = int
+
+type value = int
+
+type venv = (int * value) list
+
+val venv_lookup : venv -> int -> value
+
+val venv_extend : venv -> int -> value -> venv
+
+type event = EvBarrier | EvWarp
+
+type trace = event list
+
+type outcome = ONorm of value | ORet of value
+
+val eval :
+  (tid -> value) -> int -> tid -> venv -> expr -> (outcome * trace) option
+
+val eval_concrete : int -> tid -> venv -> expr -> (outcome * trace) option

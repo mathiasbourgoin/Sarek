@@ -1,8 +1,8 @@
 # ConvergenceSafety — Work Plan
 
-**Last updated**: 2026-06-13 (tick 0 — session re-read; T3-S6 confirmed DONE; currentTask = T3-S7)
+**Last updated**: 2026-06-13 (tick 0 — session re-read; T3-S7 confirmed DONE; currentTask = T3-S8)
 **Apparatus version**: 1.2.1
-**Phase**: T3-SEMANTIC (full ladder approved; T3-S7 is current task)
+**Phase**: T3-SEMANTIC (full ladder approved; T3-S8 is current task)
 
 ---
 
@@ -23,40 +23,40 @@
 | T3-S4 | Core semantic soundness of `check_env` (trace-uniformity theorem) | T3 | **done** (ConvergenceSemantics.v: core_frag + eval_check_uniform + check_env_sound_core; 36 proven, 6 defs, 0 admits, 0 axioms; 2026-06-13) | T3-S2, T3-S3 |
 | T3-S5 | EReturn residual-divergence verdict (formal counterexample or proof; expected F-04) | T3 | **done** (ConvergenceSemantics.v: hazard + hazard_vary + hazard_checker_blind + hazard_eval_thread0/1 + hazard_not_barrier_safe; F-04 filed; 40 proven, 8 defs, 0 admits, 0 axioms; 2026-06-13) | T3-S4 |
 | T3-S6 | ESuperstep semantic grounding (implicit-barrier event; semantic F-01) | T3 | **done** (ConvergenceSemantics.v: core_frag_ss + core_frag_impl_ss + core_frag_ss_no_ret + eval_while_exits_immediately_ss + core_frag_ss_barrier_free_superstep_free + check_env_diverged_no_barriers_ss + eval_check_uniform_ss + check_env_sound_superstep + susp_hazard/susp_vary/susp_eval_thread0/1 + semantic_f01_flagged + semantic_f01_not_barrier_safe + semantic_f01_corollary; T3-S3 side condition resolved; dv=true trust boundary documented; 50 proven, 10 defs, 0 admits, 0 axioms; 2026-06-13) | T3-S4 |
-| T3-S7 | Warp-collective semantic soundness (`check_warp` vs warp-granular traces) | T3 | current | T3-S4 |
-| T3-S8 | Extraction + differential conformance for the semantics (CMBT closure) | T3 | open | T3-S5 |
+| T3-S7 | Warp-collective semantic soundness (`check_warp` vs warp-granular traces) | T3 | **done** (ConvergenceSemantics.v: erase_barrier + warp_free + warp_free_no_warps + check_warp_env + check_warp_env_diverged_clean_warp_free + check_warp_env_diverged_no_warps + eval_check_warp_uniform + warp_safe + check_warp_sound_core in Section WarpModel; 0 admits, 0 axioms, coqchk passes; 2026-06-13) | T3-S4 |
+| T3-S8 | Extraction + differential conformance for the semantics (CMBT closure) | T3 | current | T3-S5 |
 | DOCS-SYNC | STATUS.md / ASSUMPTIONS.md / proof-ledger.json / ConvergenceSafetySpec.tex drift check | hygiene | **clean** (verified tick 1) | — |
 
 ---
 
 ## Current task
 
-**T3-S7 — current task.**
+**T3-S8 — current task.**
 
-T3-S6 done (2026-06-13): ConvergenceSemantics.v extended with the enlarged
-fragment core_frag_ss (admits ESuperstep false b c; EReturn still excluded),
-core_frag_impl_ss, core_frag_ss_no_ret, eval_while_exits_immediately_ss,
-core_frag_ss_barrier_free_superstep_free, check_env_diverged_no_barriers_ss
-(resolves the T3-S3 superstep_free side condition over core_frag_ss),
-eval_check_uniform_ss (combined Part A barrier-trace + Part B outcome uniformity
-over the enlarged fragment; new ESuperstep case emits the implicit boundary
-[EvBarrier] uniformly on all threads), check_env_sound_superstep (soundness of
-check_env over the enlarged fragment), and the semantic F-01 corollary:
-susp_hazard := EIf EVary (ESuperstep false EBarrier ELit) ELit is both flagged by
-check_env Converged [] (semantic_f01_flagged) and genuinely not barrier_safe
-(semantic_f01_not_barrier_safe: thread 0 → (ONorm 0, [EvBarrier; EvBarrier]),
-thread 1 → (ONorm 0, [])); semantic_f01_corollary conjoins them.
-50 proven, 10 defs, 0 admits, 0 axioms, coqchk passes.
-TRUST BOUNDARY: core_frag_ss admits only dv=false supersteps (clause negb dv && ...);
-dv=true emits the boundary barrier at runtime but is not flagged in Diverged mode and
-is OUT of the verified fragment — documented in ASSUMPTIONS.md §T3-S6.
+T3-S7 done (2026-06-13): ConvergenceSemantics.v extended with erase_barrier (trace
+projection keeping only EvWarp events), warp_free + warp_free_no_warps (dual of
+barrier_free_no_barriers), check_warp_env (env-threaded warp checker mirroring check_env
+with EWarpPoint flagging instead of EBarrier), check_warp_env_diverged_clean_warp_free
+(bridge lemma), check_warp_env_diverged_no_warps (silence under Diverged), Section
+WarpModel with Variable warp_of : tid -> nat, eval_check_warp_uniform (warp dual of
+eval_check_uniform: Part A erase_barrier equality + Part B outcome equality over
+core_frag with check_warp_env Converged clean), warp_safe (erase_barrier-trace agreement
+restricted to thread pairs with warp_of t1 = warp_of t2), and check_warp_sound_core
+(main theorem: core_frag e = true -> check_warp_env Converged env e = [] ->
+warp_safe env e, parametric in warp_of).
+0 admits, 0 axioms, coqchk passes. Warp-size parameterization CLOSED.
+PARAMETRIZATION NOTE: attempt to make T3-S4 induction parametric over
+(event class, agreement domain, checker) was flagged INFEASIBLE within budget
+(concrete checker reductions + per-constructor leaf inversions); eval_check_warp_uniform
+was duplicated via mechanical EBarrier<->EWarpPoint / erase_warp<->erase_barrier /
+check_env<->check_warp_env substitution.
 
-Current task: T3-S7 — Warp-collective semantic soundness (check_warp vs warp-granular
-traces). Blocked-by T3-S4 is resolved. KEY DESIGN DECISION at task start: try to make
-the eval_check_uniform induction parametric over (event class, agreement domain, checker)
-so S7 is an instantiation rather than a third copy of the ~900-line induction — note
-T3-S6 already duplicated it once (eval_check_uniform_ss), so a parametric refactor is now
-the higher-value path if the budget allows.
+Current task: T3-S8 — Extraction + differential conformance for the semantics (CMBT
+closure). Blocked-by T3-S5 is resolved (F-04 counterexample landed in T3-S5). KEY
+DELIVERABLES: extract eval to ConvergenceModel; add QCheck properties for
+eval_fuel_monotone, barrier_free_silent, differential (check_env clean => trace
+agreement), and F-04 hazard regression; DOCS-SYNC pass (STATUS.md, proof-ledger.json,
+ConvergenceSafetySpec.tex, ASSUMPTIONS.md).
 
 ---
 
@@ -326,6 +326,7 @@ global decision 4 and is recorded as the T3 trust boundary.
 
 ## Workflow notes
 
+- Tick 0 (2026-06-13, new orchestrator session tick 0): All tasks through T3-S7 confirmed DONE per STATUS.md (T3-S7: erase_barrier + warp_free + warp_free_no_warps + check_warp_env + check_warp_env_diverged_clean_warp_free + check_warp_env_diverged_no_warps + eval_check_warp_uniform + warp_safe + check_warp_sound_core; Section WarpModel with Variable warp_of; 0 admits, 0 axioms, coqchk passes; warp-size parameterization CLOSED; parametric T3-S4 induction flagged INFEASIBLE, duplicated as eval_check_warp_uniform; conformance 17/17 green, extraction 7/7 green, live 10/10 green). No open PRs (gh returns []). DOCS-SYNC clean. currentTask = T3-S8 (unblocked — T3-S5 done, no hard blockers). T3-S8 is the final remaining task.
 - Tick 0 (2026-06-13, new orchestrator session tick 0): All tasks through T3-S5 confirmed DONE per STATUS.md (40 proven items + 8 defs, 0 admits, 0 axioms, coqchk passes; conformance 17/17 green, extraction 7/7 green, live 10/10 green). No open PRs (gh returns []). DOCS-SYNC clean. currentTask = T3-S6 (unblocked — T3-S4 done, no hard blockers).
 - Tick 0 (2026-06-13, new orchestrator session tick 0): All tasks through T3-S6 confirmed DONE per STATUS.md (50 proven items + 10 defs, 0 admits, 0 axioms, coqchk passes; conformance 17/17 green, extraction 7/7 green, live 10/10 green). No open PRs (gh returns []). DOCS-SYNC clean. currentTask = T3-S7 (unblocked — T3-S4 done, no hard blockers). T3-S8 remains open (blocked by T3-S5, which is done).
 - Tick 0 (2026-06-13, previous orchestrator session): All tasks through T3-S4 confirmed DONE per STATUS.md (37 proven items, 0 admits, 0 axioms, coqchk passes; conformance 17/17 green, extraction 7/7 green, live 10/10 green). No open PRs (gh returns []). DOCS-SYNC clean. currentTask = T3-S5 (unblocked — T3-S4 done, T3-S4 the only blocker).
