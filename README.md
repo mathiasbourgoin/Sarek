@@ -25,6 +25,7 @@ This codebase has undergone significant modernization (2024-2026):
 - **WGSL/WebGPU codegen** — a 5th transpiler backend emitting WGSL for browser-side execution
 - **In-browser Playground** — live kernel transpiler at [mathiasbourgoin.github.io/Sarek/playground.html](https://mathiasbourgoin.github.io/Sarek/playground.html)
 - **Interactive Learn course** — edit and run Sarek kernels on your GPU in the browser at [mathiasbourgoin.github.io/Sarek/learn/](https://mathiasbourgoin.github.io/Sarek/learn/)
+- **PTX direct emitter** *(experimental)* — `Sarek_ir_ptx` emits NVIDIA PTX directly from Sarek IR, bypassing NVRTC; validated on real hardware; foundation for formal backend verification
 
 The framework is actively maintained and uses modern OCaml features while preserving compatibility with existing SPOC code.
 
@@ -57,6 +58,7 @@ Kernels compile to multiple backends automatically without code changes.
 | **Metal** | Apple Silicon/Intel Macs | ✓ | [sarek-metal/](sarek-metal/) |
 | **Native** | CPU (parallel) | ✓ | [sarek/plugins/native/](sarek/plugins/native/) |
 | **Interpreter** | CPU (debugging) | ✓ | [sarek/plugins/interpreter/](sarek/plugins/interpreter/) |
+| **PTX (direct)** | NVIDIA GPUs | ⚗️ Experimental | [sarek/codegen/Sarek\_ir\_ptx.ml](sarek/codegen/Sarek_ir_ptx.ml) |
 
 ### Core Features
 
@@ -87,7 +89,37 @@ GPU Backends:
 ├── sarek-opencl/  OpenCL backend (multi-vendor)
 ├── sarek-vulkan/  Vulkan/GLSL backend
 └── sarek-metal/   Apple Metal backend
+
+Experimental:
+└── sarek/codegen/Sarek_ir_ptx.ml   Direct PTX emitter (spike)
 ```
+
+## Experimental Features
+
+### PTX Direct Emitter (`Sarek_ir_ptx`)
+
+> ⚠️ **Experimental — incomplete, not production-ready.**
+
+`Sarek_ir_ptx` is a spike-level PTX code generator that emits NVIDIA PTX directly from Sarek IR, bypassing NVRTC entirely.
+
+**What works:**
+- Basic scalar and vector kernels (float32/int32 arithmetic, global memory loads/stores, barriers)
+- Thread ID / block ID / grid ID registers
+- Parameterised SM target (`?sm_target`, default `sm_86`)
+- `Cuda_api.Kernel.load_from_ptx` loads the PTX via `cuModuleLoadData` — automatically adapts the `.target` to the device's actual SM, so `sm_86` PTX runs on older hardware (tested: GTX 1070, sm_61)
+- End-to-end test in `sarek-cuda/test/test_ptx_external.ml`
+
+**What is missing (known gaps):**
+- Records and variants (`TRecord`, `TVariant`) — struct layout not implemented
+- Helper / device functions (`kern_funcs`, `EApp`) — `.func` directive
+- Array length tracking (`EArrayLen`)
+- Match expressions (`EMatch`, `SMatch`) — depends on variant lowering
+- Shared memory (`__shared__` / `.shared`) — not yet emitted
+- Full CI integration and ptxas validation gate
+
+**Intended purpose:** foundation for formal verification of the CUDA backend. Proving `Sarek_ir_ptx.ml` produces semantically correct PTX (against a Rocq PTX semantics) is the target of the planned `cuda-semantics` formal project.
+
+See `docs/plans/ptx-spike-findings.md` for the full PTX subset analysis.
 
 ## Installation
 
