@@ -3897,3 +3897,1409 @@ Proof.
   (* Heq : erase_warp [] = erase_warp [EvBarrier], i.e. [] = [EvBarrier] *)
   unfold erase_warp in Heq. simpl in Heq. discriminate.
 Qed.
+
+(* ======================================================================= *)
+(* 11.  T3-S6 — ESuperstep semantic grounding (semantic F-01)              *)
+(* ======================================================================= *)
+
+(** core_frag_ss: the core fragment ENLARGED to include ESuperstep nodes.
+    Differs from core_frag in exactly one constructor: ESuperstep false body cont
+    is now in the fragment provided its body and cont are (recursively) in
+    core_frag_ss. The clause is literally [negb dv && core_frag_ss b && core_frag_ss c],
+    so ONLY uniform-reachability (dv=false) supersteps enter the
+    verified fragment. EReturn remains excluded — an early return bypasses later
+    barriers and breaks barrier uniformity (cf. the T3-S5 hazard / F-04).
+
+    TRUST BOUNDARY (dv=true): the operational semantics emits the implicit
+    boundary [EvBarrier] uniformly on every thread regardless of dv (the runtime
+    barrier always fires; dv affects only the static check_env verdict). But a
+    dv=true superstep is NOT flagged by check_env in Diverged mode, so admitting
+    it into core_frag_ss would make check_env_diverged_no_barriers_ss false. dv=true
+    is therefore OUT of the verified fragment and relies on the front-end's
+    divergence-uniformity annotation being correct (ASSUMPTIONS.md, §T3-S6). *)
+Fixpoint core_frag_ss (e : expr) : bool :=
+  match e with
+  | ELit | EVary | EBarrier | EWarpPoint | EVar _ => true
+  | EBinop a b        => core_frag_ss a && core_frag_ss b
+  | EUnop e0          => core_frag_ss e0
+  | EIf c t el        => core_frag_ss c && core_frag_ss t && core_frag_ss el
+  | EWhile c b        => core_frag_ss c && core_frag_ss b
+  | EFor lo hi b      => core_frag_ss lo && core_frag_ss hi && core_frag_ss b
+  | ESeq es           => forallb core_frag_ss es
+  | ELet _ v b        => core_frag_ss v && core_frag_ss b
+  | ESuperstep dv b c =>
+      (* only uniform-reachability (dv=false) supersteps are in the verified
+         fragment; dv=true is a documented trust boundary (ASSUMPTIONS.md) *)
+      negb dv && core_frag_ss b && core_frag_ss c
+  | EApp args         => forallb core_frag_ss args
+  | EReturn _         => false   (* early-exit bypasses later barriers; excluded *)
+  end.
+
+(** core_frag implies core_frag_ss: the enlarged fragment subsumes the core. *)
+Lemma core_frag_impl_ss : forall e, core_frag e = true -> core_frag_ss e = true.
+Proof.
+  apply (expr_list_rect
+    (fun e  => core_frag e = true -> core_frag_ss e = true)
+    (fun es => forallb core_frag es = true -> forallb core_frag_ss es = true)).
+  - intros _. reflexivity.
+  - intros _. reflexivity.
+  - intros _. reflexivity.
+  - intros _. reflexivity.
+  - intros x _. reflexivity.
+  - intros a b IHa IHb H. simpl in H. apply andb_true_iff in H as [Ha Hb].
+    simpl. apply andb_true_iff. exact (conj (IHa Ha) (IHb Hb)).
+  - intros e0 IH H. simpl in H. simpl. exact (IH H).
+  - intros c t el IHc IHt IHel H. simpl in H.
+    apply andb_true_iff in H as [Hct Hel]. apply andb_true_iff in Hct as [Hc Ht].
+    simpl. apply andb_true_iff. split.
+    + apply andb_true_iff. exact (conj (IHc Hc) (IHt Ht)).
+    + exact (IHel Hel).
+  - intros c b IHc IHb H. simpl in H. apply andb_true_iff in H as [Hc Hb].
+    simpl. apply andb_true_iff. exact (conj (IHc Hc) (IHb Hb)).
+  - intros lo hi b IHlo IHhi IHb H. simpl in H.
+    apply andb_true_iff in H as [Hlohi Hb]. apply andb_true_iff in Hlohi as [Hlo Hhi].
+    simpl. apply andb_true_iff. split.
+    + apply andb_true_iff. exact (conj (IHlo Hlo) (IHhi Hhi)).
+    + exact (IHb Hb).
+  - intros es IHes H. simpl in H. simpl. exact (IHes H).
+  - intros x v b IHv IHb H. simpl in H. apply andb_true_iff in H as [Hv Hb].
+    simpl. apply andb_true_iff. exact (conj (IHv Hv) (IHb Hb)).
+  - intros dv body cont _ _ H. simpl in H. discriminate.  (* core_frag ESuperstep = false *)
+  - intros args IHargs H. simpl in H. simpl. exact (IHargs H).
+  - intros e0 _ H. simpl in H. discriminate.  (* core_frag EReturn = false *)
+  - intros _. reflexivity.
+  - intros h tl IHh IHtl H. simpl in H. apply andb_true_iff in H as [Hh Htl].
+    simpl. apply andb_true_iff. exact (conj (IHh Hh) (IHtl Htl)).
+Qed.
+
+(** core_frag_ss_no_ret: like core_frag_ss_no_ret but for the enlarged fragment.
+    Even with ESuperstep in the fragment, no core_frag_ss expression returns ORet:
+    a superstep's body cannot return (core_frag_ss body) and its overall
+    outcome is the cont outcome, which is itself ORet-free by induction. *)
+Lemma core_frag_ss_no_ret :
+  forall vary_val fuel,
+  forall e t rho v tr,
+    core_frag_ss e = true ->
+    eval vary_val fuel t rho e = Some (ORet v, tr) -> False.
+Proof.
+  intros vary_val.
+  induction fuel as [| f' IHf].
+  - intros e t rho v tr _ H. simpl in H. discriminate.
+  - intros e t rho v tr Hcf H.
+    destruct e as [ | | | | n0 | ea eb | eu | econd ethen eelse | ec eb
+                  | elo ehi ebod | ess | xn ev eb | dv ebod econt | eargs | er ];
+    simpl in Hcf; simpl in H; try discriminate.
+    (* EBinop ea eb *)
+    + apply andb_true_iff in Hcf as [Hcfa Hcfb].
+      set (rea := eval vary_val f' t rho ea) in *.
+      destruct rea as [[[va|va] tra_a]|] eqn:Hea.
+      { (* ONorm va: check eb *)
+        set (reb := eval vary_val f' t rho eb) in *.
+        destruct reb as [[[vb|vb] trb]|] eqn:Heb.
+        - (* ONorm vb: result is ONorm, H says ORet, contradiction *)
+          discriminate.
+        - (* ORet vb: result is ORet vb *)
+          inversion H. subst.
+          unfold reb in Heb.
+          exact (IHf eb t rho v trb Hcfb Heb).
+        - (* None: H = None = Some ORet, contradiction *)
+          discriminate. }
+      { (* ORet va: result of EBinop is Some (ORet va, tra_a) *)
+        inversion H. subst.
+        unfold rea in Hea.
+        exact (IHf ea t rho v tr Hcfa Hea). }
+      { (* None: H = None = Some ORet, contradiction *)
+        discriminate. }
+    (* EUnop eu *)
+    + set (reu := eval vary_val f' t rho eu) in *.
+      destruct reu as [[[vu|vu] tru]|] eqn:Heu; try discriminate.
+      inversion H. subst. unfold reu in Heu. exact (IHf eu t rho v tr Hcf Heu).
+    (* EIf econd ethen eelse *)
+    + apply andb_true_iff in Hcf as [Hcfct Hcfel].
+      apply andb_true_iff in Hcfct as [Hcfc Hcft].
+      set (rcond := eval vary_val f' t rho econd) in *.
+      destruct rcond as [[[vc|vc] trc]|] eqn:Hcond; try discriminate.
+      { (* ONorm vc: evaluate branch *)
+        set (rbr := eval vary_val f' t rho (if Nat.eqb vc 0 then eelse else ethen)) in *.
+        destruct rbr as [[ob trb]|] eqn:Hbr; try discriminate.
+        inversion H. subst.
+        unfold rbr in Hbr.
+        case_eq (Nat.eqb vc 0); intro Hb; rewrite Hb in Hbr.
+        - exact (IHf eelse t rho v trb Hcfel Hbr).
+        - exact (IHf ethen t rho v trb Hcft Hbr). }
+      { (* ORet vc: propagates *)
+        inversion H. subst. unfold rcond in Hcond. exact (IHf econd t rho v tr Hcfc Hcond). }
+    (* EWhile ec eb *)
+    + apply andb_true_iff in Hcf as [Hcfc Hcfb].
+      set (rcond_w := eval vary_val f' t rho ec) in *.
+      destruct rcond_w as [[[vc|vc] trc]|] eqn:Hcond; try discriminate.
+      { destruct (Nat.eqb vc 0); try discriminate.
+        set (rbod_w := eval vary_val f' t rho eb) in *.
+        destruct rbod_w as [[[vb|vb] trb]|] eqn:Hbod; try discriminate.
+        { (* ONorm vb: recursive EWhile call at fuel f' *)
+          set (rloop := eval vary_val f' t rho (EWhile ec eb)) in *.
+          destruct rloop as [[oloop trloop]|] eqn:Hloop; try discriminate.
+          inversion H. subst.
+          assert (HcfW : core_frag_ss (EWhile ec eb) = true).
+          { simpl. apply andb_true_iff. exact (conj Hcfc Hcfb). }
+          unfold rloop in Hloop.
+          exact (IHf (EWhile ec eb) t rho v trloop HcfW Hloop). }
+        { (* ORet vb: propagates from body *)
+          inversion H. subst. unfold rbod_w in Hbod. exact (IHf eb t rho v trb Hcfb Hbod). } }
+      { inversion H. subst. unfold rcond_w in Hcond. exact (IHf ec t rho v tr Hcfc Hcond). }
+    (* EFor elo ehi ebod *)
+    + apply andb_true_iff in Hcf as [Hcflohi Hcfb].
+      apply andb_true_iff in Hcflohi as [Hcflo Hcfhi].
+      set (rlo := eval vary_val f' t rho elo) in *.
+      destruct rlo as [[[vlo|vlo] trlo]|] eqn:Hlo; try discriminate.
+      { set (rhi := eval vary_val f' t rho ehi) in *.
+        destruct rhi as [[[vhi|vhi] trhi]|] eqn:Hhi; try discriminate.
+        { destruct (Nat.leb vhi vlo); try discriminate.
+          rewrite (for_loop_eq vary_val f' t rho ebod (vhi - vlo) (trlo ++ trhi)) in H.
+          (* Induct on steps, generalize acc *)
+          revert H.
+          generalize (trlo ++ trhi) as acc0.
+          induction (vhi - vlo) as [| s IHs]; intros acc0 H.
+          - simpl in H. discriminate.
+          - simpl in H.
+            set (rbod := eval vary_val f' t rho ebod) in *.
+            destruct rbod as [[[vb|vb] trb]|] eqn:Hbod; try discriminate.
+            + exact (IHs _ H).
+            + inversion H. subst. unfold rbod in Hbod. exact (IHf ebod t rho v trb Hcfb Hbod). }
+        { inversion H. subst. unfold rhi in Hhi. exact (IHf ehi t rho v trhi Hcfhi Hhi). } }
+      { inversion H. subst. unfold rlo in Hlo. exact (IHf elo t rho v tr Hcflo Hlo). }
+    (* ESeq ess *)
+    + rewrite forallb_forall in Hcf.
+      rename H into Hseq_outer.
+      assert (Hseq : forall acc,
+        (fix eval_seq (xs : list expr) (acc_tr : trace) : option (outcome * trace) :=
+          match xs with
+          | []      => Some (ONorm 0, acc_tr)
+          | x :: rest =>
+              match eval vary_val f' t rho x with
+              | Some (ORet v0, tr0)  => Some (ORet v0, acc_tr ++ tr0)
+              | Some (ONorm _, tr0) => eval_seq rest (acc_tr ++ tr0)
+              | None               => None
+              end
+          end) ess acc = Some (ORet v, tr) -> False).
+      { clear Hseq_outer.
+        induction ess as [| h0 tl0 IHtl0].
+        - intros acc H0. simpl in H0. discriminate.
+        - intros acc H0. simpl in H0.
+          assert (Hcfh0 : core_frag_ss h0 = true) by (apply Hcf; apply in_eq).
+          destruct (eval vary_val f' t rho h0) as [[[vh|vh] trh]|] eqn:Hh0; try discriminate.
+          + exact (IHtl0 (fun x Hin => Hcf x (in_cons _ _ _ Hin)) (acc ++ trh) H0).
+          + inversion H0. subst. exact (IHf h0 t rho v trh Hcfh0 Hh0). }
+      exact (Hseq [] Hseq_outer).
+    (* ELet xn ev eb *)
+    + apply andb_true_iff in Hcf as [Hcfv Hcfb].
+      set (rev_let := eval vary_val f' t rho ev) in *.
+      destruct rev_let as [[[vv|vv] trv]|] eqn:Hev; try discriminate.
+      { (* ONorm vv: evaluate body with extended env *)
+        set (rbod_let := eval vary_val f' t (venv_extend rho xn vv) eb) in *.
+        destruct rbod_let as [[ob'' trb'']|] eqn:Hbod; try discriminate.
+        inversion H. subst.
+        unfold rbod_let in Hbod.
+        exact (IHf eb t (venv_extend rho xn vv) v trb'' Hcfb Hbod). }
+      { (* ORet vv: propagates from binder *)
+        inversion H. subst. unfold rev_let in Hev. exact (IHf ev t rho v tr Hcfv Hev). }
+    (* ESuperstep dv ebod econt: body never returns ORet; cont's ORet excluded *)
+    + apply andb_true_iff in Hcf as [Hcfdvb Hcfc].
+      apply andb_true_iff in Hcfdvb as [_ Hcfb].
+      set (rbody := eval vary_val f' t rho ebod) in *.
+      destruct rbody as [[[vb|vb] trb]|] eqn:Hb; try discriminate.
+      { set (rcont := eval vary_val f' t rho econt) in *.
+        destruct rcont as [[oc trc]|] eqn:Hc; try discriminate.
+        inversion H. subst.
+        unfold rcont in Hc.
+        exact (IHf econt t rho v trc Hcfc Hc). }
+      { exfalso. unfold rbody in Hb. exact (IHf ebod t rho vb trb Hcfb Hb). }
+    (* EApp eargs *)
+    + rewrite forallb_forall in Hcf.
+      rename H into Hargs_outer.
+      assert (Hargs : forall acc lv,
+        (fix eval_args (xs : list expr) (acc_tr : trace) (last_v : value) : option (outcome * trace) :=
+          match xs with
+          | []      => Some (ONorm last_v, acc_tr)
+          | x :: rest =>
+              match eval vary_val f' t rho x with
+              | Some (ORet v0, tr0)  => Some (ORet v0, acc_tr ++ tr0)
+              | Some (ONorm v0, tr0) => eval_args rest (acc_tr ++ tr0) v0
+              | None               => None
+              end
+          end) eargs acc lv = Some (ORet v, tr) -> False).
+      { clear Hargs_outer.
+        induction eargs as [| h0 tl0 IHtl0].
+        - intros acc lv H0. simpl in H0. discriminate.
+        - intros acc lv H0. simpl in H0.
+          assert (Hcfh0 : core_frag_ss h0 = true) by (apply Hcf; apply in_eq).
+          destruct (eval vary_val f' t rho h0) as [[[vh|vh] trh]|] eqn:Hh0; try discriminate.
+          + exact (IHtl0 (fun x Hin => Hcf x (in_cons _ _ _ Hin)) (acc ++ trh) vh H0).
+          + inversion H0. subst. exact (IHf h0 t rho v trh Hcfh0 Hh0). }
+      exact (Hargs [] 0 Hargs_outer).
+    (* EReturn: excluded by core_frag_ss = false (try discriminate closed it) *)
+Qed.
+
+(** eval_while_exits_immediately_ss: the core_frag_ss analogue of
+    eval_while_exits_immediately. EWhile contains no ESuperstep at the head,
+    so the proof is identical modulo the fragment predicate. *)
+Lemma eval_while_exits_immediately_ss :
+  forall vary_val fuel ec eb t rho o tr,
+    core_frag_ss (EWhile ec eb) = true ->
+    eval vary_val fuel t rho (EWhile ec eb) = Some (o, tr) ->
+    eval vary_val (Nat.pred fuel) t rho ec = Some (ONorm 0, tr) /\ o = ONorm 0.
+Proof.
+  intros vary_val.
+  induction fuel as [| fuel' IHfuel].
+  - intros ec eb t rho o tr _ H. simpl in H. discriminate.
+  - intros ec eb t rho o tr Hcf H.
+    apply andb_true_iff in Hcf as [Hcfc Hcfb].
+    simpl in H.
+    (* outcome = ONorm | ORet; first branch = ONorm, second = ORet *)
+    destruct (eval vary_val fuel' t rho ec) as [[[cv|cv] tr_c]|] eqn:Hec.
+    + (* ec → ONorm cv: check if cv = 0 *)
+      destruct (Nat.eqb cv 0) eqn:Hcv0.
+      * apply Nat.eqb_eq in Hcv0. subst cv.
+        inversion H. subst. simpl. exact (conj Hec eq_refl).
+      * apply Nat.eqb_neq in Hcv0.
+        (* cv ≠ 0: body must return Some for the whole thing to be Some *)
+        destruct (eval vary_val fuel' t rho eb) as [[[bv|bv] tr_b]|] eqn:Heb.
+        -- (* body → ONorm bv: recursive EWhile call *)
+           destruct (eval vary_val fuel' t rho (EWhile ec eb)) as [[oloop trloop]|] eqn:Hloop.
+           ++ (* recursive call → Some: derive contradiction via IH *)
+              assert (Hwcf : core_frag_ss (EWhile ec eb) = true).
+              { simpl. apply andb_true_iff. exact (conj Hcfc Hcfb). }
+              destruct (IHfuel ec eb t rho oloop trloop Hwcf Hloop) as [Hec0 _].
+              (* Hec0 : eval (pred fuel') t rho ec = Some(ONorm 0, trloop) *)
+              destruct fuel' as [|fuel''].
+              { simpl in Hloop. discriminate. }
+              (* fuel' = S fuel'': pred (S fuel'') = fuel'' *)
+              simpl in Hec0.
+              apply eval_fuel_monotone in Hec0.
+              rewrite Hec in Hec0.
+              exfalso. apply Hcv0. congruence.
+           ++ discriminate.
+        -- (* body → ORet: excluded by core_frag_ss *)
+           exfalso. exact (core_frag_ss_no_ret vary_val fuel' eb t rho bv tr_b Hcfb Heb).
+        -- discriminate.
+    + (* ec → ORet: excluded by core_frag_ss *)
+      exfalso. exact (core_frag_ss_no_ret vary_val fuel' ec t rho cv tr_c Hcfc Hec).
+    + discriminate.
+Qed.
+
+(** core_frag_ss_barrier_free_superstep_free: a core_frag_ss expression that is
+    also barrier_free contains no superstep at all (hence is superstep_free).
+    Key fact: core_frag_ss admits only dv=false supersteps, and barrier_free of
+    a dv=false superstep is false. So barrier_free rules supersteps out entirely
+    on this fragment. *)
+Lemma core_frag_ss_barrier_free_superstep_free :
+  forall e, core_frag_ss e = true -> barrier_free e = true -> superstep_free e = true.
+Proof.
+  apply (expr_list_rect
+    (fun e  => core_frag_ss e = true -> barrier_free e = true -> superstep_free e = true)
+    (fun es => forallb core_frag_ss es = true -> forallb barrier_free es = true ->
+               forallb superstep_free es = true)).
+  - intros _ _. reflexivity.
+  - intros _ _. reflexivity.
+  - intros _ _. reflexivity.
+  - intros _ _. reflexivity.
+  - intros x _ _. reflexivity.
+  - intros a b IHa IHb Hcf Hbf. simpl in Hcf, Hbf.
+    apply andb_true_iff in Hcf as [Hca Hcb]. apply andb_true_iff in Hbf as [Hba Hbb].
+    simpl. apply andb_true_iff. exact (conj (IHa Hca Hba) (IHb Hcb Hbb)).
+  - intros e0 IH Hcf Hbf. simpl in Hcf, Hbf. simpl. exact (IH Hcf Hbf).
+  - intros c t el IHc IHt IHel Hcf Hbf. simpl in Hcf, Hbf.
+    apply andb_true_iff in Hcf as [Hct Hcel]. apply andb_true_iff in Hct as [Hcc Hct'].
+    apply andb_true_iff in Hbf as [Hbt Hbel]. apply andb_true_iff in Hbt as [Hbc Hbt'].
+    simpl. apply andb_true_iff. split.
+    + apply andb_true_iff. exact (conj (IHc Hcc Hbc) (IHt Hct' Hbt')).
+    + exact (IHel Hcel Hbel).
+  - intros c b IHc IHb Hcf Hbf. simpl in Hcf, Hbf.
+    apply andb_true_iff in Hcf as [Hcc Hcb]. apply andb_true_iff in Hbf as [Hbc Hbb].
+    simpl. apply andb_true_iff. exact (conj (IHc Hcc Hbc) (IHb Hcb Hbb)).
+  - intros lo hi b IHlo IHhi IHb Hcf Hbf. simpl in Hcf, Hbf.
+    apply andb_true_iff in Hcf as [Hclohi Hcb]. apply andb_true_iff in Hclohi as [Hclo Hchi].
+    apply andb_true_iff in Hbf as [Hblohi Hbb]. apply andb_true_iff in Hblohi as [Hblo Hbhi].
+    simpl. apply andb_true_iff. split.
+    + apply andb_true_iff. exact (conj (IHlo Hclo Hblo) (IHhi Hchi Hbhi)).
+    + exact (IHb Hcb Hbb).
+  - intros es IHes Hcf Hbf. simpl in Hcf, Hbf. simpl. exact (IHes Hcf Hbf).
+  - intros x v b IHv IHb Hcf Hbf. simpl in Hcf, Hbf.
+    apply andb_true_iff in Hcf as [Hcv Hcb]. apply andb_true_iff in Hbf as [Hbv Hbb].
+    simpl. apply andb_true_iff. exact (conj (IHv Hcv Hbv) (IHb Hcb Hbb)).
+  - (* ESuperstep dv body cont: barrier_free forces dv=true, but core_frag_ss
+       admits only dv=false — contradiction. *)
+    intros dv body cont _ _ Hcf Hbf.
+    destruct dv; simpl in Hcf, Hbf.
+    + (* dv=true: barrier_free has (if true then true else false)=true so ok,
+         but core_frag_ss has negb true = false -> Hcf false *)
+      simpl in Hcf. discriminate.
+    + (* dv=false: barrier_free has (if false..)=false -> Hbf false *)
+      simpl in Hbf. discriminate.
+  - intros args IHargs Hcf Hbf. simpl in Hcf, Hbf. simpl. exact (IHargs Hcf Hbf).
+  - intros e0 _ Hcf _. simpl in Hcf. discriminate.  (* EReturn excluded *)
+  - intros _ _. reflexivity.
+  - intros h tl IHh IHtl Hcf Hbf. simpl in Hcf, Hbf.
+    apply andb_true_iff in Hcf as [Hch Hctl]. apply andb_true_iff in Hbf as [Hbh Hbtl].
+    simpl. apply andb_true_iff. exact (conj (IHh Hch Hbh) (IHtl Hctl Hbtl)).
+Qed.
+
+(** check_env_diverged_no_barriers_ss: the core_frag_ss analogue of
+    check_env_diverged_no_barriers. On the enlarged fragment, a Diverged-clean
+    expression is still barrier-silent: the Diverged-mode checker would flag any
+    reachable dv=false superstep with [BarrierError], so a clean check forces
+    superstep-freedom, and barrier-freedom follows from the existing bridge. *)
+Lemma check_env_diverged_no_barriers_ss :
+  forall vary_val env e,
+    core_frag_ss e = true ->
+    check_env Diverged env e = [] ->
+    forall fuel t rho o tr,
+      eval vary_val fuel t rho e = Some (o, tr) ->
+      no_barrier_event tr = true.
+Proof.
+  intros vary_val env e Hcf Hclean fuel t rho o tr Heval.
+  assert (Hbf : barrier_free e = true)
+    by exact (check_env_diverged_clean_barrier_free e env Hclean).
+  apply barrier_free_no_barriers with
+    (vary_val := vary_val) (fuel := fuel) (t := t) (rho := rho) (e := e) (o := o).
+  - exact (core_frag_ss_barrier_free_superstep_free e Hcf Hbf).
+  - exact Hbf.
+  - exact Heval.
+Qed.
+
+(** eval_check_uniform_ss: the combined barrier/outcome uniformity lemma over
+    the ENLARGED fragment core_frag_ss. Identical structure to
+    eval_check_uniform; the one genuinely new case is ESuperstep, where the
+    implicit boundary [EvBarrier] is emitted uniformly on every thread, so the
+    barrier traces of two env-agreeing threads stay equal (Part A) and the
+    superstep outcome (= cont outcome) agrees when non-varying (Part B). *)
+Lemma eval_check_uniform_ss : forall vary_val fuel,
+  (* Part A: barrier-trace equality for all clean core_frag_ss expressions *)
+  (forall env e t1 t2 rho1 rho2 o1 o2 tr1 tr2,
+     core_frag_ss e = true ->
+     env_agrees env rho1 rho2 ->
+     check_env Converged env e = [] ->
+     eval vary_val fuel t1 rho1 e = Some (o1, tr1) ->
+     eval vary_val fuel t2 rho2 e = Some (o2, tr2) ->
+     erase_warp tr1 = erase_warp tr2) /\
+  (* Part B: outcome equality for non-varying clean core_frag_ss expressions *)
+  (forall env e t1 t2 rho1 rho2 o1 o2 tr1 tr2,
+     core_frag_ss e = true ->
+     env_agrees env rho1 rho2 ->
+     is_varying_in_env env e = false ->
+     check_env Converged env e = [] ->
+     eval vary_val fuel t1 rho1 e = Some (o1, tr1) ->
+     eval vary_val fuel t2 rho2 e = Some (o2, tr2) ->
+     o1 = o2).
+Proof.
+  intros vary_val.
+  induction fuel as [| fuel' IHfuel].
+  - split.
+    + intros env e t1 t2 rho1 rho2 o1 o2 tr1 tr2 _ _ _ H _. simpl in H. discriminate.
+    + intros env e t1 t2 rho1 rho2 o1 o2 tr1 tr2 _ _ _ _ H _. simpl in H. discriminate.
+  - destruct IHfuel as [IH_A IH_B].
+    split.
+
+(* ------------------------------------------------------------------ *)
+(* Part A for S fuel'                                                   *)
+(* ------------------------------------------------------------------ *)
+    + intros env e t1 t2 rho1 rho2 o1 o2 tr1 tr2 Hcf Hagr Hclean Heval1 Heval2.
+      destruct e as [ | | | | n0 | ea eb | eu | econd ethen eelse | ec eb
+                    | elo ehi ebod | ess | xn ev ebody | dv ebod econt | eargs | er ];
+      simpl in Hcf; simpl in Heval1; simpl in Heval2; try discriminate.
+
+      (* ELit *)
+      * inversion Heval1; inversion Heval2; reflexivity.
+      (* EVary *)
+      * inversion Heval1; inversion Heval2; reflexivity.
+      (* EBarrier *)
+      * inversion Heval1; inversion Heval2; reflexivity.
+      (* EWarpPoint *)
+      * inversion Heval1; inversion Heval2; reflexivity.
+      (* EVar n0 *)
+      * inversion Heval1; inversion Heval2; reflexivity.
+
+      (* EBinop ea eb *)
+      * apply andb_true_iff in Hcf as [Hcfa Hcfb].
+        simpl in Hclean. apply app_eq_nil in Hclean as [Hca Hcb].
+        destruct (eval vary_val fuel' t1 rho1 ea) as [[[va1|va1] tra1]|] eqn:Hea1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ea t1 rho1 va1 tra1 Hcfa Hea1). }
+        destruct (eval vary_val fuel' t1 rho1 eb) as [[[vb1|vb1] trb1]|] eqn:Heb1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' eb t1 rho1 vb1 trb1 Hcfb Heb1). }
+        inversion Heval1; subst.
+        destruct (eval vary_val fuel' t2 rho2 ea) as [[[va2|va2] tra2]|] eqn:Hea2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ea t2 rho2 va2 tra2 Hcfa Hea2). }
+        destruct (eval vary_val fuel' t2 rho2 eb) as [[[vb2|vb2] trb2]|] eqn:Heb2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' eb t2 rho2 vb2 trb2 Hcfb Heb2). }
+        inversion Heval2; subst.
+        rewrite !erase_warp_app. f_equal.
+        { exact (IH_A env ea t1 t2 rho1 rho2 (ONorm va1) (ONorm va2) tra1 tra2
+                   Hcfa Hagr Hca Hea1 Hea2). }
+        { exact (IH_A env eb t1 t2 rho1 rho2 (ONorm vb1) (ONorm vb2) trb1 trb2
+                   Hcfb Hagr Hcb Heb1 Heb2). }
+
+      (* EUnop eu *)
+      * destruct (eval vary_val fuel' t1 rho1 eu) as [[[vu1|vu1] tru1]|] eqn:Heu1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' eu t1 rho1 vu1 tru1 Hcf Heu1). }
+        destruct (eval vary_val fuel' t2 rho2 eu) as [[[vu2|vu2] tru2]|] eqn:Heu2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' eu t2 rho2 vu2 tru2 Hcf Heu2). }
+        (* Heval1 : Some (ONorm (unop_eval vu1), tru1) = Some (o1, tr1) *)
+        (* Heval2 : Some (ONorm (unop_eval vu2), tru2) = Some (o2, tr2) *)
+        injection Heval1 as Hout1 Htr1. injection Heval2 as Hout2 Htr2.
+        simpl in Hclean. rewrite <- Htr1. rewrite <- Htr2.
+        exact (IH_A env eu t1 t2 rho1 rho2 (ONorm vu1) (ONorm vu2) tru1 tru2
+                 Hcf Hagr Hclean Heu1 Heu2).
+
+      (* EIf econd ethen eelse *)
+      * apply andb_true_iff in Hcf as [Hcfct Hcfel].
+        apply andb_true_iff in Hcfct as [Hcfc Hcft].
+        simpl in Hclean.
+        set (inner_if := if is_varying_in_env env econd then Diverged else Converged).
+        (* Split check_env *)
+        assert (Hclean_c_br : check_env Converged env econd = [] /\
+                               check_env inner_if env ethen = [] /\
+                               check_env inner_if env eelse = []).
+        { unfold inner_if.
+          destruct (is_varying_in_env env econd);
+          simpl in Hclean;
+          apply app_eq_nil in Hclean as [HcC HtE];
+          apply app_eq_nil in HtE as [HcT HcEl];
+          exact (conj HcC (conj HcT HcEl)). }
+        destruct Hclean_c_br as [Hcc [Hct Hcel]].
+        (* Destruct eval of condition *)
+        destruct (eval vary_val fuel' t1 rho1 econd) as [[[cv1|cv1] trc1]|] eqn:Hcond1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' econd t1 rho1 cv1 trc1 Hcfc Hcond1). }
+        destruct (eval vary_val fuel' t2 rho2 econd) as [[[cv2|cv2] trc2]|] eqn:Hcond2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' econd t2 rho2 cv2 trc2 Hcfc Hcond2). }
+        (* Branch evaluation *)
+        destruct (eval vary_val fuel' t1 rho1
+                   (if Nat.eqb cv1 0 then eelse else ethen)) as [[obr1 trbr1]|] eqn:Hbr1;
+          try discriminate.
+        inversion Heval1; subst.
+        destruct (eval vary_val fuel' t2 rho2
+                   (if Nat.eqb cv2 0 then eelse else ethen)) as [[obr2 trbr2]|] eqn:Hbr2;
+          try discriminate.
+        inversion Heval2; subst.
+        rewrite !erase_warp_app.
+        f_equal.
+        { exact (IH_A env econd t1 t2 rho1 rho2 (ONorm cv1) (ONorm cv2) trc1 trc2
+                   Hcfc Hagr Hcc Hcond1 Hcond2). }
+        { (* Show branch traces have equal erase_warp *)
+          destruct (is_varying_in_env env econd) eqn:Hcvar.
+          - (* Condition varying: both branches in Diverged mode, no barriers *)
+            unfold inner_if in Hct, Hcel.
+            (* Thread 1's branch has no barriers *)
+            assert (Hnb1 : no_barrier_event trbr1 = true).
+            { destruct (Nat.eqb cv1 0) eqn:Hcv1z.
+              - exact (check_env_diverged_no_barriers_ss vary_val env eelse
+                         Hcfel Hcel fuel' t1 rho1 o1 trbr1 Hbr1).
+              - exact (check_env_diverged_no_barriers_ss vary_val env ethen
+                         Hcft Hct fuel' t1 rho1 o1 trbr1 Hbr1). }
+            assert (Hnb2 : no_barrier_event trbr2 = true).
+            { destruct (Nat.eqb cv2 0) eqn:Hcv2z.
+              - exact (check_env_diverged_no_barriers_ss vary_val env eelse
+                         Hcfel Hcel fuel' t2 rho2 o2 trbr2 Hbr2).
+              - exact (check_env_diverged_no_barriers_ss vary_val env ethen
+                         Hcft Hct fuel' t2 rho2 o2 trbr2 Hbr2). }
+            rewrite (erase_warp_no_barrier _ Hnb1).
+            rewrite (erase_warp_no_barrier _ Hnb2).
+            reflexivity.
+          - (* Condition non-varying: same branch taken *)
+            unfold inner_if in Hct, Hcel.
+            (* cv1 = cv2 from Part B *)
+            assert (Hcveq : ONorm cv1 = ONorm cv2).
+            { exact (IH_B env econd t1 t2 rho1 rho2 (ONorm cv1) (ONorm cv2) trc1 trc2
+                       Hcfc Hagr Hcvar Hcc Hcond1 Hcond2). }
+            injection Hcveq as Hcveq'. subst cv2.
+            (* Both take same branch *)
+            destruct (Nat.eqb cv1 0) eqn:Hcv1z.
+            + exact (IH_A env eelse t1 t2 rho1 rho2 o1 o2 trbr1 trbr2
+                       Hcfel Hagr Hcel Hbr1 Hbr2).
+            + exact (IH_A env ethen t1 t2 rho1 rho2 o1 o2 trbr1 trbr2
+                       Hcft Hagr Hct Hbr1 Hbr2). }
+
+      (* EWhile ec eb *)
+      * apply andb_true_iff in Hcf as [Hcfc Hcfb].
+        simpl in Hclean.
+        set (inner_w := if is_varying_in_env env ec then Diverged else Converged).
+        assert (Hclean_w : check_env Converged env ec = [] /\
+                            check_env inner_w env eb = []).
+        { unfold inner_w. destruct (is_varying_in_env env ec);
+          simpl in Hclean; apply app_eq_nil in Hclean as [? ?]; auto. }
+        destruct Hclean_w as [Hcc_w Hcb_w].
+        destruct (is_varying_in_env env ec) eqn:Hcvar_w.
+        -- (* Condition varying: use eval_while_exits_immediately_ss *)
+           assert (HwcfW : core_frag_ss (EWhile ec eb) = true).
+           { simpl. apply andb_true_iff. exact (conj Hcfc Hcfb). }
+           destruct (eval_while_exits_immediately_ss vary_val (S fuel') ec eb
+                       t1 rho1 o1 tr1 HwcfW Heval1) as [Hec1 Ho1].
+           destruct (eval_while_exits_immediately_ss vary_val (S fuel') ec eb
+                       t2 rho2 o2 tr2 HwcfW Heval2) as [Hec2 Ho2].
+           (* Hec1 : eval fuel' t1 rho1 ec = Some(ONorm 0, tr1)
+              Hec2 : eval fuel' t2 rho2 ec = Some(ONorm 0, tr2) *)
+           simpl in Hec1, Hec2.
+           exact (IH_A env ec t1 t2 rho1 rho2 (ONorm 0) (ONorm 0) tr1 tr2
+                    Hcfc Hagr Hcc_w Hec1 Hec2).
+        -- (* Condition non-varying: IH_B for condition *)
+           unfold inner_w in Hcb_w.
+           destruct (eval vary_val fuel' t1 rho1 ec) as [[[cv1|cv1] trc1]|] eqn:Hcond1;
+             try discriminate.
+           2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ec t1 rho1 cv1 trc1 Hcfc Hcond1). }
+           destruct (eval vary_val fuel' t2 rho2 ec) as [[[cv2|cv2] trc2]|] eqn:Hcond2;
+             try discriminate.
+           2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ec t2 rho2 cv2 trc2 Hcfc Hcond2). }
+           assert (Hcveq_w : ONorm cv1 = ONorm cv2).
+           { exact (IH_B env ec t1 t2 rho1 rho2 (ONorm cv1) (ONorm cv2) trc1 trc2
+                      Hcfc Hagr Hcvar_w Hcc_w Hcond1 Hcond2). }
+           injection Hcveq_w as Hcveq_w'. subst cv2.
+           destruct (Nat.eqb cv1 0) eqn:Hcv1z.
+           ++ (* cv = 0: exits immediately *)
+              apply Nat.eqb_eq in Hcv1z. subst cv1.
+              inversion Heval1; subst. inversion Heval2; subst.
+              exact (IH_A env ec t1 t2 rho1 rho2 (ONorm 0) (ONorm 0) tr1 tr2
+                       Hcfc Hagr Hcc_w Hcond1 Hcond2).
+           ++ (* cv ≠ 0: loop continues *)
+              destruct (eval vary_val fuel' t1 rho1 eb) as [[[bv1|bv1] trb1]|] eqn:Hbod1;
+                try discriminate.
+              2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' eb t1 rho1 bv1 trb1 Hcfb Hbod1). }
+              destruct (eval vary_val fuel' t1 rho1 (EWhile ec eb))
+                as [[oloop1 trloop1]|] eqn:Hloop1; try discriminate.
+              inversion Heval1; subst.
+              destruct (eval vary_val fuel' t2 rho2 eb) as [[[bv2|bv2] trb2]|] eqn:Hbod2;
+                try discriminate.
+              2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' eb t2 rho2 bv2 trb2 Hcfb Hbod2). }
+              destruct (eval vary_val fuel' t2 rho2 (EWhile ec eb))
+                as [[oloop2 trloop2]|] eqn:Hloop2; try discriminate.
+              inversion Heval2; subst.
+              assert (HwcfW : core_frag_ss (EWhile ec eb) = true).
+              { simpl. apply andb_true_iff. exact (conj Hcfc Hcfb). }
+              assert (Hwclean : check_env Converged env (EWhile ec eb) = []).
+              { simpl. rewrite Hcvar_w. simpl.
+                rewrite Hcc_w. rewrite Hcb_w. reflexivity. }
+              rewrite !erase_warp_app. f_equal.
+              { exact (IH_A env ec t1 t2 rho1 rho2 (ONorm cv1) (ONorm cv1) trc1 trc2
+                         Hcfc Hagr Hcc_w Hcond1 Hcond2). }
+              f_equal.
+              { exact (IH_A env eb t1 t2 rho1 rho2 (ONorm bv1) (ONorm bv2) trb1 trb2
+                         Hcfb Hagr Hcb_w Hbod1 Hbod2). }
+              { exact (IH_A env (EWhile ec eb) t1 t2 rho1 rho2 o1 o2
+                         trloop1 trloop2 HwcfW Hagr Hwclean Hloop1 Hloop2). }
+
+      (* EFor elo ehi ebod *)
+      * apply andb_true_iff in Hcf as [Hcflohi Hcfb].
+        apply andb_true_iff in Hcflohi as [Hcflo Hcfhi].
+        simpl in Hclean.
+        set (inner_f := if is_varying_in_env env elo || is_varying_in_env env ehi
+                        then Diverged else Converged).
+        assert (Hclean_f : check_env Converged env elo = [] /\
+                            check_env Converged env ehi = [] /\
+                            check_env inner_f env ebod = []).
+        { unfold inner_f.
+          destruct (is_varying_in_env env elo || is_varying_in_env env ehi);
+          simpl in Hclean;
+          apply app_eq_nil in Hclean as [HcL HtE];
+          apply app_eq_nil in HtE as [HcH HcB];
+          exact (conj HcL (conj HcH HcB)). }
+        destruct Hclean_f as [Hclo [Hchi Hcbod]].
+        (* Destruct lo and hi for both threads *)
+        destruct (eval vary_val fuel' t1 rho1 elo) as [[[lv1|lv1] trlo1]|] eqn:Hlo1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' elo t1 rho1 lv1 trlo1 Hcflo Hlo1). }
+        destruct (eval vary_val fuel' t1 rho1 ehi) as [[[hv1|hv1] trhi1]|] eqn:Hhi1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ehi t1 rho1 hv1 trhi1 Hcfhi Hhi1). }
+        destruct (eval vary_val fuel' t2 rho2 elo) as [[[lv2|lv2] trlo2]|] eqn:Hlo2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' elo t2 rho2 lv2 trlo2 Hcflo Hlo2). }
+        destruct (eval vary_val fuel' t2 rho2 ehi) as [[[hv2|hv2] trhi2]|] eqn:Hhi2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ehi t2 rho2 hv2 trhi2 Hcfhi Hhi2). }
+        (* Rewrite using for_loop_eq *)
+        destruct (Nat.leb hv1 lv1) eqn:Hlb1.
+        { inversion Heval1; subst.
+          destruct (Nat.leb hv2 lv2) eqn:Hlb2.
+          { inversion Heval2; subst.
+            rewrite !erase_warp_app. f_equal.
+            { exact (IH_A env elo t1 t2 rho1 rho2 (ONorm lv1) (ONorm lv2) trlo1 trlo2
+                       Hcflo Hagr Hclo Hlo1 Hlo2). }
+            { exact (IH_A env ehi t1 t2 rho1 rho2 (ONorm hv1) (ONorm hv2) trhi1 trhi2
+                       Hcfhi Hagr Hchi Hhi1 Hhi2). } }
+          (* t1 exits, t2 loops: need to show erase_warp equal *)
+          { rewrite (for_loop_eq vary_val fuel' t2 rho2 ebod (hv2 - lv2)
+                       (trlo2 ++ trhi2)) in Heval2.
+            destruct (is_varying_in_env env elo || is_varying_in_env env ehi) eqn:Hvar_lohi.
+            - (* Varying: body in Diverged mode, no barriers *)
+              unfold inner_f in Hcbod.
+              (* Destruct body eval for t2 to apply for_loop_erase_body_nil *)
+              destruct (eval vary_val fuel' t2 rho2 ebod) as [[[bv2|bv2] trb2]|] eqn:Hbod2.
+              2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ebod t2 rho2 bv2 trb2
+                                     Hcfb Hbod2). }
+              2: { (* None body: for_loop_fixed None k acc = None contradicts Heval2 *)
+                   destruct (hv2 - lv2) as [|steps_pos] eqn:Hsteps2.
+                   { apply Nat.leb_nle in Hlb2. lia. }
+                   simpl in Heval2. discriminate. }
+              (* ONorm bv2: body has no barriers *)
+              assert (Htrb2 : erase_warp trb2 = []).
+              { apply erase_warp_no_barrier.
+                exact (check_env_diverged_no_barriers_ss vary_val env ebod
+                         Hcfb Hcbod fuel' t2 rho2 (ONorm bv2) trb2 Hbod2). }
+              assert (Hnb2 := for_loop_erase_body_nil bv2 trb2 (hv2 - lv2) Htrb2 (trlo2 ++ trhi2)).
+              rewrite Heval2 in Hnb2.
+              (* Hnb2 : erase_warp tr2 = erase_warp (trlo2 ++ trhi2) *)
+              inversion Heval1; subst.
+              rewrite Hnb2. rewrite !erase_warp_app.
+              f_equal.
+              { exact (IH_A env elo t1 t2 rho1 rho2 (ONorm lv1) (ONorm lv2) trlo1 trlo2
+                         Hcflo Hagr Hclo Hlo1 Hlo2). }
+              { exact (IH_A env ehi t1 t2 rho1 rho2 (ONorm hv1) (ONorm hv2) trhi1 trhi2
+                         Hcfhi Hagr Hchi Hhi1 Hhi2). }
+            - (* Non-varying lo/hi: same lv, hv from Part B *)
+              assert (Hlv_eq : ONorm lv1 = ONorm lv2).
+              { apply Bool.orb_false_iff in Hvar_lohi as [Hvlo Hvhi].
+                exact (IH_B env elo t1 t2 rho1 rho2 (ONorm lv1) (ONorm lv2) trlo1 trlo2
+                         Hcflo Hagr Hvlo Hclo Hlo1 Hlo2). }
+              assert (Hhv_eq : ONorm hv1 = ONorm hv2).
+              { apply Bool.orb_false_iff in Hvar_lohi as [Hvlo Hvhi].
+                exact (IH_B env ehi t1 t2 rho1 rho2 (ONorm hv1) (ONorm hv2) trhi1 trhi2
+                         Hcfhi Hagr Hvhi Hchi Hhi1 Hhi2). }
+              injection Hlv_eq as Hlv_eq. injection Hhv_eq as Hhv_eq.
+              subst lv2 hv2.
+              rewrite Hlb1 in Hlb2. discriminate. } }
+        { (* t1 loops *)
+          rewrite (for_loop_eq vary_val fuel' t1 rho1 ebod (hv1 - lv1)
+                     (trlo1 ++ trhi1)) in Heval1.
+          destruct (Nat.leb hv2 lv2) eqn:Hlb2.
+          { (* t2 exits: symmetric to above *)
+            destruct (is_varying_in_env env elo || is_varying_in_env env ehi) eqn:Hvar_lohi.
+            - unfold inner_f in Hcbod.
+              (* Destruct body eval for t1 to apply for_loop_erase_body_nil *)
+              destruct (eval vary_val fuel' t1 rho1 ebod) as [[[bv1|bv1] trb1]|] eqn:Hbod1.
+              2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ebod t1 rho1 bv1 trb1
+                                     Hcfb Hbod1). }
+              2: { (* None body: for_loop_fixed None k acc = None contradicts Heval1 *)
+                   destruct (hv1 - lv1) as [|steps_pos] eqn:Hsteps1.
+                   { apply Nat.leb_nle in Hlb1. lia. }
+                   simpl in Heval1. discriminate. }
+              (* ONorm bv1: body has no barriers *)
+              assert (Htrb1 : erase_warp trb1 = []).
+              { apply erase_warp_no_barrier.
+                exact (check_env_diverged_no_barriers_ss vary_val env ebod
+                         Hcfb Hcbod fuel' t1 rho1 (ONorm bv1) trb1 Hbod1). }
+              assert (Hnb1 := for_loop_erase_body_nil bv1 trb1 (hv1 - lv1) Htrb1 (trlo1 ++ trhi1)).
+              rewrite Heval1 in Hnb1.
+              (* Hnb1 : erase_warp tr1 = erase_warp (trlo1 ++ trhi1) *)
+              inversion Heval2; subst.
+              rewrite Hnb1. rewrite !erase_warp_app.
+              f_equal.
+              { exact (IH_A env elo t1 t2 rho1 rho2 (ONorm lv1) (ONorm lv2) trlo1 trlo2
+                         Hcflo Hagr Hclo Hlo1 Hlo2). }
+              { exact (IH_A env ehi t1 t2 rho1 rho2 (ONorm hv1) (ONorm hv2) trhi1 trhi2
+                         Hcfhi Hagr Hchi Hhi1 Hhi2). }
+            - assert (Hlv_eq : ONorm lv1 = ONorm lv2).
+              { apply Bool.orb_false_iff in Hvar_lohi as [Hvlo Hvhi].
+                exact (IH_B env elo t1 t2 rho1 rho2 (ONorm lv1) (ONorm lv2) trlo1 trlo2
+                         Hcflo Hagr Hvlo Hclo Hlo1 Hlo2). }
+              assert (Hhv_eq : ONorm hv1 = ONorm hv2).
+              { apply Bool.orb_false_iff in Hvar_lohi as [Hvlo Hvhi].
+                exact (IH_B env ehi t1 t2 rho1 rho2 (ONorm hv1) (ONorm hv2) trhi1 trhi2
+                         Hcfhi Hagr Hvhi Hchi Hhi1 Hhi2). }
+              injection Hlv_eq as Hlv_eq. injection Hhv_eq as Hhv_eq.
+              subst lv2 hv2.
+              rewrite Hlb2 in Hlb1. discriminate. }
+          { (* Both loop *)
+            rewrite (for_loop_eq vary_val fuel' t2 rho2 ebod (hv2 - lv2)
+                       (trlo2 ++ trhi2)) in Heval2.
+            destruct (is_varying_in_env env elo || is_varying_in_env env ehi) eqn:Hvar_lohi.
+            - (* Varying: body in Diverged mode *)
+              unfold inner_f in Hcbod.
+              (* Destruct body eval for t1 *)
+              destruct (eval vary_val fuel' t1 rho1 ebod) as [[[bv1|bv1] trb1]|] eqn:Hbod1.
+              2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ebod t1 rho1 bv1 trb1
+                                     Hcfb Hbod1). }
+              2: { (* None body: for_loop_fixed None k acc = None contradicts Heval1 *)
+                   destruct (hv1 - lv1) as [|steps_pos] eqn:Hsteps1.
+                   { apply Nat.leb_nle in Hlb1. lia. }
+                   simpl in Heval1. discriminate. }
+              assert (Htrb1 : erase_warp trb1 = []).
+              { apply erase_warp_no_barrier.
+                exact (check_env_diverged_no_barriers_ss vary_val env ebod
+                         Hcfb Hcbod fuel' t1 rho1 (ONorm bv1) trb1 Hbod1). }
+              assert (Hnb1 := for_loop_erase_body_nil bv1 trb1 (hv1 - lv1) Htrb1 (trlo1 ++ trhi1)).
+              rewrite Heval1 in Hnb1.
+              (* Hnb1 : erase_warp tr1 = erase_warp (trlo1 ++ trhi1) *)
+              (* Destruct body eval for t2 *)
+              destruct (eval vary_val fuel' t2 rho2 ebod) as [[[bv2|bv2] trb2]|] eqn:Hbod2.
+              2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ebod t2 rho2 bv2 trb2
+                                     Hcfb Hbod2). }
+              2: { (* None body: for_loop_fixed None k acc = None contradicts Heval2 *)
+                   destruct (hv2 - lv2) as [|steps_pos] eqn:Hsteps2.
+                   { apply Nat.leb_nle in Hlb2. lia. }
+                   simpl in Heval2. discriminate. }
+              assert (Htrb2 : erase_warp trb2 = []).
+              { apply erase_warp_no_barrier.
+                exact (check_env_diverged_no_barriers_ss vary_val env ebod
+                         Hcfb Hcbod fuel' t2 rho2 (ONorm bv2) trb2 Hbod2). }
+              assert (Hnb2 := for_loop_erase_body_nil bv2 trb2 (hv2 - lv2) Htrb2 (trlo2 ++ trhi2)).
+              rewrite Heval2 in Hnb2.
+              (* Hnb2 : erase_warp tr2 = erase_warp (trlo2 ++ trhi2) *)
+              rewrite Hnb1. rewrite Hnb2.
+              rewrite !erase_warp_app. f_equal.
+              { exact (IH_A env elo t1 t2 rho1 rho2 (ONorm lv1) (ONorm lv2) trlo1 trlo2
+                         Hcflo Hagr Hclo Hlo1 Hlo2). }
+              { exact (IH_A env ehi t1 t2 rho1 rho2 (ONorm hv1) (ONorm hv2) trhi1 trhi2
+                         Hcfhi Hagr Hchi Hhi1 Hhi2). }
+            - (* Non-varying lo/hi: same steps, use for_loop_erase_eq *)
+              apply Bool.orb_false_iff in Hvar_lohi as [Hvlo Hvhi].
+              unfold inner_f in Hcbod.
+              assert (Hlv_eq : ONorm lv1 = ONorm lv2).
+              { exact (IH_B env elo t1 t2 rho1 rho2 (ONorm lv1) (ONorm lv2) trlo1 trlo2
+                         Hcflo Hagr Hvlo Hclo Hlo1 Hlo2). }
+              assert (Hhv_eq : ONorm hv1 = ONorm hv2).
+              { exact (IH_B env ehi t1 t2 rho1 rho2 (ONorm hv1) (ONorm hv2) trhi1 trhi2
+                         Hcfhi Hagr Hvhi Hchi Hhi1 Hhi2). }
+              injection Hlv_eq as Hlv_eq. injection Hhv_eq as Hhv_eq.
+              subst lv2 hv2.
+              (* Same steps: hv1 - lv1 *)
+              assert (Herase_acc : erase_warp (trlo1 ++ trhi1) = erase_warp (trlo2 ++ trhi2)).
+              { rewrite !erase_warp_app. f_equal.
+                { exact (IH_A env elo t1 t2 rho1 rho2 (ONorm lv1) (ONorm lv1) trlo1 trlo2
+                           Hcflo Hagr Hclo Hlo1 Hlo2). }
+                { exact (IH_A env ehi t1 t2 rho1 rho2 (ONorm hv1) (ONorm hv1) trhi1 trhi2
+                           Hcfhi Hagr Hchi Hhi1 Hhi2). } }
+              (* Destruct body evaluations to apply for_loop_erase_body_eq *)
+              destruct (eval vary_val fuel' t1 rho1 ebod) as [[[bv1|bv1] trb1]|] eqn:Hbod1.
+              2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ebod t1 rho1 bv1 trb1
+                                     Hcfb Hbod1). }
+              2: { (* None body: for_loop_fixed None k acc = None contradicts Heval1 *)
+                   destruct (hv1 - lv1) as [|steps_pos] eqn:Hsteps1.
+                   { apply Nat.leb_nle in Hlb1. lia. }
+                   simpl in Heval1. discriminate. }
+              destruct (eval vary_val fuel' t2 rho2 ebod) as [[[bv2|bv2] trb2]|] eqn:Hbod2.
+              2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ebod t2 rho2 bv2 trb2
+                                     Hcfb Hbod2). }
+              2: { (* None body: for_loop_fixed None k acc = None contradicts Heval2 *)
+                   destruct (hv1 - lv1) as [|steps_pos] eqn:Hsteps1.
+                   { apply Nat.leb_nle in Hlb1. lia. }
+                   simpl in Heval2. discriminate. }
+              (* ONorm bv1, ONorm bv2: apply IH_A for body erase, then for_loop_erase_body_eq *)
+              assert (Hbody_erase : erase_warp trb1 = erase_warp trb2).
+              { exact (IH_A env ebod t1 t2 rho1 rho2 (ONorm bv1) (ONorm bv2) trb1 trb2
+                           Hcfb Hagr Hcbod Hbod1 Hbod2). }
+              assert (Hfl := for_loop_erase_body_eq bv1 bv2 trb1 trb2 (hv1 - lv1)
+                               Hbody_erase (trlo1 ++ trhi1) (trlo2 ++ trhi2) Herase_acc).
+              rewrite Heval1 in Hfl. rewrite Heval2 in Hfl. exact Hfl. } }
+
+      (* ESeq ess *)
+      * simpl in Hclean.
+        assert (Hcfall : forallb core_frag_ss ess = true) by exact Hcf.
+        clear Hcf.
+        (* We prove erase_warp equality by induction on ess,
+           generalizing over the accumulator. *)
+        assert (Hgen : forall xs,
+          forallb core_frag_ss xs = true ->
+          concat (map (check_env Converged env) xs) = [] ->
+          forall acc1 acc2 o1' o2' tr1' tr2',
+          erase_warp acc1 = erase_warp acc2 ->
+          (fix eval_seq xs0 acc : option _ :=
+            match xs0 with [] => Some (ONorm 0, acc) | x::rest =>
+              match eval vary_val fuel' t1 rho1 x with
+              | Some (ORet v, tr) => Some (ORet v, acc ++ tr)
+              | Some (ONorm _, tr) => eval_seq rest (acc ++ tr)
+              | None => None end end) xs acc1 = Some (o1', tr1') ->
+          (fix eval_seq xs0 acc : option _ :=
+            match xs0 with [] => Some (ONorm 0, acc) | x::rest =>
+              match eval vary_val fuel' t2 rho2 x with
+              | Some (ORet v, tr) => Some (ORet v, acc ++ tr)
+              | Some (ONorm _, tr) => eval_seq rest (acc ++ tr)
+              | None => None end end) xs acc2 = Some (o2', tr2') ->
+          erase_warp tr1' = erase_warp tr2').
+        { intros xs. induction xs as [|h tl IHtl].
+          - intros _ _ acc1 acc2 o1' o2' tr1' tr2' Hacc Hs1 Hs2.
+            inversion Hs1; inversion Hs2; subst. exact Hacc.
+          - intros Hcfal Hcln acc1 acc2 o1' o2' tr1' tr2' Hacc Hs1 Hs2.
+            simpl in Hcfal. apply andb_true_iff in Hcfal as [Hcfh Hcftl].
+            simpl in Hcln. apply app_eq_nil in Hcln as [Hch Hctl].
+            simpl in Hs1, Hs2.
+            destruct (eval vary_val fuel' t1 rho1 h) as [[[vh1|vh1] trh1]|] eqn:Hh1;
+              try discriminate.
+            2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' h t1 rho1 vh1 trh1 Hcfh Hh1). }
+            destruct (eval vary_val fuel' t2 rho2 h) as [[[vh2|vh2] trh2]|] eqn:Hh2;
+              try discriminate.
+            2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' h t2 rho2 vh2 trh2 Hcfh Hh2). }
+            apply IHtl with (acc1 := acc1 ++ trh1) (acc2 := acc2 ++ trh2)
+              (o1' := o1') (o2' := o2').
+            + exact Hcftl.
+            + exact Hctl.
+            + rewrite !erase_warp_app. f_equal.
+              * exact Hacc.
+              * exact (IH_A env h t1 t2 rho1 rho2 (ONorm vh1) (ONorm vh2) trh1 trh2
+                         Hcfh Hagr Hch Hh1 Hh2).
+            + exact Hs1.
+            + exact Hs2. }
+        exact (Hgen ess Hcfall Hclean [] [] o1 o2 tr1 tr2 eq_refl Heval1 Heval2).
+
+      (* ELet xn ev ebody *)
+      * apply andb_true_iff in Hcf as [Hcfv Hcfb].
+        simpl in Hclean.
+        apply app_eq_nil in Hclean as [Hcv Hcb].
+        (* Destruct eval of ev for both threads *)
+        destruct (eval vary_val fuel' t1 rho1 ev) as [[[vv1|vv1] trv1]|] eqn:Hev1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ev t1 rho1 vv1 trv1 Hcfv Hev1). }
+        destruct (eval vary_val fuel' t2 rho2 ev) as [[[vv2|vv2] trv2]|] eqn:Hev2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ev t2 rho2 vv2 trv2 Hcfv Hev2). }
+        (* Destruct eval of body for both threads *)
+        destruct (eval vary_val fuel' t1 (venv_extend rho1 xn vv1) ebody)
+          as [[ob1 trb1]|] eqn:Hbod1; try discriminate.
+        destruct (eval vary_val fuel' t2 (venv_extend rho2 xn vv2) ebody)
+          as [[ob2 trb2]|] eqn:Hbod2; try discriminate.
+        inversion Heval1; subst. inversion Heval2; subst.
+        rewrite !erase_warp_app. f_equal.
+        { exact (IH_A env ev t1 t2 rho1 rho2 (ONorm vv1) (ONorm vv2) trv1 trv2
+                   Hcfv Hagr Hcv Hev1 Hev2). }
+        { (* Build env_agrees for extended env *)
+          set (vv := is_varying_in_env env ev).
+          assert (Hagr' : env_agrees (env_extend env xn vv)
+                            (venv_extend rho1 xn vv1) (venv_extend rho2 xn vv2)).
+          { unfold vv.
+            destruct (is_varying_in_env env ev) eqn:Hvv.
+            - (* ev varying: xn is varying, no constraint on vv1 vs vv2 *)
+              intros y Hlookup.
+              assert (Hxy : xn <> y).
+              { intro Heq. subst. rewrite env_lookup_extend_same in Hlookup. discriminate. }
+              rewrite (venv_lookup_extend_diff rho1 xn y vv1 Hxy).
+              rewrite (venv_lookup_extend_diff rho2 xn y vv2 Hxy).
+              apply Hagr.
+              unfold env_lookup, env_extend in Hlookup |- *.
+              simpl find in *.
+              destruct (Nat.eqb xn y) eqn:Heqn.
+              { apply Nat.eqb_eq in Heqn. subst. exfalso. exact (Hxy eq_refl). }
+              { exact Hlookup. }
+            - (* ev non-varying: vv1 = vv2 from IH_B *)
+              assert (Hveq : ONorm vv1 = ONorm vv2).
+              { exact (IH_B env ev t1 t2 rho1 rho2 (ONorm vv1) (ONorm vv2) trv1 trv2
+                         Hcfv Hagr Hvv Hcv Hev1 Hev2). }
+              injection Hveq as Hveq'. subst vv2.
+              exact (env_agrees_extend env rho1 rho2 xn vv1 false Hagr). }
+          exact (IH_A (env_extend env xn vv) ebody t1 t2
+                   (venv_extend rho1 xn vv1) (venv_extend rho2 xn vv2)
+                   o1 o2 trb1 trb2 Hcfb Hagr' Hcb Hbod1 Hbod2). }
+
+      (* ESuperstep dv ebod econt: implicit boundary barrier on every thread *)
+      * apply andb_true_iff in Hcf as [Hcfdvb Hcfc].
+        apply andb_true_iff in Hcfdvb as [_ Hcfb].
+        simpl in Hclean.
+        apply app_eq_nil in Hclean as [Hcb Hcc].
+        destruct (eval vary_val fuel' t1 rho1 ebod) as [[[bv1|bv1] trb1]|] eqn:Hbod1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ebod t1 rho1 bv1 trb1 Hcfb Hbod1). }
+        destruct (eval vary_val fuel' t1 rho1 econt) as [[oc1 trc1]|] eqn:Hcon1;
+          try discriminate.
+        inversion Heval1; subst.
+        destruct (eval vary_val fuel' t2 rho2 ebod) as [[[bv2|bv2] trb2]|] eqn:Hbod2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ebod t2 rho2 bv2 trb2 Hcfb Hbod2). }
+        destruct (eval vary_val fuel' t2 rho2 econt) as [[oc2 trc2]|] eqn:Hcon2;
+          try discriminate.
+        inversion Heval2; subst.
+        rewrite !erase_warp_app. simpl. f_equal.
+        { exact (IH_A env ebod t1 t2 rho1 rho2 (ONorm bv1) (ONorm bv2) trb1 trb2
+                   Hcfb Hagr Hcb Hbod1 Hbod2). }
+        f_equal.
+        { exact (IH_A env econt t1 t2 rho1 rho2 o1 o2 trc1 trc2
+                   Hcfc Hagr Hcc Hcon1 Hcon2). }
+
+      (* EApp eargs *)
+      * simpl in Hclean.
+        assert (Hcfall : forallb core_frag_ss eargs = true) by exact Hcf.
+        clear Hcf.
+        assert (Hgen : forall xs,
+          forallb core_frag_ss xs = true ->
+          concat (map (check_env Converged env) xs) = [] ->
+          forall acc1 acc2 lv1 lv2 o1' o2' tr1' tr2',
+          erase_warp acc1 = erase_warp acc2 ->
+          (fix eval_args xs0 acc lv : option _ :=
+            match xs0 with [] => Some (ONorm lv, acc) | x::rest =>
+              match eval vary_val fuel' t1 rho1 x with
+              | Some (ORet v, tr) => Some (ORet v, acc ++ tr)
+              | Some (ONorm v, tr) => eval_args rest (acc ++ tr) v
+              | None => None end end) xs acc1 lv1 = Some (o1', tr1') ->
+          (fix eval_args xs0 acc lv : option _ :=
+            match xs0 with [] => Some (ONorm lv, acc) | x::rest =>
+              match eval vary_val fuel' t2 rho2 x with
+              | Some (ORet v, tr) => Some (ORet v, acc ++ tr)
+              | Some (ONorm v, tr) => eval_args rest (acc ++ tr) v
+              | None => None end end) xs acc2 lv2 = Some (o2', tr2') ->
+          erase_warp tr1' = erase_warp tr2').
+        { intros xs. induction xs as [|h tl IHtl].
+          - intros _ _ acc1 acc2 lv1 lv2 o1' o2' tr1' tr2' Hacc Ha1 Ha2.
+            inversion Ha1; inversion Ha2; subst. exact Hacc.
+          - intros Hcfal Hcln acc1 acc2 lv1 lv2 o1' o2' tr1' tr2' Hacc Ha1 Ha2.
+            simpl in Hcfal. apply andb_true_iff in Hcfal as [Hcfh Hcftl].
+            simpl in Hcln. apply app_eq_nil in Hcln as [Hch Hctl].
+            simpl in Ha1, Ha2.
+            destruct (eval vary_val fuel' t1 rho1 h) as [[[vh1|vh1] trh1]|] eqn:Hh1;
+              try discriminate.
+            2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' h t1 rho1 vh1 trh1 Hcfh Hh1). }
+            destruct (eval vary_val fuel' t2 rho2 h) as [[[vh2|vh2] trh2]|] eqn:Hh2;
+              try discriminate.
+            2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' h t2 rho2 vh2 trh2 Hcfh Hh2). }
+            apply IHtl with (acc1 := acc1 ++ trh1) (acc2 := acc2 ++ trh2)
+              (lv1 := vh1) (lv2 := vh2) (o1' := o1') (o2' := o2').
+            + exact Hcftl.
+            + exact Hctl.
+            + rewrite !erase_warp_app. f_equal.
+              * exact Hacc.
+              * exact (IH_A env h t1 t2 rho1 rho2 (ONorm vh1) (ONorm vh2) trh1 trh2
+                         Hcfh Hagr Hch Hh1 Hh2).
+            + exact Ha1.
+            + exact Ha2. }
+        exact (Hgen eargs Hcfall Hclean [] [] 0 0 o1 o2 tr1 tr2 eq_refl Heval1 Heval2).
+
+(* ------------------------------------------------------------------ *)
+(* Part B for S fuel'                                                   *)
+(* ------------------------------------------------------------------ *)
+    + intros env e t1 t2 rho1 rho2 o1 o2 tr1 tr2 Hcf Hagr Hvar Hclean Heval1 Heval2.
+      destruct e as [ | | | | n0 | ea eb | eu | econd ethen eelse | ec eb
+                    | elo ehi ebod | ess | xn ev ebody | dv ebod econt | eargs | er ];
+      simpl in Hcf; simpl in Hvar; simpl in Heval1; simpl in Heval2; try discriminate.
+
+      (* ELit: both return ONorm 0 *)
+      * inversion Heval1; inversion Heval2; reflexivity.
+      (* EVary: closed by try discriminate above (Hvar : true = false) *)
+      (* EBarrier: both return ONorm 0 *)
+      * inversion Heval1; inversion Heval2; reflexivity.
+      (* EWarpPoint: both return ONorm 0 *)
+      * inversion Heval1; inversion Heval2; reflexivity.
+      (* EVar n0: env_agrees gives same value *)
+      * inversion Heval1; inversion Heval2. subst. f_equal. apply Hagr. exact Hvar.
+      (* EBinop ea eb *)
+      * apply andb_true_iff in Hcf as [Hcfa Hcfb].
+        apply Bool.orb_false_iff in Hvar as [Hva Hvb].
+        simpl in Hclean. apply app_eq_nil in Hclean as [Hca Hcb].
+        destruct (eval vary_val fuel' t1 rho1 ea) as [[[va1|va1] tra1]|] eqn:Hea1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ea t1 rho1 va1 tra1 Hcfa Hea1). }
+        destruct (eval vary_val fuel' t1 rho1 eb) as [[[vb1|vb1] trb1]|] eqn:Heb1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' eb t1 rho1 vb1 trb1 Hcfb Heb1). }
+        inversion Heval1; subst.
+        destruct (eval vary_val fuel' t2 rho2 ea) as [[[va2|va2] tra2]|] eqn:Hea2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ea t2 rho2 va2 tra2 Hcfa Hea2). }
+        destruct (eval vary_val fuel' t2 rho2 eb) as [[[vb2|vb2] trb2]|] eqn:Heb2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' eb t2 rho2 vb2 trb2 Hcfb Heb2). }
+        inversion Heval2; subst.
+        assert (Hva_eq : ONorm va1 = ONorm va2).
+        { exact (IH_B env ea t1 t2 rho1 rho2 (ONorm va1) (ONorm va2) tra1 tra2
+                   Hcfa Hagr Hva Hca Hea1 Hea2). }
+        assert (Hvb_eq : ONorm vb1 = ONorm vb2).
+        { exact (IH_B env eb t1 t2 rho1 rho2 (ONorm vb1) (ONorm vb2) trb1 trb2
+                   Hcfb Hagr Hvb Hcb Heb1 Heb2). }
+        injection Hva_eq as Hva_eq. injection Hvb_eq as Hvb_eq.
+        subst va2 vb2. reflexivity.
+      (* EUnop eu *)
+      * destruct (eval vary_val fuel' t1 rho1 eu) as [[[vu1|vu1] tru1]|] eqn:Heu1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' eu t1 rho1 vu1 tru1 Hcf Heu1). }
+        inversion Heval1; subst.
+        destruct (eval vary_val fuel' t2 rho2 eu) as [[[vu2|vu2] tru2]|] eqn:Heu2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' eu t2 rho2 vu2 tru2 Hcf Heu2). }
+        inversion Heval2; subst.
+        simpl in Hclean.
+        assert (Hvu_eq : ONorm vu1 = ONorm vu2).
+        { exact (IH_B env eu t1 t2 rho1 rho2 (ONorm vu1) (ONorm vu2) tr1 tr2
+                   Hcf Hagr Hvar Hclean Heu1 Heu2). }
+        injection Hvu_eq as Hvu_eq. subst vu2. reflexivity.
+      (* EIf econd ethen eelse *)
+      * apply andb_true_iff in Hcf as [Hcfct Hcfel].
+        apply andb_true_iff in Hcfct as [Hcfc Hcft].
+        apply Bool.orb_false_iff in Hvar as [Hvctel Hvel].
+        apply Bool.orb_false_iff in Hvctel as [Hvc Hvt].
+        (* cond non-varying: inner = Converged *)
+        simpl in Hclean. rewrite Hvc in Hclean. simpl in Hclean.
+        apply app_eq_nil in Hclean as [Hcc H'].
+        apply app_eq_nil in H' as [Hct Hcel].
+        destruct (eval vary_val fuel' t1 rho1 econd) as [[[cv1|cv1] trc1]|] eqn:Hcond1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' econd t1 rho1 cv1 trc1 Hcfc Hcond1). }
+        destruct (eval vary_val fuel' t2 rho2 econd) as [[[cv2|cv2] trc2]|] eqn:Hcond2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' econd t2 rho2 cv2 trc2 Hcfc Hcond2). }
+        assert (Hcveq : ONorm cv1 = ONorm cv2).
+        { exact (IH_B env econd t1 t2 rho1 rho2 (ONorm cv1) (ONorm cv2) trc1 trc2
+                   Hcfc Hagr Hvc Hcc Hcond1 Hcond2). }
+        injection Hcveq as Hcveq'. subst cv2.
+        destruct (eval vary_val fuel' t1 rho1
+                   (if Nat.eqb cv1 0 then eelse else ethen)) as [[obr1 trbr1]|] eqn:Hbr1;
+          try discriminate.
+        destruct (eval vary_val fuel' t2 rho2
+                   (if Nat.eqb cv1 0 then eelse else ethen)) as [[obr2 trbr2]|] eqn:Hbr2;
+          try discriminate.
+        inversion Heval1; subst. inversion Heval2; subst.
+        destruct (Nat.eqb cv1 0) eqn:Hcv1z.
+        -- exact (IH_B env eelse t1 t2 rho1 rho2 o1 o2 trbr1 trbr2
+                   Hcfel Hagr Hvel Hcel Hbr1 Hbr2).
+        -- exact (IH_B env ethen t1 t2 rho1 rho2 o1 o2 trbr1 trbr2
+                   Hcft Hagr Hvt Hct Hbr1 Hbr2).
+      (* EWhile ec eb *)
+      * apply andb_true_iff in Hcf as [Hcfc Hcfb].
+        apply Bool.orb_false_iff in Hvar as [Hvc_w Hvb_w].
+        (* cond non-varying: inner = Converged *)
+        simpl in Hclean. rewrite Hvc_w in Hclean. simpl in Hclean.
+        apply app_eq_nil in Hclean as [Hcc_w Hcb_w].
+        destruct (eval vary_val fuel' t1 rho1 ec) as [[[cv1|cv1] trc1]|] eqn:Hcond1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ec t1 rho1 cv1 trc1 Hcfc Hcond1). }
+        destruct (eval vary_val fuel' t2 rho2 ec) as [[[cv2|cv2] trc2]|] eqn:Hcond2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ec t2 rho2 cv2 trc2 Hcfc Hcond2). }
+        assert (Hcveq_w : ONorm cv1 = ONorm cv2).
+        { exact (IH_B env ec t1 t2 rho1 rho2 (ONorm cv1) (ONorm cv2) trc1 trc2
+                   Hcfc Hagr Hvc_w Hcc_w Hcond1 Hcond2). }
+        injection Hcveq_w as Hcveq_w'. subst cv2.
+        destruct (Nat.eqb cv1 0) eqn:Hcv1z.
+        -- (* cv = 0: both return ONorm 0 *)
+           inversion Heval1; subst. inversion Heval2; subst. reflexivity.
+        -- (* cv ≠ 0: recurse *)
+           destruct (eval vary_val fuel' t1 rho1 eb) as [[[bv1|bv1] trb1]|] eqn:Hbod1;
+             try discriminate.
+           2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' eb t1 rho1 bv1 trb1 Hcfb Hbod1). }
+           destruct (eval vary_val fuel' t1 rho1 (EWhile ec eb)) as [[oloop1 trloop1]|]
+             eqn:Hloop1; try discriminate.
+           inversion Heval1; subst.
+           destruct (eval vary_val fuel' t2 rho2 eb) as [[[bv2|bv2] trb2]|] eqn:Hbod2;
+             try discriminate.
+           2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' eb t2 rho2 bv2 trb2 Hcfb Hbod2). }
+           destruct (eval vary_val fuel' t2 rho2 (EWhile ec eb)) as [[oloop2 trloop2]|]
+             eqn:Hloop2; try discriminate.
+           inversion Heval2; subst.
+           assert (HwcfW : core_frag_ss (EWhile ec eb) = true).
+           { simpl. apply andb_true_iff. exact (conj Hcfc Hcfb). }
+           assert (HwvarW : is_varying_in_env env (EWhile ec eb) = false).
+           { simpl. apply Bool.orb_false_iff. exact (conj Hvc_w Hvb_w). }
+           assert (HwcleanW : check_env Converged env (EWhile ec eb) = []).
+           { simpl. rewrite Hvc_w. simpl. rewrite Hcc_w. rewrite Hcb_w. reflexivity. }
+           exact (IH_B env (EWhile ec eb) t1 t2 rho1 rho2 o1 o2 trloop1 trloop2
+                    HwcfW Hagr HwvarW HwcleanW Hloop1 Hloop2).
+      (* EFor elo ehi ebod: outcome is always ONorm 0 for core_frag_ss *)
+      * apply andb_true_iff in Hcf as [Hcflohi Hcfb].
+        apply andb_true_iff in Hcflohi as [Hcflo Hcfhi].
+        apply Bool.orb_false_iff in Hvar as [Hvlohi Hvb].
+        apply Bool.orb_false_iff in Hvlohi as [Hvlo Hvhi].
+        simpl in Hclean. rewrite Hvlo, Hvhi in Hclean. simpl in Hclean.
+        apply app_eq_nil in Hclean as [Hclo H'].
+        apply app_eq_nil in H' as [Hchi Hcb].
+        destruct (eval vary_val fuel' t1 rho1 elo) as [[[lv1|lv1] trlo1]|] eqn:Hlo1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' elo t1 rho1 lv1 trlo1 Hcflo Hlo1). }
+        destruct (eval vary_val fuel' t1 rho1 ehi) as [[[hv1|hv1] trhi1]|] eqn:Hhi1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ehi t1 rho1 hv1 trhi1 Hcfhi Hhi1). }
+        destruct (eval vary_val fuel' t2 rho2 elo) as [[[lv2|lv2] trlo2]|] eqn:Hlo2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' elo t2 rho2 lv2 trlo2 Hcflo Hlo2). }
+        destruct (eval vary_val fuel' t2 rho2 ehi) as [[[hv2|hv2] trhi2]|] eqn:Hhi2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ehi t2 rho2 hv2 trhi2 Hcfhi Hhi2). }
+        (* Both outcomes are ONorm 0 regardless of loop body, for core_frag_ss ebod *)
+        (* Use for_loop_fixed approach with inline loop outcome lemma *)
+        assert (Hfl1 : forall k acc r,
+          (fix loop (k0 : nat) (acc_tr : trace) : option (outcome * trace) :=
+            match k0 with
+            | O => Some (ONorm 0, acc_tr)
+            | S k' =>
+                match eval vary_val fuel' t1 rho1 ebod with
+                | Some (ORet v, tr_b) => Some (ORet v, acc_tr ++ tr_b)
+                | Some (ONorm _, tr_b) => loop k' (acc_tr ++ tr_b)
+                | None => None end end) k acc = Some r ->
+          fst r = ONorm 0).
+        { intros k. induction k as [|k' IHk'].
+          - intros acc r H. simpl in H. inversion H. reflexivity.
+          - intros acc r H. simpl in H.
+            destruct (eval vary_val fuel' t1 rho1 ebod) as [[[bv|bv] trb]|] eqn:Hbod.
+            + exact (IHk' _ _ H).
+            + exfalso. exact (core_frag_ss_no_ret vary_val fuel' ebod t1 rho1 bv trb Hcfb Hbod).
+            + discriminate. }
+        assert (Hfl2 : forall k acc r,
+          (fix loop (k0 : nat) (acc_tr : trace) : option (outcome * trace) :=
+            match k0 with
+            | O => Some (ONorm 0, acc_tr)
+            | S k' =>
+                match eval vary_val fuel' t2 rho2 ebod with
+                | Some (ORet v, tr_b) => Some (ORet v, acc_tr ++ tr_b)
+                | Some (ONorm _, tr_b) => loop k' (acc_tr ++ tr_b)
+                | None => None end end) k acc = Some r ->
+          fst r = ONorm 0).
+        { intros k. induction k as [|k' IHk'].
+          - intros acc r H. simpl in H. inversion H. reflexivity.
+          - intros acc r H. simpl in H.
+            destruct (eval vary_val fuel' t2 rho2 ebod) as [[[bv|bv] trb]|] eqn:Hbod.
+            + exact (IHk' _ _ H).
+            + exfalso. exact (core_frag_ss_no_ret vary_val fuel' ebod t2 rho2 bv trb Hcfb Hbod).
+            + discriminate. }
+        (* Destruct leb in Heval1/Heval2 to distinguish base vs loop case *)
+        destruct (Nat.leb hv1 lv1) eqn:Hlb1.
+        { inversion Heval1; subst.
+          destruct (Nat.leb hv2 lv2) eqn:Hlb2.
+          { inversion Heval2; subst. reflexivity. }
+          { apply Hfl2 in Heval2. simpl in Heval2. destruct o2; congruence. } }
+        { destruct (Nat.leb hv2 lv2) eqn:Hlb2.
+          { inversion Heval2; subst.
+            apply Hfl1 in Heval1. simpl in Heval1. destruct o1; congruence. }
+          { apply Hfl1 in Heval1. apply Hfl2 in Heval2.
+            destruct o1, o2; simpl in *; congruence. } }
+      (* ESeq ess: outcome is always ONorm 0 for core_frag_ss *)
+      * simpl in Hclean.
+        (* Both return ONorm 0: seq never returns ORet with core_frag_ss *)
+        (* All core_frag_ss seqs return ONorm 0 *)
+        assert (Hgen1 : forall xs acc o tr,
+          forallb core_frag_ss xs = true ->
+          (fix eval_seq xs0 acc_tr : option (outcome * trace) :=
+            match xs0 with [] => Some (ONorm 0, acc_tr) | x::rest =>
+              match eval vary_val fuel' t1 rho1 x with
+              | Some (ORet v, tr') => Some (ORet v, acc_tr ++ tr')
+              | Some (ONorm _, tr') => eval_seq rest (acc_tr ++ tr')
+              | None => None end end) xs acc = Some (o, tr) ->
+          o = ONorm 0).
+        { intros xs. induction xs as [|h tl IHtl]; intros acc o tr Hcfs He.
+          - inversion He. reflexivity.
+          - simpl in He. simpl in Hcfs. apply andb_true_iff in Hcfs as [Hcfh Hcftl].
+            destruct (eval vary_val fuel' t1 rho1 h) as [[[vh|vh] trh]|] eqn:Hh;
+              try discriminate.
+            + exact (IHtl _ _ _ Hcftl He).
+            + exfalso. exact (core_frag_ss_no_ret vary_val fuel' h t1 rho1 vh trh Hcfh Hh). }
+        assert (Hgen2 : forall xs acc o tr,
+          forallb core_frag_ss xs = true ->
+          (fix eval_seq xs0 acc_tr : option (outcome * trace) :=
+            match xs0 with [] => Some (ONorm 0, acc_tr) | x::rest =>
+              match eval vary_val fuel' t2 rho2 x with
+              | Some (ORet v, tr') => Some (ORet v, acc_tr ++ tr')
+              | Some (ONorm _, tr') => eval_seq rest (acc_tr ++ tr')
+              | None => None end end) xs acc = Some (o, tr) ->
+          o = ONorm 0).
+        { intros xs. induction xs as [|h tl IHtl]; intros acc o tr Hcfs He.
+          - inversion He. reflexivity.
+          - simpl in He. simpl in Hcfs. apply andb_true_iff in Hcfs as [Hcfh Hcftl].
+            destruct (eval vary_val fuel' t2 rho2 h) as [[[vh|vh] trh]|] eqn:Hh;
+              try discriminate.
+            + exact (IHtl _ _ _ Hcftl He).
+            + exfalso. exact (core_frag_ss_no_ret vary_val fuel' h t2 rho2 vh trh Hcfh Hh). }
+        assert (Ho1 : o1 = ONorm 0) by exact (Hgen1 ess [] o1 tr1 Hcf Heval1).
+        assert (Ho2 : o2 = ONorm 0) by exact (Hgen2 ess [] o2 tr2 Hcf Heval2).
+        subst o1 o2. reflexivity.
+      (* ELet xn ev ebody *)
+      * apply andb_true_iff in Hcf as [Hcfv Hcfb].
+        simpl in Hvar. simpl in Hclean.
+        apply app_eq_nil in Hclean as [Hcv Hcb].
+        destruct (eval vary_val fuel' t1 rho1 ev) as [[[vv1|vv1] trv1]|] eqn:Hev1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ev t1 rho1 vv1 trv1 Hcfv Hev1). }
+        destruct (eval vary_val fuel' t2 rho2 ev) as [[[vv2|vv2] trv2]|] eqn:Hev2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ev t2 rho2 vv2 trv2 Hcfv Hev2). }
+        destruct (eval vary_val fuel' t1 (venv_extend rho1 xn vv1) ebody)
+          as [[ob1 trb1]|] eqn:Hbod1; try discriminate.
+        destruct (eval vary_val fuel' t2 (venv_extend rho2 xn vv2) ebody)
+          as [[ob2 trb2]|] eqn:Hbod2; try discriminate.
+        inversion Heval1; subst. inversion Heval2; subst.
+        (* Build env_agrees for extended env *)
+        set (vvflag := is_varying_in_env env ev).
+        assert (Hagr' : env_agrees (env_extend env xn vvflag)
+                          (venv_extend rho1 xn vv1) (venv_extend rho2 xn vv2)).
+        { unfold vvflag. destruct (is_varying_in_env env ev) eqn:Hvv.
+          - intros y Hlookup.
+            assert (Hxy : xn <> y).
+            { intro Heq. subst. rewrite env_lookup_extend_same in Hlookup. discriminate. }
+            rewrite (venv_lookup_extend_diff rho1 xn y vv1 Hxy).
+            rewrite (venv_lookup_extend_diff rho2 xn y vv2 Hxy).
+            apply Hagr.
+            unfold env_lookup, env_extend in Hlookup |- *.
+            simpl find in *.
+            destruct (Nat.eqb xn y) eqn:Heqn.
+            { apply Nat.eqb_eq in Heqn. subst. exfalso. exact (Hxy eq_refl). }
+            { exact Hlookup. }
+          - assert (Hveq : ONorm vv1 = ONorm vv2).
+            { exact (IH_B env ev t1 t2 rho1 rho2 (ONorm vv1) (ONorm vv2) trv1 trv2
+                       Hcfv Hagr Hvv Hcv Hev1 Hev2). }
+            injection Hveq as Hveq'. subst vv2.
+            exact (env_agrees_extend env rho1 rho2 xn vv1 false Hagr). }
+        exact (IH_B (env_extend env xn vvflag) ebody t1 t2
+                 (venv_extend rho1 xn vv1) (venv_extend rho2 xn vv2)
+                 o1 o2 trb1 trb2 Hcfb Hagr' Hvar Hcb Hbod1 Hbod2).
+      (* ESuperstep dv ebod econt: non-varying => cont outcome agrees *)
+      * apply andb_true_iff in Hcf as [Hcfdvb Hcfc].
+        apply andb_true_iff in Hcfdvb as [_ Hcfb].
+        apply Bool.orb_false_iff in Hvar as [Hvb Hvc].
+        simpl in Hclean. apply app_eq_nil in Hclean as [Hcb Hcc].
+        destruct (eval vary_val fuel' t1 rho1 ebod) as [[[bv1|bv1] trb1]|] eqn:Hbod1;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ebod t1 rho1 bv1 trb1 Hcfb Hbod1). }
+        destruct (eval vary_val fuel' t1 rho1 econt) as [[oc1 trc1]|] eqn:Hcon1;
+          try discriminate.
+        inversion Heval1; subst.
+        destruct (eval vary_val fuel' t2 rho2 ebod) as [[[bv2|bv2] trb2]|] eqn:Hbod2;
+          try discriminate.
+        2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' ebod t2 rho2 bv2 trb2 Hcfb Hbod2). }
+        destruct (eval vary_val fuel' t2 rho2 econt) as [[oc2 trc2]|] eqn:Hcon2;
+          try discriminate.
+        inversion Heval2; subst.
+        exact (IH_B env econt t1 t2 rho1 rho2 o1 o2 trc1 trc2
+                 Hcfc Hagr Hvc Hcc Hcon1 Hcon2).
+      (* EApp eargs: last value equality *)
+      * simpl in Hclean.
+        assert (Hcfall : forallb core_frag_ss eargs = true) by exact Hcf.
+        clear Hcf.
+        assert (Hgen : forall xs,
+          forallb core_frag_ss xs = true ->
+          concat (map (check_env Converged env) xs) = [] ->
+          existsb (is_varying_in_env env) xs = false ->
+          forall acc1 acc2 lv1 lv2 o1' o2' tr1' tr2',
+          lv1 = lv2 ->
+          (fix eval_args xs0 acc lv : option _ :=
+            match xs0 with [] => Some (ONorm lv, acc) | x::rest =>
+              match eval vary_val fuel' t1 rho1 x with
+              | Some (ORet v, tr) => Some (ORet v, acc ++ tr)
+              | Some (ONorm v, tr) => eval_args rest (acc ++ tr) v
+              | None => None end end) xs acc1 lv1 = Some (o1', tr1') ->
+          (fix eval_args xs0 acc lv : option _ :=
+            match xs0 with [] => Some (ONorm lv, acc) | x::rest =>
+              match eval vary_val fuel' t2 rho2 x with
+              | Some (ORet v, tr) => Some (ORet v, acc ++ tr)
+              | Some (ONorm v, tr) => eval_args rest (acc ++ tr) v
+              | None => None end end) xs acc2 lv2 = Some (o2', tr2') ->
+          o1' = o2').
+        { intros xs. induction xs as [|h tl IHtl].
+          - intros _ _ _ acc1 acc2 lv1 lv2 o1' o2' tr1' tr2' Hlv Ha1 Ha2.
+            inversion Ha1; inversion Ha2; subst. congruence.
+          - intros Hcfal Hcln Hv acc1 acc2 lv1 lv2 o1' o2' tr1' tr2' Hlv Ha1 Ha2.
+            simpl in Hcfal. apply andb_true_iff in Hcfal as [Hcfh Hcftl].
+            simpl in Hcln. apply app_eq_nil in Hcln as [Hch Hctl].
+            simpl in Hv. apply Bool.orb_false_iff in Hv as [Hvh Hvtl].
+            simpl in Ha1, Ha2.
+            destruct (eval vary_val fuel' t1 rho1 h) as [[[vh1|vh1] trh1]|] eqn:Hh1;
+              try discriminate.
+            2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' h t1 rho1 vh1 trh1 Hcfh Hh1). }
+            destruct (eval vary_val fuel' t2 rho2 h) as [[[vh2|vh2] trh2]|] eqn:Hh2;
+              try discriminate.
+            2: { exfalso. exact (core_frag_ss_no_ret vary_val fuel' h t2 rho2 vh2 trh2 Hcfh Hh2). }
+            assert (Hvheq : ONorm vh1 = ONorm vh2).
+            { exact (IH_B env h t1 t2 rho1 rho2 (ONorm vh1) (ONorm vh2) trh1 trh2
+                       Hcfh Hagr Hvh Hch Hh1 Hh2). }
+            injection Hvheq as Hvheq'. subst vh2.
+            exact (IHtl Hcftl Hctl Hvtl (acc1 ++ trh1) (acc2 ++ trh2) vh1 vh1
+                     o1' o2' tr1' tr2' eq_refl Ha1 Ha2). }
+        exact (Hgen eargs Hcfall Hclean Hvar [] [] 0 0 o1 o2 tr1 tr2 eq_refl Heval1 Heval2).
+      (* EReturn: core_frag_ss = false *)
+Qed.
+
+(* ----------------------------------------------------------------------- *)
+(* 11.5  check_env_sound_superstep — soundness over core_frag_ss            *)
+(* ----------------------------------------------------------------------- *)
+
+(** check_env_sound_superstep: if core_frag_ss e = true (the enlarged fragment
+    including ESuperstep) and check_env Converged env e = [], then e is
+    barrier_safe. Uniform-reachability supersteps emit [EvBarrier] on all
+    threads (traces agree); thread-varying entry into a dv=false superstep is
+    excluded because the Diverged-mode checker raises [BarrierError] for it.
+    This is the runtime grounding of the static F-01 verdict
+    (superstep_outer_diverged_error). *)
+Theorem check_env_sound_superstep :
+  forall vary_val env e,
+    core_frag_ss e = true ->
+    check_env Converged env e = [] ->
+    barrier_safe vary_val env e.
+Proof.
+  intros vary_val env e Hcf Hclean.
+  unfold barrier_safe.
+  intros fuel t1 t2 rho1 rho2 o1 o2 tr1 tr2 Hagr Heval1 Heval2.
+  exact (proj1 (eval_check_uniform_ss vary_val fuel) env e t1 t2 rho1 rho2 o1 o2 tr1 tr2
+           Hcf Hagr Hclean Heval1 Heval2).
+Qed.
+
+(* ----------------------------------------------------------------------- *)
+(* 11.6  semantic_f01_corollary — runtime meaning of the static F-01 verdict *)
+(* ----------------------------------------------------------------------- *)
+
+(** The static checker (ConvergenceSpec.superstep_outer_diverged_error) proves
+    that a dv=false superstep entered under a Diverged mode flags a BarrierError.
+    The env-threaded check_env realizes this for a thread-varying entry: when
+    an EIf condition is varying (EVary), both branches are checked in Diverged
+    mode, and a dv=false ESuperstep in a branch then yields [BarrierError].
+
+    The witness expression couples the static verdict to a concrete runtime
+    counterexample:
+        susp_hazard := EIf EVary (ESuperstep false EBarrier ELit) ELit
+    - EVary is thread-varying, so check_env enters the then-branch in Diverged
+      mode and the dv=false ESuperstep raises [BarrierError]: the checker flags
+      it (semantic_f01_flagged).
+    - Operationally the branch is taken per-thread on the EVary value; threads
+      taking the then-branch evaluate the ESuperstep (body EBarrier then the
+      implicit boundary barrier => trace [EvBarrier; EvBarrier]), while threads
+      taking the else-branch (ELit) emit no barrier (trace []). The barrier
+      traces diverge, so susp_hazard is NOT barrier_safe
+      (semantic_f01_not_barrier_safe). *)
+
+Definition susp_hazard : expr :=
+  EIf EVary (ESuperstep false EBarrier ELit) ELit.
+
+(** semantic_f01_flagged: the env-threaded checker flags susp_hazard. *)
+Lemma semantic_f01_flagged :
+  check_env Converged [] susp_hazard <> [].
+Proof.
+  unfold susp_hazard. simpl. intro H. discriminate.
+Qed.
+
+(** Concrete thread-varying witness: thread 0 takes the then-branch (the
+    superstep), thread 1 takes the else-branch (ELit). *)
+Definition susp_vary (n : tid) : value :=
+  match n with O => 1 | S _ => 0 end.
+
+(** Thread 0 (EVary => susp_vary 0 = 1, nonzero => then-branch) evaluates the
+    ESuperstep: its body EBarrier emits [EvBarrier], then the implicit boundary
+    emits another, giving trace [EvBarrier; EvBarrier]. *)
+Lemma susp_eval_thread0 :
+  eval susp_vary 6 0 [] susp_hazard = Some (ONorm 0, [EvBarrier; EvBarrier]).
+Proof. reflexivity. Qed.
+
+(** Thread 1 (EVary => susp_vary 1 = 0 => else-branch ELit) emits no barrier. *)
+Lemma susp_eval_thread1 :
+  eval susp_vary 6 1 [] susp_hazard = Some (ONorm 0, []).
+Proof. reflexivity. Qed.
+
+(** semantic_f01_not_barrier_safe: susp_hazard is NOT barrier_safe, witnessed
+    by the two threads above whose barrier traces ([EvBarrier; EvBarrier] vs [])
+    differ even though both env-agree on the empty environment. *)
+Theorem semantic_f01_not_barrier_safe :
+  ~ barrier_safe susp_vary [] susp_hazard.
+Proof.
+  unfold barrier_safe. intro Hsafe.
+  assert (Hagr : env_agrees [] [] []).
+  { intros y _. reflexivity. }
+  pose proof (Hsafe 6 0 1 [] [] (ONorm 0) (ONorm 0)
+                [EvBarrier; EvBarrier] []
+                Hagr susp_eval_thread0 susp_eval_thread1) as Heq.
+  unfold erase_warp in Heq. simpl in Heq. discriminate.
+Qed.
+
+(** semantic_f01_corollary: the F-01 verdict has runtime force. The witness
+    susp_hazard is simultaneously (a) flagged by the env-threaded checker and
+    (b) genuinely not barrier_safe. The checker's BarrierError is therefore a
+    SOUND rejection: it catches a real barrier-divergence hazard. This grounds
+    ConvergenceSpec.superstep_outer_diverged_error operationally. *)
+Theorem semantic_f01_corollary :
+  check_env Converged [] susp_hazard <> [] /\ ~ barrier_safe susp_vary [] susp_hazard.
+Proof.
+  exact (conj semantic_f01_flagged semantic_f01_not_barrier_safe).
+Qed.
