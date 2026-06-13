@@ -61,7 +61,7 @@ operates on `texpr` — a large, typed AST with ~35 constructors. The correspond
 |---|---|---|
 | `is_varying_semantic_soundness` | T2 | Requires an execution semantics for `texpr` (eval relation); `EVary` must be axiomatized as "value differs across threads" |
 | `deadlock_freedom` | T3 | Requires lockstep execution model, workgroup synchronization semantics, and a whole-kernel correctness theorem |
-| Warp divergence sub-properties | **PARTIAL (T2-WARP)** | `WarpConvergence` error class: `EWarpPoint`/`WarpError`/`check_warp`/`warp_diverged_error` PROVEN. Warp size parameterization remains T3. |
+| Warp divergence sub-properties | **PROVEN (T3-S7)** | `WarpConvergence` error class: `EWarpPoint`/`WarpError`/`check_warp`/`warp_diverged_error` PROVEN (T2-WARP); semantic soundness `check_warp_sound_core` PROVEN (T3-S7). Warp size parameterization CLOSED: `warp_of : tid -> nat` is an abstract Section Variable, so soundness holds for any warp partition (no fixed warp size baked in). |
 | `TESuperstep` implicit barrier safety (outer-mode F-01) | **PROVEN Phase 1a** | `superstep_outer_diverged_error` — entering ESuperstep false under Diverged always errors |
 | `TEReturn` early-return barrier skip | **MODELED/conformant (T2-RETURN)** | `EReturn` constructor added; `check m (EReturn e) = check m e` (transparent wrapper, mirroring `Sarek_convergence.ml:230`). The `return_barrier_skip_safe` theorem proves compositionality. **Open audit item (residual):** the hazard of a conditional early return causing residual divergence at a later barrier — e.g. `ESeq [EIf EVary (EReturn ELit) ELit; EBarrier]` — is conformant with the current host checker (both model and `Sarek_convergence.ml` treat EReturn transparently and report the barrier), but the question of whether that checker behaviour is *correct* for all possible call-site continuations remains an open audit item. It is NOT recorded as resolved. |
 
@@ -116,6 +116,19 @@ Additional note: The real checker emits `Warp_collective_in_diverged_flow(name, 
 ### T2-WARP update (2026-06-12)
 
 `WarpConvergence` error class is now **IN SCOPE**. `EWarpPoint` constructor added to `expr`; `WarpError` added to `error` inductive; `check_warp` function models the warp-collective divergence check; `warp_diverged_error` theorem (Tier T2) proves `check_warp Diverged EWarpPoint ≠ []`. The entry in "Assumed / unmodeled" table has been updated to IN SCOPE. The entry in "Elided constructors" has been updated to MODELED.
+
+### T3-S7 update (2026-06-13) — warp semantic soundness, warp-size parameterization CLOSED
+
+`WarpConvergence` soundness is now **PROVEN** at the semantic level (T3-S7), the warp dual of T3-S4. New in `theories/ConvergenceSemantics.v`:
+
+- `erase_barrier` — trace projection keeping only `EvWarp` events (dual of `erase_warp`).
+- `warp_free` / `warp_free_no_warps` — trace silence: a `warp_free` + `superstep_free` expression emits no `EvWarp` event (dual of `barrier_free_no_barriers`).
+- `check_warp_env` — env-threaded warp checker mirroring `check_env`, flagging `EWarpPoint` (not `EBarrier`) under `Diverged` mode.
+- `check_warp_env_diverged_clean_warp_free` — Diverged-clean bridge lemma.
+- `eval_check_warp_uniform` — combined warp-trace + outcome uniformity (mechanical substitution of the T3-S4 induction; parametrization of the single induction was attempted and flagged infeasible within budget — see design note 1 in §12 of the source).
+- `Section WarpModel` with `Variable warp_of : tid -> nat`, `warp_safe`, and the main theorem **`check_warp_sound_core`**: `core_frag e = true -> check_warp_env Converged env e = [] -> warp_safe env e`.
+
+**Warp-size parameterization is CLOSED.** `warp_of` is an abstract `Section Variable`; the soundness theorem is universally quantified over it. No fixed warp size (32, 64, ...) is baked into the proof — `warp_safe` is the same-warp restriction `warp_of t1 = warp_of t2` for any partition. 0 admits, 0 axioms (`Closed under the global context`), coqchk clean.
 
 ### T2-RETURN update (2026-06-12)
 

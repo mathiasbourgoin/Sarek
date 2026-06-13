@@ -1,6 +1,6 @@
 # ConvergenceSafety — Work Plan
 
-**Last updated**: 2026-06-13 (T3-S6 DONE — ESuperstep semantic grounding; currentTask = T3-S7)
+**Last updated**: 2026-06-13 (tick 0 — session re-read; T3-S6 confirmed DONE; currentTask = T3-S7)
 **Apparatus version**: 1.2.1
 **Phase**: T3-SEMANTIC (full ladder approved; T3-S7 is current task)
 
@@ -327,7 +327,8 @@ global decision 4 and is recorded as the T3 trust boundary.
 ## Workflow notes
 
 - Tick 0 (2026-06-13, new orchestrator session tick 0): All tasks through T3-S5 confirmed DONE per STATUS.md (40 proven items + 8 defs, 0 admits, 0 axioms, coqchk passes; conformance 17/17 green, extraction 7/7 green, live 10/10 green). No open PRs (gh returns []). DOCS-SYNC clean. currentTask = T3-S6 (unblocked — T3-S4 done, no hard blockers).
-- Tick 0 (2026-06-13, new orchestrator session): All tasks through T3-S4 confirmed DONE per STATUS.md (37 proven items, 0 admits, 0 axioms, coqchk passes; conformance 17/17 green, extraction 7/7 green, live 10/10 green). No open PRs (gh returns []). DOCS-SYNC clean. currentTask = T3-S5 (unblocked — T3-S4 done, T3-S4 the only blocker).
+- Tick 0 (2026-06-13, new orchestrator session tick 0): All tasks through T3-S6 confirmed DONE per STATUS.md (50 proven items + 10 defs, 0 admits, 0 axioms, coqchk passes; conformance 17/17 green, extraction 7/7 green, live 10/10 green). No open PRs (gh returns []). DOCS-SYNC clean. currentTask = T3-S7 (unblocked — T3-S4 done, no hard blockers). T3-S8 remains open (blocked by T3-S5, which is done).
+- Tick 0 (2026-06-13, previous orchestrator session): All tasks through T3-S4 confirmed DONE per STATUS.md (37 proven items, 0 admits, 0 axioms, coqchk passes; conformance 17/17 green, extraction 7/7 green, live 10/10 green). No open PRs (gh returns []). DOCS-SYNC clean. currentTask = T3-S5 (unblocked — T3-S4 done, T3-S4 the only blocker).
 - Tick 8 (2026-06-13): T3-S4 confirmed DONE. ConvergenceSemantics.v extended with
   core_frag, erase_warp, barrier_safe, eval_check_uniform (combined Part A/B fuel induction),
   check_env_sound_core; 36 proven, 6 defs, 0 admits, 0 axioms. Key design: barrier_safe uses

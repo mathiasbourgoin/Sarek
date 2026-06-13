@@ -5,7 +5,7 @@
 **Host profile**: SPOC/sarek
 **Architecture**: 3-layer
 **Built at**: 2026-06-11
-**Last updated**: 2026-06-13 (T3-S6: ESuperstep semantic grounding — `core_frag_ss` enlarged fragment, `check_env_sound_superstep` soundness, `semantic_f01_corollary` runtime grounding of F-01, `dv=true` documented trust boundary; T3-S3 superstep_free side condition resolved via `check_env_diverged_no_barriers_ss` — 0 admits, 0 axioms, coqchk passes)
+**Last updated**: 2026-06-13 (T3-S7: warp-collective semantic soundness — `erase_barrier`/`warp_free`/`check_warp_env`, `check_warp_sound_core` parametric in `warp_of : tid -> nat`; warp-size parameterization CLOSED; T3-S4 induction parametrization attempted + flagged infeasible, duplicated as `eval_check_warp_uniform` — 0 admits, 0 axioms, coqchk passes)
 
 ## Project
 
@@ -18,7 +18,7 @@ Assumptions documented in `ASSUMPTIONS.md`:
 - OCaml extraction + compiler (standard TCB)
 - Abstract `expr` model faithfully represents the barrier-relevant paths in `Sarek_convergence.ml` (verified by code inspection; elided constructors documented; ESuperstep added Phase 1a)
 - `is_thread_varying` correctness for `TEVar`/`TEIntrinsicConst` (depends on `Sarek_core_primitives.is_thread_varying` — outside scope)
-- `WarpConvergence` error class: **IN SCOPE (T2-WARP)** — `EWarpPoint`/`WarpError`/`check_warp`/`warp_diverged_error` modeled and proven
+- `WarpConvergence` error class: **PROVEN (T3-S7)** — `EWarpPoint`/`WarpError`/`check_warp`/`warp_diverged_error` modeled (T2-WARP); semantic soundness `check_warp_sound_core` proven, warp-size parameterization closed via abstract `warp_of`
 
 ## Proof status
 
@@ -45,7 +45,7 @@ Assumptions documented in `ASSUMPTIONS.md`:
 | `env_var_diverged_clean` | T1 | 0 | **T2-F02** — EVar carries no barrier under Diverged mode |
 | `env_check_let_alias_catches` | T1 | 0 | **T2-F02** — F-02 soundness: `check_env` catches barrier behind let-alias |
 
-**Total**: 20 theorems (ConvergenceSpec.v) + 7 theorems/corollaries (ConvergenceSemantics.v T3-S1+T3-S2) + 6 items (T3-S3: trace silence) + 4 items (T3-S4: core soundness — `core_frag` def + `eval_check_uniform` + `check_env_nonvarying_uniform` + `check_env_sound_core`) + 5 items (T3-S5: F-04 counterexample — `hazard` def + `hazard_vary` witness + `hazard_checker_blind` + `hazard_eval_thread0/1` + `hazard_not_barrier_safe`) + 11 items (T3-S6: ESuperstep grounding — `core_frag_ss` def + `core_frag_impl_ss` + `core_frag_ss_no_ret` + `eval_while_exits_immediately_ss` + `core_frag_ss_barrier_free_superstep_free` + `check_env_diverged_no_barriers_ss` + `eval_check_uniform_ss` + `check_env_sound_superstep` + `susp_hazard`/`susp_vary`/`susp_eval_thread0/1` + `semantic_f01_flagged` + `semantic_f01_not_barrier_safe` + `semantic_f01_corollary`), 0 admits, 0 axioms — `coqchk` passes (T3-S6)
+**Total**: 20 theorems (ConvergenceSpec.v) + 7 theorems/corollaries (ConvergenceSemantics.v T3-S1+T3-S2) + 6 items (T3-S3: trace silence) + 4 items (T3-S4: core soundness — `core_frag` def + `eval_check_uniform` + `check_env_nonvarying_uniform` + `check_env_sound_core`) + 5 items (T3-S5: F-04 counterexample — `hazard` def + `hazard_vary` witness + `hazard_checker_blind` + `hazard_eval_thread0/1` + `hazard_not_barrier_safe`) + 11 items (T3-S6: ESuperstep grounding — `core_frag_ss` def + `core_frag_impl_ss` + `core_frag_ss_no_ret` + `eval_while_exits_immediately_ss` + `core_frag_ss_barrier_free_superstep_free` + `check_env_diverged_no_barriers_ss` + `eval_check_uniform_ss` + `check_env_sound_superstep` + `susp_hazard`/`susp_vary`/`susp_eval_thread0/1` + `semantic_f01_flagged` + `semantic_f01_not_barrier_safe` + `semantic_f01_corollary`) + 9 items (T3-S7: warp soundness — `erase_barrier` def + `warp_free` def + `warp_free_no_warps` + `check_warp_env` def + `check_warp_env_diverged_clean_warp_free` + `check_warp_env_diverged_no_warps` + `eval_check_warp_uniform` + `warp_safe` def + `check_warp_sound_core`), 0 admits, 0 axioms — `coqchk` passes (T3-S7)
 
 ## T3-S1 semantic layer (ConvergenceSemantics.v — new file)
 
@@ -124,6 +124,26 @@ Assumptions documented in `ASSUMPTIONS.md`:
 
 **TRUST BOUNDARY (`dv=true`)**: `core_frag_ss` admits only `dv=false` supersteps (`negb dv && ...`). A `dv=true` superstep emits the boundary barrier at runtime but is NOT flagged by `check_env` in Diverged mode — it is the front-end's assertion that the boundary is reached uniformly. `check_env_diverged_no_barriers_ss` would be FALSE if `dv=true` supersteps were admitted. The soundness guarantee therefore covers the `dv=false` fragment only; `dv=true` kernels inherit the (ASSUMED, not PROVEN) correctness of the divergence-uniformity annotation. Documented in `ASSUMPTIONS.md` §T3-S6.
 
+## T3-S7 Warp-collective semantic soundness (ConvergenceSemantics.v — 2026-06-13)
+
+| Item | Status | Notes |
+|---|---|---|
+| `Definition erase_barrier` | done | Trace projection keeping only `EvWarp` events (dual of `erase_warp`). |
+| `Fixpoint warp_free` + `Lemma warp_free_no_warps` | done | `warp_free` = no `EWarpPoint`; a `warp_free` + `superstep_free` expression emits no `EvWarp` event (dual of `barrier_free_no_barriers`). |
+| `Fixpoint check_warp_env` | done | Env-threaded warp checker mirroring `check_env` + `ConvergenceSpec.check_warp` EWarpPoint case; flags `EWarpPoint` (not `EBarrier`) under Diverged. |
+| `Lemma check_warp_env_diverged_clean_warp_free` | done | Diverged-clean bridge lemma (ESuperstep carries no warp hazard, so it does not flag). |
+| `Lemma check_warp_env_diverged_no_warps` | done | Diverged-mode warp silence; feeds the varying-branch cases of the uniformity induction. |
+| `Lemma eval_check_warp_uniform` | done | Warp dual of `eval_check_uniform`: Part A `erase_barrier` equality + Part B outcome equality over `core_frag` with `check_warp_env Converged` clean. |
+| `Section WarpModel` + `Variable warp_of : tid -> nat` + `Definition warp_safe` | done | `warp_safe` = `erase_barrier`-trace agreement restricted to thread pairs with `warp_of t1 = warp_of t2`. |
+| `Theorem check_warp_sound_core` | done | `core_frag e = true -> check_warp_env Converged env e = [] -> warp_safe env e`, parametric in `warp_of`. |
+| `coqchk` | passes | 0 new axioms; `Print Assumptions` of `check_warp_sound_core` / `eval_check_warp_uniform` / `warp_free_no_warps` all closed under global context. |
+
+**Design note (warp soundness)**: `check_warp_sound_core` is the warp dual of `check_env_sound_core` (T3-S4). The same-warp restriction `warp_of t1 = warp_of t2` is a WEAKENING of the conclusion — `eval` is independent of `warp_of`, so the underlying trace equality holds for ALL thread pairs and `warp_safe` (same-warp pairs only) follows a fortiori. The checker catches a varying-EIf with `EWarpPoint` in one branch by checking both branches in Diverged mode, where `EWarpPoint` flags `WarpError`.
+
+**PARAMETRIZATION (flagged)**: The plan asked whether the T3-S4 induction could be made parametric over (event class, agreement domain, checker) so T3-S7 becomes an instantiation. This was ATTEMPTED and found INFEASIBLE within budget: every case reduces the CONCRETE checker Fixpoint via `simpl; apply app_eq_nil` and the leaf inversions depend on concrete event constructors; a parametric induction would need ~15 checker-algebra lemmas threaded as Section hypotheses, itself a ~900-line abstraction with no working template. The induction was therefore DUPLICATED (`eval_check_warp_uniform`) via mechanical `EBarrier`<->`EWarpPoint` / `erase_warp`<->`erase_barrier` / `check_env`<->`check_warp_env` substitution. The two for-loop accumulator helpers and the trace-silence theorem are restated for `erase_barrier` (short proofs). See design note 1 in `theories/ConvergenceSemantics.v` §12.
+
+**WARP-SIZE PARAMETERIZATION CLOSED**: `warp_of` is an abstract Section Variable; `check_warp_sound_core` is universally quantified over it. No fixed warp size (32, 64, ...) is baked into the proof. The `ASSUMPTIONS.md` warp-size parameterization item is now closed (§T3-S7).
+
 ## Test intensity
 
 - **Conformance**: `test/test_convergence_conformance.ml` — 17 properties (`test_convergence_conformance`), 1000–2000 tests each — **17/17 GREEN** (2 new F-02 env-threaded properties added T2-F02; 1 new randomized warp property added T2-WARP+; 1 new return_barrier_skip_safe property added T2-RETURN; 3 new dedicated ESuperstep properties added T1A-CONF: superstep_outer_diverged_error, superstep_no_entry_error_converged, superstep_body_errors_propagate)
@@ -164,7 +184,7 @@ None yet.
 
 ```
 Resume ConvergenceSafety (apparatus v1.2.1, grade A).
-State: 20/20 theorems proven in ConvergenceSpec.v + 29 theorems/defs in ConvergenceSemantics.v (T3-S1..S6), 0 admits, 0 axioms, coqchk passes. T3-S6 complete.
+State: 20/20 theorems proven in ConvergenceSpec.v + 38 theorems/defs in ConvergenceSemantics.v (T3-S1..S7), 0 admits, 0 axioms, coqchk passes. T3-S7 complete.
 Conformance: 17/17 green. Extraction: 7/7 green. Live CMBT: 10/10 green.
 F-01 RESOLVED (OCaml + Rocq). F-02 RESOLVED (OCaml + Rocq env-threaded model).
 F-03 (WarpConvergence) RESOLVED (Rocq: EWarpPoint/WarpError/check_warp/warp_diverged_error/warp_mode_monotone/warp_varying_if_flags; documented in findings/DIVERGENCE_FINDINGS.md).
@@ -181,6 +201,9 @@ T3-S5 RESOLVED (ConvergenceSemantics.v: hazard, hazard_vary, hazard_checker_blin
 T3-S6 RESOLVED (ConvergenceSemantics.v: core_frag_ss, core_frag_impl_ss, core_frag_ss_no_ret, eval_while_exits_immediately_ss, core_frag_ss_barrier_free_superstep_free, check_env_diverged_no_barriers_ss, eval_check_uniform_ss, check_env_sound_superstep, susp_hazard/susp_vary/susp_eval_thread0/1, semantic_f01_flagged, semantic_f01_not_barrier_safe, semantic_f01_corollary; 0 admits, 0 axioms, coqchk passes).
   KEY DESIGN: check_env_sound_superstep enlarges check_env_sound_core's fragment from core_frag to core_frag_ss (admits dv=false supersteps). semantic_f01_corollary grounds superstep_outer_diverged_error at runtime: susp_hazard EIf EVary (ESuperstep false EBarrier ELit) ELit is flagged AND not barrier_safe (thread 0 [EvBarrier;EvBarrier], thread 1 []).
   TRUST BOUNDARY: core_frag_ss admits only dv=false supersteps; dv=true is a documented trust boundary (ASSUMPTIONS.md §T3-S6) — emits the barrier at runtime but is not flagged in Diverged mode. The T3-S3 superstep_free side condition is resolved over core_frag_ss via check_env_diverged_no_barriers_ss.
-Next: T3-S6 (per T3-SEMANTIC breakdown).
+T3-S7 RESOLVED (ConvergenceSemantics.v: erase_barrier, warp_free, warp_free_no_warps, check_warp_env, check_warp_env_diverged_clean_warp_free, check_warp_env_diverged_no_warps, eval_check_warp_uniform, warp_safe, check_warp_sound_core in Section WarpModel with Variable warp_of; 0 admits, 0 axioms, coqchk passes).
+  KEY DESIGN: check_warp_sound_core is the warp dual of check_env_sound_core, parametric in warp_of (warp-size parameterization CLOSED, ASSUMPTIONS §T3-S7). warp_safe = erase_barrier-trace agreement restricted to same-warp pairs (warp_of t1 = warp_of t2), which holds a fortiori since eval is independent of warp_of.
+  PARAMETRIZATION: attempted making the T3-S4 induction parametric over (event class, agreement domain, checker); flagged INFEASIBLE within budget (concrete checker reductions + per-constructor leaf inversions) and DUPLICATED as eval_check_warp_uniform via mechanical substitution.
+Next: continue T3-SEMANTIC breakdown (T3-S8).
 Run /formal-check before any lock or milestone.
 ```

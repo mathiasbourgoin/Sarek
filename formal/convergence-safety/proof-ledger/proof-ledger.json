@@ -534,15 +534,114 @@
    "source": "theories/ConvergenceSemantics.v",
    "type": "semantic_f01_corollary : check_env Converged [] susp_hazard <> [] /\\ ~ barrier_safe susp_vary [] susp_hazard",
    "notes": "F-01 BarrierError is a SOUND rejection: susp_hazard is both flagged and genuinely not barrier_safe. Grounds superstep_outer_diverged_error operationally."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.erase_barrier",
+   "status": "DEFINITION",
+   "tier": "T3",
+   "subtask": "T3-S7",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "erase_barrier : trace -> trace",
+   "notes": "Trace projection keeping only EvWarp events (dual of erase_warp); used to state warp_safe."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.warp_free",
+   "status": "DEFINITION",
+   "tier": "T3",
+   "subtask": "T3-S7",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "warp_free : expr -> bool",
+   "notes": "Structural Boolean predicate: true iff e contains no EWarpPoint (dual of barrier_free)."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.warp_free_no_warps",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S7",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "warp_free_no_warps : forall (vary_val : tid -> value) (fuel : nat) (t : tid) (rho : venv) (e : expr) (o : outcome) (tr : trace), superstep_free e = true -> warp_free e = true -> eval vary_val fuel t rho e = Some (o, tr) -> no_warp_event tr = true",
+   "notes": "Warp-trace silence (dual of barrier_free_no_barriers): a warp_free + superstep_free expression emits no EvWarp event."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.check_warp_env",
+   "status": "DEFINITION",
+   "tier": "T3",
+   "subtask": "T3-S7",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "check_warp_env : exec_mode -> Env -> expr -> list error",
+   "notes": "Env-threaded warp checker mirroring check_env + ConvergenceSpec.check_warp EWarpPoint case; flags EWarpPoint (not EBarrier) under Diverged mode."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.check_warp_env_diverged_clean_warp_free",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S7",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "check_warp_env_diverged_clean_warp_free : forall (e : expr) (env : Env), check_warp_env Diverged env e = [] -> warp_free e = true",
+   "notes": "Diverged-clean bridge lemma for check_warp_env (dual of check_env_diverged_clean_barrier_free). ESuperstep does not flag (no warp hazard at boundary)."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.check_warp_env_diverged_no_warps",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S7",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "check_warp_env_diverged_no_warps : forall (vary_val : tid -> value) (env : Env) (e : expr), core_frag e = true -> check_warp_env Diverged env e = [] -> forall fuel t rho o tr, eval vary_val fuel t rho e = Some (o, tr) -> no_warp_event tr = true",
+   "notes": "Diverged-mode warp silence for check_warp_env; bridges into the varying-branch cases of eval_check_warp_uniform."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.eval_check_warp_uniform",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S7",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "eval_check_warp_uniform : forall (vary_val : tid -> value) (fuel : nat), (Part A) ... erase_barrier tr1 = erase_barrier tr2 /\\ (Part B) ... o1 = o2, over core_frag with check_warp_env Converged clean",
+   "notes": "Warp dual of eval_check_uniform. Parametrization of the single induction over (event class, agreement domain, checker) was ATTEMPTED and FLAGGED INFEASIBLE within budget (concrete checker Fixpoint reductions + per-constructor leaf inversions); duplicated via mechanical EBarrier<->EWarpPoint / erase_warp<->erase_barrier / check_env<->check_warp_env substitution. See design note 1 in theories §12."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.warp_safe",
+   "status": "DEFINITION",
+   "tier": "T3",
+   "subtask": "T3-S7",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "warp_safe : (tid -> value) -> Env -> expr -> Prop",
+   "notes": "Defined inside Section WarpModel (Variable warp_of : tid -> nat). erase_barrier-trace agreement restricted to thread pairs with warp_of t1 = warp_of t2."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.check_warp_sound_core",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S7",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "check_warp_sound_core : forall (warp_of : tid -> nat) (vary_val : tid -> value) (env : Env) (e : expr), core_frag e = true -> check_warp_env Converged env e = [] -> warp_safe warp_of vary_val env e",
+   "notes": "Main T3-S7 theorem: warp-checker soundness for the core fragment, parametric in the warp partition warp_of. Proved via proj1 (eval_check_warp_uniform vary_val fuel). Closes ASSUMPTIONS warp-size parameterization item (no fixed warp size). 0 admits, 0 axioms, coqchk clean."
   }
  ],
  "counts": {
   "admitted": 0
  },
  "summary": {
-  "total": 60,
-  "proven": 50,
-  "definitions": 10,
+  "total": 69,
+  "proven": 55,
+  "definitions": 14,
   "admits": 0,
   "axioms": [],
   "generated": "2026-06-13",
