@@ -10,4 +10,4 @@
 
 (test
  (name test_convergence_live)
- (libraries sarek_frontend))
+ (libraries sarek_frontend qcheck-core qcheck-core.runner))

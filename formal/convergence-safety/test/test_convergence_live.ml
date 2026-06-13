@@ -171,9 +171,81 @@ let test_f01_superstep_in_diverged_if () =
       "F-01 FAIL: superstep inside diverged if — implicit end-of-superstep \
        barrier not flagged"
 
+(* ── F-04 regression: varying early-return then barrier ──────────────────── *)
+
+(* T3-S5 hazard, lifted to the typed AST:
+     ESeq [ EIf EVary (EReturn ELit) ELit ; EBarrier ]
+   i.e.  if thread_idx_x > 0 then (return 0) else () ; barrier()
+   Some threads take the early return and never reach the barrier, while the
+   fall-through threads do — the barrier traces diverge. Before F-04 the
+   checker treated TEReturn as a transparent wrapper and reported []. After
+   F-04 the varying early return diverges the context for subsequent ESeq
+   statements, so the trailing barrier is flagged.
+
+   NOTE: this makes the real checker STRICTER than the abstract Rocq spec
+   (ConvergenceSpec.v check / check_env), where Lemma hazard_checker_blind
+   proves check_env Converged [] hazard = []. The spec update is a separate
+   commit; the abstract conformance suite is unchanged. *)
+let mk_hazard () =
+  let cond = mk ~ty:t_bool (TEBinop (Gt, mk_thread_idx_x (), mk_int ())) in
+  let early_return = mk (TEReturn (mk_int ())) in
+  let varying_if = mk (TEIf (cond, early_return, None)) in
+  mk (TESeq [varying_if; mk_barrier ()])
+
+let test_f04_varying_return_then_barrier () =
+  let errors = check (mk_hazard ()) in
+  if not (has_barrier_error errors) then
+    failwith
+      "F-04 FAIL: if thread_idx_x > 0 then return; barrier() — varying early \
+       return diverges fall-through threads, trailing barrier must be flagged"
+
+(* Negative complement: a NON-varying early return must NOT diverge subsequent
+   statements (no false positive). if 0 > 0 then return; barrier() is clean. *)
+let test_f04_constant_return_then_barrier_is_clean () =
+  let cond = mk ~ty:t_bool (TEBinop (Gt, mk_int (), mk_int ())) in
+  let early_return = mk (TEReturn (mk_int ())) in
+  let constant_if = mk (TEIf (cond, early_return, None)) in
+  let prog = mk (TESeq [constant_if; mk_barrier ()]) in
+  let errors = check prog in
+  if has_barrier_error errors then
+    failwith
+      "F-04 FALSE-POSITIVE: if 0 > 0 then return; barrier() — constant \
+       condition, no divergence, barrier must stay clean"
+
+(* QCheck property (real checker): for ANY barrier-free prefix/suffix shape,
+   the sequence
+     [ if thread_idx_x > 0 then return; <clean stmts...> ; barrier() ; <more> ]
+   must be flagged. We randomize how many clean statements bracket the barrier
+   and whether a non-varying leading let aliases tid (which must NOT suppress
+   the flag). This is the F-04 invariant exercised against Sarek_convergence,
+   not the abstract model. *)
+let gen_clean_stmt : texpr QCheck2.Gen.t =
+  QCheck2.Gen.oneof_list
+    [mk TEUnit; mk_int (); mk ~ty:t_bool (TEBinop (Gt, mk_int (), mk_int ()))]
+
+let test_f04_varying_return_flags_any_trailing_barrier =
+  QCheck2.Test.make
+    ~name:"f04_varying_return_flags_trailing_barrier"
+    ~count:1000
+    (QCheck2.Gen.pair
+       (QCheck2.Gen.list_size (QCheck2.Gen.int_range 0 3) gen_clean_stmt)
+       (QCheck2.Gen.list_size (QCheck2.Gen.int_range 0 3) gen_clean_stmt))
+    (fun (mid, tail) ->
+      let cond = mk ~ty:t_bool (TEBinop (Gt, mk_thread_idx_x (), mk_int ())) in
+      let early_return = mk (TEReturn (mk_int ())) in
+      let varying_if = mk (TEIf (cond, early_return, None)) in
+      let stmts = (varying_if :: mid) @ (mk_barrier () :: tail) in
+      let prog = mk (TESeq stmts) in
+      has_barrier_error (check prog))
+
 (* ── run all ────────────────────────────────────────────────────────────── *)
 
 let () =
+  let qcheck_ok =
+    QCheck_base_runner.run_tests
+      ~verbose:true
+      [test_f04_varying_return_flags_any_trailing_barrier]
+  in
   let tests =
     [
       ("baseline: direct varying if", test_direct_varying_if_catches);
@@ -187,6 +259,9 @@ let () =
       ("F-02: let alias while", test_f02_let_alias_while);
       ("F-02: double alias", test_f02_double_alias);
       ("F-01: superstep in diverged if", test_f01_superstep_in_diverged_if);
+      ("F-04: varying return then barrier", test_f04_varying_return_then_barrier);
+      ( "F-04: constant return then barrier clean",
+        test_f04_constant_return_then_barrier_is_clean );
     ]
   in
   let pass = ref 0 and fail = ref 0 in
@@ -201,4 +276,4 @@ let () =
           Printf.printf "  [FAIL] %s: %s\n%!" name msg)
     tests ;
   Printf.printf "%d/%d PASS\n%!" !pass (List.length tests) ;
-  if !fail > 0 then exit 1
+  if !fail > 0 || qcheck_ok <> 0 then exit 1

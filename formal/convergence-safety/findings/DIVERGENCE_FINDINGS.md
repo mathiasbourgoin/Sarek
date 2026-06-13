@@ -184,11 +184,11 @@ out of scope for this dataflow pass and are tracked separately.
 | Field | Value |
 |---|---|
 | ID | F-04 |
-| Status | OPEN |
-| Sub-status | Formal counterexample (constructive) |
+| Status | PARTIAL — checker fixed; Rocq spec extension deferred to F-04b |
+| Sub-status | Implementation fix landed + regression-covered; abstract model unchanged |
 | Classification | `a'` — spec/checker gap; the abstract model faithfully mirrors the real `TEReturn` transparency, so the false negative is inherited from the implementation by construction |
 | Source | `sarek/ppx/Sarek_convergence.ml` TEReturn handling; `theories/ConvergenceSpec.v` line 860 (`EReturn e => check_env m env e`) |
-| Regression | (none yet — blocked on SPOC test suite integration; reachability in real kernels pending) |
+| Regression | `test/test_convergence_live.ml` — `test_f04_varying_return_then_barrier`, `test_f04_constant_return_then_barrier_is_clean`, `test_f04_varying_return_flags_any_trailing_barrier` (QCheck, real checker) |
 
 **Description**: The checker treats `EReturn` as a transparent wrapper:
 `check_env m env (EReturn e) = check_env m env e` (ConvergenceSpec.v line 860),
@@ -257,6 +257,33 @@ a follow-up (a `b`-class fix in `Sarek_convergence.ml` mirrored by a spec
 extension). Whether the hazard pattern (a barrier sequenced after a varying
 early return within the same superstep) is reachable in real Sarek kernels is
 the open reachability question for this finding.
+
+**Resolution (PARTIAL — implementation only)**: The real checker
+`Sarek_convergence.check_expr` was made stricter. Two helpers were added —
+`has_reachable_return` (does a `texpr` contain a `TEReturn` on some path) and
+`has_varying_return` (does a `TEReturn` sit under a thread-varying condition,
+threading `varying_vars` through `TELet`/`TEMatch`). The `TESeq` case was changed
+from a stateless `List.concat_map (check_expr ctx)` to a state-threading
+`check_seq`: once a sequence element has a varying early return, the context is
+`diverge`d for all subsequent elements, so any barrier sequenced after a varying
+early return is now flagged `Barrier_in_diverged_flow`. Regression covered by the
+T3-S5 hazard lifted to typed AST (`test_f04_varying_return_then_barrier`), a
+negative complement guarding against false positives on constant returns
+(`test_f04_constant_return_then_barrier_is_clean`), and a 1000-case QCheck
+property over randomised statement padding
+(`test_f04_varying_return_flags_any_trailing_barrier`).
+
+**Deferred to F-04b (spec extension)**: This fix makes the OCaml checker
+*stricter than the Rocq spec*. `theories/ConvergenceSpec.v` still models `EReturn`
+transparently (`EReturn e => check_env m env e`) and `ESeq` as a plain
+`concat_map`; `theories/ConvergenceSemantics.v` still proves
+`hazard_checker_blind : check_env Converged [] hazard = []`. The abstract
+conformance model in `test_convergence_conformance.ml` mirrors the spec and so
+also returns `[]` for the hazard — therefore the F-04 regression tests target the
+real checker only and the conformance suite is intentionally left unchanged
+(still green). Extending the spec to thread varying-return state through `ESeq`,
+and re-proving `check_env_sound_core` over the (now larger) sound fragment, is a
+strictly stronger soundness result deferred to follow-up **F-04b**.
 
 ---
 
