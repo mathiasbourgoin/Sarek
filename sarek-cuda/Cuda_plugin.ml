@@ -166,40 +166,32 @@ module Backend : Framework_sig.BACKEND = struct
 
   (** {2 External Kernel Support} *)
 
-  (** Supported source languages: CUDA only (PTX requires direct loading, not
-      yet implemented) *)
-  let supported_source_langs = [Framework_sig.CUDA_Source]
+  let supported_source_langs = [Framework_sig.CUDA_Source; Framework_sig.PTX]
+
+  let get_current_dev caller =
+    match Cuda_plugin_base.Cuda.Device.get_current_device () with
+    | Some d -> d
+    | None -> Cuda_error.raise_error (Cuda_error.no_device_selected caller)
+
+  let bind_args wrapped_kargs kargs args =
+    List.iteri
+      (fun i arg ->
+        match arg with
+        | Framework_sig.RSA_Buffer {binder; _} -> binder wrapped_kargs i
+        | Framework_sig.RSA_Int32 n -> Kernel.set_arg_int32 kargs i n
+        | Framework_sig.RSA_Int64 n -> Kernel.set_arg_int64 kargs i n
+        | Framework_sig.RSA_Float32 f -> Kernel.set_arg_float32 kargs i f
+        | Framework_sig.RSA_Float64 f -> Kernel.set_arg_float64 kargs i f)
+      args
 
   (** Execute external kernel from source *)
   let run_source ~source ~lang ~kernel_name ~block ~grid ~shared_mem args =
     match lang with
     | Framework_sig.CUDA_Source ->
-        (* Get current device (must be set by Execute before calling) *)
-        let dev =
-          match Cuda_plugin_base.Cuda.Device.get_current_device () with
-          | Some d -> d
-          | None ->
-              Cuda_error.raise_error
-                (Cuda_error.no_device_selected "run_source")
-        in
-
-        (* Compile and get kernel *)
+        let dev = get_current_dev "run_source:CUDA" in
         let compiled = Kernel.compile_cached dev ~name:kernel_name ~source in
-
-        (* Set up kernel arguments using typed run_source_arg list *)
         let kargs = Kernel.create_args () in
-        let wrapped_kargs = Cuda_kargs kargs in
-        List.iteri
-          (fun i arg ->
-            match arg with
-            | Framework_sig.RSA_Buffer {binder; _} -> binder wrapped_kargs i
-            | Framework_sig.RSA_Int32 n -> Kernel.set_arg_int32 kargs i n
-            | Framework_sig.RSA_Int64 n -> Kernel.set_arg_int64 kargs i n
-            | Framework_sig.RSA_Float32 f -> Kernel.set_arg_float32 kargs i f
-            | Framework_sig.RSA_Float64 f -> Kernel.set_arg_float64 kargs i f)
-          args ;
-
-        (* Launch *)
+        bind_args (Cuda_kargs kargs) kargs args ;
         let stream = Stream.default dev in
         Kernel.launch
           compiled
@@ -209,7 +201,18 @@ module Backend : Framework_sig.BACKEND = struct
           ~shared_mem
           ~stream:(Some stream)
     | Framework_sig.PTX ->
-        Cuda_error.raise_error (Cuda_error.unsupported_source_lang "PTX")
+        let dev = get_current_dev "run_source:PTX" in
+        let compiled = Kernel.load_from_ptx ~name:kernel_name ~ptx:source in
+        let kargs = Kernel.create_args () in
+        bind_args (Cuda_kargs kargs) kargs args ;
+        let stream = Stream.default dev in
+        Kernel.launch
+          compiled
+          ~args:kargs
+          ~grid
+          ~block
+          ~shared_mem
+          ~stream:(Some stream)
     | Framework_sig.OpenCL_Source ->
         Cuda_error.raise_error
           (Cuda_error.unsupported_source_lang "OpenCL_Source")

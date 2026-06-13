@@ -140,6 +140,9 @@ module Cuda : Framework_sig.PLUGIN_BASE = struct
 
     let clear_cache = Cuda_api.Kernel.clear_cache
 
+    let load_from_ptx ~name ~ptx =
+      Cuda_api.Kernel.load_from_ptx_current ~name ~ptx
+
     let create_args () = ref []
 
     let set_arg_buffer args _idx buf =

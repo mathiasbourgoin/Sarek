@@ -312,6 +312,54 @@ module Kernel = struct
   (* Compilation cache *)
   let cache : (string, t) Hashtbl.t = Hashtbl.create 16
 
+  (* Load a PTX string into a CUDA module and retrieve [name] as a function.
+     The device context must already be current when this is called. *)
+  let load_module_from_ptx ~name ptx =
+    let module_ = allocate cu_module_ptr (from_voidp cu_module null) in
+    let ptx_len = String.length ptx in
+    let ptx_ba =
+      Bigarray.Array1.create Bigarray.char Bigarray.c_layout (ptx_len + 1)
+    in
+    for i = 0 to ptx_len - 1 do
+      Bigarray.Array1.set ptx_ba i ptx.[i]
+    done ;
+    Bigarray.Array1.set ptx_ba ptx_len '\000' ;
+    let ptx_ptr = bigarray_start array1 ptx_ba |> to_voidp in
+    let opt_arr =
+      CArray.of_list int [int_of_jit_option CU_JIT_TARGET_FROM_CUCONTEXT]
+    in
+    let opt_vals = CArray.of_list (ptr void) [from_voidp void null] in
+    let load_result =
+      cuModuleLoadDataEx
+        module_
+        ptx_ptr
+        (Unsigned.UInt.of_int (CArray.length opt_arr))
+        (CArray.start opt_arr)
+        (CArray.start opt_vals)
+    in
+    let load_result =
+      match load_result with
+      | CUDA_SUCCESS -> load_result
+      | _ -> cuModuleLoadData module_ ptx_ptr
+    in
+    ignore (Sys.opaque_identity ptx_ba) ;
+    (match load_result with
+    | CUDA_SUCCESS ->
+        Spoc_core.Log.debug Spoc_core.Log.Kernel "PTX module load succeeded"
+    | err ->
+        let ptx_header =
+          String.sub ptx 0 (min max_ptx_header_preview (String.length ptx))
+        in
+        Spoc_core.Log.errorf
+          Spoc_core.Log.Kernel
+          "cuModuleLoadData failed: %s\nPTX header: %s"
+          (string_of_cu_result err)
+          ptx_header ;
+        raise (Cuda_error (err, "cuModuleLoadData"))) ;
+    let func = allocate cu_function_ptr (from_voidp cu_function null) in
+    check "cuModuleGetFunction" (cuModuleGetFunction func !@module_ name) ;
+    {module_ = !@module_; function_ = !@func; name}
+
   let compile device ~name ~source =
     Device.set_current device ;
 
@@ -338,63 +386,29 @@ module Kernel = struct
       Spoc_core.Log.Kernel
       "CUDA PTX generated (%d bytes)"
       (String.length ptx) ;
+    load_module_from_ptx ~name ptx
 
-    (* Load module from PTX - simple version *)
-    let module_ = allocate cu_module_ptr (from_voidp cu_module null) in
-    (* Use a Bigarray to hold the PTX data - it is pinned and won't be
-       moved by the GC, ensuring the pointer stays valid across multiple
-       cuModuleLoad* calls. *)
-    let ptx_len = String.length ptx in
-    let ptx_ba =
-      Bigarray.Array1.create Bigarray.char Bigarray.c_layout (ptx_len + 1)
-    in
-    for i = 0 to ptx_len - 1 do
-      Bigarray.Array1.set ptx_ba i ptx.[i]
-    done ;
-    Bigarray.Array1.set ptx_ba ptx_len '\000' ;
-    let ptx_ptr = bigarray_start array1 ptx_ba |> to_voidp in
+  (** Load a pre-assembled PTX string directly, bypassing NVRTC. The PTX must be
+      valid for the target device's SM architecture. *)
+  let load_from_ptx device ~name ~ptx =
+    Device.set_current device ;
+    Spoc_core.Log.debugf
+      Spoc_core.Log.Kernel
+      "PTX load_from_ptx: kernel='%s' (%d bytes)"
+      name
+      (String.length ptx) ;
+    load_module_from_ptx ~name ptx
 
-    (* Ask the driver to pick the target from the current context; fall back to
-       the basic loader if needed. *)
-    let opt_arr =
-      CArray.of_list int [int_of_jit_option CU_JIT_TARGET_FROM_CUCONTEXT]
-    in
-    let opt_vals = CArray.of_list (ptr void) [from_voidp void null] in
-    let load_result =
-      cuModuleLoadDataEx
-        module_
-        ptx_ptr
-        (Unsigned.UInt.of_int (CArray.length opt_arr))
-        (CArray.start opt_arr)
-        (CArray.start opt_vals)
-    in
-    let load_result =
-      match load_result with
-      | CUDA_SUCCESS -> load_result
-      | _ -> cuModuleLoadData module_ ptx_ptr
-    in
-    ignore (Sys.opaque_identity ptx_ba) ;
-
-    (match load_result with
-    | CUDA_SUCCESS ->
-        Spoc_core.Log.debug Spoc_core.Log.Kernel "PTX module load succeeded"
-    | err ->
-        (* Log PTX header for debugging *)
-        let ptx_header =
-          String.sub ptx 0 (min max_ptx_header_preview (String.length ptx))
-        in
-        Spoc_core.Log.errorf
-          Spoc_core.Log.Kernel
-          "cuModuleLoadData failed: %s\nPTX header: %s"
-          (string_of_cu_result err)
-          ptx_header ;
-        raise (Cuda_error (err, "cuModuleLoadData"))) ;
-
-    (* Get function *)
-    let func = allocate cu_function_ptr (from_voidp cu_function null) in
-    check "cuModuleGetFunction" (cuModuleGetFunction func !@module_ name) ;
-
-    {module_ = !@module_; function_ = !@func; name}
+  (** Load a pre-assembled PTX string using the already-current CUDA context.
+      The caller must have already set the device context via
+      Device.set_current. *)
+  let load_from_ptx_current ~name ~ptx =
+    Spoc_core.Log.debugf
+      Spoc_core.Log.Kernel
+      "PTX load_from_ptx_current: kernel='%s' (%d bytes)"
+      name
+      (String.length ptx) ;
+    load_module_from_ptx ~name ptx
 
   let compile_cached device ~name ~source =
     (* Cache key must include device ID - modules are device-specific *)

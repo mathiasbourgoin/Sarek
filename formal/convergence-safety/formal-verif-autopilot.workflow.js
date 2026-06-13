@@ -11,8 +11,8 @@
 //   Phase 0 Adapt        — read plan + prior feedback; pick current task; re-adapt if needed
 //   Phase 1 Formal-Check — baseline run of full apparatus pipeline (before Execute)
 //   Phase 2 Execute      — implement the current task (no commit)
-//   Phase 3 Gate         — re-run full apparatus pipeline + coqchk + Fable review until GO
-//   Phase 4 Evolve       — propose apparatus skill / methodology-backlog update; Fable review until GO
+//   Phase 3 Gate         — re-run full apparatus pipeline + coqchk + Opus review until GO
+//   Phase 4 Evolve       — propose apparatus skill / methodology-backlog update; Opus review until GO
 //   Phase 5 Feedback     — write friction log; self-adapt this script for next tick
 //
 // The workflow self-patches its own script via args.scriptPath at the end of each tick.
@@ -24,8 +24,8 @@ export const meta = {
     { title: 'Adapt',         detail: 'Read plan state, pick task, re-adapt workflow' },
     { title: 'Formal-Check',  detail: 'Baseline: run full apparatus pipeline (7 links)' },
     { title: 'Execute',       detail: 'Implement the current formal task (no commit)' },
-    { title: 'Gate',          detail: 'Full apparatus re-check + coqchk + Fable review until GO' },
-    { title: 'Evolve',        detail: 'Update apparatus skill + methodology backlog; Fable review until GO' },
+    { title: 'Gate',          detail: 'Full apparatus re-check + coqchk + Opus review until GO' },
+    { title: 'Evolve',        detail: 'Update apparatus skill + methodology backlog; Opus review until GO' },
     { title: 'Feedback',      detail: 'Write friction log; self-adapt script for next tick' },
   ],
 }
@@ -418,7 +418,7 @@ if (taskResult.status === 'complete' || taskResult.status === 'partial') {
   }
 
   if (gateVerdict !== 'FAIL-PIPELINE') {
-    // Step 3b: Independent Fable review — fresh context
+    // Step 3b: Independent Opus review — fresh context
     reviewResult = await safeAgent(
       `You are an independent Rocq/Coq formal verification reviewer. Cold review — you did NOT write this.
 
@@ -440,10 +440,10 @@ if (taskResult.status === 'complete' || taskResult.status === 'partial') {
 
       Be adversarial. REVISE with exact file+line if wrong. GO only if genuinely correct.
       BLOCK if a fundamental issue (unsound proof, wrong spec semantics) cannot be fixed this tick.`,
-      { phase: 'Gate', label: 'fable-review-1', model: 'fable', schema: REVIEW_SCHEMA }
+      { phase: 'Gate', label: 'opus-review-1', model: 'opus', schema: REVIEW_SCHEMA }
     )
 
-    log(`Fable review 1: ${reviewResult.verdict} — ${reviewResult.issues.length} issue(s)`)
+    log(`Opus review 1: ${reviewResult.verdict} — ${reviewResult.issues.length} issue(s)`)
 
     if (reviewResult.verdict === 'GO') {
       gateVerdict = 'GO'
@@ -462,16 +462,16 @@ if (taskResult.status === 'complete' || taskResult.status === 'partial') {
         { phase: 'Gate', label: 'fix-revise', schema: TASK_RESULT_SCHEMA }
       )
 
-      // Second Fable review — no more REVISE after this
+      // Second Opus review — no more REVISE after this
       const review2 = await safeAgent(
         `Independent Rocq reviewer — second pass. Cold review.
         Prior issues: ${JSON.stringify(reviewResult.issues)}
         Claimed fixes: ${JSON.stringify(fixResult.changes)}
         Read ${FORMAL}/theories/ConvergenceSpec.v and verify ALL prior issues are resolved.
         GO if resolved. BLOCK if any remain (no further REVISE rounds).`,
-        { phase: 'Gate', label: 'fable-review-2', model: 'fable', schema: REVIEW_SCHEMA }
+        { phase: 'Gate', label: 'opus-review-2', model: 'opus', schema: REVIEW_SCHEMA }
       )
-      log(`Fable review 2: ${review2.verdict}`)
+      log(`Opus review 2: ${review2.verdict}`)
       reviewResult = review2
       gateVerdict = review2.verdict === 'GO' ? 'GO' : 'BLOCK'
 
@@ -699,10 +699,10 @@ if (evolveProposal.verdict === 'CHANGE') {
       7. If backlog fold-in: the item is folded verbatim as domain-neutral guidance, no source attribution
 
       GO = apply as-is. REVISE = exact required changes. BLOCK = do not apply.`,
-      { phase: 'Evolve', label: `evolve-review-${attempt}`, model: 'fable', schema: REVIEW_SCHEMA }
+      { phase: 'Evolve', label: `evolve-review-${attempt}`, model: 'opus', schema: REVIEW_SCHEMA }
     )
 
-    log(`Evolve Fable review ${attempt}: ${evolveReview.verdict}`)
+    log(`Evolve Opus review ${attempt}: ${evolveReview.verdict}`)
 
     if (evolveReview.verdict === 'GO') {
       approvedContent = currentContent

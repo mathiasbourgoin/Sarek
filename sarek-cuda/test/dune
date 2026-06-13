@@ -13,3 +13,10 @@
  (libraries sarek_cuda spoc.ir alcotest str)
  (instrumentation
   (backend bisect_ppx)))
+
+(test
+ (name test_ptx_external)
+ (modules test_ptx_external)
+ (libraries sarek_cuda alcotest)
+ (instrumentation
+  (backend bisect_ppx)))

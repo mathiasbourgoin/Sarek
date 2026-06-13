@@ -251,6 +251,9 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
         cache ;
       Hashtbl.clear cache
 
+    let load_from_ptx ~name:_ ~ptx:_ =
+      Metal_error.raise_error (Metal_error.feature_not_supported "PTX kernels")
+
     let create_args () = ref []
 
     let set_arg_buffer args idx buf =

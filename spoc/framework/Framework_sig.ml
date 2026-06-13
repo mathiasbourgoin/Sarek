@@ -259,6 +259,8 @@ module type BACKEND = sig
 
     val clear_cache : unit -> unit
 
+    val load_from_ptx : name:string -> ptx:string -> t
+
     val create_args : unit -> args
 
     val set_arg_buffer : args -> int -> _ Memory.buffer -> unit
@@ -466,6 +468,8 @@ module type PLUGIN_BASE = sig
     val compile_cached : Device.t -> name:string -> source:string -> t
 
     val clear_cache : unit -> unit
+
+    val load_from_ptx : name:string -> ptx:string -> t
 
     val create_args : unit -> args
 
