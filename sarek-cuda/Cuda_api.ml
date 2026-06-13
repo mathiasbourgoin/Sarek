@@ -312,6 +312,19 @@ module Kernel = struct
   (* Compilation cache *)
   let cache : (string, t) Hashtbl.t = Hashtbl.create 16
 
+  (* Replace the .target directive in a PTX string to match the given SM version.
+     This makes a static PTX string portable: PTX written for sm_86 loads fine
+     on sm_61 as long as it doesn't use sm_86-specific instructions. *)
+  let with_sm_target ~major ~minor ptx =
+    let prefix = ".target " in
+    let plen = String.length prefix in
+    String.split_on_char '\n' ptx
+    |> List.map (fun line ->
+        if String.length line >= plen && String.sub line 0 plen = prefix then
+          Printf.sprintf "%ssm_%d%d" prefix major minor
+        else line)
+    |> String.concat "\n"
+
   (* Load a PTX string into a CUDA module and retrieve [name] as a function.
      The device context must already be current when this is called. *)
   let load_module_from_ptx ~name ptx =
@@ -388,14 +401,20 @@ module Kernel = struct
       (String.length ptx) ;
     load_module_from_ptx ~name ptx
 
-  (** Load a pre-assembled PTX string directly, bypassing NVRTC. The PTX must be
-      valid for the target device's SM architecture. *)
+  (** Load a pre-assembled PTX string directly, bypassing NVRTC. The .target
+      directive in the PTX is automatically rewritten to match the device's
+      actual SM, so a PTX built for sm_86 loads cleanly on sm_61 as long as it
+      uses no sm_86-specific instructions. *)
   let load_from_ptx device ~name ~ptx =
     Device.set_current device ;
+    let major, minor = device.Device.compute_capability in
+    let ptx = with_sm_target ~major ~minor ptx in
     Spoc_core.Log.debugf
       Spoc_core.Log.Kernel
-      "PTX load_from_ptx: kernel='%s' (%d bytes)"
+      "PTX load_from_ptx: kernel='%s' sm_%d%d (%d bytes)"
       name
+      major
+      minor
       (String.length ptx) ;
     load_module_from_ptx ~name ptx
 

@@ -148,6 +148,8 @@ module Interpreter : sig
       stream:Stream.t option ->
       unit
 
+    val load_from_ptx : name:string -> ptx:string -> t
+
     val clear_cache : unit -> unit
   end
 
@@ -715,6 +717,9 @@ end = struct
                  (Printf.sprintf "kernel '%s' not registered" kernel.name)))
 
     let clear_cache () = Hashtbl.clear interpreter_kernels
+
+    let load_from_ptx ~name:_ ~ptx:_ =
+      failwith "PTX kernels not supported by Interpreter backend"
   end
 
   let profiling_enabled = ref false

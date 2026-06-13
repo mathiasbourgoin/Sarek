@@ -147,6 +147,8 @@ module Backend : Framework_sig.BACKEND = struct
 
     let set_arg_ptr _a _i _p = not_impl ()
 
+    let load_from_ptx ~name:_ ~ptx:_ = not_impl ()
+
     let launch _k ~args:_ ~grid:_ ~block:_ ~shared_mem:_ ~stream:_ = not_impl ()
   end
 

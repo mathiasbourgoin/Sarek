@@ -146,6 +146,8 @@ module Dummy_backend : BACKEND = struct
 
     let clear_cache () = ()
 
+    let load_from_ptx ~name:_ ~ptx:_ = ()
+
     let create_args () = ()
 
     let set_arg_buffer _args _idx _buf = ()

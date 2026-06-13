@@ -151,6 +151,9 @@ module Vulkan = struct
 
     let clear_cache = Vulkan_api.Kernel.clear_cache
 
+    let load_from_ptx ~name:_ ~ptx:_ =
+      failwith "PTX kernels not supported by Vulkan backend"
+
     let create_args = Vulkan_api.Kernel.create_args
 
     let set_arg_buffer args idx buf =

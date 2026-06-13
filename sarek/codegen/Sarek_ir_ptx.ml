@@ -766,14 +766,22 @@ let emit_reg_decls buf alloc =
 
 (** {1 Top-level kernel generator} *)
 
-(** PTX file header. sm_86 = Ampere (RTX 30xx / A100). Adjust for the target GPU
-    via the sm target string. *)
-let ptx_file_header = ".version 8.0\n.target sm_86\n.address_size 64\n"
+(** Generate the PTX file header.
+    @param sm_target
+      SM architecture string, e.g. ["sm_86"] for Ampere or ["sm_61"] for Pascal.
+      Defaults to ["sm_86"] (RTX 30xx / A100+).
+    @param ptx_version PTX language version. Defaults to ["8.0"] (CUDA 11.8+).
+*)
+let make_ptx_header ?(sm_target = "sm_86") ?(ptx_version = "8.0") () =
+  Printf.sprintf
+    ".version %s\n.target %s\n.address_size 64\n"
+    ptx_version
+    sm_target
 
 (** Generate PTX for a single kernel. Three-phase: (1) emit body to count
     registers, (2) build header with correct register counts, (3) concatenate.
-*)
-let generate (k : kernel) : string =
+    @param sm_target Override the default [sm_86] target for older hardware. *)
+let generate ?(sm_target = "sm_86") (k : kernel) : string =
   let alloc = make_alloc () in
   let env = make_env () in
   let body_buf = Buffer.create 2048 in
@@ -782,7 +790,7 @@ let generate (k : kernel) : string =
   emit_stmt body_buf alloc env k.kern_body ;
   Buffer.add_string body_buf "    ret;\n" ;
   let out = Buffer.create 4096 in
-  Buffer.add_string out ptx_file_header ;
+  Buffer.add_string out (make_ptx_header ~sm_target ()) ;
   Buffer.add_char out '\n' ;
   Printf.bprintf out ".entry %s(\n" k.kern_name ;
   Buffer.add_string out param_str ;
