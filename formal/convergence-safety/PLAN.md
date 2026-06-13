@@ -1,8 +1,8 @@
 # ConvergenceSafety — Work Plan
 
-**Last updated**: 2026-06-13 (tick 7 — T3-S3 done; currentTask = T3-S4)
+**Last updated**: 2026-06-13 (tick 8 — T3-S4 done; currentTask = T3-S5)
 **Apparatus version**: 1.2.1
-**Phase**: T3-SEMANTIC (full ladder approved; T3-S4 is current task)
+**Phase**: T3-SEMANTIC (full ladder approved; T3-S5 is current task)
 
 ---
 
@@ -20,7 +20,7 @@
 | T3-S1 | Semantic domain + fuel-indexed big-step evaluator with barrier traces | T3 | **done** (ConvergenceSemantics.v: eval + eval_fuel_monotone + eval_app_seq_compose; 22 theorems, 0 admits, 0 axioms, coqchk passes; 2026-06-13) | — |
 | T3-S2 | Uniformity soundness of `is_varying_in_env` (semantic grounding of EVary) | T3 | **done** (ConvergenceSemantics.v: env_agrees + not_varying_uniform + closed_uniform; 27 theorems, 0 admits, 0 axioms; 2026-06-13) | T3-S1 |
 | T3-S3 | Trace silence of barrier-free expressions | T3 | **done** (ConvergenceSemantics.v: no_barrier_event + superstep_free + barrier_free_no_barriers + diverged_clean_no_barriers; 33 theorems, 0 admits, 0 axioms; commit af9f6b81354e7c6d7c5779c273315bbd6a295eff; 2026-06-13) | T3-S1 |
-| T3-S4 | Core semantic soundness of `check_env` (trace-uniformity theorem) | T3 | open | T3-S2, T3-S3 |
+| T3-S4 | Core semantic soundness of `check_env` (trace-uniformity theorem) | T3 | **done** (ConvergenceSemantics.v: core_frag + eval_check_uniform + check_env_sound_core; 36 proven, 6 defs, 0 admits, 0 axioms; 2026-06-13) | T3-S2, T3-S3 |
 | T3-S5 | EReturn residual-divergence verdict (formal counterexample or proof; expected F-04) | T3 | open | T3-S4 |
 | T3-S6 | ESuperstep semantic grounding (implicit-barrier event; semantic F-01) | T3 | open | T3-S4 |
 | T3-S7 | Warp-collective semantic soundness (`check_warp` vs warp-granular traces) | T3 | open | T3-S4 |
@@ -31,19 +31,20 @@
 
 ## Current task
 
-**T3-S4 — current task.**
+**T3-S5 — current task.**
 
-T3-S3 done (commit pending, 2026-06-13): ConvergenceSemantics.v extended with
-no_barrier_event (Definition), superstep_free (Fixpoint), no_barrier_app,
-for_loop_fixed_no_barrier, eval_seq_no_barrier, eval_args_no_barrier (helpers),
-barrier_free_no_barriers (main theorem, fuel induction), diverged_clean_no_barriers
-(corollary via diverged_clean_iff_barrier_free); 33 theorems, 0 admits, 0 axioms.
-Design note: tr = [] was too strong (EWarpPoint is barrier_free but emits [EvWarp]);
-weakened to no_barrier_event tr = true; superstep_free side-condition excludes
-ESuperstep (emits EvBarrier regardless of dv flag).
+T3-S4 done (2026-06-13): ConvergenceSemantics.v extended with core_frag (Fixpoint,
+excludes ESuperstep/EReturn), erase_warp (Definition, projects trace to EvBarrier only),
+barrier_safe (Definition, erase_warp equality for all env-agreeing thread pairs),
+eval_check_uniform (Lemma, combined Part A barrier-trace + Part B outcome uniformity by
+fuel induction), check_env_sound_core (Theorem, one-liner via proj1 eval_check_uniform);
+36 proven, 6 defs, 0 admits, 0 axioms.
+Design note: barrier_safe uses erase_warp equality (not full trace equality) so EWarpPoint
+warp-collective events are tolerated; the simultaneous Part A/B induction is the "new
+technique" cited in the T3-S4 plan as the reason for L effort.
 
-Current task: T3-S4 — Core semantic soundness of check_env (trace-uniformity theorem).
-Blocked-by T3-S2 and T3-S3 are both resolved.
+Current task: T3-S5 — EReturn residual-divergence verdict (formal counterexample or proof; expected F-04).
+Blocked-by T3-S4 is resolved.
 
 ---
 
@@ -313,6 +314,12 @@ global decision 4 and is recorded as the T3 trust boundary.
 
 ## Workflow notes
 
+- Tick 8 (2026-06-13): T3-S4 confirmed DONE. ConvergenceSemantics.v extended with
+  core_frag, erase_warp, barrier_safe, eval_check_uniform (combined Part A/B fuel induction),
+  check_env_sound_core; 36 proven, 6 defs, 0 admits, 0 axioms. Key design: barrier_safe uses
+  erase_warp equality; check_env_sound_core proved as one-liner via proj1 (eval_check_uniform).
+  proof-ledger.json updated (total=42, proven=36, definitions=6). STATUS.md updated.
+  PLAN.md promoted to T3-S5. currentTask = T3-S5 (unblocked — T3-S4 done).
 - Tick 7 (2026-06-13): T3-S3 confirmed DONE. ConvergenceSemantics.v extended with
   no_barrier_event, superstep_free, no_barrier_app, for_loop_fixed_no_barrier,
   eval_seq_no_barrier, eval_args_no_barrier, barrier_free_no_barriers,

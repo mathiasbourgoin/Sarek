@@ -295,13 +295,56 @@
       "source": "theories/ConvergenceSemantics.v",
       "type": "diverged_clean_no_barriers : forall (vary_val : tid -> value) (fuel : nat) (t : tid) (rho : venv) (e : expr) (o : outcome) (tr : trace), check Diverged e = nil -> superstep_free e = true -> eval vary_val fuel t rho e = Some (o, tr) -> no_barrier_event tr = true",
       "notes": "Corollary of barrier_free_no_barriers via diverged_clean_iff_barrier_free; the T1 flagship theorem acquires semantic content"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.core_frag",
+      "status": "DEFINITION",
+      "tier": "T3",
+      "subtask": "T3-S4",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "notes": "Fixpoint Boolean predicate on expr: true iff e contains no ESuperstep and no EReturn (the fragment on which check_env_sound_core is first proved)"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.eval_check_uniform",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "T3-S4",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "eval_check_uniform : forall (vary_val : tid -> value) (fuel : nat), (Part A) forall env e t1 t2 rho1 rho2 o1 o2 tr1 tr2, core_frag e = true -> env_agrees env rho1 rho2 -> check_env Converged env e = [] -> eval vary_val fuel t1 rho1 e = Some (o1, tr1) -> eval vary_val fuel t2 rho2 e = Some (o2, tr2) -> erase_warp tr1 = erase_warp tr2 /\\ (Part B) forall env e t1 t2 rho1 rho2 o1 o2 tr1 tr2, core_frag e = true -> env_agrees env rho1 rho2 -> is_varying_in_env env e = false -> check_env Converged env e = [] -> eval vary_val fuel t1 rho1 e = Some (o1, tr1) -> eval vary_val fuel t2 rho2 e = Some (o2, tr2) -> o1 = o2",
+      "notes": "Combined induction on fuel establishing Part A (barrier-trace equality) and Part B (outcome equality for non-varying expressions); simultaneous proof needed because EIf/EWhile non-varying cases of Part A depend on Part B for condition equality"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.check_env_nonvarying_uniform",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "T3-S4",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "check_env_nonvarying_uniform_seq / check_env_nonvarying_uniform_args : auxiliary lemmas that when check_env Converged env es = [] and all elements are non-varying and core_frag, the eval_seq / eval_args loops are identical for any two env-agreeing threads",
+      "notes": "Corollary group bridging the non-varying condition uniformity into the sequence/application inner loops used by eval_check_uniform"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.check_env_sound_core",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "T3-S4",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "check_env_sound_core : forall (vary_val : tid -> value) (env : Env) (e : expr), core_frag e = true -> check_env Converged env e = [] -> barrier_safe vary_val env e",
+      "notes": "Main T3-S4 theorem: checker soundness for the core fragment; proved as a one-liner via proj1 (eval_check_uniform vary_val fuel)"
     }
   ],
   "counts": { "admitted": 0 },
   "summary": {
-    "total": 38,
-    "proven": 33,
-    "definitions": 5,
+    "total": 42,
+    "proven": 36,
+    "definitions": 6,
     "admits": 0,
     "axioms": [],
     "generated": "2026-06-13",

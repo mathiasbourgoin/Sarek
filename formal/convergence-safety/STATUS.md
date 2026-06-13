@@ -5,7 +5,7 @@
 **Host profile**: SPOC/sarek
 **Architecture**: 3-layer
 **Built at**: 2026-06-11
-**Last updated**: 2026-06-13 (T3-S3: trace silence of barrier-free expressions — `no_barrier_event`, `superstep_free`, `barrier_free_no_barriers`, `diverged_clean_no_barriers` — 0 admits, 0 axioms)
+**Last updated**: 2026-06-13 (T3-S4: core semantic soundness of `check_env` — `core_frag`, `eval_check_uniform`, `check_env_nonvarying_uniform`, `check_env_sound_core` via combined uniformity lemma — 0 admits, 0 axioms)
 
 ## Project
 
@@ -45,7 +45,7 @@ Assumptions documented in `ASSUMPTIONS.md`:
 | `env_var_diverged_clean` | T1 | 0 | **T2-F02** — EVar carries no barrier under Diverged mode |
 | `env_check_let_alias_catches` | T1 | 0 | **T2-F02** — F-02 soundness: `check_env` catches barrier behind let-alias |
 
-**Total**: 20 theorems (ConvergenceSpec.v) + 7 theorems/corollaries (ConvergenceSemantics.v T3-S1+T3-S2), 0 admits, 0 axioms — `coqchk` passes (T3-S2)
+**Total**: 20 theorems (ConvergenceSpec.v) + 7 theorems/corollaries (ConvergenceSemantics.v T3-S1+T3-S2) + 6 items (T3-S3: trace silence) + 4 items (T3-S4: core soundness — `core_frag` def + `eval_check_uniform` + `check_env_nonvarying_uniform` + `check_env_sound_core`), 0 admits, 0 axioms — `coqchk` passes (T3-S4)
 
 ## T3-S1 semantic layer (ConvergenceSemantics.v — new file)
 
@@ -74,6 +74,22 @@ Assumptions documented in `ASSUMPTIONS.md`:
 | `coqchk` | passes | 0 new axioms |
 
 **Design note**: `is_varying_in_env` has a soundness gap for ELet — it does not require the binding expression to be non-varying. A counterexample exists: `ELet x (EWhile EVary ELit) ELit` diverges for one thread and terminates for another when EVary values differ. `is_varying_strict` corrects this by additionally requiring the binding expression to be non-varying in ELet. `not_varying_uniform` uses `is_varying_strict`; a bridge lemma `is_varying_strict_impl_env` shows the strict predicate is stronger.
+
+## T3-S4 core semantic soundness (ConvergenceSemantics.v — 2026-06-13)
+
+| Item | Status | Notes |
+|---|---|---|
+| `Fixpoint core_frag` | done | Boolean predicate: true iff e contains no ESuperstep and no EReturn |
+| `Definition erase_warp` + `Lemma erase_warp_app` + `Lemma erase_warp_no_barrier` | done | Project trace to barrier events only; EvWarp events are per-thread warp-collectives |
+| `Definition barrier_safe` | done | All env-agreeing threads produce identical barrier-event sequences (erase_warp equality) |
+| `Lemma core_frag_impl_superstep_free` | done | core_frag → superstep_free (needed to invoke T3-S3 lemmas) |
+| `Lemma check_env_nonvarying_uniform_seq` / `_args` | done | Non-varying uniform inner loops for ESeq/EApp |
+| `Lemma core_frag_no_ret` | done | core_frag e = true → eval never returns ORet |
+| `Lemma eval_check_uniform` | done | Combined Part A (barrier-trace equality) + Part B (outcome equality for non-varying) by simultaneous fuel induction |
+| `Theorem check_env_sound_core` | done | Main T3-S4 theorem: one-liner via proj1 (eval_check_uniform vary_val fuel) |
+| `coqchk` | passes | 0 new axioms |
+
+**Design note**: `barrier_safe` uses `erase_warp` equality rather than full trace equality, so `EWarpPoint` (which emits `EvWarp` per thread) does not create false negatives. The `check_env_sound_core` proof is a one-liner because all the weight is in `eval_check_uniform`, a combined induction on fuel establishing trace equality (Part A) and outcome equality for non-varying expressions (Part B) simultaneously — Part B feeds back into Part A for the condition-uniformity steps in `EIf`/`EWhile`/`EFor`.
 
 ## Test intensity
 
@@ -114,7 +130,7 @@ None yet.
 
 ```
 Resume ConvergenceSafety (apparatus v1.2.1, grade A).
-State: 20/20 theorems proven in ConvergenceSpec.v + 7 theorems/corollaries in ConvergenceSemantics.v, 0 admits, 0 axioms, coqchk passes. T3-S2 complete.
+State: 20/20 theorems proven in ConvergenceSpec.v + 13 theorems/defs in ConvergenceSemantics.v (T3-S1..S4), 0 admits, 0 axioms, coqchk passes. T3-S4 complete.
 Conformance: 17/17 green. Extraction: 7/7 green. Live CMBT: 10/10 green.
 F-01 RESOLVED (OCaml + Rocq). F-02 RESOLVED (OCaml + Rocq env-threaded model).
 F-03 (WarpConvergence) RESOLVED (Rocq: EWarpPoint/WarpError/check_warp/warp_diverged_error/warp_mode_monotone/warp_varying_if_flags; documented in findings/DIVERGENCE_FINDINGS.md).
@@ -123,6 +139,9 @@ T1A-CONF RESOLVED (3 dedicated ESuperstep QCheck properties; PR #182 merged).
 T3-S1 RESOLVED (ConvergenceSemantics.v: semantic domain + fuel-indexed big-step evaluator + eval_fuel_monotone + eval_app_seq_compose; 0 admits, 0 axioms, coqchk passes).
 T3-S2 RESOLVED (ConvergenceSemantics.v: env_agrees, is_strongly_uniform, not_varying_uniform, is_var_free, var_free_is_strongly_uniform_empty, var_free_env_irrelevant, closed_uniform; 0 admits, 0 axioms, coqchk passes).
   KEY FINDING: is_varying_in_env has a soundness gap for ELet — is_strongly_uniform corrects it by requiring ELet bindings to also be non-varying.
-Next: T3-S3 (next T3-SEMANTIC subtask per PLAN.md).
+T3-S3 RESOLVED (ConvergenceSemantics.v: no_barrier_event, superstep_free, barrier_free_no_barriers, diverged_clean_no_barriers; 0 admits, 0 axioms, coqchk passes).
+T3-S4 RESOLVED (ConvergenceSemantics.v: core_frag, erase_warp, barrier_safe, eval_check_uniform, check_env_sound_core; 0 admits, 0 axioms, coqchk passes).
+  KEY DESIGN: check_env_sound_core proved via combined eval_check_uniform lemma (simultaneous Part A barrier-trace + Part B outcome uniformity by fuel induction).
+Next: T3-S5 (EReturn residual-divergence verdict — expected new finding F-04).
 Run /formal-check before any lock or milestone.
 ```
