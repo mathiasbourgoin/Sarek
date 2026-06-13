@@ -818,6 +818,61 @@ Fixpoint is_varying_in_env (env : Env) (e : expr) : bool :=
   | EReturn e     => is_varying_in_env env e
   end.
 
+(* ===== 19b. Varying early-return detection (F-04b) =====
+
+   Models the OCaml helpers has_reachable_return / has_varying_return from
+   Sarek_convergence.ml (lines 142–202).  A thread-varying early return causes
+   SOME threads to exit the enclosing sequence early while others fall through;
+   any barrier reached only by the fall-through threads is then a divergence
+   point.  check_env threads this through ESeq via check_seq below. *)
+
+(* has_reachable_return e: true if e contains an EReturn on SOME execution path.
+   Mirrors OCaml has_reachable_return.  Literals / EVar / EBinop / EUnop / EApp /
+   EBarrier / EWarpPoint contain no return and return false. *)
+Fixpoint has_reachable_return (e : expr) : bool :=
+  match e with
+  | EReturn _      => true
+  | EIf _ t el     => has_reachable_return t || has_reachable_return el
+  | ESeq es        => existsb has_reachable_return es
+  | ELet _ v b     => has_reachable_return v || has_reachable_return b
+  | EWhile _ b     => has_reachable_return b
+  | EFor _ _ b     => has_reachable_return b
+  | ESuperstep _ body cont =>
+      has_reachable_return body || has_reachable_return cont
+  | _              => false
+  end.
+
+(* has_varying_return env e: true if e contains an EReturn reachable under a
+   thread-varying condition (relative to env).  Mirrors OCaml has_varying_return.
+   - EIf with varying cond: any reachable return in either branch counts;
+     otherwise recurse structurally with the same env.
+   - ESeq: any element with a varying return.
+   - ELet: recurse into v with env, and into b with env possibly extended when
+     v is varying (the let-bound name becomes varying).
+   - EWhile / EFor: recurse into condition/bounds and body.
+   - all other nodes (EReturn at top level, EApp, EBinop, ...): false. *)
+Fixpoint has_varying_return (env : Env) (e : expr) : bool :=
+  match e with
+  | EIf cond t el =>
+      if is_varying_in_env env cond
+      then has_reachable_return t || has_reachable_return el
+      else has_varying_return env t || has_varying_return env el
+  | ESeq es       => existsb (has_varying_return env) es
+  | ELet x v b    =>
+      let env' :=
+        if is_varying_in_env env v
+        then env_extend env x true
+        else env
+      in
+      has_varying_return env v || has_varying_return env' b
+  | EWhile cond b => has_varying_return env cond || has_varying_return env b
+  | EFor lo hi b  =>
+      has_varying_return env lo ||
+      has_varying_return env hi ||
+      has_varying_return env b
+  | _             => false
+  end.
+
 (* check_env: env-threaded safety checker.
    EVar x is treated as ELit/EVary depending on env lookup.
    ELet x v b extends env with variability of v before checking b. *)
@@ -843,7 +898,19 @@ Fixpoint check_env (m : exec_mode) (env : Env) (e : expr) : list error :=
         then Diverged else m
       in
       check_env m env lo ++ check_env m env hi ++ check_env inner env b
-  | ESeq es        => concat (map (check_env m env) es)
+  | ESeq es        =>
+      (* F-04b: thread the varying-early-return flag through the sequence.
+         After an element that can produce a varying early return, the
+         remaining elements are checked in Diverged mode (some threads have
+         already exited, so any trailing barrier is reached non-uniformly).
+         Mirrors the OCaml TESeq fix (Sarek_convergence.ml lines 287–301). *)
+      (fix check_seq (sm : exec_mode) (xs : list expr) : list error :=
+        match xs with
+        | []        => []
+        | e :: rest =>
+            let sm' := if has_varying_return env e then Diverged else sm in
+            check_env sm env e ++ check_seq sm' rest
+        end) m es
   | ELet x v b    =>
       let vv  := is_varying_in_env env v in
       let env' := env_extend env x vv in
@@ -859,6 +926,42 @@ Fixpoint check_env (m : exec_mode) (env : Env) (e : expr) : list error :=
   | EApp args      => concat (map (check_env m env) args)
   | EReturn e      => check_env m env e
   end.
+
+(* ===== 19c. check_env_seq named wrapper + structural lemmas (F-04b) ===== *)
+
+(* check_env_seq m env es: the F-04b mode-threading sequence walker, exposed as
+   a named function equal (by definition) to the ESeq case of check_env.  This
+   gives stable equations to reason about instead of an anonymous fix. *)
+Definition check_env_seq (m : exec_mode) (env : Env) (es : list expr)
+    : list error :=
+  check_env m env (ESeq es).
+
+Lemma check_env_seq_nil : forall m env,
+  check_env_seq m env [] = [].
+Proof. reflexivity. Qed.
+
+Lemma check_env_seq_cons : forall m env e rest,
+  check_env_seq m env (e :: rest) =
+  check_env m env e ++
+  check_env_seq (if has_varying_return env e then Diverged else m) env rest.
+Proof. reflexivity. Qed.
+
+Lemma check_env_ESeq : forall m env es,
+  check_env m env (ESeq es) = check_env_seq m env es.
+Proof. reflexivity. Qed.
+
+(* In Diverged mode the per-element flag is irrelevant: the mode is already
+   Diverged, and (if _ then Diverged else Diverged) = Diverged, so check_env_seq
+   collapses to the plain flat-map.  This lets every Diverged-mode proof about
+   ESeq reuse the existing concat/map reasoning unchanged. *)
+Lemma check_env_seq_diverged : forall env es,
+  check_env_seq Diverged env es = concat (map (check_env Diverged env) es).
+Proof.
+  intros env es. induction es as [| e rest IH].
+  - reflexivity.
+  - rewrite check_env_seq_cons. rewrite diverged_absorbing.
+    rewrite IH. reflexivity.
+Qed.
 
 (* ===== 20. F-02 key theorems ===== *)
 

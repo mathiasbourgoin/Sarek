@@ -178,6 +178,34 @@ let rec is_varying_env (env : env) = function
   | EApp args -> List.exists (is_varying_env env) args
   | EReturn e -> is_varying_env env e
 
+(* F-04b: varying early-return detection. Mirrors has_reachable_return /
+   has_varying_return in ConvergenceSpec.v (and Sarek_convergence.ml). *)
+let rec has_reachable_return = function
+  | EReturn _ -> true
+  | EIf (_, t, el) -> has_reachable_return t || has_reachable_return el
+  | ESeq es -> List.exists has_reachable_return es
+  | ELet (_, v, b) -> has_reachable_return v || has_reachable_return b
+  | EWhile (_, b) -> has_reachable_return b
+  | EFor (_, _, b) -> has_reachable_return b
+  | ESuperstep (_, body, cont) ->
+      has_reachable_return body || has_reachable_return cont
+  | _ -> false
+
+let rec has_varying_return (env : env) = function
+  | EIf (cond, t, el) ->
+      if is_varying_env env cond then
+        has_reachable_return t || has_reachable_return el
+      else has_varying_return env t || has_varying_return env el
+  | ESeq es -> List.exists (has_varying_return env) es
+  | ELet (x, v, b) ->
+      let env' = if is_varying_env env v then env_extend env x true else env in
+      has_varying_return env v || has_varying_return env' b
+  | EWhile (cond, b) -> has_varying_return env cond || has_varying_return env b
+  | EFor (lo, hi, b) ->
+      has_varying_return env lo || has_varying_return env hi
+      || has_varying_return env b
+  | _ -> false
+
 let rec check_env m (env : env) = function
   | EBarrier -> ( match m with Diverged -> [BarrierError] | Converged -> [])
   | ELit | EVary | EWarpPoint | EVar _ -> []
@@ -194,7 +222,16 @@ let rec check_env m (env : env) = function
         if is_varying_env env lo || is_varying_env env hi then Diverged else m
       in
       check_env m env lo @ check_env m env hi @ check_env inner env b
-  | ESeq es -> List.concat_map (check_env m env) es
+  | ESeq es ->
+      (* F-04b: thread the varying-early-return flag through the sequence,
+         mirroring check_env_seq in ConvergenceSpec.v. *)
+      let rec check_seq sm = function
+        | [] -> []
+        | e :: rest ->
+            let sm' = if has_varying_return env e then Diverged else sm in
+            check_env sm env e @ check_seq sm' rest
+      in
+      check_seq m es
   | ELet (x, v, b) ->
       let vv = is_varying_env env v in
       let env' = env_extend env x vv in
@@ -509,9 +546,33 @@ let test_return_barrier_skip_safe =
       let dv = check Diverged (EReturn e) in
       List.for_all (fun err -> List.mem err dv) cv)
 
+(* 14. F-04b: varying early return then barrier is flagged by check_env.
+ *
+ * Mirrors Lemma hazard_spec_detects / hazard_checker_sound in
+ * ConvergenceSemantics.v. The pattern
+ *   ESeq [ EIf EVary (EReturn ELit) ELit ; EBarrier ]
+ * must produce a BarrierError under Converged mode on the empty env: the
+ * varying early return in the first element forces the trailing barrier into
+ * Diverged mode. Generalized: for ANY barrier-free clean prefix-free tail, a
+ * varying-return EIf followed by a barrier is flagged. *)
+let test_f04b_varying_return_flags_barrier =
+  Test.make
+    ~name:"f04b_varying_return_flags_trailing_barrier"
+    ~count:2000
+    gen_expr
+    (fun e ->
+      (* the canonical hazard is always flagged *)
+      let hazard = ESeq [EIf (EVary, EReturn ELit, ELit); EBarrier] in
+      List.mem BarrierError (check_env Converged [] hazard)
+      &&
+      (* a varying-return EIf (either branch) placed before a barrier flags it *)
+      let prog = ESeq [EIf (EVary, EReturn e, ELit); EBarrier] in
+      List.mem BarrierError (check_env Converged [] prog))
+
 let () =
   let suite =
     [
+      test_f04b_varying_return_flags_barrier;
       test_merge_dim_comm;
       test_merge_dim_assoc;
       test_merge_dim_idem;

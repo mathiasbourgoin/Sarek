@@ -2303,6 +2303,101 @@ Fixpoint core_frag (e : expr) : bool :=
   end.
 
 (* ----------------------------------------------------------------------- *)
+(* 9.1b  core_frag has no (varying) early return                            *)
+(* ----------------------------------------------------------------------- *)
+
+(** core_frag expressions contain no EReturn, hence no reachable return at all.
+    This is the bridge that keeps the F-04b ESeq mode-threading inert on the
+    verified fragment: check_env never switches to Diverged inside a core_frag
+    sequence, so the soundness proof reuses the plain flat-map reasoning. *)
+Lemma core_frag_no_reachable_return :
+  forall e, core_frag e = true -> has_reachable_return e = false.
+Proof.
+  apply (expr_list_rect
+    (fun e  => core_frag e = true -> has_reachable_return e = false)
+    (fun es => forallb core_frag es = true -> existsb has_reachable_return es = false)).
+  - intros _. reflexivity.
+  - intros _. reflexivity.
+  - intros _. reflexivity.
+  - intros _. reflexivity.
+  - intros x _. reflexivity.
+  - intros a b IHa IHb H. reflexivity.
+  - intros e0 IH H. reflexivity.
+  - intros c t el IHc IHt IHel H. simpl in H.
+    apply andb_true_iff in H as [Hct Hel]. apply andb_true_iff in Hct as [_ Ht].
+    simpl. rewrite (IHt Ht), (IHel Hel). reflexivity.
+  - intros c b IHc IHb H. simpl in H. apply andb_true_iff in H as [_ Hb].
+    simpl. exact (IHb Hb).
+  - intros lo hi b IHlo IHhi IHb H. simpl in H.
+    apply andb_true_iff in H as [_ Hb]. simpl. exact (IHb Hb).
+  - intros es IHes H. simpl in H. simpl. exact (IHes H).
+  - intros x v b IHv IHb H. simpl in H. apply andb_true_iff in H as [Hv Hb].
+    simpl. rewrite (IHv Hv), (IHb Hb). reflexivity.
+  - intros dv body cont _ _ H. simpl in H. discriminate.  (* core_frag ESuperstep = false *)
+  - intros args IHargs H. reflexivity.
+  - intros e0 _ H. simpl in H. discriminate.  (* core_frag EReturn = false *)
+  - intros _. reflexivity.
+  - intros h tl IHh IHtl H. simpl in H. apply andb_true_iff in H as [Hh Htl].
+    simpl. rewrite (IHh Hh), (IHtl Htl). reflexivity.
+Qed.
+
+Lemma core_frag_no_varying_return :
+  forall env e, core_frag e = true -> has_varying_return env e = false.
+Proof.
+  intros env e. revert env.
+  apply (expr_list_rect
+    (fun e  => forall env, core_frag e = true -> has_varying_return env e = false)
+    (fun es => forall env, forallb core_frag es = true ->
+                 existsb (has_varying_return env) es = false)).
+  - intros env _. reflexivity.
+  - intros env _. reflexivity.
+  - intros env _. reflexivity.
+  - intros env _. reflexivity.
+  - intros x env _. reflexivity.
+  - intros a b IHa IHb env H. reflexivity.
+  - intros e0 IH env H. reflexivity.
+  - intros c t el IHc IHt IHel env H. simpl in H.
+    apply andb_true_iff in H as [Hct Hel]. apply andb_true_iff in Hct as [_ Ht].
+    simpl. destruct (is_varying_in_env env c).
+    + rewrite (core_frag_no_reachable_return t Ht),
+              (core_frag_no_reachable_return el Hel). reflexivity.
+    + rewrite (IHt env Ht), (IHel env Hel). reflexivity.
+  - intros c b IHc IHb env H. simpl in H. apply andb_true_iff in H as [Hc Hb].
+    simpl. rewrite (IHc env Hc), (IHb env Hb). reflexivity.
+  - intros lo hi b IHlo IHhi IHb env H. simpl in H.
+    apply andb_true_iff in H as [Hlohi Hb]. apply andb_true_iff in Hlohi as [Hlo Hhi].
+    simpl. rewrite (IHlo env Hlo), (IHhi env Hhi), (IHb env Hb). reflexivity.
+  - intros es IHes env H. simpl in H. simpl. exact (IHes env H).
+  - intros x v b IHv IHb env H. simpl in H. apply andb_true_iff in H as [Hv Hb].
+    simpl. rewrite (IHv env Hv).
+    destruct (is_varying_in_env env v).
+    + rewrite (IHb (env_extend env x true) Hb). reflexivity.
+    + rewrite (IHb env Hb). reflexivity.
+  - intros dv body cont _ _ env H. simpl in H. discriminate.
+  - intros args IHargs env H. reflexivity.
+  - intros e0 _ env H. simpl in H. discriminate.
+  - intros env _. reflexivity.
+  - intros h tl IHh IHtl env H. simpl in H. apply andb_true_iff in H as [Hh Htl].
+    simpl. rewrite (IHh env Hh), (IHtl env Htl). reflexivity.
+Qed.
+
+(** On a list whose elements are all core_frag, the F-04b flag never fires, so
+    check_env_seq in ANY mode equals the plain flat-map.  Used by the ESeq cases
+    of eval_check_uniform to recover the pre-F-04b clean hypotheses. *)
+Lemma check_env_seq_core_frag :
+  forall env m es,
+    forallb core_frag es = true ->
+    check_env_seq m env es = concat (map (check_env m env) es).
+Proof.
+  intros env m es. revert m. induction es as [| e rest IH]; intros m H.
+  - reflexivity.
+  - simpl in H. apply andb_true_iff in H as [He Hrest].
+    rewrite check_env_seq_cons.
+    rewrite (core_frag_no_varying_return env e He).
+    rewrite (IH m Hrest). reflexivity.
+Qed.
+
+(* ----------------------------------------------------------------------- *)
 (* 9.2  erase_warp — project trace to barrier events only                  *)
 (* ----------------------------------------------------------------------- *)
 
@@ -2465,8 +2560,11 @@ Proof.
     simpl. apply andb_true_iff. split.
     + apply andb_true_iff. exact (conj (IHlo env Hlo) (IHhi env Hhi)).
     + exact (IHb env Hb).
-  (* ESeq es: Plist IH *)
-  - intros es IHes env H. simpl in H. simpl. exact (IHes env H).
+  (* ESeq es: Plist IH. In Diverged mode the flag-threading collapses to the
+     plain flat-map (check_env_seq_diverged), so the existing list IH applies. *)
+  - intros es IHes env H.
+    rewrite check_env_ESeq, check_env_seq_diverged in H.
+    simpl. exact (IHes env H).
   (* ELet x v b: body checked with env_extend env x vv *)
   - intros x v b IHv IHb env H.
     simpl in H. apply app_eq_nil in H as [Hv Hb].
@@ -3342,8 +3440,11 @@ Proof.
               rewrite Heval1 in Hfl. rewrite Heval2 in Hfl. exact Hfl. } }
 
       (* ESeq ess *)
-      * simpl in Hclean.
-        assert (Hcfall : forallb core_frag ess = true) by exact Hcf.
+      * assert (Hcfall : forallb core_frag ess = true) by exact Hcf.
+        (* F-04b: on core_frag elements the flag never fires, so check_env_seq
+           collapses to the plain flat-map; recover the pre-F-04b clean hyp. *)
+        rewrite check_env_ESeq, (check_env_seq_core_frag env Converged ess Hcfall)
+          in Hclean.
         clear Hcf.
         (* We prove erase_warp equality by induction on ess,
            generalizing over the accumulator. *)
@@ -3834,13 +3935,11 @@ Qed.
 
 (** F-04: EReturn transparency is a kernel-granularity false negative.
 
-    The checker treats EReturn as a transparent wrapper
-    (check_env m env (EReturn e) = check_env m env e), mirroring the real
-    Sarek_convergence.ml TEReturn handling. As a consequence, a thread-varying
-    early return inside an EIf branch — followed by a barrier — passes the
-    static checker with an empty error list, yet is NOT barrier_safe: some
-    threads take the early return (never reaching the barrier) while others
-    fall through to it. The barrier traces diverge.
+    Before F-04b the checker treated EReturn as a transparent wrapper inside a
+    plain flat-map ESeq, so a thread-varying early return inside an EIf branch —
+    followed by a barrier — passed the static checker with an empty error list,
+    yet is NOT barrier_safe: some threads take the early return (never reaching
+    the barrier) while others fall through to it, and the barrier traces diverge.
 
     hazard models exactly this:
       ESeq [ EIf EVary (EReturn ELit) ELit ; EBarrier ]
@@ -3850,17 +3949,25 @@ Qed.
       never evaluated for those threads (trace []).
     - the fall-through branch (ONorm) lets ESeq reach EBarrier (trace
       [EvBarrier]).
-    Because the EReturn sits in a branch under a varying condition, and
-    Converged-mode EBarrier is clean, the checker reports []. *)
+
+    F-04b RESOLUTION: check_env now threads a varying-early-return flag through
+    ESeq (the F-04b fix mirroring Sarek_convergence.ml). The first element
+    `EIf EVary (EReturn ELit) ELit` has `has_varying_return [] = true`, so the
+    trailing EBarrier is checked in Diverged mode and flagged. The spec is no
+    longer blind: it now AGREES with the operational counterexample below. *)
 
 Definition hazard : expr :=
   ESeq [EIf EVary (EReturn ELit) ELit; EBarrier].
 
-(** hazard_checker_blind: the static checker is blind to the hazard.
-    Converged-mode check_env returns no errors on the empty environment. *)
-Lemma hazard_checker_blind :
-  check_env Converged [] hazard = [].
-Proof. reflexivity. Qed.
+(** hazard_spec_detects: after F-04b the static checker DETECTS the hazard.
+    Converged-mode check_env returns a non-empty error list on the empty
+    environment — the varying early return in the first ESeq element forces the
+    trailing barrier into Diverged mode, producing a BarrierError.
+    (This supersedes the pre-F-04b lemma hazard_checker_blind, which asserted
+    check_env Converged [] hazard = [] — now false.) *)
+Lemma hazard_spec_detects :
+  check_env Converged [] hazard <> [].
+Proof. simpl. discriminate. Qed.
 
 (** Concrete thread-varying witness: thread 0 takes the early return
     (vary_val 0 = 1, nonzero -> e_then = EReturn ELit), thread 1 falls
@@ -3884,7 +3991,8 @@ Proof. reflexivity. Qed.
     concrete vary_val = hazard_vary and the two threads above. Thread 0 and
     thread 1 trivially env-agree on the empty environment, yet their barrier
     traces ([] vs [EvBarrier]) differ. This is a formal counterexample to
-    barrier safety that the checker accepts (hazard_checker_blind). *)
+    barrier safety; after F-04b the checker correctly flags it
+    (hazard_spec_detects). *)
 Theorem hazard_not_barrier_safe :
   ~ barrier_safe hazard_vary [] hazard.
 Proof.
@@ -3896,6 +4004,21 @@ Proof.
                 Hagr hazard_eval_thread0 hazard_eval_thread1) as Heq.
   (* Heq : erase_warp [] = erase_warp [EvBarrier], i.e. [] = [EvBarrier] *)
   unfold erase_warp in Heq. simpl in Heq. discriminate.
+Qed.
+
+(** hazard_checker_sound (F-04b): spec/operational AGREEMENT on the hazard.
+    The static spec flags the hazard (check_env non-empty) AND the operational
+    semantics witnesses a genuine barrier-trace divergence (not barrier_safe).
+    Both conjuncts hold, so the spec is now SOUND on this pattern: it rejects
+    exactly the program that the operational model proves unsafe. This closes
+    the F-04 spec/impl divergence — the checker is no longer weaker than the
+    implementation on varying-early-return-then-barrier. *)
+Theorem hazard_checker_sound :
+  check_env Converged [] hazard <> [] /\ ~ barrier_safe hazard_vary [] hazard.
+Proof.
+  split.
+  - exact hazard_spec_detects.
+  - exact hazard_not_barrier_safe.
 Qed.
 
 (* ======================================================================= *)
@@ -4138,6 +4261,97 @@ Proof.
           + inversion H0. subst. exact (IHf h0 t rho v trh Hcfh0 Hh0). }
       exact (Hargs [] 0 Hargs_outer).
     (* EReturn: excluded by core_frag_ss = false (try discriminate closed it) *)
+Qed.
+
+(** core_frag_ss has no (varying) early return either: like core_frag, the
+    enlarged fragment still excludes EReturn (only ESuperstep is added, and
+    has_varying_return ignores ESuperstep / has_reachable_return recurses into
+    its barrier-free body+cont).  Keeps the F-04b ESeq mode-threading inert on
+    the ss fragment. *)
+Lemma core_frag_ss_no_reachable_return :
+  forall e, core_frag_ss e = true -> has_reachable_return e = false.
+Proof.
+  apply (expr_list_rect
+    (fun e  => core_frag_ss e = true -> has_reachable_return e = false)
+    (fun es => forallb core_frag_ss es = true -> existsb has_reachable_return es = false)).
+  - intros _. reflexivity.
+  - intros _. reflexivity.
+  - intros _. reflexivity.
+  - intros _. reflexivity.
+  - intros x _. reflexivity.
+  - intros a b IHa IHb H. reflexivity.
+  - intros e0 IH H. reflexivity.
+  - intros c t el IHc IHt IHel H. simpl in H.
+    apply andb_true_iff in H as [Hct Hel]. apply andb_true_iff in Hct as [_ Ht].
+    simpl. rewrite (IHt Ht), (IHel Hel). reflexivity.
+  - intros c b IHc IHb H. simpl in H. apply andb_true_iff in H as [_ Hb].
+    simpl. exact (IHb Hb).
+  - intros lo hi b IHlo IHhi IHb H. simpl in H.
+    apply andb_true_iff in H as [_ Hb]. simpl. exact (IHb Hb).
+  - intros es IHes H. simpl in H. simpl. exact (IHes H).
+  - intros x v b IHv IHb H. simpl in H. apply andb_true_iff in H as [Hv Hb].
+    simpl. rewrite (IHv Hv), (IHb Hb). reflexivity.
+  - intros dv body cont IHbody IHcont H. simpl in H.
+    apply andb_true_iff in H as [Hdb Hcont]. apply andb_true_iff in Hdb as [_ Hbody].
+    simpl. rewrite (IHbody Hbody), (IHcont Hcont). reflexivity.
+  - intros args IHargs H. reflexivity.
+  - intros e0 _ H. simpl in H. discriminate.  (* core_frag_ss EReturn = false *)
+  - intros _. reflexivity.
+  - intros h tl IHh IHtl H. simpl in H. apply andb_true_iff in H as [Hh Htl].
+    simpl. rewrite (IHh Hh), (IHtl Htl). reflexivity.
+Qed.
+
+Lemma core_frag_ss_no_varying_return :
+  forall env e, core_frag_ss e = true -> has_varying_return env e = false.
+Proof.
+  intros env e. revert env.
+  apply (expr_list_rect
+    (fun e  => forall env, core_frag_ss e = true -> has_varying_return env e = false)
+    (fun es => forall env, forallb core_frag_ss es = true ->
+                 existsb (has_varying_return env) es = false)).
+  - intros env _. reflexivity.
+  - intros env _. reflexivity.
+  - intros env _. reflexivity.
+  - intros env _. reflexivity.
+  - intros x env _. reflexivity.
+  - intros a b IHa IHb env H. reflexivity.
+  - intros e0 IH env H. reflexivity.
+  - intros c t el IHc IHt IHel env H. simpl in H.
+    apply andb_true_iff in H as [Hct Hel]. apply andb_true_iff in Hct as [_ Ht].
+    simpl. destruct (is_varying_in_env env c).
+    + rewrite (core_frag_ss_no_reachable_return t Ht),
+              (core_frag_ss_no_reachable_return el Hel). reflexivity.
+    + rewrite (IHt env Ht), (IHel env Hel). reflexivity.
+  - intros c b IHc IHb env H. simpl in H. apply andb_true_iff in H as [Hc Hb].
+    simpl. rewrite (IHc env Hc), (IHb env Hb). reflexivity.
+  - intros lo hi b IHlo IHhi IHb env H. simpl in H.
+    apply andb_true_iff in H as [Hlohi Hb]. apply andb_true_iff in Hlohi as [Hlo Hhi].
+    simpl. rewrite (IHlo env Hlo), (IHhi env Hhi), (IHb env Hb). reflexivity.
+  - intros es IHes env H. simpl in H. simpl. exact (IHes env H).
+  - intros x v b IHv IHb env H. simpl in H. apply andb_true_iff in H as [Hv Hb].
+    simpl. rewrite (IHv env Hv).
+    destruct (is_varying_in_env env v).
+    + rewrite (IHb (env_extend env x true) Hb). reflexivity.
+    + rewrite (IHb env Hb). reflexivity.
+  - intros dv body cont _ _ env H. reflexivity.  (* has_varying_return ignores ESuperstep *)
+  - intros args IHargs env H. reflexivity.
+  - intros e0 _ env H. simpl in H. discriminate.
+  - intros env _. reflexivity.
+  - intros h tl IHh IHtl env H. simpl in H. apply andb_true_iff in H as [Hh Htl].
+    simpl. rewrite (IHh env Hh), (IHtl env Htl). reflexivity.
+Qed.
+
+Lemma check_env_seq_core_frag_ss :
+  forall env m es,
+    forallb core_frag_ss es = true ->
+    check_env_seq m env es = concat (map (check_env m env) es).
+Proof.
+  intros env m es. revert m. induction es as [| e rest IH]; intros m H.
+  - reflexivity.
+  - simpl in H. apply andb_true_iff in H as [He Hrest].
+    rewrite check_env_seq_cons.
+    rewrite (core_frag_ss_no_varying_return env e He).
+    rewrite (IH m Hrest). reflexivity.
 Qed.
 
 (** eval_while_exits_immediately_ss: the core_frag_ss analogue of
@@ -4698,8 +4912,11 @@ Proof.
               rewrite Heval1 in Hfl. rewrite Heval2 in Hfl. exact Hfl. } }
 
       (* ESeq ess *)
-      * simpl in Hclean.
-        assert (Hcfall : forallb core_frag_ss ess = true) by exact Hcf.
+      * assert (Hcfall : forallb core_frag_ss ess = true) by exact Hcf.
+        (* F-04b: on core_frag_ss elements the flag never fires, so check_env_seq
+           collapses to the plain flat-map; recover the pre-F-04b clean hyp. *)
+        rewrite check_env_ESeq, (check_env_seq_core_frag_ss env Converged ess Hcfall)
+          in Hclean.
         clear Hcf.
         (* We prove erase_warp equality by induction on ess,
            generalizing over the accumulator. *)
