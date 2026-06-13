@@ -5,7 +5,7 @@
 **Host profile**: SPOC/sarek
 **Architecture**: 3-layer
 **Built at**: 2026-06-11
-**Last updated**: 2026-06-13 (T3-S8: extraction + differential conformance for the operational semantics — `eval_concrete` (`vary_val := fun t => t`) extracted into `ConvergenceModel`; `eval_concrete_fuel_monotone` + `eval_concrete_barrier_free_silent` Rocq lemmas; new `test/test_convergence_semantics.ml` with 4 differential properties (fuel-monotone, barrier-silence, CMBT `erase_warp` agreement, F-04 hazard regression) — 0 admits, 0 axioms, coqchk passes)
+**Last updated**: 2026-06-13 (F-04b: Rocq spec extended for the EReturn-in-ESeq hazard — `has_reachable_return` / `has_varying_return` + `check_env_seq` thread the varying-return flag through ESeq; `check_env_sound_core` extended via `check_env_seq_core_frag[_ss]` bridges; `hazard_checker_blind` → `hazard_spec_detects` (spec now flags the hazard) + `hazard_checker_sound` (spec/operational agreement); closes F-04. 86 ledger items, 0 admits, 0 axioms, coqchk passes — "Modules were successfully checked"; conformance 18/18, extraction 7/7, semantics 4/4, live 12/12 GREEN)
 
 ## Project
 
@@ -174,7 +174,7 @@ None.
 |---|---|---|---|
 | F-01 | TESuperstep hard-resets ctx.mode, discarding inherited Diverged context | **RESOLVED** | OCaml fix in PR #181 (merged); Rocq theorem `superstep_outer_diverged_error` in PR #182 |
 | F-02 | is_thread_varying is binding-blind — let-aliased thread-varying values not propagated | **RESOLVED (formal)** | OCaml fix in PR #181 (merged); Rocq env-threaded model in T2-F02: `Env`, `is_varying_in_env`, `check_env`, 3 new theorems |
-| F-04 | EReturn transparency is a kernel-granularity false negative — varying early return skipping a later barrier passes `check_env` but is not `barrier_safe` | **OPEN (formal counterexample)** | Classification `a'` (spec/checker models the real TEReturn transparency); Rocq counterexample `hazard_not_barrier_safe` in T3-S5; reachability in real kernels pending |
+| F-04 | EReturn transparency is a kernel-granularity false negative — varying early return skipping a later barrier passes `check_env` but is not `barrier_safe` | **RESOLVED (F-04b)** | Rocq spec extended (F-04b): `has_varying_return` + `check_env_seq` thread the varying-return flag through ESeq so the trailing barrier is checked in Diverged mode; `check_env_sound_core` extended; `hazard_checker_blind` replaced by `hazard_spec_detects` (spec now flags the hazard) + `hazard_checker_sound` (spec/operational agreement). Conformance tests green. |
 
 See `findings/DIVERGENCE_FINDINGS.md` for full descriptions.
 
@@ -220,6 +220,8 @@ T3-S7 RESOLVED (ConvergenceSemantics.v: erase_barrier, warp_free, warp_free_no_w
   PARAMETRIZATION: attempted making the T3-S4 induction parametric over (event class, agreement domain, checker); flagged INFEASIBLE within budget (concrete checker reductions + per-constructor leaf inversions) and DUPLICATED as eval_check_warp_uniform via mechanical substitution.
 T3-S8 RESOLVED (ConvergenceSemantics.v: eval_concrete (vary_val := fun t => t), eval_concrete_fuel_monotone, eval_concrete_barrier_free_silent; extraction/ConvergenceSafetyExtraction.v emits eval_concrete; test/test_convergence_semantics.ml with 4 differential properties; 0 admits, 0 axioms, coqchk passes).
   KEY DESIGN: eval_concrete makes the operational evaluator executable so soundness theorems are randomized-tested over their concrete instantiation. sem:differential_barrier_safe is the CMBT instance of check_env_sound_core; sem:f04_hazard_counterexample is the F-04 regression (hazard barrier traces differ across threads — counterexample real in the operational semantics). Closes the operational half of the CMBT chain.
+F-04b DONE (F-04 RESOLVED) (ConvergenceSpec.v: has_reachable_return, has_varying_return, check_env_seq + equation lemmas check_env_seq_nil/cons/ESeq, key collapse lemma check_env_seq_diverged; the ESeq case of check_env now threads the varying-return flag so the remainder after a varying EReturn is checked in Diverged mode. ConvergenceSemantics.v: core_frag_no_reachable_return, core_frag_no_varying_return, check_env_seq_core_frag (+ ss analogues core_frag_ss_no_reachable_return, core_frag_ss_no_varying_return, check_env_seq_core_frag_ss) bridge the new ESeq unfolding so check_env_sound_core / check_env_sound_superstep stay intact; hazard_checker_blind REPLACED by hazard_spec_detects (check_env Converged [] hazard <> []) + new hazard_checker_sound (spec flags the hazard AND ~ barrier_safe — spec/operational agreement). 86 ledger items, 0 admits, 0 axioms, coqchk "Modules were successfully checked". Conformance 18/18, extraction 7/7, semantics 4/4, live 12/12 GREEN.).
+  KEY FINDING (F-04 closed): the EReturn-in-ESeq false negative is eliminated — the static checker now detects the varying-early-return-then-barrier hazard, matching the OCaml implementation, with no false positive on constant-return programs.
 Next: continue T3-SEMANTIC breakdown (T3-S9 or milestone lock).
 Run /formal-check before any lock or milestone.
 ```

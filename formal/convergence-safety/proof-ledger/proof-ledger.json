@@ -360,15 +360,169 @@
       "notes": "Concrete thread-varying witness for F-04: vary_val 0 = 1 (early return), vary_val (S _) = 0 (fall through to barrier)"
     },
     {
-      "name": "ConvergenceSpec.ConvergenceSemantics.hazard_checker_blind",
+      "name": "ConvergenceSpec.ConvergenceSpec.has_reachable_return",
+      "status": "DEFINITION",
+      "tier": "T3",
+      "subtask": "F-04b",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSpec.v",
+      "type": "has_reachable_return : expr -> bool",
+      "notes": "F-04b: true iff e contains an EReturn on some execution path. Mirrors OCaml has_reachable_return."
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.has_varying_return",
+      "status": "DEFINITION",
+      "tier": "T3",
+      "subtask": "F-04b",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSpec.v",
+      "type": "has_varying_return : Env -> expr -> bool",
+      "notes": "F-04b: true iff e contains an EReturn reachable under a thread-varying condition (EIf splits on is_varying_in_env env cond). Mirrors OCaml has_varying_return."
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.check_env_seq",
+      "status": "DEFINITION",
+      "tier": "T3",
+      "subtask": "F-04b",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSpec.v",
+      "type": "check_env_seq : exec_mode -> Env -> list expr -> list error",
+      "notes": "F-04b: named wrapper for the inlined ESeq fix in check_env; after an element with has_varying_return env e the remainder is checked in Diverged mode."
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.check_env_seq_nil",
       "status": "PROVEN",
       "tier": "T3",
-      "subtask": "T3-S5",
+      "subtask": "F-04b",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSpec.v",
+      "type": "check_env_seq_nil : forall m env, check_env_seq m env [] = []",
+      "notes": "F-04b equation lemma (reflexivity)."
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.check_env_seq_cons",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "F-04b",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSpec.v",
+      "type": "check_env_seq_cons : forall m env e rest, check_env_seq m env (e :: rest) = check_env m env e ++ check_env_seq (if has_varying_return env e then Diverged else m) env rest",
+      "notes": "F-04b equation lemma (reflexivity): threads the varying-return flag into the remainder mode."
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.check_env_ESeq",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "F-04b",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSpec.v",
+      "type": "check_env_ESeq : forall m env es, check_env m env (ESeq es) = check_env_seq m env es",
+      "notes": "F-04b equation lemma (reflexivity): bridges check_env ESeq to the named wrapper."
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSpec.check_env_seq_diverged",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "F-04b",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSpec.v",
+      "type": "check_env_seq_diverged : forall env es, check_env_seq Diverged env es = concat (map (check_env Diverged env) es)",
+      "notes": "F-04b key collapse lemma: in Diverged mode the per-element flag is irrelevant (diverged_absorbing), so check_env_seq equals the plain flat-map. Keeps every Diverged-mode ESeq proof reusing concat/map reasoning."
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.core_frag_no_reachable_return",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "F-04b",
       "admits": 0,
       "axioms": [],
       "source": "theories/ConvergenceSemantics.v",
-      "type": "hazard_checker_blind : check_env Converged [] hazard = []",
-      "notes": "F-04: the static checker reports no error on hazard (by reflexivity) \u2014 EReturn transparency + Converged-mode EBarrier cleanliness"
+      "type": "core_frag_no_reachable_return : forall e, core_frag e = true -> has_reachable_return e = false",
+      "notes": "F-04b bridge: core_frag excludes EReturn, so the reachable-return flag never fires on the verified fragment."
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.core_frag_no_varying_return",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "F-04b",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "core_frag_no_varying_return : forall env e, core_frag e = true -> has_varying_return env e = false",
+      "notes": "F-04b bridge: core_frag excludes EReturn, so the varying-return flag never fires on the verified fragment."
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.check_env_seq_core_frag",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "F-04b",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "check_env_seq_core_frag : forall env m es, forallb core_frag es = true -> check_env_seq m env es = concat (map (check_env m env) es)",
+      "notes": "F-04b soundness bridge: on core_frag elements the flag never fires, so check_env_seq collapses to the flat-map; recovers the pre-F-04b clean hypothesis in eval_check_uniform Part A ESeq."
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.core_frag_ss_no_reachable_return",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "F-04b",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "core_frag_ss_no_reachable_return : forall e, core_frag_ss e = true -> has_reachable_return e = false",
+      "notes": "F-04b ss analogue: core_frag_ss also excludes EReturn (ESuperstep is ignored by has_reachable_return's structural recursion)."
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.core_frag_ss_no_varying_return",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "F-04b",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "core_frag_ss_no_varying_return : forall env e, core_frag_ss e = true -> has_varying_return env e = false",
+      "notes": "F-04b ss analogue of core_frag_no_varying_return."
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.check_env_seq_core_frag_ss",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "F-04b",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "check_env_seq_core_frag_ss : forall env m es, forallb core_frag_ss es = true -> check_env_seq m env es = concat (map (check_env m env) es)",
+      "notes": "F-04b ss soundness bridge used by eval_check_uniform_ss Part A ESeq."
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.hazard_spec_detects",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "F-04b",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "hazard_spec_detects : check_env Converged [] hazard <> []",
+      "notes": "F-04b: supersedes hazard_checker_blind (statement inverted). After F-04b the static checker DETECTS the hazard \u2014 the varying early return forces the trailing barrier into Diverged mode, producing a BarrierError."
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.hazard_checker_sound",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "F-04b",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "hazard_checker_sound : check_env Converged [] hazard <> [] /\\ ~ barrier_safe hazard_vary [] hazard",
+      "notes": "F-04b main theorem: spec/operational AGREEMENT \u2014 the spec flags the hazard AND the operational semantics witnesses genuine barrier-trace divergence. Closes the F-04 spec/impl divergence."
     },
     {
       "name": "ConvergenceSpec.ConvergenceSemantics.hazard_eval_thread0",
@@ -672,9 +826,9 @@
     "admitted": 0
   },
   "summary": {
-    "total": 72,
-    "proven": 57,
-    "definitions": 15,
+    "total": 86,
+    "proven": 68,
+    "definitions": 18,
     "admits": 0,
     "axioms": [],
     "generated": "2026-06-13",

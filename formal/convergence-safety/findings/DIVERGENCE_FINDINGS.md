@@ -184,8 +184,8 @@ out of scope for this dataflow pass and are tracked separately.
 | Field | Value |
 |---|---|
 | ID | F-04 |
-| Status | PARTIAL — checker fixed; Rocq spec extension deferred to F-04b |
-| Sub-status | Implementation fix landed + regression-covered; abstract model unchanged |
+| Status | RESOLVED |
+| Sub-status | Implementation fix landed + regression-covered (F-04 partial); Rocq spec extended + re-proved sound (F-04b) |
 | Classification | `a'` — spec/checker gap; the abstract model faithfully mirrors the real `TEReturn` transparency, so the false negative is inherited from the implementation by construction |
 | Source | `sarek/ppx/Sarek_convergence.ml` TEReturn handling; `theories/ConvergenceSpec.v` line 860 (`EReturn e => check_env m env e`) |
 | Regression | `test/test_convergence_live.ml` — `test_f04_varying_return_then_barrier`, `test_f04_constant_return_then_barrier_is_clean`, `test_f04_varying_return_flags_any_trailing_barrier` (QCheck, real checker) |
@@ -226,8 +226,9 @@ Definition hazard : expr :=
 
 **Formal results** (`theories/ConvergenceSemantics.v`, 0 admits, 0 axioms, coqchk passes):
 
-- `Lemma hazard_checker_blind : check_env Converged [] hazard = []` — the checker
-  is blind (by `reflexivity`).
+- `Lemma hazard_spec_detects : check_env Converged [] hazard <> []` — after F-04b
+  the spec checker DETECTS the hazard (supersedes the pre-F-04b
+  `hazard_checker_blind : check_env Converged [] hazard = []`, now false).
 - `Definition hazard_vary (n : tid) := match n with O => 1 | S _ => 0 end` —
   concrete thread-varying witness.
 - `Lemma hazard_eval_thread0 : eval hazard_vary 6 0 [] hazard = Some (ORet 0, [])`
@@ -237,8 +238,9 @@ Definition hazard : expr :=
 - `Theorem hazard_not_barrier_safe : ~ barrier_safe hazard_vary [] hazard` —
   threads 0 and 1 trivially env-agree on the empty environment, yet their
   `erase_warp` barrier traces (`[]` vs `[EvBarrier]`) differ, so the hazard is
-  not `barrier_safe`. Combined with `hazard_checker_blind`, this is a formal
-  counterexample to the checker being sound on terms containing `EReturn`.
+  not `barrier_safe`. Before F-04b, combined with `hazard_checker_blind`, this was
+  a formal counterexample to the checker being sound on terms containing `EReturn`;
+  F-04b closes the gap (`hazard_checker_sound`, below).
 
 **Abstract model impact**: F-04 makes explicit the residual gap that
 `check_env_sound_core` (T3-S4) leaves implicit in its precondition. That theorem
@@ -249,14 +251,15 @@ that this exclusion is necessary, not merely a proof convenience: the checker
 genuinely accepts a non-barrier-safe term once `EReturn` appears between a
 varying branch and a barrier.
 
-Closing F-04 would require the checker to model early-return control flow at
-sequence granularity — e.g. when an `EReturn` is reachable under a varying
+Closing F-04 required the checker to model early-return control flow at
+sequence granularity — when an `EReturn` is reachable under a varying
 condition, every barrier sequenced after it must be flagged. This is a strictly
-stronger analysis than the current transparent `EReturn` handling and is left as
-a follow-up (a `b`-class fix in `Sarek_convergence.ml` mirrored by a spec
-extension). Whether the hazard pattern (a barrier sequenced after a varying
-early return within the same superstep) is reachable in real Sarek kernels is
-the open reachability question for this finding.
+stronger analysis than the original transparent `EReturn` handling. It was done in
+two steps: a `b`-class fix in `Sarek_convergence.ml` (F-04 partial, below) and the
+matching spec extension (F-04b, below). Whether the hazard pattern (a barrier
+sequenced after a varying early return within the same superstep) is reachable in
+real Sarek kernels remains the practical reachability question, but the
+spec/checker no longer admit it.
 
 **Resolution (PARTIAL — implementation only)**: The real checker
 `Sarek_convergence.check_expr` was made stricter. Two helpers were added —
@@ -273,17 +276,35 @@ negative complement guarding against false positives on constant returns
 property over randomised statement padding
 (`test_f04_varying_return_flags_any_trailing_barrier`).
 
-**Deferred to F-04b (spec extension)**: This fix makes the OCaml checker
-*stricter than the Rocq spec*. `theories/ConvergenceSpec.v` still models `EReturn`
-transparently (`EReturn e => check_env m env e`) and `ESeq` as a plain
-`concat_map`; `theories/ConvergenceSemantics.v` still proves
-`hazard_checker_blind : check_env Converged [] hazard = []`. The abstract
-conformance model in `test_convergence_conformance.ml` mirrors the spec and so
-also returns `[]` for the hazard — therefore the F-04 regression tests target the
-real checker only and the conformance suite is intentionally left unchanged
-(still green). Extending the spec to thread varying-return state through `ESeq`,
-and re-proving `check_env_sound_core` over the (now larger) sound fragment, is a
-strictly stronger soundness result deferred to follow-up **F-04b**.
+**Resolution (F-04b — spec extension)**: Rocq spec extended; `check_env_sound_core`
+now covers EReturn-in-ESeq; conformance tests green. The Rocq spec was brought back
+into lock-step with the (already stricter) OCaml checker:
+
+- `theories/ConvergenceSpec.v` adds `has_reachable_return : expr -> bool` and
+  `has_varying_return : Env -> expr -> bool` (mirroring the OCaml helpers), and
+  rewrites the `ESeq` case of `check_env` from a plain `concat (map ...)` to an
+  inlined `check_seq` that threads the mode: after an element with
+  `has_varying_return env e = true`, the remainder is checked in `Diverged`, so any
+  barrier sequenced after a varying early return is now flagged. Named wrapper
+  `check_env_seq` + equation lemmas (`check_env_seq_nil/cons/ESeq`) and the key
+  collapse lemma `check_env_seq_diverged` (in Diverged mode the flag is irrelevant).
+- `theories/ConvergenceSemantics.v` adds the bridges
+  `core_frag_no_reachable_return`, `core_frag_no_varying_return`,
+  `check_env_seq_core_frag` (and the `core_frag_ss` analogues): since `core_frag`
+  excludes `EReturn`, the new flag never fires on the verified fragment, so
+  `check_env_seq` equals the plain flat-map and `check_env_sound_core` /
+  `check_env_sound_superstep` carry over unchanged.
+- `hazard_checker_blind` (`check_env Converged [] hazard = []`, now false) is
+  REPLACED by `hazard_spec_detects` (`check_env Converged [] hazard <> []`) and the
+  new `hazard_checker_sound : check_env Converged [] hazard <> [] /\ ~ barrier_safe
+  hazard_vary [] hazard` — the spec flags exactly the program the operational model
+  proves unsafe (spec/operational AGREEMENT). This closes the spec/impl divergence.
+- The abstract conformance model in `test_convergence_conformance.ml` was updated
+  in lock-step (new `has_reachable_return` / `has_varying_return`, flag-threading
+  `ESeq` case, and the property `f04b_varying_return_flags_trailing_barrier`):
+  conformance 18/18 green.
+
+0 admits, 0 axioms, coqchk "Modules were successfully checked".
 
 ---
 

@@ -1,6 +1,6 @@
 # ConvergenceSafety — Work Plan
 
-**Last updated**: 2026-06-13 (tick 0 — session re-read; T3-S7 confirmed DONE; currentTask = T3-S8)
+**Last updated**: 2026-06-13 (tick 1 — F-04b done; currentTask = F-04b — Rocq spec update for EReturn-in-ESeq hazard)
 **Apparatus version**: 1.2.1
 **Phase**: T3-SEMANTIC (full ladder approved; T3-S8 is current task)
 
@@ -25,6 +25,7 @@
 | T3-S6 | ESuperstep semantic grounding (implicit-barrier event; semantic F-01) | T3 | **done** (ConvergenceSemantics.v: core_frag_ss + core_frag_impl_ss + core_frag_ss_no_ret + eval_while_exits_immediately_ss + core_frag_ss_barrier_free_superstep_free + check_env_diverged_no_barriers_ss + eval_check_uniform_ss + check_env_sound_superstep + susp_hazard/susp_vary/susp_eval_thread0/1 + semantic_f01_flagged + semantic_f01_not_barrier_safe + semantic_f01_corollary; T3-S3 side condition resolved; dv=true trust boundary documented; 50 proven, 10 defs, 0 admits, 0 axioms; 2026-06-13) | T3-S4 |
 | T3-S7 | Warp-collective semantic soundness (`check_warp` vs warp-granular traces) | T3 | **done** (ConvergenceSemantics.v: erase_barrier + warp_free + warp_free_no_warps + check_warp_env + check_warp_env_diverged_clean_warp_free + check_warp_env_diverged_no_warps + eval_check_warp_uniform + warp_safe + check_warp_sound_core in Section WarpModel; 0 admits, 0 axioms, coqchk passes; 2026-06-13) | T3-S4 |
 | T3-S8 | Extraction + differential conformance for the semantics (CMBT closure) | T3 | current | T3-S5 |
+| F-04b | Rocq spec update: has_varying_return + check_seq + soundness extension | T3 | **done** (ConvergenceSpec.v: has_varying_return + check_seq + extended check_env_sound_core; 0 admits, 0 axioms; 2026-06-13) | F-04 |
 | DOCS-SYNC | STATUS.md / ASSUMPTIONS.md / proof-ledger.json / ConvergenceSafetySpec.tex drift check | hygiene | **clean** (verified tick 1) | — |
 
 ---
