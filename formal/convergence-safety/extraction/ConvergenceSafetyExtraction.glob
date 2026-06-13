@@ -1,6 +1,7 @@
-DIGEST f79ea7b87341a11485b4b2c43b5848db
+DIGEST cb8dff7f7b9524d8df0bc6e3868e7548
 FConvergenceSafetyExtraction
 R682:691 Stdlib.extraction.Extraction <> <> lib
 R693:706 Stdlib.extraction.ExtrOcamlBasic <> <> lib
 R708:722 Stdlib.extraction.ExtrOcamlNatInt <> <> lib
 R761:775 ConvergenceSpec.ConvergenceSpec <> <> lib
+R814:833 ConvergenceSpec.ConvergenceSemantics <> <> lib

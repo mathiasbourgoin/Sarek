@@ -1,4 +1,4 @@
-DIGEST d70e7467e6650b42fbaadaca8b9803da
+DIGEST 01324a8b307c7bd595384be8e1a01665
 FConvergenceSpec.ConvergenceSemantics
 R1242:1245 Stdlib.Lists.List <> <> lib
 R1247:1251 Stdlib.Arith.Arith <> <> lib
@@ -19330,3 +19330,89 @@ R347290:347312 ConvergenceSpec.ConvergenceSemantics <> eval_check_warp_uniform t
 R347283:347287 Corelib.Init.Logic <> proj1 thm
 R347290:347312 ConvergenceSpec.ConvergenceSemantics <> eval_check_warp_uniform thm
 R347418:347426 ConvergenceSpec.ConvergenceSemantics WarpModel <> sec
+def 348569:348581 <> eval_concrete
+R348591:348593 Corelib.Init.Datatypes <> nat ind
+binder 348584:348587 <> fuel:1527
+R348601:348603 ConvergenceSpec.ConvergenceSemantics <> tid def
+binder 348597:348597 <> t:1528
+R348613:348616 ConvergenceSpec.ConvergenceSemantics <> venv def
+binder 348607:348609 <> rho:1529
+R348624:348627 ConvergenceSpec.ConvergenceSpec <> expr ind
+binder 348620:348620 <> e:1530
+R348636:348641 Corelib.Init.Datatypes <> option ind
+R348651:348653 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R348644:348650 ConvergenceSpec.ConvergenceSemantics <> outcome ind
+R348654:348658 ConvergenceSpec.ConvergenceSemantics <> trace def
+R348666:348669 ConvergenceSpec.ConvergenceSemantics <> eval def
+R348686:348689 ConvergenceSpec.ConvergenceSemantics <> fuel:1527 var
+R348691:348691 ConvergenceSpec.ConvergenceSemantics <> t:1528 var
+R348693:348695 ConvergenceSpec.ConvergenceSemantics <> rho:1529 var
+R348697:348697 ConvergenceSpec.ConvergenceSemantics <> e:1530 var
+binder 348676:348677 <> th:1531
+R348682:348683 ConvergenceSpec.ConvergenceSemantics <> th:1531 var
+prf 348957:348983 <> eval_concrete_fuel_monotone
+binder 348996:348996 <> n:1532
+binder 348998:348998 <> t:1533
+binder 349000:349002 <> rho:1534
+binder 349004:349004 <> e:1535
+binder 349006:349006 <> r:1536
+R349045:349052 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R349036:349038 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R349013:349025 ConvergenceSpec.ConvergenceSemantics <> eval_concrete def
+R349027:349027 ConvergenceSpec.ConvergenceSemantics <> n:1532 var
+R349029:349029 ConvergenceSpec.ConvergenceSemantics <> t:1533 var
+R349031:349033 ConvergenceSpec.ConvergenceSemantics <> rho:1534 var
+R349035:349035 ConvergenceSpec.ConvergenceSemantics <> e:1535 var
+R349039:349042 Corelib.Init.Datatypes <> Some constr
+R349044:349044 ConvergenceSpec.ConvergenceSemantics <> r:1536 var
+R349080:349082 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R349053:349065 ConvergenceSpec.ConvergenceSemantics <> eval_concrete def
+R349068:349068 Corelib.Init.Datatypes <> S constr
+R349070:349070 ConvergenceSpec.ConvergenceSemantics <> n:1532 var
+R349073:349073 ConvergenceSpec.ConvergenceSemantics <> t:1533 var
+R349075:349077 ConvergenceSpec.ConvergenceSemantics <> rho:1534 var
+R349079:349079 ConvergenceSpec.ConvergenceSemantics <> e:1535 var
+R349083:349086 Corelib.Init.Datatypes <> Some constr
+R349088:349088 ConvergenceSpec.ConvergenceSemantics <> r:1536 var
+R349126:349143 ConvergenceSpec.ConvergenceSemantics <> eval_fuel_monotone thm
+R349126:349143 ConvergenceSpec.ConvergenceSemantics <> eval_fuel_monotone thm
+prf 349437:349469 <> eval_concrete_barrier_free_silent
+binder 349482:349485 <> fuel:1537
+binder 349487:349487 <> t:1538
+binder 349489:349491 <> rho:1539
+binder 349493:349493 <> e:1540
+binder 349495:349495 <> o:1541
+binder 349497:349498 <> tr:1542
+R349528:349535 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R349521:349523 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R349505:349518 ConvergenceSpec.ConvergenceSemantics <> superstep_free def
+R349520:349520 ConvergenceSpec.ConvergenceSemantics <> e:1540 var
+R349524:349527 Corelib.Init.Datatypes <> true constr
+R349557:349564 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R349550:349552 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R349536:349547 ConvergenceSpec.ConvergenceSpec <> barrier_free def
+R349549:349549 ConvergenceSpec.ConvergenceSemantics <> e:1540 var
+R349553:349556 Corelib.Init.Datatypes <> true constr
+R349606:349613 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R349591:349593 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R349565:349577 ConvergenceSpec.ConvergenceSemantics <> eval_concrete def
+R349579:349582 ConvergenceSpec.ConvergenceSemantics <> fuel:1537 var
+R349584:349584 ConvergenceSpec.ConvergenceSemantics <> t:1538 var
+R349586:349588 ConvergenceSpec.ConvergenceSemantics <> rho:1539 var
+R349590:349590 ConvergenceSpec.ConvergenceSemantics <> e:1540 var
+R349594:349597 Corelib.Init.Datatypes <> Some constr
+R349599:349599 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R349601:349602 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R349605:349605 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R349600:349600 ConvergenceSpec.ConvergenceSemantics <> o:1541 var
+R349603:349604 ConvergenceSpec.ConvergenceSemantics <> tr:1542 var
+R349633:349635 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R349614:349629 ConvergenceSpec.ConvergenceSemantics <> no_barrier_event def
+R349631:349632 ConvergenceSpec.ConvergenceSemantics <> tr:1542 var
+R349636:349639 Corelib.Init.Datatypes <> true constr
+R349696:349719 ConvergenceSpec.ConvergenceSemantics <> barrier_free_no_barriers thm
+binder 349726:349727 <> th:1543
+R349732:349733 ConvergenceSpec.ConvergenceSemantics <> th:1543 var
+R349696:349719 ConvergenceSpec.ConvergenceSemantics <> barrier_free_no_barriers thm
+binder 349726:349727 <> th:1544
+R349732:349733 ConvergenceSpec.ConvergenceSemantics <> th:1544 var

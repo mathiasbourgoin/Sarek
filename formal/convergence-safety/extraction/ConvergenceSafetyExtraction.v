@@ -15,9 +15,15 @@
 
 From Stdlib Require Import Extraction ExtrOcamlBasic ExtrOcamlNatInt.
 From ConvergenceSpec Require Import ConvergenceSpec.
+From ConvergenceSpec Require Import ConvergenceSemantics.
 
 (* Let exec_mode and error extract as regular OCaml variants —
- * do NOT use Extract Inductive here so the type definitions are emitted. *)
+ * do NOT use Extract Inductive here so the type definitions are emitted.
+ *
+ * T3-S8: eval_concrete (the operational evaluator with vary_val := fun t => t)
+ * is extracted alongside the static checkers so the differential conformance
+ * suite can exercise the operational semantics (outcome / trace / event) — not
+ * only the static analysis — against an inline OCaml reference. *)
 
 Extraction "ConvergenceModel.ml"
   is_varying
@@ -26,4 +32,5 @@ Extraction "ConvergenceModel.ml"
   check
   check_warp
   merge_dim_usage
-  empty_dim_usage.
+  empty_dim_usage
+  eval_concrete.

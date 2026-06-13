@@ -6805,3 +6805,49 @@ Proof.
 Qed.
 
 End WarpModel.
+
+(* ======================================================================= *)
+(* 13.  T3-S8 — Concrete evaluator for extraction (CMBT closure)           *)
+(* ======================================================================= *)
+
+(** eval_concrete: the operational evaluator with the abstract per-thread
+    varying value vary_val instantiated as the identity [fun t => t]. This is
+    the concrete witness extracted to OCaml (ConvergenceModel.eval_concrete)
+    so the differential conformance suite can exercise the *operational*
+    semantics — not only the static checkers — against an inline reference.
+
+    Identity is a sound, maximally-discriminating instantiation: distinct
+    threads receive distinct EVary values (vary_val t1 = t1 <> t2 = vary_val t2
+    for t1 <> t2), so any thread-dependent control-flow divergence (the F-04
+    class) becomes observable in the extracted traces. All section lemmas
+    (eval_fuel_monotone, barrier_free_no_barriers, the differential
+    check_env_sound_core, hazard_not_barrier_safe) hold for *every* vary_val,
+    hence a fortiori for this identity instantiation. *)
+Definition eval_concrete (fuel : nat) (t : tid) (rho : venv) (e : expr)
+    : option (outcome * trace) :=
+  eval (fun th => th) fuel t rho e.
+
+(** eval_concrete_fuel_monotone: the headline fuel-monotonicity sanity
+    property, specialized to the extracted instantiation. This is the Rocq
+    statement the QCheck property [eval_fuel_monotone] mirrors over random
+    inputs (CMBT link 4). *)
+Lemma eval_concrete_fuel_monotone :
+  forall n t rho e r,
+    eval_concrete n t rho e = Some r ->
+    eval_concrete (S n) t rho e = Some r.
+Proof. intros n t rho e r H. apply eval_fuel_monotone. exact H. Qed.
+
+(** eval_concrete_barrier_free_silent: the barrier-silence property for the
+    extracted instantiation. A barrier_free + superstep_free expression emits
+    no EvBarrier event in any completed concrete run. Mirrored by the QCheck
+    property [barrier_free_silent]. *)
+Lemma eval_concrete_barrier_free_silent :
+  forall fuel t rho e o tr,
+    superstep_free e = true ->
+    barrier_free e = true ->
+    eval_concrete fuel t rho e = Some (o, tr) ->
+    no_barrier_event tr = true.
+Proof.
+  intros fuel t rho e o tr Hsf Hbf H.
+  exact (barrier_free_no_barriers (fun th => th) fuel t rho e o tr Hsf Hbf H).
+Qed.
