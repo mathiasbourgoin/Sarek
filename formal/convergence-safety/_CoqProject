@@ -1,3 +1,4 @@
 -R theories ConvergenceSpec
 theories/ConvergenceSpec.v
+theories/ConvergenceSemantics.v
 extraction/ConvergenceSafetyExtraction.v

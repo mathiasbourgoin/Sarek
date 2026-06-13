@@ -41,15 +41,34 @@
     {"name": "warp_varying_if_flags", "status": "PROVEN", "tier": "T2", "admits": 0, "axioms": [],
      "note": "T2-WARP context: forall el, check_warp Converged (EIf EVary EWarpPoint el) ≠ [] — EWarpPoint nested under varying EIf is always caught; proof by simpl + discriminate"},
     {"name": "return_barrier_skip_safe", "status": "PROVEN", "tier": "T2", "admits": 0, "axioms": [],
-     "note": "T2-RETURN compositionality: forall m e, check m (EReturn e) = check m e — EReturn is a transparent wrapper for barrier analysis; proof by simpl + reflexivity. Corollary return_converged_clean: barrier_free e → check Converged (EReturn e) = []"}
+     "note": "T2-RETURN compositionality: forall m e, check m (EReturn e) = check m e — EReturn is a transparent wrapper for barrier analysis; proof by simpl + reflexivity. Corollary return_converged_clean: barrier_free e → check Converged (EReturn e) = []"},
+    {"name": "env_agrees", "status": "DEFINITION", "tier": "T3", "admits": 0, "axioms": [], "source": "theories/ConvergenceSemantics.v",
+     "note": "T3-S2: uniform-variable agreement predicate between two venvs — all non-varying vars in env map to same value in both rhos"},
+    {"name": "not_varying_uniform", "status": "PROVEN", "tier": "T3", "admits": 0, "axioms": [], "source": "theories/ConvergenceSemantics.v",
+     "note": "T3-S2 main theorem: env_agrees env rho1 rho2 → is_strongly_uniform env e = true → eval vary_val fuel t1 rho1 e = eval vary_val fuel t2 rho2 e"},
+    {"name": "not_varying_uniform_args", "status": "PROVEN", "tier": "T3", "admits": 0, "axioms": [], "source": "theories/ConvergenceSemantics.v",
+     "note": "T3-S2 list variant of not_varying_uniform — mutual induction companion for EApp/ESeq"},
+    {"name": "is_strongly_uniform_impl_is_not_varying", "status": "PROVEN", "tier": "T3", "admits": 0, "axioms": [], "source": "theories/ConvergenceSemantics.v",
+     "note": "T3-S2 bridge: is_strongly_uniform env e = true → is_varying_in_env env e = false — strictly stronger predicate"},
+    {"name": "var_free_env_irrelevant", "status": "PROVEN", "tier": "T3", "admits": 0, "axioms": [], "source": "theories/ConvergenceSemantics.v",
+     "note": "T3-S2: is_var_free e = true → is_strongly_uniform env1 e = is_strongly_uniform env2 e (EVar-free means env-independent)"},
+    {"name": "is_strongly_uniform_env_irrelevant", "status": "PROVEN", "tier": "T3", "admits": 0, "axioms": [], "source": "theories/ConvergenceSemantics.v",
+     "note": "T3-S2: alias of var_free_env_irrelevant; is_var_free e = true → is_strongly_uniform env1 e = is_strongly_uniform env2 e"},
+    {"name": "var_free_is_strongly_uniform_empty", "status": "PROVEN", "tier": "T3", "admits": 0, "axioms": [], "source": "theories/ConvergenceSemantics.v",
+     "note": "T3-S2: is_var_free e = true → is_varying e = false → is_strongly_uniform [] e = true"},
+    {"name": "closed_uniform", "status": "PROVEN", "tier": "T3", "admits": 0, "axioms": [], "source": "theories/ConvergenceSemantics.v",
+     "note": "T3-S2 corollary: is_var_free e = true → is_varying e = false → eval uniform across all thread ids and variable environments"}
   ],
   "summary": {
-    "total": 20,
-    "proven_clean": 20,
+    "total": 28,
+    "proven_clean": 27,
     "proven_under_assumption": 0,
     "assumed": 0,
     "falsified": 0,
-    "out_of_scope": 0
+    "out_of_scope": 0,
+    "definitions": 1,
+    "generated": "2026-06-13",
+    "files": ["theories/ConvergenceSpec.v", "theories/ConvergenceSemantics.v"]
   },
   "falsified": [],
   "open_assumptions": []
