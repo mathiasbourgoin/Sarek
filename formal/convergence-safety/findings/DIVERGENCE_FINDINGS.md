@@ -11,11 +11,11 @@ or a reachability gap in the abstract model.
 | Field | Value |
 |---|---|
 | ID | F-01 |
-| Status | OPEN |
-| Sub-status | Confirmed reachable |
+| Status | RESOLVED |
+| Sub-status | Fixed in checker + regression-covered |
 | Classification | `a'` — spec gap (abstract model missing ESuperstep constructor) |
 | Source | `sarek/ppx/Sarek_convergence.ml` lines 231, 239 |
-| Regression | (none yet — blocked on SPOC test suite integration) |
+| Regression | `test/test_convergence_live.ml` — `test_f01_superstep_in_diverged_if`; `test/test_convergence_conformance.ml` — `superstep_outer_diverged_error` QCheck property (properties 11–13) |
 
 **Description**: In `check_expr`, the non-divergent `TESuperstep` branch calls
 `check_expr {mode = Converged} step_body` (line 231) and
@@ -81,6 +81,15 @@ property. The abstract model must be extended:
   branch and only some threads execute it): those threads never hit the implicit barrier,
   so the continuation is not actually entered converged for all threads.
 
+**Resolution** (commits `5e0cd683` fix + `9c72ca82` refactor): Fixed in the checker. The non-divergent `TESuperstep` branch now emits
+`Barrier_in_diverged_flow` when `ctx.mode = Diverged` (the implicit end-of-superstep
+barrier is reached under inherited diverged flow) before checking the body with a fresh
+`Converged` context; the continuation reset to `Converged` is retained as
+independently correct. Regression covered by `test_f01_superstep_in_diverged_if`
+(real-checker unit test) and the `superstep_outer_diverged_error` QCheck property in the
+conformance suite. The abstract-model `ESuperstep`/theorem extension landed alongside the
+T2 superstep work; all conformance/extraction theorems re-prove green.
+
 ---
 
 ### F-02 — `is_thread_varying` is binding-blind (let-aliased thread-varying values missed)
@@ -88,11 +97,11 @@ property. The abstract model must be extended:
 | Field | Value |
 |---|---|
 | ID | F-02 |
-| Status | OPEN |
-| Sub-status | Confirmed reachable |
+| Status | RESOLVED |
+| Sub-status | Fixed in checker + regression-covered |
 | Classification | `b` — implementation bug in `Sarek_convergence.ml`; spec accurately mirrors the (incomplete) implementation |
 | Source | `sarek/ppx/Sarek_convergence.ml` line 86; `sarek/ppx/Sarek_core_primitives.ml` lines 732–733; `Sarek_convergence.ml` lines 199–200 |
-| Regression | (none yet — blocked on SPOC test suite integration) |
+| Regression | `test/test_convergence_live.ml` — `test_f02_let_alias_if`, `test_f02_let_alias_while`, `test_f02_double_alias`; `test/test_convergence_conformance.ml` — `test_f02_let_alias_env` |
 
 **Description**: `Sarek_core_primitives.is_thread_varying name` (lines 732–733) performs
 a hashtable lookup restricted to statically-known intrinsic identifiers. Any name absent
@@ -156,6 +165,17 @@ abstract model and should not be disturbed.
   `check_expr TEApp` recurses into args but the return value variability defaults to
   false because the function body is not re-analysed at the call site. Same root cause
   as F-02 but at the inter-procedural boundary.
+
+**Resolution** (commits `5e0cd683` fix + `9c72ca82` refactor): Fixed in the checker. The `ctx` record gained a `varying_vars :
+StringSet.t` field; `is_thread_varying_env` consults it, and `TELet`/`TELetMut` now add
+the bound name to `varying_vars` when its value is thread-varying, propagating variance
+into the body (and through `TEIf`/`TEFor`/`TEWhile` condition checks). The let-aliased
+`thread_idx_x` example now flags the inner barrier. The abstract model was extended with
+`is_varying_env`/`check_env` (a `Gamma` environment threaded through), keeping the spec
+in lockstep. Regression covered by the three `test_f02_let_alias_*` real-checker unit
+tests and the `f02_let_alias_env_catches_barrier` QCheck property in the conformance
+suite. UC-NEW-B/UC-NEW-F (inter-procedural `TELetRec`/`TEApp` return-value variance) remain
+out of scope for this dataflow pass and are tracked separately.
 
 ---
 
