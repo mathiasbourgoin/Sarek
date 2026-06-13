@@ -5,7 +5,7 @@
 **Host profile**: SPOC/sarek
 **Architecture**: 3-layer
 **Built at**: 2026-06-11
-**Last updated**: 2026-06-13 (T3-S4: core semantic soundness of `check_env` — `core_frag`, `eval_check_uniform`, `check_env_nonvarying_uniform`, `check_env_sound_core` via combined uniformity lemma — 0 admits, 0 axioms)
+**Last updated**: 2026-06-13 (T3-S5: EReturn residual-divergence verdict — `hazard`, `hazard_checker_blind`, `hazard_not_barrier_safe` constructive counterexample; new finding F-04 (EReturn transparency = kernel-granularity false negative) — 0 admits, 0 axioms)
 
 ## Project
 
@@ -45,7 +45,7 @@ Assumptions documented in `ASSUMPTIONS.md`:
 | `env_var_diverged_clean` | T1 | 0 | **T2-F02** — EVar carries no barrier under Diverged mode |
 | `env_check_let_alias_catches` | T1 | 0 | **T2-F02** — F-02 soundness: `check_env` catches barrier behind let-alias |
 
-**Total**: 20 theorems (ConvergenceSpec.v) + 7 theorems/corollaries (ConvergenceSemantics.v T3-S1+T3-S2) + 6 items (T3-S3: trace silence) + 4 items (T3-S4: core soundness — `core_frag` def + `eval_check_uniform` + `check_env_nonvarying_uniform` + `check_env_sound_core`), 0 admits, 0 axioms — `coqchk` passes (T3-S4)
+**Total**: 20 theorems (ConvergenceSpec.v) + 7 theorems/corollaries (ConvergenceSemantics.v T3-S1+T3-S2) + 6 items (T3-S3: trace silence) + 4 items (T3-S4: core soundness — `core_frag` def + `eval_check_uniform` + `check_env_nonvarying_uniform` + `check_env_sound_core`) + 5 items (T3-S5: F-04 counterexample — `hazard` def + `hazard_vary` witness + `hazard_checker_blind` + `hazard_eval_thread0/1` + `hazard_not_barrier_safe`), 0 admits, 0 axioms — `coqchk` passes (T3-S5)
 
 ## T3-S1 semantic layer (ConvergenceSemantics.v — new file)
 
@@ -91,6 +91,18 @@ Assumptions documented in `ASSUMPTIONS.md`:
 
 **Design note**: `barrier_safe` uses `erase_warp` equality rather than full trace equality, so `EWarpPoint` (which emits `EvWarp` per thread) does not create false negatives. The `check_env_sound_core` proof is a one-liner because all the weight is in `eval_check_uniform`, a combined induction on fuel establishing trace equality (Part A) and outcome equality for non-varying expressions (Part B) simultaneously — Part B feeds back into Part A for the condition-uniformity steps in `EIf`/`EWhile`/`EFor`.
 
+## T3-S5 EReturn residual-divergence verdict (ConvergenceSemantics.v — 2026-06-13)
+
+| Item | Status | Notes |
+|---|---|---|
+| `Definition hazard` | done | `ESeq [EIf EVary (EReturn ELit) ELit; EBarrier]` — varying early-return guarding a barrier |
+| `Lemma hazard_checker_blind` | done | `check_env Converged [] hazard = []` by reflexivity — checker reports no error |
+| `Definition hazard_vary` + `Lemma hazard_eval_thread0/1` | done | Concrete witness `vary_val 0 = 1, vary_val (S _) = 0`; thread 0 → `(ORet 0, [])`, thread 1 → `(ONorm 0, [EvBarrier])` by reflexivity |
+| `Theorem hazard_not_barrier_safe` | done | `~ barrier_safe hazard_vary [] hazard` — constructive counterexample: erase_warp traces `[]` vs `[EvBarrier]` differ |
+| `coqchk` | passes | 0 new axioms; `Print Assumptions` closed under global context |
+
+**Design note (F-04)**: This is the boundary case of `check_env_sound_core` (T3-S4). That theorem requires `core_frag e = true`, which excludes `EReturn` (and `ESuperstep`) precisely because the checker's EReturn transparency (`check_env m env (EReturn e) = check_env m env e`, mirroring `Sarek_convergence.ml` TEReturn) is unsound at kernel granularity: a thread-varying early return that skips a later barrier passes the static check yet diverges the barrier trace across threads. `hazard_not_barrier_safe` makes the residual gap explicit and constructive rather than leaving it implicit in the `core_frag` precondition. The false negative is real in the abstract model; whether it is reachable in real Sarek kernels depends on whether a barrier can follow an early return within the same superstep — see F-04.
+
 ## Test intensity
 
 - **Conformance**: `test/test_convergence_conformance.ml` — 17 properties (`test_convergence_conformance`), 1000–2000 tests each — **17/17 GREEN** (2 new F-02 env-threaded properties added T2-F02; 1 new randomized warp property added T2-WARP+; 1 new return_barrier_skip_safe property added T2-RETURN; 3 new dedicated ESuperstep properties added T1A-CONF: superstep_outer_diverged_error, superstep_no_entry_error_converged, superstep_body_errors_propagate)
@@ -107,6 +119,7 @@ None.
 |---|---|---|---|
 | F-01 | TESuperstep hard-resets ctx.mode, discarding inherited Diverged context | **RESOLVED** | OCaml fix in PR #181 (merged); Rocq theorem `superstep_outer_diverged_error` in PR #182 |
 | F-02 | is_thread_varying is binding-blind — let-aliased thread-varying values not propagated | **RESOLVED (formal)** | OCaml fix in PR #181 (merged); Rocq env-threaded model in T2-F02: `Env`, `is_varying_in_env`, `check_env`, 3 new theorems |
+| F-04 | EReturn transparency is a kernel-granularity false negative — varying early return skipping a later barrier passes `check_env` but is not `barrier_safe` | **OPEN (formal counterexample)** | Classification `a'` (spec/checker models the real TEReturn transparency); Rocq counterexample `hazard_not_barrier_safe` in T3-S5; reachability in real kernels pending |
 
 See `findings/DIVERGENCE_FINDINGS.md` for full descriptions.
 
@@ -130,7 +143,7 @@ None yet.
 
 ```
 Resume ConvergenceSafety (apparatus v1.2.1, grade A).
-State: 20/20 theorems proven in ConvergenceSpec.v + 13 theorems/defs in ConvergenceSemantics.v (T3-S1..S4), 0 admits, 0 axioms, coqchk passes. T3-S4 complete.
+State: 20/20 theorems proven in ConvergenceSpec.v + 18 theorems/defs in ConvergenceSemantics.v (T3-S1..S5), 0 admits, 0 axioms, coqchk passes. T3-S5 complete.
 Conformance: 17/17 green. Extraction: 7/7 green. Live CMBT: 10/10 green.
 F-01 RESOLVED (OCaml + Rocq). F-02 RESOLVED (OCaml + Rocq env-threaded model).
 F-03 (WarpConvergence) RESOLVED (Rocq: EWarpPoint/WarpError/check_warp/warp_diverged_error/warp_mode_monotone/warp_varying_if_flags; documented in findings/DIVERGENCE_FINDINGS.md).
@@ -142,6 +155,8 @@ T3-S2 RESOLVED (ConvergenceSemantics.v: env_agrees, is_strongly_uniform, not_var
 T3-S3 RESOLVED (ConvergenceSemantics.v: no_barrier_event, superstep_free, barrier_free_no_barriers, diverged_clean_no_barriers; 0 admits, 0 axioms, coqchk passes).
 T3-S4 RESOLVED (ConvergenceSemantics.v: core_frag, erase_warp, barrier_safe, eval_check_uniform, check_env_sound_core; 0 admits, 0 axioms, coqchk passes).
   KEY DESIGN: check_env_sound_core proved via combined eval_check_uniform lemma (simultaneous Part A barrier-trace + Part B outcome uniformity by fuel induction).
-Next: T3-S5 (EReturn residual-divergence verdict — expected new finding F-04).
+T3-S5 RESOLVED (ConvergenceSemantics.v: hazard, hazard_vary, hazard_checker_blind, hazard_eval_thread0/1, hazard_not_barrier_safe; new finding F-04; 0 admits, 0 axioms, coqchk passes).
+  KEY FINDING (F-04): EReturn transparency is a kernel-granularity false negative — hazard ESeq[EIf EVary (EReturn ELit) ELit; EBarrier] passes check_env Converged [] = [] but is NOT barrier_safe (thread 0 returns early trace [], thread 1 reaches barrier trace [EvBarrier]). This is the boundary case excluded by the core_frag precondition of check_env_sound_core.
+Next: T3-S6 (per T3-SEMANTIC breakdown).
 Run /formal-check before any lock or milestone.
 ```

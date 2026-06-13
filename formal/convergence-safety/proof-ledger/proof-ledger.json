@@ -338,13 +338,77 @@
       "source": "theories/ConvergenceSemantics.v",
       "type": "check_env_sound_core : forall (vary_val : tid -> value) (env : Env) (e : expr), core_frag e = true -> check_env Converged env e = [] -> barrier_safe vary_val env e",
       "notes": "Main T3-S4 theorem: checker soundness for the core fragment; proved as a one-liner via proj1 (eval_check_uniform vary_val fuel)"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.hazard",
+      "status": "DEFINITION",
+      "tier": "T3",
+      "subtask": "T3-S5",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "notes": "F-04 hazard term: ESeq [EIf EVary (EReturn ELit) ELit; EBarrier] — thread-varying early return guarding a later barrier"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.hazard_vary",
+      "status": "DEFINITION",
+      "tier": "T3",
+      "subtask": "T3-S5",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "notes": "Concrete thread-varying witness for F-04: vary_val 0 = 1 (early return), vary_val (S _) = 0 (fall through to barrier)"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.hazard_checker_blind",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "T3-S5",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "hazard_checker_blind : check_env Converged [] hazard = []",
+      "notes": "F-04: the static checker reports no error on hazard (by reflexivity) — EReturn transparency + Converged-mode EBarrier cleanliness"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.hazard_eval_thread0",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "T3-S5",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "hazard_eval_thread0 : eval hazard_vary 6 0 [] hazard = Some (ORet 0, [])",
+      "notes": "F-04 witness thread 0: takes the early return, barrier never reached, empty trace (by reflexivity)"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.hazard_eval_thread1",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "T3-S5",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "hazard_eval_thread1 : eval hazard_vary 6 1 [] hazard = Some (ONorm 0, [EvBarrier])",
+      "notes": "F-04 witness thread 1: falls through to the barrier, trace [EvBarrier] (by reflexivity)"
+    },
+    {
+      "name": "ConvergenceSpec.ConvergenceSemantics.hazard_not_barrier_safe",
+      "status": "PROVEN",
+      "tier": "T3",
+      "subtask": "T3-S5",
+      "admits": 0,
+      "axioms": [],
+      "source": "theories/ConvergenceSemantics.v",
+      "type": "hazard_not_barrier_safe : ~ barrier_safe hazard_vary [] hazard",
+      "notes": "F-04 main theorem: constructive counterexample to barrier safety that check_env accepts (hazard_checker_blind). Threads 0/1 env-agree yet erase_warp traces [] vs [EvBarrier] differ. This is the boundary case excluded by the core_frag precondition of check_env_sound_core (EReturn transparency is a kernel-granularity false negative)"
     }
   ],
   "counts": { "admitted": 0 },
   "summary": {
-    "total": 42,
-    "proven": 36,
-    "definitions": 6,
+    "total": 48,
+    "proven": 40,
+    "definitions": 8,
     "admits": 0,
     "axioms": [],
     "generated": "2026-06-13",

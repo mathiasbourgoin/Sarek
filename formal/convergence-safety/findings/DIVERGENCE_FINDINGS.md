@@ -159,6 +159,87 @@ abstract model and should not be disturbed.
 
 ---
 
+### F-04 — `EReturn` transparency is a kernel-granularity false negative (varying early return skipping a later barrier)
+
+| Field | Value |
+|---|---|
+| ID | F-04 |
+| Status | OPEN |
+| Sub-status | Formal counterexample (constructive) |
+| Classification | `a'` — spec/checker gap; the abstract model faithfully mirrors the real `TEReturn` transparency, so the false negative is inherited from the implementation by construction |
+| Source | `sarek/ppx/Sarek_convergence.ml` TEReturn handling; `theories/ConvergenceSpec.v` line 860 (`EReturn e => check_env m env e`) |
+| Regression | (none yet — blocked on SPOC test suite integration; reachability in real kernels pending) |
+
+**Description**: The checker treats `EReturn` as a transparent wrapper:
+`check_env m env (EReturn e) = check_env m env e` (ConvergenceSpec.v line 860),
+mirroring the real `Sarek_convergence.ml` `TEReturn` handling and the
+`return_barrier_skip_safe` theorem (`check m (EReturn e) = check m e`). The
+checker therefore reasons about an early return purely through its inner
+expression and never accounts for the control-flow effect of the return itself:
+that the early-returning thread skips every subsequent statement, including any
+later barrier.
+
+This is sound at the granularity at which the checker reasons (an `EReturn`
+inside an `EIf` branch under a varying condition does not introduce a barrier of
+its own), but it is **unsound at kernel granularity**: when a thread-varying
+early return is followed — in sequence — by a barrier, the threads that take the
+early return never reach that barrier while the threads that fall through do.
+The barrier traces diverge, yet the checker reports no error.
+
+The minimal hazard term (T3-S5, `theories/ConvergenceSemantics.v`):
+
+```coq
+Definition hazard : expr :=
+  ESeq [EIf EVary (EReturn ELit) ELit; EBarrier].
+```
+
+- `EIf EVary (EReturn ELit) ELit` branches on a thread-varying condition.
+  When `EVary` evaluates to 0 the `e_else = ELit` branch is taken (fall through);
+  when nonzero the `e_then = EReturn ELit` branch is taken (early return).
+- The early-return branch yields `ORet`, which short-circuits the `ESeq`, so the
+  subsequent `EBarrier` is never evaluated for those threads (trace `[]`).
+- The fall-through branch yields `ONorm`, letting `ESeq` reach `EBarrier`
+  (trace `[EvBarrier]`).
+- Because the `EReturn` sits under a varying `EIf` condition (whose body is
+  checked transparently) and `Converged`-mode `EBarrier` is clean, the checker
+  reports `[]`.
+
+**Formal results** (`theories/ConvergenceSemantics.v`, 0 admits, 0 axioms, coqchk passes):
+
+- `Lemma hazard_checker_blind : check_env Converged [] hazard = []` — the checker
+  is blind (by `reflexivity`).
+- `Definition hazard_vary (n : tid) := match n with O => 1 | S _ => 0 end` —
+  concrete thread-varying witness.
+- `Lemma hazard_eval_thread0 : eval hazard_vary 6 0 [] hazard = Some (ORet 0, [])`
+  — thread 0 takes the early return; barrier never reached; empty trace.
+- `Lemma hazard_eval_thread1 : eval hazard_vary 6 1 [] hazard = Some (ONorm 0, [EvBarrier])`
+  — thread 1 falls through to the barrier; one `EvBarrier` event.
+- `Theorem hazard_not_barrier_safe : ~ barrier_safe hazard_vary [] hazard` —
+  threads 0 and 1 trivially env-agree on the empty environment, yet their
+  `erase_warp` barrier traces (`[]` vs `[EvBarrier]`) differ, so the hazard is
+  not `barrier_safe`. Combined with `hazard_checker_blind`, this is a formal
+  counterexample to the checker being sound on terms containing `EReturn`.
+
+**Abstract model impact**: F-04 makes explicit the residual gap that
+`check_env_sound_core` (T3-S4) leaves implicit in its precondition. That theorem
+proves soundness only for the `core_frag` fragment, which by definition excludes
+`EReturn` (and `ESuperstep`); see `core_frag` `EReturn _ => false`
+(ConvergenceSemantics.v ~line 2302/2403). `hazard_not_barrier_safe` demonstrates
+that this exclusion is necessary, not merely a proof convenience: the checker
+genuinely accepts a non-barrier-safe term once `EReturn` appears between a
+varying branch and a barrier.
+
+Closing F-04 would require the checker to model early-return control flow at
+sequence granularity — e.g. when an `EReturn` is reachable under a varying
+condition, every barrier sequenced after it must be flagged. This is a strictly
+stronger analysis than the current transparent `EReturn` handling and is left as
+a follow-up (a `b`-class fix in `Sarek_convergence.ml` mirrored by a spec
+extension). Whether the hazard pattern (a barrier sequenced after a varying
+early return within the same superstep) is reachable in real Sarek kernels is
+the open reachability question for this finding.
+
+---
+
 ## Resolved findings
 
 ### F-03 — `WarpConvergence` error class not modeled (warp-collective calls in diverged flow)

@@ -1,8 +1,8 @@
 # ConvergenceSafety — Work Plan
 
-**Last updated**: 2026-06-13 (tick 8 — T3-S4 done; currentTask = T3-S5)
+**Last updated**: 2026-06-13 (tick 9 — T3-S5 done, F-04 filed; currentTask = T3-S6)
 **Apparatus version**: 1.2.1
-**Phase**: T3-SEMANTIC (full ladder approved; T3-S5 is current task)
+**Phase**: T3-SEMANTIC (full ladder approved; T3-S6 is current task)
 
 ---
 
@@ -21,7 +21,7 @@
 | T3-S2 | Uniformity soundness of `is_varying_in_env` (semantic grounding of EVary) | T3 | **done** (ConvergenceSemantics.v: env_agrees + not_varying_uniform + closed_uniform; 27 theorems, 0 admits, 0 axioms; 2026-06-13) | T3-S1 |
 | T3-S3 | Trace silence of barrier-free expressions | T3 | **done** (ConvergenceSemantics.v: no_barrier_event + superstep_free + barrier_free_no_barriers + diverged_clean_no_barriers; 33 theorems, 0 admits, 0 axioms; commit af9f6b81354e7c6d7c5779c273315bbd6a295eff; 2026-06-13) | T3-S1 |
 | T3-S4 | Core semantic soundness of `check_env` (trace-uniformity theorem) | T3 | **done** (ConvergenceSemantics.v: core_frag + eval_check_uniform + check_env_sound_core; 36 proven, 6 defs, 0 admits, 0 axioms; 2026-06-13) | T3-S2, T3-S3 |
-| T3-S5 | EReturn residual-divergence verdict (formal counterexample or proof; expected F-04) | T3 | open | T3-S4 |
+| T3-S5 | EReturn residual-divergence verdict (formal counterexample or proof; expected F-04) | T3 | **done** (ConvergenceSemantics.v: hazard + hazard_vary + hazard_checker_blind + hazard_eval_thread0/1 + hazard_not_barrier_safe; F-04 filed; 40 proven, 8 defs, 0 admits, 0 axioms; 2026-06-13) | T3-S4 |
 | T3-S6 | ESuperstep semantic grounding (implicit-barrier event; semantic F-01) | T3 | open | T3-S4 |
 | T3-S7 | Warp-collective semantic soundness (`check_warp` vs warp-granular traces) | T3 | open | T3-S4 |
 | T3-S8 | Extraction + differential conformance for the semantics (CMBT closure) | T3 | open | T3-S5 |
@@ -31,19 +31,24 @@
 
 ## Current task
 
-**T3-S5 — current task.**
+**T3-S6 — current task.**
 
-T3-S4 done (2026-06-13): ConvergenceSemantics.v extended with core_frag (Fixpoint,
-excludes ESuperstep/EReturn), erase_warp (Definition, projects trace to EvBarrier only),
-barrier_safe (Definition, erase_warp equality for all env-agreeing thread pairs),
-eval_check_uniform (Lemma, combined Part A barrier-trace + Part B outcome uniformity by
-fuel induction), check_env_sound_core (Theorem, one-liner via proj1 eval_check_uniform);
-36 proven, 6 defs, 0 admits, 0 axioms.
-Design note: barrier_safe uses erase_warp equality (not full trace equality) so EWarpPoint
-warp-collective events are tolerated; the simultaneous Part A/B induction is the "new
-technique" cited in the T3-S4 plan as the reason for L effort.
+T3-S5 done (2026-06-13, tick 9): ConvergenceSemantics.v extended with
+hazard := ESeq [EIf EVary (EReturn ELit) ELit; EBarrier] (Definition),
+hazard_vary (Definition, concrete witness: vary_val 0 = 1, vary_val (S _) = 0),
+hazard_checker_blind (Lemma, check_env Converged [] hazard = [] by reflexivity),
+hazard_eval_thread0/1 (Lemmas, eval by reflexivity: thread 0 → (ORet 0, []),
+thread 1 → (ONorm 0, [EvBarrier])), hazard_not_barrier_safe (Theorem,
+~ barrier_safe hazard_vary [] hazard); 40 proven, 8 defs, 0 admits, 0 axioms, coqchk passes.
+F-04 filed in findings/DIVERGENCE_FINDINGS.md (OPEN, class a').
+Design note: T3-S5 is the constructive boundary case of T3-S4 — it shows the core_frag
+precondition of check_env_sound_core (which excludes EReturn) is necessary, not a proof
+convenience. EReturn transparency is a kernel-granularity false negative: a thread-varying
+early return sequenced before a barrier passes the checker but diverges the barrier trace.
+The proofs are computations on concrete terms (reflexivity for the checker and both eval
+witnesses; one discriminate for the negation), leaning on the T3-S1 ORet ESeq short-circuit.
 
-Current task: T3-S5 — EReturn residual-divergence verdict (formal counterexample or proof; expected F-04).
+Current task: T3-S6 — ESuperstep semantic grounding (implicit-barrier event; semantic F-01).
 Blocked-by T3-S4 is resolved.
 
 ---
@@ -314,6 +319,7 @@ global decision 4 and is recorded as the T3 trust boundary.
 
 ## Workflow notes
 
+- Tick 0 (2026-06-13, new orchestrator session): All tasks through T3-S4 confirmed DONE per STATUS.md (37 proven items, 0 admits, 0 axioms, coqchk passes; conformance 17/17 green, extraction 7/7 green, live 10/10 green). No open PRs (gh returns []). DOCS-SYNC clean. currentTask = T3-S5 (unblocked — T3-S4 done, T3-S4 the only blocker).
 - Tick 8 (2026-06-13): T3-S4 confirmed DONE. ConvergenceSemantics.v extended with
   core_frag, erase_warp, barrier_safe, eval_check_uniform (combined Part A/B fuel induction),
   check_env_sound_core; 36 proven, 6 defs, 0 admits, 0 axioms. Key design: barrier_safe uses
