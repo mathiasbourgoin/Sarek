@@ -139,6 +139,68 @@ let is_warp_convergence_ref (ref : intrinsic_ref) : bool =
   | CorePrimitiveRef name ->
       Sarek_core_primitives.is_warp_convergence_point name
 
+(** True if texpr e contains a TEReturn reachable on some execution path *)
+let rec has_reachable_return (e : texpr) : bool =
+  match e.te with
+  | TEReturn _ -> true
+  | TEIf (_, t, else_opt) -> (
+      has_reachable_return t
+      || match else_opt with Some e -> has_reachable_return e | None -> false)
+  | TESeq es -> List.exists has_reachable_return es
+  | TELet (_, _, v, b) | TELetMut (_, _, v, b) ->
+      has_reachable_return v || has_reachable_return b
+  | TEWhile (_, b) -> has_reachable_return b
+  | TEFor (_, _, _, _, _, b) -> has_reachable_return b
+  | TEMatch (_, cases) ->
+      List.exists (fun (_, e) -> has_reachable_return e) cases
+  | TESuperstep (_, _, body, cont) ->
+      has_reachable_return body || has_reachable_return cont
+  | TEOpen (_, body) -> has_reachable_return body
+  | TELetRec (_, _, _, fn_body, cont) ->
+      has_reachable_return fn_body || has_reachable_return cont
+  | _ -> false
+
+(** True if e contains a TEReturn that is reachable under a thread-varying
+    condition. Such a return causes SOME threads (those that take the varying
+    branch) to exit early, while other threads continue — creating an implicit
+    divergence point at every subsequent barrier in the enclosing sequence. *)
+let rec has_varying_return (varying_env : StringSet.t) (e : texpr) : bool =
+  match e.te with
+  | TEIf (cond, t, else_opt) -> (
+      if is_thread_varying_env varying_env cond then
+        (* Under a varying condition: any return in branches is a varying return *)
+        has_reachable_return t
+        ||
+        match else_opt with
+        | Some e -> has_reachable_return e
+        | None -> false
+      else
+        (* Non-varying condition: recurse with same env *)
+        has_varying_return varying_env t
+        ||
+        match else_opt with
+        | Some e -> has_varying_return varying_env e
+        | None -> false)
+  | TESeq es -> List.exists (has_varying_return varying_env) es
+  | TELet (name, _, v, b) | TELetMut (name, _, v, b) ->
+      let env' =
+        if is_thread_varying_env varying_env v then
+          StringSet.add name varying_env
+        else varying_env
+      in
+      has_varying_return varying_env v || has_varying_return env' b
+  | TEMatch (scrut, cases) ->
+      if is_thread_varying_env varying_env scrut then
+        List.exists (fun (_, e) -> has_reachable_return e) cases
+      else List.exists (fun (_, e) -> has_varying_return varying_env e) cases
+  | TEWhile (cond, b) ->
+      has_varying_return varying_env cond || has_varying_return varying_env b
+  | TEFor (_, _, lo, hi, _, b) ->
+      has_varying_return varying_env lo
+      || has_varying_return varying_env hi
+      || has_varying_return varying_env b
+  | _ -> false
+
 (** Collect errors from convergence analysis *)
 let rec check_expr ctx (te : texpr) : Sarek_error.error list =
   match te.te with
@@ -222,7 +284,21 @@ let rec check_expr ctx (te : texpr) : Sarek_error.error list =
         else ctx
       in
       value_errors @ check_expr ctx' body
-  | TESeq es -> List.concat_map (check_expr ctx) es
+  | TESeq es ->
+      (* F-04 fix: track whether a preceding statement can produce a varying
+         early return. If so, some threads have exited; subsequent barriers are
+         reached only by threads that fell through, making them divergence
+         points. *)
+      let rec check_seq ctx = function
+        | [] -> []
+        | e :: rest ->
+            let errors = check_expr ctx e in
+            let ctx' =
+              if has_varying_return ctx.varying_vars e then diverge ctx else ctx
+            in
+            errors @ check_seq ctx' rest
+      in
+      check_seq ctx es
   | TERecord (_, fields) ->
       List.concat_map (fun (_, e) -> check_expr ctx e) fields
   | TEConstr (_, _, arg) -> (
