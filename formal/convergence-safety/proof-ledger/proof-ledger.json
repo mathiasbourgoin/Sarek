@@ -1,417 +1,554 @@
 {
-  "schema": 1,
-  "rocq_version": "9.1.1",
-  "anchors": [
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.merge_dim_comm",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "merge_dim_comm : forall a b : dim_usage, merge_dim_usage a b = merge_dim_usage b a"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.merge_dim_assoc",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "merge_dim_assoc : forall a b c : dim_usage, merge_dim_usage a (merge_dim_usage b c) = merge_dim_usage (merge_dim_usage a b) c"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.merge_dim_idempotent",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "merge_dim_idempotent : forall a : dim_usage, merge_dim_usage a a = a"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.merge_dim_empty_r",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "merge_dim_empty_r : forall a : dim_usage, merge_dim_usage a empty_dim_usage = a"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.merge_dim_empty_l",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "merge_dim_empty_l : forall a : dim_usage, merge_dim_usage empty_dim_usage a = a"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.check_seq_hom",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "check_seq_hom : forall (m : exec_mode) (es1 es2 : list expr), check m (ESeq (es1 ++ es2)) = (check m (ESeq es1) ++ check m (ESeq es2))%list"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.diverged_clean_iff_barrier_free",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "diverged_clean_iff_barrier_free : forall e : expr, check Diverged e = nil <-> barrier_free e = true"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.mode_monotone",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "mode_monotone : forall e : expr, List.incl (check Converged e) (check Diverged e)"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.not_varying_converged_clean",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "not_varying_converged_clean : forall e : expr, is_varying e = false -> check Converged e = nil"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.cdcf_check_agreement",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "cdcf_check_agreement : forall e : expr, has_diverging_cf e = false -> check Converged e = nil"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.varying_if_flags_barriers",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "varying_if_flags_barriers : forall (cond then_ else_ : expr) (ctx : exec_mode), is_varying cond = true -> barrier_free then_ = false -> check ctx (EIf cond then_ else_) <> nil"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.superstep_outer_diverged_error",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "superstep_outer_diverged_error : forall body cont : expr, check Diverged (ESuperstep false body cont) <> nil"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.env_lookup_extend_same",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "env_lookup_extend_same : forall (env : Env) (x : nat) (v : bool), env_lookup (env_extend env x v) x = v"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.env_let_alias_varying",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "env_let_alias_varying : forall (env : Env) (x : nat) (v b : expr), is_varying_in_env env v = true -> is_varying_in_env (env_extend env x true) b = true -> is_varying_in_env env (ELet x v b) = true"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.env_var_diverged_clean",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "env_var_diverged_clean : forall (env : Env) (x : nat), check_env Diverged env (EVar x) = nil"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.env_check_let_alias_catches",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "env_check_let_alias_catches : forall (env : Env) (x : nat) (v : expr), is_varying_in_env env v = true -> check_env Converged env (ELet x v (EIf (EVar x) EBarrier ELit)) <> nil"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.warp_diverged_error",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "warp_diverged_error : check_warp Diverged EWarpPoint <> nil"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.warp_mode_monotone",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "warp_mode_monotone : forall e : expr, List.incl (check_warp Converged e) (check_warp Diverged e)"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.warp_varying_if_flags",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "warp_varying_if_flags : forall el : expr, check_warp Converged (EIf EVary EWarpPoint el) <> nil"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSpec.return_barrier_skip_safe",
-      "status": "PROVEN",
-      "assumptions": [],
-      "type": "return_barrier_skip_safe : forall (m : exec_mode) (e : expr), check m (EReturn e) = check m e"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.env_agrees",
-      "status": "DEFINITION",
-      "tier": "T3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "notes": "Uniform-variable agreement predicate between two venvs: all non-varying vars in env map to the same value in both rhos"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.not_varying_uniform",
-      "status": "PROVEN",
-      "tier": "T3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "not_varying_uniform : forall (vary_val : tid -> value) (fuel : nat) (env : Env) (e : expr) (t1 t2 : tid) (rho1 rho2 : venv), env_agrees env rho1 rho2 = true -> is_strongly_uniform env e = true -> eval vary_val fuel t1 rho1 e = eval vary_val fuel t2 rho2 e"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.not_varying_uniform_args",
-      "status": "PROVEN",
-      "tier": "T3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "not_varying_uniform_args : forall (vary_val : tid -> value) (fuel : nat) (env : Env) (es : list expr) (t1 t2 : tid) (rho1 rho2 : venv), env_agrees env rho1 rho2 = true -> forallb (is_strongly_uniform env) es = true -> eval_args vary_val fuel t1 rho1 es = eval_args vary_val fuel t2 rho2 es"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.is_strongly_uniform_impl_is_not_varying",
-      "status": "PROVEN",
-      "tier": "T3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "is_strongly_uniform_impl_is_not_varying : forall (env : Env) (e : expr), is_strongly_uniform env e = true -> is_varying_in_env env e = false"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.var_free_env_irrelevant",
-      "status": "PROVEN",
-      "tier": "T3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "var_free_env_irrelevant : forall (e : expr) (env1 env2 : Env), is_var_free e = true -> is_strongly_uniform env1 e = is_strongly_uniform env2 e"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.is_strongly_uniform_env_irrelevant",
-      "status": "PROVEN",
-      "tier": "T3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "is_strongly_uniform_env_irrelevant : forall (e : expr) (env1 env2 : Env), is_var_free e = true -> is_strongly_uniform env1 e = is_strongly_uniform env2 e",
-      "notes": "Alias name for var_free_env_irrelevant in some proof contexts"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.var_free_is_strongly_uniform_empty",
-      "status": "PROVEN",
-      "tier": "T3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "var_free_is_strongly_uniform_empty : forall (e : expr), is_var_free e = true -> is_varying e = false -> is_strongly_uniform [] e = true"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.closed_uniform",
-      "status": "PROVEN",
-      "tier": "T3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "closed_uniform : forall (e : expr) (vary_val : tid -> value) (fuel : nat) (t1 t2 : tid) (rho1 rho2 : venv), is_var_free e = true -> is_varying e = false -> eval vary_val fuel t1 rho1 e = eval vary_val fuel t2 rho2 e"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.no_barrier_event",
-      "status": "DEFINITION",
-      "tier": "T3",
-      "subtask": "T3-S3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "notes": "Boolean predicate on a trace: true iff the trace contains no EvBarrier event"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.superstep_free",
-      "status": "DEFINITION",
-      "tier": "T3",
-      "subtask": "T3-S3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "notes": "Structural Boolean predicate on expr: true iff e contains no ESuperstep constructor"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.eval_seq_from",
-      "status": "DEFINITION",
-      "tier": "T3",
-      "subtask": "T3-S3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "notes": "Helper definition/fixpoint for ESeq inner loop used in eval_seq_no_barrier"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.eval_args_from",
-      "status": "DEFINITION",
-      "tier": "T3",
-      "subtask": "T3-S3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "notes": "Helper definition/fixpoint for EApp inner loop used in eval_args_no_barrier"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.no_barrier_app",
-      "status": "PROVEN",
-      "tier": "T3",
-      "subtask": "T3-S3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "no_barrier_app : forall (tr1 tr2 : trace), no_barrier_event tr1 = true -> no_barrier_event tr2 = true -> no_barrier_event (tr1 ++ tr2) = true"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.for_loop_fixed_no_barrier",
-      "status": "PROVEN",
-      "tier": "T3",
-      "subtask": "T3-S3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "for_loop_fixed_no_barrier : EFor inner loop helper — no EvBarrier in loop traces when body is barrier_free and superstep_free"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.eval_seq_no_barrier",
-      "status": "PROVEN",
-      "tier": "T3",
-      "subtask": "T3-S3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "eval_seq_no_barrier : ESeq inner loop helper — no EvBarrier in concatenated traces when each element is barrier_free and superstep_free"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.eval_args_no_barrier",
-      "status": "PROVEN",
-      "tier": "T3",
-      "subtask": "T3-S3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "eval_args_no_barrier : EApp inner loop helper — no EvBarrier in argument traces when each argument is barrier_free and superstep_free"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.barrier_free_no_barriers",
-      "status": "PROVEN",
-      "tier": "T3",
-      "subtask": "T3-S3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "barrier_free_no_barriers : forall (vary_val : tid -> value) (fuel : nat) (t : tid) (rho : venv) (e : expr) (o : outcome) (tr : trace), barrier_free e = true -> superstep_free e = true -> eval vary_val fuel t rho e = Some (o, tr) -> no_barrier_event tr = true"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.diverged_clean_no_barriers",
-      "status": "PROVEN",
-      "tier": "T3",
-      "subtask": "T3-S3",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "diverged_clean_no_barriers : forall (vary_val : tid -> value) (fuel : nat) (t : tid) (rho : venv) (e : expr) (o : outcome) (tr : trace), check Diverged e = nil -> superstep_free e = true -> eval vary_val fuel t rho e = Some (o, tr) -> no_barrier_event tr = true",
-      "notes": "Corollary of barrier_free_no_barriers via diverged_clean_iff_barrier_free; the T1 flagship theorem acquires semantic content"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.core_frag",
-      "status": "DEFINITION",
-      "tier": "T3",
-      "subtask": "T3-S4",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "notes": "Fixpoint Boolean predicate on expr: true iff e contains no ESuperstep and no EReturn (the fragment on which check_env_sound_core is first proved)"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.eval_check_uniform",
-      "status": "PROVEN",
-      "tier": "T3",
-      "subtask": "T3-S4",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "eval_check_uniform : forall (vary_val : tid -> value) (fuel : nat), (Part A) forall env e t1 t2 rho1 rho2 o1 o2 tr1 tr2, core_frag e = true -> env_agrees env rho1 rho2 -> check_env Converged env e = [] -> eval vary_val fuel t1 rho1 e = Some (o1, tr1) -> eval vary_val fuel t2 rho2 e = Some (o2, tr2) -> erase_warp tr1 = erase_warp tr2 /\\ (Part B) forall env e t1 t2 rho1 rho2 o1 o2 tr1 tr2, core_frag e = true -> env_agrees env rho1 rho2 -> is_varying_in_env env e = false -> check_env Converged env e = [] -> eval vary_val fuel t1 rho1 e = Some (o1, tr1) -> eval vary_val fuel t2 rho2 e = Some (o2, tr2) -> o1 = o2",
-      "notes": "Combined induction on fuel establishing Part A (barrier-trace equality) and Part B (outcome equality for non-varying expressions); simultaneous proof needed because EIf/EWhile non-varying cases of Part A depend on Part B for condition equality"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.check_env_nonvarying_uniform",
-      "status": "PROVEN",
-      "tier": "T3",
-      "subtask": "T3-S4",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "check_env_nonvarying_uniform_seq / check_env_nonvarying_uniform_args : auxiliary lemmas that when check_env Converged env es = [] and all elements are non-varying and core_frag, the eval_seq / eval_args loops are identical for any two env-agreeing threads",
-      "notes": "Corollary group bridging the non-varying condition uniformity into the sequence/application inner loops used by eval_check_uniform"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.check_env_sound_core",
-      "status": "PROVEN",
-      "tier": "T3",
-      "subtask": "T3-S4",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "check_env_sound_core : forall (vary_val : tid -> value) (env : Env) (e : expr), core_frag e = true -> check_env Converged env e = [] -> barrier_safe vary_val env e",
-      "notes": "Main T3-S4 theorem: checker soundness for the core fragment; proved as a one-liner via proj1 (eval_check_uniform vary_val fuel)"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.hazard",
-      "status": "DEFINITION",
-      "tier": "T3",
-      "subtask": "T3-S5",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "notes": "F-04 hazard term: ESeq [EIf EVary (EReturn ELit) ELit; EBarrier] — thread-varying early return guarding a later barrier"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.hazard_vary",
-      "status": "DEFINITION",
-      "tier": "T3",
-      "subtask": "T3-S5",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "notes": "Concrete thread-varying witness for F-04: vary_val 0 = 1 (early return), vary_val (S _) = 0 (fall through to barrier)"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.hazard_checker_blind",
-      "status": "PROVEN",
-      "tier": "T3",
-      "subtask": "T3-S5",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "hazard_checker_blind : check_env Converged [] hazard = []",
-      "notes": "F-04: the static checker reports no error on hazard (by reflexivity) — EReturn transparency + Converged-mode EBarrier cleanliness"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.hazard_eval_thread0",
-      "status": "PROVEN",
-      "tier": "T3",
-      "subtask": "T3-S5",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "hazard_eval_thread0 : eval hazard_vary 6 0 [] hazard = Some (ORet 0, [])",
-      "notes": "F-04 witness thread 0: takes the early return, barrier never reached, empty trace (by reflexivity)"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.hazard_eval_thread1",
-      "status": "PROVEN",
-      "tier": "T3",
-      "subtask": "T3-S5",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "hazard_eval_thread1 : eval hazard_vary 6 1 [] hazard = Some (ONorm 0, [EvBarrier])",
-      "notes": "F-04 witness thread 1: falls through to the barrier, trace [EvBarrier] (by reflexivity)"
-    },
-    {
-      "name": "ConvergenceSpec.ConvergenceSemantics.hazard_not_barrier_safe",
-      "status": "PROVEN",
-      "tier": "T3",
-      "subtask": "T3-S5",
-      "admits": 0,
-      "axioms": [],
-      "source": "theories/ConvergenceSemantics.v",
-      "type": "hazard_not_barrier_safe : ~ barrier_safe hazard_vary [] hazard",
-      "notes": "F-04 main theorem: constructive counterexample to barrier safety that check_env accepts (hazard_checker_blind). Threads 0/1 env-agree yet erase_warp traces [] vs [EvBarrier] differ. This is the boundary case excluded by the core_frag precondition of check_env_sound_core (EReturn transparency is a kernel-granularity false negative)"
-    }
-  ],
-  "counts": { "admitted": 0 },
-  "summary": {
-    "total": 48,
-    "proven": 40,
-    "definitions": 8,
-    "admits": 0,
-    "axioms": [],
-    "generated": "2026-06-13",
-    "files": ["theories/ConvergenceSpec.v", "theories/ConvergenceSemantics.v"]
+ "schema": 1,
+ "rocq_version": "9.1.1",
+ "anchors": [
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.merge_dim_comm",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "merge_dim_comm : forall a b : dim_usage, merge_dim_usage a b = merge_dim_usage b a"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.merge_dim_assoc",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "merge_dim_assoc : forall a b c : dim_usage, merge_dim_usage a (merge_dim_usage b c) = merge_dim_usage (merge_dim_usage a b) c"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.merge_dim_idempotent",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "merge_dim_idempotent : forall a : dim_usage, merge_dim_usage a a = a"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.merge_dim_empty_r",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "merge_dim_empty_r : forall a : dim_usage, merge_dim_usage a empty_dim_usage = a"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.merge_dim_empty_l",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "merge_dim_empty_l : forall a : dim_usage, merge_dim_usage empty_dim_usage a = a"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.check_seq_hom",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "check_seq_hom : forall (m : exec_mode) (es1 es2 : list expr), check m (ESeq (es1 ++ es2)) = (check m (ESeq es1) ++ check m (ESeq es2))%list"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.diverged_clean_iff_barrier_free",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "diverged_clean_iff_barrier_free : forall e : expr, check Diverged e = nil <-> barrier_free e = true"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.mode_monotone",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "mode_monotone : forall e : expr, List.incl (check Converged e) (check Diverged e)"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.not_varying_converged_clean",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "not_varying_converged_clean : forall e : expr, is_varying e = false -> check Converged e = nil"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.cdcf_check_agreement",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "cdcf_check_agreement : forall e : expr, has_diverging_cf e = false -> check Converged e = nil"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.varying_if_flags_barriers",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "varying_if_flags_barriers : forall (cond then_ else_ : expr) (ctx : exec_mode), is_varying cond = true -> barrier_free then_ = false -> check ctx (EIf cond then_ else_) <> nil"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.superstep_outer_diverged_error",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "superstep_outer_diverged_error : forall body cont : expr, check Diverged (ESuperstep false body cont) <> nil"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.env_lookup_extend_same",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "env_lookup_extend_same : forall (env : Env) (x : nat) (v : bool), env_lookup (env_extend env x v) x = v"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.env_let_alias_varying",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "env_let_alias_varying : forall (env : Env) (x : nat) (v b : expr), is_varying_in_env env v = true -> is_varying_in_env (env_extend env x true) b = true -> is_varying_in_env env (ELet x v b) = true"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.env_var_diverged_clean",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "env_var_diverged_clean : forall (env : Env) (x : nat), check_env Diverged env (EVar x) = nil"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.env_check_let_alias_catches",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "env_check_let_alias_catches : forall (env : Env) (x : nat) (v : expr), is_varying_in_env env v = true -> check_env Converged env (ELet x v (EIf (EVar x) EBarrier ELit)) <> nil"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.warp_diverged_error",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "warp_diverged_error : check_warp Diverged EWarpPoint <> nil"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.warp_mode_monotone",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "warp_mode_monotone : forall e : expr, List.incl (check_warp Converged e) (check_warp Diverged e)"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.warp_varying_if_flags",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "warp_varying_if_flags : forall el : expr, check_warp Converged (EIf EVary EWarpPoint el) <> nil"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSpec.return_barrier_skip_safe",
+   "status": "PROVEN",
+   "assumptions": [],
+   "type": "return_barrier_skip_safe : forall (m : exec_mode) (e : expr), check m (EReturn e) = check m e"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.env_agrees",
+   "status": "DEFINITION",
+   "tier": "T3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "notes": "Uniform-variable agreement predicate between two venvs: all non-varying vars in env map to the same value in both rhos"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.not_varying_uniform",
+   "status": "PROVEN",
+   "tier": "T3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "not_varying_uniform : forall (vary_val : tid -> value) (fuel : nat) (env : Env) (e : expr) (t1 t2 : tid) (rho1 rho2 : venv), env_agrees env rho1 rho2 = true -> is_strongly_uniform env e = true -> eval vary_val fuel t1 rho1 e = eval vary_val fuel t2 rho2 e"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.not_varying_uniform_args",
+   "status": "PROVEN",
+   "tier": "T3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "not_varying_uniform_args : forall (vary_val : tid -> value) (fuel : nat) (env : Env) (es : list expr) (t1 t2 : tid) (rho1 rho2 : venv), env_agrees env rho1 rho2 = true -> forallb (is_strongly_uniform env) es = true -> eval_args vary_val fuel t1 rho1 es = eval_args vary_val fuel t2 rho2 es"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.is_strongly_uniform_impl_is_not_varying",
+   "status": "PROVEN",
+   "tier": "T3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "is_strongly_uniform_impl_is_not_varying : forall (env : Env) (e : expr), is_strongly_uniform env e = true -> is_varying_in_env env e = false"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.var_free_env_irrelevant",
+   "status": "PROVEN",
+   "tier": "T3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "var_free_env_irrelevant : forall (e : expr) (env1 env2 : Env), is_var_free e = true -> is_strongly_uniform env1 e = is_strongly_uniform env2 e"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.is_strongly_uniform_env_irrelevant",
+   "status": "PROVEN",
+   "tier": "T3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "is_strongly_uniform_env_irrelevant : forall (e : expr) (env1 env2 : Env), is_var_free e = true -> is_strongly_uniform env1 e = is_strongly_uniform env2 e",
+   "notes": "Alias name for var_free_env_irrelevant in some proof contexts"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.var_free_is_strongly_uniform_empty",
+   "status": "PROVEN",
+   "tier": "T3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "var_free_is_strongly_uniform_empty : forall (e : expr), is_var_free e = true -> is_varying e = false -> is_strongly_uniform [] e = true"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.closed_uniform",
+   "status": "PROVEN",
+   "tier": "T3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "closed_uniform : forall (e : expr) (vary_val : tid -> value) (fuel : nat) (t1 t2 : tid) (rho1 rho2 : venv), is_var_free e = true -> is_varying e = false -> eval vary_val fuel t1 rho1 e = eval vary_val fuel t2 rho2 e"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.no_barrier_event",
+   "status": "DEFINITION",
+   "tier": "T3",
+   "subtask": "T3-S3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "notes": "Boolean predicate on a trace: true iff the trace contains no EvBarrier event"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.superstep_free",
+   "status": "DEFINITION",
+   "tier": "T3",
+   "subtask": "T3-S3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "notes": "Structural Boolean predicate on expr: true iff e contains no ESuperstep constructor"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.eval_seq_from",
+   "status": "DEFINITION",
+   "tier": "T3",
+   "subtask": "T3-S3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "notes": "Helper definition/fixpoint for ESeq inner loop used in eval_seq_no_barrier"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.eval_args_from",
+   "status": "DEFINITION",
+   "tier": "T3",
+   "subtask": "T3-S3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "notes": "Helper definition/fixpoint for EApp inner loop used in eval_args_no_barrier"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.no_barrier_app",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "no_barrier_app : forall (tr1 tr2 : trace), no_barrier_event tr1 = true -> no_barrier_event tr2 = true -> no_barrier_event (tr1 ++ tr2) = true"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.for_loop_fixed_no_barrier",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "for_loop_fixed_no_barrier : EFor inner loop helper \u2014 no EvBarrier in loop traces when body is barrier_free and superstep_free"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.eval_seq_no_barrier",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "eval_seq_no_barrier : ESeq inner loop helper \u2014 no EvBarrier in concatenated traces when each element is barrier_free and superstep_free"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.eval_args_no_barrier",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "eval_args_no_barrier : EApp inner loop helper \u2014 no EvBarrier in argument traces when each argument is barrier_free and superstep_free"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.barrier_free_no_barriers",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "barrier_free_no_barriers : forall (vary_val : tid -> value) (fuel : nat) (t : tid) (rho : venv) (e : expr) (o : outcome) (tr : trace), barrier_free e = true -> superstep_free e = true -> eval vary_val fuel t rho e = Some (o, tr) -> no_barrier_event tr = true"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.diverged_clean_no_barriers",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S3",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "diverged_clean_no_barriers : forall (vary_val : tid -> value) (fuel : nat) (t : tid) (rho : venv) (e : expr) (o : outcome) (tr : trace), check Diverged e = nil -> superstep_free e = true -> eval vary_val fuel t rho e = Some (o, tr) -> no_barrier_event tr = true",
+   "notes": "Corollary of barrier_free_no_barriers via diverged_clean_iff_barrier_free; the T1 flagship theorem acquires semantic content"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.core_frag",
+   "status": "DEFINITION",
+   "tier": "T3",
+   "subtask": "T3-S4",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "notes": "Fixpoint Boolean predicate on expr: true iff e contains no ESuperstep and no EReturn (the fragment on which check_env_sound_core is first proved)"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.eval_check_uniform",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S4",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "eval_check_uniform : forall (vary_val : tid -> value) (fuel : nat), (Part A) forall env e t1 t2 rho1 rho2 o1 o2 tr1 tr2, core_frag e = true -> env_agrees env rho1 rho2 -> check_env Converged env e = [] -> eval vary_val fuel t1 rho1 e = Some (o1, tr1) -> eval vary_val fuel t2 rho2 e = Some (o2, tr2) -> erase_warp tr1 = erase_warp tr2 /\\ (Part B) forall env e t1 t2 rho1 rho2 o1 o2 tr1 tr2, core_frag e = true -> env_agrees env rho1 rho2 -> is_varying_in_env env e = false -> check_env Converged env e = [] -> eval vary_val fuel t1 rho1 e = Some (o1, tr1) -> eval vary_val fuel t2 rho2 e = Some (o2, tr2) -> o1 = o2",
+   "notes": "Combined induction on fuel establishing Part A (barrier-trace equality) and Part B (outcome equality for non-varying expressions); simultaneous proof needed because EIf/EWhile non-varying cases of Part A depend on Part B for condition equality"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.check_env_nonvarying_uniform",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S4",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "check_env_nonvarying_uniform_seq / check_env_nonvarying_uniform_args : auxiliary lemmas that when check_env Converged env es = [] and all elements are non-varying and core_frag, the eval_seq / eval_args loops are identical for any two env-agreeing threads",
+   "notes": "Corollary group bridging the non-varying condition uniformity into the sequence/application inner loops used by eval_check_uniform"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.check_env_sound_core",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S4",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "check_env_sound_core : forall (vary_val : tid -> value) (env : Env) (e : expr), core_frag e = true -> check_env Converged env e = [] -> barrier_safe vary_val env e",
+   "notes": "Main T3-S4 theorem: checker soundness for the core fragment; proved as a one-liner via proj1 (eval_check_uniform vary_val fuel)"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.hazard",
+   "status": "DEFINITION",
+   "tier": "T3",
+   "subtask": "T3-S5",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "notes": "F-04 hazard term: ESeq [EIf EVary (EReturn ELit) ELit; EBarrier] \u2014 thread-varying early return guarding a later barrier"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.hazard_vary",
+   "status": "DEFINITION",
+   "tier": "T3",
+   "subtask": "T3-S5",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "notes": "Concrete thread-varying witness for F-04: vary_val 0 = 1 (early return), vary_val (S _) = 0 (fall through to barrier)"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.hazard_checker_blind",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S5",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "hazard_checker_blind : check_env Converged [] hazard = []",
+   "notes": "F-04: the static checker reports no error on hazard (by reflexivity) \u2014 EReturn transparency + Converged-mode EBarrier cleanliness"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.hazard_eval_thread0",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S5",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "hazard_eval_thread0 : eval hazard_vary 6 0 [] hazard = Some (ORet 0, [])",
+   "notes": "F-04 witness thread 0: takes the early return, barrier never reached, empty trace (by reflexivity)"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.hazard_eval_thread1",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S5",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "hazard_eval_thread1 : eval hazard_vary 6 1 [] hazard = Some (ONorm 0, [EvBarrier])",
+   "notes": "F-04 witness thread 1: falls through to the barrier, trace [EvBarrier] (by reflexivity)"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.hazard_not_barrier_safe",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S5",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "hazard_not_barrier_safe : ~ barrier_safe hazard_vary [] hazard",
+   "notes": "F-04 main theorem: constructive counterexample to barrier safety that check_env accepts (hazard_checker_blind). Threads 0/1 env-agree yet erase_warp traces [] vs [EvBarrier] differ. This is the boundary case excluded by the core_frag precondition of check_env_sound_core (EReturn transparency is a kernel-granularity false negative)"
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.core_frag_ss",
+   "status": "DEFINITION",
+   "tier": "T3",
+   "subtask": "T3-S6",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "core_frag_ss : expr -> bool",
+   "notes": "Enlarged core fragment: core_frag plus ESuperstep false b c (clause negb dv && core_frag_ss b && core_frag_ss c). EReturn still excluded. dv=true is a trust boundary."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.core_frag_impl_ss",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S6",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "core_frag_impl_ss : forall e, core_frag e = true -> core_frag_ss e = true",
+   "notes": "Enlarged fragment subsumes the core fragment."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.core_frag_ss_no_ret",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S6",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "core_frag_ss_no_ret : forall vary_val fuel e t rho v tr, core_frag_ss e = true -> eval vary_val fuel t rho e = Some (ORet v, tr) -> False",
+   "notes": "No core_frag_ss expression returns ORet; superstep body cannot return, cont outcome ORet-free by induction."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.eval_while_exits_immediately_ss",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S6",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "eval_while_exits_immediately_ss : forall vary_val fuel ec eb t rho o tr, core_frag_ss (EWhile ec eb) = true -> eval vary_val fuel t rho (EWhile ec eb) = Some (o, tr) -> eval vary_val (Nat.pred fuel) t rho ec = Some (ONorm 0, tr) /\\ o = ONorm 0",
+   "notes": "core_frag_ss analogue of eval_while_exits_immediately."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.core_frag_ss_barrier_free_superstep_free",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S6",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "core_frag_ss_barrier_free_superstep_free : forall e, core_frag_ss e = true -> barrier_free e = true -> superstep_free e = true",
+   "notes": "A barrier-free core_frag_ss expression contains no superstep (barrier_free of dv=false superstep is false; core_frag_ss admits only dv=false)."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.check_env_diverged_no_barriers_ss",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S6",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "check_env_diverged_no_barriers_ss : forall vary_val env e, core_frag_ss e = true -> check_env Diverged env e = [] -> forall fuel t rho o tr, eval vary_val fuel t rho e = Some (o, tr) -> no_barrier_event tr = true",
+   "notes": "Resolves the T3-S3 superstep_free side condition over core_frag_ss: Diverged-clean core_frag_ss expressions are barrier-silent."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.eval_check_uniform_ss",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S6",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "eval_check_uniform_ss : forall vary_val fuel, (Part A barrier-trace equality) /\\ (Part B outcome equality) over core_frag_ss",
+   "notes": "Combined barrier/outcome uniformity by fuel induction over the enlarged fragment; new ESuperstep case emits implicit boundary [EvBarrier] uniformly on all threads."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.check_env_sound_superstep",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S6",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "check_env_sound_superstep : forall vary_val env e, core_frag_ss e = true -> check_env Converged env e = [] -> barrier_safe vary_val env e",
+   "notes": "Soundness of check_env over the enlarged fragment including ESuperstep; runtime grounding of superstep_outer_diverged_error."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.susp_hazard",
+   "status": "DEFINITION",
+   "tier": "T3",
+   "subtask": "T3-S6",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "susp_hazard : expr",
+   "notes": "Witness EIf EVary (ESuperstep false EBarrier ELit) ELit for semantic F-01."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.semantic_f01_flagged",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S6",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "semantic_f01_flagged : check_env Converged [] susp_hazard <> []",
+   "notes": "Env-threaded checker flags susp_hazard."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.semantic_f01_not_barrier_safe",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S6",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "semantic_f01_not_barrier_safe : ~ barrier_safe susp_vary [] susp_hazard",
+   "notes": "susp_hazard not barrier_safe: thread 0 emits [EvBarrier;EvBarrier], thread 1 emits []."
+  },
+  {
+   "name": "ConvergenceSpec.ConvergenceSemantics.semantic_f01_corollary",
+   "status": "PROVEN",
+   "tier": "T3",
+   "subtask": "T3-S6",
+   "admits": 0,
+   "axioms": [],
+   "source": "theories/ConvergenceSemantics.v",
+   "type": "semantic_f01_corollary : check_env Converged [] susp_hazard <> [] /\\ ~ barrier_safe susp_vary [] susp_hazard",
+   "notes": "F-01 BarrierError is a SOUND rejection: susp_hazard is both flagged and genuinely not barrier_safe. Grounds superstep_outer_diverged_error operationally."
   }
+ ],
+ "counts": {
+  "admitted": 0
+ },
+ "summary": {
+  "total": 60,
+  "proven": 50,
+  "definitions": 10,
+  "admits": 0,
+  "axioms": [],
+  "generated": "2026-06-13",
+  "files": [
+   "theories/ConvergenceSpec.v",
+   "theories/ConvergenceSemantics.v"
+  ]
+ }
 }
