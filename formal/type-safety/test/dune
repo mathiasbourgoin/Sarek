@@ -2,4 +2,4 @@
 
 (test
  (name test_type_safety_conformance)
- (libraries type_safety_model))
+ (libraries type_safety_model sarek_frontend qcheck-core qcheck-core.runner))

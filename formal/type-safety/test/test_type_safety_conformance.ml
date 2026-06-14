@@ -1,21 +1,35 @@
 (******************************************************************************)
 (* test_type_safety_conformance.ml
  *
- * Smoke / conformance tests for the extracted TypeSafetyModel.
+ * T1-CMBT differential harness for the Sarek PPX type checker.
  *
- * The Coq spec models a post-unification, simplified type checker over a
- * 3-constructor expression type (ELit / EVar / ELet).  Sarek_typer.infer
- * operates on the full texpr AST, so end-to-end differential comparison is
- * deferred to T2.  This file exercises the extracted model itself.
+ * Two layers:
+ *
+ *   1. Smoke / conformance tests for the extracted TypeSafetyModel — fixed
+ *      expressions exercising the extracted Coq [infer_type] directly.
+ *
+ *   2. REAL differential property: random exprs over the model's covered
+ *      fragment (ELit LInt/LFloat/LBool/LUnit, EVar, ELet) are typed by BOTH
+ *      the extracted Coq model (TypeSafetyModel.infer_type) AND the real
+ *      Sarek_typer.infer (the production inference engine).  We assert the two
+ *      engines agree on (a) success vs. failure and (b) the inferred type.
+ *
+ * The Coq model has its own type universe (TypeSafetyModel.sarek_type) and the
+ * production engine uses Sarek_types.typ.  Both are projected onto a small
+ * normalised type [ncmp] for comparison; only the literal/var/let fragment is
+ * exercised, so the projection is total on the values that actually occur.
  *
  * Note: the extracted model's [string] type is Coq's ascii-encoded String,
- * not OCaml's native string.  A conversion helper is provided so that EVar /
- * ELet tests can be written with ordinary string literals.
+ * not OCaml's native string.  A conversion helper bridges the two.
  ******************************************************************************)
 
 module M = Type_safety_model.TypeSafetyModel
 
-(* ----- helpers -------------------------------------------------------------- *)
+(* Alias for OCaml's native string, captured before [open M] shadows [string]
+   with the Coq-extracted ascii-list [M.string]. *)
+type ostring = string
+
+(* ----- coq-string helpers --------------------------------------------------- *)
 
 (** Convert an OCaml [string] to the Coq-extracted [string] type. Defined before
     [open M] to avoid shadowing OCaml's [String] module. *)
@@ -133,6 +147,223 @@ let test_lookup_first_wins () =
   Printf.printf
     "  lookup_env [x:int32; x:bool] \"x\" = Some TInt32 (first wins) [ok]\n"
 
+(* ===========================================================================
+   T1-CMBT — real differential harness (Coq model  vs  Sarek_typer.infer)
+   ===========================================================================*)
+
+(* --- normalised comparison value --------------------------------------------
+   Both engines emit results in different universes. We project each onto this
+   small type. Only the model-covered fragment can occur, so the projection is
+   total on the values produced by these tests. *)
+type ncmp =
+  | NInt32
+  | NFloat32
+  | NBool
+  | NUnit
+  | NUnbound (* typing failed: variable not in scope *)
+  | NOtherErr (* any other failure — flagged as a divergence candidate *)
+  | NUnsupported (* a type outside the covered fragment leaked through *)
+
+let string_of_ncmp = function
+  | NInt32 -> "int32"
+  | NFloat32 -> "float32"
+  | NBool -> "bool"
+  | NUnit -> "unit"
+  | NUnbound -> "<unbound>"
+  | NOtherErr -> "<other-error>"
+  | NUnsupported -> "<unsupported-type>"
+
+(* --- project the Coq model result ------------------------------------------- *)
+let ncmp_of_coq (r : M.infer_result) : ncmp =
+  match r with
+  | Inl (TPrim TInt32) -> NInt32
+  | Inl (TReg RFloat32) -> NFloat32
+  | Inl (TPrim TBool) -> NBool
+  | Inl (TPrim TUnit) -> NUnit
+  | Inl _ -> NUnsupported
+  | Inr (UnboundVar _) -> NUnbound
+  | Inr (TypeMismatch _) -> NOtherErr
+
+(* --- project the real Sarek_types.typ --------------------------------------- *)
+let ncmp_of_typ (t : Sarek_types.typ) : ncmp =
+  match t with
+  | Sarek_types.TPrim Sarek_types.TInt32 -> NInt32
+  | Sarek_types.TReg Sarek_types.Float32 -> NFloat32
+  | Sarek_types.TPrim Sarek_types.TBool -> NBool
+  | Sarek_types.TPrim Sarek_types.TUnit -> NUnit
+  | _ -> NUnsupported
+
+(* --- project the real Sarek_typer.infer result ------------------------------ *)
+let ncmp_of_real (r : (Sarek_typed_ast.texpr * Sarek_env.t) Sarek_error.result)
+    : ncmp =
+  match r with
+  | Ok (te, _) -> ncmp_of_typ te.Sarek_typed_ast.ty
+  | Error errs -> (
+      (* Treat an error list that mentions an unbound variable as NUnbound;
+         everything else is a distinct error class. *)
+      let is_unbound = function
+        | Sarek_error.Unbound_variable _ -> true
+        | _ -> false
+      in
+      match List.exists is_unbound errs with
+      | true -> NUnbound
+      | false -> NOtherErr)
+
+(* --- translate a Coq-model expr into a real Sarek_ast.expr ------------------ *)
+let mk_ast (e : Sarek_ast.expr_desc) : Sarek_ast.expr =
+  {Sarek_ast.e; expr_loc = Sarek_ast.dummy_loc}
+
+let real_string_of_coq (s : M.string) : ostring =
+  let ascii_to_char (M.Ascii (b0, b1, b2, b3, b4, b5, b6, b7)) =
+    let bit b k = if b then 1 lsl k else 0 in
+    Char.chr
+      (bit b0 0 + bit b1 1 + bit b2 2 + bit b3 3 + bit b4 4 + bit b5 5
+     + bit b6 6 + bit b7 7)
+  in
+  let buf = Buffer.create 8 in
+  let rec go = function
+    | M.EmptyString -> ()
+    | M.String (a, rest) ->
+        Buffer.add_char buf (ascii_to_char a) ;
+        go rest
+  in
+  go s ;
+  Buffer.contents buf
+
+let rec real_expr_of_coq (e : M.expr) : Sarek_ast.expr =
+  match e with
+  | ELit (LInt n) -> mk_ast (Sarek_ast.EInt n)
+  | ELit (LFloat _) -> mk_ast (Sarek_ast.EFloat 0.0)
+  | ELit (LBool b) -> mk_ast (Sarek_ast.EBool b)
+  | ELit LUnit -> mk_ast Sarek_ast.EUnit
+  | EVar x -> mk_ast (Sarek_ast.EVar (real_string_of_coq x))
+  | ELet (x, e1, e2) ->
+      mk_ast
+        (Sarek_ast.ELet
+           (real_string_of_coq x, None, real_expr_of_coq e1, real_expr_of_coq e2))
+
+(* --- translate a Coq-model type_env into a real Sarek_env.t ----------------- *)
+let real_typ_of_coq (t : M.sarek_type) : Sarek_types.typ option =
+  match t with
+  | TPrim TInt32 -> Some (Sarek_types.TPrim Sarek_types.TInt32)
+  | TPrim TBool -> Some (Sarek_types.TPrim Sarek_types.TBool)
+  | TPrim TUnit -> Some (Sarek_types.TPrim Sarek_types.TUnit)
+  | TReg RFloat32 -> Some (Sarek_types.TReg Sarek_types.Float32)
+  | _ -> None (* outside covered fragment — not generated *)
+
+let real_env_of_coq (env : M.type_env) : Sarek_env.t =
+  List.fold_left
+    (fun acc (name, t) ->
+      match real_typ_of_coq t with
+      | None -> acc
+      | Some vi_type ->
+          let vi =
+            {
+              Sarek_env.vi_type;
+              vi_mutable = false;
+              vi_is_param = false;
+              vi_index = 0;
+              vi_is_vec = false;
+            }
+          in
+          Sarek_env.add_var (real_string_of_coq name) vi acc)
+    Sarek_env.empty
+    (* Sarek_env keeps a single binding per name (last write wins via
+       StringMap), whereas the Coq assoc-list is first-write-wins. We fold in
+       REVERSE so the earliest Coq binding is the one that survives in the map,
+       matching the model's lookup_env semantics. *)
+    (List.rev env)
+
+(* --- QCheck generators ------------------------------------------------------ *)
+open QCheck2
+
+(* keep variable names in a tiny pool so EVar frequently hits a binding *)
+let gen_name : ostring Gen.t = Gen.oneof_list ["x"; "y"; "z"; "w"]
+
+let gen_lit : M.lit Gen.t =
+  Gen.oneof
+    [
+      Gen.map (fun n -> M.LInt n) (Gen.int_range 0 1000);
+      Gen.map (fun n -> M.LFloat n) (Gen.int_range 0 1000);
+      Gen.map (fun b -> M.LBool b) Gen.bool;
+      Gen.return M.LUnit;
+    ]
+
+let coq_str_gen : M.string Gen.t = Gen.map coq_string_of_string gen_name
+
+(* bounded-depth expr generator over the covered fragment *)
+let gen_expr : M.expr Gen.t =
+  Gen.sized_size (Gen.int_range 0 6)
+  @@ Gen.fix (fun self n ->
+      if n = 0 then Gen.map (fun l -> M.ELit l) gen_lit
+      else
+        let sub = self (n / 2) in
+        Gen.oneof
+          [
+            Gen.map (fun l -> M.ELit l) gen_lit;
+            Gen.map (fun x -> M.EVar x) coq_str_gen;
+            Gen.map
+              (fun (x, (e1, e2)) -> M.ELet (x, e1, e2))
+              (Gen.pair coq_str_gen (Gen.pair sub sub));
+          ])
+
+(* environment generator: assoc list over the same name pool / covered types *)
+let gen_coq_typ : M.sarek_type Gen.t =
+  Gen.oneof_list
+    [M.TPrim M.TInt32; M.TPrim M.TBool; M.TPrim M.TUnit; M.TReg M.RFloat32]
+
+let gen_env : M.type_env Gen.t =
+  Gen.list_size (Gen.int_range 0 3) (Gen.pair coq_str_gen gen_coq_typ)
+
+(* --- divergence recorder ---------------------------------------------------- *)
+let divergences : ostring list ref = ref []
+
+let pp_coq_expr (e : M.expr) : ostring =
+  let rec go = function
+    | M.ELit (LInt n) -> Printf.sprintf "%d" n
+    | M.ELit (LFloat _) -> "0.0"
+    | M.ELit (LBool b) -> string_of_bool b
+    | M.ELit LUnit -> "()"
+    | M.EVar x -> real_string_of_coq x
+    | M.ELet (x, e1, e2) ->
+        Printf.sprintf
+          "(let %s = %s in %s)"
+          (real_string_of_coq x)
+          (go e1)
+          (go e2)
+  in
+  go e
+
+let pp_case ((env, e) : M.type_env * M.expr) : ostring =
+  let entries = List.map (fun (n, _) -> real_string_of_coq n) env in
+  Printf.sprintf "env=[%s]  expr=%s" (String.concat ";" entries) (pp_coq_expr e)
+
+(* --- the differential property ---------------------------------------------- *)
+let test_differential =
+  Test.make
+    ~name:"coq_model_vs_sarek_typer_agree"
+    ~count:2000
+    ~print:pp_case
+    (Gen.pair gen_env gen_expr)
+    (fun (env, e) ->
+      let coq_result = ncmp_of_coq (M.infer_type env e) in
+      let real_result =
+        ncmp_of_real
+          (Sarek_typer.infer (real_env_of_coq env) (real_expr_of_coq e))
+      in
+      if coq_result = real_result then true
+      else begin
+        let msg =
+          Printf.sprintf
+            "expr=%s  coq=%s  sarek=%s"
+            (pp_coq_expr e)
+            (string_of_ncmp coq_result)
+            (string_of_ncmp real_result)
+        in
+        divergences := msg :: !divergences ;
+        false
+      end)
+
 (* ----- runner --------------------------------------------------------------- *)
 
 let () =
@@ -154,4 +385,13 @@ let () =
   test_lookup_hit () ;
   test_lookup_miss () ;
   test_lookup_first_wins () ;
-  Printf.printf "=== All tests passed ===\n"
+  Printf.printf "=== Smoke tests passed ===\n" ;
+  Printf.printf "\n=== T1-CMBT differential (Coq model vs Sarek_typer) ===\n" ;
+  let passed = QCheck_base_runner.run_tests ~verbose:true [test_differential] in
+  if !divergences <> [] then begin
+    Printf.printf "\n--- divergence candidates (deduped) ---\n" ;
+    List.iter
+      (fun m -> Printf.printf "  %s\n" m)
+      (List.sort_uniq compare !divergences)
+  end ;
+  exit passed
