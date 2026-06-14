@@ -1,9 +1,9 @@
 # TypeSafety — Work Plan
 
-**Last updated**: 2026-06-14 (tick 3 — T1-CMBT done, currentTask = T2)
+**Last updated**: 2026-06-14 (tick 0 — T3-S2 done, currentTask = T3-S3)
 **Apparatus version**: 1.2.1 (inherited from convergence-safety template)
-**Phase**: T1-CMBT (done — differential 2000/2000, found+fixed F-TS-01) → T2
-**Branch**: formal/type-safety-phase1a
+**Phase**: T3-S2 (done — 4 theorems, 10/10 smoke) → T3-S3 (FunSpec.v)
+**Branch**: formal/type-safety-phase1e
 
 ---
 
@@ -34,8 +34,8 @@ Coq has no mutable unification, so the spec models **post-unification** types
 | T2-REGISTRY | TRecord/TVariant field access typing | T2 | **done** (5 theorems, 10/10 smoke) | T2-VEC |
 | T3-S1 | Control flow (CFIfThen/IfElse/For/While/Seq) — ControlFlowSpec.v | T3 | **done** (4 theorems, 10/10 smoke) | T2-REGISTRY |
 | T3-S2 | Operators (EBinop/EUnop) — OperatorSpec.v | T3 | **done** (4 theorems, 10/10 smoke) | T3-S1 |
-| T3-S3 | Function application (EApp, ELetRec) — FunSpec.v | T3 | **next** | T3-S2 |
-| T3-S4 | Mutable bindings (ELetMut, EAssign) — MutSpec.v | T3 | TBD | T3-S2 |
+| T3-S3 | Function application (EApp, ELetRec) — FunSpec.v | T3 | **done** (4 theorems, 10/10 smoke) | T3-S2 |
+| T3-S4 | Mutable bindings (ELetMut, EAssign) — MutSpec.v | T3 | **next** | T3-S3 |
 | T3-S5 | Pattern matching (EMatch) — PatternSpec.v | T3 | TBD | T3-S2 |
 | T3-S6 | Algebraic construction (ERecord, EConstr) — ConstrSpec.v | T3 | TBD | T3-S5 |
 | T3-S7 | Special forms (EReturn, ECreateArray, ETyped) — SpecialSpec.v | T3 | TBD | T3-S2 |

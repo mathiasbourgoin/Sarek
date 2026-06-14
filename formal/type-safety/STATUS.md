@@ -1,17 +1,17 @@
 # TypeSafety — Status
 
 **Branch**: formal/type-safety-phase1e
-**Phase**: T3-S2 (OperatorSpec, done 2026-06-14) -> T3-S3 (next)
+**Phase**: T3-S3 (FunSpec, done 2026-06-14) -> T3-S4 (next)
 **Toolchain**: Rocq 9.1.1 / OCaml 5.4.0
 
 ## Scoreboard
 
 | Metric | Value |
 |---|---|
-| Theorems proven | 54 |
+| Theorems proven | 66 (58 headline + 8 auxiliary, all Qed/Defined) |
 | Admits | 0 |
 | Axioms | 0 |
-| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, field_lookup, infer_rec_type, has_rec_type, infer_cf_type, has_cf_type, is_numeric, is_integer, infer_op_type, has_op_type |
+| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, field_lookup, infer_rec_type, has_rec_type, infer_cf_type, has_cf_type, is_numeric, is_integer, infer_op_type, has_op_type, infer_fun_type, has_fun_type |
 | Build | green (CoqMakefile, exit 0; dune build/test, exit 0) |
 | T1-CMBT harness | green -- differential QCheck 2000/2000 (0 errors, 0 fails) + 20/20 smoke |
 | T2-UNIFY harness | green -- differential QCheck 1000/1000 (0 errors, 0 fails) + 15/15 smoke |
@@ -19,6 +19,7 @@
 | T2-REGISTRY harness | green -- 10/10 smoke (EFieldGet/EFieldSet + error cases + nested + vec delegation) |
 | T3-S1 harness | green -- 10/10 smoke (CFIfThen/IfElse/For/While/Seq + error cases + loop var scope) |
 | T3-S2 harness | green -- 10/10 smoke (Add/Mod/Eq/Lt/And/Neg/Not/Lnot + mismatch + NotBool) |
+| T3-S3 harness | green -- 10/10 smoke (FEOp delegation/binop, FEApp success, NotAFunc, ArgMismatch, FELetRec success/recursive/param-scope, BodyMismatch, param-not-leaked) |
 | Findings | F-TS-01 (ELet scope leak) -- found by T1-CMBT, RESOLVED |
 
 ## Termination design (T2-UNIFY)
@@ -184,4 +185,48 @@ TRecord and TVariant are now full constructors in `sarek_type`:
    to avoid relying on these names — `congruence` finds the contradiction between
    `Hnum : is_numeric t = false` and the constructor's `is_numeric t = true` premise.
 
-## Next: T3-S3 (FunSpec)
+## Proven (tick 8, FunSpec.v -- T3-S3, all Qed, 0 admits)
+
+55. `infer_fun_type_sound` -- FEApp/FELetRec inference -> has_fun_type
+56. `infer_fun_type_complete` -- has_fun_type -> inference
+57. `has_fun_type_det` -- uniqueness of the declarative fun_expr judgement
+58. `fun_type_preservation` -- infer_fun_type env e = inl t <-> has_fun_type env e t
+
+## Proof technique notes (T3-S3)
+
+1. **Single-param function model**: `TFun (list sarek_type) sarek_type` is constrained to a
+   one-element parameter list `p_ty :: nil` in both the algorithm and the judgement, matching
+   the EApp regular-application branch of Sarek_typer.ml in the post-unification model.
+
+2. **TFun destruct cascade in soundness**: After `destruct (infer_fun_type env fn)` to `tfn`,
+   peel the function type with `destruct tfn as [...|...|...] ; try discriminate` (8 sarek_type
+   constructors), then `destruct params as [|p_ty rest]; try discriminate` and
+   `destruct rest as [|]; try discriminate` to isolate the single-param `[p_ty]` shape. Every
+   non-`TFun [p_ty] ret` shape falls into the `NotAFunc` inr branch and is killed by `discriminate`.
+
+3. **No mutual recursion needed**: `fun_expr` recurses only through `fun_expr` sub-terms
+   (FEApp fn/arg, FELetRec body/cont), so the default `induction e` principle yields all four
+   IHs directly — no `expr_ind_strong`-style custom scheme required.
+
+4. **Env extension threading**: FELetRec inference extends the body env with
+   `(p_name,p_ty)::(fn_name,fn_ty)::env` and the continuation env with `(fn_name,fn_ty)::env`.
+   The judgement `HFT_LetRec` mirrors these exact env shapes, so soundness/completeness are
+   direct constructor applications with the matching IH on each sub-derivation.
+
+## Auxiliary lemmas (TypeSafetySpec.v scaffolding, all Qed/Defined, 0 admits)
+
+These 8 declarations are internal scaffolding for the headline theorems above
+(ETuple/list recursion + the custom induction principle). They are not headline
+results but are tracked in the proof ledger so the declaration count is exact
+(58 headline + 8 auxiliary = 66 total `Theorem`/`Lemma` declarations).
+
+59. `expr_ind_strong` -- custom strong induction principle for `expr` (Forall IH for ETuple); `Defined`
+60. `infer_type_etuple` -- unfolds the ETuple case of `infer_type` (reflexivity)
+61. `infer_list_sound_helper` -- list soundness over `infer_list` (feeds `infer_type_sound`)
+62. `infer_type_sound_inner` -- soundness via `expr_ind_strong` (public `infer_type_sound` instantiates it)
+63. `has_type_list_det` -- list determinism over `Forall2 (has_type env)` (feeds `has_type_det`)
+64. `has_type_det_inner` -- determinism via `expr_ind_strong` (public `has_type_det` instantiates it)
+65. `infer_list_complete_helper` -- list completeness over `Forall2` (feeds `infer_type_complete`)
+66. `infer_type_complete_inner` -- completeness via `expr_ind_strong` (public `infer_type_complete` instantiates it)
+
+## Next: T3-S4

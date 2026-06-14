@@ -1,15 +1,15 @@
 {
   "project": "type-safety",
   "branch": "formal/type-safety-phase1e",
-  "phase": "T3-S2 (OperatorSpec)",
+  "phase": "T3-S3 (FunSpec, done)",
   "toolchain": {
     "rocq": "9.1.1",
     "ocaml": "5.4.0"
   },
   "summary": {
-    "proven": 54,
+    "proven": 66,
     "definitions": 27,
-    "total": 54,
+    "total": 66,
     "admits": 0
   },
   "cmbt": {
@@ -509,6 +509,122 @@
       "proof": "split; apply infer_op_type_sound / infer_op_type_complete",
       "file": "theories/OperatorSpec.v",
       "tick": 7
+    },
+    {
+      "id": "infer_fun_type_sound",
+      "kind": "theorem",
+      "statement": "infer_fun_type env e = inl t -> has_fun_type env e t",
+      "status": "proven",
+      "proof": "induction e as [oe | fn IHfn arg IHarg | fn_name p_name p_ty ret_ty body IHbody cont IHcont]; FEOp: infer_op_type_sound; FEApp: destruct fn result, destruct tfn to TFun, destruct param list to single p_ty :: nil, destruct arg result, sarek_type_eq_dec targ p_ty, apply HFT_App; FELetRec: destruct body result in extended (p_name,p_ty)::(fn_name,fn_ty)::env, sarek_type_eq_dec tbody ret_ty, apply HFT_LetRec with IHcont on fn-only env",
+      "file": "theories/FunSpec.v",
+      "tick": 8
+    },
+    {
+      "id": "infer_fun_type_complete",
+      "kind": "theorem",
+      "statement": "has_fun_type env e t -> infer_fun_type env e = inl t",
+      "status": "proven",
+      "proof": "induction H; HFT_Op: infer_op_type_complete; HFT_App: rewrite IH1/IH2, sarek_type_eq_dec p_ty self reflexivity; HFT_LetRec: rewrite IH1, sarek_type_eq_dec ret_ty self, exact IH2",
+      "file": "theories/FunSpec.v",
+      "tick": 8
+    },
+    {
+      "id": "has_fun_type_det",
+      "kind": "lemma",
+      "statement": "has_fun_type env e t1 -> has_fun_type env e t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "pose proof infer_fun_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity",
+      "file": "theories/FunSpec.v",
+      "tick": 8
+    },
+    {
+      "id": "fun_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_fun_type env e = inl t <-> has_fun_type env e t",
+      "status": "proven",
+      "proof": "split; apply infer_fun_type_sound / infer_fun_type_complete",
+      "file": "theories/FunSpec.v",
+      "tick": 8
+    },
+    {
+      "id": "expr_ind_strong",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "forall P, (forall l, P (ELit l)) -> (forall x, P (EVar x)) -> (forall x e1 e2, P e1 -> P e2 -> P (ELet x e1 e2)) -> (forall es, Forall P es -> P (ETuple es)) -> forall e, P e",
+      "status": "proven",
+      "proof": "custom strong induction principle for expr (Forall hypothesis for ETuple); proved by fix IH 1 with Forall-list nested induction (Defined, so it computes)",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "infer_type_etuple",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "infer_type env (ETuple es) = match infer_list env es with inl ts => inl (TTuple ts) | inr err => inr err end",
+      "status": "proven",
+      "proof": "reflexivity (unfolds the ETuple case of infer_type)",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "infer_list_sound_helper",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "Forall (fun e => forall env t, infer_type env e = inl t -> has_type env e t) es -> infer_list env es = inl ts -> Forall2 (has_type env) es ts",
+      "status": "proven",
+      "proof": "induction on the Forall IH list; unfolds infer_list_with accumulator",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "infer_type_sound_inner",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "infer_type env ex = inl ty -> has_type env ex ty",
+      "status": "proven",
+      "proof": "induction ex using expr_ind_strong; ETuple case delegates to infer_list_sound_helper; the public infer_type_sound is its instantiation",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "has_type_list_det",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "(forall e t1 t2, In e es -> has_type env e t1 -> has_type env e t2 -> t1 = t2) -> Forall2 (has_type env) es ts1 -> Forall2 (has_type env) es ts2 -> ts1 = ts2",
+      "status": "proven",
+      "proof": "induction on the first Forall2 with ts2 generalized; inversion on the second",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "has_type_det_inner",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "has_type env ex t1 -> has_type env ex t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "induction ex using expr_ind_strong; ETuple case delegates to has_type_list_det; the public has_type_det is its instantiation",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "infer_list_complete_helper",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "Forall (fun e => forall env t, has_type env e t -> infer_type env e = inl t) es -> Forall2 (has_type env) es ts -> infer_list env es = inl ts",
+      "status": "proven",
+      "proof": "induction on the Forall IH list; inversion on Forall2; rebuilds infer_list_with",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "infer_type_complete_inner",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "has_type env ex ty -> infer_type env ex = inl ty",
+      "status": "proven",
+      "proof": "induction ex using expr_ind_strong; ETuple case delegates to infer_list_complete_helper; the public infer_type_complete is its instantiation",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
     }
   ],
   "cmbt_t2_unify": {
@@ -552,6 +668,15 @@
   },
   "cmbt_t3_s2": {
     "id": "T3-S2-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s3": {
+    "id": "T3-S3-CMBT",
     "status": "done",
     "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
     "smoke_cases": 10,

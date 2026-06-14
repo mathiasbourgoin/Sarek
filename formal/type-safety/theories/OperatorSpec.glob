@@ -1,0 +1,838 @@
+DIGEST a00901d5dfe5cb666aa1c52d81bbb3ca
+FTypeSafety.OperatorSpec
+R1537:1540 Stdlib.Bool.Bool <> <> lib
+R1542:1545 Stdlib.Lists.List <> <> lib
+R1547:1552 Stdlib.Strings.String <> <> lib
+R1554:1558 Stdlib.Arith.Arith <> <> lib
+R1560:1562 Stdlib.Init.Nat <> <> lib
+R1596:1609 TypeSafety.TypeSafetySpec <> <> lib
+R1643:1649 TypeSafety.VecSpec <> <> lib
+R1683:1694 TypeSafety.RegistrySpec <> <> lib
+R1728:1742 TypeSafety.ControlFlowSpec <> <> lib
+R1752:1765 TypeSafety.TypeSafetySpec <> <> mod
+R1767:1773 TypeSafety.VecSpec <> <> mod
+R1775:1786 TypeSafety.RegistrySpec <> <> mod
+R1788:1802 TypeSafety.ControlFlowSpec <> <> mod
+R1812:1824 Stdlib.Lists.List ListNotations <> mod
+ind 1934:1938 <> binop
+constr 1954:1956 <> Add
+constr 1960:1962 <> Sub
+constr 1966:1968 <> Mul
+constr 1972:1974 <> Div
+constr 1978:1980 <> Mod
+constr 1986:1988 <> And
+constr 1992:1993 <> Or
+constr 1999:2000 <> Eq
+constr 2004:2005 <> Ne
+constr 2009:2010 <> Lt
+constr 2014:2015 <> Le
+constr 2019:2020 <> Gt
+constr 2024:2025 <> Ge
+constr 2031:2034 <> Land
+constr 2038:2040 <> Lor
+constr 2044:2047 <> Lxor
+constr 2051:2053 <> Lsl
+constr 2057:2059 <> Lsr
+constr 2063:2065 <> Asr
+scheme 1934:1938 <> binop_rect
+scheme 1934:1938 <> binop_ind
+scheme 1934:1938 <> binop_rec
+scheme 1934:1938 <> binop_sind
+ind 2079:2082 <> unop
+constr 2098:2100 <> Neg
+constr 2104:2106 <> Not
+constr 2110:2113 <> Lnot
+scheme 2079:2082 <> unop_rect
+scheme 2079:2082 <> unop_ind
+scheme 2079:2082 <> unop_rec
+scheme 2079:2082 <> unop_sind
+def 2172:2181 <> is_numeric
+R2188:2197 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 2184:2184 <> t:5
+R2202:2205 Corelib.Init.Datatypes <> bool ind
+R2218:2218 TypeSafety.OperatorSpec <> t:5 var
+R2229:2233 TypeSafety.TypeSafetySpec <> TPrim constr
+R2235:2240 TypeSafety.TypeSafetySpec <> TInt32 constr
+R2245:2248 Corelib.Init.Datatypes <> true constr
+R2254:2257 TypeSafety.TypeSafetySpec <> TReg constr
+R2259:2262 TypeSafety.TypeSafetySpec <> RInt constr
+R2266:2269 TypeSafety.TypeSafetySpec <> TReg constr
+R2271:2276 TypeSafety.TypeSafetySpec <> RInt64 constr
+R2280:2283 TypeSafety.TypeSafetySpec <> TReg constr
+R2285:2292 TypeSafety.TypeSafetySpec <> RFloat32 constr
+R2296:2299 TypeSafety.TypeSafetySpec <> TReg constr
+R2301:2308 TypeSafety.TypeSafetySpec <> RFloat64 constr
+R2313:2316 Corelib.Init.Datatypes <> true constr
+R2313:2316 Corelib.Init.Datatypes <> true constr
+R2313:2316 Corelib.Init.Datatypes <> true constr
+R2313:2316 Corelib.Init.Datatypes <> true constr
+R2327:2331 Corelib.Init.Datatypes <> false constr
+def 2352:2361 <> is_integer
+R2368:2377 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 2364:2364 <> t:7
+R2382:2385 Corelib.Init.Datatypes <> bool ind
+R2398:2398 TypeSafety.OperatorSpec <> t:7 var
+R2409:2413 TypeSafety.TypeSafetySpec <> TPrim constr
+R2415:2420 TypeSafety.TypeSafetySpec <> TInt32 constr
+R2425:2428 Corelib.Init.Datatypes <> true constr
+R2434:2437 TypeSafety.TypeSafetySpec <> TReg constr
+R2439:2442 TypeSafety.TypeSafetySpec <> RInt constr
+R2446:2449 TypeSafety.TypeSafetySpec <> TReg constr
+R2451:2456 TypeSafety.TypeSafetySpec <> RInt64 constr
+R2461:2464 Corelib.Init.Datatypes <> true constr
+R2461:2464 Corelib.Init.Datatypes <> true constr
+R2475:2479 Corelib.Init.Datatypes <> false constr
+ind 2542:2549 <> op_error
+constr 2565:2567 <> OCF
+constr 2605:2614 <> NotNumeric
+constr 2647:2656 <> NotInteger
+constr 2689:2695 <> NotBool
+constr 2731:2745 <> OperandMismatch
+R2588:2591 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2580:2587 TypeSafety.ControlFlowSpec <> cf_error ind
+R2592:2599 TypeSafety.OperatorSpec <> op_error:9 ind
+R2630:2633 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2620:2629 TypeSafety.TypeSafetySpec <> sarek_type ind
+R2634:2641 TypeSafety.OperatorSpec <> op_error:9 ind
+R2672:2675 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2662:2671 TypeSafety.TypeSafetySpec <> sarek_type ind
+R2676:2683 TypeSafety.OperatorSpec <> op_error:9 ind
+R2714:2717 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2704:2713 TypeSafety.TypeSafetySpec <> sarek_type ind
+R2718:2725 TypeSafety.OperatorSpec <> op_error:9 ind
+R2759:2762 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2749:2758 TypeSafety.TypeSafetySpec <> sarek_type ind
+R2773:2776 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2763:2772 TypeSafety.TypeSafetySpec <> sarek_type ind
+R2777:2784 TypeSafety.OperatorSpec <> op_error:9 ind
+scheme 2542:2549 <> op_error_rect
+scheme 2542:2549 <> op_error_ind
+scheme 2542:2549 <> op_error_rec
+scheme 2542:2549 <> op_error_sind
+ind 2849:2855 <> op_expr
+constr 2871:2874 <> OPCf
+constr 2904:2910 <> OPBinop
+constr 2957:2962 <> OPUnop
+R2888:2891 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2881:2887 TypeSafety.ControlFlowSpec <> cf_expr ind
+R2892:2898 TypeSafety.OperatorSpec <> op_expr:11 ind
+R2919:2922 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2914:2918 TypeSafety.OperatorSpec <> binop ind
+R2930:2933 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2923:2929 TypeSafety.OperatorSpec <> op_expr:11 ind
+R2941:2944 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2934:2940 TypeSafety.OperatorSpec <> op_expr:11 ind
+R2945:2951 TypeSafety.OperatorSpec <> op_expr:11 ind
+R2971:2974 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2967:2970 TypeSafety.OperatorSpec <> unop ind
+R2982:2985 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2975:2981 TypeSafety.OperatorSpec <> op_expr:11 ind
+R2986:2992 TypeSafety.OperatorSpec <> op_expr:11 ind
+scheme 2849:2855 <> op_expr_rect
+scheme 2849:2855 <> op_expr_ind
+scheme 2849:2855 <> op_expr_rec
+scheme 2849:2855 <> op_expr_sind
+def 3054:3066 <> infer_op_type
+R3075:3082 TypeSafety.TypeSafetySpec <> type_env def
+binder 3069:3071 <> env:13
+R3090:3096 TypeSafety.OperatorSpec <> op_expr ind
+binder 3086:3086 <> e:14
+R3116:3118 Corelib.Init.Datatypes <> ::type_scope:x_'+'_x not
+R3106:3115 TypeSafety.TypeSafetySpec <> sarek_type ind
+R3119:3126 TypeSafety.OperatorSpec <> op_error ind
+R3145:3145 TypeSafety.OperatorSpec <> e:14 var
+R3156:3159 TypeSafety.OperatorSpec <> OPCf constr
+R3179:3191 TypeSafety.ControlFlowSpec <> infer_cf_type def
+R3193:3195 TypeSafety.OperatorSpec <> env:13 var
+R3213:3215 Corelib.Init.Datatypes <> inl constr
+R3224:3226 Corelib.Init.Datatypes <> inl constr
+R3238:3240 Corelib.Init.Datatypes <> inr constr
+R3249:3251 Corelib.Init.Datatypes <> inr constr
+R3254:3256 TypeSafety.OperatorSpec <> OCF constr
+R3277:3283 TypeSafety.OperatorSpec <> OPBinop constr
+R3311:3323 TypeSafety.OperatorSpec <> infer_op_type:15 def
+R3325:3327 TypeSafety.OperatorSpec <> env:13 var
+R3346:3348 Corelib.Init.Datatypes <> inr constr
+R3357:3359 Corelib.Init.Datatypes <> inr constr
+R3373:3375 Corelib.Init.Datatypes <> inl constr
+R3400:3412 TypeSafety.OperatorSpec <> infer_op_type:15 def
+R3414:3416 TypeSafety.OperatorSpec <> env:13 var
+R3439:3441 Corelib.Init.Datatypes <> inr constr
+R3450:3452 Corelib.Init.Datatypes <> inr constr
+R3470:3472 Corelib.Init.Datatypes <> inl constr
+R3501:3517 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R3546:3550 Corelib.Init.Specif <> right constr
+R3557:3559 Corelib.Init.Datatypes <> inr constr
+R3562:3576 TypeSafety.OperatorSpec <> OperandMismatch constr
+R3601:3604 Corelib.Init.Specif <> left constr
+R3664:3666 TypeSafety.OperatorSpec <> Add constr
+R3670:3672 TypeSafety.OperatorSpec <> Sub constr
+R3676:3678 TypeSafety.OperatorSpec <> Mul constr
+R3682:3684 TypeSafety.OperatorSpec <> Div constr
+R3714:3723 TypeSafety.OperatorSpec <> is_numeric def
+R3745:3747 Corelib.Init.Datatypes <> inr constr
+R3750:3759 TypeSafety.OperatorSpec <> NotNumeric constr
+R3733:3735 Corelib.Init.Datatypes <> inl constr
+R3714:3723 TypeSafety.OperatorSpec <> is_numeric def
+R3745:3747 Corelib.Init.Datatypes <> inr constr
+R3750:3759 TypeSafety.OperatorSpec <> NotNumeric constr
+R3733:3735 Corelib.Init.Datatypes <> inl constr
+R3714:3723 TypeSafety.OperatorSpec <> is_numeric def
+R3745:3747 Corelib.Init.Datatypes <> inr constr
+R3750:3759 TypeSafety.OperatorSpec <> NotNumeric constr
+R3733:3735 Corelib.Init.Datatypes <> inl constr
+R3714:3723 TypeSafety.OperatorSpec <> is_numeric def
+R3745:3747 Corelib.Init.Datatypes <> inr constr
+R3750:3759 TypeSafety.OperatorSpec <> NotNumeric constr
+R3733:3735 Corelib.Init.Datatypes <> inl constr
+R3785:3787 TypeSafety.OperatorSpec <> Mod constr
+R3791:3794 TypeSafety.OperatorSpec <> Land constr
+R3798:3800 TypeSafety.OperatorSpec <> Lor constr
+R3804:3807 TypeSafety.OperatorSpec <> Lxor constr
+R3811:3813 TypeSafety.OperatorSpec <> Lsl constr
+R3817:3819 TypeSafety.OperatorSpec <> Lsr constr
+R3823:3825 TypeSafety.OperatorSpec <> Asr constr
+R3855:3864 TypeSafety.OperatorSpec <> is_integer def
+R3886:3888 Corelib.Init.Datatypes <> inr constr
+R3891:3900 TypeSafety.OperatorSpec <> NotInteger constr
+R3874:3876 Corelib.Init.Datatypes <> inl constr
+R3855:3864 TypeSafety.OperatorSpec <> is_integer def
+R3886:3888 Corelib.Init.Datatypes <> inr constr
+R3891:3900 TypeSafety.OperatorSpec <> NotInteger constr
+R3874:3876 Corelib.Init.Datatypes <> inl constr
+R3855:3864 TypeSafety.OperatorSpec <> is_integer def
+R3886:3888 Corelib.Init.Datatypes <> inr constr
+R3891:3900 TypeSafety.OperatorSpec <> NotInteger constr
+R3874:3876 Corelib.Init.Datatypes <> inl constr
+R3855:3864 TypeSafety.OperatorSpec <> is_integer def
+R3886:3888 Corelib.Init.Datatypes <> inr constr
+R3891:3900 TypeSafety.OperatorSpec <> NotInteger constr
+R3874:3876 Corelib.Init.Datatypes <> inl constr
+R3855:3864 TypeSafety.OperatorSpec <> is_integer def
+R3886:3888 Corelib.Init.Datatypes <> inr constr
+R3891:3900 TypeSafety.OperatorSpec <> NotInteger constr
+R3874:3876 Corelib.Init.Datatypes <> inl constr
+R3855:3864 TypeSafety.OperatorSpec <> is_integer def
+R3886:3888 Corelib.Init.Datatypes <> inr constr
+R3891:3900 TypeSafety.OperatorSpec <> NotInteger constr
+R3874:3876 Corelib.Init.Datatypes <> inl constr
+R3855:3864 TypeSafety.OperatorSpec <> is_integer def
+R3886:3888 Corelib.Init.Datatypes <> inr constr
+R3891:3900 TypeSafety.OperatorSpec <> NotInteger constr
+R3874:3876 Corelib.Init.Datatypes <> inl constr
+R3926:3927 TypeSafety.OperatorSpec <> Eq constr
+R3931:3932 TypeSafety.OperatorSpec <> Ne constr
+R3937:3939 Corelib.Init.Datatypes <> inl constr
+R3942:3946 TypeSafety.TypeSafetySpec <> TPrim constr
+R3948:3952 TypeSafety.TypeSafetySpec <> TBool constr
+R3937:3939 Corelib.Init.Datatypes <> inl constr
+R3942:3946 TypeSafety.TypeSafetySpec <> TPrim constr
+R3948:3952 TypeSafety.TypeSafetySpec <> TBool constr
+R3975:3976 TypeSafety.OperatorSpec <> Lt constr
+R3980:3981 TypeSafety.OperatorSpec <> Le constr
+R3985:3986 TypeSafety.OperatorSpec <> Gt constr
+R3990:3991 TypeSafety.OperatorSpec <> Ge constr
+R4021:4030 TypeSafety.OperatorSpec <> is_numeric def
+R4063:4065 Corelib.Init.Datatypes <> inr constr
+R4068:4077 TypeSafety.OperatorSpec <> NotNumeric constr
+R4040:4042 Corelib.Init.Datatypes <> inl constr
+R4045:4049 TypeSafety.TypeSafetySpec <> TPrim constr
+R4051:4055 TypeSafety.TypeSafetySpec <> TBool constr
+R4021:4030 TypeSafety.OperatorSpec <> is_numeric def
+R4063:4065 Corelib.Init.Datatypes <> inr constr
+R4068:4077 TypeSafety.OperatorSpec <> NotNumeric constr
+R4040:4042 Corelib.Init.Datatypes <> inl constr
+R4045:4049 TypeSafety.TypeSafetySpec <> TPrim constr
+R4051:4055 TypeSafety.TypeSafetySpec <> TBool constr
+R4021:4030 TypeSafety.OperatorSpec <> is_numeric def
+R4063:4065 Corelib.Init.Datatypes <> inr constr
+R4068:4077 TypeSafety.OperatorSpec <> NotNumeric constr
+R4040:4042 Corelib.Init.Datatypes <> inl constr
+R4045:4049 TypeSafety.TypeSafetySpec <> TPrim constr
+R4051:4055 TypeSafety.TypeSafetySpec <> TBool constr
+R4021:4030 TypeSafety.OperatorSpec <> is_numeric def
+R4063:4065 Corelib.Init.Datatypes <> inr constr
+R4068:4077 TypeSafety.OperatorSpec <> NotNumeric constr
+R4040:4042 Corelib.Init.Datatypes <> inl constr
+R4045:4049 TypeSafety.TypeSafetySpec <> TPrim constr
+R4051:4055 TypeSafety.TypeSafetySpec <> TBool constr
+R4103:4105 TypeSafety.OperatorSpec <> And constr
+R4109:4110 TypeSafety.OperatorSpec <> Or constr
+R4143:4159 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R4165:4169 TypeSafety.TypeSafetySpec <> TPrim constr
+R4171:4175 TypeSafety.TypeSafetySpec <> TBool constr
+R4207:4211 Corelib.Init.Specif <> right constr
+R4218:4220 Corelib.Init.Datatypes <> inr constr
+R4223:4229 TypeSafety.OperatorSpec <> NotBool constr
+R4259:4262 Corelib.Init.Specif <> left constr
+R4270:4272 Corelib.Init.Datatypes <> inl constr
+R4275:4279 TypeSafety.TypeSafetySpec <> TPrim constr
+R4281:4285 TypeSafety.TypeSafetySpec <> TBool constr
+R4143:4159 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R4165:4169 TypeSafety.TypeSafetySpec <> TPrim constr
+R4171:4175 TypeSafety.TypeSafetySpec <> TBool constr
+R4207:4211 Corelib.Init.Specif <> right constr
+R4218:4220 Corelib.Init.Datatypes <> inr constr
+R4223:4229 TypeSafety.OperatorSpec <> NotBool constr
+R4259:4262 Corelib.Init.Specif <> left constr
+R4270:4272 Corelib.Init.Datatypes <> inl constr
+R4275:4279 TypeSafety.TypeSafetySpec <> TPrim constr
+R4281:4285 TypeSafety.TypeSafetySpec <> TBool constr
+R4382:4387 TypeSafety.OperatorSpec <> OPUnop constr
+R4415:4427 TypeSafety.OperatorSpec <> infer_op_type:15 def
+R4429:4431 TypeSafety.OperatorSpec <> env:13 var
+R4454:4456 Corelib.Init.Datatypes <> inr constr
+R4465:4467 Corelib.Init.Datatypes <> inr constr
+R4481:4483 Corelib.Init.Datatypes <> inl constr
+R4528:4530 TypeSafety.OperatorSpec <> Neg constr
+R4539:4548 TypeSafety.OperatorSpec <> is_numeric def
+R4568:4570 Corelib.Init.Datatypes <> inr constr
+R4573:4582 TypeSafety.OperatorSpec <> NotNumeric constr
+R4557:4559 Corelib.Init.Datatypes <> inl constr
+R4599:4601 TypeSafety.OperatorSpec <> Not constr
+R4627:4643 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R4648:4652 TypeSafety.TypeSafetySpec <> TPrim constr
+R4654:4658 TypeSafety.TypeSafetySpec <> TBool constr
+R4682:4686 Corelib.Init.Specif <> right constr
+R4693:4695 Corelib.Init.Datatypes <> inr constr
+R4698:4704 TypeSafety.OperatorSpec <> NotBool constr
+R4725:4728 Corelib.Init.Specif <> left constr
+R4736:4738 Corelib.Init.Datatypes <> inl constr
+R4741:4745 TypeSafety.TypeSafetySpec <> TPrim constr
+R4747:4751 TypeSafety.TypeSafetySpec <> TBool constr
+R4784:4787 TypeSafety.OperatorSpec <> Lnot constr
+R4795:4804 TypeSafety.OperatorSpec <> is_integer def
+R4824:4826 Corelib.Init.Datatypes <> inr constr
+R4829:4838 TypeSafety.OperatorSpec <> NotInteger constr
+R4813:4815 Corelib.Init.Datatypes <> inl constr
+def 5143:5158 <> is_numeric_binop
+R5166:5170 TypeSafety.OperatorSpec <> binop ind
+binder 5161:5162 <> op:19
+R5175:5178 Corelib.Init.Datatypes <> bool ind
+R5191:5192 TypeSafety.OperatorSpec <> op:19 var
+R5199:5201 TypeSafety.OperatorSpec <> Add constr
+R5205:5207 TypeSafety.OperatorSpec <> Sub constr
+R5211:5213 TypeSafety.OperatorSpec <> Mul constr
+R5217:5219 TypeSafety.OperatorSpec <> Div constr
+R5224:5227 Corelib.Init.Datatypes <> true constr
+R5224:5227 Corelib.Init.Datatypes <> true constr
+R5224:5227 Corelib.Init.Datatypes <> true constr
+R5224:5227 Corelib.Init.Datatypes <> true constr
+R5236:5240 Corelib.Init.Datatypes <> false constr
+def 5259:5274 <> is_integer_binop
+R5282:5286 TypeSafety.OperatorSpec <> binop ind
+binder 5277:5278 <> op:21
+R5291:5294 Corelib.Init.Datatypes <> bool ind
+R5307:5308 TypeSafety.OperatorSpec <> op:21 var
+R5315:5317 TypeSafety.OperatorSpec <> Mod constr
+R5321:5324 TypeSafety.OperatorSpec <> Land constr
+R5328:5330 TypeSafety.OperatorSpec <> Lor constr
+R5334:5337 TypeSafety.OperatorSpec <> Lxor constr
+R5341:5343 TypeSafety.OperatorSpec <> Lsl constr
+R5347:5349 TypeSafety.OperatorSpec <> Lsr constr
+R5353:5355 TypeSafety.OperatorSpec <> Asr constr
+R5360:5363 Corelib.Init.Datatypes <> true constr
+R5360:5363 Corelib.Init.Datatypes <> true constr
+R5360:5363 Corelib.Init.Datatypes <> true constr
+R5360:5363 Corelib.Init.Datatypes <> true constr
+R5360:5363 Corelib.Init.Datatypes <> true constr
+R5360:5363 Corelib.Init.Datatypes <> true constr
+R5360:5363 Corelib.Init.Datatypes <> true constr
+R5372:5376 Corelib.Init.Datatypes <> false constr
+def 5395:5405 <> is_eq_binop
+R5413:5417 TypeSafety.OperatorSpec <> binop ind
+binder 5408:5409 <> op:23
+R5422:5425 Corelib.Init.Datatypes <> bool ind
+R5438:5439 TypeSafety.OperatorSpec <> op:23 var
+R5446:5447 TypeSafety.OperatorSpec <> Eq constr
+R5451:5452 TypeSafety.OperatorSpec <> Ne constr
+R5457:5460 Corelib.Init.Datatypes <> true constr
+R5457:5460 Corelib.Init.Datatypes <> true constr
+R5469:5473 Corelib.Init.Datatypes <> false constr
+def 5492:5503 <> is_cmp_binop
+R5511:5515 TypeSafety.OperatorSpec <> binop ind
+binder 5506:5507 <> op:25
+R5520:5523 Corelib.Init.Datatypes <> bool ind
+R5536:5537 TypeSafety.OperatorSpec <> op:25 var
+R5544:5545 TypeSafety.OperatorSpec <> Lt constr
+R5549:5550 TypeSafety.OperatorSpec <> Le constr
+R5554:5555 TypeSafety.OperatorSpec <> Gt constr
+R5559:5560 TypeSafety.OperatorSpec <> Ge constr
+R5565:5568 Corelib.Init.Datatypes <> true constr
+R5565:5568 Corelib.Init.Datatypes <> true constr
+R5565:5568 Corelib.Init.Datatypes <> true constr
+R5565:5568 Corelib.Init.Datatypes <> true constr
+R5577:5581 Corelib.Init.Datatypes <> false constr
+def 5600:5612 <> is_bool_binop
+R5620:5624 TypeSafety.OperatorSpec <> binop ind
+binder 5615:5616 <> op:27
+R5629:5632 Corelib.Init.Datatypes <> bool ind
+R5645:5646 TypeSafety.OperatorSpec <> op:27 var
+R5653:5655 TypeSafety.OperatorSpec <> And constr
+R5659:5660 TypeSafety.OperatorSpec <> Or constr
+R5665:5668 Corelib.Init.Datatypes <> true constr
+R5665:5668 Corelib.Init.Datatypes <> true constr
+R5677:5681 Corelib.Init.Datatypes <> false constr
+ind 5699:5709 <> has_op_type
+constr 5762:5767 <> HOT_CF
+constr 5856:5871 <> HOT_NumericBinop
+constr 6076:6091 <> HOT_IntegerBinop
+constr 6296:6306 <> HOT_EqBinop
+constr 6489:6500 <> HOT_CmpBinop
+constr 6713:6725 <> HOT_BoolBinop
+constr 6932:6938 <> HOT_Neg
+constr 7077:7083 <> HOT_Not
+constr 7215:7222 <> HOT_Lnot
+R5721:5724 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5713:5720 TypeSafety.TypeSafetySpec <> type_env def
+R5732:5735 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5725:5731 TypeSafety.OperatorSpec <> op_expr ind
+R5746:5749 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5736:5745 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 5778:5780 <> env:31
+binder 5782:5783 <> ce:32
+binder 5785:5785 <> t:33
+R5814:5823 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5794:5804 TypeSafety.ControlFlowSpec <> has_cf_type ind
+R5813:5813 TypeSafety.OperatorSpec <> t:33 var
+R5810:5811 TypeSafety.OperatorSpec <> ce:32 var
+R5806:5808 TypeSafety.OperatorSpec <> env:31 var
+R5824:5834 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R5850:5850 TypeSafety.OperatorSpec <> t:33 var
+R5841:5844 TypeSafety.OperatorSpec <> OPCf constr
+R5846:5847 TypeSafety.OperatorSpec <> ce:32 var
+R5836:5838 TypeSafety.OperatorSpec <> env:31 var
+binder 5882:5884 <> env:34
+binder 5886:5887 <> op:35
+binder 5889:5891 <> lhs:36
+binder 5893:5895 <> rhs:37
+binder 5897:5897 <> t:38
+R5932:5941 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5925:5927 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5906:5921 TypeSafety.OperatorSpec <> is_numeric_binop def
+R5923:5924 TypeSafety.OperatorSpec <> op:35 var
+R5928:5931 Corelib.Init.Datatypes <> true constr
+R5963:5972 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5942:5952 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R5962:5962 TypeSafety.OperatorSpec <> t:38 var
+R5958:5960 TypeSafety.OperatorSpec <> lhs:36 var
+R5954:5956 TypeSafety.OperatorSpec <> env:34 var
+R5994:6003 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5973:5983 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R5993:5993 TypeSafety.OperatorSpec <> t:38 var
+R5989:5991 TypeSafety.OperatorSpec <> rhs:37 var
+R5985:5987 TypeSafety.OperatorSpec <> env:34 var
+R6023:6032 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6016:6018 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6004:6013 TypeSafety.OperatorSpec <> is_numeric def
+R6015:6015 TypeSafety.OperatorSpec <> t:38 var
+R6019:6022 Corelib.Init.Datatypes <> true constr
+R6033:6043 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R6070:6070 TypeSafety.OperatorSpec <> t:38 var
+R6050:6056 TypeSafety.OperatorSpec <> OPBinop constr
+R6065:6067 TypeSafety.OperatorSpec <> rhs:37 var
+R6061:6063 TypeSafety.OperatorSpec <> lhs:36 var
+R6058:6059 TypeSafety.OperatorSpec <> op:35 var
+R6045:6047 TypeSafety.OperatorSpec <> env:34 var
+binder 6102:6104 <> env:39
+binder 6106:6107 <> op:40
+binder 6109:6111 <> lhs:41
+binder 6113:6115 <> rhs:42
+binder 6117:6117 <> t:43
+R6152:6161 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6145:6147 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6126:6141 TypeSafety.OperatorSpec <> is_integer_binop def
+R6143:6144 TypeSafety.OperatorSpec <> op:40 var
+R6148:6151 Corelib.Init.Datatypes <> true constr
+R6183:6192 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6162:6172 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R6182:6182 TypeSafety.OperatorSpec <> t:43 var
+R6178:6180 TypeSafety.OperatorSpec <> lhs:41 var
+R6174:6176 TypeSafety.OperatorSpec <> env:39 var
+R6214:6223 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6193:6203 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R6213:6213 TypeSafety.OperatorSpec <> t:43 var
+R6209:6211 TypeSafety.OperatorSpec <> rhs:42 var
+R6205:6207 TypeSafety.OperatorSpec <> env:39 var
+R6243:6252 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6236:6238 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6224:6233 TypeSafety.OperatorSpec <> is_integer def
+R6235:6235 TypeSafety.OperatorSpec <> t:43 var
+R6239:6242 Corelib.Init.Datatypes <> true constr
+R6253:6263 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R6290:6290 TypeSafety.OperatorSpec <> t:43 var
+R6270:6276 TypeSafety.OperatorSpec <> OPBinop constr
+R6285:6287 TypeSafety.OperatorSpec <> rhs:42 var
+R6281:6283 TypeSafety.OperatorSpec <> lhs:41 var
+R6278:6279 TypeSafety.OperatorSpec <> op:40 var
+R6265:6267 TypeSafety.OperatorSpec <> env:39 var
+binder 6317:6319 <> env:44
+binder 6321:6322 <> op:45
+binder 6324:6326 <> lhs:46
+binder 6328:6330 <> rhs:47
+binder 6332:6332 <> t:48
+R6362:6371 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6355:6357 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6341:6351 TypeSafety.OperatorSpec <> is_eq_binop def
+R6353:6354 TypeSafety.OperatorSpec <> op:45 var
+R6358:6361 Corelib.Init.Datatypes <> true constr
+R6393:6402 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6372:6382 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R6392:6392 TypeSafety.OperatorSpec <> t:48 var
+R6388:6390 TypeSafety.OperatorSpec <> lhs:46 var
+R6384:6386 TypeSafety.OperatorSpec <> env:44 var
+R6424:6433 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6403:6413 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R6423:6423 TypeSafety.OperatorSpec <> t:48 var
+R6419:6421 TypeSafety.OperatorSpec <> rhs:47 var
+R6415:6417 TypeSafety.OperatorSpec <> env:44 var
+R6434:6444 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R6472:6476 TypeSafety.TypeSafetySpec <> TPrim constr
+R6478:6482 TypeSafety.TypeSafetySpec <> TBool constr
+R6451:6457 TypeSafety.OperatorSpec <> OPBinop constr
+R6466:6468 TypeSafety.OperatorSpec <> rhs:47 var
+R6462:6464 TypeSafety.OperatorSpec <> lhs:46 var
+R6459:6460 TypeSafety.OperatorSpec <> op:45 var
+R6446:6448 TypeSafety.OperatorSpec <> env:44 var
+binder 6511:6513 <> env:49
+binder 6515:6516 <> op:50
+binder 6518:6520 <> lhs:51
+binder 6522:6524 <> rhs:52
+binder 6526:6526 <> t:53
+R6557:6566 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6550:6552 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6535:6546 TypeSafety.OperatorSpec <> is_cmp_binop def
+R6548:6549 TypeSafety.OperatorSpec <> op:50 var
+R6553:6556 Corelib.Init.Datatypes <> true constr
+R6588:6597 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6567:6577 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R6587:6587 TypeSafety.OperatorSpec <> t:53 var
+R6583:6585 TypeSafety.OperatorSpec <> lhs:51 var
+R6579:6581 TypeSafety.OperatorSpec <> env:49 var
+R6619:6628 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6598:6608 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R6618:6618 TypeSafety.OperatorSpec <> t:53 var
+R6614:6616 TypeSafety.OperatorSpec <> rhs:52 var
+R6610:6612 TypeSafety.OperatorSpec <> env:49 var
+R6648:6657 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6641:6643 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6629:6638 TypeSafety.OperatorSpec <> is_numeric def
+R6640:6640 TypeSafety.OperatorSpec <> t:53 var
+R6644:6647 Corelib.Init.Datatypes <> true constr
+R6658:6668 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R6696:6700 TypeSafety.TypeSafetySpec <> TPrim constr
+R6702:6706 TypeSafety.TypeSafetySpec <> TBool constr
+R6675:6681 TypeSafety.OperatorSpec <> OPBinop constr
+R6690:6692 TypeSafety.OperatorSpec <> rhs:52 var
+R6686:6688 TypeSafety.OperatorSpec <> lhs:51 var
+R6683:6684 TypeSafety.OperatorSpec <> op:50 var
+R6670:6672 TypeSafety.OperatorSpec <> env:49 var
+binder 6736:6738 <> env:54
+binder 6740:6741 <> op:55
+binder 6743:6745 <> lhs:56
+binder 6747:6749 <> rhs:57
+R6781:6790 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6774:6776 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6758:6770 TypeSafety.OperatorSpec <> is_bool_binop def
+R6772:6773 TypeSafety.OperatorSpec <> op:55 var
+R6777:6780 Corelib.Init.Datatypes <> true constr
+R6824:6833 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6791:6801 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R6812:6816 TypeSafety.TypeSafetySpec <> TPrim constr
+R6818:6822 TypeSafety.TypeSafetySpec <> TBool constr
+R6807:6809 TypeSafety.OperatorSpec <> lhs:56 var
+R6803:6805 TypeSafety.OperatorSpec <> env:54 var
+R6867:6876 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6834:6844 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R6855:6859 TypeSafety.TypeSafetySpec <> TPrim constr
+R6861:6865 TypeSafety.TypeSafetySpec <> TBool constr
+R6850:6852 TypeSafety.OperatorSpec <> rhs:57 var
+R6846:6848 TypeSafety.OperatorSpec <> env:54 var
+R6877:6887 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R6915:6919 TypeSafety.TypeSafetySpec <> TPrim constr
+R6921:6925 TypeSafety.TypeSafetySpec <> TBool constr
+R6894:6900 TypeSafety.OperatorSpec <> OPBinop constr
+R6909:6911 TypeSafety.OperatorSpec <> rhs:57 var
+R6905:6907 TypeSafety.OperatorSpec <> lhs:56 var
+R6902:6903 TypeSafety.OperatorSpec <> op:55 var
+R6889:6891 TypeSafety.OperatorSpec <> env:54 var
+binder 6949:6951 <> env:58
+binder 6953:6959 <> operand:59
+binder 6961:6961 <> t:60
+R6995:7004 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6970:6980 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R6994:6994 TypeSafety.OperatorSpec <> t:60 var
+R6986:6992 TypeSafety.OperatorSpec <> operand:59 var
+R6982:6984 TypeSafety.OperatorSpec <> env:58 var
+R7024:7033 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7017:7019 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7005:7014 TypeSafety.OperatorSpec <> is_numeric def
+R7016:7016 TypeSafety.OperatorSpec <> t:60 var
+R7020:7023 Corelib.Init.Datatypes <> true constr
+R7034:7044 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R7071:7071 TypeSafety.OperatorSpec <> t:60 var
+R7051:7056 TypeSafety.OperatorSpec <> OPUnop constr
+R7062:7068 TypeSafety.OperatorSpec <> operand:59 var
+R7058:7060 TypeSafety.OperatorSpec <> Neg constr
+R7046:7048 TypeSafety.OperatorSpec <> env:58 var
+binder 7094:7096 <> env:61
+binder 7098:7104 <> operand:62
+R7150:7159 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7113:7123 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R7138:7142 TypeSafety.TypeSafetySpec <> TPrim constr
+R7144:7148 TypeSafety.TypeSafetySpec <> TBool constr
+R7129:7135 TypeSafety.OperatorSpec <> operand:62 var
+R7125:7127 TypeSafety.OperatorSpec <> env:61 var
+R7160:7170 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R7198:7202 TypeSafety.TypeSafetySpec <> TPrim constr
+R7204:7208 TypeSafety.TypeSafetySpec <> TBool constr
+R7177:7182 TypeSafety.OperatorSpec <> OPUnop constr
+R7188:7194 TypeSafety.OperatorSpec <> operand:62 var
+R7184:7186 TypeSafety.OperatorSpec <> Not constr
+R7172:7174 TypeSafety.OperatorSpec <> env:61 var
+binder 7233:7235 <> env:63
+binder 7237:7243 <> operand:64
+binder 7245:7245 <> t:65
+R7279:7288 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7254:7264 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R7278:7278 TypeSafety.OperatorSpec <> t:65 var
+R7270:7276 TypeSafety.OperatorSpec <> operand:64 var
+R7266:7268 TypeSafety.OperatorSpec <> env:63 var
+R7308:7317 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7301:7303 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7289:7298 TypeSafety.OperatorSpec <> is_integer def
+R7300:7300 TypeSafety.OperatorSpec <> t:65 var
+R7304:7307 Corelib.Init.Datatypes <> true constr
+R7318:7328 TypeSafety.OperatorSpec <> has_op_type:29 ind
+R7356:7356 TypeSafety.OperatorSpec <> t:65 var
+R7335:7340 TypeSafety.OperatorSpec <> OPUnop constr
+R7347:7353 TypeSafety.OperatorSpec <> operand:64 var
+R7342:7345 TypeSafety.OperatorSpec <> Lnot constr
+R7330:7332 TypeSafety.OperatorSpec <> env:63 var
+scheme 5699:5709 <> has_op_type_ind
+scheme 5699:5709 <> has_op_type_sind
+prf 7431:7449 <> infer_op_type_sound
+binder 7462:7464 <> env:66
+binder 7466:7466 <> e:67
+binder 7468:7468 <> t:68
+R7502:7509 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7494:7496 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7475:7487 TypeSafety.OperatorSpec <> infer_op_type def
+R7493:7493 TypeSafety.OperatorSpec <> e:67 var
+R7489:7491 TypeSafety.OperatorSpec <> env:66 var
+R7497:7499 Corelib.Init.Datatypes <> inl constr
+R7501:7501 TypeSafety.OperatorSpec <> t:68 var
+R7510:7520 TypeSafety.OperatorSpec <> has_op_type ind
+R7528:7528 TypeSafety.OperatorSpec <> t:68 var
+R7526:7526 TypeSafety.OperatorSpec <> e:67 var
+R7522:7524 TypeSafety.OperatorSpec <> env:66 var
+R7687:7699 TypeSafety.ControlFlowSpec <> infer_cf_type def
+R7687:7699 TypeSafety.ControlFlowSpec <> infer_cf_type def
+R7779:7784 TypeSafety.OperatorSpec <> HOT_CF constr
+R7779:7784 TypeSafety.OperatorSpec <> HOT_CF constr
+R7793:7811 TypeSafety.ControlFlowSpec <> infer_cf_type_sound thm
+R7793:7811 TypeSafety.ControlFlowSpec <> infer_cf_type_sound thm
+R7857:7869 TypeSafety.OperatorSpec <> infer_op_type def
+R7857:7869 TypeSafety.OperatorSpec <> infer_op_type def
+R7934:7946 TypeSafety.OperatorSpec <> infer_op_type def
+R7934:7946 TypeSafety.OperatorSpec <> infer_op_type def
+R8011:8027 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R8011:8027 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R8331:8340 TypeSafety.OperatorSpec <> is_numeric def
+R8407:8422 TypeSafety.OperatorSpec <> HOT_NumericBinop constr
+R8331:8340 TypeSafety.OperatorSpec <> is_numeric def
+R8407:8422 TypeSafety.OperatorSpec <> HOT_NumericBinop constr
+R8331:8340 TypeSafety.OperatorSpec <> is_numeric def
+R8407:8422 TypeSafety.OperatorSpec <> HOT_NumericBinop constr
+R8331:8340 TypeSafety.OperatorSpec <> is_numeric def
+R8407:8422 TypeSafety.OperatorSpec <> HOT_NumericBinop constr
+R8331:8340 TypeSafety.OperatorSpec <> is_numeric def
+R8407:8422 TypeSafety.OperatorSpec <> HOT_NumericBinop constr
+R8573:8582 TypeSafety.OperatorSpec <> is_integer def
+R8647:8662 TypeSafety.OperatorSpec <> HOT_IntegerBinop constr
+R8573:8582 TypeSafety.OperatorSpec <> is_integer def
+R8647:8662 TypeSafety.OperatorSpec <> HOT_IntegerBinop constr
+R8821:8837 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R8843:8847 TypeSafety.TypeSafetySpec <> TPrim constr
+R8849:8853 TypeSafety.TypeSafetySpec <> TBool constr
+R8955:8967 TypeSafety.OperatorSpec <> HOT_BoolBinop constr
+R8821:8837 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R8843:8847 TypeSafety.TypeSafetySpec <> TPrim constr
+R8849:8853 TypeSafety.TypeSafetySpec <> TBool constr
+R8955:8967 TypeSafety.OperatorSpec <> HOT_BoolBinop constr
+R8821:8837 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R8843:8847 TypeSafety.TypeSafetySpec <> TPrim constr
+R8849:8853 TypeSafety.TypeSafetySpec <> TBool constr
+R8955:8967 TypeSafety.OperatorSpec <> HOT_BoolBinop constr
+R9132:9142 TypeSafety.OperatorSpec <> HOT_EqBinop constr
+R9132:9142 TypeSafety.OperatorSpec <> HOT_EqBinop constr
+R9132:9142 TypeSafety.OperatorSpec <> HOT_EqBinop constr
+R9289:9298 TypeSafety.OperatorSpec <> is_numeric def
+R9365:9376 TypeSafety.OperatorSpec <> HOT_CmpBinop constr
+R9289:9298 TypeSafety.OperatorSpec <> is_numeric def
+R9365:9376 TypeSafety.OperatorSpec <> HOT_CmpBinop constr
+R9289:9298 TypeSafety.OperatorSpec <> is_numeric def
+R9365:9376 TypeSafety.OperatorSpec <> HOT_CmpBinop constr
+R9289:9298 TypeSafety.OperatorSpec <> is_numeric def
+R9365:9376 TypeSafety.OperatorSpec <> HOT_CmpBinop constr
+R9289:9298 TypeSafety.OperatorSpec <> is_numeric def
+R9365:9376 TypeSafety.OperatorSpec <> HOT_CmpBinop constr
+R9548:9557 TypeSafety.OperatorSpec <> is_integer def
+R9624:9639 TypeSafety.OperatorSpec <> HOT_IntegerBinop constr
+R9548:9557 TypeSafety.OperatorSpec <> is_integer def
+R9624:9639 TypeSafety.OperatorSpec <> HOT_IntegerBinop constr
+R9548:9557 TypeSafety.OperatorSpec <> is_integer def
+R9624:9639 TypeSafety.OperatorSpec <> HOT_IntegerBinop constr
+R9548:9557 TypeSafety.OperatorSpec <> is_integer def
+R9624:9639 TypeSafety.OperatorSpec <> HOT_IntegerBinop constr
+R9548:9557 TypeSafety.OperatorSpec <> is_integer def
+R9624:9639 TypeSafety.OperatorSpec <> HOT_IntegerBinop constr
+R9548:9557 TypeSafety.OperatorSpec <> is_integer def
+R9624:9639 TypeSafety.OperatorSpec <> HOT_IntegerBinop constr
+R9548:9557 TypeSafety.OperatorSpec <> is_integer def
+R9624:9639 TypeSafety.OperatorSpec <> HOT_IntegerBinop constr
+R9779:9791 TypeSafety.OperatorSpec <> infer_op_type def
+R9779:9791 TypeSafety.OperatorSpec <> infer_op_type def
+R9892:9901 TypeSafety.OperatorSpec <> is_numeric def
+R9892:9901 TypeSafety.OperatorSpec <> is_numeric def
+R9964:9970 TypeSafety.OperatorSpec <> HOT_Neg constr
+R9964:9970 TypeSafety.OperatorSpec <> HOT_Neg constr
+R10022:10038 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R10044:10048 TypeSafety.TypeSafetySpec <> TPrim constr
+R10050:10054 TypeSafety.TypeSafetySpec <> TBool constr
+R10124:10130 TypeSafety.OperatorSpec <> HOT_Not constr
+R10022:10038 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R10044:10048 TypeSafety.TypeSafetySpec <> TPrim constr
+R10050:10054 TypeSafety.TypeSafetySpec <> TBool constr
+R10124:10130 TypeSafety.OperatorSpec <> HOT_Not constr
+R10194:10203 TypeSafety.OperatorSpec <> is_integer def
+R10194:10203 TypeSafety.OperatorSpec <> is_integer def
+R10266:10273 TypeSafety.OperatorSpec <> HOT_Lnot constr
+R10266:10273 TypeSafety.OperatorSpec <> HOT_Lnot constr
+prf 10389:10410 <> infer_op_type_complete
+binder 10423:10425 <> env:69
+binder 10427:10427 <> e:70
+binder 10429:10429 <> t:71
+R10455:10462 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10436:10446 TypeSafety.OperatorSpec <> has_op_type ind
+R10454:10454 TypeSafety.OperatorSpec <> t:71 var
+R10452:10452 TypeSafety.OperatorSpec <> e:70 var
+R10448:10450 TypeSafety.OperatorSpec <> env:69 var
+R10482:10484 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10463:10475 TypeSafety.OperatorSpec <> infer_op_type def
+R10481:10481 TypeSafety.OperatorSpec <> e:70 var
+R10477:10479 TypeSafety.OperatorSpec <> env:69 var
+R10485:10487 Corelib.Init.Datatypes <> inl constr
+R10489:10489 TypeSafety.OperatorSpec <> t:71 var
+R10569:10590 TypeSafety.ControlFlowSpec <> infer_cf_type_complete thm
+R10569:10590 TypeSafety.ControlFlowSpec <> infer_cf_type_complete thm
+R10569:10590 TypeSafety.ControlFlowSpec <> infer_cf_type_complete thm
+R10702:10718 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R10702:10718 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R10843:10852 TypeSafety.OperatorSpec <> is_numeric def
+R10854:10854 Corelib.Init.Nat <> t def
+R10843:10852 TypeSafety.OperatorSpec <> is_numeric def
+R10843:10852 TypeSafety.OperatorSpec <> is_numeric def
+R10843:10852 TypeSafety.OperatorSpec <> is_numeric def
+R10843:10852 TypeSafety.OperatorSpec <> is_numeric def
+R10989:11005 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R10989:11005 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R11130:11139 TypeSafety.OperatorSpec <> is_integer def
+R11141:11141 Corelib.Init.Nat <> t def
+R11130:11139 TypeSafety.OperatorSpec <> is_integer def
+R11130:11139 TypeSafety.OperatorSpec <> is_integer def
+R11130:11139 TypeSafety.OperatorSpec <> is_integer def
+R11130:11139 TypeSafety.OperatorSpec <> is_integer def
+R11130:11139 TypeSafety.OperatorSpec <> is_integer def
+R11130:11139 TypeSafety.OperatorSpec <> is_integer def
+R11130:11139 TypeSafety.OperatorSpec <> is_integer def
+R11271:11287 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R11271:11287 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R11494:11510 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R11494:11510 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R11635:11644 TypeSafety.OperatorSpec <> is_numeric def
+R11646:11646 Corelib.Init.Nat <> t def
+R11635:11644 TypeSafety.OperatorSpec <> is_numeric def
+R11635:11644 TypeSafety.OperatorSpec <> is_numeric def
+R11635:11644 TypeSafety.OperatorSpec <> is_numeric def
+R11635:11644 TypeSafety.OperatorSpec <> is_numeric def
+R11778:11794 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R11811:11815 TypeSafety.TypeSafetySpec <> TPrim constr
+R11817:11821 TypeSafety.TypeSafetySpec <> TBool constr
+R11797:11801 TypeSafety.TypeSafetySpec <> TPrim constr
+R11803:11807 TypeSafety.TypeSafetySpec <> TBool constr
+R11778:11794 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R11811:11815 TypeSafety.TypeSafetySpec <> TPrim constr
+R11817:11821 TypeSafety.TypeSafetySpec <> TBool constr
+R11797:11801 TypeSafety.TypeSafetySpec <> TPrim constr
+R11803:11807 TypeSafety.TypeSafetySpec <> TBool constr
+R11949:11965 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R11982:11986 TypeSafety.TypeSafetySpec <> TPrim constr
+R11988:11992 TypeSafety.TypeSafetySpec <> TBool constr
+R11968:11972 TypeSafety.TypeSafetySpec <> TPrim constr
+R11974:11978 TypeSafety.TypeSafetySpec <> TBool constr
+R11949:11965 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R11982:11986 TypeSafety.TypeSafetySpec <> TPrim constr
+R11988:11992 TypeSafety.TypeSafetySpec <> TBool constr
+R11968:11972 TypeSafety.TypeSafetySpec <> TPrim constr
+R11974:11978 TypeSafety.TypeSafetySpec <> TBool constr
+R11949:11965 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R11982:11986 TypeSafety.TypeSafetySpec <> TPrim constr
+R11988:11992 TypeSafety.TypeSafetySpec <> TBool constr
+R11968:11972 TypeSafety.TypeSafetySpec <> TPrim constr
+R11974:11978 TypeSafety.TypeSafetySpec <> TBool constr
+R12131:12140 TypeSafety.OperatorSpec <> is_numeric def
+R12131:12140 TypeSafety.OperatorSpec <> is_numeric def
+R12242:12258 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R12275:12279 TypeSafety.TypeSafetySpec <> TPrim constr
+R12281:12285 TypeSafety.TypeSafetySpec <> TBool constr
+R12261:12265 TypeSafety.TypeSafetySpec <> TPrim constr
+R12267:12271 TypeSafety.TypeSafetySpec <> TBool constr
+R12242:12258 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R12275:12279 TypeSafety.TypeSafetySpec <> TPrim constr
+R12281:12285 TypeSafety.TypeSafetySpec <> TBool constr
+R12261:12265 TypeSafety.TypeSafetySpec <> TPrim constr
+R12267:12271 TypeSafety.TypeSafetySpec <> TBool constr
+R12418:12427 TypeSafety.OperatorSpec <> is_integer def
+R12418:12427 TypeSafety.OperatorSpec <> is_integer def
+prf 12546:12560 <> has_op_type_det
+binder 12573:12575 <> env:72
+binder 12577:12577 <> e:73
+binder 12579:12580 <> t1:74
+binder 12582:12583 <> t2:75
+R12610:12617 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12590:12600 TypeSafety.OperatorSpec <> has_op_type ind
+R12608:12609 TypeSafety.OperatorSpec <> t1:74 var
+R12606:12606 TypeSafety.OperatorSpec <> e:73 var
+R12602:12604 TypeSafety.OperatorSpec <> env:72 var
+R12638:12645 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12618:12628 TypeSafety.OperatorSpec <> has_op_type ind
+R12636:12637 TypeSafety.OperatorSpec <> t2:75 var
+R12634:12634 TypeSafety.OperatorSpec <> e:73 var
+R12630:12632 TypeSafety.OperatorSpec <> env:72 var
+R12648:12650 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12646:12647 TypeSafety.OperatorSpec <> t1:74 var
+R12651:12652 TypeSafety.OperatorSpec <> t2:75 var
+R12704:12725 TypeSafety.OperatorSpec <> infer_op_type_complete thm
+R12704:12725 TypeSafety.OperatorSpec <> infer_op_type_complete thm
+R12753:12774 TypeSafety.OperatorSpec <> infer_op_type_complete thm
+R12753:12774 TypeSafety.OperatorSpec <> infer_op_type_complete thm
+prf 12928:12947 <> op_type_preservation
+binder 12960:12962 <> env:76
+binder 12964:12964 <> e:77
+binder 12966:12966 <> t:78
+R13000:13004 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R12992:12994 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12973:12985 TypeSafety.OperatorSpec <> infer_op_type def
+R12991:12991 TypeSafety.OperatorSpec <> e:77 var
+R12987:12989 TypeSafety.OperatorSpec <> env:76 var
+R12995:12997 Corelib.Init.Datatypes <> inl constr
+R12999:12999 TypeSafety.OperatorSpec <> t:78 var
+R13005:13015 TypeSafety.OperatorSpec <> has_op_type ind
+R13023:13023 TypeSafety.OperatorSpec <> t:78 var
+R13021:13021 TypeSafety.OperatorSpec <> e:77 var
+R13017:13019 TypeSafety.OperatorSpec <> env:76 var
+R13068:13086 TypeSafety.OperatorSpec <> infer_op_type_sound thm
+R13068:13086 TypeSafety.OperatorSpec <> infer_op_type_sound thm
+R13099:13120 TypeSafety.OperatorSpec <> infer_op_type_complete thm
+R13099:13120 TypeSafety.OperatorSpec <> infer_op_type_complete thm

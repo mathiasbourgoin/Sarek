@@ -1253,6 +1253,177 @@ let test_op_lnot_int32 () =
   assert (result = OP.Inl (OP.TPrim OP.TInt32)) ;
   Printf.printf "  Lnot int32 -> TInt32 [ok]\n"
 
+(* ----- T3-S3 function smoke tests (FunModel oracle) ------------------------- *)
+
+module FUN = Type_safety_model.FunModel
+
+(* Coq-string builder local to the FUN layer (FUN.string is its own ascii type). *)
+let fun_coq_string (s : ostring) : FUN.string =
+  let char_to_ascii c =
+    let n = Char.code c in
+    let bit k = (n lsr k) land 1 = 1 in
+    FUN.Ascii (bit 0, bit 1, bit 2, bit 3, bit 4, bit 5, bit 6, bit 7)
+  in
+  let len = String.length s in
+  let rec go i acc =
+    if i < 0 then acc else go (i - 1) (FUN.String (char_to_ascii s.[i], acc))
+  in
+  go (len - 1) FUN.EmptyString
+
+(* int32-typed literal lifted all the way up to fun_expr via the delegation chain *)
+let funint32 =
+  FUN.FEOp (FUN.OPCf (FUN.CFRec (FUN.RMem (FUN.MCore (FUN.ELit (FUN.LInt 0))))))
+
+let funbool =
+  FUN.FEOp
+    (FUN.OPCf (FUN.CFRec (FUN.RMem (FUN.MCore (FUN.ELit (FUN.LBool false))))))
+
+(* env binding a variable name to a sarek_type at the FUN layer *)
+let fun_env_entry x t = (fun_coq_string x, t)
+
+(* a fun_expr that reads variable [x] from the environment *)
+let funvar x =
+  FUN.FEOp
+    (FUN.OPCf (FUN.CFRec (FUN.RMem (FUN.MCore (FUN.EVar (fun_coq_string x))))))
+
+(* Test 1: FEOp delegation -- int32 literal types as TInt32 *)
+let test_fun_op_delegation () =
+  let result = FUN.infer_fun_type [] funint32 in
+  assert (result = FUN.Inl (FUN.TPrim FUN.TInt32)) ;
+  Printf.printf "  FEOp (int32 lit) -> TPrim TInt32 [ok]\n"
+
+(* Test 2: FEOp delegation propagates operator success (Add) *)
+let test_fun_op_binop () =
+  let e =
+    FUN.FEOp
+      (FUN.OPBinop
+         ( FUN.Add,
+           FUN.OPCf (FUN.CFRec (FUN.RMem (FUN.MCore (FUN.ELit (FUN.LInt 1))))),
+           FUN.OPCf (FUN.CFRec (FUN.RMem (FUN.MCore (FUN.ELit (FUN.LInt 2)))))
+         ))
+  in
+  let result = FUN.infer_fun_type [] e in
+  assert (result = FUN.Inl (FUN.TPrim FUN.TInt32)) ;
+  Printf.printf "  FEOp (Add int32 int32) -> TPrim TInt32 [ok]\n"
+
+(* Test 3: FEApp success -- (f : int32 -> bool) applied to int32 -> bool *)
+let test_fun_app_success () =
+  let fn_ty = FUN.TFun ([FUN.TPrim FUN.TInt32], FUN.TPrim FUN.TBool) in
+  let env = [fun_env_entry "f" fn_ty] in
+  let result = FUN.infer_fun_type env (FUN.FEApp (funvar "f", funint32)) in
+  assert (result = FUN.Inl (FUN.TPrim FUN.TBool)) ;
+  Printf.printf "  FEApp (int32->bool) int32 -> TPrim TBool [ok]\n"
+
+(* Test 4: NotAFunc -- applying a non-function value *)
+let test_fun_app_not_a_func () =
+  let env = [fun_env_entry "x" (FUN.TPrim FUN.TInt32)] in
+  let result = FUN.infer_fun_type env (FUN.FEApp (funvar "x", funint32)) in
+  assert (result = FUN.Inr (FUN.NotAFunc (FUN.TPrim FUN.TInt32))) ;
+  Printf.printf "  FEApp (non-func) -> NotAFunc [ok]\n"
+
+(* Test 5: ArgMismatch -- arg type differs from the parameter type *)
+let test_fun_app_arg_mismatch () =
+  let fn_ty = FUN.TFun ([FUN.TPrim FUN.TInt32], FUN.TPrim FUN.TBool) in
+  let env = [fun_env_entry "f" fn_ty] in
+  let result = FUN.infer_fun_type env (FUN.FEApp (funvar "f", funbool)) in
+  assert (
+    result
+    = FUN.Inr (FUN.ArgMismatch (FUN.TPrim FUN.TInt32, FUN.TPrim FUN.TBool))) ;
+  Printf.printf "  FEApp arg type != param -> ArgMismatch [ok]\n"
+
+(* Test 6: FELetRec success -- body type matches declared return; cont = call *)
+let test_fun_letrec_success () =
+  (* let rec f (n : int32) : int32 = n in f 0  -->  int32 *)
+  let body = funvar "n" in
+  let cont = FUN.FEApp (funvar "f", funint32) in
+  let e =
+    FUN.FELetRec
+      ( fun_coq_string "f",
+        fun_coq_string "n",
+        FUN.TPrim FUN.TInt32,
+        FUN.TPrim FUN.TInt32,
+        body,
+        cont )
+  in
+  let result = FUN.infer_fun_type [] e in
+  assert (result = FUN.Inl (FUN.TPrim FUN.TInt32)) ;
+  Printf.printf "  FELetRec f(n:int32):int32=n in f 0 -> TInt32 [ok]\n"
+
+(* Test 7: FELetRec recursion -- body may reference fn_name with its own type *)
+let test_fun_letrec_recursive () =
+  (* let rec f (n : int32) : bool = f n in f 0  -->  bool *)
+  let body = FUN.FEApp (funvar "f", funvar "n") in
+  let cont = FUN.FEApp (funvar "f", funint32) in
+  let e =
+    FUN.FELetRec
+      ( fun_coq_string "f",
+        fun_coq_string "n",
+        FUN.TPrim FUN.TInt32,
+        FUN.TPrim FUN.TBool,
+        body,
+        cont )
+  in
+  let result = FUN.infer_fun_type [] e in
+  assert (result = FUN.Inl (FUN.TPrim FUN.TBool)) ;
+  Printf.printf "  FELetRec recursive body (f n) -> TBool [ok]\n"
+
+(* Test 8: BodyMismatch -- body type differs from the declared return type *)
+let test_fun_letrec_body_mismatch () =
+  (* let rec f (n : int32) : bool = n in ...  -->  BodyMismatch bool int32 *)
+  let body = funvar "n" in
+  let cont = funint32 in
+  let e =
+    FUN.FELetRec
+      ( fun_coq_string "f",
+        fun_coq_string "n",
+        FUN.TPrim FUN.TInt32,
+        FUN.TPrim FUN.TBool,
+        body,
+        cont )
+  in
+  let result = FUN.infer_fun_type [] e in
+  assert (
+    result
+    = FUN.Inr (FUN.BodyMismatch (FUN.TPrim FUN.TBool, FUN.TPrim FUN.TInt32))) ;
+  Printf.printf "  FELetRec body type != return -> BodyMismatch [ok]\n"
+
+(* Test 9: FELetRec parameter is in scope for the body *)
+let test_fun_letrec_param_in_scope () =
+  (* let rec f (n : bool) : bool = n in f true (returns the param) *)
+  let body = funvar "n" in
+  let cont = FUN.FEApp (funvar "f", funbool) in
+  let e =
+    FUN.FELetRec
+      ( fun_coq_string "f",
+        fun_coq_string "n",
+        FUN.TPrim FUN.TBool,
+        FUN.TPrim FUN.TBool,
+        body,
+        cont )
+  in
+  let result = FUN.infer_fun_type [] e in
+  assert (result = FUN.Inl (FUN.TPrim FUN.TBool)) ;
+  Printf.printf "  FELetRec param n:bool visible in body -> TBool [ok]\n"
+
+(* Test 10: continuation typed in fn-only env (param NOT leaked past let-rec) *)
+let test_fun_letrec_param_not_leaked () =
+  (* let rec f (n : int32) : int32 = n in n  -->  n is unbound in continuation *)
+  let body = funvar "n" in
+  let cont = funvar "n" in
+  let e =
+    FUN.FELetRec
+      ( fun_coq_string "f",
+        fun_coq_string "n",
+        FUN.TPrim FUN.TInt32,
+        FUN.TPrim FUN.TInt32,
+        body,
+        cont )
+  in
+  let result = FUN.infer_fun_type [] e in
+  (match result with FUN.Inr _ -> () | FUN.Inl _ -> assert false) ;
+  Printf.printf
+    "  FELetRec param n not in scope in continuation -> error [ok]\n"
+
 let () =
   Printf.printf "\n=== T3-S2 operator smoke tests (OperatorModel oracle) ===\n" ;
   test_op_add_int32 () ;
@@ -1266,4 +1437,16 @@ let () =
   test_op_not_bool () ;
   test_op_lnot_int32 () ;
   Printf.printf "=== T3-S2 operator smoke tests passed ===\n" ;
+  Printf.printf "\n=== T3-S3 function smoke tests (FunModel oracle) ===\n" ;
+  test_fun_op_delegation () ;
+  test_fun_op_binop () ;
+  test_fun_app_success () ;
+  test_fun_app_not_a_func () ;
+  test_fun_app_arg_mismatch () ;
+  test_fun_letrec_success () ;
+  test_fun_letrec_recursive () ;
+  test_fun_letrec_body_mismatch () ;
+  test_fun_letrec_param_in_scope () ;
+  test_fun_letrec_param_not_leaked () ;
+  Printf.printf "=== T3-S3 function smoke tests passed ===\n" ;
   exit 0

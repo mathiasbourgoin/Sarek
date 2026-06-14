@@ -1,0 +1,9 @@
+DIGEST 4cc50773147c504721d20f2b98def81e
+FControlFlowExtraction
+R696:705 Stdlib.extraction.Extraction <> <> lib
+R707:720 Stdlib.extraction.ExtrOcamlBasic <> <> lib
+R722:736 Stdlib.extraction.ExtrOcamlNatInt <> <> lib
+R770:783 TypeSafety.TypeSafetySpec <> <> lib
+R817:823 TypeSafety.VecSpec <> <> lib
+R857:868 TypeSafety.RegistrySpec <> <> lib
+R902:916 TypeSafety.ControlFlowSpec <> <> lib
