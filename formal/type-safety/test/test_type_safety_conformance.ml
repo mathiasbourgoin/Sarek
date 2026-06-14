@@ -2063,6 +2063,155 @@ let test_spe_nested_error_propagates () =
   Printf.printf
     "  (create_array false : int32[]) -> ArraySizeNotInt (propagated) [ok]\n"
 
+(* ----- T3-S8 GPU / BSP-form smoke tests (GPUModel oracle) ----------------- *)
+
+module GPU = Type_safety_model.GPUModel
+
+(* Coq-string builder local to the GPU layer. *)
+let gpu_coq_string (s : ostring) : GPU.string =
+  let char_to_ascii c =
+    let n = Char.code c in
+    let bit k = (n lsr k) land 1 = 1 in
+    GPU.Ascii (bit 0, bit 1, bit 2, bit 3, bit 4, bit 5, bit 6, bit 7)
+  in
+  let len = String.length s in
+  let rec go i acc =
+    if i < 0 then acc else go (i - 1) (GPU.String (char_to_ascii s.[i], acc))
+  in
+  go (len - 1) GPU.EmptyString
+
+(* a literal lifted all the way up to gpu_expr through the full layer chain:
+   gpu_expr <- special_expr <- constr_expr <- pat_expr <- mut_expr <- fun_expr
+   <- op_expr <- cf_expr <- rec_expr <- mem_expr <- core expr *)
+let gpu_lit lit =
+  GPU.GESpecial
+    (GPU.SEConstr
+       (GPU.CEPat
+          (GPU.PEMut
+             (GPU.MEFun
+                (GPU.FEOp
+                   (GPU.OPCf (GPU.CFRec (GPU.RMem (GPU.MCore (GPU.ELit lit))))))))))
+
+let gpuint32 = gpu_lit (GPU.LInt 0)
+
+let gpubool = gpu_lit (GPU.LBool false)
+
+(* a gpu_expr that reads variable [x] from the environment via full delegation *)
+let gpuvar x =
+  GPU.GESpecial
+    (GPU.SEConstr
+       (GPU.CEPat
+          (GPU.PEMut
+             (GPU.MEFun
+                (GPU.FEOp
+                   (GPU.OPCf
+                      (GPU.CFRec
+                         (GPU.RMem (GPU.MCore (GPU.EVar (gpu_coq_string x)))))))))))
+
+(* a unit literal lifted to gpu_expr (used for superstep bodies) *)
+let gpuunit = gpu_lit GPU.LUnit
+
+(* Test 1: GESpecial delegation -- a bare int32 literal types as TInt32 *)
+let test_gpu_special_delegation () =
+  let result = GPU.infer_gpu_type [] [] gpuint32 in
+  assert (result = GPU.Inl (GPU.TPrim GPU.TInt32)) ;
+  Printf.printf "  GESpecial (int32 lit) -> TPrim TInt32 [ok]\n"
+
+(* Test 2: GESpecial delegation surfaces a special-layer error as GSpecialErr *)
+let test_gpu_special_err_delegation () =
+  let result = GPU.infer_gpu_type [] [] (gpuvar "ghost") in
+  (match result with GPU.Inr (GPU.GSpecialErr _) -> () | _ -> assert false) ;
+  Printf.printf "  ghost -> GSpecialErr (delegated) [ok]\n"
+
+(* Test 3: let%shared with a Shared array type, body is the bound array *)
+let test_gpu_letshared_success () =
+  let arr_ty = GPU.TArr (GPU.TReg GPU.RFloat32, GPU.Shared) in
+  let e = GPU.GELetShared (gpu_coq_string "buf", arr_ty, gpuvar "buf") in
+  let result = GPU.infer_gpu_type [] [] e in
+  assert (result = GPU.Inl arr_ty) ;
+  Printf.printf "  let%%shared buf : f32[]@Shared in buf -> TArr [ok]\n"
+
+(* Test 4: let%shared body type is the inferred body, not the array type *)
+let test_gpu_letshared_body_type () =
+  let arr_ty = GPU.TArr (GPU.TPrim GPU.TInt32, GPU.Shared) in
+  (* body ignores the binding and is a plain bool literal *)
+  let e = GPU.GELetShared (gpu_coq_string "buf", arr_ty, gpubool) in
+  let result = GPU.infer_gpu_type [] [] e in
+  assert (result = GPU.Inl (GPU.TPrim GPU.TBool)) ;
+  Printf.printf "  let%%shared buf in false -> TPrim TBool [ok]\n"
+
+(* Test 5: let%shared with a non-array annotated type -> SharedNotArray *)
+let test_gpu_letshared_not_array () =
+  let bad_ty = GPU.TPrim GPU.TInt32 in
+  let e = GPU.GELetShared (gpu_coq_string "buf", bad_ty, gpuint32) in
+  let result = GPU.infer_gpu_type [] [] e in
+  assert (result = GPU.Inr (GPU.SharedNotArray bad_ty)) ;
+  Printf.printf "  let%%shared buf : int32 -> SharedNotArray [ok]\n"
+
+(* Test 6: let%shared with an array in a non-Shared space -> SharedNotShared *)
+let test_gpu_letshared_not_shared () =
+  let bad_ty = GPU.TArr (GPU.TReg GPU.RFloat32, GPU.Global) in
+  let e = GPU.GELetShared (gpu_coq_string "buf", bad_ty, gpuint32) in
+  let result = GPU.infer_gpu_type [] [] e in
+  assert (result = GPU.Inr (GPU.SharedNotShared bad_ty)) ;
+  Printf.printf "  let%%shared buf : f32[]@Global -> SharedNotShared [ok]\n"
+
+(* Test 7: let%shared with a Local array space -> SharedNotShared too *)
+let test_gpu_letshared_local_not_shared () =
+  let bad_ty = GPU.TArr (GPU.TPrim GPU.TInt32, GPU.Local) in
+  let e = GPU.GELetShared (gpu_coq_string "buf", bad_ty, gpuint32) in
+  let result = GPU.infer_gpu_type [] [] e in
+  assert (result = GPU.Inr (GPU.SharedNotShared bad_ty)) ;
+  Printf.printf "  let%%shared buf : int32[]@Local -> SharedNotShared [ok]\n"
+
+(* Test 8: superstep with a unit body -> TPrim TUnit *)
+let test_gpu_superstep_success () =
+  let result = GPU.infer_gpu_type [] [] (GPU.GESuperstep gpuunit) in
+  assert (result = GPU.Inl (GPU.TPrim GPU.TUnit)) ;
+  Printf.printf "  superstep { () } -> TPrim TUnit [ok]\n"
+
+(* Test 9: superstep with a non-unit body -> SuperstepBodyNotUnit *)
+let test_gpu_superstep_body_not_unit () =
+  let result = GPU.infer_gpu_type [] [] (GPU.GESuperstep gpuint32) in
+  assert (result = GPU.Inr (GPU.SuperstepBodyNotUnit (GPU.TPrim GPU.TInt32))) ;
+  Printf.printf "  superstep { 0 } -> SuperstepBodyNotUnit [ok]\n"
+
+(* Test 10: env scoping -- name bound by let%shared is visible in the body and
+   reads back at exactly the shared-array type *)
+let test_gpu_letshared_env_scoping () =
+  let arr_ty = GPU.TArr (GPU.TPrim GPU.TInt32, GPU.Shared) in
+  (* outer env binds nothing; the only way the var resolves is via the binding *)
+  let e = GPU.GELetShared (gpu_coq_string "tile", arr_ty, gpuvar "tile") in
+  let result = GPU.infer_gpu_type [] [] e in
+  assert (result = GPU.Inl arr_ty) ;
+  (* and an unbound sibling name still fails -- proving the binding is precise *)
+  let e2 = GPU.GELetShared (gpu_coq_string "tile", arr_ty, gpuvar "other") in
+  (match GPU.infer_gpu_type [] [] e2 with
+  | GPU.Inr (GPU.GSpecialErr _) -> ()
+  | _ -> assert false) ;
+  Printf.printf "  let%%shared tile in tile resolves; sibling unbound [ok]\n"
+
+(* Test 11: nested forms -- superstep wrapping a let%shared whose body is unit *)
+let test_gpu_nested_superstep_letshared () =
+  let arr_ty = GPU.TArr (GPU.TReg GPU.RFloat32, GPU.Shared) in
+  let inner = GPU.GELetShared (gpu_coq_string "buf", arr_ty, gpuunit) in
+  let e = GPU.GESuperstep inner in
+  let result = GPU.infer_gpu_type [] [] e in
+  assert (result = GPU.Inl (GPU.TPrim GPU.TUnit)) ;
+  Printf.printf "  superstep { let%%shared buf in () } -> TPrim TUnit [ok]\n"
+
+(* Test 12: error propagation -- a let%shared body error surfaces unchanged
+   through an enclosing superstep *)
+let test_gpu_nested_error_propagates () =
+  let arr_ty = GPU.TArr (GPU.TPrim GPU.TInt32, GPU.Shared) in
+  (* body reads an unbound var -> GSpecialErr; must bubble through superstep *)
+  let inner = GPU.GELetShared (gpu_coq_string "buf", arr_ty, gpuvar "ghost") in
+  let e = GPU.GESuperstep inner in
+  (match GPU.infer_gpu_type [] [] e with
+  | GPU.Inr (GPU.GSpecialErr _) -> ()
+  | _ -> assert false) ;
+  Printf.printf "  superstep { let%%shared .. in ghost } -> GSpecialErr [ok]\n"
+
 let () =
   Printf.printf "\n=== T3-S2 operator smoke tests (OperatorModel oracle) ===\n" ;
   test_op_add_int32 () ;
@@ -2146,4 +2295,18 @@ let () =
   test_spe_nested_return_typed_array () ;
   test_spe_nested_error_propagates () ;
   Printf.printf "=== T3-S7 special-form smoke tests passed ===\n" ;
+  Printf.printf "\n=== T3-S8 GPU / BSP-form smoke tests (GPUModel oracle) ===\n" ;
+  test_gpu_special_delegation () ;
+  test_gpu_special_err_delegation () ;
+  test_gpu_letshared_success () ;
+  test_gpu_letshared_body_type () ;
+  test_gpu_letshared_not_array () ;
+  test_gpu_letshared_not_shared () ;
+  test_gpu_letshared_local_not_shared () ;
+  test_gpu_superstep_success () ;
+  test_gpu_superstep_body_not_unit () ;
+  test_gpu_letshared_env_scoping () ;
+  test_gpu_nested_superstep_letshared () ;
+  test_gpu_nested_error_propagates () ;
+  Printf.printf "=== T3-S8 GPU / BSP-form smoke tests passed ===\n" ;
   exit 0

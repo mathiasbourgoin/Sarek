@@ -1,15 +1,15 @@
 {
   "project": "type-safety",
   "branch": "formal/convergence-safety-phase1a",
-  "phase": "T3-S7 (SpecialSpec, done)",
+  "phase": "T3-S8 (GPUSpec, done)",
   "toolchain": {
     "rocq": "9.1.1",
     "ocaml": "5.4.0"
   },
   "summary": {
-    "proven": 86,
+    "proven": 90,
     "definitions": 36,
-    "total": 86,
+    "total": 90,
     "admits": 0
   },
   "cmbt": {
@@ -809,6 +809,42 @@
       "status": "proven",
       "file": "theories/SpecialSpec.v",
       "tick": 12
+    },
+    {
+      "id": "infer_gpu_type_sound",
+      "kind": "theorem",
+      "statement": "infer_gpu_type env mu e = inl t -> has_gpu_type env mu e t",
+      "proof": "induction e (3 gpu_expr cases); GESpecial: infer_special_type_sound wrapped as GSpecialErr; GELetShared: destruct ty (only TArr reaches), destruct mem (only Shared), recurse under ((name,ty)::env) via body IH giving HGT_LetShared; GESuperstep: destruct infer body + sarek_type_eq_dec bt (TPrim TUnit), subst, HGT_Superstep via body IH",
+      "status": "proven",
+      "file": "theories/GPUSpec.v",
+      "tick": 13
+    },
+    {
+      "id": "infer_gpu_type_complete",
+      "kind": "theorem",
+      "statement": "has_gpu_type env mu e t -> infer_gpu_type env mu e = inl t",
+      "proof": "induction H (3 judgement cases); HGT_Special: infer_special_type_complete; HGT_LetShared: ty already TArr _ Shared, simpl exposes the recursive call, exact body IH; HGT_Superstep: rewrite body IH + sarek_type_eq_dec (TPrim TUnit) self reflexive",
+      "status": "proven",
+      "file": "theories/GPUSpec.v",
+      "tick": 13
+    },
+    {
+      "id": "has_gpu_type_det",
+      "kind": "lemma",
+      "statement": "has_gpu_type env mu e t1 -> has_gpu_type env mu e t2 -> t1 = t2",
+      "proof": "pose proof infer_gpu_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity",
+      "status": "proven",
+      "file": "theories/GPUSpec.v",
+      "tick": 13
+    },
+    {
+      "id": "gpu_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_gpu_type env mu e = inl t <-> has_gpu_type env mu e t",
+      "proof": "split; apply infer_gpu_type_sound / infer_gpu_type_complete",
+      "status": "proven",
+      "file": "theories/GPUSpec.v",
+      "tick": 13
     }
   ],
   "cmbt_t2_unify": {

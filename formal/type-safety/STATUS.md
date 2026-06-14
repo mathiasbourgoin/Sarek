@@ -1,17 +1,17 @@
 # TypeSafety — Status
 
 **Branch**: formal/convergence-safety-phase1a
-**Phase**: T3-S7 (SpecialSpec, done 2026-06-14) -> T3-S8 (next)
+**Phase**: T3-S8 (GPUSpec, done 2026-06-14) -> T3-S9 (next)
 **Toolchain**: Rocq 9.1.1 / OCaml 5.4.0
 
 ## Scoreboard
 
 | Metric | Value |
 |---|---|
-| Theorems proven | 86 (74 headline + 12 auxiliary, all Qed/Defined) |
+| Theorems proven | 90 (78 headline + 12 auxiliary, all Qed/Defined) |
 | Admits | 0 |
 | Axioms | 0 |
-| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, field_lookup, infer_rec_type, has_rec_type, infer_cf_type, has_cf_type, is_numeric, is_integer, infer_op_type, has_op_type, infer_fun_type, has_fun_type, is_mutable, infer_mut_type, has_mut_type, lookup_constr, branch_body_env, check_branches, infer_pat_type, has_pat_type, branches_have_type, check_fields, infer_constr_type, has_constr_type, fields_have_type, infer_special_type, has_special_type |
+| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, field_lookup, infer_rec_type, has_rec_type, infer_cf_type, has_cf_type, is_numeric, is_integer, infer_op_type, has_op_type, infer_fun_type, has_fun_type, is_mutable, infer_mut_type, has_mut_type, lookup_constr, branch_body_env, check_branches, infer_pat_type, has_pat_type, branches_have_type, check_fields, infer_constr_type, has_constr_type, fields_have_type, infer_special_type, has_special_type, infer_gpu_type, has_gpu_type |
 | Build | green (CoqMakefile, exit 0; dune build/test, exit 0) |
 | T1-CMBT harness | green -- differential QCheck 2000/2000 (0 errors, 0 fails) + 20/20 smoke |
 | T2-UNIFY harness | green -- differential QCheck 1000/1000 (0 errors, 0 fails) + 15/15 smoke |
@@ -24,6 +24,7 @@
 | T3-S5 harness | green -- 11/11 smoke (PEMut delegation, no-payload match, payload-bound match, PENotVariant, PEMismatch unknown constructor, PEBranchType, PEMutErr delegation, PEEmpty, scoped binder, multi-branch agree, error short-circuit) |
 | T3-S6 harness | green -- 13/13 smoke (CEPat delegation, record success/empty-provided, FieldTypeMismatch, UnknownField, nullary constr, payload constr, payload mismatch, UnknownConstr, ConstrArity extra-arg/missing-arg, CPatternErr delegation, nested construction) |
 | T3-S7 harness | green -- 12/12 smoke (SEConstr delegation, return pass-through int32/bool, EarlyReturnNotAllowed, create_array Global/Shared, ArraySizeNotInt, type-annot match/mismatch, SConstrErr delegation, nested return/typed/array, size-error propagation through SETyped) |
+| T3-S8 harness | green -- 12/12 smoke (GESpecial delegation + GSpecialErr, let%shared success/body-type, SharedNotArray, SharedNotShared Global/Local, superstep success/SuperstepBodyNotUnit, let%shared env scoping, nested superstep+let%shared, error propagation through superstep) |
 | Findings | F-TS-01 (ELet scope leak) -- found by T1-CMBT, RESOLVED |
 
 ## Termination design (T2-UNIFY)
@@ -364,12 +365,50 @@ TRecord and TVariant are now full constructors in `sarek_type`:
    the same reflexive-`eq_dec` collapse used in completeness, where `destruct (sarek_type_eq_dec X X)`
    discharges the `right` (Hne) arm by `exfalso; apply Hne; reflexivity`.
 
+## Proven (tick 13, GPUSpec.v -- T3-S8, all Qed, 0 admits)
+
+75. `infer_gpu_type_sound` -- GESpecial/GELetShared/GESuperstep inference -> has_gpu_type
+76. `infer_gpu_type_complete` -- has_gpu_type -> inference
+77. `has_gpu_type_det` -- uniqueness of the declarative gpu_expr judgement
+78. `gpu_type_preservation` -- infer_gpu_type env mu e = inl t <-> has_gpu_type env mu e t
+
+## Proof technique notes (T3-S8)
+
+1. **Two BSP/GPU forms mirror `infer`'s `ELetShared`/`ESuperstep` arms** (Sarek_typer.ml:769/800):
+   `GELetShared name ty body` models Sarek's `let%shared` -- Sarek binds `name` to
+   `TArr (elem_t, Shared)` (line 781) and infers the body, returning `tbody.ty`. In this
+   post-unification model the AST node carries the fully-resolved array type `ty` directly; the
+   load-bearing well-formedness condition is that `ty` is a *shared array* (shape `TArr _ Shared`).
+   `GESuperstep body` models `let%superstep` -- Sarek unifies the step body's type with `t_unit`
+   (line 803); we require `body : TPrim TUnit` and the construct itself yields `TPrim TUnit`
+   (a barrier-delimited side-effecting block).
+
+2. **Two distinct error constructors from one `match ty`**: the inference splits `ty` once --
+   `TArr elt Shared` recurses, `TArr _ _` (any non-Shared space) yields `SharedNotShared`, and every
+   non-array shape falls through to `SharedNotArray`. This keeps both error arms genuinely reachable
+   (smoke tests 5/6/7 cover non-array, Global, and Local respectively) while the success arm is the
+   only path that extends the environment.
+
+3. **Env scoping via `(name, ty) :: env`**: `GELetShared` binds the shared-array name into the
+   `type_env` before inferring the body, exactly as the lower layers thread let-bindings. The
+   declarative `HGT_LetShared` constructor pins the bound type to `TArr elt Shared`, so completeness
+   needs no `sarek_type_eq_dec` on the binding -- the inference's `match ty` already computes to the
+   recursive call under the extended env (`simpl; exact IHbody`). Smoke test 10 verifies the binding
+   is precise (the bound name resolves; a sibling name still fails as `GSpecialErr`).
+
+4. **No custom induction principle needed**: neither `GELetShared` nor `GESuperstep` holds a *list*
+   of sub-expressions (each recurses through a single `gpu_expr`), so Rocq's default `induction e`
+   yields the required IHs directly. Soundness is a flat 3-case induction: the `GELetShared` arm
+   `destruct ty` (only `TArr` survives `discriminate`), then `destruct mem` (only `Shared` survives),
+   reducing to the body IH; the `GESuperstep` arm uses the reflexive-`sarek_type_eq_dec` collapse
+   (with `subst bt`) shared by the special/operator layers.
+
 ## Auxiliary lemmas (scaffolding, all Qed/Defined, 0 admits)
 
 These 12 declarations are internal scaffolding for the headline theorems above
 (ETuple/list recursion + the three custom induction principles + the branch-list and
 field-list helpers). They are not headline results but are tracked in the proof ledger so the
-declaration count is exact (74 headline + 12 auxiliary = 86 total
+declaration count is exact (78 headline + 12 auxiliary = 90 total
 `Theorem`/`Lemma` declarations).
 
 63. `expr_ind_strong` -- custom strong induction principle for `expr` (Forall IH for ETuple); `Defined`
@@ -385,4 +424,4 @@ declaration count is exact (74 headline + 12 auxiliary = 86 total
 73. `constr_expr_ind_strong` -- custom strong induction principle for `constr_expr` (Forall IH over provided fields + Some/None payload arm); `Defined`
 74. `check_fields_sound` -- field-list soundness over `check_fields` (feeds `infer_constr_type_sound`)
 
-## Next: T3-S8
+## Next: T3-S9

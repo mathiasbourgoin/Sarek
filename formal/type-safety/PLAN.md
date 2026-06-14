@@ -1,8 +1,8 @@
 # TypeSafety — Work Plan
 
-**Last updated**: 2026-06-14 (tick 0 — T3-S7 done, currentTask = T3-S8)
+**Last updated**: 2026-06-14 (T3-S8 done, currentTask = T3-S9 TBD)
 **Apparatus version**: 1.2.1 (inherited from convergence-safety template)
-**Phase**: T3-S7 (done — 4 theorems, 12/12 smoke) → T3-S8 (GPUSpec.v)
+**Phase**: T3-S8 (done — 4 theorems, 12/12 smoke) → T3-S9 (TBD)
 **Branch**: formal/convergence-safety-phase1a
 
 ---
@@ -39,7 +39,7 @@ Coq has no mutable unification, so the spec models **post-unification** types
 | T3-S5 | Pattern matching (EMatch) — PatternSpec.v | T3 | **done** (4 theorems + 2 aux, 11/11 smoke) | T3-S2 |
 | T3-S6 | Algebraic construction (ERecord, EConstr) — ConstrSpec.v | T3 | **done** (4 theorems + 2 aux, 13/13 smoke) | T3-S5 |
 | T3-S7 | Special forms (EReturn, ECreateArray, ETyped) — SpecialSpec.v | T3 | **done** (4 theorems, 12/12 smoke) | T3-S6 |
-| T3-S8 | GPU forms (ELetShared, ESuperstep) — GPUSpec.v | T3 | **next** | T3-S7 |
+| T3-S8 | GPU forms (ELetShared, ESuperstep) — GPUSpec.v | T3 | **done** (4 theorems, 12/12 smoke) | T3-S7 |
 | DOCS-SYNC | STATUS.md / FINDINGS.md / proof-ledger.json drift check | hygiene | clean | — |
 
 ---
