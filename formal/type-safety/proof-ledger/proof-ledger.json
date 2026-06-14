@@ -1,15 +1,15 @@
 {
   "project": "type-safety",
   "branch": "formal/type-safety-phase1a",
-  "phase": "T2-UNIFY",
+  "phase": "T2-VEC",
   "toolchain": {
     "rocq": "9.1.1",
     "ocaml": "5.4.0"
   },
   "summary": {
-    "proven": 36,
+    "proven": 41,
     "definitions": 22,
-    "total": 36,
+    "total": 41,
     "admits": 0
   },
   "cmbt": {
@@ -347,6 +347,51 @@
       "proof": "reflexivity",
       "file": "theories/UnifySpec.v",
       "tick": 3
+    },
+    {
+      "id": "sarek_type_eq_dec",
+      "kind": "lemma",
+      "statement": "forall t1 t2 : sarek_type, {t1 = t2} + {t1 <> t2}",
+      "status": "proven",
+      "proof": "fix IH 1; destruct t1 as [p|r|sv|sa ms|lf sf|lt]; destruct t2 as [...]; prim_type_eq_dec/reg_type_eq_dec/mem_space_eq_dec + inner IHL fix for list cases (TFun/TTuple); injection H as <- _ / <- for each injection step",
+      "file": "theories/VecSpec.v",
+      "tick": 4
+    },
+    {
+      "id": "infer_mem_type_sound",
+      "kind": "theorem",
+      "statement": "infer_mem_type env e = inl t -> has_mem_type env e t",
+      "status": "proven",
+      "proof": "intros env e t H; revert env t H; induction e; for MCore: infer_type_sound; for EVecGet/EVecSet: destruct on inl(TVec elem_t) then inl(TPrim TInt32), eapply HMT_VecGet/VecSet; for EArrGet/EArrSet: destruct inl(TArr elem_t ms), eapply HMT_ArrGet/ArrSet with (m:=ms)",
+      "file": "theories/VecSpec.v",
+      "tick": 4
+    },
+    {
+      "id": "infer_mem_type_complete",
+      "kind": "theorem",
+      "statement": "has_mem_type env e t -> infer_mem_type env e = inl t",
+      "status": "proven",
+      "proof": "intros env0 e0 t0 H; induction H; for HMT_Core: match goal to find has_type hyp, rewrite infer_type_complete; for HMT_VecGet/ArrGet: rewrite IH1 IH2; for HMT_VecSet/ArrSet: rewrite IH1 IH2 IH3, destruct sarek_type_eq_dec elem_t elem_t (left branch)",
+      "file": "theories/VecSpec.v",
+      "tick": 4
+    },
+    {
+      "id": "has_mem_type_det",
+      "kind": "lemma",
+      "statement": "has_mem_type env e t1 -> has_mem_type env e t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "pose proof infer_mem_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity (infer_mem_type is deterministic as a function)",
+      "file": "theories/VecSpec.v",
+      "tick": 4
+    },
+    {
+      "id": "mem_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_mem_type env e = inl t <-> has_mem_type env e t",
+      "status": "proven",
+      "proof": "split; apply infer_mem_type_sound / infer_mem_type_complete",
+      "file": "theories/VecSpec.v",
+      "tick": 4
     }
   ],
   "cmbt_t2_unify": {
@@ -358,6 +403,15 @@
     "qcheck_pass": 1000,
     "smoke_cases": 15,
     "smoke_pass": 15,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t2_vec": {
+    "id": "T2-VEC-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
     "errors": 0,
     "fails": 0
   }

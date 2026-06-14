@@ -645,4 +645,176 @@ let () =
   let passed2 =
     QCheck_base_runner.run_tests ~verbose:true [test_unify_differential]
   in
-  exit passed2
+  if passed2 <> 0 then exit passed2
+
+(* ===========================================================================
+   T2-VEC smoke tests -- extracted VecModel oracle
+   ===========================================================================
+
+   These tests drive the extracted memory-access type inference model
+   (VecModel.infer_mem_type) directly, checking:
+     1. MCore delegation -- core expr inference is threaded through.
+     2. EVecGet success -- TVec elem correctly yields elem type.
+     3. EVecGet NotAVector -- non-vec type rejected.
+     4. EVecGet IndexNotInt -- non-int32 index rejected.
+     5. EVecSet success -- matching value type yields TPrim TUnit.
+     6. EVecSet ElemMismatch -- mismatched value type rejected.
+     7. EArrGet success -- TArr elem correctly yields elem type.
+     8. EArrGet NotAnArray -- non-array type rejected.
+     9. EArrSet success -- matching value type yields TPrim TUnit.
+    10. EArrSet ElemMismatch -- mismatched value type rejected. *)
+
+module V = Type_safety_model.VecModel
+
+(** Convert an OCaml string to VecModel's Coq-extracted string type.
+    VecModel has its own Ascii/String types (same structure as M but different
+    OCaml types). *)
+let vec_coq_string_of_string (s : ostring) : V.string =
+  let char_to_ascii c =
+    let n = Char.code c in
+    let bit k = (n lsr k) land 1 = 1 in
+    V.Ascii (bit 0, bit 1, bit 2, bit 3, bit 4, bit 5, bit 6, bit 7)
+  in
+  let len = String.length s in
+  let rec go i acc =
+    if i < 0 then acc else go (i - 1) (V.String (char_to_ascii s.[i], acc))
+  in
+  go (len - 1) V.EmptyString
+
+(** Build a VecModel environment entry from an OCaml string. *)
+let vec_env_entry x t = (vec_coq_string_of_string x, t)
+
+(** Build a VecModel EVar node from an OCaml string. *)
+let vevar s = V.EVar (vec_coq_string_of_string s)
+
+(* MCore delegates to core infer_type. *)
+let test_vec_mcore_lit () =
+  let result = V.infer_mem_type [] (V.MCore (V.ELit (V.LInt 1))) in
+  assert (result = V.Inl (V.TPrim V.TInt32)) ;
+  Printf.printf "  MCore (ELit (LInt 1)) -> TPrim TInt32 [ok]\n"
+
+(* EVecGet on TVec (TPrim TInt32) with int32 index -> TPrim TInt32. *)
+let test_vec_get_ok () =
+  let env = [vec_env_entry "v" (V.TVec (V.TPrim V.TInt32))] in
+  let result =
+    V.infer_mem_type env
+      (V.EVecGet (V.MCore (vevar "v"), V.MCore (V.ELit (V.LInt 0))))
+  in
+  assert (result = V.Inl (V.TPrim V.TInt32)) ;
+  Printf.printf "  EVecGet vec[int32] idx:int32 -> TPrim TInt32 [ok]\n"
+
+(* EVecGet on a non-vector type -> NotAVector. *)
+let test_vec_get_not_a_vector () =
+  let result =
+    V.infer_mem_type []
+      (V.EVecGet (V.MCore (V.ELit (V.LInt 0)), V.MCore (V.ELit (V.LInt 0))))
+  in
+  (match result with
+  | V.Inr (V.NotAVector _) -> ()
+  | _ -> failwith "expected NotAVector") ;
+  Printf.printf "  EVecGet non-vec -> NotAVector [ok]\n"
+
+(* EVecGet with a boolean index -> IndexNotInt. *)
+let test_vec_get_bad_index () =
+  let env = [vec_env_entry "v" (V.TVec (V.TPrim V.TInt32))] in
+  let result =
+    V.infer_mem_type env
+      (V.EVecGet (V.MCore (vevar "v"), V.MCore (V.ELit (V.LBool true))))
+  in
+  (match result with
+  | V.Inr (V.IndexNotInt _) -> ()
+  | _ -> failwith "expected IndexNotInt") ;
+  Printf.printf "  EVecGet with bool index -> IndexNotInt [ok]\n"
+
+(* EVecSet with matching value type -> TPrim TUnit. *)
+let test_vec_set_ok () =
+  let env = [vec_env_entry "v" (V.TVec (V.TPrim V.TInt32))] in
+  let result =
+    V.infer_mem_type env
+      (V.EVecSet
+         ( V.MCore (vevar "v")
+         , V.MCore (V.ELit (V.LInt 0))
+         , V.MCore (V.ELit (V.LInt 42)) ))
+  in
+  assert (result = V.Inl (V.TPrim V.TUnit)) ;
+  Printf.printf "  EVecSet vec[int32] value:int32 -> TPrim TUnit [ok]\n"
+
+(* EVecSet with mismatched value type -> ElemMismatch. *)
+let test_vec_set_mismatch () =
+  let env = [vec_env_entry "v" (V.TVec (V.TPrim V.TInt32))] in
+  let result =
+    V.infer_mem_type env
+      (V.EVecSet
+         ( V.MCore (vevar "v")
+         , V.MCore (V.ELit (V.LInt 0))
+         , V.MCore (V.ELit (V.LBool true)) ))
+  in
+  (match result with
+  | V.Inr (V.ElemMismatch _) -> ()
+  | _ -> failwith "expected ElemMismatch") ;
+  Printf.printf "  EVecSet vec[int32] value:bool -> ElemMismatch [ok]\n"
+
+(* EArrGet on TArr (TPrim TBool) Local with int32 index -> TPrim TBool. *)
+let test_arr_get_ok () =
+  let env = [vec_env_entry "a" (V.TArr (V.TPrim V.TBool, V.Local))] in
+  let result =
+    V.infer_mem_type env
+      (V.EArrGet (V.MCore (vevar "a"), V.MCore (V.ELit (V.LInt 0))))
+  in
+  assert (result = V.Inl (V.TPrim V.TBool)) ;
+  Printf.printf "  EArrGet arr[bool,Local] idx:int32 -> TPrim TBool [ok]\n"
+
+(* EArrGet on a non-array type -> NotAnArray. *)
+let test_arr_get_not_an_array () =
+  let result =
+    V.infer_mem_type []
+      (V.EArrGet
+         (V.MCore (V.ELit (V.LBool true)), V.MCore (V.ELit (V.LInt 0))))
+  in
+  (match result with
+  | V.Inr (V.NotAnArray _) -> ()
+  | _ -> failwith "expected NotAnArray") ;
+  Printf.printf "  EArrGet non-array -> NotAnArray [ok]\n"
+
+(* EArrSet with matching value type -> TPrim TUnit. *)
+let test_arr_set_ok () =
+  let env = [vec_env_entry "a" (V.TArr (V.TPrim V.TInt32, V.Global))] in
+  let result =
+    V.infer_mem_type env
+      (V.EArrSet
+         ( V.MCore (vevar "a")
+         , V.MCore (V.ELit (V.LInt 0))
+         , V.MCore (V.ELit (V.LInt 7)) ))
+  in
+  assert (result = V.Inl (V.TPrim V.TUnit)) ;
+  Printf.printf "  EArrSet arr[int32,Global] value:int32 -> TPrim TUnit [ok]\n"
+
+(* EArrSet with mismatched value type -> ElemMismatch. *)
+let test_arr_set_mismatch () =
+  let env = [vec_env_entry "a" (V.TArr (V.TPrim V.TInt32, V.Shared))] in
+  let result =
+    V.infer_mem_type env
+      (V.EArrSet
+         ( V.MCore (vevar "a")
+         , V.MCore (V.ELit (V.LInt 0))
+         , V.MCore (V.ELit V.LUnit) ))
+  in
+  (match result with
+  | V.Inr (V.ElemMismatch _) -> ()
+  | _ -> failwith "expected ElemMismatch") ;
+  Printf.printf "  EArrSet arr[int32,Shared] value:unit -> ElemMismatch [ok]\n"
+
+let () =
+  Printf.printf "\n=== T2-VEC smoke tests (VecModel oracle) ===\n" ;
+  test_vec_mcore_lit () ;
+  test_vec_get_ok () ;
+  test_vec_get_not_a_vector () ;
+  test_vec_get_bad_index () ;
+  test_vec_set_ok () ;
+  test_vec_set_mismatch () ;
+  test_arr_get_ok () ;
+  test_arr_get_not_an_array () ;
+  test_arr_set_ok () ;
+  test_arr_set_mismatch () ;
+  Printf.printf "=== T2-VEC smoke tests passed ===\n" ;
+  exit 0

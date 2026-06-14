@@ -1,3 +1,4 @@
 -R theories TypeSafety
 theories/TypeSafetySpec.v
 theories/UnifySpec.v
+theories/VecSpec.v

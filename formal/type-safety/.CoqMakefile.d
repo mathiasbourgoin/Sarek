@@ -2,3 +2,5 @@ theories/TypeSafetySpec.vo theories/TypeSafetySpec.glob theories/TypeSafetySpec.
 theories/TypeSafetySpec.vos theories/TypeSafetySpec.vok theories/TypeSafetySpec.required_vos: theories/TypeSafetySpec.v /usr/lib/ocaml/rocq-runtime/rocqworker
 theories/UnifySpec.vo theories/UnifySpec.glob theories/UnifySpec.v.beautified theories/UnifySpec.required_vo: theories/UnifySpec.v theories/TypeSafetySpec.vo /usr/lib/ocaml/rocq-runtime/rocqworker
 theories/UnifySpec.vos theories/UnifySpec.vok theories/UnifySpec.required_vos: theories/UnifySpec.v theories/TypeSafetySpec.vos /usr/lib/ocaml/rocq-runtime/rocqworker
+theories/VecSpec.vo theories/VecSpec.glob theories/VecSpec.v.beautified theories/VecSpec.required_vo: theories/VecSpec.v theories/TypeSafetySpec.vo /usr/lib/ocaml/rocq-runtime/rocqworker
+theories/VecSpec.vos theories/VecSpec.vok theories/VecSpec.required_vos: theories/VecSpec.v theories/TypeSafetySpec.vos /usr/lib/ocaml/rocq-runtime/rocqworker
