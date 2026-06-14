@@ -41,8 +41,6 @@ val follow_pvar : int -> pre_subst -> int -> pre_type
 
 val follow : int -> pre_subst -> pre_type -> pre_type
 
-val recurse_occurs : int -> pre_type -> bool
-
 val occurs_in : int -> pre_subst -> int -> pre_type -> bool
 
 val unify_list_with :

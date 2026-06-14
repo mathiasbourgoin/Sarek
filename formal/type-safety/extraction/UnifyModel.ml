@@ -108,17 +108,17 @@ let follow fuel s t = match t with
 | PVar id -> follow_pvar fuel s id
 | _ -> t
 
-(** val recurse_occurs : int -> pre_type -> bool **)
-
-let rec recurse_occurs id = function
-| PVar id' -> (=) id id'
-| PTuple ts -> existsb (recurse_occurs id) ts
-| _ -> false
-
 (** val occurs_in : int -> pre_subst -> int -> pre_type -> bool **)
 
-let occurs_in fuel s id t =
-  recurse_occurs id (follow fuel s t)
+let rec occurs_in fuel s id t =
+  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+    (fun _ -> false)
+    (fun n ->
+    match follow n s t with
+    | PVar id' -> (=) id id'
+    | PTuple ts -> existsb (occurs_in n s id) ts
+    | _ -> false)
+    fuel
 
 (** val unify_list_with :
     (pre_subst -> pre_type -> pre_type -> pre_subst option) -> pre_subst ->

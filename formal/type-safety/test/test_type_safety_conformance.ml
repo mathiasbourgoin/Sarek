@@ -320,7 +320,8 @@ let gen_expr : M.expr Gen.t =
                Sarek_typer (which may thread env across elements). *)
             Gen.map
               (fun es -> M.ETuple es)
-              (Gen.list_size (Gen.int_range 0 3)
+              (Gen.list_size
+                 (Gen.int_range 0 3)
                  (Gen.map (fun l -> M.ELit l) gen_lit));
           ])
 
@@ -395,18 +396,28 @@ let test_tuple_single () =
   Printf.printf "  ETuple [42] -> TTuple [TInt32] [ok]\n"
 
 let test_tuple_pair () =
-  let result = M.infer_type [] (M.ETuple [M.ELit (M.LInt 1); M.ELit (M.LBool true)]) in
+  let result =
+    M.infer_type [] (M.ETuple [M.ELit (M.LInt 1); M.ELit (M.LBool true)])
+  in
   assert (result = M.Inl (M.TTuple [M.TPrim M.TInt32; M.TPrim M.TBool])) ;
   Printf.printf "  ETuple [1; true] -> TTuple [TInt32; TBool] [ok]\n"
 
 let test_tuple_nested () =
   let inner = M.ETuple [M.ELit (M.LInt 0); M.ELit M.LUnit] in
   let result = M.infer_type [] (M.ETuple [inner; M.ELit (M.LBool false)]) in
-  assert (result = M.Inl (M.TTuple [M.TTuple [M.TPrim M.TInt32; M.TPrim M.TUnit]; M.TPrim M.TBool])) ;
+  assert (
+    result
+    = M.Inl
+        (M.TTuple
+           [M.TTuple [M.TPrim M.TInt32; M.TPrim M.TUnit]; M.TPrim M.TBool])) ;
   Printf.printf "  ETuple [ETuple; false] -> TTuple [TTuple; TBool] [ok]\n"
 
 let test_tuple_error_propagates () =
-  let result = M.infer_type [] (M.ETuple [M.ELit (M.LInt 1); M.EVar (coq_string_of_string "x")]) in
+  let result =
+    M.infer_type
+      []
+      (M.ETuple [M.ELit (M.LInt 1); M.EVar (coq_string_of_string "x")])
+  in
   assert (match result with M.Inr (M.UnboundVar _) -> true | _ -> false) ;
   Printf.printf "  ETuple [1; free_var] -> UnboundVar [ok]\n"
 
@@ -478,7 +489,9 @@ let test_unify_prim_diff () =
   Printf.printf "  unify PPrim TInt32 PPrim TBool = None [ok]\n"
 
 let test_unify_reg_same () =
-  let s = U.unify_fun fuel empty_subst (U.PReg U.RFloat32) (U.PReg U.RFloat32) in
+  let s =
+    U.unify_fun fuel empty_subst (U.PReg U.RFloat32) (U.PReg U.RFloat32)
+  in
   assert (s = Some []) ;
   Printf.printf "  unify PReg RFloat32 PReg RFloat32 = Some [] [ok]\n"
 
@@ -535,35 +548,47 @@ let test_unify_tuple_same () =
   let t2 = U.PTuple [U.PPrim U.TInt32; U.PReg U.RFloat32] in
   let s = U.unify_fun fuel empty_subst t1 t2 in
   assert (s = Some []) ;
-  Printf.printf "  unify PTuple[int32;float32] PTuple[int32;float32] = Some [] [ok]\n"
+  Printf.printf
+    "  unify PTuple[int32;float32] PTuple[int32;float32] = Some [] [ok]\n"
 
 let test_unify_tuple_diff_len () =
   let t1 = U.PTuple [U.PPrim U.TInt32] in
   let t2 = U.PTuple [U.PPrim U.TInt32; U.PReg U.RFloat32] in
   let s = U.unify_fun fuel empty_subst t1 t2 in
   assert (s = None) ;
-  Printf.printf "  unify PTuple[int32] PTuple[int32;float32] = None (len mismatch) [ok]\n"
+  Printf.printf
+    "  unify PTuple[int32] PTuple[int32;float32] = None (len mismatch) [ok]\n"
 
 let test_unify_tuple_mismatch_elem () =
   let t1 = U.PTuple [U.PPrim U.TInt32; U.PPrim U.TBool] in
   let t2 = U.PTuple [U.PPrim U.TInt32; U.PReg U.RFloat32] in
   let s = U.unify_fun fuel empty_subst t1 t2 in
   assert (s = None) ;
-  Printf.printf "  unify PTuple[int32;bool] PTuple[int32;float32] = None (elem mismatch) [ok]\n"
+  Printf.printf
+    "  unify PTuple[int32;bool] PTuple[int32;float32] = None (elem mismatch) \
+     [ok]\n"
 
 let test_unify_var_already_bound () =
   let s0 = [(0, U.PPrim U.TInt32)] in
   let s = U.unify_fun fuel s0 (U.PVar 0) (U.PPrim U.TInt32) in
   assert (s = Some s0) ;
-  Printf.printf "  unify (PVar 0 -> TInt32) PVar 0 PPrim TInt32 = Some s0 [ok]\n"
+  Printf.printf
+    "  unify (PVar 0 -> TInt32) PVar 0 PPrim TInt32 = Some s0 [ok]\n"
 
 (* T2-UNIFY QCheck: conformance against Sarek_types.unify for ground types *)
 
 let gen_ground_pre_type : U.pre_type QCheck2.Gen.t =
   QCheck2.Gen.oneof_list
-    [U.PPrim U.TUnit; U.PPrim U.TBool; U.PPrim U.TInt32;
-     U.PReg U.RInt; U.PReg U.RInt64; U.PReg U.RFloat32; U.PReg U.RFloat64;
-     U.PReg U.RChar]
+    [
+      U.PPrim U.TUnit;
+      U.PPrim U.TBool;
+      U.PPrim U.TInt32;
+      U.PReg U.RInt;
+      U.PReg U.RInt64;
+      U.PReg U.RFloat32;
+      U.PReg U.RFloat64;
+      U.PReg U.RChar;
+    ]
 
 type unify_ncmp = UOk | UFail
 
@@ -573,14 +598,14 @@ let ncmp_of_sarek_unify = function Ok () -> UOk | Error _ -> UFail
 
 let sarek_typ_of_ground (t : U.pre_type) : Sarek_types.typ option =
   match t with
-  | U.PPrim U.TUnit  -> Some (Sarek_types.TPrim Sarek_types.TUnit)
-  | U.PPrim U.TBool  -> Some (Sarek_types.TPrim Sarek_types.TBool)
+  | U.PPrim U.TUnit -> Some (Sarek_types.TPrim Sarek_types.TUnit)
+  | U.PPrim U.TBool -> Some (Sarek_types.TPrim Sarek_types.TBool)
   | U.PPrim U.TInt32 -> Some (Sarek_types.TPrim Sarek_types.TInt32)
-  | U.PReg U.RInt     -> Some (Sarek_types.TReg Sarek_types.Int)
-  | U.PReg U.RInt64   -> Some (Sarek_types.TReg Sarek_types.Int64)
+  | U.PReg U.RInt -> Some (Sarek_types.TReg Sarek_types.Int)
+  | U.PReg U.RInt64 -> Some (Sarek_types.TReg Sarek_types.Int64)
   | U.PReg U.RFloat32 -> Some (Sarek_types.TReg Sarek_types.Float32)
   | U.PReg U.RFloat64 -> Some (Sarek_types.TReg Sarek_types.Float64)
-  | U.PReg U.RChar    -> Some (Sarek_types.TReg Sarek_types.Char)
+  | U.PReg U.RChar -> Some (Sarek_types.TReg Sarek_types.Char)
   | _ -> None
 
 let test_unify_differential =
@@ -590,7 +615,7 @@ let test_unify_differential =
     (QCheck2.Gen.pair gen_ground_pre_type gen_ground_pre_type)
     (fun (t1, t2) ->
       let model_result = ncmp_of_unify_opt (U.unify_fun fuel [] t1 t2) in
-      match sarek_typ_of_ground t1, sarek_typ_of_ground t2 with
+      match (sarek_typ_of_ground t1, sarek_typ_of_ground t2) with
       | Some st1, Some st2 ->
           Sarek_types.reset_tvar_counter () ;
           let real_result = ncmp_of_sarek_unify (Sarek_types.unify st1 st2) in
@@ -615,6 +640,9 @@ let () =
   test_unify_tuple_mismatch_elem () ;
   test_unify_var_already_bound () ;
   Printf.printf "=== T2-UNIFY smoke tests passed ===\n" ;
-  Printf.printf "\n=== T2-UNIFY differential (UnifyModel vs Sarek_types.unify) ===\n" ;
-  let passed2 = QCheck_base_runner.run_tests ~verbose:true [test_unify_differential] in
+  Printf.printf
+    "\n=== T2-UNIFY differential (UnifyModel vs Sarek_types.unify) ===\n" ;
+  let passed2 =
+    QCheck_base_runner.run_tests ~verbose:true [test_unify_differential]
+  in
   exit passed2

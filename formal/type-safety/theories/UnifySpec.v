@@ -21,8 +21,8 @@
  *   - unify_fun is a Fixpoint on fuel with {struct fuel} annotation. The
  *     PTuple branch calls unify_list_with (unify_fun n) where n is the
  *     predecessor — strictly smaller, satisfying the guard checker.
- *   - occurs_in = recurse_occurs (structural Fixpoint on pre_type) composed
- *     with follow. No mutual fixpoint is needed.
+ *   - occurs_in is a fuel-decreasing Fixpoint that follows each PVar element
+ *     before recursing, so transitive occurrences inside PTuple are not missed.
  *
  * Proof strategy:
  *   - Ground-vs-ground cases (PPrim/PPrim, PReg/PReg): unify_fun (S n) reduces
@@ -158,26 +158,31 @@ Qed.
 
 (* ===== 4. Occurs check (Sarek_types.ml:occurs) ===== *)
 
-(* recurse_occurs: structural recursion on pre_type. *)
-Fixpoint recurse_occurs (id : nat) (t : pre_type) : bool :=
-  match t with
-  | PVar id'  => Nat.eqb id id'
-  | PPrim _   => false
-  | PReg  _   => false
-  | PTuple ts => List.existsb (recurse_occurs id) ts
+(* occurs_in: fuel-bounded occurs check that follows PVar links at every level.
+   The previous definition (recurse_occurs + one-shot follow) missed transitive
+   occurrences inside PTuple: PVar 0 inside a tuple could map to the target id
+   through the substitution without being detected.
+   Fix: at each recursive step, follow the current term before inspecting it,
+   so every PVar encountered in a PTuple element is resolved against s. *)
+Fixpoint occurs_in (fuel : nat) (s : pre_subst) (id : nat) (t : pre_type) : bool :=
+  match fuel with
+  | 0 => false
+  | S n =>
+      match follow n s t with
+      | PVar id'  => Nat.eqb id id'
+      | PPrim _   => false
+      | PReg  _   => false
+      | PTuple ts => List.existsb (occurs_in n s id) ts
+      end
   end.
-
-(* occurs_in: follow t to its representative, then check structurally. *)
-Definition occurs_in (fuel : nat) (s : pre_subst) (id : nat) (t : pre_type) : bool :=
-  recurse_occurs id (follow fuel s t).
 
 Lemma occurs_ground_false : forall fuel s id p,
   occurs_in fuel s id (PPrim p) = false.
-Proof. reflexivity. Qed.
+Proof. intros fuel. destruct fuel; reflexivity. Qed.
 
 Lemma occurs_ground_reg_false : forall fuel s id r,
   occurs_in fuel s id (PReg r) = false.
-Proof. reflexivity. Qed.
+Proof. intros fuel. destruct fuel; reflexivity. Qed.
 
 (* ===== 5. Unify (Sarek_types.ml:unify) ===== *)
 
@@ -410,11 +415,11 @@ Qed.
    check always returns false. Binding is never blocked for ground types. *)
 Lemma occurs_check_blocks_prim : forall n s id p,
   occurs_in n s id (PPrim p) = false.
-Proof. reflexivity. Qed.
+Proof. intros n. destruct n; reflexivity. Qed.
 
 Lemma occurs_check_blocks_reg : forall n s id r,
   occurs_in n s id (PReg r) = false.
-Proof. reflexivity. Qed.
+Proof. intros n. destruct n; reflexivity. Qed.
 
 (* ===== 11. apply_subst (for extraction) ===== *)
 

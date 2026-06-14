@@ -7,9 +7,9 @@
     "ocaml": "5.4.0"
   },
   "summary": {
-    "proven": 30,
+    "proven": 36,
     "definitions": 22,
-    "total": 30,
+    "total": 36,
     "admits": 0
   },
   "cmbt": {

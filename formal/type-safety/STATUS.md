@@ -8,7 +8,7 @@
 
 | Metric | Value |
 |---|---|
-| Theorems proven | 30 |
+| Theorems proven | 36 |
 | Admits | 0 |
 | Axioms | 0 |
 | Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, + more |
