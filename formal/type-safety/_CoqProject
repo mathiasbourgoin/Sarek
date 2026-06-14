@@ -4,3 +4,4 @@ theories/UnifySpec.v
 theories/VecSpec.v
 theories/RegistrySpec.v
 theories/ControlFlowSpec.v
+theories/OperatorSpec.v

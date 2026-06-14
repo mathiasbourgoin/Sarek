@@ -1180,5 +1180,89 @@ let () =
   test_cf_while_ok () ;
   test_cf_seq_type () ;
   test_cf_for_var_in_scope () ;
-  Printf.printf "=== T3-S1 control flow smoke tests passed ===\n" ;
+  Printf.printf "=== T3-S1 control flow smoke tests passed ===\n"
+
+(* ===== T3-S2: OperatorSpec smoke tests ===== *)
+
+module OP = Type_safety_model.OperatorModel
+
+let opint32 = OP.OPCf (OP.CFRec (OP.RMem (OP.MCore (OP.ELit (OP.LInt 0)))))
+
+let opbool = OP.OPCf (OP.CFRec (OP.RMem (OP.MCore (OP.ELit (OP.LBool false)))))
+
+let opfloat = OP.OPCf (OP.CFRec (OP.RMem (OP.MCore (OP.ELit (OP.LFloat 0)))))
+
+(* Test 1: Add int32 int32 -> int32 (numeric binop) *)
+let test_op_add_int32 () =
+  let result = OP.infer_op_type [] (OP.OPBinop (OP.Add, opint32, opint32)) in
+  assert (result = OP.Inl (OP.TPrim OP.TInt32)) ;
+  Printf.printf "  Add int32 int32 -> TInt32 [ok]\n"
+
+(* Test 2: Add int32 bool -> OperandMismatch (type mismatch) *)
+let test_op_add_mismatch () =
+  let result = OP.infer_op_type [] (OP.OPBinop (OP.Add, opint32, opbool)) in
+  assert (result <> OP.Inl (OP.TPrim OP.TInt32)) ;
+  Printf.printf "  Add int32 bool -> error (mismatch) [ok]\n"
+
+(* Test 3: Mod int32 int32 -> int32 (integer binop) *)
+let test_op_mod_int32 () =
+  let result = OP.infer_op_type [] (OP.OPBinop (OP.Mod, opint32, opint32)) in
+  assert (result = OP.Inl (OP.TPrim OP.TInt32)) ;
+  Printf.printf "  Mod int32 int32 -> TInt32 [ok]\n"
+
+(* Test 4: Eq int32 int32 -> bool (eq binop) *)
+let test_op_eq_int32 () =
+  let result = OP.infer_op_type [] (OP.OPBinop (OP.Eq, opint32, opint32)) in
+  assert (result = OP.Inl (OP.TPrim OP.TBool)) ;
+  Printf.printf "  Eq int32 int32 -> TBool [ok]\n"
+
+(* Test 5: Lt int32 int32 -> bool (cmp binop, numeric type) *)
+let test_op_lt_int32 () =
+  let result = OP.infer_op_type [] (OP.OPBinop (OP.Lt, opint32, opint32)) in
+  assert (result = OP.Inl (OP.TPrim OP.TBool)) ;
+  Printf.printf "  Lt int32 int32 -> TBool [ok]\n"
+
+(* Test 6: And bool bool -> bool *)
+let test_op_and_bool () =
+  let result = OP.infer_op_type [] (OP.OPBinop (OP.And, opbool, opbool)) in
+  assert (result = OP.Inl (OP.TPrim OP.TBool)) ;
+  Printf.printf "  And bool bool -> TBool [ok]\n"
+
+(* Test 7: And int32 int32 -> error (NotBool) *)
+let test_op_and_not_bool () =
+  let result = OP.infer_op_type [] (OP.OPBinop (OP.And, opint32, opint32)) in
+  assert (result <> OP.Inl (OP.TPrim OP.TBool)) ;
+  Printf.printf "  And int32 int32 -> error (NotBool) [ok]\n"
+
+(* Test 8: Neg float32 -> float32 (numeric unop) *)
+let test_op_neg_float () =
+  let result = OP.infer_op_type [] (OP.OPUnop (OP.Neg, opfloat)) in
+  assert (result = OP.Inl (OP.TReg OP.RFloat32)) ;
+  Printf.printf "  Neg float32 -> TReg RFloat32 [ok]\n"
+
+(* Test 9: Not bool -> bool *)
+let test_op_not_bool () =
+  let result = OP.infer_op_type [] (OP.OPUnop (OP.Not, opbool)) in
+  assert (result = OP.Inl (OP.TPrim OP.TBool)) ;
+  Printf.printf "  Not bool -> TBool [ok]\n"
+
+(* Test 10: Lnot int32 -> int32 (integer unop) *)
+let test_op_lnot_int32 () =
+  let result = OP.infer_op_type [] (OP.OPUnop (OP.Lnot, opint32)) in
+  assert (result = OP.Inl (OP.TPrim OP.TInt32)) ;
+  Printf.printf "  Lnot int32 -> TInt32 [ok]\n"
+
+let () =
+  Printf.printf "\n=== T3-S2 operator smoke tests (OperatorModel oracle) ===\n" ;
+  test_op_add_int32 () ;
+  test_op_add_mismatch () ;
+  test_op_mod_int32 () ;
+  test_op_eq_int32 () ;
+  test_op_lt_int32 () ;
+  test_op_and_bool () ;
+  test_op_and_not_bool () ;
+  test_op_neg_float () ;
+  test_op_not_bool () ;
+  test_op_lnot_int32 () ;
+  Printf.printf "=== T3-S2 operator smoke tests passed ===\n" ;
   exit 0

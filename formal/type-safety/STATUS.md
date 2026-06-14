@@ -1,23 +1,24 @@
 # TypeSafety — Status
 
 **Branch**: formal/type-safety-phase1e
-**Phase**: T3-S1 (ControlFlowSpec, done 2026-06-14) -> T3-S2 (next)
+**Phase**: T3-S2 (OperatorSpec, done 2026-06-14) -> T3-S3 (next)
 **Toolchain**: Rocq 9.1.1 / OCaml 5.4.0
 
 ## Scoreboard
 
 | Metric | Value |
 |---|---|
-| Theorems proven | 50 |
+| Theorems proven | 54 |
 | Admits | 0 |
 | Axioms | 0 |
-| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, field_lookup, infer_rec_type, has_rec_type, infer_cf_type, has_cf_type, + more |
+| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, field_lookup, infer_rec_type, has_rec_type, infer_cf_type, has_cf_type, is_numeric, is_integer, infer_op_type, has_op_type |
 | Build | green (CoqMakefile, exit 0; dune build/test, exit 0) |
 | T1-CMBT harness | green -- differential QCheck 2000/2000 (0 errors, 0 fails) + 20/20 smoke |
 | T2-UNIFY harness | green -- differential QCheck 1000/1000 (0 errors, 0 fails) + 15/15 smoke |
 | T2-VEC harness | green -- 10/10 smoke (EVecGet/EVecSet/EArrGet/EArrSet + error cases) |
 | T2-REGISTRY harness | green -- 10/10 smoke (EFieldGet/EFieldSet + error cases + nested + vec delegation) |
 | T3-S1 harness | green -- 10/10 smoke (CFIfThen/IfElse/For/While/Seq + error cases + loop var scope) |
+| T3-S2 harness | green -- 10/10 smoke (Add/Mod/Eq/Lt/And/Neg/Not/Lnot + mismatch + NotBool) |
 | Findings | F-TS-01 (ELet scope leak) -- found by T1-CMBT, RESOLVED |
 
 ## Termination design (T2-UNIFY)
@@ -151,4 +152,36 @@ TRecord and TVariant are now full constructors in `sarek_type`:
    `infer_cf_type_complete H1/H2` gives two equations; rewriting one into the
    other and injecting gives the equality. No case analysis on `e` needed.
 
-## Next: T3-S2 (OperatorSpec)
+## Proven (tick 7, OperatorSpec.v -- T3-S2, all Qed, 0 admits)
+
+51. `infer_op_type_sound` -- OPBinop/OPUnop inference -> has_op_type
+52. `infer_op_type_complete` -- has_op_type -> inference
+53. `has_op_type_det` -- uniqueness of the declarative op_expr judgement
+54. `op_type_preservation` -- infer_op_type env e = inl t <-> has_op_type env e t
+
+## Proof technique notes (T3-S2)
+
+1. **19-goal OPBinop dispatch**: `destruct op; simpl in H` opens 19 subgoals (one per
+   binop constructor). The `all: try (...)` pattern is UNRELIABLE in Rocq 9 Ltac1 —
+   partial success leaves goals in an inconsistent state. Use explicit `N-M:` goal
+   selectors throughout: `1-4:` (Add/Sub/Mul/Div numeric), `1:` (Mod integer), `1-2:`
+   (And/Or bool), `1-2:` (Eq/Ne eq), `1-4:` (Lt/Le/Gt/Ge cmp), `1-6:` (Land...Asr integer).
+
+2. **Iota substitution eliminates rewrite**: `destruct (sarek_type_eq_dec t1 t2) as [Hb|Hne]`
+   automatically reduces `match sarek_type_eq_dec t1 t2 with Left _ => ... | Right _ => ...`
+   in the context via iota substitution. No `rewrite` or `simpl` needed after destruct.
+   Adding `eqn:Heqb` followed by `rewrite Heqb in H` FAILS with "term not found in H".
+
+3. **HOT_BoolBinop rewrite pattern**: For And/Or, the spec rewrites the bool constraint
+   into the IH hypotheses before applying the constructor. Specifically, `Hb : t1 = TPrim TBool`
+   is used as `rewrite Hb in Hl; rewrite Hb in Hr` (not `subst`) to avoid "variable used
+   in conclusion" errors when `t1` still appears in the goal.
+
+4. **Completeness hypothesis naming**: `induction H; simpl.` for constructor
+   `HOT_NumericBinop env op lhs rhs t (P1) (IH1) (IH2) (P2)` gives H=P1 (first
+   non-recursive premise), IHhas_op_type1=IH1, IHhas_op_type2=IH2, H0=P2 (second
+   non-recursive). Use `destruct (is_numeric t) eqn:Hnum; [reflexivity | congruence]`
+   to avoid relying on these names — `congruence` finds the contradiction between
+   `Hnum : is_numeric t = false` and the constructor's `is_numeric t = true` premise.
+
+## Next: T3-S3 (FunSpec)

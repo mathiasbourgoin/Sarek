@@ -2,7 +2,13 @@
 
 (library
  (name type_safety_model)
- (modules TypeSafetyModel UnifyModel VecModel RegistryModel ControlFlowModel)
+ (modules
+  TypeSafetyModel
+  UnifyModel
+  VecModel
+  RegistryModel
+  ControlFlowModel
+  OperatorModel)
  ; Extracted OCaml from Rocq: relax warnings that fire on machine-generated
  ; code (unused rec flags, unused vars, redundant matches).
  (flags

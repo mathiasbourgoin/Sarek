@@ -473,6 +473,42 @@
       "proof": "split; apply infer_cf_type_sound / infer_cf_type_complete",
       "file": "theories/ControlFlowSpec.v",
       "tick": 6
+    },
+    {
+      "id": "infer_op_type_sound",
+      "kind": "theorem",
+      "statement": "infer_op_type env e = inl t -> has_op_type env e t",
+      "status": "proven",
+      "proof": "induction e as [ce | op lhs IHl rhs IHr | op' e' IHop]; OPCf: infer_cf_type_sound; OPBinop: destruct lhs/rhs results, sarek_type_eq_dec t1=t2, then 19-goal destruct op with explicit N-M: goal selectors for NumericBinop/IntegerBinop/BoolBinop/EqBinop/CmpBinop groups; OPUnop: destruct op, Neg: is_numeric check, Not: sarek_type_eq_dec bool check, Lnot: is_integer check",
+      "file": "theories/OperatorSpec.v",
+      "tick": 7
+    },
+    {
+      "id": "infer_op_type_complete",
+      "kind": "theorem",
+      "statement": "has_op_type env e t -> infer_op_type env e = inl t",
+      "status": "proven",
+      "proof": "induction H; HOT_CF: infer_cf_type_complete; HOT_NumericBinop/IntegerBinop: rewrite IH1/IH2, eq_dec self, destruct op (discriminate non-matching), destruct is_numeric/is_integer eqn (reflexivity or congruence); HOT_BoolBinop: rewrite IH1/IH2, eq_dec self, nested eq_dec TPrim TBool self; HOT_EqBinop: rewrite IH1/IH2, eq_dec self, destruct op (discriminate), reflexivity; HOT_CmpBinop: similar with is_numeric check; HOT_Neg/HOT_Lnot: rewrite IH, is_numeric/is_integer check; HOT_Not: rewrite IH, eq_dec TPrim TBool self",
+      "file": "theories/OperatorSpec.v",
+      "tick": 7
+    },
+    {
+      "id": "has_op_type_det",
+      "kind": "lemma",
+      "statement": "has_op_type env e t1 -> has_op_type env e t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "pose proof infer_op_type_complete H1/H2; rewrite Ho1 in Ho2; injection Ho2 as <-; reflexivity",
+      "file": "theories/OperatorSpec.v",
+      "tick": 7
+    },
+    {
+      "id": "op_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_op_type env e = inl t <-> has_op_type env e t",
+      "status": "proven",
+      "proof": "split; apply infer_op_type_sound / infer_op_type_complete",
+      "file": "theories/OperatorSpec.v",
+      "tick": 7
     }
   ],
   "cmbt_t2_unify": {
@@ -507,6 +543,15 @@
   },
   "cmbt_t3_s1": {
     "id": "T3-S1-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s2": {
+    "id": "T3-S2-CMBT",
     "status": "done",
     "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
     "smoke_cases": 10,

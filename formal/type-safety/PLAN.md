@@ -33,8 +33,8 @@ Coq has no mutable unification, so the spec models **post-unification** types
 | T2-VEC | TVec/TArr inference + vec/arr get/set typing | T2 | **done** (5 theorems, 10/10 smoke) | T1-CMBT |
 | T2-REGISTRY | TRecord/TVariant field access typing | T2 | **done** (5 theorems, 10/10 smoke) | T2-VEC |
 | T3-S1 | Control flow (CFIfThen/IfElse/For/While/Seq) — ControlFlowSpec.v | T3 | **done** (4 theorems, 10/10 smoke) | T2-REGISTRY |
-| T3-S2 | Operators (EBinop/EUnop) — OperatorSpec.v | T3 | **next** | T3-S1 |
-| T3-S3 | Function application (EApp, ELetRec) — FunSpec.v | T3 | TBD | T3-S2 |
+| T3-S2 | Operators (EBinop/EUnop) — OperatorSpec.v | T3 | **done** (4 theorems, 10/10 smoke) | T3-S1 |
+| T3-S3 | Function application (EApp, ELetRec) — FunSpec.v | T3 | **next** | T3-S2 |
 | T3-S4 | Mutable bindings (ELetMut, EAssign) — MutSpec.v | T3 | TBD | T3-S2 |
 | T3-S5 | Pattern matching (EMatch) — PatternSpec.v | T3 | TBD | T3-S2 |
 | T3-S6 | Algebraic construction (ERecord, EConstr) — ConstrSpec.v | T3 | TBD | T3-S5 |
@@ -71,24 +71,15 @@ T1-CMBT dune-driven OCaml extraction conformance harness (added in T1-CMBT).
 
 ---
 
-## Next autopilot tick (T3-S2 — operator typing)
+## Next autopilot tick (T3-S3 — function application)
 
-T3-S1 is closed: 4 theorems for CFIfThen/IfElse/For/While/Seq, 10/10 smoke tests,
-0 admits. Branch formal/type-safety-phase1e, PR #191.
+T3-S2 is closed: 4 theorems (sound/complete/det/preservation) for
+OPBinop/OPUnop, 10/10 smoke tests, 0 admits. Branch formal/type-safety-phase1e.
 
-T3-S2 adds `OperatorSpec.v` modelling `Sarek_typer.ml:infer_binop_unop` (lines 213-221).
-Key rules from `Sarek_types.ml:infer_binop` / `infer_unop`:
-- Arithmetic (Add/Sub/Mul/Div/Mod): operands and result must match numeric type
-- Comparison (Eq/Ne/Lt/Le/Gt/Ge): numeric operands, bool result
-- Logical (And/Or): bool operands, bool result
-- Bitwise (Land/Lor/Lxor/Lsl/Lsr/Asr): int32 operands, int32 result
-- Unary Neg: numeric operand, same type result
-- Unary Not: bool operand, bool result
-- Unary Lnot: int32 operand, int32 result
+T3-S3 adds `FunSpec.v` modelling `Sarek_typer.ml:infer` for function application
+(`EApp`) and recursive bindings (`ELetRec`). Key rules:
+- EApp: infer function type, infer argument type, unify argument with param type,
+  result is return type.
+- ELetRec: bind name with function type (allowing recursion), infer body.
 
-Architecture: `op_expr` wraps `cf_expr` with `OPCf : cf_expr -> op_expr`
-plus `OPBinop : binop -> op_expr -> op_expr -> op_expr`
-and `OPUnop : unop -> op_expr -> op_expr`.
-
-Divergence policy stays: any disagreement on a covered fragment is a model bug
-(the model is the spec) — record in FINDINGS.md, do not silently widen the model.
+Divergence policy stays: any disagreement on a covered fragment is a model bug.
