@@ -450,3 +450,77 @@ let rec infer_rec_type env = function
               | None -> Inr (FieldNotFound (field, TRecord (name, fields))))
           | _ -> Inr (NotARecord t))
       | Inr err -> Inr err)
+
+type cf_error =
+  | CRec of rec_error
+  | CondNotBool of sarek_type
+  | BranchMismatch of sarek_type * sarek_type
+  | BoundNotInt32 of sarek_type
+
+type cf_expr =
+  | CFRec of rec_expr
+  | CFIfThen of cf_expr * cf_expr
+  | CFIfElse of cf_expr * cf_expr * cf_expr
+  | CFFor of string * cf_expr * cf_expr * cf_expr
+  | CFWhile of cf_expr * cf_expr
+  | CFSeq of cf_expr * cf_expr
+
+(** val infer_cf_type : type_env -> cf_expr -> (sarek_type, cf_error) sum **)
+
+let rec infer_cf_type env = function
+  | CFRec re -> (
+      match infer_rec_type env re with
+      | Inl t -> Inl t
+      | Inr err -> Inr (CRec err))
+  | CFIfThen (cond, then_e) -> (
+      match infer_cf_type env cond with
+      | Inl cond_t ->
+          if sarek_type_eq_dec cond_t (TPrim TBool) then
+            match infer_cf_type env then_e with
+            | Inl then_t ->
+                if sarek_type_eq_dec then_t (TPrim TUnit) then Inl (TPrim TUnit)
+                else Inr (BranchMismatch (then_t, TPrim TUnit))
+            | Inr err -> Inr err
+          else Inr (CondNotBool cond_t)
+      | Inr err -> Inr err)
+  | CFIfElse (cond, then_e, else_e) -> (
+      match infer_cf_type env cond with
+      | Inl cond_t ->
+          if sarek_type_eq_dec cond_t (TPrim TBool) then
+            match infer_cf_type env then_e with
+            | Inl then_t -> (
+                match infer_cf_type env else_e with
+                | Inl else_t ->
+                    if sarek_type_eq_dec then_t else_t then Inl then_t
+                    else Inr (BranchMismatch (then_t, else_t))
+                | Inr err -> Inr err)
+            | Inr err -> Inr err
+          else Inr (CondNotBool cond_t)
+      | Inr err -> Inr err)
+  | CFFor (var, lo, hi, body) -> (
+      match infer_cf_type env lo with
+      | Inl lo_t ->
+          if sarek_type_eq_dec lo_t (TPrim TInt32) then
+            match infer_cf_type env hi with
+            | Inl hi_t ->
+                if sarek_type_eq_dec hi_t (TPrim TInt32) then
+                  match infer_cf_type ((var, TPrim TInt32) :: env) body with
+                  | Inl _ -> Inl (TPrim TUnit)
+                  | Inr err -> Inr err
+                else Inr (BoundNotInt32 hi_t)
+            | Inr err -> Inr err
+          else Inr (BoundNotInt32 lo_t)
+      | Inr err -> Inr err)
+  | CFWhile (cond, body) -> (
+      match infer_cf_type env cond with
+      | Inl cond_t ->
+          if sarek_type_eq_dec cond_t (TPrim TBool) then
+            match infer_cf_type env body with
+            | Inl _ -> Inl (TPrim TUnit)
+            | Inr err -> Inr err
+          else Inr (CondNotBool cond_t)
+      | Inr err -> Inr err)
+  | CFSeq (e1, e2) -> (
+      match infer_cf_type env e1 with
+      | Inl _ -> infer_cf_type env e2
+      | Inr err -> Inr err)

@@ -1,22 +1,23 @@
 # TypeSafety — Status
 
-**Branch**: formal/type-safety-phase1d
-**Phase**: T2-REGISTRY (done 2026-06-14) -> T3-SEMANTIC (next)
+**Branch**: formal/type-safety-phase1e
+**Phase**: T3-S1 (ControlFlowSpec, done 2026-06-14) -> T3-S2 (next)
 **Toolchain**: Rocq 9.1.1 / OCaml 5.4.0
 
 ## Scoreboard
 
 | Metric | Value |
 |---|---|
-| Theorems proven | 46 |
+| Theorems proven | 50 |
 | Admits | 0 |
 | Axioms | 0 |
-| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, field_lookup, infer_rec_type, has_rec_type, + more |
+| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, field_lookup, infer_rec_type, has_rec_type, infer_cf_type, has_cf_type, + more |
 | Build | green (CoqMakefile, exit 0; dune build/test, exit 0) |
 | T1-CMBT harness | green -- differential QCheck 2000/2000 (0 errors, 0 fails) + 20/20 smoke |
 | T2-UNIFY harness | green -- differential QCheck 1000/1000 (0 errors, 0 fails) + 15/15 smoke |
 | T2-VEC harness | green -- 10/10 smoke (EVecGet/EVecSet/EArrGet/EArrSet + error cases) |
 | T2-REGISTRY harness | green -- 10/10 smoke (EFieldGet/EFieldSet + error cases + nested + vec delegation) |
+| T3-S1 harness | green -- 10/10 smoke (CFIfThen/IfElse/For/While/Seq + error cases + loop var scope) |
 | Findings | F-TS-01 (ELet scope leak) -- found by T1-CMBT, RESOLVED |
 
 ## Termination design (T2-UNIFY)
@@ -122,4 +123,32 @@ TRecord and TVariant are now full constructors in `sarek_type`:
    locate has_mem_type hypothesis; HRT_FieldSet uses `sarek_type_eq_dec field_t field_t`
    left branch for reflexivity.
 
-## Next: T3-SEMANTIC
+## Proven (tick 6, ControlFlowSpec.v -- T3-S1, all Qed, 0 admits)
+
+47. `infer_cf_type_sound` -- CFIfThen/IfElse/For/While/Seq inference -> has_cf_type
+48. `infer_cf_type_complete` -- has_cf_type -> inference
+49. `has_cf_type_det` -- uniqueness of the declarative cf_expr judgement
+50. `cf_type_preservation` -- infer_cf_type env e = inl t <-> has_cf_type env e t
+
+## Proof technique notes (T3-S1)
+
+1. **Two if-constructors**: `CFIfThen` (no else, then must be unit) and `CFIfElse`
+   (branches must agree) instead of `CFIf ... (option cf_expr)`. Avoids option
+   inside the inductive, so Rocq's default induction gives IHs for all direct
+   subterms without a custom induction principle.
+
+2. **sarek_type_eq_dec self-check in completeness**: For branches like
+   `sarek_type_eq_dec (TPrim TBool) (TPrim TBool)`, `destruct` gives left/right.
+   The `right` branch is dismissed with `exfalso; apply Hne; reflexivity`.
+   This is the standard pattern for eq_dec on provably-equal arguments.
+
+3. **CFFor loop variable**: The bound variable `var` is added to the environment
+   as `(var, TPrim TInt32)` before inferring the body. The body type is ignored
+   (result is always unit); only the body's *successful* inference matters.
+   The IH for `body` applies with the extended environment directly.
+
+4. **has_cf_type_det via piggybacking**: Same technique as RegistrySpec.v —
+   `infer_cf_type_complete H1/H2` gives two equations; rewriting one into the
+   other and injecting gives the equality. No case analysis on `e` needed.
+
+## Next: T3-S2 (OperatorSpec)

@@ -1,15 +1,15 @@
 {
   "project": "type-safety",
-  "branch": "formal/type-safety-phase1d",
-  "phase": "T2-REGISTRY",
+  "branch": "formal/type-safety-phase1e",
+  "phase": "T3-S1 (ControlFlowSpec)",
   "toolchain": {
     "rocq": "9.1.1",
     "ocaml": "5.4.0"
   },
   "summary": {
-    "proven": 46,
-    "definitions": 22,
-    "total": 46,
+    "proven": 50,
+    "definitions": 24,
+    "total": 50,
     "admits": 0
   },
   "cmbt": {
@@ -437,6 +437,42 @@
       "proof": "split; apply infer_rec_type_sound / infer_rec_type_complete",
       "file": "theories/RegistrySpec.v",
       "tick": 5
+    },
+    {
+      "id": "infer_cf_type_sound",
+      "kind": "theorem",
+      "statement": "infer_cf_type env e = inl t -> has_cf_type env e t",
+      "status": "proven",
+      "proof": "intros env e t H; revert env t H; induction e as [re | cond IHcond then_e IHthen | ...]; for CFRec: infer_rec_type_sound; for CFIfThen/IfElse: destruct cond/then/else results and eq_dec branches, apply HCF_If*; for CFFor: destruct lo/hi/body, apply HCF_For with t_body; for CFWhile: destruct cond/body, HCF_While; for CFSeq: HCF_Seq with t1",
+      "file": "theories/ControlFlowSpec.v",
+      "tick": 6
+    },
+    {
+      "id": "infer_cf_type_complete",
+      "kind": "theorem",
+      "statement": "has_cf_type env e t -> infer_cf_type env e = inl t",
+      "status": "proven",
+      "proof": "induction H as [...]; for HCF_Rec: infer_rec_type_complete; for HCF_IfThen/IfElse: rewrite IHcond/IHthen/IHelse, destruct sarek_type_eq_dec X X (left branch, right is exfalso); for HCF_For: rewrite IHlo/IHhi/IHbody, two eq_dec self-checks; for HCF_While: rewrite IHcond/IHbody; for HCF_Seq: rewrite IH1/IH2",
+      "file": "theories/ControlFlowSpec.v",
+      "tick": 6
+    },
+    {
+      "id": "has_cf_type_det",
+      "kind": "lemma",
+      "statement": "has_cf_type env e t1 -> has_cf_type env e t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "pose proof infer_cf_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity (infer_cf_type is deterministic as a function)",
+      "file": "theories/ControlFlowSpec.v",
+      "tick": 6
+    },
+    {
+      "id": "cf_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_cf_type env e = inl t <-> has_cf_type env e t",
+      "status": "proven",
+      "proof": "split; apply infer_cf_type_sound / infer_cf_type_complete",
+      "file": "theories/ControlFlowSpec.v",
+      "tick": 6
     }
   ],
   "cmbt_t2_unify": {
@@ -462,6 +498,15 @@
   },
   "cmbt_t2_registry": {
     "id": "T2-REGISTRY-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s1": {
+    "id": "T3-S1-CMBT",
     "status": "done",
     "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
     "smoke_cases": 10,

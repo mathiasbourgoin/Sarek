@@ -666,9 +666,9 @@ let () =
 
 module V = Type_safety_model.VecModel
 
-(** Convert an OCaml string to VecModel's Coq-extracted string type.
-    VecModel has its own Ascii/String types (same structure as M but different
-    OCaml types). *)
+(** Convert an OCaml string to VecModel's Coq-extracted string type. VecModel
+    has its own Ascii/String types (same structure as M but different OCaml
+    types). *)
 let vec_coq_string_of_string (s : ostring) : V.string =
   let char_to_ascii c =
     let n = Char.code c in
@@ -697,7 +697,8 @@ let test_vec_mcore_lit () =
 let test_vec_get_ok () =
   let env = [vec_env_entry "v" (V.TVec (V.TPrim V.TInt32))] in
   let result =
-    V.infer_mem_type env
+    V.infer_mem_type
+      env
       (V.EVecGet (V.MCore (vevar "v"), V.MCore (V.ELit (V.LInt 0))))
   in
   assert (result = V.Inl (V.TPrim V.TInt32)) ;
@@ -706,7 +707,8 @@ let test_vec_get_ok () =
 (* EVecGet on a non-vector type -> NotAVector. *)
 let test_vec_get_not_a_vector () =
   let result =
-    V.infer_mem_type []
+    V.infer_mem_type
+      []
       (V.EVecGet (V.MCore (V.ELit (V.LInt 0)), V.MCore (V.ELit (V.LInt 0))))
   in
   (match result with
@@ -718,7 +720,8 @@ let test_vec_get_not_a_vector () =
 let test_vec_get_bad_index () =
   let env = [vec_env_entry "v" (V.TVec (V.TPrim V.TInt32))] in
   let result =
-    V.infer_mem_type env
+    V.infer_mem_type
+      env
       (V.EVecGet (V.MCore (vevar "v"), V.MCore (V.ELit (V.LBool true))))
   in
   (match result with
@@ -730,11 +733,12 @@ let test_vec_get_bad_index () =
 let test_vec_set_ok () =
   let env = [vec_env_entry "v" (V.TVec (V.TPrim V.TInt32))] in
   let result =
-    V.infer_mem_type env
+    V.infer_mem_type
+      env
       (V.EVecSet
-         ( V.MCore (vevar "v")
-         , V.MCore (V.ELit (V.LInt 0))
-         , V.MCore (V.ELit (V.LInt 42)) ))
+         ( V.MCore (vevar "v"),
+           V.MCore (V.ELit (V.LInt 0)),
+           V.MCore (V.ELit (V.LInt 42)) ))
   in
   assert (result = V.Inl (V.TPrim V.TUnit)) ;
   Printf.printf "  EVecSet vec[int32] value:int32 -> TPrim TUnit [ok]\n"
@@ -743,11 +747,12 @@ let test_vec_set_ok () =
 let test_vec_set_mismatch () =
   let env = [vec_env_entry "v" (V.TVec (V.TPrim V.TInt32))] in
   let result =
-    V.infer_mem_type env
+    V.infer_mem_type
+      env
       (V.EVecSet
-         ( V.MCore (vevar "v")
-         , V.MCore (V.ELit (V.LInt 0))
-         , V.MCore (V.ELit (V.LBool true)) ))
+         ( V.MCore (vevar "v"),
+           V.MCore (V.ELit (V.LInt 0)),
+           V.MCore (V.ELit (V.LBool true)) ))
   in
   (match result with
   | V.Inr (V.ElemMismatch _) -> ()
@@ -758,7 +763,8 @@ let test_vec_set_mismatch () =
 let test_arr_get_ok () =
   let env = [vec_env_entry "a" (V.TArr (V.TPrim V.TBool, V.Local))] in
   let result =
-    V.infer_mem_type env
+    V.infer_mem_type
+      env
       (V.EArrGet (V.MCore (vevar "a"), V.MCore (V.ELit (V.LInt 0))))
   in
   assert (result = V.Inl (V.TPrim V.TBool)) ;
@@ -767,9 +773,9 @@ let test_arr_get_ok () =
 (* EArrGet on a non-array type -> NotAnArray. *)
 let test_arr_get_not_an_array () =
   let result =
-    V.infer_mem_type []
-      (V.EArrGet
-         (V.MCore (V.ELit (V.LBool true)), V.MCore (V.ELit (V.LInt 0))))
+    V.infer_mem_type
+      []
+      (V.EArrGet (V.MCore (V.ELit (V.LBool true)), V.MCore (V.ELit (V.LInt 0))))
   in
   (match result with
   | V.Inr (V.NotAnArray _) -> ()
@@ -780,11 +786,12 @@ let test_arr_get_not_an_array () =
 let test_arr_set_ok () =
   let env = [vec_env_entry "a" (V.TArr (V.TPrim V.TInt32, V.Global))] in
   let result =
-    V.infer_mem_type env
+    V.infer_mem_type
+      env
       (V.EArrSet
-         ( V.MCore (vevar "a")
-         , V.MCore (V.ELit (V.LInt 0))
-         , V.MCore (V.ELit (V.LInt 7)) ))
+         ( V.MCore (vevar "a"),
+           V.MCore (V.ELit (V.LInt 0)),
+           V.MCore (V.ELit (V.LInt 7)) ))
   in
   assert (result = V.Inl (V.TPrim V.TUnit)) ;
   Printf.printf "  EArrSet arr[int32,Global] value:int32 -> TPrim TUnit [ok]\n"
@@ -793,11 +800,12 @@ let test_arr_set_ok () =
 let test_arr_set_mismatch () =
   let env = [vec_env_entry "a" (V.TArr (V.TPrim V.TInt32, V.Shared))] in
   let result =
-    V.infer_mem_type env
+    V.infer_mem_type
+      env
       (V.EArrSet
-         ( V.MCore (vevar "a")
-         , V.MCore (V.ELit (V.LInt 0))
-         , V.MCore (V.ELit V.LUnit) ))
+         ( V.MCore (vevar "a"),
+           V.MCore (V.ELit (V.LInt 0)),
+           V.MCore (V.ELit V.LUnit) ))
   in
   (match result with
   | V.Inr (V.ElemMismatch _) -> ()
@@ -867,10 +875,13 @@ let test_reg_rmem_lit () =
 
 (* Test 2: EFieldGet success -- TRecord with field "x" : TInt32. *)
 let test_reg_field_get_ok () =
-  let rec_type = R.TRecord (reg_coq_string_of_string "MyRec", [rfield "x" (R.TPrim R.TInt32)]) in
+  let rec_type =
+    R.TRecord (reg_coq_string_of_string "MyRec", [rfield "x" (R.TPrim R.TInt32)])
+  in
   let env = [reg_env_entry "r" rec_type] in
   let result =
-    R.infer_rec_type env
+    R.infer_rec_type
+      env
       (R.EFieldGet (reg_coq_string_of_string "x", R.RMem (R.MCore (revar "r"))))
   in
   assert (result = R.Inl (R.TPrim R.TInt32)) ;
@@ -878,10 +889,13 @@ let test_reg_field_get_ok () =
 
 (* Test 3: EFieldGet FieldNotFound -- field "y" not in record. *)
 let test_reg_field_get_not_found () =
-  let rec_type = R.TRecord (reg_coq_string_of_string "MyRec", [rfield "x" (R.TPrim R.TInt32)]) in
+  let rec_type =
+    R.TRecord (reg_coq_string_of_string "MyRec", [rfield "x" (R.TPrim R.TInt32)])
+  in
   let env = [reg_env_entry "r" rec_type] in
   let result =
-    R.infer_rec_type env
+    R.infer_rec_type
+      env
       (R.EFieldGet (reg_coq_string_of_string "y", R.RMem (R.MCore (revar "r"))))
   in
   (match result with
@@ -892,8 +906,10 @@ let test_reg_field_get_not_found () =
 (* Test 4: EFieldGet NotARecord -- receiver is a primitive type. *)
 let test_reg_field_get_not_a_record () =
   let result =
-    R.infer_rec_type []
-      (R.EFieldGet (reg_coq_string_of_string "x", R.RMem (R.MCore (R.ELit (R.LInt 0)))))
+    R.infer_rec_type
+      []
+      (R.EFieldGet
+         (reg_coq_string_of_string "x", R.RMem (R.MCore (R.ELit (R.LInt 0)))))
   in
   (match result with
   | R.Inr (R.NotARecord _) -> ()
@@ -902,44 +918,55 @@ let test_reg_field_get_not_a_record () =
 
 (* Test 5: EFieldSet success -- value type matches field type, yields TPrim TUnit. *)
 let test_reg_field_set_ok () =
-  let rec_type = R.TRecord (reg_coq_string_of_string "MyRec", [rfield "x" (R.TPrim R.TInt32)]) in
+  let rec_type =
+    R.TRecord (reg_coq_string_of_string "MyRec", [rfield "x" (R.TPrim R.TInt32)])
+  in
   let env = [reg_env_entry "r" rec_type] in
   let result =
-    R.infer_rec_type env
+    R.infer_rec_type
+      env
       (R.EFieldSet
-         ( reg_coq_string_of_string "x"
-         , R.RMem (R.MCore (revar "r"))
-         , R.RMem (R.MCore (R.ELit (R.LInt 42))) ))
+         ( reg_coq_string_of_string "x",
+           R.RMem (R.MCore (revar "r")),
+           R.RMem (R.MCore (R.ELit (R.LInt 42))) ))
   in
   assert (result = R.Inl (R.TPrim R.TUnit)) ;
-  Printf.printf "  EFieldSet \"x\" value:int32 on TRecord[x:int32] -> TPrim TUnit [ok]\n"
+  Printf.printf
+    "  EFieldSet \"x\" value:int32 on TRecord[x:int32] -> TPrim TUnit [ok]\n"
 
 (* Test 6: EFieldSet FieldMismatch -- value is bool, field is int32. *)
 let test_reg_field_set_mismatch () =
-  let rec_type = R.TRecord (reg_coq_string_of_string "MyRec", [rfield "x" (R.TPrim R.TInt32)]) in
+  let rec_type =
+    R.TRecord (reg_coq_string_of_string "MyRec", [rfield "x" (R.TPrim R.TInt32)])
+  in
   let env = [reg_env_entry "r" rec_type] in
   let result =
-    R.infer_rec_type env
+    R.infer_rec_type
+      env
       (R.EFieldSet
-         ( reg_coq_string_of_string "x"
-         , R.RMem (R.MCore (revar "r"))
-         , R.RMem (R.MCore (R.ELit (R.LBool true))) ))
+         ( reg_coq_string_of_string "x",
+           R.RMem (R.MCore (revar "r")),
+           R.RMem (R.MCore (R.ELit (R.LBool true))) ))
   in
   (match result with
   | R.Inr (R.FieldMismatch _) -> ()
   | _ -> failwith "expected FieldMismatch") ;
-  Printf.printf "  EFieldSet \"x\" value:bool on TRecord[x:int32] -> FieldMismatch [ok]\n"
+  Printf.printf
+    "  EFieldSet \"x\" value:bool on TRecord[x:int32] -> FieldMismatch [ok]\n"
 
 (* Test 7: EFieldSet FieldNotFound -- field "z" not in record. *)
 let test_reg_field_set_not_found () =
-  let rec_type = R.TRecord (reg_coq_string_of_string "MyRec", [rfield "x" (R.TPrim R.TInt32)]) in
+  let rec_type =
+    R.TRecord (reg_coq_string_of_string "MyRec", [rfield "x" (R.TPrim R.TInt32)])
+  in
   let env = [reg_env_entry "r" rec_type] in
   let result =
-    R.infer_rec_type env
+    R.infer_rec_type
+      env
       (R.EFieldSet
-         ( reg_coq_string_of_string "z"
-         , R.RMem (R.MCore (revar "r"))
-         , R.RMem (R.MCore (R.ELit (R.LInt 0))) ))
+         ( reg_coq_string_of_string "z",
+           R.RMem (R.MCore (revar "r")),
+           R.RMem (R.MCore (R.ELit (R.LInt 0))) ))
   in
   (match result with
   | R.Inr (R.FieldNotFound _) -> ()
@@ -948,26 +975,28 @@ let test_reg_field_set_not_found () =
 
 (* Test 8: Nested EFieldGet -- outer.r is itself a TRecord with field "y". *)
 let test_reg_field_get_nested () =
-  let inner_rec = R.TRecord (reg_coq_string_of_string "Inner", [rfield "y" (R.TPrim R.TBool)]) in
-  let outer_rec = R.TRecord (reg_coq_string_of_string "Outer", [rfield "r" inner_rec]) in
+  let inner_rec =
+    R.TRecord (reg_coq_string_of_string "Inner", [rfield "y" (R.TPrim R.TBool)])
+  in
+  let outer_rec =
+    R.TRecord (reg_coq_string_of_string "Outer", [rfield "r" inner_rec])
+  in
   let env = [reg_env_entry "outer" outer_rec] in
   (* outer.r gives inner_rec, then .y gives TBool *)
   let get_r =
     R.EFieldGet (reg_coq_string_of_string "r", R.RMem (R.MCore (revar "outer")))
   in
   let result =
-    R.infer_rec_type env
-      (R.EFieldGet (reg_coq_string_of_string "y", get_r))
+    R.infer_rec_type env (R.EFieldGet (reg_coq_string_of_string "y", get_r))
   in
   assert (result = R.Inl (R.TPrim R.TBool)) ;
-  Printf.printf "  EFieldGet \"y\" (EFieldGet \"r\" outer) -> TPrim TBool (nested) [ok]\n"
+  Printf.printf
+    "  EFieldGet \"y\" (EFieldGet \"r\" outer) -> TPrim TBool (nested) [ok]\n"
 
 (* Test 9: RMem delegates through vec layer -- EVecGet result threaded through. *)
 let test_reg_rmem_via_vec () =
   let env = [reg_env_entry "v" (R.TVec (R.TPrim R.TInt32))] in
-  let vec_get =
-    R.EVecGet (R.MCore (revar "v"), R.MCore (R.ELit (R.LInt 0)))
-  in
+  let vec_get = R.EVecGet (R.MCore (revar "v"), R.MCore (R.ELit (R.LInt 0))) in
   let result = R.infer_rec_type env (R.RMem vec_get) in
   assert (result = R.Inl (R.TPrim R.TInt32)) ;
   Printf.printf "  RMem (EVecGet vec[int32] 0) -> TPrim TInt32 [ok]\n"
@@ -975,7 +1004,8 @@ let test_reg_rmem_via_vec () =
 (* Test 10: Error propagation from RMem -- unbound variable produces RMemError. *)
 let test_reg_rmem_error_propagation () =
   let result =
-    R.infer_rec_type []
+    R.infer_rec_type
+      []
       (R.RMem (R.MCore (R.EVar (reg_coq_string_of_string "unbound"))))
   in
   (match result with
@@ -995,5 +1025,160 @@ let () =
   test_reg_field_get_nested () ;
   test_reg_rmem_via_vec () ;
   test_reg_rmem_error_propagation () ;
-  Printf.printf "=== T2-REGISTRY smoke tests passed ===\n" ;
+  Printf.printf "=== T2-REGISTRY smoke tests passed ===\n"
+
+(* ========================================================================== *)
+(* T3-S1 control-flow smoke tests (ControlFlowModel oracle)                   *)
+(* ========================================================================== *)
+
+module CF = Type_safety_model.ControlFlowModel
+
+let cf_coq_string_of_string (s : ostring) : CF.string =
+  let char_to_ascii c =
+    let n = Char.code c in
+    let bit k = (n lsr k) land 1 = 1 in
+    CF.Ascii (bit 0, bit 1, bit 2, bit 3, bit 4, bit 5, bit 6, bit 7)
+  in
+  let len = String.length s in
+  let rec go i acc =
+    if i < 0 then acc else go (i - 1) (CF.String (char_to_ascii s.[i], acc))
+  in
+  go (len - 1) CF.EmptyString
+
+let cf_env_entry x t = (cf_coq_string_of_string x, t)
+
+let cfvar s =
+  CF.CFRec (CF.RMem (CF.MCore (CF.EVar (cf_coq_string_of_string s))))
+
+let cflit l = CF.CFRec (CF.RMem (CF.MCore (CF.ELit l)))
+
+(* Test 1: CFIfThen -- cond:bool, then:unit -> unit *)
+let test_cf_if_then_ok () =
+  let result =
+    CF.infer_cf_type [] (CF.CFIfThen (cflit (CF.LBool true), cflit CF.LUnit))
+  in
+  assert (result = CF.Inl (CF.TPrim CF.TUnit)) ;
+  Printf.printf "  CFIfThen bool then:unit -> TPrim TUnit [ok]\n"
+
+(* Test 2: CFIfThen -- cond not bool -> CondNotBool *)
+let test_cf_if_then_bad_cond () =
+  let result =
+    CF.infer_cf_type [] (CF.CFIfThen (cflit (CF.LInt 1), cflit CF.LUnit))
+  in
+  (match result with
+  | CF.Inr (CF.CondNotBool _) -> ()
+  | _ -> failwith "expected CondNotBool") ;
+  Printf.printf "  CFIfThen int cond -> CondNotBool [ok]\n"
+
+(* Test 3: CFIfThen -- then not unit -> BranchMismatch *)
+let test_cf_if_then_then_not_unit () =
+  let result =
+    CF.infer_cf_type
+      []
+      (CF.CFIfThen (cflit (CF.LBool false), cflit (CF.LInt 42)))
+  in
+  (match result with
+  | CF.Inr (CF.BranchMismatch _) -> ()
+  | _ -> failwith "expected BranchMismatch") ;
+  Printf.printf "  CFIfThen bool then:int32 -> BranchMismatch [ok]\n"
+
+(* Test 4: CFIfElse -- branches both int32 -> int32 *)
+let test_cf_if_else_ok () =
+  let result =
+    CF.infer_cf_type
+      []
+      (CF.CFIfElse (cflit (CF.LBool true), cflit (CF.LInt 1), cflit (CF.LInt 2)))
+  in
+  assert (result = CF.Inl (CF.TPrim CF.TInt32)) ;
+  Printf.printf "  CFIfElse bool then:int32 else:int32 -> TPrim TInt32 [ok]\n"
+
+(* Test 5: CFIfElse -- branch type mismatch -> BranchMismatch *)
+let test_cf_if_else_mismatch () =
+  let result =
+    CF.infer_cf_type
+      []
+      (CF.CFIfElse
+         (cflit (CF.LBool true), cflit (CF.LInt 1), cflit (CF.LBool false)))
+  in
+  (match result with
+  | CF.Inr (CF.BranchMismatch _) -> ()
+  | _ -> failwith "expected BranchMismatch") ;
+  Printf.printf "  CFIfElse then:int32 else:bool -> BranchMismatch [ok]\n"
+
+(* Test 6: CFFor -- lo:int32, hi:int32, body:unit -> unit *)
+let test_cf_for_ok () =
+  let result =
+    CF.infer_cf_type
+      []
+      (CF.CFFor
+         ( cf_coq_string_of_string "i",
+           cflit (CF.LInt 0),
+           cflit (CF.LInt 10),
+           cflit CF.LUnit ))
+  in
+  assert (result = CF.Inl (CF.TPrim CF.TUnit)) ;
+  Printf.printf "  CFFor i=0 to 10 body:unit -> TPrim TUnit [ok]\n"
+
+(* Test 7: CFFor -- lo not int32 -> BoundNotInt32 *)
+let test_cf_for_bad_bound () =
+  let result =
+    CF.infer_cf_type
+      []
+      (CF.CFFor
+         ( cf_coq_string_of_string "i",
+           cflit (CF.LBool true),
+           cflit (CF.LInt 10),
+           cflit CF.LUnit ))
+  in
+  (match result with
+  | CF.Inr (CF.BoundNotInt32 _) -> ()
+  | _ -> failwith "expected BoundNotInt32") ;
+  Printf.printf "  CFFor bool lower bound -> BoundNotInt32 [ok]\n"
+
+(* Test 8: CFWhile -- cond:bool, body:int32 -> unit *)
+let test_cf_while_ok () =
+  let env = [cf_env_entry "x" (CF.TPrim CF.TInt32)] in
+  let result =
+    CF.infer_cf_type env (CF.CFWhile (cflit (CF.LBool true), cfvar "x"))
+  in
+  assert (result = CF.Inl (CF.TPrim CF.TUnit)) ;
+  Printf.printf "  CFWhile bool body:int32 -> TPrim TUnit [ok]\n"
+
+(* Test 9: CFSeq -- e1:int32 ; e2:bool -> bool (e2's type) *)
+let test_cf_seq_type () =
+  let result =
+    CF.infer_cf_type [] (CF.CFSeq (cflit (CF.LInt 1), cflit (CF.LBool false)))
+  in
+  assert (result = CF.Inl (CF.TPrim CF.TBool)) ;
+  Printf.printf "  CFSeq int32 ; bool -> TPrim TBool [ok]\n"
+
+(* Test 10: CFFor -- loop var bound as int32 in body *)
+let test_cf_for_var_in_scope () =
+  (* body uses loop var i, which must be int32; result is unit *)
+  let result =
+    CF.infer_cf_type
+      []
+      (CF.CFFor
+         ( cf_coq_string_of_string "i",
+           cflit (CF.LInt 0),
+           cflit (CF.LInt 5),
+           cfvar "i" ))
+  in
+  assert (result = CF.Inl (CF.TPrim CF.TUnit)) ;
+  Printf.printf "  CFFor body uses loop var i (int32) -> TPrim TUnit [ok]\n"
+
+let () =
+  Printf.printf
+    "\n=== T3-S1 control flow smoke tests (ControlFlowModel oracle) ===\n" ;
+  test_cf_if_then_ok () ;
+  test_cf_if_then_bad_cond () ;
+  test_cf_if_then_then_not_unit () ;
+  test_cf_if_else_ok () ;
+  test_cf_if_else_mismatch () ;
+  test_cf_for_ok () ;
+  test_cf_for_bad_bound () ;
+  test_cf_while_ok () ;
+  test_cf_seq_type () ;
+  test_cf_for_var_in_scope () ;
+  Printf.printf "=== T3-S1 control flow smoke tests passed ===\n" ;
   exit 0
