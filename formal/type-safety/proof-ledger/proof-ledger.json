@@ -1,9 +1,17 @@
 {
   "project": "type-safety",
   "branch": "formal/type-safety-phase1a",
-  "phase": "T1-CMBT",
-  "toolchain": { "rocq": "9.1.1", "ocaml": "5.4.0" },
-  "summary": { "proven": 9, "definitions": 12, "total": 9, "admits": 0 },
+  "phase": "T2-UNIFY",
+  "toolchain": {
+    "rocq": "9.1.1",
+    "ocaml": "5.4.0"
+  },
+  "summary": {
+    "proven": 30,
+    "definitions": 22,
+    "total": 30,
+    "admits": 0
+  },
   "cmbt": {
     "id": "T1-CMBT",
     "status": "done",
@@ -84,7 +92,7 @@
       "kind": "lemma",
       "statement": "has_type env e t -> infer_type env e = inl t",
       "status": "proven",
-      "proof": "induction on has_type; HT_Var immediate (rewrite H — constructor carries lookup_env x = Some t directly); HT_Let rewrites with both IHs",
+      "proof": "induction on has_type; HT_Var immediate (rewrite H \u2014 constructor carries lookup_env x = Some t directly); HT_Let rewrites with both IHs",
       "file": "theories/TypeSafetySpec.v",
       "tick": 2
     },
@@ -96,6 +104,261 @@
       "proof": "split into infer_type_sound (->) and infer_type_complete (<-); central T1-SOUND theorem",
       "file": "theories/TypeSafetySpec.v",
       "tick": 2
+    },
+    {
+      "id": "pre_type_ind_strong",
+      "kind": "lemma",
+      "statement": "custom strong induction for pre_type (Forall IH for PTuple)",
+      "status": "proven",
+      "proof": "fix IH 1; induction list with Forall_cons",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "follow_ground_prim",
+      "kind": "lemma",
+      "statement": "follow fuel s (PPrim p) = PPrim p",
+      "status": "proven",
+      "proof": "reflexivity (follow is a Definition, iota reduces immediately)",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "follow_ground_reg",
+      "kind": "lemma",
+      "statement": "follow fuel s (PReg r) = PReg r",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "follow_ground_tuple",
+      "kind": "lemma",
+      "statement": "follow fuel s (PTuple ts) = PTuple ts",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "follow_pvar_none",
+      "kind": "lemma",
+      "statement": "subst_lookup s id = None -> follow fuel s (PVar id) = PVar id",
+      "status": "proven",
+      "proof": "unfold follow; destruct fuel; simpl; rewrite Hnone",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "prim_type_beq_true",
+      "kind": "lemma",
+      "statement": "prim_type_beq p1 p2 = true <-> p1 = p2",
+      "status": "proven",
+      "proof": "split; destruct p1 p2; discriminate/reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "prim_type_beq_false",
+      "kind": "lemma",
+      "statement": "prim_type_beq p1 p2 = false <-> p1 <> p2",
+      "status": "proven",
+      "proof": "split; destruct p2; discriminate/contradiction",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "reg_type_beq_true",
+      "kind": "lemma",
+      "statement": "reg_type_beq r1 r2 = true <-> r1 = r2",
+      "status": "proven",
+      "proof": "split; destruct r1 r2; discriminate/reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "reg_type_beq_false",
+      "kind": "lemma",
+      "statement": "reg_type_beq r1 r2 = false <-> r1 <> r2",
+      "status": "proven",
+      "proof": "split; destruct r2; discriminate/contradiction",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "subst_lookup_head",
+      "kind": "lemma",
+      "statement": "subst_lookup ((id, t) :: s) id = Some t",
+      "status": "proven",
+      "proof": "simpl; rewrite Nat.eqb_refl; reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "occurs_ground_false",
+      "kind": "lemma",
+      "statement": "occurs_in fuel s id (PPrim p) = false",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "occurs_ground_reg_false",
+      "kind": "lemma",
+      "statement": "occurs_in fuel s id (PReg r) = false",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "prim_type_beq_refl",
+      "kind": "lemma",
+      "statement": "prim_type_beq p p = true",
+      "status": "proven",
+      "proof": "destruct p; reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "reg_type_beq_refl",
+      "kind": "lemma",
+      "statement": "reg_type_beq r r = true",
+      "status": "proven",
+      "proof": "destruct r; reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_fun_prim_prim",
+      "kind": "lemma",
+      "statement": "unify_fun (S n) s (PPrim p1) (PPrim p2) = if prim_type_beq p1 p2 then Some s else None",
+      "status": "proven",
+      "proof": "reflexivity (follow Definition + struct fuel annotation enables iota reduction)",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_fun_reg_reg",
+      "kind": "lemma",
+      "statement": "unify_fun (S n) s (PReg r1) (PReg r2) = if reg_type_beq r1 r2 then Some s else None",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_fun_var_prim",
+      "kind": "lemma",
+      "statement": "follow n s (PVar id) = PVar id -> unify_fun (S n) s (PVar id) (PPrim p) = ...",
+      "status": "proven",
+      "proof": "unfold follow in Hfoll; simpl; rewrite Hfoll; reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_fun_var_reg",
+      "kind": "lemma",
+      "statement": "follow n s (PVar id) = PVar id -> unify_fun (S n) s (PVar id) (PReg r) = ...",
+      "status": "proven",
+      "proof": "unfold follow in Hfoll; simpl; rewrite Hfoll; reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_zero_none",
+      "kind": "lemma",
+      "statement": "unify_fun 0 s t1 t2 = None",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_prim_sound",
+      "kind": "theorem",
+      "statement": "unify_fun fuel s (PPrim p1) (PPrim p2) = Some s' -> s' = s /\\ p1 = p2",
+      "status": "proven",
+      "proof": "destruct fuel; rewrite unify_fun_prim_prim; destruct prim_type_beq; inversion H; prim_type_beq_true",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_prim_complete",
+      "kind": "theorem",
+      "statement": "fuel > 0 -> unify_fun fuel s (PPrim p) (PPrim p) = Some s",
+      "status": "proven",
+      "proof": "destruct fuel; rewrite unify_fun_prim_prim; prim_type_beq_refl",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_reg_sound",
+      "kind": "theorem",
+      "statement": "unify_fun fuel s (PReg r1) (PReg r2) = Some s' -> s' = s /\\ r1 = r2",
+      "status": "proven",
+      "proof": "destruct fuel; rewrite unify_fun_reg_reg; reg_type_beq_true",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_reg_complete",
+      "kind": "theorem",
+      "statement": "fuel > 0 -> unify_fun fuel s (PReg r) (PReg r) = Some s",
+      "status": "proven",
+      "proof": "destruct fuel; rewrite unify_fun_reg_reg; reg_type_beq_refl",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_var_binds_prim",
+      "kind": "theorem",
+      "statement": "follow n s (PVar id) = PVar id -> unify_fun (S n) s (PVar id) (PPrim p) = Some s' -> subst_lookup s' id = Some (PPrim p)",
+      "status": "proven",
+      "proof": "rewrite unify_fun_var_prim; occurs_ground_false; inversion H; subst_lookup_head",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_var_binds_reg",
+      "kind": "theorem",
+      "statement": "follow n s (PVar id) = PVar id -> unify_fun (S n) s (PVar id) (PReg r) = Some s' -> subst_lookup s' id = Some (PReg r)",
+      "status": "proven",
+      "proof": "rewrite unify_fun_var_reg; occurs_ground_reg_false; inversion H; subst_lookup_head",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "occurs_check_blocks_prim",
+      "kind": "theorem",
+      "statement": "occurs_in n s id (PPrim p) = false",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "occurs_check_blocks_reg",
+      "kind": "theorem",
+      "statement": "occurs_in n s id (PReg r) = false",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
     }
-  ]
+  ],
+  "cmbt_t2_unify": {
+    "id": "T2-UNIFY-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "property": "unify_model_vs_sarek_unify_ground",
+    "qcheck_cases": 1000,
+    "qcheck_pass": 1000,
+    "smoke_cases": 15,
+    "smoke_pass": 15,
+    "errors": 0,
+    "fails": 0
+  }
 }

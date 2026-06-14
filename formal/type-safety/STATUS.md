@@ -1,56 +1,62 @@
 # TypeSafety — Status
 
-**Branch**: formal/type-safety-phase1a
-**Phase**: T1-SOUND (done) → T1-CMBT (done 2026-06-14) → T2 (next)
+**Branch**: formal/type-safety-phase1b
+**Phase**: T2-UNIFY (done 2026-06-14) → T3-SEMANTIC (next)
 **Toolchain**: Rocq 9.1.1 / OCaml 5.4.0
 
 ## Scoreboard
 
 | Metric | Value |
 |---|---|
-| Theorems proven | 9 |
+| Theorems proven | 30 |
 | Admits | 0 |
 | Axioms | 0 |
-| Definitions | infer_type, lookup_env, has_type, type universe |
-| Build | green (coqc / CoqMakefile, exit 0; dune build/test, exit 0) |
-| Conformance harness | green — differential QCheck 2000/2000 (0 errors, 0 fails) + 13/13 smoke |
-| Findings | F-TS-01 (ELet scope leak) — found by T1-CMBT, **RESOLVED** |
+| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, + more |
+| Build | green (CoqMakefile, exit 0; dune build/test, exit 0) |
+| T1-CMBT harness | green — differential QCheck 2000/2000 (0 errors, 0 fails) + 20/20 smoke |
+| T2-UNIFY harness | green — differential QCheck 1000/1000 (0 errors, 0 fails) + 15/15 smoke |
+| Findings | F-TS-01 (ELet scope leak) — found by T1-CMBT, RESOLVED |
 
-## Proven (tick 1, all Qed)
+## Termination design (T2-UNIFY)
 
-1. `infer_lit_int` — `infer_type env (ELit (LInt n)) = inl (TPrim TInt32)` (reflexivity)
-2. `infer_lit_bool` — `infer_type env (ELit (LBool b)) = inl (TPrim TBool)` (reflexivity)
-3. `infer_var_bound` — `lookup_env env x = Some t -> infer_type env (EVar x) = inl t` (intros; rewrite H; reflexivity)
-4. `lookup_env_sound` — `lookup_env env x = Some t -> In (x, t) env` (induction on env, t generalized; String.eqb_eq)
-5. `infer_type_sound` — `infer_type env e = inl t -> has_type env e t` (structural induction on e, env reverted)
+The key challenge in formalizing the HM unifier was Rocq's guard checker.
+Three design decisions make it work:
 
-## Proven (tick 2 — T1-SOUND, all Qed)
+1. **follow as Definition**: `follow` dispatches on `pre_type` with a match.
+   Ground constructors (PPrim/PReg/PTuple) return the argument immediately.
+   PVar delegates to `follow_pvar` (a Fixpoint on fuel). Since `follow` is a
+   Definition (not a Fixpoint), `follow fuel s (PPrim p)` reduces by iota
+   regardless of the fuel value.
 
-6. `lookup_env_correct` — `lookup_env` is a partial function (at most one result); rewrite + injection
-7. `has_type_det` — determinism of `has_type`; induction on first derivation, inversion on second (EVar via `lookup_env_correct`, ELet chains both IHs)
-8. `infer_type_complete` — `has_type env e t -> infer_type env e = inl t` (converse of `infer_type_sound`); induction on `has_type`
-9. `type_preservation` (main) — `infer_type env e = inl t <-> has_type env e t`; split into sound + complete
+2. **{struct fuel} annotation**: Without it, Rocq infers `pre_subst` (a list)
+   as the structural argument of `unify_fun`, causing the recursive call to
+   be rejected. The annotation forces `fuel : nat` as the decreasing argument.
 
-## T1-CMBT (done — tick 3)
+3. **unify_fun n (not S n) for PTuple**: The tuple case uses `unify_fun n`
+   (the predecessor), which is strictly smaller than the outer fuel `S n`.
+   This satisfies the guard checker.
 
-- `extraction/TypeSafetyExtraction.v` — Rocq extraction config; extracts `infer_type`, `lookup_env` to `TypeSafetyModel.ml`
-- `extraction/dune` — `type_safety_model` library stanza (`-w -a` on generated code)
-- `test/test_type_safety_conformance.ml` — 13 smoke tests + differential QCheck (`coq_model_vs_sarek_typer_agree`)
-- `test/dune` — test stanza depending on `type_safety_model sarek_frontend qcheck-core qcheck-core.runner`
-- **Differential**: random `expr` over the literal/var/let fragment, run through the
-  extracted `infer_type` and the real `Sarek_typer.infer`, assert agreement on
-  `inl`/`inr` and the resolved `texpr.ty`. **2000/2000 pass** (0 errors, 0 fails).
-- **Found F-TS-01**: differential surfaced `let y = (let x = 0 in 0) in x` —
-  `Sarek_typer.infer` accepted `x` in the body; Coq model (correct HM scoping)
-  rejected it. Fixed in `Sarek_typer.ml` ELet (build body env from pre-value vars).
-  See findings/FINDINGS.md.
-- Status: `dune build` exit 0, `dune runtest` exit 0 (full suite + formal/type-safety/test/).
+## Proven (tick 1-2, TypeSafetySpec.v — T1)
 
-## Notes
+(see proof-ledger.json for full list of 9 T1 theorems)
 
-- Spec models **post-unification** types (no TVar) — mirrors `texpr.ty`
-  ("Always resolved, never contains unbound TVar", Sarek_typed_ast.ml:29).
-- Coq theories build via CoqMakefile, not dune (root `dune-project` has no
-  `(using coq ...)`; following the convergence-safety pattern).
-- Extraction emits its own `string`/`String` constructors that shadow OCaml's
-  `String` module — `coq_string_of_string` must be defined before `open M`.
+## Proven (tick 3, UnifySpec.v — T2-UNIFY, all Qed, 0 admits)
+
+21. `pre_type_ind_strong` — custom induction for pre_type (Forall IH for PTuple)
+22. `follow_ground_prim/reg/tuple` — ground types are fixed by follow (3 lemmas)
+23. `follow_pvar_none` — unbound PVar follows to itself
+24. `prim_type_beq_true/false` — prim_type_beq reflects =/≠ (2 lemmas)
+25. `reg_type_beq_true/false` — reg_type_beq reflects =/≠ (2 lemmas)
+26. `prim_type_beq_refl` — prim_type_beq p p = true
+27. `reg_type_beq_refl` — reg_type_beq r r = true
+28. `subst_lookup_head` — head binding lookup
+29. `occurs_ground_false` — PPrim/PReg contain no PVar (2 lemmas)
+30. `unify_fun_prim_prim/reg_reg` — unfolding lemmas (2 lemmas)
+31. `unify_fun_var_prim/var_reg` — conditional unfolding for PVar/ground (2 lemmas)
+32. `unify_zero_none` — zero fuel always returns None
+33. `unify_prim_sound/complete` — PPrim soundness and completeness
+34. `unify_reg_sound/complete` — PReg soundness and completeness
+35. `unify_var_binds_prim/reg` — free PVar gets bound to ground type
+36. `occurs_check_blocks_prim/reg` — occurs_in ground always false
+
+## Next: T3-SEMANTIC

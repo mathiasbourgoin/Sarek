@@ -444,4 +444,177 @@ let () =
       (fun m -> Printf.printf "  %s\n" m)
       (List.sort_uniq compare !divergences)
   end ;
-  exit passed
+  if passed <> 0 then exit passed
+
+(* ===========================================================================
+   T2-UNIFY smoke tests — extracted UnifyModel oracle
+   ===========================================================================
+
+   These tests drive the extracted pure unifier (UnifyModel.unify_fun) directly,
+   checking:
+     1. PPrim/PPrim and PReg/PReg ground unification.
+     2. PVar binds to PPrim/PReg when unbound.
+     3. Mismatch cases return None.
+     4. Zero-fuel always returns None.
+     5. PTuple matching (same-length tuples of ground types).
+
+   The conformance property: results match what Sarek_types.unify would do
+   on equivalent inputs (for the covered fragment without mutable state). *)
+
+module U = Type_safety_model.UnifyModel
+
+let fuel = 100
+
+let empty_subst : U.pre_subst = []
+
+let test_unify_prim_same () =
+  let s = U.unify_fun fuel empty_subst (U.PPrim U.TInt32) (U.PPrim U.TInt32) in
+  assert (s = Some []) ;
+  Printf.printf "  unify PPrim TInt32 PPrim TInt32 = Some [] [ok]\n"
+
+let test_unify_prim_diff () =
+  let s = U.unify_fun fuel empty_subst (U.PPrim U.TInt32) (U.PPrim U.TBool) in
+  assert (s = None) ;
+  Printf.printf "  unify PPrim TInt32 PPrim TBool = None [ok]\n"
+
+let test_unify_reg_same () =
+  let s = U.unify_fun fuel empty_subst (U.PReg U.RFloat32) (U.PReg U.RFloat32) in
+  assert (s = Some []) ;
+  Printf.printf "  unify PReg RFloat32 PReg RFloat32 = Some [] [ok]\n"
+
+let test_unify_reg_diff () =
+  let s = U.unify_fun fuel empty_subst (U.PReg U.RFloat32) (U.PReg U.RInt) in
+  assert (s = None) ;
+  Printf.printf "  unify PReg RFloat32 PReg RInt = None [ok]\n"
+
+let test_unify_prim_mismatch () =
+  let s = U.unify_fun fuel empty_subst (U.PPrim U.TBool) (U.PReg U.RFloat32) in
+  assert (s = None) ;
+  Printf.printf "  unify PPrim TBool PReg RFloat32 = None (mismatch) [ok]\n"
+
+let test_unify_var_prim () =
+  let s = U.unify_fun fuel empty_subst (U.PVar 0) (U.PPrim U.TInt32) in
+  (match s with
+  | Some [(0, U.PPrim U.TInt32)] -> ()
+  | _ -> failwith "expected Some [(0, PPrim TInt32)]") ;
+  Printf.printf "  unify PVar 0 PPrim TInt32 = Some [(0, PPrim TInt32)] [ok]\n"
+
+let test_unify_prim_var () =
+  let s = U.unify_fun fuel empty_subst (U.PPrim U.TBool) (U.PVar 1) in
+  (match s with
+  | Some [(1, U.PPrim U.TBool)] -> ()
+  | _ -> failwith "expected Some [(1, PPrim TBool)]") ;
+  Printf.printf "  unify PPrim TBool PVar 1 = Some [(1, PPrim TBool)] [ok]\n"
+
+let test_unify_var_reg () =
+  let s = U.unify_fun fuel empty_subst (U.PVar 2) (U.PReg U.RInt64) in
+  (match s with
+  | Some [(2, U.PReg U.RInt64)] -> ()
+  | _ -> failwith "expected Some [(2, PReg RInt64)]") ;
+  Printf.printf "  unify PVar 2 PReg RInt64 = Some [(2, PReg RInt64)] [ok]\n"
+
+let test_unify_var_var_same () =
+  let s = U.unify_fun fuel empty_subst (U.PVar 0) (U.PVar 0) in
+  assert (s = Some []) ;
+  Printf.printf "  unify PVar 0 PVar 0 = Some [] [ok]\n"
+
+let test_unify_var_var_diff () =
+  let s = U.unify_fun fuel empty_subst (U.PVar 0) (U.PVar 1) in
+  (match s with
+  | Some [(0, U.PVar 1)] -> ()
+  | _ -> failwith "expected Some [(0, PVar 1)]") ;
+  Printf.printf "  unify PVar 0 PVar 1 = Some [(0, PVar 1)] [ok]\n"
+
+let test_unify_zero_fuel () =
+  let s = U.unify_fun 0 empty_subst (U.PPrim U.TInt32) (U.PPrim U.TInt32) in
+  assert (s = None) ;
+  Printf.printf "  unify fuel=0 PPrim TInt32 PPrim TInt32 = None [ok]\n"
+
+let test_unify_tuple_same () =
+  let t1 = U.PTuple [U.PPrim U.TInt32; U.PReg U.RFloat32] in
+  let t2 = U.PTuple [U.PPrim U.TInt32; U.PReg U.RFloat32] in
+  let s = U.unify_fun fuel empty_subst t1 t2 in
+  assert (s = Some []) ;
+  Printf.printf "  unify PTuple[int32;float32] PTuple[int32;float32] = Some [] [ok]\n"
+
+let test_unify_tuple_diff_len () =
+  let t1 = U.PTuple [U.PPrim U.TInt32] in
+  let t2 = U.PTuple [U.PPrim U.TInt32; U.PReg U.RFloat32] in
+  let s = U.unify_fun fuel empty_subst t1 t2 in
+  assert (s = None) ;
+  Printf.printf "  unify PTuple[int32] PTuple[int32;float32] = None (len mismatch) [ok]\n"
+
+let test_unify_tuple_mismatch_elem () =
+  let t1 = U.PTuple [U.PPrim U.TInt32; U.PPrim U.TBool] in
+  let t2 = U.PTuple [U.PPrim U.TInt32; U.PReg U.RFloat32] in
+  let s = U.unify_fun fuel empty_subst t1 t2 in
+  assert (s = None) ;
+  Printf.printf "  unify PTuple[int32;bool] PTuple[int32;float32] = None (elem mismatch) [ok]\n"
+
+let test_unify_var_already_bound () =
+  let s0 = [(0, U.PPrim U.TInt32)] in
+  let s = U.unify_fun fuel s0 (U.PVar 0) (U.PPrim U.TInt32) in
+  assert (s = Some s0) ;
+  Printf.printf "  unify (PVar 0 -> TInt32) PVar 0 PPrim TInt32 = Some s0 [ok]\n"
+
+(* T2-UNIFY QCheck: conformance against Sarek_types.unify for ground types *)
+
+let gen_ground_pre_type : U.pre_type QCheck2.Gen.t =
+  QCheck2.Gen.oneof_list
+    [U.PPrim U.TUnit; U.PPrim U.TBool; U.PPrim U.TInt32;
+     U.PReg U.RInt; U.PReg U.RInt64; U.PReg U.RFloat32; U.PReg U.RFloat64;
+     U.PReg U.RChar]
+
+type unify_ncmp = UOk | UFail
+
+let ncmp_of_unify_opt = function Some _ -> UOk | None -> UFail
+
+let ncmp_of_sarek_unify = function Ok () -> UOk | Error _ -> UFail
+
+let sarek_typ_of_ground (t : U.pre_type) : Sarek_types.typ option =
+  match t with
+  | U.PPrim U.TUnit  -> Some (Sarek_types.TPrim Sarek_types.TUnit)
+  | U.PPrim U.TBool  -> Some (Sarek_types.TPrim Sarek_types.TBool)
+  | U.PPrim U.TInt32 -> Some (Sarek_types.TPrim Sarek_types.TInt32)
+  | U.PReg U.RInt     -> Some (Sarek_types.TReg Sarek_types.Int)
+  | U.PReg U.RInt64   -> Some (Sarek_types.TReg Sarek_types.Int64)
+  | U.PReg U.RFloat32 -> Some (Sarek_types.TReg Sarek_types.Float32)
+  | U.PReg U.RFloat64 -> Some (Sarek_types.TReg Sarek_types.Float64)
+  | U.PReg U.RChar    -> Some (Sarek_types.TReg Sarek_types.Char)
+  | _ -> None
+
+let test_unify_differential =
+  QCheck2.Test.make
+    ~name:"unify_model_vs_sarek_unify_ground"
+    ~count:1000
+    (QCheck2.Gen.pair gen_ground_pre_type gen_ground_pre_type)
+    (fun (t1, t2) ->
+      let model_result = ncmp_of_unify_opt (U.unify_fun fuel [] t1 t2) in
+      match sarek_typ_of_ground t1, sarek_typ_of_ground t2 with
+      | Some st1, Some st2 ->
+          Sarek_types.reset_tvar_counter () ;
+          let real_result = ncmp_of_sarek_unify (Sarek_types.unify st1 st2) in
+          model_result = real_result
+      | _ -> true)
+
+let () =
+  Printf.printf "\n=== T2-UNIFY smoke tests (UnifyModel oracle) ===\n" ;
+  test_unify_prim_same () ;
+  test_unify_prim_diff () ;
+  test_unify_reg_same () ;
+  test_unify_reg_diff () ;
+  test_unify_prim_mismatch () ;
+  test_unify_var_prim () ;
+  test_unify_prim_var () ;
+  test_unify_var_reg () ;
+  test_unify_var_var_same () ;
+  test_unify_var_var_diff () ;
+  test_unify_zero_fuel () ;
+  test_unify_tuple_same () ;
+  test_unify_tuple_diff_len () ;
+  test_unify_tuple_mismatch_elem () ;
+  test_unify_var_already_bound () ;
+  Printf.printf "=== T2-UNIFY smoke tests passed ===\n" ;
+  Printf.printf "\n=== T2-UNIFY differential (UnifyModel vs Sarek_types.unify) ===\n" ;
+  let passed2 = QCheck_base_runner.run_tests ~verbose:true [test_unify_differential] in
+  exit passed2

@@ -1,0 +1,880 @@
+DIGEST 6ddf51b92410a46a17bd78d6dead6a1e
+FTypeSafety.UnifySpec
+R3325:3328 Stdlib.Bool.Bool <> <> lib
+R3330:3333 Stdlib.Lists.List <> <> lib
+R3335:3340 Stdlib.Strings.String <> <> lib
+R3342:3346 Stdlib.Arith.Arith <> <> lib
+R3348:3350 Stdlib.Init.Nat <> <> lib
+R3384:3397 TypeSafety.TypeSafetySpec <> <> lib
+R3407:3420 TypeSafety.TypeSafetySpec <> <> mod
+R3430:3442 Stdlib.Lists.List ListNotations <> mod
+ind 3751:3758 <> pre_type
+constr 3774:3777 <> PVar
+constr 3847:3851 <> PPrim
+constr 3909:3912 <> PReg
+constr 3972:3977 <> PTuple
+R3786:3789 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3783:3785 Corelib.Init.Datatypes <> nat ind
+R3790:3797 TypeSafety.UnifySpec <> pre_type:1 ind
+R3865:3868 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3856:3864 TypeSafety.TypeSafetySpec <> prim_type ind
+R3869:3876 TypeSafety.UnifySpec <> pre_type:1 ind
+R3926:3930 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3918:3925 TypeSafety.TypeSafetySpec <> reg_type ind
+R3931:3938 TypeSafety.UnifySpec <> pre_type:1 ind
+R3994:3997 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3981:3984 Corelib.Init.Datatypes <> list ind
+R3986:3993 TypeSafety.UnifySpec <> pre_type:1 ind
+R3998:4005 TypeSafety.UnifySpec <> pre_type:1 ind
+scheme 3751:3758 <> pre_type_rect
+scheme 3751:3758 <> pre_type_ind
+scheme 3751:3758 <> pre_type_rec
+scheme 3751:3758 <> pre_type_sind
+prf 4182:4200 <> pre_type_ind_strong
+R4224:4227 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4216:4223 TypeSafety.UnifySpec <> pre_type ind
+binder 4212:4212 <> P:3
+R4237:4237 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4260:4266 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 4245:4246 <> id:4
+R4249:4249 TypeSafety.UnifySpec <> P:3 var
+R4252:4255 TypeSafety.UnifySpec <> PVar constr
+R4257:4258 TypeSafety.UnifySpec <> id:4 var
+R4267:4267 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4289:4295 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 4275:4275 <> p:5
+R4278:4278 TypeSafety.UnifySpec <> P:3 var
+R4281:4285 TypeSafety.UnifySpec <> PPrim constr
+R4287:4287 TypeSafety.UnifySpec <> p:5 var
+R4296:4296 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4317:4323 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 4304:4304 <> r:6
+R4307:4307 TypeSafety.UnifySpec <> P:3 var
+R4310:4313 TypeSafety.UnifySpec <> PReg constr
+R4315:4315 TypeSafety.UnifySpec <> r:6 var
+R4324:4324 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4364:4370 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 4332:4333 <> ts:7
+R4347:4350 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4336:4341 Corelib.Lists.ListDef <> Forall ind
+R4345:4346 TypeSafety.UnifySpec <> ts:7 var
+R4343:4343 TypeSafety.UnifySpec <> P:3 var
+R4351:4351 TypeSafety.UnifySpec <> P:3 var
+R4354:4359 TypeSafety.UnifySpec <> PTuple constr
+R4361:4362 TypeSafety.UnifySpec <> ts:7 var
+binder 4378:4378 <> t:8
+R4381:4381 TypeSafety.UnifySpec <> P:3 var
+R4383:4383 TypeSafety.UnifySpec <> t:8 var
+R4593:4602 Corelib.Lists.ListDef <> Forall_nil constr
+R4593:4602 Corelib.Lists.ListDef <> Forall_nil constr
+R4617:4627 Corelib.Lists.ListDef <> Forall_cons constr
+R4617:4627 Corelib.Lists.ListDef <> Forall_cons constr
+def 4857:4865 <> pre_subst
+R4870:4873 Corelib.Init.Datatypes <> list ind
+R4879:4881 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R4876:4878 Corelib.Init.Datatypes <> nat ind
+R4882:4889 TypeSafety.UnifySpec <> pre_type ind
+def 4943:4954 <> subst_lookup
+R4961:4969 TypeSafety.UnifySpec <> pre_subst def
+binder 4957:4957 <> s:9
+R4978:4980 Corelib.Init.Datatypes <> nat ind
+binder 4973:4974 <> id:10
+R4985:4990 Corelib.Init.Datatypes <> option ind
+R4992:4999 TypeSafety.UnifySpec <> pre_type ind
+R5012:5012 TypeSafety.UnifySpec <> s:9 var
+R5023:5024 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R5029:5032 Corelib.Init.Datatypes <> None constr
+R5046:5049 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R5038:5038 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5042:5043 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5045:5045 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5067:5073 Stdlib.Arith.PeanoNat Nat eqb def
+R5075:5076 TypeSafety.UnifySpec <> id:10 var
+R5099:5110 TypeSafety.UnifySpec <> subst_lookup:11 def
+R5117:5118 TypeSafety.UnifySpec <> id:10 var
+R5087:5090 Corelib.Init.Datatypes <> Some constr
+def 5325:5335 <> follow_pvar
+R5345:5347 Corelib.Init.Datatypes <> nat ind
+binder 5338:5341 <> fuel:13
+R5355:5363 TypeSafety.UnifySpec <> pre_subst def
+binder 5351:5351 <> s:14
+R5372:5374 Corelib.Init.Datatypes <> nat ind
+binder 5367:5368 <> id:15
+R5379:5386 TypeSafety.UnifySpec <> pre_type ind
+R5399:5402 TypeSafety.UnifySpec <> fuel:13 var
+R5418:5421 TypeSafety.UnifySpec <> PVar constr
+R5423:5424 TypeSafety.UnifySpec <> id:15 var
+R5430:5430 Corelib.Init.Datatypes <> S constr
+R5449:5460 TypeSafety.UnifySpec <> subst_lookup def
+R5464:5465 TypeSafety.UnifySpec <> id:15 var
+R5462:5462 TypeSafety.UnifySpec <> s:14 var
+R5480:5483 Corelib.Init.Datatypes <> None constr
+R5499:5502 TypeSafety.UnifySpec <> PVar constr
+R5504:5505 TypeSafety.UnifySpec <> id:15 var
+R5515:5518 Corelib.Init.Datatypes <> Some constr
+R5521:5524 TypeSafety.UnifySpec <> PVar constr
+R5534:5544 TypeSafety.UnifySpec <> follow_pvar:16 def
+R5548:5548 TypeSafety.UnifySpec <> s:14 var
+R5595:5598 Corelib.Init.Datatypes <> Some constr
+def 5942:5947 <> follow
+R5957:5959 Corelib.Init.Datatypes <> nat ind
+binder 5950:5953 <> fuel:18
+R5967:5975 TypeSafety.UnifySpec <> pre_subst def
+binder 5963:5963 <> s:19
+R5983:5990 TypeSafety.UnifySpec <> pre_type ind
+binder 5979:5979 <> t:20
+R5995:6002 TypeSafety.UnifySpec <> pre_type ind
+R6015:6015 TypeSafety.UnifySpec <> t:20 var
+R6026:6030 TypeSafety.UnifySpec <> PPrim constr
+R6038:6038 TypeSafety.UnifySpec <> t:20 var
+R6044:6047 TypeSafety.UnifySpec <> PReg constr
+R6056:6056 TypeSafety.UnifySpec <> t:20 var
+R6062:6067 TypeSafety.UnifySpec <> PTuple constr
+R6074:6074 TypeSafety.UnifySpec <> t:20 var
+R6080:6083 TypeSafety.UnifySpec <> PVar constr
+R6092:6102 TypeSafety.UnifySpec <> follow_pvar def
+R6109:6109 TypeSafety.UnifySpec <> s:19 var
+R6104:6107 TypeSafety.UnifySpec <> fuel:18 var
+prf 6128:6145 <> follow_ground_prim
+binder 6156:6159 <> fuel:22
+binder 6161:6161 <> s:23
+binder 6163:6163 <> p:24
+R6191:6193 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6168:6173 TypeSafety.UnifySpec <> follow def
+R6183:6187 TypeSafety.UnifySpec <> PPrim constr
+R6189:6189 TypeSafety.UnifySpec <> p:24 var
+R6180:6180 TypeSafety.UnifySpec <> s:23 var
+R6175:6178 TypeSafety.UnifySpec <> fuel:22 var
+R6194:6198 TypeSafety.UnifySpec <> PPrim constr
+R6200:6200 TypeSafety.UnifySpec <> p:24 var
+prf 6235:6251 <> follow_ground_reg
+binder 6262:6265 <> fuel:25
+binder 6267:6267 <> s:26
+binder 6269:6269 <> r:27
+R6296:6298 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6274:6279 TypeSafety.UnifySpec <> follow def
+R6289:6292 TypeSafety.UnifySpec <> PReg constr
+R6294:6294 TypeSafety.UnifySpec <> r:27 var
+R6286:6286 TypeSafety.UnifySpec <> s:26 var
+R6281:6284 TypeSafety.UnifySpec <> fuel:25 var
+R6299:6302 TypeSafety.UnifySpec <> PReg constr
+R6304:6304 TypeSafety.UnifySpec <> r:27 var
+prf 6339:6357 <> follow_ground_tuple
+binder 6368:6371 <> fuel:28
+binder 6373:6373 <> s:29
+binder 6375:6376 <> ts:30
+R6406:6408 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6381:6386 TypeSafety.UnifySpec <> follow def
+R6396:6401 TypeSafety.UnifySpec <> PTuple constr
+R6403:6404 TypeSafety.UnifySpec <> ts:30 var
+R6393:6393 TypeSafety.UnifySpec <> s:29 var
+R6388:6391 TypeSafety.UnifySpec <> fuel:28 var
+R6409:6414 TypeSafety.UnifySpec <> PTuple constr
+R6416:6417 TypeSafety.UnifySpec <> ts:30 var
+prf 6515:6530 <> follow_pvar_none
+binder 6541:6544 <> fuel:31
+binder 6546:6546 <> s:32
+binder 6548:6549 <> id:33
+R6578:6583 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6571:6573 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6554:6565 TypeSafety.UnifySpec <> subst_lookup def
+R6569:6570 TypeSafety.UnifySpec <> id:33 var
+R6567:6567 TypeSafety.UnifySpec <> s:32 var
+R6574:6577 Corelib.Init.Datatypes <> None constr
+R6607:6609 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6584:6589 TypeSafety.UnifySpec <> follow def
+R6599:6602 TypeSafety.UnifySpec <> PVar constr
+R6604:6605 TypeSafety.UnifySpec <> id:33 var
+R6596:6596 TypeSafety.UnifySpec <> s:32 var
+R6591:6594 TypeSafety.UnifySpec <> fuel:31 var
+R6610:6613 TypeSafety.UnifySpec <> PVar constr
+R6615:6616 TypeSafety.UnifySpec <> id:33 var
+R6661:6666 TypeSafety.UnifySpec <> follow def
+def 6881:6894 <> recurse_occurs
+R6902:6904 Corelib.Init.Datatypes <> nat ind
+binder 6897:6898 <> id:34
+R6912:6919 TypeSafety.UnifySpec <> pre_type ind
+binder 6908:6908 <> t:35
+R6924:6927 Corelib.Init.Datatypes <> bool ind
+R6940:6940 TypeSafety.UnifySpec <> t:35 var
+R6951:6954 TypeSafety.UnifySpec <> PVar constr
+R6964:6970 Stdlib.Arith.PeanoNat Nat eqb def
+R6972:6973 TypeSafety.UnifySpec <> id:34 var
+R6983:6987 TypeSafety.UnifySpec <> PPrim constr
+R6996:7000 Corelib.Init.Datatypes <> false constr
+R7006:7009 TypeSafety.UnifySpec <> PReg constr
+R7019:7023 Corelib.Init.Datatypes <> false constr
+R7029:7034 TypeSafety.UnifySpec <> PTuple constr
+R7042:7053 Stdlib.Lists.List <> existsb def
+R7056:7069 TypeSafety.UnifySpec <> recurse_occurs:36 def
+R7071:7072 TypeSafety.UnifySpec <> id:34 var
+def 7171:7179 <> occurs_in
+R7189:7191 Corelib.Init.Datatypes <> nat ind
+binder 7182:7185 <> fuel:38
+R7199:7207 TypeSafety.UnifySpec <> pre_subst def
+binder 7195:7195 <> s:39
+R7216:7218 Corelib.Init.Datatypes <> nat ind
+binder 7211:7212 <> id:40
+R7226:7233 TypeSafety.UnifySpec <> pre_type ind
+binder 7222:7222 <> t:41
+R7238:7241 Corelib.Init.Datatypes <> bool ind
+R7248:7261 TypeSafety.UnifySpec <> recurse_occurs def
+R7267:7272 TypeSafety.UnifySpec <> follow def
+R7281:7281 TypeSafety.UnifySpec <> t:41 var
+R7279:7279 TypeSafety.UnifySpec <> s:39 var
+R7274:7277 TypeSafety.UnifySpec <> fuel:38 var
+R7263:7264 TypeSafety.UnifySpec <> id:40 var
+prf 7292:7310 <> occurs_ground_false
+binder 7321:7324 <> fuel:42
+binder 7326:7326 <> s:43
+binder 7328:7329 <> id:44
+binder 7331:7331 <> p:45
+R7365:7367 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7336:7344 TypeSafety.UnifySpec <> occurs_in def
+R7357:7361 TypeSafety.UnifySpec <> PPrim constr
+R7363:7363 TypeSafety.UnifySpec <> p:45 var
+R7353:7354 TypeSafety.UnifySpec <> id:44 var
+R7351:7351 TypeSafety.UnifySpec <> s:43 var
+R7346:7349 TypeSafety.UnifySpec <> fuel:42 var
+R7368:7372 Corelib.Init.Datatypes <> false constr
+prf 7407:7429 <> occurs_ground_reg_false
+binder 7440:7443 <> fuel:46
+binder 7445:7445 <> s:47
+binder 7447:7448 <> id:48
+binder 7450:7450 <> r:49
+R7483:7485 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7455:7463 TypeSafety.UnifySpec <> occurs_in def
+R7476:7479 TypeSafety.UnifySpec <> PReg constr
+R7481:7481 TypeSafety.UnifySpec <> r:49 var
+R7472:7473 TypeSafety.UnifySpec <> id:48 var
+R7470:7470 TypeSafety.UnifySpec <> s:47 var
+R7465:7468 TypeSafety.UnifySpec <> fuel:46 var
+R7486:7490 Corelib.Init.Datatypes <> false constr
+def 7707:7721 <> unify_list_with
+R7747:7750 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7738:7746 TypeSafety.UnifySpec <> pre_subst def
+R7759:7762 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7751:7758 TypeSafety.UnifySpec <> pre_type ind
+R7771:7774 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7763:7770 TypeSafety.UnifySpec <> pre_type ind
+R7775:7780 Corelib.Init.Datatypes <> option ind
+R7782:7790 TypeSafety.UnifySpec <> pre_subst def
+binder 7728:7734 <> unify_f:50
+R7802:7810 TypeSafety.UnifySpec <> pre_subst def
+binder 7798:7798 <> s:51
+R7824:7827 Corelib.Init.Datatypes <> list ind
+R7829:7836 TypeSafety.UnifySpec <> pre_type ind
+binder 7814:7816 <> ts1:52
+binder 7818:7820 <> ts2:53
+R7841:7846 Corelib.Init.Datatypes <> option ind
+R7848:7856 TypeSafety.UnifySpec <> pre_subst def
+R7874:7876 TypeSafety.UnifySpec <> ts2:53 var
+R7869:7871 TypeSafety.UnifySpec <> ts1:52 var
+R7887:7888 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R7891:7892 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R7911:7914 Corelib.Init.Datatypes <> Some constr
+R7916:7916 TypeSafety.UnifySpec <> s:51 var
+R7924:7927 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R7937:7940 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R7962:7968 TypeSafety.UnifySpec <> unify_f:50 var
+R7970:7970 TypeSafety.UnifySpec <> s:51 var
+R7991:7994 Corelib.Init.Datatypes <> None constr
+R8002:8005 Corelib.Init.Datatypes <> None constr
+R8015:8018 Corelib.Init.Datatypes <> Some constr
+R8026:8040 TypeSafety.UnifySpec <> unify_list_with:54 def
+R8042:8048 TypeSafety.UnifySpec <> unify_f:50 var
+R8087:8090 Corelib.Init.Datatypes <> None constr
+def 8355:8363 <> unify_fun
+R8373:8375 Corelib.Init.Datatypes <> nat ind
+binder 8366:8369 <> fuel:57
+R8383:8391 TypeSafety.UnifySpec <> pre_subst def
+binder 8379:8379 <> s:58
+R8403:8410 TypeSafety.UnifySpec <> pre_type ind
+binder 8395:8396 <> t1:59
+binder 8398:8399 <> t2:60
+R8433:8438 Corelib.Init.Datatypes <> option ind
+R8440:8448 TypeSafety.UnifySpec <> pre_subst def
+R8461:8464 TypeSafety.UnifySpec <> fuel:57 var
+R8483:8486 Corelib.Init.Datatypes <> None constr
+R8492:8492 Corelib.Init.Datatypes <> S constr
+R8527:8532 TypeSafety.UnifySpec <> follow def
+R8538:8539 TypeSafety.UnifySpec <> t2:60 var
+R8536:8536 TypeSafety.UnifySpec <> s:58 var
+R8512:8517 TypeSafety.UnifySpec <> follow def
+R8523:8524 TypeSafety.UnifySpec <> t1:59 var
+R8521:8521 TypeSafety.UnifySpec <> s:58 var
+R8554:8557 TypeSafety.UnifySpec <> PVar constr
+R8564:8567 TypeSafety.UnifySpec <> PVar constr
+R8589:8595 Stdlib.Arith.PeanoNat Nat eqb def
+R8632:8635 Corelib.Init.Datatypes <> Some constr
+R8653:8656 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R8638:8638 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8642:8643 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8652:8652 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8644:8647 TypeSafety.UnifySpec <> PVar constr
+R8657:8657 TypeSafety.UnifySpec <> s:58 var
+R8610:8613 Corelib.Init.Datatypes <> Some constr
+R8615:8615 TypeSafety.UnifySpec <> s:58 var
+R8668:8671 TypeSafety.UnifySpec <> PVar constr
+R8677:8681 TypeSafety.UnifySpec <> PPrim constr
+R8701:8709 TypeSafety.UnifySpec <> occurs_in def
+R8719:8723 TypeSafety.UnifySpec <> PPrim constr
+R8713:8713 TypeSafety.UnifySpec <> s:58 var
+R8753:8756 Corelib.Init.Datatypes <> Some constr
+R8772:8775 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R8759:8759 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8762:8763 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8771:8771 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8764:8768 TypeSafety.UnifySpec <> PPrim constr
+R8776:8776 TypeSafety.UnifySpec <> s:58 var
+R8733:8736 Corelib.Init.Datatypes <> None constr
+R8787:8790 TypeSafety.UnifySpec <> PVar constr
+R8796:8799 TypeSafety.UnifySpec <> PReg constr
+R8819:8827 TypeSafety.UnifySpec <> occurs_in def
+R8837:8840 TypeSafety.UnifySpec <> PReg constr
+R8831:8831 TypeSafety.UnifySpec <> s:58 var
+R8870:8873 Corelib.Init.Datatypes <> Some constr
+R8888:8891 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R8876:8876 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8879:8880 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8887:8887 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8881:8884 TypeSafety.UnifySpec <> PReg constr
+R8892:8892 TypeSafety.UnifySpec <> s:58 var
+R8850:8853 Corelib.Init.Datatypes <> None constr
+R8903:8906 TypeSafety.UnifySpec <> PVar constr
+R8912:8917 TypeSafety.UnifySpec <> PTuple constr
+R8938:8946 TypeSafety.UnifySpec <> occurs_in def
+R8956:8961 TypeSafety.UnifySpec <> PTuple constr
+R8950:8950 TypeSafety.UnifySpec <> s:58 var
+R8992:8995 Corelib.Init.Datatypes <> Some constr
+R9013:9016 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R8998:8998 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9001:9002 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9012:9012 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9003:9008 TypeSafety.UnifySpec <> PTuple constr
+R9017:9017 TypeSafety.UnifySpec <> s:58 var
+R8972:8975 Corelib.Init.Datatypes <> None constr
+R9028:9032 TypeSafety.UnifySpec <> PPrim constr
+R9037:9040 TypeSafety.UnifySpec <> PVar constr
+R9061:9069 TypeSafety.UnifySpec <> occurs_in def
+R9079:9083 TypeSafety.UnifySpec <> PPrim constr
+R9073:9073 TypeSafety.UnifySpec <> s:58 var
+R9113:9116 Corelib.Init.Datatypes <> Some constr
+R9132:9135 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R9119:9119 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9122:9123 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9131:9131 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9124:9128 TypeSafety.UnifySpec <> PPrim constr
+R9136:9136 TypeSafety.UnifySpec <> s:58 var
+R9093:9096 Corelib.Init.Datatypes <> None constr
+R9147:9150 TypeSafety.UnifySpec <> PReg constr
+R9155:9158 TypeSafety.UnifySpec <> PVar constr
+R9179:9187 TypeSafety.UnifySpec <> occurs_in def
+R9197:9200 TypeSafety.UnifySpec <> PReg constr
+R9191:9191 TypeSafety.UnifySpec <> s:58 var
+R9230:9233 Corelib.Init.Datatypes <> Some constr
+R9248:9251 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R9236:9236 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9239:9240 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9247:9247 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9241:9244 TypeSafety.UnifySpec <> PReg constr
+R9252:9252 TypeSafety.UnifySpec <> s:58 var
+R9210:9213 Corelib.Init.Datatypes <> None constr
+R9263:9268 TypeSafety.UnifySpec <> PTuple constr
+R9274:9277 TypeSafety.UnifySpec <> PVar constr
+R9298:9306 TypeSafety.UnifySpec <> occurs_in def
+R9316:9321 TypeSafety.UnifySpec <> PTuple constr
+R9310:9310 TypeSafety.UnifySpec <> s:58 var
+R9352:9355 Corelib.Init.Datatypes <> Some constr
+R9373:9376 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R9358:9358 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9361:9362 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9372:9372 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9363:9368 TypeSafety.UnifySpec <> PTuple constr
+R9377:9377 TypeSafety.UnifySpec <> s:58 var
+R9332:9335 Corelib.Init.Datatypes <> None constr
+R9388:9392 TypeSafety.UnifySpec <> PPrim constr
+R9398:9402 TypeSafety.UnifySpec <> PPrim constr
+R9423:9435 TypeSafety.TypeSafetySpec <> prim_type_beq scheme
+R9460:9463 Corelib.Init.Datatypes <> None constr
+R9448:9451 Corelib.Init.Datatypes <> Some constr
+R9453:9453 TypeSafety.UnifySpec <> s:58 var
+R9473:9476 TypeSafety.UnifySpec <> PReg constr
+R9482:9485 TypeSafety.UnifySpec <> PReg constr
+R9506:9517 TypeSafety.TypeSafetySpec <> reg_type_beq scheme
+R9542:9545 Corelib.Init.Datatypes <> None constr
+R9530:9533 Corelib.Init.Datatypes <> Some constr
+R9535:9535 TypeSafety.UnifySpec <> s:58 var
+R9555:9560 TypeSafety.UnifySpec <> PTuple constr
+R9567:9572 TypeSafety.UnifySpec <> PTuple constr
+R9594:9597 Corelib.Init.Datatypes <> negb def
+R9600:9606 Stdlib.Arith.PeanoNat Nat eqb def
+R9609:9619 Stdlib.Lists.List <> length abbrev
+R9627:9637 Stdlib.Lists.List <> length abbrev
+R9670:9684 TypeSafety.UnifySpec <> unify_list_with def
+R9700:9700 TypeSafety.UnifySpec <> s:58 var
+R9687:9695 TypeSafety.UnifySpec <> unify_fun:61 def
+R9650:9653 Corelib.Init.Datatypes <> None constr
+R9726:9729 Corelib.Init.Datatypes <> None constr
+prf 9812:9829 <> prim_type_beq_true
+binder 9840:9841 <> p1:63
+binder 9843:9844 <> p2:64
+R9875:9879 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R9868:9870 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9849:9861 TypeSafety.TypeSafetySpec <> prim_type_beq scheme
+R9866:9867 TypeSafety.UnifySpec <> p2:64 var
+R9863:9864 TypeSafety.UnifySpec <> p1:63 var
+R9871:9874 Corelib.Init.Datatypes <> true constr
+R9882:9884 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9880:9881 TypeSafety.UnifySpec <> p1:63 var
+R9885:9886 TypeSafety.UnifySpec <> p2:64 var
+prf 10050:10068 <> prim_type_beq_false
+binder 10079:10080 <> p1:65
+binder 10082:10083 <> p2:66
+R10115:10119 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R10107:10109 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10088:10100 TypeSafety.TypeSafetySpec <> prim_type_beq scheme
+R10105:10106 TypeSafety.UnifySpec <> p2:66 var
+R10102:10103 TypeSafety.UnifySpec <> p1:65 var
+R10110:10114 Corelib.Init.Datatypes <> false constr
+R10122:10125 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R10120:10121 TypeSafety.UnifySpec <> p1:65 var
+R10126:10127 TypeSafety.UnifySpec <> p2:66 var
+R10248:10260 TypeSafety.TypeSafetySpec <> prim_type_beq scheme
+R10248:10260 TypeSafety.TypeSafetySpec <> prim_type_beq scheme
+R10308:10325 TypeSafety.UnifySpec <> prim_type_beq_true thm
+R10308:10325 TypeSafety.UnifySpec <> prim_type_beq_true thm
+prf 10370:10386 <> reg_type_beq_true
+binder 10397:10398 <> r1:67
+binder 10400:10401 <> r2:68
+R10431:10435 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R10424:10426 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10406:10417 TypeSafety.TypeSafetySpec <> reg_type_beq scheme
+R10422:10423 TypeSafety.UnifySpec <> r2:68 var
+R10419:10420 TypeSafety.UnifySpec <> r1:67 var
+R10427:10430 Corelib.Init.Datatypes <> true constr
+R10438:10440 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10436:10437 TypeSafety.UnifySpec <> r1:67 var
+R10441:10442 TypeSafety.UnifySpec <> r2:68 var
+prf 10606:10623 <> reg_type_beq_false
+binder 10634:10635 <> r1:69
+binder 10637:10638 <> r2:70
+R10669:10673 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R10661:10663 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10643:10654 TypeSafety.TypeSafetySpec <> reg_type_beq scheme
+R10659:10660 TypeSafety.UnifySpec <> r2:70 var
+R10656:10657 TypeSafety.UnifySpec <> r1:69 var
+R10664:10668 Corelib.Init.Datatypes <> false constr
+R10676:10679 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R10674:10675 TypeSafety.UnifySpec <> r1:69 var
+R10680:10681 TypeSafety.UnifySpec <> r2:70 var
+R10802:10813 TypeSafety.TypeSafetySpec <> reg_type_beq scheme
+R10802:10813 TypeSafety.TypeSafetySpec <> reg_type_beq scheme
+R10861:10877 TypeSafety.UnifySpec <> reg_type_beq_true thm
+R10861:10877 TypeSafety.UnifySpec <> reg_type_beq_true thm
+prf 10971:10987 <> subst_lookup_head
+binder 10998:10998 <> s:71
+binder 11000:11001 <> id:72
+binder 11003:11003 <> t:73
+R11038:11040 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11008:11019 TypeSafety.UnifySpec <> subst_lookup def
+R11036:11037 TypeSafety.UnifySpec <> id:72 var
+R11029:11032 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R11022:11022 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R11025:11026 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R11028:11028 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R11023:11024 TypeSafety.UnifySpec <> id:72 var
+R11027:11027 TypeSafety.UnifySpec <> t:73 var
+R11033:11033 TypeSafety.UnifySpec <> s:71 var
+R11041:11044 Corelib.Init.Datatypes <> Some constr
+R11046:11046 TypeSafety.UnifySpec <> t:73 var
+R11088:11099 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+R11088:11099 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+R11088:11099 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+prf 11261:11279 <> unify_fun_prim_prim
+binder 11290:11290 <> n:74
+binder 11292:11292 <> s:75
+binder 11294:11295 <> p1:76
+binder 11297:11298 <> p2:77
+R11342:11346 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11303:11311 TypeSafety.UnifySpec <> unify_fun def
+R11333:11337 TypeSafety.UnifySpec <> PPrim constr
+R11339:11340 TypeSafety.UnifySpec <> p2:77 var
+R11322:11326 TypeSafety.UnifySpec <> PPrim constr
+R11328:11329 TypeSafety.UnifySpec <> p1:76 var
+R11319:11319 TypeSafety.UnifySpec <> s:75 var
+R11314:11314 Corelib.Init.Datatypes <> S constr
+R11316:11316 TypeSafety.UnifySpec <> n:74 var
+R11350:11362 TypeSafety.TypeSafetySpec <> prim_type_beq scheme
+R11367:11368 TypeSafety.UnifySpec <> p2:77 var
+R11364:11365 TypeSafety.UnifySpec <> p1:76 var
+R11387:11390 Corelib.Init.Datatypes <> None constr
+R11375:11378 Corelib.Init.Datatypes <> Some constr
+R11380:11380 TypeSafety.UnifySpec <> s:75 var
+prf 11433:11449 <> unify_fun_reg_reg
+binder 11460:11460 <> n:78
+binder 11462:11462 <> s:79
+binder 11464:11465 <> r1:80
+binder 11467:11468 <> r2:81
+R11510:11514 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11473:11481 TypeSafety.UnifySpec <> unify_fun def
+R11502:11505 TypeSafety.UnifySpec <> PReg constr
+R11507:11508 TypeSafety.UnifySpec <> r2:81 var
+R11492:11495 TypeSafety.UnifySpec <> PReg constr
+R11497:11498 TypeSafety.UnifySpec <> r1:80 var
+R11489:11489 TypeSafety.UnifySpec <> s:79 var
+R11484:11484 Corelib.Init.Datatypes <> S constr
+R11486:11486 TypeSafety.UnifySpec <> n:78 var
+R11518:11529 TypeSafety.TypeSafetySpec <> reg_type_beq scheme
+R11534:11535 TypeSafety.UnifySpec <> r2:81 var
+R11531:11532 TypeSafety.UnifySpec <> r1:80 var
+R11554:11557 Corelib.Init.Datatypes <> None constr
+R11542:11545 Corelib.Init.Datatypes <> Some constr
+R11547:11547 TypeSafety.UnifySpec <> s:79 var
+prf 11720:11737 <> unify_fun_var_prim
+binder 11748:11748 <> n:82
+binder 11750:11750 <> s:83
+binder 11752:11753 <> id:84
+binder 11755:11755 <> p:85
+R11790:11795 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11780:11782 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11760:11765 TypeSafety.UnifySpec <> follow def
+R11772:11775 TypeSafety.UnifySpec <> PVar constr
+R11777:11778 TypeSafety.UnifySpec <> id:84 var
+R11769:11769 TypeSafety.UnifySpec <> s:83 var
+R11767:11767 TypeSafety.UnifySpec <> n:82 var
+R11783:11786 TypeSafety.UnifySpec <> PVar constr
+R11788:11789 TypeSafety.UnifySpec <> id:84 var
+R11833:11837 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11796:11804 TypeSafety.UnifySpec <> unify_fun def
+R11825:11829 TypeSafety.UnifySpec <> PPrim constr
+R11831:11831 TypeSafety.UnifySpec <> p:85 var
+R11815:11818 TypeSafety.UnifySpec <> PVar constr
+R11820:11821 TypeSafety.UnifySpec <> id:84 var
+R11812:11812 TypeSafety.UnifySpec <> s:83 var
+R11807:11807 Corelib.Init.Datatypes <> S constr
+R11809:11809 TypeSafety.UnifySpec <> n:82 var
+R11841:11849 TypeSafety.UnifySpec <> occurs_in def
+R11859:11863 TypeSafety.UnifySpec <> PPrim constr
+R11865:11865 TypeSafety.UnifySpec <> p:85 var
+R11855:11856 TypeSafety.UnifySpec <> id:84 var
+R11853:11853 TypeSafety.UnifySpec <> s:83 var
+R11851:11851 TypeSafety.UnifySpec <> n:82 var
+R11885:11888 Corelib.Init.Datatypes <> Some constr
+R11904:11907 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R11891:11891 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R11894:11895 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R11903:11903 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R11892:11893 TypeSafety.UnifySpec <> id:84 var
+R11896:11900 TypeSafety.UnifySpec <> PPrim constr
+R11902:11902 TypeSafety.UnifySpec <> p:85 var
+R11908:11908 TypeSafety.UnifySpec <> s:83 var
+R11873:11876 Corelib.Init.Datatypes <> None constr
+R11951:11956 TypeSafety.UnifySpec <> follow def
+prf 12015:12031 <> unify_fun_var_reg
+binder 12042:12042 <> n:86
+binder 12044:12044 <> s:87
+binder 12046:12047 <> id:88
+binder 12049:12049 <> r:89
+R12084:12089 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12074:12076 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12054:12059 TypeSafety.UnifySpec <> follow def
+R12066:12069 TypeSafety.UnifySpec <> PVar constr
+R12071:12072 TypeSafety.UnifySpec <> id:88 var
+R12063:12063 TypeSafety.UnifySpec <> s:87 var
+R12061:12061 TypeSafety.UnifySpec <> n:86 var
+R12077:12080 TypeSafety.UnifySpec <> PVar constr
+R12082:12083 TypeSafety.UnifySpec <> id:88 var
+R12126:12130 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12090:12098 TypeSafety.UnifySpec <> unify_fun def
+R12119:12122 TypeSafety.UnifySpec <> PReg constr
+R12124:12124 TypeSafety.UnifySpec <> r:89 var
+R12109:12112 TypeSafety.UnifySpec <> PVar constr
+R12114:12115 TypeSafety.UnifySpec <> id:88 var
+R12106:12106 TypeSafety.UnifySpec <> s:87 var
+R12101:12101 Corelib.Init.Datatypes <> S constr
+R12103:12103 TypeSafety.UnifySpec <> n:86 var
+R12134:12142 TypeSafety.UnifySpec <> occurs_in def
+R12152:12155 TypeSafety.UnifySpec <> PReg constr
+R12157:12157 TypeSafety.UnifySpec <> r:89 var
+R12148:12149 TypeSafety.UnifySpec <> id:88 var
+R12146:12146 TypeSafety.UnifySpec <> s:87 var
+R12144:12144 TypeSafety.UnifySpec <> n:86 var
+R12177:12180 Corelib.Init.Datatypes <> Some constr
+R12195:12198 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R12183:12183 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R12186:12187 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R12194:12194 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R12184:12185 TypeSafety.UnifySpec <> id:88 var
+R12188:12191 TypeSafety.UnifySpec <> PReg constr
+R12193:12193 TypeSafety.UnifySpec <> r:89 var
+R12199:12199 TypeSafety.UnifySpec <> s:87 var
+R12165:12168 Corelib.Init.Datatypes <> None constr
+R12242:12247 TypeSafety.UnifySpec <> follow def
+prf 12344:12358 <> unify_zero_none
+binder 12369:12369 <> s:90
+binder 12371:12372 <> t1:91
+binder 12374:12375 <> t2:92
+R12399:12401 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12380:12388 TypeSafety.UnifySpec <> unify_fun def
+R12397:12398 TypeSafety.UnifySpec <> t2:92 var
+R12394:12395 TypeSafety.UnifySpec <> t1:91 var
+R12392:12392 TypeSafety.UnifySpec <> s:90 var
+R12402:12405 Corelib.Init.Datatypes <> None constr
+prf 12497:12512 <> unify_prim_sound
+binder 12523:12526 <> fuel:93
+binder 12528:12528 <> s:94
+binder 12530:12531 <> p1:95
+binder 12533:12534 <> p2:96
+binder 12536:12537 <> s':97
+R12590:12595 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12580:12582 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12542:12550 TypeSafety.UnifySpec <> unify_fun def
+R12571:12575 TypeSafety.UnifySpec <> PPrim constr
+R12577:12578 TypeSafety.UnifySpec <> p2:96 var
+R12560:12564 TypeSafety.UnifySpec <> PPrim constr
+R12566:12567 TypeSafety.UnifySpec <> p1:95 var
+R12557:12557 TypeSafety.UnifySpec <> s:94 var
+R12552:12555 TypeSafety.UnifySpec <> fuel:93 var
+R12583:12586 Corelib.Init.Datatypes <> Some constr
+R12588:12589 TypeSafety.UnifySpec <> s':97 var
+R12602:12605 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R12598:12600 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12596:12597 TypeSafety.UnifySpec <> s':97 var
+R12601:12601 TypeSafety.UnifySpec <> s:94 var
+R12608:12610 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12606:12607 TypeSafety.UnifySpec <> p1:95 var
+R12611:12612 TypeSafety.UnifySpec <> p2:96 var
+R12704:12722 TypeSafety.UnifySpec <> unify_fun_prim_prim thm
+R12704:12722 TypeSafety.UnifySpec <> unify_fun_prim_prim thm
+R12704:12722 TypeSafety.UnifySpec <> unify_fun_prim_prim thm
+R12742:12754 TypeSafety.TypeSafetySpec <> prim_type_beq scheme
+R12742:12754 TypeSafety.TypeSafetySpec <> prim_type_beq scheme
+R12842:12859 TypeSafety.UnifySpec <> prim_type_beq_true thm
+R12842:12859 TypeSafety.UnifySpec <> prim_type_beq_true thm
+prf 12886:12903 <> prim_type_beq_refl
+binder 12914:12914 <> p:98
+R12936:12938 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12919:12931 TypeSafety.TypeSafetySpec <> prim_type_beq scheme
+R12935:12935 TypeSafety.UnifySpec <> p:98 var
+R12933:12933 TypeSafety.UnifySpec <> p:98 var
+R12939:12942 Corelib.Init.Datatypes <> true constr
+prf 12998:13014 <> reg_type_beq_refl
+binder 13025:13025 <> r:99
+R13046:13048 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13030:13041 TypeSafety.TypeSafetySpec <> reg_type_beq scheme
+R13045:13045 TypeSafety.UnifySpec <> r:99 var
+R13043:13043 TypeSafety.UnifySpec <> r:99 var
+R13049:13052 Corelib.Init.Datatypes <> true constr
+prf 13108:13126 <> unify_prim_complete
+binder 13137:13140 <> fuel:100
+binder 13142:13142 <> s:101
+binder 13144:13144 <> p:102
+R13157:13162 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13153:13155 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R13149:13152 TypeSafety.UnifySpec <> fuel:100 var
+R13199:13201 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13163:13171 TypeSafety.UnifySpec <> unify_fun def
+R13191:13195 TypeSafety.UnifySpec <> PPrim constr
+R13197:13197 TypeSafety.UnifySpec <> p:102 var
+R13181:13185 TypeSafety.UnifySpec <> PPrim constr
+R13187:13187 TypeSafety.UnifySpec <> p:102 var
+R13178:13178 TypeSafety.UnifySpec <> s:101 var
+R13173:13176 TypeSafety.UnifySpec <> fuel:100 var
+R13202:13205 Corelib.Init.Datatypes <> Some constr
+R13207:13207 TypeSafety.UnifySpec <> s:101 var
+R13299:13317 TypeSafety.UnifySpec <> unify_fun_prim_prim thm
+R13299:13317 TypeSafety.UnifySpec <> unify_fun_prim_prim thm
+R13299:13317 TypeSafety.UnifySpec <> unify_fun_prim_prim thm
+R13330:13347 TypeSafety.UnifySpec <> prim_type_beq_refl thm
+R13330:13347 TypeSafety.UnifySpec <> prim_type_beq_refl thm
+R13330:13347 TypeSafety.UnifySpec <> prim_type_beq_refl thm
+prf 13377:13391 <> unify_reg_sound
+binder 13402:13405 <> fuel:103
+binder 13407:13407 <> s:104
+binder 13409:13410 <> r1:105
+binder 13412:13413 <> r2:106
+binder 13415:13416 <> s':107
+R13467:13472 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13457:13459 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13421:13429 TypeSafety.UnifySpec <> unify_fun def
+R13449:13452 TypeSafety.UnifySpec <> PReg constr
+R13454:13455 TypeSafety.UnifySpec <> r2:106 var
+R13439:13442 TypeSafety.UnifySpec <> PReg constr
+R13444:13445 TypeSafety.UnifySpec <> r1:105 var
+R13436:13436 TypeSafety.UnifySpec <> s:104 var
+R13431:13434 TypeSafety.UnifySpec <> fuel:103 var
+R13460:13463 Corelib.Init.Datatypes <> Some constr
+R13465:13466 TypeSafety.UnifySpec <> s':107 var
+R13479:13482 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R13475:13477 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13473:13474 TypeSafety.UnifySpec <> s':107 var
+R13478:13478 TypeSafety.UnifySpec <> s:104 var
+R13485:13487 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13483:13484 TypeSafety.UnifySpec <> r1:105 var
+R13488:13489 TypeSafety.UnifySpec <> r2:106 var
+R13581:13597 TypeSafety.UnifySpec <> unify_fun_reg_reg thm
+R13581:13597 TypeSafety.UnifySpec <> unify_fun_reg_reg thm
+R13581:13597 TypeSafety.UnifySpec <> unify_fun_reg_reg thm
+R13617:13628 TypeSafety.TypeSafetySpec <> reg_type_beq scheme
+R13617:13628 TypeSafety.TypeSafetySpec <> reg_type_beq scheme
+R13716:13732 TypeSafety.UnifySpec <> reg_type_beq_true thm
+R13716:13732 TypeSafety.UnifySpec <> reg_type_beq_true thm
+prf 13759:13776 <> unify_reg_complete
+binder 13787:13790 <> fuel:108
+binder 13792:13792 <> s:109
+binder 13794:13794 <> r:110
+R13807:13812 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13803:13805 Corelib.Init.Peano <> ::nat_scope:x_'>'_x not
+R13799:13802 TypeSafety.UnifySpec <> fuel:108 var
+R13847:13849 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13813:13821 TypeSafety.UnifySpec <> unify_fun def
+R13840:13843 TypeSafety.UnifySpec <> PReg constr
+R13845:13845 TypeSafety.UnifySpec <> r:110 var
+R13831:13834 TypeSafety.UnifySpec <> PReg constr
+R13836:13836 TypeSafety.UnifySpec <> r:110 var
+R13828:13828 TypeSafety.UnifySpec <> s:109 var
+R13823:13826 TypeSafety.UnifySpec <> fuel:108 var
+R13850:13853 Corelib.Init.Datatypes <> Some constr
+R13855:13855 TypeSafety.UnifySpec <> s:109 var
+R13947:13963 TypeSafety.UnifySpec <> unify_fun_reg_reg thm
+R13947:13963 TypeSafety.UnifySpec <> unify_fun_reg_reg thm
+R13947:13963 TypeSafety.UnifySpec <> unify_fun_reg_reg thm
+R13976:13992 TypeSafety.UnifySpec <> reg_type_beq_refl thm
+R13976:13992 TypeSafety.UnifySpec <> reg_type_beq_refl thm
+R13976:13992 TypeSafety.UnifySpec <> reg_type_beq_refl thm
+prf 14212:14231 <> unify_var_binds_prim
+binder 14242:14242 <> n:111
+binder 14244:14244 <> s:112
+binder 14246:14247 <> id:113
+binder 14249:14249 <> p:114
+binder 14251:14252 <> s':115
+R14287:14292 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14277:14279 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14257:14262 TypeSafety.UnifySpec <> follow def
+R14269:14272 TypeSafety.UnifySpec <> PVar constr
+R14274:14275 TypeSafety.UnifySpec <> id:113 var
+R14266:14266 TypeSafety.UnifySpec <> s:112 var
+R14264:14264 TypeSafety.UnifySpec <> n:111 var
+R14280:14283 TypeSafety.UnifySpec <> PVar constr
+R14285:14286 TypeSafety.UnifySpec <> id:113 var
+R14340:14345 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14330:14332 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14293:14301 TypeSafety.UnifySpec <> unify_fun def
+R14322:14326 TypeSafety.UnifySpec <> PPrim constr
+R14328:14328 TypeSafety.UnifySpec <> p:114 var
+R14312:14315 TypeSafety.UnifySpec <> PVar constr
+R14317:14318 TypeSafety.UnifySpec <> id:113 var
+R14309:14309 TypeSafety.UnifySpec <> s:112 var
+R14304:14304 Corelib.Init.Datatypes <> S constr
+R14306:14306 TypeSafety.UnifySpec <> n:111 var
+R14333:14336 Corelib.Init.Datatypes <> Some constr
+R14338:14339 TypeSafety.UnifySpec <> s':115 var
+R14364:14366 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14346:14357 TypeSafety.UnifySpec <> subst_lookup def
+R14362:14363 TypeSafety.UnifySpec <> id:113 var
+R14359:14360 TypeSafety.UnifySpec <> s':115 var
+R14367:14370 Corelib.Init.Datatypes <> Some constr
+R14373:14377 TypeSafety.UnifySpec <> PPrim constr
+R14379:14379 TypeSafety.UnifySpec <> p:114 var
+R14435:14452 TypeSafety.UnifySpec <> unify_fun_var_prim thm
+R14435:14452 TypeSafety.UnifySpec <> unify_fun_var_prim thm
+R14435:14452 TypeSafety.UnifySpec <> unify_fun_var_prim thm
+R14435:14452 TypeSafety.UnifySpec <> unify_fun_var_prim thm
+R14492:14510 TypeSafety.UnifySpec <> occurs_ground_false thm
+R14492:14510 TypeSafety.UnifySpec <> occurs_ground_false thm
+R14492:14510 TypeSafety.UnifySpec <> occurs_ground_false thm
+R14561:14577 TypeSafety.UnifySpec <> subst_lookup_head thm
+R14561:14577 TypeSafety.UnifySpec <> subst_lookup_head thm
+prf 14592:14610 <> unify_var_binds_reg
+binder 14621:14621 <> n:116
+binder 14623:14623 <> s:117
+binder 14625:14626 <> id:118
+binder 14628:14628 <> r:119
+binder 14630:14631 <> s':120
+R14666:14671 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14656:14658 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14636:14641 TypeSafety.UnifySpec <> follow def
+R14648:14651 TypeSafety.UnifySpec <> PVar constr
+R14653:14654 TypeSafety.UnifySpec <> id:118 var
+R14645:14645 TypeSafety.UnifySpec <> s:117 var
+R14643:14643 TypeSafety.UnifySpec <> n:116 var
+R14659:14662 TypeSafety.UnifySpec <> PVar constr
+R14664:14665 TypeSafety.UnifySpec <> id:118 var
+R14718:14723 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14708:14710 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14672:14680 TypeSafety.UnifySpec <> unify_fun def
+R14701:14704 TypeSafety.UnifySpec <> PReg constr
+R14706:14706 TypeSafety.UnifySpec <> r:119 var
+R14691:14694 TypeSafety.UnifySpec <> PVar constr
+R14696:14697 TypeSafety.UnifySpec <> id:118 var
+R14688:14688 TypeSafety.UnifySpec <> s:117 var
+R14683:14683 Corelib.Init.Datatypes <> S constr
+R14685:14685 TypeSafety.UnifySpec <> n:116 var
+R14711:14714 Corelib.Init.Datatypes <> Some constr
+R14716:14717 TypeSafety.UnifySpec <> s':120 var
+R14742:14744 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14724:14735 TypeSafety.UnifySpec <> subst_lookup def
+R14740:14741 TypeSafety.UnifySpec <> id:118 var
+R14737:14738 TypeSafety.UnifySpec <> s':120 var
+R14745:14748 Corelib.Init.Datatypes <> Some constr
+R14751:14754 TypeSafety.UnifySpec <> PReg constr
+R14756:14756 TypeSafety.UnifySpec <> r:119 var
+R14812:14828 TypeSafety.UnifySpec <> unify_fun_var_reg thm
+R14812:14828 TypeSafety.UnifySpec <> unify_fun_var_reg thm
+R14812:14828 TypeSafety.UnifySpec <> unify_fun_var_reg thm
+R14812:14828 TypeSafety.UnifySpec <> unify_fun_var_reg thm
+R14868:14890 TypeSafety.UnifySpec <> occurs_ground_reg_false thm
+R14868:14890 TypeSafety.UnifySpec <> occurs_ground_reg_false thm
+R14868:14890 TypeSafety.UnifySpec <> occurs_ground_reg_false thm
+R14941:14957 TypeSafety.UnifySpec <> subst_lookup_head thm
+R14941:14957 TypeSafety.UnifySpec <> subst_lookup_head thm
+prf 15124:15147 <> occurs_check_blocks_prim
+binder 15158:15158 <> n:121
+binder 15160:15160 <> s:122
+binder 15162:15163 <> id:123
+binder 15165:15165 <> p:124
+R15196:15198 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R15170:15178 TypeSafety.UnifySpec <> occurs_in def
+R15188:15192 TypeSafety.UnifySpec <> PPrim constr
+R15194:15194 TypeSafety.UnifySpec <> p:124 var
+R15184:15185 TypeSafety.UnifySpec <> id:123 var
+R15182:15182 TypeSafety.UnifySpec <> s:122 var
+R15180:15180 TypeSafety.UnifySpec <> n:121 var
+R15199:15203 Corelib.Init.Datatypes <> false constr
+prf 15238:15260 <> occurs_check_blocks_reg
+binder 15271:15271 <> n:125
+binder 15273:15273 <> s:126
+binder 15275:15276 <> id:127
+binder 15278:15278 <> r:128
+R15308:15310 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R15283:15291 TypeSafety.UnifySpec <> occurs_in def
+R15301:15304 TypeSafety.UnifySpec <> PReg constr
+R15306:15306 TypeSafety.UnifySpec <> r:128 var
+R15297:15298 TypeSafety.UnifySpec <> id:127 var
+R15295:15295 TypeSafety.UnifySpec <> s:126 var
+R15293:15293 TypeSafety.UnifySpec <> n:125 var
+R15311:15315 Corelib.Init.Datatypes <> false constr
+def 15481:15491 <> apply_subst
+R15501:15503 Corelib.Init.Datatypes <> nat ind
+binder 15494:15497 <> fuel:129
+R15511:15519 TypeSafety.UnifySpec <> pre_subst def
+binder 15507:15507 <> s:130
+R15527:15534 TypeSafety.UnifySpec <> pre_type ind
+binder 15523:15523 <> t:131
+R15539:15546 TypeSafety.UnifySpec <> pre_type ind
+R15559:15559 TypeSafety.UnifySpec <> t:131 var
+R15570:15574 TypeSafety.UnifySpec <> PPrim constr
+R15583:15583 TypeSafety.UnifySpec <> t:131 var
+R15589:15592 TypeSafety.UnifySpec <> PReg constr
+R15602:15602 TypeSafety.UnifySpec <> t:131 var
+R15608:15611 TypeSafety.UnifySpec <> PVar constr
+R15621:15631 TypeSafety.UnifySpec <> follow_pvar def
+R15638:15638 TypeSafety.UnifySpec <> s:130 var
+R15633:15636 TypeSafety.UnifySpec <> fuel:129 var
+R15647:15652 TypeSafety.UnifySpec <> PTuple constr
+R15660:15665 TypeSafety.UnifySpec <> PTuple constr
+R15668:15675 Stdlib.Lists.List <> map abbrev
+R15678:15688 TypeSafety.UnifySpec <> apply_subst:132 def
+R15695:15695 TypeSafety.UnifySpec <> s:130 var
+R15690:15693 TypeSafety.UnifySpec <> fuel:129 var
