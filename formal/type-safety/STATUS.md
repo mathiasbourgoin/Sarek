@@ -1,17 +1,17 @@
 # TypeSafety — Status
 
 **Branch**: formal/convergence-safety-phase1a
-**Phase**: T3-S6 (ConstrSpec, done 2026-06-14) -> T3-S7 (next)
+**Phase**: T3-S7 (SpecialSpec, done 2026-06-14) -> T3-S8 (next)
 **Toolchain**: Rocq 9.1.1 / OCaml 5.4.0
 
 ## Scoreboard
 
 | Metric | Value |
 |---|---|
-| Theorems proven | 82 (70 headline + 12 auxiliary, all Qed/Defined) |
+| Theorems proven | 86 (74 headline + 12 auxiliary, all Qed/Defined) |
 | Admits | 0 |
 | Axioms | 0 |
-| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, field_lookup, infer_rec_type, has_rec_type, infer_cf_type, has_cf_type, is_numeric, is_integer, infer_op_type, has_op_type, infer_fun_type, has_fun_type, is_mutable, infer_mut_type, has_mut_type, lookup_constr, branch_body_env, check_branches, infer_pat_type, has_pat_type, branches_have_type, check_fields, infer_constr_type, has_constr_type, fields_have_type |
+| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, field_lookup, infer_rec_type, has_rec_type, infer_cf_type, has_cf_type, is_numeric, is_integer, infer_op_type, has_op_type, infer_fun_type, has_fun_type, is_mutable, infer_mut_type, has_mut_type, lookup_constr, branch_body_env, check_branches, infer_pat_type, has_pat_type, branches_have_type, check_fields, infer_constr_type, has_constr_type, fields_have_type, infer_special_type, has_special_type |
 | Build | green (CoqMakefile, exit 0; dune build/test, exit 0) |
 | T1-CMBT harness | green -- differential QCheck 2000/2000 (0 errors, 0 fails) + 20/20 smoke |
 | T2-UNIFY harness | green -- differential QCheck 1000/1000 (0 errors, 0 fails) + 15/15 smoke |
@@ -23,6 +23,7 @@
 | T3-S4 harness | green -- 10/10 smoke (MEFun delegation, MELetMut success/body-type/nested, MEAssign success, MEUnbound, MEImmutable, MEAssignMismatch, MEFunErr propagation, init-error short-circuit) |
 | T3-S5 harness | green -- 11/11 smoke (PEMut delegation, no-payload match, payload-bound match, PENotVariant, PEMismatch unknown constructor, PEBranchType, PEMutErr delegation, PEEmpty, scoped binder, multi-branch agree, error short-circuit) |
 | T3-S6 harness | green -- 13/13 smoke (CEPat delegation, record success/empty-provided, FieldTypeMismatch, UnknownField, nullary constr, payload constr, payload mismatch, UnknownConstr, ConstrArity extra-arg/missing-arg, CPatternErr delegation, nested construction) |
+| T3-S7 harness | green -- 12/12 smoke (SEConstr delegation, return pass-through int32/bool, EarlyReturnNotAllowed, create_array Global/Shared, ArraySizeNotInt, type-annot match/mismatch, SConstrErr delegation, nested return/typed/array, size-error propagation through SETyped) |
 | Findings | F-TS-01 (ELet scope leak) -- found by T1-CMBT, RESOLVED |
 
 ## Termination design (T2-UNIFY)
@@ -328,12 +329,47 @@ TRecord and TVariant are now full constructors in `sarek_type`:
    bare `P arg`, because the payload is optional; the `None` case carries the trivial `True`.
    This is the optional-field analogue of PatternSpec's `Forall`-over-branches IH.
 
+## Proven (tick 12, SpecialSpec.v -- T3-S7, all Qed, 0 admits)
+
+71. `infer_special_type_sound` -- SEReturn/SECreateArray/SETyped inference -> has_special_type
+72. `infer_special_type_complete` -- has_special_type -> inference
+73. `has_special_type_det` -- uniqueness of the declarative special_expr judgement
+74. `special_type_preservation` -- infer_special_type env mu e = inl t <-> has_special_type env mu e t
+
+## Proof technique notes (T3-S7)
+
+1. **Three special forms mirror `infer_data_structure`/`infer_special`** (Sarek_typer.ml:467/470/505):
+   `SEReturn allowed body` is a *pass-through* -- its type is exactly the body's type, matching
+   `EReturn e -> mk_texpr (TEReturn te) te.ty`. `SECreateArray size elt mem` infers `size`,
+   requires it to be `TPrim TInt32` (the post-unification residue of Sarek's
+   `unify_or_error tsize.ty t_int32`), and returns `TArr elt mem` exactly as Sarek's `arr_ty`.
+   `SETyped body annot` infers `body`, requires `got = annot` (residue of `unify_or_error te.ty ty`),
+   and returns the annotation type (Sarek: `{te with ty = repr ty}`).
+
+2. **`EarlyReturnNotAllowed` reachability via an explicit `allowed : bool` AST flag**: Sarek itself
+   never rejects a return, but a return is only meaningful in a tail position. Rather than thread a
+   context flag through `(env, mu)` -- which would diverge from the established layer signature -- the
+   side condition is carried by the `SEReturn` node. `allowed = true` is the faithful pass-through;
+   `allowed = false` yields `EarlyReturnNotAllowed`, keeping the error constructor genuinely reachable
+   (smoke test 4) without perturbing the inference signature shared by all layers.
+
+3. **No custom induction principle needed**: unlike the list-bearing layers (ETuple/branches/fields),
+   `special_expr` recurses only through single sub-expressions (`SEReturn`/`SECreateArray`/`SETyped`
+   each hold one `special_expr`), so Rocq's default `induction e` already yields the needed IHs.
+   Soundness is a flat 4-case induction; the `false` return arm closes by `discriminate`.
+
+4. **`subst sz` / `subst gt` after `sarek_type_eq_dec`**: in soundness the `left` branch of the
+   decidable equality gives `Heq : sz = TPrim TInt32` (resp. `got = annot`); `subst` rewrites the
+   inference hypothesis so the recursive IH (`IHsize`/`IHbody`) applies at the expected type. This is
+   the same reflexive-`eq_dec` collapse used in completeness, where `destruct (sarek_type_eq_dec X X)`
+   discharges the `right` (Hne) arm by `exfalso; apply Hne; reflexivity`.
+
 ## Auxiliary lemmas (scaffolding, all Qed/Defined, 0 admits)
 
 These 12 declarations are internal scaffolding for the headline theorems above
 (ETuple/list recursion + the three custom induction principles + the branch-list and
 field-list helpers). They are not headline results but are tracked in the proof ledger so the
-declaration count is exact (70 headline + 12 auxiliary = 82 total
+declaration count is exact (74 headline + 12 auxiliary = 86 total
 `Theorem`/`Lemma` declarations).
 
 63. `expr_ind_strong` -- custom strong induction principle for `expr` (Forall IH for ETuple); `Defined`
@@ -349,4 +385,4 @@ declaration count is exact (70 headline + 12 auxiliary = 82 total
 73. `constr_expr_ind_strong` -- custom strong induction principle for `constr_expr` (Forall IH over provided fields + Some/None payload arm); `Defined`
 74. `check_fields_sound` -- field-list soundness over `check_fields` (feeds `infer_constr_type_sound`)
 
-## Next: T3-S7
+## Next: T3-S8

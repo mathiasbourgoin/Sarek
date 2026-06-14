@@ -1,8 +1,8 @@
 # TypeSafety — Work Plan
 
-**Last updated**: 2026-06-14 (tick 11 — T3-S6 done, currentTask = T3-S7)
+**Last updated**: 2026-06-14 (tick 0 — T3-S7 done, currentTask = T3-S8)
 **Apparatus version**: 1.2.1 (inherited from convergence-safety template)
-**Phase**: T3-S6 (done — 4 theorems + 2 aux, 13/13 smoke) → T3-S7 (SpecialSpec.v)
+**Phase**: T3-S7 (done — 4 theorems, 12/12 smoke) → T3-S8 (GPUSpec.v)
 **Branch**: formal/convergence-safety-phase1a
 
 ---
@@ -38,8 +38,8 @@ Coq has no mutable unification, so the spec models **post-unification** types
 | T3-S4 | Mutable bindings (ELetMut, EAssign) — MutSpec.v | T3 | **done** (4 theorems, 10/10 smoke) | T3-S3 |
 | T3-S5 | Pattern matching (EMatch) — PatternSpec.v | T3 | **done** (4 theorems + 2 aux, 11/11 smoke) | T3-S2 |
 | T3-S6 | Algebraic construction (ERecord, EConstr) — ConstrSpec.v | T3 | **done** (4 theorems + 2 aux, 13/13 smoke) | T3-S5 |
-| T3-S7 | Special forms (EReturn, ECreateArray, ETyped) — SpecialSpec.v | T3 | **next** | T3-S6 |
-| T3-S8 | GPU forms (ELetShared, ESuperstep) — GPUSpec.v | T3 | TBD | T3-S7 |
+| T3-S7 | Special forms (EReturn, ECreateArray, ETyped) — SpecialSpec.v | T3 | **done** (4 theorems, 12/12 smoke) | T3-S6 |
+| T3-S8 | GPU forms (ELetShared, ESuperstep) — GPUSpec.v | T3 | **next** | T3-S7 |
 | DOCS-SYNC | STATUS.md / FINDINGS.md / proof-ledger.json drift check | hygiene | clean | — |
 
 ---
@@ -71,20 +71,34 @@ T1-CMBT dune-driven OCaml extraction conformance harness (added in T1-CMBT).
 
 ---
 
-## Next autopilot tick (T3-S6 — algebraic construction)
+## Next autopilot tick (T3-S8 — GPU forms)
 
-T3-S5 is closed: 4 headline theorems (sound/complete/det/preservation) for
-`PEMatch`, plus 2 auxiliary lemmas (`pat_expr_ind_strong`, `check_branches_sound`),
-11/11 smoke tests, 0 admits. Branch formal/convergence-safety-phase1a.
+T3-S7 is closed: 4 headline theorems (sound/complete/det/preservation) for
+`SEReturn`/`SECreateArray`/`SETyped`, 12/12 smoke tests, 0 admits. Branch
+formal/convergence-safety-phase1a. As-built modeling decisions (`SpecialSpec.v`):
 
-The `PatternSpec.v` model wraps the mutable layer (`MutSpec.v`). `PEMatch scrut
-branches` infers the scrutinee (must be `TVariant _ constrs`), looks up each
-branch's constructor (`lookup_constr`), binds the payload type under the branch's
-optional variable for that branch's body only (`branch_body_env`; pattern binders
-are immutable so the `mut_env` is unchanged), and requires every branch body to
-share the first branch's `result_ty`. Error constructors: PEMutErr (delegated),
-PENotVariant, PEMismatch (unknown constructor), PEBranchType, PEEmpty.
+- **SEReturn allowed body**: pass-through — `infer body = t; result = t`
+  (Sarek_typer.ml:467). The `allowed : bool` AST flag makes `EarlyReturnNotAllowed`
+  reachable: `allowed = true` is the faithful pass-through, `allowed = false`
+  rejects. This keeps the `(env, mu, e)` inference signature identical to every
+  prior layer rather than threading a tail-position context flag.
+- **SECreateArray size elt mem**: `size` must equal `TPrim TInt32` (post-unification
+  residue of Sarek's `unify_or_error tsize.ty t_int32`, line 470); result is
+  `TArr elt mem` with the node's own memory space (not hard-coded Local). Error:
+  `ArraySizeNotInt got`.
+- **SETyped body annot**: `infer body = got`, assert `got = annot` (sarek_type_eq_dec);
+  result is `annot` (Sarek line 505). Error: `TypeAnnotMismatch annot got`.
 
-T3-S6 adds `ConstrSpec.v` for `ERecord` / `EConstr` (algebraic value construction).
-Builds on the pattern layer (T3-S5). Divergence policy stays: any disagreement on a
-covered fragment is a model bug.
+Error constructors: `SConstrErr` (delegated), `EarlyReturnNotAllowed`,
+`ArraySizeNotInt`, `TypeAnnotMismatch`. No custom induction principle needed —
+`special_expr` recurses only through single sub-expressions, so default
+`induction e` yields the IHs.
+
+T3-S8 adds `GPUSpec.v` for GPU forms (`ELetShared`, `ESuperstep`), wrapping the
+special layer (`SpecialSpec.v`).
+
+Spec file: `theories/GPUSpec.v`
+Extraction: `extraction/GPUExtraction.v`
+Model module: `GPUModel`
+
+Divergence policy stays: any disagreement on a covered fragment is a model bug.

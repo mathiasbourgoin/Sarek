@@ -1929,6 +1929,140 @@ let test_con_constr_nested_arg () =
   assert (result = CON.Inl wrapper_ty) ;
   Printf.printf "  Wrap (Rgb 0) -> TVariant wrapper (nested) [ok]\n"
 
+(* ----- T3-S7 special-form smoke tests (SpecialModel oracle) --------------- *)
+
+module SPE = Type_safety_model.SpecialModel
+
+(* Coq-string builder local to the SPE layer. *)
+let spe_coq_string (s : ostring) : SPE.string =
+  let char_to_ascii c =
+    let n = Char.code c in
+    let bit k = (n lsr k) land 1 = 1 in
+    SPE.Ascii (bit 0, bit 1, bit 2, bit 3, bit 4, bit 5, bit 6, bit 7)
+  in
+  let len = String.length s in
+  let rec go i acc =
+    if i < 0 then acc else go (i - 1) (SPE.String (char_to_ascii s.[i], acc))
+  in
+  go (len - 1) SPE.EmptyString
+
+(* a literal lifted all the way up to special_expr through the full layer chain:
+   special_expr <- constr_expr <- pat_expr <- mut_expr <- fun_expr <- op_expr
+   <- cf_expr <- rec_expr <- mem_expr <- core expr *)
+let spe_lit lit =
+  SPE.SEConstr
+    (SPE.CEPat
+       (SPE.PEMut
+          (SPE.MEFun
+             (SPE.FEOp
+                (SPE.OPCf (SPE.CFRec (SPE.RMem (SPE.MCore (SPE.ELit lit)))))))))
+
+let speint32 = spe_lit (SPE.LInt 0)
+
+let spebool = spe_lit (SPE.LBool false)
+
+(* a special_expr that reads variable [x] from the environment via delegation *)
+let spevar x =
+  SPE.SEConstr
+    (SPE.CEPat
+       (SPE.PEMut
+          (SPE.MEFun
+             (SPE.FEOp
+                (SPE.OPCf
+                   (SPE.CFRec
+                      (SPE.RMem (SPE.MCore (SPE.EVar (spe_coq_string x))))))))))
+
+(* Test 1: SEConstr delegation -- a bare int32 literal types as TInt32 *)
+let test_spe_constr_delegation () =
+  let result = SPE.infer_special_type [] [] speint32 in
+  assert (result = SPE.Inl (SPE.TPrim SPE.TInt32)) ;
+  Printf.printf "  SEConstr (int32 lit) -> TPrim TInt32 [ok]\n"
+
+(* Test 2: allowed return is a pass-through of the body type *)
+let test_spe_return_passthrough () =
+  let result = SPE.infer_special_type [] [] (SPE.SEReturn (true, speint32)) in
+  assert (result = SPE.Inl (SPE.TPrim SPE.TInt32)) ;
+  Printf.printf "  (return 0) -> TPrim TInt32 [ok]\n"
+
+(* Test 3: allowed return passes through a bool body unchanged *)
+let test_spe_return_passthrough_bool () =
+  let result = SPE.infer_special_type [] [] (SPE.SEReturn (true, spebool)) in
+  assert (result = SPE.Inl (SPE.TPrim SPE.TBool)) ;
+  Printf.printf "  (return false) -> TPrim TBool [ok]\n"
+
+(* Test 4: disallowed return -> EarlyReturnNotAllowed *)
+let test_spe_return_not_allowed () =
+  let result = SPE.infer_special_type [] [] (SPE.SEReturn (false, speint32)) in
+  assert (result = SPE.Inr SPE.EarlyReturnNotAllowed) ;
+  Printf.printf "  (return 0) [disallowed] -> EarlyReturnNotAllowed [ok]\n"
+
+(* Test 5: create_array with int32 size -> TArr (elt, Global) *)
+let test_spe_create_array_global () =
+  let e = SPE.SECreateArray (speint32, SPE.TReg SPE.RFloat32, SPE.Global) in
+  let result = SPE.infer_special_type [] [] e in
+  assert (result = SPE.Inl (SPE.TArr (SPE.TReg SPE.RFloat32, SPE.Global))) ;
+  Printf.printf "  create_array 0 : float32[]@Global -> TArr [ok]\n"
+
+(* Test 6: create_array honours the Shared memory space and element type *)
+let test_spe_create_array_shared () =
+  let e = SPE.SECreateArray (speint32, SPE.TPrim SPE.TInt32, SPE.Shared) in
+  let result = SPE.infer_special_type [] [] e in
+  assert (result = SPE.Inl (SPE.TArr (SPE.TPrim SPE.TInt32, SPE.Shared))) ;
+  Printf.printf "  create_array 0 : int32[]@Shared -> TArr [ok]\n"
+
+(* Test 7: create_array with a non-int32 size -> ArraySizeNotInt *)
+let test_spe_create_array_bad_size () =
+  let e = SPE.SECreateArray (spebool, SPE.TPrim SPE.TInt32, SPE.Global) in
+  let result = SPE.infer_special_type [] [] e in
+  assert (result = SPE.Inr (SPE.ArraySizeNotInt (SPE.TPrim SPE.TBool))) ;
+  Printf.printf "  create_array false -> ArraySizeNotInt [ok]\n"
+
+(* Test 8: type annotation that matches the inferred type -> annotation type *)
+let test_spe_typed_match () =
+  let e = SPE.SETyped (speint32, SPE.TPrim SPE.TInt32) in
+  let result = SPE.infer_special_type [] [] e in
+  assert (result = SPE.Inl (SPE.TPrim SPE.TInt32)) ;
+  Printf.printf "  (0 : int32) -> TPrim TInt32 [ok]\n"
+
+(* Test 9: type annotation that disagrees with the body -> TypeAnnotMismatch *)
+let test_spe_typed_mismatch () =
+  (* body is int32 but annotated bool *)
+  let e = SPE.SETyped (speint32, SPE.TPrim SPE.TBool) in
+  let result = SPE.infer_special_type [] [] e in
+  assert (
+    result
+    = SPE.Inr
+        (SPE.TypeAnnotMismatch (SPE.TPrim SPE.TBool, SPE.TPrim SPE.TInt32))) ;
+  Printf.printf "  (0 : bool) -> TypeAnnotMismatch [ok]\n"
+
+(* Test 10: delegated construction-layer error surfaces as SConstrErr *)
+let test_spe_constr_err_delegation () =
+  (* an unbound variable read bubbles up through the constr layer and is
+     wrapped as SConstrErr *)
+  let result = SPE.infer_special_type [] [] (spevar "ghost") in
+  (match result with SPE.Inr (SPE.SConstrErr _) -> () | _ -> assert false) ;
+  Printf.printf "  ghost -> SConstrErr (delegated) [ok]\n"
+
+(* Test 11: nested specials -- ((create_array 0 : int32[]) wrapped in return) *)
+let test_spe_nested_return_typed_array () =
+  let arr = SPE.SECreateArray (speint32, SPE.TPrim SPE.TInt32, SPE.Global) in
+  let arr_ty = SPE.TArr (SPE.TPrim SPE.TInt32, SPE.Global) in
+  let e = SPE.SEReturn (true, SPE.SETyped (arr, arr_ty)) in
+  let result = SPE.infer_special_type [] [] e in
+  assert (result = SPE.Inl arr_ty) ;
+  Printf.printf "  return ((create_array 0) : int32[]) -> TArr (nested) [ok]\n"
+
+(* Test 12: error short-circuits through nested specials (size error) *)
+let test_spe_nested_error_propagates () =
+  (* create_array with a bool size, wrapped in a typed annotation; the size
+     error must surface unchanged through SETyped *)
+  let arr = SPE.SECreateArray (spebool, SPE.TPrim SPE.TInt32, SPE.Global) in
+  let e = SPE.SETyped (arr, SPE.TArr (SPE.TPrim SPE.TInt32, SPE.Global)) in
+  let result = SPE.infer_special_type [] [] e in
+  assert (result = SPE.Inr (SPE.ArraySizeNotInt (SPE.TPrim SPE.TBool))) ;
+  Printf.printf
+    "  (create_array false : int32[]) -> ArraySizeNotInt (propagated) [ok]\n"
+
 let () =
   Printf.printf "\n=== T3-S2 operator smoke tests (OperatorModel oracle) ===\n" ;
   test_op_add_int32 () ;
@@ -1997,4 +2131,19 @@ let () =
   test_con_pattern_err_delegation () ;
   test_con_constr_nested_arg () ;
   Printf.printf "=== T3-S6 algebraic-construction smoke tests passed ===\n" ;
+  Printf.printf
+    "\n=== T3-S7 special-form smoke tests (SpecialModel oracle) ===\n" ;
+  test_spe_constr_delegation () ;
+  test_spe_return_passthrough () ;
+  test_spe_return_passthrough_bool () ;
+  test_spe_return_not_allowed () ;
+  test_spe_create_array_global () ;
+  test_spe_create_array_shared () ;
+  test_spe_create_array_bad_size () ;
+  test_spe_typed_match () ;
+  test_spe_typed_mismatch () ;
+  test_spe_constr_err_delegation () ;
+  test_spe_nested_return_typed_array () ;
+  test_spe_nested_error_propagates () ;
+  Printf.printf "=== T3-S7 special-form smoke tests passed ===\n" ;
   exit 0

@@ -1,15 +1,15 @@
 {
   "project": "type-safety",
   "branch": "formal/convergence-safety-phase1a",
-  "phase": "T3-S6 (ConstrSpec, done)",
+  "phase": "T3-S7 (SpecialSpec, done)",
   "toolchain": {
     "rocq": "9.1.1",
     "ocaml": "5.4.0"
   },
   "summary": {
-    "proven": 82,
+    "proven": 86,
     "definitions": 36,
-    "total": 82,
+    "total": 86,
     "admits": 0
   },
   "cmbt": {
@@ -773,6 +773,42 @@
       "status": "proven",
       "file": "theories/ConstrSpec.v",
       "tick": 11
+    },
+    {
+      "id": "infer_special_type_sound",
+      "kind": "theorem",
+      "statement": "infer_special_type env mu e = inl t -> has_special_type env mu e t",
+      "proof": "induction e (4 special_expr cases); SEConstr: infer_constr_type_sound wrapped as SConstrErr; SEReturn: destruct allowed (false discriminates), body IH gives HST_Return; SECreateArray: destruct infer size + sarek_type_eq_dec sz (TPrim TInt32), subst, HST_CreateArray via size IH; SETyped: destruct infer body + sarek_type_eq_dec got annot, subst, HST_Typed via body IH",
+      "status": "proven",
+      "file": "theories/SpecialSpec.v",
+      "tick": 12
+    },
+    {
+      "id": "infer_special_type_complete",
+      "kind": "theorem",
+      "statement": "has_special_type env mu e t -> infer_special_type env mu e = inl t",
+      "proof": "induction H (4 judgement cases); HST_Constr: infer_constr_type_complete; HST_Return: rewrite body IH; HST_CreateArray: rewrite size IH + sarek_type_eq_dec (TPrim TInt32) self reflexive; HST_Typed: rewrite body IH + sarek_type_eq_dec annot self reflexive",
+      "status": "proven",
+      "file": "theories/SpecialSpec.v",
+      "tick": 12
+    },
+    {
+      "id": "has_special_type_det",
+      "kind": "lemma",
+      "statement": "has_special_type env mu e t1 -> has_special_type env mu e t2 -> t1 = t2",
+      "proof": "pose proof infer_special_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity",
+      "status": "proven",
+      "file": "theories/SpecialSpec.v",
+      "tick": 12
+    },
+    {
+      "id": "special_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_special_type env mu e = inl t <-> has_special_type env mu e t",
+      "proof": "split; apply infer_special_type_sound / infer_special_type_complete",
+      "status": "proven",
+      "file": "theories/SpecialSpec.v",
+      "tick": 12
     }
   ],
   "cmbt_t2_unify": {
@@ -856,6 +892,15 @@
     "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
     "smoke_cases": 13,
     "smoke_pass": 13,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s7": {
+    "id": "T3-S7-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 12,
+    "smoke_pass": 12,
     "errors": 0,
     "fails": 0
   }
