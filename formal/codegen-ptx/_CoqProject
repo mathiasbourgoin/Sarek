@@ -1,0 +1,7 @@
+-R theories CodegenPtx
+theories/AGpuSemantics.v
+theories/PtxTypes.v
+theories/PtxExprSpec.v
+theories/PtxStmtSpec.v
+theories/PtxKernelSpec.v
+extraction/Extract.v

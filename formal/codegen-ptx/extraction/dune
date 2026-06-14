@@ -1,0 +1,5 @@
+(include_subdirs no)
+
+; Extraction modules will be added here as they are produced in steps 10-12
+; (PtxExprSpec, PtxStmtSpec, PtxKernelSpec). The library is declared once
+; extraction .v files exist and produce .ml artefacts.
