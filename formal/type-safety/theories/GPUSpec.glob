@@ -1,0 +1,313 @@
+DIGEST 10d770a1c93f7706133fa14c88c890d6
+FTypeSafety.GPUSpec
+R2936:2939 Stdlib.Bool.Bool <> <> lib
+R2941:2944 Stdlib.Lists.List <> <> lib
+R2946:2951 Stdlib.Strings.String <> <> lib
+R2953:2957 Stdlib.Arith.Arith <> <> lib
+R2959:2961 Stdlib.Init.Nat <> <> lib
+R2995:3008 TypeSafety.TypeSafetySpec <> <> lib
+R3042:3048 TypeSafety.VecSpec <> <> lib
+R3082:3093 TypeSafety.RegistrySpec <> <> lib
+R3127:3141 TypeSafety.ControlFlowSpec <> <> lib
+R3175:3186 TypeSafety.OperatorSpec <> <> lib
+R3220:3226 TypeSafety.FunSpec <> <> lib
+R3260:3266 TypeSafety.MutSpec <> <> lib
+R3300:3310 TypeSafety.PatternSpec <> <> lib
+R3344:3353 TypeSafety.ConstrSpec <> <> lib
+R3387:3397 TypeSafety.SpecialSpec <> <> lib
+R3407:3420 TypeSafety.TypeSafetySpec <> <> mod
+R3422:3428 TypeSafety.VecSpec <> <> mod
+R3430:3441 TypeSafety.RegistrySpec <> <> mod
+R3443:3457 TypeSafety.ControlFlowSpec <> <> mod
+R3459:3470 TypeSafety.OperatorSpec <> <> mod
+R3479:3485 TypeSafety.FunSpec <> <> mod
+R3487:3493 TypeSafety.MutSpec <> <> mod
+R3495:3505 TypeSafety.PatternSpec <> <> mod
+R3507:3516 TypeSafety.ConstrSpec <> <> mod
+R3518:3528 TypeSafety.SpecialSpec <> <> mod
+R3538:3550 Stdlib.Lists.List ListNotations <> mod
+ind 3632:3640 <> gpu_error
+constr 3656:3666 <> GSpecialErr
+constr 3710:3723 <> SharedNotArray
+constr 3797:3811 <> SharedNotShared
+constr 3885:3904 <> SuperstepBodyNotUnit
+R3692:3695 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3679:3691 TypeSafety.SpecialSpec <> special_error ind
+R3696:3704 TypeSafety.GPUSpec <> gpu_error:1 ind
+R3743:3746 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3733:3742 TypeSafety.TypeSafetySpec <> sarek_type ind
+R3747:3755 TypeSafety.GPUSpec <> gpu_error:1 ind
+R3830:3833 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3820:3829 TypeSafety.TypeSafetySpec <> sarek_type ind
+R3834:3842 TypeSafety.GPUSpec <> gpu_error:1 ind
+R3918:3921 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3908:3917 TypeSafety.TypeSafetySpec <> sarek_type ind
+R3922:3930 TypeSafety.GPUSpec <> gpu_error:1 ind
+scheme 3632:3640 <> gpu_error_rect
+scheme 3632:3640 <> gpu_error_ind
+scheme 3632:3640 <> gpu_error_rec
+scheme 3632:3640 <> gpu_error_sind
+ind 4190:4197 <> gpu_expr
+constr 4213:4221 <> GESpecial
+constr 4256:4266 <> GELetShared
+constr 4319:4329 <> GESuperstep
+R4239:4242 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4227:4238 TypeSafety.SpecialSpec <> special_expr ind
+R4243:4250 TypeSafety.GPUSpec <> gpu_expr:3 ind
+R4276:4279 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4270:4275 Stdlib.Strings.String <> string ind
+R4290:4293 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4280:4289 TypeSafety.TypeSafetySpec <> sarek_type ind
+R4302:4305 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4294:4301 TypeSafety.GPUSpec <> gpu_expr:3 ind
+R4306:4313 TypeSafety.GPUSpec <> gpu_expr:3 ind
+R4341:4344 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4333:4340 TypeSafety.GPUSpec <> gpu_expr:3 ind
+R4345:4352 TypeSafety.GPUSpec <> gpu_expr:3 ind
+scheme 4190:4197 <> gpu_expr_rect
+scheme 4190:4197 <> gpu_expr_ind
+scheme 4190:4197 <> gpu_expr_rec
+scheme 4190:4197 <> gpu_expr_sind
+def 4414:4427 <> infer_gpu_type
+R4436:4443 TypeSafety.TypeSafetySpec <> type_env def
+binder 4430:4432 <> env:5
+R4452:4458 TypeSafety.MutSpec <> mut_env def
+binder 4447:4448 <> mu:6
+R4466:4473 TypeSafety.GPUSpec <> gpu_expr ind
+binder 4462:4462 <> e:7
+R4493:4495 Corelib.Init.Datatypes <> ::type_scope:x_'+'_x not
+R4483:4492 TypeSafety.TypeSafetySpec <> sarek_type ind
+R4496:4504 TypeSafety.GPUSpec <> gpu_error ind
+R4523:4523 TypeSafety.GPUSpec <> e:7 var
+R4534:4542 TypeSafety.GPUSpec <> GESpecial constr
+R4562:4579 TypeSafety.SpecialSpec <> infer_special_type def
+R4585:4586 TypeSafety.GPUSpec <> mu:6 var
+R4581:4583 TypeSafety.GPUSpec <> env:5 var
+R4604:4606 Corelib.Init.Datatypes <> inl constr
+R4615:4617 Corelib.Init.Datatypes <> inl constr
+R4629:4631 Corelib.Init.Datatypes <> inr constr
+R4640:4642 Corelib.Init.Datatypes <> inr constr
+R4645:4655 TypeSafety.GPUSpec <> GSpecialErr constr
+R4676:4686 TypeSafety.GPUSpec <> GELetShared constr
+R4732:4735 TypeSafety.TypeSafetySpec <> TArr constr
+R4741:4746 TypeSafety.TypeSafetySpec <> Shared constr
+R4761:4774 TypeSafety.GPUSpec <> infer_gpu_type:8 def
+R4796:4797 TypeSafety.GPUSpec <> mu:6 var
+R4787:4790 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4777:4777 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4782:4783 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4786:4786 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4791:4793 TypeSafety.GPUSpec <> env:5 var
+R4812:4815 TypeSafety.TypeSafetySpec <> TArr constr
+R4824:4826 Corelib.Init.Datatypes <> inr constr
+R4829:4843 TypeSafety.GPUSpec <> SharedNotShared constr
+R4869:4871 Corelib.Init.Datatypes <> inr constr
+R4874:4887 TypeSafety.GPUSpec <> SharedNotArray constr
+R4907:4917 TypeSafety.GPUSpec <> GESuperstep constr
+R4939:4952 TypeSafety.GPUSpec <> infer_gpu_type:8 def
+R4958:4959 TypeSafety.GPUSpec <> mu:6 var
+R4954:4956 TypeSafety.GPUSpec <> env:5 var
+R4979:4981 Corelib.Init.Datatypes <> inr constr
+R4990:4992 Corelib.Init.Datatypes <> inr constr
+R5006:5008 Corelib.Init.Datatypes <> inl constr
+R5033:5049 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R5055:5059 TypeSafety.TypeSafetySpec <> TPrim constr
+R5061:5065 TypeSafety.TypeSafetySpec <> TUnit constr
+R5085:5089 Corelib.Init.Specif <> right constr
+R5096:5098 Corelib.Init.Datatypes <> inr constr
+R5101:5120 TypeSafety.GPUSpec <> SuperstepBodyNotUnit constr
+R5138:5141 Corelib.Init.Specif <> left constr
+R5149:5151 Corelib.Init.Datatypes <> inl constr
+R5154:5158 TypeSafety.TypeSafetySpec <> TPrim constr
+R5160:5164 TypeSafety.TypeSafetySpec <> TUnit constr
+ind 5268:5279 <> has_gpu_type
+constr 5348:5358 <> HGT_Special
+constr 5467:5479 <> HGT_LetShared
+constr 5653:5665 <> HGT_Superstep
+R5295:5298 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5287:5294 TypeSafety.TypeSafetySpec <> type_env def
+R5306:5309 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5299:5305 TypeSafety.MutSpec <> mut_env def
+R5318:5321 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5310:5317 TypeSafety.GPUSpec <> gpu_expr ind
+R5332:5335 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5322:5331 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 5369:5371 <> env:13
+binder 5373:5374 <> mu:14
+binder 5376:5377 <> se:15
+binder 5379:5379 <> t:16
+R5416:5425 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5388:5403 TypeSafety.SpecialSpec <> has_special_type ind
+R5415:5415 TypeSafety.GPUSpec <> t:16 var
+R5412:5413 TypeSafety.GPUSpec <> se:15 var
+R5409:5410 TypeSafety.GPUSpec <> mu:14 var
+R5405:5407 TypeSafety.GPUSpec <> env:13 var
+R5426:5437 TypeSafety.GPUSpec <> has_gpu_type:11 ind
+R5461:5461 TypeSafety.GPUSpec <> t:16 var
+R5447:5455 TypeSafety.GPUSpec <> GESpecial constr
+R5457:5458 TypeSafety.GPUSpec <> se:15 var
+R5443:5444 TypeSafety.GPUSpec <> mu:14 var
+R5439:5441 TypeSafety.GPUSpec <> env:13 var
+binder 5490:5492 <> env:17
+binder 5494:5495 <> mu:18
+binder 5497:5500 <> name:19
+binder 5502:5504 <> elt:20
+binder 5506:5509 <> body:21
+binder 5511:5511 <> t:22
+R5575:5584 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5520:5531 TypeSafety.GPUSpec <> has_gpu_type:11 ind
+R5574:5574 TypeSafety.GPUSpec <> t:22 var
+R5569:5572 TypeSafety.GPUSpec <> body:21 var
+R5566:5567 TypeSafety.GPUSpec <> mu:18 var
+R5557:5560 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R5534:5534 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5539:5540 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5556:5556 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5535:5538 TypeSafety.GPUSpec <> name:19 var
+R5541:5544 TypeSafety.TypeSafetySpec <> TArr constr
+R5550:5555 TypeSafety.TypeSafetySpec <> Shared constr
+R5546:5548 TypeSafety.GPUSpec <> elt:20 var
+R5561:5563 TypeSafety.GPUSpec <> env:17 var
+R5585:5596 TypeSafety.GPUSpec <> has_gpu_type:11 ind
+R5647:5647 TypeSafety.GPUSpec <> t:22 var
+R5606:5616 TypeSafety.GPUSpec <> GELetShared constr
+R5641:5644 TypeSafety.GPUSpec <> body:21 var
+R5624:5627 TypeSafety.TypeSafetySpec <> TArr constr
+R5633:5638 TypeSafety.TypeSafetySpec <> Shared constr
+R5629:5631 TypeSafety.GPUSpec <> elt:20 var
+R5618:5621 TypeSafety.GPUSpec <> name:19 var
+R5602:5603 TypeSafety.GPUSpec <> mu:18 var
+R5598:5600 TypeSafety.GPUSpec <> env:17 var
+binder 5676:5678 <> env:23
+binder 5680:5681 <> mu:24
+binder 5683:5686 <> body:25
+R5733:5742 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5695:5706 TypeSafety.GPUSpec <> has_gpu_type:11 ind
+R5721:5725 TypeSafety.TypeSafetySpec <> TPrim constr
+R5727:5731 TypeSafety.TypeSafetySpec <> TUnit constr
+R5715:5718 TypeSafety.GPUSpec <> body:25 var
+R5712:5713 TypeSafety.GPUSpec <> mu:24 var
+R5708:5710 TypeSafety.GPUSpec <> env:23 var
+R5743:5754 TypeSafety.GPUSpec <> has_gpu_type:11 ind
+R5783:5787 TypeSafety.TypeSafetySpec <> TPrim constr
+R5789:5793 TypeSafety.TypeSafetySpec <> TUnit constr
+R5764:5774 TypeSafety.GPUSpec <> GESuperstep constr
+R5776:5779 TypeSafety.GPUSpec <> body:25 var
+R5760:5761 TypeSafety.GPUSpec <> mu:24 var
+R5756:5758 TypeSafety.GPUSpec <> env:23 var
+scheme 5268:5279 <> has_gpu_type_ind
+scheme 5268:5279 <> has_gpu_type_sind
+prf 5870:5889 <> infer_gpu_type_sound
+binder 5902:5902 <> e:26
+binder 5904:5906 <> env:27
+binder 5908:5909 <> mu:28
+binder 5911:5911 <> t:29
+R5949:5956 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5941:5943 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5918:5931 TypeSafety.GPUSpec <> infer_gpu_type def
+R5940:5940 TypeSafety.GPUSpec <> e:26 var
+R5937:5938 TypeSafety.GPUSpec <> mu:28 var
+R5933:5935 TypeSafety.GPUSpec <> env:27 var
+R5944:5946 Corelib.Init.Datatypes <> inl constr
+R5948:5948 TypeSafety.GPUSpec <> t:29 var
+R5957:5968 TypeSafety.GPUSpec <> has_gpu_type ind
+R5979:5979 TypeSafety.GPUSpec <> t:29 var
+R5977:5977 TypeSafety.GPUSpec <> e:26 var
+R5974:5975 TypeSafety.GPUSpec <> mu:28 var
+R5970:5972 TypeSafety.GPUSpec <> env:27 var
+R6115:6132 TypeSafety.SpecialSpec <> infer_special_type def
+R6115:6132 TypeSafety.SpecialSpec <> infer_special_type def
+R6215:6225 TypeSafety.GPUSpec <> HGT_Special constr
+R6215:6225 TypeSafety.GPUSpec <> HGT_Special constr
+R6234:6257 TypeSafety.SpecialSpec <> infer_special_type_sound thm
+R6234:6257 TypeSafety.SpecialSpec <> infer_special_type_sound thm
+R6531:6543 TypeSafety.GPUSpec <> HGT_LetShared constr
+R6531:6543 TypeSafety.GPUSpec <> HGT_LetShared constr
+R6605:6618 TypeSafety.GPUSpec <> infer_gpu_type def
+R6605:6618 TypeSafety.GPUSpec <> infer_gpu_type def
+R6690:6706 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R6712:6716 TypeSafety.TypeSafetySpec <> TPrim constr
+R6718:6722 TypeSafety.TypeSafetySpec <> TUnit constr
+R6690:6706 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R6712:6716 TypeSafety.TypeSafetySpec <> TPrim constr
+R6718:6722 TypeSafety.TypeSafetySpec <> TUnit constr
+R6797:6809 TypeSafety.GPUSpec <> HGT_Superstep constr
+R6797:6809 TypeSafety.GPUSpec <> HGT_Superstep constr
+prf 6920:6942 <> infer_gpu_type_complete
+binder 6955:6957 <> env:30
+binder 6959:6960 <> mu:31
+binder 6962:6962 <> e:32
+binder 6964:6964 <> t:33
+R6994:7001 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6971:6982 TypeSafety.GPUSpec <> has_gpu_type ind
+R6993:6993 TypeSafety.GPUSpec <> t:33 var
+R6991:6991 TypeSafety.GPUSpec <> e:32 var
+R6988:6989 TypeSafety.GPUSpec <> mu:31 var
+R6984:6986 TypeSafety.GPUSpec <> env:30 var
+R7025:7027 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7002:7015 TypeSafety.GPUSpec <> infer_gpu_type def
+R7024:7024 TypeSafety.GPUSpec <> e:32 var
+R7021:7022 TypeSafety.GPUSpec <> mu:31 var
+R7017:7019 TypeSafety.GPUSpec <> env:30 var
+R7028:7030 Corelib.Init.Datatypes <> inl constr
+R7032:7032 TypeSafety.GPUSpec <> t:33 var
+R7244:7270 TypeSafety.SpecialSpec <> infer_special_type_complete thm
+R7244:7270 TypeSafety.SpecialSpec <> infer_special_type_complete thm
+R7244:7270 TypeSafety.SpecialSpec <> infer_special_type_complete thm
+R7405:7421 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R7438:7442 TypeSafety.TypeSafetySpec <> TPrim constr
+R7444:7448 TypeSafety.TypeSafetySpec <> TUnit constr
+R7424:7428 TypeSafety.TypeSafetySpec <> TPrim constr
+R7430:7434 TypeSafety.TypeSafetySpec <> TUnit constr
+R7405:7421 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R7438:7442 TypeSafety.TypeSafetySpec <> TPrim constr
+R7444:7448 TypeSafety.TypeSafetySpec <> TUnit constr
+R7424:7428 TypeSafety.TypeSafetySpec <> TPrim constr
+R7430:7434 TypeSafety.TypeSafetySpec <> TUnit constr
+prf 7597:7612 <> has_gpu_type_det
+binder 7625:7627 <> env:34
+binder 7629:7630 <> mu:35
+binder 7632:7632 <> e:36
+binder 7634:7635 <> t1:37
+binder 7637:7638 <> t2:38
+R7669:7676 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7645:7656 TypeSafety.GPUSpec <> has_gpu_type ind
+R7667:7668 TypeSafety.GPUSpec <> t1:37 var
+R7665:7665 TypeSafety.GPUSpec <> e:36 var
+R7662:7663 TypeSafety.GPUSpec <> mu:35 var
+R7658:7660 TypeSafety.GPUSpec <> env:34 var
+R7701:7708 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7677:7688 TypeSafety.GPUSpec <> has_gpu_type ind
+R7699:7700 TypeSafety.GPUSpec <> t2:38 var
+R7697:7697 TypeSafety.GPUSpec <> e:36 var
+R7694:7695 TypeSafety.GPUSpec <> mu:35 var
+R7690:7692 TypeSafety.GPUSpec <> env:34 var
+R7711:7713 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7709:7710 TypeSafety.GPUSpec <> t1:37 var
+R7714:7715 TypeSafety.GPUSpec <> t2:38 var
+R7770:7792 TypeSafety.GPUSpec <> infer_gpu_type_complete thm
+R7770:7792 TypeSafety.GPUSpec <> infer_gpu_type_complete thm
+R7820:7842 TypeSafety.GPUSpec <> infer_gpu_type_complete thm
+R7820:7842 TypeSafety.GPUSpec <> infer_gpu_type_complete thm
+prf 7995:8015 <> gpu_type_preservation
+binder 8028:8030 <> env:39
+binder 8032:8033 <> mu:40
+binder 8035:8035 <> e:41
+binder 8037:8037 <> t:42
+R8075:8079 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R8067:8069 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8044:8057 TypeSafety.GPUSpec <> infer_gpu_type def
+R8066:8066 TypeSafety.GPUSpec <> e:41 var
+R8063:8064 TypeSafety.GPUSpec <> mu:40 var
+R8059:8061 TypeSafety.GPUSpec <> env:39 var
+R8070:8072 Corelib.Init.Datatypes <> inl constr
+R8074:8074 TypeSafety.GPUSpec <> t:42 var
+R8080:8091 TypeSafety.GPUSpec <> has_gpu_type ind
+R8102:8102 TypeSafety.GPUSpec <> t:42 var
+R8100:8100 TypeSafety.GPUSpec <> e:41 var
+R8097:8098 TypeSafety.GPUSpec <> mu:40 var
+R8093:8095 TypeSafety.GPUSpec <> env:39 var
+R8150:8169 TypeSafety.GPUSpec <> infer_gpu_type_sound thm
+R8150:8169 TypeSafety.GPUSpec <> infer_gpu_type_sound thm
+R8182:8204 TypeSafety.GPUSpec <> infer_gpu_type_complete thm
+R8182:8204 TypeSafety.GPUSpec <> infer_gpu_type_complete thm

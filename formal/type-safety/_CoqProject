@@ -10,3 +10,4 @@ theories/MutSpec.v
 theories/PatternSpec.v
 theories/ConstrSpec.v
 theories/SpecialSpec.v
+theories/GPUSpec.v
