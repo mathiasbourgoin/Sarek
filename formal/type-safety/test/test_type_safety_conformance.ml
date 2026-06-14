@@ -160,37 +160,46 @@ type ncmp =
   | NFloat32
   | NBool
   | NUnit
+  | NTuple of ncmp list
   | NUnbound (* typing failed: variable not in scope *)
   | NOtherErr (* any other failure — flagged as a divergence candidate *)
   | NUnsupported (* a type outside the covered fragment leaked through *)
 
-let string_of_ncmp = function
+let rec string_of_ncmp = function
   | NInt32 -> "int32"
   | NFloat32 -> "float32"
   | NBool -> "bool"
   | NUnit -> "unit"
+  | NTuple ns ->
+      Printf.sprintf "(%s)" (String.concat " * " (List.map string_of_ncmp ns))
   | NUnbound -> "<unbound>"
   | NOtherErr -> "<other-error>"
   | NUnsupported -> "<unsupported-type>"
 
 (* --- project the Coq model result ------------------------------------------- *)
+let rec ncmp_of_coq_typ (t : M.sarek_type) : ncmp =
+  match t with
+  | TPrim TInt32 -> NInt32
+  | TReg RFloat32 -> NFloat32
+  | TPrim TBool -> NBool
+  | TPrim TUnit -> NUnit
+  | TTuple ts -> NTuple (List.map ncmp_of_coq_typ ts)
+  | _ -> NUnsupported
+
 let ncmp_of_coq (r : M.infer_result) : ncmp =
   match r with
-  | Inl (TPrim TInt32) -> NInt32
-  | Inl (TReg RFloat32) -> NFloat32
-  | Inl (TPrim TBool) -> NBool
-  | Inl (TPrim TUnit) -> NUnit
-  | Inl _ -> NUnsupported
+  | Inl t -> ncmp_of_coq_typ t
   | Inr (UnboundVar _) -> NUnbound
   | Inr (TypeMismatch _) -> NOtherErr
 
 (* --- project the real Sarek_types.typ --------------------------------------- *)
-let ncmp_of_typ (t : Sarek_types.typ) : ncmp =
+let rec ncmp_of_typ (t : Sarek_types.typ) : ncmp =
   match t with
   | Sarek_types.TPrim Sarek_types.TInt32 -> NInt32
   | Sarek_types.TReg Sarek_types.Float32 -> NFloat32
   | Sarek_types.TPrim Sarek_types.TBool -> NBool
   | Sarek_types.TPrim Sarek_types.TUnit -> NUnit
+  | Sarek_types.TTuple ts -> NTuple (List.map ncmp_of_typ ts)
   | _ -> NUnsupported
 
 (* --- project the real Sarek_typer.infer result ------------------------------ *)
@@ -241,6 +250,7 @@ let rec real_expr_of_coq (e : M.expr) : Sarek_ast.expr =
       mk_ast
         (Sarek_ast.ELet
            (real_string_of_coq x, None, real_expr_of_coq e1, real_expr_of_coq e2))
+  | ETuple es -> mk_ast (Sarek_ast.ETuple (List.map real_expr_of_coq es))
 
 (* --- translate a Coq-model type_env into a real Sarek_env.t ----------------- *)
 let real_typ_of_coq (t : M.sarek_type) : Sarek_types.typ option =
@@ -305,6 +315,13 @@ let gen_expr : M.expr Gen.t =
             Gen.map
               (fun (x, (e1, e2)) -> M.ELet (x, e1, e2))
               (Gen.pair coq_str_gen (Gen.pair sub sub));
+            (* ETuple uses only literals to avoid ELet-scoping divergences
+               between the Coq model (per-element independent env) and
+               Sarek_typer (which may thread env across elements). *)
+            Gen.map
+              (fun es -> M.ETuple es)
+              (Gen.list_size (Gen.int_range 0 3)
+                 (Gen.map (fun l -> M.ELit l) gen_lit));
           ])
 
 (* environment generator: assoc list over the same name pool / covered types *)
@@ -331,6 +348,7 @@ let pp_coq_expr (e : M.expr) : ostring =
           (real_string_of_coq x)
           (go e1)
           (go e2)
+    | M.ETuple es -> Printf.sprintf "(%s)" (String.concat ", " (List.map go es))
   in
   go e
 
@@ -366,6 +384,32 @@ let test_differential =
 
 (* ----- runner --------------------------------------------------------------- *)
 
+let test_tuple_empty () =
+  let result = M.infer_type [] (M.ETuple []) in
+  assert (result = M.Inl (M.TTuple [])) ;
+  Printf.printf "  ETuple [] -> TTuple [] [ok]\n"
+
+let test_tuple_single () =
+  let result = M.infer_type [] (M.ETuple [M.ELit (M.LInt 42)]) in
+  assert (result = M.Inl (M.TTuple [M.TPrim M.TInt32])) ;
+  Printf.printf "  ETuple [42] -> TTuple [TInt32] [ok]\n"
+
+let test_tuple_pair () =
+  let result = M.infer_type [] (M.ETuple [M.ELit (M.LInt 1); M.ELit (M.LBool true)]) in
+  assert (result = M.Inl (M.TTuple [M.TPrim M.TInt32; M.TPrim M.TBool])) ;
+  Printf.printf "  ETuple [1; true] -> TTuple [TInt32; TBool] [ok]\n"
+
+let test_tuple_nested () =
+  let inner = M.ETuple [M.ELit (M.LInt 0); M.ELit M.LUnit] in
+  let result = M.infer_type [] (M.ETuple [inner; M.ELit (M.LBool false)]) in
+  assert (result = M.Inl (M.TTuple [M.TTuple [M.TPrim M.TInt32; M.TPrim M.TUnit]; M.TPrim M.TBool])) ;
+  Printf.printf "  ETuple [ETuple; false] -> TTuple [TTuple; TBool] [ok]\n"
+
+let test_tuple_error_propagates () =
+  let result = M.infer_type [] (M.ETuple [M.ELit (M.LInt 1); M.EVar (coq_string_of_string "x")]) in
+  assert (match result with M.Inr (M.UnboundVar _) -> true | _ -> false) ;
+  Printf.printf "  ETuple [1; free_var] -> UnboundVar [ok]\n"
+
 let () =
   Printf.printf "=== TypeSafetyModel smoke tests ===\n" ;
   Printf.printf "--- Literals ---\n" ;
@@ -385,6 +429,12 @@ let () =
   test_lookup_hit () ;
   test_lookup_miss () ;
   test_lookup_first_wins () ;
+  Printf.printf "--- ETuple (T2-CUSTOM) ---\n" ;
+  test_tuple_empty () ;
+  test_tuple_single () ;
+  test_tuple_pair () ;
+  test_tuple_nested () ;
+  test_tuple_error_propagates () ;
   Printf.printf "=== Smoke tests passed ===\n" ;
   Printf.printf "\n=== T1-CMBT differential (Coq model vs Sarek_typer) ===\n" ;
   let passed = QCheck_base_runner.run_tests ~verbose:true [test_differential] in
