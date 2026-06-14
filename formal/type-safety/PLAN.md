@@ -26,12 +26,21 @@ Coq has no mutable unification, so the spec models **post-unification** types
 | ID | Title | Tier | Status | Blocked by |
 |---|---|---|---|---|
 | T1-SPEC | Spec + basic lemmas: type universe, `type_env`/`lookup_env`, `infer_type`, `has_type`, 5 soundness lemmas | T1 | **done** (5/5 Qed) | — |
-| T1-SOUND | The 5 lemmas are proved; add type-preservation (subject reduction analogue) + completeness of `infer_type` vs `has_type` | T1 | **done** (4 new: lookup_env_correct, has_type_det, infer_type_complete, type_preservation; 9/9 Qed) | — |
-| T1-CMBT | Extraction of `infer_type` to OCaml + differential conformance vs `Sarek_typer.infer` (CMBT closure) | T1 | **done** (differential 2000/2000, 0 errors/fails; found+fixed F-TS-01 ELet scope leak) | T1-SOUND |
-| T2-CUSTOM | Extend type universe with TRecord/TVariant/Custom; field-access + constructor inference | T2 | **next** | T1-CMBT |
-| T2-UNIFY | Model unification soundness (occurs check, `repr` idempotence, mgu) against `Sarek_types.unify` | T2 | TBD | T1-CMBT |
-| T2-VEC | TVec / TArr memory-space inference (Local/Shared/Global) + vec/arr get/set typing | T2 | TBD | T1-CMBT |
-| DOCS-SYNC | STATUS.md / FINDINGS.md / proof-ledger.json drift check | hygiene | clean (scaffold) | — |
+| T1-SOUND | The 5 lemmas are proved; add type-preservation + completeness of `infer_type` vs `has_type` | T1 | **done** (9/9 Qed) | — |
+| T1-CMBT | Extraction + differential conformance vs `Sarek_typer.infer` | T1 | **done** (2000/2000, found+fixed F-TS-01) | T1-SOUND |
+| T2-CUSTOM | ETuple extension to TypeSafetySpec.v | T2 | **done** | T1-CMBT |
+| T2-UNIFY | Unification soundness (occurs check, mgu) against `Sarek_types.unify` | T2 | **done** (1000/1000 differential, 0 admits) | T1-CMBT |
+| T2-VEC | TVec/TArr inference + vec/arr get/set typing | T2 | **done** (5 theorems, 10/10 smoke) | T1-CMBT |
+| T2-REGISTRY | TRecord/TVariant field access typing | T2 | **done** (5 theorems, 10/10 smoke) | T2-VEC |
+| T3-S1 | Control flow (CFIfThen/IfElse/For/While/Seq) — ControlFlowSpec.v | T3 | **done** (4 theorems, 10/10 smoke) | T2-REGISTRY |
+| T3-S2 | Operators (EBinop/EUnop) — OperatorSpec.v | T3 | **next** | T3-S1 |
+| T3-S3 | Function application (EApp, ELetRec) — FunSpec.v | T3 | TBD | T3-S2 |
+| T3-S4 | Mutable bindings (ELetMut, EAssign) — MutSpec.v | T3 | TBD | T3-S2 |
+| T3-S5 | Pattern matching (EMatch) — PatternSpec.v | T3 | TBD | T3-S2 |
+| T3-S6 | Algebraic construction (ERecord, EConstr) — ConstrSpec.v | T3 | TBD | T3-S5 |
+| T3-S7 | Special forms (EReturn, ECreateArray, ETyped) — SpecialSpec.v | T3 | TBD | T3-S2 |
+| T3-S8 | GPU forms (ELetShared, ESuperstep) — GPUSpec.v | T3 | TBD | T3-S7 |
+| DOCS-SYNC | STATUS.md / FINDINGS.md / proof-ledger.json drift check | hygiene | clean | — |
 
 ---
 
@@ -62,22 +71,24 @@ T1-CMBT dune-driven OCaml extraction conformance harness (added in T1-CMBT).
 
 ---
 
-## Next autopilot tick (T2 — extend the type universe)
+## Next autopilot tick (T3-S2 — operator typing)
 
-T1-CMBT is closed: the differential of the extracted `infer_type` against the
-real `Sarek_typer.infer` is green (2000/2000, 0 errors/fails) and surfaced +
-fixed F-TS-01 (ELet scope leak). The model covers the literal/var/let fragment.
+T3-S1 is closed: 4 theorems for CFIfThen/IfElse/For/While/Seq, 10/10 smoke tests,
+0 admits. Branch formal/type-safety-phase1e, PR #191.
 
-T2 widens the modelled fragment. Recommended order:
+T3-S2 adds `OperatorSpec.v` modelling `Sarek_typer.ml:infer_binop_unop` (lines 213-221).
+Key rules from `Sarek_types.ml:infer_binop` / `infer_unop`:
+- Arithmetic (Add/Sub/Mul/Div/Mod): operands and result must match numeric type
+- Comparison (Eq/Ne/Lt/Le/Gt/Ge): numeric operands, bool result
+- Logical (And/Or): bool operands, bool result
+- Bitwise (Land/Lor/Lxor/Lsl/Lsr/Asr): int32 operands, int32 result
+- Unary Neg: numeric operand, same type result
+- Unary Not: bool operand, bool result
+- Unary Lnot: int32 operand, int32 result
 
-1. **T2-CUSTOM** (next) — extend the type universe and `infer_type`/`has_type`
-   with TRecord/TVariant/Custom, field-access and constructor inference; re-run
-   the existing differential plus new generators over the widened fragment.
-2. **T2-UNIFY** — model unification soundness (occurs check, `repr` idempotence,
-   mgu) against `Sarek_types.unify`; this is where the model goes from
-   post-unification to modelling the solver itself.
-3. **T2-VEC** — TVec/TArr memory-space inference (Local/Shared/Global) + vec/arr
-   get/set typing.
+Architecture: `op_expr` wraps `cf_expr` with `OPCf : cf_expr -> op_expr`
+plus `OPBinop : binop -> op_expr -> op_expr -> op_expr`
+and `OPUnop : unop -> op_expr -> op_expr`.
 
 Divergence policy stays: any disagreement on a covered fragment is a model bug
 (the model is the spec) — record in FINDINGS.md, do not silently widen the model.
