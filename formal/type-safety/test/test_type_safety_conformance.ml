@@ -1420,7 +1420,11 @@ let test_fun_letrec_param_not_leaked () =
         cont )
   in
   let result = FUN.infer_fun_type [] e in
-  (match result with FUN.Inr _ -> () | FUN.Inl _ -> assert false) ;
+  (match result with
+  | FUN.Inr
+      (FUN.FEOpErr (FUN.OCF (FUN.CRec (FUN.RMemError (FUN.VCoreError _))))) ->
+      ()
+  | _ -> assert false) ;
   Printf.printf
     "  FELetRec param n not in scope in continuation -> error [ok]\n"
 

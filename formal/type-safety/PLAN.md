@@ -1,8 +1,8 @@
 # TypeSafety — Work Plan
 
-**Last updated**: 2026-06-14 (tick 0 — T3-S2 done, currentTask = T3-S3)
+**Last updated**: 2026-06-14 (tick 0 — T3-S3 done, currentTask = T3-S4)
 **Apparatus version**: 1.2.1 (inherited from convergence-safety template)
-**Phase**: T3-S2 (done — 4 theorems, 10/10 smoke) → T3-S3 (FunSpec.v)
+**Phase**: T3-S3 (done — 4 theorems, 10/10 smoke) → T3-S4 (MutSpec.v)
 **Branch**: formal/type-safety-phase1e
 
 ---
