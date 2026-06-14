@@ -1,17 +1,17 @@
 # TypeSafety — Status
 
 **Branch**: formal/convergence-safety-phase1a
-**Phase**: T3-S5 (PatternSpec, done 2026-06-14) -> T3-S6 (next)
+**Phase**: T3-S6 (ConstrSpec, done 2026-06-14) -> T3-S7 (next)
 **Toolchain**: Rocq 9.1.1 / OCaml 5.4.0
 
 ## Scoreboard
 
 | Metric | Value |
 |---|---|
-| Theorems proven | 76 (66 headline + 10 auxiliary, all Qed/Defined) |
+| Theorems proven | 82 (70 headline + 12 auxiliary, all Qed/Defined) |
 | Admits | 0 |
 | Axioms | 0 |
-| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, field_lookup, infer_rec_type, has_rec_type, infer_cf_type, has_cf_type, is_numeric, is_integer, infer_op_type, has_op_type, infer_fun_type, has_fun_type, is_mutable, infer_mut_type, has_mut_type, lookup_constr, branch_body_env, check_branches, infer_pat_type, has_pat_type, branches_have_type |
+| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, field_lookup, infer_rec_type, has_rec_type, infer_cf_type, has_cf_type, is_numeric, is_integer, infer_op_type, has_op_type, infer_fun_type, has_fun_type, is_mutable, infer_mut_type, has_mut_type, lookup_constr, branch_body_env, check_branches, infer_pat_type, has_pat_type, branches_have_type, check_fields, infer_constr_type, has_constr_type, fields_have_type |
 | Build | green (CoqMakefile, exit 0; dune build/test, exit 0) |
 | T1-CMBT harness | green -- differential QCheck 2000/2000 (0 errors, 0 fails) + 20/20 smoke |
 | T2-UNIFY harness | green -- differential QCheck 1000/1000 (0 errors, 0 fails) + 15/15 smoke |
@@ -22,6 +22,7 @@
 | T3-S3 harness | green -- 10/10 smoke (FEOp delegation/binop, FEApp success, NotAFunc, ArgMismatch, FELetRec success/recursive/param-scope, BodyMismatch, param-not-leaked) |
 | T3-S4 harness | green -- 10/10 smoke (MEFun delegation, MELetMut success/body-type/nested, MEAssign success, MEUnbound, MEImmutable, MEAssignMismatch, MEFunErr propagation, init-error short-circuit) |
 | T3-S5 harness | green -- 11/11 smoke (PEMut delegation, no-payload match, payload-bound match, PENotVariant, PEMismatch unknown constructor, PEBranchType, PEMutErr delegation, PEEmpty, scoped binder, multi-branch agree, error short-circuit) |
+| T3-S6 harness | green -- 13/13 smoke (CEPat delegation, record success/empty-provided, FieldTypeMismatch, UnknownField, nullary constr, payload constr, payload mismatch, UnknownConstr, ConstrArity extra-arg/missing-arg, CPatternErr delegation, nested construction) |
 | Findings | F-TS-01 (ELet scope leak) -- found by T1-CMBT, RESOLVED |
 
 ## Termination design (T2-UNIFY)
@@ -285,12 +286,54 @@ TRecord and TVariant are now full constructors in `sarek_type`:
    one-to-one structural alignment makes completeness a straight `rewrite` chain over the three
    IHs (scrut, head body, rest-check) produced by `has_pat_type_mind`.
 
+## Proven (tick 11, ConstrSpec.v -- T3-S6, all Qed, 0 admits)
+
+67. `infer_constr_type_sound` -- CERecord/CEConstr inference -> has_constr_type
+68. `infer_constr_type_complete` -- has_constr_type -> inference
+69. `has_constr_type_det` -- uniqueness of the declarative constr_expr judgement
+70. `constr_type_preservation` -- infer_constr_type env mu e = inl t <-> has_constr_type env mu e t
+
+## Proof technique notes (T3-S6)
+
+1. **Construction vs. matching duality**: PatternSpec *destructs* algebraic values;
+   ConstrSpec *builds* them. `CERecord rname declared provided` carries the declared
+   record layout (the `TRecord` it targets) plus the provided `(field, value)` list;
+   each provided field's inferred type must equal the *declared* type of the field of
+   that name (reusing `RegistrySpec.field_lookup` over `declared`). The result is the
+   declared `TRecord rname declared`. `CEConstr tyname constrs cname arg` carries the
+   full variant constructor list; `lookup_constr` (reused from PatternSpec) finds the
+   chosen constructor's optional payload; the result is the full `TVariant tyname constrs`,
+   matching Sarek's `full_variant_ty`.
+
+2. **Four-way payload x arg split for CEConstr** mirrors Sarek's `Wrong_arity` cases:
+   `(None,None)` -> ok (HCT_ConstrNone); `(Some pty, Some a)` -> infer `a`, check
+   `sarek_type_eq_dec got pty` (HCT_ConstrSome / FieldTypeMismatch); the two mixed cases
+   `(Some,_None)` and `(None, Some)` -> `ConstrArity`. In soundness these mixed cases close
+   by `discriminate` since the Fixpoint returns `inr`; only the two matching arities yield `inl`.
+
+3. **Explicit `with (pty := pty)` for HCT_ConstrSome**: the payload type `pty` appears only
+   in the constructor's *premises* (`lookup_constr ... = Some (Some pty)` and the recursive
+   `has_constr_type arg pty`), never in its conclusion `TVariant tyname constrs`. `apply
+   HCT_ConstrSome` therefore cannot unify `pty` and fails with "Unable to find an instance
+   for the variable pty"; supplying it explicitly resolves the elimination.
+
+4. **`check_fields` shares the declared layout with the judgement**: as in PatternSpec, the
+   inference `Fixpoint` (`check_fields`) and the declarative `Inductive` (`fields_have_type`)
+   both call `field_lookup fname declared` and `sarek_type_eq_dec`, keeping the case-split
+   terms syntactically identical so `discriminate`/`injection` line up. Soundness over the
+   provided list is `check_fields_sound`, fed the per-field `Forall` from the strong induction.
+
+5. **Strong-induction payload arm uses a `match`-shaped IH**: `constr_expr_ind_strong` gives the
+   CEConstr arm the hypothesis `match arg with Some a => P a | None => True end` rather than a
+   bare `P arg`, because the payload is optional; the `None` case carries the trivial `True`.
+   This is the optional-field analogue of PatternSpec's `Forall`-over-branches IH.
+
 ## Auxiliary lemmas (scaffolding, all Qed/Defined, 0 admits)
 
-These 10 declarations are internal scaffolding for the headline theorems above
-(ETuple/list recursion + the two custom induction principles + the branch-list
-helper). They are not headline results but are tracked in the proof ledger so the
-declaration count is exact (66 headline + 10 auxiliary = 76 total
+These 12 declarations are internal scaffolding for the headline theorems above
+(ETuple/list recursion + the three custom induction principles + the branch-list and
+field-list helpers). They are not headline results but are tracked in the proof ledger so the
+declaration count is exact (70 headline + 12 auxiliary = 82 total
 `Theorem`/`Lemma` declarations).
 
 63. `expr_ind_strong` -- custom strong induction principle for `expr` (Forall IH for ETuple); `Defined`
@@ -303,5 +346,7 @@ declaration count is exact (66 headline + 10 auxiliary = 76 total
 70. `infer_type_complete_inner` -- completeness via `expr_ind_strong` (public `infer_type_complete` instantiates it)
 71. `pat_expr_ind_strong` -- custom strong induction principle for `pat_expr` (Forall IH over branch bodies); `Defined`
 72. `check_branches_sound` -- branch-list soundness over `check_branches` (feeds `infer_pat_type_sound`)
+73. `constr_expr_ind_strong` -- custom strong induction principle for `constr_expr` (Forall IH over provided fields + Some/None payload arm); `Defined`
+74. `check_fields_sound` -- field-list soundness over `check_fields` (feeds `infer_constr_type_sound`)
 
-## Next: T3-S6
+## Next: T3-S7

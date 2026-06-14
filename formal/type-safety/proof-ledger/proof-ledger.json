@@ -1,15 +1,15 @@
 {
   "project": "type-safety",
   "branch": "formal/convergence-safety-phase1a",
-  "phase": "T3-S5 (PatternSpec, done)",
+  "phase": "T3-S6 (ConstrSpec, done)",
   "toolchain": {
     "rocq": "9.1.1",
     "ocaml": "5.4.0"
   },
   "summary": {
-    "proven": 76,
-    "definitions": 31,
-    "total": 76,
+    "proven": 82,
+    "definitions": 36,
+    "total": 82,
     "admits": 0
   },
   "cmbt": {
@@ -717,6 +717,62 @@
       "proof": "induction ex using expr_ind_strong; ETuple case delegates to infer_list_complete_helper; the public infer_type_complete is its instantiation",
       "file": "theories/TypeSafetySpec.v",
       "tick": 1
+    },
+    {
+      "id": "constr_expr_ind_strong",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "forall P, (forall pe, P (CEPat pe)) -> (forall rname declared provided, Forall (fun fld => P (snd fld)) provided -> P (CERecord rname declared provided)) -> (forall tyname constrs cname arg, match arg with Some a => P a | None => True end -> P (CEConstr tyname constrs cname arg)) -> forall e, P e",
+      "proof": "custom strong induction for constr_expr; fix IH 1, nested Forall-list induction over provided fields and a Some/None split for the optional CEConstr payload; Defined so it computes",
+      "status": "proven",
+      "file": "theories/ConstrSpec.v",
+      "tick": 11
+    },
+    {
+      "id": "check_fields_sound",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "Forall (fun fld => forall env' mu' t', infer_constr_type env' mu' (snd fld) = inl t' -> has_constr_type env' mu' (snd fld) t') provided -> check_fields infer_constr_type env mu declared provided = inl tt -> fields_have_type env mu declared provided",
+      "proof": "induction on provided; destruct head (fname,fexpr), inversion on per-field Forall, destruct field_lookup/infer fexpr/sarek_type_eq_dec got declared_ty, apply FHT_cons, recurse with the Forall tail",
+      "status": "proven",
+      "file": "theories/ConstrSpec.v",
+      "tick": 11
+    },
+    {
+      "id": "infer_constr_type_sound",
+      "kind": "theorem",
+      "statement": "infer_constr_type env mu e = inl t -> has_constr_type env mu e t",
+      "proof": "induction e using constr_expr_ind_strong; CEPat: infer_pat_type_sound wrapped as CPatternErr; CERecord: destruct check_fields, apply HCT_Record via check_fields_sound; CEConstr: destruct lookup_constr then payload x arg (4-way) \u2014 Some/Some uses sarek_type_eq_dec + HCT_ConstrSome with explicit pty, None/None uses HCT_ConstrNone, mixed arities discriminate",
+      "status": "proven",
+      "file": "theories/ConstrSpec.v",
+      "tick": 11
+    },
+    {
+      "id": "infer_constr_type_complete",
+      "kind": "theorem",
+      "statement": "has_constr_type env mu e t -> infer_constr_type env mu e = inl t",
+      "proof": "induction H using has_constr_type_mind with P0 := check_fields ... = inl tt; HCT_Pat: infer_pat_type_complete; HCT_Record: rewrite check IH; HCT_ConstrNone: rewrite lookup hyp; HCT_ConstrSome: rewrite lookup hyp + arg IH + sarek_type_eq_dec pty self; FHT_nil: reflexivity; FHT_cons: rewrite lookup hyp + field IH + sarek_type_eq_dec declared_ty self, exact tail IH",
+      "status": "proven",
+      "file": "theories/ConstrSpec.v",
+      "tick": 11
+    },
+    {
+      "id": "has_constr_type_det",
+      "kind": "lemma",
+      "statement": "has_constr_type env mu e t1 -> has_constr_type env mu e t2 -> t1 = t2",
+      "proof": "pose proof infer_constr_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity",
+      "status": "proven",
+      "file": "theories/ConstrSpec.v",
+      "tick": 11
+    },
+    {
+      "id": "constr_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_constr_type env mu e = inl t <-> has_constr_type env mu e t",
+      "proof": "split; apply infer_constr_type_sound / infer_constr_type_complete",
+      "status": "proven",
+      "file": "theories/ConstrSpec.v",
+      "tick": 11
     }
   ],
   "cmbt_t2_unify": {
@@ -791,6 +847,15 @@
     "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
     "smoke_cases": 11,
     "smoke_pass": 11,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s6": {
+    "id": "T3-S6-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 13,
+    "smoke_pass": 13,
     "errors": 0,
     "fails": 0
   }

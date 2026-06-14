@@ -1711,6 +1711,224 @@ let test_pat_error_short_circuit () =
   assert (result = PAT.Inr (PAT.PEMismatch (pat_coq_string "Cmyk"))) ;
   Printf.printf "  short-circuit: Cmyk PEMismatch before Rgb mismatch [ok]\n"
 
+(* ----- T3-S6 algebraic-construction smoke tests (ConstrModel oracle) ------ *)
+
+module CON = Type_safety_model.ConstrModel
+
+(* Coq-string builder local to the CON layer. *)
+let con_coq_string (s : ostring) : CON.string =
+  let char_to_ascii c =
+    let n = Char.code c in
+    let bit k = (n lsr k) land 1 = 1 in
+    CON.Ascii (bit 0, bit 1, bit 2, bit 3, bit 4, bit 5, bit 6, bit 7)
+  in
+  let len = String.length s in
+  let rec go i acc =
+    if i < 0 then acc else go (i - 1) (CON.String (char_to_ascii s.[i], acc))
+  in
+  go (len - 1) CON.EmptyString
+
+(* a literal lifted all the way up to constr_expr through the full layer chain:
+   constr_expr <- pat_expr <- mut_expr <- fun_expr <- op_expr <- cf_expr
+   <- rec_expr <- mem_expr <- core expr *)
+let con_lit lit =
+  CON.CEPat
+    (CON.PEMut
+       (CON.MEFun
+          (CON.FEOp (CON.OPCf (CON.CFRec (CON.RMem (CON.MCore (CON.ELit lit))))))))
+
+let conint32 = con_lit (CON.LInt 0)
+
+let conbool = con_lit (CON.LBool false)
+
+(* a constr_expr that reads variable [x] from the environment via delegation *)
+let convar x =
+  CON.CEPat
+    (CON.PEMut
+       (CON.MEFun
+          (CON.FEOp
+             (CON.OPCf
+                (CON.CFRec (CON.RMem (CON.MCore (CON.EVar (con_coq_string x)))))))))
+
+(* a declared record type "point" : { x : int32; y : int32 } *)
+let point_declared =
+  [
+    (con_coq_string "x", CON.TPrim CON.TInt32);
+    (con_coq_string "y", CON.TPrim CON.TInt32);
+  ]
+
+let point_ty = CON.TRecord (con_coq_string "point", point_declared)
+
+(* a variant "color" : Red (no payload) | Rgb of int32 *)
+let color_constrs =
+  [
+    (con_coq_string "Red", None);
+    (con_coq_string "Rgb", Some (CON.TPrim CON.TInt32));
+  ]
+
+let color_ty = CON.TVariant (con_coq_string "color", color_constrs)
+
+let con_field f e = (con_coq_string f, e)
+
+(* Test 1: CEPat delegation -- a bare int32 literal types as TInt32 *)
+let test_con_pat_delegation () =
+  let result = CON.infer_constr_type [] [] conint32 in
+  assert (result = CON.Inl (CON.TPrim CON.TInt32)) ;
+  Printf.printf "  CEPat (int32 lit) -> TPrim TInt32 [ok]\n"
+
+(* Test 2: well-typed record -- { x = 0; y = 0 } : point *)
+let test_con_record_success () =
+  let e =
+    CON.CERecord
+      ( con_coq_string "point",
+        point_declared,
+        [con_field "x" conint32; con_field "y" conint32] )
+  in
+  let result = CON.infer_constr_type [] [] e in
+  assert (result = CON.Inl point_ty) ;
+  Printf.printf "  { x = 0; y = 0 } -> TRecord point [ok]\n"
+
+(* Test 3: empty provided field list still yields the declared record type *)
+let test_con_record_empty_provided () =
+  let e = CON.CERecord (con_coq_string "point", point_declared, []) in
+  let result = CON.infer_constr_type [] [] e in
+  assert (result = CON.Inl point_ty) ;
+  Printf.printf "  { } : point -> TRecord point [ok]\n"
+
+(* Test 4: provided field type != declared -> FieldTypeMismatch *)
+let test_con_record_field_mismatch () =
+  (* y is declared int32 but we provide a bool *)
+  let e =
+    CON.CERecord
+      ( con_coq_string "point",
+        point_declared,
+        [con_field "x" conint32; con_field "y" conbool] )
+  in
+  let result = CON.infer_constr_type [] [] e in
+  (match result with
+  | CON.Inr
+      (CON.FieldTypeMismatch (_, CON.TPrim CON.TInt32, CON.TPrim CON.TBool)) ->
+      ()
+  | _ -> assert false) ;
+  Printf.printf "  { x = 0; y = true } -> FieldTypeMismatch [ok]\n"
+
+(* Test 5: provided field not in declared layout -> UnknownField *)
+let test_con_record_unknown_field () =
+  let e =
+    CON.CERecord
+      (con_coq_string "point", point_declared, [con_field "z" conint32])
+  in
+  let result = CON.infer_constr_type [] [] e in
+  assert (result = CON.Inr (CON.UnknownField (con_coq_string "z"))) ;
+  Printf.printf "  { z = 0 } : point -> UnknownField [ok]\n"
+
+(* Test 6: nullary constructor -- Red : color *)
+let test_con_constr_none () =
+  let e =
+    CON.CEConstr
+      (con_coq_string "color", color_constrs, con_coq_string "Red", None)
+  in
+  let result = CON.infer_constr_type [] [] e in
+  assert (result = CON.Inl color_ty) ;
+  Printf.printf "  Red -> TVariant color [ok]\n"
+
+(* Test 7: payload constructor with matching arg -- Rgb 0 : color *)
+let test_con_constr_some () =
+  let e =
+    CON.CEConstr
+      ( con_coq_string "color",
+        color_constrs,
+        con_coq_string "Rgb",
+        Some conint32 )
+  in
+  let result = CON.infer_constr_type [] [] e in
+  assert (result = CON.Inl color_ty) ;
+  Printf.printf "  Rgb 0 -> TVariant color [ok]\n"
+
+(* Test 8: payload type != declared -> FieldTypeMismatch *)
+let test_con_constr_payload_mismatch () =
+  (* Rgb expects int32, given a bool *)
+  let e =
+    CON.CEConstr
+      (con_coq_string "color", color_constrs, con_coq_string "Rgb", Some conbool)
+  in
+  let result = CON.infer_constr_type [] [] e in
+  (match result with
+  | CON.Inr
+      (CON.FieldTypeMismatch (_, CON.TPrim CON.TInt32, CON.TPrim CON.TBool)) ->
+      ()
+  | _ -> assert false) ;
+  Printf.printf "  Rgb true -> FieldTypeMismatch [ok]\n"
+
+(* Test 9: unknown constructor name -> UnknownConstr *)
+let test_con_constr_unknown () =
+  let e =
+    CON.CEConstr
+      (con_coq_string "color", color_constrs, con_coq_string "Blue", None)
+  in
+  let result = CON.infer_constr_type [] [] e in
+  assert (result = CON.Inr (CON.UnknownConstr (con_coq_string "Blue"))) ;
+  Printf.printf "  Blue -> UnknownConstr [ok]\n"
+
+(* Test 10: arity disagreement -- nullary Red given an argument -> ConstrArity *)
+let test_con_constr_arity_extra_arg () =
+  let e =
+    CON.CEConstr
+      ( con_coq_string "color",
+        color_constrs,
+        con_coq_string "Red",
+        Some conint32 )
+  in
+  let result = CON.infer_constr_type [] [] e in
+  assert (result = CON.Inr (CON.ConstrArity (con_coq_string "Red"))) ;
+  Printf.printf "  Red 0 -> ConstrArity [ok]\n"
+
+(* Test 11: arity disagreement -- payload Rgb given no argument -> ConstrArity *)
+let test_con_constr_arity_missing_arg () =
+  let e =
+    CON.CEConstr
+      (con_coq_string "color", color_constrs, con_coq_string "Rgb", None)
+  in
+  let result = CON.infer_constr_type [] [] e in
+  assert (result = CON.Inr (CON.ConstrArity (con_coq_string "Rgb"))) ;
+  Printf.printf "  Rgb (no arg) -> ConstrArity [ok]\n"
+
+(* Test 12: delegated pattern-layer error surfaces as CPatternErr *)
+let test_con_pattern_err_delegation () =
+  (* a record field reads an unbound variable; the error bubbles through the
+     pattern/mut layers and is wrapped as CPatternErr *)
+  let e =
+    CON.CERecord
+      (con_coq_string "point", point_declared, [con_field "x" (convar "ghost")])
+  in
+  let result = CON.infer_constr_type [] [] e in
+  (match result with CON.Inr (CON.CPatternErr _) -> () | _ -> assert false) ;
+  Printf.printf "  { x = ghost } -> CPatternErr (delegated) [ok]\n"
+
+(* Test 13: payload arg is itself a constructor -- nested construction *)
+let test_con_constr_nested_arg () =
+  (* a variant whose payload is another variant value:
+     wrapper : Wrap of color ; build  Wrap (Rgb 0) *)
+  let wrapper_constrs = [(con_coq_string "Wrap", Some color_ty)] in
+  let wrapper_ty = CON.TVariant (con_coq_string "wrapper", wrapper_constrs) in
+  let inner =
+    CON.CEConstr
+      ( con_coq_string "color",
+        color_constrs,
+        con_coq_string "Rgb",
+        Some conint32 )
+  in
+  let e =
+    CON.CEConstr
+      ( con_coq_string "wrapper",
+        wrapper_constrs,
+        con_coq_string "Wrap",
+        Some inner )
+  in
+  let result = CON.infer_constr_type [] [] e in
+  assert (result = CON.Inl wrapper_ty) ;
+  Printf.printf "  Wrap (Rgb 0) -> TVariant wrapper (nested) [ok]\n"
+
 let () =
   Printf.printf "\n=== T3-S2 operator smoke tests (OperatorModel oracle) ===\n" ;
   test_op_add_int32 () ;
@@ -1763,4 +1981,20 @@ let () =
   test_pat_multi_branch_agree () ;
   test_pat_error_short_circuit () ;
   Printf.printf "=== T3-S5 pattern-matching smoke tests passed ===\n" ;
+  Printf.printf
+    "\n=== T3-S6 algebraic-construction smoke tests (ConstrModel oracle) ===\n" ;
+  test_con_pat_delegation () ;
+  test_con_record_success () ;
+  test_con_record_empty_provided () ;
+  test_con_record_field_mismatch () ;
+  test_con_record_unknown_field () ;
+  test_con_constr_none () ;
+  test_con_constr_some () ;
+  test_con_constr_payload_mismatch () ;
+  test_con_constr_unknown () ;
+  test_con_constr_arity_extra_arg () ;
+  test_con_constr_arity_missing_arg () ;
+  test_con_pattern_err_delegation () ;
+  test_con_constr_nested_arg () ;
+  Printf.printf "=== T3-S6 algebraic-construction smoke tests passed ===\n" ;
   exit 0
