@@ -1,21 +1,22 @@
 # TypeSafety — Status
 
-**Branch**: formal/type-safety-phase1c
-**Phase**: T2-VEC (done 2026-06-14) -> T3-SEMANTIC (next)
+**Branch**: formal/type-safety-phase1d
+**Phase**: T2-REGISTRY (done 2026-06-14) -> T3-SEMANTIC (next)
 **Toolchain**: Rocq 9.1.1 / OCaml 5.4.0
 
 ## Scoreboard
 
 | Metric | Value |
 |---|---|
-| Theorems proven | 41 |
+| Theorems proven | 46 |
 | Admits | 0 |
 | Axioms | 0 |
-| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, + more |
+| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, field_lookup, infer_rec_type, has_rec_type, + more |
 | Build | green (CoqMakefile, exit 0; dune build/test, exit 0) |
 | T1-CMBT harness | green -- differential QCheck 2000/2000 (0 errors, 0 fails) + 20/20 smoke |
 | T2-UNIFY harness | green -- differential QCheck 1000/1000 (0 errors, 0 fails) + 15/15 smoke |
 | T2-VEC harness | green -- 10/10 smoke (EVecGet/EVecSet/EArrGet/EArrSet + error cases) |
+| T2-REGISTRY harness | green -- 10/10 smoke (EFieldGet/EFieldSet + error cases + nested + vec delegation) |
 | Findings | F-TS-01 (ELet scope leak) -- found by T1-CMBT, RESOLVED |
 
 ## Termination design (T2-UNIFY)
@@ -86,5 +87,39 @@ Three design decisions make it work:
 39. `infer_mem_type_complete` -- has_mem_type -> EVecGet/EVecSet/EArrGet/EArrSet inference
 40. `has_mem_type_det` -- uniqueness of the declarative mem_expr judgement
 41. `mem_type_preservation` -- infer_mem_type env e = inl t <-> has_mem_type env e t
+
+## Proven (tick 5, RegistrySpec.v -- T2-REGISTRY, all Qed, 0 admits)
+
+42. `field_lookup_sound` -- successful lookup implies membership in field list
+43. `infer_rec_type_sound` -- EFieldGet/EFieldSet inference -> has_rec_type
+44. `infer_rec_type_complete` -- has_rec_type -> EFieldGet/EFieldSet inference
+45. `has_rec_type_det` -- uniqueness of the declarative rec_expr judgement
+46. `rec_type_preservation` -- infer_rec_type env e = inl t <-> has_rec_type env e t
+
+## Sarek_type extensions (T2-REGISTRY)
+
+TRecord and TVariant are now full constructors in `sarek_type`:
+- `TRecord : string -> list (string * sarek_type) -> sarek_type`
+- `TVariant : string -> list (string * option sarek_type) -> sarek_type`
+
+`sarek_type_eq_dec` extended with cases for both new constructors (uses nested
+`fix IHLR/IHLV` for decidability of `list (string * sarek_type)` and
+`list (string * option sarek_type)` respectively).
+
+## Proof technique notes (T2-REGISTRY)
+
+1. **sarek_type_eq_dec TRecord/TVariant**: Uses nested `fix IHLR 1` / `fix IHLV 1`
+   inside the main `fix IH 1` proof to establish decidability of the field/constructor
+   lists. Key insight: Rocq 9's `injection` on `(c1, Some t1) :: rest1 = (c2, Some t2) :: rest2`
+   already decomposes the pair and option, yielding `Hc : c1 = c2`, `Hot : t1 = t2`,
+   `Hrest : rest1 = rest2` — three names, not four. For `None/None` pairs, only
+   two names (no option injection produced for trivially equal None values).
+
+2. **infer_rec_type_sound EFieldGet/EFieldSet**: Destructs on 8-constructor `sarek_type`
+   with `try discriminate` closing all non-TRecord cases; then applies IH + HRT_FieldGet/Set.
+
+3. **infer_rec_type_complete**: Follows VecSpec pattern — `match goal with Hmem` to
+   locate has_mem_type hypothesis; HRT_FieldSet uses `sarek_type_eq_dec field_t field_t`
+   left branch for reflexivity.
 
 ## Next: T3-SEMANTIC

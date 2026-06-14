@@ -110,3 +110,20 @@ type mem_expr =
 | EArrSet of mem_expr * mem_expr * mem_expr
 
 val infer_mem_type : type_env -> mem_expr -> vec_result
+
+val field_lookup : string -> (string * sarek_type) list -> sarek_type option
+
+type rec_error =
+| RMemError of vec_error
+| NotARecord of sarek_type
+| FieldNotFound of string * sarek_type
+| FieldMismatch of sarek_type * sarek_type
+
+type rec_result = (sarek_type, rec_error) sum
+
+type rec_expr =
+| RMem of mem_expr
+| EFieldGet of string * rec_expr
+| EFieldSet of string * rec_expr * rec_expr
+
+val infer_rec_type : type_env -> rec_expr -> rec_result

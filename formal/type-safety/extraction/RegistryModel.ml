@@ -452,3 +452,58 @@ let rec infer_mem_type env = function
          | Inr err -> Inr err)
       | _ -> Inr (NotAnArray ta))
    | Inr err -> Inr err)
+
+(** val field_lookup :
+    string -> (string * sarek_type) list -> sarek_type option **)
+
+let rec field_lookup field = function
+| [] -> None
+| p :: rest ->
+  let (f, t) = p in if eqb1 f field then Some t else field_lookup field rest
+
+type rec_error =
+| RMemError of vec_error
+| NotARecord of sarek_type
+| FieldNotFound of string * sarek_type
+| FieldMismatch of sarek_type * sarek_type
+
+type rec_result = (sarek_type, rec_error) sum
+
+type rec_expr =
+| RMem of mem_expr
+| EFieldGet of string * rec_expr
+| EFieldSet of string * rec_expr * rec_expr
+
+(** val infer_rec_type : type_env -> rec_expr -> rec_result **)
+
+let rec infer_rec_type env = function
+| RMem me ->
+  (match infer_mem_type env me with
+   | Inl t -> Inl t
+   | Inr err -> Inr (RMemError err))
+| EFieldGet (field, rec0) ->
+  (match infer_rec_type env rec0 with
+   | Inl t ->
+     (match t with
+      | TRecord (name, fields) ->
+        (match field_lookup field fields with
+         | Some t0 -> Inl t0
+         | None -> Inr (FieldNotFound (field, (TRecord (name, fields)))))
+      | _ -> Inr (NotARecord t))
+   | Inr err -> Inr err)
+| EFieldSet (field, rec0, value) ->
+  (match infer_rec_type env rec0 with
+   | Inl t ->
+     (match t with
+      | TRecord (name, fields) ->
+        (match field_lookup field fields with
+         | Some field_t ->
+           (match infer_rec_type env value with
+            | Inl vt ->
+              if sarek_type_eq_dec vt field_t
+              then Inl (TPrim TUnit)
+              else Inr (FieldMismatch (vt, field_t))
+            | Inr err -> Inr err)
+         | None -> Inr (FieldNotFound (field, (TRecord (name, fields)))))
+      | _ -> Inr (NotARecord t))
+   | Inr err -> Inr err)

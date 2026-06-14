@@ -23,7 +23,7 @@
  *
  * Elided vs. Sarek_types.ml (documented for ASSUMPTIONS.md):
  *   - TVar/unification: replaced by resolved types (see header above).
- *   - TRecord / TVariant: deferred to T2 (custom-type inference).
+ *   - TRecord / TVariant: defined here; field access typing in RegistrySpec.v.
  *   - registered_type Custom: deferred (user-registered [@@sarek.type]).
  ******************************************************************************)
 
@@ -43,14 +43,16 @@ Inductive reg_type : Type := RInt | RInt64 | RFloat32 | RFloat64 | RChar.
 (* memspace = Local | Shared | Global  (Sarek_types.ml:43) *)
 Inductive mem_space : Type := Local | Shared | Global.
 
-(* typ, post-unification (Sarek_types.ml:49). TVar/TRecord/TVariant elided. *)
+(* typ, post-unification (Sarek_types.ml:49). TVar elided (replaced by resolved types). *)
 Inductive sarek_type : Type :=
-  | TPrim  : prim_type -> sarek_type
-  | TReg   : reg_type -> sarek_type
-  | TVec   : sarek_type -> sarek_type
-  | TArr   : sarek_type -> mem_space -> sarek_type
-  | TFun   : list sarek_type -> sarek_type -> sarek_type
-  | TTuple : list sarek_type -> sarek_type.
+  | TPrim    : prim_type -> sarek_type
+  | TReg     : reg_type -> sarek_type
+  | TVec     : sarek_type -> sarek_type
+  | TArr     : sarek_type -> mem_space -> sarek_type
+  | TFun     : list sarek_type -> sarek_type -> sarek_type
+  | TTuple   : list sarek_type -> sarek_type
+  | TRecord  : string -> list (string * sarek_type) -> sarek_type
+  | TVariant : string -> list (string * option sarek_type) -> sarek_type.
 
 (* Decidable equality on types is needed for the soundness statements. *)
 Scheme Equality for prim_type.

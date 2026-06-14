@@ -2,3 +2,4 @@
 theories/TypeSafetySpec.v
 theories/UnifySpec.v
 theories/VecSpec.v
+theories/RegistrySpec.v

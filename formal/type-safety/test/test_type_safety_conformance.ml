@@ -816,5 +816,184 @@ let () =
   test_arr_get_not_an_array () ;
   test_arr_set_ok () ;
   test_arr_set_mismatch () ;
-  Printf.printf "=== T2-VEC smoke tests passed ===\n" ;
+  Printf.printf "=== T2-VEC smoke tests passed ===\n"
+
+(* ===========================================================================
+   T2-REGISTRY smoke tests -- extracted RegistryModel oracle
+   ===========================================================================
+
+   These tests drive the extracted record field-access type inference model
+   (RegistryModel.infer_rec_type) directly, checking:
+     1.  RMem delegation -- core expr inference is threaded through.
+     2.  EFieldGet success -- TRecord field correctly yields field type.
+     3.  EFieldGet FieldNotFound -- missing field rejected.
+     4.  EFieldGet NotARecord -- non-record receiver rejected.
+     5.  EFieldSet success -- matching value type yields TPrim TUnit.
+     6.  EFieldSet FieldMismatch -- mismatched value type rejected.
+     7.  EFieldSet FieldNotFound -- missing field rejected.
+     8.  Nested EFieldGet -- outer.r is a TRecord, inner.y succeeds.
+     9.  RMem delegation through vec layer (EVecGet result).
+    10.  Error propagation from RMem (unbound var). *)
+
+module R = Type_safety_model.RegistryModel
+
+(** Convert an OCaml string to RegistryModel's Coq-extracted string type. *)
+let reg_coq_string_of_string (s : ostring) : R.string =
+  let char_to_ascii c =
+    let n = Char.code c in
+    let bit k = (n lsr k) land 1 = 1 in
+    R.Ascii (bit 0, bit 1, bit 2, bit 3, bit 4, bit 5, bit 6, bit 7)
+  in
+  let len = String.length s in
+  let rec go i acc =
+    if i < 0 then acc else go (i - 1) (R.String (char_to_ascii s.[i], acc))
+  in
+  go (len - 1) R.EmptyString
+
+(** Build a RegistryModel environment entry. *)
+let reg_env_entry x t = (reg_coq_string_of_string x, t)
+
+(** Build a RegistryModel EVar node. *)
+let revar s = R.EVar (reg_coq_string_of_string s)
+
+(** Build a RegistryModel field entry (name, type) pair. *)
+let rfield name t = (reg_coq_string_of_string name, t)
+
+(* Test 1: RMem delegates to core infer_type. *)
+let test_reg_rmem_lit () =
+  let result = R.infer_rec_type [] (R.RMem (R.MCore (R.ELit (R.LInt 1)))) in
+  assert (result = R.Inl (R.TPrim R.TInt32)) ;
+  Printf.printf "  RMem (ELit (LInt 1)) -> TPrim TInt32 [ok]\n"
+
+(* Test 2: EFieldGet success -- TRecord with field "x" : TInt32. *)
+let test_reg_field_get_ok () =
+  let rec_type = R.TRecord (reg_coq_string_of_string "MyRec", [rfield "x" (R.TPrim R.TInt32)]) in
+  let env = [reg_env_entry "r" rec_type] in
+  let result =
+    R.infer_rec_type env
+      (R.EFieldGet (reg_coq_string_of_string "x", R.RMem (R.MCore (revar "r"))))
+  in
+  assert (result = R.Inl (R.TPrim R.TInt32)) ;
+  Printf.printf "  EFieldGet \"x\" on TRecord[x:int32] -> TPrim TInt32 [ok]\n"
+
+(* Test 3: EFieldGet FieldNotFound -- field "y" not in record. *)
+let test_reg_field_get_not_found () =
+  let rec_type = R.TRecord (reg_coq_string_of_string "MyRec", [rfield "x" (R.TPrim R.TInt32)]) in
+  let env = [reg_env_entry "r" rec_type] in
+  let result =
+    R.infer_rec_type env
+      (R.EFieldGet (reg_coq_string_of_string "y", R.RMem (R.MCore (revar "r"))))
+  in
+  (match result with
+  | R.Inr (R.FieldNotFound _) -> ()
+  | _ -> failwith "expected FieldNotFound") ;
+  Printf.printf "  EFieldGet \"y\" on TRecord[x:int32] -> FieldNotFound [ok]\n"
+
+(* Test 4: EFieldGet NotARecord -- receiver is a primitive type. *)
+let test_reg_field_get_not_a_record () =
+  let result =
+    R.infer_rec_type []
+      (R.EFieldGet (reg_coq_string_of_string "x", R.RMem (R.MCore (R.ELit (R.LInt 0)))))
+  in
+  (match result with
+  | R.Inr (R.NotARecord _) -> ()
+  | _ -> failwith "expected NotARecord") ;
+  Printf.printf "  EFieldGet \"x\" on int literal -> NotARecord [ok]\n"
+
+(* Test 5: EFieldSet success -- value type matches field type, yields TPrim TUnit. *)
+let test_reg_field_set_ok () =
+  let rec_type = R.TRecord (reg_coq_string_of_string "MyRec", [rfield "x" (R.TPrim R.TInt32)]) in
+  let env = [reg_env_entry "r" rec_type] in
+  let result =
+    R.infer_rec_type env
+      (R.EFieldSet
+         ( reg_coq_string_of_string "x"
+         , R.RMem (R.MCore (revar "r"))
+         , R.RMem (R.MCore (R.ELit (R.LInt 42))) ))
+  in
+  assert (result = R.Inl (R.TPrim R.TUnit)) ;
+  Printf.printf "  EFieldSet \"x\" value:int32 on TRecord[x:int32] -> TPrim TUnit [ok]\n"
+
+(* Test 6: EFieldSet FieldMismatch -- value is bool, field is int32. *)
+let test_reg_field_set_mismatch () =
+  let rec_type = R.TRecord (reg_coq_string_of_string "MyRec", [rfield "x" (R.TPrim R.TInt32)]) in
+  let env = [reg_env_entry "r" rec_type] in
+  let result =
+    R.infer_rec_type env
+      (R.EFieldSet
+         ( reg_coq_string_of_string "x"
+         , R.RMem (R.MCore (revar "r"))
+         , R.RMem (R.MCore (R.ELit (R.LBool true))) ))
+  in
+  (match result with
+  | R.Inr (R.FieldMismatch _) -> ()
+  | _ -> failwith "expected FieldMismatch") ;
+  Printf.printf "  EFieldSet \"x\" value:bool on TRecord[x:int32] -> FieldMismatch [ok]\n"
+
+(* Test 7: EFieldSet FieldNotFound -- field "z" not in record. *)
+let test_reg_field_set_not_found () =
+  let rec_type = R.TRecord (reg_coq_string_of_string "MyRec", [rfield "x" (R.TPrim R.TInt32)]) in
+  let env = [reg_env_entry "r" rec_type] in
+  let result =
+    R.infer_rec_type env
+      (R.EFieldSet
+         ( reg_coq_string_of_string "z"
+         , R.RMem (R.MCore (revar "r"))
+         , R.RMem (R.MCore (R.ELit (R.LInt 0))) ))
+  in
+  (match result with
+  | R.Inr (R.FieldNotFound _) -> ()
+  | _ -> failwith "expected FieldNotFound") ;
+  Printf.printf "  EFieldSet \"z\" on TRecord[x:int32] -> FieldNotFound [ok]\n"
+
+(* Test 8: Nested EFieldGet -- outer.r is itself a TRecord with field "y". *)
+let test_reg_field_get_nested () =
+  let inner_rec = R.TRecord (reg_coq_string_of_string "Inner", [rfield "y" (R.TPrim R.TBool)]) in
+  let outer_rec = R.TRecord (reg_coq_string_of_string "Outer", [rfield "r" inner_rec]) in
+  let env = [reg_env_entry "outer" outer_rec] in
+  (* outer.r gives inner_rec, then .y gives TBool *)
+  let get_r =
+    R.EFieldGet (reg_coq_string_of_string "r", R.RMem (R.MCore (revar "outer")))
+  in
+  let result =
+    R.infer_rec_type env
+      (R.EFieldGet (reg_coq_string_of_string "y", get_r))
+  in
+  assert (result = R.Inl (R.TPrim R.TBool)) ;
+  Printf.printf "  EFieldGet \"y\" (EFieldGet \"r\" outer) -> TPrim TBool (nested) [ok]\n"
+
+(* Test 9: RMem delegates through vec layer -- EVecGet result threaded through. *)
+let test_reg_rmem_via_vec () =
+  let env = [reg_env_entry "v" (R.TVec (R.TPrim R.TInt32))] in
+  let vec_get =
+    R.EVecGet (R.MCore (revar "v"), R.MCore (R.ELit (R.LInt 0)))
+  in
+  let result = R.infer_rec_type env (R.RMem vec_get) in
+  assert (result = R.Inl (R.TPrim R.TInt32)) ;
+  Printf.printf "  RMem (EVecGet vec[int32] 0) -> TPrim TInt32 [ok]\n"
+
+(* Test 10: Error propagation from RMem -- unbound variable produces RMemError. *)
+let test_reg_rmem_error_propagation () =
+  let result =
+    R.infer_rec_type []
+      (R.RMem (R.MCore (R.EVar (reg_coq_string_of_string "unbound"))))
+  in
+  (match result with
+  | R.Inr (R.RMemError _) -> ()
+  | _ -> failwith "expected RMemError") ;
+  Printf.printf "  RMem (EVar unbound) -> RMemError [ok]\n"
+
+let () =
+  Printf.printf "\n=== T2-REGISTRY smoke tests (RegistryModel oracle) ===\n" ;
+  test_reg_rmem_lit () ;
+  test_reg_field_get_ok () ;
+  test_reg_field_get_not_found () ;
+  test_reg_field_get_not_a_record () ;
+  test_reg_field_set_ok () ;
+  test_reg_field_set_mismatch () ;
+  test_reg_field_set_not_found () ;
+  test_reg_field_get_nested () ;
+  test_reg_rmem_via_vec () ;
+  test_reg_rmem_error_propagation () ;
+  Printf.printf "=== T2-REGISTRY smoke tests passed ===\n" ;
   exit 0

@@ -1,15 +1,15 @@
 {
   "project": "type-safety",
-  "branch": "formal/type-safety-phase1a",
-  "phase": "T2-VEC",
+  "branch": "formal/type-safety-phase1d",
+  "phase": "T2-REGISTRY",
   "toolchain": {
     "rocq": "9.1.1",
     "ocaml": "5.4.0"
   },
   "summary": {
-    "proven": 41,
+    "proven": 46,
     "definitions": 22,
-    "total": 41,
+    "total": 46,
     "admits": 0
   },
   "cmbt": {
@@ -392,6 +392,51 @@
       "proof": "split; apply infer_mem_type_sound / infer_mem_type_complete",
       "file": "theories/VecSpec.v",
       "tick": 4
+    },
+    {
+      "id": "field_lookup_sound",
+      "kind": "lemma",
+      "statement": "field_lookup field fields = Some t -> In (field, t) fields",
+      "status": "proven",
+      "proof": "induction on fields as [(f, ft) :: rest]; String.eqb_spec for reflection; left/right branches via injection + subst",
+      "file": "theories/RegistrySpec.v",
+      "tick": 5
+    },
+    {
+      "id": "infer_rec_type_sound",
+      "kind": "theorem",
+      "statement": "infer_rec_type env e = inl t -> has_rec_type env e t",
+      "status": "proven",
+      "proof": "intros env e t H; revert env t H; induction e; for RMem: infer_mem_type_sound; for EFieldGet: destruct inl(TRecord rname rflds), destruct field_lookup, HRT_FieldGet via IHe; for EFieldSet: destruct TRecord, field_lookup, value type, sarek_type_eq_dec, HRT_FieldSet via IHe1/IHe2",
+      "file": "theories/RegistrySpec.v",
+      "tick": 5
+    },
+    {
+      "id": "infer_rec_type_complete",
+      "kind": "theorem",
+      "statement": "has_rec_type env e t -> infer_rec_type env e = inl t",
+      "status": "proven",
+      "proof": "intros env0 e0 t0 H; induction H; for HRT_Mem: match goal for has_mem_type, rewrite infer_mem_type_complete; for HRT_FieldGet: rewrite IH, rewrite field_lookup; for HRT_FieldSet: rewrite IH1, IH2, IH3, destruct sarek_type_eq_dec field_t field_t (left branch)",
+      "file": "theories/RegistrySpec.v",
+      "tick": 5
+    },
+    {
+      "id": "has_rec_type_det",
+      "kind": "lemma",
+      "statement": "has_rec_type env e t1 -> has_rec_type env e t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "pose proof infer_rec_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity (infer_rec_type is deterministic as a function)",
+      "file": "theories/RegistrySpec.v",
+      "tick": 5
+    },
+    {
+      "id": "rec_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_rec_type env e = inl t <-> has_rec_type env e t",
+      "status": "proven",
+      "proof": "split; apply infer_rec_type_sound / infer_rec_type_complete",
+      "file": "theories/RegistrySpec.v",
+      "tick": 5
     }
   ],
   "cmbt_t2_unify": {
@@ -408,6 +453,15 @@
   },
   "cmbt_t2_vec": {
     "id": "T2-VEC-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t2_registry": {
+    "id": "T2-REGISTRY-CMBT",
     "status": "done",
     "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
     "smoke_cases": 10,

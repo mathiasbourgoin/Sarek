@@ -40,8 +40,8 @@ Lemma sarek_type_eq_dec : forall t1 t2 : sarek_type, {t1 = t2} + {t1 <> t2}.
 Proof.
   fix IH 1.
   intros t1 t2.
-  destruct t1 as [p | r | sv | sa ms | lf sf | lt];
-  destruct t2 as [p0 | r0 | sv0 | sa0 ms0 | lf0 sf0 | lt0];
+  destruct t1 as [p | r | sv | sa ms | lf sf | lt | rname rflds | vname vcstrs];
+  destruct t2 as [p0 | r0 | sv0 | sa0 ms0 | lf0 sf0 | lt0 | rname2 rflds2 | vname2 vcstrs2];
     try (right; discriminate).
   - (* TPrim/TPrim *)
     destruct (prim_type_eq_dec p p0).
@@ -93,6 +93,50 @@ Proof.
     destruct (IHL lt lt0).
     + left. subst. reflexivity.
     + right. intro H. apply n. injection H as <-. reflexivity.
+  - (* TRecord/TRecord *)
+    assert (forall (fs1 fs2 : list (string * sarek_type)), {fs1 = fs2} + {fs1 <> fs2}) as IHLR. {
+      fix IHLR 1.
+      intros fs1 fs2.
+      destruct fs1 as [| [f1 ft1] rest1]; destruct fs2 as [| [f2 ft2] rest2];
+        try (right; discriminate); try (left; reflexivity).
+      destruct (String.string_dec f1 f2) as [Hfeq | Hfne].
+      - destruct (IH ft1 ft2) as [Hteq | Htne].
+        + destruct (IHLR rest1 rest2) as [Hreq | Hrne].
+          * left. subst. reflexivity.
+          * right. intro Heq. apply Hrne. injection Heq as Hf Hft Hrest. exact Hrest.
+        + right. intro Heq. apply Htne. injection Heq as Hf Hft Hrest. exact Hft.
+      - right. intro Heq. apply Hfne. injection Heq as Hf Hft Hrest. exact Hf.
+    }
+    destruct (String.string_dec rname rname2) as [Hneq | Hnne].
+    + destruct (IHLR rflds rflds2) as [Hfeq | Hfne].
+      * left. subst. reflexivity.
+      * right. intro Heq. apply Hfne. injection Heq as Hn Hf. exact Hf.
+    + right. intro Heq. apply Hnne. injection Heq as Hn Hf. exact Hn.
+  - (* TVariant/TVariant *)
+    assert (forall (cs1 cs2 : list (string * option sarek_type)), {cs1 = cs2} + {cs1 <> cs2}) as IHLV. {
+      fix IHLV 1.
+      intros cs1 cs2.
+      destruct cs1 as [| [c1 ot1] rest1]; destruct cs2 as [| [c2 ot2] rest2];
+        try (right; discriminate); try (left; reflexivity).
+      destruct (String.string_dec c1 c2) as [Hceq | Hcne].
+      - destruct ot1 as [t1 |]; destruct ot2 as [t2 |].
+        + destruct (IH t1 t2) as [Hteq | Htne].
+          * destruct (IHLV rest1 rest2) as [Hreq | Hrne].
+            -- left. subst. reflexivity.
+            -- right. intro Heq. apply Hrne. injection Heq as Hc Hot Hrest. exact Hrest.
+          * right. intro Heq. apply Htne. injection Heq as Hc Hot Hrest. exact Hot.
+        + right. intro Heq. injection Heq as Hc Hot Hrest. discriminate Hot.
+        + right. intro Heq. injection Heq as Hc Hot Hrest. discriminate Hot.
+        + destruct (IHLV rest1 rest2) as [Hreq | Hrne].
+          * left. subst. reflexivity.
+          * right. intro Heq. apply Hrne. injection Heq as Hc Hrest. exact Hrest.
+      - right. intro Heq. apply Hcne. injection Heq as Hc Hrest. exact Hc.
+    }
+    destruct (String.string_dec vname vname2) as [Hneq | Hnne].
+    + destruct (IHLV vcstrs vcstrs2) as [Hceq | Hcne].
+      * left. subst. reflexivity.
+      * right. intro Heq. apply Hcne. injection Heq as Hn Hc. exact Hc.
+    + right. intro Heq. apply Hnne. injection Heq as Hn Hc. exact Hn.
 Qed.
 
 (* ===== 2. Memory access error kinds ===== *)
@@ -233,10 +277,10 @@ Proof.
     + discriminate.
   - (* EVecGet *)
     destruct (infer_mem_type env e1) as [tv | err] eqn:Hvec; [| discriminate].
-    destruct tv as [| | elem_t | | |]; try discriminate.
+    destruct tv as [| | elem_t | | | | |]; try discriminate.
     (* tv = TVec elem_t *)
     destruct (infer_mem_type env e2) as [ti | err] eqn:Hidx; [| discriminate].
-    destruct ti as [p | | | | |]; try discriminate.
+    destruct ti as [p | | | | | | |]; try discriminate.
     destruct p; try discriminate.
     (* ti = TPrim TInt32 *)
     injection H as <-.
@@ -245,10 +289,10 @@ Proof.
     + apply IHe2. exact Hidx.
   - (* EVecSet *)
     destruct (infer_mem_type env e1) as [tv | err] eqn:Hvec; [| discriminate].
-    destruct tv as [| | elem_t | | |]; try discriminate.
+    destruct tv as [| | elem_t | | | | |]; try discriminate.
     (* tv = TVec elem_t *)
     destruct (infer_mem_type env e2) as [ti | err] eqn:Hidx; [| discriminate].
-    destruct ti as [p | | | | |]; try discriminate.
+    destruct ti as [p | | | | | | |]; try discriminate.
     destruct p; try discriminate.
     (* ti = TPrim TInt32 *)
     destruct (infer_mem_type env e3) as [vt | err] eqn:Hval; [| discriminate].
@@ -260,10 +304,10 @@ Proof.
     + apply IHe3. exact Hval.
   - (* EArrGet *)
     destruct (infer_mem_type env e1) as [ta | err] eqn:Harr; [| discriminate].
-    destruct ta as [| | | elem_t ms | |]; try discriminate.
+    destruct ta as [| | | elem_t ms | | | |]; try discriminate.
     (* ta = TArr elem_t ms *)
     destruct (infer_mem_type env e2) as [ti | err] eqn:Hidx; [| discriminate].
-    destruct ti as [p | | | | |]; try discriminate.
+    destruct ti as [p | | | | | | |]; try discriminate.
     destruct p; try discriminate.
     (* ti = TPrim TInt32 *)
     injection H as <-.
@@ -272,10 +316,10 @@ Proof.
     + apply IHe2. exact Hidx.
   - (* EArrSet *)
     destruct (infer_mem_type env e1) as [ta | err] eqn:Harr; [| discriminate].
-    destruct ta as [| | | elem_t ms | |]; try discriminate.
+    destruct ta as [| | | elem_t ms | | | |]; try discriminate.
     (* ta = TArr elem_t ms *)
     destruct (infer_mem_type env e2) as [ti | err] eqn:Hidx; [| discriminate].
-    destruct ti as [p | | | | |]; try discriminate.
+    destruct ti as [p | | | | | | |]; try discriminate.
     destruct p; try discriminate.
     (* ti = TPrim TInt32 *)
     destruct (infer_mem_type env e3) as [vt | err] eqn:Hval; [| discriminate].
