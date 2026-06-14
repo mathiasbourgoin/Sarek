@@ -24,5 +24,7 @@ From TypeSafety Require Import FunSpec.
 From TypeSafety Require Import MutSpec.
 From TypeSafety Require Import PatternSpec.
 
+Set Extraction Output Directory "extraction".
+
 Extraction "PatternModel.ml"
   infer_pat_type.
