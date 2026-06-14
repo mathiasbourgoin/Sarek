@@ -1,9 +1,9 @@
 # TypeSafety — Work Plan
 
-**Last updated**: 2026-06-14 (tick 9 — T3-S4 done, currentTask = T3-S5)
+**Last updated**: 2026-06-14 (tick 10 — T3-S5 done, currentTask = T3-S6)
 **Apparatus version**: 1.2.1 (inherited from convergence-safety template)
-**Phase**: T3-S4 (done — 4 theorems, 10/10 smoke) → T3-S5 (PatternSpec.v)
-**Branch**: formal/type-safety-phase1e
+**Phase**: T3-S5 (done — 4 theorems + 2 aux, 11/11 smoke) → T3-S6 (ConstrSpec.v)
+**Branch**: formal/convergence-safety-phase1a
 
 ---
 
@@ -36,8 +36,8 @@ Coq has no mutable unification, so the spec models **post-unification** types
 | T3-S2 | Operators (EBinop/EUnop) — OperatorSpec.v | T3 | **done** (4 theorems, 10/10 smoke) | T3-S1 |
 | T3-S3 | Function application (EApp, ELetRec) — FunSpec.v | T3 | **done** (4 theorems, 10/10 smoke) | T3-S2 |
 | T3-S4 | Mutable bindings (ELetMut, EAssign) — MutSpec.v | T3 | **done** (4 theorems, 10/10 smoke) | T3-S3 |
-| T3-S5 | Pattern matching (EMatch) — PatternSpec.v | T3 | **next** | T3-S2 |
-| T3-S6 | Algebraic construction (ERecord, EConstr) — ConstrSpec.v | T3 | TBD | T3-S5 |
+| T3-S5 | Pattern matching (EMatch) — PatternSpec.v | T3 | **done** (4 theorems + 2 aux, 11/11 smoke) | T3-S2 |
+| T3-S6 | Algebraic construction (ERecord, EConstr) — ConstrSpec.v | T3 | **next** | T3-S5 | T3-S5 |
 | T3-S7 | Special forms (EReturn, ECreateArray, ETyped) — SpecialSpec.v | T3 | TBD | T3-S2 |
 | T3-S8 | GPU forms (ELetShared, ESuperstep) — GPUSpec.v | T3 | TBD | T3-S7 |
 | DOCS-SYNC | STATUS.md / FINDINGS.md / proof-ledger.json drift check | hygiene | clean | — |
@@ -71,17 +71,20 @@ T1-CMBT dune-driven OCaml extraction conformance harness (added in T1-CMBT).
 
 ---
 
-## Next autopilot tick (T3-S5 — pattern matching)
+## Next autopilot tick (T3-S6 — algebraic construction)
 
-T3-S4 is closed: 4 theorems (sound/complete/det/preservation) for
-MELetMut/MEAssign, 10/10 smoke tests, 0 admits. Branch formal/type-safety-phase1e.
+T3-S5 is closed: 4 headline theorems (sound/complete/det/preservation) for
+`PEMatch`, plus 2 auxiliary lemmas (`pat_expr_ind_strong`, `check_branches_sound`),
+11/11 smoke tests, 0 admits. Branch formal/convergence-safety-phase1a.
 
-The `MutSpec.v` model uses a dual environment: the ordinary `type_env` plus a
-`mut_env := list string` recording which names are mutable. MELetMut adds the
-binding to both; MEAssign checks lookup + mutability + value/declared-type match
-and returns `TPrim TUnit`. Error constructors: MEFunErr, MEUnbound, MEImmutable,
-MEAssignMismatch.
+The `PatternSpec.v` model wraps the mutable layer (`MutSpec.v`). `PEMatch scrut
+branches` infers the scrutinee (must be `TVariant _ constrs`), looks up each
+branch's constructor (`lookup_constr`), binds the payload type under the branch's
+optional variable for that branch's body only (`branch_body_env`; pattern binders
+are immutable so the `mut_env` is unchanged), and requires every branch body to
+share the first branch's `result_ty`. Error constructors: PEMutErr (delegated),
+PENotVariant, PEMismatch (unknown constructor), PEBranchType, PEEmpty.
 
-T3-S5 adds `PatternSpec.v` for `EMatch` (pattern matching). Builds on the
-operator layer (T3-S2). Divergence policy stays: any disagreement on a covered
-fragment is a model bug.
+T3-S6 adds `ConstrSpec.v` for `ERecord` / `EConstr` (algebraic value construction).
+Builds on the pattern layer (T3-S5). Divergence policy stays: any disagreement on a
+covered fragment is a model bug.

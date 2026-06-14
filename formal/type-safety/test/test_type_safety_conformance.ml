@@ -1548,6 +1548,169 @@ let test_mut_letmut_init_error () =
   (match result with MUT.Inr (MUT.MEFunErr _) -> () | _ -> assert false) ;
   Printf.printf "  MELetMut init error short-circuits -> MEFunErr [ok]\n"
 
+(* ----- T3-S5 pattern-matching smoke tests (PatternModel oracle) ----------- *)
+
+module PAT = Type_safety_model.PatternModel
+
+(* Coq-string builder local to the PAT layer. *)
+let pat_coq_string (s : ostring) : PAT.string =
+  let char_to_ascii c =
+    let n = Char.code c in
+    let bit k = (n lsr k) land 1 = 1 in
+    PAT.Ascii (bit 0, bit 1, bit 2, bit 3, bit 4, bit 5, bit 6, bit 7)
+  in
+  let len = String.length s in
+  let rec go i acc =
+    if i < 0 then acc else go (i - 1) (PAT.String (char_to_ascii s.[i], acc))
+  in
+  go (len - 1) PAT.EmptyString
+
+(* literals lifted all the way up to pat_expr through the full layer chain *)
+let pat_lit lit =
+  PAT.PEMut
+    (PAT.MEFun
+       (PAT.FEOp (PAT.OPCf (PAT.CFRec (PAT.RMem (PAT.MCore (PAT.ELit lit)))))))
+
+let patint32 = pat_lit (PAT.LInt 0)
+
+let patbool = pat_lit (PAT.LBool false)
+
+(* a pat_expr that reads variable [x] from the environment via delegation *)
+let patvar x =
+  PAT.PEMut
+    (PAT.MEFun
+       (PAT.FEOp
+          (PAT.OPCf
+             (PAT.CFRec (PAT.RMem (PAT.MCore (PAT.EVar (pat_coq_string x))))))))
+
+let pat_env_entry x t = (pat_coq_string x, t)
+
+(* a "color" variant: Red (no payload) | Rgb of int32 *)
+let color_constrs =
+  [
+    (pat_coq_string "Red", None);
+    (pat_coq_string "Rgb", Some (PAT.TPrim PAT.TInt32));
+  ]
+
+let color_ty = PAT.TVariant (pat_coq_string "color", color_constrs)
+
+(* environment binding scrutinee variable [v : color] *)
+let color_env = [pat_env_entry "v" color_ty]
+
+(* helper: build a branch ((cname, bvar_opt), body) *)
+let branch cname bvar body = ((pat_coq_string cname, bvar), body)
+
+let branch_var cname v body =
+  ((pat_coq_string cname, Some (pat_coq_string v)), body)
+
+(* Test 1: PEMut delegation -- a bare int32 literal types as TInt32 *)
+let test_pat_mut_delegation () =
+  let result = PAT.infer_pat_type [] [] patint32 in
+  assert (result = PAT.Inl (PAT.TPrim PAT.TInt32)) ;
+  Printf.printf "  PEMut (int32 lit) -> TPrim TInt32 [ok]\n"
+
+(* Test 2: successful match, no-payload branch -- match v with Red -> 0 *)
+let test_pat_match_no_payload () =
+  let e = PAT.PEMatch (patvar "v", [branch "Red" None patint32]) in
+  let result = PAT.infer_pat_type color_env [] e in
+  assert (result = PAT.Inl (PAT.TPrim PAT.TInt32)) ;
+  Printf.printf "  match v with Red -> 0  ->  TInt32 [ok]\n"
+
+(* Test 3: successful match, payload branch binds the payload type *)
+let test_pat_match_payload () =
+  (* match v with Rgb c -> c   (c : int32 in scope, so result is int32) *)
+  let e = PAT.PEMatch (patvar "v", [branch_var "Rgb" "c" (patvar "c")]) in
+  let result = PAT.infer_pat_type color_env [] e in
+  assert (result = PAT.Inl (PAT.TPrim PAT.TInt32)) ;
+  Printf.printf "  match v with Rgb c -> c  ->  TInt32 (payload bound) [ok]\n"
+
+(* Test 4: scrutinee is not a variant -> PENotVariant *)
+let test_pat_not_a_variant () =
+  (* scrutinee is a plain int32 literal, not a variant *)
+  let e = PAT.PEMatch (patint32, [branch "Red" None patint32]) in
+  let result = PAT.infer_pat_type color_env [] e in
+  (match result with
+  | PAT.Inr (PAT.PENotVariant (PAT.TPrim PAT.TInt32)) -> ()
+  | _ -> assert false) ;
+  Printf.printf "  match (int32 lit) ... -> PENotVariant [ok]\n"
+
+(* Test 5: branch names an unknown constructor -> PEMismatch *)
+let test_pat_unknown_constructor () =
+  let e = PAT.PEMatch (patvar "v", [branch "Blue" None patint32]) in
+  let result = PAT.infer_pat_type color_env [] e in
+  assert (result = PAT.Inr (PAT.PEMismatch (pat_coq_string "Blue"))) ;
+  Printf.printf "  match v with Blue -> .. -> PEMismatch [ok]\n"
+
+(* Test 6: branch bodies disagree on type -> PEBranchType *)
+let test_pat_branch_type_mismatch () =
+  (* match v with Red -> 0 | Rgb c -> true   (int32 vs bool) *)
+  let e =
+    PAT.PEMatch
+      (patvar "v", [branch "Red" None patint32; branch_var "Rgb" "c" patbool])
+  in
+  let result = PAT.infer_pat_type color_env [] e in
+  assert (
+    result
+    = PAT.Inr (PAT.PEBranchType (PAT.TPrim PAT.TInt32, PAT.TPrim PAT.TBool))) ;
+  Printf.printf "  Red -> 0 | Rgb c -> true -> PEBranchType [ok]\n"
+
+(* Test 7: scrutinee error delegates through the mutable layer -> PEMutErr *)
+let test_pat_mut_err_delegation () =
+  (* scrutinee reads an unbound variable: surfaces as PEMutErr *)
+  let e = PAT.PEMatch (patvar "ghost", [branch "Red" None patint32]) in
+  let result = PAT.infer_pat_type color_env [] e in
+  (match result with PAT.Inr (PAT.PEMutErr _) -> () | _ -> assert false) ;
+  Printf.printf "  match (unbound) ... -> PEMutErr [ok]\n"
+
+(* Test 8: empty branch list -> PEEmpty *)
+let test_pat_empty_branches () =
+  let e = PAT.PEMatch (patvar "v", []) in
+  let result = PAT.infer_pat_type color_env [] e in
+  assert (result = PAT.Inr PAT.PEEmpty) ;
+  Printf.printf "  match v with <no branches> -> PEEmpty [ok]\n"
+
+(* Test 9: nested payload binding scope -- the binder is visible only in body *)
+let test_pat_nested_payload_scope () =
+  (* match v with Rgb c -> (match c-bound? we instead nest a let-free read) *)
+  (* Rgb c -> c uses the payload-bound c; a second branch Red -> 0 keeps int32 *)
+  let e =
+    PAT.PEMatch
+      ( patvar "v",
+        [branch_var "Rgb" "c" (patvar "c"); branch "Red" None patint32] )
+  in
+  let result = PAT.infer_pat_type color_env [] e in
+  assert (result = PAT.Inl (PAT.TPrim PAT.TInt32)) ;
+  Printf.printf "  Rgb c -> c | Red -> 0 -> TInt32 (scoped binder) [ok]\n"
+
+(* Test 10: multi-branch agreement -- all bodies agree on int32 *)
+let test_pat_multi_branch_agree () =
+  let e =
+    PAT.PEMatch
+      ( patvar "v",
+        [branch "Red" None patint32; branch_var "Rgb" "c" (patvar "c")] )
+  in
+  let result = PAT.infer_pat_type color_env [] e in
+  assert (result = PAT.Inl (PAT.TPrim PAT.TInt32)) ;
+  Printf.printf "  Red -> 0 | Rgb c -> c -> TInt32 (multi-branch agree) [ok]\n"
+
+(* Test 11 (bonus): error short-circuit -- first failing branch wins *)
+let test_pat_error_short_circuit () =
+  (* first branch is fine (fixes int32); second branch names an unknown
+     constructor: the PEMismatch from the second branch is reported, the
+     remaining branches are not inspected. *)
+  let e =
+    PAT.PEMatch
+      ( patvar "v",
+        [
+          branch "Red" None patint32;
+          branch "Cmyk" None patint32;
+          branch_var "Rgb" "c" patbool;
+        ] )
+  in
+  let result = PAT.infer_pat_type color_env [] e in
+  assert (result = PAT.Inr (PAT.PEMismatch (pat_coq_string "Cmyk"))) ;
+  Printf.printf "  short-circuit: Cmyk PEMismatch before Rgb mismatch [ok]\n"
+
 let () =
   Printf.printf "\n=== T3-S2 operator smoke tests (OperatorModel oracle) ===\n" ;
   test_op_add_int32 () ;
@@ -1586,4 +1749,18 @@ let () =
   test_mut_letmut_nested_assign () ;
   test_mut_letmut_init_error () ;
   Printf.printf "=== T3-S4 mutable-binding smoke tests passed ===\n" ;
+  Printf.printf
+    "\n=== T3-S5 pattern-matching smoke tests (PatternModel oracle) ===\n" ;
+  test_pat_mut_delegation () ;
+  test_pat_match_no_payload () ;
+  test_pat_match_payload () ;
+  test_pat_not_a_variant () ;
+  test_pat_unknown_constructor () ;
+  test_pat_branch_type_mismatch () ;
+  test_pat_mut_err_delegation () ;
+  test_pat_empty_branches () ;
+  test_pat_nested_payload_scope () ;
+  test_pat_multi_branch_agree () ;
+  test_pat_error_short_circuit () ;
+  Printf.printf "=== T3-S5 pattern-matching smoke tests passed ===\n" ;
   exit 0

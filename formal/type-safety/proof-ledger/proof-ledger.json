@@ -1,15 +1,15 @@
 {
   "project": "type-safety",
-  "branch": "formal/type-safety-phase1e",
-  "phase": "T3-S4 (MutSpec, done)",
+  "branch": "formal/convergence-safety-phase1a",
+  "phase": "T3-S5 (PatternSpec, done)",
   "toolchain": {
     "rocq": "9.1.1",
     "ocaml": "5.4.0"
   },
   "summary": {
-    "proven": 70,
-    "definitions": 28,
-    "total": 70,
+    "proven": 76,
+    "definitions": 31,
+    "total": 76,
     "admits": 0
   },
   "cmbt": {
@@ -583,6 +583,62 @@
       "tick": 9
     },
     {
+      "id": "pat_expr_ind_strong",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "forall P, (forall me, P (PEMut me)) -> (forall scrut, P scrut -> forall branches, Forall (fun b => P (snd b)) branches -> P (PEMatch scrut branches)) -> forall e, P e",
+      "status": "proven",
+      "proof": "custom strong induction principle for pat_expr (Forall hypothesis over branch bodies); fix IH 1 with nested Forall-list induction (Defined so it computes); the P-scrut argument precedes the branches binder so that 'induction e as [me | scrut IHscrut branches Hbranches]' binds the IHs in the right slots",
+      "file": "theories/PatternSpec.v",
+      "tick": 10
+    },
+    {
+      "id": "check_branches_sound",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "Forall (fun b => forall env' mu' t', infer_pat_type env' mu' (snd b) = inl t' -> has_pat_type env' mu' (snd b) t') branches -> check_branches infer_pat_type env mu constrs result_ty branches = inl tt -> branches_have_type env mu constrs result_ty branches",
+      "status": "proven",
+      "proof": "induction on branches; destruct head (cname,bvar,body), inversion on the per-body Forall, destruct lookup_constr/infer head body/sarek_type_eq_dec tbody result_ty, apply BHT_cons, recurse with the Forall tail",
+      "file": "theories/PatternSpec.v",
+      "tick": 10
+    },
+    {
+      "id": "infer_pat_type_sound",
+      "kind": "theorem",
+      "statement": "infer_pat_type env mu e = inl t -> has_pat_type env mu e t",
+      "status": "proven",
+      "proof": "induction e using pat_expr_ind_strong; PEMut: infer_mut_type_sound; PEMatch: destruct scrutinee result, destruct tscrut keeping only TVariant, inversion on the branch Forall (destruct on the list itself cannot infer the elimination motive), head branch via lookup_constr + IHscrut + Hhead, remaining via check_branches_sound",
+      "file": "theories/PatternSpec.v",
+      "tick": 10
+    },
+    {
+      "id": "infer_pat_type_complete",
+      "kind": "theorem",
+      "statement": "has_pat_type env mu e t -> infer_pat_type env mu e = inl t",
+      "status": "proven",
+      "proof": "induction H using has_pat_type_mind with P0 := check_branches ... = inl tt; HPT_Mut: infer_mut_type_complete; HPT_Match: rewrite scrut IH, lookup hyp, head body IH, rest-check IH; BHT_nil: reflexivity; BHT_cons: rewrite lookup hyp + head IH, sarek_type_eq_dec result_ty self, exact tail IH",
+      "file": "theories/PatternSpec.v",
+      "tick": 10
+    },
+    {
+      "id": "has_pat_type_det",
+      "kind": "lemma",
+      "statement": "has_pat_type env mu e t1 -> has_pat_type env mu e t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "pose proof infer_pat_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity",
+      "file": "theories/PatternSpec.v",
+      "tick": 10
+    },
+    {
+      "id": "pat_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_pat_type env mu e = inl t <-> has_pat_type env mu e t",
+      "status": "proven",
+      "proof": "split; apply infer_pat_type_sound / infer_pat_type_complete",
+      "file": "theories/PatternSpec.v",
+      "tick": 10
+    },
+    {
       "id": "expr_ind_strong",
       "kind": "lemma",
       "role": "helper",
@@ -726,6 +782,15 @@
     "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
     "smoke_cases": 10,
     "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s5": {
+    "id": "T3-S5-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 11,
+    "smoke_pass": 11,
     "errors": 0,
     "fails": 0
   }

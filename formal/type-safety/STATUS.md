@@ -1,17 +1,17 @@
 # TypeSafety — Status
 
-**Branch**: formal/type-safety-phase1e
-**Phase**: T3-S4 (MutSpec, done 2026-06-14) -> T3-S5 (next)
+**Branch**: formal/convergence-safety-phase1a
+**Phase**: T3-S5 (PatternSpec, done 2026-06-14) -> T3-S6 (next)
 **Toolchain**: Rocq 9.1.1 / OCaml 5.4.0
 
 ## Scoreboard
 
 | Metric | Value |
 |---|---|
-| Theorems proven | 70 (62 headline + 8 auxiliary, all Qed/Defined) |
+| Theorems proven | 76 (66 headline + 10 auxiliary, all Qed/Defined) |
 | Admits | 0 |
 | Axioms | 0 |
-| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, field_lookup, infer_rec_type, has_rec_type, infer_cf_type, has_cf_type, is_numeric, is_integer, infer_op_type, has_op_type, infer_fun_type, has_fun_type, is_mutable, infer_mut_type, has_mut_type |
+| Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, field_lookup, infer_rec_type, has_rec_type, infer_cf_type, has_cf_type, is_numeric, is_integer, infer_op_type, has_op_type, infer_fun_type, has_fun_type, is_mutable, infer_mut_type, has_mut_type, lookup_constr, branch_body_env, check_branches, infer_pat_type, has_pat_type, branches_have_type |
 | Build | green (CoqMakefile, exit 0; dune build/test, exit 0) |
 | T1-CMBT harness | green -- differential QCheck 2000/2000 (0 errors, 0 fails) + 20/20 smoke |
 | T2-UNIFY harness | green -- differential QCheck 1000/1000 (0 errors, 0 fails) + 15/15 smoke |
@@ -21,6 +21,7 @@
 | T3-S2 harness | green -- 10/10 smoke (Add/Mod/Eq/Lt/And/Neg/Not/Lnot + mismatch + NotBool) |
 | T3-S3 harness | green -- 10/10 smoke (FEOp delegation/binop, FEApp success, NotAFunc, ArgMismatch, FELetRec success/recursive/param-scope, BodyMismatch, param-not-leaked) |
 | T3-S4 harness | green -- 10/10 smoke (MEFun delegation, MELetMut success/body-type/nested, MEAssign success, MEUnbound, MEImmutable, MEAssignMismatch, MEFunErr propagation, init-error short-circuit) |
+| T3-S5 harness | green -- 11/11 smoke (PEMut delegation, no-payload match, payload-bound match, PENotVariant, PEMismatch unknown constructor, PEBranchType, PEMutErr delegation, PEEmpty, scoped binder, multi-branch agree, error short-circuit) |
 | Findings | F-TS-01 (ELet scope leak) -- found by T1-CMBT, RESOLVED |
 
 ## Termination design (T2-UNIFY)
@@ -242,12 +243,55 @@ TRecord and TVariant are now full constructors in `sarek_type`:
    `[reflexivity | exfalso; apply Hne; reflexivity]` idiom; the `lookup`/`is_mutable` hypotheses
    are rewritten directly.
 
-## Auxiliary lemmas (TypeSafetySpec.v scaffolding, all Qed/Defined, 0 admits)
+## Proven (tick 10, PatternSpec.v -- T3-S5, all Qed, 0 admits)
 
-These 8 declarations are internal scaffolding for the headline theorems above
-(ETuple/list recursion + the custom induction principle). They are not headline
-results but are tracked in the proof ledger so the declaration count is exact
-(62 headline + 8 auxiliary = 70 total `Theorem`/`Lemma` declarations).
+63. `infer_pat_type_sound` -- PEMatch inference -> has_pat_type
+64. `infer_pat_type_complete` -- has_pat_type -> inference
+65. `has_pat_type_det` -- uniqueness of the declarative pat_expr judgement
+66. `pat_type_preservation` -- infer_pat_type env mu e = inl t <-> has_pat_type env mu e t
+
+## Proof technique notes (T3-S5)
+
+1. **Single-level variant patterns**: each branch is `(constructor_name, opt bound_var, body)`.
+   The scrutinee must infer to `TVariant _ constrs`; `lookup_constr` finds the constructor's
+   optional payload type; `branch_body_env` prepends `(v, payload)` to the env for the body
+   only when the constructor carries a payload and the branch binds it (mirrors `add_var`
+   in Sarek_typer.ml infer_pattern; pattern binders are immutable, so the `mut_env` is left
+   unchanged). The first branch fixes `result_ty`; every subsequent branch must agree.
+
+2. **`branch_body_env` shared by Fixpoint and judgement**: the inference `Fixpoint` and the
+   declarative `Inductive` both call the same `branch_body_env`; this is load-bearing — when a
+   `destruct (infer_pat_type (branch_body_env ...) ...)` is performed, the term must appear
+   *syntactically* in the hypothesis being case-split, otherwise `discriminate` fails with
+   "Not a discriminable equality". An earlier version inlined the env match in the Fixpoint
+   and the `destruct` term diverged from the hypothesis.
+
+3. **Strong induction binder order**: `pat_expr_ind_strong` places `P scrut` *before* the
+   `branches` binder: `(forall scrut, P scrut -> forall branches, Forall (..) branches -> ..)`.
+   With the naive `(forall scrut branches, P scrut -> Forall .. -> ..)` order, the pattern
+   `as [me | scrut IHscrut branches Hbranches]` binds `IHscrut` to the *branches list* (off
+   by one), which silently breaks every later tactic.
+
+4. **`inversion Hbranches`, not `destruct branches`**: in the soundness `PEMatch` case,
+   `destruct branches` fails with "Unable to find an instance for the variables env, mu, t":
+   the strong-induction predicate quantifies over `env`/`mu`/`t`, so the elimination motive
+   cannot be inferred when those quantifiers sit inside the `Forall`. Case-splitting via
+   `inversion Hbranches` (the `Forall` over branch bodies) sidesteps the motive inference and
+   hands back the head IH (`Hhead`) and tail Forall (`Htail`) directly.
+
+5. **Head/rest split aligns judgement with Fixpoint**: `HPT_Match` makes the head branch
+   explicit and recurses with `branches_have_type` over the *rest*, exactly as `infer_pat_type`
+   peels the first branch (to fix `result_ty`) then runs `check_branches` over the rest. This
+   one-to-one structural alignment makes completeness a straight `rewrite` chain over the three
+   IHs (scrut, head body, rest-check) produced by `has_pat_type_mind`.
+
+## Auxiliary lemmas (scaffolding, all Qed/Defined, 0 admits)
+
+These 10 declarations are internal scaffolding for the headline theorems above
+(ETuple/list recursion + the two custom induction principles + the branch-list
+helper). They are not headline results but are tracked in the proof ledger so the
+declaration count is exact (66 headline + 10 auxiliary = 76 total
+`Theorem`/`Lemma` declarations).
 
 63. `expr_ind_strong` -- custom strong induction principle for `expr` (Forall IH for ETuple); `Defined`
 64. `infer_type_etuple` -- unfolds the ETuple case of `infer_type` (reflexivity)
@@ -257,5 +301,7 @@ results but are tracked in the proof ledger so the declaration count is exact
 68. `has_type_det_inner` -- determinism via `expr_ind_strong` (public `has_type_det` instantiates it)
 69. `infer_list_complete_helper` -- list completeness over `Forall2` (feeds `infer_type_complete`)
 70. `infer_type_complete_inner` -- completeness via `expr_ind_strong` (public `infer_type_complete` instantiates it)
+71. `pat_expr_ind_strong` -- custom strong induction principle for `pat_expr` (Forall IH over branch bodies); `Defined`
+72. `check_branches_sound` -- branch-list soundness over `check_branches` (feeds `infer_pat_type_sound`)
 
-## Next: T3-S5
+## Next: T3-S6
