@@ -73,11 +73,11 @@ let assert_contains ptx marker =
 
 let test_vector_add_markers () =
   let k = make_vector_add_kernel () in
-  let ptx = Sarek_ir_ptx_kernel.generate k in
+  let ptx = Sarek_ir_ptx.generate k in
   assert_contains ptx ".entry" ;
   assert_contains ptx ".param" ;
   assert_contains ptx "ld.global" ;
-  assert_contains ptx "add.u32" ;
+  assert_contains ptx "add.f32" ;
   assert_contains ptx "st.global" ;
   assert_contains ptx "ret"
 

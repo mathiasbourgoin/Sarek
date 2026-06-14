@@ -34,5 +34,6 @@ val emit_array_write :
   Buffer.t -> reg_alloc -> string -> string -> string -> elttype -> unit
 
 (** [infer_elt_type alloc arr_name] returns the element type registered for
-    [arr_name] in [alloc.arr_elt_types], or [TFloat32] if none is recorded. *)
+    [arr_name] in [alloc.arr_elt_types], or raises [Failure] if none is
+    recorded. *)
 val infer_elt_type : reg_alloc -> string -> elttype
