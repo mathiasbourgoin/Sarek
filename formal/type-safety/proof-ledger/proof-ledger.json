@@ -1,9 +1,20 @@
 {
   "project": "type-safety",
   "branch": "formal/type-safety-phase1a",
-  "phase": "T1-SOUND",
+  "phase": "T1-CMBT",
   "toolchain": { "rocq": "9.1.1", "ocaml": "5.4.0" },
   "summary": { "proven": 9, "definitions": 12, "total": 9, "admits": 0 },
+  "cmbt": {
+    "id": "T1-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "property": "coq_model_vs_sarek_typer_agree",
+    "qcheck_cases": 2000,
+    "qcheck_pass": 2000,
+    "errors": 0,
+    "fails": 0,
+    "finding": "F-TS-01 (ELet scope leak, RESOLVED)"
+  },
   "entries": [
     {
       "id": "infer_lit_int",

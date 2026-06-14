@@ -1,7 +1,7 @@
 # TypeSafety — Status
 
 **Branch**: formal/type-safety-phase1a
-**Phase**: T1-SOUND (done 2026-06-14) → T1-CMBT (current)
+**Phase**: T1-SOUND (done) → T1-CMBT (done 2026-06-14) → T2 (next)
 **Toolchain**: Rocq 9.1.1 / OCaml 5.4.0
 
 ## Scoreboard
@@ -13,7 +13,8 @@
 | Axioms | 0 |
 | Definitions | infer_type, lookup_env, has_type, type universe |
 | Build | green (coqc / CoqMakefile, exit 0; dune build/test, exit 0) |
-| Conformance harness | scaffold green (13/13 smoke tests) |
+| Conformance harness | green — differential QCheck 2000/2000 (0 errors, 0 fails) + 13/13 smoke |
+| Findings | F-TS-01 (ELet scope leak) — found by T1-CMBT, **RESOLVED** |
 
 ## Proven (tick 1, all Qed)
 
@@ -30,13 +31,20 @@
 8. `infer_type_complete` — `has_type env e t -> infer_type env e = inl t` (converse of `infer_type_sound`); induction on `has_type`
 9. `type_preservation` (main) — `infer_type env e = inl t <-> has_type env e t`; split into sound + complete
 
-## T1-CMBT scaffold (tick 2)
+## T1-CMBT (done — tick 3)
 
 - `extraction/TypeSafetyExtraction.v` — Rocq extraction config; extracts `infer_type`, `lookup_env` to `TypeSafetyModel.ml`
 - `extraction/dune` — `type_safety_model` library stanza (`-w -a` on generated code)
-- `test/test_type_safety_conformance.ml` — 13 smoke tests (literals, bound/unbound var, let simple/shadow/error, lookup_env hit/miss/first-wins)
-- `test/dune` — test stanza depending on `type_safety_model`
-- Status: `dune build` exit 0, `dune test` 13/13 passed, exit 0. Differential conformance vs `Sarek_typer.infer` is the next T1-CMBT step (not yet wired).
+- `test/test_type_safety_conformance.ml` — 13 smoke tests + differential QCheck (`coq_model_vs_sarek_typer_agree`)
+- `test/dune` — test stanza depending on `type_safety_model sarek_frontend qcheck-core qcheck-core.runner`
+- **Differential**: random `expr` over the literal/var/let fragment, run through the
+  extracted `infer_type` and the real `Sarek_typer.infer`, assert agreement on
+  `inl`/`inr` and the resolved `texpr.ty`. **2000/2000 pass** (0 errors, 0 fails).
+- **Found F-TS-01**: differential surfaced `let y = (let x = 0 in 0) in x` —
+  `Sarek_typer.infer` accepted `x` in the body; Coq model (correct HM scoping)
+  rejected it. Fixed in `Sarek_typer.ml` ELet (build body env from pre-value vars).
+  See findings/FINDINGS.md.
+- Status: `dune build` exit 0, `dune runtest` exit 0 (full suite + formal/type-safety/test/).
 
 ## Notes
 
