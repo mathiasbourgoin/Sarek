@@ -15,7 +15,7 @@
  *
  * Phase T1-SPEC: type universe + environment + a simplified [infer_type] that
  * models the checker's post-unification behaviour on literals, variables and
- * let-bindings. Soundness lemmas are stated as Admitted for the autopilot.
+ * let-bindings. Soundness lemmas are fully proved (Qed).
  *
  * Elided vs. Sarek_types.ml (documented for ASSUMPTIONS.md):
  *   - TVar/unification: replaced by resolved types (see header above).
@@ -128,21 +128,23 @@ Inductive has_type : type_env -> expr -> sarek_type -> Prop :=
       has_type ((x, t1) :: env) e2 t2 ->
       has_type env (ELet x e1 e2) t2.
 
-(* ===== 7. Soundness properties (Admitted — to be proved by autopilot) ===== *)
+(* ===== 7. Soundness properties (all proved — Qed) ===== *)
 
 (* infer_lit_int: integer literals always infer to TPrim TInt32. *)
 Theorem infer_lit_int :
   forall (env : type_env) (n : nat),
     infer_type env (ELit (LInt n)) = inl (TPrim TInt32).
 Proof.
-Admitted.
+  reflexivity.
+Qed.
 
 (* infer_lit_bool: boolean literals always infer to TPrim TBool. *)
 Theorem infer_lit_bool :
   forall (env : type_env) (b : bool),
     infer_type env (ELit (LBool b)) = inl (TPrim TBool).
 Proof.
-Admitted.
+  reflexivity.
+Qed.
 
 (* infer_var_bound: a variable present in the environment infers to its type.
    NB: requires the first binding for x in env to be (x, t) — stated here for
@@ -152,7 +154,8 @@ Theorem infer_var_bound :
     lookup_env env x = Some t ->
     infer_type env (EVar x) = inl t.
 Proof.
-Admitted.
+  intros env x t H. simpl. rewrite H. reflexivity.
+Qed.
 
 (* lookup_env_sound: a successful lookup means the binding really is in env. *)
 Theorem lookup_env_sound :
@@ -160,7 +163,13 @@ Theorem lookup_env_sound :
     lookup_env env x = Some t ->
     In (x, t) env.
 Proof.
-Admitted.
+  intros env x t. revert t.
+  induction env as [| [y t'] rest IH]; intro t; intro H.
+  - simpl in H. discriminate.
+  - simpl in H. destruct (String.eqb x y) eqn:Heq.
+    + apply String.eqb_eq in Heq. subst y. injection H as ->. left. reflexivity.
+    + right. apply IH. exact H.
+Qed.
 
 (* infer_type_sound: if inference succeeds with type t, the expression is
    well-typed at t under the declarative judgement. This is the central
@@ -170,4 +179,18 @@ Theorem infer_type_sound :
     infer_type env e = inl t ->
     has_type env e t.
 Proof.
-Admitted.
+  intros env e. revert env.
+  induction e as [l | x | x e1 IH1 e2 IH2]; intros env t H.
+  - (* ELit *)
+    destruct l; simpl in H; injection H as <-; constructor.
+  - (* EVar *)
+    simpl in H. destruct (lookup_env env x) eqn:Hlk.
+    + injection H as <-. apply HT_Var. exact Hlk.
+    + discriminate.
+  - (* ELet *)
+    simpl in H. destruct (infer_type env e1) as [t1 | err] eqn:He1.
+    + apply HT_Let with (t1 := t1).
+      * apply IH1. exact He1.
+      * apply IH2. exact H.
+    + discriminate.
+Qed.

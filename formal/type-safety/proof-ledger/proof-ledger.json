@@ -3,6 +3,52 @@
   "branch": "formal/type-safety-phase1a",
   "phase": "T1-SPEC",
   "toolchain": { "rocq": "9.1.1", "ocaml": "5.4.0" },
-  "summary": { "proven": 0, "definitions": 0, "total": 0, "admits": 0 },
-  "entries": []
+  "summary": { "proven": 5, "definitions": 12, "total": 5, "admits": 0 },
+  "entries": [
+    {
+      "id": "infer_lit_int",
+      "kind": "theorem",
+      "statement": "infer_type env (ELit (LInt n)) = inl (TPrim TInt32)",
+      "status": "proven",
+      "proof": "reflexivity (literal rule computes definitionally)",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "infer_lit_bool",
+      "kind": "theorem",
+      "statement": "infer_type env (ELit (LBool b)) = inl (TPrim TBool)",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "infer_var_bound",
+      "kind": "theorem",
+      "statement": "lookup_env env x = Some t -> infer_type env (EVar x) = inl t",
+      "status": "proven",
+      "proof": "intros env x t H; simpl; rewrite H; reflexivity",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "lookup_env_sound",
+      "kind": "theorem",
+      "statement": "lookup_env env x = Some t -> In (x, t) env",
+      "status": "proven",
+      "proof": "induction on env with t generalized; String.eqb case split via String.eqb_eq; left/right",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "infer_type_sound",
+      "kind": "theorem",
+      "statement": "infer_type env e = inl t -> has_type env e t",
+      "status": "proven",
+      "proof": "structural induction on e (env reverted); ELit destruct l + injection + constructor; EVar destruct lookup + HT_Var; ELet destruct infer_type env e1 + HT_Let via two IHs",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    }
+  ]
 }

@@ -1,6 +1,6 @@
 # TypeSafety — Work Plan
 
-**Last updated**: 2026-06-14 (scaffold — currentTask = T1-SPEC)
+**Last updated**: 2026-06-14 (tick 1 — T1-SPEC done, currentTask = T1-SOUND)
 **Apparatus version**: 1.2.1 (inherited from convergence-safety template)
 **Phase**: T1-SPEC (Formalise the Sarek type system in Rocq)
 **Branch**: formal/type-safety-phase1a
@@ -25,8 +25,8 @@ Coq has no mutable unification, so the spec models **post-unification** types
 
 | ID | Title | Tier | Status | Blocked by |
 |---|---|---|---|---|
-| T1-SPEC | Spec + basic lemmas: type universe, `type_env`/`lookup_env`, `infer_type`, `has_type`, 5 Admitted soundness lemmas | T1 | **current** | — |
-| T1-SOUND | Prove the 5 lemmas; add type-preservation (subject reduction analogue) + completeness of `infer_type` vs `has_type` | T1 | todo | T1-SPEC |
+| T1-SPEC | Spec + basic lemmas: type universe, `type_env`/`lookup_env`, `infer_type`, `has_type`, 5 soundness lemmas | T1 | **done** (5/5 Qed) | — |
+| T1-SOUND | The 5 lemmas are proved; add type-preservation (subject reduction analogue) + completeness of `infer_type` vs `has_type` | T1 | **current** | — |
 | T1-CMBT | Extraction of `infer_type` to OCaml + differential conformance vs `Sarek_typer.infer` (CMBT closure) | T1 | todo | T1-SOUND |
 | T2-CUSTOM | Extend type universe with TRecord/TVariant/Custom; field-access + constructor inference | T2 | TBD | T1-CMBT |
 | T2-UNIFY | Model unification soundness (occurs check, `repr` idempotence, mgu) against `Sarek_types.unify` | T2 | TBD | T1-CMBT |
@@ -41,9 +41,9 @@ Coq has no mutable unification, so the spec models **post-unification** types
 - [x] `type_env` + `lookup_env`
 - [x] `infer_type` with literal/var/let rules matching `Sarek_typer.ml`
 - [x] `has_type` declarative judgement (spec side)
-- [x] 5 Admitted soundness lemmas stated
+- [x] 5 soundness lemmas stated
 - [x] `theories/TypeSafetySpec.v` compiles (coqc / CoqMakefile, exit 0)
-- [ ] Lemmas proved (→ T1-SOUND)
+- [x] Lemmas proved (5/5 Qed, tick 1)
 
 ---
 
