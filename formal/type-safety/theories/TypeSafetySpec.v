@@ -194,3 +194,74 @@ Proof.
       * apply IH2. exact H.
     + discriminate.
 Qed.
+
+(* ===== 8. T1-SOUND: determinism, completeness, preservation ===== *)
+
+(* lookup_env_correct: lookup_env is a (partial) function — at most one result.
+   Trivial since lookup_env is a total function, but stated for use in
+   has_type inversion (HT_Var) reasoning. *)
+Lemma lookup_env_correct :
+  forall (env : type_env) (x : string) (t : sarek_type),
+    lookup_env env x = Some t ->
+    forall t', lookup_env env x = Some t' -> t = t'.
+Proof.
+  intros env x t H t' H'. rewrite H in H'. injection H' as ->. reflexivity.
+Qed.
+
+(* has_type_det: the declarative judgement assigns at most one type to an
+   expression in a given environment. Proved by induction on the first
+   derivation, inverting the second. EVar uses lookup_env's functionality;
+   ELet chains the two IHs (the e1 type must match before e2 can be compared). *)
+Lemma has_type_det :
+  forall (env : type_env) (e : expr) (t1 t2 : sarek_type),
+    has_type env e t1 -> has_type env e t2 -> t1 = t2.
+Proof.
+  intros env e t1 t2 H1. revert t2.
+  induction H1 as
+    [ env n | env n | env b | env
+    | env x t Hlk
+    | env x e1 e2 ta tb He1 IH1 He2 IH2 ];
+    intros tB H2.
+  - inversion H2; subst. reflexivity.
+  - inversion H2; subst. reflexivity.
+  - inversion H2; subst. reflexivity.
+  - inversion H2; subst. reflexivity.
+  - (* HT_Var: both lookups succeed; lookup_env is a function *)
+    inversion H2; subst. eapply lookup_env_correct; eauto.
+  - (* HT_Let: e1 type agrees by IH1, so e2 environments match, then IH2 *)
+    inversion H2 as [ | | | | | env' x' e1' e2' tc td He1' He2' Hx Henv ]; subst.
+    assert (Heq : ta = tc) by (apply IH1; assumption). subst tc.
+    apply IH2. assumption.
+Qed.
+
+(* infer_type_complete: the converse of infer_type_sound. Every derivable
+   typing is found by the algorithm. Induction on the has_type derivation.
+   HT_Var is immediate: the premise IS lookup_env x = Some t, which is exactly
+   what the EVar branch of infer_type matches on. HT_Let rewrites with both
+   IHs to thread the binding type. *)
+Lemma infer_type_complete :
+  forall (env : type_env) (e : expr) (t : sarek_type),
+    has_type env e t ->
+    infer_type env e = inl t.
+Proof.
+  intros env e t H.
+  induction H.
+  - reflexivity.            (* HT_Int *)
+  - reflexivity.            (* HT_Float *)
+  - reflexivity.            (* HT_Bool *)
+  - reflexivity.            (* HT_Unit *)
+  - simpl. rewrite H. reflexivity.   (* HT_Var *)
+  - simpl. rewrite IHhas_type1. rewrite IHhas_type2. reflexivity. (* HT_Let *)
+Qed.
+
+(* type_preservation: the algorithmic checker and the declarative judgement
+   coincide exactly. This is the central T1-SOUND theorem — infer_type is both
+   sound (=> direction) and complete (<= direction) w.r.t. has_type. *)
+Theorem type_preservation :
+  forall (env : type_env) (e : expr) (t : sarek_type),
+    infer_type env e = inl t <-> has_type env e t.
+Proof.
+  intros env e t. split.
+  - apply infer_type_sound.
+  - apply infer_type_complete.
+Qed.

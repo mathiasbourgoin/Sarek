@@ -1,8 +1,8 @@
 # TypeSafety — Work Plan
 
-**Last updated**: 2026-06-14 (tick 1 — T1-SPEC done, currentTask = T1-SOUND)
+**Last updated**: 2026-06-14 (tick 2 — T1-SOUND done, currentTask = T1-CMBT)
 **Apparatus version**: 1.2.1 (inherited from convergence-safety template)
-**Phase**: T1-SPEC (Formalise the Sarek type system in Rocq)
+**Phase**: T1-SOUND (done) → T1-CMBT (extraction + differential conformance)
 **Branch**: formal/type-safety-phase1a
 
 ---
@@ -26,8 +26,8 @@ Coq has no mutable unification, so the spec models **post-unification** types
 | ID | Title | Tier | Status | Blocked by |
 |---|---|---|---|---|
 | T1-SPEC | Spec + basic lemmas: type universe, `type_env`/`lookup_env`, `infer_type`, `has_type`, 5 soundness lemmas | T1 | **done** (5/5 Qed) | — |
-| T1-SOUND | The 5 lemmas are proved; add type-preservation (subject reduction analogue) + completeness of `infer_type` vs `has_type` | T1 | **current** | — |
-| T1-CMBT | Extraction of `infer_type` to OCaml + differential conformance vs `Sarek_typer.infer` (CMBT closure) | T1 | todo | T1-SOUND |
+| T1-SOUND | The 5 lemmas are proved; add type-preservation (subject reduction analogue) + completeness of `infer_type` vs `has_type` | T1 | **done** (4 new: lookup_env_correct, has_type_det, infer_type_complete, type_preservation; 9/9 Qed) | — |
+| T1-CMBT | Extraction of `infer_type` to OCaml + differential conformance vs `Sarek_typer.infer` (CMBT closure) | T1 | **current** (scaffold green: extraction + 13/13 smoke tests; differential vs `Sarek_typer.infer` not yet wired) | T1-SOUND |
 | T2-CUSTOM | Extend type universe with TRecord/TVariant/Custom; field-access + constructor inference | T2 | TBD | T1-CMBT |
 | T2-UNIFY | Model unification soundness (occurs check, `repr` idempotence, mgu) against `Sarek_types.unify` | T2 | TBD | T1-CMBT |
 | T2-VEC | TVec / TArr memory-space inference (Local/Shared/Global) + vec/arr get/set typing | T2 | TBD | T1-CMBT |
@@ -62,11 +62,19 @@ T1-CMBT dune-driven OCaml extraction conformance harness (added in T1-CMBT).
 
 ---
 
-## Next autopilot tick (T1-SPEC → T1-SOUND)
+## Next autopilot tick (T1-CMBT — wire the differential)
 
-1. Prove `infer_lit_int`, `infer_lit_bool` — both by `reflexivity` / `simpl`.
-2. Prove `infer_var_bound` and `lookup_env_sound` — induction on `env`, case on
-   `String.eqb`.
-3. Prove `infer_type_sound` — induction on `e`, using the lemmas above; the
-   `ELet` case threads the binding through `has_type`'s `HT_Let`.
-4. Once green, begin connecting to `Sarek_typer.infer` extraction (T1-CMBT).
+The extraction + smoke-test scaffold is green (tick 2). The remaining T1-CMBT
+work is the actual closure: differential conformance of the extracted
+`infer_type` against the real `Sarek_typer.infer`.
+
+1. Build a shared `expr`/`sarek_type` bridge between the extracted model and the
+   Sarek typer's `expr`/`typ` (the model is post-unification; the typer carries
+   mutable TVars — compare on the resolved `texpr.ty`).
+2. Generate random `expr` (QCheck) over the literal/var/let fragment the model
+   covers; run both and assert agreement (`inl`/`inr` and the resolved type).
+3. Decide the divergence policy: any disagreement on the covered fragment is a
+   model bug (the model is the spec) — record it in FINDINGS.md, do not silently
+   widen the model.
+4. Expand the model fragment only after the differential is green on the current
+   one (T2-CUSTOM / T2-UNIFY / T2-VEC extend the universe).

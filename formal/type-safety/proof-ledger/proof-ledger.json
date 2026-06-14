@@ -1,9 +1,9 @@
 {
   "project": "type-safety",
   "branch": "formal/type-safety-phase1a",
-  "phase": "T1-SPEC",
+  "phase": "T1-SOUND",
   "toolchain": { "rocq": "9.1.1", "ocaml": "5.4.0" },
-  "summary": { "proven": 5, "definitions": 12, "total": 5, "admits": 0 },
+  "summary": { "proven": 9, "definitions": 12, "total": 9, "admits": 0 },
   "entries": [
     {
       "id": "infer_lit_int",
@@ -49,6 +49,42 @@
       "proof": "structural induction on e (env reverted); ELit destruct l + injection + constructor; EVar destruct lookup + HT_Var; ELet destruct infer_type env e1 + HT_Let via two IHs",
       "file": "theories/TypeSafetySpec.v",
       "tick": 1
+    },
+    {
+      "id": "lookup_env_correct",
+      "kind": "lemma",
+      "statement": "lookup_env env x = Some t -> forall t', lookup_env env x = Some t' -> t = t'",
+      "status": "proven",
+      "proof": "rewrite H in H'; injection H' as ->; reflexivity (lookup_env is a partial function)",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 2
+    },
+    {
+      "id": "has_type_det",
+      "kind": "lemma",
+      "statement": "has_type env e t1 -> has_type env e t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "induction on first derivation (explicit IH names IH1/IH2 to survive auto-naming), inversion on second; EVar uses lookup_env_correct; ELet chains both IHs after matching the e1 type",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 2
+    },
+    {
+      "id": "infer_type_complete",
+      "kind": "lemma",
+      "statement": "has_type env e t -> infer_type env e = inl t",
+      "status": "proven",
+      "proof": "induction on has_type; HT_Var immediate (rewrite H — constructor carries lookup_env x = Some t directly); HT_Let rewrites with both IHs",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 2
+    },
+    {
+      "id": "type_preservation",
+      "kind": "theorem",
+      "statement": "infer_type env e = inl t <-> has_type env e t",
+      "status": "proven",
+      "proof": "split into infer_type_sound (->) and infer_type_complete (<-); central T1-SOUND theorem",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 2
     }
   ]
 }
