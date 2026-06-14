@@ -50,14 +50,18 @@ We give a formal specification of the convergence-safety analysis pass in
 OCaml GPU DSL. The analysis tracks an \emph{execution mode} ($\Converged$ or
 $\Diverged$) through an abstract expression type and collects barrier errors
 when a synchronisation point is reached inside diverged control flow.
-We prove twenty properties: five join-semilattice laws for the dimension-usage
-monoid, one homomorphism law for sequential composition, six T1 safety
-theorems about the mode-tracking state machine (including the F-01
-\texttt{ESuperstep} outer-diverged error property), three T2-WARP theorems
-for warp-collective safety (F-03), one T2-RETURN compositionality theorem
-for early-return barrier-skip (\texttt{EReturn}), and four T1 theorems
-for the env-threaded model introduced in T2-F02 to handle let-alias
-variability propagation.
+We prove 68 properties across the T1--T3 proof ladder: five join-semilattice
+laws for the dimension-usage monoid, one homomorphism law for sequential
+composition, six T1 safety theorems about the mode-tracking state machine
+(including the F-01 \texttt{ESuperstep} outer-diverged error property), three
+T2-WARP theorems for warp-collective safety (F-03), one T2-RETURN
+compositionality theorem for early-return barrier-skip (\texttt{EReturn}),
+four T1 theorems for the env-threaded model (T2-F02 let-alias variability),
+and 48 T3-SEMANTIC theorems grounding the checker in a fuel-indexed big-step
+evaluator with barrier traces (including \texttt{eval\_check\_uniform},
+\texttt{check\_env\_sound\_core}, \texttt{warp\_safe}, and the F-04
+\texttt{has\_varying\_return} / \texttt{hazard\_checker\_sound} extension).
+All theorems carry 0~admitted axioms; verified by \texttt{coqchk}.
 \end{abstract}
 
 %───────────────────────────────────────────────────────────────────────────────
