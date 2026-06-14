@@ -15,7 +15,12 @@
   Sarek_ir_glsl
   Sarek_ir_wgsl
   Sarek_wgsl_abi
-  Sarek_ir_ptx)
+  Sarek_ir_ptx
+  Sarek_ir_ptx_types
+  Sarek_ir_ptx_mem
+  Sarek_ir_ptx_expr
+  Sarek_ir_ptx_stmt
+  Sarek_ir_ptx_kernel)
  (preprocess no_preprocessing)
  (instrumentation
   (backend bisect_ppx)))
