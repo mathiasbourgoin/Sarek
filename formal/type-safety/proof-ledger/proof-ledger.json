@@ -1,15 +1,15 @@
 {
   "project": "type-safety",
   "branch": "formal/type-safety-phase1e",
-  "phase": "T3-S3 (FunSpec, done)",
+  "phase": "T3-S4 (MutSpec, done)",
   "toolchain": {
     "rocq": "9.1.1",
     "ocaml": "5.4.0"
   },
   "summary": {
-    "proven": 66,
-    "definitions": 27,
-    "total": 66,
+    "proven": 70,
+    "definitions": 28,
+    "total": 70,
     "admits": 0
   },
   "cmbt": {
@@ -547,6 +547,42 @@
       "tick": 8
     },
     {
+      "id": "infer_mut_type_sound",
+      "kind": "theorem",
+      "statement": "infer_mut_type env mu e = inl t -> has_mut_type env mu e t",
+      "status": "proven",
+      "proof": "induction e as [fe | name init IHinit body IHbody | name value IHvalue]; MEFun: infer_fun_type_sound; MELetMut: destruct init result, apply HMT_LetMut with t:=tinit using IHinit/IHbody on extended (name,t)::env and name::mu; MEAssign: destruct value result, destruct lookup_env env name, destruct is_mutable mu name, sarek_type_eq_dec tv tdecl, apply HMT_Assign",
+      "file": "theories/MutSpec.v",
+      "tick": 9
+    },
+    {
+      "id": "infer_mut_type_complete",
+      "kind": "theorem",
+      "statement": "has_mut_type env mu e t -> infer_mut_type env mu e = inl t",
+      "status": "proven",
+      "proof": "induction H; HMT_Fun: infer_fun_type_complete; HMT_LetMut: rewrite IH1, exact IH2; HMT_Assign: rewrite IH, rewrite lookup hyp, rewrite is_mutable hyp, subst tv, sarek_type_eq_dec tdecl self reflexivity",
+      "file": "theories/MutSpec.v",
+      "tick": 9
+    },
+    {
+      "id": "has_mut_type_det",
+      "kind": "lemma",
+      "statement": "has_mut_type env mu e t1 -> has_mut_type env mu e t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "pose proof infer_mut_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity",
+      "file": "theories/MutSpec.v",
+      "tick": 9
+    },
+    {
+      "id": "mut_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_mut_type env mu e = inl t <-> has_mut_type env mu e t",
+      "status": "proven",
+      "proof": "split; apply infer_mut_type_sound / infer_mut_type_complete",
+      "file": "theories/MutSpec.v",
+      "tick": 9
+    },
+    {
       "id": "expr_ind_strong",
       "kind": "lemma",
       "role": "helper",
@@ -677,6 +713,15 @@
   },
   "cmbt_t3_s3": {
     "id": "T3-S3-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s4": {
+    "id": "T3-S4-CMBT",
     "status": "done",
     "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
     "smoke_cases": 10,

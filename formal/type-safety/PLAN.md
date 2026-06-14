@@ -1,8 +1,8 @@
 # TypeSafety — Work Plan
 
-**Last updated**: 2026-06-14 (tick 0 — T3-S3 done, currentTask = T3-S4)
+**Last updated**: 2026-06-14 (tick 9 — T3-S4 done, currentTask = T3-S5)
 **Apparatus version**: 1.2.1 (inherited from convergence-safety template)
-**Phase**: T3-S3 (done — 4 theorems, 10/10 smoke) → T3-S4 (MutSpec.v)
+**Phase**: T3-S4 (done — 4 theorems, 10/10 smoke) → T3-S5 (PatternSpec.v)
 **Branch**: formal/type-safety-phase1e
 
 ---
@@ -35,8 +35,8 @@ Coq has no mutable unification, so the spec models **post-unification** types
 | T3-S1 | Control flow (CFIfThen/IfElse/For/While/Seq) — ControlFlowSpec.v | T3 | **done** (4 theorems, 10/10 smoke) | T2-REGISTRY |
 | T3-S2 | Operators (EBinop/EUnop) — OperatorSpec.v | T3 | **done** (4 theorems, 10/10 smoke) | T3-S1 |
 | T3-S3 | Function application (EApp, ELetRec) — FunSpec.v | T3 | **done** (4 theorems, 10/10 smoke) | T3-S2 |
-| T3-S4 | Mutable bindings (ELetMut, EAssign) — MutSpec.v | T3 | **next** | T3-S3 |
-| T3-S5 | Pattern matching (EMatch) — PatternSpec.v | T3 | TBD | T3-S2 |
+| T3-S4 | Mutable bindings (ELetMut, EAssign) — MutSpec.v | T3 | **done** (4 theorems, 10/10 smoke) | T3-S3 |
+| T3-S5 | Pattern matching (EMatch) — PatternSpec.v | T3 | **next** | T3-S2 |
 | T3-S6 | Algebraic construction (ERecord, EConstr) — ConstrSpec.v | T3 | TBD | T3-S5 |
 | T3-S7 | Special forms (EReturn, ECreateArray, ETyped) — SpecialSpec.v | T3 | TBD | T3-S2 |
 | T3-S8 | GPU forms (ELetShared, ESuperstep) — GPUSpec.v | T3 | TBD | T3-S7 |
@@ -71,15 +71,17 @@ T1-CMBT dune-driven OCaml extraction conformance harness (added in T1-CMBT).
 
 ---
 
-## Next autopilot tick (T3-S3 — function application)
+## Next autopilot tick (T3-S5 — pattern matching)
 
-T3-S2 is closed: 4 theorems (sound/complete/det/preservation) for
-OPBinop/OPUnop, 10/10 smoke tests, 0 admits. Branch formal/type-safety-phase1e.
+T3-S4 is closed: 4 theorems (sound/complete/det/preservation) for
+MELetMut/MEAssign, 10/10 smoke tests, 0 admits. Branch formal/type-safety-phase1e.
 
-T3-S3 adds `FunSpec.v` modelling `Sarek_typer.ml:infer` for function application
-(`EApp`) and recursive bindings (`ELetRec`). Key rules:
-- EApp: infer function type, infer argument type, unify argument with param type,
-  result is return type.
-- ELetRec: bind name with function type (allowing recursion), infer body.
+The `MutSpec.v` model uses a dual environment: the ordinary `type_env` plus a
+`mut_env := list string` recording which names are mutable. MELetMut adds the
+binding to both; MEAssign checks lookup + mutability + value/declared-type match
+and returns `TPrim TUnit`. Error constructors: MEFunErr, MEUnbound, MEImmutable,
+MEAssignMismatch.
 
-Divergence policy stays: any disagreement on a covered fragment is a model bug.
+T3-S5 adds `PatternSpec.v` for `EMatch` (pattern matching). Builds on the
+operator layer (T3-S2). Divergence policy stays: any disagreement on a covered
+fragment is a model bug.

@@ -1428,6 +1428,126 @@ let test_fun_letrec_param_not_leaked () =
   Printf.printf
     "  FELetRec param n not in scope in continuation -> error [ok]\n"
 
+(* ----- T3-S4 mutable-binding smoke tests (MutModel oracle) ----------------- *)
+
+module MUT = Type_safety_model.MutModel
+
+(* Coq-string builder local to the MUT layer (MUT.string is its own ascii type). *)
+let mut_coq_string (s : ostring) : MUT.string =
+  let char_to_ascii c =
+    let n = Char.code c in
+    let bit k = (n lsr k) land 1 = 1 in
+    MUT.Ascii (bit 0, bit 1, bit 2, bit 3, bit 4, bit 5, bit 6, bit 7)
+  in
+  let len = String.length s in
+  let rec go i acc =
+    if i < 0 then acc else go (i - 1) (MUT.String (char_to_ascii s.[i], acc))
+  in
+  go (len - 1) MUT.EmptyString
+
+(* int32 / bool literals lifted all the way up to mut_expr via the chain *)
+let mutint32 =
+  MUT.MEFun
+    (MUT.FEOp
+       (MUT.OPCf (MUT.CFRec (MUT.RMem (MUT.MCore (MUT.ELit (MUT.LInt 0)))))))
+
+let mutbool =
+  MUT.MEFun
+    (MUT.FEOp
+       (MUT.OPCf (MUT.CFRec (MUT.RMem (MUT.MCore (MUT.ELit (MUT.LBool false)))))))
+
+(* a mut_expr that reads variable [x] from the environment via delegation *)
+let mutvar x =
+  MUT.MEFun
+    (MUT.FEOp
+       (MUT.OPCf
+          (MUT.CFRec (MUT.RMem (MUT.MCore (MUT.EVar (mut_coq_string x)))))))
+
+let mut_env_entry x t = (mut_coq_string x, t)
+
+(* Test 1: MEFun delegation -- int32 literal types as TInt32 *)
+let test_mut_fun_delegation () =
+  let result = MUT.infer_mut_type [] [] mutint32 in
+  assert (result = MUT.Inl (MUT.TPrim MUT.TInt32)) ;
+  Printf.printf "  MEFun (int32 lit) -> TPrim TInt32 [ok]\n"
+
+(* Test 2: MELetMut success -- body returns the mutable variable's type *)
+let test_mut_letmut_success () =
+  (* let mut x = 0 in x  -->  int32 *)
+  let e = MUT.MELetMut (mut_coq_string "x", mutint32, mutvar "x") in
+  let result = MUT.infer_mut_type [] [] e in
+  assert (result = MUT.Inl (MUT.TPrim MUT.TInt32)) ;
+  Printf.printf "  MELetMut x=0 in x -> TInt32 [ok]\n"
+
+(* Test 3: MELetMut body type differs from init type (body is unrelated lit) *)
+let test_mut_letmut_body_type () =
+  (* let mut x = 0 in true  -->  bool *)
+  let e = MUT.MELetMut (mut_coq_string "x", mutint32, mutbool) in
+  let result = MUT.infer_mut_type [] [] e in
+  assert (result = MUT.Inl (MUT.TPrim MUT.TBool)) ;
+  Printf.printf "  MELetMut x=0 in true -> TBool [ok]\n"
+
+(* Test 4: MEAssign success -- assign matching type to a mutable var -> unit *)
+let test_mut_assign_success () =
+  (* let mut x = 0 in (x <- 1)  -->  unit *)
+  let body = MUT.MEAssign (mut_coq_string "x", mutint32) in
+  let e = MUT.MELetMut (mut_coq_string "x", mutint32, body) in
+  let result = MUT.infer_mut_type [] [] e in
+  assert (result = MUT.Inl (MUT.TPrim MUT.TUnit)) ;
+  Printf.printf "  MELetMut x=0 in (x <- 1) -> TUnit [ok]\n"
+
+(* Test 5: MEAssign to an unbound variable -> MEUnbound *)
+let test_mut_assign_unbound () =
+  let e = MUT.MEAssign (mut_coq_string "y", mutint32) in
+  let result = MUT.infer_mut_type [] [] e in
+  assert (result = MUT.Inr (MUT.MEUnbound (mut_coq_string "y"))) ;
+  Printf.printf "  MEAssign y (unbound) -> MEUnbound [ok]\n"
+
+(* Test 6: MEAssign to an immutable (plain type_env) variable -> MEImmutable *)
+let test_mut_assign_immutable () =
+  (* x is bound in the type_env but NOT in the mutability env *)
+  let env = [mut_env_entry "x" (MUT.TPrim MUT.TInt32)] in
+  let e = MUT.MEAssign (mut_coq_string "x", mutint32) in
+  let result = MUT.infer_mut_type env [] e in
+  assert (result = MUT.Inr (MUT.MEImmutable (mut_coq_string "x"))) ;
+  Printf.printf "  MEAssign x (not mutable) -> MEImmutable [ok]\n"
+
+(* Test 7: MEAssign value type != declared type -> MEAssignMismatch *)
+let test_mut_assign_mismatch () =
+  (* let mut x = 0 in (x <- true)  -->  MEAssignMismatch int32 bool *)
+  let body = MUT.MEAssign (mut_coq_string "x", mutbool) in
+  let e = MUT.MELetMut (mut_coq_string "x", mutint32, body) in
+  let result = MUT.infer_mut_type [] [] e in
+  assert (
+    result
+    = MUT.Inr (MUT.MEAssignMismatch (MUT.TPrim MUT.TInt32, MUT.TPrim MUT.TBool))) ;
+  Printf.printf "  MELetMut x=0 in (x <- true) -> MEAssignMismatch [ok]\n"
+
+(* Test 8: MEFun delegation propagates a function-layer error (MEFunErr) *)
+let test_mut_fun_error_propagates () =
+  (* reading an unbound var through the fun layer surfaces as MEFunErr *)
+  let result = MUT.infer_mut_type [] [] (mutvar "nope") in
+  (match result with MUT.Inr (MUT.MEFunErr _) -> () | _ -> assert false) ;
+  Printf.printf "  MEFun (unbound var) -> MEFunErr [ok]\n"
+
+(* Test 9: MELetMut nested -- inner mutable shadows, outer still assignable *)
+let test_mut_letmut_nested_assign () =
+  (* let mut x = 0 in let mut y = true in (x <- 1)  -->  unit *)
+  let inner_body = MUT.MEAssign (mut_coq_string "x", mutint32) in
+  let inner = MUT.MELetMut (mut_coq_string "y", mutbool, inner_body) in
+  let e = MUT.MELetMut (mut_coq_string "x", mutint32, inner) in
+  let result = MUT.infer_mut_type [] [] e in
+  assert (result = MUT.Inl (MUT.TPrim MUT.TUnit)) ;
+  Printf.printf "  nested let mut, inner assigns outer x -> TUnit [ok]\n"
+
+(* Test 10: error in the init expression short-circuits the whole MELetMut *)
+let test_mut_letmut_init_error () =
+  (* let mut x = (unbound) in x  -->  the init error propagates *)
+  let e = MUT.MELetMut (mut_coq_string "x", mutvar "ghost", mutvar "x") in
+  let result = MUT.infer_mut_type [] [] e in
+  (match result with MUT.Inr (MUT.MEFunErr _) -> () | _ -> assert false) ;
+  Printf.printf "  MELetMut init error short-circuits -> MEFunErr [ok]\n"
+
 let () =
   Printf.printf "\n=== T3-S2 operator smoke tests (OperatorModel oracle) ===\n" ;
   test_op_add_int32 () ;
@@ -1453,4 +1573,17 @@ let () =
   test_fun_letrec_param_in_scope () ;
   test_fun_letrec_param_not_leaked () ;
   Printf.printf "=== T3-S3 function smoke tests passed ===\n" ;
+  Printf.printf
+    "\n=== T3-S4 mutable-binding smoke tests (MutModel oracle) ===\n" ;
+  test_mut_fun_delegation () ;
+  test_mut_letmut_success () ;
+  test_mut_letmut_body_type () ;
+  test_mut_assign_success () ;
+  test_mut_assign_unbound () ;
+  test_mut_assign_immutable () ;
+  test_mut_assign_mismatch () ;
+  test_mut_fun_error_propagates () ;
+  test_mut_letmut_nested_assign () ;
+  test_mut_letmut_init_error () ;
+  Printf.printf "=== T3-S4 mutable-binding smoke tests passed ===\n" ;
   exit 0
