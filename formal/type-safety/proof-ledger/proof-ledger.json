@@ -1,0 +1,8 @@
+{
+  "project": "type-safety",
+  "branch": "formal/type-safety-phase1a",
+  "phase": "T1-SPEC",
+  "toolchain": { "rocq": "9.1.1", "ocaml": "5.4.0" },
+  "summary": { "proven": 0, "definitions": 0, "total": 0, "admits": 0 },
+  "entries": []
+}
