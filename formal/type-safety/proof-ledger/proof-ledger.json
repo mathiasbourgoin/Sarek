@@ -1,15 +1,15 @@
 {
   "project": "type-safety",
   "branch": "formal/type-safety-phase1e",
-  "phase": "T3-S1 (ControlFlowSpec)",
+  "phase": "T3-S2 (OperatorSpec)",
   "toolchain": {
     "rocq": "9.1.1",
     "ocaml": "5.4.0"
   },
   "summary": {
-    "proven": 50,
-    "definitions": 24,
-    "total": 50,
+    "proven": 54,
+    "definitions": 27,
+    "total": 54,
     "admits": 0
   },
   "cmbt": {

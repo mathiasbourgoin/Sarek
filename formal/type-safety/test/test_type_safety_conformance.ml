@@ -1201,7 +1201,8 @@ let test_op_add_int32 () =
 (* Test 2: Add int32 bool -> OperandMismatch (type mismatch) *)
 let test_op_add_mismatch () =
   let result = OP.infer_op_type [] (OP.OPBinop (OP.Add, opint32, opbool)) in
-  assert (result <> OP.Inl (OP.TPrim OP.TInt32)) ;
+  assert (
+    result = OP.Inr (OP.OperandMismatch (OP.TPrim OP.TInt32, OP.TPrim OP.TBool))) ;
   Printf.printf "  Add int32 bool -> error (mismatch) [ok]\n"
 
 (* Test 3: Mod int32 int32 -> int32 (integer binop) *)
@@ -1231,7 +1232,7 @@ let test_op_and_bool () =
 (* Test 7: And int32 int32 -> error (NotBool) *)
 let test_op_and_not_bool () =
   let result = OP.infer_op_type [] (OP.OPBinop (OP.And, opint32, opint32)) in
-  assert (result <> OP.Inl (OP.TPrim OP.TBool)) ;
+  assert (result = OP.Inr (OP.NotBool (OP.TPrim OP.TInt32))) ;
   Printf.printf "  And int32 int32 -> error (NotBool) [ok]\n"
 
 (* Test 8: Neg float32 -> float32 (numeric unop) *)
