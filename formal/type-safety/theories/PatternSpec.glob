@@ -1,0 +1,658 @@
+DIGEST f805ad1274cb2559f9aa05521e3c33cc
+FTypeSafety.PatternSpec
+R2525:2528 Stdlib.Bool.Bool <> <> lib
+R2530:2533 Stdlib.Lists.List <> <> lib
+R2535:2540 Stdlib.Strings.String <> <> lib
+R2542:2546 Stdlib.Arith.Arith <> <> lib
+R2548:2550 Stdlib.Init.Nat <> <> lib
+R2584:2597 TypeSafety.TypeSafetySpec <> <> lib
+R2631:2637 TypeSafety.VecSpec <> <> lib
+R2671:2682 TypeSafety.RegistrySpec <> <> lib
+R2716:2730 TypeSafety.ControlFlowSpec <> <> lib
+R2764:2775 TypeSafety.OperatorSpec <> <> lib
+R2809:2815 TypeSafety.FunSpec <> <> lib
+R2849:2855 TypeSafety.MutSpec <> <> lib
+R2865:2878 TypeSafety.TypeSafetySpec <> <> mod
+R2880:2886 TypeSafety.VecSpec <> <> mod
+R2888:2899 TypeSafety.RegistrySpec <> <> mod
+R2901:2915 TypeSafety.ControlFlowSpec <> <> mod
+R2917:2928 TypeSafety.OperatorSpec <> <> mod
+R2930:2936 TypeSafety.FunSpec <> <> mod
+R2938:2944 TypeSafety.MutSpec <> <> mod
+R2954:2966 Stdlib.Lists.List ListNotations <> mod
+def 3352:3364 <> lookup_constr
+R3377:3380 Corelib.Init.Datatypes <> list ind
+R3389:3391 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R3383:3388 Stdlib.Strings.String <> string ind
+R3392:3397 Corelib.Init.Datatypes <> option ind
+R3399:3408 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 3367:3373 <> constrs:1
+R3424:3429 Stdlib.Strings.String <> string ind
+binder 3417:3420 <> name:2
+R3434:3439 Corelib.Init.Datatypes <> option ind
+R3442:3447 Corelib.Init.Datatypes <> option ind
+R3449:3458 TypeSafety.TypeSafetySpec <> sarek_type ind
+R3472:3478 TypeSafety.PatternSpec <> constrs:1 var
+R3489:3490 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R3495:3498 Corelib.Init.Datatypes <> None constr
+R3520:3523 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3504:3504 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3510:3511 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3519:3519 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3541:3550 Stdlib.Strings.String <> eqb def
+R3552:3555 TypeSafety.PatternSpec <> name:2 var
+R3592:3604 TypeSafety.PatternSpec <> lookup_constr:3 def
+R3611:3614 TypeSafety.PatternSpec <> name:2 var
+R3568:3571 Corelib.Init.Datatypes <> Some constr
+ind 3682:3690 <> pat_error
+constr 3706:3713 <> PEMutErr
+constr 3748:3759 <> PENotVariant
+constr 3828:3837 <> PEMismatch
+constr 3907:3918 <> PEBranchType
+constr 3982:3988 <> PEEmpty
+R3730:3733 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3721:3729 TypeSafety.MutSpec <> mut_error ind
+R3734:3742 TypeSafety.PatternSpec <> pat_error:5 ind
+R3773:3776 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3763:3772 TypeSafety.TypeSafetySpec <> sarek_type ind
+R3777:3785 TypeSafety.PatternSpec <> pat_error:5 ind
+R3849:3852 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3843:3848 Stdlib.Strings.String <> string ind
+R3853:3861 TypeSafety.PatternSpec <> pat_error:5 ind
+R3932:3935 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3922:3931 TypeSafety.TypeSafetySpec <> sarek_type ind
+R3946:3949 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3936:3945 TypeSafety.TypeSafetySpec <> sarek_type ind
+R3950:3958 TypeSafety.PatternSpec <> pat_error:5 ind
+R3997:4005 TypeSafety.PatternSpec <> pat_error:5 ind
+scheme 3682:3690 <> pat_error_rect
+scheme 3682:3690 <> pat_error_ind
+scheme 3682:3690 <> pat_error_rec
+scheme 3682:3690 <> pat_error_sind
+ind 4278:4285 <> pat_expr
+constr 4301:4305 <> PEMut
+constr 4336:4342 <> PEMatch
+R4319:4322 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4311:4318 TypeSafety.MutSpec <> mut_expr ind
+R4323:4330 TypeSafety.PatternSpec <> pat_expr:7 ind
+R4354:4357 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4346:4353 TypeSafety.PatternSpec <> pat_expr:7 ind
+R4398:4401 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4358:4361 Corelib.Init.Datatypes <> list ind
+R4386:4388 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R4370:4372 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R4364:4369 Stdlib.Strings.String <> string ind
+R4373:4378 Corelib.Init.Datatypes <> option ind
+R4380:4385 Stdlib.Strings.String <> string ind
+R4389:4396 TypeSafety.PatternSpec <> pat_expr:7 ind
+R4402:4409 TypeSafety.PatternSpec <> pat_expr:7 ind
+scheme 4278:4285 <> pat_expr_rect
+scheme 4278:4285 <> pat_expr_ind
+scheme 4278:4285 <> pat_expr_rec
+scheme 4278:4285 <> pat_expr_sind
+prf 4569:4587 <> pat_expr_ind_strong
+R4613:4616 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4605:4612 TypeSafety.PatternSpec <> pat_expr ind
+binder 4601:4601 <> P:9
+R4628:4628 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4652:4660 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 4636:4637 <> me:10
+R4640:4640 TypeSafety.PatternSpec <> P:9 var
+R4643:4647 TypeSafety.PatternSpec <> PEMut constr
+R4649:4650 TypeSafety.PatternSpec <> me:10 var
+R4661:4661 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4802:4810 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+binder 4669:4673 <> scrut:11
+R4691:4702 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4684:4684 TypeSafety.PatternSpec <> P:9 var
+R4686:4690 TypeSafety.PatternSpec <> scrut:11 var
+binder 4710:4717 <> branches:12
+R4764:4775 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4728:4733 Corelib.Lists.ListDef <> Forall ind
+R4756:4763 TypeSafety.PatternSpec <> branches:12 var
+binder 4740:4740 <> b:13
+R4745:4745 TypeSafety.PatternSpec <> P:9 var
+R4748:4750 Corelib.Init.Datatypes <> snd def
+R4752:4752 TypeSafety.PatternSpec <> b:13 var
+R4776:4776 TypeSafety.PatternSpec <> P:9 var
+R4779:4785 TypeSafety.PatternSpec <> PEMatch constr
+R4793:4800 TypeSafety.PatternSpec <> branches:12 var
+R4787:4791 TypeSafety.PatternSpec <> scrut:11 var
+binder 4818:4818 <> e:14
+R4821:4821 TypeSafety.PatternSpec <> P:9 var
+R4823:4823 TypeSafety.PatternSpec <> e:14 var
+R5028:5037 Corelib.Lists.ListDef <> Forall_nil constr
+R5028:5037 Corelib.Lists.ListDef <> Forall_nil constr
+R5054:5064 Corelib.Lists.ListDef <> Forall_cons constr
+R5054:5064 Corelib.Lists.ListDef <> Forall_cons constr
+def 5616:5630 <> branch_body_env
+R5643:5650 TypeSafety.TypeSafetySpec <> type_env def
+binder 5637:5639 <> env:15
+R5668:5673 Corelib.Init.Datatypes <> option ind
+R5675:5684 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 5658:5664 <> payload:16
+R5695:5700 Corelib.Init.Datatypes <> option ind
+R5702:5707 Stdlib.Strings.String <> string ind
+binder 5688:5691 <> bvar:17
+R5712:5719 TypeSafety.TypeSafetySpec <> type_env def
+R5741:5744 TypeSafety.PatternSpec <> bvar:17 var
+R5732:5738 TypeSafety.PatternSpec <> payload:16 var
+R5755:5758 Corelib.Init.Datatypes <> Some constr
+R5765:5768 Corelib.Init.Datatypes <> Some constr
+R5783:5786 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R5775:5775 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5777:5778 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5782:5782 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5787:5789 TypeSafety.PatternSpec <> env:15 var
+R5803:5805 TypeSafety.PatternSpec <> env:15 var
+def 6181:6194 <> check_branches
+R6219:6222 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6211:6218 TypeSafety.TypeSafetySpec <> type_env def
+R6230:6233 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6223:6229 TypeSafety.MutSpec <> mut_env def
+R6242:6245 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6234:6241 TypeSafety.PatternSpec <> pat_expr ind
+R6257:6259 Corelib.Init.Datatypes <> ::type_scope:x_'+'_x not
+R6247:6256 TypeSafety.TypeSafetySpec <> sarek_type ind
+R6260:6268 TypeSafety.PatternSpec <> pat_error ind
+binder 6201:6207 <> infer_f:20
+R6288:6295 TypeSafety.TypeSafetySpec <> type_env def
+binder 6282:6284 <> env:21
+R6304:6310 TypeSafety.MutSpec <> mut_env def
+binder 6299:6300 <> mu:22
+R6328:6331 Corelib.Init.Datatypes <> list ind
+R6340:6342 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R6334:6339 Stdlib.Strings.String <> string ind
+R6343:6348 Corelib.Init.Datatypes <> option ind
+R6350:6359 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 6318:6324 <> constrs:23
+R6380:6389 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 6368:6376 <> result_ty:24
+R6408:6411 Corelib.Init.Datatypes <> list ind
+R6436:6438 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R6420:6422 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R6414:6419 Stdlib.Strings.String <> string ind
+R6423:6428 Corelib.Init.Datatypes <> option ind
+R6430:6435 Stdlib.Strings.String <> string ind
+R6439:6446 TypeSafety.PatternSpec <> pat_expr ind
+binder 6397:6404 <> branches:25
+R6461:6463 Corelib.Init.Datatypes <> ::type_scope:x_'+'_x not
+R6457:6460 Corelib.Init.Datatypes <> unit ind
+R6464:6472 TypeSafety.PatternSpec <> pat_error ind
+R6491:6498 TypeSafety.PatternSpec <> branches:25 var
+R6509:6510 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R6515:6517 Corelib.Init.Datatypes <> inl constr
+R6519:6520 Corelib.Init.Datatypes <> tt constr
+R6545:6548 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R6526:6526 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R6532:6533 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R6538:6539 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R6544:6544 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R6569:6581 TypeSafety.PatternSpec <> lookup_constr def
+R6583:6589 TypeSafety.PatternSpec <> constrs:23 var
+R6610:6613 Corelib.Init.Datatypes <> None constr
+R6618:6620 Corelib.Init.Datatypes <> inr constr
+R6623:6632 TypeSafety.PatternSpec <> PEMismatch constr
+R6649:6652 Corelib.Init.Datatypes <> Some constr
+R6681:6687 TypeSafety.PatternSpec <> infer_f:20 var
+R6724:6725 TypeSafety.PatternSpec <> mu:22 var
+R6690:6704 TypeSafety.PatternSpec <> branch_body_env def
+R6706:6708 TypeSafety.PatternSpec <> env:21 var
+R6749:6751 Corelib.Init.Datatypes <> inr constr
+R6760:6762 Corelib.Init.Datatypes <> inr constr
+R6780:6782 Corelib.Init.Datatypes <> inl constr
+R6813:6829 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R6837:6845 TypeSafety.PatternSpec <> result_ty:24 var
+R6868:6872 Corelib.Init.Specif <> right constr
+R6879:6881 Corelib.Init.Datatypes <> inr constr
+R6884:6895 TypeSafety.PatternSpec <> PEBranchType constr
+R6897:6905 TypeSafety.PatternSpec <> result_ty:24 var
+R6930:6933 Corelib.Init.Specif <> left constr
+R6959:6972 TypeSafety.PatternSpec <> check_branches:26 def
+R6997:7005 TypeSafety.PatternSpec <> result_ty:24 var
+R6989:6995 TypeSafety.PatternSpec <> constrs:23 var
+R6986:6987 TypeSafety.PatternSpec <> mu:22 var
+R6982:6984 TypeSafety.PatternSpec <> env:21 var
+R6974:6980 TypeSafety.PatternSpec <> infer_f:20 var
+def 7071:7084 <> infer_pat_type
+R7093:7100 TypeSafety.TypeSafetySpec <> type_env def
+binder 7087:7089 <> env:28
+R7109:7115 TypeSafety.MutSpec <> mut_env def
+binder 7104:7105 <> mu:29
+R7123:7130 TypeSafety.PatternSpec <> pat_expr ind
+binder 7119:7119 <> e:30
+R7150:7152 Corelib.Init.Datatypes <> ::type_scope:x_'+'_x not
+R7140:7149 TypeSafety.TypeSafetySpec <> sarek_type ind
+R7153:7161 TypeSafety.PatternSpec <> pat_error ind
+R7180:7180 TypeSafety.PatternSpec <> e:30 var
+R7191:7195 TypeSafety.PatternSpec <> PEMut constr
+R7215:7228 TypeSafety.MutSpec <> infer_mut_type def
+R7234:7235 TypeSafety.PatternSpec <> mu:29 var
+R7230:7232 TypeSafety.PatternSpec <> env:28 var
+R7253:7255 Corelib.Init.Datatypes <> inl constr
+R7264:7266 Corelib.Init.Datatypes <> inl constr
+R7278:7280 Corelib.Init.Datatypes <> inr constr
+R7289:7291 Corelib.Init.Datatypes <> inr constr
+R7294:7301 TypeSafety.PatternSpec <> PEMutErr constr
+R7322:7328 TypeSafety.PatternSpec <> PEMatch constr
+R7360:7373 TypeSafety.PatternSpec <> infer_pat_type:31 def
+R7379:7380 TypeSafety.PatternSpec <> mu:29 var
+R7375:7377 TypeSafety.PatternSpec <> env:28 var
+R7401:7403 Corelib.Init.Datatypes <> inr constr
+R7412:7414 Corelib.Init.Datatypes <> inr constr
+R7428:7430 Corelib.Init.Datatypes <> inl constr
+R7482:7489 TypeSafety.TypeSafetySpec <> TVariant constr
+R7554:7555 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R7560:7562 Corelib.Init.Datatypes <> inr constr
+R7564:7570 TypeSafety.PatternSpec <> PEEmpty constr
+R7607:7610 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R7588:7588 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R7594:7595 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R7600:7601 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R7606:7606 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R7781:7793 TypeSafety.PatternSpec <> lookup_constr def
+R7834:7837 Corelib.Init.Datatypes <> None constr
+R7842:7844 Corelib.Init.Datatypes <> inr constr
+R7847:7856 TypeSafety.PatternSpec <> PEMismatch constr
+R7885:7888 Corelib.Init.Datatypes <> Some constr
+R7929:7942 TypeSafety.PatternSpec <> infer_pat_type:31 def
+R8009:8010 TypeSafety.PatternSpec <> mu:29 var
+R7975:7989 TypeSafety.PatternSpec <> branch_body_env def
+R7991:7993 TypeSafety.PatternSpec <> env:28 var
+R8046:8048 Corelib.Init.Datatypes <> inr constr
+R8057:8059 Corelib.Init.Datatypes <> inr constr
+R8089:8091 Corelib.Init.Datatypes <> inl constr
+R8138:8151 TypeSafety.PatternSpec <> check_branches def
+R8172:8173 TypeSafety.PatternSpec <> mu:29 var
+R8168:8170 TypeSafety.PatternSpec <> env:28 var
+R8153:8166 TypeSafety.PatternSpec <> infer_pat_type:31 def
+R8265:8267 Corelib.Init.Datatypes <> inr constr
+R8276:8278 Corelib.Init.Datatypes <> inr constr
+R8312:8314 Corelib.Init.Datatypes <> inl constr
+R8323:8325 Corelib.Init.Datatypes <> inl constr
+R8454:8456 Corelib.Init.Datatypes <> inr constr
+R8459:8470 TypeSafety.PatternSpec <> PENotVariant constr
+ind 8756:8767 <> has_pat_type
+constr 8832:8838 <> HPT_Mut
+constr 8939:8947 <> HPT_Match
+ind 9387:9404 <> branches_have_type
+constr 9548:9554 <> BHT_nil
+constr 9648:9655 <> BHT_cons
+R8779:8782 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8771:8778 TypeSafety.TypeSafetySpec <> type_env def
+R8790:8793 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8783:8789 TypeSafety.MutSpec <> mut_env def
+R8802:8805 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8794:8801 TypeSafety.PatternSpec <> pat_expr ind
+R8816:8819 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8806:8815 TypeSafety.TypeSafetySpec <> sarek_type ind
+R9420:9423 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9412:9419 TypeSafety.TypeSafetySpec <> type_env def
+R9431:9434 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9424:9430 TypeSafety.MutSpec <> mut_env def
+R9468:9477 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9435:9438 Corelib.Init.Datatypes <> list ind
+R9447:9449 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R9441:9446 Stdlib.Strings.String <> string ind
+R9450:9455 Corelib.Init.Datatypes <> option ind
+R9457:9466 TypeSafety.TypeSafetySpec <> sarek_type ind
+R9488:9491 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9478:9487 TypeSafety.TypeSafetySpec <> sarek_type ind
+R9532:9535 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9492:9495 Corelib.Init.Datatypes <> list ind
+R9520:9522 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R9504:9506 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R9498:9503 Stdlib.Strings.String <> string ind
+R9507:9512 Corelib.Init.Datatypes <> option ind
+R9514:9519 Stdlib.Strings.String <> string ind
+R9523:9530 TypeSafety.PatternSpec <> pat_expr ind
+binder 8849:8851 <> env:39
+binder 8853:8854 <> mu:40
+binder 8856:8857 <> me:41
+binder 8859:8859 <> t:42
+R8892:8901 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8868:8879 TypeSafety.MutSpec <> has_mut_type ind
+R8891:8891 TypeSafety.PatternSpec <> t:42 var
+R8888:8889 TypeSafety.PatternSpec <> me:41 var
+R8885:8886 TypeSafety.PatternSpec <> mu:40 var
+R8881:8883 TypeSafety.PatternSpec <> env:39 var
+R8902:8913 TypeSafety.PatternSpec <> has_pat_type:35 ind
+R8933:8933 TypeSafety.PatternSpec <> t:42 var
+R8923:8927 TypeSafety.PatternSpec <> PEMut constr
+R8929:8930 TypeSafety.PatternSpec <> me:41 var
+R8919:8920 TypeSafety.PatternSpec <> mu:40 var
+R8915:8917 TypeSafety.PatternSpec <> env:39 var
+binder 8964:8966 <> env:43
+binder 8968:8969 <> mu:44
+binder 8971:8975 <> scrut:45
+binder 8977:8982 <> tyname:46
+binder 8984:8990 <> constrs:47
+binder 9005:9009 <> cname:48
+binder 9011:9014 <> bvar:49
+binder 9016:9019 <> body:50
+binder 9021:9027 <> payload:51
+binder 9029:9032 <> rest:52
+binder 9034:9042 <> result_ty:53
+R9102:9111 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9051:9062 TypeSafety.PatternSpec <> has_pat_type:35 ind
+R9078:9085 TypeSafety.TypeSafetySpec <> TVariant constr
+R9094:9100 TypeSafety.PatternSpec <> constrs:47 var
+R9087:9092 TypeSafety.PatternSpec <> tyname:46 var
+R9071:9075 TypeSafety.PatternSpec <> scrut:45 var
+R9068:9069 TypeSafety.PatternSpec <> mu:44 var
+R9064:9066 TypeSafety.PatternSpec <> env:43 var
+R9154:9163 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9139:9141 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9112:9124 TypeSafety.PatternSpec <> lookup_constr def
+R9134:9138 TypeSafety.PatternSpec <> cname:48 var
+R9126:9132 TypeSafety.PatternSpec <> constrs:47 var
+R9142:9145 Corelib.Init.Datatypes <> Some constr
+R9147:9153 TypeSafety.PatternSpec <> payload:51 var
+R9229:9238 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9164:9175 TypeSafety.PatternSpec <> has_pat_type:35 ind
+R9220:9228 TypeSafety.PatternSpec <> result_ty:53 var
+R9215:9218 TypeSafety.PatternSpec <> body:50 var
+R9212:9213 TypeSafety.PatternSpec <> mu:44 var
+R9178:9192 TypeSafety.PatternSpec <> branch_body_env def
+R9206:9209 TypeSafety.PatternSpec <> bvar:49 var
+R9198:9204 TypeSafety.PatternSpec <> payload:51 var
+R9194:9196 TypeSafety.PatternSpec <> env:43 var
+R9287:9296 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9239:9256 TypeSafety.PatternSpec <> branches_have_type:36 ind
+R9283:9286 TypeSafety.PatternSpec <> rest:52 var
+R9273:9281 TypeSafety.PatternSpec <> result_ty:53 var
+R9265:9271 TypeSafety.PatternSpec <> constrs:47 var
+R9262:9263 TypeSafety.PatternSpec <> mu:44 var
+R9258:9260 TypeSafety.PatternSpec <> env:43 var
+R9297:9308 TypeSafety.PatternSpec <> has_pat_type:35 ind
+R9371:9379 TypeSafety.PatternSpec <> result_ty:53 var
+R9326:9332 TypeSafety.PatternSpec <> PEMatch constr
+R9360:9363 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R9341:9341 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9347:9348 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9353:9354 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9359:9359 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9342:9346 TypeSafety.PatternSpec <> cname:48 var
+R9349:9352 TypeSafety.PatternSpec <> bvar:49 var
+R9355:9358 TypeSafety.PatternSpec <> body:50 var
+R9364:9367 TypeSafety.PatternSpec <> rest:52 var
+R9334:9338 TypeSafety.PatternSpec <> scrut:45 var
+R9314:9315 TypeSafety.PatternSpec <> mu:44 var
+R9310:9312 TypeSafety.PatternSpec <> env:43 var
+binder 9565:9567 <> env:54
+binder 9569:9570 <> mu:55
+binder 9572:9578 <> constrs:56
+binder 9580:9588 <> result_ty:57
+R9597:9614 TypeSafety.PatternSpec <> branches_have_type:36 ind
+R9641:9642 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R9631:9639 TypeSafety.PatternSpec <> result_ty:57 var
+R9623:9629 TypeSafety.PatternSpec <> constrs:56 var
+R9620:9621 TypeSafety.PatternSpec <> mu:55 var
+R9616:9618 TypeSafety.PatternSpec <> env:54 var
+binder 9666:9668 <> env:58
+binder 9670:9671 <> mu:59
+binder 9673:9679 <> constrs:60
+binder 9681:9689 <> result_ty:61
+binder 9691:9695 <> cname:62
+binder 9697:9700 <> bvar:63
+binder 9702:9705 <> body:64
+binder 9707:9713 <> payload:65
+binder 9715:9718 <> rest:66
+R9769:9778 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9754:9756 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9727:9739 TypeSafety.PatternSpec <> lookup_constr def
+R9749:9753 TypeSafety.PatternSpec <> cname:62 var
+R9741:9747 TypeSafety.PatternSpec <> constrs:60 var
+R9757:9760 Corelib.Init.Datatypes <> Some constr
+R9762:9768 TypeSafety.PatternSpec <> payload:65 var
+R9844:9853 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9779:9790 TypeSafety.PatternSpec <> has_pat_type:35 ind
+R9835:9843 TypeSafety.PatternSpec <> result_ty:61 var
+R9830:9833 TypeSafety.PatternSpec <> body:64 var
+R9827:9828 TypeSafety.PatternSpec <> mu:59 var
+R9793:9807 TypeSafety.PatternSpec <> branch_body_env def
+R9821:9824 TypeSafety.PatternSpec <> bvar:63 var
+R9813:9819 TypeSafety.PatternSpec <> payload:65 var
+R9809:9811 TypeSafety.PatternSpec <> env:58 var
+R9902:9911 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9854:9871 TypeSafety.PatternSpec <> branches_have_type:36 ind
+R9898:9901 TypeSafety.PatternSpec <> rest:66 var
+R9888:9896 TypeSafety.PatternSpec <> result_ty:61 var
+R9880:9886 TypeSafety.PatternSpec <> constrs:60 var
+R9877:9878 TypeSafety.PatternSpec <> mu:59 var
+R9873:9875 TypeSafety.PatternSpec <> env:58 var
+R9912:9929 TypeSafety.PatternSpec <> branches_have_type:36 ind
+R9984:9987 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R9965:9965 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9971:9972 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9977:9978 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9983:9983 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R9966:9970 TypeSafety.PatternSpec <> cname:62 var
+R9973:9976 TypeSafety.PatternSpec <> bvar:63 var
+R9979:9982 TypeSafety.PatternSpec <> body:64 var
+R9988:9991 TypeSafety.PatternSpec <> rest:66 var
+R9946:9954 TypeSafety.PatternSpec <> result_ty:61 var
+R9938:9944 TypeSafety.PatternSpec <> constrs:60 var
+R9935:9936 TypeSafety.PatternSpec <> mu:59 var
+R9931:9933 TypeSafety.PatternSpec <> env:58 var
+scheme 8756:8767 <> has_pat_type_ind
+scheme 8756:8767 <> has_pat_type_sind
+scheme 9387:9404 <> branches_have_type_ind
+scheme 9387:9404 <> branches_have_type_sind
+def 10074:10090 <> has_pat_type_mind
+def 10139:10161 <> branches_have_type_mind
+R10109:10120 TypeSafety.PatternSpec <> has_pat_type ind
+R10180:10197 TypeSafety.PatternSpec <> branches_have_type ind
+prf 10510:10529 <> check_branches_sound
+binder 10542:10549 <> branches:67
+binder 10551:10553 <> env:68
+binder 10555:10556 <> mu:69
+binder 10558:10564 <> constrs:70
+binder 10566:10574 <> result_ty:71
+R10736:10743 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10581:10586 Corelib.Lists.ListDef <> Forall ind
+R10728:10735 TypeSafety.PatternSpec <> branches:67 var
+binder 10593:10593 <> b:72
+binder 10605:10608 <> env':73
+binder 10610:10612 <> mu':74
+binder 10614:10615 <> t':75
+R10674:10693 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10665:10667 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10634:10647 TypeSafety.PatternSpec <> infer_pat_type def
+R10659:10661 Corelib.Init.Datatypes <> snd def
+R10663:10663 TypeSafety.PatternSpec <> b:72 var
+R10654:10656 TypeSafety.PatternSpec <> mu':74 var
+R10649:10652 TypeSafety.PatternSpec <> env':73 var
+R10668:10670 Corelib.Init.Datatypes <> inl constr
+R10672:10673 TypeSafety.PatternSpec <> t':75 var
+R10694:10705 TypeSafety.PatternSpec <> has_pat_type ind
+R10724:10725 TypeSafety.PatternSpec <> t':75 var
+R10717:10719 Corelib.Init.Datatypes <> snd def
+R10721:10721 TypeSafety.PatternSpec <> b:72 var
+R10712:10714 TypeSafety.PatternSpec <> mu':74 var
+R10707:10710 TypeSafety.PatternSpec <> env':73 var
+R10816:10823 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10807:10809 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R10744:10757 TypeSafety.PatternSpec <> check_branches def
+R10799:10806 TypeSafety.PatternSpec <> branches:67 var
+R10789:10797 TypeSafety.PatternSpec <> result_ty:71 var
+R10781:10787 TypeSafety.PatternSpec <> constrs:70 var
+R10778:10779 TypeSafety.PatternSpec <> mu:69 var
+R10774:10776 TypeSafety.PatternSpec <> env:68 var
+R10759:10772 TypeSafety.PatternSpec <> infer_pat_type def
+R10810:10812 Corelib.Init.Datatypes <> inl constr
+R10814:10815 Corelib.Init.Datatypes <> tt constr
+R10824:10841 TypeSafety.PatternSpec <> branches_have_type ind
+R10868:10875 TypeSafety.PatternSpec <> branches:67 var
+R10858:10866 TypeSafety.PatternSpec <> result_ty:71 var
+R10850:10856 TypeSafety.PatternSpec <> constrs:70 var
+R10847:10848 TypeSafety.PatternSpec <> mu:69 var
+R10843:10845 TypeSafety.PatternSpec <> env:68 var
+R10988:10994 TypeSafety.PatternSpec <> BHT_nil constr
+R10988:10994 TypeSafety.PatternSpec <> BHT_nil constr
+R11120:11132 TypeSafety.PatternSpec <> lookup_constr def
+R11120:11132 TypeSafety.PatternSpec <> lookup_constr def
+R11212:11225 TypeSafety.PatternSpec <> infer_pat_type def
+R11228:11242 TypeSafety.PatternSpec <> branch_body_env def
+R11212:11225 TypeSafety.PatternSpec <> infer_pat_type def
+R11228:11242 TypeSafety.PatternSpec <> branch_body_env def
+R11344:11360 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R11344:11360 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R11451:11458 TypeSafety.PatternSpec <> BHT_cons constr
+R11451:11458 TypeSafety.PatternSpec <> BHT_cons constr
+prf 11600:11619 <> infer_pat_type_sound
+binder 11632:11632 <> e:76
+binder 11634:11636 <> env:77
+binder 11638:11639 <> mu:78
+binder 11641:11641 <> t:79
+R11679:11686 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11671:11673 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11648:11661 TypeSafety.PatternSpec <> infer_pat_type def
+R11670:11670 TypeSafety.PatternSpec <> e:76 var
+R11667:11668 TypeSafety.PatternSpec <> mu:78 var
+R11663:11665 TypeSafety.PatternSpec <> env:77 var
+R11674:11676 Corelib.Init.Datatypes <> inl constr
+R11678:11678 TypeSafety.PatternSpec <> t:79 var
+R11687:11698 TypeSafety.PatternSpec <> has_pat_type ind
+R11709:11709 TypeSafety.PatternSpec <> t:79 var
+R11707:11707 TypeSafety.PatternSpec <> e:76 var
+R11704:11705 TypeSafety.PatternSpec <> mu:78 var
+R11700:11702 TypeSafety.PatternSpec <> env:77 var
+R11786:11804 TypeSafety.PatternSpec <> pat_expr_ind_strong thm
+R11786:11804 TypeSafety.PatternSpec <> pat_expr_ind_strong thm
+R11870:11883 TypeSafety.MutSpec <> infer_mut_type def
+R11870:11883 TypeSafety.MutSpec <> infer_mut_type def
+R11966:11972 TypeSafety.PatternSpec <> HPT_Mut constr
+R11966:11972 TypeSafety.PatternSpec <> HPT_Mut constr
+R11981:12000 TypeSafety.MutSpec <> infer_mut_type_sound thm
+R11981:12000 TypeSafety.MutSpec <> infer_mut_type_sound thm
+R12046:12059 TypeSafety.PatternSpec <> infer_pat_type def
+R12046:12059 TypeSafety.PatternSpec <> infer_pat_type def
+R12741:12753 TypeSafety.PatternSpec <> lookup_constr def
+R12741:12753 TypeSafety.PatternSpec <> lookup_constr def
+R12837:12850 TypeSafety.PatternSpec <> infer_pat_type def
+R12853:12867 TypeSafety.PatternSpec <> branch_body_env def
+R12837:12850 TypeSafety.PatternSpec <> infer_pat_type def
+R12853:12867 TypeSafety.PatternSpec <> branch_body_env def
+R12970:12983 TypeSafety.PatternSpec <> check_branches def
+R12985:12998 TypeSafety.PatternSpec <> infer_pat_type def
+R12970:12983 TypeSafety.PatternSpec <> check_branches def
+R12985:12998 TypeSafety.PatternSpec <> infer_pat_type def
+R13137:13145 TypeSafety.PatternSpec <> HPT_Match constr
+R13137:13145 TypeSafety.PatternSpec <> HPT_Match constr
+R13345:13364 TypeSafety.PatternSpec <> check_branches_sound thm
+R13345:13364 TypeSafety.PatternSpec <> check_branches_sound thm
+prf 13478:13500 <> infer_pat_type_complete
+binder 13513:13515 <> env:80
+binder 13517:13518 <> mu:81
+binder 13520:13520 <> e:82
+binder 13522:13522 <> t:83
+R13552:13559 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13529:13540 TypeSafety.PatternSpec <> has_pat_type ind
+R13551:13551 TypeSafety.PatternSpec <> t:83 var
+R13549:13549 TypeSafety.PatternSpec <> e:82 var
+R13546:13547 TypeSafety.PatternSpec <> mu:81 var
+R13542:13544 TypeSafety.PatternSpec <> env:80 var
+R13583:13585 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13560:13573 TypeSafety.PatternSpec <> infer_pat_type def
+R13582:13582 TypeSafety.PatternSpec <> e:82 var
+R13579:13580 TypeSafety.PatternSpec <> mu:81 var
+R13575:13577 TypeSafety.PatternSpec <> env:80 var
+R13586:13588 Corelib.Init.Datatypes <> inl constr
+R13590:13590 TypeSafety.PatternSpec <> t:83 var
+binder 13681:13683 <> env:84
+binder 13685:13686 <> mu:85
+binder 13688:13694 <> constrs:86
+binder 13696:13704 <> result_ty:87
+binder 13706:13713 <> branches:88
+R13740:13757 TypeSafety.PatternSpec <> branches_have_type ind
+R13784:13791 TypeSafety.PatternSpec <> branches:88 var
+R13774:13782 TypeSafety.PatternSpec <> result_ty:87 var
+R13766:13772 TypeSafety.PatternSpec <> constrs:86 var
+R13763:13764 TypeSafety.PatternSpec <> mu:85 var
+R13759:13761 TypeSafety.PatternSpec <> env:84 var
+R13878:13900 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13815:13828 TypeSafety.PatternSpec <> check_branches def
+R13870:13877 TypeSafety.PatternSpec <> branches:88 var
+R13860:13868 TypeSafety.PatternSpec <> result_ty:87 var
+R13852:13858 TypeSafety.PatternSpec <> constrs:86 var
+R13849:13850 TypeSafety.PatternSpec <> mu:85 var
+R13845:13847 TypeSafety.PatternSpec <> env:84 var
+R13830:13843 TypeSafety.PatternSpec <> infer_pat_type def
+R13901:13903 Corelib.Init.Datatypes <> inl constr
+R13905:13906 Corelib.Init.Datatypes <> tt constr
+R13643:13659 TypeSafety.PatternSpec <> has_pat_type_mind scheme
+binder 13681:13683 <> env:89
+binder 13685:13686 <> mu:90
+binder 13688:13694 <> constrs:91
+binder 13696:13704 <> result_ty:92
+binder 13706:13713 <> branches:93
+R13740:13757 TypeSafety.PatternSpec <> branches_have_type ind
+R13784:13791 TypeSafety.PatternSpec <> branches:93 var
+R13774:13782 TypeSafety.PatternSpec <> result_ty:92 var
+R13766:13772 TypeSafety.PatternSpec <> constrs:91 var
+R13763:13764 TypeSafety.PatternSpec <> mu:90 var
+R13759:13761 TypeSafety.PatternSpec <> env:89 var
+R13878:13900 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13815:13828 TypeSafety.PatternSpec <> check_branches def
+R13870:13877 TypeSafety.PatternSpec <> branches:93 var
+R13860:13868 TypeSafety.PatternSpec <> result_ty:92 var
+R13852:13858 TypeSafety.PatternSpec <> constrs:91 var
+R13849:13850 TypeSafety.PatternSpec <> mu:90 var
+R13845:13847 TypeSafety.PatternSpec <> env:89 var
+R13830:13843 TypeSafety.PatternSpec <> infer_pat_type def
+R13901:13903 Corelib.Init.Datatypes <> inl constr
+R13905:13906 Corelib.Init.Datatypes <> tt constr
+R13643:13659 TypeSafety.PatternSpec <> has_pat_type_mind scheme
+R13948:13970 TypeSafety.MutSpec <> infer_mut_type_complete thm
+R13948:13970 TypeSafety.MutSpec <> infer_mut_type_complete thm
+R13948:13970 TypeSafety.MutSpec <> infer_mut_type_complete thm
+R14241:14257 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R14241:14257 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+prf 14435:14450 <> has_pat_type_det
+binder 14463:14465 <> env:94
+binder 14467:14468 <> mu:95
+binder 14470:14470 <> e:96
+binder 14472:14473 <> t1:97
+binder 14475:14476 <> t2:98
+R14507:14514 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14483:14494 TypeSafety.PatternSpec <> has_pat_type ind
+R14505:14506 TypeSafety.PatternSpec <> t1:97 var
+R14503:14503 TypeSafety.PatternSpec <> e:96 var
+R14500:14501 TypeSafety.PatternSpec <> mu:95 var
+R14496:14498 TypeSafety.PatternSpec <> env:94 var
+R14539:14546 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14515:14526 TypeSafety.PatternSpec <> has_pat_type ind
+R14537:14538 TypeSafety.PatternSpec <> t2:98 var
+R14535:14535 TypeSafety.PatternSpec <> e:96 var
+R14532:14533 TypeSafety.PatternSpec <> mu:95 var
+R14528:14530 TypeSafety.PatternSpec <> env:94 var
+R14549:14551 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14547:14548 TypeSafety.PatternSpec <> t1:97 var
+R14552:14553 TypeSafety.PatternSpec <> t2:98 var
+R14608:14630 TypeSafety.PatternSpec <> infer_pat_type_complete thm
+R14608:14630 TypeSafety.PatternSpec <> infer_pat_type_complete thm
+R14658:14680 TypeSafety.PatternSpec <> infer_pat_type_complete thm
+R14658:14680 TypeSafety.PatternSpec <> infer_pat_type_complete thm
+prf 14833:14853 <> pat_type_preservation
+binder 14866:14868 <> env:99
+binder 14870:14871 <> mu:100
+binder 14873:14873 <> e:101
+binder 14875:14875 <> t:102
+R14913:14917 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R14905:14907 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14882:14895 TypeSafety.PatternSpec <> infer_pat_type def
+R14904:14904 TypeSafety.PatternSpec <> e:101 var
+R14901:14902 TypeSafety.PatternSpec <> mu:100 var
+R14897:14899 TypeSafety.PatternSpec <> env:99 var
+R14908:14910 Corelib.Init.Datatypes <> inl constr
+R14912:14912 TypeSafety.PatternSpec <> t:102 var
+R14918:14929 TypeSafety.PatternSpec <> has_pat_type ind
+R14940:14940 TypeSafety.PatternSpec <> t:102 var
+R14938:14938 TypeSafety.PatternSpec <> e:101 var
+R14935:14936 TypeSafety.PatternSpec <> mu:100 var
+R14931:14933 TypeSafety.PatternSpec <> env:99 var
+R14988:15007 TypeSafety.PatternSpec <> infer_pat_type_sound thm
+R14988:15007 TypeSafety.PatternSpec <> infer_pat_type_sound thm
+R15020:15042 TypeSafety.PatternSpec <> infer_pat_type_complete thm
+R15020:15042 TypeSafety.PatternSpec <> infer_pat_type_complete thm

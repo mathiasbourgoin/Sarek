@@ -7,3 +7,4 @@ theories/ControlFlowSpec.v
 theories/OperatorSpec.v
 theories/FunSpec.v
 theories/MutSpec.v
+theories/PatternSpec.v
