@@ -8,7 +8,7 @@
  *
  * Run to refresh after spec changes:
  *   cd formal/type-safety
- *   eval $(opam env --switch=~/dev/SPOC)
+ *   eval $(opam env --switch=<your-opam-switch>)   (* e.g. the repo root *)
  *   rocq compile -R theories TypeSafety \
  *         -output-directory extraction \
  *         extraction/SpecialExtraction.v
