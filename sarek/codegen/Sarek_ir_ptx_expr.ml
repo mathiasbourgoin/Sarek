@@ -50,9 +50,20 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
   | EBinop (op, e1, e2) -> emit_binop buf alloc env op e1 e2
   | EUnop (Neg, e) ->
       let r_src = emit_expr buf alloc env e in
-      if String.length r_src >= 2 && r_src.[1] = 'f' then (
+      let is_f64 r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd' in
+      let is_f32 r = String.length r >= 2 && r.[1] = 'f' && not (is_f64 r) in
+      let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
+      if is_f64 r_src then (
+        let r = new_f64 alloc in
+        emit buf "neg.f64 %s, %s;" r r_src ;
+        r)
+      else if is_f32 r_src then (
         let r = new_f32 alloc in
         emit buf "neg.f32 %s, %s;" r r_src ;
+        r)
+      else if is_u64 r_src then (
+        let r = new_u64 alloc in
+        emit buf "neg.s64 %s, %s;" r r_src ;
         r)
       else
         let r = new_u32 alloc in
@@ -130,7 +141,7 @@ and emit_binop buf alloc env op e1 e2 : string =
   (* Infer type from first operand register name prefix.
      %r* -> u32, %rd* -> u64, %f* -> f32, %fd* -> f64 *)
   let is_f64 r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd' in
-  let is_float r = String.length r >= 2 && r.[1] = 'f' in
+  let is_f32 r = String.length r >= 2 && r.[1] = 'f' && not (is_f64 r) in
   let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
   match op with
   | Add ->
@@ -138,7 +149,7 @@ and emit_binop buf alloc env op e1 e2 : string =
         let r = new_f64 alloc in
         emit buf "add.f64 %s, %s, %s;" r r1 r2 ;
         r)
-      else if is_float r1 then (
+      else if is_f32 r1 then (
         let r = new_f32 alloc in
         emit buf "add.f32 %s, %s, %s;" r r1 r2 ;
         r)
@@ -155,9 +166,13 @@ and emit_binop buf alloc env op e1 e2 : string =
         let r = new_f64 alloc in
         emit buf "sub.f64 %s, %s, %s;" r r1 r2 ;
         r)
-      else if is_float r1 then (
+      else if is_f32 r1 then (
         let r = new_f32 alloc in
         emit buf "sub.f32 %s, %s, %s;" r r1 r2 ;
+        r)
+      else if is_u64 r1 then (
+        let r = new_u64 alloc in
+        emit buf "sub.u64 %s, %s, %s;" r r1 r2 ;
         r)
       else
         let r = new_u32 alloc in
@@ -168,9 +183,13 @@ and emit_binop buf alloc env op e1 e2 : string =
         let r = new_f64 alloc in
         emit buf "mul.f64 %s, %s, %s;" r r1 r2 ;
         r)
-      else if is_float r1 then (
+      else if is_f32 r1 then (
         let r = new_f32 alloc in
         emit buf "mul.f32 %s, %s, %s;" r r1 r2 ;
+        r)
+      else if is_u64 r1 then (
+        let r = new_u64 alloc in
+        emit buf "mul.lo.u64 %s, %s, %s;" r r1 r2 ;
         r)
       else
         let r = new_u32 alloc in
@@ -181,58 +200,72 @@ and emit_binop buf alloc env op e1 e2 : string =
         let r = new_f64 alloc in
         emit buf "div.rn.f64 %s, %s, %s;" r r1 r2 ;
         r)
-      else if is_float r1 then (
+      else if is_f32 r1 then (
         let r = new_f32 alloc in
         emit buf "div.approx.f32 %s, %s, %s;" r r1 r2 ;
+        r)
+      else if is_u64 r1 then (
+        let r = new_u64 alloc in
+        emit buf "div.u64 %s, %s, %s;" r r1 r2 ;
         r)
       else
         let r = new_u32 alloc in
         emit buf "div.u32 %s, %s, %s;" r r1 r2 ;
         r
   | Mod ->
-      if is_float r1 then unsupported "Mod on float"
+      if is_f32 r1 || is_f64 r1 then unsupported "Mod on float"
+      else if is_u64 r1 then (
+        let r = new_u64 alloc in
+        emit buf "rem.u64 %s, %s, %s;" r r1 r2 ;
+        r)
       else
         let r = new_u32 alloc in
         emit buf "rem.u32 %s, %s, %s;" r r1 r2 ;
         r
   | Eq ->
       let p = new_pred alloc in
-      if is_float r1 then emit buf "setp.eq.f32 %s, %s, %s;" p r1 r2
+      if is_f64 r1 then emit buf "setp.eq.f64 %s, %s, %s;" p r1 r2
+      else if is_f32 r1 then emit buf "setp.eq.f32 %s, %s, %s;" p r1 r2
       else emit buf "setp.eq.u32 %s, %s, %s;" p r1 r2 ;
       let r = new_u32 alloc in
       emit buf "selp.u32 %s, 1, 0, %s;" r p ;
       r
   | Ne ->
       let p = new_pred alloc in
-      if is_float r1 then emit buf "setp.ne.f32 %s, %s, %s;" p r1 r2
+      if is_f64 r1 then emit buf "setp.ne.f64 %s, %s, %s;" p r1 r2
+      else if is_f32 r1 then emit buf "setp.ne.f32 %s, %s, %s;" p r1 r2
       else emit buf "setp.ne.u32 %s, %s, %s;" p r1 r2 ;
       let r = new_u32 alloc in
       emit buf "selp.u32 %s, 1, 0, %s;" r p ;
       r
   | Lt ->
       let p = new_pred alloc in
-      if is_float r1 then emit buf "setp.lt.f32 %s, %s, %s;" p r1 r2
+      if is_f64 r1 then emit buf "setp.lt.f64 %s, %s, %s;" p r1 r2
+      else if is_f32 r1 then emit buf "setp.lt.f32 %s, %s, %s;" p r1 r2
       else emit buf "setp.lt.s32 %s, %s, %s;" p r1 r2 ;
       let r = new_u32 alloc in
       emit buf "selp.u32 %s, 1, 0, %s;" r p ;
       r
   | Le ->
       let p = new_pred alloc in
-      if is_float r1 then emit buf "setp.le.f32 %s, %s, %s;" p r1 r2
+      if is_f64 r1 then emit buf "setp.le.f64 %s, %s, %s;" p r1 r2
+      else if is_f32 r1 then emit buf "setp.le.f32 %s, %s, %s;" p r1 r2
       else emit buf "setp.le.s32 %s, %s, %s;" p r1 r2 ;
       let r = new_u32 alloc in
       emit buf "selp.u32 %s, 1, 0, %s;" r p ;
       r
   | Gt ->
       let p = new_pred alloc in
-      if is_float r1 then emit buf "setp.gt.f32 %s, %s, %s;" p r1 r2
+      if is_f64 r1 then emit buf "setp.gt.f64 %s, %s, %s;" p r1 r2
+      else if is_f32 r1 then emit buf "setp.gt.f32 %s, %s, %s;" p r1 r2
       else emit buf "setp.gt.s32 %s, %s, %s;" p r1 r2 ;
       let r = new_u32 alloc in
       emit buf "selp.u32 %s, 1, 0, %s;" r p ;
       r
   | Ge ->
       let p = new_pred alloc in
-      if is_float r1 then emit buf "setp.ge.f32 %s, %s, %s;" p r1 r2
+      if is_f64 r1 then emit buf "setp.ge.f64 %s, %s, %s;" p r1 r2
+      else if is_f32 r1 then emit buf "setp.ge.f32 %s, %s, %s;" p r1 r2
       else emit buf "setp.ge.s32 %s, %s, %s;" p r1 r2 ;
       let r = new_u32 alloc in
       emit buf "selp.u32 %s, 1, 0, %s;" r p ;

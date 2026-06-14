@@ -38,7 +38,12 @@ let emit_params buf alloc (env : env) (params : decl list) : string =
                     alloc.arr_elt_types
                     v.var_name
                     info.arr_elttype
-              | None -> ()) ;
+              | None ->
+                  fail
+                    (Printf.sprintf
+                       "DParam '%s': TVec/TArray parameter missing array \
+                        element-type info"
+                       v.var_name)) ;
               emit buf "ld.param.u64 %s, [param_%s];" r v.var_name
           | TInt32 | TBool ->
               Buffer.add_string
@@ -100,16 +105,10 @@ let emit_locals buf alloc (env : env) (locals : decl list) : unit =
               in
               emit buf "%s %s, %s;" mov_op r r_init)
       | DShared (name, _elt, _size_opt) ->
-          (* Shared memory requires .shared address-space allocation and
-             cvta.to.global for pointer arithmetic.  Logged as a design gap;
-             the pointer register is reserved but not valid for load/store. *)
-          let r_ptr = new_u64 alloc in
-          env_bind env name r_ptr ;
-          emit
-            buf
-            "// shared array '%s' -> %%rd%d (lowering pending)"
-            name
-            (alloc.u64 - 1)
+          unsupported
+            (Printf.sprintf
+               "DShared '%s': shared memory lowering not yet implemented"
+               name)
       | DParam _ -> ())
     locals
 

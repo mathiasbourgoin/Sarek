@@ -64,4 +64,6 @@ let emit_array_write buf alloc r_base r_idx r_val elt_type =
 let infer_elt_type alloc arr_name =
   match Hashtbl.find_opt alloc.arr_elt_types arr_name with
   | Some t -> t
-  | None -> TFloat32
+  | None ->
+      fail
+        (Printf.sprintf "missing element-type metadata for array '%s'" arr_name)
