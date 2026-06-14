@@ -1,0 +1,368 @@
+DIGEST 0cc96db6aeb5a24b858aea8bf6f5e1cb
+FTypeSafety.FunSpec
+R1700:1703 Stdlib.Bool.Bool <> <> lib
+R1705:1708 Stdlib.Lists.List <> <> lib
+R1710:1715 Stdlib.Strings.String <> <> lib
+R1717:1721 Stdlib.Arith.Arith <> <> lib
+R1723:1725 Stdlib.Init.Nat <> <> lib
+R1759:1772 TypeSafety.TypeSafetySpec <> <> lib
+R1806:1812 TypeSafety.VecSpec <> <> lib
+R1846:1857 TypeSafety.RegistrySpec <> <> lib
+R1891:1905 TypeSafety.ControlFlowSpec <> <> lib
+R1939:1950 TypeSafety.OperatorSpec <> <> lib
+R1960:1973 TypeSafety.TypeSafetySpec <> <> mod
+R1975:1981 TypeSafety.VecSpec <> <> mod
+R1983:1994 TypeSafety.RegistrySpec <> <> mod
+R1996:2010 TypeSafety.ControlFlowSpec <> <> mod
+R2012:2023 TypeSafety.OperatorSpec <> <> mod
+R2033:2045 Stdlib.Lists.List ListNotations <> mod
+ind 2127:2135 <> fun_error
+constr 2151:2157 <> FEOpErr
+constr 2191:2198 <> NotAFunc
+constr 2233:2243 <> ArgMismatch
+constr 2308:2319 <> BodyMismatch
+R2173:2176 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2165:2172 TypeSafety.OperatorSpec <> op_error ind
+R2177:2185 TypeSafety.FunSpec <> fun_error:1 ind
+R2215:2218 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2205:2214 TypeSafety.TypeSafetySpec <> sarek_type ind
+R2219:2227 TypeSafety.FunSpec <> fun_error:1 ind
+R2257:2260 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2247:2256 TypeSafety.TypeSafetySpec <> sarek_type ind
+R2271:2274 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2261:2270 TypeSafety.TypeSafetySpec <> sarek_type ind
+R2275:2283 TypeSafety.FunSpec <> fun_error:1 ind
+R2333:2336 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2323:2332 TypeSafety.TypeSafetySpec <> sarek_type ind
+R2347:2350 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2337:2346 TypeSafety.TypeSafetySpec <> sarek_type ind
+R2351:2359 TypeSafety.FunSpec <> fun_error:1 ind
+scheme 2127:2135 <> fun_error_rect
+scheme 2127:2135 <> fun_error_ind
+scheme 2127:2135 <> fun_error_rec
+scheme 2127:2135 <> fun_error_sind
+ind 2445:2452 <> fun_expr
+constr 2468:2471 <> FEOp
+constr 2503:2507 <> FEApp
+constr 2605:2612 <> FELetRec
+R2486:2489 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2479:2485 TypeSafety.OperatorSpec <> op_expr ind
+R2490:2497 TypeSafety.FunSpec <> fun_expr:3 ind
+R2522:2525 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2514:2521 TypeSafety.FunSpec <> fun_expr:3 ind
+R2534:2537 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2526:2533 TypeSafety.FunSpec <> fun_expr:3 ind
+R2538:2545 TypeSafety.FunSpec <> fun_expr:3 ind
+R2622:2625 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2616:2621 Stdlib.Strings.String <> string ind
+R2632:2635 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2626:2631 Stdlib.Strings.String <> string ind
+R2646:2649 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2636:2645 TypeSafety.TypeSafetySpec <> sarek_type ind
+R2660:2678 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2650:2659 TypeSafety.TypeSafetySpec <> sarek_type ind
+R2687:2690 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2679:2686 TypeSafety.FunSpec <> fun_expr:3 ind
+R2699:2702 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2691:2698 TypeSafety.FunSpec <> fun_expr:3 ind
+R2703:2710 TypeSafety.FunSpec <> fun_expr:3 ind
+scheme 2445:2452 <> fun_expr_rect
+scheme 2445:2452 <> fun_expr_ind
+scheme 2445:2452 <> fun_expr_rec
+scheme 2445:2452 <> fun_expr_sind
+def 2772:2785 <> infer_fun_type
+R2794:2801 TypeSafety.TypeSafetySpec <> type_env def
+binder 2788:2790 <> env:5
+R2809:2816 TypeSafety.FunSpec <> fun_expr ind
+binder 2805:2805 <> e:6
+R2836:2838 Corelib.Init.Datatypes <> ::type_scope:x_'+'_x not
+R2826:2835 TypeSafety.TypeSafetySpec <> sarek_type ind
+R2839:2847 TypeSafety.FunSpec <> fun_error ind
+R2866:2866 TypeSafety.FunSpec <> e:6 var
+R2877:2880 TypeSafety.FunSpec <> FEOp constr
+R2900:2912 TypeSafety.OperatorSpec <> infer_op_type def
+R2914:2916 TypeSafety.FunSpec <> env:5 var
+R2934:2936 Corelib.Init.Datatypes <> inl constr
+R2945:2947 Corelib.Init.Datatypes <> inl constr
+R2959:2961 Corelib.Init.Datatypes <> inr constr
+R2970:2972 Corelib.Init.Datatypes <> inr constr
+R2975:2981 TypeSafety.FunSpec <> FEOpErr constr
+R3002:3006 TypeSafety.FunSpec <> FEApp constr
+R3030:3043 TypeSafety.FunSpec <> infer_fun_type:7 def
+R3045:3047 TypeSafety.FunSpec <> env:5 var
+R3065:3067 Corelib.Init.Datatypes <> inr constr
+R3076:3078 Corelib.Init.Datatypes <> inr constr
+R3092:3094 Corelib.Init.Datatypes <> inl constr
+R3140:3143 TypeSafety.TypeSafetySpec <> TFun constr
+R3150:3153 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3154:3156 Corelib.Init.Datatypes <> nil constr
+R3189:3202 TypeSafety.FunSpec <> infer_fun_type:7 def
+R3204:3206 TypeSafety.FunSpec <> env:5 var
+R3233:3235 Corelib.Init.Datatypes <> inr constr
+R3244:3246 Corelib.Init.Datatypes <> inr constr
+R3268:3270 Corelib.Init.Datatypes <> inl constr
+R3304:3320 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R3357:3360 Corelib.Init.Specif <> left constr
+R3368:3370 Corelib.Init.Datatypes <> inl constr
+R3399:3403 Corelib.Init.Specif <> right constr
+R3410:3412 Corelib.Init.Datatypes <> inr constr
+R3415:3425 TypeSafety.FunSpec <> ArgMismatch constr
+R3495:3497 Corelib.Init.Datatypes <> inr constr
+R3500:3507 TypeSafety.FunSpec <> NotAFunc constr
+R3542:3549 TypeSafety.FunSpec <> FELetRec constr
+R3610:3613 TypeSafety.TypeSafetySpec <> TFun constr
+R3620:3623 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3624:3626 Corelib.Init.Datatypes <> nil constr
+binder 3601:3605 <> fn_ty:10
+R3675:3678 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3661:3661 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3668:3669 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3674:3674 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3695:3698 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3679:3679 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3687:3688 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3694:3694 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3689:3693 TypeSafety.FunSpec <> fn_ty:10 var
+R3699:3701 TypeSafety.FunSpec <> env:5 var
+binder 3649:3656 <> body_env:11
+R3718:3731 TypeSafety.FunSpec <> infer_fun_type:7 def
+R3733:3740 TypeSafety.FunSpec <> body_env:11 var
+R3760:3762 Corelib.Init.Datatypes <> inr constr
+R3771:3773 Corelib.Init.Datatypes <> inr constr
+R3787:3789 Corelib.Init.Datatypes <> inl constr
+R3816:3832 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R3864:3868 Corelib.Init.Specif <> right constr
+R3875:3877 Corelib.Init.Datatypes <> inr constr
+R3880:3891 TypeSafety.FunSpec <> BodyMismatch constr
+R3919:3922 Corelib.Init.Specif <> left constr
+R3930:3943 TypeSafety.FunSpec <> infer_fun_type:7 def
+R3962:3965 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R3946:3946 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3954:3955 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3961:3961 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R3956:3960 TypeSafety.FunSpec <> fn_ty:10 var
+R3966:3968 TypeSafety.FunSpec <> env:5 var
+ind 4077:4088 <> has_fun_type
+constr 4142:4147 <> HFT_Op
+constr 4237:4243 <> HFT_App
+constr 4419:4428 <> HFT_LetRec
+R4100:4103 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4092:4099 TypeSafety.TypeSafetySpec <> type_env def
+R4112:4115 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4104:4111 TypeSafety.FunSpec <> fun_expr ind
+R4126:4129 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4116:4125 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 4158:4160 <> env:14
+binder 4162:4163 <> oe:15
+binder 4165:4165 <> t:16
+R4194:4203 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4174:4184 TypeSafety.OperatorSpec <> has_op_type ind
+R4193:4193 TypeSafety.FunSpec <> t:16 var
+R4190:4191 TypeSafety.FunSpec <> oe:15 var
+R4186:4188 TypeSafety.FunSpec <> env:14 var
+R4204:4215 TypeSafety.FunSpec <> has_fun_type:12 ind
+R4231:4231 TypeSafety.FunSpec <> t:16 var
+R4222:4225 TypeSafety.FunSpec <> FEOp constr
+R4227:4228 TypeSafety.FunSpec <> oe:15 var
+R4217:4219 TypeSafety.FunSpec <> env:14 var
+binder 4254:4256 <> env:17
+binder 4258:4259 <> fn:18
+binder 4261:4263 <> arg:19
+binder 4265:4268 <> p_ty:20
+binder 4270:4275 <> ret_ty:21
+R4331:4340 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4284:4295 TypeSafety.FunSpec <> has_fun_type:12 ind
+R4305:4308 TypeSafety.TypeSafetySpec <> TFun constr
+R4324:4329 TypeSafety.FunSpec <> ret_ty:21 var
+R4315:4318 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4311:4314 TypeSafety.FunSpec <> p_ty:20 var
+R4319:4321 Corelib.Init.Datatypes <> nil constr
+R4301:4302 TypeSafety.FunSpec <> fn:18 var
+R4297:4299 TypeSafety.FunSpec <> env:17 var
+R4366:4375 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4341:4352 TypeSafety.FunSpec <> has_fun_type:12 ind
+R4362:4365 TypeSafety.FunSpec <> p_ty:20 var
+R4358:4360 TypeSafety.FunSpec <> arg:19 var
+R4354:4356 TypeSafety.FunSpec <> env:17 var
+R4376:4387 TypeSafety.FunSpec <> has_fun_type:12 ind
+R4408:4413 TypeSafety.FunSpec <> ret_ty:21 var
+R4394:4398 TypeSafety.FunSpec <> FEApp constr
+R4403:4405 TypeSafety.FunSpec <> arg:19 var
+R4400:4401 TypeSafety.FunSpec <> fn:18 var
+R4389:4391 TypeSafety.FunSpec <> env:17 var
+binder 4439:4441 <> env:22
+binder 4443:4449 <> fn_name:23
+binder 4451:4456 <> p_name:24
+binder 4458:4461 <> p_ty:25
+binder 4463:4468 <> ret_ty:26
+binder 4470:4473 <> body:27
+binder 4475:4478 <> cont:28
+binder 4480:4480 <> t:29
+R4596:4605 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4489:4500 TypeSafety.FunSpec <> has_fun_type:12 ind
+R4590:4595 TypeSafety.FunSpec <> ret_ty:26 var
+R4585:4588 TypeSafety.FunSpec <> body:27 var
+R4517:4520 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4503:4503 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4510:4511 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4516:4516 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4504:4509 TypeSafety.FunSpec <> p_name:24 var
+R4512:4515 TypeSafety.FunSpec <> p_ty:25 var
+R4557:4560 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4521:4521 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4529:4530 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4556:4556 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4522:4528 TypeSafety.FunSpec <> fn_name:23 var
+R4531:4534 TypeSafety.TypeSafetySpec <> TFun constr
+R4550:4555 TypeSafety.FunSpec <> ret_ty:26 var
+R4541:4544 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4537:4540 TypeSafety.FunSpec <> p_ty:25 var
+R4545:4547 Corelib.Init.Datatypes <> nil constr
+R4561:4563 TypeSafety.FunSpec <> env:22 var
+R4671:4680 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4606:4617 TypeSafety.FunSpec <> has_fun_type:12 ind
+R4670:4670 TypeSafety.FunSpec <> t:29 var
+R4665:4668 TypeSafety.FunSpec <> cont:28 var
+R4656:4659 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4620:4620 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4628:4629 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4655:4655 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R4621:4627 TypeSafety.FunSpec <> fn_name:23 var
+R4630:4633 TypeSafety.TypeSafetySpec <> TFun constr
+R4649:4654 TypeSafety.FunSpec <> ret_ty:26 var
+R4640:4643 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R4636:4639 TypeSafety.FunSpec <> p_ty:25 var
+R4644:4646 Corelib.Init.Datatypes <> nil constr
+R4660:4662 TypeSafety.FunSpec <> env:22 var
+R4681:4692 TypeSafety.FunSpec <> has_fun_type:12 ind
+R4746:4746 TypeSafety.FunSpec <> t:29 var
+R4699:4706 TypeSafety.FunSpec <> FELetRec constr
+R4740:4743 TypeSafety.FunSpec <> cont:28 var
+R4735:4738 TypeSafety.FunSpec <> body:27 var
+R4728:4733 TypeSafety.FunSpec <> ret_ty:26 var
+R4723:4726 TypeSafety.FunSpec <> p_ty:25 var
+R4716:4721 TypeSafety.FunSpec <> p_name:24 var
+R4708:4714 TypeSafety.FunSpec <> fn_name:23 var
+R4694:4696 TypeSafety.FunSpec <> env:22 var
+scheme 4077:4088 <> has_fun_type_ind
+scheme 4077:4088 <> has_fun_type_sind
+prf 4822:4841 <> infer_fun_type_sound
+binder 4854:4856 <> env:30
+binder 4858:4858 <> e:31
+binder 4860:4860 <> t:32
+R4895:4902 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4887:4889 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4867:4880 TypeSafety.FunSpec <> infer_fun_type def
+R4886:4886 TypeSafety.FunSpec <> e:31 var
+R4882:4884 TypeSafety.FunSpec <> env:30 var
+R4890:4892 Corelib.Init.Datatypes <> inl constr
+R4894:4894 TypeSafety.FunSpec <> t:32 var
+R4903:4914 TypeSafety.FunSpec <> has_fun_type ind
+R4922:4922 TypeSafety.FunSpec <> t:32 var
+R4920:4920 TypeSafety.FunSpec <> e:31 var
+R4916:4918 TypeSafety.FunSpec <> env:30 var
+R5133:5145 TypeSafety.OperatorSpec <> infer_op_type def
+R5133:5145 TypeSafety.OperatorSpec <> infer_op_type def
+R5225:5230 TypeSafety.FunSpec <> HFT_Op constr
+R5225:5230 TypeSafety.FunSpec <> HFT_Op constr
+R5239:5257 TypeSafety.OperatorSpec <> infer_op_type_sound thm
+R5239:5257 TypeSafety.OperatorSpec <> infer_op_type_sound thm
+R5301:5314 TypeSafety.FunSpec <> infer_fun_type def
+R5301:5314 TypeSafety.FunSpec <> infer_fun_type def
+R5554:5567 TypeSafety.FunSpec <> infer_fun_type def
+R5554:5567 TypeSafety.FunSpec <> infer_fun_type def
+R5636:5652 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R5636:5652 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R5742:5748 TypeSafety.FunSpec <> HFT_App constr
+R5742:5748 TypeSafety.FunSpec <> HFT_App constr
+R5864:5877 TypeSafety.FunSpec <> infer_fun_type def
+R5910:5913 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R5896:5896 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5903:5904 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5909:5909 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5950:5953 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R5914:5914 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5922:5923 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5949:5949 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5924:5927 TypeSafety.TypeSafetySpec <> TFun constr
+R5934:5937 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R5938:5940 Corelib.Init.Datatypes <> nil constr
+R5864:5877 TypeSafety.FunSpec <> infer_fun_type def
+R5910:5913 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R5896:5896 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5903:5904 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5909:5909 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5950:5953 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R5914:5914 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5922:5923 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5949:5949 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R5924:5927 TypeSafety.TypeSafetySpec <> TFun constr
+R5934:5937 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R5938:5940 Corelib.Init.Datatypes <> nil constr
+R6031:6047 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R6031:6047 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R6122:6131 TypeSafety.FunSpec <> HFT_LetRec constr
+R6122:6131 TypeSafety.FunSpec <> HFT_LetRec constr
+prf 6277:6299 <> infer_fun_type_complete
+binder 6312:6314 <> env:33
+binder 6316:6316 <> e:34
+binder 6318:6318 <> t:35
+R6345:6352 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6325:6336 TypeSafety.FunSpec <> has_fun_type ind
+R6344:6344 TypeSafety.FunSpec <> t:35 var
+R6342:6342 TypeSafety.FunSpec <> e:34 var
+R6338:6340 TypeSafety.FunSpec <> env:33 var
+R6373:6375 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6353:6366 TypeSafety.FunSpec <> infer_fun_type def
+R6372:6372 TypeSafety.FunSpec <> e:34 var
+R6368:6370 TypeSafety.FunSpec <> env:33 var
+R6376:6378 Corelib.Init.Datatypes <> inl constr
+R6380:6380 TypeSafety.FunSpec <> t:35 var
+R6460:6481 TypeSafety.OperatorSpec <> infer_op_type_complete thm
+R6460:6481 TypeSafety.OperatorSpec <> infer_op_type_complete thm
+R6460:6481 TypeSafety.OperatorSpec <> infer_op_type_complete thm
+R6586:6602 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R6586:6602 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R6748:6764 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R6748:6764 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+prf 6941:6956 <> has_fun_type_det
+binder 6969:6971 <> env:36
+binder 6973:6973 <> e:37
+binder 6975:6976 <> t1:38
+binder 6978:6979 <> t2:39
+R7007:7014 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6986:6997 TypeSafety.FunSpec <> has_fun_type ind
+R7005:7006 TypeSafety.FunSpec <> t1:38 var
+R7003:7003 TypeSafety.FunSpec <> e:37 var
+R6999:7001 TypeSafety.FunSpec <> env:36 var
+R7036:7043 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7015:7026 TypeSafety.FunSpec <> has_fun_type ind
+R7034:7035 TypeSafety.FunSpec <> t2:39 var
+R7032:7032 TypeSafety.FunSpec <> e:37 var
+R7028:7030 TypeSafety.FunSpec <> env:36 var
+R7046:7048 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7044:7045 TypeSafety.FunSpec <> t1:38 var
+R7049:7050 TypeSafety.FunSpec <> t2:39 var
+R7102:7124 TypeSafety.FunSpec <> infer_fun_type_complete thm
+R7102:7124 TypeSafety.FunSpec <> infer_fun_type_complete thm
+R7152:7174 TypeSafety.FunSpec <> infer_fun_type_complete thm
+R7152:7174 TypeSafety.FunSpec <> infer_fun_type_complete thm
+prf 7327:7347 <> fun_type_preservation
+binder 7360:7362 <> env:40
+binder 7364:7364 <> e:41
+binder 7366:7366 <> t:42
+R7401:7405 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R7393:7395 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7373:7386 TypeSafety.FunSpec <> infer_fun_type def
+R7392:7392 TypeSafety.FunSpec <> e:41 var
+R7388:7390 TypeSafety.FunSpec <> env:40 var
+R7396:7398 Corelib.Init.Datatypes <> inl constr
+R7400:7400 TypeSafety.FunSpec <> t:42 var
+R7406:7417 TypeSafety.FunSpec <> has_fun_type ind
+R7425:7425 TypeSafety.FunSpec <> t:42 var
+R7423:7423 TypeSafety.FunSpec <> e:41 var
+R7419:7421 TypeSafety.FunSpec <> env:40 var
+R7470:7489 TypeSafety.FunSpec <> infer_fun_type_sound thm
+R7470:7489 TypeSafety.FunSpec <> infer_fun_type_sound thm
+R7502:7524 TypeSafety.FunSpec <> infer_fun_type_complete thm
+R7502:7524 TypeSafety.FunSpec <> infer_fun_type_complete thm

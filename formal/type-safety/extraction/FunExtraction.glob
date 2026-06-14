@@ -1,0 +1,11 @@
+DIGEST 0125a8ca886a37832b73d37d14becdcb
+FFunExtraction
+R663:672 Stdlib.extraction.Extraction <> <> lib
+R674:687 Stdlib.extraction.ExtrOcamlBasic <> <> lib
+R689:703 Stdlib.extraction.ExtrOcamlNatInt <> <> lib
+R737:750 TypeSafety.TypeSafetySpec <> <> lib
+R784:790 TypeSafety.VecSpec <> <> lib
+R824:835 TypeSafety.RegistrySpec <> <> lib
+R869:883 TypeSafety.ControlFlowSpec <> <> lib
+R917:928 TypeSafety.OperatorSpec <> <> lib
+R962:968 TypeSafety.FunSpec <> <> lib
