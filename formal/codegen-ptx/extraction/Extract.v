@@ -29,6 +29,12 @@ From CodegenPtx Require Import PtxStmtSpec.
 From CodegenPtx Require Import PtxKernelSpec.
 
 From Stdlib Require Import Extraction.
+(* ExtrOcamlNatInt maps Coq [nat] to OCaml [int].  This is sound here because
+ * all [nat] values in AGPU semantics represent thread/block/address indices
+ * that fit within 63-bit OCaml [int] bounds on 64-bit systems.  GPU hardware
+ * dimensions and address spaces are far below [max_int]; overflow is not
+ * modelled at the specification level.  If unbounded arithmetic is ever
+ * required, replace with ExtrOcamlZInt or a Zarith extraction hint. *)
 From Stdlib Require Import extraction.ExtrOcamlNatInt.
 From Stdlib Require Import extraction.ExtrOCamlFloats.
 

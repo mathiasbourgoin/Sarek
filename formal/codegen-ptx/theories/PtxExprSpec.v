@@ -33,12 +33,19 @@ Open Scope string_scope.
 (** * Binary-op classifier *)
 (* ------------------------------------------------------------------ *)
 
+(** Binary-op classifier.  Also used by [PtxStmtSpec] for proof case splits;
+ *  must be exported (not [Local]) so that cross-module Rocq references work.
+ *  The extracted OCaml function is a pure decision procedure with no
+ *  failure path — it is safe for callers to call directly. *)
 Definition is_cmp_op (op : ir_binop) : bool :=
   match op with
   | Eq | Ne | Lt | Le | Gt | Ge => true
   | _ => false
   end.
 
+(** IR binop → PTX binop AST tag.  Partial on comparison ops: the [_ => PAdd]
+ *  branch is unreachable when [is_cmp_op op = false].  Exported for use in
+ *  [PtxStmtSpec] proofs; callers must guard with [is_cmp_op op = false]. *)
 Definition ir_binop_to_ptx_binop (op : ir_binop) : ptx_binop_tag :=
   match op with
   | Add    => PAdd
@@ -56,6 +63,9 @@ Definition ir_binop_to_ptx_binop (op : ir_binop) : ptx_binop_tag :=
   | _      => PAdd   (* unreachable when is_cmp_op op = false *)
   end.
 
+(** IR binop → PTX cmp AST tag.  Partial on non-comparison ops: the [_ => PEq]
+ *  branch is unreachable when [is_cmp_op op = true].  Exported for use in
+ *  [PtxStmtSpec] proofs; callers must guard with [is_cmp_op op = true]. *)
 Definition ir_binop_to_ptx_cmp (op : ir_binop) : ptx_cmp_tag :=
   match op with
   | Eq => PEq

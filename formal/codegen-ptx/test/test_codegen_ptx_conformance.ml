@@ -17,9 +17,13 @@
  *      for each test case (the key correctness property modelled by
  *      emit_expr_correct / eval_ir_ptx_eq in the Rocq spec).
  *
- * This file has no dependency on extracted Rocq code (Float64, Datatypes).
- * It is a standalone OCaml model faithful to the Rocq spec.
- *)
+ * Test strategy note: both sides of every [eval_agrees] check use the OCaml
+ * mirror defined in this file rather than the extracted Rocq modules.  This
+ * gives fast, dependency-free execution and validates internal consistency of
+ * the mirror against the Rocq spec.  Integration tests that exercise the
+ * extracted modules (AGpuSemantics.ml, PtxExprSpec.ml, etc.) require linking
+ * against rocq-runtime and are deferred to a separate extraction-integration
+ * test target (follow-up task: wire extracted library via dune). *)
 
 (* ======================================================================= *)
 (** * 1. PTX value domain — mirrors [ptx_val] in AGpuSemantics.v *)

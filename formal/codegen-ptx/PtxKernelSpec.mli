@@ -2,11 +2,8 @@ open AGpuSemantics
 open PtxStmtSpec
 open String
 
-type ir_kernel = {
-  kern_name : string;
-  kern_params : string list;
-  kern_body : ir_stmt;
-}
+type ir_kernel = { kern_name : string; kern_params : string list;
+                   kern_body : ir_stmt }
 
 val kern_name : ir_kernel -> string
 
@@ -14,11 +11,9 @@ val kern_params : ir_kernel -> string list
 
 val kern_body : ir_kernel -> ir_stmt
 
-type ptx_kernel_ast = {
-  ptx_kern_name : string;
-  ptx_kern_params : string list;
-  ptx_kern_body : ptx_stmt_ast;
-}
+type ptx_kernel_ast = { ptx_kern_name : string;
+                        ptx_kern_params : string list;
+                        ptx_kern_body : ptx_stmt_ast }
 
 val ptx_kern_name : ptx_kernel_ast -> string
 

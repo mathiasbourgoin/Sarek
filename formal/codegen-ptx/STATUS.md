@@ -1,5 +1,4 @@
 # Status — codegen-ptx formal project
-# Status — codegen-ptx formal project
 
 Track B steps 10-12 complete.
 

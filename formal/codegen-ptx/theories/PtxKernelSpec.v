@@ -10,7 +10,7 @@
  *       agpu_exec_ir_kernel st k =
  *       agpu_exec_ptx_kernel st (emit_ast_kernel k).
  *
- * Uses [emit_stmt_correct] from [PtxStmtSpec] and [eval_ir_ptx_agree_full]
+ * Uses [emit_stmt_correct] from [PtxStmtSpec] and [eval_ir_ptx_eq]
  * from [PtxStmtSpec] (which in turn uses [emit_expr_correct] from
  * [PtxExprSpec]).
  *
