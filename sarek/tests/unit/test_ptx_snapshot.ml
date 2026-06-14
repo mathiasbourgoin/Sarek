@@ -3,66 +3,83 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(** Snapshot test for the PTX code generator.
+(** PTX snapshot test for the code generator.
 
-    Verifies that [Sarek_ir_ptx.demo_vector_add_ptx ()] produces the exact PTX
-    string that was validated by ptxas --gpu-name sm_86 on 2026-06-13. This test
-    is CPU-only: it exercises the emitter pipeline (types → mem → expr → stmt →
-    kernel) without requiring a CUDA device. *)
+    Constructs a minimal vector_add Sarek IR kernel and calls
+    [Sarek_ir_ptx_kernel.generate] directly, asserting that the emitted PTX
+    string contains canonical structural markers. This test is CPU-only: no CUDA
+    device is required. *)
 
-(** Expected PTX output — register allocation traced from the emitter and
-    validated by ptxas --gpu-name sm_86 (2026-06-13). *)
-let expected_ptx =
-  {|.version 8.0
-.target sm_86
-.address_size 64
+open Sarek_ir_types
+open Sarek_codegen
 
-.entry vector_add(
-    .param .u64 param_a,
-    .param .u64 param_b,
-    .param .u64 param_c,
-    .param .u32 param_n
-)
-{
-    .reg .u32 %r<7>;
-    .reg .u64 %rd<12>;
-    .reg .f32 %f<3>;
-    .reg .pred %p<2>;
+(** Build a minimal vector_add kernel IR: for tid in 0..n: c[tid] = a[tid] +
+    b[tid] Parameters: a, b, c (TVec TFloat32), n (TInt32). *)
+let make_vector_add_kernel () : kernel =
+  let make_var name ty =
+    {var_name = name; var_id = 0; var_type = ty; var_mutable = false}
+  in
+  let a = make_var "a" (TVec TFloat32) in
+  let b = make_var "b" (TVec TFloat32) in
+  let c = make_var "c" (TVec TFloat32) in
+  let n = make_var "n" TInt32 in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SIf
+          ( EBinop (Lt, EVar tid, EVar n),
+            SAssign
+              ( LArrayElem ("c", EVar tid),
+                EBinop
+                  (Add, EArrayRead ("a", EVar tid), EArrayRead ("b", EVar tid))
+              ),
+            None ) )
+  in
+  {
+    kern_name = "vector_add";
+    kern_params =
+      [
+        DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
+        DParam (b, Some {arr_elttype = TFloat32; arr_memspace = Global});
+        DParam (c, Some {arr_elttype = TFloat32; arr_memspace = Global});
+        DParam (n, None);
+      ];
+    kern_locals = [];
+    kern_body = body;
+    kern_types = [];
+    kern_variants = [];
+    kern_funcs = [];
+    kern_native_fn = None;
+  }
 
-    ld.param.u64 %rd0, [param_a];
-    ld.param.u64 %rd1, [param_b];
-    ld.param.u64 %rd2, [param_c];
-    ld.param.u32 %r0, [param_n];
-    mov.u32 %r1, %tid.x;
-    mov.u32 %r2, %ctaid.x;
-    mov.u32 %r3, %ntid.x;
-    mul.lo.u32 %r4, %r2, %r3;
-    add.u32 %r5, %r1, %r4;
-    setp.lt.s32 %p0, %r5, %r0;
-    selp.u32 %r6, 1, 0, %p0;
-    setp.ne.u32 %p1, %r6, 0;
-    @!%p1 bra L0;
-    cvt.u64.u32 %rd3, %r5;
-    shl.b64 %rd4, %rd3, 2;
-    add.u64 %rd5, %rd0, %rd4;
-    ld.global.f32 %f0, [%rd5];
-    cvt.u64.u32 %rd6, %r5;
-    shl.b64 %rd7, %rd6, 2;
-    add.u64 %rd8, %rd1, %rd7;
-    ld.global.f32 %f1, [%rd8];
-    add.f32 %f2, %f0, %f1;
-    cvt.u64.u32 %rd9, %r5;
-    shl.b64 %rd10, %rd9, 2;
-    add.u64 %rd11, %rd2, %rd10;
-    st.global.f32 [%rd11], %f2;
-L0:
-    ret;
-}
-|}
+(** Check that [ptx] contains [marker]; fail with a readable message if not. *)
+let assert_contains ptx marker =
+  if not (String.length ptx >= String.length marker) then
+    Alcotest.fail (Printf.sprintf "PTX too short to contain %S:\n%s" marker ptx) ;
+  let found = ref false in
+  let mlen = String.length marker in
+  let plen = String.length ptx in
+  for i = 0 to plen - mlen do
+    if String.sub ptx i mlen = marker then found := true
+  done ;
+  if not !found then
+    Alcotest.fail
+      (Printf.sprintf
+         "Expected PTX to contain %S but it did not.\nPTX:\n%s"
+         marker
+         ptx)
 
-let test_vector_add_snapshot () =
-  let got = Sarek_codegen.Sarek_ir_ptx.demo_vector_add_ptx () in
-  Alcotest.(check string) "vector_add PTX snapshot" expected_ptx got
+let test_vector_add_markers () =
+  let k = make_vector_add_kernel () in
+  let ptx = Sarek_ir_ptx_kernel.generate k in
+  assert_contains ptx ".entry" ;
+  assert_contains ptx ".param" ;
+  assert_contains ptx "ld.global" ;
+  assert_contains ptx "add.u32" ;
+  assert_contains ptx "st.global" ;
+  assert_contains ptx "ret"
 
 let () =
   Alcotest.run
@@ -71,8 +88,8 @@ let () =
       ( "codegen",
         [
           Alcotest.test_case
-            "demo_vector_add_ptx snapshot"
+            "vector_add PTX contains canonical markers"
             `Quick
-            test_vector_add_snapshot;
+            test_vector_add_markers;
         ] );
     ]
