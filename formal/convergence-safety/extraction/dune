@@ -2,4 +2,8 @@
 
 (library
  (name convergence_model)
- (modules ConvergenceModel))
+ (modules ConvergenceModel)
+ ; Extracted OCaml from Rocq: relax warnings that fire on machine-generated
+ ; code (unused rec flags, unused vars, redundant matches).
+ (flags
+  (:standard -w -a)))
