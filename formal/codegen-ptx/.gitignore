@@ -1,0 +1,3 @@
+# Rocq build artifacts — not needed for reproducibility
+*.aux
+.*.aux

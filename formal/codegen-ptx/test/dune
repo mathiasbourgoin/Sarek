@@ -1,0 +1,9 @@
+(include_subdirs no)
+
+(test
+ (name test_codegen_ptx_conformance)
+ (libraries alcotest)
+ ; Relax warnings on the abstract OCaml mirror: constructors defined for
+ ; completeness (matching the Rocq spec) may not all be used in the test suite.
+ (flags
+  (:standard -w -32-37)))

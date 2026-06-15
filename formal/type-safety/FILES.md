@@ -1,0 +1,87 @@
+# TypeSafety formal — FILES
+
+Per-file inventory of the project. Update at every structural change.
+
+## Directory layout
+
+```
+type-safety/
+├── FILES.md
+├── METHODOLOGY.md
+├── STATUS.md
+├── PLAN.md
+├── _CoqProject                       # Rocq build config
+├── CoqMakefile / CoqMakefile.conf    # generated build files
+├── proof-ledger/
+│   └── proof-ledger.json             # machine-readable proof state
+├── theories/
+│   ├── TypeSafetySpec.v              # top-level spec: expr, infer_type, 4 headline theorems
+│   ├── UnifySpec.v                   # unification: follow, unify_fun, 4 theorems
+│   ├── VecSpec.v                     # vector/array inference: infer_mem_type, 4 theorems
+│   ├── RegistrySpec.v                # record inference: infer_rec_type, 4 theorems
+│   ├── ControlFlowSpec.v             # control flow: infer_cf_type, 4 theorems
+│   ├── OperatorSpec.v                # operator inference: infer_op_type, 4 theorems
+│   ├── FunSpec.v                     # function inference: infer_fun_type, 4 theorems
+│   ├── MutSpec.v                     # mutable let inference: infer_mut_type, 4 theorems
+│   ├── PatternSpec.v                 # pattern matching: infer_pat_type, 4 theorems
+│   ├── ConstrSpec.v                  # constructor inference: infer_constr_type, 4 theorems
+│   ├── SpecialSpec.v                 # special forms: infer_special_type, 4 theorems
+│   └── GPUSpec.v                     # GPU forms: infer_gpu_type, 4 theorems
+├── extraction/
+│   ├── TypeSafetyExtraction.v        # extraction config for TypeSafetySpec
+│   ├── TypeSafetyModel.ml            # extracted OCaml (do not edit by hand)
+│   ├── TypeSafetyModel.mli
+│   ├── UnifyExtraction.v / UnifyModel.ml / .mli
+│   ├── VecExtraction.v / VecModel.ml / .mli
+│   ├── RegistryExtraction.v / RegistryModel.ml / .mli
+│   ├── ControlFlowExtraction.v / ControlFlowModel.ml / .mli
+│   ├── OperatorExtraction.v / OperatorModel.ml / .mli
+│   ├── FunExtraction.v / FunModel.ml / .mli
+│   ├── MutExtraction.v / MutModel.ml / .mli
+│   ├── PatExtraction.v / PatternModel.ml / .mli
+│   ├── ConstrExtraction.v / ConstrModel.ml / .mli
+│   ├── SpecialExtraction.v / SpecialModel.ml / .mli
+│   ├── GPUExtraction.v / GPUModel.ml / .mli
+│   └── dune                          # library stanza for type_safety_model
+├── test/
+│   ├── dune
+│   ├── test_type_safety_conformance.ml  # QCheck2 + smoke conformance harness
+│   └── test_mutation.ml                 # mutation tests (M1 type-erasure, M2 variable-blind)
+└── findings/
+    └── FINDINGS.md                   # F-TS-01: ELet scope leak (RESOLVED)
+```
+
+## Rocq theories
+
+| File | Lines | Purpose |
+|---|---|---|
+| `theories/TypeSafetySpec.v` | 486 | Top-level `expr` type, `infer_type`, 4 headline theorems + 8 auxiliary (custom induction principles, list/branch/field helpers) |
+| `theories/UnifySpec.v` | 447 | HM unification: `follow`, `follow_pvar`, `unify_fun`, `apply_subst`, 4 theorems |
+| `theories/VecSpec.v` | 414 | Vector/array forms: `infer_mem_type`, `has_mem_type`, `sarek_type_eq_dec`, 4 theorems |
+| `theories/OperatorSpec.v` | 358 | Operator inference: `infer_op_type`, 4 theorems |
+| `theories/PatternSpec.v` | 384 | Pattern matching: `infer_pat_type`, `check_branches`, 4 theorems + 2 auxiliary |
+| `theories/ConstrSpec.v` | 351 | Constructor inference: `infer_constr_type`, `check_fields`, 4 theorems + 2 auxiliary |
+| `theories/ControlFlowSpec.v` | 350 | Control flow: `infer_cf_type`, 4 theorems |
+| `theories/RegistrySpec.v` | 227 | Record inference: `infer_rec_type`, `field_lookup`, 4 theorems |
+| `theories/MutSpec.v` | 226 | Mutable let: `infer_mut_type`, 4 theorems |
+| `theories/GPUSpec.v` | 225 | GPU forms: `infer_gpu_type`, 4 theorems |
+| `theories/SpecialSpec.v` | 250 | Special forms: `infer_special_type`, 4 theorems |
+| `theories/FunSpec.v` | 220 | Function forms: `infer_fun_type`, 4 theorems |
+| **Total** | **3938** | 90 declarations (78 headline + 12 auxiliary), 0 admits, 0 axioms |
+
+## OCaml test code
+
+| File | Lines | Purpose |
+|---|---|---|
+| `test/test_type_safety_conformance.ml` | 2312 | T1-CMBT: differential QCheck2 + smoke tests across all 12 layers |
+| `test/test_mutation.ml` | 104 | M1 (type-erasure mutant) + M2 (variable-blind mutant) |
+| `extraction/TypeSafetyModel.ml` | 113 | Extracted top-level inference (do not edit) |
+| `extraction/VecModel.ml` | 397 | Extracted vector/array model |
+| `extraction/UnifyModel.ml` | 142 | Extracted unifier |
+| *(9 other Model.ml files)* | *(~5700 combined)* | Extracted per-layer models |
+
+## Notes
+
+- No `policy/` directory: project was template-bootstrapped from convergence-safety (not via `/formal-init`); apparatus policies referenced centrally from `~/.claude/skills/formal-apparatus/policy/`. See `policy_overrides.md`.
+- No LaTeX spec: see `policy_overrides.md` for rationale and waiver.
+- No `report/BENCHMARKS.md`: no bake-off has been run. Monolith-native long tier not applicable (post-unification model has no mutable state to replay; stateless spec).

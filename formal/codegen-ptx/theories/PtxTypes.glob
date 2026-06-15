@@ -1,0 +1,962 @@
+DIGEST 3e78f4c90dca9a5854012bb61399785e
+FCodegenPtx.PtxTypes
+R926:938 CodegenPtx.AGpuSemantics <> <> lib
+R968:981 Stdlib.Strings.String <> <> lib
+R1011:1019 Stdlib.Bool.Bool <> <> lib
+R1049:1059 Stdlib.Arith.Arith <> <> lib
+R1089:1094 Stdlib.Floats.Floats <> <> lib
+ind 1691:1698 <> ptx_type
+constr 1707:1713 <> PTX_U32
+constr 1719:1725 <> PTX_U64
+constr 1731:1737 <> PTX_F32
+constr 1743:1749 <> PTX_F64
+constr 1755:1762 <> PTX_Pred
+scheme 1691:1698 <> ptx_type_rect
+scheme 1691:1698 <> ptx_type_ind
+scheme 1691:1698 <> ptx_type_rec
+scheme 1691:1698 <> ptx_type_sind
+ind 2324:2330 <> elttype
+constr 2339:2346 <> ET_Int32
+constr 2352:2359 <> ET_Int64
+constr 2365:2374 <> ET_Float32
+constr 2380:2389 <> ET_Float64
+constr 2395:2401 <> ET_Bool
+constr 2407:2413 <> ET_Unit
+constr 2419:2424 <> ET_Vec
+constr 2454:2461 <> ET_Array
+R2438:2441 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2431:2437 CodegenPtx.PtxTypes <> elttype:3 ind
+R2442:2448 CodegenPtx.PtxTypes <> elttype:3 ind
+R2473:2476 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2466:2472 CodegenPtx.PtxTypes <> elttype:3 ind
+R2477:2483 CodegenPtx.PtxTypes <> elttype:3 ind
+scheme 2324:2330 <> elttype_rect
+scheme 2324:2330 <> elttype_ind
+scheme 2324:2330 <> elttype_rec
+scheme 2324:2330 <> elttype_sind
+ind 2813:2825 <> ptx_binop_tag
+constr 2834:2837 <> PAdd
+constr 2841:2844 <> PSub
+constr 2848:2851 <> PMul
+constr 2855:2858 <> PDiv
+constr 2862:2865 <> PMod
+constr 2871:2874 <> PAnd
+constr 2878:2880 <> POr
+constr 2886:2889 <> PShl
+constr 2893:2896 <> PShr
+constr 2902:2908 <> PBitAnd
+constr 2912:2917 <> PBitOr
+constr 2921:2927 <> PBitXor
+scheme 2813:2825 <> ptx_binop_tag_rect
+scheme 2813:2825 <> ptx_binop_tag_ind
+scheme 2813:2825 <> ptx_binop_tag_rec
+scheme 2813:2825 <> ptx_binop_tag_sind
+ind 2992:3002 <> ptx_cmp_tag
+constr 3011:3013 <> PEq
+constr 3017:3019 <> PNe
+constr 3023:3025 <> PLt
+constr 3029:3031 <> PLe
+constr 3035:3037 <> PGt
+constr 3041:3043 <> PGe
+scheme 2992:3002 <> ptx_cmp_tag_rect
+scheme 2992:3002 <> ptx_cmp_tag_ind
+scheme 2992:3002 <> ptx_cmp_tag_rec
+scheme 2992:3002 <> ptx_cmp_tag_sind
+ind 3355:3371 <> ptx_intrinsic_tag
+constr 3380:3386 <> PISin32
+constr 3391:3397 <> PICos32
+constr 3402:3409 <> PISqrt32
+constr 3414:3421 <> PIFabs32
+constr 3427:3433 <> PISin64
+constr 3438:3444 <> PICos64
+constr 3449:3456 <> PISqrt64
+constr 3461:3468 <> PIFabs64
+constr 3474:3478 <> PIFma
+scheme 3355:3371 <> ptx_intrinsic_tag_rect
+scheme 3355:3371 <> ptx_intrinsic_tag_ind
+scheme 3355:3371 <> ptx_intrinsic_tag_rec
+scheme 3355:3371 <> ptx_intrinsic_tag_sind
+ind 4688:4699 <> ptx_expr_ast
+constr 4708:4716 <> PtxLitU32
+constr 4758:4766 <> PtxLitU64
+constr 4832:4840 <> PtxLitF32
+constr 4882:4890 <> PtxLitF64
+constr 4956:4961 <> PtxReg
+constr 5006:5013 <> PtxBinop
+constr 5088:5093 <> PtxCmp
+constr 5170:5182 <> PtxGlobalRead
+constr 5220:5232 <> PtxSharedRead
+constr 5270:5276 <> PtxTidx
+constr 5302:5308 <> PtxBidx
+constr 5334:5340 <> PtxBdim
+constr 5366:5377 <> PtxIntrinsic
+constr 5588:5595 <> PtxFma32
+constr 5668:5675 <> PtxFma64
+R4726:4740 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4723:4725 Corelib.Init.Datatypes <> nat ind
+R4741:4752 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R4776:4790 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4773:4775 Corelib.Init.Datatypes <> nat ind
+R4791:4802 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R4852:4864 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4847:4851 Corelib.Floats.PrimFloat <> float prim
+R4865:4876 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R4902:4914 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4897:4901 Corelib.Floats.PrimFloat <> float prim
+R4915:4926 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R4977:4988 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4971:4976 Stdlib.Strings.String <> string ind
+R4989:5000 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5034:5038 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5021:5033 CodegenPtx.PtxTypes <> ptx_binop_tag ind
+R5051:5054 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5039:5050 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5067:5070 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5055:5066 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5071:5082 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5114:5120 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5103:5113 CodegenPtx.PtxTypes <> ptx_cmp_tag ind
+R5133:5136 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5121:5132 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5149:5152 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5137:5148 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5153:5164 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5198:5202 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5186:5197 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5203:5214 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5248:5252 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5236:5247 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5253:5264 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5285:5296 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5317:5328 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5349:5360 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5399:5402 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5382:5398 CodegenPtx.PtxTypes <> ptx_intrinsic_tag ind
+R5415:5418 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5403:5414 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5419:5430 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5615:5618 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5603:5614 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5631:5634 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5619:5630 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5647:5650 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5635:5646 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5651:5662 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5695:5698 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5683:5694 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5711:5714 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5699:5710 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5727:5730 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5715:5726 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+R5731:5742 CodegenPtx.PtxTypes <> ptx_expr_ast:11 ind
+scheme 4688:4699 <> ptx_expr_ast_rect
+scheme 4688:4699 <> ptx_expr_ast_ind
+scheme 4688:4699 <> ptx_expr_ast_rec
+scheme 4688:4699 <> ptx_expr_ast_sind
+def 6549:6563 <> ptx_reg_type_of
+R6570:6576 CodegenPtx.PtxTypes <> elttype ind
+binder 6566:6566 <> t:13
+R6581:6588 CodegenPtx.PtxTypes <> ptx_type ind
+R6601:6601 CodegenPtx.PtxTypes <> t:13 var
+R6612:6619 CodegenPtx.PtxTypes <> ET_Int32 constr
+R6626:6632 CodegenPtx.PtxTypes <> PTX_U32 constr
+R6638:6644 CodegenPtx.PtxTypes <> ET_Bool constr
+R6652:6658 CodegenPtx.PtxTypes <> PTX_U32 constr
+R6664:6670 CodegenPtx.PtxTypes <> ET_Unit constr
+R6678:6684 CodegenPtx.PtxTypes <> PTX_U32 constr
+R6690:6697 CodegenPtx.PtxTypes <> ET_Int64 constr
+R6704:6710 CodegenPtx.PtxTypes <> PTX_U64 constr
+R6716:6725 CodegenPtx.PtxTypes <> ET_Float32 constr
+R6730:6736 CodegenPtx.PtxTypes <> PTX_F32 constr
+R6742:6751 CodegenPtx.PtxTypes <> ET_Float64 constr
+R6756:6762 CodegenPtx.PtxTypes <> PTX_F64 constr
+R6768:6773 CodegenPtx.PtxTypes <> ET_Vec constr
+R6782:6788 CodegenPtx.PtxTypes <> PTX_U64 constr
+R6794:6801 CodegenPtx.PtxTypes <> ET_Array constr
+R6808:6814 CodegenPtx.PtxTypes <> PTX_U64 constr
+prf 7526:7546 <> ptx_reg_type_of_total
+R7564:7570 CodegenPtx.PtxTypes <> elttype ind
+binder 7560:7560 <> t:15
+R7574:7581 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R7594:7596 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R7586:7593 CodegenPtx.PtxTypes <> ptx_type ind
+binder 7582:7582 <> p:16
+R7614:7616 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7597:7611 CodegenPtx.PtxTypes <> ptx_reg_type_of def
+R7613:7613 CodegenPtx.PtxTypes <> t:15 var
+R7617:7617 CodegenPtx.PtxTypes <> p:16 var
+prf 7861:7881 <> ptx_reg_type_of_int32
+R7910:7914 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7886:7900 CodegenPtx.PtxTypes <> ptx_reg_type_of def
+R7902:7909 CodegenPtx.PtxTypes <> ET_Int32 constr
+R7915:7921 CodegenPtx.PtxTypes <> PTX_U32 constr
+prf 7955:7974 <> ptx_reg_type_of_bool
+R8003:8008 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7980:7994 CodegenPtx.PtxTypes <> ptx_reg_type_of def
+R7996:8002 CodegenPtx.PtxTypes <> ET_Bool constr
+R8009:8015 CodegenPtx.PtxTypes <> PTX_U32 constr
+prf 8049:8068 <> ptx_reg_type_of_unit
+R8097:8102 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8074:8088 CodegenPtx.PtxTypes <> ptx_reg_type_of def
+R8090:8096 CodegenPtx.PtxTypes <> ET_Unit constr
+R8103:8109 CodegenPtx.PtxTypes <> PTX_U32 constr
+prf 8143:8163 <> ptx_reg_type_of_int64
+R8192:8196 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8168:8182 CodegenPtx.PtxTypes <> ptx_reg_type_of def
+R8184:8191 CodegenPtx.PtxTypes <> ET_Int64 constr
+R8197:8203 CodegenPtx.PtxTypes <> PTX_U64 constr
+prf 8237:8259 <> ptx_reg_type_of_float32
+R8288:8290 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8262:8276 CodegenPtx.PtxTypes <> ptx_reg_type_of def
+R8278:8287 CodegenPtx.PtxTypes <> ET_Float32 constr
+R8291:8297 CodegenPtx.PtxTypes <> PTX_F32 constr
+prf 8331:8353 <> ptx_reg_type_of_float64
+R8382:8384 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8356:8370 CodegenPtx.PtxTypes <> ptx_reg_type_of def
+R8372:8381 CodegenPtx.PtxTypes <> ET_Float64 constr
+R8385:8391 CodegenPtx.PtxTypes <> PTX_F64 constr
+prf 8425:8443 <> ptx_reg_type_of_vec
+binder 8457:8457 <> t:17
+R8486:8488 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8460:8474 CodegenPtx.PtxTypes <> ptx_reg_type_of def
+R8477:8482 CodegenPtx.PtxTypes <> ET_Vec constr
+R8484:8484 CodegenPtx.PtxTypes <> t:17 var
+R8489:8495 CodegenPtx.PtxTypes <> PTX_U64 constr
+prf 8529:8549 <> ptx_reg_type_of_array
+binder 8561:8561 <> t:18
+R8592:8594 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8564:8578 CodegenPtx.PtxTypes <> ptx_reg_type_of def
+R8581:8588 CodegenPtx.PtxTypes <> ET_Array constr
+R8590:8590 CodegenPtx.PtxTypes <> t:18 var
+R8595:8601 CodegenPtx.PtxTypes <> PTX_U64 constr
+def 9332:9350 <> agpu_eval_ptx_binop
+R9358:9370 CodegenPtx.PtxTypes <> ptx_binop_tag ind
+binder 9353:9354 <> op:19
+R9382:9388 CodegenPtx.AGpuSemantics <> ptx_val ind
+binder 9374:9375 <> v1:20
+binder 9377:9378 <> v2:21
+R9397:9402 Corelib.Init.Datatypes <> option ind
+R9404:9410 CodegenPtx.AGpuSemantics <> ptx_val ind
+R9431:9432 CodegenPtx.PtxTypes <> v2:21 var
+R9427:9428 CodegenPtx.PtxTypes <> v1:20 var
+R9423:9424 CodegenPtx.PtxTypes <> op:19 var
+R9465:9468 CodegenPtx.PtxTypes <> PAdd constr
+R9474:9476 CodegenPtx.AGpuSemantics <> U32 constr
+R9481:9483 CodegenPtx.AGpuSemantics <> U32 constr
+R9490:9493 Corelib.Init.Datatypes <> Some constr
+R9496:9498 CodegenPtx.AGpuSemantics <> U32 constr
+R9502:9504 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9513:9516 CodegenPtx.PtxTypes <> PSub constr
+R9522:9524 CodegenPtx.AGpuSemantics <> U32 constr
+R9529:9531 CodegenPtx.AGpuSemantics <> U32 constr
+R9538:9541 Corelib.Init.Datatypes <> Some constr
+R9544:9546 CodegenPtx.AGpuSemantics <> U32 constr
+R9550:9552 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R9561:9564 CodegenPtx.PtxTypes <> PMul constr
+R9570:9572 CodegenPtx.AGpuSemantics <> U32 constr
+R9577:9579 CodegenPtx.AGpuSemantics <> U32 constr
+R9586:9589 Corelib.Init.Datatypes <> Some constr
+R9592:9594 CodegenPtx.AGpuSemantics <> U32 constr
+R9598:9600 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R9609:9612 CodegenPtx.PtxTypes <> PDiv constr
+R9618:9620 CodegenPtx.AGpuSemantics <> U32 constr
+R9625:9627 CodegenPtx.AGpuSemantics <> U32 constr
+R9634:9637 Corelib.Init.Datatypes <> Some constr
+R9640:9642 CodegenPtx.AGpuSemantics <> U32 constr
+R9645:9651 Stdlib.Arith.PeanoNat Nat div def
+R9663:9666 CodegenPtx.PtxTypes <> PMod constr
+R9672:9674 CodegenPtx.AGpuSemantics <> U32 constr
+R9679:9681 CodegenPtx.AGpuSemantics <> U32 constr
+R9688:9691 Corelib.Init.Datatypes <> Some constr
+R9694:9696 CodegenPtx.AGpuSemantics <> U32 constr
+R9699:9708 Stdlib.Arith.PeanoNat Nat modulo def
+R9720:9723 CodegenPtx.PtxTypes <> PAnd constr
+R9729:9731 CodegenPtx.AGpuSemantics <> U32 constr
+R9736:9738 CodegenPtx.AGpuSemantics <> U32 constr
+R9745:9748 Corelib.Init.Datatypes <> Some constr
+R9751:9753 CodegenPtx.AGpuSemantics <> U32 constr
+R9756:9763 Stdlib.Arith.PeanoNat Nat land def
+R9775:9777 CodegenPtx.PtxTypes <> POr constr
+R9784:9786 CodegenPtx.AGpuSemantics <> U32 constr
+R9791:9793 CodegenPtx.AGpuSemantics <> U32 constr
+R9800:9803 Corelib.Init.Datatypes <> Some constr
+R9806:9808 CodegenPtx.AGpuSemantics <> U32 constr
+R9811:9817 Stdlib.Arith.PeanoNat Nat lor def
+R9830:9836 CodegenPtx.PtxTypes <> PBitAnd constr
+R9839:9841 CodegenPtx.AGpuSemantics <> U32 constr
+R9846:9848 CodegenPtx.AGpuSemantics <> U32 constr
+R9855:9858 Corelib.Init.Datatypes <> Some constr
+R9861:9863 CodegenPtx.AGpuSemantics <> U32 constr
+R9866:9873 Stdlib.Arith.PeanoNat Nat land def
+R9885:9890 CodegenPtx.PtxTypes <> PBitOr constr
+R9894:9896 CodegenPtx.AGpuSemantics <> U32 constr
+R9901:9903 CodegenPtx.AGpuSemantics <> U32 constr
+R9910:9913 Corelib.Init.Datatypes <> Some constr
+R9916:9918 CodegenPtx.AGpuSemantics <> U32 constr
+R9921:9927 Stdlib.Arith.PeanoNat Nat lor def
+R9940:9946 CodegenPtx.PtxTypes <> PBitXor constr
+R9949:9951 CodegenPtx.AGpuSemantics <> U32 constr
+R9956:9958 CodegenPtx.AGpuSemantics <> U32 constr
+R9965:9968 Corelib.Init.Datatypes <> Some constr
+R9971:9973 CodegenPtx.AGpuSemantics <> U32 constr
+R9976:9983 Stdlib.Arith.PeanoNat Nat lxor def
+R9995:9998 CodegenPtx.PtxTypes <> PShl constr
+R10004:10006 CodegenPtx.AGpuSemantics <> U32 constr
+R10011:10013 CodegenPtx.AGpuSemantics <> U32 constr
+R10020:10023 Corelib.Init.Datatypes <> Some constr
+R10026:10028 CodegenPtx.AGpuSemantics <> U32 constr
+R10031:10040 Stdlib.Arith.PeanoNat Nat shiftl def
+R10052:10055 CodegenPtx.PtxTypes <> PShr constr
+R10061:10063 CodegenPtx.AGpuSemantics <> U32 constr
+R10068:10070 CodegenPtx.AGpuSemantics <> U32 constr
+R10077:10080 Corelib.Init.Datatypes <> Some constr
+R10083:10085 CodegenPtx.AGpuSemantics <> U32 constr
+R10088:10097 Stdlib.Arith.PeanoNat Nat shiftr def
+R10131:10134 CodegenPtx.PtxTypes <> PAdd constr
+R10137:10139 CodegenPtx.AGpuSemantics <> U64 constr
+R10144:10146 CodegenPtx.AGpuSemantics <> U64 constr
+R10153:10156 Corelib.Init.Datatypes <> Some constr
+R10159:10161 CodegenPtx.AGpuSemantics <> U64 constr
+R10165:10167 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R10176:10179 CodegenPtx.PtxTypes <> PSub constr
+R10182:10184 CodegenPtx.AGpuSemantics <> U64 constr
+R10189:10191 CodegenPtx.AGpuSemantics <> U64 constr
+R10198:10201 Corelib.Init.Datatypes <> Some constr
+R10204:10206 CodegenPtx.AGpuSemantics <> U64 constr
+R10210:10212 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R10221:10224 CodegenPtx.PtxTypes <> PMul constr
+R10227:10229 CodegenPtx.AGpuSemantics <> U64 constr
+R10234:10236 CodegenPtx.AGpuSemantics <> U64 constr
+R10243:10246 Corelib.Init.Datatypes <> Some constr
+R10249:10251 CodegenPtx.AGpuSemantics <> U64 constr
+R10255:10257 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R10266:10269 CodegenPtx.PtxTypes <> PDiv constr
+R10272:10274 CodegenPtx.AGpuSemantics <> U64 constr
+R10279:10281 CodegenPtx.AGpuSemantics <> U64 constr
+R10288:10291 Corelib.Init.Datatypes <> Some constr
+R10294:10296 CodegenPtx.AGpuSemantics <> U64 constr
+R10299:10305 Stdlib.Arith.PeanoNat Nat div def
+R10317:10320 CodegenPtx.PtxTypes <> PMod constr
+R10323:10325 CodegenPtx.AGpuSemantics <> U64 constr
+R10330:10332 CodegenPtx.AGpuSemantics <> U64 constr
+R10339:10342 Corelib.Init.Datatypes <> Some constr
+R10345:10347 CodegenPtx.AGpuSemantics <> U64 constr
+R10350:10359 Stdlib.Arith.PeanoNat Nat modulo def
+R10393:10396 CodegenPtx.PtxTypes <> PAdd constr
+R10399:10401 CodegenPtx.AGpuSemantics <> F32 constr
+R10406:10408 CodegenPtx.AGpuSemantics <> F32 constr
+R10415:10418 Corelib.Init.Datatypes <> Some constr
+R10421:10423 CodegenPtx.AGpuSemantics <> F32 constr
+R10426:10428 Corelib.Floats.PrimFloat <> add prim
+R10440:10443 CodegenPtx.PtxTypes <> PSub constr
+R10446:10448 CodegenPtx.AGpuSemantics <> F32 constr
+R10453:10455 CodegenPtx.AGpuSemantics <> F32 constr
+R10462:10465 Corelib.Init.Datatypes <> Some constr
+R10468:10470 CodegenPtx.AGpuSemantics <> F32 constr
+R10473:10475 Corelib.Floats.PrimFloat <> sub prim
+R10487:10490 CodegenPtx.PtxTypes <> PMul constr
+R10493:10495 CodegenPtx.AGpuSemantics <> F32 constr
+R10500:10502 CodegenPtx.AGpuSemantics <> F32 constr
+R10509:10512 Corelib.Init.Datatypes <> Some constr
+R10515:10517 CodegenPtx.AGpuSemantics <> F32 constr
+R10520:10522 Corelib.Floats.PrimFloat <> mul prim
+R10534:10537 CodegenPtx.PtxTypes <> PDiv constr
+R10540:10542 CodegenPtx.AGpuSemantics <> F32 constr
+R10547:10549 CodegenPtx.AGpuSemantics <> F32 constr
+R10556:10559 Corelib.Init.Datatypes <> Some constr
+R10562:10564 CodegenPtx.AGpuSemantics <> F32 constr
+R10567:10569 Corelib.Floats.PrimFloat <> div prim
+R10603:10606 CodegenPtx.PtxTypes <> PAdd constr
+R10609:10611 CodegenPtx.AGpuSemantics <> F64 constr
+R10616:10618 CodegenPtx.AGpuSemantics <> F64 constr
+R10625:10628 Corelib.Init.Datatypes <> Some constr
+R10631:10633 CodegenPtx.AGpuSemantics <> F64 constr
+R10636:10638 Corelib.Floats.PrimFloat <> add prim
+R10650:10653 CodegenPtx.PtxTypes <> PSub constr
+R10656:10658 CodegenPtx.AGpuSemantics <> F64 constr
+R10663:10665 CodegenPtx.AGpuSemantics <> F64 constr
+R10672:10675 Corelib.Init.Datatypes <> Some constr
+R10678:10680 CodegenPtx.AGpuSemantics <> F64 constr
+R10683:10685 Corelib.Floats.PrimFloat <> sub prim
+R10697:10700 CodegenPtx.PtxTypes <> PMul constr
+R10703:10705 CodegenPtx.AGpuSemantics <> F64 constr
+R10710:10712 CodegenPtx.AGpuSemantics <> F64 constr
+R10719:10722 Corelib.Init.Datatypes <> Some constr
+R10725:10727 CodegenPtx.AGpuSemantics <> F64 constr
+R10730:10732 Corelib.Floats.PrimFloat <> mul prim
+R10744:10747 CodegenPtx.PtxTypes <> PDiv constr
+R10750:10752 CodegenPtx.AGpuSemantics <> F64 constr
+R10757:10759 CodegenPtx.AGpuSemantics <> F64 constr
+R10766:10769 Corelib.Init.Datatypes <> Some constr
+R10772:10774 CodegenPtx.AGpuSemantics <> F64 constr
+R10777:10779 Corelib.Floats.PrimFloat <> div prim
+R10845:10848 Corelib.Init.Datatypes <> None constr
+def 10929:10945 <> agpu_eval_ptx_cmp
+R10953:10963 CodegenPtx.PtxTypes <> ptx_cmp_tag ind
+binder 10948:10949 <> op:25
+R10975:10981 CodegenPtx.AGpuSemantics <> ptx_val ind
+binder 10967:10968 <> v1:26
+binder 10970:10971 <> v2:27
+R10990:10995 Corelib.Init.Datatypes <> option ind
+R10997:11003 CodegenPtx.AGpuSemantics <> ptx_val ind
+R11024:11025 CodegenPtx.PtxTypes <> v2:27 var
+R11020:11021 CodegenPtx.PtxTypes <> v1:26 var
+R11016:11017 CodegenPtx.PtxTypes <> op:25 var
+R11058:11060 CodegenPtx.PtxTypes <> PEq constr
+R11063:11065 CodegenPtx.AGpuSemantics <> U32 constr
+R11070:11072 CodegenPtx.AGpuSemantics <> U32 constr
+R11079:11082 Corelib.Init.Datatypes <> Some constr
+R11085:11098 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R11101:11107 Stdlib.Arith.PeanoNat Nat eqb def
+R11119:11121 CodegenPtx.PtxTypes <> PNe constr
+R11124:11126 CodegenPtx.AGpuSemantics <> U32 constr
+R11131:11133 CodegenPtx.AGpuSemantics <> U32 constr
+R11140:11143 Corelib.Init.Datatypes <> Some constr
+R11146:11159 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R11162:11165 Corelib.Init.Datatypes <> negb def
+R11168:11174 Stdlib.Arith.PeanoNat Nat eqb def
+R11187:11189 CodegenPtx.PtxTypes <> PLt constr
+R11192:11194 CodegenPtx.AGpuSemantics <> U32 constr
+R11199:11201 CodegenPtx.AGpuSemantics <> U32 constr
+R11208:11211 Corelib.Init.Datatypes <> Some constr
+R11214:11227 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R11230:11236 Stdlib.Arith.PeanoNat Nat ltb def
+R11248:11250 CodegenPtx.PtxTypes <> PLe constr
+R11253:11255 CodegenPtx.AGpuSemantics <> U32 constr
+R11260:11262 CodegenPtx.AGpuSemantics <> U32 constr
+R11269:11272 Corelib.Init.Datatypes <> Some constr
+R11275:11288 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R11291:11297 Stdlib.Arith.PeanoNat Nat leb def
+R11309:11311 CodegenPtx.PtxTypes <> PGt constr
+R11314:11316 CodegenPtx.AGpuSemantics <> U32 constr
+R11321:11323 CodegenPtx.AGpuSemantics <> U32 constr
+R11330:11333 Corelib.Init.Datatypes <> Some constr
+R11336:11349 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R11352:11358 Stdlib.Arith.PeanoNat Nat ltb def
+R11370:11372 CodegenPtx.PtxTypes <> PGe constr
+R11375:11377 CodegenPtx.AGpuSemantics <> U32 constr
+R11382:11384 CodegenPtx.AGpuSemantics <> U32 constr
+R11391:11394 Corelib.Init.Datatypes <> Some constr
+R11397:11410 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R11413:11419 Stdlib.Arith.PeanoNat Nat leb def
+R11453:11455 CodegenPtx.PtxTypes <> PEq constr
+R11458:11460 CodegenPtx.AGpuSemantics <> U64 constr
+R11465:11467 CodegenPtx.AGpuSemantics <> U64 constr
+R11474:11477 Corelib.Init.Datatypes <> Some constr
+R11480:11493 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R11496:11502 Stdlib.Arith.PeanoNat Nat eqb def
+R11514:11516 CodegenPtx.PtxTypes <> PNe constr
+R11519:11521 CodegenPtx.AGpuSemantics <> U64 constr
+R11526:11528 CodegenPtx.AGpuSemantics <> U64 constr
+R11535:11538 Corelib.Init.Datatypes <> Some constr
+R11541:11554 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R11557:11560 Corelib.Init.Datatypes <> negb def
+R11563:11569 Stdlib.Arith.PeanoNat Nat eqb def
+R11582:11584 CodegenPtx.PtxTypes <> PLt constr
+R11587:11589 CodegenPtx.AGpuSemantics <> U64 constr
+R11594:11596 CodegenPtx.AGpuSemantics <> U64 constr
+R11603:11606 Corelib.Init.Datatypes <> Some constr
+R11609:11622 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R11625:11631 Stdlib.Arith.PeanoNat Nat ltb def
+R11643:11645 CodegenPtx.PtxTypes <> PLe constr
+R11648:11650 CodegenPtx.AGpuSemantics <> U64 constr
+R11655:11657 CodegenPtx.AGpuSemantics <> U64 constr
+R11664:11667 Corelib.Init.Datatypes <> Some constr
+R11670:11683 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R11686:11692 Stdlib.Arith.PeanoNat Nat leb def
+R11704:11706 CodegenPtx.PtxTypes <> PGt constr
+R11709:11711 CodegenPtx.AGpuSemantics <> U64 constr
+R11716:11718 CodegenPtx.AGpuSemantics <> U64 constr
+R11725:11728 Corelib.Init.Datatypes <> Some constr
+R11731:11744 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R11747:11753 Stdlib.Arith.PeanoNat Nat ltb def
+R11765:11767 CodegenPtx.PtxTypes <> PGe constr
+R11770:11772 CodegenPtx.AGpuSemantics <> U64 constr
+R11777:11779 CodegenPtx.AGpuSemantics <> U64 constr
+R11786:11789 Corelib.Init.Datatypes <> Some constr
+R11792:11805 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R11808:11814 Stdlib.Arith.PeanoNat Nat leb def
+R11848:11850 CodegenPtx.PtxTypes <> PEq constr
+R11853:11855 CodegenPtx.AGpuSemantics <> F32 constr
+R11860:11862 CodegenPtx.AGpuSemantics <> F32 constr
+R11869:11872 Corelib.Init.Datatypes <> Some constr
+R11875:11888 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R11891:11893 Corelib.Floats.PrimFloat <> eqb prim
+R11905:11907 CodegenPtx.PtxTypes <> PNe constr
+R11910:11912 CodegenPtx.AGpuSemantics <> F32 constr
+R11917:11919 CodegenPtx.AGpuSemantics <> F32 constr
+R11926:11929 Corelib.Init.Datatypes <> Some constr
+R11932:11945 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R11948:11951 Corelib.Init.Datatypes <> negb def
+R11954:11956 Corelib.Floats.PrimFloat <> eqb prim
+R11969:11971 CodegenPtx.PtxTypes <> PLt constr
+R11974:11976 CodegenPtx.AGpuSemantics <> F32 constr
+R11981:11983 CodegenPtx.AGpuSemantics <> F32 constr
+R11990:11993 Corelib.Init.Datatypes <> Some constr
+R11996:12009 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R12012:12014 Corelib.Floats.PrimFloat <> ltb prim
+R12026:12028 CodegenPtx.PtxTypes <> PLe constr
+R12031:12033 CodegenPtx.AGpuSemantics <> F32 constr
+R12038:12040 CodegenPtx.AGpuSemantics <> F32 constr
+R12047:12050 Corelib.Init.Datatypes <> Some constr
+R12053:12066 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R12069:12071 Corelib.Floats.PrimFloat <> leb prim
+R12083:12085 CodegenPtx.PtxTypes <> PGt constr
+R12088:12090 CodegenPtx.AGpuSemantics <> F32 constr
+R12095:12097 CodegenPtx.AGpuSemantics <> F32 constr
+R12104:12107 Corelib.Init.Datatypes <> Some constr
+R12110:12123 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R12126:12128 Corelib.Floats.PrimFloat <> ltb prim
+R12140:12142 CodegenPtx.PtxTypes <> PGe constr
+R12145:12147 CodegenPtx.AGpuSemantics <> F32 constr
+R12152:12154 CodegenPtx.AGpuSemantics <> F32 constr
+R12161:12164 Corelib.Init.Datatypes <> Some constr
+R12167:12180 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R12183:12185 Corelib.Floats.PrimFloat <> leb prim
+R12219:12221 CodegenPtx.PtxTypes <> PEq constr
+R12224:12226 CodegenPtx.AGpuSemantics <> F64 constr
+R12231:12233 CodegenPtx.AGpuSemantics <> F64 constr
+R12240:12243 Corelib.Init.Datatypes <> Some constr
+R12246:12259 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R12262:12264 Corelib.Floats.PrimFloat <> eqb prim
+R12276:12278 CodegenPtx.PtxTypes <> PNe constr
+R12281:12283 CodegenPtx.AGpuSemantics <> F64 constr
+R12288:12290 CodegenPtx.AGpuSemantics <> F64 constr
+R12297:12300 Corelib.Init.Datatypes <> Some constr
+R12303:12316 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R12319:12322 Corelib.Init.Datatypes <> negb def
+R12325:12327 Corelib.Floats.PrimFloat <> eqb prim
+R12340:12342 CodegenPtx.PtxTypes <> PLt constr
+R12345:12347 CodegenPtx.AGpuSemantics <> F64 constr
+R12352:12354 CodegenPtx.AGpuSemantics <> F64 constr
+R12361:12364 Corelib.Init.Datatypes <> Some constr
+R12367:12380 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R12383:12385 Corelib.Floats.PrimFloat <> ltb prim
+R12397:12399 CodegenPtx.PtxTypes <> PLe constr
+R12402:12404 CodegenPtx.AGpuSemantics <> F64 constr
+R12409:12411 CodegenPtx.AGpuSemantics <> F64 constr
+R12418:12421 Corelib.Init.Datatypes <> Some constr
+R12424:12437 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R12440:12442 Corelib.Floats.PrimFloat <> leb prim
+R12454:12456 CodegenPtx.PtxTypes <> PGt constr
+R12459:12461 CodegenPtx.AGpuSemantics <> F64 constr
+R12466:12468 CodegenPtx.AGpuSemantics <> F64 constr
+R12475:12478 Corelib.Init.Datatypes <> Some constr
+R12481:12494 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R12497:12499 Corelib.Floats.PrimFloat <> ltb prim
+R12511:12513 CodegenPtx.PtxTypes <> PGe constr
+R12516:12518 CodegenPtx.AGpuSemantics <> F64 constr
+R12523:12525 CodegenPtx.AGpuSemantics <> F64 constr
+R12532:12535 Corelib.Init.Datatypes <> Some constr
+R12538:12551 CodegenPtx.AGpuSemantics <> nat_cmp_to_u32 def
+R12554:12556 Corelib.Floats.PrimFloat <> leb prim
+R12609:12612 Corelib.Init.Datatypes <> None constr
+def 12989:13011 <> agpu_eval_ptx_intrinsic
+R13020:13036 CodegenPtx.PtxTypes <> ptx_intrinsic_tag ind
+binder 13014:13016 <> tag:31
+R13044:13050 CodegenPtx.AGpuSemantics <> ptx_val ind
+binder 13040:13040 <> v:32
+R13059:13064 Corelib.Init.Datatypes <> option ind
+R13066:13072 CodegenPtx.AGpuSemantics <> ptx_val ind
+R13090:13090 CodegenPtx.PtxTypes <> v:32 var
+R13085:13087 CodegenPtx.PtxTypes <> tag:31 var
+R13101:13107 CodegenPtx.PtxTypes <> PISin32 constr
+R13111:13113 CodegenPtx.AGpuSemantics <> F32 constr
+R13120:13123 Corelib.Init.Datatypes <> Some constr
+R13126:13128 CodegenPtx.AGpuSemantics <> F32 constr
+R13131:13137 CodegenPtx.AGpuSemantics <> sin_f32 defax
+R13147:13153 CodegenPtx.PtxTypes <> PICos32 constr
+R13157:13159 CodegenPtx.AGpuSemantics <> F32 constr
+R13166:13169 Corelib.Init.Datatypes <> Some constr
+R13172:13174 CodegenPtx.AGpuSemantics <> F32 constr
+R13177:13183 CodegenPtx.AGpuSemantics <> cos_f32 defax
+R13193:13200 CodegenPtx.PtxTypes <> PISqrt32 constr
+R13203:13205 CodegenPtx.AGpuSemantics <> F32 constr
+R13212:13215 Corelib.Init.Datatypes <> Some constr
+R13218:13220 CodegenPtx.AGpuSemantics <> F32 constr
+R13223:13226 Corelib.Floats.PrimFloat <> sqrt prim
+R13236:13243 CodegenPtx.PtxTypes <> PIFabs32 constr
+R13246:13248 CodegenPtx.AGpuSemantics <> F32 constr
+R13255:13258 Corelib.Init.Datatypes <> Some constr
+R13261:13263 CodegenPtx.AGpuSemantics <> F32 constr
+R13266:13268 Corelib.Floats.PrimFloat <> abs prim
+R13279:13285 CodegenPtx.PtxTypes <> PISin64 constr
+R13289:13291 CodegenPtx.AGpuSemantics <> F64 constr
+R13298:13301 Corelib.Init.Datatypes <> Some constr
+R13304:13306 CodegenPtx.AGpuSemantics <> F64 constr
+R13309:13315 CodegenPtx.AGpuSemantics <> sin_f64 defax
+R13325:13331 CodegenPtx.PtxTypes <> PICos64 constr
+R13335:13337 CodegenPtx.AGpuSemantics <> F64 constr
+R13344:13347 Corelib.Init.Datatypes <> Some constr
+R13350:13352 CodegenPtx.AGpuSemantics <> F64 constr
+R13355:13361 CodegenPtx.AGpuSemantics <> cos_f64 defax
+R13371:13378 CodegenPtx.PtxTypes <> PISqrt64 constr
+R13381:13383 CodegenPtx.AGpuSemantics <> F64 constr
+R13390:13393 Corelib.Init.Datatypes <> Some constr
+R13396:13398 CodegenPtx.AGpuSemantics <> F64 constr
+R13401:13404 Corelib.Floats.PrimFloat <> sqrt prim
+R13414:13421 CodegenPtx.PtxTypes <> PIFabs64 constr
+R13424:13426 CodegenPtx.AGpuSemantics <> F64 constr
+R13433:13436 Corelib.Init.Datatypes <> Some constr
+R13439:13441 CodegenPtx.AGpuSemantics <> F64 constr
+R13444:13446 Corelib.Floats.PrimFloat <> abs prim
+R13545:13548 Corelib.Init.Datatypes <> None constr
+def 13894:13906 <> agpu_eval_ptx
+R13914:13923 CodegenPtx.AGpuSemantics <> agpu_state rec
+binder 13909:13910 <> st:35
+R13931:13942 CodegenPtx.PtxTypes <> ptx_expr_ast ind
+binder 13927:13927 <> e:36
+R13951:13956 Corelib.Init.Datatypes <> option ind
+R13966:13968 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R13959:13965 CodegenPtx.AGpuSemantics <> ptx_val ind
+R13969:13978 CodegenPtx.AGpuSemantics <> agpu_state rec
+R13992:13992 CodegenPtx.PtxTypes <> e:36 var
+R14031:14039 CodegenPtx.PtxTypes <> PtxLitU32 constr
+R14046:14049 Corelib.Init.Datatypes <> Some constr
+R14051:14051 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14057:14058 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14061:14061 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14052:14054 CodegenPtx.AGpuSemantics <> U32 constr
+R14059:14060 CodegenPtx.PtxTypes <> st:35 var
+R14067:14075 CodegenPtx.PtxTypes <> PtxLitU64 constr
+R14082:14085 Corelib.Init.Datatypes <> Some constr
+R14087:14087 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14093:14094 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14097:14097 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14088:14090 CodegenPtx.AGpuSemantics <> U64 constr
+R14095:14096 CodegenPtx.PtxTypes <> st:35 var
+R14103:14111 CodegenPtx.PtxTypes <> PtxLitF32 constr
+R14118:14121 Corelib.Init.Datatypes <> Some constr
+R14123:14123 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14129:14130 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14133:14133 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14124:14126 CodegenPtx.AGpuSemantics <> F32 constr
+R14131:14132 CodegenPtx.PtxTypes <> st:35 var
+R14139:14147 CodegenPtx.PtxTypes <> PtxLitF64 constr
+R14154:14157 Corelib.Init.Datatypes <> Some constr
+R14159:14159 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14165:14166 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14169:14169 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14160:14162 CodegenPtx.AGpuSemantics <> F64 constr
+R14167:14168 CodegenPtx.PtxTypes <> st:35 var
+R14208:14213 CodegenPtx.PtxTypes <> PtxReg constr
+R14240:14243 CodegenPtx.AGpuSemantics <> regs proj
+R14236:14237 CodegenPtx.PtxTypes <> st:35 var
+R14265:14268 Corelib.Init.Datatypes <> Some constr
+R14275:14278 Corelib.Init.Datatypes <> Some constr
+R14280:14280 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14282:14283 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14286:14286 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14284:14285 CodegenPtx.PtxTypes <> st:35 var
+R14296:14299 Corelib.Init.Datatypes <> None constr
+R14306:14309 Corelib.Init.Datatypes <> None constr
+R14361:14368 CodegenPtx.PtxTypes <> PtxBinop constr
+R14394:14406 CodegenPtx.PtxTypes <> agpu_eval_ptx:37 def
+R14408:14409 CodegenPtx.PtxTypes <> st:35 var
+R14427:14430 Corelib.Init.Datatypes <> None constr
+R14435:14438 Corelib.Init.Datatypes <> None constr
+R14448:14451 Corelib.Init.Datatypes <> Some constr
+R14453:14453 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14456:14457 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14461:14461 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14482:14494 CodegenPtx.PtxTypes <> agpu_eval_ptx:37 def
+R14520:14523 Corelib.Init.Datatypes <> None constr
+R14528:14531 Corelib.Init.Datatypes <> None constr
+R14545:14548 Corelib.Init.Datatypes <> Some constr
+R14550:14550 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14553:14554 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14558:14558 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14583:14601 CodegenPtx.PtxTypes <> agpu_eval_ptx_binop def
+R14633:14636 Corelib.Init.Datatypes <> None constr
+R14643:14646 Corelib.Init.Datatypes <> None constr
+R14664:14667 Corelib.Init.Datatypes <> Some constr
+R14674:14677 Corelib.Init.Datatypes <> Some constr
+R14679:14679 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14681:14682 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14686:14686 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14764:14769 CodegenPtx.PtxTypes <> PtxCmp constr
+R14795:14807 CodegenPtx.PtxTypes <> agpu_eval_ptx:37 def
+R14809:14810 CodegenPtx.PtxTypes <> st:35 var
+R14828:14831 Corelib.Init.Datatypes <> None constr
+R14836:14839 Corelib.Init.Datatypes <> None constr
+R14849:14852 Corelib.Init.Datatypes <> Some constr
+R14854:14854 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14857:14858 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14862:14862 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14883:14895 CodegenPtx.PtxTypes <> agpu_eval_ptx:37 def
+R14921:14924 Corelib.Init.Datatypes <> None constr
+R14929:14932 Corelib.Init.Datatypes <> None constr
+R14946:14949 Corelib.Init.Datatypes <> Some constr
+R14951:14951 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14954:14955 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14959:14959 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14984:15000 CodegenPtx.PtxTypes <> agpu_eval_ptx_cmp def
+R15032:15035 Corelib.Init.Datatypes <> None constr
+R15042:15045 Corelib.Init.Datatypes <> None constr
+R15063:15066 Corelib.Init.Datatypes <> Some constr
+R15073:15076 Corelib.Init.Datatypes <> Some constr
+R15078:15078 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15080:15081 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15085:15085 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15171:15183 CodegenPtx.PtxTypes <> PtxGlobalRead constr
+R15207:15219 CodegenPtx.PtxTypes <> agpu_eval_ptx:37 def
+R15221:15222 CodegenPtx.PtxTypes <> st:35 var
+R15244:15247 Corelib.Init.Datatypes <> Some constr
+R15249:15249 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15255:15256 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15260:15260 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15250:15252 CodegenPtx.AGpuSemantics <> U32 constr
+R15265:15268 Corelib.Init.Datatypes <> Some constr
+R15270:15270 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15295:15296 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15300:15300 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15282:15291 CodegenPtx.AGpuSemantics <> global_mem proj
+R15276:15278 CodegenPtx.AGpuSemantics <> mem proj
+R15310:15313 Corelib.Init.Datatypes <> Some constr
+R15315:15315 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15321:15322 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15326:15326 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15316:15318 CodegenPtx.AGpuSemantics <> U64 constr
+R15331:15334 Corelib.Init.Datatypes <> Some constr
+R15336:15336 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15361:15362 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15366:15366 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15348:15357 CodegenPtx.AGpuSemantics <> global_mem proj
+R15342:15344 CodegenPtx.AGpuSemantics <> mem proj
+R15381:15384 Corelib.Init.Datatypes <> None constr
+R15438:15450 CodegenPtx.PtxTypes <> PtxSharedRead constr
+R15474:15486 CodegenPtx.PtxTypes <> agpu_eval_ptx:37 def
+R15488:15489 CodegenPtx.PtxTypes <> st:35 var
+R15511:15514 Corelib.Init.Datatypes <> Some constr
+R15516:15516 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15522:15523 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15527:15527 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15517:15519 CodegenPtx.AGpuSemantics <> U32 constr
+R15532:15535 Corelib.Init.Datatypes <> Some constr
+R15537:15537 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15562:15563 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15567:15567 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15549:15558 CodegenPtx.AGpuSemantics <> shared_mem proj
+R15543:15545 CodegenPtx.AGpuSemantics <> mem proj
+R15577:15580 Corelib.Init.Datatypes <> Some constr
+R15582:15582 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15588:15589 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15593:15593 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15583:15585 CodegenPtx.AGpuSemantics <> U64 constr
+R15598:15601 Corelib.Init.Datatypes <> Some constr
+R15603:15603 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15628:15629 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15633:15633 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15615:15624 CodegenPtx.AGpuSemantics <> shared_mem proj
+R15609:15611 CodegenPtx.AGpuSemantics <> mem proj
+R15648:15651 Corelib.Init.Datatypes <> None constr
+R15710:15716 CodegenPtx.PtxTypes <> PtxTidx constr
+R15721:15724 Corelib.Init.Datatypes <> Some constr
+R15726:15726 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15745:15746 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15749:15749 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15727:15729 CodegenPtx.AGpuSemantics <> U32 constr
+R15740:15743 CodegenPtx.AGpuSemantics <> tidx proj
+R15735:15736 CodegenPtx.AGpuSemantics <> tc proj
+R15731:15732 CodegenPtx.PtxTypes <> st:35 var
+R15747:15748 CodegenPtx.PtxTypes <> st:35 var
+R15755:15761 CodegenPtx.PtxTypes <> PtxBidx constr
+R15766:15769 Corelib.Init.Datatypes <> Some constr
+R15771:15771 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15790:15791 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15794:15794 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15772:15774 CodegenPtx.AGpuSemantics <> U32 constr
+R15785:15788 CodegenPtx.AGpuSemantics <> bidx proj
+R15780:15781 CodegenPtx.AGpuSemantics <> tc proj
+R15776:15777 CodegenPtx.PtxTypes <> st:35 var
+R15792:15793 CodegenPtx.PtxTypes <> st:35 var
+R15800:15806 CodegenPtx.PtxTypes <> PtxBdim constr
+R15811:15814 Corelib.Init.Datatypes <> Some constr
+R15816:15816 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15835:15836 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15839:15839 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15817:15819 CodegenPtx.AGpuSemantics <> U32 constr
+R15830:15833 CodegenPtx.AGpuSemantics <> bdim proj
+R15825:15826 CodegenPtx.AGpuSemantics <> tc proj
+R15821:15822 CodegenPtx.PtxTypes <> st:35 var
+R15837:15838 CodegenPtx.PtxTypes <> st:35 var
+R15888:15899 CodegenPtx.PtxTypes <> PtxIntrinsic constr
+R15923:15935 CodegenPtx.PtxTypes <> agpu_eval_ptx:37 def
+R15937:15938 CodegenPtx.PtxTypes <> st:35 var
+R15956:15959 Corelib.Init.Datatypes <> None constr
+R15964:15967 Corelib.Init.Datatypes <> None constr
+R15977:15980 Corelib.Init.Datatypes <> Some constr
+R15982:15982 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15984:15985 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R15989:15989 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16010:16032 CodegenPtx.PtxTypes <> agpu_eval_ptx_intrinsic def
+R16057:16060 Corelib.Init.Datatypes <> None constr
+R16067:16070 Corelib.Init.Datatypes <> None constr
+R16084:16087 Corelib.Init.Datatypes <> Some constr
+R16094:16097 Corelib.Init.Datatypes <> Some constr
+R16099:16099 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16101:16102 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16106:16106 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16175:16182 CodegenPtx.PtxTypes <> PtxFma32 constr
+R16208:16220 CodegenPtx.PtxTypes <> agpu_eval_ptx:37 def
+R16222:16223 CodegenPtx.PtxTypes <> st:35 var
+R16241:16244 Corelib.Init.Datatypes <> Some constr
+R16246:16246 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16252:16253 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16257:16257 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16247:16249 CodegenPtx.AGpuSemantics <> F32 constr
+R16278:16290 CodegenPtx.PtxTypes <> agpu_eval_ptx:37 def
+R16316:16319 Corelib.Init.Datatypes <> Some constr
+R16321:16321 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16327:16328 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16332:16332 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16322:16324 CodegenPtx.AGpuSemantics <> F32 constr
+R16357:16369 CodegenPtx.PtxTypes <> agpu_eval_ptx:37 def
+R16399:16402 Corelib.Init.Datatypes <> Some constr
+R16404:16404 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16410:16411 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16415:16415 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16405:16407 CodegenPtx.AGpuSemantics <> F32 constr
+R16420:16423 Corelib.Init.Datatypes <> Some constr
+R16425:16425 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16445:16446 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16450:16450 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16426:16428 CodegenPtx.AGpuSemantics <> F32 constr
+R16431:16437 CodegenPtx.AGpuSemantics <> fma_f32 defax
+R16473:16476 Corelib.Init.Datatypes <> None constr
+R16513:16516 Corelib.Init.Datatypes <> None constr
+R16545:16548 Corelib.Init.Datatypes <> None constr
+R16603:16610 CodegenPtx.PtxTypes <> PtxFma64 constr
+R16636:16648 CodegenPtx.PtxTypes <> agpu_eval_ptx:37 def
+R16650:16651 CodegenPtx.PtxTypes <> st:35 var
+R16669:16672 Corelib.Init.Datatypes <> Some constr
+R16674:16674 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16680:16681 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16685:16685 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16675:16677 CodegenPtx.AGpuSemantics <> F64 constr
+R16706:16718 CodegenPtx.PtxTypes <> agpu_eval_ptx:37 def
+R16744:16747 Corelib.Init.Datatypes <> Some constr
+R16749:16749 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16755:16756 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16760:16760 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16750:16752 CodegenPtx.AGpuSemantics <> F64 constr
+R16785:16797 CodegenPtx.PtxTypes <> agpu_eval_ptx:37 def
+R16827:16830 Corelib.Init.Datatypes <> Some constr
+R16832:16832 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16838:16839 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16843:16843 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16833:16835 CodegenPtx.AGpuSemantics <> F64 constr
+R16848:16851 Corelib.Init.Datatypes <> Some constr
+R16853:16853 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16873:16874 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16878:16878 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16854:16856 CodegenPtx.AGpuSemantics <> F64 constr
+R16859:16865 CodegenPtx.AGpuSemantics <> fma_f64 defax
+R16901:16904 Corelib.Init.Datatypes <> None constr
+R16941:16944 Corelib.Init.Datatypes <> None constr
+R16973:16976 Corelib.Init.Datatypes <> None constr
+prf 17199:17218 <> agpu_eval_ptx_litu32
+binder 17231:17231 <> n:39
+binder 17233:17234 <> st:40
+R17267:17269 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17237:17249 CodegenPtx.PtxTypes <> agpu_eval_ptx def
+R17251:17252 CodegenPtx.PtxTypes <> st:40 var
+R17255:17263 CodegenPtx.PtxTypes <> PtxLitU32 constr
+R17265:17265 CodegenPtx.PtxTypes <> n:39 var
+R17270:17273 Corelib.Init.Datatypes <> Some constr
+R17275:17275 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17281:17282 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17285:17285 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17276:17278 CodegenPtx.AGpuSemantics <> U32 constr
+R17280:17280 CodegenPtx.PtxTypes <> n:39 var
+R17283:17284 CodegenPtx.PtxTypes <> st:40 var
+prf 17328:17347 <> agpu_eval_ptx_litu64
+binder 17360:17360 <> n:41
+binder 17362:17363 <> st:42
+R17396:17398 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17366:17378 CodegenPtx.PtxTypes <> agpu_eval_ptx def
+R17380:17381 CodegenPtx.PtxTypes <> st:42 var
+R17384:17392 CodegenPtx.PtxTypes <> PtxLitU64 constr
+R17394:17394 CodegenPtx.PtxTypes <> n:41 var
+R17399:17402 Corelib.Init.Datatypes <> Some constr
+R17404:17404 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17410:17411 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17414:17414 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17405:17407 CodegenPtx.AGpuSemantics <> U64 constr
+R17409:17409 CodegenPtx.PtxTypes <> n:41 var
+R17412:17413 CodegenPtx.PtxTypes <> st:42 var
+prf 17457:17476 <> agpu_eval_ptx_litf32
+binder 17489:17489 <> f:43
+binder 17491:17492 <> st:44
+R17525:17527 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17495:17507 CodegenPtx.PtxTypes <> agpu_eval_ptx def
+R17509:17510 CodegenPtx.PtxTypes <> st:44 var
+R17513:17521 CodegenPtx.PtxTypes <> PtxLitF32 constr
+R17523:17523 CodegenPtx.PtxTypes <> f:43 var
+R17528:17531 Corelib.Init.Datatypes <> Some constr
+R17533:17533 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17539:17540 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17543:17543 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17534:17536 CodegenPtx.AGpuSemantics <> F32 constr
+R17538:17538 CodegenPtx.PtxTypes <> f:43 var
+R17541:17542 CodegenPtx.PtxTypes <> st:44 var
+prf 17586:17605 <> agpu_eval_ptx_litf64
+binder 17618:17618 <> f:45
+binder 17620:17621 <> st:46
+R17654:17656 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17624:17636 CodegenPtx.PtxTypes <> agpu_eval_ptx def
+R17638:17639 CodegenPtx.PtxTypes <> st:46 var
+R17642:17650 CodegenPtx.PtxTypes <> PtxLitF64 constr
+R17652:17652 CodegenPtx.PtxTypes <> f:45 var
+R17657:17660 Corelib.Init.Datatypes <> Some constr
+R17662:17662 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17668:17669 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17672:17672 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17663:17665 CodegenPtx.AGpuSemantics <> F64 constr
+R17667:17667 CodegenPtx.PtxTypes <> f:45 var
+R17670:17671 CodegenPtx.PtxTypes <> st:46 var
+prf 17715:17732 <> agpu_eval_ptx_tidx
+binder 17745:17746 <> st:47
+R17773:17775 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17749:17761 CodegenPtx.PtxTypes <> agpu_eval_ptx def
+R17763:17764 CodegenPtx.PtxTypes <> st:47 var
+R17766:17772 CodegenPtx.PtxTypes <> PtxTidx constr
+R17776:17779 Corelib.Init.Datatypes <> Some constr
+R17781:17781 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17800:17801 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17804:17804 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17782:17784 CodegenPtx.AGpuSemantics <> U32 constr
+R17795:17798 CodegenPtx.AGpuSemantics <> tidx proj
+R17790:17791 CodegenPtx.AGpuSemantics <> tc proj
+R17786:17787 CodegenPtx.PtxTypes <> st:47 var
+R17802:17803 CodegenPtx.PtxTypes <> st:47 var
+prf 17847:17864 <> agpu_eval_ptx_bidx
+binder 17877:17878 <> st:48
+R17905:17907 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R17881:17893 CodegenPtx.PtxTypes <> agpu_eval_ptx def
+R17895:17896 CodegenPtx.PtxTypes <> st:48 var
+R17898:17904 CodegenPtx.PtxTypes <> PtxBidx constr
+R17908:17911 Corelib.Init.Datatypes <> Some constr
+R17913:17913 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17932:17933 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17936:17936 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R17914:17916 CodegenPtx.AGpuSemantics <> U32 constr
+R17927:17930 CodegenPtx.AGpuSemantics <> bidx proj
+R17922:17923 CodegenPtx.AGpuSemantics <> tc proj
+R17918:17919 CodegenPtx.PtxTypes <> st:48 var
+R17934:17935 CodegenPtx.PtxTypes <> st:48 var
+prf 17979:17996 <> agpu_eval_ptx_bdim
+binder 18009:18010 <> st:49
+R18037:18039 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18013:18025 CodegenPtx.PtxTypes <> agpu_eval_ptx def
+R18027:18028 CodegenPtx.PtxTypes <> st:49 var
+R18030:18036 CodegenPtx.PtxTypes <> PtxBdim constr
+R18040:18043 Corelib.Init.Datatypes <> Some constr
+R18045:18045 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R18064:18065 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R18068:18068 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R18046:18048 CodegenPtx.AGpuSemantics <> U32 constr
+R18059:18062 CodegenPtx.AGpuSemantics <> bdim proj
+R18054:18055 CodegenPtx.AGpuSemantics <> tc proj
+R18050:18051 CodegenPtx.PtxTypes <> st:49 var
+R18066:18067 CodegenPtx.PtxTypes <> st:49 var

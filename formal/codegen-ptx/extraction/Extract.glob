@@ -1,0 +1,10 @@
+DIGEST 77a52db18c7693180f3ce5a56c5193f1
+FExtract
+R1127:1139 CodegenPtx.AGpuSemantics <> <> lib
+R1173:1180 CodegenPtx.PtxTypes <> <> lib
+R1214:1224 CodegenPtx.PtxExprSpec <> <> lib
+R1258:1268 CodegenPtx.PtxStmtSpec <> <> lib
+R1302:1314 CodegenPtx.PtxKernelSpec <> <> lib
+R1345:1354 Stdlib.extraction.Extraction <> <> lib
+R1836:1861 Stdlib.extraction.ExtrOcamlNatInt <> <> lib
+R1891:1916 Stdlib.extraction.ExtrOCamlFloats <> <> lib
