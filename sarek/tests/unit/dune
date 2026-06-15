@@ -53,3 +53,9 @@
 (test
  (name test_float64)
  (libraries sarek.float64))
+
+; PTX snapshot test — CPU-only, no CUDA device required
+
+(test
+ (name test_ptx_snapshot)
+ (libraries sarek.codegen alcotest))
