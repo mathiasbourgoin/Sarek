@@ -1,0 +1,11 @@
+(dirs
+ spoc
+ sarek
+ sarek-cuda
+ sarek-opencl
+ sarek-vulkan
+ sarek-metal
+ tools
+ test_verification
+ benchmarks
+ formal)

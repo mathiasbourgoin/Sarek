@@ -1,0 +1,93 @@
+---
+layout: page
+title: "Lesson 3 — Elementwise map"
+---
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.css">
+<link rel="stylesheet" href="{{ site.baseurl }}/stylesheets/learn.css">
+
+<div class="lesson-container">
+
+  <h1>Lesson 3 — Elementwise map</h1>
+
+  <p>
+    An <strong>elementwise map</strong> applies a function independently to
+    every element of an array. Because there are no dependencies between
+    elements, this is the ideal GPU workload — every thread does the same
+    work on a different datum.
+  </p>
+
+  <h2>Available math functions</h2>
+  <p>
+    Sarek exposes the standard GPU math library. Some useful functions in the
+    <code>Float32</code> module:
+  </p>
+  <ul>
+    <li><code>Float32.sin x</code>, <code>Float32.cos x</code></li>
+    <li><code>Float32.sqrt x</code>, <code>Float32.exp x</code>, <code>Float32.log x</code></li>
+    <li><code>Float32.abs x</code>, <code>Float32.ceil x</code>, <code>Float32.floor x</code></li>
+  </ul>
+  <p>Inline arithmetic: <code>x *. x</code> is faster than calling a power function for squaring.</p>
+
+  <h2>Your task</h2>
+  <p>
+    Write a kernel that squares every element of <code>a</code> into
+    <code>b</code>: <code>b[i] = a[i] * a[i]</code>.
+  </p>
+
+  <label class="lesson-editor-label" for="kernel-source">Kernel source</label>
+  <textarea id="kernel-source">fun (a : float32 vector) (b : float32 vector) ->
+  let i = global_thread_id in
+  b.(i) <- (* TODO *)</textarea>
+
+  <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+    <button class="lesson-run-btn" id="run-btn">Run on my GPU</button>
+    <button class="wgsl-toggle-btn" id="wgsl-toggle">Show generated WGSL</button>
+    <span class="lesson-status" id="status-bar"></span>
+  </div>
+
+  <pre class="lesson-output" id="output-pane">Click "Run on my GPU" to execute your kernel.</pre>
+  <pre class="lesson-wgsl-pre" id="wgsl-pane" style="display:none;"></pre>
+
+  <details>
+    <summary>Hint</summary>
+    <p>
+      <code>a.(i) *. a.(i)</code> — that is all. You can also try
+      <code>Float32.sqrt (a.(i) *. a.(i))</code> to verify that
+      <code>sqrt(x²) = |x|</code> for non-negative inputs.
+    </p>
+  </details>
+
+  <div class="lesson-nav">
+    <a href="{{ site.baseurl }}/learn/02-scale-saxpy.html">&larr; Lesson 2 — Scalar params (SAXPY)</a>
+    <a href="{{ site.baseurl }}/learn/04-bounds-if.html">Lesson 4 — Control flow &rarr;</a>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/mode/mllike/mllike.min.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_transpile.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_webgpu_runner.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_lesson.js"></script>
+<script>
+SarekLesson.init({
+  editorId:     'kernel-source',
+  runButtonId:  'run-btn',
+  outputId:     'output-pane',
+  statusId:     'status-bar',
+  wgslId:       'wgsl-pane',
+  wgslToggleId: 'wgsl-toggle',
+  n: 256,
+  starter:
+    'fun (a : float32 vector) (b : float32 vector) ->\n' +
+    '  let i = global_thread_id in\n' +
+    '  b.(i) <- (* TODO *)',
+  buffers: {
+    a: { role: 'input',  elementType: 'f32', gen: function(i){ return i * 0.5; } },
+    b: { role: 'output', elementType: 'f32' },
+  },
+  scalars:   {},
+  outName:   'b',
+  reference: function(i, inputs) { return inputs.a[i] * inputs.a[i]; },
+});
+</script>

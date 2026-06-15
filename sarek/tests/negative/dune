@@ -1,0 +1,104 @@
+; Negative tests - verify expected compile errors
+;
+; These files intentionally contain errors to test error detection.
+; Disabled by default; enabled via --profile=negative
+;
+; Run via: make test_negative
+;
+; Expected errors:
+; - test_barrier_diverged: "Barrier called in diverged control flow"
+; - test_superstep_diverged: "Barrier called in diverged control flow"
+; - test_warp_diverged: "Warp collective 'warp_shuffle' called in diverged control flow"
+; - test_unbound_function: "Unbound variable"
+; - test_reserved_keyword: "'double' is a reserved C/CUDA/OpenCL keyword"
+; - test_convention_kernel_fail: "Field z not found"
+; - test_convention_kernel_fail2: "Cannot unify types"
+; - test_inline_node_exhaustion: "Inlining produced N nodes (limit: 10000)"
+
+(library
+ (name neg_test_convention_kernel_fail)
+ (modules test_convention_kernel_fail)
+ (libraries sarek sarek.stdlib sarek_ppx.lib sarek_geometry)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_convention_kernel_fail2)
+ (modules test_convention_kernel_fail2)
+ (libraries sarek sarek.stdlib sarek_ppx.lib sarek_geometry)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_barrier_diverged)
+ (modules test_barrier_diverged)
+ (libraries sarek sarek.stdlib sarek_ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_superstep_diverged)
+ (modules test_superstep_diverged)
+ (libraries sarek sarek.stdlib sarek_ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_unbound_function)
+ (modules test_unbound_function)
+ (libraries sarek sarek.stdlib sarek_ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_warp_diverged)
+ (modules test_warp_diverged)
+ (libraries sarek sarek.stdlib sarek_ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_reserved_keyword)
+ (modules test_reserved_keyword)
+ (libraries sarek sarek.stdlib sarek_ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_inline_node_exhaustion)
+ (modules test_inline_node_exhaustion)
+ (libraries sarek sarek.stdlib sarek_ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))

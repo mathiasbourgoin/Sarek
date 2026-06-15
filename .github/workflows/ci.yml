@@ -1,0 +1,201 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master, main]
+  push:
+    branches: [master, main]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+        ocaml-compiler:
+          - 5.4.0
+        cache:
+          - true
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache key
+        run: echo "CACHE_WEEK=$(date +%G-%V)" >> $GITHUB_ENV
+
+      - name: Build CI image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: spoc-ci:latest
+          load: true
+          build-args: |
+            CACHEBUST=${{ env.CACHE_WEEK }}
+          cache-from: type=gha,scope=spoc-ci-${{ hashFiles('ci/Dockerfile') }}
+          cache-to: type=gha,scope=spoc-ci-${{ hashFiles('ci/Dockerfile') }},mode=max
+
+      - name: Cache opam root
+        uses: actions/cache@v4
+        with:
+          path: .opam-ci
+          key: opam-${{ runner.os }}-${{ matrix.ocaml-compiler }}-${{ hashFiles('*.opam') }}
+          restore-keys: |
+            opam-${{ runner.os }}-${{ matrix.ocaml-compiler }}-
+
+      - name: Build SPOC packages
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            spoc-ci:latest \
+            bash -lc 'git config --global --add safe.directory /work && \
+              git config --global --add safe.directory "*" && \
+              export OPAMROOT=/work/.opam-ci && \
+              if [ ! -d "$OPAMROOT" ]; then \
+                opam init --compiler=${{ matrix.ocaml-compiler }} --disable-sandboxing --no-setup; \
+              else \
+                opam switch set ${{ matrix.ocaml-compiler }} || \
+                  opam switch create ${{ matrix.ocaml-compiler }}; \
+              fi && \
+              eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
+              opam repo add alpha git+https://github.com/kit-ty-kate/opam-alpha-repository.git --set-default || true && \
+              opam update && \
+              opam install -y ctypes ctypes-foreign ppxlib alcotest qcheck-core js_of_ocaml js_of_ocaml-ppx js_of_ocaml-compiler && \
+              dune build @install'
+      - name: jsoo-compat gate
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            spoc-ci:latest \
+            bash -lc 'git config --global --add safe.directory /work && \
+              export OPAMROOT=/work/.opam-ci && \
+              eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
+              dune build sarek/transpile/web/transpile_js.bc.js'
+
+      - name: Run unit tests
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            spoc-ci:latest \
+            bash -lc 'git config --global --add safe.directory /work && \
+              export OPAMROOT=/work/.opam-ci && \
+              eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
+              dune runtest'
+
+      - name: Run fast e2e tests
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            spoc-ci:latest \
+            bash -lc 'git config --global --add safe.directory /work && \
+              export OPAMROOT=/work/.opam-ci && \
+              eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
+              make e2e-fast'
+
+      - name: Run coverage
+        continue-on-error: true
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            spoc-ci:latest \
+            bash -lc 'git config --global --add safe.directory /work && \
+              export OPAMROOT=/work/.opam-ci && \
+              eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
+              ./scripts/coverage-unit.sh'
+
+      - name: Upload coverage report
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: _coverage/unit-report
+          retention-days: 30
+          if-no-files-found: ignore
+
+  check-generated-code:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache key
+        run: echo "CACHE_WEEK=$(date +%G-%V)" >> $GITHUB_ENV
+
+      - name: Build CI image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: spoc-ci:latest
+          load: true
+          build-args: |
+            CACHEBUST=${{ env.CACHE_WEEK }}
+          cache-from: type=gha,scope=spoc-ci-${{ hashFiles('ci/Dockerfile') }}
+          cache-to: type=gha,scope=spoc-ci-${{ hashFiles('ci/Dockerfile') }},mode=max
+
+      - name: Cache opam root
+        uses: actions/cache@v4
+        with:
+          path: .opam-ci
+          key: opam-${{ runner.os }}-5.4.0-${{ hashFiles('*.opam') }}
+          restore-keys: |
+            opam-${{ runner.os }}-5.4.0-
+
+      - name: Setup and generate backend code
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            spoc-ci:latest \
+            bash -lc 'git config --global --add safe.directory /work && \
+              export OPAMROOT=/work/.opam-ci && \
+              if [ ! -d "$OPAMROOT" ]; then \
+                opam init --compiler=5.4.0 --disable-sandboxing --no-setup; \
+              else \
+                opam switch set 5.4.0 || opam switch create 5.4.0; \
+              fi && \
+              eval $(opam env --switch=5.4.0) && \
+              opam repo add alpha git+https://github.com/kit-ty-kate/opam-alpha-repository.git --set-default || true && \
+              opam update && \
+              opam install -y ctypes ctypes-foreign ppxlib && \
+              dune build benchmarks/generate_backend_code.exe && \
+              dune exec benchmarks/generate_backend_code.exe'
+
+      - name: Check for generated code changes
+        run: |
+          if ! git diff --quiet benchmarks/descriptions/generated/; then
+            echo "❌ Generated backend code is out of sync!"
+            echo ""
+            echo "The generated backend code has changed. This could indicate:"
+            echo "  1. The generator tool was modified"
+            echo "  2. A kernel was changed but generated code wasn't updated"
+            echo "  3. Backend code generators have been updated"
+            echo ""
+            echo "Changes detected:"
+            git diff --stat benchmarks/descriptions/generated/
+            echo ""
+            echo "To fix this, run locally:"
+            echo "  dune exec benchmarks/generate_backend_code.exe"
+            echo "  git add benchmarks/descriptions/generated/"
+            echo "  git commit -m 'Update generated backend code'"
+            echo ""
+            exit 1
+          else
+            echo "✅ Generated backend code is up to date"
+          fi

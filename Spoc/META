@@ -1,7 +1,0 @@
-version = "0.2-alpha"
-description = "spoc"
-requires = "dynlink unix bigarray str threads"
-archive(byte) = "spoc.cma"
-archive(native) = "spoc.cmxa"
-browse_interfaces = " Unit name: Spoc "
-exists_if = "spoc.cma"

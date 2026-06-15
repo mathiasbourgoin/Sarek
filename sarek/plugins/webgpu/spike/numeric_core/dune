@@ -1,0 +1,29 @@
+; sarek/plugins/webgpu/spike/numeric_core — FFI-free numeric vector spike
+;
+; SPIKE: de-risking proof that Bigarray-backed numeric vectors can compile
+; FFI-free to both bytecode AND js_of_ocaml.  NOT part of the regular build.
+;
+; Build targets:
+;   dune build sarek/plugins/webgpu/spike/numeric_core/
+;   dune exec sarek/plugins/webgpu/spike/numeric_core/test_numeric_spike.exe
+;   dune build sarek/plugins/webgpu/spike/numeric_core/test_numeric_spike.bc.js
+;
+; Intentionally excluded from @install and default alias.
+
+; Library: the FFI-free numeric core (stdlib + bigarray only)
+
+(library
+ (name numeric_vector_spike)
+ (modules numeric_vector_spike)
+ (libraries bigarray)
+ (preprocess no_preprocessing))
+
+; Test executable — bytecode + jsoo
+; (modes byte) produces .exe (bytecode); (modes js) produces .bc.js
+
+(executable
+ (name test_numeric_spike)
+ (modules test_numeric_spike)
+ (libraries numeric_vector_spike)
+ (modes byte js)
+ (preprocess no_preprocessing))

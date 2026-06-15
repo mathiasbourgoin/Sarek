@@ -1,7 +1,0 @@
-(executable
- (name VecAdd)
- (flags (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
- (preprocessor_deps (package spoc))
- (preprocess (pps spoc_ppx))
- (libraries spoc)
-)

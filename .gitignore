@@ -2,9 +2,52 @@
 ocp-buid.root*
 *.root
 _site
+gh-pages/_site
 Gemfile.lock
 serve.sh
+.bundle
+vendor/
 *.byte
 *.asm
 _build
+_opam
 dune-project
+.aider*
+*.install
+kirc_kernel*.cl
+AGENTS.md
+_coverage/
+
+# Build artifacts and test outputs
+*.exe
+*.out
+a.out
+*.log
+bisect*.coverage
+benchmark_output.txt
+
+# Local test results directory at root level (not benchmark results to share)
+/results/
+
+# Jupyter kernel JavaScript build artifacts (generated, not source)
+gh-pages/static/services/kernels/js/*.js
+
+.claude
+.gemini
+_bmad
+_bmad-output
+# Generated jsoo bundle (built by CI, never committed)
+gh-pages/javascripts/sarek_transpile.js
+
+# Roster pipeline per-PR scaffolding — durable plans live in docs/plans/
+briefs/
+
+# Local harness / roster infrastructure — not part of the published repo
+.agents/
+.harness/
+skills-meta/
+kb/
+docs/team-proposal-2026-05-29.md
+
+# Playwright MCP session artifacts
+.playwright-mcp/

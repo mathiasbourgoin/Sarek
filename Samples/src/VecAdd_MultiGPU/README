@@ -1,9 +1,0 @@
-VecAdd_MultiGPU
-Adds two vectors using 2 GPUs
-options :
- -device1 number of the device [0]
- -device2 number of the device [1]
- -size size of the vectors to multiply [1024]
- -auto let Spoc handles transfers automatically [false]
- -verify verify computation [true]
-

@@ -1,0 +1,841 @@
+% ConvergenceSafetySpec.tex — LaTeX source of truth for the convergence-safety formal specification
+% Bootstrapped from the formal-apparatus at Phase 3 (LaTeX elicitation)
+% Co-evolves with theories/ConvergenceSpec.v pre-lock; LaTeX is canonical post-lock.
+% Status: LOCKED v0.4 (2026-06-12) — matches coqchk-passing ConvergenceSpec.v (20 theorems)
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath, amssymb, amsthm, mathtools}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{cleveref}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{notation}{Notation}[section]
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}[section]
+
+% Project-specific macros
+\newcommand{\Converged}{\mathsf{Converged}}
+\newcommand{\Diverged}{\mathsf{Diverged}}
+\newcommand{\chk}[2]{\mathtt{check}(#1,\,#2)}
+\newcommand{\isvarying}[1]{\mathtt{is\_varying}(#1)}
+\newcommand{\barrierfree}[1]{\mathtt{barrier\_free}(#1)}
+\newcommand{\cdcf}[1]{\mathtt{has\_diverging\_cf}(#1)}
+\newcommand{\mergedim}{\mathbin{\sqcup}}
+\newcommand{\emptydim}{\bot_d}
+\newcommand{\incl}{\subseteq}
+
+\title{Convergence Safety --- A Formal Specification\\
+  \large \textit{Sarek GPU barrier safety analysis}}
+\author{Sarek formal apparatus}
+\date{2026-06-12 (v0.4 LOCKED)}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We give a formal specification of the convergence-safety analysis pass in
+\texttt{Sarek\_convergence.ml}, the GPU barrier-safety checker for the Sarek
+OCaml GPU DSL. The analysis tracks an \emph{execution mode} ($\Converged$ or
+$\Diverged$) through an abstract expression type and collects barrier errors
+when a synchronisation point is reached inside diverged control flow.
+We prove 68 properties across the T1--T3 proof ladder: five join-semilattice
+laws for the dimension-usage monoid, one homomorphism law for sequential
+composition, six T1 safety theorems about the mode-tracking state machine
+(including the F-01 \texttt{ESuperstep} outer-diverged error property), three
+T2-WARP theorems for warp-collective safety (F-03), one T2-RETURN
+compositionality theorem for early-return barrier-skip (\texttt{EReturn}),
+four T1 theorems for the env-threaded model (T2-F02 let-alias variability),
+and 48 T3-SEMANTIC theorems grounding the checker in a fuel-indexed big-step
+evaluator with barrier traces (including \texttt{eval\_check\_uniform},
+\texttt{check\_env\_sound\_core}, \texttt{warp\_safe}, and the F-04
+\texttt{has\_varying\_return} / \texttt{hazard\_checker\_sound} extension).
+All theorems carry 0~admitted axioms; verified by \texttt{coqchk}.
+\end{abstract}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Overview}
+\label{sec:overview}
+
+\subsection*{Target component}
+
+\texttt{Sarek\_convergence.ml} in \texttt{sarek/ppx/}. Functions of interest:
+\begin{itemize}
+  \item \texttt{is\_thread\_varying : texpr -> bool} --- conservative check for
+        thread-varying subexpressions.
+  \item \texttt{check\_expr : convergence\_ctx -> texpr -> error list} ---
+        barrier-safety error collector.
+  \item \texttt{contains\_diverging\_control\_flow : texpr -> bool} ---
+        superstep analysis predicate.
+\end{itemize}
+
+\subsection*{Properties claimed}
+
+\begin{enumerate}
+  \item[\textbf{T0}] Dimension-usage forms a join-semilattice (\cref{sec:dimmerge}).
+  \item[\textbf{T0}] Sequential composition of checks is homomorphic (\cref{thm:seqhom}).
+  \item[\textbf{T1}] \emph{Diverged-clean iff barrier-free} (\cref{thm:div-clean}).
+  \item[\textbf{T1}] Mode strengthening is monotone (\cref{thm:monotone}).
+  \item[\textbf{T1}] Non-varying-condition implies clean check (\cref{thm:cdcf-clean}).
+  \item[\textbf{T1}] Varying condition on non-barrier-free body always flags an error
+        (\cref{thm:varying-flags}).
+  \item[\textbf{T1}] Outer-diverged \texttt{ESuperstep} always raises a barrier error
+        (F-01, \cref{thm:superstep-outer-diverged}).
+  \item[\textbf{T2}] Warp-collective call site (\texttt{EWarpPoint}) under $\Diverged$ mode
+        always raises a warp error (F-03, \cref{thm:warp-diverged-error}).
+  \item[\textbf{T2}] Warp checker is mode-monotone: strengthening never removes errors
+        (\cref{thm:warp-mode-monotone}).
+  \item[\textbf{T2}] \texttt{EWarpPoint} nested under a varying-condition \texttt{EIf} is
+        always caught from $\Converged$ outer mode
+        (\cref{thm:warp-varying-if-flags}).
+  \item[\textbf{T2}] \texttt{EReturn} is a transparent wrapper for barrier analysis:
+        $\mathtt{check}(m, \mathsf{EReturn}(e)) = \mathtt{check}(m, e)$
+        (\cref{thm:return-barrier-skip-safe}).
+  \item[\textbf{T1}] Env-lookup after env-extend returns the stored value
+        (\cref{thm:env-lookup-extend-same}).
+  \item[\textbf{T1}] Let-alias variability is propagated through \texttt{ELet}
+        (\cref{thm:env-let-alias-varying}).
+  \item[\textbf{T1}] \texttt{EVar} carries no barrier under $\Diverged$ mode
+        (\cref{thm:env-var-diverged-clean}).
+  \item[\textbf{T1}] \texttt{check\_env} catches barriers reachable via let-alias
+        (F-02, \cref{thm:env-check-let-alias-catches}).
+\end{enumerate}
+
+\subsection*{T3 --- Uniformity soundness (ConvergenceSemantics.v)}
+
+\begin{enumerate}
+  \item[\textbf{T3}] Non-varying expressions evaluate uniformly across thread ids
+        and variable environments (\cref{thm:not-varying-uniform}).
+  \item[\textbf{T3}] Closed non-varying expressions are fully uniform across all
+        thread ids and environments (\cref{thm:closed-uniform}).
+  \item[\textbf{T3}] Barrier-free, superstep-free expressions produce no
+        $\mathsf{EvBarrier}$ event at runtime
+        (\cref{thm:barrier-free-no-barriers}).
+  \item[\textbf{T3}] Diverged-clean, superstep-free expressions produce no
+        $\mathsf{EvBarrier}$ event at runtime --- the T1 flagship theorem acquires
+        semantic content (\cref{cor:diverged-clean-no-barriers}).
+\end{enumerate}
+
+\subsection*{Out of scope}
+
+Deadlock freedom (needs lockstep execution model).
+Warp divergence errors are now in scope (T2-WARP, \cref{thm:warp-diverged-error}).
+Semantic soundness of \texttt{is\_varying} via eval semantics is now in scope
+(T3-S2, \cref{thm:not-varying-uniform,thm:closed-uniform}).
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Notation and types}
+\label{sec:notation}
+
+\begin{definition}[Execution mode]
+$\mathsf{ExecMode} ::= \Converged \mid \Diverged$
+\end{definition}
+
+\begin{definition}[Error]
+$\mathsf{Error} ::= \mathsf{BarrierError} \mid \mathsf{WarpError}$
+
+$\mathsf{BarrierError}$ is emitted when a synchronisation barrier is reached
+inside diverged control flow. $\mathsf{WarpError}$ is emitted when a
+warp-collective intrinsic (\texttt{warp\_shuffle}, \texttt{warp\_vote\_all/any},
+\texttt{warp\_ballot}) is called inside diverged control flow; models
+\texttt{Sarek\_error.Warp\_collective\_in\_diverged\_flow}.
+\end{definition}
+
+\begin{definition}[Abstract expression]
+\label{def:expr}
+\[
+  e ::=
+    \mathsf{ELit} \mid \mathsf{EVary} \mid \mathsf{EBarrier}
+  \mid \mathsf{EWarpPoint}
+  \mid \mathsf{EVar}(x)
+  \mid \mathsf{EBinop}(e_1, e_2)
+  \mid \mathsf{EUnop}(e)
+  \mid \mathsf{EIf}(e_c, e_t, e_f)
+  \mid \mathsf{EWhile}(e_c, e_b)
+  \mid \mathsf{EFor}(e_{lo}, e_{hi}, e_b)
+  \mid \mathsf{ESeq}(\bar{e})
+  \mid \mathsf{ELet}(x, e_v, e_b)
+  \mid \mathsf{ESuperstep}(b, e_{body}, e_{cont})
+  \mid \mathsf{EApp}(\bar{e})
+  \mid \mathsf{EReturn}(e)
+\]
+where $\bar{e}$ ranges over $\mathsf{expr}^*$, $x \in \mathbb{N}$ is a
+variable identifier, $b \in \mathbb{B}$ is a Boolean
+\emph{divergent flag} (\textsf{true} = outer superstep is already divergent),
+$\mathsf{EWarpPoint}$ represents a warp-collective call site
+(\texttt{warp\_shuffle}, \texttt{warp\_vote\_all/any}, \texttt{warp\_ballot}),
+and $\mathsf{EReturn}(e)$ represents an early-return expression that exits
+the current function without crossing any synchronisation barrier.
+\end{definition}
+
+\begin{notation}
+$\isvarying{e}$ denotes the Boolean predicate that returns $\mathsf{true}$
+when $e$ contains a thread-varying leaf.
+$\barrierfree{e}$ denotes the Boolean predicate that returns $\mathsf{true}$
+when $e$ contains no $\mathsf{EBarrier}$ leaf.
+$\cdcf{e}$ denotes the Boolean predicate that returns $\mathsf{true}$
+when $e$ contains a diverging control-flow sub-expression.
+$\chk{m}{e}$ denotes the list of errors emitted when checking $e$ in
+execution mode $m$.
+\end{notation}
+
+\begin{definition}[Dimension-usage record]
+\label{def:dimuse}
+\[
+  d ::= \{\, \mathsf{uses\_x},\, \mathsf{uses\_y},\, \mathsf{uses\_z},\,
+            \mathsf{uses\_block\_dim},\, \mathsf{uses\_grid\_dim},\,
+            \mathsf{uses\_thread\_idx},\, \mathsf{uses\_block\_idx},\,
+            \mathsf{uses\_shared\_mem} \,\}
+\]
+Each field is a Boolean.
+$\emptydim$ denotes the all-false record.
+$\mergedim$ denotes field-wise disjunction.
+\end{definition}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Semantic rules}
+\label{sec:semantics}
+
+\subsection{$\isvarying{e}$}
+
+This is the \emph{binding-blind} variant: $\mathsf{EVar}(x)$ is treated as
+non-varying regardless of what was bound to $x$.  The env-threaded variant
+$\mathtt{is\_varying\_in\_env}$ (\cref{sec:envthreaded}) corrects this.
+
+\[
+  \isvarying{\mathsf{EVary}} = \top
+  \quad
+  \isvarying{\mathsf{ELit}} = \bot
+  \quad
+  \isvarying{\mathsf{EBarrier}} = \bot
+  \quad
+  \isvarying{\mathsf{EVar}(x)} = \bot
+\]
+\[
+  \isvarying{\mathsf{EBinop}(a,b)} = \isvarying{a} \lor \isvarying{b}
+  \qquad
+  \isvarying{\mathsf{EUnop}(e)} = \isvarying{e}
+\]
+\[
+  \isvarying{\mathsf{EIf}(c,t,f)} = \isvarying{c} \lor \isvarying{t} \lor \isvarying{f}
+  \qquad
+  \isvarying{\mathsf{EWhile}(c,b)} = \isvarying{c} \lor \isvarying{b}
+\]
+\[
+  \isvarying{\mathsf{EFor}(lo,hi,b)} = \isvarying{lo} \lor \isvarying{hi} \lor \isvarying{b}
+\]
+\[
+  \isvarying{\mathsf{ESeq}(\bar{e})} = \exists\, e_i \in \bar{e}.\;\isvarying{e_i}
+  \qquad
+  \isvarying{\mathsf{EApp}(\bar{e})} = \exists\, e_i \in \bar{e}.\;\isvarying{e_i}
+\]
+\[
+  \isvarying{\mathsf{ELet}(x,v,b)} = \isvarying{v} \lor \isvarying{b}
+  \qquad
+  \isvarying{\mathsf{ESuperstep}(\_,body,cont)} = \isvarying{body} \lor \isvarying{cont}
+\]
+
+\subsection{$\chk{m}{e}$ — the barrier-error collector}
+
+\[
+  \chk{m}{\mathsf{ELit}} = []
+  \qquad
+  \chk{m}{\mathsf{EVary}} = []
+  \qquad
+  \chk{m}{\mathsf{EVar}(x)} = []
+\]
+\[
+  \chk{m}{\mathsf{EBarrier}} =
+  \begin{cases}
+    [\mathsf{BarrierError}] & \text{if } m = \Diverged \\
+    [] & \text{if } m = \Converged
+  \end{cases}
+\]
+\[
+  \chk{m}{\mathsf{EBinop}(a,b)} = \chk{m}{a} \mathbin{++} \chk{m}{b}
+  \qquad
+  \chk{m}{\mathsf{EUnop}(e)} = \chk{m}{e}
+\]
+\[
+  \chk{m}{\mathsf{ELet}(x,v,b)} = \chk{m}{v} \mathbin{++} \chk{m}{b}
+\]
+Let $m' = \text{if } \isvarying{c} \text{ then } \Diverged \text{ else } m$.
+\[
+  \chk{m}{\mathsf{EIf}(c,t,f)} = \chk{m}{c} \mathbin{++} \chk{m'}{t} \mathbin{++} \chk{m'}{f}
+\]
+\[
+  \chk{m}{\mathsf{EWhile}(c,b)} = \chk{m}{c} \mathbin{++} \chk{m'}{b}
+  \qquad
+  \chk{m}{\mathsf{EFor}(lo,hi,b)} = \chk{m}{lo} \mathbin{++} \chk{m}{hi} \mathbin{++} \chk{m''}{b}
+\]
+where $m'' = \text{if } \isvarying{lo} \lor \isvarying{hi} \text{ then } \Diverged \text{ else } m$.
+\[
+  \chk{m}{\mathsf{ESeq}(\bar{e})} = \mathbin{++}_{e_i \in \bar{e}} \chk{m}{e_i}
+  \qquad
+  \chk{m}{\mathsf{EApp}(\bar{e})} = \mathbin{++}_{e_i \in \bar{e}} \chk{m}{e_i}
+\]
+
+Let $\mathit{entry}(m, b) = [\mathsf{BarrierError}]$ if $m = \Diverged$ and
+$b = \mathsf{false}$, and $[]$ otherwise.
+\[
+  \chk{m}{\mathsf{ESuperstep}(b,\mathit{body},\mathit{cont})}
+  = \mathit{entry}(m,b) \mathbin{++} \chk{m}{\mathit{body}} \mathbin{++} \chk{m}{\mathit{cont}}
+\]
+A non-divergent superstep (\,$b = \mathsf{false}$\,) entered under $\Diverged$
+mode raises $\mathsf{BarrierError}$ because the implicit end-of-superstep barrier
+is reached by only some threads.
+
+\subsection{$\cdcf{e}$}
+
+\begin{align*}
+  &\cdcf{\mathsf{EIf}(c,t,f)} = \isvarying{c} \lor \cdcf{t} \lor \cdcf{f} \\
+  &\cdcf{\mathsf{EWhile}(c,b)} = \isvarying{c} \lor \cdcf{b} \\
+  &\cdcf{\mathsf{EFor}(lo,hi,b)} = \isvarying{lo} \lor \isvarying{hi} \lor \cdcf{b} \\
+  &\cdcf{\mathsf{ELet}(x,v,b)} = \cdcf{v} \lor \cdcf{b} \\
+  &\cdcf{\mathsf{ESuperstep}(\_,body,cont)} = \cdcf{body} \lor \cdcf{cont} \\
+  &\cdcf{e} = \mathsf{false} \quad \text{(all other constructors, incl.\ $\mathsf{EVar}$)}
+\end{align*}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Properties}
+\label{sec:properties}
+
+\subsection{T0 --- Dimension-usage semilattice}
+\label{sec:dimmerge}
+
+\begin{theorem}[Merge commutativity]
+  \label{thm:merge-comm}
+  For all $d_1, d_2$: $d_1 \mergedim d_2 = d_2 \mergedim d_1$.
+\end{theorem}
+
+\begin{theorem}[Merge associativity]
+  \label{thm:merge-assoc}
+  For all $d_1, d_2, d_3$: $(d_1 \mergedim d_2) \mergedim d_3 = d_1 \mergedim (d_2 \mergedim d_3)$.
+\end{theorem}
+
+\begin{theorem}[Merge idempotence]
+  \label{thm:merge-idem}
+  For all $d$: $d \mergedim d = d$.
+\end{theorem}
+
+\begin{theorem}[Right identity]
+  \label{thm:merge-empty-r}
+  For all $d$: $d \mergedim \emptydim = d$.
+\end{theorem}
+
+\begin{theorem}[Left identity]
+  \label{thm:merge-empty-l}
+  For all $d$: $\emptydim \mergedim d = d$.
+\end{theorem}
+
+\subsection{T0 --- Sequential composition homomorphism}
+
+\begin{theorem}[Check-seq homomorphism]
+  \label{thm:seqhom}
+  For any mode $m$ and expression lists $\bar{e}_1, \bar{e}_2$:
+  \[
+    \chk{m}{\mathsf{ESeq}(\bar{e}_1 \mathbin{++} \bar{e}_2)}
+    = \chk{m}{\mathsf{ESeq}(\bar{e}_1)} \mathbin{++} \chk{m}{\mathsf{ESeq}(\bar{e}_2)}.
+  \]
+\end{theorem}
+
+\subsection{T1 --- Barrier-safety invariants}
+
+\begin{theorem}[Diverged-clean iff barrier-free]
+  \label{thm:div-clean}
+  For all $e$:
+  \[
+    \chk{\Diverged}{e} = []
+    \;\iff\;
+    \barrierfree{e} = \mathsf{true}.
+  \]
+\end{theorem}
+
+\begin{theorem}[Mode monotonicity]
+  \label{thm:monotone}
+  For all $e$:
+  \[
+    \chk{\Converged}{e} \incl \chk{\Diverged}{e}.
+  \]
+  (Strengthening the execution context never removes errors.)
+\end{theorem}
+
+\begin{lemma}[Non-varying implies clean in converged mode]
+  \label{thm:nonvar-clean}
+  For all $e$:
+  \[
+    \isvarying{e} = \mathsf{false}
+    \;\Rightarrow\;
+    \chk{\Converged}{e} = [].
+  \]
+\end{lemma}
+
+\begin{theorem}[CDCF agreement]
+  \label{thm:cdcf-clean}
+  For all $e$:
+  \[
+    \cdcf{e} = \mathsf{false}
+    \;\Rightarrow\;
+    \chk{\Converged}{e} = [].
+  \]
+\end{theorem}
+
+\begin{theorem}[Varying condition flags barriers]
+  \label{thm:varying-flags}
+  For all $e_c, e_t, e_f$:
+  \[
+    \isvarying{e_c} = \mathsf{true}
+    \;\land\;
+    \barrierfree{e_t} = \mathsf{false}
+    \;\Rightarrow\;
+    \chk{\Converged}{\mathsf{EIf}(e_c, e_t, e_f)} \ne [].
+  \]
+\end{theorem}
+
+\begin{theorem}[Outer-diverged superstep raises error (F-01)]
+  \label{thm:superstep-outer-diverged}
+  For all $\mathit{body}, \mathit{cont}$:
+  \[
+    \chk{\Diverged}{\mathsf{ESuperstep}(\mathsf{false},\,\mathit{body},\,\mathit{cont})} \ne [].
+  \]
+  A non-divergent superstep entered under a $\Diverged$ execution context
+  unconditionally produces a $\mathsf{BarrierError}$.
+\end{theorem}
+
+\subsection{T2-WARP --- Warp-collective safety (F-03)}
+\label{sec:warp-props}
+
+The warp-collective checker $\mathtt{check\_warp}(m, e)$ extends $\chk{m}{e}$
+with an additional case for $\mathsf{EWarpPoint}$:
+\[
+  \mathtt{check\_warp}(m, \mathsf{EWarpPoint}) =
+  \begin{cases}
+    [\mathsf{WarpError}] & \text{if } m = \Diverged \\
+    [] & \text{if } m = \Converged
+  \end{cases}
+\]
+All other cases are structurally identical to $\chk{m}{\cdot}$.
+
+\begin{theorem}[Warp-diverged error (F-03)]
+  \label{thm:warp-diverged-error}
+  \[
+    \mathtt{check\_warp}(\Diverged,\,\mathsf{EWarpPoint}) \ne [].
+  \]
+  A warp-collective call site inside diverged control flow unconditionally
+  produces a $\mathsf{WarpError}$.
+\end{theorem}
+
+\begin{theorem}[Warp mode monotonicity]
+  \label{thm:warp-mode-monotone}
+  For all $e$:
+  \[
+    \mathtt{check\_warp}(\Converged,\,e) \incl \mathtt{check\_warp}(\Diverged,\,e).
+  \]
+  Strengthening the execution context (Converged $\to$ Diverged) never removes
+  warp-collective errors. This is the warp analogue of \cref{thm:monotone}.
+\end{theorem}
+
+\begin{theorem}[Varying condition flags warp (F-03 context)]
+  \label{thm:warp-varying-if-flags}
+  For all $\mathit{el}$:
+  \[
+    \mathtt{check\_warp}(\Converged,\;\mathsf{EIf}(\mathsf{EVary},\,\mathsf{EWarpPoint},\,\mathit{el})) \ne [].
+  \]
+  A warp-collective call site inside the then-branch of a varying-condition
+  \texttt{EIf} is always caught, even from $\Converged$ outer mode.
+\end{theorem}
+
+\subsection{T2-RETURN --- Early-return barrier-skip}
+\label{sec:return-props}
+
+$\mathsf{EReturn}(e)$ models \texttt{TEReturn} from \texttt{Sarek\_convergence.ml}:
+an early-return expression that exits the current function without crossing any
+synchronisation barrier. The barrier-safety checker treats \texttt{EReturn} as
+a transparent structural wrapper — the returned sub-expression $e$ is checked
+in the current mode, but no continuation barriers can be triggered because
+control flow exits the function at this point.
+
+\begin{theorem}[Return barrier-skip compositionality]
+  \label{thm:return-barrier-skip-safe}
+  For all $m \in \mathsf{ExecMode}$ and $e$:
+  \[
+    \mathtt{check}(m,\;\mathsf{EReturn}(e)) = \mathtt{check}(m,\;e).
+  \]
+  \texttt{EReturn} is a transparent wrapper: it neither introduces nor
+  suppresses barrier errors beyond those already present in its body.
+\end{theorem}
+
+\begin{corollary}[Return in converged mode with barrier-free body is clean]
+  \label{cor:return-converged-clean}
+  For all $e$:
+  \[
+    \barrierfree{e} = \mathsf{true}
+    \;\Rightarrow\;
+    \mathtt{check}(\Converged,\;\mathsf{EReturn}(e)) = [].
+  \]
+\end{corollary}
+
+\subsection{T1 --- Env-threaded model (T2-F02)}
+\label{sec:envthreaded-props}
+
+\begin{theorem}[Env-lookup after env-extend (same key)]
+  \label{thm:env-lookup-extend-same}
+  For all $\mathit{env}$, $x$, $v$:
+  \[
+    \mathtt{env\_lookup}(\mathtt{env\_extend}(\mathit{env},\,x,\,v),\;x) = v.
+  \]
+\end{theorem}
+
+\begin{theorem}[Let-alias variability propagation]
+  \label{thm:env-let-alias-varying}
+  For all $\mathit{env}$, $x$, $v$, $b$, if
+  $\mathtt{is\_varying\_in\_env}(\mathit{env}, v) = \mathsf{true}$ and
+  $\mathtt{is\_varying\_in\_env}(\mathtt{env\_extend}(\mathit{env},x,\mathsf{true}), b) = \mathsf{true}$,
+  then
+  \[
+    \mathtt{is\_varying\_in\_env}(\mathit{env},\;\mathsf{ELet}(x,v,b)) = \mathsf{true}.
+  \]
+\end{theorem}
+
+\begin{theorem}[EVar carries no barrier (F-02 auxiliary)]
+  \label{thm:env-var-diverged-clean}
+  For all $\mathit{env}$, $x$:
+  \[
+    \mathtt{check\_env}(\Diverged,\,\mathit{env},\,\mathsf{EVar}(x)) = [].
+  \]
+\end{theorem}
+
+\begin{theorem}[Let-alias soundness (F-02)]
+  \label{thm:env-check-let-alias-catches}
+  For all $\mathit{env}$, $x$, $v$, if
+  $\mathtt{is\_varying\_in\_env}(\mathit{env}, v) = \mathsf{true}$, then
+  \[
+    \mathtt{check\_env}(\Converged,\,\mathit{env},\;
+      \mathsf{ELet}(x,v,\mathsf{EIf}(\mathsf{EVar}(x),\mathsf{EBarrier},\mathsf{ELit})))
+    \ne [].
+  \]
+  A barrier guarded by a let-aliased varying variable is flagged even in
+  $\Converged$ mode.
+\end{theorem}
+
+\subsection{T3-S2 --- Uniformity soundness of \texttt{is\_strongly\_uniform}}
+\label{sec:uniformity-props}
+
+The big-step evaluator $\mathtt{eval}(\mathit{vary\_val},\,\mathit{fuel},\,t,\,\rho,\,e)$
+is defined in \texttt{ConvergenceSemantics.v} with a fuel parameter ensuring
+totality. $\mathtt{is\_strongly\_uniform}(\mathit{env},\,e)$ is a semantically
+correct uniformity predicate that, unlike $\mathtt{is\_varying\_in\_env}$, also
+requires the binding expression of $\mathsf{ELet}$ to be uniform.
+
+\begin{theorem}[Non-varying implies uniform evaluation (T3-S2)]
+  \label{thm:not-varying-uniform}
+  For all $\mathit{vary\_val}$, $\mathit{fuel}$, $\mathit{env}$, $e$, $t_1$,
+  $t_2$, $\rho_1$, $\rho_2$, if
+  $\mathtt{env\_agrees}(\mathit{env},\,\rho_1,\,\rho_2) = \mathsf{true}$ and
+  $\mathtt{is\_strongly\_uniform}(\mathit{env},\,e) = \mathsf{true}$, then
+  \[
+    \mathtt{eval}(\mathit{vary\_val},\,\mathit{fuel},\,t_1,\,\rho_1,\,e)
+    = \mathtt{eval}(\mathit{vary\_val},\,\mathit{fuel},\,t_2,\,\rho_2,\,e).
+  \]
+  ($\mathtt{env\_agrees}(\mathit{env},\,\rho_1,\,\rho_2)$ requires that all
+  variables marked uniform in $\mathit{env}$ map to the same value in $\rho_1$
+  and $\rho_2$.)
+\end{theorem}
+
+\begin{corollary}[Closed non-varying expressions are fully uniform (T3-S2)]
+  \label{thm:closed-uniform}
+  For all $e$, $\mathit{vary\_val}$, $\mathit{fuel}$, $t_1$, $t_2$, $\rho_1$,
+  $\rho_2$, if $\mathtt{is\_var\_free}(e) = \mathsf{true}$ and
+  $\isvarying{e} = \mathsf{false}$, then
+  \[
+    \mathtt{eval}(\mathit{vary\_val},\,\mathit{fuel},\,t_1,\,\rho_1,\,e)
+    = \mathtt{eval}(\mathit{vary\_val},\,\mathit{fuel},\,t_2,\,\rho_2,\,e).
+  \]
+\end{corollary}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Env-threaded model}
+\label{sec:envthreaded}
+
+The binding-blind functions $\isvarying{e}$ and $\chk{m}{e}$ treat every
+$\mathsf{EVar}(x)$ as non-varying regardless of what was bound to $x$.
+This mirrors the pre-fix \texttt{Sarek\_convergence.ml} behaviour.
+Finding F-02 showed that let-aliased thread-varying values were therefore
+missed; the OCaml fix propagates variability through \texttt{TELet}.
+
+The env-threaded model formalises the corrected behaviour.
+
+\begin{definition}[Environment]
+\label{def:env}
+$\mathsf{Env} = \mathsf{list}(\mathbb{N} \times \mathbb{B})$
+is an association list mapping variable identifiers to their variability flags.
+\[
+  \mathtt{env\_lookup}(\mathit{env},\,x) =
+  \begin{cases}
+    v & \text{if } (x,v) \text{ is the first pair in } \mathit{env} \text{ with key } x \\
+    \mathsf{false} & \text{if no such pair exists}
+  \end{cases}
+\]
+\[
+  \mathtt{env\_extend}(\mathit{env},\,x,\,v) = (x,v) :: \mathit{env}
+\]
+\end{definition}
+
+\begin{definition}[$\mathtt{is\_varying\_in\_env}(\mathit{env}, e)$]
+\label{def:isvarying-env}
+Env-threaded variability; extends $\isvarying{\cdot}$ with:
+\[
+  \mathtt{is\_varying\_in\_env}(\mathit{env},\,\mathsf{EVar}(x))
+  = \mathtt{env\_lookup}(\mathit{env},\,x)
+\]
+\[
+  \mathtt{is\_varying\_in\_env}(\mathit{env},\,\mathsf{ELet}(x,v,b))
+  = \mathtt{is\_varying\_in\_env}(
+      \mathtt{env\_extend}(\mathit{env},\,x,\,\mathtt{is\_varying\_in\_env}(\mathit{env},v)),\;b)
+\]
+All other constructors recurse with the same $\mathit{env}$ (unchanged).
+\end{definition}
+
+\begin{definition}[$\mathtt{check\_env}(m, \mathit{env}, e)$]
+\label{def:checkenv}
+Env-threaded barrier-error collector; extends $\chk{m}{\cdot}$ with:
+\[
+  \mathtt{check\_env}(m,\,\mathit{env},\,\mathsf{EVar}(x)) = []
+\]
+\[
+  \mathtt{check\_env}(m,\,\mathit{env},\,\mathsf{ELet}(x,v,b))
+  = \mathtt{check\_env}(m,\,\mathit{env},\,v) \mathbin{++}
+    \mathtt{check\_env}(m,\,\mathtt{env\_extend}(\mathit{env},x,\mathtt{is\_varying\_in\_env}(\mathit{env},v)),\,b)
+\]
+For $\mathsf{EIf}$/$\mathsf{EWhile}$/$\mathsf{EFor}$ the inner mode is
+determined by $\mathtt{is\_varying\_in\_env}$ instead of $\isvarying{\cdot}$.
+All other constructors are structurally identical to $\chk{m}{\cdot}$.
+\end{definition}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{Refinement to \texttt{sarek/ppx/}}
+\label{sec:refinement}
+
+\subsection*{Type correspondence}
+
+The abstract \texttt{expr} type maps to the real \texttt{texpr} AST as follows
+(see \texttt{ASSUMPTIONS.md} for the full table and elided constructors):
+
+\begin{center}
+\begin{tabular}{l l l}
+\hline
+Abstract & Real & Notes \\
+\hline
+\texttt{EVary} & \texttt{TEVar} (varying), \texttt{TEIntrinsicConst} (varying) & \texttt{is\_thread\_varying} recurses \\
+\texttt{EVar}($x$) & \texttt{TEVar} (by id) & variability resolved via env (T2-F02) \\
+\texttt{EBarrier} & \texttt{TEIntrinsicFun \_ (Some ConvergencePoint) \_} & error when mode=Diverged \\
+\texttt{EWarpPoint} & \texttt{TEIntrinsicFun \_ (Some WarpConvergence) \_} & WarpError when mode=Diverged (T2-WARP) \\
+\texttt{ELit} & all uniform literals + \texttt{TEUnit}/\texttt{TEBool}/\texttt{TEInt}/... & \\
+\texttt{EIf} & \texttt{TEIf}, \texttt{TEMatch} & \\
+\texttt{EFor} & \texttt{TEFor} & lo/hi checked for variation \\
+\texttt{ESeq} & \texttt{TESeq} & \\
+\texttt{ELet}($x$,$v$,$b$) & \texttt{TELet}, \texttt{TELetMut} & env-threaded model propagates variability (T2-F02) \\
+\texttt{ESuperstep}($b$,$body$,$cont$) & \texttt{TESuperstep} & F-01: diverged-entry BarrierError (Phase 1a) \\
+\texttt{EApp} & \texttt{TEApp}, \texttt{TETuple}, \texttt{TERecord} & \\
+\texttt{EBinop} & \texttt{TEBinop}, \texttt{TEVecSet}, \texttt{TEArrSet}, \texttt{TEAssign} & \\
+\texttt{EUnop} & \texttt{TEUnop}, \texttt{TEFieldGet}, \texttt{TECreateArray} & \\
+\texttt{EReturn}($e$) & \texttt{TEReturn} & T2-RETURN: early-exit; no barrier crossed (return\_barrier\_skip\_safe) \\
+\hline
+\end{tabular}
+\end{center}
+
+\subsection*{Conformance claim}
+
+For all \texttt{texpr} inputs $t$ that map to an abstract expression
+$e = \mathtt{texpr\_to\_expr}(t)$ (i.e.\ $t$ does not contain any elided
+constructor), and for each mode $m$:
+\[
+  \mathtt{normalize}(\mathtt{real\_check\_expr}(\{mode=m\}, t))
+  = \chk{m}{e}
+\]
+where $\mathtt{normalize}$ strips metadata from \texttt{texpr}-level errors and
+projects to the abstract \texttt{error} type.
+
+\subsection*{Elided constructors (out of scope)}
+
+\texttt{TELetShared}, \texttt{TELetRec},
+\texttt{TEPragma}, \texttt{TEOpen}, \texttt{TENative}, \texttt{TEGlobalRef}.
+(\texttt{TESuperstep} is in scope as $\mathsf{ESuperstep}$; the
+\texttt{WarpConvergence} error class is now in scope as $\mathsf{EWarpPoint}$
+(T2-WARP); \texttt{TEReturn} is now in scope as $\mathsf{EReturn}$
+(T2-RETURN); see type-correspondence table.)
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{T3-S3 --- Trace silence of barrier-free expressions}
+\label{sec:trace-silence}
+
+This section grounds the predicate $\barrierfree{e}$ in the execution semantics:
+a barrier-free, superstep-free expression produces no $\mathsf{EvBarrier}$ event
+at runtime.  The superstep-free side condition is necessary because
+$\mathsf{ESuperstep}$ emits an implicit $\mathsf{EvBarrier}$ event regardless of
+the divergent flag $b$, even when $\barrierfree{\mathsf{ESuperstep}(b,\_,\_)}$
+holds.  The semantic treatment of $\mathsf{ESuperstep}$ is deferred to T3-S6.
+
+\begin{definition}[$\mathtt{no\_barrier\_event}(\mathit{tr})$]
+\label{def:no-barrier-event}
+A Boolean predicate on traces:
+\[
+  \mathtt{no\_barrier\_event}(\mathit{tr}) = \mathsf{true}
+  \;\iff\;
+  \mathsf{EvBarrier} \notin \mathit{tr}.
+\]
+Defined by scanning each event: $\mathtt{no\_barrier\_event}([]) = \mathsf{true}$;
+$\mathtt{no\_barrier\_event}(\mathsf{EvBarrier} :: \_) = \mathsf{false}$;
+$\mathtt{no\_barrier\_event}(\mathsf{EvWarp} :: \mathit{tr'}) = \mathtt{no\_barrier\_event}(\mathit{tr'})$.
+\end{definition}
+
+\begin{definition}[$\mathtt{superstep\_free}(e)$]
+\label{def:superstep-free}
+A structural Boolean predicate: $\mathtt{superstep\_free}(e) = \mathsf{true}$
+iff $e$ contains no $\mathsf{ESuperstep}$ sub-expression.
+\end{definition}
+
+\begin{lemma}[Barrier-event concatenation]
+  \label{lem:no-barrier-app}
+  For all $\mathit{tr}_1$, $\mathit{tr}_2$:
+  \[
+    \mathtt{no\_barrier\_event}(\mathit{tr}_1) = \mathsf{true}
+    \;\land\;
+    \mathtt{no\_barrier\_event}(\mathit{tr}_2) = \mathsf{true}
+    \;\Rightarrow\;
+    \mathtt{no\_barrier\_event}(\mathit{tr}_1 \mathbin{++} \mathit{tr}_2) = \mathsf{true}.
+  \]
+\end{lemma}
+
+\begin{theorem}[Barrier-free implies no barrier events (T3-S3)]
+  \label{thm:barrier-free-no-barriers}
+  For all $\mathit{vary\_val}$, $\mathit{fuel}$, $t$, $\rho$, $e$, $o$, $\mathit{tr}$:
+  \[
+    \barrierfree{e} = \mathsf{true}
+    \;\land\;
+    \mathtt{superstep\_free}(e) = \mathsf{true}
+    \;\land\;
+    \mathtt{eval}(\mathit{vary\_val},\,\mathit{fuel},\,t,\,\rho,\,e)
+      = \mathsf{Some}(o,\,\mathit{tr})
+    \;\Rightarrow\;
+    \mathtt{no\_barrier\_event}(\mathit{tr}) = \mathsf{true}.
+  \]
+  A barrier-free, superstep-free expression cannot produce any
+  $\mathsf{EvBarrier}$ event at runtime.  Proved by structural induction on $e$
+  with a nested fuel induction for $\mathsf{EWhile}$.
+\end{theorem}
+
+\begin{corollary}[Diverged-clean implies no barrier events (T3-S3)]
+  \label{cor:diverged-clean-no-barriers}
+  For all $\mathit{vary\_val}$, $\mathit{fuel}$, $t$, $\rho$, $e$, $o$, $\mathit{tr}$:
+  \[
+    \chk{\Diverged}{e} = []
+    \;\land\;
+    \mathtt{superstep\_free}(e) = \mathsf{true}
+    \;\land\;
+    \mathtt{eval}(\mathit{vary\_val},\,\mathit{fuel},\,t,\,\rho,\,e)
+      = \mathsf{Some}(o,\,\mathit{tr})
+    \;\Rightarrow\;
+    \mathtt{no\_barrier\_event}(\mathit{tr}) = \mathsf{true}.
+  \]
+  Follows from \cref{thm:barrier-free-no-barriers} via the T1 flagship theorem
+  $\chk{\Diverged}{e} = [] \iff \barrierfree{e} = \mathsf{true}$
+  (\cref{thm:div-clean}), which now acquires semantic content.
+\end{corollary}
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{T3-S8 --- Extraction and differential conformance of the semantics}
+\label{sec:t3s8-extraction}
+
+The static checkers ($\isvarying{\cdot}$, $\barrierfree{\cdot}$, $\chk{m}{\cdot}$,
+$\mathtt{check\_warp}$) are extracted to OCaml
+(\texttt{extraction/ConvergenceModel.ml}) and differentially tested against an
+inline reference (\texttt{test\_convergence\_extraction.ml}).  T3-S8 closes the
+\emph{operational} half of the CMBT chain by extracting the big-step evaluator
+itself.
+
+\begin{definition}[Concrete evaluator]
+  \label{def:eval-concrete}
+  $\mathtt{eval\_concrete}(\mathit{fuel},\,t,\,\rho,\,e) \;:=\;
+   \mathtt{eval}(\lambda\,\mathit{th}.\;\mathit{th},\,\mathit{fuel},\,t,\,\rho,\,e)$,
+  i.e.\ the fuel-indexed evaluator with the abstract per-thread varying value
+  $\mathit{vary\_val}$ instantiated as the identity.  Identity is
+  \emph{maximally discriminating}: distinct thread ids receive distinct
+  $\mathsf{EVary}$ values, so any thread-dependent control-flow divergence is
+  observable in the extracted traces.  All section theorems quantify over every
+  $\mathit{vary\_val}$, so they hold for this instantiation a fortiori.
+\end{definition}
+
+\begin{lemma}[Fuel monotonicity of the concrete evaluator (T3-S8)]
+  \label{lem:eval-concrete-fuel-monotone}
+  For all $n$, $t$, $\rho$, $e$, $r$:
+  \[
+    \mathtt{eval\_concrete}(n,\,t,\,\rho,\,e) = \mathsf{Some}(r)
+    \;\Rightarrow\;
+    \mathtt{eval\_concrete}(\mathsf{S}\,n,\,t,\,\rho,\,e) = \mathsf{Some}(r).
+  \]
+  Mirrored by the QCheck property \texttt{sem:eval\_fuel\_monotone}.
+\end{lemma}
+
+\begin{lemma}[Barrier silence of the concrete evaluator (T3-S8)]
+  \label{lem:eval-concrete-barrier-free-silent}
+  For all $\mathit{fuel}$, $t$, $\rho$, $e$, $o$, $\mathit{tr}$:
+  \[
+    \mathtt{superstep\_free}(e) = \mathsf{true}
+    \;\land\;
+    \barrierfree{e} = \mathsf{true}
+    \;\land\;
+    \mathtt{eval\_concrete}(\mathit{fuel},\,t,\,\rho,\,e) = \mathsf{Some}(o,\,\mathit{tr})
+    \;\Rightarrow\;
+    \mathtt{no\_barrier\_event}(\mathit{tr}) = \mathsf{true}.
+  \]
+  Mirrored by the QCheck property \texttt{sem:barrier\_free\_silent}.
+\end{lemma}
+
+\paragraph{Differential properties.}
+The suite \texttt{test\_convergence\_semantics.ml} runs four randomized
+properties against the extracted $\mathtt{eval\_concrete}$:
+\begin{enumerate}
+  \item \texttt{sem:eval\_fuel\_monotone} ---
+        \cref{lem:eval-concrete-fuel-monotone} over random $(\mathit{fuel},t,e)$.
+  \item \texttt{sem:barrier\_free\_silent} ---
+        \cref{lem:eval-concrete-barrier-free-silent} over random $(t,e)$.
+  \item \texttt{sem:differential\_barrier\_safe} --- the CMBT instance of the
+        core-fragment soundness theorem (T3-S4): for $e$ in the core fragment
+        with $\mathtt{check\_env}(\Converged,\,[],\,e) = []$, the barrier projections
+        $\mathtt{erase\_warp}(\mathit{tr_1}) = \mathtt{erase\_warp}(\mathit{tr_2})$
+        of two distinct threads' traces agree.
+  \item \texttt{sem:f04\_hazard\_counterexample} --- the F-04 regression: the
+        hazard $\mathsf{ESeq}\,[\mathsf{EIf}\,\mathsf{EVary}\,(\mathsf{EReturn}\,\mathsf{ELit})\,\mathsf{ELit};\;\mathsf{EBarrier}]$
+        passes the checker yet its barrier traces \emph{differ} across threads
+        (thread $0$ falls through to the barrier, thread $1$ early-returns),
+        confirming the counterexample is real in the operational semantics.
+\end{enumerate}
+
+The extraction plugin and OCaml compiler remain in the trusted computing base;
+the differential suites corroborate --- but do not prove --- the fidelity of the
+extracted code to the Rocq source.  See \texttt{ASSUMPTIONS.md} \S T3-S8.
+
+%───────────────────────────────────────────────────────────────────────────────
+\section{References}
+\label{sec:references}
+
+\begin{itemize}
+  \item SPOC source: \url{https://github.com/mathiasbourgoin/SPOC}
+  \item \texttt{sarek/ppx/Sarek\_convergence.ml} --- target implementation
+  \item \texttt{ASSUMPTIONS.md} --- elided-constructor rationale
+  \item Sarek formal apparatus memory: \texttt{~/.claude/projects/.../memory/sarek-convergence-formal.md}
+\end{itemize}
+
+\end{document}

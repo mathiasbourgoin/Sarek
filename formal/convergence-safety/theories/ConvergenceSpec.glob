@@ -1,0 +1,2149 @@
+DIGEST de577fc50c4dadca92c0644593943038
+FConvergenceSpec.ConvergenceSpec
+R1361:1364 Stdlib.Bool.Bool <> <> lib
+R1366:1369 Stdlib.Lists.List <> <> lib
+R1371:1375 Stdlib.Arith.Arith <> <> lib
+R1385:1397 Stdlib.Lists.List ListNotations <> mod
+ind 1458:1461 <> expr
+constr 1477:1480 <> ELit
+constr 1498:1502 <> EVary
+constr 1519:1526 <> EBarrier
+constr 1540:1549 <> EWarpPoint
+constr 1619:1622 <> EVar
+constr 1697:1702 <> EBinop
+constr 1734:1738 <> EUnop
+constr 1763:1765 <> EIf
+constr 1833:1838 <> EWhile
+constr 1897:1900 <> EFor
+constr 1963:1966 <> ESeq
+constr 1997:2000 <> ELet
+constr 2070:2079 <> ESuperstep
+constr 2150:2153 <> EApp
+constr 2184:2190 <> EReturn
+R1489:1492 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1510:1513 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1531:1534 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1552:1555 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1634:1637 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1631:1633 Corelib.Init.Datatypes <> nat ind
+R1638:1641 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1713:1716 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1709:1712 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1721:1724 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1717:1720 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1725:1728 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1750:1753 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1746:1749 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1754:1757 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1779:1782 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1775:1778 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1787:1790 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1783:1786 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1795:1798 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1791:1794 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1799:1802 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1849:1852 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1845:1848 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1857:1860 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1853:1856 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1861:1864 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1913:1916 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1909:1912 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1921:1924 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1917:1920 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1929:1932 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1925:1928 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1933:1936 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1984:1987 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R1975:1978 Corelib.Init.Datatypes <> list ind
+R1980:1983 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R1988:1991 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R2012:2015 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2009:2011 Corelib.Init.Datatypes <> nat ind
+R2020:2023 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2016:2019 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R2028:2031 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2024:2027 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R2032:2035 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R2086:2089 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2082:2085 Corelib.Init.Datatypes <> bool ind
+R2094:2097 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2090:2093 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R2102:2105 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2098:2101 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R2106:2109 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R2171:2174 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2162:2165 Corelib.Init.Datatypes <> list ind
+R2167:2170 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R2175:2178 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R2200:2203 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R2196:2199 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+R2204:2207 ConvergenceSpec.ConvergenceSpec <> expr:1 ind
+scheme 1458:1461 <> expr_rect
+scheme 1458:1461 <> expr_ind
+scheme 1458:1461 <> expr_rec
+scheme 1458:1461 <> expr_sind
+ind 2284:2292 <> exec_mode
+constr 2304:2312 <> Converged
+constr 2316:2323 <> Diverged
+scheme 2284:2292 <> exec_mode_rect
+scheme 2284:2292 <> exec_mode_ind
+scheme 2284:2292 <> exec_mode_rec
+scheme 2284:2292 <> exec_mode_sind
+ind 2520:2524 <> error
+constr 2536:2547 <> BarrierError
+constr 2551:2559 <> WarpError
+scheme 2520:2524 <> error_rect
+scheme 2520:2524 <> error_ind
+scheme 2520:2524 <> error_rec
+scheme 2520:2524 <> error_sind
+def 2654:2663 <> is_varying
+R2670:2673 ConvergenceSpec.ConvergenceSpec <> expr ind
+binder 2666:2666 <> e:7
+R2678:2681 Corelib.Init.Datatypes <> bool ind
+R2694:2694 ConvergenceSpec.ConvergenceSpec <> e:7 var
+R2705:2709 ConvergenceSpec.ConvergenceSpec <> EVary constr
+R2722:2725 Corelib.Init.Datatypes <> true constr
+R2731:2734 ConvergenceSpec.ConvergenceSpec <> ELit constr
+R2738:2745 ConvergenceSpec.ConvergenceSpec <> EBarrier constr
+R2749:2758 ConvergenceSpec.ConvergenceSpec <> EWarpPoint constr
+R2762:2765 ConvergenceSpec.ConvergenceSpec <> EVar constr
+R2772:2776 Corelib.Init.Datatypes <> false constr
+R2772:2776 Corelib.Init.Datatypes <> false constr
+R2772:2776 Corelib.Init.Datatypes <> false constr
+R2772:2776 Corelib.Init.Datatypes <> false constr
+R2782:2787 ConvergenceSpec.ConvergenceSpec <> EBinop constr
+R2811:2814 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R2799:2808 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R2815:2824 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R2832:2836 ConvergenceSpec.ConvergenceSpec <> EUnop constr
+R2849:2858 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R2860:2860 ConvergenceSpec.ConvergenceSpec <> e:7 var
+R2866:2868 ConvergenceSpec.ConvergenceSpec <> EIf constr
+R2911:2914 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R2895:2898 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R2883:2892 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R2899:2908 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R2915:2924 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R2933:2938 ConvergenceSpec.ConvergenceSpec <> EWhile constr
+R2962:2965 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R2950:2959 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R2966:2975 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R2983:2986 ConvergenceSpec.ConvergenceSpec <> EFor constr
+R3030:3033 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R3013:3016 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R3000:3009 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R3017:3026 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R3034:3043 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R3051:3054 ConvergenceSpec.ConvergenceSpec <> ESeq constr
+R3068:3074 Stdlib.Lists.List <> existsb def
+R3076:3085 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R3094:3097 ConvergenceSpec.ConvergenceSpec <> ELet constr
+R3123:3126 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R3111:3120 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R3127:3136 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R3144:3153 ConvergenceSpec.ConvergenceSpec <> ESuperstep constr
+R3185:3188 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R3170:3179 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R3189:3198 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R3209:3212 ConvergenceSpec.ConvergenceSpec <> EApp constr
+R3226:3232 Stdlib.Lists.List <> existsb def
+R3234:3243 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R3254:3260 ConvergenceSpec.ConvergenceSpec <> EReturn constr
+R3271:3280 ConvergenceSpec.ConvergenceSpec <> is_varying:8 def
+R3282:3282 ConvergenceSpec.ConvergenceSpec <> e:7 var
+def 3336:3347 <> barrier_free
+R3354:3357 ConvergenceSpec.ConvergenceSpec <> expr ind
+binder 3350:3350 <> e:10
+R3362:3365 Corelib.Init.Datatypes <> bool ind
+R3378:3378 ConvergenceSpec.ConvergenceSpec <> e:10 var
+R3389:3396 ConvergenceSpec.ConvergenceSpec <> EBarrier constr
+R3407:3411 Corelib.Init.Datatypes <> false constr
+R3417:3420 ConvergenceSpec.ConvergenceSpec <> ELit constr
+R3424:3428 ConvergenceSpec.ConvergenceSpec <> EVary constr
+R3432:3441 ConvergenceSpec.ConvergenceSpec <> EWarpPoint constr
+R3445:3448 ConvergenceSpec.ConvergenceSpec <> EVar constr
+R3455:3458 Corelib.Init.Datatypes <> true constr
+R3455:3458 Corelib.Init.Datatypes <> true constr
+R3455:3458 Corelib.Init.Datatypes <> true constr
+R3455:3458 Corelib.Init.Datatypes <> true constr
+R3464:3469 ConvergenceSpec.ConvergenceSpec <> EBinop constr
+R3496:3499 Corelib.Init.Datatypes <> ::bool_scope:x_'&&'_x not
+R3482:3493 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R3500:3511 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R3519:3523 ConvergenceSpec.ConvergenceSpec <> EUnop constr
+R3537:3548 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R3550:3550 ConvergenceSpec.ConvergenceSpec <> e:10 var
+R3556:3558 ConvergenceSpec.ConvergenceSpec <> EIf constr
+R3606:3609 Corelib.Init.Datatypes <> ::bool_scope:x_'&&'_x not
+R3588:3591 Corelib.Init.Datatypes <> ::bool_scope:x_'&&'_x not
+R3574:3585 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R3592:3603 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R3610:3621 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R3630:3635 ConvergenceSpec.ConvergenceSpec <> EWhile constr
+R3662:3665 Corelib.Init.Datatypes <> ::bool_scope:x_'&&'_x not
+R3648:3659 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R3666:3677 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R3685:3688 ConvergenceSpec.ConvergenceSpec <> EFor constr
+R3737:3740 Corelib.Init.Datatypes <> ::bool_scope:x_'&&'_x not
+R3718:3721 Corelib.Init.Datatypes <> ::bool_scope:x_'&&'_x not
+R3703:3714 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R3722:3733 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R3741:3752 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R3760:3763 ConvergenceSpec.ConvergenceSpec <> ESeq constr
+R3778:3784 Stdlib.Lists.List <> forallb def
+R3786:3797 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R3806:3809 ConvergenceSpec.ConvergenceSpec <> ELet constr
+R3838:3841 Corelib.Init.Datatypes <> ::bool_scope:x_'&&'_x not
+R3824:3835 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R3842:3853 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R4092:4101 ConvergenceSpec.ConvergenceSpec <> ESuperstep constr
+R4188:4191 Corelib.Init.Datatypes <> ::bool_scope:x_'&&'_x not
+R4132:4132 Corelib.Init.Datatypes <> ::bool_scope:x_'&&'_x not
+R4166:4170 Corelib.Init.Datatypes <> ::bool_scope:x_'&&'_x not
+R4161:4165 Corelib.Init.Datatypes <> false constr
+R4151:4154 Corelib.Init.Datatypes <> true constr
+R4171:4182 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R4192:4203 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R4214:4217 ConvergenceSpec.ConvergenceSpec <> EApp constr
+R4232:4238 Stdlib.Lists.List <> forallb def
+R4240:4251 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R4482:4488 ConvergenceSpec.ConvergenceSpec <> EReturn constr
+R4500:4511 ConvergenceSpec.ConvergenceSpec <> barrier_free:11 def
+R4513:4513 ConvergenceSpec.ConvergenceSpec <> e:10 var
+def 4571:4586 <> has_diverging_cf
+R4593:4596 ConvergenceSpec.ConvergenceSpec <> expr ind
+binder 4589:4589 <> e:13
+R4601:4604 Corelib.Init.Datatypes <> bool ind
+R4617:4617 ConvergenceSpec.ConvergenceSpec <> e:13 var
+R4628:4630 ConvergenceSpec.ConvergenceSpec <> EIf constr
+R4679:4682 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R4657:4660 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R4645:4654 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R4661:4676 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf:14 def
+R4683:4698 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf:14 def
+R4707:4712 ConvergenceSpec.ConvergenceSpec <> EWhile constr
+R4736:4739 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R4724:4733 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R4740:4755 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf:14 def
+R4763:4766 ConvergenceSpec.ConvergenceSpec <> EFor constr
+R4810:4813 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R4793:4796 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R4780:4789 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R4797:4806 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R4814:4829 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf:14 def
+R4837:4842 ConvergenceSpec.ConvergenceSpec <> EBinop constr
+R4872:4875 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R4854:4869 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf:14 def
+R4876:4891 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf:14 def
+R4899:4903 ConvergenceSpec.ConvergenceSpec <> EUnop constr
+R4916:4931 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf:14 def
+R4933:4933 ConvergenceSpec.ConvergenceSpec <> e:13 var
+R4939:4942 ConvergenceSpec.ConvergenceSpec <> ESeq constr
+R4956:4962 Stdlib.Lists.List <> existsb def
+R4964:4979 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf:14 def
+R4988:4991 ConvergenceSpec.ConvergenceSpec <> ELet constr
+R5023:5026 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R5005:5020 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf:14 def
+R5027:5042 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf:14 def
+R5050:5059 ConvergenceSpec.ConvergenceSpec <> ESuperstep constr
+R5097:5100 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R5076:5091 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf:14 def
+R5101:5116 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf:14 def
+R5127:5130 ConvergenceSpec.ConvergenceSpec <> EApp constr
+R5144:5150 Stdlib.Lists.List <> existsb def
+R5152:5167 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf:14 def
+R5178:5184 ConvergenceSpec.ConvergenceSpec <> EReturn constr
+R5195:5210 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf:14 def
+R5212:5212 ConvergenceSpec.ConvergenceSpec <> e:13 var
+R5235:5239 Corelib.Init.Datatypes <> false constr
+def 5334:5338 <> check
+R5345:5353 ConvergenceSpec.ConvergenceSpec <> exec_mode ind
+binder 5341:5341 <> m:16
+R5361:5364 ConvergenceSpec.ConvergenceSpec <> expr ind
+binder 5357:5357 <> e:17
+R5369:5372 Corelib.Init.Datatypes <> list ind
+R5374:5378 ConvergenceSpec.ConvergenceSpec <> error ind
+R5391:5391 ConvergenceSpec.ConvergenceSpec <> e:17 var
+R5402:5409 ConvergenceSpec.ConvergenceSpec <> EBarrier constr
+R5426:5426 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R5433:5440 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R5445:5445 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R5458:5458 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R5446:5457 ConvergenceSpec.ConvergenceSpec <> BarrierError constr
+R5462:5470 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R5475:5476 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R5486:5489 ConvergenceSpec.ConvergenceSpec <> ELit constr
+R5493:5497 ConvergenceSpec.ConvergenceSpec <> EVary constr
+R5501:5510 ConvergenceSpec.ConvergenceSpec <> EWarpPoint constr
+R5514:5517 ConvergenceSpec.ConvergenceSpec <> EVar constr
+R5524:5525 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R5524:5525 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R5524:5525 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R5524:5525 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R5531:5536 ConvergenceSpec.ConvergenceSpec <> EBinop constr
+R5558:5561 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R5549:5553 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R5555:5555 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R5562:5566 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R5568:5568 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R5576:5580 ConvergenceSpec.ConvergenceSpec <> EUnop constr
+R5594:5598 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R5602:5602 ConvergenceSpec.ConvergenceSpec <> e:17 var
+R5600:5600 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R5608:5610 ConvergenceSpec.ConvergenceSpec <> EIf constr
+R5648:5657 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R5683:5683 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R5669:5676 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+binder 5636:5640 <> inner:21
+R5706:5709 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R5694:5698 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R5700:5700 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R5723:5726 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R5710:5714 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R5716:5720 ConvergenceSpec.ConvergenceSpec <> inner:21 var
+R5727:5731 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R5733:5737 ConvergenceSpec.ConvergenceSpec <> inner:21 var
+R5746:5751 ConvergenceSpec.ConvergenceSpec <> EWhile constr
+R5786:5795 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R5821:5821 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R5807:5814 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+binder 5774:5778 <> inner:22
+R5844:5847 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R5832:5836 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R5838:5838 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R5848:5852 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R5854:5858 ConvergenceSpec.ConvergenceSpec <> inner:22 var
+R5866:5869 ConvergenceSpec.ConvergenceSpec <> EFor constr
+R5919:5922 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R5906:5915 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R5923:5932 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R5956:5956 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R5942:5949 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+binder 5894:5898 <> inner:23
+R5977:5980 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R5967:5971 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R5973:5973 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R5991:5994 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R5981:5985 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R5987:5987 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R5995:5999 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R6001:6005 ConvergenceSpec.ConvergenceSpec <> inner:23 var
+R6013:6016 ConvergenceSpec.ConvergenceSpec <> ESeq constr
+R6031:6036 Stdlib.Lists.List <> concat def
+R6039:6041 Corelib.Lists.ListDef <> map def
+R6044:6048 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R6050:6050 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R6061:6064 ConvergenceSpec.ConvergenceSpec <> ELet constr
+R6088:6091 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R6079:6083 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R6085:6085 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R6092:6096 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R6098:6098 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R6413:6422 ConvergenceSpec.ConvergenceSpec <> ESuperstep constr
+R6487:6487 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R6515:6522 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R6525:6529 Corelib.Init.Datatypes <> false constr
+R6534:6534 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R6547:6547 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R6535:6546 ConvergenceSpec.ConvergenceSpec <> BarrierError constr
+R6578:6579 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+binder 6457:6468 <> entry_errors:26
+R6620:6623 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R6608:6619 ConvergenceSpec.ConvergenceSpec <> entry_errors:26 var
+R6636:6639 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R6624:6628 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R6630:6630 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R6640:6644 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R6646:6646 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R6657:6660 ConvergenceSpec.ConvergenceSpec <> EApp constr
+R6675:6680 Stdlib.Lists.List <> concat def
+R6683:6685 Corelib.Lists.ListDef <> map def
+R6688:6692 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R6694:6694 ConvergenceSpec.ConvergenceSpec <> m:16 var
+R7158:7164 ConvergenceSpec.ConvergenceSpec <> EReturn constr
+R7176:7180 ConvergenceSpec.ConvergenceSpec <> check:18 def
+R7184:7184 ConvergenceSpec.ConvergenceSpec <> e:17 var
+R7182:7182 ConvergenceSpec.ConvergenceSpec <> m:16 var
+rec 8100:8108 <> dim_usage
+proj 8137:8142 <> uses_x
+proj 8152:8157 <> uses_y
+proj 8167:8172 <> uses_z
+proj 8184:8197 <> uses_block_dim
+proj 8207:8219 <> uses_grid_dim
+proj 8231:8245 <> uses_thread_idx
+proj 8255:8268 <> uses_block_idx
+proj 8280:8294 <> uses_shared_mem
+R8146:8149 Corelib.Init.Datatypes <> bool ind
+R8161:8164 Corelib.Init.Datatypes <> bool ind
+R8176:8179 Corelib.Init.Datatypes <> bool ind
+R8201:8204 Corelib.Init.Datatypes <> bool ind
+R8223:8226 Corelib.Init.Datatypes <> bool ind
+R8249:8252 Corelib.Init.Datatypes <> bool ind
+R8272:8275 Corelib.Init.Datatypes <> bool ind
+R8298:8301 Corelib.Init.Datatypes <> bool ind
+def 8318:8332 <> empty_dim_usage
+R8339:8350 ConvergenceSpec.ConvergenceSpec <> mk_dim_usage constr
+R8352:8356 Corelib.Init.Datatypes <> false constr
+R8358:8362 Corelib.Init.Datatypes <> false constr
+R8364:8368 Corelib.Init.Datatypes <> false constr
+R8370:8374 Corelib.Init.Datatypes <> false constr
+R8376:8380 Corelib.Init.Datatypes <> false constr
+R8382:8386 Corelib.Init.Datatypes <> false constr
+R8388:8392 Corelib.Init.Datatypes <> false constr
+R8394:8398 Corelib.Init.Datatypes <> false constr
+def 8413:8427 <> merge_dim_usage
+R8436:8444 ConvergenceSpec.ConvergenceSpec <> dim_usage rec
+binder 8430:8430 <> a:36
+binder 8432:8432 <> b:37
+R8450:8461 ConvergenceSpec.ConvergenceSpec <> mk_dim_usage constr
+R8476:8488 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R8469:8474 ConvergenceSpec.ConvergenceSpec <> uses_x proj
+R8466:8466 ConvergenceSpec.ConvergenceSpec <> a:36 var
+R8492:8497 ConvergenceSpec.ConvergenceSpec <> uses_x proj
+R8489:8489 ConvergenceSpec.ConvergenceSpec <> b:37 var
+R8514:8526 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R8507:8512 ConvergenceSpec.ConvergenceSpec <> uses_y proj
+R8504:8504 ConvergenceSpec.ConvergenceSpec <> a:36 var
+R8530:8535 ConvergenceSpec.ConvergenceSpec <> uses_y proj
+R8527:8527 ConvergenceSpec.ConvergenceSpec <> b:37 var
+R8552:8564 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R8545:8550 ConvergenceSpec.ConvergenceSpec <> uses_z proj
+R8542:8542 ConvergenceSpec.ConvergenceSpec <> a:36 var
+R8568:8573 ConvergenceSpec.ConvergenceSpec <> uses_z proj
+R8565:8565 ConvergenceSpec.ConvergenceSpec <> b:37 var
+R8598:8602 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R8583:8596 ConvergenceSpec.ConvergenceSpec <> uses_block_dim proj
+R8580:8580 ConvergenceSpec.ConvergenceSpec <> a:36 var
+R8606:8619 ConvergenceSpec.ConvergenceSpec <> uses_block_dim proj
+R8603:8603 ConvergenceSpec.ConvergenceSpec <> b:37 var
+R8643:8648 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R8629:8641 ConvergenceSpec.ConvergenceSpec <> uses_grid_dim proj
+R8626:8626 ConvergenceSpec.ConvergenceSpec <> a:36 var
+R8652:8664 ConvergenceSpec.ConvergenceSpec <> uses_grid_dim proj
+R8649:8649 ConvergenceSpec.ConvergenceSpec <> b:37 var
+R8690:8693 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R8674:8688 ConvergenceSpec.ConvergenceSpec <> uses_thread_idx proj
+R8671:8671 ConvergenceSpec.ConvergenceSpec <> a:36 var
+R8697:8711 ConvergenceSpec.ConvergenceSpec <> uses_thread_idx proj
+R8694:8694 ConvergenceSpec.ConvergenceSpec <> b:37 var
+R8736:8740 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R8721:8734 ConvergenceSpec.ConvergenceSpec <> uses_block_idx proj
+R8718:8718 ConvergenceSpec.ConvergenceSpec <> a:36 var
+R8744:8757 ConvergenceSpec.ConvergenceSpec <> uses_block_idx proj
+R8741:8741 ConvergenceSpec.ConvergenceSpec <> b:37 var
+R8783:8786 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R8767:8781 ConvergenceSpec.ConvergenceSpec <> uses_shared_mem proj
+R8764:8764 ConvergenceSpec.ConvergenceSpec <> a:36 var
+R8790:8804 ConvergenceSpec.ConvergenceSpec <> uses_shared_mem proj
+R8787:8787 ConvergenceSpec.ConvergenceSpec <> b:37 var
+sec 8888:8898 <> ExprListInd
+var 8911:8911 ExprListInd P
+R8923:8926 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8919:8922 ConvergenceSpec.ConvergenceSpec <> expr ind
+var 8942:8946 ExprListInd Plist
+R8959:8962 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8950:8953 Corelib.Init.Datatypes <> list ind
+R8955:8958 ConvergenceSpec.ConvergenceSpec <> expr ind
+var 8981:8986 ExprListInd IH_lit
+R8996:8996 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R8998:9001 ConvergenceSpec.ConvergenceSpec <> ELit constr
+var 9015:9021 ExprListInd IH_vary
+R9030:9030 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9032:9036 ConvergenceSpec.ConvergenceSpec <> EVary constr
+var 9050:9059 ExprListInd IH_barrier
+R9065:9065 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9067:9074 ConvergenceSpec.ConvergenceSpec <> EBarrier constr
+var 9088:9099 ExprListInd IH_warppoint
+R9103:9103 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9105:9114 ConvergenceSpec.ConvergenceSpec <> EWarpPoint constr
+var 9128:9133 ExprListInd IH_var
+binder 9150:9150 <> x:50
+R9153:9153 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9156:9159 ConvergenceSpec.ConvergenceSpec <> EVar constr
+R9161:9161 ConvergenceSpec.ConvergenceSpec <> x:50 var
+var 9176:9183 ExprListInd IH_binop
+binder 9196:9196 <> a:53
+binder 9198:9198 <> b:54
+R9204:9207 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9201:9201 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9203:9203 ConvergenceSpec.ConvergenceSpec <> a:53 var
+R9211:9214 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9208:9208 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9210:9210 ConvergenceSpec.ConvergenceSpec <> b:54 var
+R9215:9215 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9218:9223 ConvergenceSpec.ConvergenceSpec <> EBinop constr
+R9225:9225 ConvergenceSpec.ConvergenceSpec <> a:53 var
+R9227:9227 ConvergenceSpec.ConvergenceSpec <> b:54 var
+var 9242:9248 ExprListInd IH_unop
+binder 9262:9262 <> e:57
+R9268:9271 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9265:9265 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9267:9267 ConvergenceSpec.ConvergenceSpec <> e:57 var
+R9272:9272 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9275:9279 ConvergenceSpec.ConvergenceSpec <> EUnop constr
+R9281:9281 ConvergenceSpec.ConvergenceSpec <> e:57 var
+var 9296:9300 ExprListInd IH_if
+binder 9316:9316 <> c:60
+binder 9318:9318 <> t:61
+binder 9320:9321 <> el:62
+R9327:9330 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9324:9324 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9326:9326 ConvergenceSpec.ConvergenceSpec <> c:60 var
+R9334:9337 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9331:9331 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9333:9333 ConvergenceSpec.ConvergenceSpec <> t:61 var
+R9342:9345 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9338:9338 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9340:9341 ConvergenceSpec.ConvergenceSpec <> el:62 var
+R9346:9346 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9349:9351 ConvergenceSpec.ConvergenceSpec <> EIf constr
+R9353:9353 ConvergenceSpec.ConvergenceSpec <> c:60 var
+R9355:9355 ConvergenceSpec.ConvergenceSpec <> t:61 var
+R9357:9358 ConvergenceSpec.ConvergenceSpec <> el:62 var
+var 9373:9380 ExprListInd IH_while
+binder 9393:9393 <> c:65
+binder 9395:9395 <> b:66
+R9401:9404 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9398:9398 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9400:9400 ConvergenceSpec.ConvergenceSpec <> c:65 var
+R9408:9411 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9405:9405 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9407:9407 ConvergenceSpec.ConvergenceSpec <> b:66 var
+R9412:9412 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9415:9420 ConvergenceSpec.ConvergenceSpec <> EWhile constr
+R9422:9422 ConvergenceSpec.ConvergenceSpec <> c:65 var
+R9424:9424 ConvergenceSpec.ConvergenceSpec <> b:66 var
+var 9439:9444 ExprListInd IH_for
+binder 9459:9460 <> lo:69
+binder 9462:9463 <> hi:70
+binder 9465:9465 <> b:71
+R9472:9475 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9468:9468 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9470:9471 ConvergenceSpec.ConvergenceSpec <> lo:69 var
+R9480:9483 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9476:9476 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9478:9479 ConvergenceSpec.ConvergenceSpec <> hi:70 var
+R9487:9490 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9484:9484 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9486:9486 ConvergenceSpec.ConvergenceSpec <> b:71 var
+R9491:9491 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9494:9497 ConvergenceSpec.ConvergenceSpec <> EFor constr
+R9499:9500 ConvergenceSpec.ConvergenceSpec <> lo:69 var
+R9502:9503 ConvergenceSpec.ConvergenceSpec <> hi:70 var
+R9505:9505 ConvergenceSpec.ConvergenceSpec <> b:71 var
+var 9520:9525 ExprListInd IH_seq
+binder 9540:9541 <> es:74
+R9552:9555 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9544:9548 ConvergenceSpec.ConvergenceSpec <> ExprListInd.Plist var
+R9550:9551 ConvergenceSpec.ConvergenceSpec <> es:74 var
+R9556:9556 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9559:9562 ConvergenceSpec.ConvergenceSpec <> ESeq constr
+R9564:9565 ConvergenceSpec.ConvergenceSpec <> es:74 var
+var 9580:9585 ExprListInd IH_let
+binder 9600:9600 <> x:77
+binder 9602:9602 <> v:78
+binder 9604:9604 <> b:79
+R9610:9613 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9607:9607 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9609:9609 ConvergenceSpec.ConvergenceSpec <> v:78 var
+R9617:9620 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9614:9614 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9616:9616 ConvergenceSpec.ConvergenceSpec <> b:79 var
+R9621:9621 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9624:9627 ConvergenceSpec.ConvergenceSpec <> ELet constr
+R9629:9629 ConvergenceSpec.ConvergenceSpec <> x:77 var
+R9631:9631 ConvergenceSpec.ConvergenceSpec <> v:78 var
+R9633:9633 ConvergenceSpec.ConvergenceSpec <> b:79 var
+var 9648:9659 ExprListInd IH_superstep
+R9676:9679 Corelib.Init.Datatypes <> bool ind
+binder 9671:9672 <> dv:82
+binder 9682:9685 <> body:83
+binder 9687:9690 <> cont:84
+R9701:9704 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9695:9695 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9697:9700 ConvergenceSpec.ConvergenceSpec <> body:83 var
+R9711:9714 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9705:9705 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9707:9710 ConvergenceSpec.ConvergenceSpec <> cont:84 var
+R9715:9715 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9718:9727 ConvergenceSpec.ConvergenceSpec <> ESuperstep constr
+R9729:9730 ConvergenceSpec.ConvergenceSpec <> dv:82 var
+R9732:9735 ConvergenceSpec.ConvergenceSpec <> body:83 var
+R9737:9740 ConvergenceSpec.ConvergenceSpec <> cont:84 var
+var 9755:9760 ExprListInd IH_app
+binder 9775:9778 <> args:87
+R9791:9794 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9781:9785 ConvergenceSpec.ConvergenceSpec <> ExprListInd.Plist var
+R9787:9790 ConvergenceSpec.ConvergenceSpec <> args:87 var
+R9795:9795 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9798:9801 ConvergenceSpec.ConvergenceSpec <> EApp constr
+R9803:9806 ConvergenceSpec.ConvergenceSpec <> args:87 var
+var 9821:9829 ExprListInd IH_return
+binder 9841:9841 <> e:90
+R9847:9850 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9844:9844 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9846:9846 ConvergenceSpec.ConvergenceSpec <> e:90 var
+R9851:9851 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9854:9860 ConvergenceSpec.ConvergenceSpec <> EReturn constr
+R9862:9862 ConvergenceSpec.ConvergenceSpec <> e:90 var
+var 9877:9882 ExprListInd IH_nil
+R9890:9894 ConvergenceSpec.ConvergenceSpec <> ExprListInd.Plist var
+R9896:9897 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+var 9911:9917 ExprListInd IH_cons
+binder 9931:9931 <> e:95
+binder 9933:9934 <> es:96
+R9940:9943 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9937:9937 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R9939:9939 ConvergenceSpec.ConvergenceSpec <> e:95 var
+R9952:9955 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9944:9948 ConvergenceSpec.ConvergenceSpec <> ExprListInd.Plist var
+R9950:9951 ConvergenceSpec.ConvergenceSpec <> es:96 var
+R9956:9960 ConvergenceSpec.ConvergenceSpec <> ExprListInd.Plist var
+R9964:9967 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R9963:9963 ConvergenceSpec.ConvergenceSpec <> e:95 var
+R9968:9969 ConvergenceSpec.ConvergenceSpec <> es:96 var
+def 9983:9996 <> expr_list_rect
+R10003:10006 ConvergenceSpec.ConvergenceSpec <> expr ind
+binder 9999:9999 <> e:99
+R10011:10011 ConvergenceSpec.ConvergenceSpec <> ExprListInd.P var
+R10013:10013 ConvergenceSpec.ConvergenceSpec <> e:99 var
+R10026:10026 ConvergenceSpec.ConvergenceSpec <> e:99 var
+R10037:10040 ConvergenceSpec.ConvergenceSpec <> ELit constr
+R10051:10056 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_lit var
+R10062:10066 ConvergenceSpec.ConvergenceSpec <> EVary constr
+R10076:10082 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_vary var
+R10088:10095 ConvergenceSpec.ConvergenceSpec <> EBarrier constr
+R10102:10111 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_barrier var
+R10117:10126 ConvergenceSpec.ConvergenceSpec <> EWarpPoint constr
+R10131:10142 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_warppoint var
+R10148:10151 ConvergenceSpec.ConvergenceSpec <> EVar constr
+R10162:10167 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_var var
+R10175:10180 ConvergenceSpec.ConvergenceSpec <> EBinop constr
+R10191:10198 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_binop var
+R10205:10218 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R10224:10237 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R10246:10250 ConvergenceSpec.ConvergenceSpec <> EUnop constr
+R10262:10268 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_unop var
+R10273:10286 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R10295:10297 ConvergenceSpec.ConvergenceSpec <> EIf constr
+R10317:10321 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_if var
+R10331:10344 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R10350:10363 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R10369:10382 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R10392:10397 ConvergenceSpec.ConvergenceSpec <> EWhile constr
+R10408:10415 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_while var
+R10422:10435 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R10441:10454 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R10463:10466 ConvergenceSpec.ConvergenceSpec <> EFor constr
+R10485:10490 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_for var
+R10501:10514 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R10521:10534 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R10541:10554 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R10563:10566 ConvergenceSpec.ConvergenceSpec <> ESeq constr
+R10580:10585 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_seq var
+R10613:10616 Corelib.Init.Datatypes <> list ind
+R10618:10621 ConvergenceSpec.ConvergenceSpec <> expr ind
+binder 10608:10609 <> xs:102
+R10626:10630 ConvergenceSpec.ConvergenceSpec <> ExprListInd.Plist var
+R10632:10633 ConvergenceSpec.ConvergenceSpec <> xs:102 var
+R10654:10655 ConvergenceSpec.ConvergenceSpec <> xs:102 var
+R10674:10675 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R10684:10689 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_nil var
+R10704:10707 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R10713:10719 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_cons var
+R10726:10739 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R10745:10746 ConvergenceSpec.ConvergenceSpec <> go:103 var
+R10774:10777 ConvergenceSpec.ConvergenceSpec <> ELet constr
+R10790:10795 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_let var
+R10804:10817 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R10823:10836 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R10845:10854 ConvergenceSpec.ConvergenceSpec <> ESuperstep constr
+R10878:10889 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_superstep var
+R10905:10918 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R10927:10940 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R10952:10955 ConvergenceSpec.ConvergenceSpec <> EApp constr
+R10971:10976 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_app var
+R11006:11009 Corelib.Init.Datatypes <> list ind
+R11011:11014 ConvergenceSpec.ConvergenceSpec <> expr ind
+binder 11001:11002 <> xs:105
+R11019:11023 ConvergenceSpec.ConvergenceSpec <> ExprListInd.Plist var
+R11025:11026 ConvergenceSpec.ConvergenceSpec <> xs:105 var
+R11047:11048 ConvergenceSpec.ConvergenceSpec <> xs:105 var
+R11067:11068 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R11077:11082 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_nil var
+R11097:11100 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R11106:11112 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_cons var
+R11119:11132 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R11138:11139 ConvergenceSpec.ConvergenceSpec <> go:106 var
+R11169:11175 ConvergenceSpec.ConvergenceSpec <> EReturn constr
+R11183:11191 ConvergenceSpec.ConvergenceSpec <> ExprListInd.IH_return var
+R11193:11193 ConvergenceSpec.ConvergenceSpec <> e:99 var
+R11196:11209 ConvergenceSpec.ConvergenceSpec <> expr_list_rect:100 def
+R11211:11211 ConvergenceSpec.ConvergenceSpec <> e:99 var
+R11226:11236 ConvergenceSpec.ConvergenceSpec ExprListInd <> sec
+prf 11282:11294 <> incl_app_mono
+binder 11306:11306 <> A:108
+R11333:11336 Corelib.Init.Datatypes <> list ind
+R11338:11338 ConvergenceSpec.ConvergenceSpec <> A:108 var
+binder 11317:11318 <> l1:109
+binder 11320:11321 <> l2:110
+binder 11323:11325 <> l1':111
+binder 11327:11329 <> l2':112
+R11355:11358 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11344:11347 Stdlib.Lists.List <> incl def
+R11352:11354 ConvergenceSpec.ConvergenceSpec <> l1':111 var
+R11349:11350 ConvergenceSpec.ConvergenceSpec <> l1:109 var
+R11370:11373 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11359:11362 Stdlib.Lists.List <> incl def
+R11367:11369 ConvergenceSpec.ConvergenceSpec <> l2':112 var
+R11364:11365 ConvergenceSpec.ConvergenceSpec <> l2:110 var
+R11374:11377 Stdlib.Lists.List <> incl def
+R11394:11397 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R11391:11393 ConvergenceSpec.ConvergenceSpec <> l1':111 var
+R11398:11400 ConvergenceSpec.ConvergenceSpec <> l2':112 var
+R11382:11385 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R11380:11381 ConvergenceSpec.ConvergenceSpec <> l1:109 var
+R11386:11387 ConvergenceSpec.ConvergenceSpec <> l2:110 var
+R11456:11465 Stdlib.Lists.List <> in_app_iff thm
+R11456:11465 Stdlib.Lists.List <> in_app_iff thm
+R11480:11489 Stdlib.Lists.List <> in_app_iff thm
+R11480:11489 Stdlib.Lists.List <> in_app_iff thm
+prf 11588:11598 <> app_nil_iff
+binder 11610:11610 <> A:113
+R11629:11632 Corelib.Init.Datatypes <> list ind
+R11634:11634 ConvergenceSpec.ConvergenceSpec <> A:113 var
+binder 11621:11622 <> l1:114
+binder 11624:11625 <> l2:115
+R11653:11657 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R11648:11650 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11642:11645 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R11640:11641 ConvergenceSpec.ConvergenceSpec <> l1:114 var
+R11646:11647 ConvergenceSpec.ConvergenceSpec <> l2:115 var
+R11651:11652 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R11665:11668 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R11660:11662 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11658:11659 ConvergenceSpec.ConvergenceSpec <> l1:114 var
+R11663:11664 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R11671:11673 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11669:11670 ConvergenceSpec.ConvergenceSpec <> l2:115 var
+R11674:11675 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R11720:11729 Stdlib.Lists.List <> app_eq_nil thm
+R11720:11729 Stdlib.Lists.List <> app_eq_nil thm
+prf 11784:11801 <> diverged_absorbing
+R11817:11820 Corelib.Init.Datatypes <> bool ind
+binder 11813:11813 <> b:116
+R11826:11826 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11859:11862 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11830:11830 ConvergenceSpec.ConvergenceSpec <> b:116 var
+R11851:11858 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R11837:11844 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R11863:11870 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+prf 11969:11982 <> merge_dim_comm
+binder 11993:11993 <> a:117
+binder 11995:11995 <> b:118
+R12019:12021 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12000:12014 ConvergenceSpec.ConvergenceSpec <> merge_dim_usage def
+R12016:12016 ConvergenceSpec.ConvergenceSpec <> a:117 var
+R12018:12018 ConvergenceSpec.ConvergenceSpec <> b:118 var
+R12022:12036 ConvergenceSpec.ConvergenceSpec <> merge_dim_usage def
+R12038:12038 ConvergenceSpec.ConvergenceSpec <> b:118 var
+R12040:12040 ConvergenceSpec.ConvergenceSpec <> a:117 var
+R12140:12154 ConvergenceSpec.ConvergenceSpec <> merge_dim_usage def
+R12181:12193 Stdlib.Bool.Bool <> orb_comm thm
+R12181:12193 Stdlib.Bool.Bool <> orb_comm thm
+R12181:12193 Stdlib.Bool.Bool <> orb_comm thm
+R12181:12193 Stdlib.Bool.Bool <> orb_comm thm
+R12181:12193 Stdlib.Bool.Bool <> orb_comm thm
+R12181:12193 Stdlib.Bool.Bool <> orb_comm thm
+R12181:12193 Stdlib.Bool.Bool <> orb_comm thm
+R12181:12193 Stdlib.Bool.Bool <> orb_comm thm
+R12181:12193 Stdlib.Bool.Bool <> orb_comm thm
+prf 12210:12224 <> merge_dim_assoc
+binder 12235:12235 <> a:119
+binder 12237:12237 <> b:120
+binder 12239:12239 <> c:121
+R12283:12287 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12244:12258 ConvergenceSpec.ConvergenceSpec <> merge_dim_usage def
+R12260:12260 ConvergenceSpec.ConvergenceSpec <> a:119 var
+R12263:12277 ConvergenceSpec.ConvergenceSpec <> merge_dim_usage def
+R12279:12279 ConvergenceSpec.ConvergenceSpec <> b:120 var
+R12281:12281 ConvergenceSpec.ConvergenceSpec <> c:121 var
+R12288:12302 ConvergenceSpec.ConvergenceSpec <> merge_dim_usage def
+R12305:12319 ConvergenceSpec.ConvergenceSpec <> merge_dim_usage def
+R12321:12321 ConvergenceSpec.ConvergenceSpec <> a:119 var
+R12323:12323 ConvergenceSpec.ConvergenceSpec <> b:120 var
+R12326:12326 ConvergenceSpec.ConvergenceSpec <> c:121 var
+R12466:12480 ConvergenceSpec.ConvergenceSpec <> merge_dim_usage def
+R12507:12520 Stdlib.Bool.Bool <> orb_assoc thm
+R12507:12520 Stdlib.Bool.Bool <> orb_assoc thm
+R12507:12520 Stdlib.Bool.Bool <> orb_assoc thm
+R12507:12520 Stdlib.Bool.Bool <> orb_assoc thm
+R12507:12520 Stdlib.Bool.Bool <> orb_assoc thm
+R12507:12520 Stdlib.Bool.Bool <> orb_assoc thm
+R12507:12520 Stdlib.Bool.Bool <> orb_assoc thm
+R12507:12520 Stdlib.Bool.Bool <> orb_assoc thm
+R12507:12520 Stdlib.Bool.Bool <> orb_assoc thm
+prf 12537:12556 <> merge_dim_idempotent
+binder 12567:12567 <> a:122
+R12591:12593 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12572:12586 ConvergenceSpec.ConvergenceSpec <> merge_dim_usage def
+R12588:12588 ConvergenceSpec.ConvergenceSpec <> a:122 var
+R12590:12590 ConvergenceSpec.ConvergenceSpec <> a:122 var
+R12594:12594 ConvergenceSpec.ConvergenceSpec <> a:122 var
+R12646:12660 ConvergenceSpec.ConvergenceSpec <> merge_dim_usage def
+R12687:12699 Stdlib.Bool.Bool <> orb_diag thm
+R12687:12699 Stdlib.Bool.Bool <> orb_diag thm
+R12687:12699 Stdlib.Bool.Bool <> orb_diag thm
+R12687:12699 Stdlib.Bool.Bool <> orb_diag thm
+R12687:12699 Stdlib.Bool.Bool <> orb_diag thm
+R12687:12699 Stdlib.Bool.Bool <> orb_diag thm
+R12687:12699 Stdlib.Bool.Bool <> orb_diag thm
+R12687:12699 Stdlib.Bool.Bool <> orb_diag thm
+R12687:12699 Stdlib.Bool.Bool <> orb_diag thm
+prf 12716:12732 <> merge_dim_empty_r
+binder 12743:12743 <> a:123
+R12781:12783 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12748:12762 ConvergenceSpec.ConvergenceSpec <> merge_dim_usage def
+R12764:12764 ConvergenceSpec.ConvergenceSpec <> a:123 var
+R12766:12780 ConvergenceSpec.ConvergenceSpec <> empty_dim_usage def
+R12784:12784 ConvergenceSpec.ConvergenceSpec <> a:123 var
+R12836:12850 ConvergenceSpec.ConvergenceSpec <> merge_dim_usage def
+R12853:12867 ConvergenceSpec.ConvergenceSpec <> empty_dim_usage def
+R12894:12909 Stdlib.Bool.Bool <> orb_false_r thm
+R12894:12909 Stdlib.Bool.Bool <> orb_false_r thm
+R12894:12909 Stdlib.Bool.Bool <> orb_false_r thm
+R12894:12909 Stdlib.Bool.Bool <> orb_false_r thm
+R12894:12909 Stdlib.Bool.Bool <> orb_false_r thm
+R12894:12909 Stdlib.Bool.Bool <> orb_false_r thm
+R12894:12909 Stdlib.Bool.Bool <> orb_false_r thm
+R12894:12909 Stdlib.Bool.Bool <> orb_false_r thm
+R12894:12909 Stdlib.Bool.Bool <> orb_false_r thm
+prf 12926:12942 <> merge_dim_empty_l
+binder 12953:12953 <> a:124
+R12991:12993 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12958:12972 ConvergenceSpec.ConvergenceSpec <> merge_dim_usage def
+R12974:12988 ConvergenceSpec.ConvergenceSpec <> empty_dim_usage def
+R12990:12990 ConvergenceSpec.ConvergenceSpec <> a:124 var
+R12994:12994 ConvergenceSpec.ConvergenceSpec <> a:124 var
+R13046:13060 ConvergenceSpec.ConvergenceSpec <> merge_dim_usage def
+R13063:13077 ConvergenceSpec.ConvergenceSpec <> empty_dim_usage def
+R13104:13119 Stdlib.Bool.Bool <> orb_false_l thm
+prf 13185:13197 <> check_seq_hom
+binder 13208:13208 <> m:125
+binder 13210:13212 <> es1:126
+binder 13214:13216 <> es2:127
+R13248:13250 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13221:13225 ConvergenceSpec.ConvergenceSpec <> check def
+R13227:13227 ConvergenceSpec.ConvergenceSpec <> m:125 var
+R13230:13233 ConvergenceSpec.ConvergenceSpec <> ESeq constr
+R13239:13242 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R13236:13238 ConvergenceSpec.ConvergenceSpec <> es1:126 var
+R13243:13245 ConvergenceSpec.ConvergenceSpec <> es2:127 var
+R13269:13272 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R13251:13255 ConvergenceSpec.ConvergenceSpec <> check def
+R13257:13257 ConvergenceSpec.ConvergenceSpec <> m:125 var
+R13260:13263 ConvergenceSpec.ConvergenceSpec <> ESeq constr
+R13265:13267 ConvergenceSpec.ConvergenceSpec <> es1:126 var
+R13273:13277 ConvergenceSpec.ConvergenceSpec <> check def
+R13279:13279 ConvergenceSpec.ConvergenceSpec <> m:125 var
+R13282:13285 ConvergenceSpec.ConvergenceSpec <> ESeq constr
+R13287:13289 ConvergenceSpec.ConvergenceSpec <> es2:127 var
+R13337:13343 Stdlib.Lists.List <> map_app thm
+R13346:13355 Stdlib.Lists.List <> concat_app thm
+R13337:13343 Stdlib.Lists.List <> map_app thm
+R13337:13343 Stdlib.Lists.List <> map_app thm
+R13346:13355 Stdlib.Lists.List <> concat_app thm
+R13346:13355 Stdlib.Lists.List <> concat_app thm
+prf 13452:13482 <> diverged_clean_iff_barrier_free
+binder 13493:13493 <> e:128
+R13519:13523 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R13514:13516 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13498:13502 ConvergenceSpec.ConvergenceSpec <> check def
+R13504:13511 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R13513:13513 ConvergenceSpec.ConvergenceSpec <> e:128 var
+R13517:13518 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13538:13540 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13524:13535 ConvergenceSpec.ConvergenceSpec <> barrier_free def
+R13537:13537 ConvergenceSpec.ConvergenceSpec <> e:128 var
+R13541:13544 Corelib.Init.Datatypes <> true constr
+R13563:13576 ConvergenceSpec.ConvergenceSpec <> expr_list_rect def
+binder 13653:13654 <> es:129
+R13705:13716 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R13700:13702 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13668:13673 Stdlib.Lists.List <> concat def
+R13676:13678 Corelib.Lists.ListDef <> map def
+R13697:13698 ConvergenceSpec.ConvergenceSpec <> es:129 var
+R13681:13685 ConvergenceSpec.ConvergenceSpec <> check def
+R13687:13694 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R13703:13704 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13740:13742 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13717:13723 Stdlib.Lists.List <> forallb def
+R13738:13739 ConvergenceSpec.ConvergenceSpec <> es:129 var
+R13725:13736 ConvergenceSpec.ConvergenceSpec <> barrier_free def
+R13743:13746 Corelib.Init.Datatypes <> true constr
+binder 13587:13587 <> e:130
+R13616:13620 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R13611:13613 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13595:13599 ConvergenceSpec.ConvergenceSpec <> check def
+R13601:13608 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R13610:13610 ConvergenceSpec.ConvergenceSpec <> e:130 var
+R13614:13615 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13635:13637 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13621:13632 ConvergenceSpec.ConvergenceSpec <> barrier_free def
+R13634:13634 ConvergenceSpec.ConvergenceSpec <> e:130 var
+R13638:13641 Corelib.Init.Datatypes <> true constr
+R13563:13576 ConvergenceSpec.ConvergenceSpec <> expr_list_rect def
+binder 13653:13654 <> es:131
+R13705:13716 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R13700:13702 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13668:13673 Stdlib.Lists.List <> concat def
+R13676:13678 Corelib.Lists.ListDef <> map def
+R13697:13698 ConvergenceSpec.ConvergenceSpec <> es:131 var
+R13681:13685 ConvergenceSpec.ConvergenceSpec <> check def
+R13687:13694 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R13703:13704 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13740:13742 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13717:13723 Stdlib.Lists.List <> forallb def
+R13738:13739 ConvergenceSpec.ConvergenceSpec <> es:131 var
+R13725:13736 ConvergenceSpec.ConvergenceSpec <> barrier_free def
+R13743:13746 Corelib.Init.Datatypes <> true constr
+binder 13587:13587 <> e:132
+R13616:13620 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R13611:13613 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13595:13599 ConvergenceSpec.ConvergenceSpec <> check def
+R13601:13608 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R13610:13610 ConvergenceSpec.ConvergenceSpec <> e:132 var
+R13614:13615 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13635:13637 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13621:13632 ConvergenceSpec.ConvergenceSpec <> barrier_free def
+R13634:13634 ConvergenceSpec.ConvergenceSpec <> e:132 var
+R13638:13641 Corelib.Init.Datatypes <> true constr
+R14115:14125 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14128:14140 Stdlib.Bool.Bool <> andb_true_iff thm
+R14115:14125 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14115:14125 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14128:14140 Stdlib.Bool.Bool <> andb_true_iff thm
+R14128:14140 Stdlib.Bool.Bool <> andb_true_iff thm
+R14320:14337 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R14320:14337 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R14320:14337 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R14353:14363 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14367:14379 Stdlib.Bool.Bool <> andb_true_iff thm
+R14353:14363 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14353:14363 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14353:14363 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14353:14363 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14367:14379 Stdlib.Bool.Bool <> andb_true_iff thm
+R14367:14379 Stdlib.Bool.Bool <> andb_true_iff thm
+R14367:14379 Stdlib.Bool.Bool <> andb_true_iff thm
+R14367:14379 Stdlib.Bool.Bool <> andb_true_iff thm
+R14451:14468 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R14451:14468 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R14451:14468 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R14484:14494 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14498:14510 Stdlib.Bool.Bool <> andb_true_iff thm
+R14484:14494 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14484:14494 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14484:14494 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14498:14510 Stdlib.Bool.Bool <> andb_true_iff thm
+R14498:14510 Stdlib.Bool.Bool <> andb_true_iff thm
+R14498:14510 Stdlib.Bool.Bool <> andb_true_iff thm
+R14594:14611 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R14594:14611 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R14594:14611 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R14627:14637 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14641:14653 Stdlib.Bool.Bool <> andb_true_iff thm
+R14627:14637 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14627:14637 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14627:14637 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14627:14637 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14641:14653 Stdlib.Bool.Bool <> andb_true_iff thm
+R14641:14653 Stdlib.Bool.Bool <> andb_true_iff thm
+R14641:14653 Stdlib.Bool.Bool <> andb_true_iff thm
+R14641:14653 Stdlib.Bool.Bool <> andb_true_iff thm
+R14769:14779 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14782:14794 Stdlib.Bool.Bool <> andb_true_iff thm
+R14769:14779 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14769:14779 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R14782:14794 Stdlib.Bool.Bool <> andb_true_iff thm
+R14782:14794 Stdlib.Bool.Bool <> andb_true_iff thm
+R15016:15026 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R15029:15041 Stdlib.Bool.Bool <> andb_true_iff thm
+R15016:15026 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R15016:15026 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R15029:15041 Stdlib.Bool.Bool <> andb_true_iff thm
+R15029:15041 Stdlib.Bool.Bool <> andb_true_iff thm
+R15477:15487 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R15490:15502 Stdlib.Bool.Bool <> andb_true_iff thm
+R15477:15487 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R15477:15487 ConvergenceSpec.ConvergenceSpec <> app_nil_iff thm
+R15490:15502 Stdlib.Bool.Bool <> andb_true_iff thm
+R15490:15502 Stdlib.Bool.Bool <> andb_true_iff thm
+prf 15575:15587 <> mode_monotone
+binder 15598:15598 <> e:133
+R15603:15606 Stdlib.Lists.List <> incl def
+R15629:15633 ConvergenceSpec.ConvergenceSpec <> check def
+R15635:15642 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R15644:15644 ConvergenceSpec.ConvergenceSpec <> e:133 var
+R15609:15613 ConvergenceSpec.ConvergenceSpec <> check def
+R15615:15623 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R15625:15625 ConvergenceSpec.ConvergenceSpec <> e:133 var
+R15664:15677 ConvergenceSpec.ConvergenceSpec <> expr_list_rect def
+binder 15748:15749 <> es:134
+R15761:15764 Stdlib.Lists.List <> incl def
+R15815:15820 Stdlib.Lists.List <> concat def
+R15823:15825 Corelib.Lists.ListDef <> map def
+R15844:15845 ConvergenceSpec.ConvergenceSpec <> es:134 var
+R15828:15832 ConvergenceSpec.ConvergenceSpec <> check def
+R15834:15841 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R15767:15772 Stdlib.Lists.List <> concat def
+R15775:15777 Corelib.Lists.ListDef <> map def
+R15797:15798 ConvergenceSpec.ConvergenceSpec <> es:134 var
+R15780:15784 ConvergenceSpec.ConvergenceSpec <> check def
+R15786:15794 ConvergenceSpec.ConvergenceSpec <> Converged constr
+binder 15688:15688 <> e:135
+R15694:15697 Stdlib.Lists.List <> incl def
+R15720:15724 ConvergenceSpec.ConvergenceSpec <> check def
+R15726:15733 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R15735:15735 ConvergenceSpec.ConvergenceSpec <> e:135 var
+R15700:15704 ConvergenceSpec.ConvergenceSpec <> check def
+R15706:15714 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R15716:15716 ConvergenceSpec.ConvergenceSpec <> e:135 var
+R15664:15677 ConvergenceSpec.ConvergenceSpec <> expr_list_rect def
+binder 15748:15749 <> es:136
+R15761:15764 Stdlib.Lists.List <> incl def
+R15815:15820 Stdlib.Lists.List <> concat def
+R15823:15825 Corelib.Lists.ListDef <> map def
+R15844:15845 ConvergenceSpec.ConvergenceSpec <> es:136 var
+R15828:15832 ConvergenceSpec.ConvergenceSpec <> check def
+R15834:15841 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R15767:15772 Stdlib.Lists.List <> concat def
+R15775:15777 Corelib.Lists.ListDef <> map def
+R15797:15798 ConvergenceSpec.ConvergenceSpec <> es:136 var
+R15780:15784 ConvergenceSpec.ConvergenceSpec <> check def
+R15786:15794 ConvergenceSpec.ConvergenceSpec <> Converged constr
+binder 15688:15688 <> e:137
+R15694:15697 Stdlib.Lists.List <> incl def
+R15720:15724 ConvergenceSpec.ConvergenceSpec <> check def
+R15726:15733 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R15735:15735 ConvergenceSpec.ConvergenceSpec <> e:137 var
+R15700:15704 ConvergenceSpec.ConvergenceSpec <> check def
+R15706:15714 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R15716:15716 ConvergenceSpec.ConvergenceSpec <> e:137 var
+R15882:15890 Stdlib.Lists.List <> incl_refl thm
+R15882:15890 Stdlib.Lists.List <> incl_refl thm
+R15923:15931 Stdlib.Lists.List <> incl_refl thm
+R15923:15931 Stdlib.Lists.List <> incl_refl thm
+R16011:16020 Stdlib.Lists.List <> incl_nil_l thm
+R16011:16020 Stdlib.Lists.List <> incl_nil_l thm
+R16116:16124 Stdlib.Lists.List <> incl_refl thm
+R16116:16124 Stdlib.Lists.List <> incl_refl thm
+R16189:16197 Stdlib.Lists.List <> incl_refl thm
+R16189:16197 Stdlib.Lists.List <> incl_refl thm
+R16260:16272 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R16260:16272 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R16414:16431 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R16434:16443 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R16414:16431 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R16434:16443 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R16414:16431 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R16434:16443 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R16464:16473 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R16464:16473 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R16491:16503 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R16525:16533 Stdlib.Lists.List <> incl_refl thm
+R16491:16503 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R16525:16533 Stdlib.Lists.List <> incl_refl thm
+R16549:16561 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R16583:16595 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R16549:16561 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R16583:16595 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R16688:16705 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R16708:16717 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R16688:16705 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R16708:16717 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R16688:16705 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R16708:16717 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R16738:16747 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R16738:16747 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R16765:16777 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R16799:16807 Stdlib.Lists.List <> incl_refl thm
+R16765:16777 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R16799:16807 Stdlib.Lists.List <> incl_refl thm
+R16823:16835 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R16823:16835 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R16938:16955 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R16971:16974 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R16958:16967 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R16975:16984 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R16938:16955 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R16971:16974 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R16958:16967 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R16975:16984 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R16938:16955 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R16971:16974 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R16958:16967 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R16975:16984 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R17019:17022 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R17006:17015 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R17023:17032 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R17019:17022 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R17006:17015 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R17023:17032 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R17051:17063 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R17086:17098 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R17121:17129 Stdlib.Lists.List <> incl_refl thm
+R17051:17063 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R17086:17098 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R17121:17129 Stdlib.Lists.List <> incl_refl thm
+R17146:17158 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R17181:17193 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R17146:17158 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R17181:17193 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R17327:17339 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R17327:17339 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R17538:17550 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R17538:17550 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R17795:17804 Stdlib.Lists.List <> in_app_iff thm
+R17795:17804 Stdlib.Lists.List <> in_app_iff thm
+R17838:17847 Stdlib.Lists.List <> in_app_iff thm
+R17838:17847 Stdlib.Lists.List <> in_app_iff thm
+R18154:18162 Stdlib.Lists.List <> incl_refl thm
+R18154:18162 Stdlib.Lists.List <> incl_refl thm
+R18226:18238 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R18226:18238 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+prf 18358:18384 <> not_varying_converged_clean
+binder 18395:18395 <> e:138
+R18420:18423 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18412:18414 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18400:18409 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R18411:18411 ConvergenceSpec.ConvergenceSpec <> e:138 var
+R18415:18419 Corelib.Init.Datatypes <> false constr
+R18441:18443 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18424:18428 ConvergenceSpec.ConvergenceSpec <> check def
+R18430:18438 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R18440:18440 ConvergenceSpec.ConvergenceSpec <> e:138 var
+R18444:18445 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R18464:18477 ConvergenceSpec.ConvergenceSpec <> expr_list_rect def
+binder 18551:18552 <> es:139
+R18593:18603 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18585:18587 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18564:18570 Stdlib.Lists.List <> existsb def
+R18583:18584 ConvergenceSpec.ConvergenceSpec <> es:139 var
+R18572:18581 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R18588:18592 Corelib.Init.Datatypes <> false constr
+R18637:18639 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18604:18609 Stdlib.Lists.List <> concat def
+R18612:18614 Corelib.Lists.ListDef <> map def
+R18634:18635 ConvergenceSpec.ConvergenceSpec <> es:139 var
+R18617:18621 ConvergenceSpec.ConvergenceSpec <> check def
+R18623:18631 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R18640:18641 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+binder 18488:18488 <> e:140
+R18514:18517 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18506:18508 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18494:18503 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R18505:18505 ConvergenceSpec.ConvergenceSpec <> e:140 var
+R18509:18513 Corelib.Init.Datatypes <> false constr
+R18535:18537 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18518:18522 ConvergenceSpec.ConvergenceSpec <> check def
+R18524:18532 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R18534:18534 ConvergenceSpec.ConvergenceSpec <> e:140 var
+R18538:18539 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R18464:18477 ConvergenceSpec.ConvergenceSpec <> expr_list_rect def
+binder 18551:18552 <> es:141
+R18593:18603 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18585:18587 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18564:18570 Stdlib.Lists.List <> existsb def
+R18583:18584 ConvergenceSpec.ConvergenceSpec <> es:141 var
+R18572:18581 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R18588:18592 Corelib.Init.Datatypes <> false constr
+R18637:18639 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18604:18609 Stdlib.Lists.List <> concat def
+R18612:18614 Corelib.Lists.ListDef <> map def
+R18634:18635 ConvergenceSpec.ConvergenceSpec <> es:141 var
+R18617:18621 ConvergenceSpec.ConvergenceSpec <> check def
+R18623:18631 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R18640:18641 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+binder 18488:18488 <> e:142
+R18514:18517 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18506:18508 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18494:18503 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R18505:18505 ConvergenceSpec.ConvergenceSpec <> e:142 var
+R18509:18513 Corelib.Init.Datatypes <> false constr
+R18535:18537 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18518:18522 ConvergenceSpec.ConvergenceSpec <> check def
+R18524:18532 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R18534:18534 ConvergenceSpec.ConvergenceSpec <> e:142 var
+R18538:18539 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R19041:19053 Stdlib.Bool.Bool <> orb_false_iff thm
+R19041:19053 Stdlib.Bool.Bool <> orb_false_iff thm
+R19270:19282 Stdlib.Bool.Bool <> orb_false_iff thm
+R19270:19282 Stdlib.Bool.Bool <> orb_false_iff thm
+R19325:19337 Stdlib.Bool.Bool <> orb_false_iff thm
+R19325:19337 Stdlib.Bool.Bool <> orb_false_iff thm
+R19534:19546 Stdlib.Bool.Bool <> orb_false_iff thm
+R19534:19546 Stdlib.Bool.Bool <> orb_false_iff thm
+R19724:19736 Stdlib.Bool.Bool <> orb_false_iff thm
+R19724:19736 Stdlib.Bool.Bool <> orb_false_iff thm
+R19780:19792 Stdlib.Bool.Bool <> orb_false_iff thm
+R19780:19792 Stdlib.Bool.Bool <> orb_false_iff thm
+R20059:20071 Stdlib.Bool.Bool <> orb_false_iff thm
+R20059:20071 Stdlib.Bool.Bool <> orb_false_iff thm
+R20242:20254 Stdlib.Bool.Bool <> orb_false_iff thm
+R20242:20254 Stdlib.Bool.Bool <> orb_false_iff thm
+R20607:20619 Stdlib.Bool.Bool <> orb_false_iff thm
+R20607:20619 Stdlib.Bool.Bool <> orb_false_iff thm
+prf 20768:20787 <> cdcf_check_agreement
+binder 20798:20798 <> e:143
+R20829:20832 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20821:20823 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20803:20818 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf def
+R20820:20820 ConvergenceSpec.ConvergenceSpec <> e:143 var
+R20824:20828 Corelib.Init.Datatypes <> false constr
+R20850:20852 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20833:20837 ConvergenceSpec.ConvergenceSpec <> check def
+R20839:20847 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R20849:20849 ConvergenceSpec.ConvergenceSpec <> e:143 var
+R20853:20854 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R20873:20886 ConvergenceSpec.ConvergenceSpec <> expr_list_rect def
+binder 20966:20967 <> es:144
+R21014:21024 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R21006:21008 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20979:20985 Stdlib.Lists.List <> existsb def
+R21004:21005 ConvergenceSpec.ConvergenceSpec <> es:144 var
+R20987:21002 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf def
+R21009:21013 Corelib.Init.Datatypes <> false constr
+R21058:21060 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R21025:21030 Stdlib.Lists.List <> concat def
+R21033:21035 Corelib.Lists.ListDef <> map def
+R21055:21056 ConvergenceSpec.ConvergenceSpec <> es:144 var
+R21038:21042 ConvergenceSpec.ConvergenceSpec <> check def
+R21044:21052 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R21061:21062 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+binder 20897:20897 <> e:145
+R20929:20932 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20921:20923 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20903:20918 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf def
+R20920:20920 ConvergenceSpec.ConvergenceSpec <> e:145 var
+R20924:20928 Corelib.Init.Datatypes <> false constr
+R20950:20952 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20933:20937 ConvergenceSpec.ConvergenceSpec <> check def
+R20939:20947 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R20949:20949 ConvergenceSpec.ConvergenceSpec <> e:145 var
+R20953:20954 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R20873:20886 ConvergenceSpec.ConvergenceSpec <> expr_list_rect def
+binder 20966:20967 <> es:146
+R21014:21024 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R21006:21008 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20979:20985 Stdlib.Lists.List <> existsb def
+R21004:21005 ConvergenceSpec.ConvergenceSpec <> es:146 var
+R20987:21002 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf def
+R21009:21013 Corelib.Init.Datatypes <> false constr
+R21058:21060 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R21025:21030 Stdlib.Lists.List <> concat def
+R21033:21035 Corelib.Lists.ListDef <> map def
+R21055:21056 ConvergenceSpec.ConvergenceSpec <> es:146 var
+R21038:21042 ConvergenceSpec.ConvergenceSpec <> check def
+R21044:21052 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R21061:21062 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+binder 20897:20897 <> e:147
+R20929:20932 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20921:20923 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20903:20918 ConvergenceSpec.ConvergenceSpec <> has_diverging_cf def
+R20920:20920 ConvergenceSpec.ConvergenceSpec <> e:147 var
+R20924:20928 Corelib.Init.Datatypes <> false constr
+R20950:20952 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20933:20937 ConvergenceSpec.ConvergenceSpec <> check def
+R20939:20947 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R20949:20949 ConvergenceSpec.ConvergenceSpec <> e:147 var
+R20953:20954 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R21477:21489 Stdlib.Bool.Bool <> orb_false_iff thm
+R21477:21489 Stdlib.Bool.Bool <> orb_false_iff thm
+R21706:21718 Stdlib.Bool.Bool <> orb_false_iff thm
+R21706:21718 Stdlib.Bool.Bool <> orb_false_iff thm
+R21761:21773 Stdlib.Bool.Bool <> orb_false_iff thm
+R21761:21773 Stdlib.Bool.Bool <> orb_false_iff thm
+R21821:21847 ConvergenceSpec.ConvergenceSpec <> not_varying_converged_clean thm
+R21821:21847 ConvergenceSpec.ConvergenceSpec <> not_varying_converged_clean thm
+R21821:21847 ConvergenceSpec.ConvergenceSpec <> not_varying_converged_clean thm
+R22000:22012 Stdlib.Bool.Bool <> orb_false_iff thm
+R22000:22012 Stdlib.Bool.Bool <> orb_false_iff thm
+R22056:22082 ConvergenceSpec.ConvergenceSpec <> not_varying_converged_clean thm
+R22056:22082 ConvergenceSpec.ConvergenceSpec <> not_varying_converged_clean thm
+R22056:22082 ConvergenceSpec.ConvergenceSpec <> not_varying_converged_clean thm
+R22220:22232 Stdlib.Bool.Bool <> orb_false_iff thm
+R22220:22232 Stdlib.Bool.Bool <> orb_false_iff thm
+R22276:22288 Stdlib.Bool.Bool <> orb_false_iff thm
+R22276:22288 Stdlib.Bool.Bool <> orb_false_iff thm
+R22342:22368 ConvergenceSpec.ConvergenceSpec <> not_varying_converged_clean thm
+R22392:22418 ConvergenceSpec.ConvergenceSpec <> not_varying_converged_clean thm
+R22342:22368 ConvergenceSpec.ConvergenceSpec <> not_varying_converged_clean thm
+R22342:22368 ConvergenceSpec.ConvergenceSpec <> not_varying_converged_clean thm
+R22392:22418 ConvergenceSpec.ConvergenceSpec <> not_varying_converged_clean thm
+R22392:22418 ConvergenceSpec.ConvergenceSpec <> not_varying_converged_clean thm
+R22619:22631 Stdlib.Bool.Bool <> orb_false_iff thm
+R22619:22631 Stdlib.Bool.Bool <> orb_false_iff thm
+R22802:22814 Stdlib.Bool.Bool <> orb_false_iff thm
+R22802:22814 Stdlib.Bool.Bool <> orb_false_iff thm
+R23167:23179 Stdlib.Bool.Bool <> orb_false_iff thm
+R23167:23179 Stdlib.Bool.Bool <> orb_false_iff thm
+prf 23333:23357 <> varying_if_flags_barriers
+binder 23368:23371 <> cond:148
+binder 23373:23377 <> then_:149
+binder 23379:23383 <> else_:150
+binder 23385:23387 <> ctx:151
+R23414:23419 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R23407:23409 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R23392:23401 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R23403:23406 ConvergenceSpec.ConvergenceSpec <> cond:148 var
+R23410:23413 Corelib.Init.Datatypes <> true constr
+R23446:23451 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R23438:23440 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R23420:23431 ConvergenceSpec.ConvergenceSpec <> barrier_free def
+R23433:23437 ConvergenceSpec.ConvergenceSpec <> then_:149 var
+R23441:23445 Corelib.Init.Datatypes <> false constr
+R23484:23487 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R23452:23456 ConvergenceSpec.ConvergenceSpec <> check def
+R23458:23460 ConvergenceSpec.ConvergenceSpec <> ctx:151 var
+R23463:23465 ConvergenceSpec.ConvergenceSpec <> EIf constr
+R23467:23470 ConvergenceSpec.ConvergenceSpec <> cond:148 var
+R23472:23476 ConvergenceSpec.ConvergenceSpec <> then_:149 var
+R23478:23482 ConvergenceSpec.ConvergenceSpec <> else_:150 var
+R23488:23489 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R23611:23620 Stdlib.Lists.List <> app_eq_nil thm
+R23611:23620 Stdlib.Lists.List <> app_eq_nil thm
+R23668:23677 Stdlib.Lists.List <> app_eq_nil thm
+R23668:23677 Stdlib.Lists.List <> app_eq_nil thm
+R23717:23747 ConvergenceSpec.ConvergenceSpec <> diverged_clean_iff_barrier_free thm
+R23717:23747 ConvergenceSpec.ConvergenceSpec <> diverged_clean_iff_barrier_free thm
+prf 23857:23886 <> superstep_outer_diverged_error
+binder 23897:23900 <> body:152
+binder 23902:23905 <> cont:153
+R23953:23956 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R23910:23914 ConvergenceSpec.ConvergenceSpec <> check def
+R23916:23923 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R23926:23935 ConvergenceSpec.ConvergenceSpec <> ESuperstep constr
+R23937:23941 Corelib.Init.Datatypes <> false constr
+R23943:23946 ConvergenceSpec.ConvergenceSpec <> body:152 var
+R23948:23951 ConvergenceSpec.ConvergenceSpec <> cont:153 var
+R23957:23958 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+def 24505:24514 <> check_warp
+R24521:24529 ConvergenceSpec.ConvergenceSpec <> exec_mode ind
+binder 24517:24517 <> m:154
+R24537:24540 ConvergenceSpec.ConvergenceSpec <> expr ind
+binder 24533:24533 <> e:155
+R24545:24548 Corelib.Init.Datatypes <> list ind
+R24550:24554 ConvergenceSpec.ConvergenceSpec <> error ind
+R24567:24567 ConvergenceSpec.ConvergenceSpec <> e:155 var
+R24578:24587 ConvergenceSpec.ConvergenceSpec <> EWarpPoint constr
+R24604:24604 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R24611:24618 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R24623:24623 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R24633:24633 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R24624:24632 ConvergenceSpec.ConvergenceSpec <> WarpError constr
+R24637:24645 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R24650:24651 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R24661:24668 ConvergenceSpec.ConvergenceSpec <> EBarrier constr
+R24685:24685 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R24692:24699 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R24704:24704 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R24717:24717 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R24705:24716 ConvergenceSpec.ConvergenceSpec <> BarrierError constr
+R24721:24729 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R24734:24735 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R24745:24748 ConvergenceSpec.ConvergenceSpec <> ELit constr
+R24752:24756 ConvergenceSpec.ConvergenceSpec <> EVary constr
+R24760:24763 ConvergenceSpec.ConvergenceSpec <> EVar constr
+R24770:24771 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R24770:24771 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R24770:24771 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R24777:24782 ConvergenceSpec.ConvergenceSpec <> EBinop constr
+R24809:24812 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R24795:24804 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R24806:24806 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R24813:24822 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R24824:24824 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R24832:24836 ConvergenceSpec.ConvergenceSpec <> EUnop constr
+R24850:24859 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R24863:24863 ConvergenceSpec.ConvergenceSpec <> e:155 var
+R24861:24861 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R24869:24871 ConvergenceSpec.ConvergenceSpec <> EIf constr
+R24909:24918 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R24944:24944 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R24930:24937 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+binder 24897:24901 <> inner:160
+R24972:24975 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R24955:24964 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R24966:24966 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R24994:24997 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R24976:24985 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R24987:24991 ConvergenceSpec.ConvergenceSpec <> inner:160 var
+R24998:25007 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R25009:25013 ConvergenceSpec.ConvergenceSpec <> inner:160 var
+R25022:25027 ConvergenceSpec.ConvergenceSpec <> EWhile constr
+R25062:25071 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R25097:25097 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R25083:25090 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+binder 25050:25054 <> inner:161
+R25125:25128 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R25108:25117 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R25119:25119 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R25129:25138 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R25140:25144 ConvergenceSpec.ConvergenceSpec <> inner:161 var
+R25152:25155 ConvergenceSpec.ConvergenceSpec <> EFor constr
+R25205:25208 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R25192:25201 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R25209:25218 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R25242:25242 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R25228:25235 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+binder 25180:25184 <> inner:162
+R25268:25271 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R25253:25262 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R25264:25264 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R25287:25290 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R25272:25281 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R25283:25283 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R25291:25300 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R25302:25306 ConvergenceSpec.ConvergenceSpec <> inner:162 var
+R25314:25317 ConvergenceSpec.ConvergenceSpec <> ESeq constr
+R25332:25337 Stdlib.Lists.List <> concat def
+R25340:25342 Corelib.Lists.ListDef <> map def
+R25345:25354 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R25356:25356 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R25367:25370 ConvergenceSpec.ConvergenceSpec <> ELet constr
+R25399:25402 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R25385:25394 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R25396:25396 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R25403:25412 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R25414:25414 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R25422:25431 ConvergenceSpec.ConvergenceSpec <> ESuperstep constr
+R25496:25496 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R25524:25531 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R25534:25538 Corelib.Init.Datatypes <> false constr
+R25543:25543 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R25556:25556 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R25544:25555 ConvergenceSpec.ConvergenceSpec <> BarrierError constr
+R25587:25588 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+binder 25466:25477 <> entry_errors:165
+R25629:25632 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R25617:25628 ConvergenceSpec.ConvergenceSpec <> entry_errors:165 var
+R25650:25653 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R25633:25642 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R25644:25644 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R25654:25663 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R25665:25665 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R25676:25679 ConvergenceSpec.ConvergenceSpec <> EApp constr
+R25694:25699 Stdlib.Lists.List <> concat def
+R25702:25704 Corelib.Lists.ListDef <> map def
+R25707:25716 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R25718:25718 ConvergenceSpec.ConvergenceSpec <> m:154 var
+R25731:25737 ConvergenceSpec.ConvergenceSpec <> EReturn constr
+R25749:25758 ConvergenceSpec.ConvergenceSpec <> check_warp:156 def
+R25762:25762 ConvergenceSpec.ConvergenceSpec <> e:155 var
+R25760:25760 ConvergenceSpec.ConvergenceSpec <> m:154 var
+prf 26028:26046 <> warp_diverged_error
+R26082:26085 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R26052:26061 ConvergenceSpec.ConvergenceSpec <> check_warp def
+R26063:26070 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R26072:26081 ConvergenceSpec.ConvergenceSpec <> EWarpPoint constr
+R26086:26087 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+prf 26340:26357 <> warp_mode_monotone
+binder 26368:26368 <> e:166
+R26373:26376 Stdlib.Lists.List <> incl def
+R26404:26413 ConvergenceSpec.ConvergenceSpec <> check_warp def
+R26415:26422 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R26424:26424 ConvergenceSpec.ConvergenceSpec <> e:166 var
+R26379:26388 ConvergenceSpec.ConvergenceSpec <> check_warp def
+R26390:26398 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R26400:26400 ConvergenceSpec.ConvergenceSpec <> e:166 var
+R26444:26457 ConvergenceSpec.ConvergenceSpec <> expr_list_rect def
+binder 26538:26539 <> es:167
+R26551:26554 Stdlib.Lists.List <> incl def
+R26610:26615 Stdlib.Lists.List <> concat def
+R26618:26620 Corelib.Lists.ListDef <> map def
+R26644:26645 ConvergenceSpec.ConvergenceSpec <> es:167 var
+R26623:26632 ConvergenceSpec.ConvergenceSpec <> check_warp def
+R26634:26641 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R26557:26562 Stdlib.Lists.List <> concat def
+R26565:26567 Corelib.Lists.ListDef <> map def
+R26592:26593 ConvergenceSpec.ConvergenceSpec <> es:167 var
+R26570:26579 ConvergenceSpec.ConvergenceSpec <> check_warp def
+R26581:26589 ConvergenceSpec.ConvergenceSpec <> Converged constr
+binder 26468:26468 <> e:168
+R26474:26477 Stdlib.Lists.List <> incl def
+R26505:26514 ConvergenceSpec.ConvergenceSpec <> check_warp def
+R26516:26523 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R26525:26525 ConvergenceSpec.ConvergenceSpec <> e:168 var
+R26480:26489 ConvergenceSpec.ConvergenceSpec <> check_warp def
+R26491:26499 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R26501:26501 ConvergenceSpec.ConvergenceSpec <> e:168 var
+R26444:26457 ConvergenceSpec.ConvergenceSpec <> expr_list_rect def
+binder 26538:26539 <> es:169
+R26551:26554 Stdlib.Lists.List <> incl def
+R26610:26615 Stdlib.Lists.List <> concat def
+R26618:26620 Corelib.Lists.ListDef <> map def
+R26644:26645 ConvergenceSpec.ConvergenceSpec <> es:169 var
+R26623:26632 ConvergenceSpec.ConvergenceSpec <> check_warp def
+R26634:26641 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R26557:26562 Stdlib.Lists.List <> concat def
+R26565:26567 Corelib.Lists.ListDef <> map def
+R26592:26593 ConvergenceSpec.ConvergenceSpec <> es:169 var
+R26570:26579 ConvergenceSpec.ConvergenceSpec <> check_warp def
+R26581:26589 ConvergenceSpec.ConvergenceSpec <> Converged constr
+binder 26468:26468 <> e:170
+R26474:26477 Stdlib.Lists.List <> incl def
+R26505:26514 ConvergenceSpec.ConvergenceSpec <> check_warp def
+R26516:26523 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R26525:26525 ConvergenceSpec.ConvergenceSpec <> e:170 var
+R26480:26489 ConvergenceSpec.ConvergenceSpec <> check_warp def
+R26491:26499 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R26501:26501 ConvergenceSpec.ConvergenceSpec <> e:170 var
+R26686:26694 Stdlib.Lists.List <> incl_refl thm
+R26686:26694 Stdlib.Lists.List <> incl_refl thm
+R26731:26739 Stdlib.Lists.List <> incl_refl thm
+R26731:26739 Stdlib.Lists.List <> incl_refl thm
+R26819:26828 Stdlib.Lists.List <> incl_nil_l thm
+R26819:26828 Stdlib.Lists.List <> incl_nil_l thm
+R26907:26916 Stdlib.Lists.List <> incl_nil_l thm
+R26907:26916 Stdlib.Lists.List <> incl_nil_l thm
+R26981:26989 Stdlib.Lists.List <> incl_refl thm
+R26981:26989 Stdlib.Lists.List <> incl_refl thm
+R27052:27064 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27052:27064 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27206:27223 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R27226:27235 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27206:27223 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R27226:27235 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27206:27223 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R27226:27235 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27256:27265 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27256:27265 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27283:27295 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27317:27325 Stdlib.Lists.List <> incl_refl thm
+R27283:27295 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27317:27325 Stdlib.Lists.List <> incl_refl thm
+R27341:27353 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27375:27387 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27341:27353 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27375:27387 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27480:27497 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R27500:27509 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27480:27497 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R27500:27509 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27480:27497 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R27500:27509 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27530:27539 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27530:27539 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27557:27569 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27591:27599 Stdlib.Lists.List <> incl_refl thm
+R27557:27569 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27591:27599 Stdlib.Lists.List <> incl_refl thm
+R27615:27627 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27615:27627 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27730:27747 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R27763:27766 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R27750:27759 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27767:27776 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27730:27747 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R27763:27766 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R27750:27759 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27767:27776 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27730:27747 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R27763:27766 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R27750:27759 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27767:27776 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27811:27814 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R27798:27807 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27815:27824 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27811:27814 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R27798:27807 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27815:27824 ConvergenceSpec.ConvergenceSpec <> is_varying def
+R27843:27855 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27878:27890 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27913:27921 Stdlib.Lists.List <> incl_refl thm
+R27843:27855 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27878:27890 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27913:27921 Stdlib.Lists.List <> incl_refl thm
+R27938:27950 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27973:27985 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27938:27950 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R27973:27985 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R28119:28131 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R28119:28131 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R28273:28285 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R28273:28285 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R28350:28359 Stdlib.Lists.List <> in_app_iff thm
+R28350:28359 Stdlib.Lists.List <> in_app_iff thm
+R28393:28402 Stdlib.Lists.List <> in_app_iff thm
+R28393:28402 Stdlib.Lists.List <> in_app_iff thm
+R28724:28732 Stdlib.Lists.List <> incl_refl thm
+R28724:28732 Stdlib.Lists.List <> incl_refl thm
+R28796:28808 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+R28796:28808 ConvergenceSpec.ConvergenceSpec <> incl_app_mono thm
+prf 29228:29248 <> warp_varying_if_flags
+binder 29259:29260 <> el:171
+R29311:29314 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R29265:29274 ConvergenceSpec.ConvergenceSpec <> check_warp def
+R29276:29284 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R29287:29289 ConvergenceSpec.ConvergenceSpec <> EIf constr
+R29291:29295 ConvergenceSpec.ConvergenceSpec <> EVary constr
+R29297:29306 ConvergenceSpec.ConvergenceSpec <> EWarpPoint constr
+R29308:29309 ConvergenceSpec.ConvergenceSpec <> el:171 var
+R29315:29316 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+prf 30136:30159 <> return_barrier_skip_safe
+binder 30170:30170 <> m:172
+binder 30172:30172 <> e:173
+R30196:30198 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R30177:30181 ConvergenceSpec.ConvergenceSpec <> check def
+R30183:30183 ConvergenceSpec.ConvergenceSpec <> m:172 var
+R30186:30192 ConvergenceSpec.ConvergenceSpec <> EReturn constr
+R30194:30194 ConvergenceSpec.ConvergenceSpec <> e:173 var
+R30199:30203 ConvergenceSpec.ConvergenceSpec <> check def
+R30205:30205 ConvergenceSpec.ConvergenceSpec <> m:172 var
+R30207:30207 ConvergenceSpec.ConvergenceSpec <> e:173 var
+prf 30345:30366 <> return_converged_clean
+binder 30377:30377 <> e:174
+R30403:30408 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R30396:30398 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R30382:30393 ConvergenceSpec.ConvergenceSpec <> barrier_free def
+R30395:30395 ConvergenceSpec.ConvergenceSpec <> e:174 var
+R30399:30402 Corelib.Init.Datatypes <> true constr
+R30436:30438 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R30409:30413 ConvergenceSpec.ConvergenceSpec <> check def
+R30415:30423 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R30426:30432 ConvergenceSpec.ConvergenceSpec <> EReturn constr
+R30434:30434 ConvergenceSpec.ConvergenceSpec <> e:174 var
+R30439:30440 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R30476:30499 ConvergenceSpec.ConvergenceSpec <> return_barrier_skip_safe thm
+R30476:30499 ConvergenceSpec.ConvergenceSpec <> return_barrier_skip_safe thm
+R30476:30499 ConvergenceSpec.ConvergenceSpec <> return_barrier_skip_safe thm
+R30581:30585 Corelib.Init.Logic <> proj2 thm
+R30588:30618 ConvergenceSpec.ConvergenceSpec <> diverged_clean_iff_barrier_free thm
+R30581:30585 Corelib.Init.Logic <> proj2 thm
+R30588:30618 ConvergenceSpec.ConvergenceSpec <> diverged_clean_iff_barrier_free thm
+R30720:30732 ConvergenceSpec.ConvergenceSpec <> mode_monotone thm
+R30720:30732 ConvergenceSpec.ConvergenceSpec <> mode_monotone thm
+R30780:30789 Stdlib.Lists.List <> incl_l_nil thm
+R30780:30789 Stdlib.Lists.List <> incl_l_nil thm
+def 30979:30981 <> Env
+R30986:30989 Corelib.Init.Datatypes <> list ind
+R30995:30997 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R30992:30994 Corelib.Init.Datatypes <> nat ind
+R30998:31001 Corelib.Init.Datatypes <> bool ind
+def 31017:31026 <> env_lookup
+R31035:31037 ConvergenceSpec.ConvergenceSpec <> Env def
+binder 31029:31031 <> env:175
+R31045:31047 Corelib.Init.Datatypes <> nat ind
+binder 31041:31041 <> x:176
+R31052:31055 Corelib.Init.Datatypes <> bool ind
+R31068:31071 Stdlib.Lists.List <> find def
+R31102:31104 ConvergenceSpec.ConvergenceSpec <> env:175 var
+binder 31078:31078 <> p:177
+R31083:31089 Stdlib.Arith.PeanoNat Nat eqb def
+R31092:31094 Corelib.Init.Datatypes <> fst def
+R31096:31096 ConvergenceSpec.ConvergenceSpec <> p:177 var
+R31099:31099 ConvergenceSpec.ConvergenceSpec <> x:176 var
+R31115:31118 Corelib.Init.Datatypes <> Some constr
+R31120:31120 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R31122:31123 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R31125:31125 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R31136:31139 Corelib.Init.Datatypes <> None constr
+R31151:31155 Corelib.Init.Datatypes <> false constr
+def 31176:31185 <> env_extend
+R31194:31196 ConvergenceSpec.ConvergenceSpec <> Env def
+binder 31188:31190 <> env:178
+R31204:31206 Corelib.Init.Datatypes <> nat ind
+binder 31200:31200 <> x:179
+R31214:31217 Corelib.Init.Datatypes <> bool ind
+binder 31210:31210 <> v:180
+R31222:31224 ConvergenceSpec.ConvergenceSpec <> Env def
+R31237:31240 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R31231:31231 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R31233:31234 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R31236:31236 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R31232:31232 ConvergenceSpec.ConvergenceSpec <> x:179 var
+R31235:31235 ConvergenceSpec.ConvergenceSpec <> v:180 var
+R31241:31243 ConvergenceSpec.ConvergenceSpec <> env:178 var
+def 31423:31439 <> is_varying_in_env
+R31448:31450 ConvergenceSpec.ConvergenceSpec <> Env def
+binder 31442:31444 <> env:181
+R31458:31461 ConvergenceSpec.ConvergenceSpec <> expr ind
+binder 31454:31454 <> e:182
+R31466:31469 Corelib.Init.Datatypes <> bool ind
+R31482:31482 ConvergenceSpec.ConvergenceSpec <> e:182 var
+R31493:31497 ConvergenceSpec.ConvergenceSpec <> EVary constr
+R31515:31518 Corelib.Init.Datatypes <> true constr
+R31524:31527 ConvergenceSpec.ConvergenceSpec <> ELit constr
+R31531:31538 ConvergenceSpec.ConvergenceSpec <> EBarrier constr
+R31542:31551 ConvergenceSpec.ConvergenceSpec <> EWarpPoint constr
+R31556:31560 Corelib.Init.Datatypes <> false constr
+R31556:31560 Corelib.Init.Datatypes <> false constr
+R31556:31560 Corelib.Init.Datatypes <> false constr
+R31566:31569 ConvergenceSpec.ConvergenceSpec <> EVar constr
+R31588:31597 ConvergenceSpec.ConvergenceSpec <> env_lookup def
+R31599:31601 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R31609:31614 ConvergenceSpec.ConvergenceSpec <> EBinop constr
+R31649:31652 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R31626:31642 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R31644:31646 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R31653:31669 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R31671:31673 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R31681:31685 ConvergenceSpec.ConvergenceSpec <> EUnop constr
+R31698:31714 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R31720:31720 ConvergenceSpec.ConvergenceSpec <> e:182 var
+R31716:31718 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R31726:31728 ConvergenceSpec.ConvergenceSpec <> EIf constr
+R31805:31814 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R31772:31781 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R31749:31765 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R31767:31769 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R31782:31798 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R31800:31802 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R31815:31831 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R31833:31835 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R31844:31849 ConvergenceSpec.ConvergenceSpec <> EWhile constr
+R31884:31887 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R31861:31877 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R31879:31881 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R31888:31904 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R31906:31908 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R31916:31919 ConvergenceSpec.ConvergenceSpec <> EFor constr
+R31997:32006 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R31963:31972 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R31939:31955 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R31957:31959 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R31973:31989 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R31991:31993 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R32007:32023 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R32025:32027 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R32035:32038 ConvergenceSpec.ConvergenceSpec <> ESeq constr
+R32052:32058 Stdlib.Lists.List <> existsb def
+R32061:32077 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R32079:32081 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R32091:32094 ConvergenceSpec.ConvergenceSpec <> ELet constr
+R32123:32139 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R32141:32143 ConvergenceSpec.ConvergenceSpec <> env:181 var
+binder 32117:32118 <> vv:185
+R32156:32172 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R32175:32184 ConvergenceSpec.ConvergenceSpec <> env_extend def
+R32186:32188 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R32192:32193 ConvergenceSpec.ConvergenceSpec <> vv:185 var
+R32202:32211 ConvergenceSpec.ConvergenceSpec <> ESuperstep constr
+R32260:32263 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R32234:32250 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R32252:32254 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R32264:32280 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R32282:32284 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R32295:32298 ConvergenceSpec.ConvergenceSpec <> EApp constr
+R32312:32318 Stdlib.Lists.List <> existsb def
+R32321:32337 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R32339:32341 ConvergenceSpec.ConvergenceSpec <> env:181 var
+R32353:32359 ConvergenceSpec.ConvergenceSpec <> EReturn constr
+R32370:32386 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env:183 def
+R32392:32392 ConvergenceSpec.ConvergenceSpec <> e:182 var
+R32388:32390 ConvergenceSpec.ConvergenceSpec <> env:181 var
+def 33083:33102 <> has_reachable_return
+R33109:33112 ConvergenceSpec.ConvergenceSpec <> expr ind
+binder 33105:33105 <> e:186
+R33117:33120 Corelib.Init.Datatypes <> bool ind
+R33133:33133 ConvergenceSpec.ConvergenceSpec <> e:186 var
+R33144:33150 ConvergenceSpec.ConvergenceSpec <> EReturn constr
+R33162:33165 Corelib.Init.Datatypes <> true constr
+R33171:33173 ConvergenceSpec.ConvergenceSpec <> EIf constr
+R33211:33214 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R33189:33208 ConvergenceSpec.ConvergenceSpec <> has_reachable_return:187 def
+R33215:33234 ConvergenceSpec.ConvergenceSpec <> has_reachable_return:187 def
+R33243:33246 ConvergenceSpec.ConvergenceSpec <> ESeq constr
+R33261:33267 Stdlib.Lists.List <> existsb def
+R33269:33288 ConvergenceSpec.ConvergenceSpec <> has_reachable_return:187 def
+R33297:33300 ConvergenceSpec.ConvergenceSpec <> ELet constr
+R33337:33340 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R33315:33334 ConvergenceSpec.ConvergenceSpec <> has_reachable_return:187 def
+R33341:33360 ConvergenceSpec.ConvergenceSpec <> has_reachable_return:187 def
+R33368:33373 ConvergenceSpec.ConvergenceSpec <> EWhile constr
+R33386:33405 ConvergenceSpec.ConvergenceSpec <> has_reachable_return:187 def
+R33413:33416 ConvergenceSpec.ConvergenceSpec <> EFor constr
+R33431:33450 ConvergenceSpec.ConvergenceSpec <> has_reachable_return:187 def
+R33458:33467 ConvergenceSpec.ConvergenceSpec <> ESuperstep constr
+R33515:33518 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R33490:33509 ConvergenceSpec.ConvergenceSpec <> has_reachable_return:187 def
+R33519:33538 ConvergenceSpec.ConvergenceSpec <> has_reachable_return:187 def
+R33567:33571 Corelib.Init.Datatypes <> false constr
+def 34193:34210 <> has_varying_return
+R34219:34221 ConvergenceSpec.ConvergenceSpec <> Env def
+binder 34213:34215 <> env:189
+R34229:34232 ConvergenceSpec.ConvergenceSpec <> expr ind
+binder 34225:34225 <> e:190
+R34237:34240 Corelib.Init.Datatypes <> bool ind
+R34253:34253 ConvergenceSpec.ConvergenceSpec <> e:190 var
+R34264:34266 ConvergenceSpec.ConvergenceSpec <> EIf constr
+R34290:34306 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env def
+R34308:34310 ConvergenceSpec.ConvergenceSpec <> env:189 var
+R34413:34416 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R34389:34406 ConvergenceSpec.ConvergenceSpec <> has_varying_return:191 def
+R34408:34410 ConvergenceSpec.ConvergenceSpec <> env:189 var
+R34417:34434 ConvergenceSpec.ConvergenceSpec <> has_varying_return:191 def
+R34436:34438 ConvergenceSpec.ConvergenceSpec <> env:189 var
+R34350:34353 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R34328:34347 ConvergenceSpec.ConvergenceSpec <> has_reachable_return def
+R34354:34373 ConvergenceSpec.ConvergenceSpec <> has_reachable_return def
+R34447:34450 ConvergenceSpec.ConvergenceSpec <> ESeq constr
+R34464:34470 Stdlib.Lists.List <> existsb def
+R34473:34490 ConvergenceSpec.ConvergenceSpec <> has_varying_return:191 def
+R34492:34494 ConvergenceSpec.ConvergenceSpec <> env:189 var
+R34504:34507 ConvergenceSpec.ConvergenceSpec <> ELet constr
+R34550:34566 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env def
+R34568:34570 ConvergenceSpec.ConvergenceSpec <> env:189 var
+R34622:34624 ConvergenceSpec.ConvergenceSpec <> env:189 var
+R34587:34596 ConvergenceSpec.ConvergenceSpec <> env_extend def
+R34598:34600 ConvergenceSpec.ConvergenceSpec <> env:189 var
+R34604:34607 Corelib.Init.Datatypes <> true constr
+binder 34531:34534 <> env':193
+R34665:34668 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R34641:34658 ConvergenceSpec.ConvergenceSpec <> has_varying_return:191 def
+R34660:34662 ConvergenceSpec.ConvergenceSpec <> env:189 var
+R34669:34686 ConvergenceSpec.ConvergenceSpec <> has_varying_return:191 def
+R34688:34691 ConvergenceSpec.ConvergenceSpec <> env':193 var
+R34699:34704 ConvergenceSpec.ConvergenceSpec <> EWhile constr
+R34743:34746 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R34716:34733 ConvergenceSpec.ConvergenceSpec <> has_varying_return:191 def
+R34735:34737 ConvergenceSpec.ConvergenceSpec <> env:189 var
+R34747:34764 ConvergenceSpec.ConvergenceSpec <> has_varying_return:191 def
+R34766:34768 ConvergenceSpec.ConvergenceSpec <> env:189 var
+R34776:34779 ConvergenceSpec.ConvergenceSpec <> EFor constr
+R34859:34868 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R34824:34833 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R34799:34816 ConvergenceSpec.ConvergenceSpec <> has_varying_return:191 def
+R34818:34820 ConvergenceSpec.ConvergenceSpec <> env:189 var
+R34834:34851 ConvergenceSpec.ConvergenceSpec <> has_varying_return:191 def
+R34853:34855 ConvergenceSpec.ConvergenceSpec <> env:189 var
+R34869:34886 ConvergenceSpec.ConvergenceSpec <> has_varying_return:191 def
+R34888:34890 ConvergenceSpec.ConvergenceSpec <> env:189 var
+R34915:34919 Corelib.Init.Datatypes <> false constr
+def 35111:35119 <> check_env
+R35126:35134 ConvergenceSpec.ConvergenceSpec <> exec_mode ind
+binder 35122:35122 <> m:194
+R35144:35146 ConvergenceSpec.ConvergenceSpec <> Env def
+binder 35138:35140 <> env:195
+R35154:35157 ConvergenceSpec.ConvergenceSpec <> expr ind
+binder 35150:35150 <> e:196
+R35162:35165 Corelib.Init.Datatypes <> list ind
+R35167:35171 ConvergenceSpec.ConvergenceSpec <> error ind
+R35184:35184 ConvergenceSpec.ConvergenceSpec <> e:196 var
+R35195:35202 ConvergenceSpec.ConvergenceSpec <> EBarrier constr
+R35219:35219 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R35226:35233 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R35238:35238 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R35251:35251 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R35239:35250 ConvergenceSpec.ConvergenceSpec <> BarrierError constr
+R35255:35263 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R35268:35269 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R35279:35282 ConvergenceSpec.ConvergenceSpec <> ELit constr
+R35286:35290 ConvergenceSpec.ConvergenceSpec <> EVary constr
+R35294:35303 ConvergenceSpec.ConvergenceSpec <> EWarpPoint constr
+R35308:35309 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R35308:35309 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R35308:35309 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R35315:35318 ConvergenceSpec.ConvergenceSpec <> EVar constr
+R35409:35410 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R35416:35421 ConvergenceSpec.ConvergenceSpec <> EBinop constr
+R35451:35454 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R35434:35442 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R35446:35448 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R35444:35444 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R35455:35463 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R35467:35469 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R35465:35465 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R35477:35481 ConvergenceSpec.ConvergenceSpec <> EUnop constr
+R35495:35503 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R35511:35511 ConvergenceSpec.ConvergenceSpec <> e:196 var
+R35507:35509 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R35505:35505 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R35517:35519 ConvergenceSpec.ConvergenceSpec <> EIf constr
+R35557:35573 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env def
+R35575:35577 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R35603:35603 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R35589:35596 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+binder 35545:35549 <> inner:200
+R35634:35637 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R35614:35622 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R35626:35628 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R35624:35624 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R35659:35662 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R35638:35646 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R35654:35656 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R35648:35652 ConvergenceSpec.ConvergenceSpec <> inner:200 var
+R35663:35671 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R35679:35681 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R35673:35677 ConvergenceSpec.ConvergenceSpec <> inner:200 var
+R35690:35695 ConvergenceSpec.ConvergenceSpec <> EWhile constr
+R35730:35746 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env def
+R35748:35750 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R35776:35776 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R35762:35769 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+binder 35718:35722 <> inner:201
+R35807:35810 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R35787:35795 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R35799:35801 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R35797:35797 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R35811:35819 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R35827:35829 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R35821:35825 ConvergenceSpec.ConvergenceSpec <> inner:201 var
+R35837:35840 ConvergenceSpec.ConvergenceSpec <> EFor constr
+R35909:35912 Corelib.Init.Datatypes <> ::bool_scope:x_'||'_x not
+R35885:35901 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env def
+R35903:35905 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R35913:35929 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env def
+R35931:35933 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R35965:35965 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R35951:35958 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+binder 35865:35869 <> inner:202
+R36000:36003 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R35982:35990 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R35994:35996 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R35992:35992 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R36022:36025 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R36004:36012 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R36016:36018 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R36014:36014 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R36026:36034 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R36042:36044 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R36036:36040 ConvergenceSpec.ConvergenceSpec <> inner:202 var
+R36052:36055 ConvergenceSpec.ConvergenceSpec <> ESeq constr
+R36475:36483 ConvergenceSpec.ConvergenceSpec <> exec_mode ind
+binder 36470:36471 <> sm:203
+R36492:36495 Corelib.Init.Datatypes <> list ind
+R36497:36500 ConvergenceSpec.ConvergenceSpec <> expr ind
+binder 36487:36488 <> xs:204
+R36505:36508 Corelib.Init.Datatypes <> list ind
+R36510:36514 ConvergenceSpec.ConvergenceSpec <> error ind
+R36533:36534 ConvergenceSpec.ConvergenceSpec <> xs:204 var
+R36551:36552 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R36564:36565 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R36578:36581 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R36616:36633 ConvergenceSpec.ConvergenceSpec <> has_varying_return def
+R36635:36637 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R36639:36639 ConvergenceSpec.ConvergenceSpec <> e:196 var
+R36660:36661 ConvergenceSpec.ConvergenceSpec <> sm:203 var
+R36646:36653 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+binder 36606:36608 <> sm':207
+R36696:36699 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R36678:36686 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R36695:36695 ConvergenceSpec.ConvergenceSpec <> e:196 var
+R36691:36693 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R36688:36689 ConvergenceSpec.ConvergenceSpec <> sm:203 var
+R36700:36708 ConvergenceSpec.ConvergenceSpec <> check_seq:205 var
+R36710:36712 ConvergenceSpec.ConvergenceSpec <> sm':207 var
+R36732:36732 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R36741:36744 ConvergenceSpec.ConvergenceSpec <> ELet constr
+R36775:36791 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env def
+R36793:36795 ConvergenceSpec.ConvergenceSpec <> env:195 var
+binder 36768:36769 <> vv:208
+R36820:36829 ConvergenceSpec.ConvergenceSpec <> env_extend def
+R36831:36833 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R36837:36838 ConvergenceSpec.ConvergenceSpec <> vv:208 var
+binder 36812:36815 <> env':209
+R36866:36869 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R36849:36857 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R36861:36863 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R36859:36859 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R36870:36878 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R36882:36885 ConvergenceSpec.ConvergenceSpec <> env':209 var
+R36880:36880 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R36893:36902 ConvergenceSpec.ConvergenceSpec <> ESuperstep constr
+R36967:36967 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R36995:37002 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R37005:37009 Corelib.Init.Datatypes <> false constr
+R37014:37014 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R37027:37027 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R37015:37026 ConvergenceSpec.ConvergenceSpec <> BarrierError constr
+R37058:37059 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+binder 36937:36948 <> entry_errors:212
+R37100:37103 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R37088:37099 ConvergenceSpec.ConvergenceSpec <> entry_errors:212 var
+R37124:37127 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R37104:37112 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R37116:37118 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R37114:37114 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R37128:37136 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R37140:37142 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R37138:37138 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R37153:37156 ConvergenceSpec.ConvergenceSpec <> EApp constr
+R37171:37176 Stdlib.Lists.List <> concat def
+R37179:37181 Corelib.Lists.ListDef <> map def
+R37184:37192 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R37196:37198 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R37194:37194 ConvergenceSpec.ConvergenceSpec <> m:194 var
+R37211:37217 ConvergenceSpec.ConvergenceSpec <> EReturn constr
+R37229:37237 ConvergenceSpec.ConvergenceSpec <> check_env:197 def
+R37245:37245 ConvergenceSpec.ConvergenceSpec <> e:196 var
+R37241:37243 ConvergenceSpec.ConvergenceSpec <> env:195 var
+R37239:37239 ConvergenceSpec.ConvergenceSpec <> m:194 var
+def 37579:37591 <> check_env_seq
+R37598:37606 ConvergenceSpec.ConvergenceSpec <> exec_mode ind
+binder 37594:37594 <> m:213
+R37616:37618 ConvergenceSpec.ConvergenceSpec <> Env def
+binder 37610:37612 <> env:214
+R37627:37630 Corelib.Init.Datatypes <> list ind
+R37632:37635 ConvergenceSpec.ConvergenceSpec <> expr ind
+binder 37622:37623 <> es:215
+R37644:37647 Corelib.Init.Datatypes <> list ind
+R37649:37653 ConvergenceSpec.ConvergenceSpec <> error ind
+R37660:37668 ConvergenceSpec.ConvergenceSpec <> check_env def
+R37670:37670 ConvergenceSpec.ConvergenceSpec <> m:213 var
+R37672:37674 ConvergenceSpec.ConvergenceSpec <> env:214 var
+R37677:37680 ConvergenceSpec.ConvergenceSpec <> ESeq constr
+R37682:37683 ConvergenceSpec.ConvergenceSpec <> es:215 var
+prf 37694:37710 <> check_env_seq_nil
+binder 37721:37721 <> m:216
+binder 37723:37725 <> env:217
+R37752:37754 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R37730:37742 ConvergenceSpec.ConvergenceSpec <> check_env_seq def
+R37744:37744 ConvergenceSpec.ConvergenceSpec <> m:216 var
+R37746:37748 ConvergenceSpec.ConvergenceSpec <> env:217 var
+R37750:37751 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R37755:37756 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+prf 37791:37808 <> check_env_seq_cons
+binder 37819:37819 <> m:218
+binder 37821:37823 <> env:219
+binder 37825:37825 <> e:220
+binder 37827:37830 <> rest:221
+R37866:37870 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R37835:37847 ConvergenceSpec.ConvergenceSpec <> check_env_seq def
+R37849:37849 ConvergenceSpec.ConvergenceSpec <> m:218 var
+R37851:37853 ConvergenceSpec.ConvergenceSpec <> env:219 var
+R37857:37860 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R37856:37856 ConvergenceSpec.ConvergenceSpec <> e:220 var
+R37861:37864 ConvergenceSpec.ConvergenceSpec <> rest:221 var
+R37888:37893 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R37871:37879 ConvergenceSpec.ConvergenceSpec <> check_env def
+R37881:37881 ConvergenceSpec.ConvergenceSpec <> m:218 var
+R37883:37885 ConvergenceSpec.ConvergenceSpec <> env:219 var
+R37887:37887 ConvergenceSpec.ConvergenceSpec <> e:220 var
+R37894:37906 ConvergenceSpec.ConvergenceSpec <> check_env_seq def
+R37912:37929 ConvergenceSpec.ConvergenceSpec <> has_varying_return def
+R37931:37933 ConvergenceSpec.ConvergenceSpec <> env:219 var
+R37935:37935 ConvergenceSpec.ConvergenceSpec <> e:220 var
+R37956:37956 ConvergenceSpec.ConvergenceSpec <> m:218 var
+R37942:37949 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R37959:37961 ConvergenceSpec.ConvergenceSpec <> env:219 var
+R37963:37966 ConvergenceSpec.ConvergenceSpec <> rest:221 var
+prf 38001:38014 <> check_env_ESeq
+binder 38025:38025 <> m:222
+binder 38027:38029 <> env:223
+binder 38031:38032 <> es:224
+R38062:38064 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R38037:38045 ConvergenceSpec.ConvergenceSpec <> check_env def
+R38047:38047 ConvergenceSpec.ConvergenceSpec <> m:222 var
+R38049:38051 ConvergenceSpec.ConvergenceSpec <> env:223 var
+R38054:38057 ConvergenceSpec.ConvergenceSpec <> ESeq constr
+R38059:38060 ConvergenceSpec.ConvergenceSpec <> es:224 var
+R38065:38077 ConvergenceSpec.ConvergenceSpec <> check_env_seq def
+R38079:38079 ConvergenceSpec.ConvergenceSpec <> m:222 var
+R38081:38083 ConvergenceSpec.ConvergenceSpec <> env:223 var
+R38085:38086 ConvergenceSpec.ConvergenceSpec <> es:224 var
+prf 38419:38440 <> check_env_seq_diverged
+binder 38451:38453 <> env:225
+binder 38455:38456 <> es:226
+R38490:38492 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R38461:38473 ConvergenceSpec.ConvergenceSpec <> check_env_seq def
+R38475:38482 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R38484:38486 ConvergenceSpec.ConvergenceSpec <> env:225 var
+R38488:38489 ConvergenceSpec.ConvergenceSpec <> es:226 var
+R38493:38498 Stdlib.Lists.List <> concat def
+R38501:38503 Corelib.Lists.ListDef <> map def
+R38530:38531 ConvergenceSpec.ConvergenceSpec <> es:226 var
+R38506:38514 ConvergenceSpec.ConvergenceSpec <> check_env def
+R38516:38523 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R38525:38527 ConvergenceSpec.ConvergenceSpec <> env:225 var
+R38619:38636 ConvergenceSpec.ConvergenceSpec <> check_env_seq_cons thm
+R38619:38636 ConvergenceSpec.ConvergenceSpec <> check_env_seq_cons thm
+R38619:38636 ConvergenceSpec.ConvergenceSpec <> check_env_seq_cons thm
+R38647:38664 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R38647:38664 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+R38647:38664 ConvergenceSpec.ConvergenceSpec <> diverged_absorbing thm
+prf 38830:38851 <> env_lookup_extend_same
+binder 38862:38864 <> env:227
+binder 38866:38866 <> x:228
+binder 38868:38868 <> v:229
+R38906:38908 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R38873:38882 ConvergenceSpec.ConvergenceSpec <> env_lookup def
+R38885:38894 ConvergenceSpec.ConvergenceSpec <> env_extend def
+R38896:38898 ConvergenceSpec.ConvergenceSpec <> env:227 var
+R38900:38900 ConvergenceSpec.ConvergenceSpec <> x:228 var
+R38902:38902 ConvergenceSpec.ConvergenceSpec <> v:229 var
+R38905:38905 ConvergenceSpec.ConvergenceSpec <> x:228 var
+R38909:38909 ConvergenceSpec.ConvergenceSpec <> v:229 var
+R38946:38955 ConvergenceSpec.ConvergenceSpec <> env_lookup def
+R38958:38967 ConvergenceSpec.ConvergenceSpec <> env_extend def
+R38987:38998 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+R38987:38998 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+R38987:38998 Stdlib.Arith.PeanoNat Nat eqb_refl thm
+prf 39201:39221 <> env_let_alias_varying
+binder 39232:39234 <> env:230
+binder 39236:39236 <> x:231
+binder 39238:39238 <> v:232
+binder 39240:39240 <> b:233
+R39275:39280 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R39268:39270 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R39245:39261 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env def
+R39263:39265 ConvergenceSpec.ConvergenceSpec <> env:230 var
+R39267:39267 ConvergenceSpec.ConvergenceSpec <> v:232 var
+R39271:39274 Corelib.Init.Datatypes <> true constr
+R39331:39336 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R39324:39326 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R39281:39297 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env def
+R39300:39309 ConvergenceSpec.ConvergenceSpec <> env_extend def
+R39311:39313 ConvergenceSpec.ConvergenceSpec <> env:230 var
+R39315:39315 ConvergenceSpec.ConvergenceSpec <> x:231 var
+R39317:39320 Corelib.Init.Datatypes <> true constr
+R39323:39323 ConvergenceSpec.ConvergenceSpec <> b:233 var
+R39327:39330 Corelib.Init.Datatypes <> true constr
+R39371:39373 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R39337:39353 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env def
+R39355:39357 ConvergenceSpec.ConvergenceSpec <> env:230 var
+R39360:39363 ConvergenceSpec.ConvergenceSpec <> ELet constr
+R39365:39365 ConvergenceSpec.ConvergenceSpec <> x:231 var
+R39367:39367 ConvergenceSpec.ConvergenceSpec <> v:232 var
+R39369:39369 ConvergenceSpec.ConvergenceSpec <> b:233 var
+R39374:39377 Corelib.Init.Datatypes <> true constr
+prf 39623:39644 <> env_var_diverged_clean
+binder 39655:39657 <> env:234
+binder 39659:39659 <> x:235
+R39695:39697 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R39664:39672 ConvergenceSpec.ConvergenceSpec <> check_env def
+R39674:39681 ConvergenceSpec.ConvergenceSpec <> Diverged constr
+R39683:39685 ConvergenceSpec.ConvergenceSpec <> env:234 var
+R39688:39691 ConvergenceSpec.ConvergenceSpec <> EVar constr
+R39693:39693 ConvergenceSpec.ConvergenceSpec <> x:235 var
+R39698:39699 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+prf 40028:40054 <> env_check_let_alias_catches
+binder 40065:40067 <> env:236
+binder 40069:40069 <> x:237
+binder 40071:40071 <> v:238
+R40106:40111 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R40099:40101 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R40076:40092 ConvergenceSpec.ConvergenceSpec <> is_varying_in_env def
+R40094:40096 ConvergenceSpec.ConvergenceSpec <> env:236 var
+R40098:40098 ConvergenceSpec.ConvergenceSpec <> v:238 var
+R40102:40105 Corelib.Init.Datatypes <> true constr
+R40175:40178 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R40112:40120 ConvergenceSpec.ConvergenceSpec <> check_env def
+R40122:40130 ConvergenceSpec.ConvergenceSpec <> Converged constr
+R40132:40134 ConvergenceSpec.ConvergenceSpec <> env:236 var
+R40137:40140 ConvergenceSpec.ConvergenceSpec <> ELet constr
+R40142:40142 ConvergenceSpec.ConvergenceSpec <> x:237 var
+R40144:40144 ConvergenceSpec.ConvergenceSpec <> v:238 var
+R40147:40149 ConvergenceSpec.ConvergenceSpec <> EIf constr
+R40152:40155 ConvergenceSpec.ConvergenceSpec <> EVar constr
+R40157:40157 ConvergenceSpec.ConvergenceSpec <> x:237 var
+R40160:40167 ConvergenceSpec.ConvergenceSpec <> EBarrier constr
+R40169:40172 ConvergenceSpec.ConvergenceSpec <> ELit constr
+R40179:40180 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R40251:40272 ConvergenceSpec.ConvergenceSpec <> env_lookup_extend_same thm
+R40251:40272 ConvergenceSpec.ConvergenceSpec <> env_lookup_extend_same thm
+R40251:40272 ConvergenceSpec.ConvergenceSpec <> env_lookup_extend_same thm
+R40371:40380 Stdlib.Lists.List <> app_eq_nil thm
+R40371:40380 Stdlib.Lists.List <> app_eq_nil thm

@@ -1,0 +1,13 @@
+(dirs common unit e2e negative native new_runtime codegen_golden)
+
+(alias
+ (name runtest)
+ (deps
+  (:unit
+   (alias unit/runtest))
+  (:e2e
+   (alias e2e/runtest))
+  (:codegen_golden
+   (alias codegen_golden/runtest))
+  (:core
+   (alias ../core/test/runtest))))

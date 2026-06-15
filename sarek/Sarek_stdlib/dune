@@ -1,0 +1,8 @@
+(library
+ (name sarek_stdlib)
+ (public_name sarek.stdlib)
+ ; Link sarek_ppx_lib for PPX-time registration (Sarek_ppx_registry)
+ (libraries sarek_stdlib_meta sarek_registry spoc_core ctypes sarek_ppx_lib)
+ (preprocess
+  ; Use the minimal intrinsic PPX (breaks circular dependency)
+  (pps sarek_ppx_intrinsic)))

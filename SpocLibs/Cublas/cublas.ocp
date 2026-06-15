@@ -1,4 +1,0 @@
-begin library "spoc_cublas"
-      files = ["Cublas.ml" "Spoc_cublas.c" (comp="-g")]
-      requires = ["spoc"]
-end

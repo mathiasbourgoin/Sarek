@@ -1,0 +1,10 @@
+benchmark,timestamp,hostname,device_id,device_name,framework,size,block_size,iterations_count,mean_ms,stddev_ms,median_ms,min_ms,max_ms,throughput_gflops,verified
+matrix_mul_naive,2026-01-11T18:36:04Z,cachyos,0,Intel(R) Arc(TM) Graphics,OpenCL,256,256,20,0.847375,0.384699,0.702024,0.579119,1.997948,39.5981,true
+matrix_mul_naive,2026-01-11T18:36:04Z,cachyos,1,Intel(R) Core(TM) Ultra 9 185H,OpenCL,256,256,20,2.587855,0.981519,2.289534,1.929998,5.725145,12.9661,true
+matrix_mul_naive,2026-01-11T18:36:04Z,cachyos,2,Intel(R) Arc(tm) Graphics (MTL),Vulkan,256,256,20,1.039433,0.315228,1.026034,0.640154,2.084017,32.2815,true
+matrix_mul_naive,2026-01-11T18:36:06Z,cachyos,0,Intel(R) Arc(TM) Graphics,OpenCL,512,256,20,2.400410,0.846050,2.188563,1.560926,5.243063,111.8290,true
+matrix_mul_naive,2026-01-11T18:36:06Z,cachyos,1,Intel(R) Core(TM) Ultra 9 185H,OpenCL,512,256,20,13.630188,0.731210,13.722062,12.357950,14.858961,19.6942,true
+matrix_mul_naive,2026-01-11T18:36:06Z,cachyos,2,Intel(R) Arc(tm) Graphics (MTL),Vulkan,512,256,20,4.767728,1.093014,4.491448,3.681898,8.291006,56.3026,true
+matrix_mul_naive,2026-01-11T18:36:32Z,cachyos,0,Intel(R) Arc(TM) Graphics,OpenCL,1024,256,20,16.918063,1.936558,16.632438,14.601946,24.328947,126.9344,true
+matrix_mul_naive,2026-01-11T18:36:32Z,cachyos,1,Intel(R) Core(TM) Ultra 9 185H,OpenCL,1024,256,20,135.754752,12.626709,137.171030,112.443924,159.472942,15.8188,true
+matrix_mul_naive,2026-01-11T18:36:32Z,cachyos,2,Intel(R) Arc(tm) Graphics (MTL),Vulkan,1024,256,20,15.551054,2.157883,15.361905,13.164997,23.983955,138.0925,true

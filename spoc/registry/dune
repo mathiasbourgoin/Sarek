@@ -1,0 +1,11 @@
+; Sarek Registry - SDK layer for type/function registration
+; Plugins depend on this, not full sarek library
+
+(library
+ (name sarek_registry)
+ (public_name spoc.registry)
+ (libraries)
+ (modules Sarek_registry)
+ (preprocess no_preprocessing)
+ (instrumentation
+  (backend bisect_ppx)))

@@ -1,0 +1,8 @@
+(library
+ (name visibility_lib)
+ (public_name sarek.visibility)
+ (wrapped false)
+ (modules visibility_lib)
+ (libraries sarek sarek.stdlib)
+ (preprocess
+  (pps sarek_ppx)))

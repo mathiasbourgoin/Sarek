@@ -1,0 +1,33 @@
+; SPOC Runtime Core
+; Unified abstractions for devices, memory, and kernel execution
+
+(library
+ (name spoc_core)
+ (public_name sarek.core)
+ (libraries
+  spoc_framework
+  spoc_framework_registry
+  spoc_core_base
+  ctypes
+  unix
+  sarek_ir
+  sarek_registry)
+ (modules
+  Log
+  Device
+  Memory
+  Kernel
+  Kernel_arg
+  Runtime
+  Vector_types
+  Vector_transfer
+  Vector
+  Gpu_memory
+  Transfer
+  Profiling
+  Error
+  Advanced
+  Ctypes_ops)
+ (preprocess no_preprocessing)
+ (instrumentation
+  (backend bisect_ppx)))

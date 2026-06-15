@@ -1,7 +1,0 @@
-Mandelbrot:
-computes and displays the mandelbrot set
-options:
- -device number of the device [0]
- -width width of the image to compute [1024]
- -height height of the image to compute [1024]
- -max_iter max number of iterations [1024]

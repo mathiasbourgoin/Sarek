@@ -1,0 +1,50 @@
+; Tests for sarek library
+
+(test
+ (name test_sarek_value)
+ (modules test_sarek_value)
+ (libraries sarek alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(test
+ (name test_sarek_float32)
+ (modules test_sarek_float32)
+ (libraries sarek alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(test
+ (name test_sarek_type_helpers)
+ (modules test_sarek_type_helpers)
+ (libraries sarek alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(test
+ (name test_execute_error)
+ (modules test_execute_error)
+ (libraries sarek alcotest str)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(test
+ (name test_interp_error)
+ (modules test_interp_error)
+ (libraries sarek alcotest str)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(test
+ (name test_kirc_error)
+ (modules test_kirc_error)
+ (libraries sarek alcotest str)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(test
+ (name test_fusion_error)
+ (modules test_fusion_error)
+ (libraries sarek alcotest str)
+ (instrumentation
+  (backend bisect_ppx)))

@@ -1,0 +1,519 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                          *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
+(******************************************************************************
+ * OpenCL API - Ctypes Type Definitions
+ *
+ * Pure OCaml bindings to OpenCL API using ctypes.
+ * No C stubs required - all FFI via ctypes-foreign.
+ ******************************************************************************)
+
+open Ctypes
+
+(** {1 Basic Types} *)
+
+(** OpenCL uses specific integer types *)
+type cl_int = int32
+
+let cl_int : cl_int typ = int32_t
+
+type cl_uint = Unsigned.uint32
+
+let cl_uint : cl_uint typ = uint32_t
+
+type cl_long = int64
+
+let cl_long : cl_long typ = int64_t
+
+type cl_ulong = Unsigned.uint64
+
+let cl_ulong : cl_ulong typ = uint64_t
+
+(** Bitfields *)
+type cl_bitfield = Unsigned.uint64
+
+let cl_bitfield : cl_bitfield typ = uint64_t
+
+(** Boolean *)
+type cl_bool = Unsigned.uint32
+
+let cl_bool : cl_bool typ = uint32_t
+
+let cl_true = Unsigned.UInt32.one
+
+let cl_false = Unsigned.UInt32.zero
+
+(** {1 Opaque Handle Types} *)
+
+(** Platform ID - opaque pointer *)
+type cl_platform_id = unit ptr
+
+let cl_platform_id : cl_platform_id typ = ptr void
+
+(** Device ID - opaque pointer *)
+type cl_device_id = unit ptr
+
+let cl_device_id : cl_device_id typ = ptr void
+
+(** Context - opaque pointer *)
+type cl_context = unit ptr
+
+let cl_context : cl_context typ = ptr void
+
+(** Command queue - opaque pointer *)
+type cl_command_queue = unit ptr
+
+let cl_command_queue : cl_command_queue typ = ptr void
+
+(** Memory object - opaque pointer *)
+type cl_mem = unit ptr
+
+let cl_mem : cl_mem typ = ptr void
+
+(** Program - opaque pointer *)
+type cl_program = unit ptr
+
+let cl_program : cl_program typ = ptr void
+
+(** Kernel - opaque pointer *)
+type cl_kernel = unit ptr
+
+let cl_kernel : cl_kernel typ = ptr void
+
+(** Event - opaque pointer *)
+type cl_event = unit ptr
+
+let cl_event : cl_event typ = ptr void
+
+(** Sampler - opaque pointer *)
+type cl_sampler = unit ptr
+
+let cl_sampler : cl_sampler typ = ptr void
+
+(** {1 Error Codes} *)
+
+type cl_error =
+  | CL_SUCCESS
+  | CL_DEVICE_NOT_FOUND
+  | CL_DEVICE_NOT_AVAILABLE
+  | CL_COMPILER_NOT_AVAILABLE
+  | CL_MEM_OBJECT_ALLOCATION_FAILURE
+  | CL_OUT_OF_RESOURCES
+  | CL_OUT_OF_HOST_MEMORY
+  | CL_PROFILING_INFO_NOT_AVAILABLE
+  | CL_MEM_COPY_OVERLAP
+  | CL_IMAGE_FORMAT_MISMATCH
+  | CL_IMAGE_FORMAT_NOT_SUPPORTED
+  | CL_BUILD_PROGRAM_FAILURE
+  | CL_MAP_FAILURE
+  | CL_MISALIGNED_SUB_BUFFER_OFFSET
+  | CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST
+  | CL_COMPILE_PROGRAM_FAILURE
+  | CL_LINKER_NOT_AVAILABLE
+  | CL_LINK_PROGRAM_FAILURE
+  | CL_DEVICE_PARTITION_FAILED
+  | CL_KERNEL_ARG_INFO_NOT_AVAILABLE
+  | CL_INVALID_VALUE
+  | CL_INVALID_DEVICE_TYPE
+  | CL_INVALID_PLATFORM
+  | CL_INVALID_DEVICE
+  | CL_INVALID_CONTEXT
+  | CL_INVALID_QUEUE_PROPERTIES
+  | CL_INVALID_COMMAND_QUEUE
+  | CL_INVALID_HOST_PTR
+  | CL_INVALID_MEM_OBJECT
+  | CL_INVALID_IMAGE_FORMAT_DESCRIPTOR
+  | CL_INVALID_IMAGE_SIZE
+  | CL_INVALID_SAMPLER
+  | CL_INVALID_BINARY
+  | CL_INVALID_BUILD_OPTIONS
+  | CL_INVALID_PROGRAM
+  | CL_INVALID_PROGRAM_EXECUTABLE
+  | CL_INVALID_KERNEL_NAME
+  | CL_INVALID_KERNEL_DEFINITION
+  | CL_INVALID_KERNEL
+  | CL_INVALID_ARG_INDEX
+  | CL_INVALID_ARG_VALUE
+  | CL_INVALID_ARG_SIZE
+  | CL_INVALID_KERNEL_ARGS
+  | CL_INVALID_WORK_DIMENSION
+  | CL_INVALID_WORK_GROUP_SIZE
+  | CL_INVALID_WORK_ITEM_SIZE
+  | CL_INVALID_GLOBAL_OFFSET
+  | CL_INVALID_EVENT_WAIT_LIST
+  | CL_INVALID_EVENT
+  | CL_INVALID_OPERATION
+  | CL_INVALID_GL_OBJECT
+  | CL_INVALID_BUFFER_SIZE
+  | CL_INVALID_MIP_LEVEL
+  | CL_INVALID_GLOBAL_WORK_SIZE
+  | CL_INVALID_PROPERTY
+  | CL_INVALID_IMAGE_DESCRIPTOR
+  | CL_INVALID_COMPILER_OPTIONS
+  | CL_INVALID_LINKER_OPTIONS
+  | CL_INVALID_DEVICE_PARTITION_COUNT
+  | CL_ERROR_UNKNOWN of int32
+
+let cl_error_of_int32 = function
+  | 0l -> CL_SUCCESS
+  | -1l -> CL_DEVICE_NOT_FOUND
+  | -2l -> CL_DEVICE_NOT_AVAILABLE
+  | -3l -> CL_COMPILER_NOT_AVAILABLE
+  | -4l -> CL_MEM_OBJECT_ALLOCATION_FAILURE
+  | -5l -> CL_OUT_OF_RESOURCES
+  | -6l -> CL_OUT_OF_HOST_MEMORY
+  | -7l -> CL_PROFILING_INFO_NOT_AVAILABLE
+  | -8l -> CL_MEM_COPY_OVERLAP
+  | -9l -> CL_IMAGE_FORMAT_MISMATCH
+  | -10l -> CL_IMAGE_FORMAT_NOT_SUPPORTED
+  | -11l -> CL_BUILD_PROGRAM_FAILURE
+  | -12l -> CL_MAP_FAILURE
+  | -13l -> CL_MISALIGNED_SUB_BUFFER_OFFSET
+  | -14l -> CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST
+  | -15l -> CL_COMPILE_PROGRAM_FAILURE
+  | -16l -> CL_LINKER_NOT_AVAILABLE
+  | -17l -> CL_LINK_PROGRAM_FAILURE
+  | -18l -> CL_DEVICE_PARTITION_FAILED
+  | -19l -> CL_KERNEL_ARG_INFO_NOT_AVAILABLE
+  | -30l -> CL_INVALID_VALUE
+  | -31l -> CL_INVALID_DEVICE_TYPE
+  | -32l -> CL_INVALID_PLATFORM
+  | -33l -> CL_INVALID_DEVICE
+  | -34l -> CL_INVALID_CONTEXT
+  | -35l -> CL_INVALID_QUEUE_PROPERTIES
+  | -36l -> CL_INVALID_COMMAND_QUEUE
+  | -37l -> CL_INVALID_HOST_PTR
+  | -38l -> CL_INVALID_MEM_OBJECT
+  | -39l -> CL_INVALID_IMAGE_FORMAT_DESCRIPTOR
+  | -40l -> CL_INVALID_IMAGE_SIZE
+  | -41l -> CL_INVALID_SAMPLER
+  | -42l -> CL_INVALID_BINARY
+  | -43l -> CL_INVALID_BUILD_OPTIONS
+  | -44l -> CL_INVALID_PROGRAM
+  | -45l -> CL_INVALID_PROGRAM_EXECUTABLE
+  | -46l -> CL_INVALID_KERNEL_NAME
+  | -47l -> CL_INVALID_KERNEL_DEFINITION
+  | -48l -> CL_INVALID_KERNEL
+  | -49l -> CL_INVALID_ARG_INDEX
+  | -50l -> CL_INVALID_ARG_VALUE
+  | -51l -> CL_INVALID_ARG_SIZE
+  | -52l -> CL_INVALID_KERNEL_ARGS
+  | -53l -> CL_INVALID_WORK_DIMENSION
+  | -54l -> CL_INVALID_WORK_GROUP_SIZE
+  | -55l -> CL_INVALID_WORK_ITEM_SIZE
+  | -56l -> CL_INVALID_GLOBAL_OFFSET
+  | -57l -> CL_INVALID_EVENT_WAIT_LIST
+  | -58l -> CL_INVALID_EVENT
+  | -59l -> CL_INVALID_OPERATION
+  | -60l -> CL_INVALID_GL_OBJECT
+  | -61l -> CL_INVALID_BUFFER_SIZE
+  | -62l -> CL_INVALID_MIP_LEVEL
+  | -63l -> CL_INVALID_GLOBAL_WORK_SIZE
+  | -64l -> CL_INVALID_PROPERTY
+  | -65l -> CL_INVALID_IMAGE_DESCRIPTOR
+  | -66l -> CL_INVALID_COMPILER_OPTIONS
+  | -67l -> CL_INVALID_LINKER_OPTIONS
+  | -68l -> CL_INVALID_DEVICE_PARTITION_COUNT
+  | n -> CL_ERROR_UNKNOWN n
+
+let int32_of_cl_error = function
+  | CL_SUCCESS -> 0l
+  | CL_DEVICE_NOT_FOUND -> -1l
+  | CL_DEVICE_NOT_AVAILABLE -> -2l
+  | CL_COMPILER_NOT_AVAILABLE -> -3l
+  | CL_MEM_OBJECT_ALLOCATION_FAILURE -> -4l
+  | CL_OUT_OF_RESOURCES -> -5l
+  | CL_OUT_OF_HOST_MEMORY -> -6l
+  | CL_PROFILING_INFO_NOT_AVAILABLE -> -7l
+  | CL_MEM_COPY_OVERLAP -> -8l
+  | CL_IMAGE_FORMAT_MISMATCH -> -9l
+  | CL_IMAGE_FORMAT_NOT_SUPPORTED -> -10l
+  | CL_BUILD_PROGRAM_FAILURE -> -11l
+  | CL_MAP_FAILURE -> -12l
+  | CL_MISALIGNED_SUB_BUFFER_OFFSET -> -13l
+  | CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST -> -14l
+  | CL_COMPILE_PROGRAM_FAILURE -> -15l
+  | CL_LINKER_NOT_AVAILABLE -> -16l
+  | CL_LINK_PROGRAM_FAILURE -> -17l
+  | CL_DEVICE_PARTITION_FAILED -> -18l
+  | CL_KERNEL_ARG_INFO_NOT_AVAILABLE -> -19l
+  | CL_INVALID_VALUE -> -30l
+  | CL_INVALID_DEVICE_TYPE -> -31l
+  | CL_INVALID_PLATFORM -> -32l
+  | CL_INVALID_DEVICE -> -33l
+  | CL_INVALID_CONTEXT -> -34l
+  | CL_INVALID_QUEUE_PROPERTIES -> -35l
+  | CL_INVALID_COMMAND_QUEUE -> -36l
+  | CL_INVALID_HOST_PTR -> -37l
+  | CL_INVALID_MEM_OBJECT -> -38l
+  | CL_INVALID_IMAGE_FORMAT_DESCRIPTOR -> -39l
+  | CL_INVALID_IMAGE_SIZE -> -40l
+  | CL_INVALID_SAMPLER -> -41l
+  | CL_INVALID_BINARY -> -42l
+  | CL_INVALID_BUILD_OPTIONS -> -43l
+  | CL_INVALID_PROGRAM -> -44l
+  | CL_INVALID_PROGRAM_EXECUTABLE -> -45l
+  | CL_INVALID_KERNEL_NAME -> -46l
+  | CL_INVALID_KERNEL_DEFINITION -> -47l
+  | CL_INVALID_KERNEL -> -48l
+  | CL_INVALID_ARG_INDEX -> -49l
+  | CL_INVALID_ARG_VALUE -> -50l
+  | CL_INVALID_ARG_SIZE -> -51l
+  | CL_INVALID_KERNEL_ARGS -> -52l
+  | CL_INVALID_WORK_DIMENSION -> -53l
+  | CL_INVALID_WORK_GROUP_SIZE -> -54l
+  | CL_INVALID_WORK_ITEM_SIZE -> -55l
+  | CL_INVALID_GLOBAL_OFFSET -> -56l
+  | CL_INVALID_EVENT_WAIT_LIST -> -57l
+  | CL_INVALID_EVENT -> -58l
+  | CL_INVALID_OPERATION -> -59l
+  | CL_INVALID_GL_OBJECT -> -60l
+  | CL_INVALID_BUFFER_SIZE -> -61l
+  | CL_INVALID_MIP_LEVEL -> -62l
+  | CL_INVALID_GLOBAL_WORK_SIZE -> -63l
+  | CL_INVALID_PROPERTY -> -64l
+  | CL_INVALID_IMAGE_DESCRIPTOR -> -65l
+  | CL_INVALID_COMPILER_OPTIONS -> -66l
+  | CL_INVALID_LINKER_OPTIONS -> -67l
+  | CL_INVALID_DEVICE_PARTITION_COUNT -> -68l
+  | CL_ERROR_UNKNOWN n -> n
+
+(** {1 Device Types} *)
+
+let cl_device_type_default = Unsigned.UInt64.of_int 1
+
+let cl_device_type_cpu = Unsigned.UInt64.of_int 2
+
+let cl_device_type_gpu = Unsigned.UInt64.of_int 4
+
+let cl_device_type_accelerator = Unsigned.UInt64.of_int 8
+
+let cl_device_type_custom = Unsigned.UInt64.of_int 16
+
+let cl_device_type_all = Unsigned.UInt64.of_int 0xFFFFFFFF
+
+(** {1 Memory Flags} *)
+
+let cl_mem_read_write = Unsigned.UInt64.of_int 1
+
+let cl_mem_write_only = Unsigned.UInt64.of_int 2
+
+let cl_mem_read_only = Unsigned.UInt64.of_int 4
+
+let cl_mem_use_host_ptr = Unsigned.UInt64.of_int 8
+
+let cl_mem_alloc_host_ptr = Unsigned.UInt64.of_int 16
+
+let cl_mem_copy_host_ptr = Unsigned.UInt64.of_int 32
+
+let cl_mem_host_write_only = Unsigned.UInt64.of_int 128
+
+let cl_mem_host_read_only = Unsigned.UInt64.of_int 256
+
+let cl_mem_host_no_access = Unsigned.UInt64.of_int 512
+
+(** {1 Command Queue Properties} *)
+
+let cl_queue_out_of_order_exec_mode_enable = Unsigned.UInt64.of_int 1
+
+let cl_queue_profiling_enable = Unsigned.UInt64.of_int 2
+
+let cl_queue_on_device = Unsigned.UInt64.of_int 4
+
+let cl_queue_on_device_default = Unsigned.UInt64.of_int 8
+
+(** {1 Platform Info} *)
+
+type cl_platform_info =
+  | CL_PLATFORM_PROFILE
+  | CL_PLATFORM_VERSION
+  | CL_PLATFORM_NAME
+  | CL_PLATFORM_VENDOR
+  | CL_PLATFORM_EXTENSIONS
+
+let int_of_platform_info = function
+  | CL_PLATFORM_PROFILE -> 0x0900
+  | CL_PLATFORM_VERSION -> 0x0901
+  | CL_PLATFORM_NAME -> 0x0902
+  | CL_PLATFORM_VENDOR -> 0x0903
+  | CL_PLATFORM_EXTENSIONS -> 0x0904
+
+(** {1 Device Info} *)
+
+type cl_device_info =
+  | CL_DEVICE_TYPE
+  | CL_DEVICE_VENDOR_ID
+  | CL_DEVICE_MAX_COMPUTE_UNITS
+  | CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS
+  | CL_DEVICE_MAX_WORK_GROUP_SIZE
+  | CL_DEVICE_MAX_WORK_ITEM_SIZES
+  | CL_DEVICE_PREFERRED_VECTOR_WIDTH_CHAR
+  | CL_DEVICE_PREFERRED_VECTOR_WIDTH_SHORT
+  | CL_DEVICE_PREFERRED_VECTOR_WIDTH_INT
+  | CL_DEVICE_PREFERRED_VECTOR_WIDTH_LONG
+  | CL_DEVICE_PREFERRED_VECTOR_WIDTH_FLOAT
+  | CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE
+  | CL_DEVICE_MAX_CLOCK_FREQUENCY
+  | CL_DEVICE_ADDRESS_BITS
+  | CL_DEVICE_MAX_READ_IMAGE_ARGS
+  | CL_DEVICE_MAX_WRITE_IMAGE_ARGS
+  | CL_DEVICE_MAX_MEM_ALLOC_SIZE
+  | CL_DEVICE_IMAGE2D_MAX_WIDTH
+  | CL_DEVICE_IMAGE2D_MAX_HEIGHT
+  | CL_DEVICE_IMAGE3D_MAX_WIDTH
+  | CL_DEVICE_IMAGE3D_MAX_HEIGHT
+  | CL_DEVICE_IMAGE3D_MAX_DEPTH
+  | CL_DEVICE_IMAGE_SUPPORT
+  | CL_DEVICE_MAX_PARAMETER_SIZE
+  | CL_DEVICE_MAX_SAMPLERS
+  | CL_DEVICE_MEM_BASE_ADDR_ALIGN
+  | CL_DEVICE_SINGLE_FP_CONFIG
+  | CL_DEVICE_GLOBAL_MEM_CACHE_TYPE
+  | CL_DEVICE_GLOBAL_MEM_CACHELINE_SIZE
+  | CL_DEVICE_GLOBAL_MEM_CACHE_SIZE
+  | CL_DEVICE_GLOBAL_MEM_SIZE
+  | CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE
+  | CL_DEVICE_MAX_CONSTANT_ARGS
+  | CL_DEVICE_LOCAL_MEM_TYPE
+  | CL_DEVICE_LOCAL_MEM_SIZE
+  | CL_DEVICE_ERROR_CORRECTION_SUPPORT
+  | CL_DEVICE_PROFILING_TIMER_RESOLUTION
+  | CL_DEVICE_ENDIAN_LITTLE
+  | CL_DEVICE_AVAILABLE
+  | CL_DEVICE_COMPILER_AVAILABLE
+  | CL_DEVICE_EXECUTION_CAPABILITIES
+  | CL_DEVICE_QUEUE_PROPERTIES
+  | CL_DEVICE_NAME
+  | CL_DEVICE_VENDOR
+  | CL_DRIVER_VERSION
+  | CL_DEVICE_PROFILE
+  | CL_DEVICE_VERSION
+  | CL_DEVICE_EXTENSIONS
+  | CL_DEVICE_PLATFORM
+  | CL_DEVICE_DOUBLE_FP_CONFIG
+  | CL_DEVICE_OTHER of int
+
+let int_of_device_info = function
+  | CL_DEVICE_TYPE -> 0x1000
+  | CL_DEVICE_VENDOR_ID -> 0x1001
+  | CL_DEVICE_MAX_COMPUTE_UNITS -> 0x1002
+  | CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS -> 0x1003
+  | CL_DEVICE_MAX_WORK_GROUP_SIZE -> 0x1004
+  | CL_DEVICE_MAX_WORK_ITEM_SIZES -> 0x1005
+  | CL_DEVICE_PREFERRED_VECTOR_WIDTH_CHAR -> 0x1006
+  | CL_DEVICE_PREFERRED_VECTOR_WIDTH_SHORT -> 0x1007
+  | CL_DEVICE_PREFERRED_VECTOR_WIDTH_INT -> 0x1008
+  | CL_DEVICE_PREFERRED_VECTOR_WIDTH_LONG -> 0x1009
+  | CL_DEVICE_PREFERRED_VECTOR_WIDTH_FLOAT -> 0x100A
+  | CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE -> 0x100B
+  | CL_DEVICE_MAX_CLOCK_FREQUENCY -> 0x100C
+  | CL_DEVICE_ADDRESS_BITS -> 0x100D
+  | CL_DEVICE_MAX_READ_IMAGE_ARGS -> 0x100E
+  | CL_DEVICE_MAX_WRITE_IMAGE_ARGS -> 0x100F
+  | CL_DEVICE_MAX_MEM_ALLOC_SIZE -> 0x1010
+  | CL_DEVICE_IMAGE2D_MAX_WIDTH -> 0x1011
+  | CL_DEVICE_IMAGE2D_MAX_HEIGHT -> 0x1012
+  | CL_DEVICE_IMAGE3D_MAX_WIDTH -> 0x1013
+  | CL_DEVICE_IMAGE3D_MAX_HEIGHT -> 0x1014
+  | CL_DEVICE_IMAGE3D_MAX_DEPTH -> 0x1015
+  | CL_DEVICE_IMAGE_SUPPORT -> 0x1016
+  | CL_DEVICE_MAX_PARAMETER_SIZE -> 0x1017
+  | CL_DEVICE_MAX_SAMPLERS -> 0x1018
+  | CL_DEVICE_MEM_BASE_ADDR_ALIGN -> 0x1019
+  | CL_DEVICE_SINGLE_FP_CONFIG -> 0x101B
+  | CL_DEVICE_GLOBAL_MEM_CACHE_TYPE -> 0x101C
+  | CL_DEVICE_GLOBAL_MEM_CACHELINE_SIZE -> 0x101D
+  | CL_DEVICE_GLOBAL_MEM_CACHE_SIZE -> 0x101E
+  | CL_DEVICE_GLOBAL_MEM_SIZE -> 0x101F
+  | CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE -> 0x1020
+  | CL_DEVICE_MAX_CONSTANT_ARGS -> 0x1021
+  | CL_DEVICE_LOCAL_MEM_TYPE -> 0x1022
+  | CL_DEVICE_LOCAL_MEM_SIZE -> 0x1023
+  | CL_DEVICE_ERROR_CORRECTION_SUPPORT -> 0x1024
+  | CL_DEVICE_PROFILING_TIMER_RESOLUTION -> 0x1025
+  | CL_DEVICE_ENDIAN_LITTLE -> 0x1026
+  | CL_DEVICE_AVAILABLE -> 0x1027
+  | CL_DEVICE_COMPILER_AVAILABLE -> 0x1028
+  | CL_DEVICE_EXECUTION_CAPABILITIES -> 0x1029
+  | CL_DEVICE_QUEUE_PROPERTIES -> 0x102A
+  | CL_DEVICE_NAME -> 0x102B
+  | CL_DEVICE_VENDOR -> 0x102C
+  | CL_DRIVER_VERSION -> 0x102D
+  | CL_DEVICE_PROFILE -> 0x102E
+  | CL_DEVICE_VERSION -> 0x102F
+  | CL_DEVICE_EXTENSIONS -> 0x1030
+  | CL_DEVICE_PLATFORM -> 0x1031
+  | CL_DEVICE_DOUBLE_FP_CONFIG -> 0x1032
+  | CL_DEVICE_OTHER n -> n
+
+(** {1 Program Build Info} *)
+
+type cl_program_build_info =
+  | CL_PROGRAM_BUILD_STATUS
+  | CL_PROGRAM_BUILD_OPTIONS
+  | CL_PROGRAM_BUILD_LOG
+  | CL_PROGRAM_BINARY_TYPE
+
+let int_of_program_build_info = function
+  | CL_PROGRAM_BUILD_STATUS -> 0x1181
+  | CL_PROGRAM_BUILD_OPTIONS -> 0x1182
+  | CL_PROGRAM_BUILD_LOG -> 0x1183
+  | CL_PROGRAM_BINARY_TYPE -> 0x1184
+
+(** {1 Kernel Info} *)
+
+type cl_kernel_info =
+  | CL_KERNEL_FUNCTION_NAME
+  | CL_KERNEL_NUM_ARGS
+  | CL_KERNEL_REFERENCE_COUNT
+  | CL_KERNEL_CONTEXT
+  | CL_KERNEL_PROGRAM
+  | CL_KERNEL_ATTRIBUTES
+
+let int_of_kernel_info = function
+  | CL_KERNEL_FUNCTION_NAME -> 0x1190
+  | CL_KERNEL_NUM_ARGS -> 0x1191
+  | CL_KERNEL_REFERENCE_COUNT -> 0x1192
+  | CL_KERNEL_CONTEXT -> 0x1193
+  | CL_KERNEL_PROGRAM -> 0x1194
+  | CL_KERNEL_ATTRIBUTES -> 0x1195
+
+(** {1 Profiling Info} *)
+
+type cl_profiling_info =
+  | CL_PROFILING_COMMAND_QUEUED
+  | CL_PROFILING_COMMAND_SUBMIT
+  | CL_PROFILING_COMMAND_START
+  | CL_PROFILING_COMMAND_END
+  | CL_PROFILING_COMMAND_COMPLETE
+
+let int_of_profiling_info = function
+  | CL_PROFILING_COMMAND_QUEUED -> 0x1280
+  | CL_PROFILING_COMMAND_SUBMIT -> 0x1281
+  | CL_PROFILING_COMMAND_START -> 0x1282
+  | CL_PROFILING_COMMAND_END -> 0x1283
+  | CL_PROFILING_COMMAND_COMPLETE -> 0x1284
+
+(** {1 Helper: Error to string} *)
+
+let string_of_cl_error = function
+  | CL_SUCCESS -> "CL_SUCCESS"
+  | CL_DEVICE_NOT_FOUND -> "CL_DEVICE_NOT_FOUND"
+  | CL_DEVICE_NOT_AVAILABLE -> "CL_DEVICE_NOT_AVAILABLE"
+  | CL_COMPILER_NOT_AVAILABLE -> "CL_COMPILER_NOT_AVAILABLE"
+  | CL_MEM_OBJECT_ALLOCATION_FAILURE -> "CL_MEM_OBJECT_ALLOCATION_FAILURE"
+  | CL_OUT_OF_RESOURCES -> "CL_OUT_OF_RESOURCES"
+  | CL_OUT_OF_HOST_MEMORY -> "CL_OUT_OF_HOST_MEMORY"
+  | CL_BUILD_PROGRAM_FAILURE -> "CL_BUILD_PROGRAM_FAILURE"
+  | CL_INVALID_VALUE -> "CL_INVALID_VALUE"
+  | CL_INVALID_DEVICE -> "CL_INVALID_DEVICE"
+  | CL_INVALID_CONTEXT -> "CL_INVALID_CONTEXT"
+  | CL_INVALID_PROGRAM -> "CL_INVALID_PROGRAM"
+  | CL_INVALID_KERNEL -> "CL_INVALID_KERNEL"
+  | CL_INVALID_KERNEL_ARGS -> "CL_INVALID_KERNEL_ARGS"
+  | CL_INVALID_WORK_DIMENSION -> "CL_INVALID_WORK_DIMENSION"
+  | CL_INVALID_WORK_GROUP_SIZE -> "CL_INVALID_WORK_GROUP_SIZE"
+  | CL_ERROR_UNKNOWN n -> Printf.sprintf "CL_ERROR_UNKNOWN(%ld)" n
+  | _ -> "CL_ERROR_OTHER"

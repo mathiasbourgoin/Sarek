@@ -1,0 +1,9 @@
+; Test suite for Metal backend
+
+(test
+ (name test_metal_error)
+ (libraries sarek_metal alcotest str))
+
+(test
+ (name test_sarek_ir_metal)
+ (libraries sarek_metal sarek_ir alcotest str))

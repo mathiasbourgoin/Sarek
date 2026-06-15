@@ -1,0 +1,25 @@
+; jsoo Execute smoke test.
+;
+; Compiles Execute.ml+Execute_error.ml DIRECTLY against the jsoo core
+; (spoc_core_exec_js), WITHOUT the sarek_execute library and WITHOUT native
+; spoc_core. This breaks the ctypes transitive dependency.
+;
+; spoc_core_exec_js is (wrapped false) so its modules (Sarek_ir_interp,
+; Sarek_type_helpers, Spoc_core, etc.) are in scope as top-level modules.
+; Execute.ml's "open Spoc_core" resolves to the jsoo Spoc_core.ml shim.
+; Execute.ml's "Sarek_ir_interp.*" resolves to the jsoo Sarek_ir_interp.
+
+(copy_files "../Execute.ml")
+
+(copy_files "../Execute_error.ml")
+
+(executable
+ (name smoke)
+ (modes js)
+ (modules Smoke Execute Execute_error)
+ (libraries
+  spoc_core_exec_js
+  spoc_framework
+  spoc_framework_registry
+  sarek_ir
+  sarek_registry))

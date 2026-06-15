@@ -1,7 +1,0 @@
-(executable
- (name Mandelbrot)
- (flags (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
- (libraries graphics unix spoc )
- (preprocessor_deps (package spoc))
- (preprocess (pps spoc_ppx))
-)

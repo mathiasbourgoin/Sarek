@@ -1,0 +1,9 @@
+(library
+ (name sarek_stdlib_meta)
+ (public_name sarek.stdlib_meta)
+ ; Pure library: NO spoc_core, NO ctypes. Only ppxlib + sarek_ppx_lib.
+ ; Registers stdlib intrinsic metadata (name/sarek-type/device-template/size)
+ ; into Sarek_ppx_registry + Sarek_registry-free path for FFI-free transpile.
+ (libraries sarek_registry sarek_ppx_lib)
+ (preprocess
+  (pps sarek_ppx_intrinsic)))

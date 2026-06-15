@@ -1,0 +1,55 @@
+(tests
+ (names
+  test_types
+  test_env
+  test_typer
+  test_lower
+  test_parse
+  test_core_primitives
+  test_tailrec
+  test_tailrec_analysis
+  test_tailrec_elim
+  test_tailrec_bounded
+  test_tailrec_pragma
+  test_native_helpers
+  test_native_intrinsics
+  test_error
+  test_quote
+  test_lower_ir
+  test_reserved
+  test_ppx_registry
+  test_quote_ir
+  test_convergence
+  test_scheme
+  test_mono
+  test_ir_interp
+  test_execute
+  test_kirc_kernel)
+ ; Link sarek_stdlib to trigger auto-registration of intrinsics
+ (libraries sarek_ppx_lib sarek_stdlib sarek alcotest ppxlib str)
+ (preprocess
+  (pps ppxlib.metaquot)))
+
+(test
+ (name test_cpu_runtime)
+ (libraries sarek alcotest))
+
+; Fusion tests use sarek library directly (no ppx needed)
+
+(test
+ (name test_fusion)
+ (libraries sarek))
+
+; Interpreter tests removed - Sarek_interp was legacy SPOC-dependent
+
+; Float32 module tests
+
+(test
+ (name test_float32)
+ (libraries sarek))
+
+; Float64 module tests
+
+(test
+ (name test_float64)
+ (libraries sarek.float64))

@@ -1,0 +1,79 @@
+(library
+ (name sarek_frontend)
+ (public_name sarek.frontend)
+ (wrapped false)
+ (libraries ppxlib sarek_ir)
+ (flags
+  (:standard -w +8-4))
+ (preprocess
+  (pps ppxlib.metaquot))
+ (modules
+  Sarek_types
+  Sarek_scheme
+  Sarek_core_primitives
+  Sarek_ppx_registry
+  Sarek_env
+  Sarek_error
+  Sarek_reserved
+  Sarek_parse
+  Sarek_parse_helpers
+  Sarek_ast
+  Sarek_typed_ast
+  Sarek_typer
+  Sarek_convergence
+  Sarek_lower_ir
+  Sarek_quote_ir
+  Sarek_ir_ppx
+  Sarek_mono
+  Sarek_debug
+  Sarek_tailrec_analysis
+  Sarek_tailrec_elim
+  Sarek_tailrec_bounded
+  Sarek_tailrec_pragma
+  Sarek_tailrec))
+
+(library
+ (name sarek_native_gen)
+ (public_name sarek.native_gen)
+ (wrapped false)
+ (libraries ppxlib spoc_core sarek_ir sarek_frontend)
+ (flags
+  (:standard -w +8-4))
+ (preprocess
+  (pps ppxlib.metaquot))
+ (modules
+  Kirc_Ast
+  Sarek_lower
+  Sarek_quote
+  Sarek_native_helpers
+  Sarek_native_intrinsics
+  Sarek_native_gen_base
+  Sarek_native_gen_expr
+  Sarek_native_gen
+  Sarek_native_gen_kernel))
+
+; Facade: empty (modules), re-exports both sub-libraries. Both sub-libs are
+; (wrapped false), so their modules are exposed at top level (e.g. Sarek_typer,
+; Sarek_quote) via re_export — consumers reference them unqualified, not as
+; Sarek_ppx_lib.Foo.
+
+(library
+ (name sarek_ppx_lib)
+ (public_name sarek.ppx.lib)
+ (libraries
+  (re_export sarek_frontend)
+  (re_export sarek_native_gen))
+ (modules))
+
+(library
+ (name sarek_ppx)
+ (public_name sarek.ppx)
+ (kind ppx_rewriter)
+ ; Link sarek_stdlib so its module init registers types/intrinsics at PPX load time
+ ; Link sarek_float64 so Float64 intrinsics are available (optional for runtime linking)
+ (libraries ppxlib sarek_ppx_lib sarek_stdlib sarek_float64 unix)
+ (preprocess
+  (pps ppxlib.metaquot))
+ (modules Sarek_ppx))
+
+; Sarek_external removed - was legacy SPOC feature

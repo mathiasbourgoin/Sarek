@@ -1,0 +1,13 @@
+; sarek/core_js/webgpu/lessons - jsoo composition driver for the "Composing
+; kernels" course lesson.
+;
+; Build explicitly (not included in @install or dune runtest):
+;   dune build sarek/core_js/webgpu/lessons/compose_driver.bc.js
+
+(executable
+ (name compose_driver)
+ (modules compose_driver)
+ (libraries spoc_webgpu_runtime sarek_transpile js_of_ocaml)
+ (preprocess
+  (pps js_of_ocaml-ppx))
+ (modes js))

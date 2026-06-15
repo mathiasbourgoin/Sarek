@@ -1,0 +1,31 @@
+; CUDA Plugin - Pure OCaml with ctypes
+; No C stubs required
+; Linking this library automatically registers the CUDA backend
+;
+; Dependencies: Only framework SDK + IR types, NOT full sarek library
+
+(library
+ (name sarek_cuda)
+ (public_name sarek-cuda.plugin)
+ (optional)
+ (libraries
+  ctypes
+  ctypes.foreign
+  spoc_framework
+  spoc_framework_registry
+  sarek_ir
+  sarek_registry
+  sarek_backend_error
+  sarek_codegen
+  (re_export spoc_core))
+ (modules
+  Cuda_error
+  Cuda_types
+  Cuda_bindings
+  Cuda_nvrtc
+  Cuda_api
+  Cuda_plugin_base
+  Cuda_plugin
+  Sarek_ir_cuda
+  Sarek_ir_ptx)
+ (preprocess no_preprocessing))

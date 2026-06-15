@@ -1,0 +1,22 @@
+; Tests for sarek_ppx library
+
+(test
+ (name test_sarek_reserved)
+ (modules test_sarek_reserved)
+ (libraries sarek_ppx_lib alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(test
+ (name test_sarek_error)
+ (modules test_sarek_error)
+ (libraries sarek_ppx_lib alcotest str)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(test
+ (name test_sarek_debug)
+ (modules test_sarek_debug)
+ (libraries sarek_ppx_lib alcotest)
+ (instrumentation
+  (backend bisect_ppx)))

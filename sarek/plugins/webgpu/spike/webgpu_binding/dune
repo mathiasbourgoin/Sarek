@@ -1,0 +1,18 @@
+; sarek/plugins/webgpu/spike/webgpu_binding - WebGPU jsoo spike
+;
+; SPIKE: de-risking proof that OCaml/jsoo can drive WebGPU end-to-end.
+; NOT part of the regular build; only built explicitly:
+;   dune build sarek/plugins/webgpu/spike/webgpu_binding/webgpu_jsoo_spike.bc.js
+;
+; Intentionally excluded from @install and default alias.
+
+(executable
+ (name webgpu_jsoo_spike)
+ (modules webgpu_jsoo_spike)
+ (libraries js_of_ocaml)
+ (preprocess
+  (pps js_of_ocaml-ppx))
+ (js_of_ocaml
+  (flags
+   (--opt 1 --no-source-map)))
+ (modes js))
