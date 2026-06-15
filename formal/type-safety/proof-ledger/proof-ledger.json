@@ -1,0 +1,943 @@
+{
+  "project": "type-safety",
+  "branch": "formal/convergence-safety-phase1a",
+  "phase": "T3-S8 (GPUSpec, done)",
+  "toolchain": {
+    "rocq": "9.1.1",
+    "ocaml": "5.4.0"
+  },
+  "summary": {
+    "proven": 90,
+    "definitions": 36,
+    "total": 90,
+    "admits": 0
+  },
+  "cmbt": {
+    "id": "T1-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "property": "coq_model_vs_sarek_typer_agree",
+    "qcheck_cases": 2000,
+    "qcheck_pass": 2000,
+    "errors": 0,
+    "fails": 0,
+    "finding": "F-TS-01 (ELet scope leak, RESOLVED)"
+  },
+  "entries": [
+    {
+      "id": "infer_lit_int",
+      "kind": "theorem",
+      "statement": "infer_type env (ELit (LInt n)) = inl (TPrim TInt32)",
+      "status": "proven",
+      "proof": "reflexivity (literal rule computes definitionally)",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "infer_lit_bool",
+      "kind": "theorem",
+      "statement": "infer_type env (ELit (LBool b)) = inl (TPrim TBool)",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "infer_var_bound",
+      "kind": "theorem",
+      "statement": "lookup_env env x = Some t -> infer_type env (EVar x) = inl t",
+      "status": "proven",
+      "proof": "intros env x t H; simpl; rewrite H; reflexivity",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "lookup_env_sound",
+      "kind": "theorem",
+      "statement": "lookup_env env x = Some t -> In (x, t) env",
+      "status": "proven",
+      "proof": "induction on env with t generalized; String.eqb case split via String.eqb_eq; left/right",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "infer_type_sound",
+      "kind": "theorem",
+      "statement": "infer_type env e = inl t -> has_type env e t",
+      "status": "proven",
+      "proof": "structural induction on e (env reverted); ELit destruct l + injection + constructor; EVar destruct lookup + HT_Var; ELet destruct infer_type env e1 + HT_Let via two IHs",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "lookup_env_correct",
+      "kind": "lemma",
+      "statement": "lookup_env env x = Some t -> forall t', lookup_env env x = Some t' -> t = t'",
+      "status": "proven",
+      "proof": "rewrite H in H'; injection H' as ->; reflexivity (lookup_env is a partial function)",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 2
+    },
+    {
+      "id": "has_type_det",
+      "kind": "lemma",
+      "statement": "has_type env e t1 -> has_type env e t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "induction on first derivation (explicit IH names IH1/IH2 to survive auto-naming), inversion on second; EVar uses lookup_env_correct; ELet chains both IHs after matching the e1 type",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 2
+    },
+    {
+      "id": "infer_type_complete",
+      "kind": "lemma",
+      "statement": "has_type env e t -> infer_type env e = inl t",
+      "status": "proven",
+      "proof": "induction on has_type; HT_Var immediate (rewrite H \u2014 constructor carries lookup_env x = Some t directly); HT_Let rewrites with both IHs",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 2
+    },
+    {
+      "id": "type_preservation",
+      "kind": "theorem",
+      "statement": "infer_type env e = inl t <-> has_type env e t",
+      "status": "proven",
+      "proof": "split into infer_type_sound (->) and infer_type_complete (<-); central T1-SOUND theorem",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 2
+    },
+    {
+      "id": "pre_type_ind_strong",
+      "kind": "lemma",
+      "statement": "custom strong induction for pre_type (Forall IH for PTuple)",
+      "status": "proven",
+      "proof": "fix IH 1; induction list with Forall_cons",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "follow_ground_prim",
+      "kind": "lemma",
+      "statement": "follow fuel s (PPrim p) = PPrim p",
+      "status": "proven",
+      "proof": "reflexivity (follow is a Definition, iota reduces immediately)",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "follow_ground_reg",
+      "kind": "lemma",
+      "statement": "follow fuel s (PReg r) = PReg r",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "follow_ground_tuple",
+      "kind": "lemma",
+      "statement": "follow fuel s (PTuple ts) = PTuple ts",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "follow_pvar_none",
+      "kind": "lemma",
+      "statement": "subst_lookup s id = None -> follow fuel s (PVar id) = PVar id",
+      "status": "proven",
+      "proof": "unfold follow; destruct fuel; simpl; rewrite Hnone",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "prim_type_beq_true",
+      "kind": "lemma",
+      "statement": "prim_type_beq p1 p2 = true <-> p1 = p2",
+      "status": "proven",
+      "proof": "split; destruct p1 p2; discriminate/reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "prim_type_beq_false",
+      "kind": "lemma",
+      "statement": "prim_type_beq p1 p2 = false <-> p1 <> p2",
+      "status": "proven",
+      "proof": "split; destruct p2; discriminate/contradiction",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "reg_type_beq_true",
+      "kind": "lemma",
+      "statement": "reg_type_beq r1 r2 = true <-> r1 = r2",
+      "status": "proven",
+      "proof": "split; destruct r1 r2; discriminate/reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "reg_type_beq_false",
+      "kind": "lemma",
+      "statement": "reg_type_beq r1 r2 = false <-> r1 <> r2",
+      "status": "proven",
+      "proof": "split; destruct r2; discriminate/contradiction",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "subst_lookup_head",
+      "kind": "lemma",
+      "statement": "subst_lookup ((id, t) :: s) id = Some t",
+      "status": "proven",
+      "proof": "simpl; rewrite Nat.eqb_refl; reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "occurs_ground_false",
+      "kind": "lemma",
+      "statement": "occurs_in fuel s id (PPrim p) = false",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "occurs_ground_reg_false",
+      "kind": "lemma",
+      "statement": "occurs_in fuel s id (PReg r) = false",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "prim_type_beq_refl",
+      "kind": "lemma",
+      "statement": "prim_type_beq p p = true",
+      "status": "proven",
+      "proof": "destruct p; reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "reg_type_beq_refl",
+      "kind": "lemma",
+      "statement": "reg_type_beq r r = true",
+      "status": "proven",
+      "proof": "destruct r; reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_fun_prim_prim",
+      "kind": "lemma",
+      "statement": "unify_fun (S n) s (PPrim p1) (PPrim p2) = if prim_type_beq p1 p2 then Some s else None",
+      "status": "proven",
+      "proof": "reflexivity (follow Definition + struct fuel annotation enables iota reduction)",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_fun_reg_reg",
+      "kind": "lemma",
+      "statement": "unify_fun (S n) s (PReg r1) (PReg r2) = if reg_type_beq r1 r2 then Some s else None",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_fun_var_prim",
+      "kind": "lemma",
+      "statement": "follow n s (PVar id) = PVar id -> unify_fun (S n) s (PVar id) (PPrim p) = ...",
+      "status": "proven",
+      "proof": "unfold follow in Hfoll; simpl; rewrite Hfoll; reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_fun_var_reg",
+      "kind": "lemma",
+      "statement": "follow n s (PVar id) = PVar id -> unify_fun (S n) s (PVar id) (PReg r) = ...",
+      "status": "proven",
+      "proof": "unfold follow in Hfoll; simpl; rewrite Hfoll; reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_zero_none",
+      "kind": "lemma",
+      "statement": "unify_fun 0 s t1 t2 = None",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_prim_sound",
+      "kind": "theorem",
+      "statement": "unify_fun fuel s (PPrim p1) (PPrim p2) = Some s' -> s' = s /\\ p1 = p2",
+      "status": "proven",
+      "proof": "destruct fuel; rewrite unify_fun_prim_prim; destruct prim_type_beq; inversion H; prim_type_beq_true",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_prim_complete",
+      "kind": "theorem",
+      "statement": "fuel > 0 -> unify_fun fuel s (PPrim p) (PPrim p) = Some s",
+      "status": "proven",
+      "proof": "destruct fuel; rewrite unify_fun_prim_prim; prim_type_beq_refl",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_reg_sound",
+      "kind": "theorem",
+      "statement": "unify_fun fuel s (PReg r1) (PReg r2) = Some s' -> s' = s /\\ r1 = r2",
+      "status": "proven",
+      "proof": "destruct fuel; rewrite unify_fun_reg_reg; reg_type_beq_true",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_reg_complete",
+      "kind": "theorem",
+      "statement": "fuel > 0 -> unify_fun fuel s (PReg r) (PReg r) = Some s",
+      "status": "proven",
+      "proof": "destruct fuel; rewrite unify_fun_reg_reg; reg_type_beq_refl",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_var_binds_prim",
+      "kind": "theorem",
+      "statement": "follow n s (PVar id) = PVar id -> unify_fun (S n) s (PVar id) (PPrim p) = Some s' -> subst_lookup s' id = Some (PPrim p)",
+      "status": "proven",
+      "proof": "rewrite unify_fun_var_prim; occurs_ground_false; inversion H; subst_lookup_head",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "unify_var_binds_reg",
+      "kind": "theorem",
+      "statement": "follow n s (PVar id) = PVar id -> unify_fun (S n) s (PVar id) (PReg r) = Some s' -> subst_lookup s' id = Some (PReg r)",
+      "status": "proven",
+      "proof": "rewrite unify_fun_var_reg; occurs_ground_reg_false; inversion H; subst_lookup_head",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "occurs_check_blocks_prim",
+      "kind": "theorem",
+      "statement": "occurs_in n s id (PPrim p) = false",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "occurs_check_blocks_reg",
+      "kind": "theorem",
+      "statement": "occurs_in n s id (PReg r) = false",
+      "status": "proven",
+      "proof": "reflexivity",
+      "file": "theories/UnifySpec.v",
+      "tick": 3
+    },
+    {
+      "id": "sarek_type_eq_dec",
+      "kind": "lemma",
+      "statement": "forall t1 t2 : sarek_type, {t1 = t2} + {t1 <> t2}",
+      "status": "proven",
+      "proof": "fix IH 1; destruct t1 as [p|r|sv|sa ms|lf sf|lt]; destruct t2 as [...]; prim_type_eq_dec/reg_type_eq_dec/mem_space_eq_dec + inner IHL fix for list cases (TFun/TTuple); injection H as <- _ / <- for each injection step",
+      "file": "theories/VecSpec.v",
+      "tick": 4
+    },
+    {
+      "id": "infer_mem_type_sound",
+      "kind": "theorem",
+      "statement": "infer_mem_type env e = inl t -> has_mem_type env e t",
+      "status": "proven",
+      "proof": "intros env e t H; revert env t H; induction e; for MCore: infer_type_sound; for EVecGet/EVecSet: destruct on inl(TVec elem_t) then inl(TPrim TInt32), eapply HMT_VecGet/VecSet; for EArrGet/EArrSet: destruct inl(TArr elem_t ms), eapply HMT_ArrGet/ArrSet with (m:=ms)",
+      "file": "theories/VecSpec.v",
+      "tick": 4
+    },
+    {
+      "id": "infer_mem_type_complete",
+      "kind": "theorem",
+      "statement": "has_mem_type env e t -> infer_mem_type env e = inl t",
+      "status": "proven",
+      "proof": "intros env0 e0 t0 H; induction H; for HMT_Core: match goal to find has_type hyp, rewrite infer_type_complete; for HMT_VecGet/ArrGet: rewrite IH1 IH2; for HMT_VecSet/ArrSet: rewrite IH1 IH2 IH3, destruct sarek_type_eq_dec elem_t elem_t (left branch)",
+      "file": "theories/VecSpec.v",
+      "tick": 4
+    },
+    {
+      "id": "has_mem_type_det",
+      "kind": "lemma",
+      "statement": "has_mem_type env e t1 -> has_mem_type env e t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "pose proof infer_mem_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity (infer_mem_type is deterministic as a function)",
+      "file": "theories/VecSpec.v",
+      "tick": 4
+    },
+    {
+      "id": "mem_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_mem_type env e = inl t <-> has_mem_type env e t",
+      "status": "proven",
+      "proof": "split; apply infer_mem_type_sound / infer_mem_type_complete",
+      "file": "theories/VecSpec.v",
+      "tick": 4
+    },
+    {
+      "id": "field_lookup_sound",
+      "kind": "lemma",
+      "statement": "field_lookup field fields = Some t -> In (field, t) fields",
+      "status": "proven",
+      "proof": "induction on fields as [(f, ft) :: rest]; String.eqb_spec for reflection; left/right branches via injection + subst",
+      "file": "theories/RegistrySpec.v",
+      "tick": 5
+    },
+    {
+      "id": "infer_rec_type_sound",
+      "kind": "theorem",
+      "statement": "infer_rec_type env e = inl t -> has_rec_type env e t",
+      "status": "proven",
+      "proof": "intros env e t H; revert env t H; induction e; for RMem: infer_mem_type_sound; for EFieldGet: destruct inl(TRecord rname rflds), destruct field_lookup, HRT_FieldGet via IHe; for EFieldSet: destruct TRecord, field_lookup, value type, sarek_type_eq_dec, HRT_FieldSet via IHe1/IHe2",
+      "file": "theories/RegistrySpec.v",
+      "tick": 5
+    },
+    {
+      "id": "infer_rec_type_complete",
+      "kind": "theorem",
+      "statement": "has_rec_type env e t -> infer_rec_type env e = inl t",
+      "status": "proven",
+      "proof": "intros env0 e0 t0 H; induction H; for HRT_Mem: match goal for has_mem_type, rewrite infer_mem_type_complete; for HRT_FieldGet: rewrite IH, rewrite field_lookup; for HRT_FieldSet: rewrite IH1, IH2, IH3, destruct sarek_type_eq_dec field_t field_t (left branch)",
+      "file": "theories/RegistrySpec.v",
+      "tick": 5
+    },
+    {
+      "id": "has_rec_type_det",
+      "kind": "lemma",
+      "statement": "has_rec_type env e t1 -> has_rec_type env e t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "pose proof infer_rec_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity (infer_rec_type is deterministic as a function)",
+      "file": "theories/RegistrySpec.v",
+      "tick": 5
+    },
+    {
+      "id": "rec_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_rec_type env e = inl t <-> has_rec_type env e t",
+      "status": "proven",
+      "proof": "split; apply infer_rec_type_sound / infer_rec_type_complete",
+      "file": "theories/RegistrySpec.v",
+      "tick": 5
+    },
+    {
+      "id": "infer_cf_type_sound",
+      "kind": "theorem",
+      "statement": "infer_cf_type env e = inl t -> has_cf_type env e t",
+      "status": "proven",
+      "proof": "intros env e t H; revert env t H; induction e as [re | cond IHcond then_e IHthen | ...]; for CFRec: infer_rec_type_sound; for CFIfThen/IfElse: destruct cond/then/else results and eq_dec branches, apply HCF_If*; for CFFor: destruct lo/hi/body, apply HCF_For with t_body; for CFWhile: destruct cond/body, HCF_While; for CFSeq: HCF_Seq with t1",
+      "file": "theories/ControlFlowSpec.v",
+      "tick": 6
+    },
+    {
+      "id": "infer_cf_type_complete",
+      "kind": "theorem",
+      "statement": "has_cf_type env e t -> infer_cf_type env e = inl t",
+      "status": "proven",
+      "proof": "induction H as [...]; for HCF_Rec: infer_rec_type_complete; for HCF_IfThen/IfElse: rewrite IHcond/IHthen/IHelse, destruct sarek_type_eq_dec X X (left branch, right is exfalso); for HCF_For: rewrite IHlo/IHhi/IHbody, two eq_dec self-checks; for HCF_While: rewrite IHcond/IHbody; for HCF_Seq: rewrite IH1/IH2",
+      "file": "theories/ControlFlowSpec.v",
+      "tick": 6
+    },
+    {
+      "id": "has_cf_type_det",
+      "kind": "lemma",
+      "statement": "has_cf_type env e t1 -> has_cf_type env e t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "pose proof infer_cf_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity (infer_cf_type is deterministic as a function)",
+      "file": "theories/ControlFlowSpec.v",
+      "tick": 6
+    },
+    {
+      "id": "cf_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_cf_type env e = inl t <-> has_cf_type env e t",
+      "status": "proven",
+      "proof": "split; apply infer_cf_type_sound / infer_cf_type_complete",
+      "file": "theories/ControlFlowSpec.v",
+      "tick": 6
+    },
+    {
+      "id": "infer_op_type_sound",
+      "kind": "theorem",
+      "statement": "infer_op_type env e = inl t -> has_op_type env e t",
+      "status": "proven",
+      "proof": "induction e as [ce | op lhs IHl rhs IHr | op' e' IHop]; OPCf: infer_cf_type_sound; OPBinop: destruct lhs/rhs results, sarek_type_eq_dec t1=t2, then 19-goal destruct op with explicit N-M: goal selectors for NumericBinop/IntegerBinop/BoolBinop/EqBinop/CmpBinop groups; OPUnop: destruct op, Neg: is_numeric check, Not: sarek_type_eq_dec bool check, Lnot: is_integer check",
+      "file": "theories/OperatorSpec.v",
+      "tick": 7
+    },
+    {
+      "id": "infer_op_type_complete",
+      "kind": "theorem",
+      "statement": "has_op_type env e t -> infer_op_type env e = inl t",
+      "status": "proven",
+      "proof": "induction H; HOT_CF: infer_cf_type_complete; HOT_NumericBinop/IntegerBinop: rewrite IH1/IH2, eq_dec self, destruct op (discriminate non-matching), destruct is_numeric/is_integer eqn (reflexivity or congruence); HOT_BoolBinop: rewrite IH1/IH2, eq_dec self, nested eq_dec TPrim TBool self; HOT_EqBinop: rewrite IH1/IH2, eq_dec self, destruct op (discriminate), reflexivity; HOT_CmpBinop: similar with is_numeric check; HOT_Neg/HOT_Lnot: rewrite IH, is_numeric/is_integer check; HOT_Not: rewrite IH, eq_dec TPrim TBool self",
+      "file": "theories/OperatorSpec.v",
+      "tick": 7
+    },
+    {
+      "id": "has_op_type_det",
+      "kind": "lemma",
+      "statement": "has_op_type env e t1 -> has_op_type env e t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "pose proof infer_op_type_complete H1/H2; rewrite Ho1 in Ho2; injection Ho2 as <-; reflexivity",
+      "file": "theories/OperatorSpec.v",
+      "tick": 7
+    },
+    {
+      "id": "op_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_op_type env e = inl t <-> has_op_type env e t",
+      "status": "proven",
+      "proof": "split; apply infer_op_type_sound / infer_op_type_complete",
+      "file": "theories/OperatorSpec.v",
+      "tick": 7
+    },
+    {
+      "id": "infer_fun_type_sound",
+      "kind": "theorem",
+      "statement": "infer_fun_type env e = inl t -> has_fun_type env e t",
+      "status": "proven",
+      "proof": "induction e as [oe | fn IHfn arg IHarg | fn_name p_name p_ty ret_ty body IHbody cont IHcont]; FEOp: infer_op_type_sound; FEApp: destruct fn result, destruct tfn to TFun, destruct param list to single p_ty :: nil, destruct arg result, sarek_type_eq_dec targ p_ty, apply HFT_App; FELetRec: destruct body result in extended (p_name,p_ty)::(fn_name,fn_ty)::env, sarek_type_eq_dec tbody ret_ty, apply HFT_LetRec with IHcont on fn-only env",
+      "file": "theories/FunSpec.v",
+      "tick": 8
+    },
+    {
+      "id": "infer_fun_type_complete",
+      "kind": "theorem",
+      "statement": "has_fun_type env e t -> infer_fun_type env e = inl t",
+      "status": "proven",
+      "proof": "induction H; HFT_Op: infer_op_type_complete; HFT_App: rewrite IH1/IH2, sarek_type_eq_dec p_ty self reflexivity; HFT_LetRec: rewrite IH1, sarek_type_eq_dec ret_ty self, exact IH2",
+      "file": "theories/FunSpec.v",
+      "tick": 8
+    },
+    {
+      "id": "has_fun_type_det",
+      "kind": "lemma",
+      "statement": "has_fun_type env e t1 -> has_fun_type env e t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "pose proof infer_fun_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity",
+      "file": "theories/FunSpec.v",
+      "tick": 8
+    },
+    {
+      "id": "fun_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_fun_type env e = inl t <-> has_fun_type env e t",
+      "status": "proven",
+      "proof": "split; apply infer_fun_type_sound / infer_fun_type_complete",
+      "file": "theories/FunSpec.v",
+      "tick": 8
+    },
+    {
+      "id": "infer_mut_type_sound",
+      "kind": "theorem",
+      "statement": "infer_mut_type env mu e = inl t -> has_mut_type env mu e t",
+      "status": "proven",
+      "proof": "induction e as [fe | name init IHinit body IHbody | name value IHvalue]; MEFun: infer_fun_type_sound; MELetMut: destruct init result, apply HMT_LetMut with t:=tinit using IHinit/IHbody on extended (name,t)::env and name::mu; MEAssign: destruct value result, destruct lookup_env env name, destruct is_mutable mu name, sarek_type_eq_dec tv tdecl, apply HMT_Assign",
+      "file": "theories/MutSpec.v",
+      "tick": 9
+    },
+    {
+      "id": "infer_mut_type_complete",
+      "kind": "theorem",
+      "statement": "has_mut_type env mu e t -> infer_mut_type env mu e = inl t",
+      "status": "proven",
+      "proof": "induction H; HMT_Fun: infer_fun_type_complete; HMT_LetMut: rewrite IH1, exact IH2; HMT_Assign: rewrite IH, rewrite lookup hyp, rewrite is_mutable hyp, subst tv, sarek_type_eq_dec tdecl self reflexivity",
+      "file": "theories/MutSpec.v",
+      "tick": 9
+    },
+    {
+      "id": "has_mut_type_det",
+      "kind": "lemma",
+      "statement": "has_mut_type env mu e t1 -> has_mut_type env mu e t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "pose proof infer_mut_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity",
+      "file": "theories/MutSpec.v",
+      "tick": 9
+    },
+    {
+      "id": "mut_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_mut_type env mu e = inl t <-> has_mut_type env mu e t",
+      "status": "proven",
+      "proof": "split; apply infer_mut_type_sound / infer_mut_type_complete",
+      "file": "theories/MutSpec.v",
+      "tick": 9
+    },
+    {
+      "id": "pat_expr_ind_strong",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "forall P, (forall me, P (PEMut me)) -> (forall scrut, P scrut -> forall branches, Forall (fun b => P (snd b)) branches -> P (PEMatch scrut branches)) -> forall e, P e",
+      "status": "proven",
+      "proof": "custom strong induction principle for pat_expr (Forall hypothesis over branch bodies); fix IH 1 with nested Forall-list induction (Defined so it computes); the P-scrut argument precedes the branches binder so that 'induction e as [me | scrut IHscrut branches Hbranches]' binds the IHs in the right slots",
+      "file": "theories/PatternSpec.v",
+      "tick": 10
+    },
+    {
+      "id": "check_branches_sound",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "Forall (fun b => forall env' mu' t', infer_pat_type env' mu' (snd b) = inl t' -> has_pat_type env' mu' (snd b) t') branches -> check_branches infer_pat_type env mu constrs result_ty branches = inl tt -> branches_have_type env mu constrs result_ty branches",
+      "status": "proven",
+      "proof": "induction on branches; destruct head (cname,bvar,body), inversion on the per-body Forall, destruct lookup_constr/infer head body/sarek_type_eq_dec tbody result_ty, apply BHT_cons, recurse with the Forall tail",
+      "file": "theories/PatternSpec.v",
+      "tick": 10
+    },
+    {
+      "id": "infer_pat_type_sound",
+      "kind": "theorem",
+      "statement": "infer_pat_type env mu e = inl t -> has_pat_type env mu e t",
+      "status": "proven",
+      "proof": "induction e using pat_expr_ind_strong; PEMut: infer_mut_type_sound; PEMatch: destruct scrutinee result, destruct tscrut keeping only TVariant, inversion on the branch Forall (destruct on the list itself cannot infer the elimination motive), head branch via lookup_constr + IHscrut + Hhead, remaining via check_branches_sound",
+      "file": "theories/PatternSpec.v",
+      "tick": 10
+    },
+    {
+      "id": "infer_pat_type_complete",
+      "kind": "theorem",
+      "statement": "has_pat_type env mu e t -> infer_pat_type env mu e = inl t",
+      "status": "proven",
+      "proof": "induction H using has_pat_type_mind with P0 := check_branches ... = inl tt; HPT_Mut: infer_mut_type_complete; HPT_Match: rewrite scrut IH, lookup hyp, head body IH, rest-check IH; BHT_nil: reflexivity; BHT_cons: rewrite lookup hyp + head IH, sarek_type_eq_dec result_ty self, exact tail IH",
+      "file": "theories/PatternSpec.v",
+      "tick": 10
+    },
+    {
+      "id": "has_pat_type_det",
+      "kind": "lemma",
+      "statement": "has_pat_type env mu e t1 -> has_pat_type env mu e t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "pose proof infer_pat_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity",
+      "file": "theories/PatternSpec.v",
+      "tick": 10
+    },
+    {
+      "id": "pat_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_pat_type env mu e = inl t <-> has_pat_type env mu e t",
+      "status": "proven",
+      "proof": "split; apply infer_pat_type_sound / infer_pat_type_complete",
+      "file": "theories/PatternSpec.v",
+      "tick": 10
+    },
+    {
+      "id": "expr_ind_strong",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "forall P, (forall l, P (ELit l)) -> (forall x, P (EVar x)) -> (forall x e1 e2, P e1 -> P e2 -> P (ELet x e1 e2)) -> (forall es, Forall P es -> P (ETuple es)) -> forall e, P e",
+      "status": "proven",
+      "proof": "custom strong induction principle for expr (Forall hypothesis for ETuple); proved by fix IH 1 with Forall-list nested induction (Defined, so it computes)",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "infer_type_etuple",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "infer_type env (ETuple es) = match infer_list env es with inl ts => inl (TTuple ts) | inr err => inr err end",
+      "status": "proven",
+      "proof": "reflexivity (unfolds the ETuple case of infer_type)",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "infer_list_sound_helper",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "Forall (fun e => forall env t, infer_type env e = inl t -> has_type env e t) es -> infer_list env es = inl ts -> Forall2 (has_type env) es ts",
+      "status": "proven",
+      "proof": "induction on the Forall IH list; unfolds infer_list_with accumulator",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "infer_type_sound_inner",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "infer_type env ex = inl ty -> has_type env ex ty",
+      "status": "proven",
+      "proof": "induction ex using expr_ind_strong; ETuple case delegates to infer_list_sound_helper; the public infer_type_sound is its instantiation",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "has_type_list_det",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "(forall e t1 t2, In e es -> has_type env e t1 -> has_type env e t2 -> t1 = t2) -> Forall2 (has_type env) es ts1 -> Forall2 (has_type env) es ts2 -> ts1 = ts2",
+      "status": "proven",
+      "proof": "induction on the first Forall2 with ts2 generalized; inversion on the second",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "has_type_det_inner",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "has_type env ex t1 -> has_type env ex t2 -> t1 = t2",
+      "status": "proven",
+      "proof": "induction ex using expr_ind_strong; ETuple case delegates to has_type_list_det; the public has_type_det is its instantiation",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "infer_list_complete_helper",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "Forall (fun e => forall env t, has_type env e t -> infer_type env e = inl t) es -> Forall2 (has_type env) es ts -> infer_list env es = inl ts",
+      "status": "proven",
+      "proof": "induction on the Forall IH list; inversion on Forall2; rebuilds infer_list_with",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "infer_type_complete_inner",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "has_type env ex ty -> infer_type env ex = inl ty",
+      "status": "proven",
+      "proof": "induction ex using expr_ind_strong; ETuple case delegates to infer_list_complete_helper; the public infer_type_complete is its instantiation",
+      "file": "theories/TypeSafetySpec.v",
+      "tick": 1
+    },
+    {
+      "id": "constr_expr_ind_strong",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "forall P, (forall pe, P (CEPat pe)) -> (forall rname declared provided, Forall (fun fld => P (snd fld)) provided -> P (CERecord rname declared provided)) -> (forall tyname constrs cname arg, match arg with Some a => P a | None => True end -> P (CEConstr tyname constrs cname arg)) -> forall e, P e",
+      "proof": "custom strong induction for constr_expr; fix IH 1, nested Forall-list induction over provided fields and a Some/None split for the optional CEConstr payload; Defined so it computes",
+      "status": "proven",
+      "file": "theories/ConstrSpec.v",
+      "tick": 11
+    },
+    {
+      "id": "check_fields_sound",
+      "kind": "lemma",
+      "role": "helper",
+      "statement": "Forall (fun fld => forall env' mu' t', infer_constr_type env' mu' (snd fld) = inl t' -> has_constr_type env' mu' (snd fld) t') provided -> check_fields infer_constr_type env mu declared provided = inl tt -> fields_have_type env mu declared provided",
+      "proof": "induction on provided; destruct head (fname,fexpr), inversion on per-field Forall, destruct field_lookup/infer fexpr/sarek_type_eq_dec got declared_ty, apply FHT_cons, recurse with the Forall tail",
+      "status": "proven",
+      "file": "theories/ConstrSpec.v",
+      "tick": 11
+    },
+    {
+      "id": "infer_constr_type_sound",
+      "kind": "theorem",
+      "statement": "infer_constr_type env mu e = inl t -> has_constr_type env mu e t",
+      "proof": "induction e using constr_expr_ind_strong; CEPat: infer_pat_type_sound wrapped as CPatternErr; CERecord: destruct check_fields, apply HCT_Record via check_fields_sound; CEConstr: destruct lookup_constr then payload x arg (4-way) \u2014 Some/Some uses sarek_type_eq_dec + HCT_ConstrSome with explicit pty, None/None uses HCT_ConstrNone, mixed arities discriminate",
+      "status": "proven",
+      "file": "theories/ConstrSpec.v",
+      "tick": 11
+    },
+    {
+      "id": "infer_constr_type_complete",
+      "kind": "theorem",
+      "statement": "has_constr_type env mu e t -> infer_constr_type env mu e = inl t",
+      "proof": "induction H using has_constr_type_mind with P0 := check_fields ... = inl tt; HCT_Pat: infer_pat_type_complete; HCT_Record: rewrite check IH; HCT_ConstrNone: rewrite lookup hyp; HCT_ConstrSome: rewrite lookup hyp + arg IH + sarek_type_eq_dec pty self; FHT_nil: reflexivity; FHT_cons: rewrite lookup hyp + field IH + sarek_type_eq_dec declared_ty self, exact tail IH",
+      "status": "proven",
+      "file": "theories/ConstrSpec.v",
+      "tick": 11
+    },
+    {
+      "id": "has_constr_type_det",
+      "kind": "lemma",
+      "statement": "has_constr_type env mu e t1 -> has_constr_type env mu e t2 -> t1 = t2",
+      "proof": "pose proof infer_constr_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity",
+      "status": "proven",
+      "file": "theories/ConstrSpec.v",
+      "tick": 11
+    },
+    {
+      "id": "constr_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_constr_type env mu e = inl t <-> has_constr_type env mu e t",
+      "proof": "split; apply infer_constr_type_sound / infer_constr_type_complete",
+      "status": "proven",
+      "file": "theories/ConstrSpec.v",
+      "tick": 11
+    },
+    {
+      "id": "infer_special_type_sound",
+      "kind": "theorem",
+      "statement": "infer_special_type env mu e = inl t -> has_special_type env mu e t",
+      "proof": "induction e (4 special_expr cases); SEConstr: infer_constr_type_sound wrapped as SConstrErr; SEReturn: destruct allowed (false discriminates), body IH gives HST_Return; SECreateArray: destruct infer size + sarek_type_eq_dec sz (TPrim TInt32), subst, HST_CreateArray via size IH; SETyped: destruct infer body + sarek_type_eq_dec got annot, subst, HST_Typed via body IH",
+      "status": "proven",
+      "file": "theories/SpecialSpec.v",
+      "tick": 12
+    },
+    {
+      "id": "infer_special_type_complete",
+      "kind": "theorem",
+      "statement": "has_special_type env mu e t -> infer_special_type env mu e = inl t",
+      "proof": "induction H (4 judgement cases); HST_Constr: infer_constr_type_complete; HST_Return: rewrite body IH; HST_CreateArray: rewrite size IH + sarek_type_eq_dec (TPrim TInt32) self reflexive; HST_Typed: rewrite body IH + sarek_type_eq_dec annot self reflexive",
+      "status": "proven",
+      "file": "theories/SpecialSpec.v",
+      "tick": 12
+    },
+    {
+      "id": "has_special_type_det",
+      "kind": "lemma",
+      "statement": "has_special_type env mu e t1 -> has_special_type env mu e t2 -> t1 = t2",
+      "proof": "pose proof infer_special_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity",
+      "status": "proven",
+      "file": "theories/SpecialSpec.v",
+      "tick": 12
+    },
+    {
+      "id": "special_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_special_type env mu e = inl t <-> has_special_type env mu e t",
+      "proof": "split; apply infer_special_type_sound / infer_special_type_complete",
+      "status": "proven",
+      "file": "theories/SpecialSpec.v",
+      "tick": 12
+    },
+    {
+      "id": "infer_gpu_type_sound",
+      "kind": "theorem",
+      "statement": "infer_gpu_type env mu e = inl t -> has_gpu_type env mu e t",
+      "proof": "induction e (3 gpu_expr cases); GESpecial: infer_special_type_sound wrapped as GSpecialErr; GELetShared: destruct ty (only TArr reaches), destruct mem (only Shared), recurse under ((name,ty)::env) via body IH giving HGT_LetShared; GESuperstep: destruct infer body + sarek_type_eq_dec bt (TPrim TUnit), subst, HGT_Superstep via body IH",
+      "status": "proven",
+      "file": "theories/GPUSpec.v",
+      "tick": 13
+    },
+    {
+      "id": "infer_gpu_type_complete",
+      "kind": "theorem",
+      "statement": "has_gpu_type env mu e t -> infer_gpu_type env mu e = inl t",
+      "proof": "induction H (3 judgement cases); HGT_Special: infer_special_type_complete; HGT_LetShared: ty already TArr _ Shared, simpl exposes the recursive call, exact body IH; HGT_Superstep: rewrite body IH + sarek_type_eq_dec (TPrim TUnit) self reflexive",
+      "status": "proven",
+      "file": "theories/GPUSpec.v",
+      "tick": 13
+    },
+    {
+      "id": "has_gpu_type_det",
+      "kind": "lemma",
+      "statement": "has_gpu_type env mu e t1 -> has_gpu_type env mu e t2 -> t1 = t2",
+      "proof": "pose proof infer_gpu_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity",
+      "status": "proven",
+      "file": "theories/GPUSpec.v",
+      "tick": 13
+    },
+    {
+      "id": "gpu_type_preservation",
+      "kind": "theorem",
+      "statement": "infer_gpu_type env mu e = inl t <-> has_gpu_type env mu e t",
+      "proof": "split; apply infer_gpu_type_sound / infer_gpu_type_complete",
+      "status": "proven",
+      "file": "theories/GPUSpec.v",
+      "tick": 13
+    }
+  ],
+  "cmbt_t2_unify": {
+    "id": "T2-UNIFY-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "property": "unify_model_vs_sarek_unify_ground",
+    "qcheck_cases": 1000,
+    "qcheck_pass": 1000,
+    "smoke_cases": 15,
+    "smoke_pass": 15,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t2_vec": {
+    "id": "T2-VEC-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t2_registry": {
+    "id": "T2-REGISTRY-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s1": {
+    "id": "T3-S1-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s2": {
+    "id": "T3-S2-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s3": {
+    "id": "T3-S3-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s4": {
+    "id": "T3-S4-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s5": {
+    "id": "T3-S5-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 11,
+    "smoke_pass": 11,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s6": {
+    "id": "T3-S6-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 13,
+    "smoke_pass": 13,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s7": {
+    "id": "T3-S7-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 12,
+    "smoke_pass": 12,
+    "errors": 0,
+    "fails": 0
+  }
+}

@@ -1,0 +1,13 @@
+-R theories TypeSafety
+theories/TypeSafetySpec.v
+theories/UnifySpec.v
+theories/VecSpec.v
+theories/RegistrySpec.v
+theories/ControlFlowSpec.v
+theories/OperatorSpec.v
+theories/FunSpec.v
+theories/MutSpec.v
+theories/PatternSpec.v
+theories/ConstrSpec.v
+theories/SpecialSpec.v
+theories/GPUSpec.v

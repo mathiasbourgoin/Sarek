@@ -1,0 +1,16 @@
+DIGEST 15e00446b66aae20a5066031b7bc8023
+FGPUExtraction
+R711:720 Stdlib.extraction.Extraction <> <> lib
+R722:735 Stdlib.extraction.ExtrOcamlBasic <> <> lib
+R737:751 Stdlib.extraction.ExtrOcamlNatInt <> <> lib
+R785:798 TypeSafety.TypeSafetySpec <> <> lib
+R832:838 TypeSafety.VecSpec <> <> lib
+R872:883 TypeSafety.RegistrySpec <> <> lib
+R917:931 TypeSafety.ControlFlowSpec <> <> lib
+R965:976 TypeSafety.OperatorSpec <> <> lib
+R1010:1016 TypeSafety.FunSpec <> <> lib
+R1050:1056 TypeSafety.MutSpec <> <> lib
+R1090:1100 TypeSafety.PatternSpec <> <> lib
+R1134:1143 TypeSafety.ConstrSpec <> <> lib
+R1177:1187 TypeSafety.SpecialSpec <> <> lib
+R1221:1227 TypeSafety.GPUSpec <> <> lib
