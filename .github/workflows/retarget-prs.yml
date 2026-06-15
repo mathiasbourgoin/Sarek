@@ -1,0 +1,81 @@
+name: Retarget PRs After Merge
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  retarget-dependent-prs:
+    # Only run if the PR was actually merged (not just closed)
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find and retarget dependent PRs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const mergedPR = context.payload.pull_request;
+            const oldBase = mergedPR.head.ref; // The branch that was just merged
+            const newBase = mergedPR.base.ref; // The branch it was merged into (usually 'main')
+            
+            console.log(`✅ PR #${mergedPR.number} merged: ${oldBase} → ${newBase}`);
+            console.log(`🔍 Looking for PRs targeting '${oldBase}'...`);
+            
+            // Find all open PRs
+            const { data: allPRs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+            
+            // Filter PRs that target the now-merged branch
+            const dependentPRs = allPRs.filter(pr => pr.base.ref === oldBase);
+            
+            if (dependentPRs.length === 0) {
+              console.log('✨ No dependent PRs found. All done!');
+              return;
+            }
+            
+            console.log(`📋 Found ${dependentPRs.length} PR(s) to retarget:`);
+            
+            // Retarget each dependent PR
+            for (const pr of dependentPRs) {
+              try {
+                console.log(`  🔄 Retargeting PR #${pr.number}: "${pr.title}"`);
+                console.log(`     From: ${pr.base.ref} → To: ${newBase}`);
+                
+                // Update the PR base
+                await github.rest.pulls.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pr.number,
+                  base: newBase
+                });
+                
+                // Add a comment explaining the retarget
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  body: `🤖 **Automatic Base Update**
+                  
+This PR was targeting \`${oldBase}\`, which was just merged into \`${newBase}\` via PR #${mergedPR.number}.
+
+The base branch has been automatically updated to \`${newBase}\` to maintain the merge train.
+
+Please check for any conflicts that may have appeared.`
+                });
+                
+                console.log(`     ✅ Successfully retargeted PR #${pr.number}`);
+                
+              } catch (error) {
+                console.error(`     ❌ Failed to retarget PR #${pr.number}:`, error.message);
+              }
+            }
+            
+            console.log(`\n🎉 Retargeting complete! Updated ${dependentPRs.length} PR(s).`);

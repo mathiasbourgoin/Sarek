@@ -1,0 +1,18 @@
+; FFI-free gate — regression target ensuring the numeric Bigarray path
+; builds without ctypes or unix. If either re-enters spoc_core_base,
+; this target fails to link as bytecode / js_of_ocaml.
+;
+; This stanza must NOT list ctypes or unix in (libraries ...).
+
+(library
+ (name stub_ops)
+ (modules Stub_ops)
+ (libraries spoc_core_base)
+ (preprocess no_preprocessing))
+
+(executable
+ (name gate_numeric)
+ (modes byte js)
+ (modules gate_numeric)
+ (libraries spoc_core_base stub_ops)
+ (preprocess no_preprocessing))

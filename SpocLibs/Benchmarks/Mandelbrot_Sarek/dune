@@ -1,9 +1,0 @@
-(executable
- (name Mandelbrot)
- (flags (:standard -ccopt -L$CUDA_PATH -cclib -lnvrtc -w -26 -w -27 -w -33 -w -32))
-(preprocess
-  (action
-    (system "camlp4 -I `ocamlfind query spoc.external_kernels` -I `ocamlfind query sarek.internal_kernels` -parser o -parser op -printer o internal_kernels.cma  -printer external_kernels.cma %{input-file}")))
- (preprocessor_deps (package spoc) (package sarek))
- (libraries spoc graphics camlp4 sarek unix)
-)

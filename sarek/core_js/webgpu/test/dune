@@ -1,0 +1,13 @@
+; sarek/core_js/webgpu/test - browser driver for the SpocRT end-to-end test.
+;
+; SEPARATE target: not included in @install or dune runtest.
+; Build explicitly:
+;   dune build sarek/core_js/webgpu/test/runtime_driver.bc.js
+
+(executable
+ (name runtime_driver)
+ (modules runtime_driver)
+ (libraries spoc_webgpu_runtime sarek_transpile js_of_ocaml)
+ (preprocess
+  (pps js_of_ocaml-ppx))
+ (modes js))

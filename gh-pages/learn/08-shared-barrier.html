@@ -1,0 +1,155 @@
+---
+layout: page
+title: "Lesson 8 — Shared memory & barriers"
+---
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.css">
+<link rel="stylesheet" href="{{ site.baseurl }}/stylesheets/learn.css">
+
+<div class="lesson-container">
+
+  <h1>Lesson 8 — Shared memory &amp; barriers</h1>
+
+  <p>
+    So far every thread has read directly from <strong>global memory</strong>
+    (the large buffers uploaded from the CPU). Global memory is relatively slow
+    because each access crosses the full GPU memory bus. Most GPUs also expose a
+    much faster scratchpad: <strong>shared memory</strong> (called
+    <em>workgroup-local</em> memory in WebGPU/WGSL). A block of threads can
+    load data into shared memory once and then read it many times at near-zero
+    cost.
+  </p>
+
+  <p>
+    The pattern used in almost every tiled GPU algorithm is:
+  </p>
+  <ol>
+    <li>All threads in a workgroup <strong>load</strong> their element from
+        global memory into a shared array.</li>
+    <li>Call <code>block_barrier ()</code> &mdash; this is a
+        <strong>synchronisation barrier</strong>. Every thread in the workgroup
+        stops here until <em>all</em> threads have finished their load. Without
+        it, some threads might read stale values from shared memory written by
+        a slower neighbour.</li>
+    <li>Now every thread can safely <strong>read</strong> any element of the
+        shared array &mdash; guaranteed to be fully populated &mdash; and write
+        the result to global memory.</li>
+  </ol>
+
+  <p>
+    In Sarek, shared memory is declared with the
+    <code>let%shared</code> binding:
+  </p>
+  <pre class="lesson-output" style="margin-bottom:1rem;">let%shared (tile : float32) = ()</pre>
+  <p>
+    The <code>()</code> means &ldquo;allocate one slot per thread in the
+    workgroup&rdquo; (the size comes from the dispatch configuration). The array
+    is then indexed by <code>thread_idx_x</code>, the <em>local</em> thread
+    index within the workgroup.
+  </p>
+
+  <h2>Your task</h2>
+  <p>
+    The kernel below implements a <strong>tiled copy</strong>: load each
+    element from <code>input</code> into the shared tile, synchronise, then
+    write it back to <code>output</code>. One line is missing &mdash; the
+    barrier between the load and the store. Replace the placeholder
+    <code>(* TODO: add a barrier here *) ()</code> with
+    <code>block_barrier ()</code>, then click
+    <strong>Run on my GPU</strong>.
+  </p>
+
+  <p>
+    <em>Hint:</em> avoid naming variables <code>gid</code> in kernels &mdash;
+    the WGSL backend reserves that name for the built-in; use
+    <code>global_thread_id</code> directly.
+  </p>
+
+  <label class="lesson-editor-label" for="kernel-source">Kernel source</label>
+  <textarea id="kernel-source">fun (input : float32 vector) (output : float32 vector) ->
+  let open Std in
+  let%shared (tile : float32) = () in
+  tile.(thread_idx_x) <- input.(global_thread_id) ;
+  (* TODO: add a barrier here *) () ;
+  output.(global_thread_id) <- tile.(thread_idx_x)</textarea>
+
+  <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+    <button class="lesson-run-btn" id="run-btn">Run on my GPU</button>
+    <button class="wgsl-toggle-btn" id="wgsl-toggle">Show generated WGSL</button>
+    <span class="lesson-status" id="status-bar"></span>
+  </div>
+
+  <pre class="lesson-output" id="output-pane">Fill in the TODO and click "Run on my GPU".</pre>
+  <pre class="lesson-wgsl-pre" id="wgsl-pane" style="display:none;"></pre>
+
+  <details>
+    <summary>Hint</summary>
+    <p>
+      Replace <code>(* TODO: add a barrier here *) ()</code> with
+      <code>block_barrier ()</code>. The barrier takes a unit argument
+      (<code>()</code>) and returns unit &mdash; it fits directly as a
+      statement in a semicolon-separated sequence.
+    </p>
+    <p>
+      After the fix the key lines read:
+    </p>
+    <pre>  tile.(thread_idx_x) &lt;- input.(global_thread_id) ;
+  block_barrier () ;
+  output.(global_thread_id) &lt;- tile.(thread_idx_x)</pre>
+  </details>
+
+  <details>
+    <summary>Why does this matter?</summary>
+    <p>
+      Without the barrier, thread 0 might reach the store
+      <code>output.(global_thread_id) &lt;- tile.(thread_idx_x)</code>
+      before thread 1 has finished writing its slot into <code>tile</code>.
+      In a more complex tiled algorithm where threads exchange data through
+      shared memory (e.g. tiled matrix multiplication or tree reduction),
+      reading a neighbour&rsquo;s slot before it is written yields a race
+      condition. The barrier eliminates this by guaranteeing that all writes
+      to shared memory have completed before any read can proceed.
+    </p>
+    <p>
+      In this tiled-copy lesson each thread reads back only its own slot,
+      so the barrier is technically redundant for correctness here &mdash;
+      but inserting it is the habit that makes real tiled algorithms safe.
+    </p>
+  </details>
+
+  <div class="lesson-nav">
+    <a href="{{ site.baseurl }}/learn/07-compose.html">&larr; Lesson 7 &mdash; Composing kernels</a>
+    <a href="{{ site.baseurl }}/learn/09-reduction.html">Lesson 9 &mdash; Tree reduction &rarr;</a>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/mode/mllike/mllike.min.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_transpile.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_webgpu_runner.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_lesson.js"></script>
+<script>
+SarekLesson.init({
+  editorId:     'kernel-source',
+  runButtonId:  'run-btn',
+  outputId:     'output-pane',
+  statusId:     'status-bar',
+  wgslId:       'wgsl-pane',
+  wgslToggleId: 'wgsl-toggle',
+  n: 256,
+  starter:
+    'fun (input : float32 vector) (output : float32 vector) ->\n' +
+    '  let open Std in\n' +
+    '  let%shared (tile : float32) = () in\n' +
+    '  tile.(thread_idx_x) <- input.(global_thread_id) ;\n' +
+    '  (* TODO: add a barrier here *) () ;\n' +
+    '  output.(global_thread_id) <- tile.(thread_idx_x)',
+  buffers: {
+    input:  { role: 'input',  elementType: 'f32', gen: function(i) { return i * 0.5; } },
+    output: { role: 'output', elementType: 'f32' },
+  },
+  scalars:   {},
+  outName:   'output',
+  reference: function(i, inputs) { return inputs.input[i]; },
+});
+</script>

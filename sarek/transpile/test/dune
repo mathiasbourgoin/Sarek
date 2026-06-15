@@ -1,0 +1,17 @@
+; PR-5b FFI-free transpile proof
+;
+; Depends ONLY on sarek_transpile - no spoc_core, no ctypes.
+; Proves the full Float32.sin pipeline compiles and runs FFI-free.
+
+(executable
+ (name test_transpile_proof)
+ (modules test_transpile_proof)
+ (libraries sarek_transpile sarek_stdlib_meta)
+ (modes byte exe))
+
+; jsoo attempt: comment out if js_of_ocaml is unavailable
+; (executable
+;  (name test_transpile_proof_js)
+;  (modules test_transpile_proof)
+;  (libraries sarek_transpile sarek_stdlib_meta)
+;  (modes js))

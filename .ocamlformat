@@ -1,0 +1,17 @@
+version=0.28.1
+ocaml-version=4.14
+wrap-fun-args=false
+let-binding-spacing=compact
+field-space=loose
+break-separators=after
+space-around-arrays=false
+space-around-lists=false
+space-around-records=false
+space-around-variants=false
+dock-collection-brackets=true
+space-around-records=false
+sequence-style=separator
+doc-comments=before
+margin=80
+module-item-spacing=sparse
+parens-tuple=always

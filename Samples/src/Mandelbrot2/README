@@ -1,8 +1,0 @@
-Mandelbrot2
-computes and displays the mandelbrot set using 2 GPUs
-options:
- -device1 number of the device [0]
- -device2 number of the device [0]
- -width width of the image to compute [1024]
- -height height of the image to compute [1024]
- -max_iter max number of iterations [1024]

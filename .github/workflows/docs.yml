@@ -1,0 +1,81 @@
+name: Build and Deploy Documentation
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.4.0
+
+      - name: Install dependencies
+        run: |
+          opam install . --deps-only --with-doc
+          opam install odoc ppxlib dune js_of_ocaml js_of_ocaml-ppx js_of_ocaml-compiler
+
+      - name: Build Documentation
+        run: |
+          opam exec -- dune build @doc
+
+      - name: Apply Custom Style
+        run: |
+          # Find where odoc.css actually is
+          CSS_FILE=$(find _build -name "odoc.css" | head -n 1)
+          if [ -f "$CSS_FILE" ]; then
+            echo "Found odoc.css at $CSS_FILE"
+            chmod +w "$CSS_FILE"
+            cat docs/odoc_custom.css >> "$CSS_FILE"
+          else
+            echo "Error: odoc.css not found"
+            exit 1
+          fi
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: gh-pages
+
+      - name: Build transpiler JS bundle
+        run: |
+          opam exec -- dune build sarek/transpile/web/transpile_js.bc.js
+          cp _build/default/sarek/transpile/web/transpile_js.bc.js gh-pages/javascripts/sarek_transpile.js
+          opam exec -- dune build sarek/core_js/webgpu/lessons/compose_driver.bc.js
+          cp _build/default/sarek/core_js/webgpu/lessons/compose_driver.bc.js gh-pages/javascripts/spoc_compose.js
+
+      - name: Build Jekyll site
+        run: |
+          cd gh-pages
+          bundle install
+          bundle exec jekyll build
+
+      - name: Combine documentation
+        run: |
+          # Copy Jekyll output to deployment directory
+          mkdir -p _site
+          cp -r gh-pages/_site/* _site/
+          # Copy odoc output to spoc_docs subfolder
+          mkdir -p _site/spoc_docs
+          cp -r _build/default/_doc/_html/* _site/spoc_docs/
+          # Add .nojekyll to tell GitHub Pages not to process with Jekyll
+          touch _site/.nojekyll
+
+      - name: Deploy to GitHub Pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: _site
+          branch: gh-pages
+          clean: true # Clean the branch since we're deploying everything

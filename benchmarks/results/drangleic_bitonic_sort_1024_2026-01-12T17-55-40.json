@@ -1,0 +1,102 @@
+{
+  "benchmark": {
+    "name": "bitonic_sort",
+    "timestamp": "2026-01-12T17:55:40Z",
+    "git_commit": "cafcfee16302ff01c6bb1bab3b01e3334dda8f81",
+    "parameters": {
+      "size": 1024,
+      "block_size": 256,
+      "iterations": 20,
+      "warmup": 5
+    }
+  },
+  "system": {
+    "hostname": "drangleic",
+    "os": "Linux",
+    "kernel": "6.18.3-2-cachyos",
+    "cpu": {
+      "model": "AMD Ryzen 7 5700X3D 8-Core Processor",
+      "cores": 8,
+      "threads": 16
+    },
+    "memory_gb": 62.6881103515625,
+    "devices": [
+      {
+        "compute_capability": "12.0",
+        "id": 0,
+        "name": "NVIDIA GeForce RTX 5070 Ti",
+        "framework": "CUDA",
+        "memory_gb": 15.4471435546875
+      },
+      {
+        "id": 1,
+        "name": "NVIDIA GeForce RTX 5070 Ti",
+        "framework": "OpenCL",
+        "memory_gb": 15.4471435546875
+      },
+      {
+        "compute_capability": "1.4",
+        "id": 2,
+        "name": "NVIDIA GeForce RTX 5070 Ti",
+        "framework": "Vulkan",
+        "memory_gb": 15.9208984375
+      }
+    ]
+  },
+  "results": [
+    {
+      "verified": false,
+      "device_id": 0,
+      "device_name": "NVIDIA GeForce RTX 5070 Ti",
+      "framework": "CUDA",
+      "iterations": [],
+      "mean_ms": 0.0,
+      "stddev_ms": 0.0,
+      "median_ms": 0.0,
+      "min_ms": 0.0,
+      "max_ms": 0.0
+    },
+    {
+      "verified": true,
+      "throughput_gflops": 0.034312387273562485,
+      "device_id": 1,
+      "device_name": "NVIDIA GeForce RTX 5070 Ti",
+      "framework": "OpenCL",
+      "iterations": [
+        24.830102920532227, 32.305002212524414, 32.453060150146484,
+        30.263900756835938, 29.568910598754883, 30.598878860473633,
+        30.11798858642578, 32.24587440490723, 31.47101402282715,
+        28.892040252685547, 30.562877655029297, 28.99789810180664,
+        30.81488609313965, 29.481887817382812, 30.920028686523438,
+        25.811195373535156, 25.7871150970459, 26.176929473876953,
+        25.42710304260254, 25.52008628845215
+      ],
+      "mean_ms": 29.11233901977539,
+      "stddev_ms": 2.5685787540802556,
+      "median_ms": 29.843449592590332,
+      "min_ms": 24.830102920532227,
+      "max_ms": 32.453060150146484
+    },
+    {
+      "verified": true,
+      "throughput_gflops": 0.1703946400063477,
+      "device_id": 2,
+      "device_name": "NVIDIA GeForce RTX 5070 Ti",
+      "framework": "Vulkan",
+      "iterations": [
+        5.354881286621094, 5.388975143432617, 5.39398193359375,
+        6.1740875244140625, 6.144046783447266, 6.137847900390625,
+        5.800008773803711, 6.009101867675781, 5.59687614440918,
+        5.726099014282227, 6.15382194519043, 6.0100555419921875,
+        6.356954574584961, 7.4939727783203125, 6.196022033691406,
+        5.374908447265625, 5.568981170654297, 5.281209945678711,
+        6.067037582397461, 6.07609748840332
+      ],
+      "mean_ms": 5.915248394012451,
+      "stddev_ms": 0.507097909486501,
+      "median_ms": 6.009578704833984,
+      "min_ms": 5.281209945678711,
+      "max_ms": 7.4939727783203125
+    }
+  ]
+}

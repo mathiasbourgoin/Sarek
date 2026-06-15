@@ -1,0 +1,36 @@
+; spoc_core_exec_js — jsoo Execute core: FFI-free Vector/Device/Transfer/Log/Kernel_arg
+; plus the full interpreter stack compiled against the jsoo Spoc_core.
+;
+; Modules here are compiled with jsoo's Spoc_core shim, so Spoc_core.Vector = Vector_jsx,
+; Spoc_core.Kernel_arg = Kernel_arg_jsx, etc. No ctypes, no unix.
+;
+; The interpreter stack is the SINGLE source in ../interp/, pulled in via
+; copy_files and recompiled here against the jsoo Spoc_core (no literal copies).
+
+(copy_files ../interp/*.ml)
+
+(copy_files ../interp/*.mli)
+
+(library
+ (name spoc_core_exec_js)
+ (public_name sarek.core_exec_js)
+ (wrapped false)
+ (libraries spoc_framework spoc_core_base sarek_ir sarek_registry)
+ (modules
+  Interp_error
+  Sarek_float32
+  Sarek_value
+  Sarek_ir_interp_value
+  Sarek_ir_interp_intrinsics
+  Sarek_ir_interp_eval
+  Sarek_type_helpers
+  Memory_jsx
+  Jsoo_exec_ops
+  Vector_jsx
+  Kernel_arg_jsx
+  Device_jsx
+  Transfer_jsx
+  Log_jsx
+  Spoc_core
+  Sarek_ir_interp)
+ (preprocess no_preprocessing))

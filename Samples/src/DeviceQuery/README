@@ -1,4 +1,0 @@
-DeviceQuery:
-this sample gives you info about your system presenting every device compatible with Spoc
-this sample does'nt se any kernels
-$ ./DeviceQuery.nat

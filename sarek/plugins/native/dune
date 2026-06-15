@@ -1,0 +1,14 @@
+; Native Plugin - CPU execution backend
+; Uses OCaml 5 Domains for parallelism
+
+(library
+ (name sarek_native)
+ (libraries
+  unix
+  ctypes
+  spoc_framework
+  spoc_framework_registry
+  sarek
+  (re_export spoc_core))
+ (modules Native_error Native_plugin_base Native_plugin)
+ (preprocess no_preprocessing))

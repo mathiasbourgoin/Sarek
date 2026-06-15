@@ -1,0 +1,37 @@
+; Golden-snapshot harness for code generators
+;
+; Depends directly on sarek_codegen (always available, no FFI select needed).
+; All 4 generators are pure OCaml — no ctypes, no spoc_core.
+
+(library
+ (name codegen_golden_backends)
+ (wrapped false)
+ (modules gen_cuda gen_opencl gen_metal gen_glsl gen_wgsl)
+ (libraries sarek_ir sarek_codegen))
+
+(rule
+ (action
+  (copy gen_cuda.real.ml gen_cuda.ml)))
+
+(rule
+ (action
+  (copy gen_opencl.real.ml gen_opencl.ml)))
+
+(rule
+ (action
+  (copy gen_metal.real.ml gen_metal.ml)))
+
+(rule
+ (action
+  (copy gen_glsl.real.ml gen_glsl.ml)))
+
+(rule
+ (action
+  (copy gen_wgsl.real.ml gen_wgsl.ml)))
+
+(test
+ (name test_codegen_golden)
+ (modules test_codegen_golden)
+ (libraries codegen_golden_backends sarek_ir alcotest)
+ (instrumentation
+  (backend bisect_ppx)))

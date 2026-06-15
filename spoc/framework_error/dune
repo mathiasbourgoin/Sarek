@@ -1,0 +1,11 @@
+; Pure ctypes-free backend error types.
+; No dependency on ctypes, spoc_core, or Device.t - safe to use in
+; bytecode-only and jsoo targets.
+
+(library
+ (name sarek_backend_error)
+ (public_name spoc.backend-error)
+ (modules Backend_error)
+ (preprocess no_preprocessing)
+ (instrumentation
+  (backend bisect_ppx)))

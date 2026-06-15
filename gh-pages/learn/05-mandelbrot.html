@@ -1,0 +1,169 @@
+---
+layout: page
+title: "Lesson 5 — Mandelbrot (generate an image)"
+---
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.css">
+<link rel="stylesheet" href="{{ site.baseurl }}/stylesheets/learn.css">
+
+<div class="lesson-container">
+
+  <h1>Lesson 5 — Mandelbrot (generate an image)</h1>
+
+  <p>
+    So far each thread did a little arithmetic. Now each thread will run a
+    <em>loop</em> and we will <strong>draw the result</strong>. This is the
+    Mandelbrot set: for every pixel we treat its position as a complex number
+    <code>c = x0 + i·y0</code>, iterate <code>z &larr; z² + c</code> starting
+    from <code>z = 0</code>, and count how many steps it takes for
+    <code>|z|</code> to exceed 2 (we stop at <code>max_iter</code>). Points that
+    never escape are <em>in</em> the set.
+  </p>
+
+  <p>
+    One GPU thread computes one pixel. The kernel writes the normalised escape
+    count (<code>iter / max_iter</code>) into <code>output</code>; the page maps
+    that to a colour and paints it on the canvas. The whole image
+    (<span id="dims-note">240&times;240</span> pixels) is computed in one
+    dispatch on your GPU.
+  </p>
+
+  <h2>Your task</h2>
+  <p>
+    The escape iteration is <code>z &larr; z² + c</code>. Writing
+    <code>z = zx + i·zy</code> and <code>c = x0 + i·y0</code>, the real part of
+    <code>z²&nbsp;+&nbsp;c</code> is <code>zx² − zy² + x0</code> and the
+    imaginary part is <code>2·zx·zy + y0</code> (already written for you).
+    Replace the <code>(* TODO *)</code> with the <strong>real part</strong>,
+    then click <strong>Run on my GPU</strong>.
+  </p>
+
+  <label class="lesson-editor-label" for="kernel-source">Kernel source</label>
+  <textarea id="kernel-source">fun (output : float32 vector) (width : int32) (height : int32) (max_iter : int32) ->
+  let open Std in
+  let idx = global_thread_id in
+  let px = idx mod width in
+  let py = idx / width in
+  if py &lt; height then begin
+    let x0 = (3.5 *. (float px /. float width)) -. 2.5 in
+    let y0 = (2.0 *. (float py /. float height)) -. 1.0 in
+    let zx = mut 0.0 in
+    let zy = mut 0.0 in
+    let iter = mut 0l in
+    while ((zx *. zx) +. (zy *. zy) &lt;= 4.0) &amp;&amp; (iter &lt; max_iter) do
+      let xt = (* TODO *) in
+      zy := (2.0 *. zx *. zy) +. y0 ;
+      zx := xt ;
+      iter := iter + 1l
+    done ;
+    output.(idx) &lt;- (float iter /. float max_iter)
+  end</textarea>
+
+  <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+    <button class="lesson-run-btn" id="run-btn">Run on my GPU</button>
+    <button class="wgsl-toggle-btn" id="wgsl-toggle">Show generated WGSL</button>
+    <span class="lesson-status" id="status-bar"></span>
+  </div>
+
+  <div class="lesson-canvas-row">
+    <figure>
+      <canvas class="lesson-canvas" id="output-canvas" width="240" height="240"></canvas>
+      <figcaption>Rendered on your GPU</figcaption>
+    </figure>
+  </div>
+
+  <pre class="lesson-output" id="output-pane">Fill in the TODO and click "Run on my GPU".</pre>
+  <pre class="lesson-wgsl-pre" id="wgsl-pane" style="display:none;"></pre>
+
+  <details>
+    <summary>Hint</summary>
+    <p>
+      The real part is <code>(zx *. zx) -. (zy *. zy) +. x0</code>. Note the
+      float operators <code>*.</code>, <code>-.</code>, <code>+.</code>.
+    </p>
+  </details>
+
+  <p class="lesson-disclaimer">
+    This uses a small 240&times;240 image and <code>max_iter = 100</code> so it
+    runs instantly. Larger images, deeper zooms, or higher iteration counts cost
+    proportionally more GPU time.
+  </p>
+
+  <div class="lesson-nav">
+    <a href="{{ site.baseurl }}/learn/04-bounds-if.html">&larr; Lesson 4 — Control flow and bounds</a>
+    <a href="{{ site.baseurl }}/learn/06-image-filter.html">Lesson 6 — Image filter &rarr;</a>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/mode/mllike/mllike.min.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_transpile.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_webgpu_runner.js"></script>
+<script src="{{ site.baseurl }}/javascripts/sarek_lesson.js"></script>
+<script>
+(function () {
+  var W = 240, H = 240, MAX = 100;
+
+  // float32 reference matching the kernel, for the auto-check.
+  function mandelRef(i, inputs, sc) {
+    var fr = Math.fround, w = sc.width, h = sc.height, max = sc.max_iter;
+    var px = i % w, py = Math.floor(i / w);
+    if (py >= h) return 0;
+    var x0 = fr(fr(3.5 * fr(px / w)) - 2.5);
+    var y0 = fr(fr(2.0 * fr(py / h)) - 1.0);
+    var zx = 0, zy = 0, it = 0;
+    while (fr(fr(zx * zx) + fr(zy * zy)) <= 4.0 && it < max) {
+      var xt = fr(fr(fr(zx * zx) - fr(zy * zy)) + x0);
+      zy = fr(fr(fr(2.0 * zx) * zy) + y0);
+      zx = xt; it++;
+    }
+    return it / max;
+  }
+
+  // Smooth palette: in-set (t=1) is black, escaping points get warm colours.
+  function palette(t) {
+    if (t >= 1) return [0, 0, 0];
+    var r = Math.floor(9 * (1 - t) * t * t * t * 255);
+    var g = Math.floor(15 * (1 - t) * (1 - t) * t * t * 255);
+    var b = Math.floor(8.5 * (1 - t) * (1 - t) * (1 - t) * t * 255);
+    return [r, g, b];
+  }
+
+  SarekLesson.init({
+    editorId:     'kernel-source',
+    runButtonId:  'run-btn',
+    outputId:     'output-pane',
+    statusId:     'status-bar',
+    wgslId:       'wgsl-pane',
+    wgslToggleId: 'wgsl-toggle',
+    width: W, height: H,
+    starter:
+      'fun (output : float32 vector) (width : int32) (height : int32) (max_iter : int32) ->\n' +
+      '  let open Std in\n' +
+      '  let idx = global_thread_id in\n' +
+      '  let px = idx mod width in\n' +
+      '  let py = idx / width in\n' +
+      '  if py < height then begin\n' +
+      '    let x0 = (3.5 *. (float px /. float width)) -. 2.5 in\n' +
+      '    let y0 = (2.0 *. (float py /. float height)) -. 1.0 in\n' +
+      '    let zx = mut 0.0 in\n' +
+      '    let zy = mut 0.0 in\n' +
+      '    let iter = mut 0l in\n' +
+      '    while ((zx *. zx) +. (zy *. zy) <= 4.0) && (iter < max_iter) do\n' +
+      '      let xt = (* TODO *) in\n' +
+      '      zy := (2.0 *. zx *. zy) +. y0 ;\n' +
+      '      zx := xt ;\n' +
+      '      iter := iter + 1l\n' +
+      '    done ;\n' +
+      '    output.(idx) <- (float iter /. float max_iter)\n' +
+      '  end',
+    buffers: { output: { role: 'output', elementType: 'f32' } },
+    scalars:   { width: W, height: H, max_iter: MAX },
+    outName:   'output',
+    colormap:  function (t) { return palette(t); },
+    canvasId:  'output-canvas',
+    reference: mandelRef,
+    maxBadFraction: 0.02,  // tolerate a few chaotic boundary pixels
+  });
+})();
+</script>

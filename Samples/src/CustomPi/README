@@ -1,5 +1,0 @@
-CustomPi:
-this sample uses custom vectors to compute on integer couples
-to test :
-$ ./Custom.nat 
-$ ./Custom.byte 

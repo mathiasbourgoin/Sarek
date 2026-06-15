@@ -1,7 +1,0 @@
-(executable
- (name Game)
- (flags (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
- (preprocess (pps spoc_ppx))
- (preprocessor_deps (package spoc))
- (libraries graphics unix spoc)
-)

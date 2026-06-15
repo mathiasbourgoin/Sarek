@@ -1,0 +1,9 @@
+; Test suite for Vulkan backend
+
+(test
+ (name test_vulkan_error)
+ (libraries sarek_vulkan alcotest str))
+
+(test
+ (name test_sarek_ir_glsl)
+ (libraries sarek_vulkan sarek_ir alcotest str))

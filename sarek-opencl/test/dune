@@ -1,0 +1,5 @@
+(tests
+ (names test_opencl_error test_sarek_ir_opencl)
+ (libraries sarek_opencl alcotest str)
+ (instrumentation
+  (backend bisect_ppx)))

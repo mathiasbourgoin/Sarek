@@ -1,5 +1,0 @@
-(executable
- (name DeviceQuery)
- (flags (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
- (libraries spoc)
-)

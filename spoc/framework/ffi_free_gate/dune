@@ -1,0 +1,12 @@
+; FFI-free gate — regression target ensuring spoc_framework builds without
+; ctypes or unix. If either re-enters spoc_framework, this target fails to
+; link as bytecode / js_of_ocaml.
+;
+; This stanza must NOT list ctypes or unix in (libraries ...).
+
+(executable
+ (name gate_framework)
+ (modes byte js)
+ (modules gate_framework)
+ (libraries spoc_framework)
+ (preprocess no_preprocessing))

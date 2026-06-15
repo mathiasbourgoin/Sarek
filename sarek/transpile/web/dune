@@ -1,0 +1,17 @@
+; sarek/transpile/web - js_of_ocaml shim for the in-browser playground
+;
+; SEPARATE target: dune build @install and dune runtest do NOT build this.
+; Only built explicitly:
+;   dune build sarek/transpile/web/transpile_js.bc.js
+
+(executable
+ (name transpile_js)
+ (modules transpile_js)
+ (libraries sarek_transpile sarek_stdlib_meta js_of_ocaml)
+ (preprocess
+  (pps js_of_ocaml-ppx))
+ (js_of_ocaml
+  ; --opt 3: full optimization; --no-source-map: smaller asset for the web page.
+  (flags
+   (--opt 3 --no-source-map)))
+ (modes js))

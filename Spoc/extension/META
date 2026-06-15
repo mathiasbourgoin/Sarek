@@ -1,4 +1,0 @@
-version = "0.1-alpha"
-requires = "camlp4 spoc"
-archive(syntax,preprocessor) = "kernels_ext.cma"
-archive(syntax,toploop)      = "kernels_ext.cma"

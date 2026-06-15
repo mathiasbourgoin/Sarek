@@ -1,7 +1,0 @@
-ClassifyDigits:
-	GPU accelerated version of the machine learning example from http://philtomson.github.io/blog/2014/05/29/comparing-a-machine-learning-algorithm-implemented-in-f-number-and-ocaml/
-
-	options:
-	-device number of the device [0]
-	-auto let Spoc handles transfers automatically [false]
-	-compute run the algorithm on the gpu [true]

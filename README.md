@@ -1,41 +1,368 @@
-[![Build Status](https://github.com/mathiasbourgoin/SPOC/actions/workflows/build.yml/badge.svg)](https://github.com/mathiasbourgoin/SPOC/actions?query=branch%3Amaster)
+# Sarek - GPU Computing for OCaml
 
-SPOC is a set of tools for GPGPU programming with OCaml.
+**SIMT Abstraction for Runtime Extensible Kernels**
 
-The SPOC library enables the detection and use of GPGPU devices with
-OCaml using Cuda and OpenCL. There is also a camlp4 syntax extension
-to handle external Cuda or OpenCL kernels, as well as a DSL to express
-GPGPU kernels from the OCaml code.
+[![Build Status](https://github.com/mathiasbourgoin/SPOC/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiasbourgoin/SPOC/actions)
 
-This work was part of my PhD thesis (UPMC-LIP6 laboratory, Paris,
-France) and was partially funded by the [OpenGPU](http://opengpu.net/)
-project. I continued this project in 2014-2015 in the
-[Verimag](http://www-verimag.imag.fr) laboratory (Grenoble, France)
-and then from 2015 to 2018 in the
-[LIFO](http://www.univ-orleans.fr/lifo/) laboratory in Orléans,
-France. I'm now working at [Nomadic Labs](https://nomadic-labs.com).
+Sarek is a PPX-based DSL that lets you write GPU kernels directly in OCaml syntax. Kernels compile to multiple backends (CUDA, OpenCL, Vulkan, Metal) without code changes.
 
-SPOC has been tested on multiple architectures and systems, mostly
-64-bit Linux and 64-bit OSX systems. It should work with Windows too.
+## What is Sarek?
 
-To be able to use SPOC, you'll need a computer capable of running
-OCaml (obviously) but also compatible with either OpenCL or Cuda. For
-Cuda you only need a current proprietary NVidia driver while for
-OpenCL you need to install the correct OpenCL implementation for your
-system. SPOC should compile anyway as everything is dynamically
-linked, but you'll need Cuda/OpenCL eventually to run your programs.
+**Sarek** is the user-facing DSL and compiler. Write kernels in OCaml with `[%kernel ...]`, and Sarek compiles them to GPU code at build time.
 
-# Docker image (*Probably deprecated*)
-[![](https://images.microbadger.com/badges/version/mathiasbourgoin/spoc.svg)](https://microbadger.com/images/mathiasbourgoin/spoc) [![](https://images.microbadger.com/badges/image/mathiasbourgoin/spoc.svg)](https://microbadger.com/images/mathiasbourgoin/spoc)
+**SPOC** (SIMT Programming for OCaml) is the underlying runtime providing device abstraction, plugin architecture, and backend infrastructure.
 
-(*The github page is largely deprecated. While it's being updated, github actions scripts (in
-`.github/workflows`) may show how to build and run tests*)  
-For more information, examples and live tutorials,
-please check the [github page](http://mathiasbourgoin.github.io/SPOC/):
+## Recent Development
 
-      more infos
-      how to build spoc
-      web examples
-      web tutorials
-      slides from past presentations
-      publications references
+This codebase has undergone significant modernization (2024-2026):
+
+- **OCaml 5.4 support** with effect handlers and domains
+- **Code quality improvements** across all GPU backends
+- **Structured error handling** replacing untyped exceptions
+- **Plugin-based architecture** for extensible backend support
+- **Test coverage** with unit and end-to-end tests
+- **Documentation** for all major components
+- **WGSL/WebGPU codegen** — a 5th transpiler backend emitting WGSL for browser-side execution
+- **In-browser Playground** — live kernel transpiler at [mathiasbourgoin.github.io/Sarek/playground.html](https://mathiasbourgoin.github.io/Sarek/playground.html)
+- **Interactive Learn course** — edit and run Sarek kernels on your GPU in the browser at [mathiasbourgoin.github.io/Sarek/learn/](https://mathiasbourgoin.github.io/Sarek/learn/)
+- **PTX direct emitter** *(experimental)* — `Sarek_ir_ptx` emits NVIDIA PTX directly from Sarek IR, bypassing NVRTC; validated on real hardware; foundation for formal backend verification
+
+The framework is actively maintained and uses modern OCaml features while preserving compatibility with existing SPOC code.
+
+**Note**: This recent rework was completed with assistance from AI agents. Feedback, bug reports, and contributions are welcome via [GitHub Issues](https://github.com/mathiasbourgoin/Sarek/issues).
+
+## Features
+
+### GPU Kernel Development
+
+Write GPU kernels in OCaml syntax using the `[%kernel ...]` PPX extension:
+
+```ocaml
+let vector_add =
+  [%kernel
+    fun (a : float32 vector) (b : float32 vector) (c : float32 vector) (n : int32) ->
+      let open Sarek_stdlib.Std in
+      let tid = global_thread_id in
+      if tid < n then c.(tid) <- a.(tid) + b.(tid)]
+```
+
+Kernels compile to multiple backends automatically without code changes.
+
+### Backend Support
+
+| Backend | Target | Status | Documentation |
+|---------|--------|--------|---------------|
+| **CUDA** | NVIDIA GPUs | ✓ | [sarek-cuda/](sarek-cuda/) |
+| **OpenCL** | Multi-vendor GPUs/CPUs | ✓ | [sarek-opencl/](sarek-opencl/) |
+| **Vulkan** | Cross-platform GPUs | ✓ | [sarek-vulkan/](sarek-vulkan/) |
+| **Metal** | Apple Silicon/Intel Macs | ✓ | [sarek-metal/](sarek-metal/) |
+| **Native** | CPU (parallel) | ✓ | [sarek/plugins/native/](sarek/plugins/native/) |
+| **Interpreter** | CPU (debugging) | ✓ | [sarek/plugins/interpreter/](sarek/plugins/interpreter/) |
+| **PTX (direct)** | NVIDIA GPUs | ⚗️ Experimental | [sarek/codegen/Sarek\_ir\_ptx.ml](sarek/codegen/Sarek_ir_ptx.ml) |
+
+### Core Features
+
+- **Type Safety**: GADTs and phantom types for compile-time guarantees
+- **Zero-Copy**: Efficient memory sharing between host and device
+- **Automatic Selection**: Runtime backend selection based on available hardware
+- **Intrinsics**: Extensive library of GPU intrinsics (math, atomics, barriers)
+- **Custom Types**: Support for records and variants in kernels
+- **Debug Logging**: Controlled via `SAREK_DEBUG` environment variable
+
+### Framework Architecture
+
+```
+spoc/              Low-level SDK and plugin interface
+├── framework/     Plugin registration and backend interface
+├── ir/            Intermediate representation (IR)
+└── registry/      Intrinsic function registry
+
+sarek/             Runtime and PPX compiler
+├── core/          Device abstraction and memory management
+├── framework/     Framework integration
+├── ppx/           Sarek PPX compiler
+├── sarek/         Unified execution dispatcher
+└── plugins/       Native and Interpreter backends
+
+GPU Backends:
+├── sarek-cuda/    NVIDIA CUDA backend
+├── sarek-opencl/  OpenCL backend (multi-vendor)
+├── sarek-vulkan/  Vulkan/GLSL backend
+└── sarek-metal/   Apple Metal backend
+
+Experimental:
+└── sarek/codegen/Sarek_ir_ptx.ml   Direct PTX emitter (spike)
+```
+
+## Experimental Features
+
+### PTX Direct Emitter (`Sarek_ir_ptx`)
+
+> ⚠️ **Experimental — incomplete, not production-ready.**
+
+`Sarek_ir_ptx` is a spike-level PTX code generator that emits NVIDIA PTX directly from Sarek IR, bypassing NVRTC entirely.
+
+**What works:**
+- Basic scalar and vector kernels (float32/int32 arithmetic, global memory loads/stores, barriers)
+- Thread ID / block ID / grid ID registers
+- Parameterised SM target (`?sm_target`, default `sm_86`)
+- `Cuda_api.Kernel.load_from_ptx` loads the PTX via `cuModuleLoadData` — automatically adapts the `.target` to the device's actual SM, so `sm_86` PTX runs on older hardware (tested: GTX 1070, sm_61)
+- End-to-end test in `sarek-cuda/test/test_ptx_external.ml`
+
+**What is missing (known gaps):**
+- Records and variants (`TRecord`, `TVariant`) — struct layout not implemented
+- Helper / device functions (`kern_funcs`, `EApp`) — `.func` directive
+- Array length tracking (`EArrayLen`)
+- Match expressions (`EMatch`, `SMatch`) — depends on variant lowering
+- Shared memory (`__shared__` / `.shared`) — not yet emitted
+- Full CI integration and ptxas validation gate
+
+**Intended purpose:** foundation for formal verification of the CUDA backend. Proving `Sarek_ir_ptx.ml` produces semantically correct PTX (against a Rocq PTX semantics) is the target of the planned `cuda-semantics` formal project.
+
+See `docs/plans/ptx-spike-findings.md` for the full PTX subset analysis.
+
+## Installation
+
+### Prerequisites
+
+- OCaml 5.4.0+ (local opam switch included in repository)
+- dune 3.15+
+- GPU backends (optional):
+  - **CUDA**: NVIDIA driver + CUDA toolkit (see CUDA requirements below)
+  - **OpenCL**: OpenCL implementation for your device
+  - **Vulkan**: Vulkan SDK + glslangValidator or Shaderc
+  - **Metal**: macOS 10.13+ (included with Xcode)
+
+The Native (CPU parallel) and Interpreter (CPU sequential) backends work without any GPU drivers.
+
+#### CUDA Requirements
+
+For NVIDIA GPUs, especially newer architectures:
+
+- **CUDA Toolkit**: 12.9 or later recommended
+- **Driver Version**: 
+  - CUDA 12.9 requires driver 575+
+  - CUDA 13.1+ requires driver 580+
+- **Blackwell GPUs** (RTX 5000 series, compute capability 12.0):
+  - Minimum: CUDA 12.9 + driver 575
+  - Recommended: CUDA 13.1 + driver 580+
+
+**Note**: The "CUDA Version" shown by `nvidia-smi` indicates the maximum CUDA runtime API version your driver supports. This may differ from your installed CUDA toolkit version, which is normal. For example, driver 575 with CUDA toolkit 12.9 will show "CUDA Version: 12.9" in `nvidia-smi`.
+
+### Installing via OPAM
+
+SPOC is not yet published to the OPAM repository, but you can use OPAM to install from source with all dependencies:
+
+```bash
+# Clone repository
+git clone https://github.com/mathiasbourgoin/Sarek.git
+cd Sarek
+
+# Install dependencies via OPAM (OCaml 5.4+)
+opam update
+opam install . --deps-only --working-dir
+
+# Build all backends
+dune build
+
+# Or build only specific backends you need
+dune build sarek sarek-cuda
+dune build sarek sarek-opencl
+```
+
+Backends detect compatible drivers at runtime. You can install backends even without corresponding GPU drivers - they will simply not be available for use.
+
+### Building from Source
+
+```bash
+# Clone and use local opam switch
+cd SPOC
+opam install . --deps-only
+
+# Build all packages
+dune build
+
+# Build specific backend
+dune build sarek-cuda
+dune build sarek-opencl
+```
+
+The framework uses dynamic linking, so you can build without GPU drivers installed. GPU support is detected at runtime.
+
+### Verifying Installation
+
+```bash
+# List all available devices
+dune exec -- sarek-device-info
+
+# Run unit tests
+dune runtest
+
+# Run fast benchmarks (Native + OpenCL if available)
+make benchmarks-fast
+
+# Run full benchmark suite on all available devices
+make benchmarks
+```
+
+The fast benchmarks use small problem sizes and complete in ~20 seconds, while the full benchmark suite exercises all backends with larger datasets.
+
+**Benchmark Suite**: 6 comprehensive benchmarks covering compute-bound (matrix multiplication, Mandelbrot), memory-bound (vector addition, reduction), and optimization patterns (transpose naive vs tiled). Results are published to an [interactive web viewer](https://mathiasbourgoin.github.io/Sarek/benchmarks/) with multiple visualization modes.
+
+## Usage
+
+### Basic Example
+
+```ocaml
+open Sarek
+module Device = Spoc_core.Device
+module Vector = Spoc_core.Vector
+
+(* Define a kernel *)
+let saxpy =
+  [%kernel
+    fun (a : float32 vector) (x : float32 vector)
+        (y : float32 vector) (alpha : float32) (n : int32) ->
+      let open Sarek_stdlib.Std in
+      let i = global_thread_id in
+      if i < n then y.(i) <- alpha *. x.(i) +. a.(i)]
+
+let () =
+  (* Initialize framework *)
+  let devs = Device.init ~frameworks:["CUDA"; "OpenCL"; "Native"; "Interpreter"] () in
+  let dev = devs.(0) in
+
+  (* Get IR from kernel *)
+  let _, kirc = saxpy in
+  let ir = match kirc.Sarek.Kirc_types.body_ir with
+    | Some ir -> ir | None -> failwith "No IR" in
+
+  (* Create vectors *)
+  let n = 1024 in
+  let a = Vector.create Vector.float32 n in
+  let x = Vector.create Vector.float32 n in
+  let y = Vector.create Vector.float32 n in
+
+  (* Execute kernel *)
+  let block = Execute.dims1d 256 in
+  let grid  = Execute.dims1d ((n + 255) / 256) in
+  Execute.run_vectors ~device:dev ~ir ~args:[Vec a; Vec x; Vec y; Float 2.5; Int n]
+    ~block ~grid ()
+```
+
+### Backend Selection
+
+```ocaml
+(* List available devices *)
+let devices = Device.all () in
+Array.iter (fun dev ->
+  Printf.printf "%s (%s)\n"
+    dev.Device.name
+    dev.Device.framework
+) devices
+
+(* Select specific backend *)
+let cuda_device = Device.by_framework "CUDA" in
+let opencl_device = Device.by_framework "OpenCL" in
+```
+
+See [sarek/sarek/README.md](sarek/sarek/README.md) for comprehensive usage documentation.
+
+## Testing
+
+```bash
+# Run all tests
+dune runtest
+
+# Run specific backend tests
+dune test sarek-cuda
+dune test sarek-opencl
+
+# Run with specific backend
+SAREK_BACKEND=cuda dune runtest
+```
+
+See [COVERAGE.md](COVERAGE.md) for coverage measurement instructions.
+
+## Troubleshooting
+
+### CUDA Issues
+
+**Error: `CUDA_ERROR_UNKNOWN(222)` when loading PTX on new GPUs**
+
+This error typically occurs on newer GPU architectures (e.g., Blackwell/RTX 5000 series) with mismatched CUDA versions:
+
+- **Solution**: Ensure you have CUDA 12.9+ installed with driver 575+
+- **Check versions**:
+  ```bash
+  nvidia-smi                    # Shows driver version and API level
+  nvcc --version                # Shows installed CUDA toolkit version
+  ```
+- **Common cause**: CUDA 13.1 requires driver 580+. If you have driver 575, use CUDA 12.9 instead.
+
+#### PTX compilation succeeds but module loading fails
+
+Sarek automatically handles forward compatibility by compiling PTX for `compute_90` on compute capability 9.0+ devices. The CUDA driver then JIT-compiles for your actual hardware (e.g., sm_120 for RTX 5070 Ti). This requires:
+- CUDA toolkit 12.9+ (for Blackwell GPU support)
+- Compatible driver version (see requirements above)
+
+#### Verifying CUDA setup
+
+```bash
+# Check if CUDA devices are detected
+nvidia-smi
+
+# Verify Sarek can find devices
+dune exec -- sarek-device-info
+
+# Check driver API compatibility
+cat /proc/driver/nvidia/version
+```
+
+### OpenCL Issues
+
+If OpenCL is not detecting your device, ensure you have the appropriate ICD (Installable Client Driver) installed:
+- **NVIDIA**: Install NVIDIA driver with OpenCL support
+- **AMD**: Install ROCm or AMDGPU-PRO driver
+- **Intel**: Install Intel OpenCL runtime
+
+## Documentation
+
+- [GitHub Pages](http://mathiasbourgoin.github.io/Sarek/) - User guides, tutorials, and API docs
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture and design
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
+- [PROJECT_STATUS.md](PROJECT_STATUS.md) - Current project status
+- [Backend Documentation](sarek-cuda/) - Individual backend READMEs
+
+For API documentation, see inline comments and README files in each package directory.
+
+### Contributing to Documentation
+
+Documentation sources are in `gh-pages/` directory:
+- User guides: `gh-pages/docs/*.md`
+- Jekyll layouts: `gh-pages/_layouts/`
+- API docs: Auto-generated from code comments via `odoc`
+
+Changes merged to `main` branch automatically deploy to GitHub Pages via CI.
+
+## Requirements
+
+- **OCaml**: 5.4.0+ (uses domains, effects)
+- **System**: 64-bit Linux, macOS, Windows (limited testing)
+- **GPU**: Optional - Native and Interpreter backends work on any system
+
+## Project History
+
+This work originates from Mathias Bourgoin's PhD thesis at UPMC-LIP6 laboratory (Paris) and was partially funded by the [OpenGPU](http://opengpu.net/) project. Development continued at Verimag laboratory (Grenoble, 2014-2015) and LIFO laboratory (Orléans, 2015-2018).
+
+Current maintainer: Mathias Bourgoin ([Nomadic Labs](https://nomadic-labs.com))
+
+## License
+
+See [LICENSE.md](LICENSE.md) for license information.
+
+## Resources
+
+- **GitHub Pages**: [http://mathiasbourgoin.github.io/Sarek/](http://mathiasbourgoin.github.io/Sarek/)
+- **GitHub Actions**: [Build status and CI](https://github.com/mathiasbourgoin/Sarek/actions)
+- **Issues**: [Bug reports and feature requests](https://github.com/mathiasbourgoin/Sarek/issues)

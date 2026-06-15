@@ -1,0 +1,20 @@
+# Legacy kernels with cppo or non-OCaml syntax that ocamlformat cannot parse
+SpocLibs/Benchmarks/NN/NN.ml
+SpocLibs/Benchmarks/NBody/NBody.ml
+SpocLibs/Benchmarks/Transpose/Transpose.ml
+SpocLibs/Benchmarks/BFS/BFS.ml
+SpocLibs/Benchmarks/Pi/Pi.ml
+
+Samples/src/Mandelbrot2/Mandelbrot2.ml
+Samples/src/VecAdd_MultiGPU/VecAdd_MultiGPU.ml
+
+SpocLibs/Samples/Compose/IteratePower.ml
+SpocLibs/Samples/MachineLearning/classifyDigitsSpoc.ml
+SpocLibs/Samples/Bitonic_sort_js/Bitonic_sort_js.ml
+SpocLibs/Samples/Image_filter/Image_filter.ml
+SpocLibs/Samples/Mandelbrot_js/Mandelbrot_js.ml
+SpocLibs/Samples/Test_OpenCL/Test_OpenCL.ml
+SpocLibs/Samples/Bitonic_sort/Bitonic_sort.ml
+SpocLibs/Sarek_test/comparison/test_comparison.ml
+
+Spoc/Devices.mli

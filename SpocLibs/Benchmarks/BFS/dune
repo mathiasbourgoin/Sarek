@@ -1,9 +1,0 @@
-(executable
- (name BFS)
- (flags (-ccopt -L$CUDA_PATH -cclib -lnvrtc))
-(preprocess
-  (action
-    (system "camlp4 -I `ocamlfind query spoc.external_kernels` -I `ocamlfind query sarek.internal_kernels` -parser o -parser op -printer o internal_kernels.cma  -printer external_kernels.cma %{input-file}")))
- (preprocessor_deps (package spoc) (package sarek))
- (libraries spoc camlp4 sarek unix ctypes)
-)

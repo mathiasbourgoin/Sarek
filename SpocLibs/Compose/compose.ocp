@@ -1,4 +1,0 @@
-begin library "spoc_compose"
-      files = ["Compose.ml"]
-      requires = ["spoc"]
-end

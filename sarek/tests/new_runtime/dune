@@ -1,0 +1,24 @@
+; Tests for the GPU runtime
+; Legacy SPOC tests have been moved to *.spoc_legacy files
+
+(executable
+ (name test_native_runtime)
+ (modules test_native_runtime)
+ (libraries sarek sarek.stdlib spoc_core sarek_native unix)
+ (preprocess
+  (pps sarek_ppx)))
+
+(executable
+ (name test_runtime_comparison)
+ (modules test_runtime_comparison)
+ (libraries sarek sarek.stdlib spoc_core sarek_cuda sarek_opencl unix)
+ (preprocess
+  (pps sarek_ppx))
+ (enabled_if
+  (<> %{env:CUDA_PATH=} ""))
+ ; NVRTC + the CUDA driver are loaded lazily via Dl.dlopen at runtime
+ ; (see Cuda_nvrtc.ml / Cuda_bindings.ml), so no static -lnvrtc link is
+ ; needed. Linking it forced an unnecessary build-time dependency that
+ ; broke `dune build` on machines with CUDA_PATH set but libnvrtc absent.
+ (flags
+  (:standard -w -33)))

@@ -1,0 +1,15 @@
+; Framework Plugin System
+; Core interfaces and registry for GPU backends
+
+(library
+ (name spoc_framework_registry)
+ (public_name sarek.framework.registry)
+ (modules
+  Framework_registry
+  Intrinsic_registry
+  Framework_cache
+  Framework_error)
+ (libraries spoc_framework unix)
+ (preprocess no_preprocessing)
+ (instrumentation
+  (backend bisect_ppx)))

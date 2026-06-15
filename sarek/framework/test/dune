@@ -1,0 +1,29 @@
+; Framework tests
+
+(test
+ (name test_framework_registry)
+ (modules test_framework_registry)
+ (libraries spoc_framework_registry spoc_framework alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(test
+ (name test_intrinsic_registry)
+ (modules test_intrinsic_registry)
+ (libraries spoc_framework_registry spoc_framework alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(test
+ (name test_framework_cache)
+ (modules test_framework_cache)
+ (libraries spoc_framework_registry alcotest unix)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(test
+ (name test_framework_integration)
+ (modules test_framework_integration dummy_backend)
+ (libraries spoc_framework_registry spoc_framework alcotest)
+ (instrumentation
+  (backend bisect_ppx)))

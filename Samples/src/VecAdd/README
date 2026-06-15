@@ -1,9 +1,0 @@
-VecAdd:
-Adds two vectors
-options:
- -device number of the device [0]
- -size size of the vectors to multiply [1024]
- -auto let Spoc handles transfers automatically [false]
- -verify verify computation [true]
-
- This sample needs an nvidia architecture with a compute compatibility >= 1.3 for double precision with cuda

@@ -1,9 +1,0 @@
-Game :
-this samples plays a game of life using OCaml Graphics 
-options:
- -device number of the device [0]
- -width width of the image to compute [1024]
- -height height of the image to compute [1024]
- -gens max number of generations [1024]
-for example : 
-$ ./Game.nat -device 2 width 400 -height 400 -gens 256

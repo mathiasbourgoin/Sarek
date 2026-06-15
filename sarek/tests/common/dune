@@ -1,0 +1,4 @@
+(library
+ (name sarek_test_common)
+ (libraries sarek_ppx_lib)
+ (modules Test_kernels Ir_compare Source_gen))

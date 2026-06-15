@@ -1,0 +1,13 @@
+; WebGPU Plugin - In-browser WebGPU backend (inert skeleton)
+; is_available () = false so this backend is never selected on native builds.
+
+(library
+ (name sarek_webgpu)
+ (libraries
+  ctypes
+  spoc_framework
+  spoc_framework_registry
+  sarek
+  (re_export spoc_core))
+ (modules Webgpu_plugin)
+ (preprocess no_preprocessing))
