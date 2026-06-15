@@ -1,0 +1,640 @@
+DIGEST d7b44785210b4e838f747bceb08c13b5
+FTypeSafety.VecSpec
+R1450:1453 Stdlib.Bool.Bool <> <> lib
+R1455:1458 Stdlib.Lists.List <> <> lib
+R1460:1465 Stdlib.Strings.String <> <> lib
+R1467:1471 Stdlib.Arith.Arith <> <> lib
+R1473:1475 Stdlib.Init.Nat <> <> lib
+R1509:1522 TypeSafety.TypeSafetySpec <> <> lib
+R1532:1545 TypeSafety.TypeSafetySpec <> <> mod
+R1555:1567 Stdlib.Lists.List ListNotations <> mod
+prf 1795:1811 <> sarek_type_eq_dec
+R1830:1839 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 1822:1823 <> t1:1
+binder 1825:1826 <> t2:2
+R1842:1842 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R1850:1854 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R1863:1863 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R1845:1847 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R1843:1844 TypeSafety.VecSpec <> t1:1 var
+R1848:1849 TypeSafety.VecSpec <> t2:2 var
+R1857:1860 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R1855:1856 TypeSafety.VecSpec <> t1:1 var
+R1861:1862 TypeSafety.VecSpec <> t2:2 var
+R2142:2157 TypeSafety.TypeSafetySpec <> prim_type_eq_dec scheme
+R2142:2157 TypeSafety.TypeSafetySpec <> prim_type_eq_dec scheme
+R2295:2309 TypeSafety.TypeSafetySpec <> reg_type_eq_dec scheme
+R2295:2309 TypeSafety.TypeSafetySpec <> reg_type_eq_dec scheme
+R2616:2631 TypeSafety.TypeSafetySpec <> mem_space_eq_dec scheme
+R2616:2631 TypeSafety.TypeSafetySpec <> mem_space_eq_dec scheme
+R2872:2875 Corelib.Init.Datatypes <> list ind
+R2877:2886 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 2862:2864 <> ts1:3
+binder 2866:2868 <> ts2:4
+R2890:2890 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R2900:2904 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R2915:2915 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R2894:2896 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R2891:2893 TypeSafety.VecSpec <> ts1:3 var
+R2897:2899 TypeSafety.VecSpec <> ts2:4 var
+R2908:2911 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R2905:2907 TypeSafety.VecSpec <> ts1:3 var
+R2912:2914 TypeSafety.VecSpec <> ts2:4 var
+R2872:2875 Corelib.Init.Datatypes <> list ind
+R2877:2886 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 2862:2864 <> ts1:5
+binder 2866:2868 <> ts2:6
+R2890:2890 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R2900:2904 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R2915:2915 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R2894:2896 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R2891:2893 TypeSafety.VecSpec <> ts1:5 var
+R2897:2899 TypeSafety.VecSpec <> ts2:6 var
+R2908:2911 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R2905:2907 TypeSafety.VecSpec <> ts1:5 var
+R2912:2914 TypeSafety.VecSpec <> ts2:6 var
+R3609:3612 Corelib.Init.Datatypes <> list ind
+R3614:3623 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 3599:3601 <> ts1:7
+binder 3603:3605 <> ts2:8
+R3627:3627 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R3637:3641 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R3652:3652 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R3631:3633 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3628:3630 TypeSafety.VecSpec <> ts1:7 var
+R3634:3636 TypeSafety.VecSpec <> ts2:8 var
+R3645:3648 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R3642:3644 TypeSafety.VecSpec <> ts1:7 var
+R3649:3651 TypeSafety.VecSpec <> ts2:8 var
+R3609:3612 Corelib.Init.Datatypes <> list ind
+R3614:3623 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 3599:3601 <> ts1:9
+binder 3603:3605 <> ts2:10
+R3627:3627 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R3637:3641 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R3652:3652 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R3631:3633 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R3628:3630 TypeSafety.VecSpec <> ts1:9 var
+R3634:3636 TypeSafety.VecSpec <> ts2:10 var
+R3645:3648 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R3642:3644 TypeSafety.VecSpec <> ts1:9 var
+R3649:3651 TypeSafety.VecSpec <> ts2:10 var
+R4249:4252 Corelib.Init.Datatypes <> list ind
+R4261:4263 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R4255:4260 Stdlib.Strings.String <> string ind
+R4264:4273 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 4239:4241 <> fs1:11
+binder 4243:4245 <> fs2:12
+R4278:4278 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R4288:4292 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R4303:4303 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R4282:4284 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4279:4281 TypeSafety.VecSpec <> fs1:11 var
+R4285:4287 TypeSafety.VecSpec <> fs2:12 var
+R4296:4299 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R4293:4295 TypeSafety.VecSpec <> fs1:11 var
+R4300:4302 TypeSafety.VecSpec <> fs2:12 var
+R4249:4252 Corelib.Init.Datatypes <> list ind
+R4261:4263 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R4255:4260 Stdlib.Strings.String <> string ind
+R4264:4273 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 4239:4241 <> fs1:13
+binder 4243:4245 <> fs2:14
+R4278:4278 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R4288:4292 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R4303:4303 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R4282:4284 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4279:4281 TypeSafety.VecSpec <> fs1:13 var
+R4285:4287 TypeSafety.VecSpec <> fs2:14 var
+R4296:4299 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R4293:4295 TypeSafety.VecSpec <> fs1:13 var
+R4300:4302 TypeSafety.VecSpec <> fs2:14 var
+R4511:4527 Stdlib.Strings.String <> string_dec def
+R4511:4527 Stdlib.Strings.String <> string_dec def
+R4963:4979 Stdlib.Strings.String <> string_dec def
+R4963:4979 Stdlib.Strings.String <> string_dec def
+R5300:5303 Corelib.Init.Datatypes <> list ind
+R5312:5314 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R5306:5311 Stdlib.Strings.String <> string ind
+R5315:5320 Corelib.Init.Datatypes <> option ind
+R5322:5331 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 5290:5292 <> cs1:15
+binder 5294:5296 <> cs2:16
+R5336:5336 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R5346:5350 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R5361:5361 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R5340:5342 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5337:5339 TypeSafety.VecSpec <> cs1:15 var
+R5343:5345 TypeSafety.VecSpec <> cs2:16 var
+R5354:5357 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R5351:5353 TypeSafety.VecSpec <> cs1:15 var
+R5358:5360 TypeSafety.VecSpec <> cs2:16 var
+R5300:5303 Corelib.Init.Datatypes <> list ind
+R5312:5314 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R5306:5311 Stdlib.Strings.String <> string ind
+R5315:5320 Corelib.Init.Datatypes <> option ind
+R5322:5331 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 5290:5292 <> cs1:17
+binder 5294:5296 <> cs2:18
+R5336:5336 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R5346:5350 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R5361:5361 Corelib.Init.Specif <> ::type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R5340:5342 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5337:5339 TypeSafety.VecSpec <> cs1:17 var
+R5343:5345 TypeSafety.VecSpec <> cs2:18 var
+R5354:5357 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R5351:5353 TypeSafety.VecSpec <> cs1:17 var
+R5358:5360 TypeSafety.VecSpec <> cs2:18 var
+R5569:5585 Stdlib.Strings.String <> string_dec def
+R5569:5585 Stdlib.Strings.String <> string_dec def
+R6413:6429 Stdlib.Strings.String <> string_dec def
+R6413:6429 Stdlib.Strings.String <> string_dec def
+ind 6762:6770 <> vec_error
+constr 6786:6795 <> VCoreError
+constr 6862:6871 <> NotAVector
+constr 6936:6945 <> NotAnArray
+constr 7010:7020 <> IndexNotInt
+constr 7087:7098 <> ElemMismatch
+R6810:6813 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6800:6809 TypeSafety.TypeSafetySpec <> type_error ind
+R6814:6822 TypeSafety.VecSpec <> vec_error:19 ind
+R6886:6889 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6876:6885 TypeSafety.TypeSafetySpec <> sarek_type ind
+R6890:6898 TypeSafety.VecSpec <> vec_error:19 ind
+R6960:6963 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R6950:6959 TypeSafety.TypeSafetySpec <> sarek_type ind
+R6964:6972 TypeSafety.VecSpec <> vec_error:19 ind
+R7034:7037 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7024:7033 TypeSafety.TypeSafetySpec <> sarek_type ind
+R7038:7046 TypeSafety.VecSpec <> vec_error:19 ind
+R7112:7115 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7102:7111 TypeSafety.TypeSafetySpec <> sarek_type ind
+R7126:7129 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7116:7125 TypeSafety.TypeSafetySpec <> sarek_type ind
+R7130:7138 TypeSafety.VecSpec <> vec_error:19 ind
+scheme 6762:6770 <> vec_error_rect
+scheme 6762:6770 <> vec_error_ind
+scheme 6762:6770 <> vec_error_rec
+scheme 6762:6770 <> vec_error_sind
+def 7181:7190 <> vec_result
+R7206:7208 Corelib.Init.Datatypes <> ::type_scope:x_'+'_x not
+R7196:7205 TypeSafety.TypeSafetySpec <> sarek_type ind
+R7209:7217 TypeSafety.VecSpec <> vec_error ind
+ind 7285:7292 <> mem_expr
+constr 7308:7312 <> MCore
+constr 7339:7345 <> EVecGet
+constr 7386:7392 <> EVecSet
+constr 7445:7451 <> EArrGet
+constr 7492:7498 <> EArrSet
+R7322:7325 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7318:7321 TypeSafety.TypeSafetySpec <> expr ind
+R7326:7333 TypeSafety.VecSpec <> mem_expr:21 ind
+R7357:7360 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7349:7356 TypeSafety.VecSpec <> mem_expr:21 ind
+R7369:7372 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7361:7368 TypeSafety.VecSpec <> mem_expr:21 ind
+R7373:7380 TypeSafety.VecSpec <> mem_expr:21 ind
+R7404:7407 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7396:7403 TypeSafety.VecSpec <> mem_expr:21 ind
+R7416:7419 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7408:7415 TypeSafety.VecSpec <> mem_expr:21 ind
+R7428:7431 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7420:7427 TypeSafety.VecSpec <> mem_expr:21 ind
+R7432:7439 TypeSafety.VecSpec <> mem_expr:21 ind
+R7463:7466 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7455:7462 TypeSafety.VecSpec <> mem_expr:21 ind
+R7475:7478 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7467:7474 TypeSafety.VecSpec <> mem_expr:21 ind
+R7479:7486 TypeSafety.VecSpec <> mem_expr:21 ind
+R7510:7513 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7502:7509 TypeSafety.VecSpec <> mem_expr:21 ind
+R7522:7525 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7514:7521 TypeSafety.VecSpec <> mem_expr:21 ind
+R7534:7537 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7526:7533 TypeSafety.VecSpec <> mem_expr:21 ind
+R7538:7545 TypeSafety.VecSpec <> mem_expr:21 ind
+scheme 7285:7292 <> mem_expr_rect
+scheme 7285:7292 <> mem_expr_ind
+scheme 7285:7292 <> mem_expr_rec
+scheme 7285:7292 <> mem_expr_sind
+def 7608:7621 <> infer_mem_type
+R7630:7637 TypeSafety.TypeSafetySpec <> type_env def
+binder 7624:7626 <> env:23
+R7645:7652 TypeSafety.VecSpec <> mem_expr ind
+binder 7641:7641 <> e:24
+R7657:7666 TypeSafety.VecSpec <> vec_result def
+R7679:7679 TypeSafety.VecSpec <> e:24 var
+R7690:7694 TypeSafety.VecSpec <> MCore constr
+R7714:7723 TypeSafety.TypeSafetySpec <> infer_type def
+R7725:7727 TypeSafety.VecSpec <> env:23 var
+R7745:7747 Corelib.Init.Datatypes <> inl constr
+R7756:7758 Corelib.Init.Datatypes <> inl constr
+R7770:7772 Corelib.Init.Datatypes <> inr constr
+R7781:7783 Corelib.Init.Datatypes <> inr constr
+R7786:7795 TypeSafety.VecSpec <> VCoreError constr
+R7816:7822 TypeSafety.VecSpec <> EVecGet constr
+R7847:7860 TypeSafety.VecSpec <> infer_mem_type:25 def
+R7862:7864 TypeSafety.VecSpec <> env:23 var
+R7883:7885 Corelib.Init.Datatypes <> inr constr
+R7904:7906 Corelib.Init.Datatypes <> inr constr
+R7920:7922 Corelib.Init.Datatypes <> inl constr
+R7925:7928 TypeSafety.TypeSafetySpec <> TVec constr
+R7957:7970 TypeSafety.VecSpec <> infer_mem_type:25 def
+R7972:7974 TypeSafety.VecSpec <> env:23 var
+R7997:7999 Corelib.Init.Datatypes <> inr constr
+R8019:8021 Corelib.Init.Datatypes <> inr constr
+R8039:8041 Corelib.Init.Datatypes <> inl constr
+R8044:8048 TypeSafety.TypeSafetySpec <> TPrim constr
+R8050:8055 TypeSafety.TypeSafetySpec <> TInt32 constr
+R8061:8063 Corelib.Init.Datatypes <> inl constr
+R8084:8086 Corelib.Init.Datatypes <> inl constr
+R8106:8108 Corelib.Init.Datatypes <> inr constr
+R8111:8121 TypeSafety.VecSpec <> IndexNotInt constr
+R8149:8151 Corelib.Init.Datatypes <> inl constr
+R8159:8161 Corelib.Init.Datatypes <> inr constr
+R8164:8173 TypeSafety.VecSpec <> NotAVector constr
+R8193:8199 TypeSafety.VecSpec <> EVecSet constr
+R8230:8243 TypeSafety.VecSpec <> infer_mem_type:25 def
+R8245:8247 TypeSafety.VecSpec <> env:23 var
+R8266:8268 Corelib.Init.Datatypes <> inr constr
+R8287:8289 Corelib.Init.Datatypes <> inr constr
+R8303:8305 Corelib.Init.Datatypes <> inl constr
+R8308:8311 TypeSafety.TypeSafetySpec <> TVec constr
+R8340:8353 TypeSafety.VecSpec <> infer_mem_type:25 def
+R8355:8357 TypeSafety.VecSpec <> env:23 var
+R8380:8382 Corelib.Init.Datatypes <> inr constr
+R8402:8404 Corelib.Init.Datatypes <> inr constr
+R8422:8424 Corelib.Init.Datatypes <> inl constr
+R8427:8431 TypeSafety.TypeSafetySpec <> TPrim constr
+R8433:8438 TypeSafety.TypeSafetySpec <> TInt32 constr
+R8464:8477 TypeSafety.VecSpec <> infer_mem_type:25 def
+R8479:8481 TypeSafety.VecSpec <> env:23 var
+R8510:8512 Corelib.Init.Datatypes <> inr constr
+R8521:8523 Corelib.Init.Datatypes <> inr constr
+R8545:8547 Corelib.Init.Datatypes <> inl constr
+R8580:8596 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R8633:8636 Corelib.Init.Specif <> left constr
+R8644:8646 Corelib.Init.Datatypes <> inl constr
+R8649:8653 TypeSafety.TypeSafetySpec <> TPrim constr
+R8655:8659 TypeSafety.TypeSafetySpec <> TUnit constr
+R8682:8686 Corelib.Init.Specif <> right constr
+R8693:8695 Corelib.Init.Datatypes <> inr constr
+R8698:8709 TypeSafety.VecSpec <> ElemMismatch constr
+R8774:8776 Corelib.Init.Datatypes <> inl constr
+R8784:8786 Corelib.Init.Datatypes <> inr constr
+R8789:8799 TypeSafety.VecSpec <> IndexNotInt constr
+R8827:8829 Corelib.Init.Datatypes <> inl constr
+R8837:8839 Corelib.Init.Datatypes <> inr constr
+R8842:8851 TypeSafety.VecSpec <> NotAVector constr
+R8871:8877 TypeSafety.VecSpec <> EArrGet constr
+R8902:8915 TypeSafety.VecSpec <> infer_mem_type:25 def
+R8917:8919 TypeSafety.VecSpec <> env:23 var
+R8938:8940 Corelib.Init.Datatypes <> inr constr
+R8962:8964 Corelib.Init.Datatypes <> inr constr
+R8978:8980 Corelib.Init.Datatypes <> inl constr
+R8983:8986 TypeSafety.TypeSafetySpec <> TArr constr
+R9018:9031 TypeSafety.VecSpec <> infer_mem_type:25 def
+R9033:9035 TypeSafety.VecSpec <> env:23 var
+R9058:9060 Corelib.Init.Datatypes <> inr constr
+R9080:9082 Corelib.Init.Datatypes <> inr constr
+R9100:9102 Corelib.Init.Datatypes <> inl constr
+R9105:9109 TypeSafety.TypeSafetySpec <> TPrim constr
+R9111:9116 TypeSafety.TypeSafetySpec <> TInt32 constr
+R9122:9124 Corelib.Init.Datatypes <> inl constr
+R9145:9147 Corelib.Init.Datatypes <> inl constr
+R9167:9169 Corelib.Init.Datatypes <> inr constr
+R9172:9182 TypeSafety.VecSpec <> IndexNotInt constr
+R9210:9212 Corelib.Init.Datatypes <> inl constr
+R9220:9222 Corelib.Init.Datatypes <> inr constr
+R9225:9234 TypeSafety.VecSpec <> NotAnArray constr
+R9254:9260 TypeSafety.VecSpec <> EArrSet constr
+R9291:9304 TypeSafety.VecSpec <> infer_mem_type:25 def
+R9306:9308 TypeSafety.VecSpec <> env:23 var
+R9327:9329 Corelib.Init.Datatypes <> inr constr
+R9351:9353 Corelib.Init.Datatypes <> inr constr
+R9367:9369 Corelib.Init.Datatypes <> inl constr
+R9372:9375 TypeSafety.TypeSafetySpec <> TArr constr
+R9407:9420 TypeSafety.VecSpec <> infer_mem_type:25 def
+R9422:9424 TypeSafety.VecSpec <> env:23 var
+R9447:9449 Corelib.Init.Datatypes <> inr constr
+R9469:9471 Corelib.Init.Datatypes <> inr constr
+R9489:9491 Corelib.Init.Datatypes <> inl constr
+R9494:9498 TypeSafety.TypeSafetySpec <> TPrim constr
+R9500:9505 TypeSafety.TypeSafetySpec <> TInt32 constr
+R9531:9544 TypeSafety.VecSpec <> infer_mem_type:25 def
+R9546:9548 TypeSafety.VecSpec <> env:23 var
+R9577:9579 Corelib.Init.Datatypes <> inr constr
+R9588:9590 Corelib.Init.Datatypes <> inr constr
+R9612:9614 Corelib.Init.Datatypes <> inl constr
+R9647:9663 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R9700:9703 Corelib.Init.Specif <> left constr
+R9711:9713 Corelib.Init.Datatypes <> inl constr
+R9716:9720 TypeSafety.TypeSafetySpec <> TPrim constr
+R9722:9726 TypeSafety.TypeSafetySpec <> TUnit constr
+R9749:9753 Corelib.Init.Specif <> right constr
+R9760:9762 Corelib.Init.Datatypes <> inr constr
+R9765:9776 TypeSafety.VecSpec <> ElemMismatch constr
+R9841:9843 Corelib.Init.Datatypes <> inl constr
+R9851:9853 Corelib.Init.Datatypes <> inr constr
+R9856:9866 TypeSafety.VecSpec <> IndexNotInt constr
+R9894:9896 Corelib.Init.Datatypes <> inl constr
+R9904:9906 Corelib.Init.Datatypes <> inr constr
+R9909:9918 TypeSafety.VecSpec <> NotAnArray constr
+ind 10006:10017 <> has_mem_type
+constr 10071:10078 <> HMT_Core
+constr 10165:10174 <> HMT_VecGet
+constr 10346:10355 <> HMT_VecSet
+constr 10585:10594 <> HMT_ArrGet
+constr 10770:10779 <> HMT_ArrSet
+R10029:10032 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10021:10028 TypeSafety.TypeSafetySpec <> type_env def
+R10041:10044 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10033:10040 TypeSafety.VecSpec <> mem_expr ind
+R10055:10058 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10045:10054 TypeSafety.TypeSafetySpec <> sarek_type ind
+binder 10091:10093 <> env:29
+binder 10095:10095 <> e:30
+binder 10097:10097 <> t:31
+R10122:10131 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10106:10113 TypeSafety.TypeSafetySpec <> has_type ind
+R10121:10121 TypeSafety.VecSpec <> t:31 var
+R10119:10119 TypeSafety.VecSpec <> e:30 var
+R10115:10117 TypeSafety.VecSpec <> env:29 var
+R10132:10143 TypeSafety.VecSpec <> has_mem_type:27 ind
+R10159:10159 TypeSafety.VecSpec <> t:31 var
+R10150:10154 TypeSafety.VecSpec <> MCore constr
+R10156:10156 TypeSafety.VecSpec <> e:30 var
+R10145:10147 TypeSafety.VecSpec <> env:29 var
+binder 10185:10187 <> env:32
+binder 10189:10191 <> vec:33
+binder 10193:10195 <> idx:34
+binder 10197:10202 <> elem_t:35
+R10245:10254 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10211:10222 TypeSafety.VecSpec <> has_mem_type:27 ind
+R10233:10236 TypeSafety.TypeSafetySpec <> TVec constr
+R10238:10243 TypeSafety.VecSpec <> elem_t:35 var
+R10228:10230 TypeSafety.VecSpec <> vec:33 var
+R10224:10226 TypeSafety.VecSpec <> env:32 var
+R10290:10299 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10255:10266 TypeSafety.VecSpec <> has_mem_type:27 ind
+R10277:10281 TypeSafety.TypeSafetySpec <> TPrim constr
+R10283:10288 TypeSafety.TypeSafetySpec <> TInt32 constr
+R10272:10274 TypeSafety.VecSpec <> idx:34 var
+R10268:10270 TypeSafety.VecSpec <> env:32 var
+R10300:10311 TypeSafety.VecSpec <> has_mem_type:27 ind
+R10335:10340 TypeSafety.VecSpec <> elem_t:35 var
+R10318:10324 TypeSafety.VecSpec <> EVecGet constr
+R10330:10332 TypeSafety.VecSpec <> idx:34 var
+R10326:10328 TypeSafety.VecSpec <> vec:33 var
+R10313:10315 TypeSafety.VecSpec <> env:32 var
+binder 10366:10368 <> env:36
+binder 10370:10372 <> vec:37
+binder 10374:10376 <> idx:38
+binder 10378:10382 <> value:39
+binder 10384:10389 <> elem_t:40
+R10432:10441 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10398:10409 TypeSafety.VecSpec <> has_mem_type:27 ind
+R10420:10423 TypeSafety.TypeSafetySpec <> TVec constr
+R10425:10430 TypeSafety.VecSpec <> elem_t:40 var
+R10415:10417 TypeSafety.VecSpec <> vec:37 var
+R10411:10413 TypeSafety.VecSpec <> env:36 var
+R10477:10486 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10442:10453 TypeSafety.VecSpec <> has_mem_type:27 ind
+R10464:10468 TypeSafety.TypeSafetySpec <> TPrim constr
+R10470:10475 TypeSafety.TypeSafetySpec <> TInt32 constr
+R10459:10461 TypeSafety.VecSpec <> idx:38 var
+R10455:10457 TypeSafety.VecSpec <> env:36 var
+R10516:10525 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10487:10498 TypeSafety.VecSpec <> has_mem_type:27 ind
+R10510:10515 TypeSafety.VecSpec <> elem_t:40 var
+R10504:10508 TypeSafety.VecSpec <> value:39 var
+R10500:10502 TypeSafety.VecSpec <> env:36 var
+R10526:10537 TypeSafety.VecSpec <> has_mem_type:27 ind
+R10568:10572 TypeSafety.TypeSafetySpec <> TPrim constr
+R10574:10578 TypeSafety.TypeSafetySpec <> TUnit constr
+R10544:10550 TypeSafety.VecSpec <> EVecSet constr
+R10560:10564 TypeSafety.VecSpec <> value:39 var
+R10556:10558 TypeSafety.VecSpec <> idx:38 var
+R10552:10554 TypeSafety.VecSpec <> vec:37 var
+R10539:10541 TypeSafety.VecSpec <> env:36 var
+binder 10605:10607 <> env:41
+binder 10609:10611 <> arr:42
+binder 10613:10615 <> idx:43
+binder 10617:10622 <> elem_t:44
+binder 10624:10624 <> m:45
+R10669:10678 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10633:10644 TypeSafety.VecSpec <> has_mem_type:27 ind
+R10655:10658 TypeSafety.TypeSafetySpec <> TArr constr
+R10667:10667 TypeSafety.VecSpec <> m:45 var
+R10660:10665 TypeSafety.VecSpec <> elem_t:44 var
+R10650:10652 TypeSafety.VecSpec <> arr:42 var
+R10646:10648 TypeSafety.VecSpec <> env:41 var
+R10714:10723 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10679:10690 TypeSafety.VecSpec <> has_mem_type:27 ind
+R10701:10705 TypeSafety.TypeSafetySpec <> TPrim constr
+R10707:10712 TypeSafety.TypeSafetySpec <> TInt32 constr
+R10696:10698 TypeSafety.VecSpec <> idx:43 var
+R10692:10694 TypeSafety.VecSpec <> env:41 var
+R10724:10735 TypeSafety.VecSpec <> has_mem_type:27 ind
+R10759:10764 TypeSafety.VecSpec <> elem_t:44 var
+R10742:10748 TypeSafety.VecSpec <> EArrGet constr
+R10754:10756 TypeSafety.VecSpec <> idx:43 var
+R10750:10752 TypeSafety.VecSpec <> arr:42 var
+R10737:10739 TypeSafety.VecSpec <> env:41 var
+binder 10790:10792 <> env:46
+binder 10794:10796 <> arr:47
+binder 10798:10800 <> idx:48
+binder 10802:10806 <> value:49
+binder 10808:10813 <> elem_t:50
+binder 10815:10815 <> m:51
+R10860:10869 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10824:10835 TypeSafety.VecSpec <> has_mem_type:27 ind
+R10846:10849 TypeSafety.TypeSafetySpec <> TArr constr
+R10858:10858 TypeSafety.VecSpec <> m:51 var
+R10851:10856 TypeSafety.VecSpec <> elem_t:50 var
+R10841:10843 TypeSafety.VecSpec <> arr:47 var
+R10837:10839 TypeSafety.VecSpec <> env:46 var
+R10905:10914 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10870:10881 TypeSafety.VecSpec <> has_mem_type:27 ind
+R10892:10896 TypeSafety.TypeSafetySpec <> TPrim constr
+R10898:10903 TypeSafety.TypeSafetySpec <> TInt32 constr
+R10887:10889 TypeSafety.VecSpec <> idx:48 var
+R10883:10885 TypeSafety.VecSpec <> env:46 var
+R10944:10953 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R10915:10926 TypeSafety.VecSpec <> has_mem_type:27 ind
+R10938:10943 TypeSafety.VecSpec <> elem_t:50 var
+R10932:10936 TypeSafety.VecSpec <> value:49 var
+R10928:10930 TypeSafety.VecSpec <> env:46 var
+R10954:10965 TypeSafety.VecSpec <> has_mem_type:27 ind
+R10996:11000 TypeSafety.TypeSafetySpec <> TPrim constr
+R11002:11006 TypeSafety.TypeSafetySpec <> TUnit constr
+R10972:10978 TypeSafety.VecSpec <> EArrSet constr
+R10988:10992 TypeSafety.VecSpec <> value:49 var
+R10984:10986 TypeSafety.VecSpec <> idx:48 var
+R10980:10982 TypeSafety.VecSpec <> arr:47 var
+R10967:10969 TypeSafety.VecSpec <> env:46 var
+scheme 10006:10017 <> has_mem_type_ind
+scheme 10006:10017 <> has_mem_type_sind
+prf 11506:11525 <> infer_mem_type_sound
+binder 11538:11540 <> env:52
+binder 11542:11542 <> e:53
+binder 11544:11544 <> t:54
+R11579:11586 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R11571:11573 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11551:11564 TypeSafety.VecSpec <> infer_mem_type def
+R11570:11570 TypeSafety.VecSpec <> e:53 var
+R11566:11568 TypeSafety.VecSpec <> env:52 var
+R11574:11576 Corelib.Init.Datatypes <> inl constr
+R11578:11578 TypeSafety.VecSpec <> t:54 var
+R11587:11598 TypeSafety.VecSpec <> has_mem_type ind
+R11606:11606 TypeSafety.VecSpec <> t:54 var
+R11604:11604 TypeSafety.VecSpec <> e:53 var
+R11600:11602 TypeSafety.VecSpec <> env:52 var
+R11725:11734 TypeSafety.TypeSafetySpec <> infer_type def
+R11725:11734 TypeSafety.TypeSafetySpec <> infer_type def
+R11797:11804 TypeSafety.VecSpec <> HMT_Core constr
+R11797:11804 TypeSafety.VecSpec <> HMT_Core constr
+R11813:11828 TypeSafety.TypeSafetySpec <> infer_type_sound thm
+R11813:11828 TypeSafety.TypeSafetySpec <> infer_type_sound thm
+R11894:11907 TypeSafety.VecSpec <> infer_mem_type def
+R11894:11907 TypeSafety.VecSpec <> infer_mem_type def
+R12061:12074 TypeSafety.VecSpec <> infer_mem_type def
+R12061:12074 TypeSafety.VecSpec <> infer_mem_type def
+R12277:12286 TypeSafety.VecSpec <> HMT_VecGet constr
+R12277:12286 TypeSafety.VecSpec <> HMT_VecGet constr
+R12381:12394 TypeSafety.VecSpec <> infer_mem_type def
+R12381:12394 TypeSafety.VecSpec <> infer_mem_type def
+R12548:12561 TypeSafety.VecSpec <> infer_mem_type def
+R12548:12561 TypeSafety.VecSpec <> infer_mem_type def
+R12745:12758 TypeSafety.VecSpec <> infer_mem_type def
+R12745:12758 TypeSafety.VecSpec <> infer_mem_type def
+R12824:12840 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R12824:12840 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R12931:12940 TypeSafety.VecSpec <> HMT_VecSet constr
+R12931:12940 TypeSafety.VecSpec <> HMT_VecSet constr
+R13065:13078 TypeSafety.VecSpec <> infer_mem_type def
+R13065:13078 TypeSafety.VecSpec <> infer_mem_type def
+R13238:13251 TypeSafety.VecSpec <> infer_mem_type def
+R13238:13251 TypeSafety.VecSpec <> infer_mem_type def
+R13455:13464 TypeSafety.VecSpec <> HMT_ArrGet constr
+R13455:13464 TypeSafety.VecSpec <> HMT_ArrGet constr
+R13574:13587 TypeSafety.VecSpec <> infer_mem_type def
+R13574:13587 TypeSafety.VecSpec <> infer_mem_type def
+R13747:13760 TypeSafety.VecSpec <> infer_mem_type def
+R13747:13760 TypeSafety.VecSpec <> infer_mem_type def
+R13944:13957 TypeSafety.VecSpec <> infer_mem_type def
+R13944:13957 TypeSafety.VecSpec <> infer_mem_type def
+R14023:14039 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R14023:14039 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R14130:14139 TypeSafety.VecSpec <> HMT_ArrSet constr
+R14130:14139 TypeSafety.VecSpec <> HMT_ArrSet constr
+prf 14683:14705 <> infer_mem_type_complete
+binder 14718:14720 <> env:55
+binder 14722:14722 <> e:56
+binder 14724:14724 <> t:57
+R14751:14758 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14731:14742 TypeSafety.VecSpec <> has_mem_type ind
+R14750:14750 TypeSafety.VecSpec <> t:57 var
+R14748:14748 TypeSafety.VecSpec <> e:56 var
+R14744:14746 TypeSafety.VecSpec <> env:55 var
+R14779:14781 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14759:14772 TypeSafety.VecSpec <> infer_mem_type def
+R14778:14778 TypeSafety.VecSpec <> e:56 var
+R14774:14776 TypeSafety.VecSpec <> env:55 var
+R14782:14784 Corelib.Init.Datatypes <> inl constr
+R14786:14786 TypeSafety.VecSpec <> t:57 var
+R14886:14893 TypeSafety.TypeSafetySpec <> has_type ind
+R14886:14893 TypeSafety.TypeSafetySpec <> has_type ind
+R14924:14942 TypeSafety.TypeSafetySpec <> infer_type_complete thm
+R14924:14942 TypeSafety.TypeSafetySpec <> infer_type_complete thm
+R14924:14942 TypeSafety.TypeSafetySpec <> infer_type_complete thm
+R15169:15185 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R15169:15185 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R15476:15492 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+R15476:15492 TypeSafety.VecSpec <> sarek_type_eq_dec thm
+prf 15839:15854 <> has_mem_type_det
+binder 15867:15869 <> env:58
+binder 15871:15871 <> e:59
+binder 15873:15874 <> t1:60
+binder 15876:15877 <> t2:61
+R15905:15912 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15884:15895 TypeSafety.VecSpec <> has_mem_type ind
+R15903:15904 TypeSafety.VecSpec <> t1:60 var
+R15901:15901 TypeSafety.VecSpec <> e:59 var
+R15897:15899 TypeSafety.VecSpec <> env:58 var
+R15934:15941 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R15913:15924 TypeSafety.VecSpec <> has_mem_type ind
+R15932:15933 TypeSafety.VecSpec <> t2:61 var
+R15930:15930 TypeSafety.VecSpec <> e:59 var
+R15926:15928 TypeSafety.VecSpec <> env:58 var
+R15944:15946 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R15942:15943 TypeSafety.VecSpec <> t1:60 var
+R15947:15948 TypeSafety.VecSpec <> t2:61 var
+R16000:16022 TypeSafety.VecSpec <> infer_mem_type_complete thm
+R16000:16022 TypeSafety.VecSpec <> infer_mem_type_complete thm
+R16050:16072 TypeSafety.VecSpec <> infer_mem_type_complete thm
+R16050:16072 TypeSafety.VecSpec <> infer_mem_type_complete thm
+prf 16313:16333 <> mem_type_preservation
+binder 16346:16348 <> env:62
+binder 16350:16350 <> e:63
+binder 16352:16352 <> t:64
+R16387:16391 Corelib.Init.Logic <> ::type_scope:x_'<->'_x not
+R16379:16381 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R16359:16372 TypeSafety.VecSpec <> infer_mem_type def
+R16378:16378 TypeSafety.VecSpec <> e:63 var
+R16374:16376 TypeSafety.VecSpec <> env:62 var
+R16382:16384 Corelib.Init.Datatypes <> inl constr
+R16386:16386 TypeSafety.VecSpec <> t:64 var
+R16392:16403 TypeSafety.VecSpec <> has_mem_type ind
+R16411:16411 TypeSafety.VecSpec <> t:64 var
+R16409:16409 TypeSafety.VecSpec <> e:63 var
+R16405:16407 TypeSafety.VecSpec <> env:62 var
+R16456:16475 TypeSafety.VecSpec <> infer_mem_type_sound thm
+R16456:16475 TypeSafety.VecSpec <> infer_mem_type_sound thm
+R16488:16510 TypeSafety.VecSpec <> infer_mem_type_complete thm
+R16488:16510 TypeSafety.VecSpec <> infer_mem_type_complete thm
+def 16603:16629 <> infer_mem_type_core_witness
+R16676:16678 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R16635:16648 TypeSafety.VecSpec <> infer_mem_type def
+R16654:16658 TypeSafety.VecSpec <> MCore constr
+R16661:16664 TypeSafety.TypeSafetySpec <> ELit constr
+R16667:16670 TypeSafety.TypeSafetySpec <> LInt constr
+R16650:16651 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R16679:16681 Corelib.Init.Datatypes <> inl constr
+R16684:16688 TypeSafety.TypeSafetySpec <> TPrim constr
+R16690:16695 TypeSafety.TypeSafetySpec <> TInt32 constr
+def 16733:16762 <> infer_mem_type_vec_get_witness
+R16868:16870 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R16768:16781 TypeSafety.VecSpec <> infer_mem_type def
+R16817:16823 TypeSafety.VecSpec <> EVecGet constr
+R16845:16849 TypeSafety.VecSpec <> MCore constr
+R16852:16855 TypeSafety.TypeSafetySpec <> ELit constr
+R16858:16861 TypeSafety.TypeSafetySpec <> LInt constr
+R16826:16830 TypeSafety.VecSpec <> MCore constr
+R16833:16836 TypeSafety.TypeSafetySpec <> EVar constr
+R16783:16783 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16810:16810 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16784:16784 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16788:16789 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16809:16809 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16790:16793 TypeSafety.TypeSafetySpec <> TVec constr
+R16796:16800 TypeSafety.TypeSafetySpec <> TPrim constr
+R16802:16807 TypeSafety.TypeSafetySpec <> TInt32 constr
+R16871:16873 Corelib.Init.Datatypes <> inl constr
+R16876:16880 TypeSafety.TypeSafetySpec <> TPrim constr
+R16882:16887 TypeSafety.TypeSafetySpec <> TInt32 constr
+def 16925:16960 <> infer_mem_type_not_a_vector_excluded
+R17045:17051 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R16966:16979 TypeSafety.VecSpec <> infer_mem_type def
+R16989:16995 TypeSafety.VecSpec <> EVecGet constr
+R17022:17026 TypeSafety.VecSpec <> MCore constr
+R17029:17032 TypeSafety.TypeSafetySpec <> ELit constr
+R17035:17038 TypeSafety.TypeSafetySpec <> LInt constr
+R16998:17002 TypeSafety.VecSpec <> MCore constr
+R17005:17008 TypeSafety.TypeSafetySpec <> ELit constr
+R17011:17014 TypeSafety.TypeSafetySpec <> LInt constr
+R16981:16982 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R17052:17054 Corelib.Init.Datatypes <> inr constr
+R17057:17066 TypeSafety.VecSpec <> NotAVector constr
+R17069:17073 TypeSafety.TypeSafetySpec <> TPrim constr
+R17075:17080 TypeSafety.TypeSafetySpec <> TInt32 constr

@@ -536,8 +536,8 @@ let infer_let_binding ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
             let* () = unify_or_error tv.ty vi.vi_type value.expr_loc in
             Ok (mk_texpr (TEAssign (name, vi.vi_index, tv)) t_unit loc, env))
   | ELet (name, ty_annot, value, body) ->
-      let env' = enter_level env in
-      let* tv, env' = infer env' value in
+      let env_in = enter_level env in
+      let* tv, env_after = infer env_in value in
       let* () =
         match ty_annot with
         | None -> Ok ()
@@ -555,7 +555,11 @@ let infer_let_binding ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
           vi_is_vec = false;
         }
       in
-      let env'' = add_var name vi (exit_level env') in
+      (* Restore variable bindings to pre-value state so bindings introduced
+         while inferring [value] (e.g. nested let) do not leak into the body;
+         keep the unification state carried by [env_after]. *)
+      let env_clean = {env_after with vars = env_in.vars} in
+      let env'' = add_var name vi (exit_level env_clean) in
       let* tb, env'' = infer env'' body in
       Ok (mk_texpr (TELet (name, var_id, tv, tb)) tb.ty loc, env'')
   | ELetMut (name, ty_annot, value, body) ->

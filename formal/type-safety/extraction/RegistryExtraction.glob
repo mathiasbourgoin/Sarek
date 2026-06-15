@@ -1,0 +1,8 @@
+DIGEST de64e860509170cdcce65a3df2186aea
+FRegistryExtraction
+R691:700 Stdlib.extraction.Extraction <> <> lib
+R702:715 Stdlib.extraction.ExtrOcamlBasic <> <> lib
+R717:731 Stdlib.extraction.ExtrOcamlNatInt <> <> lib
+R765:778 TypeSafety.TypeSafetySpec <> <> lib
+R812:818 TypeSafety.VecSpec <> <> lib
+R852:863 TypeSafety.RegistrySpec <> <> lib

@@ -1,0 +1,21 @@
+(include_subdirs no)
+
+(library
+ (name type_safety_model)
+ (modules
+  TypeSafetyModel
+  UnifyModel
+  VecModel
+  RegistryModel
+  ControlFlowModel
+  OperatorModel
+  FunModel
+  MutModel
+  PatternModel
+  ConstrModel
+  SpecialModel
+  GPUModel)
+ ; Extracted OCaml from Rocq: relax warnings that fire on machine-generated
+ ; code (unused rec flags, unused vars, redundant matches).
+ (flags
+  (:standard -w -a)))
