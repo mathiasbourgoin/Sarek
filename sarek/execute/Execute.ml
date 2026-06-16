@@ -298,7 +298,10 @@ let run ~(device : Device.t) ~(name : string)
                     (Compilation_failed
                        {
                          kernel = name;
-                         reason = "Backend failed to generate source";
+                         reason =
+                           device.framework
+                           ^ ": generate_source returned None (kernel may use \
+                              unsupported IR nodes)";
                        })
               | Some source ->
                   (* Convert vector args to run_source_arg format (auto-injects lengths) *)
