@@ -2,7 +2,7 @@
 
 (test
  (name test_codegen_ptx_conformance)
- (libraries alcotest)
+ (libraries alcotest sarek_codegen sarek_ir)
  ; Relax warnings on the abstract OCaml mirror: constructors defined for
  ; completeness (matching the Rocq spec) may not all be used in the test suite.
  (flags
