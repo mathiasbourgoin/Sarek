@@ -3,18 +3,20 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(** PTX array load/store helpers: element stride, typed ld.global/st.global
-    instruction emission, and element-type inference from the allocator table.
-*)
+(** PTX array load/store helpers: element stride, typed ld.global/st.global and
+    ld.shared/st.shared instruction emission, and element-type inference from
+    the allocator table. *)
 
 open Sarek_ir_types
 open Sarek_ir_ptx_types
 
 (** {1 Array load/store helpers}
 
-    Emit a typed array read (ld.global) or write (st.global) into [buf]. The
-    element type determines the stride (2 = 4 bytes, 3 = 8 bytes) and the PTX
-    load/store qualifier. All other element types raise [unsupported]. *)
+    Emit a typed array read or write into [buf]. The element type determines the
+    stride (shift 2 = 4 bytes, shift 3 = 8 bytes) and the PTX load/store
+    qualifier. When [~is_shared:true], uses 32-bit pointer arithmetic and
+    [ld/st.shared.*]; otherwise uses 64-bit and [ld/st.global.*]. All other
+    element types raise [unsupported]. *)
 
 let elt_shift = function
   | TFloat32 | TInt32 -> 2
