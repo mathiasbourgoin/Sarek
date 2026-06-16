@@ -5,9 +5,9 @@
 
 (** PTX array load/store helpers.
 
-    Emits typed [ld.global] / [st.global] instruction sequences into a
-    {!Buffer.t}. All operations use 64-bit pointer arithmetic with shift-based
-    stride calculation. The element type is either supplied explicitly or
+    Emits typed [ld.global]/[st.global] or [ld.shared]/[st.shared] instruction
+    sequences into a {!Buffer.t}. Global paths use 64-bit pointer arithmetic;
+    shared paths use 32-bit. The element type is either supplied explicitly or
     inferred from the allocator's element-type table. *)
 
 open Sarek_ir_types
@@ -50,6 +50,6 @@ val emit_array_write :
   unit
 
 (** [infer_elt_type alloc arr_name] returns the element type registered for
-    [arr_name] in [alloc.arr_elt_types], or raises [Failure] if none is
-    recorded. *)
+    [arr_name] in [alloc.arr_elt_types], or raises {!Ptx_codegen_error} if none
+    is recorded. *)
 val infer_elt_type : reg_alloc -> string -> elttype

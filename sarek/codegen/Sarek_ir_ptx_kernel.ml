@@ -152,7 +152,7 @@ let emit_locals buf shared_buf alloc (env : env) (locals : decl list) : unit =
           let r = new_u32 alloc in
           env_bind env name r ;
           emit buf "mov.u32 %s, %s;" r name ;
-          Hashtbl.replace alloc.arr_memspaces name Shared ;
+          Hashtbl.replace alloc.arr_memspaces name () ;
           Hashtbl.replace alloc.arr_elt_types name elt
       | DParam _ -> ())
     locals

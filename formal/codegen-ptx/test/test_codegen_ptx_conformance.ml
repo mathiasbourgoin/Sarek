@@ -816,7 +816,12 @@ let test_dshared_f32_emit () =
   if not (contains_sub ptx "st.shared.f32") then
     Alcotest.failf "expected 'st.shared.f32' in:\n%s" ptx ;
   if contains_sub ptx "st.global" then
-    Alcotest.failf "unexpected 'st.global' for shared array in:\n%s" ptx
+    Alcotest.failf "unexpected 'st.global' for shared array in:\n%s" ptx ;
+  (* stride: f32 is 4 bytes → shift = 2; assert the exact shl.b32 is present *)
+  if not (contains_sub ptx "shl.b32") then
+    Alcotest.failf
+      "expected 'shl.b32' (32-bit shared pointer arithmetic) in:\n%s"
+      ptx
 
 (* AC-2: DShared TInt32 static write → st.shared.s32 *)
 let test_dshared_int32_write () =
@@ -896,6 +901,47 @@ let test_dshared_directive_placement () =
   if sp >= mp then
     Alcotest.failf ".shared (%d) must precede mov.u32 (%d) in:\n%s" sp mp ptx
 
+(* AC-5 proper: global array (DParam) + DShared in same kernel — no cross-contamination *)
+let test_dshared_mixed_global_shared () =
+  let idx_var = make_var "idx" TInt32 in
+  let glob_var = make_var "glob" (TArray (TFloat32, Global)) in
+  let k =
+    make_kernel
+      "test_mixed"
+      ~params:
+        [
+          DParam (glob_var, Some {arr_elttype = TFloat32; arr_memspace = Global});
+        ]
+      ~locals:
+        [
+          DLocal (idx_var, Some (EConst (CInt32 0l)));
+          DShared ("shmem", TFloat32, Some (EConst (CInt32 64l)));
+        ]
+      ~body:
+        (SSeq
+           [
+             SLet
+               ( make_var "v" TFloat32,
+                 EArrayRead ("glob", EVar idx_var),
+                 SAssign
+                   ( LArrayElem ("shmem", EVar idx_var),
+                     EVar (make_var "v" TFloat32) ) );
+           ])
+  in
+  let ptx = Sarek_codegen.Sarek_ir_ptx_kernel.generate k in
+  if not (contains_sub ptx "ld.global.f32") then
+    Alcotest.failf "expected 'ld.global.f32' for DParam array in:\n%s" ptx ;
+  if not (contains_sub ptx "st.shared.f32") then
+    Alcotest.failf "expected 'st.shared.f32' for DShared array in:\n%s" ptx ;
+  if contains_sub ptx "ld.shared.f32" then
+    Alcotest.failf
+      "unexpected 'ld.shared.f32' for DParam (global) read in:\n%s"
+      ptx ;
+  if contains_sub ptx "st.global" then
+    Alcotest.failf
+      "unexpected 'st.global' for DShared (shared) write in:\n%s"
+      ptx
+
 (* ======================================================================= *)
 (** * 12. Run all tests *)
 (* ======================================================================= *)
@@ -960,6 +1006,10 @@ let () =
           Alcotest.test_case "f32-emit" `Quick test_dshared_f32_emit;
           Alcotest.test_case "i32-write" `Quick test_dshared_int32_write;
           Alcotest.test_case "shared-read" `Quick test_dshared_shared_read;
+          Alcotest.test_case
+            "mixed-global-shared"
+            `Quick
+            test_dshared_mixed_global_shared;
           Alcotest.test_case "dynamic-raises" `Quick test_dshared_dynamic_raises;
           Alcotest.test_case
             "zero-size-raises"
