@@ -25,6 +25,9 @@
   Cuda_nvrtc
   Cuda_api
   Cuda_plugin_base
+  Cuda_shared
+  Cuda_ptx_plugin
+  Cuda_c_plugin
   Cuda_plugin
   Sarek_ir_cuda
   Sarek_ir_ptx)
