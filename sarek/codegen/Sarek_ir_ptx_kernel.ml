@@ -85,7 +85,20 @@ let emit_params buf alloc (env : env) (params : decl list) : string =
     params ;
   Buffer.contents param_decls
 
-let emit_locals buf alloc (env : env) (locals : decl list) : unit =
+let ptx_align_of_elttype = function
+  | TFloat32 | TInt32 | TBool -> 4
+  | TFloat64 | TInt64 -> 8
+  | TUnit -> 4
+  | TVec _ | TArray _ -> 8
+  | TRecord _ | TVariant _ -> unsupported "align of custom type"
+
+let ptx_btype_of_elttype = function
+  | TFloat32 | TInt32 | TBool | TUnit -> "b32"
+  | TFloat64 | TInt64 -> "b64"
+  | TVec _ | TArray _ -> "b64"
+  | TRecord _ | TVariant _ -> unsupported "btype of custom type"
+
+let emit_locals buf shared_buf alloc (env : env) (locals : decl list) : unit =
   List.iter
     (fun decl ->
       match decl with
@@ -104,11 +117,43 @@ let emit_locals buf alloc (env : env) (locals : decl list) : unit =
                 | _ -> "mov.u32"
               in
               emit buf "%s %s, %s;" mov_op r r_init)
-      | DShared (name, _elt, _size_opt) ->
-          unsupported
+      | DShared (name, elt, size_opt) ->
+          let n =
+            match size_opt with
+            | None ->
+                unsupported
+                  (Printf.sprintf
+                     "DShared '%s': dynamic shared memory (size=None) not yet \
+                      supported"
+                     name)
+            | Some (EConst (CInt32 n)) when Int32.compare n 0l > 0 ->
+                Int32.to_int n
+            | Some (EConst (CInt32 _)) ->
+                fail
+                  (Printf.sprintf
+                     "PTX codegen: DShared '%s': size must be positive"
+                     name)
+            | Some _ ->
+                unsupported
+                  (Printf.sprintf
+                     "DShared '%s': non-literal size not supported"
+                     name)
+          in
+          let align = ptx_align_of_elttype elt in
+          let btype = ptx_btype_of_elttype elt in
+          Buffer.add_string
+            shared_buf
             (Printf.sprintf
-               "DShared '%s': shared memory lowering not yet implemented"
-               name)
+               "    .shared .align %d .%s %s[%d];\n"
+               align
+               btype
+               name
+               n) ;
+          let r = new_u32 alloc in
+          env_bind env name r ;
+          emit buf "mov.u32 %s, %s;" r name ;
+          Hashtbl.replace alloc.arr_memspaces name Shared ;
+          Hashtbl.replace alloc.arr_elt_types name elt
       | DParam _ -> ())
     locals
 
@@ -145,8 +190,9 @@ let generate ?(sm_target = "sm_86") (k : kernel) : string =
   let alloc = make_alloc () in
   let env = make_env () in
   let body_buf = Buffer.create 2048 in
+  let shared_buf = Buffer.create 256 in
   let param_str = emit_params body_buf alloc env k.kern_params in
-  emit_locals body_buf alloc env k.kern_locals ;
+  emit_locals body_buf shared_buf alloc env k.kern_locals ;
   emit_stmt body_buf alloc env k.kern_body ;
   Buffer.add_string body_buf "    ret;\n" ;
   let out = Buffer.create 4096 in
@@ -156,6 +202,7 @@ let generate ?(sm_target = "sm_86") (k : kernel) : string =
   Buffer.add_string out param_str ;
   Buffer.add_string out "\n)\n{\n" ;
   emit_reg_decls out alloc ;
+  Buffer.add_buffer out shared_buf ;
   Buffer.add_char out '\n' ;
   Buffer.add_buffer out body_buf ;
   Buffer.add_string out "}\n" ;

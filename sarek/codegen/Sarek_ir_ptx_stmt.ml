@@ -124,15 +124,24 @@ and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
         r_idx
         r_val
         (infer_elt_type alloc arr_name)
+        ~is_shared:(Hashtbl.mem alloc.arr_memspaces arr_name)
   | LArrayElemExpr (base_expr, idx_expr) ->
       let r_base = emit_expr buf alloc env base_expr in
       let r_val = emit_expr buf alloc env e in
       let r_idx = emit_expr buf alloc env idx_expr in
-      let elt_type =
-        match base_expr with
-        | EVar v -> infer_elt_type alloc v.var_name
-        | _ -> TFloat32
+      let arr_name_opt =
+        match base_expr with EVar v -> Some v.var_name | _ -> None
       in
-      emit_array_write buf alloc r_base r_idx r_val elt_type
+      let elt_type =
+        match arr_name_opt with
+        | Some n -> infer_elt_type alloc n
+        | None -> TFloat32
+      in
+      let is_shared =
+        match arr_name_opt with
+        | Some n -> Hashtbl.mem alloc.arr_memspaces n
+        | None -> false
+      in
+      emit_array_write buf alloc r_base r_idx r_val elt_type ~is_shared
   | LRecordField _ ->
       unsupported "LRecordField assignment (requires struct layout)"
