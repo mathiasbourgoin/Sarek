@@ -14,7 +14,7 @@ version: 1.0.0
 
 | Q | A |
 |---|---|
-| Should `env` type change or use a parallel structure for shared tracking? | Separate `shared_set : (string, unit) Hashtbl.t` alongside existing `env` — avoids changing the env type signature or downstream lookup sites |
+| Should `env` type change or use a parallel structure for shared tracking? | Separate `arr_memspaces : (string, unit) Hashtbl.t` field on `reg_alloc` — avoids changing the env type signature or downstream lookup sites |
 | Are shared memory pointers `.u32` or `.u64`? | `.u32` — PTX shared state space uses 32-bit addresses; `ld.shared` uses the 32-bit register directly, no `cvta` needed |
 | What happens when `DShared` has `size_opt = None`? | Raise `Ptx_codegen_error "DShared: dynamic shared memory (size=None) not yet supported"` — out of scope for this cycle |
 | What Rocq record shape for `ir_shared_decl`? | `{ sd_name : string; sd_elt : ir_elt_type; sd_size : nat }` — alignment derived from element type, not stored explicitly |
@@ -85,19 +85,19 @@ As a formal verification engineer, I want the `emit_kernel_correct` theorem in `
 
 ## Functional Requirements
 
-#### OCaml PTX Emitter — DShared Support
+### OCaml PTX Emitter — DShared Support
 
 - **FR-001** [US-1]: `emit_locals` in `Sarek_ir_ptx_kernel.ml` MUST emit a `.shared .align N .bXX name[size];` directive for each `DShared(name, elt, Some (EConst (I32 n)))` where `n > 0`.
-- **FR-002** [US-1]: After emitting the `.shared` directive, the emitter MUST emit `mov.u32 %r<k>, name;` and bind `name → %r<k>` in `env` and mark `name` in `shared_set`.
+- **FR-002** [US-1]: After emitting the `.shared` directive, the emitter MUST emit `mov.u32 %r<k>, name;` and bind `name → %r<k>` in `env` and mark `name` in `alloc.arr_memspaces`.
 - **FR-003** [US-1]: `emit_array_read` in `Sarek_ir_ptx_mem.ml` MUST accept a `~is_shared:bool` parameter and emit `ld.shared.*` when `true`, `ld.global.*` when `false`.
 - **FR-004** [US-1]: `emit_array_write` in `Sarek_ir_ptx_mem.ml` MUST accept a `~is_shared:bool` parameter and emit `st.shared.*` when `true`, `st.global.*` when `false`.
-- **FR-005** [US-1]: All call sites of `emit_array_read`/`emit_array_write` in `Sarek_ir_ptx_expr.ml` MUST pass `~is_shared:(Hashtbl.mem shared_set arr_name)`.
-- **FR-006** [US-1]: `emit_locals` MUST raise `Ptx_codegen_error "DShared: dynamic shared memory (size=None) not yet supported"` when `size_opt = None`.
-- **FR-007** [US-1]: `emit_locals` MUST raise `Ptx_codegen_error "DShared: size must be positive"` when `size_opt = Some (EConst (I32 n))` and `n <= 0`.
+- **FR-005** [US-1]: All call sites of `emit_array_read`/`emit_array_write` in `Sarek_ir_ptx_expr.ml` MUST pass `~is_shared:(Hashtbl.mem alloc.arr_memspaces arr_name)`.
+- **FR-006** [US-1]: `emit_locals` MUST raise `Ptx_codegen_error` containing `"dynamic shared memory"` when `size_opt = None`.
+- **FR-007** [US-1]: `emit_locals` MUST raise `Ptx_codegen_error` containing `"size must be positive"` when `size_opt = Some (EConst (I32 n))` and `n <= 0`.
 - **FR-008** [US-1]: `DShared(name, elt, _)` MUST register `name` in `alloc.arr_elt_types` so `infer_elt_type` finds it.
 - **FR-009** [US-1]: At least 2 new Alcotest conformance tests for DShared MUST be added to `test/test_codegen_ptx_conformance.ml`.
 
-#### Rocq Formal Proof — DShared Extension
+### Rocq Formal Proof — DShared Extension
 
 - **FR-010** [US-2]: `PtxKernelSpec.v` MUST define `ir_shared_decl` as a record with fields `sd_name : string`, `sd_elt : ir_elt_type`, `sd_size : nat`.
 - **FR-011** [US-2]: `ir_kernel` MUST be extended with field `kern_shared : list ir_shared_decl`.
@@ -142,5 +142,5 @@ As a formal verification engineer, I want the `emit_kernel_correct` theorem in `
 
 - `DShared`: An IR declaration variant `DShared of string * elttype * expr option` representing a named shared memory buffer in a kernel
 - `ir_shared_decl`: Rocq record `{ sd_name : string; sd_elt : ir_elt_type; sd_size : nat }` — formal model of a static DShared declaration
-- `shared_set`: Runtime `(string, unit) Hashtbl.t` tracking which variable names are in shared memory space, used to choose `ld.shared` vs `ld.global`
+- `arr_memspaces`: Runtime `(string, unit) Hashtbl.t` field on `reg_alloc` tracking which array names are in shared memory space, used to choose `ld.shared` vs `ld.global`
 - `emit_kernel_correct`: Top-level Rocq theorem stating IR kernel execution equals PTX kernel execution under agpu semantics, for all kernels and initial states

@@ -100,7 +100,10 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
       let elt_type =
         match arr_name_opt with
         | Some n -> infer_elt_type alloc n
-        | None -> TFloat32
+        | None ->
+            fail
+              "EArrayReadExpr: cannot infer element type from non-variable \
+               base expression"
       in
       let is_shared =
         match arr_name_opt with

@@ -10,8 +10,8 @@
  * Sarek_ir_ptx; loads kernels with cuModuleLoadData (no NVRTC).
  * Auto-registered on module load unless SPOC_DISABLE_GPU/CUDA is set.
  *
- * Unsupported IR nodes (records, variants, shared mem) cause generate_source
- * to return None. Use Cuda_c_plugin for those constructs.
+ * Unsupported IR nodes (records, variants) cause generate_source to return
+ * None. Use Cuda_c_plugin for those constructs.
  ******************************************************************************)
 
 open Spoc_framework
