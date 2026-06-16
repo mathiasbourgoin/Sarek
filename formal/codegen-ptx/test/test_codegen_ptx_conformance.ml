@@ -753,7 +753,151 @@ let test_barrier () =
   check_emit_agree IEBarrier st0 "IEBarrier"
 
 (* ======================================================================= *)
-(** * 11. Run all tests *)
+(** * 11. PTX DShared emitter tests * * Call [Sarek_ir_ptx_kernel.generate]
+    directly and inspect the emitted PTX * string. Verifies AC-1 through AC-4
+    from the spec. *)
+(* ======================================================================= *)
+
+open Sarek_ir_types
+
+let contains_sub haystack needle =
+  let hl = String.length haystack and nl = String.length needle in
+  if nl = 0 then true
+  else if nl > hl then false
+  else
+    let i = ref 0 and found = ref false in
+    while !i <= hl - nl && not !found do
+      if String.sub haystack !i nl = needle then found := true ;
+      incr i
+    done ;
+    !found
+
+let find_sub haystack needle =
+  let hl = String.length haystack and nl = String.length needle in
+  if nl > hl then -1
+  else
+    let i = ref 0 and pos = ref (-1) in
+    while !i <= hl - nl && !pos = -1 do
+      if String.sub haystack !i nl = needle then pos := !i ;
+      incr i
+    done ;
+    !pos
+
+let make_var name ty =
+  {var_name = name; var_id = 0; var_type = ty; var_mutable = true}
+
+let make_kernel ?(params = []) ?(locals = []) ?(body = SEmpty) name =
+  {
+    kern_name = name;
+    kern_params = params;
+    kern_locals = locals;
+    kern_body = body;
+    kern_types = [];
+    kern_variants = [];
+    kern_funcs = [];
+    kern_native_fn = None;
+  }
+
+(* AC-1: DShared TFloat32 static → .shared .align 4 .b32 + st.shared.f32 *)
+let test_dshared_f32_emit () =
+  let k =
+    make_kernel
+      "test_shmem_f32"
+      ~locals:[DShared ("shmem", TFloat32, Some (EConst (CInt32 256l)))]
+      ~body:
+        (SAssign
+           (LArrayElem ("shmem", EConst (CInt32 0l)), EConst (CFloat32 1.0)))
+  in
+  let ptx = Sarek_codegen.Sarek_ir_ptx_kernel.generate k in
+  if not (contains_sub ptx ".shared .align 4 .b32 shmem[256]") then
+    Alcotest.failf "expected '.shared .align 4 .b32 shmem[256]' in:\n%s" ptx ;
+  if not (contains_sub ptx "mov.u32") then
+    Alcotest.failf "expected 'mov.u32' (shared base-addr load) in:\n%s" ptx ;
+  if not (contains_sub ptx "st.shared.f32") then
+    Alcotest.failf "expected 'st.shared.f32' in:\n%s" ptx ;
+  if contains_sub ptx "st.global" then
+    Alcotest.failf "unexpected 'st.global' for shared array in:\n%s" ptx
+
+(* AC-2: DShared TInt32 static write → st.shared.s32 *)
+let test_dshared_int32_write () =
+  let v_idx = make_var "idx" TInt32 in
+  let k =
+    make_kernel
+      "test_shmem_i32"
+      ~locals:
+        [
+          DLocal (v_idx, Some (EConst (CInt32 0l)));
+          DShared ("tmp", TInt32, Some (EConst (CInt32 64l)));
+        ]
+      ~body:(SAssign (LArrayElem ("tmp", EVar v_idx), EConst (CInt32 42l)))
+  in
+  let ptx = Sarek_codegen.Sarek_ir_ptx_kernel.generate k in
+  if not (contains_sub ptx ".shared .align 4 .b32 tmp[64]") then
+    Alcotest.failf "expected '.shared .align 4 .b32 tmp[64]' in:\n%s" ptx ;
+  if not (contains_sub ptx "st.shared.s32") then
+    Alcotest.failf "expected 'st.shared.s32' in:\n%s" ptx ;
+  if contains_sub ptx "st.global" then
+    Alcotest.failf "unexpected 'st.global' for shared array in:\n%s" ptx
+
+(* AC-3: dynamic DShared (None) → Ptx_codegen_error "dynamic shared memory" *)
+let test_dshared_dynamic_raises () =
+  let k = make_kernel "test_dyn" ~locals:[DShared ("x", TFloat32, None)] in
+  match Sarek_codegen.Sarek_ir_ptx_kernel.generate k with
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error msg ->
+      if not (contains_sub msg "dynamic shared memory") then
+        Alcotest.failf "expected 'dynamic shared memory' in error, got: %s" msg
+  | _ -> Alcotest.fail "expected Ptx_codegen_error for dynamic DShared"
+
+(* AC-4: zero size → Ptx_codegen_error "size must be positive" *)
+let test_dshared_zero_size_raises () =
+  let k =
+    make_kernel
+      "test_zero"
+      ~locals:[DShared ("x", TFloat32, Some (EConst (CInt32 0l)))]
+  in
+  match Sarek_codegen.Sarek_ir_ptx_kernel.generate k with
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error msg ->
+      if not (contains_sub msg "size must be positive") then
+        Alcotest.failf "expected 'size must be positive' in error, got: %s" msg
+  | _ -> Alcotest.fail "expected Ptx_codegen_error for zero-size DShared"
+
+(* AC-5 (read side): DShared read → ld.shared.f32, never ld.global *)
+let test_dshared_shared_read () =
+  let idx_var = make_var "idx" TInt32 in
+  let k =
+    make_kernel
+      "test_shmem_read"
+      ~locals:
+        [
+          DLocal (idx_var, Some (EConst (CInt32 0l)));
+          DShared ("shmem", TFloat32, Some (EConst (CInt32 128l)));
+        ]
+      ~body:
+        (SLet (make_var "x" TFloat32, EArrayRead ("shmem", EVar idx_var), SEmpty))
+  in
+  let ptx = Sarek_codegen.Sarek_ir_ptx_kernel.generate k in
+  if not (contains_sub ptx "ld.shared.f32") then
+    Alcotest.failf "expected 'ld.shared.f32' in:\n%s" ptx ;
+  if contains_sub ptx "ld.global" then
+    Alcotest.failf "unexpected 'ld.global' for shared array read in:\n%s" ptx
+
+(* Extra: .shared directive precedes the first mov.u32 in the output *)
+let test_dshared_directive_placement () =
+  let k =
+    make_kernel
+      "test_placement"
+      ~locals:[DShared ("shmem", TFloat32, Some (EConst (CInt32 32l)))]
+  in
+  let ptx = Sarek_codegen.Sarek_ir_ptx_kernel.generate k in
+  let sp = find_sub ptx ".shared" in
+  if sp < 0 then Alcotest.failf "no .shared directive in:\n%s" ptx ;
+  let mp = find_sub ptx "mov.u32" in
+  if mp < 0 then Alcotest.failf "no mov.u32 in:\n%s" ptx ;
+  if sp >= mp then
+    Alcotest.failf ".shared (%d) must precede mov.u32 (%d) in:\n%s" sp mp ptx
+
+(* ======================================================================= *)
+(** * 12. Run all tests *)
 (* ======================================================================= *)
 
 let () =
@@ -811,4 +955,19 @@ let () =
           Alcotest.test_case "var-missing" `Quick test_var_not_found;
         ] );
       ("barrier", [Alcotest.test_case "barrier" `Quick test_barrier]);
+      ( "ptx-dshared",
+        [
+          Alcotest.test_case "f32-emit" `Quick test_dshared_f32_emit;
+          Alcotest.test_case "i32-write" `Quick test_dshared_int32_write;
+          Alcotest.test_case "shared-read" `Quick test_dshared_shared_read;
+          Alcotest.test_case "dynamic-raises" `Quick test_dshared_dynamic_raises;
+          Alcotest.test_case
+            "zero-size-raises"
+            `Quick
+            test_dshared_zero_size_raises;
+          Alcotest.test_case
+            "directive-placement"
+            `Quick
+            test_dshared_directive_placement;
+        ] );
     ]
