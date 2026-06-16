@@ -15,11 +15,11 @@ open Sarek_ir_ptx_types
     [.param] declaration block string for embedding in the [.entry] header. *)
 val emit_params : Buffer.t -> reg_alloc -> env -> decl list -> string
 
-(** [emit_locals buf alloc env locals] emits register allocations and optional
-    initialisation moves for each [DLocal] declaration. [DShared] declarations
-    reserve a [.u64] pointer register but do not emit valid [.shared] lowering
-    (logged as a design gap). [DParam] entries are skipped. *)
-val emit_locals : Buffer.t -> reg_alloc -> env -> decl list -> unit
+(** [emit_locals buf shared_buf alloc env locals] emits register allocations and
+    optional initialisation moves for each [DLocal] declaration. [DShared]
+    declarations emit a [.shared] directive to [shared_buf] and a [mov.u32]
+    base-address load to [buf]. [DParam] entries are skipped. *)
+val emit_locals : Buffer.t -> Buffer.t -> reg_alloc -> env -> decl list -> unit
 
 (** [emit_reg_decls buf alloc] emits [.reg] declarations based on the allocator
     high-water marks. Must be called {e after} all [emit_*] calls. *)

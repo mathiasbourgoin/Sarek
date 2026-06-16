@@ -23,6 +23,8 @@ val unsupported : string -> 'a
 
 (** {1 Register allocator} *)
 
+type mem_space = Global | Shared
+
 (** Counter-based register allocator. Each PTX type has an independent counter
     so that register names stay readable (e.g. [%r0], [%f0], [%rd0]). *)
 type reg_alloc = {
@@ -33,6 +35,7 @@ type reg_alloc = {
   mutable pred : int;
   mutable label : int;
   arr_elt_types : (string, elttype) Hashtbl.t;
+  arr_memspaces : (string, mem_space) Hashtbl.t;
 }
 
 (** [make_alloc ()] returns a fresh zeroed allocator. *)

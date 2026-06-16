@@ -18,20 +18,36 @@ open Sarek_ir_ptx_types
     unsupported element types. *)
 val elt_shift : elttype -> int
 
-(** [emit_array_read buf alloc r_base r_idx elt_type] emits a pointer-arithmetic
-    sequence followed by a typed [ld.global] instruction and returns the
-    destination register name.
+(** [emit_array_read buf alloc r_base r_idx elt_type ~is_shared] emits a
+    pointer-arithmetic sequence followed by a typed load and returns the
+    destination register name. When [~is_shared:true], uses 32-bit pointer
+    arithmetic and [ld.shared.*]; otherwise uses 64-bit and [ld.global.*].
 
     Ownership: [buf] is mutated; [alloc] counters are incremented. *)
 val emit_array_read :
-  Buffer.t -> reg_alloc -> string -> string -> elttype -> string
+  Buffer.t ->
+  reg_alloc ->
+  string ->
+  string ->
+  elttype ->
+  is_shared:bool ->
+  string
 
-(** [emit_array_write buf alloc r_base r_idx r_val elt_type] emits a
-    pointer-arithmetic sequence followed by a typed [st.global] instruction.
+(** [emit_array_write buf alloc r_base r_idx r_val elt_type ~is_shared] emits a
+    pointer-arithmetic sequence followed by a typed store. When
+    [~is_shared:true], uses 32-bit pointer arithmetic and [st.shared.*];
+    otherwise uses 64-bit and [st.global.*].
 
     Ownership: [buf] is mutated; [alloc] counters are incremented. *)
 val emit_array_write :
-  Buffer.t -> reg_alloc -> string -> string -> string -> elttype -> unit
+  Buffer.t ->
+  reg_alloc ->
+  string ->
+  string ->
+  string ->
+  elttype ->
+  is_shared:bool ->
+  unit
 
 (** [infer_elt_type alloc arr_name] returns the element type registered for
     [arr_name] in [alloc.arr_elt_types], or raises [Failure] if none is

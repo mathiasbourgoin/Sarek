@@ -3,9 +3,9 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(** Cuda_plugin — thin backward-compatibility shim.
-    The real backend now lives in Cuda_ptx_plugin (auto-registered) and
-    Cuda_c_plugin. Shared helpers live in Cuda_shared. *)
+(** Cuda_plugin — thin backward-compatibility shim. The real backend now lives
+    in Cuda_ptx_plugin (auto-registered) and Cuda_c_plugin. Shared helpers live
+    in Cuda_shared. *)
 
 (** Force Cuda_ptx_plugin to initialize (it auto-registers on load). *)
 let init () = Cuda_ptx_plugin.init ()

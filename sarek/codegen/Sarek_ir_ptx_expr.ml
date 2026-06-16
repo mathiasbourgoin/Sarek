@@ -84,16 +84,30 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
   | EArrayRead (arr_name, idx_expr) ->
       let r_base = env_lookup env arr_name in
       let r_idx = emit_expr buf alloc env idx_expr in
-      emit_array_read buf alloc r_base r_idx (infer_elt_type alloc arr_name)
+      emit_array_read
+        buf
+        alloc
+        r_base
+        r_idx
+        (infer_elt_type alloc arr_name)
+        ~is_shared:(Hashtbl.mem alloc.arr_memspaces arr_name)
   | EArrayReadExpr (base_expr, idx_expr) ->
       let r_base = emit_expr buf alloc env base_expr in
       let r_idx = emit_expr buf alloc env idx_expr in
-      let elt_type =
-        match base_expr with
-        | EVar v -> infer_elt_type alloc v.var_name
-        | _ -> TFloat32
+      let arr_name_opt =
+        match base_expr with EVar v -> Some v.var_name | _ -> None
       in
-      emit_array_read buf alloc r_base r_idx elt_type
+      let elt_type =
+        match arr_name_opt with
+        | Some n -> infer_elt_type alloc n
+        | None -> TFloat32
+      in
+      let is_shared =
+        match arr_name_opt with
+        | Some n -> Hashtbl.mem alloc.arr_memspaces n
+        | None -> false
+      in
+      emit_array_read buf alloc r_base r_idx elt_type ~is_shared
   | EIntrinsic (path, name, args) -> emit_intrinsic buf alloc env path name args
   | ECast (ty, e) ->
       let r_src = emit_expr buf alloc env e in
