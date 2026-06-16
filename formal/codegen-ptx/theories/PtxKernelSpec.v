@@ -16,10 +16,9 @@
  *
  * Design notes:
  * - No [Admitted] is used anywhere in this file.
- * - [ir_kernel] is a simplified record: kernel name (ignored in semantics),
- *   parameter names (list of register names to bind from the initial state),
- *   and body ([ir_stmt]).  This captures the essential structure of
- *   [Sarek_ir_types.kernel] that the PTX emitter formalizes.
+ * - [ir_kernel] is a simplified record: kernel name, parameter names, shared
+ *   memory declarations (carried through translation; the abstract [agpu_state]
+ *   already has a [shared_mem] field so no additional setup is needed), and body.
  * - The proof is immediate from [emit_stmt_correct]: the kernel evaluator
  *   simply executes the body statement, so correctness lifts directly.
  *)
@@ -32,6 +31,22 @@ From Stdlib Require Import Strings.String.
 From Stdlib Require Import List.
 
 Open Scope string_scope.
+Open Scope list_scope.
+
+(* ------------------------------------------------------------------ *)
+(** * Shared memory declaration record
+ *
+ * Mirrors the [DShared] IR constructor: a name and a static element count.
+ * The element type is not modelled here because the abstract semantics in
+ * [AGpuSemantics] use a uniform [ptx_val] domain (no stride information is
+ * needed for the kernel-level correctness theorem).
+ *)
+(* ------------------------------------------------------------------ *)
+
+Record ir_shared_decl := {
+  shdecl_name : string;
+  shdecl_size : nat;
+}.
 
 (* ------------------------------------------------------------------ *)
 (** * IR kernel record
@@ -42,9 +57,10 @@ Open Scope string_scope.
 (* ------------------------------------------------------------------ *)
 
 Record ir_kernel := {
-  kern_name   : string;        (** kernel name (for documentation only) *)
-  kern_params : list string;   (** parameter register names             *)
-  kern_body   : ir_stmt;       (** kernel body                          *)
+  kern_name   : string;
+  kern_params : list string;
+  kern_shared : list ir_shared_decl;
+  kern_body   : ir_stmt;
 }.
 
 (* ------------------------------------------------------------------ *)
@@ -54,6 +70,7 @@ Record ir_kernel := {
 Record ptx_kernel_ast := {
   ptx_kern_name   : string;
   ptx_kern_params : list string;
+  ptx_kern_shared : list ir_shared_decl;
   ptx_kern_body   : ptx_stmt_ast;
 }.
 
@@ -61,8 +78,10 @@ Record ptx_kernel_ast := {
 (** * Kernel execution semantics
  *
  * Execute the kernel body in the given initial state.  Parameters are
- * already assumed to be bound in [st.(regs)] before the kernel runs
- * (the kernel launch mechanism is out of scope for this model).
+ * already assumed to be bound in [st.(regs)] before the kernel runs.
+ * [kern_shared] / [ptx_kern_shared] are carried through but not
+ * interpreted: the abstract [agpu_state] already models shared memory
+ * as a flat word-addressed [shared_mem] array.
  *)
 (* ------------------------------------------------------------------ *)
 
@@ -81,6 +100,7 @@ Definition agpu_exec_ptx_kernel (st : agpu_state) (k : ptx_kernel_ast)
 Definition emit_ast_kernel (k : ir_kernel) : ptx_kernel_ast :=
   {| ptx_kern_name   := k.(kern_name);
      ptx_kern_params := k.(kern_params);
+     ptx_kern_shared := k.(kern_shared);
      ptx_kern_body   := emit_ast_stmt k.(kern_body) |}.
 
 (* ------------------------------------------------------------------ *)
@@ -93,6 +113,9 @@ Definition emit_ast_kernel (k : ir_kernel) : ptx_kernel_ast :=
  *   [agpu_exec_ir st k.(kern_body) =
  *    agpu_exec_ptx_stmt st (emit_ast_stmt k.(kern_body))]
  * which is exactly [emit_stmt_correct].
+ *
+ * Note: [kern_shared] / [ptx_kern_shared] do not appear in either
+ * semantics function, so the proof is unaffected by the field extension.
  *)
 (* ------------------------------------------------------------------ *)
 
@@ -106,6 +129,67 @@ Proof.
   simpl.
   apply emit_stmt_correct.
 Qed.
+
+(* ------------------------------------------------------------------ *)
+(** * Non-vacuousness witnesses (Rule 11)
+ *
+ * Three concrete Examples proving the theorem is non-vacuous:
+ * (A) kernel with no shared declarations;
+ * (B) kernel with one DShared-derived declaration (the theorem still holds);
+ * (C) [emit_ast_kernel] faithfully copies [kern_shared] into
+ *     [ptx_kern_shared] — the field is not dropped.
+ *)
+(* ------------------------------------------------------------------ *)
+
+(** Concrete initial state: empty register file, zero thread constants,
+    zero-initialised global and shared memory. *)
+Definition ex_empty_regs : string -> option ptx_val :=
+  fun _ => None.
+
+Definition ex_zero_tc : thread_const :=
+  {| tidx := 0; bidx := 0; bdim := 0 |}.
+
+Definition ex_zero_mem : agpu_mem :=
+  {| global_mem := fun _ => U32 0;
+     shared_mem := fun _ => U32 0 |}.
+
+Definition ex_st : agpu_state :=
+  {| regs := ex_empty_regs; tc := ex_zero_tc; mem := ex_zero_mem |}.
+
+(** Witness A: kernel with no shared declarations, empty body. *)
+Definition ex_k_no_shared : ir_kernel :=
+  {| kern_name := "no_shared";
+     kern_params := nil;
+     kern_shared := nil;
+     kern_body := ISEmpty |}.
+
+Example example_kernel_no_shared :
+  agpu_exec_ir_kernel ex_st ex_k_no_shared =
+  agpu_exec_ptx_kernel ex_st (emit_ast_kernel ex_k_no_shared).
+Proof. apply emit_kernel_correct. Qed.
+
+(** Witness B: kernel with one DShared-derived declaration.
+    [kern_shared] is carried through; the empty body executes correctly. *)
+Definition ex_shared_decl : ir_shared_decl :=
+  {| shdecl_name := "shmem"; shdecl_size := 256 |}.
+
+Definition ex_k_with_shared : ir_kernel :=
+  {| kern_name := "with_shared";
+     kern_params := nil;
+     kern_shared := ex_shared_decl :: nil;
+     kern_body := ISEmpty |}.
+
+Example example_kernel_with_shared :
+  agpu_exec_ir_kernel ex_st ex_k_with_shared =
+  agpu_exec_ptx_kernel ex_st (emit_ast_kernel ex_k_with_shared).
+Proof. apply emit_kernel_correct. Qed.
+
+(** Witness C: [emit_ast_kernel] faithfully copies [kern_shared]
+    into [ptx_kern_shared] — the field is not dropped. *)
+Example example_shared_field_copied :
+  (emit_ast_kernel ex_k_with_shared).(ptx_kern_shared) =
+  ex_k_with_shared.(kern_shared).
+Proof. reflexivity. Qed.
 
 (* ------------------------------------------------------------------ *)
 (** * Summary: theorems proved in this project
