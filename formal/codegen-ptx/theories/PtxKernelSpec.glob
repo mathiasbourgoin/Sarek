@@ -1,80 +1,197 @@
-DIGEST dc5829d2079b505155f4f20a00fd6e48
+DIGEST aeda0d3bca03b4f48917f2921ef9dd74
 FCodegenPtx.PtxKernelSpec
-R1197:1209 CodegenPtx.AGpuSemantics <> <> lib
-R1243:1250 CodegenPtx.PtxTypes <> <> lib
-R1284:1294 CodegenPtx.PtxExprSpec <> <> lib
-R1328:1338 CodegenPtx.PtxStmtSpec <> <> lib
-R1368:1381 Stdlib.Strings.String <> <> lib
-R1411:1414 Stdlib.Lists.List <> <> lib
-rec 1731:1739 <> ir_kernel
-proj 1748:1756 <> kern_name
-proj 1823:1833 <> kern_params
-proj 1898:1906 <> kern_body
-R1762:1767 Stdlib.Strings.String <> string ind
-R1837:1840 Corelib.Init.Datatypes <> list ind
-R1842:1847 Stdlib.Strings.String <> string ind
-R1912:1918 CodegenPtx.PtxStmtSpec <> ir_stmt ind
-rec 2153:2166 <> ptx_kernel_ast
-proj 2175:2187 <> ptx_kern_name
-proj 2203:2217 <> ptx_kern_params
-proj 2236:2248 <> ptx_kern_body
-R2193:2198 Stdlib.Strings.String <> string ind
-R2221:2224 Corelib.Init.Datatypes <> list ind
-R2226:2231 Stdlib.Strings.String <> string ind
-R2254:2265 CodegenPtx.PtxStmtSpec <> ptx_stmt_ast ind
-def 2675:2693 <> agpu_exec_ir_kernel
-R2701:2710 CodegenPtx.AGpuSemantics <> agpu_state rec
-binder 2696:2697 <> st:9
-R2718:2726 CodegenPtx.PtxKernelSpec <> ir_kernel rec
-binder 2714:2714 <> k:10
-R2735:2740 Corelib.Init.Datatypes <> option ind
-R2742:2751 CodegenPtx.AGpuSemantics <> agpu_state rec
-R2758:2769 CodegenPtx.PtxStmtSpec <> agpu_exec_ir def
-R2771:2772 CodegenPtx.PtxKernelSpec <> st:9 var
-R2777:2785 CodegenPtx.PtxKernelSpec <> kern_body proj
-R2774:2774 CodegenPtx.PtxKernelSpec <> k:10 var
-def 2801:2820 <> agpu_exec_ptx_kernel
-R2828:2837 CodegenPtx.AGpuSemantics <> agpu_state rec
-binder 2823:2824 <> st:11
-R2845:2858 CodegenPtx.PtxKernelSpec <> ptx_kernel_ast rec
-binder 2841:2841 <> k:12
-R2867:2872 Corelib.Init.Datatypes <> option ind
-R2874:2883 CodegenPtx.AGpuSemantics <> agpu_state rec
-R2890:2907 CodegenPtx.PtxStmtSpec <> agpu_exec_ptx_stmt def
-R2909:2910 CodegenPtx.PtxKernelSpec <> st:11 var
-R2915:2927 CodegenPtx.PtxKernelSpec <> ptx_kern_body proj
-R2912:2912 CodegenPtx.PtxKernelSpec <> k:12 var
-def 3144:3158 <> emit_ast_kernel
-R3165:3173 CodegenPtx.PtxKernelSpec <> ir_kernel rec
-binder 3161:3161 <> k:13
-R3178:3191 CodegenPtx.PtxKernelSpec <> ptx_kernel_ast rec
-R3201:3213 CodegenPtx.PtxKernelSpec <> ptx_kern_name proj
-R3201:3213 CodegenPtx.PtxKernelSpec <> ptx_kern_name proj
-R3201:3213 CodegenPtx.PtxKernelSpec <> ptx_kern_name proj
-R3240:3254 CodegenPtx.PtxKernelSpec <> ptx_kern_params proj
-R3240:3254 CodegenPtx.PtxKernelSpec <> ptx_kern_params proj
-R3281:3293 CodegenPtx.PtxKernelSpec <> ptx_kern_body proj
-R3281:3293 CodegenPtx.PtxKernelSpec <> ptx_kern_body proj
-R3223:3231 CodegenPtx.PtxKernelSpec <> kern_name proj
-R3220:3220 CodegenPtx.PtxKernelSpec <> k:13 var
-R3262:3272 CodegenPtx.PtxKernelSpec <> kern_params proj
-R3259:3259 CodegenPtx.PtxKernelSpec <> k:13 var
-R3300:3312 CodegenPtx.PtxStmtSpec <> emit_ast_stmt def
-R3317:3325 CodegenPtx.PtxKernelSpec <> kern_body proj
-R3314:3314 CodegenPtx.PtxKernelSpec <> k:13 var
-prf 3886:3904 <> emit_kernel_correct
-binder 3917:3917 <> k:14
-binder 3919:3920 <> st:15
-R3951:3957 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R3927:3945 CodegenPtx.PtxKernelSpec <> agpu_exec_ir_kernel def
-R3947:3948 CodegenPtx.PtxKernelSpec <> st:15 var
-R3950:3950 CodegenPtx.PtxKernelSpec <> k:14 var
-R3958:3977 CodegenPtx.PtxKernelSpec <> agpu_exec_ptx_kernel def
-R3979:3980 CodegenPtx.PtxKernelSpec <> st:15 var
-R3983:3997 CodegenPtx.PtxKernelSpec <> emit_ast_kernel def
-R3999:3999 CodegenPtx.PtxKernelSpec <> k:14 var
-R4034:4052 CodegenPtx.PtxKernelSpec <> agpu_exec_ir_kernel def
-R4055:4074 CodegenPtx.PtxKernelSpec <> agpu_exec_ptx_kernel def
-R4077:4091 CodegenPtx.PtxKernelSpec <> emit_ast_kernel def
-R4111:4127 CodegenPtx.PtxStmtSpec <> emit_stmt_correct thm
-R4111:4127 CodegenPtx.PtxStmtSpec <> emit_stmt_correct thm
+R1153:1165 CodegenPtx.AGpuSemantics <> <> lib
+R1199:1206 CodegenPtx.PtxTypes <> <> lib
+R1240:1250 CodegenPtx.PtxExprSpec <> <> lib
+R1284:1294 CodegenPtx.PtxStmtSpec <> <> lib
+R1324:1337 Stdlib.Strings.String <> <> lib
+R1367:1370 Stdlib.Lists.List <> <> lib
+rec 1903:1916 <> ir_shared_decl
+proj 1925:1935 <> shdecl_name
+proj 1949:1959 <> shdecl_size
+R1939:1944 Stdlib.Strings.String <> string ind
+R1963:1965 Corelib.Init.Datatypes <> nat ind
+rec 2259:2267 <> ir_kernel
+proj 2276:2284 <> kern_name
+proj 2300:2310 <> kern_params
+proj 2329:2339 <> kern_shared
+proj 2366:2374 <> kern_body
+R2290:2295 Stdlib.Strings.String <> string ind
+R2314:2317 Corelib.Init.Datatypes <> list ind
+R2319:2324 Stdlib.Strings.String <> string ind
+R2343:2346 Corelib.Init.Datatypes <> list ind
+R2348:2361 CodegenPtx.PtxKernelSpec <> ir_shared_decl rec
+R2380:2386 CodegenPtx.PtxStmtSpec <> ir_stmt ind
+rec 2571:2584 <> ptx_kernel_ast
+proj 2593:2605 <> ptx_kern_name
+proj 2621:2635 <> ptx_kern_params
+proj 2654:2668 <> ptx_kern_shared
+proj 2695:2707 <> ptx_kern_body
+R2611:2616 Stdlib.Strings.String <> string ind
+R2639:2642 Corelib.Init.Datatypes <> list ind
+R2644:2649 Stdlib.Strings.String <> string ind
+R2672:2675 Corelib.Init.Datatypes <> list ind
+R2677:2690 CodegenPtx.PtxKernelSpec <> ir_shared_decl rec
+R2713:2724 CodegenPtx.PtxStmtSpec <> ptx_stmt_ast ind
+def 3254:3272 <> agpu_exec_ir_kernel
+R3280:3289 CodegenPtx.AGpuSemantics <> agpu_state rec
+binder 3275:3276 <> st:14
+R3297:3305 CodegenPtx.PtxKernelSpec <> ir_kernel rec
+binder 3293:3293 <> k:15
+R3314:3319 Corelib.Init.Datatypes <> option ind
+R3321:3330 CodegenPtx.AGpuSemantics <> agpu_state rec
+R3337:3348 CodegenPtx.PtxStmtSpec <> agpu_exec_ir def
+R3350:3351 CodegenPtx.PtxKernelSpec <> st:14 var
+R3356:3364 CodegenPtx.PtxKernelSpec <> kern_body proj
+R3353:3353 CodegenPtx.PtxKernelSpec <> k:15 var
+def 3380:3399 <> agpu_exec_ptx_kernel
+R3407:3416 CodegenPtx.AGpuSemantics <> agpu_state rec
+binder 3402:3403 <> st:16
+R3424:3437 CodegenPtx.PtxKernelSpec <> ptx_kernel_ast rec
+binder 3420:3420 <> k:17
+R3446:3451 Corelib.Init.Datatypes <> option ind
+R3453:3462 CodegenPtx.AGpuSemantics <> agpu_state rec
+R3469:3486 CodegenPtx.PtxStmtSpec <> agpu_exec_ptx_stmt def
+R3488:3489 CodegenPtx.PtxKernelSpec <> st:16 var
+R3494:3506 CodegenPtx.PtxKernelSpec <> ptx_kern_body proj
+R3491:3491 CodegenPtx.PtxKernelSpec <> k:17 var
+def 3723:3737 <> emit_ast_kernel
+R3744:3752 CodegenPtx.PtxKernelSpec <> ir_kernel rec
+binder 3740:3740 <> k:18
+R3757:3770 CodegenPtx.PtxKernelSpec <> ptx_kernel_ast rec
+R3780:3792 CodegenPtx.PtxKernelSpec <> ptx_kern_name proj
+R3780:3792 CodegenPtx.PtxKernelSpec <> ptx_kern_name proj
+R3780:3792 CodegenPtx.PtxKernelSpec <> ptx_kern_name proj
+R3819:3833 CodegenPtx.PtxKernelSpec <> ptx_kern_params proj
+R3819:3833 CodegenPtx.PtxKernelSpec <> ptx_kern_params proj
+R3860:3874 CodegenPtx.PtxKernelSpec <> ptx_kern_shared proj
+R3860:3874 CodegenPtx.PtxKernelSpec <> ptx_kern_shared proj
+R3901:3913 CodegenPtx.PtxKernelSpec <> ptx_kern_body proj
+R3901:3913 CodegenPtx.PtxKernelSpec <> ptx_kern_body proj
+R3802:3810 CodegenPtx.PtxKernelSpec <> kern_name proj
+R3799:3799 CodegenPtx.PtxKernelSpec <> k:18 var
+R3841:3851 CodegenPtx.PtxKernelSpec <> kern_params proj
+R3838:3838 CodegenPtx.PtxKernelSpec <> k:18 var
+R3882:3892 CodegenPtx.PtxKernelSpec <> kern_shared proj
+R3879:3879 CodegenPtx.PtxKernelSpec <> k:18 var
+R3920:3932 CodegenPtx.PtxStmtSpec <> emit_ast_stmt def
+R3937:3945 CodegenPtx.PtxKernelSpec <> kern_body proj
+R3934:3934 CodegenPtx.PtxKernelSpec <> k:18 var
+prf 4650:4668 <> emit_kernel_correct
+binder 4681:4681 <> k:19
+binder 4683:4684 <> st:20
+R4715:4721 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4691:4709 CodegenPtx.PtxKernelSpec <> agpu_exec_ir_kernel def
+R4711:4712 CodegenPtx.PtxKernelSpec <> st:20 var
+R4714:4714 CodegenPtx.PtxKernelSpec <> k:19 var
+R4722:4741 CodegenPtx.PtxKernelSpec <> agpu_exec_ptx_kernel def
+R4743:4744 CodegenPtx.PtxKernelSpec <> st:20 var
+R4747:4761 CodegenPtx.PtxKernelSpec <> emit_ast_kernel def
+R4763:4763 CodegenPtx.PtxKernelSpec <> k:19 var
+R4798:4816 CodegenPtx.PtxKernelSpec <> agpu_exec_ir_kernel def
+R4819:4838 CodegenPtx.PtxKernelSpec <> agpu_exec_ptx_kernel def
+R4841:4855 CodegenPtx.PtxKernelSpec <> emit_ast_kernel def
+R4875:4891 CodegenPtx.PtxStmtSpec <> emit_stmt_correct thm
+R4875:4891 CodegenPtx.PtxStmtSpec <> emit_stmt_correct thm
+def 5530:5542 <> ex_empty_regs
+R5552:5555 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5546:5551 Stdlib.Strings.String <> string ind
+R5556:5561 Corelib.Init.Datatypes <> option ind
+R5563:5569 CodegenPtx.AGpuSemantics <> ptx_val ind
+R5585:5588 Corelib.Init.Datatypes <> None constr
+def 5603:5612 <> ex_zero_tc
+R5616:5627 CodegenPtx.AGpuSemantics <> thread_const rec
+R5637:5640 CodegenPtx.AGpuSemantics <> tidx proj
+R5637:5640 CodegenPtx.AGpuSemantics <> tidx proj
+R5637:5640 CodegenPtx.AGpuSemantics <> tidx proj
+R5648:5651 CodegenPtx.AGpuSemantics <> bidx proj
+R5648:5651 CodegenPtx.AGpuSemantics <> bidx proj
+R5659:5662 CodegenPtx.AGpuSemantics <> bdim proj
+R5659:5662 CodegenPtx.AGpuSemantics <> bdim proj
+def 5685:5695 <> ex_zero_mem
+R5699:5706 CodegenPtx.AGpuSemantics <> agpu_mem rec
+R5716:5725 CodegenPtx.AGpuSemantics <> global_mem proj
+R5716:5725 CodegenPtx.AGpuSemantics <> global_mem proj
+R5716:5725 CodegenPtx.AGpuSemantics <> global_mem proj
+R5751:5760 CodegenPtx.AGpuSemantics <> shared_mem proj
+R5751:5760 CodegenPtx.AGpuSemantics <> shared_mem proj
+R5739:5741 CodegenPtx.AGpuSemantics <> U32 constr
+R5774:5776 CodegenPtx.AGpuSemantics <> U32 constr
+def 5796:5800 <> ex_st
+R5804:5813 CodegenPtx.AGpuSemantics <> agpu_state rec
+R5823:5826 CodegenPtx.AGpuSemantics <> regs proj
+R5823:5826 CodegenPtx.AGpuSemantics <> regs proj
+R5823:5826 CodegenPtx.AGpuSemantics <> regs proj
+R5846:5847 CodegenPtx.AGpuSemantics <> tc proj
+R5846:5847 CodegenPtx.AGpuSemantics <> tc proj
+R5864:5866 CodegenPtx.AGpuSemantics <> mem proj
+R5864:5866 CodegenPtx.AGpuSemantics <> mem proj
+R5831:5843 CodegenPtx.PtxKernelSpec <> ex_empty_regs def
+R5852:5861 CodegenPtx.PtxKernelSpec <> ex_zero_tc def
+R5871:5881 CodegenPtx.PtxKernelSpec <> ex_zero_mem def
+def 5965:5978 <> ex_k_no_shared
+R5982:5990 CodegenPtx.PtxKernelSpec <> ir_kernel rec
+R6000:6008 CodegenPtx.PtxKernelSpec <> kern_name proj
+R6000:6008 CodegenPtx.PtxKernelSpec <> kern_name proj
+R6000:6008 CodegenPtx.PtxKernelSpec <> kern_name proj
+R6031:6041 CodegenPtx.PtxKernelSpec <> kern_params proj
+R6031:6041 CodegenPtx.PtxKernelSpec <> kern_params proj
+R6056:6066 CodegenPtx.PtxKernelSpec <> kern_shared proj
+R6056:6066 CodegenPtx.PtxKernelSpec <> kern_shared proj
+R6081:6089 CodegenPtx.PtxKernelSpec <> kern_body proj
+R6081:6089 CodegenPtx.PtxKernelSpec <> kern_body proj
+R6046:6048 Corelib.Init.Datatypes <> nil constr
+R6071:6073 Corelib.Init.Datatypes <> nil constr
+R6094:6100 CodegenPtx.PtxStmtSpec <> ISEmpty constr
+def 6115:6138 <> example_kernel_no_shared
+R6184:6188 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6144:6162 CodegenPtx.PtxKernelSpec <> agpu_exec_ir_kernel def
+R6164:6168 CodegenPtx.PtxKernelSpec <> ex_st def
+R6170:6183 CodegenPtx.PtxKernelSpec <> ex_k_no_shared def
+R6189:6208 CodegenPtx.PtxKernelSpec <> agpu_exec_ptx_kernel def
+R6210:6214 CodegenPtx.PtxKernelSpec <> ex_st def
+R6217:6231 CodegenPtx.PtxKernelSpec <> emit_ast_kernel def
+R6233:6246 CodegenPtx.PtxKernelSpec <> ex_k_no_shared def
+R6263:6281 CodegenPtx.PtxKernelSpec <> emit_kernel_correct thm
+R6263:6281 CodegenPtx.PtxKernelSpec <> emit_kernel_correct thm
+def 6437:6450 <> ex_shared_decl
+R6454:6467 CodegenPtx.PtxKernelSpec <> ir_shared_decl rec
+R6477:6487 CodegenPtx.PtxKernelSpec <> shdecl_name proj
+R6477:6487 CodegenPtx.PtxKernelSpec <> shdecl_name proj
+R6477:6487 CodegenPtx.PtxKernelSpec <> shdecl_name proj
+R6501:6511 CodegenPtx.PtxKernelSpec <> shdecl_size proj
+R6501:6511 CodegenPtx.PtxKernelSpec <> shdecl_size proj
+def 6536:6551 <> ex_k_with_shared
+R6555:6563 CodegenPtx.PtxKernelSpec <> ir_kernel rec
+R6573:6581 CodegenPtx.PtxKernelSpec <> kern_name proj
+R6573:6581 CodegenPtx.PtxKernelSpec <> kern_name proj
+R6573:6581 CodegenPtx.PtxKernelSpec <> kern_name proj
+R6606:6616 CodegenPtx.PtxKernelSpec <> kern_params proj
+R6606:6616 CodegenPtx.PtxKernelSpec <> kern_params proj
+R6631:6641 CodegenPtx.PtxKernelSpec <> kern_shared proj
+R6631:6641 CodegenPtx.PtxKernelSpec <> kern_shared proj
+R6674:6682 CodegenPtx.PtxKernelSpec <> kern_body proj
+R6674:6682 CodegenPtx.PtxKernelSpec <> kern_body proj
+R6621:6623 Corelib.Init.Datatypes <> nil constr
+R6660:6663 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R6646:6659 CodegenPtx.PtxKernelSpec <> ex_shared_decl def
+R6664:6666 Corelib.Init.Datatypes <> nil constr
+R6687:6693 CodegenPtx.PtxStmtSpec <> ISEmpty constr
+def 6708:6733 <> example_kernel_with_shared
+R6781:6785 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6739:6757 CodegenPtx.PtxKernelSpec <> agpu_exec_ir_kernel def
+R6759:6763 CodegenPtx.PtxKernelSpec <> ex_st def
+R6765:6780 CodegenPtx.PtxKernelSpec <> ex_k_with_shared def
+R6786:6805 CodegenPtx.PtxKernelSpec <> agpu_exec_ptx_kernel def
+R6807:6811 CodegenPtx.PtxKernelSpec <> ex_st def
+R6814:6828 CodegenPtx.PtxKernelSpec <> emit_ast_kernel def
+R6830:6845 CodegenPtx.PtxKernelSpec <> ex_k_with_shared def
+R6862:6880 CodegenPtx.PtxKernelSpec <> emit_kernel_correct thm
+R6862:6880 CodegenPtx.PtxKernelSpec <> emit_kernel_correct thm
+def 7022:7048 <> example_shared_field_copied
+R7106:7110 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7090:7104 CodegenPtx.PtxKernelSpec <> ptx_kern_shared proj
+R7055:7069 CodegenPtx.PtxKernelSpec <> emit_ast_kernel def
+R7071:7086 CodegenPtx.PtxKernelSpec <> ex_k_with_shared def
+R7129:7139 CodegenPtx.PtxKernelSpec <> kern_shared proj
+R7111:7126 CodegenPtx.PtxKernelSpec <> ex_k_with_shared def
