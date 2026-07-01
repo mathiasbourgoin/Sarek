@@ -1,4 +1,4 @@
-DIGEST aeda0d3bca03b4f48917f2921ef9dd74
+DIGEST 85910f9c40c3bc2b2324f02598fc03be
 FCodegenPtx.PtxKernelSpec
 R1153:1165 CodegenPtx.AGpuSemantics <> <> lib
 R1199:1206 CodegenPtx.PtxTypes <> <> lib
@@ -188,10 +188,20 @@ R6814:6828 CodegenPtx.PtxKernelSpec <> emit_ast_kernel def
 R6830:6845 CodegenPtx.PtxKernelSpec <> ex_k_with_shared def
 R6862:6880 CodegenPtx.PtxKernelSpec <> emit_kernel_correct thm
 R6862:6880 CodegenPtx.PtxKernelSpec <> emit_kernel_correct thm
-def 7022:7048 <> example_shared_field_copied
-R7106:7110 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R7090:7104 CodegenPtx.PtxKernelSpec <> ptx_kern_shared proj
-R7055:7069 CodegenPtx.PtxKernelSpec <> emit_ast_kernel def
-R7071:7086 CodegenPtx.PtxKernelSpec <> ex_k_with_shared def
-R7129:7139 CodegenPtx.PtxKernelSpec <> kern_shared proj
-R7111:7126 CodegenPtx.PtxKernelSpec <> ex_k_with_shared def
+prf 7101:7132 <> emit_ast_kernel_shared_preserved
+binder 7145:7145 <> k:21
+R7189:7191 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7173:7187 CodegenPtx.PtxKernelSpec <> ptx_kern_shared proj
+R7153:7167 CodegenPtx.PtxKernelSpec <> emit_ast_kernel def
+R7169:7169 CodegenPtx.PtxKernelSpec <> k:21 var
+R7195:7205 CodegenPtx.PtxKernelSpec <> kern_shared proj
+R7192:7192 CodegenPtx.PtxKernelSpec <> k:21 var
+def 7392:7418 <> example_shared_field_copied
+R7476:7480 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7460:7474 CodegenPtx.PtxKernelSpec <> ptx_kern_shared proj
+R7425:7439 CodegenPtx.PtxKernelSpec <> emit_ast_kernel def
+R7441:7456 CodegenPtx.PtxKernelSpec <> ex_k_with_shared def
+R7499:7509 CodegenPtx.PtxKernelSpec <> kern_shared proj
+R7481:7496 CodegenPtx.PtxKernelSpec <> ex_k_with_shared def
+R7526:7557 CodegenPtx.PtxKernelSpec <> emit_ast_kernel_shared_preserved thm
+R7526:7557 CodegenPtx.PtxKernelSpec <> emit_ast_kernel_shared_preserved thm

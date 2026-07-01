@@ -184,12 +184,20 @@ Example example_kernel_with_shared :
   agpu_exec_ptx_kernel ex_st (emit_ast_kernel ex_k_with_shared).
 Proof. apply emit_kernel_correct. Qed.
 
-(** Witness C: [emit_ast_kernel] faithfully copies [kern_shared]
-    into [ptx_kern_shared] — the field is not dropped. *)
+(** [emit_ast_kernel] faithfully copies [kern_shared] into [ptx_kern_shared]
+    for every kernel — not just the witness below — so a regression in
+    [emit_ast_kernel] is caught at the spec level. *)
+Lemma emit_ast_kernel_shared_preserved :
+  forall k,
+    (emit_ast_kernel k).(ptx_kern_shared) = k.(kern_shared).
+Proof. reflexivity. Qed.
+
+(** Witness C: instance of [emit_ast_kernel_shared_preserved] — the field
+    is not dropped for a kernel that actually carries a DShared decl. *)
 Example example_shared_field_copied :
   (emit_ast_kernel ex_k_with_shared).(ptx_kern_shared) =
   ex_k_with_shared.(kern_shared).
-Proof. reflexivity. Qed.
+Proof. apply emit_ast_kernel_shared_preserved. Qed.
 
 (* ------------------------------------------------------------------ *)
 (** * Summary: theorems proved in this project
