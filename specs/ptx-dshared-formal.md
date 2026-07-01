@@ -17,7 +17,7 @@ version: 1.0.0
 | Should `env` type change or use a parallel structure for shared tracking? | Separate `arr_memspaces : (string, unit) Hashtbl.t` field on `reg_alloc` — avoids changing the env type signature or downstream lookup sites |
 | Are shared memory pointers `.u32` or `.u64`? | `.u32` — PTX shared state space uses 32-bit addresses; `ld.shared` uses the 32-bit register directly, no `cvta` needed |
 | What happens when `DShared` has `size_opt = None`? | Raise `Ptx_codegen_error "DShared: dynamic shared memory (size=None) not yet supported"` — out of scope for this cycle |
-| What Rocq record shape for `ir_shared_decl`? | `{ sd_name : string; sd_elt : ir_elt_type; sd_size : nat }` — alignment derived from element type, not stored explicitly |
+| What Rocq record shape for `ir_shared_decl`? | `{ shdecl_name : string; shdecl_size : nat }` — the element type is not modelled: the abstract `agpu` semantics use a uniform `ptx_val` domain, so no stride/alignment info is needed for the kernel-level correctness theorem |
 | Should `DShared` populate `alloc.arr_elt_types`? | Yes — so `infer_elt_type` finds the shared array and chooses the right `ld.shared.*` variant |
 | Is `.b32` or `.f32` used in `.shared` declarations? | `.bNN` (bit-sized) in declarations, typed qualifier (`f32`, `s32`, `f64`, `s64`) in `ld.shared`/`st.shared` instructions |
 
@@ -61,11 +61,11 @@ As a formal verification engineer, I want the `emit_kernel_correct` theorem in `
 
 **Acceptance Scenarios**:
 
-1. **Given** `ir_kernel` is extended with `kern_shared : list ir_shared_decl` where `ir_shared_decl` has fields `sd_name : string`, `sd_elt : ir_elt_type`, `sd_size : nat`, **When** `coqc theories/PtxKernelSpec.v` is run, **Then** it exits 0 with 0 `Admitted` or `admit` in the file.
+1. **Given** `ir_kernel` is extended with `kern_shared : list ir_shared_decl` where `ir_shared_decl` has fields `shdecl_name : string`, `shdecl_size : nat`, **When** `coqc theories/PtxKernelSpec.v` is run, **Then** it exits 0 with 0 `Admitted` or `admit` in the file.
 
 2. **Given** `emit_kernel_correct` is stated as `forall k st, agpu_exec_ir_kernel st k = agpu_exec_ptx_kernel st (emit_ast_kernel k)` where both sides ignore `k.(kern_shared)`, **When** `coqchk` is run on the compiled `.vo`, **Then** the output contains "Modules were successfully checked".
 
-3. **Given** an `ir_kernel` with `kern_shared = [{ sd_name := "shmem"; sd_elt := TInt32; sd_size := 256 }]` but a body that performs no shared memory access, **When** the `emit_kernel_correct` theorem is instantiated for this kernel, **Then** it holds without additional lemmas (the non-interference property: shared decls do not affect body execution).
+3. **Given** an `ir_kernel` with `kern_shared = [{ shdecl_name := "shmem"; shdecl_size := 256 }]` but a body that performs no shared memory access, **When** the `emit_kernel_correct` theorem is instantiated for this kernel, **Then** it holds without additional lemmas (the non-interference property: shared decls do not affect body execution).
 
 4. **Given** `formal/codegen-ptx/theories/PtxKernelSpec.v` after the extension, **When** `grep -cE '^\s*(Admitted\.|admit\.)' theories/PtxKernelSpec.v` is run, **Then** the output is `0`.
 
@@ -99,9 +99,9 @@ As a formal verification engineer, I want the `emit_kernel_correct` theorem in `
 
 ### Rocq Formal Proof — DShared Extension
 
-- **FR-010** [US-2]: `PtxKernelSpec.v` MUST define `ir_shared_decl` as a record with fields `sd_name : string`, `sd_elt : ir_elt_type`, `sd_size : nat`.
+- **FR-010** [US-2]: `PtxKernelSpec.v` MUST define `ir_shared_decl` as a record with fields `shdecl_name : string`, `shdecl_size : nat` (element type deliberately not modelled — see Clarifications).
 - **FR-011** [US-2]: `ir_kernel` MUST be extended with field `kern_shared : list ir_shared_decl`.
-- **FR-012** [US-2]: `ptx_kernel_ast` MUST be extended with field `ptx_kern_shared : list ptx_shared_decl` where `ptx_shared_decl` mirrors `ir_shared_decl`.
+- **FR-012** [US-2]: `ptx_kernel_ast` MUST be extended with field `ptx_kern_shared : list ir_shared_decl` (the same record type is reused on both sides; no separate `ptx_shared_decl`).
 - **FR-013** [US-2]: `agpu_exec_ir_kernel` MUST NOT access `kern_shared` (the field is semantically neutral).
 - **FR-014** [US-2]: `agpu_exec_ptx_kernel` MUST NOT access `ptx_kern_shared` (static directive, semantically neutral).
 - **FR-015** [US-2]: `emit_ast_kernel` MUST map `kern_shared` to `ptx_kern_shared` element-wise.
@@ -141,6 +141,6 @@ As a formal verification engineer, I want the `emit_kernel_correct` theorem in `
 ## Entities
 
 - `DShared`: An IR declaration variant `DShared of string * elttype * expr option` representing a named shared memory buffer in a kernel
-- `ir_shared_decl`: Rocq record `{ sd_name : string; sd_elt : ir_elt_type; sd_size : nat }` — formal model of a static DShared declaration
+- `ir_shared_decl`: Rocq record `{ shdecl_name : string; shdecl_size : nat }` — formal model of a static DShared declaration (shared by `ir_kernel` and `ptx_kernel_ast`)
 - `arr_memspaces`: Runtime `(string, unit) Hashtbl.t` field on `reg_alloc` tracking which array names are in shared memory space, used to choose `ld.shared` vs `ld.global`
 - `emit_kernel_correct`: Top-level Rocq theorem stating IR kernel execution equals PTX kernel execution under agpu semantics, for all kernels and initial states
