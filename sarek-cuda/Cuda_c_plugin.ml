@@ -29,7 +29,7 @@ module Backend : Framework_sig.BACKEND = struct
 
   let generate_source ?block:_ (ir : Sarek_ir_types.kernel) : string option =
     try Some (Sarek_ir_cuda.generate_with_types ~types:ir.kern_types ir)
-    with _ -> None
+    with Sarek_backend_error.Backend_error.Backend_error _ -> None
 
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =
     Cuda_error.raise_error
