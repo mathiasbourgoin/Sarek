@@ -1,0 +1,16 @@
+# Guard: 'master' is a stale legacy branch (diverged from 'main' in 2019).
+# Several PRs silently targeted it via stale local origin/HEAD symrefs
+# (see PRs #201/#202/#205/#206, reconciled onto main via #199/#208/#209).
+# This check makes that failure mode loud instead of silent.
+name: Block PRs targeting master
+on:
+  pull_request:
+    branches: [master]
+jobs:
+  block:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "::error::This PR targets 'master', a stale legacy branch. The default branch is 'main'."
+          echo "::error::Retarget with: gh pr edit ${{ github.event.pull_request.number }} --base main (or the 'Edit' button next to the base branch)."
+          exit 1
