@@ -321,3 +321,30 @@ Proof.
   - apply infer_cf_type_sound.
   - apply infer_cf_type_complete.
 Qed.
+
+(* ===== Non-vacuousness witnesses ===== *)
+
+Example infer_cf_type_rec_witness :
+  infer_cf_type [] (CFRec (RMem (MCore (ELit (LInt 0))))) = inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_cf_type_if_then_witness :
+  infer_cf_type []
+    (CFIfThen
+      (CFRec (RMem (MCore (ELit (LBool true)))))
+      (CFRec (RMem (MCore (ELit LUnit))))) = inl (TPrim TUnit).
+Proof. reflexivity. Qed.
+
+Example infer_cf_type_seq_witness :
+  infer_cf_type []
+    (CFSeq
+      (CFRec (RMem (MCore (ELit LUnit))))
+      (CFRec (RMem (MCore (ELit (LBool true)))))) = inl (TPrim TBool).
+Proof. reflexivity. Qed.
+
+Example infer_cf_type_cond_not_bool_excluded :
+  infer_cf_type []
+    (CFIfThen
+      (CFRec (RMem (MCore (ELit (LInt 0)))))
+      (CFRec (RMem (MCore (ELit LUnit))))) = inr (CondNotBool (TPrim TInt32)).
+Proof. reflexivity. Qed.

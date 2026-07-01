@@ -1,4 +1,4 @@
-DIGEST d246737e1cfa80518483827e59eebfbd
+DIGEST 0f4b76c441b7ee1299f18fe1ea9be1a2
 FTypeSafety.ConstrSpec
 R2734:2737 Stdlib.Bool.Bool <> <> lib
 R2739:2742 Stdlib.Lists.List <> <> lib
@@ -640,3 +640,67 @@ R13852:13874 TypeSafety.ConstrSpec <> infer_constr_type_sound thm
 R13852:13874 TypeSafety.ConstrSpec <> infer_constr_type_sound thm
 R13887:13912 TypeSafety.ConstrSpec <> infer_constr_type_complete thm
 R13887:13912 TypeSafety.ConstrSpec <> infer_constr_type_complete thm
+def 14005:14033 <> infer_constr_type_pat_witness
+R14143:14149 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14039:14055 TypeSafety.ConstrSpec <> infer_constr_type def
+R14068:14072 TypeSafety.ConstrSpec <> CEPat constr
+R14075:14079 TypeSafety.PatternSpec <> PEMut constr
+R14082:14086 TypeSafety.MutSpec <> MEFun constr
+R14089:14092 TypeSafety.FunSpec <> FEOp constr
+R14095:14098 TypeSafety.OperatorSpec <> OPCf constr
+R14101:14105 TypeSafety.ControlFlowSpec <> CFRec constr
+R14108:14111 TypeSafety.RegistrySpec <> RMem constr
+R14114:14118 TypeSafety.VecSpec <> MCore constr
+R14121:14124 TypeSafety.TypeSafetySpec <> ELit constr
+R14127:14130 TypeSafety.TypeSafetySpec <> LInt constr
+R14060:14061 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R14057:14058 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R14150:14152 Corelib.Init.Datatypes <> inl constr
+R14155:14159 TypeSafety.TypeSafetySpec <> TPrim constr
+R14161:14166 TypeSafety.TypeSafetySpec <> TInt32 constr
+def 14204:14246 <> infer_constr_type_constr_no_payload_witness
+R14342:14348 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14252:14268 TypeSafety.ConstrSpec <> infer_constr_type def
+R14281:14288 TypeSafety.ConstrSpec <> CEConstr constr
+R14337:14340 Corelib.Init.Datatypes <> None constr
+R14298:14298 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R14312:14313 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R14329:14329 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R14299:14299 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14305:14306 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14311:14311 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14307:14310 Corelib.Init.Datatypes <> None constr
+R14314:14314 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14322:14323 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14328:14328 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14324:14327 Corelib.Init.Datatypes <> None constr
+R14273:14274 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R14270:14271 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R14349:14351 Corelib.Init.Datatypes <> inl constr
+R14354:14361 TypeSafety.TypeSafetySpec <> TVariant constr
+R14371:14371 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R14385:14386 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R14402:14402 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R14372:14372 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14378:14379 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14384:14384 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14380:14383 Corelib.Init.Datatypes <> None constr
+R14387:14387 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14395:14396 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14401:14401 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14397:14400 Corelib.Init.Datatypes <> None constr
+def 14440:14480 <> infer_constr_type_unknown_constr_excluded
+R14560:14566 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R14486:14502 TypeSafety.ConstrSpec <> infer_constr_type def
+R14515:14522 TypeSafety.ConstrSpec <> CEConstr constr
+R14555:14558 Corelib.Init.Datatypes <> None constr
+R14532:14532 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R14546:14546 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R14533:14533 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14539:14540 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14545:14545 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R14541:14544 Corelib.Init.Datatypes <> None constr
+R14507:14508 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R14504:14505 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R14567:14569 Corelib.Init.Datatypes <> inr constr
+R14572:14584 TypeSafety.ConstrSpec <> UnknownConstr constr

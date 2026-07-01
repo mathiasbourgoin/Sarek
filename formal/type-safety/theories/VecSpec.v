@@ -137,7 +137,7 @@ Proof.
       * left. subst. reflexivity.
       * right. intro Heq. apply Hcne. injection Heq as Hn Hc. exact Hc.
     + right. intro Heq. apply Hnne. injection Heq as Hn Hc. exact Hn.
-Qed.
+Defined.
 
 (* ===== 2. Memory access error kinds ===== *)
 
@@ -394,3 +394,21 @@ Proof.
   - apply infer_mem_type_sound.
   - apply infer_mem_type_complete.
 Qed.
+
+(* ===== Non-vacuousness witnesses ===== *)
+Local Open Scope string_scope.
+
+Example infer_mem_type_core_witness :
+  infer_mem_type [] (MCore (ELit (LInt 0))) = inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_mem_type_vec_get_witness :
+  infer_mem_type [("v", TVec (TPrim TInt32))]
+    (EVecGet (MCore (EVar "v")) (MCore (ELit (LInt 0)))) = inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_mem_type_not_a_vector_excluded :
+  infer_mem_type []
+    (EVecGet (MCore (ELit (LInt 0))) (MCore (ELit (LInt 0)))) =
+    inr (NotAVector (TPrim TInt32)).
+Proof. reflexivity. Qed.

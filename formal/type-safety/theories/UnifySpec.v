@@ -431,3 +431,17 @@ Fixpoint apply_subst (fuel : nat) (s : pre_subst) (t : pre_type) : pre_type :=
   | PVar id   => follow_pvar fuel s id
   | PTuple ts => PTuple (List.map (apply_subst fuel s) ts)
   end.
+
+(* ===== Non-vacuousness witnesses ===== *)
+
+Example unify_fun_prim_prim_succeeds :
+  unify_fun 1 [] (PPrim TInt32) (PPrim TInt32) = Some [].
+Proof. reflexivity. Qed.
+
+Example unify_fun_prim_mismatch_excluded :
+  unify_fun 1 [] (PPrim TInt32) (PPrim TBool) = None.
+Proof. reflexivity. Qed.
+
+Example unify_fun_var_binds_witness :
+  unify_fun 1 [] (PVar 0) (PPrim TInt32) = Some [(0, PPrim TInt32)].
+Proof. reflexivity. Qed.

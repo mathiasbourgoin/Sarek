@@ -328,3 +328,24 @@ Proof.
   - apply infer_constr_type_sound.
   - apply infer_constr_type_complete.
 Qed.
+
+(* ===== Non-vacuousness witnesses ===== *)
+Local Open Scope string_scope.
+
+Example infer_constr_type_pat_witness :
+  infer_constr_type [] []
+    (CEPat (PEMut (MEFun (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 0)))))))))) =
+    inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_constr_type_constr_no_payload_witness :
+  infer_constr_type [] []
+    (CEConstr "Color" [("Red", None); ("Green", None)] "Red" None) =
+    inl (TVariant "Color" [("Red", None); ("Green", None)]).
+Proof. reflexivity. Qed.
+
+Example infer_constr_type_unknown_constr_excluded :
+  infer_constr_type [] []
+    (CEConstr "Color" [("Red", None)] "Blue" None) =
+    inr (UnknownConstr "Blue").
+Proof. reflexivity. Qed.

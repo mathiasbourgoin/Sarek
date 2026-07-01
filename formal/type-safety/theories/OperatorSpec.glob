@@ -1,4 +1,4 @@
-DIGEST a00901d5dfe5cb666aa1c52d81bbb3ca
+DIGEST 2711d940746af13748892157f773ab98
 FTypeSafety.OperatorSpec
 R1537:1540 Stdlib.Bool.Bool <> <> lib
 R1542:1545 Stdlib.Lists.List <> <> lib
@@ -836,3 +836,83 @@ R13068:13086 TypeSafety.OperatorSpec <> infer_op_type_sound thm
 R13068:13086 TypeSafety.OperatorSpec <> infer_op_type_sound thm
 R13099:13120 TypeSafety.OperatorSpec <> infer_op_type_complete thm
 R13099:13120 TypeSafety.OperatorSpec <> infer_op_type_complete thm
+def 13182:13205 <> infer_op_type_cf_witness
+R13273:13275 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13211:13223 TypeSafety.OperatorSpec <> infer_op_type def
+R13229:13232 TypeSafety.OperatorSpec <> OPCf constr
+R13235:13239 TypeSafety.ControlFlowSpec <> CFRec constr
+R13242:13245 TypeSafety.RegistrySpec <> RMem constr
+R13248:13252 TypeSafety.VecSpec <> MCore constr
+R13255:13258 TypeSafety.TypeSafetySpec <> ELit constr
+R13261:13264 TypeSafety.TypeSafetySpec <> LInt constr
+R13225:13226 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13276:13278 Corelib.Init.Datatypes <> inl constr
+R13281:13285 TypeSafety.TypeSafetySpec <> TPrim constr
+R13287:13292 TypeSafety.TypeSafetySpec <> TInt32 constr
+def 13330:13354 <> infer_op_type_add_witness
+R13498:13500 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13360:13372 TypeSafety.OperatorSpec <> infer_op_type def
+R13382:13388 TypeSafety.OperatorSpec <> OPBinop constr
+R13453:13456 TypeSafety.OperatorSpec <> OPCf constr
+R13459:13463 TypeSafety.ControlFlowSpec <> CFRec constr
+R13466:13469 TypeSafety.RegistrySpec <> RMem constr
+R13472:13476 TypeSafety.VecSpec <> MCore constr
+R13479:13482 TypeSafety.TypeSafetySpec <> ELit constr
+R13485:13488 TypeSafety.TypeSafetySpec <> LInt constr
+R13401:13404 TypeSafety.OperatorSpec <> OPCf constr
+R13407:13411 TypeSafety.ControlFlowSpec <> CFRec constr
+R13414:13417 TypeSafety.RegistrySpec <> RMem constr
+R13420:13424 TypeSafety.VecSpec <> MCore constr
+R13427:13430 TypeSafety.TypeSafetySpec <> ELit constr
+R13433:13436 TypeSafety.TypeSafetySpec <> LInt constr
+R13390:13392 TypeSafety.OperatorSpec <> Add constr
+R13374:13375 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13501:13503 Corelib.Init.Datatypes <> inl constr
+R13506:13510 TypeSafety.TypeSafetySpec <> TPrim constr
+R13512:13517 TypeSafety.TypeSafetySpec <> TInt32 constr
+def 13555:13578 <> infer_op_type_eq_witness
+R13721:13723 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13584:13596 TypeSafety.OperatorSpec <> infer_op_type def
+R13606:13612 TypeSafety.OperatorSpec <> OPBinop constr
+R13676:13679 TypeSafety.OperatorSpec <> OPCf constr
+R13682:13686 TypeSafety.ControlFlowSpec <> CFRec constr
+R13689:13692 TypeSafety.RegistrySpec <> RMem constr
+R13695:13699 TypeSafety.VecSpec <> MCore constr
+R13702:13705 TypeSafety.TypeSafetySpec <> ELit constr
+R13708:13711 TypeSafety.TypeSafetySpec <> LInt constr
+R13624:13627 TypeSafety.OperatorSpec <> OPCf constr
+R13630:13634 TypeSafety.ControlFlowSpec <> CFRec constr
+R13637:13640 TypeSafety.RegistrySpec <> RMem constr
+R13643:13647 TypeSafety.VecSpec <> MCore constr
+R13650:13653 TypeSafety.TypeSafetySpec <> ELit constr
+R13656:13659 TypeSafety.TypeSafetySpec <> LInt constr
+R13614:13615 TypeSafety.OperatorSpec <> Eq constr
+R13598:13599 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13724:13726 Corelib.Init.Datatypes <> inl constr
+R13729:13733 TypeSafety.TypeSafetySpec <> TPrim constr
+R13735:13739 TypeSafety.TypeSafetySpec <> TBool constr
+def 13777:13815 <> infer_op_type_operand_mismatch_excluded
+R13963:13969 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13821:13833 TypeSafety.OperatorSpec <> infer_op_type def
+R13843:13849 TypeSafety.OperatorSpec <> OPBinop constr
+R13914:13917 TypeSafety.OperatorSpec <> OPCf constr
+R13920:13924 TypeSafety.ControlFlowSpec <> CFRec constr
+R13927:13930 TypeSafety.RegistrySpec <> RMem constr
+R13933:13937 TypeSafety.VecSpec <> MCore constr
+R13940:13943 TypeSafety.TypeSafetySpec <> ELit constr
+R13946:13950 TypeSafety.TypeSafetySpec <> LBool constr
+R13952:13955 Corelib.Init.Datatypes <> true constr
+R13862:13865 TypeSafety.OperatorSpec <> OPCf constr
+R13868:13872 TypeSafety.ControlFlowSpec <> CFRec constr
+R13875:13878 TypeSafety.RegistrySpec <> RMem constr
+R13881:13885 TypeSafety.VecSpec <> MCore constr
+R13888:13891 TypeSafety.TypeSafetySpec <> ELit constr
+R13894:13897 TypeSafety.TypeSafetySpec <> LInt constr
+R13851:13853 TypeSafety.OperatorSpec <> Add constr
+R13835:13836 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R13970:13972 Corelib.Init.Datatypes <> inr constr
+R13975:13989 TypeSafety.OperatorSpec <> OperandMismatch constr
+R14007:14011 TypeSafety.TypeSafetySpec <> TPrim constr
+R14013:14017 TypeSafety.TypeSafetySpec <> TBool constr
+R13992:13996 TypeSafety.TypeSafetySpec <> TPrim constr
+R13998:14003 TypeSafety.TypeSafetySpec <> TInt32 constr

@@ -207,3 +207,21 @@ Proof.
   - apply infer_rec_type_sound.
   - apply infer_rec_type_complete.
 Qed.
+
+(* ===== Non-vacuousness witnesses ===== *)
+Local Open Scope string_scope.
+
+Example infer_rec_type_core_witness :
+  infer_rec_type [] (RMem (MCore (ELit (LInt 0)))) = inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_rec_type_field_get_witness :
+  infer_rec_type [("r", TRecord "Pt" [("x", TPrim TInt32)])]
+    (EFieldGet "x" (RMem (MCore (EVar "r")))) = inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_rec_type_not_a_record_excluded :
+  infer_rec_type []
+    (EFieldGet "x" (RMem (MCore (ELit (LInt 0))))) =
+    inr (NotARecord (TPrim TInt32)).
+Proof. reflexivity. Qed.

@@ -1,4 +1,4 @@
-DIGEST 10d770a1c93f7706133fa14c88c890d6
+DIGEST 0532fd22cd14859c44176df71355e25e
 FTypeSafety.GPUSpec
 R2936:2939 Stdlib.Bool.Bool <> <> lib
 R2941:2944 Stdlib.Lists.List <> <> lib
@@ -311,3 +311,83 @@ R8150:8169 TypeSafety.GPUSpec <> infer_gpu_type_sound thm
 R8150:8169 TypeSafety.GPUSpec <> infer_gpu_type_sound thm
 R8182:8204 TypeSafety.GPUSpec <> infer_gpu_type_complete thm
 R8182:8204 TypeSafety.GPUSpec <> infer_gpu_type_complete thm
+def 8269:8279 <> gpu_wit_int
+R8283:8294 TypeSafety.SpecialSpec <> special_expr ind
+R8301:8308 TypeSafety.SpecialSpec <> SEConstr constr
+R8311:8315 TypeSafety.ConstrSpec <> CEPat constr
+R8318:8322 TypeSafety.PatternSpec <> PEMut constr
+R8325:8329 TypeSafety.MutSpec <> MEFun constr
+R8332:8335 TypeSafety.FunSpec <> FEOp constr
+R8338:8341 TypeSafety.OperatorSpec <> OPCf constr
+R8344:8348 TypeSafety.ControlFlowSpec <> CFRec constr
+R8351:8354 TypeSafety.RegistrySpec <> RMem constr
+R8357:8361 TypeSafety.VecSpec <> MCore constr
+R8364:8367 TypeSafety.TypeSafetySpec <> ELit constr
+R8370:8373 TypeSafety.TypeSafetySpec <> LInt constr
+def 8400:8411 <> gpu_wit_unit
+R8415:8426 TypeSafety.SpecialSpec <> special_expr ind
+R8433:8440 TypeSafety.SpecialSpec <> SEConstr constr
+R8443:8447 TypeSafety.ConstrSpec <> CEPat constr
+R8450:8454 TypeSafety.PatternSpec <> PEMut constr
+R8457:8461 TypeSafety.MutSpec <> MEFun constr
+R8464:8467 TypeSafety.FunSpec <> FEOp constr
+R8470:8473 TypeSafety.OperatorSpec <> OPCf constr
+R8476:8480 TypeSafety.ControlFlowSpec <> CFRec constr
+R8483:8486 TypeSafety.RegistrySpec <> RMem constr
+R8489:8493 TypeSafety.VecSpec <> MCore constr
+R8496:8499 TypeSafety.TypeSafetySpec <> ELit constr
+R8501:8505 TypeSafety.TypeSafetySpec <> LUnit constr
+def 8526:8555 <> infer_gpu_type_special_witness
+R8605:8607 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8561:8574 TypeSafety.GPUSpec <> infer_gpu_type def
+R8583:8591 TypeSafety.GPUSpec <> GESpecial constr
+R8593:8603 TypeSafety.GPUSpec <> gpu_wit_int def
+R8579:8580 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R8576:8577 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R8608:8610 Corelib.Init.Datatypes <> inl constr
+R8613:8617 TypeSafety.TypeSafetySpec <> TPrim constr
+R8619:8624 TypeSafety.TypeSafetySpec <> TInt32 constr
+def 8662:8694 <> infer_gpu_type_let_shared_witness
+R8795:8801 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8700:8713 TypeSafety.GPUSpec <> infer_gpu_type def
+R8726:8736 TypeSafety.GPUSpec <> GELetShared constr
+R8772:8780 TypeSafety.GPUSpec <> GESpecial constr
+R8782:8792 TypeSafety.GPUSpec <> gpu_wit_int def
+R8743:8746 TypeSafety.TypeSafetySpec <> TArr constr
+R8763:8768 TypeSafety.TypeSafetySpec <> Shared constr
+R8749:8753 TypeSafety.TypeSafetySpec <> TPrim constr
+R8755:8760 TypeSafety.TypeSafetySpec <> TInt32 constr
+R8718:8719 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R8715:8716 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R8802:8804 Corelib.Init.Datatypes <> inl constr
+R8807:8811 TypeSafety.TypeSafetySpec <> TPrim constr
+R8813:8818 TypeSafety.TypeSafetySpec <> TInt32 constr
+def 8856:8887 <> infer_gpu_type_superstep_witness
+R8952:8954 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8893:8906 TypeSafety.GPUSpec <> infer_gpu_type def
+R8915:8925 TypeSafety.GPUSpec <> GESuperstep constr
+R8928:8936 TypeSafety.GPUSpec <> GESpecial constr
+R8938:8949 TypeSafety.GPUSpec <> gpu_wit_unit def
+R8911:8912 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R8908:8909 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R8955:8957 Corelib.Init.Datatypes <> inl constr
+R8960:8964 TypeSafety.TypeSafetySpec <> TPrim constr
+R8966:8970 TypeSafety.TypeSafetySpec <> TUnit constr
+def 9008:9048 <> infer_gpu_type_shared_not_shared_excluded
+R9148:9154 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9054:9067 TypeSafety.GPUSpec <> infer_gpu_type def
+R9080:9090 TypeSafety.GPUSpec <> GELetShared constr
+R9125:9133 TypeSafety.GPUSpec <> GESpecial constr
+R9135:9145 TypeSafety.GPUSpec <> gpu_wit_int def
+R9097:9100 TypeSafety.TypeSafetySpec <> TArr constr
+R9117:9121 TypeSafety.TypeSafetySpec <> Local constr
+R9103:9107 TypeSafety.TypeSafetySpec <> TPrim constr
+R9109:9114 TypeSafety.TypeSafetySpec <> TInt32 constr
+R9072:9073 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R9069:9070 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R9155:9157 Corelib.Init.Datatypes <> inr constr
+R9160:9174 TypeSafety.GPUSpec <> SharedNotShared constr
+R9177:9180 TypeSafety.TypeSafetySpec <> TArr constr
+R9197:9201 TypeSafety.TypeSafetySpec <> Local constr
+R9183:9187 TypeSafety.TypeSafetySpec <> TPrim constr
+R9189:9194 TypeSafety.TypeSafetySpec <> TInt32 constr

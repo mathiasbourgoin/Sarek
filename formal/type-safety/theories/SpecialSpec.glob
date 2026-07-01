@@ -1,4 +1,4 @@
-DIGEST 43347665f2652ab6f761003ac5203a47
+DIGEST 894f6b8bea1f099bae899a4b5c2db0d2
 FTypeSafety.SpecialSpec
 R2583:2586 Stdlib.Bool.Bool <> <> lib
 R2588:2591 Stdlib.Lists.List <> <> lib
@@ -344,3 +344,89 @@ R8926:8949 TypeSafety.SpecialSpec <> infer_special_type_sound thm
 R8926:8949 TypeSafety.SpecialSpec <> infer_special_type_sound thm
 R8962:8988 TypeSafety.SpecialSpec <> infer_special_type_complete thm
 R8962:8988 TypeSafety.SpecialSpec <> infer_special_type_complete thm
+def 9050:9082 <> infer_special_type_constr_witness
+R9210:9216 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9088:9105 TypeSafety.SpecialSpec <> infer_special_type def
+R9118:9125 TypeSafety.SpecialSpec <> SEConstr constr
+R9134:9138 TypeSafety.ConstrSpec <> CEPat constr
+R9141:9145 TypeSafety.PatternSpec <> PEMut constr
+R9148:9152 TypeSafety.MutSpec <> MEFun constr
+R9155:9158 TypeSafety.FunSpec <> FEOp constr
+R9161:9164 TypeSafety.OperatorSpec <> OPCf constr
+R9167:9171 TypeSafety.ControlFlowSpec <> CFRec constr
+R9174:9177 TypeSafety.RegistrySpec <> RMem constr
+R9180:9184 TypeSafety.VecSpec <> MCore constr
+R9187:9190 TypeSafety.TypeSafetySpec <> ELit constr
+R9193:9196 TypeSafety.TypeSafetySpec <> LInt constr
+R9110:9111 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R9107:9108 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R9217:9219 Corelib.Init.Datatypes <> inl constr
+R9222:9226 TypeSafety.TypeSafetySpec <> TPrim constr
+R9228:9233 TypeSafety.TypeSafetySpec <> TInt32 constr
+def 9271:9303 <> infer_special_type_return_witness
+R9459:9465 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9309:9326 TypeSafety.SpecialSpec <> infer_special_type def
+R9339:9346 TypeSafety.SpecialSpec <> SEReturn constr
+R9360:9367 TypeSafety.SpecialSpec <> SEConstr constr
+R9378:9382 TypeSafety.ConstrSpec <> CEPat constr
+R9385:9389 TypeSafety.PatternSpec <> PEMut constr
+R9392:9396 TypeSafety.MutSpec <> MEFun constr
+R9399:9402 TypeSafety.FunSpec <> FEOp constr
+R9405:9408 TypeSafety.OperatorSpec <> OPCf constr
+R9411:9415 TypeSafety.ControlFlowSpec <> CFRec constr
+R9418:9421 TypeSafety.RegistrySpec <> RMem constr
+R9424:9428 TypeSafety.VecSpec <> MCore constr
+R9431:9434 TypeSafety.TypeSafetySpec <> ELit constr
+R9437:9441 TypeSafety.TypeSafetySpec <> LBool constr
+R9443:9446 Corelib.Init.Datatypes <> true constr
+R9348:9351 Corelib.Init.Datatypes <> true constr
+R9331:9332 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R9328:9329 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R9466:9468 Corelib.Init.Datatypes <> inl constr
+R9471:9475 TypeSafety.TypeSafetySpec <> TPrim constr
+R9477:9481 TypeSafety.TypeSafetySpec <> TBool constr
+def 9519:9557 <> infer_special_type_create_array_witness
+R9736:9742 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9563:9580 TypeSafety.SpecialSpec <> infer_special_type def
+R9593:9605 TypeSafety.SpecialSpec <> SECreateArray constr
+R9730:9734 TypeSafety.TypeSafetySpec <> Local constr
+R9716:9720 TypeSafety.TypeSafetySpec <> TPrim constr
+R9722:9727 TypeSafety.TypeSafetySpec <> TInt32 constr
+R9614:9621 TypeSafety.SpecialSpec <> SEConstr constr
+R9632:9636 TypeSafety.ConstrSpec <> CEPat constr
+R9639:9643 TypeSafety.PatternSpec <> PEMut constr
+R9646:9650 TypeSafety.MutSpec <> MEFun constr
+R9653:9656 TypeSafety.FunSpec <> FEOp constr
+R9659:9662 TypeSafety.OperatorSpec <> OPCf constr
+R9665:9669 TypeSafety.ControlFlowSpec <> CFRec constr
+R9672:9675 TypeSafety.RegistrySpec <> RMem constr
+R9678:9682 TypeSafety.VecSpec <> MCore constr
+R9685:9688 TypeSafety.TypeSafetySpec <> ELit constr
+R9691:9694 TypeSafety.TypeSafetySpec <> LInt constr
+R9585:9586 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R9582:9583 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R9743:9745 Corelib.Init.Datatypes <> inl constr
+R9748:9751 TypeSafety.TypeSafetySpec <> TArr constr
+R9768:9772 TypeSafety.TypeSafetySpec <> Local constr
+R9754:9758 TypeSafety.TypeSafetySpec <> TPrim constr
+R9760:9765 TypeSafety.TypeSafetySpec <> TInt32 constr
+def 9810:9849 <> infer_special_type_early_return_excluded
+R10002:10008 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9855:9872 TypeSafety.SpecialSpec <> infer_special_type def
+R9885:9892 TypeSafety.SpecialSpec <> SEReturn constr
+R9907:9914 TypeSafety.SpecialSpec <> SEConstr constr
+R9925:9929 TypeSafety.ConstrSpec <> CEPat constr
+R9932:9936 TypeSafety.PatternSpec <> PEMut constr
+R9939:9943 TypeSafety.MutSpec <> MEFun constr
+R9946:9949 TypeSafety.FunSpec <> FEOp constr
+R9952:9955 TypeSafety.OperatorSpec <> OPCf constr
+R9958:9962 TypeSafety.ControlFlowSpec <> CFRec constr
+R9965:9968 TypeSafety.RegistrySpec <> RMem constr
+R9971:9975 TypeSafety.VecSpec <> MCore constr
+R9978:9981 TypeSafety.TypeSafetySpec <> ELit constr
+R9984:9987 TypeSafety.TypeSafetySpec <> LInt constr
+R9894:9898 Corelib.Init.Datatypes <> false constr
+R9877:9878 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R9874:9875 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R10009:10011 Corelib.Init.Datatypes <> inr constr
+R10013:10033 TypeSafety.SpecialSpec <> EarlyReturnNotAllowed constr

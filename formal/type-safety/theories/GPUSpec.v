@@ -195,3 +195,31 @@ Proof.
   - apply infer_gpu_type_sound.
   - apply infer_gpu_type_complete.
 Qed.
+
+(* ===== Non-vacuousness witnesses ===== *)
+
+Definition gpu_wit_int : special_expr :=
+  SEConstr (CEPat (PEMut (MEFun (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 0)))))))))).
+
+Definition gpu_wit_unit : special_expr :=
+  SEConstr (CEPat (PEMut (MEFun (FEOp (OPCf (CFRec (RMem (MCore (ELit LUnit))))))))).
+
+Example infer_gpu_type_special_witness :
+  infer_gpu_type [] [] (GESpecial gpu_wit_int) = inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_gpu_type_let_shared_witness :
+  infer_gpu_type [] []
+    (GELetShared "s" (TArr (TPrim TInt32) Shared) (GESpecial gpu_wit_int)) =
+    inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_gpu_type_superstep_witness :
+  infer_gpu_type [] [] (GESuperstep (GESpecial gpu_wit_unit)) = inl (TPrim TUnit).
+Proof. reflexivity. Qed.
+
+Example infer_gpu_type_shared_not_shared_excluded :
+  infer_gpu_type [] []
+    (GELetShared "s" (TArr (TPrim TInt32) Local) (GESpecial gpu_wit_int)) =
+    inr (SharedNotShared (TArr (TPrim TInt32) Local)).
+Proof. reflexivity. Qed.

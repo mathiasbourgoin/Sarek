@@ -1,4 +1,4 @@
-DIGEST 99b1280ed94ead7f3fcc64cd5ead47a7
+DIGEST 8a58afbae5601094a084ef9d506887ee
 FTypeSafety.ControlFlowSpec
 R1425:1428 Stdlib.Bool.Bool <> <> lib
 R1430:1433 Stdlib.Lists.List <> <> lib
@@ -614,3 +614,72 @@ R12036:12054 TypeSafety.ControlFlowSpec <> infer_cf_type_sound thm
 R12036:12054 TypeSafety.ControlFlowSpec <> infer_cf_type_sound thm
 R12067:12088 TypeSafety.ControlFlowSpec <> infer_cf_type_complete thm
 R12067:12088 TypeSafety.ControlFlowSpec <> infer_cf_type_complete thm
+def 12150:12174 <> infer_cf_type_rec_witness
+R12235:12237 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12180:12192 TypeSafety.ControlFlowSpec <> infer_cf_type def
+R12198:12202 TypeSafety.ControlFlowSpec <> CFRec constr
+R12205:12208 TypeSafety.RegistrySpec <> RMem constr
+R12211:12215 TypeSafety.VecSpec <> MCore constr
+R12218:12221 TypeSafety.TypeSafetySpec <> ELit constr
+R12224:12227 TypeSafety.TypeSafetySpec <> LInt constr
+R12194:12195 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R12238:12240 Corelib.Init.Datatypes <> inl constr
+R12243:12247 TypeSafety.TypeSafetySpec <> TPrim constr
+R12249:12254 TypeSafety.TypeSafetySpec <> TInt32 constr
+def 12292:12320 <> infer_cf_type_if_then_witness
+R12448:12450 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12326:12338 TypeSafety.ControlFlowSpec <> infer_cf_type def
+R12348:12355 TypeSafety.ControlFlowSpec <> CFIfThen constr
+R12413:12417 TypeSafety.ControlFlowSpec <> CFRec constr
+R12420:12423 TypeSafety.RegistrySpec <> RMem constr
+R12426:12430 TypeSafety.VecSpec <> MCore constr
+R12433:12436 TypeSafety.TypeSafetySpec <> ELit constr
+R12438:12442 TypeSafety.TypeSafetySpec <> LUnit constr
+R12364:12368 TypeSafety.ControlFlowSpec <> CFRec constr
+R12371:12374 TypeSafety.RegistrySpec <> RMem constr
+R12377:12381 TypeSafety.VecSpec <> MCore constr
+R12384:12387 TypeSafety.TypeSafetySpec <> ELit constr
+R12390:12394 TypeSafety.TypeSafetySpec <> LBool constr
+R12396:12399 Corelib.Init.Datatypes <> true constr
+R12340:12341 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R12451:12453 Corelib.Init.Datatypes <> inl constr
+R12456:12460 TypeSafety.TypeSafetySpec <> TPrim constr
+R12462:12466 TypeSafety.TypeSafetySpec <> TUnit constr
+def 12504:12528 <> infer_cf_type_seq_witness
+R12653:12655 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12534:12546 TypeSafety.ControlFlowSpec <> infer_cf_type def
+R12556:12560 TypeSafety.ControlFlowSpec <> CFSeq constr
+R12611:12615 TypeSafety.ControlFlowSpec <> CFRec constr
+R12618:12621 TypeSafety.RegistrySpec <> RMem constr
+R12624:12628 TypeSafety.VecSpec <> MCore constr
+R12631:12634 TypeSafety.TypeSafetySpec <> ELit constr
+R12637:12641 TypeSafety.TypeSafetySpec <> LBool constr
+R12643:12646 Corelib.Init.Datatypes <> true constr
+R12569:12573 TypeSafety.ControlFlowSpec <> CFRec constr
+R12576:12579 TypeSafety.RegistrySpec <> RMem constr
+R12582:12586 TypeSafety.VecSpec <> MCore constr
+R12589:12592 TypeSafety.TypeSafetySpec <> ELit constr
+R12594:12598 TypeSafety.TypeSafetySpec <> LUnit constr
+R12548:12549 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R12656:12658 Corelib.Init.Datatypes <> inl constr
+R12661:12665 TypeSafety.TypeSafetySpec <> TPrim constr
+R12667:12671 TypeSafety.TypeSafetySpec <> TBool constr
+def 12709:12744 <> infer_cf_type_cond_not_bool_excluded
+R12868:12870 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R12750:12762 TypeSafety.ControlFlowSpec <> infer_cf_type def
+R12772:12779 TypeSafety.ControlFlowSpec <> CFIfThen constr
+R12833:12837 TypeSafety.ControlFlowSpec <> CFRec constr
+R12840:12843 TypeSafety.RegistrySpec <> RMem constr
+R12846:12850 TypeSafety.VecSpec <> MCore constr
+R12853:12856 TypeSafety.TypeSafetySpec <> ELit constr
+R12858:12862 TypeSafety.TypeSafetySpec <> LUnit constr
+R12788:12792 TypeSafety.ControlFlowSpec <> CFRec constr
+R12795:12798 TypeSafety.RegistrySpec <> RMem constr
+R12801:12805 TypeSafety.VecSpec <> MCore constr
+R12808:12811 TypeSafety.TypeSafetySpec <> ELit constr
+R12814:12817 TypeSafety.TypeSafetySpec <> LInt constr
+R12764:12765 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R12871:12873 Corelib.Init.Datatypes <> inr constr
+R12876:12886 TypeSafety.ControlFlowSpec <> CondNotBool constr
+R12889:12893 TypeSafety.TypeSafetySpec <> TPrim constr
+R12895:12900 TypeSafety.TypeSafetySpec <> TInt32 constr

@@ -1,4 +1,4 @@
-DIGEST 58fa848a16a069b60ece8ed51290f151
+DIGEST d6f807b983c122bd123d3b090d209760
 FTypeSafety.RegistrySpec
 R1217:1220 Stdlib.Bool.Bool <> <> lib
 R1222:1225 Stdlib.Lists.List <> <> lib
@@ -356,3 +356,50 @@ R7489:7508 TypeSafety.RegistrySpec <> infer_rec_type_sound thm
 R7489:7508 TypeSafety.RegistrySpec <> infer_rec_type_sound thm
 R7521:7543 TypeSafety.RegistrySpec <> infer_rec_type_complete thm
 R7521:7543 TypeSafety.RegistrySpec <> infer_rec_type_complete thm
+def 7636:7662 <> infer_rec_type_core_witness
+R7716:7718 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7668:7681 TypeSafety.RegistrySpec <> infer_rec_type def
+R7687:7690 TypeSafety.RegistrySpec <> RMem constr
+R7693:7697 TypeSafety.VecSpec <> MCore constr
+R7700:7703 TypeSafety.TypeSafetySpec <> ELit constr
+R7706:7709 TypeSafety.TypeSafetySpec <> LInt constr
+R7683:7684 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R7719:7721 Corelib.Init.Datatypes <> inl constr
+R7724:7728 TypeSafety.TypeSafetySpec <> TPrim constr
+R7730:7735 TypeSafety.TypeSafetySpec <> TInt32 constr
+def 7773:7804 <> infer_rec_type_field_get_witness
+R7914:7916 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7810:7823 TypeSafety.RegistrySpec <> infer_rec_type def
+R7874:7882 TypeSafety.RegistrySpec <> EFieldGet constr
+R7889:7892 TypeSafety.RegistrySpec <> RMem constr
+R7895:7899 TypeSafety.VecSpec <> MCore constr
+R7902:7905 TypeSafety.TypeSafetySpec <> EVar constr
+R7825:7825 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R7867:7867 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R7826:7826 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R7830:7831 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R7866:7866 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R7832:7838 TypeSafety.TypeSafetySpec <> TRecord constr
+R7845:7845 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R7865:7865 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R7846:7846 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R7850:7851 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R7864:7864 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R7852:7856 TypeSafety.TypeSafetySpec <> TPrim constr
+R7858:7863 TypeSafety.TypeSafetySpec <> TInt32 constr
+R7917:7919 Corelib.Init.Datatypes <> inl constr
+R7922:7926 TypeSafety.TypeSafetySpec <> TPrim constr
+R7928:7933 TypeSafety.TypeSafetySpec <> TInt32 constr
+def 7971:8006 <> infer_rec_type_not_a_record_excluded
+R8080:8086 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8012:8025 TypeSafety.RegistrySpec <> infer_rec_type def
+R8035:8043 TypeSafety.RegistrySpec <> EFieldGet constr
+R8050:8053 TypeSafety.RegistrySpec <> RMem constr
+R8056:8060 TypeSafety.VecSpec <> MCore constr
+R8063:8066 TypeSafety.TypeSafetySpec <> ELit constr
+R8069:8072 TypeSafety.TypeSafetySpec <> LInt constr
+R8027:8028 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R8087:8089 Corelib.Init.Datatypes <> inr constr
+R8092:8101 TypeSafety.RegistrySpec <> NotARecord constr
+R8104:8108 TypeSafety.TypeSafetySpec <> TPrim constr
+R8110:8115 TypeSafety.TypeSafetySpec <> TInt32 constr

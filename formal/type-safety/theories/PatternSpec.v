@@ -354,3 +354,31 @@ Proof.
   - apply infer_pat_type_sound.
   - apply infer_pat_type_complete.
 Qed.
+
+(* ===== Non-vacuousness witnesses ===== *)
+Local Open Scope string_scope.
+
+Example infer_pat_type_mut_witness :
+  infer_pat_type [] []
+    (PEMut (MEFun (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 0))))))))) =
+    inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_pat_type_match_witness :
+  infer_pat_type
+    [("c", TVariant "Color" [("Red", None); ("Green", None)])] []
+    (PEMatch
+      (PEMut (MEFun (FEOp (OPCf (CFRec (RMem (MCore (EVar "c"))))))))
+      [("Red", None,
+        PEMut (MEFun (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 0)))))))))]) =
+    inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_pat_type_not_variant_excluded :
+  infer_pat_type [] []
+    (PEMatch
+      (PEMut (MEFun (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 0)))))))))
+      [("Red", None,
+        PEMut (MEFun (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 1)))))))))])=
+    inr (PENotVariant (TPrim TInt32)).
+Proof. reflexivity. Qed.

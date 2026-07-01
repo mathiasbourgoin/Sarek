@@ -214,3 +214,37 @@ Proof.
   - apply infer_special_type_sound.
   - apply infer_special_type_complete.
 Qed.
+
+(* ===== Non-vacuousness witnesses ===== *)
+
+Example infer_special_type_constr_witness :
+  infer_special_type [] []
+    (SEConstr
+      (CEPat (PEMut (MEFun (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 0))))))))))) =
+    inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_special_type_return_witness :
+  infer_special_type [] []
+    (SEReturn true
+      (SEConstr
+        (CEPat (PEMut (MEFun (FEOp (OPCf (CFRec (RMem (MCore (ELit (LBool true)))))))))))) =
+    inl (TPrim TBool).
+Proof. reflexivity. Qed.
+
+Example infer_special_type_create_array_witness :
+  infer_special_type [] []
+    (SECreateArray
+      (SEConstr
+        (CEPat (PEMut (MEFun (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 0)))))))))))
+      (TPrim TInt32) Local) =
+    inl (TArr (TPrim TInt32) Local).
+Proof. reflexivity. Qed.
+
+Example infer_special_type_early_return_excluded :
+  infer_special_type [] []
+    (SEReturn false
+      (SEConstr
+        (CEPat (PEMut (MEFun (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 0)))))))))))) =
+    inr EarlyReturnNotAllowed.
+Proof. reflexivity. Qed.

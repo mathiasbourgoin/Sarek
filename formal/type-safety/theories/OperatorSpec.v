@@ -328,3 +328,31 @@ Proof.
   - apply infer_op_type_sound.
   - apply infer_op_type_complete.
 Qed.
+
+(* ===== Non-vacuousness witnesses ===== *)
+
+Example infer_op_type_cf_witness :
+  infer_op_type [] (OPCf (CFRec (RMem (MCore (ELit (LInt 0)))))) = inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_op_type_add_witness :
+  infer_op_type []
+    (OPBinop Add
+      (OPCf (CFRec (RMem (MCore (ELit (LInt 0))))))
+      (OPCf (CFRec (RMem (MCore (ELit (LInt 1))))))) = inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_op_type_eq_witness :
+  infer_op_type []
+    (OPBinop Eq
+      (OPCf (CFRec (RMem (MCore (ELit (LInt 0))))))
+      (OPCf (CFRec (RMem (MCore (ELit (LInt 0))))))) = inl (TPrim TBool).
+Proof. reflexivity. Qed.
+
+Example infer_op_type_operand_mismatch_excluded :
+  infer_op_type []
+    (OPBinop Add
+      (OPCf (CFRec (RMem (MCore (ELit (LInt 0))))))
+      (OPCf (CFRec (RMem (MCore (ELit (LBool true))))))) =
+    inr (OperandMismatch (TPrim TInt32) (TPrim TBool)).
+Proof. reflexivity. Qed.

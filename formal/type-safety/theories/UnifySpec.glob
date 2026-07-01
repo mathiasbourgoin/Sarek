@@ -1,4 +1,4 @@
-DIGEST bc0eb495a6d064bf37003d6956e02f5b
+DIGEST 13ba46c07992f4c6523c6411c5910c72
 FTypeSafety.UnifySpec
 R3357:3360 Stdlib.Bool.Bool <> <> lib
 R3362:3365 Stdlib.Lists.List <> <> lib
@@ -872,3 +872,37 @@ R16096:16103 Stdlib.Lists.List <> map abbrev
 R16106:16116 TypeSafety.UnifySpec <> apply_subst:130 def
 R16123:16123 TypeSafety.UnifySpec <> s:128 var
 R16118:16121 TypeSafety.UnifySpec <> fuel:127 var
+def 16191:16218 <> unify_fun_prim_prim_succeeds
+R16268:16270 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R16224:16232 TypeSafety.UnifySpec <> unify_fun def
+R16255:16259 TypeSafety.UnifySpec <> PPrim constr
+R16261:16266 TypeSafety.TypeSafetySpec <> TInt32 constr
+R16240:16244 TypeSafety.UnifySpec <> PPrim constr
+R16246:16251 TypeSafety.TypeSafetySpec <> TInt32 constr
+R16236:16237 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R16271:16274 Corelib.Init.Datatypes <> Some constr
+R16276:16277 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+def 16314:16345 <> unify_fun_prim_mismatch_excluded
+R16394:16396 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R16351:16359 TypeSafety.UnifySpec <> unify_fun def
+R16382:16386 TypeSafety.UnifySpec <> PPrim constr
+R16388:16392 TypeSafety.TypeSafetySpec <> TBool constr
+R16367:16371 TypeSafety.UnifySpec <> PPrim constr
+R16373:16378 TypeSafety.TypeSafetySpec <> TInt32 constr
+R16363:16364 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R16397:16400 Corelib.Init.Datatypes <> None constr
+def 16437:16463 <> unify_fun_var_binds_witness
+R16507:16509 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R16469:16477 TypeSafety.UnifySpec <> unify_fun def
+R16494:16498 TypeSafety.UnifySpec <> PPrim constr
+R16500:16505 TypeSafety.TypeSafetySpec <> TInt32 constr
+R16485:16488 TypeSafety.UnifySpec <> PVar constr
+R16481:16482 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R16510:16513 Corelib.Init.Datatypes <> Some constr
+R16515:16515 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16533:16533 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16516:16516 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16518:16519 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16532:16532 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R16520:16524 TypeSafety.UnifySpec <> PPrim constr
+R16526:16531 TypeSafety.TypeSafetySpec <> TInt32 constr

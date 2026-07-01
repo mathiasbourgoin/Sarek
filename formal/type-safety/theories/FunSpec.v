@@ -196,3 +196,25 @@ Proof.
   - apply infer_fun_type_sound.
   - apply infer_fun_type_complete.
 Qed.
+
+(* ===== Non-vacuousness witnesses ===== *)
+Local Open Scope string_scope.
+
+Example infer_fun_type_op_witness :
+  infer_fun_type []
+    (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 0))))))) = inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_fun_type_app_witness :
+  infer_fun_type [("f", TFun [TPrim TInt32] (TPrim TBool))]
+    (FEApp
+      (FEOp (OPCf (CFRec (RMem (MCore (EVar "f"))))))
+      (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 0)))))))) = inl (TPrim TBool).
+Proof. reflexivity. Qed.
+
+Example infer_fun_type_not_a_func_excluded :
+  infer_fun_type []
+    (FEApp
+      (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 0)))))))
+      (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 1)))))))) = inr (NotAFunc (TPrim TInt32)).
+Proof. reflexivity. Qed.

@@ -197,3 +197,30 @@ Proof.
   - apply infer_mut_type_sound.
   - apply infer_mut_type_complete.
 Qed.
+
+(* ===== Non-vacuousness witnesses ===== *)
+Local Open Scope string_scope.
+
+Example infer_mut_type_fun_witness :
+  infer_mut_type [] []
+    (MEFun (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 0)))))))) = inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_mut_type_let_mut_witness :
+  infer_mut_type [] []
+    (MELetMut "x"
+      (MEFun (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 0))))))))
+      (MEFun (FEOp (OPCf (CFRec (RMem (MCore (EVar "x")))))))) = inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_mut_type_assign_witness :
+  infer_mut_type [("x", TPrim TInt32)] ["x"]
+    (MEAssign "x"
+      (MEFun (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 0))))))))) = inl (TPrim TUnit).
+Proof. reflexivity. Qed.
+
+Example infer_mut_type_immutable_excluded :
+  infer_mut_type [("x", TPrim TInt32)] []
+    (MEAssign "x"
+      (MEFun (FEOp (OPCf (CFRec (RMem (MCore (ELit (LInt 0))))))))) = inr (MEImmutable "x").
+Proof. reflexivity. Qed.

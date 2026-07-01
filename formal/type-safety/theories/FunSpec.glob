@@ -1,4 +1,4 @@
-DIGEST 0cc96db6aeb5a24b858aea8bf6f5e1cb
+DIGEST f8a66d5ac730d3cb778382e4cad7221d
 FTypeSafety.FunSpec
 R1700:1703 Stdlib.Bool.Bool <> <> lib
 R1705:1708 Stdlib.Lists.List <> <> lib
@@ -366,3 +366,72 @@ R7470:7489 TypeSafety.FunSpec <> infer_fun_type_sound thm
 R7470:7489 TypeSafety.FunSpec <> infer_fun_type_sound thm
 R7502:7524 TypeSafety.FunSpec <> infer_fun_type_complete thm
 R7502:7524 TypeSafety.FunSpec <> infer_fun_type_complete thm
+def 7617:7641 <> infer_fun_type_op_witness
+R7721:7723 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7647:7660 TypeSafety.FunSpec <> infer_fun_type def
+R7670:7673 TypeSafety.FunSpec <> FEOp constr
+R7676:7679 TypeSafety.OperatorSpec <> OPCf constr
+R7682:7686 TypeSafety.ControlFlowSpec <> CFRec constr
+R7689:7692 TypeSafety.RegistrySpec <> RMem constr
+R7695:7699 TypeSafety.VecSpec <> MCore constr
+R7702:7705 TypeSafety.TypeSafetySpec <> ELit constr
+R7708:7711 TypeSafety.TypeSafetySpec <> LInt constr
+R7662:7663 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R7724:7726 Corelib.Init.Datatypes <> inl constr
+R7729:7733 TypeSafety.TypeSafetySpec <> TPrim constr
+R7735:7740 TypeSafety.TypeSafetySpec <> TInt32 constr
+def 7778:7803 <> infer_fun_type_app_witness
+R7991:7993 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7809:7822 TypeSafety.FunSpec <> infer_fun_type def
+R7872:7876 TypeSafety.FunSpec <> FEApp constr
+R7939:7942 TypeSafety.FunSpec <> FEOp constr
+R7945:7948 TypeSafety.OperatorSpec <> OPCf constr
+R7951:7955 TypeSafety.ControlFlowSpec <> CFRec constr
+R7958:7961 TypeSafety.RegistrySpec <> RMem constr
+R7964:7968 TypeSafety.VecSpec <> MCore constr
+R7971:7974 TypeSafety.TypeSafetySpec <> ELit constr
+R7977:7980 TypeSafety.TypeSafetySpec <> LInt constr
+R7885:7888 TypeSafety.FunSpec <> FEOp constr
+R7891:7894 TypeSafety.OperatorSpec <> OPCf constr
+R7897:7901 TypeSafety.ControlFlowSpec <> CFRec constr
+R7904:7907 TypeSafety.RegistrySpec <> RMem constr
+R7910:7914 TypeSafety.VecSpec <> MCore constr
+R7917:7920 TypeSafety.TypeSafetySpec <> EVar constr
+R7824:7824 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R7865:7865 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R7825:7825 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R7829:7830 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R7864:7864 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R7831:7834 TypeSafety.TypeSafetySpec <> TFun constr
+R7852:7856 TypeSafety.TypeSafetySpec <> TPrim constr
+R7858:7862 TypeSafety.TypeSafetySpec <> TBool constr
+R7836:7836 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R7849:7849 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R7837:7841 TypeSafety.TypeSafetySpec <> TPrim constr
+R7843:7848 TypeSafety.TypeSafetySpec <> TInt32 constr
+R7994:7996 Corelib.Init.Datatypes <> inl constr
+R7999:8003 TypeSafety.TypeSafetySpec <> TPrim constr
+R8005:8009 TypeSafety.TypeSafetySpec <> TBool constr
+def 8047:8080 <> infer_fun_type_not_a_func_excluded
+R8233:8235 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8086:8099 TypeSafety.FunSpec <> infer_fun_type def
+R8109:8113 TypeSafety.FunSpec <> FEApp constr
+R8181:8184 TypeSafety.FunSpec <> FEOp constr
+R8187:8190 TypeSafety.OperatorSpec <> OPCf constr
+R8193:8197 TypeSafety.ControlFlowSpec <> CFRec constr
+R8200:8203 TypeSafety.RegistrySpec <> RMem constr
+R8206:8210 TypeSafety.VecSpec <> MCore constr
+R8213:8216 TypeSafety.TypeSafetySpec <> ELit constr
+R8219:8222 TypeSafety.TypeSafetySpec <> LInt constr
+R8122:8125 TypeSafety.FunSpec <> FEOp constr
+R8128:8131 TypeSafety.OperatorSpec <> OPCf constr
+R8134:8138 TypeSafety.ControlFlowSpec <> CFRec constr
+R8141:8144 TypeSafety.RegistrySpec <> RMem constr
+R8147:8151 TypeSafety.VecSpec <> MCore constr
+R8154:8157 TypeSafety.TypeSafetySpec <> ELit constr
+R8160:8163 TypeSafety.TypeSafetySpec <> LInt constr
+R8101:8102 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R8236:8238 Corelib.Init.Datatypes <> inr constr
+R8241:8248 TypeSafety.FunSpec <> NotAFunc constr
+R8251:8255 TypeSafety.TypeSafetySpec <> TPrim constr
+R8257:8262 TypeSafety.TypeSafetySpec <> TInt32 constr

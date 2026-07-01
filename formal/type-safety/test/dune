@@ -3,3 +3,7 @@
 (test
  (name test_type_safety_conformance)
  (libraries type_safety_model sarek_frontend qcheck-core qcheck-core.runner))
+
+(test
+ (name test_mutation)
+ (libraries type_safety_model qcheck-core qcheck-core.runner))

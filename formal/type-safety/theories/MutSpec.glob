@@ -1,4 +1,4 @@
-DIGEST 3a955febc5177453b87952793d98b3c4
+DIGEST 8b0e316d7f3fde0a8247e2f13b72570b
 FTypeSafety.MutSpec
 R1924:1927 Stdlib.Bool.Bool <> <> lib
 R1929:1932 Stdlib.Lists.List <> <> lib
@@ -350,3 +350,89 @@ R7367:7386 TypeSafety.MutSpec <> infer_mut_type_sound thm
 R7367:7386 TypeSafety.MutSpec <> infer_mut_type_sound thm
 R7399:7421 TypeSafety.MutSpec <> infer_mut_type_complete thm
 R7399:7421 TypeSafety.MutSpec <> infer_mut_type_complete thm
+def 7514:7539 <> infer_mut_type_fun_witness
+R7630:7632 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7545:7558 TypeSafety.MutSpec <> infer_mut_type def
+R7571:7575 TypeSafety.MutSpec <> MEFun constr
+R7578:7581 TypeSafety.FunSpec <> FEOp constr
+R7584:7587 TypeSafety.OperatorSpec <> OPCf constr
+R7590:7594 TypeSafety.ControlFlowSpec <> CFRec constr
+R7597:7600 TypeSafety.RegistrySpec <> RMem constr
+R7603:7607 TypeSafety.VecSpec <> MCore constr
+R7610:7613 TypeSafety.TypeSafetySpec <> ELit constr
+R7616:7619 TypeSafety.TypeSafetySpec <> LInt constr
+R7563:7564 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R7560:7561 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R7633:7635 Corelib.Init.Datatypes <> inl constr
+R7638:7642 TypeSafety.TypeSafetySpec <> TPrim constr
+R7644:7649 TypeSafety.TypeSafetySpec <> TInt32 constr
+def 7687:7716 <> infer_mut_type_let_mut_witness
+R7890:7892 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7722:7735 TypeSafety.MutSpec <> infer_mut_type def
+R7748:7755 TypeSafety.MutSpec <> MELetMut constr
+R7835:7839 TypeSafety.MutSpec <> MEFun constr
+R7842:7845 TypeSafety.FunSpec <> FEOp constr
+R7848:7851 TypeSafety.OperatorSpec <> OPCf constr
+R7854:7858 TypeSafety.ControlFlowSpec <> CFRec constr
+R7861:7864 TypeSafety.RegistrySpec <> RMem constr
+R7867:7871 TypeSafety.VecSpec <> MCore constr
+R7874:7877 TypeSafety.TypeSafetySpec <> EVar constr
+R7768:7772 TypeSafety.MutSpec <> MEFun constr
+R7775:7778 TypeSafety.FunSpec <> FEOp constr
+R7781:7784 TypeSafety.OperatorSpec <> OPCf constr
+R7787:7791 TypeSafety.ControlFlowSpec <> CFRec constr
+R7794:7797 TypeSafety.RegistrySpec <> RMem constr
+R7800:7804 TypeSafety.VecSpec <> MCore constr
+R7807:7810 TypeSafety.TypeSafetySpec <> ELit constr
+R7813:7816 TypeSafety.TypeSafetySpec <> LInt constr
+R7740:7741 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R7737:7738 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R7893:7895 Corelib.Init.Datatypes <> inl constr
+R7898:7902 TypeSafety.TypeSafetySpec <> TPrim constr
+R7904:7909 TypeSafety.TypeSafetySpec <> TInt32 constr
+def 7947:7975 <> infer_mut_type_assign_witness
+R8109:8111 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7981:7994 TypeSafety.MutSpec <> infer_mut_type def
+R8029:8036 TypeSafety.MutSpec <> MEAssign constr
+R8049:8053 TypeSafety.MutSpec <> MEFun constr
+R8056:8059 TypeSafety.FunSpec <> FEOp constr
+R8062:8065 TypeSafety.OperatorSpec <> OPCf constr
+R8068:8072 TypeSafety.ControlFlowSpec <> CFRec constr
+R8075:8078 TypeSafety.RegistrySpec <> RMem constr
+R8081:8085 TypeSafety.VecSpec <> MCore constr
+R8088:8091 TypeSafety.TypeSafetySpec <> ELit constr
+R8094:8097 TypeSafety.TypeSafetySpec <> LInt constr
+R8018:8018 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R8022:8022 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R7996:7996 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R8016:8016 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R7997:7997 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8001:8002 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8015:8015 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8003:8007 TypeSafety.TypeSafetySpec <> TPrim constr
+R8009:8014 TypeSafety.TypeSafetySpec <> TInt32 constr
+R8112:8114 Corelib.Init.Datatypes <> inl constr
+R8117:8121 TypeSafety.TypeSafetySpec <> TPrim constr
+R8123:8127 TypeSafety.TypeSafetySpec <> TUnit constr
+def 8165:8197 <> infer_mut_type_immutable_excluded
+R8328:8330 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8203:8216 TypeSafety.MutSpec <> infer_mut_type def
+R8248:8255 TypeSafety.MutSpec <> MEAssign constr
+R8268:8272 TypeSafety.MutSpec <> MEFun constr
+R8275:8278 TypeSafety.FunSpec <> FEOp constr
+R8281:8284 TypeSafety.OperatorSpec <> OPCf constr
+R8287:8291 TypeSafety.ControlFlowSpec <> CFRec constr
+R8294:8297 TypeSafety.RegistrySpec <> RMem constr
+R8300:8304 TypeSafety.VecSpec <> MCore constr
+R8307:8310 TypeSafety.TypeSafetySpec <> ELit constr
+R8313:8316 TypeSafety.TypeSafetySpec <> LInt constr
+R8240:8241 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R8218:8218 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R8238:8238 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R8219:8219 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8223:8224 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8237:8237 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R8225:8229 TypeSafety.TypeSafetySpec <> TPrim constr
+R8231:8236 TypeSafety.TypeSafetySpec <> TInt32 constr
+R8331:8333 Corelib.Init.Datatypes <> inr constr
+R8336:8346 TypeSafety.MutSpec <> MEImmutable constr

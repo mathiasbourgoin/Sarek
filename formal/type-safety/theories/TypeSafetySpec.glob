@@ -1,4 +1,4 @@
-DIGEST 0d4bf44111108e5d9d69dcfdb4a66377
+DIGEST 88aaca8ba26c0b15280a78c9802b50ce
 FTypeSafety.TypeSafetySpec
 R1710:1713 Stdlib.Bool.Bool <> <> lib
 R1715:1718 Stdlib.Lists.List <> <> lib
@@ -953,3 +953,41 @@ R18158:18173 TypeSafety.TypeSafetySpec <> infer_type_sound thm
 R18158:18173 TypeSafety.TypeSafetySpec <> infer_type_sound thm
 R18186:18204 TypeSafety.TypeSafetySpec <> infer_type_complete thm
 R18186:18204 TypeSafety.TypeSafetySpec <> infer_type_complete thm
+def 18266:18291 <> infer_type_lit_int_witness
+R18326:18328 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18297:18306 TypeSafety.TypeSafetySpec <> infer_type def
+R18312:18315 TypeSafety.TypeSafetySpec <> ELit constr
+R18318:18321 TypeSafety.TypeSafetySpec <> LInt constr
+R18308:18309 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R18329:18331 Corelib.Init.Datatypes <> inl constr
+R18334:18338 TypeSafety.TypeSafetySpec <> TPrim constr
+R18340:18345 TypeSafety.TypeSafetySpec <> TInt32 constr
+def 18383:18406 <> infer_type_tuple_witness
+R18469:18475 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18412:18421 TypeSafety.TypeSafetySpec <> infer_type def
+R18427:18432 TypeSafety.TypeSafetySpec <> ETuple constr
+R18434:18434 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R18448:18449 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R18467:18467 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R18435:18438 TypeSafety.TypeSafetySpec <> ELit constr
+R18441:18444 TypeSafety.TypeSafetySpec <> LInt constr
+R18450:18453 TypeSafety.TypeSafetySpec <> ELit constr
+R18456:18460 TypeSafety.TypeSafetySpec <> LBool constr
+R18462:18465 Corelib.Init.Datatypes <> true constr
+R18423:18424 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R18476:18478 Corelib.Init.Datatypes <> inl constr
+R18481:18486 TypeSafety.TypeSafetySpec <> TTuple constr
+R18488:18488 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R18501:18502 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R18514:18514 Stdlib.Lists.List ListNotations ::list_scope:'['_x_';'_x_';'_'..'_';'_x_']' not
+R18489:18493 TypeSafety.TypeSafetySpec <> TPrim constr
+R18495:18500 TypeSafety.TypeSafetySpec <> TInt32 constr
+R18503:18507 TypeSafety.TypeSafetySpec <> TPrim constr
+R18509:18513 TypeSafety.TypeSafetySpec <> TBool constr
+def 18552:18578 <> infer_type_unbound_excluded
+R18608:18610 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R18584:18593 TypeSafety.TypeSafetySpec <> infer_type def
+R18599:18602 TypeSafety.TypeSafetySpec <> EVar constr
+R18595:18596 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R18611:18613 Corelib.Init.Datatypes <> inr constr
+R18616:18625 TypeSafety.TypeSafetySpec <> UnboundVar constr

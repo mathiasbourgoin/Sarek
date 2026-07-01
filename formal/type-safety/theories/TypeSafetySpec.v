@@ -469,3 +469,18 @@ Proof.
   - apply infer_type_sound.
   - apply infer_type_complete.
 Qed.
+
+(* ===== Non-vacuousness witnesses ===== *)
+
+Example infer_type_lit_int_witness :
+  infer_type [] (ELit (LInt 0)) = inl (TPrim TInt32).
+Proof. reflexivity. Qed.
+
+Example infer_type_tuple_witness :
+  infer_type [] (ETuple [ELit (LInt 0); ELit (LBool true)]) =
+    inl (TTuple [TPrim TInt32; TPrim TBool]).
+Proof. reflexivity. Qed.
+
+Example infer_type_unbound_excluded :
+  infer_type [] (EVar "x") = inr (UnboundVar "x").
+Proof. reflexivity. Qed.
