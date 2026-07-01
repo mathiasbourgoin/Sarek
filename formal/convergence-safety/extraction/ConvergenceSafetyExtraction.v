@@ -25,6 +25,10 @@ From ConvergenceSpec Require Import ConvergenceSemantics.
  * suite can exercise the operational semantics (outcome / trace / event) — not
  * only the static analysis — against an inline OCaml reference. *)
 
+(* Emit directly into extraction/ (same pattern as type-safety's
+ * SpecialExtraction.v) so no stray copy appears at the project root. *)
+Set Extraction Output Directory "extraction".
+
 Extraction "ConvergenceModel.ml"
   is_varying
   barrier_free

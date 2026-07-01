@@ -274,6 +274,13 @@ let () =
       Test.make
         ~name:"sem:eval_fuel_monotone"
         ~count:3000
+        ~stats:
+          [
+            ( "completes_at_n",
+              fun (n, t, e) ->
+                if M.eval_concrete n t [] (to_extracted e) <> None then 1 else 0
+            );
+          ]
         (Gen.triple gen_fuel gen_tid gen_expr)
         (fun (n, t, e) ->
           let ex = to_extracted e in
@@ -296,6 +303,12 @@ let () =
       Test.make
         ~name:"sem:differential_barrier_safe"
         ~count:3000
+        ~stats:
+          [
+            ( "check_clean",
+              fun (e, _t1, _t2) ->
+                if check_env Converged [] e = [] then 1 else 0 );
+          ]
         (Gen.triple gen_core_expr gen_tid gen_tid)
         (fun (e, t1, t2) ->
           if core_frag e && check_env Converged [] e = [] then begin

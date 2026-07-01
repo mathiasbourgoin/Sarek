@@ -7068,3 +7068,46 @@ Proof.
   intros fuel t rho e o tr Hsf Hbf H.
   exact (barrier_free_no_barriers (fun th => th) fuel t rho e o tr Hsf Hbf H).
 Qed.
+
+(* ===== Non-vacuousness witnesses =================================================
+ * These Examples prove that core_frag's precondition is INHABITED and that the
+ * evaluator produces non-trivial results.  They close the gap coqchk cannot:
+ * coqchk verifies axiom-freedom but cannot distinguish a vacuously-true theorem
+ * from a substantive one.  Three categories:
+ *   W-SAT   : a concrete program that satisfies core_frag = true
+ *   W-EVAL  : the evaluator terminates on that program with a non-empty trace
+ *   W-CLEAN : the program is also check_env-clean (precondition of check_env_sound_core is met)
+ *   W-NEG   : programs that are EXCLUDED from core_frag (showing the boundary)
+ * ==================================================================================*)
+
+(* W-SAT: EBarrier is in core_frag (no EReturn, no ESuperstep). *)
+Example core_frag_barrier_sat : core_frag EBarrier = true.
+Proof. reflexivity. Qed.
+
+(* W-EVAL: eval_concrete terminates on EBarrier with fuel 1 and produces [EvBarrier]. *)
+Example eval_concrete_barrier_nonempty :
+  eval_concrete 1 0 [] EBarrier = Some (ONorm 0, EvBarrier :: []).
+Proof. reflexivity. Qed.
+
+(* W-CLEAN: EBarrier is check_env-clean in Converged mode with empty env.
+   Combined with W-SAT and W-EVAL this witnesses that check_env_sound_core's
+   precondition (core_frag ∧ check_env Converged [] = []) is satisfiable. *)
+Example check_env_barrier_clean :
+  check_env Converged [] EBarrier = [].
+Proof. reflexivity. Qed.
+
+(* W-EVAL2: The evaluator is non-trivial: two barriers in sequence produce two events. *)
+Example eval_concrete_seq_barriers :
+  eval_concrete 5 0 [] (ESeq [EBarrier; EBarrier]) =
+    Some (ONorm 0, EvBarrier :: EvBarrier :: []).
+Proof. reflexivity. Qed.
+
+(* W-NEG1: EReturn is excluded from core_frag (boundary check). *)
+Example core_frag_return_excluded :
+  core_frag (EReturn ELit) = false.
+Proof. reflexivity. Qed.
+
+(* W-NEG2: ESuperstep is excluded from core_frag (boundary check). *)
+Example core_frag_superstep_excluded :
+  core_frag (ESuperstep false EBarrier ELit) = false.
+Proof. reflexivity. Qed.
