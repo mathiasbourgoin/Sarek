@@ -1,7 +1,11 @@
 # TypeSafety — Status
 
-**Branch**: formal/convergence-safety-phase1a
-**Phase**: T3-S8 (GPUSpec, done 2026-06-14) -> T3-S9 (next)
+**Grade**: A (apparatus-native, template-bootstrapped from convergence-safety)
+**Apparatus version**: 1.2.1
+**Host profile**: SPOC/sarek
+**Architecture**: 3-layer
+**Phase**: T3-SEMANTIC — MILESTONE LOCKED (T3-S1 through T3-S8, 2026-06-15)
+**Merged**: originally to `master` @ d72a2e6a (2026-06-15, PR #202); ported to `main` 2026-07-01 (proof artifacts regenerated, coqchk re-run on `main`'s tree)
 **Toolchain**: Rocq 9.1.1 / OCaml 5.4.0
 
 ## Scoreboard
@@ -424,4 +428,33 @@ declaration count is exact (78 headline + 12 auxiliary = 90 total
 73. `constr_expr_ind_strong` -- custom strong induction principle for `constr_expr` (Forall IH over provided fields + Some/None payload arm); `Defined`
 74. `check_fields_sound` -- field-list soundness over `check_fields` (feeds `infer_constr_type_sound`)
 
-## Next: T3-S9
+## CMBT completeness chain
+
+| Link | Item | Status |
+|---|---|---|
+| 1 | Spec source (12 `theories/*.v` files, 90 declarations) | checked |
+| 2 | Extracted OCaml models (12 `extraction/*Model.ml` files) | checked |
+| 3 | Integration target (`Sarek_typer.ml` `infer` function, 1154 lines) | checked |
+| 4 | Conformance tests GREEN (T1-CMBT: 2000/2000 + 20/20 smoke; T2-UNIFY/VEC/REGISTRY; T3-S1..S8) | checked |
+| 5 | Mutation tests GREEN (`test/test_mutation.ml`: M1 type-erasure + M2 variable-blind caught) | checked |
+| 6 | `coqchk` passes (0 axioms) across all 12 spec files | checked |
+| 7 | Open findings documented in `findings/FINDINGS.md` (F-TS-01 RESOLVED) | checked |
+
+## Milestone lock
+
+T3-SEMANTIC is LOCKED. The full T3-SEMANTIC ladder (T3-S1 through T3-S8) is complete:
+90 theorems (78 headline + 12 auxiliary), 0 admits, 0 axioms, coqchk passes.
+Non-vacuousness gate (Rule 11) passed: 41 Example witnesses across 12 theory files,
+mutation tests green (M1 + M2 caught).
+
+No T3-S9 is scoped. If a new task is identified post-lock, open it separately.
+
+## Next session prompt
+
+```
+Resume TypeSafety (apparatus v1.2.1, grade A, MILESTONE LOCKED 2026-06-15).
+State: 90 theorems (78 headline + 12 auxiliary) across 12 spec files, 0 admits, 0 axioms.
+T3-SEMANTIC complete (T3-S1..S8). Originally merged to `master` @ d72a2e6a (PR #202); ported to `main` 2026-07-01.
+Non-vacuousness: 41 Examples, M1+M2 mutation tests green.
+Next project: codegen-cuda via /formal-init.
+```

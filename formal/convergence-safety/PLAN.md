@@ -24,7 +24,7 @@
 | T3-S5 | EReturn residual-divergence verdict (formal counterexample or proof; expected F-04) | T3 | **done** (ConvergenceSemantics.v: hazard + hazard_vary + hazard_checker_blind + hazard_eval_thread0/1 + hazard_not_barrier_safe; F-04 filed; 40 proven, 8 defs, 0 admits, 0 axioms; 2026-06-13) | T3-S4 |
 | T3-S6 | ESuperstep semantic grounding (implicit-barrier event; semantic F-01) | T3 | **done** (ConvergenceSemantics.v: core_frag_ss + core_frag_impl_ss + core_frag_ss_no_ret + eval_while_exits_immediately_ss + core_frag_ss_barrier_free_superstep_free + check_env_diverged_no_barriers_ss + eval_check_uniform_ss + check_env_sound_superstep + susp_hazard/susp_vary/susp_eval_thread0/1 + semantic_f01_flagged + semantic_f01_not_barrier_safe + semantic_f01_corollary; T3-S3 side condition resolved; dv=true trust boundary documented; 50 proven, 10 defs, 0 admits, 0 axioms; 2026-06-13) | T3-S4 |
 | T3-S7 | Warp-collective semantic soundness (`check_warp` vs warp-granular traces) | T3 | **done** (ConvergenceSemantics.v: erase_barrier + warp_free + warp_free_no_warps + check_warp_env + check_warp_env_diverged_clean_warp_free + check_warp_env_diverged_no_warps + eval_check_warp_uniform + warp_safe + check_warp_sound_core in Section WarpModel; 0 admits, 0 axioms, coqchk passes; 2026-06-13) | T3-S4 |
-| T3-S8 | Extraction + differential conformance for the semantics (CMBT closure) | T3 | current | T3-S5 |
+| T3-S8 | Extraction + differential conformance for the semantics (CMBT closure) | T3 | **done** (eval_concrete def + eval_concrete_fuel_monotone + eval_concrete_barrier_free_silent; ConvergenceSafetyExtraction.v updated; test_convergence_semantics.ml 4/4 QCheck GREEN; 0 admits, 0 axioms; coqchk passes; 2026-06-13) | T3-S5 |
 | F-04b | Rocq spec update: has_varying_return + check_seq + soundness extension | T3 | **done** (ConvergenceSpec.v: has_varying_return + check_seq + extended check_env_sound_core; 0 admits, 0 axioms; 2026-06-13) | F-04 |
 | DOCS-SYNC | STATUS.md / ASSUMPTIONS.md / proof-ledger.json / ConvergenceSafetySpec.tex drift check | hygiene | **clean** (verified tick 1) | — |
 
@@ -32,32 +32,13 @@
 
 ## Current task
 
-**T3-S8 — current task.**
+**T3-S8 — DONE (2026-06-13).**
 
-T3-S7 done (2026-06-13): ConvergenceSemantics.v extended with erase_barrier (trace
-projection keeping only EvWarp events), warp_free + warp_free_no_warps (dual of
-barrier_free_no_barriers), check_warp_env (env-threaded warp checker mirroring check_env
-with EWarpPoint flagging instead of EBarrier), check_warp_env_diverged_clean_warp_free
-(bridge lemma), check_warp_env_diverged_no_warps (silence under Diverged), Section
-WarpModel with Variable warp_of : tid -> nat, eval_check_warp_uniform (warp dual of
-eval_check_uniform: Part A erase_barrier equality + Part B outcome equality over
-core_frag with check_warp_env Converged clean), warp_safe (erase_barrier-trace agreement
-restricted to thread pairs with warp_of t1 = warp_of t2), and check_warp_sound_core
-(main theorem: core_frag e = true -> check_warp_env Converged env e = [] ->
-warp_safe env e, parametric in warp_of).
-0 admits, 0 axioms, coqchk passes. Warp-size parameterization CLOSED.
-PARAMETRIZATION NOTE: attempt to make T3-S4 induction parametric over
-(event class, agreement domain, checker) was flagged INFEASIBLE within budget
-(concrete checker reductions + per-constructor leaf inversions); eval_check_warp_uniform
-was duplicated via mechanical EBarrier<->EWarpPoint / erase_warp<->erase_barrier /
-check_env<->check_warp_env substitution.
+T3-S8 closed the operational half of the CMBT chain. eval_concrete instantiates the abstract evaluator (vary_val := fun t => t), making the fuel-indexed big-step semantics executable via extraction. Four QCheck properties in test_convergence_semantics.ml exercise the extracted evaluator: sem:eval_fuel_monotone, sem:barrier_free_silent, sem:differential_barrier_safe (CMBT differential: core_frag ∧ check_env Converged [] = [] ⇒ erase_warp trace agreement across two threads), and sem:f04_hazard_counterexample (F-04 regression: checker-clean hazard produces differing barrier traces across threads). 0 admits, 0 axioms, coqchk passes.
 
-Current task: T3-S8 — Extraction + differential conformance for the semantics (CMBT
-closure). Blocked-by T3-S5 is resolved (F-04 counterexample landed in T3-S5). KEY
-DELIVERABLES: extract eval to ConvergenceModel; add QCheck properties for
-eval_fuel_monotone, barrier_free_silent, differential (check_env clean => trace
-agreement), and F-04 hazard regression; DOCS-SYNC pass (STATUS.md, proof-ledger.json,
-ConvergenceSafetySpec.tex, ASSUMPTIONS.md).
+**Next: T3-SEMANTIC milestone lock.**
+
+The full T3-SEMANTIC ladder (T3-S1 through T3-S8) is complete. Run /formal-check before declaring milestone lock. No T3-S9 is scoped — if a new task is identified post-milestone, open it separately.
 
 ---
 
