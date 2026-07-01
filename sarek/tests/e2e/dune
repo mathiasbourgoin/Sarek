@@ -196,6 +196,17 @@
  (libraries sarek sarek_ir spoc_core test_helpers unix)
  (preprocess no_preprocessing))
 
+; Float64 math intrinsics report across every fp64-capable device.
+; Report-only: a mismatch on one (device, function) pair does not fail the
+; test or block CI - see the module doc comment for why.
+; Run with: dune exec sarek/tests/e2e/test_float64_math_intrinsics.exe
+
+(executable
+ (name test_float64_math_intrinsics)
+ (modules test_float64_math_intrinsics)
+ (libraries sarek sarek_ir spoc_core test_helpers unix)
+ (preprocess no_preprocessing))
+
 ; External kernel test - works with any available backend
 
 (executable

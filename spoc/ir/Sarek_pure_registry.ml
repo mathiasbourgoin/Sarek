@@ -41,12 +41,38 @@ let fun_device_template ?(module_path = []) name =
  * Helpers
  ******************************************************************************)
 
+(** GLSL has no [fabs]/[rsqrt]/[atan2] builtins: it spells them [abs],
+    [inversesqrt], and the two-argument [atan] overload respectively. Every
+    other backend (CUDA, OpenCL, Metal, WGSL) uses the OpenCL-style generic name
+    directly, so this override only applies when [framework = "GLSL"]. *)
+let glsl_override_name = function
+  | "fabs" | "abs_float" -> Some "abs"
+  | "rsqrt" -> Some "inversesqrt"
+  | "atan2" -> Some "atan"
+  | _ -> None
+
+let glsl_name ~name ~generic_name =
+  match glsl_override_name name with Some g -> g | None -> generic_name
+
 (** Build a framework-dispatching closure for float32 math functions. CUDA uses
-    the [f]-suffixed form (sinf, cosf, …); OpenCL, Metal, and GLSL use the
-    un-suffixed form. *)
-let float32_math_template ~cuda_name ~generic_name =
+    the [f]-suffixed form (sinf, cosf, …); OpenCL and Metal use the un-suffixed
+    form; GLSL uses the un-suffixed form except where its builtin is spelled
+    differently (see [glsl_override_name]). *)
+let float32_math_template ~name ~cuda_name ~generic_name =
  fun ~framework ->
-  match framework with "CUDA" -> cuda_name | _ -> generic_name
+  match framework with
+  | "CUDA" -> cuda_name
+  | "GLSL" -> glsl_name ~name ~generic_name
+  | _ -> generic_name
+
+(** Same as [float32_math_template] but for functions spelled identically on
+    every backend except GLSL (e.g. Float64 math, which has no CUDA [f]-suffix).
+*)
+let generic_math_template name =
+ fun ~framework ->
+  match framework with
+  | "GLSL" -> glsl_name ~name ~generic_name:name
+  | _ -> name
 
 (******************************************************************************
  * Standard stdlib registrations (static table — PR-2 design)
@@ -71,7 +97,7 @@ let () =
     register_fun
       ~module_path:["Float32"]
       name
-      ~device:(float32_math_template ~cuda_name ~generic_name)
+      ~device:(float32_math_template ~name ~cuda_name ~generic_name)
   in
   reg32 "sin" "sinf" "sin" ;
   reg32 "cos" "cosf" "cos" ;
@@ -142,7 +168,7 @@ let () =
     register_fun
       ~module_path:["Math"; "Float32"]
       name
-      ~device:(float32_math_template ~cuda_name ~generic_name)
+      ~device:(float32_math_template ~name ~cuda_name ~generic_name)
   in
   reg_math32 "sin" "sinf" "sin" ;
   reg_math32 "cos" "cosf" "cos" ;
@@ -181,7 +207,7 @@ let () =
     register_fun
       ~module_path:["Math"; "Float64"]
       name
-      ~device:(fun ~framework:_ -> name)
+      ~device:(generic_math_template name)
   in
   reg_math64 "sin" ;
   reg_math64 "cos" ;
@@ -217,7 +243,7 @@ let () =
     register_fun
       ~module_path:["Sarek_stdlib_meta"; "Float32"]
       name
-      ~device:(float32_math_template ~cuda_name ~generic_name)
+      ~device:(float32_math_template ~name ~cuda_name ~generic_name)
   in
   reg32m "sin" "sinf" "sin" ;
   reg32m "cos" "cosf" "cos" ;
@@ -256,7 +282,7 @@ let () =
     register_fun
       ~module_path:["Sarek_stdlib_meta"; "Float64"]
       name
-      ~device:(fun ~framework:_ -> name)
+      ~device:(generic_math_template name)
   in
   reg64m "sin" ;
   reg64m "cos" ;
@@ -292,7 +318,7 @@ let () =
     register_fun
       ~module_path:["Sarek_stdlib_meta"; "Math"; "Float32"]
       name
-      ~device:(float32_math_template ~cuda_name ~generic_name)
+      ~device:(float32_math_template ~name ~cuda_name ~generic_name)
   in
   reg_meta_math32 "sin" "sinf" "sin" ;
   reg_meta_math32 "cos" "cosf" "cos" ;
@@ -331,7 +357,7 @@ let () =
     register_fun
       ~module_path:["Sarek_stdlib_meta"; "Math"; "Float64"]
       name
-      ~device:(fun ~framework:_ -> name)
+      ~device:(generic_math_template name)
   in
   reg_meta_math64 "sin" ;
   reg_meta_math64 "cos" ;

@@ -252,245 +252,292 @@ and gen_binop = function
 
 and gen_unop = function Neg -> "-" | Not -> "!" | BitNot -> "~"
 
+(** MSL has no [cbrt]/[hypot]/[expm1]/[log1p] builtins under any name (unlike
+    [fabs]/[rsqrt]/[atan2], which MSL does define — see Table 6.4 of the Metal
+    Shading Language Specification). These need a multi-token expression instead
+    of a function-name substitution, so they're special-cased here ahead of both
+    the unqualified match arms and the pure registry, applying uniformly to
+    qualified (Float32.cbrt) and unqualified calls alike. [cbrt] uses
+    [sign(x)*pow(abs(x),...)] rather than bare [pow] because [pow] is undefined
+    for a negative base. *)
+and gen_metal_polyfill buf name args =
+  match (name, args) with
+  | "cbrt", [x] ->
+      Buffer.add_string buf "(sign(" ;
+      gen_expr buf x ;
+      Buffer.add_string buf ") * pow(abs(" ;
+      gen_expr buf x ;
+      Buffer.add_string buf "), 1.0 / 3.0))"
+  | "hypot", [x; y] ->
+      Buffer.add_string buf "sqrt((" ;
+      gen_expr buf x ;
+      Buffer.add_string buf ") * (" ;
+      gen_expr buf x ;
+      Buffer.add_string buf ") + (" ;
+      gen_expr buf y ;
+      Buffer.add_string buf ") * (" ;
+      gen_expr buf y ;
+      Buffer.add_string buf "))"
+  | "expm1", [x] ->
+      Buffer.add_string buf "(exp(" ;
+      gen_expr buf x ;
+      Buffer.add_string buf ") - 1.0)"
+  | "log1p", [x] ->
+      Buffer.add_string buf "log(1.0 + (" ;
+      gen_expr buf x ;
+      Buffer.add_string buf "))"
+  | _ ->
+      Codegen_error.raise_error
+        (Codegen_error.unknown_intrinsic
+           (Printf.sprintf "%s (wrong arity for Metal polyfill)" name))
+
 and gen_intrinsic buf path name args =
   let full_name =
     match path with [] -> name | _ -> String.concat "." path ^ "." ^ name
   in
-  (* For path-qualified intrinsics, query the pure registry first.
+  if List.mem name ["cbrt"; "hypot"; "expm1"; "log1p"] then
+    gen_metal_polyfill buf name args
+  else
+    (* For path-qualified intrinsics, query the pure registry first.
      Float32.sin -> sin on Metal (Metal uses un-suffixed names). *)
-  let pure_registry_hit =
-    match path with
-    | [] -> None
-    | _ -> (
-        let framework = Option.value ~default:"Metal" !current_framework in
-        match
-          Sarek_pure_registry.fun_device_template ~module_path:path name
-        with
-        | Some f -> Some (f ~framework)
-        | None -> None)
-  in
-  match pure_registry_hit with
-  | Some device_name ->
-      Buffer.add_string buf device_name ;
-      Buffer.add_char buf '(' ;
-      List.iteri
-        (fun i e ->
-          if i > 0 then Buffer.add_string buf ", " ;
-          gen_expr buf e)
-        args ;
-      Buffer.add_char buf ')'
-  | None -> (
-      if
-        (* Try thread intrinsics - support both idx and id naming *)
-        List.mem
-          name
-          [
-            "thread_id_x";
-            "thread_idx_x";
-            "thread_id_y";
-            "thread_idx_y";
-            "thread_id_z";
-            "thread_idx_z";
-            "block_id_x";
-            "block_idx_x";
-            "block_id_y";
-            "block_idx_y";
-            "block_id_z";
-            "block_idx_z";
-            "block_dim_x";
-            "block_dim_y";
-            "block_dim_z";
-            "grid_dim_x";
-            "grid_dim_y";
-            "grid_dim_z";
-            "global_thread_id";
-            "global_idx";
-            "global_idx_x";
-            "global_idx_y";
-            "global_idx_z";
-            "global_size";
-          ]
-      then Buffer.add_string buf (metal_thread_intrinsic name)
-      else
-        (* Standard math intrinsics - Metal uses same names *)
-        match name with
-        | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh"
-        | "tanh" | "exp" | "exp2" | "log" | "log2" | "log10" | "sqrt" | "rsqrt"
-        | "cbrt" | "floor" | "ceil" | "round" | "trunc" | "fabs" ->
-            Buffer.add_string buf name ;
-            Buffer.add_char buf '(' ;
-            List.iteri
-              (fun i e ->
-                if i > 0 then Buffer.add_string buf ", " ;
-                gen_expr buf e)
-              args ;
-            Buffer.add_char buf ')'
-        | "atan2" | "pow" | "fma" | "min" | "max" ->
-            Buffer.add_string buf name ;
-            Buffer.add_char buf '(' ;
-            List.iteri
-              (fun i e ->
-                if i > 0 then Buffer.add_string buf ", " ;
-                gen_expr buf e)
-              args ;
-            Buffer.add_char buf ')'
-        (* Barrier synchronization *)
-        | "block_barrier" ->
-            Buffer.add_string
-              buf
-              "threadgroup_barrier(mem_flags::mem_threadgroup)"
-        | "atomic_add" | "atomic_add_int32" ->
-            Buffer.add_string buf "atomic_fetch_add_explicit(" ;
-            (match args with
-            | [addr; value] ->
-                (* Cast pointer to threadgroup atomic type *)
-                Buffer.add_string buf "(volatile threadgroup atomic_int*)&" ;
-                gen_expr buf addr ;
-                Buffer.add_string buf ", " ;
-                gen_expr buf value
-            | [arr; idx; value] ->
-                (* Array element atomic with threadgroup cast *)
-                Buffer.add_string buf "(volatile threadgroup atomic_int*)&" ;
-                gen_expr buf arr ;
-                Buffer.add_char buf '[' ;
-                gen_expr buf idx ;
-                Buffer.add_string buf "], " ;
-                gen_expr buf value
-            | args ->
-                Codegen_error.raise_error
-                  (Codegen_error.invalid_arg_count
-                     "atomic_add"
-                     2
-                     (List.length args))) ;
-            Buffer.add_string buf ", memory_order_relaxed)"
-        | "atomic_add_global_int32" ->
-            Buffer.add_string buf "atomic_fetch_add_explicit(" ;
-            (match args with
-            | [addr; value] ->
-                (* Cast pointer to device atomic type *)
-                Buffer.add_string buf "(volatile device atomic_int*)&" ;
-                gen_expr buf addr ;
-                Buffer.add_string buf ", " ;
-                gen_expr buf value
-            | [arr; idx; value] ->
-                (* Array element atomic with device cast *)
-                Buffer.add_string buf "(volatile device atomic_int*)&" ;
-                gen_expr buf arr ;
-                Buffer.add_char buf '[' ;
-                gen_expr buf idx ;
-                Buffer.add_string buf "], " ;
-                gen_expr buf value
-            | args ->
-                Codegen_error.raise_error
-                  (Codegen_error.invalid_arg_count
-                     "atomic_add_global"
-                     2
-                     (List.length args))) ;
-            (* Use relaxed memory order *)
-            Buffer.add_string buf ", memory_order_relaxed)"
-        | "atomic_sub" ->
-            Buffer.add_string buf "atomic_sub(" ;
-            (match args with
-            | [addr; value] ->
-                Buffer.add_char buf '&' ;
-                gen_expr buf addr ;
-                Buffer.add_string buf ", " ;
-                gen_expr buf value
-            | args ->
-                Codegen_error.raise_error
-                  (Codegen_error.invalid_arg_count
-                     "atomic_sub"
-                     2
-                     (List.length args))) ;
-            Buffer.add_char buf ')'
-        | "atomic_min" ->
-            Buffer.add_string buf "atomic_min(" ;
-            (match args with
-            | [addr; value] ->
-                Buffer.add_char buf '&' ;
-                gen_expr buf addr ;
-                Buffer.add_string buf ", " ;
-                gen_expr buf value
-            | args ->
-                Codegen_error.raise_error
-                  (Codegen_error.invalid_arg_count
-                     "atomic_min"
-                     2
-                     (List.length args))) ;
-            Buffer.add_char buf ')'
-        | "atomic_max" ->
-            Buffer.add_string buf "atomic_max(" ;
-            (match args with
-            | [addr; value] ->
-                Buffer.add_char buf '&' ;
-                gen_expr buf addr ;
-                Buffer.add_string buf ", " ;
-                gen_expr buf value
-            | args ->
-                Codegen_error.raise_error
-                  (Codegen_error.invalid_arg_count
-                     "atomic_max"
-                     2
-                     (List.length args))) ;
-            Buffer.add_char buf ')'
-        | _ -> (
-            (* Try registry lookup for intrinsics like float, int_of_float, etc. *)
-            match Sarek_registry.fun_device_template ~module_path:path name with
-            | Some template ->
-                (* Generate argument strings *)
-                let arg_strs =
-                  List.map
-                    (fun e ->
-                      let b = Buffer.create 64 in
-                      gen_expr b e ;
-                      Buffer.contents b)
-                    args
-                in
-                (* Count %s placeholders in template *)
-                let count_placeholders s =
-                  let rec count i acc =
-                    if i >= String.length s - 1 then acc
-                    else if s.[i] = '%' && s.[i + 1] = 's' then
-                      count (i + 2) (acc + 1)
-                    else count (i + 1) acc
+    let pure_registry_hit =
+      match path with
+      | [] -> None
+      | _ -> (
+          let framework = Option.value ~default:"Metal" !current_framework in
+          match
+            Sarek_pure_registry.fun_device_template ~module_path:path name
+          with
+          | Some f -> Some (f ~framework)
+          | None -> None)
+    in
+    match pure_registry_hit with
+    | Some device_name ->
+        Buffer.add_string buf device_name ;
+        Buffer.add_char buf '(' ;
+        List.iteri
+          (fun i e ->
+            if i > 0 then Buffer.add_string buf ", " ;
+            gen_expr buf e)
+          args ;
+        Buffer.add_char buf ')'
+    | None -> (
+        if
+          (* Try thread intrinsics - support both idx and id naming *)
+          List.mem
+            name
+            [
+              "thread_id_x";
+              "thread_idx_x";
+              "thread_id_y";
+              "thread_idx_y";
+              "thread_id_z";
+              "thread_idx_z";
+              "block_id_x";
+              "block_idx_x";
+              "block_id_y";
+              "block_idx_y";
+              "block_id_z";
+              "block_idx_z";
+              "block_dim_x";
+              "block_dim_y";
+              "block_dim_z";
+              "grid_dim_x";
+              "grid_dim_y";
+              "grid_dim_z";
+              "global_thread_id";
+              "global_idx";
+              "global_idx_x";
+              "global_idx_y";
+              "global_idx_z";
+              "global_size";
+            ]
+        then Buffer.add_string buf (metal_thread_intrinsic name)
+        else
+          (* Standard math intrinsics - Metal uses same names *)
+          match name with
+          | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh"
+          | "tanh" | "exp" | "exp2" | "log" | "log2" | "log10" | "sqrt"
+          | "rsqrt" | "floor" | "ceil" | "round" | "trunc" | "fabs" ->
+              Buffer.add_string buf name ;
+              Buffer.add_char buf '(' ;
+              List.iteri
+                (fun i e ->
+                  if i > 0 then Buffer.add_string buf ", " ;
+                  gen_expr buf e)
+                args ;
+              Buffer.add_char buf ')'
+          | "atan2" | "pow" | "fma" | "min" | "max" ->
+              Buffer.add_string buf name ;
+              Buffer.add_char buf '(' ;
+              List.iteri
+                (fun i e ->
+                  if i > 0 then Buffer.add_string buf ", " ;
+                  gen_expr buf e)
+                args ;
+              Buffer.add_char buf ')'
+          (* Barrier synchronization *)
+          | "block_barrier" ->
+              Buffer.add_string
+                buf
+                "threadgroup_barrier(mem_flags::mem_threadgroup)"
+          | "atomic_add" | "atomic_add_int32" ->
+              Buffer.add_string buf "atomic_fetch_add_explicit(" ;
+              (match args with
+              | [addr; value] ->
+                  (* Cast pointer to threadgroup atomic type *)
+                  Buffer.add_string buf "(volatile threadgroup atomic_int*)&" ;
+                  gen_expr buf addr ;
+                  Buffer.add_string buf ", " ;
+                  gen_expr buf value
+              | [arr; idx; value] ->
+                  (* Array element atomic with threadgroup cast *)
+                  Buffer.add_string buf "(volatile threadgroup atomic_int*)&" ;
+                  gen_expr buf arr ;
+                  Buffer.add_char buf '[' ;
+                  gen_expr buf idx ;
+                  Buffer.add_string buf "], " ;
+                  gen_expr buf value
+              | args ->
+                  Codegen_error.raise_error
+                    (Codegen_error.invalid_arg_count
+                       "atomic_add"
+                       2
+                       (List.length args))) ;
+              Buffer.add_string buf ", memory_order_relaxed)"
+          | "atomic_add_global_int32" ->
+              Buffer.add_string buf "atomic_fetch_add_explicit(" ;
+              (match args with
+              | [addr; value] ->
+                  (* Cast pointer to device atomic type *)
+                  Buffer.add_string buf "(volatile device atomic_int*)&" ;
+                  gen_expr buf addr ;
+                  Buffer.add_string buf ", " ;
+                  gen_expr buf value
+              | [arr; idx; value] ->
+                  (* Array element atomic with device cast *)
+                  Buffer.add_string buf "(volatile device atomic_int*)&" ;
+                  gen_expr buf arr ;
+                  Buffer.add_char buf '[' ;
+                  gen_expr buf idx ;
+                  Buffer.add_string buf "], " ;
+                  gen_expr buf value
+              | args ->
+                  Codegen_error.raise_error
+                    (Codegen_error.invalid_arg_count
+                       "atomic_add_global"
+                       2
+                       (List.length args))) ;
+              (* Use relaxed memory order *)
+              Buffer.add_string buf ", memory_order_relaxed)"
+          | "atomic_sub" ->
+              Buffer.add_string buf "atomic_sub(" ;
+              (match args with
+              | [addr; value] ->
+                  Buffer.add_char buf '&' ;
+                  gen_expr buf addr ;
+                  Buffer.add_string buf ", " ;
+                  gen_expr buf value
+              | args ->
+                  Codegen_error.raise_error
+                    (Codegen_error.invalid_arg_count
+                       "atomic_sub"
+                       2
+                       (List.length args))) ;
+              Buffer.add_char buf ')'
+          | "atomic_min" ->
+              Buffer.add_string buf "atomic_min(" ;
+              (match args with
+              | [addr; value] ->
+                  Buffer.add_char buf '&' ;
+                  gen_expr buf addr ;
+                  Buffer.add_string buf ", " ;
+                  gen_expr buf value
+              | args ->
+                  Codegen_error.raise_error
+                    (Codegen_error.invalid_arg_count
+                       "atomic_min"
+                       2
+                       (List.length args))) ;
+              Buffer.add_char buf ')'
+          | "atomic_max" ->
+              Buffer.add_string buf "atomic_max(" ;
+              (match args with
+              | [addr; value] ->
+                  Buffer.add_char buf '&' ;
+                  gen_expr buf addr ;
+                  Buffer.add_string buf ", " ;
+                  gen_expr buf value
+              | args ->
+                  Codegen_error.raise_error
+                    (Codegen_error.invalid_arg_count
+                       "atomic_max"
+                       2
+                       (List.length args))) ;
+              Buffer.add_char buf ')'
+          | _ -> (
+              (* Try registry lookup for intrinsics like float, int_of_float, etc. *)
+              match
+                Sarek_registry.fun_device_template ~module_path:path name
+              with
+              | Some template ->
+                  (* Generate argument strings *)
+                  let arg_strs =
+                    List.map
+                      (fun e ->
+                        let b = Buffer.create 64 in
+                        gen_expr b e ;
+                        Buffer.contents b)
+                      args
                   in
-                  count 0 0
-                in
-                let num_placeholders = count_placeholders template in
-                let result =
-                  if num_placeholders = 0 then
-                    (* Plain function/cast like "(float)" -> call as function *)
-                    template ^ "(" ^ String.concat ", " arg_strs ^ ")"
-                  else if num_placeholders = 1 && List.length arg_strs = 1 then
-                    Printf.sprintf
-                      (Scanf.format_from_string template "%s")
-                      (List.hd arg_strs)
-                  else if num_placeholders = 2 && List.length arg_strs = 2 then
-                    Printf.sprintf
-                      (Scanf.format_from_string template "%s%s")
-                      (List.nth arg_strs 0)
-                      (List.nth arg_strs 1)
-                  else if num_placeholders = 3 && List.length arg_strs = 3 then
-                    Printf.sprintf
-                      (Scanf.format_from_string template "%s%s%s")
-                      (List.nth arg_strs 0)
-                      (List.nth arg_strs 1)
-                      (List.nth arg_strs 2)
-                  else
-                    (* Fallback: treat as function call *)
-                    template ^ "(" ^ String.concat ", " arg_strs ^ ")"
-                in
-                Buffer.add_string buf result
-            | None ->
-                (* Unknown intrinsic - emit as function call *)
-                Buffer.add_string buf full_name ;
-                Buffer.add_char buf '(' ;
-                List.iteri
-                  (fun i e ->
-                    if i > 0 then Buffer.add_string buf ", " ;
-                    gen_expr buf e)
-                  args ;
-                Buffer.add_char buf ')'))
+                  (* Count %s placeholders in template *)
+                  let count_placeholders s =
+                    let rec count i acc =
+                      if i >= String.length s - 1 then acc
+                      else if s.[i] = '%' && s.[i + 1] = 's' then
+                        count (i + 2) (acc + 1)
+                      else count (i + 1) acc
+                    in
+                    count 0 0
+                  in
+                  let num_placeholders = count_placeholders template in
+                  let result =
+                    if num_placeholders = 0 then
+                      (* Plain function/cast like "(float)" -> call as function *)
+                      template ^ "(" ^ String.concat ", " arg_strs ^ ")"
+                    else if num_placeholders = 1 && List.length arg_strs = 1
+                    then
+                      Printf.sprintf
+                        (Scanf.format_from_string template "%s")
+                        (List.hd arg_strs)
+                    else if num_placeholders = 2 && List.length arg_strs = 2
+                    then
+                      Printf.sprintf
+                        (Scanf.format_from_string template "%s%s")
+                        (List.nth arg_strs 0)
+                        (List.nth arg_strs 1)
+                    else if num_placeholders = 3 && List.length arg_strs = 3
+                    then
+                      Printf.sprintf
+                        (Scanf.format_from_string template "%s%s%s")
+                        (List.nth arg_strs 0)
+                        (List.nth arg_strs 1)
+                        (List.nth arg_strs 2)
+                    else
+                      (* Fallback: treat as function call *)
+                      template ^ "(" ^ String.concat ", " arg_strs ^ ")"
+                  in
+                  Buffer.add_string buf result
+              | None ->
+                  (* Unknown intrinsic - emit as function call *)
+                  Buffer.add_string buf full_name ;
+                  Buffer.add_char buf '(' ;
+                  List.iteri
+                    (fun i e ->
+                      if i > 0 then Buffer.add_string buf ", " ;
+                      gen_expr buf e)
+                    args ;
+                  Buffer.add_char buf ')'))
 
 (** {1 L-value Generation} *)
 

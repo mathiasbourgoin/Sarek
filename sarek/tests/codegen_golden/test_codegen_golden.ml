@@ -185,6 +185,175 @@ let float32_sin_path_kernel () =
     []
     body
 
+(** Kernel 5b/5c/5d: path-qualified Float32 intrinsics whose GLSL builtin name
+    differs from the OpenCL/Metal/CUDA generic name. GLSL has no [fabs] or
+    [rsqrt] builtin (only [abs] and [inversesqrt]), and no [atan2] (the
+    two-argument arctangent is the [atan] overload). These exist to prove the
+    pure-registry framework dispatch renames correctly per backend, not just for
+    [sin] (which happens to be spelled the same everywhere). *)
+let float32_rsqrt_path_kernel () =
+  let a = make_var "a" (TVec TFloat32) in
+  let b = make_var "b" (TVec TFloat32) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("b", EVar idx),
+            EIntrinsic (["Float32"], "rsqrt", [EArrayRead ("a", EVar idx)]) ) )
+  in
+  empty_kernel
+    "float32_rsqrt_path"
+    [
+      DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat32; arr_memspace = Global});
+    ]
+    []
+    body
+
+let float32_abs_float_path_kernel () =
+  let a = make_var "a" (TVec TFloat32) in
+  let b = make_var "b" (TVec TFloat32) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("b", EVar idx),
+            EIntrinsic (["Float32"], "abs_float", [EArrayRead ("a", EVar idx)])
+          ) )
+  in
+  empty_kernel
+    "float32_abs_float_path"
+    [
+      DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat32; arr_memspace = Global});
+    ]
+    []
+    body
+
+let float32_atan2_path_kernel () =
+  let a = make_var "a" (TVec TFloat32) in
+  let b = make_var "b" (TVec TFloat32) in
+  let c = make_var "c" (TVec TFloat32) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("c", EVar idx),
+            EIntrinsic
+              ( ["Float32"],
+                "atan2",
+                [EArrayRead ("a", EVar idx); EArrayRead ("b", EVar idx)] ) ) )
+  in
+  empty_kernel
+    "float32_atan2_path"
+    [
+      DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (c, Some {arr_elttype = TFloat32; arr_memspace = Global});
+    ]
+    []
+    body
+
+(** Kernel 5e/5f/5g/5h: path-qualified Float32 intrinsics with NO GLSL/Metal
+    builtin under any name (cbrt, hypot, expm1, log1p) — unlike
+    fabs/rsqrt/atan2, these require a multi-token expression polyfill, not a
+    rename. CUDA/OpenCL do have direct builtins for these, so only
+    glsl_only/metal_only goldens are needed. *)
+let float32_cbrt_path_kernel () =
+  let a = make_var "a" (TVec TFloat32) in
+  let b = make_var "b" (TVec TFloat32) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("b", EVar idx),
+            EIntrinsic (["Float32"], "cbrt", [EArrayRead ("a", EVar idx)]) ) )
+  in
+  empty_kernel
+    "float32_cbrt_path"
+    [
+      DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat32; arr_memspace = Global});
+    ]
+    []
+    body
+
+let float32_hypot_path_kernel () =
+  let a = make_var "a" (TVec TFloat32) in
+  let b = make_var "b" (TVec TFloat32) in
+  let c = make_var "c" (TVec TFloat32) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("c", EVar idx),
+            EIntrinsic
+              ( ["Float32"],
+                "hypot",
+                [EArrayRead ("a", EVar idx); EArrayRead ("b", EVar idx)] ) ) )
+  in
+  empty_kernel
+    "float32_hypot_path"
+    [
+      DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (c, Some {arr_elttype = TFloat32; arr_memspace = Global});
+    ]
+    []
+    body
+
+let float32_expm1_path_kernel () =
+  let a = make_var "a" (TVec TFloat32) in
+  let b = make_var "b" (TVec TFloat32) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("b", EVar idx),
+            EIntrinsic (["Float32"], "expm1", [EArrayRead ("a", EVar idx)]) ) )
+  in
+  empty_kernel
+    "float32_expm1_path"
+    [
+      DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat32; arr_memspace = Global});
+    ]
+    []
+    body
+
+let float32_log1p_path_kernel () =
+  let a = make_var "a" (TVec TFloat32) in
+  let b = make_var "b" (TVec TFloat32) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("b", EVar idx),
+            EIntrinsic (["Float32"], "log1p", [EArrayRead ("a", EVar idx)]) ) )
+  in
+  empty_kernel
+    "float32_log1p_path"
+    [
+      DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat32; arr_memspace = Global});
+    ]
+    []
+    body
+
 (** Kernel 6: bounds-check with if-expression. WGSL-specific: exercises EIf
     which must emit [select(else, then, cond)] (no ternary in WGSL). fun (a :
     float32 vec) (b : float32 vec) (n : int32) -> let i = global_thread_id in
@@ -963,8 +1132,313 @@ let wgsl_only_tests () =
           check_golden "wgsl" kernel_name actual))
     (wgsl_only_kernels ())
 
+(** {1 GLSL-only golden tests}
+
+    GLSL's math builtin names diverge from the CUDA/OpenCL/Metal generic names
+    for a few functions: [fabs] -> [abs], [rsqrt] -> [inversesqrt], [atan2] ->
+    the two-arg [atan] overload. These are path-qualified Float32 intrinsics, so
+    they resolve through [Sarek_pure_registry], not through the per-backend
+    unqualified-name match arms. Only GLSL needs its own goldens here because
+    CUDA/OpenCL/Metal/WGSL all keep the generic spelling. *)
+
+let () =
+  register_golden
+    "glsl"
+    "float32_rsqrt_path"
+    "#version 450\n\n\
+     // Sarek-generated compute shader: float32_rsqrt_path\n\
+     layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;\n\n\
+     layout(std430, set=0, binding = 0) buffer Buffer_a {\n\
+    \  float a[];\n\
+     };\n\
+     layout(std430, set=0, binding = 1) buffer Buffer_b {\n\
+    \  float b[];\n\
+     };\n\
+     layout(push_constant) uniform PushConstants {\n\
+    \  int a_len;\n\
+    \  int b_len;\n\
+     } pc;\n\n\
+     #define a_len pc.a_len\n\
+     #define b_len pc.b_len\n\n\
+     void main() {\n\
+    \  int idx = int(gl_GlobalInvocationID.x);\n\
+    \  b[idx] = inversesqrt(a[idx]);\n\
+     }\n" ;
+
+  register_golden
+    "glsl"
+    "float32_abs_float_path"
+    "#version 450\n\n\
+     // Sarek-generated compute shader: float32_abs_float_path\n\
+     layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;\n\n\
+     layout(std430, set=0, binding = 0) buffer Buffer_a {\n\
+    \  float a[];\n\
+     };\n\
+     layout(std430, set=0, binding = 1) buffer Buffer_b {\n\
+    \  float b[];\n\
+     };\n\
+     layout(push_constant) uniform PushConstants {\n\
+    \  int a_len;\n\
+    \  int b_len;\n\
+     } pc;\n\n\
+     #define a_len pc.a_len\n\
+     #define b_len pc.b_len\n\n\
+     void main() {\n\
+    \  int idx = int(gl_GlobalInvocationID.x);\n\
+    \  b[idx] = abs(a[idx]);\n\
+     }\n" ;
+
+  register_golden
+    "glsl"
+    "float32_atan2_path"
+    "#version 450\n\n\
+     // Sarek-generated compute shader: float32_atan2_path\n\
+     layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;\n\n\
+     layout(std430, set=0, binding = 0) buffer Buffer_a {\n\
+    \  float a[];\n\
+     };\n\
+     layout(std430, set=0, binding = 1) buffer Buffer_b {\n\
+    \  float b[];\n\
+     };\n\
+     layout(std430, set=0, binding = 2) buffer Buffer_c {\n\
+    \  float c[];\n\
+     };\n\
+     layout(push_constant) uniform PushConstants {\n\
+    \  int a_len;\n\
+    \  int b_len;\n\
+    \  int c_len;\n\
+     } pc;\n\n\
+     #define a_len pc.a_len\n\
+     #define b_len pc.b_len\n\
+     #define c_len pc.c_len\n\n\
+     void main() {\n\
+    \  int idx = int(gl_GlobalInvocationID.x);\n\
+    \  c[idx] = atan(a[idx], b[idx]);\n\
+     }\n" ;
+
+  register_golden
+    "glsl"
+    "float32_cbrt_path"
+    "#version 450\n\n\
+     // Sarek-generated compute shader: float32_cbrt_path\n\
+     layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;\n\n\
+     layout(std430, set=0, binding = 0) buffer Buffer_a {\n\
+    \  float a[];\n\
+     };\n\
+     layout(std430, set=0, binding = 1) buffer Buffer_b {\n\
+    \  float b[];\n\
+     };\n\
+     layout(push_constant) uniform PushConstants {\n\
+    \  int a_len;\n\
+    \  int b_len;\n\
+     } pc;\n\n\
+     #define a_len pc.a_len\n\
+     #define b_len pc.b_len\n\n\
+     void main() {\n\
+    \  int idx = int(gl_GlobalInvocationID.x);\n\
+    \  b[idx] = (sign(a[idx]) * pow(abs(a[idx]), 1.0 / 3.0));\n\
+     }\n" ;
+
+  register_golden
+    "glsl"
+    "float32_hypot_path"
+    "#version 450\n\n\
+     // Sarek-generated compute shader: float32_hypot_path\n\
+     layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;\n\n\
+     layout(std430, set=0, binding = 0) buffer Buffer_a {\n\
+    \  float a[];\n\
+     };\n\
+     layout(std430, set=0, binding = 1) buffer Buffer_b {\n\
+    \  float b[];\n\
+     };\n\
+     layout(std430, set=0, binding = 2) buffer Buffer_c {\n\
+    \  float c[];\n\
+     };\n\
+     layout(push_constant) uniform PushConstants {\n\
+    \  int a_len;\n\
+    \  int b_len;\n\
+    \  int c_len;\n\
+     } pc;\n\n\
+     #define a_len pc.a_len\n\
+     #define b_len pc.b_len\n\
+     #define c_len pc.c_len\n\n\
+     void main() {\n\
+    \  int idx = int(gl_GlobalInvocationID.x);\n\
+    \  c[idx] = sqrt((a[idx]) * (a[idx]) + (b[idx]) * (b[idx]));\n\
+     }\n" ;
+
+  register_golden
+    "glsl"
+    "float32_expm1_path"
+    "#version 450\n\n\
+     // Sarek-generated compute shader: float32_expm1_path\n\
+     layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;\n\n\
+     layout(std430, set=0, binding = 0) buffer Buffer_a {\n\
+    \  float a[];\n\
+     };\n\
+     layout(std430, set=0, binding = 1) buffer Buffer_b {\n\
+    \  float b[];\n\
+     };\n\
+     layout(push_constant) uniform PushConstants {\n\
+    \  int a_len;\n\
+    \  int b_len;\n\
+     } pc;\n\n\
+     #define a_len pc.a_len\n\
+     #define b_len pc.b_len\n\n\
+     void main() {\n\
+    \  int idx = int(gl_GlobalInvocationID.x);\n\
+    \  b[idx] = (exp(a[idx]) - 1.0);\n\
+     }\n" ;
+
+  register_golden
+    "glsl"
+    "float32_log1p_path"
+    "#version 450\n\n\
+     // Sarek-generated compute shader: float32_log1p_path\n\
+     layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;\n\n\
+     layout(std430, set=0, binding = 0) buffer Buffer_a {\n\
+    \  float a[];\n\
+     };\n\
+     layout(std430, set=0, binding = 1) buffer Buffer_b {\n\
+    \  float b[];\n\
+     };\n\
+     layout(push_constant) uniform PushConstants {\n\
+    \  int a_len;\n\
+    \  int b_len;\n\
+     } pc;\n\n\
+     #define a_len pc.a_len\n\
+     #define b_len pc.b_len\n\n\
+     void main() {\n\
+    \  int idx = int(gl_GlobalInvocationID.x);\n\
+    \  b[idx] = log(1.0 + (a[idx]));\n\
+     }\n"
+
+let glsl_only_kernels () =
+  [
+    ("float32_rsqrt_path", float32_rsqrt_path_kernel ());
+    ("float32_abs_float_path", float32_abs_float_path_kernel ());
+    ("float32_atan2_path", float32_atan2_path_kernel ());
+    ("float32_cbrt_path", float32_cbrt_path_kernel ());
+    ("float32_hypot_path", float32_hypot_path_kernel ());
+    ("float32_expm1_path", float32_expm1_path_kernel ());
+    ("float32_log1p_path", float32_log1p_path_kernel ());
+  ]
+
+let glsl_only_tests () =
+  List.map
+    (fun (kernel_name, k) ->
+      Alcotest.test_case
+        (Printf.sprintf "glsl/%s" kernel_name)
+        `Quick
+        (fun () ->
+          Gen_glsl.reset_state () ;
+          let actual = Gen_glsl.generate_with_types ~types:k.kern_types k in
+          check_golden "glsl" kernel_name actual))
+    (glsl_only_kernels ())
+
+(** {1 Metal-only golden tests}
+
+    Same rationale as the GLSL-only block above: cbrt/hypot/expm1/log1p have no
+    MSL builtin under any name, so they resolve to a multi-token expression
+    polyfill in [Sarek_ir_metal.gen_metal_polyfill] rather than a renamed
+    function call. *)
+
+let () =
+  register_golden
+    "metal"
+    "float32_cbrt_path"
+    "#include <metal_stdlib>\n\
+     using namespace metal;\n\n\
+     kernel void float32_cbrt_path(device float* a [[buffer(0)]], constant int \
+     &sarek_a_length [[buffer(1)]], device float* b [[buffer(2)]], constant \
+     int &sarek_b_length [[buffer(3)]],\n\
+     uint3 __metal_gid [[thread_position_in_grid]],\n\
+     uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
+     uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
+     uint3 __metal_tpg [[threads_per_threadgroup]],\n\
+     uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
+    \  int idx = __metal_gid.x;\n\
+    \  b[idx] = (sign(a[idx]) * pow(abs(a[idx]), 1.0 / 3.0));\n\
+     }\n\n" ;
+
+  register_golden
+    "metal"
+    "float32_hypot_path"
+    "#include <metal_stdlib>\n\
+     using namespace metal;\n\n\
+     kernel void float32_hypot_path(device float* a [[buffer(0)]], constant \
+     int &sarek_a_length [[buffer(1)]], device float* b [[buffer(2)]], \
+     constant int &sarek_b_length [[buffer(3)]], device float* c \
+     [[buffer(4)]], constant int &sarek_c_length [[buffer(5)]],\n\
+     uint3 __metal_gid [[thread_position_in_grid]],\n\
+     uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
+     uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
+     uint3 __metal_tpg [[threads_per_threadgroup]],\n\
+     uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
+    \  int idx = __metal_gid.x;\n\
+    \  c[idx] = sqrt((a[idx]) * (a[idx]) + (b[idx]) * (b[idx]));\n\
+     }\n\n" ;
+
+  register_golden
+    "metal"
+    "float32_expm1_path"
+    "#include <metal_stdlib>\n\
+     using namespace metal;\n\n\
+     kernel void float32_expm1_path(device float* a [[buffer(0)]], constant \
+     int &sarek_a_length [[buffer(1)]], device float* b [[buffer(2)]], \
+     constant int &sarek_b_length [[buffer(3)]],\n\
+     uint3 __metal_gid [[thread_position_in_grid]],\n\
+     uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
+     uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
+     uint3 __metal_tpg [[threads_per_threadgroup]],\n\
+     uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
+    \  int idx = __metal_gid.x;\n\
+    \  b[idx] = (exp(a[idx]) - 1.0);\n\
+     }\n\n" ;
+
+  register_golden
+    "metal"
+    "float32_log1p_path"
+    "#include <metal_stdlib>\n\
+     using namespace metal;\n\n\
+     kernel void float32_log1p_path(device float* a [[buffer(0)]], constant \
+     int &sarek_a_length [[buffer(1)]], device float* b [[buffer(2)]], \
+     constant int &sarek_b_length [[buffer(3)]],\n\
+     uint3 __metal_gid [[thread_position_in_grid]],\n\
+     uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
+     uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
+     uint3 __metal_tpg [[threads_per_threadgroup]],\n\
+     uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
+    \  int idx = __metal_gid.x;\n\
+    \  b[idx] = log(1.0 + (a[idx]));\n\
+     }\n\n"
+
+let metal_only_kernels () =
+  [
+    ("float32_cbrt_path", float32_cbrt_path_kernel ());
+    ("float32_hypot_path", float32_hypot_path_kernel ());
+    ("float32_expm1_path", float32_expm1_path_kernel ());
+    ("float32_log1p_path", float32_log1p_path_kernel ());
+  ]
+
+let metal_only_tests () =
+  List.map
+    (fun (kernel_name, k) ->
+      Alcotest.test_case
+        (Printf.sprintf "metal/%s" kernel_name)
+        `Quick
+        (fun () ->
+          Gen_metal.reset_state () ;
+          let actual = Gen_metal.generate_with_types ~types:k.kern_types k in
+          check_golden "metal" kernel_name actual))
+    (metal_only_kernels ())
+
 let () =
   Alcotest.run
     "codegen_golden"
     (List.map make_backend_tests all_backends
-    @ [("wgsl_only", wgsl_only_tests ())])
+    @ [
+        ("wgsl_only", wgsl_only_tests ());
+        ("glsl_only", glsl_only_tests ());
+        ("metal_only", metal_only_tests ());
+      ])
