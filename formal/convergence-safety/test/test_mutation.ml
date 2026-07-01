@@ -165,7 +165,7 @@ let barrier_silent_with eval_fn =
 let assert_mutation_caught label test =
   let caught = ref false in
   (try QCheck2.Test.check_exn ~rand:(Random.State.make [|12345|]) test
-   with _ -> caught := true) ;
+   with QCheck2.Test.Test_fail _ | QCheck2.Test.Test_error _ -> caught := true) ;
   if not !caught then begin
     Printf.eprintf "MUTATION NOT CAUGHT: %s\n%!" label ;
     exit 1

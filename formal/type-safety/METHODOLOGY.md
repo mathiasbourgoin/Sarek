@@ -20,7 +20,7 @@ This project was template-bootstrapped from convergence-safety (no `/formal-init
 
 The 12 spec files form a dependency stack:
 
-```
+```text
 TypeSafetySpec.v (top, Require Imports all 11 below)
   ├── UnifySpec.v      ← HM unification foundations
   ├── VecSpec.v        ← vector/array layer

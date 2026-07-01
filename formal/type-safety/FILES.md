@@ -4,7 +4,7 @@ Per-file inventory of the project. Update at every structural change.
 
 ## Directory layout
 
-```
+```text
 type-safety/
 ├── FILES.md
 ├── METHODOLOGY.md
@@ -47,8 +47,9 @@ type-safety/
 │   ├── dune
 │   ├── test_type_safety_conformance.ml  # QCheck2 + smoke conformance harness
 │   └── test_mutation.ml                 # mutation tests (M1 type-erasure, M2 variable-blind)
-└── findings/
-    └── FINDINGS.md                   # F-TS-01: ELet scope leak (RESOLVED)
+├── findings/
+│   └── FINDINGS.md                   # F-TS-01: ELet scope leak (RESOLVED)
+└── policy_overrides.md               # per-project apparatus policy overrides
 ```
 
 ## Rocq theories

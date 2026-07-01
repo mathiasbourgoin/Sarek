@@ -451,7 +451,7 @@ No T3-S9 is scoped. If a new task is identified post-lock, open it separately.
 
 ## Next session prompt
 
-```
+```text
 Resume TypeSafety (apparatus v1.2.1, grade A, MILESTONE LOCKED 2026-06-15).
 State: 90 theorems (78 headline + 12 auxiliary) across 12 spec files, 0 admits, 0 axioms.
 T3-SEMANTIC complete (T3-S1..S8). Originally merged to `master` @ d72a2e6a (PR #202); ported to `main` 2026-07-01.

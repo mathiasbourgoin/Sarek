@@ -36,9 +36,9 @@
 
 T3-S8 closed the operational half of the CMBT chain. eval_concrete instantiates the abstract evaluator (vary_val := fun t => t), making the fuel-indexed big-step semantics executable via extraction. Four QCheck properties in test_convergence_semantics.ml exercise the extracted evaluator: sem:eval_fuel_monotone, sem:barrier_free_silent, sem:differential_barrier_safe (CMBT differential: core_frag ∧ check_env Converged [] = [] ⇒ erase_warp trace agreement across two threads), and sem:f04_hazard_counterexample (F-04 regression: checker-clean hazard produces differing barrier traces across threads). 0 admits, 0 axioms, coqchk passes.
 
-**Next: T3-SEMANTIC milestone lock.**
+**T3-SEMANTIC is MILESTONE LOCKED (2026-06-15; ported to `main` 2026-07-01).**
 
-The full T3-SEMANTIC ladder (T3-S1 through T3-S8) is complete. Run /formal-check before declaring milestone lock. No T3-S9 is scoped — if a new task is identified post-milestone, open it separately.
+The full T3-SEMANTIC ladder (T3-S1 through T3-S8) is complete and locked — see STATUS.md for the lock record. No T3-S9 is scoped — if a new task is identified post-milestone, open it separately. Next project: codegen-cuda via /formal-init.
 
 ---
 
