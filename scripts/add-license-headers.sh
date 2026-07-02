@@ -141,7 +141,7 @@ add_ocaml_header() {
                     # existing casing, the match itself is case-insensitive).
                     local tmpfile=$(mktemp)
                     cp "$file" "$tmpfile"
-                    sed -i "s/\($contributor_email.*\)$existing_years/\1$first_year-$last_commit_year/I" "$tmpfile"
+                    sed -i "s/$existing_years\(.*$contributor_email\)/$first_year-$last_commit_year\1/I" "$tmpfile"
                     apply_change "$file" "$tmpfile" "UPDATED YEAR ($first_year-$end_year -> $first_year-$last_commit_year)"
                     return
                 fi
@@ -150,7 +150,7 @@ add_ocaml_header() {
                 if [ "$last_commit_year" != "$first_year" ]; then
                     local tmpfile=$(mktemp)
                     cp "$file" "$tmpfile"
-                    sed -i "s/\($contributor_email.*\)$first_year/\1$first_year-$last_commit_year/I" "$tmpfile"
+                    sed -i "s/$first_year\(.*$contributor_email\)/$first_year-$last_commit_year\1/I" "$tmpfile"
                     apply_change "$file" "$tmpfile" "UPDATED YEAR ($first_year -> $first_year-$last_commit_year)"
                     return
                 fi
