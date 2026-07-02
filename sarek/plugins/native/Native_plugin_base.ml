@@ -559,17 +559,19 @@ end = struct
        The "compile" here is a no-op - we look up registered functions. *)
     type t = {name : string}
 
-    (** Use exec_arg directly - no intermediate type needed! *)
-    type args = {mutable list : Framework_sig.exec_arg list}
+    (** Use exec_arg directly - no intermediate type needed! Indexed by idx
+        (last-set-wins) instead of accumulated by call order: see
+        Spoc_framework.Kernel_args. *)
+    type args = Framework_sig.exec_arg Spoc_framework.Kernel_args.t
 
     let compile _device ~name ~source:_ = {name}
 
     let compile_cached = compile
 
-    let create_args () = {list = []}
+    let create_args () = Spoc_framework.Kernel_args.create ()
 
     let set_arg_buffer : type a. args -> int -> a Memory.buffer -> unit =
-     fun args _idx buf ->
+     fun args idx buf ->
       (match (buf.Memory.kind, buf.Memory.storage) with
       | Memory.Scalar_kind Spoc_core.Vector_types.Int32, Bigarray_storage _
       | Memory.Scalar_kind Spoc_core.Vector_types.Int64, Bigarray_storage _
@@ -716,19 +718,19 @@ end = struct
               Native_error.(
                 raise_error (feature_not_supported "buffer typed set accessor"))
       end in
-      args.list <- Framework_sig.EA_Vec (module EV) :: args.list
+      Spoc_framework.Kernel_args.set args idx (Framework_sig.EA_Vec (module EV))
 
-    let set_arg_int32 args _idx v =
-      args.list <- Framework_sig.EA_Int32 v :: args.list
+    let set_arg_int32 args idx v =
+      Spoc_framework.Kernel_args.set args idx (Framework_sig.EA_Int32 v)
 
-    let set_arg_int64 args _idx v =
-      args.list <- Framework_sig.EA_Int64 v :: args.list
+    let set_arg_int64 args idx v =
+      Spoc_framework.Kernel_args.set args idx (Framework_sig.EA_Int64 v)
 
-    let set_arg_float32 args _idx v =
-      args.list <- Framework_sig.EA_Float32 v :: args.list
+    let set_arg_float32 args idx v =
+      Spoc_framework.Kernel_args.set args idx (Framework_sig.EA_Float32 v)
 
-    let set_arg_float64 args _idx v =
-      args.list <- Framework_sig.EA_Float64 v :: args.list
+    let set_arg_float64 args idx v =
+      Spoc_framework.Kernel_args.set args idx (Framework_sig.EA_Float64 v)
 
     let set_arg_ptr _args _idx _ptr =
       Native_error.(raise_error (feature_not_supported "raw pointer arguments"))
@@ -741,10 +743,24 @@ end = struct
     let launch kernel ~args ~(grid : Framework_sig.dims)
         ~(block : Framework_sig.dims) ~shared_mem:_ ~stream:_ =
       match Hashtbl.find_opt native_kernels kernel.name with
-      | Some fn ->
-          (* Convert args list to array for native function call *)
-          let arg_array = args.list |> List.rev |> Array.of_list in
-          fn arg_array (grid.x, grid.y, grid.z) (block.x, block.y, block.z)
+      | Some fn -> (
+          (* KNOWN GAP: native kernel registration (register_kernel) carries
+             no arity metadata, so there is no independent source of truth
+             for "how many args does this kernel expect". We fall back to
+             the number of distinct indices actually set, which still
+             rejects internal gaps/duplicates (e.g. idx 0 and 2 set but not
+             1) but cannot catch a caller that consistently forgets a
+             trailing argument (undercounting relative to the kernel's real
+             arity). *)
+          let expected_count = Spoc_framework.Kernel_args.count args in
+          match
+            Spoc_framework.Kernel_args.validate_and_extract args ~expected_count
+          with
+          | Ok arg_array ->
+              fn arg_array (grid.x, grid.y, grid.z) (block.x, block.y, block.z)
+          | Error reason ->
+              Native_error.(
+                raise_error (kernel_launch_failed kernel.name reason)))
       | None ->
           Native_error.(
             raise_error

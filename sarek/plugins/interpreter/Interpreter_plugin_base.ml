@@ -522,17 +522,19 @@ end = struct
   module Kernel = struct
     type t = {name : string}
 
-    (** Use exec_arg directly - no intermediate type needed! *)
-    type args = {mutable list : Framework_sig.exec_arg list}
+    (** Use exec_arg directly - no intermediate type needed! Indexed by idx
+        (last-set-wins) instead of accumulated by call order: see
+        Spoc_framework.Kernel_args. *)
+    type args = Framework_sig.exec_arg Spoc_framework.Kernel_args.t
 
     let compile _device ~name ~source:_ = {name}
 
     let compile_cached = compile
 
-    let create_args () = {list = []}
+    let create_args () = Spoc_framework.Kernel_args.create ()
 
     let set_arg_buffer : type a. args -> int -> a Memory.buffer -> unit =
-     fun args _idx buf ->
+     fun args idx buf ->
       (match (buf.Memory.kind, buf.Memory.storage) with
       | Memory.Scalar_kind Spoc_core.Vector_types.Int32, Bigarray_storage _
       | Memory.Scalar_kind Spoc_core.Vector_types.Int64, Bigarray_storage _
@@ -648,19 +650,19 @@ end = struct
           Interpreter_error.(
             raise_error (feature_not_supported "buffer typed set accessor"))
       end in
-      args.list <- Framework_sig.EA_Vec (module EV) :: args.list
+      Spoc_framework.Kernel_args.set args idx (Framework_sig.EA_Vec (module EV))
 
-    let set_arg_int32 args _idx v =
-      args.list <- Framework_sig.EA_Int32 v :: args.list
+    let set_arg_int32 args idx v =
+      Spoc_framework.Kernel_args.set args idx (Framework_sig.EA_Int32 v)
 
-    let set_arg_int64 args _idx v =
-      args.list <- Framework_sig.EA_Int64 v :: args.list
+    let set_arg_int64 args idx v =
+      Spoc_framework.Kernel_args.set args idx (Framework_sig.EA_Int64 v)
 
-    let set_arg_float32 args _idx v =
-      args.list <- Framework_sig.EA_Float32 v :: args.list
+    let set_arg_float32 args idx v =
+      Spoc_framework.Kernel_args.set args idx (Framework_sig.EA_Float32 v)
 
-    let set_arg_float64 args _idx v =
-      args.list <- Framework_sig.EA_Float64 v :: args.list
+    let set_arg_float64 args idx v =
+      Spoc_framework.Kernel_args.set args idx (Framework_sig.EA_Float64 v)
 
     let set_arg_ptr _args _idx _ptr =
       Interpreter_error.(
@@ -669,46 +671,28 @@ end = struct
     let launch kernel ~args ~(grid : Framework_sig.dims)
         ~(block : Framework_sig.dims) ~shared_mem:_ ~stream:_ =
       match Hashtbl.find_opt interpreter_kernels kernel.name with
-      | Some ir ->
-          (* Convert exec_arg list to interpreter format *)
-          let arg_list = List.rev args.list in
-          let param_args =
-            List.mapi
-              (fun i arg ->
-                let name = Printf.sprintf "param%d" i in
-                match arg with
-                | Framework_sig.EA_Vec (module V) ->
-                    let arr =
-                      Sarek.Sarek_ir_interp.exec_vector_to_array (module V)
-                    in
-                    (name, Sarek.Sarek_ir_interp.ArgArray arr)
-                | Framework_sig.EA_Int32 n ->
-                    ( name,
-                      Sarek.Sarek_ir_interp.ArgScalar
-                        (Sarek.Sarek_ir_interp.VInt32 n) )
-                | Framework_sig.EA_Int64 n ->
-                    ( name,
-                      Sarek.Sarek_ir_interp.ArgScalar
-                        (Sarek.Sarek_ir_interp.VInt64 n) )
-                | Framework_sig.EA_Float32 f ->
-                    ( name,
-                      Sarek.Sarek_ir_interp.ArgScalar
-                        (Sarek.Sarek_ir_interp.VFloat32 f) )
-                | Framework_sig.EA_Float64 f ->
-                    ( name,
-                      Sarek.Sarek_ir_interp.ArgScalar
-                        (Sarek.Sarek_ir_interp.VFloat64 f) )
-                | _ ->
-                    Interpreter_error.(
-                      raise_error
-                        (unsupported_construct "exec_arg" "unsupported type")))
-              arg_list
-          in
-          Sarek.Sarek_ir_interp.run_kernel
-            ir
-            ~block:(block.x, block.y, block.z)
-            ~grid:(grid.x, grid.y, grid.z)
-            param_args
+      | Some ir -> (
+          (* Unlike Native, the interpreter has a real source of truth for
+             arity: the registered IR's kern_params. Use it instead of
+             falling back to "however many indices were actually set". *)
+          let expected_count = List.length ir.Sarek_ir_types.kern_params in
+          match
+            Spoc_framework.Kernel_args.validate_and_extract args ~expected_count
+          with
+          | Ok arr ->
+              (* run_kernel_with_exec_args positionally matches this array
+                 against kern_params (same contract as the strict validation
+                 above) and, unlike a hand-rolled conversion, also writes
+                 interpreted results back into any EA_Vec argument's
+                 underlying buffer. *)
+              Sarek.Sarek_ir_interp.run_kernel_with_exec_args
+                ir
+                ~block:(block.x, block.y, block.z)
+                ~grid:(grid.x, grid.y, grid.z)
+                (Array.to_list arr)
+          | Error reason ->
+              Interpreter_error.(
+                raise_error (kernel_launch_failed kernel.name reason)))
       | None ->
           Interpreter_error.(
             raise_error

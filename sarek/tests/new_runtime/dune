@@ -9,6 +9,15 @@
   (pps sarek_ppx)))
 
 (executable
+ (name test_set_arg_order)
+ (modules test_set_arg_order)
+ (libraries sarek sarek.stdlib spoc_core sarek_native sarek_interpreter unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33)))
+
+(executable
  (name test_runtime_comparison)
  (modules test_runtime_comparison)
  (libraries sarek sarek.stdlib spoc_core sarek_cuda sarek_opencl unix)
