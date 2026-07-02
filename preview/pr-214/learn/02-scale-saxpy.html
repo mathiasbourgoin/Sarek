@@ -1,0 +1,163 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <link rel="icon" href="/Sarek/preview/pr-214/favicon.ico" />
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
+    <script src="/Sarek/preview/pr-214/javascripts/process-rel-links.js" type="text/javascript"></script>
+    <title>Lesson 2 — Scalar parameters (SAXPY) - Sarek</title>
+    
+    <link rel="stylesheet" href='/Sarek/preview/pr-214/stylesheets/modern.css'>
+    <link rel="stylesheet" href='/Sarek/preview/pr-214/stylesheets/pygment_trac.css'>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  </head>
+  <body>
+
+    <!-- Top Navigation Bar -->
+    <nav class="navbar">
+      <div class="container">
+        <a href="/Sarek/preview/pr-214/" class="nav-brand">
+          <img src="/Sarek/preview/pr-214/pres_resources/logo_sarek.png" alt="Sarek Logo">
+          Sarek
+        </a>
+        <div class="nav-links">
+          <a href="/Sarek/preview/pr-214/">Home</a>
+          <a href="/Sarek/preview/pr-214/docs/getting_started.html">Getting Started</a>
+          <a href="/Sarek/preview/pr-214/benchmarks/">Benchmarks</a>
+          <a href="/Sarek/preview/pr-214/examples/">Examples</a>
+          <a href="/Sarek/preview/pr-214/playground.html">Playground</a>
+          <a href="/Sarek/preview/pr-214/learn/">Learn</a>
+          <div class="nav-dropdown">
+            <button type="button" class="dropdown-toggle" aria-haspopup="true" aria-expanded="false" aria-controls="docs-menu">Docs ▾</button>
+            <div class="dropdown-menu" id="docs-menu">
+              <a href="/Sarek/preview/pr-214/docs/concepts.html">Concepts</a>
+              <a href="/Sarek/preview/pr-214/docs/architecture.html">Architecture</a>
+              <a href="/Sarek/preview/pr-214/docs/backends.html">Backends</a>
+              <a href="/Sarek/preview/pr-214/docs/device_selection.html">Device Selection</a>
+              <a href="/Sarek/preview/pr-214/docs/build_guide.html">Build Guide</a>
+              <a href="/Sarek/preview/pr-214/docs/faq.html">FAQ</a>
+              <a href="/Sarek/preview/pr-214/docs/publications.html">Publications</a>
+            </div>
+          </div>
+          <a href="/Sarek/preview/pr-214/spoc_docs/index.html">API</a>
+          <a href="https://github.com/mathiasbourgoin/Sarek">GitHub</a>
+          <button id="theme-toggle" title="Toggle Dark/Light Mode">
+            <span>🌙</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main-content">
+      <div class="container">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.css">
+<link rel="stylesheet" href="/Sarek/preview/pr-214/stylesheets/learn.css">
+
+<div class="lesson-container">
+
+  <h1>Lesson 2 — Scalar parameters (SAXPY)</h1>
+
+  <p>
+    <strong>SAXPY</strong> (<em>Single-precision A times X Plus Y</em>) is the
+    canonical BLAS-1 operation: <code>y[i] = alpha * x[i] + y[i]</code>.
+    It is a staple benchmark because it is memory-bandwidth-bound — the GPU
+    must stream every element through its caches at least twice.
+  </p>
+
+  <h2>Scalar uniforms</h2>
+  <p>
+    Scalars like <code>alpha</code> are not per-thread arrays; they are the
+    same value for every thread. In Sarek you declare them as plain typed
+    arguments (e.g., <code>(alpha : float32)</code>), and the transpiler
+    automatically packs them into a uniform buffer that every thread can read.
+  </p>
+  <p>
+    For this lesson <code>alpha = 2.0</code> is injected automatically — you
+    can see it in <em>Show generated WGSL</em> as a field of the
+    <code>Params</code> uniform struct.
+  </p>
+
+  <h2>Your task</h2>
+  <p>
+    Complete the kernel so that <code>y.(i)</code> is updated in-place:
+    <code>y[i] &larr; alpha * x[i] + y[i]</code>.
+  </p>
+
+  <label class="lesson-editor-label" for="kernel-source">Kernel source</label>
+  <textarea id="kernel-source">fun (x : float32 vector) (y : float32 vector) (alpha : float32) ->
+  let i = global_thread_id in
+  y.(i) <- (* TODO *)</textarea>
+
+  <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+    <button class="lesson-run-btn" id="run-btn">Run on my GPU</button>
+    <button class="wgsl-toggle-btn" id="wgsl-toggle">Show generated WGSL</button>
+    <span class="lesson-status" id="status-bar"></span>
+  </div>
+
+  <pre class="lesson-output" id="output-pane">Click "Run on my GPU" to execute your kernel.</pre>
+  <pre class="lesson-wgsl-pre" id="wgsl-pane" style="display:none;"></pre>
+
+  <details>
+    <summary>Hint</summary>
+    <p>
+      Float multiplication in OCaml is <code>*.</code> and addition is
+      <code>+.</code>. Read <code>alpha</code> directly — it is a scalar
+      argument available in every thread.
+    </p>
+  </details>
+
+  <div class="lesson-nav">
+    <a href="/Sarek/preview/pr-214/learn/01-vector-add.html">&larr; Lesson 1 — Vector addition</a>
+    <a href="/Sarek/preview/pr-214/learn/03-map-square.html">Lesson 3 — Elementwise map &rarr;</a>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/mode/mllike/mllike.min.js"></script>
+<script src="/Sarek/preview/pr-214/javascripts/sarek_transpile.js"></script>
+<script src="/Sarek/preview/pr-214/javascripts/sarek_webgpu_runner.js"></script>
+<script src="/Sarek/preview/pr-214/javascripts/sarek_lesson.js"></script>
+<script>
+SarekLesson.init({
+  editorId:     'kernel-source',
+  runButtonId:  'run-btn',
+  outputId:     'output-pane',
+  statusId:     'status-bar',
+  wgslId:       'wgsl-pane',
+  wgslToggleId: 'wgsl-toggle',
+  n: 256,
+  starter:
+    'fun (x : float32 vector) (y : float32 vector) (alpha : float32) ->\n' +
+    '  let i = global_thread_id in\n' +
+    '  y.(i) <- (* TODO *)',
+  buffers: {
+    x: { role: 'input',  elementType: 'f32', gen: function(i){ return i * 0.5; } },
+    y: { role: 'input',  elementType: 'f32', gen: function(i){ return i * 1.0; } },
+  },
+  scalars:   { alpha: 2.0 },
+  outName:   'y',
+  reference: function(i, inputs, scalars) {
+    return scalars.alpha * inputs.x[i] + inputs.y[i];
+  },
+});
+</script>
+
+      </div>
+    </main>
+
+    <footer>
+      <div class="container">
+        <p>Sarek is maintained by <a href="https://github.com/mathiasbourgoin">mathiasbourgoin</a></p>
+        <p>Hosted on GitHub Pages</p>
+      </div>
+    </footer>
+
+    <script src="/Sarek/preview/pr-214/javascripts/scale.fix.js"></script>
+    <script src="/Sarek/preview/pr-214/javascripts/copy-code.js"></script>
+    <script src="/Sarek/preview/pr-214/javascripts/theme-toggle.js"></script>
+    <script src="/Sarek/preview/pr-214/javascripts/dropdown.js"></script>
+    <script src="/Sarek/preview/pr-214/javascripts/syntax-sarek.js"></script>
+  </body>
+</html>

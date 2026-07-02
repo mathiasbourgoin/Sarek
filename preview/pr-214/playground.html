@@ -1,0 +1,297 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <link rel="icon" href="/Sarek/preview/pr-214/favicon.ico" />
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
+    <script src="/Sarek/preview/pr-214/javascripts/process-rel-links.js" type="text/javascript"></script>
+    <title>Playground - Sarek</title>
+    
+    <link rel="stylesheet" href='/Sarek/preview/pr-214/stylesheets/modern.css'>
+    <link rel="stylesheet" href='/Sarek/preview/pr-214/stylesheets/pygment_trac.css'>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  </head>
+  <body>
+
+    <!-- Top Navigation Bar -->
+    <nav class="navbar">
+      <div class="container">
+        <a href="/Sarek/preview/pr-214/" class="nav-brand">
+          <img src="/Sarek/preview/pr-214/pres_resources/logo_sarek.png" alt="Sarek Logo">
+          Sarek
+        </a>
+        <div class="nav-links">
+          <a href="/Sarek/preview/pr-214/">Home</a>
+          <a href="/Sarek/preview/pr-214/docs/getting_started.html">Getting Started</a>
+          <a href="/Sarek/preview/pr-214/benchmarks/">Benchmarks</a>
+          <a href="/Sarek/preview/pr-214/examples/">Examples</a>
+          <a href="/Sarek/preview/pr-214/playground.html">Playground</a>
+          <a href="/Sarek/preview/pr-214/learn/">Learn</a>
+          <div class="nav-dropdown">
+            <button type="button" class="dropdown-toggle" aria-haspopup="true" aria-expanded="false" aria-controls="docs-menu">Docs ▾</button>
+            <div class="dropdown-menu" id="docs-menu">
+              <a href="/Sarek/preview/pr-214/docs/concepts.html">Concepts</a>
+              <a href="/Sarek/preview/pr-214/docs/architecture.html">Architecture</a>
+              <a href="/Sarek/preview/pr-214/docs/backends.html">Backends</a>
+              <a href="/Sarek/preview/pr-214/docs/device_selection.html">Device Selection</a>
+              <a href="/Sarek/preview/pr-214/docs/build_guide.html">Build Guide</a>
+              <a href="/Sarek/preview/pr-214/docs/faq.html">FAQ</a>
+              <a href="/Sarek/preview/pr-214/docs/publications.html">Publications</a>
+            </div>
+          </div>
+          <a href="/Sarek/preview/pr-214/spoc_docs/index.html">API</a>
+          <a href="https://github.com/mathiasbourgoin/Sarek">GitHub</a>
+          <button id="theme-toggle" title="Toggle Dark/Light Mode">
+            <span>🌙</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main-content">
+      <div class="container">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.css">
+<style>
+  :root {
+    --playground-error-color: #c0392b;
+  }
+  .dark-theme {
+    --playground-error-color: #f48771;
+  }
+  @media (prefers-color-scheme: dark) {
+    body:not(.light-theme) {
+      --playground-error-color: #f48771;
+    }
+  }
+  .playground-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1rem;
+  }
+  .playground-container h1 {
+    margin-bottom: 0.25rem;
+  }
+  .playground-container p.subtitle {
+    margin-top: 0;
+    color: var(--text-color);
+    opacity: 0.7;
+  }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .controls label {
+    font-weight: bold;
+  }
+  .controls select {
+    padding: 0.3rem 0.6rem;
+    font-size: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--card-bg);
+    color: var(--text-color);
+  }
+  .editor-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .editor-pane label {
+    font-weight: bold;
+    font-size: 0.9rem;
+  }
+  textarea#kernel-source {
+    width: 100%;
+    font-family: monospace;
+    font-size: 0.9rem;
+    padding: 0.6rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    box-sizing: border-box;
+    background: var(--code-bg);
+    color: var(--text-color);
+  }
+  /* CodeMirror: auto-height + site CSS-variable theming */
+  .CodeMirror {
+    height: auto;
+    min-height: 14em;
+    font-family: monospace;
+    font-size: 0.9rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--code-bg);
+    color: var(--text-color);
+  }
+  .CodeMirror-gutters {
+    background: var(--code-bg);
+    border-right: 1px solid var(--border-color);
+  }
+  .CodeMirror-linenumber {
+    color: var(--text-color);
+    opacity: 0.5;
+  }
+  .CodeMirror-cursor {
+    border-left-color: var(--text-color);
+  }
+  .CodeMirror-selected {
+    background: var(--primary-color) !important;
+    opacity: 0.25;
+  }
+  /* OCaml syntax token colours — contrast-safe on both light and dark --code-bg */
+  .cm-keyword    { color: var(--primary-color); font-weight: bold; }
+  .cm-builtin    { color: var(--primary-color); }
+  .cm-def        { color: var(--text-color); }
+  .cm-variable   { color: var(--text-color); }
+  .cm-variable-2 { color: var(--text-color); }
+  .cm-type       { color: #4caf50; }
+  .cm-string     { color: #e67e22; }
+  .cm-string-2   { color: #e67e22; }
+  .cm-number     { color: #8e44ad; }
+  .cm-comment    { color: var(--text-color); opacity: 0.55; font-style: italic; }
+  .cm-operator   { color: var(--primary-color); }
+  .cm-meta       { color: var(--text-color); opacity: 0.7; }
+  pre#output-pane {
+    background: var(--code-bg);
+    color: var(--text-color);
+    padding: 1rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    word-break: break-all;
+    min-height: 80px;
+    margin: 0;
+    border: 1px solid var(--border-color);
+  }
+  pre#output-pane.error-output {
+    color: var(--playground-error-color);
+  }
+  .status-bar {
+    font-size: 0.8rem;
+    color: var(--text-color);
+    opacity: 0.6;
+    height: 1.2em;
+  }
+</style>
+
+<div class="playground-container">
+  <h1>Sarek Transpiler Playground</h1>
+  <p class="subtitle">
+    Write an OCaml kernel expression and see the GPU source output.
+    The transpiler runs entirely in your browser.
+    New to this? The <a href="/Sarek/preview/pr-214/learn/">interactive Learn course</a>
+    walks you through writing kernels and runs them on your own GPU.
+  </p>
+
+  <div class="editor-pane">
+    <label for="kernel-source">Kernel source</label>
+    <textarea id="kernel-source">fun (a : float32 vector) (b : float32 vector) -> let i = global_thread_id in b.(i) <- Float32.sin a.(i)</textarea>
+  </div>
+
+  <div class="controls">
+    <label for="backend-select">Backend:</label>
+    <select id="backend-select">
+      <option value="cuda">CUDA</option>
+      <option value="opencl">OpenCL</option>
+      <option value="metal">Metal</option>
+      <option value="glsl">GLSL</option>
+        <option value="wgsl">WGSL</option>
+    </select>
+    <span class="status-bar" id="status-bar"></span>
+  </div>
+
+  <div class="editor-pane">
+    <label>Output</label>
+    <pre id="output-pane">Loading transpiler...</pre>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/mode/mllike/mllike.min.js"></script>
+<script src="javascripts/sarek_transpile.js"></script>
+<script>
+(function () {
+  var sourceEl = document.getElementById('kernel-source');
+  var backendEl = document.getElementById('backend-select');
+  var outputEl = document.getElementById('output-pane');
+  var statusEl = document.getElementById('status-bar');
+  var debounceTimer = null;
+
+  // Upgrade textarea to CodeMirror 5 if available; degrade gracefully on CDN failure.
+  var cm = null;
+  if (typeof CodeMirror !== 'undefined') {
+    cm = CodeMirror.fromTextArea(sourceEl, {
+      mode: 'text/x-ocaml',
+      lineNumbers: true,
+      lineWrapping: true,
+      viewportMargin: Infinity,
+      tabSize: 2,
+    });
+  }
+
+  function getSource() {
+    return cm ? cm.getValue() : sourceEl.value;
+  }
+
+  function runTranspile() {
+    var source = getSource();
+    var backend = backendEl.value;
+    if (typeof globalThis.SarekTranspile === 'undefined') {
+      outputEl.textContent = 'Transpiler not loaded yet. Please wait or reload.';
+      outputEl.className = 'error-output';
+      return;
+    }
+    var t0 = Date.now();
+    var result = globalThis.SarekTranspile.transpile(source, backend);
+    var elapsed = Date.now() - t0;
+    if (result.ok) {
+      outputEl.textContent = result.code;
+      outputEl.className = '';
+      statusEl.textContent = backend.toUpperCase() + ' — ' + elapsed + 'ms';
+    } else {
+      outputEl.textContent = result.error || 'Unknown error';
+      outputEl.className = 'error-output';
+      statusEl.textContent = 'Error';
+    }
+  }
+
+  function scheduleTranspile() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(runTranspile, 400);
+  }
+
+  if (cm) {
+    cm.on('change', scheduleTranspile);
+  } else {
+    sourceEl.addEventListener('input', scheduleTranspile);
+  }
+  backendEl.addEventListener('change', runTranspile);
+
+  // Run once the bundle is loaded
+  window.addEventListener('load', function () {
+    runTranspile();
+  });
+})();
+</script>
+
+      </div>
+    </main>
+
+    <footer>
+      <div class="container">
+        <p>Sarek is maintained by <a href="https://github.com/mathiasbourgoin">mathiasbourgoin</a></p>
+        <p>Hosted on GitHub Pages</p>
+      </div>
+    </footer>
+
+    <script src="/Sarek/preview/pr-214/javascripts/scale.fix.js"></script>
+    <script src="/Sarek/preview/pr-214/javascripts/copy-code.js"></script>
+    <script src="/Sarek/preview/pr-214/javascripts/theme-toggle.js"></script>
+    <script src="/Sarek/preview/pr-214/javascripts/dropdown.js"></script>
+    <script src="/Sarek/preview/pr-214/javascripts/syntax-sarek.js"></script>
+  </body>
+</html>
