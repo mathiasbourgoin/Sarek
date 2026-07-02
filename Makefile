@@ -21,6 +21,10 @@ clean:
 opam:
 	dune build @install
 
+# Guard against a "make opam" regression (see scripts/check-opam-clean.sh)
+check-opam-clean:
+	./scripts/check-opam-clean.sh
+
 install: opam
 	dune install
 
@@ -149,7 +153,7 @@ test_sarek_core:
 	@echo "=== Sarek core tests passed ==="
 
 # Run all tests: unit tests, e2e tests, negative tests, and spoc tests
-test-all: test test_spoc test_sarek_core test_interpreter test_negative
+test-all: test test_spoc test_sarek_core test_interpreter test_negative check-opam-clean
 	@echo "=== All tests passed ==="
 
 # E2E tests - quick verification with small datasets comparing GPU vs native CPU
