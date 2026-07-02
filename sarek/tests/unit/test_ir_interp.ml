@@ -223,6 +223,17 @@ let test_binop_lt () =
   | VBool b -> check bool "less than true" true b
   | _ -> fail "expected VBool"
 
+let test_binop_shr_negative_is_arithmetic () =
+  (* Ir.Shr is arithmetic (sign-extending) on every consumer - see G phase 1
+     in briefs/fix-critical-semantics-evidence.md. (-16) >> 2 must be -4,
+     not the logical-shift result 1073741820. *)
+  let env = make_env () in
+  let state = make_state () in
+  let expr = EBinop (Shr, EConst (CInt32 (-16l)), EConst (CInt32 2l)) in
+  match eval_expr state env expr with
+  | VInt32 n -> check int32 "(-16) shr 2 is arithmetic" (-4l) n
+  | _ -> fail "expected VInt32"
+
 let test_binop_eq () =
   let env = make_env () in
   let state = make_state () in
@@ -376,6 +387,10 @@ let () =
           test_case "multiply" `Quick test_binop_mul;
           test_case "less_than" `Quick test_binop_lt;
           test_case "equals" `Quick test_binop_eq;
+          test_case
+            "shr_negative_is_arithmetic"
+            `Quick
+            test_binop_shr_negative_is_arithmetic;
         ] );
       ( "unary_operations",
         [

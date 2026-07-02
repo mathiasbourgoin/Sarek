@@ -299,6 +299,82 @@ let test_lower_param () =
       Alcotest.(check int) "id" 0 var.Ir.var_id
   | _ -> Alcotest.fail "expected DParam"
 
+(* Test: TEBinop (Lsr, _, _) / (Asr, _, _) with a NEGATIVE left operand.
+   Group G (shift semantics): Sarek_ast.Lsr and Asr both used to map to the
+   same Ir.Shr constructor, which every consumer emits as an *arithmetic*
+   shift ([>>] on signed CUDA/OpenCL/Metal/GLSL/WGSL int types, shr.s32 on
+   PTX, Int32.shift_right in the interpreter - see
+   briefs/fix-critical-semantics-evidence.md, G phase 1). [asr] is correct;
+   [lsr] on a negative operand silently returned the wrong (sign-extended)
+   value. These tests lower a real Sarek_ast.Lsr/Asr binop end-to-end
+   (lower_expr -> Sarek_ir_conv.conv_expr -> the runtime interpreter) and
+   check the executed result against the true logical/arithmetic shift, so
+   they fail pre-fix and pass post-fix - see the evidence file for the
+   captured pre-fix failure. *)
+
+(* Minimal, self-contained evaluator for the fragment of Sarek_ir_ppx.expr
+   that lower_lsr/ir_binop can produce for an int32 Lsr/Asr binop (EConst
+   CInt32/CBool, EBinop over Add/Sub/Shl/Shr/BitXor/Eq, EIf). This exercises
+   the REAL production lowering (Sarek_lower_ir.lower_expr / lower_lsr)
+   without reaching into sarek_transpile's private Sarek_ir_conv (not part
+   of that library's public .mli). *)
+let rec eval_ir_int32 (e : Ir.expr) : int32 =
+  match e with
+  | Ir.EConst (Ir.CInt32 n) -> n
+  | Ir.EBinop (Ir.Add, a, b) -> Int32.add (eval_ir_int32 a) (eval_ir_int32 b)
+  | Ir.EBinop (Ir.Sub, a, b) -> Int32.sub (eval_ir_int32 a) (eval_ir_int32 b)
+  | Ir.EBinop (Ir.Shl, a, b) ->
+      Int32.shift_left (eval_ir_int32 a) (Int32.to_int (eval_ir_int32 b))
+  | Ir.EBinop (Ir.Shr, a, b) ->
+      (* Ir.Shr is arithmetic on every backend post-fix (G phase 1) *)
+      Int32.shift_right (eval_ir_int32 a) (Int32.to_int (eval_ir_int32 b))
+  | Ir.EBinop (Ir.BitXor, a, b) ->
+      Int32.logxor (eval_ir_int32 a) (eval_ir_int32 b)
+  | Ir.EIf (cond, then_, else_) ->
+      if eval_ir_bool cond then eval_ir_int32 then_ else eval_ir_int32 else_
+  | _ -> Alcotest.fail "eval_ir_int32: unsupported node"
+
+and eval_ir_bool (e : Ir.expr) : bool =
+  match e with
+  | Ir.EBinop (Ir.Eq, a, b) -> eval_ir_int32 a = eval_ir_int32 b
+  | _ -> Alcotest.fail "eval_ir_bool: unsupported node"
+
+let eval_int32_binop op a b =
+  let ty = Sarek_types.(TReg Int) in
+  let mk te = Sarek_typed_ast.{te; ty; te_loc = Sarek_ast.dummy_loc} in
+  let texpr =
+    mk (Sarek_typed_ast.TEBinop (op, mk (TEInt32 a), mk (TEInt32 b)))
+  in
+  let state = Sarek_lower_ir.create_state (Hashtbl.create 1) in
+  let ir_expr = Sarek_lower_ir.lower_expr state texpr in
+  eval_ir_int32 ir_expr
+
+let test_lsr_negative_is_logical () =
+  (* (-16) lsr 2 = 1073741820, NOT (-16) asr 2 = -4 *)
+  let result = eval_int32_binop Sarek_ast.Lsr (-16l) 2l in
+  Alcotest.(check int32) "(-16) lsr 2" 1073741820l result
+
+let test_asr_negative_is_arithmetic () =
+  let result = eval_int32_binop Sarek_ast.Asr (-16l) 2l in
+  Alcotest.(check int32) "(-16) asr 2" (-4l) result
+
+let test_lsr_negative_shift_by_zero () =
+  (* n = 0 must not hit the (width - n) = width shift-by-32 UB guard *)
+  let result = eval_int32_binop Sarek_ast.Lsr (-16l) 0l in
+  Alcotest.(check int32) "(-16) lsr 0" (-16l) result
+
+let test_lsr_negative_shift_by_31 () =
+  (* Top bit shifted all the way down to bit 0 *)
+  let result = eval_int32_binop Sarek_ast.Lsr (-16l) 31l in
+  Alcotest.(check int32) "(-16) lsr 31" 1l result
+
+let test_lsr_positive_matches_asr () =
+  (* For a non-negative operand, lsr and asr must agree *)
+  let lsr_result = eval_int32_binop Sarek_ast.Lsr 16l 2l in
+  let asr_result = eval_int32_binop Sarek_ast.Asr 16l 2l in
+  Alcotest.(check int32) "16 lsr 2" 4l lsr_result ;
+  Alcotest.(check int32) "16 asr 2 matches lsr" lsr_result asr_result
+
 (* Test suite *)
 let () =
   Alcotest.run
@@ -410,5 +486,28 @@ let () =
             test_lower_decl_immutable;
           Alcotest.test_case "lower decl mutable" `Quick test_lower_decl_mutable;
           Alcotest.test_case "lower param" `Quick test_lower_param;
+        ] );
+      ( "shift_semantics",
+        [
+          Alcotest.test_case
+            "lsr negative is logical"
+            `Quick
+            test_lsr_negative_is_logical;
+          Alcotest.test_case
+            "asr negative is arithmetic"
+            `Quick
+            test_asr_negative_is_arithmetic;
+          Alcotest.test_case
+            "lsr negative shift by zero"
+            `Quick
+            test_lsr_negative_shift_by_zero;
+          Alcotest.test_case
+            "lsr negative shift by 31"
+            `Quick
+            test_lsr_negative_shift_by_31;
+          Alcotest.test_case
+            "lsr positive matches asr"
+            `Quick
+            test_lsr_positive_matches_asr;
         ] );
     ]
