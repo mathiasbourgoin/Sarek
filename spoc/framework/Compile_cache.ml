@@ -11,10 +11,17 @@
  * second kernel compiled from the same source silently aliases the first.
  ******************************************************************************)
 
+(* Each (key, value) pair is digested independently before being joined, for
+   the same reason the top-level fields are: without it, an option value
+   containing ',' or '=' can shift a byte across the "k=v" boundary and make
+   a single pair collide with a distinct multi-pair list, e.g.
+   [("a", "1,b=2")] and [("a", "1"); ("b", "2")] would otherwise both
+   canonicalize to the literal string "a=1,b=2". *)
 let canonicalize_options options =
   options
   |> List.sort (fun (k1, _) (k2, _) -> String.compare k1 k2)
-  |> List.map (fun (k, v) -> k ^ "=" ^ v)
+  |> List.map (fun (k, v) ->
+      Digest.to_hex (Digest.string k) ^ "=" ^ Digest.to_hex (Digest.string v))
   |> String.concat ","
 
 (* Each free-form component is digested on its own before being joined, so the
