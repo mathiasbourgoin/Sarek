@@ -319,7 +319,12 @@ let rec type_of_type_expr (te : Sarek_ast.type_expr) : typ =
   | Sarek_ast.TEConstr ("int64", []) -> t_int64
   | Sarek_ast.TEConstr ("float32", []) -> t_float32
   | Sarek_ast.TEConstr ("float64", []) -> t_float64
-  | Sarek_ast.TEConstr ("float", []) -> t_float64 (* OCaml float = float64 *)
+  | Sarek_ast.TEConstr ("float", []) ->
+      t_float32
+      (* Bare `float` defaults to float32 in GPGPU kernels (human decision
+         2026-07-02): most GPU hardware executes float32 natively while
+         float64 is slow or unsupported, so the DSL's default should match
+         the common case. Use `float64` explicitly for double precision. *)
   | Sarek_ast.TEConstr ("char", []) -> t_char
   | Sarek_ast.TEConstr ("vector", [elem]) -> TVec (type_of_type_expr elem)
   | Sarek_ast.TEConstr (name, [elem])

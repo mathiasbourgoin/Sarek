@@ -407,6 +407,17 @@
  (preprocess
   (pps sarek_ppx)))
 
+; Regression test: bare `float` in kernel type annotations types as float32,
+; not float64 (Sarek_types.ml:322). Run with:
+;   dune exec sarek/tests/e2e/test_bare_float_is_float32.exe
+
+(executable
+ (name test_bare_float_is_float32)
+ (modules test_bare_float_is_float32)
+ (libraries sarek sarek_native sarek_stdlib sarek_ir spoc_core unix)
+ (preprocess
+  (pps sarek_ppx)))
+
 ; Regression test: Sarek_ppx.scan_file_for_sarek_types's `with _ -> ()`
 ; catch-all. %sarek_includes a deliberately unparseable sibling fixture; this
 ; file must still compile (see fixture_scan_failure_include.ml.fixture and
