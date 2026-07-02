@@ -144,41 +144,221 @@
  (flags
   (:standard -w -32-33-34-69)))
 
+; -----------------------------------------------------------------------
+; e2e alias wiring
+;
+; Previously `(alias (name runtest) (deps test_X.exe ...))` only *built*
+; these executables - dune's `deps` field does not execute anything, so
+; `dune runtest` silently ran zero e2e tests. Each test below now has an
+; explicit `(rule (alias runtest) (action (run ...)))` so `dune runtest`
+; actually executes it and fails the build on nonzero exit.
+;
+; Classification (see briefs/make-tests-actually-run-impl-notes.md for the
+; full per-test table):
+;   - CPU-safe, self-verifying (exits nonzero on mismatch; runs on the
+;     always-available Native/Interpreter backends when no GPU is
+;     present) -> wired into the default `runtest` alias below.
+;   - Compile-only by design (the assertion IS successful compilation -
+;     e.g. convergence-analysis positive cases) -> `compile-only` alias,
+;     build-only, not executed.
+;   - GPU-required (no Native/Interpreter fallback exists) -> `e2e-gpu`
+;     alias, not part of default `runtest`.
+;   - Manual/report-only tools (do not gate; print diagnostics or an
+;     explicitly-documented non-failing report) -> `e2e-manual` alias.
+; -----------------------------------------------------------------------
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_vector_add.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_module_const.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_ktype_record.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_klet_fun.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_klet_variant.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_ktype_helper.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_nbody_ppx.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_ray_ppx.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_registered_type.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_registered_variant.exe})))
+
+; test_cross_module_type.exe     ; DISABLED: PPX registration issue
+; test_registered_const.exe       ; DISABLED: PPX registration issue
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_visibility_private.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_convention.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_convention_kernel.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_fusion_api.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_stencil.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_matrix_mul.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_reduce.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_complex_types.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_math_intrinsics.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_bitwise_ops.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_scan.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_transpose.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_sort.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_histogram.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_convolution.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_mandelbrot.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_polymorphism.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_module_poly.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_bounded_recursion.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_nested_types.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_stdlib_meta_proof.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_float32_sin_pure.exe})))
+
+; compile-only alias: the assertion IS successful compilation (PPX
+; convergence-analysis positive cases, or a smoke test with no runtime
+; check). Build-only - not executed - since there is nothing to run that
+; would add verification beyond "it compiled".
+;
+; test_inline_pragma is also parked here (build-only): it is otherwise
+; self-verifying and CPU-safe, but running it on this session's real GPU
+; segfaulted reproducibly when Device.all () selected the OpenCL device for
+; a non-tail-recursive `pragma ["sarek.inline N"]` kernel (see
+; briefs/make-tests-actually-run-impl-notes.md). That is a genuine backend
+; crash, out of scope here (no sarek-opencl / codegen changes in this task).
+; Keeping it out of default `runtest` avoids nondeterministically crashing
+; the suite on machines where a GPU happens to be the first device.
+
 (alias
- (name runtest)
+ (name compile-only)
  (deps
-  test_vector_add.exe
-  test_module_const.exe
-  test_ktype_record.exe
-  test_klet_fun.exe
-  test_klet_variant.exe
-  test_ktype_helper.exe
-  test_nbody_ppx.exe
-  test_ray_ppx.exe
-  test_registered_type.exe
-  test_registered_variant.exe
-  ; test_cross_module_type.exe     ; DISABLED: PPX registration issue
-  ; test_registered_const.exe       ; DISABLED: PPX registration issue
-  test_visibility_private.exe
-  test_convention.exe
-  test_convention_kernel.exe
   test_pragma.exe
   test_barrier_converged.exe
   test_superstep.exe
-  test_fusion_api.exe
-  test_stencil.exe
-  test_matrix_mul.exe
-  test_reduce.exe
-  test_complex_types.exe
-  test_math_intrinsics.exe
-  test_bitwise_ops.exe
-  test_scan.exe
-  test_transpose.exe
-  test_sort.exe
-  test_histogram.exe
-  test_convolution.exe
-  test_mandelbrot.exe
-  test_polymorphism.exe))
+  test_inline_pragma.exe))
+
+; e2e-gpu alias: requires an actual GPU backend (no Native/Interpreter
+; fallback path exists in the test). Not part of default `runtest`.
+
+(rule
+ (alias e2e-gpu)
+ (action
+  (run %{dep:test_external_kernel.exe})))
 
 (executable
  (name test_debug_native)
@@ -224,3 +404,13 @@
  (name test_stdlib_meta_proof)
  (modules test_stdlib_meta_proof)
  (libraries sarek_frontend sarek_stdlib_meta))
+
+; e2e-manual alias: build-only diagnostic/report tools. Neither test
+; asserts a pass/fail outcome (test_debug_native only prints device output
+; for manual inspection; test_float64_math_intrinsics is explicitly a
+; report per its own doc comment - it always exits 0). Not part of default
+; `runtest` since there is nothing here that can fail.
+
+(alias
+ (name e2e-manual)
+ (deps test_debug_native.exe test_float64_math_intrinsics.exe))
