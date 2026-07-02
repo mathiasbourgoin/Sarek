@@ -21,7 +21,7 @@ __global__ void sarek_kern(int* __restrict__ input, int sarek_input_length, int*
   {
     if ((gid < n)) {
       int value = input[gid];
-      int digit = ((value >> shift) & mask);
+      int digit = (((shift == 0) ? value : ((value >> shift) ^ ((value >> 31) << ((32 - shift) & 31)))) & mask);
       int _old = atomicAdd(&local_hist[digit], 1);
     }
   }
@@ -53,7 +53,7 @@ __kernel void sarek_kern(__global int* restrict input, int sarek_input_length, _
   {
     if ((gid < n)) {
       int value = input[gid];
-      int digit = ((value >> shift) & mask);
+      int digit = (((shift == 0) ? value : ((value >> shift) ^ ((value >> 31) << ((32 - shift) & 31)))) & mask);
       int _old = atomic_add(&local_hist[digit], 1);
     }
   }
@@ -111,7 +111,7 @@ void main() {
   {
     if ((gid < n)) {
       int value = inputv[gid];
-      int digit = ((value >> shift) & mask);
+      int digit = (((shift == 0) ? value : ((value >> shift) ^ ((value >> 31) << ((32 - shift) & 31)))) & mask);
       int _old = atomicAdd(local_hist[digit], 1);
     }
   }
@@ -150,7 +150,7 @@ uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   {
     if ((gid < n)) {
       int value = input[gid];
-      int digit = ((value >> shift) & mask);
+      int digit = (((shift == 0) ? value : ((value >> shift) ^ ((value >> 31) << ((32 - shift) & 31)))) & mask);
       int _old = atomic_fetch_add_explicit((volatile threadgroup atomic_int*)&local_hist[digit], 1, memory_order_relaxed);
     }
   }

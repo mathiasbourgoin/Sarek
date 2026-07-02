@@ -11,7 +11,7 @@ __global__ void sarek_kern(int* __restrict__ input, int sarek_input_length, int*
   int gid = (threadIdx.x + blockIdx.x * blockDim.x);
   if ((gid < n)) {
     int value = input[gid];
-    int digit = ((value >> shift) & mask);
+    int digit = (((shift == 0) ? value : ((value >> shift) ^ ((value >> 31) << ((32 - shift) & 31)))) & mask);
     int pos = atomicAdd(&counters[digit], 1);
     output[pos] = value;
   }
@@ -26,7 +26,7 @@ __kernel void sarek_kern(__global int* restrict input, int sarek_input_length, _
   int gid = get_global_id(0);
   if ((gid < n)) {
     int value = input[gid];
-    int digit = ((value >> shift) & mask);
+    int digit = (((shift == 0) ? value : ((value >> shift) ^ ((value >> 31) << ((32 - shift) & 31)))) & mask);
     int pos = atomic_add(&counters[digit], 1);
     output[pos] = value;
   }
@@ -70,7 +70,7 @@ void main() {
   int gid = int(gl_GlobalInvocationID.x);
   if ((gid < n)) {
     int value = inputv[gid];
-    int digit = ((value >> shift) & mask);
+    int digit = (((shift == 0) ? value : ((value >> shift) ^ ((value >> 31) << ((32 - shift) & 31)))) & mask);
     int pos = atomicAdd(counters[digit], 1);
     outputv[pos] = value;
   }
@@ -92,7 +92,7 @@ uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   int gid = __metal_gid.x;
   if ((gid < n)) {
     int value = input[gid];
-    int digit = ((value >> shift) & mask);
+    int digit = (((shift == 0) ? value : ((value >> shift) ^ ((value >> 31) << ((32 - shift) & 31)))) & mask);
     int pos = atomic_fetch_add_explicit((volatile device atomic_int*)&counters[digit], 1, memory_order_relaxed);
     output[pos] = value;
   }
