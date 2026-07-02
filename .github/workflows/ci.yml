@@ -103,6 +103,17 @@ jobs:
               eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
               make e2e-fast'
 
+      - name: Run negative tests (expected compile errors)
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            spoc-ci:latest \
+            bash -lc 'git config --global --add safe.directory /work && \
+              export OPAMROOT=/work/.opam-ci && \
+              eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
+              make test_negative'
+
       - name: Run coverage
         continue-on-error: true
         run: |
