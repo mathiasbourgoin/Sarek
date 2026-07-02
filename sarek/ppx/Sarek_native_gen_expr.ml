@@ -199,10 +199,13 @@ let gen_control_flow ~loc ~gen_expr (te : texpr) : expression =
               [%e wrapped_body]
             done]
       | Sarek_ast.Downto ->
+          (* The parser stores `for i = start downto stop` positionally as
+             (lo, hi) = (start, stop) (see Sarek_parse.ml, Pexp_for handling),
+             so the OCaml `downto` loop must run from lo to hi, not hi to lo. *)
           [%expr
             for
-              [%p int_var_pat] = Int32.to_int [%e hi_e]
-              downto Int32.to_int [%e lo_e]
+              [%p int_var_pat] = Int32.to_int [%e lo_e]
+              downto Int32.to_int [%e hi_e]
             do
               [%e wrapped_body]
             done])
@@ -329,9 +332,11 @@ let gen_data_structure ~loc ~ctx ~gen_expr (te : texpr) : expression =
       Ast_builder.Default.pexp_tuple ~loc exprs_e
   (* Create local array - use regular OCaml arrays for native mode *)
   | TECreateArray (size, elem_ty, _memspace) ->
+      (* [size] is a Sarek int32-typed expression; Array.make expects an
+         OCaml int, so convert like the for-loop bounds do (see :196-208). *)
       let size_e = gen_expr ~loc size in
       let default_e = default_value_for_type ~loc elem_ty in
-      [%expr Array.make [%e size_e] [%e default_e]]
+      [%expr Array.make (Int32.to_int [%e size_e]) [%e default_e]]
   | _ -> failwith "gen_data_structure: not a data structure expression"
 
 (** Generate special expressions (return, global ref, native, pragma, open) *)
