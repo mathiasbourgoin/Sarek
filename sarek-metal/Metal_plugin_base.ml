@@ -231,12 +231,18 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
       {library; pipeline; function_name = name; device_id = device.id}
 
     let compile_cached device ~name ~source =
+      (* Cache key must include device ID and the kernel/entry name - a
+         source file may define more than one kernel, and a resolved kernel
+         handle for one name must never be returned for another (see
+         Compile_cache.mli). Delegates to the shared, collision-resistant
+         key builder used by CUDA/Vulkan instead of hand-rolling a
+         delimiter-unsafe Printf.sprintf join. *)
       let key =
-        Printf.sprintf
-          "%d:%s:%s"
-          device.Metal_api.Device.id
-          name
-          (Digest.string source |> Digest.to_hex)
+        Spoc_framework.Compile_cache.make_key
+          ~device:(string_of_int device.Metal_api.Device.id)
+          ~name
+          ~source
+          ()
       in
       match Hashtbl.find_opt cache key with
       | Some k -> k
