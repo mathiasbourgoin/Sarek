@@ -45,6 +45,12 @@ let check (ctx : string) (result : cu_result) : unit =
     ctx
     result
 
+(** Hooks invoked with a device id right before its context is destroyed.
+    [Kernel] registers an eviction hook here (after [Kernel.cache] is defined
+    below) so that [Device.destroy] can retire per-device compiled kernels
+    without a circular module dependency. *)
+let device_destroy_hooks : (int -> unit) list ref = ref []
+
 (** {1 Device Management} *)
 
 module Device = struct
@@ -193,8 +199,13 @@ module Device = struct
   let destroy dev =
     (* Evict from device_cache first: leaving a stale entry means a later
        [get idx] returns a handle whose context has already been destroyed
-       (mirrors the Vulkan fix in Vulkan_api_device.ml). *)
+       (mirrors the Vulkan fix in Vulkan_api_device.ml). Also run the
+       registered destroy hooks (Kernel.cache eviction) while the context
+       is still current, so stale module/function handles for this device
+       can't be returned by [Kernel.compile_cached] after the context is
+       recreated. *)
     Hashtbl.remove device_cache dev.id ;
+    List.iter (fun hook -> hook dev.id) !device_destroy_hooks ;
     check "cuCtxDestroy" (cuCtxDestroy dev.context)
 end
 
@@ -332,6 +343,35 @@ module Kernel = struct
   (* Compilation cache *)
   let cache : (string, t) Hashtbl.t = Hashtbl.create 16
 
+  (* Cache keys grouped by device id, so a device destroy/recreate cycle can
+     evict exactly its own stale module/function handles from [cache]
+     without needing to reverse the (digested, opaque) cache key. *)
+  let keys_by_device : (int, string list ref) Hashtbl.t = Hashtbl.create 16
+
+  let record_key_for_device device_id key =
+    match Hashtbl.find_opt keys_by_device device_id with
+    | Some keys -> keys := key :: !keys
+    | None -> Hashtbl.add keys_by_device device_id (ref [key])
+
+  (* Evict every cached kernel compiled for [device_id]. Registered as a
+     [device_destroy_hooks] callback below so [Device.destroy] retires
+     these handles before the underlying CUDA context is destroyed. *)
+  let evict_device device_id =
+    match Hashtbl.find_opt keys_by_device device_id with
+    | None -> ()
+    | Some keys ->
+        List.iter
+          (fun key ->
+            match Hashtbl.find_opt cache key with
+            | None -> ()
+            | Some k ->
+                let _ = cuModuleUnload k.module_ in
+                Hashtbl.remove cache key)
+          !keys ;
+        Hashtbl.remove keys_by_device device_id
+
+  let () = device_destroy_hooks := evict_device :: !device_destroy_hooks
+
   (* Replace the .target directive in a PTX string to match the given SM version.
      This makes a static PTX string portable: PTX written for sm_86 loads fine
      on sm_61 as long as it doesn't use sm_86-specific instructions. *)
@@ -468,6 +508,7 @@ module Kernel = struct
     | None ->
         let k = compile device ~name ~source in
         Hashtbl.add cache key k ;
+        record_key_for_device device.Device.id key ;
         k
 
   let clear_cache () =
@@ -476,7 +517,8 @@ module Kernel = struct
         let _ = cuModuleUnload k.module_ in
         ())
       cache ;
-    Hashtbl.clear cache
+    Hashtbl.clear cache ;
+    Hashtbl.clear keys_by_device
 
   (** Existential wrapper for keeping Ctypes-allocated values alive during FFI
       calls *)
