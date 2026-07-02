@@ -53,7 +53,7 @@ let () =
   let dispatch =
     [%kernel
       fun (src : shape vector) (dst : float32 vector) (n : int32) ->
-        let tid = thread_idx_x in
+        let tid = thread_idx_x + (block_dim_x * block_idx_x) in
         if tid < n then
           match src.(tid) with
           | Circle r -> dst.(tid) <- 3.14 *. r *. r

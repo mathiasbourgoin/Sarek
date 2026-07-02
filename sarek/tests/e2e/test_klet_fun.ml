@@ -32,7 +32,7 @@ let () =
     [%kernel
       let add_scale (x : float32) (y : float32) : float32 = x +. (2.0 *. y) in
       fun (src : float32 vector) (dst : float32 vector) (n : int32) ->
-        let tid = thread_idx_x in
+        let tid = thread_idx_x + (block_dim_x * block_idx_x) in
         if tid < n then dst.(tid) <- add_scale src.(tid) 3.0]
   in
   let _native, kirc = scale_add in

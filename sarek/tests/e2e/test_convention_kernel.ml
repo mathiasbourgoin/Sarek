@@ -52,6 +52,16 @@ let () =
     | None -> devs.(0)
   in
   Printf.printf "Using device: %s\n%!" dev.Device.name ;
+  (* Custom-type codegen (Geometry_lib.point here) is documented as unreliable
+     off Native - see test_klet_variant.ml's identical restriction. Hard-skip
+     rather than silently run (and possibly fail nondeterministically) on a
+     framework where custom-type support isn't guaranteed. *)
+  if dev.framework <> "Native" then begin
+    Printf.printf
+      "runtime: SKIP (convention kernel test checked on native backend only)\n\
+       %!" ;
+    exit 0
+  end ;
 
   let n = 64 in
   let points = Vector.create_custom Geometry_lib.point_custom n in
