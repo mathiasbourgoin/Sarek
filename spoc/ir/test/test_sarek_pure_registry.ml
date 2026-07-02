@@ -102,24 +102,30 @@ let math_float64_names =
     "atan2";
   ]
 
-(* Presence-only check: asserts every expected name resolves on the path.
-   It does NOT prove the absence of extra registrations — the registry
-   exposes no key enumeration, so a full set-equality snapshot is not
-   possible without an API addition. Absence is guarded only at the known
-   boundary: test_math_float64_intentionally_missing checks the 11
-   unsupported intrinsics stay unregistered on the two Math.Float64 paths. *)
+(* Sarek_pure_registry has no .mli, so [fun_registry] (the backing Hashtbl) is
+   directly accessible here - fold over it to get the exact set of names
+   registered under a given module_path, rather than only checking presence
+   of the expected names one at a time. This proves absence of accidental
+   extra registrations too, closing the gap the old presence-only check left
+   open (an accidental extra entry under Float32/Float64 would previously
+   have passed silently). *)
+let names_for_path module_path =
+  Hashtbl.fold
+    (fun (path, name) _ acc -> if path = module_path then name :: acc else acc)
+    fun_registry
+    []
+  |> List.sort_uniq String.compare
+
 let assert_path_has_all module_path expected label =
-  List.iter
-    (fun name ->
-      match fun_device_template ~module_path name with
-      | Some _ -> ()
-      | None ->
-          failwith
-            (Printf.sprintf
-               "%s: expected %s to be registered but it is not"
-               label
-               name))
-    expected
+  let expected_sorted = List.sort_uniq String.compare expected in
+  let actual_sorted = names_for_path module_path in
+  if actual_sorted <> expected_sorted then
+    failwith
+      (Printf.sprintf
+         "%s: expected exactly [%s], got [%s]"
+         label
+         (String.concat ", " expected_sorted)
+         (String.concat ", " actual_sorted))
 
 let test_float32_paths () =
   assert_path_has_all ["Float32"] float32_names "Float32" ;
