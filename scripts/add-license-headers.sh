@@ -5,6 +5,11 @@
 # Automatically add or update SPDX license headers in source files
 # Uses git history to determine copyright years
 # Uses a canonical maintainer identity (MAINTAINER) for contributor attribution
+#
+# Pass --check (or --dry-run) to report which files would change without
+# touching the working tree. check-license-headers.sh uses this mode so the
+# "check" never mutates files. Exits 1 in that mode if any file needs an
+# update, 0 otherwise.
 
 set -e
 
@@ -12,6 +17,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
+
+DRY_RUN=false
+case "${1:-}" in
+    --check|--dry-run)
+        DRY_RUN=true
+        ;;
+esac
 
 # Default license
 LICENSE="CECILL-B"
@@ -61,6 +73,32 @@ get_primary_contributor() {
     echo "$MAINTAINER"
 }
 
+# Apply a pending change to $file.
+#
+# In normal mode, moves $tmpfile onto $file and reports "$label".
+# In --check/--dry-run mode, never touches $file: diffs $tmpfile against it
+# (case-sensitive, byte-for-byte) and only reports/counts a change if they
+# actually differ, then discards $tmpfile.
+apply_change() {
+    local file="$1"
+    local tmpfile="$2"
+    local label="$3"
+
+    if $DRY_RUN; then
+        if ! diff -q "$file" "$tmpfile" >/dev/null 2>&1; then
+            echo -e "${GREEN}${label}${NC}: $file"
+            UPDATED_COUNT=$((UPDATED_COUNT + 1))
+        else
+            SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+        fi
+        rm -f "$tmpfile"
+    else
+        mv "$tmpfile" "$file"
+        echo -e "${GREEN}${label}${NC}: $file"
+        UPDATED_COUNT=$((UPDATED_COUNT + 1))
+    fi
+}
+
 # Add or update header in OCaml file
 add_ocaml_header() {
     local file="$1"
@@ -79,73 +117,79 @@ add_ocaml_header() {
         # calls below never receive an empty or invalid line number.
         [ -z "$header_end_line" ] && header_end_line=10
         
-        # Check if this contributor already has a copyright line
-        if head -"$header_end_line" "$file" 2>/dev/null | grep "SPDX-FileCopyrightText:" | grep -q "$contributor_email"; then
+        # Check if this contributor already has a copyright line.
+        # NB: match case-insensitively. Email providers (e.g. "Gmail.com" vs
+        # "gmail.com") are case-insensitive by spec, and mail clients/editors
+        # routinely normalize casing over a file's history. A case-sensitive
+        # grep here previously caused a contributor with a differently-cased
+        # email to look like a "new" contributor on every run, so the fixer
+        # kept appending a duplicate SPDX-FileCopyrightText line for the same
+        # person (root cause of the sarek/codegen/Sarek_ir_ptx_stmt.mli
+        # header mangling).
+        if head -"$header_end_line" "$file" 2>/dev/null | grep "SPDX-FileCopyrightText:" | grep -qi "$contributor_email"; then
             # Contributor exists - check if year needs updating
-            local contributor_line=$(head -"$header_end_line" "$file" | grep "SPDX-FileCopyrightText:" | grep "$contributor_email")
+            local contributor_line=$(head -"$header_end_line" "$file" | grep "SPDX-FileCopyrightText:" | grep -i "$contributor_email")
             local existing_years=$(echo "$contributor_line" | grep -oP '\d{4}(-\d{4})?')
             local first_year=$(echo "$existing_years" | cut -d- -f1)
-            
+
             if [[ "$existing_years" =~ - ]]; then
                 # Has year range - check if last year matches
                 local end_year=$(echo "$existing_years" | cut -d- -f2)
                 if [ "$last_commit_year" != "$end_year" ]; then
-                    # Update year range
-                    sed -i "s/\($contributor_email.*\)$existing_years/\1$first_year-$last_commit_year/" "$file"
-                    echo -e "${GREEN}UPDATED YEAR${NC}: $file ($first_year-$end_year -> $first_year-$last_commit_year)"
-                    UPDATED_COUNT=$((UPDATED_COUNT + 1))
+                    # Update year range (operate on a copy so --check never
+                    # touches the real file; \1 preserves the email's
+                    # existing casing, the match itself is case-insensitive).
+                    local tmpfile=$(mktemp)
+                    cp "$file" "$tmpfile"
+                    sed -i "s/\($contributor_email.*\)$existing_years/\1$first_year-$last_commit_year/I" "$tmpfile"
+                    apply_change "$file" "$tmpfile" "UPDATED YEAR ($first_year-$end_year -> $first_year-$last_commit_year)"
                     return
                 fi
             else
                 # Single year - check if we need range
                 if [ "$last_commit_year" != "$first_year" ]; then
-                    sed -i "s/\($contributor_email.*\)$first_year/\1$first_year-$last_commit_year/" "$file"
-                    echo -e "${GREEN}UPDATED YEAR${NC}: $file ($first_year -> $first_year-$last_commit_year)"
-                    UPDATED_COUNT=$((UPDATED_COUNT + 1))
+                    local tmpfile=$(mktemp)
+                    cp "$file" "$tmpfile"
+                    sed -i "s/\($contributor_email.*\)$first_year/\1$first_year-$last_commit_year/I" "$tmpfile"
+                    apply_change "$file" "$tmpfile" "UPDATED YEAR ($first_year -> $first_year-$last_commit_year)"
                     return
                 fi
             fi
-            
+
             echo -e "${YELLOW}SKIP${NC}: $file (already up-to-date)"
             SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
         else
             # New contributor - add copyright line before closing delimiter
             local years=$(get_copyright_years "$file")
             local tmpfile=$(mktemp)
-            
+
             head -$((header_end_line - 1)) "$file" > "$tmpfile"
             echo "(* SPDX-FileCopyrightText: $years $contributor *)" >> "$tmpfile"
             tail -n +"$header_end_line" "$file" >> "$tmpfile"
-            mv "$tmpfile" "$file"
-            
-            echo -e "${GREEN}ADDED CONTRIBUTOR${NC}: $file"
-            UPDATED_COUNT=$((UPDATED_COUNT + 1))
+            apply_change "$file" "$tmpfile" "ADDED CONTRIBUTOR"
         fi
-        
+
         return
     fi
-    
+
     # No header - create new one
     local years=$(get_copyright_years "$file")
     local tmpfile=$(mktemp)
-    
+
     cat > "$tmpfile" << 'HEADER_EOF'
 (******************************************************************************)
 (* SPDX-License-Identifier: CECILL-B                                          *)
 HEADER_EOF
-    
+
     echo "(* SPDX-FileCopyrightText: $years $contributor *)" >> "$tmpfile"
-    
+
     cat >> "$tmpfile" << 'HEADER_EOF'
 (******************************************************************************)
 
 HEADER_EOF
-    
+
     cat "$file" >> "$tmpfile"
-    mv "$tmpfile" "$file"
-    
-    echo -e "${GREEN}ADDED HEADER${NC}: $file"
-    UPDATED_COUNT=$((UPDATED_COUNT + 1))
+    apply_change "$file" "$tmpfile" "ADDED HEADER"
 }
 
 # Add header to shell script
@@ -179,12 +223,8 @@ add_shell_header() {
         echo "" >> "$tmpfile"
         cat "$file" >> "$tmpfile"
     fi
-    
-    # Replace original file
-    mv "$tmpfile" "$file"
-    
-    echo -e "${GREEN}UPDATED${NC}: $file"
-    UPDATED_COUNT=$((UPDATED_COUNT + 1))
+
+    apply_change "$file" "$tmpfile" "UPDATED"
 }
 
 # Add header to dune file
@@ -262,9 +302,20 @@ echo ""
 echo "========================================"
 echo "License Header Update Summary"
 echo "========================================"
-echo "Files updated: $UPDATED_COUNT"
+if $DRY_RUN; then
+    echo "Files needing updates: $UPDATED_COUNT"
+else
+    echo "Files updated: $UPDATED_COUNT"
+fi
 echo "Files skipped: $SKIPPED_COUNT"
 echo ""
+
+if $DRY_RUN; then
+    if [ $UPDATED_COUNT -gt 0 ]; then
+        exit 1
+    fi
+    exit 0
+fi
 
 if [ $UPDATED_COUNT -gt 0 ]; then
     echo -e "${GREEN}✓ Headers added successfully!${NC}"
