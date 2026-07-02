@@ -468,13 +468,38 @@ let build_push_constants args : bytes option =
     |> List.map (fun (_binding, AnyBuf buf) -> Int32.of_int buf.Memory.size)
   in
   let scalars =
-    Spoc_framework.Kernel_args.to_sorted_list args.scalar_store |> List.map snd
+    let entries = Spoc_framework.Kernel_args.to_sorted_list args.scalar_store in
+    let negative_idxs =
+      List.filter_map
+        (fun (idx, _) -> if idx < 0 then Some idx else None)
+        entries
+    in
+    if negative_idxs <> [] then
+      Vulkan_error.raise_error
+        (Vulkan_error.context_error
+           "push constant"
+           (Printf.sprintf
+              "negative scalar index%s: [%s]"
+              (if List.length negative_idxs = 1 then "" else "es")
+              (String.concat ", " (List.map string_of_int negative_idxs)))) ;
+    List.map snd entries
   in
   if vector_lengths = [] && scalars = [] then None
   else begin
     let pc = Bytes.create push_constant_limit in
     let offset = ref 0 in
+    (* GLSL's std430-like push_constant layout base-aligns each scalar member
+       to its own size (4 bytes for int/float, 8 bytes for int64_t/double), so
+       an 8-byte field following one or more 4-byte fields needs 4 bytes of
+       padding inserted by the compiler before it. [write_at] must reproduce
+       that padding on the host side or a mixed 32/64-bit push-constant block
+       reads shifted bytes for every field after the first misalignment. *)
+    let align_to width =
+      let misalignment = !offset mod width in
+      if misalignment <> 0 then offset := !offset + (width - misalignment)
+    in
     let write_at width write =
+      align_to width ;
       if !offset + width > push_constant_limit then
         Vulkan_error.raise_error
           (Vulkan_error.context_error
