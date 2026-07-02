@@ -600,8 +600,11 @@ module Kernel = struct
 
   let release kernel = check "clReleaseKernel" (clReleaseKernel kernel.handle)
 
-  let set_arg_buffer kernel idx buf =
-    let mem_ptr = allocate cl_mem buf.Memory.handle in
+  (** Bind a raw [cl_mem] handle directly, routed through the checked
+      [clSetKernelArg] funnel so failures (e.g. [CL_INVALID_MEM_OBJECT],
+      [CL_INVALID_ARG_INDEX]) raise the canonical {!Opencl_error}. *)
+  let set_arg_mem kernel idx (mem : cl_mem) =
+    let mem_ptr = allocate cl_mem mem in
     check
       "clSetKernelArg"
       (clSetKernelArg
@@ -609,6 +612,8 @@ module Kernel = struct
          (Unsigned.UInt32.of_int idx)
          (Unsigned.Size_t.of_int (sizeof cl_mem))
          (to_voidp mem_ptr))
+
+  let set_arg_buffer kernel idx buf = set_arg_mem kernel idx buf.Memory.handle
 
   let set_arg_int32 kernel idx value =
     let v = allocate int32_t value in

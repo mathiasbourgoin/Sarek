@@ -325,17 +325,7 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
       Array.iter
         (function
           | ArgBuffer {buf; idx} ->
-              let open Ctypes in
-              let open Opencl_types in
-              let mem_ptr = allocate cl_mem buf in
-              let _ =
-                Opencl_bindings.clSetKernelArg
-                  kernel.kernel.Opencl_api.Kernel.handle
-                  (Unsigned.UInt32.of_int idx)
-                  (Unsigned.Size_t.of_int (sizeof cl_mem))
-                  (to_voidp mem_ptr)
-              in
-              ()
+              Opencl_api.Kernel.set_arg_mem kernel.kernel idx buf
           | ArgInt32 {value; idx} ->
               Opencl_api.Kernel.set_arg_int32 kernel.kernel idx value
           | ArgInt64 {value; idx} ->
