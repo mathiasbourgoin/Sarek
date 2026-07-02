@@ -378,15 +378,19 @@ let rec lower_expr (state : state) (te : texpr) : Kirc_Ast.k_ext =
           let else_ir = lower_expr state else_e in
           Kirc_Ast.Ife (cond_ir, then_ir, else_ir))
   (* For loop *)
-  | TEFor (var, id, lo, hi, dir, body) ->
-      let lo_ir = lower_expr state lo in
-      let hi_ir = lower_expr state hi in
-      let var_ir = lower_ref id var te.ty in
-      let body_ir = lower_expr state body in
-      (* DoLoop takes: var, start, end, body *)
-      (* For downto, we need to handle differently - for now assume upto *)
-      let _ = dir in
-      Kirc_Ast.DoLoop (var_ir, lo_ir, hi_ir, body_ir)
+  | TEFor (var, id, lo, hi, dir, body) -> (
+      match dir with
+      | Sarek_ast.Downto ->
+          Location.raise_errorf
+            ~loc:(Sarek_ast.loc_to_ppxlib te.te_loc)
+            "downto is not supported by the legacy lowering path"
+      | Sarek_ast.Upto ->
+          let lo_ir = lower_expr state lo in
+          let hi_ir = lower_expr state hi in
+          let var_ir = lower_ref id var te.ty in
+          let body_ir = lower_expr state body in
+          (* DoLoop takes: var, start, end, body *)
+          Kirc_Ast.DoLoop (var_ir, lo_ir, hi_ir, body_ir))
   (* While loop *)
   | TEWhile (cond, body) ->
       let cond_ir = lower_expr state cond in

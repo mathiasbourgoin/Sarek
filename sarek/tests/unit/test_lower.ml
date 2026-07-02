@@ -255,6 +255,32 @@ let test_lower_for () =
     | DoLoop (IntId ("i", 0), Int 0, Int 10, Unit) -> true
     | _ -> false)
 
+(* The legacy (Kirc_Ast) lowering path has no production callers for
+   `downto` loops: the V2 path (Sarek_lower_ir.ml) and the native backend
+   (Sarek_native_gen_expr.ml) both handle downto themselves, and nothing
+   routes a Sarek-level downto loop through Sarek_lower.lower_expr in
+   normal use. This test therefore calls lower_expr directly on a
+   hand-built Downto AST fragment - there is no kernel source that would
+   exercise this path today - to pin down that the legacy path fails
+   loudly (a located PPX error) instead of silently mis-lowering the loop
+   as if it were Upto (which is what happened before this fix: the `dir`
+   value was discarded with `let _ = dir in`). *)
+let test_lower_for_downto_raises () =
+  let te =
+    mk_texpr
+      (TEFor
+         ("i", 0, int_texpr 10, int_texpr 0, Downto, mk_texpr TEUnit t_unit))
+      t_unit
+  in
+  let state = create_state (empty_fun_map ()) in
+  let raised =
+    try
+      let _ = lower_expr state te in
+      false
+    with Ppxlib.Location.Error _ -> true
+  in
+  Alcotest.(check bool) "downto raises a located error" true raised
+
 (* Test lowering sequence *)
 let test_lower_seq () =
   let te = mk_texpr (TESeq [int_texpr 1; int_texpr 2; int_texpr 3]) t_int32 in
@@ -422,6 +448,10 @@ let () =
           Alcotest.test_case "if no else" `Quick test_lower_if_no_else;
           Alcotest.test_case "while" `Quick test_lower_while;
           Alcotest.test_case "for" `Quick test_lower_for;
+          Alcotest.test_case
+            "for downto raises"
+            `Quick
+            test_lower_for_downto_raises;
         ] );
       ( "other",
         [
