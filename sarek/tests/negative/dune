@@ -18,7 +18,7 @@
 (library
  (name neg_test_convention_kernel_fail)
  (modules test_convention_kernel_fail)
- (libraries sarek sarek.stdlib sarek_ppx.lib sarek_geometry)
+ (libraries sarek sarek.stdlib sarek.ppx.lib sarek_geometry)
  (preprocess
   (pps sarek_ppx))
  (flags
@@ -29,7 +29,7 @@
 (library
  (name neg_test_convention_kernel_fail2)
  (modules test_convention_kernel_fail2)
- (libraries sarek sarek.stdlib sarek_ppx.lib sarek_geometry)
+ (libraries sarek sarek.stdlib sarek.ppx.lib sarek_geometry)
  (preprocess
   (pps sarek_ppx))
  (flags
@@ -40,7 +40,7 @@
 (library
  (name neg_test_barrier_diverged)
  (modules test_barrier_diverged)
- (libraries sarek sarek.stdlib sarek_ppx.lib)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
  (flags
@@ -51,7 +51,7 @@
 (library
  (name neg_test_superstep_diverged)
  (modules test_superstep_diverged)
- (libraries sarek sarek.stdlib sarek_ppx.lib)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
  (flags
@@ -62,7 +62,7 @@
 (library
  (name neg_test_unbound_function)
  (modules test_unbound_function)
- (libraries sarek sarek.stdlib sarek_ppx.lib)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
  (flags
@@ -73,7 +73,7 @@
 (library
  (name neg_test_warp_diverged)
  (modules test_warp_diverged)
- (libraries sarek sarek.stdlib sarek_ppx.lib)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
  (flags
@@ -84,7 +84,7 @@
 (library
  (name neg_test_reserved_keyword)
  (modules test_reserved_keyword)
- (libraries sarek sarek.stdlib sarek_ppx.lib)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
  (flags
@@ -95,7 +95,7 @@
 (library
  (name neg_test_inline_node_exhaustion)
  (modules test_inline_node_exhaustion)
- (libraries sarek sarek.stdlib sarek_ppx.lib)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
  (flags

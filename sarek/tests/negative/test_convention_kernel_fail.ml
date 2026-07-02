@@ -5,7 +5,6 @@
 
 (* Test kernel that should FAIL type checking:
    - Uses Geometry_lib.point but accesses non-existent field 'z' *)
-open Spoc
 open Sarek_geometry
 
 let () =
