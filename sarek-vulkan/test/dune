@@ -15,3 +15,7 @@
 (test
  (name test_vulkan_ffi_check_funnel)
  (libraries sarek_vulkan sarek_backend_error alcotest))
+
+(test
+ (name test_vulkan_buffer_index_validation)
+ (libraries sarek_vulkan spoc_framework alcotest str))

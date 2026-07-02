@@ -62,6 +62,45 @@ let resolve_bindings args : (int * any_buffer) list =
   Spoc_framework.Kernel_args.to_sorted_list args.buffer_store
   |> List.mapi (fun binding (_idx, buf) -> (binding, buf))
 
+(** Validate the set of buffer-argument indices actually bound in [store]
+    against the number of buffer bindings the compiled kernel expects
+    ([expected_count], derived from the GLSL source's `binding = N` declarations
+    \- see [num_bindings] in {!compile}).
+
+    [resolve_bindings] above silently compresses whatever indices are present
+    into dense, ascending descriptor bindings; that rank-mapping is correct for
+    a valid index *set*, but gives no signal at all if the caller passed a
+    nonsensical one (negative indices, or simply the wrong number of buffers -
+    e.g. a caller-side idx typo that drops one buffer and duplicates another
+    slot). This checks the set's sanity before [resolve_bindings]'s compression
+    can paper over it. Exposed for direct unit testing (no hardware required).
+*)
+let validate_buffer_indices ~expected_count
+    (store : 'a Spoc_framework.Kernel_args.t) : (unit, string) result =
+  let entries = Spoc_framework.Kernel_args.to_sorted_list store in
+  let negative_idxs =
+    List.filter_map (fun (idx, _) -> if idx < 0 then Some idx else None) entries
+  in
+  if negative_idxs <> [] then
+    Error
+      (Printf.sprintf
+         "negative buffer index%s: [%s]"
+         (if List.length negative_idxs = 1 then "" else "es")
+         (String.concat ", " (List.map string_of_int negative_idxs)))
+  else
+    let actual_count = List.length entries in
+    if actual_count <> expected_count then
+      Error
+        (Printf.sprintf
+           "expected %d buffer argument%s but got %d (indices: [%s])"
+           expected_count
+           (if expected_count = 1 then "" else "s")
+           actual_count
+           (String.concat
+              ", "
+              (List.map (fun (idx, _) -> string_of_int idx) entries)))
+    else Ok ()
+
 (* Compilation cache *)
 let cache : (string, t) Hashtbl.t = Hashtbl.create 16
 
@@ -452,6 +491,15 @@ let launch kernel ~args ~(grid : Spoc_framework.Framework_sig.dims)
     let fence = s.Stream.fence in
 
     (* 2. Update Descriptor Set (reuse persistent set) *)
+    (match
+       validate_buffer_indices
+         ~expected_count:kernel.num_bindings
+         args.buffer_store
+     with
+    | Ok () -> ()
+    | Error reason ->
+        Vulkan_error.raise_error
+          (Vulkan_error.kernel_launch_failed kernel.name reason)) ;
     let desc_set = kernel.descriptor_set in
     let bindings = resolve_bindings args in
     let num_bindings = List.length bindings in
