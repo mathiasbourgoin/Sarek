@@ -422,3 +422,100 @@ No unilateral choice was made among these; awaiting orchestrator decision.
   staging, keeping the change set scoped to the 3 intended files. The two
   `.ml` files this task did touch already carried correct SPDX headers
   (unchanged by the script).
+
+### Finding 3 follow-up — orchestrator decision + option (b) implemented
+
+The orchestrator reviewed the (a)/(b)/(c) escalation above and decided:
+**option (b), reduced scope.** `test_klet_variant.ml` was reworked (same
+worktree/commit line, no `sarek/ppx/` changes) to:
+
+- Move `shape` to a top-level declaration: `type shape = Circle of float32
+  | Square of float32 [@@sarek.type]` (with `type float32 = float` and
+  `[@@@warning "-32"]` above it, matching the idiom already used in
+  `test_ktype_record.ml` / `test_complex_types.ml` / `test_nested_types.ml`).
+- Restore the kernel's first parameter to a real `shape vector`:
+  `fun (src : shape vector) (dst : float32 vector) (n : int32) -> ...`.
+- **Inline the `match` directly in the kernel body** instead of a separate
+  kernel-local helper function:
+  ```ocaml
+  let tid = thread_idx_x in
+  if tid < n then
+    match src.(tid) with
+    | Circle r -> dst.(tid) <- 3.14 *. r *. r
+    | Square x -> dst.(tid) <- x *. x
+  ```
+  This is the exact code path verified safe in the "Verified the isolation
+  two ways" bullet above (point 1): a top-level `[@@sarek.type]` variant + a
+  real `shape vector` kernel parameter compiles and runs correctly as long
+  as the `match` stays in the kernel's own top-level context (no
+  `gen_module_fun`/`empty_ctx` involved), because `is_same_module` then
+  correctly resolves against the kernel's real `current_module`.
+- Host side now builds `src` via `Vector.create_custom shape_custom n` (not
+  a plain `float32 vector`) and populates it with real alternating
+  `Circle (float_of_int (i+1))` / `Square (float_of_int (i+1))` values
+  (even/odd index), matching the `Vector.create_custom`/`Vector.set`/
+  `Vector.get`-with-constructors idiom already used in
+  `test_nested_types.ml` (`maybe_colored_point`) and `test_complex_types.ml`.
+  `dst` stays a plain `float32 vector`. Host-side `expected` is computed per
+  index from which shape/value was actually written (even → `3.14 *. v *.
+  v`, odd → `v *. v`), compared against `Vector.get dst i` with the existing
+  `1e-2` tolerance, `exit 1` on mismatch — this is the same real-assertion
+  shape as before, now driven by a genuine custom-type vector instead of a
+  sign-encoded float.
+- Kept the finding-2 fixes already in this file untouched: the
+  `Sarek_native.Native_plugin.init ()` / `Sarek_interpreter.
+  Interpreter_plugin.init ()` registration calls, and the
+  Native-preferred-then-Interpreter-then-`devs.(0)` device selection with
+  the "skip if not Native" guard (custom-type codegen off Native remains
+  documented as unreliable elsewhere in this directory, and this test now
+  exercises a real custom-type vector, so the guard is if anything more
+  load-bearing than before).
+
+Verified on this machine: `Device.init` enumerates `[OpenCL GPU, OpenCL
+CPU, Vulkan GPU, Vulkan CPU, Native, Interpreter(seq), Interpreter(par)]`
+(OpenCL GPU first); the Native-preference logic still picks `CPU Native
+(Parallel, 32 cores)` explicitly (printed `Using device: CPU Native
+(Parallel, 32 cores)`), not the first-enumerated OpenCL GPU, and prints
+`test_klet_variant PASSED`.
+
+**Break/restore demonstration:** temporarily changed `Circle r -> dst.(tid)
+<- 3.14 *. r *. r` to `Circle r -> dst.(tid) <- 9.99 *. r *. r`, rebuilt,
+ran `dune runtest --force` — exited 1, printed mismatches (e.g. "Mismatch
+at 2: got 89.910004 expected 28.260000") and `test_klet_variant FAILED:
+area mismatch`. Reverted to the correct `3.14 *. r *. r`, rebuilt, re-ran —
+exited 0, printed `test_klet_variant PASSED` again. Confirms the test is
+non-vacuous under the new inline-match/real-variant-vector version.
+
+**The ppx bug documented above remains open and untouched — tracked here
+as a follow-up, not fixed in this task:**
+
+- **Fix site 1:** `sarek/ppx/Sarek_native_gen.ml`, `gen_module_fun` (the
+  function that generates kernel-local `let <name> (params) = body in`
+  helper functions). It calls `gen_expr ~loc body`, which resolves to
+  `gen_expr_impl ~loc ~ctx:empty_ctx e` — `empty_ctx` has `current_module =
+  None` instead of the enclosing kernel's real `current_module`. Needs
+  `current_module` threaded from the call site into the helper's codegen
+  context.
+- **Fix site 2:** `sarek/ppx/Sarek_native_intrinsics.ml`, `core_type_of_typ`
+  — used to render a helper function's parameter type annotations (e.g.
+  `(s : shape)`). It takes **no** `ctx`/`current_module` parameter at all,
+  so it unconditionally fully-qualifies `TRecord`/`TVariant` type paths
+  regardless of same-module status. Needs a `current_module`/ctx parameter
+  added and threaded into its `TRecord`/`TVariant` cases.
+- **Exact repro** (unchanged from the bisection above, not re-derived): a
+  top-level `[@@sarek.type]` variant (`type shape = Circle of float32 |
+  Square of float32 [@@sarek.type]`) used as a real `shape vector` kernel
+  parameter, combined with a **kernel-local helper function** that pattern
+  matches on / is type-annotated with `shape`, e.g. `let area (s : shape) :
+  float32 = match s with Circle r -> 3.14 *. r *. r | Square x -> x *. x in
+  fun (src : shape vector) (dst : float32 vector) (n : int32) -> ... dst.(tid)
+  <- area src.(tid)`.
+- **Exact compiler error:**
+  ```
+  File "_none_", line 1:
+  Error: The module Test_klet_variant is an alias for module
+  Dune__exe__Test_klet_variant, which is the current compilation unit
+  ```
+- This is explicitly **out of scope** for this task (`sarek/ppx/` was not
+  touched); it is left as a tracked, named follow-up for whoever picks up a
+  ppx-scoped sub-brief next.

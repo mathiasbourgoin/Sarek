@@ -4,40 +4,31 @@
 (******************************************************************************)
 
 (******************************************************************************
- * E2E test for Sarek PPX with variant type and helper function.
+ * E2E test for Sarek PPX with a top-level variant type used as a real
+ * `shape vector` kernel parameter.
  *
- * NOTE (finding 3, briefs/make-tests-actually-run-impl-notes.md): this test
- * was supposed to be upgraded to use a top-level `[@@sarek.type] shape`
- * variant as a real `shape vector` kernel parameter (matching
- * test_ktype_record.ml's record pattern). That upgrade is BLOCKED by a
- * genuine ppx bug, not a test-file limitation: when a kernel-local klet
- * helper function (here `area`) pattern-matches/type-annotates a
- * same-module custom variant, `Sarek_native_gen.gen_module_fun` generates
- * the helper's body via `gen_expr ~loc body` which uses `empty_ctx`
- * (current_module = None, see Sarek_native_gen.ml:292-310), so
- * `is_same_module` in Sarek_native_gen_base.ml always returns false for
- * helper functions and the variant gets fully qualified as
- * "Test_klet_variant.shape" / "Test_klet_variant.Circle" - which is a
- * circular self-reference once dune wraps this file as
- * `Dune__exe.Test_klet_variant` inside the `(executables (names ...))`
- * stanza, and ocamlopt rejects it with:
- *   "The module Test_klet_variant is an alias for module
- *    Dune__exe__Test_klet_variant, which is the current compilation unit"
- * Separately, Sarek_native_intrinsics.ml's `core_type_of_typ` (used for the
- * helper's `(s : shape)` parameter annotation) takes no current_module/ctx
- * parameter at all, so it unconditionally fully-qualifies record/variant
- * type paths - it would need the same fix even if gen_module_fun were
- * patched. Both are in sarek/ppx/, out of scope for this test-only
- * worktree; escalated rather than silently kept on the workaround below.
- * (Inlining the match directly in the kernel body instead of a separate
- * klet helper does NOT hit this bug - verified empirically - but that
- * would drop the "helper function" coverage finding 3 asked to add.)
+ * HISTORY (finding 3, briefs/make-tests-actually-run-impl-notes.md): an
+ * earlier attempt combined this top-level `[@@sarek.type] shape` variant
+ * with a *kernel-local klet helper function* (`area`) that pattern-matched
+ * on `shape`. That combination hit a genuine ppx bug (fully-qualified
+ * self-reference through the helper-function code path - see the impl
+ * notes for the full bisection) and was BLOCKED/escalated. The orchestrator
+ * decided (option b, reduced scope) to keep the top-level variant and the
+ * real `shape vector` parameter, but inline the `match` directly in the
+ * kernel body instead of factoring it into a separate klet helper - this
+ * avoids the buggy code path entirely (verified empirically) while still
+ * exercising a real variant-vector kernel parameter, which is the
+ * substance of finding 3. The ppx bug itself remains open and is
+ * documented in the impl notes as a tracked follow-up; it is NOT fixed
+ * here (sarek/ppx/ is out of scope for this test-only change).
  ******************************************************************************)
 
 (* runtime module aliases *)
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
+
+[@@@warning "-32"]
 
 (* Force backend registration. Also register the always-available
    Native/Interpreter plugins - the previous version of this test only
@@ -51,23 +42,22 @@ let () =
   Sarek_native.Native_plugin.init () ;
   Sarek_interpreter.Interpreter_plugin.init ()
 
+type float32 = float
+
+(* Top-level variant type, registered via [@@sarek.type] so it gets a real
+   `shape_custom` custom-vector descriptor (see test_nested_types.ml /
+   test_complex_types.ml for the same idiom on records and variants). *)
+type shape = Circle of float32 | Square of float32 [@@sarek.type]
+
 let () =
   let dispatch =
     [%kernel
-      let module Types = struct
-        type shape = Circle of float32 | Square of float32
-      end in
-      let area (s : shape) : float32 =
-        match s with Circle r -> 3.14 *. r *. r | Square x -> x *. x
-      in
-      fun (src : float32 vector) (dst : float32 vector) (n : int32) ->
+      fun (src : shape vector) (dst : float32 vector) (n : int32) ->
         let tid = thread_idx_x in
         if tid < n then
-          let s =
-            if src.(tid) > 0.0 then Circle src.(tid)
-            else Square (0.0 -. src.(tid))
-          in
-          dst.(tid) <- area s]
+          match src.(tid) with
+          | Circle r -> dst.(tid) <- 3.14 *. r *. r
+          | Square x -> dst.(tid) <- x *. x]
   in
 
   (* Get IR *)
@@ -123,15 +113,13 @@ let () =
       exit 0
   | Some ir ->
       let n = 64 in
-      let src = Vector.create Vector.float32 n in
+      let src = Vector.create_custom shape_custom n in
       let dst = Vector.create Vector.float32 n in
       for i = 0 to n - 1 do
-        (* Alternate between "circle" (positive radius) and "square"
-           (negative side, sign is the dispatch tag). *)
-        Vector.set
-          src
-          i
-          (if i mod 2 = 0 then float_of_int (i + 1) else -.float_of_int (i + 1)) ;
+        (* Alternate between Circle and Square variants with a real payload,
+           instead of encoding the tag via the sign of a plain float. *)
+        let v = float_of_int (i + 1) in
+        Vector.set src i (if i mod 2 = 0 then Circle v else Square v) ;
         Vector.set dst i 0.0
       done ;
       let threads = min 64 n in
@@ -151,8 +139,8 @@ let () =
       Transfer.flush dev ;
       let ok = ref true in
       for i = 0 to n - 1 do
-        let x = Vector.get src i in
-        let expected = if x > 0.0 then 3.14 *. x *. x else x *. x in
+        let v = float_of_int (i + 1) in
+        let expected = if i mod 2 = 0 then 3.14 *. v *. v else v *. v in
         let got = Vector.get dst i in
         if abs_float (got -. expected) > 1e-2 then begin
           ok := false ;
