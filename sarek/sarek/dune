@@ -5,7 +5,8 @@
 ; Main sarek library - V2 path, no SPOC dependency
 ; sarek_interp (FFI-free) provides Sarek_float32/Sarek_value/type helpers.
 ; sarek_execute provides Execute/Execute_error.
-; Sarek_ir_interp.ml is kept here because it depends on spoc_core.Vector.
+; Sarek_ir_interp.ml is kept here as a forwarding alias to
+; sarek_interp.Sarek_ir_interp, re-exported under the Sarek namespace.
 
 (library
  (name sarek)
