@@ -49,11 +49,15 @@ while [[ $# -gt 0 ]]; do
       CLEAN_OLD=false
       shift
       ;;
+    --*)
+      echo "Unknown option: $1" >&2
+      echo "Usage: $0 [output_dir] [--generate-backend-code] [--no-clean]" >&2
+      echo "Run '$0 --help' for details." >&2
+      exit 2
+      ;;
     *)
-      if [[ ! "$1" == --* ]]; then
-        OUTPUT_DIR="$1"
-        shift
-      fi
+      OUTPUT_DIR="$1"
+      shift
       ;;
   esac
 done
