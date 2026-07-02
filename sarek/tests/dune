@@ -9,5 +9,7 @@
    (alias e2e/runtest))
   (:codegen_golden
    (alias codegen_golden/runtest))
+  (:new_runtime
+   (alias new_runtime/runtest))
   (:core
    (alias ../core/test/runtest))))

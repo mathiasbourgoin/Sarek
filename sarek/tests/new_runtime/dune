@@ -8,7 +8,7 @@
  (preprocess
   (pps sarek_ppx)))
 
-(executable
+(test
  (name test_set_arg_order)
  (modules test_set_arg_order)
  (libraries sarek sarek.stdlib spoc_core sarek_native sarek_interpreter unix)
