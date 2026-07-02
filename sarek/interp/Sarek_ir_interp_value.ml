@@ -243,7 +243,14 @@ let eval_binop op v1 v2 =
   | And -> VBool (to_bool v1 && to_bool v2)
   | Or -> VBool (to_bool v1 || to_bool v2)
   | Shl -> VInt32 (Int32.shift_left (to_int32 v1) (to_int v2))
-  | Shr -> VInt32 (Int32.shift_right_logical (to_int32 v1) (to_int v2))
+  | Shr ->
+      (* Arithmetic (sign-extending) shift, matching every codegen backend:
+         CUDA/OpenCL/Metal/GLSL/WGSL emit plain [>>] on a signed int type,
+         and PTX emits shr.s32. [lsr] is lowered to a separate expression
+         tree in Sarek_lower_ir.ml precisely because this node is
+         arithmetic - see G phase 1 in
+         briefs/fix-critical-semantics-evidence.md. *)
+      VInt32 (Int32.shift_right (to_int32 v1) (to_int v2))
   | BitAnd -> VInt32 (Int32.logand (to_int32 v1) (to_int32 v2))
   | BitOr -> VInt32 (Int32.logor (to_int32 v1) (to_int32 v2))
   | BitXor -> VInt32 (Int32.logxor (to_int32 v1) (to_int32 v2))

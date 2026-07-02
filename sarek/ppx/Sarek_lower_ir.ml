@@ -230,8 +230,15 @@ let ir_binop (op : binop) (_ty : typ) : Ir.binop =
   | And -> Ir.And
   | Or -> Ir.Or
   | Lsl -> Ir.Shl
-  | Lsr -> Ir.Shr
-  | Asr -> Ir.Shr
+  | Lsr ->
+      (* Never reached: TEBinop (Lsr, _, _) is intercepted in lower_expr
+         and rewritten via lower_lsr into a logical-shift expression tree,
+         because Ir.Shr is arithmetic on every backend (see
+         briefs/fix-critical-semantics-evidence.md, G phase 1). Kept here
+         so this match stays a total, honest structural map of
+         Sarek_ast.binop. *)
+      Ir.Shr
+  | Asr -> Ir.Shr (* arithmetic shift; Ir.Shr is arithmetic on every backend *)
   | Land -> Ir.BitAnd
   | Lor -> Ir.BitOr
   | Lxor -> Ir.BitXor
@@ -285,6 +292,45 @@ let rec make_returning stmt =
       Ir.SSeq [stmt; Ir.SReturn (Ir.EConst Ir.CUnit)]
   | Ir.SBlock body -> Ir.SBlock (make_returning body)
 
+(** Lower [a lsr b] (logical/unsigned right shift) to an IR expression tree
+    built only from existing IR nodes.
+
+    Ir.Shr is emitted as an *arithmetic* (sign-extending) shift by every
+    consumer (CUDA/OpenCL/Metal/GLSL/WGSL emit plain [>>] on a signed C/GLSL int
+    type; PTX and the interpreter use [shr.s32]/[Int32.shift_right] - see G
+    phase 1 in briefs/fix-critical-semantics-evidence.md). There is no IR node
+    for a logical shift and none may be added (formal/codegen-ptx models [Shr]
+    itself), so [lsr] is expressed via the classic arithmetic-shift identity,
+    width-aware via [width_bits]:
+
+    {[
+      lshr (a, n)
+      =
+      if n = 0 then a else ashr (a, n) lxor (ashr (a, width - 1) lsl (width - n))
+    ]}
+
+    [ashr(a, width-1)] is all-1s when [a] is negative and all-0s otherwise;
+    shifted left by [width - n] it isolates exactly the [n] sign-extended bits
+    that [ashr(a, n)] filled in, and XOR-ing them off recovers the zero-filled
+    logical shift. The [n = 0] guard avoids shifting by [width] (undefined
+    behaviour on the C-family backends). Shift amounts with [n < 0] or
+    [n >= width] are unspecified, matching the pre-existing behaviour of
+    [Shl]/[Shr] on out-of-range counts. *)
+let lower_lsr (a_ir : Ir.expr) (b_ir : Ir.expr) (ty : Ir.elttype) : Ir.expr =
+  let width_bits = match ty with Ir.TInt64 -> 64 | _ -> 32 in
+  let const n =
+    match ty with
+    | Ir.TInt64 -> Ir.EConst (Ir.CInt64 (Int64.of_int n))
+    | _ -> Ir.EConst (Ir.CInt32 (Int32.of_int n))
+  in
+  let sign_fill = Ir.EBinop (Ir.Shr, a_ir, const (width_bits - 1)) in
+  let top_bits =
+    Ir.EBinop (Ir.Shl, sign_fill, Ir.EBinop (Ir.Sub, const width_bits, b_ir))
+  in
+  let arith_shift = Ir.EBinop (Ir.Shr, a_ir, b_ir) in
+  let logical_shift = Ir.EBinop (Ir.BitXor, arith_shift, top_bits) in
+  Ir.EIf (Ir.EBinop (Ir.Eq, b_ir, const 0), a_ir, logical_shift)
+
 (** Convert a typed expression to IR expression *)
 let rec lower_expr (state : state) (te : texpr) : Ir.expr =
   incr ir_lower_expr_count ;
@@ -318,6 +364,8 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
       | TEVar (name, _) -> Ir.EArrayRead (name, lower_expr state idx)
       | _ -> Ir.EArrayReadExpr (lower_expr state arr, lower_expr state idx))
   | TEFieldGet (r, field, _) -> Ir.ERecordField (lower_expr state r, field)
+  | TEBinop (Lsr, a, b) ->
+      lower_lsr (lower_expr state a) (lower_expr state b) (elttype_of_typ te.ty)
   | TEBinop (op, a, b) ->
       Ir.EBinop (ir_binop op te.ty, lower_expr state a, lower_expr state b)
   | TEUnop (op, a) -> Ir.EUnop (ir_unop op, lower_expr state a)
