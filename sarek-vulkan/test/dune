@@ -11,3 +11,7 @@
 (test
  (name test_vulkan_cache_two_kernels)
  (libraries sarek_vulkan alcotest))
+
+(test
+ (name test_vulkan_ffi_check_funnel)
+ (libraries sarek_vulkan sarek_backend_error alcotest))

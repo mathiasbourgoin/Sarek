@@ -1,5 +1,9 @@
 (tests
- (names test_opencl_error test_sarek_ir_opencl test_opencl_cache_two_kernels)
- (libraries sarek_opencl alcotest str)
+ (names
+  test_opencl_error
+  test_sarek_ir_opencl
+  test_opencl_cache_two_kernels
+  test_opencl_ffi_check_funnel)
+ (libraries sarek_opencl sarek_backend_error alcotest str)
  (instrumentation
   (backend bisect_ppx)))

@@ -20,19 +20,33 @@ let u32 = Unsigned.UInt32.of_int
 
 (** {1 Exceptions} *)
 
-exception Vk_result_error of vk_result * string
+(** Deprecated: no longer raised. [check] below now raises the canonical
+    {!Vulkan_error.Vulkan_error} (a [Backend_error] alias) via the shared
+    {!Sarek_backend_error.Backend_error.Make.check} funnel. Kept only so
+    out-of-tree code matching on [Vulkan_api_base.Vk_result_error (code, ctx)]
+    (or the re-exported [Vulkan_api.Vk_result_error]) still compiles (this
+    library is opam-published). *)
+exception
+  Vk_result_error of vk_result * string
+      [@ocaml.deprecated
+        "no longer raised; Vulkan_api_base.check now raises \
+         Vulkan_error.Vulkan_error (Backend_error) - catch that instead"]
 
-(** Check Vulkan result and raise exception on error *)
+(** Check Vulkan result and raise a canonical {!Backend_error} on failure. *)
 let check (ctx : string) (result : vk_result) : unit =
-  match result with
+  (match result with
   | VK_SUCCESS -> ()
   | err ->
       Spoc_core.Log.errorf
         Spoc_core.Log.Device
         "[Vulkan] %s failed with %s"
         ctx
-        (string_of_vk_result err) ;
-      raise (Vk_result_error (err, ctx))
+        (string_of_vk_result err)) ;
+  Vulkan_error.check
+    ~is_success:(fun r -> r = VK_SUCCESS)
+    ~to_string:string_of_vk_result
+    ctx
+    result
 
 (** {1 SPIR-V Compilation} *)
 

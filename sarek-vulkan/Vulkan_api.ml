@@ -6,7 +6,13 @@
 open Ctypes
 open Vulkan_bindings
 
-exception Vk_result_error = Vulkan_api_base.Vk_result_error
+(** Deprecated: no longer raised, see {!Vulkan_api_base.Vk_result_error}. *)
+exception
+  Vk_result_error = Vulkan_api_base.Vk_result_error
+      [@alert "-deprecated"]
+      [@ocaml.deprecated
+        "no longer raised; Vulkan_api.check now raises \
+         Vulkan_error.Vulkan_error (Backend_error) - catch that instead"]
 
 let memcpy = Vulkan_api_base.memcpy
 

@@ -115,6 +115,35 @@ let test_error_equality () =
   let e4 = Cuda_error.unsupported_source_lang "GLSL" in
   Alcotest.(check bool) "Different errors are not equal" false (e3 = e4)
 
+(** [Cuda_api.check] must raise the canonical {!Sarek_backend_error} on failure
+    (this is what every handler in the codebase catches), not the deprecated
+    [Cuda_api.Cuda_error] variant. This is CUDA's FFI check funnel unification
+    test - no CUDA hardware is required since [check] operates purely on the
+    [cu_result] value, not the driver. *)
+let test_check_raises_canonical_backend_error () =
+  let raised =
+    try
+      Cuda_api.check "cuTestOp" Cuda_types.CUDA_ERROR_INVALID_VALUE ;
+      None
+    with
+    | Sarek_backend_error.Backend_error.Backend_error _ as e -> Some e
+    | e -> Some e
+  in
+  match raised with
+  | None -> Alcotest.fail "expected check to raise on a non-success result"
+  | Some (Sarek_backend_error.Backend_error.Backend_error _) -> ()
+  | Some e ->
+      Alcotest.failf "expected Backend_error, got %s" (Printexc.to_string e)
+
+(** Compile-only: a legacy handler pattern-matching on the deprecated
+    [Cuda_api.Cuda_error] alias must still type-check, since this library is
+    opam-published and out-of-tree code may still reference it. The alert is
+    expected and deliberately suppressed here - this function is never actually
+    reached at runtime (see test above: [check] no longer raises it), it exists
+    purely to prove the alias still compiles. *)
+let _legacy_handler_still_compiles (f : unit -> unit) : unit =
+  (try f () with Cuda_api.Cuda_error _ -> ()) [@alert "-deprecated"]
+
 (** Test suite *)
 let () =
   Alcotest.run
@@ -133,5 +162,12 @@ let () =
           Alcotest.test_case "with_default" `Quick test_with_default;
           Alcotest.test_case "to_result" `Quick test_to_result;
           Alcotest.test_case "error_equality" `Quick test_error_equality;
+        ] );
+      ( "check_funnel_unification",
+        [
+          Alcotest.test_case
+            "check raises canonical Backend_error"
+            `Quick
+            test_check_raises_canonical_backend_error;
         ] );
     ]

@@ -26,13 +26,24 @@ let memcpy ~dst ~src ~size =
 
 (** {1 Exceptions} *)
 
-exception Metal_error of string
+(** Deprecated: no longer raised. [check] below now raises the canonical
+    {!Metal_error.Metal_error} (a [Backend_error] alias) via the shared
+    {!Sarek_backend_error.Backend_error.Make.check} funnel. Kept only so
+    out-of-tree code matching on [Metal_api.Metal_error msg] still compiles
+    (this library is opam-published). *)
+exception
+  Metal_error of string
+      [@ocaml.deprecated
+        "no longer raised; Metal_api.check now raises Metal_error.Metal_error \
+         (Backend_error) - catch that instead"]
 
-(** Check Metal result and raise exception on error *)
+(** Check Metal result and raise a canonical {!Backend_error} on failure. *)
 let check (ctx : string) (result : mtl_error) : unit =
-  match result with
-  | MTL_SUCCESS -> ()
-  | NS_ERROR msg -> raise (Metal_error (ctx ^ ": " ^ msg))
+  Metal_error.check
+    ~is_success:(fun r -> r = MTL_SUCCESS)
+    ~to_string:string_of_mtl_error
+    ctx
+    result
 
 (** {1 Device Management} *)
 
@@ -154,7 +165,11 @@ module CommandQueue = struct
 
   let create device =
     let queue = mtl_device_new_command_queue device.Device.handle in
-    if is_null queue then raise (Metal_error "Failed to create command queue")
+    if is_null queue then
+      Metal_error.raise_error
+        (Metal_error.context_error
+           "mtl_device_new_command_queue"
+           "Failed to create command queue")
     else {handle = queue; device}
 
   let release queue = release queue.handle
@@ -182,7 +197,11 @@ module Memory = struct
         byte_size
         mtl_resource_storage_mode_shared
     in
-    if is_null buf then raise (Metal_error "Failed to allocate buffer")
+    if is_null buf then
+      Metal_error.raise_error
+        (Metal_error.memory_allocation_failed
+           (Int64.of_int byte_size)
+           "mtl_device_new_buffer_with_length returned null")
     else
       let contents = mtl_buffer_contents buf in
       {handle = buf; size; elem_size; device; contents}
@@ -222,14 +241,18 @@ module Library = struct
       mtl_device_new_library_with_source device.Device.handle source None
     with
     | Ok lib -> {handle = lib; device}
-    | Error msg -> raise (Metal_error ("Library compilation failed: " ^ msg))
+    | Error msg ->
+        Metal_error.raise_error (Metal_error.compilation_failed source msg)
 
   let release lib = release lib.handle
 
   let get_function lib name =
     let func = mtl_library_new_function_with_name lib.handle name in
     if is_null func then
-      raise (Metal_error ("Function '" ^ name ^ "' not found in library"))
+      Metal_error.raise_error
+        (Metal_error.context_error
+           "mtl_library_new_function_with_name"
+           (Printf.sprintf "Function '%s' not found in library" name))
     else func
 end
 
@@ -259,7 +282,10 @@ module ComputePipeline = struct
           thread_execution_width = thread_width;
         }
     | Error msg ->
-        raise (Metal_error ("Pipeline state creation failed: " ^ msg))
+        Metal_error.raise_error
+          (Metal_error.context_error
+             "mtl_device_new_compute_pipeline_state"
+             (Printf.sprintf "Pipeline state creation failed: %s" msg))
 
   let release pipeline = release pipeline.handle
 
@@ -288,12 +314,18 @@ module Kernel = struct
       mtl_command_queue_command_buffer queue.CommandQueue.handle
     in
     if is_null cmd_buffer then
-      raise (Metal_error "Failed to create command buffer") ;
+      Metal_error.raise_error
+        (Metal_error.kernel_launch_failed
+           kernel.function_name
+           "Failed to create command buffer") ;
 
     (* Create compute command encoder *)
     let encoder = mtl_command_buffer_compute_command_encoder cmd_buffer in
     if is_null encoder then
-      raise (Metal_error "Failed to create compute encoder") ;
+      Metal_error.raise_error
+        (Metal_error.kernel_launch_failed
+           kernel.function_name
+           "Failed to create compute encoder") ;
 
     (* Set pipeline state *)
     mtl_compute_command_encoder_set_compute_pipeline_state

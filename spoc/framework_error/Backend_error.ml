@@ -334,6 +334,21 @@ struct
 
   let synchronization_failed reason = synchronization_failed ~backend reason
 
+  (** {1 Shared FFI check funnel}
+
+      Generic replacement for each backend's hand-rolled [check ctx result]
+      function (e.g. [Cuda_api.check], [Opencl_api.check], [Metal_api.check],
+      [Vulkan_api_base.check]). Backends supply their own success predicate and
+      stringifier since the underlying result types differ (CUDA [cu_result],
+      OpenCL [cl_error], Metal [mtl_error], Vulkan [vk_result]); this folds the
+      raw code/message into a canonical {!Backend_error} via [context_error]
+      instead of a backend-specific exception, so every backend's FFI funnel
+      raises the same exception shape and callers only ever need to catch
+      [Backend_error]. *)
+  let check ~is_success ~to_string (ctx : string) result =
+    if is_success result then ()
+    else raise_error (context_error ctx (to_string result))
+
   (** {1 Plugin Errors} *)
 
   let unsupported_source_lang lang = unsupported_source_lang ~backend lang

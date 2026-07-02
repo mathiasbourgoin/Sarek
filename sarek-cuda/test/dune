@@ -3,7 +3,7 @@
 (test
  (name test_cuda_error)
  (modules test_cuda_error)
- (libraries sarek_cuda alcotest str)
+ (libraries sarek_cuda sarek_backend_error alcotest str)
  (instrumentation
   (backend bisect_ppx)))
 

@@ -24,11 +24,26 @@ let max_ptx_header_preview = 200
 
 (** {1 Exceptions} *)
 
-exception Cuda_error of cu_result * string
+(** Deprecated: no longer raised. [check] below now raises the canonical
+    {!Cuda_error.Cuda_error} (a [Backend_error] alias) via the shared
+    {!Sarek_backend_error.Backend_error.Make.check} funnel, so every handler in
+    the codebase can catch one exception shape across backends. This declaration
+    is kept only so that out-of-tree code matching on
+    [Cuda_api.Cuda_error (code, ctx)] still compiles (this library is
+    opam-published). *)
+exception
+  Cuda_error of cu_result * string
+      [@ocaml.deprecated
+        "no longer raised; Cuda_api.check now raises Cuda_error.Cuda_error \
+         (Backend_error) - catch that instead"]
 
-(** Check CUDA result and raise exception on error *)
+(** Check CUDA result and raise a canonical {!Backend_error} on failure. *)
 let check (ctx : string) (result : cu_result) : unit =
-  match result with CUDA_SUCCESS -> () | err -> raise (Cuda_error (err, ctx))
+  Cuda_error.check
+    ~is_success:(fun r -> r = CUDA_SUCCESS)
+    ~to_string:string_of_cu_result
+    ctx
+    result
 
 (** {1 Device Management} *)
 
@@ -373,7 +388,10 @@ module Kernel = struct
           "cuModuleLoadData failed: %s\nPTX header: %s"
           (string_of_cu_result err)
           ptx_header ;
-        raise (Cuda_error (err, "cuModuleLoadData"))) ;
+        Cuda_error.raise_error
+          (Cuda_error.module_load_failed
+             (String.length ptx)
+             (Printf.sprintf "cuModuleLoadData: %s" (string_of_cu_result err)))) ;
     let func = allocate cu_function_ptr (from_voidp cu_function null) in
     check "cuModuleGetFunction" (cuModuleGetFunction func !@module_ name) ;
     {module_ = !@module_; function_ = !@func; name}

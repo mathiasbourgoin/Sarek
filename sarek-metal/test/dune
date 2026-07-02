@@ -2,7 +2,7 @@
 
 (test
  (name test_metal_error)
- (libraries sarek_metal alcotest str))
+ (libraries sarek_metal sarek_backend_error alcotest str))
 
 (test
  (name test_sarek_ir_metal)

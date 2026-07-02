@@ -116,6 +116,31 @@ let test_utilities () =
   | Ok s -> Alcotest.(check string) "to_result returns Ok" "success" s
   | Error _ -> Alcotest.fail "to_result should return Ok"
 
+(** [Metal_api.check] must raise the canonical {!Sarek_backend_error} on failure
+    (this is what every handler in the codebase catches), not the deprecated
+    [Metal_api.Metal_error] variant. Metal hardware is macOS-only and
+    unavailable here, but [check] operates purely on the [mtl_error] value, so
+    this is testable without a device. *)
+let test_check_raises_canonical_backend_error () =
+  let raised =
+    try
+      Metal_api.check "mtlTestOp" (Metal_types.NS_ERROR "simulated failure") ;
+      None
+    with e -> Some e
+  in
+  match raised with
+  | None -> Alcotest.fail "expected check to raise on a non-success result"
+  | Some (Sarek_backend_error.Backend_error.Backend_error _) -> ()
+  | Some e ->
+      Alcotest.failf "expected Backend_error, got %s" (Printexc.to_string e)
+
+(** Compile-only: a legacy handler pattern-matching on the deprecated
+    [Metal_api.Metal_error] alias must still type-check (opam-published library,
+    out-of-tree code may still reference it). Never reached at runtime; [check]
+    no longer raises it (see test above). *)
+let _legacy_handler_still_compiles (f : unit -> unit) : unit =
+  (try f () with Metal_api.Metal_error _ -> ()) [@alert "-deprecated"]
+
 let () =
   Alcotest.run
     "Metal_error"
@@ -134,4 +159,11 @@ let () =
         ] );
       ("prefix", [Alcotest.test_case "error prefix" `Quick test_error_prefix]);
       ("utilities", [Alcotest.test_case "utilities" `Quick test_utilities]);
+      ( "check_funnel_unification",
+        [
+          Alcotest.test_case
+            "check raises canonical Backend_error"
+            `Quick
+            test_check_raises_canonical_backend_error;
+        ] );
     ]
