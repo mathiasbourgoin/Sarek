@@ -256,11 +256,18 @@ let register_sarek_module_item ~loc:_ item =
 let scan_file_for_sarek_types path : string option =
   try
     let ic = open_in path in
-    let lexbuf = Lexing.from_channel ic in
-    lexbuf.lex_curr_p <-
-      {lexbuf.lex_curr_p with pos_fname = path; pos_bol = 0; pos_lnum = 1} ;
-    let st = Parse.implementation lexbuf in
-    close_in ic ;
+    (* close_in must run whether or not Parse.implementation raises: this
+       function's whole purpose is to handle malformed files gracefully, so the
+       parse-failure path is expected and must not leak the descriptor. *)
+    let st =
+      Fun.protect
+        ~finally:(fun () -> close_in_noerr ic)
+        (fun () ->
+          let lexbuf = Lexing.from_channel ic in
+          lexbuf.lex_curr_p <-
+            {lexbuf.lex_curr_p with pos_fname = path; pos_bol = 0; pos_lnum = 1} ;
+          Parse.implementation lexbuf)
+    in
     List.iter
       (fun item ->
         match item.pstr_desc with
