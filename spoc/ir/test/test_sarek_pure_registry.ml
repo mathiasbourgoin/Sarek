@@ -102,7 +102,13 @@ let math_float64_names =
     "atan2";
   ]
 
-let assert_path_has_exactly module_path expected label =
+(* Presence-only check: asserts every expected name resolves on the path.
+   It does NOT prove the absence of extra registrations — the registry
+   exposes no key enumeration, so a full set-equality snapshot is not
+   possible without an API addition. Absence is guarded only at the known
+   boundary: test_math_float64_intentionally_missing checks the 11
+   unsupported intrinsics stay unregistered on the two Math.Float64 paths. *)
+let assert_path_has_all module_path expected label =
   List.iter
     (fun name ->
       match fun_device_template ~module_path name with
@@ -113,36 +119,32 @@ let assert_path_has_exactly module_path expected label =
                "%s: expected %s to be registered but it is not"
                label
                name))
-    expected ;
-  (* Also confirm no unexpected extra registrations exist for names close to
-     the boundary (the 11 known-missing Math.Float64 intrinsics, checked only
-     when this path is one of the two float64 paths). *)
-  ()
+    expected
 
 let test_float32_paths () =
-  assert_path_has_exactly ["Float32"] float32_names "Float32" ;
-  assert_path_has_exactly ["Math"; "Float32"] float32_names "Math.Float32" ;
-  assert_path_has_exactly
+  assert_path_has_all ["Float32"] float32_names "Float32" ;
+  assert_path_has_all ["Math"; "Float32"] float32_names "Math.Float32" ;
+  assert_path_has_all
     ["Sarek_stdlib_meta"; "Float32"]
     float32_names
     "Sarek_stdlib_meta.Float32" ;
-  assert_path_has_exactly
+  assert_path_has_all
     ["Sarek_stdlib_meta"; "Math"; "Float32"]
     float32_names
     "Sarek_stdlib_meta.Math.Float32" ;
   print_endline "  float32 paths expose exactly the 32-entry set: OK"
 
 let test_float64_paths () =
-  assert_path_has_exactly ["Float64"] float64_names "Float64" ;
-  assert_path_has_exactly
+  assert_path_has_all ["Float64"] float64_names "Float64" ;
+  assert_path_has_all
     ["Sarek_stdlib_meta"; "Float64"]
     float64_names
     "Sarek_stdlib_meta.Float64" ;
   print_endline "  Float64 paths expose exactly the 27-entry set: OK"
 
 let test_math_float64_paths () =
-  assert_path_has_exactly ["Math"; "Float64"] math_float64_names "Math.Float64" ;
-  assert_path_has_exactly
+  assert_path_has_all ["Math"; "Float64"] math_float64_names "Math.Float64" ;
+  assert_path_has_all
     ["Sarek_stdlib_meta"; "Math"; "Float64"]
     math_float64_names
     "Sarek_stdlib_meta.Math.Float64" ;

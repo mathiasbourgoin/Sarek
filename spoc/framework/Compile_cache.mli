@@ -30,8 +30,9 @@
     - [source] is digested with {!Digest.string}; the raw source is never
       embedded in the key.
     - [options] is an optional association list of compile options (e.g.
-      optimization flags). Entries are sorted by key before being folded into
-      the digest so key order never affects cache hits. Defaults to [[]]. *)
+      optimization flags). Entries are sorted by key and appended to the key
+      string in plaintext, so option order never affects cache hits. Defaults to
+      [[]]. *)
 val make_key :
   device:string ->
   name:string ->
