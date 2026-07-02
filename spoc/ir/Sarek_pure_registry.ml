@@ -89,289 +89,157 @@ let generic_math_template name =
  * Unqualified (path = []) entries are intentionally ABSENT.
  * Unqualified intrinsics continue to be resolved by the hardcoded match arms
  * in each generator.  The pure registry handles path-qualified calls only.
+ *
+ * Four module paths expose the float32 table (["Float32"]; ["Math";"Float32"];
+ * ["Sarek_stdlib_meta";"Float32"]; ["Sarek_stdlib_meta";"Math";"Float32"]) and
+ * two expose each of the float64 and math-float64 tables (plain path and its
+ * Sarek_stdlib_meta twin, used when sarek_stdlib_meta is linked instead of
+ * sarek_stdlib — see the PR-5b note below). The three lists below are
+ * registered once and iterated over every path that exposes them, instead of
+ * being hand-duplicated per path.
+ *
+ * IMPORTANT — intentional float64 drift (do not "complete" this table):
+ * math_float64_list has 16 entries, missing_from_math_float64 lists the 11
+ * intrinsics present in float64_list but absent from math_float64_list:
+ *   exp2, log2, log10, rsqrt, cbrt, round, trunc, fabs, fma, min, max
+ * All 11 lack interpreter support (sarek/interp/Sarek_ir_interp_intrinsics.ml
+ * eval_float64_math_intrinsic implements only sin/cos/sqrt/exp/log/abs/of_int)
+ * and 8 of the 11 (exp2, log2, cbrt, round, trunc, fma, min, max) also lack a
+ * Sarek_float64.Float64 stdlib declaration. Registering any of them into the
+ * Math.Float64 tables without adding the missing interpreter (and, for those
+ * 8, stdlib) support would convert an honest lookup failure into a silent
+ * miscompile: codegen would emit a call to a name the interpreter cannot
+ * evaluate. See briefs/backend-dry-correctness-step0.md section (e) for the
+ * full per-intrinsic evidence table. This is a tracked follow-up boundary,
+ * not an oversight.
  ******************************************************************************)
 
-let () =
-  (* ---- Float32 math (CUDA gets sinf, others get sin) ---- *)
-  let reg32 name cuda_name generic_name =
-    register_fun
-      ~module_path:["Float32"]
-      name
-      ~device:(float32_math_template ~name ~cuda_name ~generic_name)
-  in
-  reg32 "sin" "sinf" "sin" ;
-  reg32 "cos" "cosf" "cos" ;
-  reg32 "tan" "tanf" "tan" ;
-  reg32 "asin" "asinf" "asin" ;
-  reg32 "acos" "acosf" "acos" ;
-  reg32 "atan" "atanf" "atan" ;
-  reg32 "sinh" "sinhf" "sinh" ;
-  reg32 "cosh" "coshf" "cosh" ;
-  reg32 "tanh" "tanhf" "tanh" ;
-  reg32 "exp" "expf" "exp" ;
-  reg32 "exp2" "exp2f" "exp2" ;
-  reg32 "log" "logf" "log" ;
-  reg32 "log2" "log2f" "log2" ;
-  reg32 "log10" "log10f" "log10" ;
-  reg32 "sqrt" "sqrtf" "sqrt" ;
-  reg32 "rsqrt" "rsqrtf" "rsqrt" ;
-  reg32 "cbrt" "cbrtf" "cbrt" ;
-  reg32 "floor" "floorf" "floor" ;
-  reg32 "ceil" "ceilf" "ceil" ;
-  reg32 "round" "roundf" "round" ;
-  reg32 "trunc" "truncf" "trunc" ;
-  reg32 "fabs" "fabsf" "fabs" ;
-  reg32 "abs_float" "fabsf" "fabs" ;
-  reg32 "pow" "powf" "pow" ;
-  reg32 "atan2" "atan2f" "atan2" ;
-  reg32 "fma" "fmaf" "fma" ;
-  reg32 "min" "fminf" "min" ;
-  reg32 "max" "fmaxf" "max" ;
-  reg32 "expm1" "expm1f" "expm1" ;
-  reg32 "log1p" "log1pf" "log1p" ;
-  reg32 "hypot" "hypotf" "hypot" ;
-  reg32 "copysign" "copysignf" "copysign" ;
-  (* ---- Float64 math (same name on all backends) ---- *)
-  let reg64 name =
-    register_fun ~module_path:["Float64"] name ~device:(fun ~framework:_ ->
-        name)
-  in
-  reg64 "sin" ;
-  reg64 "cos" ;
-  reg64 "tan" ;
-  reg64 "asin" ;
-  reg64 "acos" ;
-  reg64 "atan" ;
-  reg64 "sinh" ;
-  reg64 "cosh" ;
-  reg64 "tanh" ;
-  reg64 "exp" ;
-  reg64 "exp2" ;
-  reg64 "log" ;
-  reg64 "log2" ;
-  reg64 "log10" ;
-  reg64 "sqrt" ;
-  reg64 "rsqrt" ;
-  reg64 "cbrt" ;
-  reg64 "floor" ;
-  reg64 "ceil" ;
-  reg64 "round" ;
-  reg64 "trunc" ;
-  reg64 "fabs" ;
-  reg64 "pow" ;
-  reg64 "atan2" ;
-  reg64 "fma" ;
-  reg64 "min" ;
-  reg64 "max" ;
-  (* ---- Math.Float32 (open Math.Float32 → path ["Math";"Float32"]) ---- *)
-  let reg_math32 name cuda_name generic_name =
-    register_fun
-      ~module_path:["Math"; "Float32"]
-      name
-      ~device:(float32_math_template ~name ~cuda_name ~generic_name)
-  in
-  reg_math32 "sin" "sinf" "sin" ;
-  reg_math32 "cos" "cosf" "cos" ;
-  reg_math32 "tan" "tanf" "tan" ;
-  reg_math32 "asin" "asinf" "asin" ;
-  reg_math32 "acos" "acosf" "acos" ;
-  reg_math32 "atan" "atanf" "atan" ;
-  reg_math32 "sinh" "sinhf" "sinh" ;
-  reg_math32 "cosh" "coshf" "cosh" ;
-  reg_math32 "tanh" "tanhf" "tanh" ;
-  reg_math32 "exp" "expf" "exp" ;
-  reg_math32 "exp2" "exp2f" "exp2" ;
-  reg_math32 "log" "logf" "log" ;
-  reg_math32 "log2" "log2f" "log2" ;
-  reg_math32 "log10" "log10f" "log10" ;
-  reg_math32 "sqrt" "sqrtf" "sqrt" ;
-  reg_math32 "rsqrt" "rsqrtf" "rsqrt" ;
-  reg_math32 "cbrt" "cbrtf" "cbrt" ;
-  reg_math32 "floor" "floorf" "floor" ;
-  reg_math32 "ceil" "ceilf" "ceil" ;
-  reg_math32 "round" "roundf" "round" ;
-  reg_math32 "trunc" "truncf" "trunc" ;
-  reg_math32 "fabs" "fabsf" "fabs" ;
-  reg_math32 "pow" "powf" "pow" ;
-  reg_math32 "atan2" "atan2f" "atan2" ;
-  reg_math32 "fma" "fmaf" "fma" ;
-  reg_math32 "min" "fminf" "min" ;
-  reg_math32 "max" "fmaxf" "max" ;
-  reg_math32 "abs_float" "fabsf" "fabs" ;
-  reg_math32 "expm1" "expm1f" "expm1" ;
-  reg_math32 "log1p" "log1pf" "log1p" ;
-  reg_math32 "hypot" "hypotf" "hypot" ;
-  reg_math32 "copysign" "copysignf" "copysign" ;
-  (* ---- Math.Float64 ---- *)
-  let reg_math64 name =
-    register_fun
-      ~module_path:["Math"; "Float64"]
-      name
-      ~device:(generic_math_template name)
-  in
-  reg_math64 "sin" ;
-  reg_math64 "cos" ;
-  reg_math64 "tan" ;
-  reg_math64 "asin" ;
-  reg_math64 "acos" ;
-  reg_math64 "atan" ;
-  reg_math64 "sinh" ;
-  reg_math64 "cosh" ;
-  reg_math64 "tanh" ;
-  reg_math64 "exp" ;
-  reg_math64 "log" ;
-  reg_math64 "sqrt" ;
-  reg_math64 "floor" ;
-  reg_math64 "ceil" ;
-  reg_math64 "pow" ;
-  reg_math64 "atan2"
+(** (name, cuda_name, generic_name) — the 32-entry float32 math list, shared
+    verbatim across all four float32-exposing paths. *)
+let float32_list =
+  [
+    ("sin", "sinf", "sin");
+    ("cos", "cosf", "cos");
+    ("tan", "tanf", "tan");
+    ("asin", "asinf", "asin");
+    ("acos", "acosf", "acos");
+    ("atan", "atanf", "atan");
+    ("sinh", "sinhf", "sinh");
+    ("cosh", "coshf", "cosh");
+    ("tanh", "tanhf", "tanh");
+    ("exp", "expf", "exp");
+    ("exp2", "exp2f", "exp2");
+    ("log", "logf", "log");
+    ("log2", "log2f", "log2");
+    ("log10", "log10f", "log10");
+    ("sqrt", "sqrtf", "sqrt");
+    ("rsqrt", "rsqrtf", "rsqrt");
+    ("cbrt", "cbrtf", "cbrt");
+    ("floor", "floorf", "floor");
+    ("ceil", "ceilf", "ceil");
+    ("round", "roundf", "round");
+    ("trunc", "truncf", "trunc");
+    ("fabs", "fabsf", "fabs");
+    ("abs_float", "fabsf", "fabs");
+    ("pow", "powf", "pow");
+    ("atan2", "atan2f", "atan2");
+    ("fma", "fmaf", "fma");
+    ("min", "fminf", "min");
+    ("max", "fmaxf", "max");
+    ("expm1", "expm1f", "expm1");
+    ("log1p", "log1pf", "log1p");
+    ("hypot", "hypotf", "hypot");
+    ("copysign", "copysignf", "copysign");
+  ]
 
-(******************************************************************************
- * Sarek_stdlib_meta path aliases (PR-5b)
- *
- * When sarek_stdlib_meta is linked (instead of sarek_stdlib), the PPX
- * registry stores intrinsics under module_path ["Sarek_stdlib_meta";"Float32"]
- * etc.  The lower_kernel pass preserves this path verbatim in EIntrinsic.
- *
- * Add alias registrations for all Sarek_stdlib_meta.* paths so the codegen
- * pure-registry lookup succeeds regardless of which stdlib module was linked.
- ******************************************************************************)
+(** The 27-entry float64 math list (same name on every backend, modulo the GLSL
+    override), shared verbatim across both float64-exposing paths. *)
+let float64_list =
+  [
+    "sin";
+    "cos";
+    "tan";
+    "asin";
+    "acos";
+    "atan";
+    "sinh";
+    "cosh";
+    "tanh";
+    "exp";
+    "exp2";
+    "log";
+    "log2";
+    "log10";
+    "sqrt";
+    "rsqrt";
+    "cbrt";
+    "floor";
+    "ceil";
+    "round";
+    "trunc";
+    "fabs";
+    "pow";
+    "atan2";
+    "fma";
+    "min";
+    "max";
+  ]
 
+(** The 16-entry Math.Float64 list — intentionally a strict subset of
+    [float64_list]; see the module-level comment above. *)
+let math_float64_list =
+  [
+    "sin";
+    "cos";
+    "tan";
+    "asin";
+    "acos";
+    "atan";
+    "sinh";
+    "cosh";
+    "tanh";
+    "exp";
+    "log";
+    "sqrt";
+    "floor";
+    "ceil";
+    "pow";
+    "atan2";
+  ]
+
+let register_float32_path module_path =
+  List.iter
+    (fun (name, cuda_name, generic_name) ->
+      register_fun
+        ~module_path
+        name
+        ~device:(float32_math_template ~name ~cuda_name ~generic_name))
+    float32_list
+
+let register_float64_path module_path =
+  List.iter
+    (fun name ->
+      register_fun ~module_path name ~device:(generic_math_template name))
+    float64_list
+
+let register_math_float64_path module_path =
+  List.iter
+    (fun name ->
+      register_fun ~module_path name ~device:(generic_math_template name))
+    math_float64_list
+
+(** Sarek_stdlib_meta path aliases (PR-5b): when sarek_stdlib_meta is linked
+    (instead of sarek_stdlib), the PPX registry stores intrinsics under
+    module_path ["Sarek_stdlib_meta"; ...] instead of the plain path. The
+    lower_kernel pass preserves this path verbatim in EIntrinsic, so both the
+    plain and the Sarek_stdlib_meta paths must resolve identically regardless of
+    which stdlib module was linked. *)
 let () =
-  (* ---- Sarek_stdlib_meta.Float32 aliases ---- *)
-  let reg32m name cuda_name generic_name =
-    register_fun
-      ~module_path:["Sarek_stdlib_meta"; "Float32"]
-      name
-      ~device:(float32_math_template ~name ~cuda_name ~generic_name)
-  in
-  reg32m "sin" "sinf" "sin" ;
-  reg32m "cos" "cosf" "cos" ;
-  reg32m "tan" "tanf" "tan" ;
-  reg32m "asin" "asinf" "asin" ;
-  reg32m "acos" "acosf" "acos" ;
-  reg32m "atan" "atanf" "atan" ;
-  reg32m "sinh" "sinhf" "sinh" ;
-  reg32m "cosh" "coshf" "cosh" ;
-  reg32m "tanh" "tanhf" "tanh" ;
-  reg32m "exp" "expf" "exp" ;
-  reg32m "exp2" "exp2f" "exp2" ;
-  reg32m "log" "logf" "log" ;
-  reg32m "log2" "log2f" "log2" ;
-  reg32m "log10" "log10f" "log10" ;
-  reg32m "sqrt" "sqrtf" "sqrt" ;
-  reg32m "rsqrt" "rsqrtf" "rsqrt" ;
-  reg32m "cbrt" "cbrtf" "cbrt" ;
-  reg32m "floor" "floorf" "floor" ;
-  reg32m "ceil" "ceilf" "ceil" ;
-  reg32m "round" "roundf" "round" ;
-  reg32m "trunc" "truncf" "trunc" ;
-  reg32m "fabs" "fabsf" "fabs" ;
-  reg32m "abs_float" "fabsf" "fabs" ;
-  reg32m "pow" "powf" "pow" ;
-  reg32m "atan2" "atan2f" "atan2" ;
-  reg32m "fma" "fmaf" "fma" ;
-  reg32m "min" "fminf" "min" ;
-  reg32m "max" "fmaxf" "max" ;
-  reg32m "expm1" "expm1f" "expm1" ;
-  reg32m "log1p" "log1pf" "log1p" ;
-  reg32m "hypot" "hypotf" "hypot" ;
-  reg32m "copysign" "copysignf" "copysign" ;
-  (* ---- Sarek_stdlib_meta.Float64 aliases ---- *)
-  let reg64m name =
-    register_fun
-      ~module_path:["Sarek_stdlib_meta"; "Float64"]
-      name
-      ~device:(generic_math_template name)
-  in
-  reg64m "sin" ;
-  reg64m "cos" ;
-  reg64m "tan" ;
-  reg64m "asin" ;
-  reg64m "acos" ;
-  reg64m "atan" ;
-  reg64m "sinh" ;
-  reg64m "cosh" ;
-  reg64m "tanh" ;
-  reg64m "exp" ;
-  reg64m "exp2" ;
-  reg64m "log" ;
-  reg64m "log2" ;
-  reg64m "log10" ;
-  reg64m "sqrt" ;
-  reg64m "rsqrt" ;
-  reg64m "cbrt" ;
-  reg64m "floor" ;
-  reg64m "ceil" ;
-  reg64m "round" ;
-  reg64m "trunc" ;
-  reg64m "fabs" ;
-  reg64m "pow" ;
-  reg64m "atan2" ;
-  reg64m "fma" ;
-  reg64m "min" ;
-  reg64m "max" ;
-  (* ---- Sarek_stdlib_meta.Int32 (arithmetic in templates) ---- *)
-  (* Int32 operations are encoded in device templates, not math functions. *)
-  (* ---- Sarek_stdlib_meta.Math.Float32 aliases ---- *)
-  let reg_meta_math32 name cuda_name generic_name =
-    register_fun
-      ~module_path:["Sarek_stdlib_meta"; "Math"; "Float32"]
-      name
-      ~device:(float32_math_template ~name ~cuda_name ~generic_name)
-  in
-  reg_meta_math32 "sin" "sinf" "sin" ;
-  reg_meta_math32 "cos" "cosf" "cos" ;
-  reg_meta_math32 "tan" "tanf" "tan" ;
-  reg_meta_math32 "asin" "asinf" "asin" ;
-  reg_meta_math32 "acos" "acosf" "acos" ;
-  reg_meta_math32 "atan" "atanf" "atan" ;
-  reg_meta_math32 "sinh" "sinhf" "sinh" ;
-  reg_meta_math32 "cosh" "coshf" "cosh" ;
-  reg_meta_math32 "tanh" "tanhf" "tanh" ;
-  reg_meta_math32 "exp" "expf" "exp" ;
-  reg_meta_math32 "exp2" "exp2f" "exp2" ;
-  reg_meta_math32 "log" "logf" "log" ;
-  reg_meta_math32 "log2" "log2f" "log2" ;
-  reg_meta_math32 "log10" "log10f" "log10" ;
-  reg_meta_math32 "sqrt" "sqrtf" "sqrt" ;
-  reg_meta_math32 "rsqrt" "rsqrtf" "rsqrt" ;
-  reg_meta_math32 "cbrt" "cbrtf" "cbrt" ;
-  reg_meta_math32 "floor" "floorf" "floor" ;
-  reg_meta_math32 "ceil" "ceilf" "ceil" ;
-  reg_meta_math32 "round" "roundf" "round" ;
-  reg_meta_math32 "trunc" "truncf" "trunc" ;
-  reg_meta_math32 "fabs" "fabsf" "fabs" ;
-  reg_meta_math32 "pow" "powf" "pow" ;
-  reg_meta_math32 "atan2" "atan2f" "atan2" ;
-  reg_meta_math32 "fma" "fmaf" "fma" ;
-  reg_meta_math32 "min" "fminf" "min" ;
-  reg_meta_math32 "max" "fmaxf" "max" ;
-  reg_meta_math32 "abs_float" "fabsf" "fabs" ;
-  reg_meta_math32 "expm1" "expm1f" "expm1" ;
-  reg_meta_math32 "log1p" "log1pf" "log1p" ;
-  reg_meta_math32 "hypot" "hypotf" "hypot" ;
-  reg_meta_math32 "copysign" "copysignf" "copysign" ;
-  (* ---- Sarek_stdlib_meta.Math.Float64 aliases ---- *)
-  let reg_meta_math64 name =
-    register_fun
-      ~module_path:["Sarek_stdlib_meta"; "Math"; "Float64"]
-      name
-      ~device:(generic_math_template name)
-  in
-  reg_meta_math64 "sin" ;
-  reg_meta_math64 "cos" ;
-  reg_meta_math64 "tan" ;
-  reg_meta_math64 "asin" ;
-  reg_meta_math64 "acos" ;
-  reg_meta_math64 "atan" ;
-  reg_meta_math64 "sinh" ;
-  reg_meta_math64 "cosh" ;
-  reg_meta_math64 "tanh" ;
-  reg_meta_math64 "exp" ;
-  reg_meta_math64 "log" ;
-  reg_meta_math64 "sqrt" ;
-  reg_meta_math64 "floor" ;
-  reg_meta_math64 "ceil" ;
-  reg_meta_math64 "pow" ;
-  reg_meta_math64 "atan2"
+  register_float32_path ["Float32"] ;
+  register_float32_path ["Math"; "Float32"] ;
+  register_float32_path ["Sarek_stdlib_meta"; "Float32"] ;
+  register_float32_path ["Sarek_stdlib_meta"; "Math"; "Float32"] ;
+  register_float64_path ["Float64"] ;
+  register_float64_path ["Sarek_stdlib_meta"; "Float64"] ;
+  register_math_float64_path ["Math"; "Float64"] ;
+  register_math_float64_path ["Sarek_stdlib_meta"; "Math"; "Float64"]
