@@ -3,5 +3,6 @@
   test_framework_sig
   test_typed_value
   test_device_type
-  test_backend_error)
+  test_backend_error
+  test_kernel_args)
  (libraries spoc_framework alcotest str))
