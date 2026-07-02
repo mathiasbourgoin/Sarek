@@ -76,6 +76,50 @@ let test_plugin_errors () =
     true
     (Str.string_match (Str.regexp ".*raw pointers.*") s2 0)
 
+(** Coverage for the error constructors exercised by Metal_api.ml's raise sites
+    (compile, allocation, context/check, and launch failures) - these were
+    previously untested even though they are the core error paths of this
+    refactor. *)
+let contains substr s =
+  try
+    ignore (Str.search_forward (Str.regexp_string substr) s 0) ;
+    true
+  with Not_found -> false
+
+let test_runtime_errors_extended () =
+  let e1 =
+    Metal_error.compilation_failed "kernel void foo() {}" "syntax error"
+  in
+  let s1 = Metal_error.to_string e1 in
+  (* The rendered message embeds a source preview then the compiler log
+     across multiple lines, so a single ".*"-anchored regexp can't cross the
+     newlines - search_forward instead. *)
+  Alcotest.(check bool)
+    "compilation_failed mentions the compiler log"
+    true
+    (contains "syntax error" s1) ;
+
+  let e2 = Metal_error.context_error "device init" "no Metal device" in
+  let s2 = Metal_error.to_string e2 in
+  Alcotest.(check bool)
+    "context_error mentions operation and reason"
+    true
+    (Str.string_match (Str.regexp ".*device init.*no Metal device.*") s2 0) ;
+
+  let e3 = Metal_error.memory_allocation_failed 4096L "out of memory" in
+  let s3 = Metal_error.to_string e3 in
+  Alcotest.(check bool)
+    "memory_allocation_failed mentions size and reason"
+    true
+    (Str.string_match (Str.regexp ".*4096.*out of memory.*") s3 0) ;
+
+  let e4 = Metal_error.kernel_launch_failed "my_kernel" "invalid grid size" in
+  let s4 = Metal_error.to_string e4 in
+  Alcotest.(check bool)
+    "kernel_launch_failed mentions kernel name and reason"
+    true
+    (Str.string_match (Str.regexp ".*my_kernel.*invalid grid size.*") s4 0)
+
 let test_backend_error_exception () =
   let e = Metal_error.unknown_intrinsic "test" in
   Alcotest.check_raises
@@ -148,7 +192,13 @@ let () =
       ( "codegen",
         [Alcotest.test_case "codegen errors" `Quick test_codegen_errors] );
       ( "runtime",
-        [Alcotest.test_case "runtime errors" `Quick test_runtime_errors] );
+        [
+          Alcotest.test_case "runtime errors" `Quick test_runtime_errors;
+          Alcotest.test_case
+            "runtime errors (compile/context/alloc/launch)"
+            `Quick
+            test_runtime_errors_extended;
+        ] );
       ("plugin", [Alcotest.test_case "plugin errors" `Quick test_plugin_errors]);
       ( "exception",
         [
