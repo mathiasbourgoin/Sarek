@@ -117,7 +117,7 @@ let run_test (dev : Device.t) size block_size =
     ~device:dev
     ~source:glsl_axpy_interleaved
     ~lang:Sarek.Execute.GLSL_Source
-    ~kernel_name:"axpy_interleaved"
+    ~kernel_name:"main"
     ~block:(Sarek.Execute.dims1d threads)
     ~grid:(Sarek.Execute.dims1d grid_x)
     [
