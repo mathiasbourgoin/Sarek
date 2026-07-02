@@ -5,7 +5,9 @@
 
 (******************************************************************************
  * E2E test for Sarek PPX with helper function (klet-style) in the payload.
- * Uses GPU runtime only.
+ * Runs on Native/Interpreter when available (falls back to whatever device
+ * Device.init enumerates first otherwise); plain float32 vectors only, no
+ * custom types, so GPU backends are not documented as unreliable here.
  ******************************************************************************)
 
 (* runtime module aliases *)
@@ -13,10 +15,17 @@ module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 
-(* Force backend registration *)
+(* Force backend registration. Also register the always-available
+   Native/Interpreter plugins - the previous version of this test only
+   called Sarek_cuda.Cuda_plugin.init/Sarek_opencl.Opencl_plugin.init,
+   which never registered Native/Interpreter at all, so the
+   Interpreter/Native device preference below could never actually find
+   them (see briefs/make-tests-actually-run-impl-notes.md). *)
 let () =
   Sarek_cuda.Cuda_plugin.init () ;
-  Sarek_opencl.Opencl_plugin.init ()
+  Sarek_opencl.Opencl_plugin.init () ;
+  Sarek_native.Native_plugin.init () ;
+  Sarek_interpreter.Interpreter_plugin.init ()
 
 let () =
   let scale_add =
@@ -35,7 +44,14 @@ let () =
   if Array.length devs = 0 then (
     print_endline "No device found - IR generation test passed" ;
     exit 0) ;
-  let dev = devs.(0) in
+  let dev =
+    match Array.find_opt (fun d -> d.Device.framework = "Interpreter") devs with
+    | Some d -> d
+    | None -> (
+        match Array.find_opt (fun d -> d.Device.framework = "Native") devs with
+        | Some d -> d
+        | None -> devs.(0))
+  in
   Printf.printf "Using device: %s\n%!" dev.Device.name ;
 
   let n = 64 in

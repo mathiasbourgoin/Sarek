@@ -352,6 +352,22 @@
   test_superstep.exe
   test_inline_pragma.exe))
 
+; Build-gate the compile-only tests under default `runtest` too, so a
+; compile regression still fails CI, without executing them (this is the
+; old build-only `(alias (name runtest) (deps ...))` pattern, kept
+; deliberately distinct from the `(rule (alias runtest) (action (run ...)))`
+; pattern used above for tests that must actually execute). See the
+; comment block above and briefs/make-tests-actually-run-impl-notes.md for
+; why these four are build-only rather than run.
+
+(alias
+ (name runtest)
+ (deps
+  test_pragma.exe
+  test_barrier_converged.exe
+  test_superstep.exe
+  test_inline_pragma.exe))
+
 ; e2e-gpu alias: requires an actual GPU backend (no Native/Interpreter
 ; fallback path exists in the test). Not part of default `runtest`.
 
