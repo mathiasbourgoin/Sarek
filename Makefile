@@ -96,21 +96,21 @@ test_interpreter:
 test_negative:
 	@echo "=== Negative tests (expected compile errors) ==="
 	@echo "Testing type mismatch detection..."
-	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_convention_kernel_fail2.cma > $$out 2>&1; if grep -q "Cannot unify types" $$out; then echo "  PASS: type mismatch"; else cat $$out; rm -f $$out; exit 1; fi; rm -f $$out
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_convention_kernel_fail2.cma > "$$out" 2>&1; if grep -q "Cannot unify types" "$$out"; then echo "  PASS: type mismatch"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing barrier in diverged control flow..."
-	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_barrier_diverged.cma > $$out 2>&1; if grep -q "Barrier called in diverged control flow" $$out; then echo "  PASS: barrier diverged"; else cat $$out; rm -f $$out; exit 1; fi; rm -f $$out
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_barrier_diverged.cma > "$$out" 2>&1; if grep -q "Barrier called in diverged control flow" "$$out"; then echo "  PASS: barrier diverged"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing superstep in diverged control flow..."
-	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_superstep_diverged.cma > $$out 2>&1; if grep -q "Barrier called in diverged control flow" $$out; then echo "  PASS: superstep diverged"; else echo "  KNOWN-ISSUE (non-blocking): superstep_diverged compiled WITHOUT the expected error - pre-existing convergence-checker gap, see Makefile comment above test_negative"; fi; rm -f $$out
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_superstep_diverged.cma > "$$out" 2>&1; if grep -q "Barrier called in diverged control flow" "$$out"; then echo "  PASS: superstep diverged"; elif grep -q "Error" "$$out"; then echo "  FAIL: superstep_diverged failed with an UNEXPECTED error (not the known convergence-checker gap):"; cat "$$out"; rm -f "$$out"; exit 1; else echo "  KNOWN-ISSUE (non-blocking): superstep_diverged compiled WITHOUT the expected error - pre-existing convergence-checker gap, see Makefile comment above test_negative"; fi; rm -f "$$out"
 	@echo "Testing unbound function detection..."
-	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_unbound_function.cma > $$out 2>&1; if grep -q "Unbound" $$out; then echo "  PASS: unbound function"; else cat $$out; rm -f $$out; exit 1; fi; rm -f $$out
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_unbound_function.cma > "$$out" 2>&1; if grep -q "Unbound" "$$out"; then echo "  PASS: unbound function"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing reserved keyword detection..."
-	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_reserved_keyword.cma > $$out 2>&1; if grep -q "reserved C/CUDA/OpenCL keyword" $$out; then echo "  PASS: reserved keyword"; else cat $$out; rm -f $$out; exit 1; fi; rm -f $$out
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_reserved_keyword.cma > "$$out" 2>&1; if grep -q "reserved C/CUDA/OpenCL keyword" "$$out"; then echo "  PASS: reserved keyword"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing inline node exhaustion..."
-	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_inline_node_exhaustion.cma > $$out 2>&1; if grep -q "Inlining produced .* nodes (limit: 10000)" $$out; then echo "  PASS: inline node exhaustion"; else cat $$out; rm -f $$out; exit 1; fi; rm -f $$out
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_inline_node_exhaustion.cma > "$$out" 2>&1; if grep -q "Inlining produced .* nodes (limit: 10000)" "$$out"; then echo "  PASS: inline node exhaustion"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing convention kernel field-not-found detection..."
-	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_convention_kernel_fail.cma > $$out 2>&1; if grep -q "Unbound record field .Geometry_lib\.z.\?" $$out; then echo "  PASS: convention kernel field not found"; else cat $$out; rm -f $$out; exit 1; fi; rm -f $$out
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_convention_kernel_fail.cma > "$$out" 2>&1; if grep -q "Unbound record field .Geometry_lib\.z.\?" "$$out"; then echo "  PASS: convention kernel field not found"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing warp collective in diverged control flow..."
-	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_warp_diverged.cma > $$out 2>&1; if grep -q "Warp collective 'warp_shuffle' called in diverged control flow" $$out; then echo "  PASS: warp diverged"; else cat $$out; rm -f $$out; exit 1; fi; rm -f $$out
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_warp_diverged.cma > "$$out" 2>&1; if grep -q "Warp collective 'warp_shuffle' called in diverged control flow" "$$out"; then echo "  PASS: warp diverged"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "All negative tests checked (see KNOWN-ISSUE line above for the one non-blocking gap, if any)"
 
 
