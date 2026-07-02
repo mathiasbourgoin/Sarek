@@ -266,6 +266,53 @@ let test_can_fuse_with_atomic_in_helper () =
   assert (not result) ;
   Printf.printf "test_can_fuse_with_atomic_in_helper: PASSED\n"
 
+(** Test: can_fuse returns false when the only atomic in the producer is inside
+    an SAssign's lvalue index expression (e.g.
+    [arr.(atomic_add arr2 0 1) <- 5]), not in the RHS. This is the finding-3
+    case: a walk that ignores the lvalue and only inspects the RHS expression
+    would miss it and would wrongly permit fusion. *)
+let test_can_fuse_with_atomic_in_assign_lvalue () =
+  let atomic_idx =
+    EIntrinsic ([], "atomic_add_int32", [EConst (CInt32 0l); EConst (CInt32 1l)])
+  in
+  let producer =
+    {
+      kern_name = "producer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SSeq
+          [
+            SAssign (LArrayElem ("temp", atomic_idx), EConst (CInt32 5l));
+            SAssign
+              ( LArrayElem ("temp", thread_idx_x),
+                EArrayRead ("input", thread_idx_x) );
+          ];
+      kern_types = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+      kern_variants = [];
+    }
+  in
+  let consumer =
+    {
+      kern_name = "consumer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("output", thread_idx_x),
+            EArrayRead ("temp", thread_idx_x) );
+      kern_types = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+      kern_variants = [];
+    }
+  in
+  let result = can_fuse producer consumer "temp" in
+  assert (not result) ;
+  Printf.printf "test_can_fuse_with_atomic_in_assign_lvalue: PASSED\n"
+
 (** Test: atomic-free kernels still fuse (no regression) *)
 let test_can_fuse_no_atomics_regression () =
   let producer =
@@ -1295,6 +1342,7 @@ let () =
   test_can_fuse_with_barrier () ;
   test_can_fuse_with_direct_atomic () ;
   test_can_fuse_with_atomic_in_helper () ;
+  test_can_fuse_with_atomic_in_assign_lvalue () ;
   test_can_fuse_no_atomics_regression () ;
   test_fuse_simple () ;
   test_fuse_pipeline () ;

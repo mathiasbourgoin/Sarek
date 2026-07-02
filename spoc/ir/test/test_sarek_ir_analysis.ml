@@ -506,6 +506,76 @@ let test_kernel_uses_atomics_in_helper () =
   assert (kernel_uses_atomics k_helper_atomic = true) ;
   print_endline "  kernel_uses_atomics via helper: OK"
 
+(** {1 lvalue_uses_atomics / SAssign lvalue Tests (finding 3)} *)
+
+let test_lvalue_uses_atomics () =
+  let atomic_idx =
+    EIntrinsic ([], "atomic_add_int32", [EConst (CInt32 0l); EConst (CInt32 1l)])
+  in
+  assert (
+    lvalue_uses_atomics
+      (LVar {var_name = "x"; var_id = 0; var_type = TInt32; var_mutable = true})
+    = false) ;
+  assert (lvalue_uses_atomics (LArrayElem ("arr", EConst (CInt32 0l))) = false) ;
+  assert (lvalue_uses_atomics (LArrayElem ("arr", atomic_idx)) = true) ;
+  assert (
+    lvalue_uses_atomics (LArrayElemExpr (EConst (CInt32 0l), atomic_idx)) = true) ;
+  assert (
+    lvalue_uses_atomics (LArrayElemExpr (atomic_idx, EConst (CInt32 0l))) = true) ;
+  assert (
+    lvalue_uses_atomics (LRecordField (LArrayElem ("arr", atomic_idx), "field"))
+    = true) ;
+  print_endline "  lvalue_uses_atomics: OK"
+
+(** Load-bearing case for finding 3: the only atomic in the kernel is inside an
+    [SAssign]'s lvalue index expression (e.g. [arr.(atomic_add ...) <- 5]), not
+    in the RHS. Pre-fix, [stmt_uses_atomics]'s [SAssign] case ignored the lvalue
+    entirely and only walked the RHS, so this wrongly returned false. *)
+let test_kernel_uses_atomics_in_assign_lvalue () =
+  let atomic_idx =
+    EIntrinsic ([], "atomic_add_int32", [EConst (CInt32 0l); EConst (CInt32 1l)])
+  in
+  let k_lvalue_atomic : kernel =
+    {
+      kern_name = "test";
+      kern_params = [];
+      kern_locals = [];
+      kern_body = SAssign (LArrayElem ("arr", atomic_idx), EConst (CInt32 5l));
+      kern_types = [];
+      kern_variants = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+    }
+  in
+  assert (kernel_uses_atomics k_lvalue_atomic = true) ;
+  print_endline "  kernel_uses_atomics via assign lvalue: OK"
+
+(** {1 SNative conservative-atomics Tests (finding 4)} *)
+
+let dummy_native_gpu ~framework:_ = ""
+
+let dummy_native_ocaml : ocaml_closure =
+  {run = (fun ~block:_ ~grid:_ _args -> ())}
+
+let test_kernel_uses_atomics_snative () =
+  (* SNative is opaque inline GPU code; stmt_uses_atomics must treat it
+     conservatively as atomic-bearing rather than hard-coding "no atomics
+     here". Pre-fix this returned false unconditionally. *)
+  let k_native : kernel =
+    {
+      kern_name = "test";
+      kern_params = [];
+      kern_locals = [];
+      kern_body = SNative {gpu = dummy_native_gpu; ocaml = dummy_native_ocaml};
+      kern_types = [];
+      kern_variants = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+    }
+  in
+  assert (kernel_uses_atomics k_native = true) ;
+  print_endline "  kernel_uses_atomics via SNative (conservative): OK"
+
 (** {1 Main} *)
 
 let () =
@@ -540,4 +610,7 @@ let () =
   test_helper_uses_atomics () ;
   test_kernel_uses_atomics_direct () ;
   test_kernel_uses_atomics_in_helper () ;
+  test_lvalue_uses_atomics () ;
+  test_kernel_uses_atomics_in_assign_lvalue () ;
+  test_kernel_uses_atomics_snative () ;
   print_endline "All Sarek_ir_analysis tests passed!"

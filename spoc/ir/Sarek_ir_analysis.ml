@@ -70,6 +70,7 @@ let rec stmt_uses_float64 = function
       elttype_uses_float64 v.var_type
       || expr_uses_float64 e || stmt_uses_float64 body
   | SPragma (_, body) | SBlock body -> stmt_uses_float64 body
+  (* Deliberately asymmetric vs. stmt_uses_atomics's SNative arm: native-block float64 usage is a separate, not-yet-decided question - see KB / review notes; do not change this arm as part of the atomics fix. *)
   | SNative _ -> false
 
 (** Check if a declaration uses float64 *)
@@ -158,9 +159,19 @@ let rec expr_uses_atomics = function
       expr_uses_atomics scrutinee
       || List.exists (fun (_, e) -> expr_uses_atomics e) cases
 
+(** Check if an lvalue contains an atomic intrinsic call (in its index/base
+    expression). LVar has no sub-expression; LRecordField recurses into the
+    inner lvalue. *)
+let rec lvalue_uses_atomics = function
+  | LVar _ -> false
+  | LArrayElem (_, idx) -> expr_uses_atomics idx
+  | LArrayElemExpr (base, idx) ->
+      expr_uses_atomics base || expr_uses_atomics idx
+  | LRecordField (lv, _) -> lvalue_uses_atomics lv
+
 (** Check if a statement contains an atomic intrinsic call *)
 let rec stmt_uses_atomics = function
-  | SAssign (_, e) -> expr_uses_atomics e
+  | SAssign (lv, e) -> lvalue_uses_atomics lv || expr_uses_atomics e
   | SSeq stmts -> List.exists stmt_uses_atomics stmts
   | SIf (cond, then_, else_) ->
       expr_uses_atomics cond || stmt_uses_atomics then_
@@ -176,7 +187,10 @@ let rec stmt_uses_atomics = function
   | SLet (_, e, body) | SLetMut (_, e, body) ->
       expr_uses_atomics e || stmt_uses_atomics body
   | SPragma (_, body) | SBlock body -> stmt_uses_atomics body
-  | SNative _ -> false
+  | SNative _ ->
+      (* Conservative: inline native GPU code is opaque; fusion must not
+         assume it is atomic-free. *)
+      true
 
 (** Check if a declaration contains an atomic intrinsic call (in its
     initializer/size expression, if any) *)
