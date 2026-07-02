@@ -28,41 +28,44 @@ let describe_indices idxs = String.concat ", " (List.map string_of_int idxs)
 let plural n = if n = 1 then "" else "s"
 
 let validate_and_extract t ~expected_count =
-  let missing = ref [] in
-  for i = expected_count - 1 downto 0 do
-    if not (Hashtbl.mem t.slots i) then missing := i :: !missing
-  done ;
-  let extra =
-    Hashtbl.fold
-      (fun idx _ acc ->
-        if idx < 0 || idx >= expected_count then idx :: acc else acc)
-      t.slots
-      []
-    |> List.sort compare
-  in
-  match (!missing, extra) with
-  | [], [] -> Ok (Array.init expected_count (fun i -> Hashtbl.find t.slots i))
-  | missing, [] ->
-      Error
-        (Printf.sprintf
-           "missing indices: [%s]; expected %d args, got %d"
-           (describe_indices missing)
-           expected_count
-           (Hashtbl.length t.slots))
-  | [], extra ->
-      Error
-        (Printf.sprintf
-           "unexpected index%s: [%s]; expected contiguous 0..%d"
-           (plural (List.length extra))
-           (describe_indices extra)
-           (expected_count - 1))
-  | missing, extra ->
-      Error
-        (Printf.sprintf
-           "missing indices: [%s]; unexpected index%s: [%s]; expected %d args, \
-            got %d"
-           (describe_indices missing)
-           (plural (List.length extra))
-           (describe_indices extra)
-           expected_count
-           (Hashtbl.length t.slots))
+  if expected_count < 0 then
+    Error (Printf.sprintf "invalid expected_count: %d" expected_count)
+  else
+    let missing = ref [] in
+    for i = expected_count - 1 downto 0 do
+      if not (Hashtbl.mem t.slots i) then missing := i :: !missing
+    done ;
+    let extra =
+      Hashtbl.fold
+        (fun idx _ acc ->
+          if idx < 0 || idx >= expected_count then idx :: acc else acc)
+        t.slots
+        []
+      |> List.sort compare
+    in
+    match (!missing, extra) with
+    | [], [] -> Ok (Array.init expected_count (fun i -> Hashtbl.find t.slots i))
+    | missing, [] ->
+        Error
+          (Printf.sprintf
+             "missing indices: [%s]; expected %d args, got %d"
+             (describe_indices missing)
+             expected_count
+             (Hashtbl.length t.slots))
+    | [], extra ->
+        Error
+          (Printf.sprintf
+             "unexpected index%s: [%s]; expected contiguous 0..%d"
+             (plural (List.length extra))
+             (describe_indices extra)
+             (expected_count - 1))
+    | missing, extra ->
+        Error
+          (Printf.sprintf
+             "missing indices: [%s]; unexpected index%s: [%s]; expected %d \
+              args, got %d"
+             (describe_indices missing)
+             (plural (List.length extra))
+             (describe_indices extra)
+             expected_count
+             (Hashtbl.length t.slots))

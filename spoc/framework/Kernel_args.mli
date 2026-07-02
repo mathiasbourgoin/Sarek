@@ -47,6 +47,10 @@ val to_sorted_list : 'a t -> (int * 'a) list
     unexpected indices, e.g. ["missing indices: [2]; expected 3 args, got 2"] or
     ["unexpected index: [5]; expected contiguous 0..2"]. Callers are expected to
     wrap [msg] into their backend's own structured error (e.g.
-    [Kernel_launch_failed]) rather than raise directly from here. *)
+    [Kernel_launch_failed]) rather than raise directly from here.
+
+    A negative [expected_count] returns [Error msg] rather than raising
+    [Invalid_argument] (which the underlying [Array.init] would otherwise
+    raise). *)
 val validate_and_extract :
   'a t -> expected_count:int -> ('a array, string) result

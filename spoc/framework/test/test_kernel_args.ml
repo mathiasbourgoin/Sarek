@@ -75,6 +75,18 @@ let test_unexpected_index_beyond_range () =
         true
         (Str.string_match (Str.regexp ".*5.*") msg 0)
 
+(** A negative [expected_count] must return a structured [Error], not raise
+    [Invalid_argument] out of the underlying [Array.init]. *)
+let test_negative_expected_count () =
+  let t = KA.create () in
+  match KA.validate_and_extract t ~expected_count:(-1) with
+  | Ok _ -> Alcotest.fail "expected negative expected_count to be rejected"
+  | Error msg ->
+      Alcotest.(check bool)
+        "error names invalid expected_count"
+        true
+        (Str.string_match (Str.regexp ".*invalid expected_count.*") msg 0)
+
 let test_count () =
   let t = KA.create () in
   Alcotest.(check int) "empty" 0 (KA.count t) ;
@@ -121,5 +133,9 @@ let () =
             "unexpected index beyond range"
             `Quick
             test_unexpected_index_beyond_range;
+          Alcotest.test_case
+            "negative expected_count"
+            `Quick
+            test_negative_expected_count;
         ] );
     ]
