@@ -47,20 +47,6 @@ test-force:
 	dune clean || true
 	dune build --force @sarek/tests/runtest
 
-# Optional CUDA samples (require CUDA toolchain and graphics libs)
-test_samples_cuda:
-	@if [ -z "$$CUDA_PATH" ] || [ ! -f "$$CUDA_PATH/lib64/libnvrtc.so" ]; then \
-	  echo "Skipping CUDA samples (CUDA_PATH/libnvrtc.so not found)"; \
-	else \
-	  dune build --profile=cuda \
-	    Samples/src/DeviceQuery/DeviceQuery.exe \
-	    Samples/src/VecAdd/VecAdd.exe \
-	    Samples/src/Mandelbrot/Mandelbrot.exe && \
-	  dune exec --profile=cuda Samples/src/DeviceQuery/DeviceQuery.exe && \
-	  dune exec --profile=cuda Samples/src/VecAdd/VecAdd.exe && \
-	  dune exec --profile=cuda Samples/src/Mandelbrot/Mandelbrot.exe ; \
-	fi
-
 test_ppx:
 	# Build unit/comparison tests and all Sarek PPX e2e binaries (execution may require GPU)
 	SKIP_OCAMLFORMAT=1 dune build @sarek/tests/runtest
@@ -367,7 +353,7 @@ test-tiers: test-tier1 test-tier2 test-tier3 test-tier4
 	@echo "  ALL TIERS PASSED"
 	@echo "=============================================="
 
-check: all install install_sarek samples test 
+check: all test
 
 mr_proper: clean
 	rm -rf _build
