@@ -219,8 +219,41 @@ let register_sarek_module_item ~loc:_ item =
   registered_mods := item :: !registered_mods
 
 (** Scan a single .ml file for [@@sarek.type] and [@sarek.module] declarations
-*)
-let scan_file_for_sarek_types path =
+    and register them as a side effect (see [register_sarek_type_decl],
+    [register_sarek_module_item]).
+
+    This is a best-effort scan of a file that may be *different* from the one
+    currently being compiled (e.g. a co-located file scanned implicitly by
+    [expand_kernel], or an explicit [%sarek_include] target) - a failure here
+    (unreadable file, parse error, or a downstream registration error triggered
+    by malformed [@sarek.*] content in the scanned file) must not silently
+    vanish, but it also must not abort compilation of the file that triggered
+    the scan. The whole scan (read + parse + per-declaration registration) is
+    wrapped in one handler on purpose: every exception it can raise originates
+    from processing the *scanned* file's content, so a malformed registration
+    deep inside a well-parsed file is exactly as much "this file's problem" as a
+    read or parse failure - narrowing the try to only the read/parse steps would
+    just move the same silent swallow one level down instead of fixing it.
+
+    On failure, prints a diagnostic naming the scanned file and the exception to
+    stderr via [Printf.eprintf] and returns [Some diagnostic] (the returned
+    value lets callers/tests inspect the exact message; the printed side effect
+    is what makes the failure visible during a real build). Returns [None] on
+    success.
+
+    Mechanism choice: an [@ocaml.ppwarning] attribute (surfaced as OCaml warning
+    22) was tried first and rejected - this project's dune default ("dev")
+    profile promotes warning 22 to a hard error (dune's default warning flags
+    treat warnings 5 through 28 as fatal), so attaching it here would turn "a
+    sibling file failed to scan" into a build failure for the *current* file,
+    which is exactly the "compilation must still succeed" property this fix is
+    required to preserve. A ppxlib driver-level diagnostic reduces to the same
+    ppwarning-attribute mechanism under the hood (see [Ppxlib.Driver]'s own
+    lint-error-to-attribute conversion) and has the same fatality problem. Plain
+    stderr output has no interaction with the warning/error machinery, so it is
+    the only one of the three ranked options that is testable while satisfying
+    "the build succeeds". *)
+let scan_file_for_sarek_types path : string option =
   try
     let ic = open_in path in
     let lexbuf = Lexing.from_channel ic in
@@ -315,20 +348,32 @@ let scan_file_for_sarek_types path =
                        ~item)))
               vbs
         | _ -> ())
-      st
-  with _ -> ()
+      st ;
+    None
+  with e ->
+    let msg =
+      Printf.sprintf
+        "Sarek PPX: scanning %s for [@sarek.*] declarations failed (%s); \
+         skipping this file's Sarek registrations."
+        path
+        (Printexc.to_string e)
+    in
+    Printf.eprintf "%s\n%!" msg ;
+    Some msg
 
 (** Scan a directory for .ml files with Sarek declarations, or scan a single
-    file *)
+    file. Not currently invoked (dead code, pre-existing - flagged, not removed:
+    out of scope for this change); return values are discarded here since there
+    is no caller to surface a diagnostic to. *)
 let scan_dir_for_sarek_types ?single_file directory =
   match single_file with
-  | Some path -> scan_file_for_sarek_types path
+  | Some path -> ignore (scan_file_for_sarek_types path : string option)
   | None ->
       Array.iter
         (fun fname ->
           if Filename.check_suffix fname ".ml" then
             let path = Filename.concat directory fname in
-            scan_file_for_sarek_types path)
+            ignore (scan_file_for_sarek_types path : string option))
         (try Sys.readdir directory with Sys_error _ -> [||])
 
 (* Attribute used to mark Sarek-visible type declarations *)
@@ -1424,7 +1469,11 @@ let expand_kernel ~ctxt payload : expression =
        This is needed because the impl pass (process_structure_for_module_items)
        runs AFTER extensions are expanded, so we need to scan now. *)
     let current_file = loc.loc_start.pos_fname in
-    if Sys.file_exists current_file then scan_file_for_sarek_types current_file ;
+    (* scan_file_for_sarek_types never raises (see its doc comment); a scan
+       failure is reported via eprintf as a side effect, so its return value
+       is not needed here. *)
+    if Sys.file_exists current_file then
+      ignore (scan_file_for_sarek_types current_file : string option) ;
     (* Types and module items registered in the current compilation unit. *)
     let pre_types = dedup_tdecls !registered_types in
     let local_mods = dedup_mods !registered_mods in
@@ -1823,14 +1872,12 @@ let expand_sarek_include ~ctxt payload =
           "sarek_include: scanning %s (exists=%b)"
           full_path
           (Sys.file_exists full_path) ;
-      (* Scan the file for types and module items *)
-      (try scan_file_for_sarek_types full_path
-       with e ->
-         Location.raise_errorf
-           ~loc
-           "%%sarek_include: failed to scan %s: %s"
-           full_path
-           (Printexc.to_string e)) ;
+      (* Scan the file for types and module items. scan_file_for_sarek_types
+         never raises (see its doc comment) - it reports failures via
+         eprintf as a side effect instead, so this file's compilation
+         succeeds even if the included file was
+         unreadable/unparseable/mis-annotated. *)
+      ignore (scan_file_for_sarek_types full_path : string option) ;
       (* Return empty structure item - the side effect is registration *)
       [%stri let () = ()]
   | None ->

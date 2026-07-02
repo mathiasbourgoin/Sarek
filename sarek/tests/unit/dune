@@ -59,3 +59,13 @@
 (test
  (name test_ptx_snapshot)
  (libraries sarek.codegen alcotest))
+
+; Regression test: Sarek_ppx.scan_file_for_sarek_types's `with _ -> ()`
+; catch-all (pre-fix: silently swallowed the scanned file's name and the
+; exception, on ANY failure). Post-fix it returns a diagnostic instead of
+; unit. See sarek/tests/e2e/test_ppx_scan_failure_warning.ml for the
+; complementary "compilation still succeeds" half of the contract.
+
+(test
+ (name test_ppx_scan_diagnostics)
+ (libraries sarek_ppx alcotest))

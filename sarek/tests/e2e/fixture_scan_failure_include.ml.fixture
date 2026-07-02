@@ -1,0 +1,10 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                          *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
+(* Fixture for test_ppx_scan_failure_warning.ml - deliberately unparseable
+   OCaml. Named with a .ml.fixture suffix (not .ml) so dune never tries to
+   compile it as a module in this directory; it is only read as raw text by
+   Sarek_ppx.scan_file_for_sarek_types via `let%sarek_include`. *)
+let broken = fun x -> x +
