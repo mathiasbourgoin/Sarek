@@ -549,11 +549,18 @@ function markdownToHtml(markdown) {
     // Fenced code blocks first (before bold/italic/links), pulled out into
     // placeholders so no later step -- in particular the line-break
     // conversion -- rewrites their contents. `code` is already escaped.
+    //
+    // The placeholder is wrapped in U+E000 (Private Use Area) sentinels
+    // rather than plain spaces: escapeHtml() never produces PUA characters,
+    // so author-supplied text cannot forge a placeholder and collide with
+    // the literal-text restore step below (content-integrity, not XSS --
+    // code block content is already escaped either way).
     const codeBlocks = [];
+    const CODEBLOCK_MARKER = '\uE000';
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(match, lang, code) {
         const language = lang || 'text';
         codeBlocks.push(`<pre style="margin: 15px 0; padding: 15px; background: var(--code-bg); border: 1px solid var(--border-color); border-radius: 4px; overflow-x: auto; font-size: 0.85em; line-height: 1.4;"><code class="language-${language}">${code}</code></pre>`);
-        return ` CODEBLOCK${codeBlocks.length - 1} `;
+        return `${CODEBLOCK_MARKER}CODEBLOCK${codeBlocks.length - 1}${CODEBLOCK_MARKER}`;
     });
 
     // Inline code (before bold/italic, same reasoning as fenced blocks).
@@ -584,8 +591,10 @@ function markdownToHtml(markdown) {
     html = html.replace(/\n{2,}/g, '<br><br>');
     html = html.replace(/\n/g, '<br>');
 
-    // Restore fenced code blocks.
-    html = html.replace(/ CODEBLOCK(\d+) /g, function(match, idx) {
+    // Restore fenced code blocks. The PUA sentinel makes this restore
+    // literal-text match collision-resistant against author-supplied prose
+    // (escapeHtml() never emits U+E000).
+    html = html.replace(new RegExp(CODEBLOCK_MARKER + 'CODEBLOCK(\\d+)' + CODEBLOCK_MARKER, 'g'), function(match, idx) {
         return codeBlocks[Number(idx)];
     });
 

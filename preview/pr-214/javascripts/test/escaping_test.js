@@ -43,6 +43,22 @@ test('markdownToHtml drops javascript: links entirely', () => {
     assert.ok(rendered.includes('click'), `expected the link text to remain, got: ${rendered}`);
 });
 
+// (b1) Common javascript: bypass variants (case, embedded whitespace) must be
+// dropped too -- the allow-list is an exact ^https?:// match, so anything
+// that isn't literally http(s) is rejected regardless of scheme casing or
+// stray whitespace an attacker might use to dodge a naive string check.
+test('markdownToHtml drops javascript: link bypass variants (case/whitespace)', () => {
+    const variants = [
+        '[click](JavaScript:alert(1))',
+        '[click](java\tscript:alert(1))',
+        '[click]( javascript:alert(1))',
+    ];
+    for (const md of variants) {
+        const rendered = markdownToHtml(md);
+        assert.ok(!rendered.includes('<a '), `expected link dropped for ${JSON.stringify(md)}, got: ${rendered}`);
+    }
+});
+
 // (b2) An https:// link is still allowed and rendered as a real anchor.
 test('markdownToHtml keeps https:// links as real anchors', () => {
     const rendered = markdownToHtml('[docs](https://example.com/page)');
@@ -67,6 +83,22 @@ test('markdownToHtml keeps fenced code block content escaped and literal', () =>
     const rendered = markdownToHtml('```js\nconst x = "<script>alert(1)</script>";\n```');
     assert.ok(!rendered.includes('<script>'), `expected no literal <script> tag, got: ${rendered}`);
     assert.ok(rendered.includes('<pre'), `expected a <pre> block, got: ${rendered}`);
+});
+
+// (c3) The fenced-code-block placeholder must not collide with literal author
+// prose. Before the fix the placeholder was the plain string " CODEBLOCK0 ",
+// so a description that happened to contain that exact substring got the
+// unrelated code block's content spliced into it. The placeholder is now
+// wrapped in a Private-Use-Area sentinel (U+E000) that escapeHtml() can never
+// produce, so it cannot be forged from author-supplied text.
+test('markdownToHtml does not let literal "CODEBLOCK0" prose collide with the placeholder', () => {
+    const rendered = markdownToHtml('See CODEBLOCK0 for details.\n```js\nconst secret = 1;\n```');
+    assert.ok(
+        rendered.includes('See CODEBLOCK0 for details.'),
+        `expected the literal prose to survive unchanged, got: ${rendered}`
+    );
+    assert.ok(rendered.includes('<pre'), `expected the real code block to still render, got: ${rendered}`);
+    assert.ok(rendered.includes('const secret = 1;'), `expected the code block content to survive, got: ${rendered}`);
 });
 
 // (d) Plain text with & < > " ' round-trips as escaped entities.
