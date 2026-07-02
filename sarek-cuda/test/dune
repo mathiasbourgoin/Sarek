@@ -20,3 +20,10 @@
  (libraries sarek_cuda sarek.codegen alcotest)
  (instrumentation
   (backend bisect_ppx)))
+
+(test
+ (name test_cuda_cache_key)
+ (modules test_cuda_cache_key)
+ (libraries spoc_framework alcotest)
+ (instrumentation
+  (backend bisect_ppx)))

@@ -118,6 +118,7 @@ let compile device ~name ~source =
     Framework_cache.compute_key
       ~dev_name:device.Device.name
       ~driver_version
+      ~name
       ~source
   in
 
@@ -330,11 +331,16 @@ let compile device ~name ~source =
   }
 
 let compile_cached device ~name ~source =
+  (* Cache key must include the kernel/entry name - a source string may
+     define more than one kernel, and without the name in the key a second
+     kernel compiled from the same source would resolve to the first
+     kernel's cached pipeline (see Compile_cache.mli). *)
   let key =
-    Printf.sprintf
-      "%d:%s"
-      device.Device.id
-      (Digest.string source |> Digest.to_hex)
+    Spoc_framework.Compile_cache.make_key
+      ~device:(string_of_int device.Device.id)
+      ~name
+      ~source
+      ()
   in
   match Hashtbl.find_opt cache key with
   | Some k -> k

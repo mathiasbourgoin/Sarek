@@ -4,5 +4,6 @@
   test_typed_value
   test_device_type
   test_backend_error
-  test_kernel_args)
+  test_kernel_args
+  test_compile_cache)
  (libraries spoc_framework alcotest str))

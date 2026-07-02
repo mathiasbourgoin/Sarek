@@ -23,6 +23,7 @@ let test_compute_key () =
     Framework_cache.compute_key
       ~dev_name:"Device1"
       ~driver_version:"1.0"
+      ~name:"kernel_a"
       ~source:"kernel code"
   in
 
@@ -30,19 +31,24 @@ let test_compute_key () =
     Framework_cache.compute_key
       ~dev_name:"Device1"
       ~driver_version:"1.0"
+      ~name:"kernel_a"
       ~source:"kernel code"
   in
 
   Alcotest.(check string) "Same inputs produce same key" key1 key2 ;
 
-  Alcotest.(check bool) "Key is hex string" true (String.length key1 = 32)
-(* MD5 hex is 32 chars *)
+  Alcotest.(check bool)
+    "Key is schema-versioned hex string"
+    true
+    (String.length key1 = 35 && String.sub key1 0 3 = "v2:")
+(* "v2:" (3 chars) + MD5 hex (32 chars) = 35 *)
 
 let test_compute_key_different () =
   let key1 =
     Framework_cache.compute_key
       ~dev_name:"Device1"
       ~driver_version:"1.0"
+      ~name:"kernel_a"
       ~source:"code1"
   in
 
@@ -50,6 +56,7 @@ let test_compute_key_different () =
     Framework_cache.compute_key
       ~dev_name:"Device1"
       ~driver_version:"1.0"
+      ~name:"kernel_a"
       ~source:"code2"
   in
 
@@ -57,6 +64,31 @@ let test_compute_key_different () =
     "Different sources produce different keys"
     true
     (key1 <> key2)
+
+(* Non-vacuous regression test for the cache-key fix: two kernels compiled
+   from the same source string (same device, same driver) must never
+   collide. Before the fix, [compute_key] omitted the kernel name entirely,
+   so this test would have failed by asserting key1 = key2. *)
+let test_compute_key_name_differs () =
+  let shared_source = "shared source defining kernel_a and kernel_b" in
+  let key_a =
+    Framework_cache.compute_key
+      ~dev_name:"Device1"
+      ~driver_version:"1.0"
+      ~name:"kernel_a"
+      ~source:shared_source
+  in
+  let key_b =
+    Framework_cache.compute_key
+      ~dev_name:"Device1"
+      ~driver_version:"1.0"
+      ~name:"kernel_b"
+      ~source:shared_source
+  in
+  Alcotest.(check bool)
+    "Different kernel names in the same source produce different keys"
+    true
+    (key_a <> key_b)
 
 let test_put_and_get () =
   let key = "test_key_12345" in
@@ -164,6 +196,10 @@ let () =
             "Different inputs different keys"
             `Quick
             test_compute_key_different;
+          test_case
+            "Different kernel names in same source differ"
+            `Quick
+            test_compute_key_name_differs;
         ] );
       ( "cache_operations",
         [

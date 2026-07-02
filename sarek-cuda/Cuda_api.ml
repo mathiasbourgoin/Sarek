@@ -175,7 +175,12 @@ module Device = struct
     set_current dev ;
     check "cuCtxSynchronize" (cuCtxSynchronize ())
 
-  let destroy dev = check "cuCtxDestroy" (cuCtxDestroy dev.context)
+  let destroy dev =
+    (* Evict from device_cache first: leaving a stale entry means a later
+       [get idx] returns a handle whose context has already been destroyed
+       (mirrors the Vulkan fix in Vulkan_api_device.ml). *)
+    Hashtbl.remove device_cache dev.id ;
+    check "cuCtxDestroy" (cuCtxDestroy dev.context)
 end
 
 (** {1 Memory Management} *)
@@ -430,12 +435,15 @@ module Kernel = struct
     load_module_from_ptx ~name ptx
 
   let compile_cached device ~name ~source =
-    (* Cache key must include device ID - modules are device-specific *)
+    (* Cache key must include device ID and the kernel name - a source file
+       may define more than one kernel, and a resolved kernel handle for one
+       name must never be returned for another (see Compile_cache.mli). *)
     let key =
-      Printf.sprintf
-        "%d:%s"
-        device.Device.id
-        (Digest.string source |> Digest.to_hex)
+      Spoc_framework.Compile_cache.make_key
+        ~device:(string_of_int device.Device.id)
+        ~name
+        ~source
+        ()
     in
     match Hashtbl.find_opt cache key with
     | Some k -> k

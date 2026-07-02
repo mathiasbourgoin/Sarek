@@ -86,11 +86,33 @@ let get_cache_dir () =
     Framework_error.raise_error
       (Cache_error {operation = "get_cache_dir"; reason = Printexc.to_string e})
 
-(** Compute cache key from device, driver, and source *)
-let compute_key ~dev_name ~driver_version ~source =
-  let ctx = Digest.string (dev_name ^ driver_version ^ source) in
-  let key = Digest.to_hex ctx in
-  debugf "Cache key: %s (dev=%s, driver=%s)" key dev_name driver_version ;
+(** On-disk key schema version. Bump this whenever the key inputs change so
+    stale entries written under an older schema can never mis-hit - they simply
+    become unreachable orphans (safe: just re-computed and rewritten under the
+    new key). v2 adds the kernel/entry name to the digest (v1 keys omitted it,
+    so two kernels sharing one source string collided). *)
+let key_schema_version = "v2"
+
+(** Compute cache key from device, driver, kernel/entry name, and source.
+
+    [name] (the kernel/entry-point name) must be included: a single source
+    string may define more than one kernel, and without the name in the key a
+    second kernel compiled from the same source would return the first kernel's
+    cached SPIR-V. The device identity is deliberately the device NAME + driver
+    version (not an enumeration-order ordinal) so the key stays stable across
+    process restarts where device enumeration order is not guaranteed. *)
+let compute_key ~dev_name ~driver_version ~name ~source =
+  let ctx =
+    Digest.string
+      (key_schema_version ^ dev_name ^ driver_version ^ name ^ source)
+  in
+  let key = Printf.sprintf "%s:%s" key_schema_version (Digest.to_hex ctx) in
+  debugf
+    "Cache key: %s (dev=%s, driver=%s, name=%s)"
+    key
+    dev_name
+    driver_version
+    name ;
   key
 
 (** Retrieve cached data by key *)

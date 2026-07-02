@@ -54,6 +54,7 @@ let test_cache_with_dummy_backend () =
     Framework_cache.compute_key
       ~dev_name:"Dummy Test Device"
       ~driver_version:"1.0.0"
+      ~name:"dummy_kernel"
       ~source:"test kernel source"
   in
 
