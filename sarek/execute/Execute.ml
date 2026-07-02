@@ -230,9 +230,15 @@ let transfer_vectors_to_device (args : vector_arg list) (dev : Device.t) : unit
 
 (** Expand vector args to run_source_arg format.
     @param inject_lengths
-      If true (default), auto-inject vector length as Int32 after each buffer.
-      This matches Sarek-generated kernels which expect (ptr, len) pairs. Set to
-      false for external kernels with different signatures. *)
+      If true (default), auto-inject vector length as [RSA_Vector_Length] after
+      each buffer. This matches Sarek-generated kernels which expect (ptr, len)
+      pairs. Set to false for external kernels with different signatures.
+
+    The injected length is tagged [RSA_Vector_Length], not [RSA_Int32], so
+    backends can tell it apart from a genuine caller-supplied scalar that
+    happens to immediately follow a buffer (which is exactly what a
+    [~inject_lengths:false] caller can pass) - see
+    {!Framework_sig.run_source_arg}. *)
 let expand_to_run_source_args ?(inject_lengths = true) (args : vector_arg list)
     (dev : Device.t) : Framework_sig.run_source_arg list =
   List.concat_map
@@ -245,7 +251,7 @@ let expand_to_run_source_args ?(inject_lengths = true) (args : vector_arg list)
             Framework_sig.RSA_Buffer {binder = B.bind_to_kargs; length = len}
           in
           if inject_lengths then
-            [buf_arg; Framework_sig.RSA_Int32 (Int32.of_int len)]
+            [buf_arg; Framework_sig.RSA_Vector_Length (Int32.of_int len)]
           else [buf_arg]
       | Int n -> [Framework_sig.RSA_Int32 (Int32.of_int n)]
       | Int32 n -> [Framework_sig.RSA_Int32 n]

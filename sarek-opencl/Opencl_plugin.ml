@@ -231,7 +231,10 @@ module Backend : Framework_sig.BACKEND = struct
           (fun i arg ->
             match arg with
             | Framework_sig.RSA_Buffer {binder; _} -> binder wrapped_kargs i
-            | Framework_sig.RSA_Int32 n -> Kernel.set_arg_int32 kargs i n
+            | Framework_sig.RSA_Vector_Length n | Framework_sig.RSA_Int32 n ->
+                (* OpenCL kernels expect the vector length as an ordinary
+                   (ptr, len) scalar argument, same as a real RSA_Int32. *)
+                Kernel.set_arg_int32 kargs i n
             | Framework_sig.RSA_Int64 n -> Kernel.set_arg_int64 kargs i n
             | Framework_sig.RSA_Float32 f -> Kernel.set_arg_float32 kargs i f
             | Framework_sig.RSA_Float64 f -> Kernel.set_arg_float64 kargs i f)

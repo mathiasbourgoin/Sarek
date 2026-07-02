@@ -132,7 +132,10 @@ let bind_args wrapped_kargs kargs (args : Framework_sig.run_source_arg list) =
     (fun i arg ->
       match arg with
       | Framework_sig.RSA_Buffer {binder; _} -> binder wrapped_kargs i
-      | Framework_sig.RSA_Int32 n ->
+      | Framework_sig.RSA_Vector_Length n | Framework_sig.RSA_Int32 n ->
+          (* CUDA kernels expect the vector length as an ordinary (ptr, len)
+             scalar argument, so RSA_Vector_Length is bound the same way as a
+             real RSA_Int32 here. *)
           Cuda_plugin_base.Cuda.Kernel.set_arg_int32 kargs i n
       | Framework_sig.RSA_Int64 n ->
           Cuda_plugin_base.Cuda.Kernel.set_arg_int64 kargs i n

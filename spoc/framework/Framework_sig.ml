@@ -90,6 +90,16 @@ type run_source_arg =
       binder : kargs -> int -> unit;  (** Binds buffer to kernel arg *)
       length : int;  (** Vector length for generated kernels *)
     }
+  | RSA_Vector_Length of int32
+      (** Auto-injected vector length (see
+          [Execute.expand_to_run_source_args ~inject_lengths]), distinguished
+          from a genuine caller-supplied [RSA_Int32] so backends that derive
+          lengths from the bound buffer itself (e.g. Vulkan) can drop it without
+          relying on its position in the argument list - "immediately after a
+          buffer" is not a safe test, since [~inject_lengths:false] callers can
+          put a real [RSA_Int32] there instead. Backends that need the length as
+          an ordinary scalar kernel argument (CUDA/Metal/OpenCL) treat this
+          identically to [RSA_Int32]. *)
   | RSA_Int32 of int32
   | RSA_Int64 of int64
   | RSA_Float32 of float
