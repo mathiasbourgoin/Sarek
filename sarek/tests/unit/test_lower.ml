@@ -268,8 +268,7 @@ let test_lower_for () =
 let test_lower_for_downto_raises () =
   let te =
     mk_texpr
-      (TEFor
-         ("i", 0, int_texpr 10, int_texpr 0, Downto, mk_texpr TEUnit t_unit))
+      (TEFor ("i", 0, int_texpr 10, int_texpr 0, Downto, mk_texpr TEUnit t_unit))
       t_unit
   in
   let state = create_state (empty_fun_map ()) in

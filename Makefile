@@ -94,6 +94,10 @@ test_negative:
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_convention_kernel_fail.cma > "$$out" 2>&1; if grep -q "Unbound record field.*Geometry_lib\.z" "$$out"; then echo "  PASS: convention kernel field not found"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing warp collective in diverged control flow..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_warp_diverged.cma > "$$out" 2>&1; if grep -q "Warp collective 'warp_shuffle' called in diverged control flow" "$$out"; then echo "  PASS: warp diverged"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@echo "Testing tuple-typed kernel parameter rejection..."
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_tuple_param.cma > "$$out" 2>&1; if grep -q "Tuple-typed kernel parameters are not supported" "$$out"; then echo "  PASS: tuple param rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@echo "Testing function-typed kernel parameter rejection..."
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_fun_param.cma > "$$out" 2>&1; if grep -q "Function-typed kernel parameters are not supported" "$$out"; then echo "  PASS: function param rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "All negative tests checked (see KNOWN-ISSUE line above for the one non-blocking gap, if any)"
 
 

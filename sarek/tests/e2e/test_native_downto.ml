@@ -68,10 +68,7 @@ let () =
   let got_count = Vector.get count 0 in
   let ok = ref (got_count = Int32.of_int n) in
   if not !ok then
-    Printf.printf
-      "MISMATCH: expected %d iterations, got %ld\n%!"
-      n
-      got_count ;
+    Printf.printf "MISMATCH: expected %d iterations, got %ld\n%!" n got_count ;
   for i = 0 to n - 1 do
     let expected = Int32.of_int (9 - i) in
     let got = Vector.get output i in

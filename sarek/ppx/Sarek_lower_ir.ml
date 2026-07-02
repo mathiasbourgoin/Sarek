@@ -49,6 +49,16 @@ let rec elttype_of_typ (ty : typ) : Ir.elttype =
               ( n,
                 match ty_opt with None -> [] | Some ty -> [elttype_of_typ ty] ))
             constrs )
+  (* NOTE: TTuple/TFun are NOT rejected here even though this is where the
+     original bug report pointed. This function converts the type of *any*
+     typed value reachable during lowering, including local/helper function
+     bindings inside a kernel body (e.g. `let make_p x y z = ... in ...`,
+     see test_visibility_private.ml, test_transpose.ml, bench_nbody.ml) -
+     those legitimately have TFun type and must keep lowering (their
+     "elttype" is a don't-care placeholder, never actually used as data).
+     The real defect is kernel *parameters* of tuple/function type, which
+     are rejected explicitly in lower_param below, at the point where a
+     type is about to become a formal parameter. *)
   | TTuple _ -> Ir.TInt32
   | TFun _ -> Ir.TInt32
   | TVar _ ->
@@ -580,6 +590,17 @@ and extract_pattern_vars (pat : tpattern) : string list =
 
 (** Convert a kernel parameter to IR declaration *)
 let lower_param (p : tparam) : Ir.decl =
+  (match repr p.tparam_type with
+  | TTuple _ ->
+      Ppxlib.Location.raise_errorf
+        ~loc:Ppxlib.Location.none
+        "Tuple-typed kernel parameters are not supported; pass components as \
+         separate parameters."
+  | TFun _ ->
+      Ppxlib.Location.raise_errorf
+        ~loc:Ppxlib.Location.none
+        "Function-typed kernel parameters are not supported."
+  | _ -> ()) ;
   let elt = elttype_of_typ p.tparam_type in
   let v =
     {

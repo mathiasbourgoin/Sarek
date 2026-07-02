@@ -66,11 +66,7 @@ let () =
     let expected = Int32.add (Int32.mul (Int32.of_int i) 2l) 1l in
     let got = Vector.get output i in
     if got <> expected then begin
-      Printf.printf
-        "MISMATCH at %d: expected %ld, got %ld\n%!"
-        i
-        expected
-        got ;
+      Printf.printf "MISMATCH at %d: expected %ld, got %ld\n%!" i expected got ;
       ok := false
     end
   done ;

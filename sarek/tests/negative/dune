@@ -14,6 +14,8 @@
 ; - test_convention_kernel_fail: "Field z not found"
 ; - test_convention_kernel_fail2: "Cannot unify types"
 ; - test_inline_node_exhaustion: "Inlining produced N nodes (limit: 10000)"
+; - test_tuple_param: "Tuple-typed kernel parameters are not supported"
+; - test_fun_param: "Function-typed kernel parameters are not supported"
 
 (library
  (name neg_test_convention_kernel_fail)
@@ -95,6 +97,28 @@
 (library
  (name neg_test_inline_node_exhaustion)
  (modules test_inline_node_exhaustion)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_tuple_param)
+ (modules test_tuple_param)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_fun_param)
+ (modules test_fun_param)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
