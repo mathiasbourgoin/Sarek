@@ -377,6 +377,135 @@ let test_kernel_uses_float64_variants () =
 
   print_endline "  kernel_uses_float64 variants: OK"
 
+(** {1 is_atomic_intrinsic_name / expr_uses_atomics Tests} *)
+
+let test_is_atomic_intrinsic_name () =
+  assert (is_atomic_intrinsic_name "atomic_add_int32" = true) ;
+  assert (is_atomic_intrinsic_name "atomic_cas_int32" = true) ;
+  assert (is_atomic_intrinsic_name "atomic_add_global_int32" = true) ;
+  assert (is_atomic_intrinsic_name "thread_idx_x" = false) ;
+  assert (is_atomic_intrinsic_name "block_barrier" = false) ;
+  assert (is_atomic_intrinsic_name "" = false) ;
+  print_endline "  is_atomic_intrinsic_name: OK"
+
+let test_expr_uses_atomics () =
+  let non_atomic = EIntrinsic (["Gpu"], "thread_idx_x", []) in
+  assert (expr_uses_atomics non_atomic = false) ;
+  let direct_atomic =
+    EIntrinsic
+      ( [],
+        "atomic_add_int32",
+        [
+          EVar
+            {
+              var_name = "arr";
+              var_id = 0;
+              var_type = TInt32;
+              var_mutable = true;
+            };
+          EConst (CInt32 0l);
+          EConst (CInt32 1l);
+        ] )
+  in
+  assert (expr_uses_atomics direct_atomic = true) ;
+  (* Nested: atomic call buried inside an otherwise ordinary expression *)
+  let nested_atomic = EBinop (Add, EConst (CInt32 1l), direct_atomic) in
+  assert (expr_uses_atomics nested_atomic = true) ;
+  print_endline "  expr_uses_atomics: OK"
+
+(** {1 helper_uses_atomics / kernel_uses_atomics Tests} *)
+
+let test_helper_uses_atomics () =
+  let param : var =
+    {var_name = "x"; var_id = 0; var_type = TInt32; var_mutable = false}
+  in
+  let hf_atomic : helper_func =
+    {
+      hf_name = "bump";
+      hf_params = [param];
+      hf_ret_type = TInt32;
+      hf_body =
+        SReturn
+          (EIntrinsic ([], "atomic_add_int32", [EVar param; EConst (CInt32 1l)]));
+    }
+  in
+  assert (helper_uses_atomics hf_atomic = true) ;
+
+  let hf_no_atomic : helper_func =
+    {
+      hf_name = "identity";
+      hf_params = [param];
+      hf_ret_type = TInt32;
+      hf_body = SReturn (EVar param);
+    }
+  in
+  assert (helper_uses_atomics hf_no_atomic = false) ;
+  print_endline "  helper_uses_atomics: OK"
+
+let test_kernel_uses_atomics_direct () =
+  let k_direct : kernel =
+    {
+      kern_name = "test";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SExpr
+          (EIntrinsic
+             ([], "atomic_add_int32", [EConst (CInt32 0l); EConst (CInt32 1l)]));
+      kern_types = [];
+      kern_variants = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+    }
+  in
+  assert (kernel_uses_atomics k_direct = true) ;
+
+  let k_none : kernel =
+    {
+      kern_name = "test";
+      kern_params = [];
+      kern_locals = [];
+      kern_body = SEmpty;
+      kern_types = [];
+      kern_variants = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+    }
+  in
+  assert (kernel_uses_atomics k_none = false) ;
+  print_endline "  kernel_uses_atomics direct: OK"
+
+let test_kernel_uses_atomics_in_helper () =
+  (* Load-bearing case: the atomic is only reachable through kern_funcs, not
+     kern_body. A body-only walk would wrongly report false. *)
+  let param : var =
+    {var_name = "x"; var_id = 0; var_type = TInt32; var_mutable = false}
+  in
+  let hf_atomic : helper_func =
+    {
+      hf_name = "bump";
+      hf_params = [param];
+      hf_ret_type = TInt32;
+      hf_body =
+        SReturn
+          (EIntrinsic ([], "atomic_add_int32", [EVar param; EConst (CInt32 1l)]));
+    }
+  in
+  let k_helper_atomic : kernel =
+    {
+      kern_name = "test";
+      kern_params = [];
+      kern_locals = [];
+      kern_body = SEmpty;
+      kern_types = [];
+      kern_variants = [];
+      kern_funcs = [hf_atomic];
+      kern_native_fn = None;
+    }
+  in
+  assert (kernel_uses_atomics k_helper_atomic = true) ;
+  print_endline "  kernel_uses_atomics via helper: OK"
+
 (** {1 Main} *)
 
 let () =
@@ -406,4 +535,9 @@ let () =
   test_kernel_uses_float64_params () ;
   test_kernel_uses_float64_types () ;
   test_kernel_uses_float64_variants () ;
+  test_is_atomic_intrinsic_name () ;
+  test_expr_uses_atomics () ;
+  test_helper_uses_atomics () ;
+  test_kernel_uses_atomics_direct () ;
+  test_kernel_uses_atomics_in_helper () ;
   print_endline "All Sarek_ir_analysis tests passed!"

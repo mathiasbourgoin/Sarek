@@ -327,7 +327,7 @@ let analyze_pattern reads arr =
     - Which arrays are read and with what access patterns
     - Which arrays are written and with what access patterns
     - Whether barriers are present (prevents fusion)
-    - Whether atomic operations are present (TODO: not yet detected)
+    - Whether atomic operations are present (prevents fusion)
 
     Access patterns determine fusability:
     - OneToOne: Element-wise access (arr[tid]) - always fusable
@@ -349,8 +349,7 @@ let analyze (k : kernel) : fusion_info =
     reads = List.map (fun arr -> (arr, analyze_pattern reads arr)) read_arrs;
     writes = List.map (fun arr -> (arr, analyze_pattern writes arr)) write_arrs;
     has_barriers = has_barrier k.kern_body;
-    has_atomics = false;
-    (* TODO: detect atomics *)
+    has_atomics = Sarek_ir_analysis.kernel_uses_atomics k;
   }
 
 (** {1 Fusion} *)
@@ -429,7 +428,13 @@ let can_fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
     (not prod_info.has_barriers) && not cons_info.has_barriers
   in
 
+  (* No atomics in either: an atomic's ordering/visibility guarantees depend
+     on the kernel boundary being preserved, so fusing it into another
+     kernel would silently change its semantics. *)
+  let no_atomics = (not prod_info.has_atomics) && not cons_info.has_atomics in
+
   prod_writes_inter && cons_reads_inter && patterns_ok && no_barriers
+  && no_atomics
 
 (** Fuse producer into consumer, eliminating intermediate array.
 
@@ -692,7 +697,12 @@ let can_fuse_reduction (map_kernel : kernel) (reduce_kernel : kernel)
     (not map_info.has_barriers) && not reduce_info.has_barriers
   in
 
-  map_writes_inter && Option.is_some reduce_reads_inter && no_barriers
+  (* No atomics: see can_fuse for rationale *)
+  let no_atomics = (not map_info.has_atomics) && not reduce_info.has_atomics in
+
+  map_writes_inter
+  && Option.is_some reduce_reads_inter
+  && no_barriers && no_atomics
 
 (** Fuse a map kernel into a reduction kernel, eliminating intermediate array.
 
@@ -849,7 +859,10 @@ let can_fuse_stencil (producer : kernel) (consumer : kernel)
     (not prod_info.has_barriers) && not cons_info.has_barriers
   in
 
-  prod_writes_inter && cons_stencil && no_barriers
+  (* No atomics: see can_fuse for rationale *)
+  let no_atomics = (not prod_info.has_atomics) && not cons_info.has_atomics in
+
+  prod_writes_inter && cons_stencil && no_barriers && no_atomics
 
 (** Information about fused stencil *)
 type stencil_fusion_info = {
@@ -1104,8 +1117,15 @@ let should_fuse (producer : kernel) (consumer : kernel) (intermediate : string)
   let prod_info = analyze producer in
   let cons_info = analyze consumer in
 
-  (* Rule 1: Can't fuse if barriers present *)
-  if prod_info.has_barriers || cons_info.has_barriers then
+  (* Rule 0: Can't fuse if atomics present in either kernel — see can_fuse
+     for rationale. Checked before Rule 1 so auto_fuse_pipeline_list reports
+     an accurate skip reason instead of falling through to try_fuse's None
+     (which can_fuse/can_fuse_reduction already reject, but with a generic
+     reason). *)
+  if prod_info.has_atomics || cons_info.has_atomics then
+    {decision = DontFuse; reason = "Atomic operation prevents fusion"}
+    (* Rule 1: Can't fuse if barriers present *)
+  else if prod_info.has_barriers || cons_info.has_barriers then
     {decision = DontFuse; reason = "Barrier prevents fusion"}
   else
     (* Rule 2: Always fuse simple element-wise (OneToOne -> OneToOne) *)

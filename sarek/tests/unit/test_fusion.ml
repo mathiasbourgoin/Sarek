@@ -170,6 +170,140 @@ let test_can_fuse_with_barrier () =
   assert (not result) ;
   Printf.printf "test_can_fuse_with_barrier: PASSED\n"
 
+(** Test: can_fuse returns false when the producer contains a direct atomic
+    operation. Pre-fix (Sarek_fusion.ml hardcoded [has_atomics = false]), this
+    incorrectly returned [true]. *)
+let test_can_fuse_with_direct_atomic () =
+  let producer =
+    {
+      kern_name = "producer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SSeq
+          [
+            SExpr
+              (EIntrinsic
+                 ([], "atomic_add_int32", [thread_idx_x; EConst (CInt32 1l)]));
+            SAssign
+              ( LArrayElem ("temp", thread_idx_x),
+                EArrayRead ("input", thread_idx_x) );
+          ];
+      kern_types = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+      kern_variants = [];
+    }
+  in
+  let consumer =
+    {
+      kern_name = "consumer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("output", thread_idx_x),
+            EArrayRead ("temp", thread_idx_x) );
+      kern_types = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+      kern_variants = [];
+    }
+  in
+  let result = can_fuse producer consumer "temp" in
+  assert (not result) ;
+  Printf.printf "test_can_fuse_with_direct_atomic: PASSED\n"
+
+(** Test: can_fuse returns false when an atomic is only reachable through a
+    helper function called from the kernel, not from kern_body directly. This is
+    the load-bearing case: a walk that only inspects kern_body (rather than also
+    walking kern_funcs) misses it and would wrongly permit fusion. *)
+let test_can_fuse_with_atomic_in_helper () =
+  let bump_param =
+    {var_name = "x"; var_id = 0; var_type = TInt32; var_mutable = false}
+  in
+  let atomic_helper =
+    {
+      hf_name = "bump";
+      hf_params = [bump_param];
+      hf_ret_type = TInt32;
+      hf_body =
+        SReturn
+          (EIntrinsic
+             ([], "atomic_add_int32", [EVar bump_param; EConst (CInt32 1l)]));
+    }
+  in
+  let producer =
+    {
+      kern_name = "producer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          (LArrayElem ("temp", thread_idx_x), EArrayRead ("input", thread_idx_x));
+      kern_types = [];
+      kern_funcs = [atomic_helper];
+      kern_native_fn = None;
+      kern_variants = [];
+    }
+  in
+  let consumer =
+    {
+      kern_name = "consumer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("output", thread_idx_x),
+            EArrayRead ("temp", thread_idx_x) );
+      kern_types = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+      kern_variants = [];
+    }
+  in
+  let result = can_fuse producer consumer "temp" in
+  assert (not result) ;
+  Printf.printf "test_can_fuse_with_atomic_in_helper: PASSED\n"
+
+(** Test: atomic-free kernels still fuse (no regression) *)
+let test_can_fuse_no_atomics_regression () =
+  let producer =
+    {
+      kern_name = "producer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("temp", thread_idx_x),
+            EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
+          );
+      kern_types = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+      kern_variants = [];
+    }
+  in
+  let consumer =
+    {
+      kern_name = "consumer";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LArrayElem ("output", thread_idx_x),
+            EBinop (Add, EArrayRead ("temp", thread_idx_x), EConst (CInt32 1l))
+          );
+      kern_types = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+      kern_variants = [];
+    }
+  in
+  let result = can_fuse producer consumer "temp" in
+  assert result ;
+  Printf.printf "test_can_fuse_no_atomics_regression: PASSED\n"
+
 (** Test: fuse inlines producer into consumer *)
 let test_fuse_simple () =
   (* Producer: temp[i] = input[i] * 2 *)
@@ -1159,6 +1293,9 @@ let () =
   test_analyze_with_barrier () ;
   test_can_fuse_compatible () ;
   test_can_fuse_with_barrier () ;
+  test_can_fuse_with_direct_atomic () ;
+  test_can_fuse_with_atomic_in_helper () ;
+  test_can_fuse_no_atomics_regression () ;
   test_fuse_simple () ;
   test_fuse_pipeline () ;
   test_fuse_pipeline_list_preserves_unfused () ;
