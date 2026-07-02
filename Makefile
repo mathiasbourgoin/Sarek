@@ -108,7 +108,7 @@ test_negative:
 	@echo "Testing inline node exhaustion..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_inline_node_exhaustion.cma > "$$out" 2>&1; if grep -q "Inlining produced .* nodes (limit: 10000)" "$$out"; then echo "  PASS: inline node exhaustion"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing convention kernel field-not-found detection..."
-	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_convention_kernel_fail.cma > "$$out" 2>&1; if grep -q "Unbound record field .Geometry_lib\.z.\?" "$$out"; then echo "  PASS: convention kernel field not found"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_convention_kernel_fail.cma > "$$out" 2>&1; if grep -q "Unbound record field.*Geometry_lib\.z" "$$out"; then echo "  PASS: convention kernel field not found"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing warp collective in diverged control flow..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_warp_diverged.cma > "$$out" 2>&1; if grep -q "Warp collective 'warp_shuffle' called in diverged control flow" "$$out"; then echo "  PASS: warp diverged"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "All negative tests checked (see KNOWN-ISSUE line above for the one non-blocking gap, if any)"
