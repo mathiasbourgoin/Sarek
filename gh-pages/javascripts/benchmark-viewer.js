@@ -33,6 +33,25 @@ const ALGO_COLORS = {
     'baseline': '#6c757d'    // Gray
 };
 
+// Escape a value for safe interpolation into an HTML string. Benchmark JSON
+// (system info, device names, descriptions, ...) is contributor-submitted via
+// PR and is rendered through innerHTML at several sinks in this file -- every
+// piece of that data must be routed through this helper before it touches an
+// HTML string. Implemented with plain string replacement (rather than the
+// DOM `div.textContent -> div.innerHTML` trick) so it also works outside a
+// browser (Node, for testing) and so it escapes quotes too, which matters
+// when the escaped value is later placed inside an HTML attribute (e.g. an
+// `href`) rather than only in text content.
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // Benchmark configurations
 // IMPORTANT: When adding a new benchmark, you must update:
 //   1. This BENCHMARK_CONFIGS object with benchmark metadata (title, labels, variants, readme)
@@ -503,76 +522,74 @@ async function updateBenchmarkDescription() {
     }
 }
 
-// Simple markdown to HTML converter
+// Simple markdown to HTML converter.
+//
+// SECURITY (ESCAPE-EVERYTHING): benchmark description markdown ships with
+// contributor-submitted benchmarks (merged via PR) and is rendered through
+// innerHTML by updateBenchmarkDescription(). The ENTIRE input is HTML-escaped
+// first via escapeHtml(); every substitution below runs on top of that
+// already-escaped text and only ever wraps escaped content in trusted tags
+// -- attacker-controlled text can never be un-escaped back into live markup.
+//
+// Formatting intentionally DROPPED versus the previous (unescaped) converter
+// -- now rendered as plain escaped text instead of real HTML, since they are
+// not exercised meaningfully by current benchmark descriptions:
+//   - headers            (#, ##, ###)
+//   - images             (![alt](src))
+//   - tables             (| a | b |)
+//   - lists              (-, 1.)
+//   - paragraph wrapping (kept as <br> line breaks instead of <p>)
+// Formatting KEPT: **bold**, *italic*, ***bold italic***, `inline code`,
+// ```fenced code blocks```, [text](https://...) links (http/https only --
+// any other scheme, e.g. javascript:, renders as plain escaped text with the
+// link dropped), and line breaks.
 function markdownToHtml(markdown) {
-    let html = markdown;
-    
-    // Headers
-    html = html.replace(/^### (.*$)/gim, '<h4>$1</h4>');
-    html = html.replace(/^## (.*$)/gim, '<h3>$1</h3>');
-    html = html.replace(/^# (.*$)/gim, '<h2 style="color: var(--link-color);">$1</h2>');
-    
-    // Code blocks FIRST (before bold/italic to avoid issues with comments)
-    html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, function(match, lang, code) {
-        const language = lang || 'ocaml';
-        return `<pre style="margin: 15px 0; padding: 15px; background: var(--code-bg); border: 1px solid var(--border-color); border-radius: 4px; overflow-x: auto; font-size: 0.85em; line-height: 1.4;"><code class="language-${language}">${escapeHtml(code.trim())}</code></pre>`;
+    let html = escapeHtml(markdown);
+
+    // Fenced code blocks first (before bold/italic/links), pulled out into
+    // placeholders so no later step -- in particular the line-break
+    // conversion -- rewrites their contents. `code` is already escaped.
+    const codeBlocks = [];
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(match, lang, code) {
+        const language = lang || 'text';
+        codeBlocks.push(`<pre style="margin: 15px 0; padding: 15px; background: var(--code-bg); border: 1px solid var(--border-color); border-radius: 4px; overflow-x: auto; font-size: 0.85em; line-height: 1.4;"><code class="language-${language}">${code}</code></pre>`);
+        return ` CODEBLOCK${codeBlocks.length - 1} `;
     });
-    
-    // Inline code (before bold/italic)
-    html = html.replace(/`([^`]+)`/g, '<code style="background: var(--code-bg); padding: 2px 6px; border-radius: 3px; font-size: 0.9em;">$1</code>');
-    
-    // Bold and italic (after code) - more restrictive to avoid matching comment syntax
+
+    // Inline code (before bold/italic, same reasoning as fenced blocks).
+    html = html.replace(/`([^`\n]+)`/g, '<code style="background: var(--code-bg); padding: 2px 6px; border-radius: 3px; font-size: 0.9em;">$1</code>');
+
+    // Bold and italic (after code) - restrictive patterns retained from the
+    // original converter to avoid matching stray asterisks in comment-like
+    // text such as "(* comment *)".
     html = html.replace(/\*\*\*([^\*\n]+?)\*\*\*/g, '<strong><em>$1</em></strong>');
     html = html.replace(/\*\*([^\*\n]+?)\*\*/g, '<strong>$1</strong>');
-    // Only match italic if not preceded by ( or followed by ) to avoid (* comments *)
     html = html.replace(/(?<!\()\*([^\*\n]+?)\*(?!\))/g, '<em>$1</em>');
-    
-    // Images
-    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width: 100%; height: auto; border-radius: 8px; margin: 15px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />');
-    
-    // Links
-    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color: var(--link-color); text-decoration: underline;">$1</a>');
-    
-    // Tables
-    html = html.replace(/\n\|(.+)\|\n\|[-\s|]+\|\n((?:\|.+\|\n?)+)/g, function(match, header, rows) {
-        let table = '<table style="width: 100%; border-collapse: collapse; margin: 15px 0;">';
-        table += '<thead><tr>';
-        header.split('|').slice(1, -1).forEach(cell => {
-            table += `<th style="padding: 10px; text-align: left; border: 1px solid var(--border-color); background: var(--code-bg); font-weight: 600;">${cell.trim()}</th>`;
-        });
-        table += '</tr></thead><tbody>';
-        rows.trim().split('\n').forEach(row => {
-            table += '<tr>';
-            row.split('|').slice(1, -1).forEach(cell => {
-                table += `<td style="padding: 10px; border: 1px solid var(--border-color);">${cell.trim()}</td>`;
-            });
-            table += '</tr>';
-        });
-        table += '</tbody></table>';
-        return table;
-    });
-    
-    // Lists
-    html = html.replace(/^\- (.+)$/gim, '<li>$1</li>');
-    html = html.replace(/^\d+\. (.+)$/gim, '<li>$1</li>');
-    html = html.replace(/(<li>.*<\/li>)/s, '<ul style="margin: 10px 0; padding-left: 30px;">$1</ul>');
-    
-    // Paragraphs
-    html = html.split('\n\n').map(para => {
-        para = para.trim();
-        if (!para) return '';
-        if (para.startsWith('<')) return para; // Already HTML
-        return `<p style="margin: 12px 0; line-height: 1.6;">${para}</p>`;
-    }).join('\n');
-    
-    return html;
-}
 
-// Helper to escape HTML in code
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    // Links only. Images use the same `[...](...)` shape prefixed with `!`;
+    // the negative lookbehind skips them so `![alt](src)` is left as escaped
+    // literal text (images are dropped, see comment above) instead of being
+    // turned into a link. Link text is already escaped; the href is only
+    // emitted if it is a plain http(s) URL, otherwise the link is dropped
+    // and just the escaped text remains.
+    html = html.replace(/(?<!!)\[([^\]]+)\]\(([^)]+)\)/g, function(match, text, url) {
+        if (/^https?:\/\//i.test(url.trim())) {
+            return `<a href="${url}" style="color: var(--link-color); text-decoration: underline;">${text}</a>`;
+        }
+        return text;
+    });
+
+    // Line breaks (paragraph wrapping is dropped in favor of simple <br>s).
+    html = html.replace(/\r\n/g, '\n');
+    html = html.replace(/\n{2,}/g, '<br><br>');
+    html = html.replace(/\n/g, '<br>');
+
+    // Restore fenced code blocks.
+    html = html.replace(/ CODEBLOCK(\d+) /g, function(match, idx) {
+        return codeBlocks[Number(idx)];
+    });
+
+    return html;
 }
 
 // Initialize filter controls
@@ -1050,26 +1067,29 @@ function updateSystemInfo() {
         
         if (index > 0) html += '<hr style="margin: 20px 0; border: none; border-top: 1px solid #ddd;">';
         
+        // NOTE: system/device fields below come from contributor-submitted
+        // benchmark JSON (merged via PR) and must be escaped before joining
+        // into this HTML string.
         html += '<table style="width: 100%; font-family: monospace; font-size: 0.9em;">';
-        html += `<tr><td><strong>Hostname:</strong></td><td>${system.hostname || 'N/A'}</td></tr>`;
-        html += `<tr><td><strong>OS:</strong></td><td>${system.os || 'N/A'} ${system.kernel || ''}</td></tr>`;
-        html += `<tr><td><strong>CPU:</strong></td><td>${system.cpu?.model || 'N/A'} (${system.cpu?.cores || 'N/A'} cores)</td></tr>`;
-        html += `<tr><td><strong>Memory:</strong></td><td>${system.memory_gb ? system.memory_gb.toFixed(1) : 'N/A'} GB</td></tr>`;
+        html += `<tr><td><strong>Hostname:</strong></td><td>${escapeHtml(system.hostname || 'N/A')}</td></tr>`;
+        html += `<tr><td><strong>OS:</strong></td><td>${escapeHtml(system.os || 'N/A')} ${escapeHtml(system.kernel || '')}</td></tr>`;
+        html += `<tr><td><strong>CPU:</strong></td><td>${escapeHtml(system.cpu?.model || 'N/A')} (${escapeHtml(system.cpu?.cores ?? 'N/A')} cores)</td></tr>`;
+        html += `<tr><td><strong>Memory:</strong></td><td>${system.memory_gb ? escapeHtml(system.memory_gb.toFixed(1)) : 'N/A'} GB</td></tr>`;
         if (benchmark) {
             html += `<tr><td><strong>Results:</strong></td><td>${data.count} benchmark${data.count > 1 ? 's' : ''}</td></tr>`;
         }
         html += '</table>';
-        
+
         if (system.devices && system.devices.length > 0) {
             html += '<p style="margin: 10px 0 5px 0;"><strong>Devices:</strong></p>';
             html += '<ul style="margin: 5px 0;">';
             system.devices.forEach(device => {
-                html += `<li><strong>${device.name || 'Unknown'}</strong> (${device.framework || 'N/A'})`;
+                html += `<li><strong>${escapeHtml(device.name || 'Unknown')}</strong> (${escapeHtml(device.framework || 'N/A')})`;
                 if (device.memory_gb) {
-                    html += ` - ${device.memory_gb.toFixed(1)} GB`;
+                    html += ` - ${escapeHtml(device.memory_gb.toFixed(1))} GB`;
                 }
                 if (device.compute_capability) {
-                    html += ` - Compute ${device.compute_capability}`;
+                    html += ` - Compute ${escapeHtml(device.compute_capability)}`;
                 }
                 html += '</li>';
             });
@@ -1801,7 +1821,9 @@ function createDeviceMatrix(config) {
     
     devices.forEach(deviceKey => {
         const { device, backend } = deviceBackendSet.get(deviceKey);
-        html += `<tr><td class="device-name">${deviceKey}</td>`;
+        // deviceKey is built from contributor-submitted device_name/framework
+        // fields (see above) and must be escaped before joining into HTML.
+        html += `<tr><td class="device-name">${escapeHtml(deviceKey)}</td>`;
         
         variants.forEach(variantName => {
             // Find all results for this variant
@@ -2037,8 +2059,17 @@ function formatSize(size) {
     return size.toString();
 }
 
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', () => {
-    loadBenchmarkData('data/latest.json');
-    setupTabClickHandlers();
-});
+// Initialize on page load. Guarded so this file can also be `require()`d
+// under Node (no `document` global) for the escaping unit tests in
+// gh-pages/javascripts/test/.
+if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', () => {
+        loadBenchmarkData('data/latest.json');
+        setupTabClickHandlers();
+    });
+}
+
+// Node test-only export. Not loaded in the browser.
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { escapeHtml, markdownToHtml };
+}
