@@ -100,13 +100,28 @@ let key_schema_version = "v2"
     second kernel compiled from the same source would return the first kernel's
     cached SPIR-V. The device identity is deliberately the device NAME + driver
     version (not an enumeration-order ordinal) so the key stays stable across
-    process restarts where device enumeration order is not guaranteed. *)
+    process restarts where device enumeration order is not guaranteed.
+
+    Delegates to {!Compile_cache.make_key} for the name/source component so this
+    on-disk cache uses the same collision-resistant, digest-per-field join as
+    every backend's in-memory compile cache. [dev_name] and [driver_version] are
+    digested independently before being combined into the single [device]
+    component [make_key] expects, so a value containing [':'] in either field
+    can never shift bytes between them (the same class of bug
+    [key_schema_version] concatenation used to have). The [key_schema_version]
+    prefix is preserved as an outer wrapper around the digest so schema bumps
+    still invalidate stale on-disk entries. *)
 let compute_key ~dev_name ~driver_version ~name ~source =
-  let ctx =
-    Digest.string
-      (key_schema_version ^ dev_name ^ driver_version ^ name ^ source)
+  let device =
+    Printf.sprintf
+      "%s:%s"
+      (Digest.to_hex (Digest.string dev_name))
+      (Digest.to_hex (Digest.string driver_version))
   in
-  let key = Printf.sprintf "%s:%s" key_schema_version (Digest.to_hex ctx) in
+  let inner_key =
+    Spoc_framework.Compile_cache.make_key ~device ~name ~source ()
+  in
+  let key = Printf.sprintf "%s:%s" key_schema_version inner_key in
   debugf
     "Cache key: %s (dev=%s, driver=%s, name=%s)"
     key

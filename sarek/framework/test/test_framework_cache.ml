@@ -37,11 +37,24 @@ let test_compute_key () =
 
   Alcotest.(check string) "Same inputs produce same key" key1 key2 ;
 
+  (* compute_key delegates to Compile_cache.make_key for the digest, so the
+     key is "v2:" followed by 4 ':'-joined 32-char hex digests (device, name,
+     source, options) - see Compile_cache.make_key's documented key shape. *)
+  let is_hex32 s =
+    String.length s = 32
+    && String.for_all
+         (function '0' .. '9' | 'a' .. 'f' -> true | _ -> false)
+         s
+  in
+  let parts = String.split_on_char ':' key1 in
   Alcotest.(check bool)
-    "Key is schema-versioned hex string"
+    "Key is schema-versioned, 4-component hex digest string"
     true
-    (String.length key1 = 35 && String.sub key1 0 3 = "v2:")
-(* "v2:" (3 chars) + MD5 hex (32 chars) = 35 *)
+    (match parts with
+    | [schema; device; name; source; options] ->
+        schema = "v2" && is_hex32 device && is_hex32 name && is_hex32 source
+        && is_hex32 options
+    | _ -> false)
 
 let test_compute_key_different () =
   let key1 =
