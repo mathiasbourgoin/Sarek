@@ -35,6 +35,16 @@ type arg =
 (** Existential wrapper to hide buffer type parameter *)
 type any_buffer = AnyBuf : 'a Memory.buffer -> any_buffer
 
+(** Scalar kernel argument, tagged with its byte width/value so the
+    push-constant block can be materialized in one pass at launch time (see
+    {!build_push_constants}) instead of being appended byte-by-byte in whatever
+    order [set_arg_*] happens to be called. *)
+type scalar_arg =
+  | SInt32 of int32
+  | SInt64 of int64
+  | SFloat32 of float
+  | SFloat64 of float
+
 type args = {
   (* Buffer arguments, indexed by the caller-supplied idx (last-set-wins),
      not by call order: see Spoc_framework.Kernel_args. idx here shares its
@@ -43,9 +53,11 @@ type args = {
      resolve_bindings below derives the actual Vulkan descriptor binding
      numbers from it. *)
   buffer_store : any_buffer Spoc_framework.Kernel_args.t;
+  (* Scalar (push-constant) arguments, indexed by the caller-supplied idx,
+     same last-set-wins semantics as buffer_store. Kept separate from the
+     packed byte layout until launch: see build_push_constants. *)
+  scalar_store : scalar_arg Spoc_framework.Kernel_args.t;
   mutable descriptor_set : vk_descriptor_set;
-  mutable push_constants : bytes option; (* Raw bytes for push constants *)
-  mutable push_constant_offset : int; (* Current offset in push constant block *)
 }
 
 (** Vulkan descriptor binding numbers are assigned to buffer-typed kernel
@@ -405,71 +417,90 @@ let clear_cache () =
 let create_args () =
   {
     buffer_store = Spoc_framework.Kernel_args.create ();
+    scalar_store = Spoc_framework.Kernel_args.create ();
     descriptor_set = vk_null_handle;
-    push_constants = None;
-    push_constant_offset = 0;
   }
 
 let set_arg_buffer args idx buf =
   Spoc_framework.Kernel_args.set args.buffer_store idx (AnyBuf buf)
 
-let ensure_push_constants args =
-  match args.push_constants with
-  | Some pc -> pc
-  | None ->
-      (* Vulkan guarantees at least 128 bytes of push constants.
-         This accommodates vector lengths + scalar arguments. *)
-      let pc = Bytes.create 128 in
-      args.push_constants <- Some pc ;
-      pc
+let set_arg_int32 args idx n =
+  Spoc_framework.Kernel_args.set args.scalar_store idx (SInt32 n)
 
-let set_arg_int32 args _idx n =
-  let pc = ensure_push_constants args in
-  let offset = args.push_constant_offset in
-  if offset + 4 > 128 then
-    Vulkan_error.raise_error
-      (Vulkan_error.context_error
-         "push constant"
-         "push constant block overflow: exceeded 128-byte limit") ;
-  Bytes.set_int32_le pc offset n ;
-  args.push_constant_offset <- offset + 4
+let set_arg_int64 args idx n =
+  Spoc_framework.Kernel_args.set args.scalar_store idx (SInt64 n)
 
-let set_arg_int64 args _idx n =
-  let pc = ensure_push_constants args in
-  let offset = args.push_constant_offset in
-  if offset + 8 > 128 then
-    Vulkan_error.raise_error
-      (Vulkan_error.context_error
-         "push constant"
-         "push constant block overflow: exceeded 128-byte limit") ;
-  Bytes.set_int64_le pc offset n ;
-  args.push_constant_offset <- offset + 8
+let set_arg_float32 args idx f =
+  Spoc_framework.Kernel_args.set args.scalar_store idx (SFloat32 f)
 
-let set_arg_float32 args _idx f =
-  let pc = ensure_push_constants args in
-  let offset = args.push_constant_offset in
-  if offset + 4 > 128 then
-    Vulkan_error.raise_error
-      (Vulkan_error.context_error
-         "push constant"
-         "push constant block overflow: exceeded 128-byte limit") ;
-  Bytes.set_int32_le pc offset (Int32.bits_of_float f) ;
-  args.push_constant_offset <- offset + 4
-
-let set_arg_float64 args _idx f =
-  let pc = ensure_push_constants args in
-  let offset = args.push_constant_offset in
-  if offset + 8 > 128 then
-    Vulkan_error.raise_error
-      (Vulkan_error.context_error
-         "push constant"
-         "push constant block overflow: exceeded 128-byte limit") ;
-  Bytes.set_int64_le pc offset (Int64.bits_of_float f) ;
-  args.push_constant_offset <- offset + 8
+let set_arg_float64 args idx f =
+  Spoc_framework.Kernel_args.set args.scalar_store idx (SFloat64 f)
 
 let set_arg_ptr _args _idx _p =
   Vulkan_error.raise_error
     (Vulkan_error.feature_not_supported "raw pointer kernel arguments")
+
+(* Vulkan guarantees at least 128 bytes of push constants. *)
+let push_constant_limit = 128
+
+(** Materialize the push-constant byte block for [args] at launch time, from the
+    full ordered argument set (buffers + scalars), matching EXACTLY the GLSL
+    block layout emitted by [Sarek_ir_glsl.gen_push_constants]
+    (sarek/codegen/Sarek_ir_glsl.ml:889-919): all vector lengths first, in
+    vector-declaration order, followed by all user scalar parameters, in
+    declaration order.
+
+    - "Vector-declaration order" here is the same order used for descriptor
+      bindings: the buffer with the Nth-smallest caller-supplied idx gets the
+      Nth length slot (see resolve_bindings above / gen_push_constants's
+      [vectors] list, which is built by iterating kernel params in order).
+    - "Scalar declaration order" is the ascending order of the scalar arguments'
+      own caller-supplied idx (see gen_push_constants's [scalars] list, same
+      iteration).
+
+    This must not be done incrementally inside each [set_arg_*] call: the caller
+    may invoke those in any call order (e.g. a vector, then a scalar, then
+    another vector), which does not match the GLSL grouping, so the block can
+    only be assembled correctly once every argument is known. *)
+let build_push_constants args : bytes option =
+  let vector_lengths =
+    resolve_bindings args
+    |> List.map (fun (_binding, AnyBuf buf) -> Int32.of_int buf.Memory.size)
+  in
+  let scalars =
+    Spoc_framework.Kernel_args.to_sorted_list args.scalar_store |> List.map snd
+  in
+  if vector_lengths = [] && scalars = [] then None
+  else begin
+    let pc = Bytes.create push_constant_limit in
+    let offset = ref 0 in
+    let write_at width write =
+      if !offset + width > push_constant_limit then
+        Vulkan_error.raise_error
+          (Vulkan_error.context_error
+             "push constant"
+             (Printf.sprintf
+                "push constant block overflow: exceeded %d-byte limit"
+                push_constant_limit)) ;
+      write pc !offset ;
+      offset := !offset + width
+    in
+    List.iter
+      (fun len -> write_at 4 (fun buf off -> Bytes.set_int32_le buf off len))
+      vector_lengths ;
+    List.iter
+      (function
+        | SInt32 n -> write_at 4 (fun buf off -> Bytes.set_int32_le buf off n)
+        | SInt64 n -> write_at 8 (fun buf off -> Bytes.set_int64_le buf off n)
+        | SFloat32 f ->
+            write_at 4 (fun buf off ->
+                Bytes.set_int32_le buf off (Int32.bits_of_float f))
+        | SFloat64 f ->
+            write_at 8 (fun buf off ->
+                Bytes.set_int64_le buf off (Int64.bits_of_float f)))
+      scalars ;
+    Some (Bytes.sub pc 0 !offset)
+  end
 
 let launch kernel ~args ~(grid : Spoc_framework.Framework_sig.dims)
     ~(block : Spoc_framework.Framework_sig.dims) ~shared_mem:_ ~stream =
@@ -597,7 +628,7 @@ let launch kernel ~args ~(grid : Spoc_framework.Framework_sig.dims)
     ignore (keep desc_set_ptr) ;
 
     (* Push constants *)
-    (match args.push_constants with
+    (match build_push_constants args with
     | Some pc ->
         let len = Bytes.length pc in
         let pc_ptr = Ctypes.allocate_n Ctypes.char ~count:len in

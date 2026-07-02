@@ -224,18 +224,42 @@ module Backend : Framework_sig.BACKEND = struct
         (* Compile GLSL to pipeline *)
         let compiled = Kernel.compile_cached dev ~name:kernel_name ~source in
 
-        (* Set up kernel arguments using typed run_source_arg list *)
+        (* Set up kernel arguments using typed run_source_arg list.
+
+           Execute.expand_to_run_source_args (sarek/execute/Execute.ml:236-254)
+           unconditionally injects an RSA_Int32 vector length immediately
+           after every RSA_Buffer. Vulkan's GLSL codegen does not thread that
+           length through as an ordinary scalar parameter: it derives every
+           vector's length directly from the bound buffer and groups all
+           vector lengths at the front of the push-constant block (see
+           Sarek_ir_glsl.gen_push_constants and Kernel.build_push_constants,
+           which reads buffer sizes straight from args.buffer_store). Forwarding
+           the redundant auto-injected length here would register a phantom
+           extra scalar that has no matching declaration in the generated
+           GLSL, corrupting the push-constant layout - so it is dropped: track
+           whether the previous run_source_arg was a buffer, and skip exactly
+           the one RSA_Int32 immediately following it. *)
         let kargs = Kernel.create_args () in
         let wrapped_kargs = Vulkan_kargs kargs in
-        List.iteri
-          (fun i arg ->
-            match arg with
-            | Framework_sig.RSA_Buffer {binder; _} -> binder wrapped_kargs i
-            | Framework_sig.RSA_Int32 n -> Kernel.set_arg_int32 kargs i n
-            | Framework_sig.RSA_Int64 n -> Kernel.set_arg_int64 kargs i n
-            | Framework_sig.RSA_Float32 f -> Kernel.set_arg_float32 kargs i f
-            | Framework_sig.RSA_Float64 f -> Kernel.set_arg_float64 kargs i f)
-          args ;
+        let (_ : int * bool) =
+          List.fold_left
+            (fun (i, prev_was_buffer) arg ->
+              (match arg with
+              | Framework_sig.RSA_Buffer {binder; _} -> binder wrapped_kargs i
+              | Framework_sig.RSA_Int32 _ when prev_was_buffer ->
+                  (* Redundant auto-injected vector length; Vulkan derives it
+                     from the buffer itself. *)
+                  ()
+              | Framework_sig.RSA_Int32 n -> Kernel.set_arg_int32 kargs i n
+              | Framework_sig.RSA_Int64 n -> Kernel.set_arg_int64 kargs i n
+              | Framework_sig.RSA_Float32 f -> Kernel.set_arg_float32 kargs i f
+              | Framework_sig.RSA_Float64 f -> Kernel.set_arg_float64 kargs i f) ;
+              ( i + 1,
+                match arg with Framework_sig.RSA_Buffer _ -> true | _ -> false
+              ))
+            (0, false)
+            args
+        in
 
         (* Launch *)
         let stream = Stream.default dev in
