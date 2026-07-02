@@ -210,7 +210,9 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
       | ArgFloat32 of {value : float; idx : int}
       | ArgFloat64 of {value : float; idx : int}
 
-    type args = arg list ref
+    (* Indexed by idx (last-set-wins) instead of accumulated by call order:
+       see Spoc_framework.Kernel_args. *)
+    type args = arg Spoc_framework.Kernel_args.t
 
     (* Cache: key -> compiled kernel *)
     let cache : (string, t) Hashtbl.t = Hashtbl.create 16
@@ -251,35 +253,38 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
       Opencl_error.raise_error
         (Opencl_error.feature_not_supported "PTX kernels")
 
-    let create_args () = ref []
+    let create_args () = Spoc_framework.Kernel_args.create ()
 
     let set_arg_buffer args idx buf =
       Spoc_core.Log.debugf
         Spoc_core.Log.Kernel
         "OpenCL set_arg_buffer idx=%d (before=%d)"
         idx
-        (List.length !args) ;
-      args :=
-        ArgBuffer {buf = buf.Memory.buf.Opencl_api.Memory.handle; idx} :: !args ;
+        (Spoc_framework.Kernel_args.count args) ;
+      Spoc_framework.Kernel_args.set
+        args
+        idx
+        (ArgBuffer {buf = buf.Memory.buf.Opencl_api.Memory.handle; idx}) ;
       Spoc_core.Log.debugf
         Spoc_core.Log.Kernel
         "OpenCL set_arg_buffer done (after=%d)"
-        (List.length !args)
+        (Spoc_framework.Kernel_args.count args)
 
     let set_arg_int32 args idx value =
       Spoc_core.Log.debugf
         Spoc_core.Log.Kernel
         "OpenCL set_arg_int32 idx=%d"
         idx ;
-      args := ArgInt32 {value; idx} :: !args
+      Spoc_framework.Kernel_args.set args idx (ArgInt32 {value; idx})
 
-    let set_arg_int64 args idx value = args := ArgInt64 {value; idx} :: !args
+    let set_arg_int64 args idx value =
+      Spoc_framework.Kernel_args.set args idx (ArgInt64 {value; idx})
 
     let set_arg_float32 args idx value =
-      args := ArgFloat32 {value; idx} :: !args
+      Spoc_framework.Kernel_args.set args idx (ArgFloat32 {value; idx})
 
     let set_arg_float64 args idx value =
-      args := ArgFloat64 {value; idx} :: !args
+      Spoc_framework.Kernel_args.set args idx (ArgFloat64 {value; idx})
 
     let set_arg_ptr _args _idx _ptr =
       Opencl_error.raise_error
@@ -287,17 +292,37 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
 
     let launch kernel ~args ~grid ~block ~shared_mem:_ ~stream =
       let open Framework_sig in
+      (* KNOWN GAP: OpenCL kernel handles carry no arity metadata in this
+         plugin (CL_KERNEL_NUM_ARGS is queryable via clGetKernelInfo but not
+         currently wired up), so -- as with Native/CUDA/Metal --
+         expected_count falls back to the number of distinct indices
+         actually set. This still rejects internal gaps/duplicates but
+         cannot catch a caller that consistently omits a trailing
+         argument. *)
+      let expected_count = Spoc_framework.Kernel_args.count args in
       Spoc_core.Log.debugf
         Spoc_core.Log.Kernel
         "OpenCL launch: args count=%d"
-        (List.length !args) ;
+        expected_count ;
+      let ordered_args =
+        match
+          Spoc_framework.Kernel_args.validate_and_extract args ~expected_count
+        with
+        | Ok arr -> arr
+        | Error reason ->
+            Opencl_error.raise_error
+              (Opencl_error.kernel_launch_failed
+                 (Printf.sprintf "device %d" kernel.device_id)
+                 reason)
+      in
       let state = get_state kernel.device_id in
       let queue =
         match stream with Some s -> s.Stream.queue | None -> state.queue
       in
 
-      (* Set arguments *)
-      List.iter
+      (* Set arguments -- last-set-wins per idx is already resolved by
+         Kernel_args, so each idx is set exactly once here. *)
+      Array.iter
         (function
           | ArgBuffer {buf; idx} ->
               let open Ctypes in
@@ -319,7 +344,7 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
               Opencl_api.Kernel.set_arg_float32 kernel.kernel idx value
           | ArgFloat64 {value; idx} ->
               Opencl_api.Kernel.set_arg_float64 kernel.kernel idx value)
-        !args ;
+        ordered_args ;
 
       (* Calculate global work size = grid * block *)
       let global = (grid.x * block.x, grid.y * block.y, grid.z * block.z) in

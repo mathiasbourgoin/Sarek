@@ -36,13 +36,31 @@ type arg =
 type any_buffer = AnyBuf : 'a Memory.buffer -> any_buffer
 
 type args = {
-  mutable bindings : (int * any_buffer) list;
+  (* Buffer arguments, indexed by the caller-supplied idx (last-set-wins),
+     not by call order: see Spoc_framework.Kernel_args. idx here shares its
+     numbering space with scalar args (push constants below), so it is
+     generally sparse/non-contiguous from this store's point of view --
+     resolve_bindings below derives the actual Vulkan descriptor binding
+     numbers from it. *)
+  buffer_store : any_buffer Spoc_framework.Kernel_args.t;
   mutable descriptor_set : vk_descriptor_set;
   mutable push_constants : bytes option; (* Raw bytes for push constants *)
-  mutable push_constant_offset : int;
-      (* Current offset in push constant block *)
-  mutable buffer_binding : int; (* Next available buffer binding index *)
+  mutable push_constant_offset : int; (* Current offset in push constant block *)
 }
+
+(** Vulkan descriptor binding numbers are assigned to buffer-typed kernel
+    parameters only, in the order those parameters appear in the kernel
+    signature (see the GLSL codegen, which numbers `layout(binding = N)` this
+    way, skipping scalar parameters entirely). Since kernel-arg idx is shared
+    across buffers and scalars, idx itself is not usable as a binding number
+    directly; instead the buffer with the Nth-smallest idx among buffer args
+    gets binding N. Because buffers cannot be reordered by the caller relative
+    to each other without also changing which kernel parameter they represent,
+    this rank-by-idx is stable and order-of-call-independent, unlike the
+    previous per-call sequential counter it replaces. *)
+let resolve_bindings args : (int * any_buffer) list =
+  Spoc_framework.Kernel_args.to_sorted_list args.buffer_store
+  |> List.mapi (fun binding (_idx, buf) -> (binding, buf))
 
 (* Compilation cache *)
 let cache : (string, t) Hashtbl.t = Hashtbl.create 16
@@ -341,17 +359,14 @@ let clear_cache () =
 
 let create_args () =
   {
-    bindings = [];
+    buffer_store = Spoc_framework.Kernel_args.create ();
     descriptor_set = vk_null_handle;
     push_constants = None;
     push_constant_offset = 0;
-    buffer_binding = 0;
   }
 
-let set_arg_buffer args _idx buf =
-  let binding = args.buffer_binding in
-  args.bindings <- (binding, AnyBuf buf) :: args.bindings ;
-  args.buffer_binding <- binding + 1
+let set_arg_buffer args idx buf =
+  Spoc_framework.Kernel_args.set args.buffer_store idx (AnyBuf buf)
 
 let ensure_push_constants args =
   match args.push_constants with
@@ -432,7 +447,8 @@ let launch kernel ~args ~(grid : Spoc_framework.Framework_sig.dims)
 
     (* 2. Update Descriptor Set (reuse persistent set) *)
     let desc_set = kernel.descriptor_set in
-    let num_bindings = List.length args.bindings in
+    let bindings = resolve_bindings args in
+    let num_bindings = List.length bindings in
     let writes = CArray.make vk_write_descriptor_set num_bindings in
     let buf_infos = CArray.make vk_descriptor_buffer_info num_bindings in
 
@@ -462,7 +478,7 @@ let launch kernel ~args ~(grid : Spoc_framework.Framework_sig.dims)
         setf write write_desc_pImageInfo null ;
         setf write write_desc_pBufferInfo (addr buf_info) ;
         setf write write_desc_pTexelBufferView null)
-      args.bindings ;
+      bindings ;
 
     if num_bindings > 0 then
       vkUpdateDescriptorSets

@@ -131,7 +131,9 @@ module Cuda : Framework_sig.PLUGIN_BASE = struct
   module Kernel = struct
     type t = Cuda_api.Kernel.t
 
-    type args = Cuda_api.Kernel.arg list ref
+    (* Indexed by idx (last-set-wins) instead of accumulated by call order:
+       see Spoc_framework.Kernel_args. *)
+    type args = Cuda_api.Kernel.arg Spoc_framework.Kernel_args.t
 
     let compile dev ~name ~source = Cuda_api.Kernel.compile dev ~name ~source
 
@@ -145,28 +147,47 @@ module Cuda : Framework_sig.PLUGIN_BASE = struct
       | Some dev -> Cuda_api.Kernel.load_from_ptx dev ~name ~ptx
       | None -> Cuda_api.Kernel.load_from_ptx_current ~name ~ptx
 
-    let create_args () = ref []
+    let create_args () = Spoc_framework.Kernel_args.create ()
 
-    let set_arg_buffer args _idx buf =
-      args := !args @ [Cuda_api.Kernel.ArgBuffer buf]
+    let set_arg_buffer args idx buf =
+      Spoc_framework.Kernel_args.set args idx (Cuda_api.Kernel.ArgBuffer buf)
 
-    let set_arg_int32 args _idx v = args := !args @ [Cuda_api.Kernel.ArgInt32 v]
+    let set_arg_int32 args idx v =
+      Spoc_framework.Kernel_args.set args idx (Cuda_api.Kernel.ArgInt32 v)
 
-    let set_arg_int64 args _idx v = args := !args @ [Cuda_api.Kernel.ArgInt64 v]
+    let set_arg_int64 args idx v =
+      Spoc_framework.Kernel_args.set args idx (Cuda_api.Kernel.ArgInt64 v)
 
-    let set_arg_float32 args _idx v =
-      args := !args @ [Cuda_api.Kernel.ArgFloat32 v]
+    let set_arg_float32 args idx v =
+      Spoc_framework.Kernel_args.set args idx (Cuda_api.Kernel.ArgFloat32 v)
 
-    let set_arg_float64 args _idx v =
-      args := !args @ [Cuda_api.Kernel.ArgFloat64 v]
+    let set_arg_float64 args idx v =
+      Spoc_framework.Kernel_args.set args idx (Cuda_api.Kernel.ArgFloat64 v)
 
-    let set_arg_ptr args _idx ptr = args := !args @ [Cuda_api.Kernel.ArgPtr ptr]
+    let set_arg_ptr args idx ptr =
+      Spoc_framework.Kernel_args.set args idx (Cuda_api.Kernel.ArgPtr ptr)
 
     let launch kernel ~args ~grid ~block ~shared_mem ~stream =
       let open Framework_sig in
+      (* KNOWN GAP: CUDA kernel handles (Cuda_api.Kernel.t) carry no arity
+         metadata, so -- as with Native -- expected_count falls back to the
+         number of distinct indices actually set. This still rejects
+         internal gaps/duplicates but cannot catch a caller that
+         consistently omits a trailing argument. *)
+      let expected_count = Spoc_framework.Kernel_args.count args in
+      let arg_list =
+        match
+          Spoc_framework.Kernel_args.validate_and_extract args ~expected_count
+        with
+        | Ok arr -> Array.to_list arr
+        | Error reason ->
+            Cuda_error.(
+              raise_error
+                (kernel_launch_failed kernel.Cuda_api.Kernel.name reason))
+      in
       Cuda_api.Kernel.launch
         kernel
-        ~args:!args
+        ~args:arg_list
         ~grid:(grid.x, grid.y, grid.z)
         ~block:(block.x, block.y, block.z)
         ~shared_mem
