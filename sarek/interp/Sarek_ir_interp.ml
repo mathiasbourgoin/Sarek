@@ -96,7 +96,7 @@ module DomainPool = struct
        sarek/tests/e2e/test_domain_pool_stress.ml. *)
     mutable domains : unit Domain.t array;
     mutable active_tasks : int;
-    mutable first_error : exn option;
+    mutable first_error : (exn * Printexc.raw_backtrace) option;
     done_cond : Condition.t;
   }
 
@@ -121,11 +121,11 @@ module DomainPool = struct
           try
             task () ;
             None
-          with exn -> Some exn
+          with exn -> Some (exn, Printexc.get_raw_backtrace ())
         in
         Mutex.lock pool.mutex ;
         (match (pool.first_error, task_error) with
-        | None, Some exn -> pool.first_error <- Some exn
+        | None, Some err -> pool.first_error <- Some err
         | _ -> ()) ;
         pool.active_tasks <- pool.active_tasks - 1 ;
         if pool.active_tasks = 0 && Queue.is_empty pool.task_queue then
@@ -170,7 +170,9 @@ module DomainPool = struct
     let first_error = pool.first_error in
     pool.first_error <- None ;
     Mutex.unlock pool.mutex ;
-    match first_error with Some exn -> raise exn | None -> ()
+    match first_error with
+    | Some (exn, bt) -> Printexc.raise_with_backtrace exn bt
+    | None -> ()
 end
 
 (** Resolve how many domains the interpreter's [DomainPool] should use.
@@ -199,17 +201,19 @@ let get_pool () =
   | Some pool -> pool
   | None ->
       Mutex.lock global_pool_mutex ;
-      let pool =
-        match !global_pool with
-        | Some pool -> pool
-        | None ->
-            let num_cores = resolve_domain_count ~default:4 () in
-            let pool = DomainPool.create num_cores in
-            global_pool := Some pool ;
-            pool
-      in
-      Mutex.unlock global_pool_mutex ;
-      pool
+      (* [Fun.protect]: if [DomainPool.create] raises (e.g. [Domain.spawn]
+         failure), the mutex must still be released or every later
+         [get_pool] caller deadlocks. *)
+      Fun.protect
+        ~finally:(fun () -> Mutex.unlock global_pool_mutex)
+        (fun () ->
+          match !global_pool with
+          | Some pool -> pool
+          | None ->
+              let num_cores = resolve_domain_count ~default:4 () in
+              let pool = DomainPool.create num_cores in
+              global_pool := Some pool ;
+              pool)
 
 (** Run all blocks in a grid (parallel - distributes blocks across domain pool)
 *)

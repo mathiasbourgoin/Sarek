@@ -43,7 +43,7 @@ module DomainPool = struct
        sarek/interp/Sarek_ir_interp.ml's [DomainPool]. *)
     mutable domains : unit Domain.t array;
     mutable active_tasks : int;
-    mutable first_error : exn option;
+    mutable first_error : (exn * Printexc.raw_backtrace) option;
     done_cond : Condition.t;
   }
 
@@ -65,11 +65,11 @@ module DomainPool = struct
           try
             task () ;
             None
-          with exn -> Some exn
+          with exn -> Some (exn, Printexc.get_raw_backtrace ())
         in
         Mutex.lock pool.mutex ;
         (match (pool.first_error, task_error) with
-        | None, Some exn -> pool.first_error <- Some exn
+        | None, Some err -> pool.first_error <- Some err
         | _ -> ()) ;
         pool.active_tasks <- pool.active_tasks - 1 ;
         if pool.active_tasks = 0 && Queue.is_empty pool.task_queue then
@@ -114,7 +114,9 @@ module DomainPool = struct
     let first_error = pool.first_error in
     pool.first_error <- None ;
     Mutex.unlock pool.mutex ;
-    match first_error with Some exn -> raise exn | None -> ()
+    match first_error with
+    | Some (exn, bt) -> Printexc.raise_with_backtrace exn bt
+    | None -> ()
 
   let shutdown pool =
     Mutex.lock pool.mutex ;
@@ -136,17 +138,18 @@ let get_pool () =
   | Some pool -> pool
   | None ->
       Mutex.lock global_pool_mutex ;
-      let pool =
-        match !global_pool with
-        | Some p -> p
-        | None ->
-            let num_cores = resolve_domain_count ~default:4 () in
-            let p = DomainPool.create num_cores in
-            global_pool := Some p ;
-            p
-      in
-      Mutex.unlock global_pool_mutex ;
-      pool
+      (* [Fun.protect]: pool creation can raise (e.g. [Domain.spawn]); the
+         mutex must still be released or later callers deadlock. *)
+      Fun.protect
+        ~finally:(fun () -> Mutex.unlock global_pool_mutex)
+        (fun () ->
+          match !global_pool with
+          | Some p -> p
+          | None ->
+              let num_cores = resolve_domain_count ~default:4 () in
+              let p = DomainPool.create num_cores in
+              global_pool := Some p ;
+              p)
 
 (** {1 Persistent Thread Pool for Fission Mode}
 
@@ -200,7 +203,8 @@ module ThreadPool = struct
     mutable pending_workers : int;
     mutable shutdown : bool;
     mutable generation : int; (* Incremented each kernel launch *)
-    mutable first_error : exn option; (* First error across all workers *)
+    mutable first_error : (exn * Printexc.raw_backtrace) option;
+        (* First error across all workers *)
   }
 
   (** Run a single block with BSP barriers using Effect.Shallow fibers *)
@@ -269,7 +273,8 @@ module ThreadPool = struct
             end);
         exnc =
           (fun exn ->
-            if !first_error = None then first_error := Some exn ;
+            if !first_error = None then
+              first_error := Some (exn, Printexc.get_raw_backtrace ()) ;
             if status.(tid) <> 2 then begin
               status.(tid) <- 2 ;
               incr num_completed
@@ -310,7 +315,9 @@ module ThreadPool = struct
         end
       done
     done ;
-    match !first_error with Some exn -> raise exn | None -> ()
+    match !first_error with
+    | Some (exn, bt) -> Printexc.raise_with_backtrace exn bt
+    | None -> ()
 
   (** Run a range of global threads directly - for barrier-free kernels. More
       efficient than block distribution when no barriers are needed. *)
@@ -408,7 +415,7 @@ module ThreadPool = struct
                     (* Thread distribution - more granular, faster *)
                     run_threads w ;
                   None
-                with exn -> Some exn
+                with exn -> Some (exn, Printexc.get_raw_backtrace ())
               in
               Atomic.set pool.work.(worker_id) None ;
               (true, err)
@@ -417,7 +424,7 @@ module ThreadPool = struct
         if had_work then begin
           Mutex.lock pool.mutex ;
           (match (pool.first_error, work_error) with
-          | None, Some exn -> pool.first_error <- Some exn
+          | None, Some err -> pool.first_error <- Some err
           | _ -> ()) ;
           pool.pending_workers <- pool.pending_workers - 1 ;
           if pool.pending_workers = 0 then Condition.broadcast pool.work_done ;
@@ -542,7 +549,9 @@ module ThreadPool = struct
     let first_error = pool.first_error in
     pool.first_error <- None ;
     Mutex.unlock pool.mutex ;
-    match first_error with Some exn -> raise exn | None -> ()
+    match first_error with
+    | Some (exn, bt) -> Printexc.raise_with_backtrace exn bt
+    | None -> ()
 
   let shutdown pool =
     Mutex.lock pool.mutex ;
@@ -561,17 +570,16 @@ let fission_pool_mutex = Mutex.create ()
 
 let get_fission_pool () =
   Mutex.lock fission_pool_mutex ;
-  let pool =
-    match !fission_pool with
-    | Some p -> p
-    | None ->
-        let num_cores = resolve_domain_count ~default:4 () in
-        let p = ThreadPool.create num_cores in
-        fission_pool := Some p ;
-        p
-  in
-  Mutex.unlock fission_pool_mutex ;
-  pool
+  Fun.protect
+    ~finally:(fun () -> Mutex.unlock fission_pool_mutex)
+    (fun () ->
+      match !fission_pool with
+      | Some p -> p
+      | None ->
+          let num_cores = resolve_domain_count ~default:4 () in
+          let p = ThreadPool.create num_cores in
+          fission_pool := Some p ;
+          p)
 
 (** {1 Simple Parallel Pool for Simple Kernels}
 
@@ -604,7 +612,7 @@ module ParallelPool = struct
     mutable pending_workers : int;
     mutable shutdown : bool;
     mutable generation : int;
-    mutable first_error : exn option;
+    mutable first_error : (exn * Printexc.raw_backtrace) option;
   }
 
   (** Worker function - claims chunks via atomic counter *)
@@ -648,13 +656,13 @@ module ParallelPool = struct
           try
             process_chunks () ;
             None
-          with exn -> Some exn
+          with exn -> Some (exn, Printexc.get_raw_backtrace ())
         in
 
         (* Signal completion - always, even on error *)
         Mutex.lock pool.mutex ;
         (match (pool.first_error, work_error) with
-        | None, Some exn -> pool.first_error <- Some exn
+        | None, Some err -> pool.first_error <- Some err
         | _ -> ()) ;
         pool.pending_workers <- pool.pending_workers - 1 ;
         if pool.pending_workers = 0 then Condition.signal pool.work_done ;
@@ -716,7 +724,9 @@ module ParallelPool = struct
       let first_error = pool.first_error in
       pool.first_error <- None ;
       Mutex.unlock pool.mutex ;
-      match first_error with Some exn -> raise exn | None -> ()
+      match first_error with
+      | Some (exn, bt) -> Printexc.raise_with_backtrace exn bt
+      | None -> ()
     end
 
   (** Run a parallel_for over the range 0 to total (exclusive) with default
@@ -744,24 +754,28 @@ let get_parallel_pool () =
   | Some p -> p
   | None ->
       Mutex.lock parallel_pool_mutex ;
-      let p =
-        match !parallel_pool with
-        | Some p -> p
-        | None ->
-            let num_workers =
-              match Sys.getenv_opt "SAREK_DOMAIN_COUNT" with
-              | Some s -> (
-                  match int_of_string_opt s with
-                  | Some n when n > 0 -> n
-                  | _ -> max 1 (Domain.recommended_domain_count () - 1))
-              | None -> max 1 (Domain.recommended_domain_count () - 1)
-            in
-            let p = ParallelPool.create num_workers in
-            parallel_pool := Some p ;
-            p
-      in
-      Mutex.unlock parallel_pool_mutex ;
-      p
+      Fun.protect
+        ~finally:(fun () -> Mutex.unlock parallel_pool_mutex)
+        (fun () ->
+          match !parallel_pool with
+          | Some p -> p
+          | None ->
+              (* Workers = cores - 1 (min 1); an explicit SAREK_DOMAIN_COUNT
+                 is taken as-is. [resolve_domain_count] already guards
+                 [Domain.recommended_domain_count] with a fallback so this
+                 cannot raise while the mutex is held. *)
+              let num_workers =
+                match Sys.getenv_opt "SAREK_DOMAIN_COUNT" with
+                | Some s
+                  when match int_of_string_opt s with
+                       | Some n -> n > 0
+                       | None -> false ->
+                    int_of_string s
+                | _ -> max 1 (resolve_domain_count ~default:4 () - 1)
+              in
+              let p = ParallelPool.create num_workers in
+              parallel_pool := Some p ;
+              p)
 
 (** {1 Fission Queue with Thread Pool Execution}
 
