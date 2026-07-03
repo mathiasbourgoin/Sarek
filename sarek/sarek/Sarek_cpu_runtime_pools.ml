@@ -5,6 +5,22 @@
 
 open Sarek_cpu_runtime_types
 
+(** Resolve how many domains a CPU worker pool should use.
+
+    Reads [SAREK_DOMAIN_COUNT] first (any positive integer) so tests can force a
+    domain count higher than the host's physical core count - this is the only
+    reliable way to reproduce oversubscription races on a small developer
+    machine that only show up at CI's higher core counts. Falls back to
+    [Domain.recommended_domain_count ()], and finally to [default] if that
+    raises. *)
+let resolve_domain_count ~default () =
+  match Sys.getenv_opt "SAREK_DOMAIN_COUNT" with
+  | Some s -> (
+      match int_of_string_opt s with
+      | Some n when n > 0 -> n
+      | _ -> ( try Domain.recommended_domain_count () with _ -> default))
+  | None -> ( try Domain.recommended_domain_count () with _ -> default)
+
 (** Global domain pool for parallel execution *)
 module DomainPool = struct
   type task = unit -> unit
@@ -15,7 +31,17 @@ module DomainPool = struct
     mutex : Mutex.t;
     cond : Condition.t;
     mutable shutdown : bool;
-    domains : unit Domain.t array;
+    (* [domains] MUST be mutated in place (never rebuilt via
+       [{pool with domains}]): worker domains close over the exact record
+       returned by [create]. A functional record update after [Domain.spawn]
+       allocates a *new* block, so the [mutable] fields above - stored inline,
+       not behind a shared box - would live at two different addresses: the
+       one workers mutate and the one [submit]/[wait_all] read. [wait_all]
+       would then observe [active_tasks] stuck at 0 and could return before
+       the last popped task finished running, silently dropping its output.
+       See the interpreter-side twin of this bug in
+       sarek/interp/Sarek_ir_interp.ml's [DomainPool]. *)
+    mutable domains : unit Domain.t array;
     mutable active_tasks : int;
     mutable first_error : exn option;
     done_cond : Condition.t;
@@ -68,10 +94,11 @@ module DomainPool = struct
         done_cond = Condition.create ();
       }
     in
-    let domains =
-      Array.init num_domains (fun _ -> Domain.spawn (fun () -> worker pool))
-    in
-    {pool with domains}
+    (* Mutate [domains] in place on [pool] - see the field comment above for
+       why a functional record update here would be unsound. *)
+    pool.domains <-
+      Array.init num_domains (fun _ -> Domain.spawn (fun () -> worker pool)) ;
+    pool
 
   let submit pool task =
     Mutex.lock pool.mutex ;
@@ -113,9 +140,7 @@ let get_pool () =
         match !global_pool with
         | Some p -> p
         | None ->
-            let num_cores =
-              try Domain.recommended_domain_count () with _ -> 4
-            in
+            let num_cores = resolve_domain_count ~default:4 () in
             let p = DomainPool.create num_cores in
             global_pool := Some p ;
             p
@@ -540,7 +565,7 @@ let get_fission_pool () =
     match !fission_pool with
     | Some p -> p
     | None ->
-        let num_cores = try Domain.recommended_domain_count () with _ -> 4 in
+        let num_cores = resolve_domain_count ~default:4 () in
         let p = ThreadPool.create num_cores in
         fission_pool := Some p ;
         p
@@ -579,6 +604,7 @@ module ParallelPool = struct
     mutable pending_workers : int;
     mutable shutdown : bool;
     mutable generation : int;
+    mutable first_error : exn option;
   }
 
   (** Worker function - claims chunks via atomic counter *)
@@ -604,19 +630,32 @@ module ParallelPool = struct
         let total = Atomic.get pool.total_work in
         let chunk_size = Atomic.get pool.current_chunk_size in
 
-        (* Claim and process chunks until done *)
-        let rec process_chunks () =
-          let start = Atomic.fetch_and_add pool.next_chunk chunk_size in
-          if start < total then begin
-            let end_ = min (start + chunk_size) total in
-            work_fn start end_ ;
-            process_chunks ()
-          end
+        (* Claim and process chunks until done. This MUST run under a
+           try/with: if [work_fn] raises, [process_chunks] used to propagate
+           the exception straight out of [worker_fn], skipping the
+           "signal completion" block below entirely. [pending_workers] would
+           then never reach 0 and [parallel_for_chunk]'s wait loop would hang
+           forever instead of surfacing the error. *)
+        let work_error =
+          let rec process_chunks () =
+            let start = Atomic.fetch_and_add pool.next_chunk chunk_size in
+            if start < total then begin
+              let end_ = min (start + chunk_size) total in
+              work_fn start end_ ;
+              process_chunks ()
+            end
+          in
+          try
+            process_chunks () ;
+            None
+          with exn -> Some exn
         in
-        process_chunks () ;
 
-        (* Signal completion *)
+        (* Signal completion - always, even on error *)
         Mutex.lock pool.mutex ;
+        (match (pool.first_error, work_error) with
+        | None, Some exn -> pool.first_error <- Some exn
+        | _ -> ()) ;
         pool.pending_workers <- pool.pending_workers - 1 ;
         if pool.pending_workers = 0 then Condition.signal pool.work_done ;
         Mutex.unlock pool.mutex ;
@@ -643,6 +682,7 @@ module ParallelPool = struct
         pending_workers = 0;
         shutdown = false;
         generation = 0;
+        first_error = None;
       }
     in
     (* Spawn worker domains - they reference the same pool record *)
@@ -673,7 +713,10 @@ module ParallelPool = struct
       while pool.pending_workers > 0 do
         Condition.wait pool.work_done pool.mutex
       done ;
-      Mutex.unlock pool.mutex
+      let first_error = pool.first_error in
+      pool.first_error <- None ;
+      Mutex.unlock pool.mutex ;
+      match first_error with Some exn -> raise exn | None -> ()
     end
 
   (** Run a parallel_for over the range 0 to total (exclusive) with default
@@ -705,7 +748,14 @@ let get_parallel_pool () =
         match !parallel_pool with
         | Some p -> p
         | None ->
-            let num_workers = max 1 (Domain.recommended_domain_count () - 1) in
+            let num_workers =
+              match Sys.getenv_opt "SAREK_DOMAIN_COUNT" with
+              | Some s -> (
+                  match int_of_string_opt s with
+                  | Some n when n > 0 -> n
+                  | _ -> max 1 (Domain.recommended_domain_count () - 1))
+              | None -> max 1 (Domain.recommended_domain_count () - 1)
+            in
             let p = ParallelPool.create num_workers in
             parallel_pool := Some p ;
             p
