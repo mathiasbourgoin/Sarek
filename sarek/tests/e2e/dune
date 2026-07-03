@@ -486,6 +486,11 @@
  (optional)
  (libraries sarek_ir sarek_execute sarek_vulkan spoc_core))
 
+(rule
+ (alias e2e-gpu)
+ (action
+  (run %{dep:test_vulkan_float64.exe})))
+
 ; PR-5a proof: FFI-free stdlib metadata population
 ; Asserts that sarek_stdlib_meta populates Sarek_ppx_registry without
 ; any Ctypes or Spoc_core dependency (sarek_frontend + sarek_stdlib_meta only).
