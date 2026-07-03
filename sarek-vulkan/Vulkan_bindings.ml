@@ -118,6 +118,16 @@ let vkGetPhysicalDeviceMemoryProperties_lazy =
 let vkGetPhysicalDeviceMemoryProperties dev props =
   Lazy.force vkGetPhysicalDeviceMemoryProperties_lazy dev props
 
+let vkGetPhysicalDeviceFeatures_lazy =
+  foreign_vk_lazy
+    "vkGetPhysicalDeviceFeatures"
+    (vk_physical_device_ptr
+    @-> ptr vk_physical_device_features
+    @-> returning void)
+
+let vkGetPhysicalDeviceFeatures dev features =
+  Lazy.force vkGetPhysicalDeviceFeatures_lazy dev features
+
 (** {1 Device Functions} *)
 
 let vkCreateDevice_lazy =

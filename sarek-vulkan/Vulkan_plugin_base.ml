@@ -52,7 +52,7 @@ module Vulkan = struct
         shared_mem_per_block = 49152;
         total_global_mem = total_mem;
         compute_capability = (major, minor);
-        supports_fp64 = true;
+        supports_fp64 = dev.Vulkan_api.Device.supports_fp64;
         supports_atomics = true;
         warp_size = 32;
         (* subgroup size varies by vendor *)

@@ -19,6 +19,10 @@ type t = {
   api_version : int * int * int;
   memory_properties : vk_physical_device_memory_properties structure;
   command_pool : vk_command_pool;
+  supports_fp64 : bool;
+      (** Physical-device [shaderFloat64] feature, queried via
+          [vkGetPhysicalDeviceFeatures] and mirrored into the logical device's
+          [pEnabledFeatures] at creation time (see [get] below). *)
 }
 
 let instance_ref : vk_instance structure ptr option ref = ref None
@@ -193,6 +197,17 @@ let get idx =
       let mem_props = make vk_physical_device_memory_properties in
       vkGetPhysicalDeviceMemoryProperties phys_dev (addr mem_props) ;
 
+      (* Query supported physical-device features so we only ever request a
+         feature the hardware actually reports - requesting an unsupported
+         feature in pEnabledFeatures fails vkCreateDevice outright. *)
+      let supported_features = make vk_physical_device_features in
+      vkGetPhysicalDeviceFeatures phys_dev (addr supported_features) ;
+      let supported_bools = getf supported_features phys_features_bools in
+      let feature_supported index =
+        Unsigned.UInt32.to_int (CArray.get supported_bools index) <> 0
+      in
+      let supports_fp64 = feature_supported shader_float64_field_index in
+
       (* Find compute queue family *)
       let queue_family = find_compute_queue_family phys_dev in
 
@@ -243,7 +258,33 @@ let get idx =
         dev_create_info
         dev_create_ppEnabledExtensionNames
         (from_voidp string null) ;
-      setf dev_create_info dev_create_pEnabledFeatures null ;
+      (* Only request shaderFloat64 when the physical device actually
+         reports it - never request an unsupported feature, since that
+         fails vkCreateDevice on hardware without fp64 support. All other
+         features are left at their default (false), matching the previous
+         pEnabledFeatures = null behaviour.
+
+         [enabled_features] is bound in this function's scope (not inside
+         the [if]) so the ctypes-managed memory it owns stays alive - and
+         therefore [addr enabled_features] stays valid - across the
+         [vkCreateDevice] call below; a binding local to the [if] branch
+         would let the GC reclaim it before the FFI call runs. *)
+      let enabled_features = make vk_physical_device_features in
+      if supports_fp64 then begin
+        let enabled_bools = getf enabled_features phys_features_bools in
+        for i = 0 to vk_physical_device_features_field_count - 1 do
+          CArray.set enabled_bools i (Unsigned.UInt32.of_int 0)
+        done ;
+        CArray.set
+          enabled_bools
+          shader_float64_field_index
+          (Unsigned.UInt32.of_int 1) ;
+        setf
+          dev_create_info
+          dev_create_pEnabledFeatures
+          (to_voidp (addr enabled_features))
+      end
+      else setf dev_create_info dev_create_pEnabledFeatures null ;
 
       let device = allocate vk_device_ptr (from_voidp vk_device null) in
       check
@@ -298,6 +339,7 @@ let get idx =
           api_version = (api_major, api_minor, api_patch);
           memory_properties = mem_props;
           command_pool = !@pool;
+          supports_fp64;
         }
       in
       Hashtbl.add device_cache idx dev ;

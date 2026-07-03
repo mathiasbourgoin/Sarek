@@ -857,16 +857,28 @@ let count_vec_params params =
 
 (** Generate GLSL compute shader header.
     @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.
-*)
-let glsl_header ~kernel_name ?(block = (256, 1, 1)) () =
+    @param uses_float64
+      Whether the kernel uses [double] (Sarek [float64]) anywhere. When [true],
+      emits [#extension GL_ARB_gpu_shader_fp64 : require]. glslang does not
+      strictly require this pragma to compile [double] under [#version 450]
+      targeting SPIR-V (it auto-adds the SPIR-V [Float64] capability), but
+      declaring it explicitly keeps the generated source correct against
+      stricter/non-glslang GLSL compilers and documents the requirement in the
+      emitted shader. Defaults to [false] so kernels that do not use float64
+      never carry the extension. *)
+let glsl_header ~kernel_name ?(block = (256, 1, 1)) ?(uses_float64 = false) () =
   let bx, by, bz = block in
+  let fp64_extension =
+    if uses_float64 then "#extension GL_ARB_gpu_shader_fp64 : require\n" else ""
+  in
   Printf.sprintf
     {|#version 450
-
+%s
 // Sarek-generated compute shader: %s
 layout(local_size_x = %d, local_size_y = %d, local_size_z = %d) in;
 
 |}
+    fp64_extension
     kernel_name
     bx
     by
@@ -982,7 +994,13 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
   (* Clear per-kernel state *)
   Hashtbl.clear helper_vec_param_indices ;
   let buf = Buffer.create 1024 in
-  Buffer.add_string buf (glsl_header ~kernel_name:k.kern_name ?block ()) ;
+  Buffer.add_string
+    buf
+    (glsl_header
+       ~kernel_name:k.kern_name
+       ?block
+       ~uses_float64:(Sarek_ir_analysis.kernel_uses_float64 k)
+       ()) ;
 
   (* Generate buffer bindings *)
   let binding_idx = ref 0 in
@@ -1060,7 +1078,13 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   current_variants := k.kern_variants ;
 
   let buf = Buffer.create 1024 in
-  Buffer.add_string buf (glsl_header ~kernel_name:k.kern_name ?block ()) ;
+  Buffer.add_string
+    buf
+    (glsl_header
+       ~kernel_name:k.kern_name
+       ?block
+       ~uses_float64:(Sarek_ir_analysis.kernel_uses_float64 k)
+       ()) ;
 
   (* Generate record type definitions (simple structs without tag) *)
   List.iter (gen_record_def buf) types ;

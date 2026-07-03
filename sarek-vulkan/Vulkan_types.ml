@@ -427,6 +427,33 @@ let phys_props_padding =
 
 let () = seal vk_physical_device_properties
 
+(* VkPhysicalDeviceFeatures - exactly 55 VkBool32 (uint32_t) fields in the
+   fixed order defined by the Vulkan spec (vulkan_core.h). We only care
+   about a couple of them (shaderFloat64 at index 40, shaderInt64 at index
+   41), so the struct is modelled as a single fixed-size array of uint32_t
+   rather than 55 named fields - same "care about a slice, pad the rest"
+   approach as vk_physical_device_properties above. Field index derivation:
+   robustBufferAccess=0 ... shaderCullDistance=39, shaderFloat64=40,
+   shaderInt64=41, shaderInt16=42, ... inheritedQueries=54. *)
+type vk_physical_device_features
+
+let vk_physical_device_features_field_count = 55
+
+let shader_float64_field_index = 40
+
+let shader_int64_field_index = 41
+
+let vk_physical_device_features : vk_physical_device_features structure typ =
+  structure "VkPhysicalDeviceFeatures"
+
+let phys_features_bools =
+  field
+    vk_physical_device_features
+    "bools"
+    (array vk_physical_device_features_field_count uint32_t)
+
+let () = seal vk_physical_device_features
+
 (* VkQueueFamilyProperties *)
 type vk_queue_family_properties
 
