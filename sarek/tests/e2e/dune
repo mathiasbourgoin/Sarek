@@ -473,6 +473,19 @@
  (optional)
  (libraries sarek sarek_vulkan spoc_core))
 
+; Vulkan-only regression test: a float64 (double-precision) Sarek kernel
+; must compile, run, and produce correct results on Vulkan (shaderFloat64 +
+; GL_ARB_gpu_shader_fp64). Device-filtered to Vulkan; skips (prints [SKIP],
+; exits 0) if no Vulkan device is present or it does not report fp64
+; support. Requires sarek_vulkan, so only built when the Vulkan plugin is
+; available.
+
+(executable
+ (name test_vulkan_float64)
+ (modules test_vulkan_float64)
+ (optional)
+ (libraries sarek_ir sarek_execute sarek_vulkan spoc_core))
+
 ; PR-5a proof: FFI-free stdlib metadata population
 ; Asserts that sarek_stdlib_meta populates Sarek_ppx_registry without
 ; any Ctypes or Spoc_core dependency (sarek_frontend + sarek_stdlib_meta only).
