@@ -84,8 +84,19 @@ module DomainPool = struct
     mutex : Mutex.t;
     cond : Condition.t;
     mutable shutdown : bool;
-    domains : unit Domain.t array;
+    (* [domains] MUST be a mutable field mutated in place (never rebuilt via
+       [{pool with domains}]): worker domains close over the exact record
+       returned by [create]. A functional record update after [Domain.spawn]
+       allocates a *new* block, so [mutable active_tasks]/[mutable shutdown]
+       - stored inline in the record, not behind a shared box - would live at
+       two different addresses: the one workers mutate and the one
+       [submit]/[wait_all] read. [wait_all] then observes [active_tasks]
+       stuck at 0 and can return before the last popped task has finished
+       running, dropping that task's output. See the regression test in
+       sarek/tests/e2e/test_domain_pool_stress.ml. *)
+    mutable domains : unit Domain.t array;
     mutable active_tasks : int;
+    mutable first_error : exn option;
     done_cond : Condition.t;
   }
 
@@ -102,8 +113,20 @@ module DomainPool = struct
         let task = Queue.pop pool.task_queue in
         pool.active_tasks <- pool.active_tasks + 1 ;
         Mutex.unlock pool.mutex ;
-        (try task () with _ -> ()) ;
+        (* Never silently swallow a work-item exception: a raise here used to
+           be caught and dropped, leaving the block's output unwritten while
+           [wait_all] still reported success. Capture the first error and
+           re-raise it from [wait_all] instead. *)
+        let task_error =
+          try
+            task () ;
+            None
+          with exn -> Some exn
+        in
         Mutex.lock pool.mutex ;
+        (match (pool.first_error, task_error) with
+        | None, Some exn -> pool.first_error <- Some exn
+        | _ -> ()) ;
         pool.active_tasks <- pool.active_tasks - 1 ;
         if pool.active_tasks = 0 && Queue.is_empty pool.task_queue then
           Condition.broadcast pool.done_cond ;
@@ -123,13 +146,15 @@ module DomainPool = struct
         shutdown = false;
         domains = [||];
         active_tasks = 0;
+        first_error = None;
         done_cond = Condition.create ();
       }
     in
-    let domains =
-      Array.init num_domains (fun _ -> Domain.spawn (fun () -> worker pool))
-    in
-    {pool with domains}
+    (* Mutate [domains] in place on [pool] - see the field comment above for
+       why a functional record update here would be unsound. *)
+    pool.domains <-
+      Array.init num_domains (fun _ -> Domain.spawn (fun () -> worker pool)) ;
+    pool
 
   let submit pool task =
     Mutex.lock pool.mutex ;
@@ -142,19 +167,48 @@ module DomainPool = struct
     while pool.active_tasks > 0 || not (Queue.is_empty pool.task_queue) do
       Condition.wait pool.done_cond pool.mutex
     done ;
-    Mutex.unlock pool.mutex
+    let first_error = pool.first_error in
+    pool.first_error <- None ;
+    Mutex.unlock pool.mutex ;
+    match first_error with Some exn -> raise exn | None -> ()
 end
+
+(** Resolve how many domains the interpreter's [DomainPool] should use.
+
+    Reads [SAREK_DOMAIN_COUNT] first (any positive integer) so tests can force a
+    domain count higher than the host's physical core count - this is the only
+    reliable way to reproduce oversubscription races such as the [DomainPool]
+    record-aliasing bug on a small developer machine. Falls back to
+    [Domain.recommended_domain_count ()], and finally to a fixed default if that
+    raises. *)
+let resolve_domain_count ~default () =
+  match Sys.getenv_opt "SAREK_DOMAIN_COUNT" with
+  | Some s -> (
+      match int_of_string_opt s with
+      | Some n when n > 0 -> n
+      | _ -> ( try Domain.recommended_domain_count () with _ -> default))
+  | None -> ( try Domain.recommended_domain_count () with _ -> default)
 
 (** Global pool - lazily initialized *)
 let global_pool : DomainPool.t option ref = ref None
+
+let global_pool_mutex = Mutex.create ()
 
 let get_pool () =
   match !global_pool with
   | Some pool -> pool
   | None ->
-      let num_cores = try Domain.recommended_domain_count () with _ -> 4 in
-      let pool = DomainPool.create num_cores in
-      global_pool := Some pool ;
+      Mutex.lock global_pool_mutex ;
+      let pool =
+        match !global_pool with
+        | Some pool -> pool
+        | None ->
+            let num_cores = resolve_domain_count ~default:4 () in
+            let pool = DomainPool.create num_cores in
+            global_pool := Some pool ;
+            pool
+      in
+      Mutex.unlock global_pool_mutex ;
       pool
 
 (** Run all blocks in a grid (parallel - distributes blocks across domain pool)
