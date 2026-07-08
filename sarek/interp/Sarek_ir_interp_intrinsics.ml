@@ -358,6 +358,44 @@ let eval_float64_math_intrinsic name args =
           Interp_error.raise_error
             (Unsupported_operation
                {operation = "abs (float64)"; reason = "requires 1 argument"}))
+  | "floor" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (floor (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "floor (float64)"; reason = "requires 1 argument"}))
+  | "ceil" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (ceil (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "ceil (float64)"; reason = "requires 1 argument"}))
+  | "pow" -> (
+      match args with
+      | arg1 :: arg2 :: _ ->
+          Some (VFloat64 (Float.pow (to_float64 arg1) (to_float64 arg2)))
+      | _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "pow (float64)"; reason = "requires 2 arguments"}))
+  | "min" -> (
+      match args with
+      | arg1 :: arg2 :: _ ->
+          Some (VFloat64 (min (to_float64 arg1) (to_float64 arg2)))
+      | _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "min (float64)"; reason = "requires 2 arguments"}))
+  | "max" -> (
+      match args with
+      | arg1 :: arg2 :: _ ->
+          Some (VFloat64 (max (to_float64 arg1) (to_float64 arg2)))
+      | _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "max (float64)"; reason = "requires 2 arguments"}))
   | "of_int" -> (
       match args with
       | arg :: _ -> Some (VFloat64 (Float.of_int (to_int arg)))
