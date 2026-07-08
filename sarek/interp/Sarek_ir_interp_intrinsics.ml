@@ -274,6 +274,62 @@ let eval_float64_math_intrinsic name args =
           Interp_error.raise_error
             (Unsupported_operation
                {operation = "cos (float64)"; reason = "requires 1 argument"}))
+  | "tan" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (tan (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "tan (float64)"; reason = "requires 1 argument"}))
+  | "asin" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (asin (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "asin (float64)"; reason = "requires 1 argument"}))
+  | "acos" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (acos (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "acos (float64)"; reason = "requires 1 argument"}))
+  | "atan" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (atan (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "atan (float64)"; reason = "requires 1 argument"}))
+  | "atan2" -> (
+      match args with
+      | arg1 :: arg2 :: _ -> Some (VFloat64 (atan2 (to_float64 arg1) (to_float64 arg2)))
+      | _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "atan2 (float64)"; reason = "requires 2 arguments"}))
+  | "sinh" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (sinh (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "sinh (float64)"; reason = "requires 1 argument"}))
+  | "cosh" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (cosh (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "cosh (float64)"; reason = "requires 1 argument"}))
+  | "tanh" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (tanh (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "tanh (float64)"; reason = "requires 1 argument"}))
   | "sqrt" -> (
       match args with
       | arg :: _ -> Some (VFloat64 (sqrt (to_float64 arg)))
