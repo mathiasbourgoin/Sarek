@@ -133,6 +133,55 @@ let eval_float32_math_intrinsic name args =
           Interp_error.raise_error
             (Unsupported_operation
                {operation = "tan"; reason = "requires 1 argument"}))
+  | "asin" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.asin (to_float32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "asin"; reason = "requires 1 argument"}))
+  | "acos" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.acos (to_float32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "acos"; reason = "requires 1 argument"}))
+  | "atan" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.atan (to_float32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "atan"; reason = "requires 1 argument"}))
+  | "atan2" -> (
+      match args with
+      | arg1 :: arg2 :: _ -> Some (VFloat32 (F32.atan2 (to_float32 arg1) (to_float32 arg2)))
+      | _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "atan2"; reason = "requires 2 arguments"}))
+  | "sinh" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.sinh (to_float32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "sinh"; reason = "requires 1 argument"}))
+  | "cosh" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.cosh (to_float32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "cosh"; reason = "requires 1 argument"}))
+  | "tanh" -> (
+      match args with
+      | arg :: _ -> Some (VFloat32 (F32.tanh (to_float32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "tanh"; reason = "requires 1 argument"}))
   | "sqrt" -> (
       match args with
       | arg :: _ -> Some (VFloat32 (F32.sqrt (to_float32 arg)))
