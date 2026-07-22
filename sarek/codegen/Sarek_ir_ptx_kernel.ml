@@ -127,7 +127,11 @@ let emit_params buf alloc (env : env) (params : decl list) : string =
    Sarek_ir_ptx_types, shared with the SLet shared-array path in
    Sarek_ir_ptx_stmt. *)
 
-let emit_locals buf shared_buf alloc (env : env) (locals : decl list) : unit =
+let emit_locals buf shared_buf module_buf alloc (env : env) (locals : decl list)
+    : unit =
+  (* PTX allows at most one incomplete (extern) .shared array per kernel: all
+     dynamic shared memory is one region sized at launch, as in raw CUDA. *)
+  let dyn_shared : string option ref = ref None in
   List.iter
     (fun decl ->
       match decl with
@@ -161,37 +165,54 @@ let emit_locals buf shared_buf alloc (env : env) (locals : decl list) : unit =
               in
               emit buf "%s %s, %s;" mov_op r r_init)
       | DShared (name, elt, size_opt) ->
-          let n =
-            match size_opt with
-            | None ->
-                unsupported
-                  (Printf.sprintf
-                     "DShared '%s': dynamic shared memory (size=None) not yet \
-                      supported"
-                     name)
-            | Some (EConst (CInt32 n)) when Int32.compare n 0l > 0 ->
-                Int32.to_int n
-            | Some (EConst (CInt32 _)) ->
-                fail
-                  (Printf.sprintf
-                     "PTX codegen: DShared '%s': size must be positive"
-                     name)
-            | Some _ ->
-                unsupported
-                  (Printf.sprintf
-                     "DShared '%s': non-literal size not supported"
-                     name)
-          in
           let align = ptx_align_of_elttype elt in
           let btype = ptx_btype_of_elttype elt in
-          Buffer.add_string
-            shared_buf
-            (Printf.sprintf
-               "    .shared .align %d .%s %s[%d];\n"
-               align
-               btype
-               name
-               n) ;
+          (match size_opt with
+          | None ->
+              (* Dynamic shared memory: one extern region whose byte size is
+                 supplied at launch (Execute.run_vectors ~shared_mem →
+                 run_source ~shared_mem → cuLaunchKernel), exactly like
+                 extern __shared__ in raw CUDA. The incomplete-array
+                 declaration must be MODULE scope (before .entry) — NVCC
+                 emits it there, and ZLUDA rejects the function-scope form
+                 at cuModuleLoadData time. *)
+              (match !dyn_shared with
+              | Some first ->
+                  fail
+                    (Printf.sprintf
+                       "PTX codegen: kernel declares two dynamic shared arrays \
+                        ('%s' and '%s'); PTX allows a single extern .shared \
+                        region per kernel — merge them into one array with \
+                        manual offsets, or give all but one a static size"
+                       first
+                       name)
+              | None -> dyn_shared := Some name) ;
+              Buffer.add_string
+                module_buf
+                (Printf.sprintf
+                   ".extern .shared .align %d .%s %s[];\n"
+                   align
+                   btype
+                   name)
+          | Some (EConst (CInt32 n)) when Int32.compare n 0l > 0 ->
+              Buffer.add_string
+                shared_buf
+                (Printf.sprintf
+                   "    .shared .align %d .%s %s[%d];\n"
+                   align
+                   btype
+                   name
+                   (Int32.to_int n))
+          | Some (EConst (CInt32 _)) ->
+              fail
+                (Printf.sprintf
+                   "PTX codegen: DShared '%s': size must be positive"
+                   name)
+          | Some _ ->
+              unsupported
+                (Printf.sprintf
+                   "DShared '%s': non-literal size not supported"
+                   name)) ;
           let r = new_u32 alloc in
           env_bind env name r ;
           emit buf "mov.u32 %s, %s;" r name ;
@@ -250,13 +271,19 @@ let generate ?(sm_target = "sm_86") (k : kernel) : string =
   let env = make_env () in
   let body_buf = Buffer.create 2048 in
   let shared_buf = Buffer.create 256 in
+  let module_buf = Buffer.create 128 in
   let param_str = emit_params body_buf alloc env k.kern_params in
-  emit_locals body_buf shared_buf alloc env k.kern_locals ;
+  emit_locals body_buf shared_buf module_buf alloc env k.kern_locals ;
   emit_stmt body_buf alloc env k.kern_body ;
   Buffer.add_string body_buf "    ret;\n" ;
   let out = Buffer.create 4096 in
   Buffer.add_string out (make_ptx_header ~sm_target ()) ;
   Buffer.add_char out '\n' ;
+  (* Module-scope declarations (extern .shared dynamic region). *)
+  if Buffer.length module_buf > 0 then begin
+    Buffer.add_buffer out module_buf ;
+    Buffer.add_char out '\n'
+  end ;
   Printf.bprintf out ".entry %s(\n" k.kern_name ;
   Buffer.add_string out param_str ;
   Buffer.add_string out "\n)\n{\n" ;

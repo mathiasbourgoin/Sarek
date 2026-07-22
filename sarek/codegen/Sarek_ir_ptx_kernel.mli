@@ -15,11 +15,17 @@ open Sarek_ir_ptx_types
     [.param] declaration block string for embedding in the [.entry] header. *)
 val emit_params : Buffer.t -> reg_alloc -> env -> decl list -> string
 
-(** [emit_locals buf shared_buf alloc env locals] emits register allocations and
-    optional initialisation moves for each [DLocal] declaration. [DShared]
-    declarations emit a [.shared] directive to [shared_buf] and a [mov.u32]
-    base-address load to [buf]. [DParam] entries are skipped. *)
-val emit_locals : Buffer.t -> Buffer.t -> reg_alloc -> env -> decl list -> unit
+(** [emit_locals buf shared_buf module_buf alloc env locals] emits register
+    allocations and optional initialisation moves for each [DLocal] declaration
+    ([DLocal] of array type is rejected fail-closed: it carries no size and
+    cannot allocate storage). Statically-sized [DShared] declarations emit a
+    [.shared] directive to [shared_buf]; a dynamic [DShared] (size [None]) emits
+    a module-scope [.extern .shared] incomplete-array directive to [module_buf]
+    (one per kernel; the region's byte size is supplied at launch via
+    [~shared_mem]). Both bind the base address with a [mov.u32] in [buf].
+    [DParam] entries are skipped. *)
+val emit_locals :
+  Buffer.t -> Buffer.t -> Buffer.t -> reg_alloc -> env -> decl list -> unit
 
 (** [emit_reg_decls buf alloc] emits [.reg] declarations based on the allocator
     high-water marks. Must be called {e after} all [emit_*] calls. *)

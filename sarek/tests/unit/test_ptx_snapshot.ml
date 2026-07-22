@@ -1763,6 +1763,96 @@ let test_atomic_on_local_array_rejected () =
   | _ -> Alcotest.fail "atomic on local array should be rejected"
   | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()
 
+(** Dynamic shared memory: DShared (name, elt, None) declares one extern .shared
+    region whose byte size is supplied at kernel launch (run_vectors
+    ~shared_mem), like extern __shared__ in raw CUDA. Accesses go through the
+    normal 32-bit shared path. *)
+let test_dynamic_shared_markers () =
+  let out = make_var "out" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "thread_idx_x", []),
+        SSeq
+          [
+            SAssign
+              (LArrayElem ("dynbuf", EVar tid), EArrayRead ("out", EVar tid));
+            SBarrier;
+            SAssign
+              (LArrayElem ("out", EVar tid), EArrayRead ("dynbuf", EVar tid));
+          ] )
+  in
+  let k =
+    {
+      (base_kernel
+         "dyn_shared"
+         [DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+         body
+         [])
+      with
+      kern_locals = [DShared ("dynbuf", TFloat32, None)];
+    }
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx ".extern .shared .align 4 .b32 dynbuf[];" ;
+  assert_contains ptx "st.shared.f32" ;
+  assert_contains ptx "ld.shared.f32"
+
+(** PTX allows one extern .shared region per kernel: a second dynamic shared
+    array must be rejected with an error naming both arrays. *)
+let test_two_dynamic_shared_rejected () =
+  let out = make_var "out" (TVec TFloat32) in
+  let k =
+    {
+      (base_kernel
+         "dyn_shared2"
+         [DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+         (SAssign (LArrayElem ("out", EConst (CInt32 0l)), EConst (CFloat32 1.0)))
+         [])
+      with
+      kern_locals =
+        [DShared ("dyn_a", TFloat32, None); DShared ("dyn_b", TInt32, None)];
+    }
+  in
+  match Sarek_ir_ptx.generate k with
+  | _ -> Alcotest.fail "two dynamic shared arrays should be rejected"
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error msg ->
+      if not (contains msg "dyn_a" && contains msg "dyn_b") then
+        Alcotest.fail
+          (Printf.sprintf
+             "two-dynamic-shared rejection must name both arrays; got: %s"
+             msg)
+
+(** Statically-sized DShared decls keep the non-extern declaration shape. *)
+let test_static_dshared_markers () =
+  let out = make_var "out" (TVec TInt32) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "thread_idx_x", []),
+        SAssign (LArrayElem ("sbuf", EVar tid), EVar tid) )
+  in
+  let k =
+    {
+      (base_kernel
+         "static_dshared"
+         [DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global})]
+         body
+         [])
+      with
+      kern_locals = [DShared ("sbuf", TInt32, Some (EConst (CInt32 128l)))];
+    }
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx ".shared .align 4 .b32 sbuf[128];" ;
+  assert_absent
+    ptx
+    ".extern"
+    ~why:"statically-sized shared array must not be extern" ;
+  assert_contains ptx "st.shared.s32"
+
 let () =
   Alcotest.run
     "ptx_snapshot"
@@ -1945,5 +2035,17 @@ let () =
             "atomic on per-thread local array rejected"
             `Quick
             test_atomic_on_local_array_rejected;
+          Alcotest.test_case
+            "dynamic shared emits .extern .shared decl"
+            `Quick
+            test_dynamic_shared_markers;
+          Alcotest.test_case
+            "second dynamic shared array rejected"
+            `Quick
+            test_two_dynamic_shared_rejected;
+          Alcotest.test_case
+            "static DShared keeps non-extern decl"
+            `Quick
+            test_static_dshared_markers;
         ] );
     ]

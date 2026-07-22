@@ -844,14 +844,34 @@ let test_dshared_int32_write () =
   if contains_sub ptx "st.global" then
     Alcotest.failf "unexpected 'st.global' for shared array in:\n%s" ptx
 
-(* AC-3: dynamic DShared (None) → Ptx_codegen_error "dynamic shared memory" *)
-let test_dshared_dynamic_raises () =
+(* AC-3 (updated): dynamic DShared (None) is now SUPPORTED — it emits a
+   module-scope extern .shared incomplete-array declaration whose byte size
+   is supplied at launch (~shared_mem), like extern __shared__ in raw CUDA.
+   The Rocq spec (PtxKernelSpec.v) models only static DShared declarations;
+   the original AC-3 pinned the pre-support rejection, not a theorem. The
+   guarded invariant is now: exactly one extern region per kernel. *)
+let test_dshared_dynamic_extern () =
   let k = make_kernel "test_dyn" ~locals:[DShared ("x", TFloat32, None)] in
-  match Sarek_codegen.Sarek_ir_ptx_kernel.generate k with
+  let ptx = Sarek_codegen.Sarek_ir_ptx_kernel.generate k in
+  if not (contains_sub ptx ".extern .shared .align 4 .b32 x[];") then
+    Alcotest.failf "expected extern .shared declaration in:\n%s" ptx ;
+  (* The extern declaration must be module scope: before the .entry. *)
+  let ep = find_sub ptx ".extern .shared" in
+  let np = find_sub ptx ".entry" in
+  if ep < 0 || np < 0 || ep >= np then
+    Alcotest.failf ".extern .shared must precede .entry in:\n%s" ptx ;
+  (* A second dynamic region is rejected: single extern region per kernel. *)
+  let k2 =
+    make_kernel
+      "test_dyn2"
+      ~locals:[DShared ("x", TFloat32, None); DShared ("y", TInt32, None)]
+  in
+  match Sarek_codegen.Sarek_ir_ptx_kernel.generate k2 with
   | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error msg ->
-      if not (contains_sub msg "dynamic shared memory") then
-        Alcotest.failf "expected 'dynamic shared memory' in error, got: %s" msg
-  | _ -> Alcotest.fail "expected Ptx_codegen_error for dynamic DShared"
+      if not (contains_sub msg "single extern") then
+        Alcotest.failf "expected 'single extern' in error, got: %s" msg
+  | _ ->
+      Alcotest.fail "expected Ptx_codegen_error for two dynamic DShared decls"
 
 (* AC-4: zero size → Ptx_codegen_error "size must be positive" *)
 let test_dshared_zero_size_raises () =
@@ -1010,7 +1030,10 @@ let () =
             "mixed-global-shared"
             `Quick
             test_dshared_mixed_global_shared;
-          Alcotest.test_case "dynamic-raises" `Quick test_dshared_dynamic_raises;
+          Alcotest.test_case
+            "dynamic-extern-region"
+            `Quick
+            test_dshared_dynamic_extern;
           Alcotest.test_case
             "zero-size-raises"
             `Quick
