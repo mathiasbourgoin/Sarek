@@ -1481,9 +1481,13 @@ let expand_kernel ~ctxt payload : expression =
        is not needed here. *)
     if Sys.file_exists current_file then
       ignore (scan_file_for_sarek_types current_file : string option) ;
-    (* Types and module items registered in the current compilation unit. *)
-    let pre_types = dedup_tdecls !registered_types in
-    let local_mods = dedup_mods !registered_mods in
+    (* Types and module items registered in the current compilation unit.
+       Registration conses, so the refs hold items in REVERSE declaration
+       order; restore file order here - module items are typed sequentially
+       (Sarek_typer.add_module_items), so a helper calling an earlier helper
+       needs its callee to appear first. *)
+    let pre_types = dedup_tdecls (List.rev !registered_types) in
+    let local_mods = dedup_mods (List.rev !registered_mods) in
     (* Also include module items from the registry (populated by linked libraries) *)
     let registry_mods =
       List.map
