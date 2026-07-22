@@ -1111,35 +1111,70 @@ and emit_intrinsic_native buf alloc env path name args : string =
     | [a] -> emit_cast buf alloc (emit_expr buf alloc env a) dst_ty
     | _ -> unsupported (intr ^ " arity != 1")
   in
-  (* atom.{shared,global}.add.s32 on an int32 array denoted by a plain
-     variable; returns the old value. *)
-  (* Atomic read-modify-write on a 4-byte element of an int32/float32 array
-     denoted by a plain variable; returns the old value. [op]/[ty] form the
-     PTX suffix (e.g. add.s32, min.s32, and.b32, exch.b32, add.f32). PTX has
-     no atom.sub, so "sub" is lowered to an add of the negated operand.
-     [result] selects the old-value register class. *)
-  let atomic_rmw intr ~global_only ~op ~ty ~result =
+  (* An i64 register is "%rd<n>" (u64 class; distinct from f64 "%fd<n>"). *)
+  let is_u64_reg r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
+  (* The operand register class must agree with the atom.<op><ty> suffix; a
+     mismatched register would be invalid PTX (module-load failure). *)
+  let check_atom_operand intr result r =
+    let ok, want =
+      match result with
+      | `F32 -> (is_f32_reg r, "f32")
+      | `F64 -> (is_f64_reg r, "f64")
+      | `U64 -> (is_u64_reg r, "int64")
+      | `U32 ->
+          ( (not (is_f32_reg r)) && (not (is_f64_reg r)) && not (is_u64_reg r),
+            "int32" )
+    in
+    if not ok then
+      unsupported
+        (intr ^ ": operand " ^ r ^ " is not " ^ want ^ "; cast the value first")
+  in
+  let new_atom_result = function
+    | `F32 -> new_f32 alloc
+    | `F64 -> new_f64 alloc
+    | `U64 -> new_u64 alloc
+    | `U32 -> new_u32 alloc
+  in
+  (* Byte address of element [r_idx] of array [arr]: shared arrays use
+     32-bit byte addressing, global arrays 64-bit. [elt_shift] is log2 of
+     the element size (2 for 32-bit, 3 for 64-bit elements) — the stride
+     must match the atom width or neighbouring elements alias. Returns the
+     PTX space name and the address register. *)
+  let atomic_addr ~global_only ~elt_shift arr r_idx =
+    let r_base = env_lookup env arr.var_name in
+    let is_shared =
+      (not global_only) && Hashtbl.mem alloc.arr_memspaces arr.var_name
+    in
+    if is_shared then begin
+      let r_off = new_u32 alloc in
+      let r_addr = new_u32 alloc in
+      emit buf "shl.b32 %s, %s, %d;" r_off r_idx elt_shift ;
+      emit buf "add.u32 %s, %s, %s;" r_addr r_base r_off ;
+      ("shared", r_addr)
+    end
+    else begin
+      let r_idx64 = new_u64 alloc in
+      let r_off = new_u64 alloc in
+      let r_addr = new_u64 alloc in
+      emit buf "cvt.u64.u32 %s, %s;" r_idx64 r_idx ;
+      emit buf "shl.b64 %s, %s, %d;" r_off r_idx64 elt_shift ;
+      emit buf "add.u64 %s, %s, %s;" r_addr r_base r_off ;
+      ("global", r_addr)
+    end
+  in
+  (* Atomic read-modify-write on one element of an array denoted by a plain
+     variable; returns the old value. [op]/[ty] form the PTX suffix (e.g.
+     add.s32, min.s32, and.b32, exch.b32, add.f32, add.u64, add.f64 — u64
+     add is two's-complement, so it is also the int64 add). PTX has no
+     atom.sub, so int32 "sub" is lowered to an add of the negated operand.
+     [result] selects the old-value register class and the operand width
+     check; [elt_shift] the addressing stride. *)
+  let atomic_rmw intr ~global_only ~elt_shift ~op ~ty ~result =
     match args with
     | [EVar arr; idx_e; val_e] ->
-        let r_base = env_lookup env arr.var_name in
         let r_idx = emit_expr buf alloc env idx_e in
         let r_val0 = emit_expr buf alloc env val_e in
-        (* The value register class must agree with the atom.<op><ty> suffix;
-           a mismatched register would be invalid PTX (module-load failure). *)
-        (match result with
-        | `F32 when not (is_f32_reg r_val0) ->
-            unsupported
-              (intr ^ ": value operand " ^ r_val0
-             ^ " is not f32; cast the value first")
-        | `U32
-          when is_f32_reg r_val0 || is_f64_reg r_val0
-               || String.length r_val0 >= 3
-                  && r_val0.[1] = 'r'
-                  && r_val0.[2] = 'd' ->
-            unsupported
-              (intr ^ ": value operand " ^ r_val0
-             ^ " is not int32; cast the value first")
-        | _ -> ()) ;
+        check_atom_operand intr result r_val0 ;
         let op, r_val =
           if op = "sub" then begin
             let r = new_u32 alloc in
@@ -1148,30 +1183,59 @@ and emit_intrinsic_native buf alloc env path name args : string =
           end
           else (op, r_val0)
         in
-        let is_shared =
-          (not global_only) && Hashtbl.mem alloc.arr_memspaces arr.var_name
-        in
-        let r_old =
-          match result with `F32 -> new_f32 alloc | `U32 -> new_u32 alloc
-        in
-        if is_shared then begin
-          let r_off = new_u32 alloc in
-          let r_addr = new_u32 alloc in
-          emit buf "shl.b32 %s, %s, 2;" r_off r_idx ;
-          emit buf "add.u32 %s, %s, %s;" r_addr r_base r_off ;
-          emit buf "atom.shared.%s%s %s, [%s], %s;" op ty r_old r_addr r_val
-        end
-        else begin
-          let r_idx64 = new_u64 alloc in
-          let r_off = new_u64 alloc in
-          let r_addr = new_u64 alloc in
-          emit buf "cvt.u64.u32 %s, %s;" r_idx64 r_idx ;
-          emit buf "shl.b64 %s, %s, 2;" r_off r_idx64 ;
-          emit buf "add.u64 %s, %s, %s;" r_addr r_base r_off ;
-          emit buf "atom.global.%s%s %s, [%s], %s;" op ty r_old r_addr r_val
-        end ;
+        let space, r_addr = atomic_addr ~global_only ~elt_shift arr r_idx in
+        let r_old = new_atom_result result in
+        emit buf "atom.%s.%s%s %s, [%s], %s;" space op ty r_old r_addr r_val ;
         r_old
     | _ -> unsupported (intr ^ ": expects (array-variable, index, value)")
+  in
+  (* Atomic compare-and-swap: atom.{shared,global}.cas.b{32,64}
+     d, [addr], compare, value — stores value iff *addr == compare; returns
+     the old value either way. *)
+  let atomic_cas intr ~elt_shift ~ty ~result =
+    match args with
+    | [EVar arr; idx_e; cmp_e; val_e] ->
+        let r_idx = emit_expr buf alloc env idx_e in
+        let r_cmp = emit_expr buf alloc env cmp_e in
+        let r_val = emit_expr buf alloc env val_e in
+        check_atom_operand intr result r_cmp ;
+        check_atom_operand intr result r_val ;
+        let space, r_addr =
+          atomic_addr ~global_only:false ~elt_shift arr r_idx
+        in
+        let r_old = new_atom_result result in
+        emit
+          buf
+          "atom.%s.cas%s %s, [%s], %s, %s;"
+          space
+          ty
+          r_old
+          r_addr
+          r_cmp
+          r_val ;
+        r_old
+    | _ ->
+        unsupported (intr ^ ": expects (array-variable, index, compare, value)")
+  in
+  (* atom.{shared,global}.{inc,dec}.u32 with limit 0xffffffff. Semantics
+     note: PTX inc/dec WRAP at the limit operand —
+       inc: d = (old >= limit) ? 0 : old + 1
+       dec: d = (old == 0 || old > limit) ? limit : old - 1
+     With limit = 0xffffffff both coincide exactly with add/sub of 1 modulo
+     2^32, i.e. the interpreter's plain ±1 semantics; a smaller limit would
+     turn them into wrapping ring-buffer counters, which no Sarek intrinsic
+     exposes yet. *)
+  let atomic_incdec intr ~global_only ~op =
+    match args with
+    | [EVar arr; idx_e] ->
+        let r_idx = emit_expr buf alloc env idx_e in
+        let space, r_addr = atomic_addr ~global_only ~elt_shift:2 arr r_idx in
+        let r_lim = new_u32 alloc in
+        emit buf "mov.u32 %s, 0xffffffff;" r_lim ;
+        let r_old = new_u32 alloc in
+        emit buf "atom.%s.%s.u32 %s, [%s], %s;" space op r_old r_addr r_lim ;
+        r_old
+    | _ -> unsupported (intr ^ ": expects (array-variable, index)")
   in
   (* Binary min/max: native PTX op. Both operands must share a register
      class — a mixed-width op would be invalid PTX. *)
@@ -1579,23 +1643,121 @@ and emit_intrinsic_native buf alloc env path name args : string =
   (* Atomics (old value returned). Shared vs global is auto-detected from the
      array's memory space; the *_global_* names force the global path. *)
   | "atomic_add_int32" ->
-      atomic_rmw name ~global_only:false ~op:"add" ~ty:".s32" ~result:`U32
+      atomic_rmw
+        name
+        ~global_only:false
+        ~elt_shift:2
+        ~op:"add"
+        ~ty:".s32"
+        ~result:`U32
   | "atomic_add_global_int32" ->
-      atomic_rmw name ~global_only:true ~op:"add" ~ty:".s32" ~result:`U32
+      atomic_rmw
+        name
+        ~global_only:true
+        ~elt_shift:2
+        ~op:"add"
+        ~ty:".s32"
+        ~result:`U32
   | "atomic_sub_int32" ->
-      atomic_rmw name ~global_only:false ~op:"sub" ~ty:".s32" ~result:`U32
+      atomic_rmw
+        name
+        ~global_only:false
+        ~elt_shift:2
+        ~op:"sub"
+        ~ty:".s32"
+        ~result:`U32
   | "atomic_min_int32" ->
-      atomic_rmw name ~global_only:false ~op:"min" ~ty:".s32" ~result:`U32
+      atomic_rmw
+        name
+        ~global_only:false
+        ~elt_shift:2
+        ~op:"min"
+        ~ty:".s32"
+        ~result:`U32
   | "atomic_max_int32" ->
-      atomic_rmw name ~global_only:false ~op:"max" ~ty:".s32" ~result:`U32
+      atomic_rmw
+        name
+        ~global_only:false
+        ~elt_shift:2
+        ~op:"max"
+        ~ty:".s32"
+        ~result:`U32
   | "atomic_and_int32" ->
-      atomic_rmw name ~global_only:false ~op:"and" ~ty:".b32" ~result:`U32
+      atomic_rmw
+        name
+        ~global_only:false
+        ~elt_shift:2
+        ~op:"and"
+        ~ty:".b32"
+        ~result:`U32
   | "atomic_or_int32" ->
-      atomic_rmw name ~global_only:false ~op:"or" ~ty:".b32" ~result:`U32
+      atomic_rmw
+        name
+        ~global_only:false
+        ~elt_shift:2
+        ~op:"or"
+        ~ty:".b32"
+        ~result:`U32
   | "atomic_xor_int32" ->
-      atomic_rmw name ~global_only:false ~op:"xor" ~ty:".b32" ~result:`U32
+      atomic_rmw
+        name
+        ~global_only:false
+        ~elt_shift:2
+        ~op:"xor"
+        ~ty:".b32"
+        ~result:`U32
   | "atomic_exch_int32" ->
-      atomic_rmw name ~global_only:false ~op:"exch" ~ty:".b32" ~result:`U32
+      atomic_rmw
+        name
+        ~global_only:false
+        ~elt_shift:2
+        ~op:"exch"
+        ~ty:".b32"
+        ~result:`U32
+  (* exch generalized to 64-bit elements. No stdlib/ppx int64-exch name
+     exists yet; the emitter accepts the conventional name ahead of it
+     (snapshot-only coverage). *)
+  | "atomic_exch_int64" ->
+      atomic_rmw
+        name
+        ~global_only:false
+        ~elt_shift:3
+        ~op:"exch"
+        ~ty:".b64"
+        ~result:`U64
+  (* atom.add.u64: PTX add has no .s64 form; u64 add is two's-complement,
+     identical to signed int64 add. *)
+  | "atomic_add_int64" ->
+      atomic_rmw
+        name
+        ~global_only:false
+        ~elt_shift:3
+        ~op:"add"
+        ~ty:".u64"
+        ~result:`U64
   | "atomic_add_float32" ->
-      atomic_rmw name ~global_only:false ~op:"add" ~ty:".f32" ~result:`F32
+      atomic_rmw
+        name
+        ~global_only:false
+        ~elt_shift:2
+        ~op:"add"
+        ~ty:".f32"
+        ~result:`F32
+  (* atom.add.f64 requires sm_60+; the default target is sm_86. ZLUDA
+     support for f64 atomics is unverified — snapshot coverage only. *)
+  | "atomic_add_float64" ->
+      atomic_rmw
+        name
+        ~global_only:false
+        ~elt_shift:3
+        ~op:"add"
+        ~ty:".f64"
+        ~result:`F64
+  | "atomic_cas_int32" -> atomic_cas name ~elt_shift:2 ~ty:".b32" ~result:`U32
+  (* No stdlib/ppx int64-CAS name exists yet; the emitter accepts the
+     conventional name ahead of it (snapshot-only coverage). *)
+  | "atomic_cas_int64" -> atomic_cas name ~elt_shift:3 ~ty:".b64" ~result:`U64
+  | "atomic_inc_int32" -> atomic_incdec name ~global_only:false ~op:"inc"
+  | "atomic_inc_global_int32" -> atomic_incdec name ~global_only:true ~op:"inc"
+  | "atomic_dec_int32" -> atomic_incdec name ~global_only:false ~op:"dec"
   | n -> unsupported ("intrinsic: " ^ n)

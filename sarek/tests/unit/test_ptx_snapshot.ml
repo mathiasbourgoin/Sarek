@@ -491,6 +491,91 @@ let test_atomic_family_markers () =
   assert_contains ptx "neg.s32" ;
   assert_contains ptx "atom.global.add.s32"
 
+(** Extended atomics round 2: cas.b32/b64, wrapping inc/dec.u32 (limit
+    0xffffffff = plain ±1 mod 2^32), add.u64/f64, exch.b64; 64-bit elements use
+    an 8-byte stride (shl …, 3), and a shared cas addresses in 32-bit. *)
+let test_atomic_cas_incdec_wide_markers () =
+  let hist = make_var "hist" (TVec TInt32) in
+  let lacc = make_var "lacc" (TVec TInt64) in
+  let dacc = make_var "dacc" (TVec TFloat64) in
+  let slock = make_var "slock" (TArray (TInt32, Shared)) in
+  let tid = make_var "tid" TInt32 in
+  let a name args = EIntrinsic (["Sarek_stdlib"; "Gpu"], name, args) in
+  let one = EConst (CInt32 1l) in
+  let zero = EConst (CInt32 0l) in
+  let lone = EConst (CInt64 1L) in
+  let lzero = EConst (CInt64 0L) in
+  let done_ = EConst (CFloat64 1.0) in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( slock,
+            EArrayCreate (TInt32, EConst (CInt32 32l), Shared),
+            SSeq
+              [
+                SExpr (a "atomic_cas_int32" [EVar hist; EVar tid; zero; one]);
+                SExpr (a "atomic_cas_int64" [EVar lacc; EVar tid; lzero; lone]);
+                SExpr (a "atomic_cas_int32" [EVar slock; EVar tid; zero; one]);
+                SExpr (a "atomic_inc_int32" [EVar hist; EVar tid]);
+                SExpr (a "atomic_dec_int32" [EVar hist; EVar tid]);
+                SExpr (a "atomic_add_int64" [EVar lacc; EVar tid; lone]);
+                SExpr (a "atomic_add_float64" [EVar dacc; EVar tid; done_]);
+                SExpr (a "atomic_exch_int64" [EVar lacc; EVar tid; lone]);
+              ] ) )
+  in
+  let k =
+    base_kernel
+      "atomics_ext"
+      [
+        DParam (hist, Some {arr_elttype = TInt32; arr_memspace = Global});
+        DParam (lacc, Some {arr_elttype = TInt64; arr_memspace = Global});
+        DParam (dacc, Some {arr_elttype = TFloat64; arr_memspace = Global});
+      ]
+      body
+      []
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "atom.global.cas.b32" ;
+  assert_contains ptx "atom.global.cas.b64" ;
+  assert_contains ptx "atom.shared.cas.b32" ;
+  assert_contains ptx "atom.global.inc.u32" ;
+  assert_contains ptx "atom.global.dec.u32" ;
+  (* inc/dec wrap at the limit operand; 0xffffffff makes them plain ±1 *)
+  assert_contains ptx "0xffffffff" ;
+  assert_contains ptx "atom.global.add.u64" ;
+  assert_contains ptx "atom.global.add.f64" ;
+  assert_contains ptx "atom.global.exch.b64" ;
+  (* 8-byte addressing stride for the 64-bit forms *)
+  assert_contains ptx ", 3;"
+
+(** A 32-bit value into a 64-bit atom form is invalid PTX; the emitter must
+    reject it (width discipline), never emit the mismatched suffix. *)
+let test_atomic_width_mismatch_rejected () =
+  let lacc = make_var "lacc" (TVec TInt64) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SExpr
+          (EIntrinsic
+             ( ["Sarek_stdlib"; "Gpu"],
+               "atomic_add_int64",
+               [EVar lacc; EVar tid; EConst (CInt32 1l)] )) )
+  in
+  let k =
+    base_kernel
+      "atomic_mismatch"
+      [DParam (lacc, Some {arr_elttype = TInt64; arr_memspace = Global})]
+      body
+      []
+  in
+  match Sarek_ir_ptx.generate k with
+  | _ -> Alcotest.fail "int32 value into atom.add.u64 should be rejected"
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()
+
 (** Check that [ptx] does NOT contain [marker]. *)
 let assert_absent ptx marker ~why =
   let mlen = String.length marker in
@@ -1466,6 +1551,14 @@ let () =
             "extended atomics emit atom.*.<op> (+ neg for sub)"
             `Quick
             test_atomic_family_markers;
+          Alcotest.test_case
+            "cas/inc/dec/64-bit atomics emit atom forms + stride 3"
+            `Quick
+            test_atomic_cas_incdec_wide_markers;
+          Alcotest.test_case
+            "width-mismatched atomic value is rejected"
+            `Quick
+            test_atomic_width_mismatch_rejected;
           Alcotest.test_case
             "shared array SLet emits .shared decl + ld/st.shared"
             `Quick
