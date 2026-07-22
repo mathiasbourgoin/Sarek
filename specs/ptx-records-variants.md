@@ -127,20 +127,20 @@ Out-of-scope constructs fail at codegen with errors naming the construct AND the
 
 ## Functional Requirements
 
-#### Layout (US-1, US-2, US-4)
+### Layout (US-1, US-2, US-4)
 - **FR-001** [US-1]: The emitter MUST compute all aggregate byte offsets/sizes exclusively via `Sarek_ir_layout`; no offset arithmetic may be duplicated at emission sites.
 - **FR-002** [US-1]: `Sarek_ir_layout` MUST reproduce the host packed layout: record offsets = cumulative `field_byte_size` sums; scalar sizes identical to host `field_byte_size`.
 - **FR-003** [US-2]: Variant layout MUST be `[tag:int32 at 0][payload region at 4]`, element size `4 + max_payload_bytes`, tag = constructor declaration index; multi-arg payload offsets = 4 + packed cumulative.
 - **FR-004** [US-5]: The layout function MUST reject (typed error) any aggregate placing a scalar leaf at a non-naturally-aligned offset; the error MUST name type, field, offset, and required alignment.
 - **FR-005** [US-1]: Nested records MUST be supported by recursive flattening; aggregates containing variants below top level MUST be rejected with a precise error.
 
-#### Emission — global memory (US-1, US-2)
+### Emission — global memory (US-1, US-2)
 - **FR-010** [US-1]: Element addressing for aggregate vectors MUST use general byte-stride multiplication; scalar power-of-2 paths MUST remain shift-based (no regression).
 - **FR-011** [US-1]: `ERecordField`/`LRecordField` on vector elements MUST load/store single fields at `base + idx*stride + offset` with the field's typed ld/st.
 - **FR-012** [US-1]: Whole-aggregate element reads MUST materialize an SROA register set; whole-aggregate element writes MUST emit all loads before any store (EC-1).
 - **FR-013** [US-2]: Variant element reads MUST load the tag and only the payload slots of the constructors the consuming match requires (or all slots — implementer's choice — but never read past `sizeof`).
 
-#### Emission — local values (US-1, US-2, US-3)
+### Emission — local values (US-1, US-2, US-3)
 - **FR-020** [US-1]: Local record values MUST be SROA register sets; `ERecord` construction = per-field evaluation into fresh registers; `ERecordField` = register selection (no memory).
 - **FR-021** [US-2]: Local variant values MUST be tag register + per-(ctor,arg) registers; `EVariant` sets the tag and its ctor's registers.
 - **FR-022** [US-2]: `EMatch`/`SMatch` MUST lower to a tag-compare branch chain; EMatch MUST NOT use selp; payload bindings are arm-scoped; exhaustiveness per C-9 resolution.
@@ -148,16 +148,16 @@ Out-of-scope constructs fail at codegen with errors naming the construct AND the
 - **FR-024** [US-3]: `ETuple` MUST lower as an anonymous SROA aggregate with positional slots; tuple storage into global vectors MUST be rejected with a precise error.
 - **FR-025** [US-1]: `SAssign (LArrayElem …, ERecord …)` MUST be supported (construct SROA then field-wise store, or direct per-field store — observable behavior per FR-012).
 
-#### Params & errors (US-5)
+### Params & errors (US-5)
 - **FR-030** [US-5]: `DParam` of bare `TRecord`/`TVariant` MUST be rejected with the C-17 message; `DParam` with `arr_info` whose `arr_elttype` is an accepted aggregate MUST be accepted and register its stride/layout for addressing.
 - **FR-031** [US-5]: All new `unsupported` messages MUST name the construct and a workaround.
 
-#### Formal (US-4)
+### Formal (US-4)
 - **FR-040** [US-4]: A standalone `PtxLayout.v` MUST model the layout function without modifying `PtxTypes.v`'s `elttype`; the three existing theorems MUST still compile unmodified.
 - **FR-041** [US-4]: Lemmas proved with 0 admits: field non-overlap; in-bounds; size correctness; natural alignment of every scalar leaf in accepted layouts.
 - **FR-042** [US-4]: A conformance test MUST compare the Rocq layout model and the OCaml layout function on an exhaustive small-shape enumeration plus qcheck-random shapes, and MUST pin host agreement on the e2e test types (`point`, `point3d`, `color`, `particle`) via literal offset/size asserts. Per the plan's consensus decision (fact-checked: the extraction dune wiring is a stub), the Rocq side is represented by a hand-mirror OCaml transcription following the project's established CMBT pattern — not extracted code; the host pins are literal (a live `custom_type` get/set query would pull the PPX into the formal test's dependencies).
 
-#### Tests & integration (US-1..US-3)
+### Tests & integration (US-1..US-3)
 - **FR-050** [US-1]: `generate_with_types` MUST become the real entry point consuming `kern_types`/`kern_variants`; plain `generate` behavior for scalar kernels MUST be unchanged (existing snapshot suite green).
 - **FR-051** [US-1..3]: Unit snapshot tests MUST cover: record construct/field/global-roundtrip; nested record; non-pow2 stride; variant construct/match (nullary, 1-arg, multi-arg, ≥3 ctors); EMatch value position; tuple construct/project; helper with record arg+return; each rejection error of US-5.
 - **FR-052** [US-1, US-2]: The 8 target e2e tests MUST pass with per-device Status OK on CUDA/PTX under ZLUDA (RX 7900 XTX); the 44 currently-passing e2e tests MUST remain passing (CPU + ZLUDA).

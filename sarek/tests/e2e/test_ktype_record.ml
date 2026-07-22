@@ -55,7 +55,9 @@ let () =
      EVERY available device and reports a per-device status. Baseline before
      removal (2026-07-22T21:30Z, RX 7900 XTX host): every non-Native device
      (OpenCL plain run, CUDA under ZLUDA) printed SKIP and verified nothing;
-     no framework had a recorded pass or fail. *)
+     no framework had a recorded pass or fail. Any device failure makes the
+     process exit non-zero so CI catches per-device regressions. *)
+  let any_failure = ref false in
   Array.iter
     (fun dev ->
       Printf.printf "runtime [%s] %s: %!" dev.Device.framework dev.Device.name ;
@@ -108,6 +110,13 @@ let () =
                 expected_x
                 expected_y)
         done ;
-        if !ok then print_endline "PASSED" else print_endline "FAILED"
-      with e -> Printf.printf "FAIL (%s)\n%!" (Printexc.to_string e))
-    devs
+        if !ok then print_endline "PASSED"
+        else begin
+          any_failure := true ;
+          print_endline "FAILED"
+        end
+      with e ->
+        any_failure := true ;
+        Printf.printf "FAIL (%s)\n%!" (Printexc.to_string e))
+    devs ;
+  if !any_failure then exit 1

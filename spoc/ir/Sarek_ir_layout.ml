@@ -183,28 +183,25 @@ and flatten_fields ~type_name ~prefix ~offset fields :
     (Ok ([], 0))
     fields
 
-(** Packed byte size of a field type. Only called on types already validated by
-    [flatten_field], so aggregates can only be records. *)
-let rec packed_size = function
-  | TRecord (_, fields) ->
-      List.fold_left (fun acc (_, t) -> acc + packed_size t) 0 fields
-  | t -> scalar_size t
-
 (** {1 Layout computation} *)
 
 let record_layout ~type_name (fields : (string * elttype) list) :
     (record_layout, layout_error) result =
-  let* leaves, size = flatten_fields ~type_name ~prefix:"" ~offset:0 fields in
-  let field_offsets =
-    List.rev
-      (fst
-         (List.fold_left
-            (fun (acc, off) (name, ftype) ->
-              ((name, off) :: acc, off + packed_size ftype))
-            ([], 0)
-            fields))
+  (* Single validated traversal: leaves, per-field offsets and total size all
+     derive from the same [flatten_field] fold, so the packed-offset rule is
+     encoded exactly once. *)
+  let* leaves, field_offsets, size =
+    List.fold_left
+      (fun acc (name, ftype) ->
+        let* leaves_acc, offsets_acc, off = acc in
+        let* leaves, fsize =
+          flatten_field ~type_name ~path:name ~offset:off ftype
+        in
+        Ok (leaves_acc @ leaves, (name, off) :: offsets_acc, off + fsize))
+      (Ok ([], [], 0))
+      fields
   in
-  Ok {rl_fields = field_offsets; rl_leaves = leaves; rl_size = size}
+  Ok {rl_fields = List.rev field_offsets; rl_leaves = leaves; rl_size = size}
 
 let variant_layout ~type_name (ctors : (string * elttype list) list) :
     (variant_layout, layout_error) result =
