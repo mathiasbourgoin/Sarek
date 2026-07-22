@@ -158,7 +158,10 @@ let ceil x = to_float32 (Stdlib.ceil x)
 let abs x = to_float32 (Stdlib.abs_float x)
 
 (** FMA (fused multiply-add) - important for GPU accuracy *)
-let fma x y z = to_float32 ((x *. y) +. z) |> check_overflow "fma"
+(* A single fused rounding (Float.fma), then one float32 rounding — not
+   [(x *. y) +. z], whose intermediate product rounds independently and breaks
+   exact TwoProd error extraction for the df64 (float-float) library. *)
+let fma x y z = to_float32 (Float.fma x y z) |> check_overflow "fma"
 
 (** Min/max that handle NaN correctly (GPU semantics) *)
 let min x y =
