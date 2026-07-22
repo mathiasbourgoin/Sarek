@@ -65,8 +65,8 @@
   test_ray_ppx
   test_registered_type
   test_registered_variant
-  ; test_cross_module_type     ; DISABLED: PPX registration issue with add_vec
-  ; test_registered_const       ; DISABLED: PPX registration issue with scale_fun
+  test_cross_module_type
+  test_registered_const
   test_visibility_private
   test_convention
   test_convention_kernel
@@ -102,8 +102,8 @@
   test_ray_ppx
   test_registered_type
   test_registered_variant
-  ; test_cross_module_type     ; DISABLED: PPX registration issue with add_vec
-  ; test_registered_const       ; DISABLED: PPX registration issue with scale_fun
+  test_cross_module_type
+  test_registered_const
   test_visibility_private
   test_convention
   test_convention_kernel
@@ -139,6 +139,7 @@
   spoc_core
   test_helpers
   unix)
+ (preprocessor_deps registered_defs.ml)
  (preprocess
   (pps sarek_ppx))
  (flags
@@ -217,8 +218,15 @@
  (action
   (run %{dep:test_registered_variant.exe})))
 
-; test_cross_module_type.exe     ; DISABLED: PPX registration issue
-; test_registered_const.exe       ; DISABLED: PPX registration issue
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_cross_module_type.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_registered_const.exe})))
 
 (rule
  (alias runtest)
@@ -527,3 +535,12 @@
 (alias
  (name e2e-manual)
  (deps test_debug_native.exe test_float64_math_intrinsics.exe))
+
+(executable
+ (name test_df64)
+ (modules test_df64)
+ (libraries sarek sarek.stdlib spoc_core test_helpers unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
