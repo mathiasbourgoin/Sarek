@@ -60,6 +60,13 @@
  (name test_ptx_snapshot)
  (libraries sarek.codegen alcotest))
 
+; Aggregate byte-layout test — pins the host ABI (packed offsets, variant
+; tag@0/payload@4) mirrored by Sarek_ir_layout, plus its typed rejections
+
+(test
+ (name test_ir_layout)
+ (libraries spoc.ir alcotest))
+
 ; Regression test: Sarek_ppx.scan_file_for_sarek_types's `with _ -> ()`
 ; catch-all (pre-fix: silently swallowed the scanned file's name and the
 ; exception, on ANY failure). Post-fix it returns a diagnostic instead of
