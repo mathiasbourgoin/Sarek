@@ -22,6 +22,13 @@
   (backend bisect_ppx)))
 
 (test
+ (name test_ptx_stride_spike)
+ (modules test_ptx_stride_spike)
+ (libraries sarek_cuda alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(test
  (name test_cuda_cache_key)
  (modules test_cuda_cache_key)
  (libraries spoc_framework alcotest)
