@@ -16,13 +16,13 @@
     Numerics: precise tier, max relative error ≤ 1e-12 on the documented domains
     (measured, see sarek/tests/unit/test_f64_softmath.ml).
 
-    Coefficient provenance: the sin/cos kernel polynomials and the Cody-Waite
-    π/2 and ln2 hi/lo splits are the published fdlibm 5.3 constants (Sun
-    Microsystems, freely-redistributable license; the same values appear in
-    Cephes and glibc). The exp and atanh-based log polynomials are plain Taylor
-    coefficients — on the reduced domains (|r| ≤ ln2/2 for exp, z = s² ≤ 0.0295
-    for log) truncation error is below ~1e-14 relative, so minimax refinement is
-    unnecessary at this tier.
+    Coefficient provenance: the sin/cos/atan/asin/acos/expm1/log1p kernel
+    polynomials and the Cody-Waite π/2 and ln2 hi/lo splits are the published
+    fdlibm 5.3 constants (Sun Microsystems, freely-redistributable license; the
+    same values appear in Cephes and glibc). The exp and atanh-based log
+    polynomials are plain Taylor coefficients — on the reduced domains (|r| ≤
+    ln2/2 for exp, z = s² ≤ 0.0295 for log) truncation error is below ~1e-14
+    relative, so minimax refinement is unnecessary at this tier.
 
     Documented domains (graceful degradation outside, no Payne-Hanek):
     - sin/cos/tan: |x| ≤ 1e6 (3-term Cody-Waite reduction);
@@ -32,7 +32,12 @@
     - pow: x > 0 (log of a negative is NaN; integer-exponent negative bases are
       not handled);
     - sinh/cosh: |x| ≤ 708 (via exp(|x|)); tanh: all finite x (argument clamped,
-      saturates to ±1). *)
+      saturates to ±1);
+    - asin/acos: [-1, 1]; atan: all finite x (large |x| through the −1/x
+      branch);
+    - atan2: finite (y, x), x = −0 treated as +0, inf/nan unspecified;
+    - expm1: x ∈ [-708, 709]; log1p: finite x > −1 (both keep full relative
+      precision near 0 — that is what they exist for). *)
 
 open Sarek_ir_types
 
@@ -91,6 +96,9 @@ let abs_ e = EIntrinsic ([], "fabs", [e])
 
 let min_ a b = EIntrinsic ([], "min", [a; b])
 
+(* Native sqrt.rn.f64 — correctly rounded, no software emulation needed. *)
+let sqrt_ e = EIntrinsic ([], "sqrt", [e])
+
 (** [copysign_ mag sgn] = |mag| with [sgn]'s sign (OCaml argument order). *)
 let copysign_ mag sgn = EIntrinsic ([], "copysign", [mag; sgn])
 
@@ -142,6 +150,9 @@ let pio2_2 = 6.07710050630396597660e-11
 
 let pio2_3 = 2.02226624879595063154e-21
 
+(* Mantissa-normalization pivot for log/log1p: nearest double to √2. *)
+let sqrt2 = 1.41421356237309514547
+
 (* fdlibm __kernel_sin: sin(r) = r + r·z·(S1 + z·(S2 + … z·S6)), z = r²,
    |r| ≤ π/4. Highest degree first for Horner. *)
 let sin_coeffs =
@@ -166,6 +177,92 @@ let cos_coeffs =
   ]
 
 let cos_c1 = 4.16666666666666019037e-02
+
+(* fdlibm s_atan.c: atanhi/atanlo = atan(0.5), atan(1), atan(1.5), atan(inf)
+   as hi/lo pairs, and the degree-11 odd-polynomial coefficients aT. *)
+let atan_hi =
+  [|
+    4.63647609000806093515e-01;
+    7.85398163397448278999e-01;
+    9.82793723247329054082e-01;
+    1.57079632679489655800e+00;
+  |]
+
+let atan_lo =
+  [|
+    2.26987774529616870924e-17;
+    3.06161699786838301793e-17;
+    1.39033110312309984516e-17;
+    6.12323399573676603587e-17;
+  |]
+
+let atan_at =
+  [|
+    3.33333333333329318027e-01 (* aT0 *);
+    -1.99999999998764832476e-01;
+    1.42857142725034663711e-01;
+    -1.11111104054623557880e-01;
+    9.09088713343650656196e-02;
+    -7.69187620504482999495e-02;
+    6.66107313738753120669e-02;
+    -5.83357013379057348645e-02;
+    4.97687799461593236017e-02;
+    -3.65315727442169155270e-02;
+    1.62858201153657823623e-02 (* aT10 *);
+  |]
+
+(* fdlibm e_asin.c / e_acos.c: shared rational R(t) = p(t)/q(t) coefficients
+   (pS0..pS5 / qS1..qS4) and the π/2, π/4 hi/lo splits. *)
+let pio2_hi = 1.57079632679489655800e+00
+
+let pio2_lo = 6.12323399573676603587e-17
+
+let pio4_hi = 7.85398163397448278999e-01
+
+let pi = 3.14159265358979311600e+00
+
+let asin_ps0 = 1.66666666666666657415e-01
+
+let asin_p_coeffs =
+  [
+    3.47933107596021167570e-05 (* pS5 *);
+    7.91534994289814532176e-04;
+    -4.00555345006794114027e-02;
+    2.01212532134862925881e-01;
+    -3.25565818622400915405e-01 (* pS1 *);
+  ]
+
+let asin_q_coeffs =
+  [
+    7.70381505559019352791e-02 (* qS4 *);
+    -6.88283971605453293030e-01;
+    2.02094576023350569471e+00;
+    -2.40339491173441421878e+00 (* qS1 *);
+  ]
+
+(* fdlibm s_expm1.c: rational-approximation coefficients Q1..Q5. *)
+let expm1_q1 = -3.33333333333331316428e-02
+
+let expm1_q_coeffs =
+  [
+    -2.01099218183624371326e-07 (* Q5 *);
+    4.00821782732936239552e-06;
+    -7.93650757867487942473e-05;
+    1.58730158725481460165e-03 (* Q2 *);
+  ]
+
+(* fdlibm s_log1p.c: polynomial coefficients Lp1..Lp7. *)
+let log1p_lp1 = 6.666666666666735130e-01
+
+let log1p_lp_coeffs =
+  [
+    1.479819860511658591e-01 (* Lp7 *);
+    1.531383769920937332e-01;
+    1.818357216161805012e-01;
+    2.222219843214978396e-01;
+    2.857142874366239149e-01;
+    3.999999999940941908e-01 (* Lp2 *);
+  ]
 
 let inv_fact k =
   let rec fact i acc =
@@ -218,7 +315,6 @@ let log_body x =
       ~coeffs:[1. /. 15.; 1. /. 13.; 1. /. 11.; 1. /. 9.; 1. /. 7.; 1. /. 5.]
       ~last:(1. /. 3.)
   in
-  let sqrt2 = 1.41421356237309514547 in
   let_ b (bits (EVar x))
   @@ let_ k_raw (to_i32 (shr (EVar b) 52 &! i64 0x7FFL))
   @@ let_
@@ -345,6 +441,264 @@ let tanh_body x =
                    (f64 1.0 -! (f64 2.0 /! (EVar t +! f64 1.0)))
                    (EVar x))) )
 
+(** atan(x): fdlibm 5.3 s_atan.c — |x| reduced against the 7/16, 11/16, 19/16,
+    39/16 breakpoints to t (|t| ≲ 0.46), degree-11 odd polynomial split into
+    even/odd Horner halves (aT), result hi − ((p − lo) − t) with the
+    atan(0.5)/atan(1)/atan(1.5)/(π/2) hi/lo tables (hi = lo = 0 on the
+    no-reduction branch). Large |x| flows through the −1/x branch, so fdlibm's
+    2^66 cutoff is unnecessary. *)
+let atan_body x =
+  let a = fvar "a" in
+  let t = fvar "t" in
+  let hi = fvar "hi" in
+  let lo = fvar "lo" in
+  let z = fvar "z" in
+  let w = fvar "w" in
+  let p = fvar "p" in
+  (* 5-way select on the reduction interval of |x| (selp chains — all branches
+     are computed; every divisor below is bounded away from 0 on its lane). *)
+  let pick v0 v1 v2 v3 v4 =
+    let br lim y n = EIf (EVar a <! f64 lim, y, n) in
+    br 0.4375 v0 (br 0.6875 v1 (br 1.1875 v2 (br 2.4375 v3 v4)))
+  in
+  let tbl c = pick (f64 0.0) (f64 c.(0)) (f64 c.(1)) (f64 c.(2)) (f64 c.(3)) in
+  let even = [atan_at.(10); atan_at.(8); atan_at.(6); atan_at.(4); atan_at.(2)]
+  and odd = [atan_at.(9); atan_at.(7); atan_at.(5); atan_at.(3)] in
+  let_ a (abs_ (EVar x))
+  @@ let_
+       t
+       (pick
+          (EVar a)
+          ((EVar a +! EVar a -! f64 1.0) /! (f64 2.0 +! EVar a))
+          ((EVar a -! f64 1.0) /! (EVar a +! f64 1.0))
+          ((EVar a -! f64 1.5) /! fma (f64 1.5) (EVar a) (f64 1.0))
+          (f64 (-1.0) /! EVar a))
+  @@ let_ hi (tbl atan_hi)
+  @@ let_ lo (tbl atan_lo)
+  @@ let_ z (EVar t *! EVar t)
+  @@ let_ w (EVar z *! EVar z)
+  (* p = t·(s1 + s2), s1 = z·E(w), s2 = w·O(w) (fdlibm's split evaluation). *)
+  @@ let_
+       p
+       (EVar t
+       *! ((EVar z *! horner (EVar w) ~coeffs:even ~last:atan_at.(0))
+          +! (EVar w *! horner (EVar w) ~coeffs:odd ~last:atan_at.(1))))
+  @@ SReturn (copysign_ (EVar hi -! (EVar p -! EVar lo -! EVar t)) (EVar x))
+
+(** atan2(y, x): fdlibm 5.3 e_atan2.c quadrant logic over atan(y/x), collapsed
+    to the single x < 0 fixup atan2(y,x) = atan(y/x) + copysign(π, y); for x > 0
+    (and x = +0 via atan(±∞) = ±π/2) atan(y/x) is already the answer. Only the π
+    hi part is added (the π lo tail is ≪ 1e-12 relative on results of magnitude
+    ≥ π/2). x = −0 is treated as +0; inf/inf and nan are unspecified (outside
+    the documented domain). *)
+let atan2_body y x =
+  let z = fvar "z" in
+  let_ z (call "__sarek_f64_atan" [EVar y /! EVar x])
+  @@ SReturn
+       (EIf (EVar x <! f64 0.0, copysign_ (f64 pi) (EVar y) +! EVar z, EVar z))
+
+(** asin(x): fdlibm 5.3 e_asin.c — |x| < 0.5: x + x·R(x²) with the rational R =
+    p/q; 0.5 ≤ |x| ≤ 0.975: π/4-anchored form with the low-word-zeroed hi part
+    of s = sqrt((1−|x|)/2) and its exact-square correction c; |x| > 0.975 (incl.
+    1): π/2 − 2·(s + s·R). *)
+let asin_body x =
+  let a = fvar "a" in
+  let t = fvar "t" in
+  let p = fvar "p" in
+  let q = fvar "q" in
+  let s = fvar "s" in
+  let ws = fvar "ws" in
+  let c = fvar "c" in
+  let p2 = fvar "p2" in
+  let q2 = fvar "q2" in
+  let pnum z = z *! horner z ~coeffs:asin_p_coeffs ~last:asin_ps0 in
+  let qden z = horner z ~coeffs:asin_q_coeffs ~last:1.0 in
+  let_ a (abs_ (EVar x))
+  @@ SIf
+       ( EVar a <! f64 0.5,
+         let_ t (EVar x *! EVar x)
+         @@ SReturn (fma (EVar x) (pnum (EVar t) /! qden (EVar t)) (EVar x)),
+         Some
+           (let_ t ((f64 1.0 -! EVar a) *! f64 0.5)
+           @@ let_ p (pnum (EVar t))
+           @@ let_ q (qden (EVar t))
+           @@ let_ s (sqrt_ (EVar t))
+           @@ SIf
+                ( EVar a >! f64 0.975,
+                  SReturn
+                    (copysign_
+                       (f64 pio2_hi
+                       -! ((f64 2.0 *! fma (EVar s) (EVar p /! EVar q) (EVar s))
+                          -! f64 pio2_lo))
+                       (EVar x)),
+                  Some
+                    (let_ ws (unbits (bits (EVar s) &! i64 0xFFFFFFFF00000000L))
+                    @@ let_
+                         c
+                         ((EVar t -! (EVar ws *! EVar ws))
+                         /! (EVar s +! EVar ws))
+                    @@ let_
+                         p2
+                         ((f64 2.0 *! EVar s *! (EVar p /! EVar q))
+                         -! (f64 pio2_lo -! (EVar c +! EVar c)))
+                    @@ let_ q2 (f64 pio4_hi -! (EVar ws +! EVar ws))
+                    @@ SReturn
+                         (copysign_
+                            (f64 pio4_hi -! (EVar p2 -! EVar q2))
+                            (EVar x))) )) )
+
+(** acos(x): fdlibm 5.3 e_acos.c — |x| < 0.5: π/2 − (x − (π/2_lo − x·R(x²))); x
+    ≤ −0.5: π − 2·(s + (R·s − π/2_lo)) on z = (1+x)/2, s = sqrt(z); x ≥ 0.5:
+    2·(df + (R·s + c)) on z = (1−x)/2 with the low-word-zeroed df and its
+    exact-square correction c (c := 0 at z = 0, i.e. x = 1, avoiding the 0/0
+    fdlibm dodges with an early return). *)
+let acos_body x =
+  let z = fvar "z" in
+  let s = fvar "s" in
+  let r = fvar "r" in
+  let df = fvar "df" in
+  let c = fvar "c" in
+  (* The shared fdlibm rational R(v) = p(v)/q(v). *)
+  let rfun v =
+    v
+    *! horner v ~coeffs:asin_p_coeffs ~last:asin_ps0
+    /! horner v ~coeffs:asin_q_coeffs ~last:1.0
+  in
+  SIf
+    ( abs_ (EVar x) <! f64 0.5,
+      let_ z (EVar x *! EVar x)
+      @@ SReturn
+           (f64 pio2_hi
+           -! (EVar x -! (f64 pio2_lo -! (EVar x *! rfun (EVar z))))),
+      Some
+        (SIf
+           ( EVar x <! f64 0.0,
+             let_ z ((f64 1.0 +! EVar x) *! f64 0.5)
+             @@ let_ s (sqrt_ (EVar z))
+             @@ let_ r (rfun (EVar z))
+             @@ SReturn
+                  (f64 pi
+                  -! (f64 2.0 *! (EVar s +! ((EVar r *! EVar s) -! f64 pio2_lo)))
+                  ),
+             Some
+               (let_ z ((f64 1.0 -! EVar x) *! f64 0.5)
+               @@ let_ s (sqrt_ (EVar z))
+               @@ let_ df (unbits (bits (EVar s) &! i64 0xFFFFFFFF00000000L))
+               @@ let_
+                    c
+                    (EIf
+                       ( EVar z =! f64 0.0,
+                         f64 0.0,
+                         (EVar z -! (EVar df *! EVar df)) /! (EVar s +! EVar df)
+                       ))
+               @@ let_ r (rfun (EVar z))
+               @@ SReturn
+                    (f64 2.0 *! (EVar df +! fma (EVar r) (EVar s) (EVar c)))) ))
+    )
+
+(** expm1(x): fdlibm 5.3 s_expm1.c — k = rint(x/ln2) with the fma Cody-Waite
+    residual c; rational correction e from Q1..Q5 on the reduced x. k = 0 keeps
+    fdlibm's exact near-zero form x − (x·e − x²/2) (full relative precision —
+    the reason expm1 exists); k ≠ 0 collapses fdlibm's k-cases to 2^k·(1 − (e′ −
+    x)) − 1 via fma (result magnitude ≥ 0.41 there, so the collapsed form stays
+    ≪ 1e-12 relative). Domain x ∈ [−708, 709]. *)
+let expm1_body x =
+  let nf = fvar "nf" in
+  let hi = fvar "hi" in
+  let lo = fvar "lo" in
+  let xr = fvar "xr" in
+  let c = fvar "c" in
+  let hfx = fvar "hfx" in
+  let hxs = fvar "hxs" in
+  let r1 = fvar "r1" in
+  let t = fvar "t" in
+  let e = fvar "e" in
+  let n = ivar "n" in
+  let e2 = fvar "e2" in
+  let_ nf (floor_ (fma (EVar x) (f64 log2_e) (f64 0.5)))
+  @@ let_ hi (fma (EVar nf) (f64 (-.ln2_hi)) (EVar x))
+  @@ let_ lo (EVar nf *! f64 ln2_lo)
+  @@ let_ xr (EVar hi -! EVar lo)
+  @@ let_ c (EVar hi -! EVar xr -! EVar lo)
+  @@ let_ hfx (f64 0.5 *! EVar xr)
+  @@ let_ hxs (EVar xr *! EVar hfx)
+  @@ let_
+       r1
+       (fma
+          (EVar hxs)
+          (horner (EVar hxs) ~coeffs:expm1_q_coeffs ~last:expm1_q1)
+          (f64 1.0))
+  @@ let_ t (fma (EVar r1) (neg (EVar hfx)) (f64 3.0))
+  @@ let_
+       e
+       (EVar hxs
+       *! ((EVar r1 -! EVar t) /! fma (neg (EVar xr)) (EVar t) (f64 6.0)))
+  @@ let_ n (to_i32 (EVar nf))
+  @@ SIf
+       ( EVar n =! i32 0,
+         SReturn (EVar xr -! ((EVar xr *! EVar e) -! EVar hxs)),
+         Some
+           (let_ e2 ((EVar xr *! (EVar e -! EVar c)) -! EVar c -! EVar hxs)
+           @@ SReturn
+                (fma
+                   (f64 1.0 -! (EVar e2 -! EVar xr))
+                   (unbits (shl (to_i64 (EVar n +! i32 1023)) 52))
+                   (f64 (-1.0)))) )
+
+(** log1p(x): fdlibm 5.3 s_log1p.c — u = 1 + x with the rounding correction
+    c = (k > 0 ? 1 − (u − x) : x − (u − 1))/u, u's mantissa normalized to
+    [√2/2, √2) exactly as __sarek_f64_log, f = m − 1, R(z) on z = s²,
+    s = f/(2+f), result k·ln2_hi + (f − (hfsq − (s·(hfsq+R) + (k·ln2_lo+c)))).
+    fdlibm's separate k = 0 fast path is subsumed: for u ∈ [√2/2, √2) the
+    normalization yields k = 0, f = u − 1 (exact by Sterbenz) and c carries
+    the 1 + x rounding residual, preserving full relative precision near 0
+    (log1p's raison d'être). Domain x > −1. *)
+let log1p_body x =
+  let u = fvar "u" in
+  let b = lvar "b" in
+  let k_raw = ivar "k_raw" in
+  let m0 = fvar "m0" in
+  let big = ivar "big" in
+  let m = fvar "m" in
+  let k = ivar "k" in
+  let c = fvar "c" in
+  let f = fvar "f" in
+  let s = fvar "s" in
+  let z = fvar "z" in
+  let r = fvar "r" in
+  let hfsq = fvar "hfsq" in
+  let kf = fvar "kf" in
+  let_ u (f64 1.0 +! EVar x)
+  @@ let_ b (bits (EVar u))
+  @@ let_ k_raw (to_i32 (shr (EVar b) 52 &! i64 0x7FFL))
+  @@ let_
+       m0
+       (unbits (EVar b &! i64 0xFFFFFFFFFFFFFL |! i64 0x3FF0000000000000L))
+  @@ let_ big (EVar m0 >! f64 sqrt2)
+  @@ let_ m (EIf (EVar big, EVar m0 *! f64 0.5, EVar m0))
+  @@ let_ k (EIf (EVar big, EVar k_raw -! i32 1022, EVar k_raw -! i32 1023))
+  @@ let_
+       c
+       (EIf
+          ( EVar k >! i32 0,
+            f64 1.0 -! (EVar u -! EVar x),
+            EVar x -! (EVar u -! f64 1.0) )
+       /! EVar u)
+  @@ let_ f (EVar m -! f64 1.0)
+  @@ let_ s (EVar f /! (f64 2.0 +! EVar f))
+  @@ let_ z (EVar s *! EVar s)
+  @@ let_ r (EVar z *! horner (EVar z) ~coeffs:log1p_lp_coeffs ~last:log1p_lp1)
+  @@ let_ hfsq (f64 0.5 *! EVar f *! EVar f)
+  @@ let_ kf (to_f64 (EVar k))
+  @@ SReturn
+       (fma
+          (EVar kf)
+          (f64 ln2_hi)
+          (EVar f
+          -! (EVar hfsq
+             -! ((EVar s *! (EVar hfsq +! EVar r))
+                +! fma (EVar kf) (f64 ln2_lo) (EVar c)))))
+
 (** {1 Helper table} *)
 
 let unary name body =
@@ -380,6 +734,12 @@ let helpers =
       unary "__sarek_f64_cosh" cosh_body;
       unary "__sarek_f64_tanh" tanh_body;
       binary "__sarek_f64_pow" pow_body;
+      unary "__sarek_f64_atan" atan_body;
+      binary "__sarek_f64_atan2" atan2_body;
+      unary "__sarek_f64_asin" asin_body;
+      unary "__sarek_f64_acos" acos_body;
+      unary "__sarek_f64_expm1" expm1_body;
+      unary "__sarek_f64_log1p" log1p_body;
     ]
 
 let helper_name = function
@@ -393,6 +753,12 @@ let helper_name = function
   | "cosh" -> Some "__sarek_f64_cosh"
   | "tanh" -> Some "__sarek_f64_tanh"
   | "pow" -> Some "__sarek_f64_pow"
+  | "atan" -> Some "__sarek_f64_atan"
+  | "atan2" -> Some "__sarek_f64_atan2"
+  | "asin" -> Some "__sarek_f64_asin"
+  | "acos" -> Some "__sarek_f64_acos"
+  | "expm1" -> Some "__sarek_f64_expm1"
+  | "log1p" -> Some "__sarek_f64_log1p"
   | _ -> None
 
 let register funcs =

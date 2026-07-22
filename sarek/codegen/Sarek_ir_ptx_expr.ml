@@ -1436,23 +1436,38 @@ and emit_intrinsic_native buf alloc env path name args : string =
       let r = new_f32 alloc in
       emit buf "copysign.f32 %s, %s, %s;" r r_arg r_mag ;
       r
-  | "asin" | "acos" | "atan" ->
-      unsupported
-        (name
-       ^ ": no native PTX instruction and no accurate ex2/lg2 composition \
-          (polynomial approximation is out of scope); compute on the CPU")
-  | "atan2" ->
-      unsupported
-        "atan2: depends on atan, which has no native PTX instruction; compute \
-         on the CPU"
-  | "expm1" ->
-      unsupported
-        "expm1: exp(x)-1 via ex2 would lose the near-zero precision expm1 \
-         exists for; use exp then subtract explicitly, or compute on the CPU"
-  | "log1p" ->
-      unsupported
-        "log1p: log(1+x) via lg2 would lose the near-zero precision log1p \
-         exists for; use log(1.0+x) explicitly, or compute on the CPU"
+  | "asin" | "acos" | "atan" | "atan2" | "expm1" | "log1p" -> (
+      (* f32 path: no native PTX instruction and no accurate ex2/lg2
+         composition (and for expm1/log1p an exp/log composition would lose
+         the near-zero precision they exist for). Widen to f64
+         (cvt.rn.f64.f32), run the softmath f64 helper, round the result back
+         (cvt.rn.f32.f64) — precision trivially exceeds f32 ulp. PERF: the
+         f64 helper runs at the fp64 rate (1/16 of fp32 on most consumer
+         GPUs); acceptable for these rare functions — a native-f32
+         composition can come later if profiling demands. f64 callers reach
+         the softmath helper directly via the ["Float64"] path. *)
+      let hname =
+        match Sarek_ir_ptx_softmath.helper_name name with
+        | Some h -> h
+        | None ->
+            fail ("PTX codegen: internal error: no softmath helper for " ^ name)
+      in
+      Sarek_ir_ptx_softmath.register alloc.funcs ;
+      let f =
+        {
+          var_name = hname;
+          var_id = -1;
+          var_type = TFloat64;
+          var_mutable = false;
+        }
+      in
+      let args64 = List.map (fun a -> ECast (TFloat64, a)) args in
+      match emit_app buf alloc env f args64 with
+      | Scalar r -> emit_cast buf alloc r TFloat32
+      | Agg _ ->
+          fail
+            "PTX codegen: internal error: softmath helper returned an aggregate"
+      )
   | "fabs" | "abs_float" ->
       unary_native name ~f32_op:(Some "abs.f32") ~f64_op:(Some "abs.f64")
   | "copysign" ->

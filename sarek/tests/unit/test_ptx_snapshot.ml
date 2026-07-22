@@ -1368,22 +1368,6 @@ let test_f64_variant_param_rejected () =
       check "Some_" ;
       check "8"
 
-(** Shared driver for math-intrinsic rejection tests: codegen must raise
-    Ptx_codegen_error and the message must contain every expected substring
-    (construct + width + workaround). *)
-let assert_math_rejected k expected_substrings =
-  match Sarek_ir_ptx.generate k with
-  | _ -> Alcotest.fail "kernel should raise Ptx_codegen_error"
-  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error msg ->
-      List.iter
-        (fun expected ->
-          match find_first msg expected with
-          | Some _ -> ()
-          | None ->
-              Alcotest.fail
-                (Printf.sprintf "error should contain %S, got: %s" expected msg))
-        expected_substrings
-
 (** A one-intrinsic kernel over a float vector of [elt] element type. *)
 let make_math_kernel elt path name =
   let out = make_var "out" (TVec elt) in
@@ -1433,12 +1417,16 @@ let test_f64_exp_log_softmath () =
   if contains ptx_log "lg2.approx.f32" then
     Alcotest.fail "f64 log must not emit the f32 .approx instruction"
 
-(** asin has no native PTX op and no accurate composition at any width. *)
-let test_f32_asin_rejected () =
+(** f32 asin has no native PTX op and no accurate composition; it lowers via the
+    f64 softmath helper: widen (cvt.rn.f64.f32), inline the fdlibm-style f64
+    body (fma.rn.f64 + sqrt.rn.f64), round back (cvt.rn.f32.f64). *)
+let test_f32_asin_via_f64 () =
   let k = make_math_kernel TFloat32 ["Sarek_stdlib"; "Float32"] "asin" in
-  assert_math_rejected
-    k
-    ["asin: no native PTX instruction"; "compute on the CPU"]
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "cvt.rn.f64.f32" ;
+  assert_contains ptx "fma.rn.f64" ;
+  assert_contains ptx "sqrt.rn.f64" ;
+  assert_contains ptx "cvt.rn.f32.f64"
 
 let () =
   Alcotest.run
@@ -1471,9 +1459,9 @@ let () =
             `Quick
             test_f64_exp_log_softmath;
           Alcotest.test_case
-            "f32 asin is rejected (no native op, no composition)"
+            "f32 asin lowers via the f64 softmath helper (cvt round-trip)"
             `Quick
-            test_f32_asin_rejected;
+            test_f32_asin_via_f64;
           Alcotest.test_case
             "extended atomics emit atom.*.<op> (+ neg for sub)"
             `Quick

@@ -91,6 +91,8 @@ let eval_intrinsic name args =
   | "floor", [VF a] -> VF (Float.floor a)
   | "fabs", [VF a] -> VF (Float.abs a)
   | "min", [VF a; VF b] -> VF (Float.min a b)
+  (* sqrt.rn.f64 is correctly rounded, same as OCaml's sqrt. *)
+  | "sqrt", [VF a] -> VF (Stdlib.sqrt a)
   (* IR copysign(mag, sgn) follows the OCaml argument order. *)
   | "copysign", [VF m; VF s] -> VF (Float.copy_sign m s)
   | "f64_bits", [VF a] -> VI64 (Int64.bits_of_float a)
@@ -239,6 +241,94 @@ let test_tanh () =
     Stdlib.tanh
     ~domains:[(-2.0, 2.0); (-0.04, 0.04); (-25.0, 25.0)]
 
+let test_asin () = check_unary "asin" Stdlib.asin ~domains:[(-1.0, 1.0)]
+
+let test_acos () = check_unary "acos" Stdlib.acos ~domains:[(-1.0, 1.0)]
+
+let test_atan () =
+  check_unary "atan" Stdlib.atan ~domains:[(-1.0, 1.0); (-1e6, 1e6)]
+
+(** expm1/log1p exist for relative precision near 0: sweep ±10^-e down to 1e-300
+    on top of the linear-grid domains. *)
+let test_near_zero name reference =
+  let hname =
+    match Sarek_codegen.Sarek_ir_ptx_softmath.helper_name name with
+    | Some h -> h
+    | None -> Alcotest.fail ("no softmath helper for " ^ name)
+  in
+  let worst = ref 0.0 in
+  let worst_x = ref 0.0 in
+  for e = 1 to 300 do
+    List.iter
+      (fun x ->
+        let err = rel_err ~got:(call1 hname x) ~expect:(reference x) in
+        if err > !worst then begin
+          worst := err ;
+          worst_x := x
+        end)
+      [10.0 ** float_of_int (-e); -.(10.0 ** float_of_int (-e))]
+  done ;
+  Printf.printf
+    "%-6s ±1e-300..1e-1: max rel err %.3e (at x = %.17g)\n%!"
+    name
+    !worst
+    !worst_x ;
+  if !worst > 1e-12 then
+    Alcotest.failf
+      "%s: near-zero max rel err %.3e > 1e-12 (worst at x = %.17g)"
+      name
+      !worst
+      !worst_x
+
+let test_expm1 () =
+  check_unary
+    "expm1"
+    Stdlib.expm1
+    ~domains:[(-0.9, 20.0); (-0.1, 0.1); (-700.0, 700.0)] ;
+  test_near_zero "expm1" Stdlib.expm1
+
+let test_log1p () =
+  check_unary "log1p" Stdlib.log1p ~domains:[(-0.9, 20.0); (-0.1, 0.1)] ;
+  test_near_zero "log1p" Stdlib.log1p
+
+(** atan2 over all four quadrants (32x32 grid chosen to avoid exact zeros, which
+    linear 1D grids would hit) plus the axis special cases. *)
+let test_atan2 () =
+  let worst = ref 0.0 in
+  let worst_at = ref (0.0, 0.0) in
+  let check y x =
+    let e =
+      rel_err ~got:(call2 "__sarek_f64_atan2" y x) ~expect:(Stdlib.atan2 y x)
+    in
+    if e > !worst then begin
+      worst := e ;
+      worst_at := (y, x)
+    end
+  in
+  for i = 0 to 31 do
+    for j = 0 to 31 do
+      let y = -3.0 +. (6.0 *. float_of_int i /. 31.0) in
+      let x = -3.0 +. (6.0 *. float_of_int j /. 31.0) in
+      check y x
+    done
+  done ;
+  (* Axes: y = 0 (x > 0 and x < 0), x = 0 (both y signs). *)
+  List.iter
+    (fun (y, x) -> check y x)
+    [(0.0, 2.0); (0.0, -2.0); (2.0, 0.0); (-2.0, 0.0); (-0.0, 2.0)] ;
+  let y, x = !worst_at in
+  Printf.printf
+    "atan2  [-3,3]x[-3,3]: max rel err %.3e (at y=%g, x=%g)\n%!"
+    !worst
+    y
+    x ;
+  if !worst > 1e-12 then
+    Alcotest.failf
+      "atan2: max rel err %.3e > 1e-12 (worst at y=%g x=%g)"
+      !worst
+      y
+      x
+
 let test_pow () =
   let worst = ref 0.0 in
   let worst_at = ref (0.0, 0.0) in
@@ -284,5 +374,11 @@ let () =
           Alcotest.test_case "cosh" `Quick test_cosh;
           Alcotest.test_case "tanh" `Quick test_tanh;
           Alcotest.test_case "pow" `Quick test_pow;
+          Alcotest.test_case "asin" `Quick test_asin;
+          Alcotest.test_case "acos" `Quick test_acos;
+          Alcotest.test_case "atan" `Quick test_atan;
+          Alcotest.test_case "atan2" `Quick test_atan2;
+          Alcotest.test_case "expm1" `Quick test_expm1;
+          Alcotest.test_case "log1p" `Quick test_log1p;
         ] );
     ]
