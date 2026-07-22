@@ -550,6 +550,48 @@ let test_atomic_cas_incdec_wide_markers () =
   (* 8-byte addressing stride for the 64-bit forms *)
   assert_contains ptx ", 3;"
 
+(** Float Mod lowers to C fmod: x − trunc(x/y)·y via rn-rounded div, cvt.rzi
+    trunc, neg and a single fma — for both f32 and f64. *)
+let test_float_mod_fmod_markers () =
+  let fa = make_var "fa" (TVec TFloat32) in
+  let da = make_var "da" (TVec TFloat64) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SSeq
+          [
+            SAssign
+              ( LArrayElem ("fa", EVar tid),
+                EBinop (Mod, EArrayRead ("fa", EVar tid), EConst (CFloat32 3.0))
+              );
+            SAssign
+              ( LArrayElem ("da", EVar tid),
+                EBinop (Mod, EArrayRead ("da", EVar tid), EConst (CFloat64 3.0))
+              );
+          ] )
+  in
+  let k =
+    base_kernel
+      "float_fmod"
+      [
+        DParam (fa, Some {arr_elttype = TFloat32; arr_memspace = Global});
+        DParam (da, Some {arr_elttype = TFloat64; arr_memspace = Global});
+      ]
+      body
+      []
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "div.rn.f32" ;
+  assert_contains ptx "cvt.rzi.f32.f32" ;
+  assert_contains ptx "neg.f32" ;
+  assert_contains ptx "fma.rn.f32" ;
+  assert_contains ptx "div.rn.f64" ;
+  assert_contains ptx "cvt.rzi.f64.f64" ;
+  assert_contains ptx "neg.f64" ;
+  assert_contains ptx "fma.rn.f64"
+
 (** A 32-bit value into a 64-bit atom form is invalid PTX; the emitter must
     reject it (width discipline), never emit the mismatched suffix. *)
 let test_atomic_width_mismatch_rejected () =
@@ -1559,6 +1601,10 @@ let () =
             "width-mismatched atomic value is rejected"
             `Quick
             test_atomic_width_mismatch_rejected;
+          Alcotest.test_case
+            "float Mod lowers to fmod (div.rn + cvt.rzi + fma)"
+            `Quick
+            test_float_mod_fmod_markers;
           Alcotest.test_case
             "shared array SLet emits .shared decl + ld/st.shared"
             `Quick

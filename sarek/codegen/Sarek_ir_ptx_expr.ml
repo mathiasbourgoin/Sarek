@@ -911,7 +911,32 @@ and emit_binop buf alloc env op e1 e2 : string =
         emit buf "div.u32 %s, %s, %s;" r r1 r2 ;
         r
   | Mod ->
-      if is_f32 r1 || is_f64 r1 then unsupported "Mod on float"
+      (* Float Mod is C fmod: x - trunc(x/y)*y, result sign follows the
+         dividend x. OCaml's Float.rem has the same contract (it is C fmod),
+         so this matches mod_float on the host. rn-rounded div (not the fast
+         .approx form): the trunc snaps the quotient to an integer, so the
+         quotient's rounding error only shows within 1 ulp of an integer
+         boundary; the final fma is a single rounding. *)
+      if is_f64 r1 then (
+        let q = new_f64 alloc in
+        emit buf "div.rn.f64 %s, %s, %s;" q r1 r2 ;
+        let t = new_f64 alloc in
+        emit buf "cvt.rzi.f64.f64 %s, %s;" t q ;
+        let nt = new_f64 alloc in
+        emit buf "neg.f64 %s, %s;" nt t ;
+        let r = new_f64 alloc in
+        emit buf "fma.rn.f64 %s, %s, %s, %s;" r nt r2 r1 ;
+        r)
+      else if is_f32 r1 then (
+        let q = new_f32 alloc in
+        emit buf "div.rn.f32 %s, %s, %s;" q r1 r2 ;
+        let t = new_f32 alloc in
+        emit buf "cvt.rzi.f32.f32 %s, %s;" t q ;
+        let nt = new_f32 alloc in
+        emit buf "neg.f32 %s, %s;" nt t ;
+        let r = new_f32 alloc in
+        emit buf "fma.rn.f32 %s, %s, %s, %s;" r nt r2 r1 ;
+        r)
       else if is_u64 r1 then (
         let r = new_u64 alloc in
         emit buf "rem.u64 %s, %s, %s;" r r1 r2 ;
