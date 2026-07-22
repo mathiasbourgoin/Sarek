@@ -367,10 +367,16 @@ let run ~(device : Device.t) ~(name : string)
     @param args Arguments that may contain vectors
     @param dev Device that just executed the kernel *)
 let mark_vectors_stale (args : vector_arg list) (dev : Device.t) : unit =
-  (* Only Native uses true zero-copy for all vector types.
+  (* Native and Interpreter execute directly on host storage (the interpreter
+     reads/writes vector elements through EXEC_VECTOR get/set, never through
+     the device buffer), so the CPU copy is authoritative after the run -
+     marking it Stale_CPU would make the next host read clobber kernel
+     results with the stale device-buffer copy (observed with custom record
+     vectors, which have no zero-copy path).
      OpenCL CPU uses zero-copy for scalar types but NOT for custom types.
      Always mark stale for JIT backends - Transfer will check zero_copy. *)
-  if dev.Device.framework = "Native" then ()
+  if dev.Device.framework = "Native" || dev.Device.framework = "Interpreter"
+  then ()
   else
     List.iter
       (function
