@@ -3,11 +3,15 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(** Unit tests for Sarek_ir_layout: pins the packed byte layout (offsets and
-    sizes) of the aggregate types used by the e2e tests, and the typed
-    rejections of mixed-alignment / nested-variant / array-field aggregates.
-    These offsets are the host ABI (Sarek_ppx.ml calc_offsets and the variant
-    [tag@0][payload@4] encoding) — a change here is a host/device ABI break. *)
+(** Unit tests for Sarek_ir_layout: pins the aligned (C-ABI) byte layout
+    (offsets and sizes) of the aggregate types used by the e2e tests, the newly
+    supported mixed-alignment aggregates ([{i32;f64}] records, f64/i64-payload
+    variants), and the still-typed rejections of nested-variant / array-field
+    aggregates. These offsets are the host ABI (Sarek_ppx.ml calc_offsets and
+    the variant [tag@0][payload@max(4,align)] encoding) — a change here is a
+    host/device ABI break. The all-4-byte e2e types (point/point3d/color/
+    particle) are UNCHANGED by the L8 packed->aligned migration (zero-breakage).
+*)
 
 open Sarek_ir_types
 open Sarek_ir_layout
@@ -134,47 +138,91 @@ let assert_msg_contains what msg fragments =
           (Printf.sprintf "%s: message %S should contain %S" what msg frag))
     fragments
 
-(** {a:i32; b:f64}: b lands at packed offset 4 but f64 needs 8 -> rejected. *)
-let test_reject_misaligned_record () =
-  let err =
-    get_error
+(** L8: [{a:i32; b:f64}] is now ACCEPTED with aligned offsets: a@0, b@8 (4 bytes
+    of padding after a), total size 16 (rounded to the 8-byte max alignment).
+    This was a rejection before the packed->aligned migration. *)
+let test_mixed_align_record () =
+  let rl =
+    get_ok
       ~what:"mixed_align"
       (record_layout ~type_name:"mixed_align" [("a", TInt32); ("b", TFloat64)])
   in
-  (match err with
-  | Misaligned_field {type_name; field; offset; required_align} ->
-      Alcotest.(check string) "type name" "mixed_align" type_name ;
-      Alcotest.(check string) "field" "b" field ;
-      Alcotest.(check int) "offset" 4 offset ;
-      Alcotest.(check int) "required align" 8 required_align
-  | e ->
-      Alcotest.fail ("expected Misaligned_field, got: " ^ layout_error_message e)) ;
-  assert_msg_contains
-    "misaligned record message"
-    (layout_error_message err)
-    ["mixed_align"; "'b'"; "offset 4"; "8-byte alignment"]
+  check_leaves "mixed_align leaves" [("a", 0); ("b", 8)] rl.rl_leaves ;
+  Alcotest.(check (list (pair string int)))
+    "mixed_align fields"
+    [("a", 0); ("b", 8)]
+    rl.rl_fields ;
+  Alcotest.(check int) "mixed_align size" 16 rl.rl_size
 
-(** Variant with an f64 payload: slot at offset 4 needs 8 -> rejected. *)
-let test_reject_f64_variant_payload () =
-  let err =
-    get_error
+(** L8: [{b:f64; a:i32}] reordered largest-first packs tighter: b@0, a@8, size 16
+    (a fits in the trailing 8 bytes; still 16 due to 8-byte struct alignment). *)
+let test_mixed_align_record_reordered () =
+  let rl =
+    get_ok
+      ~what:"reordered"
+      (record_layout ~type_name:"reordered" [("b", TFloat64); ("a", TInt32)])
+  in
+  check_leaves "reordered leaves" [("b", 0); ("a", 8)] rl.rl_leaves ;
+  Alcotest.(check int) "reordered size" 16 rl.rl_size
+
+(** L8: [{flag:bool; d:f64}]: bool is 4 bytes on the host, d needs 8 -> d@8,
+    size 16. *)
+let test_bool_f64_record () =
+  let rl =
+    get_ok
+      ~what:"bool_f64"
+      (record_layout ~type_name:"bool_f64" [("flag", TBool); ("d", TFloat64)])
+  in
+  check_leaves "bool_f64 leaves" [("flag", 0); ("d", 8)] rl.rl_leaves ;
+  Alcotest.(check int) "bool_f64 size" 16 rl.rl_size
+
+(** L8: variant with an f64 payload is now ACCEPTED. Payload region moves to
+    offset 8 (max(4, 8-byte align)); Some_._0@8, size 16. *)
+let test_f64_variant_payload () =
+  let vl =
+    get_ok
       ~what:"f64_variant"
       (variant_layout
          ~type_name:"f64_variant"
          [("None_", []); ("Some_", [TFloat64])])
   in
-  (match err with
-  | Misaligned_field {type_name; field; offset; required_align} ->
-      Alcotest.(check string) "type name" "f64_variant" type_name ;
-      Alcotest.(check string) "field" "Some_._0" field ;
-      Alcotest.(check int) "offset" 4 offset ;
-      Alcotest.(check int) "required align" 8 required_align
-  | e ->
-      Alcotest.fail ("expected Misaligned_field, got: " ^ layout_error_message e)) ;
-  assert_msg_contains
-    "f64 variant message"
-    (layout_error_message err)
-    ["f64_variant"; "Some_._0"; "offset 4"; "8-byte alignment"]
+  Alcotest.(check int) "tag offset" 0 vl.vl_tag_offset ;
+  Alcotest.(check int) "payload offset" 8 vl.vl_payload_offset ;
+  Alcotest.(check int) "f64_variant size" 16 vl.vl_size ;
+  let some = List.nth vl.vl_ctors 1 in
+  check_leaves "Some_ payload" [("Some_._0", 8)] some.ctor_leaves ;
+  Alcotest.(check int) "Some_ payload size" 8 some.ctor_payload_size
+
+(** L8: variant with an i64 payload behaves like f64 (8-byte payload): payload
+    region @8, size 16. *)
+let test_i64_variant_payload () =
+  let vl =
+    get_ok
+      ~what:"i64_variant"
+      (variant_layout
+         ~type_name:"i64_variant"
+         [("None_", []); ("Some_", [TInt64])])
+  in
+  Alcotest.(check int) "payload offset" 8 vl.vl_payload_offset ;
+  Alcotest.(check int) "i64_variant size" 16 vl.vl_size ;
+  let some = List.nth vl.vl_ctors 1 in
+  check_leaves "Some_ payload" [("Some_._0", 8)] some.ctor_leaves
+
+(** L8: a variant carrying a mixed-alignment tuple payload [{i32;f64}]: payload@8,
+    _0 (i32) @8, _1 (f64) @16, payload size 16, total size 24. *)
+let test_mixed_tuple_variant_payload () =
+  let vl =
+    get_ok
+      ~what:"mixed_tuple"
+      (variant_layout
+         ~type_name:"mixed_tuple"
+         [("Nil", []); ("Pair", [TInt32; TFloat64])])
+  in
+  Alcotest.(check int) "payload offset" 8 vl.vl_payload_offset ;
+  Alcotest.(check int) "mixed_tuple size" 24 vl.vl_size ;
+  let pair = List.nth vl.vl_ctors 1 in
+  check_leaves "Pair payload" [("Pair._0", 8); ("Pair._1", 16)] pair.ctor_leaves ;
+  Alcotest.(check int) "Pair payload size" 16 pair.ctor_payload_size
 
 (** Record containing a variant field -> rejected (FR-005). *)
 let test_reject_variant_in_record () =
@@ -278,16 +326,35 @@ let () =
             `Quick
             test_elttype_layout_dispatch;
         ] );
-      ( "rejections",
+      ( "mixed-alignment (L8 unlocked)",
         [
           Alcotest.test_case
-            "{a:i32; b:f64} rejected (b at 4 needs 8)"
+            "{a:i32; b:f64} accepted: a@0 b@8 size 16"
             `Quick
-            test_reject_misaligned_record;
+            test_mixed_align_record;
           Alcotest.test_case
-            "variant f64 payload rejected (slot at 4 needs 8)"
+            "{b:f64; a:i32} reordered: b@0 a@8 size 16"
             `Quick
-            test_reject_f64_variant_payload;
+            test_mixed_align_record_reordered;
+          Alcotest.test_case
+            "{flag:bool; d:f64} accepted: d@8 size 16"
+            `Quick
+            test_bool_f64_record;
+          Alcotest.test_case
+            "variant f64 payload accepted: payload@8 size 16"
+            `Quick
+            test_f64_variant_payload;
+          Alcotest.test_case
+            "variant i64 payload accepted: payload@8 size 16"
+            `Quick
+            test_i64_variant_payload;
+          Alcotest.test_case
+            "variant {i32;f64} tuple payload: _0@8 _1@16 size 24"
+            `Quick
+            test_mixed_tuple_variant_payload;
+        ] );
+      ( "rejections",
+        [
           Alcotest.test_case
             "variant field in record rejected"
             `Quick

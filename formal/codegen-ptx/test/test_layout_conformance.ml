@@ -37,16 +37,30 @@ module RocqMirror = struct
   (* PtxLayout.v [scalar_align] (= size for both widths). *)
   let scalar_align = scalar_size
 
+  (* PtxLayout.v [align_up]: round [off] up to a multiple of [a]. *)
+  let align_up off a = a * ((off + a - 1) / a)
+
   (* PtxLayout.v [lfield]/[lfields]: record fields are scalar leaves or
      nested records; no variant constructor exists below top level. *)
   type lfield = LLeaf of lty | LRec of lfields
 
   and lfields = LNil | LCons of int * lfield * lfields
 
-  (* PtxLayout.v [fsize]/[fssize]: packed byte size, no padding. *)
-  let rec fsize = function LLeaf t -> scalar_size t | LRec fs -> fssize fs
+  (* PtxLayout.v [falign]/[fsalign]: natural alignment (empty seq = 1). *)
+  let rec falign = function LLeaf t -> scalar_align t | LRec fs -> fsalign fs
 
-  and fssize = function LNil -> 0 | LCons (_, f, r) -> fsize f + fssize r
+  and fsalign = function
+    | LNil -> 1
+    | LCons (_, f, r) -> max (falign f) (fsalign r)
+
+  (* PtxLayout.v [fsize]/[fsend]: aligned (padded) size and running end. *)
+  let rec fsize = function
+    | LLeaf t -> scalar_size t
+    | LRec fs -> align_up (fsend 0 fs) (fsalign fs)
+
+  and fsend off = function
+    | LNil -> off
+    | LCons (_, f, r) -> fsend (align_up off (falign f) + fsize f) r
 
   (* PtxLayout.v [leaf] (lf_path / lf_ty / lf_off). *)
   type leaf = {lf_path : int list; lf_ty : lty; lf_off : int}
@@ -54,34 +68,36 @@ module RocqMirror = struct
   (* PtxLayout.v [leaf_size]. *)
   let leaf_size l = scalar_size l.lf_ty
 
-  (* PtxLayout.v [flatten]/[flattens]: declaration-order leaves at packed
-     cumulative offsets. *)
+  (* PtxLayout.v [flatten]/[flattens]: declaration-order leaves, each field
+     rounded up to its natural alignment before placement. *)
   let rec flatten p off = function
     | LLeaf t -> [{lf_path = p; lf_ty = t; lf_off = off}]
     | LRec fs -> flattens p off fs
 
   and flattens p off = function
     | LNil -> []
-    | LCons (n, f, r) -> flatten (p @ [n]) off f @ flattens p (off + fsize f) r
+    | LCons (n, f, r) ->
+        let o = align_up off (falign f) in
+        flatten (p @ [n]) o f @ flattens p (o + fsize f) r
 
-  (* PtxLayout.v [record_leaves] / [record_size]. *)
+  (* PtxLayout.v [record_leaves] / [record_size] (padded cumulative end). *)
   let record_leaves fs = flattens [] 0 fs
 
-  let record_size = fssize
+  let record_size fs = align_up (fsend 0 fs) (fsalign fs)
 
-  (* PtxLayout.v [field_offsets] / [record_field_offsets]. *)
+  (* PtxLayout.v [field_offsets] / [record_field_offsets] (aligned). *)
   let rec field_offsets off = function
     | LNil -> []
-    | LCons (n, f, r) -> (n, off) :: field_offsets (off + fsize f) r
+    | LCons (n, f, r) ->
+        let o = align_up off (falign f) in
+        (n, o) :: field_offsets (o + fsize f) r
 
   let record_field_offsets fs = field_offsets 0 fs
 
-  (* PtxLayout.v [tag_offset]/[tag_size]/[payload_offset]. *)
+  (* PtxLayout.v [tag_offset]/[tag_size]. *)
   let tag_offset = 0
 
   let tag_size = 4
-
-  let payload_offset = 4
 
   (* PtxLayout.v [ctor_layout]. *)
   type ctor_layout = {
@@ -95,38 +111,49 @@ module RocqMirror = struct
     | [] -> LNil
     | a :: r -> LCons (i, a, number_args (i + 1) r)
 
-  (* PtxLayout.v [ctor_layout_of]: payload packed from [payload_offset]. *)
-  let ctor_layout_of tag args =
-    let fs = number_args 0 args in
-    {
-      cl_tag = tag;
-      cl_leaves = flattens [tag] payload_offset fs;
-      cl_payload_size = fssize fs;
-    }
+  (* PtxLayout.v [ctor_align] / [payload_struct_size]. *)
+  let ctor_align args = fsalign (number_args 0 args)
 
-  (* PtxLayout.v [ctor_layouts]: tag = declaration index. *)
-  let rec ctor_layouts tag = function
+  let payload_struct_size args =
+    let fs = number_args 0 args in
+    align_up (fsend 0 fs) (fsalign fs)
+
+  (* PtxLayout.v [variant_payload_offset]: max(4, max payload alignment). *)
+  let variant_payload_offset ctors =
+    List.fold_right (fun c acc -> max (ctor_align c) acc) ctors 4
+
+  (* PtxLayout.v [ctor_layouts]: payload placed from [payoff], tag = index. *)
+  let rec ctor_layouts payoff tag = function
     | [] -> []
-    | c :: r -> ctor_layout_of tag c :: ctor_layouts (tag + 1) r
+    | c :: r ->
+        {
+          cl_tag = tag;
+          cl_leaves = flattens [tag] payoff (number_args 0 c);
+          cl_payload_size = payload_struct_size c;
+        }
+        :: ctor_layouts payoff (tag + 1) r
 
   (* PtxLayout.v [max_payload]. *)
   let max_payload cls =
     List.fold_right (fun c acc -> max c.cl_payload_size acc) cls 0
 
-  (* PtxLayout.v [variant_size]: 4-byte int32 tag + max payload. *)
-  let variant_size ctors = tag_size + max_payload (ctor_layouts 0 ctors)
+  (* PtxLayout.v [variant_size]: round_up(payload_offset + max payload, align). *)
+  let variant_size ctors =
+    let p = variant_payload_offset ctors in
+    align_up (p + max_payload (ctor_layouts p 0 ctors)) p
 
   (* PtxLayout.v [leaf_aligned]: natural alignment of the absolute offset. *)
   let leaf_aligned l = l.lf_off mod scalar_align l.lf_ty = 0
 
-  (* PtxLayout.v [record_accepted]. *)
+  (* PtxLayout.v [record_accepted] (now always true). *)
   let record_accepted fs = List.for_all leaf_aligned (record_leaves fs)
 
-  (* PtxLayout.v [variant_accepted]. *)
+  (* PtxLayout.v [variant_accepted] (now always true). *)
   let variant_accepted ctors =
+    let p = variant_payload_offset ctors in
     List.for_all
       (fun c -> List.for_all leaf_aligned c.cl_leaves)
-      (ctor_layouts 0 ctors)
+      (ctor_layouts p 0 ctors)
 end
 
 (* ======================================================================= *)
@@ -262,13 +289,14 @@ let check_variant_agreement (ctors : (string * elttype list) list) =
   | Ok vl ->
       if not m_ok then
         Alcotest.failf "%s: Sarek_ir_layout accepts but mirror rejects" what ;
+      let m_payoff = RocqMirror.variant_payload_offset m_ctors in
       Alcotest.(check int)
         (what ^ ": tag offset")
         RocqMirror.tag_offset
         vl.Sarek_ir_layout.vl_tag_offset ;
       Alcotest.(check int)
         (what ^ ": payload offset")
-        RocqMirror.payload_offset
+        m_payoff
         vl.Sarek_ir_layout.vl_payload_offset ;
       Alcotest.(check int)
         (what ^ ": total size")
@@ -293,7 +321,7 @@ let check_variant_agreement (ctors : (string * elttype list) list) =
             (Printf.sprintf "%s: ctor %d" what k)
             m.RocqMirror.cl_leaves
             o.Sarek_ir_layout.ctor_leaves)
-        (RocqMirror.ctor_layouts 0 m_ctors)
+        (RocqMirror.ctor_layouts m_payoff 0 m_ctors)
         vl.Sarek_ir_layout.vl_ctors
 
 (* ======================================================================= *)
@@ -447,7 +475,10 @@ let test_pin_color () =
     [0; 1]
     (List.map
        (fun (c : RocqMirror.ctor_layout) -> c.RocqMirror.cl_tag)
-       (RocqMirror.ctor_layouts 0 m_ctors)) ;
+       (RocqMirror.ctor_layouts
+          (RocqMirror.variant_payload_offset m_ctors)
+          0
+          m_ctors)) ;
   match Sarek_ir_layout.variant_layout ~type_name:"color" ctors with
   | Error e ->
       Alcotest.failf
@@ -481,6 +512,54 @@ let test_pin_color () =
         4
         value_ctor.Sarek_ir_layout.ctor_payload_size
 
+(* L8: mixed-alignment record {a:i32; b:f64} — a@0, b@8 (pad), size 16. Both
+   the mirror and Sarek_ir_layout must agree on the aligned offsets. *)
+let test_pin_mixed_i32_f64 () =
+  pin_record "mixed_i32_f64" [("a", TInt32); ("b", TFloat64)] [0; 8] 16
+
+(* L8: {flag:bool; d:f64} — bool is 4 bytes on the host, d@8, size 16. *)
+let test_pin_bool_f64 () =
+  pin_record "bool_f64" [("flag", TBool); ("d", TFloat64)] [0; 8] 16
+
+(* L8: reordered largest-first {b:f64; a:i32} — b@0, a@8, size 16. *)
+let test_pin_f64_i32 () =
+  pin_record "f64_i32" [("b", TFloat64); ("a", TInt32)] [0; 8] 16
+
+(* L8: variant with an f64 payload — payload region @8, Some_._0@8, size 16. *)
+let test_pin_f64_variant () =
+  let ctors = [("None_", []); ("Some_", [TFloat64])] in
+  let m_ctors = [[]; [RocqMirror.LLeaf RocqMirror.L64]] in
+  Alcotest.(check bool)
+    "f64_variant: mirror accepts"
+    true
+    (RocqMirror.variant_accepted m_ctors) ;
+  Alcotest.(check int)
+    "f64_variant: mirror payload offset"
+    8
+    (RocqMirror.variant_payload_offset m_ctors) ;
+  Alcotest.(check int)
+    "f64_variant: mirror size"
+    16
+    (RocqMirror.variant_size m_ctors) ;
+  match Sarek_ir_layout.variant_layout ~type_name:"f64_variant" ctors with
+  | Error e ->
+      Alcotest.failf
+        "f64_variant: rejected: %s"
+        (Sarek_ir_layout.layout_error_message e)
+  | Ok vl ->
+      Alcotest.(check int)
+        "f64_variant: payload offset"
+        8
+        vl.Sarek_ir_layout.vl_payload_offset ;
+      Alcotest.(check int) "f64_variant: size" 16 vl.Sarek_ir_layout.vl_size ;
+      let some = List.nth vl.Sarek_ir_layout.vl_ctors 1 in
+      Alcotest.(check (list int))
+        "f64_variant: Some_ payload offsets"
+        [8]
+        (List.map
+           (fun (l : Sarek_ir_layout.leaf) -> l.Sarek_ir_layout.leaf_offset)
+           some.Sarek_ir_layout.ctor_leaves)
+
 (* ======================================================================= *)
 (** * 7. Suite *)
 (* ======================================================================= *)
@@ -513,5 +592,21 @@ let () =
           Alcotest.test_case "point3d" `Quick test_pin_point3d;
           Alcotest.test_case "color" `Quick test_pin_color;
           Alcotest.test_case "particle" `Quick test_pin_particle;
+        ] );
+      ( "mixed-alignment pins (L8)",
+        [
+          Alcotest.test_case
+            "{i32;f64} a@0 b@8 size 16"
+            `Quick
+            test_pin_mixed_i32_f64;
+          Alcotest.test_case "{bool;f64} d@8 size 16" `Quick test_pin_bool_f64;
+          Alcotest.test_case
+            "{f64;i32} reordered b@0 a@8 size 16"
+            `Quick
+            test_pin_f64_i32;
+          Alcotest.test_case
+            "variant f64 payload@8 size 16"
+            `Quick
+            test_pin_f64_variant;
         ] );
     ]

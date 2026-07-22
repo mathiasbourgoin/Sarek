@@ -90,11 +90,13 @@
   test_module_poly
   test_bounded_recursion
   test_inline_pragma
-  test_nested_types)
+  test_nested_types
+  test_ktype_mixed_align)
  (modules
   test_vector_add
   test_module_const
   test_ktype_record
+  test_ktype_mixed_align
   test_klet_fun
   test_klet_variant
   test_ktype_helper
@@ -182,6 +184,11 @@
  (alias runtest)
  (action
   (run %{dep:test_ktype_record.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_ktype_mixed_align.exe})))
 
 (rule
  (alias runtest)

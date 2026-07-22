@@ -1477,13 +1477,15 @@ let test_bare_record_param_rejected () =
         "pass fields as separate scalar params or use a 1-element 'point' \
          vector"
 
-(** A vector of mixed-alignment records (f64 leaf at a packed non-8-aligned
-    offset) is rejected at codegen with an error naming field, offset, and
-    required alignment (spec AC-5 / FR-004). *)
-let test_misaligned_record_param_rejected () =
+(** L8 (sanctioned rejection->acceptance conversion): a vector of
+    mixed-alignment records {a:int32; b:float64} is now laid out with the
+    aligned host ABI (b at the 8-aligned offset 8, element stride 16), so the
+    kernel COMPILES and emits a natural [ld.global.f64] for the f64 field. This
+    previously raised Ptx_codegen_error (AC-5 / FR-004, now superseded). *)
+let test_mixed_align_record_param_accepted () =
   let mixed_ty = TRecord ("mixed", [("a", TInt32); ("b", TFloat64)]) in
   let src = make_var "src" (TVec mixed_ty) in
-  let dst = make_var "dst" (TVec TFloat32) in
+  let dst = make_var "dst" (TVec TFloat64) in
   let tid = make_var "tid" TInt32 in
   let body =
     SLet
@@ -1491,35 +1493,28 @@ let test_misaligned_record_param_rejected () =
         EIntrinsic ([], "global_thread_id", []),
         SAssign
           ( LArrayElem ("dst", EVar tid),
-            ERecordField (EArrayRead ("src", EVar tid), "a") ) )
+            ERecordField (EArrayRead ("src", EVar tid), "b") ) )
   in
   let k =
     base_kernel
-      "misaligned_record"
+      "mixed_align_record"
       [
         DParam (src, Some {arr_elttype = mixed_ty; arr_memspace = Global});
-        DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global});
+        DParam (dst, Some {arr_elttype = TFloat64; arr_memspace = Global});
       ]
       body
       []
   in
-  match Sarek_ir_ptx.generate k with
-  | _ -> Alcotest.fail "misaligned record should raise Ptx_codegen_error"
-  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error msg ->
-      let check expected =
-        match find_first msg expected with
-        | Some _ -> ()
-        | None ->
-            Alcotest.fail
-              (Printf.sprintf "error should contain %S, got: %s" expected msg)
-      in
-      check "b" ;
-      check "4" ;
-      check "8"
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx ".entry" ;
+  (* f64 field now loaded at its natural 8-byte boundary. *)
+  assert_contains ptx "ld.global.f64" ;
+  assert_contains ptx "st.global.f64"
 
-(** A vector of variants with an f64 payload (payload slot at offset 4, below
-    its 8-byte natural alignment) is rejected the same way (AC-5). *)
-let test_f64_variant_param_rejected () =
+(** L8: a vector of variants with an f64 payload now lays the payload region at
+    the aligned offset 8 (element stride 16) and COMPILES, rather than raising
+    Ptx_codegen_error. The variant param binds and the entry is emitted. *)
+let test_f64_variant_param_accepted () =
   let vty = TVariant ("boxed", [("None_", []); ("Some_", [TFloat64])]) in
   let src = make_var "src" (TVec vty) in
   let dst = make_var "dst" (TVec TFloat32) in
@@ -1540,18 +1535,8 @@ let test_f64_variant_param_rejected () =
       body
       []
   in
-  match Sarek_ir_ptx.generate k with
-  | _ -> Alcotest.fail "f64-payload variant should raise Ptx_codegen_error"
-  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error msg ->
-      let check expected =
-        match find_first msg expected with
-        | Some _ -> ()
-        | None ->
-            Alcotest.fail
-              (Printf.sprintf "error should contain %S, got: %s" expected msg)
-      in
-      check "Some_" ;
-      check "8"
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx ".entry"
 
 (** A one-intrinsic kernel over a float vector of [elt] element type. *)
 let make_math_kernel elt path name =
@@ -2008,13 +1993,13 @@ let () =
             `Quick
             test_bare_record_param_rejected;
           Alcotest.test_case
-            "misaligned record vector param rejected (field/offset/align)"
+            "L8: mixed-alignment record vector param accepted (aligned f64)"
             `Quick
-            test_misaligned_record_param_rejected;
+            test_mixed_align_record_param_accepted;
           Alcotest.test_case
-            "f64-payload variant vector param rejected"
+            "L8: f64-payload variant vector param accepted (payload@8)"
             `Quick
-            test_f64_variant_param_rejected;
+            test_f64_variant_param_accepted;
           Alcotest.test_case
             "local array emits .local decl + ld/st.local"
             `Quick
