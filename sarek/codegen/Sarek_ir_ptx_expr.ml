@@ -23,6 +23,42 @@ let is_f64_reg r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd'
 
 let is_f32_reg r = String.length r >= 2 && r.[1] = 'f' && not (is_f64_reg r)
 
+(** Whether an expression must NOT be evaluated speculatively — i.e. an [EIf]
+    with such a branch must emit real control flow rather than the eager
+    evaluate-both-branches [selp] path. Two reasons a subexpression qualifies:
+    - it has an observable effect (a store/atomic, or a helper call whose body
+      may store/atomic/barrier); running the not-taken branch is wrong;
+    - it dereferences memory (an array read); the not-taken branch's index may
+      be out of bounds (the classic [if i < n then a.(i) else d] guard), and an
+      unconditional load can fault or read garbage. *)
+let rec expr_needs_branch_guard (e : expr) : bool =
+  let is_atomic name =
+    String.length name >= 7 && String.sub name 0 7 = "atomic_"
+  in
+  (* Barriers/fences emit side-effecting, convergence-sensitive instructions
+     (bar.sync, membar); they must never run on a not-taken branch. *)
+  let is_barrier = function
+    | "block_barrier" | "warp_barrier" | "memory_fence" -> true
+    | _ -> false
+  in
+  match e with
+  | EApp _ -> true
+  | EIntrinsic (_, name, args) ->
+      is_atomic name || is_barrier name
+      || List.exists expr_needs_branch_guard args
+  (* Array reads must not be evaluated speculatively (out-of-bounds guard). *)
+  | EArrayRead _ | EArrayReadExpr _ -> true
+  | EConst _ | EVar _ | EArrayLen _ -> false
+  | EUnop (_, a) | ECast (_, a) -> expr_needs_branch_guard a
+  | EBinop (_, a, b) -> expr_needs_branch_guard a || expr_needs_branch_guard b
+  | EIf (c, t, f) ->
+      expr_needs_branch_guard c || expr_needs_branch_guard t
+      || expr_needs_branch_guard f
+  | EArrayCreate (_, s, _) -> expr_needs_branch_guard s
+  | EMatch _ | ERecord _ | ERecordField _ | ETuple _ | EVariant _ ->
+      (* Rejected later by the emitter; conservative answer is irrelevant. *)
+      true
+
 (** {1 Expression emitter}
 
     Returns the PTX register name holding the result. Emits instructions into
@@ -126,6 +162,32 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
   | ECast (ty, e) ->
       let r_src = emit_expr buf alloc env e in
       emit_cast buf alloc r_src ty
+  | EIf (cond, then_e, else_e)
+    when expr_needs_branch_guard then_e || expr_needs_branch_guard else_e ->
+      (* A branch with an effect or a (possibly out-of-bounds) array read must
+         not be evaluated eagerly (the selp path below computes both); emit
+         real control flow instead. *)
+      let r_cond = emit_expr buf alloc env cond in
+      let p = new_pred alloc in
+      emit buf "setp.ne.u32 %s, %s, 0;" p r_cond ;
+      let l_else = new_label alloc in
+      let l_merge = new_label alloc in
+      emit buf "@!%s bra %s;" p l_else ;
+      let r_then = emit_expr buf alloc env then_e in
+      let r_res = copy_reg buf alloc r_then in
+      emit buf "bra %s;" l_merge ;
+      emit_label buf l_else ;
+      let r_else = emit_expr buf alloc env else_e in
+      let mov_op =
+        if is_f64_reg r_res then "mov.f64"
+        else if is_f32_reg r_res then "mov.f32"
+        else if String.length r_res >= 3 && r_res.[1] = 'r' && r_res.[2] = 'd'
+        then "mov.u64"
+        else "mov.u32"
+      in
+      emit buf "%s %s, %s;" mov_op r_res r_else ;
+      emit_label buf l_merge ;
+      r_res
   | EIf (cond, then_e, else_e) ->
       let r_cond = emit_expr buf alloc env cond in
       let r_then = emit_expr buf alloc env then_e in
@@ -168,8 +230,107 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
   | ERecord _ -> unsupported "ERecord (requires struct layout)"
   | ERecordField _ -> unsupported "ERecordField (requires struct layout)"
   | ETuple _ -> unsupported "ETuple (no PTX equivalent)"
-  | EApp _ ->
-      unsupported "EApp (device function calls via .func not yet implemented)"
+  | EApp (EVar f, args) -> (
+      (* Helper-function call: inline the body at the call site. PTX .func
+         would need a per-function register frame and .param ABI the
+         single-pass emitter does not model; helpers are small and NVCC
+         inlines them anyway. Recursive helpers are rejected (guard below)
+         and fall back to another backend, as before. *)
+      match Hashtbl.find_opt alloc.funcs f.var_name with
+      | None -> unsupported ("EApp to unknown function '" ^ f.var_name ^ "'")
+      | Some hf ->
+          if List.mem hf.hf_name alloc.inline_stack then
+            unsupported
+              ("EApp: recursive helper '" ^ hf.hf_name
+             ^ "' (inlining supports non-recursive helpers only)")
+          else if List.length args <> List.length hf.hf_params then
+            fail
+              (Printf.sprintf
+                 "PTX codegen: helper '%s' called with %d args, expects %d"
+                 hf.hf_name
+                 (List.length args)
+                 (List.length hf.hf_params))
+          else begin
+            (* Evaluate arguments in the caller's environment. *)
+            let arg_regs = List.map (emit_expr buf alloc env) args in
+            (* Fresh environment for the helper body: only its parameters
+               are in scope (helpers are module-level, no capture). *)
+            let callee_env = make_env () in
+            (* Array params: register element type (from the param's own
+               type) and propagate shared-ness / length binding from the
+               caller when the argument is a plain array variable. Entries
+               we overwrite are saved and restored after the inline. *)
+            let saved =
+              List.map2
+                (fun (p : var) (arg, r_arg) ->
+                  (* Scalars are copied so mutations inside the helper (via
+                     mutable lets rebinding the param) can never clobber the
+                     caller's register; array params are base pointers and
+                     are never written through LVar, bind directly. *)
+                  (match p.var_type with
+                  | TVec _ | TArray _ -> env_bind callee_env p.var_name r_arg
+                  | _ ->
+                      env_bind callee_env p.var_name (copy_reg buf alloc r_arg)) ;
+                  match p.var_type with
+                  | TVec elt | TArray (elt, _) ->
+                      let prev_elt =
+                        Hashtbl.find_opt alloc.arr_elt_types p.var_name
+                      in
+                      let prev_ms =
+                        Hashtbl.mem alloc.arr_memspaces p.var_name
+                      in
+                      Hashtbl.replace alloc.arr_elt_types p.var_name elt ;
+                      (match arg with
+                      | EVar a -> (
+                          if Hashtbl.mem alloc.arr_memspaces a.var_name then
+                            Hashtbl.replace alloc.arr_memspaces p.var_name ()
+                          else Hashtbl.remove alloc.arr_memspaces p.var_name ;
+                          match
+                            Hashtbl.find_opt env (length_param_name a.var_name)
+                          with
+                          | Some r_len ->
+                              env_bind
+                                callee_env
+                                (length_param_name p.var_name)
+                                r_len
+                          | None -> ())
+                      | _ -> Hashtbl.remove alloc.arr_memspaces p.var_name) ;
+                      Some (p.var_name, prev_elt, prev_ms)
+                  | _ -> None)
+                hf.hf_params
+                (List.combine args arg_regs)
+            in
+            let l_end = new_label alloc in
+            let r_ret =
+              match hf.hf_ret_type with
+              | TUnit -> None
+              | t -> Some (new_reg_for_type alloc t)
+            in
+            alloc.inline_stack <- hf.hf_name :: alloc.inline_stack ;
+            alloc.inline_ret <- (r_ret, l_end) :: alloc.inline_ret ;
+            !stmt_emitter buf alloc callee_env hf.hf_body ;
+            alloc.inline_ret <- List.tl alloc.inline_ret ;
+            alloc.inline_stack <- List.tl alloc.inline_stack ;
+            emit_label buf l_end ;
+            (* Restore array metadata shadowed by parameter names. *)
+            List.iter
+              (function
+                | None -> ()
+                | Some (name, prev_elt, prev_ms) ->
+                    (match prev_elt with
+                    | Some e -> Hashtbl.replace alloc.arr_elt_types name e
+                    | None -> Hashtbl.remove alloc.arr_elt_types name) ;
+                    if prev_ms then Hashtbl.replace alloc.arr_memspaces name ()
+                    else Hashtbl.remove alloc.arr_memspaces name)
+              saved ;
+            match r_ret with
+            | Some r -> r
+            | None ->
+                let r = new_u32 alloc in
+                emit buf "mov.u32 %s, 0;" r ;
+                r
+          end)
+  | EApp _ -> unsupported "EApp with non-variable callee"
   | EVariant _ -> unsupported "EVariant (requires tagged-union lowering)"
 
 and emit_binop buf alloc env op e1 e2 : string =
@@ -399,7 +560,44 @@ and emit_cast buf alloc r_src dst_ty : string =
         r
   | _ -> unsupported ("ECast to " ^ ptx_reg_type_of dst_ty)
 
-and emit_intrinsic buf alloc env _path name args : string =
+and emit_intrinsic buf alloc env path name args : string =
+  (* Type conversions delegate to emit_cast; a unary helper for them. *)
+  let unary_cast intr dst_ty =
+    match args with
+    | [a] -> emit_cast buf alloc (emit_expr buf alloc env a) dst_ty
+    | _ -> unsupported (intr ^ " arity != 1")
+  in
+  (* atom.{shared,global}.add.s32 on an int32 array denoted by a plain
+     variable; returns the old value. *)
+  let atomic_add_s32 intr ~global_only =
+    match args with
+    | [EVar arr; idx_e; val_e] ->
+        let r_base = env_lookup env arr.var_name in
+        let r_idx = emit_expr buf alloc env idx_e in
+        let r_val = emit_expr buf alloc env val_e in
+        let is_shared =
+          (not global_only) && Hashtbl.mem alloc.arr_memspaces arr.var_name
+        in
+        let r_old = new_u32 alloc in
+        if is_shared then begin
+          let r_off = new_u32 alloc in
+          let r_addr = new_u32 alloc in
+          emit buf "shl.b32 %s, %s, 2;" r_off r_idx ;
+          emit buf "add.u32 %s, %s, %s;" r_addr r_base r_off ;
+          emit buf "atom.shared.add.s32 %s, [%s], %s;" r_old r_addr r_val
+        end
+        else begin
+          let r_idx64 = new_u64 alloc in
+          let r_off = new_u64 alloc in
+          let r_addr = new_u64 alloc in
+          emit buf "cvt.u64.u32 %s, %s;" r_idx64 r_idx ;
+          emit buf "shl.b64 %s, %s, 2;" r_off r_idx64 ;
+          emit buf "add.u64 %s, %s, %s;" r_addr r_base r_off ;
+          emit buf "atom.global.add.s32 %s, [%s], %s;" r_old r_addr r_val
+        end ;
+        r_old
+    | _ -> unsupported (intr ^ ": expects (array-variable, index, value)")
+  in
   (* Emit the single argument of a unary f32 intrinsic, rejecting f64
      operands (the .approx PTX ops used below are f32-only; an f64 operand
      would emit invalid PTX that only fails at module-load time). *)
@@ -559,4 +757,17 @@ and emit_intrinsic buf alloc env _path name args : string =
           emit buf "fma.rn.f32 %s, %s, %s, %s;" r ra rb rc ;
           r
       | _ -> unsupported "fma arity != 3")
+  (* Type conversions (Gpu.float / Float32.of_int / …). "of_int"/"to_int"
+     are path-dependent: they exist in both the Float32 and Float64 stdlib
+     modules. *)
+  | "float" | "float_of_int" -> unary_cast name TFloat32
+  | "float64" | "float64_of_int" -> unary_cast name TFloat64
+  | "int_of_float" | "int_of_float64" -> unary_cast name TInt32
+  | "of_int" ->
+      if List.exists (fun p -> p = "Float64") path then unary_cast name TFloat64
+      else unary_cast name TFloat32
+  | "to_int" -> unary_cast name TInt32
+  (* Atomics (int32 add; old value returned). *)
+  | "atomic_add_int32" -> atomic_add_s32 name ~global_only:false
+  | "atomic_add_global_int32" -> atomic_add_s32 name ~global_only:true
   | n -> unsupported ("intrinsic: " ^ n)

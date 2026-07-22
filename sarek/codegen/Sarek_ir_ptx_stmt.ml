@@ -19,12 +19,61 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
   match stmt with
   | SEmpty -> ()
   | SSeq stmts -> List.iter (emit_stmt buf alloc env) stmts
+  | SLet (v, EArrayCreate (elt, size_e, Shared), body) ->
+      (* let%shared lowers to this shape (the PPX never emits DShared decls).
+         Declare the array in .shared space and bind its base address. *)
+      let n =
+        match size_e with
+        | EConst (CInt32 n) when Int32.compare n 0l > 0 -> Int32.to_int n
+        | EConst (CInt32 _) ->
+            fail
+              (Printf.sprintf
+                 "PTX codegen: shared array '%s': size must be positive"
+                 v.var_name)
+        | _ ->
+            unsupported
+              (Printf.sprintf
+                 "shared array '%s' with non-literal size"
+                 v.var_name)
+      in
+      if Hashtbl.mem alloc.arr_memspaces v.var_name then
+        fail
+          (Printf.sprintf
+             "PTX codegen: duplicate shared array name '%s'"
+             v.var_name) ;
+      Buffer.add_string
+        alloc.shared_decls
+        (Printf.sprintf
+           "    .shared .align %d .%s %s[%d];\n"
+           (ptx_align_of_elttype elt)
+           (ptx_btype_of_elttype elt)
+           v.var_name
+           n) ;
+      let r = new_u32 alloc in
+      env_bind env v.var_name r ;
+      emit buf "mov.u32 %s, %s;" r v.var_name ;
+      Hashtbl.replace alloc.arr_memspaces v.var_name () ;
+      Hashtbl.replace alloc.arr_elt_types v.var_name elt ;
+      emit_stmt buf alloc env body
+  | SLet (v, EArrayCreate (_, _, ms), _) ->
+      unsupported
+        (Printf.sprintf
+           "%s array creation for '%s' (only Shared is supported)"
+           (match ms with
+           | Sarek_ir_types.Local -> "Local"
+           | Sarek_ir_types.Global -> "Global"
+           | Sarek_ir_types.Shared -> assert false)
+           v.var_name)
   | SLet (v, e, body) ->
       let r = emit_expr buf alloc env e in
       env_bind env v.var_name r ;
       emit_stmt buf alloc env body
   | SLetMut (v, e, body) ->
-      let r = emit_expr buf alloc env e in
+      (* Mutable binding: copy into a fresh register. Binding the initializer
+         register directly would alias it — `let mutable acc = y` followed by
+         `acc <- …` would silently clobber y. *)
+      let r_init = emit_expr buf alloc env e in
+      let r = copy_reg buf alloc r_init in
       env_bind env v.var_name r ;
       emit_stmt buf alloc env body
   | SAssign (lv, e) -> emit_assign buf alloc env lv e
@@ -83,9 +132,32 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
   | SBarrier -> emit buf "bar.sync 0;"
   | SWarpBarrier -> emit buf "bar.warp.sync 0xffffffff;"
   | SMemFence -> emit buf "membar.gl;"
-  | SReturn e ->
-      ignore (emit_expr buf alloc env e) ;
-      emit buf "ret;"
+  | SReturn e -> (
+      match alloc.inline_ret with
+      | (r_ret, l_end) :: _ ->
+          (* Inside an inlined helper body: write the result register (if the
+             helper returns a value) and branch to the inline end label
+             instead of returning from the kernel. *)
+          let r_val = emit_expr buf alloc env e in
+          (match r_ret with
+          | None -> ()
+          | Some r_dst ->
+              let mov_op =
+                if
+                  String.length r_dst >= 3 && r_dst.[1] = 'r' && r_dst.[2] = 'd'
+                then "mov.u64"
+                else if
+                  String.length r_dst >= 3 && r_dst.[1] = 'f' && r_dst.[2] = 'd'
+                then "mov.f64"
+                else if String.length r_dst >= 2 && r_dst.[1] = 'f' then
+                  "mov.f32"
+                else "mov.u32"
+              in
+              emit buf "%s %s, %s;" mov_op r_dst r_val) ;
+          emit buf "bra %s;" l_end
+      | [] ->
+          ignore (emit_expr buf alloc env e) ;
+          emit buf "ret;")
   | SExpr e -> ignore (emit_expr buf alloc env e)
   | SBlock inner -> emit_stmt buf alloc env inner
   | SPragma (_hints, body) ->
@@ -148,3 +220,7 @@ and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
       emit_array_write buf alloc r_base r_idx r_val elt_type ~is_shared
   | LRecordField _ ->
       unsupported "LRecordField assignment (requires struct layout)"
+
+(* Install the statement emitter for EApp inlining (see stmt_emitter in
+   Sarek_ir_ptx_types). *)
+let () = Sarek_ir_ptx_types.stmt_emitter := emit_stmt

@@ -98,18 +98,9 @@ let emit_params buf alloc (env : env) (params : decl list) : string =
     params ;
   Buffer.contents param_decls
 
-let ptx_align_of_elttype = function
-  | TFloat32 | TInt32 | TBool -> 4
-  | TFloat64 | TInt64 -> 8
-  | TUnit -> 4
-  | TVec _ | TArray _ -> 8
-  | TRecord _ | TVariant _ -> unsupported "align of custom type"
-
-let ptx_btype_of_elttype = function
-  | TFloat32 | TInt32 | TBool | TUnit -> "b32"
-  | TFloat64 | TInt64 -> "b64"
-  | TVec _ | TArray _ -> "b64"
-  | TRecord _ | TVariant _ -> unsupported "btype of custom type"
+(* ptx_align_of_elttype / ptx_btype_of_elttype now live in
+   Sarek_ir_ptx_types, shared with the SLet shared-array path in
+   Sarek_ir_ptx_stmt. *)
 
 let emit_locals buf shared_buf alloc (env : env) (locals : decl list) : unit =
   List.iter
@@ -201,6 +192,7 @@ let make_ptx_header ?(sm_target = "sm_86") ?(ptx_version = "8.0") () =
     @param sm_target Override the default [sm_86] target for older hardware. *)
 let generate ?(sm_target = "sm_86") (k : kernel) : string =
   let alloc = make_alloc () in
+  List.iter (fun hf -> Hashtbl.replace alloc.funcs hf.hf_name hf) k.kern_funcs ;
   let env = make_env () in
   let body_buf = Buffer.create 2048 in
   let shared_buf = Buffer.create 256 in
@@ -216,6 +208,8 @@ let generate ?(sm_target = "sm_86") (k : kernel) : string =
   Buffer.add_string out "\n)\n{\n" ;
   emit_reg_decls out alloc ;
   Buffer.add_buffer out shared_buf ;
+  (* Shared arrays declared mid-body (SLet-bound let%shared). *)
+  Buffer.add_buffer out alloc.shared_decls ;
   Buffer.add_char out '\n' ;
   Buffer.add_buffer out body_buf ;
   Buffer.add_string out "}\n" ;

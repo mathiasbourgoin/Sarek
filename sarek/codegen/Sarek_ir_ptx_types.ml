@@ -29,6 +29,17 @@ type reg_alloc = {
   mutable label : int;
   arr_elt_types : (string, elttype) Hashtbl.t;
   arr_memspaces : (string, unit) Hashtbl.t;
+  shared_decls : Buffer.t;
+      (** [.shared] declarations discovered while emitting the body (SLet-bound
+          shared arrays); spliced into the kernel prologue by [generate]. *)
+  funcs : (string, helper_func) Hashtbl.t;
+      (** Kernel helper functions ([kern_funcs]), inlined at EApp sites. *)
+  mutable inline_stack : string list;
+      (** Helper names currently being inlined — recursion guard. *)
+  mutable inline_ret : (string option * string) list;
+      (** Per-inline (result register, end label); SReturn inside an inlined
+          body writes the register (if any) and branches to the label instead of
+          emitting [ret]. *)
 }
 
 let make_alloc () =
@@ -41,6 +52,10 @@ let make_alloc () =
     label = 0;
     arr_elt_types = Hashtbl.create 8;
     arr_memspaces = Hashtbl.create 8;
+    shared_decls = Buffer.create 128;
+    funcs = Hashtbl.create 4;
+    inline_stack = [];
+    inline_ret = [];
   }
 
 let new_u32 a =
@@ -120,3 +135,53 @@ let length_param_name arr_name = Printf.sprintf "sarek_%s_length" arr_name
 let emit buf fmt = Printf.bprintf buf ("    " ^^ fmt ^^ "\n")
 
 let emit_label buf lbl = Printf.bprintf buf "%s:\n" lbl
+
+(** [copy_reg buf alloc r] allocates a fresh register of [r]'s class and emits a
+    mov from [r] into it. Used wherever a binding must not alias the source
+    register (mutable lets, inlined helper parameters). *)
+let copy_reg buf a r_src =
+  if String.length r_src >= 3 && r_src.[1] = 'f' && r_src.[2] = 'd' then begin
+    let r = new_f64 a in
+    emit buf "mov.f64 %s, %s;" r r_src ;
+    r
+  end
+  else if String.length r_src >= 2 && r_src.[1] = 'f' then begin
+    let r = new_f32 a in
+    emit buf "mov.f32 %s, %s;" r r_src ;
+    r
+  end
+  else if String.length r_src >= 3 && r_src.[1] = 'r' && r_src.[2] = 'd' then begin
+    let r = new_u64 a in
+    emit buf "mov.u64 %s, %s;" r r_src ;
+    r
+  end
+  else begin
+    let r = new_u32 a in
+    emit buf "mov.u32 %s, %s;" r r_src ;
+    r
+  end
+
+(** {1 Shared-memory declaration helpers} *)
+
+let ptx_align_of_elttype = function
+  | TFloat32 | TInt32 | TBool -> 4
+  | TFloat64 | TInt64 -> 8
+  | TUnit -> 4
+  | TVec _ | TArray _ -> 8
+  | TRecord _ | TVariant _ -> unsupported "align of custom type"
+
+let ptx_btype_of_elttype = function
+  | TFloat32 | TInt32 | TBool | TUnit -> "b32"
+  | TFloat64 | TInt64 -> "b64"
+  | TVec _ | TArray _ -> "b64"
+  | TRecord _ | TVariant _ -> unsupported "btype of custom type"
+
+(** {1 Statement-emitter hook}
+
+    EApp inlining in the expression emitter must emit the helper body, a
+    statement — but Sarek_ir_ptx_stmt depends on Sarek_ir_ptx_expr. This hook
+    breaks the cycle: Sarek_ir_ptx_stmt installs [emit_stmt] here at load time,
+    and the expression emitter calls through it. *)
+let stmt_emitter :
+    (Buffer.t -> reg_alloc -> env -> Sarek_ir_types.stmt -> unit) ref =
+  ref (fun _ _ _ _ -> fail "PTX codegen: stmt_emitter not initialized")

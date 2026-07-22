@@ -34,6 +34,15 @@ type reg_alloc = {
   mutable label : int;
   arr_elt_types : (string, elttype) Hashtbl.t;
   arr_memspaces : (string, unit) Hashtbl.t;
+  shared_decls : Buffer.t;
+      (** [.shared] declarations discovered while emitting the body; spliced
+          into the kernel prologue by [generate]. *)
+  funcs : (string, helper_func) Hashtbl.t;
+      (** Kernel helper functions ([kern_funcs]), inlined at EApp sites. *)
+  mutable inline_stack : string list;
+      (** Helper names currently being inlined — recursion guard. *)
+  mutable inline_ret : (string option * string) list;
+      (** Per-inline (result register, end label) for SReturn lowering. *)
 }
 
 (** [make_alloc ()] returns a fresh zeroed allocator. *)
@@ -98,3 +107,24 @@ val emit : Buffer.t -> ('a, Buffer.t, unit) format -> 'a
 
 (** [emit_label buf lbl] appends [lbl:] followed by a newline to [buf]. *)
 val emit_label : Buffer.t -> string -> unit
+
+(** [copy_reg buf alloc r] allocates a fresh register of [r]'s class and emits a
+    mov from [r] into it — for bindings that must not alias the source register
+    (mutable lets, inlined helper parameters). *)
+val copy_reg : Buffer.t -> reg_alloc -> string -> string
+
+(** {1 Shared-memory declaration helpers} *)
+
+(** Byte alignment of a [.shared] array of the given element type. *)
+val ptx_align_of_elttype : elttype -> int
+
+(** PTX untyped-bits type ([b32]/[b64]) for a [.shared] array declaration. *)
+val ptx_btype_of_elttype : elttype -> string
+
+(** {1 Statement-emitter hook}
+
+    Installed by Sarek_ir_ptx_stmt at load time so the expression emitter can
+    emit helper-function bodies (statements) when inlining EApp without a
+    circular module dependency. *)
+val stmt_emitter :
+  (Buffer.t -> reg_alloc -> env -> Sarek_ir_types.stmt -> unit) ref

@@ -176,15 +176,22 @@ let benchmark_device dev size config =
 
     (* Generate image if requested *)
     (if config.generate_images then
-       let safe_name =
-         String.map (fun c -> if c = ' ' then '_' else c) dev.Device.name
+       let sanitize s =
+         String.map (fun c -> if c = ' ' || c = '/' then '_' else c) s
+       in
+       (* Distinct devices can sanitize name+framework to the same string
+          (e.g. differing only in '/'); a hash of the raw identity keeps the
+          filenames unique. *)
+       let tag =
+         Hashtbl.hash (dev.Device.name, dev.Device.framework) land 0xffff
        in
        let img_filename =
          Printf.sprintf
-           "%s/mandelbrot_%s_%s_%dx%d.ppm"
+           "%s/mandelbrot_%s_%s_%04x_%dx%d.ppm"
            config.output_dir
-           safe_name
-           dev.Device.framework
+           (sanitize dev.Device.name)
+           (sanitize dev.Device.framework)
+           tag
            width
            height
        in

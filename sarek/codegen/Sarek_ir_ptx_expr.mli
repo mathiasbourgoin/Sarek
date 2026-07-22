@@ -16,7 +16,8 @@ open Sarek_ir_ptx_types
     and returns the register name holding the result.
 
     Raises {!Ptx_codegen_error} for IR constructs not yet covered by the PTX
-    backend (variants, records, device function calls, etc.). *)
+    backend (variants, records, recursive device functions, etc.). Non-recursive
+    helper-function calls (EApp) are inlined at the call site. *)
 val emit_expr : Buffer.t -> reg_alloc -> env -> expr -> string
 
 (** [emit_binop buf alloc env op e1 e2] emits a binary operation. Type is
@@ -29,7 +30,8 @@ val emit_binop : Buffer.t -> reg_alloc -> env -> binop -> expr -> expr -> string
 val emit_cast : Buffer.t -> reg_alloc -> string -> elttype -> string
 
 (** [emit_intrinsic buf alloc env path name args] emits the PTX sequence for the
-    named Sarek intrinsic. [path] is ignored (reserved for future namespacing).
-    Raises {!Ptx_codegen_error} for unknown intrinsic names. *)
+    named Sarek intrinsic. [path] disambiguates module-qualified names ("of_int"
+    resolves to f32 or f64 by its Float32/Float64 path). Raises
+    {!Ptx_codegen_error} for unknown intrinsic names. *)
 val emit_intrinsic :
   Buffer.t -> reg_alloc -> env -> string list -> string -> expr list -> string
