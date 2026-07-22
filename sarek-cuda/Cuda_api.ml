@@ -51,6 +51,55 @@ let check (ctx : string) (result : cu_result) : unit =
     without a circular module dependency. *)
 let device_destroy_hooks : (int -> unit) list ref = ref []
 
+(** Host-side kernel-argument buffers (the [CArray] of argument pointers plus
+    the per-argument value cells) for launches that may still be in flight,
+    keyed by device id.
+
+    [cuLaunchKernel] is asynchronous. The NVIDIA driver snapshots the kernel
+    parameters synchronously before returning, so a caller may free them right
+    after the call — but the ZLUDA/HIP stack reads them later, at dispatch time.
+    Freeing them when [Kernel.launch] returns is therefore a use-after-free once
+    the OCaml GC reclaims the cells: the GPU then reads recycled host memory as
+    the kernel's arguments (observed as an intermittent GPU page fault at a
+    host-range address on ZLUDA).
+
+    We retain the buffers here until the stream that ran the launch is drained.
+    Each entry is keyed by [(device_id, stream_key)] where [stream_key] is the
+    raw address of the stream handle (0 for the default/null stream, which is
+    what SPOC uses). Values are kept as [Obj.t] purely for liveness and are
+    never inspected. A mutex guards the list so launches/retires from different
+    OCaml domains cannot lose an entry (drop = use-after-free) or a removal. *)
+let pending_kernargs : (int * nativeint * Obj.t) list ref = ref []
+
+let pending_lock = Mutex.create ()
+
+let retain_kernargs device_id stream_key keepalive =
+  Mutex.protect pending_lock (fun () ->
+      pending_kernargs :=
+        (device_id, stream_key, keepalive) :: !pending_kernargs)
+
+(** Release buffers for one stream — use after draining exactly that stream (its
+    synchronize, or a blocking op known to run on it). *)
+let retire_stream device_id stream_key =
+  Mutex.protect pending_lock (fun () ->
+      pending_kernargs :=
+        List.filter
+          (fun (id, sk, _) -> id <> device_id || sk <> stream_key)
+          !pending_kernargs)
+
+(** Release all buffers for a device — use only after a full-context synchronize
+    (drains every stream) or context destruction. *)
+let retire_device device_id =
+  Mutex.protect pending_lock (fun () ->
+      pending_kernargs :=
+        List.filter (fun (id, _, _) -> id <> device_id) !pending_kernargs)
+
+(** Raw address of a stream handle; the default (null) stream is 0. *)
+let stream_key_of_ptr (handle : _ ptr) = raw_address_of_ptr (to_voidp handle)
+
+(** Key of the default/null stream (what SPOC's blocking memcpys run on). *)
+let default_stream_key = 0n
+
 (** {1 Device Management} *)
 
 module Device = struct
@@ -92,6 +141,22 @@ module Device = struct
       "cuDeviceGetAttribute"
       (cuDeviceGetAttribute v (int_of_device_attribute attr) dev) ;
     !@v
+
+  (* Tracks the device whose context is current, so a null-stream
+     [Kernel.launch] attributes retained kernargs to the right device. Kept in
+     sync at every context switch: [set_current] and [create_device] (which
+     leaves its new context current). All SPOC context switches go through
+     these two, so the tracker never disagrees with the live CUDA context.
+
+     Domain-local: a CUDA current context is per-OS-thread (cuCtxSetCurrent is
+     thread-local), and OCaml 5 domains are threads, so each domain must track
+     its own current device — a shared ref would let one domain's context
+     switch mis-attribute another domain's launches. *)
+  let current_id_key = Domain.DLS.new_key (fun () -> -1)
+
+  let current_id () = Domain.DLS.get current_id_key
+
+  let set_current_id id = Domain.DLS.set current_id_key id
 
   (* Create a new device with context - internal, use get for cached version *)
   let create_device idx =
@@ -179,6 +244,8 @@ module Device = struct
       major
       minor
       (Int64.div total_mem (Int64.of_int (1024 * 1024))) ;
+    (* cuCtxCreate leaves the new context current. *)
+    set_current_id idx ;
     dev
 
   (* Get a device, reusing cached context to keep kernel handles valid *)
@@ -190,11 +257,15 @@ module Device = struct
         Hashtbl.add device_cache idx dev ;
         dev
 
-  let set_current dev = check "cuCtxSetCurrent" (cuCtxSetCurrent dev.context)
+  let set_current dev =
+    set_current_id dev.id ;
+    check "cuCtxSetCurrent" (cuCtxSetCurrent dev.context)
 
   let synchronize dev =
     set_current dev ;
-    check "cuCtxSynchronize" (cuCtxSynchronize ())
+    check "cuCtxSynchronize" (cuCtxSynchronize ()) ;
+    (* A full-context synchronize drains every stream on the device. *)
+    retire_device dev.id
 
   let destroy dev =
     (* Evict from device_cache first: leaving a stale entry means a later
@@ -206,6 +277,7 @@ module Device = struct
        recreated. *)
     Hashtbl.remove device_cache dev.id ;
     List.iter (fun hook -> hook dev.id) !device_destroy_hooks ;
+    retire_device dev.id ;
     check "cuCtxDestroy" (cuCtxDestroy dev.context)
 end
 
@@ -239,34 +311,41 @@ module Memory = struct
     Device.set_current buf.device ;
     check "cuMemFree" (cuMemFree buf.ptr)
 
+  (* A blocking memcpy on the default stream drains all prior launches on that
+     stream, so it is a safe point to release the device's retained kernargs. *)
   let host_to_device ~src ~dst =
     Device.set_current dst.device ;
     let src_ptr = bigarray_start array1 src |> to_voidp in
     let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes src) in
-    check "cuMemcpyHtoD" (cuMemcpyHtoD dst.ptr src_ptr bytes)
+    check "cuMemcpyHtoD" (cuMemcpyHtoD dst.ptr src_ptr bytes) ;
+    retire_stream dst.device.id default_stream_key
 
   let device_to_host ~src ~dst =
     Device.set_current src.device ;
     let dst_ptr = bigarray_start array1 dst |> to_voidp in
     let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes dst) in
-    check "cuMemcpyDtoH" (cuMemcpyDtoH dst_ptr src.ptr bytes)
+    check "cuMemcpyDtoH" (cuMemcpyDtoH dst_ptr src.ptr bytes) ;
+    retire_stream src.device.id default_stream_key
 
   (** Transfer from raw pointer to device buffer (for custom types) *)
   let host_ptr_to_device ~src_ptr ~byte_size ~dst =
     Device.set_current dst.device ;
     let bytes = Unsigned.Size_t.of_int byte_size in
-    check "cuMemcpyHtoD (ptr)" (cuMemcpyHtoD dst.ptr src_ptr bytes)
+    check "cuMemcpyHtoD (ptr)" (cuMemcpyHtoD dst.ptr src_ptr bytes) ;
+    retire_stream dst.device.id default_stream_key
 
   (** Transfer from device buffer to raw pointer (for custom types) *)
   let device_to_host_ptr ~src ~dst_ptr ~byte_size =
     Device.set_current src.device ;
     let bytes = Unsigned.Size_t.of_int byte_size in
-    check "cuMemcpyDtoH (ptr)" (cuMemcpyDtoH dst_ptr src.ptr bytes)
+    check "cuMemcpyDtoH (ptr)" (cuMemcpyDtoH dst_ptr src.ptr bytes) ;
+    retire_stream src.device.id default_stream_key
 
   let device_to_device ~src ~dst =
     Device.set_current src.device ;
     let bytes = Unsigned.Size_t.of_int (src.size * src.elem_size) in
-    check "cuMemcpyDtoD" (cuMemcpyDtoD dst.ptr src.ptr bytes)
+    check "cuMemcpyDtoD" (cuMemcpyDtoD dst.ptr src.ptr bytes) ;
+    retire_stream src.device.id default_stream_key
 
   let memset buf value =
     Device.set_current buf.device ;
@@ -292,7 +371,9 @@ module Stream = struct
     check "cuStreamDestroy" (cuStreamDestroy stream.handle)
 
   let synchronize stream =
-    check "cuStreamSynchronize" (cuStreamSynchronize stream.handle)
+    check "cuStreamSynchronize" (cuStreamSynchronize stream.handle) ;
+    (* Draining one stream retires only that stream's kernargs. *)
+    retire_stream stream.device.id (stream_key_of_ptr stream.handle)
 
   let default device = {handle = from_voidp cu_stream null; device}
 end
@@ -597,7 +678,18 @@ module Kernel = struct
          (Unsigned.UInt.of_int shared_mem)
          stream_ptr
          (CArray.start params)
-         (from_voidp (ptr void) null))
+         (from_voidp (ptr void) null)) ;
+    (* The launch is asynchronous and the argument buffers (params + the
+       per-arg cells in refs) may be read after this returns. Keep them alive
+       until the stream that ran the launch is drained. Attribute to that
+       stream (and its device); a null/default stream keys as
+       [default_stream_key] on the current context's device. *)
+    let device_id, stream_key =
+      match stream with
+      | Some s -> (s.Stream.device.id, stream_key_of_ptr s.Stream.handle)
+      | None -> (Device.current_id (), default_stream_key)
+    in
+    retain_kernargs device_id stream_key (Obj.repr (params, !refs))
 end
 
 (** {1 Utility Functions} *)
