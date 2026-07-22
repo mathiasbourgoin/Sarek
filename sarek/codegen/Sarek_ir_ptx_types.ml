@@ -65,6 +65,11 @@ type reg_alloc = {
           payload slots and compute the tag index. *)
   mutable inline_stack : string list;
       (** Helper names currently being inlined — recursion guard. *)
+  inline_budget : (string, int) Hashtbl.t;
+      (** Remaining recursive-inline depth per helper, seeded from the helper's
+          [pragma ["sarek.inline N"]] at first entry; consulted (and
+          decremented) only on recursive re-entry. Helpers without the pragma
+          have no entry and recursive re-entry stays an error. *)
   mutable inline_ret : (binding option * string) list;
       (** Per-inline (result binding, end label); SReturn inside an inlined body
           writes the binding (if any) and branches to the label instead of
@@ -85,6 +90,7 @@ let make_alloc () =
     funcs = Hashtbl.create 4;
     variant_decls = Hashtbl.create 4;
     inline_stack = [];
+    inline_budget = Hashtbl.create 4;
     inline_ret = [];
   }
 

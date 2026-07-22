@@ -233,6 +233,47 @@ let emit_match_arms buf alloc (env : env) (scrut : binding)
              only variant values dispatch on a tag (tuple/record destructuring \
              takes a single pattern)")
 
+(** {1 Recursive-inline budget helpers}
+
+    A recursive helper is inlinable only when its body root carries
+    [pragma ["sarek.inline N"]]: N bounds the recursive re-entry depth. *)
+
+(** Inline budget declared by [hf], parsed from an [SPragma] at its body root.
+    Minimal re-implementation of the option parsing in
+    sarek/ppx/Sarek_tailrec_pragma.parse_sarek_inline_pragma (the source of
+    truth for the "sarek.inline N" string format) — the PPX is a separate
+    library not linkable from the codegen. *)
+let helper_inline_budget (hf : helper_func) : int option =
+  let parse = function
+    | [opt] -> (
+        match String.split_on_char ' ' opt with
+        | ["sarek.inline"; n] -> int_of_string_opt n
+        | _ -> None)
+    | ["sarek.inline"; n] -> int_of_string_opt n
+    | _ -> None
+  in
+  let rec root = function SBlock s -> root s | s -> s in
+  match root hf.hf_body with SPragma (opts, _) -> parse opts | _ -> None
+
+(** Write a typed zero into every scalar leaf of [b] — the result of a recursive
+    call at inline-budget exhaustion (a dynamically-unreachable branch; see
+    [emit_app_recursive]). *)
+let rec zero_binding buf (b : binding) : unit =
+  match b with
+  | Scalar r ->
+      let zero =
+        match reg_class r with
+        | RU32 | RU64 -> "0"
+        | RF32 -> "0F00000000"
+        | RF64 -> "0D0000000000000000"
+      in
+      emit buf "%s %s, %s;" (mov_op_of_class (reg_class r)) r zero
+  | Agg (ARecord fields) ->
+      List.iter (fun (_, fb) -> zero_binding buf fb) fields
+  | Agg (AVariant {tag_reg; ctors; _}) ->
+      emit buf "mov.u32 %s, 0;" tag_reg ;
+      List.iter (fun (_, bs) -> List.iter (zero_binding buf) bs) ctors
+
 (** {1 Expression emitter}
 
     Returns the PTX register name holding the result. Emits instructions into
@@ -485,56 +526,100 @@ and restore_helper_array_meta alloc saved =
           else Hashtbl.remove alloc.arr_memspaces name)
     saved
 
-(** Inline a helper call and return the binding holding its result. Aggregate
-    returns are pre-allocated from [hf_ret_type] (FR-023); SReturn inside the
-    inlined body movs leaf-wise into that binding. *)
+(** Inline a helper call and return the binding holding its result. First entry
+    seeds the helper's recursive-inline budget (from a [sarek.inline N] pragma
+    at its body root, if any); recursive re-entry dispatches to
+    [emit_app_recursive]. *)
 and emit_app buf alloc (env : env) (f : var) (args : expr list) : binding =
   match Hashtbl.find_opt alloc.funcs f.var_name with
   | None -> unsupported ("EApp to unknown function '" ^ f.var_name ^ "'")
   | Some hf ->
-      if List.mem hf.hf_name alloc.inline_stack then
-        unsupported
-          ("EApp: recursive helper '" ^ hf.hf_name
-         ^ "' (inlining supports non-recursive helpers only)")
-      else if List.length args <> List.length hf.hf_params then
+      if List.length args <> List.length hf.hf_params then
         fail
           (Printf.sprintf
              "PTX codegen: helper '%s' called with %d args, expects %d"
              hf.hf_name
              (List.length args)
              (List.length hf.hf_params))
+      else if List.mem hf.hf_name alloc.inline_stack then
+        emit_app_recursive buf alloc env hf args
       else begin
-        (* Evaluate arguments in the caller's environment. *)
-        let arg_vals = List.map (emit_value buf alloc env) args in
-        (* Fresh environment for the helper body: only its parameters are in
-           scope (helpers are module-level, no capture). *)
-        let callee_env = make_env () in
-        let saved =
-          List.map2
-            (bind_helper_param buf alloc env callee_env)
-            hf.hf_params
-            (List.combine args arg_vals)
-        in
-        let l_end = new_label alloc in
-        let ret =
-          match hf.hf_ret_type with
-          | TUnit -> None
-          | t -> Some (binding_of_elttype alloc t)
-        in
-        alloc.inline_stack <- hf.hf_name :: alloc.inline_stack ;
-        alloc.inline_ret <- (ret, l_end) :: alloc.inline_ret ;
-        !stmt_emitter buf alloc callee_env hf.hf_body ;
-        alloc.inline_ret <- List.tl alloc.inline_ret ;
-        alloc.inline_stack <- List.tl alloc.inline_stack ;
-        emit_label buf l_end ;
-        restore_helper_array_meta alloc saved ;
-        match ret with
-        | Some b -> b
-        | None ->
-            let r = new_u32 alloc in
-            emit buf "mov.u32 %s, 0;" r ;
-            Scalar r
+        (match helper_inline_budget hf with
+        | Some n -> Hashtbl.replace alloc.inline_budget hf.hf_name n
+        | None -> ()) ;
+        let res = emit_app_inline buf alloc env hf args in
+        Hashtbl.remove alloc.inline_budget hf.hf_name ;
+        res
       end
+
+(** Recursive re-entry into a helper already on the inline stack. Allowed only
+    for helpers carrying [pragma ["sarek.inline N"]]: each re-entry consumes one
+    unit of the remaining budget (restored on exit, so sibling calls — e.g.
+    fib's two — each see the same depth). At exhaustion the call's result is a
+    typed zero: the pragma is the author's contract that N levels cover all
+    runtime inputs, so the residual call site is dynamically unreachable and
+    only needs to be well-formed PTX, never correct. *)
+and emit_app_recursive buf alloc env hf args : binding =
+  match Hashtbl.find_opt alloc.inline_budget hf.hf_name with
+  | None ->
+      unsupported
+        ("EApp: recursive helper '" ^ hf.hf_name
+       ^ "' (inlining supports non-recursive helpers only; annotate the helper \
+          body with pragma [\"sarek.inline N\"] to enable depth-bounded \
+          inlining)")
+  | Some 0 -> (
+      (* Evaluate the arguments even though the residual call is elided —
+         keeps emitted PTX consistent with every budgeted level (argument
+         side effects are never silently dropped). *)
+      List.iter (fun a -> ignore (emit_value buf alloc env a)) args ;
+      match hf.hf_ret_type with
+      | TUnit ->
+          let r = new_u32 alloc in
+          emit buf "mov.u32 %s, 0;" r ;
+          Scalar r
+      | t ->
+          let b = binding_of_elttype alloc t in
+          zero_binding buf b ;
+          b)
+  | Some n ->
+      Hashtbl.replace alloc.inline_budget hf.hf_name (n - 1) ;
+      let res = emit_app_inline buf alloc env hf args in
+      Hashtbl.replace alloc.inline_budget hf.hf_name n ;
+      res
+
+(** Emit the inline expansion of a call to [hf] — shared by first entry and
+    budgeted recursive re-entry. *)
+and emit_app_inline buf alloc env hf args : binding =
+  (* Evaluate arguments in the caller's environment. *)
+  let arg_vals = List.map (emit_value buf alloc env) args in
+  (* Fresh environment for the helper body: only its parameters are in
+     scope (helpers are module-level, no capture). *)
+  let callee_env = make_env () in
+  let saved =
+    List.map2
+      (bind_helper_param buf alloc env callee_env)
+      hf.hf_params
+      (List.combine args arg_vals)
+  in
+  let l_end = new_label alloc in
+  let ret =
+    match hf.hf_ret_type with
+    | TUnit -> None
+    | t -> Some (binding_of_elttype alloc t)
+  in
+  alloc.inline_stack <- hf.hf_name :: alloc.inline_stack ;
+  alloc.inline_ret <- (ret, l_end) :: alloc.inline_ret ;
+  !stmt_emitter buf alloc callee_env hf.hf_body ;
+  alloc.inline_ret <- List.tl alloc.inline_ret ;
+  alloc.inline_stack <- List.tl alloc.inline_stack ;
+  emit_label buf l_end ;
+  restore_helper_array_meta alloc saved ;
+  match ret with
+  | Some b -> b
+  | None ->
+      let r = new_u32 alloc in
+      emit buf "mov.u32 %s, 0;" r ;
+      Scalar r
 
 (** {1 Value emitter (scalar or aggregate)}
 

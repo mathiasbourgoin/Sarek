@@ -232,6 +232,69 @@ let test_recursive_helper_rejected () =
   | _ -> Alcotest.fail "recursive helper should raise Ptx_codegen_error"
   | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()
 
+(** Number of (possibly overlapping) occurrences of [sub] in [s]. *)
+let count_substr s sub =
+  let subl = String.length sub in
+  let c = ref 0 in
+  for i = 0 to String.length s - subl do
+    if String.sub s i subl = sub then incr c
+  done ;
+  !c
+
+(** Recursive int32 pow2-style helper whose body root carries
+    [pragma ["sarek.inline 3"]]. *)
+let make_pragma_pow2_helper n self =
+  {
+    hf_name = "pow2";
+    hf_params = [n];
+    hf_ret_type = TInt32;
+    hf_body =
+      SPragma
+        ( ["sarek.inline 3"],
+          SReturn
+            (EIf
+               ( EBinop (Le, EVar n, EConst (CInt32 0l)),
+                 EConst (CInt32 1l),
+                 EBinop
+                   ( Mul,
+                     EConst (CInt32 2l),
+                     EApp (EVar self, [EBinop (Sub, EVar n, EConst (CInt32 1l))])
+                   ) )) );
+  }
+
+(** Recursive helper WITH [pragma ["sarek.inline 3"]] is depth-unrolled inline:
+    the body multiply appears once per unrolled level (>= 3 times) and no .func
+    is emitted. *)
+let test_recursive_helper_pragma_unrolled () =
+  let out = make_var "out" (TVec TInt32) in
+  let n = make_var "n" TInt32 in
+  let self = make_var "pow2" TInt32 in
+  let helper = make_pragma_pow2_helper n self in
+  let body =
+    SAssign (LArrayElem ("out", EConst (CInt32 0l)), EApp (EVar self, [EVar n]))
+  in
+  let k =
+    base_kernel
+      "pow2_unrolled"
+      [
+        DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global});
+        DParam (n, None);
+      ]
+      body
+      [helper]
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  let muls = count_substr ptx "mul.lo.u32" in
+  if muls < 3 then
+    Alcotest.fail
+      (Printf.sprintf
+         "expected >=3 unrolled multiplies, found %d:\n%s"
+         muls
+         ptx) ;
+  if count_substr ptx ".func" > 0 then
+    Alcotest.fail
+      "pragma-unrolled helper must be inlined, found .func directive"
+
 (** A guarded array read in an if-EXPRESSION must compile to real control flow
     (a predicated branch), never the eager evaluate-both + selp path, so the
     not-taken (possibly out-of-bounds) load is never executed. *)
@@ -1392,6 +1455,10 @@ let () =
             "recursive helper is rejected"
             `Quick
             test_recursive_helper_rejected;
+          Alcotest.test_case
+            "recursive helper with sarek.inline pragma is depth-unrolled"
+            `Quick
+            test_recursive_helper_pragma_unrolled;
           Alcotest.test_case
             "guarded array read in if-expr branches (no speculative load)"
             `Quick

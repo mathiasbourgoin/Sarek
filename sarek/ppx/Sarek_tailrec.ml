@@ -129,7 +129,22 @@ let transform_kernel (kernel : tkernel) : tkernel =
                               "Sarek: successfully inlined '%s' (%d nodes)@."
                               name
                               (Sarek_tailrec_pragma.count_nodes new_body) ;
-                          TMFun (name, is_rec, params, new_body)
+                          (* Re-wrap the unrolled body with a zero-budget
+                             inline pragma: residual recursive calls left in
+                             dead branches (see inline_with_pragma) have no
+                             remaining inline depth. Backends that must fully
+                             resolve calls at codegen time (PTX) read this
+                             marker and lower such residual calls as
+                             dynamically-unreachable typed zeros; C-family
+                             backends emit "#pragma sarek.inline 0", which C99
+                             defines as an ignored unknown pragma. *)
+                          let final_body =
+                            {
+                              body with
+                              te = TEPragma (["sarek.inline 0"], new_body);
+                            }
+                          in
+                          TMFun (name, is_rec, params, final_body)
                       | Error msg ->
                           Format.eprintf "Sarek error in '%s': %s@." name msg ;
                           failwith msg)
