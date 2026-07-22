@@ -112,8 +112,8 @@ Experimental:
 **What is missing (known gaps):**
 - Records and variants (`TRecord`, `TVariant`) — struct layout not implemented
 - Helper / device functions (`kern_funcs`, `EApp`) — `.func` directive
-- Array length tracking (`EArrayLen`)
 - Match expressions (`EMatch`, `SMatch`) — depends on variant lowering
+- `EArrayLen` on local/shared arrays (parameter arrays are supported)
 - Shared memory (`__shared__` / `.shared`) — not yet emitted
 - Full CI integration and ptxas validation gate
 
@@ -148,6 +148,19 @@ For NVIDIA GPUs, especially newer architectures:
   - Recommended: CUDA 13.1 + driver 580+
 
 **Note**: The "CUDA Version" shown by `nvidia-smi` indicates the maximum CUDA runtime API version your driver supports. This may differ from your installed CUDA toolkit version, which is normal. For example, driver 575 with CUDA toolkit 12.9 will show "CUDA Version: 12.9" in `nvidia-smi`.
+
+#### AMD GPUs via ZLUDA
+
+The CUDA backend also runs on AMD GPUs through [ZLUDA](https://github.com/vosen/ZLUDA), a CUDA implementation on top of ROCm. ZLUDA ships the CUDA driver API but not NVRTC, so only the CUDA/PTX backend (the default) is available — kernels that fall back to the CUDA/C backend (records, variants) will not run.
+
+```bash
+# Prerequisites: ROCm (tested with 7.2) and a supported AMD GPU (e.g. RDNA3)
+# Download a ZLUDA release and point the dynamic loader at it:
+LD_LIBRARY_PATH=/path/to/zluda dune exec -- sarek-device-info
+# → AMD Radeon RX 7900 XTX [ZLUDA] (CUDA/PTX)
+```
+
+Tested on an RX 7900 XTX with ZLUDA v7-preview.3: the CUDA/PTX backend matches or exceeds the OpenCL and Vulkan backends on memory-bound benchmarks.
 
 ### Installing via OPAM
 
@@ -261,9 +274,10 @@ Array.iter (fun dev ->
     dev.Device.framework
 ) devices
 
-(* Select specific backend *)
-let cuda_device = Device.by_framework "CUDA" in
-let opencl_device = Device.by_framework "OpenCL" in
+(* Select specific backend. CUDA backends register as "CUDA/PTX" and
+   "CUDA/C"; use filter_cuda to match the whole family. *)
+let cuda_devices = Device.filter_cuda () in
+let opencl_devices = Device.by_framework "OpenCL" in
 ```
 
 See [sarek/sarek/README.md](sarek/sarek/README.md) for comprehensive usage documentation.

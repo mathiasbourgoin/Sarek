@@ -27,9 +27,19 @@ let emit_params buf alloc (env : env) (params : decl list) : string =
           first := false ;
           match v.var_type with
           | TVec _ | TArray _ ->
+              (* The launch convention (Execute.expand_to_run_source_args)
+                 passes every vector as a (ptr, length) pair, mirroring the
+                 CUDA C signature "T* x, int sarek_x_length". Declare both
+                 params here even when the body never reads the length —
+                 otherwise every following parameter is read from the wrong
+                 kernelParams slot. *)
+              let len_name = length_param_name v.var_name in
               Buffer.add_string
                 param_decls
-                (Printf.sprintf "    .param .u64 param_%s" v.var_name) ;
+                (Printf.sprintf
+                   "    .param .u64 param_%s,\n    .param .u32 param_%s"
+                   v.var_name
+                   len_name) ;
               let r = new_u64 alloc in
               env_bind env v.var_name r ;
               (match arr_info_opt with
@@ -44,7 +54,10 @@ let emit_params buf alloc (env : env) (params : decl list) : string =
                        "DParam '%s': TVec/TArray parameter missing array \
                         element-type info"
                        v.var_name)) ;
-              emit buf "ld.param.u64 %s, [param_%s];" r v.var_name
+              emit buf "ld.param.u64 %s, [param_%s];" r v.var_name ;
+              let r_len = new_u32 alloc in
+              env_bind env len_name r_len ;
+              emit buf "ld.param.u32 %s, [param_%s];" r_len len_name
           | TInt32 | TBool ->
               Buffer.add_string
                 param_decls

@@ -125,7 +125,7 @@ let gpu_only (d : Device.t) =
 
 (** Convenience filter: JIT backends only (CUDA, OpenCL, Vulkan, Metal) *)
 let jit_only (d : Device.t) =
-  d.framework = "CUDA" || d.framework = "OpenCL" || d.framework = "Vulkan"
+  Device.is_cuda d || d.framework = "OpenCL" || d.framework = "Vulkan"
   || d.framework = "Metal"
 
 let run ?(baseline : (int -> 'a) option) ?(verify : ('a -> 'a -> bool) option)

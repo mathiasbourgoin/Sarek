@@ -108,6 +108,13 @@ let env_lookup (env : env) name =
   | Some r -> r
   | None -> fail ("PTX codegen: unbound variable: " ^ name)
 
+(** Name of the implicit length parameter paired with a vector/array parameter.
+    Single definition for both the producer (emit_params declares and binds it)
+    and the consumer (EArrayLen looks it up) — it must also match the
+    "sarek_<name>_length" convention used by Execute.expand_to_run_source_args
+    and the C-family code generators. *)
+let length_param_name arr_name = Printf.sprintf "sarek_%s_length" arr_name
+
 (** {1 Emit helpers} *)
 
 let emit buf fmt = Printf.bprintf buf ("    " ^^ fmt ^^ "\n")

@@ -492,10 +492,12 @@ module Kernel = struct
       (String.length ptx) ;
     load_module_from_ptx ~name ptx
 
-  let compile_cached device ~name ~source =
-    (* Cache key must include device ID and the kernel name - a source file
-       may define more than one kernel, and a resolved kernel handle for one
-       name must never be returned for another (see Compile_cache.mli). *)
+  (* Shared memoization for compiled/loaded kernels. The cache key must
+     include device ID and the kernel name - a source file may define more
+     than one kernel, and a resolved kernel handle for one name must never be
+     returned for another (see Compile_cache.mli). [record_key_for_device]
+     keeps the device-destroy eviction hook working for every entry. *)
+  let with_cache device ~name ~source build =
     let key =
       Spoc_framework.Compile_cache.make_key
         ~device:(string_of_int device.Device.id)
@@ -506,10 +508,21 @@ module Kernel = struct
     match Hashtbl.find_opt cache key with
     | Some k -> k
     | None ->
-        let k = compile device ~name ~source in
+        let k = build () in
         Hashtbl.add cache key k ;
         record_key_for_device device.Device.id key ;
         k
+
+  (** Cached variant of [load_from_ptx] — same cache as [compile_cached].
+      Without it, every launch reloads (and re-JITs) the PTX module, which
+      dominates kernel time on drivers that compile at module-load (NVIDIA JIT,
+      ZLUDA). *)
+  let load_from_ptx_cached device ~name ~ptx =
+    with_cache device ~name ~source:ptx (fun () ->
+        load_from_ptx device ~name ~ptx)
+
+  let compile_cached device ~name ~source =
+    with_cache device ~name ~source (fun () -> compile device ~name ~source)
 
   let clear_cache () =
     Hashtbl.iter
@@ -595,15 +608,23 @@ let driver_version () =
   let ver = !@v in
   (ver / 1000, ver mod 1000 / 10)
 
-let is_available () =
-  (* First check if the library is available at all *)
+(** Driver-only availability: libcuda is loadable and reports at least one
+    device. Sufficient for the PTX backend, which never calls NVRTC — this is
+    what makes SPOC work on non-NVIDIA CUDA implementations such as ZLUDA, which
+    ship the driver API without libnvrtc. *)
+let is_driver_available () =
   if not (Cuda_bindings.is_available ()) then false
-  else if not (Cuda_nvrtc.is_available ()) then false
   else
     try
       Device.init () ;
       Device.count () > 0
     with _ -> false
+
+(* NVRTC is probed before the driver so that a host without libnvrtc (e.g.
+   ZLUDA) returns false without cuInit-ing the driver as a side effect. *)
+let is_available () =
+  Cuda_bindings.is_available ()
+  && Cuda_nvrtc.is_available () && is_driver_available ()
 
 let memory_info device =
   Device.set_current device ;

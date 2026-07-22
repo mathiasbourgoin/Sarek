@@ -142,9 +142,14 @@ module Cuda : Framework_sig.PLUGIN_BASE = struct
 
     let clear_cache = Cuda_api.Kernel.clear_cache
 
+    (* Returned handles are owned by the shared kernel cache: [clear_cache]
+       or destroying the device unloads the underlying module, so callers
+       must not retain a handle across those events (reload instead). The
+       per-launch lookup in Cuda_ptx_plugin.run_source is safe by
+       construction. *)
     let load_from_ptx ~name ~ptx =
       match !current_device with
-      | Some dev -> Cuda_api.Kernel.load_from_ptx dev ~name ~ptx
+      | Some dev -> Cuda_api.Kernel.load_from_ptx_cached dev ~name ~ptx
       | None -> Cuda_api.Kernel.load_from_ptx_current ~name ~ptx
 
     let create_args () = Spoc_framework.Kernel_args.create ()

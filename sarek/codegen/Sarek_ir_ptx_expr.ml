@@ -12,6 +12,17 @@ open Sarek_ir_types
 open Sarek_ir_ptx_types
 open Sarek_ir_ptx_mem
 
+(** f32 bit patterns for the base-2 change-of-base constants used by the exp/log
+    lowerings (PTX only provides base-2 ex2/lg2). *)
+let f32_log2_e_bits = Int32.bits_of_float (Float.log2 (Float.exp 1.0))
+
+let f32_ln_2_bits = Int32.bits_of_float (Float.log 2.0)
+
+(** An f64 register is "%fd<n>"; an f32 register is "%f<n>" (not "%fd<n>"). *)
+let is_f64_reg r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd'
+
+let is_f32_reg r = String.length r >= 2 && r.[1] = 'f' && not (is_f64_reg r)
+
 (** {1 Expression emitter}
 
     Returns the PTX register name holding the result. Emits instructions into
@@ -140,8 +151,17 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
         let r = new_u32 alloc in
         emit buf "selp.u32 %s, %s, %s, %s;" r r_then r_else p ;
         r
-  | EArrayLen _ ->
-      unsupported "EArrayLen (needs (ptr,len) pair tracking in env)"
+  | EArrayLen arr -> (
+      (* Bound by emit_params alongside the array pointer param. Only
+         parameter arrays carry a length; local/shared arrays fall back to
+         another backend. *)
+      match Hashtbl.find_opt env (length_param_name arr) with
+      | Some r -> r
+      | None ->
+          unsupported
+            (Printf.sprintf
+               "EArrayLen on '%s' (only parameter arrays have a length)"
+               arr))
   | EArrayCreate _ ->
       unsupported "EArrayCreate in expression position (use SLet)"
   | EMatch _ -> unsupported "EMatch (requires variant lowering)"
@@ -380,6 +400,17 @@ and emit_cast buf alloc r_src dst_ty : string =
   | _ -> unsupported ("ECast to " ^ ptx_reg_type_of dst_ty)
 
 and emit_intrinsic buf alloc env _path name args : string =
+  (* Emit the single argument of a unary f32 intrinsic, rejecting f64
+     operands (the .approx PTX ops used below are f32-only; an f64 operand
+     would emit invalid PTX that only fails at module-load time). *)
+  let unary_f32_arg intr args =
+    match args with
+    | [a] ->
+        let r = emit_expr buf alloc env a in
+        if is_f32_reg r then r
+        else unsupported (intr ^ ": f32 only (operand " ^ r ^ " not lowered)")
+    | _ -> unsupported (intr ^ " arity != 1")
+  in
   match name with
   | "thread_id_x" | "thread_idx_x" ->
       let r = new_u32 alloc in
@@ -492,6 +523,22 @@ and emit_intrinsic buf alloc env _path name args : string =
       in
       let r = new_f32 alloc in
       emit buf "sqrt.approx.f32 %s, %s;" r r_arg ;
+      r
+  | "exp" ->
+      (* exp(x) = 2^(x * log2 e); PTX only has base-2 ex2, f32 only *)
+      let r_arg = unary_f32_arg "exp" args in
+      let r_scaled = new_f32 alloc in
+      emit buf "mul.f32 %s, %s, 0F%08lX;" r_scaled r_arg f32_log2_e_bits ;
+      let r = new_f32 alloc in
+      emit buf "ex2.approx.f32 %s, %s;" r r_scaled ;
+      r
+  | "log" ->
+      (* log(x) = log2(x) * ln 2; PTX only has base-2 lg2, f32 only *)
+      let r_arg = unary_f32_arg "log" args in
+      let r_lg2 = new_f32 alloc in
+      emit buf "lg2.approx.f32 %s, %s;" r_lg2 r_arg ;
+      let r = new_f32 alloc in
+      emit buf "mul.f32 %s, %s, 0F%08lX;" r r_lg2 f32_ln_2_bits ;
       r
   | "fabs" ->
       let r_arg =

@@ -27,6 +27,16 @@ let devices : t array ref = ref [||]
 
 let initialized = ref false
 
+(** Resolve a requested framework name to registered backend names. An exact
+    name matches itself; a family name ("CUDA") matches every backend registered
+    as "<family>/<variant>" ("CUDA/PTX", "CUDA/C"), highest priority first.
+    Keeps callers written against the historical family names working after the
+    plugin split. *)
+let resolve_framework fw_name =
+  let all = Framework_registry.all_backend_names () in
+  if List.mem fw_name all then [fw_name]
+  else List.filter (String.starts_with ~prefix:(fw_name ^ "/")) all
+
 (** Initialize all available backends and enumerate devices *)
 let init
     ?(frameworks =
@@ -35,8 +45,21 @@ let init
   else begin
     let all_devices = ref [] in
     let global_id = ref 0 in
+    let seen = Hashtbl.create 8 in
 
     frameworks
+    |> List.concat_map (fun fw_name ->
+        match resolve_framework fw_name with
+        | [] ->
+            Log.debugf Log.Device "Framework %s: not registered" fw_name ;
+            []
+        | names -> names)
+    |> List.filter (fun fw_name ->
+        if Hashtbl.mem seen fw_name then false
+        else begin
+          Hashtbl.add seen fw_name () ;
+          true
+        end)
     |> List.iter (fun fw_name ->
         match Framework_registry.find_backend fw_name with
         | None -> Log.debugf Log.Device "Framework %s: not registered" fw_name
@@ -108,13 +131,18 @@ let with_fp64 () =
   |> List.filter (fun d -> d.capabilities.supports_fp64)
   |> Array.of_list
 
+(** CUDA backends register as "CUDA/PTX" and "CUDA/C"; match the family name or
+    its slash-separated variants (not arbitrary "CUDA*" names). *)
+let is_cuda_framework framework =
+  framework = "CUDA" || String.starts_with ~prefix:"CUDA/" framework
+
 (** Get the best device (first CUDA, then OpenCL, then Native) *)
 let best () =
-  let cuda = by_framework "CUDA" in
-  if Array.length cuda > 0 then Some cuda.(0)
-  else
-    let opencl = by_framework "OpenCL" in
-    if Array.length opencl > 0 then Some opencl.(0) else first ()
+  match Array.find_opt (fun d -> is_cuda_framework d.framework) (all ()) with
+  | Some d -> Some d
+  | None ->
+      let opencl = by_framework "OpenCL" in
+      if Array.length opencl > 0 then Some opencl.(0) else first ()
 
 (** Reset initialization state (for testing) *)
 let reset () =
@@ -141,7 +169,7 @@ let print_all () = all () |> Array.iter (fun d -> print_endline (to_string d))
 
 (** {2 Type Predicates} *)
 
-let is_cuda d = d.framework = "CUDA"
+let is_cuda d = is_cuda_framework d.framework
 
 let is_opencl d = d.framework = "OpenCL"
 
@@ -192,7 +220,8 @@ let find_by_id devices id = Array.find_opt (fun d -> d.id = id) devices
 
 (** {2 Filters} *)
 
-let filter_cuda () = by_framework "CUDA"
+let filter_cuda () =
+  all () |> Array.to_list |> List.filter is_cuda |> Array.of_list
 
 let filter_opencl () = by_framework "OpenCL"
 

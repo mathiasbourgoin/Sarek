@@ -84,6 +84,13 @@ val env_bind : env -> string -> string -> unit
     {!Ptx_codegen_error} if [name] is unbound. *)
 val env_lookup : env -> string -> string
 
+(** [length_param_name arr] is the name of the implicit length parameter paired
+    with vector/array parameter [arr] ("sarek_<arr>_length") — the single
+    definition shared by the param emitter and the [EArrayLen] lookup, matching
+    the convention of Execute.expand_to_run_source_args and the C-family code
+    generators. *)
+val length_param_name : string -> string
+
 (** {1 Emit helpers} *)
 
 (** [emit buf fmt ...] appends a 4-space-indented line to [buf]. *)

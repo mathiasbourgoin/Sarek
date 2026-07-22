@@ -22,6 +22,10 @@ module Backend : Framework_sig.BACKEND = struct
 
   let name = "CUDA/PTX"
 
+  (* Unlike the C backend, PTX loading needs only the driver API — no NVRTC.
+     Keeps this backend usable on ZLUDA and other libnvrtc-less stacks. *)
+  let is_available = Cuda_api.is_driver_available
+
   let execution_model = Framework_sig.JIT
 
   let generate_source ?block:_ (ir : Sarek_ir_types.kernel) : string option =

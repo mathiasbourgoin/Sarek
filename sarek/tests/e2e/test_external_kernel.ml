@@ -126,7 +126,10 @@ let run_external_kernel (dev : Device.t) size block_size =
   (* Select source based on device framework *)
   let source, lang =
     match dev.Device.framework with
-    | "CUDA" -> (cuda_vector_add, Sarek.Execute.CUDA_Source)
+    (* CUDA C source needs NVRTC, i.e. specifically the CUDA/C backend — the
+       CUDA/PTX backend only accepts pre-assembled PTX (see
+       test_ptx_external.ml for that path). *)
+    | "CUDA/C" -> (cuda_vector_add, Sarek.Execute.CUDA_Source)
     | "OpenCL" -> (opencl_vector_add, Sarek.Execute.OpenCL_Source)
     | "Vulkan" -> (glsl_vector_add, Sarek.Execute.GLSL_Source)
     | fw -> failwith ("External kernels not supported on " ^ fw)
@@ -170,7 +173,7 @@ let verify result expected =
 
 (* Only run on devices that support external kernels (CUDA, OpenCL, Vulkan) *)
 let supports_external_kernels (dev : Device.t) =
-  match dev.framework with "CUDA" | "OpenCL" | "Vulkan" -> true | _ -> false
+  match dev.framework with "CUDA/C" | "OpenCL" | "Vulkan" -> true | _ -> false
 
 (* ========== Main ========== *)
 
