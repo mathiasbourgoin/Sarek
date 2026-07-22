@@ -592,6 +592,64 @@ let test_float_mod_fmod_markers () =
   assert_contains ptx "neg.f64" ;
   assert_contains ptx "fma.rn.f64"
 
+(** ECast scalar-matrix coverage: bool casts normalize to a u32 0/1 via
+    setp+selp (float sources use unordered neu so NaN -> 1, matching C); i32 ->
+    i64 sign-extends (cvt.s64.s32); i64 -> i32 truncates (cvt.u32.u64). *)
+let test_cast_matrix_markers () =
+  let out = make_var "out" (TVec TInt32) in
+  let tid = make_var "tid" TInt32 in
+  let store i e = SAssign (LArrayElem ("out", i), e) in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SSeq
+          [
+            store (EVar tid) (ECast (TBool, EVar tid));
+            store (EVar tid) (ECast (TBool, EConst (CFloat32 1.0)));
+            store (EVar tid) (ECast (TBool, EConst (CFloat64 1.0)));
+            store (EVar tid) (ECast (TBool, EConst (CInt64 1L)));
+            store (EVar tid) (ECast (TInt32, ECast (TInt64, EVar tid)));
+          ] )
+  in
+  let k =
+    base_kernel
+      "cast_matrix"
+      [DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global})]
+      body
+      []
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "setp.ne.u32" ;
+  assert_contains ptx "setp.neu.f32" ;
+  assert_contains ptx "setp.neu.f64" ;
+  assert_contains ptx "setp.ne.s64" ;
+  assert_contains ptx "selp.u32" ;
+  (* widen sign-extends, narrow truncates to the low 32 bits *)
+  assert_contains ptx "cvt.s64.s32" ;
+  assert_contains ptx "cvt.u32.u64"
+
+(** ECast to unit is semantically meaningless and must be rejected. *)
+let test_cast_to_unit_rejected () =
+  let out = make_var "out" (TVec TInt32) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign (LArrayElem ("out", EVar tid), ECast (TUnit, EVar tid)) )
+  in
+  let k =
+    base_kernel
+      "cast_unit"
+      [DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global})]
+      body
+      []
+  in
+  match Sarek_ir_ptx.generate k with
+  | _ -> Alcotest.fail "ECast to unit should be rejected"
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()
+
 (** A 32-bit value into a 64-bit atom form is invalid PTX; the emitter must
     reject it (width discipline), never emit the mismatched suffix. *)
 let test_atomic_width_mismatch_rejected () =
@@ -1605,6 +1663,14 @@ let () =
             "float Mod lowers to fmod (div.rn + cvt.rzi + fma)"
             `Quick
             test_float_mod_fmod_markers;
+          Alcotest.test_case
+            "ECast matrix: bool setp/selp + i32<->i64 cvt pairs"
+            `Quick
+            test_cast_matrix_markers;
+          Alcotest.test_case
+            "ECast to unit is rejected"
+            `Quick
+            test_cast_to_unit_rejected;
           Alcotest.test_case
             "shared array SLet emits .shared decl + ld/st.shared"
             `Quick

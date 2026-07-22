@@ -1093,6 +1093,9 @@ and emit_cast buf alloc r_src dst_ty : string =
         emit buf "%s %s, %s;" cvt r r_src ;
         r
   | TInt64 ->
+      (* i32 -> i64 widens with sign extension (cvt.s64.s32); the reverse
+         narrowing in the TInt32 arm (cvt.u32.u64) TRUNCATES to the low 32
+         bits — values outside int32 range wrap, matching Int64.to_int32. *)
       if is_u64 r_src then r_src
       else
         let r = new_u64 alloc in
@@ -1103,7 +1106,29 @@ and emit_cast buf alloc r_src dst_ty : string =
         in
         emit buf "%s %s, %s;" cvt r r_src ;
         r
-  | _ -> unsupported ("ECast to " ^ ptx_reg_type_of dst_ty)
+  | TBool ->
+      (* Bool lives in a u32 register as 0/1 (the setp/selp discipline). A
+         cast to bool is C truth-testing: nonzero -> 1, zero -> 0. Sources
+         that are already 0/1 pay one setp+selp normalization — the register
+         class alone cannot prove a u32 holds only 0/1. Float sources use
+         UNordered ne (setp.neu): NaN != 0.0 is true in C, so
+         (bool)NaN = 1. *)
+      let p = new_pred alloc in
+      if is_f64 r_src then
+        emit buf "setp.neu.f64 %s, %s, 0D0000000000000000;" p r_src
+      else if is_f32 r_src then
+        emit buf "setp.neu.f32 %s, %s, 0F00000000;" p r_src
+      else if is_u64 r_src then emit buf "setp.ne.s64 %s, %s, 0;" p r_src
+      else emit buf "setp.ne.u32 %s, %s, 0;" p r_src ;
+      let r = new_u32 alloc in
+      emit buf "selp.u32 %s, 1, 0, %s;" r p ;
+      r
+  | TUnit ->
+      (* No meaningful value to produce; a cast to unit is a lowering bug —
+         drop the expression (SExpr) instead of casting it. *)
+      unsupported "ECast to unit: drop the expression instead of casting it"
+  | TRecord _ | TVariant _ | TArray _ | TVec _ ->
+      unsupported "ECast to an aggregate type: casts are scalar-only"
 
 and emit_intrinsic buf alloc env path name args : string =
   match Sarek_ir_ptx_softmath.helper_name name with
