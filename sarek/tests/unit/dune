@@ -60,6 +60,13 @@
  (name test_ptx_snapshot)
  (libraries sarek.codegen alcotest))
 
+; Software f64 transcendentals for PTX: IR-level accuracy vs the OCaml stdlib
+; (pure scalar evaluation of the helper bodies — CPU-only, no device needed)
+
+(test
+ (name test_f64_softmath)
+ (libraries sarek.codegen spoc.ir alcotest))
+
 ; Aggregate byte-layout test — pins the host ABI (packed offsets, variant
 ; tag@0/payload@4) mirrored by Sarek_ir_layout, plus its typed rejections
 

@@ -71,6 +71,16 @@ let assert_contains ptx marker =
          marker
          ptx)
 
+(** Substring check (no failure) — for asserting a marker's ABSENCE. *)
+let contains ptx marker =
+  let mlen = String.length marker in
+  let plen = String.length ptx in
+  let found = ref false in
+  for i = 0 to plen - mlen do
+    if String.sub ptx i mlen = marker then found := true
+  done ;
+  !found
+
 let test_vector_add_markers () =
   let k = make_vector_add_kernel () in
   let ptx = Sarek_ir_ptx.generate k in
@@ -1327,13 +1337,38 @@ let make_math_kernel elt path name =
   let mk v = DParam (v, Some {arr_elttype = elt; arr_memspace = Global}) in
   base_kernel ("math_" ^ name) [mk out; mk a] body []
 
-(** sin on an f64 operand is rejected cleanly (never emitted as sin.approx.f32
-    on an %fd register — the invalid-PTX module-load bug). *)
-let test_f64_sin_rejected () =
+(** Float64 sin lowers to the software implementation (inlined
+    Sarek_ir_ptx_softmath helper): Cody-Waite reduction + fma polynomial on f64
+    registers, never the f32 [.approx] instruction. *)
+let test_f64_sin_softmath () =
   let k = make_math_kernel TFloat64 ["Float64"] "sin" in
-  assert_math_rejected
-    k
-    ["sin: no native f64 sin in PTX"; "compute in float32 or on the CPU"]
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "fma.rn.f64" ;
+  (* rint(x·2/π) via floor *)
+  assert_contains ptx "cvt.rmi.f64.f64" ;
+  (* quadrant select *)
+  assert_contains ptx "selp.f64" ;
+  if contains ptx "sin.approx.f32" then
+    Alcotest.fail "f64 sin must not emit the f32 .approx instruction"
+
+(** Float64 exp/log lower to softmath bodies built on the f64<->i64 bitcasts
+    (mov.b64) and 64-bit exponent-field manipulation. *)
+let test_f64_exp_log_softmath () =
+  let k_exp = make_math_kernel TFloat64 ["Float64"] "exp" in
+  let ptx_exp = Sarek_ir_ptx.generate k_exp in
+  (* 2^n scaling: (n+1023) << 52 then bits_f64 *)
+  assert_contains ptx_exp "shl.b64" ;
+  assert_contains ptx_exp "mov.b64" ;
+  assert_contains ptx_exp "fma.rn.f64" ;
+  let k_log = make_math_kernel TFloat64 ["Float64"] "log" in
+  let ptx_log = Sarek_ir_ptx.generate k_log in
+  (* exponent extract: f64_bits then (bits >> 52) & 0x7ff, mantissa mask/or *)
+  assert_contains ptx_log "shr.s64" ;
+  assert_contains ptx_log "and.b64" ;
+  assert_contains ptx_log "or.b64" ;
+  assert_contains ptx_log "mov.b64" ;
+  if contains ptx_log "lg2.approx.f32" then
+    Alcotest.fail "f64 log must not emit the f32 .approx instruction"
 
 (** asin has no native PTX op and no accurate composition at any width. *)
 let test_f32_asin_rejected () =
@@ -1365,9 +1400,13 @@ let () =
             `Quick
             test_f32_transcendental_markers;
           Alcotest.test_case
-            "f64 sin is rejected with width + workaround"
+            "f64 sin lowers to softmath (fma/floor/selp .f64, no .approx)"
             `Quick
-            test_f64_sin_rejected;
+            test_f64_sin_softmath;
+          Alcotest.test_case
+            "f64 exp/log lower to softmath (mov.b64 + 64-bit exponent ops)"
+            `Quick
+            test_f64_exp_log_softmath;
           Alcotest.test_case
             "f32 asin is rejected (no native op, no composition)"
             `Quick
