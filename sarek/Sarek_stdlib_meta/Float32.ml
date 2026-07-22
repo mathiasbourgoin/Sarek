@@ -110,6 +110,11 @@ let%sarek_intrinsic (pow : float32 -> float32 -> float32) =
 let%sarek_intrinsic (atan2 : float32 -> float32 -> float32) =
   {device = dev "atan2f" "atan2"; ocaml = Stdlib.atan2}
 
+(* Fused multiply-add: fma a b c = a *. b +. c with a single rounding.
+   Required for exact error extraction (TwoProd) in extended-precision code. *)
+let%sarek_intrinsic (fma : float32 -> float32 -> float32 -> float32) =
+  {device = dev "fmaf" "fma"; ocaml = Float.fma}
+
 let%sarek_intrinsic (hypot : float32 -> float32 -> float32) =
   {device = dev "hypotf" "hypot"; ocaml = Stdlib.hypot}
 

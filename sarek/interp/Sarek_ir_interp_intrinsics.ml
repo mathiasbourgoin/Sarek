@@ -183,6 +183,16 @@ let eval_float32_math_intrinsic name args =
           Interp_error.raise_error
             (Unsupported_operation
                {operation = "pow"; reason = "requires 2 arguments"}))
+  | "fma" -> (
+      match args with
+      | arg1 :: arg2 :: arg3 :: _ ->
+          Some
+            (VFloat32
+               (F32.fma (to_float32 arg1) (to_float32 arg2) (to_float32 arg3)))
+      | _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "fma"; reason = "requires 3 arguments"}))
   | "min" -> (
       match args with
       | arg1 :: arg2 :: _ ->
