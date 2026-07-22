@@ -184,6 +184,10 @@ and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
       | Agg _ as dst ->
           let src = emit_value buf alloc env e in
           mov_binding buf ~src ~dst)
+  | LArrayElem (arr_name, idx_expr) when elt_is_aggregate alloc arr_name ->
+      emit_agg_elem_assign buf alloc env arr_name idx_expr e
+  | LArrayElemExpr (EVar v, idx_expr) when elt_is_aggregate alloc v.var_name ->
+      emit_agg_elem_assign buf alloc env v.var_name idx_expr e
   | LArrayElem (arr_name, idx_expr) ->
       let r_base = env_lookup env arr_name in
       let r_val = emit_expr buf alloc env e in
@@ -218,13 +222,75 @@ and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
       in
       emit_array_write buf alloc r_base r_idx r_val elt_type ~is_shared
   | LRecordField (root, field) -> (
-      match resolve_local_field env root field with
-      | Scalar r_dst ->
-          let r_val = emit_expr buf alloc env e in
-          mov_scalar buf ~dst:r_dst ~src:r_val
-      | Agg _ as dst ->
-          let src = emit_value buf alloc env e in
-          mov_binding buf ~src ~dst)
+      match split_elem_field_lvalue alloc (LRecordField (root, field)) with
+      | Some (arr_name, idx_expr, path) ->
+          emit_elem_field_assign buf alloc env arr_name idx_expr path e
+      | None -> (
+          match resolve_local_field env root field with
+          | Scalar r_dst ->
+              let r_val = emit_expr buf alloc env e in
+              mov_scalar buf ~dst:r_dst ~src:r_val
+          | Agg _ as dst ->
+              let src = emit_value buf alloc env e in
+              mov_binding buf ~src ~dst))
+
+(** Whole-aggregate element write ([v.(i) <- e] where the element type is a
+    record/variant). The value binding is materialized FIRST so every load it
+    needs (e.g. a whole-element read from an aliasing vector) precedes the first
+    store (EC-1 / FR-012); addressing uses the layout byte stride (FR-010).
+    Supports [SAssign (LArrayElem, ERecord …)] directly (FR-025). *)
+and emit_agg_elem_assign buf alloc env arr_name idx_expr e : unit =
+  let elt = infer_elt_type alloc arr_name in
+  let b_val = emit_value buf alloc env e in
+  let r_base = env_lookup env arr_name in
+  let r_idx = emit_expr buf alloc env idx_expr in
+  let r_addr =
+    emit_agg_elem_addr
+      buf
+      alloc
+      r_base
+      r_idx
+      ~stride:(elt_stride elt)
+      ~is_shared:(Hashtbl.mem alloc.arr_memspaces arr_name)
+      ~arr_name
+  in
+  emit_agg_elem_store buf alloc r_addr ~offset:0 elt b_val
+
+(** When an [LRecordField] chain roots at an element of an aggregate-element
+    array ([v.(i).f <- …], possibly nested [v.(i).f.g <- …]), return the array
+    name, index expression, and outermost-first field path. *)
+and split_elem_field_lvalue alloc lv : (string * expr * string list) option =
+  let rec root lv path =
+    match lv with
+    | LRecordField (inner, f) -> root inner (f :: path)
+    | LArrayElem (n, idx) -> Some (n, idx, path)
+    | LArrayElemExpr (EVar v, idx) -> Some (v.var_name, idx, path)
+    | LArrayElemExpr _ | LVar _ -> None
+  in
+  match root lv [] with
+  | Some (n, idx, path) when elt_is_aggregate alloc n -> Some (n, idx, path)
+  | _ -> None
+
+(** Single-field element write ([v.(i).field <- e]): one typed st at
+    [base + idx*stride + field_offset] (FR-011). The value is evaluated before
+    the address so its loads precede the store (EC-1). *)
+and emit_elem_field_assign buf alloc env arr_name idx_expr path e : unit =
+  let elt = infer_elt_type alloc arr_name in
+  let offset, fty = agg_field_path elt path in
+  let b_val = emit_value buf alloc env e in
+  let r_base = env_lookup env arr_name in
+  let r_idx = emit_expr buf alloc env idx_expr in
+  let r_addr =
+    emit_agg_elem_addr
+      buf
+      alloc
+      r_base
+      r_idx
+      ~stride:(elt_stride elt)
+      ~is_shared:(Hashtbl.mem alloc.arr_memspaces arr_name)
+      ~arr_name
+  in
+  emit_agg_elem_store buf alloc r_addr ~offset fty b_val
 
 (** Resolve the binding of [root.field] for a LOCAL record lvalue (root chain of
     LVar / nested LRecordField only). Assignments into fields of vector ELEMENTS
@@ -237,11 +303,16 @@ and resolve_local_field (env : env) (root : lvalue) (field : string) : binding =
     | LRecordField (inner_root, inner_field) ->
         resolve_local_field env inner_root inner_field
     | LArrayElem _ | LArrayElemExpr _ ->
+        (* Aggregate-element arrays are intercepted by
+           [split_elem_field_lvalue] before reaching here: this is a field
+           assignment into an element of a NON-record array (or an array
+           denoted by a non-variable base expression). *)
         unsupported
           (Printf.sprintf
-             "LRecordField assignment on a vector/array element (v.(i).%s <- \
-              …) — not yet supported at this stage; compute the record in a \
-              local mutable binding and store its scalar fields individually"
+             "LRecordField assignment (v.(i).%s <- …) on an array whose \
+              elements are not records (or whose base is not a plain \
+              variable); use a vector of a registered record type, or compute \
+              the value locally and store it whole"
              field)
   in
   match root_binding with

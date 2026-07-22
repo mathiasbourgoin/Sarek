@@ -536,6 +536,12 @@ and emit_app buf alloc (env : env) (f : var) (args : expr list) : binding =
     (FR-020). *)
 and emit_value buf alloc (env : env) (e : expr) : binding =
   match e with
+  | EArrayRead (arr_name, idx_expr) when elt_is_aggregate alloc arr_name ->
+      (* Whole-aggregate element read: SROA register set materialized by one
+         typed ld per leaf (FR-012). *)
+      emit_agg_array_read buf alloc env arr_name idx_expr
+  | EArrayReadExpr (EVar v, idx_expr) when elt_is_aggregate alloc v.var_name ->
+      emit_agg_array_read buf alloc env v.var_name idx_expr
   | ERecord (_name, fields) ->
       (* Field order = declaration order as carried by the ERecord node. *)
       Agg
@@ -590,9 +596,69 @@ and emit_value buf alloc (env : env) (e : expr) : binding =
       b_res
   | _ -> Scalar (emit_expr buf alloc env e)
 
+(** Element base address + whole-element SROA load of an aggregate-element array
+    (used by [emit_value] for [v.(i)] reads of record/variant vectors). Stride
+    and offsets come from Sarek_ir_layout (FR-001, FR-010). *)
+and emit_agg_array_read buf alloc env arr_name idx_expr : binding =
+  let elt = infer_elt_type alloc arr_name in
+  let r_base = env_lookup env arr_name in
+  let r_idx = emit_expr buf alloc env idx_expr in
+  let r_addr =
+    emit_agg_elem_addr
+      buf
+      alloc
+      r_base
+      r_idx
+      ~stride:(elt_stride elt)
+      ~is_shared:(Hashtbl.mem alloc.arr_memspaces arr_name)
+      ~arr_name
+  in
+  emit_agg_elem_load buf alloc r_addr ~offset:0 elt
+
+(** When [base.field] roots at an element of an aggregate-element array
+    ([v.(i).f], possibly through nested projections [v.(i).f.g]), return the
+    array name, index expression, and outermost-first field path. *)
+and split_elem_field_read alloc base field :
+    (string * expr * string list) option =
+  let rec root e path =
+    match e with
+    | ERecordField (b, f) -> root b (f :: path)
+    | EArrayRead (n, idx) -> Some (n, idx, path)
+    | EArrayReadExpr (EVar v, idx) -> Some (v.var_name, idx, path)
+    | _ -> None
+  in
+  match root base [field] with
+  | Some (n, idx, path) when elt_is_aggregate alloc n -> Some (n, idx, path)
+  | _ -> None
+
+(** Field selection on a record value. On a local (SROA) record this is pure
+    register selection (no instructions). On an element of an aggregate-element
+    vector ([v.(i).field]) it is a single typed ld at
+    [base + idx*stride + field_offset] (FR-011) — intercepted BEFORE base
+    evaluation so the untouched fields are never loaded. *)
+and emit_record_field buf alloc env base field : binding =
+  match split_elem_field_read alloc base field with
+  | Some (arr_name, idx_expr, path) ->
+      let elt = infer_elt_type alloc arr_name in
+      let offset, fty = agg_field_path elt path in
+      let r_base = env_lookup env arr_name in
+      let r_idx = emit_expr buf alloc env idx_expr in
+      let r_addr =
+        emit_agg_elem_addr
+          buf
+          alloc
+          r_base
+          r_idx
+          ~stride:(elt_stride elt)
+          ~is_shared:(Hashtbl.mem alloc.arr_memspaces arr_name)
+          ~arr_name
+      in
+      emit_agg_elem_load buf alloc r_addr ~offset fty
+  | None -> emit_local_record_field buf alloc env base field
+
 (** Field selection on a local (SROA) record value: pure register selection, no
     instructions emitted for the projection itself. *)
-and emit_record_field buf alloc env base field : binding =
+and emit_local_record_field buf alloc env base field : binding =
   match emit_value buf alloc env base with
   | Agg (ARecord fields) -> (
       match List.assoc_opt field fields with
@@ -610,8 +676,8 @@ and emit_record_field buf alloc env base field : binding =
   | Scalar _ ->
       fail
         ("PTX codegen: field access '." ^ field
-       ^ "' on a non-record value (records in vector elements are not yet \
-          supported at this stage; build the record locally)")
+       ^ "' on a non-record value; only record values (local or vector \
+          elements of a record type) have fields")
 
 (** Variant construction (FR-021): the tag register is a mov of the
     constructor's DECLARATION-INDEX constant (aligned with

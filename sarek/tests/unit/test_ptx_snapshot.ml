@@ -945,6 +945,221 @@ let test_tuple_into_vector_rejected () =
         Alcotest.fail
           (Printf.sprintf "error should contain %S, got: %s" expected msg)
 
+(** Index of the first occurrence of [marker] in [ptx], or [None]. *)
+let find_first ptx marker =
+  let mlen = String.length marker in
+  let rec go i =
+    if i > String.length ptx - mlen then None
+    else if String.sub ptx i mlen = marker then Some i
+    else go (i + 1)
+  in
+  go 0
+
+(** Index of the last occurrence of [marker] in [ptx], or [None]. *)
+let find_last ptx marker =
+  let mlen = String.length marker in
+  let rec go i best =
+    if i > String.length ptx - mlen then best
+    else if String.sub ptx i mlen = marker then go (i + 1) (Some i)
+    else go (i + 1) best
+  in
+  go 0 None
+
+let point_arr_info =
+  Some {arr_elttype = point_ty; arr_memspace = Sarek_ir_types.Global}
+
+(** Field-wise element access
+    ([dst.(tid) <- {x = src.(tid).x + 1; y = src.(tid).y}]): stride via
+    mul.wide.u32 (FR-010), field loads/stores at immediate offsets (+4 for y —
+    FR-011), one typed ld/st per field. *)
+let test_record_elem_field_rw_markers () =
+  let src = make_var "src" (TVec point_ty) in
+  let dst = make_var "dst" (TVec point_ty) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("dst", EVar tid),
+            ERecord
+              ( "point",
+                [
+                  ( "x",
+                    EBinop
+                      ( Add,
+                        ERecordField (EArrayRead ("src", EVar tid), "x"),
+                        EConst (CFloat32 1.0) ) );
+                  ("y", ERecordField (EArrayRead ("src", EVar tid), "y"));
+                ] ) ) )
+  in
+  let k =
+    base_kernel
+      "record_elem_rw"
+      [DParam (src, point_arr_info); DParam (dst, point_arr_info)]
+      body
+      []
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "mul.wide.u32" ;
+  assert_contains ptx "ld.global.f32" ;
+  assert_contains ptx "+4]" ;
+  assert_contains ptx "st.global.f32" ;
+  assert_absent
+    ptx
+    "shl.b64"
+    ~why:"aggregate elements use byte-stride multiplication, not shifts"
+
+(** Whole-element copy of a 12-byte point3d ([dst.(o) <- src.(i)]): stride-12
+    mul.wide.u32 (AC-3, non-pow2), +8 field offset, and EVERY ld.global
+    preceding the first st.global (EC-1 aliasing safety). *)
+let test_point3d_whole_copy_markers () =
+  let p3_ty =
+    TRecord ("point3d", [("x", TFloat32); ("y", TFloat32); ("z", TFloat32)])
+  in
+  let info = Some {arr_elttype = p3_ty; arr_memspace = Sarek_ir_types.Global} in
+  let src = make_var "src" (TVec p3_ty) in
+  let dst = make_var "dst" (TVec p3_ty) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign (LArrayElem ("dst", EVar tid), EArrayRead ("src", EVar tid)) )
+  in
+  let k =
+    base_kernel "p3d_copy" [DParam (src, info); DParam (dst, info)] body []
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx ", 12;" ;
+  (* mul.wide.u32 …, 12 *)
+  assert_contains ptx "+8]" ;
+  match (find_last ptx "ld.global", find_first ptx "st.global") with
+  | Some last_ld, Some first_st ->
+      if last_ld > first_st then
+        Alcotest.fail
+          "whole-element copy must emit ALL loads before ANY store (EC-1)"
+  | _ -> Alcotest.fail "expected both ld.global and st.global in copy kernel"
+
+(** Single-field element write ([dst.(tid).y <- 4.0]) is ONE typed st at the
+    field offset — no other global traffic. *)
+let test_record_elem_field_store_markers () =
+  let dst = make_var "dst" (TVec point_ty) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LRecordField (LArrayElem ("dst", EVar tid), "y"),
+            EConst (CFloat32 4.0) ) )
+  in
+  let k = base_kernel "field_store" [DParam (dst, point_arr_info)] body [] in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "mul.wide.u32" ;
+  assert_contains ptx "st.global.f32 [" ;
+  assert_contains ptx "+4]" ;
+  assert_absent
+    ptx
+    "ld.global"
+    ~why:"a single-field store must not load the element"
+
+(** Variant vector element roundtrip: read loads the tag (ld.global.u32 at the
+    element base) + payload slots (FR-013: all constructors' slots, never past
+    the element); write stores the tag then only the active constructor's
+    payload via a tag branch chain. *)
+let test_variant_elem_roundtrip_markers () =
+  let cinfo =
+    Some {arr_elttype = color_ty; arr_memspace = Sarek_ir_types.Global}
+  in
+  let src = make_var "src" (TVec color_ty) in
+  let vdst = make_var "vdst" (TVec color_ty) in
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let c = make_var "c" color_ty in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( c,
+            EArrayRead ("src", EVar tid),
+            SSeq
+              [
+                SAssign
+                  ( LArrayElem ("dst", EVar tid),
+                    EMatch
+                      ( EVar c,
+                        [
+                          (PConstr ("Red", []), EConst (CFloat32 0.0));
+                          ( PConstr ("Value", ["v"]),
+                            EVar (make_var "v" TFloat32) );
+                        ] ) );
+                SAssign
+                  ( LArrayElem ("vdst", EVar tid),
+                    EVariant ("color", "Value", [EConst (CFloat32 3.5)]) );
+              ] ) )
+  in
+  let k =
+    variant_kernel
+      "variant_elem"
+      [
+        DParam (src, cinfo);
+        DParam (vdst, cinfo);
+        DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      ]
+      body
+      [("color", color_decl)]
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "ld.global.u32" ;
+  (* tag load *)
+  assert_contains ptx "st.global.u32" ;
+  (* tag store *)
+  assert_contains ptx "setp.eq.u32" ;
+  (* match dispatch *)
+  assert_contains ptx "setp.ne.u32" ;
+  (* store branch chain guard *)
+  assert_contains ptx "st.global.f32"
+
+(** A bare record parameter (DParam with no arr_info) is rejected with the C-17
+    message naming the param and both workarounds; a TVec of the same type is
+    accepted (EC-11 discrimination — proven by the tests above). *)
+let test_bare_record_param_rejected () =
+  let p = make_var "p" point_ty in
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign (LArrayElem ("dst", EVar tid), ERecordField (EVar p, "x")) )
+  in
+  let k =
+    base_kernel
+      "bare_record_param"
+      [
+        DParam (p, None);
+        DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      ]
+      body
+      []
+  in
+  match Sarek_ir_ptx.generate k with
+  | _ -> Alcotest.fail "bare record param should raise Ptx_codegen_error"
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error msg ->
+      let check expected =
+        match find_first msg expected with
+        | Some _ -> ()
+        | None ->
+            Alcotest.fail
+              (Printf.sprintf "error should contain %S, got: %s" expected msg)
+      in
+      check "parameter 'p'" ;
+      check
+        "pass fields as separate scalar params or use a 1-element 'point' \
+         vector"
+
 let () =
   Alcotest.run
     "ptx_snapshot"
@@ -1035,5 +1250,25 @@ let () =
             "tuple store into a vector element is rejected"
             `Quick
             test_tuple_into_vector_rejected;
+          Alcotest.test_case
+            "record element field r/w uses mul.wide stride + typed ld/st"
+            `Quick
+            test_record_elem_field_rw_markers;
+          Alcotest.test_case
+            "point3d whole copy: stride 12, loads before stores"
+            `Quick
+            test_point3d_whole_copy_markers;
+          Alcotest.test_case
+            "single-field element store is one typed st"
+            `Quick
+            test_record_elem_field_store_markers;
+          Alcotest.test_case
+            "variant vector element roundtrip (tag ld/st + branch chain)"
+            `Quick
+            test_variant_elem_roundtrip_markers;
+          Alcotest.test_case
+            "bare record param rejected with C-17 message"
+            `Quick
+            test_bare_record_param_rejected;
         ] );
     ]

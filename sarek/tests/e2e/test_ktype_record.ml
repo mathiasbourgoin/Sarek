@@ -51,68 +51,63 @@ let () =
     exit 0
   end ;
 
-  let dev =
-    match Array.find_opt (fun d -> d.Device.framework = "Interpreter") devs with
-    | Some d -> d
-    | None -> (
-        match Array.find_opt (fun d -> d.Device.framework = "Native") devs with
-        | Some d -> d
-        | None -> devs.(0))
-  in
-  Printf.printf "runtime device: %s\n%!" dev.Device.name ;
-  if dev.framework <> "Native" then (
-    Printf.printf
-      "runtime: SKIP (record test checked on native backend only)\n%!" ;
-    exit 0) ;
-  print_string "runtime: " ;
-  try
-    let n = 64 in
-    let src = Vector.create_custom point_custom n in
-    let dst = Vector.create_custom point_custom n in
-    for i = 0 to n - 1 do
-      Vector.set src i {x = float_of_int i; y = float_of_int (n - i)} ;
-      Vector.set dst i {x = 0.0; y = 0.0}
-    done ;
-    let threads = min 64 n in
-    let grid_x = (n + threads - 1) / threads in
-    let ir =
-      match point_copy_kirc.Sarek.Kirc_types.body_ir with
-      | Some ir -> ir
-      | None -> failwith "Kernel has no IR"
-    in
-    Sarek.Execute.run_vectors
-      ~device:dev
-      ~block:(Sarek.Execute.dims1d threads)
-      ~grid:(Sarek.Execute.dims1d grid_x)
-      ~ir
-      ~args:
-        [
-          Sarek.Execute.Vec src;
-          Sarek.Execute.Vec dst;
-          Sarek.Execute.Int32 (Int32.of_int n);
-        ]
-      () ;
-    Transfer.flush dev ;
-    (* Verify: dst[i].x should be src[i].x + 1.0, dst[i].y should be src[i].y *)
-    let ok = ref true in
-    for i = 0 to n - 1 do
-      let s = Vector.get src i in
-      let d = Vector.get dst i in
-      let expected_x = s.x +. 1.0 in
-      let expected_y = s.y in
-      if
-        abs_float (d.x -. expected_x) > 1e-3
-        || abs_float (d.y -. expected_y) > 1e-3
-      then (
-        ok := false ;
-        if i < 5 then
-          Printf.printf
-            "  Mismatch at %d: got {%.1f, %.1f} expected {%.1f, %.1f}\n%!"
-            i
-            d.x
-            d.y
-            expected_x
-            expected_y)
-    done ;
-    if !ok then print_endline "PASSED" else print_endline "FAILED"
-  with e -> Printf.printf "FAIL (%s)\n%!" (Printexc.to_string e)
+  (* FR-053: the blanket non-Native SKIP is removed — the kernel runs on
+     EVERY available device and reports a per-device status. Baseline before
+     removal (2026-07-22T21:30Z, RX 7900 XTX host): every non-Native device
+     (OpenCL plain run, CUDA under ZLUDA) printed SKIP and verified nothing;
+     no framework had a recorded pass or fail. *)
+  Array.iter
+    (fun dev ->
+      Printf.printf "runtime [%s] %s: %!" dev.Device.framework dev.Device.name ;
+      try
+        let n = 64 in
+        let src = Vector.create_custom point_custom n in
+        let dst = Vector.create_custom point_custom n in
+        for i = 0 to n - 1 do
+          Vector.set src i {x = float_of_int i; y = float_of_int (n - i)} ;
+          Vector.set dst i {x = 0.0; y = 0.0}
+        done ;
+        let threads = min 64 n in
+        let grid_x = (n + threads - 1) / threads in
+        let ir =
+          match point_copy_kirc.Sarek.Kirc_types.body_ir with
+          | Some ir -> ir
+          | None -> failwith "Kernel has no IR"
+        in
+        Sarek.Execute.run_vectors
+          ~device:dev
+          ~block:(Sarek.Execute.dims1d threads)
+          ~grid:(Sarek.Execute.dims1d grid_x)
+          ~ir
+          ~args:
+            [
+              Sarek.Execute.Vec src;
+              Sarek.Execute.Vec dst;
+              Sarek.Execute.Int32 (Int32.of_int n);
+            ]
+          () ;
+        Transfer.flush dev ;
+        (* Verify: dst[i].x = src[i].x + 1.0, dst[i].y = src[i].y *)
+        let ok = ref true in
+        for i = 0 to n - 1 do
+          let s = Vector.get src i in
+          let d = Vector.get dst i in
+          let expected_x = s.x +. 1.0 in
+          let expected_y = s.y in
+          if
+            abs_float (d.x -. expected_x) > 1e-3
+            || abs_float (d.y -. expected_y) > 1e-3
+          then (
+            ok := false ;
+            if i < 5 then
+              Printf.printf
+                "\n  Mismatch at %d: got {%.1f, %.1f} expected {%.1f, %.1f}%!"
+                i
+                d.x
+                d.y
+                expected_x
+                expected_y)
+        done ;
+        if !ok then print_endline "PASSED" else print_endline "FAILED"
+      with e -> Printf.printf "FAIL (%s)\n%!" (Printexc.to_string e))
+    devs

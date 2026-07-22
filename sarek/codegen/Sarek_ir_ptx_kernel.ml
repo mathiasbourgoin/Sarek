@@ -44,6 +44,21 @@ let emit_params buf alloc (env : env) (params : decl list) : string =
               env_bind env v.var_name r ;
               (match arr_info_opt with
               | Some info ->
+                  (* Aggregate element types are validated at param time so a
+                     rejected layout (misaligned leaf, nested variant, …)
+                     fails with a precise error naming the parameter, instead
+                     of surfacing later at a ld/st site (FR-030). *)
+                  (match info.arr_elttype with
+                  | TRecord _ | TVariant _ -> (
+                      match Sarek_ir_layout.elttype_layout info.arr_elttype with
+                      | Ok _ -> ()
+                      | Error err ->
+                          fail
+                            (Printf.sprintf
+                               "PTX codegen: vector parameter '%s': %s"
+                               v.var_name
+                               (Sarek_ir_layout.layout_error_message err)))
+                  | _ -> ()) ;
                   Hashtbl.replace
                     alloc.arr_elt_types
                     v.var_name
@@ -93,7 +108,17 @@ let emit_params buf alloc (env : env) (params : decl list) : string =
               let r = new_u32 alloc in
               env_bind env v.var_name r ;
               emit buf "ld.param.u32 %s, [param_%s];" r v.var_name
-          | TRecord _ | TVariant _ -> unsupported "DParam with custom type")
+          | TRecord (tname, _) | TVariant (tname, _) ->
+              (* C-17 / FR-030: by-value aggregate params have no host
+                 marshalling; a TVec of the same type IS accepted (EC-11). *)
+              fail
+                (Printf.sprintf
+                   "PTX codegen: kernel parameter '%s' is a bare \
+                    record/variant of type '%s' passed by value; pass fields \
+                    as separate scalar params or use a 1-element '%s' vector"
+                   v.var_name
+                   tname
+                   tname))
       | DLocal _ | DShared _ -> ())
     params ;
   Buffer.contents param_decls
