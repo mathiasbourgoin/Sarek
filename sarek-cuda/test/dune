@@ -34,3 +34,10 @@
  (libraries spoc_framework alcotest)
  (instrumentation
   (backend bisect_ppx)))
+
+(test
+ (name test_ptx_atomics_probe)
+ (modules test_ptx_atomics_probe)
+ (libraries sarek_cuda alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
