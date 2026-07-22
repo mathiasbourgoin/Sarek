@@ -1,1026 +1,2013 @@
-DIGEST 22e98ebaf7591d1c6144f096ac66a9d5
+DIGEST 0f9dde93b8971af496fb2355c03ff356
 FCodegenPtx.PtxLayout
-R2212:2215 Stdlib.Lists.List <> <> lib
-R2245:2255 Stdlib.Arith.Arith <> <> lib
-R2285:2293 Stdlib.Bool.Bool <> <> lib
-R2323:2325 Stdlib.micromega.Lia <> <> lib
-R2335:2347 Stdlib.Lists.List ListNotations <> mod
-ind 2703:2705 <> lty
-constr 2721:2723 <> L32
-constr 2735:2737 <> L64
-R2727:2729 CodegenPtx.PtxLayout <> lty:1 ind
-R2741:2743 CodegenPtx.PtxLayout <> lty:1 ind
-scheme 2703:2705 <> lty_rect
-scheme 2703:2705 <> lty_ind
-scheme 2703:2705 <> lty_rec
-scheme 2703:2705 <> lty_sind
-def 2758:2768 <> scalar_size
-R2775:2777 CodegenPtx.PtxLayout <> lty ind
-binder 2771:2771 <> t:3
-R2782:2784 Corelib.Init.Datatypes <> nat ind
-R2797:2797 CodegenPtx.PtxLayout <> t:3 var
-R2808:2810 CodegenPtx.PtxLayout <> L32 constr
-R2821:2823 CodegenPtx.PtxLayout <> L64 constr
-def 2955:2966 <> scalar_align
-R2973:2975 CodegenPtx.PtxLayout <> lty ind
-binder 2969:2969 <> t:5
-R2980:2982 Corelib.Init.Datatypes <> nat ind
-R2987:2997 CodegenPtx.PtxLayout <> scalar_size def
-R2999:2999 CodegenPtx.PtxLayout <> t:5 var
-prf 3009:3023 <> scalar_size_pos
-binder 3034:3034 <> t:6
-R3038:3040 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
-R3041:3051 CodegenPtx.PtxLayout <> scalar_size def
-R3053:3053 CodegenPtx.PtxLayout <> t:6 var
-ind 3536:3541 <> lfield
-constr 3557:3561 <> LLeaf
-constr 3583:3586 <> LRec
-ind 3613:3619 <> lfields
-constr 3635:3638 <> LNil
-constr 3654:3658 <> LCons
-R3568:3571 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R3565:3567 CodegenPtx.PtxLayout <> lty ind
-R3572:3577 CodegenPtx.PtxLayout <> lfield:7 ind
-R3597:3600 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R3590:3596 CodegenPtx.PtxLayout <> lfields:8 ind
-R3601:3606 CodegenPtx.PtxLayout <> lfield:7 ind
-R3642:3648 CodegenPtx.PtxLayout <> lfields:8 ind
-R3665:3668 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R3662:3664 Corelib.Init.Datatypes <> nat ind
-R3675:3678 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R3669:3674 CodegenPtx.PtxLayout <> lfield:7 ind
-R3686:3689 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R3679:3685 CodegenPtx.PtxLayout <> lfields:8 ind
-R3690:3696 CodegenPtx.PtxLayout <> lfields:8 ind
-scheme 3536:3541 <> lfield_rect
-scheme 3536:3541 <> lfield_ind
-scheme 3536:3541 <> lfield_rec
-scheme 3536:3541 <> lfield_sind
-scheme 3613:3619 <> lfields_rect
-scheme 3613:3619 <> lfields_ind
-scheme 3613:3619 <> lfields_rec
-scheme 3613:3619 <> lfields_sind
-def 3707:3716 <> lfield_mut
-def 3759:3769 <> lfields_mut
-R3735:3740 CodegenPtx.PtxLayout <> lfield ind
-R3788:3794 CodegenPtx.PtxLayout <> lfields ind
-R3847:3856 CodegenPtx.PtxLayout <> lfield_mut scheme
-R3859:3869 CodegenPtx.PtxLayout <> lfields_mut scheme
-def 4049:4053 <> fsize
-def 4157:4162 <> fssize
-R4060:4065 CodegenPtx.PtxLayout <> lfield ind
-binder 4056:4056 <> f:11
-R4170:4176 CodegenPtx.PtxLayout <> lfields ind
-binder 4165:4166 <> fs:12
-R4070:4072 Corelib.Init.Datatypes <> nat ind
-R4181:4183 Corelib.Init.Datatypes <> nat ind
-R4085:4085 CodegenPtx.PtxLayout <> f:11 var
-R4096:4100 CodegenPtx.PtxLayout <> LLeaf constr
-R4107:4117 CodegenPtx.PtxLayout <> scalar_size def
-R4125:4128 CodegenPtx.PtxLayout <> LRec constr
-R4136:4141 CodegenPtx.PtxLayout <> fssize:14 def
-R4196:4197 CodegenPtx.PtxLayout <> fs:12 var
-R4208:4211 CodegenPtx.PtxLayout <> LNil constr
-R4222:4226 CodegenPtx.PtxLayout <> LCons constr
-R4244:4246 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R4237:4241 CodegenPtx.PtxLayout <> fsize:13 def
-R4247:4252 CodegenPtx.PtxLayout <> fssize:14 def
-rec 4706:4709 <> leaf
-proj 4732:4738 <> lf_path
-proj 4754:4758 <> lf_ty
-proj 4769:4774 <> lf_off
-R4742:4745 Corelib.Init.Datatypes <> list ind
-R4747:4749 Corelib.Init.Datatypes <> nat ind
-R4762:4764 CodegenPtx.PtxLayout <> lty ind
-R4778:4780 Corelib.Init.Datatypes <> nat ind
-def 4797:4805 <> leaf_size
-R4812:4815 CodegenPtx.PtxLayout <> leaf rec
-binder 4808:4808 <> l:21
-R4820:4822 Corelib.Init.Datatypes <> nat ind
-R4827:4837 CodegenPtx.PtxLayout <> scalar_size def
-R4840:4844 CodegenPtx.PtxLayout <> lf_ty proj
-R4846:4846 CodegenPtx.PtxLayout <> l:21 var
-def 5039:5045 <> flatten
-def 5195:5202 <> flattens
-R5052:5055 Corelib.Init.Datatypes <> list ind
-R5057:5059 Corelib.Init.Datatypes <> nat ind
-binder 5048:5048 <> p:22
-R5069:5071 Corelib.Init.Datatypes <> nat ind
-binder 5063:5065 <> off:23
-R5079:5084 CodegenPtx.PtxLayout <> lfield ind
-binder 5075:5075 <> f:24
-R5209:5212 Corelib.Init.Datatypes <> list ind
-R5214:5216 Corelib.Init.Datatypes <> nat ind
-binder 5205:5205 <> p:25
-R5226:5228 Corelib.Init.Datatypes <> nat ind
-binder 5220:5222 <> off:26
-R5237:5243 CodegenPtx.PtxLayout <> lfields ind
-binder 5232:5233 <> fs:27
-R5089:5092 Corelib.Init.Datatypes <> list ind
-R5094:5097 CodegenPtx.PtxLayout <> leaf rec
-R5248:5251 Corelib.Init.Datatypes <> list ind
-R5253:5256 CodegenPtx.PtxLayout <> leaf rec
-R5110:5110 CodegenPtx.PtxLayout <> f:24 var
-R5121:5125 CodegenPtx.PtxLayout <> LLeaf constr
-R5132:5133 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
-R5148:5149 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
-R5134:5139 CodegenPtx.PtxLayout <> mkLeaf constr
-R5141:5141 CodegenPtx.PtxLayout <> p:22 var
-R5145:5147 CodegenPtx.PtxLayout <> off:23 var
-R5155:5158 CodegenPtx.PtxLayout <> LRec constr
-R5166:5173 CodegenPtx.PtxLayout <> flattens:29 def
-R5177:5179 CodegenPtx.PtxLayout <> off:23 var
-R5175:5175 CodegenPtx.PtxLayout <> p:22 var
-R5269:5270 CodegenPtx.PtxLayout <> fs:27 var
-R5281:5284 CodegenPtx.PtxLayout <> LNil constr
-R5289:5290 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
-R5296:5300 CodegenPtx.PtxLayout <> LCons constr
-R5341:5344 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
-R5317:5323 CodegenPtx.PtxLayout <> flatten:28 def
-R5336:5338 CodegenPtx.PtxLayout <> off:26 var
-R5327:5330 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
-R5326:5326 CodegenPtx.PtxLayout <> p:25 var
-R5331:5331 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
-R5333:5333 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
-R5345:5352 CodegenPtx.PtxLayout <> flattens:29 def
-R5360:5362 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R5357:5359 CodegenPtx.PtxLayout <> off:26 var
-R5363:5367 CodegenPtx.PtxLayout <> fsize def
-R5354:5354 CodegenPtx.PtxLayout <> p:25 var
-def 5393:5403 <> leaves_size
-R5411:5414 Corelib.Init.Datatypes <> list ind
-R5416:5419 CodegenPtx.PtxLayout <> leaf rec
-binder 5406:5407 <> ls:32
-R5424:5426 Corelib.Init.Datatypes <> nat ind
-R5433:5442 Stdlib.Lists.List <> fold_right def
-R5479:5480 CodegenPtx.PtxLayout <> ls:32 var
-binder 5449:5449 <> l:33
-binder 5451:5453 <> acc:34
-R5469:5471 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R5458:5466 CodegenPtx.PtxLayout <> leaf_size def
-R5468:5468 CodegenPtx.PtxLayout <> l:33 var
-R5472:5474 CodegenPtx.PtxLayout <> acc:34 var
-def 5822:5834 <> record_leaves
-R5842:5848 CodegenPtx.PtxLayout <> lfields ind
-binder 5837:5838 <> fs:35
-R5853:5856 Corelib.Init.Datatypes <> list ind
-R5858:5861 CodegenPtx.PtxLayout <> leaf rec
-R5866:5873 CodegenPtx.PtxLayout <> flattens def
-R5875:5876 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
-R5880:5881 CodegenPtx.PtxLayout <> fs:35 var
-def 5895:5905 <> record_size
-R5913:5919 CodegenPtx.PtxLayout <> lfields ind
-binder 5908:5909 <> fs:36
-R5924:5926 Corelib.Init.Datatypes <> nat ind
-R5931:5936 CodegenPtx.PtxLayout <> fssize def
-R5938:5939 CodegenPtx.PtxLayout <> fs:36 var
-def 6067:6079 <> field_offsets
-R6088:6090 Corelib.Init.Datatypes <> nat ind
-binder 6082:6084 <> off:37
-R6099:6105 CodegenPtx.PtxLayout <> lfields ind
-binder 6094:6095 <> fs:38
-R6110:6113 Corelib.Init.Datatypes <> list ind
-R6119:6121 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
-R6116:6118 Corelib.Init.Datatypes <> nat ind
-R6122:6124 Corelib.Init.Datatypes <> nat ind
-R6138:6139 CodegenPtx.PtxLayout <> fs:38 var
-R6150:6153 CodegenPtx.PtxLayout <> LNil constr
-R6158:6159 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
-R6165:6169 CodegenPtx.PtxLayout <> LCons constr
-R6188:6191 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
-R6180:6180 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
-R6182:6183 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
-R6187:6187 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
-R6184:6186 CodegenPtx.PtxLayout <> off:37 var
-R6192:6204 CodegenPtx.PtxLayout <> field_offsets:39 def
-R6210:6212 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R6207:6209 CodegenPtx.PtxLayout <> off:37 var
-R6213:6217 CodegenPtx.PtxLayout <> fsize def
-def 6243:6262 <> record_field_offsets
-R6270:6276 CodegenPtx.PtxLayout <> lfields ind
-binder 6265:6266 <> fs:41
-R6281:6284 Corelib.Init.Datatypes <> list ind
-R6290:6292 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
-R6287:6289 Corelib.Init.Datatypes <> nat ind
-R6293:6295 Corelib.Init.Datatypes <> nat ind
-R6303:6315 CodegenPtx.PtxLayout <> field_offsets def
-R6319:6320 CodegenPtx.PtxLayout <> fs:41 var
-def 6543:6552 <> tag_offset
-R6556:6558 Corelib.Init.Datatypes <> nat ind
-def 6577:6584 <> tag_size
-R6588:6590 Corelib.Init.Datatypes <> nat ind
-def 6609:6622 <> payload_offset
-R6626:6628 Corelib.Init.Datatypes <> nat ind
-rec 6769:6779 <> ctor_layout
-proj 6802:6807 <> cl_tag
-proj 6818:6826 <> cl_leaves
-proj 6843:6857 <> cl_payload_size
-R6811:6813 Corelib.Init.Datatypes <> nat ind
-R6830:6833 Corelib.Init.Datatypes <> list ind
-R6835:6838 CodegenPtx.PtxLayout <> leaf rec
-R6861:6863 Corelib.Init.Datatypes <> nat ind
-def 6956:6966 <> number_args
-R6973:6975 Corelib.Init.Datatypes <> nat ind
-binder 6969:6969 <> i:46
-R6986:6989 Corelib.Init.Datatypes <> list ind
-R6991:6996 CodegenPtx.PtxLayout <> lfield ind
-binder 6979:6982 <> args:47
-R7001:7007 CodegenPtx.PtxLayout <> lfields ind
-R7020:7023 CodegenPtx.PtxLayout <> args:47 var
-R7034:7035 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
-R7040:7043 CodegenPtx.PtxLayout <> LNil constr
-R7050:7053 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
-R7059:7063 CodegenPtx.PtxLayout <> LCons constr
-R7065:7065 CodegenPtx.PtxLayout <> i:46 var
-R7070:7080 CodegenPtx.PtxLayout <> number_args:48 def
-R7083:7083 Corelib.Init.Datatypes <> S constr
-R7085:7085 CodegenPtx.PtxLayout <> i:46 var
-def 7270:7283 <> ctor_layout_of
-R7292:7294 Corelib.Init.Datatypes <> nat ind
-binder 7286:7288 <> tag:50
-R7305:7308 Corelib.Init.Datatypes <> list ind
-R7310:7315 CodegenPtx.PtxLayout <> lfield ind
-binder 7298:7301 <> args:51
-R7320:7330 CodegenPtx.PtxLayout <> ctor_layout rec
-R7347:7357 CodegenPtx.PtxLayout <> number_args def
-R7361:7364 CodegenPtx.PtxLayout <> args:51 var
-binder 7341:7342 <> fs:52
-R7371:7376 CodegenPtx.PtxLayout <> mkCtor constr
-R7378:7380 CodegenPtx.PtxLayout <> tag:50 var
-R7383:7390 CodegenPtx.PtxLayout <> flattens def
-R7392:7392 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
-R7396:7396 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
-R7393:7395 CodegenPtx.PtxLayout <> tag:50 var
-R7398:7411 CodegenPtx.PtxLayout <> payload_offset def
-R7413:7414 CodegenPtx.PtxLayout <> fs:52 var
-R7418:7423 CodegenPtx.PtxLayout <> fssize def
-R7425:7426 CodegenPtx.PtxLayout <> fs:52 var
-def 7440:7451 <> ctor_layouts
-R7460:7462 Corelib.Init.Datatypes <> nat ind
-binder 7454:7456 <> tag:53
-R7474:7477 Corelib.Init.Datatypes <> list ind
-R7480:7483 Corelib.Init.Datatypes <> list ind
-R7485:7490 CodegenPtx.PtxLayout <> lfield ind
-binder 7466:7470 <> ctors:54
-R7498:7501 Corelib.Init.Datatypes <> list ind
-R7503:7513 CodegenPtx.PtxLayout <> ctor_layout rec
-R7526:7530 CodegenPtx.PtxLayout <> ctors:54 var
-R7541:7542 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
-R7547:7548 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
-R7555:7558 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
-R7584:7587 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
-R7564:7577 CodegenPtx.PtxLayout <> ctor_layout_of def
-R7579:7581 CodegenPtx.PtxLayout <> tag:53 var
-R7588:7599 CodegenPtx.PtxLayout <> ctor_layouts:55 def
-R7602:7602 Corelib.Init.Datatypes <> S constr
-R7604:7606 CodegenPtx.PtxLayout <> tag:53 var
-def 7630:7640 <> max_payload
-R7649:7652 Corelib.Init.Datatypes <> list ind
-R7654:7664 CodegenPtx.PtxLayout <> ctor_layout rec
-binder 7643:7645 <> cls:57
-R7669:7671 Corelib.Init.Datatypes <> nat ind
-R7678:7687 Stdlib.Lists.List <> fold_right def
-R7738:7740 CodegenPtx.PtxLayout <> cls:57 var
-binder 7694:7694 <> c:58
-binder 7696:7698 <> acc:59
-R7703:7709 Stdlib.Arith.PeanoNat Nat max def
-R7712:7726 CodegenPtx.PtxLayout <> cl_payload_size proj
-R7728:7728 CodegenPtx.PtxLayout <> c:58 var
-R7731:7733 CodegenPtx.PtxLayout <> acc:59 var
-def 7876:7887 <> variant_size
-R7898:7901 Corelib.Init.Datatypes <> list ind
-R7904:7907 Corelib.Init.Datatypes <> list ind
-R7909:7914 CodegenPtx.PtxLayout <> lfield ind
-binder 7890:7894 <> ctors:60
-R7920:7922 Corelib.Init.Datatypes <> nat ind
-R7937:7939 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R7929:7936 CodegenPtx.PtxLayout <> tag_size def
-R7940:7950 CodegenPtx.PtxLayout <> max_payload def
-R7953:7964 CodegenPtx.PtxLayout <> ctor_layouts def
-R7968:7972 CodegenPtx.PtxLayout <> ctors:60 var
-ind 8320:8326 <> elayout
-constr 8342:8349 <> ELScalar
-constr 8372:8379 <> ELRecord
-constr 8406:8414 <> ELVariant
-R8356:8359 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R8353:8355 CodegenPtx.PtxLayout <> lty ind
-R8360:8366 CodegenPtx.PtxLayout <> elayout:61 ind
-R8390:8393 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R8383:8389 CodegenPtx.PtxLayout <> lfields ind
-R8394:8400 CodegenPtx.PtxLayout <> elayout:61 ind
-R8436:8439 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R8418:8421 Corelib.Init.Datatypes <> list ind
-R8424:8427 Corelib.Init.Datatypes <> list ind
-R8429:8434 CodegenPtx.PtxLayout <> lfield ind
-R8440:8446 CodegenPtx.PtxLayout <> elayout:61 ind
-scheme 8320:8326 <> elayout_rect
-scheme 8320:8326 <> elayout_ind
-scheme 8320:8326 <> elayout_rec
-scheme 8320:8326 <> elayout_sind
-def 8461:8472 <> elayout_size
-R8479:8485 CodegenPtx.PtxLayout <> elayout ind
-binder 8475:8475 <> e:63
-R8490:8492 Corelib.Init.Datatypes <> nat ind
-R8505:8505 CodegenPtx.PtxLayout <> e:63 var
-R8516:8523 CodegenPtx.PtxLayout <> ELScalar constr
-R8530:8540 CodegenPtx.PtxLayout <> scalar_size def
-R8548:8555 CodegenPtx.PtxLayout <> ELRecord constr
-R8563:8573 CodegenPtx.PtxLayout <> record_size def
-R8582:8590 CodegenPtx.PtxLayout <> ELVariant constr
-R8598:8609 CodegenPtx.PtxLayout <> variant_size def
-def 8834:8845 <> leaf_aligned
-R8852:8855 CodegenPtx.PtxLayout <> leaf rec
-binder 8848:8848 <> l:65
-R8860:8863 Corelib.Init.Datatypes <> bool ind
-R8870:8876 Stdlib.Arith.PeanoNat Nat eqb def
-R8879:8888 Stdlib.Arith.PeanoNat Nat modulo def
-R8891:8896 CodegenPtx.PtxLayout <> lf_off proj
-R8898:8898 CodegenPtx.PtxLayout <> l:65 var
-R8902:8913 CodegenPtx.PtxLayout <> scalar_align def
-R8916:8920 CodegenPtx.PtxLayout <> lf_ty proj
-R8922:8922 CodegenPtx.PtxLayout <> l:65 var
-def 8942:8956 <> record_accepted
-R8964:8970 CodegenPtx.PtxLayout <> lfields ind
-binder 8959:8960 <> fs:66
-R8975:8978 Corelib.Init.Datatypes <> bool ind
-R8985:8991 Stdlib.Lists.List <> forallb def
-R9007:9019 CodegenPtx.PtxLayout <> record_leaves def
-R9021:9022 CodegenPtx.PtxLayout <> fs:66 var
-R8993:9004 CodegenPtx.PtxLayout <> leaf_aligned def
-def 9038:9053 <> variant_accepted
-R9064:9067 Corelib.Init.Datatypes <> list ind
-R9070:9073 Corelib.Init.Datatypes <> list ind
-R9075:9080 CodegenPtx.PtxLayout <> lfield ind
-binder 9056:9060 <> ctors:67
-R9086:9089 Corelib.Init.Datatypes <> bool ind
-R9096:9102 Stdlib.Lists.List <> forallb def
-R9151:9162 CodegenPtx.PtxLayout <> ctor_layouts def
-R9166:9170 CodegenPtx.PtxLayout <> ctors:67 var
-binder 9109:9109 <> c:68
-R9114:9120 Stdlib.Lists.List <> forallb def
-R9136:9144 CodegenPtx.PtxLayout <> cl_leaves proj
-R9146:9146 CodegenPtx.PtxLayout <> c:68 var
-R9122:9133 CodegenPtx.PtxLayout <> leaf_aligned def
-def 9186:9193 <> accepted
-R9200:9206 CodegenPtx.PtxLayout <> elayout ind
-binder 9196:9196 <> e:69
-R9211:9214 Corelib.Init.Datatypes <> bool ind
-R9227:9227 CodegenPtx.PtxLayout <> e:69 var
-R9238:9245 CodegenPtx.PtxLayout <> ELScalar constr
-R9252:9255 Corelib.Init.Datatypes <> true constr
-R9261:9268 CodegenPtx.PtxLayout <> ELRecord constr
-R9276:9290 CodegenPtx.PtxLayout <> record_accepted def
-R9299:9307 CodegenPtx.PtxLayout <> ELVariant constr
-R9315:9330 CodegenPtx.PtxLayout <> variant_accepted def
-def 9848:9852 <> chain
-R9861:9863 Corelib.Init.Datatypes <> nat ind
-binder 9855:9857 <> off:71
-R9872:9875 Corelib.Init.Datatypes <> list ind
-R9877:9880 CodegenPtx.PtxLayout <> leaf rec
-binder 9867:9868 <> ls:72
-R9901:9902 CodegenPtx.PtxLayout <> ls:72 var
-R9913:9914 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
-R9919:9922 Corelib.Init.Logic <> True ind
-R9929:9932 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
-R9952:9955 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
-R9946:9948 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R9938:9943 CodegenPtx.PtxLayout <> lf_off proj
-R9949:9951 CodegenPtx.PtxLayout <> off:71 var
-R9956:9960 CodegenPtx.PtxLayout <> chain:73 def
-R9966:9968 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R9963:9965 CodegenPtx.PtxLayout <> off:71 var
-R9969:9977 CodegenPtx.PtxLayout <> leaf_size def
-prf 9998:10012 <> leaves_size_app
-binder 10023:10023 <> a:75
-binder 10025:10025 <> b:76
-R10050:10052 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R10030:10040 CodegenPtx.PtxLayout <> leaves_size def
-R10044:10047 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
-R10043:10043 CodegenPtx.PtxLayout <> a:75 var
-R10048:10048 CodegenPtx.PtxLayout <> b:76 var
-R10066:10068 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R10053:10063 CodegenPtx.PtxLayout <> leaves_size def
-R10065:10065 CodegenPtx.PtxLayout <> a:75 var
-R10069:10079 CodegenPtx.PtxLayout <> leaves_size def
-R10081:10081 CodegenPtx.PtxLayout <> b:76 var
-prf 10185:10193 <> chain_app
-binder 10204:10204 <> a:77
-binder 10206:10208 <> off:78
-binder 10210:10210 <> b:79
-R10226:10231 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R10215:10219 CodegenPtx.PtxLayout <> chain def
-R10221:10223 CodegenPtx.PtxLayout <> off:78 var
-R10225:10225 CodegenPtx.PtxLayout <> a:77 var
-R10261:10266 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R10232:10236 CodegenPtx.PtxLayout <> chain def
-R10242:10244 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R10239:10241 CodegenPtx.PtxLayout <> off:78 var
-R10245:10255 CodegenPtx.PtxLayout <> leaves_size def
-R10257:10257 CodegenPtx.PtxLayout <> a:77 var
-R10260:10260 CodegenPtx.PtxLayout <> b:79 var
-R10267:10271 CodegenPtx.PtxLayout <> chain def
-R10273:10275 CodegenPtx.PtxLayout <> off:78 var
-R10279:10282 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
-R10278:10278 CodegenPtx.PtxLayout <> a:77 var
-R10283:10283 CodegenPtx.PtxLayout <> b:79 var
-R10371:10381 Stdlib.Arith.PeanoNat Nat add_0_r thm
-R10371:10381 Stdlib.Arith.PeanoNat Nat add_0_r thm
-R10371:10381 Stdlib.Arith.PeanoNat Nat add_0_r thm
-R10486:10498 Stdlib.Arith.PeanoNat Nat add_assoc thm
-R10486:10498 Stdlib.Arith.PeanoNat Nat add_assoc thm
-R10486:10498 Stdlib.Arith.PeanoNat Nat add_assoc thm
-prf 10758:10775 <> flatten_chain_size
-R10781:10781 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
-R10878:10887 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
-R10991:10991 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
-binder 10789:10789 <> f:80
-binder 10791:10791 <> p:81
-binder 10793:10795 <> off:82
-R10830:10838 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
-R10803:10807 CodegenPtx.PtxLayout <> chain def
-R10809:10811 CodegenPtx.PtxLayout <> off:82 var
-R10814:10820 CodegenPtx.PtxLayout <> flatten def
-R10822:10822 CodegenPtx.PtxLayout <> p:81 var
-R10824:10826 CodegenPtx.PtxLayout <> off:82 var
-R10828:10828 CodegenPtx.PtxLayout <> f:80 var
-R10868:10870 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R10839:10849 CodegenPtx.PtxLayout <> leaves_size def
-R10852:10858 CodegenPtx.PtxLayout <> flatten def
-R10860:10860 CodegenPtx.PtxLayout <> p:81 var
-R10862:10864 CodegenPtx.PtxLayout <> off:82 var
-R10866:10866 CodegenPtx.PtxLayout <> f:80 var
-R10871:10875 CodegenPtx.PtxLayout <> fsize def
-R10877:10877 CodegenPtx.PtxLayout <> f:80 var
-binder 10895:10896 <> fs:83
-binder 10898:10898 <> p:84
-binder 10900:10902 <> off:85
-R10939:10947 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
-R10910:10914 CodegenPtx.PtxLayout <> chain def
-R10916:10918 CodegenPtx.PtxLayout <> off:85 var
-R10921:10928 CodegenPtx.PtxLayout <> flattens def
-R10930:10930 CodegenPtx.PtxLayout <> p:84 var
-R10932:10934 CodegenPtx.PtxLayout <> off:85 var
-R10936:10937 CodegenPtx.PtxLayout <> fs:83 var
-R10979:10981 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R10948:10958 CodegenPtx.PtxLayout <> leaves_size def
-R10961:10968 CodegenPtx.PtxLayout <> flattens def
-R10970:10970 CodegenPtx.PtxLayout <> p:84 var
-R10972:10974 CodegenPtx.PtxLayout <> off:85 var
-R10976:10977 CodegenPtx.PtxLayout <> fs:83 var
-R10982:10987 CodegenPtx.PtxLayout <> fssize def
-R10989:10990 CodegenPtx.PtxLayout <> fs:83 var
-R11009:11026 CodegenPtx.PtxLayout <> lfield_lfields_ind scheme
-R11009:11026 CodegenPtx.PtxLayout <> lfield_lfields_ind scheme
-R11096:11096 Corelib.Init.Logic <> I constr
-R11096:11096 Corelib.Init.Logic <> I constr
-R11110:11118 CodegenPtx.PtxLayout <> leaf_size def
-R11253:11253 Corelib.Init.Logic <> I constr
-R11336:11339 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
-R11340:11340 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
-R11342:11342 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
-R11336:11339 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
-R11340:11340 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
-R11342:11342 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
-R11388:11390 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R11391:11395 CodegenPtx.PtxLayout <> fsize def
-R11388:11390 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R11391:11395 CodegenPtx.PtxLayout <> fsize def
-R11438:11446 CodegenPtx.PtxLayout <> chain_app thm
-R11438:11446 CodegenPtx.PtxLayout <> chain_app thm
-R11495:11509 CodegenPtx.PtxLayout <> leaves_size_app thm
-R11495:11509 CodegenPtx.PtxLayout <> leaves_size_app thm
-R11495:11509 CodegenPtx.PtxLayout <> leaves_size_app thm
-prf 11547:11560 <> flattens_chain
-binder 11571:11572 <> fs:86
-binder 11574:11574 <> p:87
-binder 11576:11578 <> off:88
-R11581:11585 CodegenPtx.PtxLayout <> chain def
-R11587:11589 CodegenPtx.PtxLayout <> off:88 var
-R11592:11599 CodegenPtx.PtxLayout <> flattens def
-R11601:11601 CodegenPtx.PtxLayout <> p:87 var
-R11603:11605 CodegenPtx.PtxLayout <> off:88 var
-R11607:11608 CodegenPtx.PtxLayout <> fs:86 var
-R11643:11647 Corelib.Init.Logic <> proj2 thm
-R11649:11666 CodegenPtx.PtxLayout <> flatten_chain_size thm
-R11643:11647 Corelib.Init.Logic <> proj2 thm
-R11649:11666 CodegenPtx.PtxLayout <> flatten_chain_size thm
-prf 11682:11701 <> flattens_leaves_size
-binder 11712:11713 <> fs:89
-binder 11715:11715 <> p:90
-binder 11717:11719 <> off:91
-R11755:11757 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R11724:11734 CodegenPtx.PtxLayout <> leaves_size def
-R11737:11744 CodegenPtx.PtxLayout <> flattens def
-R11746:11746 CodegenPtx.PtxLayout <> p:90 var
-R11748:11750 CodegenPtx.PtxLayout <> off:91 var
-R11752:11753 CodegenPtx.PtxLayout <> fs:89 var
-R11758:11763 CodegenPtx.PtxLayout <> fssize def
-R11765:11766 CodegenPtx.PtxLayout <> fs:89 var
-R11800:11804 Corelib.Init.Logic <> proj2 thm
-R11806:11823 CodegenPtx.PtxLayout <> flatten_chain_size thm
-R11800:11804 Corelib.Init.Logic <> proj2 thm
-R11806:11823 CodegenPtx.PtxLayout <> flatten_chain_size thm
-prf 12040:12053 <> chain_in_lower
-binder 12064:12065 <> ls:92
-binder 12067:12069 <> off:93
-binder 12071:12071 <> l:94
-R12088:12091 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R12076:12080 CodegenPtx.PtxLayout <> chain def
-R12082:12084 CodegenPtx.PtxLayout <> off:93 var
-R12086:12087 CodegenPtx.PtxLayout <> ls:92 var
-R12099:12102 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R12092:12093 Stdlib.Lists.List <> In def
-R12097:12098 CodegenPtx.PtxLayout <> ls:92 var
-R12095:12095 CodegenPtx.PtxLayout <> l:94 var
-R12106:12109 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
-R12103:12105 CodegenPtx.PtxLayout <> off:93 var
-R12110:12115 CodegenPtx.PtxLayout <> lf_off proj
-R12117:12117 CodegenPtx.PtxLayout <> l:94 var
-prf 12328:12342 <> chain_in_bounds
-binder 12353:12354 <> ls:95
-binder 12356:12358 <> off:96
-binder 12360:12360 <> l:97
-R12377:12380 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R12365:12369 CodegenPtx.PtxLayout <> chain def
-R12371:12373 CodegenPtx.PtxLayout <> off:96 var
-R12375:12376 CodegenPtx.PtxLayout <> ls:95 var
-R12388:12393 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R12381:12382 Stdlib.Lists.List <> In def
-R12386:12387 CodegenPtx.PtxLayout <> ls:95 var
-R12384:12384 CodegenPtx.PtxLayout <> l:97 var
-R12416:12419 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
-R12402:12404 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R12394:12399 CodegenPtx.PtxLayout <> lf_off proj
-R12401:12401 CodegenPtx.PtxLayout <> l:97 var
-R12405:12413 CodegenPtx.PtxLayout <> leaf_size def
-R12415:12415 CodegenPtx.PtxLayout <> l:97 var
-R12423:12425 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R12420:12422 CodegenPtx.PtxLayout <> off:96 var
-R12426:12436 CodegenPtx.PtxLayout <> leaves_size def
-R12438:12439 CodegenPtx.PtxLayout <> ls:95 var
-prf 12650:12664 <> chain_nth_lower
-binder 12675:12676 <> ls:98
-binder 12678:12680 <> off:99
-binder 12682:12682 <> j:100
-binder 12684:12685 <> lj:101
-R12702:12705 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R12690:12694 CodegenPtx.PtxLayout <> chain def
-R12696:12698 CodegenPtx.PtxLayout <> off:99 var
-R12700:12701 CodegenPtx.PtxLayout <> ls:98 var
-R12730:12733 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R12720:12722 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R12706:12714 Stdlib.Lists.List <> nth_error def
-R12719:12719 CodegenPtx.PtxLayout <> j:100 var
-R12716:12717 CodegenPtx.PtxLayout <> ls:98 var
-R12723:12726 Corelib.Init.Datatypes <> Some constr
-R12728:12729 CodegenPtx.PtxLayout <> lj:101 var
-R12737:12740 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
-R12734:12736 CodegenPtx.PtxLayout <> off:99 var
-R12741:12746 CodegenPtx.PtxLayout <> lf_off proj
-R12748:12749 CodegenPtx.PtxLayout <> lj:101 var
-R12796:12809 CodegenPtx.PtxLayout <> chain_in_lower thm
-R12796:12809 CodegenPtx.PtxLayout <> chain_in_lower thm
-R12835:12846 Stdlib.Lists.List <> nth_error_In thm
-R12835:12846 Stdlib.Lists.List <> nth_error_In thm
-prf 12996:13011 <> chain_nonoverlap
-binder 13022:13023 <> ls:102
-binder 13025:13027 <> off:103
-binder 13029:13029 <> i:104
-binder 13031:13031 <> j:105
-binder 13033:13034 <> li:106
-binder 13036:13037 <> lj:107
-R13054:13057 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R13042:13046 CodegenPtx.PtxLayout <> chain def
-R13048:13050 CodegenPtx.PtxLayout <> off:103 var
-R13052:13053 CodegenPtx.PtxLayout <> ls:102 var
-R13063:13068 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R13059:13061 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
-R13058:13058 CodegenPtx.PtxLayout <> i:104 var
-R13062:13062 CodegenPtx.PtxLayout <> j:105 var
-R13093:13096 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R13083:13085 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R13069:13077 Stdlib.Lists.List <> nth_error def
-R13082:13082 CodegenPtx.PtxLayout <> i:104 var
-R13079:13080 CodegenPtx.PtxLayout <> ls:102 var
-R13086:13089 Corelib.Init.Datatypes <> Some constr
-R13091:13092 CodegenPtx.PtxLayout <> li:106 var
-R13121:13126 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R13111:13113 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R13097:13105 Stdlib.Lists.List <> nth_error def
-R13110:13110 CodegenPtx.PtxLayout <> j:105 var
-R13107:13108 CodegenPtx.PtxLayout <> ls:102 var
-R13114:13117 Corelib.Init.Datatypes <> Some constr
-R13119:13120 CodegenPtx.PtxLayout <> lj:107 var
-R13151:13154 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
-R13136:13138 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R13127:13132 CodegenPtx.PtxLayout <> lf_off proj
-R13134:13135 CodegenPtx.PtxLayout <> li:106 var
-R13139:13147 CodegenPtx.PtxLayout <> leaf_size def
-R13149:13150 CodegenPtx.PtxLayout <> li:106 var
-R13155:13160 CodegenPtx.PtxLayout <> lf_off proj
-R13162:13163 CodegenPtx.PtxLayout <> lj:107 var
-R13446:13449 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
-R13431:13433 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R13434:13442 CodegenPtx.PtxLayout <> leaf_size def
-R13450:13455 CodegenPtx.PtxLayout <> lf_off proj
-R13480:13494 CodegenPtx.PtxLayout <> chain_nth_lower thm
-R13446:13449 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
-R13431:13433 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R13434:13442 CodegenPtx.PtxLayout <> leaf_size def
-R13450:13455 CodegenPtx.PtxLayout <> lf_off proj
-R13480:13494 CodegenPtx.PtxLayout <> chain_nth_lower thm
-R13597:13599 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R13600:13608 CodegenPtx.PtxLayout <> leaf_size def
-R13597:13599 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R13600:13608 CodegenPtx.PtxLayout <> leaf_size def
-prf 13983:14001 <> record_size_correct
-binder 14012:14013 <> fs:108
-R14048:14050 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R14018:14028 CodegenPtx.PtxLayout <> leaves_size def
-R14031:14043 CodegenPtx.PtxLayout <> record_leaves def
-R14045:14046 CodegenPtx.PtxLayout <> fs:108 var
-R14051:14061 CodegenPtx.PtxLayout <> record_size def
-R14063:14064 CodegenPtx.PtxLayout <> fs:108 var
-R14091:14110 CodegenPtx.PtxLayout <> flattens_leaves_size thm
-R14091:14110 CodegenPtx.PtxLayout <> flattens_leaves_size thm
-prf 14204:14224 <> record_leaf_in_bounds
-binder 14235:14236 <> fs:109
-binder 14238:14238 <> l:110
-R14266:14271 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R14243:14244 Stdlib.Lists.List <> In def
-R14249:14261 CodegenPtx.PtxLayout <> record_leaves def
-R14263:14264 CodegenPtx.PtxLayout <> fs:109 var
-R14246:14246 CodegenPtx.PtxLayout <> l:110 var
-R14294:14297 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
-R14280:14282 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R14272:14277 CodegenPtx.PtxLayout <> lf_off proj
-R14279:14279 CodegenPtx.PtxLayout <> l:110 var
-R14283:14291 CodegenPtx.PtxLayout <> leaf_size def
-R14293:14293 CodegenPtx.PtxLayout <> l:110 var
-R14298:14308 CodegenPtx.PtxLayout <> record_size def
-R14310:14311 CodegenPtx.PtxLayout <> fs:109 var
-R14354:14368 CodegenPtx.PtxLayout <> chain_in_bounds thm
-R14371:14383 CodegenPtx.PtxLayout <> record_leaves def
-R14410:14423 CodegenPtx.PtxLayout <> flattens_chain thm
-R14428:14429 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
-R14354:14368 CodegenPtx.PtxLayout <> chain_in_bounds thm
-R14371:14383 CodegenPtx.PtxLayout <> record_leaves def
-R14410:14423 CodegenPtx.PtxLayout <> flattens_chain thm
-R14428:14429 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
-R14455:14473 CodegenPtx.PtxLayout <> record_size_correct thm
-R14455:14473 CodegenPtx.PtxLayout <> record_size_correct thm
-R14455:14473 CodegenPtx.PtxLayout <> record_size_correct thm
-prf 14615:14636 <> record_leaf_nonoverlap
-binder 14647:14648 <> fs:111
-binder 14650:14650 <> i:112
-binder 14652:14652 <> j:113
-binder 14654:14655 <> li:114
-binder 14657:14658 <> lj:115
-R14669:14674 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R14664:14667 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
-R14663:14663 CodegenPtx.PtxLayout <> i:112 var
-R14668:14668 CodegenPtx.PtxLayout <> j:113 var
-R14715:14720 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R14705:14707 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R14675:14683 Stdlib.Lists.List <> nth_error def
-R14704:14704 CodegenPtx.PtxLayout <> i:112 var
-R14686:14698 CodegenPtx.PtxLayout <> record_leaves def
-R14700:14701 CodegenPtx.PtxLayout <> fs:111 var
-R14708:14711 Corelib.Init.Datatypes <> Some constr
-R14713:14714 CodegenPtx.PtxLayout <> li:114 var
-R14761:14766 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R14751:14753 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R14721:14729 Stdlib.Lists.List <> nth_error def
-R14750:14750 CodegenPtx.PtxLayout <> j:113 var
-R14732:14744 CodegenPtx.PtxLayout <> record_leaves def
-R14746:14747 CodegenPtx.PtxLayout <> fs:111 var
-R14754:14757 Corelib.Init.Datatypes <> Some constr
-R14759:14760 CodegenPtx.PtxLayout <> lj:115 var
-R14804:14809 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
-R14791:14794 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
-R14776:14778 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R14767:14772 CodegenPtx.PtxLayout <> lf_off proj
-R14774:14775 CodegenPtx.PtxLayout <> li:114 var
-R14779:14787 CodegenPtx.PtxLayout <> leaf_size def
-R14789:14790 CodegenPtx.PtxLayout <> li:114 var
-R14795:14800 CodegenPtx.PtxLayout <> lf_off proj
-R14802:14803 CodegenPtx.PtxLayout <> lj:115 var
-R14834:14837 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
-R14819:14821 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R14810:14815 CodegenPtx.PtxLayout <> lf_off proj
-R14817:14818 CodegenPtx.PtxLayout <> lj:115 var
-R14822:14830 CodegenPtx.PtxLayout <> leaf_size def
-R14832:14833 CodegenPtx.PtxLayout <> lj:115 var
-R14838:14843 CodegenPtx.PtxLayout <> lf_off proj
-R14845:14846 CodegenPtx.PtxLayout <> li:114 var
-R14901:14915 Stdlib.Arith.PeanoNat Nat lt_ge_cases thm
-R14901:14915 Stdlib.Arith.PeanoNat Nat lt_ge_cases thm
-R14955:14970 CodegenPtx.PtxLayout <> chain_nonoverlap thm
-R14955:14970 CodegenPtx.PtxLayout <> chain_nonoverlap thm
-R14986:14999 CodegenPtx.PtxLayout <> flattens_chain thm
-R14986:14999 CodegenPtx.PtxLayout <> flattens_chain thm
-R15022:15024 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
-R15022:15024 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
-R15054:15069 CodegenPtx.PtxLayout <> chain_nonoverlap thm
-R15054:15069 CodegenPtx.PtxLayout <> chain_nonoverlap thm
-R15085:15098 CodegenPtx.PtxLayout <> flattens_chain thm
-R15085:15098 CodegenPtx.PtxLayout <> flattens_chain thm
-prf 15247:15269 <> record_accepted_aligned
-binder 15280:15281 <> fs:116
-binder 15283:15283 <> l:117
-R15313:15318 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R15306:15308 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R15288:15302 CodegenPtx.PtxLayout <> record_accepted def
-R15304:15305 CodegenPtx.PtxLayout <> fs:116 var
-R15309:15312 Corelib.Init.Datatypes <> true constr
-R15342:15347 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R15319:15320 Stdlib.Lists.List <> In def
-R15325:15337 CodegenPtx.PtxLayout <> record_leaves def
-R15339:15340 CodegenPtx.PtxLayout <> fs:116 var
-R15322:15322 CodegenPtx.PtxLayout <> l:117 var
-R15394:15396 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R15348:15357 Stdlib.Arith.PeanoNat Nat modulo def
-R15360:15365 CodegenPtx.PtxLayout <> lf_off proj
-R15367:15367 CodegenPtx.PtxLayout <> l:117 var
-R15371:15382 CodegenPtx.PtxLayout <> scalar_align def
-R15385:15389 CodegenPtx.PtxLayout <> lf_ty proj
-R15391:15391 CodegenPtx.PtxLayout <> l:117 var
-R15440:15454 CodegenPtx.PtxLayout <> record_accepted def
-R15475:15488 Stdlib.Lists.List <> forallb_forall thm
-R15475:15488 Stdlib.Lists.List <> forallb_forall thm
-R15475:15488 Stdlib.Lists.List <> forallb_forall thm
-R15535:15546 CodegenPtx.PtxLayout <> leaf_aligned def
-R15569:15578 Stdlib.Arith.PeanoNat Nat eqb_eq thm
-R15569:15578 Stdlib.Arith.PeanoNat Nat eqb_eq thm
-prf 15791:15805 <> ctor_layouts_ok
-binder 15816:15820 <> ctors:118
-binder 15822:15822 <> t:119
-binder 15824:15824 <> c:120
-R15856:15861 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R15829:15830 Stdlib.Lists.List <> In def
-R15835:15846 CodegenPtx.PtxLayout <> ctor_layouts def
-R15848:15848 CodegenPtx.PtxLayout <> t:119 var
-R15850:15854 CodegenPtx.PtxLayout <> ctors:118 var
-R15832:15832 CodegenPtx.PtxLayout <> c:120 var
-R15896:15901 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
-R15862:15866 CodegenPtx.PtxLayout <> chain def
-R15868:15881 CodegenPtx.PtxLayout <> payload_offset def
-R15884:15892 CodegenPtx.PtxLayout <> cl_leaves proj
-R15894:15894 CodegenPtx.PtxLayout <> c:120 var
-R15927:15929 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R15902:15912 CodegenPtx.PtxLayout <> leaves_size def
-R15915:15923 CodegenPtx.PtxLayout <> cl_leaves proj
-R15925:15925 CodegenPtx.PtxLayout <> c:120 var
-R15930:15944 CodegenPtx.PtxLayout <> cl_payload_size proj
-R15946:15946 CodegenPtx.PtxLayout <> c:120 var
-R16101:16114 CodegenPtx.PtxLayout <> flattens_chain thm
-R16124:16143 CodegenPtx.PtxLayout <> flattens_leaves_size thm
-R16101:16114 CodegenPtx.PtxLayout <> flattens_chain thm
-R16124:16143 CodegenPtx.PtxLayout <> flattens_leaves_size thm
-prf 16183:16196 <> max_payload_ub
-binder 16207:16209 <> cls:121
-binder 16211:16211 <> c:122
-R16224:16227 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R16216:16217 Stdlib.Lists.List <> In def
-R16221:16223 CodegenPtx.PtxLayout <> cls:121 var
-R16219:16219 CodegenPtx.PtxLayout <> c:122 var
-R16245:16248 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
-R16228:16242 CodegenPtx.PtxLayout <> cl_payload_size proj
-R16244:16244 CodegenPtx.PtxLayout <> c:122 var
-R16249:16259 CodegenPtx.PtxLayout <> max_payload def
-R16261:16263 CodegenPtx.PtxLayout <> cls:121 var
-prf 16566:16582 <> ctor_tag_is_index
-binder 16593:16597 <> ctors:123
-binder 16599:16599 <> i:124
-binder 16601:16601 <> c:125
-R16649:16654 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R16640:16642 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R16606:16614 Stdlib.Lists.List <> nth_error def
-R16639:16639 CodegenPtx.PtxLayout <> i:124 var
-R16617:16628 CodegenPtx.PtxLayout <> ctor_layouts def
-R16632:16636 CodegenPtx.PtxLayout <> ctors:123 var
-R16643:16646 Corelib.Init.Datatypes <> Some constr
-R16648:16648 CodegenPtx.PtxLayout <> c:125 var
-R16663:16665 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R16655:16660 CodegenPtx.PtxLayout <> cl_tag proj
-R16662:16662 CodegenPtx.PtxLayout <> c:125 var
-R16666:16666 CodegenPtx.PtxLayout <> i:124 var
-binder 16693:16697 <> ctors:126
-binder 16699:16699 <> t:127
-binder 16701:16701 <> i:128
-binder 16703:16703 <> c:129
-R16761:16776 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R16752:16754 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R16718:16726 Stdlib.Lists.List <> nth_error def
-R16751:16751 CodegenPtx.PtxLayout <> i:128 var
-R16729:16740 CodegenPtx.PtxLayout <> ctor_layouts def
-R16742:16742 CodegenPtx.PtxLayout <> t:127 var
-R16744:16748 CodegenPtx.PtxLayout <> ctors:126 var
-R16755:16758 Corelib.Init.Datatypes <> Some constr
-R16760:16760 CodegenPtx.PtxLayout <> c:129 var
-R16785:16787 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R16777:16782 CodegenPtx.PtxLayout <> cl_tag proj
-R16784:16784 CodegenPtx.PtxLayout <> c:129 var
-R16789:16791 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R16788:16788 CodegenPtx.PtxLayout <> t:127 var
-R16792:16792 CodegenPtx.PtxLayout <> i:128 var
-binder 16693:16697 <> ctors:130
-binder 16699:16699 <> t:131
-binder 16701:16701 <> i:132
-binder 16703:16703 <> c:133
-R16761:16776 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R16752:16754 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R16718:16726 Stdlib.Lists.List <> nth_error def
-R16751:16751 CodegenPtx.PtxLayout <> i:132 var
-R16729:16740 CodegenPtx.PtxLayout <> ctor_layouts def
-R16742:16742 CodegenPtx.PtxLayout <> t:131 var
-R16744:16748 CodegenPtx.PtxLayout <> ctors:130 var
-R16755:16758 Corelib.Init.Datatypes <> Some constr
-R16760:16760 CodegenPtx.PtxLayout <> c:133 var
-R16785:16787 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R16777:16782 CodegenPtx.PtxLayout <> cl_tag proj
-R16784:16784 CodegenPtx.PtxLayout <> c:133 var
-R16789:16791 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R16788:16788 CodegenPtx.PtxLayout <> t:131 var
-R16792:16792 CodegenPtx.PtxLayout <> i:132 var
-R16993:16993 Corelib.Init.Datatypes <> S constr
-R16993:16993 Corelib.Init.Datatypes <> S constr
-prf 17205:17232 <> variant_tag_payload_disjoint
-binder 17243:17247 <> ctors:134
-binder 17249:17249 <> c:135
-binder 17251:17251 <> l:136
-R17283:17288 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R17256:17257 Stdlib.Lists.List <> In def
-R17262:17273 CodegenPtx.PtxLayout <> ctor_layouts def
-R17277:17281 CodegenPtx.PtxLayout <> ctors:134 var
-R17259:17259 CodegenPtx.PtxLayout <> c:135 var
-R17307:17312 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R17289:17290 Stdlib.Lists.List <> In def
-R17295:17303 CodegenPtx.PtxLayout <> cl_leaves proj
-R17305:17305 CodegenPtx.PtxLayout <> c:135 var
-R17292:17292 CodegenPtx.PtxLayout <> l:136 var
-R17334:17337 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
-R17323:17325 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R17313:17322 CodegenPtx.PtxLayout <> tag_offset def
-R17326:17333 CodegenPtx.PtxLayout <> tag_size def
-R17338:17343 CodegenPtx.PtxLayout <> lf_off proj
-R17345:17345 CodegenPtx.PtxLayout <> l:136 var
-R17393:17407 CodegenPtx.PtxLayout <> ctor_layouts_ok thm
-R17393:17407 CodegenPtx.PtxLayout <> ctor_layouts_ok thm
-R17452:17465 CodegenPtx.PtxLayout <> chain_in_lower thm
-R17452:17465 CodegenPtx.PtxLayout <> chain_in_lower thm
-R17494:17503 CodegenPtx.PtxLayout <> tag_offset def
-R17506:17513 CodegenPtx.PtxLayout <> tag_size def
-R17516:17529 CodegenPtx.PtxLayout <> payload_offset def
-prf 17682:17709 <> variant_ctor_leaf_nonoverlap
-binder 17720:17724 <> ctors:137
-binder 17726:17726 <> c:138
-binder 17728:17728 <> i:139
-binder 17730:17730 <> j:140
-binder 17732:17733 <> li:141
-binder 17735:17736 <> lj:142
-R17768:17773 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R17741:17742 Stdlib.Lists.List <> In def
-R17747:17758 CodegenPtx.PtxLayout <> ctor_layouts def
-R17762:17766 CodegenPtx.PtxLayout <> ctors:137 var
-R17744:17744 CodegenPtx.PtxLayout <> c:138 var
-R17780:17785 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R17775:17778 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
-R17774:17774 CodegenPtx.PtxLayout <> i:139 var
-R17779:17779 CodegenPtx.PtxLayout <> j:140 var
-R17821:17826 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R17811:17813 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R17786:17794 Stdlib.Lists.List <> nth_error def
-R17810:17810 CodegenPtx.PtxLayout <> i:139 var
-R17797:17805 CodegenPtx.PtxLayout <> cl_leaves proj
-R17807:17807 CodegenPtx.PtxLayout <> c:138 var
-R17814:17817 Corelib.Init.Datatypes <> Some constr
-R17819:17820 CodegenPtx.PtxLayout <> li:141 var
-R17862:17867 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R17852:17854 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R17827:17835 Stdlib.Lists.List <> nth_error def
-R17851:17851 CodegenPtx.PtxLayout <> j:140 var
-R17838:17846 CodegenPtx.PtxLayout <> cl_leaves proj
-R17848:17848 CodegenPtx.PtxLayout <> c:138 var
-R17855:17858 Corelib.Init.Datatypes <> Some constr
-R17860:17861 CodegenPtx.PtxLayout <> lj:142 var
-R17905:17910 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
-R17892:17895 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
-R17877:17879 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R17868:17873 CodegenPtx.PtxLayout <> lf_off proj
-R17875:17876 CodegenPtx.PtxLayout <> li:141 var
-R17880:17888 CodegenPtx.PtxLayout <> leaf_size def
-R17890:17891 CodegenPtx.PtxLayout <> li:141 var
-R17896:17901 CodegenPtx.PtxLayout <> lf_off proj
-R17903:17904 CodegenPtx.PtxLayout <> lj:142 var
-R17935:17938 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
-R17920:17922 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R17911:17916 CodegenPtx.PtxLayout <> lf_off proj
-R17918:17919 CodegenPtx.PtxLayout <> lj:142 var
-R17923:17931 CodegenPtx.PtxLayout <> leaf_size def
-R17933:17934 CodegenPtx.PtxLayout <> lj:142 var
-R17939:17944 CodegenPtx.PtxLayout <> lf_off proj
-R17946:17947 CodegenPtx.PtxLayout <> li:141 var
-R18010:18024 CodegenPtx.PtxLayout <> ctor_layouts_ok thm
-R18010:18024 CodegenPtx.PtxLayout <> ctor_layouts_ok thm
-R18067:18081 Stdlib.Arith.PeanoNat Nat lt_ge_cases thm
-R18067:18081 Stdlib.Arith.PeanoNat Nat lt_ge_cases thm
-R18121:18136 CodegenPtx.PtxLayout <> chain_nonoverlap thm
-R18121:18136 CodegenPtx.PtxLayout <> chain_nonoverlap thm
-R18166:18168 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
-R18166:18168 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
-R18198:18213 CodegenPtx.PtxLayout <> chain_nonoverlap thm
-R18198:18213 CodegenPtx.PtxLayout <> chain_nonoverlap thm
-prf 18377:18401 <> ctor_payload_size_correct
-binder 18412:18416 <> ctors:143
-binder 18418:18418 <> c:144
-R18450:18455 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R18423:18424 Stdlib.Lists.List <> In def
-R18429:18440 CodegenPtx.PtxLayout <> ctor_layouts def
-R18444:18448 CodegenPtx.PtxLayout <> ctors:143 var
-R18426:18426 CodegenPtx.PtxLayout <> c:144 var
-R18481:18483 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R18456:18466 CodegenPtx.PtxLayout <> leaves_size def
-R18469:18477 CodegenPtx.PtxLayout <> cl_leaves proj
-R18479:18479 CodegenPtx.PtxLayout <> c:144 var
-R18484:18498 CodegenPtx.PtxLayout <> cl_payload_size proj
-R18500:18500 CodegenPtx.PtxLayout <> c:144 var
-R18536:18550 CodegenPtx.PtxLayout <> ctor_layouts_ok thm
-R18536:18550 CodegenPtx.PtxLayout <> ctor_layouts_ok thm
-prf 18703:18724 <> variant_leaf_in_bounds
-binder 18735:18739 <> ctors:145
-binder 18741:18741 <> c:146
-binder 18743:18743 <> l:147
-R18775:18780 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R18748:18749 Stdlib.Lists.List <> In def
-R18754:18765 CodegenPtx.PtxLayout <> ctor_layouts def
-R18769:18773 CodegenPtx.PtxLayout <> ctors:145 var
-R18751:18751 CodegenPtx.PtxLayout <> c:146 var
-R18799:18804 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R18781:18782 Stdlib.Lists.List <> In def
-R18787:18795 CodegenPtx.PtxLayout <> cl_leaves proj
-R18797:18797 CodegenPtx.PtxLayout <> c:146 var
-R18784:18784 CodegenPtx.PtxLayout <> l:147 var
-R18827:18830 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
-R18813:18815 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
-R18805:18810 CodegenPtx.PtxLayout <> lf_off proj
-R18812:18812 CodegenPtx.PtxLayout <> l:147 var
-R18816:18824 CodegenPtx.PtxLayout <> leaf_size def
-R18826:18826 CodegenPtx.PtxLayout <> l:147 var
-R18831:18842 CodegenPtx.PtxLayout <> variant_size def
-R18844:18848 CodegenPtx.PtxLayout <> ctors:145 var
-R18896:18910 CodegenPtx.PtxLayout <> ctor_layouts_ok thm
-R18896:18910 CodegenPtx.PtxLayout <> ctor_layouts_ok thm
-R18959:18973 CodegenPtx.PtxLayout <> chain_in_bounds thm
-R18959:18973 CodegenPtx.PtxLayout <> chain_in_bounds thm
-R19013:19026 CodegenPtx.PtxLayout <> max_payload_ub thm
-R19013:19026 CodegenPtx.PtxLayout <> max_payload_ub thm
-R19054:19065 CodegenPtx.PtxLayout <> variant_size def
-R19068:19075 CodegenPtx.PtxLayout <> tag_size def
-R19078:19091 CodegenPtx.PtxLayout <> payload_offset def
-prf 19318:19341 <> variant_accepted_aligned
-binder 19352:19356 <> ctors:148
-binder 19358:19358 <> c:149
-binder 19360:19360 <> l:150
-R19394:19399 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R19387:19389 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R19365:19380 CodegenPtx.PtxLayout <> variant_accepted def
-R19382:19386 CodegenPtx.PtxLayout <> ctors:148 var
-R19390:19393 Corelib.Init.Datatypes <> true constr
-R19427:19432 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R19400:19401 Stdlib.Lists.List <> In def
-R19406:19417 CodegenPtx.PtxLayout <> ctor_layouts def
-R19421:19425 CodegenPtx.PtxLayout <> ctors:148 var
-R19403:19403 CodegenPtx.PtxLayout <> c:149 var
-R19451:19456 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
-R19433:19434 Stdlib.Lists.List <> In def
-R19439:19447 CodegenPtx.PtxLayout <> cl_leaves proj
-R19449:19449 CodegenPtx.PtxLayout <> c:149 var
-R19436:19436 CodegenPtx.PtxLayout <> l:150 var
-R19503:19505 Corelib.Init.Logic <> ::type_scope:x_'='_x not
-R19457:19466 Stdlib.Arith.PeanoNat Nat modulo def
-R19469:19474 CodegenPtx.PtxLayout <> lf_off proj
-R19476:19476 CodegenPtx.PtxLayout <> l:150 var
-R19480:19491 CodegenPtx.PtxLayout <> scalar_align def
-R19494:19498 CodegenPtx.PtxLayout <> lf_ty proj
-R19500:19500 CodegenPtx.PtxLayout <> l:150 var
-R19556:19571 CodegenPtx.PtxLayout <> variant_accepted def
-R19592:19605 Stdlib.Lists.List <> forallb_forall thm
-R19592:19605 Stdlib.Lists.List <> forallb_forall thm
-R19592:19605 Stdlib.Lists.List <> forallb_forall thm
-R19652:19665 Stdlib.Lists.List <> forallb_forall thm
-R19652:19665 Stdlib.Lists.List <> forallb_forall thm
-R19652:19665 Stdlib.Lists.List <> forallb_forall thm
-R19711:19722 CodegenPtx.PtxLayout <> leaf_aligned def
-R19745:19754 Stdlib.Arith.PeanoNat Nat eqb_eq thm
-R19745:19754 Stdlib.Arith.PeanoNat Nat eqb_eq thm
-R20044:20062 CodegenPtx.PtxLayout <> record_size_correct thm
-R20083:20103 CodegenPtx.PtxLayout <> record_leaf_in_bounds thm
-R20124:20145 CodegenPtx.PtxLayout <> record_leaf_nonoverlap thm
-R20166:20188 CodegenPtx.PtxLayout <> record_accepted_aligned thm
-R20209:20225 CodegenPtx.PtxLayout <> ctor_tag_is_index thm
-R20246:20273 CodegenPtx.PtxLayout <> variant_tag_payload_disjoint thm
-R20294:20321 CodegenPtx.PtxLayout <> variant_ctor_leaf_nonoverlap thm
-R20342:20366 CodegenPtx.PtxLayout <> ctor_payload_size_correct thm
-R20387:20408 CodegenPtx.PtxLayout <> variant_leaf_in_bounds thm
-R20429:20452 CodegenPtx.PtxLayout <> variant_accepted_aligned thm
+R3073:3076 Stdlib.Lists.List <> <> lib
+R3106:3116 Stdlib.Arith.Arith <> <> lib
+R3146:3154 Stdlib.Bool.Bool <> <> lib
+R3184:3186 Stdlib.micromega.Lia <> <> lib
+R3196:3208 Stdlib.Lists.List ListNotations <> mod
+def 3561:3568 <> align_up
+R3579:3581 Corelib.Init.Datatypes <> nat ind
+binder 3571:3573 <> off:1
+binder 3575:3575 <> a:2
+R3586:3588 Corelib.Init.Datatypes <> nat ind
+R3594:3597 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R3615:3615 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R3593:3593 CodegenPtx.PtxLayout <> a:2 var
+R3598:3598 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R3610:3613 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R3606:3608 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R3602:3604 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3599:3601 CodegenPtx.PtxLayout <> off:1 var
+R3605:3605 CodegenPtx.PtxLayout <> a:2 var
+R3614:3614 CodegenPtx.PtxLayout <> a:2 var
+prf 3625:3635 <> align_up_ge
+binder 3646:3648 <> off:3
+binder 3650:3650 <> a:4
+R3658:3661 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R3654:3656 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R3657:3657 CodegenPtx.PtxLayout <> a:4 var
+R3665:3668 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R3662:3664 CodegenPtx.PtxLayout <> off:3 var
+R3669:3676 CodegenPtx.PtxLayout <> align_up def
+R3678:3680 CodegenPtx.PtxLayout <> off:3 var
+R3682:3682 CodegenPtx.PtxLayout <> a:4 var
+R3718:3725 CodegenPtx.PtxLayout <> align_up def
+R3742:3752 Stdlib.Arith.PeanoNat Nat div_mod thm
+R3762:3764 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R3758:3760 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3771:3781 Stdlib.Arith.PeanoNat Nat neq_sym thm
+R3788:3797 Stdlib.Arith.PeanoNat Nat lt_neq thm
+R3742:3752 Stdlib.Arith.PeanoNat Nat div_mod thm
+R3762:3764 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R3758:3760 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3771:3781 Stdlib.Arith.PeanoNat Nat neq_sym thm
+R3788:3797 Stdlib.Arith.PeanoNat Nat lt_neq thm
+R3831:3849 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+R3859:3861 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R3855:3857 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3868:3878 Stdlib.Arith.PeanoNat Nat neq_sym thm
+R3885:3894 Stdlib.Arith.PeanoNat Nat lt_neq thm
+R3831:3849 Stdlib.Arith.PeanoNat Nat mod_upper_bound def
+R3859:3861 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R3855:3857 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R3868:3878 Stdlib.Arith.PeanoNat Nat neq_sym thm
+R3885:3894 Stdlib.Arith.PeanoNat Nat lt_neq thm
+prf 3933:3947 <> align_up_divide
+binder 3958:3960 <> off:5
+binder 3962:3962 <> a:6
+R3965:3974 Stdlib.Arith.PeanoNat Nat divide def
+R3976:3976 CodegenPtx.PtxLayout <> a:6 var
+R3979:3986 CodegenPtx.PtxLayout <> align_up def
+R3988:3990 CodegenPtx.PtxLayout <> off:5 var
+R3992:3992 CodegenPtx.PtxLayout <> a:6 var
+R4024:4031 CodegenPtx.PtxLayout <> align_up def
+R4042:4042 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R4054:4057 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R4050:4052 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4046:4048 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4042:4042 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R4054:4057 Stdlib.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R4050:4052 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4046:4048 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+prf 4365:4376 <> align_up_add
+binder 4387:4387 <> d:7
+binder 4389:4389 <> x:8
+binder 4391:4391 <> a:9
+R4401:4404 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4397:4399 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R4400:4400 CodegenPtx.PtxLayout <> a:9 var
+R4419:4422 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R4405:4414 Stdlib.Arith.PeanoNat Nat divide def
+R4416:4416 CodegenPtx.PtxLayout <> a:9 var
+R4418:4418 CodegenPtx.PtxLayout <> d:7 var
+R4441:4443 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R4423:4430 CodegenPtx.PtxLayout <> align_up def
+R4434:4436 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4433:4433 CodegenPtx.PtxLayout <> d:7 var
+R4437:4437 CodegenPtx.PtxLayout <> x:8 var
+R4440:4440 CodegenPtx.PtxLayout <> a:9 var
+R4445:4447 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4444:4444 CodegenPtx.PtxLayout <> d:7 var
+R4448:4455 CodegenPtx.PtxLayout <> align_up def
+R4457:4457 CodegenPtx.PtxLayout <> x:8 var
+R4459:4459 CodegenPtx.PtxLayout <> a:9 var
+R4511:4518 CodegenPtx.PtxLayout <> align_up def
+R4538:4541 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R4538:4541 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R4577:4579 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4573:4575 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4569:4571 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4565:4567 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4594:4597 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4607:4607 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4590:4592 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4603:4605 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4599:4601 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4577:4579 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4573:4575 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4569:4571 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4565:4567 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4594:4597 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4607:4607 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4590:4592 Corelib.Init.Peano <> ::nat_scope:x_'*'_x not
+R4603:4605 Corelib.Init.Peano <> ::nat_scope:x_'-'_x not
+R4599:4601 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R4628:4640 Stdlib.Arith.PeanoNat Nat div_add_l def
+R4628:4640 Stdlib.Arith.PeanoNat Nat div_add_l def
+R4628:4640 Stdlib.Arith.PeanoNat Nat div_add_l def
+ind 4888:4890 <> lty
+constr 4906:4908 <> L32
+constr 4920:4922 <> L64
+R4912:4914 CodegenPtx.PtxLayout <> lty:10 ind
+R4926:4928 CodegenPtx.PtxLayout <> lty:10 ind
+scheme 4888:4890 <> lty_rect
+scheme 4888:4890 <> lty_ind
+scheme 4888:4890 <> lty_rec
+scheme 4888:4890 <> lty_sind
+def 4943:4953 <> scalar_size
+R4960:4962 CodegenPtx.PtxLayout <> lty ind
+binder 4956:4956 <> t:12
+R4967:4969 Corelib.Init.Datatypes <> nat ind
+R4982:4982 CodegenPtx.PtxLayout <> t:12 var
+R4993:4995 CodegenPtx.PtxLayout <> L32 constr
+R5006:5008 CodegenPtx.PtxLayout <> L64 constr
+def 5034:5045 <> scalar_align
+R5052:5054 CodegenPtx.PtxLayout <> lty ind
+binder 5048:5048 <> t:14
+R5059:5061 Corelib.Init.Datatypes <> nat ind
+R5066:5076 CodegenPtx.PtxLayout <> scalar_size def
+R5078:5078 CodegenPtx.PtxLayout <> t:14 var
+prf 5088:5103 <> scalar_align_pos
+binder 5114:5114 <> t:15
+R5118:5120 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R5121:5132 CodegenPtx.PtxLayout <> scalar_align def
+R5134:5134 CodegenPtx.PtxLayout <> t:15 var
+prf 5180:5197 <> scalar_align_cases
+binder 5208:5208 <> t:16
+R5229:5232 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R5225:5227 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5211:5222 CodegenPtx.PtxLayout <> scalar_align def
+R5224:5224 CodegenPtx.PtxLayout <> t:16 var
+R5247:5249 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R5233:5244 CodegenPtx.PtxLayout <> scalar_align def
+R5246:5246 CodegenPtx.PtxLayout <> t:16 var
+ind 5526:5531 <> lfield
+constr 5547:5551 <> LLeaf
+constr 5573:5576 <> LRec
+ind 5603:5609 <> lfields
+constr 5625:5628 <> LNil
+constr 5644:5648 <> LCons
+R5558:5561 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5555:5557 CodegenPtx.PtxLayout <> lty ind
+R5562:5567 CodegenPtx.PtxLayout <> lfield:17 ind
+R5587:5590 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5580:5586 CodegenPtx.PtxLayout <> lfields:18 ind
+R5591:5596 CodegenPtx.PtxLayout <> lfield:17 ind
+R5632:5638 CodegenPtx.PtxLayout <> lfields:18 ind
+R5655:5658 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5652:5654 Corelib.Init.Datatypes <> nat ind
+R5665:5668 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5659:5664 CodegenPtx.PtxLayout <> lfield:17 ind
+R5676:5679 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R5669:5675 CodegenPtx.PtxLayout <> lfields:18 ind
+R5680:5686 CodegenPtx.PtxLayout <> lfields:18 ind
+scheme 5526:5531 <> lfield_rect
+scheme 5526:5531 <> lfield_ind
+scheme 5526:5531 <> lfield_rec
+scheme 5526:5531 <> lfield_sind
+scheme 5603:5609 <> lfields_rect
+scheme 5603:5609 <> lfields_ind
+scheme 5603:5609 <> lfields_rec
+scheme 5603:5609 <> lfields_sind
+def 5697:5706 <> lfield_mut
+def 5749:5759 <> lfields_mut
+R5725:5730 CodegenPtx.PtxLayout <> lfield ind
+R5778:5784 CodegenPtx.PtxLayout <> lfields ind
+R5837:5846 CodegenPtx.PtxLayout <> lfield_mut scheme
+R5849:5859 CodegenPtx.PtxLayout <> lfields_mut scheme
+def 6010:6015 <> falign
+def 6121:6127 <> fsalign
+R6022:6027 CodegenPtx.PtxLayout <> lfield ind
+binder 6018:6018 <> f:21
+R6135:6141 CodegenPtx.PtxLayout <> lfields ind
+binder 6130:6131 <> fs:22
+R6032:6034 Corelib.Init.Datatypes <> nat ind
+R6146:6148 Corelib.Init.Datatypes <> nat ind
+R6047:6047 CodegenPtx.PtxLayout <> f:21 var
+R6058:6062 CodegenPtx.PtxLayout <> LLeaf constr
+R6069:6080 CodegenPtx.PtxLayout <> scalar_align def
+R6088:6091 CodegenPtx.PtxLayout <> LRec constr
+R6099:6105 CodegenPtx.PtxLayout <> fsalign:24 def
+R6161:6162 CodegenPtx.PtxLayout <> fs:22 var
+R6173:6176 CodegenPtx.PtxLayout <> LNil constr
+R6187:6191 CodegenPtx.PtxLayout <> LCons constr
+R6202:6208 Stdlib.Arith.PeanoNat Nat max def
+R6211:6216 CodegenPtx.PtxLayout <> falign:23 def
+R6222:6228 CodegenPtx.PtxLayout <> fsalign:24 def
+def 6475:6479 <> fsize
+def 6608:6612 <> fsend
+R6486:6491 CodegenPtx.PtxLayout <> lfield ind
+binder 6482:6482 <> f:27
+R6621:6623 Corelib.Init.Datatypes <> nat ind
+binder 6615:6617 <> off:28
+R6632:6638 CodegenPtx.PtxLayout <> lfields ind
+binder 6627:6628 <> fs:29
+R6496:6498 Corelib.Init.Datatypes <> nat ind
+R6643:6645 Corelib.Init.Datatypes <> nat ind
+R6511:6511 CodegenPtx.PtxLayout <> f:27 var
+R6522:6526 CodegenPtx.PtxLayout <> LLeaf constr
+R6533:6543 CodegenPtx.PtxLayout <> scalar_size def
+R6551:6554 CodegenPtx.PtxLayout <> LRec constr
+R6562:6569 CodegenPtx.PtxLayout <> align_up def
+R6572:6576 CodegenPtx.PtxLayout <> fsend:31 def
+R6585:6591 CodegenPtx.PtxLayout <> fsalign def
+R6658:6659 CodegenPtx.PtxLayout <> fs:29 var
+R6670:6673 CodegenPtx.PtxLayout <> LNil constr
+R6678:6680 CodegenPtx.PtxLayout <> off:28 var
+R6686:6690 CodegenPtx.PtxLayout <> LCons constr
+R6701:6705 CodegenPtx.PtxLayout <> fsend:31 def
+R6731:6733 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R6708:6715 CodegenPtx.PtxLayout <> align_up def
+R6717:6719 CodegenPtx.PtxLayout <> off:28 var
+R6722:6727 CodegenPtx.PtxLayout <> falign def
+R6734:6738 CodegenPtx.PtxLayout <> fsize:30 def
+prf 6823:6834 <> falign_cases
+R6840:6840 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R6895:6902 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R6964:6964 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+binder 6848:6848 <> f:34
+R6863:6866 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R6859:6861 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6851:6856 CodegenPtx.PtxLayout <> falign def
+R6858:6858 CodegenPtx.PtxLayout <> f:34 var
+R6879:6882 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R6875:6877 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6867:6872 CodegenPtx.PtxLayout <> falign def
+R6874:6874 CodegenPtx.PtxLayout <> f:34 var
+R6891:6893 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6883:6888 CodegenPtx.PtxLayout <> falign def
+R6890:6890 CodegenPtx.PtxLayout <> f:34 var
+binder 6910:6911 <> fs:35
+R6928:6931 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R6924:6926 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6914:6920 CodegenPtx.PtxLayout <> fsalign def
+R6922:6923 CodegenPtx.PtxLayout <> fs:35 var
+R6946:6949 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R6942:6944 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6932:6938 CodegenPtx.PtxLayout <> fsalign def
+R6940:6941 CodegenPtx.PtxLayout <> fs:35 var
+R6960:6962 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R6950:6956 CodegenPtx.PtxLayout <> fsalign def
+R6958:6959 CodegenPtx.PtxLayout <> fs:35 var
+R6982:6999 CodegenPtx.PtxLayout <> lfield_lfields_ind scheme
+R6982:6999 CodegenPtx.PtxLayout <> lfield_lfields_ind scheme
+R7033:7050 CodegenPtx.PtxLayout <> scalar_align_cases thm
+R7033:7050 CodegenPtx.PtxLayout <> scalar_align_cases thm
+prf 7258:7267 <> falign_pos
+binder 7278:7278 <> f:36
+R7282:7284 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R7285:7290 CodegenPtx.PtxLayout <> falign def
+R7292:7292 CodegenPtx.PtxLayout <> f:36 var
+R7322:7326 Corelib.Init.Logic <> proj1 thm
+R7328:7339 CodegenPtx.PtxLayout <> falign_cases thm
+R7322:7326 Corelib.Init.Logic <> proj1 thm
+R7328:7339 CodegenPtx.PtxLayout <> falign_cases thm
+prf 7386:7396 <> fsalign_pos
+binder 7407:7408 <> fs:37
+R7412:7414 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R7415:7421 CodegenPtx.PtxLayout <> fsalign def
+R7423:7424 CodegenPtx.PtxLayout <> fs:37 var
+R7455:7459 Corelib.Init.Logic <> proj2 thm
+R7461:7472 CodegenPtx.PtxLayout <> falign_cases thm
+R7455:7459 Corelib.Init.Logic <> proj2 thm
+R7461:7472 CodegenPtx.PtxLayout <> falign_cases thm
+prf 7592:7598 <> div_148
+binder 7609:7609 <> a:38
+binder 7611:7611 <> b:39
+R7616:7616 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7640:7644 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7622:7625 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R7618:7620 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7617:7617 CodegenPtx.PtxLayout <> a:38 var
+R7631:7634 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R7627:7629 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7626:7626 CodegenPtx.PtxLayout <> a:38 var
+R7636:7638 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7635:7635 CodegenPtx.PtxLayout <> a:38 var
+R7645:7645 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7669:7675 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7651:7654 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R7647:7649 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7646:7646 CodegenPtx.PtxLayout <> b:39 var
+R7660:7663 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R7656:7658 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7655:7655 CodegenPtx.PtxLayout <> b:39 var
+R7665:7667 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R7664:7664 CodegenPtx.PtxLayout <> b:39 var
+R7682:7685 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R7677:7680 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R7676:7676 CodegenPtx.PtxLayout <> a:38 var
+R7681:7681 CodegenPtx.PtxLayout <> b:39 var
+R7686:7695 Stdlib.Arith.PeanoNat Nat divide def
+R7697:7697 CodegenPtx.PtxLayout <> a:38 var
+R7699:7699 CodegenPtx.PtxLayout <> b:39 var
+prf 7908:7923 <> falign_div_max_l
+binder 7934:7934 <> f:40
+binder 7936:7936 <> r:41
+R7941:7950 Stdlib.Arith.PeanoNat Nat divide def
+R7953:7958 CodegenPtx.PtxLayout <> falign def
+R7960:7960 CodegenPtx.PtxLayout <> f:40 var
+R7964:7970 Stdlib.Arith.PeanoNat Nat max def
+R7973:7978 CodegenPtx.PtxLayout <> falign def
+R7980:7980 CodegenPtx.PtxLayout <> f:40 var
+R7984:7990 CodegenPtx.PtxLayout <> fsalign def
+R7992:7992 CodegenPtx.PtxLayout <> r:41 var
+R8024:8030 CodegenPtx.PtxLayout <> div_148 thm
+R8024:8030 CodegenPtx.PtxLayout <> div_148 thm
+R8044:8048 Corelib.Init.Logic <> proj1 thm
+R8050:8061 CodegenPtx.PtxLayout <> falign_cases thm
+R8044:8048 Corelib.Init.Logic <> proj1 thm
+R8050:8061 CodegenPtx.PtxLayout <> falign_cases thm
+R8079:8083 Corelib.Init.Logic <> proj1 thm
+R8085:8096 CodegenPtx.PtxLayout <> falign_cases thm
+R8140:8144 Corelib.Init.Logic <> proj2 thm
+R8146:8157 CodegenPtx.PtxLayout <> falign_cases thm
+R8079:8083 Corelib.Init.Logic <> proj1 thm
+R8085:8096 CodegenPtx.PtxLayout <> falign_cases thm
+R8140:8144 Corelib.Init.Logic <> proj2 thm
+R8146:8157 CodegenPtx.PtxLayout <> falign_cases thm
+R8140:8144 Corelib.Init.Logic <> proj2 thm
+R8146:8157 CodegenPtx.PtxLayout <> falign_cases thm
+R8140:8144 Corelib.Init.Logic <> proj2 thm
+R8146:8157 CodegenPtx.PtxLayout <> falign_cases thm
+R8210:8221 Stdlib.Arith.PeanoNat Nat le_max_l thm
+R8210:8221 Stdlib.Arith.PeanoNat Nat le_max_l thm
+prf 8236:8252 <> fsalign_div_max_r
+binder 8263:8263 <> f:42
+binder 8265:8265 <> r:43
+R8270:8279 Stdlib.Arith.PeanoNat Nat divide def
+R8282:8288 CodegenPtx.PtxLayout <> fsalign def
+R8290:8290 CodegenPtx.PtxLayout <> r:43 var
+R8294:8300 Stdlib.Arith.PeanoNat Nat max def
+R8303:8308 CodegenPtx.PtxLayout <> falign def
+R8310:8310 CodegenPtx.PtxLayout <> f:42 var
+R8314:8320 CodegenPtx.PtxLayout <> fsalign def
+R8322:8322 CodegenPtx.PtxLayout <> r:43 var
+R8354:8360 CodegenPtx.PtxLayout <> div_148 thm
+R8354:8360 CodegenPtx.PtxLayout <> div_148 thm
+R8374:8378 Corelib.Init.Logic <> proj2 thm
+R8380:8391 CodegenPtx.PtxLayout <> falign_cases thm
+R8374:8378 Corelib.Init.Logic <> proj2 thm
+R8380:8391 CodegenPtx.PtxLayout <> falign_cases thm
+R8409:8413 Corelib.Init.Logic <> proj1 thm
+R8415:8426 CodegenPtx.PtxLayout <> falign_cases thm
+R8470:8474 Corelib.Init.Logic <> proj2 thm
+R8476:8487 CodegenPtx.PtxLayout <> falign_cases thm
+R8409:8413 Corelib.Init.Logic <> proj1 thm
+R8415:8426 CodegenPtx.PtxLayout <> falign_cases thm
+R8470:8474 Corelib.Init.Logic <> proj2 thm
+R8476:8487 CodegenPtx.PtxLayout <> falign_cases thm
+R8470:8474 Corelib.Init.Logic <> proj2 thm
+R8476:8487 CodegenPtx.PtxLayout <> falign_cases thm
+R8470:8474 Corelib.Init.Logic <> proj2 thm
+R8476:8487 CodegenPtx.PtxLayout <> falign_cases thm
+R8540:8551 Stdlib.Arith.PeanoNat Nat le_max_r thm
+R8540:8551 Stdlib.Arith.PeanoNat Nat le_max_r thm
+prf 8654:8664 <> fsend_shift
+binder 8675:8676 <> fs:44
+binder 8678:8678 <> d:45
+binder 8680:8682 <> off:46
+R8712:8715 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R8687:8696 Stdlib.Arith.PeanoNat Nat divide def
+R8699:8705 CodegenPtx.PtxLayout <> fsalign def
+R8707:8708 CodegenPtx.PtxLayout <> fs:44 var
+R8711:8711 CodegenPtx.PtxLayout <> d:45 var
+R8734:8736 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R8716:8720 CodegenPtx.PtxLayout <> fsend def
+R8724:8726 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R8723:8723 CodegenPtx.PtxLayout <> d:45 var
+R8727:8729 CodegenPtx.PtxLayout <> off:46 var
+R8732:8733 CodegenPtx.PtxLayout <> fs:44 var
+R8738:8740 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R8737:8737 CodegenPtx.PtxLayout <> d:45 var
+R8741:8745 CodegenPtx.PtxLayout <> fsend def
+R8747:8749 CodegenPtx.PtxLayout <> off:46 var
+R8751:8752 CodegenPtx.PtxLayout <> fs:44 var
+R8918:8927 Stdlib.Arith.PeanoNat Nat divide def
+R8930:8935 CodegenPtx.PtxLayout <> falign def
+R8960:8975 Stdlib.Arith.PeanoNat Nat divide_trans def
+R8985:9000 CodegenPtx.PtxLayout <> falign_div_max_l thm
+R8918:8927 Stdlib.Arith.PeanoNat Nat divide def
+R8930:8935 CodegenPtx.PtxLayout <> falign def
+R8960:8975 Stdlib.Arith.PeanoNat Nat divide_trans def
+R8985:9000 CodegenPtx.PtxLayout <> falign_div_max_l thm
+R9033:9042 Stdlib.Arith.PeanoNat Nat divide def
+R9045:9051 CodegenPtx.PtxLayout <> fsalign def
+R9076:9091 Stdlib.Arith.PeanoNat Nat divide_trans def
+R9101:9117 CodegenPtx.PtxLayout <> fsalign_div_max_r thm
+R9033:9042 Stdlib.Arith.PeanoNat Nat divide def
+R9045:9051 CodegenPtx.PtxLayout <> fsalign def
+R9076:9091 Stdlib.Arith.PeanoNat Nat divide_trans def
+R9101:9117 CodegenPtx.PtxLayout <> fsalign_div_max_r thm
+R9146:9157 CodegenPtx.PtxLayout <> align_up_add thm
+R9166:9171 CodegenPtx.PtxLayout <> falign def
+R9177:9186 CodegenPtx.PtxLayout <> falign_pos thm
+R9146:9157 CodegenPtx.PtxLayout <> align_up_add thm
+R9166:9171 CodegenPtx.PtxLayout <> falign def
+R9177:9186 CodegenPtx.PtxLayout <> falign_pos thm
+R9146:9157 CodegenPtx.PtxLayout <> align_up_add thm
+R9166:9171 CodegenPtx.PtxLayout <> falign def
+R9177:9186 CodegenPtx.PtxLayout <> falign_pos thm
+R9236:9238 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9210:9212 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9213:9220 CodegenPtx.PtxLayout <> align_up def
+R9227:9232 CodegenPtx.PtxLayout <> falign def
+R9239:9243 CodegenPtx.PtxLayout <> fsize def
+R9261:9264 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9298:9298 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9288:9290 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9265:9272 CodegenPtx.PtxLayout <> align_up def
+R9279:9284 CodegenPtx.PtxLayout <> falign def
+R9291:9295 CodegenPtx.PtxLayout <> fsize def
+R9236:9238 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9210:9212 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9213:9220 CodegenPtx.PtxLayout <> align_up def
+R9227:9232 CodegenPtx.PtxLayout <> falign def
+R9239:9243 CodegenPtx.PtxLayout <> fsize def
+R9261:9264 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9298:9298 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9288:9290 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9265:9272 CodegenPtx.PtxLayout <> align_up def
+R9279:9284 CodegenPtx.PtxLayout <> falign def
+R9291:9295 CodegenPtx.PtxLayout <> fsize def
+R9351:9353 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9328:9335 CodegenPtx.PtxLayout <> align_up def
+R9342:9347 CodegenPtx.PtxLayout <> falign def
+R9354:9358 CodegenPtx.PtxLayout <> fsize def
+R9351:9353 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9328:9335 CodegenPtx.PtxLayout <> align_up def
+R9342:9347 CodegenPtx.PtxLayout <> falign def
+R9354:9358 CodegenPtx.PtxLayout <> fsize def
+R9351:9353 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9328:9335 CodegenPtx.PtxLayout <> align_up def
+R9342:9347 CodegenPtx.PtxLayout <> falign def
+R9354:9358 CodegenPtx.PtxLayout <> fsize def
+prf 9397:9411 <> fsend_translate
+binder 9422:9423 <> fs:47
+binder 9425:9427 <> off:48
+R9459:9462 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R9432:9441 Stdlib.Arith.PeanoNat Nat divide def
+R9444:9450 CodegenPtx.PtxLayout <> fsalign def
+R9452:9453 CodegenPtx.PtxLayout <> fs:47 var
+R9456:9458 CodegenPtx.PtxLayout <> off:48 var
+R9475:9477 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R9463:9467 CodegenPtx.PtxLayout <> fsend def
+R9469:9471 CodegenPtx.PtxLayout <> off:48 var
+R9473:9474 CodegenPtx.PtxLayout <> fs:47 var
+R9481:9483 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9478:9480 CodegenPtx.PtxLayout <> off:48 var
+R9484:9488 CodegenPtx.PtxLayout <> fsend def
+R9492:9493 CodegenPtx.PtxLayout <> fs:47 var
+R9539:9549 CodegenPtx.PtxLayout <> fsend_shift thm
+R9539:9549 CodegenPtx.PtxLayout <> fsend_shift thm
+R9539:9549 CodegenPtx.PtxLayout <> fsend_shift thm
+R9575:9585 Stdlib.Arith.PeanoNat Nat add_0_r thm
+R9575:9585 Stdlib.Arith.PeanoNat Nat add_0_r thm
+R9575:9585 Stdlib.Arith.PeanoNat Nat add_0_r thm
+prf 9613:9620 <> fsend_ge
+binder 9631:9632 <> fs:49
+binder 9634:9636 <> off:50
+R9642:9645 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R9639:9641 CodegenPtx.PtxLayout <> off:50 var
+R9646:9650 CodegenPtx.PtxLayout <> fsend def
+R9652:9654 CodegenPtx.PtxLayout <> off:50 var
+R9656:9657 CodegenPtx.PtxLayout <> fs:49 var
+R9770:9772 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9747:9754 CodegenPtx.PtxLayout <> align_up def
+R9761:9766 CodegenPtx.PtxLayout <> falign def
+R9773:9777 CodegenPtx.PtxLayout <> fsize def
+R9770:9772 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R9747:9754 CodegenPtx.PtxLayout <> align_up def
+R9761:9766 CodegenPtx.PtxLayout <> falign def
+R9773:9777 CodegenPtx.PtxLayout <> fsize def
+R9800:9810 CodegenPtx.PtxLayout <> align_up_ge thm
+R9817:9822 CodegenPtx.PtxLayout <> falign def
+R9828:9837 CodegenPtx.PtxLayout <> falign_pos thm
+R9800:9810 CodegenPtx.PtxLayout <> align_up_ge thm
+R9817:9822 CodegenPtx.PtxLayout <> falign def
+R9828:9837 CodegenPtx.PtxLayout <> falign_pos thm
+rec 10076:10079 <> leaf
+proj 10102:10108 <> lf_path
+proj 10124:10128 <> lf_ty
+proj 10139:10144 <> lf_off
+R10112:10115 Corelib.Init.Datatypes <> list ind
+R10117:10119 Corelib.Init.Datatypes <> nat ind
+R10132:10134 CodegenPtx.PtxLayout <> lty ind
+R10148:10150 Corelib.Init.Datatypes <> nat ind
+def 10167:10175 <> leaf_size
+R10182:10185 CodegenPtx.PtxLayout <> leaf rec
+binder 10178:10178 <> l:55
+R10190:10192 Corelib.Init.Datatypes <> nat ind
+R10197:10207 CodegenPtx.PtxLayout <> scalar_size def
+R10210:10214 CodegenPtx.PtxLayout <> lf_ty proj
+R10216:10216 CodegenPtx.PtxLayout <> l:55 var
+def 10416:10422 <> flatten
+def 10572:10579 <> flattens
+R10429:10432 Corelib.Init.Datatypes <> list ind
+R10434:10436 Corelib.Init.Datatypes <> nat ind
+binder 10425:10425 <> p:56
+R10446:10448 Corelib.Init.Datatypes <> nat ind
+binder 10440:10442 <> off:57
+R10456:10461 CodegenPtx.PtxLayout <> lfield ind
+binder 10452:10452 <> f:58
+R10586:10589 Corelib.Init.Datatypes <> list ind
+R10591:10593 Corelib.Init.Datatypes <> nat ind
+binder 10582:10582 <> p:59
+R10603:10605 Corelib.Init.Datatypes <> nat ind
+binder 10597:10599 <> off:60
+R10614:10620 CodegenPtx.PtxLayout <> lfields ind
+binder 10609:10610 <> fs:61
+R10466:10469 Corelib.Init.Datatypes <> list ind
+R10471:10474 CodegenPtx.PtxLayout <> leaf rec
+R10625:10628 Corelib.Init.Datatypes <> list ind
+R10630:10633 CodegenPtx.PtxLayout <> leaf rec
+R10487:10487 CodegenPtx.PtxLayout <> f:58 var
+R10498:10502 CodegenPtx.PtxLayout <> LLeaf constr
+R10509:10510 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R10525:10526 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R10511:10516 CodegenPtx.PtxLayout <> mkLeaf constr
+R10518:10518 CodegenPtx.PtxLayout <> p:56 var
+R10522:10524 CodegenPtx.PtxLayout <> off:57 var
+R10532:10535 CodegenPtx.PtxLayout <> LRec constr
+R10543:10550 CodegenPtx.PtxLayout <> flattens:63 def
+R10554:10556 CodegenPtx.PtxLayout <> off:57 var
+R10552:10552 CodegenPtx.PtxLayout <> p:56 var
+R10646:10647 CodegenPtx.PtxLayout <> fs:61 var
+R10658:10661 CodegenPtx.PtxLayout <> LNil constr
+R10666:10667 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R10673:10677 CodegenPtx.PtxLayout <> LCons constr
+R10703:10710 CodegenPtx.PtxLayout <> align_up def
+R10712:10714 CodegenPtx.PtxLayout <> off:60 var
+R10717:10722 CodegenPtx.PtxLayout <> falign def
+binder 10698:10698 <> o:66
+R10758:10761 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R10736:10742 CodegenPtx.PtxLayout <> flatten:62 def
+R10755:10755 CodegenPtx.PtxLayout <> o:66 var
+R10746:10749 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R10745:10745 CodegenPtx.PtxLayout <> p:59 var
+R10750:10750 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R10752:10752 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R10762:10769 CodegenPtx.PtxLayout <> flattens:63 def
+R10775:10777 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R10774:10774 CodegenPtx.PtxLayout <> o:66 var
+R10778:10782 CodegenPtx.PtxLayout <> fsize def
+R10771:10771 CodegenPtx.PtxLayout <> p:59 var
+def 11291:11303 <> sorted_packed
+R11311:11313 Corelib.Init.Datatypes <> nat ind
+binder 11306:11307 <> lo:67
+R11322:11325 Corelib.Init.Datatypes <> list ind
+R11327:11330 CodegenPtx.PtxLayout <> leaf rec
+binder 11317:11318 <> ls:68
+R11351:11352 CodegenPtx.PtxLayout <> ls:68 var
+R11363:11364 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R11369:11372 Corelib.Init.Logic <> True ind
+R11379:11382 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R11402:11405 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R11390:11393 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R11388:11389 CodegenPtx.PtxLayout <> lo:67 var
+R11394:11399 CodegenPtx.PtxLayout <> lf_off proj
+R11406:11418 CodegenPtx.PtxLayout <> sorted_packed:69 def
+R11429:11431 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R11421:11426 CodegenPtx.PtxLayout <> lf_off proj
+R11432:11440 CodegenPtx.PtxLayout <> leaf_size def
+def 11522:11527 <> end_of
+R11535:11537 Corelib.Init.Datatypes <> nat ind
+binder 11530:11531 <> lo:71
+R11546:11549 Corelib.Init.Datatypes <> list ind
+R11551:11554 CodegenPtx.PtxLayout <> leaf rec
+binder 11541:11542 <> ls:72
+R11559:11561 Corelib.Init.Datatypes <> nat ind
+R11574:11575 CodegenPtx.PtxLayout <> ls:72 var
+R11586:11587 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R11592:11593 CodegenPtx.PtxLayout <> lo:71 var
+R11600:11603 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R11609:11614 CodegenPtx.PtxLayout <> end_of:73 def
+R11625:11627 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R11617:11622 CodegenPtx.PtxLayout <> lf_off proj
+R11628:11636 CodegenPtx.PtxLayout <> leaf_size def
+prf 11657:11666 <> end_of_app
+binder 11677:11677 <> a:75
+binder 11679:11679 <> b:76
+binder 11681:11682 <> lo:77
+R11705:11707 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11687:11692 CodegenPtx.PtxLayout <> end_of def
+R11694:11695 CodegenPtx.PtxLayout <> lo:77 var
+R11699:11702 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R11698:11698 CodegenPtx.PtxLayout <> a:75 var
+R11703:11703 CodegenPtx.PtxLayout <> b:76 var
+R11708:11713 CodegenPtx.PtxLayout <> end_of def
+R11716:11721 CodegenPtx.PtxLayout <> end_of def
+R11723:11724 CodegenPtx.PtxLayout <> lo:77 var
+R11726:11726 CodegenPtx.PtxLayout <> a:75 var
+R11729:11729 CodegenPtx.PtxLayout <> b:76 var
+prf 11898:11914 <> end_of_cons_indep
+binder 11925:11925 <> l:78
+binder 11927:11927 <> r:79
+binder 11929:11930 <> lo:80
+binder 11932:11934 <> lo':81
+R11957:11959 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R11939:11944 CodegenPtx.PtxLayout <> end_of def
+R11946:11947 CodegenPtx.PtxLayout <> lo:80 var
+R11951:11954 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R11950:11950 CodegenPtx.PtxLayout <> l:78 var
+R11955:11955 CodegenPtx.PtxLayout <> r:79 var
+R11960:11965 CodegenPtx.PtxLayout <> end_of def
+R11967:11969 CodegenPtx.PtxLayout <> lo':81 var
+R11973:11976 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R11972:11972 CodegenPtx.PtxLayout <> l:78 var
+R11977:11977 CodegenPtx.PtxLayout <> r:79 var
+prf 12028:12040 <> sorted_weaken
+binder 12051:12052 <> ls:82
+binder 12054:12055 <> lo:83
+binder 12057:12059 <> lo':84
+R12073:12076 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12067:12070 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12064:12066 CodegenPtx.PtxLayout <> lo':84 var
+R12071:12072 CodegenPtx.PtxLayout <> lo:83 var
+R12096:12099 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12077:12089 CodegenPtx.PtxLayout <> sorted_packed def
+R12091:12092 CodegenPtx.PtxLayout <> lo:83 var
+R12094:12095 CodegenPtx.PtxLayout <> ls:82 var
+R12100:12112 CodegenPtx.PtxLayout <> sorted_packed def
+R12114:12116 CodegenPtx.PtxLayout <> lo':84 var
+R12118:12119 CodegenPtx.PtxLayout <> ls:82 var
+R12180:12180 Corelib.Init.Logic <> I constr
+R12180:12180 Corelib.Init.Logic <> I constr
+prf 12258:12267 <> sorted_app
+binder 12278:12278 <> a:85
+binder 12280:12280 <> b:86
+binder 12282:12283 <> lo:87
+R12306:12311 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12288:12300 CodegenPtx.PtxLayout <> sorted_packed def
+R12302:12303 CodegenPtx.PtxLayout <> lo:87 var
+R12305:12305 CodegenPtx.PtxLayout <> a:85 var
+R12341:12346 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12312:12324 CodegenPtx.PtxLayout <> sorted_packed def
+R12327:12332 CodegenPtx.PtxLayout <> end_of def
+R12334:12335 CodegenPtx.PtxLayout <> lo:87 var
+R12337:12337 CodegenPtx.PtxLayout <> a:85 var
+R12340:12340 CodegenPtx.PtxLayout <> b:86 var
+R12347:12359 CodegenPtx.PtxLayout <> sorted_packed def
+R12361:12362 CodegenPtx.PtxLayout <> lo:87 var
+R12366:12369 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R12365:12365 CodegenPtx.PtxLayout <> a:85 var
+R12370:12370 CodegenPtx.PtxLayout <> b:86 var
+prf 12553:12564 <> sorted_lower
+binder 12575:12576 <> ls:88
+binder 12578:12579 <> lo:89
+binder 12581:12581 <> l:90
+R12605:12608 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12586:12598 CodegenPtx.PtxLayout <> sorted_packed def
+R12600:12601 CodegenPtx.PtxLayout <> lo:89 var
+R12603:12604 CodegenPtx.PtxLayout <> ls:88 var
+R12616:12619 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12609:12610 Stdlib.Lists.List <> In def
+R12614:12615 CodegenPtx.PtxLayout <> ls:88 var
+R12612:12612 CodegenPtx.PtxLayout <> l:90 var
+R12622:12625 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12620:12621 CodegenPtx.PtxLayout <> lo:89 var
+R12626:12631 CodegenPtx.PtxLayout <> lf_off proj
+R12633:12633 CodegenPtx.PtxLayout <> l:90 var
+prf 12843:12851 <> end_of_ge
+binder 12862:12863 <> ls:91
+binder 12865:12866 <> lo:92
+R12888:12891 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R12869:12881 CodegenPtx.PtxLayout <> sorted_packed def
+R12883:12884 CodegenPtx.PtxLayout <> lo:92 var
+R12886:12887 CodegenPtx.PtxLayout <> ls:91 var
+R12894:12897 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R12892:12893 CodegenPtx.PtxLayout <> lo:92 var
+R12898:12903 CodegenPtx.PtxLayout <> end_of def
+R12905:12906 CodegenPtx.PtxLayout <> lo:92 var
+R12908:12909 CodegenPtx.PtxLayout <> ls:91 var
+prf 13052:13060 <> in_le_end
+binder 13071:13072 <> ls:93
+binder 13074:13075 <> lo:94
+binder 13077:13077 <> l:95
+R13101:13104 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13082:13094 CodegenPtx.PtxLayout <> sorted_packed def
+R13096:13097 CodegenPtx.PtxLayout <> lo:94 var
+R13099:13100 CodegenPtx.PtxLayout <> ls:93 var
+R13112:13115 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13105:13106 Stdlib.Lists.List <> In def
+R13110:13111 CodegenPtx.PtxLayout <> ls:93 var
+R13108:13108 CodegenPtx.PtxLayout <> l:95 var
+R13138:13141 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13124:13126 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13116:13121 CodegenPtx.PtxLayout <> lf_off proj
+R13123:13123 CodegenPtx.PtxLayout <> l:95 var
+R13127:13135 CodegenPtx.PtxLayout <> leaf_size def
+R13137:13137 CodegenPtx.PtxLayout <> l:95 var
+R13142:13147 CodegenPtx.PtxLayout <> end_of def
+R13149:13150 CodegenPtx.PtxLayout <> lo:94 var
+R13152:13153 CodegenPtx.PtxLayout <> ls:93 var
+R13323:13331 CodegenPtx.PtxLayout <> end_of_ge thm
+R13345:13347 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13337:13342 CodegenPtx.PtxLayout <> lf_off proj
+R13348:13356 CodegenPtx.PtxLayout <> leaf_size def
+R13323:13331 CodegenPtx.PtxLayout <> end_of_ge thm
+R13345:13347 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13337:13342 CodegenPtx.PtxLayout <> lf_off proj
+R13348:13356 CodegenPtx.PtxLayout <> leaf_size def
+prf 13412:13424 <> sorted_nth_le
+binder 13435:13436 <> ls:96
+binder 13438:13439 <> lo:97
+binder 13441:13441 <> i:98
+binder 13443:13443 <> j:99
+binder 13445:13446 <> li:100
+binder 13448:13449 <> lj:101
+R13473:13476 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13454:13466 CodegenPtx.PtxLayout <> sorted_packed def
+R13468:13469 CodegenPtx.PtxLayout <> lo:97 var
+R13471:13472 CodegenPtx.PtxLayout <> ls:96 var
+R13482:13487 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13478:13480 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R13477:13477 CodegenPtx.PtxLayout <> i:98 var
+R13481:13481 CodegenPtx.PtxLayout <> j:99 var
+R13512:13515 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13502:13504 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13488:13496 Stdlib.Lists.List <> nth_error def
+R13501:13501 CodegenPtx.PtxLayout <> i:98 var
+R13498:13499 CodegenPtx.PtxLayout <> ls:96 var
+R13505:13508 Corelib.Init.Datatypes <> Some constr
+R13510:13511 CodegenPtx.PtxLayout <> li:100 var
+R13540:13545 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R13530:13532 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R13516:13524 Stdlib.Lists.List <> nth_error def
+R13529:13529 CodegenPtx.PtxLayout <> j:99 var
+R13526:13527 CodegenPtx.PtxLayout <> ls:96 var
+R13533:13536 Corelib.Init.Datatypes <> Some constr
+R13538:13539 CodegenPtx.PtxLayout <> lj:101 var
+R13570:13573 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13555:13557 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13546:13551 CodegenPtx.PtxLayout <> lf_off proj
+R13553:13554 CodegenPtx.PtxLayout <> li:100 var
+R13558:13566 CodegenPtx.PtxLayout <> leaf_size def
+R13568:13569 CodegenPtx.PtxLayout <> li:100 var
+R13574:13579 CodegenPtx.PtxLayout <> lf_off proj
+R13581:13582 CodegenPtx.PtxLayout <> lj:101 var
+R13870:13873 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13855:13857 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13846:13851 CodegenPtx.PtxLayout <> lf_off proj
+R13858:13866 CodegenPtx.PtxLayout <> leaf_size def
+R13874:13879 CodegenPtx.PtxLayout <> lf_off proj
+R13904:13915 CodegenPtx.PtxLayout <> sorted_lower thm
+R13937:13948 Stdlib.Lists.List <> nth_error_In thm
+R13870:13873 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R13855:13857 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R13846:13851 CodegenPtx.PtxLayout <> lf_off proj
+R13858:13866 CodegenPtx.PtxLayout <> leaf_size def
+R13874:13879 CodegenPtx.PtxLayout <> lf_off proj
+R13904:13915 CodegenPtx.PtxLayout <> sorted_lower thm
+R13937:13948 Stdlib.Lists.List <> nth_error_In thm
+R14056:14058 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R14048:14053 CodegenPtx.PtxLayout <> lf_off proj
+R14059:14067 CodegenPtx.PtxLayout <> leaf_size def
+R14056:14058 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R14048:14053 CodegenPtx.PtxLayout <> lf_off proj
+R14059:14067 CodegenPtx.PtxLayout <> leaf_size def
+prf 14570:14587 <> flatten_sorted_mut
+R14593:14593 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R14738:14745 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R14860:14860 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+binder 14601:14601 <> f:102
+binder 14603:14603 <> p:103
+binder 14605:14607 <> off:104
+R14640:14648 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R14615:14624 Stdlib.Arith.PeanoNat Nat divide def
+R14627:14632 CodegenPtx.PtxLayout <> falign def
+R14634:14634 CodegenPtx.PtxLayout <> f:102 var
+R14637:14639 CodegenPtx.PtxLayout <> off:104 var
+R14684:14692 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R14649:14661 CodegenPtx.PtxLayout <> sorted_packed def
+R14663:14665 CodegenPtx.PtxLayout <> off:104 var
+R14668:14674 CodegenPtx.PtxLayout <> flatten def
+R14676:14676 CodegenPtx.PtxLayout <> p:103 var
+R14678:14680 CodegenPtx.PtxLayout <> off:104 var
+R14682:14682 CodegenPtx.PtxLayout <> f:102 var
+R14721:14724 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R14693:14698 CodegenPtx.PtxLayout <> end_of def
+R14700:14702 CodegenPtx.PtxLayout <> off:104 var
+R14705:14711 CodegenPtx.PtxLayout <> flatten def
+R14713:14713 CodegenPtx.PtxLayout <> p:103 var
+R14715:14717 CodegenPtx.PtxLayout <> off:104 var
+R14719:14719 CodegenPtx.PtxLayout <> f:102 var
+R14728:14730 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R14725:14727 CodegenPtx.PtxLayout <> off:104 var
+R14731:14735 CodegenPtx.PtxLayout <> fsize def
+R14737:14737 CodegenPtx.PtxLayout <> f:102 var
+binder 14753:14754 <> fs:105
+binder 14756:14756 <> p:106
+binder 14758:14760 <> off:107
+R14805:14813 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R14768:14780 CodegenPtx.PtxLayout <> sorted_packed def
+R14782:14784 CodegenPtx.PtxLayout <> off:107 var
+R14787:14794 CodegenPtx.PtxLayout <> flattens def
+R14796:14796 CodegenPtx.PtxLayout <> p:106 var
+R14798:14800 CodegenPtx.PtxLayout <> off:107 var
+R14802:14803 CodegenPtx.PtxLayout <> fs:105 var
+R14844:14847 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R14814:14819 CodegenPtx.PtxLayout <> end_of def
+R14821:14823 CodegenPtx.PtxLayout <> off:107 var
+R14826:14833 CodegenPtx.PtxLayout <> flattens def
+R14835:14835 CodegenPtx.PtxLayout <> p:106 var
+R14837:14839 CodegenPtx.PtxLayout <> off:107 var
+R14841:14842 CodegenPtx.PtxLayout <> fs:105 var
+R14848:14852 CodegenPtx.PtxLayout <> fsend def
+R14854:14856 CodegenPtx.PtxLayout <> off:107 var
+R14858:14859 CodegenPtx.PtxLayout <> fs:105 var
+R14878:14895 CodegenPtx.PtxLayout <> lfield_lfields_ind scheme
+R14878:14895 CodegenPtx.PtxLayout <> lfield_lfields_ind scheme
+R14953:14961 CodegenPtx.PtxLayout <> leaf_size def
+R15003:15003 Corelib.Init.Logic <> I constr
+R15003:15003 Corelib.Init.Logic <> I constr
+R15304:15318 CodegenPtx.PtxLayout <> fsend_translate thm
+R15304:15318 CodegenPtx.PtxLayout <> fsend_translate thm
+R15304:15318 CodegenPtx.PtxLayout <> fsend_translate thm
+R15358:15368 CodegenPtx.PtxLayout <> align_up_ge thm
+R15371:15375 CodegenPtx.PtxLayout <> fsend def
+R15384:15390 CodegenPtx.PtxLayout <> fsalign def
+R15397:15407 CodegenPtx.PtxLayout <> fsalign_pos thm
+R15358:15368 CodegenPtx.PtxLayout <> align_up_ge thm
+R15371:15375 CodegenPtx.PtxLayout <> fsend def
+R15384:15390 CodegenPtx.PtxLayout <> fsalign def
+R15397:15407 CodegenPtx.PtxLayout <> fsalign_pos thm
+R15474:15474 Corelib.Init.Logic <> I constr
+R15474:15474 Corelib.Init.Logic <> I constr
+R15559:15566 CodegenPtx.PtxLayout <> align_up def
+R15573:15578 CodegenPtx.PtxLayout <> falign def
+R15559:15566 CodegenPtx.PtxLayout <> align_up def
+R15573:15578 CodegenPtx.PtxLayout <> falign def
+R15607:15610 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15624:15634 CodegenPtx.PtxLayout <> align_up_ge thm
+R15643:15652 CodegenPtx.PtxLayout <> falign_pos thm
+R15607:15610 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R15624:15634 CodegenPtx.PtxLayout <> align_up_ge thm
+R15643:15652 CodegenPtx.PtxLayout <> falign_pos thm
+R15676:15685 Stdlib.Arith.PeanoNat Nat divide def
+R15688:15693 CodegenPtx.PtxLayout <> falign def
+R15710:15724 CodegenPtx.PtxLayout <> align_up_divide thm
+R15676:15685 Stdlib.Arith.PeanoNat Nat divide def
+R15688:15693 CodegenPtx.PtxLayout <> falign def
+R15710:15724 CodegenPtx.PtxLayout <> align_up_divide thm
+R15747:15750 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R15751:15751 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R15753:15753 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R15747:15750 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R15751:15751 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R15753:15753 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R15803:15805 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15806:15810 CodegenPtx.PtxLayout <> fsize def
+R15803:15805 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15806:15810 CodegenPtx.PtxLayout <> fsize def
+R15894:15906 CodegenPtx.PtxLayout <> sorted_packed def
+R15948:15951 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R15926:15932 CodegenPtx.PtxLayout <> flatten def
+R15936:15939 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R15940:15940 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R15942:15942 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R15952:15959 CodegenPtx.PtxLayout <> flattens def
+R15965:15967 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15968:15972 CodegenPtx.PtxLayout <> fsize def
+R15894:15906 CodegenPtx.PtxLayout <> sorted_packed def
+R15948:15951 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R15926:15932 CodegenPtx.PtxLayout <> flatten def
+R15936:15939 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R15940:15940 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R15942:15942 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R15952:15959 CodegenPtx.PtxLayout <> flattens def
+R15965:15967 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R15968:15972 CodegenPtx.PtxLayout <> fsize def
+R15994:16003 CodegenPtx.PtxLayout <> sorted_app thm
+R15994:16003 CodegenPtx.PtxLayout <> sorted_app thm
+R16021:16033 CodegenPtx.PtxLayout <> sorted_weaken thm
+R16021:16033 CodegenPtx.PtxLayout <> sorted_weaken thm
+R16258:16261 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16223:16228 CodegenPtx.PtxLayout <> end_of def
+R16235:16241 CodegenPtx.PtxLayout <> flatten def
+R16245:16248 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R16249:16249 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16251:16251 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16263:16265 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16266:16270 CodegenPtx.PtxLayout <> fsize def
+R16258:16261 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16223:16228 CodegenPtx.PtxLayout <> end_of def
+R16235:16241 CodegenPtx.PtxLayout <> flatten def
+R16245:16248 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R16249:16249 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16251:16251 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16263:16265 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16266:16270 CodegenPtx.PtxLayout <> fsize def
+R16296:16302 CodegenPtx.PtxLayout <> flatten def
+R16306:16309 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R16310:16310 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16312:16312 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16296:16302 CodegenPtx.PtxLayout <> flatten def
+R16306:16309 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R16310:16310 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16312:16312 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16359:16366 CodegenPtx.PtxLayout <> fsend_ge thm
+R16372:16374 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16375:16379 CodegenPtx.PtxLayout <> fsize def
+R16359:16366 CodegenPtx.PtxLayout <> fsend_ge thm
+R16372:16374 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16375:16379 CodegenPtx.PtxLayout <> fsize def
+R16435:16445 CodegenPtx.PtxLayout <> align_up_ge thm
+R16452:16457 CodegenPtx.PtxLayout <> falign def
+R16463:16472 CodegenPtx.PtxLayout <> falign_pos thm
+R16435:16445 CodegenPtx.PtxLayout <> align_up_ge thm
+R16452:16457 CodegenPtx.PtxLayout <> falign def
+R16463:16472 CodegenPtx.PtxLayout <> falign_pos thm
+R16505:16521 CodegenPtx.PtxLayout <> end_of_cons_indep thm
+R16505:16521 CodegenPtx.PtxLayout <> end_of_cons_indep thm
+R16505:16521 CodegenPtx.PtxLayout <> end_of_cons_indep thm
+R16566:16578 CodegenPtx.PtxLayout <> sorted_weaken thm
+R16584:16586 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16587:16591 CodegenPtx.PtxLayout <> fsize def
+R16597:16602 CodegenPtx.PtxLayout <> end_of def
+R16609:16615 CodegenPtx.PtxLayout <> flatten def
+R16619:16620 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R16621:16621 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16623:16623 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16566:16578 CodegenPtx.PtxLayout <> sorted_weaken thm
+R16584:16586 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16587:16591 CodegenPtx.PtxLayout <> fsize def
+R16597:16602 CodegenPtx.PtxLayout <> end_of def
+R16609:16615 CodegenPtx.PtxLayout <> flatten def
+R16619:16620 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R16621:16621 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16623:16623 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16727:16736 CodegenPtx.PtxLayout <> end_of_app thm
+R16727:16736 CodegenPtx.PtxLayout <> end_of_app thm
+R16727:16736 CodegenPtx.PtxLayout <> end_of_app thm
+R16853:16856 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16818:16823 CodegenPtx.PtxLayout <> end_of def
+R16830:16836 CodegenPtx.PtxLayout <> flatten def
+R16840:16843 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R16844:16844 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16846:16846 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16858:16860 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16861:16865 CodegenPtx.PtxLayout <> fsize def
+R16853:16856 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R16818:16823 CodegenPtx.PtxLayout <> end_of def
+R16830:16836 CodegenPtx.PtxLayout <> flatten def
+R16840:16843 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R16844:16844 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16846:16846 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16858:16860 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R16861:16865 CodegenPtx.PtxLayout <> fsize def
+R16887:16893 CodegenPtx.PtxLayout <> flatten def
+R16897:16900 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R16901:16901 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16903:16903 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16887:16893 CodegenPtx.PtxLayout <> flatten def
+R16897:16900 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R16901:16901 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16903:16903 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R16946:16956 CodegenPtx.PtxLayout <> align_up_ge thm
+R16963:16968 CodegenPtx.PtxLayout <> falign def
+R16974:16983 CodegenPtx.PtxLayout <> falign_pos thm
+R16946:16956 CodegenPtx.PtxLayout <> align_up_ge thm
+R16963:16968 CodegenPtx.PtxLayout <> falign def
+R16974:16983 CodegenPtx.PtxLayout <> falign_pos thm
+R17012:17028 CodegenPtx.PtxLayout <> end_of_cons_indep thm
+R17012:17028 CodegenPtx.PtxLayout <> end_of_cons_indep thm
+R17012:17028 CodegenPtx.PtxLayout <> end_of_cons_indep thm
+R17072:17079 CodegenPtx.PtxLayout <> flattens def
+R17085:17087 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R17088:17092 CodegenPtx.PtxLayout <> fsize def
+R17072:17079 CodegenPtx.PtxLayout <> flattens def
+R17085:17087 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R17088:17092 CodegenPtx.PtxLayout <> fsize def
+R17133:17140 CodegenPtx.PtxLayout <> fsend_ge thm
+R17146:17148 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R17149:17153 CodegenPtx.PtxLayout <> fsize def
+R17133:17140 CodegenPtx.PtxLayout <> fsend_ge thm
+R17146:17148 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R17149:17153 CodegenPtx.PtxLayout <> fsize def
+R17180:17196 CodegenPtx.PtxLayout <> end_of_cons_indep thm
+R17204:17209 CodegenPtx.PtxLayout <> end_of def
+R17216:17222 CodegenPtx.PtxLayout <> flatten def
+R17226:17227 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R17228:17228 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R17230:17230 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R17241:17243 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R17244:17248 CodegenPtx.PtxLayout <> fsize def
+R17180:17196 CodegenPtx.PtxLayout <> end_of_cons_indep thm
+R17204:17209 CodegenPtx.PtxLayout <> end_of def
+R17216:17222 CodegenPtx.PtxLayout <> flatten def
+R17226:17227 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R17228:17228 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R17230:17230 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R17241:17243 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R17244:17248 CodegenPtx.PtxLayout <> fsize def
+R17180:17196 CodegenPtx.PtxLayout <> end_of_cons_indep thm
+R17204:17209 CodegenPtx.PtxLayout <> end_of def
+R17216:17222 CodegenPtx.PtxLayout <> flatten def
+R17226:17227 Corelib.Init.Datatypes <> ::list_scope:x_'++'_x not
+R17228:17228 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R17230:17230 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R17241:17243 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R17244:17248 CodegenPtx.PtxLayout <> fsize def
+prf 17286:17300 <> flattens_sorted
+binder 17311:17312 <> fs:108
+binder 17314:17314 <> p:109
+binder 17316:17318 <> off:110
+R17321:17333 CodegenPtx.PtxLayout <> sorted_packed def
+R17335:17337 CodegenPtx.PtxLayout <> off:110 var
+R17340:17347 CodegenPtx.PtxLayout <> flattens def
+R17349:17349 CodegenPtx.PtxLayout <> p:109 var
+R17351:17353 CodegenPtx.PtxLayout <> off:110 var
+R17355:17356 CodegenPtx.PtxLayout <> fs:108 var
+R17391:17395 Corelib.Init.Logic <> proj2 thm
+R17397:17414 CodegenPtx.PtxLayout <> flatten_sorted_mut thm
+R17391:17395 Corelib.Init.Logic <> proj2 thm
+R17397:17414 CodegenPtx.PtxLayout <> flatten_sorted_mut thm
+prf 17430:17441 <> flattens_end
+binder 17452:17453 <> fs:111
+binder 17455:17455 <> p:112
+binder 17457:17459 <> off:113
+R17494:17497 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R17464:17469 CodegenPtx.PtxLayout <> end_of def
+R17471:17473 CodegenPtx.PtxLayout <> off:113 var
+R17476:17483 CodegenPtx.PtxLayout <> flattens def
+R17485:17485 CodegenPtx.PtxLayout <> p:112 var
+R17487:17489 CodegenPtx.PtxLayout <> off:113 var
+R17491:17492 CodegenPtx.PtxLayout <> fs:111 var
+R17498:17502 CodegenPtx.PtxLayout <> fsend def
+R17504:17506 CodegenPtx.PtxLayout <> off:113 var
+R17508:17509 CodegenPtx.PtxLayout <> fs:111 var
+R17543:17547 Corelib.Init.Logic <> proj2 thm
+R17549:17566 CodegenPtx.PtxLayout <> flatten_sorted_mut thm
+R17543:17547 Corelib.Init.Logic <> proj2 thm
+R17549:17566 CodegenPtx.PtxLayout <> flatten_sorted_mut thm
+prf 17742:17760 <> flatten_aligned_mut
+R17766:17766 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R17911:17918 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R18032:18032 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+binder 17774:17774 <> f:114
+binder 17776:17776 <> p:115
+binder 17778:17780 <> off:116
+R17813:17821 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R17788:17797 Stdlib.Arith.PeanoNat Nat divide def
+R17800:17805 CodegenPtx.PtxLayout <> falign def
+R17807:17807 CodegenPtx.PtxLayout <> f:114 var
+R17810:17812 CodegenPtx.PtxLayout <> off:116 var
+binder 17829:17829 <> l:117
+R17854:17864 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R17832:17833 Stdlib.Lists.List <> In def
+R17838:17844 CodegenPtx.PtxLayout <> flatten def
+R17846:17846 CodegenPtx.PtxLayout <> p:115 var
+R17848:17850 CodegenPtx.PtxLayout <> off:116 var
+R17852:17852 CodegenPtx.PtxLayout <> f:114 var
+R17835:17835 CodegenPtx.PtxLayout <> l:117 var
+R17865:17874 Stdlib.Arith.PeanoNat Nat divide def
+R17877:17888 CodegenPtx.PtxLayout <> scalar_align def
+R17891:17895 CodegenPtx.PtxLayout <> lf_ty proj
+R17897:17897 CodegenPtx.PtxLayout <> l:117 var
+R17902:17907 CodegenPtx.PtxLayout <> lf_off proj
+R17909:17909 CodegenPtx.PtxLayout <> l:117 var
+binder 17926:17927 <> fs:118
+binder 17929:17929 <> p:119
+binder 17931:17933 <> off:120
+binder 17948:17948 <> l:121
+R17975:17985 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R17951:17952 Stdlib.Lists.List <> In def
+R17957:17964 CodegenPtx.PtxLayout <> flattens def
+R17966:17966 CodegenPtx.PtxLayout <> p:119 var
+R17968:17970 CodegenPtx.PtxLayout <> off:120 var
+R17972:17973 CodegenPtx.PtxLayout <> fs:118 var
+R17954:17954 CodegenPtx.PtxLayout <> l:121 var
+R17986:17995 Stdlib.Arith.PeanoNat Nat divide def
+R17998:18009 CodegenPtx.PtxLayout <> scalar_align def
+R18012:18016 CodegenPtx.PtxLayout <> lf_ty proj
+R18018:18018 CodegenPtx.PtxLayout <> l:121 var
+R18023:18028 CodegenPtx.PtxLayout <> lf_off proj
+R18030:18030 CodegenPtx.PtxLayout <> l:121 var
+R18050:18067 CodegenPtx.PtxLayout <> lfield_lfields_ind scheme
+R18050:18067 CodegenPtx.PtxLayout <> lfield_lfields_ind scheme
+R18422:18430 Stdlib.Lists.List <> in_app_or thm
+R18422:18430 Stdlib.Lists.List <> in_app_or thm
+R18495:18509 CodegenPtx.PtxLayout <> align_up_divide thm
+R18495:18509 CodegenPtx.PtxLayout <> align_up_divide thm
+prf 18563:18578 <> flattens_aligned
+binder 18589:18590 <> fs:122
+binder 18592:18592 <> p:123
+binder 18594:18596 <> off:124
+binder 18598:18598 <> l:125
+R18627:18632 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R18603:18604 Stdlib.Lists.List <> In def
+R18609:18616 CodegenPtx.PtxLayout <> flattens def
+R18618:18618 CodegenPtx.PtxLayout <> p:123 var
+R18620:18622 CodegenPtx.PtxLayout <> off:124 var
+R18624:18625 CodegenPtx.PtxLayout <> fs:122 var
+R18606:18606 CodegenPtx.PtxLayout <> l:125 var
+R18633:18642 Stdlib.Arith.PeanoNat Nat divide def
+R18645:18656 CodegenPtx.PtxLayout <> scalar_align def
+R18659:18663 CodegenPtx.PtxLayout <> lf_ty proj
+R18665:18665 CodegenPtx.PtxLayout <> l:125 var
+R18670:18675 CodegenPtx.PtxLayout <> lf_off proj
+R18677:18677 CodegenPtx.PtxLayout <> l:125 var
+R18704:18708 Corelib.Init.Logic <> proj2 thm
+R18710:18728 CodegenPtx.PtxLayout <> flatten_aligned_mut thm
+R18704:18708 Corelib.Init.Logic <> proj2 thm
+R18710:18728 CodegenPtx.PtxLayout <> flatten_aligned_mut thm
+def 18935:18947 <> record_leaves
+R18955:18961 CodegenPtx.PtxLayout <> lfields ind
+binder 18950:18951 <> fs:126
+R18966:18969 Corelib.Init.Datatypes <> list ind
+R18971:18974 CodegenPtx.PtxLayout <> leaf rec
+R18979:18986 CodegenPtx.PtxLayout <> flattens def
+R18988:18989 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R18993:18994 CodegenPtx.PtxLayout <> fs:126 var
+def 19151:19161 <> record_size
+R19169:19175 CodegenPtx.PtxLayout <> lfields ind
+binder 19164:19165 <> fs:127
+R19180:19182 Corelib.Init.Datatypes <> nat ind
+R19189:19196 CodegenPtx.PtxLayout <> align_up def
+R19199:19203 CodegenPtx.PtxLayout <> fsend def
+R19207:19208 CodegenPtx.PtxLayout <> fs:127 var
+R19212:19218 CodegenPtx.PtxLayout <> fsalign def
+R19220:19221 CodegenPtx.PtxLayout <> fs:127 var
+def 19235:19247 <> field_offsets
+R19256:19258 Corelib.Init.Datatypes <> nat ind
+binder 19250:19252 <> off:128
+R19267:19273 CodegenPtx.PtxLayout <> lfields ind
+binder 19262:19263 <> fs:129
+R19278:19281 Corelib.Init.Datatypes <> list ind
+R19287:19289 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R19284:19286 Corelib.Init.Datatypes <> nat ind
+R19290:19292 Corelib.Init.Datatypes <> nat ind
+R19306:19307 CodegenPtx.PtxLayout <> fs:129 var
+R19318:19321 CodegenPtx.PtxLayout <> LNil constr
+R19326:19327 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R19333:19337 CodegenPtx.PtxLayout <> LCons constr
+R19363:19370 CodegenPtx.PtxLayout <> align_up def
+R19372:19374 CodegenPtx.PtxLayout <> off:128 var
+R19377:19382 CodegenPtx.PtxLayout <> falign def
+binder 19358:19358 <> o:132
+R19402:19405 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R19396:19396 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R19398:19399 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R19401:19401 Corelib.Init.Datatypes <> ::core_scope:'('_x_','_x_','_'..'_','_x_')' not
+R19400:19400 CodegenPtx.PtxLayout <> o:132 var
+R19406:19418 CodegenPtx.PtxLayout <> field_offsets:130 def
+R19422:19424 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R19421:19421 CodegenPtx.PtxLayout <> o:132 var
+R19425:19429 CodegenPtx.PtxLayout <> fsize def
+def 19455:19474 <> record_field_offsets
+R19482:19488 CodegenPtx.PtxLayout <> lfields ind
+binder 19477:19478 <> fs:133
+R19493:19496 Corelib.Init.Datatypes <> list ind
+R19502:19504 Corelib.Init.Datatypes <> ::type_scope:x_'*'_x not
+R19499:19501 Corelib.Init.Datatypes <> nat ind
+R19505:19507 Corelib.Init.Datatypes <> nat ind
+R19515:19527 CodegenPtx.PtxLayout <> field_offsets def
+R19531:19532 CodegenPtx.PtxLayout <> fs:133 var
+prf 19542:19554 <> record_sorted
+binder 19565:19566 <> fs:134
+R19569:19581 CodegenPtx.PtxLayout <> sorted_packed def
+R19586:19598 CodegenPtx.PtxLayout <> record_leaves def
+R19600:19601 CodegenPtx.PtxLayout <> fs:134 var
+R19629:19643 CodegenPtx.PtxLayout <> flattens_sorted thm
+R19629:19643 CodegenPtx.PtxLayout <> flattens_sorted thm
+prf 19889:19913 <> record_size_is_padded_end
+binder 19924:19925 <> fs:135
+R19944:19946 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R19930:19940 CodegenPtx.PtxLayout <> record_size def
+R19942:19943 CodegenPtx.PtxLayout <> fs:135 var
+R19947:19954 CodegenPtx.PtxLayout <> align_up def
+R19957:19961 CodegenPtx.PtxLayout <> fsend def
+R19965:19966 CodegenPtx.PtxLayout <> fs:135 var
+R19970:19976 CodegenPtx.PtxLayout <> fsalign def
+R19978:19979 CodegenPtx.PtxLayout <> fs:135 var
+prf 20094:20114 <> record_leaf_in_bounds
+binder 20125:20126 <> fs:136
+binder 20128:20128 <> l:137
+R20156:20161 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20133:20134 Stdlib.Lists.List <> In def
+R20139:20151 CodegenPtx.PtxLayout <> record_leaves def
+R20153:20154 CodegenPtx.PtxLayout <> fs:136 var
+R20136:20136 CodegenPtx.PtxLayout <> l:137 var
+R20184:20187 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R20170:20172 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R20162:20167 CodegenPtx.PtxLayout <> lf_off proj
+R20169:20169 CodegenPtx.PtxLayout <> l:137 var
+R20173:20181 CodegenPtx.PtxLayout <> leaf_size def
+R20183:20183 CodegenPtx.PtxLayout <> l:137 var
+R20188:20198 CodegenPtx.PtxLayout <> record_size def
+R20200:20201 CodegenPtx.PtxLayout <> fs:136 var
+R20244:20252 CodegenPtx.PtxLayout <> in_le_end thm
+R20255:20267 CodegenPtx.PtxLayout <> record_leaves def
+R20278:20290 CodegenPtx.PtxLayout <> record_sorted thm
+R20244:20252 CodegenPtx.PtxLayout <> in_le_end thm
+R20255:20267 CodegenPtx.PtxLayout <> record_leaves def
+R20278:20290 CodegenPtx.PtxLayout <> record_sorted thm
+R20321:20332 CodegenPtx.PtxLayout <> flattens_end thm
+R20337:20338 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R20321:20332 CodegenPtx.PtxLayout <> flattens_end thm
+R20337:20338 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R20359:20371 CodegenPtx.PtxLayout <> record_leaves def
+R20393:20403 CodegenPtx.PtxLayout <> align_up_ge thm
+R20406:20410 CodegenPtx.PtxLayout <> fsend def
+R20419:20425 CodegenPtx.PtxLayout <> fsalign def
+R20432:20442 CodegenPtx.PtxLayout <> fsalign_pos thm
+R20393:20403 CodegenPtx.PtxLayout <> align_up_ge thm
+R20406:20410 CodegenPtx.PtxLayout <> fsend def
+R20419:20425 CodegenPtx.PtxLayout <> fsalign def
+R20432:20442 CodegenPtx.PtxLayout <> fsalign_pos thm
+R20459:20469 CodegenPtx.PtxLayout <> record_size def
+prf 20606:20627 <> record_leaf_nonoverlap
+binder 20638:20639 <> fs:138
+binder 20641:20641 <> i:139
+binder 20643:20643 <> j:140
+binder 20645:20646 <> li:141
+binder 20648:20649 <> lj:142
+R20660:20665 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20655:20658 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R20654:20654 CodegenPtx.PtxLayout <> i:139 var
+R20659:20659 CodegenPtx.PtxLayout <> j:140 var
+R20706:20711 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20696:20698 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20666:20674 Stdlib.Lists.List <> nth_error def
+R20695:20695 CodegenPtx.PtxLayout <> i:139 var
+R20677:20689 CodegenPtx.PtxLayout <> record_leaves def
+R20691:20692 CodegenPtx.PtxLayout <> fs:138 var
+R20699:20702 Corelib.Init.Datatypes <> Some constr
+R20704:20705 CodegenPtx.PtxLayout <> li:141 var
+R20752:20757 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R20742:20744 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R20712:20720 Stdlib.Lists.List <> nth_error def
+R20741:20741 CodegenPtx.PtxLayout <> j:140 var
+R20723:20735 CodegenPtx.PtxLayout <> record_leaves def
+R20737:20738 CodegenPtx.PtxLayout <> fs:138 var
+R20745:20748 Corelib.Init.Datatypes <> Some constr
+R20750:20751 CodegenPtx.PtxLayout <> lj:142 var
+R20795:20800 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R20782:20785 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R20767:20769 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R20758:20763 CodegenPtx.PtxLayout <> lf_off proj
+R20765:20766 CodegenPtx.PtxLayout <> li:141 var
+R20770:20778 CodegenPtx.PtxLayout <> leaf_size def
+R20780:20781 CodegenPtx.PtxLayout <> li:141 var
+R20786:20791 CodegenPtx.PtxLayout <> lf_off proj
+R20793:20794 CodegenPtx.PtxLayout <> lj:142 var
+R20825:20828 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R20810:20812 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R20801:20806 CodegenPtx.PtxLayout <> lf_off proj
+R20808:20809 CodegenPtx.PtxLayout <> lj:142 var
+R20813:20821 CodegenPtx.PtxLayout <> leaf_size def
+R20823:20824 CodegenPtx.PtxLayout <> lj:142 var
+R20829:20834 CodegenPtx.PtxLayout <> lf_off proj
+R20836:20837 CodegenPtx.PtxLayout <> li:141 var
+R20892:20906 Stdlib.Arith.PeanoNat Nat lt_ge_cases thm
+R20892:20906 Stdlib.Arith.PeanoNat Nat lt_ge_cases thm
+R20946:20958 CodegenPtx.PtxLayout <> sorted_nth_le thm
+R20946:20958 CodegenPtx.PtxLayout <> sorted_nth_le thm
+R20974:20986 CodegenPtx.PtxLayout <> record_sorted thm
+R20974:20986 CodegenPtx.PtxLayout <> record_sorted thm
+R21009:21011 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R21009:21011 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R21041:21053 CodegenPtx.PtxLayout <> sorted_nth_le thm
+R21041:21053 CodegenPtx.PtxLayout <> sorted_nth_le thm
+R21069:21081 CodegenPtx.PtxLayout <> record_sorted thm
+R21069:21081 CodegenPtx.PtxLayout <> record_sorted thm
+prf 21252:21270 <> record_leaf_aligned
+binder 21281:21282 <> fs:143
+binder 21284:21284 <> l:144
+R21312:21317 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R21289:21290 Stdlib.Lists.List <> In def
+R21295:21307 CodegenPtx.PtxLayout <> record_leaves def
+R21309:21310 CodegenPtx.PtxLayout <> fs:143 var
+R21292:21292 CodegenPtx.PtxLayout <> l:144 var
+R21318:21327 Stdlib.Arith.PeanoNat Nat divide def
+R21330:21341 CodegenPtx.PtxLayout <> scalar_align def
+R21344:21348 CodegenPtx.PtxLayout <> lf_ty proj
+R21350:21350 CodegenPtx.PtxLayout <> l:144 var
+R21355:21360 CodegenPtx.PtxLayout <> lf_off proj
+R21362:21362 CodegenPtx.PtxLayout <> l:144 var
+R21397:21412 CodegenPtx.PtxLayout <> flattens_aligned thm
+R21397:21412 CodegenPtx.PtxLayout <> flattens_aligned thm
+def 21647:21656 <> tag_offset
+R21660:21662 Corelib.Init.Datatypes <> nat ind
+def 21681:21688 <> tag_size
+R21692:21694 Corelib.Init.Datatypes <> nat ind
+def 21790:21800 <> number_args
+R21807:21809 Corelib.Init.Datatypes <> nat ind
+binder 21803:21803 <> i:145
+R21820:21823 Corelib.Init.Datatypes <> list ind
+R21825:21830 CodegenPtx.PtxLayout <> lfield ind
+binder 21813:21816 <> args:146
+R21835:21841 CodegenPtx.PtxLayout <> lfields ind
+R21854:21857 CodegenPtx.PtxLayout <> args:146 var
+R21868:21869 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R21874:21877 CodegenPtx.PtxLayout <> LNil constr
+R21884:21887 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R21893:21897 CodegenPtx.PtxLayout <> LCons constr
+R21899:21899 CodegenPtx.PtxLayout <> i:145 var
+R21904:21914 CodegenPtx.PtxLayout <> number_args:147 def
+R21917:21917 Corelib.Init.Datatypes <> S constr
+R21919:21919 CodegenPtx.PtxLayout <> i:145 var
+def 22016:22025 <> ctor_align
+R22035:22038 Corelib.Init.Datatypes <> list ind
+R22040:22045 CodegenPtx.PtxLayout <> lfield ind
+binder 22028:22031 <> args:149
+R22050:22052 Corelib.Init.Datatypes <> nat ind
+R22057:22063 CodegenPtx.PtxLayout <> fsalign def
+R22066:22076 CodegenPtx.PtxLayout <> number_args def
+R22080:22083 CodegenPtx.PtxLayout <> args:149 var
+def 22229:22250 <> variant_payload_offset
+R22261:22264 Corelib.Init.Datatypes <> list ind
+R22267:22270 Corelib.Init.Datatypes <> list ind
+R22272:22277 CodegenPtx.PtxLayout <> lfield ind
+binder 22253:22257 <> ctors:150
+R22283:22285 Corelib.Init.Datatypes <> nat ind
+R22292:22301 Stdlib.Lists.List <> fold_right def
+R22347:22351 CodegenPtx.PtxLayout <> ctors:150 var
+binder 22308:22308 <> c:151
+binder 22310:22312 <> acc:152
+R22317:22323 Stdlib.Arith.PeanoNat Nat max def
+R22326:22335 CodegenPtx.PtxLayout <> ctor_align def
+R22337:22337 CodegenPtx.PtxLayout <> c:151 var
+R22340:22342 CodegenPtx.PtxLayout <> acc:152 var
+def 22430:22448 <> payload_struct_size
+R22458:22461 Corelib.Init.Datatypes <> list ind
+R22463:22468 CodegenPtx.PtxLayout <> lfield ind
+binder 22451:22454 <> args:153
+R22473:22475 Corelib.Init.Datatypes <> nat ind
+R22482:22489 CodegenPtx.PtxLayout <> align_up def
+R22492:22496 CodegenPtx.PtxLayout <> fsend def
+R22501:22511 CodegenPtx.PtxLayout <> number_args def
+R22515:22518 CodegenPtx.PtxLayout <> args:153 var
+R22523:22529 CodegenPtx.PtxLayout <> fsalign def
+R22532:22542 CodegenPtx.PtxLayout <> number_args def
+R22546:22549 CodegenPtx.PtxLayout <> args:153 var
+rec 22562:22572 <> ctor_layout
+proj 22595:22600 <> cl_tag
+proj 22611:22619 <> cl_leaves
+proj 22636:22650 <> cl_payload_size
+R22604:22606 Corelib.Init.Datatypes <> nat ind
+R22623:22626 Corelib.Init.Datatypes <> list ind
+R22628:22631 CodegenPtx.PtxLayout <> leaf rec
+R22654:22656 Corelib.Init.Datatypes <> nat ind
+def 22786:22797 <> ctor_layouts
+R22813:22815 Corelib.Init.Datatypes <> nat ind
+binder 22800:22805 <> payoff:158
+binder 22807:22809 <> tag:159
+R22827:22830 Corelib.Init.Datatypes <> list ind
+R22833:22836 Corelib.Init.Datatypes <> list ind
+R22838:22843 CodegenPtx.PtxLayout <> lfield ind
+binder 22819:22823 <> ctors:160
+R22851:22854 Corelib.Init.Datatypes <> list ind
+R22856:22866 CodegenPtx.PtxLayout <> ctor_layout rec
+R22879:22883 CodegenPtx.PtxLayout <> ctors:160 var
+R22894:22895 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R22900:22901 Stdlib.Lists.List ListNotations ::list_scope:'['_']' not
+R22908:22911 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R22999:23010 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R22923:22928 CodegenPtx.PtxLayout <> mkCtor constr
+R22930:22932 CodegenPtx.PtxLayout <> tag:159 var
+R22935:22942 CodegenPtx.PtxLayout <> flattens def
+R22944:22944 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R22948:22948 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R22945:22947 CodegenPtx.PtxLayout <> tag:159 var
+R22950:22955 CodegenPtx.PtxLayout <> payoff:158 var
+R22958:22968 CodegenPtx.PtxLayout <> number_args def
+R22977:22995 CodegenPtx.PtxLayout <> payload_struct_size def
+R23011:23022 CodegenPtx.PtxLayout <> ctor_layouts:161 def
+R23032:23032 Corelib.Init.Datatypes <> S constr
+R23034:23036 CodegenPtx.PtxLayout <> tag:159 var
+R23024:23029 CodegenPtx.PtxLayout <> payoff:158 var
+def 23060:23070 <> max_payload
+R23079:23082 Corelib.Init.Datatypes <> list ind
+R23084:23094 CodegenPtx.PtxLayout <> ctor_layout rec
+binder 23073:23075 <> cls:163
+R23099:23101 Corelib.Init.Datatypes <> nat ind
+R23108:23117 Stdlib.Lists.List <> fold_right def
+R23168:23170 CodegenPtx.PtxLayout <> cls:163 var
+binder 23124:23124 <> c:164
+binder 23126:23128 <> acc:165
+R23133:23139 Stdlib.Arith.PeanoNat Nat max def
+R23142:23156 CodegenPtx.PtxLayout <> cl_payload_size proj
+R23158:23158 CodegenPtx.PtxLayout <> c:164 var
+R23161:23163 CodegenPtx.PtxLayout <> acc:165 var
+def 23316:23327 <> variant_size
+R23338:23341 Corelib.Init.Datatypes <> list ind
+R23344:23347 Corelib.Init.Datatypes <> list ind
+R23349:23354 CodegenPtx.PtxLayout <> lfield ind
+binder 23330:23334 <> ctors:166
+R23360:23362 Corelib.Init.Datatypes <> nat ind
+R23378:23399 CodegenPtx.PtxLayout <> variant_payload_offset def
+R23401:23405 CodegenPtx.PtxLayout <> ctors:166 var
+binder 23373:23373 <> p:167
+R23412:23419 CodegenPtx.PtxLayout <> align_up def
+R23423:23425 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R23422:23422 CodegenPtx.PtxLayout <> p:167 var
+R23426:23436 CodegenPtx.PtxLayout <> max_payload def
+R23439:23450 CodegenPtx.PtxLayout <> ctor_layouts def
+R23452:23452 CodegenPtx.PtxLayout <> p:167 var
+R23456:23460 CodegenPtx.PtxLayout <> ctors:166 var
+R23464:23464 CodegenPtx.PtxLayout <> p:167 var
+prf 23561:23586 <> variant_payload_offset_ge4
+binder 23597:23601 <> ctors:168
+R23607:23610 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R23611:23632 CodegenPtx.PtxLayout <> variant_payload_offset def
+R23634:23638 CodegenPtx.PtxLayout <> ctors:168 var
+R23711:23722 Stdlib.Arith.PeanoNat Nat le_max_r thm
+R23725:23734 CodegenPtx.PtxLayout <> ctor_align def
+R23740:23761 CodegenPtx.PtxLayout <> variant_payload_offset def
+R23711:23722 Stdlib.Arith.PeanoNat Nat le_max_r thm
+R23725:23734 CodegenPtx.PtxLayout <> ctor_align def
+R23740:23761 CodegenPtx.PtxLayout <> variant_payload_offset def
+prf 23785:23800 <> ctor_align_cases
+binder 23811:23814 <> args:169
+R23838:23841 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R23834:23836 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R23819:23828 CodegenPtx.PtxLayout <> ctor_align def
+R23830:23833 CodegenPtx.PtxLayout <> args:169 var
+R23861:23864 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R23857:23859 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R23842:23851 CodegenPtx.PtxLayout <> ctor_align def
+R23853:23856 CodegenPtx.PtxLayout <> args:169 var
+R23880:23882 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R23865:23874 CodegenPtx.PtxLayout <> ctor_align def
+R23876:23879 CodegenPtx.PtxLayout <> args:169 var
+R23913:23922 CodegenPtx.PtxLayout <> ctor_align def
+R23932:23936 Corelib.Init.Logic <> proj2 thm
+R23938:23949 CodegenPtx.PtxLayout <> falign_cases thm
+R23932:23936 Corelib.Init.Logic <> proj2 thm
+R23938:23949 CodegenPtx.PtxLayout <> falign_cases thm
+prf 23965:23992 <> variant_payload_offset_cases
+binder 24003:24007 <> ctors:170
+R24044:24047 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R24040:24042 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R24012:24033 CodegenPtx.PtxLayout <> variant_payload_offset def
+R24035:24039 CodegenPtx.PtxLayout <> ctors:170 var
+R24076:24078 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R24048:24069 CodegenPtx.PtxLayout <> variant_payload_offset def
+R24071:24075 CodegenPtx.PtxLayout <> ctors:170 var
+R24151:24166 CodegenPtx.PtxLayout <> ctor_align_cases thm
+R24151:24166 CodegenPtx.PtxLayout <> ctor_align_cases thm
+prf 24253:24281 <> variant_payload_offset_cases3
+binder 24292:24296 <> ctors:171
+R24333:24336 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R24329:24331 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R24301:24322 CodegenPtx.PtxLayout <> variant_payload_offset def
+R24324:24328 CodegenPtx.PtxLayout <> ctors:171 var
+R24369:24374 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R24365:24367 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R24337:24358 CodegenPtx.PtxLayout <> variant_payload_offset def
+R24360:24364 CodegenPtx.PtxLayout <> ctors:171 var
+R24403:24405 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R24375:24396 CodegenPtx.PtxLayout <> variant_payload_offset def
+R24398:24402 CodegenPtx.PtxLayout <> ctors:171 var
+R24440:24467 CodegenPtx.PtxLayout <> variant_payload_offset_cases thm
+R24440:24467 CodegenPtx.PtxLayout <> variant_payload_offset_cases thm
+prf 24504:24529 <> variant_payload_offset_pos
+binder 24540:24544 <> ctors:172
+R24548:24550 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R24551:24572 CodegenPtx.PtxLayout <> variant_payload_offset def
+R24574:24578 CodegenPtx.PtxLayout <> ctors:172 var
+R24614:24639 CodegenPtx.PtxLayout <> variant_payload_offset_ge4 thm
+R24614:24639 CodegenPtx.PtxLayout <> variant_payload_offset_ge4 thm
+prf 24727:24753 <> variant_payload_offset_cons
+binder 24764:24764 <> a:173
+binder 24766:24766 <> r:174
+R24802:24806 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R24771:24792 CodegenPtx.PtxLayout <> variant_payload_offset def
+R24796:24799 Corelib.Init.Datatypes <> ::list_scope:x_'::'_x not
+R24795:24795 CodegenPtx.PtxLayout <> a:173 var
+R24800:24800 CodegenPtx.PtxLayout <> r:174 var
+R24807:24813 Stdlib.Arith.PeanoNat Nat max def
+R24816:24825 CodegenPtx.PtxLayout <> ctor_align def
+R24827:24827 CodegenPtx.PtxLayout <> a:173 var
+R24831:24852 CodegenPtx.PtxLayout <> variant_payload_offset def
+R24854:24854 CodegenPtx.PtxLayout <> r:174 var
+prf 25015:25043 <> ctor_align_div_payload_offset
+binder 25054:25058 <> ctors:175
+binder 25060:25060 <> c:176
+R25075:25078 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R25065:25066 Stdlib.Lists.List <> In def
+R25070:25074 CodegenPtx.PtxLayout <> ctors:175 var
+R25068:25068 CodegenPtx.PtxLayout <> c:176 var
+R25079:25088 Stdlib.Arith.PeanoNat Nat divide def
+R25091:25100 CodegenPtx.PtxLayout <> ctor_align def
+R25102:25102 CodegenPtx.PtxLayout <> c:176 var
+R25106:25127 CodegenPtx.PtxLayout <> variant_payload_offset def
+R25129:25133 CodegenPtx.PtxLayout <> ctors:175 var
+R25268:25274 CodegenPtx.PtxLayout <> div_148 thm
+R25268:25274 CodegenPtx.PtxLayout <> div_148 thm
+R25291:25306 CodegenPtx.PtxLayout <> ctor_align_cases thm
+R25291:25306 CodegenPtx.PtxLayout <> ctor_align_cases thm
+R25323:25351 CodegenPtx.PtxLayout <> variant_payload_offset_cases3 thm
+R25323:25351 CodegenPtx.PtxLayout <> variant_payload_offset_cases3 thm
+R25370:25396 CodegenPtx.PtxLayout <> variant_payload_offset_cons thm
+R25370:25396 CodegenPtx.PtxLayout <> variant_payload_offset_cons thm
+R25370:25396 CodegenPtx.PtxLayout <> variant_payload_offset_cons thm
+R25405:25416 Stdlib.Arith.PeanoNat Nat le_max_l thm
+R25405:25416 Stdlib.Arith.PeanoNat Nat le_max_l thm
+R25432:25447 Stdlib.Arith.PeanoNat Nat divide_trans def
+R25432:25447 Stdlib.Arith.PeanoNat Nat divide_trans def
+R25488:25494 CodegenPtx.PtxLayout <> div_148 thm
+R25488:25494 CodegenPtx.PtxLayout <> div_148 thm
+R25511:25539 CodegenPtx.PtxLayout <> variant_payload_offset_cases3 thm
+R25511:25539 CodegenPtx.PtxLayout <> variant_payload_offset_cases3 thm
+R25556:25584 CodegenPtx.PtxLayout <> variant_payload_offset_cases3 thm
+R25556:25584 CodegenPtx.PtxLayout <> variant_payload_offset_cases3 thm
+R25603:25629 CodegenPtx.PtxLayout <> variant_payload_offset_cons thm
+R25603:25629 CodegenPtx.PtxLayout <> variant_payload_offset_cons thm
+R25603:25629 CodegenPtx.PtxLayout <> variant_payload_offset_cons thm
+R25638:25649 Stdlib.Arith.PeanoNat Nat le_max_r thm
+R25638:25649 Stdlib.Arith.PeanoNat Nat le_max_r thm
+prf 25807:25823 <> ctor_layouts_spec
+binder 25834:25838 <> ctors:177
+binder 25840:25845 <> payoff:178
+binder 25847:25847 <> t:179
+binder 25849:25849 <> c:180
+R25888:25893 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R25854:25855 Stdlib.Lists.List <> In def
+R25860:25871 CodegenPtx.PtxLayout <> ctor_layouts def
+R25873:25878 CodegenPtx.PtxLayout <> payoff:178 var
+R25880:25880 CodegenPtx.PtxLayout <> t:179 var
+R25882:25886 CodegenPtx.PtxLayout <> ctors:177 var
+R25857:25857 CodegenPtx.PtxLayout <> c:180 var
+R25894:25900 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+R25905:25906 Corelib.Init.Logic <> ::type_scope:'exists'_x_'..'_x_','_x not
+binder 25901:25904 <> args:181
+R25920:25927 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R25907:25908 Stdlib.Lists.List <> In def
+R25915:25919 CodegenPtx.PtxLayout <> ctors:177 var
+R25910:25913 CodegenPtx.PtxLayout <> args:181 var
+R25989:25996 Corelib.Init.Logic <> ::type_scope:x_'/\'_x not
+R25939:25941 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R25928:25936 CodegenPtx.PtxLayout <> cl_leaves proj
+R25938:25938 CodegenPtx.PtxLayout <> c:180 var
+R25942:25949 CodegenPtx.PtxLayout <> flattens def
+R25951:25951 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R25960:25960 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R25952:25957 CodegenPtx.PtxLayout <> cl_tag proj
+R25959:25959 CodegenPtx.PtxLayout <> c:180 var
+R25962:25967 CodegenPtx.PtxLayout <> payoff:178 var
+R25970:25980 CodegenPtx.PtxLayout <> number_args def
+R25984:25987 CodegenPtx.PtxLayout <> args:181 var
+R26014:26016 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R25997:26011 CodegenPtx.PtxLayout <> cl_payload_size proj
+R26013:26013 CodegenPtx.PtxLayout <> c:180 var
+R26017:26035 CodegenPtx.PtxLayout <> payload_struct_size def
+R26037:26040 CodegenPtx.PtxLayout <> args:181 var
+R26231:26231 Corelib.Init.Datatypes <> S constr
+R26231:26231 Corelib.Init.Datatypes <> S constr
+prf 26335:26348 <> max_payload_ub
+binder 26359:26361 <> cls:182
+binder 26363:26363 <> c:183
+R26376:26379 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R26368:26369 Stdlib.Lists.List <> In def
+R26373:26375 CodegenPtx.PtxLayout <> cls:182 var
+R26371:26371 CodegenPtx.PtxLayout <> c:183 var
+R26397:26400 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R26380:26394 CodegenPtx.PtxLayout <> cl_payload_size proj
+R26396:26396 CodegenPtx.PtxLayout <> c:183 var
+R26401:26411 CodegenPtx.PtxLayout <> max_payload def
+R26413:26415 CodegenPtx.PtxLayout <> cls:182 var
+R26542:26553 Stdlib.Arith.PeanoNat Nat le_max_l thm
+R26542:26553 Stdlib.Arith.PeanoNat Nat le_max_l thm
+R26598:26609 Stdlib.Arith.PeanoNat Nat le_max_r thm
+R26612:26626 CodegenPtx.PtxLayout <> cl_payload_size proj
+R26632:26642 CodegenPtx.PtxLayout <> max_payload def
+R26598:26609 Stdlib.Arith.PeanoNat Nat le_max_r thm
+R26612:26626 CodegenPtx.PtxLayout <> cl_payload_size proj
+R26632:26642 CodegenPtx.PtxLayout <> max_payload def
+prf 26798:26814 <> ctor_tag_is_index
+binder 26825:26829 <> ctors:184
+binder 26831:26831 <> p:185
+binder 26833:26833 <> i:186
+binder 26835:26835 <> c:187
+R26885:26890 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R26876:26878 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R26840:26848 Stdlib.Lists.List <> nth_error def
+R26875:26875 CodegenPtx.PtxLayout <> i:186 var
+R26851:26862 CodegenPtx.PtxLayout <> ctor_layouts def
+R26864:26864 CodegenPtx.PtxLayout <> p:185 var
+R26868:26872 CodegenPtx.PtxLayout <> ctors:184 var
+R26879:26882 Corelib.Init.Datatypes <> Some constr
+R26884:26884 CodegenPtx.PtxLayout <> c:187 var
+R26899:26901 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R26891:26896 CodegenPtx.PtxLayout <> cl_tag proj
+R26898:26898 CodegenPtx.PtxLayout <> c:187 var
+R26902:26902 CodegenPtx.PtxLayout <> i:186 var
+binder 26929:26933 <> ctors:188
+binder 26935:26935 <> p:189
+binder 26937:26937 <> t:190
+binder 26939:26939 <> i:191
+binder 26941:26941 <> c:192
+R27001:27016 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R26992:26994 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R26956:26964 Stdlib.Lists.List <> nth_error def
+R26991:26991 CodegenPtx.PtxLayout <> i:191 var
+R26967:26978 CodegenPtx.PtxLayout <> ctor_layouts def
+R26980:26980 CodegenPtx.PtxLayout <> p:189 var
+R26982:26982 CodegenPtx.PtxLayout <> t:190 var
+R26984:26988 CodegenPtx.PtxLayout <> ctors:188 var
+R26995:26998 Corelib.Init.Datatypes <> Some constr
+R27000:27000 CodegenPtx.PtxLayout <> c:192 var
+R27025:27027 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R27017:27022 CodegenPtx.PtxLayout <> cl_tag proj
+R27024:27024 CodegenPtx.PtxLayout <> c:192 var
+R27029:27031 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R27028:27028 CodegenPtx.PtxLayout <> t:190 var
+R27032:27032 CodegenPtx.PtxLayout <> i:191 var
+binder 26929:26933 <> ctors:193
+binder 26935:26935 <> p:194
+binder 26937:26937 <> t:195
+binder 26939:26939 <> i:196
+binder 26941:26941 <> c:197
+R27001:27016 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R26992:26994 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R26956:26964 Stdlib.Lists.List <> nth_error def
+R26991:26991 CodegenPtx.PtxLayout <> i:196 var
+R26967:26978 CodegenPtx.PtxLayout <> ctor_layouts def
+R26980:26980 CodegenPtx.PtxLayout <> p:194 var
+R26982:26982 CodegenPtx.PtxLayout <> t:195 var
+R26984:26988 CodegenPtx.PtxLayout <> ctors:193 var
+R26995:26998 Corelib.Init.Datatypes <> Some constr
+R27000:27000 CodegenPtx.PtxLayout <> c:197 var
+R27025:27027 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R27017:27022 CodegenPtx.PtxLayout <> cl_tag proj
+R27024:27024 CodegenPtx.PtxLayout <> c:197 var
+R27029:27031 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R27028:27028 CodegenPtx.PtxLayout <> t:195 var
+R27032:27032 CodegenPtx.PtxLayout <> i:196 var
+R27237:27237 Corelib.Init.Datatypes <> S constr
+R27237:27237 Corelib.Init.Datatypes <> S constr
+prf 27484:27508 <> ctor_payload_size_correct
+binder 27519:27523 <> ctors:198
+binder 27525:27525 <> c:199
+binder 27527:27527 <> l:200
+R27590:27595 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R27532:27533 Stdlib.Lists.List <> In def
+R27538:27549 CodegenPtx.PtxLayout <> ctor_layouts def
+R27552:27573 CodegenPtx.PtxLayout <> variant_payload_offset def
+R27575:27579 CodegenPtx.PtxLayout <> ctors:198 var
+R27584:27588 CodegenPtx.PtxLayout <> ctors:198 var
+R27535:27535 CodegenPtx.PtxLayout <> c:199 var
+R27614:27619 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R27596:27597 Stdlib.Lists.List <> In def
+R27602:27610 CodegenPtx.PtxLayout <> cl_leaves proj
+R27612:27612 CodegenPtx.PtxLayout <> c:199 var
+R27599:27599 CodegenPtx.PtxLayout <> l:200 var
+R27642:27645 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R27628:27630 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R27620:27625 CodegenPtx.PtxLayout <> lf_off proj
+R27627:27627 CodegenPtx.PtxLayout <> l:200 var
+R27631:27639 CodegenPtx.PtxLayout <> leaf_size def
+R27641:27641 CodegenPtx.PtxLayout <> l:200 var
+R27674:27676 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R27646:27667 CodegenPtx.PtxLayout <> variant_payload_offset def
+R27669:27673 CodegenPtx.PtxLayout <> ctors:198 var
+R27677:27691 CodegenPtx.PtxLayout <> cl_payload_size proj
+R27693:27693 CodegenPtx.PtxLayout <> c:199 var
+R27741:27757 CodegenPtx.PtxLayout <> ctor_layouts_spec thm
+R27741:27757 CodegenPtx.PtxLayout <> ctor_layouts_spec thm
+R27847:27868 CodegenPtx.PtxLayout <> variant_payload_offset def
+R27847:27868 CodegenPtx.PtxLayout <> variant_payload_offset def
+R27896:27906 CodegenPtx.PtxLayout <> number_args def
+R27896:27906 CodegenPtx.PtxLayout <> number_args def
+R27936:27944 CodegenPtx.PtxLayout <> in_le_end thm
+R27947:27954 CodegenPtx.PtxLayout <> flattens def
+R27956:27956 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R27965:27965 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R27957:27962 CodegenPtx.PtxLayout <> cl_tag proj
+R27994:28008 CodegenPtx.PtxLayout <> flattens_sorted thm
+R28013:28013 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R28022:28022 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R28014:28019 CodegenPtx.PtxLayout <> cl_tag proj
+R27936:27944 CodegenPtx.PtxLayout <> in_le_end thm
+R27947:27954 CodegenPtx.PtxLayout <> flattens def
+R27956:27956 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R27965:27965 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R27957:27962 CodegenPtx.PtxLayout <> cl_tag proj
+R27994:28008 CodegenPtx.PtxLayout <> flattens_sorted thm
+R28013:28013 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R28022:28022 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R28014:28019 CodegenPtx.PtxLayout <> cl_tag proj
+R28052:28063 CodegenPtx.PtxLayout <> flattens_end thm
+R28068:28068 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R28077:28077 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R28069:28074 CodegenPtx.PtxLayout <> cl_tag proj
+R28052:28063 CodegenPtx.PtxLayout <> flattens_end thm
+R28068:28068 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R28077:28077 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R28069:28074 CodegenPtx.PtxLayout <> cl_tag proj
+R28173:28182 Stdlib.Arith.PeanoNat Nat divide def
+R28185:28191 CodegenPtx.PtxLayout <> fsalign def
+R28173:28182 Stdlib.Arith.PeanoNat Nat divide def
+R28185:28191 CodegenPtx.PtxLayout <> fsalign def
+R28227:28233 CodegenPtx.PtxLayout <> fsalign def
+R28236:28246 CodegenPtx.PtxLayout <> number_args def
+R28263:28272 CodegenPtx.PtxLayout <> ctor_align def
+R28227:28233 CodegenPtx.PtxLayout <> fsalign def
+R28236:28246 CodegenPtx.PtxLayout <> number_args def
+R28263:28272 CodegenPtx.PtxLayout <> ctor_align def
+R28291:28319 CodegenPtx.PtxLayout <> ctor_align_div_payload_offset thm
+R28291:28319 CodegenPtx.PtxLayout <> ctor_align_div_payload_offset thm
+R28348:28362 CodegenPtx.PtxLayout <> fsend_translate thm
+R28348:28362 CodegenPtx.PtxLayout <> fsend_translate thm
+R28348:28362 CodegenPtx.PtxLayout <> fsend_translate thm
+R28408:28426 CodegenPtx.PtxLayout <> payload_struct_size def
+R28452:28462 CodegenPtx.PtxLayout <> align_up_ge thm
+R28465:28469 CodegenPtx.PtxLayout <> fsend def
+R28478:28484 CodegenPtx.PtxLayout <> fsalign def
+R28491:28501 CodegenPtx.PtxLayout <> fsalign_pos thm
+R28452:28462 CodegenPtx.PtxLayout <> align_up_ge thm
+R28465:28469 CodegenPtx.PtxLayout <> fsend def
+R28478:28484 CodegenPtx.PtxLayout <> fsalign def
+R28491:28501 CodegenPtx.PtxLayout <> fsalign_pos thm
+prf 28648:28675 <> variant_tag_payload_disjoint
+binder 28686:28690 <> ctors:201
+binder 28692:28692 <> c:202
+binder 28694:28694 <> l:203
+R28757:28762 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R28699:28700 Stdlib.Lists.List <> In def
+R28705:28716 CodegenPtx.PtxLayout <> ctor_layouts def
+R28719:28740 CodegenPtx.PtxLayout <> variant_payload_offset def
+R28742:28746 CodegenPtx.PtxLayout <> ctors:201 var
+R28751:28755 CodegenPtx.PtxLayout <> ctors:201 var
+R28702:28702 CodegenPtx.PtxLayout <> c:202 var
+R28781:28786 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R28763:28764 Stdlib.Lists.List <> In def
+R28769:28777 CodegenPtx.PtxLayout <> cl_leaves proj
+R28779:28779 CodegenPtx.PtxLayout <> c:202 var
+R28766:28766 CodegenPtx.PtxLayout <> l:203 var
+R28808:28811 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R28797:28799 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R28787:28796 CodegenPtx.PtxLayout <> tag_offset def
+R28800:28807 CodegenPtx.PtxLayout <> tag_size def
+R28812:28817 CodegenPtx.PtxLayout <> lf_off proj
+R28819:28819 CodegenPtx.PtxLayout <> l:203 var
+R28867:28883 CodegenPtx.PtxLayout <> ctor_layouts_spec thm
+R28867:28883 CodegenPtx.PtxLayout <> ctor_layouts_spec thm
+R28969:28990 CodegenPtx.PtxLayout <> variant_payload_offset def
+R28969:28990 CodegenPtx.PtxLayout <> variant_payload_offset def
+R29019:29030 CodegenPtx.PtxLayout <> sorted_lower thm
+R29039:29053 CodegenPtx.PtxLayout <> flattens_sorted thm
+R29056:29066 CodegenPtx.PtxLayout <> number_args def
+R29076:29076 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R29085:29085 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R29077:29082 CodegenPtx.PtxLayout <> cl_tag proj
+R29019:29030 CodegenPtx.PtxLayout <> sorted_lower thm
+R29039:29053 CodegenPtx.PtxLayout <> flattens_sorted thm
+R29056:29066 CodegenPtx.PtxLayout <> number_args def
+R29076:29076 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R29085:29085 Stdlib.Lists.List ListNotations ::list_scope:'['_x_']' not
+R29077:29082 CodegenPtx.PtxLayout <> cl_tag proj
+R29109:29134 CodegenPtx.PtxLayout <> variant_payload_offset_ge4 thm
+R29109:29134 CodegenPtx.PtxLayout <> variant_payload_offset_ge4 thm
+R29153:29162 CodegenPtx.PtxLayout <> tag_offset def
+R29165:29172 CodegenPtx.PtxLayout <> tag_size def
+prf 29247:29274 <> variant_ctor_leaf_nonoverlap
+binder 29285:29289 <> ctors:204
+binder 29291:29291 <> c:205
+binder 29293:29293 <> i:206
+binder 29295:29295 <> j:207
+binder 29297:29298 <> li:208
+binder 29300:29301 <> lj:209
+R29364:29369 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R29306:29307 Stdlib.Lists.List <> In def
+R29312:29323 CodegenPtx.PtxLayout <> ctor_layouts def
+R29326:29347 CodegenPtx.PtxLayout <> variant_payload_offset def
+R29349:29353 CodegenPtx.PtxLayout <> ctors:204 var
+R29358:29362 CodegenPtx.PtxLayout <> ctors:204 var
+R29309:29309 CodegenPtx.PtxLayout <> c:205 var
+R29376:29381 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R29371:29374 Corelib.Init.Logic <> ::type_scope:x_'<>'_x not
+R29370:29370 CodegenPtx.PtxLayout <> i:206 var
+R29375:29375 CodegenPtx.PtxLayout <> j:207 var
+R29417:29422 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R29407:29409 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R29382:29390 Stdlib.Lists.List <> nth_error def
+R29406:29406 CodegenPtx.PtxLayout <> i:206 var
+R29393:29401 CodegenPtx.PtxLayout <> cl_leaves proj
+R29403:29403 CodegenPtx.PtxLayout <> c:205 var
+R29410:29413 Corelib.Init.Datatypes <> Some constr
+R29415:29416 CodegenPtx.PtxLayout <> li:208 var
+R29458:29463 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R29448:29450 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R29423:29431 Stdlib.Lists.List <> nth_error def
+R29447:29447 CodegenPtx.PtxLayout <> j:207 var
+R29434:29442 CodegenPtx.PtxLayout <> cl_leaves proj
+R29444:29444 CodegenPtx.PtxLayout <> c:205 var
+R29451:29454 Corelib.Init.Datatypes <> Some constr
+R29456:29457 CodegenPtx.PtxLayout <> lj:209 var
+R29501:29506 Corelib.Init.Logic <> ::type_scope:x_'\/'_x not
+R29488:29491 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R29473:29475 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R29464:29469 CodegenPtx.PtxLayout <> lf_off proj
+R29471:29472 CodegenPtx.PtxLayout <> li:208 var
+R29476:29484 CodegenPtx.PtxLayout <> leaf_size def
+R29486:29487 CodegenPtx.PtxLayout <> li:208 var
+R29492:29497 CodegenPtx.PtxLayout <> lf_off proj
+R29499:29500 CodegenPtx.PtxLayout <> lj:209 var
+R29531:29534 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R29516:29518 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R29507:29512 CodegenPtx.PtxLayout <> lf_off proj
+R29514:29515 CodegenPtx.PtxLayout <> lj:209 var
+R29519:29527 CodegenPtx.PtxLayout <> leaf_size def
+R29529:29530 CodegenPtx.PtxLayout <> lj:209 var
+R29535:29540 CodegenPtx.PtxLayout <> lf_off proj
+R29542:29543 CodegenPtx.PtxLayout <> li:208 var
+R29606:29622 CodegenPtx.PtxLayout <> ctor_layouts_spec thm
+R29606:29622 CodegenPtx.PtxLayout <> ctor_layouts_spec thm
+R29687:29699 CodegenPtx.PtxLayout <> sorted_packed def
+R29702:29723 CodegenPtx.PtxLayout <> variant_payload_offset def
+R29733:29741 CodegenPtx.PtxLayout <> cl_leaves proj
+R29687:29699 CodegenPtx.PtxLayout <> sorted_packed def
+R29702:29723 CodegenPtx.PtxLayout <> variant_payload_offset def
+R29733:29741 CodegenPtx.PtxLayout <> cl_leaves proj
+R29775:29789 CodegenPtx.PtxLayout <> flattens_sorted thm
+R29775:29789 CodegenPtx.PtxLayout <> flattens_sorted thm
+R29806:29820 Stdlib.Arith.PeanoNat Nat lt_ge_cases thm
+R29806:29820 Stdlib.Arith.PeanoNat Nat lt_ge_cases thm
+R29860:29872 CodegenPtx.PtxLayout <> sorted_nth_le thm
+R29860:29872 CodegenPtx.PtxLayout <> sorted_nth_le thm
+R29902:29904 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R29902:29904 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R29930:29942 CodegenPtx.PtxLayout <> sorted_nth_le thm
+R29930:29942 CodegenPtx.PtxLayout <> sorted_nth_le thm
+prf 30070:30091 <> variant_leaf_in_bounds
+binder 30102:30106 <> ctors:210
+binder 30108:30108 <> c:211
+binder 30110:30110 <> l:212
+R30173:30178 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R30115:30116 Stdlib.Lists.List <> In def
+R30121:30132 CodegenPtx.PtxLayout <> ctor_layouts def
+R30135:30156 CodegenPtx.PtxLayout <> variant_payload_offset def
+R30158:30162 CodegenPtx.PtxLayout <> ctors:210 var
+R30167:30171 CodegenPtx.PtxLayout <> ctors:210 var
+R30118:30118 CodegenPtx.PtxLayout <> c:211 var
+R30197:30202 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R30179:30180 Stdlib.Lists.List <> In def
+R30185:30193 CodegenPtx.PtxLayout <> cl_leaves proj
+R30195:30195 CodegenPtx.PtxLayout <> c:211 var
+R30182:30182 CodegenPtx.PtxLayout <> l:212 var
+R30225:30228 Corelib.Init.Peano <> ::nat_scope:x_'<='_x not
+R30211:30213 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R30203:30208 CodegenPtx.PtxLayout <> lf_off proj
+R30210:30210 CodegenPtx.PtxLayout <> l:212 var
+R30214:30222 CodegenPtx.PtxLayout <> leaf_size def
+R30224:30224 CodegenPtx.PtxLayout <> l:212 var
+R30229:30240 CodegenPtx.PtxLayout <> variant_size def
+R30242:30246 CodegenPtx.PtxLayout <> ctors:210 var
+R30296:30320 CodegenPtx.PtxLayout <> ctor_payload_size_correct thm
+R30296:30320 CodegenPtx.PtxLayout <> ctor_payload_size_correct thm
+R30360:30373 CodegenPtx.PtxLayout <> max_payload_ub thm
+R30360:30373 CodegenPtx.PtxLayout <> max_payload_ub thm
+R30401:30412 CodegenPtx.PtxLayout <> variant_size def
+R30427:30448 CodegenPtx.PtxLayout <> variant_payload_offset def
+R30427:30448 CodegenPtx.PtxLayout <> variant_payload_offset def
+R30477:30487 CodegenPtx.PtxLayout <> align_up_ge thm
+R30491:30493 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R30494:30504 CodegenPtx.PtxLayout <> max_payload def
+R30507:30518 CodegenPtx.PtxLayout <> ctor_layouts def
+R30551:30576 CodegenPtx.PtxLayout <> variant_payload_offset_pos thm
+R30477:30487 CodegenPtx.PtxLayout <> align_up_ge thm
+R30491:30493 Corelib.Init.Peano <> ::nat_scope:x_'+'_x not
+R30494:30504 CodegenPtx.PtxLayout <> max_payload def
+R30507:30518 CodegenPtx.PtxLayout <> ctor_layouts def
+R30551:30576 CodegenPtx.PtxLayout <> variant_payload_offset_pos thm
+prf 30684:30703 <> variant_leaf_aligned
+binder 30714:30718 <> ctors:213
+binder 30720:30720 <> c:214
+binder 30722:30722 <> l:215
+R30785:30790 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R30727:30728 Stdlib.Lists.List <> In def
+R30733:30744 CodegenPtx.PtxLayout <> ctor_layouts def
+R30747:30768 CodegenPtx.PtxLayout <> variant_payload_offset def
+R30770:30774 CodegenPtx.PtxLayout <> ctors:213 var
+R30779:30783 CodegenPtx.PtxLayout <> ctors:213 var
+R30730:30730 CodegenPtx.PtxLayout <> c:214 var
+R30809:30814 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R30791:30792 Stdlib.Lists.List <> In def
+R30797:30805 CodegenPtx.PtxLayout <> cl_leaves proj
+R30807:30807 CodegenPtx.PtxLayout <> c:214 var
+R30794:30794 CodegenPtx.PtxLayout <> l:215 var
+R30815:30824 Stdlib.Arith.PeanoNat Nat divide def
+R30827:30838 CodegenPtx.PtxLayout <> scalar_align def
+R30841:30845 CodegenPtx.PtxLayout <> lf_ty proj
+R30847:30847 CodegenPtx.PtxLayout <> l:215 var
+R30852:30857 CodegenPtx.PtxLayout <> lf_off proj
+R30859:30859 CodegenPtx.PtxLayout <> l:215 var
+R30908:30924 CodegenPtx.PtxLayout <> ctor_layouts_spec thm
+R30908:30924 CodegenPtx.PtxLayout <> ctor_layouts_spec thm
+R31001:31016 CodegenPtx.PtxLayout <> flattens_aligned thm
+R31001:31016 CodegenPtx.PtxLayout <> flattens_aligned thm
+def 31423:31434 <> leaf_aligned
+R31441:31444 CodegenPtx.PtxLayout <> leaf rec
+binder 31437:31437 <> l:216
+R31449:31452 Corelib.Init.Datatypes <> bool ind
+R31459:31465 Stdlib.Arith.PeanoNat Nat eqb def
+R31468:31477 Stdlib.Arith.PeanoNat Nat modulo def
+R31480:31485 CodegenPtx.PtxLayout <> lf_off proj
+R31487:31487 CodegenPtx.PtxLayout <> l:216 var
+R31491:31502 CodegenPtx.PtxLayout <> scalar_align def
+R31505:31509 CodegenPtx.PtxLayout <> lf_ty proj
+R31511:31511 CodegenPtx.PtxLayout <> l:216 var
+def 31531:31545 <> record_accepted
+R31553:31559 CodegenPtx.PtxLayout <> lfields ind
+binder 31548:31549 <> fs:217
+R31564:31567 Corelib.Init.Datatypes <> bool ind
+R31574:31580 Stdlib.Lists.List <> forallb def
+R31596:31608 CodegenPtx.PtxLayout <> record_leaves def
+R31610:31611 CodegenPtx.PtxLayout <> fs:217 var
+R31582:31593 CodegenPtx.PtxLayout <> leaf_aligned def
+def 31627:31642 <> variant_accepted
+R31653:31656 Corelib.Init.Datatypes <> list ind
+R31659:31662 Corelib.Init.Datatypes <> list ind
+R31664:31669 CodegenPtx.PtxLayout <> lfield ind
+binder 31645:31649 <> ctors:218
+R31675:31678 Corelib.Init.Datatypes <> bool ind
+R31685:31691 Stdlib.Lists.List <> forallb def
+R31744:31755 CodegenPtx.PtxLayout <> ctor_layouts def
+R31758:31779 CodegenPtx.PtxLayout <> variant_payload_offset def
+R31781:31785 CodegenPtx.PtxLayout <> ctors:218 var
+R31790:31794 CodegenPtx.PtxLayout <> ctors:218 var
+binder 31698:31698 <> c:219
+R31703:31709 Stdlib.Lists.List <> forallb def
+R31725:31733 CodegenPtx.PtxLayout <> cl_leaves proj
+R31735:31735 CodegenPtx.PtxLayout <> c:219 var
+R31711:31722 CodegenPtx.PtxLayout <> leaf_aligned def
+prf 31805:31815 <> divide_mod0
+binder 31826:31826 <> a:220
+binder 31828:31828 <> b:221
+R31836:31839 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R31832:31834 Corelib.Init.Peano <> ::nat_scope:x_'<'_x not
+R31835:31835 CodegenPtx.PtxLayout <> a:220 var
+R31854:31857 Corelib.Init.Logic <> ::type_scope:x_'->'_x not
+R31840:31849 Stdlib.Arith.PeanoNat Nat divide def
+R31851:31851 CodegenPtx.PtxLayout <> a:220 var
+R31853:31853 CodegenPtx.PtxLayout <> b:221 var
+R31872:31874 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R31858:31867 Stdlib.Arith.PeanoNat Nat modulo def
+R31869:31869 CodegenPtx.PtxLayout <> b:221 var
+R31871:31871 CodegenPtx.PtxLayout <> a:220 var
+R31911:31929 Stdlib.Arith.PeanoNat Nat.Lcm0 mod_divide thm
+R31911:31929 Stdlib.Arith.PeanoNat Nat.Lcm0 mod_divide thm
+prf 31956:31977 <> record_always_accepted
+binder 31988:31989 <> fs:222
+R32010:32012 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R31992:32006 CodegenPtx.PtxLayout <> record_accepted def
+R32008:32009 CodegenPtx.PtxLayout <> fs:222 var
+R32013:32016 Corelib.Init.Datatypes <> true constr
+R32046:32060 CodegenPtx.PtxLayout <> record_accepted def
+R32069:32082 Stdlib.Lists.List <> forallb_forall thm
+R32069:32082 Stdlib.Lists.List <> forallb_forall thm
+R32108:32119 CodegenPtx.PtxLayout <> leaf_aligned def
+R32128:32137 Stdlib.Arith.PeanoNat Nat eqb_eq thm
+R32128:32137 Stdlib.Arith.PeanoNat Nat eqb_eq thm
+R32148:32158 CodegenPtx.PtxLayout <> divide_mod0 thm
+R32168:32183 CodegenPtx.PtxLayout <> scalar_align_pos thm
+R32148:32158 CodegenPtx.PtxLayout <> divide_mod0 thm
+R32168:32183 CodegenPtx.PtxLayout <> scalar_align_pos thm
+R32198:32216 CodegenPtx.PtxLayout <> record_leaf_aligned thm
+R32198:32216 CodegenPtx.PtxLayout <> record_leaf_aligned thm
+prf 32240:32262 <> variant_always_accepted
+binder 32273:32277 <> ctors:223
+R32302:32304 Corelib.Init.Logic <> ::type_scope:x_'='_x not
+R32280:32295 CodegenPtx.PtxLayout <> variant_accepted def
+R32297:32301 CodegenPtx.PtxLayout <> ctors:223 var
+R32305:32308 Corelib.Init.Datatypes <> true constr
+R32341:32356 CodegenPtx.PtxLayout <> variant_accepted def
+R32365:32378 Stdlib.Lists.List <> forallb_forall thm
+R32365:32378 Stdlib.Lists.List <> forallb_forall thm
+R32402:32415 Stdlib.Lists.List <> forallb_forall thm
+R32402:32415 Stdlib.Lists.List <> forallb_forall thm
+R32440:32451 CodegenPtx.PtxLayout <> leaf_aligned def
+R32460:32469 Stdlib.Arith.PeanoNat Nat eqb_eq thm
+R32460:32469 Stdlib.Arith.PeanoNat Nat eqb_eq thm
+R32480:32490 CodegenPtx.PtxLayout <> divide_mod0 thm
+R32500:32515 CodegenPtx.PtxLayout <> scalar_align_pos thm
+R32480:32490 CodegenPtx.PtxLayout <> divide_mod0 thm
+R32500:32515 CodegenPtx.PtxLayout <> scalar_align_pos thm
+R32530:32549 CodegenPtx.PtxLayout <> variant_leaf_aligned thm
+R32530:32549 CodegenPtx.PtxLayout <> variant_leaf_aligned thm
+R32837:32861 CodegenPtx.PtxLayout <> record_size_is_padded_end thm
+R32882:32902 CodegenPtx.PtxLayout <> record_leaf_in_bounds thm
+R32923:32944 CodegenPtx.PtxLayout <> record_leaf_nonoverlap thm
+R32965:32983 CodegenPtx.PtxLayout <> record_leaf_aligned thm
+R33004:33025 CodegenPtx.PtxLayout <> record_always_accepted thm
+R33046:33062 CodegenPtx.PtxLayout <> ctor_tag_is_index thm
+R33083:33110 CodegenPtx.PtxLayout <> variant_tag_payload_disjoint thm
+R33131:33158 CodegenPtx.PtxLayout <> variant_ctor_leaf_nonoverlap thm
+R33179:33203 CodegenPtx.PtxLayout <> ctor_payload_size_correct thm
+R33224:33245 CodegenPtx.PtxLayout <> variant_leaf_in_bounds thm
+R33266:33285 CodegenPtx.PtxLayout <> variant_leaf_aligned thm
+R33306:33328 CodegenPtx.PtxLayout <> variant_always_accepted thm
