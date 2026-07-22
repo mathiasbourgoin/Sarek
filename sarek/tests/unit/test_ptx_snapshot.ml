@@ -283,6 +283,82 @@ let test_guarded_array_read_branches () =
       "guarded array read must branch, not selp.f32 (speculative load risks \
        OOB)"
 
+(** Native math: min/max/floor/ceil/rsqrt emit direct PTX ops. *)
+let test_native_math_markers () =
+  let out = make_var "out" (TVec TFloat32) in
+  let a = make_var "a" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let f name args = EIntrinsic (["Sarek_stdlib"; "Gpu"], name, args) in
+  let av = EArrayRead ("a", EVar tid) in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SSeq
+          [
+            SAssign (LArrayElem ("out", EVar tid), f "min" [av; av]);
+            SAssign (LArrayElem ("out", EVar tid), f "max" [av; av]);
+            SAssign (LArrayElem ("out", EVar tid), f "floor" [av]);
+            SAssign (LArrayElem ("out", EVar tid), f "ceil" [av]);
+            SAssign (LArrayElem ("out", EVar tid), f "rsqrt" [av]);
+          ] )
+  in
+  let mk v = DParam (v, Some {arr_elttype = TFloat32; arr_memspace = Global}) in
+  let k = base_kernel "native_math" [mk out; mk a] body [] in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "min.f32" ;
+  assert_contains ptx "max.f32" ;
+  assert_contains ptx "cvt.rmi.f32.f32" ;
+  assert_contains ptx "cvt.rpi.f32.f32" ;
+  assert_contains ptx "rsqrt.approx.f32"
+
+(** Extended atomics emit atom.{shared,global}.<op>.<ty>; sub lowers to
+    neg + add. *)
+let test_atomic_family_markers () =
+  let hist = make_var "hist" (TVec TInt32) in
+  let facc = make_var "facc" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let a name args = EIntrinsic (["Sarek_stdlib"; "Gpu"], name, args) in
+  let one = EConst (CInt32 1l) in
+  let fone = EConst (CFloat32 1.0) in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SSeq
+          [
+            SExpr (a "atomic_min_int32" [EVar hist; EVar tid; one]);
+            SExpr (a "atomic_max_int32" [EVar hist; EVar tid; one]);
+            SExpr (a "atomic_and_int32" [EVar hist; EVar tid; one]);
+            SExpr (a "atomic_or_int32" [EVar hist; EVar tid; one]);
+            SExpr (a "atomic_xor_int32" [EVar hist; EVar tid; one]);
+            SExpr (a "atomic_exch_int32" [EVar hist; EVar tid; one]);
+            SExpr (a "atomic_sub_int32" [EVar hist; EVar tid; one]);
+            SExpr (a "atomic_add_float32" [EVar facc; EVar tid; fone]);
+          ] )
+  in
+  let k =
+    base_kernel
+      "atomics"
+      [
+        DParam (hist, Some {arr_elttype = TInt32; arr_memspace = Global});
+        DParam (facc, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      ]
+      body
+      []
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "atom.global.min.s32" ;
+  assert_contains ptx "atom.global.max.s32" ;
+  assert_contains ptx "atom.global.and.b32" ;
+  assert_contains ptx "atom.global.or.b32" ;
+  assert_contains ptx "atom.global.xor.b32" ;
+  assert_contains ptx "atom.global.exch.b32" ;
+  assert_contains ptx "atom.global.add.f32" ;
+  (* sub has no PTX atom op → negate then atom.add *)
+  assert_contains ptx "neg.s32" ;
+  assert_contains ptx "atom.global.add.s32"
+
 let () =
   Alcotest.run
     "ptx_snapshot"
@@ -293,6 +369,14 @@ let () =
             "vector_add PTX contains canonical markers"
             `Quick
             test_vector_add_markers;
+          Alcotest.test_case
+            "native math emits min/max/cvt.rmi/cvt.rpi/rsqrt"
+            `Quick
+            test_native_math_markers;
+          Alcotest.test_case
+            "extended atomics emit atom.*.<op> (+ neg for sub)"
+            `Quick
+            test_atomic_family_markers;
           Alcotest.test_case
             "shared array SLet emits .shared decl + ld/st.shared"
             `Quick
