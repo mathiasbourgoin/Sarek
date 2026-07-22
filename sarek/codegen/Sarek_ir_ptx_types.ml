@@ -110,17 +110,42 @@ let new_reg_for_type alloc = function
   | TRecord _ -> unsupported "TRecord new_reg"
   | TVariant _ -> unsupported "TVariant new_reg"
 
-(** {1 Environment: variable name -> PTX register name} *)
+(** {1 Environment: variable name -> PTX binding}
 
-type env = (string, string) Hashtbl.t
+    Scalars bind to a single register name. Aggregates (records/variants,
+    SROA-decomposed) bind to a structured register set. Nested records appear as
+    nested [ARecord] values under their field name. *)
+
+type agg_value =
+  | ARecord of (string * binding) list
+      (** Record value: one binding per field, in declaration order. *)
+  | AVariant of {tag_reg : string; payloads : (int * binding list) list}
+      (** Variant value: u32 tag register + per-(constructor index) payload
+          bindings in payload-argument order. *)
+
+and binding = Scalar of string | Agg of agg_value
+
+type env = (string, binding) Hashtbl.t
 
 let make_env () : env = Hashtbl.create 32
 
-let env_bind (env : env) name reg = Hashtbl.replace env name reg
+let env_bind (env : env) name reg = Hashtbl.replace env name (Scalar reg)
+
+let env_bind_binding (env : env) name b = Hashtbl.replace env name b
 
 let env_lookup (env : env) name =
   match Hashtbl.find_opt env name with
-  | Some r -> r
+  | Some (Scalar r) -> r
+  | Some (Agg _) ->
+      fail
+        ("PTX codegen: variable " ^ name
+       ^ " is an aggregate; internal error: scalar lookup on aggregate binding"
+        )
+  | None -> fail ("PTX codegen: unbound variable: " ^ name)
+
+let env_lookup_binding (env : env) name =
+  match Hashtbl.find_opt env name with
+  | Some b -> b
   | None -> fail ("PTX codegen: unbound variable: " ^ name)
 
 (** Name of the implicit length parameter paired with a vector/array parameter.

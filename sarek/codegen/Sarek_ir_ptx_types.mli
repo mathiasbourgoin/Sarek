@@ -77,21 +77,41 @@ val ptx_reg_type_of : elttype -> string
     returns its PTX name. *)
 val new_reg_for_type : reg_alloc -> elttype -> string
 
-(** {1 Environment: variable name -> PTX register name} *)
+(** {1 Environment: variable name -> PTX binding} *)
 
-(** Maps Sarek IR variable names to their PTX register names. *)
-type env = (string, string) Hashtbl.t
+(** SROA-decomposed aggregate value: a record is one binding per field (in
+    declaration order, nested records as nested [ARecord]); a variant is a u32
+    tag register plus per-(constructor index) payload bindings. *)
+type agg_value =
+  | ARecord of (string * binding) list
+  | AVariant of {tag_reg : string; payloads : (int * binding list) list}
+
+(** A variable's PTX value: a single scalar register name, or an aggregate
+    register set. *)
+and binding = Scalar of string | Agg of agg_value
+
+(** Maps Sarek IR variable names to their PTX bindings. *)
+type env = (string, binding) Hashtbl.t
 
 (** [make_env ()] returns an empty environment. *)
 val make_env : unit -> env
 
-(** [env_bind env name reg] binds [name] to register [reg], overwriting any
-    previous binding. *)
+(** [env_bind env name reg] binds [name] to the scalar register [reg],
+    overwriting any previous binding. *)
 val env_bind : env -> string -> string -> unit
 
-(** [env_lookup env name] returns the PTX register for [name]. Raises
-    {!Ptx_codegen_error} if [name] is unbound. *)
+(** [env_bind_binding env name b] binds [name] to [b] (scalar or aggregate),
+    overwriting any previous binding. *)
+val env_bind_binding : env -> string -> binding -> unit
+
+(** [env_lookup env name] returns the PTX register for the scalar [name]. Raises
+    {!Ptx_codegen_error} if [name] is unbound, or if it is bound to an aggregate
+    (internal error: scalar lookup on aggregate binding). *)
 val env_lookup : env -> string -> string
+
+(** [env_lookup_binding env name] returns the binding for [name]. Raises
+    {!Ptx_codegen_error} if [name] is unbound. *)
+val env_lookup_binding : env -> string -> binding
 
 (** [length_param_name arr] is the name of the implicit length parameter paired
     with vector/array parameter [arr] ("sarek_<arr>_length") — the single

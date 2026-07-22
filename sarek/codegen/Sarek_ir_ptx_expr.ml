@@ -213,17 +213,17 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
         let r = new_u32 alloc in
         emit buf "selp.u32 %s, %s, %s, %s;" r r_then r_else p ;
         r
-  | EArrayLen arr -> (
+  | EArrayLen arr ->
       (* Bound by emit_params alongside the array pointer param. Only
          parameter arrays carry a length; local/shared arrays fall back to
          another backend. *)
-      match Hashtbl.find_opt env (length_param_name arr) with
-      | Some r -> r
-      | None ->
-          unsupported
-            (Printf.sprintf
-               "EArrayLen on '%s' (only parameter arrays have a length)"
-               arr))
+      if Hashtbl.mem env (length_param_name arr) then
+        env_lookup env (length_param_name arr)
+      else
+        unsupported
+          (Printf.sprintf
+             "EArrayLen on '%s' (only parameter arrays have a length)"
+             arr)
   | EArrayCreate _ ->
       unsupported "EArrayCreate in expression position (use SLet)"
   | EMatch _ -> unsupported "EMatch (requires variant lowering)"
@@ -288,11 +288,11 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
                           match
                             Hashtbl.find_opt env (length_param_name a.var_name)
                           with
-                          | Some r_len ->
-                              env_bind
+                          | Some len_binding ->
+                              env_bind_binding
                                 callee_env
                                 (length_param_name p.var_name)
-                                r_len
+                                len_binding
                           | None -> ())
                       | _ -> Hashtbl.remove alloc.arr_memspaces p.var_name) ;
                       Some (p.var_name, prev_elt, prev_ms)
