@@ -545,6 +545,14 @@ and emit_value buf alloc (env : env) (e : expr) : binding =
   | EVar v -> env_lookup_binding env v.var_name
   | EApp (EVar f, args) -> emit_app buf alloc env f args
   | EVariant (tyname, ctor, args) -> emit_variant buf alloc env tyname ctor args
+  | ETuple es ->
+      (* Tuple = anonymous record with positional fields "_0", "_1", ...
+         (FR-024); destructured by PConstr("tuple", vars) match patterns. *)
+      Agg
+        (ARecord
+           (List.mapi
+              (fun i e -> (Printf.sprintf "_%d" i, emit_value buf alloc env e))
+              es))
   | EMatch (scrut_e, arms) -> (
       (* Branch-based match in value position (never selp — FR-022). The
          result binding is allocated by leaf-wise copying the first emitted

@@ -825,6 +825,126 @@ let test_nonexhaustive_match_rejected () =
         Alcotest.fail
           (Printf.sprintf "error should contain %S, got: %s" expected msg)
 
+(** Tuple construct + destructure: anonymous register aggregate with positional
+    slots, no memory traffic (FR-024). *)
+let test_tuple_construct_destructure_markers () =
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let t = make_var "t" TUnit in
+  (* var_type is irrelevant to the ETuple binding shape *)
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( t,
+            ETuple [EConst (CFloat32 1.5); EConst (CFloat32 2.5)],
+            SMatch
+              ( EVar t,
+                [
+                  ( PConstr ("tuple", ["u"; "v"]),
+                    SAssign
+                      ( LArrayElem ("dst", EVar tid),
+                        EBinop
+                          ( Add,
+                            EVar (make_var "u" TFloat32),
+                            EVar (make_var "v" TFloat32) ) ) );
+                ] ) ) )
+  in
+  let k =
+    base_kernel
+      "tuple_destructure"
+      [DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+      body
+      []
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "add.f32" ;
+  assert_contains ptx "st.global.f32" ;
+  assert_absent
+    ptx
+    "ld.global"
+    ~why:"tuple components must stay in registers (anonymous SROA aggregate)"
+
+(** 2-arg variant payload roundtrip through value-position EMatch: both payload
+    registers flow construct -> match arm -> result without memory. *)
+let test_variant_payload_roundtrip_markers () =
+  let pair_decl = [("Pair", [TFloat32; TFloat32])] in
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let pv = make_var "pv" (TVariant ("pair_v", pair_decl)) in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( pv,
+            EVariant
+              ("pair_v", "Pair", [EConst (CFloat32 3.0); EConst (CFloat32 5.0)]),
+            SAssign
+              ( LArrayElem ("dst", EVar tid),
+                EMatch
+                  ( EVar pv,
+                    [
+                      ( PConstr ("Pair", ["a"; "b"]),
+                        EBinop
+                          ( Mul,
+                            EVar (make_var "a" TFloat32),
+                            EVar (make_var "b" TFloat32) ) );
+                    ] ) ) ) )
+  in
+  let k =
+    variant_kernel
+      "payload_roundtrip"
+      [DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+      body
+      [("pair_v", pair_decl)]
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "mul.f32" ;
+  assert_contains ptx "st.global.f32" ;
+  assert_absent
+    ptx
+    "ld.global"
+    ~why:"2-arg payload roundtrip must stay in registers" ;
+  assert_absent
+    ptx
+    "selp.f32"
+    ~why:"EMatch result must be merged by branch chain, never selp"
+
+(** Storing a tuple into a global vector element is rejected with an error
+    naming the construct and a workaround (FR-024). *)
+let test_tuple_into_vector_rejected () =
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("dst", EVar tid),
+            ETuple [EConst (CFloat32 1.0); EConst (CFloat32 2.0)] ) )
+  in
+  let k =
+    base_kernel
+      "tuple_store"
+      [DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+      body
+      []
+  in
+  match Sarek_ir_ptx.generate k with
+  | _ -> Alcotest.fail "tuple store into vector should raise Ptx_codegen_error"
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error msg ->
+      let expected = "tuple value used in a scalar context" in
+      let found = ref false in
+      let mlen = String.length expected in
+      for i = 0 to String.length msg - mlen do
+        if String.sub msg i mlen = expected then found := true
+      done ;
+      if not !found then
+        Alcotest.fail
+          (Printf.sprintf "error should contain %S, got: %s" expected msg)
+
 let () =
   Alcotest.run
     "ptx_snapshot"
@@ -903,5 +1023,17 @@ let () =
             "non-exhaustive variant match is rejected"
             `Quick
             test_nonexhaustive_match_rejected;
+          Alcotest.test_case
+            "tuple construct + destructure stays in registers"
+            `Quick
+            test_tuple_construct_destructure_markers;
+          Alcotest.test_case
+            "2-arg variant payload roundtrip via EMatch value"
+            `Quick
+            test_variant_payload_roundtrip_markers;
+          Alcotest.test_case
+            "tuple store into a vector element is rejected"
+            `Quick
+            test_tuple_into_vector_rejected;
         ] );
     ]
