@@ -77,7 +77,7 @@ void main() {
   int row = (tid / n);
   int col = (tid % n);
   if (((row < m) && (col < n))) {
-    float sum = 0.0;
+    precise float sum = 0.0;
     for (int i = 0; i <= (k - 1); i++) {
       sum = (sum + (a[((row * k) + i)] * b[((i * n) + col)]));
     }

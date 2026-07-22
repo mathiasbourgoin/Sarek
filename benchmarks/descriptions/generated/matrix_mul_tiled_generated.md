@@ -139,7 +139,7 @@ void main() {
   int col = (tx + (int(gl_WorkGroupSize.x) * int(gl_WorkGroupID.x)));
   int tile_size = 16;
   int num_tiles = (((k + tile_size) - 1) / tile_size);
-  float sum = 0.0;
+  precise float sum = 0.0;
   for (int t = 0; t <= (num_tiles - 1); t++) {
     {
       int a_col = ((t * tile_size) + tx);

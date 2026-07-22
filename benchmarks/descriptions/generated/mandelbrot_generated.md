@@ -78,13 +78,13 @@ void main() {
   int px = int(gl_GlobalInvocationID.x);
   int py = int(gl_GlobalInvocationID.y);
   if (((px < width) && (py < height))) {
-    float x0 = ((4.0 * (float(px) / float(width))) - 2.5);
-    float y0 = ((3.0 * (float(py) / float(height))) - 1.5);
-    float x = 0.0;
-    float y = 0.0;
+    precise float x0 = ((4.0 * (float(px) / float(width))) - 2.5);
+    precise float y0 = ((3.0 * (float(py) / float(height))) - 1.5);
+    precise float x = 0.0;
+    precise float y = 0.0;
     int iter = 0;
     while (((((x * x) + (y * y)) <= 4.0) && (iter < max_iter))) {
-      float xtemp = (((x * x) - (y * y)) + x0);
+      precise float xtemp = (((x * x) - (y * y)) + x0);
       y = (((2.0 * x) * y) + y0);
       x = xtemp;
       iter = (iter + 1);

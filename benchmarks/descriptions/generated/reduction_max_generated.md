@@ -253,8 +253,8 @@ void main() {
   barrier();
   {
     if ((tid < 128)) {
-      float a = sdata[tid];
-      float b = sdata[(tid + 128)];
+      precise float a = sdata[tid];
+      precise float b = sdata[(tid + 128)];
       if ((b > a)) {
         sdata[tid] = b;
       }
@@ -263,8 +263,8 @@ void main() {
   barrier();
   {
     if ((tid < 64)) {
-      float a = sdata[tid];
-      float b = sdata[(tid + 64)];
+      precise float a = sdata[tid];
+      precise float b = sdata[(tid + 64)];
       if ((b > a)) {
         sdata[tid] = b;
       }
@@ -273,8 +273,8 @@ void main() {
   barrier();
   {
     if ((tid < 32)) {
-      float a = sdata[tid];
-      float b = sdata[(tid + 32)];
+      precise float a = sdata[tid];
+      precise float b = sdata[(tid + 32)];
       if ((b > a)) {
         sdata[tid] = b;
       }
@@ -283,8 +283,8 @@ void main() {
   barrier();
   {
     if ((tid < 16)) {
-      float a = sdata[tid];
-      float b = sdata[(tid + 16)];
+      precise float a = sdata[tid];
+      precise float b = sdata[(tid + 16)];
       if ((b > a)) {
         sdata[tid] = b;
       }
@@ -293,8 +293,8 @@ void main() {
   barrier();
   {
     if ((tid < 8)) {
-      float a = sdata[tid];
-      float b = sdata[(tid + 8)];
+      precise float a = sdata[tid];
+      precise float b = sdata[(tid + 8)];
       if ((b > a)) {
         sdata[tid] = b;
       }
@@ -303,8 +303,8 @@ void main() {
   barrier();
   {
     if ((tid < 4)) {
-      float a = sdata[tid];
-      float b = sdata[(tid + 4)];
+      precise float a = sdata[tid];
+      precise float b = sdata[(tid + 4)];
       if ((b > a)) {
         sdata[tid] = b;
       }
@@ -313,8 +313,8 @@ void main() {
   barrier();
   {
     if ((tid < 2)) {
-      float a = sdata[tid];
-      float b = sdata[(tid + 2)];
+      precise float a = sdata[tid];
+      precise float b = sdata[(tid + 2)];
       if ((b > a)) {
         sdata[tid] = b;
       }
@@ -323,8 +323,8 @@ void main() {
   barrier();
   {
     if ((tid < 1)) {
-      float a = sdata[tid];
-      float b = sdata[(tid + 1)];
+      precise float a = sdata[tid];
+      precise float b = sdata[(tid + 1)];
       if ((b > a)) {
         sdata[tid] = b;
       }
