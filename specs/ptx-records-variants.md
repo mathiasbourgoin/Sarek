@@ -12,7 +12,7 @@ host-ABI-compatible) with two representations: **SROA register sets** for local 
 **field-wise global memory access** for elements of `t vector` parameters. Variants use the
 host tag encoding (`[tag:int32@0][payload@4]`, tag = constructor declaration index). The layout
 function is mirrored in Rocq (separate module, existing theorems untouched) with proved lemmas
-and an extraction conformance test.
+and a hand-mirror CMBT conformance test.
 
 ## Entities
 
@@ -73,21 +73,23 @@ construct + match binding both args).
 
 ### US-4: Layout function frozen in Rocq (P1)
 The byte-layout function is one pure OCaml module mirrored by an independent Rocq
-re-implementation (option (b) of C-16) with proved lemmas and an extraction-based conformance
-test, so the ABI is frozen formally without touching the existing three theorems.
+re-implementation (option (b) of C-16) with proved lemmas and a hand-mirror CMBT conformance
+test (the project's established pattern — see FR-042), so the ABI is frozen formally without
+touching the existing three theorems.
 **Scope excludes:** re-proving `emit_expr/stmt/kernel_correct` over aggregates (deferred,
 documented follow-up).
 **Independent test:** `dune build @formal` (or project-local build) proves 0-admit lemmas;
-conformance test compares Rocq-extracted and OCaml functions.
+conformance test compares the Rocq hand-mirror and OCaml functions.
 **Acceptance scenarios:**
 1. **Given** the accepted-layout predicate, **When** lemmas are checked, **Then** field
    non-overlap, in-bounds (offset+size ≤ sizeof), size correctness, AND natural-alignment of
    every scalar leaf (the C-15 side-condition) are proved with 0 admits.
 2. **Given** an enumeration of small shapes (≤4 fields over {i32,f32,bool,i64,f64} + variants
    ≤3 ctors ≤2 args) plus qcheck random shapes, **When** the conformance test runs, **Then**
-   OCaml `Sarek_ir_layout` and extracted Rocq agree on offsets/sizes/accept-reject.
-3. **Given** `point` and `color` from the e2e tests, **When** compared against host
-   `custom_type` (elem_size, get/set round-trip), **Then** layouts agree byte-for-byte.
+   OCaml `Sarek_ir_layout` and the Rocq hand-mirror agree on offsets/sizes/accept-reject.
+3. **Given** `point` and `color` from the e2e tests, **When** compared against the host
+   layout constants (literal offset/size pins mirroring `custom_type` elem_size), **Then**
+   layouts agree byte-for-byte (live get/set round-trips are exercised by the e2e suite).
 
 ### US-5: Precise rejection of out-of-scope constructs (P2)
 Out-of-scope constructs fail at codegen with errors naming the construct AND the workaround.
@@ -153,7 +155,7 @@ Out-of-scope constructs fail at codegen with errors naming the construct AND the
 #### Formal (US-4)
 - **FR-040** [US-4]: A standalone `PtxLayout.v` MUST model the layout function without modifying `PtxTypes.v`'s `elttype`; the three existing theorems MUST still compile unmodified.
 - **FR-041** [US-4]: Lemmas proved with 0 admits: field non-overlap; in-bounds; size correctness; natural alignment of every scalar leaf in accepted layouts.
-- **FR-042** [US-4]: An extraction conformance test MUST compare Rocq and OCaml layout functions on an exhaustive small-shape enumeration plus qcheck-random shapes, and MUST pin host agreement on the e2e test types (`point`, `point3d`, `color`, `particle`).
+- **FR-042** [US-4]: A conformance test MUST compare the Rocq layout model and the OCaml layout function on an exhaustive small-shape enumeration plus qcheck-random shapes, and MUST pin host agreement on the e2e test types (`point`, `point3d`, `color`, `particle`) via literal offset/size asserts. Per the plan's consensus decision (fact-checked: the extraction dune wiring is a stub), the Rocq side is represented by a hand-mirror OCaml transcription following the project's established CMBT pattern — not extracted code; the host pins are literal (a live `custom_type` get/set query would pull the PPX into the formal test's dependencies).
 
 #### Tests & integration (US-1..US-3)
 - **FR-050** [US-1]: `generate_with_types` MUST become the real entry point consuming `kern_types`/`kern_variants`; plain `generate` behavior for scalar kernels MUST be unchanged (existing snapshot suite green).

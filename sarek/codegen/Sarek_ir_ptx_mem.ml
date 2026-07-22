@@ -312,6 +312,33 @@ let rec emit_agg_elem_load buf alloc r_addr ~offset (t : elttype) : binding =
 let store_variant_elem buf alloc ~store_ctor r_addr ~offset name ctors v_ctors
     tag_reg =
   let vl = variant_layout_exn ~type_name:name ctors in
+  (* The layout ctor list (from the element type) and the binding's ctor list
+     (from the kernel's variant declarations) come from independent sources;
+     they agree within one kernel but can diverge if fusion ever concatenates
+     two kernels declaring a variant under the same name with different
+     constructors. Validate name-wise agreement before the positional zip so
+     that case fails loudly instead of writing mispaired bytes. *)
+  (if
+     List.length vl.L.vl_ctors <> List.length v_ctors
+     || not
+          (List.for_all2
+             (fun (cl : L.ctor_layout) (cn, _) -> cl.L.ctor_name = cn)
+             vl.L.vl_ctors
+             v_ctors)
+   then
+     let names l = String.concat ", " l in
+     unsupported
+       (Printf.sprintf
+          "variant '%s': element-type constructors [%s] disagree with the \
+           kernel's declaration [%s] (two kernels declaring '%s' differently \
+           were probably fused); rename one of the variant types"
+          name
+          (names
+             (List.map
+                (fun (cl : L.ctor_layout) -> cl.L.ctor_name)
+                vl.L.vl_ctors))
+          (names (List.map fst v_ctors))
+          name)) ;
   emit
     buf
     "st.global.u32 %s, %s;"
