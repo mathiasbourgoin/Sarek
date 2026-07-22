@@ -1160,6 +1160,82 @@ let test_bare_record_param_rejected () =
         "pass fields as separate scalar params or use a 1-element 'point' \
          vector"
 
+(** A vector of mixed-alignment records (f64 leaf at a packed non-8-aligned
+    offset) is rejected at codegen with an error naming field, offset, and
+    required alignment (spec AC-5 / FR-004). *)
+let test_misaligned_record_param_rejected () =
+  let mixed_ty = TRecord ("mixed", [("a", TInt32); ("b", TFloat64)]) in
+  let src = make_var "src" (TVec mixed_ty) in
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("dst", EVar tid),
+            ERecordField (EArrayRead ("src", EVar tid), "a") ) )
+  in
+  let k =
+    base_kernel
+      "misaligned_record"
+      [
+        DParam (src, Some {arr_elttype = mixed_ty; arr_memspace = Global});
+        DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      ]
+      body
+      []
+  in
+  match Sarek_ir_ptx.generate k with
+  | _ -> Alcotest.fail "misaligned record should raise Ptx_codegen_error"
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error msg ->
+      let check expected =
+        match find_first msg expected with
+        | Some _ -> ()
+        | None ->
+            Alcotest.fail
+              (Printf.sprintf "error should contain %S, got: %s" expected msg)
+      in
+      check "b" ;
+      check "4" ;
+      check "8"
+
+(** A vector of variants with an f64 payload (payload slot at offset 4, below
+    its 8-byte natural alignment) is rejected the same way (AC-5). *)
+let test_f64_variant_param_rejected () =
+  let vty = TVariant ("boxed", [("None_", []); ("Some_", [TFloat64])]) in
+  let src = make_var "src" (TVec vty) in
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign (LArrayElem ("dst", EVar tid), EConst (CFloat32 0.0)) )
+  in
+  let k =
+    base_kernel
+      "f64_variant"
+      [
+        DParam (src, Some {arr_elttype = vty; arr_memspace = Global});
+        DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      ]
+      body
+      []
+  in
+  match Sarek_ir_ptx.generate k with
+  | _ -> Alcotest.fail "f64-payload variant should raise Ptx_codegen_error"
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error msg ->
+      let check expected =
+        match find_first msg expected with
+        | Some _ -> ()
+        | None ->
+            Alcotest.fail
+              (Printf.sprintf "error should contain %S, got: %s" expected msg)
+      in
+      check "Some_" ;
+      check "8"
+
 let () =
   Alcotest.run
     "ptx_snapshot"
@@ -1270,5 +1346,13 @@ let () =
             "bare record param rejected with C-17 message"
             `Quick
             test_bare_record_param_rejected;
+          Alcotest.test_case
+            "misaligned record vector param rejected (field/offset/align)"
+            `Quick
+            test_misaligned_record_param_rejected;
+          Alcotest.test_case
+            "f64-payload variant vector param rejected"
+            `Quick
+            test_f64_variant_param_rejected;
         ] );
     ]
