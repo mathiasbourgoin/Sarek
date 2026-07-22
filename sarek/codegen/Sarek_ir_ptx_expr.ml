@@ -18,6 +18,14 @@ let f32_log2_e_bits = Int32.bits_of_float (Float.log2 (Float.exp 1.0))
 
 let f32_ln_2_bits = Int32.bits_of_float (Float.log 2.0)
 
+let f32_log10_2_bits = Int32.bits_of_float (Float.log10 2.0)
+
+let f32_two_log2_e_bits = Int32.bits_of_float (2.0 *. Float.log2 (Float.exp 1.0))
+
+let f32_one_bits = Int32.bits_of_float 1.0
+
+let f32_half_bits = Int32.bits_of_float 0.5
+
 (** An f64 register is "%fd<n>"; an f32 register is "%f<n>" (not "%fd<n>"). *)
 let is_f64_reg r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd'
 
@@ -976,6 +984,18 @@ and emit_intrinsic buf alloc env path name args : string =
         let r_base = env_lookup env arr.var_name in
         let r_idx = emit_expr buf alloc env idx_e in
         let r_val0 = emit_expr buf alloc env val_e in
+        (* The value register class must agree with the atom.<op><ty> suffix;
+           a mismatched register would be invalid PTX (module-load failure). *)
+        (match result with
+        | `F32 when not (is_f32_reg r_val0) ->
+            unsupported
+              (intr ^ ": value operand " ^ r_val0
+             ^ " is not f32; cast the value first")
+        | `U32 when is_f32_reg r_val0 || is_f64_reg r_val0 ->
+            unsupported
+              (intr ^ ": value operand " ^ r_val0
+             ^ " is not int32; cast the value first")
+        | _ -> ()) ;
         let op, r_val =
           if op = "sub" then begin
             let r = new_u32 alloc in
@@ -1009,20 +1029,31 @@ and emit_intrinsic buf alloc env path name args : string =
         r_old
     | _ -> unsupported (intr ^ ": expects (array-variable, index, value)")
   in
-  (* Binary min/max: native PTX op, typed by the first operand's register. *)
+  (* Binary min/max: native PTX op. Both operands must share a register
+     class — a mixed-width op would be invalid PTX. *)
   let binary_minmax intr op =
     match args with
     | [a; b] ->
         let ra = emit_expr buf alloc env a in
         let rb = emit_expr buf alloc env b in
+        let mismatch () =
+          unsupported
+            (intr ^ ": operands " ^ ra ^ " and " ^ rb
+           ^ " have different register classes; cast one operand first")
+        in
         if is_f64_reg ra then (
-          let r = new_f64 alloc in
-          emit buf "%s.f64 %s, %s, %s;" op r ra rb ;
-          r)
+          if not (is_f64_reg rb) then mismatch ()
+          else
+            let r = new_f64 alloc in
+            emit buf "%s.f64 %s, %s, %s;" op r ra rb ;
+            r)
         else if is_f32_reg ra then (
-          let r = new_f32 alloc in
-          emit buf "%s.f32 %s, %s, %s;" op r ra rb ;
-          r)
+          if not (is_f32_reg rb) then mismatch ()
+          else
+            let r = new_f32 alloc in
+            emit buf "%s.f32 %s, %s, %s;" op r ra rb ;
+            r)
+        else if is_f32_reg rb || is_f64_reg rb then mismatch ()
         else
           let r = new_u32 alloc in
           emit buf "%s.s32 %s, %s, %s;" op r ra rb ;
@@ -1045,16 +1076,75 @@ and emit_intrinsic buf alloc env path name args : string =
         else unsupported (intr ^ ": float operand required")
     | _ -> unsupported (intr ^ " arity != 1")
   in
-  (* Emit the single argument of a unary f32 intrinsic, rejecting f64
-     operands (the .approx PTX ops used below are f32-only; an f64 operand
-     would emit invalid PTX that only fails at module-load time). *)
-  let unary_f32_arg intr args =
+  (* Emit the argument(s) of a math intrinsic (no width check). *)
+  let unary_arg intr =
     match args with
-    | [a] ->
-        let r = emit_expr buf alloc env a in
-        if is_f32_reg r then r
-        else unsupported (intr ^ ": f32 only (operand " ^ r ^ " not lowered)")
+    | [a] -> emit_expr buf alloc env a
     | _ -> unsupported (intr ^ " arity != 1")
+  in
+  let binary_args intr =
+    match args with
+    | [a; b] -> (emit_expr buf alloc env a, emit_expr buf alloc env b)
+    | _ -> unsupported (intr ^ " arity != 2")
+  in
+  (* Clean rejection for a math intrinsic with no f64 lowering. Never emit an
+     .f32-suffixed op on an f64 register: the mismatch is invalid PTX that
+     only fails at module-load time (cuModuleLoadData). *)
+  let no_f64 intr =
+    unsupported
+      (intr ^ ": no native f64 " ^ intr
+     ^ " in PTX; compute in float32 or on the CPU")
+  in
+  (* Argument of a unary f32-only (.approx) lowering: f64 operands are
+     rejected cleanly, never emitted with an .f32 suffix. *)
+  let unary_f32_arg intr =
+    let r = unary_arg intr in
+    if is_f32_reg r then r
+    else if is_f64_reg r then no_f64 intr
+    else unsupported (intr ^ ": float operand required")
+  in
+  let binary_f32_args intr =
+    let ra, rb = binary_args intr in
+    if is_f32_reg ra && is_f32_reg rb then (ra, rb)
+    else if is_f64_reg ra || is_f64_reg rb then no_f64 intr
+    else unsupported (intr ^ ": float operands required")
+  in
+  (* Unary float op with (up to) one native instruction per width; [None]
+     means the width has no lowering and is rejected cleanly. *)
+  let unary_native intr ~f32_op ~f64_op =
+    let r_arg = unary_arg intr in
+    if is_f64_reg r_arg then
+      match f64_op with
+      | Some op ->
+          let d = new_f64 alloc in
+          emit buf "%s %s, %s;" op d r_arg ;
+          d
+      | None -> no_f64 intr
+    else if is_f32_reg r_arg then
+      match f32_op with
+      | Some op ->
+          let d = new_f32 alloc in
+          emit buf "%s %s, %s;" op d r_arg ;
+          d
+      | None -> unsupported (intr ^ ": no f32 lowering")
+    else unsupported (intr ^ ": float operand required")
+  in
+  (* f32 building blocks for the transcendental compositions below (all based
+     on .approx ops — f32 precision only, caveats at each call site). *)
+  let f32_op1 op a =
+    let d = new_f32 alloc in
+    emit buf "%s %s, %s;" op d a ;
+    d
+  in
+  let f32_op2 op a b =
+    let d = new_f32 alloc in
+    emit buf "%s %s, %s, %s;" op d a b ;
+    d
+  in
+  let f32_mul_const a bits =
+    let d = new_f32 alloc in
+    emit buf "mul.f32 %s, %s, 0F%08lX;" d a bits ;
+    d
   in
   match name with
   | "thread_id_x" | "thread_idx_x" ->
@@ -1142,67 +1232,133 @@ and emit_intrinsic buf alloc env path name args : string =
       let r = new_u32 alloc in
       emit buf "mov.u32 %s, 0;" r ;
       r
-  | "sin" ->
-      let r_arg =
-        match args with
-        | [a] -> emit_expr buf alloc env a
-        | _ -> unsupported "sin arity != 1"
-      in
-      let r = new_f32 alloc in
-      emit buf "sin.approx.f32 %s, %s;" r r_arg ;
-      r
-  | "cos" ->
-      let r_arg =
-        match args with
-        | [a] -> emit_expr buf alloc env a
-        | _ -> unsupported "cos arity != 1"
-      in
-      let r = new_f32 alloc in
-      emit buf "cos.approx.f32 %s, %s;" r r_arg ;
-      r
+  | "sin" -> f32_op1 "sin.approx.f32" (unary_f32_arg "sin")
+  | "cos" -> f32_op1 "cos.approx.f32" (unary_f32_arg "cos")
+  | "tan" ->
+      (* tan = sin/cos, all .approx: f32 precision only. *)
+      let r_arg = unary_f32_arg "tan" in
+      let r_sin = f32_op1 "sin.approx.f32" r_arg in
+      let r_cos = f32_op1 "cos.approx.f32" r_arg in
+      f32_op2 "div.approx.f32" r_sin r_cos
   | "sqrt" ->
-      let r_arg =
-        match args with
-        | [a] -> emit_expr buf alloc env a
-        | _ -> unsupported "sqrt arity != 1"
-      in
-      let r = new_f32 alloc in
-      emit buf "sqrt.approx.f32 %s, %s;" r r_arg ;
-      r
+      unary_native
+        "sqrt"
+        ~f32_op:(Some "sqrt.approx.f32")
+        ~f64_op:(Some "sqrt.rn.f64")
   | "exp" ->
-      (* exp(x) = 2^(x * log2 e); PTX only has base-2 ex2, f32 only *)
-      let r_arg = unary_f32_arg "exp" args in
-      let r_scaled = new_f32 alloc in
-      emit buf "mul.f32 %s, %s, 0F%08lX;" r_scaled r_arg f32_log2_e_bits ;
-      let r = new_f32 alloc in
-      emit buf "ex2.approx.f32 %s, %s;" r r_scaled ;
-      r
+      (* exp(x) = 2^(x·log2 e); PTX only has base-2 ex2 (.approx, f32). *)
+      let r_arg = unary_f32_arg "exp" in
+      f32_op1 "ex2.approx.f32" (f32_mul_const r_arg f32_log2_e_bits)
   | "log" ->
-      (* log(x) = log2(x) * ln 2; PTX only has base-2 lg2, f32 only *)
-      let r_arg = unary_f32_arg "log" args in
-      let r_lg2 = new_f32 alloc in
-      emit buf "lg2.approx.f32 %s, %s;" r_lg2 r_arg ;
-      let r = new_f32 alloc in
-      emit buf "mul.f32 %s, %s, 0F%08lX;" r r_lg2 f32_ln_2_bits ;
-      r
-  | "fabs" ->
-      let r_arg =
-        match args with
-        | [a] -> emit_expr buf alloc env a
-        | _ -> unsupported "fabs arity != 1"
+      (* log(x) = log2(x)·ln 2; PTX only has base-2 lg2 (.approx, f32). *)
+      let r_arg = unary_f32_arg "log" in
+      f32_mul_const (f32_op1 "lg2.approx.f32" r_arg) f32_ln_2_bits
+  | "log10" ->
+      (* log10(x) = log2(x)·log10 2; .approx, f32 precision only. *)
+      let r_arg = unary_f32_arg "log10" in
+      f32_mul_const (f32_op1 "lg2.approx.f32" r_arg) f32_log10_2_bits
+  | "pow" ->
+      (* pow(x,y) = 2^(y·log2 x) via lg2/ex2 (.approx, f32). Domain caveat:
+         valid for x > 0 only — lg2 of a negative is NaN, so integer-exponent
+         negative bases are not handled. *)
+      let ra, rb = binary_f32_args "pow" in
+      let r_lg = f32_op1 "lg2.approx.f32" ra in
+      f32_op1 "ex2.approx.f32" (f32_op2 "mul.f32" rb r_lg)
+  | "sinh" | "cosh" ->
+      (* sinh/cosh x = (e^x ∓ e^-x)/2 via ex2(±x·log2 e); .approx, f32. *)
+      let r_arg = unary_f32_arg name in
+      let r_t = f32_mul_const r_arg f32_log2_e_bits in
+      let r_pos = f32_op1 "ex2.approx.f32" r_t in
+      let r_neg = f32_op1 "ex2.approx.f32" (f32_op1 "neg.f32" r_t) in
+      let comb = if name = "sinh" then "sub.f32" else "add.f32" in
+      f32_mul_const (f32_op2 comb r_pos r_neg) f32_half_bits
+  | "tanh" ->
+      (* tanh x = (e^2x − 1)/(e^2x + 1) via ex2(2x·log2 e); .approx, f32. *)
+      let r_arg = unary_f32_arg "tanh" in
+      let r_e2x =
+        f32_op1 "ex2.approx.f32" (f32_mul_const r_arg f32_two_log2_e_bits)
       in
-      let r = new_f32 alloc in
-      emit buf "abs.f32 %s, %s;" r r_arg ;
-      r
+      let r_num = new_f32 alloc in
+      emit buf "sub.f32 %s, %s, 0F%08lX;" r_num r_e2x f32_one_bits ;
+      let r_den = new_f32 alloc in
+      emit buf "add.f32 %s, %s, 0F%08lX;" r_den r_e2x f32_one_bits ;
+      f32_op2 "div.approx.f32" r_num r_den
+  | "asin" | "acos" | "atan" ->
+      unsupported
+        (name
+       ^ ": no native PTX instruction and no accurate ex2/lg2 composition \
+          (polynomial approximation is out of scope); compute on the CPU")
+  | "atan2" ->
+      unsupported
+        "atan2: depends on atan, which has no native PTX instruction; compute \
+         on the CPU"
+  | "expm1" ->
+      unsupported
+        "expm1: exp(x)-1 via ex2 would lose the near-zero precision expm1 \
+         exists for; use exp then subtract explicitly, or compute on the CPU"
+  | "log1p" ->
+      unsupported
+        "log1p: log(1+x) via lg2 would lose the near-zero precision log1p \
+         exists for; use log(1.0+x) explicitly, or compute on the CPU"
+  | "fabs" | "abs_float" ->
+      unary_native name ~f32_op:(Some "abs.f32") ~f64_op:(Some "abs.f64")
+  | "copysign" ->
+      (* PTX: copysign d, a, b = |b| with a's sign. OCaml copysign x y = |x|
+         with y's sign — the sign source (second Sarek argument) therefore
+         goes in the FIRST PTX operand slot. *)
+      let ra, rb = binary_args "copysign" in
+      if is_f64_reg ra && is_f64_reg rb then (
+        let d = new_f64 alloc in
+        emit buf "copysign.f64 %s, %s, %s;" d rb ra ;
+        d)
+      else if is_f32_reg ra && is_f32_reg rb then (
+        let d = new_f32 alloc in
+        emit buf "copysign.f32 %s, %s, %s;" d rb ra ;
+        d)
+      else
+        unsupported
+          ("copysign: operands " ^ ra ^ ", " ^ rb
+         ^ " must both be f32 or both f64; cast one operand first")
+  | "hypot" ->
+      (* hypot = sqrt(x² + y²) via mul + fma + sqrt. No overflow/underflow
+         rescaling: exact enough for moderate magnitudes (f64 uses only
+         correctly-rounded ops), wrong near FLT/DBL_MAX. *)
+      let ra, rb = binary_args "hypot" in
+      if is_f64_reg ra && is_f64_reg rb then (
+        let r_xx = new_f64 alloc in
+        emit buf "mul.f64 %s, %s, %s;" r_xx ra ra ;
+        let r_sum = new_f64 alloc in
+        emit buf "fma.rn.f64 %s, %s, %s, %s;" r_sum rb rb r_xx ;
+        let d = new_f64 alloc in
+        emit buf "sqrt.rn.f64 %s, %s;" d r_sum ;
+        d)
+      else if is_f32_reg ra && is_f32_reg rb then (
+        let r_xx = f32_op2 "mul.f32" ra ra in
+        let r_sum = new_f32 alloc in
+        emit buf "fma.rn.f32 %s, %s, %s, %s;" r_sum rb rb r_xx ;
+        f32_op1 "sqrt.rn.f32" r_sum)
+      else
+        unsupported
+          ("hypot: operands " ^ ra ^ ", " ^ rb
+         ^ " must both be f32 or both f64; cast one operand first")
   | "fma" -> (
       match args with
       | [a; b; c] ->
           let ra = emit_expr buf alloc env a in
           let rb = emit_expr buf alloc env b in
           let rc = emit_expr buf alloc env c in
-          let r = new_f32 alloc in
-          emit buf "fma.rn.f32 %s, %s, %s, %s;" r ra rb rc ;
-          r
+          if is_f64_reg ra && is_f64_reg rb && is_f64_reg rc then (
+            let r = new_f64 alloc in
+            emit buf "fma.rn.f64 %s, %s, %s, %s;" r ra rb rc ;
+            r)
+          else if is_f32_reg ra && is_f32_reg rb && is_f32_reg rc then (
+            let r = new_f32 alloc in
+            emit buf "fma.rn.f32 %s, %s, %s, %s;" r ra rb rc ;
+            r)
+          else
+            unsupported
+              ("fma: operands " ^ ra ^ ", " ^ rb ^ ", " ^ rc
+             ^ " must all be f32 or all f64; cast the mismatched operand")
       | _ -> unsupported "fma arity != 3")
   (* Type conversions (Gpu.float / Float32.of_int / …). "of_int"/"to_int"
      are path-dependent: they exist in both the Float32 and Float64 stdlib
@@ -1220,20 +1376,22 @@ and emit_intrinsic buf alloc env path name args : string =
   | "max" -> binary_minmax name "max"
   | "floor" -> unary_round name "cvt.rmi"
   | "ceil" -> unary_round name "cvt.rpi"
-  | "rsqrt" -> (
-      match args with
-      | [a] ->
-          let r = emit_expr buf alloc env a in
-          if is_f64_reg r then (
-            let d = new_f64 alloc in
-            emit buf "rsqrt.approx.f64 %s, %s;" d r ;
-            d)
-          else if is_f32_reg r then (
-            let d = new_f32 alloc in
-            emit buf "rsqrt.approx.f32 %s, %s;" d r ;
-            d)
-          else unsupported "rsqrt: float operand required"
-      | _ -> unsupported "rsqrt arity != 1")
+  | "rsqrt" ->
+      (* f64: rcp.rn∘sqrt.rn — rsqrt.approx.f64 exists but is low-precision
+         (~1e-4); the two correctly-rounded ops give ~1-ulp-per-op accuracy.
+         f32 keeps the fast rsqrt.approx.f32. *)
+      let r = unary_arg "rsqrt" in
+      if is_f64_reg r then (
+        let r_sqrt = new_f64 alloc in
+        emit buf "sqrt.rn.f64 %s, %s;" r_sqrt r ;
+        let d = new_f64 alloc in
+        emit buf "rcp.rn.f64 %s, %s;" d r_sqrt ;
+        d)
+      else if is_f32_reg r then (
+        let d = new_f32 alloc in
+        emit buf "rsqrt.approx.f32 %s, %s;" d r ;
+        d)
+      else unsupported "rsqrt: float operand required"
   (* Atomics (old value returned). Shared vs global is auto-detected from the
      array's memory space; the *_global_* names force the global path. *)
   | "atomic_add_int32" ->

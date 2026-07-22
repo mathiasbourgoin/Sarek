@@ -312,6 +312,65 @@ let test_native_math_markers () =
   assert_contains ptx "cvt.rpi.f32.f32" ;
   assert_contains ptx "rsqrt.approx.f32"
 
+(** Native f64 math: sqrt/abs_float/copysign/hypot/rsqrt on Float64 operands
+    emit .f64-suffixed ops only (never an .f32 suffix on an %fd register). *)
+let test_f64_native_math_markers () =
+  let out = make_var "out" (TVec TFloat64) in
+  let a = make_var "a" (TVec TFloat64) in
+  let tid = make_var "tid" TInt32 in
+  let f name args = EIntrinsic (["Float64"], name, args) in
+  let av = EArrayRead ("a", EVar tid) in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SSeq
+          [
+            SAssign (LArrayElem ("out", EVar tid), f "sqrt" [av]);
+            SAssign (LArrayElem ("out", EVar tid), f "abs_float" [av]);
+            SAssign (LArrayElem ("out", EVar tid), f "copysign" [av; av]);
+            SAssign (LArrayElem ("out", EVar tid), f "hypot" [av; av]);
+            SAssign (LArrayElem ("out", EVar tid), f "rsqrt" [av]);
+          ] )
+  in
+  let mk v = DParam (v, Some {arr_elttype = TFloat64; arr_memspace = Global}) in
+  let k = base_kernel "f64_native_math" [mk out; mk a] body [] in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "sqrt.rn.f64" ;
+  assert_contains ptx "abs.f64" ;
+  assert_contains ptx "copysign.f64" ;
+  assert_contains ptx "fma.rn.f64" ;
+  assert_contains ptx "rcp.rn.f64"
+
+(** f32 transcendental compositions: tan/pow/log10/tanh lower to sin/cos/lg2/ex2
+    .approx building blocks plus div.approx.f32. *)
+let test_f32_transcendental_markers () =
+  let out = make_var "out" (TVec TFloat32) in
+  let a = make_var "a" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let f name args = EIntrinsic (["Sarek_stdlib"; "Float32"], name, args) in
+  let av = EArrayRead ("a", EVar tid) in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SSeq
+          [
+            SAssign (LArrayElem ("out", EVar tid), f "tan" [av]);
+            SAssign (LArrayElem ("out", EVar tid), f "pow" [av; av]);
+            SAssign (LArrayElem ("out", EVar tid), f "log10" [av]);
+            SAssign (LArrayElem ("out", EVar tid), f "tanh" [av]);
+          ] )
+  in
+  let mk v = DParam (v, Some {arr_elttype = TFloat32; arr_memspace = Global}) in
+  let k = base_kernel "f32_transcendentals" [mk out; mk a] body [] in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "sin.approx.f32" ;
+  assert_contains ptx "cos.approx.f32" ;
+  assert_contains ptx "lg2.approx.f32" ;
+  assert_contains ptx "ex2.approx.f32" ;
+  assert_contains ptx "div.approx.f32"
+
 (** Extended atomics emit atom.{shared,global}.<op>.<ty>; sub lowers to
     neg + add. *)
 let test_atomic_family_markers () =
@@ -1236,6 +1295,53 @@ let test_f64_variant_param_rejected () =
       check "Some_" ;
       check "8"
 
+(** Shared driver for math-intrinsic rejection tests: codegen must raise
+    Ptx_codegen_error and the message must contain every expected substring
+    (construct + width + workaround). *)
+let assert_math_rejected k expected_substrings =
+  match Sarek_ir_ptx.generate k with
+  | _ -> Alcotest.fail "kernel should raise Ptx_codegen_error"
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error msg ->
+      List.iter
+        (fun expected ->
+          match find_first msg expected with
+          | Some _ -> ()
+          | None ->
+              Alcotest.fail
+                (Printf.sprintf "error should contain %S, got: %s" expected msg))
+        expected_substrings
+
+(** A one-intrinsic kernel over a float vector of [elt] element type. *)
+let make_math_kernel elt path name =
+  let out = make_var "out" (TVec elt) in
+  let a = make_var "a" (TVec elt) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("out", EVar tid),
+            EIntrinsic (path, name, [EArrayRead ("a", EVar tid)]) ) )
+  in
+  let mk v = DParam (v, Some {arr_elttype = elt; arr_memspace = Global}) in
+  base_kernel ("math_" ^ name) [mk out; mk a] body []
+
+(** sin on an f64 operand is rejected cleanly (never emitted as sin.approx.f32
+    on an %fd register — the invalid-PTX module-load bug). *)
+let test_f64_sin_rejected () =
+  let k = make_math_kernel TFloat64 ["Float64"] "sin" in
+  assert_math_rejected
+    k
+    ["sin: no native f64 sin in PTX"; "compute in float32 or on the CPU"]
+
+(** asin has no native PTX op and no accurate composition at any width. *)
+let test_f32_asin_rejected () =
+  let k = make_math_kernel TFloat32 ["Sarek_stdlib"; "Float32"] "asin" in
+  assert_math_rejected
+    k
+    ["asin: no native PTX instruction"; "compute on the CPU"]
+
 let () =
   Alcotest.run
     "ptx_snapshot"
@@ -1250,6 +1356,22 @@ let () =
             "native math emits min/max/cvt.rmi/cvt.rpi/rsqrt"
             `Quick
             test_native_math_markers;
+          Alcotest.test_case
+            "f64 native math emits sqrt.rn/abs/copysign/fma/rcp .f64"
+            `Quick
+            test_f64_native_math_markers;
+          Alcotest.test_case
+            "f32 transcendentals compose sin/cos/lg2/ex2/div .approx"
+            `Quick
+            test_f32_transcendental_markers;
+          Alcotest.test_case
+            "f64 sin is rejected with width + workaround"
+            `Quick
+            test_f64_sin_rejected;
+          Alcotest.test_case
+            "f32 asin is rejected (no native op, no composition)"
+            `Quick
+            test_f32_asin_rejected;
           Alcotest.test_case
             "extended atomics emit atom.*.<op> (+ neg for sub)"
             `Quick
