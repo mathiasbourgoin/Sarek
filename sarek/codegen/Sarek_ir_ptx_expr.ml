@@ -991,7 +991,11 @@ and emit_intrinsic buf alloc env path name args : string =
             unsupported
               (intr ^ ": value operand " ^ r_val0
              ^ " is not f32; cast the value first")
-        | `U32 when is_f32_reg r_val0 || is_f64_reg r_val0 ->
+        | `U32
+          when is_f32_reg r_val0 || is_f64_reg r_val0
+               || String.length r_val0 >= 3
+                  && r_val0.[1] = 'r'
+                  && r_val0.[2] = 'd' ->
             unsupported
               (intr ^ ": value operand " ^ r_val0
              ^ " is not int32; cast the value first")
@@ -1273,16 +1277,25 @@ and emit_intrinsic buf alloc env path name args : string =
       let comb = if name = "sinh" then "sub.f32" else "add.f32" in
       f32_mul_const (f32_op2 comb r_pos r_neg) f32_half_bits
   | "tanh" ->
-      (* tanh x = (e^2x − 1)/(e^2x + 1) via ex2(2x·log2 e); .approx, f32. *)
+      (* tanh x = copysign(1 − 2/(e^(2|x|) + 1), x) via ex2(2|x|·log2 e).
+         Using |x| keeps the exponential finite-or-+inf only: at overflow
+         e^(2|x|) = +inf, 2/(inf+1) = 0 and the result saturates to ±1
+         instead of the NaN the naive (e^2x−1)/(e^2x+1) form produces. *)
       let r_arg = unary_f32_arg "tanh" in
+      let r_abs = f32_op1 "abs.f32" r_arg in
       let r_e2x =
-        f32_op1 "ex2.approx.f32" (f32_mul_const r_arg f32_two_log2_e_bits)
+        f32_op1 "ex2.approx.f32" (f32_mul_const r_abs f32_two_log2_e_bits)
       in
-      let r_num = new_f32 alloc in
-      emit buf "sub.f32 %s, %s, 0F%08lX;" r_num r_e2x f32_one_bits ;
       let r_den = new_f32 alloc in
       emit buf "add.f32 %s, %s, 0F%08lX;" r_den r_e2x f32_one_bits ;
-      f32_op2 "div.approx.f32" r_num r_den
+      let r_two = new_f32 alloc in
+      emit buf "mov.f32 %s, 0F%08lX;" r_two (Int32.bits_of_float 2.0) ;
+      let r_frac = f32_op2 "div.approx.f32" r_two r_den in
+      let r_mag = new_f32 alloc in
+      emit buf "sub.f32 %s, 0F%08lX, %s;" r_mag f32_one_bits r_frac ;
+      let r = new_f32 alloc in
+      emit buf "copysign.f32 %s, %s, %s;" r r_arg r_mag ;
+      r
   | "asin" | "acos" | "atan" ->
       unsupported
         (name
