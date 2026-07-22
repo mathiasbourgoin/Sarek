@@ -1517,26 +1517,42 @@ let test_mixed_align_record_param_accepted () =
 let test_f64_variant_param_accepted () =
   let vty = TVariant ("boxed", [("None_", []); ("Some_", [TFloat64])]) in
   let src = make_var "src" (TVec vty) in
-  let dst = make_var "dst" (TVec TFloat32) in
   let tid = make_var "tid" TInt32 in
+  (* dst is f64 so the matched Some_ payload is written straight back — this
+     forces the variant element load to pull the f64 payload from its aligned
+     offset 8 (ld.global.f64) and store it (st.global.f64), exercising the
+     aligned layout rather than merely compiling. *)
+  let dst = make_var "dst" (TVec TFloat64) in
   let body =
     SLet
       ( tid,
         EIntrinsic ([], "global_thread_id", []),
-        SAssign (LArrayElem ("dst", EVar tid), EConst (CFloat32 0.0)) )
+        SMatch
+          ( EArrayRead ("src", EVar tid),
+            [
+              ( PConstr ("None_", []),
+                SAssign (LArrayElem ("dst", EVar tid), EConst (CFloat64 0.0)) );
+              ( PConstr ("Some_", ["v"]),
+                SAssign
+                  (LArrayElem ("dst", EVar tid), EVar (make_var "v" TFloat64))
+              );
+            ] ) )
   in
   let k =
     base_kernel
       "f64_variant"
       [
         DParam (src, Some {arr_elttype = vty; arr_memspace = Global});
-        DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global});
+        DParam (dst, Some {arr_elttype = TFloat64; arr_memspace = Global});
       ]
       body
       []
   in
   let ptx = Sarek_ir_ptx.generate k in
-  assert_contains ptx ".entry"
+  assert_contains ptx ".entry" ;
+  (* f64 payload read from the aligned offset 8, then stored. *)
+  assert_contains ptx "ld.global.f64" ;
+  assert_contains ptx "st.global.f64"
 
 (** A one-intrinsic kernel over a float vector of [elt] element type. *)
 let make_math_kernel elt path name =
