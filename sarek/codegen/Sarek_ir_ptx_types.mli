@@ -21,6 +21,28 @@ val fail : string -> 'a
     construct named [what]. *)
 val unsupported : string -> 'a
 
+(** {1 Value bindings} *)
+
+(** SROA-decomposed aggregate value: a record is one binding per field (in
+    declaration order, nested records as nested [ARecord]); a variant is a u32
+    tag register plus one payload slot list per constructor, ALL constructors in
+    declaration order (a constructor's tag value = its position in [ctors]).
+    Slots of constructors other than the one a value was built with are
+    freshly-allocated, never-written registers: undefined contents, never read
+    dynamically, present so every value of a variant type has a uniform full
+    shape for leaf-wise copy/mov merging. *)
+type agg_value =
+  | ARecord of (string * binding) list
+  | AVariant of {
+      vname : string;
+      tag_reg : string;
+      ctors : (string * binding list) list;
+    }
+
+(** A variable's PTX value: a single scalar register name, or an aggregate
+    register set. *)
+and binding = Scalar of string | Agg of agg_value
+
 (** {1 Register allocator} *)
 
 (** Counter-based register allocator. Each PTX type has an independent counter
@@ -39,10 +61,14 @@ type reg_alloc = {
           into the kernel prologue by [generate]. *)
   funcs : (string, helper_func) Hashtbl.t;
       (** Kernel helper functions ([kern_funcs]), inlined at EApp sites. *)
+  variant_decls : (string, (string * elttype list) list) Hashtbl.t;
+      (** Variant type declarations ([kern_variants]): type name -> constructors
+          in declaration order, needed by EVariant construction (which only
+          carries the type name). *)
   mutable inline_stack : string list;
       (** Helper names currently being inlined — recursion guard. *)
-  mutable inline_ret : (string option * string) list;
-      (** Per-inline (result register, end label) for SReturn lowering. *)
+  mutable inline_ret : (binding option * string) list;
+      (** Per-inline (result binding, end label) for SReturn lowering. *)
 }
 
 (** [make_alloc ()] returns a fresh zeroed allocator. *)
@@ -77,18 +103,13 @@ val ptx_reg_type_of : elttype -> string
     returns its PTX name. *)
 val new_reg_for_type : reg_alloc -> elttype -> string
 
+(** [binding_of_elttype alloc t] allocates a fresh binding with the register
+    shape of type [t] (no instructions emitted; the registers are declared but
+    unwritten). Used to pre-allocate aggregate results (inlined helper returns)
+    and absent-constructor payload slots. *)
+val binding_of_elttype : reg_alloc -> elttype -> binding
+
 (** {1 Environment: variable name -> PTX binding} *)
-
-(** SROA-decomposed aggregate value: a record is one binding per field (in
-    declaration order, nested records as nested [ARecord]); a variant is a u32
-    tag register plus per-(constructor index) payload bindings. *)
-type agg_value =
-  | ARecord of (string * binding) list
-  | AVariant of {tag_reg : string; payloads : (int * binding list) list}
-
-(** A variable's PTX value: a single scalar register name, or an aggregate
-    register set. *)
-and binding = Scalar of string | Agg of agg_value
 
 (** Maps Sarek IR variable names to their PTX bindings. *)
 type env = (string, binding) Hashtbl.t

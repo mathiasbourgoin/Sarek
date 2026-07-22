@@ -193,6 +193,9 @@ let make_ptx_header ?(sm_target = "sm_86") ?(ptx_version = "8.0") () =
 let generate ?(sm_target = "sm_86") (k : kernel) : string =
   let alloc = make_alloc () in
   List.iter (fun hf -> Hashtbl.replace alloc.funcs hf.hf_name hf) k.kern_funcs ;
+  List.iter
+    (fun (name, ctors) -> Hashtbl.replace alloc.variant_decls name ctors)
+    k.kern_variants ;
   let env = make_env () in
   let body_buf = Buffer.create 2048 in
   let shared_buf = Buffer.create 256 in

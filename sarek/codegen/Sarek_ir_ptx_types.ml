@@ -16,6 +16,30 @@ let fail msg = raise (Ptx_codegen_error msg)
 
 let unsupported what = fail ("PTX codegen: unsupported construct: " ^ what)
 
+(** {1 Value bindings}
+
+    Scalars bind to a single register name. Aggregates (records/variants,
+    SROA-decomposed) bind to a structured register set. Nested records appear as
+    nested [ARecord] values under their field name. *)
+
+type agg_value =
+  | ARecord of (string * binding) list
+      (** Record value: one binding per field, in declaration order. *)
+  | AVariant of {
+      vname : string;  (** Variant type name (for error messages). *)
+      tag_reg : string;  (** u32 register holding the constructor tag. *)
+      ctors : (string * binding list) list;
+          (** One payload slot list per constructor, ALL constructors in
+              declaration order (a constructor's tag value = its position in
+              this list). Slots of constructors other than the one a value was
+              built with are freshly-allocated, never-written registers: their
+              contents are undefined but never read dynamically (the tag never
+              selects them); they exist so every value of a given variant type
+              has a uniform full shape for leaf-wise copy/mov merging. *)
+    }
+
+and binding = Scalar of string | Agg of agg_value
+
 (** {1 Register allocator} *)
 
 (** Counter-based register allocator. Each PTX type has an independent counter
@@ -34,11 +58,16 @@ type reg_alloc = {
           shared arrays); spliced into the kernel prologue by [generate]. *)
   funcs : (string, helper_func) Hashtbl.t;
       (** Kernel helper functions ([kern_funcs]), inlined at EApp sites. *)
+  variant_decls : (string, (string * elttype list) list) Hashtbl.t;
+      (** Variant type declarations ([kern_variants]): type name -> constructors
+          in declaration order. EVariant construction needs the full declaration
+          (it only carries the type name) to allocate every constructor's
+          payload slots and compute the tag index. *)
   mutable inline_stack : string list;
       (** Helper names currently being inlined — recursion guard. *)
-  mutable inline_ret : (string option * string) list;
-      (** Per-inline (result register, end label); SReturn inside an inlined
-          body writes the register (if any) and branches to the label instead of
+  mutable inline_ret : (binding option * string) list;
+      (** Per-inline (result binding, end label); SReturn inside an inlined body
+          writes the binding (if any) and branches to the label instead of
           emitting [ret]. *)
 }
 
@@ -54,6 +83,7 @@ let make_alloc () =
     arr_memspaces = Hashtbl.create 8;
     shared_decls = Buffer.create 128;
     funcs = Hashtbl.create 4;
+    variant_decls = Hashtbl.create 4;
     inline_stack = [];
     inline_ret = [];
   }
@@ -110,20 +140,31 @@ let new_reg_for_type alloc = function
   | TRecord _ -> unsupported "TRecord new_reg"
   | TVariant _ -> unsupported "TVariant new_reg"
 
-(** {1 Environment: variable name -> PTX binding}
+(** [binding_of_elttype alloc t] allocates a fresh binding with the register
+    shape of type [t], without emitting any instruction: the registers are
+    declared (they count toward the [.reg] block) but unwritten. Used to
+    pre-allocate aggregate results (inlined helper returns) and the payload
+    slots of not-constructed variant constructors. *)
+let rec binding_of_elttype alloc = function
+  | TRecord (_, fields) ->
+      Agg
+        (ARecord
+           (List.map (fun (n, t) -> (n, binding_of_elttype alloc t)) fields))
+  | TVariant (name, ctors) ->
+      Agg
+        (AVariant
+           {
+             vname = name;
+             tag_reg = new_u32 alloc;
+             ctors =
+               List.map
+                 (fun (cn, tys) ->
+                   (cn, List.map (binding_of_elttype alloc) tys))
+                 ctors;
+           })
+  | t -> Scalar (new_reg_for_type alloc t)
 
-    Scalars bind to a single register name. Aggregates (records/variants,
-    SROA-decomposed) bind to a structured register set. Nested records appear as
-    nested [ARecord] values under their field name. *)
-
-type agg_value =
-  | ARecord of (string * binding) list
-      (** Record value: one binding per field, in declaration order. *)
-  | AVariant of {tag_reg : string; payloads : (int * binding list) list}
-      (** Variant value: u32 tag register + per-(constructor index) payload
-          bindings in payload-argument order. *)
-
-and binding = Scalar of string | Agg of agg_value
+(** {1 Environment: variable name -> PTX binding} *)
 
 type env = (string, binding) Hashtbl.t
 
@@ -209,15 +250,16 @@ let rec copy_binding buf a = function
   | Scalar r -> Scalar (copy_reg buf a r)
   | Agg (ARecord fields) ->
       Agg (ARecord (List.map (fun (n, b) -> (n, copy_binding buf a b)) fields))
-  | Agg (AVariant {tag_reg; payloads}) ->
+  | Agg (AVariant {vname; tag_reg; ctors}) ->
       Agg
         (AVariant
            {
+             vname;
              tag_reg = copy_reg buf a tag_reg;
-             payloads =
+             ctors =
                List.map
-                 (fun (tag, bs) -> (tag, List.map (copy_binding buf a) bs))
-                 payloads;
+                 (fun (cn, bs) -> (cn, List.map (copy_binding buf a) bs))
+                 ctors;
            })
 
 (** [mov_binding buf ~src ~dst] emits leaf-wise typed movs of [src]'s registers
@@ -241,17 +283,18 @@ let rec mov_binding buf ~src ~dst =
   | Agg (AVariant vs), Agg (AVariant vd) ->
       mov_scalar buf ~dst:vd.tag_reg ~src:vs.tag_reg ;
       List.iter
-        (fun (tag, sbs) ->
-          match List.assoc_opt tag vd.payloads with
+        (fun (cn, sbs) ->
+          match List.assoc_opt cn vd.ctors with
           | Some dbs when List.length dbs = List.length sbs ->
               List.iter2 (fun sb db -> mov_binding buf ~src:sb ~dst:db) sbs dbs
           | _ ->
               fail
                 (Printf.sprintf
                    "PTX codegen: internal error: variant shape mismatch in \
-                    aggregate mov (constructor tag %d)"
-                   tag))
-        vs.payloads
+                    aggregate mov (constructor '%s' of type '%s')"
+                   cn
+                   vs.vname))
+        vs.ctors
   | _ ->
       fail
         "PTX codegen: internal error: aggregate shape mismatch in mov \

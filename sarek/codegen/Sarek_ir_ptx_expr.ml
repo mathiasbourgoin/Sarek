@@ -162,32 +162,17 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
   | ECast (ty, e) ->
       let r_src = emit_expr buf alloc env e in
       emit_cast buf alloc r_src ty
-  | EIf (cond, then_e, else_e)
-    when expr_needs_branch_guard then_e || expr_needs_branch_guard else_e ->
+  | EIf (_, then_e, else_e) as e
+    when expr_needs_branch_guard then_e || expr_needs_branch_guard else_e -> (
       (* A branch with an effect or a (possibly out-of-bounds) array read must
          not be evaluated eagerly (the selp path below computes both); emit
-         real control flow instead. *)
-      let r_cond = emit_expr buf alloc env cond in
-      let p = new_pred alloc in
-      emit buf "setp.ne.u32 %s, %s, 0;" p r_cond ;
-      let l_else = new_label alloc in
-      let l_merge = new_label alloc in
-      emit buf "@!%s bra %s;" p l_else ;
-      let r_then = emit_expr buf alloc env then_e in
-      let r_res = copy_reg buf alloc r_then in
-      emit buf "bra %s;" l_merge ;
-      emit_label buf l_else ;
-      let r_else = emit_expr buf alloc env else_e in
-      let mov_op =
-        if is_f64_reg r_res then "mov.f64"
-        else if is_f32_reg r_res then "mov.f32"
-        else if String.length r_res >= 3 && r_res.[1] = 'r' && r_res.[2] = 'd'
-        then "mov.u64"
-        else "mov.u32"
-      in
-      emit buf "%s %s, %s;" mov_op r_res r_else ;
-      emit_label buf l_merge ;
-      r_res
+         real control flow instead — emit_value owns the branch-based path. *)
+      match emit_value buf alloc env e with
+      | Scalar r -> r
+      | Agg _ ->
+          fail
+            "PTX codegen: if-expression of record/variant type used in a \
+             scalar context; bind it with let and read its scalar fields")
   | EIf (cond, then_e, else_e) ->
       let r_cond = emit_expr buf alloc env cond in
       let r_then = emit_expr buf alloc env then_e in
@@ -242,109 +227,130 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
             ("PTX codegen: field '" ^ field
            ^ "' is a nested record/variant and cannot be used in a scalar \
               context; bind it with let and read its scalar fields"))
-  | ETuple _ -> unsupported "ETuple (no PTX equivalent)"
+  | ETuple _ ->
+      fail
+        "PTX codegen: tuple value used in a scalar context (e.g. stored into a \
+         vector element); bind it with let and use its components \
+         individually, or use a registered record type instead"
   | EApp (EVar f, args) -> (
-      (* Helper-function call: inline the body at the call site. PTX .func
-         would need a per-function register frame and .param ABI the
-         single-pass emitter does not model; helpers are small and NVCC
-         inlines them anyway. Recursive helpers are rejected (guard below)
-         and fall back to another backend, as before. *)
-      match Hashtbl.find_opt alloc.funcs f.var_name with
-      | None -> unsupported ("EApp to unknown function '" ^ f.var_name ^ "'")
-      | Some hf ->
-          if List.mem hf.hf_name alloc.inline_stack then
-            unsupported
-              ("EApp: recursive helper '" ^ hf.hf_name
-             ^ "' (inlining supports non-recursive helpers only)")
-          else if List.length args <> List.length hf.hf_params then
-            fail
-              (Printf.sprintf
-                 "PTX codegen: helper '%s' called with %d args, expects %d"
-                 hf.hf_name
-                 (List.length args)
-                 (List.length hf.hf_params))
-          else begin
-            (* Evaluate arguments in the caller's environment. *)
-            let arg_regs = List.map (emit_expr buf alloc env) args in
-            (* Fresh environment for the helper body: only its parameters
-               are in scope (helpers are module-level, no capture). *)
-            let callee_env = make_env () in
-            (* Array params: register element type (from the param's own
-               type) and propagate shared-ness / length binding from the
-               caller when the argument is a plain array variable. Entries
-               we overwrite are saved and restored after the inline. *)
-            let saved =
-              List.map2
-                (fun (p : var) (arg, r_arg) ->
-                  (* Scalars are copied so mutations inside the helper (via
-                     mutable lets rebinding the param) can never clobber the
-                     caller's register; array params are base pointers and
-                     are never written through LVar, bind directly. *)
-                  (match p.var_type with
-                  | TVec _ | TArray _ -> env_bind callee_env p.var_name r_arg
-                  | _ ->
-                      env_bind callee_env p.var_name (copy_reg buf alloc r_arg)) ;
-                  match p.var_type with
-                  | TVec elt | TArray (elt, _) ->
-                      let prev_elt =
-                        Hashtbl.find_opt alloc.arr_elt_types p.var_name
-                      in
-                      let prev_ms =
-                        Hashtbl.mem alloc.arr_memspaces p.var_name
-                      in
-                      Hashtbl.replace alloc.arr_elt_types p.var_name elt ;
-                      (match arg with
-                      | EVar a -> (
-                          if Hashtbl.mem alloc.arr_memspaces a.var_name then
-                            Hashtbl.replace alloc.arr_memspaces p.var_name ()
-                          else Hashtbl.remove alloc.arr_memspaces p.var_name ;
-                          match
-                            Hashtbl.find_opt env (length_param_name a.var_name)
-                          with
-                          | Some len_binding ->
-                              env_bind_binding
-                                callee_env
-                                (length_param_name p.var_name)
-                                len_binding
-                          | None -> ())
-                      | _ -> Hashtbl.remove alloc.arr_memspaces p.var_name) ;
-                      Some (p.var_name, prev_elt, prev_ms)
-                  | _ -> None)
-                hf.hf_params
-                (List.combine args arg_regs)
-            in
-            let l_end = new_label alloc in
-            let r_ret =
-              match hf.hf_ret_type with
-              | TUnit -> None
-              | t -> Some (new_reg_for_type alloc t)
-            in
-            alloc.inline_stack <- hf.hf_name :: alloc.inline_stack ;
-            alloc.inline_ret <- (r_ret, l_end) :: alloc.inline_ret ;
-            !stmt_emitter buf alloc callee_env hf.hf_body ;
-            alloc.inline_ret <- List.tl alloc.inline_ret ;
-            alloc.inline_stack <- List.tl alloc.inline_stack ;
-            emit_label buf l_end ;
-            (* Restore array metadata shadowed by parameter names. *)
-            List.iter
-              (function
-                | None -> ()
-                | Some (name, prev_elt, prev_ms) ->
-                    (match prev_elt with
-                    | Some e -> Hashtbl.replace alloc.arr_elt_types name e
-                    | None -> Hashtbl.remove alloc.arr_elt_types name) ;
-                    if prev_ms then Hashtbl.replace alloc.arr_memspaces name ()
-                    else Hashtbl.remove alloc.arr_memspaces name)
-              saved ;
-            match r_ret with
-            | Some r -> r
-            | None ->
-                let r = new_u32 alloc in
-                emit buf "mov.u32 %s, 0;" r ;
-                r
-          end)
+      match emit_app buf alloc env f args with
+      | Scalar r -> r
+      | Agg _ ->
+          fail
+            ("PTX codegen: helper '" ^ f.var_name
+           ^ "' returns a record/variant and cannot be used in a scalar \
+              context; bind the result with let and use its fields"))
   | EApp _ -> unsupported "EApp with non-variable callee"
   | EVariant _ -> unsupported "EVariant (requires tagged-union lowering)"
+
+(** {1 Helper-function inlining}
+
+    Inline the helper body at the call site. PTX .func would need a per-function
+    register frame and .param ABI the single-pass emitter does not model;
+    helpers are small and NVCC inlines them anyway. Recursive helpers are
+    rejected and fall back to another backend, as before. *)
+
+(** Bind one helper parameter in [callee_env] from the caller's evaluated
+    argument. Scalar and aggregate values are leaf-wise copied so mutations
+    inside the helper can never clobber the caller's registers; array params are
+    base pointers, never written through LVar — bound directly. Returns array
+    metadata to restore after the inline ([None] for non-arrays). *)
+and bind_helper_param buf alloc env callee_env (p : var) (arg, arg_val) =
+  (match (p.var_type, arg_val) with
+  | (TVec _ | TArray _), Scalar r_arg -> env_bind callee_env p.var_name r_arg
+  | (TVec _ | TArray _), Agg _ ->
+      fail
+        (Printf.sprintf
+           "PTX codegen: array parameter '%s' bound to a record/variant value"
+           p.var_name)
+  | _, v -> env_bind_binding callee_env p.var_name (copy_binding buf alloc v)) ;
+  (* Array params: register element type (from the param's own type) and
+     propagate shared-ness / length binding from the caller when the argument
+     is a plain array variable. Overwritten entries are saved for restore. *)
+  match p.var_type with
+  | TVec elt | TArray (elt, _) ->
+      let prev_elt = Hashtbl.find_opt alloc.arr_elt_types p.var_name in
+      let prev_ms = Hashtbl.mem alloc.arr_memspaces p.var_name in
+      Hashtbl.replace alloc.arr_elt_types p.var_name elt ;
+      (match arg with
+      | EVar a -> (
+          if Hashtbl.mem alloc.arr_memspaces a.var_name then
+            Hashtbl.replace alloc.arr_memspaces p.var_name ()
+          else Hashtbl.remove alloc.arr_memspaces p.var_name ;
+          match Hashtbl.find_opt env (length_param_name a.var_name) with
+          | Some len_binding ->
+              env_bind_binding
+                callee_env
+                (length_param_name p.var_name)
+                len_binding
+          | None -> ())
+      | _ -> Hashtbl.remove alloc.arr_memspaces p.var_name) ;
+      Some (p.var_name, prev_elt, prev_ms)
+  | _ -> None
+
+(** Restore array metadata shadowed by helper parameter names. *)
+and restore_helper_array_meta alloc saved =
+  List.iter
+    (function
+      | None -> ()
+      | Some (name, prev_elt, prev_ms) ->
+          (match prev_elt with
+          | Some e -> Hashtbl.replace alloc.arr_elt_types name e
+          | None -> Hashtbl.remove alloc.arr_elt_types name) ;
+          if prev_ms then Hashtbl.replace alloc.arr_memspaces name ()
+          else Hashtbl.remove alloc.arr_memspaces name)
+    saved
+
+(** Inline a helper call and return the binding holding its result. Aggregate
+    returns are pre-allocated from [hf_ret_type] (FR-023); SReturn inside the
+    inlined body movs leaf-wise into that binding. *)
+and emit_app buf alloc (env : env) (f : var) (args : expr list) : binding =
+  match Hashtbl.find_opt alloc.funcs f.var_name with
+  | None -> unsupported ("EApp to unknown function '" ^ f.var_name ^ "'")
+  | Some hf ->
+      if List.mem hf.hf_name alloc.inline_stack then
+        unsupported
+          ("EApp: recursive helper '" ^ hf.hf_name
+         ^ "' (inlining supports non-recursive helpers only)")
+      else if List.length args <> List.length hf.hf_params then
+        fail
+          (Printf.sprintf
+             "PTX codegen: helper '%s' called with %d args, expects %d"
+             hf.hf_name
+             (List.length args)
+             (List.length hf.hf_params))
+      else begin
+        (* Evaluate arguments in the caller's environment. *)
+        let arg_vals = List.map (emit_value buf alloc env) args in
+        (* Fresh environment for the helper body: only its parameters are in
+           scope (helpers are module-level, no capture). *)
+        let callee_env = make_env () in
+        let saved =
+          List.map2
+            (bind_helper_param buf alloc env callee_env)
+            hf.hf_params
+            (List.combine args arg_vals)
+        in
+        let l_end = new_label alloc in
+        let ret =
+          match hf.hf_ret_type with
+          | TUnit -> None
+          | t -> Some (binding_of_elttype alloc t)
+        in
+        alloc.inline_stack <- hf.hf_name :: alloc.inline_stack ;
+        alloc.inline_ret <- (ret, l_end) :: alloc.inline_ret ;
+        !stmt_emitter buf alloc callee_env hf.hf_body ;
+        alloc.inline_ret <- List.tl alloc.inline_ret ;
+        alloc.inline_stack <- List.tl alloc.inline_stack ;
+        emit_label buf l_end ;
+        restore_helper_array_meta alloc saved ;
+        match ret with
+        | Some b -> b
+        | None ->
+            let r = new_u32 alloc in
+            emit buf "mov.u32 %s, 0;" r ;
+            Scalar r
+      end
 
 (** {1 Value emitter (scalar or aggregate)}
 
@@ -361,6 +367,27 @@ and emit_value buf alloc (env : env) (e : expr) : binding =
            (List.map (fun (n, fe) -> (n, emit_value buf alloc env fe)) fields))
   | ERecordField (base, field) -> emit_record_field buf alloc env base field
   | EVar v -> env_lookup_binding env v.var_name
+  | EApp (EVar f, args) -> emit_app buf alloc env f args
+  | EIf (cond, then_e, else_e)
+    when expr_needs_branch_guard then_e || expr_needs_branch_guard else_e ->
+      (* Branch-based conditional, aggregate-capable: the then-value's binding
+         is leaf-wise copied into the result, the else-value leaf-wise moved
+         into it (for scalars this emits exactly the instructions of
+         emit_expr's guarded EIf path). *)
+      let r_cond = emit_expr buf alloc env cond in
+      let p = new_pred alloc in
+      emit buf "setp.ne.u32 %s, %s, 0;" p r_cond ;
+      let l_else = new_label alloc in
+      let l_merge = new_label alloc in
+      emit buf "@!%s bra %s;" p l_else ;
+      let b_then = emit_value buf alloc env then_e in
+      let b_res = copy_binding buf alloc b_then in
+      emit buf "bra %s;" l_merge ;
+      emit_label buf l_else ;
+      let b_else = emit_value buf alloc env else_e in
+      mov_binding buf ~src:b_else ~dst:b_res ;
+      emit_label buf l_merge ;
+      b_res
   | _ -> Scalar (emit_expr buf alloc env e)
 
 (** Field selection on a local (SROA) record value: pure register selection, no

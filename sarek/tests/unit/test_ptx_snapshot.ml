@@ -498,6 +498,70 @@ let test_record_field_mutation_markers () =
     "ld.global"
     ~why:"mutable local record field update must be a register mov"
 
+(** Helper taking AND returning a record: aggregate args are leaf-wise copied
+    into the callee, the aggregate return is pre-allocated and filled by SReturn
+    — all inlined, all in registers (FR-023). *)
+let test_helper_record_arg_ret_markers () =
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let p = make_var "p" point_ty in
+  let kf = make_var "k" TFloat32 in
+  let helper =
+    {
+      hf_name = "scale";
+      hf_params = [p; kf];
+      hf_ret_type = point_ty;
+      hf_body =
+        SReturn
+          (ERecord
+             ( "point",
+               [
+                 ("x", EBinop (Mul, ERecordField (EVar p, "x"), EVar kf));
+                 ("y", EBinop (Mul, ERecordField (EVar p, "y"), EVar kf));
+               ] ));
+    }
+  in
+  let q = make_var "q" point_ty in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( q,
+            EApp
+              ( EVar (make_var "scale" point_ty),
+                [
+                  ERecord
+                    ( "point",
+                      [
+                        ("x", EConst (CFloat32 1.5));
+                        ("y", EConst (CFloat32 2.5));
+                      ] );
+                  EConst (CFloat32 2.0);
+                ] ),
+            SAssign
+              ( LArrayElem ("dst", EVar tid),
+                EBinop
+                  (Add, ERecordField (EVar q, "x"), ERecordField (EVar q, "y"))
+              ) ) )
+  in
+  let k =
+    base_kernel
+      "record_helper"
+      [DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+      body
+      [helper]
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "mul.f32" ;
+  assert_contains ptx "add.f32" ;
+  assert_contains ptx "st.global.f32" ;
+  assert_absent ptx ".func" ~why:"helper must be inlined, not a PTX function" ;
+  assert_absent
+    ptx
+    "ld.global"
+    ~why:"record argument and return must stay in SROA registers"
+
 let () =
   Alcotest.run
     "ptx_snapshot"
@@ -536,5 +600,21 @@ let () =
             "guarded array read in if-expr branches (no speculative load)"
             `Quick
             test_guarded_array_read_branches;
+          Alcotest.test_case
+            "local record is SROA registers (no memory traffic)"
+            `Quick
+            test_record_sroa_markers;
+          Alcotest.test_case
+            "nested local record stays in registers"
+            `Quick
+            test_nested_record_sroa_markers;
+          Alcotest.test_case
+            "mutable record field update is a register mov"
+            `Quick
+            test_record_field_mutation_markers;
+          Alcotest.test_case
+            "helper with record arg + record return is inlined SROA"
+            `Quick
+            test_helper_record_arg_ret_markers;
         ] );
     ]

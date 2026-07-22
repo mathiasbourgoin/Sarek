@@ -137,26 +137,15 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
   | SMemFence -> emit buf "membar.gl;"
   | SReturn e -> (
       match alloc.inline_ret with
-      | (r_ret, l_end) :: _ ->
-          (* Inside an inlined helper body: write the result register (if the
-             helper returns a value) and branch to the inline end label
-             instead of returning from the kernel. *)
-          let r_val = emit_expr buf alloc env e in
-          (match r_ret with
-          | None -> ()
-          | Some r_dst ->
-              let mov_op =
-                if
-                  String.length r_dst >= 3 && r_dst.[1] = 'r' && r_dst.[2] = 'd'
-                then "mov.u64"
-                else if
-                  String.length r_dst >= 3 && r_dst.[1] = 'f' && r_dst.[2] = 'd'
-                then "mov.f64"
-                else if String.length r_dst >= 2 && r_dst.[1] = 'f' then
-                  "mov.f32"
-                else "mov.u32"
-              in
-              emit buf "%s %s, %s;" mov_op r_dst r_val) ;
+      | (ret, l_end) :: _ ->
+          (* Inside an inlined helper body: write the result binding (if the
+             helper returns a value; leaf-wise movs for aggregates) and branch
+             to the inline end label instead of returning from the kernel. *)
+          (match ret with
+          | None -> ignore (emit_expr buf alloc env e)
+          | Some dst ->
+              let src = emit_value buf alloc env e in
+              mov_binding buf ~src ~dst) ;
           emit buf "bra %s;" l_end
       | [] ->
           ignore (emit_expr buf alloc env e) ;
