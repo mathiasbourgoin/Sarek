@@ -244,12 +244,23 @@ let emit_match_arms buf alloc (env : env) (scrut : binding)
     truth for the "sarek.inline N" string format) — the PPX is a separate
     library not linkable from the codegen. *)
 let helper_inline_budget (hf : helper_func) : int option =
+  (* A negative depth would never reach the [Some 0] exhaustion arm of
+     [emit_app_recursive] (the budget decrements past zero), making the
+     expansion non-terminating — reject it loudly instead of parsing it. *)
+  let checked n_str =
+    match int_of_string_opt n_str with
+    | Some n when n < 0 ->
+        unsupported
+          ("pragma [\"sarek.inline " ^ n_str
+         ^ "\"]: the inline depth must be >= 0")
+    | v -> v
+  in
   let parse = function
     | [opt] -> (
         match String.split_on_char ' ' opt with
-        | ["sarek.inline"; n] -> int_of_string_opt n
+        | ["sarek.inline"; n] -> checked n
         | _ -> None)
-    | ["sarek.inline"; n] -> int_of_string_opt n
+    | ["sarek.inline"; n] -> checked n
     | _ -> None
   in
   let rec root = function SBlock s -> root s | s -> s in
