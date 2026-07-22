@@ -637,6 +637,14 @@ and gen_match_pattern buf indent scrutinee cname bindings find_constr_types =
 and gen_var_decl buf indent v_name v_type init_expr =
   let vn = escape_glsl_name v_name in
   Buffer.add_string buf indent ;
+  (* [precise] forbids contraction/reassociation on float locals (SPIR-V
+     NoContraction). Without it some drivers (observed: RADV via glslang)
+     simplify error-free transformations like Dekker/Knuth TwoSum, breaking
+     algorithms that rely on IEEE-exact rounding of each operation. This
+     matches CUDA/OpenCL codegen semantics (no fast-math contraction). *)
+  (match v_type with
+  | TFloat32 | TFloat64 -> Buffer.add_string buf "precise "
+  | _ -> ()) ;
   Buffer.add_string buf (glsl_type_of_elttype v_type) ;
   Buffer.add_char buf ' ' ;
   Buffer.add_string buf vn ;
