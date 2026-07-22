@@ -3,18 +3,25 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(** Sarek_ir_layout - Packed aggregate byte layout for GPU codegen.
+(** Sarek_ir_layout - Aligned (C-ABI-compatible) aggregate byte layout for GPU
+    codegen.
 
     Pure layout computation for record/variant element types, mirroring the host
-    PPX layout exactly (packed cumulative offsets, no padding — see
-    [calc_offsets] and the variant [[tag:int32@0][payload@4]] encoding in
-    sarek/ppx/Sarek_ppx.ml). Every backend that stores aggregates in vector
-    elements must take its offsets from this module so host and device agree
-    byte-for-byte.
+    PPX layout exactly (aligned C struct rules: each field rounded up to its
+    natural alignment with padding, total size rounded up to the struct's max
+    member alignment; the variant
+    [[tag:int32@0][payload@max(4, max payload align)]] encoding — see
+    [calc_offsets] in sarek/ppx/Sarek_ppx.ml). This is byte-for-byte identical
+    to the [typedef struct {...}] the C-family backends emit, so host and every
+    device agree. Every backend that stores aggregates in vector elements must
+    take its offsets from this module.
 
-    Layouts whose packed placement would put a scalar leaf at a
-    non-naturally-aligned offset are rejected with a typed error, as are
-    variants nested below top level and array/vector fields. *)
+    Because placement is alignment-derived, mixed-alignment aggregates
+    ([{i32;f64}] records, f64/i64-payload variants) are now laid out correctly
+    on all backends rather than rejected. The [Misaligned_field] error is
+    retained only as a defensive internal invariant (it can no longer fire for
+    well-formed input); variants nested below top level and array/vector fields
+    are still rejected. *)
 
 open Sarek_ir_types
 
@@ -27,11 +34,13 @@ type layout_error =
   | Misaligned_field of {
       type_name : string;
       field : string;
-      offset : int;  (** packed byte offset of the leaf *)
+      offset : int;  (** byte offset of the leaf *)
       required_align : int;  (** natural alignment of the leaf's scalar type *)
     }
-      (** The packed layout places a scalar leaf at an offset that is not a
-          multiple of its natural alignment. *)
+      (** Defensive internal invariant: a scalar leaf landed at an offset that
+          is not a multiple of its natural alignment. With the aligned layout
+          every field is padded to its boundary, so this can no longer be
+          produced by well-formed input; kept as an assertion guard. *)
   | Nested_variant of {type_name : string; field : string}
       (** A variant occurs below top level (record field or variant payload). *)
   | Unsupported_field of {type_name : string; field : string; what : string}
@@ -69,14 +78,15 @@ type leaf = {
   leaf_align : int;  (** Natural alignment ([scalar_align leaf_type]). *)
 }
 
-(** Packed record layout. *)
+(** Aligned record layout. *)
 type record_layout = {
   rl_fields : (string * int) list;
-      (** Byte offset of each immediate field (declaration order), including
-          nested-record fields as a whole. *)
+      (** Aligned byte offset of each immediate field (declaration order),
+          including nested-record fields as a whole. *)
   rl_leaves : leaf list;
       (** All scalar leaves, flattened recursively, declaration order. *)
-  rl_size : int;  (** Total packed byte size. *)
+  rl_size : int;
+      (** Total byte size, padded to the struct's maximum member alignment. *)
 }
 
 (** Layout of one variant constructor's payload. *)
@@ -85,17 +95,23 @@ type ctor_layout = {
   ctor_tag : int;  (** Constructor declaration index (host tag value). *)
   ctor_leaves : leaf list;
       (** Payload scalar leaves; offsets are absolute from the element start
-          (i.e. [>= 4]), paths are constructor-qualified positional slots
-          ([Value._0], [Pair._1], ...). *)
-  ctor_payload_size : int;  (** Packed byte size of this payload. *)
+          (i.e. [>= vl_payload_offset]), paths are constructor-qualified
+          positional slots ([Value._0], [Pair._1], ...). *)
+  ctor_payload_size : int;
+      (** Aligned (padded) byte size of this payload — its C union member size.
+      *)
 }
 
-(** Variant layout: [[tag:int32@0][payload@4]]. *)
+(** Variant layout: [[tag:int32@0][payload@P]] with
+    [P = max(4, max payload-member alignment)]. *)
 type variant_layout = {
   vl_tag_offset : int;  (** Always 0. *)
-  vl_payload_offset : int;  (** Always 4. *)
+  vl_payload_offset : int;
+      (** [max(4, max payload-member alignment)] — 4 when every payload is
+          4-byte-aligned, 8 when any payload is 8-byte-aligned. *)
   vl_ctors : ctor_layout list;  (** Declaration order. *)
-  vl_size : int;  (** [4 + max payload size] over all constructors. *)
+  vl_size : int;
+      (** [round_up(vl_payload_offset + max payload size, max_align)]. *)
 }
 
 (** Layout of any element type, as dispatched by {!elttype_layout}. *)
@@ -106,21 +122,23 @@ type layout =
 
 (** {1 Layout computation} *)
 
-(** [record_layout ~type_name fields] computes the packed layout of a record:
-    offsets are cumulative field sizes with no padding, nested records are
-    flattened recursively with dotted leaf paths. Rejects misaligned leaves,
-    variant fields, and array/vector fields. *)
+(** [record_layout ~type_name fields] computes the aligned layout of a record:
+    each field is placed at the next offset satisfying its natural alignment
+    (padding inserted), the total size is rounded up to the struct's max member
+    alignment, nested records are flattened recursively with dotted leaf paths.
+    Rejects variant fields and array/vector fields. *)
 val record_layout :
   type_name:string ->
   (string * elttype) list ->
   (record_layout, layout_error) result
 
-(** [variant_layout ~type_name ctors] computes the packed layout of a variant:
-    int32 tag at offset 0, payload region at offset 4, per-constructor arg
-    offsets = 4 + packed cumulative sizes, total size = 4 + max payload. Rejects
-    misaligned payload leaves (hence every 8-byte scalar payload, which would
-    sit at a non-8-aligned offset), nested variants, and array/vector payloads.
-*)
+(** [variant_layout ~type_name ctors] computes the aligned layout of a variant:
+    int32 tag at offset 0, payload region at offset
+    [max(4, max payload-member alignment)], per-constructor arg offsets aligned
+    within the payload, total size =
+    [round_up(payload_offset + max payload, max_align)]. Mixed-alignment and
+    8-byte-scalar payloads are now supported (aligned naturally). Rejects nested
+    variants and array/vector payloads. *)
 val variant_layout :
   type_name:string ->
   (string * elttype list) list ->

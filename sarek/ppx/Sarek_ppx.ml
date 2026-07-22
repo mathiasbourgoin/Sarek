@@ -112,6 +112,14 @@ let module_name_of_loc loc =
    This allows nested types to look up sizes of previously processed types. *)
 let type_size_registry : (string, int) Hashtbl.t = Hashtbl.create 16
 
+(* Registry of known type alignments, populated alongside type_size_registry so
+   nested aggregate fields can be placed on their natural boundary (L8). *)
+let type_align_registry : (string, int) Hashtbl.t = Hashtbl.create 16
+
+(* Round [off] up to the next multiple of [a] (C-ABI padding rule). [a] is a
+   positive power of two (4 or 8) here; [a <= 1] is the identity. *)
+let align_up off a = if a <= 1 then off else (off + a - 1) / a * a
+
 (* Get size of a type, checking registry for custom types *)
 let get_type_size_from_core_type (ct : core_type) : int =
   match ct.ptyp_desc with
@@ -119,39 +127,112 @@ let get_type_size_from_core_type (ct : core_type) : int =
   | Ptyp_constr ({txt = Lident "int64"; _}, _) -> 8
   | Ptyp_constr ({txt = Lident "float32"; _}, _) -> 4
   | Ptyp_constr ({txt = Lident "float"; _}, _) -> 4 (* GPU float32 *)
+  | Ptyp_constr ({txt = Lident "float64"; _}, _) -> 8
   | Ptyp_constr ({txt = Lident "int"; _}, _) -> 4
   | Ptyp_constr ({txt = Lident type_name; _}, _) -> (
       (* Check if it's a known custom type *)
       try Hashtbl.find type_size_registry type_name with Not_found -> 4)
   | _ -> 4
 
-let calc_type_size_early (labels : label_declaration list) : int =
-  List.fold_left
-    (fun acc ld -> acc + get_type_size_from_core_type ld.pld_type)
-    0
-    labels
+(* Natural alignment of a field type, mirroring Sarek_ir_layout.elttype_align:
+   4 for 32-bit scalars, 8 for int64/float64, and the registered alignment for a
+   nested custom aggregate. *)
+let get_type_align_from_core_type (ct : core_type) : int =
+  match ct.ptyp_desc with
+  | Ptyp_constr ({txt = Lident "int32"; _}, _) -> 4
+  | Ptyp_constr ({txt = Lident "int64"; _}, _) -> 8
+  | Ptyp_constr ({txt = Lident "float32"; _}, _) -> 4
+  | Ptyp_constr ({txt = Lident "float"; _}, _) -> 4 (* GPU float32 *)
+  | Ptyp_constr ({txt = Lident "float64"; _}, _) -> 8
+  | Ptyp_constr ({txt = Lident "int"; _}, _) -> 4
+  | Ptyp_constr ({txt = Lident type_name; _}, _) -> (
+      try Hashtbl.find type_align_registry type_name with Not_found -> 4)
+  | _ -> 4
 
-(* Helper to get payload size in bytes for a variant constructor *)
+(* Aligned immediate-field offset table for a record: each field placed at the
+   next offset satisfying its natural alignment. Returns (name, offset, type)
+   in declaration order together with the end offset (before trailing pad) and
+   the struct's maximum member alignment. Single source of the aligned record
+   rule for the host PPX (mirrors Sarek_ir_layout.flatten_fields). *)
+let aligned_record_offsets (labels : label_declaration list) =
+  let fields, running, maxalign =
+    List.fold_left
+      (fun (acc, running, maxalign) ld ->
+        let a = get_type_align_from_core_type ld.pld_type in
+        let off = align_up running a in
+        ( (ld.pld_name.txt, off, ld.pld_type) :: acc,
+          off + get_type_size_from_core_type ld.pld_type,
+          max maxalign a ))
+      ([], 0, 1)
+      labels
+  in
+  (List.rev fields, running, maxalign)
+
+(* Aligned total size of a record type: end offset padded to the struct's max
+   member alignment. *)
+let calc_type_size_early (labels : label_declaration list) : int =
+  let _, running, maxalign = aligned_record_offsets labels in
+  align_up running maxalign
+
+(* Alignment of one variant constructor's payload (max over its args). *)
+let variant_payload_align (cd : constructor_declaration) : int =
+  match cd.pcd_args with
+  | Pcstr_tuple [] -> 1
+  | Pcstr_tuple cts ->
+      List.fold_left
+        (fun m ct -> max m (get_type_align_from_core_type ct))
+        1
+        cts
+  | Pcstr_record _ -> 1
+
+(* Aligned (padded) payload size of one variant constructor — its C union member
+   size: args laid out from 0 on their natural boundaries, padded to the
+   payload's own alignment. *)
 let variant_payload_byte_size (cd : constructor_declaration) : int =
   match cd.pcd_args with
   | Pcstr_tuple [] -> 0
-  | Pcstr_tuple [ct] -> get_type_size_from_core_type ct
   | Pcstr_tuple cts ->
-      List.fold_left ( + ) 0 (List.map get_type_size_from_core_type cts)
+      let running, maxalign =
+        List.fold_left
+          (fun (off, ma) ct ->
+            let a = get_type_align_from_core_type ct in
+            (align_up off a + get_type_size_from_core_type ct, max ma a))
+          (0, 1)
+          cts
+      in
+      align_up running maxalign
   | Pcstr_record _ -> 0 (* TODO: support inline records *)
+
+(* Payload region offset for a variant: max(4, max payload-member alignment)
+   over all constructors (mirrors Sarek_ir_layout variant_layout). *)
+let variant_payload_offset (constrs : constructor_declaration list) : int =
+  List.fold_left (fun m cd -> max m (variant_payload_align cd)) 4 constrs
+
+(* Aligned total size of a variant: round_up(payload_offset + max payload,
+   payload_align). *)
+let calc_variant_size (constrs : constructor_declaration list) : int =
+  let payload_off = variant_payload_offset constrs in
+  let max_payload =
+    List.fold_left max 0 (List.map variant_payload_byte_size constrs)
+  in
+  align_up (payload_off + max_payload) payload_off
 
 (* Compute type size and register it in the registry for nested type lookup. *)
 let register_type_size (td : type_declaration) =
   let type_name = td.ptype_name.txt in
+  let align =
+    match td.ptype_kind with
+    | Ptype_record labels ->
+        let _, _, maxalign = aligned_record_offsets labels in
+        maxalign
+    | Ptype_variant constrs -> variant_payload_offset constrs
+    | _ -> 4
+  in
+  Hashtbl.replace type_align_registry type_name align ;
   let size =
     match td.ptype_kind with
     | Ptype_record labels -> calc_type_size_early labels
-    | Ptype_variant constrs ->
-        (* 4 bytes for tag + max payload size *)
-        let max_payload =
-          List.fold_left max 0 (List.map variant_payload_byte_size constrs)
-        in
-        4 + max_payload
+    | Ptype_variant constrs -> calc_variant_size constrs
     | _ -> 4
   in
   Hashtbl.replace type_size_registry type_name size
@@ -507,6 +588,11 @@ let gen_field_read ~loc (ftype : core_type) (byte_off_expr : expression) :
         Spoc_core.Vector.Custom_helpers.read_int64
           raw_ptr
           (base_off + [%e byte_off_expr])]
+  | Ptyp_constr ({txt = Lident "float64"; _}, _) ->
+      [%expr
+        Spoc_core.Vector.Custom_helpers.read_float64
+          raw_ptr
+          (base_off + [%e byte_off_expr])]
   | Ptyp_constr ({txt = Lident "int"; _}, _) ->
       [%expr
         Spoc_core.Vector.Custom_helpers.read_int
@@ -562,6 +648,12 @@ let gen_field_write ~loc (ftype : core_type) (byte_off_expr : expression)
           raw_ptr
           (base_off + [%e byte_off_expr])
           [%e value_expr]]
+  | Ptyp_constr ({txt = Lident "float64"; _}, _) ->
+      [%expr
+        Spoc_core.Vector.Custom_helpers.write_float64
+          raw_ptr
+          (base_off + [%e byte_off_expr])
+          [%e value_expr]]
   | Ptyp_constr ({txt = Lident "int"; _}, _) ->
       [%expr
         Spoc_core.Vector.Custom_helpers.write_int
@@ -611,17 +703,8 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
           ]
       in
 
-      (* Calculate byte offsets for each field *)
-      let field_infos =
-        let rec calc_offsets byte_off = function
-          | [] -> []
-          | ld :: rest ->
-              let fsize = field_byte_size ld.pld_type in
-              (ld.pld_name.txt, byte_off, ld.pld_type)
-              :: calc_offsets (byte_off + fsize) rest
-        in
-        calc_offsets 0 labels
-      in
+      (* Calculate aligned byte offsets for each field (L8: C-ABI padding). *)
+      let field_infos = aligned_record_offsets labels |> fun (fs, _, _) -> fs in
 
       (* Generate V2 custom type - use a helper function to avoid value restriction issues *)
       let _ = type_annot in
@@ -738,21 +821,28 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
           ]
       in
 
-      (* Helper to get payload size in bytes for a constructor *)
-      let payload_byte_size cd =
-        match cd.pcd_args with
-        | Pcstr_tuple [] -> 0
-        | Pcstr_tuple [ct] -> get_type_size_from_core_type ct
-        | Pcstr_tuple cts ->
-            List.fold_left ( + ) 0 (List.map get_type_size_from_core_type cts)
-        | Pcstr_record _ -> 0 (* TODO: support inline records *)
-      in
-      let max_payload_bytes =
-        List.fold_left max 0 (List.map payload_byte_size constrs)
-      in
-      let total_size = 4 + max_payload_bytes in
-      (* 4 for int32 tag *)
+      (* L8 aligned variant layout: payload region starts at
+         max(4, max payload-member alignment), computed once and threaded
+         through every get/set/fallback site (was a duplicated literal 4). *)
+      let payload_off_val = variant_payload_offset constrs in
+      let total_size = calc_variant_size constrs in
       let size_expr = Ast_builder.Default.eint ~loc total_size in
+      (* Aligned absolute offset of a single-arg payload. *)
+      let single_payload_off ct =
+        align_up payload_off_val (get_type_align_from_core_type ct)
+      in
+      (* Aligned absolute offsets of each positional arg of a multi-arg payload. *)
+      let arg_offsets cts =
+        let offs, _ =
+          List.fold_left
+            (fun (acc, off) ct ->
+              let o = align_up off (get_type_align_from_core_type ct) in
+              (acc @ [o], o + get_type_size_from_core_type ct))
+            ([], payload_off_val)
+            cts
+        in
+        offs
+      in
 
       (* Build match cases for get: int32 tag -> constructor with payload *)
       let get_cases =
@@ -767,24 +857,26 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
                     {txt = Lident cd.pcd_name.txt; loc}
                     None
               | Pcstr_tuple [ct] ->
-                  (* Read payload at base_off+4 *)
-                  let payload_off = Ast_builder.Default.eint ~loc 4 in
+                  (* Read payload at the aligned payload offset. *)
+                  let payload_off =
+                    Ast_builder.Default.eint ~loc (single_payload_off ct)
+                  in
                   let payload_expr = gen_field_read ~loc ct payload_off in
                   Ast_builder.Default.pexp_construct
                     ~loc
                     {txt = Lident cd.pcd_name.txt; loc}
                     (Some payload_expr)
               | Pcstr_tuple cts ->
-                  (* Multiple args: read each at successive offsets *)
-                  let _, args =
-                    List.fold_left
-                      (fun (off, acc) ct ->
-                        let off_expr = Ast_builder.Default.eint ~loc off in
-                        let arg_expr = gen_field_read ~loc ct off_expr in
-                        let size = get_type_size_from_core_type ct in
-                        (off + size, acc @ [arg_expr]))
-                      (4, [])
+                  (* Multiple args: read each at its aligned offset. *)
+                  let args =
+                    List.map2
+                      (fun ct off ->
+                        gen_field_read
+                          ~loc
+                          ct
+                          (Ast_builder.Default.eint ~loc off))
                       cts
+                      (arg_offsets cts)
                   in
                   Ast_builder.Default.pexp_construct
                     ~loc
@@ -809,7 +901,9 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
               {txt = Lident fallback_ctor.pcd_name.txt; loc}
               None
         | Pcstr_tuple [ct] ->
-            let payload_off = Ast_builder.Default.eint ~loc 4 in
+            let payload_off =
+              Ast_builder.Default.eint ~loc (single_payload_off ct)
+            in
             let payload_expr = gen_field_read ~loc ct payload_off in
             Ast_builder.Default.pexp_construct
               ~loc
@@ -901,7 +995,9 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
                     {txt = Lident cd.pcd_name.txt; loc}
                     (Some payload_pat)
                 in
-                let payload_off = Ast_builder.Default.eint ~loc 4 in
+                let payload_off =
+                  Ast_builder.Default.eint ~loc (single_payload_off ct)
+                in
                 let write_payload =
                   gen_field_write ~loc ct payload_off [%expr payload]
                 in
@@ -930,20 +1026,16 @@ let generate_custom_value ~loc (td : type_declaration) : structure_item list =
                     {txt = Lident cd.pcd_name.txt; loc}
                     (Some (Ast_builder.Default.ppat_tuple ~loc arg_pats))
                 in
-                let _, write_stmts =
-                  List.fold_left
-                    (fun (off, acc) (j, ct) ->
+                let write_stmts =
+                  List.map2
+                    (fun (j, ct) off ->
                       let off_expr = Ast_builder.Default.eint ~loc off in
                       let arg_var =
                         Ast_builder.Default.evar ~loc (Printf.sprintf "arg%d" j)
                       in
-                      let write_stmt =
-                        gen_field_write ~loc ct off_expr arg_var
-                      in
-                      let size = get_type_size_from_core_type ct in
-                      (off + size, acc @ [write_stmt]))
-                    (4, [])
+                      gen_field_write ~loc ct off_expr arg_var)
                     (List.mapi (fun j ct -> (j, ct)) cts)
+                    (arg_offsets cts)
                 in
                 let body =
                   List.fold_left
