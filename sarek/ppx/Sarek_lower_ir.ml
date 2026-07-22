@@ -705,20 +705,23 @@ let lower_param (p : tparam) : Ir.decl =
       Ppxlib.Location.raise_errorf
         ~loc:Ppxlib.Location.none
         "Function-typed kernel parameters are not supported."
-  | TVec t | TArr (t, _) -> (
+  | (TVec t | TArr (t, _)) as container -> (
       (* A vector/array of tuples or functions would silently collapse to
          TInt32 in elttype_of_typ (wrong stride, garbage layout) — reject
          at the formal-parameter boundary like the bare cases above. *)
+      let kind = match container with TArr _ -> "Arrays" | _ -> "Vectors" in
       match repr t with
       | TTuple _ ->
           Ppxlib.Location.raise_errorf
             ~loc:Ppxlib.Location.none
-            "Vectors of tuples are not supported as kernel parameters; declare \
-             a record type with [@@sarek.type] instead."
+            "%s of tuples are not supported as kernel parameters; declare a \
+             record type with [@@sarek.type] instead."
+            kind
       | TFun _ ->
           Ppxlib.Location.raise_errorf
             ~loc:Ppxlib.Location.none
-            "Vectors of functions are not supported as kernel parameters."
+            "%s of functions are not supported as kernel parameters."
+            kind
       | _ -> ())
   | _ -> ()) ;
   let elt = elttype_of_typ p.tparam_type in
