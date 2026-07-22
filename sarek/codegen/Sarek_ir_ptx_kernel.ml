@@ -132,6 +132,20 @@ let emit_locals buf shared_buf alloc (env : env) (locals : decl list) : unit =
     (fun decl ->
       match decl with
       | DLocal (v, init_opt) -> (
+          (* Fail-closed: a DLocal of array type would silently fall through
+             new_reg_for_type to a bare, never-initialized u64 register with
+             no .local declaration behind it — dangling-pointer PTX. A DLocal
+             carries no size, so it can never become a real allocation. *)
+          (match v.var_type with
+          | TArray _ | TVec _ ->
+              fail
+                (Printf.sprintf
+                   "PTX codegen: local declaration '%s' has array type: a \
+                    DLocal carries no size and cannot allocate storage; create \
+                    the array in the kernel body instead (create_array n \
+                    Local, or let%%shared for shared memory)"
+                   v.var_name)
+          | _ -> ()) ;
           let r = new_reg_for_type alloc v.var_type in
           env_bind env v.var_name r ;
           match init_opt with
@@ -181,7 +195,7 @@ let emit_locals buf shared_buf alloc (env : env) (locals : decl list) : unit =
           let r = new_u32 alloc in
           env_bind env name r ;
           emit buf "mov.u32 %s, %s;" r name ;
-          Hashtbl.replace alloc.arr_memspaces name () ;
+          Hashtbl.replace alloc.arr_memspaces name SpaceShared ;
           Hashtbl.replace alloc.arr_elt_types name elt
       | DParam _ -> ())
     locals
@@ -250,6 +264,9 @@ let generate ?(sm_target = "sm_86") (k : kernel) : string =
   Buffer.add_buffer out shared_buf ;
   (* Shared arrays declared mid-body (SLet-bound let%shared). *)
   Buffer.add_buffer out alloc.shared_decls ;
+  (* Per-thread local arrays declared mid-body (SLet-bound create_array
+     Local). *)
+  Buffer.add_buffer out alloc.local_decls ;
   Buffer.add_char out '\n' ;
   Buffer.add_buffer out body_buf ;
   Buffer.add_string out "}\n" ;

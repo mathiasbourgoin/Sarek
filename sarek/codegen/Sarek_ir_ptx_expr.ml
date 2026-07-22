@@ -363,7 +363,7 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
         r_base
         r_idx
         (infer_elt_type alloc arr_name)
-        ~is_shared:(Hashtbl.mem alloc.arr_memspaces arr_name)
+        ~space:(arr_space_of alloc arr_name)
   | EArrayReadExpr (base_expr, idx_expr) ->
       let r_base = emit_expr buf alloc env base_expr in
       let r_idx = emit_expr buf alloc env idx_expr in
@@ -378,12 +378,10 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
               "EArrayReadExpr: cannot infer element type from non-variable \
                base expression"
       in
-      let is_shared =
-        match arr_name_opt with
-        | Some n -> Hashtbl.mem alloc.arr_memspaces n
-        | None -> false
+      let space =
+        match arr_name_opt with Some n -> arr_space_of alloc n | None -> None
       in
-      emit_array_read buf alloc r_base r_idx elt_type ~is_shared
+      emit_array_read buf alloc r_base r_idx elt_type ~space
   | EIntrinsic (path, name, args) -> emit_intrinsic buf alloc env path name args
   | ECast (ty, e) ->
       let r_src = emit_expr buf alloc env e in
@@ -506,13 +504,13 @@ and bind_helper_param buf alloc env callee_env (p : var) (arg, arg_val) =
   match p.var_type with
   | TVec elt | TArray (elt, _) ->
       let prev_elt = Hashtbl.find_opt alloc.arr_elt_types p.var_name in
-      let prev_ms = Hashtbl.mem alloc.arr_memspaces p.var_name in
+      let prev_ms = arr_space_of alloc p.var_name in
       Hashtbl.replace alloc.arr_elt_types p.var_name elt ;
       (match arg with
       | EVar a -> (
-          if Hashtbl.mem alloc.arr_memspaces a.var_name then
-            Hashtbl.replace alloc.arr_memspaces p.var_name ()
-          else Hashtbl.remove alloc.arr_memspaces p.var_name ;
+          (match arr_space_of alloc a.var_name with
+          | Some space -> Hashtbl.replace alloc.arr_memspaces p.var_name space
+          | None -> Hashtbl.remove alloc.arr_memspaces p.var_name) ;
           match Hashtbl.find_opt env (length_param_name a.var_name) with
           | Some len_binding ->
               env_bind_binding
@@ -529,12 +527,13 @@ and restore_helper_array_meta alloc saved =
   List.iter
     (function
       | None -> ()
-      | Some (name, prev_elt, prev_ms) ->
+      | Some (name, prev_elt, prev_ms) -> (
           (match prev_elt with
           | Some e -> Hashtbl.replace alloc.arr_elt_types name e
           | None -> Hashtbl.remove alloc.arr_elt_types name) ;
-          if prev_ms then Hashtbl.replace alloc.arr_memspaces name ()
-          else Hashtbl.remove alloc.arr_memspaces name)
+          match prev_ms with
+          | Some space -> Hashtbl.replace alloc.arr_memspaces name space
+          | None -> Hashtbl.remove alloc.arr_memspaces name))
     saved
 
 (** Inline a helper call and return the binding holding its result. First entry
@@ -714,7 +713,7 @@ and emit_agg_array_read buf alloc env arr_name idx_expr : binding =
       r_base
       r_idx
       ~stride:(elt_stride elt)
-      ~is_shared:(Hashtbl.mem alloc.arr_memspaces arr_name)
+      ~space:(arr_space_of alloc arr_name)
       ~arr_name
   in
   emit_agg_elem_load buf alloc r_addr ~offset:0 elt
@@ -754,7 +753,7 @@ and emit_record_field buf alloc env base field : binding =
           r_base
           r_idx
           ~stride:(elt_stride elt)
-          ~is_shared:(Hashtbl.mem alloc.arr_memspaces arr_name)
+          ~space:(arr_space_of alloc arr_name)
           ~arr_name
       in
       emit_agg_elem_load buf alloc r_addr ~offset fty
@@ -1192,8 +1191,15 @@ and emit_intrinsic_native buf alloc env path name args : string =
      PTX space name and the address register. *)
   let atomic_addr ~global_only ~elt_shift arr r_idx =
     let r_base = env_lookup env arr.var_name in
+    (* PTX has no atom.local — and per-thread memory needs no atomics. *)
+    (match arr_space_of alloc arr.var_name with
+    | Some SpaceLocal ->
+        unsupported
+          ("atomic operation on per-thread local array '" ^ arr.var_name
+         ^ "' (atomics require shared or global memory)")
+    | Some SpaceShared | None -> ()) ;
     let is_shared =
-      (not global_only) && Hashtbl.mem alloc.arr_memspaces arr.var_name
+      (not global_only) && arr_space_of alloc arr.var_name = Some SpaceShared
     in
     if is_shared then begin
       let r_off = new_u32 alloc in

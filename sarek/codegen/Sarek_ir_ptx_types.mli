@@ -45,6 +45,10 @@ and binding = Scalar of string | Agg of agg_value
 
 (** {1 Register allocator} *)
 
+(** Non-global state space of an array known to the emitter. Arrays absent from
+    [arr_memspaces] are global (vector parameters). *)
+type arr_space = SpaceShared | SpaceLocal
+
 (** Counter-based register allocator. Each PTX type has an independent counter
     so that register names stay readable (e.g. [%r0], [%f0], [%rd0]). *)
 type reg_alloc = {
@@ -55,10 +59,14 @@ type reg_alloc = {
   mutable pred : int;
   mutable label : int;
   arr_elt_types : (string, elttype) Hashtbl.t;
-  arr_memspaces : (string, unit) Hashtbl.t;
+  arr_memspaces : (string, arr_space) Hashtbl.t;
   shared_decls : Buffer.t;
       (** [.shared] declarations discovered while emitting the body; spliced
           into the kernel prologue by [generate]. *)
+  local_decls : Buffer.t;
+      (** [.local] declarations discovered while emitting the body (SLet-bound
+          per-thread local arrays); spliced into the kernel prologue by
+          [generate]. *)
   funcs : (string, helper_func) Hashtbl.t;
       (** Kernel helper functions ([kern_funcs]), inlined at EApp sites. *)
   variant_decls : (string, (string * elttype list) list) Hashtbl.t;
@@ -78,6 +86,10 @@ type reg_alloc = {
 
 (** [make_alloc ()] returns a fresh zeroed allocator. *)
 val make_alloc : unit -> reg_alloc
+
+(** [arr_space_of alloc name] is the registered non-global state space of array
+    [name], or [None] for global arrays (vector parameters). *)
+val arr_space_of : reg_alloc -> string -> arr_space option
 
 (** Allocate a fresh [.u32] register and return its PTX name ([%rN]). *)
 val new_u32 : reg_alloc -> string

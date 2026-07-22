@@ -42,6 +42,10 @@ and binding = Scalar of string | Agg of agg_value
 
 (** {1 Register allocator} *)
 
+(** Non-global state space of an array known to the emitter. Arrays absent from
+    [arr_memspaces] are global (vector parameters). *)
+type arr_space = SpaceShared | SpaceLocal
+
 (** Counter-based register allocator. Each PTX type has an independent counter
     so that register names stay readable (e.g. %r0, %f0, %rd0). *)
 type reg_alloc = {
@@ -52,10 +56,14 @@ type reg_alloc = {
   mutable pred : int;
   mutable label : int;
   arr_elt_types : (string, elttype) Hashtbl.t;
-  arr_memspaces : (string, unit) Hashtbl.t;
+  arr_memspaces : (string, arr_space) Hashtbl.t;
   shared_decls : Buffer.t;
       (** [.shared] declarations discovered while emitting the body (SLet-bound
           shared arrays); spliced into the kernel prologue by [generate]. *)
+  local_decls : Buffer.t;
+      (** [.local] declarations discovered while emitting the body (SLet-bound
+          per-thread local arrays); spliced into the kernel prologue by
+          [generate]. *)
   funcs : (string, helper_func) Hashtbl.t;
       (** Kernel helper functions ([kern_funcs]), inlined at EApp sites. *)
   variant_decls : (string, (string * elttype list) list) Hashtbl.t;
@@ -87,12 +95,17 @@ let make_alloc () =
     arr_elt_types = Hashtbl.create 8;
     arr_memspaces = Hashtbl.create 8;
     shared_decls = Buffer.create 128;
+    local_decls = Buffer.create 128;
     funcs = Hashtbl.create 4;
     variant_decls = Hashtbl.create 4;
     inline_stack = [];
     inline_budget = Hashtbl.create 4;
     inline_ret = [];
   }
+
+(** [arr_space_of alloc name] is the registered non-global state space of array
+    [name], or [None] for global arrays (vector parameters). *)
+let arr_space_of a name = Hashtbl.find_opt a.arr_memspaces name
 
 let new_u32 a =
   let n = a.u32 in

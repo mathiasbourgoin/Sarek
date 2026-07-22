@@ -3,9 +3,9 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(** PTX array load/store helpers: element stride, typed ld.global/st.global and
-    ld.shared/st.shared instruction emission, and element-type inference from
-    the allocator table. *)
+(** PTX array load/store helpers: element stride, typed ld.global/st.global,
+    ld.shared/st.shared and ld.local/st.local instruction emission, and
+    element-type inference from the allocator table. *)
 
 open Sarek_ir_types
 open Sarek_ir_ptx_types
@@ -14,9 +14,11 @@ open Sarek_ir_ptx_types
 
     Emit a typed array read or write into [buf]. The element type determines the
     stride (shift 2 = 4 bytes, shift 3 = 8 bytes) and the PTX load/store
-    qualifier. When [~is_shared:true], uses 32-bit pointer arithmetic and
-    [ld/st.shared.*]; otherwise uses 64-bit and [ld/st.global.*]. All other
-    element types raise [unsupported]. *)
+    qualifier. [~space] selects the state space: [Some SpaceShared] uses 32-bit
+    pointer arithmetic and [ld/st.shared.*]; [Some SpaceLocal] uses 64-bit
+    arithmetic and [ld/st.local.*] (per-thread stack memory); [None] (global)
+    uses 64-bit and [ld/st.global.*]. All other element types raise
+    [unsupported]. *)
 
 let elt_shift = function
   | TFloat32 | TInt32 -> 2
@@ -27,86 +29,62 @@ let elt_shift = function
        ^ "' reached the scalar array path (use the aggregate element helpers)")
   | t -> unsupported ("array element type " ^ ptx_reg_type_of t)
 
-let emit_array_read buf alloc r_base r_idx elt_type ~is_shared =
-  if is_shared then begin
-    let r_off = new_u32 alloc in
-    emit buf "shl.b32 %s, %s, %d;" r_off r_idx (elt_shift elt_type) ;
-    let r_addr = new_u32 alloc in
-    emit buf "add.u32 %s, %s, %s;" r_addr r_base r_off ;
-    match elt_type with
-    | TFloat32 ->
-        let r = new_f32 alloc in
-        emit buf "ld.shared.f32 %s, [%s];" r r_addr ;
-        r
-    | TInt32 ->
-        let r = new_u32 alloc in
-        emit buf "ld.shared.s32 %s, [%s];" r r_addr ;
-        r
-    | TFloat64 ->
-        let r = new_f64 alloc in
-        emit buf "ld.shared.f64 %s, [%s];" r r_addr ;
-        r
-    | TInt64 ->
-        let r = new_u64 alloc in
-        emit buf "ld.shared.s64 %s, [%s];" r r_addr ;
-        r
-    | t -> unsupported ("shared array read of element type " ^ ptx_reg_type_of t)
-  end
-  else begin
-    let r_idx64 = new_u64 alloc in
-    emit buf "cvt.u64.u32 %s, %s;" r_idx64 r_idx ;
-    let r_off = new_u64 alloc in
-    emit buf "shl.b64 %s, %s, %d;" r_off r_idx64 (elt_shift elt_type) ;
-    let r_addr = new_u64 alloc in
-    emit buf "add.u64 %s, %s, %s;" r_addr r_base r_off ;
-    match elt_type with
-    | TFloat32 ->
-        let r = new_f32 alloc in
-        emit buf "ld.global.f32 %s, [%s];" r r_addr ;
-        r
-    | TInt32 ->
-        let r = new_u32 alloc in
-        emit buf "ld.global.s32 %s, [%s];" r r_addr ;
-        r
-    | TFloat64 ->
-        let r = new_f64 alloc in
-        emit buf "ld.global.f64 %s, [%s];" r r_addr ;
-        r
-    | TInt64 ->
-        let r = new_u64 alloc in
-        emit buf "ld.global.s64 %s, [%s];" r r_addr ;
-        r
-    | t -> unsupported ("array read of element type " ^ ptx_reg_type_of t)
-  end
+(** PTX space qualifier of an array's loads/stores. *)
+let space_qualifier = function
+  | Some SpaceShared -> "shared"
+  | Some SpaceLocal -> "local"
+  | None -> "global"
 
-let emit_array_write buf alloc r_base r_idx r_val elt_type ~is_shared =
-  if is_shared then begin
-    let r_off = new_u32 alloc in
-    emit buf "shl.b32 %s, %s, %d;" r_off r_idx (elt_shift elt_type) ;
-    let r_addr = new_u32 alloc in
-    emit buf "add.u32 %s, %s, %s;" r_addr r_base r_off ;
-    match elt_type with
-    | TFloat32 -> emit buf "st.shared.f32 [%s], %s;" r_addr r_val
-    | TInt32 -> emit buf "st.shared.s32 [%s], %s;" r_addr r_val
-    | TFloat64 -> emit buf "st.shared.f64 [%s], %s;" r_addr r_val
-    | TInt64 -> emit buf "st.shared.s64 [%s], %s;" r_addr r_val
-    | t ->
-        unsupported ("shared array write of element type " ^ ptx_reg_type_of t)
-  end
-  else begin
-    let r_idx64 = new_u64 alloc in
-    emit buf "cvt.u64.u32 %s, %s;" r_idx64 r_idx ;
-    let r_off = new_u64 alloc in
-    emit buf "shl.b64 %s, %s, %d;" r_off r_idx64 (elt_shift elt_type) ;
-    let r_addr = new_u64 alloc in
-    emit buf "add.u64 %s, %s, %s;" r_addr r_base r_off ;
-    match elt_type with
-    | TFloat32 -> emit buf "st.global.f32 [%s], %s;" r_addr r_val
-    | TInt32 -> emit buf "st.global.s32 [%s], %s;" r_addr r_val
-    | TFloat64 -> emit buf "st.global.f64 [%s], %s;" r_addr r_val
-    | TInt64 -> emit buf "st.global.s64 [%s], %s;" r_addr r_val
-    | t -> unsupported ("array write of element type " ^ ptx_reg_type_of t)
-  end
+(** Element byte address: shared arrays use 32-bit pointer arithmetic (their
+    base is a 32-bit window offset); local and global arrays use 64-bit. *)
+let emit_elt_addr buf alloc r_base r_idx elt_type ~space =
+  match space with
+  | Some SpaceShared ->
+      let r_off = new_u32 alloc in
+      emit buf "shl.b32 %s, %s, %d;" r_off r_idx (elt_shift elt_type) ;
+      let r_addr = new_u32 alloc in
+      emit buf "add.u32 %s, %s, %s;" r_addr r_base r_off ;
+      r_addr
+  | Some SpaceLocal | None ->
+      let r_idx64 = new_u64 alloc in
+      emit buf "cvt.u64.u32 %s, %s;" r_idx64 r_idx ;
+      let r_off = new_u64 alloc in
+      emit buf "shl.b64 %s, %s, %d;" r_off r_idx64 (elt_shift elt_type) ;
+      let r_addr = new_u64 alloc in
+      emit buf "add.u64 %s, %s, %s;" r_addr r_base r_off ;
+      r_addr
+
+let emit_array_read buf alloc r_base r_idx elt_type ~space =
+  let sp = space_qualifier space in
+  let r_addr = emit_elt_addr buf alloc r_base r_idx elt_type ~space in
+  match elt_type with
+  | TFloat32 ->
+      let r = new_f32 alloc in
+      emit buf "ld.%s.f32 %s, [%s];" sp r r_addr ;
+      r
+  | TInt32 ->
+      let r = new_u32 alloc in
+      emit buf "ld.%s.s32 %s, [%s];" sp r r_addr ;
+      r
+  | TFloat64 ->
+      let r = new_f64 alloc in
+      emit buf "ld.%s.f64 %s, [%s];" sp r r_addr ;
+      r
+  | TInt64 ->
+      let r = new_u64 alloc in
+      emit buf "ld.%s.s64 %s, [%s];" sp r r_addr ;
+      r
+  | t -> unsupported (sp ^ " array read of element type " ^ ptx_reg_type_of t)
+
+let emit_array_write buf alloc r_base r_idx r_val elt_type ~space =
+  let sp = space_qualifier space in
+  let r_addr = emit_elt_addr buf alloc r_base r_idx elt_type ~space in
+  match elt_type with
+  | TFloat32 -> emit buf "st.%s.f32 [%s], %s;" sp r_addr r_val
+  | TInt32 -> emit buf "st.%s.s32 [%s], %s;" sp r_addr r_val
+  | TFloat64 -> emit buf "st.%s.f64 [%s], %s;" sp r_addr r_val
+  | TInt64 -> emit buf "st.%s.s64 [%s], %s;" sp r_addr r_val
+  | t -> unsupported (sp ^ " array write of element type " ^ ptx_reg_type_of t)
 
 let infer_elt_type alloc arr_name =
   match Hashtbl.find_opt alloc.arr_elt_types arr_name with
@@ -184,18 +162,20 @@ let agg_field_path (t : elttype) (path : string list) : int * elttype =
   in
   go 0 t path
 
-(** [emit_agg_elem_addr buf alloc r_base r_idx ~stride ~is_shared ~arr_name]
-    emits the element base address of an aggregate vector element:
-    [mul.wide.u32] of the u32 index by the byte stride, then [add.u64] with the
-    base pointer. Shared-memory aggregate arrays are not supported. *)
-let emit_agg_elem_addr buf alloc r_base r_idx ~stride ~is_shared ~arr_name =
-  if is_shared then
+(** [emit_agg_elem_addr buf alloc r_base r_idx ~stride ~space ~arr_name] emits
+    the element base address of an aggregate vector element: [mul.wide.u32] of
+    the u32 index by the byte stride, then [add.u64] with the base pointer.
+    Shared- and local-memory aggregate arrays are not supported. *)
+let emit_agg_elem_addr buf alloc r_base r_idx ~stride ~space ~arr_name =
+  if space <> None then
     unsupported
       (Printf.sprintf
-         "shared-memory array '%s' with record/variant elements (aggregate \
+         "%s-memory array '%s' with record/variant elements (aggregate \
           elements are supported in global vectors only; use a vector \
-          parameter or scalar shared arrays)"
-         arr_name)
+          parameter or scalar %s arrays)"
+         (space_qualifier space)
+         arr_name
+         (space_qualifier space))
   else begin
     let r_off = new_u64 alloc in
     emit buf "mul.wide.u32 %s, %s, %d;" r_off r_idx stride ;

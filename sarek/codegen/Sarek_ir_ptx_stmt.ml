@@ -52,17 +52,54 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
       let r = new_u32 alloc in
       env_bind env v.var_name r ;
       emit buf "mov.u32 %s, %s;" r v.var_name ;
-      Hashtbl.replace alloc.arr_memspaces v.var_name () ;
+      Hashtbl.replace alloc.arr_memspaces v.var_name SpaceShared ;
       Hashtbl.replace alloc.arr_elt_types v.var_name elt ;
       emit_stmt buf alloc env body
-  | SLet (v, EArrayCreate (_, _, ms), _) ->
+  | SLet (v, EArrayCreate (elt, size_e, Local), body) ->
+      (* create_array n Local: per-thread array in the .local state space
+         (stack memory, backed by device memory with caching). Declared like a
+         shared array but addressed with 64-bit pointers and ld/st.local.
+         Small constant-indexed arrays would be faster fully promoted to
+         registers; that optimization pass is future work — this is the
+         baseline. *)
+      let n =
+        match size_e with
+        | EConst (CInt32 n) when Int32.compare n 0l > 0 -> Int32.to_int n
+        | EConst (CInt32 _) ->
+            fail
+              (Printf.sprintf
+                 "PTX codegen: local array '%s': size must be positive"
+                 v.var_name)
+        | _ ->
+            unsupported
+              (Printf.sprintf
+                 "local array '%s' with non-literal size"
+                 v.var_name)
+      in
+      if Hashtbl.mem alloc.arr_memspaces v.var_name then
+        fail
+          (Printf.sprintf
+             "PTX codegen: duplicate local array name '%s'"
+             v.var_name) ;
+      Buffer.add_string
+        alloc.local_decls
+        (Printf.sprintf
+           "    .local .align %d .%s %s[%d];\n"
+           (ptx_align_of_elttype elt)
+           (ptx_btype_of_elttype elt)
+           v.var_name
+           n) ;
+      let r = new_u64 alloc in
+      env_bind env v.var_name r ;
+      emit buf "mov.u64 %s, %s;" r v.var_name ;
+      Hashtbl.replace alloc.arr_memspaces v.var_name SpaceLocal ;
+      Hashtbl.replace alloc.arr_elt_types v.var_name elt ;
+      emit_stmt buf alloc env body
+  | SLet (v, EArrayCreate (_, _, Global), _) ->
       unsupported
         (Printf.sprintf
-           "%s array creation for '%s' (only Shared is supported)"
-           (match ms with
-           | Sarek_ir_types.Local -> "Local"
-           | Sarek_ir_types.Global -> "Global"
-           | Sarek_ir_types.Shared -> assert false)
+           "Global array creation for '%s' (only Shared and Local are \
+            supported; global arrays must be vector parameters)"
            v.var_name)
   | SLet (v, e, body) ->
       (* emit_value: scalar initializers behave exactly as before (Scalar of
@@ -199,7 +236,7 @@ and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
         r_idx
         r_val
         (infer_elt_type alloc arr_name)
-        ~is_shared:(Hashtbl.mem alloc.arr_memspaces arr_name)
+        ~space:(arr_space_of alloc arr_name)
   | LArrayElemExpr (base_expr, idx_expr) ->
       let r_base = emit_expr buf alloc env base_expr in
       let r_val = emit_expr buf alloc env e in
@@ -215,12 +252,10 @@ and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
               "LArrayElemExpr: cannot infer element type from non-variable \
                base expression"
       in
-      let is_shared =
-        match arr_name_opt with
-        | Some n -> Hashtbl.mem alloc.arr_memspaces n
-        | None -> false
+      let space =
+        match arr_name_opt with Some n -> arr_space_of alloc n | None -> None
       in
-      emit_array_write buf alloc r_base r_idx r_val elt_type ~is_shared
+      emit_array_write buf alloc r_base r_idx r_val elt_type ~space
   | LRecordField (root, field) -> (
       match split_elem_field_lvalue alloc (LRecordField (root, field)) with
       | Some (arr_name, idx_expr, path) ->
@@ -251,7 +286,7 @@ and emit_agg_elem_assign buf alloc env arr_name idx_expr e : unit =
       r_base
       r_idx
       ~stride:(elt_stride elt)
-      ~is_shared:(Hashtbl.mem alloc.arr_memspaces arr_name)
+      ~space:(arr_space_of alloc arr_name)
       ~arr_name
   in
   emit_agg_elem_store buf alloc r_addr ~offset:0 elt b_val
@@ -287,7 +322,7 @@ and emit_elem_field_assign buf alloc env arr_name idx_expr path e : unit =
       r_base
       r_idx
       ~stride:(elt_stride elt)
-      ~is_shared:(Hashtbl.mem alloc.arr_memspaces arr_name)
+      ~space:(arr_space_of alloc arr_name)
       ~arr_name
   in
   emit_agg_elem_store buf alloc r_addr ~offset fty b_val

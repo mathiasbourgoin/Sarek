@@ -1613,6 +1613,156 @@ let test_f32_asin_via_f64 () =
   assert_contains ptx "sqrt.rn.f64" ;
   assert_contains ptx "cvt.rn.f32.f64"
 
+(** Per-thread local array: create_array n Local lowers to SLet (arr,
+    EArrayCreate (elt, n, Local), ...). Declaration in the .local state space,
+    64-bit base address, typed ld.local/st.local accesses. *)
+let test_local_array_markers () =
+  let out = make_var "out" (TVec TFloat32) in
+  let tmp = make_var "tmp" (TArray (TFloat32, Local)) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( tmp,
+            EArrayCreate (TFloat32, EConst (CInt32 16l), Local),
+            SSeq
+              [
+                SAssign
+                  ( LArrayElem ("tmp", EConst (CInt32 0l)),
+                    ECast (TFloat32, EVar tid) );
+                SAssign
+                  ( LArrayElem ("out", EVar tid),
+                    EArrayRead ("tmp", EConst (CInt32 0l)) );
+              ] ) )
+  in
+  let k =
+    base_kernel
+      "local_arr"
+      [DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+      body
+      []
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx ".local .align 4 .b32 tmp[16];" ;
+  assert_contains ptx "mov.u64" ;
+  assert_contains ptx "st.local.f32" ;
+  assert_contains ptx "ld.local.f32"
+
+(** 8-byte elements get .align 8 .b64 local declarations. *)
+let test_local_array_int64_markers () =
+  let out = make_var "out" (TVec TInt64) in
+  let tmp = make_var "tmp" (TArray (TInt64, Local)) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( tmp,
+            EArrayCreate (TInt64, EConst (CInt32 8l), Local),
+            SSeq
+              [
+                SAssign (LArrayElem ("tmp", EVar tid), EConst (CInt64 7L));
+                SAssign
+                  (LArrayElem ("out", EVar tid), EArrayRead ("tmp", EVar tid));
+              ] ) )
+  in
+  let k =
+    base_kernel
+      "local_arr64"
+      [DParam (out, Some {arr_elttype = TInt64; arr_memspace = Global})]
+      body
+      []
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx ".local .align 8 .b64 tmp[8];" ;
+  assert_contains ptx "st.local.s64" ;
+  assert_contains ptx "ld.local.s64"
+
+(** A DLocal declaration of array type has no size and can never allocate
+    storage: it must be rejected fail-closed (previously it fell through to a
+    bare uninitialized u64 register — dangling-pointer PTX). *)
+let test_dlocal_array_rejected () =
+  let out = make_var "out" (TVec TInt32) in
+  let arr = make_var "scratch" (TArray (TInt32, Local)) in
+  let k =
+    {
+      (base_kernel
+         "dlocal_arr"
+         [DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global})]
+         (SAssign (LArrayElem ("out", EConst (CInt32 0l)), EConst (CInt32 1l)))
+         [])
+      with
+      kern_locals = [DLocal (arr, None)];
+    }
+  in
+  match Sarek_ir_ptx.generate k with
+  | _ -> Alcotest.fail "DLocal of array type should raise Ptx_codegen_error"
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error msg ->
+      if not (contains msg "scratch" && contains msg "create_array") then
+        Alcotest.fail
+          (Printf.sprintf
+             "DLocal array rejection must name the variable and the \
+              workaround; got: %s"
+             msg)
+
+(** Non-literal local array sizes are rejected (per-thread stack allocations
+    must be static). *)
+let test_local_array_dynamic_size_rejected () =
+  let out = make_var "out" (TVec TInt32) in
+  let tmp = make_var "tmp" (TArray (TInt32, Local)) in
+  let n = make_var "n" TInt32 in
+  let body =
+    SLet
+      ( tmp,
+        EArrayCreate (TInt32, EVar n, Local),
+        SAssign (LArrayElem ("out", EConst (CInt32 0l)), EConst (CInt32 1l)) )
+  in
+  let k =
+    base_kernel
+      "local_dyn"
+      [
+        DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global});
+        DParam (n, None);
+      ]
+      body
+      []
+  in
+  match Sarek_ir_ptx.generate k with
+  | _ -> Alcotest.fail "non-literal local array size should be rejected"
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()
+
+(** PTX has no atom.local: atomics on a per-thread local array are rejected. *)
+let test_atomic_on_local_array_rejected () =
+  let out = make_var "out" (TVec TInt32) in
+  let tmp = make_var "tmp" (TArray (TInt32, Local)) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( tmp,
+            EArrayCreate (TInt32, EConst (CInt32 4l), Local),
+            SExpr
+              (EIntrinsic
+                 ( ["Sarek_stdlib"; "Gpu"],
+                   "atomic_add_int32",
+                   [EVar tmp; EVar tid; EConst (CInt32 1l)] )) ) )
+  in
+  let k =
+    base_kernel
+      "local_atomic"
+      [DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global})]
+      body
+      []
+  in
+  match Sarek_ir_ptx.generate k with
+  | _ -> Alcotest.fail "atomic on local array should be rejected"
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()
+
 let () =
   Alcotest.run
     "ptx_snapshot"
@@ -1775,5 +1925,25 @@ let () =
             "f64-payload variant vector param rejected"
             `Quick
             test_f64_variant_param_rejected;
+          Alcotest.test_case
+            "local array emits .local decl + ld/st.local"
+            `Quick
+            test_local_array_markers;
+          Alcotest.test_case
+            "int64 local array gets .align 8 .b64 decl"
+            `Quick
+            test_local_array_int64_markers;
+          Alcotest.test_case
+            "DLocal of array type is rejected fail-closed"
+            `Quick
+            test_dlocal_array_rejected;
+          Alcotest.test_case
+            "non-literal local array size rejected"
+            `Quick
+            test_local_array_dynamic_size_rejected;
+          Alcotest.test_case
+            "atomic on per-thread local array rejected"
+            `Quick
+            test_atomic_on_local_array_rejected;
         ] );
     ]
