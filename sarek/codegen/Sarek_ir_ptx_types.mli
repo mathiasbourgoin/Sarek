@@ -128,10 +128,39 @@ val emit : Buffer.t -> ('a, Buffer.t, unit) format -> 'a
 (** [emit_label buf lbl] appends [lbl:] followed by a newline to [buf]. *)
 val emit_label : Buffer.t -> string -> unit
 
+(** {1 Register-class helpers} *)
+
+(** Register class recovered from a PTX register name prefix ([%fdN] = f64,
+    [%fN] = f32, [%rdN] = u64, [%rN] = u32). *)
+type reg_class = RU32 | RU64 | RF32 | RF64
+
+(** [reg_class r] is the class of register [r], from its name prefix. *)
+val reg_class : string -> reg_class
+
+(** [mov_op_of_class c] is the typed PTX mov opcode for class [c]. *)
+val mov_op_of_class : reg_class -> string
+
+(** [new_reg_like alloc r] allocates a fresh register of [r]'s class. *)
+val new_reg_like : reg_alloc -> string -> string
+
+(** [mov_scalar buf ~dst ~src] emits a typed mov of [src] into [dst], typed by
+    [dst]'s register class. *)
+val mov_scalar : Buffer.t -> dst:string -> src:string -> unit
+
 (** [copy_reg buf alloc r] allocates a fresh register of [r]'s class and emits a
     mov from [r] into it — for bindings that must not alias the source register
     (mutable lets, inlined helper parameters). *)
 val copy_reg : Buffer.t -> reg_alloc -> string -> string
+
+(** [copy_binding buf alloc b] copies every scalar leaf of [b] into fresh
+    registers (leaf-wise {!copy_reg}), preserving the aggregate shape. *)
+val copy_binding : Buffer.t -> reg_alloc -> binding -> binding
+
+(** [mov_binding buf ~src ~dst] emits leaf-wise typed movs of [src]'s registers
+    into [dst]'s registers. Shapes must be compatible (records matched by field
+    name, variant payload slots by constructor tag); raises {!Ptx_codegen_error}
+    on shape mismatch. *)
+val mov_binding : Buffer.t -> src:binding -> dst:binding -> unit
 
 (** {1 Shared-memory declaration helpers} *)
 

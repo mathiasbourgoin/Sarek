@@ -359,6 +359,145 @@ let test_atomic_family_markers () =
   assert_contains ptx "neg.s32" ;
   assert_contains ptx "atom.global.add.s32"
 
+(** Check that [ptx] does NOT contain [marker]. *)
+let assert_absent ptx marker ~why =
+  let mlen = String.length marker in
+  let found = ref false in
+  for i = 0 to String.length ptx - mlen do
+    if String.sub ptx i mlen = marker then found := true
+  done ;
+  if !found then
+    Alcotest.fail
+      (Printf.sprintf
+         "Expected PTX to NOT contain %S (%s).\nPTX:\n%s"
+         marker
+         why
+         ptx)
+
+let point_ty = TRecord ("point", [("x", TFloat32); ("y", TFloat32)])
+
+(** Local record construct + field reads live entirely in registers: the record
+    itself must generate no global-memory traffic (SROA, FR-020). *)
+let test_record_sroa_markers () =
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let p = make_var "p" point_ty in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( p,
+            ERecord
+              ( "point",
+                [("x", EConst (CFloat32 1.5)); ("y", EConst (CFloat32 2.5))] ),
+            SAssign
+              ( LArrayElem ("dst", EVar tid),
+                EBinop
+                  (Add, ERecordField (EVar p, "x"), ERecordField (EVar p, "y"))
+              ) ) )
+  in
+  let k =
+    base_kernel
+      "record_sroa"
+      [DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+      body
+      []
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "add.f32" ;
+  assert_contains ptx "st.global.f32" ;
+  assert_absent
+    ptx
+    "ld.global"
+    ~why:"local record must be SROA registers, never loaded from memory"
+
+(** Nested record construct + two-level projection stays in registers. *)
+let test_nested_record_sroa_markers () =
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let outer_ty = TRecord ("outer", [("inner", point_ty); ("c", TFloat32)]) in
+  let q = make_var "q" outer_ty in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( q,
+            ERecord
+              ( "outer",
+                [
+                  ( "inner",
+                    ERecord
+                      ( "point",
+                        [
+                          ("x", EConst (CFloat32 1.0));
+                          ("y", EConst (CFloat32 2.0));
+                        ] ) );
+                  ("c", EConst (CFloat32 3.0));
+                ] ),
+            SAssign
+              ( LArrayElem ("dst", EVar tid),
+                EBinop
+                  ( Add,
+                    ERecordField (ERecordField (EVar q, "inner"), "y"),
+                    ERecordField (EVar q, "c") ) ) ) )
+  in
+  let k =
+    base_kernel
+      "nested_record_sroa"
+      [DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+      body
+      []
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "add.f32" ;
+  assert_contains ptx "st.global.f32" ;
+  assert_absent
+    ptx
+    "ld.global"
+    ~why:"nested local record must be SROA registers"
+
+(** Mutable local record: field assignment is a register mov into the leaf. *)
+let test_record_field_mutation_markers () =
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let p = {(make_var "p" point_ty) with var_mutable = true} in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLetMut
+          ( p,
+            ERecord
+              ( "point",
+                [("x", EConst (CFloat32 1.0)); ("y", EConst (CFloat32 2.0))] ),
+            SSeq
+              [
+                SAssign (LRecordField (LVar p, "x"), EConst (CFloat32 4.0));
+                SAssign
+                  ( LArrayElem ("dst", EVar tid),
+                    EBinop
+                      ( Add,
+                        ERecordField (EVar p, "x"),
+                        ERecordField (EVar p, "y") ) );
+              ] ) )
+  in
+  let k =
+    base_kernel
+      "record_field_mut"
+      [DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+      body
+      []
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "mov.f32" ;
+  assert_contains ptx "add.f32" ;
+  assert_absent
+    ptx
+    "ld.global"
+    ~why:"mutable local record field update must be a register mov"
+
 let () =
   Alcotest.run
     "ptx_snapshot"

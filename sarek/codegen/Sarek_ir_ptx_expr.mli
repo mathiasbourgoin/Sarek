@@ -20,6 +20,13 @@ open Sarek_ir_ptx_types
     helper-function calls (EApp) are inlined at the call site. *)
 val emit_expr : Buffer.t -> reg_alloc -> env -> expr -> string
 
+(** [emit_value buf alloc env expr] is the aggregate-aware emitter: scalar
+    expressions delegate to {!emit_expr} (wrapped in [Scalar]); record
+    construction ([ERecord]) evaluates each field into an SROA register set, and
+    field projection ([ERecordField]) on a local record is pure register
+    selection ([Agg] values, no memory traffic — FR-020). *)
+val emit_value : Buffer.t -> reg_alloc -> env -> expr -> binding
+
 (** [emit_binop buf alloc env op e1 e2] emits a binary operation. Type is
     inferred from the register-name prefix of the first operand. *)
 val emit_binop : Buffer.t -> reg_alloc -> env -> binop -> expr -> expr -> string

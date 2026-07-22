@@ -227,8 +227,21 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
   | EArrayCreate _ ->
       unsupported "EArrayCreate in expression position (use SLet)"
   | EMatch _ -> unsupported "EMatch (requires variant lowering)"
-  | ERecord _ -> unsupported "ERecord (requires struct layout)"
-  | ERecordField _ -> unsupported "ERecordField (requires struct layout)"
+  | ERecord (name, _) ->
+      fail
+        ("PTX codegen: record value of type '" ^ name
+       ^ "' cannot be used in a scalar context; bind it with let and read its \
+          scalar fields")
+  | ERecordField (_, field) as e -> (
+      (* A field projection is usually scalar; delegate to emit_value and
+         reject only when the projected field is itself an aggregate. *)
+      match emit_value buf alloc env e with
+      | Scalar r -> r
+      | Agg _ ->
+          fail
+            ("PTX codegen: field '" ^ field
+           ^ "' is a nested record/variant and cannot be used in a scalar \
+              context; bind it with let and read its scalar fields"))
   | ETuple _ -> unsupported "ETuple (no PTX equivalent)"
   | EApp (EVar f, args) -> (
       (* Helper-function call: inline the body at the call site. PTX .func
@@ -332,6 +345,46 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
           end)
   | EApp _ -> unsupported "EApp with non-variable callee"
   | EVariant _ -> unsupported "EVariant (requires tagged-union lowering)"
+
+(** {1 Value emitter (scalar or aggregate)}
+
+    [emit_value] is the aggregate-aware entry point: scalar expressions delegate
+    to {!emit_expr} (wrapped in [Scalar]); record construction and field
+    projection build/select SROA register sets ([Agg]) without touching memory
+    (FR-020). *)
+and emit_value buf alloc (env : env) (e : expr) : binding =
+  match e with
+  | ERecord (_name, fields) ->
+      (* Field order = declaration order as carried by the ERecord node. *)
+      Agg
+        (ARecord
+           (List.map (fun (n, fe) -> (n, emit_value buf alloc env fe)) fields))
+  | ERecordField (base, field) -> emit_record_field buf alloc env base field
+  | EVar v -> env_lookup_binding env v.var_name
+  | _ -> Scalar (emit_expr buf alloc env e)
+
+(** Field selection on a local (SROA) record value: pure register selection, no
+    instructions emitted for the projection itself. *)
+and emit_record_field buf alloc env base field : binding =
+  match emit_value buf alloc env base with
+  | Agg (ARecord fields) -> (
+      match List.assoc_opt field fields with
+      | Some b -> b
+      | None ->
+          fail
+            (Printf.sprintf
+               "PTX codegen: record has no field '%s' (available: %s)"
+               field
+               (String.concat ", " (List.map fst fields))))
+  | Agg (AVariant _) ->
+      fail
+        ("PTX codegen: field access '." ^ field
+       ^ "' on a variant value; use match to inspect a variant")
+  | Scalar _ ->
+      fail
+        ("PTX codegen: field access '." ^ field
+       ^ "' on a non-record value (records in vector elements are not yet \
+          supported at this stage; build the record locally)")
 
 and emit_binop buf alloc env op e1 e2 : string =
   let r1 = emit_expr buf alloc env e1 in

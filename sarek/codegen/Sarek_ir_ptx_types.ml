@@ -138,9 +138,9 @@ let env_lookup (env : env) name =
   | Some (Scalar r) -> r
   | Some (Agg _) ->
       fail
-        ("PTX codegen: variable " ^ name
-       ^ " is an aggregate; internal error: scalar lookup on aggregate binding"
-        )
+        ("PTX codegen: variable '" ^ name
+       ^ "' is an aggregate (record/variant) and cannot be used in a scalar \
+          context; read one of its scalar fields instead")
   | None -> fail ("PTX codegen: unbound variable: " ^ name)
 
 let env_lookup_binding (env : env) name =
@@ -161,30 +161,101 @@ let emit buf fmt = Printf.bprintf buf ("    " ^^ fmt ^^ "\n")
 
 let emit_label buf lbl = Printf.bprintf buf "%s:\n" lbl
 
+(** {1 Register-class helpers}
+
+    A register's class is recovered from its PTX name prefix: [%fdN] = f64,
+    [%fN] = f32, [%rdN] = u64, [%rN] = u32. *)
+
+type reg_class = RU32 | RU64 | RF32 | RF64
+
+let reg_class r =
+  if String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd' then RF64
+  else if String.length r >= 2 && r.[1] = 'f' then RF32
+  else if String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' then RU64
+  else RU32
+
+let mov_op_of_class = function
+  | RU32 -> "mov.u32"
+  | RU64 -> "mov.u64"
+  | RF32 -> "mov.f32"
+  | RF64 -> "mov.f64"
+
+(** [new_reg_like alloc r] allocates a fresh register of [r]'s class. *)
+let new_reg_like a r =
+  match reg_class r with
+  | RU32 -> new_u32 a
+  | RU64 -> new_u64 a
+  | RF32 -> new_f32 a
+  | RF64 -> new_f64 a
+
+(** [mov_scalar buf ~dst ~src] emits a typed mov of [src] into [dst]; the mov
+    type is selected from [dst]'s register class. *)
+let mov_scalar buf ~dst ~src =
+  emit buf "%s %s, %s;" (mov_op_of_class (reg_class dst)) dst src
+
 (** [copy_reg buf alloc r] allocates a fresh register of [r]'s class and emits a
     mov from [r] into it. Used wherever a binding must not alias the source
     register (mutable lets, inlined helper parameters). *)
 let copy_reg buf a r_src =
-  if String.length r_src >= 3 && r_src.[1] = 'f' && r_src.[2] = 'd' then begin
-    let r = new_f64 a in
-    emit buf "mov.f64 %s, %s;" r r_src ;
-    r
-  end
-  else if String.length r_src >= 2 && r_src.[1] = 'f' then begin
-    let r = new_f32 a in
-    emit buf "mov.f32 %s, %s;" r r_src ;
-    r
-  end
-  else if String.length r_src >= 3 && r_src.[1] = 'r' && r_src.[2] = 'd' then begin
-    let r = new_u64 a in
-    emit buf "mov.u64 %s, %s;" r r_src ;
-    r
-  end
-  else begin
-    let r = new_u32 a in
-    emit buf "mov.u32 %s, %s;" r r_src ;
-    r
-  end
+  let r = new_reg_like a r_src in
+  mov_scalar buf ~dst:r ~src:r_src ;
+  r
+
+(** [copy_binding buf alloc b] copies every scalar leaf of [b] into fresh
+    registers (leaf-wise {!copy_reg}), preserving the aggregate shape. Used for
+    mutation isolation (mutable lets, inlined helper parameters bound to
+    aggregates). *)
+let rec copy_binding buf a = function
+  | Scalar r -> Scalar (copy_reg buf a r)
+  | Agg (ARecord fields) ->
+      Agg (ARecord (List.map (fun (n, b) -> (n, copy_binding buf a b)) fields))
+  | Agg (AVariant {tag_reg; payloads}) ->
+      Agg
+        (AVariant
+           {
+             tag_reg = copy_reg buf a tag_reg;
+             payloads =
+               List.map
+                 (fun (tag, bs) -> (tag, List.map (copy_binding buf a) bs))
+                 payloads;
+           })
+
+(** [mov_binding buf ~src ~dst] emits leaf-wise typed movs of [src]'s registers
+    into [dst]'s registers. The two bindings must have compatible shapes
+    (records matched by field name; variant payload slots matched by constructor
+    tag — [src] slots absent from [dst] are an error, [dst] slots absent from
+    [src] are left untouched). *)
+let rec mov_binding buf ~src ~dst =
+  match (src, dst) with
+  | Scalar s, Scalar d -> mov_scalar buf ~dst:d ~src:s
+  | Agg (ARecord fs), Agg (ARecord fd) ->
+      List.iter
+        (fun (name, db) ->
+          match List.assoc_opt name fs with
+          | Some sb -> mov_binding buf ~src:sb ~dst:db
+          | None ->
+              fail
+                ("PTX codegen: internal error: record shape mismatch in \
+                  aggregate mov (missing field '" ^ name ^ "')"))
+        fd
+  | Agg (AVariant vs), Agg (AVariant vd) ->
+      mov_scalar buf ~dst:vd.tag_reg ~src:vs.tag_reg ;
+      List.iter
+        (fun (tag, sbs) ->
+          match List.assoc_opt tag vd.payloads with
+          | Some dbs when List.length dbs = List.length sbs ->
+              List.iter2 (fun sb db -> mov_binding buf ~src:sb ~dst:db) sbs dbs
+          | _ ->
+              fail
+                (Printf.sprintf
+                   "PTX codegen: internal error: variant shape mismatch in \
+                    aggregate mov (constructor tag %d)"
+                   tag))
+        vs.payloads
+  | _ ->
+      fail
+        "PTX codegen: internal error: aggregate shape mismatch in mov \
+         (scalar/record/variant kinds differ)"
 
 (** {1 Shared-memory declaration helpers} *)
 

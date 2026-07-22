@@ -65,16 +65,19 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
            | Sarek_ir_types.Shared -> assert false)
            v.var_name)
   | SLet (v, e, body) ->
-      let r = emit_expr buf alloc env e in
-      env_bind env v.var_name r ;
+      (* emit_value: scalar initializers behave exactly as before (Scalar of
+         emit_expr's register); record/variant initializers bind their SROA
+         register set. *)
+      let b = emit_value buf alloc env e in
+      env_bind_binding env v.var_name b ;
       emit_stmt buf alloc env body
   | SLetMut (v, e, body) ->
-      (* Mutable binding: copy into a fresh register. Binding the initializer
-         register directly would alias it — `let mutable acc = y` followed by
-         `acc <- …` would silently clobber y. *)
-      let r_init = emit_expr buf alloc env e in
-      let r = copy_reg buf alloc r_init in
-      env_bind env v.var_name r ;
+      (* Mutable binding: copy into fresh registers (leaf-wise for
+         aggregates). Binding the initializer registers directly would alias
+         them — `let mutable acc = y` followed by `acc <- …` would silently
+         clobber y. *)
+      let b_init = emit_value buf alloc env e in
+      env_bind_binding env v.var_name (copy_binding buf alloc b_init) ;
       emit_stmt buf alloc env body
   | SAssign (lv, e) -> emit_assign buf alloc env lv e
   | SIf (cond, then_s, else_opt) -> (
@@ -173,18 +176,14 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
 
 and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
   match lv with
-  | LVar v ->
-      let r_val = emit_expr buf alloc env e in
-      let r_dst = env_lookup env v.var_name in
-      let is_f64 r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd' in
-      let mov_op =
-        if String.length r_dst >= 3 && r_dst.[1] = 'r' && r_dst.[2] = 'd' then
-          "mov.u64"
-        else if is_f64 r_dst then "mov.f64"
-        else if String.length r_dst >= 2 && r_dst.[1] = 'f' then "mov.f32"
-        else "mov.u32"
-      in
-      emit buf "%s %s, %s;" mov_op r_dst r_val
+  | LVar v -> (
+      match env_lookup_binding env v.var_name with
+      | Scalar r_dst ->
+          let r_val = emit_expr buf alloc env e in
+          mov_scalar buf ~dst:r_dst ~src:r_val
+      | Agg _ as dst ->
+          let src = emit_value buf alloc env e in
+          mov_binding buf ~src ~dst)
   | LArrayElem (arr_name, idx_expr) ->
       let r_base = env_lookup env arr_name in
       let r_val = emit_expr buf alloc env e in
@@ -218,8 +217,52 @@ and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
         | None -> false
       in
       emit_array_write buf alloc r_base r_idx r_val elt_type ~is_shared
-  | LRecordField _ ->
-      unsupported "LRecordField assignment (requires struct layout)"
+  | LRecordField (root, field) -> (
+      match resolve_local_field env root field with
+      | Scalar r_dst ->
+          let r_val = emit_expr buf alloc env e in
+          mov_scalar buf ~dst:r_dst ~src:r_val
+      | Agg _ as dst ->
+          let src = emit_value buf alloc env e in
+          mov_binding buf ~src ~dst)
+
+(** Resolve the binding of [root.field] for a LOCAL record lvalue (root chain of
+    LVar / nested LRecordField only). Assignments into fields of vector ELEMENTS
+    (v.(i).field <- …) are a global-memory feature not yet supported at this
+    stage. *)
+and resolve_local_field (env : env) (root : lvalue) (field : string) : binding =
+  let root_binding =
+    match root with
+    | LVar v -> env_lookup_binding env v.var_name
+    | LRecordField (inner_root, inner_field) ->
+        resolve_local_field env inner_root inner_field
+    | LArrayElem _ | LArrayElemExpr _ ->
+        unsupported
+          (Printf.sprintf
+             "LRecordField assignment on a vector/array element (v.(i).%s <- \
+              …) — not yet supported at this stage; compute the record in a \
+              local mutable binding and store its scalar fields individually"
+             field)
+  in
+  match root_binding with
+  | Agg (ARecord fields) -> (
+      match List.assoc_opt field fields with
+      | Some b -> b
+      | None ->
+          fail
+            (Printf.sprintf
+               "PTX codegen: record has no field '%s' (available: %s)"
+               field
+               (String.concat ", " (List.map fst fields))))
+  | Agg (AVariant _) ->
+      fail
+        ("PTX codegen: field assignment '." ^ field
+       ^ "' on a variant value; variants are immutable — rebuild the value \
+          with its constructor instead")
+  | Scalar _ ->
+      fail
+        ("PTX codegen: field assignment '." ^ field
+       ^ "' on a non-record variable")
 
 (* Install the statement emitter for EApp inlining (see stmt_emitter in
    Sarek_ir_ptx_types). *)
