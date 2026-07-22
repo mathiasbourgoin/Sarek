@@ -881,9 +881,16 @@ and emit_binop buf alloc env op e1 e2 : string =
       emit buf "or.b32 %s, %s, %s;" r r1 r2 ;
       r
   | Shl ->
-      let r = new_u32 alloc in
-      emit buf "shl.b32 %s, %s, %s;" r r1 r2 ;
-      r
+      if is_u64 r1 then (
+        (* PTX shift amounts are u32; narrow a 64-bit amount if needed. *)
+        let amt = if is_u64 r2 then emit_cast buf alloc r2 TInt32 else r2 in
+        let r = new_u64 alloc in
+        emit buf "shl.b64 %s, %s, %s;" r r1 amt ;
+        r)
+      else
+        let r = new_u32 alloc in
+        emit buf "shl.b32 %s, %s, %s;" r r1 r2 ;
+        r
   | Shr ->
       (* Arithmetic (sign-extending) shift: Ir.Shr is arithmetic on every
          backend (CUDA/OpenCL/Metal/GLSL/WGSL emit plain [>>] on a signed
@@ -896,21 +903,34 @@ and emit_binop buf alloc env op e1 e2 : string =
          shr.u32 emission and is now out of sync with this fix. formal/ is
          out of scope for this task - flagged for the formal-verification
          owner. *)
-      let r = new_u32 alloc in
-      emit buf "shr.s32 %s, %s, %s;" r r1 r2 ;
-      r
-  | BitAnd ->
-      let r = new_u32 alloc in
-      emit buf "and.b32 %s, %s, %s;" r r1 r2 ;
-      r
-  | BitOr ->
-      let r = new_u32 alloc in
-      emit buf "or.b32 %s, %s, %s;" r r1 r2 ;
-      r
-  | BitXor ->
-      let r = new_u32 alloc in
-      emit buf "xor.b32 %s, %s, %s;" r r1 r2 ;
-      r
+      if is_u64 r1 then (
+        (* 64-bit arithmetic shift (softmath exponent extraction); PTX shift
+           amounts are u32, so a 64-bit amount is narrowed first. *)
+        let amt = if is_u64 r2 then emit_cast buf alloc r2 TInt32 else r2 in
+        let r = new_u64 alloc in
+        emit buf "shr.s64 %s, %s, %s;" r r1 amt ;
+        r)
+      else
+        let r = new_u32 alloc in
+        emit buf "shr.s32 %s, %s, %s;" r r1 r2 ;
+        r
+  | BitAnd -> emit_bitwise buf alloc "and" r1 r2
+  | BitOr -> emit_bitwise buf alloc "or" r1 r2
+  | BitXor -> emit_bitwise buf alloc "xor" r1 r2
+
+(** Bitwise and/or/xor at the width of the first operand (b64 when it is a
+    64-bit register, b32 otherwise); a narrower second operand is widened. *)
+and emit_bitwise buf alloc op r1 r2 : string =
+  let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
+  if is_u64 r1 then (
+    let r2w = if is_u64 r2 then r2 else emit_cast buf alloc r2 TInt64 in
+    let r = new_u64 alloc in
+    emit buf "%s.b64 %s, %s, %s;" op r r1 r2w ;
+    r)
+  else
+    let r = new_u32 alloc in
+    emit buf "%s.b32 %s, %s, %s;" op r r1 r2 ;
+    r
 
 and emit_cast buf alloc r_src dst_ty : string =
   let is_f64 r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd' in
@@ -965,6 +985,30 @@ and emit_cast buf alloc r_src dst_ty : string =
   | _ -> unsupported ("ECast to " ^ ptx_reg_type_of dst_ty)
 
 and emit_intrinsic buf alloc env path name args : string =
+  match Sarek_ir_ptx_softmath.helper_name name with
+  | Some hname when List.mem "Float64" path -> (
+      (* Float64 transcendental: PTX has no f64 instruction for it, so route
+         through the software implementation (polynomial helper_func bodies in
+         Sarek_ir_ptx_softmath) via the existing EApp inline machinery. The
+         "__sarek_f64_*" helper names are reserved. *)
+      Sarek_ir_ptx_softmath.register alloc.funcs ;
+      let f =
+        {
+          var_name = hname;
+          var_id = -1;
+          var_type = TFloat64;
+          var_mutable = false;
+        }
+      in
+      match emit_app buf alloc env f args with
+      | Scalar r -> r
+      | Agg _ ->
+          fail
+            "PTX codegen: internal error: softmath helper returned an aggregate"
+      )
+  | _ -> emit_intrinsic_native buf alloc env path name args
+
+and emit_intrinsic_native buf alloc env path name args : string =
   (* Type conversions delegate to emit_cast; a unary helper for them. *)
   let unary_cast intr dst_ty =
     match args with
@@ -1354,6 +1398,22 @@ and emit_intrinsic buf alloc env path name args : string =
         unsupported
           ("hypot: operands " ^ ra ^ ", " ^ rb
          ^ " must both be f32 or both f64; cast one operand first")
+  (* Bitcasts between f64 and int64 (mov.b64) — the exponent-field plumbing
+     the softmath f64 transcendentals are built on. *)
+  | "f64_bits" ->
+      let r = unary_arg "f64_bits" in
+      if is_f64_reg r then (
+        let d = new_u64 alloc in
+        emit buf "mov.b64 %s, %s;" d r ;
+        d)
+      else unsupported "f64_bits: f64 operand required"
+  | "bits_f64" ->
+      let r = unary_arg "bits_f64" in
+      if String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' then (
+        let d = new_f64 alloc in
+        emit buf "mov.b64 %s, %s;" d r ;
+        d)
+      else unsupported "bits_f64: int64 operand required"
   | "fma" -> (
       match args with
       | [a; b; c] ->

@@ -18,6 +18,7 @@
   Sarek_ir_ptx
   Sarek_ir_ptx_types
   Sarek_ir_ptx_mem
+  Sarek_ir_ptx_softmath
   Sarek_ir_ptx_expr
   Sarek_ir_ptx_stmt
   Sarek_ir_ptx_kernel)
