@@ -4,4 +4,5 @@ theories/PtxTypes.v
 theories/PtxExprSpec.v
 theories/PtxStmtSpec.v
 theories/PtxKernelSpec.v
+theories/PtxLayout.v
 extraction/Extract.v

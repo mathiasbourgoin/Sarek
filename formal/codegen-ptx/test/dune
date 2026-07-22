@@ -2,8 +2,20 @@
 
 (test
  (name test_codegen_ptx_conformance)
+ (modules test_codegen_ptx_conformance)
  (libraries alcotest sarek_codegen sarek_ir)
  ; Relax warnings on the abstract OCaml mirror: constructors defined for
  ; completeness (matching the Rocq spec) may not all be used in the test suite.
  (flags
   (:standard -w -32-37)))
+
+(test
+ (name test_layout_conformance)
+ (modules test_layout_conformance)
+ ; qcheck-core is already in the switch; used only for the seeded random
+ ; shape generator (deterministic: fixed Random.State seed).
+ (libraries alcotest qcheck-core sarek_ir)
+ ; Same relaxation as above for the hand-mirror of PtxLayout.v; 69 allows
+ ; the mirror's [lf_path] field, kept write-only for fidelity to the theory.
+ (flags
+  (:standard -w -32-37-69)))
