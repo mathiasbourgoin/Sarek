@@ -27,6 +27,23 @@ val emit_expr : Buffer.t -> reg_alloc -> env -> expr -> string
     selection ([Agg] values, no memory traffic — FR-020). *)
 val emit_value : Buffer.t -> reg_alloc -> env -> expr -> binding
 
+(** [emit_match_arms buf alloc env scrut arms ~emit_arm] emits a full match on
+    the scrutinee binding [scrut]: variant scrutinees get a tag-compare branch
+    chain (per-arm [setp.eq] + bra, last/catch-all arm unconditional — never
+    selp, FR-022); tuple/record/scalar scrutinees support exactly one
+    destructuring arm. [emit_arm] emits one arm body (expression or statement)
+    with the arm's pattern variables bound arm-scoped. Raises
+    {!Ptx_codegen_error} on a non-exhaustive variant match (no catch-all arm and
+    at least one constructor uncovered). *)
+val emit_match_arms :
+  Buffer.t ->
+  reg_alloc ->
+  env ->
+  binding ->
+  (pattern * 'a) list ->
+  emit_arm:('a -> unit) ->
+  unit
+
 (** [emit_binop buf alloc env op e1 e2] emits a binary operation. Type is
     inferred from the register-name prefix of the first operand. *)
 val emit_binop : Buffer.t -> reg_alloc -> env -> binop -> expr -> expr -> string

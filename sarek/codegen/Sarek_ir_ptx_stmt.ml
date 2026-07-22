@@ -155,7 +155,18 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
   | SPragma (_hints, body) ->
       (* PTX has no pragma equivalent; skip the hint and emit the body. *)
       emit_stmt buf alloc env body
-  | SMatch _ -> unsupported "SMatch (requires variant lowering)"
+  | SMatch (scrut_e, arms) ->
+      (* Statement match: same tag branch chain as value-position EMatch
+         (FR-022), arm bodies emitted as statements, no result. Payload
+         bindings are arm-scoped. *)
+      let scrut = emit_value buf alloc env scrut_e in
+      emit_match_arms
+        buf
+        alloc
+        env
+        scrut
+        arms
+        ~emit_arm:(emit_stmt buf alloc env)
   | SNative {gpu; _} ->
       (* Pass-through: caller must supply valid PTX as the gpu closure. *)
       let code = gpu ~framework:"PTX" in

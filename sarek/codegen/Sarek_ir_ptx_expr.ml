@@ -56,8 +56,174 @@ let rec expr_needs_branch_guard (e : expr) : bool =
       || expr_needs_branch_guard f
   | EArrayCreate (_, s, _) -> expr_needs_branch_guard s
   | EMatch _ | ERecord _ | ERecordField _ | ETuple _ | EVariant _ ->
-      (* Rejected later by the emitter; conservative answer is irrelevant. *)
+      (* EMatch is always branch-based; aggregate constructions/projections
+         may nest arbitrary subexpressions — conservative answer. *)
       true
+
+(** {1 Match dispatch}
+
+    Shared branch-chain machinery for EMatch (value position) and SMatch
+    (statement position): tag-compare branch chain, arm-scoped payload bindings,
+    exhaustiveness checking (FR-022, C-9). *)
+
+(** A pattern that matches unconditionally: wildcard, or the variable pattern
+    the lowering encodes as [PConstr ("", [x])]. *)
+let pattern_is_catch_all = function
+  | PWild | PConstr ("", [_]) -> true
+  | _ -> false
+
+(** Bind [pat]'s variables against the scrutinee binding [scrut] and return the
+    shadowed entries, to be undone with {!restore_bindings} when the arm ends
+    (arm-scoped bindings, FR-022). *)
+let bind_pattern_vars (env : env) (scrut : binding) (pat : pattern) :
+    (string * binding option) list =
+  let save_bind name b =
+    let prev = Hashtbl.find_opt env name in
+    env_bind_binding env name b ;
+    (name, prev)
+  in
+  match (pat, scrut) with
+  | PWild, _ -> []
+  | PConstr ("", [x]), _ -> [save_bind x scrut]
+  | PConstr ("tuple", vars), Agg (ARecord fields) ->
+      (* Tuple destructuring: positional components of the anonymous record
+         (fields "_0", "_1", ... — FR-024). *)
+      if List.length vars <> List.length fields then
+        fail
+          (Printf.sprintf
+             "PTX codegen: tuple pattern binds %d variables but the value has \
+              %d components"
+             (List.length vars)
+             (List.length fields))
+      else List.map2 (fun v (_, b) -> save_bind v b) vars fields
+  | PConstr (ctor, vars), Agg (AVariant {vname; ctors; _}) -> (
+      match List.assoc_opt ctor ctors with
+      | None ->
+          fail
+            (Printf.sprintf
+               "PTX codegen: variant type '%s' has no constructor '%s'"
+               vname
+               ctor)
+      | Some payload ->
+          if List.length vars <> List.length payload then
+            fail
+              (Printf.sprintf
+                 "PTX codegen: constructor '%s' of '%s' has %d payload \
+                  argument(s), pattern binds %d"
+                 ctor
+                 vname
+                 (List.length payload)
+                 (List.length vars))
+          else List.map2 save_bind vars payload)
+  | PConstr (ctor, _), _ ->
+      fail
+        ("PTX codegen: constructor pattern '" ^ ctor
+       ^ "' on a non-variant value; only variant values and tuples can be \
+          destructured by match")
+
+(** Undo the env mutations recorded by {!bind_pattern_vars}. *)
+let restore_bindings (env : env) saved =
+  List.iter
+    (fun (name, prev) ->
+      match prev with
+      | Some b -> Hashtbl.replace env name b
+      | None -> Hashtbl.remove env name)
+    saved
+
+(** Check that a variant match is exhaustive: a catch-all arm, or every
+    constructor covered. Raises a precise error otherwise (C-9). *)
+let check_match_exhaustive vname ctors (arms : (pattern * 'a) list) =
+  let has_catch_all = List.exists (fun (p, _) -> pattern_is_catch_all p) arms in
+  let covered = function
+    | cn, _ ->
+        List.exists (function PConstr (c, _), _ -> c = cn | _ -> false) arms
+  in
+  let missing = List.filter (fun c -> not (covered c)) ctors in
+  if (not has_catch_all) && missing <> [] then
+    fail
+      (Printf.sprintf
+         "PTX codegen: non-exhaustive match on '%s' (missing: %s); add the \
+          missing constructor arm(s) or a wildcard arm"
+         vname
+         (String.concat ", " (List.map fst missing)))
+
+(** Emit the branch chain of a match: per-arm [setp.eq] on the tag register +
+    predicated bra; the last arm (or the first catch-all arm) is branched to
+    unconditionally. [tag_of ctor] = the constructor's declaration index (= its
+    position in the binding's [ctors] list, aligned with
+    [Sarek_ir_layout.ctor_tag]). *)
+let emit_match_dispatch buf alloc vname tag_reg ctors arms labels =
+  let n = List.length arms in
+  let tag_of ctor =
+    let rec index i = function
+      | [] ->
+          fail
+            (Printf.sprintf
+               "PTX codegen: variant type '%s' has no constructor '%s'"
+               vname
+               ctor)
+      | (cn, _) :: rest -> if cn = ctor then i else index (i + 1) rest
+    in
+    index 0 ctors
+  in
+  let rec dispatch i arms_labels =
+    match arms_labels with
+    | [] -> ()
+    | ((pat, _), lbl) :: rest ->
+        if i = n - 1 || pattern_is_catch_all pat then
+          (* Last arm / catch-all: unconditional (C-9; exhaustiveness was
+             checked statically, so falling through every test implies the
+             last constructor). *)
+          emit buf "bra %s;" lbl
+        else begin
+          (match pat with
+          | PConstr (ctor, _) ->
+              let p = new_pred alloc in
+              emit buf "setp.eq.u32 %s, %s, %d;" p tag_reg (tag_of ctor) ;
+              emit buf "@%s bra %s;" p lbl
+          | PWild -> assert false (* catch-all handled above *)) ;
+          dispatch (i + 1) rest
+        end
+  in
+  dispatch 0 (List.combine arms labels)
+
+(** [emit_match_arms buf alloc env scrut arms ~emit_arm] emits a full match on
+    the scrutinee binding [scrut]. Variant scrutinees get a tag branch chain
+    (never selp — FR-022); tuple/record/scalar scrutinees support exactly one
+    destructuring arm. [emit_arm] emits an arm body (expression or statement)
+    with the arm's pattern variables bound arm-scoped. *)
+let emit_match_arms buf alloc (env : env) (scrut : binding)
+    (arms : (pattern * 'a) list) ~(emit_arm : 'a -> unit) : unit =
+  if arms = [] then fail "PTX codegen: match with no arms" ;
+  let emit_one_arm (pat, arm) =
+    let saved = bind_pattern_vars env scrut pat in
+    emit_arm arm ;
+    restore_bindings env saved
+  in
+  match scrut with
+  | Agg (AVariant {vname; tag_reg; ctors}) ->
+      check_match_exhaustive vname ctors arms ;
+      let labels = List.map (fun _ -> new_label alloc) arms in
+      let l_end = new_label alloc in
+      emit_match_dispatch buf alloc vname tag_reg ctors arms labels ;
+      let n = List.length arms in
+      List.iteri
+        (fun i ((_, _) as arm) ->
+          emit_label buf (List.nth labels i) ;
+          emit_one_arm arm ;
+          if i < n - 1 then emit buf "bra %s;" l_end)
+        arms ;
+      emit_label buf l_end
+  | _ -> (
+      (* Non-variant scrutinee: single-arm destructuring only (tuples,
+         variable/wildcard patterns). *)
+      match arms with
+      | [arm] -> emit_one_arm arm
+      | _ ->
+          fail
+            "PTX codegen: match with multiple arms on a non-variant value; \
+             only variant values dispatch on a tag (tuple/record destructuring \
+             takes a single pattern)")
 
 (** {1 Expression emitter}
 
@@ -211,7 +377,13 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
              arr)
   | EArrayCreate _ ->
       unsupported "EArrayCreate in expression position (use SLet)"
-  | EMatch _ -> unsupported "EMatch (requires variant lowering)"
+  | EMatch _ as e -> (
+      match emit_value buf alloc env e with
+      | Scalar r -> r
+      | Agg _ ->
+          fail
+            "PTX codegen: match result is a record/variant used in a scalar \
+             context; bind it with let and read its scalar fields")
   | ERecord (name, _) ->
       fail
         ("PTX codegen: record value of type '" ^ name
@@ -241,7 +413,11 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
            ^ "' returns a record/variant and cannot be used in a scalar \
               context; bind the result with let and use its fields"))
   | EApp _ -> unsupported "EApp with non-variable callee"
-  | EVariant _ -> unsupported "EVariant (requires tagged-union lowering)"
+  | EVariant (tyname, _, _) ->
+      fail
+        ("PTX codegen: variant value of type '" ^ tyname
+       ^ "' cannot be used in a scalar context; bind it with let and match on \
+          it")
 
 (** {1 Helper-function inlining}
 
@@ -368,6 +544,22 @@ and emit_value buf alloc (env : env) (e : expr) : binding =
   | ERecordField (base, field) -> emit_record_field buf alloc env base field
   | EVar v -> env_lookup_binding env v.var_name
   | EApp (EVar f, args) -> emit_app buf alloc env f args
+  | EVariant (tyname, ctor, args) -> emit_variant buf alloc env tyname ctor args
+  | EMatch (scrut_e, arms) -> (
+      (* Branch-based match in value position (never selp — FR-022). The
+         result binding is allocated by leaf-wise copying the first emitted
+         arm's value; every other arm movs leaf-wise into it (post-typing arm
+         result types are uniform). *)
+      let scrut = emit_value buf alloc env scrut_e in
+      let result = ref None in
+      emit_match_arms buf alloc env scrut arms ~emit_arm:(fun arm_e ->
+          let b = emit_value buf alloc env arm_e in
+          match !result with
+          | None -> result := Some (copy_binding buf alloc b)
+          | Some dst -> mov_binding buf ~src:b ~dst) ;
+      match !result with
+      | Some b -> b
+      | None -> fail "PTX codegen: match with no arms")
   | EIf (cond, then_e, else_e)
     when expr_needs_branch_guard then_e || expr_needs_branch_guard else_e ->
       (* Branch-based conditional, aggregate-capable: the then-value's binding
@@ -412,6 +604,56 @@ and emit_record_field buf alloc env base field : binding =
         ("PTX codegen: field access '." ^ field
        ^ "' on a non-record value (records in vector elements are not yet \
           supported at this stage; build the record locally)")
+
+(** Variant construction (FR-021): the tag register is a mov of the
+    constructor's DECLARATION-INDEX constant (aligned with
+    [Sarek_ir_layout.ctor_tag]); the constructed ctor's payload slots hold the
+    evaluated arguments; every other constructor's slots are freshly-allocated,
+    never-written registers (see [agg_value] in Sarek_ir_ptx_types). *)
+and emit_variant buf alloc env tyname ctor args : binding =
+  let decl =
+    match Hashtbl.find_opt alloc.variant_decls tyname with
+    | Some d -> d
+    | None ->
+        fail
+          ("PTX codegen: variant type '" ^ tyname
+         ^ "' has no registered declaration; declare it with [@@sarek.type] \
+            (or a kernel-local Types module) so the kernel carries its \
+            constructor list")
+  in
+  let tag =
+    let rec index i = function
+      | [] ->
+          fail
+            (Printf.sprintf
+               "PTX codegen: variant type '%s' has no constructor '%s'"
+               tyname
+               ctor)
+      | (cn, _) :: rest -> if cn = ctor then i else index (i + 1) rest
+    in
+    index 0 decl
+  in
+  let tag_reg = new_u32 alloc in
+  emit buf "mov.u32 %s, %d;" tag_reg tag ;
+  let ctors =
+    List.map
+      (fun (cn, tys) ->
+        if cn = ctor then begin
+          if List.length args <> List.length tys then
+            fail
+              (Printf.sprintf
+                 "PTX codegen: constructor '%s' of '%s' expects %d \
+                  argument(s), got %d"
+                 ctor
+                 tyname
+                 (List.length tys)
+                 (List.length args)) ;
+          (cn, List.map (emit_value buf alloc env) args)
+        end
+        else (cn, List.map (binding_of_elttype alloc) tys))
+      decl
+  in
+  Agg (AVariant {vname = tyname; tag_reg; ctors})
 
 and emit_binop buf alloc env op e1 e2 : string =
   let r1 = emit_expr buf alloc env e1 in

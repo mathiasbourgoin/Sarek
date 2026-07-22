@@ -562,6 +562,269 @@ let test_helper_record_arg_ret_markers () =
     "ld.global"
     ~why:"record argument and return must stay in SROA registers"
 
+let color_decl = [("Red", []); ("Value", [TFloat32])]
+
+let color_ty = TVariant ("color", color_decl)
+
+(** [base_kernel] with variant declarations registered ([kern_variants]),
+    required by EVariant construction. *)
+let variant_kernel name params body variants =
+  {(base_kernel name params body []) with kern_variants = variants}
+
+(** Variant construct (nullary + 1-arg) and SMatch: tag is a mov of the
+    declaration-index constant, dispatch is a setp.eq branch chain, and
+    everything stays in registers. *)
+let test_variant_construct_smatch_markers () =
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let c = make_var "c" color_ty in
+  let v = make_var "v" TFloat32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( c,
+            EVariant ("color", "Value", [EConst (CFloat32 3.5)]),
+            SMatch
+              ( EVar c,
+                [
+                  ( PConstr ("Red", []),
+                    SAssign (LArrayElem ("dst", EVar tid), EConst (CFloat32 0.0))
+                  );
+                  ( PConstr ("Value", ["v"]),
+                    SAssign
+                      ( LArrayElem ("dst", EVar tid),
+                        EBinop (Add, EVar v, EConst (CFloat32 1.0)) ) );
+                ] ) ) )
+  in
+  let k =
+    variant_kernel
+      "variant_smatch"
+      [DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+      body
+      [("color", color_decl)]
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  (* Value's declaration index is 1. *)
+  assert_contains ptx "mov.u32" ;
+  assert_contains ptx "setp.eq.u32" ;
+  assert_contains ptx "add.f32" ;
+  assert_contains ptx "st.global.f32" ;
+  assert_absent
+    ptx
+    "ld.global"
+    ~why:"local variant must be SROA registers, never loaded from memory"
+
+(** EMatch in value position is ALWAYS branch-based: branch labels present, no
+    selp on the f32 match result (FR-022, AC-4). *)
+let test_ematch_value_markers () =
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let c = make_var "c" color_ty in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( c,
+            EVariant ("color", "Value", [EConst (CFloat32 2.0)]),
+            SAssign
+              ( LArrayElem ("dst", EVar tid),
+                EMatch
+                  ( EVar c,
+                    [
+                      (PConstr ("Red", []), EConst (CFloat32 0.0));
+                      (PConstr ("Value", ["v"]), EVar (make_var "v" TFloat32));
+                    ] ) ) ) )
+  in
+  let k =
+    variant_kernel
+      "ematch_value"
+      [DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+      body
+      [("color", color_decl)]
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "setp.eq.u32" ;
+  assert_contains ptx "bra " ;
+  assert_contains ptx "st.global.f32" ;
+  assert_absent
+    ptx
+    "selp.f32"
+    ~why:"EMatch result must be merged by branch chain, never selp"
+
+(** Three-constructor variant with mixed payload arities matches through a
+    setp.eq chain (two tests + unconditional last arm). *)
+let test_three_ctor_variant_markers () =
+  let shape_decl =
+    [("Circle", [TFloat32]); ("Square", [TFloat32]); ("Point", [])]
+  in
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let s = make_var "s" (TVariant ("shape", shape_decl)) in
+  let r = make_var "r" TFloat32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( s,
+            EVariant ("shape", "Square", [EConst (CFloat32 4.0)]),
+            SMatch
+              ( EVar s,
+                [
+                  ( PConstr ("Circle", ["r"]),
+                    SAssign
+                      ( LArrayElem ("dst", EVar tid),
+                        EBinop (Mul, EVar r, EVar r) ) );
+                  ( PConstr ("Square", ["r"]),
+                    SAssign
+                      ( LArrayElem ("dst", EVar tid),
+                        EBinop (Add, EVar r, EVar r) ) );
+                  ( PConstr ("Point", []),
+                    SAssign (LArrayElem ("dst", EVar tid), EConst (CFloat32 0.0))
+                  );
+                ] ) ) )
+  in
+  let k =
+    variant_kernel
+      "three_ctors"
+      [DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+      body
+      [("shape", shape_decl)]
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "setp.eq.u32" ;
+  assert_contains ptx "mul.f32" ;
+  assert_contains ptx "add.f32" ;
+  assert_absent ptx "ld.global" ~why:"3-ctor local variant stays in registers"
+
+(** Multi-argument payload: construct with two args and bind both in the
+    matching arm. *)
+let test_multiarg_payload_markers () =
+  let pair_decl = [("Pair", [TFloat32; TFloat32])] in
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let pv = make_var "pv" (TVariant ("pair_v", pair_decl)) in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( pv,
+            EVariant
+              ( "pair_v",
+                "Pair",
+                [EConst (CFloat32 1.25); EConst (CFloat32 2.75)] ),
+            SMatch
+              ( EVar pv,
+                [
+                  ( PConstr ("Pair", ["a"; "b"]),
+                    SAssign
+                      ( LArrayElem ("dst", EVar tid),
+                        EBinop
+                          ( Add,
+                            EVar (make_var "a" TFloat32),
+                            EVar (make_var "b" TFloat32) ) ) );
+                ] ) ) )
+  in
+  let k =
+    variant_kernel
+      "multiarg_payload"
+      [DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+      body
+      [("pair_v", pair_decl)]
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "add.f32" ;
+  assert_contains ptx "st.global.f32" ;
+  assert_absent
+    ptx
+    "ld.global"
+    ~why:"multi-arg variant payload stays in registers"
+
+(** Nullary-only variant (pure enum): tag register only, no payload slots. *)
+let test_nullary_only_variant_markers () =
+  let light_decl = [("Stop", []); ("Slow", []); ("Go", [])] in
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let l = make_var "l" (TVariant ("light", light_decl)) in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( l,
+            EVariant ("light", "Go", []),
+            SMatch
+              ( EVar l,
+                [
+                  ( PConstr ("Stop", []),
+                    SAssign (LArrayElem ("dst", EVar tid), EConst (CFloat32 0.0))
+                  );
+                  ( PConstr ("Slow", []),
+                    SAssign (LArrayElem ("dst", EVar tid), EConst (CFloat32 1.0))
+                  );
+                  ( PConstr ("Go", []),
+                    SAssign (LArrayElem ("dst", EVar tid), EConst (CFloat32 2.0))
+                  );
+                ] ) ) )
+  in
+  let k =
+    variant_kernel
+      "nullary_only"
+      [DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+      body
+      [("light", light_decl)]
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  (* Go's declaration index is 2. *)
+  assert_contains ptx "mov.u32" ;
+  assert_contains ptx "setp.eq.u32" ;
+  assert_contains ptx "st.global.f32"
+
+(** A variant match covering neither all constructors nor a wildcard is rejected
+    with a precise error naming the type (C-9). *)
+let test_nonexhaustive_match_rejected () =
+  let dst = make_var "dst" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let c = make_var "c" color_ty in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( c,
+            EVariant ("color", "Red", []),
+            SMatch
+              ( EVar c,
+                [
+                  ( PConstr ("Red", []),
+                    SAssign (LArrayElem ("dst", EVar tid), EConst (CFloat32 0.0))
+                  );
+                ] ) ) )
+  in
+  let k =
+    variant_kernel
+      "nonexhaustive"
+      [DParam (dst, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+      body
+      [("color", color_decl)]
+  in
+  match Sarek_ir_ptx.generate k with
+  | _ -> Alcotest.fail "non-exhaustive match should raise Ptx_codegen_error"
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error msg ->
+      let expected = "non-exhaustive match on 'color'" in
+      let found = ref false in
+      let mlen = String.length expected in
+      for i = 0 to String.length msg - mlen do
+        if String.sub msg i mlen = expected then found := true
+      done ;
+      if not !found then
+        Alcotest.fail
+          (Printf.sprintf "error should contain %S, got: %s" expected msg)
+
 let () =
   Alcotest.run
     "ptx_snapshot"
@@ -616,5 +879,29 @@ let () =
             "helper with record arg + record return is inlined SROA"
             `Quick
             test_helper_record_arg_ret_markers;
+          Alcotest.test_case
+            "variant construct + SMatch (nullary + 1-arg)"
+            `Quick
+            test_variant_construct_smatch_markers;
+          Alcotest.test_case
+            "EMatch value position branches (no selp on result)"
+            `Quick
+            test_ematch_value_markers;
+          Alcotest.test_case
+            "three-constructor variant matches via setp.eq chain"
+            `Quick
+            test_three_ctor_variant_markers;
+          Alcotest.test_case
+            "multi-arg payload construct + match binds both args"
+            `Quick
+            test_multiarg_payload_markers;
+          Alcotest.test_case
+            "nullary-only variant (enum) construct + match"
+            `Quick
+            test_nullary_only_variant_markers;
+          Alcotest.test_case
+            "non-exhaustive variant match is rejected"
+            `Quick
+            test_nonexhaustive_match_rejected;
         ] );
     ]
