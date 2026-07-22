@@ -217,7 +217,19 @@ let make_ptx_header ?(sm_target = "sm_86") ?(ptx_version = "8.0") () =
     @param sm_target Override the default [sm_86] target for older hardware. *)
 let generate ?(sm_target = "sm_86") (k : kernel) : string =
   let alloc = make_alloc () in
-  List.iter (fun hf -> Hashtbl.replace alloc.funcs hf.hf_name hf) k.kern_funcs ;
+  List.iter
+    (fun hf ->
+      (* The __sarek_ prefix is reserved for emitter-internal helpers (e.g.
+         the f64 softmath family); a user helper with such a name would be
+         silently clobbered by the on-demand registration in emit_intrinsic. *)
+      if String.length hf.hf_name >= 8 && String.sub hf.hf_name 0 8 = "__sarek_"
+      then
+        unsupported
+          ("helper '" ^ hf.hf_name
+         ^ "': the '__sarek_' name prefix is reserved for emitter-internal \
+            helpers; rename the function") ;
+      Hashtbl.replace alloc.funcs hf.hf_name hf)
+    k.kern_funcs ;
   List.iter
     (fun (name, ctors) -> Hashtbl.replace alloc.variant_decls name ctors)
     k.kern_variants ;
