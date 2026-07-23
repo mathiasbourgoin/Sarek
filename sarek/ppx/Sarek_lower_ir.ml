@@ -45,9 +45,7 @@ let rec elttype_of_typ (ty : typ) : Ir.elttype =
       Ir.TVariant
         ( name,
           List.map
-            (fun (n, ty_opt) ->
-              ( n,
-                match ty_opt with None -> [] | Some ty -> [elttype_of_typ ty] ))
+            (fun (n, ty_opt) -> (n, constr_payload_elttypes ty_opt))
             constrs )
   (* NOTE: TTuple/TFun are NOT rejected here even though this is where the
      original bug report pointed. This function converts the type of *any*
@@ -67,6 +65,31 @@ let rec elttype_of_typ (ty : typ) : Ir.elttype =
         "Kernel parameter type is a type variable — polymorphic kernels are \
          not supported. Annotate the parameter with a concrete type (e.g. \
          float32, int32)."
+
+(** Flatten a variant constructor's payload type into its IR field list. A
+    multi-argument constructor ([MkPair of float32 * float32]) carries a tuple
+    payload type; it is FLATTENED to one IR field per component
+    ([TFloat32; TFloat32]) so it lines up field-for-field with the multi-binder
+    pattern ([PConstr ("MkPair", ["x"; "y"])]) and the flat [_0/_1] tagged-union
+    payload every source generator already emits. A single, non-tuple payload
+    stays one field. Only scalar-primitive tuple components flatten; any other
+    tuple keeps the (placeholder) single-field mapping. *)
+and constr_payload_elttypes (ty_opt : typ option) : Ir.elttype list =
+  match ty_opt with
+  | None -> []
+  | Some ty -> (
+      match repr ty with
+      | TTuple tys when List.for_all is_scalar_prim_typ tys ->
+          List.map elttype_of_typ tys
+      | _ -> [elttype_of_typ ty])
+
+(** Scalar-primitive predicate on a source [typ], matching the component set
+    accepted for flattened tuple payloads (mirrors [prim_component_elttype]). *)
+and is_scalar_prim_typ (t : typ) : bool =
+  match repr t with
+  | TPrim TInt32 | TPrim TBool | TReg Int64 | TReg Float32 | TReg Float64 ->
+      true
+  | _ -> false
 
 (* L13: tuple-typed vector elements. A tuple used as a vector element type is
    lowered to a synthesized packed record with positional fields [_0], [_1],
@@ -564,17 +587,27 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
         | TVariant (_, constrs) ->
             let constr_types =
               List.map
-                (fun (cname, ty_opt) ->
-                  ( cname,
-                    match ty_opt with
-                    | None -> []
-                    | Some ty -> [elttype_of_typ ty] ))
+                (fun (cname, ty_opt) -> (cname, constr_payload_elttypes ty_opt))
                 constrs
             in
             Hashtbl.add state.variants ty_name constr_types
         | _ -> ()
       end ;
-      let args = match arg with None -> [] | Some e -> [lower_expr state e] in
+      (* Flatten a multi-argument constructor's tuple payload into one IR
+         argument per component, matching the flattened field registration
+         above and the multi-binder pattern side. A literal tuple whose
+         components are all scalar primitives is the shape the typer produces
+         for [MkPair (a, b)]; everything else stays a single argument. *)
+      let args =
+        match arg with
+        | None -> []
+        | Some {te = TETuple comps; ty = tup_ty; _}
+          when match repr tup_ty with
+               | TTuple tys -> List.for_all is_scalar_prim_typ tys
+               | _ -> false ->
+            List.map (lower_expr state) comps
+        | Some e -> [lower_expr state e]
+      in
       Ir.EVariant (ty_name, constr, args)
   | TETuple exprs -> (
       (* L13: a tuple literal whose components are scalar primitives is lowered

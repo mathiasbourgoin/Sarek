@@ -102,6 +102,31 @@ let gen_variant_def_glsl ~type_of_elttype buf (name, constrs) =
       Buffer.add_string buf (Printf.sprintf "const int %s = %d;\n" cname i))
     constrs ;
   Buffer.add_char buf '\n' ;
+  (* GLSL forbids anonymous nested struct definitions inside a struct, so a
+     multi-field (flattened tuple) payload is hoisted to a named struct type
+     [<mangled>_<cname>_payload { T0 _0; T1 _1; ... }] declared before the
+     variant struct; the member and all accesses keep the [<cname>_v._N] shape
+     shared with the other backends. *)
+  let payload_struct_name cname =
+    Printf.sprintf "%s_%s_payload" mangled cname
+  in
+  List.iter
+    (fun (cname, args) ->
+      match args with
+      | [] | [_] -> ()
+      | _ ->
+          Buffer.add_string
+            buf
+            (Printf.sprintf "struct %s {" (payload_struct_name cname)) ;
+          List.iteri
+            (fun i ty ->
+              if i > 0 then Buffer.add_string buf " " ;
+              Buffer.add_string
+                buf
+                (Printf.sprintf " %s _%d;" (type_of_elttype ty) i))
+            args ;
+          Buffer.add_string buf " };\n")
+    constrs ;
   (* Struct with tag and union-like data *)
   Buffer.add_string buf (Printf.sprintf "struct %s {\n  int tag;\n" mangled) ;
   let has_payload = List.exists (fun (_, args) -> args <> []) constrs in
@@ -116,16 +141,9 @@ let gen_variant_def_glsl ~type_of_elttype buf (name, constrs) =
               buf
               (Printf.sprintf "  %s %s_v;\n" (type_of_elttype ty) cname)
         | _ ->
-            (* Multiple args - generate struct *)
-            Buffer.add_string buf (Printf.sprintf "  struct { ") ;
-            List.iteri
-              (fun i ty ->
-                if i > 0 then Buffer.add_string buf " " ;
-                Buffer.add_string
-                  buf
-                  (Printf.sprintf "%s _%d;" (type_of_elttype ty) i))
-              args ;
-            Buffer.add_string buf (Printf.sprintf " } %s_v;\n" cname))
+            Buffer.add_string
+              buf
+              (Printf.sprintf "  %s %s_v;\n" (payload_struct_name cname) cname))
       constrs
   end ;
   Buffer.add_string buf "};\n\n" ;

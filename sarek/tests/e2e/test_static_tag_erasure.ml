@@ -217,16 +217,12 @@ let () =
       let r = float_of_int (i + 1) in
       (r *. r) +. r) ;
   run_behaviour "nullary(erasable)" nullary_kirc ~reference:(fun _ -> 1.0) ;
-  (* Multi-arg constructor payloads are a PRE-EXISTING gap everywhere except
-     Native: the Interpreter crashes (List.iter2) and every source generator
-     (CUDA/PTX, OpenCL, Vulkan) returns generate_source None — unrelated to
-     erasure. The retained-tag assertion above is the real check here;
-     behaviour is gated only where the construct executes today (Native). *)
-  run_behaviour
-    "multiarg-payload(control)"
-    multiarg_kirc
-    ~must:(fun fw -> fw = "Native")
-    ~reference:(fun i ->
+  (* Multi-arg constructor payloads: the constructor's tuple payload is
+     FLATTENED to one field per component end-to-end (Sarek_lower_ir), so it
+     lines up with the multi-binder pattern and the flat [_0/_1] tagged-union
+     payload every backend emits. Now executes on every backend, so the gate
+     is the default (all frameworks must pass). *)
+  run_behaviour "multiarg-payload(control)" multiarg_kirc ~reference:(fun i ->
       let a = float_of_int (i + 1) in
       a +. (a +. a)) ;
   Printf.printf
