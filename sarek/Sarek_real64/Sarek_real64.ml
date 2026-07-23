@@ -58,6 +58,14 @@
  *   materialisation, dispatch, readback) is what makes the two bodies feel
  *   like one abstraction to the caller. See sarek/tests/e2e/test_real64.ml
  *   for the canonical usage.
+ *
+ * AUTHORING KERNELS (palier B - single source)
+ *   [%kernel.real64 ...] removes the hand-written pair: author the compute
+ *   ONCE over an abstract `real64 vector` element type with the intersection
+ *   op set (+. -. *. /. and sqrt), and the PPX expands the SAME AST twice into
+ *   the (native, fallback) pair above. {!kernel_ir} picks the IR matching a
+ *   device's substrate. Transcendentals are rejected at expansion (df64 has
+ *   none). See sarek/tests/e2e/test_real64_single_source.ml.
  ******************************************************************************)
 
 module Device = Spoc_core.Device
@@ -112,6 +120,28 @@ let substrate_for ?force (dev : Device.t) : substrate =
     but works for anything). *)
 let select (s : substrate) ~(native : 'a) ~(fallback : 'a) : 'a =
   match s with Native_f64 -> native | Fallback_df64 -> fallback
+
+(** {1 Single-source kernels (palier B)}
+
+    A [%kernel.real64 ...] kernel is authored ONCE over an abstract
+    [real64 vector] element type and expands to the pair [(native, fallback)] -
+    the same two lowered [%kernel] values palier A authored by hand. Each
+    element is a [(closure, kirc)] pair; {!kernel_ir} picks the one matching a
+    device's substrate, ready to hand to [Sarek.Execute.run_vectors]. *)
+
+(** Extract the lowered IR from one lowered kernel value. *)
+let ir_of_kernel (_, kirc) =
+  match kirc.Sarek.Kirc_types.body_ir with
+  | Some ir -> ir
+  | None -> failwith "Sarek_real64: kernel has no lowered IR"
+
+(** Pick the IR variant matching [substrate] from the [(native, fallback)] pair
+    produced by [%kernel.real64]. *)
+let kernel_ir (substrate : substrate) (native_k, fallback_k) =
+  select
+    substrate
+    ~native:(ir_of_kernel native_k)
+    ~fallback:(ir_of_kernel fallback_k)
 
 (** {1 Uniform host vectors}
 

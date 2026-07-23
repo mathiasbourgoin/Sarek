@@ -781,3 +781,33 @@
  (alias runtest)
  (action
   (run %{dep:test_bare_float_infers_f64.exe})))
+
+; Palier B: single-source real64 kernel ([%kernel.real64]). ONE authored body
+; expands to both the native-f64 and df64 lowerings; same op-check coverage as
+; test_real64, both substrates forced on every device.
+
+(executable
+ (name test_real64_single_source)
+ (modules test_real64_single_source)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.df64
+  sarek.float64
+  sarek.real64
+  spoc_core
+  test_helpers
+  unix
+  sarek_backend_error)
+ (preprocessor_deps
+  (file ../../Sarek_df64/Sarek_df64.ml))
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_real64_single_source.exe})))
+

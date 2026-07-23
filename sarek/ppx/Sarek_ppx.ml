@@ -1761,6 +1761,221 @@ let kernel_extension =
     Ast_pattern.(single_expr_payload __)
     expand_kernel
 
+(* ==========================================================================
+   Single-source real64 kernels ([%kernel.real64 ...], palier B)
+
+   Authors write ONE kernel body over an abstract [real64 vector] element type
+   using +. -. *. /. and sqrt. The extension expands the SAME surface AST TWICE
+   - once as a native IEEE-754 float64 kernel, once as a df64 double-float
+   kernel - and returns the pair [(native, fallback)]. Both variants are then
+   the ordinary [%kernel] outputs Sarek_real64.select / kernel_ir already know
+   how to consume: no IR or codegen change, everything downstream is reused.
+
+   The df64 substitution maps arithmetic operators and sqrt to the df64 helper
+   calls, G-suffix literals to df64 records, the element type to Sarek_df64.df64,
+   and REJECTS constructs df64 lacks (transcendentals) with a clear error. The
+   native substitution maps sqrt to Float64.sqrt and rejects the same
+   unsupported set (real64 promises neither path more than the intersection).
+   ========================================================================== *)
+module Real64_lowering = struct
+  (* real64's op set is the INTERSECTION of the native-f64 and df64 substrates.
+     df64 has no transcendentals, so reject them at expansion rather than
+     lowering only one variant of the pair. *)
+  let unsupported_ops =
+    [
+      "sin";
+      "cos";
+      "tan";
+      "asin";
+      "acos";
+      "atan";
+      "atan2";
+      "sinh";
+      "cosh";
+      "tanh";
+      "exp";
+      "expm1";
+      "log";
+      "log2";
+      "log10";
+      "log1p";
+      "pow";
+      "**";
+      "cbrt";
+      "hypot";
+      "fabs";
+      "floor";
+      "ceil";
+      "round";
+      "trunc";
+    ]
+
+  let arith_fn = function
+    | "+." -> Some "df64_add"
+    | "-." -> Some "df64_sub"
+    | "*." -> Some "df64_mul"
+    | "/." -> Some "df64_div"
+    | _ -> None
+
+  (* real64 element type -> concrete substrate element type in every core-type
+     position (kernel param annotations, let-bound annotations, ...). *)
+  let subst_type (replacement : Longident.t) =
+    object
+      inherit Ast_traverse.map as super
+
+      method! core_type ct =
+        let ct = super#core_type ct in
+        match ct.ptyp_desc with
+        | Ptyp_constr ({txt = Lident "real64"; loc}, args) ->
+            {ct with ptyp_desc = Ptyp_constr ({txt = replacement; loc}, args)}
+        | _ -> ct
+    end
+
+  let ident ~loc name =
+    Ast_builder.Default.pexp_ident ~loc {txt = Lident name; loc}
+
+  let reject_unsupported ~loc op =
+    Location.raise_errorf
+      ~loc
+      "[%%kernel.real64]: operation '%s' is not part of the real64 contract. \
+       real64 exposes only +. -. *. /. and sqrt (the intersection of the \
+       native-f64 and df64 fallback substrates; the df64 fallback has no \
+       transcendentals)."
+      op
+
+  (* df64 fallback body: operators and sqrt become df64 helper calls, G-suffix
+     literals become df64 records, transcendentals are rejected. *)
+  let df64_expr =
+    object (self)
+      inherit Ast_traverse.map as super
+
+      method! expression e =
+        let loc = e.pexp_loc in
+        match e.pexp_desc with
+        | Pexp_apply
+            ( {pexp_desc = Pexp_ident {txt = Lident op; _}; _},
+              [(Nolabel, a); (Nolabel, b)] )
+          when arith_fn op <> None ->
+            let fn = Option.get (arith_fn op) in
+            Ast_builder.Default.eapply
+              ~loc
+              (ident ~loc fn)
+              [self#expression a; self#expression b]
+        | Pexp_apply
+            ( {pexp_desc = Pexp_ident {txt = Lident "sqrt"; _}; _},
+              [(Nolabel, x)] ) ->
+            Ast_builder.Default.eapply
+              ~loc
+              (ident ~loc "df64_sqrt")
+              [self#expression x]
+        | Pexp_apply
+            ({pexp_desc = Pexp_ident {txt = Lident op; loc = oloc}; _}, _)
+          when List.mem op unsupported_ops ->
+            reject_unsupported ~loc:oloc op
+        | Pexp_constant (Pconst_float (s, (Some 'g' | Some 'G'))) ->
+            (* Faithful two-float32 split of the binary64 literal into a df64
+               record {hi; lo}: hi carries the leading ~24 bits, lo the next. *)
+            let round_f32 x = Int32.float_of_bits (Int32.bits_of_float x) in
+            let x = float_of_string s in
+            let hi = round_f32 x in
+            let lo = round_f32 (x -. hi) in
+            let flit v =
+              Ast_builder.Default.pexp_constant
+                ~loc
+                (Pconst_float (Printf.sprintf "%h" v, None))
+            in
+            Ast_builder.Default.pexp_record
+              ~loc
+              [
+                ({txt = Lident "hi"; loc}, flit hi);
+                ({txt = Lident "lo"; loc}, flit lo);
+              ]
+              None
+        | _ -> super#expression e
+    end
+
+  (* Native f64 body: sqrt -> Float64.sqrt, transcendentals rejected. Operators
+     and G-suffix literals lower unchanged (float64). *)
+  let native_expr =
+    object (self)
+      inherit Ast_traverse.map as super
+
+      method! expression e =
+        let loc = e.pexp_loc in
+        match e.pexp_desc with
+        | Pexp_apply
+            ( {pexp_desc = Pexp_ident {txt = Lident "sqrt"; _}; _},
+              [(Nolabel, x)] ) ->
+            Ast_builder.Default.eapply
+              ~loc
+              (Ast_builder.Default.pexp_ident
+                 ~loc
+                 {txt = Ldot (Lident "Float64", "sqrt"); loc})
+              [self#expression x]
+        | Pexp_apply
+            ({pexp_desc = Pexp_ident {txt = Lident op; loc = oloc}; _}, _)
+          when List.mem op unsupported_ops ->
+            reject_unsupported ~loc:oloc op
+        | _ -> super#expression e
+    end
+
+  (* Inject a [let open M in] around the innermost function body so the
+     substrate's ops resolve exactly as in a hand-written body. *)
+  let rec open_in_body ~loc modname e =
+    match e.pexp_desc with
+    | Pexp_fun (lbl, def, pat, body) ->
+        {
+          e with
+          pexp_desc = Pexp_fun (lbl, def, pat, open_in_body ~loc modname body);
+        }
+    | _ ->
+        let mod_ident =
+          Ast_builder.Default.pmod_ident ~loc {txt = Lident modname; loc}
+        in
+        Ast_builder.Default.pexp_open
+          ~loc
+          (Ast_builder.Default.open_infos ~loc ~expr:mod_ident ~override:Fresh)
+          e
+
+  let build_variant ~(expr_map : Ast_traverse.map) ~replacement ~open_mod
+      (payload : expression) =
+    let loc = payload.pexp_loc in
+    let e = expr_map#expression payload in
+    let e = (subst_type replacement)#expression e in
+    open_in_body ~loc open_mod e
+end
+
+(** [%kernel.real64 ...] - single-source dual lowering (palier B). See the
+    [Real64_lowering] module comment above. Returns the [(native, fallback)]
+    kernel pair; consume it with {!Sarek_real64.kernel_ir}. *)
+let expand_kernel_real64 ~ctxt (payload : expression) : expression =
+  let loc = payload.pexp_loc in
+  let native =
+    Real64_lowering.build_variant
+      ~expr_map:Real64_lowering.native_expr
+      ~replacement:(Lident "float64")
+      ~open_mod:"Sarek_float64"
+      payload
+  in
+  let fallback =
+    Real64_lowering.build_variant
+      ~expr_map:Real64_lowering.df64_expr
+      ~replacement:(Ldot (Lident "Sarek_df64", "df64"))
+      ~open_mod:"Sarek_df64"
+      payload
+  in
+  let native_k = expand_kernel ~ctxt native in
+  let fallback_k = expand_kernel ~ctxt fallback in
+  [%expr [%e native_k], [%e fallback_k]]
+
+(** The [%kernel.real64 ...] extension for expressions (palier B). *)
+let kernel_real64_extension =
+  Extension.V3.declare
+    "kernel.real64"
+    Extension.Context.expression
+    Ast_pattern.(single_expr_payload __)
+    expand_kernel_real64
+
 (* Register top-level Sarek type declarations *)
 let expand_sarek_type ~ctxt payload =
   let loc = Expansion_context.Extension.extension_point_loc ctxt in
@@ -2023,6 +2238,7 @@ let () =
       sarek_type_rule;
       sarek_type_private_rule;
       Context_free.Rule.extension kernel_extension;
+      Context_free.Rule.extension kernel_real64_extension;
       Context_free.Rule.extension sarek_include_extension;
       (* NOTE: %sarek_intrinsic and %sarek_extend are handled by sarek_ppx_intrinsic *)
     ]
