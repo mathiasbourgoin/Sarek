@@ -13,11 +13,10 @@
  * and writes a modified tuple element back; results are checked against a pure
  * OCaml reference on every available device.
  *
- * Device support tier: the GPU/device path (CUDA/PTX, OpenCL, Vulkan) works
- * from the inline record layout alone. The Native and Interpreter paths
- * additionally need host/kernel Type_id identity and interpreter value-model
- * unification and are recorded as follow-ups; they are reported as
- * NOT-YET-SUPPORTED here rather than treated as failures.
+ * Device support tier: CUDA/PTX, OpenCL, Vulkan and Native must pass. The
+ * Interpreter path additionally needs value-model unification (its tuple/record
+ * representation and helper registration) and is recorded as a follow-up; it is
+ * reported as NOT-YET-SUPPORTED rather than treated as a failure.
  ******************************************************************************)
 
 module Vector = Spoc_core.Vector
@@ -47,10 +46,13 @@ let tuple_copy_kirc =
         let tid = thread_idx_x + (block_dim_x * block_idx_x) in
         if tid < n then match src.(tid) with a, b -> dst.(tid) <- (a +. 1.0, b)]
 
-(* Devices where the tuple-vector capability is expected to be fully supported
-   in this tier. *)
-let gpu_supported fw =
-  match fw with "CUDA" | "OpenCL" | "Vulkan" | "Metal" -> true | _ -> false
+(* Devices where the tuple-vector capability must work in this tier. The
+   Interpreter is a documented follow-up and reported (not failed) when it
+   cannot run. *)
+let must_pass fw =
+  match fw with
+  | "CUDA" | "OpenCL" | "Vulkan" | "Metal" | "Native" -> true
+  | _ -> false
 
 let () =
   print_endline "=== L13 tuple-vector E2E: (float32 * int32) vector ===" ;
@@ -132,7 +134,7 @@ let () =
           incr pass_count ;
           print_endline "PASSED"
         end
-        else if gpu_supported fw then begin
+        else if must_pass fw then begin
           any_failure := true ;
           print_endline "FAILED"
         end
@@ -147,7 +149,7 @@ let () =
               Sarek_backend_error.Backend_error.to_string err
           | e -> Printexc.to_string e
         in
-        if gpu_supported fw then begin
+        if must_pass fw then begin
           any_failure := true ;
           Printf.printf "FAIL (%s)\n%!" msg
         end

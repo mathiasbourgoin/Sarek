@@ -127,18 +127,49 @@ let gen_variable ~loc ~ctx (name : string) (id : int) : expression =
     [%expr ![%e var_e]]
   else var_e
 
+(* L13: a synthesized tuple-shape record (name starting with [_tup]) has no
+   [<name>_custom] binding — its canonical descriptor lives in the process-wide
+   Sarek_tuple_vec registry, shared with the host so both carry the same
+   Type_id. Emit a runtime lookup instead of an unbound identifier. *)
+let is_tuple_shape_name name =
+  String.length name >= 4 && String.sub name 0 4 = "_tup"
+
+(* Tag of a tuple component type on the Native path. Restricted to the exact
+   component types Sarek_tuple_vec builds (matching OCaml element types) so the
+   registry lookup is type-sound: float32/float64 (float), int32 (int32),
+   int64 (int64). Other component types have no host builder and stay
+   Native-unsupported. *)
+let tuple_component_tag (t : typ) : string option =
+  match repr t with
+  | TReg Float32 -> Some "float32"
+  | TReg Float64 -> Some "float64"
+  | TPrim TInt32 -> Some "int32"
+  | TReg Int64 -> Some "int64"
+  | _ -> None
+
+let tuple_shape_name (tys : typ list) : string option =
+  let tags = List.map tuple_component_tag tys in
+  if List.for_all Option.is_some tags then
+    Some
+      ("_tup" ^ String.concat "" (List.map (fun t -> "_" ^ Option.get t) tags))
+  else None
+
 let custom_descriptor_expr ?current_module ~loc type_name =
-  let parts = String.split_on_char '.' type_name in
-  match List.rev parts with
-  | name :: modules ->
-      let modules = List.rev modules in
-      let modules =
-        match (current_module, modules) with
-        | Some current, [m] when String.equal current m -> []
-        | _ -> modules
-      in
-      evar_qualified ~loc modules (name ^ "_custom")
-  | [] -> failwith "custom_descriptor_expr: empty type name"
+  if is_tuple_shape_name type_name then
+    let name_str = Ast_builder.Default.estring ~loc type_name in
+    [%expr Sarek_tuple_vec.descriptor_by_name [%e name_str]]
+  else
+    let parts = String.split_on_char '.' type_name in
+    match List.rev parts with
+    | name :: modules ->
+        let modules = List.rev modules in
+        let modules =
+          match (current_module, modules) with
+          | Some current, [m] when String.equal current m -> []
+          | _ -> modules
+        in
+        evar_qualified ~loc modules (name ^ "_custom")
+    | [] -> failwith "custom_descriptor_expr: empty type name"
 
 let is_inline_type inline_types type_name =
   match inline_types with
@@ -185,6 +216,14 @@ let vector_type_id_expr ?current_module ?inline_types
         [%expr
           [%e custom_descriptor_expr ?current_module ~loc type_name]
             .Spoc_core.Vector.vector_type_id]
+  | TTuple tys when Option.is_some (tuple_shape_name tys) ->
+      [%expr
+        [%e
+          custom_descriptor_expr
+            ?current_module
+            ~loc
+            (Option.get (tuple_shape_name tys))]
+          .Spoc_core.Vector.vector_type_id]
   | _ -> [%expr failwith "unsupported vector type identity"]
 
 let custom_type_id_expr ?current_module ?inline_types
@@ -198,4 +237,12 @@ let custom_type_id_expr ?current_module ?inline_types
         [%expr
           [%e custom_descriptor_expr ?current_module ~loc type_name]
             .Spoc_core.Vector.type_id]
+  | TTuple tys when Option.is_some (tuple_shape_name tys) ->
+      [%expr
+        [%e
+          custom_descriptor_expr
+            ?current_module
+            ~loc
+            (Option.get (tuple_shape_name tys))]
+          .Spoc_core.Vector.type_id]
   | _ -> [%expr failwith "unsupported custom type identity"]

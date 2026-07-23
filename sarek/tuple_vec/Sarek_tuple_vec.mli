@@ -35,3 +35,10 @@ val triple :
   'b component ->
   'c component ->
   ('a * 'b * 'c) Vector.custom_type
+
+(** [descriptor_by_name name] returns the canonical [custom_type] registered for
+    a mangled tuple-shape name (e.g. ["_tup_float32_int32"]) by a previous
+    [pair]/[triple] call. Generated Native kernel code uses this to obtain the
+    same [Type_id] the host vector carries. Raises if the shape was never built
+    on the host. Not normally called directly. *)
+val descriptor_by_name : string -> 'a Vector.custom_type

@@ -16,11 +16,11 @@
  * ([Sarek_lower_ir.vector_elem_elttype]). Host [get]/[set] therefore marshal
  * to/from exactly the bytes the kernel reads and writes on device.
  *
- * Scope (this tier): tuples of two or three scalar-primitive components. The
- * device/GPU path (CUDA/PTX, OpenCL, Vulkan) consumes these directly. The
- * Native and Interpreter execution paths additionally require host/kernel
- * [Type_id] identity and interpreter value-model unification respectively and
- * are follow-ups (see roster/ptx-limits-campaign/L13-tuple-vectors.md).
+ * Scope (this tier): tuples of two or three scalar-primitive components,
+ * running on CUDA/PTX, OpenCL, Vulkan and Native. Native shares the [Type_id]
+ * with generated kernel code through the process-wide registry below. The
+ * Interpreter path needs value-model unification and is a follow-up (see
+ * roster/ptx-limits-campaign/L13-tuple-vectors.md).
  ******************************************************************************)
 
 module Vector = Spoc_core.Vector
@@ -91,9 +91,42 @@ let offset_of rl fname =
   | Some off -> off
   | None -> failwith ("Sarek_tuple_vec: missing field offset for " ^ fname)
 
+(* Process-global registry mapping a mangled tuple-shape name to its canonical
+   [custom_type]. A shape is instantiated once and shared: the host builds a
+   vector from it and the Native execution path looks up the very same
+   descriptor (via [descriptor_by_name], emitted by the native code generator),
+   so both sides carry the identical [Type_id] token that [vec_get_custom]
+   compares with [Type_id.equal]. The value is stored type-erased and recovered
+   at the call-site type; the mangled name uniquely determines the OCaml type,
+   so the coercion is sound. *)
+let registry : (string, Obj.t) Hashtbl.t = Hashtbl.create 16
+
+let memoize name (build : unit -> 'a Vector.custom_type) : 'a Vector.custom_type
+    =
+  match Hashtbl.find_opt registry name with
+  | Some obj -> Obj.obj obj
+  | None ->
+      let custom = build () in
+      Hashtbl.replace registry name (Obj.repr custom) ;
+      custom
+
+(** [descriptor_by_name name] returns the canonical [custom_type] previously
+    registered for the mangled shape [name] (built by [pair]/[triple]). Used by
+    generated Native kernel code to obtain the host-shared [Type_id]. Raises if
+    the shape was never instantiated on the host. *)
+let descriptor_by_name (name : string) : 'a Vector.custom_type =
+  match Hashtbl.find_opt registry name with
+  | Some obj -> Obj.obj obj
+  | None ->
+      failwith
+        ("Sarek_tuple_vec: no tuple custom_type registered for shape '" ^ name
+       ^ "'; build it on the host (e.g. Sarek_tuple_vec.pair ...) before \
+          running the kernel.")
+
 (** [pair a b] is the [custom_type] for a [(a, b)] tuple vector element. *)
 let pair (a : 'a component) (b : 'b component) : ('a * 'b) Vector.custom_type =
   let name = mangled_name [a.c_tag; b.c_tag] in
+  memoize name @@ fun () ->
   let fields = [(field_name 0, a.c_elttype); (field_name 1, b.c_elttype)] in
   let rl = layout_of fields name in
   let size = rl.Layout.rl_size in
@@ -120,6 +153,7 @@ let pair (a : 'a component) (b : 'b component) : ('a * 'b) Vector.custom_type =
 let triple (a : 'a component) (b : 'b component) (c : 'c component) :
     ('a * 'b * 'c) Vector.custom_type =
   let name = mangled_name [a.c_tag; b.c_tag; c.c_tag] in
+  memoize name @@ fun () ->
   let fields =
     [
       (field_name 0, a.c_elttype);
