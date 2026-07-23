@@ -808,6 +808,53 @@ let test_atomic_width_mismatch_rejected () =
   | _ -> Alcotest.fail "int32 value into atom.add.u64 should be rejected"
   | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()
 
+(** Audit finding M5: the intrinsic's hardwired 4/8-byte stride must match
+    the array's element width — atomic_add_int32 on an int64 vector would
+    corrupt neighbouring elements; and a *_global_* atomic on a shared
+    array would use the 32-bit shared-window offset as a global address. *)
+let test_atomic_stride_and_space_rejected () =
+  let tid = make_var "tid" TInt32 in
+  let gen_with body params =
+    base_kernel "atomic_bad" params body [] |> Sarek_ir_ptx.generate
+  in
+  (* 4-byte atomic on an 8-byte-element array: rejected. *)
+  let lacc = make_var "lacc" (TVec TInt64) in
+  let body32on64 =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SExpr
+          (EIntrinsic
+             ( ["Sarek_stdlib"; "Gpu"],
+               "atomic_add_int32",
+               [EVar lacc; EVar tid; EConst (CInt32 1l)] )) )
+  in
+  (match
+     gen_with
+       body32on64
+       [DParam (lacc, Some {arr_elttype = TInt64; arr_memspace = Global})]
+   with
+  | _ -> Alcotest.fail "4-byte atomic on 8-byte elements should be rejected"
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()) ;
+  (* *_global_* atomic on a shared array: rejected. *)
+  let sacc = make_var "sacc" TInt32 in
+  let body_global_on_shared =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( sacc,
+            EArrayCreate (TInt32, EConst (CInt32 32l), Shared),
+            SExpr
+              (EIntrinsic
+                 ( ["Sarek_stdlib"; "Gpu"],
+                   "atomic_add_global_int32",
+                   [EVar sacc; EVar tid; EConst (CInt32 1l)] )) ) )
+  in
+  match gen_with body_global_on_shared [] with
+  | _ -> Alcotest.fail "global-form atomic on shared array should be rejected"
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()
+
 (** Check that [ptx] does NOT contain [marker]. *)
 let assert_absent ptx marker ~why =
   let mlen = String.length marker in
@@ -2039,6 +2086,10 @@ let () =
             "width-mismatched atomic value is rejected"
             `Quick
             test_atomic_width_mismatch_rejected;
+          Alcotest.test_case
+            "stride/space-mismatched atomics are rejected"
+            `Quick
+            test_atomic_stride_and_space_rejected;
           Alcotest.test_case
             "float Mod lowers to fmod (div.rn + cvt.rzi + fma)"
             `Quick

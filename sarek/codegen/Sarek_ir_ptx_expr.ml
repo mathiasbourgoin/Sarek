@@ -1293,7 +1293,7 @@ and emit_intrinsic_native buf alloc env path name args : string =
      the element size (2 for 32-bit, 3 for 64-bit elements) — the stride
      must match the atom width or neighbouring elements alias. Returns the
      PTX space name and the address register. *)
-  let atomic_addr ~global_only ~elt_shift arr r_idx =
+  let atomic_addr ~intr ~global_only ~elt_shift arr r_idx =
     let r_base = env_lookup env arr.var_name in
     (* PTX has no atom.local — and per-thread memory needs no atomics. *)
     (match arr_space_of alloc arr.var_name with
@@ -1301,7 +1301,40 @@ and emit_intrinsic_native buf alloc env path name args : string =
         unsupported
           ("atomic operation on per-thread local array '" ^ arr.var_name
          ^ "' (atomics require shared or global memory)")
+    | Some SpaceShared when global_only ->
+        (* A *_global_* atomic on a shared array would use the 32-bit
+           shared-window offset as a 64-bit global address — silent
+           corruption (audit finding M5). *)
+        unsupported
+          (intr ^ ": '" ^ arr.var_name
+         ^ "' is a shared array; use the non-global atomic form")
     | Some SpaceShared | None -> ()) ;
+    (* The intrinsic's hardwired stride must match the array's element
+       width: atomic_add_int32 on an int64/f64 vector would index with a
+       4-byte stride into 8-byte elements — silent corruption of
+       neighbouring elements (audit finding M5). *)
+    (let elt = infer_elt_type alloc arr.var_name in
+     let width_shift =
+       match elt with
+       | TInt32 | TFloat32 | TBool -> Some 2
+       | TInt64 | TFloat64 -> Some 3
+       | _ -> None
+     in
+     match width_shift with
+     | Some w when w <> elt_shift ->
+         unsupported
+           (Printf.sprintf
+              "%s: array '%s' has %d-byte elements but this atomic addresses \
+               %d-byte elements; use the matching-width atomic"
+              intr
+              arr.var_name
+              (1 lsl w)
+              (1 lsl elt_shift))
+     | Some _ -> ()
+     | None ->
+         unsupported
+           (intr ^ ": atomics require a scalar int/float element type, but '"
+          ^ arr.var_name ^ "' has an aggregate element type")) ;
     let is_shared =
       (not global_only) && arr_space_of alloc arr.var_name = Some SpaceShared
     in
@@ -1343,7 +1376,7 @@ and emit_intrinsic_native buf alloc env path name args : string =
           end
           else (op, r_val0)
         in
-        let space, r_addr = atomic_addr ~global_only ~elt_shift arr r_idx in
+        let space, r_addr = atomic_addr ~intr ~global_only ~elt_shift arr r_idx in
         let r_old = new_atom_result result in
         emit buf "atom.%s.%s%s %s, [%s], %s;" space op ty r_old r_addr r_val ;
         r_old
@@ -1361,7 +1394,7 @@ and emit_intrinsic_native buf alloc env path name args : string =
         check_atom_operand intr result r_cmp ;
         check_atom_operand intr result r_val ;
         let space, r_addr =
-          atomic_addr ~global_only:false ~elt_shift arr r_idx
+          atomic_addr ~intr ~global_only:false ~elt_shift arr r_idx
         in
         let r_old = new_atom_result result in
         emit
@@ -1389,7 +1422,7 @@ and emit_intrinsic_native buf alloc env path name args : string =
     match args with
     | [EVar arr; idx_e] ->
         let r_idx = emit_expr buf alloc env idx_e in
-        let space, r_addr = atomic_addr ~global_only ~elt_shift:2 arr r_idx in
+        let space, r_addr = atomic_addr ~intr ~global_only ~elt_shift:2 arr r_idx in
         let r_lim = new_u32 alloc in
         emit buf "mov.u32 %s, 0xffffffff;" r_lim ;
         let r_old = new_u32 alloc in
