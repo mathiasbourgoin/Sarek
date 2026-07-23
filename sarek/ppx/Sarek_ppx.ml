@@ -1920,29 +1920,61 @@ module Real64_lowering = struct
     end
 
   (* Inject a [let open M in] around the innermost function body so the
-     substrate's ops resolve exactly as in a hand-written body. *)
-  let rec open_in_body ~loc modname e =
-    match e.pexp_desc with
-    | Pexp_fun (lbl, def, pat, body) ->
+     substrate's ops (df64_* helpers, float64 operators) resolve exactly as in
+     a hand-written body.
+
+     Done in the frozen Ast_502 representation via the repo's own converters
+     (Sarek_parse_helpers.expression_{to,of}_502), mirroring how
+     collect_fun_params walks the fun chain. This is version-robust: the
+     ambient ppxlib AST merged [Pexp_fun] into [Pexp_function] in 5.2+, but
+     Ast_502 always exposes [Pexp_function (params, _, Pfunction_body body)]. *)
+  let open_in_body modname (e : expression) : expression =
+    let module P = Astlib.Ast_502.Parsetree in
+    let module A = Astlib.Ast_502.Asttypes in
+    let mk_open (body : P.expression) : P.expression =
+      let loc = body.P.pexp_loc in
+      let md : P.module_expr =
         {
-          e with
-          pexp_desc = Pexp_fun (lbl, def, pat, open_in_body ~loc modname body);
+          P.pmod_desc = P.Pmod_ident {txt = Longident.Lident modname; loc};
+          P.pmod_loc = loc;
+          P.pmod_attributes = [];
         }
-    | _ ->
-        let mod_ident =
-          Ast_builder.Default.pmod_ident ~loc {txt = Lident modname; loc}
-        in
-        Ast_builder.Default.pexp_open
-          ~loc
-          (Ast_builder.Default.open_infos ~loc ~expr:mod_ident ~override:Fresh)
-          e
+      in
+      let od : P.open_declaration =
+        {
+          P.popen_expr = md;
+          P.popen_override = A.Fresh;
+          P.popen_loc = loc;
+          P.popen_attributes = [];
+        }
+      in
+      {body with P.pexp_desc = P.Pexp_open (od, body)}
+    in
+    let rec wrap (fn : P.expression) : P.expression =
+      match fn.P.pexp_desc with
+      | P.Pexp_function (params, constr, P.Pfunction_body body) ->
+          let body' =
+            match body.P.pexp_desc with
+            (* nested [fun a -> fun b -> ...]: descend to the real body *)
+            | P.Pexp_function _ -> wrap body
+            | _ -> mk_open body
+          in
+          {
+            fn with
+            P.pexp_desc =
+              P.Pexp_function (params, constr, P.Pfunction_body body');
+          }
+      (* not a function: expand_kernel will report "Kernel must be a function" *)
+      | _ -> fn
+    in
+    let e502 = Sarek_parse_helpers.expression_to_502 e in
+    Sarek_parse_helpers.expression_of_502 (wrap e502)
 
   let build_variant ~(expr_map : Ast_traverse.map) ~replacement ~open_mod
       (payload : expression) =
-    let loc = payload.pexp_loc in
     let e = expr_map#expression payload in
     let e = (subst_type replacement)#expression e in
-    open_in_body ~loc open_mod e
+    open_in_body open_mod e
 end
 
 (** [%kernel.real64 ...] - single-source dual lowering (palier B). See the
