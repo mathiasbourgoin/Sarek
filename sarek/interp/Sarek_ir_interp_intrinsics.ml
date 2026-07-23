@@ -109,6 +109,39 @@ let eval_barrier_intrinsic name =
       Some VUnit
   | _ -> None
 
+(* Serialises global-memory atomics. The sequential interpreter needs no lock,
+   but the parallel interpreter distributes blocks across a domain pool sharing
+   the same global VArray, so the read-modify-write must be atomic. *)
+let atomic_global_mutex = Mutex.create ()
+
+let with_atomic_lock f =
+  Mutex.lock atomic_global_mutex ;
+  Fun.protect ~finally:(fun () -> Mutex.unlock atomic_global_mutex) f
+
+(** Global-memory atomics and memory fences.
+
+    Atomics on global vectors return the OLD value and update in place. The
+    interpreter models global memory as a shared mutable [VArray]; fences are
+    no-ops because a single logical memory is already sequentially consistent
+    here. Sufficient for the Sarek_worklist queue pattern (atomic HEAD/TAIL
+    counters + ring slots). *)
+let eval_atomic_intrinsic name args =
+  match (name, args) with
+  | "atomic_add_global_int32", [VArray a; idx; delta] ->
+      with_atomic_lock (fun () ->
+          let i = to_int idx in
+          let old = to_int32 a.(i) in
+          a.(i) <- VInt32 (Int32.add old (to_int32 delta)) ;
+          Some (VInt32 old))
+  | "atomic_inc_global_int32", [VArray a; idx] ->
+      with_atomic_lock (fun () ->
+          let i = to_int idx in
+          let old = to_int32 a.(i) in
+          a.(i) <- VInt32 (Int32.add old 1l) ;
+          Some (VInt32 old))
+  | ("memory_fence_block" | "memory_fence_device"), _ -> Some VUnit
+  | _ -> None
+
 (** Float32 math intrinsics *)
 let eval_float32_math_intrinsic name args =
   match name with

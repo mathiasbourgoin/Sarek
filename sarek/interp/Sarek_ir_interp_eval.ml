@@ -9,20 +9,25 @@ open Sarek_ir_interp_intrinsics
 
 (** Main intrinsic dispatcher - tries each category in order *)
 let rec eval_intrinsic state path name args =
-  (* Try GPU path intrinsics *)
-  if is_gpu_path path then
-    match eval_gpu_index_intrinsic state name with
-    | Some v -> v
-    | None -> (
-        match eval_barrier_intrinsic name with
+  (* Global-memory atomics and fences are path-independent (they may be opened
+     from Gpu or referenced unqualified), so try them first. *)
+  match eval_atomic_intrinsic name args with
+  | Some v -> v
+  | None ->
+      (* Try GPU path intrinsics *)
+      if is_gpu_path path then
+        match eval_gpu_index_intrinsic state name with
         | Some v -> v
         | None -> (
-            match eval_type_conversion_intrinsic name args with
+            match eval_barrier_intrinsic name with
             | Some v -> v
-            | None ->
-                (* Not a GPU intrinsic, fall through to type-specific *)
-                eval_intrinsic_by_type path name args))
-  else eval_intrinsic_by_type path name args
+            | None -> (
+                match eval_type_conversion_intrinsic name args with
+                | Some v -> v
+                | None ->
+                    (* Not a GPU intrinsic, fall through to type-specific *)
+                    eval_intrinsic_by_type path name args))
+      else eval_intrinsic_by_type path name args
 
 (** Try type-specific intrinsics based on path *)
 and eval_intrinsic_by_type path name args =
