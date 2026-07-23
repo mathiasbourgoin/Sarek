@@ -17,6 +17,18 @@
 ; - test_tuple_param: "Tuple-typed kernel parameters are not supported"
 ; - test_fun_param: "Function-typed kernel parameters are not supported"
 ; - test_fun_escape: "Function value escapes"
+; - test_unregistered_field: "unknown size/alignment for field type"
+
+(library
+ (name neg_test_unregistered_field)
+ (modules test_unregistered_field)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
 
 (library
  (name neg_test_convention_kernel_fail)

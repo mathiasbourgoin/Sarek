@@ -120,7 +120,12 @@ let type_align_registry : (string, int) Hashtbl.t = Hashtbl.create 16
    positive power of two (4 or 8) here; [a <= 1] is the identity. *)
 let align_up off a = if a <= 1 then off else (off + a - 1) / a * a
 
-(* Get size of a type, checking registry for custom types *)
+(* Get size of a type, checking registry for custom types.
+
+   Unknown or non-simple field types are a HARD ERROR, not a silent 4-byte
+   default: these sizes feed the aligned host ABI (L8), and a wrong
+   size/alignment silently desynchronizes host bytes from the device layout
+   (audit finding M6). *)
 let get_type_size_from_core_type (ct : core_type) : int =
   match ct.ptyp_desc with
   | Ptyp_constr ({txt = Lident "int32"; _}, _) -> 4
@@ -129,10 +134,23 @@ let get_type_size_from_core_type (ct : core_type) : int =
   | Ptyp_constr ({txt = Lident "float"; _}, _) -> 4 (* GPU float32 *)
   | Ptyp_constr ({txt = Lident "float64"; _}, _) -> 8
   | Ptyp_constr ({txt = Lident "int"; _}, _) -> 4
+  | Ptyp_constr ({txt = Lident "bool"; _}, _) -> 4
+  | Ptyp_constr ({txt = Lident "unit"; _}, _) -> 4
   | Ptyp_constr ({txt = Lident type_name; _}, _) -> (
       (* Check if it's a known custom type *)
-      try Hashtbl.find type_size_registry type_name with Not_found -> 4)
-  | _ -> 4
+      try Hashtbl.find type_size_registry type_name
+      with Not_found ->
+        Location.raise_errorf
+          ~loc:ct.ptyp_loc
+          "sarek: unknown size for field type '%s' - register it with \
+           [%%ktype] before using it as a record/variant field (a silent \
+           default would corrupt the host/device layout)"
+          type_name)
+  | _ ->
+      Location.raise_errorf
+        ~loc:ct.ptyp_loc
+        "sarek: unsupported field type in a GPU record/variant - only scalar \
+         types and [%%ktype]-registered names are supported here"
 
 (* Natural alignment of a field type, mirroring Sarek_ir_layout.elttype_align:
    4 for 32-bit scalars, 8 for int64/float64, and the registered alignment for a
@@ -145,9 +163,22 @@ let get_type_align_from_core_type (ct : core_type) : int =
   | Ptyp_constr ({txt = Lident "float"; _}, _) -> 4 (* GPU float32 *)
   | Ptyp_constr ({txt = Lident "float64"; _}, _) -> 8
   | Ptyp_constr ({txt = Lident "int"; _}, _) -> 4
+  | Ptyp_constr ({txt = Lident "bool"; _}, _) -> 4
+  | Ptyp_constr ({txt = Lident "unit"; _}, _) -> 4
   | Ptyp_constr ({txt = Lident type_name; _}, _) -> (
-      try Hashtbl.find type_align_registry type_name with Not_found -> 4)
-  | _ -> 4
+      try Hashtbl.find type_align_registry type_name
+      with Not_found ->
+        Location.raise_errorf
+          ~loc:ct.ptyp_loc
+          "sarek: unknown alignment for field type '%s' - register it with \
+           [%%ktype] before using it as a record/variant field (a silent \
+           default would corrupt the host/device layout)"
+          type_name)
+  | _ ->
+      Location.raise_errorf
+        ~loc:ct.ptyp_loc
+        "sarek: unsupported field type in a GPU record/variant - only scalar \
+         types and [%%ktype]-registered names are supported here"
 
 (* Aligned immediate-field offset table for a record: each field placed at the
    next offset satisfying its natural alignment. Returns (name, offset, type)
