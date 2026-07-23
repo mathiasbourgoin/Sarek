@@ -19,10 +19,24 @@ jobs:
           - true
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Test alias coverage guard
+        run: ./scripts/check-test-alias-coverage.sh
+
+      - name: Formal proofs admit gate
+        run: |
+          # The formal projects claim 0 admits; fail if an Admitted/admit/Axiom
+          # sneaks into a .v file (comments don't match the line-anchored regex).
+          if grep -rnE '^[[:space:]]*(Admitted\.|admit\.|Axiom[[:space:]])' formal --include='*.v'; then
+            echo "::error::Admitted/admit/Axiom found in formal/ .v files (0-admit invariant violated)"
+            exit 1
+          fi
+          echo "OK: no Admitted/admit/Axiom in formal/ .v files"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -137,6 +151,7 @@ jobs:
 
   check-generated-code:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     
     steps:
       - name: Checkout code

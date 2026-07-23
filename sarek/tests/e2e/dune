@@ -372,7 +372,8 @@
   test_pragma.exe
   test_barrier_converged.exe
   test_superstep.exe
-  test_inline_pragma.exe))
+  test_inline_pragma.exe
+  test_ppx_scan_failure_warning.exe))
 
 ; Build-gate the compile-only tests under default `runtest` too, so a
 ; compile regression still fails CI, without executing them (this is the
@@ -388,7 +389,33 @@
   test_pragma.exe
   test_barrier_converged.exe
   test_superstep.exe
-  test_inline_pragma.exe))
+  test_inline_pragma.exe
+  test_ppx_scan_failure_warning.exe))
+
+; Regression tests wired to executing runtest rules (found unwired by
+; scripts/check-test-alias-coverage.sh - the guard added after the 2026-07
+; vacuous-e2e fix). test_vulkan_interleaved_push_constants self-skips
+; without a Vulkan device.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_native_create_array.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_native_downto.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_bare_float_is_float32.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_vulkan_interleaved_push_constants.exe})))
 
 ; e2e-gpu alias: requires an actual GPU backend (no Native/Interpreter
 ; fallback path exists in the test). Not part of default `runtest`.
