@@ -61,7 +61,10 @@
  *            let s = mut off.(u) in
  *            while s < off.(u + 1l) do
  *              let t = atomic_add_global_int32 ctrl 1l 1l in
- *              slots.(wl_ring_index cap t) <- idx.(s) ;
+ *              let head = atomic_add_global_int32 ctrl 0l 0l in
+ *              if t - head >= cap then
+ *                (let _ = atomic_add_global_int32 ctrl 3l 1l in ())  (* OVERFLOW *)
+ *              else slots.(wl_ring_index cap t) <- idx.(s) ;
  *              s := s + 1l
  *            done ;
  *            i := i + stride
@@ -76,8 +79,12 @@
  *
  * CAPACITY / TERMINATION CONTRACT (honest limits)
  *   - Level-sync main use: size capacity >= total items ever enqueued (the ring
- *     never reuses a slot, so ordering can never corrupt). The OVERFLOW flag is
- *     set if a push finds the ring full; the host checks {!Host.overflow}.
+ *     never reuses a slot, so ordering can never corrupt). Every push is guarded
+ *     ([t - head >= cap] -> set OVERFLOW instead of writing to a live slot), so
+ *     an under-sized ring is FLAGGED via {!Host.overflow} rather than silently
+ *     clobbering live data. Once OVERFLOW is set the run's result is undefined
+ *     (items were dropped) — treat a nonzero {!Host.overflow} as "grow capacity
+ *     and re-run", exactly like the {!push_guarded} pattern.
  *   - Ring reuse (wrap) is correct only when capacity >= peak simultaneously-
  *     live items, so a slot is always consumed before its ticket laps it.
  *   - This is NOT a drop-in for arbitrary CDP: workers are homogeneous (same

@@ -56,7 +56,11 @@ let frontier_kernel =
         let e = child_off.(u + 1l) in
         while s < e do
           let t = atomic_add_global_int32 ctrl 1l 1l in
-          slots.(wl_ring_index cap t) <- child_idx.(s) ;
+          let head = atomic_add_global_int32 ctrl 0l 0l in
+          if t - head >= cap then
+            let _ = atomic_add_global_int32 ctrl 3l 1l in
+            ()
+          else slots.(wl_ring_index cap t) <- child_idx.(s) ;
           s := s + 1l
         done ;
         i := i + stride
