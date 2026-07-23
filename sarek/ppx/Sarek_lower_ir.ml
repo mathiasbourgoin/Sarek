@@ -87,8 +87,8 @@ let elttype_prim_tag (e : Ir.elttype) : string option =
     match on [Sarek_types.typ] directly, NOT via [elttype_of_typ]: that
     conversion maps [TTuple]/[TFun] to a placeholder [Ir.TInt32] (see its NOTE),
     so routing the primitivity check through it would silently accept nested
-    tuples or function components as int32 fields and synthesize a wrong
-    layout. Returns the component's IR type iff it is a supported scalar. *)
+    tuples or function components as int32 fields and synthesize a wrong layout.
+    Returns the component's IR type iff it is a supported scalar. *)
 let prim_component_elttype (t : typ) : Ir.elttype option =
   match repr t with
   | TPrim TInt32 -> Some Ir.TInt32

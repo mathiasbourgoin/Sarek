@@ -70,8 +70,7 @@ let nullary_kirc =
    pattern is a tuple of binders, which the S1 reduction does not substitute —
    the arm is ineligible and the tag must be RETAINED (erasing it would drop
    the tuple binders and emit malformed code). Result: a + 2a with a = src.(tid). *)
-type pair_pt = MkPair of float32 * float32 | MkOne of float32
-[@@sarek.type]
+type pair_pt = MkPair of float32 * float32 | MkOne of float32 [@@sarek.type]
 
 let multiarg_kirc =
   snd
