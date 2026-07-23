@@ -28,6 +28,14 @@ end)
 (** Current kernel's variant definitions (set during generate) *)
 let current_variants : (string * (string * elttype list) list) list ref = ref []
 
+(** Name of the integer-remainder helper ([sarek_smod] by default) for the
+    current kernel, set per-kernel during generate by {!compute_smod_name} so it
+    cannot collide with a user identifier. Both the declaration
+    ({!gen_smod_helper}) and the call site ({!gen_expr}'s [Mod] arm) read this,
+    guaranteeing they agree. Mirrors the per-kernel {!current_variants} state.
+*)
+let current_smod_name = ref "sarek_smod"
+
 (** Helper function vector parameter indices - maps function name to set of
     parameter indices that are vectors. In GLSL, vectors cannot be passed as
     function parameters, so these must be filtered out at call sites. *)
@@ -215,7 +223,8 @@ let rec gen_expr buf = function
          operand twice and double any such effect. Float [mod] never reaches
          this arm (the frontend lowers it to the [fmod]/[mod] intrinsic, not
          [Ir.Mod]). *)
-      Buffer.add_string buf "sarek_smod(" ;
+      Buffer.add_string buf !current_smod_name ;
+      Buffer.add_char buf '(' ;
       gen_expr buf e1 ;
       Buffer.add_string buf ", " ;
       gen_expr buf e2 ;
@@ -1035,14 +1044,58 @@ let gen_shared_decls buf (decls : (string * elttype * expr) list) =
     [int]-only for now: int64 on the Vulkan backend is unwired (no
     [GL_ARB_gpu_shader_int64] extension is emitted anywhere), so an int64 kernel
     already fails to compile independently of [mod]. If int64 Vulkan lands, add
-    an [int64_t sarek_smod(int64_t, int64_t)] overload here (GLSL resolves the
+    an [int64_t <name>(int64_t, int64_t)] overload here (GLSL resolves the
     overload by argument type at the call site) and gate the extension on int64
-    usage, mirroring the float64 path in [glsl_header]. *)
+    usage, mirroring the float64 path in [glsl_header].
+
+    The helper name is [!current_smod_name] (see {!compute_smod_name}), not a
+    literal, so it cannot collide with a user param or helper identifier. *)
 let gen_smod_helper buf (k : kernel) =
   if Sarek_ir_analysis.kernel_uses_int_mod k then
     Buffer.add_string
       buf
-      "int sarek_smod(int a, int b) { return a - b * (a / b); }\n\n"
+      (Printf.sprintf
+         "int %s(int a, int b) { return a - b * (a / b); }\n\n"
+         !current_smod_name)
+
+(** Choose a collision-safe name for the integer-remainder helper of kernel [k].
+
+    The helper is declared at GLSL top level and called from expressions, so its
+    name must avoid every identifier sharing that scope. Two collision sources
+    (both observed by CodeRabbit on PR #255):
+
+    - {b param names}: a scalar param becomes a push-constant alias
+      [#define <name> pc.<name>], which would macro-expand the helper
+      declaration and every call; a vector param becomes the storage-buffer
+      array identifier [<name>]. Both use [escape_glsl_name].
+    - {b helper-function names}: emitted verbatim as [hf.hf_name] (see
+      {!gen_helper_func}); a user helper named [sarek_smod] would duplicate the
+      symbol.
+
+    If the default [sarek_smod] is taken, return the first free [sarek_smod_1],
+    [sarek_smod_2], ... Local ([SLet]) names are function-scoped, not top-level,
+    and are left to the future reserved-prefix policy noted in the impl brief
+    (the same class already affects the [sarek_<arr>_length] intrinsic name). *)
+let compute_smod_name (k : kernel) : string =
+  let reserved : (string, unit) Hashtbl.t = Hashtbl.create 16 in
+  List.iter
+    (fun decl ->
+      match decl with
+      | DParam (v, _) ->
+          Hashtbl.replace reserved (escape_glsl_name v.var_name) ()
+      | _ -> ())
+    k.kern_params ;
+  List.iter
+    (fun (hf : helper_func) -> Hashtbl.replace reserved hf.hf_name ())
+    k.kern_funcs ;
+  let base = "sarek_smod" in
+  if not (Hashtbl.mem reserved base) then base
+  else
+    let rec find i =
+      let cand = Printf.sprintf "%s_%d" base i in
+      if Hashtbl.mem reserved cand then find (i + 1) else cand
+    in
+    find 1
 
 (** Generate complete GLSL source for a kernel.
     @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.
@@ -1051,6 +1104,7 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
     =
   (* Clear per-kernel state *)
   Hashtbl.clear helper_vec_param_indices ;
+  current_smod_name := compute_smod_name k ;
   let buf = Buffer.create 1024 in
   Buffer.add_string
     buf
@@ -1136,6 +1190,7 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
   (* Clear per-kernel state *)
   Hashtbl.clear helper_vec_param_indices ;
+  current_smod_name := compute_smod_name k ;
   (* Use variant types directly from kernel IR *)
   current_variants := k.kern_variants ;
 
