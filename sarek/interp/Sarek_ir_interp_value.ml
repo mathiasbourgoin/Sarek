@@ -279,7 +279,15 @@ let is_float32_path = function
   | _ -> false
 
 let is_float64_path = function
-  | ["Float64"] | ["Sarek_stdlib"; "Float64"] -> true
+  | ["Float64"]
+  | ["Sarek_stdlib"; "Float64"]
+  (* Float64 intrinsics live in the standalone [sarek_float64] library
+     (module [Sarek_float64.Float64]), so a kernel that opens it lowers
+     transcendentals under this module path. GPU backends resolve them
+     via the intrinsic's embedded device-ref, but the interpreter
+     dispatches on the path, so it must recognise it here too. *)
+  | ["Sarek_float64"; "Float64"] ->
+      true
   | _ -> false
 
 let is_int32_path = function

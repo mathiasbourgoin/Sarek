@@ -128,7 +128,12 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
         Sarek_ast.EInt64 (Int64.of_string s)
     | Pexp_constant (Pconst_integer (s, None)) ->
         Sarek_ast.EInt (int_of_string s)
-    (* Float literals *)
+    (* Float literals. The OCaml float-literal suffix selects the width:
+       'g'/'G' -> EDouble (float64), bare/any other suffix -> EFloat (float32).
+       Keeping bare literals at float32 preserves the GPU-default width and full
+       backward compatibility; [1.0G] is the explicit way to write an f64 literal. *)
+    | Pexp_constant (Pconst_float (s, (Some 'g' | Some 'G'))) ->
+        Sarek_ast.EDouble (float_of_string s)
     | Pexp_constant (Pconst_float (s, _)) ->
         Sarek_ast.EFloat (float_of_string s)
     (* Variables *)

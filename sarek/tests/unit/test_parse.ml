@@ -436,6 +436,32 @@ let test_parse_expr_float () =
       Alcotest.(check pass) "3.14 parses" () ()
   | _ -> Alcotest.fail "3.14 should parse to EFloat"
 
+(* A bare float literal (no suffix) stays float32 (EFloat) - the GPU default.
+   This is the backward-compat guarantee for the G-suffix change. *)
+let test_parse_expr_float_bare_is_float32 () =
+  let loc = Location.none in
+  let open Ppxlib.Ast_builder.Default in
+  let expr = pexp_constant ~loc (Pconst_float ("1.0", None)) in
+  match (parse_expression expr).e with
+  | EFloat f when abs_float (f -. 1.0) < 0.001 ->
+      Alcotest.(check pass) "bare 1.0 is EFloat (float32)" () ()
+  | _ -> Alcotest.fail "bare 1.0 should parse to EFloat"
+
+(* A G-suffixed float literal parses to EDouble (float64). This is the only way
+   to write an f64 literal in the DSL. Both 'g' and 'G' select float64. *)
+let test_parse_expr_float_g_suffix_is_float64 () =
+  let loc = Location.none in
+  let open Ppxlib.Ast_builder.Default in
+  let check suffix =
+    let expr = pexp_constant ~loc (Pconst_float ("1.0", Some suffix)) in
+    match (parse_expression expr).e with
+    | EDouble f when abs_float (f -. 1.0) < 0.001 -> ()
+    | _ -> Alcotest.failf "1.0%c should parse to EDouble (float64)" suffix
+  in
+  check 'G' ;
+  check 'g' ;
+  Alcotest.(check pass) "1.0G / 1.0g are EDouble (float64)" () ()
+
 let test_parse_expr_bool () =
   let loc = Location.none in
   let open Ppxlib.Ast_builder.Default in
@@ -584,6 +610,14 @@ let () =
           Alcotest.test_case "int" `Quick test_parse_expr_int;
           Alcotest.test_case "int32" `Quick test_parse_expr_int32;
           Alcotest.test_case "float" `Quick test_parse_expr_float;
+          Alcotest.test_case
+            "bare float is float32"
+            `Quick
+            test_parse_expr_float_bare_is_float32;
+          Alcotest.test_case
+            "G-suffix float is float64"
+            `Quick
+            test_parse_expr_float_g_suffix_is_float64;
           Alcotest.test_case "bool" `Quick test_parse_expr_bool;
           Alcotest.test_case "unit" `Quick test_parse_expr_unit;
           Alcotest.test_case "var" `Quick test_parse_expr_var;

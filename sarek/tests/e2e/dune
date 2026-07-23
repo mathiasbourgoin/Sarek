@@ -590,3 +590,29 @@
  (alias runtest)
  (action
   (run %{dep:test_sarek_gemm.exe})))
+
+; E2E proof for float64 arithmetic written in the [%kernel] DSL via the `G`
+; float64-literal suffix (Sarek_parse.ml). A real DSL kernel - f64 literals,
+; +. -. *. /. , comparisons, `mut`, `while`, and the Float64.sqrt intrinsic -
+; compiled, lowered and run against an OCaml binary64 reference. Gates on the
+; native/interpreter device; other fp64 devices are verified and reported.
+; Run with: dune exec sarek/tests/e2e/test_float64_kernel_arith.exe
+
+(executable
+ (name test_float64_kernel_arith)
+ (modules test_float64_kernel_arith)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.float64
+  sarek_ir
+  spoc_core
+  test_helpers
+  unix)
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_float64_kernel_arith.exe})))
