@@ -355,6 +355,28 @@ let eval_int32_binop op a b =
   let ir_expr = Sarek_lower_ir.lower_expr state texpr in
   eval_ir_int32 ir_expr
 
+(* Audit finding H3: && / || must lower to short-circuit EIf, not a strict
+   Ir.And/Ir.Or - the strict form evaluated both operands eagerly on PTX and
+   the Interpreter (out-of-bounds reads in the classic bounds-guard idiom)
+   while the C backends short-circuited. *)
+let test_and_or_lower_to_short_circuit_eif () =
+  let ty = Sarek_types.(TPrim TBool) in
+  let mk te = Sarek_typed_ast.{te; ty; te_loc = Sarek_ast.dummy_loc} in
+  let texpr op =
+    mk (Sarek_typed_ast.TEBinop (op, mk (TEBool true), mk (TEBool false)))
+  in
+  let state = Sarek_lower_ir.create_state (Hashtbl.create 1) in
+  (match Sarek_lower_ir.lower_expr state (texpr Sarek_ast.And) with
+  | Ir.EIf (_, _, Ir.EConst (Ir.CBool false)) -> ()
+  | Ir.EBinop (Ir.And, _, _) ->
+      Alcotest.fail "&& lowered to strict Ir.And (evaluates both operands)"
+  | _ -> Alcotest.fail "&& lowered to unexpected IR shape") ;
+  match Sarek_lower_ir.lower_expr state (texpr Sarek_ast.Or) with
+  | Ir.EIf (_, Ir.EConst (Ir.CBool true), _) -> ()
+  | Ir.EBinop (Ir.Or, _, _) ->
+      Alcotest.fail "|| lowered to strict Ir.Or (evaluates both operands)"
+  | _ -> Alcotest.fail "|| lowered to unexpected IR shape"
+
 let test_lsr_negative_is_logical () =
   (* (-16) lsr 2 = 1073741820, NOT (-16) asr 2 = -4 *)
   let result = eval_int32_binop Sarek_ast.Lsr (-16l) 2l in
@@ -615,6 +637,10 @@ let () =
             "lsr positive matches asr"
             `Quick
             test_lsr_positive_matches_asr;
+          Alcotest.test_case
+            "&&/|| lower to short-circuit EIf"
+            `Quick
+            test_and_or_lower_to_short_circuit_eif;
           Alcotest.test_case
             "lsr raises on non-trivial operand"
             `Quick

@@ -533,6 +533,18 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
         (lower_expr state a)
         (lower_expr state b)
         (elttype_of_typ te.ty)
+  | TEBinop (And, a, b) ->
+      (* Short-circuit && (audit finding H3): a strict Ir.And evaluates both
+         operands eagerly on the PTX and Interpreter backends while the
+         C-family backends emit C's short-circuiting &&, so the classic
+         [i < n && a.(i) > 0.] bounds guard read out of bounds on PTX and
+         raised on the Interpreter. Lowering to EIf gives every backend
+         short-circuit semantics (the PTX EIf emitter already refuses to
+         evaluate memory-reading/effectful branches speculatively). *)
+      Ir.EIf (lower_expr state a, lower_expr state b, Ir.EConst (Ir.CBool false))
+  | TEBinop (Or, a, b) ->
+      (* Short-circuit || - see the && case above. *)
+      Ir.EIf (lower_expr state a, Ir.EConst (Ir.CBool true), lower_expr state b)
   | TEBinop (op, a, b) ->
       Ir.EBinop (ir_binop op te.ty, lower_expr state a, lower_expr state b)
   | TEUnop (op, a) -> Ir.EUnop (ir_unop op, lower_expr state a)

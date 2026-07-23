@@ -11,7 +11,7 @@ __global__ void sarek_kern(float* __restrict__ a, int sarek_a_length, float* __r
   int tid = (threadIdx.x + blockIdx.x * blockDim.x);
   int row = (tid / n);
   int col = (tid % n);
-  if (((row < m) && (col < n))) {
+  if (((row < m) ? (col < n) : 0)) {
     float sum = 0.0f;
     for (int i = 0; i <= (k - 1); i++) {
       sum = (sum + (a[((row * k) + i)] * b[((i * n) + col)]));
@@ -29,7 +29,7 @@ __kernel void sarek_kern(__global float* restrict a, int sarek_a_length, __globa
   int tid = get_global_id(0);
   int row = (tid / n);
   int col = (tid % n);
-  if (((row < m) && (col < n))) {
+  if (((row < m) ? (col < n) : 0)) {
     float sum = 0.0f;
     for (int i = 0; i <= (k - 1); i++) {
       sum = (sum + (a[((row * k) + i)] * b[((i * n) + col)]));
@@ -76,7 +76,7 @@ void main() {
   int tid = int(gl_GlobalInvocationID.x);
   int row = (tid / n);
   int col = (tid % n);
-  if (((row < m) && (col < n))) {
+  if (((row < m) ? (col < n) : false)) {
     precise float sum = 0.0;
     for (int i = 0; i <= (k - 1); i++) {
       sum = (sum + (a[((row * k) + i)] * b[((i * n) + col)]));
@@ -101,7 +101,7 @@ uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   int tid = __metal_gid.x;
   int row = (tid / n);
   int col = (tid % n);
-  if (((row < m) && (col < n))) {
+  if (((row < m) ? (col < n) : 0)) {
     float sum = 0.0f;
     for (int i = 0; i <= (k - 1); i++) {
       sum = (sum + (a[((row * k) + i)] * b[((i * n) + col)]));

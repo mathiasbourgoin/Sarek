@@ -20,7 +20,7 @@ __global__ void sarek_kern(float* __restrict__ a, int sarek_a_length, float* __r
   for (int t = 0; t <= (num_tiles - 1); t++) {
     {
       int a_col = ((t * tile_size) + tx);
-      if (((row < m) && (a_col < k))) {
+      if (((row < m) ? (a_col < k) : 0)) {
         tile_a[((ty * tile_size) + tx)] = a[((row * k) + a_col)];
       } else {
         tile_a[((ty * tile_size) + tx)] = 0.0f;
@@ -29,7 +29,7 @@ __global__ void sarek_kern(float* __restrict__ a, int sarek_a_length, float* __r
     __syncthreads();
     {
       int b_row = ((t * tile_size) + ty);
-      if (((b_row < k) && (col < n))) {
+      if (((b_row < k) ? (col < n) : 0)) {
         tile_b[((ty * tile_size) + tx)] = b[((b_row * n) + col)];
       } else {
         tile_b[((ty * tile_size) + tx)] = 0.0f;
@@ -43,7 +43,7 @@ __global__ void sarek_kern(float* __restrict__ a, int sarek_a_length, float* __r
     }
     __syncthreads();
   }
-  if (((row < m) && (col < n))) {
+  if (((row < m) ? (col < n) : 0)) {
     c[((row * n) + col)] = sum;
   }
 }
@@ -66,7 +66,7 @@ __kernel void sarek_kern(__global float* restrict a, int sarek_a_length, __globa
   for (int t = 0; t <= (num_tiles - 1); t++) {
     {
       int a_col = ((t * tile_size) + tx);
-      if (((row < m) && (a_col < k))) {
+      if (((row < m) ? (a_col < k) : 0)) {
         tile_a[((ty * tile_size) + tx)] = a[((row * k) + a_col)];
       } else {
         tile_a[((ty * tile_size) + tx)] = 0.0f;
@@ -75,7 +75,7 @@ __kernel void sarek_kern(__global float* restrict a, int sarek_a_length, __globa
     barrier(CLK_LOCAL_MEM_FENCE);
     {
       int b_row = ((t * tile_size) + ty);
-      if (((b_row < k) && (col < n))) {
+      if (((b_row < k) ? (col < n) : 0)) {
         tile_b[((ty * tile_size) + tx)] = b[((b_row * n) + col)];
       } else {
         tile_b[((ty * tile_size) + tx)] = 0.0f;
@@ -89,7 +89,7 @@ __kernel void sarek_kern(__global float* restrict a, int sarek_a_length, __globa
     }
     barrier(CLK_LOCAL_MEM_FENCE);
   }
-  if (((row < m) && (col < n))) {
+  if (((row < m) ? (col < n) : 0)) {
     c[((row * n) + col)] = sum;
   }
 }
@@ -143,7 +143,7 @@ void main() {
   for (int t = 0; t <= (num_tiles - 1); t++) {
     {
       int a_col = ((t * tile_size) + tx);
-      if (((row < m) && (a_col < k))) {
+      if (((row < m) ? (a_col < k) : false)) {
         tile_a[((ty * tile_size) + tx)] = a[((row * k) + a_col)];
       } else {
         tile_a[((ty * tile_size) + tx)] = 0.0;
@@ -152,7 +152,7 @@ void main() {
     barrier();
     {
       int b_row = ((t * tile_size) + ty);
-      if (((b_row < k) && (col < n))) {
+      if (((b_row < k) ? (col < n) : false)) {
         tile_b[((ty * tile_size) + tx)] = b[((b_row * n) + col)];
       } else {
         tile_b[((ty * tile_size) + tx)] = 0.0;
@@ -166,7 +166,7 @@ void main() {
     }
     barrier();
   }
-  if (((row < m) && (col < n))) {
+  if (((row < m) ? (col < n) : false)) {
     c[((row * n) + col)] = sum;
   }
 }
@@ -196,7 +196,7 @@ uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   for (int t = 0; t <= (num_tiles - 1); t++) {
     {
       int a_col = ((t * tile_size) + tx);
-      if (((row < m) && (a_col < k))) {
+      if (((row < m) ? (a_col < k) : 0)) {
         tile_a[((ty * tile_size) + tx)] = a[((row * k) + a_col)];
       } else {
         tile_a[((ty * tile_size) + tx)] = 0.0f;
@@ -205,7 +205,7 @@ uint3 __metal_num_groups [[threadgroups_per_grid]]) {
     threadgroup_barrier(mem_flags::mem_threadgroup);
     {
       int b_row = ((t * tile_size) + ty);
-      if (((b_row < k) && (col < n))) {
+      if (((b_row < k) ? (col < n) : 0)) {
         tile_b[((ty * tile_size) + tx)] = b[((b_row * n) + col)];
       } else {
         tile_b[((ty * tile_size) + tx)] = 0.0f;
@@ -219,7 +219,7 @@ uint3 __metal_num_groups [[threadgroups_per_grid]]) {
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
   }
-  if (((row < m) && (col < n))) {
+  if (((row < m) ? (col < n) : 0)) {
     c[((row * n) + col)] = sum;
   }
 }

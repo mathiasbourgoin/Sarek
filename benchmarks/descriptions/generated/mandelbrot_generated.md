@@ -10,13 +10,13 @@ extern "C" {
 __global__ void sarek_kern(int* __restrict__ output, int sarek_output_length, int width, int height, int max_iter) {
   int px = (threadIdx.x + blockIdx.x * blockDim.x);
   int py = (threadIdx.y + blockIdx.y * blockDim.y);
-  if (((px < width) && (py < height))) {
+  if (((px < width) ? (py < height) : 0)) {
     float x0 = ((4.0f * ((float)(px) / (float)(width))) - 2.5f);
     float y0 = ((3.0f * ((float)(py) / (float)(height))) - 1.5f);
     float x = 0.0f;
     float y = 0.0f;
     int iter = 0;
-    while (((((x * x) + (y * y)) <= 4.0f) && (iter < max_iter))) {
+    while (((((x * x) + (y * y)) <= 4.0f) ? (iter < max_iter) : 0)) {
       float xtemp = (((x * x) - (y * y)) + x0);
       y = (((2.0f * x) * y) + y0);
       x = xtemp;
@@ -34,13 +34,13 @@ __global__ void sarek_kern(int* __restrict__ output, int sarek_output_length, in
 __kernel void sarek_kern(__global int* restrict output, int sarek_output_length, int width, int height, int max_iter) {
   int px = get_global_id(0);
   int py = get_global_id(1);
-  if (((px < width) && (py < height))) {
+  if (((px < width) ? (py < height) : 0)) {
     float x0 = ((4.0f * ((float)(px) / (float)(width))) - 2.5f);
     float y0 = ((3.0f * ((float)(py) / (float)(height))) - 1.5f);
     float x = 0.0f;
     float y = 0.0f;
     int iter = 0;
-    while (((((x * x) + (y * y)) <= 4.0f) && (iter < max_iter))) {
+    while (((((x * x) + (y * y)) <= 4.0f) ? (iter < max_iter) : 0)) {
       float xtemp = (((x * x) - (y * y)) + x0);
       y = (((2.0f * x) * y) + y0);
       x = xtemp;
@@ -77,13 +77,13 @@ layout(push_constant) uniform PushConstants {
 void main() {
   int px = int(gl_GlobalInvocationID.x);
   int py = int(gl_GlobalInvocationID.y);
-  if (((px < width) && (py < height))) {
+  if (((px < width) ? (py < height) : false)) {
     precise float x0 = ((4.0 * (float(px) / float(width))) - 2.5);
     precise float y0 = ((3.0 * (float(py) / float(height))) - 1.5);
     precise float x = 0.0;
     precise float y = 0.0;
     int iter = 0;
-    while (((((x * x) + (y * y)) <= 4.0) && (iter < max_iter))) {
+    while (((((x * x) + (y * y)) <= 4.0) ? (iter < max_iter) : false)) {
       precise float xtemp = (((x * x) - (y * y)) + x0);
       y = (((2.0 * x) * y) + y0);
       x = xtemp;
@@ -108,13 +108,13 @@ uint3 __metal_tpg [[threads_per_threadgroup]],
 uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   int px = __metal_gid.x;
   int py = __metal_gid.y;
-  if (((px < width) && (py < height))) {
+  if (((px < width) ? (py < height) : 0)) {
     float x0 = ((4.0f * ((float)(px) / (float)(width))) - 2.5f);
     float y0 = ((3.0f * ((float)(py) / (float)(height))) - 1.5f);
     float x = 0.0f;
     float y = 0.0f;
     int iter = 0;
-    while (((((x * x) + (y * y)) <= 4.0f) && (iter < max_iter))) {
+    while (((((x * x) + (y * y)) <= 4.0f) ? (iter < max_iter) : 0)) {
       float xtemp = (((x * x) - (y * y)) + x0);
       y = (((2.0f * x) * y) + y0);
       x = xtemp;

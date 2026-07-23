@@ -17,7 +17,7 @@ __global__ void sarek_kern(float* __restrict__ input, int sarek_input_length, fl
   int read_col = (block_col + tx);
   int read_row = (block_row + ty);
   {
-    if (((read_col < width) && (read_row < height))) {
+    if (((read_col < width) ? (read_row < height) : 0)) {
       int read_idx = ((read_row * width) + read_col);
       int tile_idx = ((ty * 17) + tx);
       tile[tile_idx] = input[read_idx];
@@ -27,7 +27,7 @@ __global__ void sarek_kern(float* __restrict__ input, int sarek_input_length, fl
   int write_col = (block_row + tx);
   int write_row = (block_col + ty);
   {
-    if (((write_col < height) && (write_row < width))) {
+    if (((write_col < height) ? (write_row < width) : 0)) {
       int tile_idx = ((tx * 17) + ty);
       int write_idx = ((write_row * height) + write_col);
       output[write_idx] = tile[tile_idx];
@@ -51,7 +51,7 @@ __kernel void sarek_kern(__global float* restrict input, int sarek_input_length,
   int read_col = (block_col + tx);
   int read_row = (block_row + ty);
   {
-    if (((read_col < width) && (read_row < height))) {
+    if (((read_col < width) ? (read_row < height) : 0)) {
       int read_idx = ((read_row * width) + read_col);
       int tile_idx = ((ty * 17) + tx);
       tile[tile_idx] = input[read_idx];
@@ -61,7 +61,7 @@ __kernel void sarek_kern(__global float* restrict input, int sarek_input_length,
   int write_col = (block_row + tx);
   int write_row = (block_col + ty);
   {
-    if (((write_col < height) && (write_row < width))) {
+    if (((write_col < height) ? (write_row < width) : 0)) {
       int tile_idx = ((tx * 17) + ty);
       int write_idx = ((write_row * height) + write_col);
       output[write_idx] = tile[tile_idx];
@@ -109,7 +109,7 @@ void main() {
   int read_col = (block_col + tx);
   int read_row = (block_row + ty);
   {
-    if (((read_col < width) && (read_row < height))) {
+    if (((read_col < width) ? (read_row < height) : false)) {
       int read_idx = ((read_row * width) + read_col);
       int tile_idx = ((ty * 17) + tx);
       tile[tile_idx] = inputv[read_idx];
@@ -119,7 +119,7 @@ void main() {
   int write_col = (block_row + tx);
   int write_row = (block_col + ty);
   {
-    if (((write_col < height) && (write_row < width))) {
+    if (((write_col < height) ? (write_row < width) : false)) {
       int tile_idx = ((tx * 17) + ty);
       int write_idx = ((write_row * height) + write_col);
       outputv[write_idx] = tile[tile_idx];
@@ -150,7 +150,7 @@ uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   int read_col = (block_col + tx);
   int read_row = (block_row + ty);
   {
-    if (((read_col < width) && (read_row < height))) {
+    if (((read_col < width) ? (read_row < height) : 0)) {
       int read_idx = ((read_row * width) + read_col);
       int tile_idx = ((ty * 17) + tx);
       tile[tile_idx] = input[read_idx];
@@ -160,7 +160,7 @@ uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   int write_col = (block_row + tx);
   int write_row = (block_col + ty);
   {
-    if (((write_col < height) && (write_row < width))) {
+    if (((write_col < height) ? (write_row < width) : 0)) {
       int tile_idx = ((tx * 17) + ty);
       int write_idx = ((write_row * height) + write_col);
       output[write_idx] = tile[tile_idx];
