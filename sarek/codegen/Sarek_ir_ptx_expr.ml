@@ -908,8 +908,13 @@ and emit_binop buf alloc env op e1 e2 : string =
         emit buf "div.rn.f64 %s, %s, %s;" r r1 r2 ;
         r)
       else if is_f32 r1 then (
+        (* Correctly-rounded division (audit finding M2): div.approx.f32 is
+           ~2 ulp and badly wrong at exponent extremes, which made PTX the
+           least-accurate backend for ordinary /. and eroded Sarek_df64's
+           error budget. Fast approximate division stays available to
+           intrinsics that are already approximate (tan, tanh). *)
         let r = new_f32 alloc in
-        emit buf "div.approx.f32 %s, %s, %s;" r r1 r2 ;
+        emit buf "div.rn.f32 %s, %s, %s;" r r1 r2 ;
         r)
       else if is_u64 r1 then (
         (* Sarek int64 is signed: div.u64 on negative operands is silently

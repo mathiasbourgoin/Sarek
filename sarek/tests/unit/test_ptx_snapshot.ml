@@ -644,6 +644,29 @@ let test_int_div_rem_signed_markers () =
   if contains ptx "rem.u32" || contains ptx "rem.u64" then
     Alcotest.fail "unsigned rem emitted for signed Sarek int"
 
+(** Plain f32 division is correctly rounded (audit finding M2): the generic
+    Div binop must emit div.rn.f32, not the ~2-ulp div.approx.f32 (which
+    remains reserved for already-approximate intrinsics like tan/tanh). *)
+let test_f32_div_correctly_rounded () =
+  let out = make_var "out" (TVec TFloat32) in
+  let a = make_var "a" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let av = EArrayRead ("a", EVar tid) in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          (LArrayElem ("out", EVar tid), EBinop (Div, av, EConst (CFloat32 3.0)))
+      )
+  in
+  let mk v = DParam (v, Some {arr_elttype = TFloat32; arr_memspace = Global}) in
+  let k = base_kernel "f32_div" [mk out; mk a] body [] in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "div.rn.f32" ;
+  if contains ptx "div.approx.f32" then
+    Alcotest.fail "plain f32 division must not use div.approx.f32"
+
 (** Int64 comparison family, Not/BitNot and min/max must be class-aware
     (audit finding H2): the old code emitted setp.*.s32 / not.b32 / min.s32
     on %rd (64-bit) registers - invalid PTX, rejected at module load. *)
@@ -2020,6 +2043,10 @@ let () =
             "int64 compare/not/min emit 64-bit forms"
             `Quick
             test_int64_compare_minmax_markers;
+          Alcotest.test_case
+            "plain f32 division emits div.rn.f32"
+            `Quick
+            test_f32_div_correctly_rounded;
           Alcotest.test_case
             "ECast matrix: bool setp/selp + i32<->i64 cvt pairs"
             `Quick
