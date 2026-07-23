@@ -40,6 +40,12 @@ module Transfer = Spoc_core.Transfer
 
 [@@@warning "-32"]
 
+(* The arm-order-shadowed control below matches a record's variant field with a
+   deliberately redundant match (`_ -> .. | Circle r -> ..`). OCaml's own
+   redundant-case warning (11) is the first line of defence; suppressing it here
+   lets the test exercise the tag-erasure reachability guard directly. *)
+[@@@warning "-11"]
+
 let () = Test_helpers.Benchmarks.init ()
 
 type float32 = float
@@ -118,6 +124,28 @@ let runtime_kirc =
           match c.kind with
           | Circle r -> dst.(tid) <- r *. c.scale
           | Square x -> dst.(tid) <- x *. c.scale
+        end]
+
+(* NEGATIVE CONTROL (arm-order shadowing): the variant field [kind] is set by a
+   literal [Circle] (statically known slot), but the match on [c.kind] puts a
+   wildcard arm BEFORE the Circle arm. OCaml first-match-wins makes the runtime
+   result the WILDCARD arm (v +. 100.), not the Circle arm. Erasing to the
+   Circle arm would miscompile to v *. v. The reachability guard must keep the
+   field's slot ineligible so the tag is RETAINED; because the record then keeps
+   a variant field, only the Native path executes it, and behaviour is checked
+   on Native as the oracle against the wildcard arm. Mirrors S1's
+   arm-order-shadowed(control). *)
+let shadowed_kirc =
+  snd
+    [%kernel
+      fun (src : float32 vector) (dst : float32 vector) (n : int32) ->
+        let tid = thread_idx_x + (block_dim_x * block_idx_x) in
+        if tid < n then begin
+          let c = {kind = Circle src.(tid); scale = 2.0} in
+          let base =
+            match c.kind with _ -> src.(tid) +. 100.0 | Circle r -> r *. r
+          in
+          dst.(tid) <- base *. c.scale
         end]
 
 let ir_of name kirc =
@@ -253,6 +281,25 @@ let () =
     runtime_kirc
     ~expect_tag:true
     ~expect_erec:false ;
+  (* Arm-order shadowing: a wildcard-first match compiles to a ternary, not a
+     switch, so the crude tag heuristic does not apply (same as S1's control).
+     The guard must (a) leave the record field UN-erased -- no [_erec], the
+     named record with its variant [kind] field survives -- and (b) keep the
+     wildcard arm [+ 100] rather than rewriting the match to the shadowed Circle
+     arm [r *. r]. Assert both directly on the emitted device source. *)
+  let shadowed_src =
+    Sarek_codegen.Sarek_ir_cuda.generate (ir_of "shadowed" shadowed_kirc)
+  in
+  let field_retained = not (contains shadowed_src "_erec") in
+  let wildcard_kept = contains shadowed_src "100" in
+  let shadowed_ok = field_retained && wildcard_kept in
+  if not shadowed_ok then observable_ok := false ;
+  Printf.printf
+    "  emitted[arm-order-shadowed(control)]: field %s, wildcard arm %s -> %s\n\
+     %!"
+    (if field_retained then "retained" else "ERASED to _erec")
+    (if wildcard_kept then "kept" else "ERASED to Circle arm")
+    (if shadowed_ok then "OK" else "MISMATCH") ;
   print_endline "-- behaviour vs pure-OCaml reference --" ;
   run_behaviour ~must:all_must "unary(erasable)" unary_kirc ~reference:(fun i ->
       let v = float_of_int (i + 1) in
@@ -274,6 +321,11 @@ let () =
     "runtime-selected(control)"
     runtime_kirc
     ~reference:(fun i -> float_of_int (i + 1) *. 2.0) ;
+  run_behaviour
+    ~must:native_only
+    "arm-order-shadowed(control)"
+    shadowed_kirc
+    ~reference:(fun i -> (float_of_int (i + 1) +. 100.0) *. 2.0) ;
   Printf.printf
     "\n=== observable=%s behaviour=%s ===\n"
     (if !observable_ok then "OK" else "FAIL")

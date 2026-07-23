@@ -355,7 +355,10 @@ let record_body_eligible (rid : int) (plan : (string * field_plan) list)
           Option.bind (field_read_of rid scrut) (variant_field_ctor plan)
         with
         | Some cname ->
-            if not (List.exists (is_ctor_case cname) cases) then ok := false ;
+            if
+              (not (List.exists (is_ctor_case cname) cases))
+              || not (ctor_arm_reachable cname cases)
+            then ok := false ;
             List.iter (fun (_, rhs) -> go rhs) cases (* skip the scrutinee *)
         | None -> iter_children go e)
     | TEFieldGet ({te = TEVar (_, i); _}, fname, _) when i = rid -> (
