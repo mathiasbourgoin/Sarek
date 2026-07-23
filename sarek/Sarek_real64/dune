@@ -1,0 +1,4 @@
+(library
+ (name sarek_real64)
+ (public_name sarek.real64)
+ (libraries sarek sarek_stdlib sarek_df64 sarek_float64 spoc_core))
