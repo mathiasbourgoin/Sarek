@@ -114,8 +114,22 @@ let map_children (f : texpr -> texpr) (e : texpr) : texpr =
 let is_slot_var (id : int) (e : texpr) : bool =
   match e.te with TEVar (_, i) -> i = id | _ -> false
 
+(* A constructor arm is reducible only when its payload pattern binds through
+   the forms [reduce_matches] actually substitutes: no payload (nullary), a
+   single [TPVar], or a binder-free [TPAny] (`C _ -> ...`). Compound payload
+   patterns (a multi-arg constructor's [TPTuple], nested [TPConstr], ...) would
+   have their binders silently dropped by the reduction, so they make the arm -
+   and therefore the slot - ineligible and the tag is retained. *)
+let is_reducible_payload (arg : tpattern option) : bool =
+  match arg with
+  | None -> true
+  | Some {tpat = TPVar _; _} | Some {tpat = TPAny; _} -> true
+  | Some _ -> false
+
 let is_ctor_case (cname : string) ((p, _) : tpattern * texpr) : bool =
-  match p.tpat with TPConstr (_, cn, _) -> cn = cname | _ -> false
+  match p.tpat with
+  | TPConstr (_, cn, arg) -> cn = cname && is_reducible_payload arg
+  | _ -> false
 
 (* Every read of the slot variable is the scrutinee of a `match` that has an
    explicit arm for [cname]. Any other use of the variable (which would need
@@ -161,8 +175,14 @@ let reduce_matches (id : int) (cname : string)
               match p.tpat with
               | TPConstr (_, _, arg) -> (arg, rhs)
               | _ -> (None, rhs))
-          | None -> (None, e)
-          (* unreachable: guarded by uses_all_reducible *)
+          | None ->
+              (* Guarded by uses_all_reducible; if a future eligibility-check
+                 change breaks that invariant, fail loudly rather than
+                 re-entering this same branch forever via [go e]. *)
+              failwith
+                "Sarek_tag_erasure.reduce_matches: no reducible arm for the \
+                 slot's constructor (invariant violated: uses_all_reducible \
+                 should have made this slot ineligible)"
         in
         let rhs' = go rhs in
         match (pat, accessor) with

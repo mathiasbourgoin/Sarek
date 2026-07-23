@@ -66,6 +66,22 @@ let nullary_kirc =
           match f with On -> dst.(tid) <- 1.0 | Off -> dst.(tid) <- 2.0
         end]
 
+(* NEGATIVE CONTROL (compound payload): a multi-arg constructor's payload
+   pattern is a tuple of binders, which the S1 reduction does not substitute —
+   the arm is ineligible and the tag must be RETAINED (erasing it would drop
+   the tuple binders and emit malformed code). Result: a + 2a with a = src.(tid). *)
+type pair_pt = MkPair of float32 * float32 [@@sarek.type]
+
+let multiarg_kirc =
+  snd
+    [%kernel
+      fun (src : float32 vector) (dst : float32 vector) (n : int32) ->
+        let tid = thread_idx_x + (block_dim_x * block_idx_x) in
+        if tid < n then begin
+          let s = MkPair (src.(tid), src.(tid) +. src.(tid)) in
+          match s with MkPair (x, y) -> dst.(tid) <- x +. y
+        end]
+
 (* NEGATIVE CONTROL: the live constructor is chosen at runtime, so the slot is
    NOT erasable and the tag/branch must be retained. *)
 let retained_kirc =
@@ -128,7 +144,7 @@ let must_pass fw =
 
 let any_failure = ref false
 
-let run_behaviour name kirc ~reference =
+let run_behaviour ?(must = must_pass) name kirc ~reference =
   Printf.printf "runtime[%s]:\n%!" name ;
   let devs =
     Device.init
@@ -176,12 +192,15 @@ let run_behaviour name kirc ~reference =
           done ;
           if !ok then print_endline "PASSED"
           else begin
-            if must_pass fw then any_failure := true ;
+            if must fw then any_failure := true ;
             print_endline "FAILED"
           end
         with e ->
-          if must_pass fw then any_failure := true ;
-          Printf.printf "ERROR %s\n%!" (Printexc.to_string e))
+          if must fw then any_failure := true ;
+          Printf.printf
+            "%s %s\n%!"
+            (if must fw then "ERROR" else "SKIP (backend lacks the construct)")
+            (Printexc.to_string e))
       devs
 
 let () =
@@ -190,11 +209,24 @@ let () =
   check_emitted "unary(erasable)" unary_kirc ~expect_tag:false ;
   check_emitted "nullary(erasable)" nullary_kirc ~expect_tag:false ;
   check_emitted "runtime-selected(control)" retained_kirc ~expect_tag:true ;
+  check_emitted "multiarg-payload(control)" multiarg_kirc ~expect_tag:true ;
   print_endline "-- behaviour vs pure-OCaml reference --" ;
   run_behaviour "unary(erasable)" unary_kirc ~reference:(fun i ->
       let r = float_of_int (i + 1) in
       (r *. r) +. r) ;
   run_behaviour "nullary(erasable)" nullary_kirc ~reference:(fun _ -> 1.0) ;
+  (* Multi-arg constructor payloads are a PRE-EXISTING gap everywhere except
+     Native: the Interpreter crashes (List.iter2) and every source generator
+     (CUDA/PTX, OpenCL, Vulkan) returns generate_source None — unrelated to
+     erasure. The retained-tag assertion above is the real check here;
+     behaviour is gated only where the construct executes today (Native). *)
+  run_behaviour
+    "multiarg-payload(control)"
+    multiarg_kirc
+    ~must:(fun fw -> fw = "Native")
+    ~reference:(fun i ->
+      let a = float_of_int (i + 1) in
+      a +. (a +. a)) ;
   Printf.printf
     "\n=== observable=%s behaviour=%s ===\n"
     (if !observable_ok then "OK" else "FAIL")
