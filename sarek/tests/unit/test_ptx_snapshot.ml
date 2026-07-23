@@ -2037,6 +2037,123 @@ let test_static_dshared_markers () =
     ~why:"statically-sized shared array must not be extern" ;
   assert_contains ptx "st.shared.s32"
 
+(** ptxas validation gate (audit finding M9): the substring markers above prove
+    which instructions were emitted, but not that the module ASSEMBLES. When the
+    CUDA toolkit's [ptxas] is on PATH, assemble the PTX of the regression
+    kernels (vector_add, signed div/rem, int64 comparisons) and fail if ptxas
+    rejects it — this is exactly the check that catches an invalid-PTX class of
+    bug (e.g. a 32-bit instruction on a 64-bit register) with no GPU required.
+    Skips cleanly when ptxas is absent (CPU-only CI). *)
+let ptxas_available =
+  lazy
+    (match Unix.system "command -v ptxas >/dev/null 2>&1" with
+    | Unix.WEXITED 0 -> true
+    | _ -> false)
+
+let assemble_ok ptx =
+  let base = Filename.temp_file "sarek_ptx_" "" in
+  let src = base ^ ".ptx" in
+  let obj = base ^ ".cubin" in
+  let oc = open_out src in
+  output_string oc ptx ;
+  close_out oc ;
+  let cmd =
+    Printf.sprintf
+      "ptxas --compile-only -o %s %s 2>%s.err"
+      (Filename.quote obj)
+      (Filename.quote src)
+      (Filename.quote base)
+  in
+  let rc = Unix.system cmd in
+  let err =
+    try
+      let ic = open_in (base ^ ".err") in
+      let n = in_channel_length ic in
+      let s = really_input_string ic n in
+      close_in ic ;
+      s
+    with _ -> ""
+  in
+  List.iter
+    (fun f -> try Sys.remove f with _ -> ())
+    [src; obj; base; base ^ ".err"] ;
+  match rc with Unix.WEXITED 0 -> Ok () | _ -> Error err
+
+let test_ptxas_assembles () =
+  if not (Lazy.force ptxas_available) then
+    Printf.printf "  SKIP: ptxas not on PATH (CPU-only environment)\n%!"
+  else begin
+    let ia = make_var "ia" (TVec TInt32) in
+    let la = make_var "la" (TVec TInt64) in
+    let out = make_var "out" (TVec TInt32) in
+    let tid = make_var "tid" TInt32 in
+    let x = make_var "x" TInt64 in
+    let div_body =
+      SLet
+        ( tid,
+          EIntrinsic ([], "global_thread_id", []),
+          SSeq
+            [
+              SAssign
+                ( LArrayElem ("ia", EVar tid),
+                  EBinop
+                    (Div, EArrayRead ("ia", EVar tid), EConst (CInt32 (-2l))) );
+              SAssign
+                ( LArrayElem ("la", EVar tid),
+                  EBinop
+                    (Div, EArrayRead ("la", EVar tid), EConst (CInt64 (-2L))) );
+            ] )
+    in
+    let cmp_body =
+      SLet
+        ( tid,
+          EIntrinsic ([], "global_thread_id", []),
+          SLet
+            ( x,
+              EArrayRead ("la", EVar tid),
+              SSeq
+                [
+                  SAssign
+                    ( LArrayElem ("out", EVar tid),
+                      EBinop (Lt, EVar x, EConst (CInt64 0L)) );
+                  SAssign
+                    ( LArrayElem ("la", EVar tid),
+                      EIntrinsic ([], "min", [EVar x; EConst (CInt64 7L)]) );
+                ] ) )
+    in
+    let kernels =
+      [
+        ("vector_add", make_vector_add_kernel ());
+        ( "int_div_rem_signed",
+          base_kernel
+            "int_div_rem"
+            [
+              DParam (ia, Some {arr_elttype = TInt32; arr_memspace = Global});
+              DParam (la, Some {arr_elttype = TInt64; arr_memspace = Global});
+            ]
+            div_body
+            [] );
+        ( "int64_compare",
+          base_kernel
+            "int64_cmp"
+            [
+              DParam (la, Some {arr_elttype = TInt64; arr_memspace = Global});
+              DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global});
+            ]
+            cmp_body
+            [] );
+      ]
+    in
+    List.iter
+      (fun (name, k) ->
+        match assemble_ok (Sarek_ir_ptx.generate k) with
+        | Ok () -> Printf.printf "  ptxas OK: %s\n%!" name
+        | Error err ->
+            Alcotest.fail
+              (Printf.sprintf "ptxas rejected kernel %s:\n%s" name err))
+      kernels
+  end
+
 let () =
   Alcotest.run
     "ptx_snapshot"
@@ -2047,6 +2164,10 @@ let () =
             "vector_add PTX contains canonical markers"
             `Quick
             test_vector_add_markers;
+          Alcotest.test_case
+            "ptxas assembles regression kernels (skips if ptxas absent)"
+            `Quick
+            test_ptxas_assembles;
           Alcotest.test_case
             "native math emits min/max/cvt.rmi/cvt.rpi/rsqrt"
             `Quick

@@ -58,7 +58,7 @@
 
 (test
  (name test_ptx_snapshot)
- (libraries sarek.codegen alcotest))
+ (libraries sarek.codegen alcotest unix))
 
 ; Software f64 transcendentals for PTX: IR-level accuracy vs the OCaml stdlib
 ; (pure scalar evaluation of the helper bodies — CPU-only, no device needed)
