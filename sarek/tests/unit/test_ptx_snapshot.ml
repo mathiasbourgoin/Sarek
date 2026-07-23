@@ -2057,9 +2057,21 @@ let assemble_ok ptx =
   let oc = open_out src in
   output_string oc ptx ;
   close_out oc ;
+  (* ptxas assumes a low default SM and rejects any PTX whose [.target] is
+     higher ("SM version specified by .target is higher than default SM
+     version assumed"), so extract the module's own target and pass it
+     explicitly via --gpu-name. *)
+  let gpu_name =
+    let target_re = Str.regexp "\\.target[ \t]+\\(sm_[0-9]+\\)" in
+    try
+      ignore (Str.search_forward target_re ptx 0) ;
+      Str.matched_group 1 ptx
+    with Not_found -> "sm_86"
+  in
   let cmd =
     Printf.sprintf
-      "ptxas --compile-only -o %s %s 2>%s.err"
+      "ptxas --compile-only --gpu-name %s -o %s %s 2>%s.err"
+      (Filename.quote gpu_name)
       (Filename.quote obj)
       (Filename.quote src)
       (Filename.quote base)
