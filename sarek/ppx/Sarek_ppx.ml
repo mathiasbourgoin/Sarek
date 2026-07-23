@@ -1684,6 +1684,16 @@ let expand_kernel ~ctxt payload : expression =
             Sarek_debug.log_to_file "  step 6: tailrec transform done" ;
             Sarek_debug.log_exit "transform_kernel" ;
 
+            (* 6b. Static tag erasure (L14, scoped tier) - device path only.
+               Erase statically-known variant tags from kernel-local slots
+               before lowering; [native_kernel] captured above keeps the tag
+               and stays the OCaml reference. See Sarek_tag_erasure.ml. *)
+            Sarek_debug.log_to_file "  step 6b: tag erasure start" ;
+            Sarek_debug.log_enter "erase_tags" ;
+            let tkernel = Sarek_tag_erasure.erase_tags tkernel in
+            Sarek_debug.log_to_file "  step 6b: tag erasure done" ;
+            Sarek_debug.log_exit "erase_tags" ;
+
             (* 7. Lower to Sarek_ir *)
             let kern_name = Option.value ~default:"anon" tkernel.tkern_name in
             Sarek_debug.log_to_file

@@ -695,3 +695,37 @@
  (alias runtest)
  (action
   (run %{dep:test_tuple_vector.exe})))
+
+; L14 static tag erasure E2E (Sarek_tag_erasure). A variant-typed kernel-local
+; slot written once by a literal constructor and read only as a match scrutinee
+; has its tag/branch erased for codegen. Self-verifying: (1) emitted CUDA-C
+; carries no tag/switch for the erasable kernels but does for a runtime-selected
+; control, and (2) behaviour matches a pure-OCaml reference on every device
+; (Native/Interpreter always, plus any GPU backend present).
+
+(executable
+ (name test_static_tag_erasure)
+ (modules test_static_tag_erasure)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  sarek.codegen
+  spoc_core
+  test_helpers
+  sarek_native
+  sarek_interpreter
+  sarek_cuda
+  sarek_opencl
+  sarek_vulkan
+  unix
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_static_tag_erasure.exe})))
