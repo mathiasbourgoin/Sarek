@@ -218,6 +218,8 @@ let eval_binop op v1 v2 =
       | VFloat64 a, VFloat64 b -> VBool (a < b)
       | VFloat32 _, _ | _, VFloat32 _ -> VBool (to_float32 v1 < to_float32 v2)
       | VFloat64 _, _ | _, VFloat64 _ -> VBool (to_float64 v1 < to_float64 v2)
+      | VInt64 _, _ | _, VInt64 _ ->
+          VBool (Int64.compare (to_int64 v1) (to_int64 v2) < 0)
       | _ -> VBool (to_int32 v1 < to_int32 v2))
   | Le -> (
       match (v1, v2) with
@@ -225,6 +227,8 @@ let eval_binop op v1 v2 =
       | VFloat64 a, VFloat64 b -> VBool (a <= b)
       | VFloat32 _, _ | _, VFloat32 _ -> VBool (to_float32 v1 <= to_float32 v2)
       | VFloat64 _, _ | _, VFloat64 _ -> VBool (to_float64 v1 <= to_float64 v2)
+      | VInt64 _, _ | _, VInt64 _ ->
+          VBool (Int64.compare (to_int64 v1) (to_int64 v2) <= 0)
       | _ -> VBool (to_int32 v1 <= to_int32 v2))
   | Gt -> (
       match (v1, v2) with
@@ -232,6 +236,8 @@ let eval_binop op v1 v2 =
       | VFloat64 a, VFloat64 b -> VBool (a > b)
       | VFloat32 _, _ | _, VFloat32 _ -> VBool (to_float32 v1 > to_float32 v2)
       | VFloat64 _, _ | _, VFloat64 _ -> VBool (to_float64 v1 > to_float64 v2)
+      | VInt64 _, _ | _, VInt64 _ ->
+          VBool (Int64.compare (to_int64 v1) (to_int64 v2) > 0)
       | _ -> VBool (to_int32 v1 > to_int32 v2))
   | Ge -> (
       match (v1, v2) with
@@ -239,21 +245,40 @@ let eval_binop op v1 v2 =
       | VFloat64 a, VFloat64 b -> VBool (a >= b)
       | VFloat32 _, _ | _, VFloat32 _ -> VBool (to_float32 v1 >= to_float32 v2)
       | VFloat64 _, _ | _, VFloat64 _ -> VBool (to_float64 v1 >= to_float64 v2)
+      | VInt64 _, _ | _, VInt64 _ ->
+          VBool (Int64.compare (to_int64 v1) (to_int64 v2) >= 0)
       | _ -> VBool (to_int32 v1 >= to_int32 v2))
   | And -> VBool (to_bool v1 && to_bool v2)
   | Or -> VBool (to_bool v1 || to_bool v2)
-  | Shl -> VInt32 (Int32.shift_left (to_int32 v1) (to_int v2))
-  | Shr ->
+  | Shl -> (
+      match v1 with
+      | VInt64 a -> VInt64 (Int64.shift_left a (to_int v2))
+      | _ -> VInt32 (Int32.shift_left (to_int32 v1) (to_int v2)))
+  | Shr -> (
       (* Arithmetic (sign-extending) shift, matching every codegen backend:
          CUDA/OpenCL/Metal/GLSL/WGSL emit plain [>>] on a signed int type,
-         and PTX emits shr.s32. [lsr] is lowered to a separate expression
-         tree in Sarek_lower_ir.ml precisely because this node is
+         and PTX emits shr.s32/shr.s64. [lsr] is lowered to a separate
+         expression tree in Sarek_lower_ir.ml precisely because this node is
          arithmetic - see G phase 1 in
          briefs/fix-critical-semantics-evidence.md. *)
-      VInt32 (Int32.shift_right (to_int32 v1) (to_int v2))
-  | BitAnd -> VInt32 (Int32.logand (to_int32 v1) (to_int32 v2))
-  | BitOr -> VInt32 (Int32.logor (to_int32 v1) (to_int32 v2))
-  | BitXor -> VInt32 (Int32.logxor (to_int32 v1) (to_int32 v2))
+      match v1 with
+      | VInt64 a -> VInt64 (Int64.shift_right a (to_int v2))
+      | _ -> VInt32 (Int32.shift_right (to_int32 v1) (to_int v2)))
+  | BitAnd -> (
+      match (v1, v2) with
+      | VInt64 _, _ | _, VInt64 _ ->
+          VInt64 (Int64.logand (to_int64 v1) (to_int64 v2))
+      | _ -> VInt32 (Int32.logand (to_int32 v1) (to_int32 v2)))
+  | BitOr -> (
+      match (v1, v2) with
+      | VInt64 _, _ | _, VInt64 _ ->
+          VInt64 (Int64.logor (to_int64 v1) (to_int64 v2))
+      | _ -> VInt32 (Int32.logor (to_int32 v1) (to_int32 v2)))
+  | BitXor -> (
+      match (v1, v2) with
+      | VInt64 _, _ | _, VInt64 _ ->
+          VInt64 (Int64.logxor (to_int64 v1) (to_int64 v2))
+      | _ -> VInt32 (Int32.logxor (to_int32 v1) (to_int32 v2)))
 
 let eval_unop op v =
   match op with
@@ -264,7 +289,10 @@ let eval_unop op v =
       | VInt64 n -> VInt64 (Int64.neg n)
       | _ -> VInt32 (Int32.neg (to_int32 v)))
   | Not -> VBool (not (to_bool v))
-  | BitNot -> VInt32 (Int32.lognot (to_int32 v))
+  | BitNot -> (
+      match v with
+      | VInt64 a -> VInt64 (Int64.lognot a)
+      | _ -> VInt32 (Int32.lognot (to_int32 v)))
 
 (** {1 Intrinsics} *)
 

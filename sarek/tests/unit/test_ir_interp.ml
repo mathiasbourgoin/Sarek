@@ -234,6 +234,50 @@ let test_binop_shr_negative_is_arithmetic () =
   | VInt32 n -> check int32 "(-16) shr 2 is arithmetic" (-4l) n
   | _ -> fail "expected VInt32"
 
+let test_binop_int64_compare_above_bit31 () =
+  (* Regression (2026-07 audit M4): int64 comparisons used to route through
+     to_int32, truncating operands. 2^32 > 0 must hold; truncated it would
+     compare 0 > 0 = false. Also covers Lt/Le/Ge via the same arms. *)
+  let env = make_env () in
+  let state = make_state () in
+  let big = 4294967296L (* 2^32: truncates to 0l *) in
+  let check_cmp op a b expected label =
+    let expr = EBinop (op, EConst (CInt64 a), EConst (CInt64 b)) in
+    match eval_expr state env expr with
+    | VBool r -> check bool label expected r
+    | _ -> fail "expected VBool"
+  in
+  check_cmp Gt big 0L true "2^32 > 0" ;
+  check_cmp Lt 0L big true "0 < 2^32" ;
+  check_cmp Le big 0L false "2^32 <= 0 is false" ;
+  check_cmp Ge Int64.min_int Int64.max_int false "min_int64 >= max_int64" ;
+  check_cmp Lt Int64.min_int Int64.max_int true "min_int64 < max_int64"
+
+let test_binop_int64_bitwise_and_shift () =
+  (* Regression (2026-07 audit M4): 64-bit shift/bitwise ops used to truncate
+     to 32 bits, diverging from the PTX/CUDA/OpenCL backends' 64-bit ops. *)
+  let env = make_env () in
+  let state = make_state () in
+  let eval e = eval_expr state env e in
+  (match eval (EBinop (Shl, EConst (CInt64 1L), EConst (CInt32 40l))) with
+  | VInt64 n -> check int64 "1L shl 40" 1099511627776L n
+  | _ -> fail "expected VInt64") ;
+  (match
+     eval (EBinop (Shr, EConst (CInt64 (-1099511627776L)), EConst (CInt32 40l)))
+   with
+  | VInt64 n -> check int64 "arithmetic shr 40" (-1L) n
+  | _ -> fail "expected VInt64") ;
+  (match
+     eval
+       (EBinop
+          (BitAnd, EConst (CInt64 0xFF00000000L), EConst (CInt64 0x0F00000000L)))
+   with
+  | VInt64 n -> check int64 "band above bit31" 0x0F00000000L n
+  | _ -> fail "expected VInt64") ;
+  (match eval (EUnop (BitNot, EConst (CInt64 0L))) with
+  | VInt64 n -> check int64 "bnot 0L" (-1L) n
+  | _ -> fail "expected VInt64")
+
 let test_binop_eq () =
   let env = make_env () in
   let state = make_state () in
@@ -386,6 +430,14 @@ let () =
           test_case "add" `Quick test_binop_add;
           test_case "multiply" `Quick test_binop_mul;
           test_case "less_than" `Quick test_binop_lt;
+          test_case
+            "int64_compare_above_bit31"
+            `Quick
+            test_binop_int64_compare_above_bit31;
+          test_case
+            "int64_bitwise_and_shift"
+            `Quick
+            test_binop_int64_bitwise_and_shift;
           test_case "equals" `Quick test_binop_eq;
           test_case
             "shr_negative_is_arithmetic"
