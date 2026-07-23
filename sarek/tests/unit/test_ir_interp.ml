@@ -240,7 +240,10 @@ let test_binop_int64_compare_above_bit31 () =
      compare 0 > 0 = false. Also covers Lt/Le/Ge via the same arms. *)
   let env = make_env () in
   let state = make_state () in
-  let big = 4294967296L (* 2^32: truncates to 0l *) in
+  let big =
+    4294967296L
+    (* 2^32: truncates to 0l *)
+  in
   let check_cmp op a b expected label =
     let expr = EBinop (op, EConst (CInt64 a), EConst (CInt64 b)) in
     match eval_expr state env expr with

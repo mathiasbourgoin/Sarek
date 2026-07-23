@@ -205,9 +205,9 @@ let test_exp () =
   check_unary "exp" Stdlib.exp ~domains:[(-2.0, 2.0); (-700.0, 700.0)]
 
 (** Out-of-domain saturation (audit finding M3): the (n + 1023) << 52 scale
-    construction used to wrap into the sign/exponent bits outside
-    [-708, 709.78] and return garbage (exp -1000 came back huge). Now it
-    flushes to 0 / -1 / +inf per the documented tier. *)
+    construction used to wrap into the sign/exponent bits outside [-708, 709.78]
+    and return garbage (exp -1000 came back huge). Now it flushes to 0 / -1 /
+    +inf per the documented tier. *)
 let test_exp_expm1_saturation () =
   let hname name =
     match Sarek_codegen.Sarek_ir_ptx_softmath.helper_name name with

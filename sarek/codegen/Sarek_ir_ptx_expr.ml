@@ -1376,7 +1376,9 @@ and emit_intrinsic_native buf alloc env path name args : string =
           end
           else (op, r_val0)
         in
-        let space, r_addr = atomic_addr ~intr ~global_only ~elt_shift arr r_idx in
+        let space, r_addr =
+          atomic_addr ~intr ~global_only ~elt_shift arr r_idx
+        in
         let r_old = new_atom_result result in
         emit buf "atom.%s.%s%s %s, [%s], %s;" space op ty r_old r_addr r_val ;
         r_old
@@ -1422,7 +1424,9 @@ and emit_intrinsic_native buf alloc env path name args : string =
     match args with
     | [EVar arr; idx_e] ->
         let r_idx = emit_expr buf alloc env idx_e in
-        let space, r_addr = atomic_addr ~intr ~global_only ~elt_shift:2 arr r_idx in
+        let space, r_addr =
+          atomic_addr ~intr ~global_only ~elt_shift:2 arr r_idx
+        in
         let r_lim = new_u32 alloc in
         emit buf "mov.u32 %s, 0xffffffff;" r_lim ;
         let r_old = new_u32 alloc in

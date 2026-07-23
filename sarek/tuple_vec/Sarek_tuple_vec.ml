@@ -129,7 +129,8 @@ let memoize name (build : unit -> 'a Vector.custom_type) : 'a Vector.custom_type
     generated Native kernel code to obtain the host-shared [Type_id]. Raises if
     the shape was never instantiated on the host. *)
 let descriptor_by_name (name : string) : 'a Vector.custom_type =
-  match Mutex.protect registry_mutex (fun () -> Hashtbl.find_opt registry name)
+  match
+    Mutex.protect registry_mutex (fun () -> Hashtbl.find_opt registry name)
   with
   | Some obj -> Obj.obj obj
   | None ->

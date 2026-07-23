@@ -77,14 +77,14 @@ let names () = Hashtbl.to_seq_keys plugins |> List.of_seq
 
     A probe failure counts as unavailable, but only for ordinary exceptions:
     asynchronous/fatal ones (Out_of_memory, Stack_overflow, signals) must
-    propagate - swallowing them turned real failures into silent
-    "no backends found" (audit finding). *)
+    propagate - swallowing them turned real failures into silent "no backends
+    found" (audit finding). *)
 let available () =
   Hashtbl.to_seq_values plugins
   |> Seq.filter (fun (module P : S) ->
-         try P.is_available () with
-         | (Out_of_memory | Stack_overflow) as fatal -> raise fatal
-         | _ -> false)
+      try P.is_available () with
+      | (Out_of_memory | Stack_overflow) as fatal -> raise fatal
+      | _ -> false)
   |> List.of_seq
 
 (** List all available full backends *)

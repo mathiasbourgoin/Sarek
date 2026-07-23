@@ -213,8 +213,7 @@ let eval_binop op v1 v2 =
       | VFloat32 a, VFloat32 b -> VFloat32 (F32.to_float32 (Float.rem a b))
       | VFloat64 a, VFloat64 b -> VFloat64 (Float.rem a b)
       | VFloat32 _, _ | _, VFloat32 _ ->
-          VFloat32
-            (F32.to_float32 (Float.rem (to_float32 v1) (to_float32 v2)))
+          VFloat32 (F32.to_float32 (Float.rem (to_float32 v1) (to_float32 v2)))
       | VFloat64 _, _ | _, VFloat64 _ ->
           VFloat64 (Float.rem (to_float64 v1) (to_float64 v2))
       | VInt64 _, _ | _, VInt64 _ ->

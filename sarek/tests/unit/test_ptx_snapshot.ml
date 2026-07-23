@@ -550,10 +550,10 @@ let test_atomic_cas_incdec_wide_markers () =
   (* 8-byte addressing stride for the 64-bit forms *)
   assert_contains ptx ", 3;"
 
-(** Float Mod lowers to exact C fmod via emit_float_fmod's iterative
-    reduction (audit finding M1): rn-rounded div + cvt.rzi + fma per round,
-    inside a branch loop, with an overflow-scaling branch and a final
-    sign fix (selp) + copysign zero-sign normalization — for f32 and f64. *)
+(** Float Mod lowers to exact C fmod via emit_float_fmod's iterative reduction
+    (audit finding M1): rn-rounded div + cvt.rzi + fma per round, inside a
+    branch loop, with an overflow-scaling branch and a final sign fix (selp) +
+    copysign zero-sign normalization — for f32 and f64. *)
 let test_float_mod_fmod_markers () =
   let fa = make_var "fa" (TVec TFloat32) in
   let da = make_var "da" (TVec TFloat64) in
@@ -600,11 +600,11 @@ let test_float_mod_fmod_markers () =
   assert_contains ptx "selp.f64" ;
   assert_contains ptx "selp.f32"
 
-(** Integer Div/Mod are SIGNED (audit finding H1): Sarek int32/int64 are
-    signed everywhere (interpreter uses Int32.div/Int64.div, C backends emit
-    / and % on signed types), so PTX must emit div.s32/s64 and rem.s32/s64.
-    The old div.u32/u64, rem.u32/u64 silently returned garbage for negative
-    operands ((-7)/2 = 2147483644). *)
+(** Integer Div/Mod are SIGNED (audit finding H1): Sarek int32/int64 are signed
+    everywhere (interpreter uses Int32.div/Int64.div, C backends emit / and % on
+    signed types), so PTX must emit div.s32/s64 and rem.s32/s64. The old
+    div.u32/u64, rem.u32/u64 silently returned garbage for negative operands
+    ((-7)/2 = 2147483644). *)
 let test_int_div_rem_signed_markers () =
   let ia = make_var "ia" (TVec TInt32) in
   let la = make_var "la" (TVec TInt64) in
@@ -624,12 +624,11 @@ let test_int_div_rem_signed_markers () =
                 EBinop (Mod, EArrayRead ("ia", EVar tid), EConst (CInt32 3l)) );
             SAssign
               ( LArrayElem ("la", EVar tid),
-                EBinop
-                  (Div, EArrayRead ("la", EVar tid), EConst (CInt64 (-2L))) );
+                EBinop (Div, EArrayRead ("la", EVar tid), EConst (CInt64 (-2L)))
+              );
             SAssign
               ( LArrayElem ("la", EVar tid),
-                EBinop (Mod, EArrayRead ("la", EVar tid), EConst (CInt64 3L))
-              );
+                EBinop (Mod, EArrayRead ("la", EVar tid), EConst (CInt64 3L)) );
           ] )
   in
   let k =
@@ -652,9 +651,9 @@ let test_int_div_rem_signed_markers () =
   if contains ptx "rem.u32" || contains ptx "rem.u64" then
     Alcotest.fail "unsigned rem emitted for signed Sarek int"
 
-(** Plain f32 division is correctly rounded (audit finding M2): the generic
-    Div binop must emit div.rn.f32, not the ~2-ulp div.approx.f32 (which
-    remains reserved for already-approximate intrinsics like tan/tanh). *)
+(** Plain f32 division is correctly rounded (audit finding M2): the generic Div
+    binop must emit div.rn.f32, not the ~2-ulp div.approx.f32 (which remains
+    reserved for already-approximate intrinsics like tan/tanh). *)
 let test_f32_div_correctly_rounded () =
   let out = make_var "out" (TVec TFloat32) in
   let a = make_var "a" (TVec TFloat32) in
@@ -675,9 +674,9 @@ let test_f32_div_correctly_rounded () =
   if contains ptx "div.approx.f32" then
     Alcotest.fail "plain f32 division must not use div.approx.f32"
 
-(** Int64 comparison family, Not/BitNot and min/max must be class-aware
-    (audit finding H2): the old code emitted setp.*.s32 / not.b32 / min.s32
-    on %rd (64-bit) registers - invalid PTX, rejected at module load. *)
+(** Int64 comparison family, Not/BitNot and min/max must be class-aware (audit
+    finding H2): the old code emitted setp.*.s32 / not.b32 / min.s32 on %rd
+    (64-bit) registers - invalid PTX, rejected at module load. *)
 let test_int64_compare_minmax_markers () =
   let la = make_var "la" (TVec TInt64) in
   let out = make_var "out" (TVec TInt32) in
@@ -698,9 +697,7 @@ let test_int64_compare_minmax_markers () =
                 SAssign
                   ( LArrayElem ("out", EVar tid),
                     EBinop (Eq, EVar x, EConst (CInt64 42L)) );
-                SAssign
-                  ( LArrayElem ("la", EVar tid),
-                    EUnop (BitNot, EVar x) );
+                SAssign (LArrayElem ("la", EVar tid), EUnop (BitNot, EVar x));
                 SAssign
                   ( LArrayElem ("la", EVar tid),
                     EIntrinsic ([], "min", [EVar x; EConst (CInt64 7L)]) );
@@ -808,10 +805,10 @@ let test_atomic_width_mismatch_rejected () =
   | _ -> Alcotest.fail "int32 value into atom.add.u64 should be rejected"
   | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()
 
-(** Audit finding M5: the intrinsic's hardwired 4/8-byte stride must match
-    the array's element width — atomic_add_int32 on an int64 vector would
-    corrupt neighbouring elements; and a *_global_* atomic on a shared
-    array would use the 32-bit shared-window offset as a global address. *)
+(** Audit finding M5: the intrinsic's hardwired 4/8-byte stride must match the
+    array's element width — atomic_add_int32 on an int64 vector would corrupt
+    neighbouring elements; and a *_global_* atomic on a shared array would use
+    the 32-bit shared-window offset as a global address. *)
 let test_atomic_stride_and_space_rejected () =
   let tid = make_var "tid" TInt32 in
   let gen_with body params =

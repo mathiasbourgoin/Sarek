@@ -272,14 +272,15 @@ let inv_fact k =
 
 (** {1 Helper bodies} *)
 
-(** exp(x): n = rint(x·log2 e) (as floor(·+0.5)); r = x − n·ln2 (hi/lo split, 2
-    fma); degree-12 Taylor on r ∈ [−ln2/2, ln2/2] (truncation ≈ 1.7e-16
-    relative); scale by 2^n via exponent-field construction (n+1023) << 52. *)
 (* Saturation bounds for the 2^n exponent-field construction: n must stay in
    [-1022, 1024] or (n + 1023) << 52 wraps into the sign/exponent bits and
    returns garbage instead of 0/inf (audit finding M3). log(max_float) =
    709.7827...; below -708 the true result is subnormal and this tier
    flushes to zero (documented: no gradual underflow). *)
+
+(** exp(x): n = rint(x·log2 e) (as floor(·+0.5)); r = x − n·ln2 (hi/lo split, 2
+    fma); degree-12 Taylor on r ∈ [−ln2/2, ln2/2] (truncation ≈ 1.7e-16
+    relative); scale by 2^n via exponent-field construction (n+1023) << 52. *)
 let exp_hi_cut = 709.782712893384
 
 let exp_lo_cut = -708.0
@@ -294,22 +295,22 @@ let exp_body x =
   let coeffs = List.init 10 (fun i -> inv_fact (12 - i)) in
   let core =
     let_ nf (floor_ (fma (EVar x) (f64 log2_e) (f64 0.5)))
-  @@ let_ r_hi (fma (EVar nf) (f64 (-.ln2_hi)) (EVar x))
-  @@ let_ r (fma (EVar nf) (f64 (-.ln2_lo)) (EVar r_hi))
-  (* exp(r) = 1 + r·(1 + r·(1/2 + r/6 + …)) *)
-  @@ let_
-       p
-       (fma (horner (EVar r) ~coeffs ~last:(inv_fact 2)) (EVar r) (f64 1.0))
-  @@ let_ n (to_i32 (EVar nf))
-  @@ SReturn
-       (fma (EVar p) (EVar r) (f64 1.0)
-       *! unbits (shl (to_i64 (EVar n +! i32 1023)) 52))
+    @@ let_ r_hi (fma (EVar nf) (f64 (-.ln2_hi)) (EVar x))
+    @@ let_ r (fma (EVar nf) (f64 (-.ln2_lo)) (EVar r_hi))
+    (* exp(r) = 1 + r·(1 + r·(1/2 + r/6 + …)) *)
+    @@ let_
+         p
+         (fma (horner (EVar r) ~coeffs ~last:(inv_fact 2)) (EVar r) (f64 1.0))
+    @@ let_ n (to_i32 (EVar nf))
+    @@ SReturn
+         (fma (EVar p) (EVar r) (f64 1.0)
+         *! unbits (shl (to_i64 (EVar n +! i32 1023)) 52))
   in
   SIf
     ( EVar x <! f64 exp_lo_cut,
       SReturn (f64 0.0),
-      Some
-        (SIf (EVar x >! f64 exp_hi_cut, SReturn (f64 infinity), Some core)) )
+      Some (SIf (EVar x >! f64 exp_hi_cut, SReturn (f64 infinity), Some core))
+    )
 
 (** log(x): exponent extract + mantissa normalized to [√2/2, √2), then
     log(m) = 2·atanh(s) with s = (m−1)/(m+1): odd Taylor to s¹⁵ (truncation
@@ -633,42 +634,42 @@ let expm1_body x =
   let e2 = fvar "e2" in
   let core =
     let_ nf (floor_ (fma (EVar x) (f64 log2_e) (f64 0.5)))
-  @@ let_ hi (fma (EVar nf) (f64 (-.ln2_hi)) (EVar x))
-  @@ let_ lo (EVar nf *! f64 ln2_lo)
-  @@ let_ xr (EVar hi -! EVar lo)
-  @@ let_ c (EVar hi -! EVar xr -! EVar lo)
-  @@ let_ hfx (f64 0.5 *! EVar xr)
-  @@ let_ hxs (EVar xr *! EVar hfx)
-  @@ let_
-       r1
-       (fma
-          (EVar hxs)
-          (horner (EVar hxs) ~coeffs:expm1_q_coeffs ~last:expm1_q1)
-          (f64 1.0))
-  @@ let_ t (fma (EVar r1) (neg (EVar hfx)) (f64 3.0))
-  @@ let_
-       e
-       (EVar hxs
-       *! ((EVar r1 -! EVar t) /! fma (neg (EVar xr)) (EVar t) (f64 6.0)))
-  @@ let_ n (to_i32 (EVar nf))
-  @@ SIf
-       ( EVar n =! i32 0,
-         SReturn (EVar xr -! ((EVar xr *! EVar e) -! EVar hxs)),
-         Some
-           (let_ e2 ((EVar xr *! (EVar e -! EVar c)) -! EVar c -! EVar hxs)
-           @@ SReturn
-                (fma
-                   (f64 1.0 -! (EVar e2 -! EVar xr))
-                   (unbits (shl (to_i64 (EVar n +! i32 1023)) 52))
-                   (f64 (-1.0)))) )
+    @@ let_ hi (fma (EVar nf) (f64 (-.ln2_hi)) (EVar x))
+    @@ let_ lo (EVar nf *! f64 ln2_lo)
+    @@ let_ xr (EVar hi -! EVar lo)
+    @@ let_ c (EVar hi -! EVar xr -! EVar lo)
+    @@ let_ hfx (f64 0.5 *! EVar xr)
+    @@ let_ hxs (EVar xr *! EVar hfx)
+    @@ let_
+         r1
+         (fma
+            (EVar hxs)
+            (horner (EVar hxs) ~coeffs:expm1_q_coeffs ~last:expm1_q1)
+            (f64 1.0))
+    @@ let_ t (fma (EVar r1) (neg (EVar hfx)) (f64 3.0))
+    @@ let_
+         e
+         (EVar hxs
+         *! ((EVar r1 -! EVar t) /! fma (neg (EVar xr)) (EVar t) (f64 6.0)))
+    @@ let_ n (to_i32 (EVar nf))
+    @@ SIf
+         ( EVar n =! i32 0,
+           SReturn (EVar xr -! ((EVar xr *! EVar e) -! EVar hxs)),
+           Some
+             (let_ e2 ((EVar xr *! (EVar e -! EVar c)) -! EVar c -! EVar hxs)
+             @@ SReturn
+                  (fma
+                     (f64 1.0 -! (EVar e2 -! EVar xr))
+                     (unbits (shl (to_i64 (EVar n +! i32 1023)) 52))
+                     (f64 (-1.0)))) )
   in
   (* Same exponent-field saturation as exp (audit finding M3): below the
      cut expm1 = -1 to within 1 ulp; above, +inf. *)
   SIf
     ( EVar x <! f64 exp_lo_cut,
       SReturn (f64 (-1.0)),
-      Some
-        (SIf (EVar x >! f64 exp_hi_cut, SReturn (f64 infinity), Some core)) )
+      Some (SIf (EVar x >! f64 exp_hi_cut, SReturn (f64 infinity), Some core))
+    )
 
 (** log1p(x): fdlibm 5.3 s_log1p.c — u = 1 + x with the rounding correction
     c = (k > 0 ? 1 − (u − x) : x − (u − 1))/u, u's mantissa normalized to

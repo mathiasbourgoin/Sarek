@@ -179,10 +179,10 @@ module Host = struct
   let grid ~m ~n =
     Sarek.Execute.dims2d ((n + tile - 1) / tile) ((m + tile - 1) / tile)
 
-  (** Shared-memory footprint of the kernel's two float32 tiles, for
-      occupancy estimation only. The kernel declares its tiles with
-      [let%shared] (STATIC shared memory), so launches do NOT need to pass
-      [~shared_mem] - passing it merely reserves the same bytes again as an
-      unused dynamic region (audit finding L5). *)
+  (** Shared-memory footprint of the kernel's two float32 tiles, for occupancy
+      estimation only. The kernel declares its tiles with [let%shared] (STATIC
+      shared memory), so launches do NOT need to pass [~shared_mem] - passing it
+      merely reserves the same bytes again as an unused dynamic region (audit
+      finding L5). *)
   let shared_mem_bytes = 2 * tile * tile * 4
 end
