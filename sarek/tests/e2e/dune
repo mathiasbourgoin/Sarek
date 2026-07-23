@@ -758,3 +758,26 @@
  (alias runtest)
  (action
   (run %{dep:test_soa_aos_equiv.exe})))
+
+; L17b polymorphic bare float literals: bare (unsuffixed) literals inferred as
+; float64 from an f64 context, executed on all devices vs an OCaml f64 reference.
+
+(executable
+ (name test_bare_float_infers_f64)
+ (modules test_bare_float_infers_f64)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.float64
+  sarek_ir
+  spoc_core
+  test_helpers
+  unix
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_bare_float_infers_f64.exe})))
