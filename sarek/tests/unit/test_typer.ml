@@ -36,6 +36,8 @@ let int32_expr i = mk_expr (EInt32 i)
 
 let float_expr f = mk_expr (EFloat f)
 
+let double_expr f = mk_expr (EDouble f)
+
 let bool_expr b = mk_expr (EBool b)
 
 let var_expr s = mk_expr (EVar s)
@@ -73,6 +75,9 @@ let check_infer_ok msg env expr expected_typ =
   reset_var_id_counter () ;
   match infer env expr with
   | Ok (te, _) ->
+      (* L17b: bare float literals infer to unconstrained tvars; mirror the
+         kernel behaviour by defaulting them to float32 before comparing. *)
+      default_float_literals () ;
       if types_equal te.ty expected_typ then ()
       else
         Alcotest.failf
@@ -453,6 +458,70 @@ let test_kernel_type_decl_record () =
         "kernel with type decl failed: %s"
         (String.concat ", " (List.map Sarek_error.error_to_string errs))
 
+(* ------------------------------------------------------------------ *)
+(* L17b: polymorphic bare float literals                              *)
+(* ------------------------------------------------------------------ *)
+
+(* An unconstrained bare float literal `let z = 1.0 in z` defaults to float32. *)
+let test_float_literal_defaults_f32 () =
+  let env = with_stdlib empty in
+  let expr = let_expr "z" None (float_expr 1.0) (var_expr "z") in
+  check_infer_ok "let z = 1.0 in z defaults to float32" env expr t_float32
+
+(* A bare float literal unifies with an f64 context:
+   `let x = 0.0 in x *. 2.0G` infers float64 without suffixing every literal. *)
+let test_float_literal_infers_f64_from_context () =
+  reset_tvar_counter () ;
+  reset_var_id_counter () ;
+  let env = with_stdlib empty in
+  let body = binop_expr Mul (var_expr "x") (double_expr 2.0) in
+  let expr = mk_expr (ELetMut ("x", None, float_expr 0.0, body)) in
+  match infer env expr with
+  | Ok (te, _) ->
+      default_float_literals () ;
+      if types_equal te.ty t_float64 then ()
+      else
+        Alcotest.failf
+          "expected float64 (inferred from *. 2.0G), got %s"
+          (typ_to_string te.ty)
+  | Error errors ->
+      Alcotest.failf
+        "let x = 0.0 in x *. 2.0G: type error: %s"
+        (String.concat ", " (List.map Sarek_error.error_to_string errors))
+
+(* A bare float literal must not satisfy an integer op: `1.0 land x` is still a
+   compile error even though the literal is (transiently) an unbound tvar. *)
+let test_float_literal_not_integer () =
+  reset_tvar_counter () ;
+  reset_var_id_counter () ;
+  let env = with_stdlib empty in
+  let info =
+    {
+      vi_type = t_int32;
+      vi_mutable = false;
+      vi_is_param = true;
+      vi_index = 0;
+      vi_is_vec = false;
+    }
+  in
+  let env = add_var "x" info env in
+  let expr = binop_expr Land (float_expr 1.0) (var_expr "x") in
+  check_infer_error "1.0 land x must fail (float is not an integer)" env expr
+
+(* Existing f32 behaviour is unchanged: two bare literals added together are
+   float32, and a float literal added to an int is still a type error. *)
+let test_float_literal_f32_unchanged () =
+  let env = with_stdlib empty in
+  check_infer_ok
+    "1.0 +. 2.0 is float32"
+    env
+    (binop_expr Add (float_expr 1.0) (float_expr 2.0))
+    t_float32 ;
+  check_infer_error
+    "1 + 2.0 is still a type error"
+    env
+    (binop_expr Add (int_expr 1) (float_expr 2.0))
+
 (* Test variable type inference *)
 let test_var_lookup () =
   let env = with_stdlib empty in
@@ -717,4 +786,23 @@ let () =
             test_vec_access_wrong_index;
         ] );
       ("sequence", [Alcotest.test_case "seq" `Quick test_seq]);
+      ( "float literals (L17b)",
+        [
+          Alcotest.test_case
+            "unconstrained defaults f32"
+            `Quick
+            test_float_literal_defaults_f32;
+          Alcotest.test_case
+            "infers f64 from context"
+            `Quick
+            test_float_literal_infers_f64_from_context;
+          Alcotest.test_case
+            "not an integer (1.0 land x)"
+            `Quick
+            test_float_literal_not_integer;
+          Alcotest.test_case
+            "f32 behaviour unchanged"
+            `Quick
+            test_float_literal_f32_unchanged;
+        ] );
     ]

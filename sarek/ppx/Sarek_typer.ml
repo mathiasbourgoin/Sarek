@@ -79,6 +79,11 @@ let check_integer t loc =
   match repr t with
   | TPrim TInt32 -> Ok ()
   | TReg (Int64 | Int) -> Ok ()
+  | TVar {contents = Unbound (id, _)} when is_float_literal_id id ->
+      (* L17b: a bare float literal must never satisfy an integer requirement,
+         e.g. [1.0 land x] stays a compile error even though the literal is an
+         (as-yet unbound) tvar. *)
+      Error [Type_mismatch {expected = t_int32; got = t; loc}]
   | TVar _ -> Ok ()
   | t -> Error [Type_mismatch {expected = t_int32; got = t; loc}]
 
@@ -200,7 +205,14 @@ let infer_literal (loc : Sarek_ast.loc) (expr : expr_desc) : texpr result =
   | EInt i -> Ok (mk_texpr (TEInt i) t_int32 loc)
   | EInt32 i -> Ok (mk_texpr (TEInt32 i) t_int32 loc)
   | EInt64 i -> Ok (mk_texpr (TEInt64 i) t_int64 loc)
-  | EFloat f -> Ok (mk_texpr (TEFloat f) t_float32 loc)
+  | EFloat f ->
+      (* L17b: a bare float literal is polymorphic — a fresh tvar that unifies
+         with its context and defaults to float32 if left unconstrained. The
+         tvar is recorded so it can be guarded (never an integer) and defaulted
+         after kernel inference. *)
+      let tv = fresh_tvar () in
+      register_float_literal tv ;
+      Ok (mk_texpr (TEFloat f) tv loc)
   | EDouble f -> Ok (mk_texpr (TEDouble f) t_float64 loc)
   | _ ->
       error
@@ -945,6 +957,8 @@ and is_intrinsic_fun name env =
 
 (** Type a complete kernel *)
 let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
+  (* L17b: start each kernel with an empty bare-float-literal registry. *)
+  clear_float_literals () ;
   (* Register type declarations first *)
   let rec add_type_decls env acc = function
     | [] -> Ok (List.rev acc, env)
@@ -1145,6 +1159,10 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
   in
   let* tparams, env' = add_params env_after_mods 0 [] kernel.kern_params in
   let* tbody, _ = infer env' kernel.kern_body in
+  (* L17b: any bare float literal that context never constrained defaults to
+     float32. Runs before the typed AST is handed to the lowering / defunc /
+     tag-erasure passes, so those never see an unbound literal-origin tvar. *)
+  default_float_literals () ;
   Ok
     {
       tkern_name = kernel.kern_name;

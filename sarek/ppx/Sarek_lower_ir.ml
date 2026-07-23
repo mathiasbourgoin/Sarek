@@ -502,7 +502,12 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
   | TEInt i -> Ir.EConst (Ir.CInt32 (Int32.of_int i))
   | TEInt32 i -> Ir.EConst (Ir.CInt32 i)
   | TEInt64 i -> Ir.EConst (Ir.CInt64 i)
-  | TEFloat f -> Ir.EConst (Ir.CFloat32 f)
+  | TEFloat f -> (
+      (* L17b: a bare float literal is lowered by its resolved type — float64 if
+         context unified it to Float64, float32 otherwise (the default). *)
+      match repr te.ty with
+      | TReg Float64 -> Ir.EConst (Ir.CFloat64 f)
+      | _ -> Ir.EConst (Ir.CFloat32 f))
   | TEDouble f -> Ir.EConst (Ir.CFloat64 f)
   | TEVar (name, id) -> (
       match repr te.ty with

@@ -72,12 +72,54 @@ let fresh_tvar_id () = Atomic.fetch_and_add tvar_counter 1
 let fresh_tvar ?(level = 0) () : typ =
   TVar (ref (Unbound (fresh_tvar_id (), level)))
 
+(** {1 Polymorphic bare float literals (L17b)}
+
+    A bare float literal (e.g. [1.0]) is typed as a fresh unification variable
+    instead of being hard-typed [float32], so it can unify with its context
+    (e.g. a [float64] binding). Two invariants make this safe:
+
+    - a float-literal tvar may only ever resolve to a floating-point type
+      ([float32]/[float64]) — it must never unify with an integer or other
+      concrete type (enforced in {!unify} via {!float_literal_can_link});
+    - any float-literal tvar left unconstrained after kernel inference is
+      defaulted to [float32] (see {!default_float_literals}), so [float32] stays
+      the GPGPU default.
+
+    The registry is process-global but scoped per kernel: it is cleared at the
+    start of each [infer_kernel] and whenever the tvar counter is reset. IDs are
+    monotonic within a kernel so no stale collision is possible. *)
+
+(** IDs of tvars that originate from bare float literals. *)
+let float_literal_ids : (int, unit) Hashtbl.t = Hashtbl.create 16
+
+(** The float-literal tvars in creation order, used for defaulting. *)
+let float_literal_tvars : typ list ref = ref []
+
+(** Clear the float-literal registry (called per kernel). *)
+let clear_float_literals () =
+  Hashtbl.clear float_literal_ids ;
+  float_literal_tvars := []
+
+(** Is [id] the id of a float-literal-origin tvar? *)
+let is_float_literal_id (id : int) : bool = Hashtbl.mem float_literal_ids id
+
 (** Reset the type variable counter (for testing) *)
-let reset_tvar_counter () = Atomic.set tvar_counter 0
+let reset_tvar_counter () =
+  Atomic.set tvar_counter 0 ;
+  clear_float_literals ()
 
 (** Follow links to get the actual type *)
 let rec repr (t : typ) : typ =
   match t with TVar {contents = Link t'} -> repr t' | t -> t
+
+(** Record a fresh float-literal tvar so it can be guarded and later defaulted.
+    (See the L17b registry section above.) *)
+let register_float_literal (t : typ) : unit =
+  match repr t with
+  | TVar {contents = Unbound (id, _)} ->
+      Hashtbl.replace float_literal_ids id () ;
+      float_literal_tvars := t :: !float_literal_tvars
+  | _ -> ()
 
 (** Check if a type variable occurs in a type (for occurs check) *)
 let rec occurs (id : int) (t : typ) : bool =
@@ -100,6 +142,13 @@ let rec occurs (id : int) (t : typ) : bool =
 (** Unification error *)
 type unify_error = Cannot_unify of typ * typ | Occurs_check of int * typ
 
+(** A float-literal tvar may only link to a floating-point type or to another
+    type variable (which will itself carry the constraint). Linking it to any
+    other concrete type (int32, int64, bool, records, ...) is a type error — a
+    bare float literal is never an integer. *)
+let float_literal_can_link (t : typ) : bool =
+  match repr t with TReg (Float32 | Float64) | TVar _ -> true | _ -> false
+
 (** Unify two types *)
 let rec unify (t1 : typ) (t2 : typ) : (unit, unify_error) result =
   let t1 = repr t1 and t2 = repr t2 in
@@ -112,11 +161,17 @@ let rec unify (t1 : typ) (t2 : typ) : (unit, unify_error) result =
     | TVar ({contents = Unbound (id, level1)} as r), t
     | t, TVar ({contents = Unbound (id, level1)} as r) ->
         if occurs id t then Error (Occurs_check (id, t))
+        else if is_float_literal_id id && not (float_literal_can_link t) then
+          (* L17b: a bare-float-literal tvar cannot become a non-float type. *)
+          Error (Cannot_unify (TVar r, t))
         else begin
           (* Update level for let-polymorphism *)
           (match t with
           | TVar {contents = Unbound (_, level2)} ->
-              r := Unbound (id, min level1 level2)
+              r := Unbound (id, min level1 level2) ;
+              (* Propagate the float-literal constraint onto the tvar that
+                 becomes the representative after linking. *)
+              if is_float_literal_id id then register_float_literal t
           | _ -> ()) ;
           r := Link t ;
           Ok ()
@@ -265,6 +320,21 @@ let t_int64 = TReg Int64
 let t_int = TReg Int
 
 let t_char = TReg Char
+
+(** Default every still-unconstrained float-literal tvar to [float32]. Called
+    once after kernel inference: literal-origin tvars that context never
+    resolved (e.g. an unconstrained [let z = 1.0]) become [float32], preserving
+    the GPGPU default. Already-resolved literals (unified to [float64] by
+    context, or to [float32]) are left untouched. Non-literal tvars are never in
+    the registry, so the polymorphic-kernel-parameter guard in
+    [Sarek_lower_ir.elttype_of_typ] keeps firing for them. *)
+let default_float_literals () =
+  List.iter
+    (fun t ->
+      match repr t with
+      | TVar {contents = Unbound _} -> ignore (unify t t_float32)
+      | _ -> ())
+    !float_literal_tvars
 
 (** {1 Type Predicates}
 
