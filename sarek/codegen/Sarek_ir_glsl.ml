@@ -465,7 +465,13 @@ and gen_intrinsic buf path name args =
                   gen_expr buf e)
                 args ;
               Buffer.add_char buf ')'
-          | "fabs" ->
+          | "fabs" | "abs_float" ->
+              (* GLSL has no [fabs]; its abs() has an fp64 overload under
+                 GL_ARB_gpu_shader_fp64 (enabled on the f64 path). [abs_float]
+                 (Float64.abs_float) reaches here rather than via the pure
+                 registry — it is absent from [float64_list] because that list's
+                 generic template would emit the raw name on CUDA/OpenCL, which
+                 need [fabs]. See spoc/ir/Sarek_pure_registry.ml. *)
               Buffer.add_string buf "abs" ;
               Buffer.add_char buf '(' ;
               List.iteri

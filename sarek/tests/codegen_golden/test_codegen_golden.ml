@@ -234,6 +234,31 @@ let float32_abs_float_path_kernel () =
     []
     body
 
+(* Float64.abs_float reaches the GLSL generator's hardcoded match arm (it is
+   absent from Sarek_pure_registry.float64_list), and must lower to abs() — not
+   the raw Float64.abs_float(...) that glslang rejects. See Sarek_ir_glsl.ml. *)
+let float64_abs_float_path_kernel () =
+  let a = make_var "a" (TVec TFloat64) in
+  let b = make_var "b" (TVec TFloat64) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("b", EVar idx),
+            EIntrinsic (["Float64"], "abs_float", [EArrayRead ("a", EVar idx)])
+          ) )
+  in
+  empty_kernel
+    "float64_abs_float_path"
+    [
+      DParam (a, Some {arr_elttype = TFloat64; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat64; arr_memspace = Global});
+    ]
+    []
+    body
+
 let float32_atan2_path_kernel () =
   let a = make_var "a" (TVec TFloat32) in
   let b = make_var "b" (TVec TFloat32) in
@@ -1190,6 +1215,30 @@ let () =
 
   register_golden
     "glsl"
+    "float64_abs_float_path"
+    "#version 450\n\
+     #extension GL_ARB_gpu_shader_fp64 : require\n\n\
+     // Sarek-generated compute shader: float64_abs_float_path\n\
+     layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;\n\n\
+     layout(std430, set=0, binding = 0) buffer Buffer_a {\n\
+    \  double a[];\n\
+     };\n\
+     layout(std430, set=0, binding = 1) buffer Buffer_b {\n\
+    \  double b[];\n\
+     };\n\
+     layout(push_constant) uniform PushConstants {\n\
+    \  int a_len;\n\
+    \  int b_len;\n\
+     } pc;\n\n\
+     #define a_len pc.a_len\n\
+     #define b_len pc.b_len\n\n\
+     void main() {\n\
+    \  int idx = int(gl_GlobalInvocationID.x);\n\
+    \  b[idx] = abs(a[idx]);\n\
+     }\n" ;
+
+  register_golden
+    "glsl"
     "float32_atan2_path"
     "#version 450\n\n\
      // Sarek-generated compute shader: float32_atan2_path\n\
@@ -1317,6 +1366,7 @@ let glsl_only_kernels () =
   [
     ("float32_rsqrt_path", float32_rsqrt_path_kernel ());
     ("float32_abs_float_path", float32_abs_float_path_kernel ());
+    ("float64_abs_float_path", float64_abs_float_path_kernel ());
     ("float32_atan2_path", float32_atan2_path_kernel ());
     ("float32_cbrt_path", float32_cbrt_path_kernel ());
     ("float32_hypot_path", float32_hypot_path_kernel ());
