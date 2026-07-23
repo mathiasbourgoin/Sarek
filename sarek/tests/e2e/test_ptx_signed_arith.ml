@@ -16,9 +16,11 @@
  * under-tests.
  *
  * Integer div/rem is exact, so results are compared bit-for-bit against
- * OCaml's Int32.div/Int32.rem (no tolerance). Native, Interpreter and
- * CUDA/PTX are hard-gated; the Vulkan backend has a pre-existing signed-mod
- * divergence (see [is_gated]) and is reported only.
+ * OCaml's Int32.div/Int32.rem (no tolerance). Native, Interpreter, CUDA/PTX
+ * and Vulkan are all hard-gated (see [is_gated]). Vulkan's signed-mod
+ * divergence - GLSL [%] returns a divisor-signed remainder on RADV - was
+ * fixed by lowering integer [Mod] to the C-truncated form [a - b*(a/b)] in
+ * Sarek_ir_glsl.ml; this probe now gates that fix.
  *
  * Run with (surfaces the CUDA device):
  *   LD_LIBRARY_PATH=$HOME/opt/zluda \
@@ -120,18 +122,20 @@ let verify got_q got_r =
 let is_native (dev : Device.t) =
   dev.Device.framework = "Native" || dev.Device.framework = "Interpreter"
 
-(* Backends whose signed remainder this PR fixes/claims C semantics for: the
-   PTX emitter (audit H1) plus the interpreter and native oracle. A wrong
-   result from one of these is a hard failure.
+(* Backends whose signed remainder is claimed to have C semantics: the PTX
+   emitter (audit H1), the interpreter and native oracle, AND the Vulkan/GLSL
+   backend. A wrong result from any of these is a hard failure.
 
-   NOT gated: the Vulkan backend lowers integer Mod to the GLSL [%] operator
+   Vulkan is now gated: integer [Mod] used to lower to the GLSL [%] operator
    (Sarek_ir_glsl.ml), which on RADV returns a remainder with the DIVISOR's
-   sign (OpSMod-like) instead of C's dividend sign - so [-7 mod 2] yields +1,
-   not -1. That is a genuine pre-existing Vulkan codegen bug this probe
-   surfaces, but it is out of scope for this PTX/interpreter PR; it is
-   reported here (see stdout) and left for a dedicated GLSL-backend fix. *)
+   sign (OpSMod-like) instead of C's dividend sign - so [-7 mod 2] yielded +1,
+   not -1. That backend gap is fixed by emitting the C-truncated form
+   [a - b*(a/b)] (GLSL integer [/] truncates toward zero), so the Vulkan rows
+   must now match Int32.rem bit-for-bit like every other gated backend. *)
 let is_gated (dev : Device.t) =
-  is_native dev || dev.Device.framework = "CUDA/PTX"
+  is_native dev
+  || dev.Device.framework = "CUDA/PTX"
+  || dev.Device.framework = "Vulkan"
 
 let () =
   let _, kirc = signed_divrem_kernel in
@@ -161,7 +165,7 @@ let () =
           (if bad <> 0 && not gated then " [known out-of-scope backend gap]"
            else "") ;
         (* Integer div/rem is exact, so a gated backend that ran must match
-           bit-for-bit. Non-gated backends (Vulkan) are reported only. *)
+           bit-for-bit. A non-gated backend that diverges is reported only. *)
         if bad <> 0 && gated then failed := true ;
         if native then native_ran := true
       with e ->

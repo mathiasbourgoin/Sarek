@@ -203,6 +203,28 @@ let rec gen_expr buf = function
   | EConst (CBool false) -> Buffer.add_string buf "false"
   | EConst CUnit -> Buffer.add_string buf "/* unit */"
   | EVar v -> Buffer.add_string buf (escape_glsl_name v.var_name)
+  | EBinop (Mod, e1, e2) ->
+      (* Integer remainder with C (dividend-signed, truncated) semantics.
+         GLSL's [%] is undefined for negative operands and lowers to OpSMod
+         (divisor-signed) on RADV, so [-7 % 2] yields +1 instead of C's -1.
+         Reconstruct C's [rem] as [a - b * (a / b)]: GLSL integer [/] truncates
+         toward zero (verified: the signed-arith probe's quotients already match
+         Int32.div on Vulkan), so this recovers the dividend's sign and matches
+         OCaml Int32.rem / the interpreter / PTX rem.s32 / OpenCL [%]. Type-
+         agnostic: signed int32 and int64 both use truncating [/]. Float [mod]
+         never reaches this arm (the frontend lowers it to the [fmod]/[mod]
+         intrinsic, not [Ir.Mod]). Operands are re-emitted, which is safe
+         because Sarek IR expressions are pure (no side effects); see
+         [Sarek_ir_types.expr]. *)
+      Buffer.add_char buf '(' ;
+      gen_expr buf e1 ;
+      Buffer.add_string buf " - " ;
+      gen_expr buf e2 ;
+      Buffer.add_string buf " * (" ;
+      gen_expr buf e1 ;
+      Buffer.add_string buf " / " ;
+      gen_expr buf e2 ;
+      Buffer.add_string buf "))"
   | EBinop (op, e1, e2) ->
       Buffer.add_char buf '(' ;
       gen_expr buf e1 ;
@@ -334,6 +356,8 @@ and gen_binop = function
   | Sub -> " - "
   | Mul -> " * "
   | Div -> " / "
+  (* [Mod] is intercepted by [gen_expr] with a C-truncated form; this arm is
+     unreachable and kept only for match exhaustiveness. *)
   | Mod -> " % "
   | Eq -> " == "
   | Ne -> " != "
