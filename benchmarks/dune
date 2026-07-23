@@ -127,6 +127,17 @@
  (preprocess
   (pps sarek_ppx)))
 
+; Tier 1a: AoS vs SoA memory-bound single-field access
+
+(executable
+ (name bench_soa_aos)
+ (modules bench_soa_aos)
+ (libraries sarek sarek_stdlib sarek_ir spoc_core benchmark_backends unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
 ; Tier 1a: pinned vs pageable host-memory transfer (CUDA/ZLUDA only)
 
 (executable

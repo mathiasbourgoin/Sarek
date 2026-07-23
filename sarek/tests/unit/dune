@@ -83,3 +83,9 @@
 (test
  (name test_ppx_scan_diagnostics)
  (libraries sarek_ppx alcotest))
+
+; Tier 1a: host-side SoA layout/transpose round-trip (pure ctypes, no device)
+
+(test
+ (name test_soa)
+ (libraries spoc_core spoc.ir ctypes alcotest))

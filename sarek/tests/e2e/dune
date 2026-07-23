@@ -729,3 +729,32 @@
  (alias runtest)
  (action
   (run %{dep:test_static_tag_erasure.exe})))
+
+; Tier 1a SoA correctness: AoS and SoA kernels produce identical values on
+; every device (Spoc_core.Soa host transpose + scalar transfer path).
+
+(executable
+ (name test_soa_aos_equiv)
+ (modules test_soa_aos_equiv)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  spoc_core
+  test_helpers
+  sarek_native
+  sarek_interpreter
+  sarek_cuda
+  sarek_opencl
+  sarek_vulkan
+  unix
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_soa_aos_equiv.exe})))

@@ -22,6 +22,7 @@
   Vector_types
   Vector_transfer
   Vector
+  Soa
   Gpu_memory
   Transfer
   Profiling
