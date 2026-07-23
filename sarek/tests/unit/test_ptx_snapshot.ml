@@ -1507,8 +1507,12 @@ let test_mixed_align_record_param_accepted () =
   in
   let ptx = Sarek_ir_ptx.generate k in
   assert_contains ptx ".entry" ;
-  (* f64 field now loaded at its natural 8-byte boundary. *)
+  (* Aligned ABI: 16-byte element stride and the f64 field read at its natural
+     8-byte offset ([+8], not the packed [+4]) — proves placement, not just the
+     opcode width. *)
+  assert_contains ptx ", 16;" ;
   assert_contains ptx "ld.global.f64" ;
+  assert_contains ptx "+8]" ;
   assert_contains ptx "st.global.f64"
 
 (** L8: a vector of variants with an f64 payload now lays the payload region at
@@ -1550,8 +1554,11 @@ let test_f64_variant_param_accepted () =
   in
   let ptx = Sarek_ir_ptx.generate k in
   assert_contains ptx ".entry" ;
-  (* f64 payload read from the aligned offset 8, then stored. *)
+  (* Aligned ABI: 16-byte variant element stride and the f64 payload read at
+     its aligned offset 8 ([+8], not the packed [+4]). *)
+  assert_contains ptx ", 16;" ;
   assert_contains ptx "ld.global.f64" ;
+  assert_contains ptx "+8]" ;
   assert_contains ptx "st.global.f64"
 
 (** A one-intrinsic kernel over a float vector of [elt] element type. *)
