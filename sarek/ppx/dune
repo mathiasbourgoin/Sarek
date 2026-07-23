@@ -25,6 +25,7 @@
   Sarek_quote_ir
   Sarek_ir_ppx
   Sarek_mono
+  Sarek_defunc
   Sarek_debug
   Sarek_tailrec_analysis
   Sarek_tailrec_elim

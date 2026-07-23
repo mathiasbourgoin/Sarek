@@ -1665,6 +1665,16 @@ let expand_kernel ~ctxt payload : expression =
             Sarek_debug.log_to_file "  step 5: monomorphization done" ;
             Sarek_debug.log_exit "monomorphize" ;
 
+            (* 5b. Defunctionalization pass (Tier 0) - eliminate first-class
+               function values bound to `let` variables by distributing
+               applications into if/match selectors, so lowering only ever
+               sees directly-named callees. See Sarek_defunc.ml. *)
+            Sarek_debug.log_to_file "  step 5b: defunctionalization start" ;
+            Sarek_debug.log_enter "defunctionalize" ;
+            let tkernel = Sarek_defunc.defunctionalize tkernel in
+            Sarek_debug.log_to_file "  step 5b: defunctionalization done" ;
+            Sarek_debug.log_exit "defunctionalize" ;
+
             (* 6. Tail recursion elimination pass (for GPU code) *)
             (* Keep original kernel for native OCaml which handles recursion *)
             let native_kernel = tkernel in
