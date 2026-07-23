@@ -227,12 +227,16 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
       {kernel; program; device_id = device.id}
 
     let compile_cached device ~name ~source =
+      (* Compile_cache.make_key gives the same collision-resistant,
+         digest-per-field encoding every other backend uses (the July 2026
+         cache-key standardization missed this hand-rolled join - audit
+         finding; a ':' in a kernel name could shift bytes between fields). *)
       let key =
-        Printf.sprintf
-          "%d:%s:%s"
-          device.Opencl_api.Device.id
-          name
-          (Digest.string source |> Digest.to_hex)
+        Spoc_framework.Compile_cache.make_key
+          ~device:(string_of_int device.Opencl_api.Device.id)
+          ~name
+          ~source
+          ()
       in
       match Hashtbl.find_opt cache key with
       | Some k -> k
