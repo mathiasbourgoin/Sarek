@@ -194,7 +194,9 @@ let ncmp_of_coq (r : M.infer_result) : ncmp =
 
 (* --- project the real Sarek_types.typ --------------------------------------- *)
 let rec ncmp_of_typ (t : Sarek_types.typ) : ncmp =
-  match t with
+  (* Follow unification links: after L17b defaulting a float literal's type is a
+     [TVar] linked to [Float32], not a bare [TReg Float32]. *)
+  match Sarek_types.repr t with
   | Sarek_types.TPrim Sarek_types.TInt32 -> NInt32
   | Sarek_types.TReg Sarek_types.Float32 -> NFloat32
   | Sarek_types.TPrim Sarek_types.TBool -> NBool
@@ -367,8 +369,17 @@ let test_differential =
     (fun (env, e) ->
       let coq_result = ncmp_of_coq (M.infer_type env e) in
       let real_result =
-        ncmp_of_real
-          (Sarek_typer.infer (real_env_of_coq env) (real_expr_of_coq e))
+        (* L17b: a bare float literal is now typed as a fresh tvar that defaults
+           to float32 when unconstrained. The production engine performs that
+           defaulting inside [infer_kernel]; this harness calls [infer]
+           directly, so we reproduce the exact same language rule here — clear
+           the per-run literal registry, infer, then unify every still-unbound
+           literal tvar with float32 before projecting. This keeps the Rocq
+           model (ELit (LFloat _) -> RFloat32) correct and untouched. *)
+        Sarek_types.clear_float_literals () ;
+        let r = Sarek_typer.infer (real_env_of_coq env) (real_expr_of_coq e) in
+        Sarek_types.default_float_literals () ;
+        ncmp_of_real r
       in
       if coq_result = real_result then true
       else begin
