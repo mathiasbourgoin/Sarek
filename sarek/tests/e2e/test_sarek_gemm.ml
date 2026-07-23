@@ -252,6 +252,48 @@ let run_hand_checked dev =
     Printf.printf "    hand-checked ok2=%b ok3=%b\n" ok2 ok3 ;
   ok2 && ok3
 
+(* ========================== perf note (non-gating) ========================== *)
+
+let median xs =
+  let a = Array.of_list xs in
+  Array.sort compare a ;
+  a.(Array.length a / 2)
+
+let best_of ~iters run =
+  let ts = ref [] in
+  for _ = 1 to iters do
+    let _, t = run () in
+    ts := t :: !ts
+  done ;
+  median !ts
+
+let perf_note dev =
+  (* Bigger, compute-bound square on GPUs where tiling actually pays; a modest
+     size on CPU-class devices to keep the note fast. Non-gating. *)
+  let dim = match dev.Device.framework with "Native" -> 384 | _ -> 1024 in
+  let m, n, k = (dim, dim, dim) in
+  let a = fill m k 7 and b = fill k n 9 in
+  let c0 = Array.make (m * n) 0.0 in
+  let _ = run_tiled dev a b c0 ~m ~n ~k ~alpha:1.0 ~beta:0.0 in
+  (* warm-up *)
+  let _ = run_naive dev a b c0 ~m ~n ~k ~alpha:1.0 ~beta:0.0 in
+  let tt =
+    best_of ~iters:5 (fun () ->
+        run_tiled dev a b c0 ~m ~n ~k ~alpha:1.0 ~beta:0.0)
+  in
+  let tn =
+    best_of ~iters:5 (fun () ->
+        run_naive dev a b c0 ~m ~n ~k ~alpha:1.0 ~beta:0.0)
+  in
+  let ratio = if tt > 0.0 then tn /. tt else 0.0 in
+  Printf.printf
+    "    perf %d^3 (median of 5): tiled=%.3fms naive=%.3fms (tiled speedup \
+     %.2fx)\n"
+    dim
+    tt
+    tn
+    ratio
+
 (* ========================== driver ========================== *)
 
 let () =
@@ -277,6 +319,7 @@ let () =
                   nm
                   (if ok then "OK" else "FAIL"))
               (("hand-checked 2x2/3x3", hand) :: cs) ;
+            (try perf_note dev with _ -> ()) ;
             hand && List.for_all snd cs
           with e ->
             Printf.printf "    EXN: %s\n" (Printexc.to_string e) ;
