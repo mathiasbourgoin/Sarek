@@ -31,9 +31,23 @@ jobs:
       - name: Formal proofs admit gate
         run: |
           # The formal projects claim 0 admits; fail if an Admitted/admit/Axiom
-          # sneaks into a .v file (comments don't match the line-anchored regex).
-          if grep -rnE '^[[:space:]]*(Admitted\.|admit\.|Axiom[[:space:]])' formal --include='*.v'; then
-            echo "::error::Admitted/admit/Axiom found in formal/ .v files (0-admit invariant violated)"
+          # sneaks into a .v file. Word-boundary regex with optional space
+          # before the terminating dot catches bulleted tactics (`- admit.`),
+          # same-line sequences (`Proof. Admitted.`) and `Axiom(`/`Axioms`.
+          # Note: `Parameter` remains a sanctioned escape hatch (see
+          # AGpuSemantics.v) - this gate enforces the textual invariant only;
+          # full assurance needs a proof-building CI job (tracked follow-up).
+          set +e
+          ls formal/*/theories/*.v >/dev/null 2>&1 || { echo "::error::admit gate could not find formal .v files"; exit 1; }
+          matches=$(grep -rnE "(^|[^[:alnum:]_'])((Admitted|admit)[[:space:]]*\.|Axioms?([[:space:]]|\())" formal --include='*.v')
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "$matches"
+            echo "::error::Admitted/admit/Axiom found in formal/ .v files"
+            exit 1
+          elif [ "$rc" -ge 2 ]; then
+            echo "::error::admit gate grep failed (rc=$rc)"
             exit 1
           fi
           echo "OK: no Admitted/admit/Axiom in formal/ .v files"

@@ -414,6 +414,7 @@
 
 (rule
  (alias runtest)
+ (enabled_if %{lib-available:sarek_vulkan})
  (action
   (run %{dep:test_vulkan_interleaved_push_constants.exe})))
 

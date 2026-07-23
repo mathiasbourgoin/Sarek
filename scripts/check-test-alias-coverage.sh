@@ -49,6 +49,13 @@ for form in toplevel_forms(src):
 # alias deps list FOO.exe directly - both match).
 referenced = set(re.findall(r"([A-Za-z0-9_]+)\.exe", src))
 
+if not declared:
+    print(f"ERROR: no executables parsed from {path} - parser broken or file restructured")
+    sys.exit(2)
+if src.count("(") != src.count(")"):
+    print(f"ERROR: unbalanced parentheses after comment-stripping in {path} - parser assumptions violated")
+    sys.exit(2)
+
 missing = sorted(declared - referenced)
 if missing:
     for exe in missing:
