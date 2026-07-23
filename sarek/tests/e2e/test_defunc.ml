@@ -36,11 +36,10 @@ module Transfer = Spoc_core.Transfer
 open Sarek
 module Std = Sarek_stdlib.Std
 
-let () =
-  Sarek_cuda.Cuda_plugin.init () ;
-  Sarek_opencl.Opencl_plugin.init () ;
-  Sarek_native.Native_plugin.init () ;
-  Sarek_interpreter.Interpreter_plugin.init ()
+(* Backend init goes through the shared conditional loader so this test
+   stays buildable when optional GPU plugins (CUDA/OpenCL/Vulkan/Metal) are
+   absent, and enumerates every backend that IS present. *)
+let () = Test_helpers.Benchmarks.init ()
 
 (* Case 1: static single candidate. `let f = addf` resolves to one helper. *)
 let static_kernel =
