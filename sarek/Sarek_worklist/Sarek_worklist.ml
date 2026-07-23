@@ -200,7 +200,12 @@ module Host = struct
       ~max_levels =
     let rec loop level base =
       let snap = tail t in
-      if snap <= base || level >= max_levels then level
+      (* Stop at the first overflow (audit finding M8): once OVERFLOW is
+         set, TAIL counts tickets whose ring slot was never written - still
+         the -1 seed - and the next level would feed -1 to the kernel as a
+         node index (out-of-bounds device reads on poisoned data). The
+         caller observes {!overflow} > 0 and re-runs with a larger ring. *)
+      if snap <= base || level >= max_levels || overflow t > 0 then level
       else begin
         launch ~level_base:base ~snapshot_tail:snap ;
         loop (level + 1) snap
