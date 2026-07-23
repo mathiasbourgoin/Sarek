@@ -36,6 +36,13 @@ let current_variants : (string * (string * elttype list) list) list ref = ref []
 *)
 let current_smod_name = ref "sarek_smod"
 
+(** Name of the sign-copy helper ([sarek_copysign] by default) for the current
+    kernel, set per-kernel during generate by {!compute_copysign_name} so it
+    cannot collide with a user identifier. Both the declaration
+    ({!gen_copysign_helper}) and the call site ({!gen_intrinsic}'s [copysign]
+    arm) read this, guaranteeing they agree. Mirrors {!current_smod_name}. *)
+let current_copysign_name = ref "sarek_copysign"
+
 (** Helper function vector parameter indices - maps function name to set of
     parameter indices that are vectors. In GLSL, vectors cannot be passed as
     function parameters, so these must be filtered out at call sites. *)
@@ -424,6 +431,26 @@ and gen_intrinsic buf path name args =
   in
   if List.mem name ["cbrt"; "hypot"; "expm1"; "log1p"] then
     gen_glsl_polyfill buf name args
+  else if name = "copysign" then (
+    (* GLSL has no [copysign] builtin under any name, and [abs(x)*sign(y)] is
+       wrong for [y=0] (GLSL [sign(0)=0]) and the [x=0]/NaN sign-transfer edge
+       cases. Lower to the bit-level [sarek_copysign] helper emitted in the
+       preamble by [gen_copysign_helper], ahead of both the pure registry
+       (which would emit the raw un-suffixed [copysign(...)] for
+       [Float32.copysign]) and the unqualified match arms (where
+       [Float64.copysign] would fall through to the raw-name fallback and emit
+       the swizzle-parsed [Float64.copysign(...)] that glslang rejects).
+       Routing through a function (not inlining the bit twiddling) evaluates
+       each argument exactly once — the same single-eval guarantee as the
+       [sarek_smod] helper. *)
+    Buffer.add_string buf !current_copysign_name ;
+    Buffer.add_char buf '(' ;
+    List.iteri
+      (fun i e ->
+        if i > 0 then Buffer.add_string buf ", " ;
+        gen_expr buf e)
+      args ;
+    Buffer.add_char buf ')')
   else
     (* For path-qualified intrinsics, query the pure registry first.
      Float32.sin -> sin on GLSL (GLSL uses un-suffixed names). *)
@@ -1076,7 +1103,7 @@ let gen_smod_helper buf (k : kernel) =
     [sarek_smod_2], ... Local ([SLet]) names are function-scoped, not top-level,
     and are left to the future reserved-prefix policy noted in the impl brief
     (the same class already affects the [sarek_<arr>_length] intrinsic name). *)
-let compute_smod_name (k : kernel) : string =
+let compute_collision_safe_name (k : kernel) ~(base : string) : string =
   let reserved : (string, unit) Hashtbl.t = Hashtbl.create 16 in
   List.iter
     (fun decl ->
@@ -1088,7 +1115,6 @@ let compute_smod_name (k : kernel) : string =
   List.iter
     (fun (hf : helper_func) -> Hashtbl.replace reserved hf.hf_name ())
     k.kern_funcs ;
-  let base = "sarek_smod" in
   if not (Hashtbl.mem reserved base) then base
   else
     let rec find i =
@@ -1096,6 +1122,57 @@ let compute_smod_name (k : kernel) : string =
       if Hashtbl.mem reserved cand then find (i + 1) else cand
     in
     find 1
+
+let compute_smod_name (k : kernel) : string =
+  compute_collision_safe_name k ~base:"sarek_smod"
+
+(** Choose a collision-safe name for the sign-copy helper of kernel [k]. Same
+    scope and collision rules as {!compute_smod_name} (see its doc); the two
+    helpers use distinct bases ([sarek_smod] / [sarek_copysign]) so they never
+    collide with each other, only with user param/helper identifiers. *)
+let compute_copysign_name (k : kernel) : string =
+  compute_collision_safe_name k ~base:"sarek_copysign"
+
+(** Emit the [sarek_copysign] sign-copy helper when the kernel uses [copysign].
+
+    GLSL has no [copysign] builtin. The exact, branch-free lowering transfers
+    the IEEE-754 sign bit of [y] onto the magnitude of [x] via integer bit ops,
+    correct for every input including [±0] (where [abs(x)*sign(y)] fails, since
+    GLSL [sign(0)=0]) and NaN sign transfer.
+
+    Two overloads are emitted, resolved by argument type at the call site:
+
+    - [float]: always emitted when [copysign] is used. [floatBitsToUint] /
+      [uintBitsToFloat] are core since GLSL 3.30, so this needs no extension.
+    - [double]: emitted only when the kernel also uses float64, because it uses
+      [unpackDouble2x32] / [packDouble2x32] and the [double] type itself, all
+      gated behind [GL_ARB_gpu_shader_fp64] — the extension [glsl_header]
+      already emits under the same [kernel_uses_float64] condition. A
+      [Float64.copysign] kernel is float64 by construction, so its call always
+      finds the double overload; the (then-unused) float overload is harmless
+      dead code. A [Float32.copysign]-only kernel gets just the float overload.
+
+    The helper name is [!current_copysign_name] (see {!compute_copysign_name}),
+    not a literal, so it cannot collide with a user param or helper identifier.
+*)
+let gen_copysign_helper buf (k : kernel) =
+  if Sarek_ir_analysis.kernel_uses_copysign k then begin
+    Buffer.add_string
+      buf
+      (Printf.sprintf
+         "float %s(float x, float y) { return \
+          uintBitsToFloat((floatBitsToUint(x) & 0x7FFFFFFFu) | \
+          (floatBitsToUint(y) & 0x80000000u)); }\n\n"
+         !current_copysign_name) ;
+    if Sarek_ir_analysis.kernel_uses_float64 k then
+      Buffer.add_string
+        buf
+        (Printf.sprintf
+           "double %s(double x, double y) { uvec2 ux = unpackDouble2x32(x); \
+            uvec2 uy = unpackDouble2x32(y); ux.y = (ux.y & 0x7FFFFFFFu) | \
+            (uy.y & 0x80000000u); return packDouble2x32(ux); }\n\n"
+           !current_copysign_name)
+  end
 
 (** Generate complete GLSL source for a kernel.
     @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.
@@ -1105,6 +1182,7 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
   (* Clear per-kernel state *)
   Hashtbl.clear helper_vec_param_indices ;
   current_smod_name := compute_smod_name k ;
+  current_copysign_name := compute_copysign_name k ;
   let buf = Buffer.create 1024 in
   Buffer.add_string
     buf
@@ -1150,6 +1228,10 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
      it) when the kernel uses [mod]. *)
   gen_smod_helper buf k ;
 
+  (* Emit the sign-copy helper (before user helpers, which may call it) when
+     the kernel uses [copysign]. *)
+  gen_copysign_helper buf k ;
+
   (* Generate helper functions *)
   List.iter (gen_helper_func ~pc_names buf) k.kern_funcs ;
 
@@ -1191,6 +1273,7 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   (* Clear per-kernel state *)
   Hashtbl.clear helper_vec_param_indices ;
   current_smod_name := compute_smod_name k ;
+  current_copysign_name := compute_copysign_name k ;
   (* Use variant types directly from kernel IR *)
   current_variants := k.kern_variants ;
 
@@ -1244,6 +1327,10 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   (* Emit the integer-remainder helper (before user helpers, which may call
      it) when the kernel uses [mod]. *)
   gen_smod_helper buf k ;
+
+  (* Emit the sign-copy helper (before user helpers, which may call it) when
+     the kernel uses [copysign]. *)
+  gen_copysign_helper buf k ;
 
   (* Generate helper functions *)
   List.iter (gen_helper_func ~pc_names buf) k.kern_funcs ;

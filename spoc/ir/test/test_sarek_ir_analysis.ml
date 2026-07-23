@@ -646,6 +646,147 @@ let test_kernel_uses_int_mod_in_record_field_lvalue () =
   assert (kernel_uses_int_mod k_none = false) ;
   print_endline "  kernel_uses_int_mod via record-field lvalue: OK"
 
+(** {1 expr_uses_copysign / kernel_uses_copysign Tests} *)
+
+let test_is_copysign_intrinsic_name () =
+  assert (is_copysign_intrinsic_name "copysign" = true) ;
+  assert (is_copysign_intrinsic_name "copysignf" = false) ;
+  assert (is_copysign_intrinsic_name "sin" = false) ;
+  assert (is_copysign_intrinsic_name "" = false) ;
+  print_endline "  is_copysign_intrinsic_name: OK"
+
+let test_expr_uses_copysign () =
+  let non_copysign =
+    EIntrinsic (["Float64"], "hypot", [EConst (CFloat64 1.0)])
+  in
+  assert (expr_uses_copysign non_copysign = false) ;
+  let direct_copysign =
+    EIntrinsic
+      ( ["Float64"],
+        "copysign",
+        [EConst (CFloat64 1.0); EConst (CFloat64 (-2.0))] )
+  in
+  assert (expr_uses_copysign direct_copysign = true) ;
+  (* Float32-qualified copysign is detected too (name-based, path-agnostic). *)
+  let f32_copysign =
+    EIntrinsic
+      ( ["Float32"],
+        "copysign",
+        [EConst (CFloat32 1.0); EConst (CFloat32 (-2.0))] )
+  in
+  assert (expr_uses_copysign f32_copysign = true) ;
+  (* Nested: copysign buried inside an otherwise ordinary expression. *)
+  let nested = EBinop (Add, EConst (CFloat64 1.0), direct_copysign) in
+  assert (expr_uses_copysign nested = true) ;
+  print_endline "  expr_uses_copysign: OK"
+
+(** Regression pin (round-3 LRecordField lesson): [lvalue_uses_copysign] must
+    recurse through [LRecordField]. A non-recursive arm would return false when
+    a copysign result only appears inside an [LRecordField]-wrapped index, so
+    the GLSL backend would emit a [sarek_copysign(...)] call from the lvalue
+    index while [kernel_uses_copysign] wrongly reported false and skipped
+    emitting the helper — an undefined-function shader compile failure. *)
+let test_lvalue_uses_copysign () =
+  let cs_idx =
+    EIntrinsic
+      ( [],
+        "int_of_float",
+        [
+          EIntrinsic
+            ( ["Float64"],
+              "copysign",
+              [EConst (CFloat64 1.0); EConst (CFloat64 (-2.0))] );
+        ] )
+  in
+  assert (
+    lvalue_uses_copysign
+      (LVar {var_name = "x"; var_id = 0; var_type = TInt32; var_mutable = true})
+    = false) ;
+  assert (lvalue_uses_copysign (LArrayElem ("arr", EConst (CInt32 0l))) = false) ;
+  assert (lvalue_uses_copysign (LArrayElem ("arr", cs_idx)) = true) ;
+  assert (
+    lvalue_uses_copysign (LArrayElemExpr (EConst (CInt32 0l), cs_idx)) = true) ;
+  (* The load-bearing shape: copysign only inside an LRecordField-wrapped index. *)
+  assert (
+    lvalue_uses_copysign (LRecordField (LArrayElem ("arr", cs_idx), "field"))
+    = true) ;
+  print_endline "  lvalue_uses_copysign: OK"
+
+let test_kernel_uses_copysign_in_record_field_lvalue () =
+  let cs_idx =
+    EIntrinsic
+      ( [],
+        "int_of_float",
+        [
+          EIntrinsic
+            ( ["Float64"],
+              "copysign",
+              [EConst (CFloat64 1.0); EConst (CFloat64 (-2.0))] );
+        ] )
+  in
+  let k_lvalue_cs : kernel =
+    {
+      kern_name = "test";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LRecordField (LArrayElem ("arr", cs_idx), "field"),
+            EConst (CInt32 5l) );
+      kern_types = [];
+      kern_variants = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+    }
+  in
+  assert (kernel_uses_copysign k_lvalue_cs = true) ;
+  let k_none : kernel =
+    {
+      kern_name = "test";
+      kern_params = [];
+      kern_locals = [];
+      kern_body = SEmpty;
+      kern_types = [];
+      kern_variants = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+    }
+  in
+  assert (kernel_uses_copysign k_none = false) ;
+  print_endline "  kernel_uses_copysign via record-field lvalue: OK"
+
+(** Load-bearing case: the only copysign is reachable through [kern_funcs], not
+    [kern_body]. A body-only walk would wrongly report false. *)
+let test_kernel_uses_copysign_in_helper () =
+  let param : var =
+    {var_name = "x"; var_id = 0; var_type = TFloat64; var_mutable = false}
+  in
+  let hf_cs : helper_func =
+    {
+      hf_name = "f";
+      hf_params = [param];
+      hf_ret_type = TFloat64;
+      hf_body =
+        SReturn
+          (EIntrinsic
+             (["Float64"], "copysign", [EVar param; EConst (CFloat64 (-1.0))]));
+    }
+  in
+  let k : kernel =
+    {
+      kern_name = "test";
+      kern_params = [];
+      kern_locals = [];
+      kern_body = SEmpty;
+      kern_types = [];
+      kern_variants = [];
+      kern_funcs = [hf_cs];
+      kern_native_fn = None;
+    }
+  in
+  assert (kernel_uses_copysign k = true) ;
+  print_endline "  kernel_uses_copysign via helper: OK"
+
 (** {1 Main} *)
 
 let () =
@@ -686,4 +827,9 @@ let () =
   test_expr_uses_int_mod () ;
   test_lvalue_uses_int_mod () ;
   test_kernel_uses_int_mod_in_record_field_lvalue () ;
+  test_is_copysign_intrinsic_name () ;
+  test_expr_uses_copysign () ;
+  test_lvalue_uses_copysign () ;
+  test_kernel_uses_copysign_in_record_field_lvalue () ;
+  test_kernel_uses_copysign_in_helper () ;
   print_endline "All Sarek_ir_analysis tests passed!"

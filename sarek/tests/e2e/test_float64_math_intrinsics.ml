@@ -277,7 +277,32 @@ let binary_specs =
     {
       b_name = "copysign";
       b_ocaml = Stdlib.copysign;
-      b_gen = (fun i -> (bounded (-3.0) 3.0 i, bounded (-3.0) 3.0 (i + 11)));
+      (* Edge-case coverage vs the OCaml [Stdlib.copysign] reference, tol 0.0
+         (copysign is exact — a pure sign-bit transfer). [x] is forced nonzero
+         so the sign-transfer result has detectable magnitude, then [y] cycles
+         through both signed zeros and both nonzero signs. The [y = ±0.0] rows
+         are the discriminating ones: the naive [abs(x)*sign(y)] lowering gives
+         [|x|*0 = 0] there (GLSL [sign(0)=0]), so it would report [0.0] where C
+         copysign requires [±|x|] — caught here as a magnitude mismatch. The
+         bit-level helper transfers [y]'s sign bit exactly, including for
+         [-0.0]. *)
+      b_gen =
+        (fun i ->
+          let x =
+            let v = bounded (-3.0) 3.0 i in
+            if v = 0.0 then 1.5 else v
+          in
+          let y =
+            match i mod 6 with
+            | 0 -> 0.0 (* +0.0 -> +|x| *)
+            | 1 -> -0.0 (* -0.0 -> -|x| (naive abs*sign would give 0) *)
+            | 2 -> 2.5
+            | 3 -> -2.5
+            | 4 ->
+                float_of_int (i - 128) (* spans both signs across the range *)
+            | _ -> bounded (-3.0) 3.0 (i + 11)
+          in
+          (x, y));
       b_tol = 0.0;
     };
   ]

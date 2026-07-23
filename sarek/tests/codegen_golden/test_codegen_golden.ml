@@ -259,6 +259,68 @@ let float64_abs_float_path_kernel () =
     []
     body
 
+(* Float64.copysign has no GLSL builtin (and is absent from
+   Sarek_pure_registry.float64_list), so pre-fix it fell through to the raw-name
+   fallback and emitted [Float64.copysign(...)], which glslang parses as a
+   swizzle on a [Float64] variable and rejects. It must lower to a call to the
+   bit-level [sarek_copysign] helper (emitted in the preamble). See
+   Sarek_ir_glsl.ml. *)
+let float64_copysign_path_kernel () =
+  let a = make_var "a" (TVec TFloat64) in
+  let b = make_var "b" (TVec TFloat64) in
+  let c = make_var "c" (TVec TFloat64) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("c", EVar idx),
+            EIntrinsic
+              ( ["Float64"],
+                "copysign",
+                [EArrayRead ("a", EVar idx); EArrayRead ("b", EVar idx)] ) ) )
+  in
+  empty_kernel
+    "float64_copysign_path"
+    [
+      DParam (a, Some {arr_elttype = TFloat64; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat64; arr_memspace = Global});
+      DParam (c, Some {arr_elttype = TFloat64; arr_memspace = Global});
+    ]
+    []
+    body
+
+(* Float32.copysign resolves through the pure registry to the raw un-suffixed
+   [copysign(...)] (no GLSL builtin), so it too must lower to the
+   [sarek_copysign] helper — here the float overload only, as the kernel is not
+   float64. *)
+let float32_copysign_path_kernel () =
+  let a = make_var "a" (TVec TFloat32) in
+  let b = make_var "b" (TVec TFloat32) in
+  let c = make_var "c" (TVec TFloat32) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("c", EVar idx),
+            EIntrinsic
+              ( ["Float32"],
+                "copysign",
+                [EArrayRead ("a", EVar idx); EArrayRead ("b", EVar idx)] ) ) )
+  in
+  empty_kernel
+    "float32_copysign_path"
+    [
+      DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (c, Some {arr_elttype = TFloat32; arr_memspace = Global});
+    ]
+    []
+    body
+
 let float32_atan2_path_kernel () =
   let a = make_var "a" (TVec TFloat32) in
   let b = make_var "b" (TVec TFloat32) in
@@ -1239,6 +1301,72 @@ let () =
 
   register_golden
     "glsl"
+    "float64_copysign_path"
+    "#version 450\n\
+     #extension GL_ARB_gpu_shader_fp64 : require\n\n\
+     // Sarek-generated compute shader: float64_copysign_path\n\
+     layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;\n\n\
+     layout(std430, set=0, binding = 0) buffer Buffer_a {\n\
+    \  double a[];\n\
+     };\n\
+     layout(std430, set=0, binding = 1) buffer Buffer_b {\n\
+    \  double b[];\n\
+     };\n\
+     layout(std430, set=0, binding = 2) buffer Buffer_c {\n\
+    \  double c[];\n\
+     };\n\
+     layout(push_constant) uniform PushConstants {\n\
+    \  int a_len;\n\
+    \  int b_len;\n\
+    \  int c_len;\n\
+     } pc;\n\n\
+     #define a_len pc.a_len\n\
+     #define b_len pc.b_len\n\
+     #define c_len pc.c_len\n\n\
+     float sarek_copysign(float x, float y) { return \
+     uintBitsToFloat((floatBitsToUint(x) & 0x7FFFFFFFu) | (floatBitsToUint(y) \
+     & 0x80000000u)); }\n\n\
+     double sarek_copysign(double x, double y) { uvec2 ux = \
+     unpackDouble2x32(x); uvec2 uy = unpackDouble2x32(y); ux.y = (ux.y & \
+     0x7FFFFFFFu) | (uy.y & 0x80000000u); return packDouble2x32(ux); }\n\n\
+     void main() {\n\
+    \  int idx = int(gl_GlobalInvocationID.x);\n\
+    \  c[idx] = sarek_copysign(a[idx], b[idx]);\n\
+     }\n" ;
+
+  register_golden
+    "glsl"
+    "float32_copysign_path"
+    "#version 450\n\n\
+     // Sarek-generated compute shader: float32_copysign_path\n\
+     layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;\n\n\
+     layout(std430, set=0, binding = 0) buffer Buffer_a {\n\
+    \  float a[];\n\
+     };\n\
+     layout(std430, set=0, binding = 1) buffer Buffer_b {\n\
+    \  float b[];\n\
+     };\n\
+     layout(std430, set=0, binding = 2) buffer Buffer_c {\n\
+    \  float c[];\n\
+     };\n\
+     layout(push_constant) uniform PushConstants {\n\
+    \  int a_len;\n\
+    \  int b_len;\n\
+    \  int c_len;\n\
+     } pc;\n\n\
+     #define a_len pc.a_len\n\
+     #define b_len pc.b_len\n\
+     #define c_len pc.c_len\n\n\
+     float sarek_copysign(float x, float y) { return \
+     uintBitsToFloat((floatBitsToUint(x) & 0x7FFFFFFFu) | (floatBitsToUint(y) \
+     & 0x80000000u)); }\n\n\
+     void main() {\n\
+    \  int idx = int(gl_GlobalInvocationID.x);\n\
+    \  c[idx] = sarek_copysign(a[idx], b[idx]);\n\
+     }\n" ;
+
+  register_golden
+    "glsl"
     "float32_atan2_path"
     "#version 450\n\n\
      // Sarek-generated compute shader: float32_atan2_path\n\
@@ -1367,6 +1495,8 @@ let glsl_only_kernels () =
     ("float32_rsqrt_path", float32_rsqrt_path_kernel ());
     ("float32_abs_float_path", float32_abs_float_path_kernel ());
     ("float64_abs_float_path", float64_abs_float_path_kernel ());
+    ("float64_copysign_path", float64_copysign_path_kernel ());
+    ("float32_copysign_path", float32_copysign_path_kernel ());
     ("float32_atan2_path", float32_atan2_path_kernel ());
     ("float32_cbrt_path", float32_cbrt_path_kernel ());
     ("float32_hypot_path", float32_hypot_path_kernel ());
