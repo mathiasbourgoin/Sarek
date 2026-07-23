@@ -48,11 +48,10 @@ open Sarek_ast
 open Sarek_types
 open Sarek_typed_ast
 
-(** Is the top constructor of this expression's type a function type? *)
-let is_fun_typed (e : texpr) : bool =
-  match repr e.ty with TFun _ -> true | _ -> false
-
 let is_fun_ty (t : typ) : bool = match repr t with TFun _ -> true | _ -> false
+
+(** Is the top constructor of this expression's type a function type? *)
+let is_fun_typed (e : texpr) : bool = is_fun_ty e.ty
 
 (* -------------------------------------------------------------------------- *)
 (* Core rewrite                                                               *)
