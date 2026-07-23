@@ -136,6 +136,30 @@ let is_ctor_case (cname : string) ((p, _) : tpattern * texpr) : bool =
   | TPConstr (_, cn, arg) -> cn = cname && is_reducible_payload arg
   | _ -> false
 
+(* Could this arm match a value built with constructor [cname]? A wildcard or
+   variable pattern matches anything; a constructor pattern matches only its
+   own constructor; anything else on a variant scrutinee is treated
+   conservatively as matching. Used to detect arms that shadow the [cname] arm
+   under OCaml's first-match-wins semantics. *)
+let arm_matches_ctor (cname : string) ((p, _) : tpattern * texpr) : bool =
+  match p.tpat with
+  | TPAny | TPVar _ -> true
+  | TPConstr (_, cn, _) -> cn = cname
+  | _ -> true
+
+(* The reduction keeps the first arm satisfying [is_ctor_case]; that is only
+   correct if no earlier arm would also match a [cname] value at runtime.
+   Otherwise `match s with _ -> a | C x -> b` (first-match-wins => [a]) would be
+   miscompiled to [b]. Returns true when the [cname] arm is reachable. *)
+let ctor_arm_reachable (cname : string) (cases : (tpattern * texpr) list) : bool
+    =
+  let rec go = function
+    | [] -> true (* no cname arm at all; caller's List.exists handles that *)
+    | case :: _ when is_ctor_case cname case -> true
+    | case :: rest -> if arm_matches_ctor cname case then false else go rest
+  in
+  go cases
+
 (* Every read of the slot variable is the scrutinee of a `match` that has an
    explicit arm for [cname]. Any other use of the variable (which would need
    the whole tagged value) makes the slot ineligible. Variable ids are globally
@@ -146,7 +170,10 @@ let uses_all_reducible (id : int) (cname : string) (body : texpr) : bool =
     match e.te with
     | TEVar (_, i) when i = id -> ok := false (* bare use outside scrutinee *)
     | TEMatch (scrut, cases) when is_slot_var id scrut ->
-        if not (List.exists (is_ctor_case cname) cases) then ok := false ;
+        if
+          (not (List.exists (is_ctor_case cname) cases))
+          || not (ctor_arm_reachable cname cases)
+        then ok := false ;
         List.iter (fun (_, rhs) -> go rhs) cases
     | _ -> iter_children go e
   in

@@ -31,6 +31,13 @@ module Transfer = Spoc_core.Transfer
 
 [@@@warning "-32"]
 
+(* -11 (redundant-case): the arm-order-shadowed control kernel below is a
+   deliberately redundant match (`_ -> .. | Circle r -> ..`) - exactly the
+   shape that must NOT be tag-erased. OCaml's own redundancy checker is the
+   first line of defense against it; suppressing the warning here lets the
+   test drive the erasure pass's own guard (audit finding M7) directly. *)
+[@@@warning "-11"]
+
 let () = Test_helpers.Benchmarks.init ()
 
 type float32 = float
@@ -82,6 +89,22 @@ let multiarg_kirc =
           match s with
           | MkPair (x, y) -> dst.(tid) <- x +. y
           | MkOne x -> dst.(tid) <- x
+        end]
+
+(* NEGATIVE CONTROL (arm-order shadowing): the wildcard arm precedes the
+   Circle arm, so first-match-wins makes the runtime result the WILDCARD arm
+   (v +. 100.), not the Circle arm. Erasing to the Circle arm would miscompile
+   to v *. v (audit finding M7). The slot must stay ineligible and the tag be
+   retained; behaviour must equal the wildcard arm. *)
+let shadowed_kirc =
+  snd
+    [%kernel
+      fun (src : float32 vector) (dst : float32 vector) (n : int32) ->
+        let tid = thread_idx_x + (block_dim_x * block_idx_x) in
+        if tid < n then begin
+          let s = Circle src.(tid) in
+          dst.(tid) <-
+            (match s with _ -> src.(tid) +. 100.0 | Circle r -> r *. r)
         end]
 
 (* NEGATIVE CONTROL: the live constructor is chosen at runtime, so the slot is
@@ -212,11 +235,34 @@ let () =
   check_emitted "nullary(erasable)" nullary_kirc ~expect_tag:false ;
   check_emitted "runtime-selected(control)" retained_kirc ~expect_tag:true ;
   check_emitted "multiarg-payload(control)" multiarg_kirc ~expect_tag:true ;
+  (* Arm-order shadowing (M7): a wildcard-first match compiles to a ternary,
+     not a switch, so the crude tag heuristic does not apply. The specific
+     regression to guard is erasure rewriting the match to the (unreachable)
+     Circle arm [r *. r]; assert instead that the emitted device code keeps
+     the wildcard arm [+ 100]. *)
+  let shadowed_src =
+    Sarek_codegen.Sarek_ir_cuda.generate (ir_of "shadowed" shadowed_kirc)
+  in
+  let shadowed_ok = contains shadowed_src "100" in
+  if not shadowed_ok then observable_ok := false ;
+  Printf.printf
+    "  emitted[arm-order-shadowed(control)]: wildcard arm %s -> %s\n%!"
+    (if shadowed_ok then "kept" else "ERASED to Circle arm")
+    (if shadowed_ok then "OK" else "MISMATCH") ;
   print_endline "-- behaviour vs pure-OCaml reference --" ;
   run_behaviour "unary(erasable)" unary_kirc ~reference:(fun i ->
       let r = float_of_int (i + 1) in
       (r *. r) +. r) ;
   run_behaviour "nullary(erasable)" nullary_kirc ~reference:(fun _ -> 1.0) ;
+  (* Gated to Native/Interpreter: the retained tagged match on a variant with a
+     wildcard arm is a pre-existing device-codegen gap (OpenCL/Vulkan return
+     generate_source None), unrelated to erasure. Native+Interpreter are the
+     oracle proving erasure did not miscompile to the Circle arm. *)
+  run_behaviour
+    "arm-order-shadowed(control)"
+    shadowed_kirc
+    ~must:(fun fw -> fw = "Native" || fw = "Interpreter")
+    ~reference:(fun i -> float_of_int (i + 1) +. 100.0) ;
   (* Multi-arg constructor payloads: the constructor's tuple payload is
      FLATTENED to one field per component end-to-end (Sarek_lower_ir), so it
      lines up with the multi-binder pattern and the flat [_0/_1] tagged-union
