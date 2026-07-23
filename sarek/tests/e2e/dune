@@ -558,3 +558,19 @@
  (alias runtest)
  (action
   (run %{dep:test_df64.exe})))
+
+(executable
+ (name test_worklist)
+ (modules test_worklist)
+ (libraries sarek sarek.stdlib sarek.worklist spoc_core test_helpers unix)
+ (preprocessor_deps
+  (file ../../Sarek_worklist/Sarek_worklist.ml))
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_worklist.exe})))
