@@ -204,6 +204,28 @@ let check_unary name ?(tol = 1e-12) ~domains reference =
 let test_exp () =
   check_unary "exp" Stdlib.exp ~domains:[(-2.0, 2.0); (-700.0, 700.0)]
 
+(** Out-of-domain saturation (audit finding M3): the (n + 1023) << 52 scale
+    construction used to wrap into the sign/exponent bits outside
+    [-708, 709.78] and return garbage (exp -1000 came back huge). Now it
+    flushes to 0 / -1 / +inf per the documented tier. *)
+let test_exp_expm1_saturation () =
+  let hname name =
+    match Sarek_codegen.Sarek_ir_ptx_softmath.helper_name name with
+    | Some h -> h
+    | None -> Alcotest.fail ("no softmath helper for " ^ name)
+  in
+  let exp_h = hname "exp" and expm1_h = hname "expm1" in
+  let checkf label want got =
+    if got <> want then
+      Alcotest.failf "%s: expected %.17g, got %.17g" label want got
+  in
+  checkf "exp(-1000)" 0.0 (call1 exp_h (-1000.0)) ;
+  checkf "exp(-750)" 0.0 (call1 exp_h (-750.0)) ;
+  checkf "exp(710)" infinity (call1 exp_h 710.0) ;
+  checkf "exp(1e10)" infinity (call1 exp_h 1e10) ;
+  checkf "expm1(-1000)" (-1.0) (call1 expm1_h (-1000.0)) ;
+  checkf "expm1(710)" infinity (call1 expm1_h 710.0)
+
 let test_log () =
   check_unary
     "log"
@@ -365,6 +387,10 @@ let () =
       ( "accuracy",
         [
           Alcotest.test_case "exp" `Quick test_exp;
+          Alcotest.test_case
+            "exp/expm1 saturation"
+            `Quick
+            test_exp_expm1_saturation;
           Alcotest.test_case "log" `Quick test_log;
           Alcotest.test_case "sin" `Quick test_sin;
           Alcotest.test_case "cos" `Quick test_cos;
