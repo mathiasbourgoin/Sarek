@@ -51,7 +51,8 @@
    from
    (sarek_metal -> backend_metal.available.ml)
    (-> backend_metal.unavailable.ml))
-  unix))
+  unix
+  sarek_backend_error))
 
 (executables
  (names
@@ -140,7 +141,8 @@
   registered_defs
   spoc_core
   test_helpers
-  unix)
+  unix
+  sarek_backend_error)
  (preprocessor_deps registered_defs.ml)
  (preprocess
   (pps sarek_ppx))
@@ -570,7 +572,8 @@
   sarek.real64
   spoc_core
   test_helpers
-  unix)
+  unix
+  sarek_backend_error)
  (preprocessor_deps
   (file ../../Sarek_df64/Sarek_df64.ml))
  (preprocess
@@ -632,7 +635,8 @@
   sarek_ir
   spoc_core
   test_helpers
-  unix)
+  unix
+  sarek_backend_error)
  (preprocess
   (pps sarek_ppx)))
 
@@ -658,3 +662,36 @@
  (alias runtest)
  (action
   (run %{dep:test_defunc.exe})))
+
+; L13 tuple-typed vectors E2E ((float32 * int32) vector). Builds the host
+; custom_type with sarek.tuple_vec, runs a read-modify-write kernel on every
+; available device, checks against a pure-OCaml reference. GPU devices
+; (CUDA/PTX under ZLUDA, Vulkan, OpenCL) must pass; Native/Interpreter are
+; reported NOT-YET-SUPPORTED (host/kernel Type_id identity and interpreter
+; value-model unification are follow-ups — see L13 design doc).
+
+(executable
+ (name test_tuple_vector)
+ (modules test_tuple_vector)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  spoc_core
+  sarek.tuple_vec
+  sarek_native
+  sarek_interpreter
+  sarek_cuda
+  sarek_opencl
+  sarek_vulkan
+  unix
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_tuple_vector.exe})))

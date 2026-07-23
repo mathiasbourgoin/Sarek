@@ -1,0 +1,7 @@
+; L13 — host-side custom_type builders for tuple-typed vector elements.
+
+(library
+ (name sarek_tuple_vec)
+ (public_name sarek.tuple_vec)
+ (libraries spoc_core sarek_ir ctypes)
+ (preprocess no_preprocessing))
