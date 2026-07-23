@@ -1,4 +1,50 @@
-## Unreleased
+## 2026-07
+
+### Added
+
+- Direct PTX emitter completion: records/variants with aligned C-ABI layout,
+  match, helper-function inlining, static + dynamic `.shared`, `.local`
+  arrays, full atomic set (CAS, wrapping inc/dec, 64-bit add/exch), f64
+  softmath (trig, exp/log family, hypot, …), scalar cast matrix
+- `Sarek_worklist` — portable dynamic-parallelism (work-queue) library
+- `Sarek_gemm` — portable tiled SGEMM library for shared-memory backends
+- `Sarek_df64` — float-float extended-precision arithmetic in pure Sarek
+- Portable float64: `G`-suffix float64 literals, `sarek.real64` host
+  plumbing, complete interpreter float64 math oracle
+- Tier-0 defunctionalization pass (first-class kernel-local functions)
+- Tuple-typed vectors on device and Native paths (shared shape registry)
+- Static tag erasure for kernel-local variant slots
+- Aligned C-ABI aggregate host layout (L8), with the `PtxLayout.v` formal
+  model restated for the aligned ABI (0 admits)
+- float32 `fma` intrinsic on all backends; GLSL `precise` qualifier on
+  float locals
+- ZLUDA/AMD support for the CUDA/PTX backend (PTX launch ABI fix)
+- T3-SEMANTIC milestone lock for both formal projects; conformance +
+  mutation tests wired into `dune runtest`
+
+### Fixed
+
+- Indexed kernel-argument container with strict launch validation, honored
+  across all six backends (out-of-order/sparse `set_arg` now correct)
+- Unambiguous, collision-resistant compile-cache keys (kernel name included,
+  digest-per-field); CUDA kernel-cache eviction on context destroy
+- e2e test alias actually executes tests; vacuous tests now assert real
+  results; negative suite runs in CI
+- Vulkan push-constant scalar binding by logical index; 64-bit write
+  alignment; buffer-index validation
+- Benchmark dashboard HTML escaping at all sinks (stored-XSS hardening)
+- CPU data kept authoritative after Interpreter runs
+
+## 2026-06
+
+### Added
+
+- CUDA backend split into CUDA/PTX and CUDA/C devices (PTX is the default)
+- `.shared` (DShared) emission in the PTX backend with formal spec
+  (`specs/ptx-dshared-formal.md`)
+- T3-SEMANTIC theorem work for the convergence-safety and type-safety
+  formal projects
+- WGSL/WebGPU codegen backend, in-browser playground and Learn course
 
 ### Changed
 

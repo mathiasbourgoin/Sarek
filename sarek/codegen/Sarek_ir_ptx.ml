@@ -13,13 +13,15 @@
  *   Sarek_ir_ptx_stmt    - statement emitter
  *   Sarek_ir_ptx_kernel  - kernel-level generation entry points
  *
- * Known gaps (documented in docs/plans/ptx-spike-findings.md):
- *   - Records / TRecord: layout would need a struct-to-offset mapping
- *   - Variants / TVariant: tagged-union lowering is non-trivial in PTX
- *   - EMatch / SMatch: depends on variant lowering
- *   - Helper functions / kern_funcs: .func directive; callable from kernel
- *   - EArrayLen: needs (ptr, len) pair tracking in env
- *   - EApp: device function calls via .func; not yet implemented
+ * Supported: records/variants (aligned C-ABI layout, see PtxLayout.v),
+ * EMatch/SMatch, helper functions via EApp inlining, EArrayLen on parameter
+ * arrays (local/shared arrays fall back to another backend), static and
+ * dynamic .shared, per-thread .local arrays, atomics (incl. CAS and 64-bit
+ * forms), f64 softmath.
+ *
+ * Known gaps:
+ *   - No ptxas validation gate in CI; GPU validation is manual
+ *   - Warp-level primitives modeled in the IR but not emitted
  ******************************************************************************)
 
 open Sarek_ir_types

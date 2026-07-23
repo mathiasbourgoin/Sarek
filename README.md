@@ -91,35 +91,32 @@ GPU Backends:
 └── sarek-metal/   Apple Metal backend
 
 Experimental:
-└── sarek/codegen/Sarek_ir_ptx.ml   Direct PTX emitter (spike)
+└── sarek/codegen/Sarek_ir_ptx.ml   Direct PTX emitter (experimental)
 ```
 
 ## Experimental Features
 
 ### PTX Direct Emitter (`Sarek_ir_ptx`)
 
-> ⚠️ **Experimental — incomplete, not production-ready.**
+> ⚠️ **Experimental — validated on real hardware, not yet exercised by CI on GPUs.**
 
-`Sarek_ir_ptx` is a spike-level PTX code generator that emits NVIDIA PTX directly from Sarek IR, bypassing NVRTC entirely.
+`Sarek_ir_ptx` emits NVIDIA PTX directly from Sarek IR, bypassing NVRTC entirely. It is the default device path of the CUDA backend (`Cuda_ptx_plugin`); the NVRTC/C path remains available as `Cuda_c_plugin`.
 
 **What works:**
-- Basic scalar and vector kernels (float32/int32 arithmetic, global memory loads/stores, barriers)
-- Thread ID / block ID / grid ID registers
-- Parameterised SM target (`?sm_target`, default `sm_86`)
-- `Cuda_api.Kernel.load_from_ptx` loads the PTX via `cuModuleLoadData` — automatically adapts the `.target` to the device's actual SM, so `sm_86` PTX runs on older hardware (tested: GTX 1070, sm_61)
-- End-to-end test in `sarek-cuda/test/test_ptx_external.ml`
+- Scalar and vector kernels (int32/int64, float32/float64), global loads/stores, barriers
+- Records and variants with the aligned C-ABI aggregate layout (proven in `formal/codegen-ptx/theories/PtxLayout.v`), match expressions, static tag erasure
+- Helper functions via `EApp` inlining (`sarek.inline` budget-controlled)
+- Static and dynamic shared memory (`.shared`, module-scope `extern .shared`), per-thread `.local` arrays
+- Atomics: add/min/max/and/or/xor/exch, CAS, wrapping inc/dec, 64-bit add/exch
+- float64 softmath library (trig, exp/log family, hypot, fma, …) with an interpreter oracle
+- Parameterised SM target (`?sm_target`, default `sm_86`); `Cuda_api.Kernel.load_from_ptx` adapts `.target` to the device's actual SM (tested: GTX 1070, sm_61; AMD RX 7900 XTX via ZLUDA)
 
-**What is missing (known gaps):**
-- Records and variants (`TRecord`, `TVariant`) — struct layout not implemented
-- Helper / device functions (`kern_funcs`, `EApp`) — `.func` directive
-- Match expressions (`EMatch`, `SMatch`) — depends on variant lowering
-- `EArrayLen` on local/shared arrays (parameter arrays are supported)
-- Shared memory (`__shared__` / `.shared`) — not yet emitted
-- Full CI integration and ptxas validation gate
+**Known gaps:**
+- The formal proofs cover the aggregate byte layout and a scalar statement/expression fragment of a Rocq-side model; the production emitter is conformance-tested against that model, not extracted from it
+- No `ptxas` validation gate or GPU execution in CI yet — GPU validation is manual
+- Warp-level primitives are modeled in the IR but not emitted by any backend yet
 
-**Intended purpose:** foundation for formal verification of the CUDA backend. Proving `Sarek_ir_ptx.ml` produces semantically correct PTX (against a Rocq PTX semantics) is the target of the planned `cuda-semantics` formal project.
-
-See `docs/plans/ptx-spike-findings.md` for the full PTX subset analysis.
+**Intended purpose:** foundation for formal verification of the CUDA backend, developed in `formal/codegen-ptx/` alongside `specs/ptx-records-variants.md` and `specs/ptx-dshared-formal.md`.
 
 ## Installation
 
@@ -151,7 +148,7 @@ For NVIDIA GPUs, especially newer architectures:
 
 #### AMD GPUs via ZLUDA
 
-The CUDA backend also runs on AMD GPUs through [ZLUDA](https://github.com/vosen/ZLUDA), a CUDA implementation on top of ROCm. ZLUDA ships the CUDA driver API but not NVRTC, so only the CUDA/PTX backend (the default) is available — kernels that fall back to the CUDA/C backend (records, variants) will not run.
+The CUDA backend also runs on AMD GPUs through [ZLUDA](https://github.com/vosen/ZLUDA), a CUDA implementation on top of ROCm. ZLUDA ships the CUDA driver API but not NVRTC, so only the CUDA/PTX backend (the default) is available. Records, variants, match expressions and shared memory are all supported by the PTX emitter, so typical Sarek kernels run unmodified; only kernels that explicitly select the CUDA/C (NVRTC) backend will not run.
 
 ```bash
 # Prerequisites: ROCm (tested with 7.2) and a supported AMD GPU (e.g. RDNA3)
@@ -343,9 +340,8 @@ If OpenCL is not detecting your device, ensure you have the appropriate ICD (Ins
 ## Documentation
 
 - [GitHub Pages](http://mathiasbourgoin.github.io/Sarek/) - User guides, tutorials, and API docs
-- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture and design
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
-- [PROJECT_STATUS.md](PROJECT_STATUS.md) - Current project status
+- [CHANGES.md](CHANGES.md) - Changelog
 - [Backend Documentation](sarek-cuda/) - Individual backend READMEs
 
 For API documentation, see inline comments and README files in each package directory.
