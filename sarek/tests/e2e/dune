@@ -574,3 +574,19 @@
  (alias runtest)
  (action
   (run %{dep:test_worklist.exe})))
+
+(executable
+ (name test_sarek_gemm)
+ (modules test_sarek_gemm)
+ (libraries sarek sarek.stdlib sarek.gemm spoc_core test_helpers unix)
+ (preprocessor_deps
+  (file ../../Sarek_gemm/Sarek_gemm.ml))
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_sarek_gemm.exe})))
