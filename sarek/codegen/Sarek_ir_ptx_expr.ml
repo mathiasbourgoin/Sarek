@@ -902,12 +902,15 @@ and emit_binop buf alloc env op e1 e2 : string =
         emit buf "div.approx.f32 %s, %s, %s;" r r1 r2 ;
         r)
       else if is_u64 r1 then (
+        (* Sarek int64 is signed: div.u64 on negative operands is silently
+           wrong ((-7)/2 = huge). add/sub/mul are sign-agnostic in two's
+           complement; div/rem are not (audit finding H1). *)
         let r = new_u64 alloc in
-        emit buf "div.u64 %s, %s, %s;" r r1 r2 ;
+        emit buf "div.s64 %s, %s, %s;" r r1 r2 ;
         r)
       else
         let r = new_u32 alloc in
-        emit buf "div.u32 %s, %s, %s;" r r1 r2 ;
+        emit buf "div.s32 %s, %s, %s;" r r1 r2 ;
         r
   | Mod ->
       (* Float Mod is C fmod: x - trunc(x/y)*y, result sign follows the
@@ -937,12 +940,14 @@ and emit_binop buf alloc env op e1 e2 : string =
         emit buf "fma.rn.f32 %s, %s, %s, %s;" r nt r2 r1 ;
         r)
       else if is_u64 r1 then (
+        (* Signed rem, matching C's % (result sign follows the dividend),
+           the interpreter's Int64.rem, and every C-family backend. *)
         let r = new_u64 alloc in
-        emit buf "rem.u64 %s, %s, %s;" r r1 r2 ;
+        emit buf "rem.s64 %s, %s, %s;" r r1 r2 ;
         r)
       else
         let r = new_u32 alloc in
-        emit buf "rem.u32 %s, %s, %s;" r r1 r2 ;
+        emit buf "rem.s32 %s, %s, %s;" r r1 r2 ;
         r
   | Eq ->
       let p = new_pred alloc in

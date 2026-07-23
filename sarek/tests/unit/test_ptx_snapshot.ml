@@ -592,6 +592,58 @@ let test_float_mod_fmod_markers () =
   assert_contains ptx "neg.f64" ;
   assert_contains ptx "fma.rn.f64"
 
+(** Integer Div/Mod are SIGNED (audit finding H1): Sarek int32/int64 are
+    signed everywhere (interpreter uses Int32.div/Int64.div, C backends emit
+    / and % on signed types), so PTX must emit div.s32/s64 and rem.s32/s64.
+    The old div.u32/u64, rem.u32/u64 silently returned garbage for negative
+    operands ((-7)/2 = 2147483644). *)
+let test_int_div_rem_signed_markers () =
+  let ia = make_var "ia" (TVec TInt32) in
+  let la = make_var "la" (TVec TInt64) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SSeq
+          [
+            SAssign
+              ( LArrayElem ("ia", EVar tid),
+                EBinop (Div, EArrayRead ("ia", EVar tid), EConst (CInt32 (-2l)))
+              );
+            SAssign
+              ( LArrayElem ("ia", EVar tid),
+                EBinop (Mod, EArrayRead ("ia", EVar tid), EConst (CInt32 3l)) );
+            SAssign
+              ( LArrayElem ("la", EVar tid),
+                EBinop
+                  (Div, EArrayRead ("la", EVar tid), EConst (CInt64 (-2L))) );
+            SAssign
+              ( LArrayElem ("la", EVar tid),
+                EBinop (Mod, EArrayRead ("la", EVar tid), EConst (CInt64 3L))
+              );
+          ] )
+  in
+  let k =
+    base_kernel
+      "int_div_rem"
+      [
+        DParam (ia, Some {arr_elttype = TInt32; arr_memspace = Global});
+        DParam (la, Some {arr_elttype = TInt64; arr_memspace = Global});
+      ]
+      body
+      []
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "div.s32" ;
+  assert_contains ptx "rem.s32" ;
+  assert_contains ptx "div.s64" ;
+  assert_contains ptx "rem.s64" ;
+  if contains ptx "div.u32" || contains ptx "div.u64" then
+    Alcotest.fail "unsigned div emitted for signed Sarek int" ;
+  if contains ptx "rem.u32" || contains ptx "rem.u64" then
+    Alcotest.fail "unsigned rem emitted for signed Sarek int"
+
 (** ECast scalar-matrix coverage: bool casts normalize to a u32 0/1 via
     setp+selp (float sources use unordered neu so NaN -> 1, matching C); i32 ->
     i64 sign-extends (cvt.s64.s32); i64 -> i32 truncates (cvt.u32.u64). *)
@@ -1911,6 +1963,10 @@ let () =
             "float Mod lowers to fmod (div.rn + cvt.rzi + fma)"
             `Quick
             test_float_mod_fmod_markers;
+          Alcotest.test_case
+            "integer Div/Mod emit signed div.s32/s64 rem.s32/s64"
+            `Quick
+            test_int_div_rem_signed_markers;
           Alcotest.test_case
             "ECast matrix: bool setp/selp + i32<->i64 cvt pairs"
             `Quick
