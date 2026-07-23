@@ -63,11 +63,13 @@ layout(push_constant) uniform PushConstants {
 #define width pc.width
 #define height pc.height
 
+int sarek_smod(int a, int b) { return a - b * (a / b); }
+
 void main() {
   int tid = int(gl_GlobalInvocationID.x);
   int n = (width * height);
   if ((tid < n)) {
-    int col = (tid % width);
+    int col = sarek_smod(tid, width);
     int row = (tid / width);
     int in_idx = ((row * width) + col);
     int out_idx = ((col * height) + row);

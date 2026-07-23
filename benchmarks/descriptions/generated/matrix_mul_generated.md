@@ -72,10 +72,12 @@ layout(push_constant) uniform PushConstants {
 #define n pc.n
 #define k pc.k
 
+int sarek_smod(int a, int b) { return a - b * (a / b); }
+
 void main() {
   int tid = int(gl_GlobalInvocationID.x);
   int row = (tid / n);
-  int col = (tid % n);
+  int col = sarek_smod(tid, n);
   if (((row < m) ? (col < n) : false)) {
     precise float sum = 0.0;
     for (int i = 0; i <= (k - 1); i++) {
