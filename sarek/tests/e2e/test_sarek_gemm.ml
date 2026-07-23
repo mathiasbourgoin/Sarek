@@ -109,7 +109,6 @@ let run_tiled dev a_arr b_arr c_init ~m ~n ~k ~alpha ~beta =
     ~args:(args a b c ~m ~n ~k ~alpha ~beta)
     ~block:(GH.block ())
     ~grid:(GH.grid ~m ~n)
-    ~shared_mem:GH.shared_mem_bytes
     () ;
   Transfer.flush dev ;
   let t1 = Unix.gettimeofday () in
