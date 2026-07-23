@@ -6,6 +6,14 @@
 ;
 ; The interpreter stack is the SINGLE source in ../interp/, pulled in via
 ; copy_files and recompiled here against the jsoo Spoc_core (no literal copies).
+;
+; This is an INTERNAL jsoo build shim, not a public API. It is intentionally a
+; private library (no public_name): being (wrapped false) it exposes a top-level
+; `Spoc_core` shim module, which would otherwise collide in package `sarek`'s odoc
+; output with the genuine public `Spoc_core` from the `sarek.core` library
+; ("Multiple rules generated for .../sarek/Spoc_core/index.html"). Keeping it
+; private (and thus out of @doc/@install) resolves the collision without changing
+; the wrapped-false layout the jsoo Execute smoke test depends on.
 
 (copy_files ../interp/*.ml)
 
@@ -13,7 +21,6 @@
 
 (library
  (name spoc_core_exec_js)
- (public_name sarek.core_exec_js)
  (wrapped false)
  (libraries spoc_framework spoc_core_base sarek_ir sarek_registry)
  (modules
