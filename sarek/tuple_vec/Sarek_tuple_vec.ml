@@ -101,14 +101,27 @@ let offset_of rl fname =
    so the coercion is sound. *)
 let registry : (string, Obj.t) Hashtbl.t = Hashtbl.create 16
 
+(* Guards first-time registration: [find_opt] + [replace] is not atomic, and
+   two concurrent callers racing on the same shape would each build a fresh
+   [Type_id] with only one winning the registry slot — the loser's vector
+   would then fail the [Type_id.equal] check against the canonical descriptor
+   later resolved by generated Native code ([descriptor_by_name]). The mutex
+   makes build-and-insert single-winner; the double-check inside the critical
+   section resolves the race deterministically. *)
+let registry_mutex = Mutex.create ()
+
 let memoize name (build : unit -> 'a Vector.custom_type) : 'a Vector.custom_type
     =
   match Hashtbl.find_opt registry name with
   | Some obj -> Obj.obj obj
   | None ->
-      let custom = build () in
-      Hashtbl.replace registry name (Obj.repr custom) ;
-      custom
+      Mutex.protect registry_mutex (fun () ->
+          match Hashtbl.find_opt registry name with
+          | Some obj -> Obj.obj obj
+          | None ->
+              let custom = build () in
+              Hashtbl.replace registry name (Obj.repr custom) ;
+              custom)
 
 (** [descriptor_by_name name] returns the canonical [custom_type] previously
     registered for the mangled shape [name] (built by [pair]/[triple]). Used by

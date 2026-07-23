@@ -666,9 +666,9 @@
 ; L13 tuple-typed vectors E2E ((float32 * int32) vector). Builds the host
 ; custom_type with sarek.tuple_vec, runs a read-modify-write kernel on every
 ; available device, checks against a pure-OCaml reference. GPU devices
-; (CUDA/PTX under ZLUDA, Vulkan, OpenCL) must pass; Native/Interpreter are
-; reported NOT-YET-SUPPORTED (host/kernel Type_id identity and interpreter
-; value-model unification are follow-ups — see L13 design doc).
+; (CUDA/PTX under ZLUDA, Vulkan, OpenCL) AND Native must pass; only the
+; Interpreter is reported NOT-YET-SUPPORTED (its evaluator's tuple
+; value-model unification is a follow-up — see L13 design doc).
 
 (executable
  (name test_tuple_vector)

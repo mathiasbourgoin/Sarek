@@ -83,6 +83,21 @@ let elttype_prim_tag (e : Ir.elttype) : string option =
   | Ir.TBool -> Some "bool"
   | _ -> None
 
+(** Scalar-primitive check on the SOURCE type of a tuple component. This must
+    match on [Sarek_types.typ] directly, NOT via [elttype_of_typ]: that
+    conversion maps [TTuple]/[TFun] to a placeholder [Ir.TInt32] (see its NOTE),
+    so routing the primitivity check through it would silently accept nested
+    tuples or function components as int32 fields and synthesize a wrong
+    layout. Returns the component's IR type iff it is a supported scalar. *)
+let prim_component_elttype (t : typ) : Ir.elttype option =
+  match repr t with
+  | TPrim TInt32 -> Some Ir.TInt32
+  | TPrim TBool -> Some Ir.TBool
+  | TReg Int64 -> Some Ir.TInt64
+  | TReg Float32 -> Some Ir.TFloat32
+  | TReg Float64 -> Some Ir.TFloat64
+  | _ -> None
+
 let tuple_field_name i = Printf.sprintf "_%d" i
 
 (** Mangled nominal name of the record synthesized for a tuple shape, e.g.
@@ -100,16 +115,20 @@ let tuple_record_name (comps : Ir.elttype list) : string =
 (** Synthesized record fields (positional [_0.._n]) for a tuple's component
     types. Raises if any component is not a scalar primitive. *)
 let tuple_record_fields (tys : typ list) : string * (string * Ir.elttype) list =
-  let comps = List.map elttype_of_typ tys in
-  List.iter
-    (fun e ->
-      if elttype_prim_tag e = None then
-        Ppxlib.Location.raise_errorf
-          ~loc:Ppxlib.Location.none
-          "Tuple-typed vector elements support only scalar components \
-           (float32/float64/int32/int64/bool); nested tuples, records, vectors \
-           or functions inside a vector-element tuple are not supported.")
-    comps ;
+  let comps =
+    List.map
+      (fun t ->
+        match prim_component_elttype t with
+        | Some e -> e
+        | None ->
+            Ppxlib.Location.raise_errorf
+              ~loc:Ppxlib.Location.none
+              "Tuple-typed vector elements support only scalar components \
+               (float32/float64/int32/int64/bool); nested tuples, records, \
+               vectors or functions inside a vector-element tuple are not \
+               supported.")
+      tys
+  in
   let name = tuple_record_name comps in
   (name, List.mapi (fun i e -> (tuple_field_name i, e)) comps)
 
@@ -119,8 +138,7 @@ let tuple_tmp_counter = ref 0
     synthesize a record for)? *)
 let is_primitive_tuple (t : typ) : bool =
   match repr t with
-  | TTuple tys ->
-      List.for_all (fun t -> elttype_prim_tag (elttype_of_typ t) <> None) tys
+  | TTuple tys -> List.for_all (fun t -> prim_component_elttype t <> None) tys
   | _ -> false
 
 (** Element IR type of a vector whose element is [t]; a tuple element becomes
@@ -567,10 +585,15 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
          slot stores. Non-primitive tuples keep the generic [Ir.ETuple]. *)
       match repr te.ty with
       | TTuple tys
-        when List.for_all
-               (fun t -> elttype_prim_tag (elttype_of_typ t) <> None)
-               tys ->
-          let comps = List.map elttype_of_typ tys in
+        when List.for_all (fun t -> prim_component_elttype t <> None) tys ->
+          let comps =
+            List.map
+              (fun t ->
+                match prim_component_elttype t with
+                | Some e -> e
+                | None -> assert false (* guarded above *))
+              tys
+          in
           let name = tuple_record_name comps in
           if not (Hashtbl.mem state.types name) then
             Hashtbl.add
@@ -912,16 +935,24 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
     | TArr (elem_ty, _) -> register_types_from_typ elem_ty
     | TTuple tys ->
         (* L13: register the synthesized record for a tuple aggregate so the
-           codegen types table knows its field layout, mirroring records. *)
-        let comps = List.map elttype_of_typ tys in
-        if List.for_all (fun e -> elttype_prim_tag e <> None) comps then begin
-          let name = tuple_record_name comps in
-          if not (Hashtbl.mem state.types name) then
-            Hashtbl.add
-              state.types
-              name
-              (List.mapi (fun i e -> (tuple_field_name i, e)) comps)
-        end ;
+           codegen types table knows its field layout, mirroring records.
+           Primitivity is checked on the SOURCE types (prim_component_elttype),
+           never via elttype_of_typ, whose TTuple/TFun placeholder would let a
+           nested tuple register as an int32 field. *)
+        (match
+           List.map prim_component_elttype tys |> fun opts ->
+           if List.for_all Option.is_some opts then
+             Some (List.map Option.get opts)
+           else None
+         with
+        | Some comps ->
+            let name = tuple_record_name comps in
+            if not (Hashtbl.mem state.types name) then
+              Hashtbl.add
+                state.types
+                name
+                (List.mapi (fun i e -> (tuple_field_name i, e)) comps)
+        | None -> ()) ;
         List.iter register_types_from_typ tys
     | _ -> ()
   in
