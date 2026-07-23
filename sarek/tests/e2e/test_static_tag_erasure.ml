@@ -70,7 +70,8 @@ let nullary_kirc =
    pattern is a tuple of binders, which the S1 reduction does not substitute —
    the arm is ineligible and the tag must be RETAINED (erasing it would drop
    the tuple binders and emit malformed code). Result: a + 2a with a = src.(tid). *)
-type pair_pt = MkPair of float32 * float32 [@@sarek.type]
+type pair_pt = MkPair of float32 * float32 | MkOne of float32
+[@@sarek.type]
 
 let multiarg_kirc =
   snd
@@ -79,7 +80,9 @@ let multiarg_kirc =
         let tid = thread_idx_x + (block_dim_x * block_idx_x) in
         if tid < n then begin
           let s = MkPair (src.(tid), src.(tid) +. src.(tid)) in
-          match s with MkPair (x, y) -> dst.(tid) <- x +. y
+          match s with
+          | MkPair (x, y) -> dst.(tid) <- x +. y
+          | MkOne x -> dst.(tid) <- x
         end]
 
 (* NEGATIVE CONTROL: the live constructor is chosen at runtime, so the slot is
