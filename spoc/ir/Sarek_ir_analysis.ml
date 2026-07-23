@@ -244,12 +244,16 @@ let rec expr_uses_int_mod = function
       expr_uses_int_mod scrutinee
       || List.exists (fun (_, e) -> expr_uses_int_mod e) cases
 
-let lvalue_uses_int_mod = function
+let rec lvalue_uses_int_mod = function
   | LVar _ -> false
   | LArrayElem (_, idx) -> expr_uses_int_mod idx
   | LArrayElemExpr (base, idx) ->
       expr_uses_int_mod base || expr_uses_int_mod idx
-  | LRecordField _ -> false
+  (* Recurse into the nested lvalue: its array index may carry a [mod], e.g.
+     [arr.(j mod n).field <- v]. A non-recursive arm would miss it and skip
+     emitting the [sarek_smod] helper the emitted index references. Mirrors
+     [lvalue_uses_atomics]. *)
+  | LRecordField (lv, _) -> lvalue_uses_int_mod lv
 
 let rec stmt_uses_int_mod = function
   | SAssign (lv, e) -> lvalue_uses_int_mod lv || expr_uses_int_mod e

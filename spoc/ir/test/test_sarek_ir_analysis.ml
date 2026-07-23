@@ -576,6 +576,76 @@ let test_kernel_uses_atomics_snative () =
   assert (kernel_uses_atomics k_native = true) ;
   print_endline "  kernel_uses_atomics via SNative (conservative): OK"
 
+(** {1 expr_uses_int_mod / kernel_uses_int_mod Tests} *)
+
+let test_expr_uses_int_mod () =
+  let no_mod = EBinop (Add, EConst (CInt32 1l), EConst (CInt32 2l)) in
+  assert (expr_uses_int_mod no_mod = false) ;
+  let direct_mod = EBinop (Mod, EConst (CInt32 7l), EConst (CInt32 2l)) in
+  assert (expr_uses_int_mod direct_mod = true) ;
+  (* Nested: [mod] buried inside an otherwise ordinary expression. *)
+  let nested_mod = EBinop (Add, EConst (CInt32 1l), direct_mod) in
+  assert (expr_uses_int_mod nested_mod = true) ;
+  print_endline "  expr_uses_int_mod: OK"
+
+(** Regression pin (finding: [lvalue_uses_int_mod] must recurse through
+    [LRecordField]). [LRecordField] wraps a NESTED lvalue whose array index can
+    carry a [mod], e.g. [arr.(j mod n).field <- v]. A non-recursive arm returned
+    false, so the GLSL backend would emit a [sarek_smod(...)] call from the
+    lvalue index while [kernel_uses_int_mod] wrongly reported false and skipped
+    emitting the helper — an undefined-function shader compile failure. *)
+let test_lvalue_uses_int_mod () =
+  let mod_idx = EBinop (Mod, EConst (CInt32 7l), EConst (CInt32 2l)) in
+  assert (
+    lvalue_uses_int_mod
+      (LVar {var_name = "x"; var_id = 0; var_type = TInt32; var_mutable = true})
+    = false) ;
+  assert (lvalue_uses_int_mod (LArrayElem ("arr", EConst (CInt32 0l))) = false) ;
+  assert (lvalue_uses_int_mod (LArrayElem ("arr", mod_idx)) = true) ;
+  assert (
+    lvalue_uses_int_mod (LArrayElemExpr (EConst (CInt32 0l), mod_idx)) = true) ;
+  (* The load-bearing shape: [mod] only inside an LRecordField-wrapped index. *)
+  assert (
+    lvalue_uses_int_mod (LRecordField (LArrayElem ("arr", mod_idx), "field"))
+    = true) ;
+  print_endline "  lvalue_uses_int_mod: OK"
+
+(** The only [mod] in the kernel is inside an [SAssign] lvalue whose index is
+    wrapped in [LRecordField] ([arr.(j mod n).field <- v]) — the exact shape
+    that a non-recursive [lvalue_uses_int_mod] would miss. *)
+let test_kernel_uses_int_mod_in_record_field_lvalue () =
+  let mod_idx = EBinop (Mod, EConst (CInt32 7l), EConst (CInt32 2l)) in
+  let k_lvalue_mod : kernel =
+    {
+      kern_name = "test";
+      kern_params = [];
+      kern_locals = [];
+      kern_body =
+        SAssign
+          ( LRecordField (LArrayElem ("arr", mod_idx), "field"),
+            EConst (CInt32 5l) );
+      kern_types = [];
+      kern_variants = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+    }
+  in
+  assert (kernel_uses_int_mod k_lvalue_mod = true) ;
+  let k_none : kernel =
+    {
+      kern_name = "test";
+      kern_params = [];
+      kern_locals = [];
+      kern_body = SEmpty;
+      kern_types = [];
+      kern_variants = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+    }
+  in
+  assert (kernel_uses_int_mod k_none = false) ;
+  print_endline "  kernel_uses_int_mod via record-field lvalue: OK"
+
 (** {1 Main} *)
 
 let () =
@@ -613,4 +683,7 @@ let () =
   test_lvalue_uses_atomics () ;
   test_kernel_uses_atomics_in_assign_lvalue () ;
   test_kernel_uses_atomics_snative () ;
+  test_expr_uses_int_mod () ;
+  test_lvalue_uses_int_mod () ;
+  test_kernel_uses_int_mod_in_record_field_lvalue () ;
   print_endline "All Sarek_ir_analysis tests passed!"
