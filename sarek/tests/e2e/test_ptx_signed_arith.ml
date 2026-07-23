@@ -68,7 +68,22 @@ let cases =
     (-1l, 2l);
     (0l, 5l);
     (-999l, -13l);
+    (* Divisor magnitude 1: remainder is always 0, so a divisor-signed vs
+       dividend-signed remainder cannot be told apart on these - they pin the
+       [b = +/-1] edge of the GLSL [a - b*(a/b)] reconstruction (a/b = a, so
+       the remainder must collapse to exactly 0) rather than the sign. *)
+    (42l, 1l);
+    (-42l, 1l);
+    (7l, -1l);
+    (-7l, -1l);
   |]
+
+(* NOTE: [INT_MIN / -1] (and its remainder) is deliberately absent. It is
+   undefined behaviour for signed division on every target here (the true
+   quotient +2^31 is not representable in int32) and is a pre-existing Div
+   concern independent of this Mod fix - adding it would test div overflow, not
+   remainder sign. INT_MIN paired with +3 above already exercises the sign bit
+   through the remainder path. *)
 
 let n = Array.length cases
 

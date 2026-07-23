@@ -211,3 +211,79 @@ let kernel_uses_atomics k =
   || List.exists decl_uses_atomics k.kern_locals
   || stmt_uses_atomics k.kern_body
   || List.exists helper_uses_atomics k.kern_funcs
+
+(** {1 Integer-remainder detection}
+
+    [EBinop (Mod, _, _)] is always integer remainder — float [mod] is lowered to
+    the [fmod]/[mod] intrinsic (an [EIntrinsic]), never to [Ir.Mod]. Backends
+    that cannot lower [%] directly (e.g. GLSL, whose [%] is undefined for
+    negative operands) use this to decide whether to emit a remainder helper. *)
+let rec expr_uses_int_mod = function
+  | EBinop (Mod, _, _) -> true
+  | EConst _ | EVar _ -> false
+  | EBinop (_, e1, e2) -> expr_uses_int_mod e1 || expr_uses_int_mod e2
+  | EUnop (_, e) -> expr_uses_int_mod e
+  | EArrayRead (_, idx) -> expr_uses_int_mod idx
+  | EArrayReadExpr (base, idx) ->
+      expr_uses_int_mod base || expr_uses_int_mod idx
+  | ERecordField (e, _) -> expr_uses_int_mod e
+  | EIntrinsic (_, _, args) -> List.exists expr_uses_int_mod args
+  | ECast (_, e) -> expr_uses_int_mod e
+  | ETuple exprs -> List.exists expr_uses_int_mod exprs
+  | EApp (fn, args) ->
+      expr_uses_int_mod fn || List.exists expr_uses_int_mod args
+  | ERecord (_, fields) ->
+      List.exists (fun (_, e) -> expr_uses_int_mod e) fields
+  | EVariant (_, _, args) -> List.exists expr_uses_int_mod args
+  | EArrayLen _ -> false
+  | EArrayCreate (_, size, _) -> expr_uses_int_mod size
+  | EIf (cond, then_, else_) ->
+      expr_uses_int_mod cond || expr_uses_int_mod then_
+      || expr_uses_int_mod else_
+  | EMatch (scrutinee, cases) ->
+      expr_uses_int_mod scrutinee
+      || List.exists (fun (_, e) -> expr_uses_int_mod e) cases
+
+let lvalue_uses_int_mod = function
+  | LVar _ -> false
+  | LArrayElem (_, idx) -> expr_uses_int_mod idx
+  | LArrayElemExpr (base, idx) ->
+      expr_uses_int_mod base || expr_uses_int_mod idx
+  | LRecordField _ -> false
+
+let rec stmt_uses_int_mod = function
+  | SAssign (lv, e) -> lvalue_uses_int_mod lv || expr_uses_int_mod e
+  | SSeq stmts -> List.exists stmt_uses_int_mod stmts
+  | SIf (cond, then_, else_) ->
+      expr_uses_int_mod cond || stmt_uses_int_mod then_
+      || Option.fold ~none:false ~some:stmt_uses_int_mod else_
+  | SWhile (cond, body) -> expr_uses_int_mod cond || stmt_uses_int_mod body
+  | SFor (_, lo, hi, _, body) ->
+      expr_uses_int_mod lo || expr_uses_int_mod hi || stmt_uses_int_mod body
+  | SMatch (scrutinee, cases) ->
+      expr_uses_int_mod scrutinee
+      || List.exists (fun (_, s) -> stmt_uses_int_mod s) cases
+  | SReturn e | SExpr e -> expr_uses_int_mod e
+  | SBarrier | SWarpBarrier | SEmpty | SMemFence -> false
+  | SLet (_, e, body) | SLetMut (_, e, body) ->
+      expr_uses_int_mod e || stmt_uses_int_mod body
+  | SPragma (_, body) | SBlock body -> stmt_uses_int_mod body
+  (* Inline native GPU code is opaque text; assume it may contain a remainder
+     so a helper it references is still emitted. *)
+  | SNative _ -> true
+
+let decl_uses_int_mod = function
+  | DParam _ -> false
+  | DLocal (_, init) -> Option.fold ~none:false ~some:expr_uses_int_mod init
+  | DShared (_, _, size) -> Option.fold ~none:false ~some:expr_uses_int_mod size
+
+let helper_uses_int_mod hf = stmt_uses_int_mod hf.hf_body
+
+(** Check if a kernel uses integer remainder anywhere: locals initializers,
+    body, and helper functions. Helper bodies are walked explicitly (a helper
+    may use [mod] even when the top-level body does not). *)
+let kernel_uses_int_mod k =
+  List.exists decl_uses_int_mod k.kern_params
+  || List.exists decl_uses_int_mod k.kern_locals
+  || stmt_uses_int_mod k.kern_body
+  || List.exists helper_uses_int_mod k.kern_funcs

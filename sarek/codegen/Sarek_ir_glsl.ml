@@ -207,24 +207,19 @@ let rec gen_expr buf = function
       (* Integer remainder with C (dividend-signed, truncated) semantics.
          GLSL's [%] is undefined for negative operands and lowers to OpSMod
          (divisor-signed) on RADV, so [-7 % 2] yields +1 instead of C's -1.
-         Reconstruct C's [rem] as [a - b * (a / b)]: GLSL integer [/] truncates
-         toward zero (verified: the signed-arith probe's quotients already match
-         Int32.div on Vulkan), so this recovers the dividend's sign and matches
-         OCaml Int32.rem / the interpreter / PTX rem.s32 / OpenCL [%]. Type-
-         agnostic: signed int32 and int64 both use truncating [/]. Float [mod]
-         never reaches this arm (the frontend lowers it to the [fmod]/[mod]
-         intrinsic, not [Ir.Mod]). Operands are re-emitted, which is safe
-         because Sarek IR expressions are pure (no side effects); see
-         [Sarek_ir_types.expr]. *)
-      Buffer.add_char buf '(' ;
+         Delegate to the [sarek_smod] helper (emitted in the preamble by
+         [gen_smod_helper]) rather than inlining [a - b * (a / b)]: a GLSL
+         function call evaluates each argument exactly once, so operands that
+         carry side effects (a value-returning atomic intrinsic, an effectful
+         helper call) fire once - inlining the arithmetic form would emit each
+         operand twice and double any such effect. Float [mod] never reaches
+         this arm (the frontend lowers it to the [fmod]/[mod] intrinsic, not
+         [Ir.Mod]). *)
+      Buffer.add_string buf "sarek_smod(" ;
       gen_expr buf e1 ;
-      Buffer.add_string buf " - " ;
+      Buffer.add_string buf ", " ;
       gen_expr buf e2 ;
-      Buffer.add_string buf " * (" ;
-      gen_expr buf e1 ;
-      Buffer.add_string buf " / " ;
-      gen_expr buf e2 ;
-      Buffer.add_string buf "))"
+      Buffer.add_char buf ')'
   | EBinop (op, e1, e2) ->
       Buffer.add_char buf '(' ;
       gen_expr buf e1 ;
@@ -356,8 +351,8 @@ and gen_binop = function
   | Sub -> " - "
   | Mul -> " * "
   | Div -> " / "
-  (* [Mod] is intercepted by [gen_expr] with a C-truncated form; this arm is
-     unreachable and kept only for match exhaustiveness. *)
+  (* [Mod] is intercepted by [gen_expr] and lowered to the [sarek_smod] helper
+     call; this arm is unreachable and kept only for match exhaustiveness. *)
   | Mod -> " % "
   | Eq -> " == "
   | Ne -> " != "
@@ -1024,6 +1019,31 @@ let gen_shared_decls buf (decls : (string * elttype * expr) list) =
     Buffer.add_char buf '\n'
   end
 
+(** Emit the [sarek_smod] integer-remainder helper when the kernel uses [mod].
+
+    Integer [Mod] is lowered (in [gen_expr]) to a call to this helper rather
+    than to the GLSL [%] operator: [%] is undefined for negative operands and
+    lowers to OpSMod (divisor-signed) on RADV, giving [-7 % 2 = +1] instead of
+    C's [-1]. The helper computes the C-truncated, dividend-signed remainder as
+    [a - b * (a / b)]; GLSL integer [/] truncates toward zero, so the result
+    carries the dividend's sign and matches OCaml [Int32.rem] / the interpreter
+    / PTX [rem.s32] / OpenCL [%]. Routing through a function (not inlining the
+    arithmetic) guarantees each operand is evaluated exactly once - critical for
+    operands with side effects (value-returning atomics, effectful helper calls)
+    that are legal integer expressions and reach the [Mod] node unguarded.
+
+    [int]-only for now: int64 on the Vulkan backend is unwired (no
+    [GL_ARB_gpu_shader_int64] extension is emitted anywhere), so an int64 kernel
+    already fails to compile independently of [mod]. If int64 Vulkan lands, add
+    an [int64_t sarek_smod(int64_t, int64_t)] overload here (GLSL resolves the
+    overload by argument type at the call site) and gate the extension on int64
+    usage, mirroring the float64 path in [glsl_header]. *)
+let gen_smod_helper buf (k : kernel) =
+  if Sarek_ir_analysis.kernel_uses_int_mod k then
+    Buffer.add_string
+      buf
+      "int sarek_smod(int a, int b) { return a - b * (a / b); }\n\n"
+
 (** Generate complete GLSL source for a kernel.
     @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.
 *)
@@ -1071,6 +1091,10 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
   (* Generate shared declarations at module scope (GLSL requirement) *)
   let shared_decls = collect_shared_decls k.kern_body in
   gen_shared_decls buf shared_decls ;
+
+  (* Emit the integer-remainder helper (before user helpers, which may call
+     it) when the kernel uses [mod]. *)
+  gen_smod_helper buf k ;
 
   (* Generate helper functions *)
   List.iter (gen_helper_func ~pc_names buf) k.kern_funcs ;
@@ -1161,6 +1185,10 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   (* Generate shared declarations at module scope (GLSL requirement) *)
   let shared_decls = collect_shared_decls k.kern_body in
   gen_shared_decls buf shared_decls ;
+
+  (* Emit the integer-remainder helper (before user helpers, which may call
+     it) when the kernel uses [mod]. *)
+  gen_smod_helper buf k ;
 
   (* Generate helper functions *)
   List.iter (gen_helper_func ~pc_names buf) k.kern_funcs ;
