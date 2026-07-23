@@ -874,3 +874,31 @@
  (alias runtest)
  (action
   (run %{dep:test_record_field_tag_erasure.exe})))
+
+; H1 signed int32 div/rem hardware probe. Plain DSL [/] and [mod] on int32
+; run against OCaml Int32.div/Int32.rem on every available device (Native /
+; Interpreter always, plus CUDA/PTX under ZLUDA and any other GPU backend).
+; A wrong result from any device that ran is a hard failure - this is the
+; executed proof of the div.s32/rem.s32 retarget the snapshot only asserts.
+; Run with:
+;   LD_LIBRARY_PATH=$HOME/opt/zluda \
+;     dune exec sarek/tests/e2e/test_ptx_signed_arith.exe
+
+(executable
+ (name test_ptx_signed_arith)
+ (modules test_ptx_signed_arith)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  spoc_core
+  test_helpers
+  unix
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_ptx_signed_arith.exe})))
