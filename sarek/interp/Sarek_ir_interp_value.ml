@@ -207,6 +207,16 @@ let eval_binop op v1 v2 =
       | _ -> VInt32 (Int32.div (to_int32 v1) (to_int32 v2)))
   | Mod -> (
       match (v1, v2) with
+      (* Float Mod is C fmod on every backend; Float.rem is C fmod. The
+         float arms were missing entirely (audit follow-up to M1/M4): float
+         operands were truncated to ints before the rem. *)
+      | VFloat32 a, VFloat32 b -> VFloat32 (F32.to_float32 (Float.rem a b))
+      | VFloat64 a, VFloat64 b -> VFloat64 (Float.rem a b)
+      | VFloat32 _, _ | _, VFloat32 _ ->
+          VFloat32
+            (F32.to_float32 (Float.rem (to_float32 v1) (to_float32 v2)))
+      | VFloat64 _, _ | _, VFloat64 _ ->
+          VFloat64 (Float.rem (to_float64 v1) (to_float64 v2))
       | VInt64 _, _ | _, VInt64 _ ->
           VInt64 (Int64.rem (to_int64 v1) (to_int64 v2))
       | _ -> VInt32 (Int32.rem (to_int32 v1) (to_int32 v2)))

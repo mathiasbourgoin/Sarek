@@ -285,6 +285,131 @@ let rec zero_binding buf (b : binding) : unit =
       emit buf "mov.u32 %s, 0;" tag_reg ;
       List.iter (fun (_, bs) -> List.iter (zero_binding buf) bs) ctors
 
+(** Exact C-semantics fmod (audit finding M1): the single-pass
+    [x - trunc(x/y)*y] formula is only exact while the quotient fits the
+    mantissa; beyond 2^53 (f64) / 2^24 (f32) the rounded quotient carries
+    absolute error >> 1 and the result can leave [0, |y|) or flip sign.
+    This emits an iterative reduction instead:
+
+    - outer loop: while |r| >= |y|, subtract trunc(r/y)*y via a single fma
+      (each round shrinks |r| by ~2^-mantissa, so it terminates in <= ~20
+      rounds for f64 / ~6 for f32; once |r| < |y| the quotient truncates
+      to 0 and further rounds are exact no-ops);
+    - overflow branch: if r/y overflows to inf (huge x with tiny/subnormal
+      y), reduce against y * 2^k (k = 1022 f64 / 126 f32, exact scaling and
+      still a multiple of y, so congruence mod y is preserved), retrying
+      with a larger scale while the scaled quotient is still inf;
+    - sign fix: the last fma can land one |y| past zero on the wrong side;
+      one conditional +/-|y| restores the dividend's sign, and a final
+      copysign fixes the sign of a +/-0 result;
+    - domain guard: y = 0, y = NaN, |x| = inf and x = NaN all produce NaN
+      (C fmod contract); x mod inf = x falls out naturally.
+
+    Validated bit-exact against OCaml's [Float.rem] (C fmod) on 200k
+    full-exponent-range fuzz cases including subnormals and the
+    overflow-scaling path (see commit message). *)
+let emit_float_fmod buf alloc ~is64 rx ry : string =
+  let newf () = if is64 then new_f64 alloc else new_f32 alloc in
+  let s = if is64 then "f64" else "f32" in
+  let const b64 b32 =
+    if is64 then Printf.sprintf "0D%016LX" b64 else Printf.sprintf "0F%08lX" b32
+  in
+  let c_inf = const 0x7FF0000000000000L 0x7F800000l in
+  let c_nan = const 0x7FF8000000000000L 0x7FC00000l in
+  (* 2^1022 / 2^126: largest power-of-two scale that keeps y * scale exact
+     and finite for every y small enough to make x/y overflow. *)
+  let c_scale = const 0x7FD0000000000000L 0x7E800000l in
+  let c_zero = const 0L 0l in
+  let rz = newf () in
+  emit buf "mov.%s %s, %s;" s rz c_zero ;
+  let rinf = newf () in
+  emit buf "mov.%s %s, %s;" s rinf c_inf ;
+  let rscale = newf () in
+  emit buf "mov.%s %s, %s;" s rscale c_scale ;
+  let ay = newf () in
+  emit buf "abs.%s %s, %s;" s ay ry ;
+  let ax = newf () in
+  emit buf "abs.%s %s, %s;" s ax rx ;
+  let r = newf () in
+  emit buf "mov.%s %s, %s;" s r rx ;
+  let l_outer = new_label alloc in
+  let l_scale = new_label alloc in
+  let l_scale_loop = new_label alloc in
+  let l_fix = new_label alloc in
+  (* Domain guard: ay > 0 rejects y = 0 and y = NaN; ax < inf rejects
+     x = +/-inf and x = NaN. *)
+  let p_y = new_pred alloc in
+  emit buf "setp.gt.%s %s, %s, %s;" s p_y ay rz ;
+  let p_x = new_pred alloc in
+  emit buf "setp.lt.%s %s, %s, %s;" s p_x ax rinf ;
+  let p_ok = new_pred alloc in
+  emit buf "and.pred %s, %s, %s;" p_ok p_y p_x ;
+  emit buf "@%s bra %s;" p_ok l_outer ;
+  emit buf "mov.%s %s, %s;" s r c_nan ;
+  emit buf "bra %s;" l_fix ;
+  emit_label buf l_outer ;
+  let ar = newf () in
+  emit buf "abs.%s %s, %s;" s ar r ;
+  let p_done = new_pred alloc in
+  emit buf "setp.lt.%s %s, %s, %s;" s p_done ar ay ;
+  emit buf "@%s bra %s;" p_done l_fix ;
+  let q = newf () in
+  emit buf "div.rn.%s %s, %s, %s;" s q r ry ;
+  let aq = newf () in
+  emit buf "abs.%s %s, %s;" s aq q ;
+  let p_qinf = new_pred alloc in
+  emit buf "setp.eq.%s %s, %s, %s;" s p_qinf aq rinf ;
+  emit buf "@%s bra %s;" p_qinf l_scale ;
+  let t = newf () in
+  emit buf "cvt.rzi.%s.%s %s, %s;" s s t q ;
+  let nt = newf () in
+  emit buf "neg.%s %s, %s;" s nt t ;
+  emit buf "fma.rn.%s %s, %s, %s, %s;" s r nt ry r ;
+  emit buf "bra %s;" l_outer ;
+  emit_label buf l_scale ;
+  let ys = newf () in
+  emit buf "mov.%s %s, %s;" s ys ry ;
+  emit_label buf l_scale_loop ;
+  emit buf "mul.%s %s, %s, %s;" s ys ys rscale ;
+  let q2 = newf () in
+  emit buf "div.rn.%s %s, %s, %s;" s q2 r ys ;
+  let aq2 = newf () in
+  emit buf "abs.%s %s, %s;" s aq2 q2 ;
+  let p_q2inf = new_pred alloc in
+  emit buf "setp.eq.%s %s, %s, %s;" s p_q2inf aq2 rinf ;
+  emit buf "@%s bra %s;" p_q2inf l_scale_loop ;
+  let t2 = newf () in
+  emit buf "cvt.rzi.%s.%s %s, %s;" s s t2 q2 ;
+  let nt2 = newf () in
+  emit buf "neg.%s %s, %s;" s nt2 t2 ;
+  emit buf "fma.rn.%s %s, %s, %s, %s;" s r nt2 ys r ;
+  emit buf "bra %s;" l_outer ;
+  emit_label buf l_fix ;
+  let p_rn = new_pred alloc in
+  emit buf "setp.lt.%s %s, %s, %s;" s p_rn r rz ;
+  let p_xp = new_pred alloc in
+  emit buf "setp.ge.%s %s, %s, %s;" s p_xp rx rz ;
+  let p_c1 = new_pred alloc in
+  emit buf "and.pred %s, %s, %s;" p_c1 p_rn p_xp ;
+  let p_rp = new_pred alloc in
+  emit buf "setp.gt.%s %s, %s, %s;" s p_rp r rz ;
+  let p_xn = new_pred alloc in
+  emit buf "setp.lt.%s %s, %s, %s;" s p_xn rx rz ;
+  let p_c2 = new_pred alloc in
+  emit buf "and.pred %s, %s, %s;" p_c2 p_rp p_xn ;
+  let c = newf () in
+  emit buf "selp.%s %s, %s, %s, %s;" s c ay rz p_c1 ;
+  let nay = newf () in
+  emit buf "neg.%s %s, %s;" s nay ay ;
+  emit buf "selp.%s %s, %s, %s, %s;" s c nay c p_c2 ;
+  emit buf "add.%s %s, %s, %s;" s r r c ;
+  (* copysign d, a, b = |b| with a's sign: post-fix sign(r) already matches
+     sign(x) for r <> 0, so this only normalizes the sign of a zero result
+     (fmod(-x, y) must return -0 when the remainder is exact). *)
+  let res = newf () in
+  emit buf "copysign.%s %s, %s, %s;" s res rx r ;
+  res
+
 (** {1 Expression emitter}
 
     Returns the PTX register name holding the result. Emits instructions into
@@ -928,32 +1053,11 @@ and emit_binop buf alloc env op e1 e2 : string =
         emit buf "div.s32 %s, %s, %s;" r r1 r2 ;
         r
   | Mod ->
-      (* Float Mod is C fmod: x - trunc(x/y)*y, result sign follows the
-         dividend x. OCaml's Float.rem has the same contract (it is C fmod),
-         so this matches mod_float on the host. rn-rounded div (not the fast
-         .approx form): the trunc snaps the quotient to an integer, so the
-         quotient's rounding error only shows within 1 ulp of an integer
-         boundary; the final fma is a single rounding. *)
-      if is_f64 r1 then (
-        let q = new_f64 alloc in
-        emit buf "div.rn.f64 %s, %s, %s;" q r1 r2 ;
-        let t = new_f64 alloc in
-        emit buf "cvt.rzi.f64.f64 %s, %s;" t q ;
-        let nt = new_f64 alloc in
-        emit buf "neg.f64 %s, %s;" nt t ;
-        let r = new_f64 alloc in
-        emit buf "fma.rn.f64 %s, %s, %s, %s;" r nt r2 r1 ;
-        r)
-      else if is_f32 r1 then (
-        let q = new_f32 alloc in
-        emit buf "div.rn.f32 %s, %s, %s;" q r1 r2 ;
-        let t = new_f32 alloc in
-        emit buf "cvt.rzi.f32.f32 %s, %s;" t q ;
-        let nt = new_f32 alloc in
-        emit buf "neg.f32 %s, %s;" nt t ;
-        let r = new_f32 alloc in
-        emit buf "fma.rn.f32 %s, %s, %s, %s;" r nt r2 r1 ;
-        r)
+      (* Float Mod is C fmod (exact for all finite inputs, result sign
+         follows the dividend). Lowered by emit_float_fmod's iterative
+         reduction - see its doc comment (audit finding M1). *)
+      if is_f64 r1 then emit_float_fmod buf alloc ~is64:true r1 r2
+      else if is_f32 r1 then emit_float_fmod buf alloc ~is64:false r1 r2
       else if is_u64 r1 then (
         (* Signed rem, matching C's % (result sign follows the dividend),
            the interpreter's Int64.rem, and every C-family backend. *)

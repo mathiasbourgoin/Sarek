@@ -296,6 +296,28 @@ let test_binop_int64_bitwise_and_shift () =
   | VBool b -> check bool "mixed 0l < 2^32" true b
   | _ -> fail "expected VBool"
 
+let test_binop_float_mod_is_fmod () =
+  (* Regression (audit M1 follow-up): float Mod had no float arms and
+     truncated operands to ints. It must be C fmod (Float.rem). *)
+  let env = make_env () in
+  let state = make_state () in
+  (match
+     eval_expr
+       state
+       env
+       (EBinop (Mod, EConst (CFloat64 1e17), EConst (CFloat64 3.0)))
+   with
+  | VFloat64 f -> check (float 0.0) "1e17 fmod 3" 1.0 f
+  | _ -> fail "expected VFloat64") ;
+  match
+    eval_expr
+      state
+      env
+      (EBinop (Mod, EConst (CFloat64 (-7.5)), EConst (CFloat64 2.0)))
+  with
+  | VFloat64 f -> check (float 0.0) "-7.5 fmod 2 keeps dividend sign" (-1.5) f
+  | _ -> fail "expected VFloat64"
+
 let test_binop_eq () =
   let env = make_env () in
   let state = make_state () in
@@ -457,6 +479,7 @@ let () =
             `Quick
             test_binop_int64_bitwise_and_shift;
           test_case "equals" `Quick test_binop_eq;
+          test_case "float_mod_is_fmod" `Quick test_binop_float_mod_is_fmod;
           test_case
             "shr_negative_is_arithmetic"
             `Quick

@@ -550,8 +550,10 @@ let test_atomic_cas_incdec_wide_markers () =
   (* 8-byte addressing stride for the 64-bit forms *)
   assert_contains ptx ", 3;"
 
-(** Float Mod lowers to C fmod: x − trunc(x/y)·y via rn-rounded div, cvt.rzi
-    trunc, neg and a single fma — for both f32 and f64. *)
+(** Float Mod lowers to exact C fmod via emit_float_fmod's iterative
+    reduction (audit finding M1): rn-rounded div + cvt.rzi + fma per round,
+    inside a branch loop, with an overflow-scaling branch and a final
+    sign fix (selp) + copysign zero-sign normalization — for f32 and f64. *)
 let test_float_mod_fmod_markers () =
   let fa = make_var "fa" (TVec TFloat32) in
   let da = make_var "da" (TVec TFloat64) in
@@ -587,10 +589,16 @@ let test_float_mod_fmod_markers () =
   assert_contains ptx "cvt.rzi.f32.f32" ;
   assert_contains ptx "neg.f32" ;
   assert_contains ptx "fma.rn.f32" ;
+  assert_contains ptx "copysign.f32" ;
   assert_contains ptx "div.rn.f64" ;
   assert_contains ptx "cvt.rzi.f64.f64" ;
   assert_contains ptx "neg.f64" ;
-  assert_contains ptx "fma.rn.f64"
+  assert_contains ptx "fma.rn.f64" ;
+  assert_contains ptx "copysign.f64" ;
+  (* loop + overflow-scale + sign-fix structure *)
+  assert_contains ptx "and.pred" ;
+  assert_contains ptx "selp.f64" ;
+  assert_contains ptx "selp.f32"
 
 (** Integer Div/Mod are SIGNED (audit finding H1): Sarek int32/int64 are
     signed everywhere (interpreter uses Int32.div/Int64.div, C backends emit
