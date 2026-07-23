@@ -74,9 +74,9 @@ let to_float (x : real64) : float = x
 (** {1 Host reference arithmetic}
 
     Plain binary64 operations on real64 values, for building references and
-    doing host-side combination of results. These are NOT the device ops
-    (those live in the two substrates); they are the "what a correct answer
-    looks like" oracle. *)
+    doing host-side combination of results. These are NOT the device ops (those
+    live in the two substrates); they are the "what a correct answer looks like"
+    oracle. *)
 
 let add (a : real64) (b : real64) : real64 = a +. b
 
@@ -100,26 +100,26 @@ let string_of_substrate = function
   | Fallback_df64 -> "fallback-df64"
 
 (** Substrate a device would use by default: native f64 iff it reports fp64
-    support, df64 otherwise. Pass [~force] to override (used by tests to run
-    the df64 fallback even on fp64-capable hardware, so both lowering paths are
+    support, df64 otherwise. Pass [~force] to override (used by tests to run the
+    df64 fallback even on fp64-capable hardware, so both lowering paths are
     exercised everywhere). *)
 let substrate_for ?force (dev : Device.t) : substrate =
   match force with
   | Some s -> s
   | None -> if Device.allows_fp64 dev then Native_f64 else Fallback_df64
 
-(** Pick one of two per-substrate values (typically the two lowered kernel
-    IRs, but works for anything). *)
+(** Pick one of two per-substrate values (typically the two lowered kernel IRs,
+    but works for anything). *)
 let select (s : substrate) ~(native : 'a) ~(fallback : 'a) : 'a =
   match s with Native_f64 -> native | Fallback_df64 -> fallback
 
 (** {1 Uniform host vectors}
 
     A [real64_vector] hides whether the underlying storage is a float64 vector
-    (native path) or a df64 struct vector (fallback). Callers always
-    read/write plain doubles; encoding/decoding to the df64 pair is done here.
-    [arg] is the ready-to-pass kernel argument (the same physical vector
-    run_vectors transfers to/from the device). *)
+    (native path) or a df64 struct vector (fallback). Callers always read/write
+    plain doubles; encoding/decoding to the df64 pair is done here. [arg] is the
+    ready-to-pass kernel argument (the same physical vector run_vectors
+    transfers to/from the device). *)
 type real64_vector = {
   arg : Sarek.Execute.vector_arg;
   set : int -> float -> unit;

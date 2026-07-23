@@ -560,6 +560,30 @@
   (run %{dep:test_df64.exe})))
 
 (executable
+ (name test_real64)
+ (modules test_real64)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.df64
+  sarek.float64
+  sarek.real64
+  spoc_core
+  test_helpers
+  unix)
+ (preprocessor_deps
+  (file ../../Sarek_df64/Sarek_df64.ml))
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_real64.exe})))
+
+(executable
  (name test_worklist)
  (modules test_worklist)
  (libraries sarek sarek.stdlib sarek.worklist spoc_core test_helpers unix)
