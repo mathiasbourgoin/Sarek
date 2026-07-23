@@ -118,6 +118,10 @@ let with_atomic_lock f =
   Mutex.lock atomic_global_mutex ;
   Fun.protect ~finally:(fun () -> Mutex.unlock atomic_global_mutex) f
 
+(* Bounds-checked index into an atomic's target array, mirroring
+   eval_array_expr's Array_bounds_error path so the interpreter oracle rejects
+   out-of-range atomics the same way an ordinary array access would. *)
+
 (** Global-memory atomics and memory fences.
 
     Atomics on global vectors return the OLD value and update in place. The
@@ -125,20 +129,35 @@ let with_atomic_lock f =
     no-ops because a single logical memory is already sequentially consistent
     here. Sufficient for the Sarek_worklist queue pattern (atomic HEAD/TAIL
     counters + ring slots). *)
+let atomic_index name a idx =
+  let i = to_int idx in
+  if i < 0 || i >= Array.length a then
+    Interp_error.raise_error
+      (Array_bounds_error
+         {array_name = name; index = i; length = Array.length a}) ;
+  i
+
+let atomic_arity name n _args =
+  Interp_error.raise_error
+    (Unsupported_operation
+       {operation = name; reason = Printf.sprintf "requires %d arguments" n})
+
 let eval_atomic_intrinsic name args =
   match (name, args) with
   | "atomic_add_global_int32", [VArray a; idx; delta] ->
       with_atomic_lock (fun () ->
-          let i = to_int idx in
+          let i = atomic_index "atomic_add_global_int32" a idx in
           let old = to_int32 a.(i) in
           a.(i) <- VInt32 (Int32.add old (to_int32 delta)) ;
           Some (VInt32 old))
+  | "atomic_add_global_int32", _ -> atomic_arity name 3 args
   | "atomic_inc_global_int32", [VArray a; idx] ->
       with_atomic_lock (fun () ->
-          let i = to_int idx in
+          let i = atomic_index "atomic_inc_global_int32" a idx in
           let old = to_int32 a.(i) in
           a.(i) <- VInt32 (Int32.add old 1l) ;
           Some (VInt32 old))
+  | "atomic_inc_global_int32", _ -> atomic_arity name 2 args
   | ("memory_fence_block" | "memory_fence_device"), _ -> Some VUnit
   | _ -> None
 
