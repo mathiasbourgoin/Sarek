@@ -160,7 +160,10 @@ let shape_registry : (string, shape) Hashtbl.t = Hashtbl.create 16
     [name] (e.g. ["_tup_float32_int32"]), or [None] if no [pair]/[triple] has
     built it yet. *)
 let lookup_shape (name : string) : shape option =
-  Hashtbl.find_opt shape_registry name
+  (* Locked: register_shape_of writes under [registry_mutex]; an unlocked read
+     could race a concurrent first-time registration on the mutable Hashtbl
+     (interpreter workers look shapes up while the host may still register). *)
+  Mutex.protect registry_mutex (fun () -> Hashtbl.find_opt shape_registry name)
 
 (* Build a [shape] from a laid-out field list and record it. Called only from
    within the [memoize] critical section (which already holds
