@@ -16,6 +16,7 @@
 ; - test_inline_node_exhaustion: "Inlining produced N nodes (limit: 10000)"
 ; - test_tuple_param: "Tuple-typed kernel parameters are not supported"
 ; - test_fun_param: "Function-typed kernel parameters are not supported"
+; - test_fun_escape: "Function value escapes"
 
 (library
  (name neg_test_convention_kernel_fail)
@@ -119,6 +120,17 @@
 (library
  (name neg_test_fun_param)
  (modules test_fun_param)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_fun_escape)
+ (modules test_fun_escape)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))

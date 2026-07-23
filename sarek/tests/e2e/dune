@@ -640,3 +640,21 @@
  (alias runtest)
  (action
   (run %{dep:test_float64_kernel_arith.exe})))
+
+; L12 Tier-0 defunctionalization E2E (Sarek_defunc). Self-verifying against a
+; pure-OCaml reference on every available device (Native/Interpreter always,
+; plus any GPU backend present). int32-only, no custom types.
+
+(executable
+ (name test_defunc)
+ (modules test_defunc)
+ (libraries sarek sarek.stdlib sarek_ir spoc_core test_helpers unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_defunc.exe})))

@@ -54,15 +54,6 @@ let is_fun_typed (e : texpr) : bool =
 
 let is_fun_ty (t : typ) : bool = match repr t with TFun _ -> true | _ -> false
 
-(** An expression cheap enough to duplicate without changing evaluation
-    semantics (no side effects, no re-computation cost worth a temporary). *)
-let is_atomic (e : texpr) : bool =
-  match e.te with
-  | TEVar _ | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _
-  | TEDouble _ | TEIntrinsicConst _ | TEGlobalRef _ ->
-      true
-  | _ -> false
-
 (* -------------------------------------------------------------------------- *)
 (* Core rewrite                                                               *)
 (* -------------------------------------------------------------------------- *)
@@ -194,43 +185,16 @@ and rewrite_fexpr (fenv : (int, texpr) Hashtbl.t) (fe : texpr) : texpr =
          as a leaf and lowering/codegen will handle or reject it as today. *)
       rewrite fenv fe
 
-(* Does this selector branch (so that duplicating the arguments across its
-   leaves would re-evaluate them)? *)
-and is_branching (sel : texpr) : bool =
-  match sel.te with
-  | TEIf _ | TEMatch _ -> true
-  | TELet (_, _, _, b) | TEOpen (_, b) -> is_branching b
-  | TESeq es -> (
-      match List.rev es with last :: _ -> is_branching last | [] -> false)
-  | _ -> false
-
-(* Push [args] down to every leaf of [sel], producing an expression of type
-   [ty]. If [sel] branches, bind non-atomic arguments to fresh temporaries
-   first so they are evaluated exactly once. *)
+(* Push [args] down to every leaf of a selector. The selector's branches
+   (if/match arms) are mutually exclusive, so at runtime exactly one leaf
+   executes and each argument is evaluated exactly as many times as in the
+   source `f args` -- distribution duplicates arguments only *textually*, never
+   at runtime, so no fresh temporaries are needed. This also keeps the result a
+   plain expression (introducing `let` bindings here would place a
+   statement-only form in expression position and break lowering). *)
 and distribute_app (sel : texpr) (args : texpr list) (ty : typ) (loc : loc) :
     texpr =
-  if is_branching sel then begin
-    (* Bind non-atomic args once. *)
-    let binds = ref [] in
-    let args' =
-      List.map
-        (fun a ->
-          if is_atomic a then a
-          else begin
-            let id = fresh_var_id () in
-            let name = Printf.sprintf "__df_arg%d" id in
-            binds := (name, id, a) :: !binds ;
-            mk_texpr (TEVar (name, id)) a.ty a.te_loc
-          end)
-        args
-    in
-    let dispatched = push_args sel args' ty loc in
-    List.fold_left
-      (fun acc (name, id, v) -> mk_texpr (TELet (name, id, v, acc)) ty loc)
-      dispatched
-      !binds
-  end
-  else push_args sel args ty loc
+  push_args sel args ty loc
 
 (* Recursively descend a selector's spine, applying [args] at each leaf. *)
 and push_args (sel : texpr) (args : texpr list) (ty : typ) (loc : loc) : texpr =
