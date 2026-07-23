@@ -399,6 +399,56 @@ type exec_writeback =
       (module Spoc_framework.Typed_value.EXEC_VECTOR) * value array
       -> exec_writeback
 
+(* Tuple vector elements (L13) reach the interpreter as a [COMPOSITE_TYPE] whose
+   [fields] descriptor list is empty but whose [to_bytes]/[of_bytes] marshal the
+   raw device-layout element bytes. The tuple-shape byte layout (per-field type
+   and offset) is resolved from [Sarek_tuple_vec], the single authority that
+   built the host vector, and used to decode those bytes into a positional
+   [VRecord] (fields [_0], [_1], ...) and re-encode them on writeback. *)
+let value_of_bytes (b : bytes) (fl : Sarek_tuple_vec.field_layout) : value =
+  let off = fl.Sarek_tuple_vec.fl_offset in
+  match fl.Sarek_tuple_vec.fl_elttype with
+  | Sarek_ir_types.TFloat32 ->
+      VFloat32 (Int32.float_of_bits (Bytes.get_int32_le b off))
+  | Sarek_ir_types.TFloat64 ->
+      VFloat64 (Int64.float_of_bits (Bytes.get_int64_le b off))
+  | Sarek_ir_types.TInt32 -> VInt32 (Bytes.get_int32_le b off)
+  | Sarek_ir_types.TInt64 -> VInt64 (Bytes.get_int64_le b off)
+  | Sarek_ir_types.TBool -> VBool (Bytes.get_int8 b off <> 0)
+  | _ ->
+      Interp_error.raise_error
+        (Unsupported_operation
+           {
+             operation = "value_of_bytes";
+             reason = "unsupported tuple component type";
+           })
+
+let bytes_of_shape (shape : Sarek_tuple_vec.shape) (fields : value array) :
+    bytes =
+  let b = Bytes.make shape.Sarek_tuple_vec.sh_size '\000' in
+  List.iteri
+    (fun idx fl ->
+      let off = fl.Sarek_tuple_vec.fl_offset in
+      let v = if idx < Array.length fields then fields.(idx) else VUnit in
+      match fl.Sarek_tuple_vec.fl_elttype with
+      | Sarek_ir_types.TFloat32 ->
+          Bytes.set_int32_le b off (Int32.bits_of_float (to_float32 v))
+      | Sarek_ir_types.TFloat64 ->
+          Bytes.set_int64_le b off (Int64.bits_of_float (to_float64 v))
+      | Sarek_ir_types.TInt32 -> Bytes.set_int32_le b off (to_int32 v)
+      | Sarek_ir_types.TInt64 -> Bytes.set_int64_le b off (to_int64 v)
+      | Sarek_ir_types.TBool ->
+          Bytes.set_int8 b off (if to_bool v then 1 else 0)
+      | _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {
+                 operation = "bytes_of_shape";
+                 reason = "unsupported tuple component type";
+               }))
+    shape.Sarek_tuple_vec.sh_fields ;
+  b
+
 let value_of_typed_value (tv : Spoc_framework.Typed_value.typed_value) : value =
   match tv with
   | TV_Scalar (SV ((module S), x)) -> (
@@ -411,7 +461,15 @@ let value_of_typed_value (tv : Spoc_framework.Typed_value.typed_value) : value =
           Interp_error.raise_error
             (Unsupported_operation
                {operation = "value_of_typed_value"; reason = "PBytes scalar"}))
-  | TV_Composite (CV ((module C), _x)) -> VRecord (C.name, [||])
+  | TV_Composite (CV ((module C), x)) -> (
+      match Sarek_tuple_vec.lookup_shape C.name with
+      | Some shape ->
+          let b = C.to_bytes x in
+          VRecord
+            ( C.name,
+              Array.of_list
+                (List.map (value_of_bytes b) shape.Sarek_tuple_vec.sh_fields) )
+      | None -> VRecord (C.name, [||]))
 
 let typed_value_of_value (type a)
     (module V : Spoc_framework.Typed_value.EXEC_VECTOR with type elt = a)
@@ -443,10 +501,26 @@ let array_to_exec_vector (module V : Spoc_framework.Typed_value.EXEC_VECTOR)
   let len = min (Array.length arr) V.length in
   for i = 0 to len - 1 do
     match arr.(i) with
-    | VRecord _ as vrec -> (
+    | VRecord (name, fields) as vrec -> (
         match Sarek_type_helpers.lookup_typed V.type_id with
         | Some (module H) -> V.set_typed i (H.from_value vrec)
-        | None -> ())
+        | None -> (
+            (* Tuple vector element (L13): re-encode the positional record to
+               raw element bytes via the resolved shape layout, then round-trip
+               through the composite's [of_bytes] to set the element. *)
+            match Sarek_tuple_vec.lookup_shape name with
+            | Some shape -> (
+                match V.get i with
+                | Spoc_framework.Typed_value.TV_Composite (CV ((module C), _))
+                  ->
+                    let b = bytes_of_shape shape fields in
+                    V.set
+                      i
+                      (Spoc_framework.Typed_value.TV_Composite
+                         (Spoc_framework.Typed_value.CV
+                            ((module C), C.of_bytes b)))
+                | _ -> ())
+            | None -> ()))
     | scalar -> (
         match typed_value_of_value (module V) scalar with
         | Some tv -> V.set i tv

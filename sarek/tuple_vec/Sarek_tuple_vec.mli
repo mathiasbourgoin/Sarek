@@ -42,3 +42,21 @@ val triple :
     same [Type_id] the host vector carries. Raises if the shape was never built
     on the host. Not normally called directly. *)
 val descriptor_by_name : string -> 'a Vector.custom_type
+
+(** Byte layout of one positional field ([_0], [_1], ...) of a tuple element. *)
+type field_layout = {
+  fl_name : string;
+  fl_elttype : Sarek_ir_types.elttype;
+  fl_offset : int;
+}
+
+(** The byte layout of a tuple-shape element: total size and per-field layout,
+    taken from the shared layout authority so it matches the raw element bytes
+    the host composite bridge marshals. *)
+type shape = {sh_name : string; sh_size : int; sh_fields : field_layout list}
+
+(** [lookup_shape name] returns the registered byte layout of the tuple shape
+    [name] (e.g. ["_tup_float32_int32"]), or [None] if no [pair]/[triple] has
+    instantiated it yet. Used by the Interpreter to decode/encode tuple vector
+    elements without depending on the interpreter's value model. *)
+val lookup_shape : string -> shape option

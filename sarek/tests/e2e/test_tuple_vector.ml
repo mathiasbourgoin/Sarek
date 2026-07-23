@@ -13,10 +13,11 @@
  * and writes a modified tuple element back; results are checked against a pure
  * OCaml reference on every available device.
  *
- * Device support tier: CUDA/PTX, OpenCL, Vulkan and Native must pass. The
- * Interpreter path additionally needs value-model unification (its tuple/record
- * representation and helper registration) and is recorded as a follow-up; it is
- * reported as NOT-YET-SUPPORTED rather than treated as a failure.
+ * Device support tier: CUDA/PTX, OpenCL, Vulkan, Native AND the Interpreter
+ * must pass. The Interpreter decodes a tuple element from the raw composite
+ * bytes into a positional record ([_0], [_1], ...) using the shape layout
+ * resolved from [Sarek_tuple_vec], and re-encodes it on writeback — the same
+ * value model the record/aggregate path already uses.
  ******************************************************************************)
 
 module Vector = Spoc_core.Vector
@@ -46,12 +47,10 @@ let tuple_copy_kirc =
         let tid = thread_idx_x + (block_dim_x * block_idx_x) in
         if tid < n then match src.(tid) with a, b -> dst.(tid) <- (a +. 1.0, b)]
 
-(* Devices where the tuple-vector capability must work in this tier. The
-   Interpreter is a documented follow-up and reported (not failed) when it
-   cannot run. *)
+(* Devices where the tuple-vector capability must work in this tier. *)
 let must_pass fw =
   match fw with
-  | "CUDA" | "OpenCL" | "Vulkan" | "Metal" | "Native" -> true
+  | "CUDA" | "OpenCL" | "Vulkan" | "Metal" | "Native" | "Interpreter" -> true
   | _ -> false
 
 let () =

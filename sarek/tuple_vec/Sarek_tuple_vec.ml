@@ -136,12 +136,52 @@ let descriptor_by_name (name : string) : 'a Vector.custom_type =
        ^ "'; build it on the host (e.g. Sarek_tuple_vec.pair ...) before \
           running the kernel.")
 
+(* Value-model-neutral description of a tuple element's byte layout, keyed by
+   the mangled shape name. The Interpreter (which represents a tuple element as
+   a positional record of boxed scalars, not as a native OCaml tuple) resolves a
+   shape here to decode the raw element bytes exposed by the host composite
+   bridge into per-field scalar values and re-encode them on writeback. This
+   keeps the dependency one-directional: the Interpreter depends on this module,
+   never the reverse. *)
+type field_layout = {
+  fl_name : string;
+  fl_elttype : Sarek_ir_types.elttype;
+  fl_offset : int;
+}
+
+type shape = {sh_name : string; sh_size : int; sh_fields : field_layout list}
+
+let shape_registry : (string, shape) Hashtbl.t = Hashtbl.create 16
+
+(** [lookup_shape name] returns the registered byte layout of the tuple shape
+    [name] (e.g. ["_tup_float32_int32"]), or [None] if no [pair]/[triple] has
+    built it yet. *)
+let lookup_shape (name : string) : shape option =
+  Hashtbl.find_opt shape_registry name
+
+(* Build a [shape] from a laid-out field list and record it. Called only from
+   within the [memoize] critical section (which already holds
+   [registry_mutex]), so it must not re-acquire the lock. *)
+let register_shape_of rl name fields =
+  let sh_fields =
+    List.map
+      (fun (fname, elttype) ->
+        {fl_name = fname; fl_elttype = elttype; fl_offset = offset_of rl fname})
+      fields
+  in
+  if not (Hashtbl.mem shape_registry name) then
+    Hashtbl.replace
+      shape_registry
+      name
+      {sh_name = name; sh_size = rl.Layout.rl_size; sh_fields}
+
 (** [pair a b] is the [custom_type] for a [(a, b)] tuple vector element. *)
 let pair (a : 'a component) (b : 'b component) : ('a * 'b) Vector.custom_type =
   let name = mangled_name [a.c_tag; b.c_tag] in
   memoize name @@ fun () ->
   let fields = [(field_name 0, a.c_elttype); (field_name 1, b.c_elttype)] in
   let rl = layout_of fields name in
+  register_shape_of rl name fields ;
   let size = rl.Layout.rl_size in
   let o0 = offset_of rl (field_name 0) in
   let o1 = offset_of rl (field_name 1) in
@@ -175,6 +215,7 @@ let triple (a : 'a component) (b : 'b component) (c : 'c component) :
     ]
   in
   let rl = layout_of fields name in
+  register_shape_of rl name fields ;
   let size = rl.Layout.rl_size in
   let o0 = offset_of rl (field_name 0) in
   let o1 = offset_of rl (field_name 1) in

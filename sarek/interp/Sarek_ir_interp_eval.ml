@@ -7,6 +7,20 @@ open Sarek_ir_types
 open Sarek_ir_interp_value
 open Sarek_ir_interp_intrinsics
 
+(** Positional tuple-field index for a synthesized [_tup_*] record: ["_0"] ->
+    [Some 0], ["_12"] -> [Some 12], any other name -> [None]. Used to resolve
+    tuple-element field access without a record-registry entry. *)
+let positional_field_index (field : string) : int option =
+  let n = String.length field in
+  if n >= 2 && field.[0] = '_' then begin
+    let rec all_digits i =
+      i >= n || (field.[i] >= '0' && field.[i] <= '9' && all_digits (i + 1))
+    in
+    if all_digits 1 then int_of_string_opt (String.sub field 1 (n - 1))
+    else None
+  end
+  else None
+
 (** Main intrinsic dispatcher - tries each category in order *)
 let rec eval_intrinsic state path name args =
   (* Global-memory atomics and fences are path-independent (they may be opened
@@ -106,6 +120,22 @@ and eval_composite_expr state env = function
       | VRecord (type_name, fields) as vrec -> (
           match Sarek_type_helpers.lookup type_name with
           | Some h -> h.get_field vrec field
+          | None when positional_field_index field <> None ->
+              (* Synthesized tuple records (L13, [_tup_*]) use positional field
+                 names [_0], [_1], ...; resolve the index directly rather than
+                 through the record registry, which never holds these. *)
+              let idx = Option.get (positional_field_index field) in
+              if idx < Array.length fields then fields.(idx)
+              else
+                Interp_error.raise_error
+                  (Pattern_match_failure
+                     {
+                       context =
+                         Printf.sprintf
+                           "Positional field %s out of range in %s"
+                           field
+                           type_name;
+                     })
           | None ->
               let field_infos = Sarek_registry.record_fields type_name in
               let rec find_idx i = function
