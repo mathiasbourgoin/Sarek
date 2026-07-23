@@ -257,6 +257,21 @@ let cuMemFreeHost_lazy =
 
 let cuMemFreeHost ptr = Lazy.force cuMemFreeHost_lazy ptr
 
+(* Page-lock an existing host allocation in place (no copy). [flags] is 0 for
+   the default portable/non-mapped registration. *)
+let cuMemHostRegister_lazy =
+  foreign_cuda_lazy
+    "cuMemHostRegister_v2"
+    (ptr void @-> size_t @-> uint @-> returning cu_result)
+
+let cuMemHostRegister ptr size flags =
+  Lazy.force cuMemHostRegister_lazy ptr size flags
+
+let cuMemHostUnregister_lazy =
+  foreign_cuda_lazy "cuMemHostUnregister" (ptr void @-> returning cu_result)
+
+let cuMemHostUnregister ptr = Lazy.force cuMemHostUnregister_lazy ptr
+
 let cuMemGetInfo_lazy =
   foreign_cuda_lazy
     "cuMemGetInfo_v2"

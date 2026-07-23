@@ -351,6 +351,46 @@ module Memory = struct
     Device.set_current buf.device ;
     let bytes = Unsigned.Size_t.of_int (buf.size * buf.elem_size) in
     check "cuMemsetD8" (cuMemsetD8 buf.ptr (Unsigned.UChar.of_int value) bytes)
+
+  (** {2 Pinned (page-locked) host memory}
+
+      Page-locked host buffers let the driver DMA straight to/from the device
+      without staging through an internal pageable bounce buffer, roughly
+      doubling H2D/D2H bandwidth on PCIe-class links, and are the hard
+      prerequisite for true async transfers (a pageable [cuMemcpy*Async]
+      silently degrades to synchronous). Two shapes are exposed:
+
+      - {!alloc_host}/{!free_host} — driver-allocated page-locked memory
+        ([cuMemAllocHost]); the returned raw pointer is fed to
+        {!host_ptr_to_device}/{!device_to_host_ptr} exactly like any other host
+        pointer.
+      - {!register_host}/{!unregister_host} — page-lock an {e existing} host
+        allocation in place ([cuMemHostRegister]); no allocation-path change,
+        but the caller owns page-alignment and the register/unregister cost. *)
+
+  type pinned_host = {host_ptr : unit ptr; bytes : int}
+
+  (** Allocate [bytes] of page-locked host memory. Must be released with
+      {!free_host}, never [Stdlib]/[free]. *)
+  let alloc_host bytes =
+    let pp = allocate (ptr void) null in
+    check "cuMemAllocHost" (cuMemAllocHost pp (Unsigned.Size_t.of_int bytes)) ;
+    {host_ptr = !@pp; bytes}
+
+  let free_host ph = check "cuMemFreeHost" (cuMemFreeHost ph.host_ptr)
+
+  (** Page-lock [bytes] at an existing host pointer (flags = 0: portable,
+      non-mapped). Pair with {!unregister_host}. *)
+  let register_host ptr bytes =
+    check
+      "cuMemHostRegister"
+      (cuMemHostRegister
+         (to_voidp ptr)
+         (Unsigned.Size_t.of_int bytes)
+         (Unsigned.UInt.of_int 0))
+
+  let unregister_host ptr =
+    check "cuMemHostUnregister" (cuMemHostUnregister (to_voidp ptr))
 end
 
 (** {1 Stream Management} *)

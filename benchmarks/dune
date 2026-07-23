@@ -127,6 +127,13 @@
  (preprocess
   (pps sarek_ppx)))
 
+; Tier 1a: pinned vs pageable host-memory transfer (CUDA/ZLUDA only)
+
+(executable
+ (name bench_pinned_transfer)
+ (modules bench_pinned_transfer)
+ (libraries sarek_cuda ctypes unix))
+
 ; Data aggregation and analysis tools
 
 (executable
