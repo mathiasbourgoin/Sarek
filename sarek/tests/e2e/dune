@@ -811,3 +811,38 @@
  (action
   (run %{dep:test_real64_single_source.exe})))
 
+; L14 S2: record-field static tag erasure. A kernel-local record whose
+; variant-typed field is written by a literal constructor and read only as a
+; match scrutinee is lowered to a synthesized all-scalar record ([_erec_*]),
+; erasing the nested variant and unblocking every backend. Self-verifying:
+; emitted CUDA-C carries no tag and the synthesized record for the erasable
+; kernels, keeps the tag for a runtime-selected control, and leaves a
+; variant-free record untouched; behaviour matches a pure-OCaml reference on
+; every device (Native-only for the retained control).
+
+(executable
+ (name test_record_field_tag_erasure)
+ (modules test_record_field_tag_erasure)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  sarek.codegen
+  spoc_core
+  test_helpers
+  sarek_native
+  sarek_interpreter
+  sarek_cuda
+  sarek_opencl
+  sarek_vulkan
+  unix
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_record_field_tag_erasure.exe})))
