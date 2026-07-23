@@ -644,6 +644,55 @@ let test_int_div_rem_signed_markers () =
   if contains ptx "rem.u32" || contains ptx "rem.u64" then
     Alcotest.fail "unsigned rem emitted for signed Sarek int"
 
+(** Int64 comparison family, Not/BitNot and min/max must be class-aware
+    (audit finding H2): the old code emitted setp.*.s32 / not.b32 / min.s32
+    on %rd (64-bit) registers - invalid PTX, rejected at module load. *)
+let test_int64_compare_minmax_markers () =
+  let la = make_var "la" (TVec TInt64) in
+  let out = make_var "out" (TVec TInt32) in
+  let tid = make_var "tid" TInt32 in
+  let x = make_var "x" TInt64 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( x,
+            EArrayRead ("la", EVar tid),
+            SSeq
+              [
+                SAssign
+                  ( LArrayElem ("out", EVar tid),
+                    EBinop (Lt, EVar x, EConst (CInt64 0L)) );
+                SAssign
+                  ( LArrayElem ("out", EVar tid),
+                    EBinop (Eq, EVar x, EConst (CInt64 42L)) );
+                SAssign
+                  ( LArrayElem ("la", EVar tid),
+                    EUnop (BitNot, EVar x) );
+                SAssign
+                  ( LArrayElem ("la", EVar tid),
+                    EIntrinsic ([], "min", [EVar x; EConst (CInt64 7L)]) );
+              ] ) )
+  in
+  let k =
+    base_kernel
+      "int64_cmp"
+      [
+        DParam (la, Some {arr_elttype = TInt64; arr_memspace = Global});
+        DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global});
+      ]
+      body
+      []
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "setp.lt.s64" ;
+  assert_contains ptx "setp.eq.s64" ;
+  assert_contains ptx "not.b64" ;
+  assert_contains ptx "min.s64" ;
+  if contains ptx "setp.lt.s32" || contains ptx "not.b32" then
+    Alcotest.fail "32-bit instruction emitted for 64-bit operand"
+
 (** ECast scalar-matrix coverage: bool casts normalize to a u32 0/1 via
     setp+selp (float sources use unordered neu so NaN -> 1, matching C); i32 ->
     i64 sign-extends (cvt.s64.s32); i64 -> i32 truncates (cvt.u32.u64). *)
@@ -1967,6 +2016,10 @@ let () =
             "integer Div/Mod emit signed div.s32/s64 rem.s32/s64"
             `Quick
             test_int_div_rem_signed_markers;
+          Alcotest.test_case
+            "int64 compare/not/min emit 64-bit forms"
+            `Quick
+            test_int64_compare_minmax_markers;
           Alcotest.test_case
             "ECast matrix: bool setp/selp + i32<->i64 cvt pairs"
             `Quick

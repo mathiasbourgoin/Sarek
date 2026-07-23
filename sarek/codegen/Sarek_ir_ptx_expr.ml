@@ -343,17 +343,27 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
         emit buf "neg.s32 %s, %s;" r r_src ;
         r
   | EUnop (Not, e) ->
+      (* Bools are u32 0/1 post-typer, but be class-aware so a 64-bit
+         operand cannot produce invalid setp.eq.u32-on-%rd PTX (H2). *)
       let r_src = emit_expr buf alloc env e in
+      let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
       let p = new_pred alloc in
-      emit buf "setp.eq.u32 %s, %s, 0;" p r_src ;
+      if is_u64 r_src then emit buf "setp.eq.s64 %s, %s, 0;" p r_src
+      else emit buf "setp.eq.u32 %s, %s, 0;" p r_src ;
       let r = new_u32 alloc in
       emit buf "selp.u32 %s, 1, 0, %s;" r p ;
       r
   | EUnop (BitNot, e) ->
       let r_src = emit_expr buf alloc env e in
-      let r = new_u32 alloc in
-      emit buf "not.b32 %s, %s;" r r_src ;
-      r
+      let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
+      if is_u64 r_src then (
+        let r = new_u64 alloc in
+        emit buf "not.b64 %s, %s;" r r_src ;
+        r)
+      else
+        let r = new_u32 alloc in
+        emit buf "not.b32 %s, %s;" r r_src ;
+        r
   | EArrayRead (arr_name, idx_expr) ->
       let r_base = env_lookup env arr_name in
       let r_idx = emit_expr buf alloc env idx_expr in
@@ -949,51 +959,31 @@ and emit_binop buf alloc env op e1 e2 : string =
         let r = new_u32 alloc in
         emit buf "rem.s32 %s, %s, %s;" r r1 r2 ;
         r
-  | Eq ->
+  | Eq | Ne | Lt | Le | Gt | Ge ->
+      (* Comparison family, class-aware (audit finding H2): the old code
+         fell through to setp.*.u32/s32 even on %rd (64-bit) operands,
+         which is invalid PTX and fails at module load. Sarek ints are
+         signed, so the integer forms are s32/s64 (sign matters for
+         Lt/Le/Gt/Ge; for Eq/Ne it is irrelevant but harmless). *)
+      let cmp =
+        match op with
+        | Eq -> "eq"
+        | Ne -> "ne"
+        | Lt -> "lt"
+        | Le -> "le"
+        | Gt -> "gt"
+        | Ge -> "ge"
+        | _ -> assert false
+      in
+      let ty =
+        if is_f64 r1 then "f64"
+        else if is_f32 r1 then "f32"
+        else if is_u64 r1 then "s64"
+        else if cmp = "eq" || cmp = "ne" then "u32"
+        else "s32"
+      in
       let p = new_pred alloc in
-      if is_f64 r1 then emit buf "setp.eq.f64 %s, %s, %s;" p r1 r2
-      else if is_f32 r1 then emit buf "setp.eq.f32 %s, %s, %s;" p r1 r2
-      else emit buf "setp.eq.u32 %s, %s, %s;" p r1 r2 ;
-      let r = new_u32 alloc in
-      emit buf "selp.u32 %s, 1, 0, %s;" r p ;
-      r
-  | Ne ->
-      let p = new_pred alloc in
-      if is_f64 r1 then emit buf "setp.ne.f64 %s, %s, %s;" p r1 r2
-      else if is_f32 r1 then emit buf "setp.ne.f32 %s, %s, %s;" p r1 r2
-      else emit buf "setp.ne.u32 %s, %s, %s;" p r1 r2 ;
-      let r = new_u32 alloc in
-      emit buf "selp.u32 %s, 1, 0, %s;" r p ;
-      r
-  | Lt ->
-      let p = new_pred alloc in
-      if is_f64 r1 then emit buf "setp.lt.f64 %s, %s, %s;" p r1 r2
-      else if is_f32 r1 then emit buf "setp.lt.f32 %s, %s, %s;" p r1 r2
-      else emit buf "setp.lt.s32 %s, %s, %s;" p r1 r2 ;
-      let r = new_u32 alloc in
-      emit buf "selp.u32 %s, 1, 0, %s;" r p ;
-      r
-  | Le ->
-      let p = new_pred alloc in
-      if is_f64 r1 then emit buf "setp.le.f64 %s, %s, %s;" p r1 r2
-      else if is_f32 r1 then emit buf "setp.le.f32 %s, %s, %s;" p r1 r2
-      else emit buf "setp.le.s32 %s, %s, %s;" p r1 r2 ;
-      let r = new_u32 alloc in
-      emit buf "selp.u32 %s, 1, 0, %s;" r p ;
-      r
-  | Gt ->
-      let p = new_pred alloc in
-      if is_f64 r1 then emit buf "setp.gt.f64 %s, %s, %s;" p r1 r2
-      else if is_f32 r1 then emit buf "setp.gt.f32 %s, %s, %s;" p r1 r2
-      else emit buf "setp.gt.s32 %s, %s, %s;" p r1 r2 ;
-      let r = new_u32 alloc in
-      emit buf "selp.u32 %s, 1, 0, %s;" r p ;
-      r
-  | Ge ->
-      let p = new_pred alloc in
-      if is_f64 r1 then emit buf "setp.ge.f64 %s, %s, %s;" p r1 r2
-      else if is_f32 r1 then emit buf "setp.ge.f32 %s, %s, %s;" p r1 r2
-      else emit buf "setp.ge.s32 %s, %s, %s;" p r1 r2 ;
+      emit buf "setp.%s.%s %s, %s, %s;" cmp ty p r1 r2 ;
       let r = new_u32 alloc in
       emit buf "selp.u32 %s, 1, 0, %s;" r p ;
       r
@@ -1324,9 +1314,18 @@ and emit_intrinsic_native buf alloc env path name args : string =
             r)
         else if is_f32_reg rb || is_f64_reg rb then mismatch ()
         else
-          let r = new_u32 alloc in
-          emit buf "%s.s32 %s, %s, %s;" op r ra rb ;
-          r
+          let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
+          if is_u64 ra then (
+            if not (is_u64 rb) then mismatch ()
+            else
+              let r = new_u64 alloc in
+              emit buf "%s.s64 %s, %s, %s;" op r ra rb ;
+              r)
+          else if is_u64 rb then mismatch ()
+          else
+            let r = new_u32 alloc in
+            emit buf "%s.s32 %s, %s, %s;" op r ra rb ;
+            r
     | _ -> unsupported (intr ^ " arity != 2")
   in
   (* Unary same-type float rounding via cvt (rmi = floor, rpi = ceil). *)

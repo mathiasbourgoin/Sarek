@@ -276,7 +276,25 @@ let test_binop_int64_bitwise_and_shift () =
   | _ -> fail "expected VInt64") ;
   (match eval (EUnop (BitNot, EConst (CInt64 0L))) with
   | VInt64 n -> check int64 "bnot 0L" (-1L) n
-  | _ -> fail "expected VInt64")
+  | _ -> fail "expected VInt64") ;
+  (match
+     eval
+       (EBinop
+          (BitOr, EConst (CInt64 0xF000000000L), EConst (CInt64 0x0F00000000L)))
+   with
+  | VInt64 n -> check int64 "bor above bit31" 0xFF00000000L n
+  | _ -> fail "expected VInt64") ;
+  (match
+     eval
+       (EBinop
+          (BitXor, EConst (CInt64 0xFF00000000L), EConst (CInt64 0x0F00000000L)))
+   with
+  | VInt64 n -> check int64 "bxor above bit31" 0xF000000000L n
+  | _ -> fail "expected VInt64") ;
+  (* Mixed-width promotion arm: VInt32 promotes to Int64 for the compare. *)
+  match eval (EBinop (Lt, EConst (CInt32 0l), EConst (CInt64 4294967296L))) with
+  | VBool b -> check bool "mixed 0l < 2^32" true b
+  | _ -> fail "expected VBool"
 
 let test_binop_eq () =
   let env = make_env () in
