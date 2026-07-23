@@ -112,23 +112,25 @@ let registry_mutex = Mutex.create ()
 
 let memoize name (build : unit -> 'a Vector.custom_type) : 'a Vector.custom_type
     =
-  match Hashtbl.find_opt registry name with
-  | Some obj -> Obj.obj obj
-  | None ->
-      Mutex.protect registry_mutex (fun () ->
-          match Hashtbl.find_opt registry name with
-          | Some obj -> Obj.obj obj
-          | None ->
-              let custom = build () in
-              Hashtbl.replace registry name (Obj.repr custom) ;
-              custom)
+  (* No unlocked fast path: a lock-free [find_opt] racing a [replace] on a
+     non-atomic Hashtbl is a data race under OCaml 5 (audit finding L1).
+     Registration is rare and the table tiny, so taking the mutex on every
+     lookup is cheap and makes every access happens-before ordered. *)
+  Mutex.protect registry_mutex (fun () ->
+      match Hashtbl.find_opt registry name with
+      | Some obj -> Obj.obj obj
+      | None ->
+          let custom = build () in
+          Hashtbl.replace registry name (Obj.repr custom) ;
+          custom)
 
 (** [descriptor_by_name name] returns the canonical [custom_type] previously
     registered for the mangled shape [name] (built by [pair]/[triple]). Used by
     generated Native kernel code to obtain the host-shared [Type_id]. Raises if
     the shape was never instantiated on the host. *)
 let descriptor_by_name (name : string) : 'a Vector.custom_type =
-  match Hashtbl.find_opt registry name with
+  match Mutex.protect registry_mutex (fun () -> Hashtbl.find_opt registry name)
+  with
   | Some obj -> Obj.obj obj
   | None ->
       failwith
