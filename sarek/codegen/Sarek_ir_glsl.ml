@@ -1441,30 +1441,68 @@ let gen_f64_softmath_helpers ~pc_names buf =
     {!generate_with_types} for deterministic output. *)
 let pc_shadow_counter = ref 0
 
-(** Alpha-rename kernel-body locals whose name collides with a push-constant
-    scalar macro.
+(** Alpha-rename kernel-body binders whose name collides with a push-constant
+    macro.
 
     Scalar params are exposed to the body as preprocessor macros
-    ([#define width pc.width]), so the macro rewrites {e every} [width] token in
+    ([#define width pc.width]), and each vector param exposes a length macro
+    ([#define v_len pc.v_len]); a macro rewrites {e every} matching token in
     [main] — including the declared name of a local. A helper inlined at its
     call site (e.g. a [[@sarek.module]] function whose formal is named like a
     kernel scalar) emits a self-binding [int width = width;], which the macro
     turns into [int pc.width = pc.width;] — a syntax error ("unexpected DOT").
     Helper {e functions} already dodge this via the [#undef]/[#define] guards in
-    {!gen_helper_func}, but a body-inlined local has no such guard.
+    {!gen_helper_func}, but a body-inlined binder has no such guard.
 
-    This pass rewrites each colliding local binder (and its in-scope references)
-    to a fresh [sarek_pc_shadow_*] name that no macro touches; the initializer,
-    evaluated in the outer scope, still expands to the push constant, so
-    semantics are preserved and the generated declaration is valid. It is a
-    no-op unless a local genuinely shadows a scalar param, so collision-free
-    kernels (every existing golden) are byte-identical. GLSL-only: no other
-    backend uses macros for scalar params. *)
-let rename_pc_shadowing_locals ~pc_names body =
+    Covered binder forms: [SLet], [SLetMut], [SFor], and match pattern binders
+    (both [SMatch] and [EMatch]). Both scalar-param macros ([pc_names]) and
+    vector-length macros ([len_names]) are treated as collisions.
+
+    Each colliding binder (and its in-scope references) is rewritten to a fresh
+    [sarek_pc_shadow_*] name that no macro touches; for [SLet]/[SLetMut]/[SFor]
+    the initializer, evaluated in the outer scope, still expands to the push
+    constant, so semantics are preserved and the declaration is valid. It is a
+    no-op unless a binder genuinely shadows a macro, so collision-free kernels
+    (every existing golden) are byte-identical. GLSL-only: no other backend uses
+    macros for params. *)
+let rename_pc_shadowing_locals ~pc_names ~len_names body =
   let module SM = Map.Make (String) in
-  let collides name = List.mem (escape_glsl_name name) pc_names in
+  (* A local collides if its escaped name matches a scalar-param macro
+     ([#define name pc.name]) or a vector-length macro ([#define vec_len
+     pc.vec_len]); either would rewrite the declared identifier to [pc....]. *)
+  let collides name =
+    let n = escape_glsl_name name in
+    List.mem n pc_names || List.mem n len_names
+  in
   let ren env name =
     match SM.find_opt name env with Some n -> n | None -> name
+  in
+  (* Mint a fresh push-constant-shadow name for a colliding binder. *)
+  let fresh_name orig =
+    incr pc_shadow_counter ;
+    Printf.sprintf
+      "sarek_pc_shadow_%s_%d"
+      (escape_glsl_name orig)
+      !pc_shadow_counter
+  in
+  (* Rebind a match pattern's binders: rename each that collides with a macro
+     to a fresh name — used both in the destructuring declaration emitted by
+     {!gen_match_pattern} and in case-body references (via [env]) — and drop
+     any same-named outer mapping for non-colliding binders (they shadow it). *)
+  let bind_pattern env = function
+    | PWild -> (PWild, env)
+    | PConstr (cname, names) ->
+        let env, names =
+          List.fold_left_map
+            (fun env name ->
+              if collides name then
+                let nn = fresh_name name in
+                (SM.add name nn env, nn)
+              else (SM.remove name env, name))
+            env
+            names
+        in
+        (PConstr (cname, names), env)
   in
   let rec re_expr env e =
     match e with
@@ -1486,7 +1524,16 @@ let rename_pc_shadowing_locals ~pc_names body =
     | EArrayCreate (t, s, m) -> EArrayCreate (t, re_expr env s, m)
     | EIf (c, t, e) -> EIf (re_expr env c, re_expr env t, re_expr env e)
     | EMatch (s, cases) ->
-        EMatch (re_expr env s, List.map (fun (p, b) -> (p, re_expr env b)) cases)
+        (* Rebind pattern binders before each case body (mirrors [SMatch]): a
+           binder shadowing a scalar/_len macro is renamed and its body refs
+           follow, otherwise an outer mapping would wrongly substitute them. *)
+        EMatch
+          ( re_expr env s,
+            List.map
+              (fun (p, b) ->
+                let p, env = bind_pattern env p in
+                (p, re_expr env b))
+              cases )
   in
   let rec re_lvalue env lv =
     match lv with
@@ -1498,23 +1545,10 @@ let rename_pc_shadowing_locals ~pc_names body =
   (* Bind a local: rename it when it collides with a scalar macro; otherwise
      drop any same-named outer mapping (this fresh local shadows it). *)
   let bind env (v : var) =
-    if collides v.var_name then begin
-      incr pc_shadow_counter ;
-      let nn =
-        Printf.sprintf
-          "sarek_pc_shadow_%s_%d"
-          (escape_glsl_name v.var_name)
-          !pc_shadow_counter
-      in
+    if collides v.var_name then
+      let nn = fresh_name v.var_name in
       ({v with var_name = nn}, SM.add v.var_name nn env)
-    end
     else (v, SM.remove v.var_name env)
-  in
-  (* Pattern binders introduce distinct locals; drop any same-named mappings in
-     the case body so references there are not mis-substituted. *)
-  let drop_pattern env = function
-    | PWild -> env
-    | PConstr (_, names) -> List.fold_left (fun e n -> SM.remove n e) env names
   in
   let rec re_stmt env s =
     match s with
@@ -1530,8 +1564,11 @@ let rename_pc_shadowing_locals ~pc_names body =
     | SMatch (e, cases) ->
         SMatch
           ( re_expr env e,
-            List.map (fun (p, b) -> (p, re_stmt (drop_pattern env p) b)) cases
-          )
+            List.map
+              (fun (p, b) ->
+                let p, env = bind_pattern env p in
+                (p, re_stmt env b))
+              cases )
     | SReturn e -> SReturn (re_expr env e)
     | (SBarrier | SWarpBarrier | SMemFence | SEmpty) as s -> s
     | SExpr e -> SExpr (re_expr env e)
@@ -1601,6 +1638,19 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
         | _ -> None)
       k.kern_params
   in
+  (* Vector params emit a length macro [#define <vec>_len pc.<vec>_len]; a local
+     named [<vec>_len] collides with it (see rename_pc_shadowing_locals). *)
+  let len_names =
+    List.filter_map
+      (fun decl ->
+        match decl with
+        | DParam (v, _) -> (
+            match v.var_type with
+            | TVec _ -> Some (escape_glsl_name v.var_name ^ "_len")
+            | _ -> None)
+        | _ -> None)
+      k.kern_params
+  in
 
   (* Generate shared declarations at module scope (GLSL requirement) *)
   let shared_decls = collect_shared_decls k.kern_body in
@@ -1629,7 +1679,10 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
   (* Generate main function. Alpha-rename any body local that shadows a scalar
      push-constant macro first (see rename_pc_shadowing_locals). *)
   Buffer.add_string buf "void main() {\n" ;
-  gen_stmt buf "  " (rename_pc_shadowing_locals ~pc_names k.kern_body) ;
+  gen_stmt
+    buf
+    "  "
+    (rename_pc_shadowing_locals ~pc_names ~len_names k.kern_body) ;
   Buffer.add_string buf "}\n" ;
 
   let shader = Buffer.contents buf in
@@ -1718,6 +1771,19 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
         | _ -> None)
       k.kern_params
   in
+  (* Vector params emit a length macro [#define <vec>_len pc.<vec>_len]; a local
+     named [<vec>_len] collides with it (see rename_pc_shadowing_locals). *)
+  let len_names =
+    List.filter_map
+      (fun decl ->
+        match decl with
+        | DParam (v, _) -> (
+            match v.var_type with
+            | TVec _ -> Some (escape_glsl_name v.var_name ^ "_len")
+            | _ -> None)
+        | _ -> None)
+      k.kern_params
+  in
 
   (* Generate shared declarations at module scope (GLSL requirement) *)
   let shared_decls = collect_shared_decls k.kern_body in
@@ -1746,7 +1812,10 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   (* Generate main function. Alpha-rename any body local that shadows a scalar
      push-constant macro first (see rename_pc_shadowing_locals). *)
   Buffer.add_string buf "void main() {\n" ;
-  gen_stmt buf "  " (rename_pc_shadowing_locals ~pc_names k.kern_body) ;
+  gen_stmt
+    buf
+    "  "
+    (rename_pc_shadowing_locals ~pc_names ~len_names k.kern_body) ;
   Buffer.add_string buf "}\n" ;
 
   let shader = Buffer.contents buf in

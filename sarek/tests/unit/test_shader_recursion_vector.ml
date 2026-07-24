@@ -249,6 +249,147 @@ let transpose_naive_kernel () =
     body
     []
 
+(** Match-pattern-binder shadow (#71, same class as #65): a [match] whose
+    variant destructuring binds a name equal to a scalar push-constant param
+    ([width]). [gen_match_pattern] emits the binding as a real declaration
+    [float width = scrut.OptSome_v;]; the scalar macro [#define width pc.width]
+    rewrites it to [float pc.width = pc.width;] → glslangValidator "unexpected
+    DOT". The pre-pass must alpha-rename the pattern binder (and its body refs)
+    to [sarek_pc_shadow_*], consistently with the SLet path. *)
+let match_pc_shadow_kernel () =
+  let opt_constrs = [("OptNone", []); ("OptSome", [TFloat32])] in
+  let opt_type = TVariant ("Opt", opt_constrs) in
+  let data = make_var "data" (TVec opt_type) in
+  let out = make_var "out" (TVec TFloat32) in
+  (* scalar param named EXACTLY like the pattern binder below *)
+  let width = make_var "width" TFloat32 in
+  let tid = make_var "tid" TInt32 in
+  let scrut = make_var "scrut" opt_type in
+  (* the [OptSome] payload binder — same name as the scalar param *)
+  let width_bind = make_var "width" TFloat32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( scrut,
+            EArrayRead ("data", EVar tid),
+            SMatch
+              ( EVar scrut,
+                [
+                  ( PConstr ("OptSome", ["width"]),
+                    SAssign (LArrayElem ("out", EVar tid), EVar width_bind) );
+                  ( PConstr ("OptNone", []),
+                    SAssign (LArrayElem ("out", EVar tid), EConst (CFloat32 0.0))
+                  );
+                ] ) ) )
+  in
+  let k =
+    base_kernel
+      "match_pc_shadow"
+      [
+        DParam (data, None);
+        DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+        DParam (width, None);
+      ]
+      body
+      []
+  in
+  {k with kern_variants = [("Opt", opt_constrs)]}
+
+(** Vector-length-macro shadow (#71, Minor): each vector param [v] emits a
+    length macro [#define v_len pc.v_len]. A local named [<vec>_len] collides
+    with it: [int data_len = ...;] → [int pc.data_len = ...;] → "unexpected
+    DOT". [pc_names] excludes vectors, so the pre-pass must additionally treat
+    the [_len] macro names as collisions. *)
+let vec_len_shadow_kernel () =
+  let data = make_var "data" (TVec TFloat32) in
+  let out = make_var "out" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  (* local named EXACTLY like the [data] vector's length macro *)
+  let data_len_l = make_var "data_len" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( data_len_l,
+            EConst (CInt32 0l),
+            SAssign
+              ( LArrayElem ("out", EVar tid),
+                EArrayRead ("data", EVar (make_var "data_len" TInt32)) ) ) )
+  in
+  base_kernel
+    "vec_len_shadow"
+    [
+      DParam (data, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+    ]
+    body
+    []
+
+(** EMatch env-drop asymmetry (#71 gap #2, silent-bug once gap #1 lands). An
+    outer local [width] shadows the scalar param and is alpha-renamed to
+    [sarek_pc_shadow_width_1]. An expression-position [match] then binds [width]
+    again in its [OptSome] arm and reads it, while the fallback arm reads the
+    OUTER [width].
+
+    [EMatch] emits a ternary and NO binder declaration, so unlike [SMatch] the
+    fix's manifestation is a {e substitution} bug, not a syntax error: if the
+    [EMatch] arm does not rebind the pattern binder (as [SMatch] does), the
+    outer [width -> sarek_pc_shadow_width_1] mapping leaks into the [OptSome]
+    arm and its [width] reference is silently substituted with the outer local's
+    name — a wrong-variable read. With the fix the pattern binder gets its own
+    fresh name ([sarek_pc_shadow_width_2]).
+
+    This is a semantic assertion, not a glslangValidator case: an [EMatch] arm
+    that references its payload binder is a separate pre-existing backend
+    limitation (no destructuring declaration is emitted for expression-position
+    matches), so the shader is not expected to assemble regardless. *)
+let ematch_shadow_kernel () =
+  let opt_constrs = [("OptNone", []); ("OptSome", [TFloat32])] in
+  let opt_type = TVariant ("Opt", opt_constrs) in
+  let data = make_var "data" (TVec opt_type) in
+  let out = make_var "out" (TVec TFloat32) in
+  let width = make_var "width" TFloat32 in
+  let tid = make_var "tid" TInt32 in
+  let scrut = make_var "scrut" opt_type in
+  (* outer local named like the scalar param -> renamed to _1 *)
+  let width_outer = make_var "width" TFloat32 in
+  (* inner OptSome payload binder, same name -> must get its own _2 *)
+  let width_bind = make_var "width" TFloat32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( width_outer,
+            EConst (CFloat32 5.0),
+            SLet
+              ( scrut,
+                EArrayRead ("data", EVar tid),
+                SAssign
+                  ( LArrayElem ("out", EVar tid),
+                    EMatch
+                      ( EVar scrut,
+                        [
+                          (PConstr ("OptSome", ["width"]), EVar width_bind);
+                          (PConstr ("OptNone", []), EVar width_outer);
+                        ] ) ) ) ) )
+  in
+  let k =
+    base_kernel
+      "ematch_shadow"
+      [
+        DParam (data, None);
+        DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+        DParam (width, None);
+      ]
+      body
+      []
+  in
+  {k with kern_variants = [("Opt", opt_constrs)]}
+
 (* ---- validator plumbing (mirrors the ptxas gate) ---- *)
 
 let tool_available cmd =
@@ -467,6 +608,99 @@ let test_wgsl_transpose_naive_validates () =
           e
           wgsl
 
+(* #71 gap #1: a match variant binder named like a scalar param must be
+   alpha-renamed (gen_match_pattern emits it as a real declaration). Red-on-
+   mutation: revert the pattern-binder rename and glslangValidator fails with
+   "unexpected DOT" on `float pc.width = ...`. *)
+let test_glsl_match_pattern_pc_shadow_validates () =
+  let k =
+    Sarek_ir_glsl.generate_with_types ~types:[] (match_pc_shadow_kernel ())
+  in
+  if not (contains k "sarek_pc_shadow_") then
+    Alcotest.failf
+      "expected the match pattern binder to be alpha-renamed \
+       (sarek_pc_shadow_*):\n\
+       %s"
+      k ;
+  (* The raw destructuring declaration `float width = ` must NOT survive (it
+     would be macro-rewritten to `float pc.width = `). *)
+  if contains k "float width =" then
+    Alcotest.failf
+      "a scalar-param-shadowing match binder declaration survived unrenamed:\n\
+       %s"
+      k ;
+  if not (Lazy.force glslang_available) then
+    Printf.printf "  SKIP: glslangValidator not on PATH\n%!"
+  else
+    match glslang_ok k with
+    | Ok () -> Printf.printf "  glslangValidator OK: match_pc_shadow\n%!"
+    | Error e ->
+        Alcotest.failf
+          "glslangValidator rejected match_pc_shadow GLSL (unexpected DOT?):\n\
+           %s\n\
+           --- shader ---\n\
+           %s"
+          e
+          k
+
+(* #71 gap #3: a local named like a vector-length macro (`data_len`) must be
+   alpha-renamed. Red-on-mutation: drop the `_len` names from the pre-pass
+   collision set and glslangValidator fails with "unexpected DOT" on
+   `int pc.data_len = ...`. *)
+let test_glsl_vec_len_shadow_validates () =
+  let k = Sarek_ir_glsl.generate (vec_len_shadow_kernel ()) in
+  if not (contains k "sarek_pc_shadow_") then
+    Alcotest.failf
+      "expected the vector-_len-shadowing local to be alpha-renamed \
+       (sarek_pc_shadow_*):\n\
+       %s"
+      k ;
+  if contains k "int data_len =" then
+    Alcotest.failf
+      "a vector-_len-shadowing local declaration survived unrenamed:\n%s"
+      k ;
+  if not (Lazy.force glslang_available) then
+    Printf.printf "  SKIP: glslangValidator not on PATH\n%!"
+  else
+    match glslang_ok k with
+    | Ok () -> Printf.printf "  glslangValidator OK: vec_len_shadow\n%!"
+    | Error e ->
+        Alcotest.failf
+          "glslangValidator rejected vec_len_shadow GLSL (unexpected DOT?):\n\
+           %s\n\
+           --- shader ---\n\
+           %s"
+          e
+          k
+
+(* #71 gap #2 (silent wrong-var read). Semantic assertion, not a validator gate
+   (EMatch expression binders emit no declaration — see kernel docstring). The
+   OptSome arm binds `width` shadowing the outer renamed local; with the EMatch
+   arm made consistent with SMatch, the pattern binder gets its OWN fresh name
+   (sarek_pc_shadow_width_2), distinct from the outer local
+   (sarek_pc_shadow_width_1). Red-on-mutation: revert the EMatch arm to reuse
+   the outer env and both ternary branches collapse to _1 — the OptSome arm
+   silently reads the outer local (no _2 is ever minted), failing this check. *)
+let test_glsl_ematch_pattern_shadow_rebinds () =
+  let k =
+    Sarek_ir_glsl.generate_with_types ~types:[] (ematch_shadow_kernel ())
+  in
+  if not (contains k "sarek_pc_shadow_width_1") then
+    Alcotest.failf
+      "expected the outer scalar-shadowing local to be renamed \
+       (sarek_pc_shadow_width_1):\n\
+       %s"
+      k ;
+  if not (contains k "sarek_pc_shadow_width_2") then
+    Alcotest.failf
+      "EMatch pattern binder was not rebound: the OptSome arm reuses the outer \
+       local (sarek_pc_shadow_width_1) instead of its own binder \
+       (sarek_pc_shadow_width_2) — silent wrong-variable read:\n\
+       %s"
+      k ;
+  Printf.printf
+    "  semantic OK: ematch_shadow (pattern binder rebound to _2)\n%!"
+
 let () =
   Alcotest.run
     "shader_recursion_vector"
@@ -497,5 +731,17 @@ let () =
             "WGSL transpose_naive scalar-param-shadowing local"
             `Quick
             test_wgsl_transpose_naive_validates;
+          Alcotest.test_case
+            "GLSL match pattern binder shadows scalar param (unexpected DOT)"
+            `Quick
+            test_glsl_match_pattern_pc_shadow_validates;
+          Alcotest.test_case
+            "GLSL local shadows vector _len macro (unexpected DOT)"
+            `Quick
+            test_glsl_vec_len_shadow_validates;
+          Alcotest.test_case
+            "GLSL EMatch pattern binder rebinds (silent wrong-var read)"
+            `Quick
+            test_glsl_ematch_pattern_shadow_rebinds;
         ] );
     ]
