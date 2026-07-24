@@ -1036,7 +1036,3 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
 
   (* Pretty-print the generated code *)
   pretty_print_metal (Buffer.contents buf)
-
-(** Generate Metal source with double precision (Metal supports FP64 natively)
-*)
-let generate_with_fp64 (k : kernel) : string = generate k

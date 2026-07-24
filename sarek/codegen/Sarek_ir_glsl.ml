@@ -1014,16 +1014,6 @@ let gen_helper_func ~pc_names buf (hf : helper_func) =
 
 (** {1 Kernel Generation} *)
 
-(** Count vector parameters for binding assignment *)
-let count_vec_params params =
-  List.fold_left
-    (fun acc decl ->
-      match decl with
-      | DParam (v, _) -> ( match v.var_type with TVec _ -> acc + 1 | _ -> acc)
-      | _ -> acc)
-    0
-    params
-
 (** Generate GLSL compute shader header.
     @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.
     @param uses_float64

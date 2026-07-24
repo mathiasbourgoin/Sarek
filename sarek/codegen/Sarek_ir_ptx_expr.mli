@@ -15,9 +15,10 @@ open Sarek_ir_ptx_types
 (** [emit_expr buf alloc env expr] emits PTX instructions for [expr] into [buf]
     and returns the register name holding the result.
 
-    Raises {!Ptx_codegen_error} for IR constructs not yet covered by the PTX
-    backend (variants, records, recursive device functions, etc.). Non-recursive
-    helper-function calls (EApp) are inlined at the call site. *)
+    Raises {!Sarek_ir_ptx_types.Ptx_codegen_error} for IR constructs not yet
+    covered by the PTX backend (variants, records, recursive device functions,
+    etc.). Non-recursive helper-function calls (EApp) are inlined at the call
+    site. *)
 val emit_expr : Buffer.t -> reg_alloc -> env -> expr -> string
 
 (** [emit_value buf alloc env expr] is the aggregate-aware emitter: scalar
@@ -33,8 +34,8 @@ val emit_value : Buffer.t -> reg_alloc -> env -> expr -> binding
     selp, FR-022); tuple/record/scalar scrutinees support exactly one
     destructuring arm. [emit_arm] emits one arm body (expression or statement)
     with the arm's pattern variables bound arm-scoped. Raises
-    {!Ptx_codegen_error} on a non-exhaustive variant match (no catch-all arm and
-    at least one constructor uncovered). *)
+    {!Sarek_ir_ptx_types.Ptx_codegen_error} on a non-exhaustive variant match
+    (no catch-all arm and at least one constructor uncovered). *)
 val emit_match_arms :
   Buffer.t ->
   reg_alloc ->
@@ -56,6 +57,6 @@ val emit_cast : Buffer.t -> reg_alloc -> string -> elttype -> string
 (** [emit_intrinsic buf alloc env path name args] emits the PTX sequence for the
     named Sarek intrinsic. [path] disambiguates module-qualified names ("of_int"
     resolves to f32 or f64 by its Float32/Float64 path). Raises
-    {!Ptx_codegen_error} for unknown intrinsic names. *)
+    {!Sarek_ir_ptx_types.Ptx_codegen_error} for unknown intrinsic names. *)
 val emit_intrinsic :
   Buffer.t -> reg_alloc -> env -> string list -> string -> expr list -> string

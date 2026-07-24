@@ -410,6 +410,15 @@ let emit_float_fmod buf alloc ~is64 rx ry : string =
   emit buf "copysign.%s %s, %s, %s;" s res rx r ;
   res
 
+(* Clean rejection for a math intrinsic with no f64 lowering. Never emit an
+   .f32-suffixed op on an f64 register: the mismatch is invalid PTX that
+   only fails at module-load time (cuModuleLoadData). [unsupported] raises, so
+   the generalized return type lets this be used in any operand context. *)
+let intr_no_f64 intr =
+  unsupported
+    (intr ^ ": no native f64 " ^ intr
+   ^ " in PTX; compute in float32 or on the CPU")
+
 (** {1 Expression emitter}
 
     Returns the PTX register name holding the result. Emits instructions into
@@ -1266,358 +1275,368 @@ and emit_intrinsic buf alloc env path name args : string =
       )
   | _ -> emit_intrinsic_native buf alloc env path name args
 
-and emit_intrinsic_native buf alloc env path name args : string =
-  (* Type conversions delegate to emit_cast; a unary helper for them. *)
-  let unary_cast intr dst_ty =
-    match args with
-    | [a] -> emit_cast buf alloc (emit_expr buf alloc env a) dst_ty
-    | _ -> unsupported (intr ^ " arity != 1")
-  in
-  (* An i64 register is "%rd<n>" (u64 class; distinct from f64 "%fd<n>"). *)
-  let is_u64_reg r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
-  (* The operand register class must agree with the atom.<op><ty> suffix; a
-     mismatched register would be invalid PTX (module-load failure). *)
-  let check_atom_operand intr result r =
-    let ok, want =
-      match result with
-      | `F32 -> (is_f32_reg r, "f32")
-      | `F64 -> (is_f64_reg r, "f64")
-      | `U64 -> (is_u64_reg r, "int64")
-      | `U32 ->
-          ( (not (is_f32_reg r)) && (not (is_f64_reg r)) && not (is_u64_reg r),
-            "int32" )
-    in
-    if not ok then
-      unsupported
-        (intr ^ ": operand " ^ r ^ " is not " ^ want ^ "; cast the value first")
-  in
-  let new_atom_result = function
-    | `F32 -> new_f32 alloc
-    | `F64 -> new_f64 alloc
-    | `U64 -> new_u64 alloc
-    | `U32 -> new_u32 alloc
-  in
-  (* Byte address of element [r_idx] of array [arr]: shared arrays use
-     32-bit byte addressing, global arrays 64-bit. [elt_shift] is log2 of
-     the element size (2 for 32-bit, 3 for 64-bit elements) — the stride
-     must match the atom width or neighbouring elements alias. Returns the
-     PTX space name and the address register. *)
-  let atomic_addr ~intr ~global_only ~elt_shift arr r_idx =
-    let r_base = env_lookup env arr.var_name in
-    (* PTX has no atom.local — and per-thread memory needs no atomics. *)
-    (match arr_space_of alloc arr.var_name with
-    | Some SpaceLocal ->
+(* ---- Shared intrinsic-emitter helpers ------------------------------------ *)
+
+(* f32 building blocks for the transcendental compositions below (all based
+   on .approx ops — f32 precision only, caveats at each call site). *)
+and intr_f32_op1 buf alloc op a =
+  let d = new_f32 alloc in
+  emit buf "%s %s, %s;" op d a ;
+  d
+
+and intr_f32_op2 buf alloc op a b =
+  let d = new_f32 alloc in
+  emit buf "%s %s, %s, %s;" op d a b ;
+  d
+
+and intr_f32_mul_const buf alloc a bits =
+  let d = new_f32 alloc in
+  emit buf "mul.f32 %s, %s, 0F%08lX;" d a bits ;
+  d
+
+(* Emit the argument(s) of a math intrinsic (no width check). *)
+and intr_unary_arg buf alloc (env : env) intr args =
+  match args with
+  | [a] -> emit_expr buf alloc env a
+  | _ -> unsupported (intr ^ " arity != 1")
+
+and intr_binary_args buf alloc (env : env) intr args =
+  match args with
+  | [a; b] -> (emit_expr buf alloc env a, emit_expr buf alloc env b)
+  | _ -> unsupported (intr ^ " arity != 2")
+
+(* Argument of a unary f32-only (.approx) lowering: f64 operands are
+   rejected cleanly, never emitted with an .f32 suffix. *)
+and intr_unary_f32_arg buf alloc env intr args =
+  let r = intr_unary_arg buf alloc env intr args in
+  if is_f32_reg r then r
+  else if is_f64_reg r then intr_no_f64 intr
+  else unsupported (intr ^ ": float operand required")
+
+and intr_binary_f32_args buf alloc env intr args =
+  let ra, rb = intr_binary_args buf alloc env intr args in
+  if is_f32_reg ra && is_f32_reg rb then (ra, rb)
+  else if is_f64_reg ra || is_f64_reg rb then intr_no_f64 intr
+  else unsupported (intr ^ ": float operands required")
+
+(* Unary float op with (up to) one native instruction per width; [None]
+   means the width has no lowering and is rejected cleanly. *)
+and intr_unary_native buf alloc env intr ~f32_op ~f64_op args =
+  let r_arg = intr_unary_arg buf alloc env intr args in
+  if is_f64_reg r_arg then
+    match f64_op with
+    | Some op ->
+        let d = new_f64 alloc in
+        emit buf "%s %s, %s;" op d r_arg ;
+        d
+    | None -> intr_no_f64 intr
+  else if is_f32_reg r_arg then
+    match f32_op with
+    | Some op ->
+        let d = new_f32 alloc in
+        emit buf "%s %s, %s;" op d r_arg ;
+        d
+    | None -> unsupported (intr ^ ": no f32 lowering")
+  else unsupported (intr ^ ": float operand required")
+
+(* Type conversions delegate to emit_cast; a unary helper for them. *)
+and intr_unary_cast buf alloc (env : env) intr dst_ty args =
+  match args with
+  | [a] -> emit_cast buf alloc (emit_expr buf alloc env a) dst_ty
+  | _ -> unsupported (intr ^ " arity != 1")
+
+(* Binary min/max: native PTX op. Both operands must share a register
+   class — a mixed-width op would be invalid PTX. *)
+and intr_binary_minmax buf alloc env intr op args =
+  match args with
+  | [a; b] ->
+      let ra = emit_expr buf alloc env a in
+      let rb = emit_expr buf alloc env b in
+      let mismatch () =
         unsupported
-          ("atomic operation on per-thread local array '" ^ arr.var_name
-         ^ "' (atomics require shared or global memory)")
-    | Some SpaceShared when global_only ->
-        (* A *_global_* atomic on a shared array would use the 32-bit
-           shared-window offset as a 64-bit global address — silent
-           corruption (audit finding M5). *)
-        unsupported
-          (intr ^ ": '" ^ arr.var_name
-         ^ "' is a shared array; use the non-global atomic form")
-    | Some SpaceShared | None -> ()) ;
-    (* The intrinsic's hardwired stride must match the array's element
-       width: atomic_add_int32 on an int64/f64 vector would index with a
-       4-byte stride into 8-byte elements — silent corruption of
-       neighbouring elements (audit finding M5). *)
-    (let elt = infer_elt_type alloc arr.var_name in
-     let width_shift =
-       match elt with
-       | TInt32 | TFloat32 | TBool -> Some 2
-       | TInt64 | TFloat64 -> Some 3
-       | _ -> None
-     in
-     match width_shift with
-     | Some w when w <> elt_shift ->
-         unsupported
-           (Printf.sprintf
-              "%s: array '%s' has %d-byte elements but this atomic addresses \
-               %d-byte elements; use the matching-width atomic"
-              intr
-              arr.var_name
-              (1 lsl w)
-              (1 lsl elt_shift))
-     | Some _ -> ()
-     | None ->
-         unsupported
-           (intr ^ ": atomics require a scalar int/float element type, but '"
-          ^ arr.var_name ^ "' has an aggregate element type")) ;
-    let is_shared =
-      (not global_only) && arr_space_of alloc arr.var_name = Some SpaceShared
-    in
-    if is_shared then begin
-      let r_off = new_u32 alloc in
-      let r_addr = new_u32 alloc in
-      emit buf "shl.b32 %s, %s, %d;" r_off r_idx elt_shift ;
-      emit buf "add.u32 %s, %s, %s;" r_addr r_base r_off ;
-      ("shared", r_addr)
-    end
-    else begin
-      let r_idx64 = new_u64 alloc in
-      let r_off = new_u64 alloc in
-      let r_addr = new_u64 alloc in
-      emit buf "cvt.u64.u32 %s, %s;" r_idx64 r_idx ;
-      emit buf "shl.b64 %s, %s, %d;" r_off r_idx64 elt_shift ;
-      emit buf "add.u64 %s, %s, %s;" r_addr r_base r_off ;
-      ("global", r_addr)
-    end
-  in
-  (* Atomic read-modify-write on one element of an array denoted by a plain
-     variable; returns the old value. [op]/[ty] form the PTX suffix (e.g.
-     add.s32, min.s32, and.b32, exch.b32, add.f32, add.u64, add.f64 — u64
-     add is two's-complement, so it is also the int64 add). PTX has no
-     atom.sub, so int32 "sub" is lowered to an add of the negated operand.
-     [result] selects the old-value register class and the operand width
-     check; [elt_shift] the addressing stride. *)
-  let atomic_rmw intr ~global_only ~elt_shift ~op ~ty ~result =
-    match args with
-    | [EVar arr; idx_e; val_e] ->
-        let r_idx = emit_expr buf alloc env idx_e in
-        let r_val0 = emit_expr buf alloc env val_e in
-        check_atom_operand intr result r_val0 ;
-        let op, r_val =
-          if op = "sub" then begin
-            let r = new_u32 alloc in
-            emit buf "neg.s32 %s, %s;" r r_val0 ;
-            ("add", r)
-          end
-          else (op, r_val0)
-        in
-        let space, r_addr =
-          atomic_addr ~intr ~global_only ~elt_shift arr r_idx
-        in
-        let r_old = new_atom_result result in
-        emit buf "atom.%s.%s%s %s, [%s], %s;" space op ty r_old r_addr r_val ;
-        r_old
-    | _ -> unsupported (intr ^ ": expects (array-variable, index, value)")
-  in
-  (* Atomic compare-and-swap: atom.{shared,global}.cas.b{32,64}
-     d, [addr], compare, value — stores value iff *addr == compare; returns
-     the old value either way. *)
-  let atomic_cas intr ~elt_shift ~ty ~result =
-    match args with
-    | [EVar arr; idx_e; cmp_e; val_e] ->
-        let r_idx = emit_expr buf alloc env idx_e in
-        let r_cmp = emit_expr buf alloc env cmp_e in
-        let r_val = emit_expr buf alloc env val_e in
-        check_atom_operand intr result r_cmp ;
-        check_atom_operand intr result r_val ;
-        let space, r_addr =
-          atomic_addr ~intr ~global_only:false ~elt_shift arr r_idx
-        in
-        let r_old = new_atom_result result in
-        emit
-          buf
-          "atom.%s.cas%s %s, [%s], %s, %s;"
-          space
-          ty
-          r_old
-          r_addr
-          r_cmp
-          r_val ;
-        r_old
-    | _ ->
-        unsupported (intr ^ ": expects (array-variable, index, compare, value)")
-  in
-  (* atom.{shared,global}.{inc,dec}.u32 with limit 0xffffffff. Semantics
-     note: PTX inc/dec WRAP at the limit operand —
-       inc: d = (old >= limit) ? 0 : old + 1
-       dec: d = (old == 0 || old > limit) ? limit : old - 1
-     With limit = 0xffffffff both coincide exactly with add/sub of 1 modulo
-     2^32, i.e. the interpreter's plain ±1 semantics; a smaller limit would
-     turn them into wrapping ring-buffer counters, which no Sarek intrinsic
-     exposes yet. *)
-  let atomic_incdec intr ~global_only ~op =
-    match args with
-    | [EVar arr; idx_e] ->
-        let r_idx = emit_expr buf alloc env idx_e in
-        let space, r_addr =
-          atomic_addr ~intr ~global_only ~elt_shift:2 arr r_idx
-        in
-        let r_lim = new_u32 alloc in
-        emit buf "mov.u32 %s, 0xffffffff;" r_lim ;
-        let r_old = new_u32 alloc in
-        emit buf "atom.%s.%s.u32 %s, [%s], %s;" space op r_old r_addr r_lim ;
-        r_old
-    | _ -> unsupported (intr ^ ": expects (array-variable, index)")
-  in
-  (* Binary min/max: native PTX op. Both operands must share a register
-     class — a mixed-width op would be invalid PTX. *)
-  let binary_minmax intr op =
-    match args with
-    | [a; b] ->
-        let ra = emit_expr buf alloc env a in
-        let rb = emit_expr buf alloc env b in
-        let mismatch () =
-          unsupported
-            (intr ^ ": operands " ^ ra ^ " and " ^ rb
-           ^ " have different register classes; cast one operand first")
-        in
-        if is_f64_reg ra then (
-          if not (is_f64_reg rb) then mismatch ()
-          else
-            let r = new_f64 alloc in
-            emit buf "%s.f64 %s, %s, %s;" op r ra rb ;
-            r)
-        else if is_f32_reg ra then (
-          if not (is_f32_reg rb) then mismatch ()
-          else
-            let r = new_f32 alloc in
-            emit buf "%s.f32 %s, %s, %s;" op r ra rb ;
-            r)
-        else if is_f32_reg rb || is_f64_reg rb then mismatch ()
+          (intr ^ ": operands " ^ ra ^ " and " ^ rb
+         ^ " have different register classes; cast one operand first")
+      in
+      if is_f64_reg ra then (
+        if not (is_f64_reg rb) then mismatch ()
         else
-          let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
-          if is_u64 ra then (
-            if not (is_u64 rb) then mismatch ()
-            else
-              let r = new_u64 alloc in
-              emit buf "%s.s64 %s, %s, %s;" op r ra rb ;
-              r)
-          else if is_u64 rb then mismatch ()
+          let r = new_f64 alloc in
+          emit buf "%s.f64 %s, %s, %s;" op r ra rb ;
+          r)
+      else if is_f32_reg ra then (
+        if not (is_f32_reg rb) then mismatch ()
+        else
+          let r = new_f32 alloc in
+          emit buf "%s.f32 %s, %s, %s;" op r ra rb ;
+          r)
+      else if is_f32_reg rb || is_f64_reg rb then mismatch ()
+      else
+        let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
+        if is_u64 ra then (
+          if not (is_u64 rb) then mismatch ()
           else
-            let r = new_u32 alloc in
-            emit buf "%s.s32 %s, %s, %s;" op r ra rb ;
-            r
-    | _ -> unsupported (intr ^ " arity != 2")
+            let r = new_u64 alloc in
+            emit buf "%s.s64 %s, %s, %s;" op r ra rb ;
+            r)
+        else if is_u64 rb then mismatch ()
+        else
+          let r = new_u32 alloc in
+          emit buf "%s.s32 %s, %s, %s;" op r ra rb ;
+          r
+  | _ -> unsupported (intr ^ " arity != 2")
+
+(* Unary same-type float rounding via cvt (rmi = floor, rpi = ceil). *)
+and intr_unary_round buf alloc env intr cvt args =
+  match args with
+  | [a] ->
+      let r = emit_expr buf alloc env a in
+      if is_f64_reg r then (
+        let d = new_f64 alloc in
+        emit buf "%s.f64.f64 %s, %s;" cvt d r ;
+        d)
+      else if is_f32_reg r then (
+        let d = new_f32 alloc in
+        emit buf "%s.f32.f32 %s, %s;" cvt d r ;
+        d)
+      else unsupported (intr ^ ": float operand required")
+  | _ -> unsupported (intr ^ " arity != 1")
+
+(* ---- Atomic-intrinsic helpers -------------------------------------------- *)
+
+(* An i64 register is "%rd<n>" (u64 class; distinct from f64 "%fd<n>"). *)
+and intr_is_u64_reg r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd'
+
+(* The operand register class must agree with the atom.<op><ty> suffix; a
+   mismatched register would be invalid PTX (module-load failure). *)
+and intr_check_atom_operand intr result r =
+  let ok, want =
+    match result with
+    | `F32 -> (is_f32_reg r, "f32")
+    | `F64 -> (is_f64_reg r, "f64")
+    | `U64 -> (intr_is_u64_reg r, "int64")
+    | `U32 ->
+        ( (not (is_f32_reg r)) && (not (is_f64_reg r)) && not (intr_is_u64_reg r),
+          "int32" )
   in
-  (* Unary same-type float rounding via cvt (rmi = floor, rpi = ceil). *)
-  let unary_round intr cvt =
-    match args with
-    | [a] ->
-        let r = emit_expr buf alloc env a in
-        if is_f64_reg r then (
-          let d = new_f64 alloc in
-          emit buf "%s.f64.f64 %s, %s;" cvt d r ;
-          d)
-        else if is_f32_reg r then (
-          let d = new_f32 alloc in
-          emit buf "%s.f32.f32 %s, %s;" cvt d r ;
-          d)
-        else unsupported (intr ^ ": float operand required")
-    | _ -> unsupported (intr ^ " arity != 1")
-  in
-  (* Emit the argument(s) of a math intrinsic (no width check). *)
-  let unary_arg intr =
-    match args with
-    | [a] -> emit_expr buf alloc env a
-    | _ -> unsupported (intr ^ " arity != 1")
-  in
-  let binary_args intr =
-    match args with
-    | [a; b] -> (emit_expr buf alloc env a, emit_expr buf alloc env b)
-    | _ -> unsupported (intr ^ " arity != 2")
-  in
-  (* Clean rejection for a math intrinsic with no f64 lowering. Never emit an
-     .f32-suffixed op on an f64 register: the mismatch is invalid PTX that
-     only fails at module-load time (cuModuleLoadData). *)
-  let no_f64 intr =
+  if not ok then
     unsupported
-      (intr ^ ": no native f64 " ^ intr
-     ^ " in PTX; compute in float32 or on the CPU")
+      (intr ^ ": operand " ^ r ^ " is not " ^ want ^ "; cast the value first")
+
+and intr_new_atom_result alloc = function
+  | `F32 -> new_f32 alloc
+  | `F64 -> new_f64 alloc
+  | `U64 -> new_u64 alloc
+  | `U32 -> new_u32 alloc
+
+(* Byte address of element [r_idx] of array [arr]: shared arrays use
+   32-bit byte addressing, global arrays 64-bit. [elt_shift] is log2 of
+   the element size (2 for 32-bit, 3 for 64-bit elements) — the stride
+   must match the atom width or neighbouring elements alias. Returns the
+   PTX space name and the address register. *)
+and intr_atomic_addr buf alloc (env : env) ~intr ~global_only ~elt_shift arr
+    r_idx =
+  let r_base = env_lookup env arr.var_name in
+  (* PTX has no atom.local — and per-thread memory needs no atomics. *)
+  (match arr_space_of alloc arr.var_name with
+  | Some SpaceLocal ->
+      unsupported
+        ("atomic operation on per-thread local array '" ^ arr.var_name
+       ^ "' (atomics require shared or global memory)")
+  | Some SpaceShared when global_only ->
+      (* A *_global_* atomic on a shared array would use the 32-bit
+         shared-window offset as a 64-bit global address — silent
+         corruption (audit finding M5). *)
+      unsupported
+        (intr ^ ": '" ^ arr.var_name
+       ^ "' is a shared array; use the non-global atomic form")
+  | Some SpaceShared | None -> ()) ;
+  (* The intrinsic's hardwired stride must match the array's element
+     width: atomic_add_int32 on an int64/f64 vector would index with a
+     4-byte stride into 8-byte elements — silent corruption of
+     neighbouring elements (audit finding M5). *)
+  (let elt = infer_elt_type alloc arr.var_name in
+   let width_shift =
+     match elt with
+     | TInt32 | TFloat32 | TBool -> Some 2
+     | TInt64 | TFloat64 -> Some 3
+     | _ -> None
+   in
+   match width_shift with
+   | Some w when w <> elt_shift ->
+       unsupported
+         (Printf.sprintf
+            "%s: array '%s' has %d-byte elements but this atomic addresses \
+             %d-byte elements; use the matching-width atomic"
+            intr
+            arr.var_name
+            (1 lsl w)
+            (1 lsl elt_shift))
+   | Some _ -> ()
+   | None ->
+       unsupported
+         (intr ^ ": atomics require a scalar int/float element type, but '"
+        ^ arr.var_name ^ "' has an aggregate element type")) ;
+  let is_shared =
+    (not global_only) && arr_space_of alloc arr.var_name = Some SpaceShared
   in
-  (* Argument of a unary f32-only (.approx) lowering: f64 operands are
-     rejected cleanly, never emitted with an .f32 suffix. *)
-  let unary_f32_arg intr =
-    let r = unary_arg intr in
-    if is_f32_reg r then r
-    else if is_f64_reg r then no_f64 intr
-    else unsupported (intr ^ ": float operand required")
-  in
-  let binary_f32_args intr =
-    let ra, rb = binary_args intr in
-    if is_f32_reg ra && is_f32_reg rb then (ra, rb)
-    else if is_f64_reg ra || is_f64_reg rb then no_f64 intr
-    else unsupported (intr ^ ": float operands required")
-  in
-  (* Unary float op with (up to) one native instruction per width; [None]
-     means the width has no lowering and is rejected cleanly. *)
-  let unary_native intr ~f32_op ~f64_op =
-    let r_arg = unary_arg intr in
-    if is_f64_reg r_arg then
-      match f64_op with
-      | Some op ->
-          let d = new_f64 alloc in
-          emit buf "%s %s, %s;" op d r_arg ;
-          d
-      | None -> no_f64 intr
-    else if is_f32_reg r_arg then
-      match f32_op with
-      | Some op ->
-          let d = new_f32 alloc in
-          emit buf "%s %s, %s;" op d r_arg ;
-          d
-      | None -> unsupported (intr ^ ": no f32 lowering")
-    else unsupported (intr ^ ": float operand required")
-  in
-  (* f32 building blocks for the transcendental compositions below (all based
-     on .approx ops — f32 precision only, caveats at each call site). *)
-  let f32_op1 op a =
-    let d = new_f32 alloc in
-    emit buf "%s %s, %s;" op d a ;
-    d
-  in
-  let f32_op2 op a b =
-    let d = new_f32 alloc in
-    emit buf "%s %s, %s, %s;" op d a b ;
-    d
-  in
-  let f32_mul_const a bits =
-    let d = new_f32 alloc in
-    emit buf "mul.f32 %s, %s, 0F%08lX;" d a bits ;
-    d
-  in
+  if is_shared then begin
+    let r_off = new_u32 alloc in
+    let r_addr = new_u32 alloc in
+    emit buf "shl.b32 %s, %s, %d;" r_off r_idx elt_shift ;
+    emit buf "add.u32 %s, %s, %s;" r_addr r_base r_off ;
+    ("shared", r_addr)
+  end
+  else begin
+    let r_idx64 = new_u64 alloc in
+    let r_off = new_u64 alloc in
+    let r_addr = new_u64 alloc in
+    emit buf "cvt.u64.u32 %s, %s;" r_idx64 r_idx ;
+    emit buf "shl.b64 %s, %s, %d;" r_off r_idx64 elt_shift ;
+    emit buf "add.u64 %s, %s, %s;" r_addr r_base r_off ;
+    ("global", r_addr)
+  end
+
+(* Atomic read-modify-write on one element of an array denoted by a plain
+   variable; returns the old value. [op]/[ty] form the PTX suffix (e.g.
+   add.s32, min.s32, and.b32, exch.b32, add.f32, add.u64, add.f64 — u64
+   add is two's-complement, so it is also the int64 add). PTX has no
+   atom.sub, so int32 "sub" is lowered to an add of the negated operand.
+   [result] selects the old-value register class and the operand width
+   check; [elt_shift] the addressing stride. *)
+and intr_atomic_rmw buf alloc env intr ~global_only ~elt_shift ~op ~ty ~result
+    args =
+  match args with
+  | [EVar arr; idx_e; val_e] ->
+      let r_idx = emit_expr buf alloc env idx_e in
+      let r_val0 = emit_expr buf alloc env val_e in
+      intr_check_atom_operand intr result r_val0 ;
+      let op, r_val =
+        if op = "sub" then begin
+          let r = new_u32 alloc in
+          emit buf "neg.s32 %s, %s;" r r_val0 ;
+          ("add", r)
+        end
+        else (op, r_val0)
+      in
+      let space, r_addr =
+        intr_atomic_addr buf alloc env ~intr ~global_only ~elt_shift arr r_idx
+      in
+      let r_old = intr_new_atom_result alloc result in
+      emit buf "atom.%s.%s%s %s, [%s], %s;" space op ty r_old r_addr r_val ;
+      r_old
+  | _ -> unsupported (intr ^ ": expects (array-variable, index, value)")
+
+(* Atomic compare-and-swap: atom.{shared,global}.cas.b{32,64}
+   d, [addr], compare, value — stores value iff *addr == compare; returns
+   the old value either way. *)
+and intr_atomic_cas buf alloc env intr ~elt_shift ~ty ~result args =
+  match args with
+  | [EVar arr; idx_e; cmp_e; val_e] ->
+      let r_idx = emit_expr buf alloc env idx_e in
+      let r_cmp = emit_expr buf alloc env cmp_e in
+      let r_val = emit_expr buf alloc env val_e in
+      intr_check_atom_operand intr result r_cmp ;
+      intr_check_atom_operand intr result r_val ;
+      let space, r_addr =
+        intr_atomic_addr
+          buf
+          alloc
+          env
+          ~intr
+          ~global_only:false
+          ~elt_shift
+          arr
+          r_idx
+      in
+      let r_old = intr_new_atom_result alloc result in
+      emit
+        buf
+        "atom.%s.cas%s %s, [%s], %s, %s;"
+        space
+        ty
+        r_old
+        r_addr
+        r_cmp
+        r_val ;
+      r_old
+  | _ -> unsupported (intr ^ ": expects (array-variable, index, compare, value)")
+
+(* atom.{shared,global}.{inc,dec}.u32 with limit 0xffffffff. Semantics
+   note: PTX inc/dec WRAP at the limit operand —
+     inc: d = (old >= limit) ? 0 : old + 1
+     dec: d = (old == 0 || old > limit) ? limit : old - 1
+   With limit = 0xffffffff both coincide exactly with add/sub of 1 modulo
+   2^32, i.e. the interpreter's plain ±1 semantics; a smaller limit would
+   turn them into wrapping ring-buffer counters, which no Sarek intrinsic
+   exposes yet. *)
+and intr_atomic_incdec buf alloc env intr ~global_only ~op args =
+  match args with
+  | [EVar arr; idx_e] ->
+      let r_idx = emit_expr buf alloc env idx_e in
+      let space, r_addr =
+        intr_atomic_addr buf alloc env ~intr ~global_only ~elt_shift:2 arr r_idx
+      in
+      let r_lim = new_u32 alloc in
+      emit buf "mov.u32 %s, 0xffffffff;" r_lim ;
+      let r_old = new_u32 alloc in
+      emit buf "atom.%s.%s.u32 %s, [%s], %s;" space op r_old r_addr r_lim ;
+      r_old
+  | _ -> unsupported (intr ^ ": expects (array-variable, index)")
+
+(* ---- Per-category intrinsic emitters ------------------------------------- *)
+
+(* Thread/block/grid indices, derived global indices, and the block
+   barrier. All are pure special-register moves plus arithmetic. *)
+and emit_intrinsic_index buf alloc name : string option =
   match name with
   | "thread_id_x" | "thread_idx_x" ->
       let r = new_u32 alloc in
       emit buf "mov.u32 %s, %%tid.x;" r ;
-      r
+      Some r
   | "thread_id_y" | "thread_idx_y" ->
       let r = new_u32 alloc in
       emit buf "mov.u32 %s, %%tid.y;" r ;
-      r
+      Some r
   | "thread_id_z" | "thread_idx_z" ->
       let r = new_u32 alloc in
       emit buf "mov.u32 %s, %%tid.z;" r ;
-      r
+      Some r
   | "block_id_x" | "block_idx_x" ->
       let r = new_u32 alloc in
       emit buf "mov.u32 %s, %%ctaid.x;" r ;
-      r
+      Some r
   | "block_id_y" | "block_idx_y" ->
       let r = new_u32 alloc in
       emit buf "mov.u32 %s, %%ctaid.y;" r ;
-      r
+      Some r
   | "block_id_z" | "block_idx_z" ->
       let r = new_u32 alloc in
       emit buf "mov.u32 %s, %%ctaid.z;" r ;
-      r
+      Some r
   | "block_dim_x" ->
       let r = new_u32 alloc in
       emit buf "mov.u32 %s, %%ntid.x;" r ;
-      r
+      Some r
   | "block_dim_y" ->
       let r = new_u32 alloc in
       emit buf "mov.u32 %s, %%ntid.y;" r ;
-      r
+      Some r
   | "block_dim_z" ->
       let r = new_u32 alloc in
       emit buf "mov.u32 %s, %%ntid.z;" r ;
-      r
+      Some r
   | "grid_dim_x" ->
       let r = new_u32 alloc in
       emit buf "mov.u32 %s, %%nctaid.x;" r ;
-      r
+      Some r
   | "grid_dim_y" ->
       let r = new_u32 alloc in
       emit buf "mov.u32 %s, %%nctaid.y;" r ;
-      r
+      Some r
   | "grid_dim_z" ->
       let r = new_u32 alloc in
       emit buf "mov.u32 %s, %%nctaid.z;" r ;
-      r
+      Some r
   | "global_thread_id" | "global_idx" | "global_idx_x" ->
       let r_tid = new_u32 alloc in
       emit buf "mov.u32 %s, %%tid.x;" r_tid ;
@@ -1629,7 +1648,7 @@ and emit_intrinsic_native buf alloc env path name args : string =
       emit buf "mul.lo.u32 %s, %s, %s;" r_off r_bid r_bdim ;
       let r_gid = new_u32 alloc in
       emit buf "add.u32 %s, %s, %s;" r_gid r_tid r_off ;
-      r_gid
+      Some r_gid
   | "global_idx_y" ->
       let r_tid = new_u32 alloc in
       emit buf "mov.u32 %s, %%tid.y;" r_tid ;
@@ -1641,7 +1660,7 @@ and emit_intrinsic_native buf alloc env path name args : string =
       emit buf "mul.lo.u32 %s, %s, %s;" r_off r_bid r_bdim ;
       let r_gid = new_u32 alloc in
       emit buf "add.u32 %s, %s, %s;" r_gid r_tid r_off ;
-      r_gid
+      Some r_gid
   | "global_size" ->
       let r_bdim = new_u32 alloc in
       emit buf "mov.u32 %s, %%ntid.x;" r_bdim ;
@@ -1649,72 +1668,131 @@ and emit_intrinsic_native buf alloc env path name args : string =
       emit buf "mov.u32 %s, %%nctaid.x;" r_gdim ;
       let r = new_u32 alloc in
       emit buf "mul.lo.u32 %s, %s, %s;" r r_bdim r_gdim ;
-      r
+      Some r
   | "block_barrier" ->
       emit buf "bar.sync 0;" ;
       let r = new_u32 alloc in
       emit buf "mov.u32 %s, 0;" r ;
-      r
-  | "sin" -> f32_op1 "sin.approx.f32" (unary_f32_arg "sin")
-  | "cos" -> f32_op1 "cos.approx.f32" (unary_f32_arg "cos")
+      Some r
+  | _ -> None
+
+(* Transcendental and trigonometric functions. Most are f32-only .approx
+   compositions; the arc/expm1/log1p family widens to the f64 softmath
+   helper and rounds back. *)
+and emit_intrinsic_transcendental buf alloc env name args : string option =
+  match name with
+  | "sin" ->
+      Some
+        (intr_f32_op1
+           buf
+           alloc
+           "sin.approx.f32"
+           (intr_unary_f32_arg buf alloc env "sin" args))
+  | "cos" ->
+      Some
+        (intr_f32_op1
+           buf
+           alloc
+           "cos.approx.f32"
+           (intr_unary_f32_arg buf alloc env "cos" args))
   | "tan" ->
       (* tan = sin/cos, all .approx: f32 precision only. *)
-      let r_arg = unary_f32_arg "tan" in
-      let r_sin = f32_op1 "sin.approx.f32" r_arg in
-      let r_cos = f32_op1 "cos.approx.f32" r_arg in
-      f32_op2 "div.approx.f32" r_sin r_cos
+      let r_arg = intr_unary_f32_arg buf alloc env "tan" args in
+      let r_sin = intr_f32_op1 buf alloc "sin.approx.f32" r_arg in
+      let r_cos = intr_f32_op1 buf alloc "cos.approx.f32" r_arg in
+      Some (intr_f32_op2 buf alloc "div.approx.f32" r_sin r_cos)
   | "sqrt" ->
-      unary_native
-        "sqrt"
-        ~f32_op:(Some "sqrt.approx.f32")
-        ~f64_op:(Some "sqrt.rn.f64")
+      Some
+        (intr_unary_native
+           buf
+           alloc
+           env
+           "sqrt"
+           ~f32_op:(Some "sqrt.approx.f32")
+           ~f64_op:(Some "sqrt.rn.f64")
+           args)
   | "exp" ->
       (* exp(x) = 2^(x·log2 e); PTX only has base-2 ex2 (.approx, f32). *)
-      let r_arg = unary_f32_arg "exp" in
-      f32_op1 "ex2.approx.f32" (f32_mul_const r_arg f32_log2_e_bits)
+      let r_arg = intr_unary_f32_arg buf alloc env "exp" args in
+      Some
+        (intr_f32_op1
+           buf
+           alloc
+           "ex2.approx.f32"
+           (intr_f32_mul_const buf alloc r_arg f32_log2_e_bits))
   | "log" ->
       (* log(x) = log2(x)·ln 2; PTX only has base-2 lg2 (.approx, f32). *)
-      let r_arg = unary_f32_arg "log" in
-      f32_mul_const (f32_op1 "lg2.approx.f32" r_arg) f32_ln_2_bits
+      let r_arg = intr_unary_f32_arg buf alloc env "log" args in
+      Some
+        (intr_f32_mul_const
+           buf
+           alloc
+           (intr_f32_op1 buf alloc "lg2.approx.f32" r_arg)
+           f32_ln_2_bits)
   | "log10" ->
       (* log10(x) = log2(x)·log10 2; .approx, f32 precision only. *)
-      let r_arg = unary_f32_arg "log10" in
-      f32_mul_const (f32_op1 "lg2.approx.f32" r_arg) f32_log10_2_bits
+      let r_arg = intr_unary_f32_arg buf alloc env "log10" args in
+      Some
+        (intr_f32_mul_const
+           buf
+           alloc
+           (intr_f32_op1 buf alloc "lg2.approx.f32" r_arg)
+           f32_log10_2_bits)
   | "pow" ->
       (* pow(x,y) = 2^(y·log2 x) via lg2/ex2 (.approx, f32). Domain caveat:
          valid for x > 0 only — lg2 of a negative is NaN, so integer-exponent
          negative bases are not handled. *)
-      let ra, rb = binary_f32_args "pow" in
-      let r_lg = f32_op1 "lg2.approx.f32" ra in
-      f32_op1 "ex2.approx.f32" (f32_op2 "mul.f32" rb r_lg)
+      let ra, rb = intr_binary_f32_args buf alloc env "pow" args in
+      let r_lg = intr_f32_op1 buf alloc "lg2.approx.f32" ra in
+      Some
+        (intr_f32_op1
+           buf
+           alloc
+           "ex2.approx.f32"
+           (intr_f32_op2 buf alloc "mul.f32" rb r_lg))
   | "sinh" | "cosh" ->
       (* sinh/cosh x = (e^x ∓ e^-x)/2 via ex2(±x·log2 e); .approx, f32. *)
-      let r_arg = unary_f32_arg name in
-      let r_t = f32_mul_const r_arg f32_log2_e_bits in
-      let r_pos = f32_op1 "ex2.approx.f32" r_t in
-      let r_neg = f32_op1 "ex2.approx.f32" (f32_op1 "neg.f32" r_t) in
+      let r_arg = intr_unary_f32_arg buf alloc env name args in
+      let r_t = intr_f32_mul_const buf alloc r_arg f32_log2_e_bits in
+      let r_pos = intr_f32_op1 buf alloc "ex2.approx.f32" r_t in
+      let r_neg =
+        intr_f32_op1
+          buf
+          alloc
+          "ex2.approx.f32"
+          (intr_f32_op1 buf alloc "neg.f32" r_t)
+      in
       let comb = if name = "sinh" then "sub.f32" else "add.f32" in
-      f32_mul_const (f32_op2 comb r_pos r_neg) f32_half_bits
+      Some
+        (intr_f32_mul_const
+           buf
+           alloc
+           (intr_f32_op2 buf alloc comb r_pos r_neg)
+           f32_half_bits)
   | "tanh" ->
       (* tanh x = copysign(1 − 2/(e^(2|x|) + 1), x) via ex2(2|x|·log2 e).
          Using |x| keeps the exponential finite-or-+inf only: at overflow
          e^(2|x|) = +inf, 2/(inf+1) = 0 and the result saturates to ±1
          instead of the NaN the naive (e^2x−1)/(e^2x+1) form produces. *)
-      let r_arg = unary_f32_arg "tanh" in
-      let r_abs = f32_op1 "abs.f32" r_arg in
+      let r_arg = intr_unary_f32_arg buf alloc env "tanh" args in
+      let r_abs = intr_f32_op1 buf alloc "abs.f32" r_arg in
       let r_e2x =
-        f32_op1 "ex2.approx.f32" (f32_mul_const r_abs f32_two_log2_e_bits)
+        intr_f32_op1
+          buf
+          alloc
+          "ex2.approx.f32"
+          (intr_f32_mul_const buf alloc r_abs f32_two_log2_e_bits)
       in
       let r_den = new_f32 alloc in
       emit buf "add.f32 %s, %s, 0F%08lX;" r_den r_e2x f32_one_bits ;
       let r_two = new_f32 alloc in
       emit buf "mov.f32 %s, 0F%08lX;" r_two (Int32.bits_of_float 2.0) ;
-      let r_frac = f32_op2 "div.approx.f32" r_two r_den in
+      let r_frac = intr_f32_op2 buf alloc "div.approx.f32" r_two r_den in
       let r_mag = new_f32 alloc in
       emit buf "sub.f32 %s, 0F%08lX, %s;" r_mag f32_one_bits r_frac ;
       let r = new_f32 alloc in
       emit buf "copysign.f32 %s, %s, %s;" r r_arg r_mag ;
-      r
+      Some r
   | "asin" | "acos" | "atan" | "atan2" | "expm1" | "log1p" -> (
       (* f32 path: no native PTX instruction and no accurate ex2/lg2
          composition (and for expm1/log1p an exp/log composition would lose
@@ -1742,26 +1820,56 @@ and emit_intrinsic_native buf alloc env path name args : string =
       in
       let args64 = List.map (fun a -> ECast (TFloat64, a)) args in
       match emit_app buf alloc env f args64 with
-      | Scalar r -> emit_cast buf alloc r TFloat32
+      | Scalar r -> Some (emit_cast buf alloc r TFloat32)
       | Agg _ ->
           fail
             "PTX codegen: internal error: softmath helper returned an aggregate"
       )
+  | "rsqrt" ->
+      (* f64: rcp.rn∘sqrt.rn — rsqrt.approx.f64 exists but is low-precision
+         (~1e-4); the two correctly-rounded ops give ~1-ulp-per-op accuracy.
+         f32 keeps the fast rsqrt.approx.f32. *)
+      let r = intr_unary_arg buf alloc env "rsqrt" args in
+      if is_f64_reg r then (
+        let r_sqrt = new_f64 alloc in
+        emit buf "sqrt.rn.f64 %s, %s;" r_sqrt r ;
+        let d = new_f64 alloc in
+        emit buf "rcp.rn.f64 %s, %s;" d r_sqrt ;
+        Some d)
+      else if is_f32_reg r then (
+        let d = new_f32 alloc in
+        emit buf "rsqrt.approx.f32 %s, %s;" d r ;
+        Some d)
+      else unsupported "rsqrt: float operand required"
+  | _ -> None
+
+(* Elementary float operations with direct (or short) native lowerings:
+   abs, copysign, fmod, hypot, fma, min/max, floor/ceil. *)
+and emit_intrinsic_float_ops buf alloc env name args : string option =
+  match name with
   | "fabs" | "abs_float" ->
-      unary_native name ~f32_op:(Some "abs.f32") ~f64_op:(Some "abs.f64")
+      Some
+        (intr_unary_native
+           buf
+           alloc
+           env
+           name
+           ~f32_op:(Some "abs.f32")
+           ~f64_op:(Some "abs.f64")
+           args)
   | "copysign" ->
       (* PTX: copysign d, a, b = |b| with a's sign. OCaml copysign x y = |x|
          with y's sign — the sign source (second Sarek argument) therefore
          goes in the FIRST PTX operand slot. *)
-      let ra, rb = binary_args "copysign" in
+      let ra, rb = intr_binary_args buf alloc env "copysign" args in
       if is_f64_reg ra && is_f64_reg rb then (
         let d = new_f64 alloc in
         emit buf "copysign.f64 %s, %s, %s;" d rb ra ;
-        d)
+        Some d)
       else if is_f32_reg ra && is_f32_reg rb then (
         let d = new_f32 alloc in
         emit buf "copysign.f32 %s, %s, %s;" d rb ra ;
-        d)
+        Some d)
       else
         unsupported
           ("copysign: operands " ^ ra ^ ", " ^ rb
@@ -1770,11 +1878,11 @@ and emit_intrinsic_native buf alloc env path name args : string =
       (* C fmod (Float32.fmod / Float64.fmod): exact iterative reduction shared
          with the float [Mod] binop lowering (see emit_float_fmod). Both operands
          must share a width — a mixed-width op would be invalid PTX. *)
-      let ra, rb = binary_args "fmod" in
+      let ra, rb = intr_binary_args buf alloc env "fmod" args in
       if is_f64_reg ra && is_f64_reg rb then
-        emit_float_fmod buf alloc ~is64:true ra rb
+        Some (emit_float_fmod buf alloc ~is64:true ra rb)
       else if is_f32_reg ra && is_f32_reg rb then
-        emit_float_fmod buf alloc ~is64:false ra rb
+        Some (emit_float_fmod buf alloc ~is64:false ra rb)
       else
         unsupported
           ("fmod: operands " ^ ra ^ ", " ^ rb
@@ -1783,7 +1891,7 @@ and emit_intrinsic_native buf alloc env path name args : string =
       (* hypot = sqrt(x² + y²) via mul + fma + sqrt. No overflow/underflow
          rescaling: exact enough for moderate magnitudes (f64 uses only
          correctly-rounded ops), wrong near FLT/DBL_MAX. *)
-      let ra, rb = binary_args "hypot" in
+      let ra, rb = intr_binary_args buf alloc env "hypot" args in
       if is_f64_reg ra && is_f64_reg rb then (
         let r_xx = new_f64 alloc in
         emit buf "mul.f64 %s, %s, %s;" r_xx ra ra ;
@@ -1791,32 +1899,16 @@ and emit_intrinsic_native buf alloc env path name args : string =
         emit buf "fma.rn.f64 %s, %s, %s, %s;" r_sum rb rb r_xx ;
         let d = new_f64 alloc in
         emit buf "sqrt.rn.f64 %s, %s;" d r_sum ;
-        d)
+        Some d)
       else if is_f32_reg ra && is_f32_reg rb then (
-        let r_xx = f32_op2 "mul.f32" ra ra in
+        let r_xx = intr_f32_op2 buf alloc "mul.f32" ra ra in
         let r_sum = new_f32 alloc in
         emit buf "fma.rn.f32 %s, %s, %s, %s;" r_sum rb rb r_xx ;
-        f32_op1 "sqrt.rn.f32" r_sum)
+        Some (intr_f32_op1 buf alloc "sqrt.rn.f32" r_sum))
       else
         unsupported
           ("hypot: operands " ^ ra ^ ", " ^ rb
          ^ " must both be f32 or both f64; cast one operand first")
-  (* Bitcasts between f64 and int64 (mov.b64) — the exponent-field plumbing
-     the softmath f64 transcendentals are built on. *)
-  | "f64_bits" ->
-      let r = unary_arg "f64_bits" in
-      if is_f64_reg r then (
-        let d = new_u64 alloc in
-        emit buf "mov.b64 %s, %s;" d r ;
-        d)
-      else unsupported "f64_bits: f64 operand required"
-  | "bits_f64" ->
-      let r = unary_arg "bits_f64" in
-      if String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' then (
-        let d = new_f64 alloc in
-        emit buf "mov.b64 %s, %s;" d r ;
-        d)
-      else unsupported "bits_f64: int64 operand required"
   | "fma" -> (
       match args with
       | [a; b; c] ->
@@ -1826,166 +1918,306 @@ and emit_intrinsic_native buf alloc env path name args : string =
           if is_f64_reg ra && is_f64_reg rb && is_f64_reg rc then (
             let r = new_f64 alloc in
             emit buf "fma.rn.f64 %s, %s, %s, %s;" r ra rb rc ;
-            r)
+            Some r)
           else if is_f32_reg ra && is_f32_reg rb && is_f32_reg rc then (
             let r = new_f32 alloc in
             emit buf "fma.rn.f32 %s, %s, %s, %s;" r ra rb rc ;
-            r)
+            Some r)
           else
             unsupported
               ("fma: operands " ^ ra ^ ", " ^ rb ^ ", " ^ rc
              ^ " must all be f32 or all f64; cast the mismatched operand")
       | _ -> unsupported "fma arity != 3")
-  (* Type conversions (Gpu.float / Float32.of_int / …). "of_int"/"to_int"
-     are path-dependent: they exist in both the Float32 and Float64 stdlib
-     modules. *)
-  | "float" | "float_of_int" -> unary_cast name TFloat32
-  | "float64" | "float64_of_int" -> unary_cast name TFloat64
-  | "int_of_float" | "int_of_float64" -> unary_cast name TInt32
-  | "of_int" ->
-      if List.exists (fun p -> p = "Float64") path then unary_cast name TFloat64
-      else unary_cast name TFloat32
-  | "to_int" -> unary_cast name TInt32
-  (* Atomics (int32 add; old value returned). *)
-  (* Native math with a direct PTX op. *)
-  | "min" -> binary_minmax name "min"
-  | "max" -> binary_minmax name "max"
-  | "floor" -> unary_round name "cvt.rmi"
-  | "ceil" -> unary_round name "cvt.rpi"
-  | "rsqrt" ->
-      (* f64: rcp.rn∘sqrt.rn — rsqrt.approx.f64 exists but is low-precision
-         (~1e-4); the two correctly-rounded ops give ~1-ulp-per-op accuracy.
-         f32 keeps the fast rsqrt.approx.f32. *)
-      let r = unary_arg "rsqrt" in
+  | "min" -> Some (intr_binary_minmax buf alloc env name "min" args)
+  | "max" -> Some (intr_binary_minmax buf alloc env name "max" args)
+  | "floor" -> Some (intr_unary_round buf alloc env name "cvt.rmi" args)
+  | "ceil" -> Some (intr_unary_round buf alloc env name "cvt.rpi" args)
+  | _ -> None
+
+(* Bitcasts between f64 and int64 (mov.b64) — the exponent-field plumbing
+   the softmath f64 transcendentals are built on. *)
+and emit_intrinsic_bitcast buf alloc env name args : string option =
+  match name with
+  | "f64_bits" ->
+      let r = intr_unary_arg buf alloc env "f64_bits" args in
       if is_f64_reg r then (
-        let r_sqrt = new_f64 alloc in
-        emit buf "sqrt.rn.f64 %s, %s;" r_sqrt r ;
+        let d = new_u64 alloc in
+        emit buf "mov.b64 %s, %s;" d r ;
+        Some d)
+      else unsupported "f64_bits: f64 operand required"
+  | "bits_f64" ->
+      let r = intr_unary_arg buf alloc env "bits_f64" args in
+      if String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' then (
         let d = new_f64 alloc in
-        emit buf "rcp.rn.f64 %s, %s;" d r_sqrt ;
-        d)
-      else if is_f32_reg r then (
-        let d = new_f32 alloc in
-        emit buf "rsqrt.approx.f32 %s, %s;" d r ;
-        d)
-      else unsupported "rsqrt: float operand required"
-  (* Atomics (old value returned). Shared vs global is auto-detected from the
-     array's memory space; the *_global_* names force the global path. *)
+        emit buf "mov.b64 %s, %s;" d r ;
+        Some d)
+      else unsupported "bits_f64: int64 operand required"
+  | _ -> None
+
+(* Type conversions (Gpu.float / Float32.of_int / …). "of_int"/"to_int"
+   are path-dependent: they exist in both the Float32 and Float64 stdlib
+   modules. *)
+and emit_intrinsic_convert buf alloc env path name args : string option =
+  match name with
+  | "float" | "float_of_int" ->
+      Some (intr_unary_cast buf alloc env name TFloat32 args)
+  | "float64" | "float64_of_int" ->
+      Some (intr_unary_cast buf alloc env name TFloat64 args)
+  | "int_of_float" | "int_of_float64" ->
+      Some (intr_unary_cast buf alloc env name TInt32 args)
+  | "of_int" ->
+      if List.exists (fun p -> p = "Float64") path then
+        Some (intr_unary_cast buf alloc env name TFloat64 args)
+      else Some (intr_unary_cast buf alloc env name TFloat32 args)
+  | "to_int" -> Some (intr_unary_cast buf alloc env name TInt32 args)
+  | _ -> None
+
+(* Atomics (old value returned). Shared vs global is auto-detected from the
+   array's memory space; the *_global_* names force the global path. *)
+and emit_intrinsic_atomic buf alloc env name args : string option =
+  match name with
   | "atomic_add_int32" ->
-      atomic_rmw
-        name
-        ~global_only:false
-        ~elt_shift:2
-        ~op:"add"
-        ~ty:".s32"
-        ~result:`U32
+      Some
+        (intr_atomic_rmw
+           buf
+           alloc
+           env
+           name
+           ~global_only:false
+           ~elt_shift:2
+           ~op:"add"
+           ~ty:".s32"
+           ~result:`U32
+           args)
   | "atomic_add_global_int32" ->
-      atomic_rmw
-        name
-        ~global_only:true
-        ~elt_shift:2
-        ~op:"add"
-        ~ty:".s32"
-        ~result:`U32
+      Some
+        (intr_atomic_rmw
+           buf
+           alloc
+           env
+           name
+           ~global_only:true
+           ~elt_shift:2
+           ~op:"add"
+           ~ty:".s32"
+           ~result:`U32
+           args)
   | "atomic_sub_int32" ->
-      atomic_rmw
-        name
-        ~global_only:false
-        ~elt_shift:2
-        ~op:"sub"
-        ~ty:".s32"
-        ~result:`U32
+      Some
+        (intr_atomic_rmw
+           buf
+           alloc
+           env
+           name
+           ~global_only:false
+           ~elt_shift:2
+           ~op:"sub"
+           ~ty:".s32"
+           ~result:`U32
+           args)
   | "atomic_min_int32" ->
-      atomic_rmw
-        name
-        ~global_only:false
-        ~elt_shift:2
-        ~op:"min"
-        ~ty:".s32"
-        ~result:`U32
+      Some
+        (intr_atomic_rmw
+           buf
+           alloc
+           env
+           name
+           ~global_only:false
+           ~elt_shift:2
+           ~op:"min"
+           ~ty:".s32"
+           ~result:`U32
+           args)
   | "atomic_max_int32" ->
-      atomic_rmw
-        name
-        ~global_only:false
-        ~elt_shift:2
-        ~op:"max"
-        ~ty:".s32"
-        ~result:`U32
+      Some
+        (intr_atomic_rmw
+           buf
+           alloc
+           env
+           name
+           ~global_only:false
+           ~elt_shift:2
+           ~op:"max"
+           ~ty:".s32"
+           ~result:`U32
+           args)
   | "atomic_and_int32" ->
-      atomic_rmw
-        name
-        ~global_only:false
-        ~elt_shift:2
-        ~op:"and"
-        ~ty:".b32"
-        ~result:`U32
+      Some
+        (intr_atomic_rmw
+           buf
+           alloc
+           env
+           name
+           ~global_only:false
+           ~elt_shift:2
+           ~op:"and"
+           ~ty:".b32"
+           ~result:`U32
+           args)
   | "atomic_or_int32" ->
-      atomic_rmw
-        name
-        ~global_only:false
-        ~elt_shift:2
-        ~op:"or"
-        ~ty:".b32"
-        ~result:`U32
+      Some
+        (intr_atomic_rmw
+           buf
+           alloc
+           env
+           name
+           ~global_only:false
+           ~elt_shift:2
+           ~op:"or"
+           ~ty:".b32"
+           ~result:`U32
+           args)
   | "atomic_xor_int32" ->
-      atomic_rmw
-        name
-        ~global_only:false
-        ~elt_shift:2
-        ~op:"xor"
-        ~ty:".b32"
-        ~result:`U32
+      Some
+        (intr_atomic_rmw
+           buf
+           alloc
+           env
+           name
+           ~global_only:false
+           ~elt_shift:2
+           ~op:"xor"
+           ~ty:".b32"
+           ~result:`U32
+           args)
   | "atomic_exch_int32" ->
-      atomic_rmw
-        name
-        ~global_only:false
-        ~elt_shift:2
-        ~op:"exch"
-        ~ty:".b32"
-        ~result:`U32
+      Some
+        (intr_atomic_rmw
+           buf
+           alloc
+           env
+           name
+           ~global_only:false
+           ~elt_shift:2
+           ~op:"exch"
+           ~ty:".b32"
+           ~result:`U32
+           args)
   (* exch generalized to 64-bit elements. No stdlib/ppx int64-exch name
      exists yet; the emitter accepts the conventional name ahead of it
      (snapshot-only coverage). *)
   | "atomic_exch_int64" ->
-      atomic_rmw
-        name
-        ~global_only:false
-        ~elt_shift:3
-        ~op:"exch"
-        ~ty:".b64"
-        ~result:`U64
+      Some
+        (intr_atomic_rmw
+           buf
+           alloc
+           env
+           name
+           ~global_only:false
+           ~elt_shift:3
+           ~op:"exch"
+           ~ty:".b64"
+           ~result:`U64
+           args)
   (* atom.add.u64: PTX add has no .s64 form; u64 add is two's-complement,
      identical to signed int64 add. *)
   | "atomic_add_int64" ->
-      atomic_rmw
-        name
-        ~global_only:false
-        ~elt_shift:3
-        ~op:"add"
-        ~ty:".u64"
-        ~result:`U64
+      Some
+        (intr_atomic_rmw
+           buf
+           alloc
+           env
+           name
+           ~global_only:false
+           ~elt_shift:3
+           ~op:"add"
+           ~ty:".u64"
+           ~result:`U64
+           args)
   | "atomic_add_float32" ->
-      atomic_rmw
-        name
-        ~global_only:false
-        ~elt_shift:2
-        ~op:"add"
-        ~ty:".f32"
-        ~result:`F32
+      Some
+        (intr_atomic_rmw
+           buf
+           alloc
+           env
+           name
+           ~global_only:false
+           ~elt_shift:2
+           ~op:"add"
+           ~ty:".f32"
+           ~result:`F32
+           args)
   (* atom.add.f64 requires sm_60+; the default target is sm_86. ZLUDA
      support for f64 atomics is unverified — snapshot coverage only. *)
   | "atomic_add_float64" ->
-      atomic_rmw
-        name
-        ~global_only:false
-        ~elt_shift:3
-        ~op:"add"
-        ~ty:".f64"
-        ~result:`F64
-  | "atomic_cas_int32" -> atomic_cas name ~elt_shift:2 ~ty:".b32" ~result:`U32
+      Some
+        (intr_atomic_rmw
+           buf
+           alloc
+           env
+           name
+           ~global_only:false
+           ~elt_shift:3
+           ~op:"add"
+           ~ty:".f64"
+           ~result:`F64
+           args)
+  | "atomic_cas_int32" ->
+      Some
+        (intr_atomic_cas
+           buf
+           alloc
+           env
+           name
+           ~elt_shift:2
+           ~ty:".b32"
+           ~result:`U32
+           args)
   (* No stdlib/ppx int64-CAS name exists yet; the emitter accepts the
      conventional name ahead of it (snapshot-only coverage). *)
-  | "atomic_cas_int64" -> atomic_cas name ~elt_shift:3 ~ty:".b64" ~result:`U64
-  | "atomic_inc_int32" -> atomic_incdec name ~global_only:false ~op:"inc"
-  | "atomic_inc_global_int32" -> atomic_incdec name ~global_only:true ~op:"inc"
-  | "atomic_dec_int32" -> atomic_incdec name ~global_only:false ~op:"dec"
-  | n -> unsupported ("intrinsic: " ^ n)
+  | "atomic_cas_int64" ->
+      Some
+        (intr_atomic_cas
+           buf
+           alloc
+           env
+           name
+           ~elt_shift:3
+           ~ty:".b64"
+           ~result:`U64
+           args)
+  | "atomic_inc_int32" ->
+      Some
+        (intr_atomic_incdec
+           buf
+           alloc
+           env
+           name
+           ~global_only:false
+           ~op:"inc"
+           args)
+  | "atomic_inc_global_int32" ->
+      Some
+        (intr_atomic_incdec buf alloc env name ~global_only:true ~op:"inc" args)
+  | "atomic_dec_int32" ->
+      Some
+        (intr_atomic_incdec
+           buf
+           alloc
+           env
+           name
+           ~global_only:false
+           ~op:"dec"
+           args)
+  | _ -> None
+
+(* PTX-assembly intrinsic emitter. Dispatches [name] across the cohesive
+   per-category emitters above; each returns [None] for a name it does not
+   own (the name sets are disjoint), so the first [Some] wins and an
+   unrecognised name falls through to [unsupported]. *)
+and emit_intrinsic_native buf alloc (env : env) path name args : string =
+  let candidates =
+    [
+      (fun () -> emit_intrinsic_index buf alloc name);
+      (fun () -> emit_intrinsic_transcendental buf alloc env name args);
+      (fun () -> emit_intrinsic_float_ops buf alloc env name args);
+      (fun () -> emit_intrinsic_bitcast buf alloc env name args);
+      (fun () -> emit_intrinsic_convert buf alloc env path name args);
+      (fun () -> emit_intrinsic_atomic buf alloc env name args);
+    ]
+  in
+  let rec first = function
+    | [] -> unsupported ("intrinsic: " ^ name)
+    | f :: rest -> ( match f () with Some r -> r | None -> first rest)
+  in
+  first candidates
