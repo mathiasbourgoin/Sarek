@@ -395,24 +395,45 @@ and gen_unop = function Neg -> "-" | Not -> "!" | BitNot -> "~"
     [cbrt] uses [sign(x)*pow(abs(x),...)] rather than bare [pow] because GLSL's
     [pow] is undefined for a negative base. [log10] is derived from the natural
     [log] builtin: GLSL exposes [log] (base e) and [log2] but no base-10 form,
-    so [log10(x) = log(x)/log(10)]; the [log(10.0)] divisor is a compile-time
-    constant every GLSL compiler folds. Routing [log10] through here (ahead of
-    the pure registry) is required: [log10] IS present in the pure-registry
+    so [log10(x) = log(x)/log(10)]. Routing [log10] through here (ahead of the
+    pure registry) is required: [log10] IS present in the pure-registry
     float32/float64 tables and would otherwise emit the raw un-suffixed
     [log10(...)] that glslang rejects — the same latent-invalid-GLSL class as
-    [fabs]/[copysign] (#246/#256). *)
-and gen_glsl_polyfill buf name args =
+    [fabs]/[copysign] (#246/#256).
+
+    [is_f64] carries the operand precision (derived from the intrinsic path — a
+    [Float64] component). It governs the precision of any numeric LITERAL that a
+    builtin then computes on: on the [double] route the literal must carry the
+    GLSL double suffix (GLSL 4.5 §4.1.4), otherwise it defaults to [float] and
+    pins the result to single precision even where the [double] overload of the
+    surrounding builtin exists. The suffix is spelled lowercase [lf] to match
+    the generator's own [EConst (CFloat64 _)] output (see {!gen_expr}); GLSL
+    accepts [lf] and [LF] interchangeably, so a single casing keeps every double
+    literal in the emitted shader uniform. This bites exactly the two polyfills
+    that feed a literal into a transcendental / irrational computation:
+    - [log10]: [log(10.0)] — an irrational, evaluated by the [float] [log]
+      overload; [log(10.0lf)] uses the [double] overload.
+    - [cbrt]: the exponent [1.0/3.0] — a non-terminating fraction; [1.0/3.0] is
+      a [float] division (~7 digits), [1.0lf/3.0lf] a [double] one. [hypot] (no
+      literal), [expm1] and [log1p] (their only literal is [1.0], which is
+      exactly representable and promotes to [double] losslessly, and is never
+      itself the argument of a builtin) are precision-safe as-is and left
+      byte-for-byte unchanged so their existing goldens do not move. *)
+and gen_glsl_polyfill buf ~is_f64 name args =
+  let flit s = if is_f64 then s ^ "lf" else s in
   match (name, args) with
   | "log10", [x] ->
       Buffer.add_string buf "(log(" ;
       gen_expr buf x ;
-      Buffer.add_string buf ") / log(10.0))"
+      Buffer.add_string buf (Printf.sprintf ") / log(%s))" (flit "10.0"))
   | "cbrt", [x] ->
       Buffer.add_string buf "(sign(" ;
       gen_expr buf x ;
       Buffer.add_string buf ") * pow(abs(" ;
       gen_expr buf x ;
-      Buffer.add_string buf "), 1.0 / 3.0))"
+      Buffer.add_string
+        buf
+        (Printf.sprintf "), %s / %s))" (flit "1.0") (flit "3.0"))
   | "hypot", [x; y] ->
       Buffer.add_string buf "sqrt((" ;
       gen_expr buf x ;
@@ -441,7 +462,12 @@ and gen_intrinsic buf path name args =
     match path with [] -> name | _ -> String.concat "." path ^ "." ^ name
   in
   if List.mem name ["cbrt"; "hypot"; "expm1"; "log1p"; "log10"] then
-    gen_glsl_polyfill buf name args
+    (* A [Float64] path component marks the double-precision route; the plain
+       [Float32]/[Math.Float32] and unqualified (core-primitive, f32-typed)
+       spellings stay single-precision. This mirrors how the pure registry keys
+       the same intrinsics by their [Float64] vs [Float32] module path. *)
+    let is_f64 = List.mem "Float64" path in
+    gen_glsl_polyfill buf ~is_f64 name args
   else if name = "copysign" then (
     (* GLSL has no [copysign] builtin under any name, and [abs(x)*sign(y)] is
        wrong for [y=0] (GLSL [sign(0)=0]) and the [x=0]/NaN sign-transfer edge

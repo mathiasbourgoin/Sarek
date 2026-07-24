@@ -101,13 +101,21 @@ let string_contains ~haystack ~needle =
   in
   nl = 0 || loop 0
 
-let test_log10 ~path ~label () =
+let test_log10 ~path ~is_f64 ~label () =
   let glsl = generate (kernel_calling ~path ~name:"log10" ~arity:1) in
   let contains needle = string_contains ~haystack:glsl ~needle in
+  (* The divisor literal must carry the GLSL [lf] double suffix on the Float64
+     route and must NOT on the f32 route (else the divisor is pinned to single
+     precision — the CodeRabbit #259 finding). *)
+  let divisor = if is_f64 then "log(10.0lf)" else "log(10.0)" in
   Alcotest.(check bool)
-    (label ^ ": emits (log(..)/log(10.0)) polyfill")
+    (label ^ ": emits (log(x) / " ^ divisor ^ ") polyfill")
     true
-    (contains "log(" && contains "/ log(10.0)") ;
+    (contains "log(" && contains ("/ " ^ divisor)) ;
+  Alcotest.(check bool)
+    (label ^ ": f32 divisor carries no lf suffix")
+    is_f64
+    (contains "10.0lf") ;
   Alcotest.(check bool)
     (label ^ ": no raw log10( token")
     false
@@ -125,14 +133,17 @@ let () =
           unhandled );
       ( "log10-polyfill",
         [
-          test_case "unqualified" `Quick (test_log10 ~path:[] ~label:"log10");
+          test_case
+            "unqualified"
+            `Quick
+            (test_log10 ~path:[] ~is_f64:false ~label:"log10");
           test_case
             "Float32-qualified"
             `Quick
-            (test_log10 ~path:["Float32"] ~label:"Float32.log10");
+            (test_log10 ~path:["Float32"] ~is_f64:false ~label:"Float32.log10");
           test_case
             "Float64-qualified"
             `Quick
-            (test_log10 ~path:["Float64"] ~label:"Float64.log10");
+            (test_log10 ~path:["Float64"] ~is_f64:true ~label:"Float64.log10");
         ] );
     ]

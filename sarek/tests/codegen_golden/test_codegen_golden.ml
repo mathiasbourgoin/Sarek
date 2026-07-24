@@ -259,6 +259,53 @@ let float64_abs_float_path_kernel () =
     []
     body
 
+(* Float64.log10 / Float64.cbrt: the polyfill must emit the divisor / exponent
+   literal with the GLSL [lf] double suffix (10.0lf, 1.0lf/3.0lf) so the constant
+   is evaluated at double precision. The plain Float32 goldens (float32_log10_path
+   / float32_cbrt_path) keep the un-suffixed literal — that path-awareness is the
+   guarantee under test here. *)
+let float64_log10_path_kernel () =
+  let a = make_var "a" (TVec TFloat64) in
+  let b = make_var "b" (TVec TFloat64) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("b", EVar idx),
+            EIntrinsic (["Float64"], "log10", [EArrayRead ("a", EVar idx)]) ) )
+  in
+  empty_kernel
+    "float64_log10_path"
+    [
+      DParam (a, Some {arr_elttype = TFloat64; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat64; arr_memspace = Global});
+    ]
+    []
+    body
+
+let float64_cbrt_path_kernel () =
+  let a = make_var "a" (TVec TFloat64) in
+  let b = make_var "b" (TVec TFloat64) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("b", EVar idx),
+            EIntrinsic (["Float64"], "cbrt", [EArrayRead ("a", EVar idx)]) ) )
+  in
+  empty_kernel
+    "float64_cbrt_path"
+    [
+      DParam (a, Some {arr_elttype = TFloat64; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat64; arr_memspace = Global});
+    ]
+    []
+    body
+
 (* Float64.copysign has no GLSL builtin (and is absent from
    Sarek_pure_registry.float64_list), so pre-fix it fell through to the raw-name
    fallback and emitted [Float64.copysign(...)], which glslang parses as a
@@ -1538,6 +1585,54 @@ let () =
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  b[idx] = (log(a[idx]) / log(10.0));\n\
+     }\n" ;
+
+  register_golden
+    "glsl"
+    "float64_log10_path"
+    "#version 450\n\
+     #extension GL_ARB_gpu_shader_fp64 : require\n\n\
+     // Sarek-generated compute shader: float64_log10_path\n\
+     layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;\n\n\
+     layout(std430, set=0, binding = 0) buffer Buffer_a {\n\
+    \  double a[];\n\
+     };\n\
+     layout(std430, set=0, binding = 1) buffer Buffer_b {\n\
+    \  double b[];\n\
+     };\n\
+     layout(push_constant) uniform PushConstants {\n\
+    \  int a_len;\n\
+    \  int b_len;\n\
+     } pc;\n\n\
+     #define a_len pc.a_len\n\
+     #define b_len pc.b_len\n\n\
+     void main() {\n\
+    \  int idx = int(gl_GlobalInvocationID.x);\n\
+    \  b[idx] = (log(a[idx]) / log(10.0lf));\n\
+     }\n" ;
+
+  register_golden
+    "glsl"
+    "float64_cbrt_path"
+    "#version 450\n\
+     #extension GL_ARB_gpu_shader_fp64 : require\n\n\
+     // Sarek-generated compute shader: float64_cbrt_path\n\
+     layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;\n\n\
+     layout(std430, set=0, binding = 0) buffer Buffer_a {\n\
+    \  double a[];\n\
+     };\n\
+     layout(std430, set=0, binding = 1) buffer Buffer_b {\n\
+    \  double b[];\n\
+     };\n\
+     layout(push_constant) uniform PushConstants {\n\
+    \  int a_len;\n\
+    \  int b_len;\n\
+     } pc;\n\n\
+     #define a_len pc.a_len\n\
+     #define b_len pc.b_len\n\n\
+     void main() {\n\
+    \  int idx = int(gl_GlobalInvocationID.x);\n\
+    \  b[idx] = (sign(a[idx]) * pow(abs(a[idx]), 1.0lf / 3.0lf));\n\
      }\n"
 
 let glsl_only_kernels () =
@@ -1553,6 +1648,8 @@ let glsl_only_kernels () =
     ("float32_expm1_path", float32_expm1_path_kernel ());
     ("float32_log1p_path", float32_log1p_path_kernel ());
     ("float32_log10_path", float32_log10_path_kernel ());
+    ("float64_log10_path", float64_log10_path_kernel ());
+    ("float64_cbrt_path", float64_cbrt_path_kernel ());
   ]
 
 let glsl_only_tests () =
