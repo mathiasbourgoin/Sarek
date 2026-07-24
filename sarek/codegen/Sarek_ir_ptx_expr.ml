@@ -1243,13 +1243,13 @@ and emit_cast buf alloc r_src dst_ty : string =
       unsupported "ECast to an aggregate type: casts are scalar-only"
 
 and emit_intrinsic buf alloc env path name args : string =
-  match Sarek_ir_ptx_softmath.helper_name name with
+  match Sarek_ir_softmath.helper_name name with
   | Some hname when List.mem "Float64" path -> (
       (* Float64 transcendental: PTX has no f64 instruction for it, so route
          through the software implementation (polynomial helper_func bodies in
-         Sarek_ir_ptx_softmath) via the existing EApp inline machinery. The
+         Sarek_ir_softmath) via the existing EApp inline machinery. The
          "__sarek_f64_*" helper names are reserved. *)
-      Sarek_ir_ptx_softmath.register alloc.funcs ;
+      Sarek_ir_softmath.register alloc.funcs ;
       let f =
         {
           var_name = hname;
@@ -1726,12 +1726,12 @@ and emit_intrinsic_native buf alloc env path name args : string =
          composition can come later if profiling demands. f64 callers reach
          the softmath helper directly via the ["Float64"] path. *)
       let hname =
-        match Sarek_ir_ptx_softmath.helper_name name with
+        match Sarek_ir_softmath.helper_name name with
         | Some h -> h
         | None ->
             fail ("PTX codegen: internal error: no softmath helper for " ^ name)
       in
-      Sarek_ir_ptx_softmath.register alloc.funcs ;
+      Sarek_ir_softmath.register alloc.funcs ;
       let f =
         {
           var_name = hname;

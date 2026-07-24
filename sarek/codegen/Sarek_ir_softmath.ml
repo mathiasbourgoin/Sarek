@@ -3,15 +3,22 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(** Software f64 transcendentals for the PTX backend.
+(** Software f64 transcendentals — backend-shared (PTX and GLSL/Vulkan).
 
     PTX has no f64 transcendental instructions (sin/cos/ex2/lg2 exist only as
-    f32 [.approx] ops). This module provides polynomial implementations as pure
-    IR [helper_func] bodies, built from natively-supported f64 operations only:
-    add/sub/mul/div.rn, fma.rn, floor (cvt.rmi), min, abs, copysign, and the
-    [f64_bits]/[bits_f64] bitcasts (mov.b64). The PTX emitter registers these
-    helpers on demand and routes [EIntrinsic (["Float64"], name, args)] through
-    the existing EApp inlining machinery — no emitted-assembly polynomials.
+    f32 [.approx] ops), and GLSL core has no f64 overload for any transcendental
+    builtin. This module provides polynomial implementations as pure IR
+    [helper_func] bodies, built from operations every such backend can express:
+    add/sub/mul/div, fma, floor, min, abs, copysign, and the [f64_bits]/
+    [bits_f64] bitcasts. Because the bodies are pure [Sarek_ir_types] IR (no
+    backend assembly), each emitter reuses them by routing
+    [EIntrinsic (["Float64"], name, args)] through its own machinery:
+    - PTX ([Sarek_ir_ptx_expr]) registers them into its helper table and inlines
+      via the EApp machinery;
+    - GLSL ([Sarek_ir_glsl]) emits the needed family as top-level functions
+      (forward-declared) gated per-kernel, with [f64_bits]/[bits_f64] lowered to
+      [doubleBitsToInt64]/[int64BitsToDouble] under [GL_ARB_gpu_shader_int64].
+      Neither emits assembly-level polynomials.
 
     Numerics: precise tier, max relative error ≤ 1e-12 on the documented domains
     (measured, see sarek/tests/unit/test_f64_softmath.ml).
@@ -319,7 +326,7 @@ let log_body x =
   let b = lvar "b" in
   let k_raw = ivar "k_raw" in
   let m0 = fvar "m0" in
-  let big = ivar "big" in
+  let big = mkvar TBool "big" in
   let m = fvar "m" in
   let k = ivar "k" in
   let s = fvar "s" in
@@ -684,7 +691,7 @@ let log1p_body x =
   let b = lvar "b" in
   let k_raw = ivar "k_raw" in
   let m0 = fvar "m0" in
-  let big = ivar "big" in
+  let big = mkvar TBool "big" in
   let m = fvar "m" in
   let k = ivar "k" in
   let c = fvar "c" in
@@ -791,3 +798,99 @@ let register funcs =
   List.iter (fun hf -> Hashtbl.replace funcs hf.hf_name hf) (Lazy.force helpers)
 
 let all_helpers () = Lazy.force helpers
+
+(** {1 Body introspection}
+
+    A backend that emits the helpers as separate functions (rather than inlining
+    them, as PTX does) needs, per kernel, the transitive family of helpers and
+    the machinery each one requires. These fold over the pure-IR bodies so the
+    GLSL emitter does not duplicate an IR walker. *)
+
+let helper_by_name name =
+  List.find_opt (fun hf -> String.equal hf.hf_name name) (Lazy.force helpers)
+
+(** Fold [f] over every subexpression of [e] (pre-order). *)
+let rec fold_expr f acc e =
+  let acc = f acc e in
+  match e with
+  | EConst _ | EVar _ | EArrayLen _ -> acc
+  | EBinop (_, a, b) | EArrayReadExpr (a, b) ->
+      fold_expr f (fold_expr f acc a) b
+  | EUnop (_, a) | ERecordField (a, _) | ECast (_, a) | EArrayRead (_, a) ->
+      fold_expr f acc a
+  | ETuple es | EVariant (_, _, es) -> List.fold_left (fold_expr f) acc es
+  | EApp (fn, args) -> List.fold_left (fold_expr f) (fold_expr f acc fn) args
+  | EIntrinsic (_, _, args) -> List.fold_left (fold_expr f) acc args
+  | ERecord (_, fields) ->
+      List.fold_left (fun a (_, e) -> fold_expr f a e) acc fields
+  | EArrayCreate (_, size, _) -> fold_expr f acc size
+  | EIf (c, t, e) -> fold_expr f (fold_expr f (fold_expr f acc c) t) e
+  | EMatch (s, cases) ->
+      List.fold_left (fun a (_, e) -> fold_expr f a e) (fold_expr f acc s) cases
+
+(** Fold [f] (expr visitor) over every expression reachable from statement [s].
+*)
+let rec fold_stmt_exprs f acc s =
+  match s with
+  | SEmpty | SBarrier | SWarpBarrier | SMemFence | SNative _ -> acc
+  | SSeq stmts -> List.fold_left (fold_stmt_exprs f) acc stmts
+  | SAssign (_, e) | SReturn e | SExpr e -> fold_expr f acc e
+  | SIf (c, t, e) ->
+      let acc = fold_stmt_exprs f (fold_expr f acc c) t in
+      Option.fold ~none:acc ~some:(fold_stmt_exprs f acc) e
+  | SWhile (c, body) -> fold_stmt_exprs f (fold_expr f acc c) body
+  | SFor (_, lo, hi, _, body) ->
+      fold_stmt_exprs f (fold_expr f (fold_expr f acc lo) hi) body
+  | SMatch (s, cases) ->
+      List.fold_left
+        (fun a (_, st) -> fold_stmt_exprs f a st)
+        (fold_expr f acc s)
+        cases
+  | SLet (_, e, body) | SLetMut (_, e, body) ->
+      fold_stmt_exprs f (fold_expr f acc e) body
+  | SPragma (_, body) | SBlock body -> fold_stmt_exprs f acc body
+
+let is_softmath_helper_name name =
+  let p = "__sarek_f64_" in
+  String.length name >= String.length p
+  && String.sub name 0 (String.length p) = p
+
+(** Names of the sibling softmath helpers [hf] calls directly (deduplicated).
+    Softmath cross-calls are [EApp (EVar {var_name = "__sarek_f64_*"}, _)]. *)
+let callees hf =
+  fold_stmt_exprs
+    (fun acc e ->
+      match e with
+      | EApp (EVar v, _) when is_softmath_helper_name v.var_name ->
+          v.var_name :: acc
+      | _ -> acc)
+    []
+    hf.hf_body
+  |> List.sort_uniq compare
+
+(** Whether [hf]'s body needs 64-bit integer support — the [f64_bits]/[bits_f64]
+    bitcasts or any [int64] value/cast/literal. The pure-polynomial helpers
+    (sin, cos, tan, atan, atan2) need none; the exponent/mantissa-manipulating
+    ones (exp, log, …) do. *)
+let uses_int64 hf =
+  fold_stmt_exprs
+    (fun acc e ->
+      acc
+      ||
+      match e with
+      | EIntrinsic ([], ("f64_bits" | "bits_f64"), _) -> true
+      | EConst (CInt64 _) -> true
+      | ECast (TInt64, _) -> true
+      | _ -> false)
+    false
+    hf.hf_body
+
+(** Whether [hf]'s body calls the [copysign] intrinsic (which a
+    separate-function backend must have already declared — GLSL's
+    [sarek_copysign] helper). *)
+let uses_copysign hf =
+  fold_stmt_exprs
+    (fun acc e ->
+      acc || match e with EIntrinsic (_, "copysign", _) -> true | _ -> false)
+    false
+    hf.hf_body

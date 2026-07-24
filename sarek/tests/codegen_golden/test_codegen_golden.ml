@@ -1590,50 +1590,122 @@ let () =
   register_golden
     "glsl"
     "float64_log10_path"
-    "#version 450\n\
-     #extension GL_ARB_gpu_shader_fp64 : require\n\n\
-     // Sarek-generated compute shader: float64_log10_path\n\
-     layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;\n\n\
-     layout(std430, set=0, binding = 0) buffer Buffer_a {\n\
-    \  double a[];\n\
-     };\n\
-     layout(std430, set=0, binding = 1) buffer Buffer_b {\n\
-    \  double b[];\n\
-     };\n\
-     layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
-     } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\n\
-     void main() {\n\
-    \  int idx = int(gl_GlobalInvocationID.x);\n\
-    \  b[idx] = (log(a[idx]) / log(10.0lf));\n\
-     }\n" ;
+    {|#version 450
+#extension GL_ARB_gpu_shader_fp64 : require
+#extension GL_ARB_gpu_shader_int64 : require
+
+// Sarek-generated compute shader: float64_log10_path
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set=0, binding = 0) buffer Buffer_a {
+  double a[];
+};
+layout(std430, set=0, binding = 1) buffer Buffer_b {
+  double b[];
+};
+layout(push_constant) uniform PushConstants {
+  int a_len;
+  int b_len;
+} pc;
+
+#define a_len pc.a_len
+#define b_len pc.b_len
+
+double sarek_f64_log(double);
+double sarek_f64_log10(double);
+
+double sarek_f64_log(double x) {
+  int64_t b = doubleBitsToInt64(x);
+  int k_raw = int(((b >> 52) & 2047L));
+  precise double m0 = int64BitsToDouble(((b & 4503599627370495L) | 4607182418800017408L));
+  bool big = (m0 > 1.4142135623730951lf);
+  precise double m = (big ? (m0 * 0.5lf) : m0);
+  int k = (big ? (k_raw - 1022) : (k_raw - 1023));
+  precise double s = ((m - 1.0lf) / (m + 1.0lf));
+  precise double z = (s * s);
+  precise double lm = fma(((s + s) * z), fma(fma(fma(fma(fma(fma(0.066666666666666666lf, z, 0.076923076923076927lf), z, 0.090909090909090912lf), z, 0.1111111111111111lf), z, 0.14285714285714285lf), z, 0.20000000000000001lf), z, 0.33333333333333331lf), (s + s));
+  precise double kf = double(k);
+  return fma(kf, 0.69314718036912382lf, fma(kf, 1.9082149292705877e-10lf, lm));
+}
+
+double sarek_f64_log10(double x) {
+  return (sarek_f64_log(x) * 0.43429448190325182lf);
+}
+
+void main() {
+  int idx = int(gl_GlobalInvocationID.x);
+  b[idx] = sarek_f64_log10(a[idx]);
+}
+|} ;
 
   register_golden
     "glsl"
     "float64_cbrt_path"
-    "#version 450\n\
-     #extension GL_ARB_gpu_shader_fp64 : require\n\n\
-     // Sarek-generated compute shader: float64_cbrt_path\n\
-     layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;\n\n\
-     layout(std430, set=0, binding = 0) buffer Buffer_a {\n\
-    \  double a[];\n\
-     };\n\
-     layout(std430, set=0, binding = 1) buffer Buffer_b {\n\
-    \  double b[];\n\
-     };\n\
-     layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
-     } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\n\
-     void main() {\n\
-    \  int idx = int(gl_GlobalInvocationID.x);\n\
-    \  b[idx] = (sign(a[idx]) * pow(abs(a[idx]), 1.0lf / 3.0lf));\n\
-     }\n"
+    {|#version 450
+#extension GL_ARB_gpu_shader_fp64 : require
+#extension GL_ARB_gpu_shader_int64 : require
+
+// Sarek-generated compute shader: float64_cbrt_path
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set=0, binding = 0) buffer Buffer_a {
+  double a[];
+};
+layout(std430, set=0, binding = 1) buffer Buffer_b {
+  double b[];
+};
+layout(push_constant) uniform PushConstants {
+  int a_len;
+  int b_len;
+} pc;
+
+#define a_len pc.a_len
+#define b_len pc.b_len
+
+double sarek_f64_exp(double);
+double sarek_f64_log(double);
+double sarek_f64_pow(double, double);
+
+double sarek_f64_exp(double x) {
+  if ((x < -708.0lf)) {
+    return 0.0lf;
+  } else {
+    if ((x > 709.78271289338397lf)) {
+      return int64BitsToDouble(9218868437227405312L);
+    } else {
+      precise double nf = floor(fma(x, 1.4426950408889634lf, 0.5lf));
+      precise double r_hi = fma(nf, -0.69314718036912382lf, x);
+      precise double r = fma(nf, -1.9082149292705877e-10lf, r_hi);
+      precise double p = fma(fma(fma(fma(fma(fma(fma(fma(fma(fma(fma(2.08767569878681e-09lf, r, 2.505210838544172e-08lf), r, 2.7557319223985888e-07lf), r, 2.7557319223985893e-06lf), r, 2.4801587301587302e-05lf), r, 0.00019841269841269841lf), r, 0.0013888888888888889lf), r, 0.0083333333333333332lf), r, 0.041666666666666664lf), r, 0.16666666666666666lf), r, 0.5lf), r, 1.0lf);
+      int n = int(nf);
+      return (fma(p, r, 1.0lf) * int64BitsToDouble((int64_t((n + 1023)) << 52)));
+    }
+  }
+}
+
+double sarek_f64_log(double x) {
+  int64_t b = doubleBitsToInt64(x);
+  int k_raw = int(((b >> 52) & 2047L));
+  precise double m0 = int64BitsToDouble(((b & 4503599627370495L) | 4607182418800017408L));
+  bool big = (m0 > 1.4142135623730951lf);
+  precise double m = (big ? (m0 * 0.5lf) : m0);
+  int k = (big ? (k_raw - 1022) : (k_raw - 1023));
+  precise double s = ((m - 1.0lf) / (m + 1.0lf));
+  precise double z = (s * s);
+  precise double lm = fma(((s + s) * z), fma(fma(fma(fma(fma(fma(0.066666666666666666lf, z, 0.076923076923076927lf), z, 0.090909090909090912lf), z, 0.1111111111111111lf), z, 0.14285714285714285lf), z, 0.20000000000000001lf), z, 0.33333333333333331lf), (s + s));
+  precise double kf = double(k);
+  return fma(kf, 0.69314718036912382lf, fma(kf, 1.9082149292705877e-10lf, lm));
+}
+
+double sarek_f64_pow(double x, double y) {
+  return sarek_f64_exp((y * sarek_f64_log(x)));
+}
+
+void main() {
+  int idx = int(gl_GlobalInvocationID.x);
+  b[idx] = (sign(a[idx]) * sarek_f64_pow(abs(a[idx]), 1.0lf / 3.0lf));
+}
+|}
 
 let glsl_only_kernels () =
   [
@@ -1833,23 +1905,11 @@ let naga_ok wgsl =
     validator (e.g. it exercises an intentionally partial construct). Keyed by
     (backend, kernel_name). Empty unless a genuine, documented gap is found. *)
 let validation_exclusions : ((string * string) * string) list =
-  [
-    (* PRE-EXISTING float64-transcendental GLSL codegen gap (NOT related to the
-       vector-helper work): GLSL core has no double-precision overload for the
-       transcendental builtins, so the float64 log10 path emits [log(<double>)]
-       and the float64 cbrt path emits [pow(<double>, ...)], both of which
-       glslangValidator rejects ("no matching overloaded function"). These
-       goldens pin the current (float-builtin) lowering and are still
-       byte-exact-checked above; validating them is out of scope for this task
-       and would require a genuine double-precision transcendental lowering
-       (software polyfill) on the Vulkan backend. *)
-    ( ("glsl", "float64_log10_path"),
-      "GLSL core has no double overload for log(); pre-existing f64 \
-       transcendental codegen gap, out of scope" );
-    ( ("glsl", "float64_cbrt_path"),
-      "GLSL core has no double overload for pow(); pre-existing f64 \
-       transcendental codegen gap, out of scope" );
-  ]
+  (* The former float64_log10_path / float64_cbrt_path exclusions are gone: the
+     GLSL backend now lowers every Float64 transcendental through the software
+     helper family (Sarek_ir_softmath), so both goldens emit valid GLSL and are
+     validated by the sweep below like every other case. *)
+  []
 
 let excluded backend name = List.assoc_opt (backend, name) validation_exclusions
 

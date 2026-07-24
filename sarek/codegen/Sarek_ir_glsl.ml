@@ -48,6 +48,28 @@ let current_copysign_name = ref "sarek_copysign"
     function parameters, so these must be filtered out at call sites. *)
 let helper_vec_param_indices : (string, int list) Hashtbl.t = Hashtbl.create 16
 
+(** The software f64-transcendental helper family ({!Sarek_ir_softmath}) this
+    kernel needs, transitively closed over cross-calls, set per-kernel by
+    {!compute_f64_softmath}. GLSL core has no double-precision overload for
+    sin/cos/exp/log/pow/… so [Float64] transcendentals are lowered to calls into
+    this family, emitted as forward-declared top-level functions in the preamble
+    (mirroring {!current_smod_name}/{!current_copysign_name}). Empty for kernels
+    with no f64 transcendental. *)
+let current_f64_helpers : Sarek_ir_types.helper_func list ref = ref []
+
+(** Whether {!current_f64_helpers} needs 64-bit integers (exp/log/… manipulate
+    the exponent/mantissa fields via [f64_bits]/[bits_f64] and int64 ops). Gates
+    the [GL_ARB_gpu_shader_int64] extension. The pure-polynomial members (sin,
+    cos, tan, atan, atan2) need none. *)
+let current_needs_int64 = ref false
+
+(** Whether any member of {!current_f64_helpers} calls [copysign]
+    (sinh/tanh/atan/atan2/asin/acos). The original kernel IR carries no
+    [copysign] node in that case, so {!Sarek_ir_analysis.kernel_uses_copysign}
+    would miss it; this forces the [sarek_copysign] helper to be emitted so the
+    softmath bodies find it. *)
+let current_f64_needs_copysign = ref false
+
 (** {1 Type Mapping} *)
 
 let mangle_name = Sarek_ir_codegen.mangle_name
@@ -157,9 +179,29 @@ let glsl_reserved_keywords =
     "main";
   ]
 
+(** The software f64-transcendental helpers ({!Sarek_ir_softmath}) are named
+    [__sarek_f64_<fn>] — a valid PTX identifier, but GLSL reserves identifiers
+    containing consecutive underscores (GLSL 4.5 §3.7), so glslang warns and a
+    stricter compiler may reject them. Re-spell the leading [__] as a single
+    [sarek_f64_] prefix for GLSL emission only; the shared IR (and thus PTX
+    output) keeps the [__sarek_f64_*] names unchanged. Applied at every point
+    GLSL emits such a name — the [EVar] cross-calls and call sites (via
+    {!escape_glsl_name}) and the function definitions/prototypes. Lookup keys
+    (helper_by_name, the vec-param table) stay on the raw name. *)
+let softmath_glsl_prefix = "__sarek_f64_"
+
+let mangle_softmath_ident name =
+  let p = softmath_glsl_prefix in
+  let pl = String.length p in
+  if String.length name >= pl && String.sub name 0 pl = p then
+    "sarek_f64_" ^ String.sub name pl (String.length name - pl)
+  else name
+
 (** Escape reserved GLSL keywords by adding 'v' suffix (avoids double underscore
-    with _len) *)
+    with _len), and re-spell software-transcendental helper names
+    ({!mangle_softmath_ident}). *)
 let escape_glsl_name name =
+  let name = mangle_softmath_ident name in
   if List.mem name glsl_reserved_keywords then name ^ "v" else name
 
 (** Map Sarek IR element type to GLSL type string *)
@@ -197,6 +239,34 @@ let glsl_thread_intrinsic = function
   | "global_size" -> "int(gl_WorkGroupSize.x * gl_NumWorkGroups.x)"
   | name -> Codegen_error.raise_error (Codegen_error.unknown_intrinsic name)
 
+(** Format an f64 literal exactly as [gen_expr]'s [EConst (CFloat64 _)] arm does
+    (the GLSL lowercase [lf] double suffix), for the composition constants used
+    by the exp2/log2/cbrt lowerings below. *)
+let f64_lit v =
+  let s = Printf.sprintf "%.17g" v in
+  let s =
+    if String.contains s '.' || String.contains s 'e' then s else s ^ ".0"
+  in
+  s ^ "lf"
+
+(** Root {!Sarek_ir_softmath} helpers a [Float64] transcendental [name] needs,
+    or [None] if [name] has a native GLSL f64 builtin (sqrt/floor/…/fma/min/max)
+    or is not a transcendental. The direct cases resolve through
+    [Sarek_ir_softmath.helper_name]; exp2/log2/cbrt have no dedicated helper and
+    are lowered by composition over exp/log/pow, so their roots are those. This
+    is the single source of truth shared by the call-site emission
+    ({!gen_f64_transcendental}) and the per-kernel family closure
+    ({!compute_f64_softmath}) — they must agree on which names are routed. *)
+let f64_root_helpers name =
+  match Sarek_ir_softmath.helper_name name with
+  | Some h -> Some [h]
+  | None -> (
+      match name with
+      | "exp2" -> Some ["__sarek_f64_exp"]
+      | "log2" -> Some ["__sarek_f64_log"]
+      | "cbrt" -> Some ["__sarek_f64_pow"]
+      | _ -> None)
+
 (** {1 Expression Generation} *)
 
 let rec gen_expr buf = function
@@ -208,6 +278,18 @@ let rec gen_expr buf = function
         if String.contains s '.' || String.contains s 'e' then s else s ^ ".0"
       in
       Buffer.add_string buf s
+  | EConst (CFloat64 f) when not (Float.is_finite f) ->
+      (* GLSL has no [inf]/[nan] literal, so [%.17g]'s "inf"/"nan" spelling is
+         invalid source. Reconstruct the exact IEEE-754 value from its bit
+         pattern via [int64BitsToDouble] (GL_ARB_gpu_shader_int64 — emitted
+         whenever such a constant occurs, since the only producers are the
+         software f64 transcendentals, which already require int64). The decimal
+         (possibly negative) bit literal avoids the >int64-max hex forms glslang
+         rejects. Finite doubles keep the plain [%.17g … lf] form below, so no
+         existing golden moves. *)
+      Buffer.add_string
+        buf
+        (Printf.sprintf "int64BitsToDouble(%LdL)" (Int64.bits_of_float f))
   | EConst (CFloat64 f) ->
       let s = Printf.sprintf "%.17g" f in
       let s =
@@ -462,16 +544,74 @@ and gen_glsl_polyfill buf ~is_f64 name args =
       Codegen_error.raise_error
         (Codegen_error.invalid_arg_count name expected (List.length args))
 
+(** Lower a [Float64] transcendental (identified by {!f64_root_helpers}) to the
+    software {!Sarek_ir_softmath} family. The direct cases emit a call to the
+    reserved [__sarek_f64_<name>] helper; exp2/log2/cbrt have no dedicated
+    helper and are composed over exp/log/pow (matching PTX's own exp2/log2
+    handling and the f32 [cbrt] polyfill shape, but with the f64 [pow]). The
+    helper bodies themselves are emitted, forward-declared, in the preamble by
+    {!gen_f64_softmath_helpers}, gated on {!current_f64_helpers}. *)
+and gen_f64_transcendental buf name args =
+  let emit_call fn =
+    Buffer.add_string buf (mangle_softmath_ident fn) ;
+    Buffer.add_char buf '(' ;
+    List.iteri
+      (fun i e ->
+        if i > 0 then Buffer.add_string buf ", " ;
+        gen_expr buf e)
+      args ;
+    Buffer.add_char buf ')'
+  in
+  match Sarek_ir_softmath.helper_name name with
+  | Some hname -> emit_call hname
+  | None -> (
+      match (name, args) with
+      | "exp2", [x] ->
+          (* 2^x = exp(x·ln2) *)
+          Buffer.add_string buf "sarek_f64_exp((" ;
+          gen_expr buf x ;
+          Buffer.add_string
+            buf
+            (Printf.sprintf ") * %s)" (f64_lit 0.6931471805599453))
+      | "log2", [x] ->
+          (* log2(x) = log(x)·log2(e) *)
+          Buffer.add_string buf "(sarek_f64_log(" ;
+          gen_expr buf x ;
+          Buffer.add_string
+            buf
+            (Printf.sprintf ") * %s)" (f64_lit 1.4426950408889634))
+      | "cbrt", [x] ->
+          (* sign(x)·pow(|x|, 1/3): GLSL [pow] is undefined for a negative base,
+             and here [pow] is the software f64 helper. *)
+          Buffer.add_string buf "(sign(" ;
+          gen_expr buf x ;
+          Buffer.add_string buf ") * sarek_f64_pow(abs(" ;
+          gen_expr buf x ;
+          Buffer.add_string
+            buf
+            (Printf.sprintf "), %s / %s))" (f64_lit 1.0) (f64_lit 3.0))
+      | _ ->
+          Codegen_error.raise_error
+            (Codegen_error.unknown_intrinsic
+               (Printf.sprintf "%s (wrong arity for f64 transcendental)" name)))
+
 and gen_intrinsic buf path name args =
   let full_name =
     match path with [] -> name | _ -> String.concat "." path ^ "." ^ name
   in
-  if List.mem name ["cbrt"; "hypot"; "expm1"; "log1p"; "log10"] then
-    (* A [Float64] path component marks the double-precision route; the plain
-       [Float32]/[Math.Float32] and unqualified (core-primitive, f32-typed)
-       spellings stay single-precision. This mirrors how the pure registry keys
-       the same intrinsics by their [Float64] vs [Float32] module path. *)
-    let is_f64 = List.mem "Float64" path in
+  (* A [Float64] path component marks the double-precision route; the plain
+     [Float32]/[Math.Float32] and unqualified (core-primitive, f32-typed)
+     spellings stay single-precision. This mirrors how the pure registry keys
+     the same intrinsics by their [Float64] vs [Float32] module path. *)
+  let is_f64 = List.mem "Float64" path in
+  if is_f64 && f64_root_helpers name <> None then
+    (* GLSL core has no double overload for the transcendental builtins; route
+       [Float64] sin/cos/exp/log/log10/pow/…/exp2/log2/cbrt/expm1/log1p through
+       the software helper family instead of emitting an invalid [sin(<double>)].
+       f32 spellings and native-f64 builtins (sqrt/floor/fma/hypot/…) fall
+       through to the existing logic unchanged. *)
+    gen_f64_transcendental buf name args
+  else if List.mem name ["cbrt"; "hypot"; "expm1"; "log1p"; "log10"] then
     gen_glsl_polyfill buf ~is_f64 name args
   else if name = "copysign" then (
     (* GLSL has no [copysign] builtin under any name, and [abs(x)*sign(y)] is
@@ -603,6 +743,25 @@ and gen_intrinsic buf path name args =
                   if i > 0 then Buffer.add_string buf ", " ;
                   gen_expr buf e)
                 args ;
+              Buffer.add_char buf ')'
+          | "f64_bits" | "bits_f64" ->
+              (* IEEE-754 double <-> int64 reinterpret casts used by the
+                 software f64 transcendentals ({!Sarek_ir_softmath}) to pick
+                 apart the exponent/mantissa fields. GLSL spells them
+                 [doubleBitsToInt64] / [int64BitsToDouble], both from
+                 [GL_ARB_gpu_shader_int64] (emitted by [glsl_header] when a
+                 needed helper uses int64). *)
+              let fn =
+                if name = "f64_bits" then "doubleBitsToInt64"
+                else "int64BitsToDouble"
+              in
+              Buffer.add_string buf fn ;
+              Buffer.add_char buf '(' ;
+              (match args with
+              | [e] -> gen_expr buf e
+              | _ ->
+                  Codegen_error.raise_error
+                    (Codegen_error.invalid_arg_count name 1 (List.length args))) ;
               Buffer.add_char buf ')'
           (* Barrier synchronization *)
           | "block_barrier" -> Buffer.add_string buf "barrier()"
@@ -942,10 +1101,11 @@ let gen_helper_func ~pc_names buf (hf : helper_func) =
   List.iter
     (fun name -> Buffer.add_string buf (Printf.sprintf "#undef %s\n" name))
     colliding_names ;
-  (* Generate function *)
+  (* Generate function (softmath helper names are re-spelled for GLSL; user
+     helper names pass through unchanged — see {!mangle_softmath_ident}). *)
   Buffer.add_string buf (glsl_type_of_elttype hf.hf_ret_type) ;
   Buffer.add_char buf ' ' ;
-  Buffer.add_string buf hf.hf_name ;
+  Buffer.add_string buf (mangle_softmath_ident hf.hf_name) ;
   Buffer.add_char buf '(' ;
   List.iteri
     (fun i (v : var) ->
@@ -987,19 +1147,29 @@ let count_vec_params params =
       stricter/non-glslang GLSL compilers and documents the requirement in the
       emitted shader. Defaults to [false] so kernels that do not use float64
       never carry the extension. *)
-let glsl_header ~kernel_name ?(block = (256, 1, 1)) ?(uses_float64 = false) () =
+let glsl_header ~kernel_name ?(block = (256, 1, 1)) ?(uses_float64 = false)
+    ?(uses_int64 = false) () =
   let bx, by, bz = block in
   let fp64_extension =
     if uses_float64 then "#extension GL_ARB_gpu_shader_fp64 : require\n" else ""
   in
+  (* [GL_ARB_gpu_shader_int64] is required only by the software f64
+     transcendentals, which reinterpret a double's bits as an [int64_t] to
+     extract its exponent/mantissa. Emitted after the fp64 line (a kernel that
+     needs int64 necessarily uses fp64) so its absence keeps every other shader
+     byte-identical. *)
+  let int64_extension =
+    if uses_int64 then "#extension GL_ARB_gpu_shader_int64 : require\n" else ""
+  in
   Printf.sprintf
     {|#version 450
-%s
+%s%s
 // Sarek-generated compute shader: %s
 layout(local_size_x = %d, local_size_y = %d, local_size_z = %d) in;
 
 |}
     fp64_extension
+    int64_extension
     kernel_name
     bx
     by
@@ -1208,7 +1378,13 @@ let compute_copysign_name (k : kernel) : string =
     not a literal, so it cannot collide with a user param or helper identifier.
 *)
 let gen_copysign_helper buf (k : kernel) =
-  if Sarek_ir_analysis.kernel_uses_copysign k then begin
+  (* Emitted when the kernel uses [copysign] directly, OR when a needed software
+     f64 transcendental does (sinh/tanh/atan/atan2/asin/acos): those helpers call
+     [copysign] internally, but the original kernel IR carries no [copysign]
+     node, so [kernel_uses_copysign] alone would miss it and leave the softmath
+     body referencing an undeclared [sarek_copysign]. *)
+  if Sarek_ir_analysis.kernel_uses_copysign k || !current_f64_needs_copysign
+  then begin
     Buffer.add_string
       buf
       (Printf.sprintf
@@ -1226,6 +1402,68 @@ let gen_copysign_helper buf (k : kernel) =
            !current_copysign_name)
   end
 
+(** Resolve the software f64-transcendental helper family a kernel needs and set
+    the per-kernel emitter state ({!current_f64_helpers},
+    {!current_needs_int64}, {!current_f64_needs_copysign}). Collects the
+    [Float64] transcendental intrinsics the kernel invokes
+    ({!Sarek_ir_analysis.kernel_float64_intrinsics}), maps each to its root
+    helper(s) ({!f64_root_helpers}), and closes the set over softmath
+    cross-calls (tan→sin/cos, pow→exp/log, log10→log, …). The retained order is
+    [Sarek_ir_softmath.all_helpers]'s stable family order, so the emitted
+    preamble is deterministic across runs. *)
+let compute_f64_softmath (k : kernel) =
+  let roots =
+    List.concat_map
+      (fun n -> Option.value ~default:[] (f64_root_helpers n))
+      (Sarek_ir_analysis.kernel_float64_intrinsics k)
+  in
+  let needed : (string, unit) Hashtbl.t = Hashtbl.create 16 in
+  let rec add name =
+    if not (Hashtbl.mem needed name) then begin
+      Hashtbl.replace needed name () ;
+      match Sarek_ir_softmath.helper_by_name name with
+      | Some hf -> List.iter add (Sarek_ir_softmath.callees hf)
+      | None -> ()
+    end
+  in
+  List.iter add roots ;
+  let helpers =
+    List.filter
+      (fun (hf : helper_func) -> Hashtbl.mem needed hf.hf_name)
+      (Sarek_ir_softmath.all_helpers ())
+  in
+  current_f64_helpers := helpers ;
+  current_needs_int64 := List.exists Sarek_ir_softmath.uses_int64 helpers ;
+  current_f64_needs_copysign :=
+    List.exists Sarek_ir_softmath.uses_copysign helpers
+
+(** Emit the needed software f64-transcendental helpers
+    ({!current_f64_helpers}). The whole family is forward-declared first, so
+    cross-calls resolve regardless of definition order, then the bodies are
+    emitted via {!gen_helper_func} (which applies the same push-constant-macro
+    [#undef]/[#define] guarding as user helpers). Emitted after [sarek_copysign]
+    (which the bodies may call) and before user helpers (which may call these).
+*)
+let gen_f64_softmath_helpers ~pc_names buf =
+  match !current_f64_helpers with
+  | [] -> ()
+  | helpers ->
+      List.iter
+        (fun (hf : helper_func) ->
+          Buffer.add_string buf (glsl_type_of_elttype hf.hf_ret_type) ;
+          Buffer.add_char buf ' ' ;
+          Buffer.add_string buf (mangle_softmath_ident hf.hf_name) ;
+          Buffer.add_char buf '(' ;
+          List.iteri
+            (fun i (v : var) ->
+              if i > 0 then Buffer.add_string buf ", " ;
+              Buffer.add_string buf (glsl_type_of_elttype v.var_type))
+            hf.hf_params ;
+          Buffer.add_string buf ");\n")
+        helpers ;
+      Buffer.add_char buf '\n' ;
+      List.iter (gen_helper_func ~pc_names buf) helpers
+
 (** Generate complete GLSL source for a kernel.
     @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.
 *)
@@ -1238,6 +1476,7 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
   Hashtbl.clear helper_vec_param_indices ;
   current_smod_name := compute_smod_name k ;
   current_copysign_name := compute_copysign_name k ;
+  compute_f64_softmath k ;
   let buf = Buffer.create 1024 in
   Buffer.add_string
     buf
@@ -1245,6 +1484,7 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
        ~kernel_name:k.kern_name
        ?block
        ~uses_float64:(Sarek_ir_analysis.kernel_uses_float64 k)
+       ~uses_int64:!current_needs_int64
        ()) ;
 
   (* Generate buffer bindings *)
@@ -1286,6 +1526,11 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
   (* Emit the sign-copy helper (before user helpers, which may call it) when
      the kernel uses [copysign]. *)
   gen_copysign_helper buf k ;
+
+  (* Emit the software f64-transcendental helper family (forward-declared,
+     after copysign which they may call, before user helpers which may call
+     them) when the kernel invokes a [Float64] transcendental. *)
+  gen_f64_softmath_helpers ~pc_names buf ;
 
   (* Generate helper functions *)
   List.iter (gen_helper_func ~pc_names buf) k.kern_funcs ;
@@ -1332,6 +1577,7 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   Hashtbl.clear helper_vec_param_indices ;
   current_smod_name := compute_smod_name k ;
   current_copysign_name := compute_copysign_name k ;
+  compute_f64_softmath k ;
   (* Use variant types directly from kernel IR *)
   current_variants := k.kern_variants ;
 
@@ -1342,6 +1588,7 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
        ~kernel_name:k.kern_name
        ?block
        ~uses_float64:(Sarek_ir_analysis.kernel_uses_float64 k)
+       ~uses_int64:!current_needs_int64
        ()) ;
 
   (* Generate record type definitions (simple structs without tag) *)
@@ -1389,6 +1636,11 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   (* Emit the sign-copy helper (before user helpers, which may call it) when
      the kernel uses [copysign]. *)
   gen_copysign_helper buf k ;
+
+  (* Emit the software f64-transcendental helper family (forward-declared,
+     after copysign which they may call, before user helpers which may call
+     them) when the kernel invokes a [Float64] transcendental. *)
+  gen_f64_softmath_helpers ~pc_names buf ;
 
   (* Generate helper functions *)
   List.iter (gen_helper_func ~pc_names buf) k.kern_funcs ;

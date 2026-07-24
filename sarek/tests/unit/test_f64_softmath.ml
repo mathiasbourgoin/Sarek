@@ -3,7 +3,7 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(** Correctness of the PTX software f64 transcendentals (Sarek_ir_ptx_softmath),
+(** Correctness of the PTX software f64 transcendentals (Sarek_ir_softmath),
     checked against the OCaml stdlib at the IR level.
 
     The helper bodies are pure scalar IR (SLet/SIf/SReturn over
@@ -26,7 +26,7 @@ let funcs : (string, helper_func) Hashtbl.t = Hashtbl.create 16
 let () =
   List.iter
     (fun hf -> Hashtbl.replace funcs hf.hf_name hf)
-    (Sarek_codegen.Sarek_ir_ptx_softmath.all_helpers ())
+    (Sarek_codegen.Sarek_ir_softmath.all_helpers ())
 
 let as_f = function VF x -> x | _ -> Alcotest.fail "expected f64 value"
 
@@ -176,7 +176,7 @@ let max_rel_on ~lo ~hi ~n f reference =
 
 let check_unary name ?(tol = 1e-12) ~domains reference =
   let hname =
-    match Sarek_codegen.Sarek_ir_ptx_softmath.helper_name name with
+    match Sarek_codegen.Sarek_ir_softmath.helper_name name with
     | Some h -> h
     | None -> Alcotest.fail ("no softmath helper for " ^ name)
   in
@@ -210,7 +210,7 @@ let test_exp () =
     +inf per the documented tier. *)
 let test_exp_expm1_saturation () =
   let hname name =
-    match Sarek_codegen.Sarek_ir_ptx_softmath.helper_name name with
+    match Sarek_codegen.Sarek_ir_softmath.helper_name name with
     | Some h -> h
     | None -> Alcotest.fail ("no softmath helper for " ^ name)
   in
@@ -274,7 +274,7 @@ let test_atan () =
     on top of the linear-grid domains. *)
 let test_near_zero name reference =
   let hname =
-    match Sarek_codegen.Sarek_ir_ptx_softmath.helper_name name with
+    match Sarek_codegen.Sarek_ir_softmath.helper_name name with
     | Some h -> h
     | None -> Alcotest.fail ("no softmath helper for " ^ name)
   in

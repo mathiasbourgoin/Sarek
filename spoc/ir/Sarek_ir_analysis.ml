@@ -381,3 +381,101 @@ let kernel_uses_copysign k =
   || List.exists decl_uses_copysign k.kern_locals
   || stmt_uses_copysign k.kern_body
   || List.exists helper_uses_copysign k.kern_funcs
+
+(** {1 Float64 intrinsic detection}
+
+    Collects the names of every path-qualified Float64 math intrinsic invoked
+    anywhere in a kernel — an [EIntrinsic (path, name, _)] whose [path] carries
+    a ["Float64"] component (matching the four registry-exposing paths
+    [["Float64"]], [["Math"; "Float64"]] and their [Sarek_stdlib_meta] twins,
+    exactly the test the GLSL polyfill already uses).
+
+    A backend with no native f64 transcendental (GLSL core has no double
+    overload for sin/cos/exp/log/pow/… — see [Sarek_ir_glsl]) uses this to
+    decide which software helper family ([Sarek_ir_softmath]) to emit per
+    kernel. Names are returned deduplicated; the caller filters to the subset it
+    routes to helpers and maps the composed cases (exp2/log2/cbrt). Helper
+    bodies and locals are walked explicitly, mirroring [kernel_uses_copysign].
+*)
+let path_is_float64 path = List.mem "Float64" path
+
+let rec expr_float64_intrinsics acc = function
+  | EIntrinsic (path, name, args) ->
+      let acc = if path_is_float64 path then name :: acc else acc in
+      List.fold_left expr_float64_intrinsics acc args
+  | EConst _ | EVar _ | EArrayLen _ -> acc
+  | EBinop (_, e1, e2) ->
+      expr_float64_intrinsics (expr_float64_intrinsics acc e1) e2
+  | EUnop (_, e) | ERecordField (e, _) | ECast (_, e) ->
+      expr_float64_intrinsics acc e
+  | EArrayRead (_, idx) -> expr_float64_intrinsics acc idx
+  | EArrayReadExpr (base, idx) ->
+      expr_float64_intrinsics (expr_float64_intrinsics acc base) idx
+  | ETuple exprs | EVariant (_, _, exprs) ->
+      List.fold_left expr_float64_intrinsics acc exprs
+  | EApp (fn, args) ->
+      List.fold_left
+        expr_float64_intrinsics
+        (expr_float64_intrinsics acc fn)
+        args
+  | ERecord (_, fields) ->
+      List.fold_left (fun a (_, e) -> expr_float64_intrinsics a e) acc fields
+  | EArrayCreate (_, size, _) -> expr_float64_intrinsics acc size
+  | EIf (cond, then_, else_) ->
+      expr_float64_intrinsics
+        (expr_float64_intrinsics (expr_float64_intrinsics acc cond) then_)
+        else_
+  | EMatch (scrutinee, cases) ->
+      List.fold_left
+        (fun a (_, e) -> expr_float64_intrinsics a e)
+        (expr_float64_intrinsics acc scrutinee)
+        cases
+
+let rec lvalue_float64_intrinsics acc = function
+  | LVar _ -> acc
+  | LArrayElem (_, idx) -> expr_float64_intrinsics acc idx
+  | LArrayElemExpr (base, idx) ->
+      expr_float64_intrinsics (expr_float64_intrinsics acc base) idx
+  | LRecordField (lv, _) -> lvalue_float64_intrinsics acc lv
+
+let rec stmt_float64_intrinsics acc = function
+  | SAssign (lv, e) ->
+      expr_float64_intrinsics (lvalue_float64_intrinsics acc lv) e
+  | SSeq stmts -> List.fold_left stmt_float64_intrinsics acc stmts
+  | SIf (cond, then_, else_) ->
+      let acc = expr_float64_intrinsics acc cond in
+      let acc = stmt_float64_intrinsics acc then_ in
+      Option.fold ~none:acc ~some:(stmt_float64_intrinsics acc) else_
+  | SWhile (cond, body) ->
+      stmt_float64_intrinsics (expr_float64_intrinsics acc cond) body
+  | SFor (_, lo, hi, _, body) ->
+      stmt_float64_intrinsics
+        (expr_float64_intrinsics (expr_float64_intrinsics acc lo) hi)
+        body
+  | SMatch (scrutinee, cases) ->
+      List.fold_left
+        (fun a (_, s) -> stmt_float64_intrinsics a s)
+        (expr_float64_intrinsics acc scrutinee)
+        cases
+  | SReturn e | SExpr e -> expr_float64_intrinsics acc e
+  | SBarrier | SWarpBarrier | SEmpty | SMemFence | SNative _ -> acc
+  | SLet (_, e, body) | SLetMut (_, e, body) ->
+      stmt_float64_intrinsics (expr_float64_intrinsics acc e) body
+  | SPragma (_, body) | SBlock body -> stmt_float64_intrinsics acc body
+
+let decl_float64_intrinsics acc = function
+  | DParam _ -> acc
+  | DLocal (_, init) ->
+      Option.fold ~none:acc ~some:(expr_float64_intrinsics acc) init
+  | DShared (_, _, size) ->
+      Option.fold ~none:acc ~some:(expr_float64_intrinsics acc) size
+
+let helper_float64_intrinsics acc hf = stmt_float64_intrinsics acc hf.hf_body
+
+(** Deduplicated names of the Float64 math intrinsics a kernel invokes. *)
+let kernel_float64_intrinsics k =
+  let acc = List.fold_left decl_float64_intrinsics [] k.kern_params in
+  let acc = List.fold_left decl_float64_intrinsics acc k.kern_locals in
+  let acc = stmt_float64_intrinsics acc k.kern_body in
+  let acc = List.fold_left helper_float64_intrinsics acc k.kern_funcs in
+  List.sort_uniq compare acc

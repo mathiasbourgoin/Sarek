@@ -1753,9 +1753,9 @@ let make_math_kernel elt path name =
   let mk v = DParam (v, Some {arr_elttype = elt; arr_memspace = Global}) in
   base_kernel ("math_" ^ name) [mk out; mk a] body []
 
-(** Float64 sin lowers to the software implementation (inlined
-    Sarek_ir_ptx_softmath helper): Cody-Waite reduction + fma polynomial on f64
-    registers, never the f32 [.approx] instruction. *)
+(** Float64 sin lowers to the software implementation (inlined Sarek_ir_softmath
+    helper): Cody-Waite reduction + fma polynomial on f64 registers, never the
+    f32 [.approx] instruction. *)
 let test_f64_sin_softmath () =
   let k = make_math_kernel TFloat64 ["Float64"] "sin" in
   let ptx = Sarek_ir_ptx.generate k in
