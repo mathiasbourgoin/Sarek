@@ -101,6 +101,45 @@ let tol_for ~(substrate : Real64.substrate) ~framework ~op =
       | "Vulkan", ("mul" | "div") -> f32_tol
       | _ -> base)
 
+(* KNOWN ISSUE - rusticl / Mesa fp64 (RUSTICL_FEATURES=fp64) is non-conformant:
+   fp64 +, -, * are computed at full double precision, but fp64 [sqrt] and
+   division are computed at only ~single precision. Measured directly with a
+   hand-written OpenCL C repro (briefs/opencl-f64-while-loop-impl.md, harness
+   clprobe.c) on both rusticl devices (navi31 GPU + raphael CPU):
+
+       max rel err:  sqrt = 1.82e-08   1.0/v = 1.64e-08   v*v - v = 3.97e-16
+
+   Vulkan/RADV on the same GPU is exact, so this is a rusticl driver limitation,
+   not a Sarek codegen artefact. Full evidence: PR #266 (test_float64_kernel_arith
+   carries the same annotation for its final sqrt).
+
+   Reachability here: WITHOUT the flag, OpenCL reports fp64=false and real64
+   selects the exact df64 fallback substrate - the default baseline never hits
+   this branch and is unaffected. WITH RUSTICL_FEATURES=fp64 the Native_f64
+   substrate is selected and only div/sqrt carry the ~1e-8 error; +, -, * stay
+   exact. We therefore annotate an OpenCL Native_f64 div/sqrt result whose
+   relative error is within the transcendental envelope below as a KNOWN-ISSUE
+   rather than a bare FAIL. A *real* regression still FAILs: add/sub/mul beyond
+   the f64 tolerance, a non-finite (NaN/inf) result - [rel_error]/[check] already
+   maps NaN to infinity so it can never fit the envelope - or the wrong substrate
+   being selected (Fallback_df64 is exact and is never annotated). *)
+let opencl_fp64_transcendental_envelope = 1e-5
+
+(* Classify one op's outcome: PASS within tolerance, the documented rusticl fp64
+   div/sqrt KNOWN-ISSUE (OpenCL + Native_f64 only, error inside the envelope), or
+   a genuine FAIL. *)
+let op_status ~(substrate : Real64.substrate) ~framework ~op ~err ~tol =
+  if err <= tol then `Pass
+  else
+    match substrate with
+    | Real64.Native_f64
+      when framework = "OpenCL"
+           && (op = "div" || op = "sqrt")
+           && Float.is_finite err
+           && err <= opencl_fp64_transcendental_envelope ->
+        `Known_issue
+    | _ -> `Fail
+
 (* ========== One pass on one device with one substrate ===================== *)
 
 let failures = ref 0
@@ -167,14 +206,17 @@ let run_pass (dev : Device.t) ~(substrate : Real64.substrate) =
     (fun op ->
       let err = try Hashtbl.find worst op with Not_found -> 0.0 in
       let tol = tol_for ~substrate ~framework ~op in
-      let ok = err <= tol in
-      if not ok then incr failures ;
+      let status = op_status ~substrate ~framework ~op ~err ~tol in
+      (match status with `Fail -> incr failures | `Pass | `Known_issue -> ()) ;
       Printf.printf
         "    %-5s max rel err %.3g (tol %.3g) %s\n%!"
         op
         err
         tol
-        (if ok then "PASS" else "FAIL"))
+        (match status with
+        | `Pass -> "PASS"
+        | `Known_issue -> "KNOWN-ISSUE (rusticl fp64 sqrt/div)"
+        | `Fail -> "FAIL"))
     ["add"; "sub"; "mul"; "div"; "sqrt"]
 
 (* ========== Main ========== *)
