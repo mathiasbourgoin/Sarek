@@ -177,21 +177,28 @@ module Backend : Framework_sig.BACKEND = struct
 
   (** Generate GLSL source from Sarek IR.
       @param block Workgroup dimensions - required for correct GLSL local_size
-  *)
+
+      Codegen never legitimately declines a kernel by returning [None]:
+      {!Sarek_ir_glsl.generate_with_types} either produces source or raises a
+      located [Backend_error (Codegen {backend = "Vulkan"; _})] naming the
+      offending IR node (e.g. an intrinsic with no GLSL lowering). That
+      exception is deliberately allowed to PROPAGATE so callers surface the
+      intrinsic name — a blanket [try ... with _ -> None] previously swallowed
+      it, and Execute then raised the opaque "generate_source returned None"
+      with the name lost (PR #259 review). This function therefore always
+      returns [Some _] on success. *)
   let generate_source ?block (ir : Sarek_ir_types.kernel) : string option =
     let block_tuple =
       match block with
       | Some b -> Some (b.Framework_sig.x, b.Framework_sig.y, b.Framework_sig.z)
       | None -> None
     in
-    try
-      Some
-        (Sarek_ir_glsl.generate_with_types
-           ?block:block_tuple
-           ~log:(fun s -> Spoc_core.Log.debugf Spoc_core.Log.Device "%s" s)
-           ~types:ir.kern_types
-           ir)
-    with _ -> None
+    Some
+      (Sarek_ir_glsl.generate_with_types
+         ?block:block_tuple
+         ~log:(fun s -> Spoc_core.Log.debugf Spoc_core.Log.Device "%s" s)
+         ~types:ir.kern_types
+         ir)
 
   (** Execute directly - not supported for JIT backend *)
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =

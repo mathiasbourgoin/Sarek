@@ -27,9 +27,14 @@ module Backend : Framework_sig.BACKEND = struct
 
   let execution_model = Framework_sig.JIT
 
+  (* Codegen never legitimately declines a kernel by returning [None]: it either
+     produces source or raises a located
+     [Backend_error (Codegen {backend = "CUDA/C"; _})] naming the offending IR
+     node. That error is allowed to PROPAGATE so callers surface the name rather
+     than the opaque "generate_source returned None" — catching it here and
+     returning [None] hid it identically to the Vulkan swallow (PR #259). *)
   let generate_source ?block:_ (ir : Sarek_ir_types.kernel) : string option =
-    try Some (Sarek_ir_cuda.generate_with_types ~types:ir.kern_types ir)
-    with Sarek_backend_error.Backend_error.Backend_error _ -> None
+    Some (Sarek_ir_cuda.generate_with_types ~types:ir.kern_types ir)
 
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =
     Cuda_error.raise_error

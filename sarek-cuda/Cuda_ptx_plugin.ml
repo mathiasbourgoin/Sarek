@@ -12,8 +12,8 @@
  *
  * Records, variants and tuples are supported (SROA registers + field-wise
  * global access; see spoc/ir/Sarek_ir_layout.ml). Remaining unsupported IR
- * nodes (e.g. bounded recursion, f64 transcendentals) cause generate_source
- * to return None.
+ * nodes (e.g. bounded recursion, f64 transcendentals) raise a located
+ * [Ptx_codegen_error] from generate_source (propagated, not swallowed).
  ******************************************************************************)
 
 open Spoc_framework
@@ -30,10 +30,12 @@ module Backend : Framework_sig.BACKEND = struct
 
   let execution_model = Framework_sig.JIT
 
+  (* A located [Ptx_codegen_error] (its string message carries the unsupported
+     IR node) is allowed to PROPAGATE so callers surface it, rather than being
+     converted to [None] and re-raised by Execute as the opaque
+     "generate_source returned None" with the detail lost (PR #259). *)
   let generate_source ?block:_ (ir : Sarek_ir_types.kernel) : string option =
-    match Sarek_ir_ptx.generate_with_types ~types:ir.kern_types ir with
-    | s -> Some s
-    | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> None
+    Some (Sarek_ir_ptx.generate_with_types ~types:ir.kern_types ir)
 
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =
     Cuda_error.raise_error

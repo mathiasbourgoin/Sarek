@@ -179,21 +179,24 @@ module Backend : Framework_sig.BACKEND = struct
   let execution_model = Framework_sig.JIT
 
   (** Generate OpenCL source from Sarek IR.
-      @param block Ignored - OpenCL specifies work-group size at launch *)
+      @param block Ignored - OpenCL specifies work-group size at launch
+
+      A located [Backend_error (Codegen {backend = "OpenCL"; _})] from codegen
+      is deliberately allowed to PROPAGATE so callers surface the offending IR
+      node (e.g. an intrinsic name) rather than the opaque "generate_source
+      returned None" (PR #259 review); a blanket [try ... with _ -> None]
+      previously swallowed it. Codegen never legitimately declines a kernel by
+      returning [None]. *)
   let generate_source ?block:_ (ir : Sarek_ir_types.kernel) : string option =
-    try
-      let source =
-        Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir
-      in
-      (* Add FP64 pragma if kernel uses double precision *)
-      let source =
-        if Sarek_ir_analysis.kernel_uses_float64 ir then
-          "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n\n" ^ source
-        else source
-      in
-      Spoc_core.Log.debug Kernel ("OpenCL source:\n" ^ source) ;
-      Some source
-    with _ -> None
+    let source = Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir in
+    (* Add FP64 pragma if kernel uses double precision *)
+    let source =
+      if Sarek_ir_analysis.kernel_uses_float64 ir then
+        "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n\n" ^ source
+      else source
+    in
+    Spoc_core.Log.debug Kernel ("OpenCL source:\n" ^ source) ;
+    Some source
 
   (** Execute directly - not supported for JIT backend *)
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =

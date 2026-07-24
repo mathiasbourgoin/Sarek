@@ -267,6 +267,17 @@ let to_string = function
       | Feature_not_supported {feature; backend = _} ->
           Printf.sprintf "%s Feature not supported: %s" prefix feature)
 
+(** Render [Backend_error] through {!to_string} anywhere an exception is
+    stringified via [Printexc.to_string] — notably generic funnels that catch an
+    arbitrary [exn] and re-wrap it (e.g. Sarek_transpile's
+    [Internal_error (Printexc.to_string exn)]). Without this printer such paths
+    emit the opaque [Backend_error(_)] constructor and lose the located message
+    (backend + intrinsic name). *)
+let () =
+  Printexc.register_printer (function
+    | Backend_error err -> Some (to_string err)
+    | _ -> None)
+
 (** Raise backend error as exception *)
 let raise_error err = raise (Backend_error err)
 

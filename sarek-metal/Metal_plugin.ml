@@ -172,13 +172,18 @@ module Backend : Framework_sig.BACKEND = struct
   let execution_model = Framework_sig.JIT
 
   (** Generate Metal Shading Language source from Sarek IR.
-      @param block Ignored - Metal specifies work-group size at launch *)
+      @param block Ignored - Metal specifies work-group size at launch
+
+      A located [Backend_error (Codegen {backend = "Metal"; _})] from codegen is
+      deliberately allowed to PROPAGATE so callers surface the offending IR node
+      (e.g. an intrinsic name) rather than the opaque "generate_source returned
+      None" (PR #259 review); a blanket [try ... with _ -> None] previously
+      swallowed it. Codegen never legitimately declines a kernel by returning
+      [None]. *)
   let generate_source ?block:_ (ir : Sarek_ir_types.kernel) : string option =
-    try
-      let source = Sarek_ir_metal.generate_with_types ~types:ir.kern_types ir in
-      Spoc_core.Log.debug Kernel ("Metal source:\n" ^ source) ;
-      Some source
-    with _ -> None
+    let source = Sarek_ir_metal.generate_with_types ~types:ir.kern_types ir in
+    Spoc_core.Log.debug Kernel ("Metal source:\n" ^ source) ;
+    Some source
 
   (** Execute directly - not supported for JIT backend *)
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =

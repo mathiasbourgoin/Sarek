@@ -453,9 +453,14 @@ and gen_glsl_polyfill buf ~is_f64 name args =
       gen_expr buf x ;
       Buffer.add_string buf "))"
   | _ ->
+      (* [gen_glsl_polyfill] is only ever entered for a KNOWN polyfill name
+         (guarded by the [List.mem name [...]] test in {!gen_intrinsic}), so a
+         fall-through here is always an arity mismatch — not an unknown
+         intrinsic. Report it as such: every polyfill above is unary except
+         [hypot], which is binary. *)
+      let expected = if name = "hypot" then 2 else 1 in
       Codegen_error.raise_error
-        (Codegen_error.unknown_intrinsic
-           (Printf.sprintf "%s (wrong arity for GLSL polyfill)" name))
+        (Codegen_error.invalid_arg_count name expected (List.length args))
 
 and gen_intrinsic buf path name args =
   let full_name =
