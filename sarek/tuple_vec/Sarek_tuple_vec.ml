@@ -13,7 +13,7 @@
  * positional fields [_0], [_1], ... and its byte layout is taken from the
  * shared layout authority [Sarek_ir_layout], byte-for-byte identical to the
  * layout the device codegen computes for the synthesized record
- * ([Sarek_lower_ir.vector_elem_elttype]). Host [get]/[set] therefore marshal
+ * ([Sarek_lower_ir.slot_elttype_of_typ]). Host [get]/[set] therefore marshal
  * to/from exactly the bytes the kernel reads and writes on device.
  *
  * Scope (this tier): tuples of two or three scalar-primitive components,

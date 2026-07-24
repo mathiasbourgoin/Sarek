@@ -104,6 +104,8 @@ test_negative:
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_fun_param.cma > "$$out" 2>&1; if grep -q "Function-typed kernel parameters are not supported" "$$out"; then echo "  PASS: function param rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing non-primitive local tuple rejection..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_tuple_local_nonprim.cma > "$$out" 2>&1; if grep -q "Tuple values support only scalar components" "$$out"; then echo "  PASS: non-primitive local tuple rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@echo "Testing non-primitive tuple destructure rejection (non-variable scrutinee)..."
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_tuple_destructure_nonprim.cma > "$$out" 2>&1; if grep -q "Tuple values support only scalar components" "$$out"; then echo "  PASS: non-primitive tuple destructure rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing escaping function-value rejection (L12 defunctionalization)..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_fun_escape.cma > "$$out" 2>&1; if grep -q "Function value escapes" "$$out"; then echo "  PASS: escaping function value rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing reserved-prefix rejection (kernel param sarek_smod)..."

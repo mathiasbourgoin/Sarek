@@ -135,6 +135,19 @@ let tuple_record_name (comps : Ir.elttype list) : string =
            match elttype_prim_tag e with Some t -> "_" ^ t | None -> "_x")
          comps)
 
+(** The single located error raised for any tuple whose components are not all
+    scalar primitives — shared by the vector-element path, the kernel-local slot
+    path ({!slot_elttype_of_typ}), and the match-scrutinee guard in
+    {!lower_stmt}. [loc] should be the offending source expression when known
+    ([Ppxlib.Location.none] otherwise). *)
+let raise_tuple_component_error ~loc : 'a =
+  Ppxlib.Location.raise_errorf
+    ~loc
+    "Tuple values support only scalar components \
+     (float32/float64/int32/int64/bool); nested tuples, records, vectors or \
+     functions as tuple components are not supported (applies to vector \
+     elements, kernel-local tuple bindings and tuple match scrutinees)."
+
 (** Synthesized record fields (positional [_0.._n]) for a tuple's component
     types. Raises if any component is not a scalar primitive. *)
 let tuple_record_fields (tys : typ list) : string * (string * Ir.elttype) list =
@@ -143,14 +156,7 @@ let tuple_record_fields (tys : typ list) : string * (string * Ir.elttype) list =
       (fun t ->
         match prim_component_elttype t with
         | Some e -> e
-        | None ->
-            Ppxlib.Location.raise_errorf
-              ~loc:Ppxlib.Location.none
-              "Tuple values support only scalar components \
-               (float32/float64/int32/int64/bool); nested tuples, records, \
-               vectors or functions as tuple components are not supported \
-               (applies to both vector elements and kernel-local tuple \
-               bindings).")
+        | None -> raise_tuple_component_error ~loc:Ppxlib.Location.none)
       tys
   in
   let name = tuple_record_name comps in
@@ -708,6 +714,13 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
       (* No else branch - only valid for unit-returning expressions *)
       Ir.EIf (lower_expr state cond, lower_expr state then_, Ir.EConst Ir.CUnit)
   (* Match as expression *)
+  | TEMatch (e, _)
+    when (match repr e.ty with TTuple _ -> true | _ -> false)
+         && not (is_primitive_tuple e.ty) ->
+      (* Same non-primitive tuple-scrutinee guard as the statement path (see
+         {!lower_stmt}); reachable when a non-primitive tuple match is used in
+         value position. *)
+      raise_tuple_component_error ~loc:(Sarek_ast.loc_to_ppxlib e.te_loc)
   | TEMatch (e, cases) ->
       let ir_cases =
         List.map
@@ -836,6 +849,20 @@ and lower_stmt (state : state) (te : texpr) : Ir.stmt =
           body_ir
       in
       Ir.SLet (tmp_var, lower_expr state e, bound)
+  | TEMatch (e, _)
+    when (match repr e.ty with TTuple _ -> true | _ -> false)
+         && not (is_primitive_tuple e.ty) ->
+      (* A tuple-typed match scrutinee that did NOT take the primitive
+         single-arm destructure path above is a NON-PRIMITIVE tuple (nested
+         tuple / record / vector / function component), reachable with a
+         non-variable scrutinee that never passes through [slot_elttype_of_typ]
+         (e.g. [let ((a, b), c) = ((x, y), z) in ...], which the parser desugars
+         to this match, or the equivalent [match] spelling). Without this guard
+         it would lower to [Ir.ETuple] + an [SMatch] and die as a confusing
+         backend C error ([switch ((...).tag)]). Raise the same located
+         tuple-component error the slot path raises. Only tuple scrutinees reach
+         here; variant matches have a [TVariant] scrutinee and fall through. *)
+      raise_tuple_component_error ~loc:(Sarek_ast.loc_to_ppxlib e.te_loc)
   | TEMatch (e, cases) ->
       let ir_cases =
         List.map
