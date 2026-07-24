@@ -94,9 +94,21 @@ let contains hay needle =
 
 let codegen_ok = ref true
 
-(* The helper must be declared with the synthesized struct return type, and the
-   struct must be defined. It must never be declared int-returning (the old
-   placeholder collapse) while its body returns a compound. *)
+(* Pin the EXACT wrong-width signature the fix targets. Three direct assertions
+   on the emitted source, one per backend:
+
+   (a) The helper is DECLARED returning the synthesized [_tup_*] record — the
+       emitted source contains ["<struct_name> <helper>("] (the struct-return
+       form all three C-family backends emit: [cuda/opencl/glsl_type_of_elttype]
+       maps the tuple's [TRecord] to the mangled [_tup_*] name, then a space,
+       then the helper name and its parameter list).
+   (b) It is NOT declared int-returning — the emitted source must NOT contain
+       ["int <helper>("], the old [elttype_of_typ] placeholder collapse
+       ([TTuple] -> [Ir.TInt32]) that produced the int-vs-compound miscompile.
+   (c) The [_tup_*] struct DEFINITION is emitted (not merely the name in a
+       literal/usage). CUDA and OpenCL emit a C typedef (["} <struct_name>;"]);
+       GLSL emits a tagged struct (["struct <struct_name> {"]). Either form
+       counts as a definition. *)
 let check_codegen name kirc ~struct_name ~helper =
   let ir = ir_of name kirc in
   let types = ir.Sarek_ir_types.kern_types in
@@ -109,19 +121,28 @@ let check_codegen name kirc ~struct_name ~helper =
   in
   List.iter
     (fun (bk, src) ->
-      let has_struct = contains src struct_name in
-      (* The int-vs-compound miscompile: helper declared "int <helper>(" . *)
+      (* (a) helper declared returning the synthesized struct type. *)
+      let struct_ret = contains src (struct_name ^ " " ^ helper ^ "(") in
+      (* (b) the int-vs-compound miscompile: helper declared "int <helper>(". *)
       let mistyped = contains src ("int " ^ helper ^ "(") in
-      if (not has_struct) || mistyped then begin
+      (* (c) the struct definition itself (typedef for CUDA/OpenCL, tagged
+         struct for GLSL) — not just the mangled name in a literal. *)
+      let struct_def =
+        contains src ("} " ^ struct_name ^ ";")
+        || contains src ("struct " ^ struct_name ^ " {")
+      in
+      if (not struct_ret) || mistyped || not struct_def then begin
         codegen_ok := false ;
         Printf.printf
-          "  codegen[%s/%s]: FAIL (struct present=%b, int-returning helper=%b)\n\
+          "  codegen[%s/%s]: FAIL (struct-returning helper=%b, int-returning \
+           helper=%b, struct defined=%b)\n\
            %s\n\
            %!"
           name
           bk
-          has_struct
+          struct_ret
           mistyped
+          struct_def
           src
       end
       else Printf.printf "  codegen[%s/%s]: OK\n%!" name bk)
