@@ -92,7 +92,8 @@
   test_bounded_recursion
   test_inline_pragma
   test_nested_types
-  test_ktype_mixed_align)
+  test_ktype_mixed_align
+  test_ktype_record_f64_arith)
  (modules
   test_vector_add
   test_module_const
@@ -130,9 +131,11 @@
   test_module_poly
   test_bounded_recursion
   test_inline_pragma
-  test_nested_types)
+  test_nested_types
+  test_ktype_record_f64_arith)
  (libraries
   sarek
+  spoc.ir
   sarek.stdlib
   sarek.float64
   sarek_geometry
@@ -1029,3 +1032,19 @@
  (alias runtest)
  (action
   (run %{dep:test_ktype_record_variant_field.exe})))
+
+; ktype-record-f64-arith: a [@@sarek.type] record with float64 fields used as a
+; vector, with float64 ARITHMETIC on the fields. CPU-safe and self-verifying
+; (exits nonzero on a verified-device mismatch), so it gates in the default
+; runtest alias. RUSTICL_FEATURES=fp64 is set so the rusticl OpenCL ICD
+; advertises cl_khr_fp64 and the OpenCL leg is actually exercised (rather than
+; skipped); devices that still lack fp64 are skipped, never failed. Harmless on
+; non-rusticl ICDs, which ignore the variable.
+
+(rule
+ (alias runtest)
+ (action
+  (setenv
+   RUSTICL_FEATURES
+   fp64
+   (run %{dep:test_ktype_record_f64_arith.exe}))))
