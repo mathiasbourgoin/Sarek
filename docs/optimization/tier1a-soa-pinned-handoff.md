@@ -92,6 +92,14 @@ pinned API is correct CUDA per the driver docs; the ~2× pinned-vs-pageable
 comparison simply cannot be measured on this hardware/driver and needs a stock
 NVIDIA driver (or a ZLUDA build that implements pinned host memory).
 
+> **Update 2026-07-24:** the emitter half of this handoff (item 1 below) is
+> now implemented — see
+> [tier1b-emitter-soa-handoff.md](tier1b-emitter-soa-handoff.md). The kernel
+> signature grows to N base pointers and element addressing is per-leaf
+> coalesced, driven by `Sarek_ir_ptx.generate ~soa_params`. Items 2–3 (the host
+> `Custom_storage_soa` variant + `Transfer`/`Kernel_args` N-buffer plumbing)
+> remain as Tier 1c in that doc.
+
 ## Tier 1b handoff — device-side single-vector SoA (emitter)
 
 The host+transfer tier above lets a user *manually* run SoA today (bundle N
