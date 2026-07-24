@@ -15,7 +15,8 @@
   backend_cuda
   backend_opencl
   backend_vulkan
-  backend_metal)
+  backend_metal
+  backend_hip)
  (libraries
   spoc_core
   sarek_native
@@ -41,6 +42,11 @@
    from
    (sarek_metal -> backend_metal.available.ml)
    (-> backend_metal.unavailable.ml))
+  (select
+   backend_hip.ml
+   from
+   (sarek_hip -> backend_hip.available.ml)
+   (-> backend_hip.unavailable.ml))
   unix))
 
 (executable
