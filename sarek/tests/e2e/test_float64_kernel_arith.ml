@@ -147,6 +147,61 @@ let verify ~exact got_iters got_mag =
 let is_native (dev : Device.t) =
   dev.Device.framework = "Native" || dev.Device.framework = "Interpreter"
 
+(* KNOWN ISSUE — rusticl / Mesa fp64 (RUSTICL_FEATURES=fp64) is non-conformant:
+   fp64 +, -, * are computed at full double precision, but fp64 [sqrt] and
+   division are computed at only ~single precision. Measured directly with a
+   hand-written OpenCL C repro (attached in briefs/opencl-f64-while-loop-impl.md,
+   harness clprobe.c) on both rusticl devices (navi31 GPU + raphael CPU):
+
+       max rel err:  sqrt = 1.82e-08   1.0/v = 1.64e-08   v*v - v = 3.97e-16
+
+   The .cl repro also proves this is NOT a Sarek codegen artefact: the exact
+   emitted source (bare integer literals for the f64 constants, e.g. `4`, `2`)
+   and a variant with explicit double literals (`4.0`, `2.0`) produce
+   byte-identical output — C's int->double promotion is correct, and both match
+   Sarek's result exactly. Vulkan/RADV on the same GPU is exact, so this is a
+   rusticl driver limitation, not a bug in Sarek.
+
+   Effect on this kernel: the escape-loop condition uses only +, -, * and <=,
+   so iteration counts are EXACT on OpenCL; only the final sqrt(x^2 + y^2)
+   carries the ~1e-8 error. We therefore annotate the OpenCL result as a known
+   issue rather than a bare FAIL. A *real* regression still reports FAIL: wrong
+   iteration counts, or a magnitude error beyond the fp64-transcendental
+   envelope below, is NOT covered by this annotation. *)
+let opencl_fp64_transcendental_envelope = 1e-5
+
+(* Reporting-only detail: iteration mismatches (loop math, expected exact) and
+   the worst relative magnitude error (the sqrt-bearing output). *)
+let detailed_stats got_iters got_mag =
+  let iter_bad = ref 0 in
+  let max_rel = ref 0.0 in
+  for i = 0 to n - 1 do
+    let ref_iter, ref_mag = ocaml_reference (cx_of i) (cy_of i) in
+    if Int32.compare got_iters.(i) ref_iter <> 0 then incr iter_bad ;
+    let denom = Stdlib.abs_float ref_mag in
+    let ad = Stdlib.abs_float (got_mag.(i) -. ref_mag) in
+    let rel = if denom > 0.0 then ad /. denom else ad in
+    if rel > !max_rel then max_rel := rel
+  done ;
+  (!iter_bad, !max_rel)
+
+(* Status for a non-native device: PASS, the documented rusticl fp64 KNOWN-ISSUE,
+   or a genuine FAIL. *)
+let device_status (dev : Device.t) ~bad got_iters got_mag =
+  if bad = 0 then "PASS"
+  else
+    let iter_bad, max_rel = detailed_stats got_iters got_mag in
+    if
+      dev.Device.framework = "OpenCL"
+      && iter_bad = 0
+      && max_rel <= opencl_fp64_transcendental_envelope
+    then
+      Printf.sprintf
+        "KNOWN-ISSUE (rusticl fp64 sqrt/div ~single-precision; iters exact, \
+         mag max_rel=%.2g; see brief)"
+        max_rel
+    else "FAIL"
+
 let () =
   let _, kirc = f64_mandelbrot_kernel in
   let ir =
@@ -174,11 +229,15 @@ let () =
         try
           let got_iters, got_mag = run_on_device dev ir in
           let bad = verify ~exact:native got_iters got_mag in
+          let status =
+            if native then if bad = 0 then "PASS" else "FAIL"
+            else device_status dev ~bad got_iters got_mag
+          in
           Printf.printf
             "  %-10s %-24s %s (%d/%d ok)\n%!"
             dev.Device.framework
             dev.Device.name
-            (if bad = 0 then "PASS" else "FAIL")
+            status
             (n - bad)
             n ;
           if native then begin
