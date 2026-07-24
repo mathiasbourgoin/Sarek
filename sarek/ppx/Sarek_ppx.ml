@@ -87,6 +87,96 @@ let custom_descriptor_expr_of_lid ~loc lid =
       Ast_builder.Default.pexp_ident ~loc {txt = ident; loc}
   | [] -> Ast_builder.Default.evar ~loc "unknown_custom"
 
+(** Interpreter value-model converters, shared by the record and variant helper
+    generators ([generate_interp_helpers]).
+
+    [value_to_ocaml]: extract the OCaml scalar / nested-custom value of type
+    [ct] from a runtime [value] expression (used by record [from_values] field
+    converters and variant [from_value] payload reconstruction).
+
+    [value_from_ocaml]: wrap an OCaml scalar / nested-custom value of type [ct]
+    into the corresponding runtime [value] (used by record [to_values]/
+    [get_field] and variant [to_value]).
+
+    A nested custom type (record OR variant) is delegated to its registered
+    helper via [lookup_typed <ct>_custom.type_id]; the [value_to_ocaml] nested
+    arm accepts BOTH [VRecord] and [VVariant] — a variant-typed field is no
+    longer rejected with "expected record" (the L14-S2 PR #251 break). [what]
+    names the field/argument for error messages. *)
+let value_to_ocaml ~loc ~(what : string) (ct : core_type)
+    (value_expr : expression) : expression =
+  let estr s = Ast_builder.Default.estring ~loc s in
+  match ct.ptyp_desc with
+  | Ptyp_constr ({txt = Lident ("float32" | "float"); _}, _) ->
+      [%expr
+        match [%e value_expr] with
+        | Sarek.Sarek_value.VFloat32 f -> f
+        | Sarek.Sarek_value.VFloat64 f -> f
+        | _ -> failwith [%e estr (what ^ " expected float32, got wrong type")]]
+  | Ptyp_constr ({txt = Lident "float64"; _}, _) ->
+      [%expr
+        match [%e value_expr] with
+        | Sarek.Sarek_value.VFloat64 f -> f
+        | Sarek.Sarek_value.VFloat32 f -> f
+        | _ -> failwith [%e estr (what ^ " expected float64, got wrong type")]]
+  | Ptyp_constr ({txt = Lident ("int32" | "int"); _}, _) ->
+      [%expr
+        match [%e value_expr] with
+        | Sarek.Sarek_value.VInt32 n -> n
+        | _ -> failwith [%e estr (what ^ " expected int32, got wrong type")]]
+  | Ptyp_constr ({txt = Lident "int64"; _}, _) ->
+      [%expr
+        match [%e value_expr] with
+        | Sarek.Sarek_value.VInt64 n -> n
+        | _ -> failwith [%e estr (what ^ " expected int64, got wrong type")]]
+  | Ptyp_constr ({txt = Lident "bool"; _}, _) ->
+      [%expr
+        match [%e value_expr] with
+        | Sarek.Sarek_value.VBool b -> b
+        | _ -> failwith [%e estr (what ^ " expected bool")]]
+  | Ptyp_constr ({txt; _}, _) ->
+      let custom_type = String.concat "." (flatten_longident txt) in
+      let custom_expr = custom_descriptor_expr_of_lid ~loc txt in
+      [%expr
+        match [%e value_expr] with
+        | (Sarek.Sarek_value.VRecord _ | Sarek.Sarek_value.VVariant _) as nested
+          -> (
+            match
+              Sarek.Sarek_type_helpers.lookup_typed
+                [%e custom_expr].Spoc_core.Vector.type_id
+            with
+            | Some (module H) -> H.from_value nested
+            | None ->
+                failwith [%e estr ("No helper for nested type " ^ custom_type)])
+        | _ -> failwith [%e estr (what ^ " expected record or variant")]]
+  | _ -> [%expr failwith [%e estr ("Unsupported field type: " ^ what)]]
+
+let value_from_ocaml ~loc ~(what : string) (ct : core_type)
+    (ocaml_expr : expression) : expression =
+  let estr s = Ast_builder.Default.estring ~loc s in
+  match ct.ptyp_desc with
+  | Ptyp_constr ({txt = Lident ("float32" | "float"); _}, _) ->
+      [%expr Sarek.Sarek_value.VFloat32 [%e ocaml_expr]]
+  | Ptyp_constr ({txt = Lident "float64"; _}, _) ->
+      [%expr Sarek.Sarek_value.VFloat64 [%e ocaml_expr]]
+  | Ptyp_constr ({txt = Lident ("int32" | "int"); _}, _) ->
+      [%expr Sarek.Sarek_value.VInt32 [%e ocaml_expr]]
+  | Ptyp_constr ({txt = Lident "int64"; _}, _) ->
+      [%expr Sarek.Sarek_value.VInt64 [%e ocaml_expr]]
+  | Ptyp_constr ({txt = Lident "bool"; _}, _) ->
+      [%expr Sarek.Sarek_value.VBool [%e ocaml_expr]]
+  | Ptyp_constr ({txt; _}, _) ->
+      let custom_type = String.concat "." (flatten_longident txt) in
+      let custom_expr = custom_descriptor_expr_of_lid ~loc txt in
+      [%expr
+        match
+          Sarek.Sarek_type_helpers.lookup_typed
+            [%e custom_expr].Spoc_core.Vector.type_id
+        with
+        | Some (module H) -> H.to_value [%e ocaml_expr]
+        | None -> failwith [%e estr ("No helper for type " ^ custom_type)]]
+  | _ -> [%expr failwith [%e estr ("Unsupported field type: " ^ what)]]
+
 let rec core_type_to_sarek_type_expr ~loc (ct : core_type) =
   match ct.ptyp_desc with
   | Ptyp_constr ({txt; _}, args) ->
@@ -1168,96 +1258,11 @@ let generate_interp_helpers ~loc (td : type_declaration) : structure_item list =
               [%expr arr.([%e Ast_builder.Default.eint ~loc i])]
             in
             let converter =
-              match field_type.ptyp_desc with
-              | Ptyp_constr ({txt = Lident "float32"; _}, _)
-              | Ptyp_constr ({txt = Lident "float"; _}, _) ->
-                  [%expr
-                    match [%e array_access] with
-                    | Sarek.Sarek_value.VFloat32 f -> f
-                    | Sarek.Sarek_value.VFloat64 f -> f
-                    | _ ->
-                        failwith
-                          [%e
-                            Ast_builder.Default.estring
-                              ~loc
-                              ("Field '" ^ field_name
-                             ^ "' expected float32, got wrong type")]]
-              | Ptyp_constr ({txt = Lident "float64"; _}, _) ->
-                  [%expr
-                    match [%e array_access] with
-                    | Sarek.Sarek_value.VFloat64 f -> f
-                    | Sarek.Sarek_value.VFloat32 f -> f
-                    | _ ->
-                        failwith
-                          [%e
-                            Ast_builder.Default.estring
-                              ~loc
-                              ("Field '" ^ field_name
-                             ^ "' expected float64, got wrong type")]]
-              | Ptyp_constr ({txt = Lident "int32"; _}, _)
-              | Ptyp_constr ({txt = Lident "int"; _}, _) ->
-                  [%expr
-                    match [%e array_access] with
-                    | Sarek.Sarek_value.VInt32 n -> n
-                    | _ ->
-                        failwith
-                          [%e
-                            Ast_builder.Default.estring
-                              ~loc
-                              ("Field '" ^ field_name
-                             ^ "' expected int32, got wrong type")]]
-              | Ptyp_constr ({txt = Lident "int64"; _}, _) ->
-                  [%expr
-                    match [%e array_access] with
-                    | Sarek.Sarek_value.VInt64 n -> n
-                    | _ ->
-                        failwith
-                          [%e
-                            Ast_builder.Default.estring
-                              ~loc
-                              ("Field '" ^ field_name
-                             ^ "' expected int64, got wrong type")]]
-              | Ptyp_constr ({txt = Lident "bool"; _}, _) ->
-                  [%expr
-                    match [%e array_access] with
-                    | Sarek.Sarek_value.VBool b -> b
-                    | _ ->
-                        failwith
-                          [%e
-                            Ast_builder.Default.estring
-                              ~loc
-                              ("Field '" ^ field_name ^ "' expected bool")]]
-              | Ptyp_constr ({txt; _}, _) ->
-                  (* Nested custom type - recursively call its helper *)
-                  let custom_type = String.concat "." (flatten_longident txt) in
-                  let custom_expr = custom_descriptor_expr_of_lid ~loc txt in
-                  [%expr
-                    match [%e array_access] with
-                    | Sarek.Sarek_value.VRecord _ as nested_vrec -> (
-                        match
-                          Sarek.Sarek_type_helpers.lookup_typed
-                            [%e custom_expr].Spoc_core.Vector.type_id
-                        with
-                        | Some (module H) -> H.from_value nested_vrec
-                        | None ->
-                            failwith
-                              [%e
-                                Ast_builder.Default.estring
-                                  ~loc
-                                  ("No helper for nested type " ^ custom_type)])
-                    | _ ->
-                        failwith
-                          [%e
-                            Ast_builder.Default.estring
-                              ~loc
-                              ("Field '" ^ field_name ^ "' expected record")]]
-              | _ ->
-                  [%expr
-                    failwith
-                      [%e
-                        Ast_builder.Default.estring
-                          ~loc
-                          ("Unsupported field type: " ^ field_name)]]
+              value_to_ocaml
+                ~loc
+                ~what:("Field '" ^ field_name ^ "'")
+                field_type
+                array_access
             in
             (Ast_builder.Default.Located.lident ~loc field_name, converter))
           labels
@@ -1279,47 +1284,11 @@ let generate_interp_helpers ~loc (td : type_declaration) : structure_item list =
               let field_access =
                 Ast_builder.Default.pexp_field ~loc [%expr record] field_lid
               in
-              let converter =
-                match ld.pld_type.ptyp_desc with
-                | Ptyp_constr ({txt = Lident "float32"; _}, _)
-                | Ptyp_constr ({txt = Lident "float"; _}, _) ->
-                    [%expr Sarek.Sarek_value.VFloat32 [%e field_access]]
-                | Ptyp_constr ({txt = Lident "float64"; _}, _) ->
-                    [%expr Sarek.Sarek_value.VFloat64 [%e field_access]]
-                | Ptyp_constr ({txt = Lident "int32"; _}, _)
-                | Ptyp_constr ({txt = Lident "int"; _}, _) ->
-                    [%expr Sarek.Sarek_value.VInt32 [%e field_access]]
-                | Ptyp_constr ({txt = Lident "int64"; _}, _) ->
-                    [%expr Sarek.Sarek_value.VInt64 [%e field_access]]
-                | Ptyp_constr ({txt = Lident "bool"; _}, _) ->
-                    [%expr Sarek.Sarek_value.VBool [%e field_access]]
-                | Ptyp_constr ({txt; _}, _) ->
-                    (* Nested custom type - use helper to convert *)
-                    let custom_type =
-                      String.concat "." (flatten_longident txt)
-                    in
-                    let custom_expr = custom_descriptor_expr_of_lid ~loc txt in
-                    [%expr
-                      match
-                        Sarek.Sarek_type_helpers.lookup_typed
-                          [%e custom_expr].Spoc_core.Vector.type_id
-                      with
-                      | Some (module H) -> H.to_value [%e field_access]
-                      | None ->
-                          failwith
-                            [%e
-                              Ast_builder.Default.estring
-                                ~loc
-                                ("No helper for type " ^ custom_type)]]
-                | _ ->
-                    [%expr
-                      failwith
-                        [%e
-                          Ast_builder.Default.estring
-                            ~loc
-                            ("Unsupported field type: " ^ field_name)]]
-              in
-              converter)
+              value_from_ocaml
+                ~loc
+                ~what:("field " ^ field_name)
+                ld.pld_type
+                field_access)
             labels
         in
         let array_expr = Ast_builder.Default.elist ~loc field_conversions in
@@ -1339,41 +1308,11 @@ let generate_interp_helpers ~loc (td : type_declaration) : structure_item list =
               Ast_builder.Default.pexp_field ~loc [%expr record] field_lid
             in
             let converter =
-              match ld.pld_type.ptyp_desc with
-              | Ptyp_constr ({txt = Lident "float32"; _}, _)
-              | Ptyp_constr ({txt = Lident "float"; _}, _) ->
-                  [%expr Sarek.Sarek_value.VFloat32 [%e field_access]]
-              | Ptyp_constr ({txt = Lident "float64"; _}, _) ->
-                  [%expr Sarek.Sarek_value.VFloat64 [%e field_access]]
-              | Ptyp_constr ({txt = Lident "int32"; _}, _)
-              | Ptyp_constr ({txt = Lident "int"; _}, _) ->
-                  [%expr Sarek.Sarek_value.VInt32 [%e field_access]]
-              | Ptyp_constr ({txt = Lident "int64"; _}, _) ->
-                  [%expr Sarek.Sarek_value.VInt64 [%e field_access]]
-              | Ptyp_constr ({txt = Lident "bool"; _}, _) ->
-                  [%expr Sarek.Sarek_value.VBool [%e field_access]]
-              | Ptyp_constr ({txt; _}, _) ->
-                  let custom_type = String.concat "." (flatten_longident txt) in
-                  let custom_expr = custom_descriptor_expr_of_lid ~loc txt in
-                  [%expr
-                    match
-                      Sarek.Sarek_type_helpers.lookup_typed
-                        [%e custom_expr].Spoc_core.Vector.type_id
-                    with
-                    | Some (module H) -> H.to_value [%e field_access]
-                    | None ->
-                        failwith
-                          [%e
-                            Ast_builder.Default.estring
-                              ~loc
-                              ("No helper for type " ^ custom_type)]]
-              | _ ->
-                  [%expr
-                    failwith
-                      [%e
-                        Ast_builder.Default.estring
-                          ~loc
-                          ("Unsupported field type: " ^ field_name)]]
+              value_from_ocaml
+                ~loc
+                ~what:("field " ^ field_name)
+                ld.pld_type
+                field_access
             in
             Ast_builder.Default.case
               ~lhs:
@@ -1456,8 +1395,200 @@ let generate_interp_helpers ~loc (td : type_declaration) : structure_item list =
               [%e full_name_expr]
               (Sarek.Sarek_type_helpers.AnyHelpers (module H))];
       ]
+  | Ptype_variant constrs ->
+      (* Interpreter value-model helper for a variant type: convert the native
+         OCaml constructor to/from a [VVariant]. The interpreter tags a variant
+         by [Hashtbl.hash ctor mod 256] (Sarek_ir_interp_eval EVariant/EMatch/
+         SMatch), NOT by the declaration index the byte path uses; the tag is
+         emitted as a runtime [Hashtbl.hash "C" mod 256] expression so it
+         matches that convention byte-for-byte regardless of compile vs runtime.
+
+         This makes a variant field of a [@@sarek.type] record round-trip on the
+         Interpreter/Native value path (the record helper delegates the field to
+         this helper's [from_value]/[to_value]) and lets a standalone variant
+         vector element decode to a [VVariant]. It does NOT give the variant a
+         nested byte layout (that stays a Sarek_ir_layout Nested_variant
+         rejection — Rocq-coupled, out of scope), so device backends are
+         unaffected. *)
+      let cvar i = "x" ^ string_of_int i in
+      let tag_of cname =
+        [%expr Hashtbl.hash [%e Ast_builder.Default.estring ~loc cname] mod 256]
+      in
+      let payload_cts (cd : constructor_declaration) : core_type list =
+        match cd.pcd_args with
+        | Pcstr_tuple cts -> cts
+        | Pcstr_record _ ->
+            Location.raise_errorf
+              ~loc
+              "sarek: inline records in [@@sarek.type] variant constructors \
+               are not supported"
+      in
+      (* to_value: C (a, b, ..) -> VVariant (full_name, tag, [Va; Vb; ..]) *)
+      let to_value_cases =
+        List.map
+          (fun (cd : constructor_declaration) ->
+            let cname = cd.pcd_name.txt in
+            let cts = payload_cts cd in
+            let arg_pat, arg_values =
+              match cts with
+              | [] -> (None, [])
+              | [ct] ->
+                  ( Some (Ast_builder.Default.pvar ~loc (cvar 0)),
+                    [
+                      value_from_ocaml
+                        ~loc
+                        ~what:cname
+                        ct
+                        (Ast_builder.Default.evar ~loc (cvar 0));
+                    ] )
+              | cts ->
+                  let pats =
+                    List.mapi
+                      (fun i _ -> Ast_builder.Default.pvar ~loc (cvar i))
+                      cts
+                  in
+                  let vals =
+                    List.mapi
+                      (fun i ct ->
+                        value_from_ocaml
+                          ~loc
+                          ~what:cname
+                          ct
+                          (Ast_builder.Default.evar ~loc (cvar i)))
+                      cts
+                  in
+                  (Some (Ast_builder.Default.ppat_tuple ~loc pats), vals)
+            in
+            let lhs =
+              Ast_builder.Default.ppat_construct
+                ~loc
+                (Ast_builder.Default.Located.lident ~loc cname)
+                arg_pat
+            in
+            let rhs =
+              [%expr
+                Sarek.Sarek_value.VVariant
+                  ( [%e full_name_expr],
+                    [%e tag_of cname],
+                    [%e Ast_builder.Default.elist ~loc arg_values] )]
+            in
+            Ast_builder.Default.case ~lhs ~guard:None ~rhs)
+          constrs
+      in
+      let to_value_fn =
+        [%expr
+          fun v ->
+            [%e Ast_builder.Default.pexp_match ~loc [%expr v] to_value_cases]]
+      in
+      (* from_value: VVariant (_, tag, args) -> the constructor whose hashed name
+         equals [tag]; payload rebuilt positionally from [args]. Falls back to
+         the first constructor on an unknown tag (mirrors the byte-path get
+         fallback). *)
+      let build_ctor (cd : constructor_declaration) : expression =
+        let cname = cd.pcd_name.txt in
+        let cts = payload_cts cd in
+        let nth i =
+          value_to_ocaml
+            ~loc
+            ~what:(cname ^ " arg " ^ string_of_int i)
+            (List.nth cts i)
+            [%expr List.nth args [%e Ast_builder.Default.eint ~loc i]]
+        in
+        let arg =
+          match cts with
+          | [] -> None
+          | [_] -> Some (nth 0)
+          | cts ->
+              Some
+                (Ast_builder.Default.pexp_tuple
+                   ~loc
+                   (List.mapi (fun i _ -> nth i) cts))
+        in
+        Ast_builder.Default.pexp_construct
+          ~loc
+          (Ast_builder.Default.Located.lident ~loc cname)
+          arg
+      in
+      let from_value_chain =
+        let fallback =
+          match constrs with
+          | first :: _ -> build_ctor first
+          | [] -> [%expr failwith "empty variant"]
+        in
+        List.fold_right
+          (fun (cd : constructor_declaration) acc ->
+            [%expr
+              if tag = [%e tag_of cd.pcd_name.txt] then [%e build_ctor cd]
+              else [%e acc]])
+          constrs
+          fallback
+      in
+      let from_value_fn =
+        [%expr
+          fun v ->
+            match v with
+            | Sarek.Sarek_value.VVariant (_, tag, args) ->
+                ignore args ;
+                [%e from_value_chain]
+            | _ ->
+                failwith
+                  [%e
+                    Ast_builder.Default.estring
+                      ~loc
+                      ("Expected " ^ type_name ^ " VVariant")]]
+      in
+      let helper_module_name = type_name ^ "_interp_helpers" in
+      let type_lid = Ast_builder.Default.Located.lident ~loc type_name in
+      let helper_module_lid =
+        Ast_builder.Default.Located.lident ~loc helper_module_name
+      in
+      [
+        Ast_builder.Default.pstr_module
+          ~loc
+          (Ast_builder.Default.module_binding
+             ~loc
+             ~name:
+               (Ast_builder.Default.Located.mk ~loc (Some helper_module_name))
+             ~expr:
+               (Ast_builder.Default.pmod_structure
+                  ~loc
+                  [
+                    [%stri
+                      type t =
+                        [%t Ast_builder.Default.ptyp_constr ~loc type_lid []]];
+                    [%stri
+                      let type_id =
+                        [%e
+                          Ast_builder.Default.evar ~loc (type_name ^ "_custom")]
+                          .Spoc_core.Vector.type_id];
+                    [%stri let to_value = [%e to_value_fn]];
+                    [%stri let from_value = [%e from_value_fn]];
+                    (* A variant is not a named-field aggregate; the HELPERS
+                       [from_values]/[to_values]/[get_field] members exist only
+                       to satisfy the signature and are defined in terms of the
+                       single-value converters. *)
+                    [%stri let to_values v = [|to_value v|]];
+                    [%stri let from_values arr = from_value arr.(0)];
+                    [%stri
+                      let get_field _ _ =
+                        failwith
+                          [%e
+                            Ast_builder.Default.estring
+                              ~loc
+                              (type_name ^ " is a variant: no named fields")]];
+                  ]));
+        [%stri
+          let () =
+            let module H =
+              [%m
+              Ast_builder.Default.pmod_ident ~loc helper_module_lid]
+            in
+            Sarek.Sarek_type_helpers.register
+              [%e full_name_expr]
+              (Sarek.Sarek_type_helpers.AnyHelpers (module H))];
+      ]
   | _ ->
-      (* Only generate helpers for records *)
+      (* Abstract / open / extensible types have no value-model helper. *)
       []
 
 (** Generate runtime registration code for a type. The PPX emits calls to

@@ -186,8 +186,24 @@ and eval_control_flow state env = function
         | [] ->
             Interp_error.raise_error
               (Pattern_match_failure {context = "EMatch"})
-        | (PConstr (name, _), body) :: rest ->
-            if Hashtbl.hash name mod 256 = tag then body else find_case rest
+        | (PConstr (name, vars), body) :: rest ->
+            if Hashtbl.hash name mod 256 = tag then begin
+              (* Bind the constructor's payload variables positionally, exactly
+                 as SMatch does, so an expression-position match on a variant
+                 (e.g. [let s = match c.kind with Shade f -> f]) can use the
+                 payload. Previously EMatch selected the arm but left payload
+                 vars unbound. *)
+              (match v with
+              | VVariant (_, _, args) ->
+                  List.iter2
+                    (fun vname arg ->
+                      Hashtbl.replace env.vars_by_name vname arg)
+                    vars
+                    args
+              | _ -> ()) ;
+              body
+            end
+            else find_case rest
         | (PWild, body) :: _ -> body
       in
       eval_expr state env (find_case cases)

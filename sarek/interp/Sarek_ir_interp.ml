@@ -501,6 +501,13 @@ let array_to_exec_vector (module V : Spoc_framework.Typed_value.EXEC_VECTOR)
   let len = min (Array.length arr) V.length in
   for i = 0 to len - 1 do
     match arr.(i) with
+    | VVariant _ as vv -> (
+        (* Standalone variant vector element: the [@@sarek.type] variant helper
+           decodes the [VVariant] back to the native constructor, then the
+           composite's typed setter writes the [tag|payload] bytes. *)
+        match Sarek_type_helpers.lookup_typed V.type_id with
+        | Some (module H) -> V.set_typed i (H.from_value vv)
+        | None -> ())
     | VRecord (name, fields) as vrec -> (
         match Sarek_type_helpers.lookup_typed V.type_id with
         | Some (module H) -> V.set_typed i (H.from_value vrec)

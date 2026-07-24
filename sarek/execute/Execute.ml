@@ -464,18 +464,20 @@ let interp_array_to_vector : type a b.
       (* Custom types: convert VRecord to native OCaml values using helpers *)
       for i = 0 to len - 1 do
         match arr.(i) with
-        | Sarek_ir_interp.VRecord (type_name, _fields) as vrec -> (
+        | ( Sarek_ir_interp.VRecord (type_name, _)
+          | Sarek_ir_interp.VVariant (type_name, _, _) ) as v -> (
+            (* Both a record element (VRecord) and a standalone variant element
+               (VVariant) are decoded back to their native OCaml value through
+               the registered [@@sarek.type] helper. *)
             match Sarek_type_helpers.lookup_typed custom.Vector.type_id with
-            | Some (module H) ->
-                let native_record = H.from_value vrec in
-                Vector.set vec i native_record
+            | Some (module H) -> Vector.set vec i (H.from_value v)
             | None ->
                 Execute_error.raise_error
                   (Execute_error.Type_helper_not_found
                      {
                        type_name;
                        context =
-                         "sync_vector_back (record conversion from interpreter)";
+                         "sync_vector_back (custom conversion from interpreter)";
                      }))
         | _ -> () (* Skip other values *)
       done

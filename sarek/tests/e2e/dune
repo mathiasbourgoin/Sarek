@@ -999,3 +999,33 @@
  (alias runtest)
  (action
   (run %{dep:test_local_tuple.exe})))
+
+; deriver-variant-fields: a [@@sarek.type] record with a VARIANT-typed field as
+; a vector element, round-tripping host->device->host on the value-based
+; backends (Interpreter + Native). Fixes the L14-S2 PR #251
+; `Field 'kind' expected record` boundary bug; also covers a standalone variant
+; vector round-trip. Device backends stay out of scope (nested-variant byte
+; layout is Rocq-coupled); the erasable case already runs there via L14-S2.
+
+(executable
+ (name test_ktype_record_variant_field)
+ (modules test_ktype_record_variant_field)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  spoc_core
+  test_helpers
+  sarek_native
+  sarek_interpreter
+  unix
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_ktype_record_variant_field.exe})))

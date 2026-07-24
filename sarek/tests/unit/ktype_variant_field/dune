@@ -1,0 +1,13 @@
+; deriver-variant-fields: device-free guard for the [@@sarek.type] interpreter
+; value-model helpers with a variant-typed record field (round-trips through
+; the Sarek_type_helpers registry). Isolated in its own directory so the
+; sarek_ppx preprocessing does not collide with the metaquot test group in the
+; parent unit/ directory.
+
+(test
+ (name test_ktype_variant_field)
+ (libraries sarek spoc_core alcotest)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
