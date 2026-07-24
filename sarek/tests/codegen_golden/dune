@@ -42,3 +42,10 @@
  (libraries sarek_ir sarek_codegen alcotest)
  (instrumentation
   (backend bisect_ppx)))
+
+(test
+ (name test_glsl_intrinsic_fallback)
+ (modules test_glsl_intrinsic_fallback)
+ (libraries sarek_ir sarek_codegen sarek_backend_error alcotest)
+ (instrumentation
+  (backend bisect_ppx)))

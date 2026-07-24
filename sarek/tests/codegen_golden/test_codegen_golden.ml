@@ -441,6 +441,33 @@ let float32_log1p_path_kernel () =
     []
     body
 
+(** Kernel 5i: path-qualified [Float32.log10]. GLSL exposes [log]/[log2] but no
+    base-10 builtin, so — like cbrt/hypot/expm1/log1p — it needs a multi-token
+    polyfill [log(x)/log(10.0)]. Unlike those four, [log10] IS present in the
+    pure-registry float32/float64 tables, so without the polyfill it would
+    resolve to the invalid raw [log10(...)]. CUDA/OpenCL/Metal have a native
+    [log10] builtin, so only a glsl_only golden is needed. *)
+let float32_log10_path_kernel () =
+  let a = make_var "a" (TVec TFloat32) in
+  let b = make_var "b" (TVec TFloat32) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("b", EVar idx),
+            EIntrinsic (["Float32"], "log10", [EArrayRead ("a", EVar idx)]) ) )
+  in
+  empty_kernel
+    "float32_log10_path"
+    [
+      DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat32; arr_memspace = Global});
+    ]
+    []
+    body
+
 (** Kernel 6: bounds-check with if-expression. WGSL-specific: exercises EIf
     which must emit [select(else, then, cond)] (no ternary in WGSL). fun (a :
     float32 vec) (b : float32 vec) (n : int32) -> let i = global_thread_id in
@@ -1488,6 +1515,29 @@ let () =
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  b[idx] = log(1.0 + (a[idx]));\n\
+     }\n" ;
+
+  register_golden
+    "glsl"
+    "float32_log10_path"
+    "#version 450\n\n\
+     // Sarek-generated compute shader: float32_log10_path\n\
+     layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;\n\n\
+     layout(std430, set=0, binding = 0) buffer Buffer_a {\n\
+    \  float a[];\n\
+     };\n\
+     layout(std430, set=0, binding = 1) buffer Buffer_b {\n\
+    \  float b[];\n\
+     };\n\
+     layout(push_constant) uniform PushConstants {\n\
+    \  int a_len;\n\
+    \  int b_len;\n\
+     } pc;\n\n\
+     #define a_len pc.a_len\n\
+     #define b_len pc.b_len\n\n\
+     void main() {\n\
+    \  int idx = int(gl_GlobalInvocationID.x);\n\
+    \  b[idx] = (log(a[idx]) / log(10.0));\n\
      }\n"
 
 let glsl_only_kernels () =
@@ -1502,6 +1552,7 @@ let glsl_only_kernels () =
     ("float32_hypot_path", float32_hypot_path_kernel ());
     ("float32_expm1_path", float32_expm1_path_kernel ());
     ("float32_log1p_path", float32_log1p_path_kernel ());
+    ("float32_log10_path", float32_log10_path_kernel ());
   ]
 
 let glsl_only_tests () =

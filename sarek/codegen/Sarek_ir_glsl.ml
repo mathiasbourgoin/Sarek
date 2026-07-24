@@ -386,16 +386,27 @@ and gen_binop = function
 
 and gen_unop = function Neg -> "-" | Not -> "!" | BitNot -> "~"
 
-(** GLSL has no [cbrt]/[hypot]/[expm1]/[log1p] builtins under any name (unlike
-    [fabs]/[rsqrt]/[atan2], which are simple renames — see
+(** GLSL has no [cbrt]/[hypot]/[expm1]/[log1p]/[log10] builtins under any name
+    (unlike [fabs]/[rsqrt]/[atan2], which are simple renames — see
     [Sarek_pure_registry.glsl_override_name]). These need a multi-token
     expression instead of a function-name substitution, so they're special-cased
     here ahead of both the unqualified match arms and the pure registry,
     applying uniformly to qualified (Float32.cbrt) and unqualified calls alike.
     [cbrt] uses [sign(x)*pow(abs(x),...)] rather than bare [pow] because GLSL's
-    [pow] is undefined for a negative base. *)
+    [pow] is undefined for a negative base. [log10] is derived from the natural
+    [log] builtin: GLSL exposes [log] (base e) and [log2] but no base-10 form,
+    so [log10(x) = log(x)/log(10)]; the [log(10.0)] divisor is a compile-time
+    constant every GLSL compiler folds. Routing [log10] through here (ahead of
+    the pure registry) is required: [log10] IS present in the pure-registry
+    float32/float64 tables and would otherwise emit the raw un-suffixed
+    [log10(...)] that glslang rejects — the same latent-invalid-GLSL class as
+    [fabs]/[copysign] (#246/#256). *)
 and gen_glsl_polyfill buf name args =
   match (name, args) with
+  | "log10", [x] ->
+      Buffer.add_string buf "(log(" ;
+      gen_expr buf x ;
+      Buffer.add_string buf ") / log(10.0))"
   | "cbrt", [x] ->
       Buffer.add_string buf "(sign(" ;
       gen_expr buf x ;
@@ -429,7 +440,7 @@ and gen_intrinsic buf path name args =
   let full_name =
     match path with [] -> name | _ -> String.concat "." path ^ "." ^ name
   in
-  if List.mem name ["cbrt"; "hypot"; "expm1"; "log1p"] then
+  if List.mem name ["cbrt"; "hypot"; "expm1"; "log1p"; "log10"] then
     gen_glsl_polyfill buf name args
   else if name = "copysign" then (
     (* GLSL has no [copysign] builtin under any name, and [abs(x)*sign(y)] is
@@ -622,15 +633,25 @@ and gen_intrinsic buf path name args =
               (match args with [e] -> gen_expr buf e | _ -> ()) ;
               Buffer.add_char buf ')'
           | _ ->
-              (* Unknown intrinsic - emit as function call *)
-              Buffer.add_string buf full_name ;
-              Buffer.add_char buf '(' ;
-              List.iteri
-                (fun i e ->
-                  if i > 0 then Buffer.add_string buf ", " ;
-                  gen_expr buf e)
-                args ;
-              Buffer.add_char buf ')')
+              (* No GLSL lowering for this intrinsic. Unlike CUDA/OpenCL/Metal,
+                 GLSL does NOT fall back to [Sarek_registry] (the FFI registry):
+                 its device closures only branch CUDA-vs-OpenCL and have no GLSL
+                 arm, so consulting it would splice OpenCL C — [get_global_id],
+                 [barrier(CLK_LOCAL_MEM_FENCE)], [(float)] casts — into GLSL,
+                 which glslang rejects just as cryptically as the old behaviour
+                 of emitting the raw OCaml path [full_name(...)] ("vector
+                 swizzle too long"). Raise a located error naming the intrinsic
+                 and backend instead — strictly better than emitting garbage.
+
+                 To give a future intrinsic a real GLSL lowering, extend one of
+                 (a) [Sarek_pure_registry.glsl_override_name] for a plain rename,
+                 (b) [gen_glsl_polyfill] above for a multi-token expression, or
+                 (c) an explicit match arm here. The pure registry is already
+                 GLSL-parameterised (it receives [~framework:"GLSL"]), so no
+                 registry-type change is needed and existing registrations are
+                 untouched. *)
+              Codegen_error.raise_error
+                (Codegen_error.unknown_intrinsic full_name))
 
 (** {1 L-value Generation} *)
 
