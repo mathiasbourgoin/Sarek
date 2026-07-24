@@ -70,10 +70,11 @@ let soa_leaves_of_param param_name (elt : elttype) : (string * elttype) list =
 
     [~soa_params] lists vector parameters to lower as Structure-of-Arrays: each
     such custom (record) vector expands to one [.param .u64] base pointer per
-    scalar leaf (named [param_<name>_soa_<field>]) followed by the shared
-    [.param .u32 param_sarek_<name>_length], instead of the single AoS
-    [(ptr, length)] pair. The N leaf base registers are recorded in
-    [alloc.arr_soa] for the element load/store paths. Parameters absent from
+    scalar leaf (named [param_sarek_soa_<name>_<field>], in the reserved
+    [sarek_] namespace so it can never alias a user parameter's generated name)
+    followed by the shared [.param .u32 param_sarek_<name>_length], instead of
+    the single AoS [(ptr, length)] pair. The N leaf base registers are recorded
+    in [alloc.arr_soa] for the element load/store paths. Parameters absent from
     [~soa_params] are unchanged (packed AoS). *)
 let emit_params buf alloc (env : env) ~(soa_params : string list)
     (params : decl list) : string =
@@ -117,7 +118,7 @@ let emit_params buf alloc (env : env) ~(soa_params : string list)
                     Buffer.add_string
                       param_decls
                       (Printf.sprintf
-                         "    .param .u64 param_%s_soa_%s"
+                         "    .param .u64 param_sarek_soa_%s_%s"
                          v.var_name
                          field))
                   leaves ;
@@ -130,7 +131,7 @@ let emit_params buf alloc (env : env) ~(soa_params : string list)
                       let r = new_u64 alloc in
                       emit
                         buf
-                        "ld.param.u64 %s, [param_%s_soa_%s];"
+                        "ld.param.u64 %s, [param_sarek_soa_%s_%s];"
                         r
                         v.var_name
                         field ;

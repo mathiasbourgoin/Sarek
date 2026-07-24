@@ -2302,9 +2302,9 @@ let test_ptxas_assembles () =
 let test_soa_field_read_markers () =
   let k = soa_field_sum_kernel () in
   let soa = Sarek_ir_ptx.generate ~soa_params:["pts"] k in
-  assert_contains soa ".param .u64 param_pts_soa_x" ;
-  assert_contains soa ".param .u64 param_pts_soa_y" ;
-  assert_contains soa ".param .u64 param_pts_soa_z" ;
+  assert_contains soa ".param .u64 param_sarek_soa_pts_x" ;
+  assert_contains soa ".param .u64 param_sarek_soa_pts_y" ;
+  assert_contains soa ".param .u64 param_sarek_soa_pts_z" ;
   assert_contains soa ".param .u32 param_sarek_pts_length" ;
   if count_substr soa "ld.global.f32" < 3 then
     Alcotest.fail (Printf.sprintf "expected >=3 coalesced leaf loads:\n%s" soa) ;
@@ -2325,7 +2325,7 @@ let test_soa_field_read_markers () =
   assert_contains aos "mul.wide.u32" ;
   assert_absent
     aos
-    "param_pts_soa_x"
+    "param_sarek_soa_pts_x"
     ~why:"AoS compilation must not emit SoA per-leaf pointers"
 
 (** Whole-element copy between two SoA vectors: per-leaf coalesced loads from
@@ -2357,8 +2357,8 @@ let test_soa_whole_copy_markers () =
       []
   in
   let soa = Sarek_ir_ptx.generate ~soa_params:["src"; "dst"] k in
-  assert_contains soa ".param .u64 param_src_soa_x" ;
-  assert_contains soa ".param .u64 param_dst_soa_z" ;
+  assert_contains soa ".param .u64 param_sarek_soa_src_x" ;
+  assert_contains soa ".param .u64 param_sarek_soa_dst_z" ;
   if count_substr soa "ld.global.f32" < 3 then
     Alcotest.fail (Printf.sprintf "expected >=3 leaf loads:\n%s" soa) ;
   if count_substr soa "st.global.f32" < 3 then
@@ -2442,8 +2442,8 @@ let test_soa_mixed_width_markers () =
       []
   in
   let soa = Sarek_ir_ptx.generate ~soa_params:["v"] k in
-  assert_contains soa ".param .u64 param_v_soa_i" ;
-  assert_contains soa ".param .u64 param_v_soa_d" ;
+  assert_contains soa ".param .u64 param_sarek_soa_v_i" ;
+  assert_contains soa ".param .u64 param_sarek_soa_v_d" ;
   assert_contains soa "ld.global.s32" ;
   assert_contains soa "ld.global.f64" ;
   assert_absent
@@ -2455,8 +2455,8 @@ let test_soa_mixed_width_markers () =
     load, each from its own base (the remaining two leaf widths). *)
 let test_soa_int64_markers () =
   let soa = Sarek_ir_ptx.generate ~soa_params:["v"] (soa_long_kernel ()) in
-  assert_contains soa ".param .u64 param_v_soa_p" ;
-  assert_contains soa ".param .u64 param_v_soa_q" ;
+  assert_contains soa ".param .u64 param_sarek_soa_v_p" ;
+  assert_contains soa ".param .u64 param_sarek_soa_v_q" ;
   assert_contains soa "ld.global.s64" ;
   assert_contains soa "ld.global.s32" ;
   assert_absent
@@ -2500,6 +2500,62 @@ let test_soa_nested_record_rejected () =
   match Sarek_ir_ptx.generate ~soa_params:["v"] k with
   | _ -> Alcotest.fail "SoA on a nested-record vector should be rejected"
   | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()
+
+(** PRECONDITION regression (Tier 1c namespace fix): a SoA vector [x] with field
+    [y] alongside a distinct scalar param literally named [x_soa_y] must compile
+    to two DISTINCT PTX operands. The generated SoA leaf now lives in the
+    reserved [sarek_] namespace ([param_sarek_soa_x_y]), so it cannot alias the
+    user param's generated name ([param_x_soa_y]). Before the fix both mangled
+    to [param_x_soa_y] — silently-wrong PTX. (A user param cannot itself be
+    [sarek_]-prefixed — #258 reserves that — so the collision is one-directional
+    and fully closed by prefixing the generated side.) *)
+let test_soa_param_name_collision_safe () =
+  let xy_ty = TRecord ("xy", [("y", TFloat32); ("z", TFloat32)]) in
+  let x = make_var "x" (TVec xy_ty) in
+  (* User scalar param whose name collides with the OLD SoA mangle
+     [param_<vec>_soa_<field>] for vector [x], field [y]. *)
+  let x_soa_y = make_var "x_soa_y" TFloat32 in
+  let out = make_var "out" (TVec TFloat32) in
+  let n = make_var "n" TInt32 in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SIf
+          ( EBinop (Lt, EVar tid, EVar n),
+            SAssign
+              ( LArrayElem ("out", EVar tid),
+                EBinop
+                  ( Add,
+                    ERecordField (EArrayRead ("x", EVar tid), "y"),
+                    EVar x_soa_y ) ),
+            None ) )
+  in
+  let k =
+    base_kernel
+      "collision"
+      [
+        DParam (x, Some {arr_elttype = xy_ty; arr_memspace = Global});
+        DParam (x_soa_y, None);
+        DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+        DParam (n, None);
+      ]
+      body
+      []
+  in
+  let soa = Sarek_ir_ptx.generate ~soa_params:["x"] k in
+  (* Generated SoA leaf sits in the reserved namespace. *)
+  assert_contains soa ".param .u64 param_sarek_soa_x_y" ;
+  (* User scalar keeps its own (non-reserved) generated name. *)
+  assert_contains soa ".param .f32 param_x_soa_y" ;
+  (* And the generated leaf must NOT have taken the user's name. *)
+  assert_absent
+    soa
+    ".param .u64 param_x_soa_y"
+    ~why:
+      "the generated SoA leaf must not alias the user scalar param's name — it \
+       is prefixed into the reserved sarek_ namespace"
 
 let () =
   Alcotest.run
@@ -2744,5 +2800,9 @@ let () =
             "SoA on a nested-record vector is rejected"
             `Quick
             test_soa_nested_record_rejected;
+          Alcotest.test_case
+            "SoA leaf name cannot alias a user param named <vec>_soa_<field>"
+            `Quick
+            test_soa_param_name_collision_safe;
         ] );
     ]
