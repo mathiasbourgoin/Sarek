@@ -40,7 +40,7 @@ let resolve_framework fw_name =
 (** Initialize all available backends and enumerate devices *)
 let init
     ?(frameworks =
-      ["CUDA"; "OpenCL"; "Vulkan"; "Metal"; "Native"; "Interpreter"]) () =
+      ["CUDA"; "HIP"; "OpenCL"; "Vulkan"; "Metal"; "Native"; "Interpreter"]) () =
   if !initialized then !devices
   else begin
     let all_devices = ref [] in
@@ -178,7 +178,8 @@ let is_native d = d.framework = "Native"
 let is_cpu d = d.capabilities.is_cpu || is_native d
 
 let is_gpu d =
-  (is_cuda d || is_opencl d || d.framework = "Vulkan") && not (is_cpu d)
+  (is_cuda d || is_opencl d || d.framework = "Vulkan" || d.framework = "HIP")
+  && not (is_cpu d)
 
 (** {2 Capability Queries} *)
 

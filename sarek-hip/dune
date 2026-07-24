@@ -1,0 +1,28 @@
+; HIP Plugin - native ROCm/HIP backend (pure OCaml, ctypes, no C stubs).
+; Linking this library auto-registers the HIP backend (bypasses ZLUDA/PTX).
+; Reuses the CUDA-C code generator verbatim (sarek_codegen).
+
+(library
+ (name sarek_hip)
+ (public_name sarek-hip.plugin)
+ (optional)
+ (libraries
+  ctypes
+  ctypes.foreign
+  spoc_framework
+  spoc_framework_registry
+  sarek_ir
+  sarek_registry
+  sarek_backend_error
+  sarek_codegen
+  (re_export spoc_core))
+ (modules
+  Hip_error
+  Hip_types
+  Hip_bindings
+  Hip_rtc
+  Hip_api
+  Hip_plugin_base
+  Hip_shared
+  Hip_plugin)
+ (preprocess no_preprocessing))

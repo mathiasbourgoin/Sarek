@@ -1,0 +1,25 @@
+; HIP backend etape-A hardware gate. Links sarek_hip directly so the backend
+; registers; self-skips (exit 0) when no HIP device is present.
+
+(executable
+ (name test_hip_backend)
+ (modules test_hip_backend)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.gemm
+  sarek_ir
+  spoc_core
+  sarek_hip
+  unix)
+ (preprocessor_deps
+  (file ../../sarek/Sarek_gemm/Sarek_gemm.ml))
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias e2e-hip)
+ (action
+  (run %{dep:test_hip_backend.exe})))

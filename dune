@@ -2,6 +2,7 @@
  spoc
  sarek
  sarek-cuda
+ sarek-hip
  sarek-opencl
  sarek-vulkan
  sarek-metal

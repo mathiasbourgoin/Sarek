@@ -60,6 +60,18 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (depopts
   conf-cuda))
 
+; HIP (ROCm/AMD) backend plugin - native, bypasses ZLUDA/PTX
+(package
+ (name sarek-hip)
+ (synopsis "ROCm/HIP backend for Sarek GPU kernels")
+ (description "Enables native execution of Sarek kernels on AMD GPUs via ROCm/HIP (hiprtc JIT); RDNA3 rocWMMA tensor-core GEMM path.")
+ (depends
+  (ocaml (>= 5.4.0))
+  (dune (>= 3.15))
+  (sarek (= :version))
+  ctypes
+  ctypes-foreign))
+
 ; OpenCL backend plugin
 (package
  (name sarek-opencl)
