@@ -27,7 +27,7 @@
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
-module Soa = Spoc_core.Soa
+module Soa_vector = Spoc_core.Soa_vector
 open Sarek_codegen
 
 type ('a, 'b) vector = ('a, 'b) Vector.t
@@ -84,8 +84,6 @@ let fields =
       ("f7", TFloat32);
     ]
 
-let plan = Soa.plan ~name:"wide" fields
-
 let is_ptx (dev : Device.t) = dev.Device.framework = "CUDA/PTX"
 
 (* Median wall time (ms) of [launch] over [iters], after [warmup] launches. *)
@@ -104,12 +102,14 @@ let run dev n =
   let block = Sarek.Execute.dims1d threads in
   let grid = Sarek.Execute.dims1d ((n + threads - 1) / threads) in
   let ir = ir_of kernel in
-  (* AoS source. *)
-  let pts = Vector.create_custom wide_custom n in
+  (* Storage via the real user-facing SoA API (Tier 1c). The SoA vector owns
+     the AoS host buffer (used for the AoS leg) + the N per-leaf buffers. *)
+  let sv = Soa_vector.create wide_custom ~fields n in
+  let pts = Soa_vector.aos_vector sv in
   for i = 0 to n - 1 do
     let v = float_of_int i in
-    Vector.set
-      pts
+    Soa_vector.set
+      sv
       i
       {f0 = v; f1 = v; f2 = v; f3 = v; f4 = v; f5 = v; f6 = v; f7 = v}
   done ;
@@ -128,20 +128,23 @@ let run dev n =
           () ;
         Transfer.flush dev)
   in
-  (* SoA emitter: 8 per-leaf buffers (only f0 read), driven through the emitted
-     N-pointer ABI. *)
-  let leaves = Array.init 8 (fun _ -> Vector.create Vector.float32 n) in
-  Soa.scatter
-    plan
-    ~aos:(Vector.to_ctypes_ptr pts)
-    ~length:n
-    ~leaves:(Array.map Vector.to_ctypes_ptr leaves) ;
+  (* SoA emitter: the SoA vector's 8 per-leaf buffers (only f0 read), driven
+     through the emitted N-pointer ABI. Scatter + leaf transfer are hoisted out
+     of the timed loop (amortised, exactly as the AoS leg's packed transfer is),
+     so the measurement isolates the kernel's coalescing win. The end-to-end
+     Soa_launch.run_soa path is covered in tests/e2e/test_soa_emitter_equiv. *)
+  Soa_vector.scatter sv ;
+  let leaf_args =
+    Array.to_list
+      (Array.map
+         (fun (Soa_vector.Leaf v) -> Sarek.Execute.Vec v)
+         (Soa_vector.leaves sv))
+  in
   let out_s = Vector.create Vector.float32 n in
   let ptx = Sarek_ir_ptx.generate ~soa_params:["pts"] ir in
   let len = Sarek.Execute.Int32 (Int32.of_int n) in
   let soa_args =
-    Array.to_list (Array.map (fun v -> Sarek.Execute.Vec v) leaves)
-    @ [len; Sarek.Execute.Vec out_s; len; Sarek.Execute.Int n]
+    leaf_args @ [len; Sarek.Execute.Vec out_s; len; Sarek.Execute.Int n]
   in
   let t_soa =
     time (fun () ->

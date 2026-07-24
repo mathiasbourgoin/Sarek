@@ -33,6 +33,8 @@ module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 module Soa = Spoc_core.Soa
+module Soa_vector = Spoc_core.Soa_vector
+module Soa_launch = Sarek.Soa_launch
 module Benchmarks = Test_helpers.Benchmarks
 open Sarek_codegen
 
@@ -102,6 +104,27 @@ let run_soa dev ir ~leaves ~out ~n ~block ~grid =
     args ;
   Transfer.flush dev
 
+(* Tier 1c: the SAME kernel driven through the real user-facing API —
+   Soa_vector storage + Soa_launch.run_soa. Unlike run_soa above (which pokes
+   the emitter directly), this exercises the whole host path: SoA storage
+   allocation, host AoS->leaf scatter, per-leaf H2D transfer, N-base-pointer
+   launch expansion, and the CUDA/PTX gate. [sv] is the SoA input vector (kernel
+   param 0), [out] the scalar output, [n] the length. *)
+let run_soa_via_api dev ir ~sv ~out ~n ~block ~grid =
+  Soa_launch.run_soa
+    ~device:dev
+    ~ir
+    ~args:
+      [
+        Soa_launch.SA_Soa sv;
+        Soa_launch.SA_Reg (Sarek.Execute.Vec out);
+        Soa_launch.SA_Reg (Sarek.Execute.Int n);
+      ]
+    ~block
+    ~grid
+    () ;
+  Transfer.flush dev
+
 (* ---- point3d (f32) ---- *)
 
 let run_p3 dev n =
@@ -156,11 +179,37 @@ let run_p3 dev n =
       Some out
     end
   in
+  (* SoA via the real user-facing API (Soa_vector + Soa_launch.run_soa). *)
+  let out_api =
+    if not (is_ptx dev) then None
+    else begin
+      let sv =
+        Soa_vector.create
+          point3d_custom
+          ~fields:
+            Sarek_ir_types.[("x", TFloat32); ("y", TFloat32); ("z", TFloat32)]
+          n
+      in
+      for i = 0 to n - 1 do
+        Soa_vector.set
+          sv
+          i
+          {
+            x = float_of_int i;
+            y = (float_of_int i *. 0.5) +. 1.0;
+            z = float_of_int (n - i);
+          }
+      done ;
+      let out = Vector.create Vector.float32 n in
+      run_soa_via_api dev ir ~sv ~out ~n ~block ~grid ;
+      Some out
+    end
+  in
   let reference i =
     let p = Vector.get src i in
     p.x +. p.y +. p.z
   in
-  (out_aos, out_soa, reference)
+  (out_aos, out_soa, out_api, reference)
 
 (* ---- dpair (f64) ---- *)
 
@@ -202,11 +251,31 @@ let run_dpair dev n =
       Some out
     end
   in
+  let out_api =
+    if not (is_ptx dev) then None
+    else begin
+      let sv =
+        Soa_vector.create
+          dpair_custom
+          ~fields:Sarek_ir_types.[("u", TFloat64); ("v", TFloat64)]
+          n
+      in
+      for i = 0 to n - 1 do
+        Soa_vector.set
+          sv
+          i
+          {u = float_of_int i *. 1.5; v = float_of_int (n - i) -. 0.25}
+      done ;
+      let out = Vector.create Vector.float64 n in
+      run_soa_via_api dev ir ~sv ~out ~n ~block ~grid ;
+      Some out
+    end
+  in
   let reference i =
     let p = Vector.get src i in
     p.u +. p.v
   in
-  (out_aos, out_soa, reference)
+  (out_aos, out_soa, out_api, reference)
 
 let check name dev n runner =
   Printf.printf
@@ -215,8 +284,26 @@ let check name dev n runner =
     dev.Device.framework
     dev.Device.name ;
   try
-    let out_aos, out_soa, reference = runner dev n in
+    let out_aos, out_soa, out_api, reference = runner dev n in
     let ok = ref true in
+    let check_leg label o a r i =
+      match o with
+      | None -> ()
+      | Some o ->
+          let s = Vector.get o i in
+          if abs_float (s -. r) > 1e-3 || abs_float (s -. a) > 1e-4 then begin
+            ok := false ;
+            if i < 5 then
+              Printf.printf
+                "\n  %s mismatch @%d: %s=%f aos=%f ref=%f%!"
+                label
+                i
+                label
+                s
+                a
+                r
+          end
+    in
     for i = 0 to n - 1 do
       let r = reference i in
       let a = Vector.get out_aos i in
@@ -225,20 +312,10 @@ let check name dev n runner =
         if i < 5 then
           Printf.printf "\n  AoS mismatch @%d: aos=%f ref=%f%!" i a r
       end ;
-      match out_soa with
-      | None -> ()
-      | Some o ->
-          let s = Vector.get o i in
-          if abs_float (s -. r) > 1e-3 || abs_float (s -. a) > 1e-4 then begin
-            ok := false ;
-            if i < 5 then
-              Printf.printf
-                "\n  SoA mismatch @%d: soa=%f aos=%f ref=%f%!"
-                i
-                s
-                a
-                r
-          end
+      (* Direct-emitter SoA leg. *)
+      check_leg "SoA" out_soa a r i ;
+      (* Real user-facing API leg (Soa_vector + Soa_launch.run_soa). *)
+      check_leg "SoA-API" out_api a r i
     done ;
     let soa_note =
       match out_soa with None -> " (SoA skipped: non-PTX)" | Some _ -> ""
@@ -252,6 +329,34 @@ let check name dev n runner =
   with e ->
     Printf.printf "FAIL (%s)\n%!" (Printexc.to_string e) ;
     false
+
+(* Item 3 gate: run_soa on a non-PTX device MUST raise a located error rather
+   than binding the SoA N-pointer ABI to an AoS kernel signature (which would
+   read wrong data). This is the "never wrong data" guarantee, checked
+   concretely on whatever non-PTX backends are present. *)
+let check_gate dev =
+  if is_ptx dev then true
+  else begin
+    Printf.printf "SoA-gate [%s] %s: %!" dev.Device.framework dev.Device.name ;
+    let ir = ir_of p3_kernel in
+    let sv =
+      Soa_vector.create
+        point3d_custom
+        ~fields:
+          Sarek_ir_types.[("x", TFloat32); ("y", TFloat32); ("z", TFloat32)]
+        16
+    in
+    let out = Vector.create Vector.float32 16 in
+    match
+      run_soa_via_api dev ir ~sv ~out ~n:16 ~block:(dims 16) ~grid:(dims 1)
+    with
+    | () | (exception Not_found) ->
+        Printf.printf "FAILED (run_soa did not reject a non-PTX device)\n%!" ;
+        false
+    | exception Sarek.Execute_error.Execution_error _ ->
+        Printf.printf "rejected (located error) OK\n%!" ;
+        true
+  end
 
 let () =
   Benchmarks.init () ;
@@ -275,6 +380,8 @@ let () =
          only. (Some non-PTX backends — e.g. OpenCL/radeonsi — have an unrelated
          f64 custom-vector gap that is out of scope for this emitter test and is
          exercised elsewhere.) *)
-      if is_ptx dev && not (check "dpair(f64)" dev n run_dpair) then ok := false)
+      if is_ptx dev && not (check "dpair(f64)" dev n run_dpair) then ok := false ;
+      (* Item 3: SoA launch must be rejected (never wrong data) on non-PTX. *)
+      if not (check_gate dev) then ok := false)
     devs ;
   if not !ok then exit 1
