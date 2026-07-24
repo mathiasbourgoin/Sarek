@@ -838,20 +838,25 @@ and emit_value buf alloc (env : env) (e : expr) : binding =
     (used by [emit_value] for [v.(i)] reads of record/variant vectors). Stride
     and offsets come from Sarek_ir_layout (FR-001, FR-010). *)
 and emit_agg_array_read buf alloc env arr_name idx_expr : binding =
-  let elt = infer_elt_type alloc arr_name in
-  let r_base = env_lookup env arr_name in
-  let r_idx = emit_expr buf alloc env idx_expr in
-  let r_addr =
-    emit_agg_elem_addr
-      buf
-      alloc
-      r_base
-      r_idx
-      ~stride:(elt_stride elt)
-      ~space:(arr_space_of alloc arr_name)
-      ~arr_name
-  in
-  emit_agg_elem_load buf alloc r_addr ~offset:0 elt
+  if is_soa alloc arr_name then
+    (* SoA: one coalesced scalar load per leaf from its own base. *)
+    let r_idx = emit_expr buf alloc env idx_expr in
+    emit_soa_elem_load buf alloc r_idx arr_name
+  else
+    let elt = infer_elt_type alloc arr_name in
+    let r_base = env_lookup env arr_name in
+    let r_idx = emit_expr buf alloc env idx_expr in
+    let r_addr =
+      emit_agg_elem_addr
+        buf
+        alloc
+        r_base
+        r_idx
+        ~stride:(elt_stride elt)
+        ~space:(arr_space_of alloc arr_name)
+        ~arr_name
+    in
+    emit_agg_elem_load buf alloc r_addr ~offset:0 elt
 
 (** When [base.field] roots at an element of an aggregate-element array
     ([v.(i).f], possibly through nested projections [v.(i).f.g]), return the
@@ -876,6 +881,10 @@ and split_elem_field_read alloc base field :
     evaluation so the untouched fields are never loaded. *)
 and emit_record_field buf alloc env base field : binding =
   match split_elem_field_read alloc base field with
+  | Some (arr_name, idx_expr, path) when is_soa alloc arr_name ->
+      (* SoA: one coalesced scalar load at the addressed leaf's own base. *)
+      let r_idx = emit_expr buf alloc env idx_expr in
+      emit_soa_field_load buf alloc r_idx arr_name path
   | Some (arr_name, idx_expr, path) ->
       let elt = infer_elt_type alloc arr_name in
       let offset, fty = agg_field_path elt path in

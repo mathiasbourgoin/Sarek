@@ -275,21 +275,30 @@ and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
     store (EC-1 / FR-012); addressing uses the layout byte stride (FR-010).
     Supports [SAssign (LArrayElem, ERecord …)] directly (FR-025). *)
 and emit_agg_elem_assign buf alloc env arr_name idx_expr e : unit =
-  let elt = infer_elt_type alloc arr_name in
-  let b_val = emit_value buf alloc env e in
-  let r_base = env_lookup env arr_name in
-  let r_idx = emit_expr buf alloc env idx_expr in
-  let r_addr =
-    emit_agg_elem_addr
-      buf
-      alloc
-      r_base
-      r_idx
-      ~stride:(elt_stride elt)
-      ~space:(arr_space_of alloc arr_name)
-      ~arr_name
-  in
-  emit_agg_elem_store buf alloc r_addr ~offset:0 elt b_val
+  if is_soa alloc arr_name then begin
+    (* SoA: materialize the value first (EC-1), then one coalesced scalar store
+       per leaf to its own base. *)
+    let b_val = emit_value buf alloc env e in
+    let r_idx = emit_expr buf alloc env idx_expr in
+    emit_soa_elem_store buf alloc r_idx arr_name b_val
+  end
+  else begin
+    let elt = infer_elt_type alloc arr_name in
+    let b_val = emit_value buf alloc env e in
+    let r_base = env_lookup env arr_name in
+    let r_idx = emit_expr buf alloc env idx_expr in
+    let r_addr =
+      emit_agg_elem_addr
+        buf
+        alloc
+        r_base
+        r_idx
+        ~stride:(elt_stride elt)
+        ~space:(arr_space_of alloc arr_name)
+        ~arr_name
+    in
+    emit_agg_elem_store buf alloc r_addr ~offset:0 elt b_val
+  end
 
 (** When an [LRecordField] chain roots at an element of an aggregate-element
     array ([v.(i).f <- …], possibly nested [v.(i).f.g <- …]), return the array
@@ -310,22 +319,30 @@ and split_elem_field_lvalue alloc lv : (string * expr * string list) option =
     [base + idx*stride + field_offset] (FR-011). The value is evaluated before
     the address so its loads precede the store (EC-1). *)
 and emit_elem_field_assign buf alloc env arr_name idx_expr path e : unit =
-  let elt = infer_elt_type alloc arr_name in
-  let offset, fty = agg_field_path elt path in
-  let b_val = emit_value buf alloc env e in
-  let r_base = env_lookup env arr_name in
-  let r_idx = emit_expr buf alloc env idx_expr in
-  let r_addr =
-    emit_agg_elem_addr
-      buf
-      alloc
-      r_base
-      r_idx
-      ~stride:(elt_stride elt)
-      ~space:(arr_space_of alloc arr_name)
-      ~arr_name
-  in
-  emit_agg_elem_store buf alloc r_addr ~offset fty b_val
+  if is_soa alloc arr_name then begin
+    (* SoA: value first (EC-1), then one coalesced scalar store at the leaf. *)
+    let b_val = emit_value buf alloc env e in
+    let r_idx = emit_expr buf alloc env idx_expr in
+    emit_soa_field_store buf alloc r_idx arr_name path b_val
+  end
+  else begin
+    let elt = infer_elt_type alloc arr_name in
+    let offset, fty = agg_field_path elt path in
+    let b_val = emit_value buf alloc env e in
+    let r_base = env_lookup env arr_name in
+    let r_idx = emit_expr buf alloc env idx_expr in
+    let r_addr =
+      emit_agg_elem_addr
+        buf
+        alloc
+        r_base
+        r_idx
+        ~stride:(elt_stride elt)
+        ~space:(arr_space_of alloc arr_name)
+        ~arr_name
+    in
+    emit_agg_elem_store buf alloc r_addr ~offset fty b_val
+  end
 
 (** Resolve the binding of [root.field] for a LOCAL record lvalue (root chain of
     LVar / nested LRecordField only). Assignments into fields of vector ELEMENTS

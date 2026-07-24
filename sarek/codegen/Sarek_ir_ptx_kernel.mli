@@ -9,11 +9,20 @@
 open Sarek_ir_types
 open Sarek_ir_ptx_types
 
-(** [emit_params buf alloc env params] emits [ld.param] instructions for each
-    kernel parameter into [buf], binds each parameter register into [env], and
-    records array element types in [alloc.arr_elt_types]. Returns the formatted
-    [.param] declaration block string for embedding in the [.entry] header. *)
-val emit_params : Buffer.t -> reg_alloc -> env -> decl list -> string
+(** [emit_params buf alloc env ~soa_params params] emits [ld.param] instructions
+    for each kernel parameter into [buf], binds each parameter register into
+    [env], and records array element types in [alloc.arr_elt_types]. Returns the
+    formatted [.param] declaration block string for embedding in the [.entry]
+    header. Parameters named in [~soa_params] are lowered as Structure-of-Arrays
+    (N per-leaf base pointers + one shared length, leaves recorded in
+    [alloc.arr_soa]); they must be flat-record custom vectors. *)
+val emit_params :
+  Buffer.t -> reg_alloc -> env -> soa_params:string list -> decl list -> string
+
+(** Scalar leaves of a flat-record custom-vector type selected for SoA:
+    [(field, scalar type, byte size)] in declaration order. Rejects
+    nested-record / variant / array / unit fields with [Ptx_codegen_error]. *)
+val soa_leaves_of_param : string -> elttype -> (string * elttype * int) list
 
 (** [emit_locals buf shared_buf module_buf alloc env locals] emits register
     allocations and optional initialisation moves for each [DLocal] declaration
@@ -36,13 +45,17 @@ val emit_reg_decls : Buffer.t -> reg_alloc -> unit
     [sm_target = "sm_86"], [ptx_version = "8.0"]. *)
 val make_ptx_header : ?sm_target:string -> ?ptx_version:string -> unit -> string
 
-(** [generate ?sm_target k] translates kernel [k] to a complete PTX string. Uses
-    three-phase generation: body → register-count → header concatenation.
-    @param sm_target Override the default [sm_86] target for older hardware. *)
-val generate : ?sm_target:string -> kernel -> string
+(** [generate ?sm_target ?soa_params k] translates kernel [k] to a complete PTX
+    string. Uses three-phase generation: body → register-count → header
+    concatenation.
+    @param sm_target Override the default [sm_86] target for older hardware.
+    @param soa_params
+      Vector parameters to lower as Structure-of-Arrays; defaults to [[]] (all
+      packed AoS, byte-identical to the pre-SoA emitter). *)
+val generate : ?sm_target:string -> ?soa_params:string list -> kernel -> string
 
-(** [generate_with_types ~types k] is [generate k]. Record and variant type
-    definitions are not representable as PTX struct types; the [~types] argument
-    is accepted for interface compatibility with other backends and is ignored.
-*)
-val generate_with_types : types:_ -> kernel -> string
+(** [generate_with_types ~types ?soa_params k] is [generate ?soa_params k].
+    Record and variant type definitions are not representable as PTX struct
+    types; the [~types] argument is accepted for interface compatibility with
+    other backends and is ignored. *)
+val generate_with_types : types:_ -> ?soa_params:string list -> kernel -> string

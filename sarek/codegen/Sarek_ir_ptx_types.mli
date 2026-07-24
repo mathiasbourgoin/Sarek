@@ -49,6 +49,17 @@ and binding = Scalar of string | Agg of agg_value
     [arr_memspaces] are global (vector parameters). *)
 type arr_space = SpaceShared | SpaceLocal
 
+(** One scalar leaf of a Structure-of-Arrays (SoA) custom-vector parameter: the
+    record field it comes from, its scalar type/byte size, and the u64 register
+    holding its own device base pointer (each leaf lives in its own contiguous
+    device buffer). *)
+type soa_leaf = {
+  sl_field : string;
+  sl_type : elttype;
+  sl_size : int;
+  sl_base : string;
+}
+
 (** Counter-based register allocator. Each PTX type has an independent counter
     so that register names stay readable (e.g. [%r0], [%f0], [%rd0]). *)
 type reg_alloc = {
@@ -60,6 +71,10 @@ type reg_alloc = {
   mutable label : int;
   arr_elt_types : (string, elttype) Hashtbl.t;
   arr_memspaces : (string, arr_space) Hashtbl.t;
+  arr_soa : (string, soa_leaf list) Hashtbl.t;
+      (** Custom-vector parameters lowered as Structure-of-Arrays: name -> its
+          scalar leaves in record declaration order. A name present here is SoA;
+          absent means AoS. Empty for every kernel compiled without SoA. *)
   shared_decls : Buffer.t;
       (** [.shared] declarations discovered while emitting the body; spliced
           into the kernel prologue by [generate]. *)
@@ -90,6 +105,18 @@ val make_alloc : unit -> reg_alloc
 (** [arr_space_of alloc name] is the registered non-global state space of array
     [name], or [None] for global arrays (vector parameters). *)
 val arr_space_of : reg_alloc -> string -> arr_space option
+
+(** [is_soa alloc name] is true when vector parameter [name] was lowered as
+    Structure-of-Arrays (N per-leaf base pointers) rather than packed AoS. *)
+val is_soa : reg_alloc -> string -> bool
+
+(** [soa_leaves alloc name] are the SoA leaves of [name] in record declaration
+    order. Raises [Not_found] if [name] is not SoA (guard with [is_soa]). *)
+val soa_leaves : reg_alloc -> string -> soa_leaf list
+
+(** [soa_leaf_of_field alloc name field] is the leaf of SoA vector [name] whose
+    record field is [field], or [None]. *)
+val soa_leaf_of_field : reg_alloc -> string -> string -> soa_leaf option
 
 (** Allocate a fresh [.u32] register and return its PTX name ([%rN]). *)
 val new_u32 : reg_alloc -> string

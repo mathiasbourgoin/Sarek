@@ -46,6 +46,19 @@ and binding = Scalar of string | Agg of agg_value
     [arr_memspaces] are global (vector parameters). *)
 type arr_space = SpaceShared | SpaceLocal
 
+(** One scalar leaf of a Structure-of-Arrays (SoA) custom-vector parameter: the
+    record field it comes from, its scalar type/byte size, and the u64 register
+    holding its own device base pointer (each leaf lives in its own contiguous
+    device buffer, so field access is a plain coalesced scalar-array access at
+    that base). Populated by [emit_params] for parameters selected via
+    [~soa_params]; consumed by the aggregate load/store paths. *)
+type soa_leaf = {
+  sl_field : string;
+  sl_type : elttype;
+  sl_size : int;
+  sl_base : string;
+}
+
 (** Counter-based register allocator. Each PTX type has an independent counter
     so that register names stay readable (e.g. %r0, %f0, %rd0). *)
 type reg_alloc = {
@@ -57,6 +70,12 @@ type reg_alloc = {
   mutable label : int;
   arr_elt_types : (string, elttype) Hashtbl.t;
   arr_memspaces : (string, arr_space) Hashtbl.t;
+  arr_soa : (string, soa_leaf list) Hashtbl.t;
+      (** Custom-vector parameters lowered as Structure-of-Arrays: name -> its
+          scalar leaves (in record declaration order), each carrying its own
+          device base-pointer register. A name present here is SoA; absent means
+          AoS (packed, single base pointer). Populated by [emit_params] from
+          [~soa_params]; empty for every kernel compiled without SoA. *)
   shared_decls : Buffer.t;
       (** [.shared] declarations discovered while emitting the body (SLet-bound
           shared arrays); spliced into the kernel prologue by [generate]. *)
@@ -94,6 +113,7 @@ let make_alloc () =
     label = 0;
     arr_elt_types = Hashtbl.create 8;
     arr_memspaces = Hashtbl.create 8;
+    arr_soa = Hashtbl.create 4;
     shared_decls = Buffer.create 128;
     local_decls = Buffer.create 128;
     funcs = Hashtbl.create 4;
@@ -106,6 +126,21 @@ let make_alloc () =
 (** [arr_space_of alloc name] is the registered non-global state space of array
     [name], or [None] for global arrays (vector parameters). *)
 let arr_space_of a name = Hashtbl.find_opt a.arr_memspaces name
+
+(** [is_soa alloc name] is true when the vector parameter [name] was lowered as
+    Structure-of-Arrays (N per-leaf base pointers) rather than packed AoS. *)
+let is_soa a name = Hashtbl.mem a.arr_soa name
+
+(** [soa_leaves alloc name] are the SoA leaves of [name] in record declaration
+    order. Raises if [name] is not SoA (callers guard with [is_soa]). *)
+let soa_leaves a name = Hashtbl.find a.arr_soa name
+
+(** [soa_leaf_of_field alloc name field] is the leaf of SoA vector [name] whose
+    record field is [field], or [None] if there is no such leaf. *)
+let soa_leaf_of_field a name field =
+  match Hashtbl.find_opt a.arr_soa name with
+  | None -> None
+  | Some leaves -> List.find_opt (fun l -> l.sl_field = field) leaves
 
 let new_u32 a =
   let n = a.u32 in

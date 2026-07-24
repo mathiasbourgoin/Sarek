@@ -405,3 +405,148 @@ let rec emit_agg_elem_store buf alloc r_addr ~offset (t : elttype) (b : binding)
         "PTX codegen: internal error: aggregate shape mismatch storing a \
          vector element (scalar/record/variant kinds differ)"
   | t, Scalar r -> emit_field_store buf r_addr ~offset t r
+
+(** {1 Structure-of-Arrays (SoA) custom-vector element access}
+
+    A SoA custom-vector parameter (selected via [~soa_params]) stores each
+    scalar leaf of its record type in its own contiguous device buffer, bound to
+    its own base-pointer register ([soa_leaf.sl_base]). Every field access is
+    then a plain coalesced scalar-array access at that leaf's base and index —
+    [mul.wide]/[shl] of the shared index by the leaf's own width, then a typed
+    [ld.global]/[st.global] — exactly what
+    {!emit_array_read}/{!emit_array_write} already emit for scalar vectors. This
+    is strictly less work than the AoS aggregate path (no packed element stride,
+    no byte-offset folding), and, being per-leaf-contiguous, it is what restores
+    full memory coalescing for single-field access over a wide record (the Tier
+    1b headline win).
+
+    v1 supports flat records only (validated at parameter time in
+    [Sarek_ir_ptx_kernel.emit_params]); leaf paths are therefore always a single
+    field name. A [TBool] leaf is addressed as its 4-byte [u32] storage. *)
+
+(* Addressing/load width of a leaf: bool is stored as its 4-byte u32 form; the
+   scalar-array path has no dedicated bool case. Bit-preserving for a 0/1 bool. *)
+let soa_leaf_ld_type (l : soa_leaf) : elttype =
+  match l.sl_type with TBool -> TInt32 | t -> t
+
+let soa_field_or_fail alloc arr_name field : soa_leaf =
+  match soa_leaf_of_field alloc arr_name field with
+  | Some l -> l
+  | None ->
+      fail
+        (Printf.sprintf
+           "PTX codegen: SoA vector '%s' has no scalar leaf for field '%s'"
+           arr_name
+           field)
+
+(* A flat-record SoA field path is a single field name; nested paths cannot
+   occur (nested-record SoA params are rejected at parameter time), but guard
+   defensively so a shape bug fails loudly rather than mis-addressing. *)
+let soa_single_field arr_name (path : string list) : string =
+  match path with
+  | [f] -> f
+  | _ ->
+      fail
+        (Printf.sprintf
+           "PTX codegen: nested field path %s on SoA vector '%s' (v1 SoA is \
+            flat records only)"
+           (String.concat "." path)
+           arr_name)
+
+(** Whole-element SoA read [v.(i)]: one coalesced scalar [ld.global] per leaf
+    from its own base, assembled into the same [ARecord] binding shape the AoS
+    whole-element load produces (so every downstream consumer is unchanged). *)
+let emit_soa_elem_load buf alloc r_idx arr_name : binding =
+  Agg
+    (ARecord
+       (List.map
+          (fun (l : soa_leaf) ->
+            ( l.sl_field,
+              Scalar
+                (emit_array_read
+                   buf
+                   alloc
+                   l.sl_base
+                   r_idx
+                   (soa_leaf_ld_type l)
+                   ~space:None) ))
+          (soa_leaves alloc arr_name)))
+
+(** Single-field SoA read [v.(i).field]: one coalesced scalar [ld.global] at
+    that leaf's base — the untouched leaves are never loaded. *)
+let emit_soa_field_load buf alloc r_idx arr_name (path : string list) : binding
+    =
+  let field = soa_single_field arr_name path in
+  let l = soa_field_or_fail alloc arr_name field in
+  Scalar
+    (emit_array_read buf alloc l.sl_base r_idx (soa_leaf_ld_type l) ~space:None)
+
+(** Whole-element SoA write [v.(i) <- e]: one coalesced scalar [st.global] per
+    leaf. The value binding must be fully materialized by the caller first
+    (EC-1: every load precedes the first store). *)
+let emit_soa_elem_store buf alloc r_idx arr_name (b : binding) : unit =
+  match b with
+  | Agg (ARecord fbs) ->
+      List.iter
+        (fun (l : soa_leaf) ->
+          match List.assoc_opt l.sl_field fbs with
+          | Some (Scalar r) ->
+              emit_array_write
+                buf
+                alloc
+                l.sl_base
+                r_idx
+                r
+                (soa_leaf_ld_type l)
+                ~space:None
+          | Some (Agg _) ->
+              fail
+                (Printf.sprintf
+                   "PTX codegen: internal error: nested field '%s' in SoA \
+                    element store of '%s' (flat records only)"
+                   l.sl_field
+                   arr_name)
+          | None ->
+              fail
+                (Printf.sprintf
+                   "PTX codegen: internal error: SoA element store of '%s' \
+                    missing field '%s'"
+                   arr_name
+                   l.sl_field))
+        (soa_leaves alloc arr_name)
+  | Agg (AVariant _) ->
+      fail
+        (Printf.sprintf
+           "PTX codegen: variant value storing a SoA element of '%s' (v1 SoA \
+            is flat records only)"
+           arr_name)
+  | Scalar _ ->
+      fail
+        (Printf.sprintf
+           "PTX codegen: internal error: scalar binding storing whole SoA \
+            record element of '%s'"
+           arr_name)
+
+(** Single-field SoA write [v.(i).field <- e]: one coalesced scalar [st.global]
+    at that leaf's base. *)
+let emit_soa_field_store buf alloc r_idx arr_name (path : string list)
+    (b : binding) : unit =
+  let field = soa_single_field arr_name path in
+  let l = soa_field_or_fail alloc arr_name field in
+  match b with
+  | Scalar r ->
+      emit_array_write
+        buf
+        alloc
+        l.sl_base
+        r_idx
+        r
+        (soa_leaf_ld_type l)
+        ~space:None
+  | Agg _ ->
+      fail
+        (Printf.sprintf
+           "PTX codegen: aggregate value stored into scalar SoA field '%s' of \
+            '%s'"
+           field
+           arr_name)

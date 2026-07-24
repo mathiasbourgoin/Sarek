@@ -13,10 +13,74 @@ open Sarek_ir_ptx_stmt
 
 (** {1 Parameter and local emitters} *)
 
+(** Scalar leaves of a flat-record custom-vector type selected for
+    Structure-of-Arrays lowering: [(field, scalar type, byte size)] in record
+    declaration order. v1 accepts flat records only — a nested-record, variant,
+    array/vector or unit field is rejected with a precise [Ptx_codegen_error]
+    naming the parameter and field (FR-030 shape). Note SoA imposes no
+    inter-field alignment constraint (each leaf gets its own contiguous buffer),
+    so it accepts mixed-width records regardless of packed AoS alignment. *)
+let soa_leaves_of_param param_name (elt : elttype) :
+    (string * elttype * int) list =
+  match elt with
+  | TRecord (_, fields) ->
+      List.map
+        (fun (fname, fty) ->
+          let sz =
+            match fty with
+            | TInt32 | TBool | TFloat32 -> 4
+            | TInt64 | TFloat64 -> 8
+            | TRecord _ ->
+                fail
+                  (Printf.sprintf
+                     "PTX codegen: SoA parameter '%s': nested-record field \
+                      '%s' — v1 SoA supports flat records only"
+                     param_name
+                     fname)
+            | TVariant _ ->
+                fail
+                  (Printf.sprintf
+                     "PTX codegen: SoA parameter '%s': variant field '%s' has \
+                      no well-defined per-tag SoA split"
+                     param_name
+                     fname)
+            | TArray _ | TVec _ ->
+                fail
+                  (Printf.sprintf
+                     "PTX codegen: SoA parameter '%s': array/vector field '%s' \
+                      unsupported"
+                     param_name
+                     fname)
+            | TUnit ->
+                fail
+                  (Printf.sprintf
+                     "PTX codegen: SoA parameter '%s': unit field '%s' \
+                      unsupported"
+                     param_name
+                     fname)
+          in
+          (fname, fty, sz))
+        fields
+  | _ ->
+      fail
+        (Printf.sprintf
+           "PTX codegen: parameter '%s' selected for SoA is not a record type \
+            (SoA applies to custom record vectors)"
+           param_name)
+
 (** Emit ld.param instructions for each kernel parameter, binding registers into
     [env]. Returns the formatted .param declaration block string to be embedded
-    in the .entry header. *)
-let emit_params buf alloc (env : env) (params : decl list) : string =
+    in the .entry header.
+
+    [~soa_params] lists vector parameters to lower as Structure-of-Arrays: each
+    such custom (record) vector expands to one [.param .u64] base pointer per
+    scalar leaf (named [param_<name>_soa_<field>]) followed by the shared
+    [.param .u32 param_sarek_<name>_length], instead of the single AoS
+    [(ptr, length)] pair. The N leaf base registers are recorded in
+    [alloc.arr_soa] for the element load/store paths. Parameters absent from
+    [~soa_params] are unchanged (packed AoS). *)
+let emit_params buf alloc (env : env) ~(soa_params : string list)
+    (params : decl list) : string =
   let param_decls = Buffer.create 256 in
   let first = ref true in
   List.iter
@@ -32,47 +96,96 @@ let emit_params buf alloc (env : env) (params : decl list) : string =
                  CUDA C signature "T* x, int sarek_x_length". Declare both
                  params here even when the body never reads the length —
                  otherwise every following parameter is read from the wrong
-                 kernelParams slot. *)
+                 kernelParams slot. Under SoA (below) the single base pointer
+                 becomes one pointer per scalar leaf, still sharing one
+                 length. *)
               let len_name = length_param_name v.var_name in
-              Buffer.add_string
-                param_decls
-                (Printf.sprintf
-                   "    .param .u64 param_%s,\n    .param .u32 param_%s"
-                   v.var_name
-                   len_name) ;
-              let r = new_u64 alloc in
-              env_bind env v.var_name r ;
-              (match arr_info_opt with
-              | Some info ->
-                  (* Aggregate element types are validated at param time so a
-                     rejected layout (misaligned leaf, nested variant, …)
-                     fails with a precise error naming the parameter, instead
-                     of surfacing later at a ld/st site (FR-030). *)
-                  (match info.arr_elttype with
-                  | TRecord _ | TVariant _ -> (
-                      match Sarek_ir_layout.elttype_layout info.arr_elttype with
-                      | Ok _ -> ()
-                      | Error err ->
-                          fail
-                            (Printf.sprintf
-                               "PTX codegen: vector parameter '%s': %s"
-                               v.var_name
-                               (Sarek_ir_layout.layout_error_message err)))
-                  | _ -> ()) ;
-                  Hashtbl.replace
-                    alloc.arr_elt_types
-                    v.var_name
-                    info.arr_elttype
-              | None ->
-                  fail
-                    (Printf.sprintf
-                       "DParam '%s': TVec/TArray parameter missing array \
-                        element-type info"
-                       v.var_name)) ;
-              emit buf "ld.param.u64 %s, [param_%s];" r v.var_name ;
-              let r_len = new_u32 alloc in
-              env_bind env len_name r_len ;
-              emit buf "ld.param.u32 %s, [param_%s];" r_len len_name
+              let info =
+                match arr_info_opt with
+                | Some info -> info
+                | None ->
+                    fail
+                      (Printf.sprintf
+                         "DParam '%s': TVec/TArray parameter missing array \
+                          element-type info"
+                         v.var_name)
+              in
+              if List.mem v.var_name soa_params then begin
+                (* SoA: N base pointers (one per scalar leaf) + shared length.
+                   Grows kernel arity with field count; the launch side must
+                   bind N buffers per SoA argument in this same leaf order. *)
+                let leaves = soa_leaves_of_param v.var_name info.arr_elttype in
+                List.iteri
+                  (fun k (field, _ty, _sz) ->
+                    if k > 0 then Buffer.add_string param_decls ",\n" ;
+                    Buffer.add_string
+                      param_decls
+                      (Printf.sprintf
+                         "    .param .u64 param_%s_soa_%s"
+                         v.var_name
+                         field))
+                  leaves ;
+                Buffer.add_string
+                  param_decls
+                  (Printf.sprintf ",\n    .param .u32 param_%s" len_name) ;
+                let soa =
+                  List.map
+                    (fun (field, ty, sz) ->
+                      let r = new_u64 alloc in
+                      emit
+                        buf
+                        "ld.param.u64 %s, [param_%s_soa_%s];"
+                        r
+                        v.var_name
+                        field ;
+                      {
+                        sl_field = field;
+                        sl_type = ty;
+                        sl_size = sz;
+                        sl_base = r;
+                      })
+                    leaves
+                in
+                Hashtbl.replace alloc.arr_soa v.var_name soa ;
+                (* arr_elt_types kept so elt_is_aggregate still routes reads of
+                   this vector through the aggregate paths (which then dispatch
+                   on is_soa). *)
+                Hashtbl.replace alloc.arr_elt_types v.var_name info.arr_elttype ;
+                let r_len = new_u32 alloc in
+                env_bind env len_name r_len ;
+                emit buf "ld.param.u32 %s, [param_%s];" r_len len_name
+              end
+              else begin
+                (* AoS (default, unchanged): single packed base pointer. *)
+                Buffer.add_string
+                  param_decls
+                  (Printf.sprintf
+                     "    .param .u64 param_%s,\n    .param .u32 param_%s"
+                     v.var_name
+                     len_name) ;
+                let r = new_u64 alloc in
+                env_bind env v.var_name r ;
+                (* Aggregate element types are validated at param time so a
+                   rejected layout (misaligned leaf, nested variant, …) fails
+                   with a precise error naming the parameter, instead of
+                   surfacing later at a ld/st site (FR-030). *)
+                (match info.arr_elttype with
+                | TRecord _ | TVariant _ -> (
+                    match Sarek_ir_layout.elttype_layout info.arr_elttype with
+                    | Ok _ -> ()
+                    | Error err ->
+                        fail
+                          (Printf.sprintf
+                             "PTX codegen: vector parameter '%s': %s"
+                             v.var_name
+                             (Sarek_ir_layout.layout_error_message err)))
+                | _ -> ()) ;
+                Hashtbl.replace alloc.arr_elt_types v.var_name info.arr_elttype ;
+                emit buf "ld.param.u64 %s, [param_%s];" r v.var_name ;
+                let r_len = new_u32 alloc in
+                env_bind env len_name r_len ;
+                emit buf "ld.param.u32 %s, [param_%s];" r_len len_name
+              end
           | TInt32 | TBool ->
               Buffer.add_string
                 param_decls
@@ -249,8 +362,14 @@ let make_ptx_header ?(sm_target = "sm_86") ?(ptx_version = "8.0") () =
 
 (** Generate PTX for a single kernel. Three-phase: (1) emit body to count
     registers, (2) build header with correct register counts, (3) concatenate.
-    @param sm_target Override the default [sm_86] target for older hardware. *)
-let generate ?(sm_target = "sm_86") (k : kernel) : string =
+    @param sm_target Override the default [sm_86] target for older hardware.
+    @param soa_params
+      Vector parameters to lower as Structure-of-Arrays (N per-leaf base
+      pointers + one shared length) instead of packed AoS. Each named parameter
+      must be a flat-record custom vector; anything else is rejected. Defaults
+      to [[]] (all AoS) — so the standard backend path emits byte-identical PTX
+      to before. *)
+let generate ?(sm_target = "sm_86") ?(soa_params = []) (k : kernel) : string =
   let alloc = make_alloc () in
   List.iter
     (fun hf ->
@@ -272,7 +391,7 @@ let generate ?(sm_target = "sm_86") (k : kernel) : string =
   let body_buf = Buffer.create 2048 in
   let shared_buf = Buffer.create 256 in
   let module_buf = Buffer.create 128 in
-  let param_str = emit_params body_buf alloc env k.kern_params in
+  let param_str = emit_params body_buf alloc env ~soa_params k.kern_params in
   emit_locals body_buf shared_buf module_buf alloc env k.kern_locals ;
   emit_stmt body_buf alloc env k.kern_body ;
   Buffer.add_string body_buf "    ret;\n" ;
@@ -302,4 +421,5 @@ let generate ?(sm_target = "sm_86") (k : kernel) : string =
 (** Same interface as [Sarek_ir_cuda.generate_with_types]. Record and variant
     type definitions are not representable as PTX struct types; this is a
     documented design gap in ptx-spike-findings.md. *)
-let generate_with_types ~types:_ (k : kernel) : string = generate k
+let generate_with_types ~types:_ ?(soa_params = []) (k : kernel) : string =
+  generate ~soa_params k

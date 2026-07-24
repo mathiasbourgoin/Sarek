@@ -116,3 +116,30 @@ val emit_agg_elem_load :
     chain. *)
 val emit_agg_elem_store :
   Buffer.t -> reg_alloc -> string -> offset:int -> elttype -> binding -> unit
+
+(** {1 Structure-of-Arrays (SoA) custom-vector element access}
+
+    Each function addresses a SoA custom-vector parameter (a name present in
+    [alloc.arr_soa]) as N per-leaf coalesced scalar accesses at each leaf's own
+    base pointer and the shared index register [r_idx]. v1 supports flat records
+    only, so field paths are a single field name. *)
+
+(** Whole-element read [v.(i)]: one scalar [ld.global] per leaf, in record
+    declaration order, assembled into the same [ARecord] binding the AoS path
+    produces. *)
+val emit_soa_elem_load : Buffer.t -> reg_alloc -> string -> string -> binding
+
+(** Single-field read [v.(i).field]: one scalar [ld.global] at that leaf. The
+    path must be a single field name. *)
+val emit_soa_field_load :
+  Buffer.t -> reg_alloc -> string -> string -> string list -> binding
+
+(** Whole-element write [v.(i) <- e]: one scalar [st.global] per leaf. The value
+    binding must be fully materialized first (EC-1). *)
+val emit_soa_elem_store :
+  Buffer.t -> reg_alloc -> string -> string -> binding -> unit
+
+(** Single-field write [v.(i).field <- e]: one scalar [st.global] at that leaf.
+*)
+val emit_soa_field_store :
+  Buffer.t -> reg_alloc -> string -> string -> string list -> binding -> unit
