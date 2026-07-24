@@ -2106,6 +2106,75 @@ let point3d_ty =
    own contiguous buffer. *)
 let mixed_id_ty = TRecord ("mixed_id", [("i", TInt32); ("d", TFloat64)])
 
+(* {p:int64; q:int32} — the remaining two leaf widths (8-byte i64 + 4-byte
+   i32). *)
+let long_iq_ty = TRecord ("long_iq", [("p", TInt64); ("q", TInt32)])
+
+(* mixed_id field-combine: reads an i32 leaf and an f64 leaf and writes their
+   sum (i widened to f64). Exercises s32 + f64 SoA leaf loads. *)
+let soa_mixed_kernel () =
+  let v = make_var "v" (TVec mixed_id_ty) in
+  let out = make_var "out" (TVec TFloat64) in
+  let n = make_var "n" TInt32 in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SIf
+          ( EBinop (Lt, EVar tid, EVar n),
+            SAssign
+              ( LArrayElem ("out", EVar tid),
+                EBinop
+                  ( Add,
+                    ECast
+                      (TFloat64, ERecordField (EArrayRead ("v", EVar tid), "i")),
+                    ERecordField (EArrayRead ("v", EVar tid), "d") ) ),
+            None ) )
+  in
+  base_kernel
+    "mixedsum"
+    [
+      DParam (v, Some {arr_elttype = mixed_id_ty; arr_memspace = Global});
+      DParam (out, Some {arr_elttype = TFloat64; arr_memspace = Global});
+      DParam (n, None);
+    ]
+    body
+    []
+
+(* long_iq field-combine: reads an i64 leaf and an i32 leaf (q widened to i64)
+   and writes their sum. Exercises s64 + s32 SoA leaf loads. *)
+let soa_long_kernel () =
+  let v = make_var "v" (TVec long_iq_ty) in
+  let out = make_var "out" (TVec TInt64) in
+  let n = make_var "n" TInt32 in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SIf
+          ( EBinop (Lt, EVar tid, EVar n),
+            SAssign
+              ( LArrayElem ("out", EVar tid),
+                EBinop
+                  ( Add,
+                    ERecordField (EArrayRead ("v", EVar tid), "p"),
+                    ECast
+                      (TInt64, ERecordField (EArrayRead ("v", EVar tid), "q"))
+                  ) ),
+            None ) )
+  in
+  base_kernel
+    "longsum"
+    [
+      DParam (v, Some {arr_elttype = long_iq_ty; arr_memspace = Global});
+      DParam (out, Some {arr_elttype = TInt64; arr_memspace = Global});
+      DParam (n, None);
+    ]
+    body
+    []
+
 (** point3d field-sum: reads three f32 fields of a custom vector and writes
     their sum. Shared by the marker test and the ptxas gate. *)
 let soa_field_sum_kernel () =
@@ -2208,15 +2277,21 @@ let test_ptxas_assembles () =
             Alcotest.fail
               (Printf.sprintf "ptxas rejected kernel %s:\n%s" name err))
       kernels ;
-    (* SoA-lowered custom-vector kernel: N per-leaf base pointers + coalesced
-       scalar loads must also assemble. *)
-    match
-      assemble_ok
-        (Sarek_ir_ptx.generate ~soa_params:["pts"] (soa_field_sum_kernel ()))
-    with
-    | Ok () -> Printf.printf "  ptxas OK: soa_field_sum\n%!"
-    | Error err ->
-        Alcotest.fail (Printf.sprintf "ptxas rejected SoA kernel:\n%s" err)
+    (* SoA-lowered custom-vector kernels: N per-leaf base pointers + coalesced
+       scalar loads must also assemble, across every leaf width (f32/f64/i32/i64
+       and a misaligned-AoS mixed record). *)
+    List.iter
+      (fun (name, vec, k) ->
+        match assemble_ok (Sarek_ir_ptx.generate ~soa_params:[vec] k) with
+        | Ok () -> Printf.printf "  ptxas OK: %s (SoA)\n%!" name
+        | Error err ->
+            Alcotest.fail
+              (Printf.sprintf "ptxas rejected SoA kernel %s:\n%s" name err))
+      [
+        ("soa_field_sum_f32", "pts", soa_field_sum_kernel ());
+        ("soa_mixed_i32_f64", "v", soa_mixed_kernel ());
+        ("soa_long_i64_i32", "v", soa_long_kernel ());
+      ]
   end
 
 (** SoA field read emits N per-leaf base pointers + one shared length, coalesced
@@ -2375,6 +2450,19 @@ let test_soa_mixed_width_markers () =
     soa
     "mul.wide.u32"
     ~why:"mixed-width SoA leaves are scalar-strided per leaf"
+
+(** Record [{p:int64; q:int32}] under SoA: an s64 leaf load and an s32 leaf
+    load, each from its own base (the remaining two leaf widths). *)
+let test_soa_int64_markers () =
+  let soa = Sarek_ir_ptx.generate ~soa_params:["v"] (soa_long_kernel ()) in
+  assert_contains soa ".param .u64 param_v_soa_p" ;
+  assert_contains soa ".param .u64 param_v_soa_q" ;
+  assert_contains soa "ld.global.s64" ;
+  assert_contains soa "ld.global.s32" ;
+  assert_absent
+    soa
+    "mul.wide.u32"
+    ~why:"i64/i32 SoA leaves are scalar-strided per leaf (shl 3 / shl 2)"
 
 (** A [~soa_params] naming a scalar-element (non-record) vector is rejected. *)
 let test_soa_nonrecord_rejected () =
@@ -2644,6 +2732,10 @@ let () =
             "SoA mixed-width {i32;f64}: s32 + f64 leaf loads, misaligned AoS ok"
             `Quick
             test_soa_mixed_width_markers;
+          Alcotest.test_case
+            "SoA {i64;i32}: s64 + s32 leaf loads"
+            `Quick
+            test_soa_int64_markers;
           Alcotest.test_case
             "SoA on a non-record vector is rejected"
             `Quick

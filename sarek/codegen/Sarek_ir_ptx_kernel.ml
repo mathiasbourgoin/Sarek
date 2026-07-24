@@ -14,53 +14,49 @@ open Sarek_ir_ptx_stmt
 (** {1 Parameter and local emitters} *)
 
 (** Scalar leaves of a flat-record custom-vector type selected for
-    Structure-of-Arrays lowering: [(field, scalar type, byte size)] in record
-    declaration order. v1 accepts flat records only — a nested-record, variant,
-    array/vector or unit field is rejected with a precise [Ptx_codegen_error]
-    naming the parameter and field (FR-030 shape). Note SoA imposes no
-    inter-field alignment constraint (each leaf gets its own contiguous buffer),
-    so it accepts mixed-width records regardless of packed AoS alignment. *)
-let soa_leaves_of_param param_name (elt : elttype) :
-    (string * elttype * int) list =
+    Structure-of-Arrays lowering: [(field, scalar type)] in record declaration
+    order. v1 accepts flat records only — a nested-record, variant, array/vector
+    or unit field is rejected with a precise [Ptx_codegen_error] naming the
+    parameter and field (FR-030 shape). Note SoA imposes no inter-field
+    alignment constraint (each leaf gets its own contiguous buffer), so it
+    accepts mixed-width records regardless of packed AoS alignment. *)
+let soa_leaves_of_param param_name (elt : elttype) : (string * elttype) list =
   match elt with
   | TRecord (_, fields) ->
-      List.map
+      List.iter
         (fun (fname, fty) ->
-          let sz =
-            match fty with
-            | TInt32 | TBool | TFloat32 -> 4
-            | TInt64 | TFloat64 -> 8
-            | TRecord _ ->
-                fail
-                  (Printf.sprintf
-                     "PTX codegen: SoA parameter '%s': nested-record field \
-                      '%s' — v1 SoA supports flat records only"
-                     param_name
-                     fname)
-            | TVariant _ ->
-                fail
-                  (Printf.sprintf
-                     "PTX codegen: SoA parameter '%s': variant field '%s' has \
-                      no well-defined per-tag SoA split"
-                     param_name
-                     fname)
-            | TArray _ | TVec _ ->
-                fail
-                  (Printf.sprintf
-                     "PTX codegen: SoA parameter '%s': array/vector field '%s' \
-                      unsupported"
-                     param_name
-                     fname)
-            | TUnit ->
-                fail
-                  (Printf.sprintf
-                     "PTX codegen: SoA parameter '%s': unit field '%s' \
-                      unsupported"
-                     param_name
-                     fname)
-          in
-          (fname, fty, sz))
-        fields
+          match fty with
+          | TInt32 | TBool | TFloat32 | TInt64 | TFloat64 -> ()
+          | TRecord _ ->
+              fail
+                (Printf.sprintf
+                   "PTX codegen: SoA parameter '%s': nested-record field '%s' \
+                    — v1 SoA supports flat records only"
+                   param_name
+                   fname)
+          | TVariant _ ->
+              fail
+                (Printf.sprintf
+                   "PTX codegen: SoA parameter '%s': variant field '%s' has no \
+                    well-defined per-tag SoA split"
+                   param_name
+                   fname)
+          | TArray _ | TVec _ ->
+              fail
+                (Printf.sprintf
+                   "PTX codegen: SoA parameter '%s': array/vector field '%s' \
+                    unsupported"
+                   param_name
+                   fname)
+          | TUnit ->
+              fail
+                (Printf.sprintf
+                   "PTX codegen: SoA parameter '%s': unit field '%s' \
+                    unsupported"
+                   param_name
+                   fname))
+        fields ;
+      fields
   | _ ->
       fail
         (Printf.sprintf
@@ -116,7 +112,7 @@ let emit_params buf alloc (env : env) ~(soa_params : string list)
                    bind N buffers per SoA argument in this same leaf order. *)
                 let leaves = soa_leaves_of_param v.var_name info.arr_elttype in
                 List.iteri
-                  (fun k (field, _ty, _sz) ->
+                  (fun k (field, _ty) ->
                     if k > 0 then Buffer.add_string param_decls ",\n" ;
                     Buffer.add_string
                       param_decls
@@ -130,7 +126,7 @@ let emit_params buf alloc (env : env) ~(soa_params : string list)
                   (Printf.sprintf ",\n    .param .u32 param_%s" len_name) ;
                 let soa =
                   List.map
-                    (fun (field, ty, sz) ->
+                    (fun (field, ty) ->
                       let r = new_u64 alloc in
                       emit
                         buf
@@ -138,12 +134,7 @@ let emit_params buf alloc (env : env) ~(soa_params : string list)
                         r
                         v.var_name
                         field ;
-                      {
-                        sl_field = field;
-                        sl_type = ty;
-                        sl_size = sz;
-                        sl_base = r;
-                      })
+                      {sl_field = field; sl_type = ty; sl_base = r})
                     leaves
                 in
                 Hashtbl.replace alloc.arr_soa v.var_name soa ;

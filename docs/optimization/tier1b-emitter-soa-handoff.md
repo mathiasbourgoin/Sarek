@@ -72,8 +72,13 @@ existing enumeration — the STOP condition in the task did not fire).
 |---|---|---|---|
 | f32 × 3 (`point3d`) | ✓ | ✓ | ✓ |
 | f64 × 2 (`dpair`) | ✓ | ✓ | ✓ |
-| i32 + f64 (`{i;d}`) | ✓ | ✓ | (Tier 1c) |
-| i64 + i32 | ✓ (`ld.global.s64`) | ✓ | (Tier 1c) |
+| i32 + f64 (`{i;d}`) | ✓ | ✓ (`soa_mixed`) | (Tier 1c) |
+| i64 + i32 (`{p;q}`) | ✓ (`ld.global.s64`+`s32`) | ✓ (`soa_long`) | (Tier 1c) |
+
+All three SoA kernels (`soa_field_sum_f32`, `soa_mixed_i32_f64`,
+`soa_long_i64_i32`) go through `test_ptxas_assembles`; the i32+f64 and i64+i32
+combos additionally have dedicated marker tests. Device e2e for the two integer
+combos folds into Tier 1c with the launch plumbing.
 
 ## Benchmark — the emitter's coalescing win (`benchmarks/bench_soa_emitter`)
 
@@ -138,6 +143,25 @@ This is pure plumbing (no new coalescing) — the roadmap (§1.2c/e) rates it th
 bulk of the SoA cost; it was descoped here so the emitter could ship complete
 and proven. When it lands, extend `test_soa_emitter_equiv` to drive SoA through
 `Vector.create ~layout:SoA` + `run_vectors`, and add the i32/i64 device rows.
+
+> **PRECONDITION — generated param-name namespace (latent today, MUST fix in
+> Tier 1c).** The emitter mangles each SoA leaf param as
+> `param_<vec>_soa_<field>` (`Sarek_ir_ptx_kernel.emit_params`). This can
+> **collide** with a distinct user vector/scalar parameter whose own generated
+> name is `param_<vec>_soa_<field>` — e.g. a user param literally named
+> `x_soa_y` alongside a SoA vector `x` with field `y`. The reserved `sarek_`
+> prefix does **not** cover this infix mangle. It is unreachable today because
+> `~soa_params` is only ever passed by the emitter's own tests (never from user
+> code), but the moment Tier 1c lets a user opt a vector into SoA it becomes a
+> real (silently-wrong-PTX) hazard. Tier 1c **MUST** close it, by either:
+> (a) `sarek_`-prefixing the generated SoA params
+> (`param_sarek_soa_<vec>_<field>`) so they live in the already-reserved
+> namespace and cannot alias a user name; or (b) validating the kernel's param
+> names against the generated SoA pattern and rejecting a collision with a
+> precise error. Option (a) is preferred (no user-facing rejection, consistent
+> with the existing `sarek_<vec>_length` convention). Add a regression test that
+> a kernel mixing a SoA vector `x` (field `y`) with a scalar param `x_soa_y`
+> compiles to distinct PTX operands.
 
 ### 2. `ld.global.nc` for read-only params (roadmap #3 — High, cost S)
 

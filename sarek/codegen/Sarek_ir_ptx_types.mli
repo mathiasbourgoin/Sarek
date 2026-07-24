@@ -50,15 +50,10 @@ and binding = Scalar of string | Agg of agg_value
 type arr_space = SpaceShared | SpaceLocal
 
 (** One scalar leaf of a Structure-of-Arrays (SoA) custom-vector parameter: the
-    record field it comes from, its scalar type/byte size, and the u64 register
-    holding its own device base pointer (each leaf lives in its own contiguous
-    device buffer). *)
-type soa_leaf = {
-  sl_field : string;
-  sl_type : elttype;
-  sl_size : int;
-  sl_base : string;
-}
+    record field it comes from, its scalar type, and the u64 register holding
+    its own device base pointer (each leaf lives in its own contiguous device
+    buffer). *)
+type soa_leaf = {sl_field : string; sl_type : elttype; sl_base : string}
 
 (** Counter-based register allocator. Each PTX type has an independent counter
     so that register names stay readable (e.g. [%r0], [%f0], [%rd0]). *)

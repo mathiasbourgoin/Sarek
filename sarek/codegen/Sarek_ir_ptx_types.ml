@@ -52,12 +52,7 @@ type arr_space = SpaceShared | SpaceLocal
     device buffer, so field access is a plain coalesced scalar-array access at
     that base). Populated by [emit_params] for parameters selected via
     [~soa_params]; consumed by the aggregate load/store paths. *)
-type soa_leaf = {
-  sl_field : string;
-  sl_type : elttype;
-  sl_size : int;
-  sl_base : string;
-}
+type soa_leaf = {sl_field : string; sl_type : elttype; sl_base : string}
 
 (** Counter-based register allocator. Each PTX type has an independent counter
     so that register names stay readable (e.g. %r0, %f0, %rd0). *)

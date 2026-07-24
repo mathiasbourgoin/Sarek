@@ -20,9 +20,9 @@ val emit_params :
   Buffer.t -> reg_alloc -> env -> soa_params:string list -> decl list -> string
 
 (** Scalar leaves of a flat-record custom-vector type selected for SoA:
-    [(field, scalar type, byte size)] in declaration order. Rejects
-    nested-record / variant / array / unit fields with [Ptx_codegen_error]. *)
-val soa_leaves_of_param : string -> elttype -> (string * elttype * int) list
+    [(field, scalar type)] in declaration order. Rejects nested-record / variant
+    / array / unit fields with [Ptx_codegen_error]. *)
+val soa_leaves_of_param : string -> elttype -> (string * elttype) list
 
 (** [emit_locals buf shared_buf module_buf alloc env locals] emits register
     allocations and optional initialisation moves for each [DLocal] declaration
