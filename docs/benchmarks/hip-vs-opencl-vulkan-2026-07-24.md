@@ -55,6 +55,7 @@ choice — not tuned to favour any backend. Raw JSON/logs: `/mnt/ssd-external-2t
 
 Metric is whatever the benchmark itself prints. **Higher is better** for every metric.
 Ratio = HIP ÷ best of {OpenCL, Vulkan}. ✓/✗ = the benchmark's own correctness flag.
+⊘ = row excluded from the headline aggregate (unverified, see footnote 2 and the Summary).
 
 | Benchmark | Metric | Size | HIP | OpenCL | Vulkan | Best portable | HIP/best | Verified (H/O/V) |
 |---|---|--:|--:|--:|--:|--:|--:|:--:|
@@ -66,10 +67,10 @@ Ratio = HIP ÷ best of {OpenCL, Vulkan}. ✓/✗ = the benchmark's own correctne
 | stencil_2d | GB/s (eff)¹ | 2048 | **51140.1** | 28605.2 | 27968.5 | 28605.2 | **1.79** | ✓/✓/✓ |
 | soa_aos (SoA path) | GB/s | 16.7 M | **729.2** | 522.2 | 526.1 | 526.1 | **1.39** | n/a⁴ |
 | mandelbrot | Mpix/s | 4096² | **16169.5** | 12896.4 | 13034.4 | 13034.4 | **1.24** | ✓/✓/✓ |
-| nbody | GFLOPS | 4096 | **26.5** | 21.6 | 22.2 | 22.2 | **1.19** | ✗/✗/✗² |
+| nbody | GFLOPS | 4096 | **26.5** | 21.6 | 22.2 | 22.2 | **1.19** | ✗/✗/✗² ⊘ |
 | histogram | Melem/s | 50 M | **93289.7** | 79362.4 | 57996.5 | 79362.4 | **1.18** | ✓/✓/✓ |
 | vector_copy | GB/s | 500 M | **819.3** | 787.2 | 784.6 | 787.2 | 1.04 | ✓/✓/✓ |
-| vector_add | GB/s | 100 M | **780.2** | 755.6 | 752.3 | 755.6 | 1.03 | ✗/✗/✗² |
+| vector_add | GB/s | 100 M | **780.2** | 755.6 | 752.3 | 755.6 | 1.03 | ✗/✗/✗² ⊘ |
 | stream_triad | GB/s | 500 M | **790.7** | 769.8 | 773.5 | 773.5 | 1.02 | ✓/✓/✓ |
 | gather | Melem/s | 50 M | 8254.9 | 8175.2 | 8203.4 | 8203.4 | 1.01 | ✓/✓/✓ |
 | scatter | Melem/s | 50 M | 4736.7 | 4614.4 | 4778.7 | 4778.7 | 0.99 | ✓/✓/✓ |
@@ -97,7 +98,9 @@ backend wins.
    a float64 OCaml reference with a fixed absolute epsilon (0.001), and at large indices the
    float32 rounding error (values reach ~3×10⁵) legitimately exceeds it. It fails **identically
    on all three backends**, so it does not discriminate between them. `vector_add` verifies ✓
-   at size 1 M on every backend.
+   at size 1 M on every backend. Both rows are marked ⊘ and **excluded from the headline
+   win/loss tally and geometric mean** (Summary) so the aggregate rests only on verified rows;
+   the rows are retained in the table for completeness.
 3. `transpose_naive` on **Vulkan fails on every device** — the Sarek→GLSL emitter produces a
    syntax error (`unexpected DOT`) that glslangValidator rejects, so no SPIR-V is generated.
    This is a real Vulkan-backend codegen limitation, not a perf result. HIP and OpenCL run it
@@ -114,17 +117,31 @@ backend wins.
 
 ## Summary
 
-**Comparable benchmarks: 21** (the 22 listed minus `pinned_transfer` and `soa_emitter`, both
-CUDA/PTX-only; `gather_scatter` counted as its two sub-kernels `gather` + `scatter`).
+**Comparable benchmarks: 21.** The results table has **23 metric rows**: 22 benchmark
+programs, with `gather_scatter` split into its two sub-kernels `gather` + `scatter`
+(→ 23 rows). Removing the two CUDA/PTX-only rows that SKIP on all three portable backends
+(`pinned_transfer`, `soa_emitter`) leaves **21 comparable** rows.
 
-- **HIP wins: 13 · loses: 4 · ties: 4** (±2% band = tie).
-- **Geometric mean of HIP ÷ best-portable ratio:**
-  - **1.25× over all 21** comparable benchmarks.
+**The headline aggregate is computed over the 19 *verified* comparable benchmarks** — the 21
+comparable rows minus `vector_add` and `nbody`, which report Verified ✗ (a float32-vs-float64
+epsilon artifact that fails identically on all three backends, see footnote 2). Both rows are
+kept in the table above but **excluded from the tally and geomean below**, so no headline
+number depends on an unverified row.
+
+- **HIP wins: 11 · loses: 4 · ties: 4** (±2% band = tie), over the 19 verified benchmarks.
+  Including the two unverified rows it is **13 · 4 · 4 over 21** — both are HIP "wins", so
+  excluding them makes HIP look slightly *less* dominant, not more.
+- **Geometric mean of HIP ÷ best-portable ratio: 1.26× over the 19 verified benchmarks**
+  (1.25× over all 21 including the two unverified rows — essentially unchanged; the two
+  excluded ratios, 1.03× and 1.19×, both sit below the mean, so dropping them nudges the
+  geomean up very slightly rather than down).
   - **1.13× excluding the two tiny-size, launch-overhead-dominated kernels** (`bitonic_sort`
     at 16 K elements, `scan` at 256 elements — these measure dispatch latency, not throughput,
-    and inflate the mean).
-  - **1.02× over the pure DRAM-bandwidth-bound streaming kernels** (`vector_add`,
-    `vector_copy`, `stream_triad`, `dot_product`) — i.e. **statistical parity**.
+    and inflate the mean); 17 verified benchmarks.
+  - **1.01× over the pure DRAM-bandwidth-bound streaming kernels** (`vector_copy`,
+    `stream_triad`, `dot_product`) — i.e. **statistical parity**. (`vector_add`, also pure
+    streaming, sits at 1.03× but is an unverified row excluded from the aggregate; it does not
+    change the parity conclusion.)
 
 ### Where HIP loses (most important finding)
 
@@ -157,7 +174,8 @@ generalise into a blanket "HIP is faster" claim.**
 - HIP **loses on GEMM and max-reduction**, where the portable Mesa compilers win by up to 1.9×.
 
 So: HIP earns its place for launch-bound, LDS-heavy, and atomics-heavy kernels, and is a
-safe default (wins or ties on 17/21). But it is **not** a universal performance win — for pure
+safe default (wins or ties on 15 of the 19 verified benchmarks — 17 of 21 including the two
+unverified rows). But it is **not** a universal performance win — for pure
 streaming it is a wash, and for matrix multiply it is currently the *slowest* of the three.
 Any "HIP is faster" statement must be qualified by kernel class.
 
