@@ -501,13 +501,26 @@ let array_to_exec_vector (module V : Spoc_framework.Typed_value.EXEC_VECTOR)
   let len = min (Array.length arr) V.length in
   for i = 0 to len - 1 do
     match arr.(i) with
-    | VVariant _ as vv -> (
+    | VVariant (type_name, _, _) as vv -> (
         (* Standalone variant vector element: the [@@sarek.type] variant helper
            decodes the [VVariant] back to the native constructor, then the
            composite's typed setter writes the [tag|payload] bytes. *)
         match Sarek_type_helpers.lookup_typed V.type_id with
         | Some (module H) -> V.set_typed i (H.from_value vv)
-        | None -> ())
+        | None ->
+            (* A [@@sarek.type] variant element always has a registered helper;
+               a missing one is a registration bug. Surface it (mirrors
+               Execute.interp_array_to_vector) rather than silently dropping the
+               write and producing wrong output. Unlike the VRecord arm there is
+               no tuple-shape fallback for variants. *)
+            Interp_error.raise_error
+              (Unsupported_operation
+                 {
+                   operation = "variant vector writeback";
+                   reason =
+                     "no registered [@@sarek.type] helper for variant element \
+                      type '" ^ type_name ^ "'";
+                 }))
     | VRecord (name, fields) as vrec -> (
         match Sarek_type_helpers.lookup_typed V.type_id with
         | Some (module H) -> V.set_typed i (H.from_value vrec)

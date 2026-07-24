@@ -119,11 +119,18 @@ let value_to_ocaml ~loc ~(what : string) (ct : core_type)
         | Sarek.Sarek_value.VFloat64 f -> f
         | Sarek.Sarek_value.VFloat32 f -> f
         | _ -> failwith [%e estr (what ^ " expected float64, got wrong type")]]
-  | Ptyp_constr ({txt = Lident ("int32" | "int"); _}, _) ->
+  | Ptyp_constr ({txt = Lident "int32"; _}, _) ->
       [%expr
         match [%e value_expr] with
         | Sarek.Sarek_value.VInt32 n -> n
         | _ -> failwith [%e estr (what ^ " expected int32, got wrong type")]]
+  | Ptyp_constr ({txt = Lident "int"; _}, _) ->
+      (* Bare [int] fields are 4-byte on the host ABI and carried through the
+         VInt32 value model; convert the int32 payload back to a native int. *)
+      [%expr
+        match [%e value_expr] with
+        | Sarek.Sarek_value.VInt32 n -> Int32.to_int n
+        | _ -> failwith [%e estr (what ^ " expected int, got wrong type")]]
   | Ptyp_constr ({txt = Lident "int64"; _}, _) ->
       [%expr
         match [%e value_expr] with
@@ -159,8 +166,11 @@ let value_from_ocaml ~loc ~(what : string) (ct : core_type)
       [%expr Sarek.Sarek_value.VFloat32 [%e ocaml_expr]]
   | Ptyp_constr ({txt = Lident "float64"; _}, _) ->
       [%expr Sarek.Sarek_value.VFloat64 [%e ocaml_expr]]
-  | Ptyp_constr ({txt = Lident ("int32" | "int"); _}, _) ->
+  | Ptyp_constr ({txt = Lident "int32"; _}, _) ->
       [%expr Sarek.Sarek_value.VInt32 [%e ocaml_expr]]
+  | Ptyp_constr ({txt = Lident "int"; _}, _) ->
+      (* Bare [int] field: wrap the native int as VInt32 (host ABI is 4-byte). *)
+      [%expr Sarek.Sarek_value.VInt32 (Int32.of_int [%e ocaml_expr])]
   | Ptyp_constr ({txt = Lident "int64"; _}, _) ->
       [%expr Sarek.Sarek_value.VInt64 [%e ocaml_expr]]
   | Ptyp_constr ({txt = Lident "bool"; _}, _) ->

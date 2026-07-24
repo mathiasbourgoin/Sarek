@@ -158,9 +158,18 @@ let run_color dev =
   !ok
 
 let () =
-  let devs = Device.init ~frameworks:["Interpreter"; "Native"] () in
-  if Array.length devs = 0 then begin
-    print_endline "No Interpreter/Native device found" ;
+  let required = ["Interpreter"; "Native"] in
+  let devs = Device.init ~frameworks:required () in
+  (* Both backends are the stated contract: a Native or Interpreter regression
+     must not be silently untested because one failed to initialize. *)
+  let available =
+    Array.to_list devs |> List.map (fun d -> d.Device.framework)
+  in
+  let missing = List.filter (fun f -> not (List.mem f available)) required in
+  if missing <> [] then begin
+    Printf.eprintf
+      "Missing required backends: %s\n%!"
+      (String.concat ", " missing) ;
     exit 1
   end ;
   let any_failure = ref false in
