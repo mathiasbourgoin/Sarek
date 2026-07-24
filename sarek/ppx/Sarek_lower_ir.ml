@@ -600,6 +600,21 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
             (* First time - lower the function *)
             let params, body = Hashtbl.find state.fun_map name in
             let ret_ty = repr body.ty in
+            (* Wrong-width class, 3rd instance: a module-level helper whose
+               RETURN type is a primitive-component tuple ([let mk x y = (x, y)])
+               must be typed through the data mapper, not the bare
+               [elttype_of_typ] placeholder that collapses [TTuple]/[TFun] to
+               [Ir.TInt32]. The body already lowers a primitive tuple literal to
+               the synthesized [_tup_*] record (see the [TETuple] case), so a
+               placeholder return type declared the helper int-returning while
+               its body returned a compound — a silent miscompile. Routing
+               through [slot_elttype_of_typ] lowers the return to that same
+               [_tup_*] record end-to-end (backends already support an aggregate
+               helper return; see the record-arg/ret helper path). Register the
+               synthesized record so its [struct] definition is emitted even if
+               no other site did. A non-primitive tuple return raises the located
+               tuple-component error rather than miscompiling. *)
+            register_tuple_type state ret_ty ;
             Hashtbl.add state.lowering_stack name () ;
             let fun_body_ir = lower_stmt state body in
             Hashtbl.remove state.lowering_stack name ;
@@ -616,7 +631,7 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
               {
                 hf_name = name;
                 hf_params;
-                hf_ret_type = elttype_of_typ ret_ty;
+                hf_ret_type = slot_elttype_of_typ ret_ty;
                 hf_body = fun_body_ir;
               }
             in
@@ -880,7 +895,17 @@ and lower_stmt (state : state) (te : texpr) : Ir.stmt =
         | None -> Ir.EIntrinsic (["Sarek_stdlib"; "Gpu"], "block_dim_x", [])
       in
       let v = make_var name id (TArr (elem_ty, Sarek_types.Shared)) false in
-      let elem_ir = elttype_of_typ elem_ty in
+      (* Sibling of the helper-return wrong-width fix: a shared-memory array
+         whose ELEMENT type is a primitive-component tuple must be typed through
+         the data mapper. [elttype_of_typ] would collapse the [TTuple] element to
+         [Ir.TInt32] (wrong stride / int32-collapse), so the [__shared__]/[__local]
+         declaration and every indexed access would mistype a compound slot as a
+         scalar. [slot_elttype_of_typ] lowers it to the synthesized [_tup_*]
+         record (the same element type a tuple vector param uses); register the
+         record so its [struct] definition is emitted. A non-primitive tuple
+         element raises the located tuple-component error. *)
+      register_tuple_type state elem_ty ;
+      let elem_ir = slot_elttype_of_typ elem_ty in
       (* Use EArrayCreate with Shared memspace - codegen will emit proper declaration *)
       Ir.SLet
         (v, Ir.EArrayCreate (elem_ir, size_ir, Ir.Shared), lower_stmt state body)
