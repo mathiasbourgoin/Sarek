@@ -49,6 +49,7 @@ let float32_names =
     "log1p";
     "hypot";
     "copysign";
+    "fmod";
   ]
 
 let float64_names =
@@ -80,6 +81,7 @@ let float64_names =
     "fma";
     "min";
     "max";
+    "fmod";
   ]
 
 let math_float64_names =
@@ -138,7 +140,7 @@ let test_float32_paths () =
     ["Sarek_stdlib_meta"; "Math"; "Float32"]
     float32_names
     "Sarek_stdlib_meta.Math.Float32" ;
-  print_endline "  float32 paths expose exactly the 32-entry set: OK"
+  print_endline "  float32 paths expose exactly the 33-entry set: OK"
 
 let test_float64_paths () =
   assert_path_has_all ["Float64"] float64_names "Float64" ;
@@ -146,7 +148,7 @@ let test_float64_paths () =
     ["Sarek_stdlib_meta"; "Float64"]
     float64_names
     "Sarek_stdlib_meta.Float64" ;
-  print_endline "  Float64 paths expose exactly the 27-entry set: OK"
+  print_endline "  Float64 paths expose exactly the 28-entry set: OK"
 
 let test_math_float64_paths () =
   assert_path_has_all ["Math"; "Float64"] math_float64_names "Math.Float64" ;

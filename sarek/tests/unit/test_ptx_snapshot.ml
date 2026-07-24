@@ -600,6 +600,57 @@ let test_float_mod_fmod_markers () =
   assert_contains ptx "selp.f64" ;
   assert_contains ptx "selp.f32"
 
+(** Float32.fmod / Float64.fmod (the explicit intrinsic, EIntrinsic path) reach
+    the SAME emit_float_fmod lowering as the [Mod] binop — the exact-C-fmod
+    iterative reduction. Guards the intrinsic-dispatch wiring added by
+    float-mod-intrinsic. *)
+let test_fmod_intrinsic_markers () =
+  let fa = make_var "fa" (TVec TFloat32) in
+  let da = make_var "da" (TVec TFloat64) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SSeq
+          [
+            SAssign
+              ( LArrayElem ("fa", EVar tid),
+                EIntrinsic
+                  ( ["Float32"],
+                    "fmod",
+                    [EArrayRead ("fa", EVar tid); EConst (CFloat32 3.0)] ) );
+            SAssign
+              ( LArrayElem ("da", EVar tid),
+                EIntrinsic
+                  ( ["Float64"],
+                    "fmod",
+                    [EArrayRead ("da", EVar tid); EConst (CFloat64 3.0)] ) );
+          ] )
+  in
+  let k =
+    base_kernel
+      "fmod_intrinsic"
+      [
+        DParam (fa, Some {arr_elttype = TFloat32; arr_memspace = Global});
+        DParam (da, Some {arr_elttype = TFloat64; arr_memspace = Global});
+      ]
+      body
+      []
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  (* Same emit_float_fmod signature as the Mod binop test above. *)
+  assert_contains ptx "div.rn.f32" ;
+  assert_contains ptx "cvt.rzi.f32.f32" ;
+  assert_contains ptx "fma.rn.f32" ;
+  assert_contains ptx "copysign.f32" ;
+  assert_contains ptx "div.rn.f64" ;
+  assert_contains ptx "cvt.rzi.f64.f64" ;
+  assert_contains ptx "fma.rn.f64" ;
+  assert_contains ptx "copysign.f64" ;
+  assert_contains ptx "selp.f64" ;
+  assert_contains ptx "selp.f32"
+
 (** Integer Div/Mod are SIGNED (audit finding H1): Sarek int32/int64 are signed
     everywhere (interpreter uses Int32.div/Int64.div, C backends emit / and % on
     signed types), so PTX must emit div.s32/s64 and rem.s32/s64. The old
@@ -2559,6 +2610,10 @@ let () =
             "float Mod lowers to fmod (div.rn + cvt.rzi + fma)"
             `Quick
             test_float_mod_fmod_markers;
+          Alcotest.test_case
+            "Float32/64.fmod intrinsic reaches emit_float_fmod"
+            `Quick
+            test_fmod_intrinsic_markers;
           Alcotest.test_case
             "integer Div/Mod emit signed div.s32/s64 rem.s32/s64"
             `Quick

@@ -375,17 +375,35 @@ and gen_intrinsic buf path name args =
     match path with [] -> name | _ -> String.concat "." path ^ "." ^ name
   in
   let framework = Option.value ~default:"WGSL" !current_framework in
-  let pure_registry_hit =
-    match path with
-    | [] -> None
-    | _ -> (
-        match
-          Sarek_pure_registry.fun_device_template ~module_path:path name
-        with
-        | Some f -> Some (f ~framework)
-        | None -> None)
-  in
-  match pure_registry_hit with
+  if name = "fmod" then
+    (* WGSL's [%] operator on floats is exactly C [fmod]
+       ([e1 - e2 * trunc(e1 / e2)], sign of the dividend — WGSL spec §8.7).
+       WGSL has no [fmod] builtin, so the pure registry (queried below for the
+       other math intrinsics) would emit an invalid [fmod(...)] call. Intercept
+       ahead of it and lower to the operator. f64 is unsupported in WGSL, so
+       only the f32 [Float32.fmod] spelling ever reaches here. *)
+    match args with
+    | [x; y] ->
+        Buffer.add_char buf '(' ;
+        gen_expr buf x ;
+        Buffer.add_string buf " % " ;
+        gen_expr buf y ;
+        Buffer.add_char buf ')'
+    | _ ->
+        Codegen_error.raise_error
+          (Codegen_error.invalid_arg_count "fmod" 2 (List.length args))
+  else
+    let pure_registry_hit =
+      match path with
+      | [] -> None
+      | _ -> (
+          match
+            Sarek_pure_registry.fun_device_template ~module_path:path name
+          with
+          | Some f -> Some (f ~framework)
+          | None -> None)
+    in
+    match pure_registry_hit with
   | Some device_name ->
       Buffer.add_string buf device_name ;
       Buffer.add_char buf '(' ;

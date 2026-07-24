@@ -43,6 +43,17 @@ let current_smod_name = ref "sarek_smod"
     arm) read this, guaranteeing they agree. Mirrors {!current_smod_name}. *)
 let current_copysign_name = ref "sarek_copysign"
 
+(** Name of the C-[fmod] helper ([sarek_fmod] by default) for the current
+    kernel, set per-kernel during generate by {!compute_fmod_name} so it cannot
+    collide with a user identifier. GLSL's [mod()] builtin is floor-based
+    (divisor-signed remainder), NOT the truncated C [fmod] the
+    [Float32.fmod]/[Float64.fmod] intrinsics contract for, and GLSL has no
+    [fmod] builtin — so both spellings lower to this helper. Both the
+    declaration ({!gen_fmod_helper}) and the call site ({!gen_intrinsic}'s
+    [fmod] arm) read this ref, guaranteeing they agree. Mirrors
+    {!current_copysign_name}. *)
+let current_fmod_name = ref "sarek_fmod"
+
 (** Helper function vector parameter indices - maps function name to set of
     parameter indices that are vectors. In GLSL, vectors cannot be passed as
     function parameters, so these must be filtered out at call sites. *)
@@ -628,6 +639,24 @@ and gen_intrinsic buf path name args =
        each argument exactly once — the same single-eval guarantee as the
        [sarek_smod] helper. *)
     Buffer.add_string buf !current_copysign_name ;
+    Buffer.add_char buf '(' ;
+    List.iteri
+      (fun i e ->
+        if i > 0 then Buffer.add_string buf ", " ;
+        gen_expr buf e)
+      args ;
+    Buffer.add_char buf ')')
+  else if name = "fmod" then (
+    (* GLSL's [mod(x,y)] is floor-based ([x - y*floor(x/y)], sign of the
+       divisor), NOT the truncated C [fmod] ([x - y*trunc(x/y)], sign of the
+       dividend) that Float32.fmod/Float64.fmod contract for; GLSL has no
+       [fmod] builtin under any name. Lower to the [sarek_fmod] helper emitted
+       in the preamble by [gen_fmod_helper], ahead of both the pure registry
+       (which would emit the raw un-suffixed [fmod(...)] glslang rejects) and
+       the unqualified match arms. Routing through a function (not inlining
+       [x - y*trunc(x/y)]) evaluates each argument exactly once — the same
+       single-eval guarantee as [sarek_copysign]/[sarek_smod]. *)
+    Buffer.add_string buf !current_fmod_name ;
     Buffer.add_char buf '(' ;
     List.iteri
       (fun i e ->
@@ -1357,6 +1386,13 @@ let compute_smod_name (k : kernel) : string =
 let compute_copysign_name (k : kernel) : string =
   compute_collision_safe_name k ~base:"sarek_copysign"
 
+(** Choose a collision-safe name for the C-[fmod] helper of kernel [k]. Same
+    scope and collision rules as {!compute_smod_name}; the distinct base
+    ([sarek_fmod]) keeps it from colliding with the other helpers, only with
+    user param/helper identifiers. *)
+let compute_fmod_name (k : kernel) : string =
+  compute_collision_safe_name k ~base:"sarek_fmod"
+
 (** Emit the [sarek_copysign] sign-copy helper when the kernel uses [copysign].
 
     GLSL has no [copysign] builtin. The exact, branch-free lowering transfers
@@ -1402,6 +1438,46 @@ let gen_copysign_helper buf (k : kernel) =
             uvec2 uy = unpackDouble2x32(y); ux.y = (ux.y & 0x7FFFFFFFu) | \
             (uy.y & 0x80000000u); return packDouble2x32(ux); }\n\n"
            !current_copysign_name)
+  end
+
+(** Emit the [sarek_fmod] C-[fmod] helper when the kernel uses [fmod].
+
+    GLSL has no [fmod] builtin, and its [mod()] is floor-based (divisor-signed),
+    so it cannot implement the truncated C [fmod] the intrinsic contracts for.
+    The lowering [x - y * trunc(x / y)] yields the dividend-signed remainder;
+    [trunc] is a GLSL core builtin for both [float] and [double] (GLSL 4.5
+    §8.3), so no polyfill is required for the double overload.
+
+    Two overloads are emitted, resolved by argument type at the call site (same
+    scheme as {!gen_copysign_helper}):
+
+    - [float]: always emitted when [fmod] is used.
+    - [double]: emitted only when the kernel also uses float64 (the [double]
+      type is gated behind [GL_ARB_gpu_shader_fp64], already emitted under the
+      same [kernel_uses_float64] condition). A [Float64.fmod] kernel is float64
+      by construction, so its call always finds the double overload; the
+      then-unused float overload is harmless dead code.
+
+    The helper name is [!current_fmod_name] (see {!compute_fmod_name}), never a
+    literal, so it cannot collide with a user param or helper identifier.
+
+    Note the single-pass [trunc(x/y)] is only exact while the quotient fits the
+    mantissa (unlike the PTX backend's iterative reduction); this matches the
+    accuracy GLSL's own [mod()] and float arithmetic already provide, and is
+    exact for the moderate-magnitude operands GPU kernels use in practice. *)
+let gen_fmod_helper buf (k : kernel) =
+  if Sarek_ir_analysis.kernel_uses_intrinsic "fmod" k then begin
+    Buffer.add_string
+      buf
+      (Printf.sprintf
+         "float %s(float x, float y) { return x - y * trunc(x / y); }\n\n"
+         !current_fmod_name) ;
+    if Sarek_ir_analysis.kernel_uses_float64 k then
+      Buffer.add_string
+        buf
+        (Printf.sprintf
+           "double %s(double x, double y) { return x - y * trunc(x / y); }\n\n"
+           !current_fmod_name)
   end
 
 (** Resolve the software f64-transcendental helper family a kernel needs and set
@@ -1485,6 +1561,7 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
   Hashtbl.clear helper_vec_param_indices ;
   current_smod_name := compute_smod_name k ;
   current_copysign_name := compute_copysign_name k ;
+  current_fmod_name := compute_fmod_name k ;
   compute_f64_softmath k ;
   let buf = Buffer.create 1024 in
   Buffer.add_string
@@ -1536,6 +1613,10 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
      the kernel uses [copysign]. *)
   gen_copysign_helper buf k ;
 
+  (* Emit the C-fmod helper (before user helpers, which may call it) when the
+     kernel uses [fmod]. *)
+  gen_fmod_helper buf k ;
+
   (* Emit the software f64-transcendental helper family (forward-declared,
      after copysign which they may call, before user helpers which may call
      them) when the kernel invokes a [Float64] transcendental. *)
@@ -1586,6 +1667,7 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   Hashtbl.clear helper_vec_param_indices ;
   current_smod_name := compute_smod_name k ;
   current_copysign_name := compute_copysign_name k ;
+  current_fmod_name := compute_fmod_name k ;
   compute_f64_softmath k ;
   (* Use variant types directly from kernel IR *)
   current_variants := k.kern_variants ;
@@ -1645,6 +1727,10 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   (* Emit the sign-copy helper (before user helpers, which may call it) when
      the kernel uses [copysign]. *)
   gen_copysign_helper buf k ;
+
+  (* Emit the C-fmod helper (before user helpers, which may call it) when the
+     kernel uses [fmod]. *)
+  gen_fmod_helper buf k ;
 
   (* Emit the software f64-transcendental helper family (forward-declared,
      after copysign which they may call, before user helpers which may call

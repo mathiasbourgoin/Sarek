@@ -98,6 +98,11 @@ let generic_math_template name =
  * registered once and iterated over every path that exposes them, instead of
  * being hand-duplicated per path.
  *
+ * [fmod] is deliberately Float64-only (Float64.fmod), NOT a Math.Float64 name,
+ * so it too is absent from math_float64_list — but unlike the 11 below it DOES
+ * have interpreter support (eval_float64_math_intrinsic "fmod"), so its absence
+ * is an API-surface choice, not the miscompile hazard the note below describes.
+ *
  * IMPORTANT — intentional float64 drift (do not "complete" this table):
  * math_float64_list has 16 entries, missing_from_math_float64 lists the 11
  * intrinsics present in float64_list but absent from math_float64_list:
@@ -150,6 +155,7 @@ let float32_list =
     ("log1p", "log1pf", "log1p");
     ("hypot", "hypotf", "hypot");
     ("copysign", "copysignf", "copysign");
+    ("fmod", "fmodf", "fmod");
   ]
 
 (** The 27-entry float64 math list (same name on every backend, modulo the GLSL
@@ -183,6 +189,7 @@ let float64_list =
     "fma";
     "min";
     "max";
+    "fmod";
   ]
 
 (** The 16-entry Math.Float64 list — intentionally a strict subset of

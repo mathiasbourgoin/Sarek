@@ -119,6 +119,12 @@ let%sarek_intrinsic (hypot : float -> float -> float) =
 let%sarek_intrinsic (copysign : float -> float -> float) =
   {device = dev "copysign" "copysign"; ocaml = Stdlib.copysign}
 
+(* Floating-point remainder with C [fmod] semantics (result sign = dividend
+   sign, magnitude < |divisor|). Explicit function form of float modulo; the
+   [mod] operator stays integer-only. [Float.rem] is OCaml's C [fmod]. *)
+let%sarek_intrinsic (fmod : float -> float -> float) =
+  {device = dev "fmod" "fmod"; ocaml = Float.rem}
+
 (******************************************************************************
  * Conversion functions
  *

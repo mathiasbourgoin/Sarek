@@ -1766,6 +1766,19 @@ and emit_intrinsic_native buf alloc env path name args : string =
         unsupported
           ("copysign: operands " ^ ra ^ ", " ^ rb
          ^ " must both be f32 or both f64; cast one operand first")
+  | "fmod" ->
+      (* C fmod (Float32.fmod / Float64.fmod): exact iterative reduction shared
+         with the float [Mod] binop lowering (see emit_float_fmod). Both operands
+         must share a width — a mixed-width op would be invalid PTX. *)
+      let ra, rb = binary_args "fmod" in
+      if is_f64_reg ra && is_f64_reg rb then
+        emit_float_fmod buf alloc ~is64:true ra rb
+      else if is_f32_reg ra && is_f32_reg rb then
+        emit_float_fmod buf alloc ~is64:false ra rb
+      else
+        unsupported
+          ("fmod: operands " ^ ra ^ ", " ^ rb
+         ^ " must both be f32 or both f64; cast one operand first")
   | "hypot" ->
       (* hypot = sqrt(x² + y²) via mul + fma + sqrt. No overflow/underflow
          rescaling: exact enough for moderate magnitudes (f64 uses only

@@ -295,6 +295,18 @@ let eval_float32_math_intrinsic name args =
           Interp_error.raise_error
             (Unsupported_operation
                {operation = "fma"; reason = "requires 3 arguments"}))
+  | "fmod" -> (
+      (* C fmod = OCaml Float.rem (sign of dividend, magnitude < |divisor|),
+         rounded back to float32. Matches Sarek_ir_interp_value's float Mod. *)
+      match args with
+      | arg1 :: arg2 :: _ ->
+          Some
+            (VFloat32
+               (F32.to_float32 (Float.rem (to_float32 arg1) (to_float32 arg2))))
+      | _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "fmod"; reason = "requires 2 arguments"}))
   | "min" -> (
       match args with
       | arg1 :: arg2 :: _ ->
@@ -527,6 +539,16 @@ let eval_float64_math_intrinsic name args =
                  operation = "copysign (float64)";
                  reason = "requires 2 arguments";
                }))
+  | "fmod" -> (
+      (* C fmod = OCaml Float.rem (sign of dividend, magnitude < |divisor|).
+         Matches Sarek_ir_interp_value's float64 Mod arm. *)
+      match args with
+      | arg1 :: arg2 :: _ ->
+          Some (VFloat64 (Float.rem (to_float64 arg1) (to_float64 arg2)))
+      | _ ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {operation = "fmod (float64)"; reason = "requires 2 arguments"}))
   | _ -> None
 
 (** Int32 math intrinsics *)

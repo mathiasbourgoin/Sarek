@@ -321,6 +321,39 @@ let test_binop_float_mod_is_fmod () =
   | VFloat64 f -> check (float 0.0) "-7.5 fmod 2 keeps dividend sign" (-1.5) f
   | _ -> fail "expected VFloat64"
 
+let test_fmod_intrinsic () =
+  (* Float32.fmod / Float64.fmod (float-mod-intrinsic): the explicit function
+     form reaches the eval_float{32,64}_math_intrinsic "fmod" arms and returns
+     C fmod (Float.rem) — sign of the dividend, magnitude < |divisor|. Probes
+     all four sign quadrants and a large-|x| case. *)
+  let env = make_env () in
+  let state = make_state () in
+  let f64 x y =
+    EIntrinsic (["Float64"], "fmod", [EConst (CFloat64 x); EConst (CFloat64 y)])
+  in
+  let f32 x y =
+    EIntrinsic (["Float32"], "fmod", [EConst (CFloat32 x); EConst (CFloat32 y)])
+  in
+  let ck64 name x y expected =
+    match eval_expr state env (f64 x y) with
+    | VFloat64 f -> check (float 0.0) name expected f
+    | _ -> fail "expected VFloat64"
+  in
+  let ck32 name x y expected =
+    match eval_expr state env (f32 x y) with
+    | VFloat32 f -> check (float 1e-6) name expected f
+    | _ -> fail "expected VFloat32"
+  in
+  (* Four sign quadrants: result sign follows the dividend, not the divisor. *)
+  ck64 "f64 +7.5 % +2" 7.5 2.0 1.5 ;
+  ck64 "f64 -7.5 % +2" (-7.5) 2.0 (-1.5) ;
+  ck64 "f64 +7.5 % -2" 7.5 (-2.0) 1.5 ;
+  ck64 "f64 -7.5 % -2" (-7.5) (-2.0) (-1.5) ;
+  (* |x| >> |y|: exact for this magnitude. *)
+  ck64 "f64 1e17 % 3" 1e17 3.0 1.0 ;
+  ck32 "f32 +7.5 % +2" 7.5 2.0 1.5 ;
+  ck32 "f32 -7.5 % -2" (-7.5) (-2.0) (-1.5)
+
 let test_binop_eq () =
   let env = make_env () in
   let state = make_state () in
@@ -483,6 +516,7 @@ let () =
             test_binop_int64_bitwise_and_shift;
           test_case "equals" `Quick test_binop_eq;
           test_case "float_mod_is_fmod" `Quick test_binop_float_mod_is_fmod;
+          test_case "fmod_intrinsic" `Quick test_fmod_intrinsic;
           test_case
             "shr_negative_is_arithmetic"
             `Quick

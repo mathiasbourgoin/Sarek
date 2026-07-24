@@ -121,6 +121,11 @@ let%sarek_intrinsic (hypot : float32 -> float32 -> float32) =
 let%sarek_intrinsic (copysign : float32 -> float32 -> float32) =
   {device = dev "copysignf" "copysign"; ocaml = Stdlib.copysign}
 
+(* Float modulo with C [fmod] semantics; explicit function form ([mod] stays
+   integer-only). [Float.rem] is OCaml's C [fmod]. *)
+let%sarek_intrinsic (fmod : float32 -> float32 -> float32) =
+  {device = dev "fmodf" "fmod"; ocaml = Float.rem}
+
 (******************************************************************************
  * Short aliases for backward compatibility
  ******************************************************************************)

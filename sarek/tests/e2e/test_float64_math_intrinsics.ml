@@ -329,6 +329,28 @@ let binary_specs =
           (x, y));
       b_tol = 0.0;
     };
+    {
+      (* Float64.fmod (float-mod-intrinsic): C fmod = OCaml Float.rem. Result
+         sign follows the DIVIDEND, magnitude < |divisor|. b_gen cycles all
+         four (sign x, sign y) quadrants and uses fractional divisors with a
+         wide |x|/|y| ratio. tol is 1e-9, not 0: the PTX emitter's iterative
+         reduction is bit-exact vs Float.rem, but the single-pass GLSL helper
+         [x - y*trunc(x/y)] carries a couple of ULPs of rounding/cancellation
+         error at these magnitudes — a shared tol must cover the loosest
+         backend. The [y = ±0 -> NaN] domain is exercised by the PTX-emitter
+         and interpreter unit tests instead; this report-only harness compares
+         by magnitude and would mis-handle NaN. *)
+      b_name = "fmod";
+      b_ocaml = Float.rem;
+      b_gen =
+        (fun i ->
+          let mag_x = bounded 0.5 900.0 i in
+          let mag_y = bounded 0.3 3.3 (i + 17) in
+          let sx = if i land 1 = 0 then 1.0 else -1.0 in
+          let sy = if i land 2 = 0 then 1.0 else -1.0 in
+          (sx *. mag_x, sy *. mag_y));
+      b_tol = 1e-9;
+    };
   ]
 
 (** {1 Runner} *)

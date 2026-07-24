@@ -557,3 +557,87 @@ let kernel_uses_nonfinite_float64 k =
   || List.exists decl_uses_nonfinite_f64 k.kern_locals
   || stmt_uses_nonfinite_f64 k.kern_body
   || List.exists helper_uses_nonfinite_f64 k.kern_funcs
+
+(** {1 Generic intrinsic-usage detection}
+
+    Whether a kernel calls a named [EIntrinsic] anywhere. Generalizes the
+    bespoke [kernel_uses_copysign] / [kernel_uses_int_mod] walkers for backends
+    that must conditionally emit a helper for one intrinsic (e.g. the GLSL
+    [sarek_fmod] helper for [Float32.fmod]/[Float64.fmod], which GLSL has no
+    builtin for). Matches on the intrinsic [name] only, ignoring the module
+    path, so both the [Float32] and [Float64] spellings are detected. Inline
+    native GPU code ([SNative]) is opaque text and is conservatively assumed to
+    reference the intrinsic, mirroring the copysign/int_mod detectors. *)
+let rec expr_uses_intrinsic name = function
+  | EIntrinsic (_, n, args) ->
+      String.equal n name || List.exists (expr_uses_intrinsic name) args
+  | EBinop (_, e1, e2) ->
+      expr_uses_intrinsic name e1 || expr_uses_intrinsic name e2
+  | EUnop (_, e) -> expr_uses_intrinsic name e
+  | EArrayRead (_, idx) -> expr_uses_intrinsic name idx
+  | EArrayReadExpr (base, idx) ->
+      expr_uses_intrinsic name base || expr_uses_intrinsic name idx
+  | ERecordField (e, _) -> expr_uses_intrinsic name e
+  | ECast (_, e) -> expr_uses_intrinsic name e
+  | ETuple exprs -> List.exists (expr_uses_intrinsic name) exprs
+  | EApp (fn, args) ->
+      expr_uses_intrinsic name fn || List.exists (expr_uses_intrinsic name) args
+  | ERecord (_, fields) ->
+      List.exists (fun (_, e) -> expr_uses_intrinsic name e) fields
+  | EVariant (_, _, args) -> List.exists (expr_uses_intrinsic name) args
+  | EArrayLen _ -> false
+  | EArrayCreate (_, size, _) -> expr_uses_intrinsic name size
+  | EIf (cond, then_, else_) ->
+      expr_uses_intrinsic name cond
+      || expr_uses_intrinsic name then_
+      || expr_uses_intrinsic name else_
+  | EMatch (scrutinee, cases) ->
+      expr_uses_intrinsic name scrutinee
+      || List.exists (fun (_, e) -> expr_uses_intrinsic name e) cases
+  | EConst _ | EVar _ -> false
+
+let rec lvalue_uses_intrinsic name = function
+  | LVar _ -> false
+  | LArrayElem (_, idx) -> expr_uses_intrinsic name idx
+  | LArrayElemExpr (base, idx) ->
+      expr_uses_intrinsic name base || expr_uses_intrinsic name idx
+  | LRecordField (lv, _) -> lvalue_uses_intrinsic name lv
+
+let rec stmt_uses_intrinsic name = function
+  | SAssign (lv, e) ->
+      lvalue_uses_intrinsic name lv || expr_uses_intrinsic name e
+  | SSeq stmts -> List.exists (stmt_uses_intrinsic name) stmts
+  | SIf (cond, then_, else_) ->
+      expr_uses_intrinsic name cond
+      || stmt_uses_intrinsic name then_
+      || Option.fold ~none:false ~some:(stmt_uses_intrinsic name) else_
+  | SWhile (cond, body) ->
+      expr_uses_intrinsic name cond || stmt_uses_intrinsic name body
+  | SFor (_, lo, hi, _, body) ->
+      expr_uses_intrinsic name lo
+      || expr_uses_intrinsic name hi
+      || stmt_uses_intrinsic name body
+  | SMatch (scrutinee, cases) ->
+      expr_uses_intrinsic name scrutinee
+      || List.exists (fun (_, s) -> stmt_uses_intrinsic name s) cases
+  | SReturn e | SExpr e -> expr_uses_intrinsic name e
+  | SBarrier | SWarpBarrier | SEmpty | SMemFence -> false
+  | SLet (_, e, body) | SLetMut (_, e, body) ->
+      expr_uses_intrinsic name e || stmt_uses_intrinsic name body
+  | SPragma (_, body) | SBlock body -> stmt_uses_intrinsic name body
+  | SNative _ -> true
+
+let decl_uses_intrinsic name = function
+  | DParam _ -> false
+  | DLocal (_, init) ->
+      Option.fold ~none:false ~some:(expr_uses_intrinsic name) init
+  | DShared (_, _, size) ->
+      Option.fold ~none:false ~some:(expr_uses_intrinsic name) size
+
+let kernel_uses_intrinsic name k =
+  List.exists (decl_uses_intrinsic name) k.kern_params
+  || List.exists (decl_uses_intrinsic name) k.kern_locals
+  || stmt_uses_intrinsic name k.kern_body
+  || List.exists
+       (fun (hf : helper_func) -> stmt_uses_intrinsic name hf.hf_body)
+       k.kern_funcs
