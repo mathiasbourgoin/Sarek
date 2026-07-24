@@ -120,6 +120,8 @@ test_negative:
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_reserved_prefix_for.cma > "$$out" 2>&1; if grep -q "identifiers beginning with 'sarek_' are reserved" "$$out"; then echo "  PASS: reserved-prefix for-loop variable rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing unregistered record field-type rejection (aligned ABI safety)..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_unregistered_field.cma > "$$out" 2>&1; if grep -qE "unknown (size|alignment) for field type" "$$out"; then echo "  PASS: unregistered field type rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@echo "Testing recursive-call vector-swap rejection (tail-recursion + vector)..."
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_tailrec_vec_swap.cma > "$$out" 2>&1; if grep -q "must pass its own vector parameter" "$$out"; then echo "  PASS: recursive vector-swap rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "All negative tests checked (see KNOWN-ISSUE line above for the one non-blocking gap, if any)"
 
 

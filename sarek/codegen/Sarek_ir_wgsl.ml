@@ -1004,6 +1004,9 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
       (Codegen_error.unsupported_construct
          "f64 parameter"
          "WGSL: f64 unsupported — WebGPU has no float64 type") ;
+  (* Inline vector-parameter helpers (buffers cannot be passed as WGSL function
+     arguments — see Sarek_ir_inline_vec). *)
+  let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"WGSL" k in
   scalar_param_names := [] ;
   current_variants := k.kern_variants ;
   let buf = Buffer.create 1024 in
@@ -1027,6 +1030,9 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
       (Codegen_error.unsupported_construct
          "f64 parameter"
          "WGSL: f64 unsupported — WebGPU has no float64 type") ;
+  (* Inline vector-parameter helpers (buffers cannot be passed as WGSL function
+     arguments — see Sarek_ir_inline_vec). *)
+  let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"WGSL" k in
   scalar_param_names := [] ;
   current_variants := k.kern_variants ;
   let buf = Buffer.create 1024 in

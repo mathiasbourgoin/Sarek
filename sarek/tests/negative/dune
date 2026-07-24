@@ -38,6 +38,17 @@
   (= %{profile} "negative")))
 
 (library
+ (name neg_test_tailrec_vec_swap)
+ (modules test_tailrec_vec_swap)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
  (name neg_test_convention_kernel_fail)
  (modules test_convention_kernel_fail)
  (libraries sarek sarek.stdlib sarek.ppx.lib sarek_geometry)

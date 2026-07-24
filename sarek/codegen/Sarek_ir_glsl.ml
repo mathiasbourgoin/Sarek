@@ -1226,6 +1226,9 @@ let gen_copysign_helper buf (k : kernel) =
 *)
 let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
     =
+  (* Inline vector-parameter helpers (buffers cannot be passed as GLSL function
+     arguments — see Sarek_ir_inline_vec). *)
+  let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"Vulkan" k in
   (* Clear per-kernel state *)
   Hashtbl.clear helper_vec_param_indices ;
   current_smod_name := compute_smod_name k ;
@@ -1317,6 +1320,9 @@ let gen_variant_def buf v =
 *)
 let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
+  (* Inline vector-parameter helpers (buffers cannot be passed as GLSL function
+     arguments — see Sarek_ir_inline_vec). *)
+  let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"Vulkan" k in
   (* Clear per-kernel state *)
   Hashtbl.clear helper_vec_param_indices ;
   current_smod_name := compute_smod_name k ;

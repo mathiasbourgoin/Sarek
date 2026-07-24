@@ -60,6 +60,14 @@
  (name test_ptx_snapshot)
  (libraries sarek.codegen alcotest unix str))
 
+; Shader-validation gate for recursion + vector-parameter helpers.
+; GLSL assembled with glslangValidator; WGSL validated with naga if present,
+; else skipped cleanly (mirrors the ptxas gate above). CPU-only, no device.
+
+(test
+ (name test_shader_recursion_vector)
+ (libraries sarek.codegen alcotest unix))
+
 ; Software f64 transcendentals for PTX: IR-level accuracy vs the OCaml stdlib
 ; (pure scalar evaluation of the helper bodies — CPU-only, no device needed)
 
@@ -89,3 +97,5 @@
 (test
  (name test_soa)
  (libraries spoc_core spoc.ir ctypes alcotest))
+
+

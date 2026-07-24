@@ -553,6 +553,23 @@
  (action
   (run %{dep:test_vulkan_float64.exe})))
 
+; Recursion + vector-parameter helper on Vulkan: builds a loop-form
+; vector-reduction helper (the shape tail-recursion elimination produces) and
+; runs it end-to-end, exercising the vector-helper inlining pass through GLSL
+; and glslangValidator to a real device. Device-filtered to Vulkan; skips
+; cleanly if none present.
+
+(executable
+ (name test_vulkan_recursion_vector)
+ (modules test_vulkan_recursion_vector)
+ (optional)
+ (libraries sarek_ir sarek_execute sarek_vulkan spoc_core))
+
+(rule
+ (alias e2e-gpu)
+ (action
+  (run %{dep:test_vulkan_recursion_vector.exe})))
+
 ; PR-5a proof: FFI-free stdlib metadata population
 ; Asserts that sarek_stdlib_meta populates Sarek_ppx_registry without
 ; any Ctypes or Spoc_core dependency (sarek_frontend + sarek_stdlib_meta only).

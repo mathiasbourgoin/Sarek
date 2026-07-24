@@ -30,11 +30,18 @@ let fresh_transform_id () = Atomic.fetch_and_add transform_var_counter 1
     - Recursive call: update loop vars (continue stays true) *)
 let eliminate_tail_recursion (fname : string) (params : tparam list)
     (body : texpr) (loc : Sarek_ast.loc) : texpr =
-  (* Create loop variable IDs for each parameter - use __name to avoid C redeclaration *)
+  (* Create loop variable IDs for each parameter - use __name to avoid C
+     redeclaration. Vector ([TVec]) parameters are EXCLUDED: on GPU backends a
+     vector/buffer cannot be reassigned (GLSL/WGSL cannot even take one as a
+     function argument), so it stays a plain parameter reference — never a
+     mutable loop variable — and a recursive call must pass it unchanged (see
+     the self-call transform below, which rejects a different vector). *)
   let loop_vars =
-    List.map
+    List.filter_map
       (fun p ->
-        (p.tparam_name, p.tparam_id, fresh_transform_id (), p.tparam_type))
+        if p.tparam_is_vec then None
+        else
+          Some (p.tparam_name, p.tparam_id, fresh_transform_id (), p.tparam_type))
       params
   in
 
@@ -201,24 +208,69 @@ let eliminate_tail_recursion (fname : string) (params : tparam list)
              __a := _tmp_0;
              __b := _tmp_1;
         *)
-        (* Create temporary variables for each argument *)
+        (* Pair each parameter with its argument. A vector parameter must be
+           passed back unchanged (it has no loop variable to update); passing a
+           DIFFERENT vector is meaningless on GLSL/WGSL — where the call is
+           inlined and the buffer name substituted — so reject it with a located
+           error. Only non-vector parameters become loop-variable updates. *)
+        let pairs =
+          if List.length params <> List.length args then
+            Sarek_error.raise_error
+              (Sarek_error.Invalid_kernel
+                 ( Printf.sprintf
+                     "recursive call to '%s' has %d arguments but the function \
+                      takes %d parameters"
+                     fname
+                     (List.length args)
+                     (List.length params),
+                   expr.te_loc ))
+          else List.combine params args
+        in
+        let scalar_pairs =
+          List.filter
+            (fun (p, arg) ->
+              if p.tparam_is_vec then begin
+                (match arg.te with
+                | TEVar (n, id) when n = p.tparam_name && id = p.tparam_id -> ()
+                | _ ->
+                    Sarek_error.raise_error
+                      (Sarek_error.Invalid_kernel
+                         ( Printf.sprintf
+                             "recursive call to '%s' must pass its own vector \
+                              parameter '%s' unchanged; passing a different \
+                              vector is not supported (a vector/buffer cannot \
+                              be reassigned on GPU backends)"
+                             fname
+                             p.tparam_name,
+                           arg.te_loc ))) ;
+                false
+              end
+              else true)
+            pairs
+        in
+        (* Create temporary variables for each non-vector argument *)
         let temps =
           List.mapi
-            (fun i arg ->
+            (fun i (_p, arg) ->
               let tmp_id = fresh_transform_id () in
               let tmp_name = "_tmp_" ^ string_of_int i in
               (tmp_name, tmp_id, arg))
-            args
+            scalar_pairs
         in
         (* Create assignments from temps to loop vars *)
         let assigns =
           List.map2
-            (fun (name, _orig_id, loop_id, _ty) (tmp_name, tmp_id, arg) ->
+            (fun (p, _arg) (tmp_name, tmp_id, arg) ->
+              let _, _, loop_id, _ =
+                List.find
+                  (fun (n, oid, _, _) -> n = p.tparam_name && oid = p.tparam_id)
+                  loop_vars
+              in
               let tmp_ref =
                 {te = TEVar (tmp_name, tmp_id); ty = arg.ty; te_loc = loc}
               in
-              mk_loop_assign name loop_id tmp_ref)
-            loop_vars
+              mk_loop_assign p.tparam_name loop_id tmp_ref)
+            scalar_pairs
             temps
         in
         (* Wrap assigns in let bindings for temps *)
