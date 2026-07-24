@@ -41,17 +41,6 @@ let half_bits_of_float x =
   else if exp >= 31 then sign lor 0x7c00
   else sign lor (exp lsl 10) lor mant
 
-let float_of_half h =
-  let sign = if h land 0x8000 <> 0 then -1.0 else 1.0 in
-  let exp = (h lsr 10) land 0x1f in
-  let mant = h land 0x3ff in
-  if exp = 0 then sign *. float_of_int mant *. (2.0 ** -24.0)
-  else if exp = 31 then sign *. infinity
-  else
-    sign
-    *. (1.0 +. (float_of_int mant /. 1024.0))
-    *. (2.0 ** float_of_int (exp - 15))
-
 (* rocWMMA tiled SGEMM: block = one wavefront computes a 16x16 C tile; K marched
    in steps of 16 = one 16x16x16 fragment MAC per step (exactly the L15a tile).
    alpha=1, beta=0. M,N,K multiples of 16. *)
@@ -80,7 +69,12 @@ let fill rows cols seed =
   Array.init (rows * cols) (fun i ->
       float_of_int ((((i * 2654435761) + seed) mod 17) - 8) /. 8.0)
 
-(* CPU reference on the half-rounded inputs (matches device precision). *)
+(* CPU reference on the TRUE (un-rounded) inputs, accumulated in OCaml float
+   (IEEE-754 f64). This is the ideal GEMM the device result is graded against:
+   the device rounds its inputs to f16, so the difference device-vs-reference is
+   dominated by that f16 input rounding (see [close_enough] for the tolerance
+   derivation). Grading against the ideal — rather than a CPU copy that also
+   rounds to f16 — is what makes this an actual correctness gate. *)
 let cpu_gemm_half ah bh ~m ~n ~k =
   let out = Array.make (m * n) 0.0 in
   for row = 0 to m - 1 do
@@ -101,8 +95,6 @@ let run_rocwmma hdev ~m ~n ~k =
   let bh = Bigarray.(Array1.create int16_unsigned c_layout (k * n)) in
   Array.iteri (fun i x -> ah.{i} <- half_bits_of_float x) a ;
   Array.iteri (fun i x -> bh.{i} <- half_bits_of_float x) b ;
-  let a_rounded = Array.init (m * k) (fun i -> float_of_half ah.{i}) in
-  let b_rounded = Array.init (k * n) (fun i -> float_of_half bh.{i}) in
   let da = HA.Memory.alloc hdev (m * k) Bigarray.int16_unsigned in
   let db = HA.Memory.alloc hdev (k * n) Bigarray.int16_unsigned in
   let dc = HA.Memory.alloc hdev (m * n) Bigarray.float32 in
@@ -146,7 +138,7 @@ let run_rocwmma hdev ~m ~n ~k =
   let hc = Bigarray.(Array1.create float32 c_layout (m * n)) in
   HA.Memory.device_to_host ~src:dc ~dst:hc ;
   let result = Array.init (m * n) (fun i -> hc.{i}) in
-  let expected = cpu_gemm_half a_rounded b_rounded ~m ~n ~k in
+  let expected = cpu_gemm_half a b ~m ~n ~k in
   HA.Memory.free da ;
   HA.Memory.free db ;
   HA.Memory.free dc ;
@@ -195,18 +187,45 @@ let run_sarek_tiled sdev ~m ~n ~k =
   let t1 = Unix.gettimeofday () in
   (t1 -. t0) *. 1000.0 /. float_of_int iters
 
+(* Correctness gate tolerance, DERIVED from the f16 input rounding (not a fixed
+   magic constant). Inputs are f16 (IEEE-754 binary16): 10-bit mantissa, so the
+   unit roundoff is u = 2^-11 ~ 4.88e-4 relative. The device rounds A and B to
+   f16 then accumulates the K-length dot product in f32; the reference is the
+   ideal GEMM in f64. The device-vs-reference error is therefore dominated by
+   the f16 input rounding, which for a K-term dot product grows between
+   sqrt(K)*u (statistical / random-walk, independent rounding errors) and K*u
+   (worst-case linear, fully-correlated errors) in RELATIVE terms.
+
+   We gate at the statistical scale with a small safety constant C:
+       rel_tol = C * sqrt(K) * u
+   C = 4 gives ~4 standard deviations of headroom over the random-walk estimate
+   for the pseudo-random [-1,1] inputs produced by [fill], while remaining ~1-2
+   orders of magnitude TIGHTER than the worst-case K*u bound (and ~4x-8x tighter
+   than the previous 3e-3 + K*5e-4 gate, which at K=1024 admitted a 51% error).
+
+   For reference entries near zero (cancellation) the relative test is
+   meaningless, so we add an absolute floor. Each product term |a_i*b_i| <= 1
+   because [fill] constrains |a_i|,|b_i| <= 1 (P = 1 below); the absolute error
+   of the sum is then bounded on the same C*sqrt(K)*u scale, giving
+       abs_floor = C * sqrt(K) * u * P.
+   The per-entry test is  |got - ref| <= rel_tol*|ref| + abs_floor .
+   [max_ratio] is the worst-case (error / per-entry-tolerance); <= 1 passes. *)
 let close_enough result expected ~k =
   let n = Array.length expected in
-  (* f16 inputs: relative tolerance scaled by K accumulation in half precision *)
-  let eps = 3e-3 +. (float_of_int k *. 5e-4) in
-  let bad = ref 0 and maxrel = ref 0.0 in
+  let u = 2.0 ** -11.0 in
+  let c = 4.0 in
+  let rel_tol = c *. sqrt (float_of_int k) *. u in
+  let product_bound = 1.0 in
+  let abs_floor = rel_tol *. product_bound in
+  let bad = ref 0 and max_ratio = ref 0.0 in
   for i = 0 to n - 1 do
     let e = expected.(i) and g = result.(i) in
-    let rel = abs_float (e -. g) /. (1.0 +. abs_float e) in
-    if rel > !maxrel then maxrel := rel ;
-    if rel > eps then incr bad
+    let tol = (rel_tol *. abs_float e) +. abs_floor in
+    let ratio = abs_float (e -. g) /. tol in
+    if ratio > !max_ratio then max_ratio := ratio ;
+    if ratio > 1.0 then incr bad
   done ;
-  (!bad = 0, !maxrel)
+  (!bad = 0, !max_ratio)
 
 let () =
   let devices = SDevice.init () in
@@ -236,7 +255,7 @@ let () =
               let result, expected, ms = run_rocwmma hdev ~m ~n ~k in
               let ok, maxrel = close_enough result expected ~k in
               Printf.printf
-                "    rocWMMA %dx%dx%d : %s (max rel err %.4g, %.4f ms)\n"
+                "    rocWMMA %dx%dx%d : %s (max tol ratio %.4g, %.4f ms)\n"
                 m
                 n
                 k
