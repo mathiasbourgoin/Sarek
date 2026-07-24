@@ -81,6 +81,37 @@ let contains ptx marker =
   done ;
   !found
 
+(** First index of [marker] in [ptx], or [-1] if absent. *)
+let index_of ptx marker =
+  let mlen = String.length marker and plen = String.length ptx in
+  let rec loop i =
+    if i > plen - mlen then -1
+    else if String.sub ptx i mlen = marker then i
+    else loop (i + 1)
+  in
+  loop 0
+
+(** Assert the first occurrence of [a] strictly precedes the first occurrence of
+    [b] in [ptx] (both must be present). Pins textual/emission order. *)
+let assert_before ptx a b =
+  let ia = index_of ptx a and ib = index_of ptx b in
+  if ia < 0 then
+    Alcotest.fail (Printf.sprintf "marker %S absent\nPTX:\n%s" a ptx) ;
+  if ib < 0 then
+    Alcotest.fail (Printf.sprintf "marker %S absent\nPTX:\n%s" b ptx) ;
+  if not (ia < ib) then
+    Alcotest.fail
+      (Printf.sprintf
+         "expected %S (index %d) to precede %S (index %d) — operand emission \
+          order reversed\n\
+          PTX:\n\
+          %s"
+         a
+         ia
+         b
+         ib
+         ptx)
+
 let test_vector_add_markers () =
   let k = make_vector_add_kernel () in
   let ptx = Sarek_ir_ptx.generate k in
@@ -443,6 +474,50 @@ let test_f32_transcendental_markers () =
   assert_contains ptx "lg2.approx.f32" ;
   assert_contains ptx "ex2.approx.f32" ;
   assert_contains ptx "div.approx.f32"
+
+(** Regression (#279 CodeRabbit "Major"): every multi-operand PTX intrinsic must
+    emit its operand sub-expressions in LEFT-TO-RIGHT source order.
+
+    [emit_expr] is side-effecting (it appends instructions to the buffer and
+    allocates fresh registers), so binding the two operands of a binary
+    intrinsic through a tuple — [(emit_expr a, emit_expr b)], as
+    [intr_binary_args] did — leaves component evaluation order UNSPECIFIED, and
+    ocamlopt evaluates tuple components right-to-left: it emitted operand [b]'s
+    instructions before operand [a]'s, reversing register numbering and the
+    order of observable side effects (array reads, atomics) relative to source.
+
+    The pre-existing goldens exercised binary intrinsics only with simple
+    register-only operands (e.g. [fmod av av]), which emit no operand
+    instructions and are therefore order-insensitive — the golden gap that let
+    the reversal slip through. Here the two [fmod] operands are DISTINGUISHABLE
+    nested intrinsics ([sin] vs [cos]): with correct left-to-right emission the
+    first operand's [sin.approx.f32] precedes the second operand's
+    [cos.approx.f32]. A tuple / right-to-left regression flips that order and
+    fails [assert_before]. *)
+let test_binary_intrinsic_operand_order () =
+  let out = make_var "out" (TVec TFloat32) in
+  let a = make_var "a" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let path name args = EIntrinsic (["Sarek_stdlib"; "Float32"], name, args) in
+  let av = EArrayRead ("a", EVar tid) in
+  (* out.[i] <- fmod (sin a.[i]) (cos a.[i]) — a binary intrinsic
+     ([intr_binary_args]) whose two operands are distinct side-effecting
+     sub-expressions. *)
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("out", EVar tid),
+            path "fmod" [path "sin" [av]; path "cos" [av]] ) )
+  in
+  let mk v = DParam (v, Some {arr_elttype = TFloat32; arr_memspace = Global}) in
+  let k = base_kernel "binop_operand_order" [mk out; mk a] body [] in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "sin.approx.f32" ;
+  assert_contains ptx "cos.approx.f32" ;
+  (* First operand ([sin]) emitted before the second ([cos]). *)
+  assert_before ptx "sin.approx.f32" "cos.approx.f32"
 
 (** Extended atomics emit atom.{shared,global}.<op>.<ty>; sub lowers to
     neg + add. *)
@@ -2352,6 +2427,25 @@ let test_ptxas_assembles () =
             ]
             fmod_body
             [] );
+        (* #279 operand-order regression: a binary intrinsic ([fmod]) whose two
+           operands are distinct side-effecting sub-expressions ([sin]/[cos]).
+           Beyond the marker order-check above, prove the left-to-right emission
+           still assembles. *)
+        ( "binop_operand_order",
+          base_kernel
+            "binop_operand_order"
+            [DParam (fa, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+            (let f name args =
+               EIntrinsic (["Sarek_stdlib"; "Float32"], name, args)
+             in
+             let av = EArrayRead ("fa", EVar tid) in
+             SLet
+               ( tid,
+                 EIntrinsic ([], "global_thread_id", []),
+                 SAssign
+                   ( LArrayElem ("fa", EVar tid),
+                     f "fmod" [f "sin" [av]; f "cos" [av]] ) ))
+            [] );
       ]
     in
     List.iter
@@ -2668,6 +2762,11 @@ let () =
             "f32 transcendentals compose sin/cos/lg2/ex2/div .approx"
             `Quick
             test_f32_transcendental_markers;
+          Alcotest.test_case
+            "binary intrinsic emits operands left-to-right (#279 tuple-order \
+             regression)"
+            `Quick
+            test_binary_intrinsic_operand_order;
           Alcotest.test_case
             "f64 sin lowers to softmath (fma/floor/selp .f64, no .approx)"
             `Quick

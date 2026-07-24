@@ -1302,7 +1302,16 @@ and intr_unary_arg buf alloc (env : env) intr args =
 
 and intr_binary_args buf alloc (env : env) intr args =
   match args with
-  | [a; b] -> (emit_expr buf alloc env a, emit_expr buf alloc env b)
+  | [a; b] ->
+      (* emit_expr is side-effecting (emits into [buf], allocates registers),
+         so the operands MUST be bound in sequence: a tuple
+         [(emit_expr a, emit_expr b)] leaves component order unspecified and
+         ocamlopt evaluates it right-to-left, emitting [b]'s instructions
+         before [a]'s and reversing register numbering / side effects (array
+         reads, atomics) relative to source order. Force left-to-right. *)
+      let ra = emit_expr buf alloc env a in
+      let rb = emit_expr buf alloc env b in
+      (ra, rb)
   | _ -> unsupported (intr ^ " arity != 2")
 
 (* Argument of a unary f32-only (.approx) lowering: f64 operands are
