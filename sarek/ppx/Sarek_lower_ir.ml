@@ -146,10 +146,11 @@ let tuple_record_fields (tys : typ list) : string * (string * Ir.elttype) list =
         | None ->
             Ppxlib.Location.raise_errorf
               ~loc:Ppxlib.Location.none
-              "Tuple-typed vector elements support only scalar components \
+              "Tuple values support only scalar components \
                (float32/float64/int32/int64/bool); nested tuples, records, \
-               vectors or functions inside a vector-element tuple are not \
-               supported.")
+               vectors or functions as tuple components are not supported \
+               (applies to both vector elements and kernel-local tuple \
+               bindings).")
       tys
   in
   let name = tuple_record_name comps in
@@ -164,9 +165,17 @@ let is_primitive_tuple (t : typ) : bool =
   | TTuple tys -> List.for_all (fun t -> prim_component_elttype t <> None) tys
   | _ -> false
 
-(** Element IR type of a vector whose element is [t]; a tuple element becomes
-    its synthesized record, everything else is the ordinary mapping. *)
-let vector_elem_elttype (t : typ) : Ir.elttype =
+(** IR type for a value that occupies a *data slot* — a vector element, or a
+    kernel-local binding ([let]/[match]-bound). A primitive-component tuple
+    becomes its synthesized positional record ([_tup_*], fields [_0.._n]) so the
+    struct backends (CUDA/OpenCL/GLSL/Metal) emit the right compound type
+    instead of the [elttype_of_typ] placeholder [int] (see that function's
+    NOTE); every other type uses the ordinary mapping. A non-primitive tuple
+    raises the located tuple-component error via {!tuple_record_fields},
+    mirroring vector-of-tuple scope. This is the sole difference from
+    {!elttype_of_typ}: the placeholder there stays intact for genuinely non-data
+    flows (function-typed helper bindings), while data uses route here. *)
+let slot_elttype_of_typ (t : typ) : Ir.elttype =
   match repr t with
   | TTuple tys ->
       let name, fields = tuple_record_fields tys in
@@ -318,6 +327,24 @@ let fresh_id state =
   state.next_var_id <- id + 1 ;
   id
 
+(** Register the synthesized [_tup_*] record for a primitive-component tuple in
+    the codegen types table, so a kernel-local slot typed by that record (see
+    {!make_var}/{!slot_elttype_of_typ}) has its [struct] definition emitted.
+    Idempotent; a no-op for non-tuple or non-primitive-tuple types (the latter
+    is rejected at the slot-typing site by {!tuple_record_fields}). The
+    realistic data sources for a local tuple (a tuple literal, an [if]/[match]
+    whose branches are tuple literals, a tuple-typed vector element) already
+    register it elsewhere; this call makes the binding site self-sufficient
+    regardless. *)
+let register_tuple_type (state : state) (ty : typ) : unit =
+  match repr ty with
+  | TTuple tys when List.for_all (fun t -> prim_component_elttype t <> None) tys
+    ->
+      let name, fields = tuple_record_fields tys in
+      if not (Hashtbl.mem state.types name) then
+        Hashtbl.add state.types name fields
+  | _ -> ()
+
 (** Convert Sarek_ast.binop to Sarek_ir_ppx.binop *)
 let ir_binop (op : binop) (_ty : typ) : Ir.binop =
   match op with
@@ -358,12 +385,16 @@ let lower_memspace = function
   | Shared -> Ir.Shared
   | Global -> Ir.Global
 
-(** Create a var from typed var info *)
+(** Create a var from typed var info. Uses {!slot_elttype_of_typ} (not the bare
+    {!elttype_of_typ}) so a kernel-local binding of primitive-tuple type is
+    typed by its synthesized [_tup_*] record rather than the placeholder [int] —
+    the struct backends then declare and read the slot as the right compound
+    type. Function-typed references still fall through to the placeholder. *)
 let make_var name id ty mutable_ : Ir.var =
   {
     var_name = name;
     var_id = id;
-    var_type = elttype_of_typ ty;
+    var_type = slot_elttype_of_typ ty;
     var_mutable = mutable_;
   }
 
@@ -740,9 +771,11 @@ and lower_stmt (state : state) (te : texpr) : Ir.stmt =
               body_ir )
       (* Normal let binding *)
       | _ ->
+          register_tuple_type state value.ty ;
           let v = make_var name id value.ty false in
           Ir.SLet (v, lower_expr state value, lower_stmt state body))
   | TELetMut (name, id, value, body) ->
+      register_tuple_type state value.ty ;
       let v = make_var name id value.ty true in
       Ir.SLetMut (v, lower_expr state value, lower_stmt state body)
   | TELetRec (name, _id, params, fn_body, cont) ->
@@ -776,7 +809,8 @@ and lower_stmt (state : state) (te : texpr) : Ir.stmt =
          [switch (x.tag)]. Rewrite it to a record destructure: bind the
          scrutinee once, then bind each component to its [_i] field. This works
          uniformly on every backend (field access is already supported). *)
-      let rec_elt = vector_elem_elttype e.ty in
+      register_tuple_type state e.ty ;
+      let rec_elt = slot_elttype_of_typ e.ty in
       incr tuple_tmp_counter ;
       let tmp_name = Printf.sprintf "__sarek_tup_%d" !tuple_tmp_counter in
       let tmp_var : Ir.var =
@@ -933,7 +967,7 @@ let lower_param (p : tparam) : Ir.decl =
   | _ -> ()) ;
   let elt =
     match repr p.tparam_type with
-    | TVec t -> Ir.TVec (vector_elem_elttype t)
+    | TVec t -> Ir.TVec (slot_elttype_of_typ t)
     | _ -> elttype_of_typ p.tparam_type
   in
   let v =
@@ -946,7 +980,7 @@ let lower_param (p : tparam) : Ir.decl =
   in
   if p.tparam_is_vec then
     let elem_ty =
-      match repr p.tparam_type with TVec t -> vector_elem_elttype t | _ -> elt
+      match repr p.tparam_type with TVec t -> slot_elttype_of_typ t | _ -> elt
     in
     Ir.DParam (v, Some {arr_elttype = elem_ty; arr_memspace = Ir.Global})
   else Ir.DParam (v, None)

@@ -403,6 +403,26 @@ and parse_binop_or_app_form (expr : expression) (op : string) (e1 : expression)
 (** Extract body for let binding arm *)
 and parse_let_form (pvb_pat : pattern) (pvb_expr : expression)
     (body : expression) : Sarek_ast.expr_desc =
+  (* A tuple-pattern let ([let (a, b) = e in body]) is not a named binding;
+     desugar it to the single-arm tuple [match] the lowering already handles as
+     a positional-record destructure ([let ..], line ~800 of
+     Sarek_lower_ir.ml). This is the [let]-pattern half of local tuple support;
+     [match] was already covered directly. Constraints on the pattern (e.g.
+     [let ((a, b) : t) = e]) unwrap to the inner tuple. *)
+  let rec is_tuple_pattern (p : pattern) =
+    match p.ppat_desc with
+    | Ppat_tuple _ -> true
+    | Ppat_constraint (p, _) -> is_tuple_pattern p
+    | _ -> false
+  in
+  if is_tuple_pattern pvb_pat then
+    Sarek_ast.EMatch
+      ( parse_expression pvb_expr,
+        [(parse_pattern pvb_pat, parse_expression body)] )
+  else parse_named_let_form pvb_pat pvb_expr body
+
+and parse_named_let_form (pvb_pat : pattern) (pvb_expr : expression)
+    (body : expression) : Sarek_ast.expr_desc =
   let name =
     match extract_name_from_pattern pvb_pat with
     | Some n -> n

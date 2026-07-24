@@ -964,3 +964,38 @@
  (alias runtest)
  (action
   (run %{dep:test_reserved_prefix_positive.exe})))
+
+; local-tuple E2E: kernel-LOCAL primitive tuple bindings (let-bound literal,
+; let-pattern / match destructure, tuple through an if-branch, mixed
+; float32*int32) lowered to the L13 synthesized [_tup_*] positional record.
+; Axis 1 asserts the emitted CUDA/OpenCL/GLSL declares the slot with the
+; struct type (not the placeholder int); Axis 2 runs every position on every
+; available device (Native/Interpreter always, plus any GPU backend) against a
+; pure-OCaml reference. Self-verifying: exits nonzero on any mismatch.
+
+(executable
+ (name test_local_tuple)
+ (modules test_local_tuple)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  sarek.codegen
+  spoc_core
+  test_helpers
+  sarek_native
+  sarek_interpreter
+  sarek_cuda
+  sarek_opencl
+  sarek_vulkan
+  unix
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_local_tuple.exe})))
