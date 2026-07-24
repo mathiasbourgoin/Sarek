@@ -353,28 +353,19 @@ module Kernel = struct
     | ArgFloat64 : float -> arg
     | ArgPtr : nativeint -> arg
 
-  let cache : (string, t) Hashtbl.t = Hashtbl.create 16
-
-  let keys_by_device : (int, string list ref) Hashtbl.t = Hashtbl.create 16
-
-  let record_key_for_device device_id key =
-    match Hashtbl.find_opt keys_by_device device_id with
-    | Some keys -> keys := key :: !keys
-    | None -> Hashtbl.add keys_by_device device_id (ref [key])
+  (* Compilation cache. Guarded against concurrent multi-domain access by
+     [Spoc_framework.Guarded_cache]: cache lookup/insert, per-device key
+     tracking, eviction and clearing are all atomic, while the hiprtc compile
+     runs outside the lock. Keys are grouped by device id (via
+     [find_or_build ~device_id]) so a device destroy/recreate cycle can evict
+     exactly its own stale module/function handles. *)
+  let cache : (string, t) Spoc_framework.Guarded_cache.t =
+    Spoc_framework.Guarded_cache.create
+      ~destroy:(fun k -> ignore (hipModuleUnload k.module_))
+      ()
 
   let evict_device device_id =
-    match Hashtbl.find_opt keys_by_device device_id with
-    | None -> ()
-    | Some keys ->
-        List.iter
-          (fun key ->
-            match Hashtbl.find_opt cache key with
-            | None -> ()
-            | Some k ->
-                let _ = hipModuleUnload k.module_ in
-                Hashtbl.remove cache key)
-          !keys ;
-        Hashtbl.remove keys_by_device device_id
+    Spoc_framework.Guarded_cache.evict_device cache device_id
 
   let () = device_destroy_hooks := evict_device :: !device_destroy_hooks
 
@@ -447,25 +438,16 @@ module Kernel = struct
         ~source
         ()
     in
-    match Hashtbl.find_opt cache key with
-    | Some k -> k
-    | None ->
-        let k = build () in
-        Hashtbl.add cache key k ;
-        record_key_for_device device.Device.id key ;
-        k
+    Spoc_framework.Guarded_cache.find_or_build
+      cache
+      ~key
+      ~device_id:device.Device.id
+      build
 
   let compile_cached device ~name ~source =
     with_cache device ~name ~source (fun () -> compile device ~name ~source)
 
-  let clear_cache () =
-    Hashtbl.iter
-      (fun _ k ->
-        let _ = hipModuleUnload k.module_ in
-        ())
-      cache ;
-    Hashtbl.clear cache ;
-    Hashtbl.clear keys_by_device
+  let clear_cache () = Spoc_framework.Guarded_cache.clear cache
 
   type ctype_ref = CTypeRef : 'a typ * 'a ptr -> ctype_ref
 

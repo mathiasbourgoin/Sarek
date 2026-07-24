@@ -113,8 +113,23 @@ let validate_buffer_indices ~expected_count
               (List.map (fun (idx, _) -> string_of_int idx) entries)))
     else Ok ()
 
-(* Compilation cache *)
-let cache : (string, t) Hashtbl.t = Hashtbl.create 16
+(* Compilation cache (compiled compute pipelines). Guarded against concurrent
+   multi-domain access by [Spoc_framework.Guarded_cache]: lookup/insert and
+   clearing are atomic critical sections, while GLSL->SPIR-V compilation and
+   pipeline creation run outside the lock. The on-disk SPIR-V cache
+   ([Framework_cache]) is a separate layer. *)
+let cache : (string, t) Spoc_framework.Guarded_cache.t =
+  Spoc_framework.Guarded_cache.create
+    ~destroy:(fun k ->
+      vkDestroyPipeline k.device.Device.device k.pipeline null ;
+      vkDestroyPipelineLayout k.device.Device.device k.pipeline_layout null ;
+      vkDestroyDescriptorPool k.device.Device.device k.descriptor_pool null ;
+      vkDestroyDescriptorSetLayout
+        k.device.Device.device
+        k.descriptor_set_layout
+        null ;
+      vkDestroyShaderModule k.device.Device.device k.shader_module null)
+    ()
 
 (** Create shader module from SPIR-V *)
 let create_shader_module device spirv =
@@ -393,26 +408,10 @@ let compile_cached device ~name ~source =
       ~source
       ()
   in
-  match Hashtbl.find_opt cache key with
-  | Some k -> k
-  | None ->
-      let k = compile device ~name ~source in
-      Hashtbl.add cache key k ;
-      k
+  Spoc_framework.Guarded_cache.find_or_build cache ~key (fun () ->
+      compile device ~name ~source)
 
-let clear_cache () =
-  Hashtbl.iter
-    (fun _ k ->
-      vkDestroyPipeline k.device.Device.device k.pipeline null ;
-      vkDestroyPipelineLayout k.device.Device.device k.pipeline_layout null ;
-      vkDestroyDescriptorPool k.device.Device.device k.descriptor_pool null ;
-      vkDestroyDescriptorSetLayout
-        k.device.Device.device
-        k.descriptor_set_layout
-        null ;
-      vkDestroyShaderModule k.device.Device.device k.shader_module null)
-    cache ;
-  Hashtbl.clear cache
+let clear_cache () = Spoc_framework.Guarded_cache.clear cache
 
 let create_args () =
   {

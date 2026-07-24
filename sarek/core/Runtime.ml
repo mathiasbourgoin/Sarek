@@ -45,23 +45,25 @@ let all_devices ?framework () =
   Device.init ~frameworks ()
 
 (** Kernel source cache: (device_framework, kernel_name, source_hash) ->
-    compiled *)
-let kernel_cache : (string * string * int, Kernel.t) Hashtbl.t =
-  Hashtbl.create 32
+    compiled. Guarded against concurrent multi-domain access by
+    [Spoc_framework.Guarded_cache] (this is the cross-backend entry point most
+    multi-domain code hits). [destroy] is a no-op: the compiled [Kernel.t]
+    handles are owned by the per-backend caches reached through
+    [Kernel.compile_cached], which release them on their own [clear_cache];
+    clearing this outer layer only drops the memoization. *)
+let kernel_cache :
+    (string * string * int, Kernel.t) Spoc_framework.Guarded_cache.t =
+  Spoc_framework.Guarded_cache.create ~size:32 ~destroy:(fun _ -> ()) ()
 
 (** Compile a kernel from source, with caching *)
 let compile_kernel (device : Device.t) ~(name : string) ~(source : string) :
     Kernel.t =
   let key = (device.framework, name, Hashtbl.hash source) in
-  match Hashtbl.find_opt kernel_cache key with
-  | Some k -> k
-  | None ->
-      let k = Kernel.compile_cached device ~name ~source in
-      Hashtbl.replace kernel_cache key k ;
-      k
+  Spoc_framework.Guarded_cache.find_or_build kernel_cache ~key (fun () ->
+      Kernel.compile_cached device ~name ~source)
 
 (** Clear the kernel cache *)
-let clear_cache () = Hashtbl.clear kernel_cache
+let clear_cache () = Spoc_framework.Guarded_cache.clear kernel_cache
 
 (** Argument builder - collects kernel arguments *)
 type arg =

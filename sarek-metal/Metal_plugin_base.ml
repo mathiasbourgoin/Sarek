@@ -221,8 +221,16 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
        see Spoc_framework.Kernel_args. *)
     type args = arg Spoc_framework.Kernel_args.t
 
-    (* Cache: key -> compiled kernel *)
-    let cache : (string, t) Hashtbl.t = Hashtbl.create 16
+    (* Cache: key -> compiled kernel. Guarded against concurrent multi-domain
+       access by [Spoc_framework.Guarded_cache]: lookup/insert and clearing are
+       atomic critical sections, while the Metal library/pipeline compile runs
+       outside the lock. *)
+    let cache : (string, t) Spoc_framework.Guarded_cache.t =
+      Spoc_framework.Guarded_cache.create
+        ~destroy:(fun k ->
+          Metal_api.Library.release k.library ;
+          Metal_api.ComputePipeline.release k.pipeline)
+        ()
 
     let compile device ~name ~source =
       let library = Metal_api.Library.create_from_source device source in
@@ -244,20 +252,10 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
           ~source
           ()
       in
-      match Hashtbl.find_opt cache key with
-      | Some k -> k
-      | None ->
-          let k = compile device ~name ~source in
-          Hashtbl.add cache key k ;
-          k
+      Spoc_framework.Guarded_cache.find_or_build cache ~key (fun () ->
+          compile device ~name ~source)
 
-    let clear_cache () =
-      Hashtbl.iter
-        (fun _ k ->
-          Metal_api.Library.release k.library ;
-          Metal_api.ComputePipeline.release k.pipeline)
-        cache ;
-      Hashtbl.clear cache
+    let clear_cache () = Spoc_framework.Guarded_cache.clear cache
 
     let load_from_ptx ~name:_ ~ptx:_ =
       Metal_error.raise_error (Metal_error.feature_not_supported "PTX kernels")

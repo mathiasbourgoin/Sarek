@@ -461,35 +461,23 @@ module Kernel = struct
     | ArgFloat64 : float -> arg
     | ArgPtr : nativeint -> arg
 
-  (* Compilation cache *)
-  let cache : (string, t) Hashtbl.t = Hashtbl.create 16
-
-  (* Cache keys grouped by device id, so a device destroy/recreate cycle can
-     evict exactly its own stale module/function handles from [cache]
-     without needing to reverse the (digested, opaque) cache key. *)
-  let keys_by_device : (int, string list ref) Hashtbl.t = Hashtbl.create 16
-
-  let record_key_for_device device_id key =
-    match Hashtbl.find_opt keys_by_device device_id with
-    | Some keys -> keys := key :: !keys
-    | None -> Hashtbl.add keys_by_device device_id (ref [key])
+  (* Compilation cache. Guarded against concurrent multi-domain access by
+     [Spoc_framework.Guarded_cache]: cache lookup/insert, per-device key
+     tracking, eviction and clearing are all atomic, while the NVRTC compile
+     runs outside the lock. Keys are grouped by device id (via
+     [find_or_build ~device_id]) so a device destroy/recreate cycle can evict
+     exactly its own stale module/function handles without reversing the
+     (digested, opaque) cache key. *)
+  let cache : (string, t) Spoc_framework.Guarded_cache.t =
+    Spoc_framework.Guarded_cache.create
+      ~destroy:(fun k -> ignore (cuModuleUnload k.module_))
+      ()
 
   (* Evict every cached kernel compiled for [device_id]. Registered as a
      [device_destroy_hooks] callback below so [Device.destroy] retires
      these handles before the underlying CUDA context is destroyed. *)
   let evict_device device_id =
-    match Hashtbl.find_opt keys_by_device device_id with
-    | None -> ()
-    | Some keys ->
-        List.iter
-          (fun key ->
-            match Hashtbl.find_opt cache key with
-            | None -> ()
-            | Some k ->
-                let _ = cuModuleUnload k.module_ in
-                Hashtbl.remove cache key)
-          !keys ;
-        Hashtbl.remove keys_by_device device_id
+    Spoc_framework.Guarded_cache.evict_device cache device_id
 
   let () = device_destroy_hooks := evict_device :: !device_destroy_hooks
 
@@ -616,8 +604,8 @@ module Kernel = struct
   (* Shared memoization for compiled/loaded kernels. The cache key must
      include device ID and the kernel name - a source file may define more
      than one kernel, and a resolved kernel handle for one name must never be
-     returned for another (see Compile_cache.mli). [record_key_for_device]
-     keeps the device-destroy eviction hook working for every entry. *)
+     returned for another (see Compile_cache.mli). Passing [~device_id] keeps
+     the device-destroy eviction hook working for every entry. *)
   let with_cache device ~name ~source build =
     let key =
       Spoc_framework.Compile_cache.make_key
@@ -626,13 +614,11 @@ module Kernel = struct
         ~source
         ()
     in
-    match Hashtbl.find_opt cache key with
-    | Some k -> k
-    | None ->
-        let k = build () in
-        Hashtbl.add cache key k ;
-        record_key_for_device device.Device.id key ;
-        k
+    Spoc_framework.Guarded_cache.find_or_build
+      cache
+      ~key
+      ~device_id:device.Device.id
+      build
 
   (** Cached variant of [load_from_ptx] — same cache as [compile_cached].
       Without it, every launch reloads (and re-JITs) the PTX module, which
@@ -645,14 +631,7 @@ module Kernel = struct
   let compile_cached device ~name ~source =
     with_cache device ~name ~source (fun () -> compile device ~name ~source)
 
-  let clear_cache () =
-    Hashtbl.iter
-      (fun _ k ->
-        let _ = cuModuleUnload k.module_ in
-        ())
-      cache ;
-    Hashtbl.clear cache ;
-    Hashtbl.clear keys_by_device
+  let clear_cache () = Spoc_framework.Guarded_cache.clear cache
 
   (** Existential wrapper for keeping Ctypes-allocated values alive during FFI
       calls *)

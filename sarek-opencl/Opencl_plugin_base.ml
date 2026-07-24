@@ -214,8 +214,15 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
        see Spoc_framework.Kernel_args. *)
     type args = arg Spoc_framework.Kernel_args.t
 
-    (* Cache: key -> compiled kernel *)
-    let cache : (string, t) Hashtbl.t = Hashtbl.create 16
+    (* Cache: key -> compiled kernel. Guarded against concurrent multi-domain
+       access by [Spoc_framework.Guarded_cache]: lookup/insert and clearing are
+       atomic critical sections, while clBuildProgram runs outside the lock. *)
+    let cache : (string, t) Spoc_framework.Guarded_cache.t =
+      Spoc_framework.Guarded_cache.create
+        ~destroy:(fun k ->
+          Opencl_api.Kernel.release k.kernel ;
+          Opencl_api.Program.release k.program)
+        ()
 
     let compile device ~name ~source =
       let state = get_state device.Opencl_api.Device.id in
@@ -238,20 +245,10 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
           ~source
           ()
       in
-      match Hashtbl.find_opt cache key with
-      | Some k -> k
-      | None ->
-          let k = compile device ~name ~source in
-          Hashtbl.add cache key k ;
-          k
+      Spoc_framework.Guarded_cache.find_or_build cache ~key (fun () ->
+          compile device ~name ~source)
 
-    let clear_cache () =
-      Hashtbl.iter
-        (fun _ k ->
-          Opencl_api.Kernel.release k.kernel ;
-          Opencl_api.Program.release k.program)
-        cache ;
-      Hashtbl.clear cache
+    let clear_cache () = Spoc_framework.Guarded_cache.clear cache
 
     let load_from_ptx ~name:_ ~ptx:_ =
       Opencl_error.raise_error
