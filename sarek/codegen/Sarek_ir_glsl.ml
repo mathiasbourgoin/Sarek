@@ -25,6 +25,13 @@ module Codegen_error = Sarek_backend_error.Backend_error.Make (struct
   let name = "Vulkan"
 end)
 
+module Dispatch = Sarek_ir_intrinsic_dispatch
+
+(** Raise a located invalid-argument-count error (atomic-arity helper for the
+    shared {!Dispatch.emit_atomic}). *)
+let bad_arity n e g =
+  Codegen_error.raise_error (Codegen_error.invalid_arg_count n e g)
+
 (** Current kernel's variant definitions (set during generate) *)
 let current_variants : (string * (string * elttype list) list) list ref = ref []
 
@@ -358,7 +365,8 @@ let rec gen_expr buf = function
       gen_expr buf e ;
       Buffer.add_char buf '.' ;
       Buffer.add_string buf field
-  | EIntrinsic (path, name, args) -> gen_intrinsic buf path name args
+  | EIntrinsic (path, name, args) ->
+      Dispatch.gen_intrinsic glsl_backend buf path name args
   | ECast (ty, e) ->
       Buffer.add_string buf (glsl_type_of_elttype ty) ;
       Buffer.add_char buf '(' ;
@@ -608,271 +616,120 @@ and gen_f64_transcendental buf name args =
             (Codegen_error.unknown_intrinsic
                (Printf.sprintf "%s (wrong arity for f64 transcendental)" name)))
 
-and gen_intrinsic buf path name args =
-  let full_name =
-    match path with [] -> name | _ -> String.concat "." path ^ "." ^ name
-  in
-  (* A [Float64] path component marks the double-precision route; the plain
-     [Float32]/[Math.Float32] and unqualified (core-primitive, f32-typed)
-     spellings stay single-precision. This mirrors how the pure registry keys
-     the same intrinsics by their [Float64] vs [Float32] module path. *)
-  let is_f64 = List.mem "Float64" path in
-  if is_f64 && f64_root_helpers name <> None then
-    (* GLSL core has no double overload for the transcendental builtins; route
-       [Float64] sin/cos/exp/log/log10/pow/…/exp2/log2/cbrt/expm1/log1p through
-       the software helper family instead of emitting an invalid [sin(<double>)].
-       f32 spellings and native-f64 builtins (sqrt/floor/fma/hypot/…) fall
-       through to the existing logic unchanged. *)
-    gen_f64_transcendental buf name args
-  else if List.mem name ["cbrt"; "hypot"; "expm1"; "log1p"; "log10"] then
-    gen_glsl_polyfill buf ~is_f64 name args
-  else if name = "copysign" then (
-    (* GLSL has no [copysign] builtin under any name, and [abs(x)*sign(y)] is
-       wrong for [y=0] (GLSL [sign(0)=0]) and the [x=0]/NaN sign-transfer edge
-       cases. Lower to the bit-level [sarek_copysign] helper emitted in the
-       preamble by [gen_copysign_helper], ahead of both the pure registry
-       (which would emit the raw un-suffixed [copysign(...)] for
-       [Float32.copysign]) and the unqualified match arms (where
-       [Float64.copysign] would fall through to the raw-name fallback and emit
-       the swizzle-parsed [Float64.copysign(...)] that glslang rejects).
-       Routing through a function (not inlining the bit twiddling) evaluates
-       each argument exactly once — the same single-eval guarantee as the
-       [sarek_smod] helper. *)
-    Buffer.add_string buf !current_copysign_name ;
-    Buffer.add_char buf '(' ;
-    List.iteri
-      (fun i e ->
-        if i > 0 then Buffer.add_string buf ", " ;
-        gen_expr buf e)
-      args ;
-    Buffer.add_char buf ')')
-  else if name = "fmod" then (
-    (* GLSL's [mod(x,y)] is floor-based ([x - y*floor(x/y)], sign of the
-       divisor), NOT the truncated C [fmod] ([x - y*trunc(x/y)], sign of the
-       dividend) that Float32.fmod/Float64.fmod contract for; GLSL has no
-       [fmod] builtin under any name. Lower to the [sarek_fmod] helper emitted
-       in the preamble by [gen_fmod_helper], ahead of both the pure registry
-       (which would emit the raw un-suffixed [fmod(...)] glslang rejects) and
-       the unqualified match arms. Routing through a function (not inlining
-       [x - y*trunc(x/y)]) evaluates each argument exactly once — the same
-       single-eval guarantee as [sarek_copysign]/[sarek_smod]. *)
-    Buffer.add_string buf !current_fmod_name ;
-    Buffer.add_char buf '(' ;
-    List.iteri
-      (fun i e ->
-        if i > 0 then Buffer.add_string buf ", " ;
-        gen_expr buf e)
-      args ;
-    Buffer.add_char buf ')')
-  else
-    (* For path-qualified intrinsics, query the pure registry first.
-     Float32.sin -> sin on GLSL (GLSL uses un-suffixed names). *)
-    let pure_registry_hit =
-      match path with
-      | [] -> None
-      | _ -> (
-          match
-            Sarek_pure_registry.fun_device_template ~module_path:path name
-          with
-          | Some f -> Some (f ~framework:"GLSL")
-          | None -> None)
-    in
-    match pure_registry_hit with
-    | Some device_name ->
-        Buffer.add_string buf device_name ;
-        Buffer.add_char buf '(' ;
-        List.iteri
-          (fun i e ->
-            if i > 0 then Buffer.add_string buf ", " ;
-            gen_expr buf e)
-          args ;
-        Buffer.add_char buf ')'
-    | None -> (
-        if
-          (* Try thread intrinsics *)
-          List.mem
-            name
-            [
-              "thread_id_x";
-              "thread_idx_x";
-              "thread_id_y";
-              "thread_idx_y";
-              "thread_id_z";
-              "thread_idx_z";
-              "block_id_x";
-              "block_idx_x";
-              "block_id_y";
-              "block_idx_y";
-              "block_id_z";
-              "block_idx_z";
-              "block_dim_x";
-              "block_dim_y";
-              "block_dim_z";
-              "grid_dim_x";
-              "grid_dim_y";
-              "grid_dim_z";
-              "global_thread_id";
-              "global_idx";
-              "global_idx_x";
-              "global_idx_y";
-              "global_idx_z";
-              "global_size";
-            ]
-        then Buffer.add_string buf (glsl_thread_intrinsic name)
-        else
-          (* Standard math intrinsics - GLSL versions *)
-          match name with
-          | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh"
-          | "tanh" | "exp" | "exp2" | "log" | "log2" | "sqrt" | "floor" | "ceil"
-          | "round" | "trunc" | "abs" ->
-              Buffer.add_string buf name ;
-              Buffer.add_char buf '(' ;
-              List.iteri
-                (fun i e ->
-                  if i > 0 then Buffer.add_string buf ", " ;
-                  gen_expr buf e)
-                args ;
-              Buffer.add_char buf ')'
-          | "fabs" | "abs_float" ->
-              (* GLSL has no [fabs]; its abs() has an fp64 overload under
-                 GL_ARB_gpu_shader_fp64 (enabled on the f64 path). [abs_float]
-                 (Float64.abs_float) reaches here rather than via the pure
-                 registry — it is absent from [float64_list] because that list's
-                 generic template would emit the raw name on CUDA/OpenCL, which
-                 need [fabs]. See spoc/ir/Sarek_pure_registry.ml. *)
-              Buffer.add_string buf "abs" ;
-              Buffer.add_char buf '(' ;
-              List.iteri
-                (fun i e ->
-                  if i > 0 then Buffer.add_string buf ", " ;
-                  gen_expr buf e)
-                args ;
-              Buffer.add_char buf ')'
-          | "rsqrt" ->
-              Buffer.add_string buf "inversesqrt" ;
-              Buffer.add_char buf '(' ;
-              List.iteri
-                (fun i e ->
-                  if i > 0 then Buffer.add_string buf ", " ;
-                  gen_expr buf e)
-                args ;
-              Buffer.add_char buf ')'
-          | "atan2" | "pow" | "min" | "max" ->
-              Buffer.add_string buf name ;
-              Buffer.add_char buf '(' ;
-              List.iteri
-                (fun i e ->
-                  if i > 0 then Buffer.add_string buf ", " ;
-                  gen_expr buf e)
-                args ;
-              Buffer.add_char buf ')'
-          | "fma" ->
-              Buffer.add_string buf "fma" ;
-              Buffer.add_char buf '(' ;
-              List.iteri
-                (fun i e ->
-                  if i > 0 then Buffer.add_string buf ", " ;
-                  gen_expr buf e)
-                args ;
-              Buffer.add_char buf ')'
-          | "f64_bits" | "bits_f64" ->
-              (* IEEE-754 double <-> int64 reinterpret casts used by the
-                 software f64 transcendentals ({!Sarek_ir_softmath}) to pick
-                 apart the exponent/mantissa fields. GLSL spells them
-                 [doubleBitsToInt64] / [int64BitsToDouble], both from
-                 [GL_ARB_gpu_shader_int64] (emitted by [glsl_header] when a
-                 needed helper uses int64). *)
-              let fn =
-                if name = "f64_bits" then "doubleBitsToInt64"
-                else "int64BitsToDouble"
-              in
-              Buffer.add_string buf fn ;
-              Buffer.add_char buf '(' ;
-              (match args with
-              | [e] -> gen_expr buf e
-              | _ ->
-                  Codegen_error.raise_error
-                    (Codegen_error.invalid_arg_count name 1 (List.length args))) ;
-              Buffer.add_char buf ')'
-          (* Barrier synchronization *)
-          | "block_barrier" -> Buffer.add_string buf "barrier()"
-          (* Atomic operations - GLSL uses atomicAdd etc. *)
-          | "atomic_add" | "atomic_add_int32" | "atomic_add_global_int32" ->
-              Buffer.add_string buf "atomicAdd(" ;
-              (match args with
-              | [addr; value] ->
-                  gen_expr buf addr ;
-                  Buffer.add_string buf ", " ;
-                  gen_expr buf value
-              | [arr; idx; value] ->
-                  gen_expr buf arr ;
-                  Buffer.add_char buf '[' ;
-                  gen_expr buf idx ;
-                  Buffer.add_string buf "], " ;
-                  gen_expr buf value
-              | args ->
-                  Codegen_error.raise_error
-                    (Codegen_error.invalid_arg_count
-                       "atomic_add"
-                       2
-                       (List.length args))) ;
-              Buffer.add_char buf ')'
-          | "atomic_min" ->
-              Buffer.add_string buf "atomicMin(" ;
-              (match args with
-              | [addr; value] ->
-                  gen_expr buf addr ;
-                  Buffer.add_string buf ", " ;
-                  gen_expr buf value
-              | args ->
-                  Codegen_error.raise_error
-                    (Codegen_error.invalid_arg_count
-                       "atomic_min"
-                       2
-                       (List.length args))) ;
-              Buffer.add_char buf ')'
-          | "atomic_max" ->
-              Buffer.add_string buf "atomicMax(" ;
-              (match args with
-              | [addr; value] ->
-                  gen_expr buf addr ;
-                  Buffer.add_string buf ", " ;
-                  gen_expr buf value
-              | args ->
-                  Codegen_error.raise_error
-                    (Codegen_error.invalid_arg_count
-                       "atomic_max"
-                       2
-                       (List.length args))) ;
-              Buffer.add_char buf ')'
-          | "float" ->
-              Buffer.add_string buf "float(" ;
-              (match args with [e] -> gen_expr buf e | _ -> ()) ;
-              Buffer.add_char buf ')'
-          | "int_of_float" ->
-              Buffer.add_string buf "int(" ;
-              (match args with [e] -> gen_expr buf e | _ -> ()) ;
-              Buffer.add_char buf ')'
-          | _ ->
-              (* No GLSL lowering for this intrinsic. Unlike CUDA/OpenCL/Metal,
-                 GLSL does NOT fall back to [Sarek_registry] (the FFI registry):
-                 its device closures only branch CUDA-vs-OpenCL and have no GLSL
-                 arm, so consulting it would splice OpenCL C — [get_global_id],
-                 [barrier(CLK_LOCAL_MEM_FENCE)], [(float)] casts — into GLSL,
-                 which glslang rejects just as cryptically as the old behaviour
-                 of emitting the raw OCaml path [full_name(...)] ("vector
-                 swizzle too long"). Raise a located error naming the intrinsic
-                 and backend instead — strictly better than emitting garbage.
-
-                 To give a future intrinsic a real GLSL lowering, extend one of
-                 (a) [Sarek_pure_registry.glsl_override_name] for a plain rename,
-                 (b) [gen_glsl_polyfill] above for a multi-token expression, or
-                 (c) an explicit match arm here. The pure registry is already
-                 GLSL-parameterised (it receives [~framework:"GLSL"]), so no
-                 registry-type change is needed and existing registrations are
-                 untouched. *)
-              Codegen_error.raise_error
-                (Codegen_error.unknown_intrinsic full_name))
+and glsl_backend =
+  {
+    Dispatch.framework = (fun () -> "GLSL");
+    gen_expr;
+    thread_intrinsic = glsl_thread_intrinsic;
+    pre_hook =
+      (fun buf ~full_name:_ path name args ->
+        let is_f64 = List.mem "Float64" path in
+        if is_f64 && f64_root_helpers name <> None then (
+          gen_f64_transcendental buf name args ;
+          true)
+        else if List.mem name ["cbrt"; "hypot"; "expm1"; "log1p"; "log10"] then (
+          gen_glsl_polyfill buf ~is_f64 name args ;
+          true)
+        else if name = "copysign" then (
+          Dispatch.emit_call ~gen_expr buf !current_copysign_name args ;
+          true)
+        else if name = "fmod" then (
+          Dispatch.emit_call ~gen_expr buf !current_fmod_name args ;
+          true)
+        else false);
+    post_hook = (fun _ _ _ _ -> false);
+    on_unknown =
+      (fun full ->
+        Codegen_error.raise_error (Codegen_error.unknown_intrinsic full));
+    arm =
+      (fun name ->
+        match name with
+        | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh"
+        | "tanh" | "exp" | "exp2" | "log" | "log2" | "sqrt" | "floor" | "ceil"
+        | "round" | "trunc" | "abs" | "atan2" | "pow" | "min" | "max" | "fma" ->
+            Some (fun buf args -> Dispatch.emit_call ~gen_expr buf name args)
+        | "fabs" | "abs_float" ->
+            Some (fun buf args -> Dispatch.emit_call ~gen_expr buf "abs" args)
+        | "rsqrt" ->
+            Some
+              (fun buf args ->
+                Dispatch.emit_call ~gen_expr buf "inversesqrt" args)
+        | "f64_bits" | "bits_f64" ->
+            Some
+              (fun buf args ->
+                let fn =
+                  if name = "f64_bits" then "doubleBitsToInt64"
+                  else "int64BitsToDouble"
+                in
+                Buffer.add_string buf fn ;
+                Buffer.add_char buf '(' ;
+                (match args with
+                | [e] -> gen_expr buf e
+                | _ ->
+                    Codegen_error.raise_error
+                      (Codegen_error.invalid_arg_count
+                         name
+                         1
+                         (List.length args))) ;
+                Buffer.add_char buf ')')
+        | "block_barrier" ->
+            Some (fun buf _ -> Buffer.add_string buf "barrier()")
+        | "atomic_add" | "atomic_add_int32" | "atomic_add_global_int32" ->
+            Some
+              (fun buf args ->
+                Dispatch.emit_atomic
+                  ~gen_expr
+                  ~invalid_arg_count:bad_arity
+                  buf
+                  ~callee:"atomicAdd"
+                  ~prefix:""
+                  ~suffix:")"
+                  ~opname:"atomic_add"
+                  ~expected:2
+                  ~allow_array:true
+                  args)
+        | "atomic_min" ->
+            Some
+              (fun buf args ->
+                Dispatch.emit_atomic
+                  ~gen_expr
+                  ~invalid_arg_count:bad_arity
+                  buf
+                  ~callee:"atomicMin"
+                  ~prefix:""
+                  ~suffix:")"
+                  ~opname:"atomic_min"
+                  ~expected:2
+                  ~allow_array:false
+                  args)
+        | "atomic_max" ->
+            Some
+              (fun buf args ->
+                Dispatch.emit_atomic
+                  ~gen_expr
+                  ~invalid_arg_count:bad_arity
+                  buf
+                  ~callee:"atomicMax"
+                  ~prefix:""
+                  ~suffix:")"
+                  ~opname:"atomic_max"
+                  ~expected:2
+                  ~allow_array:false
+                  args)
+        | "float" ->
+            Some
+              (fun buf args ->
+                Buffer.add_string buf "float(" ;
+                (match args with [e] -> gen_expr buf e | _ -> ()) ;
+                Buffer.add_char buf ')')
+        | "int_of_float" ->
+            Some
+              (fun buf args ->
+                Buffer.add_string buf "int(" ;
+                (match args with [e] -> gen_expr buf e | _ -> ()) ;
+                Buffer.add_char buf ')')
+        | _ -> None);
+  }
 
 (** {1 L-value Generation} *)
 

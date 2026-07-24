@@ -25,6 +25,13 @@ module Codegen_error = Sarek_backend_error.Backend_error.Make (struct
   let name = "WebGPU"
 end)
 
+module Dispatch = Sarek_ir_intrinsic_dispatch
+
+(** Raise a located invalid-argument-count error (atomic-arity helper for the
+    shared {!Dispatch.emit_atomic}). *)
+let bad_arity n e g =
+  Codegen_error.raise_error (Codegen_error.invalid_arg_count n e g)
+
 (** Current kernel's variant definitions (set during generate) *)
 let current_variants : (string * (string * elttype list) list) list ref = ref []
 
@@ -241,7 +248,8 @@ let rec gen_expr buf = function
       gen_expr buf e ;
       Buffer.add_char buf '.' ;
       Buffer.add_string buf field
-  | EIntrinsic (path, name, args) -> gen_intrinsic buf path name args
+  | EIntrinsic (path, name, args) ->
+      Dispatch.gen_intrinsic wgsl_backend buf path name args
   | ECast (ty, e) ->
       Buffer.add_string buf (wgsl_type_of_elttype ty) ;
       Buffer.add_char buf '(' ;
@@ -370,199 +378,106 @@ and gen_binop = function
 
 and gen_unop = function Neg -> "-" | Not -> "!" | BitNot -> "~"
 
-and gen_intrinsic buf path name args =
-  let full_name =
-    match path with [] -> name | _ -> String.concat "." path ^ "." ^ name
-  in
-  let framework = Option.value ~default:"WGSL" !current_framework in
-  if name = "fmod" then
-    (* WGSL has no [fmod] builtin (the pure registry, queried below, would emit
-       an invalid [fmod(...)] call). The bare [%] operator was WRONG for two
-       cases (both raised in review): an infinite divisor gives
-       [x - inf*trunc(0)] = NaN where C wants [x], and large [|x/y|] loses
-       quotient precision. Lower instead to the [sarek_fmod] preamble helper
-       ([gen_fmod_helper]), whose bounded exact reduction is C-conformant for
-       finite operands and the infinite-divisor case. f64 is unsupported in
-       WGSL, so only the f32 [Float32.fmod] spelling ever reaches here. *)
-    match args with
-    | [x; y] ->
-        Buffer.add_string buf "sarek_fmod(" ;
-        gen_expr buf x ;
-        Buffer.add_string buf ", " ;
-        gen_expr buf y ;
-        Buffer.add_char buf ')'
-    | _ ->
-        Codegen_error.raise_error
-          (Codegen_error.invalid_arg_count "fmod" 2 (List.length args))
-  else
-    let pure_registry_hit =
-      match path with
-      | [] -> None
-      | _ -> (
-          match
-            Sarek_pure_registry.fun_device_template ~module_path:path name
-          with
-          | Some f -> Some (f ~framework)
-          | None -> None)
-    in
-    match pure_registry_hit with
-  | Some device_name ->
-      Buffer.add_string buf device_name ;
-      Buffer.add_char buf '(' ;
-      List.iteri
-        (fun i e ->
-          if i > 0 then Buffer.add_string buf ", " ;
-          gen_expr buf e)
-        args ;
-      Buffer.add_char buf ')'
-  | None -> (
-      if
-        List.mem
-          name
-          [
-            "thread_id_x";
-            "thread_idx_x";
-            "thread_id_y";
-            "thread_idx_y";
-            "thread_id_z";
-            "thread_idx_z";
-            "block_id_x";
-            "block_idx_x";
-            "block_id_y";
-            "block_idx_y";
-            "block_id_z";
-            "block_idx_z";
-            "block_dim_x";
-            "block_dim_y";
-            "block_dim_z";
-            "grid_dim_x";
-            "grid_dim_y";
-            "grid_dim_z";
-            "global_thread_id";
-            "global_idx";
-            "global_idx_x";
-            "global_idx_y";
-            "global_idx_z";
-            "global_size";
-          ]
-      then Buffer.add_string buf (wgsl_thread_intrinsic name)
-      else
+and wgsl_backend =
+  {
+    Dispatch.framework =
+      (fun () -> Option.value ~default:"WGSL" !current_framework);
+    gen_expr;
+    thread_intrinsic = wgsl_thread_intrinsic;
+    pre_hook =
+      (fun buf ~full_name:_ _path name args ->
+        if name = "fmod" then
+          match args with
+          | [x; y] ->
+              Buffer.add_string buf "sarek_fmod(" ;
+              gen_expr buf x ;
+              Buffer.add_string buf ", " ;
+              gen_expr buf y ;
+              Buffer.add_char buf ')' ;
+              true
+          | _ ->
+              Codegen_error.raise_error
+                (Codegen_error.invalid_arg_count "fmod" 2 (List.length args))
+        else false);
+    post_hook = (fun _ _ _ _ -> false);
+    on_unknown =
+      (fun full ->
+        Codegen_error.raise_error (Codegen_error.unknown_intrinsic full));
+    arm =
+      (fun name ->
         match name with
         | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh"
         | "tanh" | "exp" | "exp2" | "log" | "log2" | "sqrt" | "floor" | "ceil"
-        | "round" | "trunc" | "abs" ->
-            Buffer.add_string buf name ;
-            Buffer.add_char buf '(' ;
-            List.iteri
-              (fun i e ->
-                if i > 0 then Buffer.add_string buf ", " ;
-                gen_expr buf e)
-              args ;
-            Buffer.add_char buf ')'
+        | "round" | "trunc" | "abs" | "atan2" | "pow" | "min" | "max" | "fma" ->
+            Some (fun buf args -> Dispatch.emit_call ~gen_expr buf name args)
         | "fabs" ->
-            Buffer.add_string buf "abs" ;
-            Buffer.add_char buf '(' ;
-            List.iteri
-              (fun i e ->
-                if i > 0 then Buffer.add_string buf ", " ;
-                gen_expr buf e)
-              args ;
-            Buffer.add_char buf ')'
+            Some (fun buf args -> Dispatch.emit_call ~gen_expr buf "abs" args)
         | "rsqrt" ->
-            Buffer.add_string buf "(1.0f / sqrt(" ;
-            (match args with
-            | [e] -> gen_expr buf e
-            | _ ->
-                List.iteri
-                  (fun i e ->
-                    if i > 0 then Buffer.add_string buf ", " ;
-                    gen_expr buf e)
-                  args) ;
-            Buffer.add_string buf "))"
-        | "atan2" | "pow" | "min" | "max" ->
-            Buffer.add_string buf name ;
-            Buffer.add_char buf '(' ;
-            List.iteri
-              (fun i e ->
-                if i > 0 then Buffer.add_string buf ", " ;
-                gen_expr buf e)
-              args ;
-            Buffer.add_char buf ')'
-        | "fma" ->
-            Buffer.add_string buf "fma" ;
-            Buffer.add_char buf '(' ;
-            List.iteri
-              (fun i e ->
-                if i > 0 then Buffer.add_string buf ", " ;
-                gen_expr buf e)
-              args ;
-            Buffer.add_char buf ')'
-        | "block_barrier" -> Buffer.add_string buf "workgroupBarrier()"
+            Some
+              (fun buf args ->
+                Buffer.add_string buf "(1.0f / sqrt(" ;
+                (match args with
+                | [e] -> gen_expr buf e
+                | _ -> Dispatch.emit_args ~gen_expr buf args) ;
+                Buffer.add_string buf "))")
+        | "block_barrier" ->
+            Some (fun buf _ -> Buffer.add_string buf "workgroupBarrier()")
         | "atomic_add" | "atomic_add_int32" | "atomic_add_global_int32" ->
-            Buffer.add_string buf "atomicAdd(" ;
-            (match args with
-            | [addr; value] ->
-                gen_expr buf addr ;
-                Buffer.add_string buf ", " ;
-                gen_expr buf value
-            | [arr; idx; value] ->
-                gen_expr buf arr ;
-                Buffer.add_char buf '[' ;
-                gen_expr buf idx ;
-                Buffer.add_string buf "], " ;
-                gen_expr buf value
-            | args ->
-                Codegen_error.raise_error
-                  (Codegen_error.invalid_arg_count
-                     "atomic_add"
-                     2
-                     (List.length args))) ;
-            Buffer.add_char buf ')'
+            Some
+              (fun buf args ->
+                Dispatch.emit_atomic
+                  ~gen_expr
+                  ~invalid_arg_count:bad_arity
+                  buf
+                  ~callee:"atomicAdd"
+                  ~prefix:""
+                  ~suffix:")"
+                  ~opname:"atomic_add"
+                  ~expected:2
+                  ~allow_array:true
+                  args)
         | "atomic_min" ->
-            Buffer.add_string buf "atomicMin(" ;
-            (match args with
-            | [addr; value] ->
-                gen_expr buf addr ;
-                Buffer.add_string buf ", " ;
-                gen_expr buf value
-            | args ->
-                Codegen_error.raise_error
-                  (Codegen_error.invalid_arg_count
-                     "atomic_min"
-                     2
-                     (List.length args))) ;
-            Buffer.add_char buf ')'
+            Some
+              (fun buf args ->
+                Dispatch.emit_atomic
+                  ~gen_expr
+                  ~invalid_arg_count:bad_arity
+                  buf
+                  ~callee:"atomicMin"
+                  ~prefix:""
+                  ~suffix:")"
+                  ~opname:"atomic_min"
+                  ~expected:2
+                  ~allow_array:false
+                  args)
         | "atomic_max" ->
-            Buffer.add_string buf "atomicMax(" ;
-            (match args with
-            | [addr; value] ->
-                gen_expr buf addr ;
-                Buffer.add_string buf ", " ;
-                gen_expr buf value
-            | args ->
-                Codegen_error.raise_error
-                  (Codegen_error.invalid_arg_count
-                     "atomic_max"
-                     2
-                     (List.length args))) ;
-            Buffer.add_char buf ')'
+            Some
+              (fun buf args ->
+                Dispatch.emit_atomic
+                  ~gen_expr
+                  ~invalid_arg_count:bad_arity
+                  buf
+                  ~callee:"atomicMax"
+                  ~prefix:""
+                  ~suffix:")"
+                  ~opname:"atomic_max"
+                  ~expected:2
+                  ~allow_array:false
+                  args)
         | "float" ->
-            Buffer.add_string buf "f32(" ;
-            (match args with [e] -> gen_expr buf e | _ -> ()) ;
-            Buffer.add_char buf ')'
+            Some
+              (fun buf args ->
+                Buffer.add_string buf "f32(" ;
+                (match args with [e] -> gen_expr buf e | _ -> ()) ;
+                Buffer.add_char buf ')')
         | "int_of_float" ->
-            Buffer.add_string buf "i32(" ;
-            (match args with [e] -> gen_expr buf e | _ -> ()) ;
-            Buffer.add_char buf ')'
-        | _ ->
-            Buffer.add_string buf full_name ;
-            Buffer.add_char buf '(' ;
-            List.iteri
-              (fun i e ->
-                if i > 0 then Buffer.add_string buf ", " ;
-                gen_expr buf e)
-              args ;
-            Buffer.add_char buf ')')
+            Some
+              (fun buf args ->
+                Buffer.add_string buf "i32(" ;
+                (match args with [e] -> gen_expr buf e | _ -> ()) ;
+                Buffer.add_char buf ')')
+        | _ -> None);
+  }
 
 (** {1 L-value Generation} *)
 
@@ -809,9 +724,9 @@ let gen_helper_func buf (hf : helper_func) =
 
 (** Emit the [sarek_fmod] C-fmod helper (f32; WGSL has no f64) when the kernel
     uses [fmod]. Replaces the earlier bare [%] lowering, which shared C-fmod's
-    two divergences (both raised in review): the single-pass
-    [x - y*trunc(x/y)] loses quotient precision for large [|x/y|], and an
-    infinite divisor yields NaN where C defines [fmod(x, ±inf) = x].
+    two divergences (both raised in review): the single-pass [x - y*trunc(x/y)]
+    loses quotient precision for large [|x/y|], and an infinite divisor yields
+    NaN where C defines [fmod(x, ±inf) = x].
 
     The body is a bounded exact reduction by power-of-two scaling (identical in
     shape to the GLSL [sarek_fmod] helper): scale [d = |y|] up by [×2] to the
@@ -842,10 +757,10 @@ let gen_fmod_helper buf (k : kernel) =
       \  if (ax < ay) { return x; }\n\
       \  var r = ax; var d = ay;\n\
       \  loop { if (!(d <= 0.5 * r)) { break; } d = d * 2.0; }\n\
-      \  loop { if (r >= d) { r = r - d; } if (d == ay) { break; } d = d * 0.5; \
-       }\n\
-      \  return bitcast<f32>((bitcast<u32>(r) & 0x7fffffffu) | (bitcast<u32>(x) \
-       & 0x80000000u));\n\
+      \  loop { if (r >= d) { r = r - d; } if (d == ay) { break; } d = d * \
+       0.5; }\n\
+      \  return bitcast<f32>((bitcast<u32>(r) & 0x7fffffffu) | \
+       (bitcast<u32>(x) & 0x80000000u));\n\
        }\n\n"
 
 (** {1 Record and Variant Type Generation} *)

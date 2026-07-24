@@ -162,7 +162,12 @@ let test_atomics () =
   let buf = Buffer.create 128 in
   let addr = make_var "counter" TInt32 in
   let value = EConst (CInt32 1l) in
-  Sarek_ir_glsl.gen_intrinsic buf [] "atomic_add" [EVar addr; value] ;
+  Sarek_ir_glsl.Dispatch.gen_intrinsic
+    Sarek_ir_glsl.glsl_backend
+    buf
+    []
+    "atomic_add"
+    [EVar addr; value] ;
   let result = Buffer.contents buf in
   Alcotest.(check bool)
     "atomic_add generates atomicAdd"

@@ -9,6 +9,7 @@
  (public_name sarek.codegen)
  (libraries sarek_ir sarek_registry sarek_backend_error)
  (modules
+  Sarek_ir_intrinsic_dispatch
   Sarek_ir_cuda
   Sarek_ir_opencl
   Sarek_ir_metal
