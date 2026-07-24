@@ -20,7 +20,7 @@
  *
  * The device-side consumption (lowering [pts.(i).x] to N base pointers +
  * coalesced scalar loads) is the #260 PTX emitter; the launch that binds these
- * N leaf buffers as that ABI is {!Sarek.Execute.run_soa}, which is CUDA/PTX
+ * N leaf buffers as that ABI is {!Sarek.Soa_launch.run_soa}, which is CUDA/PTX
  * only. This module is pure host storage + transpose and is backend-agnostic.
  *
  * This is deliberately layered above {!Vector} + {!Soa} rather than being a new
