@@ -112,6 +112,74 @@ let recursion_vector_kernel () =
     body
     [helper]
 
+(** A vector-parameter helper whose own LOCAL accumulator is named [data] — the
+    same name as the kernel's buffer the call passes for the vector parameter.
+    Without alpha-renaming, substituting the vector parameter [arr] -> [data]
+    makes the spliced body read the local scalar [data] as an array ([data[i]])
+    and shadows the global buffer: invalid GLSL. The inliner must rename the
+    colliding local to a fresh [sarek_]-prefixed name. *)
+let collision_helper () =
+  let arr = make_var "arr" (TVec TFloat32) in
+  let n = make_var "n" TInt32 in
+  let i = {(make_var "__i" TInt32) with var_mutable = true} in
+  (* local named EXACTLY like the kernel buffer parameter below *)
+  let data_local = {(make_var "data" TFloat32) with var_mutable = true} in
+  let body =
+    SLetMut
+      ( i,
+        EConst (CInt32 0l),
+        SLetMut
+          ( data_local,
+            EConst (CFloat32 0.0),
+            SSeq
+              [
+                SWhile
+                  ( EBinop (Lt, EVar i, EVar n),
+                    SSeq
+                      [
+                        SAssign
+                          ( LVar data_local,
+                            EBinop
+                              (Add, EVar data_local, EArrayRead ("arr", EVar i))
+                          );
+                        SAssign
+                          (LVar i, EBinop (Add, EVar i, EConst (CInt32 1l)));
+                      ] );
+                SReturn (EVar data_local);
+              ] ) )
+  in
+  {
+    hf_name = "sum_range";
+    hf_params = [arr; n];
+    hf_ret_type = TFloat32;
+    hf_body = body;
+  }
+
+(** Same call shape, but the buffer parameter is literally named [data] and the
+    helper's local accumulator is also [data]. *)
+let collision_kernel () =
+  let data = make_var "data" (TVec TFloat32) in
+  let out = make_var "out" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("out", EVar tid),
+            EApp
+              ( EVar (make_var "sum_range" TFloat32),
+                [EVar data; EBinop (Add, EVar tid, EConst (CInt32 1l))] ) ) )
+  in
+  base_kernel
+    "collision_vector"
+    [
+      DParam (data, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+    ]
+    body
+    [collision_helper ()]
+
 (* ---- validator plumbing (mirrors the ptxas gate) ---- *)
 
 let tool_available cmd =
@@ -226,6 +294,59 @@ let test_wgsl_recursion_vector_validates () =
           e
           wgsl
 
+(* Alpha-capture regression: a helper local named like the kernel buffer. The
+   fixed inliner renames the local to a fresh sarek_-prefixed name; the buffer
+   read survives; glslangValidator accepts. Before the fix this GLSL was invalid
+   (a scalar `data` indexed as `data[i]`, shadowing the global buffer). *)
+let test_glsl_local_buffer_name_collision () =
+  let k = collision_kernel () in
+  let glsl = Sarek_ir_glsl.generate k in
+  if contains glsl "sum_range(" then
+    Alcotest.failf "helper must be inlined, found residual call/def:\n%s" glsl ;
+  (* The colliding local must have been renamed. *)
+  if not (contains glsl "sarek_inl_local_") then
+    Alcotest.failf
+      "expected the colliding local to be alpha-renamed (sarek_inl_local_*):\n\
+       %s"
+      glsl ;
+  if not (Lazy.force glslang_available) then
+    Printf.printf "  SKIP: glslangValidator not on PATH\n%!"
+  else
+    match glslang_ok glsl with
+    | Ok () -> Printf.printf "  glslangValidator OK: collision_vector\n%!"
+    | Error e ->
+        Alcotest.failf
+          "glslangValidator rejected collision_vector GLSL (alpha-capture?):\n\
+           %s\n\
+           --- shader ---\n\
+           %s"
+          e
+          glsl
+
+let test_wgsl_local_buffer_name_collision () =
+  let k = collision_kernel () in
+  let wgsl = Sarek_ir_wgsl.generate k in
+  if contains wgsl "sum_range(" then
+    Alcotest.failf "helper must be inlined, found residual call/def:\n%s" wgsl ;
+  if not (contains wgsl "sarek_inl_local_") then
+    Alcotest.failf
+      "expected the colliding local to be alpha-renamed (sarek_inl_local_*):\n\
+       %s"
+      wgsl ;
+  if not (Lazy.force naga_available) then
+    Printf.printf "  SKIP: naga not on PATH (WGSL validation skipped)\n%!"
+  else
+    match naga_ok wgsl with
+    | Ok () -> Printf.printf "  naga OK: collision_vector\n%!"
+    | Error e ->
+        Alcotest.failf
+          "naga rejected collision_vector WGSL (alpha-capture?):\n\
+           %s\n\
+           --- shader ---\n\
+           %s"
+          e
+          wgsl
+
 let () =
   Alcotest.run
     "shader_recursion_vector"
@@ -240,5 +361,13 @@ let () =
             "WGSL recursion+vector validates"
             `Quick
             test_wgsl_recursion_vector_validates;
+          Alcotest.test_case
+            "GLSL helper-local vs buffer-name collision (alpha-capture)"
+            `Quick
+            test_glsl_local_buffer_name_collision;
+          Alcotest.test_case
+            "WGSL helper-local vs buffer-name collision (alpha-capture)"
+            `Quick
+            test_wgsl_local_buffer_name_collision;
         ] );
     ]

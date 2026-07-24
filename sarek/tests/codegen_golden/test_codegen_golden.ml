@@ -1761,6 +1761,162 @@ let metal_only_tests () =
           check_golden "metal" kernel_name actual))
     (metal_only_kernels ())
 
+(** {1 Shader-validation sweep}
+
+    The golden strings above pin byte-exact codegen output but never checked
+    that the emitted shader is VALID. This sweep runs every GLSL golden through
+    [glslangValidator] and every WGSL golden through [naga] (validating that the
+    whole committed corpus assembles, not just the recursion+vector regression
+    in the unit gate). Both skip cleanly when the tool is absent (mirrors the
+    ptxas gate in test_ptx_snapshot.ml). *)
+
+let tool_available cmd =
+  match Unix.system (Printf.sprintf "command -v %s >/dev/null 2>&1" cmd) with
+  | Unix.WEXITED 0 -> true
+  | _ -> false
+
+let glslang_available = lazy (tool_available "glslangValidator")
+
+let naga_available = lazy (tool_available "naga")
+
+let read_file f =
+  try
+    let ic = open_in f in
+    let n = in_channel_length ic in
+    let s = really_input_string ic n in
+    close_in ic ;
+    s
+  with _ -> ""
+
+(** Assemble GLSL compute source with glslangValidator (same invocation as the
+    production Vulkan path: [-V -S comp], entry [main], no --target-env). *)
+let glslang_ok glsl =
+  let base = Filename.temp_file "sarek_golden_glsl_" "" in
+  let src = base ^ ".comp" in
+  let spv = base ^ ".spv" in
+  let err = base ^ ".err" in
+  let oc = open_out src in
+  output_string oc glsl ;
+  close_out oc ;
+  let cmd =
+    Printf.sprintf
+      "glslangValidator -V -S comp -o %s %s >%s 2>&1"
+      (Filename.quote spv)
+      (Filename.quote src)
+      (Filename.quote err)
+  in
+  let rc = Unix.system cmd in
+  let out = read_file err in
+  List.iter (fun f -> try Sys.remove f with _ -> ()) [src; spv; err; base] ;
+  match rc with Unix.WEXITED 0 -> Ok () | _ -> Error out
+
+let naga_ok wgsl =
+  let base = Filename.temp_file "sarek_golden_wgsl_" "" in
+  let src = base ^ ".wgsl" in
+  let err = base ^ ".err" in
+  let oc = open_out src in
+  output_string oc wgsl ;
+  close_out oc ;
+  let cmd =
+    Printf.sprintf
+      "naga --validate all %s >%s 2>&1"
+      (Filename.quote src)
+      (Filename.quote err)
+  in
+  let rc = Unix.system cmd in
+  let out = read_file err in
+  List.iter (fun f -> try Sys.remove f with _ -> ()) [src; err; base] ;
+  match rc with Unix.WEXITED 0 -> Ok () | _ -> Error out
+
+(** Per-case exclusions from the validation sweep, each with a cited reason. A
+    golden here is still byte-exact-checked above; it is only skipped by the
+    validator (e.g. it exercises an intentionally partial construct). Keyed by
+    (backend, kernel_name). Empty unless a genuine, documented gap is found. *)
+let validation_exclusions : ((string * string) * string) list =
+  [
+    (* PRE-EXISTING float64-transcendental GLSL codegen gap (NOT related to the
+       vector-helper work): GLSL core has no double-precision overload for the
+       transcendental builtins, so the float64 log10 path emits [log(<double>)]
+       and the float64 cbrt path emits [pow(<double>, ...)], both of which
+       glslangValidator rejects ("no matching overloaded function"). These
+       goldens pin the current (float-builtin) lowering and are still
+       byte-exact-checked above; validating them is out of scope for this task
+       and would require a genuine double-precision transcendental lowering
+       (software polyfill) on the Vulkan backend. *)
+    ( ("glsl", "float64_log10_path"),
+      "GLSL core has no double overload for log(); pre-existing f64 \
+       transcendental codegen gap, out of scope" );
+    ( ("glsl", "float64_cbrt_path"),
+      "GLSL core has no double overload for pow(); pre-existing f64 \
+       transcendental codegen gap, out of scope" );
+  ]
+
+let excluded backend name = List.assoc_opt (backend, name) validation_exclusions
+
+(** GLSL corpus = cross-backend kernels + GLSL-only kernels. *)
+let glsl_validation_tests () =
+  List.map
+    (fun (kernel_name, k) ->
+      Alcotest.test_case
+        (Printf.sprintf "glsl-validate/%s" kernel_name)
+        `Quick
+        (fun () ->
+          match excluded "glsl" kernel_name with
+          | Some reason ->
+              Printf.printf
+                "  SKIP (excluded): glsl/%s — %s\n%!"
+                kernel_name
+                reason
+          | None -> (
+              Gen_glsl.reset_state () ;
+              let glsl = Gen_glsl.generate_with_types ~types:k.kern_types k in
+              if not (Lazy.force glslang_available) then
+                Printf.printf "  SKIP: glslangValidator not on PATH\n%!"
+              else
+                match glslang_ok glsl with
+                | Ok () ->
+                    Printf.printf "  glslangValidator OK: %s\n%!" kernel_name
+                | Error e ->
+                    Alcotest.failf
+                      "glslangValidator rejected golden glsl/%s:\n\
+                       %s\n\
+                       --- shader ---\n\
+                       %s"
+                      kernel_name
+                      e
+                      glsl)))
+    (test_kernels () @ glsl_only_kernels ())
+
+(** WGSL corpus = cross-backend kernels + WGSL-only kernels. *)
+let wgsl_validation_tests () =
+  List.map
+    (fun (kernel_name, k) ->
+      Alcotest.test_case
+        (Printf.sprintf "wgsl-validate/%s" kernel_name)
+        `Quick
+        (fun () ->
+          match excluded "wgsl" kernel_name with
+          | Some reason ->
+              Printf.printf
+                "  SKIP (excluded): wgsl/%s — %s\n%!"
+                kernel_name
+                reason
+          | None -> (
+              Gen_wgsl.reset_state () ;
+              let wgsl = Gen_wgsl.generate_with_types ~types:k.kern_types k in
+              if not (Lazy.force naga_available) then
+                Printf.printf "  SKIP: naga not on PATH\n%!"
+              else
+                match naga_ok wgsl with
+                | Ok () -> Printf.printf "  naga OK: %s\n%!" kernel_name
+                | Error e ->
+                    Alcotest.failf
+                      "naga rejected golden wgsl/%s:\n%s\n--- shader ---\n%s"
+                      kernel_name
+                      e
+                      wgsl)))
+    (test_kernels () @ wgsl_only_kernels ())
+
 let () =
   Alcotest.run
     "codegen_golden"
@@ -1769,4 +1925,6 @@ let () =
         ("wgsl_only", wgsl_only_tests ());
         ("glsl_only", glsl_only_tests ());
         ("metal_only", metal_only_tests ());
+        ("glsl_validation_sweep", glsl_validation_tests ());
+        ("wgsl_validation_sweep", wgsl_validation_tests ());
       ])

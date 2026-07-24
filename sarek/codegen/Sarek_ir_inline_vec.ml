@@ -73,6 +73,13 @@ let fresh_temp_name ctx =
   ctx.temp_counter <- ctx.temp_counter + 1 ;
   Printf.sprintf "_sarek_inl_%d" ctx.temp_counter
 
+(** Fresh name for a helper local that must be alpha-renamed to avoid capturing
+    a substituted-in buffer reference. [sarek_]-prefixed (a reserved,
+    collision-proof namespace on every backend). *)
+let fresh_local_name ctx =
+  ctx.temp_counter <- ctx.temp_counter + 1 ;
+  Printf.sprintf "sarek_inl_local_%d" ctx.temp_counter
+
 (** Is [e] a call to a vector-parameter helper? Returns its name + args. *)
 let as_vec_call ctx = function
   | EApp (EVar f, args) when Hashtbl.mem ctx.vec_helpers f.var_name ->
@@ -83,69 +90,127 @@ let as_vec_call ctx = function
 (* Vector-parameter name substitution                                  *)
 (* ------------------------------------------------------------------ *)
 
-(** [subst] maps a helper's vector-parameter name to the call site's buffer
-    name. Applied throughout the spliced body so every buffer access
-    ([EArrayRead], [EArrayLen], [LArrayElem], and any bare [EVar] of the
-    parameter) reads the caller's global buffer directly. *)
+(** [subst] maps a name to its replacement (identity if absent). Two uses:
+    - vector-parameter substitution: maps a helper's vector-parameter name to
+      the call site's buffer name, so every buffer access ([EArrayRead],
+      [EArrayLen], [LArrayElem], and any bare [EVar]) reads the caller's global
+      buffer directly. Here [~rename_binders:false] — the vector parameter has
+      no binder in the body, and a shadowing local of the same name must NOT be
+      touched.
+    - alpha-renaming: maps a helper local that would collide with a
+      substituted-in buffer name to a fresh name. Here [~rename_binders:true] so
+      the binder occurrences ([SLet]/[SLetMut]/[SFor] variables and match
+      pattern bindings) are rewritten too, not only the uses. *)
 let sub subst name =
   match List.assoc_opt name subst with Some n -> n | None -> name
 
-let rec subst_expr subst e =
+let sub_pattern ~rename_binders subst = function
+  | PConstr (cname, bindings) when rename_binders ->
+      PConstr (cname, List.map (sub subst) bindings)
+  | p -> p
+
+let rec subst_expr ~rename_binders subst e =
+  let se = subst_expr ~rename_binders subst in
   match e with
   | EConst _ -> e
   | EVar v -> EVar {v with var_name = sub subst v.var_name}
-  | EBinop (op, a, b) -> EBinop (op, subst_expr subst a, subst_expr subst b)
-  | EUnop (op, a) -> EUnop (op, subst_expr subst a)
-  | EArrayRead (name, idx) -> EArrayRead (sub subst name, subst_expr subst idx)
-  | EArrayReadExpr (base, idx) ->
-      EArrayReadExpr (subst_expr subst base, subst_expr subst idx)
-  | ERecordField (a, f) -> ERecordField (subst_expr subst a, f)
-  | EIntrinsic (path, name, args) ->
-      EIntrinsic (path, name, List.map (subst_expr subst) args)
-  | ECast (ty, a) -> ECast (ty, subst_expr subst a)
-  | ETuple es -> ETuple (List.map (subst_expr subst) es)
-  | EApp (fn, args) ->
-      EApp (subst_expr subst fn, List.map (subst_expr subst) args)
+  | EBinop (op, a, b) -> EBinop (op, se a, se b)
+  | EUnop (op, a) -> EUnop (op, se a)
+  | EArrayRead (name, idx) -> EArrayRead (sub subst name, se idx)
+  | EArrayReadExpr (base, idx) -> EArrayReadExpr (se base, se idx)
+  | ERecordField (a, f) -> ERecordField (se a, f)
+  | EIntrinsic (path, name, args) -> EIntrinsic (path, name, List.map se args)
+  | ECast (ty, a) -> ECast (ty, se a)
+  | ETuple es -> ETuple (List.map se es)
+  | EApp (fn, args) -> EApp (se fn, List.map se args)
   | ERecord (name, fields) ->
-      ERecord (name, List.map (fun (f, x) -> (f, subst_expr subst x)) fields)
-  | EVariant (t, c, args) -> EVariant (t, c, List.map (subst_expr subst) args)
+      ERecord (name, List.map (fun (f, x) -> (f, se x)) fields)
+  | EVariant (t, c, args) -> EVariant (t, c, List.map se args)
   | EArrayLen name -> EArrayLen (sub subst name)
-  | EArrayCreate (ty, sz, ms) -> EArrayCreate (ty, subst_expr subst sz, ms)
-  | EIf (c, t, e2) ->
-      EIf (subst_expr subst c, subst_expr subst t, subst_expr subst e2)
+  | EArrayCreate (ty, sz, ms) -> EArrayCreate (ty, se sz, ms)
+  | EIf (c, t, e2) -> EIf (se c, se t, se e2)
   | EMatch (s, cases) ->
       EMatch
-        ( subst_expr subst s,
-          List.map (fun (p, b) -> (p, subst_expr subst b)) cases )
+        ( se s,
+          List.map
+            (fun (p, b) -> (sub_pattern ~rename_binders subst p, se b))
+            cases )
 
-and subst_lvalue subst = function
+and subst_lvalue ~rename_binders subst lv =
+  let se = subst_expr ~rename_binders subst in
+  match lv with
   | LVar v -> LVar {v with var_name = sub subst v.var_name}
-  | LArrayElem (name, idx) -> LArrayElem (sub subst name, subst_expr subst idx)
-  | LArrayElemExpr (base, idx) ->
-      LArrayElemExpr (subst_expr subst base, subst_expr subst idx)
-  | LRecordField (lv, f) -> LRecordField (subst_lvalue subst lv, f)
+  | LArrayElem (name, idx) -> LArrayElem (sub subst name, se idx)
+  | LArrayElemExpr (base, idx) -> LArrayElemExpr (se base, se idx)
+  | LRecordField (lv, f) ->
+      LRecordField (subst_lvalue ~rename_binders subst lv, f)
 
-let rec subst_stmt subst s =
+(** Rewrite a binder's variable, renaming it only when [~rename_binders]. *)
+let sub_binder ~rename_binders subst (v : var) =
+  if rename_binders then {v with var_name = sub subst v.var_name} else v
+
+let rec subst_stmt ~rename_binders subst s =
+  let se = subst_expr ~rename_binders subst in
+  let ss = subst_stmt ~rename_binders subst in
+  let sb v = sub_binder ~rename_binders subst v in
   match s with
-  | SAssign (lv, e) -> SAssign (subst_lvalue subst lv, subst_expr subst e)
-  | SSeq ss -> SSeq (List.map (subst_stmt subst) ss)
-  | SIf (c, t, e) ->
-      SIf
-        (subst_expr subst c, subst_stmt subst t, Option.map (subst_stmt subst) e)
-  | SWhile (c, b) -> SWhile (subst_expr subst c, subst_stmt subst b)
-  | SFor (v, lo, hi, dir, b) ->
-      SFor (v, subst_expr subst lo, subst_expr subst hi, dir, subst_stmt subst b)
+  | SAssign (lv, e) -> SAssign (subst_lvalue ~rename_binders subst lv, se e)
+  | SSeq stmts -> SSeq (List.map ss stmts)
+  | SIf (c, t, e) -> SIf (se c, ss t, Option.map ss e)
+  | SWhile (c, b) -> SWhile (se c, ss b)
+  | SFor (v, lo, hi, dir, b) -> SFor (sb v, se lo, se hi, dir, ss b)
   | SMatch (e, cases) ->
       SMatch
-        ( subst_expr subst e,
-          List.map (fun (p, b) -> (p, subst_stmt subst b)) cases )
-  | SReturn e -> SReturn (subst_expr subst e)
+        ( se e,
+          List.map
+            (fun (p, b) -> (sub_pattern ~rename_binders subst p, ss b))
+            cases )
+  | SReturn e -> SReturn (se e)
   | (SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _) as s -> s
-  | SExpr e -> SExpr (subst_expr subst e)
-  | SLet (v, e, b) -> SLet (v, subst_expr subst e, subst_stmt subst b)
-  | SLetMut (v, e, b) -> SLetMut (v, subst_expr subst e, subst_stmt subst b)
-  | SPragma (h, b) -> SPragma (h, subst_stmt subst b)
-  | SBlock b -> SBlock (subst_stmt subst b)
+  | SExpr e -> SExpr (se e)
+  | SLet (v, e, b) -> SLet (sb v, se e, ss b)
+  | SLetMut (v, e, b) -> SLetMut (sb v, se e, ss b)
+  | SPragma (h, b) -> SPragma (h, ss b)
+  | SBlock b -> SBlock (ss b)
+
+(* ------------------------------------------------------------------ *)
+(* Binder collection (for alpha-renaming)                              *)
+(* ------------------------------------------------------------------ *)
+
+(** All local binder names introduced anywhere in [s]: [SLet]/[SLetMut]/[SFor]
+    variables and match-pattern bindings. Used to detect names that would
+    capture a substituted-in buffer reference. *)
+let collect_binders s =
+  let acc = ref [] in
+  let add n = acc := n :: !acc in
+  let pat = function
+    | PConstr (_, bindings) -> List.iter add bindings
+    | PWild -> ()
+  in
+  let rec go = function
+    | SLet (v, _, b) | SLetMut (v, _, b) ->
+        add v.var_name ;
+        go b
+    | SFor (v, _, _, _, b) ->
+        add v.var_name ;
+        go b
+    | SSeq stmts -> List.iter go stmts
+    | SIf (_, t, e) ->
+        go t ;
+        Option.iter go e
+    | SWhile (_, b) | SPragma (_, b) | SBlock b -> go b
+    | SMatch (_, cases) ->
+        List.iter
+          (fun (p, b) ->
+            pat p ;
+            go b)
+          cases
+    | SAssign _ | SReturn _ | SExpr _ | SBarrier | SWarpBarrier | SMemFence
+    | SEmpty | SNative _ ->
+        ()
+  in
+  go s ;
+  !acc
 
 (* ------------------------------------------------------------------ *)
 (* Return rewriting (tail-position only)                               *)
@@ -283,8 +348,29 @@ let rec splice_call ctx sink (fname : string) (args : expr list) : stmt =
       args
       ([], [])
   in
+  (* Alpha-capture avoidance. A helper local (or scalar-parameter) whose name
+     collides with a name involved in the buffer substitution — either the
+     buffer we substitute IN (a value) or the vector parameter we substitute
+     AWAY (a key) — would, once spliced into the caller's block, shadow the
+     global buffer and make substituted [buf[i]] accesses read the local
+     instead. Rename every such colliding binder to a fresh [sarek_]-prefixed
+     name (binder AND uses) BEFORE the buffer substitution runs. *)
+  let dangerous = List.map fst subst @ List.map snd subst in
+  let scalar_param_names = List.map (fun (p, _) -> p.var_name) scalar_binds in
+  let rename =
+    List.sort_uniq compare (collect_binders hf.hf_body @ scalar_param_names)
+    |> List.filter_map (fun name ->
+        if List.mem name dangerous then Some (name, fresh_local_name ctx)
+        else None)
+  in
+  let body = subst_stmt ~rename_binders:true rename hf.hf_body in
+  let scalar_binds =
+    List.map
+      (fun (p, arg) -> ({p with var_name = sub rename p.var_name}, arg))
+      scalar_binds
+  in
   (* Substitute buffer names, then route returns to the sink. *)
-  let body = subst_stmt subst hf.hf_body in
+  let body = subst_stmt ~rename_binders:false subst body in
   let body = rewrite_returns ctx sink body in
   (* Bind scalar parameters as lets wrapping the body. *)
   let bound =

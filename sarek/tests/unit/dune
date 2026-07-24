@@ -97,5 +97,3 @@
 (test
  (name test_soa)
  (libraries spoc_core spoc.ir ctypes alcotest))
-
-
