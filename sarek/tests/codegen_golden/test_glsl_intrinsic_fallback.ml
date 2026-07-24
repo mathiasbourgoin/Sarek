@@ -17,9 +17,11 @@
  *    variants, [_f64] primitives, int bit-ops, memory fences).
  *
  * 2. POSITIVE — [log10], which IS present in the pure-registry float32/float64
- *    tables (so it "resolves" but to the non-existent GLSL builtin [log10]),
- *    must be polyfilled to [(log(x) / log(10.0))] for both the path-qualified
- *    and the unqualified spelling.
+ *    tables (so it "resolves" but to the non-existent GLSL builtin [log10]).
+ *    The f32 spellings (unqualified and [Float32]) are polyfilled to
+ *    [(log(x) / log(10.0))]; the [Float64] spelling has no GLSL f64 builtin at
+ *    all and is lowered to the software helper family ([sarek_f64_log10], built
+ *    over [sarek_f64_log]) — see [Sarek_ir_softmath] / [Sarek_ir_glsl].
  ******************************************************************************)
 
 open Sarek_ir_types
@@ -101,25 +103,51 @@ let string_contains ~haystack ~needle =
   in
   nl = 0 || loop 0
 
-let test_log10 ~path ~is_f64 ~label () =
+(* f32 route (unqualified / Float32): [log10] is polyfilled to
+   [(log(x) / log(10.0))] with the un-suffixed (single-precision) divisor. *)
+let test_log10 ~path ~label () =
   let glsl = generate (kernel_calling ~path ~name:"log10" ~arity:1) in
   let contains needle = string_contains ~haystack:glsl ~needle in
-  (* The divisor literal must carry the GLSL [lf] double suffix on the Float64
-     route and must NOT on the f32 route (else the divisor is pinned to single
-     precision — the CodeRabbit #259 finding). *)
-  let divisor = if is_f64 then "log(10.0lf)" else "log(10.0)" in
   Alcotest.(check bool)
-    (label ^ ": emits (log(x) / " ^ divisor ^ ") polyfill")
+    (label ^ ": emits (log(x) / log(10.0)) polyfill")
     true
-    (contains "log(" && contains ("/ " ^ divisor)) ;
+    (contains "log(" && contains "/ log(10.0)") ;
   Alcotest.(check bool)
     (label ^ ": f32 divisor carries no lf suffix")
-    is_f64
+    false
     (contains "10.0lf") ;
   Alcotest.(check bool)
     (label ^ ": no raw log10( token")
     false
     (contains "log10(")
+
+(* Float64 route: no GLSL f64 builtin exists, so [log10] lowers to the software
+   helper family — a call to [sarek_f64_log10], defined over [sarek_f64_log],
+   under the int64 extension — never a bare double-typed [log10]/[log] builtin. *)
+let test_log10_f64 () =
+  let glsl = generate (kernel_calling ~path:["Float64"] ~name:"log10" ~arity:1) in
+  let contains needle = string_contains ~haystack:glsl ~needle in
+  Alcotest.(check bool)
+    "Float64.log10: calls the sarek_f64_log10 helper"
+    true
+    (contains "sarek_f64_log10(") ;
+  Alcotest.(check bool)
+    "Float64.log10: defines the helper"
+    true
+    (contains "double sarek_f64_log10(") ;
+  Alcotest.(check bool)
+    "Float64.log10: routes through sarek_f64_log"
+    true
+    (contains "sarek_f64_log(") ;
+  Alcotest.(check bool)
+    "Float64.log10: emits the int64 extension"
+    true
+    (contains "GL_ARB_gpu_shader_int64") ;
+  (* No reserved double-underscore identifier leaks into GLSL. *)
+  Alcotest.(check bool)
+    "Float64.log10: no __ reserved identifier"
+    false
+    (contains "__sarek")
 
 let () =
   let open Alcotest in
@@ -136,14 +164,11 @@ let () =
           test_case
             "unqualified"
             `Quick
-            (test_log10 ~path:[] ~is_f64:false ~label:"log10");
+            (test_log10 ~path:[] ~label:"log10");
           test_case
             "Float32-qualified"
             `Quick
-            (test_log10 ~path:["Float32"] ~is_f64:false ~label:"Float32.log10");
-          test_case
-            "Float64-qualified"
-            `Quick
-            (test_log10 ~path:["Float64"] ~is_f64:true ~label:"Float64.log10");
+            (test_log10 ~path:["Float32"] ~label:"Float32.log10");
+          test_case "Float64-qualified" `Quick test_log10_f64;
         ] );
     ]
