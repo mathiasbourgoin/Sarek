@@ -895,17 +895,36 @@ and lower_stmt (state : state) (te : texpr) : Ir.stmt =
         | None -> Ir.EIntrinsic (["Sarek_stdlib"; "Gpu"], "block_dim_x", [])
       in
       let v = make_var name id (TArr (elem_ty, Sarek_types.Shared)) false in
-      (* Sibling of the helper-return wrong-width fix: a shared-memory array
-         whose ELEMENT type is a primitive-component tuple must be typed through
-         the data mapper. [elttype_of_typ] would collapse the [TTuple] element to
-         [Ir.TInt32] (wrong stride / int32-collapse), so the [__shared__]/[__local]
-         declaration and every indexed access would mistype a compound slot as a
-         scalar. [slot_elttype_of_typ] lowers it to the synthesized [_tup_*]
-         record (the same element type a tuple vector param uses); register the
-         record so its [struct] definition is emitted. A non-primitive tuple
-         element raises the located tuple-component error. *)
-      register_tuple_type state elem_ty ;
-      let elem_ir = slot_elttype_of_typ elem_ty in
+      (* Sibling of the helper-return wrong-width fix, REJECTED (round 2). A
+         [let%shared] whose ELEMENT type is a tuple/function was originally typed
+         by the bare [elttype_of_typ] placeholder, which collapses [TTuple]/[TFun]
+         to [Ir.TInt32] — a silent scalar-collapse miscompile. Routing it through
+         [slot_elttype_of_typ] to the synthesized [_tup_*] record (as data slots
+         do) was attempted, but a compound in shared memory is NOT supported by
+         the whole backend fleet: the PTX backend raises "unsupported construct:
+         btype of custom type" and Native raises "Cannot create default value for
+         this type" (proven on hardware: OpenCL/Vulkan/Interpreter passed,
+         CUDA/PTX-under-ZLUDA and Native failed; the rejection is locked by
+         sarek/tests/negative/test_shared_tuple.ml). Shipping a route that
+         miscompiles on shared-capable
+         devices is worse than a clean rejection, so a tuple/function shared
+         element is a located compile error, mirroring [lower_param]'s
+         parameter-boundary rejection. (Aggregate shared arrays are a follow-up
+         needing per-backend struct-in-__shared__ support first.) *)
+      (match repr elem_ty with
+      | TTuple _ ->
+          Ppxlib.Location.raise_errorf
+            ~loc:(Sarek_ast.loc_to_ppxlib te.te_loc)
+            "Tuple-typed shared-memory arrays are not supported; declare \
+             separate scalar [let%%shared] arrays for each component (a \
+             compound in shared memory is not supported across the CUDA/PTX \
+             and Native backends)."
+      | TFun _ ->
+          Ppxlib.Location.raise_errorf
+            ~loc:(Sarek_ast.loc_to_ppxlib te.te_loc)
+            "Function-typed shared-memory arrays are not supported."
+      | _ -> ()) ;
+      let elem_ir = elttype_of_typ elem_ty in
       (* Use EArrayCreate with Shared memspace - codegen will emit proper declaration *)
       Ir.SLet
         (v, Ir.EArrayCreate (elem_ir, size_ir, Ir.Shared), lower_stmt state body)

@@ -15,6 +15,7 @@
 ; - test_convention_kernel_fail2: "Cannot unify types"
 ; - test_inline_node_exhaustion: "Inlining produced N nodes (limit: 10000)"
 ; - test_tuple_param: "Tuple-typed kernel parameters are not supported"
+; - test_shared_tuple: "Tuple-typed shared-memory arrays are not supported"
 ; - test_tuple_local_nonprim: "Tuple values support only scalar components"
 ; - test_tuple_destructure_nonprim: "Tuple values support only scalar components"
 ; - test_fun_param: "Function-typed kernel parameters are not supported"
@@ -63,6 +64,17 @@
  (name neg_test_convention_kernel_fail2)
  (modules test_convention_kernel_fail2)
  (libraries sarek sarek.stdlib sarek.ppx.lib sarek_geometry)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_shared_tuple)
+ (modules test_shared_tuple)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
  (flags
