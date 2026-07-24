@@ -787,6 +787,149 @@ let test_kernel_uses_copysign_in_helper () =
   assert (kernel_uses_copysign k = true) ;
   print_endline "  kernel_uses_copysign via helper: OK"
 
+(** {1 kernel_uses_nonfinite_float64 Tests}
+
+    A [CFloat64] whose value is ±inf or NaN cannot be spelled as a GLSL literal,
+    so the detector flags any non-finite f64 constant anywhere in the kernel. A
+    {e finite} f64 constant must NOT trip it, and [SNative] is treated as
+    non-finite-free (native code carries its own literals). *)
+
+let empty_kernel body : kernel =
+  {
+    kern_name = "test";
+    kern_params = [];
+    kern_locals = [];
+    kern_body = body;
+    kern_types = [];
+    kern_variants = [];
+    kern_funcs = [];
+    kern_native_fn = None;
+  }
+
+let test_kernel_uses_nonfinite_float64 () =
+  (* Positive: +inf constant in the body. *)
+  let k_inf = empty_kernel (SExpr (EConst (CFloat64 Float.infinity))) in
+  assert (kernel_uses_nonfinite_float64 k_inf = true) ;
+  (* Positive: NaN constant in the body. *)
+  let k_nan = empty_kernel (SExpr (EConst (CFloat64 Float.nan))) in
+  assert (kernel_uses_nonfinite_float64 k_nan = true) ;
+  (* Positive: -inf buried inside an otherwise ordinary expression. *)
+  let k_neg_inf =
+    empty_kernel
+      (SExpr
+         (EBinop
+            (Add, EConst (CFloat64 1.0), EConst (CFloat64 Float.neg_infinity))))
+  in
+  assert (kernel_uses_nonfinite_float64 k_neg_inf = true) ;
+  (* Negative: an ordinary FINITE f64 constant must NOT trip the detector — the
+     distinction from [kernel_uses_float64] is exactly finiteness. *)
+  let k_finite = empty_kernel (SExpr (EConst (CFloat64 3.14))) in
+  assert (kernel_uses_nonfinite_float64 k_finite = false) ;
+  (* Negative: an f32 non-finite value is not an f64 constant. *)
+  let k_f32_inf = empty_kernel (SExpr (EConst (CFloat32 Float.infinity))) in
+  assert (kernel_uses_nonfinite_float64 k_f32_inf = false) ;
+  (* Negative: empty kernel. *)
+  assert (kernel_uses_nonfinite_float64 (empty_kernel SEmpty) = false) ;
+  (* Negative: SNative is treated as non-finite-free (asymmetric vs atomics). *)
+  let k_native =
+    empty_kernel (SNative {gpu = dummy_native_gpu; ocaml = dummy_native_ocaml})
+  in
+  assert (kernel_uses_nonfinite_float64 k_native = false) ;
+  print_endline "  kernel_uses_nonfinite_float64: OK"
+
+(** {1 kernel_uses_intrinsic Tests}
+
+    Generic named-intrinsic detector: [kernel_uses_intrinsic name k] matches an
+    [EIntrinsic] by [name] only (module path ignored), so both the [Float32] and
+    [Float64] spellings are found. [SNative] is conservatively assumed to
+    reference the intrinsic. *)
+
+let test_kernel_uses_intrinsic () =
+  (* Positive: fmod invoked directly in the body (Float64 path). *)
+  let k_fmod =
+    empty_kernel
+      (SExpr
+         (EIntrinsic
+            (["Float64"], "fmod", [EConst (CFloat64 7.0); EConst (CFloat64 2.0)])))
+  in
+  assert (kernel_uses_intrinsic "fmod" k_fmod = true) ;
+  (* Path-agnostic: the Float32 spelling of the same name is detected too. *)
+  let k_fmod_f32 =
+    empty_kernel
+      (SExpr
+         (EIntrinsic
+            (["Float32"], "fmod", [EConst (CFloat32 7.0); EConst (CFloat32 2.0)])))
+  in
+  assert (kernel_uses_intrinsic "fmod" k_fmod_f32 = true) ;
+  (* Positive: reachable only through a helper function, not kern_body. *)
+  let param : var =
+    {var_name = "x"; var_id = 0; var_type = TFloat64; var_mutable = false}
+  in
+  let hf_fmod : helper_func =
+    {
+      hf_name = "f";
+      hf_params = [param];
+      hf_ret_type = TFloat64;
+      hf_body =
+        SReturn
+          (EIntrinsic (["Float64"], "fmod", [EVar param; EConst (CFloat64 2.0)]));
+    }
+  in
+  let k_helper = {(empty_kernel SEmpty) with kern_funcs = [hf_fmod]} in
+  assert (kernel_uses_intrinsic "fmod" k_helper = true) ;
+  (* Negative: kernel calls a DIFFERENT intrinsic — must not match "fmod". *)
+  let k_sin =
+    empty_kernel
+      (SExpr (EIntrinsic (["Float64"], "sin", [EConst (CFloat64 1.0)])))
+  in
+  assert (kernel_uses_intrinsic "fmod" k_sin = false) ;
+  (* Negative: no intrinsics at all. *)
+  assert (kernel_uses_intrinsic "fmod" (empty_kernel SEmpty) = false) ;
+  (* Conservative: SNative is assumed to reference the intrinsic. *)
+  let k_native =
+    empty_kernel (SNative {gpu = dummy_native_gpu; ocaml = dummy_native_ocaml})
+  in
+  assert (kernel_uses_intrinsic "fmod" k_native = true) ;
+  print_endline "  kernel_uses_intrinsic: OK"
+
+(** {1 kernel_float64_intrinsics Tests}
+
+    STRING-LIST collector: gathers the names of every [EIntrinsic] whose [path]
+    carries a ["Float64"] component, returning them via [List.sort_uniq compare]
+    — i.e. deduplicated and sorted in ascending (OCaml polymorphic) order. The
+    asserted lists below are pinned to that exact order. Float32-pathed
+    intrinsics are excluded; [SNative] contributes nothing. *)
+
+let test_kernel_float64_intrinsics () =
+  (* Several f64 intrinsics (sin appears twice; cos, exp once), plus one
+     Float32-pathed intrinsic that must be excluded. Expected result is the
+     deduplicated, ascending-sorted name list: ["cos"; "exp"; "sin"]. *)
+  let k_many =
+    empty_kernel
+      (SSeq
+         [
+           SExpr (EIntrinsic (["Float64"], "sin", [EConst (CFloat64 1.0)]));
+           SExpr
+             (EIntrinsic (["Math"; "Float64"], "cos", [EConst (CFloat64 1.0)]));
+           SExpr (EIntrinsic (["Float64"], "exp", [EConst (CFloat64 1.0)]));
+           (* duplicate name -> must be deduplicated *)
+           SExpr (EIntrinsic (["Float64"], "sin", [EConst (CFloat64 2.0)]));
+           (* Float32-pathed -> must be EXCLUDED from the f64 collector *)
+           SExpr (EIntrinsic (["Float32"], "tan", [EConst (CFloat32 1.0)]));
+         ])
+  in
+  assert (kernel_float64_intrinsics k_many = ["cos"; "exp"; "sin"]) ;
+  (* Negative: a kernel using NO Float64-pathed intrinsic collects []. Here the
+     only intrinsic is Float32-pathed. *)
+  let k_f32_only =
+    empty_kernel
+      (SExpr (EIntrinsic (["Float32"], "sin", [EConst (CFloat32 1.0)])))
+  in
+  assert (kernel_float64_intrinsics k_f32_only = []) ;
+  (* Negative: empty kernel collects []. *)
+  assert (kernel_float64_intrinsics (empty_kernel SEmpty) = []) ;
+  print_endline "  kernel_float64_intrinsics: OK"
+
 (** {1 Main} *)
 
 let () =
@@ -832,4 +975,7 @@ let () =
   test_lvalue_uses_copysign () ;
   test_kernel_uses_copysign_in_record_field_lvalue () ;
   test_kernel_uses_copysign_in_helper () ;
+  test_kernel_uses_nonfinite_float64 () ;
+  test_kernel_uses_intrinsic () ;
+  test_kernel_float64_intrinsics () ;
   print_endline "All Sarek_ir_analysis tests passed!"
