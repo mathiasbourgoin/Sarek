@@ -352,7 +352,23 @@ let test_fmod_intrinsic () =
   (* |x| >> |y|: exact for this magnitude. *)
   ck64 "f64 1e17 % 3" 1e17 3.0 1.0 ;
   ck32 "f32 +7.5 % +2" 7.5 2.0 1.5 ;
-  ck32 "f32 -7.5 % -2" (-7.5) (-2.0) (-1.5)
+  ck32 "f32 -7.5 % -2" (-7.5) (-2.0) (-1.5) ;
+  (* Review-raised edge cases (the GLSL/WGSL single-pass form got these wrong;
+     the interpreter's Float.rem is C-conformant and is the golden reference). *)
+  (* Infinite divisor: C fmod(x, +/-inf) = x for finite x. *)
+  ck64 "f64 5 % +inf" 5.0 Float.infinity 5.0 ;
+  ck64 "f64 -5 % -inf" (-5.0) Float.neg_infinity (-5.0) ;
+  (* Huge |x/y| ratio (>> 2^53): the truncated-quotient single pass fails; the
+     exact remainder is well-defined. *)
+  ck64 "f64 1e30 % 3" 1e30 3.0 (Float.rem 1e30 3.0) ;
+  (* NaN domain: y = 0 and |x| = inf both yield NaN per C. *)
+  let is_nan64 name x y =
+    match eval_expr state env (f64 x y) with
+    | VFloat64 f -> check bool name true (Float.is_nan f)
+    | _ -> fail "expected VFloat64"
+  in
+  is_nan64 "f64 1 % 0 = nan" 1.0 0.0 ;
+  is_nan64 "f64 inf % 3 = nan" Float.infinity 3.0
 
 let test_binop_eq () =
   let env = make_env () in

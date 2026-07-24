@@ -1565,8 +1565,33 @@ let () =
      #define a_len pc.a_len\n\
      #define b_len pc.b_len\n\
      #define c_len pc.c_len\n\n\
-     float sarek_fmod(float x, float y) { return x - y * trunc(x / y); }\n\n\
-     double sarek_fmod(double x, double y) { return x - y * trunc(x / y); }\n\n\
+     float sarek_fmod(float x, float y) {\n\
+    \  float ay = abs(y);\n\
+    \  if (isnan(x) || isnan(y) || isinf(x) || ay == 0.0) return \
+     uintBitsToFloat(0x7fc00000u);\n\
+    \  if (isinf(y)) return x;\n\
+    \  float ax = abs(x);\n\
+    \  if (ax < ay) return x;\n\
+    \  float r = ax; float d = ay;\n\
+    \  while (d <= 0.5 * r) d *= 2.0;\n\
+    \  while (true) { if (r >= d) r -= d; if (d == ay) break; d *= 0.5; }\n\
+    \  return uintBitsToFloat((floatBitsToUint(r) & 0x7fffffffu) | \
+     (floatBitsToUint(x) & 0x80000000u));\n\
+     }\n\n\
+     double sarek_fmod(double x, double y) {\n\
+    \  double ay = abs(y);\n\
+    \  if (isnan(x) || isnan(y) || isinf(x) || ay == 0.0lf) return \
+     packDouble2x32(uvec2(0u, 0x7ff80000u));\n\
+    \  if (isinf(y)) return x;\n\
+    \  double ax = abs(x);\n\
+    \  if (ax < ay) return x;\n\
+    \  double r = ax; double d = ay;\n\
+    \  while (d <= 0.5lf * r) d *= 2.0lf;\n\
+    \  while (true) { if (r >= d) r -= d; if (d == ay) break; d *= 0.5lf; }\n\
+    \  uvec2 ur = unpackDouble2x32(r); uvec2 ux = unpackDouble2x32(x);\n\
+    \  ur.y = (ur.y & 0x7fffffffu) | (ux.y & 0x80000000u);\n\
+    \  return packDouble2x32(ur);\n\
+     }\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  c[idx] = sarek_fmod(a[idx], b[idx]);\n\
@@ -1595,7 +1620,19 @@ let () =
      #define a_len pc.a_len\n\
      #define b_len pc.b_len\n\
      #define c_len pc.c_len\n\n\
-     float sarek_fmod(float x, float y) { return x - y * trunc(x / y); }\n\n\
+     float sarek_fmod(float x, float y) {\n\
+    \  float ay = abs(y);\n\
+    \  if (isnan(x) || isnan(y) || isinf(x) || ay == 0.0) return \
+     uintBitsToFloat(0x7fc00000u);\n\
+    \  if (isinf(y)) return x;\n\
+    \  float ax = abs(x);\n\
+    \  if (ax < ay) return x;\n\
+    \  float r = ax; float d = ay;\n\
+    \  while (d <= 0.5 * r) d *= 2.0;\n\
+    \  while (true) { if (r >= d) r -= d; if (d == ay) break; d *= 0.5; }\n\
+    \  return uintBitsToFloat((floatBitsToUint(r) & 0x7fffffffu) | \
+     (floatBitsToUint(x) & 0x80000000u));\n\
+     }\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  c[idx] = sarek_fmod(a[idx], b[idx]);\n\

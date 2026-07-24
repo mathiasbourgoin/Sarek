@@ -331,24 +331,34 @@ let binary_specs =
     };
     {
       (* Float64.fmod (float-mod-intrinsic): C fmod = OCaml Float.rem. Result
-         sign follows the DIVIDEND, magnitude < |divisor|. b_gen cycles all
-         four (sign x, sign y) quadrants and uses fractional divisors with a
-         wide |x|/|y| ratio. tol is 1e-9, not 0: the PTX emitter's iterative
-         reduction is bit-exact vs Float.rem, but the single-pass GLSL helper
-         [x - y*trunc(x/y)] carries a couple of ULPs of rounding/cancellation
-         error at these magnitudes — a shared tol must cover the loosest
-         backend. The [y = ±0 -> NaN] domain is exercised by the PTX-emitter
-         and interpreter unit tests instead; this report-only harness compares
-         by magnitude and would mis-handle NaN. *)
+         sign follows the DIVIDEND, magnitude < |divisor|. Three fixed indices
+         pin the review-raised edge cases; the rest cycle all four (sign x,
+         sign y) quadrants with fractional divisors:
+           i=0 : fmod(5, +inf) = 5   -- infinite divisor: C returns x. The old
+                 single-pass x - y*trunc(x/y) gave inf*0 = NaN here.
+           i=1 : fmod(1e30, 3)        -- |x/y| ~ 3e29 >> 2^53, so the single-pass
+           i=2 : fmod(-1e30, 3)          quotient loses all integer bits and the
+                 result could leave [0,|y|); the bounded exact reduction (GLSL)
+                 and emit_float_fmod (PTX) are correct.
+         tol 1e-9: GLSL/WGSL now use a bit-exact power-of-two reduction and
+         PTX's emit_float_fmod is bit-exact vs Float.rem, so the residual is
+         device-fp only. The [y = 0 -> NaN] / [|x| = inf -> NaN] domain is
+         exercised by the interpreter unit test instead; this report-only
+         harness compares by magnitude and would mis-handle NaN. *)
       b_name = "fmod";
       b_ocaml = Float.rem;
       b_gen =
         (fun i ->
-          let mag_x = bounded 0.5 900.0 i in
-          let mag_y = bounded 0.3 3.3 (i + 17) in
-          let sx = if i land 1 = 0 then 1.0 else -1.0 in
-          let sy = if i land 2 = 0 then 1.0 else -1.0 in
-          (sx *. mag_x, sy *. mag_y));
+          match i with
+          | 0 -> (5.0, Float.infinity)
+          | 1 -> (1e30, 3.0)
+          | 2 -> (-1e30, 3.0)
+          | _ ->
+              let mag_x = bounded 0.5 900.0 i in
+              let mag_y = bounded 0.3 3.3 (i + 17) in
+              let sx = if i land 1 = 0 then 1.0 else -1.0 in
+              let sy = if i land 2 = 0 then 1.0 else -1.0 in
+              (sx *. mag_x, sy *. mag_y));
       b_tol = 1e-9;
     };
   ]

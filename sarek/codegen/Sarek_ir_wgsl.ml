@@ -376,17 +376,19 @@ and gen_intrinsic buf path name args =
   in
   let framework = Option.value ~default:"WGSL" !current_framework in
   if name = "fmod" then
-    (* WGSL's [%] operator on floats is exactly C [fmod]
-       ([e1 - e2 * trunc(e1 / e2)], sign of the dividend — WGSL spec §8.7).
-       WGSL has no [fmod] builtin, so the pure registry (queried below for the
-       other math intrinsics) would emit an invalid [fmod(...)] call. Intercept
-       ahead of it and lower to the operator. f64 is unsupported in WGSL, so
-       only the f32 [Float32.fmod] spelling ever reaches here. *)
+    (* WGSL has no [fmod] builtin (the pure registry, queried below, would emit
+       an invalid [fmod(...)] call). The bare [%] operator was WRONG for two
+       cases (both raised in review): an infinite divisor gives
+       [x - inf*trunc(0)] = NaN where C wants [x], and large [|x/y|] loses
+       quotient precision. Lower instead to the [sarek_fmod] preamble helper
+       ([gen_fmod_helper]), whose bounded exact reduction is C-conformant for
+       finite operands and the infinite-divisor case. f64 is unsupported in
+       WGSL, so only the f32 [Float32.fmod] spelling ever reaches here. *)
     match args with
     | [x; y] ->
-        Buffer.add_char buf '(' ;
+        Buffer.add_string buf "sarek_fmod(" ;
         gen_expr buf x ;
-        Buffer.add_string buf " % " ;
+        Buffer.add_string buf ", " ;
         gen_expr buf y ;
         Buffer.add_char buf ')'
     | _ ->
@@ -805,6 +807,47 @@ let gen_helper_func buf (hf : helper_func) =
   gen_stmt buf "  " hf.hf_body ;
   Buffer.add_string buf "}\n\n"
 
+(** Emit the [sarek_fmod] C-fmod helper (f32; WGSL has no f64) when the kernel
+    uses [fmod]. Replaces the earlier bare [%] lowering, which shared C-fmod's
+    two divergences (both raised in review): the single-pass
+    [x - y*trunc(x/y)] loses quotient precision for large [|x/y|], and an
+    infinite divisor yields NaN where C defines [fmod(x, ±inf) = x].
+
+    The body is a bounded exact reduction by power-of-two scaling (identical in
+    shape to the GLSL [sarek_fmod] helper): scale [d = |y|] up by [×2] to the
+    largest [|y|·2^k ≤ |x|], then walk back down subtracting whenever [r ≥ d].
+    Every [×2]/[×0.5] is exact and each subtraction runs with [d ≤ r < 2d]
+    (exact by Sterbenz), so [r] is the bit-exact remainder magnitude; the loops
+    are bounded by the f32 exponent span (~277 iterations). The dividend's sign
+    is restored by a bit-level copy.
+
+    WGSL has no [isnan]/[isinf]; infinity is detected by a magnitude test
+    against the largest finite f32 ([0x1.fffffep+127]). [|y| = inf] returns [x]
+    (C-conformant). The genuine NaN-domain cases ([y = 0], [|x| = inf]) are NOT
+    expressible in WGSL's float model — WGSL cannot synthesise a NaN — so they
+    return [x] purely to keep the reduction loop terminating; this is the one
+    residual divergence from C, unavoidable in WGSL and documented as such.
+
+    The helper name is a fixed [sarek_fmod] (WGSL codegen has no collision-safe
+    naming pass); a user helper of the same name would clash — a pre-existing
+    limitation shared with any reserved WGSL identifier. *)
+let gen_fmod_helper buf (k : kernel) =
+  if Sarek_ir_analysis.kernel_uses_intrinsic "fmod" k then
+    Buffer.add_string
+      buf
+      "fn sarek_fmod(x: f32, y: f32) -> f32 {\n\
+      \  let ax = abs(x); let ay = abs(y);\n\
+      \  if (ay > 0x1.fffffep+127f) { return x; }\n\
+      \  if (ax > 0x1.fffffep+127f || ay == 0.0) { return x; }\n\
+      \  if (ax < ay) { return x; }\n\
+      \  var r = ax; var d = ay;\n\
+      \  loop { if (!(d <= 0.5 * r)) { break; } d = d * 2.0; }\n\
+      \  loop { if (r >= d) { r = r - d; } if (d == ay) { break; } d = d * 0.5; \
+       }\n\
+      \  return bitcast<f32>((bitcast<u32>(r) & 0x7fffffffu) | (bitcast<u32>(x) \
+       & 0x80000000u));\n\
+       }\n\n"
+
 (** {1 Record and Variant Type Generation} *)
 
 let gen_record_def buf (name, fields) =
@@ -1032,6 +1075,7 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
   scalar_param_names := scalars ;
   let wg_decls = collect_workgroup_decls k.kern_body in
   gen_workgroup_module_decls buf wg_decls ;
+  gen_fmod_helper buf k ;
   List.iter (gen_helper_func buf) k.kern_funcs ;
   Buffer.add_string buf (wgsl_header ~kernel_name:k.kern_name ?block ()) ;
   gen_stmt buf "  " k.kern_body ;
@@ -1060,6 +1104,7 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   scalar_param_names := scalars ;
   let wg_decls = collect_workgroup_decls k.kern_body in
   gen_workgroup_module_decls buf wg_decls ;
+  gen_fmod_helper buf k ;
   List.iter (gen_helper_func buf) k.kern_funcs ;
   Buffer.add_string buf (wgsl_header ~kernel_name:k.kern_name ?block ()) ;
   gen_stmt buf "  " k.kern_body ;

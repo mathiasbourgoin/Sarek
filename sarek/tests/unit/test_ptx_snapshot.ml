@@ -2262,8 +2262,33 @@ let test_ptxas_assembles () =
     let ia = make_var "ia" (TVec TInt32) in
     let la = make_var "la" (TVec TInt64) in
     let out = make_var "out" (TVec TInt32) in
+    let fa = make_var "fa" (TVec TFloat32) in
+    let da = make_var "da" (TVec TFloat64) in
     let tid = make_var "tid" TInt32 in
     let x = make_var "x" TInt64 in
+    (* Float32/64.fmod intrinsic reaches emit_float_fmod's iterative reduction;
+       assemble it so ptxas proves the reduction (div.rn/cvt.rzi/fma/selp/
+       copysign, both widths) is valid PTX, not only that the markers appear. *)
+    let fmod_body =
+      SLet
+        ( tid,
+          EIntrinsic ([], "global_thread_id", []),
+          SSeq
+            [
+              SAssign
+                ( LArrayElem ("fa", EVar tid),
+                  EIntrinsic
+                    ( ["Float32"],
+                      "fmod",
+                      [EArrayRead ("fa", EVar tid); EConst (CFloat32 3.0)] ) );
+              SAssign
+                ( LArrayElem ("da", EVar tid),
+                  EIntrinsic
+                    ( ["Float64"],
+                      "fmod",
+                      [EArrayRead ("da", EVar tid); EConst (CFloat64 3.0)] ) );
+            ] )
+    in
     let div_body =
       SLet
         ( tid,
@@ -2317,6 +2342,15 @@ let test_ptxas_assembles () =
               DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global});
             ]
             cmp_body
+            [] );
+        ( "fmod_intrinsic",
+          base_kernel
+            "fmod_intrinsic"
+            [
+              DParam (fa, Some {arr_elttype = TFloat32; arr_memspace = Global});
+              DParam (da, Some {arr_elttype = TFloat64; arr_memspace = Global});
+            ]
+            fmod_body
             [] );
       ]
     in

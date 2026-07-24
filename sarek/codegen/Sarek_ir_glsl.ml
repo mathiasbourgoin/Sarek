@@ -1440,43 +1440,83 @@ let gen_copysign_helper buf (k : kernel) =
            !current_copysign_name)
   end
 
-(** Emit the [sarek_fmod] C-[fmod] helper when the kernel uses [fmod].
+(** Emit the [sarek_fmod] C-conformant [fmod] helper when the kernel uses
+    [fmod].
 
     GLSL has no [fmod] builtin, and its [mod()] is floor-based (divisor-signed),
     so it cannot implement the truncated C [fmod] the intrinsic contracts for.
-    The lowering [x - y * trunc(x / y)] yields the dividend-signed remainder;
-    [trunc] is a GLSL core builtin for both [float] and [double] (GLSL 4.5
-    §8.3), so no polyfill is required for the double overload.
+    The earlier single-pass [x - y * trunc(x / y)] was wrong two ways (both
+    caught in review): (1) for an infinite divisor it gives [x - inf*trunc(0)] =
+    [x - inf*0] = NaN, where C defines [fmod(x, ±inf) = x]; (2) for large [|x/y|]
+    the quotient [x/y] loses integer precision, so [trunc] is wrong and the
+    result can leave [0,|y|) — exactly why #252's PTX [emit_float_fmod] is an
+    ITERATIVE reduction, not a single pass.
+
+    This emits a C-conformant body instead:
+
+    - domain guards, per C: NaN operand, [|x| = inf], or [y = 0] → NaN;
+      [|y| = inf] (finite [x]) → [x]; [|x| < |y|] → [x];
+    - otherwise an exact reduction by power-of-two scaling: scale [d = |y|] up by
+      [×2] (exact) to the largest [|y|·2^k ≤ |x|], then walk it back down to
+      [|y|] subtracting whenever [r ≥ d]. Every [×2]/[×0.5] is exact, and each
+      subtraction runs with [d ≤ r < 2d] so it is exact by Sterbenz — the result
+      is therefore bit-exact vs C [fmod] (stronger than the PTX path's
+      correctly-rounded div/fma reduction). The two loops each run at most
+      [exp(|x|) − exp(|y|)] ≤ ~277 (f32) / ~2098 (f64) iterations — bounded by
+      the exponent span, so termination is guaranteed (the same bound argument as
+      the PTX reduction, which shrinks [|r|] by the mantissa width per round).
+      The dividend's sign (incl. [-0]) is restored with a bit-level copy.
 
     Two overloads are emitted, resolved by argument type at the call site (same
     scheme as {!gen_copysign_helper}):
 
-    - [float]: always emitted when [fmod] is used.
-    - [double]: emitted only when the kernel also uses float64 (the [double]
-      type is gated behind [GL_ARB_gpu_shader_fp64], already emitted under the
-      same [kernel_uses_float64] condition). A [Float64.fmod] kernel is float64
-      by construction, so its call always finds the double overload; the
-      then-unused float overload is harmless dead code.
+    - [float]: always emitted when [fmod] is used. [isnan]/[isinf]/[floatBitsTo*]
+      are core since GLSL 3.30/4.10, needing no extension.
+    - [double]: emitted only when the kernel also uses float64. It uses the
+      genDType [isnan]/[isinf] overloads and [un/packDouble2x32], all gated
+      behind [GL_ARB_gpu_shader_fp64] (already emitted under the same
+      [kernel_uses_float64] condition, as for {!gen_copysign_helper}).
 
     The helper name is [!current_fmod_name] (see {!compute_fmod_name}), never a
-    literal, so it cannot collide with a user param or helper identifier.
-
-    Note the single-pass [trunc(x/y)] is only exact while the quotient fits the
-    mantissa (unlike the PTX backend's iterative reduction); this matches the
-    accuracy GLSL's own [mod()] and float arithmetic already provide, and is
-    exact for the moderate-magnitude operands GPU kernels use in practice. *)
+    literal, so it cannot collide with a user param or helper identifier. *)
 let gen_fmod_helper buf (k : kernel) =
   if Sarek_ir_analysis.kernel_uses_intrinsic "fmod" k then begin
     Buffer.add_string
       buf
       (Printf.sprintf
-         "float %s(float x, float y) { return x - y * trunc(x / y); }\n\n"
+         "float %s(float x, float y) {\n\
+         \  float ay = abs(y);\n\
+         \  if (isnan(x) || isnan(y) || isinf(x) || ay == 0.0) return \
+          uintBitsToFloat(0x7fc00000u);\n\
+         \  if (isinf(y)) return x;\n\
+         \  float ax = abs(x);\n\
+         \  if (ax < ay) return x;\n\
+         \  float r = ax; float d = ay;\n\
+         \  while (d <= 0.5 * r) d *= 2.0;\n\
+         \  while (true) { if (r >= d) r -= d; if (d == ay) break; d *= 0.5; }\n\
+         \  return uintBitsToFloat((floatBitsToUint(r) & 0x7fffffffu) | \
+          (floatBitsToUint(x) & 0x80000000u));\n\
+          }\n\n"
          !current_fmod_name) ;
     if Sarek_ir_analysis.kernel_uses_float64 k then
       Buffer.add_string
         buf
         (Printf.sprintf
-           "double %s(double x, double y) { return x - y * trunc(x / y); }\n\n"
+           "double %s(double x, double y) {\n\
+           \  double ay = abs(y);\n\
+           \  if (isnan(x) || isnan(y) || isinf(x) || ay == 0.0lf) return \
+            packDouble2x32(uvec2(0u, 0x7ff80000u));\n\
+           \  if (isinf(y)) return x;\n\
+           \  double ax = abs(x);\n\
+           \  if (ax < ay) return x;\n\
+           \  double r = ax; double d = ay;\n\
+           \  while (d <= 0.5lf * r) d *= 2.0lf;\n\
+           \  while (true) { if (r >= d) r -= d; if (d == ay) break; d *= \
+            0.5lf; }\n\
+           \  uvec2 ur = unpackDouble2x32(r); uvec2 ux = unpackDouble2x32(x);\n\
+           \  ur.y = (ur.y & 0x7fffffffu) | (ux.y & 0x80000000u);\n\
+           \  return packDouble2x32(ur);\n\
+            }\n\n"
            !current_fmod_name)
   end
 
