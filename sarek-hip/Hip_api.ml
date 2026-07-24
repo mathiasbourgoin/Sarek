@@ -426,6 +426,19 @@ module Kernel = struct
       (String.length code) ;
     load_module_from_code_object ~name code
 
+  (* Like [compile] but threads extra hiprtc options (e.g. include dirs such as
+     "-I/opt/rocm/include" for rocWMMA headers, or preprocessor defines).
+     Targets the current device (no explicit --offload-arch). *)
+  let compile_with_options device ~name ~source ~options =
+    Device.set_current device ;
+    let code = Hip_rtc.compile_to_code_object ~name ~options source in
+    Spoc_core.Log.debugf
+      Spoc_core.Log.Kernel
+      "HIP code object generated (%d bytes, %d extra opts)"
+      (String.length code)
+      (List.length options) ;
+    load_module_from_code_object ~name code
+
   let with_cache device ~name ~source build =
     let key =
       Spoc_framework.Compile_cache.make_key

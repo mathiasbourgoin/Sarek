@@ -23,3 +23,27 @@
  (alias e2e-hip)
  (action
   (run %{dep:test_hip_backend.exe})))
+
+; Etape-B rocWMMA tensor-core GEMM gate (RDNA3+; self-skips otherwise).
+(executable
+ (name test_hip_rocwmma)
+ (modules test_hip_rocwmma)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.gemm
+  sarek_ir
+  spoc_core
+  sarek_hip
+  unix)
+ (preprocessor_deps
+  (file ../../sarek/Sarek_gemm/Sarek_gemm.ml))
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias e2e-hip)
+ (action
+  (run %{dep:test_hip_rocwmma.exe})))

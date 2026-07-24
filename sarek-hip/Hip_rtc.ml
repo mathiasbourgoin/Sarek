@@ -202,7 +202,8 @@ let check ctx result =
     option outright it falls back to the current-device default. NOTE a merely
     *mismatched* (but syntactically valid) arch compiles here and only fails at
     hipModuleLoadData, so callers should prefer the default. *)
-let compile_to_code_object ?(name = "kernel") ?arch (source : string) : string =
+let compile_to_code_object ?(name = "kernel") ?arch ?(options = [])
+    (source : string) : string =
   let prog = allocate hiprtc_program_ptr (from_voidp hiprtc_program null) in
   check
     "hiprtcCreateProgram"
@@ -215,27 +216,34 @@ let compile_to_code_object ?(name = "kernel") ?arch (source : string) : string =
        (from_voidp string_opt null)) ;
   let prog_handle = !@prog in
 
-  let compile_with_opts numopts opt_ptr =
-    hiprtcCompileProgram prog_handle numopts opt_ptr
+  (* Build the option array from [options] (e.g. "-I/opt/rocm/include" for
+     rocWMMA) plus an optional --offload-arch. When [arch] is None hiprtc
+     targets the currently-selected device. *)
+  let compile_with lst =
+    match lst with
+    | [] -> hiprtcCompileProgram prog_handle 0 (from_voidp string null)
+    | _ ->
+        let arr = CArray.of_list string lst in
+        let res =
+          hiprtcCompileProgram
+            prog_handle
+            (CArray.length arr)
+            (CArray.start arr)
+        in
+        ignore (Sys.opaque_identity (lst, arr)) ;
+        res
   in
-  let no_arch () = compile_with_opts 0 (from_voidp string null) in
   let compile_result =
     match arch with
-    | None -> no_arch ()
+    | None -> compile_with options
     | Some a -> (
-        let opt_arch = "--offload-arch=" ^ a in
-        let opt_array = CArray.of_list string [opt_arch] in
-        let res =
-          compile_with_opts (CArray.length opt_array) (CArray.start opt_array)
-        in
-        ignore (Sys.opaque_identity (opt_arch, opt_array)) ;
-        match res with
+        match compile_with (("--offload-arch=" ^ a) :: options) with
         | HIPRTC_ERROR_INVALID_OPTION | HIPRTC_ERROR_INVALID_INPUT ->
             Spoc_core.Log.warnf
               Spoc_core.Log.Kernel
               "HIPRTC rejected --offload-arch=%s, retrying for current device"
               a ;
-            no_arch ()
+            compile_with options
         | other -> other)
   in
 
