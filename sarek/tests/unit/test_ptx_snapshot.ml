@@ -2091,6 +2091,50 @@ let assemble_ok ptx =
     [src; obj; base; base ^ ".err"] ;
   match rc with Unix.WEXITED 0 -> Ok () | _ -> Error err
 
+(** {1 SoA (Structure-of-Arrays) shared fixtures}
+
+    A custom (record) vector parameter named in [~soa_params] lowers to one
+    [.param .u64] base pointer per scalar leaf (sharing one length), and every
+    field access becomes a coalesced per-leaf scalar [ld/st.global] at that
+    leaf's own base — never the AoS packed-element [mul.wide] stride. *)
+
+let point3d_ty =
+  TRecord ("point3d", [("x", TFloat32); ("y", TFloat32); ("z", TFloat32)])
+
+(* {i:int32; d:float64} — covers a 4-byte and an 8-byte leaf, and a packed-AoS
+   *misaligned* layout (d at offset 4) that SoA accepts because each leaf has its
+   own contiguous buffer. *)
+let mixed_id_ty = TRecord ("mixed_id", [("i", TInt32); ("d", TFloat64)])
+
+(** point3d field-sum: reads three f32 fields of a custom vector and writes
+    their sum. Shared by the marker test and the ptxas gate. *)
+let soa_field_sum_kernel () =
+  let pts = make_var "pts" (TVec point3d_ty) in
+  let out = make_var "out" (TVec TFloat32) in
+  let n = make_var "n" TInt32 in
+  let tid = make_var "tid" TInt32 in
+  let fld f = ERecordField (EArrayRead ("pts", EVar tid), f) in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SIf
+          ( EBinop (Lt, EVar tid, EVar n),
+            SAssign
+              ( LArrayElem ("out", EVar tid),
+                EBinop (Add, EBinop (Add, fld "x", fld "y"), fld "z") ),
+            None ) )
+  in
+  base_kernel
+    "p3sum"
+    [
+      DParam (pts, Some {arr_elttype = point3d_ty; arr_memspace = Global});
+      DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (n, None);
+    ]
+    body
+    []
+
 let test_ptxas_assembles () =
   if not (Lazy.force ptxas_available) then
     Printf.printf "  SKIP: ptxas not on PATH (CPU-only environment)\n%!"
@@ -2163,8 +2207,211 @@ let test_ptxas_assembles () =
         | Error err ->
             Alcotest.fail
               (Printf.sprintf "ptxas rejected kernel %s:\n%s" name err))
-      kernels
+      kernels ;
+    (* SoA-lowered custom-vector kernel: N per-leaf base pointers + coalesced
+       scalar loads must also assemble. *)
+    match
+      assemble_ok
+        (Sarek_ir_ptx.generate ~soa_params:["pts"] (soa_field_sum_kernel ()))
+    with
+    | Ok () -> Printf.printf "  ptxas OK: soa_field_sum\n%!"
+    | Error err ->
+        Alcotest.fail (Printf.sprintf "ptxas rejected SoA kernel:\n%s" err)
   end
+
+(** SoA field read emits N per-leaf base pointers + one shared length, coalesced
+    per-leaf scalar loads, and NO packed-element [mul.wide] stride nor the
+    single AoS base pointer. The default (AoS) compilation of the same kernel
+    keeps the single pointer + element stride — proving SoA is opt-in and AoS
+    unchanged. *)
+let test_soa_field_read_markers () =
+  let k = soa_field_sum_kernel () in
+  let soa = Sarek_ir_ptx.generate ~soa_params:["pts"] k in
+  assert_contains soa ".param .u64 param_pts_soa_x" ;
+  assert_contains soa ".param .u64 param_pts_soa_y" ;
+  assert_contains soa ".param .u64 param_pts_soa_z" ;
+  assert_contains soa ".param .u32 param_sarek_pts_length" ;
+  if count_substr soa "ld.global.f32" < 3 then
+    Alcotest.fail (Printf.sprintf "expected >=3 coalesced leaf loads:\n%s" soa) ;
+  assert_absent
+    soa
+    "mul.wide.u32"
+    ~why:
+      "SoA field access must be scalar-strided (shl), not the AoS element \
+       multiply" ;
+  assert_absent
+    soa
+    ".param .u64 param_pts,"
+    ~why:"SoA replaces the single AoS base pointer with per-leaf pointers" ;
+  (* AoS (default) compilation is unchanged: single base pointer + element
+     stride. *)
+  let aos = Sarek_ir_ptx.generate k in
+  assert_contains aos ".param .u64 param_pts," ;
+  assert_contains aos "mul.wide.u32" ;
+  assert_absent
+    aos
+    "param_pts_soa_x"
+    ~why:"AoS compilation must not emit SoA per-leaf pointers"
+
+(** Whole-element copy between two SoA vectors: per-leaf coalesced loads from
+    the source leaves and stores to the destination leaves, no element stride.
+*)
+let test_soa_whole_copy_markers () =
+  let src = make_var "src" (TVec point3d_ty) in
+  let dst = make_var "dst" (TVec point3d_ty) in
+  let n = make_var "n" TInt32 in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SIf
+          ( EBinop (Lt, EVar tid, EVar n),
+            SAssign (LArrayElem ("dst", EVar tid), EArrayRead ("src", EVar tid)),
+            None ) )
+  in
+  let k =
+    base_kernel
+      "p3copy"
+      [
+        DParam (src, Some {arr_elttype = point3d_ty; arr_memspace = Global});
+        DParam (dst, Some {arr_elttype = point3d_ty; arr_memspace = Global});
+        DParam (n, None);
+      ]
+      body
+      []
+  in
+  let soa = Sarek_ir_ptx.generate ~soa_params:["src"; "dst"] k in
+  assert_contains soa ".param .u64 param_src_soa_x" ;
+  assert_contains soa ".param .u64 param_dst_soa_z" ;
+  if count_substr soa "ld.global.f32" < 3 then
+    Alcotest.fail (Printf.sprintf "expected >=3 leaf loads:\n%s" soa) ;
+  if count_substr soa "st.global.f32" < 3 then
+    Alcotest.fail (Printf.sprintf "expected >=3 leaf stores:\n%s" soa) ;
+  assert_absent
+    soa
+    "mul.wide.u32"
+    ~why:"whole SoA copy is per-leaf coalesced scalar ld/st, no element stride"
+
+(** Single-field SoA write [v.(i).x <- v.(i).y +. 1.0]: one coalesced scalar
+    load (y leaf) and one coalesced scalar store (x leaf). *)
+let test_soa_field_write_markers () =
+  let pts = make_var "pts" (TVec point3d_ty) in
+  let n = make_var "n" TInt32 in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SIf
+          ( EBinop (Lt, EVar tid, EVar n),
+            SAssign
+              ( LRecordField (LArrayElem ("pts", EVar tid), "x"),
+                EBinop
+                  ( Add,
+                    ERecordField (EArrayRead ("pts", EVar tid), "y"),
+                    EConst (CFloat32 1.0) ) ),
+            None ) )
+  in
+  let k =
+    base_kernel
+      "p3fieldwrite"
+      [
+        DParam (pts, Some {arr_elttype = point3d_ty; arr_memspace = Global});
+        DParam (n, None);
+      ]
+      body
+      []
+  in
+  let soa = Sarek_ir_ptx.generate ~soa_params:["pts"] k in
+  assert_contains soa "ld.global.f32" ;
+  assert_contains soa "st.global.f32" ;
+  assert_absent
+    soa
+    "mul.wide.u32"
+    ~why:"single-field SoA write addresses one leaf by scalar stride"
+
+(** Mixed-width record [{i:int32; d:float64}] under SoA: an s32 leaf load and an
+    f64 leaf load, each from its own base — and it is accepted despite the
+    packed AoS layout being misaligned (SoA leaves are independently
+    contiguous). *)
+let test_soa_mixed_width_markers () =
+  let v = make_var "v" (TVec mixed_id_ty) in
+  let out = make_var "out" (TVec TFloat64) in
+  let n = make_var "n" TInt32 in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SIf
+          ( EBinop (Lt, EVar tid, EVar n),
+            SAssign
+              ( LArrayElem ("out", EVar tid),
+                EBinop
+                  ( Add,
+                    ECast
+                      (TFloat64, ERecordField (EArrayRead ("v", EVar tid), "i")),
+                    ERecordField (EArrayRead ("v", EVar tid), "d") ) ),
+            None ) )
+  in
+  let k =
+    base_kernel
+      "mixedsum"
+      [
+        DParam (v, Some {arr_elttype = mixed_id_ty; arr_memspace = Global});
+        DParam (out, Some {arr_elttype = TFloat64; arr_memspace = Global});
+        DParam (n, None);
+      ]
+      body
+      []
+  in
+  let soa = Sarek_ir_ptx.generate ~soa_params:["v"] k in
+  assert_contains soa ".param .u64 param_v_soa_i" ;
+  assert_contains soa ".param .u64 param_v_soa_d" ;
+  assert_contains soa "ld.global.s32" ;
+  assert_contains soa "ld.global.f64" ;
+  assert_absent
+    soa
+    "mul.wide.u32"
+    ~why:"mixed-width SoA leaves are scalar-strided per leaf"
+
+(** A [~soa_params] naming a scalar-element (non-record) vector is rejected. *)
+let test_soa_nonrecord_rejected () =
+  let k = make_vector_add_kernel () in
+  match Sarek_ir_ptx.generate ~soa_params:["a"] k with
+  | _ -> Alcotest.fail "SoA on a non-record vector should be rejected"
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()
+
+(** A [~soa_params] naming a nested-record vector is rejected (v1 = flat records
+    only). *)
+let test_soa_nested_record_rejected () =
+  let outer_ty = TRecord ("outer", [("inner", point_ty); ("c", TFloat32)]) in
+  let v = make_var "v" (TVec outer_ty) in
+  let out = make_var "out" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("out", EVar tid),
+            ERecordField
+              (ERecordField (EArrayRead ("v", EVar tid), "inner"), "x") ) )
+  in
+  let k =
+    base_kernel
+      "nested_soa"
+      [
+        DParam (v, Some {arr_elttype = outer_ty; arr_memspace = Global});
+        DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      ]
+      body
+      []
+  in
+  match Sarek_ir_ptx.generate ~soa_params:["v"] k with
+  | _ -> Alcotest.fail "SoA on a nested-record vector should be rejected"
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()
 
 let () =
   Alcotest.run
@@ -2380,5 +2627,30 @@ let () =
             "static DShared keeps non-extern decl"
             `Quick
             test_static_dshared_markers;
+          Alcotest.test_case
+            "SoA field read: N per-leaf pointers + coalesced loads, AoS \
+             unchanged"
+            `Quick
+            test_soa_field_read_markers;
+          Alcotest.test_case
+            "SoA whole-element copy: per-leaf coalesced ld/st"
+            `Quick
+            test_soa_whole_copy_markers;
+          Alcotest.test_case
+            "SoA single-field write: one leaf ld + one leaf st"
+            `Quick
+            test_soa_field_write_markers;
+          Alcotest.test_case
+            "SoA mixed-width {i32;f64}: s32 + f64 leaf loads, misaligned AoS ok"
+            `Quick
+            test_soa_mixed_width_markers;
+          Alcotest.test_case
+            "SoA on a non-record vector is rejected"
+            `Quick
+            test_soa_nonrecord_rejected;
+          Alcotest.test_case
+            "SoA on a nested-record vector is rejected"
+            `Quick
+            test_soa_nested_record_rejected;
         ] );
     ]
