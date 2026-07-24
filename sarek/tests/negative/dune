@@ -22,6 +22,7 @@
 ; - test_reserved_prefix_local: "identifiers beginning with 'sarek_' are reserved"
 ; - test_reserved_prefix_helper: "identifiers beginning with 'sarek_' are reserved"
 ; - test_reserved_prefix_field: "identifiers beginning with 'sarek_' are reserved"
+; - test_reserved_prefix_for: "identifiers beginning with 'sarek_' are reserved"
 
 (library
  (name neg_test_unregistered_field)
@@ -191,6 +192,17 @@
 (library
  (name neg_test_reserved_prefix_field)
  (modules test_reserved_prefix_field)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_reserved_prefix_for)
+ (modules test_reserved_prefix_for)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))

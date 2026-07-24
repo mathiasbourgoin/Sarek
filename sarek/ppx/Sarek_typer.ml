@@ -397,6 +397,7 @@ let infer_control_flow ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
           let* () = unify_or_error tt.ty te.ty else_e.expr_loc in
           Ok (mk_texpr (TEIf (tc, tt, Some te)) tt.ty loc, env))
   | EFor (var, lo, hi, dir, body) ->
+      let* () = check_reserved_prefix var loc in
       let* tlo, env = infer env lo in
       let* thi, env = infer env hi in
       let* () = unify_or_error tlo.ty t_int32 lo.expr_loc in
