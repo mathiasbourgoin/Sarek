@@ -35,3 +35,10 @@
  (libraries codegen_golden_backends sarek_ir alcotest)
  (instrumentation
   (backend bisect_ppx)))
+
+(test
+ (name test_glsl_name_collision)
+ (modules test_glsl_name_collision)
+ (libraries sarek_ir sarek_codegen alcotest)
+ (instrumentation
+  (backend bisect_ppx)))

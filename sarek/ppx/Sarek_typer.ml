@@ -41,6 +41,36 @@ let unify_or_error t1 t2 loc =
   | Error (Cannot_unify (t1, t2)) -> Error [Cannot_unify (t1, t2, loc)]
   | Error (Occurs_check (_, t)) -> Error [Recursive_type (t, loc)]
 
+(** {1 Reserved-Prefix Policy}
+
+    User-written identifiers may not begin with the [sarek_] prefix, which the
+    code generator reserves for its own emitted device-code names (param length
+    aliases, the [sarek_smod] / [sarek_copysign] helpers, and any future
+    generated helper). Enforcing this once at elaboration time closes the
+    user/generated collision class structurally; the collision-safe name
+    computation in the backends (PR #255 / #256) is kept as defense-in-depth.
+
+    This is the single validation function; every user-binder introduction path
+    in the typer calls it (or {!check_reserved_prefix_all} for lists). It must
+    only fire on {e user-written} binders — never on names the generator itself
+    synthesizes (those are produced downstream, in lowering / codegen). *)
+
+(** Reject a single user-written binder whose name is reserved. *)
+let check_reserved_prefix (name : string) (loc : Sarek_ast.loc) : unit result =
+  if Sarek_reserved.has_reserved_prefix name then
+    Error [Reserved_prefix (name, loc)]
+  else Ok ()
+
+(** Reject any reserved name in a list of user-written binders sharing [loc]
+    (e.g. all record fields or variant constructors of one declaration). *)
+let check_reserved_prefix_all (names : string list) (loc : Sarek_ast.loc) :
+    unit result =
+  List.fold_left
+    (fun acc name ->
+      match acc with Ok () -> check_reserved_prefix name loc | e -> e)
+    (Ok ())
+    names
+
 (** {1 Type Validators}
 
     Result-returning validators for type checking with error messages.
@@ -548,6 +578,7 @@ let infer_let_binding ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
             let* () = unify_or_error tv.ty vi.vi_type value.expr_loc in
             Ok (mk_texpr (TEAssign (name, vi.vi_index, tv)) t_unit loc, env))
   | ELet (name, ty_annot, value, body) ->
+      let* () = check_reserved_prefix name loc in
       let env_in = enter_level env in
       let* tv, env_after = infer env_in value in
       let* () =
@@ -575,6 +606,7 @@ let infer_let_binding ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
       let* tb, env'' = infer env'' body in
       Ok (mk_texpr (TELet (name, var_id, tv, tb)) tb.ty loc, env'')
   | ELetMut (name, ty_annot, value, body) ->
+      let* () = check_reserved_prefix name loc in
       let* tv, env = infer env value in
       let* () =
         match ty_annot with
@@ -598,6 +630,10 @@ let infer_let_binding ~infer (env : t) (loc : Sarek_ast.loc) (expr : expr_desc)
       Ok (mk_texpr (TELetMut (name, var_id, tv, tb)) tb.ty loc, env')
   | ELetRec (name, params, ret_ty_opt, fn_body, cont) ->
       Sarek_debug.log "ELetRec '%s'" name ;
+      let* () = check_reserved_prefix name loc in
+      let* () =
+        check_reserved_prefix_all (List.map (fun p -> p.param_name) params) loc
+      in
       (* Enter a level for the function's type variables *)
       let env_inner = enter_level env in
       (* Type parameters using shared type variable context at inner level *)
@@ -779,6 +815,7 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
       infer_special ~infer env loc expr.e
   (* BSP constructs: let%shared and let%superstep *)
   | ELetShared (name, elem_ty, size_opt, body) ->
+      let* () = check_reserved_prefix name loc in
       (* Type the optional size expression *)
       let* tsize_opt, env =
         match size_opt with
@@ -881,6 +918,7 @@ and infer_pattern env scrutinee_ty pat =
   match pat.pat with
   | PAny -> Ok ({tpat = TPAny; tpat_ty = scrutinee_ty; tpat_loc = loc}, env)
   | PVar name ->
+      let* () = check_reserved_prefix name loc in
       let var_id = fresh_var_id () in
       let vi =
         {
@@ -966,6 +1004,12 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
         match decl with
         | Sarek_ast.Type_record
             {tdecl_name; tdecl_module; tdecl_fields; tdecl_loc} ->
+            let* () = check_reserved_prefix tdecl_name tdecl_loc in
+            let* () =
+              check_reserved_prefix_all
+                (List.map (fun (fname, _, _) -> fname) tdecl_fields)
+                tdecl_loc
+            in
             let full_name =
               match tdecl_module with
               | Some m -> m ^ "." ^ tdecl_name
@@ -1001,6 +1045,12 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
             add_type_decls env'' (acc_decl :: acc) rest
         | Sarek_ast.Type_variant
             {tdecl_name; tdecl_module; tdecl_constructors; tdecl_loc} ->
+            let* () = check_reserved_prefix tdecl_name tdecl_loc in
+            let* () =
+              check_reserved_prefix_all
+                (List.map (fun (cname, _) -> cname) tdecl_constructors)
+                tdecl_loc
+            in
             let full_name =
               match tdecl_module with
               | Some m -> m ^ "." ^ tdecl_name
@@ -1043,6 +1093,7 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
     | item :: rest -> (
         match item with
         | Sarek_ast.MConst (name, ty_expr, value) ->
+            let* () = check_reserved_prefix name value.expr_loc in
             let ty = type_of_type_expr_env env ty_expr in
             let* tvalue, env' = infer env value in
             let* () = unify_or_error tvalue.ty ty value.expr_loc in
@@ -1066,6 +1117,12 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
             if Sarek_reserved.is_reserved name then
               Error [Reserved_keyword (name, body.expr_loc)]
             else begin
+              let* () = check_reserved_prefix name body.expr_loc in
+              let* () =
+                check_reserved_prefix_all
+                  (List.map (fun p -> p.param_name) params)
+                  body.expr_loc
+              in
               (* Enter a new level for let-polymorphism *)
               let env_inner = enter_level env in
               (* Create a shared type variable context for all params at inner level *)
@@ -1133,6 +1190,7 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
   let rec add_params env idx acc = function
     | [] -> Ok (List.rev acc, env)
     | p :: rest ->
+        let* () = check_reserved_prefix p.param_name p.param_loc in
         let ty = type_of_type_expr_env env p.param_type in
         let is_vec = match ty with TVec _ -> true | _ -> false in
         let var_id = fresh_var_id () in

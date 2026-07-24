@@ -202,3 +202,32 @@ let all_reserved =
 
 (** Check if an identifier is a reserved keyword *)
 let is_reserved (name : string) : bool = Hashtbl.mem all_reserved name
+
+(** The prefix the Sarek code generator reserves for its own emitted device-code
+    identifiers.
+
+    Generated helpers and parameter aliases all start with this prefix in the
+    emitted C/CUDA/OpenCL/GLSL/WGSL — e.g. the per-array length parameters
+    [sarek_<arr>_length], the integer-remainder helper [sarek_smod] /
+    [sarek_smod_N] (PR #255), and the sign-copy helper [sarek_copysign] (PR
+    #256). Reserving the whole prefix at elaboration time closes the
+    user/generated name-collision class at its root, rather than defending each
+    generated name individually.
+
+    The prefix is matched {b case-sensitively}: GLSL and C are case-sensitive
+    languages, and the generator only ever emits the lowercase [sarek_] form.
+    The OCaml module path [Sarek_.*] (capital [S]) is a compile-time name that
+    is never emitted into device code, so it is deliberately {e not} matched. *)
+let generated_prefix = "sarek_"
+
+(** [has_reserved_prefix name] is [true] iff [name] begins with
+    {!generated_prefix} ([sarek_]), matched case-sensitively.
+
+    This is the single predicate behind the reserved-prefix policy enforced on
+    user-written binders (kernel params, local [let]/[let mut] bindings,
+    [[@sarek.module]] helper names, and [[@@sarek.type]] type / field /
+    constructor names). It only inspects the leading characters, so boundary
+    cases such as [sarekX_foo], [_sarek_foo], and [mysarek_] are accepted. *)
+let has_reserved_prefix (name : string) : bool =
+  let plen = String.length generated_prefix in
+  String.length name >= plen && String.sub name 0 plen = generated_prefix

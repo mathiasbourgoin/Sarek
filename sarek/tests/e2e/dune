@@ -923,20 +923,13 @@
   (run %{dep:test_glsl_mod_single_eval.exe})))
 
 (executable
- (name test_glsl_mod_name_collision)
- (modules test_glsl_mod_name_collision)
- (libraries
-  sarek
-  sarek.stdlib
-  sarek_ir
-  spoc_core
-  test_helpers
-  unix
-  sarek_backend_error)
+ (name test_reserved_prefix_positive)
+ (modules test_reserved_prefix_positive)
+ (libraries sarek sarek.stdlib sarek_ir)
  (preprocess
   (pps sarek_ppx)))
 
 (rule
  (alias runtest)
  (action
-  (run %{dep:test_glsl_mod_name_collision.exe})))
+  (run %{dep:test_reserved_prefix_positive.exe})))

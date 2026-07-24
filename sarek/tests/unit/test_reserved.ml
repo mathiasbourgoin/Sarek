@@ -241,6 +241,62 @@ let test_all_lists_combined () =
   Alcotest.(check bool) "has CUDA keyword" true has_cuda ;
   Alcotest.(check bool) "has OpenCL keyword" true has_opencl
 
+(* Test: has_reserved_prefix flags exactly the [sarek_] generated-code prefix.
+   These names correspond to the reserved-prefix policy enforced on user-written
+   binders in the typer. *)
+let test_has_reserved_prefix_positive () =
+  Alcotest.(check bool)
+    "sarek_smod is reserved"
+    true
+    (Sarek_reserved.has_reserved_prefix "sarek_smod") ;
+  Alcotest.(check bool)
+    "sarek_foo is reserved"
+    true
+    (Sarek_reserved.has_reserved_prefix "sarek_foo") ;
+  Alcotest.(check bool)
+    "sarek_ (bare prefix) is reserved"
+    true
+    (Sarek_reserved.has_reserved_prefix "sarek_") ;
+  Alcotest.(check bool)
+    "sarek_a_length is reserved"
+    true
+    (Sarek_reserved.has_reserved_prefix "sarek_a_length")
+
+(* Boundary cases that must remain ACCEPTED (the prefix must not over-match). *)
+let test_has_reserved_prefix_boundary () =
+  Alcotest.(check bool)
+    "sarekX_foo not reserved (no underscore after sarek)"
+    false
+    (Sarek_reserved.has_reserved_prefix "sarekX_foo") ;
+  Alcotest.(check bool)
+    "_sarek_foo not reserved (leading underscore)"
+    false
+    (Sarek_reserved.has_reserved_prefix "_sarek_foo") ;
+  Alcotest.(check bool)
+    "mysarek_ not reserved (prefix not at start)"
+    false
+    (Sarek_reserved.has_reserved_prefix "mysarek_") ;
+  Alcotest.(check bool)
+    "sarek (no trailing underscore) not reserved"
+    false
+    (Sarek_reserved.has_reserved_prefix "sarek") ;
+  Alcotest.(check bool)
+    "empty string not reserved"
+    false
+    (Sarek_reserved.has_reserved_prefix "")
+
+(* The generated prefix is matched case-sensitively: the OCaml module path
+   [Sarek_*] (capital S) is never emitted into device code and must not fire. *)
+let test_has_reserved_prefix_case_sensitive () =
+  Alcotest.(check bool)
+    "Sarek_foo (capital S) not reserved"
+    false
+    (Sarek_reserved.has_reserved_prefix "Sarek_foo") ;
+  Alcotest.(check bool)
+    "SAREK_foo not reserved"
+    false
+    (Sarek_reserved.has_reserved_prefix "SAREK_foo")
+
 (* Test suite *)
 let () =
   let open Alcotest in
@@ -270,5 +326,20 @@ let () =
             test_opencl_keywords_nonempty;
           test_case "CUDA keywords non-empty" `Quick test_cuda_keywords_nonempty;
           test_case "All lists combined" `Quick test_all_lists_combined;
+        ] );
+      ( "has_reserved_prefix",
+        [
+          test_case
+            "reserved sarek_ names"
+            `Quick
+            test_has_reserved_prefix_positive;
+          test_case
+            "accepted boundary names"
+            `Quick
+            test_has_reserved_prefix_boundary;
+          test_case
+            "case sensitive"
+            `Quick
+            test_has_reserved_prefix_case_sensitive;
         ] );
     ]

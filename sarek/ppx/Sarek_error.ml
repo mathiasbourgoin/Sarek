@@ -38,6 +38,7 @@ type error =
   | Barrier_in_diverged_flow of loc
   | Warp_collective_in_diverged_flow of string * loc
   | Reserved_keyword of string * loc
+  | Reserved_prefix of string * loc
   (* Lowering errors - occur during typed AST → IR transformation *)
   | Unsupported_type_in_registration of string * loc
   | Unsupported_constructor_form of loc
@@ -74,6 +75,7 @@ let error_loc = function
   | Barrier_in_diverged_flow loc -> loc
   | Warp_collective_in_diverged_flow (_, loc) -> loc
   | Reserved_keyword (_, loc) -> loc
+  | Reserved_prefix (_, loc) -> loc
   | Unsupported_type_in_registration (_, loc) -> loc
   | Unsupported_constructor_form loc -> loc
   | Unsupported_registration_form loc -> loc
@@ -151,6 +153,12 @@ let pp_error fmt = function
         fmt
         "'%s' is a reserved C/CUDA/OpenCL keyword and cannot be used as a \
          function or variable name"
+        name
+  | Reserved_prefix (name, _) ->
+      Format.fprintf
+        fmt
+        "identifiers beginning with 'sarek_' are reserved by the Sarek code \
+         generator; rename '%s'"
         name
   | Unsupported_type_in_registration (type_desc, _) ->
       Format.fprintf
