@@ -187,7 +187,8 @@ module Backend : Framework_sig.BACKEND = struct
       it, and Execute then raised the opaque "generate_source returned None"
       with the name lost (PR #259 review). This function therefore always
       returns [Some _] on success. *)
-  let generate_source ?block ?soa_params:_ (ir : Sarek_ir_types.kernel) : string option =
+  let generate_source ?block ?soa_params:_ (ir : Sarek_ir_types.kernel) :
+      string option =
     let block_tuple =
       match block with
       | Some b -> Some (b.Framework_sig.x, b.Framework_sig.y, b.Framework_sig.z)

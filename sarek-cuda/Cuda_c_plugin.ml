@@ -33,7 +33,8 @@ module Backend : Framework_sig.BACKEND = struct
      node. That error is allowed to PROPAGATE so callers surface the name rather
      than the opaque "generate_source returned None" — catching it here and
      returning [None] hid it identically to the Vulkan swallow (PR #259). *)
-  let generate_source ?block:_ ?soa_params:_ (ir : Sarek_ir_types.kernel) : string option =
+  let generate_source ?block:_ ?soa_params:_ (ir : Sarek_ir_types.kernel) :
+      string option =
     Some (Sarek_ir_cuda.generate_with_types ~types:ir.kern_types ir)
 
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =
