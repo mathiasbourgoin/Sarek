@@ -252,6 +252,30 @@ let unary_specs =
       u_gen = bounded (-5.0) 5.0;
       u_tol = 0.0;
     };
+    (* exp2/log2/cbrt have no dedicated Float64 device builtin and no software
+       helper of their own: the GLSL backend composes them over exp/log/pow
+       (2^x = exp(x·ln2), log2 x = log x·log2e, cbrt x = sign x·pow(|x|,1/3)).
+       These rows give the composition numeric coverage on real fp64 devices.
+       The CPU interpreter has no eval arm for them, so it reports SKIP there —
+       expected, and harmless to this report-only test. *)
+    {
+      u_name = "exp2";
+      u_ocaml = (fun x -> Float.pow 2.0 x);
+      u_gen = bounded (-2.0) 2.0;
+      u_tol = 1e-8;
+    };
+    {
+      u_name = "log2";
+      u_ocaml = Float.log2;
+      u_gen = bounded 0.01 5.0;
+      u_tol = 1e-9;
+    };
+    {
+      u_name = "cbrt";
+      u_ocaml = Float.cbrt;
+      u_gen = bounded (-5.0) 5.0;
+      u_tol = 1e-9;
+    };
   ]
 
 let binary_specs =

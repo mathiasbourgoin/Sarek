@@ -125,7 +125,9 @@ let test_log10 ~path ~label () =
    helper family — a call to [sarek_f64_log10], defined over [sarek_f64_log],
    under the int64 extension — never a bare double-typed [log10]/[log] builtin. *)
 let test_log10_f64 () =
-  let glsl = generate (kernel_calling ~path:["Float64"] ~name:"log10" ~arity:1) in
+  let glsl =
+    generate (kernel_calling ~path:["Float64"] ~name:"log10" ~arity:1)
+  in
   let contains needle = string_contains ~haystack:glsl ~needle in
   Alcotest.(check bool)
     "Float64.log10: calls the sarek_f64_log10 helper"
@@ -161,10 +163,7 @@ let () =
           unhandled );
       ( "log10-polyfill",
         [
-          test_case
-            "unqualified"
-            `Quick
-            (test_log10 ~path:[] ~label:"log10");
+          test_case "unqualified" `Quick (test_log10 ~path:[] ~label:"log10");
           test_case
             "Float32-qualified"
             `Quick

@@ -306,6 +306,48 @@ let float64_cbrt_path_kernel () =
     []
     body
 
+let float64_exp2_path_kernel () =
+  let a = make_var "a" (TVec TFloat64) in
+  let b = make_var "b" (TVec TFloat64) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("b", EVar idx),
+            EIntrinsic (["Float64"], "exp2", [EArrayRead ("a", EVar idx)]) ) )
+  in
+  empty_kernel
+    "float64_exp2_path"
+    [
+      DParam (a, Some {arr_elttype = TFloat64; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat64; arr_memspace = Global});
+    ]
+    []
+    body
+
+let float64_log2_path_kernel () =
+  let a = make_var "a" (TVec TFloat64) in
+  let b = make_var "b" (TVec TFloat64) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("b", EVar idx),
+            EIntrinsic (["Float64"], "log2", [EArrayRead ("a", EVar idx)]) ) )
+  in
+  empty_kernel
+    "float64_log2_path"
+    [
+      DParam (a, Some {arr_elttype = TFloat64; arr_memspace = Global});
+      DParam (b, Some {arr_elttype = TFloat64; arr_memspace = Global});
+    ]
+    []
+    body
+
 (* Float64.copysign has no GLSL builtin (and is absent from
    Sarek_pure_registry.float64_list), so pre-fix it fell through to the raw-name
    fallback and emitted [Float64.copysign(...)], which glslang parses as a
@@ -1705,6 +1747,101 @@ void main() {
   int idx = int(gl_GlobalInvocationID.x);
   b[idx] = (sign(a[idx]) * sarek_f64_pow(abs(a[idx]), 1.0lf / 3.0lf));
 }
+|} ;
+
+  register_golden
+    "glsl"
+    "float64_exp2_path"
+    {|#version 450
+#extension GL_ARB_gpu_shader_fp64 : require
+#extension GL_ARB_gpu_shader_int64 : require
+
+// Sarek-generated compute shader: float64_exp2_path
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set=0, binding = 0) buffer Buffer_a {
+  double a[];
+};
+layout(std430, set=0, binding = 1) buffer Buffer_b {
+  double b[];
+};
+layout(push_constant) uniform PushConstants {
+  int a_len;
+  int b_len;
+} pc;
+
+#define a_len pc.a_len
+#define b_len pc.b_len
+
+double sarek_f64_exp(double);
+
+double sarek_f64_exp(double x) {
+  if ((x < -708.0lf)) {
+    return 0.0lf;
+  } else {
+    if ((x > 709.78271289338397lf)) {
+      return int64BitsToDouble(9218868437227405312L);
+    } else {
+      precise double nf = floor(fma(x, 1.4426950408889634lf, 0.5lf));
+      precise double r_hi = fma(nf, -0.69314718036912382lf, x);
+      precise double r = fma(nf, -1.9082149292705877e-10lf, r_hi);
+      precise double p = fma(fma(fma(fma(fma(fma(fma(fma(fma(fma(fma(2.08767569878681e-09lf, r, 2.505210838544172e-08lf), r, 2.7557319223985888e-07lf), r, 2.7557319223985893e-06lf), r, 2.4801587301587302e-05lf), r, 0.00019841269841269841lf), r, 0.0013888888888888889lf), r, 0.0083333333333333332lf), r, 0.041666666666666664lf), r, 0.16666666666666666lf), r, 0.5lf), r, 1.0lf);
+      int n = int(nf);
+      return (fma(p, r, 1.0lf) * int64BitsToDouble((int64_t((n + 1023)) << 52)));
+    }
+  }
+}
+
+void main() {
+  int idx = int(gl_GlobalInvocationID.x);
+  b[idx] = sarek_f64_exp((a[idx]) * 0.69314718055994529lf);
+}
+|} ;
+
+  register_golden
+    "glsl"
+    "float64_log2_path"
+    {|#version 450
+#extension GL_ARB_gpu_shader_fp64 : require
+#extension GL_ARB_gpu_shader_int64 : require
+
+// Sarek-generated compute shader: float64_log2_path
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set=0, binding = 0) buffer Buffer_a {
+  double a[];
+};
+layout(std430, set=0, binding = 1) buffer Buffer_b {
+  double b[];
+};
+layout(push_constant) uniform PushConstants {
+  int a_len;
+  int b_len;
+} pc;
+
+#define a_len pc.a_len
+#define b_len pc.b_len
+
+double sarek_f64_log(double);
+
+double sarek_f64_log(double x) {
+  int64_t b = doubleBitsToInt64(x);
+  int k_raw = int(((b >> 52) & 2047L));
+  precise double m0 = int64BitsToDouble(((b & 4503599627370495L) | 4607182418800017408L));
+  bool big = (m0 > 1.4142135623730951lf);
+  precise double m = (big ? (m0 * 0.5lf) : m0);
+  int k = (big ? (k_raw - 1022) : (k_raw - 1023));
+  precise double s = ((m - 1.0lf) / (m + 1.0lf));
+  precise double z = (s * s);
+  precise double lm = fma(((s + s) * z), fma(fma(fma(fma(fma(fma(0.066666666666666666lf, z, 0.076923076923076927lf), z, 0.090909090909090912lf), z, 0.1111111111111111lf), z, 0.14285714285714285lf), z, 0.20000000000000001lf), z, 0.33333333333333331lf), (s + s));
+  precise double kf = double(k);
+  return fma(kf, 0.69314718036912382lf, fma(kf, 1.9082149292705877e-10lf, lm));
+}
+
+void main() {
+  int idx = int(gl_GlobalInvocationID.x);
+  b[idx] = (sarek_f64_log(a[idx]) * 1.4426950408889634lf);
+}
 |}
 
 let glsl_only_kernels () =
@@ -1722,6 +1859,8 @@ let glsl_only_kernels () =
     ("float32_log10_path", float32_log10_path_kernel ());
     ("float64_log10_path", float64_log10_path_kernel ());
     ("float64_cbrt_path", float64_cbrt_path_kernel ());
+    ("float64_exp2_path", float64_exp2_path_kernel ());
+    ("float64_log2_path", float64_log2_path_kernel ());
   ]
 
 let glsl_only_tests () =

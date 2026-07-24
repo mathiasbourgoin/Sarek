@@ -479,3 +479,81 @@ let kernel_float64_intrinsics k =
   let acc = stmt_float64_intrinsics acc k.kern_body in
   let acc = List.fold_left helper_float64_intrinsics acc k.kern_funcs in
   List.sort_uniq compare acc
+
+(** {1 Non-finite Float64 constant detection}
+
+    A [CFloat64] whose value is ±inf or NaN cannot be spelled as a GLSL literal
+    (GLSL has no inf/nan literal), so a backend targeting GLSL reconstructs it
+    from its bit pattern via [int64BitsToDouble] — which needs
+    [GL_ARB_gpu_shader_int64]. Such a constant can occur independently of any
+    transcendental (e.g. a user-written [Float64.infinity]), so the int64
+    extension must be gated on this too, not only on the software helper family.
+    Mirrors [kernel_uses_copysign]. *)
+let const_is_nonfinite_float64 = function
+  | CFloat64 f -> not (Float.is_finite f)
+  | _ -> false
+
+let rec expr_uses_nonfinite_f64 = function
+  | EConst c -> const_is_nonfinite_float64 c
+  | EVar _ | EArrayLen _ -> false
+  | EBinop (_, e1, e2) | EArrayReadExpr (e1, e2) ->
+      expr_uses_nonfinite_f64 e1 || expr_uses_nonfinite_f64 e2
+  | EUnop (_, e) | ERecordField (e, _) | ECast (_, e) | EArrayRead (_, e) ->
+      expr_uses_nonfinite_f64 e
+  | EIntrinsic (_, _, args) | ETuple args | EVariant (_, _, args) ->
+      List.exists expr_uses_nonfinite_f64 args
+  | EApp (fn, args) ->
+      expr_uses_nonfinite_f64 fn || List.exists expr_uses_nonfinite_f64 args
+  | ERecord (_, fields) ->
+      List.exists (fun (_, e) -> expr_uses_nonfinite_f64 e) fields
+  | EArrayCreate (_, size, _) -> expr_uses_nonfinite_f64 size
+  | EIf (c, t, e) ->
+      expr_uses_nonfinite_f64 c || expr_uses_nonfinite_f64 t
+      || expr_uses_nonfinite_f64 e
+  | EMatch (s, cases) ->
+      expr_uses_nonfinite_f64 s
+      || List.exists (fun (_, e) -> expr_uses_nonfinite_f64 e) cases
+
+let rec lvalue_uses_nonfinite_f64 = function
+  | LVar _ -> false
+  | LArrayElem (_, idx) -> expr_uses_nonfinite_f64 idx
+  | LArrayElemExpr (base, idx) ->
+      expr_uses_nonfinite_f64 base || expr_uses_nonfinite_f64 idx
+  | LRecordField (lv, _) -> lvalue_uses_nonfinite_f64 lv
+
+let rec stmt_uses_nonfinite_f64 = function
+  | SAssign (lv, e) -> lvalue_uses_nonfinite_f64 lv || expr_uses_nonfinite_f64 e
+  | SSeq stmts -> List.exists stmt_uses_nonfinite_f64 stmts
+  | SIf (cond, then_, else_) ->
+      expr_uses_nonfinite_f64 cond
+      || stmt_uses_nonfinite_f64 then_
+      || Option.fold ~none:false ~some:stmt_uses_nonfinite_f64 else_
+  | SWhile (cond, body) ->
+      expr_uses_nonfinite_f64 cond || stmt_uses_nonfinite_f64 body
+  | SFor (_, lo, hi, _, body) ->
+      expr_uses_nonfinite_f64 lo || expr_uses_nonfinite_f64 hi
+      || stmt_uses_nonfinite_f64 body
+  | SMatch (scrutinee, cases) ->
+      expr_uses_nonfinite_f64 scrutinee
+      || List.exists (fun (_, s) -> stmt_uses_nonfinite_f64 s) cases
+  | SReturn e | SExpr e -> expr_uses_nonfinite_f64 e
+  | SBarrier | SWarpBarrier | SEmpty | SMemFence | SNative _ -> false
+  | SLet (_, e, body) | SLetMut (_, e, body) ->
+      expr_uses_nonfinite_f64 e || stmt_uses_nonfinite_f64 body
+  | SPragma (_, body) | SBlock body -> stmt_uses_nonfinite_f64 body
+
+let decl_uses_nonfinite_f64 = function
+  | DParam _ -> false
+  | DLocal (_, init) ->
+      Option.fold ~none:false ~some:expr_uses_nonfinite_f64 init
+  | DShared (_, _, size) ->
+      Option.fold ~none:false ~some:expr_uses_nonfinite_f64 size
+
+let helper_uses_nonfinite_f64 hf = stmt_uses_nonfinite_f64 hf.hf_body
+
+(** Whether the kernel contains a non-finite Float64 constant anywhere. *)
+let kernel_uses_nonfinite_float64 k =
+  List.exists decl_uses_nonfinite_f64 k.kern_params
+  || List.exists decl_uses_nonfinite_f64 k.kern_locals
+  || stmt_uses_nonfinite_f64 k.kern_body
+  || List.exists helper_uses_nonfinite_f64 k.kern_funcs

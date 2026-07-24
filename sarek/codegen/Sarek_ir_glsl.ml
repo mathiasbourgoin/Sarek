@@ -281,12 +281,14 @@ let rec gen_expr buf = function
   | EConst (CFloat64 f) when not (Float.is_finite f) ->
       (* GLSL has no [inf]/[nan] literal, so [%.17g]'s "inf"/"nan" spelling is
          invalid source. Reconstruct the exact IEEE-754 value from its bit
-         pattern via [int64BitsToDouble] (GL_ARB_gpu_shader_int64 — emitted
-         whenever such a constant occurs, since the only producers are the
-         software f64 transcendentals, which already require int64). The decimal
-         (possibly negative) bit literal avoids the >int64-max hex forms glslang
-         rejects. Finite doubles keep the plain [%.17g … lf] form below, so no
-         existing golden moves. *)
+         pattern via [int64BitsToDouble], which needs GL_ARB_gpu_shader_int64 —
+         emitted by [glsl_header] whenever the kernel contains such a constant
+         ([compute_f64_softmath] ORs [kernel_uses_nonfinite_float64] into
+         [current_needs_int64], so this is covered even for a user-written
+         non-finite literal with no transcendental, not only the software f64
+         helpers). The decimal (possibly negative) bit literal avoids the
+         >int64-max hex forms glslang rejects. Finite doubles keep the plain
+         [%.17g … lf] form below, so no existing golden moves. *)
       Buffer.add_string
         buf
         (Printf.sprintf "int64BitsToDouble(%LdL)" (Int64.bits_of_float f))
@@ -1433,7 +1435,14 @@ let compute_f64_softmath (k : kernel) =
       (Sarek_ir_softmath.all_helpers ())
   in
   current_f64_helpers := helpers ;
-  current_needs_int64 := List.exists Sarek_ir_softmath.uses_int64 helpers ;
+  (* int64 is needed by any helper that manipulates the exponent/mantissa
+     fields AND, independently of the helpers, by any non-finite Float64
+     constant (emitted via int64BitsToDouble in gen_expr — GLSL has no inf/nan
+     literal). Gating on both keeps a user-reachable [Float64.infinity] with no
+     transcendental from emitting int64 ops without the extension. *)
+  current_needs_int64 :=
+    List.exists Sarek_ir_softmath.uses_int64 helpers
+    || Sarek_ir_analysis.kernel_uses_nonfinite_float64 k ;
   current_f64_needs_copysign :=
     List.exists Sarek_ir_softmath.uses_copysign helpers
 
