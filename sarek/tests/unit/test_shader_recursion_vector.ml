@@ -180,6 +180,75 @@ let collision_kernel () =
     body
     [collision_helper ()]
 
+(** transpose_naive regression (#65): a body local that SHADOWS a scalar kernel
+    param — the exact shape a [[@sarek.module]] helper produces when its formal
+    is named like a kernel scalar. The inliner binds the formal to the argument
+    ([let width = width]), so the emitted GLSL declares [int width = ...;].
+
+    GLSL exposes scalar params as preprocessor macros
+    ([#define width pc.width]), which rewrite EVERY [width] token in [main] —
+    including that declaration's name, yielding [int pc.width = pc.width;]:
+    glslangValidator rejects it with "unexpected DOT". HIP/OpenCL/Metal have no
+    such macro, so the same kernel assembled fine there (perf sweep 2026-07-24).
+    The GLSL emitter must alpha-rename the shadowing locals. *)
+let transpose_naive_kernel () =
+  let input = make_var "input" (TVec TFloat32) in
+  let output = make_var "output" (TVec TFloat32) in
+  let width = make_var "width" TInt32 in
+  let height = make_var "height" TInt32 in
+  (* Locals named EXACTLY like the scalar params — the module-inline shape. *)
+  let width_l = make_var "width" TInt32 in
+  let height_l = make_var "height" TInt32 in
+  let tid = make_var "tid" TInt32 in
+  let n = make_var "n" TInt32 in
+  let col = make_var "col" TInt32 in
+  let row = make_var "row" TInt32 in
+  let in_idx = make_var "in_idx" TInt32 in
+  let out_idx = make_var "out_idx" TInt32 in
+  let inner =
+    SLet
+      ( col,
+        EBinop (Mod, EVar tid, EVar width_l),
+        SLet
+          ( row,
+            EBinop (Div, EVar tid, EVar width_l),
+            SLet
+              ( in_idx,
+                EBinop (Add, EBinop (Mul, EVar row, EVar width_l), EVar col),
+                SLet
+                  ( out_idx,
+                    EBinop (Add, EBinop (Mul, EVar col, EVar height_l), EVar row),
+                    SAssign
+                      ( LArrayElem ("output", EVar out_idx),
+                        EArrayRead ("input", EVar in_idx) ) ) ) ) )
+  in
+  let body =
+    SBlock
+      (SLet
+         ( width_l,
+           EVar width,
+           SLet
+             ( height_l,
+               EVar height,
+               SLet
+                 ( tid,
+                   EIntrinsic ([], "global_thread_id", []),
+                   SLet
+                     ( n,
+                       EBinop (Mul, EVar width_l, EVar height_l),
+                       SIf (EBinop (Lt, EVar tid, EVar n), inner, None) ) ) ) ))
+  in
+  base_kernel
+    "transpose_naive"
+    [
+      DParam (input, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (output, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (width, None);
+      DParam (height, None);
+    ]
+    body
+    []
+
 (* ---- validator plumbing (mirrors the ptxas gate) ---- *)
 
 let tool_available cmd =
@@ -347,6 +416,57 @@ let test_wgsl_local_buffer_name_collision () =
           e
           wgsl
 
+(* transpose_naive (#65): a scalar-param-shadowing local must be alpha-renamed
+   so the push-constant macro does not mangle its declaration into `pc.width`.
+   Red-on-mutation: revert the rename pass in Sarek_ir_glsl and glslangValidator
+   fails here with "unexpected DOT". *)
+let test_glsl_transpose_naive_pc_shadow_validates () =
+  let k = transpose_naive_kernel () in
+  let glsl = Sarek_ir_glsl.generate k in
+  if not (contains glsl "sarek_pc_shadow_") then
+    Alcotest.failf
+      "expected the scalar-param-shadowing locals to be alpha-renamed \
+       (sarek_pc_shadow_*):\n\
+       %s"
+      glsl ;
+  (* The colliding raw declaration `int width = ` must NOT survive (it would be
+     macro-rewritten to `int pc.width = `). *)
+  if contains glsl "int width =" || contains glsl "int height =" then
+    Alcotest.failf
+      "a scalar-param-shadowing local declaration survived unrenamed:\n%s"
+      glsl ;
+  if not (Lazy.force glslang_available) then
+    Printf.printf "  SKIP: glslangValidator not on PATH\n%!"
+  else
+    match glslang_ok glsl with
+    | Ok () -> Printf.printf "  glslangValidator OK: transpose_naive\n%!"
+    | Error e ->
+        Alcotest.failf
+          "glslangValidator rejected transpose_naive GLSL (unexpected DOT?):\n\
+           %s\n\
+           --- shader ---\n\
+           %s"
+          e
+          glsl
+
+(* WGSL is NOT affected by the "unexpected DOT" defect: it exposes scalars as
+   `params.<name>` field access, not macros, so `let width : i32 = params.width;`
+   is valid. This case documents that WGSL still assembles (skips if naga is
+   absent, as elsewhere). *)
+let test_wgsl_transpose_naive_validates () =
+  let k = transpose_naive_kernel () in
+  let wgsl = Sarek_ir_wgsl.generate k in
+  if not (Lazy.force naga_available) then
+    Printf.printf "  SKIP: naga not on PATH (WGSL validation skipped)\n%!"
+  else
+    match naga_ok wgsl with
+    | Ok () -> Printf.printf "  naga OK: transpose_naive\n%!"
+    | Error e ->
+        Alcotest.failf
+          "naga rejected transpose_naive WGSL:\n%s\n--- shader ---\n%s"
+          e
+          wgsl
+
 let () =
   Alcotest.run
     "shader_recursion_vector"
@@ -369,5 +489,13 @@ let () =
             "WGSL helper-local vs buffer-name collision (alpha-capture)"
             `Quick
             test_wgsl_local_buffer_name_collision;
+          Alcotest.test_case
+            "GLSL transpose_naive scalar-param-shadowing local (unexpected DOT)"
+            `Quick
+            test_glsl_transpose_naive_pc_shadow_validates;
+          Alcotest.test_case
+            "WGSL transpose_naive scalar-param-shadowing local"
+            `Quick
+            test_wgsl_transpose_naive_validates;
         ] );
     ]

@@ -1436,6 +1436,119 @@ let gen_f64_softmath_helpers ~pc_names buf =
       Buffer.add_char buf '\n' ;
       List.iter (gen_helper_func ~pc_names buf) helpers
 
+(** Counter for fresh push-constant-shadowing local names (see
+    {!rename_pc_shadowing_locals}). Reset per kernel in {!generate} /
+    {!generate_with_types} for deterministic output. *)
+let pc_shadow_counter = ref 0
+
+(** Alpha-rename kernel-body locals whose name collides with a push-constant
+    scalar macro.
+
+    Scalar params are exposed to the body as preprocessor macros
+    ([#define width pc.width]), so the macro rewrites {e every} [width] token in
+    [main] — including the declared name of a local. A helper inlined at its
+    call site (e.g. a [[@sarek.module]] function whose formal is named like a
+    kernel scalar) emits a self-binding [int width = width;], which the macro
+    turns into [int pc.width = pc.width;] — a syntax error ("unexpected DOT").
+    Helper {e functions} already dodge this via the [#undef]/[#define] guards in
+    {!gen_helper_func}, but a body-inlined local has no such guard.
+
+    This pass rewrites each colliding local binder (and its in-scope references)
+    to a fresh [sarek_pc_shadow_*] name that no macro touches; the initializer,
+    evaluated in the outer scope, still expands to the push constant, so
+    semantics are preserved and the generated declaration is valid. It is a
+    no-op unless a local genuinely shadows a scalar param, so collision-free
+    kernels (every existing golden) are byte-identical. GLSL-only: no other
+    backend uses macros for scalar params. *)
+let rename_pc_shadowing_locals ~pc_names body =
+  let module SM = Map.Make (String) in
+  let collides name = List.mem (escape_glsl_name name) pc_names in
+  let ren env name =
+    match SM.find_opt name env with Some n -> n | None -> name
+  in
+  let rec re_expr env e =
+    match e with
+    | EConst _ -> e
+    | EVar v -> EVar {v with var_name = ren env v.var_name}
+    | EBinop (op, a, b) -> EBinop (op, re_expr env a, re_expr env b)
+    | EUnop (op, a) -> EUnop (op, re_expr env a)
+    | EArrayRead (arr, i) -> EArrayRead (ren env arr, re_expr env i)
+    | EArrayReadExpr (b, i) -> EArrayReadExpr (re_expr env b, re_expr env i)
+    | ERecordField (e, f) -> ERecordField (re_expr env e, f)
+    | EIntrinsic (ns, n, args) -> EIntrinsic (ns, n, List.map (re_expr env) args)
+    | ECast (t, e) -> ECast (t, re_expr env e)
+    | ETuple es -> ETuple (List.map (re_expr env) es)
+    | EApp (f, args) -> EApp (re_expr env f, List.map (re_expr env) args)
+    | ERecord (n, fs) ->
+        ERecord (n, List.map (fun (k, v) -> (k, re_expr env v)) fs)
+    | EVariant (t, c, args) -> EVariant (t, c, List.map (re_expr env) args)
+    | EArrayLen n -> EArrayLen (ren env n)
+    | EArrayCreate (t, s, m) -> EArrayCreate (t, re_expr env s, m)
+    | EIf (c, t, e) -> EIf (re_expr env c, re_expr env t, re_expr env e)
+    | EMatch (s, cases) ->
+        EMatch (re_expr env s, List.map (fun (p, b) -> (p, re_expr env b)) cases)
+  in
+  let rec re_lvalue env lv =
+    match lv with
+    | LVar v -> LVar {v with var_name = ren env v.var_name}
+    | LArrayElem (arr, i) -> LArrayElem (ren env arr, re_expr env i)
+    | LArrayElemExpr (b, i) -> LArrayElemExpr (re_expr env b, re_expr env i)
+    | LRecordField (lv, f) -> LRecordField (re_lvalue env lv, f)
+  in
+  (* Bind a local: rename it when it collides with a scalar macro; otherwise
+     drop any same-named outer mapping (this fresh local shadows it). *)
+  let bind env (v : var) =
+    if collides v.var_name then begin
+      incr pc_shadow_counter ;
+      let nn =
+        Printf.sprintf
+          "sarek_pc_shadow_%s_%d"
+          (escape_glsl_name v.var_name)
+          !pc_shadow_counter
+      in
+      ({v with var_name = nn}, SM.add v.var_name nn env)
+    end
+    else (v, SM.remove v.var_name env)
+  in
+  (* Pattern binders introduce distinct locals; drop any same-named mappings in
+     the case body so references there are not mis-substituted. *)
+  let drop_pattern env = function
+    | PWild -> env
+    | PConstr (_, names) -> List.fold_left (fun e n -> SM.remove n e) env names
+  in
+  let rec re_stmt env s =
+    match s with
+    | SAssign (lv, e) -> SAssign (re_lvalue env lv, re_expr env e)
+    | SSeq ss -> SSeq (List.map (re_stmt env) ss)
+    | SIf (c, t, eo) ->
+        SIf (re_expr env c, re_stmt env t, Option.map (re_stmt env) eo)
+    | SWhile (c, b) -> SWhile (re_expr env c, re_stmt env b)
+    | SFor (v, lo, hi, dir, b) ->
+        let lo = re_expr env lo and hi = re_expr env hi in
+        let v', env' = bind env v in
+        SFor (v', lo, hi, dir, re_stmt env' b)
+    | SMatch (e, cases) ->
+        SMatch
+          ( re_expr env e,
+            List.map (fun (p, b) -> (p, re_stmt (drop_pattern env p) b)) cases
+          )
+    | SReturn e -> SReturn (re_expr env e)
+    | (SBarrier | SWarpBarrier | SMemFence | SEmpty) as s -> s
+    | SExpr e -> SExpr (re_expr env e)
+    | SLet (v, e, body) ->
+        let e = re_expr env e in
+        let v', env' = bind env v in
+        SLet (v', e, re_stmt env' body)
+    | SLetMut (v, e, body) ->
+        let e = re_expr env e in
+        let v', env' = bind env v in
+        SLetMut (v', e, re_stmt env' body)
+    | SPragma (ss, b) -> SPragma (ss, re_stmt env b)
+    | SBlock b -> SBlock (re_stmt env b)
+    | SNative _ as s -> s
+  in
+  re_stmt SM.empty body
+
 (** Generate complete GLSL source for a kernel.
     @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.
 *)
@@ -1446,6 +1559,7 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
   let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"Vulkan" k in
   (* Clear per-kernel state *)
   Hashtbl.clear helper_vec_param_indices ;
+  pc_shadow_counter := 0 ;
   current_smod_name := compute_smod_name k ;
   current_copysign_name := compute_copysign_name k ;
   current_fmod_name := compute_fmod_name k ;
@@ -1512,9 +1626,10 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
   (* Generate helper functions *)
   List.iter (gen_helper_func ~pc_names buf) k.kern_funcs ;
 
-  (* Generate main function *)
+  (* Generate main function. Alpha-rename any body local that shadows a scalar
+     push-constant macro first (see rename_pc_shadowing_locals). *)
   Buffer.add_string buf "void main() {\n" ;
-  gen_stmt buf "  " k.kern_body ;
+  gen_stmt buf "  " (rename_pc_shadowing_locals ~pc_names k.kern_body) ;
   Buffer.add_string buf "}\n" ;
 
   let shader = Buffer.contents buf in
@@ -1552,6 +1667,7 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"Vulkan" k in
   (* Clear per-kernel state *)
   Hashtbl.clear helper_vec_param_indices ;
+  pc_shadow_counter := 0 ;
   current_smod_name := compute_smod_name k ;
   current_copysign_name := compute_copysign_name k ;
   current_fmod_name := compute_fmod_name k ;
@@ -1627,9 +1743,10 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   (* Generate helper functions *)
   List.iter (gen_helper_func ~pc_names buf) k.kern_funcs ;
 
-  (* Generate main function *)
+  (* Generate main function. Alpha-rename any body local that shadows a scalar
+     push-constant macro first (see rename_pc_shadowing_locals). *)
   Buffer.add_string buf "void main() {\n" ;
-  gen_stmt buf "  " k.kern_body ;
+  gen_stmt buf "  " (rename_pc_shadowing_locals ~pc_names k.kern_body) ;
   Buffer.add_string buf "}\n" ;
 
   let shader = Buffer.contents buf in
