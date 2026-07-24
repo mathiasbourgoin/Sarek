@@ -7,7 +7,160 @@
 
 open Sarek_ir_types
 
-(** Check if an element type is or contains float64 *)
+(** {1 Generic IR traversal}
+
+    Every "does a kernel use feature X?" detector — and the Float64-intrinsic
+    name collector — shares one traversal skeleton over the IR
+    (expr/lvalue/stmt/decl/helper/kernel). Historically each family duplicated
+    that skeleton, so adding an IR node meant editing ~7 copies and any omission
+    silently under-reported a feature.
+
+    A single polymorphic fold now carries the skeleton; each family supplies
+    only its per-node behaviour through a {!folder} record. This is also the
+    requirement-extraction primitive a future capability/affinity model reuses,
+    hence the fully general ['a] accumulator rather than a fixed boolean.
+
+    The four hooks capture every axis along which the old families differed:
+    - [fe]: combine the accumulator with a single expression node. This is the
+      only place a family's "leaf" fires; the traversal always recurses into the
+      node's sub-expressions afterwards. A rich leaf may inspect an expression's
+      embedded {e types} here (e.g. [ECast]/[EArrayCreate] element types, an
+      [EVar]'s [var_type]) — Float64 detection does exactly this, so the
+      traversal never forces a lowest-common-denominator leaf.
+    - [ft]: combine the accumulator with an element type occurring at a binder
+      or declaration ([SFor]/[SLet]/[SLetMut] binder, [DParam]/[DShared] types,
+      helper return/param types, kernel record/variant field types). Families
+      that do not inspect types leave this at the identity, which makes those
+      positions contribute nothing — reproducing the old "types ignored"
+      behaviour exactly.
+    - [fnative]: combine the accumulator at an [SNative] node. Inline native GPU
+      code is opaque text, so its polarity is asymmetric across families
+      (atomics/int_mod/copysign/generic-intrinsic conservatively assume the
+      feature is present; float64/nonfinite/collector treat it as absent). This
+      is carried explicitly and never flattened away.
+    - [visit_lvalue]: whether [SAssign] descends into its l-value. The float64
+      detector deliberately ignores assignment l-values; the others recurse (an
+      index expression can hide the feature). *)
+type 'a folder = {
+  fe : 'a -> expr -> 'a;
+  ft : 'a -> elttype -> 'a;
+  fnative : 'a -> 'a;
+  visit_lvalue : bool;
+}
+
+let rec expr_fold f acc e =
+  let acc = f.fe acc e in
+  match e with
+  | EConst _ | EVar _ | EArrayLen _ -> acc
+  | EBinop (_, e1, e2) | EArrayReadExpr (e1, e2) ->
+      expr_fold f (expr_fold f acc e1) e2
+  | EUnop (_, e) | ERecordField (e, _) | ECast (_, e) | EArrayRead (_, e) ->
+      expr_fold f acc e
+  | EIntrinsic (_, _, args) | ETuple args | EVariant (_, _, args) ->
+      List.fold_left (expr_fold f) acc args
+  | EApp (fn, args) -> List.fold_left (expr_fold f) (expr_fold f acc fn) args
+  | ERecord (_, fields) ->
+      List.fold_left (fun a (_, e) -> expr_fold f a e) acc fields
+  | EArrayCreate (_, size, _) -> expr_fold f acc size
+  | EIf (cond, then_, else_) ->
+      expr_fold f (expr_fold f (expr_fold f acc cond) then_) else_
+  | EMatch (scrutinee, cases) ->
+      List.fold_left
+        (fun a (_, e) -> expr_fold f a e)
+        (expr_fold f acc scrutinee)
+        cases
+
+let rec lvalue_fold f acc = function
+  | LVar _ -> acc
+  | LArrayElem (_, idx) -> expr_fold f acc idx
+  | LArrayElemExpr (base, idx) -> expr_fold f (expr_fold f acc base) idx
+  | LRecordField (lv, _) -> lvalue_fold f acc lv
+
+let rec stmt_fold f acc = function
+  | SAssign (lv, e) ->
+      let acc = if f.visit_lvalue then lvalue_fold f acc lv else acc in
+      expr_fold f acc e
+  | SSeq stmts -> List.fold_left (stmt_fold f) acc stmts
+  | SIf (cond, then_, else_) ->
+      let acc = expr_fold f acc cond in
+      let acc = stmt_fold f acc then_ in
+      Option.fold ~none:acc ~some:(stmt_fold f acc) else_
+  | SWhile (cond, body) -> stmt_fold f (expr_fold f acc cond) body
+  | SFor (v, lo, hi, _, body) ->
+      let acc = f.ft acc v.var_type in
+      stmt_fold f (expr_fold f (expr_fold f acc lo) hi) body
+  | SMatch (scrutinee, cases) ->
+      List.fold_left
+        (fun a (_, s) -> stmt_fold f a s)
+        (expr_fold f acc scrutinee)
+        cases
+  | SReturn e | SExpr e -> expr_fold f acc e
+  | SBarrier | SWarpBarrier | SEmpty | SMemFence -> acc
+  | SLet (v, e, body) | SLetMut (v, e, body) ->
+      let acc = f.ft acc v.var_type in
+      stmt_fold f (expr_fold f acc e) body
+  | SPragma (_, body) | SBlock body -> stmt_fold f acc body
+  | SNative _ -> f.fnative acc
+
+let decl_fold f acc = function
+  | DParam (v, arr_info) ->
+      let acc = f.ft acc v.var_type in
+      Option.fold ~none:acc ~some:(fun ai -> f.ft acc ai.arr_elttype) arr_info
+  | DLocal (v, init) ->
+      let acc = f.ft acc v.var_type in
+      Option.fold ~none:acc ~some:(expr_fold f acc) init
+  | DShared (_, ty, size) ->
+      let acc = f.ft acc ty in
+      Option.fold ~none:acc ~some:(expr_fold f acc) size
+
+let helper_fold f acc hf =
+  let acc = f.ft acc hf.hf_ret_type in
+  let acc = List.fold_left (fun a v -> f.ft a v.var_type) acc hf.hf_params in
+  stmt_fold f acc hf.hf_body
+
+(** Fold the whole kernel: params, locals, body, helper functions, and record
+    /variant field types. The type positions ([ft]) contribute nothing for
+    detectors that do not inspect types, so families that historically skipped
+    [kern_types]/[kern_variants] are unaffected by visiting them here. *)
+let kernel_fold f acc k =
+  let acc = List.fold_left (decl_fold f) acc k.kern_params in
+  let acc = List.fold_left (decl_fold f) acc k.kern_locals in
+  let acc = stmt_fold f acc k.kern_body in
+  let acc = List.fold_left (helper_fold f) acc k.kern_funcs in
+  let acc =
+    List.fold_left
+      (fun a (_, fields) -> List.fold_left (fun a (_, t) -> f.ft a t) a fields)
+      acc
+      k.kern_types
+  in
+  List.fold_left
+    (fun a (_, constrs) ->
+      List.fold_left (fun a (_, args) -> List.fold_left f.ft a args) a constrs)
+    acc
+    k.kern_variants
+
+(** A boolean [folder] for an "exists" detector. [leaf] fires per expression
+    node (and may inspect embedded types); [type_leaf] fires per binder/decl
+    type; [native] is the [SNative] verdict; [visit_lvalue] controls whether
+    [SAssign] descends into its l-value. *)
+let exists_folder ~leaf ?(type_leaf = fun _ -> false) ~native
+    ?(visit_lvalue = true) () =
+  {
+    fe = (fun acc e -> acc || leaf e);
+    ft = (fun acc t -> acc || type_leaf t);
+    fnative = (if native then fun _ -> true else fun acc -> acc);
+    visit_lvalue;
+  }
+
+(** {1 Float64 detection}
+
+    The float64 detector has a {e rich} leaf: it inspects element types, not
+    just constructors, at every binder, declaration, cast, and array
+    construction, plus record/variant field types at the kernel level. Its
+    [SNative] arm is deliberately asymmetric vs. the atomics detector:
+    native-block float64 usage is a separate, not-yet-decided question (see KB /
+    review notes), so [SNative] is treated as float64-free. It also does not
+    descend into assignment l-values. *)
 let rec elttype_uses_float64 = function
   | TFloat64 -> true
   | TRecord (_, fields) ->
@@ -22,94 +175,34 @@ let rec elttype_uses_float64 = function
 (** Check if a constant is float64 *)
 let const_uses_float64 = function CFloat64 _ -> true | _ -> false
 
-(** Check if an expression uses float64 *)
-let rec expr_uses_float64 = function
+let float64_leaf = function
   | EConst c -> const_uses_float64 c
   | EVar v -> elttype_uses_float64 v.var_type
-  | EBinop (_, e1, e2) -> expr_uses_float64 e1 || expr_uses_float64 e2
-  | EUnop (_, e) -> expr_uses_float64 e
-  | EArrayRead (_, idx) -> expr_uses_float64 idx
-  | EArrayReadExpr (base, idx) ->
-      expr_uses_float64 base || expr_uses_float64 idx
-  | ERecordField (e, _) -> expr_uses_float64 e
-  | EIntrinsic (_, _, args) -> List.exists expr_uses_float64 args
-  | ECast (ty, e) -> elttype_uses_float64 ty || expr_uses_float64 e
-  | ETuple exprs -> List.exists expr_uses_float64 exprs
-  | EApp (fn, args) ->
-      expr_uses_float64 fn || List.exists expr_uses_float64 args
-  | ERecord (_, fields) ->
-      List.exists (fun (_, e) -> expr_uses_float64 e) fields
-  | EVariant (_, _, args) -> List.exists expr_uses_float64 args
-  | EArrayLen _ -> false
-  | EArrayCreate (ty, size, _) ->
-      elttype_uses_float64 ty || expr_uses_float64 size
-  | EIf (cond, then_, else_) ->
-      expr_uses_float64 cond || expr_uses_float64 then_
-      || expr_uses_float64 else_
-  | EMatch (scrutinee, cases) ->
-      expr_uses_float64 scrutinee
-      || List.exists (fun (_, e) -> expr_uses_float64 e) cases
+  | ECast (ty, _) | EArrayCreate (ty, _, _) -> elttype_uses_float64 ty
+  | _ -> false
+
+let float64_folder =
+  exists_folder
+    ~leaf:float64_leaf
+    ~type_leaf:elttype_uses_float64
+    ~native:false
+    ~visit_lvalue:false
+    ()
+
+(** Check if an expression uses float64 *)
+let expr_uses_float64 e = expr_fold float64_folder false e
 
 (** Check if a statement uses float64 *)
-let rec stmt_uses_float64 = function
-  | SAssign (_, e) -> expr_uses_float64 e
-  | SSeq stmts -> List.exists stmt_uses_float64 stmts
-  | SIf (cond, then_, else_) ->
-      expr_uses_float64 cond || stmt_uses_float64 then_
-      || Option.fold ~none:false ~some:stmt_uses_float64 else_
-  | SWhile (cond, body) -> expr_uses_float64 cond || stmt_uses_float64 body
-  | SFor (v, lo, hi, _, body) ->
-      elttype_uses_float64 v.var_type
-      || expr_uses_float64 lo || expr_uses_float64 hi || stmt_uses_float64 body
-  | SMatch (scrutinee, cases) ->
-      expr_uses_float64 scrutinee
-      || List.exists (fun (_, s) -> stmt_uses_float64 s) cases
-  | SReturn e | SExpr e -> expr_uses_float64 e
-  | SBarrier | SWarpBarrier | SEmpty | SMemFence -> false
-  | SLet (v, e, body) | SLetMut (v, e, body) ->
-      elttype_uses_float64 v.var_type
-      || expr_uses_float64 e || stmt_uses_float64 body
-  | SPragma (_, body) | SBlock body -> stmt_uses_float64 body
-  (* Deliberately asymmetric vs. stmt_uses_atomics's SNative arm: native-block float64 usage is a separate, not-yet-decided question - see KB / review notes; do not change this arm as part of the atomics fix. *)
-  | SNative _ -> false
+let stmt_uses_float64 s = stmt_fold float64_folder false s
 
 (** Check if a declaration uses float64 *)
-let decl_uses_float64 = function
-  | DParam (v, arr_info) ->
-      elttype_uses_float64 v.var_type
-      || Option.fold
-           ~none:false
-           ~some:(fun ai -> elttype_uses_float64 ai.arr_elttype)
-           arr_info
-  | DLocal (v, init) ->
-      elttype_uses_float64 v.var_type
-      || Option.fold ~none:false ~some:expr_uses_float64 init
-  | DShared (_, ty, size) ->
-      elttype_uses_float64 ty
-      || Option.fold ~none:false ~some:expr_uses_float64 size
+let decl_uses_float64 d = decl_fold float64_folder false d
 
 (** Check if a helper function uses float64 *)
-let helper_uses_float64 hf =
-  elttype_uses_float64 hf.hf_ret_type
-  || List.exists (fun v -> elttype_uses_float64 v.var_type) hf.hf_params
-  || stmt_uses_float64 hf.hf_body
+let helper_uses_float64 hf = helper_fold float64_folder false hf
 
 (** Check if a kernel uses float64 anywhere *)
-let kernel_uses_float64 k =
-  List.exists decl_uses_float64 k.kern_params
-  || List.exists decl_uses_float64 k.kern_locals
-  || stmt_uses_float64 k.kern_body
-  || List.exists helper_uses_float64 k.kern_funcs
-  || List.exists
-       (fun (_, fields) ->
-         List.exists (fun (_, t) -> elttype_uses_float64 t) fields)
-       k.kern_types
-  || List.exists
-       (fun (_, constrs) ->
-         List.exists
-           (fun (_, args) -> List.exists elttype_uses_float64 args)
-           constrs)
-       k.kern_variants
+let kernel_uses_float64 k = kernel_fold float64_folder false k
 
 (** {1 Atomic-operation detection}
 
@@ -126,171 +219,71 @@ let kernel_uses_float64 k =
     name that does not start with ["atomic_"], update [is_atomic_intrinsic_name]
     below (and consider exporting the name list from Sarek_core_primitives.ml
     instead of relying on the prefix convention). Do not duplicate this check
-    elsewhere. *)
+    elsewhere.
+
+    Inline native GPU code ([SNative]) is opaque; fusion must not assume it is
+    atomic-free, so the detector is conservative there. *)
 let is_atomic_intrinsic_name name =
   let prefix = "atomic_" in
   String.length name >= String.length prefix
   && String.sub name 0 (String.length prefix) = prefix
 
-(** Check if an expression contains an atomic intrinsic call *)
-let rec expr_uses_atomics = function
-  | EIntrinsic (_, name, args) ->
-      is_atomic_intrinsic_name name || List.exists expr_uses_atomics args
-  | EConst _ | EVar _ -> false
-  | EBinop (_, e1, e2) -> expr_uses_atomics e1 || expr_uses_atomics e2
-  | EUnop (_, e) -> expr_uses_atomics e
-  | EArrayRead (_, idx) -> expr_uses_atomics idx
-  | EArrayReadExpr (base, idx) ->
-      expr_uses_atomics base || expr_uses_atomics idx
-  | ERecordField (e, _) -> expr_uses_atomics e
-  | ECast (_, e) -> expr_uses_atomics e
-  | ETuple exprs -> List.exists expr_uses_atomics exprs
-  | EApp (fn, args) ->
-      expr_uses_atomics fn || List.exists expr_uses_atomics args
-  | ERecord (_, fields) ->
-      List.exists (fun (_, e) -> expr_uses_atomics e) fields
-  | EVariant (_, _, args) -> List.exists expr_uses_atomics args
-  | EArrayLen _ -> false
-  | EArrayCreate (_, size, _) -> expr_uses_atomics size
-  | EIf (cond, then_, else_) ->
-      expr_uses_atomics cond || expr_uses_atomics then_
-      || expr_uses_atomics else_
-  | EMatch (scrutinee, cases) ->
-      expr_uses_atomics scrutinee
-      || List.exists (fun (_, e) -> expr_uses_atomics e) cases
+let atomics_leaf = function
+  | EIntrinsic (_, name, _) -> is_atomic_intrinsic_name name
+  | _ -> false
 
-(** Check if an lvalue contains an atomic intrinsic call (in its index/base
-    expression). LVar has no sub-expression; LRecordField recurses into the
-    inner lvalue. *)
-let rec lvalue_uses_atomics = function
-  | LVar _ -> false
-  | LArrayElem (_, idx) -> expr_uses_atomics idx
-  | LArrayElemExpr (base, idx) ->
-      expr_uses_atomics base || expr_uses_atomics idx
-  | LRecordField (lv, _) -> lvalue_uses_atomics lv
+let atomics_folder = exists_folder ~leaf:atomics_leaf ~native:true ()
+
+(** Check if an expression contains an atomic intrinsic call *)
+let expr_uses_atomics e = expr_fold atomics_folder false e
+
+(** Check if an l-value contains an atomic intrinsic call (in its index/base
+    expression). [LVar] has no sub-expression; [LRecordField] recurses into the
+    inner l-value. *)
+let lvalue_uses_atomics lv = lvalue_fold atomics_folder false lv
 
 (** Check if a statement contains an atomic intrinsic call *)
-let rec stmt_uses_atomics = function
-  | SAssign (lv, e) -> lvalue_uses_atomics lv || expr_uses_atomics e
-  | SSeq stmts -> List.exists stmt_uses_atomics stmts
-  | SIf (cond, then_, else_) ->
-      expr_uses_atomics cond || stmt_uses_atomics then_
-      || Option.fold ~none:false ~some:stmt_uses_atomics else_
-  | SWhile (cond, body) -> expr_uses_atomics cond || stmt_uses_atomics body
-  | SFor (_, lo, hi, _, body) ->
-      expr_uses_atomics lo || expr_uses_atomics hi || stmt_uses_atomics body
-  | SMatch (scrutinee, cases) ->
-      expr_uses_atomics scrutinee
-      || List.exists (fun (_, s) -> stmt_uses_atomics s) cases
-  | SReturn e | SExpr e -> expr_uses_atomics e
-  | SBarrier | SWarpBarrier | SEmpty | SMemFence -> false
-  | SLet (_, e, body) | SLetMut (_, e, body) ->
-      expr_uses_atomics e || stmt_uses_atomics body
-  | SPragma (_, body) | SBlock body -> stmt_uses_atomics body
-  | SNative _ ->
-      (* Conservative: inline native GPU code is opaque; fusion must not
-         assume it is atomic-free. *)
-      true
+let stmt_uses_atomics s = stmt_fold atomics_folder false s
 
-(** Check if a declaration contains an atomic intrinsic call (in its
-    initializer/size expression, if any) *)
-let decl_uses_atomics = function
-  | DParam _ -> false
-  | DLocal (_, init) -> Option.fold ~none:false ~some:expr_uses_atomics init
-  | DShared (_, _, size) -> Option.fold ~none:false ~some:expr_uses_atomics size
+(** Check if a declaration contains an atomic intrinsic call *)
+let decl_uses_atomics d = decl_fold atomics_folder false d
 
 (** Check if a helper function contains an atomic intrinsic call *)
-let helper_uses_atomics hf = stmt_uses_atomics hf.hf_body
+let helper_uses_atomics hf = helper_fold atomics_folder false hf
 
 (** Check if a kernel uses atomic operations anywhere: params/locals
     initializers, body, and helper functions called from the kernel. Helper
-    bodies must be walked explicitly — a body-only check would miss atomics
-    hidden inside a called helper function. *)
-let kernel_uses_atomics k =
-  List.exists decl_uses_atomics k.kern_params
-  || List.exists decl_uses_atomics k.kern_locals
-  || stmt_uses_atomics k.kern_body
-  || List.exists helper_uses_atomics k.kern_funcs
+    bodies are walked explicitly — a body-only check would miss atomics hidden
+    inside a called helper function. *)
+let kernel_uses_atomics k = kernel_fold atomics_folder false k
 
 (** {1 Integer-remainder detection}
 
     [EBinop (Mod, _, _)] is always integer remainder — float [mod] is lowered to
     the [fmod]/[mod] intrinsic (an [EIntrinsic]), never to [Ir.Mod]. Backends
     that cannot lower [%] directly (e.g. GLSL, whose [%] is undefined for
-    negative operands) use this to decide whether to emit a remainder helper. *)
-let rec expr_uses_int_mod = function
-  | EBinop (Mod, _, _) -> true
-  | EConst _ | EVar _ -> false
-  | EBinop (_, e1, e2) -> expr_uses_int_mod e1 || expr_uses_int_mod e2
-  | EUnop (_, e) -> expr_uses_int_mod e
-  | EArrayRead (_, idx) -> expr_uses_int_mod idx
-  | EArrayReadExpr (base, idx) ->
-      expr_uses_int_mod base || expr_uses_int_mod idx
-  | ERecordField (e, _) -> expr_uses_int_mod e
-  | EIntrinsic (_, _, args) -> List.exists expr_uses_int_mod args
-  | ECast (_, e) -> expr_uses_int_mod e
-  | ETuple exprs -> List.exists expr_uses_int_mod exprs
-  | EApp (fn, args) ->
-      expr_uses_int_mod fn || List.exists expr_uses_int_mod args
-  | ERecord (_, fields) ->
-      List.exists (fun (_, e) -> expr_uses_int_mod e) fields
-  | EVariant (_, _, args) -> List.exists expr_uses_int_mod args
-  | EArrayLen _ -> false
-  | EArrayCreate (_, size, _) -> expr_uses_int_mod size
-  | EIf (cond, then_, else_) ->
-      expr_uses_int_mod cond || expr_uses_int_mod then_
-      || expr_uses_int_mod else_
-  | EMatch (scrutinee, cases) ->
-      expr_uses_int_mod scrutinee
-      || List.exists (fun (_, e) -> expr_uses_int_mod e) cases
+    negative operands) use this to decide whether to emit a remainder helper.
 
-let rec lvalue_uses_int_mod = function
-  | LVar _ -> false
-  | LArrayElem (_, idx) -> expr_uses_int_mod idx
-  | LArrayElemExpr (base, idx) ->
-      expr_uses_int_mod base || expr_uses_int_mod idx
-  (* Recurse into the nested lvalue: its array index may carry a [mod], e.g.
-     [arr.(j mod n).field <- v]. A non-recursive arm would miss it and skip
-     emitting the [sarek_smod] helper the emitted index references. Mirrors
-     [lvalue_uses_atomics]. *)
-  | LRecordField (lv, _) -> lvalue_uses_int_mod lv
+    L-values are recursed (an array index may carry a [mod], e.g.
+    [arr.(j mod n).field <- v]); [SNative] is conservatively assumed to contain
+    a remainder so any helper it references is still emitted. *)
+let int_mod_leaf = function EBinop (Mod, _, _) -> true | _ -> false
 
-let rec stmt_uses_int_mod = function
-  | SAssign (lv, e) -> lvalue_uses_int_mod lv || expr_uses_int_mod e
-  | SSeq stmts -> List.exists stmt_uses_int_mod stmts
-  | SIf (cond, then_, else_) ->
-      expr_uses_int_mod cond || stmt_uses_int_mod then_
-      || Option.fold ~none:false ~some:stmt_uses_int_mod else_
-  | SWhile (cond, body) -> expr_uses_int_mod cond || stmt_uses_int_mod body
-  | SFor (_, lo, hi, _, body) ->
-      expr_uses_int_mod lo || expr_uses_int_mod hi || stmt_uses_int_mod body
-  | SMatch (scrutinee, cases) ->
-      expr_uses_int_mod scrutinee
-      || List.exists (fun (_, s) -> stmt_uses_int_mod s) cases
-  | SReturn e | SExpr e -> expr_uses_int_mod e
-  | SBarrier | SWarpBarrier | SEmpty | SMemFence -> false
-  | SLet (_, e, body) | SLetMut (_, e, body) ->
-      expr_uses_int_mod e || stmt_uses_int_mod body
-  | SPragma (_, body) | SBlock body -> stmt_uses_int_mod body
-  (* Inline native GPU code is opaque text; assume it may contain a remainder
-     so a helper it references is still emitted. *)
-  | SNative _ -> true
+let int_mod_folder = exists_folder ~leaf:int_mod_leaf ~native:true ()
 
-let decl_uses_int_mod = function
-  | DParam _ -> false
-  | DLocal (_, init) -> Option.fold ~none:false ~some:expr_uses_int_mod init
-  | DShared (_, _, size) -> Option.fold ~none:false ~some:expr_uses_int_mod size
+let expr_uses_int_mod e = expr_fold int_mod_folder false e
 
-let helper_uses_int_mod hf = stmt_uses_int_mod hf.hf_body
+let lvalue_uses_int_mod lv = lvalue_fold int_mod_folder false lv
+
+let stmt_uses_int_mod s = stmt_fold int_mod_folder false s
+
+let decl_uses_int_mod d = decl_fold int_mod_folder false d
+
+let helper_uses_int_mod hf = helper_fold int_mod_folder false hf
 
 (** Check if a kernel uses integer remainder anywhere: locals initializers,
-    body, and helper functions. Helper bodies are walked explicitly (a helper
-    may use [mod] even when the top-level body does not). *)
-let kernel_uses_int_mod k =
-  List.exists decl_uses_int_mod k.kern_params
-  || List.exists decl_uses_int_mod k.kern_locals
-  || stmt_uses_int_mod k.kern_body
-  || List.exists helper_uses_int_mod k.kern_funcs
+    body, and helper functions. *)
+let kernel_uses_int_mod k = kernel_fold int_mod_folder false k
 
 (** {1 copysign detection}
 
@@ -301,86 +294,29 @@ let kernel_uses_int_mod k =
     whereas C [copysign(x, ±0) = ±|x|]) and for the [x=0]/NaN sign-transfer edge
     cases. The GLSL backend therefore lowers it to a bit-level [sarek_copysign]
     helper emitted in the preamble; this predicate decides whether that helper
-    is emitted. Mirrors [kernel_uses_int_mod]. *)
+    is emitted. L-values are recursed (the round-3 LRecordField lesson) and
+    [SNative] is conservatively assumed to reference the helper. *)
 let is_copysign_intrinsic_name name = String.equal name "copysign"
 
-let rec expr_uses_copysign = function
-  | EIntrinsic (_, name, args) ->
-      is_copysign_intrinsic_name name || List.exists expr_uses_copysign args
-  | EConst _ | EVar _ -> false
-  | EBinop (_, e1, e2) -> expr_uses_copysign e1 || expr_uses_copysign e2
-  | EUnop (_, e) -> expr_uses_copysign e
-  | EArrayRead (_, idx) -> expr_uses_copysign idx
-  | EArrayReadExpr (base, idx) ->
-      expr_uses_copysign base || expr_uses_copysign idx
-  | ERecordField (e, _) -> expr_uses_copysign e
-  | ECast (_, e) -> expr_uses_copysign e
-  | ETuple exprs -> List.exists expr_uses_copysign exprs
-  | EApp (fn, args) ->
-      expr_uses_copysign fn || List.exists expr_uses_copysign args
-  | ERecord (_, fields) ->
-      List.exists (fun (_, e) -> expr_uses_copysign e) fields
-  | EVariant (_, _, args) -> List.exists expr_uses_copysign args
-  | EArrayLen _ -> false
-  | EArrayCreate (_, size, _) -> expr_uses_copysign size
-  | EIf (cond, then_, else_) ->
-      expr_uses_copysign cond || expr_uses_copysign then_
-      || expr_uses_copysign else_
-  | EMatch (scrutinee, cases) ->
-      expr_uses_copysign scrutinee
-      || List.exists (fun (_, e) -> expr_uses_copysign e) cases
+let copysign_leaf = function
+  | EIntrinsic (_, name, _) -> is_copysign_intrinsic_name name
+  | _ -> false
 
-(** Recurse into the nested lvalue: its array index may carry a [copysign]
-    result cast to an int index, e.g.
-    [arr.(int_of_float (copysign ...)).field <- v]. A non-recursive
-    [LRecordField] arm would miss it and skip emitting the [sarek_copysign]
-    helper the emitted index references. Mirrors [lvalue_uses_int_mod] — the
-    round-3 LRecordField lesson. *)
-let rec lvalue_uses_copysign = function
-  | LVar _ -> false
-  | LArrayElem (_, idx) -> expr_uses_copysign idx
-  | LArrayElemExpr (base, idx) ->
-      expr_uses_copysign base || expr_uses_copysign idx
-  | LRecordField (lv, _) -> lvalue_uses_copysign lv
+let copysign_folder = exists_folder ~leaf:copysign_leaf ~native:true ()
 
-let rec stmt_uses_copysign = function
-  | SAssign (lv, e) -> lvalue_uses_copysign lv || expr_uses_copysign e
-  | SSeq stmts -> List.exists stmt_uses_copysign stmts
-  | SIf (cond, then_, else_) ->
-      expr_uses_copysign cond || stmt_uses_copysign then_
-      || Option.fold ~none:false ~some:stmt_uses_copysign else_
-  | SWhile (cond, body) -> expr_uses_copysign cond || stmt_uses_copysign body
-  | SFor (_, lo, hi, _, body) ->
-      expr_uses_copysign lo || expr_uses_copysign hi || stmt_uses_copysign body
-  | SMatch (scrutinee, cases) ->
-      expr_uses_copysign scrutinee
-      || List.exists (fun (_, s) -> stmt_uses_copysign s) cases
-  | SReturn e | SExpr e -> expr_uses_copysign e
-  | SBarrier | SWarpBarrier | SEmpty | SMemFence -> false
-  | SLet (_, e, body) | SLetMut (_, e, body) ->
-      expr_uses_copysign e || stmt_uses_copysign body
-  | SPragma (_, body) | SBlock body -> stmt_uses_copysign body
-  (* Inline native GPU code is opaque text; assume it may reference a copysign
-     helper so the helper it references is still emitted. Mirrors
-     [stmt_uses_int_mod]. *)
-  | SNative _ -> true
+let expr_uses_copysign e = expr_fold copysign_folder false e
 
-let decl_uses_copysign = function
-  | DParam _ -> false
-  | DLocal (_, init) -> Option.fold ~none:false ~some:expr_uses_copysign init
-  | DShared (_, _, size) ->
-      Option.fold ~none:false ~some:expr_uses_copysign size
+let lvalue_uses_copysign lv = lvalue_fold copysign_folder false lv
 
-let helper_uses_copysign hf = stmt_uses_copysign hf.hf_body
+let stmt_uses_copysign s = stmt_fold copysign_folder false s
+
+let decl_uses_copysign d = decl_fold copysign_folder false d
+
+let helper_uses_copysign hf = helper_fold copysign_folder false hf
 
 (** Check if a kernel uses [copysign] anywhere: locals initializers, body, and
-    helper functions. Helper bodies are walked explicitly (a helper may use
-    [copysign] even when the top-level body does not). *)
-let kernel_uses_copysign k =
-  List.exists decl_uses_copysign k.kern_params
-  || List.exists decl_uses_copysign k.kern_locals
-  || stmt_uses_copysign k.kern_body
-  || List.exists helper_uses_copysign k.kern_funcs
+    helper functions. *)
+let kernel_uses_copysign k = kernel_fold copysign_folder false k
 
 (** {1 Float64 intrinsic detection}
 
@@ -394,91 +330,26 @@ let kernel_uses_copysign k =
     overload for sin/cos/exp/log/pow/… — see [Sarek_ir_glsl]) uses this to
     decide which software helper family ([Sarek_ir_softmath]) to emit per
     kernel. Names are returned deduplicated; the caller filters to the subset it
-    routes to helpers and maps the composed cases (exp2/log2/cbrt). Helper
-    bodies and locals are walked explicitly, mirroring [kernel_uses_copysign].
-*)
+    routes to helpers and maps the composed cases (exp2/log2/cbrt). This is a
+    {e collector} rather than a boolean detector, so it uses the generic fold
+    with a [string list] accumulator: it ignores types ([ft] = identity) and
+    treats [SNative] as contributing nothing. *)
 let path_is_float64 path = List.mem "Float64" path
-
-let rec expr_float64_intrinsics acc = function
-  | EIntrinsic (path, name, args) ->
-      let acc = if path_is_float64 path then name :: acc else acc in
-      List.fold_left expr_float64_intrinsics acc args
-  | EConst _ | EVar _ | EArrayLen _ -> acc
-  | EBinop (_, e1, e2) ->
-      expr_float64_intrinsics (expr_float64_intrinsics acc e1) e2
-  | EUnop (_, e) | ERecordField (e, _) | ECast (_, e) ->
-      expr_float64_intrinsics acc e
-  | EArrayRead (_, idx) -> expr_float64_intrinsics acc idx
-  | EArrayReadExpr (base, idx) ->
-      expr_float64_intrinsics (expr_float64_intrinsics acc base) idx
-  | ETuple exprs | EVariant (_, _, exprs) ->
-      List.fold_left expr_float64_intrinsics acc exprs
-  | EApp (fn, args) ->
-      List.fold_left
-        expr_float64_intrinsics
-        (expr_float64_intrinsics acc fn)
-        args
-  | ERecord (_, fields) ->
-      List.fold_left (fun a (_, e) -> expr_float64_intrinsics a e) acc fields
-  | EArrayCreate (_, size, _) -> expr_float64_intrinsics acc size
-  | EIf (cond, then_, else_) ->
-      expr_float64_intrinsics
-        (expr_float64_intrinsics (expr_float64_intrinsics acc cond) then_)
-        else_
-  | EMatch (scrutinee, cases) ->
-      List.fold_left
-        (fun a (_, e) -> expr_float64_intrinsics a e)
-        (expr_float64_intrinsics acc scrutinee)
-        cases
-
-let rec lvalue_float64_intrinsics acc = function
-  | LVar _ -> acc
-  | LArrayElem (_, idx) -> expr_float64_intrinsics acc idx
-  | LArrayElemExpr (base, idx) ->
-      expr_float64_intrinsics (expr_float64_intrinsics acc base) idx
-  | LRecordField (lv, _) -> lvalue_float64_intrinsics acc lv
-
-let rec stmt_float64_intrinsics acc = function
-  | SAssign (lv, e) ->
-      expr_float64_intrinsics (lvalue_float64_intrinsics acc lv) e
-  | SSeq stmts -> List.fold_left stmt_float64_intrinsics acc stmts
-  | SIf (cond, then_, else_) ->
-      let acc = expr_float64_intrinsics acc cond in
-      let acc = stmt_float64_intrinsics acc then_ in
-      Option.fold ~none:acc ~some:(stmt_float64_intrinsics acc) else_
-  | SWhile (cond, body) ->
-      stmt_float64_intrinsics (expr_float64_intrinsics acc cond) body
-  | SFor (_, lo, hi, _, body) ->
-      stmt_float64_intrinsics
-        (expr_float64_intrinsics (expr_float64_intrinsics acc lo) hi)
-        body
-  | SMatch (scrutinee, cases) ->
-      List.fold_left
-        (fun a (_, s) -> stmt_float64_intrinsics a s)
-        (expr_float64_intrinsics acc scrutinee)
-        cases
-  | SReturn e | SExpr e -> expr_float64_intrinsics acc e
-  | SBarrier | SWarpBarrier | SEmpty | SMemFence | SNative _ -> acc
-  | SLet (_, e, body) | SLetMut (_, e, body) ->
-      stmt_float64_intrinsics (expr_float64_intrinsics acc e) body
-  | SPragma (_, body) | SBlock body -> stmt_float64_intrinsics acc body
-
-let decl_float64_intrinsics acc = function
-  | DParam _ -> acc
-  | DLocal (_, init) ->
-      Option.fold ~none:acc ~some:(expr_float64_intrinsics acc) init
-  | DShared (_, _, size) ->
-      Option.fold ~none:acc ~some:(expr_float64_intrinsics acc) size
-
-let helper_float64_intrinsics acc hf = stmt_float64_intrinsics acc hf.hf_body
 
 (** Deduplicated names of the Float64 math intrinsics a kernel invokes. *)
 let kernel_float64_intrinsics k =
-  let acc = List.fold_left decl_float64_intrinsics [] k.kern_params in
-  let acc = List.fold_left decl_float64_intrinsics acc k.kern_locals in
-  let acc = stmt_float64_intrinsics acc k.kern_body in
-  let acc = List.fold_left helper_float64_intrinsics acc k.kern_funcs in
-  List.sort_uniq compare acc
+  let folder =
+    {
+      fe =
+        (fun acc -> function
+          | EIntrinsic (path, name, _) when path_is_float64 path -> name :: acc
+          | _ -> acc);
+      ft = (fun acc _ -> acc);
+      fnative = (fun acc -> acc);
+      visit_lvalue = true;
+    }
+  in
+  List.sort_uniq compare (kernel_fold folder [] k)
 
 (** {1 Non-finite Float64 constant detection}
 
@@ -488,75 +359,21 @@ let kernel_float64_intrinsics k =
     [GL_ARB_gpu_shader_int64]. Such a constant can occur independently of any
     transcendental (e.g. a user-written [Float64.infinity]), so the int64
     extension must be gated on this too, not only on the software helper family.
-    Mirrors [kernel_uses_copysign]. *)
+    [SNative] is treated as non-finite-free (native code carries its own
+    literals). *)
 let const_is_nonfinite_float64 = function
   | CFloat64 f -> not (Float.is_finite f)
   | _ -> false
 
-let rec expr_uses_nonfinite_f64 = function
+let nonfinite_f64_leaf = function
   | EConst c -> const_is_nonfinite_float64 c
-  | EVar _ | EArrayLen _ -> false
-  | EBinop (_, e1, e2) | EArrayReadExpr (e1, e2) ->
-      expr_uses_nonfinite_f64 e1 || expr_uses_nonfinite_f64 e2
-  | EUnop (_, e) | ERecordField (e, _) | ECast (_, e) | EArrayRead (_, e) ->
-      expr_uses_nonfinite_f64 e
-  | EIntrinsic (_, _, args) | ETuple args | EVariant (_, _, args) ->
-      List.exists expr_uses_nonfinite_f64 args
-  | EApp (fn, args) ->
-      expr_uses_nonfinite_f64 fn || List.exists expr_uses_nonfinite_f64 args
-  | ERecord (_, fields) ->
-      List.exists (fun (_, e) -> expr_uses_nonfinite_f64 e) fields
-  | EArrayCreate (_, size, _) -> expr_uses_nonfinite_f64 size
-  | EIf (c, t, e) ->
-      expr_uses_nonfinite_f64 c || expr_uses_nonfinite_f64 t
-      || expr_uses_nonfinite_f64 e
-  | EMatch (s, cases) ->
-      expr_uses_nonfinite_f64 s
-      || List.exists (fun (_, e) -> expr_uses_nonfinite_f64 e) cases
+  | _ -> false
 
-let rec lvalue_uses_nonfinite_f64 = function
-  | LVar _ -> false
-  | LArrayElem (_, idx) -> expr_uses_nonfinite_f64 idx
-  | LArrayElemExpr (base, idx) ->
-      expr_uses_nonfinite_f64 base || expr_uses_nonfinite_f64 idx
-  | LRecordField (lv, _) -> lvalue_uses_nonfinite_f64 lv
-
-let rec stmt_uses_nonfinite_f64 = function
-  | SAssign (lv, e) -> lvalue_uses_nonfinite_f64 lv || expr_uses_nonfinite_f64 e
-  | SSeq stmts -> List.exists stmt_uses_nonfinite_f64 stmts
-  | SIf (cond, then_, else_) ->
-      expr_uses_nonfinite_f64 cond
-      || stmt_uses_nonfinite_f64 then_
-      || Option.fold ~none:false ~some:stmt_uses_nonfinite_f64 else_
-  | SWhile (cond, body) ->
-      expr_uses_nonfinite_f64 cond || stmt_uses_nonfinite_f64 body
-  | SFor (_, lo, hi, _, body) ->
-      expr_uses_nonfinite_f64 lo || expr_uses_nonfinite_f64 hi
-      || stmt_uses_nonfinite_f64 body
-  | SMatch (scrutinee, cases) ->
-      expr_uses_nonfinite_f64 scrutinee
-      || List.exists (fun (_, s) -> stmt_uses_nonfinite_f64 s) cases
-  | SReturn e | SExpr e -> expr_uses_nonfinite_f64 e
-  | SBarrier | SWarpBarrier | SEmpty | SMemFence | SNative _ -> false
-  | SLet (_, e, body) | SLetMut (_, e, body) ->
-      expr_uses_nonfinite_f64 e || stmt_uses_nonfinite_f64 body
-  | SPragma (_, body) | SBlock body -> stmt_uses_nonfinite_f64 body
-
-let decl_uses_nonfinite_f64 = function
-  | DParam _ -> false
-  | DLocal (_, init) ->
-      Option.fold ~none:false ~some:expr_uses_nonfinite_f64 init
-  | DShared (_, _, size) ->
-      Option.fold ~none:false ~some:expr_uses_nonfinite_f64 size
-
-let helper_uses_nonfinite_f64 hf = stmt_uses_nonfinite_f64 hf.hf_body
+let nonfinite_f64_folder =
+  exists_folder ~leaf:nonfinite_f64_leaf ~native:false ()
 
 (** Whether the kernel contains a non-finite Float64 constant anywhere. *)
-let kernel_uses_nonfinite_float64 k =
-  List.exists decl_uses_nonfinite_f64 k.kern_params
-  || List.exists decl_uses_nonfinite_f64 k.kern_locals
-  || stmt_uses_nonfinite_f64 k.kern_body
-  || List.exists helper_uses_nonfinite_f64 k.kern_funcs
+let kernel_uses_nonfinite_float64 k = kernel_fold nonfinite_f64_folder false k
 
 (** {1 Generic intrinsic-usage detection}
 
@@ -568,76 +385,9 @@ let kernel_uses_nonfinite_float64 k =
     path, so both the [Float32] and [Float64] spellings are detected. Inline
     native GPU code ([SNative]) is opaque text and is conservatively assumed to
     reference the intrinsic, mirroring the copysign/int_mod detectors. *)
-let rec expr_uses_intrinsic name = function
-  | EIntrinsic (_, n, args) ->
-      String.equal n name || List.exists (expr_uses_intrinsic name) args
-  | EBinop (_, e1, e2) ->
-      expr_uses_intrinsic name e1 || expr_uses_intrinsic name e2
-  | EUnop (_, e) -> expr_uses_intrinsic name e
-  | EArrayRead (_, idx) -> expr_uses_intrinsic name idx
-  | EArrayReadExpr (base, idx) ->
-      expr_uses_intrinsic name base || expr_uses_intrinsic name idx
-  | ERecordField (e, _) -> expr_uses_intrinsic name e
-  | ECast (_, e) -> expr_uses_intrinsic name e
-  | ETuple exprs -> List.exists (expr_uses_intrinsic name) exprs
-  | EApp (fn, args) ->
-      expr_uses_intrinsic name fn || List.exists (expr_uses_intrinsic name) args
-  | ERecord (_, fields) ->
-      List.exists (fun (_, e) -> expr_uses_intrinsic name e) fields
-  | EVariant (_, _, args) -> List.exists (expr_uses_intrinsic name) args
-  | EArrayLen _ -> false
-  | EArrayCreate (_, size, _) -> expr_uses_intrinsic name size
-  | EIf (cond, then_, else_) ->
-      expr_uses_intrinsic name cond
-      || expr_uses_intrinsic name then_
-      || expr_uses_intrinsic name else_
-  | EMatch (scrutinee, cases) ->
-      expr_uses_intrinsic name scrutinee
-      || List.exists (fun (_, e) -> expr_uses_intrinsic name e) cases
-  | EConst _ | EVar _ -> false
-
-let rec lvalue_uses_intrinsic name = function
-  | LVar _ -> false
-  | LArrayElem (_, idx) -> expr_uses_intrinsic name idx
-  | LArrayElemExpr (base, idx) ->
-      expr_uses_intrinsic name base || expr_uses_intrinsic name idx
-  | LRecordField (lv, _) -> lvalue_uses_intrinsic name lv
-
-let rec stmt_uses_intrinsic name = function
-  | SAssign (lv, e) ->
-      lvalue_uses_intrinsic name lv || expr_uses_intrinsic name e
-  | SSeq stmts -> List.exists (stmt_uses_intrinsic name) stmts
-  | SIf (cond, then_, else_) ->
-      expr_uses_intrinsic name cond
-      || stmt_uses_intrinsic name then_
-      || Option.fold ~none:false ~some:(stmt_uses_intrinsic name) else_
-  | SWhile (cond, body) ->
-      expr_uses_intrinsic name cond || stmt_uses_intrinsic name body
-  | SFor (_, lo, hi, _, body) ->
-      expr_uses_intrinsic name lo
-      || expr_uses_intrinsic name hi
-      || stmt_uses_intrinsic name body
-  | SMatch (scrutinee, cases) ->
-      expr_uses_intrinsic name scrutinee
-      || List.exists (fun (_, s) -> stmt_uses_intrinsic name s) cases
-  | SReturn e | SExpr e -> expr_uses_intrinsic name e
-  | SBarrier | SWarpBarrier | SEmpty | SMemFence -> false
-  | SLet (_, e, body) | SLetMut (_, e, body) ->
-      expr_uses_intrinsic name e || stmt_uses_intrinsic name body
-  | SPragma (_, body) | SBlock body -> stmt_uses_intrinsic name body
-  | SNative _ -> true
-
-let decl_uses_intrinsic name = function
-  | DParam _ -> false
-  | DLocal (_, init) ->
-      Option.fold ~none:false ~some:(expr_uses_intrinsic name) init
-  | DShared (_, _, size) ->
-      Option.fold ~none:false ~some:(expr_uses_intrinsic name) size
-
 let kernel_uses_intrinsic name k =
-  List.exists (decl_uses_intrinsic name) k.kern_params
-  || List.exists (decl_uses_intrinsic name) k.kern_locals
-  || stmt_uses_intrinsic name k.kern_body
-  || List.exists
-       (fun (hf : helper_func) -> stmt_uses_intrinsic name hf.hf_body)
-       k.kern_funcs
+  let leaf = function
+    | EIntrinsic (_, n, _) -> String.equal n name
+    | _ -> false
+  in
+  kernel_fold (exists_folder ~leaf ~native:true ()) false k
