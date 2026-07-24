@@ -43,6 +43,13 @@
   (backend bisect_ppx)))
 
 (test
+ (name test_ptx_mma_probe)
+ (modules test_ptx_mma_probe)
+ (libraries sarek_cuda alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(test
  (name test_ptx_dynshared_probe)
  (modules test_ptx_dynshared_probe)
  (libraries sarek_cuda sarek.codegen spoc.ir alcotest)
