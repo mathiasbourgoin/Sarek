@@ -787,6 +787,37 @@
  (action
   (run %{dep:test_soa_aos_equiv.exe})))
 
+; Tier 1b SoA emitter equivalence: a single custom-vector kernel param lowered
+; SoA (Sarek_ir_ptx.generate ~soa_params) computes identical results to the AoS
+; lowering of the same IR and to an OCaml reference, on CUDA/PTX (ZLUDA).
+
+(executable
+ (name test_soa_emitter_equiv)
+ (modules test_soa_emitter_equiv)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.codegen
+  sarek_ir
+  spoc_core
+  test_helpers
+  sarek_native
+  sarek_interpreter
+  sarek_cuda
+  sarek_opencl
+  sarek_vulkan
+  unix
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_soa_emitter_equiv.exe})))
+
 ; L17b polymorphic bare float literals: bare (unsuffixed) literals inferred as
 ; float64 from an f64 context, executed on all devices vs an OCaml f64 reference.
 
