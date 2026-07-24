@@ -252,4 +252,95 @@ let time_it f =
   let t1 = Unix.gettimeofday () in
   (result, (t1 -. t0) *. 1000.0)
 
+(* ========================================================================== *)
+(* fp64 result classification (shared by the float64 / real64 E2E tests)      *)
+(* ========================================================================== *)
+
+(** [true] iff [haystack] contains [needle] as a substring. *)
+let string_contains ~needle haystack =
+  let nl = String.length needle and hl = String.length haystack in
+  if nl = 0 then true
+  else begin
+    let rec go i =
+      i + nl <= hl && (String.sub haystack i nl = needle || go (i + 1))
+    in
+    go 0
+  end
+
+(** [true] iff [(framework, device)] identifies a rusticl (Mesa) OpenCL device.
+
+    The rusticl fp64 KNOWN-ISSUE (div/sqrt at ~single precision, see
+    [classify_fp64_result]) is a limitation of exactly this one ICD, so the
+    annotation must be gated on rusticl IDENTITY rather than on the generic
+    ["OpenCL"] framework tag. Otherwise a conformant NON-rusticl ICD that
+    regressed its fp64 div/sqrt into the tolerance envelope would be silently
+    masked as "known" instead of FAILing (audit finding #52 / F5).
+
+    We key on the OpenCL device name: rusticl reports its Gallium driver as
+    ["radeonsi"] in CL_DEVICE_NAME on the campaign hardware (observed: "AMD
+    Radeon RX 7900 XTX (radeonsi, navi31, ...)" and the raphael CPU device), and
+    the ICD/platform identifies itself as ["rusticl"]. We match either token,
+    case-insensitively.
+
+    Why the device name and NOT the [RUSTICL_FEATURES] env var: the run-rules
+    export [RUSTICL_FEATURES=fp64] for the WHOLE test process, so the variable
+    is present for every device in the run and cannot discriminate a
+    co-installed non-rusticl ICD from rusticl within the same process. The
+    device name is per-device and can. Name sniffing is admittedly driver-string
+    dependent; if a future rusticl build changes CL_DEVICE_NAME this predicate
+    must be revisited (a bare non-rusticl over-tolerance simply FAILs, which is
+    the safe direction). *)
+let is_rusticl_device ~framework ~device =
+  framework = "OpenCL"
+  &&
+  let d = String.lowercase_ascii device in
+  string_contains ~needle:"rusticl" d || string_contains ~needle:"radeonsi" d
+
+(** Default relative-error envelope for the rusticl fp64 div/sqrt KNOWN-ISSUE.
+
+    rusticl / Mesa fp64 (with RUSTICL_FEATURES=fp64) computes fp64 division and
+    sqrt at only ~single precision while +, -, * stay exact. Measured directly
+    with a hand-written OpenCL C repro (briefs/opencl-f64-while-loop-impl.md,
+    harness clprobe.c) on both rusticl devices: sqrt/div rel err ~1.8e-8, mul
+    ~4e-16. Vulkan/RADV on the same GPU is exact, so this is a driver
+    limitation, not a Sarek codegen artefact (evidence: PR #266). *)
+let opencl_fp64_transcendental_envelope = 1e-5
+
+(** Classify one fp64 result as [`Pass], the documented rusticl fp64 div/sqrt
+    KNOWN-ISSUE, or a genuine [`Fail]. Single source of truth for the fp64 E2E
+    tests (audit finding #52 / F4), replacing the constant + classifier + label
+    previously copy-pasted across test_real64, test_real64_single_source,
+    test_float64_kernel_arith and test_ktype_record_f64_arith.
+
+    - [framework], [device]: the running device's framework tag and name; used
+      only to decide rusticl identity via [is_rusticl_device] (F5 gating).
+    - [within_tol]: the result met its normal tolerance -> [`Pass] outright.
+    - [transcendental]: this result depends on fp64 div/sqrt (the ops rusticl
+      computes at ~single precision). Only such results are eligible for the
+      KNOWN-ISSUE annotation. A result that uses only +,-,* is never eligible
+      and, over tolerance, always [`Fail]s.
+    - [exact_ok]: the companion parts that MUST stay exact (e.g. escape-loop
+      iteration counts, or add/sub/mul in the same pass) are exact. A violation
+      here is a real regression -> [`Fail].
+    - [max_rel]: worst relative error of the transcendental part.
+    - [non_finite]: a non-finite (NaN/inf) result was observed. This forces
+      [`Fail] independently of [max_rel] (a NaN must never fit the envelope).
+    - [envelope]: KNOWN-ISSUE ceiling (default
+      [opencl_fp64_transcendental_envelope] = 1e-5).
+    - [label]: the KNOWN-ISSUE text surfaced (and printed) when annotated.
+
+    A result is annotated [`Known_issue] iff it is over tolerance AND on a
+    rusticl device AND transcendental AND its exact companions are exact AND the
+    error is finite AND within [envelope]; everything else [`Fail]s. *)
+let classify_fp64_result ~framework ~device ~within_tol ~transcendental
+    ~exact_ok ~max_rel ~non_finite
+    ?(envelope = opencl_fp64_transcendental_envelope) ~label () =
+  if within_tol then `Pass
+  else if
+    is_rusticl_device ~framework ~device
+    && transcendental && exact_ok && (not non_finite) && Float.is_finite max_rel
+    && max_rel <= envelope
+  then `Known_issue label
+  else `Fail
+
 module Benchmarks = Benchmarks

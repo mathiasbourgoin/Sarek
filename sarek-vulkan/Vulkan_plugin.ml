@@ -344,9 +344,6 @@ let find_intrinsic = Vulkan_intrinsics.find
 (** Generate GLSL source with custom types *)
 let generate_with_types = Sarek_ir_glsl.generate_with_types
 
-(** Generate GLSL source for a kernel *)
-let generate_source = Sarek_ir_glsl.generate
-
 (** Check if glslangValidator is available *)
 let glslang_available = Vulkan_api.glslang_available
 

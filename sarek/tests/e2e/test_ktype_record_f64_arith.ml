@@ -153,10 +153,28 @@ let () =
                   (ref_z s.x s.y s.z)
             end
           done ;
-          if !ok then print_endline "PASSED"
-          else begin
-            any_failure := true ;
-            print_endline "FAILED"
+          (* Route through the shared fp64 classifier (audit #52 / F4). This
+             kernel does only +, -, * on fp64 (no div/sqrt), so it never touches
+             the rusticl transcendental KNOWN-ISSUE: [transcendental=false]
+             keeps it a strict PASS/FAIL, exactly the pre-refactor behaviour. *)
+          (* [`Known_issue] is unreachable here (transcendental:false). *)
+          begin match
+            Test_helpers.classify_fp64_result
+              ~framework:dev.Device.framework
+              ~device:dev.Device.name
+              ~within_tol:!ok
+              ~transcendental:false
+              ~exact_ok:true
+              ~max_rel:0.0
+              ~non_finite:false
+              ~label:""
+              ()
+          with
+          | `Pass -> print_endline "PASSED"
+          | `Known_issue s -> print_endline s
+          | `Fail ->
+              any_failure := true ;
+              print_endline "FAILED"
           end
         with e ->
           any_failure := true ;

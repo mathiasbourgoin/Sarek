@@ -20,6 +20,3 @@ let find_intrinsic = Cuda_shared.Cuda_intrinsics.find
 
 (** Generate CUDA source with custom types. *)
 let generate_with_types = Sarek_ir_cuda.generate_with_types
-
-(** Generate CUDA source for a kernel. *)
-let generate_source = Sarek_ir_cuda.generate

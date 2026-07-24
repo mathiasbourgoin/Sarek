@@ -101,44 +101,28 @@ let tol_for ~(substrate : Real64.substrate) ~framework ~op =
       | "Vulkan", ("mul" | "div") -> f32_tol
       | _ -> base)
 
-(* KNOWN ISSUE - rusticl / Mesa fp64 (RUSTICL_FEATURES=fp64) is non-conformant:
-   fp64 +, -, * are computed at full double precision, but fp64 [sqrt] and
-   division are computed at only ~single precision. Measured directly with a
-   hand-written OpenCL C repro (briefs/opencl-f64-while-loop-impl.md, harness
-   clprobe.c) on both rusticl devices (navi31 GPU + raphael CPU):
-
-       max rel err:  sqrt = 1.82e-08   1.0/v = 1.64e-08   v*v - v = 3.97e-16
-
-   Vulkan/RADV on the same GPU is exact, so this is a rusticl driver limitation,
-   not a Sarek codegen artefact. Full evidence: PR #266 (test_float64_kernel_arith
-   carries the same annotation for its final sqrt).
-
-   Reachability here: WITHOUT the flag, OpenCL reports fp64=false and real64
-   selects the exact df64 fallback substrate - the default baseline never hits
-   this branch and is unaffected. WITH RUSTICL_FEATURES=fp64 the Native_f64
-   substrate is selected and only div/sqrt carry the ~1e-8 error; +, -, * stay
-   exact. We therefore annotate an OpenCL Native_f64 div/sqrt result whose
-   relative error is within the transcendental envelope below as a KNOWN-ISSUE
-   rather than a bare FAIL. A *real* regression still FAILs: add/sub/mul beyond
-   the f64 tolerance, a non-finite (NaN/inf) result - [rel_error]/[check] already
-   maps NaN to infinity so it can never fit the envelope - or the wrong substrate
-   being selected (Fallback_df64 is exact and is never annotated). *)
-let opencl_fp64_transcendental_envelope = 1e-5
-
 (* Classify one op's outcome: PASS within tolerance, the documented rusticl fp64
-   div/sqrt KNOWN-ISSUE (OpenCL + Native_f64 only, error inside the envelope), or
-   a genuine FAIL. *)
-let op_status ~(substrate : Real64.substrate) ~framework ~op ~err ~tol =
-  if err <= tol then `Pass
-  else
-    match substrate with
-    | Real64.Native_f64
-      when framework = "OpenCL"
-           && (op = "div" || op = "sqrt")
-           && Float.is_finite err
-           && err <= opencl_fp64_transcendental_envelope ->
-        `Known_issue
-    | _ -> `Fail
+   div/sqrt KNOWN-ISSUE, or a genuine FAIL. The classifier, the transcendental
+   envelope and the rusticl-identity gate all live in [Test_helpers] now (audit
+   #52 / F4, F5); see [Test_helpers.classify_fp64_result] for the full rationale.
+
+   Only the Native_f64 substrate can hit the rusticl div/sqrt error: WITHOUT
+   RUSTICL_FEATURES=fp64 OpenCL reports fp64=false and real64 selects the exact
+   df64 fallback (never annotated); WITH it, Native_f64 is selected and only
+   div/sqrt carry the ~1e-8 error while +, -, * stay exact. [transcendental] is
+   therefore [Native_f64 && (div|sqrt)]. A non-finite result forces FAIL. *)
+let op_status ~(substrate : Real64.substrate) ~framework ~device ~op ~err ~tol =
+  Test_helpers.classify_fp64_result
+    ~framework
+    ~device
+    ~within_tol:(err <= tol)
+    ~transcendental:
+      (substrate = Real64.Native_f64 && (op = "div" || op = "sqrt"))
+    ~exact_ok:true
+    ~max_rel:err
+    ~non_finite:(not (Float.is_finite err))
+    ~label:"KNOWN-ISSUE (rusticl fp64 sqrt/div)"
+    ()
 
 (* ========== One pass on one device with one substrate ===================== *)
 
@@ -181,6 +165,7 @@ let run_pass (dev : Device.t) ~(substrate : Real64.substrate) =
     () ;
   Transfer.flush dev ;
   let framework = dev.Device.framework in
+  let device = dev.Device.name in
   let worst = Hashtbl.create 8 in
   let check op got expected =
     let err =
@@ -206,8 +191,10 @@ let run_pass (dev : Device.t) ~(substrate : Real64.substrate) =
     (fun op ->
       let err = try Hashtbl.find worst op with Not_found -> 0.0 in
       let tol = tol_for ~substrate ~framework ~op in
-      let status = op_status ~substrate ~framework ~op ~err ~tol in
-      (match status with `Fail -> incr failures | `Pass | `Known_issue -> ()) ;
+      let status = op_status ~substrate ~framework ~device ~op ~err ~tol in
+      (match status with
+      | `Fail -> incr failures
+      | `Pass | `Known_issue _ -> ()) ;
       Printf.printf
         "    %-5s max rel err %.3g (tol %.3g) %s\n%!"
         op
@@ -215,7 +202,7 @@ let run_pass (dev : Device.t) ~(substrate : Real64.substrate) =
         tol
         (match status with
         | `Pass -> "PASS"
-        | `Known_issue -> "KNOWN-ISSUE (rusticl fp64 sqrt/div)"
+        | `Known_issue s -> s
         | `Fail -> "FAIL"))
     ["add"; "sub"; "mul"; "div"; "sqrt"]
 

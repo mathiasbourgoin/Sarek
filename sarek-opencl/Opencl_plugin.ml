@@ -300,8 +300,5 @@ let find_intrinsic = Opencl_intrinsics.find
 (** Generate OpenCL source with custom types *)
 let generate_with_types = Sarek_ir_opencl.generate_with_types
 
-(** Generate OpenCL source for a kernel *)
-let generate_source = Sarek_ir_opencl.generate
-
 (** Generate OpenCL source with FP64 extension if needed *)
 let generate_with_fp64 = Sarek_ir_opencl.generate_with_fp64

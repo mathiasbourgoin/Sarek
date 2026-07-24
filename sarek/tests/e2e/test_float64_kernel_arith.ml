@@ -150,28 +150,17 @@ let verify ~exact got_iters got_mag =
 let is_native (dev : Device.t) =
   dev.Device.framework = "Native" || dev.Device.framework = "Interpreter"
 
-(* KNOWN ISSUE — rusticl / Mesa fp64 (RUSTICL_FEATURES=fp64) is non-conformant:
-   fp64 +, -, * are computed at full double precision, but fp64 [sqrt] and
-   division are computed at only ~single precision. Measured directly with a
-   hand-written OpenCL C repro (attached in briefs/opencl-f64-while-loop-impl.md,
-   harness clprobe.c) on both rusticl devices (navi31 GPU + raphael CPU):
-
-       max rel err:  sqrt = 1.82e-08   1.0/v = 1.64e-08   v*v - v = 3.97e-16
-
-   The .cl repro also proves this is NOT a Sarek codegen artefact: the exact
-   emitted source (bare integer literals for the f64 constants, e.g. `4`, `2`)
-   and a variant with explicit double literals (`4.0`, `2.0`) produce
-   byte-identical output — C's int->double promotion is correct, and both match
-   Sarek's result exactly. Vulkan/RADV on the same GPU is exact, so this is a
-   rusticl driver limitation, not a bug in Sarek.
+(* KNOWN ISSUE — rusticl / Mesa fp64 (RUSTICL_FEATURES=fp64) computes fp64 sqrt
+   and division at only ~single precision while +, -, * stay exact; the
+   classifier, the transcendental envelope and the rusticl-identity gate now
+   live in [Test_helpers] (audit #52 / F4, F5). See
+   [Test_helpers.classify_fp64_result] for the full evidence and rationale.
 
    Effect on this kernel: the escape-loop condition uses only +, -, * and <=,
-   so iteration counts are EXACT on OpenCL; only the final sqrt(x^2 + y^2)
-   carries the ~1e-8 error. We therefore annotate the OpenCL result as a known
-   issue rather than a bare FAIL. A *real* regression still reports FAIL: wrong
-   iteration counts, or a magnitude error beyond the fp64-transcendental
-   envelope below, is NOT covered by this annotation. *)
-let opencl_fp64_transcendental_envelope = 1e-5
+   so iteration counts are EXACT on OpenCL ([exact_ok = iter_bad = 0]); only the
+   final sqrt(x^2 + y^2) carries the ~1e-8 error, so it is [transcendental].
+   A *real* regression still reports FAIL: wrong iteration counts, or a
+   magnitude error beyond the envelope, is NOT covered by this annotation. *)
 
 (* Reporting-only detail: iteration mismatches (loop math, expected exact) and
    the worst relative magnitude error (the sqrt-bearing output). *)
@@ -194,19 +183,28 @@ let detailed_stats got_iters got_mag =
 (* Status for a non-native device: PASS, the documented rusticl fp64 KNOWN-ISSUE,
    or a genuine FAIL. *)
 let device_status (dev : Device.t) ~bad got_iters got_mag =
-  if bad = 0 then "PASS"
-  else
-    let iter_bad, max_rel = detailed_stats got_iters got_mag in
-    if
-      dev.Device.framework = "OpenCL"
-      && iter_bad = 0
-      && max_rel <= opencl_fp64_transcendental_envelope
-    then
-      Printf.sprintf
-        "KNOWN-ISSUE (rusticl fp64 sqrt/div ~single-precision; iters exact, \
-         mag max_rel=%.2g; see brief)"
-        max_rel
-    else "FAIL"
+  let iter_bad, max_rel = detailed_stats got_iters got_mag in
+  let label =
+    Printf.sprintf
+      "KNOWN-ISSUE (rusticl fp64 sqrt/div ~single-precision; iters exact, mag \
+       max_rel=%.2g; see brief)"
+      max_rel
+  in
+  match
+    Test_helpers.classify_fp64_result
+      ~framework:dev.Device.framework
+      ~device:dev.Device.name
+      ~within_tol:(bad = 0)
+      ~transcendental:true
+      ~exact_ok:(iter_bad = 0)
+      ~max_rel
+      ~non_finite:(not (Float.is_finite max_rel))
+      ~label
+      ()
+  with
+  | `Pass -> "PASS"
+  | `Known_issue s -> s
+  | `Fail -> "FAIL"
 
 let () =
   let _, kirc = f64_mandelbrot_kernel in
