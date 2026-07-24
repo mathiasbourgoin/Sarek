@@ -130,7 +130,10 @@ let verify ~exact got_iters got_mag =
     let ref_iter, ref_mag = ocaml_reference (cx_of i) (cy_of i) in
     let di = abs (Int32.to_int got_iters.(i) - Int32.to_int ref_iter) in
     let dm = Stdlib.abs_float (got_mag.(i) -. ref_mag) in
-    if di > iter_tol || dm > mag_tol then begin
+    (* A non-finite device magnitude must count as a mismatch: [dm > mag_tol]
+       is false for NaN, which would otherwise slip through both this check
+       and the KNOWN-ISSUE envelope. *)
+    if di > iter_tol || dm > mag_tol || not (Float.is_finite dm) then begin
       if !bad < 5 then
         Printf.printf
           "    mismatch @%d: iter got=%ld ref=%ld | mag got=%.15g ref=%.15g\n%!"
@@ -181,6 +184,9 @@ let detailed_stats got_iters got_mag =
     let denom = Stdlib.abs_float ref_mag in
     let ad = Stdlib.abs_float (got_mag.(i) -. ref_mag) in
     let rel = if denom > 0.0 then ad /. denom else ad in
+    (* [rel > !max_rel] is false for NaN — treat any non-finite deviation as
+       infinitely bad so it can never fit the KNOWN-ISSUE envelope. *)
+    let rel = if Float.is_finite rel then rel else Float.infinity in
     if rel > !max_rel then max_rel := rel
   done ;
   (!iter_bad, !max_rel)
