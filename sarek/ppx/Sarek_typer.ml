@@ -848,6 +848,16 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
             loc,
           env' )
   | ESuperstep (name, divergent, step_body, cont) ->
+      (* The superstep name is a user-written binder: guard it against the
+         reserved-name policy exactly as other binders (see [MFun]) — a
+         reserved C/CUDA/OpenCL keyword or the generated [sarek_] prefix. Latent
+         today (the name is never emitted as an identifier), but this closes the
+         collision class should a future emission path use it. *)
+      let* () =
+        if Sarek_reserved.is_reserved name then
+          Error [Reserved_keyword (name, loc)]
+        else check_reserved_prefix name loc
+      in
       (* Type the superstep body - should be unit *)
       let* tstep_body, env = infer env step_body in
       let* () = unify_or_error tstep_body.ty t_unit step_body.expr_loc in

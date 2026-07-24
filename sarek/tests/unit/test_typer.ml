@@ -693,6 +693,59 @@ let test_seq () =
   let expr = mk_expr (ESeq (int_expr 1, float_expr 2.0)) in
   check_infer_ok "1; 2.0 has type of last expr" env expr t_float32
 
+(* A superstep binding name is a user-written binder and must obey the same
+   reserved-name policy as any other binder: a reserved C/CUDA/OpenCL keyword
+   ([Reserved_keyword]) or the generated [sarek_] prefix ([Reserved_prefix]) is
+   rejected at the point the superstep is elaborated. Guards the collision class
+   even though the name is not emitted as an identifier today. See #56. *)
+let superstep_expr name =
+  mk_expr (ESuperstep (name, false, unit_expr, int32_expr 0l))
+
+let check_infer_error_is msg env expr pred =
+  reset_tvar_counter () ;
+  reset_var_id_counter () ;
+  match infer env expr with
+  | Ok (te, _) ->
+      Alcotest.failf
+        "%s: expected error but got type %s"
+        msg
+        (typ_to_string te.ty)
+  | Error errors ->
+      if List.exists pred errors then ()
+      else
+        Alcotest.failf
+          "%s: wrong error(s): %s"
+          msg
+          (String.concat ", " (List.map Sarek_error.error_to_string errors))
+
+let test_superstep_reserved_prefix_rejected () =
+  let env = with_stdlib empty in
+  check_infer_error_is
+    "sarek_-prefixed superstep name rejected"
+    env
+    (superstep_expr "sarek_step")
+    (function
+    | Sarek_error.Reserved_prefix _ -> true
+    | _ -> false)
+
+let test_superstep_reserved_keyword_rejected () =
+  let env = with_stdlib empty in
+  check_infer_error_is
+    "reserved-keyword superstep name rejected"
+    env
+    (superstep_expr "for")
+    (function
+    | Sarek_error.Reserved_keyword _ -> true
+    | _ -> false)
+
+let test_superstep_ordinary_name_accepted () =
+  let env = with_stdlib empty in
+  check_infer_ok
+    "ordinary superstep name accepted"
+    env
+    (superstep_expr "phase1")
+    t_int32
+
 (* Test suite *)
 let () =
   Alcotest.run
@@ -804,5 +857,20 @@ let () =
             "f32 behaviour unchanged"
             `Quick
             test_float_literal_f32_unchanged;
+        ] );
+      ( "superstep reserved names",
+        [
+          Alcotest.test_case
+            "sarek_ prefix rejected"
+            `Quick
+            test_superstep_reserved_prefix_rejected;
+          Alcotest.test_case
+            "reserved keyword rejected"
+            `Quick
+            test_superstep_reserved_keyword_rejected;
+          Alcotest.test_case
+            "ordinary name accepted"
+            `Quick
+            test_superstep_ordinary_name_accepted;
         ] );
     ]
