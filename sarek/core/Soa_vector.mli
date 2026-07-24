@@ -41,9 +41,19 @@ type 'a t
 
 (** [create custom ~fields length] builds a SoA custom vector of [length]
     elements. [custom] is the PPX-generated custom type (the AoS source of
-    truth); [fields] is the record's field layout [(name, scalar type)] in
-    declaration order (the [custom_type] does not carry it, so it must be
-    supplied). Raises {!Soa.Unsupported} if [fields] is not a flat record. *)
+    truth); [fields] is the record's field layout [(name, scalar type)].
+
+    {b Precondition — [fields] MUST match the record's declaration order and
+       types exactly.} The [custom_type] carries no layout, so this cannot be
+    checked: [fields] is the sole description of how the packed AoS element is
+    split into leaves. If it disagrees with the actual record layout (wrong
+    order, wrong widths, missing/extra field), {!scatter}/{!gather} transpose
+    against the wrong byte offsets and the vector carries
+    {e silently transposed / corrupted} data with no error. Pass exactly the
+    fields the [[@@sarek.type]] record declares, in order — the same list the
+    kernel IR's [TRecord] uses.
+
+    Raises {!Soa.Unsupported} if [fields] is not a flat record. *)
 val create :
   'a Vector.custom_type ->
   fields:(string * Sarek_ir_types.elttype) list ->

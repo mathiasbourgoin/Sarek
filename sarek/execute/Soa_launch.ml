@@ -82,6 +82,19 @@ let rs_args_of_reg (a : Execute.vector_arg) (dev : Device.t) :
 
 (** Execute a kernel with SoA-lowered custom-vector arguments.
 
+    {b Host coherence contract.} The AoS host buffer of each SoA vector is the
+    source of truth. [run_soa] calls {!Spoc_core.Soa_vector.scatter} internally
+    (AoS host -> per-leaf host -> device) immediately before launch, so there is
+    no user-visible window between scatter and launch and host [set]s made
+    before the call are always reflected on the device. For a kernel that only
+    {e reads} SoA leaves nothing more is needed. For a kernel that {e writes} an
+    SoA leaf, the device-side leaf buffers become authoritative; to observe the
+    result through the AoS vector the caller must round-trip explicitly:
+    transfer each leaf back to the host (e.g. {!Spoc_core.Transfer.to_cpu} on
+    every {!Spoc_core.Soa_vector.leaves} entry — [run_soa] marks them stale so
+    this triggers a D2H copy) and then call {!Spoc_core.Soa_vector.gather}
+    (per-leaf host -> AoS host). [run_soa] never gathers automatically.
+
     @param device Target device (must be a CUDA/PTX backend)
     @param ir Sarek IR kernel definition
     @param args Kernel arguments (SoA vectors + regular args) in param order

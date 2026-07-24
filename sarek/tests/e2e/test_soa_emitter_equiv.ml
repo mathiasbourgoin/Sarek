@@ -44,7 +44,10 @@ type float32 = float
 
 type float64 = float
 
-type point3d = {x : float32; y : float32; z : float32} [@@sarek.type]
+(* Fields mutable so the round-trip kernel can write a leaf in place
+   (pts.(i).y <- ...); the read legs are unaffected. *)
+type point3d = {mutable x : float32; mutable y : float32; mutable z : float32}
+[@@sarek.type]
 
 type dpair = {u : float64; v : float64} [@@sarek.type]
 
@@ -65,6 +68,15 @@ let dpair_kernel =
       fun (pv : dpair vector) (out : float64 vector) (n : int32) ->
         let tid = thread_idx_x + (block_idx_x * block_dim_x) in
         if tid < n then out.(tid) <- pv.(tid).u +. pv.(tid).v]
+
+(* Write case: scales the y leaf in place. Exercises the SoA field STORE path
+   (D2H leaf readback + gather round-trip on the host side). *)
+let p3_scale_y_kernel =
+  snd
+    [%kernel
+      fun (pts : point3d vector) (n : int32) ->
+        let tid = thread_idx_x + (block_idx_x * block_dim_x) in
+        if tid < n then pts.(tid).y <- pts.(tid).y *. 2.0]
 
 let ir_of kirc =
   match kirc.Sarek.Kirc_types.body_ir with
@@ -358,6 +370,87 @@ let check_gate dev =
         true
   end
 
+(* Round-trip: a kernel WRITES the y leaf on the device; then we transfer each
+   leaf back (D2H) and gather into the AoS vector, and check the AoS y values.
+   Exercises the leaf-writeback + Soa_vector.gather path (no other shipped test
+   writes an SoA leaf). CUDA/PTX only. *)
+let check_roundtrip dev n =
+  if not (is_ptx dev) then true
+  else begin
+    Printf.printf
+      "SoA-roundtrip [%s] %s: %!"
+      dev.Device.framework
+      dev.Device.name ;
+    try
+      let threads = min 128 n in
+      let block = dims threads and grid = dims ((n + threads - 1) / threads) in
+      let sv =
+        Soa_vector.create
+          point3d_custom
+          ~fields:
+            Sarek_ir_types.[("x", TFloat32); ("y", TFloat32); ("z", TFloat32)]
+          n
+      in
+      let orig i =
+        {
+          x = float_of_int i;
+          y = (float_of_int i *. 0.5) +. 1.0;
+          z = float_of_int (n - i);
+        }
+      in
+      for i = 0 to n - 1 do
+        Soa_vector.set sv i (orig i)
+      done ;
+      let ir = ir_of p3_scale_y_kernel in
+      Soa_launch.run_soa
+        ~device:dev
+        ~ir
+        ~args:[Soa_launch.SA_Soa sv; Soa_launch.SA_Reg (Sarek.Execute.Int n)]
+        ~block
+        ~grid
+        () ;
+      (* Device wrote the y leaf; round-trip explicitly per the run_soa
+         contract: D2H every leaf, then gather back into the AoS vector. *)
+      Array.iter
+        (fun (Soa_vector.Leaf v) -> Transfer.to_cpu ~force:true v)
+        (Soa_vector.leaves sv) ;
+      Soa_vector.gather sv ;
+      let ok = ref true in
+      for i = 0 to n - 1 do
+        let got = Soa_vector.get sv i in
+        let o = orig i in
+        (* y doubled; x and z untouched. *)
+        if
+          abs_float (got.y -. (o.y *. 2.0)) > 1e-3
+          || abs_float (got.x -. o.x) > 1e-3
+          || abs_float (got.z -. o.z) > 1e-3
+        then begin
+          ok := false ;
+          if i < 5 then
+            Printf.printf
+              "\n\
+              \  roundtrip mismatch @%d: got {x=%f;y=%f;z=%f} expected \
+               {x=%f;y=%f;z=%f}%!"
+              i
+              got.x
+              got.y
+              got.z
+              o.x
+              (o.y *. 2.0)
+              o.z
+        end
+      done ;
+      if !ok then (
+        Printf.printf "PASSED\n%!" ;
+        true)
+      else (
+        Printf.printf "FAILED\n%!" ;
+        false)
+    with e ->
+      Printf.printf "FAIL (%s)\n%!" (Printexc.to_string e) ;
+      false
+  end
+
 let () =
   Benchmarks.init () ;
   let n = 1024 in
@@ -382,6 +475,8 @@ let () =
          exercised elsewhere.) *)
       if is_ptx dev && not (check "dpair(f64)" dev n run_dpair) then ok := false ;
       (* Item 3: SoA launch must be rejected (never wrong data) on non-PTX. *)
-      if not (check_gate dev) then ok := false)
+      if not (check_gate dev) then ok := false ;
+      (* Leaf-write round-trip (D2H + gather) on CUDA/PTX. *)
+      if is_ptx dev && not (check_roundtrip dev n) then ok := false)
     devs ;
   if not !ok then exit 1
