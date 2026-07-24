@@ -25,7 +25,7 @@ module Dummy_backend : BACKEND = struct
 
   let supported_source_langs = []
 
-  let generate_source ?block:_ _ir = None
+  let generate_source ?block:_ ?soa_params:_ _ir = None
 
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args = ()
 

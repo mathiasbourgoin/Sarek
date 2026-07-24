@@ -180,7 +180,7 @@ module Backend : Framework_sig.BACKEND = struct
       None" (PR #259 review); a blanket [try ... with _ -> None] previously
       swallowed it. Codegen never legitimately declines a kernel by returning
       [None]. *)
-  let generate_source ?block:_ (ir : Sarek_ir_types.kernel) : string option =
+  let generate_source ?block:_ ?soa_params:_ (ir : Sarek_ir_types.kernel) : string option =
     let source = Sarek_ir_metal.generate_with_types ~types:ir.kern_types ir in
     Spoc_core.Log.debug Kernel ("Metal source:\n" ^ source) ;
     Some source

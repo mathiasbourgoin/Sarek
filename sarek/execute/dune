@@ -15,7 +15,7 @@
   sarek_ir
   sarek_registry
   sarek_interp)
- (modules Execute Execute_error)
+ (modules Execute Execute_error Soa_launch)
  (preprocess no_preprocessing)
  (instrumentation
   (backend bisect_ppx)))

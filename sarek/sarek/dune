@@ -37,6 +37,7 @@
   Interp_error
   Sarek_type_helpers
   Execute
-  Execute_error)
+  Execute_error
+  Soa_launch)
  (instrumentation
   (backend bisect_ppx)))

@@ -154,7 +154,7 @@ module Backend : Framework_sig.BACKEND = struct
   let execution_model = Framework_sig.Direct
 
   (** Generate source - not used for Direct backend *)
-  let generate_source ?block:_ (_ir : Sarek_ir_types.kernel) : string option =
+  let generate_source ?block:_ ?soa_params:_ (_ir : Sarek_ir_types.kernel) : string option =
     None
 
   (** Convert exec_arg to native_arg for typed native function *)

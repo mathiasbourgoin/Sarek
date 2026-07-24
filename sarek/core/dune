@@ -23,6 +23,7 @@
   Vector_transfer
   Vector
   Soa
+  Soa_vector
   Gpu_memory
   Transfer
   Profiling

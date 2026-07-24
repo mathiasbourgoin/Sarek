@@ -306,8 +306,19 @@ module type BACKEND = sig
       Direct/Custom backends.
       @param block
         Optional block dimensions (required for Vulkan/GLSL which embeds
-        workgroup size in shader) *)
-  val generate_source : ?block:dims -> Sarek_ir_types.kernel -> string option
+        workgroup size in shader)
+      @param soa_params
+        Names of custom (record) vector parameters to lower as
+        Structure-of-Arrays: each expands to N per-leaf base pointers + one
+        shared length instead of a single packed AoS pointer (the #260 PTX
+        emitter ABI). Honoured only by the CUDA/PTX backend; every other backend
+        ignores it and emits its ordinary AoS code. Defaults to [[]] (all AoS),
+        so existing callers are byte-identical. *)
+  val generate_source :
+    ?block:dims ->
+    ?soa_params:string list ->
+    Sarek_ir_types.kernel ->
+    string option
 
   (** Execute a kernel directly (for Direct/Custom backends). JIT backends
       should raise an error if this is called. The backend chooses which
