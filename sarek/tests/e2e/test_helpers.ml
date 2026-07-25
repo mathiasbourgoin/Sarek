@@ -391,7 +391,15 @@ let pocl_device_name_prefixes = ["pthread-"; "cpu-"]
     a device matching these prefixes really enumerates, so a pocl rename fails
     the build loudly instead of quietly re-widening the suppression. *)
 let is_pocl_device (dev : Device.t) =
-  Device.is_opencl dev
+  (* [is_cpu_opencl_device], not a bare [Device.is_opencl]: the contract above
+     is "pocl's CPU device", and pocl's device is CL_DEVICE_TYPE=CPU. The name
+     prefixes alone do not carry that — as the comment on
+     [is_cpu_opencl_device] records, an OpenCL device on this workstation is
+     named after the CPU socket while reporting CL_DEVICE_TYPE=GPU, so a
+     name-only test is exactly the classifier that gets such a device wrong.
+     The callers' outer CPU check currently masks the difference; that is a
+     property of the callers, not of this predicate. *)
+  is_cpu_opencl_device dev
   && List.exists
        (fun p -> String.starts_with ~prefix:p (String.lowercase_ascii dev.name))
        pocl_device_name_prefixes

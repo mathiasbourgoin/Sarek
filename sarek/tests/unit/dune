@@ -74,6 +74,15 @@
  (deps ../../codegen/Sarek_ir_ptx_expr.ml)
  (libraries sarek.codegen alcotest unix str))
 
+; WGSL identifier escaping: injectivity + legality of escape_wgsl_name, and
+; coverage of the WGSL keyword/reserved-word table. Pure string-level test —
+; no naga, no device — complementing the whole-shader naga sweep in
+; test_shader_recursion_vector below.
+
+(test
+ (name test_wgsl_escape)
+ (libraries sarek.codegen alcotest))
+
 ; Shader-validation gate for recursion + vector-parameter helpers.
 ; GLSL assembled with glslangValidator; WGSL validated with naga if present,
 ; else skipped cleanly (mirrors the ptxas gate above). CPU-only, no device.

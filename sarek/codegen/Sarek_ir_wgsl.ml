@@ -44,9 +44,37 @@ let current_framework : string option ref = ref None
 
 let mangle_name = Sarek_ir_codegen.mangle_name
 
-(** WGSL reserved keywords that cannot be used as identifiers *)
+(** Names that must never be emitted as a WGSL identifier.
+
+    Three groups, kept separate because they are reserved for different reasons
+    and a reader needs to know which ones are load-bearing:
+
+    - {b Predeclared names} (types, address spaces, access modes, attribute
+      names). WGSL {i does} accept these as user identifiers — they live in a
+      scope outside module scope and are shadowable — so escaping them is
+      defensive rather than mandatory: a kernel variable named [f32] parses, but
+      then [f32] can no longer be spelled as a type in the same scope and the
+      emitter would produce a shader that fails much later and much less
+      legibly.
+    - {b Keywords} (WGSL §2.3 "Keyword Summary"). Hard parse errors.
+    - {b Reserved words} (WGSL §2.4 "Reserved Words"). Also hard parse errors,
+      and this is where the previous table was materially incomplete: plausible
+      OCaml variable names such as [ref], [set], [get], [from], [shared],
+      [filter], [target] and [where] are all reserved in WGSL and were being
+      emitted verbatim, producing a shader that no WebGPU implementation
+      accepts.
+
+    The keyword and reserved-word groups are not a transcription from memory:
+    every entry below was verified to be {i actually} rejected by running [naga]
+    30.0.0 (the validator [ci/assert-toolchain.sh] pins) over a minimal compute
+    shader declaring [var <name> : i32]. The probe also established that the
+    predeclared group is {i not} rejected, which is why it is labelled defensive
+    above rather than merged into the other two. Re-run the probe when bumping
+    naga: a word moving between these groups changes nothing (both are escaped),
+    but a word being {i added} to WGSL must be added here. *)
 let wgsl_reserved_keywords =
   [
+    (* -- Predeclared names: escaped defensively, not rejected by WGSL. ----- *)
     (* Types *)
     "bool";
     "f32";
@@ -66,29 +94,6 @@ let wgsl_reserved_keywords =
     "ptr";
     "sampler";
     "texture_2d";
-    (* Storage qualifiers *)
-    "var";
-    "let";
-    "const";
-    "override";
-    (* Control flow *)
-    "if";
-    "else";
-    "for";
-    "while";
-    "loop";
-    "break";
-    "continue";
-    "return";
-    "switch";
-    "case";
-    "default";
-    "fallthrough";
-    "discard";
-    (* Functions / structure *)
-    "fn";
-    "struct";
-    "type";
     (* Address spaces *)
     "storage";
     "uniform";
@@ -107,25 +112,194 @@ let wgsl_reserved_keywords =
     "group";
     "binding";
     "workgroup_size";
-    (* Built-in values *)
-    "true";
-    "false";
     (* Entry point name — avoid shadowing *)
     "main";
     (* Params struct name we emit *)
     "Params";
     "params";
     (* Internal builtin parameter names emitted by wgsl_header; must not
-       be shadowed by user variable declarations in the kernel body. *)
+       be shadowed by user variable declarations in the kernel body.
+       Redundant since [escape_wgsl_name] reserves the whole ["sarek_"]
+       prefix, kept so the intent survives a change to that rule. *)
     "sarek_gid";
     "sarek_lid";
     "sarek_wid";
     "sarek_nwg";
+    (* -- Keywords (WGSL §2.3). Hard parse errors. ------------------------- *)
+    "alias";
+    "break";
+    "case";
+    "const";
+    "const_assert";
+    "continue";
+    "continuing";
+    "default";
+    "diagnostic";
+    "discard";
+    "else";
+    "enable";
+    "false";
+    "fn";
+    "for";
+    "if";
+    "let";
+    "loop";
+    "override";
+    "requires";
+    "return";
+    "struct";
+    "switch";
+    "true";
+    "var";
+    "while";
+    (* -- Reserved words (WGSL §2.4). Hard parse errors. ------------------- *)
+    "NULL";
+    "Self";
+    "abstract";
+    "active";
+    "alignas";
+    "alignof";
+    "as";
+    "asm";
+    "asm_fragment";
+    "async";
+    "attribute";
+    "auto";
+    "await";
+    "become";
+    "cast";
+    "catch";
+    "class";
+    "co_await";
+    "co_return";
+    "co_yield";
+    "coherent";
+    "column_major";
+    "common";
+    "compile";
+    "compile_fragment";
+    "concept";
+    "consteval";
+    "constexpr";
+    "constinit";
+    "crate";
+    "do";
+    "dynamic_cast";
+    "enum";
+    "explicit";
+    "export";
+    "extends";
+    "extern";
+    "external";
+    "fallthrough";
+    "filter";
+    "final";
+    "finally";
+    "friend";
+    "from";
+    "fxgroup";
+    "get";
+    "goto";
+    "groupshared";
+    "highp";
+    "impl";
+    "implements";
+    "import";
+    "inline";
+    "instanceof";
+    "interface";
+    "layout";
+    "lowp";
+    "macro";
+    "macro_rules";
+    "match";
+    "mediump";
+    "meta";
+    "mod";
+    "module";
+    "move";
+    "mut";
+    "mutable";
+    "namespace";
+    "new";
+    "nil";
+    "noexcept";
+    "noinline";
+    "nointerpolation";
+    "non_coherent";
+    "noncoherent";
+    "noperspective";
+    "null";
+    "nullptr";
+    "of";
+    "operator";
+    "package";
+    "packoffset";
+    "partition";
+    "pass";
+    "patch";
+    "pixelfragment";
+    "precise";
+    "precision";
+    "premerge";
+    "priv";
+    "protected";
+    "pub";
+    "public";
+    "readonly";
+    "ref";
+    "regardless";
+    "register";
+    "reinterpret_cast";
+    "require";
+    "resource";
+    "restrict";
+    "self";
+    "set";
+    "shared";
+    "sizeof";
+    "smooth";
+    "snorm";
+    "static";
+    "static_assert";
+    "static_cast";
+    "std";
+    "subroutine";
+    "super";
+    "target";
+    "template";
+    "this";
+    "thread_local";
+    "throw";
+    "trait";
+    "try";
+    "type";
+    "typedef";
+    "typeid";
+    "typename";
+    "typeof";
+    "union";
+    "unless";
+    "unorm";
+    "unsafe";
+    "unsized";
+    "use";
+    "using";
+    "varying";
+    "virtual";
+    "volatile";
+    "wgsl";
+    "where";
+    "with";
+    "writeonly";
+    "yield";
   ]
 
 (** Escape identifiers that WGSL forbids.
 
-    Two distinct rules, in order:
+    Four things make a name unusable as a WGSL identifier. All four are handled
+    by the same rewrite — prefixing with ["sarek_"] — for the injectivity reason
+    set out below.
 
     - {b Reserved prefix} (WGSL §4.4.1): an identifier must not start with a
       double underscore. The frontend's tail-recursion elimination
@@ -135,27 +309,101 @@ let wgsl_reserved_keywords =
       this emitter with a [__]-prefixed variable. C-family targets (CUDA,
       OpenCL, GLSL, Metal) accept those names, WGSL rejects them outright at
       parse time ("Identifier starts with a reserved prefix"), which made the
-      emitted shader unusable on every WebGPU implementation. Re-prefixing with
-      ["sarek"] keeps the name recognisable and moves the double underscore off
-      the front, where it is legal.
+      emitted shader unusable on every WebGPU implementation. Prefixing keeps
+      the name recognisable and moves the double underscore off the front, where
+      it is legal.
     - {b Bare underscore} (same clause): a lone ["_"] is not an identifier in
       WGSL either — it is the phony-assignment target. An OCaml wildcard or
       generated placeholder reaching the emitter as ["_"] would produce
-      [let _ : i32 = ...], which naga rejects. Rewritten the same way.
-    - {b Reserved keywords}: escaped by appending a ['v'] suffix.
+      [let _ : i32 = ...], which naga rejects.
+    - {b Reserved names}: anything in {!wgsl_reserved_keywords} — WGSL keywords
+      and reserved words, plus the predeclared and internal names this emitter
+      escapes defensively.
+    - {b The escaped namespace itself}: a source name that already starts with
+      ["sarek_"] is escaped too, so it cannot be confused with the image of one
+      that was. This is what makes the rewrite injective; see below.
 
-    Both rewrites are injective except for a source identifier that already
-    literally spells the escaped form (e.g. a user variable named [sarek__i]);
-    that is the same theoretical collision the keyword suffix has, documented
-    below with the shadowing limitation. *)
+    {2 Injectivity}
+
+    An earlier form of this function rewrote each problem separately — ["_"] to
+    ["sarek_"], a ["__"] prefix to ["sarek" ^ name], a keyword to [name ^ "v"] —
+    and was {i not} injective: ["__i"] and ["sarek__i"] both emitted
+    ["sarek__i"], ["_"] and ["sarek_"] both emitted ["sarek_"], and ["if"] and
+    ["ifv"] both emitted ["ifv"]. Two source variables colliding on one WGSL
+    name is not a cosmetic problem: the second [var] declaration shadows the
+    first in the same block, every later read silently resolves to the wrong
+    binding, and the shader still compiles. A wrong answer with no diagnostic is
+    the worst failure mode available here.
+
+    The rule below is a single unconditional one: the whole ["sarek_"] prefix is
+    reserved, and any name that is reserved, or that could be confused with an
+    escaped name, is prefixed with it.
+
+    That this is injective on source identifiers is checkable by cases rather
+    than by inspection:
+    - the escaping branch only ever emits names starting with ["sarek_"];
+    - the identity branch only ever emits names {i not} starting with
+      ["sarek_"], because such a name would have taken the escaping branch;
+    - the two images are therefore disjoint, and each branch is injective on its
+      own ([name ↦ "sarek_" ^ name] and the identity).
+
+    {2 Generator-produced names}
+
+    {!wgsl_generated_prefixes} is exempt, and the exemption is structural rather
+    than a convenience. [rename_scalar_shadowing_locals] mints
+    [sarek_scalar_shadow_*] names and puts them into the IR as ordinary
+    variables, so they reach this function again on the way out. A name in the
+    escaped namespace cannot be a fixed point of the rule above — that is what
+    reserving the prefix means — so re-escaping produced
+    [sarek_sarek_scalar_shadow_width_1], and the alternative of choosing an
+    internal name that {i is} a fixed point is self-defeating: every fixed point
+    is, by definition, reachable from the identical source identifier. Internal
+    names must therefore be minted in final form and left alone.
+
+    The cost is one contrived residual: a user identifier spelled exactly like a
+    generator-internal name (a local literally named
+    [sarek_scalar_shadow_width_1]) is no longer pushed out of the namespace and
+    can collide with the generated one. That is strictly smaller than what this
+    function replaced, which collided on [__i]/[sarek__i], [_]/[sarek_] and
+    [if]/[ifv] — three families of ordinary, plausible names.
+
+    The output is also always a legal WGSL identifier: it never starts with
+    ["__"] (an escaped name starts with ["sarek"], and an unescaped one cannot
+    start with ["__"] or it would have been escaped), it is never a bare ["_"],
+    and it is never reserved (no WGSL keyword or reserved word starts with
+    ["sarek_"]).
+
+    {2 Residual}
+
+    [abi] builds the uniform-struct length fields as
+    ["sarek_" ^ escape_wgsl_name v ^ "_length"], a second construction in the
+    same namespace that this function cannot police. A vector named ["if"] and a
+    scalar named ["sarek_if_length"] in one kernel still collide there. Closing
+    it needs a length-prefixed encoding for that namespace, which changes the
+    emitted ABI field names, so it is deliberately left for its own change
+    rather than folded into this one. *)
+let wgsl_escape_prefix = "sarek_"
+
+(** Prefixes of names this generator mints itself, in already-final form. They
+    round-trip unchanged through {!escape_wgsl_name}; see its
+    "Generator-produced names" section for why the exemption is unavoidable
+    rather than a shortcut. Anything added here must be a name a generator
+    constructs, never a name that can arrive from source. *)
+let wgsl_generated_prefixes = ["sarek_scalar_shadow_"]
+
 let escape_wgsl_name name =
-  let name =
-    if name = "_" then "sarek_"
-    else if String.length name >= 2 && String.sub name 0 2 = "__" then
-      "sarek" ^ name
-    else name
-  in
-  if List.mem name wgsl_reserved_keywords then name ^ "v" else name
+  if
+    List.exists
+      (fun p -> String.starts_with ~prefix:p name)
+      wgsl_generated_prefixes
+  then name
+  else if
+    name = "_"
+    || String.starts_with ~prefix:"__" name
+    || String.starts_with ~prefix:wgsl_escape_prefix name
+    || List.mem name wgsl_reserved_keywords
+  then wgsl_escape_prefix ^ name
+  else name
 
 (** Map Sarek IR element type to WGSL type string. Float64 (f64) is not
     supported in WebGPU — callers must check for TFloat64 before reaching this
@@ -795,7 +1043,13 @@ let gen_helper_func buf (hf : helper_func) =
       hf.hf_params
   in
   Buffer.add_string buf "fn " ;
-  Buffer.add_string buf hf.hf_name ;
+  (* Escaped, like every other identifier. A call to this helper is an
+     [EApp (EVar _, _)], and [gen_expr]'s [EVar] case escapes — so emitting the
+     definition raw does not merely risk an illegal name, it guarantees the
+     definition and its call sites disagree. A helper named [__f] was defined as
+     `fn __f(` (illegal: reserved double-underscore prefix) and called as
+     `sarek___f(` (undefined function): two errors from one omission. *)
+  Buffer.add_string buf (escape_wgsl_name hf.hf_name) ;
   Buffer.add_char buf '(' ;
   List.iteri
     (fun i (v : var) ->
@@ -831,9 +1085,11 @@ let gen_helper_func buf (hf : helper_func) =
     return [x] purely to keep the reduction loop terminating; this is the one
     residual divergence from C, unavoidable in WGSL and documented as such.
 
-    The helper name is a fixed [sarek_fmod] (WGSL codegen has no collision-safe
-    naming pass); a user helper of the same name would clash — a pre-existing
-    limitation shared with any reserved WGSL identifier. *)
+    The helper name is a fixed [sarek_fmod], emitted verbatim at both its
+    definition here and its call site in [gen_expr]. A user helper of the same
+    name no longer clashes with it: [escape_wgsl_name] reserves the whole
+    ["sarek_"] prefix, so a user [sarek_fmod] is emitted as [sarek_sarek_fmod]
+    at its definition and at every call. *)
 let gen_fmod_helper buf (k : kernel) =
   if Sarek_ir_analysis.kernel_uses_intrinsic "fmod" k then
     Buffer.add_string

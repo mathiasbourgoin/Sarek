@@ -1,11 +1,29 @@
-# Build context for ci/Dockerfile.
+# Build context for BOTH images built from this repository. Docker resolves
+# .dockerignore relative to the CONTEXT root, not to the Dockerfile, and both
+# builds use `context: .`, so this one file governs:
 #
-# The Dockerfile COPYs nothing from the repo — it only installs tooling — yet
-# the whole tree was being uploaded to the daemon as context for two jobs
-# (`build` and `check-generated-code`) on every run. On a working tree with
-# _build/ populated that is ~3.8 GB, of which ~3.6 GB is _build and ~155 MB is
-# .git. Excluding the heavy directories keeps the context to the source tree,
-# and changes to _build no longer invalidate the context hash.
+#   ci/Dockerfile   — the CI toolchain image (jobs `build`,
+#                     `check-generated-code`). COPYs nothing from the repo; it
+#                     only installs tooling, so nothing here can affect it
+#                     beyond context upload size.
+#   ./Dockerfile    — the GHCR interactive image (.github/workflows/
+#                     ghcr-image.yml). This one DOES copy the tree
+#                     (`COPY --chown=opam:opam . .`), so every pattern below
+#                     removes files from that image.
+#
+# Checked for the second image: the excluded tracked files are the 132 committed
+# Rocq build artefacts (*.vo/*.vok/*.vos/*.glob), plus .git/ and .github/.
+# `formal/dune` declares no stanzas, so dune never builds the proofs and
+# `dune build @install` does not need them — the image is unaffected today. The
+# *.o/*.a/*.so/*.exe/*.install globs are the ones to watch: they are aimed at
+# build residue, and would silently drop a tracked stub library or opam
+# .install file from that image if one were ever committed.
+#
+# Why it was added: the whole tree was being uploaded to the daemon on every
+# run. On a working tree with _build/ populated that is ~3.8 GB, of which
+# ~3.6 GB is _build and ~155 MB is .git. Excluding the heavy directories keeps
+# the context to the source tree, and changes to _build no longer invalidate
+# the context hash.
 _build/
 _opam/
 _site/

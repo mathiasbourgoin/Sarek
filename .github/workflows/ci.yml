@@ -227,8 +227,26 @@ jobs:
       #
       # `docker run` honours the ENTRYPOINT, runs as the image's own user, and
       # matches how every other step in this workflow invokes a container.
+      # The chown is required, not tidiness. rocq/rocq-prover runs as its own
+      # `rocq` user (uid 1000); a GitHub-hosted runner owns the checkout as
+      # `runner` (uid 1001) with mode 0755. check-formal-proofs.sh rebuilds in
+      # place — it deletes the committed .vo files and regenerates CoqMakefile
+      # beside the sources — so without this the container cannot write a single
+      # file and the job dies on step 1 with EACCES.
+      #
+      # Measured, not assumed: a uid-1000 process in this image cannot create or
+      # unlink a file in a uid-1001 0755 bind mount. It is invisible when the
+      # script is run locally, because a developer's checkout is already owned by
+      # the user running it — the job passing on a workstation says nothing about
+      # this. The script now probes writability up front so a future regression
+      # of this line fails with that sentence instead of a confusing rm error.
+      #
+      # chown rather than `--user`: the ENTRYPOINT is ["opam","exec","--"] and
+      # the opam switch lives under /home/rocq, so running as any other uid (or
+      # as root, HOME=/root) loses the switch and rocq/coqc look MISSING.
       - name: Rebuild and kernel-re-check the Rocq proofs
         run: |
+          sudo chown -R 1000:1000 "$GITHUB_WORKSPACE"
           docker run --rm \
             -v ${{ github.workspace }}:/work \
             -w /work \

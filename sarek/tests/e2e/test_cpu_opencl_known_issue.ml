@@ -85,6 +85,15 @@ let dgpu_opencl =
     ~framework:"OpenCL"
     ~is_cpu:false
 
+(* A GPU whose CL_DEVICE_NAME happens to start with a pocl prefix. Contrived as
+   a product name, but it is the case that separates the two possible readings
+   of is_pocl_device: name-only (would say "pocl") versus name-AND-device-type
+   (says "not pocl", which is what the predicate's contract states). Without
+   this row, dropping the CL_DEVICE_TYPE test from is_pocl_device passes the
+   whole suite. *)
+let gpu_named_like_pocl =
+  device ~name:"cpu-znver4 compatibility GPU" ~framework:"OpenCL" ~is_cpu:false
+
 let native_cpu = device ~name:"CPU Native" ~framework:"Native" ~is_cpu:true
 
 let interpreter =
@@ -316,6 +325,14 @@ let () =
     "is_pocl_device on Native -> false"
     false
     (Test_helpers.is_pocl_device native_cpu) ;
+  check
+    "is_pocl_device on a GPU whose name starts with a pocl prefix -> false"
+    false
+    (Test_helpers.is_pocl_device gpu_named_like_pocl) ;
+  check
+    "is_pocl_device on the iGPU named like a CPU -> false"
+    false
+    (Test_helpers.is_pocl_device igpu_named_like_a_cpu) ;
 
   print_endline "classify_cpu_opencl_math_result, correct result:" ;
   check "CPU-OpenCL -> Pass" "Pass" (classify_ok ci_cpu_opencl) ;

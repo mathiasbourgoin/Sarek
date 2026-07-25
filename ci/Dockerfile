@@ -161,5 +161,7 @@ ENV PATH=/usr/local/cuda/bin:$PATH
 
 COPY --from=naga-builder /out/bin/naga /usr/local/bin/naga
 
-# Intel oneAPI already provides an OpenCL runtime; pocl is added alongside it.
+# Intel oneAPI provides the ONLY OpenCL runtime in this image. pocl was tried as
+# a second, conformant CPU ICD and removed — see the "NOT installed, and why"
+# block above; it moves to a separate experimental PR.
 ENV OPAMYES=1

@@ -33,6 +33,15 @@
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
+# How many checks must actually run. Pinned for the same reason
+# check-formal-proofs.sh pins EXPECTED_PROJECTS: without it, deleting a section
+# — or an edit that makes one stop running — shrinks this script's scope in
+# silence and it still prints "OK: N/N checks passed" and exits 0. "N of N"
+# is tautological by construction and can never report a gap on its own.
+#
+# The Rocq section below is deliberately NOT counted; see its comment.
+EXPECTED_CHECKS=8
+
 failures=0
 checks=0
 
@@ -62,6 +71,9 @@ $out"
 # --------------------------------------------------------------------------
 section "ptxas (PTX assembler — host-side, no GPU required)"
 if ! command -v ptxas >/dev/null 2>&1; then
+  # Counted: a failure that is not in the denominator reads as "1 of 6 failed"
+  # out of a 6 that excludes it.
+  checks=$((checks + 1))
   fail "ptxas is not on PATH. The PTX assembly gate in test_ptx_snapshot.ml \
 will self-skip and CI will validate nothing. Install cuda-nvcc-12-6 (see \
 ci/Dockerfile)."
@@ -156,6 +168,7 @@ fi
 # --------------------------------------------------------------------------
 section "glslangValidator (GLSL -> SPIR-V)"
 if ! command -v glslangValidator >/dev/null 2>&1; then
+  checks=$((checks + 1))
   fail "glslangValidator is not on PATH. The GLSL shader-validation sweep will \
 self-skip. Install glslang-tools (see ci/Dockerfile)."
 else
@@ -181,6 +194,7 @@ fi
 # --------------------------------------------------------------------------
 section "naga (WGSL validation)"
 if ! command -v naga >/dev/null 2>&1; then
+  checks=$((checks + 1))
   fail "naga is not on PATH. WGSL has NO other executable validation anywhere \
 in this repository, so the wgsl_validation_sweep would silently validate \
 nothing. Built from naga-cli in the Dockerfile's builder stage."
@@ -219,14 +233,24 @@ fi
 # on the real GitHub runner. When that lands, the checks belong here.
 #
 # --------------------------------------------------------------------------
-section "Rocq / Coq proof checker"
-# #45: the formal guarantee ("0 admits, N theorems") was enforced by grep only,
-# and the committed .vo files were never re-verified on a branch. A real
-# rocqchk needs the toolchain to be here.
+section "Rocq / Coq proof checker (informational — NOT a gate)"
+# Reported, not asserted, and deliberately excluded from EXPECTED_CHECKS.
+#
+# #45's guarantee is enforced by the separate formal-proofs job, which runs
+# scripts/check-formal-proofs.sh inside the official rocq/rocq-prover image.
+# This image ships no Rocq on purpose (see the comment above the formal-proofs
+# job in .github/workflows/ci.yml), so there is nothing here to assert: a check
+# that passes whether or not the tool is present is the exact anti-pattern this
+# script exists to remove, and an earlier revision of this section was one.
+#
+# Absence is not asserted either — adding Rocq to this image would be wasteful
+# but not wrong, and failing on it would make this script a style gate.
 if command -v rocq >/dev/null 2>&1; then
-  run_check "rocq --version" rocq --version
+  echo "  NOTE: rocq present ($(rocq --version 2>&1 | head -1)); the proof job" \
+       "does not use it."
 elif command -v coqc >/dev/null 2>&1; then
-  run_check "coqc --version" coqc --version
+  echo "  NOTE: coqc present ($(coqc --version 2>&1 | head -1)); the proof job" \
+       "does not use it."
 else
   echo "  NOTE: no rocq/coqc in this image — the proof-checking job runs in the" \
        "official rocq/rocq-prover container instead, so this is expected here."
@@ -241,4 +265,13 @@ if [ "$failures" -gt 0 ]; then
   echo "ci/Dockerfile rather than relaxing this script."
   exit 1
 fi
-echo "toolchain assertion OK: $checks/$checks checks passed."
+# Reached only when every check that RAN passed — which is exactly when a
+# silently-vanished check would otherwise be invisible.
+if [ "$checks" -ne "$EXPECTED_CHECKS" ]; then
+  echo "::error::toolchain assertion ran $checks checks, expected \
+$EXPECTED_CHECKS. Every check passed, so this is not a broken tool — it is a \
+check that stopped running. Restore it, or update EXPECTED_CHECKS at the top of \
+this script if the removal was deliberate."
+  exit 1
+fi
+echo "toolchain assertion OK: $checks/$EXPECTED_CHECKS checks passed."

@@ -50,6 +50,45 @@ EXPECTED_PROJECTS=3
 
 cd "$(dirname "$0")/.."
 
+# Writability pre-flight.
+#
+# This script rebuilds in place: it deletes committed .vo files and regenerates
+# CoqMakefile next to the sources. In CI that happens inside a container whose
+# user need not own the mounted checkout — rocq/rocq-prover runs as `rocq`
+# (uid 1000) while a GitHub-hosted runner owns the workspace as `runner`
+# (uid 1001), and a uid-1000 process cannot write a uid-1001 0755 directory.
+# Without this probe the first symptom is an EACCES from `rm` several steps
+# later, which reads like a broken proof rather than a broken mount.
+#
+# This cannot be caught by running the script locally: a developer's checkout is
+# already owned by the user running it. That is precisely why it is asserted.
+probe=".formal-write-probe.$$"
+if ! : > "$probe" 2>/dev/null; then
+  echo "::error::$(pwd) is not writable by uid $(id -u). This script rebuilds \
+the proofs in place. In CI, mount a checkout owned by the container's user (see \
+the formal-proofs job in .github/workflows/ci.yml)."
+  exit 1
+fi
+rm -f "$probe"
+
+# Refuse to run on a formal/ tree that already has uncommitted changes.
+#
+# Step 6 restores the tree with `git checkout -- .` because the build rewrites
+# ~68 extracted .ml/.mli files. That restore cannot tell build output from work
+# in progress, so on a dirty tree it would silently destroy a developer's
+# uncommitted edits. Refusing here is what makes the restore safe: after this
+# check, any drift observed later must have been produced by the build.
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  dirty=$(git status --porcelain -- formal | grep -v '^?? ' || true)
+  if [ -n "$dirty" ] && [ "${FORMAL_ALLOW_DIRTY:-0}" != "1" ]; then
+    echo "::error::formal/ has uncommitted changes to tracked files. This \
+script rebuilds in place and restores the tree afterwards, which would discard \
+them. Commit or stash first, or set FORMAL_ALLOW_DIRTY=1 to accept the loss."
+    printf '%s\n' "$dirty" | sed 's/^/    /'
+    exit 1
+  fi
+fi
+
 if command -v rocq >/dev/null 2>&1; then
   ROCQ=rocq
 elif command -v coqc >/dev/null 2>&1; then
@@ -93,6 +132,42 @@ cannot determine the logical path to check."
   (
     cd "$proj"
 
+    # Restore the working tree on EVERY exit path, installed BEFORE the first
+    # destructive step.
+    #
+    # `make -f CoqMakefile` re-runs extraction, and the extracted .ml/.mli files
+    # are committed in ocamlformat-formatted form while extraction emits them
+    # raw. A full run therefore rewrites ~68 tracked files with semantically
+    # identical but differently formatted output, and also leaves a regenerated
+    # CoqMakefile behind. Harmless on a throwaway CI checkout, destructive for
+    # anyone running this documented gate on their own tree.
+    #
+    # As a trap rather than a final step because the interesting exits are the
+    # early ones: a failed compile or a failed kernel re-check used to leave the
+    # committed .vo files deleted and the tree rewritten, and — now that this
+    # script refuses to start on a dirty formal/ — that residue would block the
+    # very next run with a message about uncommitted changes the developer never
+    # made. Restoring unconditionally keeps a failed run repeatable.
+    #
+    # Safe precisely because of the dirty-tree check above: the tree was clean
+    # when this started, so anything to restore was produced by this script.
+    # The lia/nia caches are untracked build residue the tactics drop next to
+    # the sources; they would otherwise be left behind.
+    restore_tree() {
+      rm -f .lia.cache .nia.cache
+      if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        drift=$(git status --porcelain -- . 2>/dev/null | grep -v '^?? ' || true)
+        if [ -n "$drift" ]; then
+          n=$(printf '%s\n' "$drift" | wc -l)
+          echo "  NOTE: the build rewrote $n tracked file(s) (extraction output" \
+               "vs the ocamlformat-formatted committed copies); restoring them."
+          git checkout -- . 2>/dev/null || \
+            echo "  WARNING: could not restore; tree left dirty."
+        fi
+      fi
+    }
+    trap restore_tree EXIT
+
     # 1. Delete every committed build artefact. A .vo that is never rebuilt is
     #    an unverified binary blob, and re-checking it would only prove it is
     #    self-consistent, not that it matches the .v beside it.
@@ -125,25 +200,44 @@ cannot determine the logical path to check."
     # 4. Kernel re-check. This is the load-bearing step: it re-verifies the
     #    proof terms independently of the elaborator that built them, and
     #    reports the axioms they rest on.
+    #    `set +e` around the capture is load-bearing, not defensive habit.
+    #    `out=$(rocq check ...)` is a plain assignment in a command body, not an
+    #    `if` condition, so `set -e` applies to it in full. `rocqchk` exits
+    #    non-zero when it finds an error, so on a REAL kernel-check failure the
+    #    subshell died on this very line — before the diagnostics below could
+    #    run — and because `2>&1` had redirected the checker's entire output
+    #    into `$out`, that output was discarded with it. The job still failed
+    #    (no false pass), but reported none of the context this step exists to
+    #    provide. Untested until now because the committed proofs all pass.
+    set +e
     if [ -n "$ROCQ" ]; then
       out=$(rocq check -R theories "$logical" theories/*.vo 2>&1)
     else
       out=$(coqchk -R theories "$logical" theories/*.vo 2>&1)
     fi
+    rc=$?
+    set -e
     printf '%s\n' "$out" | tail -3
+    # Two independent conditions, both fatal: a non-zero exit from the checker,
+    # and the absence of its success marker. Neither implies the other — a
+    # checker that dies on a missing .vo exits non-zero without ever printing a
+    # verdict, and a truncated or partial run can exit 0 having checked nothing.
+    #
     # Substring match on the variable, NOT `printf ... | grep -q`: grep -q exits
     # on its first match and closes the pipe, printf takes SIGPIPE (141), and
     # `set -o pipefail` propagates that as a failure. With `rocq check` output
     # running to thousands of lines this fires reliably, and the check would
     # report a failure on a run where every proof passed.
     case "$out" in
-      *"Modules were successfully checked"*) : ;;
-      *)
-        echo "::error::kernel re-check FAILED for $proj"
-        printf '%s\n' "$out"
-        exit 1
-        ;;
+      *"Modules were successfully checked"*) marker=1 ;;
+      *) marker=0 ;;
     esac
+    if [ "$rc" -ne 0 ] || [ "$marker" -ne 1 ]; then
+      echo "::error::kernel re-check FAILED for $proj (exit $rc, success marker \
+present: $marker)"
+      printf '%s\n' "$out"
+      exit 1
+    fi
 
     # 5. Report what the proofs assume. `rocq check` lists axioms rather than
     #    rejecting them, and this repository has one sanctioned escape hatch
@@ -162,34 +256,18 @@ cannot determine the logical path to check."
     # awk, not bc: bc is not installed in the rocq/rocq-prover image, and under
     # `set -euo pipefail` its absence failed the job AFTER every proof had
     # already been checked — a green result reported as red.
-    theorems=$(grep -rhcE "^(Theorem|Lemma|Corollary|Proposition|Remark|Fact) " \
-                 theories/*.v | awk '{s += $1} END {print s + 0}')
+    #
+    # `|| true` for the same reason: `grep -c` exits 1 when NO file matched, and
+    # under pipefail that status propagates out of the assignment and `set -e`
+    # kills the run. This is a reporting line, not a gate — a project with no
+    # Theorem/Lemma must print 0, not fail a run whose proofs all checked.
+    theorems=$({ grep -rhcE "^(Theorem|Lemma|Corollary|Proposition|Remark|Fact) " \
+                   theories/*.v || true; } | awk '{s += $1} END {print s + 0}')
     echo "  kernel-verified statements in theories/: $theorems"
 
-    # 6. Put the working tree back.
-    #
-    #    `make -f CoqMakefile` also re-runs extraction, and the extracted .ml /
-    #    .mli files are committed in ocamlformat-formatted form while extraction
-    #    emits them raw. A full run therefore rewrites ~68 tracked files
-    #    (~2.5k insertions / ~4.4k deletions) with semantically identical but
-    #    differently formatted output. Harmless on a throwaway CI checkout,
-    #    destructive for anyone running this documented gate on their own tree.
-    #    Report the drift so it stays visible, then restore.
-    #    The lia/nia decision-procedure caches are pure build residue that the
-    #    tactics drop next to the sources; they are untracked and would
-    #    otherwise be left behind in a developer's tree.
-    rm -f .lia.cache .nia.cache
-
-    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-      drift=$(git status --porcelain -- . 2>/dev/null | grep -v '^?? ' || true)
-      if [ -n "$drift" ]; then
-        n=$(printf '%s\n' "$drift" | wc -l)
-        echo "  NOTE: the build rewrote $n tracked file(s) (extraction output vs" \
-             "the ocamlformat-formatted committed copies); restoring them."
-        git checkout -- . 2>/dev/null || \
-          echo "  WARNING: could not restore; tree left dirty."
-      fi
-    fi
+    # 6. The working tree is put back by the restore_tree EXIT trap installed
+    #    at the top of this subshell, so that it also runs on the failure paths
+    #    above. See the comment there.
   )
   checked=$((checked + 1))
 done
