@@ -14,6 +14,8 @@
 #     wgsl_validation_sweep                       -> naga
 #   sarek/tests/unit/test_shader_recursion_vector.ml -> glslangValidator + naga
 #   sarek-cuda/test/test_cuda_nvrtc_gate.ml       -> libnvrtc
+#     opencl_validation_sweep                     -> clang (OpenCL C)
+#   sarek/tests/unit/test_opencl_gate.ml          -> clang (OpenCL C)
 #
 # That skip is correct behaviour for a developer machine, which legitimately has
 # none of these installed. It is a disaster in CI: the previous image carried
@@ -40,7 +42,7 @@ set -uo pipefail
 # is tautological by construction and can never report a gap on its own.
 #
 # The Rocq section below is deliberately NOT counted; see its comment.
-EXPECTED_CHECKS=8
+EXPECTED_CHECKS=10
 
 failures=0
 checks=0
@@ -215,6 +217,40 @@ WGSL
     ok "naga validated a probe shader — $out"
   else
     fail "naga is on PATH but cannot validate a trivial compute shader:
+$out"
+  fi
+  rm -rf "$tmpdir"
+fi
+
+# --------------------------------------------------------------------------
+section "clang (OpenCL C validation)"
+# The OpenCL gate (#128) compiles generated OpenCL C with `clang -x cl` rather
+# than through a vendor ICD, and that choice is the point: on the reference
+# machine (RX 7900 XTX, rusticl/radeonsi) illegal generated OpenCL did not
+# produce a build log, it took the host process down with SIGSEGV. A gate has to
+# fail where we can read the failure.
+if ! command -v clang >/dev/null 2>&1; then
+  checks=$((checks + 1))
+  fail "clang is not on PATH. OpenCL C is then the ONLY backend with committed \
+goldens and no executable validation at all, so opencl_validation_sweep would \
+silently validate nothing."
+else
+  run_check "clang --version" clang --version
+  tmpdir=$(mktemp -d)
+  cat >"$tmpdir/probe.cl" <<'CL'
+__kernel void probe(__global int *o) { o[get_global_id(0)] = 1; }
+CL
+  checks=$((checks + 1))
+  # Positive control, not `command -v`: a clang built without OpenCL support, or
+  # without the default builtin header, is on PATH and useless. This probe needs
+  # BOTH -x cl and -finclude-default-header to succeed, which is exactly the
+  # invocation the gate uses (opencl_clang.ml). A clang that cannot resolve
+  # get_global_id would fail every kernel on builtins rather than on defects.
+  if out=$(clang -x cl -cl-std=CL1.2 -Xclang -finclude-default-header \
+             -fsyntax-only "$tmpdir/probe.cl" 2>&1); then
+    ok "clang compiled a probe OpenCL kernel"
+  else
+    fail "clang is on PATH but cannot compile a trivial OpenCL kernel:
 $out"
   fi
   rm -rf "$tmpdir"

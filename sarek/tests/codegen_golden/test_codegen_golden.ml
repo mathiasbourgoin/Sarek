@@ -2210,7 +2210,58 @@ let validation_exclusions : ((string * string) * string) list =
      GLSL backend now lowers every Float64 transcendental through the software
      helper family (Sarek_ir_softmath), so both goldens emit valid GLSL and are
      validated by the sweep below like every other case. *)
-  []
+  (* FINDING (#128 sweep, first run): Float64.abs_float and Float64.copysign are
+     declared in sarek/Sarek_float64/Float64.ml — user-callable — but are absent
+     from Sarek_pure_registry.float64_list, which is what every non-GLSL backend
+     dispatches through. GLSL survives only because it special-cases both in a
+     hardcoded arm. On OpenCL they die at codegen:
+
+       [OpenCL Codegen] Unknown intrinsic: Float64.abs_float
+       [OpenCL Codegen] Unknown intrinsic: Float64.copysign
+
+     Two exclusions rather than a fix, deliberately. Naively adding the names to
+     float64_list was tried and makes it worse, not better: the float64 template
+     emits the Sarek name verbatim (the float32 table carries an explicit
+     ("abs_float","fabsf","fabs") mapping; the float64 table is a bare name
+     list), so codegen then emits [abs_float(a[idx])] — clang: "use of
+     undeclared identifier 'abs_float'". And the module-level comment on
+     Sarek_pure_registry states the boundary directly: registering float64 names
+     the interpreter cannot evaluate converts an honest lookup failure into a
+     silent miscompile. A real fix needs a name mapping AND interpreter support,
+     across every backend — a separate change, not a rider on the gate that
+     found it. *)
+  [
+    ( ("opencl", "float64_abs_float_path"),
+      "Float64.abs_float is user-callable but unmapped on every non-GLSL \
+       backend (Sarek_pure_registry.float64_list) — codegen raises Unknown \
+       intrinsic. Found by this sweep; see the note above for why the one-line \
+       fix is wrong." );
+    ( ("opencl", "float64_copysign_path"),
+      "Float64.copysign — same gap as float64_abs_float_path above." );
+    (* RESOLVED (#128 sweep, first run -> fixed by #75): the binder canary
+       reproduced the #75 EMatch-payload defect on OpenCL, in the shape a
+       compile gate provably cannot see. It emitted:
+
+         out[idx] = ((s.tag == Circle) ? (r * 2.0f) : (r + 7.0f));
+
+       — accepted by clang and by rusticl, and wrong, because the dropped
+       payload binder [r] silently resolved to the enclosing local [r]. Under
+       unique binder names the same emission was:
+
+         sk2_out[sk3_idx] = ((sk5_s.tag == Circle) ? (sk6_r * 2.0f) : (sk7_r + 7.0f));
+         error: use of undeclared identifier 'sk6_r'; did you mean 'sk4_r'?
+
+       That exclusion is GONE, and it was removed the way its own removal
+       condition demanded: not because a PR merged, but because the check
+       passes. Re-verified after the EMatch payload fix landed —
+       opencl-validate/ematch_payload_shadowed now reports [OK] ("clang OK:
+       ematch_payload_shadowed (+ binder canary)"), not [SKIP]. So the fix
+       covers the colliding-binder shape, not just the undeclared-identifier
+       one, which is the part a compile gate alone could never have confirmed.
+
+       [ematch_payload_shadowed] stays in the sweep corpus permanently as the
+       live regression check for that shape. *)
+  ]
 
 let excluded backend name = List.assoc_opt (backend, name) validation_exclusions
 
@@ -2287,6 +2338,188 @@ let wgsl_validation_tests () =
                       wgsl)))
     (test_kernels () @ wgsl_only_kernels ())
 
+(** {1 OpenCL validation sweep (#128)}
+
+    OpenCL was the one backend with goldens but no validator, and it is the one
+    where the vendor compiler is least able to act as a safety net: on the
+    reference machine (RX 7900 XTX, rusticl/radeonsi) illegal generated OpenCL
+    crashed the host process instead of producing a build log, and valid-but-
+    wrong generated OpenCL produced no diagnostic at all.
+
+    Three layers per kernel, each with a different blind spot:
+
+    + {b recursion} ({!Opencl_recursion}) — reads the emitted text. No compiler
+      in reach diagnoses OpenCL recursion (measured: clang 22.1.6 accepts it on
+      four targets; rusticl SIGSEGVs on it), so this layer is not redundant with
+      the compile gate, it is the only cover for that class.
+    + {b compile} ({!Opencl_clang}) — [clang -x cl], the same language level and
+      builtin header a real ICD provides. Catches ill-typed and undeclared-
+      identifier defects.
+    + {b binder canary} ({!Ir_uniquify}) — regenerates from an α-converted twin
+      of the kernel and compiles that too. See ir_uniquify.ml: the compile layer
+      alone is structurally unable to see a dropped binder whose name collides
+      with something in scope, because such code IS valid OpenCL C. Under unique
+      binder names a collision cannot happen, so the class collapses into
+      "undeclared identifier", which layer 2 does catch.
+
+    What this sweep still cannot catch, stated plainly so a green run is not
+    mistaken for "our OpenCL is correct": anything that is well-formed OpenCL C
+    with all binders present but the wrong semantics — a wrong operator, a wrong
+    intrinsic mapping, a wrong index. That is what the goldens above and the e2e
+    runtime tests are for. *)
+
+(** Kernels that exist only to be run through the OpenCL validator, and carry no
+    golden: their point is what the gate says about the emitted source, not
+    which bytes it is. Keeping them out of [test_kernels ()] avoids minting five
+    backends' worth of goldens for a case that is about validation. *)
+let opencl_validation_only_kernels () =
+  (* Colliding-binder reproduction (#75 / PR #306). An enclosing local [r] and
+     an EMatch payload binder also called [r]. If the emitter drops the payload
+     binding, the arm's [r] resolves to the enclosing [r]: the source is VALID
+     OpenCL C, no compiler anywhere says a word, and the kernel returns a wrong
+     answer. Measured on an RX 7900 XTX (rusticl/radeonsi): 1024/1024 elements
+     wrong, first at index 0 — got 2000.0, expected 1.0. Layer 2 cannot see
+     this; layer 3 (binder canary) exists for it. *)
+  let shape_constrs = [("Circle", [TFloat32]); ("Square", [TFloat32])] in
+  let shape_ty = TVariant ("Shape", shape_constrs) in
+  let shapes = make_var "shapes" (TVec shape_ty) in
+  let out = make_var "out" (TVec TFloat32) in
+  let idx = make_var "idx" TInt32 in
+  let r = make_var "r" TFloat32 in
+  let s = make_var "s" shape_ty in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( r,
+            EConst (CFloat32 1000.0),
+            SLet
+              ( s,
+                EArrayRead ("shapes", EVar idx),
+                SAssign
+                  ( LArrayElem ("out", EVar idx),
+                    EMatch
+                      ( EVar s,
+                        [
+                          ( PConstr ("Circle", ["r"]),
+                            EBinop (Mul, EVar r, EConst (CFloat32 2.0)) );
+                          ( PConstr ("Square", ["r"]),
+                            EBinop (Add, EVar r, EConst (CFloat32 7.0)) );
+                        ] ) ) ) ) )
+  in
+  let k =
+    empty_kernel
+      "ematch_payload_shadowed"
+      [
+        DParam (shapes, None);
+        DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      ]
+      []
+      body
+  in
+  [
+    ( "ematch_payload_shadowed",
+      {k with kern_variants = [("Shape", shape_constrs)]} );
+  ]
+
+module Opencl_recursion = Opencl_gate.Opencl_recursion
+module Opencl_clang = Opencl_gate.Opencl_clang
+module Ir_uniquify = Opencl_gate.Ir_uniquify
+
+(** Mirror of the production path in [Opencl_plugin.generate_source]: the
+    generator plus the fp64 preamble the plugin prepends. Validating anything
+    else would validate a string we never ship. *)
+let opencl_production_source k =
+  Gen_opencl.reset_state () ;
+  let src = Gen_opencl.generate_with_types ~types:k.kern_types k in
+  if Sarek_ir_analysis.kernel_uses_float64 k then
+    "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n\n" ^ src
+  else src
+
+let opencl_validation_tests () =
+  List.map
+    (fun (kernel_name, k) ->
+      Alcotest.test_case
+        (Printf.sprintf "opencl-validate/%s" kernel_name)
+        `Quick
+        (fun () ->
+          match excluded "opencl" kernel_name with
+          | Some reason ->
+              Printf.printf
+                "  SKIP (excluded): opencl/%s — %s\n%!"
+                kernel_name
+                reason ;
+              Alcotest.skip ()
+          | None ->
+              let src = opencl_production_source k in
+              (* Layer 1 — always runs, needs no external tool. *)
+              (match Opencl_recursion.cycles src with
+              | [] -> ()
+              | cs ->
+                  Alcotest.failf
+                    "generated OpenCL for %s contains recursion, which OpenCL \
+                     C forbids (§6.9.e) and no vendor compiler here diagnoses:\n\
+                     %s\n\
+                     --- source ---\n\
+                     %s"
+                    kernel_name
+                    (String.concat "\n" (List.map Opencl_recursion.describe cs))
+                    src) ;
+              if not (Opencl_clang.available ()) then begin
+                Printf.printf
+                  "  SKIP: %s — %s (recursion layer ran; compile and binder \
+                   layers did not)\n\
+                   %!"
+                  kernel_name
+                  (Opencl_clang.why_unavailable ()) ;
+                Alcotest.skip ()
+              end
+              else begin
+                (* Layer 2 — the kernel as we ship it. *)
+                (match Opencl_clang.run_clang src with
+                | Ok () -> ()
+                | Error e ->
+                    Alcotest.failf
+                      "clang rejected generated opencl/%s:\n\
+                       %s\n\
+                       --- source ---\n\
+                       %s"
+                      kernel_name
+                      e
+                      src) ;
+                (* Layer 3 — the same kernel with every binder made unique. *)
+                match Ir_uniquify.uniquify_kernel k with
+                | exception Ir_uniquify.Unsupported r ->
+                    Printf.printf
+                      "  clang OK: %s (binder canary skipped: %s)\n%!"
+                      kernel_name
+                      r
+                | ku -> (
+                    let usrc = opencl_production_source ku in
+                    match Opencl_clang.run_clang usrc with
+                    | Ok () ->
+                        Printf.printf
+                          "  clang OK: %s (+ binder canary)\n%!"
+                          kernel_name
+                    | Error e ->
+                        Alcotest.failf
+                          "binder canary FAILED for opencl/%s.\n\
+                           The kernel compiles as written but not after \
+                           α-renaming every binder to a unique name, so a \
+                           binder the emitter drops is currently being \
+                           resolved by an unrelated same-named identifier in \
+                           scope — valid OpenCL C computing the wrong answer, \
+                           with no diagnostic on the shipped source.\n\
+                           %s\n\
+                           --- α-renamed source ---\n\
+                           %s"
+                          kernel_name
+                          e
+                          usrc)
+              end))
+    (test_kernels () @ glsl_only_kernels () @ opencl_validation_only_kernels ())
+
 let () =
   Alcotest.run
     "codegen_golden"
@@ -2297,4 +2530,5 @@ let () =
         ("metal_only", metal_only_tests ());
         ("glsl_validation_sweep", glsl_validation_tests ());
         ("wgsl_validation_sweep", wgsl_validation_tests ());
+        ("opencl_validation_sweep", opencl_validation_tests ());
       ])

@@ -62,6 +62,29 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 #                       false — but it cannot actually be removed without
 #                       losing glslangValidator.
 #
+#   clang               NOT installed here - already provided by the base
+#                       toolchain layer at the top of this file, so the OpenCL
+#                       validation gate (#128) adds 0 MB. Recorded in this list
+#                       anyway because that install now has a SECOND consumer
+#                       and nothing else would say so: `clang` there is no
+#                       longer only a C toolchain, it is the OpenCL C front-end
+#                       the gate and ci/assert-toolchain.sh's probe depend on.
+#                       If it is ever trimmed as unused, assert-toolchain.sh
+#                       fails loudly rather than letting the sweep return to
+#                       self-skipping.
+#
+#                       Deliberately NOT an OpenCL ICD: the gate must be able
+#                       to REPORT a rejection, and on the reference hardware
+#                       (RX 7900 XTX, rusticl/radeonsi) illegal generated
+#                       OpenCL crashed the host process instead of returning a
+#                       build log (#53/#127). clang needs no device, so this
+#                       does not change device enumeration. `clang -x cl` plus
+#                       `-Xclang -finclude-default-header` supplies the builtin
+#                       declarations an ICD would inject; the assert-toolchain
+#                       probe fails if that header is missing, because without
+#                       it every kernel would fail on get_global_id rather than
+#                       on its own defects.
+#
 # NOT installed, and why:
 #
 #   pocl-opencl-icd

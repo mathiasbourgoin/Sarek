@@ -32,7 +32,7 @@
 (test
  (name test_codegen_golden)
  (modules test_codegen_golden)
- (libraries codegen_golden_backends sarek_ir alcotest unix)
+ (libraries codegen_golden_backends opencl_gate sarek_ir alcotest unix)
  (instrumentation
   (backend bisect_ppx)))
 

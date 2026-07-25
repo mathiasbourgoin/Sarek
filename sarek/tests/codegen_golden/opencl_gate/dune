@@ -1,0 +1,11 @@
+; OpenCL validation gate (#128) — see opencl_clang.ml / opencl_recursion.ml /
+; ir_uniquify.ml for what each layer catches and what it provably cannot.
+;
+; Its own library rather than modules of test_codegen_golden so the negative
+; controls in ../../unit/test_opencl_gate.ml can drive the same code the sweep
+; drives — a gate whose red path is never executed is not a gate.
+
+(library
+ (name opencl_gate)
+ (modules ir_uniquify opencl_clang opencl_recursion)
+ (libraries sarek_ir unix))

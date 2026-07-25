@@ -120,3 +120,13 @@
 (test
  (name test_soa)
  (libraries spoc_core spoc.ir ctypes alcotest))
+
+; Negative controls for the OpenCL validation gate (#127/#128). Proves each
+; layer of the gate can go red: recursion detection, the clang compile gate
+; under a removed declaration, and the α-renaming binder canary. Also pins the
+; #127 backend policy (budgeted self-recursion bounded, every other cycle
+; refused). CPU-only, no device; clang-dependent cases self-skip.
+
+(test
+ (name test_opencl_gate)
+ (libraries sarek.codegen spoc.ir opencl_gate alcotest str))

@@ -376,36 +376,39 @@
  (action
   (run %{dep:test_domain_pool_stress.exe})))
 
-; compile-only alias: the assertion IS successful compilation (PPX
-; convergence-analysis positive cases, or a smoke test with no runtime
-; check). Build-only - not executed - since there is nothing to run that
-; would add verification beyond "it compiled".
+; test_inline_pragma EXECUTES again (#127) - it is no longer parked.
 ;
-; test_inline_pragma is also parked here (build-only): it is otherwise
-; self-verifying and CPU-safe, but it segfaults DETERMINISTICALLY (not
-; flakily) whenever an OpenCL device is present. Diagnosed 2026-07-25:
+; It was build-only because it segfaulted DETERMINISTICALLY (not flakily)
+; whenever an OpenCL device was present. Never a test bug:
 ;
 ;   `pragma ["sarek.inline N"]` bounds the UNROLLING of a non-tail-recursive
-;   function but leaves a residual self-call, so the OpenCL backend emits a
+;   function but leaves a residual self-call, so the OpenCL backend emitted a
 ;   genuinely recursive device function:
 ;
 ;     int pow2(int n) { ... return (2 * (... (2 * pow2(n-1-1-1-1-1-1-1))))); }
 ;
-;   OpenCL C forbids recursion. rusticl (Mesa 26.1.4) does not diagnose it;
-;   it tries to inline and overflows its own compiler stack - the crash is a
+;   OpenCL C forbids recursion (1.2 6.9.e). rusticl (Mesa 26.1.4) does not
+;   diagnose it; it tries to inline and overflows its own compiler stack - a
 ;   ~30800-frame recursion inside libRusticlOpenCL on a `clctxworker` thread,
 ;   with zero SPOC/OCaml frames on the stack.
 ;
-; So the fix belongs in the OpenCL backend: either fully bound the recursion
-; (emit a depth-limited base case) or refuse with an explicit "Unsupported
-; construct" error the way the GLSL backend already does. Until then this
-; stays build-only.
+; Fixed in the backend: Sarek_ir_opencl.resolve_recursive_helpers elides the
+; residual call in a budgeted self-recursive helper (typed zero, matching what
+; PTX already does for the same pragma) and REFUSES every other cycle. Verified
+; on an AMD RX 7900 XTX (rusticl/radeonsi): exit 139 before, exit 0 with correct
+; results after. The generated OpenCL is now checked for recursion on every
+; codegen_golden run - see opencl_validation_sweep (#128), layer 1, which exists
+; because no compiler on this path reports this class.
 ;
-; NOTE: this is NOT the ctypes-rooting use-after-free that was fixed in
-; sarek-vulkan (PR #303). That one also presented as a SIGSEGV, which is why
-; the two were once filed as one class. They are unrelated: this crash is
-; unchanged by that fix, is OpenCL-only, and disappears when the OpenCL ICD
-; is hidden.
+; HISTORICAL NOTE, kept because the two were once filed as one class: this was
+; NOT the ctypes-rooting use-after-free fixed in sarek-vulkan (PR #303). Both
+; presented as SIGSEGV; they are unrelated. This one was OpenCL-only and
+; disappeared when the OpenCL ICD was hidden.
+
+; compile-only alias: the assertion IS successful compilation (PPX
+; convergence-analysis positive cases, or a smoke test with no runtime
+; check). Build-only - not executed - since there is nothing to run that
+; would add verification beyond "it compiled".
 
 (alias
  (name compile-only)
@@ -413,7 +416,6 @@
   test_pragma.exe
   test_barrier_converged.exe
   test_superstep.exe
-  test_inline_pragma.exe
   test_ppx_scan_failure_warning.exe))
 
 ; Build-gate the compile-only tests under default `runtest` too, so a
@@ -422,7 +424,7 @@
 ; deliberately distinct from the `(rule (alias runtest) (action (run ...)))`
 ; pattern used above for tests that must actually execute). See the
 ; comment block above and briefs/make-tests-actually-run-impl-notes.md for
-; why these four are build-only rather than run.
+; why these are build-only rather than run.
 
 (alias
  (name runtest)
@@ -430,8 +432,15 @@
   test_pragma.exe
   test_barrier_converged.exe
   test_superstep.exe
-  test_inline_pragma.exe
   test_ppx_scan_failure_warning.exe))
+
+; #127: executed, not build-only. Self-verifying (exit 1 on mismatch) and
+; self-skipping when Device.all () is empty.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_inline_pragma.exe})))
 
 ; Regression tests wired to executing runtest rules (found unwired by
 ; scripts/check-test-alias-coverage.sh - the guard added after the 2026-07
