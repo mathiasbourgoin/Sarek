@@ -64,14 +64,11 @@
  (libraries sarek.codegen alcotest unix str))
 
 ; ptxas sweep over the WHOLE PTX intrinsic surface: one kernel per intrinsic
-; name, enumerated from Sarek_ir_ptx_expr's own dispatch tables so a new
+; name, enumerated from Sarek_ir_ptx_expr's own dispatch registry so a new
 ; intrinsic is assembled automatically. Skips cleanly without ptxas.
 
 (test
  (name test_ptx_intrinsic_sweep)
- ; The emitter source is a dep: one test scans its intrinsic match arms and
- ; requires them to agree with the exported name tables.
- (deps ../../codegen/Sarek_ir_ptx_expr.ml)
  (libraries sarek.codegen alcotest unix str))
 
 ; WGSL identifier escaping: injectivity + legality of escape_wgsl_name, and

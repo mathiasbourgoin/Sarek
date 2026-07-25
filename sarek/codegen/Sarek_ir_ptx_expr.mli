@@ -61,14 +61,32 @@ val emit_cast : Buffer.t -> reg_alloc -> string -> elttype -> string
 val emit_intrinsic :
   Buffer.t -> reg_alloc -> env -> string list -> string -> expr list -> string
 
-(** {1 Intrinsic name tables}
+(** {1 Intrinsic dispatch registry}
 
-    The intrinsic names each per-category emitter owns. This is the dispatch
-    table {!emit_intrinsic} consults, so it cannot drift from what the backend
-    actually lowers: a name absent from every list raises
-    {!Sarek_ir_ptx_types.Ptx_codegen_error}, and a name in two lists is an
-    internal error. Exposed so the ptxas sweep gate can assemble one kernel per
-    intrinsic name and so a new intrinsic is covered automatically. *)
+    Each intrinsic is one entry in a per-category handler registry: the names it
+    answers to paired with the closure that lowers them. {!emit_intrinsic}
+    dispatches by looking a name up there, so {!intrinsic_registry} is what the
+    backend actually lowers; the tables below are pinned to it entry for entry
+    by a value-level test. A name absent from the registry raises
+    {!Sarek_ir_ptx_types.Ptx_codegen_error}; a name claimed by two handlers is
+    an internal error. Exposed so the ptxas sweep gate can assemble one kernel
+    per intrinsic name and so a new intrinsic is covered automatically. *)
+
+(** The per-category handler registries, in dispatch order. *)
+type intrinsic_category =
+  | Index
+  | Transcendental
+  | Float_ops
+  | Bitcast
+  | Convert
+  | Atomic
+
+(** Every intrinsic name the PTX backend lowers, with the registry that owns it,
+    in dispatch order. Derived from the handler values themselves: an entry here
+    is a handler that exists, and every handler has its entries here. The name
+    tables below are checked against it — over these values, not over source
+    text — by sarek/tests/unit/test_ptx_intrinsic_sweep.ml. *)
+val intrinsic_registry : (string * intrinsic_category) list
 
 val index_intrinsic_names : string list
 
@@ -82,5 +100,6 @@ val convert_intrinsic_names : string list
 
 val atomic_intrinsic_names : string list
 
-(** All of the above concatenated, in dispatch order. *)
+(** All of the above concatenated, in dispatch order — i.e. the names of
+    {!intrinsic_registry}. *)
 val intrinsic_names : string list

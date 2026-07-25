@@ -12,8 +12,8 @@
     generated fine, passed a substring snapshot test that asserted the invalid
     opcode, and died at [cuModuleLoadData].
 
-    So this gate is driven by the emitter's own dispatch tables
-    ({!Sarek_ir_ptx_expr.intrinsic_names}) rather than a hand-picked list: it
+    So this gate is driven by the emitter's own dispatch registry
+    ({!Sarek_ir_ptx_expr.intrinsic_registry}) rather than a hand-picked list: it
     builds and assembles at least one kernel per intrinsic NAME, and an
     intrinsic added to the emitter with no kernel recipe here FAILS the recipe
     test. Kernel GENERATION always runs; only the [ptxas] assembly step
@@ -334,128 +334,27 @@ let test_name_sets_disjoint () =
                (String.concat "; " ds)))
     named_sets
 
-(* ---- registry vs. emitter arms ------------------------------------------- *)
+(* ---- why there is no "tables match the registry" test --------------------
 
-(* The name tables and the emitters' [match] arms are two sources for one fact,
-   hundreds of lines apart: a name declared in a table but with no arm, or an
-   arm added without its table entry, is drift. The unregistered direction is
-   fail-loud at runtime (the name reaches no emitter and becomes [unsupported])
-   but nothing FAILS A TEST — the arm is simply absent from dispatch, from
-   [intrinsic_names] and from this sweep, all at once. Until the categories
-   become single name -> handler registries (which would make this structural),
-   scan the emitter source and require the two to agree exactly. *)
+   There used to be one, and before that a worse one: the exported name tables
+   and the dispatch arms were two sources for one fact, hundreds of lines apart,
+   compared by SCANNING THE EMITTER SOURCE for [match] arms — a textual check
+   that passes whenever the text moves, and fails when it moves harmlessly.
 
-let emitter_source_path () =
-  List.find_opt
-    Sys.file_exists
-    ((match Sys.getenv_opt "SAREK_PTX_EXPR_SRC" with
-       | Some p -> [p]
-       | None -> [])
-    @ [
-        (* cwd is the test's build dir under dune runtest; the file is a
-           declared dep of this test in sarek/tests/unit/dune. *)
-        Filename.concat
-          ".."
-          (Filename.concat ".." "codegen/Sarek_ir_ptx_expr.ml");
-        "sarek/codegen/Sarek_ir_ptx_expr.ml";
-      ])
+   Replacing the scan with a value-level comparison against the handler registry
+   fixed the textual coupling but kept two lists. The tables are now COMPUTED
+   from the handlers ([Sarek_ir_ptx_expr.names_of_category]), so "the tables
+   agree with dispatch" is true by construction and there is nothing left to
+   compare: such a test would assert [x = x] and could never fail. A test that
+   cannot fail is worse than no test, so it is gone rather than kept for
+   appearances.
 
-let read_lines path =
-  let ic = open_in path in
-  let rec go acc =
-    match input_line ic with
-    | l -> go (l :: acc)
-    | exception End_of_file ->
-        close_in ic ;
-        List.rev acc
-  in
-  go []
-
-(* The quoted names of a top-level [match] arm: everything before the [->], so
-   string arguments in the arm's BODY (e.g. ~f32_op:(Some "sqrt.rn.f32")) are
-   not mistaken for patterns. *)
-let pattern_names line =
-  let head =
-    match Str.bounded_split_delim (Str.regexp_string "->") line 2 with
-    | h :: _ -> h
-    | [] -> line
-  in
-  let re = Str.regexp "\"\\([a-z0-9_]+\\)\"" in
-  let rec go i acc =
-    match Str.search_forward re head i with
-    | exception Not_found -> List.rev acc
-    | _ -> go (Str.match_end ()) (Str.matched_group 1 head :: acc)
-  in
-  go 0 []
-
-(** [category, arm names] scraped from the emitter source, in file order. *)
-let arms_by_category lines =
-  let categories =
-    ["index"; "transcendental"; "float_ops"; "bitcast"; "convert"; "atomic"]
-  in
-  let acc = Hashtbl.create 8 in
-  let current = ref None in
-  List.iter
-    (fun line ->
-      (match
-         List.find_opt
-           (fun c -> starts_with ("and emit_intrinsic_" ^ c ^ " ") line)
-           categories
-       with
-      | Some c -> current := Some c
-      | None -> if starts_with "and " line then current := None) ;
-      match !current with
-      | None -> ()
-      | Some c ->
-          let t = String.trim line in
-          if starts_with "| \"" t then
-            let previous = Option.value (Hashtbl.find_opt acc c) ~default:[] in
-            Hashtbl.replace acc c (previous @ pattern_names t))
-    lines ;
-  List.map
-    (fun c -> (c, Option.value (Hashtbl.find_opt acc c) ~default:[]))
-    categories
-
-(** The exported name tables and the emitters' own [match] arms must agree, name
-    for name, in both directions. *)
-let test_arms_match_registry () =
-  match emitter_source_path () with
-  | None ->
-      Alcotest.fail
-        "cannot locate Sarek_ir_ptx_expr.ml to scan its intrinsic match arms \
-         (declare it as a dep of this test, or set SAREK_PTX_EXPR_SRC)"
-  | Some path ->
-      let scraped = arms_by_category (read_lines path) in
-      let registered = named_sets in
-      List.iter
-        (fun (cat, arms) ->
-          let declared =
-            Option.value (List.assoc_opt cat registered) ~default:[]
-          in
-          let arms = List.sort_uniq compare arms in
-          let declared = List.sort_uniq compare declared in
-          let missing = List.filter (fun n -> not (List.mem n declared)) arms in
-          let extra = List.filter (fun n -> not (List.mem n arms)) declared in
-          if missing <> [] then
-            Alcotest.fail
-              (Printf.sprintf
-                 "emit_intrinsic_%s has match arm(s) [%s] that are NOT in \
-                  %s_intrinsic_names — the arm is unreachable: dispatch is by \
-                  name, so the intrinsic is [unsupported] and absent from the \
-                  sweep"
-                 cat
-                 (String.concat "; " missing)
-                 cat) ;
-          if extra <> [] then
-            Alcotest.fail
-              (Printf.sprintf
-                 "%s_intrinsic_names declares [%s] with no matching arm in \
-                  emit_intrinsic_%s — dispatch would route the name to an \
-                  emitter that declines it"
-                 cat
-                 (String.concat "; " extra)
-                 cat))
-        scraped
+   What derivation does NOT give is that the registries PARTITION the surface —
+   two handlers, in the same category or different ones, can still claim the
+   same name, and dispatch raises an internal error on it. That property has
+   real content and is checked by [test_name_sets_disjoint] above. The sweep
+   below, which lowers a kernel per registered name, is what proves each entry's
+   handler actually claims and emits it. *)
 
 (** Every dispatched intrinsic name has an assembling kernel recipe above. This
     is the anti-drift check: add an intrinsic to the emitter and this fails
@@ -581,10 +480,6 @@ let () =
             "emitter name sets partition the intrinsic surface"
             `Quick
             test_name_sets_disjoint;
-          Alcotest.test_case
-            "emitter match arms and the exported name tables agree"
-            `Quick
-            test_arms_match_registry;
           Alcotest.test_case
             "every dispatched intrinsic has a sweep kernel"
             `Quick

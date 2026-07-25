@@ -419,122 +419,60 @@ let intr_no_f64 intr =
     (intr ^ ": no native f64 " ^ intr
    ^ " in PTX; compute in float32 or on the CPU")
 
-(** {1 Intrinsic name tables}
+(** {1 Intrinsic dispatch registry}
 
-    The name set OWNED by each per-category intrinsic emitter below. These are
-    the dispatch table consulted by {!emit_intrinsic_native} — not
-    documentation: a name absent from every list is [unsupported], and a name
-    present in two lists is an internal error (the emitters must partition the
-    intrinsic surface, see {!intrinsic_emitter_table}). They also give the ptxas
-    sweep gate a drift-proof enumeration of the whole PTX intrinsic surface
-    (sarek/tests/unit/test_ptx_intrinsic_sweep.ml): an intrinsic added here
-    without an assembling kernel recipe fails that test. *)
+    Every PTX intrinsic is one entry in a per-category handler registry
+    ([index_intrinsic_handlers], [transcendental_intrinsic_handlers], …): the
+    names it answers to, paired with the closure that lowers it. Dispatch
+    ({!emit_intrinsic_native}) looks a name up in those registries, and the
+    exported name tables ({!intrinsic_names} and friends, at the bottom of this
+    file) are computed from the same values by {!names_of_category} — literally
+    [List.filter_map] over these entries, not a second list written out beside
+    them. There is therefore no way to add a handler the tables do not know
+    about, or to declare a name no handler answers: the two are one data
+    structure, not two texts that have to be kept in step.
 
-let index_intrinsic_names =
-  [
-    "thread_id_x";
-    "thread_idx_x";
-    "thread_id_y";
-    "thread_idx_y";
-    "thread_id_z";
-    "thread_idx_z";
-    "block_id_x";
-    "block_idx_x";
-    "block_id_y";
-    "block_idx_y";
-    "block_id_z";
-    "block_idx_z";
-    "block_dim_x";
-    "block_dim_y";
-    "block_dim_z";
-    "grid_dim_x";
-    "grid_dim_y";
-    "grid_dim_z";
-    "global_thread_id";
-    "global_idx";
-    "global_idx_x";
-    "global_idx_y";
-    "global_size";
-    "block_barrier";
-  ]
+    The one property this does NOT give for free is that the registries
+    partition the surface. A name claimed by two handlers is possible to write,
+    and is an internal error raised at dispatch; a name claimed by none is
+    [unsupported].
 
-let transcendental_intrinsic_names =
-  [
-    "sin";
-    "cos";
-    "tan";
-    "sqrt";
-    "exp";
-    "log";
-    "log10";
-    "pow";
-    "sinh";
-    "cosh";
-    "tanh";
-    "asin";
-    "acos";
-    "atan";
-    "atan2";
-    "expm1";
-    "log1p";
-    "rsqrt";
-  ]
+    The tables give the ptxas sweep gate a drift-proof enumeration of the whole
+    PTX intrinsic surface (sarek/tests/unit/test_ptx_intrinsic_sweep.ml): an
+    intrinsic added here without an assembling kernel recipe fails that test. *)
 
-let float_ops_intrinsic_names =
-  [
-    "fabs";
-    "abs_float";
-    "copysign";
-    "fmod";
-    "hypot";
-    "fma";
-    "min";
-    "max";
-    "floor";
-    "ceil";
-  ]
+(** What one registry entry does: emit the PTX for [name] applied to [args] and
+    return the register holding the result. [path] disambiguates
+    module-qualified names ("of_int" is Float32's or Float64's depending on it).
+    [None] means the handler declines the call, which dispatch reports as
+    [unsupported] — a handler owning a name it will not lower is a bug, and the
+    sweep gate generates a kernel per registered name to catch it. *)
+type intrinsic_handler =
+  Buffer.t ->
+  reg_alloc ->
+  env ->
+  string list ->
+  string ->
+  expr list ->
+  string option
 
-let bitcast_intrinsic_names = ["f64_bits"; "bits_f64"]
+(** The per-category registries, in dispatch order. *)
+type intrinsic_category =
+  | Index
+  | Transcendental
+  | Float_ops
+  | Bitcast
+  | Convert
+  | Atomic
 
-let convert_intrinsic_names =
-  [
-    "float";
-    "float_of_int";
-    "float64";
-    "float64_of_int";
-    "int_of_float";
-    "int_of_float64";
-    "of_int";
-    "to_int";
-  ]
-
-let atomic_intrinsic_names =
-  [
-    "atomic_add_int32";
-    "atomic_add_global_int32";
-    "atomic_sub_int32";
-    "atomic_min_int32";
-    "atomic_max_int32";
-    "atomic_and_int32";
-    "atomic_or_int32";
-    "atomic_xor_int32";
-    "atomic_exch_int32";
-    "atomic_exch_int64";
-    "atomic_add_int64";
-    "atomic_add_float32";
-    "atomic_add_float64";
-    "atomic_cas_int32";
-    "atomic_cas_int64";
-    "atomic_inc_int32";
-    "atomic_inc_global_int32";
-    "atomic_dec_int32";
-  ]
-
-(** Every intrinsic name the PTX backend lowers natively, in dispatch order. *)
-let intrinsic_names =
-  index_intrinsic_names @ transcendental_intrinsic_names
-  @ float_ops_intrinsic_names @ bitcast_intrinsic_names
-  @ convert_intrinsic_names @ atomic_intrinsic_names
+(* Flattened registry, built once on first use. The per-category registries are
+   thunks because their handlers close over [emit_expr], so they live inside the
+   recursive chain below and cannot be plain values; this cell is what keeps
+   dispatch from rebuilding ~80 tuples and their closures for every intrinsic
+   node. It is written once and never invalidated — the registry is constant. *)
+let intrinsic_entries_memo :
+    (string * intrinsic_category * intrinsic_handler) list option ref =
+  ref None
 
 (** {1 Expression emitter}
 
@@ -1726,214 +1664,243 @@ and intr_atomic_incdec buf alloc env intr ~global_only ~op args =
 
 (* Thread/block/grid indices, derived global indices, and the block
    barrier. All are pure special-register moves plus arithmetic. *)
-and emit_intrinsic_index buf alloc name : string option =
-  match name with
-  | "thread_id_x" | "thread_idx_x" ->
-      let r = new_u32 alloc in
-      emit buf "mov.u32 %s, %%tid.x;" r ;
-      Some r
-  | "thread_id_y" | "thread_idx_y" ->
-      let r = new_u32 alloc in
-      emit buf "mov.u32 %s, %%tid.y;" r ;
-      Some r
-  | "thread_id_z" | "thread_idx_z" ->
-      let r = new_u32 alloc in
-      emit buf "mov.u32 %s, %%tid.z;" r ;
-      Some r
-  | "block_id_x" | "block_idx_x" ->
-      let r = new_u32 alloc in
-      emit buf "mov.u32 %s, %%ctaid.x;" r ;
-      Some r
-  | "block_id_y" | "block_idx_y" ->
-      let r = new_u32 alloc in
-      emit buf "mov.u32 %s, %%ctaid.y;" r ;
-      Some r
-  | "block_id_z" | "block_idx_z" ->
-      let r = new_u32 alloc in
-      emit buf "mov.u32 %s, %%ctaid.z;" r ;
-      Some r
-  | "block_dim_x" ->
-      let r = new_u32 alloc in
-      emit buf "mov.u32 %s, %%ntid.x;" r ;
-      Some r
-  | "block_dim_y" ->
-      let r = new_u32 alloc in
-      emit buf "mov.u32 %s, %%ntid.y;" r ;
-      Some r
-  | "block_dim_z" ->
-      let r = new_u32 alloc in
-      emit buf "mov.u32 %s, %%ntid.z;" r ;
-      Some r
-  | "grid_dim_x" ->
-      let r = new_u32 alloc in
-      emit buf "mov.u32 %s, %%nctaid.x;" r ;
-      Some r
-  | "grid_dim_y" ->
-      let r = new_u32 alloc in
-      emit buf "mov.u32 %s, %%nctaid.y;" r ;
-      Some r
-  | "grid_dim_z" ->
-      let r = new_u32 alloc in
-      emit buf "mov.u32 %s, %%nctaid.z;" r ;
-      Some r
-  | "global_thread_id" | "global_idx" | "global_idx_x" ->
-      let r_tid = new_u32 alloc in
-      emit buf "mov.u32 %s, %%tid.x;" r_tid ;
-      let r_bid = new_u32 alloc in
-      emit buf "mov.u32 %s, %%ctaid.x;" r_bid ;
-      let r_bdim = new_u32 alloc in
-      emit buf "mov.u32 %s, %%ntid.x;" r_bdim ;
-      let r_off = new_u32 alloc in
-      emit buf "mul.lo.u32 %s, %s, %s;" r_off r_bid r_bdim ;
-      let r_gid = new_u32 alloc in
-      emit buf "add.u32 %s, %s, %s;" r_gid r_tid r_off ;
-      Some r_gid
-  | "global_idx_y" ->
-      let r_tid = new_u32 alloc in
-      emit buf "mov.u32 %s, %%tid.y;" r_tid ;
-      let r_bid = new_u32 alloc in
-      emit buf "mov.u32 %s, %%ctaid.y;" r_bid ;
-      let r_bdim = new_u32 alloc in
-      emit buf "mov.u32 %s, %%ntid.y;" r_bdim ;
-      let r_off = new_u32 alloc in
-      emit buf "mul.lo.u32 %s, %s, %s;" r_off r_bid r_bdim ;
-      let r_gid = new_u32 alloc in
-      emit buf "add.u32 %s, %s, %s;" r_gid r_tid r_off ;
-      Some r_gid
-  | "global_size" ->
-      let r_bdim = new_u32 alloc in
-      emit buf "mov.u32 %s, %%ntid.x;" r_bdim ;
-      let r_gdim = new_u32 alloc in
-      emit buf "mov.u32 %s, %%nctaid.x;" r_gdim ;
-      let r = new_u32 alloc in
-      emit buf "mul.lo.u32 %s, %s, %s;" r r_bdim r_gdim ;
-      Some r
-  | "block_barrier" ->
-      emit buf "bar.sync 0;" ;
-      let r = new_u32 alloc in
-      emit buf "mov.u32 %s, 0;" r ;
-      Some r
-  | _ -> None
+and index_intrinsic_handlers () : (string list * intrinsic_handler) list =
+  [
+    ( ["thread_id_x"; "thread_idx_x"],
+      fun buf alloc _env _path _name _args ->
+        let r = new_u32 alloc in
+        emit buf "mov.u32 %s, %%tid.x;" r ;
+        Some r );
+    ( ["thread_id_y"; "thread_idx_y"],
+      fun buf alloc _env _path _name _args ->
+        let r = new_u32 alloc in
+        emit buf "mov.u32 %s, %%tid.y;" r ;
+        Some r );
+    ( ["thread_id_z"; "thread_idx_z"],
+      fun buf alloc _env _path _name _args ->
+        let r = new_u32 alloc in
+        emit buf "mov.u32 %s, %%tid.z;" r ;
+        Some r );
+    ( ["block_id_x"; "block_idx_x"],
+      fun buf alloc _env _path _name _args ->
+        let r = new_u32 alloc in
+        emit buf "mov.u32 %s, %%ctaid.x;" r ;
+        Some r );
+    ( ["block_id_y"; "block_idx_y"],
+      fun buf alloc _env _path _name _args ->
+        let r = new_u32 alloc in
+        emit buf "mov.u32 %s, %%ctaid.y;" r ;
+        Some r );
+    ( ["block_id_z"; "block_idx_z"],
+      fun buf alloc _env _path _name _args ->
+        let r = new_u32 alloc in
+        emit buf "mov.u32 %s, %%ctaid.z;" r ;
+        Some r );
+    ( ["block_dim_x"],
+      fun buf alloc _env _path _name _args ->
+        let r = new_u32 alloc in
+        emit buf "mov.u32 %s, %%ntid.x;" r ;
+        Some r );
+    ( ["block_dim_y"],
+      fun buf alloc _env _path _name _args ->
+        let r = new_u32 alloc in
+        emit buf "mov.u32 %s, %%ntid.y;" r ;
+        Some r );
+    ( ["block_dim_z"],
+      fun buf alloc _env _path _name _args ->
+        let r = new_u32 alloc in
+        emit buf "mov.u32 %s, %%ntid.z;" r ;
+        Some r );
+    ( ["grid_dim_x"],
+      fun buf alloc _env _path _name _args ->
+        let r = new_u32 alloc in
+        emit buf "mov.u32 %s, %%nctaid.x;" r ;
+        Some r );
+    ( ["grid_dim_y"],
+      fun buf alloc _env _path _name _args ->
+        let r = new_u32 alloc in
+        emit buf "mov.u32 %s, %%nctaid.y;" r ;
+        Some r );
+    ( ["grid_dim_z"],
+      fun buf alloc _env _path _name _args ->
+        let r = new_u32 alloc in
+        emit buf "mov.u32 %s, %%nctaid.z;" r ;
+        Some r );
+    ( ["global_thread_id"; "global_idx"; "global_idx_x"],
+      fun buf alloc _env _path _name _args ->
+        let r_tid = new_u32 alloc in
+        emit buf "mov.u32 %s, %%tid.x;" r_tid ;
+        let r_bid = new_u32 alloc in
+        emit buf "mov.u32 %s, %%ctaid.x;" r_bid ;
+        let r_bdim = new_u32 alloc in
+        emit buf "mov.u32 %s, %%ntid.x;" r_bdim ;
+        let r_off = new_u32 alloc in
+        emit buf "mul.lo.u32 %s, %s, %s;" r_off r_bid r_bdim ;
+        let r_gid = new_u32 alloc in
+        emit buf "add.u32 %s, %s, %s;" r_gid r_tid r_off ;
+        Some r_gid );
+    ( ["global_idx_y"],
+      fun buf alloc _env _path _name _args ->
+        let r_tid = new_u32 alloc in
+        emit buf "mov.u32 %s, %%tid.y;" r_tid ;
+        let r_bid = new_u32 alloc in
+        emit buf "mov.u32 %s, %%ctaid.y;" r_bid ;
+        let r_bdim = new_u32 alloc in
+        emit buf "mov.u32 %s, %%ntid.y;" r_bdim ;
+        let r_off = new_u32 alloc in
+        emit buf "mul.lo.u32 %s, %s, %s;" r_off r_bid r_bdim ;
+        let r_gid = new_u32 alloc in
+        emit buf "add.u32 %s, %s, %s;" r_gid r_tid r_off ;
+        Some r_gid );
+    ( ["global_size"],
+      fun buf alloc _env _path _name _args ->
+        let r_bdim = new_u32 alloc in
+        emit buf "mov.u32 %s, %%ntid.x;" r_bdim ;
+        let r_gdim = new_u32 alloc in
+        emit buf "mov.u32 %s, %%nctaid.x;" r_gdim ;
+        let r = new_u32 alloc in
+        emit buf "mul.lo.u32 %s, %s, %s;" r r_bdim r_gdim ;
+        Some r );
+    ( ["block_barrier"],
+      fun buf alloc _env _path _name _args ->
+        emit buf "bar.sync 0;" ;
+        let r = new_u32 alloc in
+        emit buf "mov.u32 %s, 0;" r ;
+        Some r );
+  ]
 
 (* Transcendental and trigonometric functions. Most are f32-only .approx
    compositions; the arc/expm1/log1p family widens to the f64 softmath
    helper and rounds back. *)
-and emit_intrinsic_transcendental buf alloc env name args : string option =
-  match name with
-  | "sin" ->
-      Some
-        (intr_f32_op1
-           buf
-           alloc
-           "sin.approx.f32"
-           (intr_unary_f32_arg buf alloc env "sin" args))
-  | "cos" ->
-      Some
-        (intr_f32_op1
-           buf
-           alloc
-           "cos.approx.f32"
-           (intr_unary_f32_arg buf alloc env "cos" args))
-  | "tan" ->
-      (* tan = sin/cos, all .approx: f32 precision only. *)
-      let r_arg = intr_unary_f32_arg buf alloc env "tan" args in
-      let r_sin = intr_f32_op1 buf alloc "sin.approx.f32" r_arg in
-      let r_cos = intr_f32_op1 buf alloc "cos.approx.f32" r_arg in
-      Some (intr_f32_op2 buf alloc "div.approx.f32" r_sin r_cos)
-  | "sqrt" ->
-      Some
-        (intr_unary_native
-           buf
-           alloc
-           env
-           "sqrt"
-           ~f32_op:(Some "sqrt.approx.f32")
-           ~f64_op:(Some "sqrt.rn.f64")
-           args)
-  | "exp" ->
-      (* exp(x) = 2^(x·log2 e); PTX only has base-2 ex2 (.approx, f32). *)
-      let r_arg = intr_unary_f32_arg buf alloc env "exp" args in
-      Some
-        (intr_f32_op1
-           buf
-           alloc
-           "ex2.approx.f32"
-           (intr_f32_mul_const buf alloc r_arg f32_log2_e_bits))
-  | "log" ->
-      (* log(x) = log2(x)·ln 2; PTX only has base-2 lg2 (.approx, f32). *)
-      let r_arg = intr_unary_f32_arg buf alloc env "log" args in
-      Some
-        (intr_f32_mul_const
-           buf
-           alloc
-           (intr_f32_op1 buf alloc "lg2.approx.f32" r_arg)
-           f32_ln_2_bits)
-  | "log10" ->
-      (* log10(x) = log2(x)·log10 2; .approx, f32 precision only. *)
-      let r_arg = intr_unary_f32_arg buf alloc env "log10" args in
-      Some
-        (intr_f32_mul_const
-           buf
-           alloc
-           (intr_f32_op1 buf alloc "lg2.approx.f32" r_arg)
-           f32_log10_2_bits)
-  | "pow" ->
-      (* pow(x,y) = 2^(y·log2 x) via lg2/ex2 (.approx, f32). Domain caveat:
+
+and transcendental_intrinsic_handlers () :
+    (string list * intrinsic_handler) list =
+  [
+    ( ["sin"],
+      fun buf alloc env _path _name args ->
+        Some
+          (intr_f32_op1
+             buf
+             alloc
+             "sin.approx.f32"
+             (intr_unary_f32_arg buf alloc env "sin" args)) );
+    ( ["cos"],
+      fun buf alloc env _path _name args ->
+        Some
+          (intr_f32_op1
+             buf
+             alloc
+             "cos.approx.f32"
+             (intr_unary_f32_arg buf alloc env "cos" args)) );
+    ( ["tan"],
+      fun buf alloc env _path _name args ->
+        (* tan = sin/cos, all .approx: f32 precision only. *)
+        let r_arg = intr_unary_f32_arg buf alloc env "tan" args in
+        let r_sin = intr_f32_op1 buf alloc "sin.approx.f32" r_arg in
+        let r_cos = intr_f32_op1 buf alloc "cos.approx.f32" r_arg in
+        Some (intr_f32_op2 buf alloc "div.approx.f32" r_sin r_cos) );
+    ( ["sqrt"],
+      fun buf alloc env _path _name args ->
+        Some
+          (intr_unary_native
+             buf
+             alloc
+             env
+             "sqrt"
+             ~f32_op:(Some "sqrt.approx.f32")
+             ~f64_op:(Some "sqrt.rn.f64")
+             args) );
+    ( ["exp"],
+      fun buf alloc env _path _name args ->
+        (* exp(x) = 2^(x·log2 e); PTX only has base-2 ex2 (.approx, f32). *)
+        let r_arg = intr_unary_f32_arg buf alloc env "exp" args in
+        Some
+          (intr_f32_op1
+             buf
+             alloc
+             "ex2.approx.f32"
+             (intr_f32_mul_const buf alloc r_arg f32_log2_e_bits)) );
+    ( ["log"],
+      fun buf alloc env _path _name args ->
+        (* log(x) = log2(x)·ln 2; PTX only has base-2 lg2 (.approx, f32). *)
+        let r_arg = intr_unary_f32_arg buf alloc env "log" args in
+        Some
+          (intr_f32_mul_const
+             buf
+             alloc
+             (intr_f32_op1 buf alloc "lg2.approx.f32" r_arg)
+             f32_ln_2_bits) );
+    ( ["log10"],
+      fun buf alloc env _path _name args ->
+        (* log10(x) = log2(x)·log10 2; .approx, f32 precision only. *)
+        let r_arg = intr_unary_f32_arg buf alloc env "log10" args in
+        Some
+          (intr_f32_mul_const
+             buf
+             alloc
+             (intr_f32_op1 buf alloc "lg2.approx.f32" r_arg)
+             f32_log10_2_bits) );
+    ( ["pow"],
+      fun buf alloc env _path _name args ->
+        (* pow(x,y) = 2^(y·log2 x) via lg2/ex2 (.approx, f32). Domain caveat:
          valid for x > 0 only — lg2 of a negative is NaN, so integer-exponent
          negative bases are not handled. *)
-      let ra, rb = intr_binary_f32_args buf alloc env "pow" args in
-      let r_lg = intr_f32_op1 buf alloc "lg2.approx.f32" ra in
-      Some
-        (intr_f32_op1
-           buf
-           alloc
-           "ex2.approx.f32"
-           (intr_f32_op2 buf alloc "mul.f32" rb r_lg))
-  | "sinh" | "cosh" ->
-      (* sinh/cosh x = (e^x ∓ e^-x)/2 via ex2(±x·log2 e); .approx, f32. *)
-      let r_arg = intr_unary_f32_arg buf alloc env name args in
-      let r_t = intr_f32_mul_const buf alloc r_arg f32_log2_e_bits in
-      let r_pos = intr_f32_op1 buf alloc "ex2.approx.f32" r_t in
-      let r_neg =
-        intr_f32_op1
-          buf
-          alloc
-          "ex2.approx.f32"
-          (intr_f32_op1 buf alloc "neg.f32" r_t)
-      in
-      let comb = if name = "sinh" then "sub.f32" else "add.f32" in
-      Some
-        (intr_f32_mul_const
-           buf
-           alloc
-           (intr_f32_op2 buf alloc comb r_pos r_neg)
-           f32_half_bits)
-  | "tanh" ->
-      (* tanh x = copysign(1 − 2/(e^(2|x|) + 1), x) via ex2(2|x|·log2 e).
+        let ra, rb = intr_binary_f32_args buf alloc env "pow" args in
+        let r_lg = intr_f32_op1 buf alloc "lg2.approx.f32" ra in
+        Some
+          (intr_f32_op1
+             buf
+             alloc
+             "ex2.approx.f32"
+             (intr_f32_op2 buf alloc "mul.f32" rb r_lg)) );
+    ( ["sinh"; "cosh"],
+      fun buf alloc env _path name args ->
+        (* sinh/cosh x = (e^x ∓ e^-x)/2 via ex2(±x·log2 e); .approx, f32. *)
+        let r_arg = intr_unary_f32_arg buf alloc env name args in
+        let r_t = intr_f32_mul_const buf alloc r_arg f32_log2_e_bits in
+        let r_pos = intr_f32_op1 buf alloc "ex2.approx.f32" r_t in
+        let r_neg =
+          intr_f32_op1
+            buf
+            alloc
+            "ex2.approx.f32"
+            (intr_f32_op1 buf alloc "neg.f32" r_t)
+        in
+        let comb = if name = "sinh" then "sub.f32" else "add.f32" in
+        Some
+          (intr_f32_mul_const
+             buf
+             alloc
+             (intr_f32_op2 buf alloc comb r_pos r_neg)
+             f32_half_bits) );
+    ( ["tanh"],
+      fun buf alloc env _path _name args ->
+        (* tanh x = copysign(1 − 2/(e^(2|x|) + 1), x) via ex2(2|x|·log2 e).
          Using |x| keeps the exponential finite-or-+inf only: at overflow
          e^(2|x|) = +inf, 2/(inf+1) = 0 and the result saturates to ±1
          instead of the NaN the naive (e^2x−1)/(e^2x+1) form produces. *)
-      let r_arg = intr_unary_f32_arg buf alloc env "tanh" args in
-      let r_abs = intr_f32_op1 buf alloc "abs.f32" r_arg in
-      let r_e2x =
-        intr_f32_op1
-          buf
-          alloc
-          "ex2.approx.f32"
-          (intr_f32_mul_const buf alloc r_abs f32_two_log2_e_bits)
-      in
-      let r_den = new_f32 alloc in
-      emit buf "add.f32 %s, %s, 0F%08lX;" r_den r_e2x f32_one_bits ;
-      let r_two = new_f32 alloc in
-      emit buf "mov.f32 %s, 0F%08lX;" r_two (Int32.bits_of_float 2.0) ;
-      let r_frac = intr_f32_op2 buf alloc "div.approx.f32" r_two r_den in
-      let r_mag = new_f32 alloc in
-      emit buf "sub.f32 %s, 0F%08lX, %s;" r_mag f32_one_bits r_frac ;
-      let r = new_f32 alloc in
-      emit buf "copysign.f32 %s, %s, %s;" r r_arg r_mag ;
-      Some r
-  | "asin" | "acos" | "atan" | "atan2" | "expm1" | "log1p" -> (
-      (* f32 path: no native PTX instruction and no accurate ex2/lg2
+        let r_arg = intr_unary_f32_arg buf alloc env "tanh" args in
+        let r_abs = intr_f32_op1 buf alloc "abs.f32" r_arg in
+        let r_e2x =
+          intr_f32_op1
+            buf
+            alloc
+            "ex2.approx.f32"
+            (intr_f32_mul_const buf alloc r_abs f32_two_log2_e_bits)
+        in
+        let r_den = new_f32 alloc in
+        emit buf "add.f32 %s, %s, 0F%08lX;" r_den r_e2x f32_one_bits ;
+        let r_two = new_f32 alloc in
+        emit buf "mov.f32 %s, 0F%08lX;" r_two (Int32.bits_of_float 2.0) ;
+        let r_frac = intr_f32_op2 buf alloc "div.approx.f32" r_two r_den in
+        let r_mag = new_f32 alloc in
+        emit buf "sub.f32 %s, 0F%08lX, %s;" r_mag f32_one_bits r_frac ;
+        let r = new_f32 alloc in
+        emit buf "copysign.f32 %s, %s, %s;" r r_arg r_mag ;
+        Some r );
+    ( ["asin"; "acos"; "atan"; "atan2"; "expm1"; "log1p"],
+      fun buf alloc env _path name args ->
+        (* f32 path: no native PTX instruction and no accurate ex2/lg2
          composition (and for expm1/log1p an exp/log composition would lose
          the near-zero precision they exist for). Widen to f64
          (cvt.f64.f32 — exact, hence no rounding modifier), run the softmath f64
@@ -1943,445 +1910,503 @@ and emit_intrinsic_transcendental buf alloc env name args : string option =
          GPUs); acceptable for these rare functions — a native-f32
          composition can come later if profiling demands. f64 callers reach
          the softmath helper directly via the ["Float64"] path. *)
-      let hname =
-        match Sarek_ir_softmath.helper_name name with
-        | Some h -> h
-        | None ->
-            fail ("PTX codegen: internal error: no softmath helper for " ^ name)
-      in
-      Sarek_ir_softmath.register alloc.funcs ;
-      let f =
-        {
-          var_name = hname;
-          var_id = -1;
-          var_type = TFloat64;
-          var_mutable = false;
-        }
-      in
-      let args64 = List.map (fun a -> ECast (TFloat64, a)) args in
-      match emit_app buf alloc env f args64 with
-      | Scalar r -> Some (emit_cast buf alloc r TFloat32)
-      | Agg _ ->
-          fail
-            "PTX codegen: internal error: softmath helper returned an aggregate"
-      )
-  | "rsqrt" ->
-      (* f64: rcp.rn∘sqrt.rn — rsqrt.approx.f64 exists but is low-precision
+        let hname =
+          match Sarek_ir_softmath.helper_name name with
+          | Some h -> h
+          | None ->
+              fail
+                ("PTX codegen: internal error: no softmath helper for " ^ name)
+        in
+        Sarek_ir_softmath.register alloc.funcs ;
+        let f =
+          {
+            var_name = hname;
+            var_id = -1;
+            var_type = TFloat64;
+            var_mutable = false;
+          }
+        in
+        let args64 = List.map (fun a -> ECast (TFloat64, a)) args in
+        match emit_app buf alloc env f args64 with
+        | Scalar r -> Some (emit_cast buf alloc r TFloat32)
+        | Agg _ ->
+            fail
+              "PTX codegen: internal error: softmath helper returned an \
+               aggregate" );
+    ( ["rsqrt"],
+      fun buf alloc env _path _name args ->
+        (* f64: rcp.rn∘sqrt.rn — rsqrt.approx.f64 exists but is low-precision
          (~1e-4); the two correctly-rounded ops give ~1-ulp-per-op accuracy.
          f32 keeps the fast rsqrt.approx.f32. *)
-      let r = intr_unary_arg buf alloc env "rsqrt" args in
-      if is_f64_reg r then (
-        let r_sqrt = new_f64 alloc in
-        emit buf "sqrt.rn.f64 %s, %s;" r_sqrt r ;
-        let d = new_f64 alloc in
-        emit buf "rcp.rn.f64 %s, %s;" d r_sqrt ;
-        Some d)
-      else if is_f32_reg r then (
-        let d = new_f32 alloc in
-        emit buf "rsqrt.approx.f32 %s, %s;" d r ;
-        Some d)
-      else unsupported "rsqrt: float operand required"
-  | _ -> None
+        let r = intr_unary_arg buf alloc env "rsqrt" args in
+        if is_f64_reg r then (
+          let r_sqrt = new_f64 alloc in
+          emit buf "sqrt.rn.f64 %s, %s;" r_sqrt r ;
+          let d = new_f64 alloc in
+          emit buf "rcp.rn.f64 %s, %s;" d r_sqrt ;
+          Some d)
+        else if is_f32_reg r then (
+          let d = new_f32 alloc in
+          emit buf "rsqrt.approx.f32 %s, %s;" d r ;
+          Some d)
+        else unsupported "rsqrt: float operand required" );
+  ]
 
 (* Elementary float operations with direct (or short) native lowerings:
    abs, copysign, fmod, hypot, fma, min/max, floor/ceil. *)
-and emit_intrinsic_float_ops buf alloc env name args : string option =
-  match name with
-  | "fabs" | "abs_float" ->
-      Some
-        (intr_unary_native
-           buf
-           alloc
-           env
-           name
-           ~f32_op:(Some "abs.f32")
-           ~f64_op:(Some "abs.f64")
-           args)
-  | "copysign" ->
-      (* PTX: copysign d, a, b = |b| with a's sign. OCaml copysign x y = |x|
+
+and float_ops_intrinsic_handlers () : (string list * intrinsic_handler) list =
+  [
+    ( ["fabs"; "abs_float"],
+      fun buf alloc env _path name args ->
+        Some
+          (intr_unary_native
+             buf
+             alloc
+             env
+             name
+             ~f32_op:(Some "abs.f32")
+             ~f64_op:(Some "abs.f64")
+             args) );
+    ( ["copysign"],
+      fun buf alloc env _path _name args ->
+        (* PTX: copysign d, a, b = |b| with a's sign. OCaml copysign x y = |x|
          with y's sign — the sign source (second Sarek argument) therefore
          goes in the FIRST PTX operand slot. *)
-      let ra, rb = intr_binary_args buf alloc env "copysign" args in
-      if is_f64_reg ra && is_f64_reg rb then (
-        let d = new_f64 alloc in
-        emit buf "copysign.f64 %s, %s, %s;" d rb ra ;
-        Some d)
-      else if is_f32_reg ra && is_f32_reg rb then (
-        let d = new_f32 alloc in
-        emit buf "copysign.f32 %s, %s, %s;" d rb ra ;
-        Some d)
-      else
-        unsupported
-          ("copysign: operands " ^ ra ^ ", " ^ rb
-         ^ " must both be f32 or both f64; cast one operand first")
-  | "fmod" ->
-      (* C fmod (Float32.fmod / Float64.fmod): exact iterative reduction shared
+        let ra, rb = intr_binary_args buf alloc env "copysign" args in
+        if is_f64_reg ra && is_f64_reg rb then (
+          let d = new_f64 alloc in
+          emit buf "copysign.f64 %s, %s, %s;" d rb ra ;
+          Some d)
+        else if is_f32_reg ra && is_f32_reg rb then (
+          let d = new_f32 alloc in
+          emit buf "copysign.f32 %s, %s, %s;" d rb ra ;
+          Some d)
+        else
+          unsupported
+            ("copysign: operands " ^ ra ^ ", " ^ rb
+           ^ " must both be f32 or both f64; cast one operand first") );
+    ( ["fmod"],
+      fun buf alloc env _path _name args ->
+        (* C fmod (Float32.fmod / Float64.fmod): exact iterative reduction shared
          with the float [Mod] binop lowering (see emit_float_fmod). Both operands
          must share a width — a mixed-width op would be invalid PTX. *)
-      let ra, rb = intr_binary_args buf alloc env "fmod" args in
-      if is_f64_reg ra && is_f64_reg rb then
-        Some (emit_float_fmod buf alloc ~is64:true ra rb)
-      else if is_f32_reg ra && is_f32_reg rb then
-        Some (emit_float_fmod buf alloc ~is64:false ra rb)
-      else
-        unsupported
-          ("fmod: operands " ^ ra ^ ", " ^ rb
-         ^ " must both be f32 or both f64; cast one operand first")
-  | "hypot" ->
-      (* hypot = sqrt(x² + y²) via mul + fma + sqrt. No overflow/underflow
+        let ra, rb = intr_binary_args buf alloc env "fmod" args in
+        if is_f64_reg ra && is_f64_reg rb then
+          Some (emit_float_fmod buf alloc ~is64:true ra rb)
+        else if is_f32_reg ra && is_f32_reg rb then
+          Some (emit_float_fmod buf alloc ~is64:false ra rb)
+        else
+          unsupported
+            ("fmod: operands " ^ ra ^ ", " ^ rb
+           ^ " must both be f32 or both f64; cast one operand first") );
+    ( ["hypot"],
+      fun buf alloc env _path _name args ->
+        (* hypot = sqrt(x² + y²) via mul + fma + sqrt. No overflow/underflow
          rescaling: exact enough for moderate magnitudes (f64 uses only
          correctly-rounded ops), wrong near FLT/DBL_MAX. *)
-      let ra, rb = intr_binary_args buf alloc env "hypot" args in
-      if is_f64_reg ra && is_f64_reg rb then (
-        let r_xx = new_f64 alloc in
-        emit buf "mul.f64 %s, %s, %s;" r_xx ra ra ;
-        let r_sum = new_f64 alloc in
-        emit buf "fma.rn.f64 %s, %s, %s, %s;" r_sum rb rb r_xx ;
-        let d = new_f64 alloc in
-        emit buf "sqrt.rn.f64 %s, %s;" d r_sum ;
-        Some d)
-      else if is_f32_reg ra && is_f32_reg rb then (
-        let r_xx = intr_f32_op2 buf alloc "mul.f32" ra ra in
-        let r_sum = new_f32 alloc in
-        emit buf "fma.rn.f32 %s, %s, %s, %s;" r_sum rb rb r_xx ;
-        Some (intr_f32_op1 buf alloc "sqrt.rn.f32" r_sum))
-      else
-        unsupported
-          ("hypot: operands " ^ ra ^ ", " ^ rb
-         ^ " must both be f32 or both f64; cast one operand first")
-  | "fma" -> (
-      match args with
-      | [a; b; c] ->
-          let ra = emit_expr buf alloc env a in
-          let rb = emit_expr buf alloc env b in
-          let rc = emit_expr buf alloc env c in
-          if is_f64_reg ra && is_f64_reg rb && is_f64_reg rc then (
-            let r = new_f64 alloc in
-            emit buf "fma.rn.f64 %s, %s, %s, %s;" r ra rb rc ;
-            Some r)
-          else if is_f32_reg ra && is_f32_reg rb && is_f32_reg rc then (
-            let r = new_f32 alloc in
-            emit buf "fma.rn.f32 %s, %s, %s, %s;" r ra rb rc ;
-            Some r)
-          else
-            unsupported
-              ("fma: operands " ^ ra ^ ", " ^ rb ^ ", " ^ rc
-             ^ " must all be f32 or all f64; cast the mismatched operand")
-      | _ -> unsupported "fma arity != 3")
-  | "min" -> Some (intr_binary_minmax buf alloc env name "min" args)
-  | "max" -> Some (intr_binary_minmax buf alloc env name "max" args)
-  | "floor" -> Some (intr_unary_round buf alloc env name "cvt.rmi" args)
-  | "ceil" -> Some (intr_unary_round buf alloc env name "cvt.rpi" args)
-  | _ -> None
+        let ra, rb = intr_binary_args buf alloc env "hypot" args in
+        if is_f64_reg ra && is_f64_reg rb then (
+          let r_xx = new_f64 alloc in
+          emit buf "mul.f64 %s, %s, %s;" r_xx ra ra ;
+          let r_sum = new_f64 alloc in
+          emit buf "fma.rn.f64 %s, %s, %s, %s;" r_sum rb rb r_xx ;
+          let d = new_f64 alloc in
+          emit buf "sqrt.rn.f64 %s, %s;" d r_sum ;
+          Some d)
+        else if is_f32_reg ra && is_f32_reg rb then (
+          let r_xx = intr_f32_op2 buf alloc "mul.f32" ra ra in
+          let r_sum = new_f32 alloc in
+          emit buf "fma.rn.f32 %s, %s, %s, %s;" r_sum rb rb r_xx ;
+          Some (intr_f32_op1 buf alloc "sqrt.rn.f32" r_sum))
+        else
+          unsupported
+            ("hypot: operands " ^ ra ^ ", " ^ rb
+           ^ " must both be f32 or both f64; cast one operand first") );
+    ( ["fma"],
+      fun buf alloc env _path _name args ->
+        match args with
+        | [a; b; c] ->
+            let ra = emit_expr buf alloc env a in
+            let rb = emit_expr buf alloc env b in
+            let rc = emit_expr buf alloc env c in
+            if is_f64_reg ra && is_f64_reg rb && is_f64_reg rc then (
+              let r = new_f64 alloc in
+              emit buf "fma.rn.f64 %s, %s, %s, %s;" r ra rb rc ;
+              Some r)
+            else if is_f32_reg ra && is_f32_reg rb && is_f32_reg rc then (
+              let r = new_f32 alloc in
+              emit buf "fma.rn.f32 %s, %s, %s, %s;" r ra rb rc ;
+              Some r)
+            else
+              unsupported
+                ("fma: operands " ^ ra ^ ", " ^ rb ^ ", " ^ rc
+               ^ " must all be f32 or all f64; cast the mismatched operand")
+        | _ -> unsupported "fma arity != 3" );
+    ( ["min"],
+      fun buf alloc env _path name args ->
+        Some (intr_binary_minmax buf alloc env name "min" args) );
+    ( ["max"],
+      fun buf alloc env _path name args ->
+        Some (intr_binary_minmax buf alloc env name "max" args) );
+    ( ["floor"],
+      fun buf alloc env _path name args ->
+        Some (intr_unary_round buf alloc env name "cvt.rmi" args) );
+    ( ["ceil"],
+      fun buf alloc env _path name args ->
+        Some (intr_unary_round buf alloc env name "cvt.rpi" args) );
+  ]
 
 (* Bitcasts between f64 and int64 (mov.b64) — the exponent-field plumbing
    the softmath f64 transcendentals are built on. *)
-and emit_intrinsic_bitcast buf alloc env name args : string option =
-  match name with
-  | "f64_bits" ->
-      let r = intr_unary_arg buf alloc env "f64_bits" args in
-      if is_f64_reg r then (
-        let d = new_u64 alloc in
-        emit buf "mov.b64 %s, %s;" d r ;
-        Some d)
-      else unsupported "f64_bits: f64 operand required"
-  | "bits_f64" ->
-      let r = intr_unary_arg buf alloc env "bits_f64" args in
-      if String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' then (
-        let d = new_f64 alloc in
-        emit buf "mov.b64 %s, %s;" d r ;
-        Some d)
-      else unsupported "bits_f64: int64 operand required"
-  | _ -> None
+
+and bitcast_intrinsic_handlers () : (string list * intrinsic_handler) list =
+  [
+    ( ["f64_bits"],
+      fun buf alloc env _path _name args ->
+        let r = intr_unary_arg buf alloc env "f64_bits" args in
+        if is_f64_reg r then (
+          let d = new_u64 alloc in
+          emit buf "mov.b64 %s, %s;" d r ;
+          Some d)
+        else unsupported "f64_bits: f64 operand required" );
+    ( ["bits_f64"],
+      fun buf alloc env _path _name args ->
+        let r = intr_unary_arg buf alloc env "bits_f64" args in
+        if String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' then (
+          let d = new_f64 alloc in
+          emit buf "mov.b64 %s, %s;" d r ;
+          Some d)
+        else unsupported "bits_f64: int64 operand required" );
+  ]
 
 (* Type conversions (Gpu.float / Float32.of_int / …). "of_int"/"to_int"
    are path-dependent: they exist in both the Float32 and Float64 stdlib
    modules. *)
-and emit_intrinsic_convert buf alloc env path name args : string option =
-  match name with
-  | "float" | "float_of_int" ->
-      Some (intr_unary_cast buf alloc env name TFloat32 args)
-  | "float64" | "float64_of_int" ->
-      Some (intr_unary_cast buf alloc env name TFloat64 args)
-  | "int_of_float" | "int_of_float64" ->
-      Some (intr_unary_cast buf alloc env name TInt32 args)
-  | "of_int" ->
-      if List.exists (fun p -> p = "Float64") path then
-        Some (intr_unary_cast buf alloc env name TFloat64 args)
-      else Some (intr_unary_cast buf alloc env name TFloat32 args)
-  | "to_int" -> Some (intr_unary_cast buf alloc env name TInt32 args)
-  | _ -> None
+
+and convert_intrinsic_handlers () : (string list * intrinsic_handler) list =
+  [
+    ( ["float"; "float_of_int"],
+      fun buf alloc env _path name args ->
+        Some (intr_unary_cast buf alloc env name TFloat32 args) );
+    ( ["float64"; "float64_of_int"],
+      fun buf alloc env _path name args ->
+        Some (intr_unary_cast buf alloc env name TFloat64 args) );
+    ( ["int_of_float"; "int_of_float64"],
+      fun buf alloc env _path name args ->
+        Some (intr_unary_cast buf alloc env name TInt32 args) );
+    ( ["of_int"],
+      fun buf alloc env path name args ->
+        if List.exists (fun p -> p = "Float64") path then
+          Some (intr_unary_cast buf alloc env name TFloat64 args)
+        else Some (intr_unary_cast buf alloc env name TFloat32 args) );
+    ( ["to_int"],
+      fun buf alloc env _path name args ->
+        Some (intr_unary_cast buf alloc env name TInt32 args) );
+  ]
 
 (* Atomics (old value returned). Shared vs global is auto-detected from the
    array's memory space; the *_global_* names force the global path. *)
-and emit_intrinsic_atomic buf alloc env name args : string option =
-  match name with
-  | "atomic_add_int32" ->
-      Some
-        (intr_atomic_rmw
-           buf
-           alloc
-           env
-           name
-           ~global_only:false
-           ~elt_shift:2
-           ~op:"add"
-           ~ty:".s32"
-           ~result:`U32
-           args)
-  | "atomic_add_global_int32" ->
-      Some
-        (intr_atomic_rmw
-           buf
-           alloc
-           env
-           name
-           ~global_only:true
-           ~elt_shift:2
-           ~op:"add"
-           ~ty:".s32"
-           ~result:`U32
-           args)
-  | "atomic_sub_int32" ->
-      Some
-        (intr_atomic_rmw
-           buf
-           alloc
-           env
-           name
-           ~global_only:false
-           ~elt_shift:2
-           ~op:"sub"
-           ~ty:".s32"
-           ~result:`U32
-           args)
-  | "atomic_min_int32" ->
-      Some
-        (intr_atomic_rmw
-           buf
-           alloc
-           env
-           name
-           ~global_only:false
-           ~elt_shift:2
-           ~op:"min"
-           ~ty:".s32"
-           ~result:`U32
-           args)
-  | "atomic_max_int32" ->
-      Some
-        (intr_atomic_rmw
-           buf
-           alloc
-           env
-           name
-           ~global_only:false
-           ~elt_shift:2
-           ~op:"max"
-           ~ty:".s32"
-           ~result:`U32
-           args)
-  | "atomic_and_int32" ->
-      Some
-        (intr_atomic_rmw
-           buf
-           alloc
-           env
-           name
-           ~global_only:false
-           ~elt_shift:2
-           ~op:"and"
-           ~ty:".b32"
-           ~result:`U32
-           args)
-  | "atomic_or_int32" ->
-      Some
-        (intr_atomic_rmw
-           buf
-           alloc
-           env
-           name
-           ~global_only:false
-           ~elt_shift:2
-           ~op:"or"
-           ~ty:".b32"
-           ~result:`U32
-           args)
-  | "atomic_xor_int32" ->
-      Some
-        (intr_atomic_rmw
-           buf
-           alloc
-           env
-           name
-           ~global_only:false
-           ~elt_shift:2
-           ~op:"xor"
-           ~ty:".b32"
-           ~result:`U32
-           args)
-  | "atomic_exch_int32" ->
-      Some
-        (intr_atomic_rmw
-           buf
-           alloc
-           env
-           name
-           ~global_only:false
-           ~elt_shift:2
-           ~op:"exch"
-           ~ty:".b32"
-           ~result:`U32
-           args)
-  (* exch generalized to 64-bit elements. No stdlib/ppx int64-exch name
-     exists yet; the emitter accepts the conventional name ahead of it
-     (snapshot-only coverage). *)
-  | "atomic_exch_int64" ->
-      Some
-        (intr_atomic_rmw
-           buf
-           alloc
-           env
-           name
-           ~global_only:false
-           ~elt_shift:3
-           ~op:"exch"
-           ~ty:".b64"
-           ~result:`U64
-           args)
-  (* atom.add.u64: PTX add has no .s64 form; u64 add is two's-complement,
-     identical to signed int64 add. *)
-  | "atomic_add_int64" ->
-      Some
-        (intr_atomic_rmw
-           buf
-           alloc
-           env
-           name
-           ~global_only:false
-           ~elt_shift:3
-           ~op:"add"
-           ~ty:".u64"
-           ~result:`U64
-           args)
-  | "atomic_add_float32" ->
-      Some
-        (intr_atomic_rmw
-           buf
-           alloc
-           env
-           name
-           ~global_only:false
-           ~elt_shift:2
-           ~op:"add"
-           ~ty:".f32"
-           ~result:`F32
-           args)
-  (* atom.add.f64 requires sm_60+; the default target is sm_86. ZLUDA
-     support for f64 atomics is unverified — snapshot coverage only. *)
-  | "atomic_add_float64" ->
-      Some
-        (intr_atomic_rmw
-           buf
-           alloc
-           env
-           name
-           ~global_only:false
-           ~elt_shift:3
-           ~op:"add"
-           ~ty:".f64"
-           ~result:`F64
-           args)
-  | "atomic_cas_int32" ->
-      Some
-        (intr_atomic_cas
-           buf
-           alloc
-           env
-           name
-           ~elt_shift:2
-           ~ty:".b32"
-           ~result:`U32
-           args)
-  (* No stdlib/ppx int64-CAS name exists yet; the emitter accepts the
-     conventional name ahead of it (snapshot-only coverage). *)
-  | "atomic_cas_int64" ->
-      Some
-        (intr_atomic_cas
-           buf
-           alloc
-           env
-           name
-           ~elt_shift:3
-           ~ty:".b64"
-           ~result:`U64
-           args)
-  | "atomic_inc_int32" ->
-      Some
-        (intr_atomic_incdec
-           buf
-           alloc
-           env
-           name
-           ~global_only:false
-           ~op:"inc"
-           args)
-  | "atomic_inc_global_int32" ->
-      Some
-        (intr_atomic_incdec buf alloc env name ~global_only:true ~op:"inc" args)
-  | "atomic_dec_int32" ->
-      Some
-        (intr_atomic_incdec
-           buf
-           alloc
-           env
-           name
-           ~global_only:false
-           ~op:"dec"
-           args)
-  | _ -> None
 
-(* Which emitter owns which names. Ownership is by NAME, not by "first emitter
-   that returns [Some]": a name claimed by two emitters would otherwise be
-   silently won by whichever comes first in the list (no warning, no test
-   failure, wrong lowering) — the single [match] this dispatcher replaced would
-   at least have warned about a redundant arm. Here the overlap is an explicit
-   internal error, and test_ptx_intrinsic_sweep.ml asserts the six name sets are
-   pairwise disjoint up front. A thunk because the closures reference the
-   emitters defined in this same [let rec] chain. *)
-and intrinsic_emitter_table () =
+and atomic_intrinsic_handlers () : (string list * intrinsic_handler) list =
   [
-    ( index_intrinsic_names,
-      fun buf alloc _env _path name _args -> emit_intrinsic_index buf alloc name
-    );
-    ( transcendental_intrinsic_names,
+    ( ["atomic_add_int32"],
       fun buf alloc env _path name args ->
-        emit_intrinsic_transcendental buf alloc env name args );
-    ( float_ops_intrinsic_names,
+        Some
+          (intr_atomic_rmw
+             buf
+             alloc
+             env
+             name
+             ~global_only:false
+             ~elt_shift:2
+             ~op:"add"
+             ~ty:".s32"
+             ~result:`U32
+             args) );
+    ( ["atomic_add_global_int32"],
       fun buf alloc env _path name args ->
-        emit_intrinsic_float_ops buf alloc env name args );
-    ( bitcast_intrinsic_names,
+        Some
+          (intr_atomic_rmw
+             buf
+             alloc
+             env
+             name
+             ~global_only:true
+             ~elt_shift:2
+             ~op:"add"
+             ~ty:".s32"
+             ~result:`U32
+             args) );
+    ( ["atomic_sub_int32"],
       fun buf alloc env _path name args ->
-        emit_intrinsic_bitcast buf alloc env name args );
-    ( convert_intrinsic_names,
-      fun buf alloc env path name args ->
-        emit_intrinsic_convert buf alloc env path name args );
-    ( atomic_intrinsic_names,
+        Some
+          (intr_atomic_rmw
+             buf
+             alloc
+             env
+             name
+             ~global_only:false
+             ~elt_shift:2
+             ~op:"sub"
+             ~ty:".s32"
+             ~result:`U32
+             args) );
+    ( ["atomic_min_int32"],
       fun buf alloc env _path name args ->
-        emit_intrinsic_atomic buf alloc env name args );
+        Some
+          (intr_atomic_rmw
+             buf
+             alloc
+             env
+             name
+             ~global_only:false
+             ~elt_shift:2
+             ~op:"min"
+             ~ty:".s32"
+             ~result:`U32
+             args) );
+    ( ["atomic_max_int32"],
+      fun buf alloc env _path name args ->
+        Some
+          (intr_atomic_rmw
+             buf
+             alloc
+             env
+             name
+             ~global_only:false
+             ~elt_shift:2
+             ~op:"max"
+             ~ty:".s32"
+             ~result:`U32
+             args) );
+    ( ["atomic_and_int32"],
+      fun buf alloc env _path name args ->
+        Some
+          (intr_atomic_rmw
+             buf
+             alloc
+             env
+             name
+             ~global_only:false
+             ~elt_shift:2
+             ~op:"and"
+             ~ty:".b32"
+             ~result:`U32
+             args) );
+    ( ["atomic_or_int32"],
+      fun buf alloc env _path name args ->
+        Some
+          (intr_atomic_rmw
+             buf
+             alloc
+             env
+             name
+             ~global_only:false
+             ~elt_shift:2
+             ~op:"or"
+             ~ty:".b32"
+             ~result:`U32
+             args) );
+    ( ["atomic_xor_int32"],
+      fun buf alloc env _path name args ->
+        Some
+          (intr_atomic_rmw
+             buf
+             alloc
+             env
+             name
+             ~global_only:false
+             ~elt_shift:2
+             ~op:"xor"
+             ~ty:".b32"
+             ~result:`U32
+             args) );
+    ( ["atomic_exch_int32"],
+      fun buf alloc env _path name args ->
+        Some
+          (intr_atomic_rmw
+             buf
+             alloc
+             env
+             name
+             ~global_only:false
+             ~elt_shift:2
+             ~op:"exch"
+             ~ty:".b32"
+             ~result:`U32
+             args) );
+    (* exch generalized to 64-bit elements. No stdlib/ppx int64-exch name
+       exists yet; the emitter accepts the conventional name ahead of it
+       (snapshot-only coverage). *)
+    ( ["atomic_exch_int64"],
+      fun buf alloc env _path name args ->
+        Some
+          (intr_atomic_rmw
+             buf
+             alloc
+             env
+             name
+             ~global_only:false
+             ~elt_shift:3
+             ~op:"exch"
+             ~ty:".b64"
+             ~result:`U64
+             args) );
+    (* atom.add.u64: PTX add has no .s64 form; u64 add is two's-complement,
+       identical to signed int64 add. *)
+    ( ["atomic_add_int64"],
+      fun buf alloc env _path name args ->
+        Some
+          (intr_atomic_rmw
+             buf
+             alloc
+             env
+             name
+             ~global_only:false
+             ~elt_shift:3
+             ~op:"add"
+             ~ty:".u64"
+             ~result:`U64
+             args) );
+    ( ["atomic_add_float32"],
+      fun buf alloc env _path name args ->
+        Some
+          (intr_atomic_rmw
+             buf
+             alloc
+             env
+             name
+             ~global_only:false
+             ~elt_shift:2
+             ~op:"add"
+             ~ty:".f32"
+             ~result:`F32
+             args) );
+    (* atom.add.f64 requires sm_60+; the default target is sm_86. ZLUDA
+       support for f64 atomics is unverified — snapshot coverage only. *)
+    ( ["atomic_add_float64"],
+      fun buf alloc env _path name args ->
+        Some
+          (intr_atomic_rmw
+             buf
+             alloc
+             env
+             name
+             ~global_only:false
+             ~elt_shift:3
+             ~op:"add"
+             ~ty:".f64"
+             ~result:`F64
+             args) );
+    ( ["atomic_cas_int32"],
+      fun buf alloc env _path name args ->
+        Some
+          (intr_atomic_cas
+             buf
+             alloc
+             env
+             name
+             ~elt_shift:2
+             ~ty:".b32"
+             ~result:`U32
+             args) );
+    (* No stdlib/ppx int64-CAS name exists yet; the emitter accepts the
+       conventional name ahead of it (snapshot-only coverage). *)
+    ( ["atomic_cas_int64"],
+      fun buf alloc env _path name args ->
+        Some
+          (intr_atomic_cas
+             buf
+             alloc
+             env
+             name
+             ~elt_shift:3
+             ~ty:".b64"
+             ~result:`U64
+             args) );
+    ( ["atomic_inc_int32"],
+      fun buf alloc env _path name args ->
+        Some
+          (intr_atomic_incdec
+             buf
+             alloc
+             env
+             name
+             ~global_only:false
+             ~op:"inc"
+             args) );
+    ( ["atomic_inc_global_int32"],
+      fun buf alloc env _path name args ->
+        Some
+          (intr_atomic_incdec
+             buf
+             alloc
+             env
+             name
+             ~global_only:true
+             ~op:"inc"
+             args) );
+    ( ["atomic_dec_int32"],
+      fun buf alloc env _path name args ->
+        Some
+          (intr_atomic_incdec
+             buf
+             alloc
+             env
+             name
+             ~global_only:false
+             ~op:"dec"
+             args) );
   ]
 
-(* PTX-assembly intrinsic emitter. Looks [name] up in {!intrinsic_emitter_table}
-   and runs its owning per-category emitter; an unowned (or declined) name is
-   [unsupported]. *)
+(* Which handler registry owns which names, in dispatch order. Ownership is by
+   NAME, not by "first emitter that returns [Some]": a name claimed twice would
+   otherwise be silently won by whichever comes first (no warning, no test
+   failure, wrong lowering). Here the overlap is an explicit internal error, and
+   test_ptx_intrinsic_sweep.ml asserts the registries are pairwise disjoint up
+   front. Thunks because the closures reference the emitters defined in this
+   same [let rec] chain. *)
+and intrinsic_emitter_table () :
+    (intrinsic_category * (string list * intrinsic_handler) list) list =
+  [
+    (Index, index_intrinsic_handlers ());
+    (Transcendental, transcendental_intrinsic_handlers ());
+    (Float_ops, float_ops_intrinsic_handlers ());
+    (Bitcast, bitcast_intrinsic_handlers ());
+    (Convert, convert_intrinsic_handlers ());
+    (Atomic, atomic_intrinsic_handlers ());
+  ]
+
+(* Every (name, handler) pair the PTX backend lowers natively, flattened out of
+   {!intrinsic_emitter_table} in dispatch order. Both dispatch below and the
+   exported name tables at the bottom of this file are computed from THIS list —
+   that is what makes "the dispatch arms and the name tables agree" true by
+   construction rather than by a check. Memoized: see {!intrinsic_entries_memo}. *)
+and intrinsic_handler_entries () :
+    (string * intrinsic_category * intrinsic_handler) list =
+  match !intrinsic_entries_memo with
+  | Some entries -> entries
+  | None ->
+      let entries =
+        List.concat_map
+          (fun (cat, handlers) ->
+            List.concat_map
+              (fun (names, h) -> List.map (fun n -> (n, cat, h)) names)
+              handlers)
+          (intrinsic_emitter_table ())
+      in
+      intrinsic_entries_memo := Some entries ;
+      entries
+
+(* PTX-assembly intrinsic emitter. Looks [name] up in the handler registry and
+   runs its owning handler; an unowned (or declined) name is [unsupported]. *)
 and emit_intrinsic_native buf alloc (env : env) path name args : string =
   match
-    List.filter
-      (fun (names, _) -> List.mem name names)
-      (intrinsic_emitter_table ())
+    List.filter (fun (n, _, _) -> n = name) (intrinsic_handler_entries ())
   with
-  | [(_, emitter)] -> (
-      match emitter buf alloc env path name args with
+  | [(_, _, handler)] -> (
+      match handler buf alloc env path name args with
       | Some r -> r
       | None -> unsupported ("intrinsic: " ^ name))
   | [] -> unsupported ("intrinsic: " ^ name)
@@ -2389,3 +2414,47 @@ and emit_intrinsic_native buf alloc (env : env) path name args : string =
       fail
         ("PTX codegen: internal error: intrinsic " ^ name
        ^ " is claimed by more than one emitter")
+
+(** {1 Intrinsic name tables}
+
+    Derived from the handler registry above, not written out beside it. Each
+    table is the names of the handlers in one category, in dispatch order, so
+    the tables cannot disagree with what dispatch does: there is no way to
+    declare a name no handler answers, or to add a handler the tables do not
+    know about. That is a property of the definitions, not of a test — the
+    correspondence has no opportunity to drift, so nothing has to check it.
+
+    These are what the ptxas sweep gate enumerates
+    (sarek/tests/unit/test_ptx_intrinsic_sweep.ml): every registered name gets a
+    generated kernel, so an intrinsic added to a registry without an assembling
+    recipe fails there. *)
+
+let names_of_category cat =
+  List.filter_map
+    (fun (n, c, _) -> if c = cat then Some n else None)
+    (intrinsic_handler_entries ())
+
+let index_intrinsic_names = names_of_category Index
+
+let transcendental_intrinsic_names = names_of_category Transcendental
+
+let float_ops_intrinsic_names = names_of_category Float_ops
+
+let bitcast_intrinsic_names = names_of_category Bitcast
+
+let convert_intrinsic_names = names_of_category Convert
+
+let atomic_intrinsic_names = names_of_category Atomic
+
+(** Every intrinsic name the PTX backend lowers natively, in dispatch order. *)
+let intrinsic_names =
+  index_intrinsic_names @ transcendental_intrinsic_names
+  @ float_ops_intrinsic_names @ bitcast_intrinsic_names
+  @ convert_intrinsic_names @ atomic_intrinsic_names
+
+(** Every intrinsic name the dispatch registry holds a handler for, with the
+    registry that owns it, in dispatch order. Like the tables above, this is the
+    handler values themselves projected — it is the same list, retaining the
+    category. *)
+let intrinsic_registry : (string * intrinsic_category) list =
+  List.map (fun (n, cat, _) -> (n, cat)) (intrinsic_handler_entries ())
