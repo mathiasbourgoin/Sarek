@@ -11,6 +11,27 @@
     "Module.point" -> "Module_point"). Replaces '.' with '_'. *)
 val mangle_name : string -> string
 
+(** Alpha-rename kernel-body binders whose name collides with a backend-reserved
+    identifier, rewriting each colliding binder (and its in-scope references) to
+    a fresh name so it no longer aliases a scalar param exposed by name. Covers
+    [SLet], [SLetMut], [SFor], and [SMatch]/[EMatch] pattern binders; a no-op
+    for collision-free kernels.
+
+    [collides name] reports whether [name] (as written in the IR) is reserved
+    for this backend. [fresh_name orig n] mints the [n]-th shadow name for
+    original binder [orig] ([n] is 1-based, incremented once per colliding
+    binder). The counter is internal and starts at 0 on every call, so a single
+    per-kernel invocation numbers shadows from 1.
+
+    Shared by the GLSL (push-constant / vector-[_len] macros,
+    [sarek_pc_shadow_*]) and WGSL (scalar-param field access,
+    [sarek_scalar_shadow_*]) backends. *)
+val rename_shadowing_locals :
+  collides:(string -> bool) ->
+  fresh_name:(string -> int -> string) ->
+  Sarek_ir_types.stmt ->
+  Sarek_ir_types.stmt
+
 (** Emit a C/MSL tagged-union variant type: an [enum] of constructor tags, a
     [typedef struct] with a [tag] field and a [union] of payloads, and one
     inline constructor function per case.

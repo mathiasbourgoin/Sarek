@@ -998,11 +998,6 @@ let gen_bindings buf params =
 
 (** {1 Scalar-param shadow renaming} *)
 
-(** Counter for fresh scalar-param-shadowing local names (see
-    {!rename_scalar_shadowing_locals}). Reset per kernel in {!generate} /
-    {!generate_with_types} for deterministic output. *)
-let scalar_shadow_counter = ref 0
-
 (** Alpha-rename kernel-body binders whose name collides with a scalar kernel
     param.
 
@@ -1017,137 +1012,27 @@ let scalar_shadow_counter = ref 0
     name ([var width : i32 = params.width;]) so writes hit the local, but every
     read is redirected to the immutable uniform.
 
-    This mirrors the GLSL backend's {!Sarek_ir_glsl.rename_pc_shadowing_locals}:
-    each colliding binder (and its in-scope references) is rewritten to a fresh
-    [sarek_scalar_shadow_*] name that is not a scalar param, so [gen_expr]'s
-    [scalar_param_names] check never matches it and the bare fresh name is
-    emitted for both reads and writes. The initializer is evaluated in the outer
-    scope, so it still expands to [params.<name>], preserving semantics.
-
-    Covered binder forms: [SLet], [SLetMut], [SFor], and match pattern binders
-    (both [SMatch] and [EMatch]). Unlike GLSL there is no vector-length ([_len])
-    collision: WGSL emits vector length as the field access
-    [params.sarek_<arr>_length] ({!EArrayLen}), hardcoded with a [params.]
-    prefix independent of any local, so a local cannot alias it.
-
-    No-op unless a binder genuinely shadows a scalar param, so collision-free
-    kernels (every existing golden) are byte-identical. WGSL-only. *)
+    This mirrors the GLSL backend's {!Sarek_ir_glsl.rename_pc_shadowing_locals};
+    both delegate the shared traversal to
+    {!Sarek_ir_codegen.rename_shadowing_locals}. Each colliding binder (and its
+    in-scope references) is rewritten to a fresh [sarek_scalar_shadow_*] name
+    that is not a scalar param, so [gen_expr]'s [scalar_param_names] check never
+    matches it. The initializer is evaluated in the outer scope, so it still
+    expands to [params.<name>], preserving semantics. Unlike GLSL there is no
+    vector-length ([_len]) collision: WGSL emits vector length as the field
+    access [params.sarek_<arr>_length] ({!EArrayLen}), hardcoded with a
+    [params.] prefix independent of any local, so a local cannot alias it — the
+    collision set is scalar params only. WGSL-only. *)
 let rename_scalar_shadowing_locals ~scalar_names body =
-  let module SM = Map.Make (String) in
-  (* A local collides if its name matches a scalar param — the exact check
-     [gen_expr] performs on [EVar] against [scalar_param_names] (raw names). *)
-  let collides name = List.mem name scalar_names in
-  let ren env name =
-    match SM.find_opt name env with Some n -> n | None -> name
-  in
-  (* Mint a fresh scalar-shadow name for a colliding binder. *)
-  let fresh_name orig =
-    incr scalar_shadow_counter ;
-    Printf.sprintf
-      "sarek_scalar_shadow_%s_%d"
-      (escape_wgsl_name orig)
-      !scalar_shadow_counter
-  in
-  (* Rebind a match pattern's binders: rename each that collides with a scalar
-     param to a fresh name (used both in the destructuring declaration emitted
-     by {!gen_match_pattern} and in case-body references, via [env]) and drop
-     any same-named outer mapping for non-colliding binders (they shadow it). *)
-  let bind_pattern env = function
-    | PWild -> (PWild, env)
-    | PConstr (cname, names) ->
-        let env, names =
-          List.fold_left_map
-            (fun env name ->
-              if collides name then
-                let nn = fresh_name name in
-                (SM.add name nn env, nn)
-              else (SM.remove name env, name))
-            env
-            names
-        in
-        (PConstr (cname, names), env)
-  in
-  let rec re_expr env e =
-    match e with
-    | EConst _ -> e
-    | EVar v -> EVar {v with var_name = ren env v.var_name}
-    | EBinop (op, a, b) -> EBinop (op, re_expr env a, re_expr env b)
-    | EUnop (op, a) -> EUnop (op, re_expr env a)
-    | EArrayRead (arr, i) -> EArrayRead (ren env arr, re_expr env i)
-    | EArrayReadExpr (b, i) -> EArrayReadExpr (re_expr env b, re_expr env i)
-    | ERecordField (e, f) -> ERecordField (re_expr env e, f)
-    | EIntrinsic (ns, n, args) -> EIntrinsic (ns, n, List.map (re_expr env) args)
-    | ECast (t, e) -> ECast (t, re_expr env e)
-    | ETuple es -> ETuple (List.map (re_expr env) es)
-    | EApp (f, args) -> EApp (re_expr env f, List.map (re_expr env) args)
-    | ERecord (n, fs) ->
-        ERecord (n, List.map (fun (k, v) -> (k, re_expr env v)) fs)
-    | EVariant (t, c, args) -> EVariant (t, c, List.map (re_expr env) args)
-    | EArrayLen n -> EArrayLen (ren env n)
-    | EArrayCreate (t, s, m) -> EArrayCreate (t, re_expr env s, m)
-    | EIf (c, t, e) -> EIf (re_expr env c, re_expr env t, re_expr env e)
-    | EMatch (s, cases) ->
-        (* Rebind pattern binders before each case body (mirrors [SMatch]): a
-           binder shadowing a scalar param is renamed and its body refs follow,
-           otherwise an outer mapping would wrongly substitute them. *)
-        EMatch
-          ( re_expr env s,
-            List.map
-              (fun (p, b) ->
-                let p, env = bind_pattern env p in
-                (p, re_expr env b))
-              cases )
-  in
-  let rec re_lvalue env lv =
-    match lv with
-    | LVar v -> LVar {v with var_name = ren env v.var_name}
-    | LArrayElem (arr, i) -> LArrayElem (ren env arr, re_expr env i)
-    | LArrayElemExpr (b, i) -> LArrayElemExpr (re_expr env b, re_expr env i)
-    | LRecordField (lv, f) -> LRecordField (re_lvalue env lv, f)
-  in
-  (* Bind a local: rename it when it collides with a scalar param; otherwise
-     drop any same-named outer mapping (this fresh local shadows it). *)
-  let bind env (v : var) =
-    if collides v.var_name then
-      let nn = fresh_name v.var_name in
-      ({v with var_name = nn}, SM.add v.var_name nn env)
-    else (v, SM.remove v.var_name env)
-  in
-  let rec re_stmt env s =
-    match s with
-    | SAssign (lv, e) -> SAssign (re_lvalue env lv, re_expr env e)
-    | SSeq ss -> SSeq (List.map (re_stmt env) ss)
-    | SIf (c, t, eo) ->
-        SIf (re_expr env c, re_stmt env t, Option.map (re_stmt env) eo)
-    | SWhile (c, b) -> SWhile (re_expr env c, re_stmt env b)
-    | SFor (v, lo, hi, dir, b) ->
-        let lo = re_expr env lo and hi = re_expr env hi in
-        let v', env' = bind env v in
-        SFor (v', lo, hi, dir, re_stmt env' b)
-    | SMatch (e, cases) ->
-        SMatch
-          ( re_expr env e,
-            List.map
-              (fun (p, b) ->
-                let p, env = bind_pattern env p in
-                (p, re_stmt env b))
-              cases )
-    | SReturn e -> SReturn (re_expr env e)
-    | (SBarrier | SWarpBarrier | SMemFence | SEmpty) as s -> s
-    | SExpr e -> SExpr (re_expr env e)
-    | SLet (v, e, body) ->
-        let e = re_expr env e in
-        let v', env' = bind env v in
-        SLet (v', e, re_stmt env' body)
-    | SLetMut (v, e, body) ->
-        let e = re_expr env e in
-        let v', env' = bind env v in
-        SLetMut (v', e, re_stmt env' body)
-    | SPragma (ss, b) -> SPragma (ss, re_stmt env b)
-    | SBlock b -> SBlock (re_stmt env b)
-    | SNative _ as s -> s
-  in
-  re_stmt SM.empty body
+  Sarek_ir_codegen.rename_shadowing_locals
+    ~collides:(fun name ->
+      (* A local collides if its name matches a scalar param — the exact check
+         [gen_expr] performs on [EVar] against [scalar_param_names] (raw
+         names). *)
+      List.mem name scalar_names)
+    ~fresh_name:(fun orig n ->
+      Printf.sprintf "sarek_scalar_shadow_%s_%d" (escape_wgsl_name orig) n)
+    body
 
 (** {1 Main generate functions} *)
 
@@ -1186,7 +1071,6 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
      arguments — see Sarek_ir_inline_vec). *)
   let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"WGSL" k in
   scalar_param_names := [] ;
-  scalar_shadow_counter := 0 ;
   current_variants := k.kern_variants ;
   let buf = Buffer.create 1024 in
   let scalars = gen_bindings buf k.kern_params in
@@ -1219,7 +1103,6 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
      arguments — see Sarek_ir_inline_vec). *)
   let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"WGSL" k in
   scalar_param_names := [] ;
-  scalar_shadow_counter := 0 ;
   current_variants := k.kern_variants ;
   let buf = Buffer.create 1024 in
   List.iter (gen_record_def buf) types ;
