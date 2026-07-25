@@ -121,36 +121,21 @@ let run_complex_math (dev : Device.t) =
     [Test_helpers.classify_cpu_opencl_math_result] (#74 / F1). *)
 let verify_float_arrays name result expected tolerance :
     Test_helpers.float_check_shape =
-  let n = Array.length expected in
-  let errors = ref 0 in
-  let first_bad = ref None in
-  let non_finite = ref false in
-  for i = 0 to n - 1 do
-    let got = result.(i) in
-    if not (Float.is_finite got && Float.is_finite expected.(i)) then
-      non_finite := true ;
-    let diff = abs_float (got -. expected.(i)) in
-    (* The is_nan guard matters: a NaN result makes every comparison false, so
-       without it a NaN buffer would silently pass. *)
-    if Float.is_nan diff || diff > tolerance then begin
-      if !first_bad = None then first_bad := Some i ;
-      if !errors < 5 then
-        Printf.printf
-          "  %s mismatch at %d: expected %.6f, got %.6f (diff=%.6f)\n"
-          name
-          i
-          expected.(i)
-          got
-          diff ;
-      incr errors
-    end
-  done ;
-  {
-    Test_helpers.first_bad_index = !first_bad;
-    bad_count = !errors;
-    total = n;
-    non_finite = !non_finite;
-  }
+  (* The shape computation itself lives in Test_helpers (single source of truth,
+     fixture tested by test_float_check_shape.ml). *)
+  Test_helpers.compute_float_check_shape
+    ~total:(Array.length expected)
+    ~tolerance
+    ~expected:(fun i -> expected.(i))
+    ~got:(fun i -> result.(i))
+    ~report:(fun ~index ~expected ~got ~diff ->
+      Printf.printf
+        "  %s mismatch at %d: expected %.6f, got %.6f (diff=%.6f)\n"
+        name
+        index
+        expected
+        got
+        diff)
 
 let () =
   let c = Test_helpers.parse_args "test_math_intrinsics" in

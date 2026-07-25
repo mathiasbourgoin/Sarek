@@ -399,6 +399,49 @@ type float_check_shape = {
 let float_check_not_verified =
   {first_bad_index = None; bad_count = 0; total = 0; non_finite = false}
 
+(** How many individual mismatches a verifier prints before going quiet. *)
+let max_reported_mismatches = 5
+
+(** Single source of truth for computing a [float_check_shape]: compare [total]
+    elements of [got] against [expected] at absolute tolerance [tolerance],
+    calling [report] for the first [max_reported_mismatches] mismatches.
+
+    Factored out of the two E2E verifiers (test_float32_sin_pure.verify_result
+    and test_math_intrinsics.verify_float_arrays) so the shape that gates the
+    CPU-OpenCL KNOWN-ISSUE is computed in exactly ONE place, and so it can be
+    fixture-tested device-free (test_float_check_shape.ml). If this miscomputed
+    [first_bad_index], [bad_count] or [non_finite] the classifier would silently
+    be fed garbage and the #74 / F1 masking hole would reopen with no test
+    failing. [expected] and [got] are index functions so callers can compare an
+    array against an array or against a computed reference without materialising
+    one.
+
+    The [Float.is_nan diff] guard is load-bearing: every comparison against a
+    NaN is false, so [diff > tolerance] alone silently ACCEPTS a NaN buffer.
+    Non-finite values on either side also raise [non_finite], which the
+    classifier treats as never-excusable. *)
+let compute_float_check_shape ~total ~tolerance ~expected ~got ~report =
+  let errors = ref 0 in
+  let first_bad = ref None in
+  let non_finite = ref false in
+  for i = 0 to total - 1 do
+    let e = expected i and g = got i in
+    if not (Float.is_finite g && Float.is_finite e) then non_finite := true ;
+    let diff = Float.abs (g -. e) in
+    if Float.is_nan diff || diff > tolerance then begin
+      if !first_bad = None then first_bad := Some i ;
+      if !errors < max_reported_mismatches then
+        report ~index:i ~expected:e ~got:g ~diff ;
+      incr errors
+    end
+  done ;
+  {
+    first_bad_index = !first_bad;
+    bad_count = !errors;
+    total;
+    non_finite = !non_finite;
+  }
+
 (** Vector lane width of the miscompiled CPU-OpenCL math library (SSE, 4 x
     float32). The observed flake never damages the scalar prologue, so a genuine
     wrong result at an index below this bound is NEVER the known issue. *)

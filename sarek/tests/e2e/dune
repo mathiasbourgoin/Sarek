@@ -358,6 +358,11 @@
 (rule
  (alias runtest)
  (action
+  (run %{dep:test_float_check_shape.exe})))
+
+(rule
+ (alias runtest)
+ (action
   (run %{dep:test_domain_pool_stress.exe})))
 
 ; compile-only alias: the assertion IS successful compilation (PPX
@@ -510,6 +515,21 @@
 (executable
  (name test_cpu_opencl_known_issue)
  (modules test_cpu_opencl_known_issue)
+ (libraries spoc_core spoc.framework test_helpers)
+ (preprocess no_preprocessing))
+
+; Fixture test for the OTHER half of the #74 / F1 contract: the classifier
+; truth table above assumes a correct float_check_shape, and this pins the
+; computation that produces it (Test_helpers.compute_float_check_shape, which
+; both test_float32_sin_pure and test_math_intrinsics delegate to). Without it a
+; miscomputed first_bad_index / bad_count / non_finite would feed the classifier
+; garbage and reopen the masking hole with no test failing. Array-in /
+; record-out: no device, no backend.
+; Run with: dune exec sarek/tests/e2e/test_float_check_shape.exe
+
+(executable
+ (name test_float_check_shape)
+ (modules test_float_check_shape)
  (libraries spoc_core spoc.framework test_helpers)
  (preprocess no_preprocessing))
 

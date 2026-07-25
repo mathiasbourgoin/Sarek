@@ -65,14 +65,17 @@ let make_float32_sin_ir () : kernel =
 
 let n = 256
 
+(** The i-th input value: [n] samples spanning [0, 2*pi]. Shared by the filler
+    and the verifier so they cannot drift apart. *)
+let input_at i = Float.pi *. 2.0 *. (float_of_int i /. float_of_int n)
+
 let run_kernel_on_device (dev : Device.t) =
   let ir = make_float32_sin_ir () in
   let a_vec = Vector.create Vector.float32 n in
   let b_vec = Vector.create Vector.float32 n in
   (* Fill input with values in [0, 2*pi] *)
   for i = 0 to n - 1 do
-    let x = Float.pi *. 2.0 *. (float_of_int i /. float_of_int n) in
-    Vector.set a_vec i x ;
+    Vector.set a_vec i (input_at i) ;
     Vector.set b_vec i 0.0
   done ;
   let block = Execute.dims1d 256 in
@@ -95,37 +98,22 @@ let run_kernel_on_device (dev : Device.t) =
     output at its 0.0 pre-fill) can never be excused. See
     [Test_helpers.classify_cpu_opencl_math_result] (#74 / F1). *)
 let verify_result result : Test_helpers.float_check_shape =
-  let errors = ref 0 in
-  let first_bad = ref None in
-  let non_finite = ref false in
-  for i = 0 to n - 1 do
-    let x = Float.pi *. 2.0 *. (float_of_int i /. float_of_int n) in
-    let expected = sin x in
-    let got = result.(i) in
-    if not (Float.is_finite got) then non_finite := true ;
-    let diff = abs_float (got -. expected) in
-    (* Allow 1e-4 absolute tolerance for GPU float32 sin variation. The
-       is_nan guard matters: a NaN result makes every comparison false, so
-       without it a NaN buffer would silently pass. *)
-    if Float.is_nan diff || diff > 1e-4 then begin
-      if !first_bad = None then first_bad := Some i ;
-      if !errors < 5 then
-        Printf.printf
-          "  Mismatch at %d: x=%.4f expected=%.6f got=%.6f diff=%.2e\n"
-          i
-          x
-          expected
-          got
-          diff ;
-      incr errors
-    end
-  done ;
-  {
-    Test_helpers.first_bad_index = !first_bad;
-    bad_count = !errors;
-    total = n;
-    non_finite = !non_finite;
-  }
+  (* Allow 1e-4 absolute tolerance for GPU float32 sin variation. The shape
+     computation itself lives in Test_helpers (single source of truth, fixture
+     tested by test_float_check_shape.ml). *)
+  Test_helpers.compute_float_check_shape
+    ~total:n
+    ~tolerance:1e-4
+    ~expected:(fun i -> sin (input_at i))
+    ~got:(fun i -> result.(i))
+    ~report:(fun ~index ~expected ~got ~diff ->
+      Printf.printf
+        "  Mismatch at %d: x=%.4f expected=%.6f got=%.6f diff=%.2e\n"
+        index
+        (input_at index)
+        expected
+        got
+        diff)
 
 let () =
   let cfg = Test_helpers.parse_args "test_float32_sin_pure" in
