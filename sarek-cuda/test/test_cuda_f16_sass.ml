@@ -34,7 +34,10 @@
  * form appears" would pass for a detector that can see nothing at all.
  *
  * Skips cleanly with no CUDA toolkit, no nvrtc, or no CUDA headers; and skips
- * individual architectures the local ptxas does not know.
+ * individual architectures the local ptxas does not know. It does NOT skip an
+ * architecture whose SASS the classifier cannot read — see [classifier_min_sm]:
+ * that is a hard failure, because a classifier applied to an instruction shape
+ * it does not model returns a wrong verdict, not no verdict.
  ******************************************************************************)
 
 open Sarek_ir_types
@@ -154,7 +157,11 @@ let ready () =
    (see docs/optimization/cuda-f16-fusion-sass-audit.md) to give SASS byte-identical
    to assembling arch-native PTX on every target here. Any name the local ptxas
    does not know is skipped rather than failed, so an older toolkit still runs
-   the targets it does support. *)
+   the targets it does support.
+
+   This list is bounded below by [classifier_min_sm]: adding a pre-Turing target
+   here (sm_61, say) makes the test fail rather than classify a SASS shape the
+   classifier was never written for. *)
 let architectures =
   ["sm_75"; "sm_80"; "sm_86"; "sm_89"; "sm_90"; "sm_100"; "sm_120"]
 
@@ -170,16 +177,26 @@ let write_file path contents =
   output_string oc contents ;
   close_out oc
 
-(** Why the toolchain produced no SASS for an architecture. The distinction is
+(** Why this test produced no verdict for an architecture. The distinction is
     load-bearing: [Unknown_arch] is an environment gap and a legitimate skip,
     while [Tool_error] means ptxas or nvdisasm rejected work this test generated
     — a real failure that must not be folded into the skip bucket. Before this
     split every nonzero exit read as "arch not supported", so a ptxas that
     rejected the generated PTX outright made the gate report a green pass having
-    checked nothing. *)
-type tool_failure = Unknown_arch of string | Tool_error of string
+    checked nothing.
 
-let failure_message = function Unknown_arch m | Tool_error m -> m
+    [Unclassifiable_arch] is the third case and belongs to US, not to the
+    toolchain: the local ptxas may assemble the target perfectly well while the
+    classifier below has no idea what the resulting instruction stream means. It
+    is a hard failure for the same reason [Tool_error] is — a classifier that
+    guesses is worse than one that declines. *)
+type tool_failure =
+  | Unknown_arch of string
+  | Unclassifiable_arch of string
+  | Tool_error of string
+
+let failure_message = function
+  | Unknown_arch m | Unclassifiable_arch m | Tool_error m -> m
 
 (* ptxas reports an unrecognised target as
    [ptxas fatal : Value 'sm_XXX' is not defined for option 'gpu-name'],
@@ -211,53 +228,125 @@ let classify_nvdisasm_error msg =
   then Unknown_arch msg
   else Tool_error msg
 
+(* ------------------------------------------------------------------ *)
+(* What the classifier is allowed to look at                          *)
+(* ------------------------------------------------------------------ *)
+
+(** The lowest SM the SASS classifier below is written for.
+
+    Every idiom it matches is Turing-and-later shaped: the
+    [HADD2 Rd, -RZ, Rs.H0_H0] widening idiom, the
+    [HFMA2.MMA ..., -RZ, RZ, imm, imm] immediate materialisation, and the
+    [F2F.F16.F32] / [F2FP.PACK_AB] narrowing family. Pascal (sm_5x/sm_6x) does
+    not emit that stream — it converts with [F2F.F32.F16] in BOTH directions and
+    has no [HADD2]-based widening idiom at all — so on Pascal {!is_widening}
+    would recognise nothing, {!narrowings} would count widenings as narrowings,
+    and {!binary16_arithmetic} would flag conversions as the defect. That is
+    MISCLASSIFICATION, not detection: the gate would report a defect that is not
+    there, or (worse, under a different instruction selection) miss one that is.
+
+    So the classifier declines instead. Adding an architecture below this floor
+    to {!architectures} makes the test FAIL with {!Unclassifiable_arch} until
+    someone teaches the classifier that architecture's idioms and verifies them
+    against real SASS for it. *)
+let classifier_min_sm = 75
+
+(* [sm_90a] / [sm_100f] and friends: take the leading digit run after "sm_". *)
+let sm_version arch =
+  let prefix = "sm_" in
+  let pl = String.length prefix and al = String.length arch in
+  if al <= pl || String.sub arch 0 pl <> prefix then None
+  else
+    let i = ref pl in
+    while !i < al && arch.[!i] >= '0' && arch.[!i] <= '9' do
+      incr i
+    done ;
+    if !i = pl then None else int_of_string_opt (String.sub arch pl (!i - pl))
+
+(** [Ok ()] only for architectures whose SASS the classifier actually models. An
+    unparsable name is refused too: guessing at [gfx1100] or [compute_75] here
+    would be the same mistake. *)
+let classifier_supports arch =
+  match sm_version arch with
+  | Some v when v >= classifier_min_sm -> Ok ()
+  | Some v ->
+      Error
+        (Unclassifiable_arch
+           (Printf.sprintf
+              "the SASS classifier in this test is written for sm_%d and later \
+               (Turing/Ampere/Hopper/Blackwell instruction shapes: HADD2 \
+               widening idiom, F2F/F2FP narrowing family). sm_%d predates that \
+               shape, so classifying its disassembly would produce a wrong \
+               verdict rather than no verdict. Refusing. Teach the classifier \
+               this architecture's idioms (is_widening, narrowings, \
+               binary16_arithmetic) and verify them against real sm_%d SASS \
+               before adding it to `architectures`."
+              classifier_min_sm
+              v
+              v))
+  | None ->
+      Error
+        (Unclassifiable_arch
+           (Printf.sprintf
+              "cannot tell which SASS instruction shape %S has; the classifier \
+               only models sm_NN targets with NN >= %d. Refusing rather than \
+               guessing."
+              arch
+              classifier_min_sm))
+
 (** [sass_of_ptx ~arch ptx] assembles [ptx] for [arch] and disassembles the
-    result. See {!tool_failure} for the two error kinds. *)
+    result. See {!tool_failure} for the three error kinds. The classifier's own
+    competence is checked FIRST: an architecture it cannot read is refused
+    before any tool runs, so the refusal does not depend on which CUDA release
+    happens to be installed. *)
 let sass_of_ptx ~arch ptx =
-  let base = Filename.temp_file "sarek_f16_sass_" "" in
-  let src = base ^ ".ptx" and obj = base ^ ".cubin" in
-  let err = base ^ ".err" and out = base ^ ".sass" in
-  let cleanup () =
-    List.iter
-      (fun f -> try Sys.remove f with _ -> ())
-      [base; src; obj; err; out]
-  in
-  Fun.protect ~finally:cleanup (fun () ->
-      write_file src ptx ;
-      let rc =
-        Unix.system
-          (Printf.sprintf
-             "ptxas -arch=%s -o %s %s 2>%s"
-             (Filename.quote arch)
-             (Filename.quote obj)
-             (Filename.quote src)
-             (Filename.quote err))
+  match classifier_supports arch with
+  | Error _ as e -> e
+  | Ok () ->
+      let base = Filename.temp_file "sarek_f16_sass_" "" in
+      let src = base ^ ".ptx" and obj = base ^ ".cubin" in
+      let err = base ^ ".err" and out = base ^ ".sass" in
+      let cleanup () =
+        List.iter
+          (fun f -> try Sys.remove f with _ -> ())
+          [base; src; obj; err; out]
       in
-      match rc with
-      | Unix.WEXITED 0 -> (
+      Fun.protect ~finally:cleanup (fun () ->
+          write_file src ptx ;
           let rc =
             Unix.system
               (Printf.sprintf
-                 "nvdisasm -c %s >%s 2>%s"
+                 "ptxas -arch=%s -o %s %s 2>%s"
+                 (Filename.quote arch)
                  (Filename.quote obj)
-                 (Filename.quote out)
+                 (Filename.quote src)
                  (Filename.quote err))
           in
           match rc with
-          | Unix.WEXITED 0 -> Ok (read_file out)
-          | _ ->
-              (* ptxas accepted the target but nvdisasm did not. ptxas and
+          | Unix.WEXITED 0 -> (
+              let rc =
+                Unix.system
+                  (Printf.sprintf
+                     "nvdisasm -c %s >%s 2>%s"
+                     (Filename.quote obj)
+                     (Filename.quote out)
+                     (Filename.quote err))
+              in
+              match rc with
+              | Unix.WEXITED 0 -> Ok (read_file out)
+              | _ ->
+                  (* ptxas accepted the target but nvdisasm did not. ptxas and
                  nvdisasm are located independently by [on_path], so they can
                  come from different CUDA installs: a newer ptxas assembling
                  sm_100 whose cubin an older nvdisasm cannot read is an
                  environment gap, not a defect. Classify it the same way. *)
+                  Error
+                    (classify_nvdisasm_error
+                       ("nvdisasm failed: " ^ try read_file err with _ -> "")))
+          | _ ->
               Error
-                (classify_nvdisasm_error
-                   ("nvdisasm failed: " ^ try read_file err with _ -> "")))
-      | _ ->
-          Error
-            (classify_ptxas_error
-               ("ptxas failed: " ^ try read_file err with _ -> "")))
+                (classify_ptxas_error
+                   ("ptxas failed: " ^ try read_file err with _ -> "")))
 
 (* ------------------------------------------------------------------ *)
 (* SASS classification                                                *)
@@ -401,6 +490,15 @@ let test_midround_sass_unfused () =
                    %s"
                   arch
                   (String.trim e)
+            | Error (Unclassifiable_arch e) ->
+                (* Not an environment gap: this architecture is in the list
+                   above and the classifier cannot read its SASS. Skipping it
+                   would let the gate report green having classified a stream
+                   it does not understand. *)
+                Alcotest.failf
+                  "%s: refusing to classify this architecture's SASS: %s"
+                  arch
+                  (String.trim e)
             | Error (Unknown_arch e) ->
                 (* ptxas does not know this architecture. Legitimate per-arch
                    skip; recorded so the zero-architecture case can report
@@ -498,6 +596,11 @@ let test_classifier_detects_fusion () =
               match sass_of_ptx ~arch:a ptx with
               | Ok _ -> true
               | Error (Unknown_arch _) -> false
+              | Error (Unclassifiable_arch e) ->
+                  Alcotest.failf
+                    "%s: refusing to classify this architecture's SASS: %s"
+                    a
+                    (String.trim e)
               | Error (Tool_error e) ->
                   (* Same rule as the gate: a target the toolchain knows but
                      could not process is a failure, not "no usable arch". *)
