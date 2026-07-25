@@ -141,11 +141,38 @@ let check name ptx =
         name
   end
 
+(* The Newton seed of df64_sqrt. [sqrt.approx.f32] is ~1 ulp rather than
+   correctly rounded, and it was the ONLY non-correctly-rounded instruction in
+   the whole emitted df64_sqrt body -- every other op is fma.rn / div.rn / an
+   exact add-sub. Same bug class as [div.approx.f32] (audit finding M2), one
+   operator over. This asserts the emitted-PTX property; the precision it buys
+   is measured by test_df64.ml on real NVIDIA hardware. *)
+let check_sqrt_seed ptx =
+  let approx = count "sqrt.approx.f32" ptx in
+  let exact = count "sqrt.rn.f32" ptx in
+  let ok = approx = 0 && exact > 0 in
+  Printf.printf
+    "  %-10s sqrt.approx.f32 = %d (want 0), sqrt.rn.f32 = %d (want > 0) %s\n%!"
+    "df64_sqrt"
+    approx
+    exact
+    (if ok then "PASS" else "FAIL") ;
+  if not ok then begin
+    incr failures ;
+    Printf.printf
+      "    -> df64_sqrt's Newton seed is not correctly rounded; the Karp\n\
+      \       correction cannot recover the seed's error and df64_sqrt loses\n\
+      \       precision on PTX only. See \"KNOWN RESIDUAL\" in\n\
+      \       sarek/Sarek_df64/Sarek_df64.ml.\n\
+       %!"
+  end
+
 let () =
   print_endline "Sarek_df64 PTX contraction guard:" ;
   check "df64_mul" (ptx_of mul_kernel) ;
   check "df64_div" (ptx_of div_kernel) ;
   check "df64_sqrt" (ptx_of sqrt_kernel) ;
+  check_sqrt_seed (ptx_of sqrt_kernel) ;
   check "df64_of_i32" (ptx_of of_int32_kernel) ;
   if !failures = 0 then print_endline "test_df64_no_contraction PASSED"
   else begin

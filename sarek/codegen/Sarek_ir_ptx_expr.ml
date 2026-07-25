@@ -1801,13 +1801,30 @@ and transcendental_intrinsic_handlers () :
         Some (intr_f32_op2 buf alloc "div.approx.f32" r_sin r_cos) );
     ( ["sqrt"],
       fun buf alloc env _path _name args ->
+        (* Correctly-rounded square root, for the same reason division is
+           (audit finding M2, [div.rn.f32] above): [sqrt.approx.f32] is ~1 ulp
+           rather than correctly rounded, which made PTX the only backend whose
+           f32 [sqrt] does not meet Sarek's "IEEE-exact float32 ops" contract.
+           The motivating case is Sarek_df64: [df64_sqrt] uses this
+           instruction's result as its Newton seed, and [sqrt.approx.f32] was
+           the ONLY non-correctly-rounded instruction in the whole emitted
+           df64_sqrt body -- every other op is fma.rn, div.rn, or an exact
+           add/sub. Executed on a GTX 1070 Max-Q (sm_61, CUDA 12.9): df64_sqrt
+           goes from 1.42e-14 (failing 2^-46) to 8.53e-15, the interpreter's
+           own figure, at a cost of ~12% on a sqrt-dominated kernel.
+
+           This is a GLOBAL choice, not a per-caller one: there is no separate
+           df64 sqrt IR node, so [df64_sqrt] and user code reach this same arm.
+           Fast approximate roots stay available to intrinsics that are already
+           documented as approximate -- [rsqrt] below keeps
+           [rsqrt.approx.f32]. *)
         Some
           (intr_unary_native
              buf
              alloc
              env
              "sqrt"
-             ~f32_op:(Some "sqrt.approx.f32")
+             ~f32_op:(Some "sqrt.rn.f32")
              ~f64_op:(Some "sqrt.rn.f64")
              args) );
     ( ["exp"],
