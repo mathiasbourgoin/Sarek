@@ -28,6 +28,7 @@
 
 open Sarek_ir_types
 open Sarek_codegen
+module Backend_error = Sarek_backend_error.Backend_error
 
 let make_var name ty =
   {var_name = name; var_id = 0; var_type = ty; var_mutable = false}
@@ -400,10 +401,10 @@ let ematch_shadow_kernel () =
     reads, and the reads see the never-updated uniform — a silent wrong result
     (valid WGSL, no error).
 
-    The local's initializer is a constant (NOT [params.width]), so [params.width]
-    appears in the emitted shader {e only} through the buggy body reads: with the
-    scalar-shadow rename pass it must not appear at all, and the local must carry
-    a fresh [sarek_scalar_shadow_*] name. *)
+    The local's initializer is a constant (NOT [params.width]), so
+    [params.width] appears in the emitted shader {e only} through the buggy body
+    reads: with the scalar-shadow rename pass it must not appear at all, and the
+    local must carry a fresh [sarek_scalar_shadow_*] name. *)
 let wgsl_scalar_shadow_mut_kernel () =
   let out = make_var "out" (TVec TFloat32) in
   let width = make_var "width" TInt32 in
@@ -426,8 +427,7 @@ let wgsl_scalar_shadow_mut_kernel () =
                   (LVar width_l, EBinop (Add, EVar width_l, EConst (CInt32 1l)));
                 (* read the local — the bug emits params.width here *)
                 SAssign
-                  ( LArrayElem ("out", EVar tid),
-                    ECast (TFloat32, EVar width_l) );
+                  (LArrayElem ("out", EVar tid), ECast (TFloat32, EVar width_l));
               ] ) )
   in
   base_kernel
@@ -678,8 +678,7 @@ let test_wgsl_scalar_shadow_mut_local () =
   if contains wgsl "params.width" then
     Alcotest.failf
       "a body reference to the mutated shadowing local was emitted as \
-       `params.width` (reads the uniform, not the local — silent wrong \
-       result):\n\
+       `params.width` (reads the uniform, not the local — silent wrong result):\n\
        %s"
       wgsl ;
   (* The declaration and the mutation must both use the renamed local. *)
@@ -767,32 +766,37 @@ let test_glsl_vec_len_shadow_validates () =
           k
 
 (* #71 gap #2 (silent wrong-var read). Semantic assertion, not a validator gate
-   (EMatch expression binders emit no declaration — see kernel docstring). The
-   OptSome arm binds `width` shadowing the outer renamed local; with the EMatch
-   arm made consistent with SMatch, the pattern binder gets its OWN fresh name
-   (sarek_pc_shadow_width_2), distinct from the outer local
-   (sarek_pc_shadow_width_1). Red-on-mutation: revert the EMatch arm to reuse
-   the outer env and both ternary branches collapse to _1 — the OptSome arm
-   silently reads the outer local (no _2 is ever minted), failing this check. *)
+   (EMatch expression binders emit no declaration — see kernel docstring).
+
+   [ematch-payload-fail-loud] (#73) superseded the earlier shadow-rename
+   assertion here: an [EMatch] arm that binds AND reads its payload binder is no
+   longer lowered to a wrong-variable ternary read — the GLSL backend now fails
+   loud with a located [Unsupported_construct "match-expression payload
+   binding"] before any code is emitted. This is the correct terminal behavior
+   for that pre-existing limitation (no destructuring declaration exists for
+   expression-position matches), so the guarantee under test is now the raise
+   itself. Red-on-mutation: remove the backend guard and generation succeeds
+   again, emitting silent-wrong / undefined GLSL, and this check fails. *)
 let test_glsl_ematch_pattern_shadow_rebinds () =
-  let k =
+  match
     Sarek_ir_glsl.generate_with_types ~types:[] (ematch_shadow_kernel ())
-  in
-  if not (contains k "sarek_pc_shadow_width_1") then
-    Alcotest.failf
-      "expected the outer scalar-shadowing local to be renamed \
-       (sarek_pc_shadow_width_1):\n\
-       %s"
-      k ;
-  if not (contains k "sarek_pc_shadow_width_2") then
-    Alcotest.failf
-      "EMatch pattern binder was not rebound: the OptSome arm reuses the outer \
-       local (sarek_pc_shadow_width_1) instead of its own binder \
-       (sarek_pc_shadow_width_2) — silent wrong-variable read:\n\
-       %s"
-      k ;
-  Printf.printf
-    "  semantic OK: ematch_shadow (pattern binder rebound to _2)\n%!"
+  with
+  | (_ : string) ->
+      Alcotest.failf
+        "expected a located Unsupported_construct for the payload-using EMatch \
+         arm, but GLSL generation succeeded (silent-wrong / undefined code)"
+  | exception
+      Backend_error.Backend_error
+        (Backend_error.Codegen
+           {backend; error = Backend_error.Unsupported_construct {construct; _}})
+    ->
+      Alcotest.(check string) "backend tag" "Vulkan" backend ;
+      Alcotest.(check string)
+        "names the construct"
+        "match-expression payload binding"
+        construct ;
+      Printf.printf
+        "  fail-loud OK: ematch_shadow (payload binding rejected)\n%!"
 
 let () =
   Alcotest.run
@@ -837,7 +841,7 @@ let () =
             `Quick
             test_glsl_vec_len_shadow_validates;
           Alcotest.test_case
-            "GLSL EMatch pattern binder rebinds (silent wrong-var read)"
+            "GLSL EMatch payload binding fails loud (#73)"
             `Quick
             test_glsl_ematch_pattern_shadow_rebinds;
         ] );

@@ -193,6 +193,45 @@ let wgsl_thread_intrinsic = function
 (** Names of scalar kernel params — accessed as [params.<name>] in WGSL. *)
 let scalar_param_names : string list ref = ref []
 
+(** [ematch-payload-fail-loud] (#73): a match-EXPRESSION ([EMatch]) lowers to
+    nested [select(else, then, cond)] calls that evaluate each case body in the
+    enclosing scope and have nowhere to declare a constructor payload. A case
+    body that {e uses} a payload binder would therefore emit an undefined
+    identifier or, worse, silently read a same-named in-scope variable. Detect
+    that shape and fail loud rather than emit silent-wrong / undefined code. A
+    statement match ([SMatch]) is unaffected — it emits real destructuring
+    declarations. *)
+let rec expr_mentions names = function
+  | EConst _ -> false
+  | EVar v -> List.mem v.var_name names
+  | EBinop (_, a, b) -> expr_mentions names a || expr_mentions names b
+  | EUnop (_, a) -> expr_mentions names a
+  | EArrayRead (arr, i) -> List.mem arr names || expr_mentions names i
+  | EArrayReadExpr (b, i) -> expr_mentions names b || expr_mentions names i
+  | ERecordField (e, _) -> expr_mentions names e
+  | EIntrinsic (_, _, args) -> List.exists (expr_mentions names) args
+  | ECast (_, e) -> expr_mentions names e
+  | ETuple es -> List.exists (expr_mentions names) es
+  | EApp (f, args) ->
+      expr_mentions names f || List.exists (expr_mentions names) args
+  | ERecord (_, fs) -> List.exists (fun (_, v) -> expr_mentions names v) fs
+  | EVariant (_, _, args) -> List.exists (expr_mentions names) args
+  | EArrayLen n -> List.mem n names
+  | EArrayCreate (_, s, _) -> expr_mentions names s
+  | EIf (c, t, e) ->
+      expr_mentions names c || expr_mentions names t || expr_mentions names e
+  | EMatch (s, cases) ->
+      expr_mentions names s
+      || List.exists (fun (_, b) -> expr_mentions names b) cases
+
+(** A match-expression case whose constructor pattern binds at least one payload
+    name that its body actually references. Wildcard binders ([_]) never occur
+    as a referenced identifier, so [Some _] and a tag-only [PConstr (_, [])]
+    stay supported. *)
+let case_binds_used_payload = function
+  | PConstr (_, names), body when names <> [] -> expr_mentions names body
+  | _ -> false
+
 let rec gen_expr buf = function
   | EConst (CInt32 n) -> Buffer.add_string buf (Int32.to_string n ^ "i")
   | EConst (CInt64 _) ->
@@ -306,6 +345,16 @@ let rec gen_expr buf = function
       Buffer.add_string buf ", " ;
       gen_expr buf cond ;
       Buffer.add_char buf ')'
+  | EMatch (_, cases) when List.exists case_binds_used_payload cases ->
+      (* Fail loud: the select() lowering below discards payload binders. See
+         {!case_binds_used_payload}. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "match-expression payload binding"
+           "a match-expression case binds a constructor payload that its body \
+            uses, but the WGSL backend lowers match-expressions to nested \
+            select() calls with no place to bind the payload; use a match \
+            statement (a match whose case bodies are statements) instead")
   | EMatch (_, []) ->
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct "match" "empty match expression")

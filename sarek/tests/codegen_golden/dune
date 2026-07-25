@@ -56,3 +56,10 @@
  (libraries sarek_ir sarek_codegen sarek_backend_error alcotest)
  (instrumentation
   (backend bisect_ppx)))
+
+(test
+ (name test_shader_ematch_payload)
+ (modules test_shader_ematch_payload)
+ (libraries sarek_ir sarek_codegen sarek_backend_error alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
