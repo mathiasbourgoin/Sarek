@@ -24,6 +24,20 @@
 
 ### Fixed
 
+- `Sarek_df64` silently ran at plain float32 precision on real NVIDIA
+  hardware (CUDA/PTX and NVIDIA OpenCL): `ptxas` contracted the multiply in
+  `two_prod` into the `add`/`sub` of the `quick_two_sum` closing `df64_mul`,
+  rebuilding the exact product and cancelling the TwoProd error term.
+  `mul`/`div`/`sqrt` degraded from ~2^-47 to ~2^-24 with no error reported.
+  `two_prod` now forms its product with `fma a b 0.0`, which cannot be fused
+  again. Measured on a GTX 1070 (sm_61, CUDA 12.9): mul 5.92e-08 → 9.07e-15,
+  div 5.64e-08 → 5.08e-15, throughput unchanged. A CPU-only regression guard
+  (`test_df64_no_contraction`) asserts the emitted PTX contains no
+  contractable `mul.f32`. The df64 per-backend precision table now names the
+  device and toolchain behind every figure — the previous table generalised
+  AMD-only measurements to "CUDA/PTX", which is why this went unseen. NOTE
+  `df64_sqrt` on NVIDIA remains above tolerance; see the `KNOWN RESIDUAL`
+  block in `sarek/Sarek_df64/Sarek_df64.ml`.
 - Indexed kernel-argument container with strict launch validation, honored
   across all six backends (out-of-order/sparse `set_arg` now correct)
 - Unambiguous, collision-resistant compile-cache keys (kernel name included,

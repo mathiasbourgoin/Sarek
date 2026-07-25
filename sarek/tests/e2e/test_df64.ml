@@ -240,11 +240,22 @@ let run_ops_test dev =
        error-free transformations cancel (lo = 0) and df64 degenerates to
        plain f32 storage precision (~2^-24 relative).  Harmless (Native has
        real f64) but documented here.
-     - Vulkan (RADV + glslang): add/sub/sqrt meet the strict contract since
-       float locals are declared [precise], but mul/div still lose the
-       two_prod error term when composed through df64_mul/df64_div helper
-       chains (under investigation; suspected driver-side fma handling).
-     Both are reported as KNOWN-DEVIATION, not silently widened. *)
+     - Vulkan (RADV + glslang, and Mesa ANV on Intel): add/sub/sqrt meet the
+       strict contract since float locals are declared [precise], but mul/div
+       lose the two_prod error term because RADV's GLSL [fma] is not
+       correctly rounded. This is NOT the ptxas contraction bug that cost
+       CUDA/PTX and NVIDIA OpenCL their precision; see the PER-BACKEND STATUS
+       and "Contraction barrier" blocks in Sarek_df64.ml.
+     Both are reported as KNOWN-DEVIATION, not silently widened.
+
+     LIMITATION: the widening below keys on [dev.framework] alone, so it
+     applies to EVERY Vulkan device. NVIDIA Vulkan actually meets the full
+     contract (9.07e-15 mul on a GTX 1070), but is checked here against
+     f32_tol, so a future contraction-class regression on NVIDIA Vulkan would
+     pass silently - the same blind spot that hid the CUDA/PTX collapse. The
+     widening should be keyed on the driver/device (RADV, ANV) rather than on
+     "Vulkan". Not changed here: it needs an NVIDIA device to validate, and
+     narrowing it blind risks turning the suite red for the wrong reason. *)
   let f32_tol = 0x1p-22 in
   let tol_sqrt = tol_dv in
   let tol_mul, tol_dv, tol_sqrt, tol_add, deviation =

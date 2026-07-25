@@ -33,14 +33,25 @@
  *   - Native f64 path  : full IEEE-754 binary64 (~2^-52 relative), i.e.
  *     at-least-f64-comparable precision. This is the existing, fully-working
  *     f64 kernel path (writable f64 literals via the `G` suffix since PR #240).
- *   - df64 fallback    : ~2^-47..2^-46 relative on backends with IEEE-exact
- *     float32 + fma (OpenCL, CUDA/PTX, Interpreter) - "significantly better
- *     than f32, near-f64". Exponent range is that of float32, NOT binary64,
- *     and results are NOT bit-exact with binary64. On Native the error-free
- *     transformations collapse to plain f32 storage precision (~2^-24), and
- *     on Vulkan mul/div currently degrade likewise (see Sarek_df64 for the
- *     full per-backend table). These are the df64 contract's known
- *     deviations, inherited verbatim.
+ *   - df64 fallback    : ~2^-47..2^-46 relative on a backend AND DEVICE whose
+ *     float32 ops are IEEE-exact, whose fma is correctly rounded, and whose
+ *     compiler does not contract a multiply into a neighbouring add -
+ *     "significantly better than f32, near-f64". Exponent range is that of
+ *     float32, NOT binary64; results are NOT bit-exact with binary64; and
+ *     overflow yields NaN rather than a signed infinity.
+ *
+ *     DO NOT name backends here. Precision is a property of the backend
+ *     compiler AND the device, so "OpenCL" or "CUDA/PTX" alone is not a
+ *     meaningful qualifier - an earlier version of this line listed
+ *     "(OpenCL, CUDA/PTX, Interpreter)" on the strength of measurements
+ *     taken only on an AMD box, and a total collapse to ~2^-24 on real
+ *     NVIDIA hardware went unnoticed for four years as a result.
+ *     Sarek_df64's PER-BACKEND STATUS block is the single source of truth
+ *     and names the hardware and toolchain behind every figure; consult it
+ *     rather than restating it, and note it also records a still-unresolved
+ *     sqrt residual on NVIDIA. On Native the error-free transformations
+ *     collapse to plain f32 storage precision (~2^-24). These are the df64
+ *     contract's known deviations, inherited verbatim.
  *
  * EXPOSED OPERATION SET
  *   The op set is the INTERSECTION of what both substrates provide:

@@ -654,7 +654,7 @@
 (executable
  (name test_df64_no_contraction)
  (modules test_df64_no_contraction)
- (libraries sarek sarek.stdlib sarek.df64 sarek.codegen spoc_core)
+ (libraries sarek sarek.stdlib sarek.df64 sarek.codegen spoc.ir spoc_core)
  (preprocessor_deps
   (file ../../Sarek_df64/Sarek_df64.ml))
  (preprocess

@@ -27,8 +27,6 @@
  * reach locally, which is precisely how the sm_61 regression went unnoticed.
  ******************************************************************************)
 
-[@@@warning "-32-33-34-69"]
-
 module Vector = Spoc_core.Vector
 
 type float32 = float
@@ -49,7 +47,9 @@ let mul_kernel =
 
 let sqrt_kernel =
   [%kernel
-    fun (a : Sarek_df64.df64 vector) (out : Sarek_df64.df64 vector) (n : int32) ->
+    fun (a : Sarek_df64.df64 vector)
+        (out : Sarek_df64.df64 vector)
+        (n : int32) ->
       let open Sarek_df64 in
       let tid = thread_idx_x + (block_idx_x * block_dim_x) in
       if tid < n then out.(tid) <- df64_sqrt a.(tid)]
@@ -63,6 +63,16 @@ let div_kernel =
       let open Sarek_df64 in
       let tid = thread_idx_x + (block_idx_x * block_dim_x) in
       if tid < n then out.(tid) <- df64_div a.(tid) b.(tid)]
+
+(* df64_of_int32 is the fourth caller of two_prod, and the only one outside
+   mul/div/sqrt. It is covered so that the guard tracks two_prod's call sites
+   rather than a hand-picked three. *)
+let of_int32_kernel =
+  [%kernel
+    fun (out : Sarek_df64.df64 vector) (n : int32) ->
+      let open Sarek_df64 in
+      let tid = thread_idx_x + (block_idx_x * block_dim_x) in
+      if tid < n then out.(tid) <- df64_of_int32 tid]
 
 let ptx_of (_, kirc) =
   match kirc.Sarek.Kirc_types.body_ir with
@@ -82,17 +92,28 @@ let count needle hay =
   in
   go 0 0
 
+(* First line of [ptx] containing [needle], for a self-diagnosing failure. *)
+let first_line_with needle ptx =
+  let rec go = function
+    | [] -> None
+    | l :: tl -> if count needle l > 0 then Some (String.trim l) else go tl
+  in
+  go (String.split_on_char '\n' ptx)
+
 let failures = ref 0
 
 let check name ptx =
-  (* An unqualified [mul.f32] is contractable; [mul.rn.f32] and [fma.rn.f32]
-     are not. df64 code must emit none of the former. *)
+  (* An unqualified [mul.f32] is contractable; a rounding-qualified multiply
+     ([mul.rn.f32]) and [fma.rn.f32] are not, since PTX forbids fusing an
+     operation that carries an explicit rounding modifier. df64 must emit none
+     of the former. NB the emitter never currently produces [mul.rn.f32] - the
+     f32 [Mul] arm emits bare [mul.f32] (Sarek_ir_ptx_expr.ml) - so in practice
+     zero here means every float product went through the fma barrier. *)
   let contractable = count "mul.f32 " ptx in
   let fused = count "fma.rn.f32 " ptx in
   let ok = contractable = 0 && fused > 0 in
   Printf.printf
-    "  %-10s contractable mul.f32 = %d (want 0), fma.rn.f32 = %d (want > 0) \
-     %s\n\
+    "  %-10s contractable mul.f32 = %d (want 0), fma.rn.f32 = %d (want > 0) %s\n\
      %!"
     name
     contractable
@@ -100,12 +121,22 @@ let check name ptx =
     (if ok then "PASS" else "FAIL") ;
   if not ok then begin
     incr failures ;
-    if contractable > 0 then
+    if contractable > 0 then begin
       Printf.printf
         "    -> df64 %s emits a contractable multiply; ptxas may fuse it into \
          the\n\
         \       following add/sub and silently degrade df64 to float32.\n\
         \       See \"Contraction barrier\" in sarek/Sarek_df64/Sarek_df64.ml.\n\
+         %!"
+        name ;
+      match first_line_with "mul.f32 " ptx with
+      | Some l -> Printf.printf "       first offending line: %s\n%!" l
+      | None -> ()
+    end ;
+    if fused = 0 then
+      Printf.printf
+        "    -> df64 %s emits no fma.rn.f32 at all; the TwoProd error extraction\n\
+        \       is missing entirely, which is a worse failure than contraction.\n\
          %!"
         name
   end
@@ -115,6 +146,7 @@ let () =
   check "df64_mul" (ptx_of mul_kernel) ;
   check "df64_div" (ptx_of div_kernel) ;
   check "df64_sqrt" (ptx_of sqrt_kernel) ;
+  check "df64_of_i32" (ptx_of of_int32_kernel) ;
   if !failures = 0 then print_endline "test_df64_no_contraction PASSED"
   else begin
     Printf.printf "test_df64_no_contraction FAILED (%d failures)\n" !failures ;
