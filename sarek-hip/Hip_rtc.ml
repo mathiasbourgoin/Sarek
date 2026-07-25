@@ -191,6 +191,30 @@ let check ctx result =
   | HIPRTC_SUCCESS -> ()
   | err -> raise (Hiprtc_error (err, ctx))
 
+(** Options forced onto EVERY hiprtc compilation.
+
+    [-ffp-contract=off] is a CONFORMANCE requirement, not a tuning choice. HIP
+    (clang) defaults to [-ffp-contract=fast], which lets the backend fuse a
+    multiply into the operation that consumes it — including an f32 multiply
+    feeding an f32->f16 narrowing, which RDNA3 can do in one [v_fma_mix]-class
+    instruction. The fused form rounds the EXACT product straight to binary16
+    and skips the intermediate f32 rounding the Sarek DSL promises, so the
+    device result stops matching the interpreter.
+
+    Measured on gfx1100 with
+    [float16_of_float32 (float32_of_float16 (float16_of_float32
+     (float32_of_float16 x *. 1.1)) +. 1000.0)] at x = 5.68359375: contracted
+    gives 1006.5, unfused (and the interpreter, the native path and the host
+    reference) give 1006.0. Isolated, both halves are correct — the f32 product
+    is bit-identical to the host's [0x40c81000] and the device's f32->f16
+    narrowing is verified round-to-nearest-even on exact ties in both directions
+    — so the defect is specifically the FUSION, not the arithmetic or the
+    conversion.
+
+    An exhaustive sweep of all finite binary16 inputs found 373 values on which
+    contraction changed the result; with contraction off, zero. *)
+let base_options = ["-ffp-contract=off"]
+
 (** Compile HIP C++ source to a finalized code object, ready to feed to
     hipModuleLoadData. Returns the code-object bytes as an OCaml string.
 
@@ -202,6 +226,7 @@ let check ctx result =
     option outright it falls back to the current-device default. NOTE a merely
     *mismatched* (but syntactically valid) arch compiles here and only fails at
     hipModuleLoadData, so callers should prefer the default. *)
+
 let compile_to_code_object ?(name = "kernel") ?arch ?(options = [])
     (source : string) : string =
   let prog = allocate hiprtc_program_ptr (from_voidp hiprtc_program null) in
@@ -220,6 +245,7 @@ let compile_to_code_object ?(name = "kernel") ?arch ?(options = [])
      rocWMMA) plus an optional --offload-arch. When [arch] is None hiprtc
      targets the currently-selected device. *)
   let compile_with lst =
+    let lst = base_options @ lst in
     match lst with
     | [] -> hiprtcCompileProgram prog_handle 0 (from_voidp string null)
     | _ ->

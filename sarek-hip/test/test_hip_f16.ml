@@ -81,6 +81,13 @@ let inputs =
       | 3 -> 0.0
       | 4 -> -2.5
       | 5 -> 1e-5 (* subnormal territory for binary16 *)
+      (* The fusion witness. On this input the f32 product lands EXACTLY on a
+         binary16 rounding tie, which is what let the AMDGPU backend's fused
+         multiply-and-narrow ([v_fma_mixlo_f16]) be observed: it returned 1006.5
+         where every f32-discipline path returns 1006.0. Kept as a permanent
+         lane so the fusion cannot come back unnoticed; the exhaustive sweep
+         below is the general statement, this is the cheap canary. *)
+      | 6 -> 5.68359375
       | _ -> float_of_int (i mod 97) /. 7.0)
 
 let round16 = Sarek_interp.Sarek_float16.to_float16
@@ -103,17 +110,13 @@ let round16 = Sarek_interp.Sarek_float16.to_float16
    reason the old spelling passed. A bit-exactness test must be exact by
    construction, so the references now follow the kernel's f32 discipline.
 
-   !! KNOWN BACKEND DIVERGENCE, NOT FIXED HERE (#57 follow-up). On that same
-   witness the HIP GPU returns 1006.5 while the interpreter and native paths
-   return 1006.0 — i.e. the device agrees with the f64 spelling and the CPU
-   paths agree with the f32 one, so "HIP == interpreter, bit-identical" does NOT
-   hold across all binary16 inputs. It is not a codegen literal bug: the emitted
-   source is `__float2half(((float)__float2half(((float)inp[tid] *
-   1.1000000000000001f)) + 1000.0f))`, a genuine f32 multiply against an f32
-   literal. The divergence is in how the device realises the f32 multiply /
-   half-conversion around an exact rounding tie. Deliberately NOT added to
-   [inputs]: it is pre-existing and out of scope for slice 1, and wiring it in
-   would turn this gate red on a defect this PR did not introduce.
+   That witness also exposed a real codegen defect, now FIXED (see
+   [Sarek_ir_cuda.sarek_f32_barrier_decl]): the AMDGPU backend was fusing the
+   f32 multiply into the narrowing ([v_fma_mixlo_f16]) and demoting the f32 add
+   to binary16 ([v_add_f16]), skipping the roundings the DSL promises. On this
+   witness HIP returned 1006.5 against 1006.0 everywhere else. Across the whole
+   binary16 domain the device disagreed on 620 of 63488 inputs; with the barrier
+   in place, 0. x = 5.68359375 is now lane 6 of [inputs] as the cheap canary.
 
    Deliberately NOT [Sarek_interp.Sarek_float32.to_float32]: that helper flushes
    subnormals to zero and clamps overflow to infinity, which is the
@@ -349,6 +352,76 @@ let run_midround devices =
   interp_ok && native_ok && hip_ok && agree
 
 (* --------------------------------------------------------------- *)
+(* EXHAUSTIVE domain sweep                                         *)
+(* --------------------------------------------------------------- *)
+
+(* "HIP == interpreter, bit-identical" is a claim about the WHOLE f16 domain, so
+   state it over the whole domain instead of over a hand-picked sample. binary16
+   has only 63488 finite values, so the exhaustive statement is affordable —
+   under a second — and it is what actually restores the guarantee. A sampled
+   version of this gate passed for months while the backend was fusing away a
+   mandated rounding on 620 of those inputs.
+
+   Sensitivity is not assumed: with the codegen barrier removed this reports
+   620/63488 on both gfx1100 and the integrated gfx1036, first at 5.68359375. *)
+
+(* Exact value of a binary16 bit pattern; None for NaN/Inf. *)
+let f16_value_of_bits b =
+  let sign = if b land 0x8000 <> 0 then -1.0 else 1.0 in
+  let exp = (b lsr 10) land 0x1f and man = b land 0x3ff in
+  if exp = 31 then None
+  else if exp = 0 then Some (sign *. float_of_int man *. ldexp 1.0 (-24))
+  else Some (sign *. float_of_int (1024 + man) *. ldexp 1.0 (exp - 25))
+
+let sweep_inputs =
+  List.init 0x10000 (fun i -> i)
+  |> List.filter_map f16_value_of_bits
+  |> Array.of_list
+
+let sweep_reference =
+  Array.map
+    (fun x ->
+      let mid = round16 (f32 (round16 x *. f32 1.1)) in
+      round16 (f32 (mid +. 1000.0)))
+    sweep_inputs
+
+let run_sweep dev =
+  let m = Array.length sweep_inputs in
+  let inp = Vector.create Vector.float16 m in
+  Array.iteri (fun i x -> Vector.set inp i x) sweep_inputs ;
+  let out = Vector.create Vector.float16 m in
+  let block = 256 in
+  Execute.run_vectors
+    ~device:dev
+    ~ir:midround_ir
+    ~args:[Vec out; Vec inp; Int m]
+    ~block:(Execute.dims1d block)
+    ~grid:(Execute.dims1d ((m + block - 1) / block))
+    () ;
+  Transfer.flush dev ;
+  let bad = ref 0 and first = ref None in
+  for i = 0 to m - 1 do
+    let g = Vector.get out i and e = sweep_reference.(i) in
+    if not (g = e || (g <> g && e <> e)) then begin
+      incr bad ;
+      if !first = None then first := Some (sweep_inputs.(i), g, e)
+    end
+  done ;
+  Printf.printf
+    "    exhaustive sweep (%d inputs)          : %s\n"
+    m
+    (match !first with
+    | None -> "OK"
+    | Some (x, g, e) ->
+        Printf.sprintf
+          "FAIL — %d mismatches, first x=%.9g got=%.9g expected=%.9g"
+          !bad
+          x
+          g
+          e) ;
+  !bad = 0
+
+(* --------------------------------------------------------------- *)
 
 let () =
   Printf.printf "test_hip_f16 (#57 slice 1 f16 end-to-end)\n" ;
@@ -419,8 +492,26 @@ let () =
       Printf.printf "    midround EXN: %s\n" (Printexc.to_string e) ;
       false
   in
-  if host_ok && interp_ok && native_ok && hip_ok && agree_ok && midround_ok then
-    print_endline "test_hip_f16 PASSED"
+  (* Every HIP device, not just the first: the fusion reproduced on both the
+     discrete gfx1100 and the integrated gfx1036, so both must be swept. *)
+  let sweep_ok =
+    List.fold_left
+      (fun acc dev ->
+        Printf.printf "    sweeping %s\n" dev.Device.name ;
+        let ok =
+          try run_sweep dev
+          with e ->
+            Printf.printf "    sweep EXN: %s\n" (Printexc.to_string e) ;
+            false
+        in
+        acc && ok)
+      true
+      hip
+  in
+  if
+    host_ok && interp_ok && native_ok && hip_ok && agree_ok && midround_ok
+    && sweep_ok
+  then print_endline "test_hip_f16 PASSED"
   else (
     print_endline "test_hip_f16 FAILED" ;
     exit 1)

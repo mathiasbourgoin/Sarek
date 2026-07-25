@@ -137,10 +137,15 @@ let rec gen_expr buf = function
          identical on CUDA and HIP. The widening direction (__half -> float,
          int, ...) needs no intrinsic: __half carries an implicit conversion
          operator to float in both toolchains, so a plain C cast is correct and
-         is left to the generic arm below. *)
-      Buffer.add_string buf "__float2half(" ;
+         is left to the generic arm below.
+
+         The argument goes through [sarek_f32_barrier] because the narrowing is
+         exactly where the AMDGPU backend fuses away the f32 intermediate the
+         DSL promises. See [sarek_f32_barrier_decl] for the measured ISA and why
+         neither -ffp-contract=off nor `#pragma clang fp contract` reaches it. *)
+      Buffer.add_string buf "__float2half(sarek_f32_barrier(" ;
       gen_expr buf e ;
-      Buffer.add_char buf ')'
+      Buffer.add_string buf "))"
   | ECast (ty, e) ->
       Buffer.add_char buf '(' ;
       Buffer.add_string buf (cuda_type_of_elttype ty) ;
@@ -676,11 +681,63 @@ let cuda_fp16_include =
 #endif
 |}
 
+(** An optimisation barrier that forces an f32 value to be MATERIALISED as a
+    correctly-rounded binary32 register before it is consumed.
+
+    WHY THIS EXISTS. Sarek's f16 surface promises that arithmetic happens in f32
+    and that narrowing to binary16 is a separate, explicit,
+    round-to-nearest-even step — that is what makes the device agree with the
+    interpreter bit-for-bit. The AMDGPU backend breaks that promise: it fuses a
+    narrowing into the operation that feeds it. Measured on gfx1100 for
+    [__float2half((float)__float2half((float)inp[tid] * 1.1f) + 1000.0f)]:
+
+    v_fma_mixlo_f16 v0, v0, s2, 0 <- f32 multiply AND the narrowing, fused
+    v_add_f16_e32 v0.l, 0x63d0, v0.l <- the f32 ADD demoted to binary16
+
+    Both fusions skip a mandated rounding. The first is what made x = 5.68359375
+    return 1006.5 on HIP where the interpreter, the native path and the host
+    reference all return 1006.0: the fused form rounds the EXACT product once to
+    binary16 instead of rounding to f32 first, and the exact product sits just
+    above a binary16 tie that the correctly-rounded f32 value sits exactly on.
+
+    Both halves are individually CORRECT — verified in isolation: the device's
+    f32 product is bit-identical to the host's (0x40c81000), and the device's
+    f32->f16 narrowing is round-to-nearest-even on exact ties in both directions
+    and on negatives. The defect is purely the FUSION.
+
+    WHY A BARRIER AND NOT A FLAG. Verified at ISA level, the emitted code is
+    byte-identical under [-ffp-contract=off], [=on] and [=fast], and under
+    [#pragma clang fp contract(off)]: this is an AMDGPU ISel combine that the
+    standard FP-contraction controls do not reach. [-ffp-contract=off] is still
+    set on the hiprtc path (see [Hip_rtc.base_options]) because it DOES fix
+    ordinary f32 [a*b+c] contraction, but it is necessary-not-sufficient and
+    does nothing for this pattern.
+
+    COST. The [asm volatile] constraint pins the value in a register and
+    clobbers nothing, so it costs no memory traffic — ScratchSize stays 0. A
+    [volatile] local also works but spills to scratch, which is why it is not
+    used. The price is the un-fused instruction count: 6 VALU ops instead of 2
+    per f16 round-trip. Paid only inside kernels that actually narrow to f16 —
+    the declaration is emitted only under [kernel_uses_float16]. *)
+let sarek_f32_barrier_decl =
+  {|#if defined(__HIP__) || defined(__HIP_PLATFORM_AMD__)
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  asm volatile("" : "+v"(x));
+  return x;
+}
+#else
+__device__ __forceinline__ float sarek_f32_barrier(float x) {
+  asm volatile("" : "+f"(x));
+  return x;
+}
+#endif
+|}
+
 (** Prefix for a kernel's generated source: the f16 include (only when the
     kernel uses f16) followed by the standard header. *)
 let cuda_header_for (k : kernel) =
   if Sarek_ir_analysis.kernel_uses_float16 k then
-    cuda_fp16_include ^ cuda_header
+    cuda_fp16_include ^ sarek_f32_barrier_decl ^ cuda_header
   else cuda_header
 
 (** Generate complete CUDA source for a kernel *)

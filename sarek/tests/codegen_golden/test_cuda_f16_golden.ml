@@ -173,6 +173,25 @@ let test_f16_conversions () =
   check_contains "narrowing" src "__float2half(" ;
   (* Widening rides __half's implicit conversion operator via a plain C cast. *)
   check_contains "widening" src "(float)" ;
+  (* CONFORMANCE, not cosmetics: every narrowing must go through the f32
+     barrier. Without it the AMDGPU backend fuses the producing f32 op into the
+     narrowing (v_fma_mixlo_f16 / v_add_f16) and skips a mandated rounding — 620
+     of 63488 binary16 inputs came back wrong on gfx1100. A plain
+     [check_contains "__float2half("] still matches the barriered form, so it
+     would NOT catch a regression here; these two assertions are what do. *)
+  check_contains
+    "narrowing goes through the f32 barrier"
+    src
+    "__float2half(sarek_f32_barrier(" ;
+  check_contains
+    "barrier is declared"
+    src
+    "__device__ __forceinline__ float sarek_f32_barrier(float x)" ;
+  (* Both toolchains, because the register constraint is target-specific: "v"
+     for AMDGPU VGPRs, "f" for PTX .f32. A single-platform barrier would leave
+     the other backend silently fusing again. *)
+  check_contains "AMDGPU constraint" src "asm volatile(\"\" : \"+v\"(x))" ;
+  check_contains "PTX constraint" src "asm volatile(\"\" : \"+f\"(x))" ;
   ()
 
 let test_non_f16_kernel_unchanged () =
@@ -183,6 +202,10 @@ let test_non_f16_kernel_unchanged () =
   check_absent "no __half in f32 kernel" src "__half" ;
   check_absent "no hip guard in f32 kernel" src "__HIP__" ;
   check_absent "no narrowing in f32 kernel" src "__float2half" ;
+  (* The barrier costs 4 extra VALU ops per f16 round-trip, so it must be gated
+     on the kernel actually using f16. Its absence here is what makes that
+     zero-cost claim for non-f16 kernels checkable rather than asserted. *)
+  check_absent "no f32 barrier in f32 kernel" src "sarek_f32_barrier" ;
   (* And it still starts with the unmodified header. *)
   check_contains "extern C header" src "extern \"C\"" ;
   ()
