@@ -104,11 +104,20 @@ function appendTraces(dir, round) {
   }
 }
 
-function gate(verdictPath, args = []) {
+// Runs the gate WITHOUT parsing its stdout. Required for the fail-closed
+// cases: an input-rejection exit 2 deliberately emits no report at all, so
+// JSON.parse()ing it would mask the refusal as a parse error.
+function gateRaw(verdictPath, args = []) {
   const r = spawnSync(process.execPath, [GATE, verdictPath, "--max-rounds", "5", "--strikes", "2", "--static", ...args], {
     cwd: REPO,
     encoding: "utf8",
   });
+  return { status: r.status, stdout: r.stdout || "", stderr: r.stderr || "" };
+}
+
+function gate(verdictPath, args = []) {
+  const r = gateRaw(verdictPath, args);
+  assert.notStrictEqual(r.stdout, "", `gate emitted no report (exit ${r.status}): ${r.stderr}`);
   return { status: r.status, report: JSON.parse(r.stdout), raw: r.stdout };
 }
 
@@ -208,21 +217,26 @@ check("five novel rounds: round-cap AND streak both fire; streak wins on precede
   assert.deepStrictEqual(audit.map((e) => e.strike), [false, true, true, true, true]);
 });
 
-check("MUTATION: strike:null on a past round silently resets the streak (round-cap only)", () => {
+// The three cases below used to assert the DEFECT — they are the executable
+// record of what "a gate that cannot fail" looked like here, and each now
+// asserts the refusal that replaced it. Read the old expectations in git
+// history alongside these: same mutation, opposite verdict.
+check("MUTATION: strike:null on a past round is now refused, not warned about", () => {
   const dir = scratch();
   const { final } = driveRounds(dir, 5);
   const verdict = JSON.parse(fs.readFileSync(final, "utf8"));
   verdict.rounds_audit.find((e) => e.round === 4).strike = null;
   fs.writeFileSync(final, JSON.stringify(verdict, null, 2));
 
-  const mutated = gate(final);
-  assert.strictEqual(mutated.report.cause, "round-cap", "the streak must have been reset by the null");
-  assert.deepStrictEqual(mutated.report.violations.map((v) => v.type), ["round-cap"]);
-  assert.match(mutated.report.warnings.join("\n"), /round 4 lacks a boolean strike field/);
-  assert.strictEqual(mutated.status, 1);
+  // WAS: exit 1, cause "round-cap", the streak silently reset by the null, and
+  // the only signal a warning inside a report nobody reads.
+  const mutated = gateRaw(final);
+  assert.strictEqual(mutated.status, 2, "a non-boolean strike is degraded input, not a warning");
+  assert.match(mutated.stderr, /rounds_audit entry for round 4 has strike null/);
+  assert.match(mutated.stderr, /silently resets/);
 });
 
-check("MUTATION: all-null strikes below the cap escape the gate entirely (exit 0)", () => {
+check("MUTATION: all-null strikes below the cap are refused (was: total escape, exit 0)", () => {
   const dir = scratch();
   const { final } = driveRounds(dir, 5);
   const verdict = JSON.parse(fs.readFileSync(final, "utf8"));
@@ -230,34 +244,38 @@ check("MUTATION: all-null strikes below the cap escape the gate entirely (exit 0
   verdict.no_go_round = 2; // below --max-rounds, as in the real five-round PR
   fs.writeFileSync(final, JSON.stringify(verdict, null, 2));
 
-  const escaped = gate(final);
-  // Documented defect (schema/review-json-schema.md §strike): five striking
-  // rounds, `current_round_strike: true`, and the gate still reports no
-  // violation. Warnings only. This is why `strike` must be a boolean.
-  assert.strictEqual(escaped.report.current_round_strike, true);
-  assert.deepStrictEqual(escaped.report.violations, []);
-  assert.strictEqual(escaped.report.cause, null);
-  assert.strictEqual(escaped.status, 0);
-  assert.strictEqual(escaped.report.warnings.length, 3);
+  // WAS the headline defect (schema/review-json-schema.md §strike): five
+  // striking rounds, `current_round_strike: true`, `violations: []`, exit 0.
+  const escaped = gateRaw(final);
+  assert.strictEqual(escaped.status, 2);
+  assert.strictEqual(escaped.stdout, "", "an input-rejection exit 2 emits no report to mistake for a pass");
+  assert.match(escaped.stderr, /must be a\s+boolean/);
 });
 
-// NOTE the exit code: dropping `round` removes the strike/rounds_audit/trace
-// checks, but `no_go_round` (5) still trips the round cap on its own, so the
-// gate exits 1 here for a reason that has nothing to do with the skipped
-// checks. That is what makes the skip dangerous — below the cap (see the
-// preceding case, which sets no_go_round: 2) the same mutation exits 0.
-check("MUTATION: dropping `round` skips strike/audit/trace checks; only round-cap survives (exit 1)", () => {
+check("MUTATION: dropping `round` is refused unless the skip is explicitly authorized", () => {
   const dir = scratch();
   const { final } = driveRounds(dir, 5);
   const verdict = JSON.parse(fs.readFileSync(final, "utf8"));
   delete verdict.round;
   fs.writeFileSync(final, JSON.stringify(verdict, null, 2));
 
-  const skipped = gate(final);
-  assert.strictEqual(skipped.report.legacy_round, true);
-  assert.strictEqual(skipped.report.current_round_strike, null);
-  assert.match(skipped.report.warnings.join("\n"), /round key absent — skipping strike and rounds_audit checks/);
-  assert.strictEqual(skipped.status, 1, "only round-cap survives, via no_go_round");
+  // WAS: exit 1 via the round cap alone — the skipped strike/audit/trace checks
+  // contributed nothing, and below the cap the same mutation exited 0.
+  const skipped = gateRaw(final);
+  assert.strictEqual(skipped.status, 2);
+  assert.match(skipped.stderr, /no `round` key/);
+  assert.match(skipped.stderr, /--allow-legacy/);
+
+  // The escape hatch exists, but it leaves a mark: authorized, recorded, and
+  // refused downstream.
+  const authorized = gate(final, ["--allow-legacy"]);
+  assert.strictEqual(authorized.report.legacy_skip_authorized, true);
+  assert.strictEqual(authorized.report.current_round_strike, null);
+
+  const dirReport = path.join(dir, "briefs", `${TASK}-authorized-report.json`);
+  fs.writeFileSync(dirReport, authorized.raw);
+  const w = run(ASSEMBLE, ["--write-strike", "--verdict", final, "--gate-report", dirReport], dir);
+  assert.strictEqual(w.status, 2, "a strike from a legacy-skipped gate must never be journaled");
 });
 
 // ── carry-forward + delegation contracts ─────────────────────────────────

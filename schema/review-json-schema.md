@@ -14,8 +14,10 @@ The nested shapes live in real JSON Schema files and are not restated here:
 | one line of `briefs/<task>-review-trace.jsonl` | `schema/review-trace.schema.json` |
 
 The envelope itself has no machine-checkable schema. `scripts/check-review-convergence.js` is its
-only enforcer, and it enforces ten keys (below). Everything else in the envelope is enforced by
-prose alone.
+only enforcer. It reads ten keys for its own decisions (below) and, since the fail-closed hardening
+(`scripts/lib/review-gate-hardening.js`), it also *validates* the routing keys it does not act on —
+`status`, `no_go_reason`, `cross_runtime_findings` — because an unvalidated routing key is a step
+that silently does nothing. Everything still outside that set is enforced by prose alone.
 
 ---
 
@@ -81,8 +83,8 @@ in [Prose/enforcer discrepancies](#proseenforcer-discrepancies) rather than sile
 
 ## Why this document exists
 
-`scripts/check-review-convergence.js` degrades silently, not loudly, on an under-populated verdict.
-Reproduced on a real hand-written verdict in this repo:
+`scripts/check-review-convergence.js` used to degrade silently, not loudly, on an under-populated
+verdict. Reproduced at the time on a real hand-written verdict in this repo:
 
 ```console
 $ node scripts/check-review-convergence.js briefs/make-tests-actually-run-review.json --static
@@ -104,33 +106,65 @@ $ echo $?
 ```
 
 `violations: []`, exit `0`. The gate passed because it was never given anything to check, and that
-outcome is byte-identical to a genuine pass everywhere a caller looks (exit code, `violations`,
-`cause`). The two knobs that produce it are [`round`](#round) and
-[`rounds_audit[].strike`](#rounds_auditstrike) — read those two sections before writing a verdict by
-hand.
+outcome was byte-identical to a genuine pass everywhere a caller looks (exit code, `violations`,
+`cause`).
+
+**That is now a refusal.** The same verdict exits `2`, prints no report at all, and says why:
+
+```console
+$ node scripts/check-review-convergence.js briefs/make-tests-actually-run-review.json --static
+check-review-convergence: review.json has no `round` key — the gate would skip strike
+classification, the rounds_audit completeness check and every trace check, then exit 0 with
+violations: [] (B-8 vacuity, schema/review-json-schema.md §round). Assemble the verdict with
+scripts/review-verdict-assemble.js, or pass --allow-legacy to authorize the skip — it is then
+RECORDED as legacy_skip_authorized in the report and --write-strike refuses that report.
+$ echo $?
+2
+```
+
+The escape hatch survives, but it is a **recorded** skip rather than a silent one: `--allow-legacy`
+stamps `legacy_skip_authorized: true` into the report, and
+`review-verdict-assemble.js --write-strike` refuses to journal a strike from it. An unrecorded skip
+is indistinguishable from a pass; a recorded one is not. Read [`round`](#round) and
+[`rounds_audit[].strike`](#rounds_auditstrike) before writing a verdict by hand — better still,
+don't write one by hand.
 
 ---
 
 ## Keys the gate reads (enforced)
 
-Exactly ten. Anything else in the envelope is prose-enforced only.
+Ten drive decisions. **Every "Absent" and "Malformed" cell below is a refusal, not a default.** The
+old behaviour is kept in the last column, because most of these were silent — and knowing which
+green you used to be getting is the point of the table.
 
-| Key | Absent | Malformed | What it drives |
+| Key | Absent | Malformed | Was (silent) |
 |---|---|---|---|
-| `round` | **skips strike + rounds_audit + trace checks**, warns, and exits 0 *unless something else independently violates* (a `no_go_round` at the cap still exits 1) | non-number / negative / non-finite → exit 2 | strike classification, `rounds_audit` completeness, trace obligation |
-| `no_go_round` | defaults to `0` + warning; round-cap can never fire | non-number / negative → exit 2 | the round-cap violation (`no_go_round >= --max-rounds`) |
-| `cycle` | `null`, legacy-safe | non-number → `null`, never fatal | `(cycle, round)` scoping of trace lines |
-| `findings` | `[]`, legacy-safe | present but not an array → exit 2 | ratchet, unencodable-finding, strike classification, red/green |
-| `rounds_audit` | treated as `[]` | non-array → treated as `[]` | past strikes, loop-back completeness, trace obligation |
-| `task` | see below | not a `validSlug` **on a trace-obligated round** → exit 2 | derives the trace + journal sibling paths |
-| `mode` | no scope-gate trace line is required | any value other than `"full"` → same as absent | requires a `scope-gate` trace line when `"full"` |
-| `normalized_by` | no `normalizer` trace line required; triggers the omit-everything warning **only if the round is also un-obligated** | any truthy value behaves alike | requires a `normalizer` trace line |
-| `cross_runtime` | no warnings, no corroboration | non-object → ignored | degraded-bookkeeping warnings, journal corroboration |
-| `streak_override` | no override | anything not `{round: <this round>, by: "human"}` → no override | forces this round's `strike` to `false` |
+| `round` | exit 2 unless `--allow-legacy` | non-number / negative / non-finite → exit 2 | skipped strike + `rounds_audit` + trace checks, warned, exit 0 |
+| `no_go_round` | exit 2 unless `--allow-legacy` | non-number / negative → exit 2 | defaulted to `0`; the cap could never fire |
+| `cycle` | exit 2 (non-legacy) | non-number / `< 1` → exit 2 | `null`; every trace line classified as prior-cycle |
+| `findings` | `[]`, legacy-safe | present but not an array → exit 2 | already fail-closed (FIX-A/CGF-1) |
+| `rounds_audit` | treated as `[]` | non-array → exit 2; a gap in rounds `2..round-1` → exit 3 | non-array read as `[]`; a gap erased the streak |
+| `task` | exit 2 (non-legacy) | not a `validSlug` → exit 2 | load-bearing only on a trace-obligated round |
+| `mode` | no scope-gate trace line required | outside `express\|fast\|full` → exit 2 | any other value read exactly like absent |
+| `normalized_by` | exit 2 (non-legacy) | non-string / empty → exit 2 | a conditional warning |
+| `cross_runtime` | no corroboration | non-object → exit 2; unknown `status` → exit 2; `digest` without `config_digest` → exit 2 | non-object ignored; statuses unvalidated |
+| `streak_override` | no override | anything not `{round: <this round>, by: "human"}` → no override | unchanged |
 
-Everything the gate does **not** read: `status`, `date`, `summary`, `auto_fixes_applied`,
-`no_go_reason`, `cross_runtime_findings`, `escalation_needed`, `escalation_reason`. Those are real
-fields with real consumers — just not this one.
+Three more keys are **validated but not acted on** — they route, and an unvalidated routing key is a
+step that silently does nothing:
+
+| Key | Rule |
+|---|---|
+| `status` | outside `GO\|NO-GO` → exit 2. `GO` while the gate reports a design violation → `go-with-design-violation`, exit 1 |
+| `no_go_reason` | absent on a `NO-GO` → exit 2; `type` outside the routing enum → exit 2; `cause` outside the cause enum → exit 2 |
+| `cross_runtime_findings` | non-array → exit 2; entries are ratchet-checked like `findings`; a `CRITICAL`/`HIGH` `OPEN` entry not mirrored into `findings[]` → `unmirrored-cross-runtime-finding`, exit 1 |
+
+Findings in **both** arrays must carry a `status` inside `OPEN\|RESOLVED\|ACCEPTED`; anything else is
+exit 2, because the gate only ever compares against `RESOLVED` and `ACCEPTED` and a near-miss
+escapes both the ratchet and the waiver.
+
+Still unread and prose-enforced only: `date`, `summary`, `auto_fixes_applied`, `escalation_needed`,
+`escalation_reason`.
 
 ---
 
@@ -147,16 +181,20 @@ Two events only (INV-3): a persisted `GO` verdict keeps its cycle-final `round` 
 `cross_runtime` for auditability; the *next* cycle then initializes fresh — `round: 1`, full
 fan-out, empty `rounds_audit`, new cross-runtime probe, `cycle + 1`.
 
-**Absence is the vacuity hole (B-8).** With no `round` key the gate skips strike classification,
-the `rounds_audit` completeness check, and all trace checks, emits three warnings, and exits 0.
-`scripts/review-verdict-assemble.js` refuses to emit a verdict without it.
+**Absence was the vacuity hole (B-8).** With no `round` key the gate skipped strike classification,
+the `rounds_audit` completeness check and all trace checks, emitted three warnings, and exited 0.
+It is now **exit 2 unless `--allow-legacy`** is passed, which records the skip (see
+[Gate report](#gate-report)). `scripts/review-verdict-assemble.js` still refuses to emit a verdict
+without it, so the flag is for pre-schema fixtures, never for new work.
 
-**Skipping a round is the quieter half of the same hole.** `computeStreakViolation()` walks
+**Skipping a round was the quieter half of the same hole.** `computeStreakViolation()` walks
 `round, round-1, …` and stops at the first entry that is not `true`; `computeStrikeMap()` only
-knows about rounds that have a `rounds_audit` entry. Jumping from round 3 to round 7 therefore
-leaves rounds 4–6 absent from the map and erases the streak — with **no** warning, because
-`computeMissingStrikeWarnings()` only inspects entries that exist. The assembler refuses any
-`--round` other than the one the lifecycle witness derives.
+knows about rounds that have a `rounds_audit` entry. Jumping from round 3 to round 7 left rounds
+4–6 absent from the map and erased the streak — with **no** warning, because
+`computeMissingStrikeWarnings()` only inspects entries that exist. A gap anywhere in
+`2..round-1` is now a `missing-past-audit` violation (`process-incomplete`, exit 3), repairable by
+journaling the missing round. The assembler additionally refuses any `--round` other than the one
+the lifecycle witness derives.
 
 Never conflate `round` with `no_go_round` — separate counters, separate reset rules.
 
@@ -247,34 +285,37 @@ only repair. Because omitting the stamp *removes* the trace obligation rather th
 #### `rounds_audit[].strike`
 
 **Boolean. Never `null`, never absent once the round has been gated.** This is the single most
-dangerous field in the envelope.
+dangerous field in the envelope, and a non-boolean is now **exit 2**.
 
 `computeStrikeMap()` reads past strikes with
 `if (typeof entry.strike === "boolean") strikeByRound.set(entry.round, entry.strike)`. A `null`
 therefore never lands in the map, `Map.get()` returns `undefined`, and
-`computeStreakViolation()`'s `strikeByRound.get(r) !== true` test **silently resets the streak**.
+`computeStreakViolation()`'s `strikeByRound.get(r) !== true` test **silently reset the streak**.
 
-Verified behaviour, on a five-round verdict where every round carries a novel HIGH finding:
+Verified behaviour, on a five-round verdict where every round carries a novel HIGH finding —
+before, and after:
 
-| Verdict | Gate result |
-|---|---|
-| `strike` boolean throughout | exit **1**, `cause: novel-finding-streak` — and it fires at **round 3**, not round 5 |
-| `strike: null` on round 4 only | exit 1, `cause: round-cap`; the streak is gone; one warning |
-| `strike: null` on every round, `no_go_round: 2` | exit **0**, `violations: []`, `cause: null` — total escape, three warnings |
+| Verdict | Was | Now |
+|---|---|---|
+| `strike` boolean throughout | exit **1**, `cause: novel-finding-streak`, firing at **round 3** not round 5 | unchanged |
+| `strike: null` on round 4 only | exit 1, `cause: round-cap`; the streak gone; one warning | **exit 2**, no report, `rounds_audit entry for round 4 has strike null` |
+| `strike: null` on every round, `no_go_round: 2` | exit **0**, `violations: []`, `cause: null` — total escape, three warnings | **exit 2**, no report |
 
-The third row is the real-world failure: five rounds, every round striking,
-`current_round_strike: true` in the report, and the gate still reports no violation. A live example
-of the shape that produces it is `briefs/f16-dsl-slice1-review.json` (`round: 3`, `strike: null` on
-all three entries).
+The third row was the real-world failure: five rounds, every round striking,
+`current_round_strike: true` in the report, and the gate still reporting no violation. A live
+example of the shape that produced it is `briefs/f16-dsl-slice1-review.json` (`round: 3`,
+`strike: null` on all three entries) — it now fails the gate, and the repair is to re-gate each
+round and journal its strike.
 
-Two further sharp edges:
+The two sharp edges that made it so quiet, both now closed:
 
-- A `null` on the **current** round's entry produces **no warning at all** —
+- A `null` on the **current** round's entry produced **no warning at all** —
   `computeMissingStrikeWarnings()` skips entries with `round >= currentRound`, and the current
-  round's strike is recomputed fresh anyway. It becomes a silent streak reset one round later,
-  once that round is a past round.
-- The only warning you get for a past-round `null` is inside the JSON report, on a run whose exit
-  code may well be `0`. It is not a violation.
+  round's strike is recomputed fresh anyway. It became a silent streak reset one round later, once
+  that round was a past round. The boolean check covers the current round's entry too, whenever
+  `strike` is *present*; **absent** on the round being gated is still correct and required.
+- The only signal for a past-round `null` was a warning inside a JSON report, on a run whose exit
+  code was often `0`.
 
 **Therefore: `strike` is written by the gate, not the author.** Assemble the draft with the key
 ABSENT, run the gate, then copy the report's boolean `current_round_strike` into the entry:
@@ -455,15 +496,29 @@ gate *reports* on — 0, 1, 3, the legacy skip, and the inconclusive-red/green f
   "no_go_round": 2, "max_rounds": 5, "legacy_no_go_round": false,
   "round": 3, "legacy_round": false,
   "current_round_strike": true,
+  "legacy_skip_authorized": false,
   "config": { "max_rounds": 5, "strikes": 2, "static": true },
+  "hardening": { "version": "1.0.0" },
   "cause": "novel-finding-streak",
   "warnings": [], "violations": [], "checks": [],
   "trace": { "obligated": true, "lines_seen": 9, "schema_version": "1.0", "skipped": false }
 }
 ```
 
-Before trusting any other field, confirm **both** `config.strikes` and `trace` are present. Either
-one absent means a stale gate script: do not persist, surface "gate script out of date", stop.
+Before trusting any other field, confirm **all three** of `config.strikes`, `trace` and
+`hardening.version` are present. Any one absent means a stale gate script: do not persist, surface
+"gate script out of date", stop.
+
+### `legacy_skip_authorized` — the recorded skip
+
+`true` when `--allow-legacy` suppressed the fail-closed refusal for an absent `round` or an absent
+`no_go_round`. It means: *this run was authorized to skip checks it could not perform, and is not
+evidence that they passed.* `review-verdict-assemble.js --write-strike` refuses such a report
+outright — journaling a strike from a gate run that skipped strike classification would convert a
+recorded skip straight back into an indistinguishable pass.
+
+Pass the flag only for a genuinely pre-schema fixture. For anything else, the fix is to assemble
+the verdict rather than to authorize the skip.
 
 ### Exit codes
 
@@ -471,8 +526,16 @@ one absent means a stale gate script: do not persist, surface "gate script out o
 |---|---|---|
 | 0 | no violations, no degraded input | proceed |
 | 1 | design violation — `cause` is `unencodable-finding` / `unattested-invocation` / `novel-finding-streak` / `round-cap` | `NO-GO` regardless of the human verdict; route per `cause` |
-| 2 | degraded input: absent/malformed verdict, unknown flag, inconclusive red/green, malformed current-cycle trace line | fail closed; block the route-back, surface to the human |
-| 3 | `process-incomplete` only — incomplete/absent `rounds_audit` entry, or `missing-trace` | repair per `violations[].detail`, re-gate, max 2 attempts, never bump `round`, never route |
+| 2 | degraded input: absent/malformed verdict, unknown flag, inconclusive red/green, malformed current-cycle trace line, **or any of the fail-closed envelope rules above** | fail closed; block the route-back, surface to the human. **No report is emitted** — there is nothing to persist |
+| 3 | `process-incomplete` only — incomplete/absent `rounds_audit` entry for the current round, a **gap** in rounds `2..round-1`, or `missing-trace` | repair per `violations[].detail`, re-gate, max 2 attempts, never bump `round`, never route |
+
+Two violation types are newer than the four causes above and reuse them:
+
+| Type | Cause | Exit |
+|---|---|---|
+| `unmirrored-cross-runtime-finding` | `unencodable-finding` | 1 |
+| `go-with-design-violation` | inherited from the first design violation found | 1 |
+| `missing-past-audit` | `process-incomplete` | 3 |
 
 `cause` precedence (FR-059/B-5, extended FR-174):
 
@@ -488,24 +551,35 @@ given the previous section, most often means a `strike: null`.
 
 ---
 
-## Prose/enforcer discrepancies
+## Prose/enforcer discrepancies — resolved
 
-Recorded, not resolved. Each is a place where `roster-review` prose implies an enforcement that
-does not exist, or where the enforcer requires something the prose never states.
+Each row was a place where `roster-review` prose implied an enforcement that did not exist, or
+where the enforcer required something the prose never stated. **All eleven are now enforced**, by
+`scripts/lib/review-gate-hardening.js`, and each has a proof-of-rejection case in
+`scripts/check-review-convergence-hardening.test.js` — the gate has been watched failing on every
+one of them.
 
-| # | Discrepancy | Consequence |
+| # | Discrepancy | Was (silent) | Now |
+|---|---|---|---|
+| D1 | Prose: "any `cross_runtime_findings` entry that is CRITICAL or HIGH (OPEN) sets `status: NO-GO`". The gate never read the array. | A HIGH cross-runtime finding was invisible; only the prose-level mirror into `findings` put it under the ratchet, and forgetting the mirror was unenforced. | The array is ratchet-checked like `findings`, and a `CRITICAL`/`HIGH` `OPEN` entry with no mirror is `unmirrored-cross-runtime-finding` (exit 1). |
+| D2 | Prose treats `no_go_reason.type` as the routing key; the gate never read `no_go_reason` or `status`. | A typo routed nowhere. Caught only for assembler-produced verdicts. | `type`/`cause` enums and the `status` enum are validated (exit 2); a `GO` asserted over a design violation is `go-with-design-violation` (exit 1). |
+| D3 | Prose says `strike` is "populated after the gate reports it" but never that it must be a **boolean**. | `strike: null` passed the completeness check and defeated streak escalation. Live here: `briefs/f16-dsl-slice1-review.json`. | Non-boolean on any gated round → exit 2. Absent on the round being gated is still correct. |
+| D4 | Prose lists `task` as an ordinary field; the gate made it load-bearing only once the round was trace-obligated. | On any other round, a blanked `task` fell through to the B-8 skip. | Required and `validSlug`-checked on every non-legacy round (exit 2). |
+| D5 | `mode` means `express\|fast\|full` in the verdict and `static\|full` in the gate report. | Copying one into the other silently changed what the gate demanded. | Outside the verdict enum → exit 2, with the collision named in the message. |
+| D6 | Prose does not state that stamping `normalized_by` creates a `normalizer` trace obligation, nor that the normalizer self-appends only when `--task`, `--round` **and** `--cycle` are all given. | Absent `normalized_by` was a conditional warning, on a verdict whose fingerprints were therefore unstable. | Absent/empty on a non-legacy round → exit 2: strike classification on an unnormalized verdict is not a result. |
+| D7 | `findings[].status` is `OPEN\|RESOLVED\|ACCEPTED` per `schema/review-finding.schema.json`; the gate accepted any string (it only tests `=== "RESOLVED"` / `=== "ACCEPTED"`). | `status: "OPEN-FOR-HUMAN"` (live here) matched neither branch. Enforcement depended on which tool you ran. | Enum-checked in **both** finding arrays → exit 2. |
+| D8 | Prose describes the ratchet's exemptions but not the FIX-2 hardening: *missing* round provenance on a `RESOLVED` HIGH+ finding is itself an `unencodable-finding` violation. | — | **Not a hole**: the enforcer is *stricter* than the prose, so nothing escapes. Resolved by this documentation only. |
+| D9 | Prose says `cross_runtime` entries persist `config_digest`; the journal writes the same value under `digest`. | Writing the journal's key into the verdict broke corroboration silently; no status value was validated at all. | `digest` without `config_digest` → exit 2 with the asymmetry explained; unknown `status` → exit 2. |
+| D10 | Prose does not mention that an absent `no_go_round` defaults to `0` with a warning. | The round cap could never fire — a second, quieter vacuity path alongside `round`. | Exit 2 unless `--allow-legacy` records the skip. |
+| D11 | Prose does not mention that an absent/non-numeric `cycle` filters every numerically-stamped trace line out as prior-cycle. | A trace-obligated round with no `cycle` failed as `missing-trace` even with the lines on disk. | Absent or non-numeric/`< 1` on a non-legacy round → exit 2. |
+
+Three further holes, found auditing the same file and not previously recorded:
+
+| # | Hole | Now |
 |---|---|---|
-| D1 | Prose: "any `cross_runtime_findings` entry that is CRITICAL or HIGH (OPEN) sets `status: NO-GO`". The gate never reads `cross_runtime_findings`. | A HIGH cross-runtime finding is invisible to the gate. Only the prose-level mirror into `findings` puts it under the ratchet — forget the mirror and it is unenforced. |
-| D2 | Prose treats `no_go_reason.type` as the routing key. The gate never reads `no_go_reason` at all. | A typo silently routes nowhere. Unresolved in the enforcer; `review-verdict-assemble.js` validates both enums at assembly time, so a typo is caught for verdicts it produces — a hand-written one is still unchecked. |
-| D3 | Prose says `strike` is "populated after the gate reports it"; it never says the value must be a *boolean*, and the gate's completeness check does not require it. | `strike: null` passes the completeness check and silently defeats streak escalation. Live in this repo: `briefs/f16-dsl-slice1-review.json`. |
-| D4 | Prose lists `task` as an ordinary field. The gate makes it load-bearing for path derivation and fails **closed (exit 2)** on an invalid slug once the round is trace-obligated. | An innocuous-looking `task` edit turns a working round into a hard degraded-input failure. |
-| D5 | `mode` means `express\|fast\|full` in the verdict and `static\|full` in the gate report. | Copying one into the other silently changes what the gate demands. |
-| D6 | Prose does not state that stamping `normalized_by` creates a `normalizer` trace obligation, nor that the normalizer self-appends only when `--task`, `--round` **and** `--cycle` are all given. | Two of three flags → no trace line → `unattested-invocation` (exit 1) on a round that really did normalize. |
-| D7 | `findings[].status` is `OPEN\|RESOLVED\|ACCEPTED` per `schema/review-finding.schema.json`, and `review-normalize.js` *rejects* anything else. The gate accepts any string (it only tests `=== "RESOLVED"` / `=== "ACCEPTED"`). | Hand-written verdicts in this repo carry `status: "OPEN-FOR-HUMAN"` and `category: "ci"` (`briefs/make-tests-actually-run-review.json`). The gate tolerates them; the normalizer would have rejected them. Enforcement depends on which tool you ran. |
-| D8 | Prose describes the ratchet's exemptions (same-round raise+resolve, `ACCEPTED`) but not the FIX-2 hardening: *missing* round provenance on a `RESOLVED` HIGH+ finding is itself an `unencodable-finding` violation. | A verdict that omits `resolved_round` reads as lenient and gates as a design violation. |
-| D9 | Prose says `cross_runtime` entries persist `config_digest`; the journal writes the same value under `digest`. Documented in code comments only. | Writing `digest` in the verdict (or `config_digest` in the journal) breaks corroboration and yields `unattested-invocation`. |
-| D10 | Prose does not mention that an absent `no_go_round` defaults to `0` with a warning. | The round-cap backstop cannot fire on a verdict that omits it — a second, quieter vacuity path alongside the `round` one. |
-| D11 | Prose does not mention that an absent/non-numeric `cycle` filters every numerically-stamped trace line out as prior-cycle. | A trace-obligated round with no `cycle` fails as `missing-trace` (exit 3) even though the lines are on disk. |
+| G3 | An absent `round` skipped strike, `rounds_audit` and trace checks and exited 0. | Exit 2 unless `--allow-legacy` records the skip. |
+| G5 | A **gap** in `rounds_audit` (e.g. round 3 → round 7) left the skipped rounds out of the strike map and erased the streak, with no warning, because `computeMissingStrikeWarnings()` only inspects entries that exist. | `missing-past-audit` over `2..round-1` → exit 3. |
+| G13 | `rounds_audit` and `cross_runtime` were coerced (`Array.isArray(x) ? x : []`, `typeof x === "object" \|\| return`), so a wrong type emptied the check instead of failing it. | Present-but-wrong-type → exit 2. |
 
 Two more notes on the enforcer itself, neither a discrepancy:
 
@@ -524,17 +598,25 @@ Two more notes on the enforcer itself, neither a discrepancy:
 `scripts/review-bundle.manifest.json` and verified by `node scripts/review-bundle-verify.js`. Do
 not hand-edit them; see `scripts/REVIEW-BUNDLE.md`.
 
-This document, `scripts/review-verdict-assemble.js`, its rule layer
-`scripts/lib/review-verdict-rules.js`, and the test are **repo-local** and deliberately absent from
-the manifest, so a bundle upgrade neither overwrites nor flags them. Note the path: the rule layer
-sits directly in `scripts/lib/`, *not* in the bundle-owned `scripts/lib/review/`.
+This document, `scripts/review-verdict-assemble.js`, `scripts/check-mandated-steps.js`, their rule
+layers `scripts/lib/review-verdict-rules.js`, `scripts/lib/review-gate-hardening.js` and
+`scripts/lib/mandated-steps-rules.js`, and the three tests are **repo-local** and deliberately
+absent from the manifest, so a bundle upgrade neither overwrites nor flags them. Note the path: the
+rule layers sit directly in `scripts/lib/`, *not* in the bundle-owned `scripts/lib/review/`.
 
-The assembler's own checks — including the round-cap / streak / `strike: null` cases tabulated
-above, each red-on-mutation against the real gate — run standalone, no test framework:
+`check-review-convergence.js` requires `scripts/lib/review-gate-hardening.js`. That is the one
+place a bundle file depends on a repo-local one, and it is deliberate: the hardening rules are this
+repo's contract with the gate, and keeping them out of the bundle means a bundle upgrade cannot
+silently restore any of the eleven holes.
+
+The checks run standalone, no test framework. Each constructs the input that should be rejected and
+asserts the refusal:
 
 ```bash
-node scripts/review-verdict-assemble.test.js   # exit 0 = green
-node scripts/review-bundle-verify.js           # bundle integrity, no network
+node scripts/review-verdict-assemble.test.js              # assembler ↔ real gate, red-on-mutation
+node scripts/check-review-convergence-hardening.test.js   # D1..D11 + G3/G5/G13 proof-of-rejection
+node scripts/check-mandated-steps.test.js                 # recorded-skip ledger
+node scripts/review-bundle-verify.js                      # bundle integrity, no network
 ```
 
 They are deliberately not wired into `make test-all`: that target runs the GPU suites, and this

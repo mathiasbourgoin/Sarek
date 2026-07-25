@@ -192,6 +192,24 @@ test_sarek_core:
 test-all: test test_spoc test_sarek_core test_interpreter test_negative check-opam-clean
 	@echo "=== All tests passed ==="
 
+# Review-pipeline gate contracts. Kept OUT of test-all on purpose: test-all runs
+# the GPU suites, and these must stay checkable on a machine with no GPU. Node
+# only, no framework, no network.
+#
+# Each suite constructs inputs that SHOULD be rejected and asserts the refusal —
+# schema/review-json-schema.md and schema/mandated-steps-schema.md are the
+# contracts under test. They need the review-tool bundle installed
+# (scripts/REVIEW-BUNDLE.md) and FAIL rather than skip when it is absent, because
+# a skipped contract check reads exactly like a passing one.
+.PHONY: test-review-tools
+test-review-tools:
+	@echo "=== Review-pipeline gate contracts (no GPU, no network) ==="
+	node scripts/review-verdict-assemble.test.js
+	node scripts/check-review-convergence-hardening.test.js
+	node scripts/check-mandated-steps.test.js
+	node scripts/review-bundle-verify.js
+	@echo "=== Review-tool contracts hold ==="
+
 # E2E tests - quick verification with small datasets comparing GPU vs native CPU
 # removed test for v2 compatibilit: test_histogram
 E2E_TESTS = test_stencil test_matrix_mul test_reduce  \

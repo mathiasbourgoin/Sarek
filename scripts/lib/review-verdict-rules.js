@@ -146,6 +146,22 @@ function assertGateReportIsCurrent(report) {
     stale("no numeric config.strikes");
   }
   if (!report.trace || typeof report.trace !== "object") stale("no `trace` block (FR-176)");
+  if (!report.hardening || typeof report.hardening.version !== "string") {
+    stale("no `hardening.version` (scripts/lib/review-gate-hardening.js)");
+  }
+  // A gate run that was authorized to SKIP its own checks is not evidence that
+  // those checks passed. `legacy_skip_authorized` is the recorded-skip marker
+  // the gate stamps when --allow-legacy suppressed the round / no_go_round
+  // fail-closed refusal; journaling a strike from such a report would convert
+  // a recorded skip back into an indistinguishable pass, which is precisely
+  // the defect the flag exists to avoid.
+  if (report.legacy_skip_authorized === true) {
+    fail(
+      "gate report has legacy_skip_authorized: true — that run was authorized (via --allow-legacy) to SKIP " +
+        "strike classification and/or the round cap, so its strike is not a computed result. Refusing to journal " +
+        "it. Assemble the verdict properly (scripts/review-verdict-assemble.js) and re-gate without --allow-legacy."
+    );
+  }
 }
 
 // ── rounds_audit carry-forward (append-only) ─────────────────────────────
