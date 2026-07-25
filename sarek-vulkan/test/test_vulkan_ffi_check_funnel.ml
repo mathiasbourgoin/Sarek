@@ -27,10 +27,12 @@ module Memory = Vulkan_api_memory
 let absurd_element_count = 1 lsl 40
 
 let test_absurd_allocation_raises_canonical_backend_error () =
-  if not (Vulkan_api.is_available ()) then
+  if not (Vulkan_api.is_available ()) then begin
     Printf.printf
       "[SKIP] No Vulkan device available - skipping hardware check-funnel test\n\
-       %!"
+       %!" ;
+    Alcotest.skip ()
+  end
   else begin
     Device.init () ;
     let device = Device.get 0 in

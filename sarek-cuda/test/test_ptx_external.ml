@@ -86,8 +86,10 @@ let make_host_array size f =
 let test_vector_add () =
   if not (Cuda_api.is_driver_available ()) then (
     Printf.printf "  [SKIP] no CUDA device\n%!" ;
-    (* Alcotest skip not available without raising; just pass *)
-    ())
+    (* Alcotest.skip () raises Test.Skip, which the runner reports as a
+       distinct [SKIP] status. Returning unit instead renders as a green
+       [OK] under this test case's name, which claims the launch verified. *)
+    Alcotest.skip ())
   else begin
     Cuda_api.Device.init () ;
     let dev = Cuda_api.Device.get 0 in

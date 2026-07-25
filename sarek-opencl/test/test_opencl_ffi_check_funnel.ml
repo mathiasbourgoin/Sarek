@@ -25,10 +25,12 @@ __kernel void real_kernel(__global float *out) {
 |}
 
 let test_invalid_kernel_name_raises_canonical_backend_error () =
-  if not (Opencl_api.is_available ()) then
+  if not (Opencl_api.is_available ()) then begin
     Printf.printf
       "[SKIP] No OpenCL device available - skipping hardware check-funnel test\n\
-       %!"
+       %!" ;
+    Alcotest.skip ()
+  end
   else begin
     Opencl_api.Device.init () ;
     let device = Opencl_api.Device.get 0 in

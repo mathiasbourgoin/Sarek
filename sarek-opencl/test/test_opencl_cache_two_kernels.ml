@@ -60,9 +60,11 @@ let run_kernel_and_read_result device ~name =
   result.{0}
 
 let test_two_kernels_one_source_resolve_independently () =
-  if not (Backend.is_available ()) then
+  if not (Backend.is_available ()) then begin
     Printf.printf
-      "[SKIP] No OpenCL device available - skipping hardware cache test\n%!"
+      "[SKIP] No OpenCL device available - skipping hardware cache test\n%!" ;
+    Alcotest.skip ()
+  end
   else begin
     Backend.Device.init () ;
     let device = Backend.Device.get 0 in

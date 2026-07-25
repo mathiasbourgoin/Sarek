@@ -2224,12 +2224,18 @@ let glsl_validation_tests () =
               Printf.printf
                 "  SKIP (excluded): glsl/%s — %s\n%!"
                 kernel_name
-                reason
+                reason ;
+              (* An excluded golden is not validated. Report SKIP so the
+                 exclusion list is visible in the runner output instead of
+                 hiding behind a green [OK] on a "glsl-validate/*" name. *)
+              Alcotest.skip ()
           | None -> (
               Gen_glsl.reset_state () ;
               let glsl = Gen_glsl.generate_with_types ~types:k.kern_types k in
-              if not (Lazy.force glslang_available) then
-                Printf.printf "  SKIP: glslangValidator not on PATH\n%!"
+              if not (Lazy.force glslang_available) then begin
+                Printf.printf "  SKIP: glslangValidator not on PATH\n%!" ;
+                Alcotest.skip ()
+              end
               else
                 match glslang_ok glsl with
                 | Ok () ->
@@ -2258,12 +2264,15 @@ let wgsl_validation_tests () =
               Printf.printf
                 "  SKIP (excluded): wgsl/%s — %s\n%!"
                 kernel_name
-                reason
+                reason ;
+              Alcotest.skip ()
           | None -> (
               Gen_wgsl.reset_state () ;
               let wgsl = Gen_wgsl.generate_with_types ~types:k.kern_types k in
-              if not (Lazy.force naga_available) then
-                Printf.printf "  SKIP: naga not on PATH\n%!"
+              if not (Lazy.force naga_available) then begin
+                Printf.printf "  SKIP: naga not on PATH\n%!" ;
+                Alcotest.skip ()
+              end
               else
                 match naga_ok wgsl with
                 | Ok () -> Printf.printf "  naga OK: %s\n%!" kernel_name

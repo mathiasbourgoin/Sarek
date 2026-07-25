@@ -161,8 +161,14 @@ let run_wmma_load dev =
   with e -> Error (Printexc.to_string e)
 
 let test_mma () =
-  if not (Cuda_api.is_driver_available ()) then
-    Printf.printf "  [SKIP] no CUDA device\n%!"
+  if not (Cuda_api.is_driver_available ()) then begin
+    Printf.printf "  [SKIP] no CUDA device\n%!" ;
+    (* Report a distinct SKIP status to the runner. Printing alone is not
+       enough: Alcotest captures stdout, so a printed skip that returns
+       normally renders as a green [OK] under the test case's name — which
+       here asserts the mma executed correctly. *)
+    Alcotest.skip ()
+  end
   else begin
     Cuda_api.Device.init () ;
     let dev = Cuda_api.Device.get 0 in
@@ -196,7 +202,8 @@ let test_mma () =
         Printf.printf
           "  [SKIP] tensor-core mma not available on this driver (see \
            docs/optimization/l15b-mma-probe.md)\n\
-           %!"
+           %!" ;
+        Alcotest.skip ()
   end
 
 let () =

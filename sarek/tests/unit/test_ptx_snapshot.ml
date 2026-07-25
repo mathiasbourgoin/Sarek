@@ -2340,8 +2340,10 @@ let soa_field_sum_kernel () =
     []
 
 let test_ptxas_assembles () =
-  if not (Lazy.force ptxas_available) then
-    Printf.printf "  SKIP: ptxas not on PATH (CPU-only environment)\n%!"
+  if not (Lazy.force ptxas_available) then begin
+    Printf.printf "  SKIP: ptxas not on PATH (CPU-only environment)\n%!" ;
+    Alcotest.skip ()
+  end
   else begin
     let ia = make_var "ia" (TVec TInt32) in
     let la = make_var "la" (TVec TInt64) in

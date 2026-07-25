@@ -138,6 +138,7 @@ let test_match_still_runs dev =
 let () =
   Printf.printf "test_hip_f16_argcheck (#57 slice 1 review)\n" ;
   let devices = Device.init () in
+  let exercised = ref 0 in
   if Array.length devices = 0 then print_endline "    [SKIP] no devices"
   else
     Array.iter
@@ -147,11 +148,21 @@ let () =
           List.mem dev.Device.framework ["HIP"; "CUDA"; "Native"; "Interpreter"]
         then begin
           Printf.printf "  %s: %s\n" dev.Device.framework dev.Device.name ;
+          incr exercised ;
           test_mismatch_rejected dev ;
           test_match_still_runs dev
         end)
       devices ;
-  if !failures = 0 then print_endline "test_hip_f16_argcheck PASSED"
+  (* Without this the suite prints PASSED after checking nothing at all: the
+     per-device filter can exclude every enumerated device and the loop then
+     runs zero assertions, which is indistinguishable from a real pass. *)
+  if !exercised = 0 && Array.length devices > 0 then
+    print_endline
+      "    [SKIP] no enumerated device implements device-side f16 (HIP / CUDA \
+       / Native / Interpreter) — 0 checks ran" ;
+  if !failures = 0 && !exercised = 0 then
+    print_endline "test_hip_f16_argcheck SKIPPED (no eligible device)"
+  else if !failures = 0 then print_endline "test_hip_f16_argcheck PASSED"
   else begin
     Printf.printf "test_hip_f16_argcheck FAILED (%d)\n" !failures ;
     exit 1

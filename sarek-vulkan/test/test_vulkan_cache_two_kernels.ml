@@ -58,9 +58,11 @@ let compile_and_read_result device ~name =
   (compiled, result.{0})
 
 let test_two_kernel_names_one_source_do_not_alias () =
-  if not (Vulkan_api.is_available ()) then
+  if not (Vulkan_api.is_available ()) then begin
     Printf.printf
-      "[SKIP] No Vulkan device available - skipping hardware cache test\n%!"
+      "[SKIP] No Vulkan device available - skipping hardware cache test\n%!" ;
+    Alcotest.skip ()
+  end
   else begin
     Device.init () ;
     let device = Device.get 0 in

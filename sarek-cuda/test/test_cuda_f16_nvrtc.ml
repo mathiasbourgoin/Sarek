@@ -125,8 +125,10 @@ let compile src =
   | exception e -> Error (Printexc.to_string e)
 
 let test_f16_source_compiles () =
-  if not (nvrtc_ready ()) then
-    Printf.printf "  [SKIP] f16 nvrtc compile: %s\n" (skip_reason ())
+  if not (nvrtc_ready ()) then begin
+    Printf.printf "  [SKIP] f16 nvrtc compile: %s\n" (skip_reason ()) ;
+    Alcotest.skip ()
+  end
   else
     let src = gen (f16_scale_kernel ()) in
     (* Precondition: this really is the f16 source shape under test. *)
@@ -152,8 +154,10 @@ let test_f16_source_compiles () =
             ptx
 
 let test_f32_source_still_compiles () =
-  if not (Sarek_cuda.Cuda_nvrtc.is_available ()) then
-    Printf.printf "  [SKIP] f32 nvrtc compile: libnvrtc not loadable\n"
+  if not (Sarek_cuda.Cuda_nvrtc.is_available ()) then begin
+    Printf.printf "  [SKIP] f32 nvrtc compile: libnvrtc not loadable\n" ;
+    Alcotest.skip ()
+  end
   else
     let src = gen (f32_scale_kernel ()) in
     match compile src with

@@ -170,9 +170,49 @@ let write_file path contents =
   output_string oc contents ;
   close_out oc
 
+(** Why the toolchain produced no SASS for an architecture. The distinction is
+    load-bearing: [Unknown_arch] is an environment gap and a legitimate skip,
+    while [Tool_error] means ptxas or nvdisasm rejected work this test generated
+    — a real failure that must not be folded into the skip bucket. Before this
+    split every nonzero exit read as "arch not supported", so a ptxas that
+    rejected the generated PTX outright made the gate report a green pass having
+    checked nothing. *)
+type tool_failure = Unknown_arch of string | Tool_error of string
+
+let failure_message = function Unknown_arch m | Tool_error m -> m
+
+(* ptxas reports an unrecognised target as
+   [ptxas fatal : Value 'sm_XXX' is not defined for option 'gpu-name'],
+   an architecture it was not built for as "Unsupported gpu architecture",
+   and an unassemblable .target directive as "Unsupported .target". Anything
+   else is a genuine assembler error. If a future toolkit invents new
+   wording the effect is a hard failure with the message quoted verbatim,
+   which is the safe direction: a new phrase gets noticed and added here,
+   rather than joining a silent skip bucket. *)
+let contains_sub s sub =
+  let n = String.length sub and l = String.length s in
+  let rec go i = i + n <= l && (String.sub s i n = sub || go (i + 1)) in
+  n = 0 || go 0
+
+let classify_ptxas_error msg =
+  if
+    contains_sub msg "is not defined for option"
+    || contains_sub msg "Unsupported gpu architecture"
+    || contains_sub msg "Unsupported .target"
+  then Unknown_arch msg
+  else Tool_error msg
+
+(* nvdisasm's own "I do not know this SM" wording. *)
+let classify_nvdisasm_error msg =
+  if
+    contains_sub msg "Unrecognized SM version"
+    || contains_sub msg "Unsupported SM version"
+    || contains_sub msg "unsupported architecture"
+  then Unknown_arch msg
+  else Tool_error msg
+
 (** [sass_of_ptx ~arch ptx] assembles [ptx] for [arch] and disassembles the
-    result. [Error msg] when the architecture is unknown to the local ptxas or
-    either tool fails. *)
+    result. See {!tool_failure} for the two error kinds. *)
 let sass_of_ptx ~arch ptx =
   let base = Filename.temp_file "sarek_f16_sass_" "" in
   let src = base ^ ".ptx" and obj = base ^ ".cubin" in
@@ -205,8 +245,19 @@ let sass_of_ptx ~arch ptx =
           in
           match rc with
           | Unix.WEXITED 0 -> Ok (read_file out)
-          | _ -> Error ("nvdisasm failed: " ^ try read_file err with _ -> ""))
-      | _ -> Error ("ptxas failed: " ^ try read_file err with _ -> ""))
+          | _ ->
+              (* ptxas accepted the target but nvdisasm did not. ptxas and
+                 nvdisasm are located independently by [on_path], so they can
+                 come from different CUDA installs: a newer ptxas assembling
+                 sm_100 whose cubin an older nvdisasm cannot read is an
+                 environment gap, not a defect. Classify it the same way. *)
+              Error
+                (classify_nvdisasm_error
+                   ("nvdisasm failed: " ^ try read_file err with _ -> "")))
+      | _ ->
+          Error
+            (classify_ptxas_error
+               ("ptxas failed: " ^ try read_file err with _ -> "")))
 
 (* ------------------------------------------------------------------ *)
 (* SASS classification                                                *)
@@ -327,18 +378,35 @@ let ptx_of_source ~name src =
     Each bullet is one half of what went wrong on AMDGPU, plus the count that
     catches a narrowing being folded AWAY rather than fused. *)
 let test_midround_sass_unfused () =
-  if not (ready ()) then
-    Printf.printf "  [SKIP] f16 SASS gate: %s\n" (skip_reason ())
+  if not (ready ()) then begin
+    Printf.printf "  [SKIP] f16 SASS gate: %s\n" (skip_reason ()) ;
+    Alcotest.skip ()
+  end
   else
     let src = gen (f16_midround_kernel ()) in
     match ptx_of_source ~name:"f16_midround" src with
     | Error e -> Alcotest.failf "nvrtc rejected the generated f16 kernel: %s" e
     | Ok ptx ->
         let checked = ref 0 in
+        let unusable = ref [] in
         List.iter
           (fun arch ->
             match sass_of_ptx ~arch ptx with
-            | Error e -> Printf.printf "  [SKIP] %s: %s\n" arch (String.trim e)
+            | Error (Tool_error e) ->
+                (* The toolchain knows this target and still refused the work
+                   this test generated. A real defect, not an environment
+                   gap: do not fold it into the skip bucket. *)
+                Alcotest.failf
+                  "%s: the local CUDA toolchain rejected the generated kernel: \
+                   %s"
+                  arch
+                  (String.trim e)
+            | Error (Unknown_arch e) ->
+                (* ptxas does not know this architecture. Legitimate per-arch
+                   skip; recorded so the zero-architecture case can report
+                   WHY nothing was checked instead of passing silently. *)
+                unusable := (arch, String.trim e) :: !unusable ;
+                Printf.printf "  [SKIP] %s: %s\n" arch (String.trim e)
             | Ok sass ->
                 incr checked ;
                 let insns = instructions sass in
@@ -393,10 +461,17 @@ let test_midround_sass_unfused () =
                     arch
                     (render insns))
           architectures ;
-        if !checked = 0 then
+        if !checked = 0 then begin
+          (* Zero architectures checked: the gate asserted nothing. Report a
+             SKIP status, never a pass. *)
           Printf.printf
             "  [SKIP] f16 SASS gate: local ptxas knows none of %s\n"
-            (String.concat ", " architectures)
+            (String.concat ", " architectures) ;
+          List.iter
+            (fun (arch, e) -> Printf.printf "    %s: %s\n" arch e)
+            (List.rev !unusable) ;
+          Alcotest.skip ()
+        end
         else
           Printf.printf
             "  f16 SASS gate: f32 discipline intact on %d/%d architectures\n"
@@ -407,8 +482,10 @@ let test_midround_sass_unfused () =
     fails, the gate above proves nothing: it would be asserting the absence of a
     pattern it cannot recognise. *)
 let test_classifier_detects_fusion () =
-  if not (ready ()) then
-    Printf.printf "  [SKIP] f16 SASS positive control: %s\n" (skip_reason ())
+  if not (ready ()) then begin
+    Printf.printf "  [SKIP] f16 SASS positive control: %s\n" (skip_reason ()) ;
+    Alcotest.skip ()
+  end
   else
     match ptx_of_source ~name:"f16_native_arith" positive_control_source with
     | Error e -> Alcotest.failf "nvrtc rejected the positive control: %s" e
@@ -418,14 +495,26 @@ let test_classifier_detects_fusion () =
         let arch =
           List.find_opt
             (fun a ->
-              match sass_of_ptx ~arch:a ptx with Ok _ -> true | _ -> false)
+              match sass_of_ptx ~arch:a ptx with
+              | Ok _ -> true
+              | Error (Unknown_arch _) -> false
+              | Error (Tool_error e) ->
+                  (* Same rule as the gate: a target the toolchain knows but
+                     could not process is a failure, not "no usable arch". *)
+                  Alcotest.failf
+                    "%s: the local CUDA toolchain rejected the positive \
+                     control: %s"
+                    a
+                    (String.trim e))
             architectures
         in
         match arch with
-        | None -> Printf.printf "  [SKIP] positive control: no usable arch\n"
+        | None ->
+            Printf.printf "  [SKIP] positive control: no usable arch\n" ;
+            Alcotest.skip ()
         | Some arch -> (
             match sass_of_ptx ~arch ptx with
-            | Error e -> Alcotest.failf "%s: %s" arch e
+            | Error e -> Alcotest.failf "%s: %s" arch (failure_message e)
             | Ok sass ->
                 let insns = instructions sass in
                 let fused = binary16_arithmetic insns in

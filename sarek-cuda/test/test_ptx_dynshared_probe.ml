@@ -67,8 +67,12 @@ let make_dynshared_kernel () : kernel =
     kern_native_fn = None;
   }
 
-let test_dynshared () =
-  let ptx = Sarek_codegen.Sarek_ir_ptx.generate (make_dynshared_kernel ()) in
+let emitted_ptx () =
+  Sarek_codegen.Sarek_ir_ptx.generate (make_dynshared_kernel ())
+
+(* Static half: always runs, needs no driver. *)
+let test_dynshared_ptx () =
+  let ptx = emitted_ptx () in
   (* The declaration must be the extern (launch-sized) form. *)
   Alcotest.(check bool)
     "PTX declares extern .shared dynbuf"
@@ -79,9 +83,17 @@ let test_dynshared () =
      for i = 0 to String.length ptx - mlen do
        if String.sub ptx i mlen = marker then found := true
      done ;
-     !found) ;
-  if not (Cuda_api.is_driver_available ()) then
-    Printf.printf "  [SKIP] no CUDA device (PTX emission checked)\n%!"
+     !found)
+
+(* Device half: separate case so that skipping it does not report a green
+   [OK] on a name claiming the kernel executed. The static half above keeps
+   its own honest green. *)
+let test_dynshared () =
+  let ptx = emitted_ptx () in
+  if not (Cuda_api.is_driver_available ()) then begin
+    Printf.printf "  [SKIP] no CUDA device (PTX emission checked)\n%!" ;
+    Alcotest.skip ()
+  end
   else begin
     Cuda_api.Device.init () ;
     let dev = Cuda_api.Device.get 0 in
@@ -134,6 +146,10 @@ let () =
     [
       ( "dynshared",
         [
+          Alcotest.test_case
+            "PTX declares the extern .shared region"
+            `Quick
+            test_dynshared_ptx;
           Alcotest.test_case
             "extern .shared region sized at launch works"
             `Quick

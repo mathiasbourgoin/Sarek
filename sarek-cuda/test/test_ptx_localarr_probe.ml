@@ -93,16 +93,20 @@ let make_localarr_kernel () : kernel =
     kern_native_fn = None;
   }
 
-let test_localarr () =
-  let ptx = Sarek_codegen.Sarek_ir_ptx.generate (make_localarr_kernel ()) in
-  let contains_sub s sub =
-    let n = String.length sub in
-    let found = ref false in
-    for i = 0 to String.length s - n do
-      if String.sub s i n = sub then found := true
-    done ;
-    !found
-  in
+let emitted_ptx () =
+  Sarek_codegen.Sarek_ir_ptx.generate (make_localarr_kernel ())
+
+let contains_sub s sub =
+  let n = String.length sub in
+  let found = ref false in
+  for i = 0 to String.length s - n do
+    if String.sub s i n = sub then found := true
+  done ;
+  !found
+
+(* Static half: always runs, needs no driver. *)
+let test_localarr_ptx () =
+  let ptx = emitted_ptx () in
   Alcotest.(check bool)
     "PTX declares .local tmp"
     true
@@ -114,9 +118,16 @@ let test_localarr () =
   Alcotest.(check bool)
     "PTX loads via ld.local"
     true
-    (contains_sub ptx "ld.local.f32") ;
-  if not (Cuda_api.is_driver_available ()) then
-    Printf.printf "  [SKIP] no CUDA device (PTX emission checked)\n%!"
+    (contains_sub ptx "ld.local.f32")
+
+(* Device half: separate case so that skipping it does not report a green
+   [OK] on a name claiming the kernel executed. *)
+let test_localarr () =
+  let ptx = emitted_ptx () in
+  if not (Cuda_api.is_driver_available ()) then begin
+    Printf.printf "  [SKIP] no CUDA device (PTX emission checked)\n%!" ;
+    Alcotest.skip ()
+  end
   else begin
     Cuda_api.Device.init () ;
     let dev = Cuda_api.Device.get 0 in
@@ -168,6 +179,10 @@ let () =
     [
       ( "localarr",
         [
+          Alcotest.test_case
+            "PTX declares and uses the .local array"
+            `Quick
+            test_localarr_ptx;
           Alcotest.test_case
             ".local array declare/fill/sum executes correctly"
             `Quick

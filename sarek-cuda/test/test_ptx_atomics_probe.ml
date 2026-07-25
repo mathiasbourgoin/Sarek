@@ -68,7 +68,7 @@ let block_size = 256
 let test_atomics () =
   if not (Cuda_api.is_driver_available ()) then (
     Printf.printf "  [SKIP] no CUDA device\n%!" ;
-    ())
+    Alcotest.skip ())
   else begin
     Cuda_api.Device.init () ;
     let dev = Cuda_api.Device.get 0 in
