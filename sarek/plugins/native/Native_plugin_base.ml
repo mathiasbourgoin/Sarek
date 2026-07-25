@@ -810,7 +810,15 @@ end = struct
                  kernel.name
                  (Printf.sprintf "kernel '%s' not registered" kernel.name)))
 
-    let clear_cache () = Hashtbl.clear native_kernels
+    (* Wrapped like every other backend's clear (see Cache_hooks.mli). This
+       table holds no releasable driver handle, so nothing here can dangle —
+       but the outer memos above it close over these closures and must be
+       dropped with them, and a caller that reaches this through
+       [Framework_registry] gets the same guarantee as one going through
+       [Sarek.Kernel.clear_cache]. *)
+    let clear_cache () =
+      Spoc_framework.Cache_hooks.around_clear (fun () ->
+          Hashtbl.clear native_kernels)
 
     let load_from_ptx ~name:_ ~ptx:_ =
       failwith "PTX kernels not supported by Native backend"

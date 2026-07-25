@@ -742,7 +742,12 @@ end = struct
                  kernel.name
                  (Printf.sprintf "kernel '%s' not registered" kernel.name)))
 
-    let clear_cache () = Hashtbl.clear interpreter_kernels
+    (* Wrapped like every other backend's clear (see Cache_hooks.mli): no
+       driver handle to dangle here, but the outer memos close over these
+       closures and must be dropped with them. *)
+    let clear_cache () =
+      Spoc_framework.Cache_hooks.around_clear (fun () ->
+          Hashtbl.clear interpreter_kernels)
 
     let load_from_ptx ~name:_ ~ptx:_ =
       failwith "PTX kernels not supported by Interpreter backend"

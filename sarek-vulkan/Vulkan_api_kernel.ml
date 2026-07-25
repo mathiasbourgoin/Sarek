@@ -131,6 +131,24 @@ let cache : (string, t) Spoc_framework.Guarded_cache.t =
       vkDestroyShaderModule k.device.Device.device k.shader_module null)
     ()
 
+(* Per-device eviction (#90). Every object [destroy] above releases belongs to
+   [k.device.Device.device], so they MUST be released before that logical
+   device is destroyed — otherwise [Vulkan_api_device.destroy] takes the device
+   down under them and the entries stay in this table, referencing a dead
+   VkDevice, to be handed to the next [compile_cached] for a recreated index.
+   [Vulkan_api_device.destroy] fires the notification before it destroys
+   anything, so this listener runs while the device is still alive.
+
+   Registered on [Cache_hooks] rather than on a Vulkan-private hook list because
+   [Vulkan_api_device] is compiled before this module and cannot reference it —
+   the same constraint CUDA and HIP solve the same way. Match on the family
+   name, never on the index alone: backend-local indices collide across
+   backends. *)
+let () =
+  Spoc_framework.Cache_hooks.on_device_destroy (fun ~backend index ->
+      if String.equal backend "Vulkan" then
+        Spoc_framework.Guarded_cache.evict_device cache index)
+
 (** Create shader module from SPIR-V *)
 let create_shader_module device spirv =
   let code_size = String.length spirv in
@@ -427,10 +445,19 @@ let compile_cached device ~name ~source =
       ~source
       ()
   in
-  Spoc_framework.Guarded_cache.find_or_build cache ~key (fun () ->
-      compile device ~name ~source)
+  (* [~device_id] is the same backend-local index the key already carries;
+     without it the entry is not grouped by device and [evict_device] can never
+     reach it, which is why per-device eviction used to be inexpressible here
+     at either layer (#90). *)
+  Spoc_framework.Guarded_cache.find_or_build
+    cache
+    ~key
+    ~device_id:device.Device.id
+    (fun () -> compile device ~name ~source)
 
-let clear_cache () = Spoc_framework.Guarded_cache.clear cache
+let clear_cache () =
+  Spoc_framework.Cache_hooks.around_clear (fun () ->
+      Spoc_framework.Guarded_cache.clear cache)
 
 let create_args () =
   {

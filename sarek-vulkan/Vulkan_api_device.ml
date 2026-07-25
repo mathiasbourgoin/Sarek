@@ -365,7 +365,27 @@ let set_current _dev = ()
 
 let synchronize dev = check "vkDeviceWaitIdle" (vkDeviceWaitIdle dev.device)
 
+(* Notify the layers above this backend BEFORE anything is released (#90):
+   [Vulkan_api_kernel]'s cache holds pipelines, layouts, descriptor pools and
+   shader modules created from [dev.device], and [Sarek.Runtime]'s outer memo
+   holds closures over those. Destroying the VkDevice first would leave both
+   tables referencing dead objects, to be served to the next lookup for a
+   recreated index.
+
+   [notify_device_destroy] re-raises the first failing listener, and
+   [device_cache] has already been emptied, so letting it escape here would
+   leave the device unreachable with its VkDevice still alive. Capture it,
+   finish the teardown, re-raise at the end — the discipline Cache_hooks.mli
+   imposes on this path, and the shape Cuda_api/Hip_api use. *)
 let destroy dev =
   Hashtbl.remove device_cache dev.id ;
+  let listener_exn =
+    match
+      Spoc_framework.Cache_hooks.notify_device_destroy ~backend:"Vulkan" dev.id
+    with
+    | () -> None
+    | exception e -> Some e
+  in
   vkDestroyCommandPool dev.device dev.command_pool null ;
-  vkDestroyDevice dev.device null
+  vkDestroyDevice dev.device null ;
+  Option.iter raise listener_exn

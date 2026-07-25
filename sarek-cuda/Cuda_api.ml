@@ -45,12 +45,6 @@ let check (ctx : string) (result : cu_result) : unit =
     ctx
     result
 
-(** Hooks invoked with a device id right before its context is destroyed.
-    [Kernel] registers an eviction hook here (after [Kernel.cache] is defined
-    below) so that [Device.destroy] can retire per-device compiled kernels
-    without a circular module dependency. *)
-let device_destroy_hooks : (int -> unit) list ref = ref []
-
 (** Host-side kernel-argument buffers (the [CArray] of argument pointers plus
     the per-argument value cells) for launches that may still be in flight,
     keyed by device id.
@@ -270,14 +264,14 @@ module Device = struct
   let destroy dev =
     (* Evict from device_cache first: leaving a stale entry means a later
        [get idx] returns a handle whose context has already been destroyed
-       (mirrors the Vulkan fix in Vulkan_api_device.ml). Also run the
-       registered destroy hooks (Kernel.cache eviction) while the context
-       is still current, so stale module/function handles for this device
-       can't be returned by [Kernel.compile_cached] after the context is
-       recreated. *)
+       (mirrors Vulkan_api_device.destroy). *)
     Hashtbl.remove device_cache dev.id ;
-    (* Notify layers above this backend BEFORE the local hooks unload modules:
-       they memoize values that close over the handles those hooks release.
+    (* Notify BEFORE anything is released, while the context is still current:
+       the listeners are the cache layers — this backend's own [Kernel.cache]
+       (which unloads this device's modules) and, above it, memos closing over
+       exactly those handles. Doing it here is what stops a stale
+       module/function handle being returned by [Kernel.compile_cached] after
+       the context is recreated under the same index.
        [notify_device_destroy] re-raises the first failing listener, and
        [device_cache] has already been emptied, so letting it escape here would
        leave the device unreachable with its context still alive and its modules
@@ -291,7 +285,6 @@ module Device = struct
       | () -> None
       | exception e -> Some e
     in
-    List.iter (fun hook -> hook dev.id) !device_destroy_hooks ;
     retire_device dev.id ;
     check "cuCtxDestroy" (cuCtxDestroy dev.context) ;
     Option.iter raise listener_exn
@@ -502,13 +495,18 @@ module Kernel = struct
       ~destroy:(fun k -> ignore (cuModuleUnload k.module_))
       ()
 
-  (* Evict every cached kernel compiled for [device_id]. Registered as a
-     [device_destroy_hooks] callback below so [Device.destroy] retires
-     these handles before the underlying CUDA context is destroyed. *)
-  let evict_device device_id =
-    Spoc_framework.Guarded_cache.evict_device cache device_id
-
-  let () = device_destroy_hooks := evict_device :: !device_destroy_hooks
+  (* Evict every cached kernel compiled for [device_id]. Registered on the
+     shared [Cache_hooks] registry — the one mechanism every backend uses (see
+     Cache_hooks.mli) rather than a CUDA-private hook list — so that
+     [Device.destroy], which fires the notification before it destroys
+     anything, retires these module handles while the context is still alive.
+     Match on the family name, never on the index alone: backend-local indices
+     collide across backends, and [evict_device] does not merely drop
+     memoization, it aborts in-flight builds for that index. *)
+  let () =
+    Spoc_framework.Cache_hooks.on_device_destroy (fun ~backend index ->
+        if String.equal backend "CUDA" then
+          Spoc_framework.Guarded_cache.evict_device cache index)
 
   (* Replace the .target directive in a PTX string to match the given SM version.
      This makes a static PTX string portable: PTX written for sm_86 loads fine
@@ -660,7 +658,9 @@ module Kernel = struct
   let compile_cached device ~name ~source =
     with_cache device ~name ~source (fun () -> compile device ~name ~source)
 
-  let clear_cache () = Spoc_framework.Guarded_cache.clear cache
+  let clear_cache () =
+    Spoc_framework.Cache_hooks.around_clear (fun () ->
+        Spoc_framework.Guarded_cache.clear cache)
 
   (** Existential wrapper for keeping Ctypes-allocated values alive during FFI
       calls *)

@@ -27,8 +27,11 @@
  * teardown notifications.
  *
  * Requires >= 2 devices of ONE backend. The probe kernel is written in OpenCL C,
- * so the gate is the OpenCL backend specifically; the test skips (exit 0) with a
- * printed reason when fewer than two OpenCL devices are enumerated. A CUDA/HIP
+ * so the gate is the OpenCL backend specifically. When fewer than two OpenCL
+ * devices are enumerated the case reports an Alcotest [SKIP] - deliberately not
+ * a printed "SKIP" from a plain executable exiting 0, which is what this test
+ * used to do and which is indistinguishable from a pass on any machine without
+ * two OpenCL devices (i.e. on CI, where it therefore gated nothing). A CUDA/HIP
  * variant only needs the corresponding source spelling added here.
  ******************************************************************************)
 
@@ -41,15 +44,6 @@ let source =
 let kernel_name = "cache_key_probe"
 
 let n = 16
-
-let failures = ref 0
-
-let failf fmt =
-  Printf.ksprintf
-    (fun s ->
-      incr failures ;
-      Printf.printf "FAIL: %s\n%!" s)
-    fmt
 
 (* Launch the probe on [d] and read the buffer back. Returns every element, so a
    partial write is visible rather than being masked by checking only [0]. *)
@@ -76,7 +70,7 @@ let check_all_sevens label (host : (float, _, _) Bigarray.Array1.t) =
     if host.{i} <> 7.0 then incr bad
   done ;
   if !bad > 0 then
-    failf
+    Alcotest.failf
       "%s: %d/%d elements were not written by the kernel (got %g %g %g %g ...) \
        - the launch went to the wrong device"
       label
@@ -88,7 +82,7 @@ let check_all_sevens label (host : (float, _, _) Bigarray.Array1.t) =
       host.{3}
   else Printf.printf "OK: %s -> all %d elements = 7\n%!" label n
 
-let () =
+let test_outer_memo_is_device_keyed () =
   Test_helpers.Benchmarks.init_backends () ;
   let devs = Device.init () in
   let opencl =
@@ -99,11 +93,11 @@ let () =
   in
   if Array.length opencl < 2 then begin
     Printf.printf
-      "SKIP: needs >= 2 devices of one backend to detect cross-device cache \
+      "[SKIP] needs >= 2 devices of one backend to detect cross-device cache \
        aliasing; found %d OpenCL device(s) (the probe kernel is OpenCL C)\n\
        %!"
       (Array.length opencl) ;
-    exit 0
+    Alcotest.skip ()
   end ;
   let d0 = opencl.(0) and d1 = opencl.(1) in
   Printf.printf
@@ -119,12 +113,12 @@ let () =
   let k0 = Runtime.compile_kernel d0 ~name:kernel_name ~source in
   let k1 = Runtime.compile_kernel d1 ~name:kernel_name ~source in
   if (Kernel.device k0).Device.id <> d0.id then
-    failf
+    Alcotest.failf
       "requested device %d, got a kernel bound to device %d"
       d0.id
       (Kernel.device k0).Device.id ;
   if (Kernel.device k1).Device.id <> d1.id then
-    failf
+    Alcotest.failf
       "requested device %d, got a kernel bound to device %d (outer cache key \
        omits device identity)"
       d1.id
@@ -142,14 +136,14 @@ let () =
      Kernel.t), the real backend's must evict it. *)
   let k0_again = Runtime.compile_kernel d0 ~name:kernel_name ~source in
   if not (k0_again == k0) then
-    failf
+    Alcotest.failf
       "device %d's entry was evicted with no teardown at all (cache is not \
        hitting)"
       d0.id ;
   Spoc_framework.Cache_hooks.notify_device_destroy ~backend:"HIP" d0.backend_id ;
   let after_foreign = Runtime.compile_kernel d0 ~name:kernel_name ~source in
   if not (after_foreign == k0) then
-    failf
+    Alcotest.failf
       "a HIP device-%d teardown evicted the OpenCL device-%d entry (hook \
        matches on the backend-local index alone)"
       d0.backend_id
@@ -165,7 +159,7 @@ let () =
     d0.backend_id ;
   let after_own = Runtime.compile_kernel d0 ~name:kernel_name ~source in
   if after_own == k0 then
-    failf
+    Alcotest.failf
       "the OpenCL device-%d teardown did NOT evict its own entry (listener is \
        a no-op)"
       d0.backend_id
@@ -188,8 +182,18 @@ let () =
        d0.id)
     (run_and_read d1) ;
 
-  if !failures > 0 then begin
-    Printf.printf "%d check(s) failed\n%!" !failures ;
-    exit 1
-  end ;
-  print_endline "test_runtime_cache_device_key: PASSED"
+  ()
+
+let () =
+  Alcotest.run
+    "Runtime cache device key"
+    [
+      ( "outer memo",
+        [
+          Alcotest.test_case
+            "is keyed by device identity and dropped by its own backend's \
+             teardown"
+            `Quick
+            test_outer_memo_is_device_keyed;
+        ] );
+    ]

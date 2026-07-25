@@ -1189,26 +1189,38 @@
 ; -----------------------------------------------------------------------
 ; Runtime kernel-cache regressions (#86).
 ;
-; Three separate executables on purpose: the teardown case CRASHES (SIGSEGV)
-; rather than failing an assertion when the outer memo is not invalidated, so
-; it must not share a binary with anything else, and the reset case drives
-; Device.init/reset twice over different framework lists, which is only
-; meaningful in a process that has not enumerated devices yet. All three are
-; self-verifying (exit nonzero on mismatch) and skip with a printed reason -
-; exit 0 - when the devices they need are not enumerated, so they gate in the
-; default runtest alias on every machine.
+; Four separate executables on purpose: the teardown and direct-clear cases
+; CRASH (SIGSEGV) rather than failing an assertion when the outer memo is not
+; invalidated, so they must not share a binary with anything else, and the reset
+; case drives Device.init/reset twice over different framework lists, which is
+; only meaningful in a process that has not enumerated devices yet.
+;
+; All four are Alcotest suites, NOT bare self-verifying executables. That is
+; load-bearing: the devices these need (two OpenCL devices, a Vulkan device) do
+; not exist on CI, and a plain executable that printed "SKIP" and exited 0 was
+; indistinguishable from one that ran and verified everything - which is what
+; these were, and why they gated nothing there. Under Alcotest a skip is a
+; distinct [SKIP] row and is excluded from the "N tests run" tally, so a suite
+; that verified nothing reports "0 test run".
 ; -----------------------------------------------------------------------
 
 (executables
  (names
   test_runtime_cache_device_key
   test_runtime_cache_teardown
-  test_runtime_cache_reset_ids)
+  test_runtime_cache_reset_ids
+  test_backend_cache_scope)
  (modules
   test_runtime_cache_device_key
   test_runtime_cache_teardown
-  test_runtime_cache_reset_ids)
- (libraries spoc_core spoc_framework test_helpers))
+  test_runtime_cache_reset_ids
+  test_backend_cache_scope)
+ (libraries
+  spoc_core
+  spoc_framework
+  spoc_framework_registry
+  test_helpers
+  alcotest))
 
 (rule
  (alias runtest)
@@ -1256,3 +1268,32 @@
  (alias runtest)
  (action
   (run %{dep:test_ematch_payload_e2e.exe})))
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_backend_cache_scope.exe})))
+
+; Its own binary. The original rationale - that a Mesa host segfaults when a
+; Vulkan pipeline is created in a process that already enumerated OpenCL - was
+; WRONG: that crash was a use-after-free in our own ctypes bindings, fixed in
+; #303 (a8b5a193). OpenCL only supplied the heap pressure that made the GC
+; collect early. The split is kept anyway because it is genuinely simpler: this
+; binary links sarek_vulkan directly and inits only that plugin instead of
+; going through Test_helpers.Benchmarks.init_backends, so the Vulkan half of
+; the scope check is not entangled with backend discovery.
+
+(executable
+ (name test_vulkan_cache_device_scope)
+ (modules test_vulkan_cache_device_scope)
+ (optional)
+ (libraries
+  spoc_core
+  spoc_framework
+  spoc_framework_registry
+  sarek_vulkan
+  alcotest))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_vulkan_cache_device_scope.exe})))

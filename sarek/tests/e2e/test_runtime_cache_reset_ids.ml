@@ -29,9 +29,11 @@
  *
  * Requires >= 2 OpenCL devices plus at least one other backend that enumerates
  * fewer devices than OpenCL does before it, so that some id actually changes
- * meaning. Skips with a printed reason (exit 0) otherwise - and, importantly,
- * skips only after checking that no id changed meaning, so it cannot pass by
- * silently failing to set up the hazard.
+ * meaning. Reports an Alcotest [SKIP] otherwise - and, importantly, skips only
+ * after checking that no id changed meaning, so it cannot pass by silently
+ * failing to set up the hazard. The [SKIP] matters: as a plain executable
+ * printing "SKIP" and exiting 0, this was indistinguishable from a pass on any
+ * machine without two OpenCL devices, i.e. on CI, where it gated nothing.
  ******************************************************************************)
 
 open Spoc_core
@@ -70,7 +72,7 @@ let run_and_count_unwritten (d : Device.t) =
 let snapshot () =
   Array.map (fun (d : Device.t) -> (d.id, d.framework, d.name)) !Device.devices
 
-let () =
+let test_outer_memo_dropped_by_device_reset () =
   Test_helpers.Benchmarks.init_backends () ;
 
   (* Init A: OpenCL alone, so its devices occupy ids 0..k-1. *)
@@ -79,29 +81,25 @@ let () =
   let opencl_count = Array.length before in
   if opencl_count < 2 then begin
     Printf.printf
-      "SKIP: needs >= 2 OpenCL devices for a reset to be able to move an id \
+      "[SKIP] needs >= 2 OpenCL devices for a reset to be able to move an id \
        between two of them; found %d (the probe kernel is OpenCL C)\n\
        %!"
       opencl_count ;
-    exit 0
+    Alcotest.skip ()
   end ;
 
   (* Warm the outer memo for every OpenCL id under init A's numbering. *)
   Array.iter
     (fun (d : Device.t) ->
       let bad = run_and_count_unwritten d in
-      if bad > 0 then begin
-        Printf.printf
-          "FAIL: baseline run on init-A id %d (%s) left %d/%d elements \
-           unwritten; the test cannot distinguish a stale hit from a broken \
-           device\n\
-           %!"
+      if bad > 0 then
+        Alcotest.failf
+          "baseline run on init-A id %d (%s) left %d/%d elements unwritten; \
+           the test cannot distinguish a stale hit from a broken device"
           d.id
           d.name
           bad
-          n ;
-        exit 1
-      end)
+          n)
     !Device.devices ;
   Printf.printf
     "init A: warmed the memo for %d OpenCL device(s)\n%!"
@@ -125,7 +123,7 @@ let () =
   match collision with
   | None ->
       Printf.printf
-        "SKIP: no OpenCL id changed meaning across the reset on this machine, \
+        "[SKIP] no OpenCL id changed meaning across the reset on this machine, \
          so the hazard is not reachable here (init A ids: %s / init B ids: %s)\n\
          %!"
         (String.concat
@@ -138,7 +136,7 @@ let () =
            (List.map
               (fun (id, fw, _) -> Printf.sprintf "%d:%s" id fw)
               (Array.to_list after))) ;
-      exit 0
+      Alcotest.skip ()
   | Some (id, _, name) ->
       Printf.printf
         "id %d denoted a different OpenCL device before the reset; it now \
@@ -151,15 +149,24 @@ let () =
           (Array.find_opt (fun (dev : Device.t) -> dev.id = id) !Device.devices)
       in
       let bad = run_and_count_unwritten d in
-      if bad > 0 then begin
-        Printf.printf
-          "FAIL: %d/%d elements were not written - the outer memo served id \
-           %d's pre-reset entry, which is bound to a different physical device\n\
-           %!"
+      if bad > 0 then
+        Alcotest.failf
+          "%d/%d elements were not written - the outer memo served id %d's \
+           pre-reset entry, which is bound to a different physical device"
           bad
           n
           id ;
-        exit 1
-      end ;
-      Printf.printf "OK: all %d elements = 7 after the reset\n%!" n ;
-      print_endline "test_runtime_cache_reset_ids: PASSED"
+      Printf.printf "OK: all %d elements = 7 after the reset\n%!" n
+
+let () =
+  Alcotest.run
+    "Runtime cache reset ids"
+    [
+      ( "outer memo",
+        [
+          Alcotest.test_case
+            "does not survive Device.reset re-numbering the global id space"
+            `Quick
+            test_outer_memo_dropped_by_device_reset;
+        ] );
+    ]

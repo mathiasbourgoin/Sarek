@@ -20,9 +20,11 @@
  * (and every other case in it) down.
  *
  * Requires the OpenCL backend (the probe kernel is OpenCL C) and at least one
- * OpenCL device; skips with a printed reason otherwise. Native/Interpreter are
- * deliberately not accepted: they hold no releasable driver handle, so the test
- * would pass vacuously.
+ * OpenCL device; reports an Alcotest [SKIP] otherwise. Not a printed "SKIP"
+ * from a plain executable exiting 0, which is what this used to be and which is
+ * indistinguishable from a pass on a machine with no OpenCL device (i.e. on
+ * CI). Native/Interpreter are deliberately not accepted: they hold no
+ * releasable driver handle, so the test would pass vacuously.
  ******************************************************************************)
 
 open Spoc_core
@@ -54,44 +56,77 @@ let run_and_read (d : Device.t) label =
   Printf.printf "  [%s] readback[0] = %g\n%!" label host.{0} ;
   host.{0}
 
-let () =
+let test_outer_memo_dropped_by_backend_teardown () =
   Test_helpers.Benchmarks.init_backends () ;
   let devs = Device.init () in
   match Array.find_opt (fun (d : Device.t) -> d.framework = "OpenCL") devs with
   | None ->
       Printf.printf
-        "SKIP: needs an OpenCL device (the probe kernel is OpenCL C and the \
+        "[SKIP] needs an OpenCL device (the probe kernel is OpenCL C and the \
          hazard is a released driver handle, which CPU backends do not have)\n\
          %!" ;
-      exit 0
+      Alcotest.skip ()
   | Some d ->
       Printf.printf "using OpenCL device [%d] %s\n%!" d.id d.name ;
       let before = run_and_read d "before clear_cache" in
-      if before <> 7.0 then begin
-        Printf.printf "FAIL: baseline launch produced %g, expected 7\n%!" before ;
-        exit 1
-      end ;
+      if before <> 7.0 then
+        Alcotest.failf
+          "baseline launch produced %g, expected 7 - the device is not usable, \
+           so nothing below is meaningful"
+          before ;
+      (* Structural check FIRST, before anything is launched. Without it this
+         test's only signal is the SIGSEGV below, which names nothing: dune
+         reports a nonzero exit and the reader has to work out why. Physical
+         identity of what [Runtime.compile_kernel] returns is the memo's own
+         state, so a stale entry is reported here as a message instead of as a
+         crash. The launch that follows still has to happen: this identity check
+         cannot tell whether the RELEASE actually occurred, only whether the
+         memo was dropped. *)
+      let memoized = Runtime.compile_kernel d ~name:kernel_name ~source in
+      if not (Runtime.compile_kernel d ~name:kernel_name ~source == memoized)
+      then
+        Alcotest.failf
+          "the outer memo is not hitting at all before the clear, so this test \
+           cannot tell an invalidated memo from a memo that never held \
+           anything" ;
       (* Releases the backend handles the outer memo closed over. *)
       Printf.printf "calling Kernel.clear_cache\n%!" ;
       Kernel.clear_cache d ;
       Printf.printf "clear_cache returned\n%!" ;
+      if Runtime.compile_kernel d ~name:kernel_name ~source == memoized then
+        Alcotest.failf
+          "Kernel.clear_cache released the backend handles but the outer memo \
+           still holds the Kernel.t that closes over them: the next launch \
+           goes through a released cl_kernel. Cache_hooks.notify_clear_all did \
+           not reach Runtime's on_clear_all listener" ;
       (* Must recompile, not serve the stale closure. SIGSEGV here before the
          fix. *)
       let after = run_and_read d "after clear_cache" in
-      if after <> 7.0 then begin
-        Printf.printf
-          "FAIL: post-clear launch produced %g, expected 7\n%!"
+      if after <> 7.0 then
+        Alcotest.failf
+          "post-clear launch produced %g, expected 7: the outer memo served a \
+           Kernel.t whose backend handle Kernel.clear_cache had already \
+           released"
           after ;
-        exit 1
-      end ;
       (* And a second clear/run cycle, to confirm the invalidation is not a
          one-shot. *)
       Kernel.clear_cache d ;
       let again = run_and_read d "after a second clear_cache" in
-      if again <> 7.0 then begin
-        Printf.printf
-          "FAIL: second post-clear launch produced %g, expected 7\n%!"
-          again ;
-        exit 1
-      end ;
-      print_endline "test_runtime_cache_teardown: PASSED"
+      if again <> 7.0 then
+        Alcotest.failf
+          "second post-clear launch produced %g, expected 7: the invalidation \
+           is one-shot"
+          again
+
+let () =
+  Alcotest.run
+    "Runtime cache teardown"
+    [
+      ( "outer memo",
+        [
+          Alcotest.test_case
+            "is dropped by Kernel.clear_cache, repeatably"
+            `Quick
+            test_outer_memo_dropped_by_backend_teardown;
+        ] );
+    ]

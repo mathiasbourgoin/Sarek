@@ -43,3 +43,29 @@ let notify_device_destroy ~backend device_id =
 let notify_clear_all () =
   let hooks = Mutex.protect mutex (fun () -> !clear_all_hooks) in
   run_all hooks
+
+(* Nesting depth of [around_clear] on THIS domain. Per-domain, not global: a
+   concurrent clear on another domain is a genuinely separate teardown and must
+   still notify. Within one domain the nesting is always
+   [Sarek.Kernel.clear_cache] -> [B.Kernel.clear_cache], and both would
+   otherwise notify, giving four notifications where the contract says two. *)
+let clear_depth = Domain.DLS.new_key (fun () -> 0)
+
+let around_clear f =
+  let depth = Domain.DLS.get clear_depth in
+  if depth > 0 then f ()
+  else begin
+    Domain.DLS.set clear_depth (depth + 1) ;
+    let listener_exn = ref None in
+    let notify () =
+      try notify_clear_all ()
+      with e -> if Option.is_none !listener_exn then listener_exn := Some e
+    in
+    notify () ;
+    Fun.protect
+      ~finally:(fun () ->
+        notify () ;
+        Domain.DLS.set clear_depth depth)
+      f ;
+    Option.iter raise !listener_exn
+  end

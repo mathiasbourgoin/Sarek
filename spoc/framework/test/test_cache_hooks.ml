@@ -54,10 +54,71 @@ let test_all_listeners_run_and_first_failure_is_reported () =
         (List.mem tag !ran))
     ["a"; "b"; "c"]
 
+(* [around_clear] is where the clear notification lives, so that a DIRECT
+   backend clear cannot bypass it. Three properties, each of which a backend
+   depends on. *)
+
+let test_around_clear_notifies_on_both_sides () =
+  let events = ref [] in
+  CH.on_clear_all (fun () -> events := "notify" :: !events) ;
+  CH.around_clear (fun () -> events := "clear" :: !events) ;
+  (* The pre-notification drops what is memoized now; only the post one rejects
+     a build that spans the handle release (Guarded_cache ~invalidated_by_clear).
+     Neither alone is sufficient. *)
+  Alcotest.(check (list string))
+    "notify, clear, notify"
+    ["notify"; "clear"; "notify"]
+    (List.rev !events)
+
+let test_around_clear_nesting_collapses () =
+  let n = ref 0 in
+  CH.on_clear_all (fun () -> incr n) ;
+  (* Sarek.Kernel.clear_cache wraps the backend's own clear_cache, which is
+     itself wrapped. The contract is two notifications per teardown, not two per
+     nesting level. *)
+  CH.around_clear (fun () -> CH.around_clear (fun () -> ())) ;
+  Alcotest.(check int) "two notifications, not four" 2 !n
+
+exception Boom
+
+(* Runs LAST in the suite: [Cache_hooks] has no unregister, so the listener this
+   case installs would otherwise poison every case declared after it. For the
+   same reason it catches any exception rather than [Boom] specifically — by the
+   time it runs, the notification cases above have also installed a raising
+   listener, and [run_all] re-raises whichever failed first. *)
+let test_around_clear_isolates_a_failing_listener () =
+  let cleared = ref false in
+  CH.on_clear_all (fun () -> raise Boom) ;
+  let raised =
+    try
+      CH.around_clear (fun () -> cleared := true) ;
+      false
+    with _ -> true
+  in
+  (* A listener owns no handles: letting it escape early would skip the release
+     the clear exists to perform and leak every backend handle. It must still be
+     reported, just afterwards. *)
+  Alcotest.(check bool) "the clear still ran" true !cleared ;
+  Alcotest.(check bool) "the failure is re-raised afterwards" true raised
+
 let () =
   Alcotest.run
     "Cache_hooks"
     [
+      (* Declaration order is execution order, and the registry has no
+         unregister: every case that installs a RAISING listener must come after
+         every case that counts or orders notifications. *)
+      ( "around_clear",
+        [
+          Alcotest.test_case
+            "notifies on both sides of the clear"
+            `Quick
+            test_around_clear_notifies_on_both_sides;
+          Alcotest.test_case
+            "nested scopes notify once, not per level"
+            `Quick
+            test_around_clear_nesting_collapses;
+        ] );
       ( "notification",
         [
           Alcotest.test_case
@@ -68,5 +129,12 @@ let () =
             "a failing listener does not skip the others"
             `Quick
             test_all_listeners_run_and_first_failure_is_reported;
+        ] );
+      ( "around_clear failure isolation",
+        [
+          Alcotest.test_case
+            "a failing listener does not abort the clear"
+            `Quick
+            test_around_clear_isolates_a_failing_listener;
         ] );
     ]

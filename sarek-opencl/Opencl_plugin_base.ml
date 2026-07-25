@@ -228,6 +228,19 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
           Opencl_api.Program.release k.program)
         ()
 
+    (* Per-device eviction, the model every backend cache follows (see
+       Cache_hooks.mli). OpenCL exposes no device-destroy entry point, so
+       nothing in this backend fires the notification today; registering anyway
+       is what keeps the model uniform rather than "per-device on CUDA/HIP,
+       global everywhere else", and it means the day an OpenCL teardown path
+       appears the eviction is already wired. Match on the family name this
+       backend would fire under, never on the index alone: backend-local
+       indices collide across backends. *)
+    let () =
+      Spoc_framework.Cache_hooks.on_device_destroy (fun ~backend index ->
+          if String.equal backend "OpenCL" then
+            Spoc_framework.Guarded_cache.evict_device cache index)
+
     let compile device ~name ~source =
       let state = get_state device.Opencl_api.Device.id in
       let program =
@@ -249,10 +262,18 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
           ~source
           ()
       in
-      Spoc_framework.Guarded_cache.find_or_build cache ~key (fun () ->
-          compile device ~name ~source)
+      (* [~device_id] is the same backend-local index the key already carries;
+         without it the entry is not grouped by device and [evict_device] can
+         never reach it. *)
+      Spoc_framework.Guarded_cache.find_or_build
+        cache
+        ~key
+        ~device_id:device.Opencl_api.Device.id
+        (fun () -> compile device ~name ~source)
 
-    let clear_cache () = Spoc_framework.Guarded_cache.clear cache
+    let clear_cache () =
+      Spoc_framework.Cache_hooks.around_clear (fun () ->
+          Spoc_framework.Guarded_cache.clear cache)
 
     let load_from_ptx ~name:_ ~ptx:_ =
       Opencl_error.raise_error

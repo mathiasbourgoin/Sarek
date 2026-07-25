@@ -236,6 +236,17 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
           Metal_api.ComputePipeline.release k.pipeline)
         ()
 
+    (* Per-device eviction, the model every backend cache follows (see
+       Cache_hooks.mli). Metal exposes no device-destroy entry point, so nothing
+       in this backend fires the notification today; registering anyway keeps
+       the model uniform instead of "per-device on some backends, global on
+       others". Match on the family name, never on the index alone: backend-local
+       indices collide across backends. *)
+    let () =
+      Spoc_framework.Cache_hooks.on_device_destroy (fun ~backend index ->
+          if String.equal backend "Metal" then
+            Spoc_framework.Guarded_cache.evict_device cache index)
+
     let compile device ~name ~source =
       let library = Metal_api.Library.create_from_source device source in
       let func = Metal_api.Library.get_function library name in
@@ -256,10 +267,18 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
           ~source
           ()
       in
-      Spoc_framework.Guarded_cache.find_or_build cache ~key (fun () ->
-          compile device ~name ~source)
+      (* [~device_id] is the same backend-local index the key already carries;
+         without it the entry is not grouped by device and [evict_device] can
+         never reach it. *)
+      Spoc_framework.Guarded_cache.find_or_build
+        cache
+        ~key
+        ~device_id:device.Metal_api.Device.id
+        (fun () -> compile device ~name ~source)
 
-    let clear_cache () = Spoc_framework.Guarded_cache.clear cache
+    let clear_cache () =
+      Spoc_framework.Cache_hooks.around_clear (fun () ->
+          Spoc_framework.Guarded_cache.clear cache)
 
     let load_from_ptx ~name:_ ~ptx:_ =
       Metal_error.raise_error (Metal_error.feature_not_supported "PTX kernels")

@@ -30,10 +30,6 @@ let check (ctx : string) (result : hip_result) : unit =
     ctx
     result
 
-(** Hooks invoked with a device id right before its device is torn down (kernel
-    cache eviction), registered by [Kernel] to avoid a circular dependency. *)
-let device_destroy_hooks : (int -> unit) list ref = ref []
-
 (** hipModuleLaunchKernel is asynchronous and the HIP stack snapshots the kernel
     parameters at dispatch time, not at the call site (see the CUDA sibling's
     note - it explicitly calls out the HIP behaviour). Freeing the arg cells
@@ -211,12 +207,13 @@ module Device = struct
     retire_device dev.id
 
   let destroy dev =
-    (* Evict cache + run kernel-cache eviction hooks while the device is still
+    (* Evict from device_cache, then notify while the device is still
        selected, mirroring the CUDA backend. HIP has no explicit context to
        destroy under the runtime model, so there is no hipCtxDestroy analog. *)
     Hashtbl.remove device_cache dev.id ;
-    (* Notify layers above this backend BEFORE the local hooks unload modules:
-       they memoize values that close over the handles those hooks release.
+    (* Notify BEFORE anything is released: the listeners are the cache layers —
+       this backend's own [Kernel.cache] (which unloads this device's modules)
+       and, above it, memos closing over exactly those handles.
        [notify_device_destroy] re-raises the first failing listener; since
        [device_cache] has already been emptied, letting it escape here would
        leave the device unreachable with its modules still loaded. Capture it,
@@ -228,7 +225,6 @@ module Device = struct
       | () -> None
       | exception e -> Some e
     in
-    List.iter (fun hook -> hook dev.id) !device_destroy_hooks ;
     retire_device dev.id ;
     Option.iter raise listener_exn
 end
@@ -391,10 +387,16 @@ module Kernel = struct
       ~destroy:(fun k -> ignore (hipModuleUnload k.module_))
       ()
 
-  let evict_device device_id =
-    Spoc_framework.Guarded_cache.evict_device cache device_id
-
-  let () = device_destroy_hooks := evict_device :: !device_destroy_hooks
+  (* Evict every cached kernel compiled for [device_id]. Registered on the
+     shared [Cache_hooks] registry — the one mechanism every backend uses (see
+     Cache_hooks.mli) rather than a HIP-private hook list. [Device.destroy]
+     fires the notification before it retires anything. Match on the family
+     name, never on the index alone: backend-local indices collide across
+     backends. *)
+  let () =
+    Spoc_framework.Cache_hooks.on_device_destroy (fun ~backend index ->
+        if String.equal backend "HIP" then
+          Spoc_framework.Guarded_cache.evict_device cache index)
 
   (* Load a finalized HIP code object (binary ELF bytes) into a module and
      resolve [name]. The device must already be selected. The code object is
@@ -474,7 +476,9 @@ module Kernel = struct
   let compile_cached device ~name ~source =
     with_cache device ~name ~source (fun () -> compile device ~name ~source)
 
-  let clear_cache () = Spoc_framework.Guarded_cache.clear cache
+  let clear_cache () =
+    Spoc_framework.Cache_hooks.around_clear (fun () ->
+        Spoc_framework.Guarded_cache.clear cache)
 
   type ctype_ref = CTypeRef : 'a typ * 'a ptr -> ctype_ref
 
