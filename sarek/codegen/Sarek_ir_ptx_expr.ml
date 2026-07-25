@@ -419,6 +419,123 @@ let intr_no_f64 intr =
     (intr ^ ": no native f64 " ^ intr
    ^ " in PTX; compute in float32 or on the CPU")
 
+(** {1 Intrinsic name tables}
+
+    The name set OWNED by each per-category intrinsic emitter below. These are
+    the dispatch table consulted by {!emit_intrinsic_native} — not
+    documentation: a name absent from every list is [unsupported], and a name
+    present in two lists is an internal error (the emitters must partition the
+    intrinsic surface, see {!intrinsic_emitter_table}). They also give the ptxas
+    sweep gate a drift-proof enumeration of the whole PTX intrinsic surface
+    (sarek/tests/unit/test_ptx_intrinsic_sweep.ml): an intrinsic added here
+    without an assembling kernel recipe fails that test. *)
+
+let index_intrinsic_names =
+  [
+    "thread_id_x";
+    "thread_idx_x";
+    "thread_id_y";
+    "thread_idx_y";
+    "thread_id_z";
+    "thread_idx_z";
+    "block_id_x";
+    "block_idx_x";
+    "block_id_y";
+    "block_idx_y";
+    "block_id_z";
+    "block_idx_z";
+    "block_dim_x";
+    "block_dim_y";
+    "block_dim_z";
+    "grid_dim_x";
+    "grid_dim_y";
+    "grid_dim_z";
+    "global_thread_id";
+    "global_idx";
+    "global_idx_x";
+    "global_idx_y";
+    "global_size";
+    "block_barrier";
+  ]
+
+let transcendental_intrinsic_names =
+  [
+    "sin";
+    "cos";
+    "tan";
+    "sqrt";
+    "exp";
+    "log";
+    "log10";
+    "pow";
+    "sinh";
+    "cosh";
+    "tanh";
+    "asin";
+    "acos";
+    "atan";
+    "atan2";
+    "expm1";
+    "log1p";
+    "rsqrt";
+  ]
+
+let float_ops_intrinsic_names =
+  [
+    "fabs";
+    "abs_float";
+    "copysign";
+    "fmod";
+    "hypot";
+    "fma";
+    "min";
+    "max";
+    "floor";
+    "ceil";
+  ]
+
+let bitcast_intrinsic_names = ["f64_bits"; "bits_f64"]
+
+let convert_intrinsic_names =
+  [
+    "float";
+    "float_of_int";
+    "float64";
+    "float64_of_int";
+    "int_of_float";
+    "int_of_float64";
+    "of_int";
+    "to_int";
+  ]
+
+let atomic_intrinsic_names =
+  [
+    "atomic_add_int32";
+    "atomic_add_global_int32";
+    "atomic_sub_int32";
+    "atomic_min_int32";
+    "atomic_max_int32";
+    "atomic_and_int32";
+    "atomic_or_int32";
+    "atomic_xor_int32";
+    "atomic_exch_int32";
+    "atomic_exch_int64";
+    "atomic_add_int64";
+    "atomic_add_float32";
+    "atomic_add_float64";
+    "atomic_cas_int32";
+    "atomic_cas_int64";
+    "atomic_inc_int32";
+    "atomic_inc_global_int32";
+    "atomic_dec_int32";
+  ]
+
+(** Every intrinsic name the PTX backend lowers natively, in dispatch order. *)
+let intrinsic_names =
+  index_intrinsic_names @ transcendental_intrinsic_names
+  @ float_ops_intrinsic_names @ bitcast_intrinsic_names
+  @ convert_intrinsic_names @ atomic_intrinsic_names
+
 (** {1 Expression emitter}
 
     Returns the PTX register name holding the result. Emits instructions into
@@ -1195,7 +1312,13 @@ and emit_cast buf alloc r_src dst_ty : string =
       else
         let r = new_f64 alloc in
         let cvt =
-          if is_f32 r_src then "cvt.rn.f64.f32"
+          (* f32 -> f64 is EXACT (every f32 value is representable in f64) and
+             PTX forbids a rounding modifier on an exact widening: ptxas
+             rejects [cvt.rn.f64.f32] with "Illegal rounding modifier for
+             instruction 'cvt'". The int -> f64 conversions below and the
+             narrowing f64 -> f32 in the TFloat32 arm above ARE inexact, so
+             they keep (and require) the [.rn] modifier. *)
+          if is_f32 r_src then "cvt.f64.f32"
           else if is_u64 r_src then "cvt.rn.f64.s64"
           else "cvt.rn.f64.s32"
         in
@@ -1806,7 +1929,8 @@ and emit_intrinsic_transcendental buf alloc env name args : string option =
       (* f32 path: no native PTX instruction and no accurate ex2/lg2
          composition (and for expm1/log1p an exp/log composition would lose
          the near-zero precision they exist for). Widen to f64
-         (cvt.rn.f64.f32), run the softmath f64 helper, round the result back
+         (cvt.f64.f32 — exact, hence no rounding modifier), run the softmath f64
+         helper, round the result back
          (cvt.rn.f32.f64) — precision trivially exceeds f32 ulp. PERF: the
          f64 helper runs at the fp64 rate (1/16 of fp32 on most consumer
          GPUs); acceptable for these rare functions — a native-f32
@@ -2210,23 +2334,51 @@ and emit_intrinsic_atomic buf alloc env name args : string option =
            args)
   | _ -> None
 
-(* PTX-assembly intrinsic emitter. Dispatches [name] across the cohesive
-   per-category emitters above; each returns [None] for a name it does not
-   own (the name sets are disjoint), so the first [Some] wins and an
-   unrecognised name falls through to [unsupported]. *)
+(* Which emitter owns which names. Ownership is by NAME, not by "first emitter
+   that returns [Some]": a name claimed by two emitters would otherwise be
+   silently won by whichever comes first in the list (no warning, no test
+   failure, wrong lowering) — the single [match] this dispatcher replaced would
+   at least have warned about a redundant arm. Here the overlap is an explicit
+   internal error, and test_ptx_intrinsic_sweep.ml asserts the six name sets are
+   pairwise disjoint up front. A thunk because the closures reference the
+   emitters defined in this same [let rec] chain. *)
+and intrinsic_emitter_table () =
+  [
+    ( index_intrinsic_names,
+      fun buf alloc _env _path name _args -> emit_intrinsic_index buf alloc name
+    );
+    ( transcendental_intrinsic_names,
+      fun buf alloc env _path name args ->
+        emit_intrinsic_transcendental buf alloc env name args );
+    ( float_ops_intrinsic_names,
+      fun buf alloc env _path name args ->
+        emit_intrinsic_float_ops buf alloc env name args );
+    ( bitcast_intrinsic_names,
+      fun buf alloc env _path name args ->
+        emit_intrinsic_bitcast buf alloc env name args );
+    ( convert_intrinsic_names,
+      fun buf alloc env path name args ->
+        emit_intrinsic_convert buf alloc env path name args );
+    ( atomic_intrinsic_names,
+      fun buf alloc env _path name args ->
+        emit_intrinsic_atomic buf alloc env name args );
+  ]
+
+(* PTX-assembly intrinsic emitter. Looks [name] up in {!intrinsic_emitter_table}
+   and runs its owning per-category emitter; an unowned (or declined) name is
+   [unsupported]. *)
 and emit_intrinsic_native buf alloc (env : env) path name args : string =
-  let candidates =
-    [
-      (fun () -> emit_intrinsic_index buf alloc name);
-      (fun () -> emit_intrinsic_transcendental buf alloc env name args);
-      (fun () -> emit_intrinsic_float_ops buf alloc env name args);
-      (fun () -> emit_intrinsic_bitcast buf alloc env name args);
-      (fun () -> emit_intrinsic_convert buf alloc env path name args);
-      (fun () -> emit_intrinsic_atomic buf alloc env name args);
-    ]
-  in
-  let rec first = function
-    | [] -> unsupported ("intrinsic: " ^ name)
-    | f :: rest -> ( match f () with Some r -> r | None -> first rest)
-  in
-  first candidates
+  match
+    List.filter
+      (fun (names, _) -> List.mem name names)
+      (intrinsic_emitter_table ())
+  with
+  | [(_, emitter)] -> (
+      match emitter buf alloc env path name args with
+      | Some r -> r
+      | None -> unsupported ("intrinsic: " ^ name))
+  | [] -> unsupported ("intrinsic: " ^ name)
+  | _ :: _ :: _ ->
+      fail
+        ("PTX codegen: internal error: intrinsic " ^ name
+       ^ " is claimed by more than one emitter")

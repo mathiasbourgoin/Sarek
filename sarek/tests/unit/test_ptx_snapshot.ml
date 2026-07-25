@@ -1913,12 +1913,21 @@ let test_f64_exp_log_softmath () =
     Alcotest.fail "f64 log must not emit the f32 .approx instruction"
 
 (** f32 asin has no native PTX op and no accurate composition; it lowers via the
-    f64 softmath helper: widen (cvt.rn.f64.f32), inline the fdlibm-style f64
-    body (fma.rn.f64 + sqrt.rn.f64), round back (cvt.rn.f32.f64). *)
+    f64 softmath helper: widen (cvt.f64.f32 — an EXACT conversion, on which PTX
+    forbids a rounding modifier: [cvt.rn.f64.f32] is rejected by ptxas), inline
+    the fdlibm-style f64 body (fma.rn.f64 + sqrt.rn.f64), round back
+    (cvt.rn.f32.f64 — inexact, so that one requires .rn). The kernel is
+    assembled by the sweep gate in test_ptx_intrinsic_sweep.ml. *)
 let test_f32_asin_via_f64 () =
   let k = make_math_kernel TFloat32 ["Sarek_stdlib"; "Float32"] "asin" in
   let ptx = Sarek_ir_ptx.generate k in
-  assert_contains ptx "cvt.rn.f64.f32" ;
+  assert_contains ptx "cvt.f64.f32" ;
+  assert_absent
+    ptx
+    "cvt.rn.f64.f32"
+    ~why:
+      "a rounding modifier on the exact f32->f64 widening is illegal PTX \
+       (ptxas: Illegal rounding modifier for instruction 'cvt')" ;
   assert_contains ptx "fma.rn.f64" ;
   assert_contains ptx "sqrt.rn.f64" ;
   assert_contains ptx "cvt.rn.f32.f64"

@@ -60,3 +60,27 @@ val emit_cast : Buffer.t -> reg_alloc -> string -> elttype -> string
     {!Sarek_ir_ptx_types.Ptx_codegen_error} for unknown intrinsic names. *)
 val emit_intrinsic :
   Buffer.t -> reg_alloc -> env -> string list -> string -> expr list -> string
+
+(** {1 Intrinsic name tables}
+
+    The intrinsic names each per-category emitter owns. This is the dispatch
+    table {!emit_intrinsic} consults, so it cannot drift from what the backend
+    actually lowers: a name absent from every list raises
+    {!Sarek_ir_ptx_types.Ptx_codegen_error}, and a name in two lists is an
+    internal error. Exposed so the ptxas sweep gate can assemble one kernel per
+    intrinsic name and so a new intrinsic is covered automatically. *)
+
+val index_intrinsic_names : string list
+
+val transcendental_intrinsic_names : string list
+
+val float_ops_intrinsic_names : string list
+
+val bitcast_intrinsic_names : string list
+
+val convert_intrinsic_names : string list
+
+val atomic_intrinsic_names : string list
+
+(** All of the above concatenated, in dispatch order. *)
+val intrinsic_names : string list
