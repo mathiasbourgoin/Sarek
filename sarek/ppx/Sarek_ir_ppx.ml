@@ -18,6 +18,9 @@ type memspace = Global | Shared | Local
 type elttype =
   | TInt32
   | TInt64
+  | TFloat16
+      (** Mirrors {!Sarek_ir_types.TFloat16}: IEEE binary16 storage, f32
+          compute. No matching [CFloat16] constant — f16 has no literal. *)
   | TFloat32
   | TFloat64
   | TBool

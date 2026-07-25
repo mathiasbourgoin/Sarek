@@ -94,6 +94,7 @@ let layout_error_message = function
    host PPX (via read_float64/write_float64) and placed on their natural 8-byte
    boundary by the aligned layout. *)
 let scalar_size = function
+  | TFloat16 -> 2
   | TInt32 | TFloat32 | TBool | TUnit -> 4
   | TInt64 | TFloat64 -> 8
   | TRecord (n, _) ->
@@ -107,6 +108,7 @@ let scalar_size = function
   | TVec _ -> invalid_arg "Sarek_ir_layout.scalar_size: not a scalar type: TVec"
 
 let scalar_align = function
+  | TFloat16 -> 2
   | TInt32 | TFloat32 | TBool | TUnit -> 4
   | TInt64 | TFloat64 -> 8
   | TRecord _ | TVariant _ | TArray _ | TVec _ ->
@@ -123,7 +125,7 @@ let align_up off a = if a <= 1 then off else (off + a - 1) / a * a
     rejected below top level, so their value here is a harmless placeholder used
     only before {!flatten_field} produces the typed rejection. *)
 let rec elttype_align = function
-  | (TInt32 | TFloat32 | TBool | TUnit | TInt64 | TFloat64) as t ->
+  | (TInt32 | TFloat32 | TBool | TUnit | TInt64 | TFloat64 | TFloat16) as t ->
       scalar_align t
   | TRecord (_, fields) -> record_align fields
   | TVariant _ -> 4 (* rejected below top level; placeholder *)
@@ -212,6 +214,14 @@ let rec flatten_field ~type_name ~path ~offset (t : elttype) :
       in
       let size = align_up (endoff - offset) (record_align fields) in
       Ok (leaves, size)
+  | TFloat16 ->
+      (* f16 as a record/variant FIELD is deliberately out of scope: the host
+         PPX marshaller has no read_float16/write_float16 (the byte sizes here
+         must agree with [get_type_size_from_core_type] in sarek/ppx/Sarek_ppx.ml,
+         which knows nothing of f16). f16 is supported as a *vector* element
+         type; aggregate fields are a follow-on. Reject rather than lay out a
+         field the host cannot marshal. *)
+      Error (Unsupported_field {type_name; field = path; what = "TFloat16"})
   | TVariant _ -> Error (Nested_variant {type_name; field = path})
   | TArray _ ->
       Error (Unsupported_field {type_name; field = path; what = "TArray"})
@@ -309,7 +319,7 @@ let variant_layout ~type_name (ctors : (string * elttype list) list) :
 
 let elttype_layout (t : elttype) : (layout, layout_error) result =
   match t with
-  | TInt32 | TInt64 | TFloat32 | TFloat64 | TBool | TUnit ->
+  | TInt32 | TInt64 | TFloat16 | TFloat32 | TFloat64 | TBool | TUnit ->
       Ok (LScalar {size = scalar_size t; align = scalar_align t})
   | TRecord (name, fields) ->
       let* rl = record_layout ~type_name:name fields in

@@ -24,6 +24,18 @@ let reject_non_flat name fields =
     (fun (fname, ty) ->
       match (ty : Sarek_ir_types.elttype) with
       | TInt32 | TInt64 | TFloat32 | TFloat64 | TBool | TUnit -> ()
+      | TFloat16 ->
+          (* Consistent with Sarek_ir_layout.flatten_field: f16 aggregate
+             fields are out of scope for #57 slice 1 (the host PPX has no
+             read_float16/write_float16 marshaller), so an f16 field cannot be
+             SoA-split either. *)
+          raise
+            (Unsupported
+               (Printf.sprintf
+                  "float16 field %S in %S: f16 record fields unsupported (#57 \
+                   slice 1 supports f16 vectors, not aggregate fields)"
+                  fname
+                  name))
       | TRecord _ ->
           raise
             (Unsupported

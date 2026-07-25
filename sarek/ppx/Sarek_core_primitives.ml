@@ -575,6 +575,38 @@ let primitives =
       purity = Pure;
       category = "math_f64";
     };
+    (* === Float16 conversions (Pure) ===
+       f16's ENTIRE arithmetic surface. f16 is a storage type: it is absent from
+       [Sarek_types.is_numeric] / [is_float], so an f16 value cannot be added,
+       compared or passed to a math intrinsic. These two primitives are the only
+       way in and out, which is what makes "compute in f32" a type-system
+       guarantee instead of a convention.
+
+       They are registered as CORE primitives (unqualified names, like
+       [sin_f64]) rather than as a [%sarek_intrinsic] Float16 stdlib module on
+       purpose: a stdlib type registration needs a [ctype], and Ctypes has no
+       half type, so there is nothing to register f16 as. Both names are
+       special-cased in [Sarek_lower_ir.lower_expr] to lower to
+       [Sarek_ir.ECast], NOT to an [EIntrinsic] emitting a device string -- so
+       each backend picks its own documented narrowing instruction
+       (CUDA/HIP: __float2half) and the interpreter narrows through
+       [Sarek_float16.to_float16]. *)
+    {
+      name = "float16_of_float32";
+      typ = t_fun [t_float32] t_float16;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "conv_f16";
+    };
+    {
+      name = "float32_of_float16";
+      typ = t_fun [t_float16] t_float32;
+      variance = Uniform;
+      convergence = NoEffect;
+      purity = Pure;
+      category = "conv_f16";
+    };
     (* === Integer Primitives (Pure) === *)
     {
       name = "abs_int32";

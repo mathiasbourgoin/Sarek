@@ -26,6 +26,7 @@ let conv_memspace : P.memspace -> T.memspace = function
 let rec conv_elttype : P.elttype -> T.elttype = function
   | P.TInt32 -> T.TInt32
   | P.TInt64 -> T.TInt64
+  | P.TFloat16 -> T.TFloat16
   | P.TFloat32 -> T.TFloat32
   | P.TFloat64 -> T.TFloat64
   | P.TBool -> T.TBool

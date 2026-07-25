@@ -36,6 +36,16 @@
  (instrumentation
   (backend bisect_ppx)))
 
+; f16 (#57 slice 1) codegen assertions. Kept out of test_codegen_golden's
+; all-backends corpus so every committed golden stays byte-identical.
+
+(test
+ (name test_cuda_f16_golden)
+ (modules test_cuda_f16_golden)
+ (libraries sarek_ir sarek_codegen sarek_backend_error alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
+
 (test
  (name test_glsl_name_collision)
  (modules test_glsl_name_collision)

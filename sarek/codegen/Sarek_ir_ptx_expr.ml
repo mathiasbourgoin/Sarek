@@ -1296,6 +1296,13 @@ and emit_cast buf alloc r_src dst_ty : string =
   let is_f32 r = String.length r >= 2 && r.[1] = 'f' && not (is_f64 r) in
   let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
   match dst_ty with
+  | TFloat16 ->
+      (* #57 slice 2. Note the hazard this arm guards: [is_f32] above is
+         "second char is 'f' and not %fd", which an "%h" f16 register would NOT
+         satisfy — so an f16 source would silently fall through to the
+         "cvt.rn.f32.s32" integer path and produce garbage. f16 registers must
+         not exist until those guards are made class-aware. *)
+      f16_unsupported "ECast to float16"
   | TFloat32 ->
       if is_f32 r_src then r_src
       else

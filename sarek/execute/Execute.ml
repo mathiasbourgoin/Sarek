@@ -99,6 +99,13 @@ let exec_arg_of_vector : type a b. (a, b) Vector.t -> Framework_sig.exec_arg =
       | Vector.Scalar Vector.Int64 ->
           Typed_value.TV_Scalar
             (Typed_value.SV ((module Typed_value.Int64_type), Vector.get v i))
+      | Vector.Scalar Vector.Float16 ->
+          (* f16 has no Typed_value module of its own: it is a storage width,
+             and [Vector.get] already returns the binary16-rounded value as an
+             OCaml float. Surfacing it as Float32_type is what makes "compute in
+             f32" automatic on the native path. *)
+          Typed_value.TV_Scalar
+            (Typed_value.SV ((module Typed_value.Float32_type), Vector.get v i))
       | Vector.Scalar Vector.Float32 ->
           Typed_value.TV_Scalar
             (Typed_value.SV ((module Typed_value.Float32_type), Vector.get v i))
@@ -408,6 +415,9 @@ let vector_to_interp_array : type a b.
       Array.init len (fun i -> Sarek_ir_interp.VInt32 (Vector.get vec i))
   | Vector.Scalar Vector.Int64 ->
       Array.init len (fun i -> Sarek_ir_interp.VInt64 (Vector.get vec i))
+  | Vector.Scalar Vector.Float16 ->
+      (* See the Float16 arm of [get] above: f16 reads as an f32 value. *)
+      Array.init len (fun i -> Sarek_ir_interp.VFloat32 (Vector.get vec i))
   | Vector.Scalar Vector.Float32 ->
       Array.init len (fun i -> Sarek_ir_interp.VFloat32 (Vector.get vec i))
   | Vector.Scalar Vector.Float64 ->
@@ -451,6 +461,11 @@ let interp_array_to_vector : type a b.
   | Vector.Scalar Vector.Int64 ->
       for i = 0 to len - 1 do
         Vector.set vec i (Sarek_ir_interp.to_int64 arr.(i))
+      done
+  | Vector.Scalar Vector.Float16 ->
+      (* Round-on-store: the Bigarray.Float16 cell narrows to binary16. *)
+      for i = 0 to len - 1 do
+        Vector.set vec i (Sarek_ir_interp.to_float32 arr.(i))
       done
   | Vector.Scalar Vector.Float32 ->
       for i = 0 to len - 1 do

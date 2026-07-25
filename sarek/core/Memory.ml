@@ -37,6 +37,35 @@ let bigarray_elem_size : type a b. (a, b) Bigarray.kind -> int = function
   | Bigarray.Complex64 -> 16
   | Bigarray.Char -> 1
 
+(** {1 Host bigarray -> raw pointer} *)
+
+(** Raw data pointer of a host bigarray, for the H2D/D2H byte transfers.
+
+    [Ctypes.bigarray_start] cannot be used for f16: ctypes maps a
+    [Bigarray.kind] to its own [Ctypes_bigarray.kind] GADT, and that mapping has
+    NO [Float16] arm — it ends in [failwith "Unsupported bigarray kind"]
+    (ctypes_bigarray_stubs.ml). An f16 vector therefore raised on its first
+    transfer even though every byte size involved was already correct.
+
+    This corrects a claim in the f16 design spec (§3.3, "transfer is
+    element-type-agnostic beyond byte size — no change needed"): the transfer
+    ARITHMETIC is indeed element-agnostic, but ACQUIRING the host pointer is
+    not.
+
+    [Ctypes_bigarray.unsafe_address] is the kind-independent primitive (it is
+    just [Caml_ba_data_val]) and is used for f16 only, keeping every other
+    element type on the exact pre-existing code path. It is "unsafe" because it
+    does not tie the address's lifetime to the bigarray, so callers must keep
+    the bigarray reachable across the transfer — the two callers below do, and
+    make that explicit with [Sys.opaque_identity]. *)
+let bigarray_void_ptr : type a b.
+    (a, b, Bigarray.c_layout) Bigarray.Array1.t -> unit Ctypes.ptr =
+ fun ba ->
+  match Bigarray.Array1.kind ba with
+  | Bigarray.Float16 ->
+      Ctypes.ptr_of_raw_address (Ctypes_bigarray.unsafe_address ba)
+  | _ -> Ctypes.(bigarray_start array1 ba |> to_voidp)
+
 (** {1 Buffer Module Type} *)
 
 (** A buffer packages backend-specific buffer with its operations. All transfers
@@ -163,9 +192,12 @@ let host_to_device : type a b.
     src:(a, b, Bigarray.c_layout) Bigarray.Array1.t -> dst:a buffer -> unit =
  fun ~src ~dst ->
   let (Buffer (module B)) = dst in
-  let src_ptr = Ctypes.(bigarray_start array1 src |> to_voidp) in
+  let src_ptr = bigarray_void_ptr src in
   let byte_size = Bigarray.Array1.dim src * B.elem_size in
-  B.host_ptr_to_device src_ptr ~byte_size
+  B.host_ptr_to_device src_ptr ~byte_size ;
+  (* Keep [src] reachable until the transfer has consumed the raw address
+     (see bigarray_void_ptr). *)
+  ignore (Sys.opaque_identity src)
 
 (** Copy data from device to host bigarray. Converts bigarray to pointer
     internally. Type parameter ensures bigarray element type matches buffer
@@ -174,9 +206,10 @@ let device_to_host : type a b.
     src:a buffer -> dst:(a, b, Bigarray.c_layout) Bigarray.Array1.t -> unit =
  fun ~src ~dst ->
   let (Buffer (module B)) = src in
-  let dst_ptr = Ctypes.(bigarray_start array1 dst |> to_voidp) in
+  let dst_ptr = bigarray_void_ptr dst in
   let byte_size = Bigarray.Array1.dim dst * B.elem_size in
-  B.device_to_host_ptr dst_ptr ~byte_size
+  B.device_to_host_ptr dst_ptr ~byte_size ;
+  ignore (Sys.opaque_identity dst)
 
 (** Copy data from raw pointer to device buffer (for custom types) *)
 let host_ptr_to_device : type a. src_ptr:unit Ctypes.ptr -> dst:a buffer -> unit

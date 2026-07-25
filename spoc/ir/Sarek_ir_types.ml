@@ -46,6 +46,11 @@ type memspace = Global | Shared | Local
 type elttype =
   | TInt32
   | TInt64
+  | TFloat16
+      (** IEEE binary16 {e storage} type. Values are stored/loaded as binary16;
+          arithmetic promotes to [TFloat32], computes there, and rounds back on
+          store. There is deliberately no [CFloat16] constant: f16 values are
+          produced by conversion ([ECast (TFloat16, _)]), never by a literal. *)
   | TFloat32
   | TFloat64
   | TBool

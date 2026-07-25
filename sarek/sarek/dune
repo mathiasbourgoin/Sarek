@@ -32,6 +32,7 @@
   Kirc_error
   Fusion_error
   Sarek_ir_interp
+  Sarek_float16
   Sarek_float32
   Sarek_value
   Interp_error

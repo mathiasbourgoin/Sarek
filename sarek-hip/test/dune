@@ -17,6 +17,32 @@
  (action
   (run %{dep:test_hip_backend.exe})))
 
+; f16 (#57 slice 1) end-to-end gate: host storage + interpreter + HIP hardware,
+; cross-checked and required to agree bit-for-bit. Self-skips the HIP part
+; off-ROCm.
+
+(executable
+ (name test_hip_f16)
+ (modules test_hip_f16)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.interp
+  sarek_native
+  sarek_ir
+  spoc_core
+  sarek_hip
+  unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias e2e-hip)
+ (action
+  (run %{dep:test_hip_f16.exe})))
+
 ; Etape-B rocWMMA tensor-core GEMM gate (RDNA3+; self-skips otherwise).
 
 (executable

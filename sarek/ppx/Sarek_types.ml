@@ -34,6 +34,14 @@ type prim_type = TUnit | TBool | TInt32
 type registered_type =
   | Int  (** OCaml int - alias for int32 on GPU *)
   | Int64  (** 64-bit integer *)
+  | Float16
+      (** IEEE binary16 half float. A {e storage} type: f16 is deliberately NOT
+          in [is_numeric] / [is_float] / [float_literal_can_link], so f16 values
+          cannot be added, passed to math intrinsics, or written as bare
+          literals. They must be converted explicitly through the [Float16]
+          stdlib module ([Float16.of_float32] / [Float16.to_float32]), which is
+          what makes "store as binary16, compute in f32" a type-system guarantee
+          rather than a convention. *)
   | Float32  (** 32-bit float *)
   | Float64  (** 64-bit float (double) *)
   | Char  (** 8-bit character *)
@@ -239,6 +247,7 @@ let pp_prim fmt = function
 let pp_registered fmt = function
   | Int -> Format.fprintf fmt "int"
   | Int64 -> Format.fprintf fmt "int64"
+  | Float16 -> Format.fprintf fmt "float16"
   | Float32 -> Format.fprintf fmt "float32"
   | Float64 -> Format.fprintf fmt "float64"
   | Char -> Format.fprintf fmt "char"
@@ -315,6 +324,10 @@ let t_float32 = TReg Float32
 
 let t_float64 = TReg Float64
 
+(** Half float. Intentionally absent from {!is_numeric} / {!is_float} and from
+    {!float_literal_can_link}: see {!Float16}. *)
+let t_float16 = TReg Float16
+
 let t_int64 = TReg Int64
 
 let t_int = TReg Int
@@ -389,6 +402,11 @@ let rec type_of_type_expr (te : Sarek_ast.type_expr) : typ =
   | Sarek_ast.TEConstr ("int64", []) -> t_int64
   | Sarek_ast.TEConstr ("float32", []) -> t_float32
   | Sarek_ast.TEConstr ("float64", []) -> t_float64
+  | Sarek_ast.TEConstr ("float16", []) ->
+      (* Only `float16` is accepted, not the also-reserved `half`: one spelling
+         keeps the public surface and the diagnostics single-valued, and `half`
+         stays reserved so it can be added later without breaking anything. *)
+      t_float16
   | Sarek_ast.TEConstr ("float", []) ->
       t_float32
       (* Bare `float` defaults to float32 in GPGPU kernels (human decision

@@ -170,7 +170,7 @@ let rec elttype_uses_float64 = function
         (fun (_, args) -> List.exists elttype_uses_float64 args)
         constrs
   | TArray (elt, _) | TVec elt -> elttype_uses_float64 elt
-  | TInt32 | TInt64 | TFloat32 | TBool | TUnit -> false
+  | TInt32 | TInt64 | TFloat16 | TFloat32 | TBool | TUnit -> false
 
 (** Check if a constant is float64 *)
 let const_uses_float64 = function CFloat64 _ -> true | _ -> false
@@ -203,6 +203,63 @@ let helper_uses_float64 hf = helper_fold float64_folder false hf
 
 (** Check if a kernel uses float64 anywhere *)
 let kernel_uses_float64 k = kernel_fold float64_folder false k
+
+(** {1 Float16 detection}
+
+    Structurally identical to the float64 detector above — a rich leaf that
+    inspects element types at every binder, declaration, cast and array
+    construction — reusing the same {!exists_folder} skeleton rather than a new
+    traversal family. Two deliberate asymmetries vs. float64:
+
+    - There is no [const_uses_float16]: f16 has no literal and hence no
+      [CFloat16] constant (see {!Sarek_ir_types.elttype}). An f16 value always
+      enters through [ECast (TFloat16, _)] or an f16-typed binder/parameter,
+      both of which this detector sees.
+    - [SNative] is treated as f16-free, matching float64: inline native GPU text
+      is opaque, and a native block that hand-writes f16 is responsible for its
+      own feature declaration.
+
+    This drives conditional emission of the CUDA/HIP [#include <cuda_fp16.h>]
+    exactly as [kernel_uses_float64] drives the OpenCL/GLSL fp64
+    pragma/extension. *)
+let rec elttype_uses_float16 = function
+  | TFloat16 -> true
+  | TRecord (_, fields) ->
+      List.exists (fun (_, t) -> elttype_uses_float16 t) fields
+  | TVariant (_, constrs) ->
+      List.exists
+        (fun (_, args) -> List.exists elttype_uses_float16 args)
+        constrs
+  | TArray (elt, _) | TVec elt -> elttype_uses_float16 elt
+  | TInt32 | TInt64 | TFloat32 | TFloat64 | TBool | TUnit -> false
+
+let float16_leaf = function
+  | EVar v -> elttype_uses_float16 v.var_type
+  | ECast (ty, _) | EArrayCreate (ty, _, _) -> elttype_uses_float16 ty
+  | _ -> false
+
+let float16_folder =
+  exists_folder
+    ~leaf:float16_leaf
+    ~type_leaf:elttype_uses_float16
+    ~native:false
+    ~visit_lvalue:false
+    ()
+
+(** Check if an expression uses float16 *)
+let expr_uses_float16 e = expr_fold float16_folder false e
+
+(** Check if a statement uses float16 *)
+let stmt_uses_float16 s = stmt_fold float16_folder false s
+
+(** Check if a declaration uses float16 *)
+let decl_uses_float16 d = decl_fold float16_folder false d
+
+(** Check if a helper function uses float16 *)
+let helper_uses_float16 hf = helper_fold float16_folder false hf
+
+(** Check if a kernel uses float16 anywhere *)
+let kernel_uses_float16 k = kernel_fold float16_folder false k
 
 (** {1 Atomic-operation detection}
 

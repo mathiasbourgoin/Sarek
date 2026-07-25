@@ -10,6 +10,7 @@ open Sarek_ir_types
 let rec string_of_elttype = function
   | TInt32 -> "int32"
   | TInt64 -> "int64"
+  | TFloat16 -> "float16"
   | TFloat32 -> "float32"
   | TFloat64 -> "float64"
   | TBool -> "bool"

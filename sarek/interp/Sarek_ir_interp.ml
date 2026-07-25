@@ -302,6 +302,14 @@ let vector_to_array : type a b. (a, b) Spoc_core.Vector.t -> value array =
       Array.init len (fun i -> VInt32 (Spoc_core.Vector.get vec i))
   | Spoc_core.Vector.Scalar Spoc_core.Vector.Int64 ->
       Array.init len (fun i -> VInt64 (Spoc_core.Vector.get vec i))
+  | Spoc_core.Vector.Scalar Spoc_core.Vector.Float16 ->
+      (* f16 is a STORAGE type: there is no VFloat16. [get] already returns the
+         binary16-rounded value as an OCaml float, and the interpreter computes
+         in f32 — so an f16 element enters the interpreter as VFloat32. This is
+         the "reuse the f32 accessor, let the storage kind do the rounding"
+         decision: rounding is a property of the Bigarray.Float16 cell, not of
+         the accessor. *)
+      Array.init len (fun i -> VFloat32 (Spoc_core.Vector.get vec i))
   | Spoc_core.Vector.Scalar Spoc_core.Vector.Float32 ->
       Array.init len (fun i -> VFloat32 (Spoc_core.Vector.get vec i))
   | Spoc_core.Vector.Scalar Spoc_core.Vector.Float64 ->
@@ -341,6 +349,13 @@ let array_to_vector : type a b. value array -> (a, b) Spoc_core.Vector.t -> unit
   | Spoc_core.Vector.Scalar Spoc_core.Vector.Int64 ->
       for i = 0 to len - 1 do
         Spoc_core.Vector.set vec i (to_int64 arr.(i))
+      done
+  | Spoc_core.Vector.Scalar Spoc_core.Vector.Float16 ->
+      (* Writing back through a Bigarray.Float16 cell rounds to binary16 for
+         free — this is where "round on store" actually happens on the
+         interpreter and native paths. *)
+      for i = 0 to len - 1 do
+        Spoc_core.Vector.set vec i (to_float32 arr.(i))
       done
   | Spoc_core.Vector.Scalar Spoc_core.Vector.Float32 ->
       for i = 0 to len - 1 do

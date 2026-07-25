@@ -14,6 +14,9 @@
 
 (** GADT mapping OCaml element types to Bigarray element kinds. *)
 type (_, _) scalar_kind =
+  | Float16 : (float, Bigarray.float16_elt) scalar_kind
+      (** IEEE binary16 storage; values are OCaml [float] and round to binary16
+          on store through the underlying [Bigarray.Float16] array. *)
   | Float32 : (float, Bigarray.float32_elt) scalar_kind
   | Float64 : (float, Bigarray.float64_elt) scalar_kind
   | Int32 : (int32, Bigarray.int32_elt) scalar_kind
@@ -36,6 +39,8 @@ val scalar_elem_size : ('a, 'b) scalar_kind -> int
 val scalar_kind_name : ('a, 'b) scalar_kind -> string
 
 (** {1 Type-id singletons for scalar element types} *)
+
+val float16_type_id : float Sarek_ir_types.Type_id.t
 
 val float32_type_id : float Sarek_ir_types.Type_id.t
 

@@ -57,6 +57,16 @@ let mangle_name = Sarek_ir_codegen.mangle_name
 let rec opencl_type_of_elttype = function
   | TInt32 -> "int"
   | TInt64 -> "long"
+  | TFloat16 ->
+      (* Deferred to #57 slice 2: OpenCL spells this "half" but needs
+         `#pragma OPENCL EXTENSION cl_khr_fp16 : enable` prepended (mirroring
+         generate_with_fp64) plus the `h` literal suffix. Reject explicitly
+         rather than emit a type the kernel preamble has not enabled. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "f16"
+           "OpenCL: float16 not yet supported (#57 slice 2 — needs cl_khr_fp16 \
+            enablement)")
   | TFloat32 -> "float"
   | TFloat64 -> "double"
   | TBool -> "int"

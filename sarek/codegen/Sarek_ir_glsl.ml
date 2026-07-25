@@ -226,6 +226,15 @@ let escape_glsl_name name =
 let rec glsl_type_of_elttype = function
   | TInt32 -> "int"
   | TInt64 -> "int64_t" (* Requires GL_ARB_gpu_shader_int64 *)
+  | TFloat16 ->
+      (* Deferred to #57 slice 2: GLSL spells this `float16_t` and needs both
+         GL_EXT_shader_explicit_arithmetic_types_float16 and (for buffer I/O)
+         GL_EXT_shader_16bit_storage declared in the header. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "f16"
+           "GLSL: float16 not yet supported (#57 slice 2 — needs \
+            GL_EXT_shader_explicit_arithmetic_types_float16)")
   | TFloat32 -> "float"
   | TFloat64 -> "double" (* Requires GL_ARB_gpu_shader_fp64 *)
   | TBool -> "bool"

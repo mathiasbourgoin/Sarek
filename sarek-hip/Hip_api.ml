@@ -231,7 +231,11 @@ module Memory = struct
 
   let alloc device size kind =
     Device.set_current device ;
-    let elem_size = Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind) in
+    (* NOT Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind): ctypes has
+       no Float16 kind and raises "Unsupported bigarray kind" there. Spoc_core's
+       pure table knows f16 is 2 bytes. See Spoc_core.Memory.bigarray_void_ptr
+       for the full explanation. *)
+    let elem_size = Spoc_core.Memory.bigarray_elem_size kind in
     let bytes = Unsigned.Size_t.of_int (size * elem_size) in
     let pp = allocate (ptr void) null in
     check "hipMalloc" (hipMalloc pp bytes) ;
@@ -250,14 +254,14 @@ module Memory = struct
 
   let host_to_device ~src ~dst =
     Device.set_current dst.device ;
-    let src_ptr = bigarray_start array1 src |> to_voidp in
+    let src_ptr = Spoc_core.Memory.bigarray_void_ptr src in
     let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes src) in
     check "hipMemcpyHtoD" (hipMemcpyHtoD dst.ptr src_ptr bytes) ;
     retire_stream dst.device.id default_stream_key
 
   let device_to_host ~src ~dst =
     Device.set_current src.device ;
-    let dst_ptr = bigarray_start array1 dst |> to_voidp in
+    let dst_ptr = Spoc_core.Memory.bigarray_void_ptr dst in
     let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes dst) in
     check "hipMemcpyDtoH" (hipMemcpyDtoH dst_ptr src.ptr bytes) ;
     retire_stream src.device.id default_stream_key

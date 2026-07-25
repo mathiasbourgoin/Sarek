@@ -15,15 +15,14 @@
 let to_ctypes_ptr : type a b. (a, b) Vector_types.t -> unit Ctypes.ptr =
  fun vec ->
   match vec.host with
-  | Vector_types.Bigarray_storage ba ->
-      Ctypes.(bigarray_start array1 ba |> to_voidp)
+  | Vector_types.Bigarray_storage ba -> Memory.bigarray_void_ptr ba
   | Vector_types.Custom_storage {ptr; _} -> ptr
 
 let host_ptr : type a b. (a, b) Vector_types.t -> nativeint =
  fun vec ->
   match vec.host with
   | Vector_types.Bigarray_storage ba ->
-      Ctypes.(raw_address_of_ptr (bigarray_start array1 ba |> to_voidp))
+      Ctypes.raw_address_of_ptr (Memory.bigarray_void_ptr ba)
   | Vector_types.Custom_storage {ptr; _} -> Ctypes.raw_address_of_ptr ptr
 
 (** Convert bigarray to raw pointer and byte size *)
@@ -32,8 +31,7 @@ let bigarray_to_ptr (type a b)
     unit Ctypes.ptr * int =
   let len = Bigarray.Array1.dim ba in
   let byte_size = len * elem_size in
-  let ptr = Ctypes.bigarray_start Ctypes.array1 ba in
-  (Ctypes.to_voidp ptr, byte_size)
+  (Memory.bigarray_void_ptr ba, byte_size)
 
 (** Auto-sync callback registration *)
 type sync_callback = {sync : 'a 'b. ('a, 'b) Vector_types.t -> bool}

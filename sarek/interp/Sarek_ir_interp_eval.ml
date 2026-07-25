@@ -222,6 +222,14 @@ and eval_special_expr state env = function
       match ty with
       | TInt32 -> VInt32 (to_int32 v)
       | TInt64 -> VInt64 (to_int64 v)
+      | TFloat16 ->
+          (* An f16 value is carried as VFloat32 (there is no VFloat16 -- f16 is
+             a storage width, not a compute type), but it MUST be narrowed here.
+             Without this arm the old catch-all returned [v] unchanged, so
+             `float32_of_float16 (float16_of_float32 3.14159)` would yield
+             3.14159 on the interpreter and 3.14062 on the GPU. Rounding here is
+             what keeps the interpreter a faithful oracle for f16 kernels. *)
+          VFloat32 (Sarek_float16.to_float16 (to_float32 v))
       | TFloat32 -> VFloat32 (to_float32 v)
       | TFloat64 -> VFloat64 (to_float64 v)
       | TBool -> VBool (to_bool v)

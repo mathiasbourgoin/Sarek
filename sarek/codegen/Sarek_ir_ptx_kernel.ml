@@ -27,6 +27,13 @@ let soa_leaves_of_param param_name (elt : elttype) : (string * elttype) list =
         (fun (fname, fty) ->
           match fty with
           | TInt32 | TBool | TFloat32 | TInt64 | TFloat64 -> ()
+          | TFloat16 ->
+              fail
+                (Printf.sprintf
+                   "PTX codegen: SoA parameter '%s': float16 field '%s' \
+                    unsupported (#57 slice 2)"
+                   param_name
+                   fname)
           | TRecord _ ->
               fail
                 (Printf.sprintf
@@ -213,6 +220,13 @@ let emit_params buf alloc (env : env) ~(soa_params : string list)
               let r = new_u32 alloc in
               env_bind env v.var_name r ;
               emit buf "ld.param.u32 %s, [param_%s];" r v.var_name
+          | TFloat16 ->
+              fail
+                (Printf.sprintf
+                   "PTX codegen: kernel parameter '%s' has type float16, which \
+                    the PTX backend does not support (#57 slice 2 — needs a \
+                    %%h register class)"
+                   v.var_name)
           | TRecord (tname, _) | TVariant (tname, _) ->
               (* C-17 / FR-030: by-value aggregate params have no host
                  marshalling; a TVec of the same type IS accepted (EC-11). *)

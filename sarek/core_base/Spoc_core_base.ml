@@ -81,6 +81,7 @@ module Make (Ops : CUSTOM_OPS) = struct
   (** Re-export scalar_kind with constructors so [Make(Ops).Float32] etc.
       resolve. The underlying type is [Spoc_core_base_scalar.scalar_kind]. *)
   type ('a, 'b) scalar_kind = ('a, 'b) Spoc_core_base_scalar.scalar_kind =
+    | Float16 : (float, Bigarray.float16_elt) scalar_kind
     | Float32 : (float, Bigarray.float32_elt) scalar_kind
     | Float64 : (float, Bigarray.float64_elt) scalar_kind
     | Int32 : (int32, Bigarray.int32_elt) scalar_kind
@@ -149,6 +150,8 @@ module Make (Ops : CUSTOM_OPS) = struct
 
   (** {2 Type-id helpers — delegated to Spoc_core_base_scalar} *)
 
+  let float16_type_id = Spoc_core_base_scalar.float16_type_id
+
   let float32_type_id = Spoc_core_base_scalar.float32_type_id
 
   let float64_type_id = Spoc_core_base_scalar.float64_type_id
@@ -166,6 +169,10 @@ module Make (Ops : CUSTOM_OPS) = struct
   let type_id : type a b. (a, b) kind -> a Sarek_ir_types.Type_id.t = function
     | Scalar k -> scalar_type_id k
     | Custom c -> c.type_id
+
+  let float16_vector_type_id :
+      (float, Bigarray.float16_elt) t Sarek_ir_types.Type_id.t =
+    Sarek_ir_types.Type_id.create ()
 
   let float32_vector_type_id :
       (float, Bigarray.float32_elt) t Sarek_ir_types.Type_id.t =
@@ -193,6 +200,7 @@ module Make (Ops : CUSTOM_OPS) = struct
 
   let vector_type_id : type a b.
       (a, b) kind -> (a, b) t Sarek_ir_types.Type_id.t = function
+    | Scalar Float16 -> float16_vector_type_id
     | Scalar Float32 -> float32_vector_type_id
     | Scalar Float64 -> float64_vector_type_id
     | Scalar Int32 -> int32_vector_type_id

@@ -26,6 +26,7 @@ let rec elttype_of_typ (ty : typ) : Ir.elttype =
   | TPrim TUnit -> Ir.TUnit
   | TReg Int64 -> Ir.TInt64
   | TReg Int -> Ir.TInt32 (* int maps to int32 on GPU *)
+  | TReg Float16 -> Ir.TFloat16
   | TReg Float32 -> Ir.TFloat32
   | TReg Float64 -> Ir.TFloat64
   | TReg Char -> Ir.TInt32 (* char represented as int32 *)
@@ -715,6 +716,20 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
       match ref with
       | Sarek_env.IntrinsicRef (path, name) -> Ir.EIntrinsic (path, name, [])
       | Sarek_env.CorePrimitiveRef name -> Ir.EIntrinsic ([], name, []))
+  (* The two f16 width conversions are the only primitives that lower to a
+     typed IR cast instead of an intrinsic call. Going through [ECast] (rather
+     than an [EIntrinsic] carrying a device format string) is what lets each
+     backend emit its own documented narrowing -- CUDA/HIP __float2half, and on
+     the interpreter a narrowing through Sarek_float16 -- and it is also what
+     makes [Sarek_ir_analysis.kernel_uses_float16] see the conversion, since its
+     leaf inspects [ECast] target types. See the "conv_f16" primitives in
+     Sarek_core_primitives.ml. *)
+  | TEIntrinsicFun (Sarek_env.CorePrimitiveRef "float16_of_float32", _, [arg])
+    ->
+      Ir.ECast (Ir.TFloat16, lower_expr state arg)
+  | TEIntrinsicFun (Sarek_env.CorePrimitiveRef "float32_of_float16", _, [arg])
+    ->
+      Ir.ECast (Ir.TFloat32, lower_expr state arg)
   | TEIntrinsicFun (ref, _conv, args) -> (
       match ref with
       | Sarek_env.IntrinsicRef (path, name) ->

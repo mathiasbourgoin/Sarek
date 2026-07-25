@@ -284,7 +284,13 @@ let default_expr ctx = function
   | TFloat64 -> EConst (CFloat64 0.0)
   | TBool -> EConst (CBool false)
   | TUnit -> EConst CUnit
-  | (TRecord _ | TVariant _ | TArray _ | TVec _) as t ->
+  | (TFloat16 | TRecord _ | TVariant _ | TArray _ | TVec _) as t ->
+      (* TFloat16 has no default initializer here because f16 has no IR
+         constant (no literal, by design — see Sarek_ir_types.elttype): there is
+         no [CFloat16 0.0] to return. An f16-returning helper would need an
+         [ECast (TFloat16, EConst (CFloat32 0.0))] temporary; that is only
+         reachable once f16 helper inlining is actually exercised, so reject
+         with the existing diagnostic rather than guess. *)
       fail
         ctx
         "recursion+vector helper"
@@ -295,6 +301,7 @@ let default_expr ctx = function
            | TRecord (n, _) -> "record " ^ n
            | TVariant (n, _) -> "variant " ^ n
            | TArray _ -> "an array"
+           | TFloat16 -> "float16"
            | _ -> "a vector"))
 
 (* ------------------------------------------------------------------ *)

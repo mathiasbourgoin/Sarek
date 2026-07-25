@@ -50,6 +50,7 @@ let rec quote_elttype ~loc (t : Ir.elttype) : expression =
   match t with
   | Ir.TInt32 -> [%expr Sarek.Sarek_ir.TInt32]
   | Ir.TInt64 -> [%expr Sarek.Sarek_ir.TInt64]
+  | Ir.TFloat16 -> [%expr Sarek.Sarek_ir.TFloat16]
   | Ir.TFloat32 -> [%expr Sarek.Sarek_ir.TFloat32]
   | Ir.TFloat64 -> [%expr Sarek.Sarek_ir.TFloat64]
   | Ir.TBool -> [%expr Sarek.Sarek_ir.TBool]

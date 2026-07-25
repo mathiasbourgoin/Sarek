@@ -266,6 +266,13 @@ end = struct
      fun device size kind ->
       let arr = Bigarray.Array1.create kind Bigarray.c_layout size in
       match kind with
+      | Bigarray.Float16 ->
+          {
+            storage = Bigarray_storage arr;
+            kind = Scalar_kind Spoc_core.Vector_types.Float16;
+            size;
+            device;
+          }
       | Bigarray.Float32 ->
           {
             storage = Bigarray_storage arr;
@@ -349,6 +356,14 @@ end = struct
      fun device ba kind ->
       let size = Bigarray.Array1.dim ba in
       match kind with
+      | Bigarray.Float16 ->
+          Some
+            {
+              storage = Bigarray_storage ba;
+              kind = Scalar_kind Spoc_core.Vector_types.Float16;
+              size;
+              device;
+            }
       | Bigarray.Float32 ->
           Some
             {
@@ -488,8 +503,7 @@ end = struct
      fun buf ->
       match buf.storage with
       | Bigarray_storage arr ->
-          let ptr = Ctypes.bigarray_start Ctypes.array1 arr in
-          Ctypes.to_voidp ptr |> Ctypes.raw_address_of_ptr
+          Ctypes.raw_address_of_ptr (Spoc_core.Memory.bigarray_void_ptr arr)
       | Ctypes_storage ptr -> Ctypes.raw_address_of_ptr ptr
   end
 

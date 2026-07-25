@@ -9,6 +9,7 @@
  (public_name sarek.interp)
  (libraries sarek_ir spoc_core spoc_framework sarek_registry sarek_tuple_vec)
  (modules
+  Sarek_float16
   Sarek_float32
   Sarek_value
   Sarek_ir_interp_value

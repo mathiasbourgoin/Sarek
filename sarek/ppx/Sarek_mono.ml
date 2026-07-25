@@ -102,6 +102,7 @@ let rec mangle_type (t : typ) : string =
   | TPrim TInt32 -> "i32"
   | TReg Int -> "i"
   | TReg Int64 -> "i64"
+  | TReg Float16 -> "f16"
   | TReg Float32 -> "f32"
   | TReg Float64 -> "f64"
   | TReg Char -> "c"

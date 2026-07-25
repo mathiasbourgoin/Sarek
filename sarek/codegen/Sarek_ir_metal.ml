@@ -46,6 +46,14 @@ let mangle_name = Sarek_ir_codegen.mangle_name
 let rec metal_type_of_elttype = function
   | TInt32 -> "int"
   | TInt64 -> "long"
+  | TFloat16 ->
+      (* Deferred to #57 slice 2: Metal has a native `half` needing no feature
+         declaration, so this arm is a one-liner then — but it is untestable on
+         this platform, so it is not landed unverified. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "f16"
+           "Metal: float16 not yet supported (#57 slice 2)")
   | TFloat32 -> "float"
   | TFloat64 -> "float" (* Metal doesn't support double precision *)
   | TBool -> "bool"

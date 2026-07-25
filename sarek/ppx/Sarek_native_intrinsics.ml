@@ -247,6 +247,30 @@ let gen_intrinsic_fun ~loc ~gen_mode (ref : intrinsic_ref) args =
               [%expr Sarek.Sarek_cpu_runtime.global_idx_x [%e state]]
           | "global_size" ->
               [%expr Sarek.Sarek_cpu_runtime.global_size_x [%e state]]
+          (* f16 width conversions on the NATIVE path (#57 slice 1). Without
+             these two arms the catch-all below emits `Gpu.float16_of_float32`,
+             which does not exist -- a native f16 kernel fails to compile with
+             "Unbound module Gpu".
+
+             Narrowing MUST round: it shares Sarek_float16.to_float16 with the
+             interpreter and with the Bigarray.Float16 store, which is what makes
+             native, interpreter and GPU agree bit-for-bit. Widening is the
+             identity because an f16 value is already carried as an OCaml
+             float. *)
+          | "float16_of_float32" -> (
+              match args with
+              | [x] -> [%expr Sarek.Sarek_float16.to_float16 [%e x]]
+              | _ ->
+                  Location.raise_errorf
+                    ~loc
+                    "float16_of_float32 expects exactly one argument")
+          | "float32_of_float16" -> (
+              match args with
+              | [x] -> x
+              | _ ->
+                  Location.raise_errorf
+                    ~loc
+                    "float32_of_float16 expects exactly one argument")
           | _ ->
               (* Try Gpu module *)
               let fn = evar_qualified ~loc ["Gpu"] name in

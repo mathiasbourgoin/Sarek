@@ -202,6 +202,7 @@ let inline_vector_type_id_expr ~loc ~ids_var type_name =
 let vector_type_id_expr ?current_module ?inline_types
     ?(inline_ids_var = types_module_var) ~loc elem_ty =
   match repr elem_ty with
+  | TReg Float16 -> [%expr Spoc_core.Vector.float16_vector_type_id]
   | TReg Float32 -> [%expr Spoc_core.Vector.float32_vector_type_id]
   | TReg Float64 -> [%expr Spoc_core.Vector.float64_vector_type_id]
   | TReg Int | TPrim TInt32 -> [%expr Spoc_core.Vector.int32_vector_type_id]
@@ -229,6 +230,7 @@ let vector_type_id_expr ?current_module ?inline_types
 let custom_type_id_expr ?current_module ?inline_types
     ?(inline_ids_var = types_module_var) ~loc elem_ty =
   match repr elem_ty with
+  | TReg Float16 -> [%expr Spoc_core.Vector.float16_type_id]
   | TReg (Custom "complex32") -> [%expr Spoc_core.Vector.complex32_type_id]
   | TRecord (type_name, _) | TVariant (type_name, _) ->
       if is_inline_type inline_types type_name then

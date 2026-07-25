@@ -14,6 +14,12 @@
 (** {1 Scalar element kinds} *)
 
 type (_, _) scalar_kind =
+  | Float16 : (float, Bigarray.float16_elt) scalar_kind
+      (** IEEE binary16. Host-side values are ordinary OCaml [float]s;
+          [Bigarray.Array1.set] on a [Float16] array rounds to binary16 on store
+          (e.g. 3.14159 stores as 3.14062). That free round-on-store is exactly
+          the rounding the "store f16, compute f32" semantics needs, so no
+          software rounding helper is required on the host. *)
   | Float32 : (float, Bigarray.float32_elt) scalar_kind
   | Float64 : (float, Bigarray.float64_elt) scalar_kind
   | Int32 : (int32, Bigarray.int32_elt) scalar_kind
@@ -25,6 +31,7 @@ type (_, _) scalar_kind =
 
 let to_bigarray_kind : type a b. (a, b) scalar_kind -> (a, b) Bigarray.kind =
   function
+  | Float16 -> Bigarray.Float16
   | Float32 -> Bigarray.Float32
   | Float64 -> Bigarray.Float64
   | Int32 -> Bigarray.Int32
@@ -50,6 +57,7 @@ let bigarray_elem_size : type a b. (a, b) Bigarray.kind -> int = function
   | Bigarray.Char -> 1
 
 let scalar_elem_size : type a b. (a, b) scalar_kind -> int = function
+  | Float16 -> 2
   | Float32 -> 4
   | Float64 -> 8
   | Int32 -> 4
@@ -58,6 +66,7 @@ let scalar_elem_size : type a b. (a, b) scalar_kind -> int = function
   | Complex32 -> 8
 
 let scalar_kind_name : type a b. (a, b) scalar_kind -> string = function
+  | Float16 -> "Float16"
   | Float32 -> "Float32"
   | Float64 -> "Float64"
   | Int32 -> "Int32"
@@ -66,6 +75,9 @@ let scalar_kind_name : type a b. (a, b) scalar_kind -> string = function
   | Complex32 -> "Complex32"
 
 (** {1 Type-id singletons for scalar element types} *)
+
+let float16_type_id : float Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
 
 let float32_type_id : float Sarek_ir_types.Type_id.t =
   Sarek_ir_types.Type_id.create ()
@@ -87,6 +99,7 @@ let complex32_type_id : Complex.t Sarek_ir_types.Type_id.t =
 
 let scalar_type_id : type a b. (a, b) scalar_kind -> a Sarek_ir_types.Type_id.t
     = function
+  | Float16 -> float16_type_id
   | Float32 -> float32_type_id
   | Float64 -> float64_type_id
   | Int32 -> int32_type_id

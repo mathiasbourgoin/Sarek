@@ -21,6 +21,14 @@ val fail : string -> 'a
     construct named [what]. *)
 val unsupported : string -> 'a
 
+(** [f16_unsupported what] raises {!Ptx_codegen_error} for a float16 construct.
+    f16 is deliberately out of scope for the PTX backend in #57 slice 1: this
+    emitter derives a value's register class from the register NAME's prefix
+    ([%f] / [%fd] / [%rd]), so introducing a [%h] class requires auditing every
+    such guard first. Shared so the expression emitter reports it identically.
+*)
+val f16_unsupported : string -> 'a
+
 (** {1 Value bindings} *)
 
 (** SROA-decomposed aggregate value: a record is one binding per field (in

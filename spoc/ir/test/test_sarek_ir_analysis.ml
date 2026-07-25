@@ -806,6 +806,186 @@ let empty_kernel body : kernel =
     kern_native_fn = None;
   }
 
+(** {1 Float16 detection Tests}
+
+    Mirrors the float64 detector tests above. Every positive case is paired with
+    a negative one: the whole point of the detector is that a NON-f16 kernel
+    must not trigger the CUDA/HIP [cuda_fp16.h] include, so a detector that
+    over-reports would silently change every existing golden. *)
+
+let test_elttype_float16 () =
+  assert (elttype_uses_float16 TFloat16 = true) ;
+  (* f16 must not be confused with the other float widths, in either
+     direction. *)
+  assert (elttype_uses_float16 TFloat32 = false) ;
+  assert (elttype_uses_float16 TFloat64 = false) ;
+  assert (elttype_uses_float64 TFloat16 = false) ;
+  assert (elttype_uses_float16 TInt32 = false) ;
+  assert (elttype_uses_float16 TInt64 = false) ;
+  assert (elttype_uses_float16 TBool = false) ;
+  assert (elttype_uses_float16 TUnit = false) ;
+  print_endline "  elttype_uses_float16 primitives: OK"
+
+let test_elttype_nested_float16 () =
+  (* Records, variants, arrays and vectors are searched recursively. *)
+  assert (
+    elttype_uses_float16 (TRecord ("r", [("x", TFloat32); ("y", TFloat16)]))
+    = true) ;
+  assert (
+    elttype_uses_float16 (TRecord ("r", [("x", TFloat32); ("y", TFloat64)]))
+    = false) ;
+  assert (
+    elttype_uses_float16 (TVariant ("v", [("A", [TInt32]); ("B", [TFloat16])]))
+    = true) ;
+  assert (
+    elttype_uses_float16 (TVariant ("v", [("A", [TInt32]); ("B", [TFloat32])]))
+    = false) ;
+  assert (elttype_uses_float16 (TArray (TFloat16, Shared)) = true) ;
+  assert (elttype_uses_float16 (TArray (TFloat32, Shared)) = false) ;
+  assert (elttype_uses_float16 (TVec TFloat16) = true) ;
+  assert (elttype_uses_float16 (TVec TFloat32) = false) ;
+  (* Doubly nested: vector of records containing an f16 field. *)
+  assert (elttype_uses_float16 (TVec (TRecord ("r", [("h", TFloat16)]))) = true) ;
+  print_endline "  elttype_uses_float16 nested: OK"
+
+let test_expr_uses_float16 () =
+  (* An f16 value enters an expression through a CAST -- f16 has no literal, so
+     unlike float64 there is no constant case to detect. *)
+  assert (expr_uses_float16 (ECast (TFloat16, EConst (CFloat32 1.5))) = true) ;
+  assert (expr_uses_float16 (ECast (TFloat32, EConst (CFloat32 1.5))) = false) ;
+  (* ... or through an f16-typed variable. *)
+  let v_f16 : var =
+    {var_name = "h"; var_id = 0; var_type = TFloat16; var_mutable = false}
+  in
+  let v_f32 : var =
+    {var_name = "f"; var_id = 1; var_type = TFloat32; var_mutable = false}
+  in
+  assert (expr_uses_float16 (EVar v_f16) = true) ;
+  assert (expr_uses_float16 (EVar v_f32) = false) ;
+  (* ... or through an f16 array construction. *)
+  assert (
+    expr_uses_float16 (EArrayCreate (TFloat16, EConst (CInt32 4l), Shared))
+    = true) ;
+  assert (
+    expr_uses_float16 (EArrayCreate (TFloat32, EConst (CInt32 4l), Shared))
+    = false) ;
+  (* Buried in a sub-expression: the traversal must still find it. *)
+  assert (
+    expr_uses_float16
+      (EBinop
+         ( Add,
+           EConst (CFloat32 1.0),
+           EBinop (Mul, EConst (CFloat32 2.0), ECast (TFloat16, EVar v_f32)) ))
+    = true) ;
+  (* A structurally identical f32-only expression must NOT trigger. *)
+  assert (
+    expr_uses_float16
+      (EBinop
+         ( Add,
+           EConst (CFloat32 1.0),
+           EBinop (Mul, EConst (CFloat32 2.0), ECast (TFloat32, EVar v_f32)) ))
+    = false) ;
+  print_endline "  expr_uses_float16: OK"
+
+let test_stmt_decl_uses_float16 () =
+  let v_f16 : var =
+    {var_name = "h"; var_id = 0; var_type = TFloat16; var_mutable = false}
+  in
+  let v_f32 : var =
+    {var_name = "f"; var_id = 1; var_type = TFloat32; var_mutable = false}
+  in
+  (* Binder types are inspected (the [ft] hook of the shared folder). *)
+  assert (stmt_uses_float16 (SLet (v_f16, EConst (CFloat32 0.0), SEmpty)) = true) ;
+  assert (
+    stmt_uses_float16 (SLet (v_f32, EConst (CFloat32 0.0), SEmpty)) = false) ;
+  assert (stmt_uses_float16 SEmpty = false) ;
+  (* SNative is treated as f16-free, matching the float64 detector: inline
+     device text is opaque and owns its own feature declaration. *)
+  assert (
+    stmt_uses_float16
+      (SNative {gpu = dummy_native_gpu; ocaml = dummy_native_ocaml})
+    = false) ;
+  (* Declarations: the parameter type AND the array element type. *)
+  assert (decl_uses_float16 (DParam (v_f16, None)) = true) ;
+  assert (decl_uses_float16 (DParam (v_f32, None)) = false) ;
+  assert (
+    decl_uses_float16
+      (DParam (v_f32, Some {arr_elttype = TFloat16; arr_memspace = Global}))
+    = true) ;
+  assert (
+    decl_uses_float16
+      (DParam (v_f32, Some {arr_elttype = TFloat32; arr_memspace = Global}))
+    = false) ;
+  assert (decl_uses_float16 (DShared ("s", TFloat16, None)) = true) ;
+  assert (decl_uses_float16 (DShared ("s", TFloat32, None)) = false) ;
+  print_endline "  stmt/decl_uses_float16: OK"
+
+let test_kernel_uses_float16 () =
+  let v_f16 : var =
+    {var_name = "x"; var_id = 0; var_type = TVec TFloat16; var_mutable = false}
+  in
+  let v_f32 : var =
+    {var_name = "x"; var_id = 0; var_type = TVec TFloat32; var_mutable = false}
+  in
+  let kern_with params body : kernel =
+    {
+      kern_name = "test";
+      kern_params = params;
+      kern_locals = [];
+      kern_body = body;
+      kern_types = [];
+      kern_variants = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+    }
+  in
+  (* Positive: an f16 vector parameter. This is the case that must switch the
+     CUDA/HIP fp16 include on. *)
+  assert (
+    kernel_uses_float16
+      (kern_with
+         [DParam (v_f16, Some {arr_elttype = TFloat16; arr_memspace = Global})]
+         SEmpty)
+    = true) ;
+  (* Negative: the same kernel with an f32 vector. *)
+  assert (
+    kernel_uses_float16
+      (kern_with
+         [DParam (v_f32, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+         SEmpty)
+    = false) ;
+  (* Positive: f16 only in the BODY, via a cast -- no f16 in the signature. *)
+  assert (
+    kernel_uses_float16
+      (kern_with [] (SExpr (ECast (TFloat16, EConst (CFloat32 1.0)))))
+    = true) ;
+  (* Positive: f16 only inside a helper function. *)
+  let helper : helper_func =
+    {hf_name = "h"; hf_params = []; hf_ret_type = TFloat16; hf_body = SEmpty}
+  in
+  let k_helper = {(kern_with [] SEmpty) with kern_funcs = [helper]} in
+  assert (kernel_uses_float16 k_helper = true) ;
+  assert (helper_uses_float16 helper = true) ;
+  (* Positive: f16 only in a kernel record type declaration. *)
+  let k_types =
+    {(kern_with [] SEmpty) with kern_types = [("r", [("h", TFloat16)])]}
+  in
+  assert (kernel_uses_float16 k_types = true) ;
+  (* Negative: an entirely f16-free kernel, including an f64 one -- f64 must not
+     be mistaken for f16. *)
+  let v_f64 : var =
+    {var_name = "x"; var_id = 0; var_type = TVec TFloat64; var_mutable = false}
+  in
+  let k_f64 =
+    kern_with
+      [DParam (v_f64, Some {arr_elttype = TFloat64; arr_memspace = Global})]
+      (SExpr (EConst (CFloat64 1.0)))
+  in
+  assert (kernel_uses_float16 k_f64 = false) ;
+  assert (kernel_uses_float64 k_f64 = true) ;
+  assert (kernel_uses_float16 (kern_with [] SEmpty) = false) ;
+  print_endline "  kernel_uses_float16: OK"
+
 let test_kernel_uses_nonfinite_float64 () =
   (* Positive: +inf constant in the body. *)
   let k_inf = empty_kernel (SExpr (EConst (CFloat64 Float.infinity))) in
@@ -959,6 +1139,11 @@ let () =
   test_kernel_uses_float64_params () ;
   test_kernel_uses_float64_types () ;
   test_kernel_uses_float64_variants () ;
+  test_elttype_float16 () ;
+  test_elttype_nested_float16 () ;
+  test_expr_uses_float16 () ;
+  test_stmt_decl_uses_float16 () ;
+  test_kernel_uses_float16 () ;
   test_is_atomic_intrinsic_name () ;
   test_expr_uses_atomics () ;
   test_helper_uses_atomics () ;

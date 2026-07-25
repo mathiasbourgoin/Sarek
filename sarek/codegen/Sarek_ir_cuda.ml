@@ -46,6 +46,7 @@ let mangle_name = Sarek_ir_codegen.mangle_name
 let rec cuda_type_of_elttype = function
   | TInt32 -> "int"
   | TInt64 -> "long long"
+  | TFloat16 -> "__half"
   | TFloat32 -> "float"
   | TFloat64 -> "double"
   | TBool -> "int"
@@ -130,6 +131,16 @@ let rec gen_expr buf = function
       Buffer.add_string buf field
   | EIntrinsic (path, name, args) ->
       Dispatch.gen_intrinsic cuda_backend buf path name args
+  | ECast (TFloat16, e) ->
+      (* f16 is a storage type: narrow through the documented intrinsic rather
+         than a C cast, so the round-to-nearest-even mode is explicit and
+         identical on CUDA and HIP. The widening direction (__half -> float,
+         int, ...) needs no intrinsic: __half carries an implicit conversion
+         operator to float in both toolchains, so a plain C cast is correct and
+         is left to the generic arm below. *)
+      Buffer.add_string buf "__float2half(" ;
+      gen_expr buf e ;
+      Buffer.add_char buf ')'
   | ECast (ty, e) ->
       Buffer.add_char buf '(' ;
       Buffer.add_string buf (cuda_type_of_elttype ty) ;
@@ -632,12 +643,45 @@ let cuda_header = {|
 extern "C" {
 |}
 
+(** f16 feature declaration, emitted only for kernels that actually use f16 —
+    the same conditional-emission discipline the OpenCL/GLSL backends apply to
+    fp64 via {!Sarek_ir_analysis.kernel_uses_float64}. Kernels without f16 are
+    byte-identical to before.
+
+    The guard is NOT decoration. This generator is shared verbatim by the HIP
+    backend ([sarek-hip/Hip_shared.ml]), and the two toolchains disagree:
+
+    - CUDA (nvcc / nvrtc) needs [#include <cuda_fp16.h>] for [__half] and
+      [__float2half].
+    - HIP compiles through hiprtc, which pre-provides [__half], [half] and
+      [__float2half] with no include at all, and which cannot resolve ANY f16
+      header — neither [cuda_fp16.h] nor [hip/hip_fp16.h] exists on its search
+      path. Emitting an unconditional include therefore breaks every HIP f16
+      kernel. Verified empirically against hiprtc on gfx1100: bare [__half] +
+      [__float2half] compile; both include forms fail with "file not found";
+      this negative guard compiles.
+
+    [__HIP__] / [__HIP_PLATFORM_AMD__] are both defined under hiprtc (also
+    verified), so the include is skipped there and taken on CUDA. *)
+let cuda_fp16_include =
+  {|#if !defined(__HIP__) && !defined(__HIP_PLATFORM_AMD__)
+#include <cuda_fp16.h>
+#endif
+|}
+
+(** Prefix for a kernel's generated source: the f16 include (only when the
+    kernel uses f16) followed by the standard header. *)
+let cuda_header_for (k : kernel) =
+  if Sarek_ir_analysis.kernel_uses_float16 k then
+    cuda_fp16_include ^ cuda_header
+  else cuda_header
+
 (** Generate complete CUDA source for a kernel *)
 let generate (k : kernel) : string =
   let buf = Buffer.create 4096 in
 
   (* Header *)
-  Buffer.add_string buf cuda_header ;
+  Buffer.add_string buf (cuda_header_for k) ;
 
   (* Generate helper functions before kernel *)
   List.iter (gen_helper_func buf) k.kern_funcs ;
@@ -686,7 +730,7 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   let buf = Buffer.create 4096 in
 
   (* Header *)
-  Buffer.add_string buf cuda_header ;
+  Buffer.add_string buf (cuda_header_for k) ;
 
   (* Variant type definitions first (may be needed by records) *)
   List.iter (gen_variant_def buf) k.kern_variants ;

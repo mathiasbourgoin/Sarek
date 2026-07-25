@@ -137,6 +137,15 @@ let rec wgsl_type_of_elttype = function
         (Codegen_error.unsupported_construct
            "i64"
            "WGSL: 64-bit integers unsupported in core WebGPU")
+  | TFloat16 ->
+      (* Deferred to #57 slice 2: WGSL has a native `f16`, but it requires
+         `enable f16;` at MODULE TOP — before the bindings the header emits —
+         which is a structural change to the emitter, not a match arm. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "f16"
+           "WGSL: float16 not yet supported (#57 slice 2 — needs a module-top \
+            `enable f16;` directive)")
   | TFloat32 -> "f32"
   | TFloat64 ->
       Codegen_error.raise_error
@@ -157,7 +166,7 @@ let rec has_float64 = function
   | TRecord (_, fields) -> List.exists (fun (_, t) -> has_float64 t) fields
   | TVariant (_, constrs) ->
       List.exists (fun (_, ts) -> List.exists has_float64 ts) constrs
-  | TInt32 | TInt64 | TFloat32 | TBool | TUnit -> false
+  | TInt32 | TInt64 | TFloat16 | TFloat32 | TBool | TUnit -> false
 
 (** {1 Thread Intrinsics}
 

@@ -169,7 +169,11 @@ let rec to_lfield (t : elttype) : RocqMirror.lfield =
   | TInt32 | TFloat32 | TBool -> RocqMirror.LLeaf RocqMirror.L32
   | TInt64 | TFloat64 -> RocqMirror.LLeaf RocqMirror.L64
   | TRecord (_, fields) -> RocqMirror.LRec (to_lfields (List.map snd fields))
-  | TVariant _ | TArray _ | TVec _ | TUnit ->
+  (* TFloat16 is a 2-byte leaf; the Rocq layout mirror only models L32/L64, and
+     f16 aggregate fields are rejected by Sarek_ir_layout.flatten_field anyway
+     (#57 slice 1), so f16 is outside the conformance domain. It is likewise
+     absent from [scalar_universe] above, so no generated case reaches here. *)
+  | TFloat16 | TVariant _ | TArray _ | TVec _ | TUnit ->
       invalid_arg "to_lfield: outside the conformance domain"
 
 and to_lfields (ts : elttype list) : RocqMirror.lfields =
@@ -181,6 +185,7 @@ and to_lfields (ts : elttype list) : RocqMirror.lfields =
 let rec pp_elttype = function
   | TInt32 -> "i32"
   | TInt64 -> "i64"
+  | TFloat16 -> "f16"
   | TFloat32 -> "f32"
   | TFloat64 -> "f64"
   | TBool -> "bool"

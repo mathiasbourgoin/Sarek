@@ -26,6 +26,7 @@
  (modules
   Interp_error
   Sarek_tuple_vec
+  Sarek_float16
   Sarek_float32
   Sarek_value
   Sarek_ir_interp_value

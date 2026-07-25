@@ -188,6 +188,8 @@ let to_string (vec : ('a, 'b) t) : string =
 
 (** {1 Convenience Constructors for Scalar Types} *)
 
+let float16 = Scalar Float16
+
 let float32 = Scalar Float32
 
 let float64 = Scalar Float64
@@ -199,6 +201,10 @@ let int64 = Scalar Int64
 let char = Scalar Char
 
 let complex32 = Scalar Complex32
+
+(** Create an f16 vector. Elements are ordinary OCaml [float]s; every [set]
+    rounds to IEEE binary16 (so 3.14159 reads back as 3.14062). *)
+let create_float16 ?dev n = create float16 ?dev n
 
 let create_float32 ?dev n = create float32 ?dev n
 

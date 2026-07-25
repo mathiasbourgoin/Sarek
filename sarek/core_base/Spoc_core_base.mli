@@ -78,6 +78,7 @@ module Make (Ops : CUSTOM_OPS) : sig
   (** {2 Element types} *)
 
   type ('a, 'b) scalar_kind = ('a, 'b) Spoc_core_base_scalar.scalar_kind =
+    | Float16 : (float, Bigarray.float16_elt) scalar_kind
     | Float32 : (float, Bigarray.float32_elt) scalar_kind
     | Float64 : (float, Bigarray.float64_elt) scalar_kind
     | Int32 : (int32, Bigarray.int32_elt) scalar_kind
@@ -142,6 +143,8 @@ module Make (Ops : CUSTOM_OPS) : sig
 
   (** {2 Type-id helpers} *)
 
+  val float16_type_id : float Sarek_ir_types.Type_id.t
+
   val float32_type_id : float Sarek_ir_types.Type_id.t
 
   val float64_type_id : float Sarek_ir_types.Type_id.t
@@ -157,6 +160,9 @@ module Make (Ops : CUSTOM_OPS) : sig
   val scalar_type_id : ('a, 'b) scalar_kind -> 'a Sarek_ir_types.Type_id.t
 
   val type_id : ('a, 'b) kind -> 'a Sarek_ir_types.Type_id.t
+
+  val float16_vector_type_id :
+    (float, Bigarray.float16_elt) t Sarek_ir_types.Type_id.t
 
   val float32_vector_type_id :
     (float, Bigarray.float32_elt) t Sarek_ir_types.Type_id.t
