@@ -49,36 +49,48 @@
  * a real-NVIDIA collapse to ~2^-24 went unnoticed. Do not restate a result
  * more broadly than it was measured.
  *
- * Measured by sarek/tests/e2e/test_df64.ml unless noted:
+ * Measured by sarek/tests/e2e/test_df64.ml. "mul/div/sqrt" below are that
+ * test's max relative errors; its tolerance is 7.11e-15 (2^-47) for add/sub
+ * and 1.42e-14 (2^-46) for mul/div/sqrt.
  *
  *   Interpreter, sequential and parallel (any host)
- *       full contract (~2^-47). Emulates float32 rounding, incl. Float.fma.
+ *       full contract. mul 9.07e-15, div 5.08e-15, sqrt 8.53e-15.
+ *
+ *   CUDA/PTX on NVIDIA Pascal
+ *   (GTX 1070 Max-Q, sm_61, CUDA 12.9, driver 580.119.02)
+ *       mul 9.07e-15, div 5.08e-15 - contract met.
+ *       sqrt 1.42e-14 - marginally OVER the 1.42e-14 tolerance, still failing.
+ *       Before the contraction barrier: mul 5.92e-08, div 5.64e-08,
+ *       sqrt 2.88e-08, i.e. plain float32.
+ *
+ *   OpenCL on NVIDIA Pascal (same GPU and driver)
+ *       mul 9.07e-15, div 5.08e-15, sqrt 9.80e-15 - contract met.
+ *       Before the barrier it showed the same collapse as CUDA/PTX
+ *       (mul 5.92e-08, div 5.85e-08, sqrt 2.88e-08). No OpenCL-specific
+ *       change was needed: FP_CONTRACT is defeated by the same barrier.
+ *
+ *   Vulkan on NVIDIA Pascal (same GPU and driver)
+ *       mul 9.07e-15, div 5.08e-15, sqrt 1.24e-14 - contract met, and met
+ *       before the barrier too. NVIDIA's GLSL [fma] is exact and the
+ *       [precise] qualifier on float locals already blocked contraction.
  *
  *   OpenCL on AMD (RX 7900 XTX and Raphael iGPU, Mesa rusticl/radeonsi)
- *       full contract (~2^-47).
- *
- *   CUDA/PTX on NVIDIA Pascal (GTX 1070, sm_61, CUDA 12.9, driver 580.119.02)
- *       full contract expected after the contraction barrier below; the fix
- *       is verified in SASS offline (ptxas 12.9 -arch=sm_61 -O3) but has NOT
- *       yet been re-run on the device. Before the fix: mul 5.92e-08,
- *       div 5.64e-08, sqrt 2.88e-08 - i.e. plain float32.
+ *       full contract. mul 9.07e-15, div 5.08e-15, sqrt 1.08e-14.
  *
  *   CUDA/PTX on AMD through ZLUDA (RX 7900 XTX)
- *       full contract (~2^-47). NOT evidence for real NVIDIA hardware.
- *
- *   OpenCL on NVIDIA Pascal (GTX 1070)
- *       UNVERIFIED after the fix. Before the fix it showed the same
- *       ~2^-24 collapse as CUDA/PTX on that GPU.
+ *       full contract. NOT evidence for real NVIDIA hardware - this is the
+ *       configuration whose result was previously generalised to "CUDA/PTX".
  *
  *   Vulkan on AMD (RX 7900 XTX and Raphael iGPU, Mesa RADV)
- *       add/sub/sqrt meet the contract - float locals carry the GLSL
- *       [precise] qualifier - but mul/div degrade to ~2^-24 because RADV's
+ *       add/sub/sqrt meet the contract, mul/div degrade to ~5.8e-08. RADV's
  *       GLSL [fma] is not correctly rounded, so TwoProd's error term is lost.
- *       Unfixed, and distinct from the ptxas contraction bug below.
+ *       UNFIXED, and unrelated to the contraction bug - the barrier below
+ *       does not help, and extending it to two_sum/quick_two_sum makes RADV
+ *       strictly worse (see "Contraction barrier").
  *
- *   Vulkan on NVIDIA Pascal (GTX 1070)
- *       meets the contract (mul 9.07e-15) - NVIDIA's GLSL [fma] is exact and
- *       [precise] blocks contraction. Measured before the fix.
+ *   Vulkan on Intel (UHD Graphics 630, CFL GT2, Mesa ANV)
+ *       add/sub/sqrt meet the contract, mul/div degrade to ~5.8e-08, same
+ *       shape as RADV. UNFIXED, unmeasured cause.
  *
  *   Native (OCaml host code)
  *       evaluates float32 at OCaml binary64 precision, so the error-free
@@ -87,6 +99,18 @@
  *       but do not use df64 for extra precision there.
  *
  *   Metal, WGSL: UNTESTED.
+ *
+ * KNOWN RESIDUAL: df64_sqrt on NVIDIA
+ *   After the contraction barrier, sqrt still lands just above the 2^-46
+ *   tolerance on some NVIDIA paths: 1.42e-14 (CUDA/PTX, test_df64) and
+ *   1.68e-14 / 1.81e-14 (CUDA/PTX and OpenCL, test_real64's df64 fallback).
+ *   This is NOT the contraction bug - that cost sqrt 2.88e-08, and the
+ *   barrier removed it. It is a separate margin problem in the Karp/Newton
+ *   correction, and it pre-dates the barrier: Vulkan on the same GPU, which
+ *   was never affected by contraction, already failed test_real64's sqrt at
+ *   1.68e-14 beforehand. Devices generally land at 1.0e-14..1.8e-14 for sqrt
+ *   where the interpreter reaches 8.5e-15. Unresolved; do not paper over it
+ *   by widening the tolerance.
  *
  * References:
  *   - T.J. Dekker, "A floating-point technique for extending the available
@@ -145,6 +169,14 @@ let float x = float_of_int (Int32.to_int x)
  * so every add and subtract downstream of a [two_prod] has nothing to contract
  * with. One instruction changes (FMUL -> FFMA, same rate on NVIDIA); the SASS
  * instruction count for df64_mul and df64_sqrt is unchanged at sm_61.
+ *
+ * CONFIRMED ON HARDWARE (GTX 1070 Max-Q, sm_61, CUDA 12.9, driver
+ * 580.119.02), not only in SASS: CUDA/PTX mul 5.92e-08 -> 9.07e-15 and
+ * div 5.64e-08 -> 5.08e-15; NVIDIA OpenCL mul 5.92e-08 -> 9.07e-15,
+ * div 5.85e-08 -> 5.08e-15, sqrt 2.88e-08 -> 9.80e-15. The same barrier
+ * fixes OpenCL with no OpenCL-specific change. Throughput on that GPU is
+ * unchanged: the df64 poly benchmark runs 6.04 ms before and 6.03 ms after
+ * (CUDA/PTX, 2^20 x 512 iters, steady state of 3 runs).
  *
  * WHY IT IS NOT APPLIED MORE WIDELY. Rewriting [two_sum] and [quick_two_sum]
  * in terms of [fma] as well was tried and MEASURED TO REGRESS RADV/Vulkan
