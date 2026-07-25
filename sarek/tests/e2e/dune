@@ -382,13 +382,30 @@
 ; would add verification beyond "it compiled".
 ;
 ; test_inline_pragma is also parked here (build-only): it is otherwise
-; self-verifying and CPU-safe, but running it on this session's real GPU
-; segfaulted reproducibly when Device.all () selected the OpenCL device for
-; a non-tail-recursive `pragma ["sarek.inline N"]` kernel (see
-; briefs/make-tests-actually-run-impl-notes.md). That is a genuine backend
-; crash, out of scope here (no sarek-opencl / codegen changes in this task).
-; Keeping it out of default `runtest` avoids nondeterministically crashing
-; the suite on machines where a GPU happens to be the first device.
+; self-verifying and CPU-safe, but it segfaults DETERMINISTICALLY (not
+; flakily) whenever an OpenCL device is present. Diagnosed 2026-07-25:
+;
+;   `pragma ["sarek.inline N"]` bounds the UNROLLING of a non-tail-recursive
+;   function but leaves a residual self-call, so the OpenCL backend emits a
+;   genuinely recursive device function:
+;
+;     int pow2(int n) { ... return (2 * (... (2 * pow2(n-1-1-1-1-1-1-1))))); }
+;
+;   OpenCL C forbids recursion. rusticl (Mesa 26.1.4) does not diagnose it;
+;   it tries to inline and overflows its own compiler stack - the crash is a
+;   ~30800-frame recursion inside libRusticlOpenCL on a `clctxworker` thread,
+;   with zero SPOC/OCaml frames on the stack.
+;
+; So the fix belongs in the OpenCL backend: either fully bound the recursion
+; (emit a depth-limited base case) or refuse with an explicit "Unsupported
+; construct" error the way the GLSL backend already does. Until then this
+; stays build-only.
+;
+; NOTE: this is NOT the ctypes-rooting use-after-free that was fixed in
+; sarek-vulkan (PR #303). That one also presented as a SIGSEGV, which is why
+; the two were once filed as one class. They are unrelated: this crash is
+; unchanged by that fix, is OpenCL-only, and disappears when the OpenCL ICD
+; is hidden.
 
 (alias
  (name compile-only)
