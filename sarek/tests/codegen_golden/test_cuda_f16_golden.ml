@@ -191,14 +191,18 @@ let test_f16_conversions () =
      value in a VGPR ahead of the ISel combine that fuses. *)
   check_contains "AMDGPU constraint" src "asm volatile(\"\" : \"+v\"(x))" ;
   (* NVIDIA is where it is NOT, and that asymmetry is asserted rather than left
-     to a reader's assumption (#110). The non-HIP branch used to carry a PTX
-     "+f" variant; it was an empty asm template that NVVM erased, so the cubins
-     were byte-identical with and without it — measured on CUDA 13.3
+     to a reader's assumption (#110), and it is scoped to the NARROWING: the
+     non-HIP branch used to carry a PTX "+f" variant, which contributes zero PTX
+     instructions there, so ptxas sees an identical instruction stream and the
+     cubins were byte-identical with and without it — measured on CUDA 13.3
      (nvcc/ptxas/nvdisasm V13.3.73, host-side, no NVIDIA device) for sm_75
      through sm_121. Keeping a no-op that reads as protection is what this
      assertion forbids. What actually keeps the multiply out of the narrowing
      on NVIDIA is ptxas, machine-checked by
-     sarek-cuda/test/test_cuda_f16_sass.ml; see docs/fp-contraction-policy.md. *)
+     sarek-cuda/test/test_cuda_f16_sass.ml. NOTE the same barrier is NOT inert
+     at a mul->add site (PTX mul.f32+add.f32 instead of fma.rn.f32) — but ptxas
+     re-contracts that under the default -fmad=true, so it is still not a usable
+     contraction barrier on NVIDIA. See docs/fp-contraction-policy.md. *)
   check_absent "no inert PTX barrier" src "\"+f\"" ;
   check_contains
     "NVIDIA branch documents why it is empty"

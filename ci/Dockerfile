@@ -132,6 +132,19 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 # image, dependencies included, not estimates from the .deb payloads:
 #   cuda-nvcc-12-6       147.6 MB  ptxas 31 MB, nvlink 31 MB, nvcc 23 MB,
 #                                  libnvptxcompiler_static.a 60 MB
+#   cuda-nvdisasm-12-6              nvdisasm — the SASS disassembler. NOT part of
+#                                  cuda-nvcc, which is why it was missing: the
+#                                  built image was checked and `command -v
+#                                  nvdisasm` came back empty while ptxas and nvcc
+#                                  were present. Without it
+#                                  sarek-cuda/test/test_cuda_f16_sass.ml
+#                                  self-skips, and that gate is the ONLY thing
+#                                  standing behind the f16 f32-discipline
+#                                  guarantee on NVIDIA (see
+#                                  docs/fp-contraction-policy.md section 4) — and
+#                                  the only thing that could ever surface a
+#                                  12.6-vs-13.3 ptxas divergence, since 12.6 is
+#                                  exercised here and nowhere else.
 #   cuda-nvrtc-12-6       60.5 MB  libnvrtc.so.12 + builtins
 #   cuda-nvvm-12-6        56.1 MB  hard dependency of cuda-nvcc (cicc/libnvvm);
 #                                  not requested, not optional
@@ -156,6 +169,7 @@ RUN curl -fsSLO https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2
   && rm cuda-keyring_1.1-1_all.deb \
   && apt-get update && apt-get install --no-install-recommends -y \
        "cuda-nvcc-${CUDA_APT_SERIES}" \
+       "cuda-nvdisasm-${CUDA_APT_SERIES}" \
        "cuda-nvrtc-${CUDA_APT_SERIES}" \
        "cuda-cudart-dev-${CUDA_APT_SERIES}" \
   && rm -rf /var/lib/apt/lists/*

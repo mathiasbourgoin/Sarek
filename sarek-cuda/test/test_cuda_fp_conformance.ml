@@ -15,6 +15,12 @@
  *
  * NON-VACUITY. Three separate things keep this from being a test of a constant:
  *
+ *   0. THE SEPARATED SPELLING. nvrtc takes an option and its value as two array
+ *      elements, and the first version of this guard matched only the inline
+ *      form -- ["--ftz"; "true"] compiled a subnormal-flushing kernel with no
+ *      exception and no warning, confirmed against libnvrtc 13.3 through these
+ *      bindings. Both spellings of every value-taking option are now asserted,
+ *      as is the fail-closed behaviour of a bare ["--ftz"] with no value.
  *   1. NEGATIVE SIDE. Options that must stay accepted are asserted accepted --
  *      including [-ftz=false] and [--prec-div=true], which differ from the
  *      rejected forms only in the VALUE. A guard that matched on the option
@@ -96,58 +102,75 @@ let generated_source () =
 (* 1. Rejection                                                        *)
 (* ------------------------------------------------------------------ *)
 
-(* Every spelling nvcc/nvrtc accepts for the same hazard. Both dash forms,
-   because nvrtc takes either. *)
+(* Every spelling nvrtc accepts for the same hazard: both dash forms, both the
+   inline [--ftz=true] and the SEPARATED [--ftz; true] value, and the bare name
+   with no value at all (fail-closed). Each entry is a whole option ARRAY,
+   because the separated form is invisible to any per-element check. *)
 let must_reject =
   [
-    ("-use_fast_math", "subnormal");
-    ("--use_fast_math", "subnormal");
-    ("-ftz=true", "subnormal");
-    ("--ftz=true", "subnormal");
-    ("--ftz=1", "subnormal");
-    ("--prec-div=false", "division");
-    ("-prec-div=0", "division");
-    ("--prec-sqrt=false", "square root");
+    (["-use_fast_math"], "subnormal");
+    (["--use_fast_math"], "subnormal");
+    (["-ftz=true"], "subnormal");
+    (["--ftz=true"], "subnormal");
+    (["--ftz=1"], "subnormal");
+    (* the confirmed bypass *)
+    (["--ftz"; "true"], "subnormal");
+    (["-ftz"; "true"], "subnormal");
+    (["--ftz"; "1"], "subnormal");
+    (* fail-closed: a value we cannot resolve is not assumed safe *)
+    (["--ftz"], "subnormal");
+    (["--ftz"; "--std=c++17"], "subnormal");
+    (["--prec-div=false"], "division");
+    (["-prec-div=0"], "division");
+    (["--prec-div"; "false"], "division");
+    (["--prec-sqrt=false"], "square root");
+    (["--prec-sqrt"; "false"], "square root");
+    (* the real thing it protects: a full array with the hazard buried in it *)
+    ( ["--gpu-architecture=compute_75"; "--ftz"; "true"; "-I/opt/cuda/include"],
+      "subnormal" );
   ]
+
+let contains hay needle =
+  let n = String.length needle and h = String.length hay in
+  let rec go i = i + n <= h && (String.sub hay i n = needle || go (i + 1)) in
+  n = 0 || go 0
 
 let test_rejected () =
   List.iter
-    (fun (opt, needle) ->
-      match Nvrtc.fp_rejection_reason opt with
+    (fun (opts, needle) ->
+      let shown = String.concat " " opts in
+      match Nvrtc.fp_rejection_reason_list opts with
       | None ->
           Alcotest.failf
             "%S must be refused on the CUDA path; the guard accepted it"
-            opt
+            shown
       | Some msg ->
           (* Not merely "some error": the message must name the option and
              explain the hazard, or a caller cannot act on it. *)
-          let contains hay needle =
-            let n = String.length needle and h = String.length hay in
-            let rec go i =
-              i + n <= h && (String.sub hay i n = needle || go (i + 1))
-            in
-            n = 0 || go 0
-          in
-          if not (contains msg opt) then
+          (* The message must quote the OFFENDING option, wherever it sits in
+             the array -- a message naming only the first element would be
+             useless when the hazard is buried among include paths. *)
+          if not (List.exists (fun o -> contains msg o) opts) then
             Alcotest.failf
-              "rejection message for %S does not quote it: %s"
-              opt
+              "rejection message for %S quotes none of its options: %s"
+              shown
               msg ;
           if not (contains msg needle) then
             Alcotest.failf
               "rejection message for %S does not explain the hazard (expected \
                %S): %s"
-              opt
+              shown
               needle
               msg ;
           if not (contains msg "docs/fp-contraction-policy.md") then
             Alcotest.failf
               "rejection message for %S does not point at the policy: %s"
-              opt
+              shown
               msg)
     must_reject ;
   Printf.printf
-    "  guard rejects %d FP-relaxing option spellings, each with a reason\n"
+    "  guard rejects %d FP-relaxing option arrays (inline, separated and \
+     valueless spellings), each with a reason\n"
     (List.length must_reject)
 
 (* ------------------------------------------------------------------ *)
@@ -156,74 +179,119 @@ let test_rejected () =
 
 let must_accept =
   [
-    "--gpu-architecture=compute_75";
-    "--include-path=/opt/cuda/include";
-    "-I/opt/cuda/include";
-    "-DFOO=1";
-    "-ftz=false";
-    "--ftz=false";
-    "--prec-div=true";
-    "--prec-sqrt=true";
-    "-O3";
-    "--extra-device-vectorization";
-    "--std=c++17";
+    ["--gpu-architecture=compute_75"];
+    ["--include-path=/opt/cuda/include"];
+    ["-I/opt/cuda/include"];
+    ["-DFOO=1"];
+    ["-ftz=false"];
+    ["--ftz=false"];
+    (* the separated SAFE spellings must survive the separated-form handling *)
+    ["--ftz"; "false"];
+    ["-ftz"; "0"];
+    ["--prec-div=true"];
+    ["--prec-div"; "true"];
+    ["--prec-sqrt=true"];
+    ["--prec-sqrt"; "1"];
+    ["-O3"];
+    ["--extra-device-vectorization"];
+    ["--std=c++17"];
+    (* a realistic full array *)
+    ["--gpu-architecture=compute_90"; "--include-path=/opt/cuda/include"];
   ]
 
 let test_accepted () =
   List.iter
-    (fun opt ->
-      match Nvrtc.fp_rejection_reason opt with
+    (fun opts ->
+      match Nvrtc.fp_rejection_reason_list opts with
       | Some msg ->
           Alcotest.failf
             "%S is legitimate and must be accepted; the guard refused it: %s"
-            opt
+            (String.concat " " opts)
             msg
       | None -> ())
     must_accept ;
   (* --fmad=true is a real relaxation but is nvrtc's default, so it warns
      rather than rejects. Both halves matter: it must NOT reject, and it must
-     NOT be silent. *)
-  (match Nvrtc.fp_rejection_reason "--fmad=true" with
-  | Some msg -> Alcotest.failf "--fmad=true must warn, not reject: %s" msg
-  | None -> ()) ;
-  (match Nvrtc.fp_warning_reason "--fmad=true" with
-  | None -> Alcotest.fail "--fmad=true must produce a warning; it was silent"
-  | Some _ -> ()) ;
-  (match Nvrtc.fp_warning_reason "--fmad=false" with
-  | Some msg ->
-      Alcotest.failf
-        "--fmad=false is the safe setting and must be silent: %s"
-        msg
-  | None -> ()) ;
+     NOT be silent -- in BOTH spellings. *)
+  List.iter
+    (fun opts ->
+      let shown = String.concat " " opts in
+      (match Nvrtc.fp_rejection_reason_list opts with
+      | Some msg -> Alcotest.failf "%S must warn, not reject: %s" shown msg
+      | None -> ()) ;
+      match Nvrtc.fp_warning_reason_list opts with
+      | None -> Alcotest.failf "%S must produce a warning; it was silent" shown
+      | Some _ -> ())
+    [["--fmad=true"]; ["--fmad"; "true"]; ["-fmad"; "1"]] ;
+  List.iter
+    (fun opts ->
+      match Nvrtc.fp_warning_reason_list opts with
+      | Some msg ->
+          Alcotest.failf
+            "%S is the safe setting and must be silent: %s"
+            (String.concat " " opts)
+            msg
+      | None -> ())
+    [["--fmad=false"]; ["--fmad"; "false"]] ;
   Printf.printf
-    "  guard accepts %d legitimate options; --fmad=true warns, --fmad=false is \
-     silent\n"
+    "  guard accepts %d legitimate option arrays (incl. separated safe \
+     values); --fmad=true warns in both spellings, --fmad=false is silent\n"
     (List.length must_accept)
 
 (* ------------------------------------------------------------------ *)
 (* 3. End-to-end: the real entry point raises, with no CUDA needed     *)
 (* ------------------------------------------------------------------ *)
 
-let test_compile_to_ptx_raises () =
+let expect_refused ~what options =
   let src = generated_source () in
   match
-    Nvrtc.compile_to_ptx
-      ~name:"guarded"
-      ~arch:"compute_75"
-      ~options:["-use_fast_math"]
-      src
+    Nvrtc.compile_to_ptx ~name:"guarded" ~arch:"compute_75" ~options src
   with
   | _ptx ->
-      Alcotest.fail
-        "compile_to_ptx accepted -use_fast_math and compiled; the guard did \
-         not fire on the real entry point"
+      Alcotest.failf
+        "compile_to_ptx accepted %s and compiled; the guard did not fire on \
+         the real entry point"
+        what
   | exception Nvrtc.Fp_conformance_violation msg ->
-      Printf.printf "  compile_to_ptx refused -use_fast_math: %s\n" msg
+      Printf.printf "  compile_to_ptx refused %s: %s\n" what msg
   | exception e ->
       Alcotest.failf
-        "compile_to_ptx must raise Fp_conformance_violation; it raised %s \
-         (which means the guard did not run before libnvrtc was reached)"
+        "compile_to_ptx must raise Fp_conformance_violation for %s; it raised \
+         %s (which means the guard did not run before libnvrtc was reached)"
+        what
         (Printexc.to_string e)
+
+let test_compile_to_ptx_raises () =
+  expect_refused ~what:"-use_fast_math" ["-use_fast_math"] ;
+  (* The separated spelling, through the same entry point. This is the case
+     that compiled successfully before the guard was made option-shaped. *)
+  expect_refused ~what:"the separated form --ftz true" ["--ftz"; "true"]
+
+(* The CHOKEPOINT copy of the guard screens the array this module ASSEMBLES,
+   not just the caller's half. Exercised through [nvrtc_option_array], which is
+   the exact composition [compile_to_ptx] hands to nvrtcCompileProgram, so a
+   hazard introduced by this module's own flags is caught the same way. *)
+let test_assembled_array_is_screened () =
+  let assembled =
+    Nvrtc.nvrtc_option_array
+      ~arch:"compute_75"
+      ~options:["--ftz"; "true"]
+      ~include_opts:["--include-path=/opt/cuda/include"]
+      ()
+  in
+  (* Non-vacuity: the hazard must have SURVIVED assembly, not been dropped. *)
+  if not (List.mem "--ftz" assembled) then
+    Alcotest.failf
+      "the assembled array no longer contains the option under test (%s), so \
+       this check proves nothing"
+      (String.concat " " assembled) ;
+  match Nvrtc.fp_rejection_reason_list assembled with
+  | None ->
+      Alcotest.failf
+        "the array this module assembles (%s) is not screened; a hazard in the \
+         module's OWN flags would reach nvrtcCompileProgram"
+        (String.concat " " assembled)
+  | Some msg -> Printf.printf "  assembled option array is screened: %s\n" msg
 
 (* ------------------------------------------------------------------ *)
 (* 4. The hazard, measured (host tools only)                           *)
@@ -282,10 +350,14 @@ let sass_of ~dir ~tag ~extra_flags src =
     if rc <> 0 then None else Some (read_file sass)
 
 let test_ftz_hazard_is_real () =
-  if not (on_path "nvcc" && on_path "nvdisasm") then
+  if not (on_path "nvcc" && on_path "nvdisasm") then (
     Printf.printf
       "  [SKIP] FTZ hazard control: nvcc/nvdisasm not on PATH (host tools, no \
-       device needed)\n"
+       device needed)\n" ;
+    (* Alcotest.skip, not a bare return: a skipped gate that prints [OK] is
+       indistinguishable from a gate that ran, which is exactly the regression
+       commit cf58801b fixed. *)
+    Alcotest.skip ())
   else
     let dir = Filename.temp_file "sarek_fpc" "" in
     Sys.remove dir ;
@@ -297,7 +369,8 @@ let test_ftz_hazard_is_real () =
     with
     | None, _ | _, None ->
         Printf.printf
-          "  [SKIP] FTZ hazard control: the local nvcc could not build sm_90\n"
+          "  [SKIP] FTZ hazard control: the local nvcc could not build sm_90\n" ;
+        Alcotest.skip ()
     | Some plain, Some ftz ->
         if has_ftz_arith plain then
           Alcotest.fail
@@ -328,9 +401,13 @@ let () =
             `Quick
             test_accepted;
           Alcotest.test_case
-            "compile_to_ptx itself refuses -use_fast_math"
+            "compile_to_ptx itself refuses relaxing options, both spellings"
             `Quick
             test_compile_to_ptx_raises;
+          Alcotest.test_case
+            "the array this module assembles is screened too"
+            `Quick
+            test_assembled_array_is_screened;
           Alcotest.test_case
             "the flushed-subnormal hazard is real (SASS)"
             `Quick

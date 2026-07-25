@@ -18,6 +18,11 @@
   model restated for the aligned ABI (0 admits)
 - float32 `fma` intrinsic on all backends; GLSL `precise` qualifier on
   float locals
+- CI installs `cuda-nvdisasm-12-6` and `ci/assert-toolchain.sh` asserts
+  `nvdisasm` (version + a ptxas→nvdisasm probe). It was absent from the built
+  image, so `test_cuda_f16_sass` — the gate the NVIDIA f16 guarantee rests on,
+  and the only one that could surface a 12.6-vs-13.3 ptxas divergence —
+  self-skipped in CI while reporting green.
 - `docs/fp-contraction-policy.md` — cross-backend floating-point contraction
   policy: what each backend may contract, what actually prevents it, and
   whether that mechanism is verified or merely believed. The interpreter is
@@ -25,7 +30,11 @@
   carried an ad-hoc contraction comment.
 - FP-conformance guard on the CUDA/nvrtc path: `-use_fast_math`, `-ftz=true`,
   `--prec-div=false` and `--prec-sqrt=false` are now REJECTED at the point an
-  option array reaches `nvrtcCompileProgram` (`--fmad=true` warns). They flush
+  option array reaches `nvrtcCompileProgram` (`--fmad=true` warns). The guard
+  screens the whole ARRAY, because nvrtc accepts an option and its value as two
+  elements: `["--ftz"; "true"]` compiled a subnormal-flushing kernel past a
+  per-element check (confirmed against libnvrtc 13.3, `.ftz` in the emitted
+  PTX). A value-taking name consumes the next element and is fail-closed. They flush
   binary32 subnormals or downgrade div/sqrt, and no later flag undoes that.
   `sarek-cuda/test/test_cuda_fp_conformance.ml` reproduces the hazard
   host-side (`-ftz=true` turns `FMUL`/`FADD` into `FMUL.FTZ`/`FADD.FTZ` at
@@ -37,11 +46,15 @@
 ### Changed
 
 - The CUDA branch of `sarek_f32_barrier` no longer emits
-  `asm volatile("" : "+f"(x))`. That barrier was inert: the assembly template
-  is empty, NVVM erases it, and the cubins are byte-identical with and without
-  it — re-measured on CUDA 13.3 for sm_75 through sm_121. What keeps the f32
-  multiply out of the f16 narrowing on NVIDIA is `ptxas`, machine-checked by
-  `test_cuda_f16_sass`. The AMDGPU `"+v"` barrier, which IS load-bearing, is
+  `asm volatile("" : "+f"(x))`. At an f16 narrowing it contributes zero PTX
+  instructions, so `ptxas` receives an identical instruction stream and the
+  cubins are byte-identical with and without it — re-measured on CUDA 13.3 for
+  sm_75 through sm_121. What keeps the f32 multiply out of the narrowing on
+  NVIDIA is `ptxas`, machine-checked by `test_cuda_f16_sass`. NOTE the same
+  barrier is *not* inert at a `mul`→`add` site (PTX `mul.f32`+`add.f32` instead
+  of `fma.rn.f32`), but `ptxas -O1`+ re-contracts that under the default
+  `-fmad=true`, so it is still not a usable contraction barrier on NVIDIA — use
+  `Sarek_df64`'s `mul_rn`. The AMDGPU `"+v"` barrier, which IS load-bearing, is
   unchanged. Removing a no-op that read as protection; no behaviour change.
 
 ### Fixed

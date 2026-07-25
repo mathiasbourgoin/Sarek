@@ -39,9 +39,17 @@ caught the AMD bug, not a proxy for it.
 
 **CUDA never had the defect, on any architecture checked, and the barrier is
 inert there.** The `"+f"` barrier compiles down to an *empty* inline-asm block
-that NVVM erases entirely; the PTX instruction stream is identical with and
-without it, and the resulting cubins are byte-identical on all seven targets.
-The non-fusion comes from `ptxas`, not from the barrier.
+that contributes **zero PTX instructions**; the PTX instruction stream is
+identical with and without it, and the resulting cubins are byte-identical on
+all seven targets. The non-fusion comes from `ptxas`, not from the barrier.
+
+> **Correction (#116).** An earlier wording here said NVVM "erases" the block.
+> It does not: the barriered PTX keeps the `// begin/end inline asm` markers and
+> renumbers virtual registers (`%f<9>` against `%f<5>`, as the diff below in
+> fact shows). What is true is that it emits no instruction, so `ptxas` receives
+> an identical stream. And the barrier is inert only *at a narrowing* — at a
+> `mul`→`add` site it does suppress `fma.rn.f32` in the PTX, though `ptxas -O1`+
+> re-contracts it anyway. See `docs/fp-contraction-policy.md` §4.
 
 Claim tier: this shows **the fusion is absent from the SASS that ptxas 13.3
 emits for these targets**. It is *not* "verified on CUDA" — see

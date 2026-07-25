@@ -12,9 +12,20 @@ actually had:
 
 - **HIP/AMDGPU.** An ISel combine fused an f32 multiply into the f32→f16
   narrowing that consumed it (`v_fma_mixlo_f16`) and demoted an f32 add to
-  binary16 (`v_add_f16`). 620 of 63488 finite binary16 inputs disagreed with the
-  interpreter. `-ffp-contract=off` did not prevent it: the combine sits below
-  the C-level FP controls.
+  binary16 (`v_add_f16`). **620 of 63488** finite binary16 inputs disagreed with
+  the interpreter, and 0 with the barrier in place (quoted from
+  `sarek-hip/test/test_hip_f16.ml`; measured on RX 7900 XTX / gfx1100).
+  `-ffp-contract=off` did not prevent it: the combine sits below the C-level FP
+  controls.
+
+  > **Do not quote "373" for this.** That figure appears in-tree for two *other*
+  > populations and the two uses are not consistent with each other:
+  > `test_hip_f16.ml` attributes it to inputs where the test's own old
+  > f64-intermediate reference disagreed with the f32 one (a harness question,
+  > not a device one), while `Hip_rtc.ml` attributes it to inputs on which
+  > `-ffp-contract=off` changed the result. One of those two is a slip and it is
+  > **not resolved here**. 620 is the barrier/ISel-combine count and is the only
+  > one this document uses.
 - **CUDA/ptxas.** `ptxas` contracted the multiply that closes `quick_two_sum`
   into *both* of its consumers, collapsing `df64` mul/div from ~9e-15 to
   5.92e-08 — plain float32. It survived four years.
@@ -82,8 +93,8 @@ Legend for the evidence column:
 | backend | what the compiler may contract | what actually prevents it | evidence |
 |---|---|---|---|
 | **Interpreter** | nothing — it is the oracle | it evaluates the IR directly | executed (any host) |
-| **HIP / AMDGPU** | `a*b+c`; **and**, below the FP flags, an f32 multiply into an f32→f16 narrowing, plus f32 add demotion to binary16 | two mechanisms, both required: `-ffp-contract=off` forced **last** in the hiprtc option array (`Hip_rtc.base_options` / `hiprtc_options`), *and* the `asm volatile("" : "+v"(x))` opacity barrier on every narrowing's argument (`Sarek_ir_cuda.sarek_f32_barrier_decl`) | executed, RX 7900 XTX / gfx1100, ROCm hiprtc: exhaustive sweep of all finite binary16 inputs, 373 disagreements before, 0 after |
-| **CUDA / nvrtc (f16 narrowing)** | in principle the same fusion | **nothing Sarek emits.** `ptxas` simply declines to absorb `cvt.rn.f16.f32` | machine-code, CUDA 13.3 host tools, sm_75…sm_121 — see §4 |
+| **HIP / AMDGPU** | `a*b+c`; **and**, below the FP flags, an f32 multiply into an f32→f16 narrowing, plus f32 add demotion to binary16 | two mechanisms, both required: `-ffp-contract=off` forced **last** in the hiprtc option array (`Hip_rtc.base_options` / `hiprtc_options`), *and* the `asm volatile("" : "+v"(x))` opacity barrier on every narrowing's argument (`Sarek_ir_cuda.sarek_f32_barrier_decl`) | executed (quoted), RX 7900 XTX / gfx1100, ROCm hiprtc: exhaustive sweep of all 63488 finite binary16 inputs — 620 device/interpreter disagreements before the barrier, 0 after. See the caveat in the opening section about the separate, inconsistent "373" |
+| **CUDA / nvrtc (f16 narrowing)** | in principle the same fusion — but NVIDIA has no fused multiply-and-convert-to-f16 instruction to fuse *into* | **nothing Sarek emits.** `ptxas` simply declines to absorb `cvt.rn.f16.f32` | machine-code, CUDA 13.3 host tools, sm_75…sm_121 — see §4. Machine-checked by `test_cuda_f16_sass`, which until this change **self-skipped in CI** for want of `nvdisasm` (§7) |
 | **CUDA / nvrtc + PTX (f32 `a*b+c`)** | yes, by default (`-fmad=true` is nvrtc's and ptxas's default, and it applies to PTX input too) | **no flag.** `Sarek_df64` denies the compiler a fusable multiply by routing products through `fma` (`mul_rn`) | executed, GTX 1070 Max-Q / sm_61 / CUDA 12.9 / driver 580.119.02: df64 mul 5.92e-08 → 9.07e-15, div 5.64e-08 → 5.08e-15 |
 | **CUDA — subnormal flushing** | `-use_fast_math` / `-ftz=true` would flush binary32 subnormals | `Cuda_nvrtc.check_fp_conformance` **rejects** those options at the only point an option array reaches `nvrtcCompileProgram` | machine-code + test, CUDA 13.3: the hazard is reproduced (`FMUL.FTZ`/`FADD.FTZ` at sm_90) and the guard is proved to fire — see §5 |
 | **OpenCL** | `FP_CONTRACT` is on by default in OpenCL C | **no flag** — Sarek passes an empty build-option string. Same `mul_rn`-by-construction defence as CUDA | executed, GTX 1070 Max-Q / NVIDIA OpenCL: mul 5.92e-08 → 9.07e-15, sqrt 2.88e-08 → 9.80e-15 with no OpenCL-specific change (quoted). Re-measured here on RX 7900 XTX / Mesa radeonsi: mul 9.07e-15, div 5.08e-15, sqrt 1.08e-14 |
@@ -105,7 +116,11 @@ Legend for the evidence column:
   NVIDIA Pascal, and on OpenCL on AMD** — with the `sqrt` residual recorded in
   `Sarek_df64`'s header still open.
 - **No `-use_fast_math` / `-ftz=true` reaching nvrtc**, enforced rather than
-  documented (§5).
+  documented (§5) — in **both** the inline (`--ftz=true`) and the separated
+  (`--ftz true`) spelling, and fail-closed on a bare `--ftz` whose value cannot
+  be resolved. The first version of this guard was spelling-shaped and the
+  separated form went straight through it; that hole is closed and both
+  spellings are now regression-tested against real `libnvrtc`.
 
 **You may NOT rely on:**
 
@@ -134,15 +149,46 @@ two worked examples.
 
 ---
 
-## 4. CUDA f16: the barrier was inert, and has been removed (#110)
+## 4. CUDA f16: the barrier bought nothing *at the narrowing*, and has been removed (#110)
 
 The AMDGPU fix added an opacity barrier around every f32→f16 narrowing. A
 PTX-flavoured variant, `asm volatile("" : "+f"(x))`, was added to the non-HIP
 branch of `sarek_f32_barrier` at the same time — on the assumption that what
 was needed on one target was probably needed on the other.
 
-It was doing nothing. The assembly template is empty, NVVM erases the block and
-coalesces the register, and the emitted machine code is unchanged.
+It was buying nothing **at the narrowing site**, and the reason is not the one
+first recorded here. Two corrections, both measured:
+
+**NVVM does NOT erase the block.** The barriered PTX keeps the
+`// begin inline asm` / `// end inline asm` marker pair and allocates more
+virtual registers (`.reg .f32 %f<9>` against `%f<5>`). What is true, and is the
+argument that actually settles the deletion, is that the block contributes
+**zero PTX instructions**: the two modules differ only by those comment markers
+and virtual-register renumbering, so `ptxas` receives an *identical instruction
+stream* either way. The identical cubins are therefore structural, not a CUDA
+13.3 coincidence.
+
+**And the barrier is not inert in general** — only at a narrowing. Measured
+(CUDA 13.3, sm_90, host-side) on `out[i] = sarek_f32_barrier(a[i]*b[i]) + c[i]`:
+
+| | PTX | SASS (`-fmad=true`, the default) | SASS (`-fmad=false`) |
+|---|---|---|---|
+| without barrier | `fma.rn.f32` | `FFMA` | `FMUL` + `FADD` |
+| with barrier | `mul.f32` + `add.f32` | `FFMA` | `FMUL` + `FADD` |
+
+So at a mul→add site it **is** a real NVVM-level contraction barrier — and
+`ptxas -O1` and above **re-contract it back to `FFMA` anyway** (`-O0` and
+`--fmad=false` do not), leaving the cubins byte-identical again. The practical
+consequence is worth stating plainly, because it is a trap:
+
+> **Do not reach for `sarek_f32_barrier` to fix the caller-side `df64` hazard in
+> §3 on NVIDIA.** It protects the PTX and `ptxas` undoes it. `mul_rn` works
+> because an `fma` cannot be fused a second time — that is a property of the
+> instruction, not of a flag or a barrier.
+
+At the f16 narrowing there is nothing for either level to fuse in the first
+place: NVIDIA has no fused multiply-and-convert-to-f16 instruction, which is why
+the emitted code is unchanged there under every flag tried.
 
 **Measured for this change** (CUDA 13.3, `nvcc`/`ptxas`/`nvdisasm` V13.3.73,
 host-side, **no NVIDIA device**), on the current output of
@@ -203,7 +249,27 @@ flushing. So these are **rejected**, not warned about.
 
 `Cuda_nvrtc.check_fp_conformance` raises `Fp_conformance_violation` for
 `use_fast_math` (any spelling), `ftz=true|1`, `prec-div=false|0`,
-`prec-sqrt=false|0`. `fmad=true` **warns** rather than rejects, because it is
+`prec-sqrt=false|0`.
+
+**It screens the option ARRAY, not individual strings, and this is the whole
+design.** nvrtc accepts an option and its value as two separate array elements,
+so a per-element check is spelling-shaped and misses the separated form. The
+first version of this guard did exactly that. Measured through these bindings
+against real `libnvrtc.so.13.3`:
+
+| option array | compiles? | `.ftz` in PTX | old guard | current guard |
+|---|---|---|---|---|
+| `["--ftz=true"]` | — | — | REJECT | REJECT |
+| `["--ftz"; "true"]` | **yes** | **yes** | **accept** | REJECT |
+| `["-ftz"; "true"]` | **yes** | **yes** | **accept** | REJECT |
+| `["--prec-div"; "false"]` | yes | n/a | accept | REJECT |
+| `["--ftz"; "false"]` | yes | no | accept | accept |
+
+A value-taking name now consumes the following array element when there is no
+`=`, and is **fail-closed**: a bare `--ftz` whose value cannot be resolved is
+refused, because a guard that cannot tell what a flag is set to must not assume
+the safe answer. (`Hip_rtc.fp_relaxing_option_prefixes` never had this hole — it
+matches by prefix on options whose value is always inline.) `fmad=true` **warns** rather than rejects, because it is
 nvrtc's default and rejecting it would reject the status quo; contraction is
 defeated by construction instead (§2). It is applied in two places: at the
 entry of `compile_to_ptx`, before libnvrtc is touched — so the check works on a
@@ -227,6 +293,8 @@ holds four cases, and each was proved red by mutating the thing under test:
 | match on option name, ignoring its value | acceptance | `"-ftz=false" is legitimate and must be accepted; the guard refused it` |
 | remove both `check_fp_conformance` calls from `compile_to_ptx` | end-to-end | `compile_to_ptx accepted -use_fast_math and compiled; the guard did not fire on the real entry point` |
 | build the "ftz" SASS variant without `-ftz=true` | hazard control | `control is broken: -ftz=true produced no FMUL.FTZ / FADD.FTZ, so the option this guard rejects has not been shown to change anything on this toolchain` |
+| restore the per-element (spelling-shaped) matcher | rejection + end-to-end | the separated form compiles again, with `.ftz` in the PTX — the bypass reproduced on demand |
+| drop the option under test from the assembled array | assembled-array | `the assembled array no longer contains the option under test, so this check proves nothing` |
 
 The third mutation is the informative one: with the guard removed,
 `compile_to_ptx` compiled `-use_fast_math` **successfully** on this host. The
@@ -272,9 +340,23 @@ the measurement that extending `mul_rn` into `two_sum`/`quick_two_sum`
 contracting; it does **not** establish that RADV honours `NoContraction`.
 
 **The experiment that would settle it** (not run): a kernel computing
-`precise float p = a*b; out = p + c;` and, separately, `out = fma(a,b,c)`, on
-inputs chosen so that `fl(fl(a*b)+c) ≠ fma(a,b,c)`, executed on RADV and on
-ANV. If the two kernels agree, the driver contracted despite `NoContraction`.
+`precise float p = a*b; out = p + c;` and, separately, `out = fma(a,b,c)`,
+executed on RADV and on ANV. If the two kernels agree, the driver contracted
+despite `NoContraction`.
+
+Two things it must get right, or it will return a false "they agree":
+
+- **Choose the inputs against the device's MEASURED `fma`, not the correctly
+  rounded one.** This same document establishes that RADV's `fma` is not
+  correctly rounded, so inputs picked so that
+  `fl(fl(a*b)+c) ≠ fma_correct(a,b,c)` may still collide with what RADV's `fma`
+  actually returns. Read the device's `fma` result first, then select inputs on
+  which it differs from the separately-rounded form.
+- **ANV is not available here.** There is no Intel GPU on the machine this
+  policy was written on (AMD RX 7900 XTX and a Raphael iGPU only), so the ANV
+  half cannot be run without different hardware — the same class of gap as
+  everything in §7.
+
 Until that is run, treat Vulkan float32 as *contraction-safe by front-end
 declaration only*.
 
@@ -300,6 +382,17 @@ GPU would, but they cover a different question. Explicitly still open:
   being a durable `ptxas` property rather than a 13.3 accident — an argument,
   not a measurement. **If the SASS gate ever fails on CI at 12.6 while passing
   at 13.3, that difference is the finding.**
+
+  > **This was not actually being checked.** `nvdisasm` ships in `cuda-nvdisasm`,
+  > not in `cuda-nvcc`, and it was **absent from the built CI image** — verified
+  > by running `command -v nvdisasm` inside it, where `ptxas` and `nvcc` both
+  > resolve and `nvdisasm` does not. So `test_cuda_f16_sass` self-skipped in the
+  > only place 12.6 is exercised, and nothing could have surfaced a 12.6-vs-13.3
+  > divergence. Fixed in this change: `ci/Dockerfile` installs
+  > `cuda-nvdisasm-12-6` and `ci/assert-toolchain.sh` now fails the build when
+  > `nvdisasm` is missing or cannot disassemble a freshly assembled probe cubin.
+  > Until an image built with that change has run, **treat every "the gate
+  > checks this" statement in §4 as holding at CUDA 13.3 only.**
 - **`FMUL.FTZ` was observed, subnormal divergence was not.** §5 shows the flag
   changes the instruction; it does not show a wrong answer, because that
   requires running the kernel.

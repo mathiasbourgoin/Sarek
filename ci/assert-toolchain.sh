@@ -16,6 +16,10 @@
 #   sarek-cuda/test/test_cuda_nvrtc_gate.ml       -> libnvrtc
 #     opencl_validation_sweep                     -> clang (OpenCL C)
 #   sarek/tests/unit/test_opencl_gate.ml          -> clang (OpenCL C)
+#   sarek-cuda/test/test_cuda_f16_sass.ml         -> ptxas + nvdisasm
+#   sarek-cuda/test/test_cuda_fp_conformance.ml   -> nvcc + nvdisasm (hazard
+#                                                    control only; the guard
+#                                                    checks run everywhere)
 #
 # That skip is correct behaviour for a developer machine, which legitimately has
 # none of these installed. It is a disaster in CI: the previous image carried
@@ -104,6 +108,52 @@ PTX
     ok "ptxas assembled a probe module"
   else
     fail "ptxas is on PATH but cannot assemble a trivial module:
+$out"
+  fi
+  rm -rf "$tmpdir"
+fi
+
+# --------------------------------------------------------------------------
+section "nvdisasm (SASS disassembler — host-side, no GPU required)"
+# WHY THIS IS ASSERTED. nvdisasm ships in cuda-nvdisasm, NOT in cuda-nvcc, and
+# it was absent from the built image while ptxas and nvcc were present. That is
+# the quiet kind of gap: sarek-cuda/test/test_cuda_f16_sass.ml skips cleanly
+# without it, so CI went green while the f16 f32-discipline gate validated
+# nothing. That gate is what stands behind the NVIDIA half of
+# docs/fp-contraction-policy.md — the CUDA "+f" barrier was deleted on the
+# strength of it — and it is also the only gate that could ever surface a
+# 12.6-vs-13.3 ptxas divergence, because 12.6 is exercised here and nowhere
+# else.
+if ! command -v nvdisasm >/dev/null 2>&1; then
+  checks=$((checks + 1))
+  fail "nvdisasm is not on PATH. The f16 SASS conformance gate in \
+test_cuda_f16_sass.ml will self-skip and CI will validate nothing about \
+f32-discipline in generated f16 kernels. Install cuda-nvdisasm-12-6 (see \
+ci/Dockerfile)."
+else
+  run_check "nvdisasm --version" nvdisasm --version
+  # Positive control: assemble a probe and disassemble it, so this proves the
+  # ptxas -> nvdisasm chain the gate actually walks, not just a version banner.
+  tmpdir=$(mktemp -d)
+  cat >"$tmpdir/probe.ptx" <<'PTX'
+.version 7.0
+.target sm_75
+.address_size 64
+.visible .entry probe(.param .u64 p)
+{
+  .reg .u64 %rd<2>;
+  ld.param.u64 %rd1, [p];
+  ret;
+}
+PTX
+  checks=$((checks + 1))
+  if ptxas --compile-only --gpu-name sm_75 -o "$tmpdir/probe.cubin" \
+       "$tmpdir/probe.ptx" >/dev/null 2>&1 &&
+     out=$(nvdisasm -c "$tmpdir/probe.cubin" 2>&1) &&
+     printf '%s' "$out" | grep -q 'probe'; then
+    ok "nvdisasm disassembled a probe cubin"
+  else
+    fail "nvdisasm is on PATH but cannot disassemble a freshly assembled cubin:
 $out"
   fi
   rm -rf "$tmpdir"

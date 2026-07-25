@@ -751,19 +751,42 @@ let cuda_fp16_include =
 
     NVIDIA BRANCH: DELIBERATELY EMPTY, and that is a statement about NVIDIA, not
     an oversight. The non-HIP branch previously carried a PTX-flavoured
-    [asm volatile("" : "+f"(x))]. That barrier was INERT: the assembly template
-    is empty, NVVM erases the block and coalesces the register, and the
-    resulting cubins are byte-identical with and without it. Re-measured for
-    this file's current output on CUDA 13.3 (nvcc/ptxas/nvdisasm V13.3.73,
-    host-side, no NVIDIA device) for sm_75, sm_80, sm_86, sm_89, sm_90, sm_100,
-    sm_120 and sm_121: [cmp] on the cubin says byte-identical on all eight, and
-    the arithmetic stream stays
+    [asm volatile("" : "+f"(x))]. AT A NARROWING it bought nothing, and it was
+    removed because a call site reading [sarek_f32_barrier(...)] on the CUDA
+    path advertised a protection that did not exist — the gap between assumed
+    and actual FP semantics is exactly what produced this bug class.
+
+    Measured for this file's current output on CUDA 13.3 (nvcc/ptxas/nvdisasm
+    V13.3.73, host-side, no NVIDIA device) for sm_75, sm_80, sm_86, sm_89,
+    sm_90, sm_100, sm_120 and sm_121: [cmp] on the cubin says byte-identical on
+    all eight, and the arithmetic stream stays
     [HADD2.F32 / FMUL / F2FP.F16.F32 / HADD2.F32 / FADD / F2FP.F16.F32] — the
     f32 multiply and the f32 add both intact and the narrowings separate — with
-    the asm and without it. It was removed rather than kept because a call site
-    reading [sarek_f32_barrier(...)] on the CUDA path advertised a protection
-    that did not exist, and the gap between assumed and actual FP semantics is
-    exactly what produced this bug class.
+    the asm and without it.
+
+    WHY, precisely. The first version of this note got it wrong twice, and both
+    corrections matter to anyone reusing this function:
+
+    - NVVM does NOT erase the block. The barriered PTX keeps the
+      [// begin/end inline asm] marker pair and allocates more virtual registers
+      ([%f<9>] against [%f<5>]). What it contributes is ZERO PTX INSTRUCTIONS,
+      so ptxas receives an identical instruction stream either way — which makes
+      the identical cubins structural, not a 13.3 accident.
+    - The barrier is NOT inert in general. On
+      [out[i] = sarek_f32_barrier(a[i]*b[i]) + c[i]] it IS a real NVVM-level
+      contraction barrier: [mul.f32]+[add.f32] with it, [fma.rn.f32] without.
+      Measured at sm_90. But ptxas -O1 and above RE-CONTRACT that back to [FFMA]
+      under the default [-fmad=true] ([-O0] and [--fmad=false] do not), so the
+      cubins are byte-identical there too.
+
+    CONSEQUENCE, and it is a trap: do NOT reach for [sarek_f32_barrier] to fix
+    the caller-side df64 contraction hazard on NVIDIA. It protects the PTX and
+    ptxas undoes it. [Sarek_df64]'s [mul_rn] works because an fma cannot be
+    fused a second time — a property of the instruction, not of a barrier.
+
+    At the f16 narrowing there is nothing for either level to fuse in the first
+    place: NVIDIA has no fused multiply-and-convert-to-f16 instruction, which is
+    why the emitted code is unchanged there under every flag tried.
 
     WHAT ACTUALLY HOLDS THE GUARANTEE ON NVIDIA: [ptxas] declines to absorb
     [cvt.rn.f16.f32] into the operation feeding it — hand-written PTX with no
@@ -782,11 +805,14 @@ __device__ __forceinline__ float sarek_f32_barrier(float x) {
   return x;
 }
 #else
-/* NVIDIA: intentionally an identity. A PTX opacity barrier here would be an
-   empty asm block that NVVM erases (cubins byte-identical, measured on CUDA
-   13.3 for sm_75..sm_121). What keeps the f32 multiply out of the narrowing on
-   NVIDIA is ptxas itself, checked by test_cuda_f16_sass.ml — not this
-   function. See docs/fp-contraction-policy.md. */
+/* NVIDIA: intentionally an identity. A PTX opacity barrier here contributes
+   zero PTX instructions at a narrowing, so ptxas sees the same instruction
+   stream and the cubins are byte-identical (measured on CUDA 13.3, sm_75..
+   sm_121). What keeps the f32 multiply out of the narrowing on NVIDIA is ptxas
+   itself, checked by test_cuda_f16_sass.ml — not this function. NOTE the same
+   barrier IS load-bearing at PTX level for mul->add, but ptxas re-contracts
+   that under the default -fmad=true; do not reuse it as a general contraction
+   barrier here. See docs/fp-contraction-policy.md. */
 __device__ __forceinline__ float sarek_f32_barrier(float x) {
   return x;
 }
