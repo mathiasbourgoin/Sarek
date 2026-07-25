@@ -291,10 +291,14 @@ let test_clear_during_build_rejected_when_borrowing () =
   Alcotest.(check int) "nothing survived the clear" 0 (GC.length cache) ;
   (* The decisive check: a LATER lookup must rebuild against live handles, not
      be served the closure over the handle the clear released. *)
-  let mutable_seen_released = ref true in
+  (* Seeded [false] on purpose: the failure under test is the later lookup being
+     served the poisoned entry, in which case this closure never runs at all.
+     Seeding it with the asserted value would make the check pass in exactly
+     that case, i.e. assert nothing. *)
+  let rebuilt_after_release = ref false in
   let later =
     GC.find_or_build cache ~key:"K" ~device_id:0 (fun () ->
-        mutable_seen_released := Atomic.get released ;
+        rebuilt_after_release := Atomic.get released ;
         "closure-over-handle-2")
   in
   Alcotest.(check string)
@@ -302,9 +306,10 @@ let test_clear_during_build_rejected_when_borrowing () =
     "closure-over-handle-2"
     later ;
   Alcotest.(check bool)
-    "and it rebuilt after the release, i.e. against fresh handles"
+    "the build closure actually ran, after the release, i.e. against fresh \
+     handles"
     true
-    !mutable_seen_released
+    !rebuilt_after_release
 
 (* The mirror image: on an OWNING cache (the default), [clear] must NOT reject
    an in-flight build. It releases the handles this cache owns; it does not

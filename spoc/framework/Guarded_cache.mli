@@ -75,10 +75,18 @@ exception Cache_cleared_during_build
     [destroy] is allowed to raise (some backends' release calls go through an
     error check that does). One failing [destroy] never prevents the remaining
     victims of a {!clear} / {!evict_device} from being released: every victim is
-    attempted and the first exception is re-raised afterwards. On the
-    lost-a-race path in {!find_or_build}, a failing [destroy] of the discarded
-    loser is dropped rather than raised, so it cannot turn a successfully
-    resolved value into an intermittent compile failure.
+    attempted and the first exception is re-raised afterwards.
+
+    On every path in {!find_or_build} that discards a value it has just built —
+    losing the race, {!Device_destroyed_during_build},
+    {!Cache_cleared_during_build} — a failing [destroy] of that discarded value
+    is dropped rather than raised. On the lost-race path this keeps a release
+    error from turning a successfully resolved [winner] into an intermittent,
+    multi-domain-only compile failure; on the other two it keeps the exception
+    the caller sees the one that describes {e why} no value could be returned,
+    rather than a secondary release error from the cleanup. In all three cases
+    the release error is not reported at all, which is a deliberate trade
+    against masking the primary outcome.
 
     [size] is the initial table size (default 16).
 

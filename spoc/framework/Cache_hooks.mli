@@ -25,6 +25,29 @@
     callbacks run outside the lock. If a callback raises, the remaining
     callbacks still run and the first exception is re-raised afterwards.
 
+    {2 What actually notifies today — this back-channel is not yet universal}
+
+    Registering a listener does {b not} mean every handle release will reach it.
+    The current coverage is exactly:
+
+    - {!notify_clear_all} is fired by [Sarek.Kernel.clear_cache] (on both sides
+      of the backend clear) and by [Sarek.Device.reset]. Those are the only
+      notifying entry points. A caller that resolves a backend through
+      [Framework_registry.find_backend] and calls [B.Kernel.clear_cache ()]
+      {e directly} releases the handles without notifying anything, and an outer
+      memo will then serve a released handle — the same failure this module
+      exists to prevent, through a sibling entry point. Go through
+      [Sarek.Kernel.clear_cache].
+    - {!notify_device_destroy} is fired by the CUDA and HIP backends only.
+      Vulkan has a device-destroy path ([Vulkan_api_device.destroy]) and does
+      {e not} fire it; its kernel cache also passes no [~device_id] to
+      {!Guarded_cache.find_or_build}, so per-device eviction is not expressible
+      there at either layer. OpenCL and Metal expose no device-destroy entry
+      point at all, so there is nothing for them to notify from.
+
+    Treat this list as the contract, not as an implementation detail: a listener
+    that assumes total coverage is wrong today.
+
     {2 Notifying from a teardown path}
 
     Because the first callback failure is re-raised, [notify_*] can throw out of

@@ -144,8 +144,26 @@ let best () =
       let opencl = by_framework "OpenCL" in
       if Array.length opencl > 0 then Some opencl.(0) else first ()
 
-(** Reset initialization state (for testing) *)
+(** Reset initialization state (for testing).
+
+    Retires the global id space, so every cache keyed on it must be dropped in
+    the same breath. [init] restarts [global_id] at 0 over whichever frameworks
+    it is handed, so the same id routinely denotes a DIFFERENT physical device
+    after a reset: with [~frameworks:["OpenCL"]] then
+    [~frameworks:["Native"; "OpenCL"]], the single Native device shifts OpenCL
+    down one and id 1 moves from the second OpenCL device to the first. A
+    surviving entry keyed on id 1 is then served to the wrong device, silently —
+    a compiled kernel carries no device check — which is exactly the aliasing
+    class this cache was keyed by device to prevent.
+
+    Only [Sarek.Runtime]'s outer memo is affected: it keys on the global
+    [Device.t.id], while every per-backend cache keys on its own backend-local
+    device index, which a reset does not perturb. So the notification here is
+    enough, and it releases nothing — the listeners drop memoization only (see
+    {!Spoc_framework.Cache_hooks}), so unlike [Kernel.clear_cache] this cannot
+    invalidate a handle a caller still holds. *)
 let reset () =
+  Spoc_framework.Cache_hooks.notify_clear_all () ;
   devices := [||] ;
   initialized := false
 

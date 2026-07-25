@@ -213,10 +213,68 @@ let test_create_args_unknown_framework () =
   print_endline "  create_args unknown framework error: OK"
 
 let test_clear_cache_unknown_framework () =
-  (* clear_cache should not raise for unknown framework - it's a no-op *)
+  (* clear_cache must not raise for an unknown framework. It is not a no-op:
+     the Cache_hooks notifications still fire (outer memos are cross-backend, so
+     they are dropped regardless of which backend resolves) - only the backend
+     clear is skipped. *)
   let fake_device = make_fake_device () in
   Spoc_core.Kernel.clear_cache fake_device ;
-  print_endline "  clear_cache unknown framework (no-op): OK"
+  print_endline "  clear_cache unknown framework (does not raise): OK"
+
+(** {1 Cache_hooks notification contract (#86)} *)
+
+(* Counts every clear-all notification. Registered once; the counter is reset
+   immediately before each assertion below, since Cache_hooks has no unregister
+   and earlier cases in this binary also call clear_cache. *)
+let notifications = ref 0
+
+let listener_should_raise = ref false
+
+exception Listener_boom
+
+let () =
+  Spoc_framework.Cache_hooks.on_clear_all (fun () ->
+      incr notifications ;
+      if !listener_should_raise then raise Listener_boom)
+
+(* [clear_cache] must notify on BOTH sides of the backend clear. The
+   pre-notification drops what is already memoized but cannot cover a build that
+   starts after it: such a build snapshots the new generation, compiles a handle
+   that the backend clear then releases, and would install it over a dead handle.
+   Only the post-notification rejects a build that spans the release. *)
+let test_clear_cache_notifies_on_both_sides () =
+  let fake_device = make_fake_device () in
+  notifications := 0 ;
+  Spoc_core.Kernel.clear_cache fake_device ;
+  if !notifications <> 2 then
+    failwith
+      (Printf.sprintf
+         "clear_cache fired %d clear-all notification(s), expected 2 (one \
+          before the backend clear and one after it); a build spanning the \
+          handle release is only rejected by the second"
+         !notifications) ;
+  print_endline "  clear_cache notifies before and after the backend clear: OK"
+
+(* A listener only drops memoization it does not own, so letting it escape early
+   would skip the release clear_cache exists to perform. The failure must still
+   be reported, but only once the clear has completed. *)
+let test_clear_cache_isolates_a_raising_listener () =
+  let fake_device = make_fake_device () in
+  notifications := 0 ;
+  listener_should_raise := true ;
+  let raised = ref false in
+  (try Spoc_core.Kernel.clear_cache fake_device
+   with Listener_boom -> raised := true) ;
+  listener_should_raise := false ;
+  if not !raised then
+    failwith "clear_cache swallowed a failing listener instead of re-raising" ;
+  if !notifications <> 2 then
+    failwith
+      (Printf.sprintf
+         "a raising listener cut the clear short after %d notification(s); the \
+          clear must complete before the exception is re-raised"
+         !notifications) ;
+  print_endline "  clear_cache completes then re-raises a listener failure: OK"
 
 (** {1 Framework_sig.dims Tests} *)
 
@@ -252,5 +310,7 @@ let () =
   test_compile_cached_unknown_framework () ;
   test_create_args_unknown_framework () ;
   test_clear_cache_unknown_framework () ;
+  test_clear_cache_notifies_on_both_sides () ;
+  test_clear_cache_isolates_a_raising_listener () ;
   test_dims_usage () ;
   print_endline "All Kernel module tests passed!"

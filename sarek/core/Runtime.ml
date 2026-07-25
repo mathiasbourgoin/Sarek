@@ -45,9 +45,15 @@ let all_devices ?framework () =
   Device.init ~frameworks ()
 
 (** Outer kernel memo, keyed by {!Spoc_framework.Compile_cache.make_key} so this
-    layer keys exactly like the per-backend caches underneath it. Guarded
-    against concurrent multi-domain access by [Spoc_framework.Guarded_cache]
-    (this is the cross-backend entry point most multi-domain code hits).
+    layer uses the same key {e shape} as the per-backend caches underneath it —
+    not the same key. Their device component is the backend-local device index;
+    this layer spans backends, so its device component must be globally unique
+    and is built from the global [Device.t.id] (see {!compile_kernel}). That
+    difference is why {!Device.reset}, which retires the global id space without
+    perturbing any backend-local one, has to drop this layer and only this one.
+    Guarded against concurrent multi-domain access by
+    [Spoc_framework.Guarded_cache] (this is the cross-backend entry point most
+    multi-domain code hits).
 
     The key MUST include device identity. [Device.t.framework] is the backend
     {e name}, shared by every device of that backend, so keying on it alone
