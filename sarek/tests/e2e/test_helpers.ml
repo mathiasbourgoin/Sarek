@@ -471,11 +471,20 @@ let cpu_opencl_math_lane_width = 4
       an emitter is wrong from element 0, and a kernel that never executed is
       wrong from element 1 (element 0 accidentally matches for sin, since sin 0
       = 0 = the pre-fill); both must FAIL;
-    - [not non_finite] — a NaN/inf result is never this flake;
+    - [not non_finite] — a NaN/inf result is never this flake. Tested FIRST, so
+      a non-finite result [`Fail]s even if the shape claims nothing was out of
+      tolerance (see the note in the body);
     - [bad_count < total] — a partially wrong buffer. An all-elements-wrong
       result (dead kernel, dead queue, wrong buffer bound) must always FAIL.
 
     Everything else [`Fail]s, on every device.
+
+    Known residual: a partial, all-finite wrongness starting at index >= 4 on a
+    CPU-OpenCL device is excused — e.g. a dropped final work-group leaving the
+    0.0 pre-fill in the buffer tail. That is the deliberate trade that
+    suppresses the flake. It is still covered on Native, Interpreter and every
+    GPU device; it is NOT covered on CI's only OpenCL device, which is why
+    adding a conformant CPU ICD (pocl) to the CI image is tracked separately.
 
     Suppression review: this KNOWN-ISSUE exists only until the CI OpenCL ICD is
     fixed or replaced (task #74). Re-evaluate by 2027-01-01, or earlier if the
@@ -484,11 +493,25 @@ let cpu_opencl_math_lane_width = 4
     already be dead weight masking future regressions. *)
 let classify_cpu_opencl_math_result ~dev ~(shape : float_check_shape)
     ?(label = cpu_opencl_float32_math_label) () =
-  if shape.bad_count = 0 then begin
+  (* A non-finite value FAILs first, ahead of the clean-result branch. Today
+     [non_finite] implies [bad_count >= 1] (a non-finite on either side makes
+     [diff] inf or NaN, and [compute_float_check_shape] counts both), so this
+     ordering is not what makes the current code correct — it is what keeps it
+     correct. That implication is an incidental property of the verifier, not an
+     enforced invariant: with the [Float.is_nan] guard removed the shape becomes
+     [{first_bad_index = None; bad_count = 0; non_finite = true}], and a
+     [bad_count = 0 -> `Pass] test placed first would hand back `Pass on a NaN
+     buffer. Checked structurally here so no future edit to the verifier can
+     reintroduce that. Pinned by test_cpu_opencl_known_issue. *)
+  if shape.non_finite then `Fail
+  else if shape.bad_count = 0 then begin
     (* F2: the suppression must be able to expire. Announce every correct
        result from a device we would otherwise excuse, so a fixed ICD is
-       visible in the log instead of silently keeping the annotation alive. *)
-    if is_cpu_opencl_device dev then
+       visible in the log instead of silently keeping the annotation alive.
+       Gated on [total > 0]: under --no-verify nothing was compared (see
+       [float_check_not_verified]), and claiming a CORRECT result there would be
+       a misleading expiry signal. *)
+    if is_cpu_opencl_device dev && shape.total > 0 then
       Printf.printf
         "NOTE: known-issue device produced a CORRECT result — re-evaluate the \
          CPU-OpenCL suppression (task #74)\n\
@@ -496,7 +519,7 @@ let classify_cpu_opencl_math_result ~dev ~(shape : float_check_shape)
     `Pass
   end
   else if
-    is_cpu_opencl_device dev && (not shape.non_finite)
+    is_cpu_opencl_device dev
     && shape.bad_count < shape.total
     &&
     match shape.first_bad_index with

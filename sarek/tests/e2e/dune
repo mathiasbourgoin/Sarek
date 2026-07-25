@@ -515,7 +515,8 @@
 (executable
  (name test_cpu_opencl_known_issue)
  (modules test_cpu_opencl_known_issue)
- (libraries spoc_core spoc.framework test_helpers)
+ ; unix: the F2 expiry-NOTE rows capture stdout to assert on a side effect
+ (libraries spoc_core spoc.framework test_helpers unix)
  (preprocess no_preprocessing))
 
 ; Fixture test for the OTHER half of the #74 / F1 contract: the classifier

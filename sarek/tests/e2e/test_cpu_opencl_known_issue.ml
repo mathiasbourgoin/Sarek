@@ -123,6 +123,44 @@ let classify_ok dev =
 let classify_shape s dev =
   verdict_name (Test_helpers.classify_cpu_opencl_math_result ~dev ~shape:s ())
 
+(* Run [f] with stdout redirected to a temp file and return what it printed.
+   Needed to assert on the F2 expiry NOTE, which is a side effect on the `Pass
+   path rather than part of the verdict. *)
+let capture_stdout f =
+  let tmp = Filename.temp_file "cpu_opencl_known_issue" ".out" in
+  let fd =
+    Unix.openfile tmp [Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC] 0o600
+  in
+  let saved = Unix.dup Unix.stdout in
+  flush stdout ;
+  Unix.dup2 fd Unix.stdout ;
+  let restore () =
+    flush stdout ;
+    Unix.dup2 saved Unix.stdout ;
+    Unix.close fd ;
+    Unix.close saved
+  in
+  (try f ()
+   with e ->
+     restore () ;
+     Sys.remove tmp ;
+     raise e) ;
+  restore () ;
+  let ic = open_in_bin tmp in
+  let out = really_input_string ic (in_channel_length ic) in
+  close_in ic ;
+  Sys.remove tmp ;
+  out
+
+let note_printed ~dev ~shape =
+  let out =
+    capture_stdout (fun () ->
+        ignore (Test_helpers.classify_cpu_opencl_math_result ~dev ~shape ()))
+  in
+  Test_helpers.string_contains
+    ~needle:"re-evaluate the CPU-OpenCL suppression"
+    out
+
 let () =
   print_endline "=== CPU-OpenCL KNOWN-ISSUE classifier truth table ===" ;
   print_endline "is_cpu_opencl_device:" ;
@@ -207,6 +245,24 @@ let () =
     "bad_count > 0 but no first_bad_index (inconsistent shape) -> Fail"
     "Fail"
     (classify_shape (shape ~first_bad:None ~bad_count:60 ()) ci_cpu_opencl) ;
+  (* Ordering guard: non_finite must be tested BEFORE the bad_count = 0 -> Pass
+     branch. This shape is unreachable today, because a non-finite value always
+     lands in bad_count too - but only as an incidental property of
+     compute_float_check_shape (drop its Float.is_nan guard and this is exactly
+     the shape a NaN buffer produces). Pins the structural guarantee instead of
+     relying on that implication holding forever. *)
+  check
+    "non_finite with bad_count 0 (unreachable today) -> Fail, not Pass"
+    "Fail"
+    (classify_shape
+       (shape ~first_bad:None ~bad_count:0 ~non_finite:true ())
+       ci_cpu_opencl) ;
+  check
+    "non_finite with bad_count 0 on a GPU device -> Fail"
+    "Fail"
+    (classify_shape
+       (shape ~first_bad:None ~bad_count:0 ~non_finite:true ())
+       dgpu_opencl) ;
   (* The flake shape on a non-known-issue device is still a hard failure: both
      gates are required, neither alone suffices. *)
   check
@@ -217,6 +273,36 @@ let () =
   print_endline "classify_cpu_opencl_math_result, correct result:" ;
   check "CPU-OpenCL -> Pass" "Pass" (classify_ok ci_cpu_opencl) ;
   check "Native -> Pass" "Pass" (classify_ok native_cpu) ;
+  check
+    "not-verified shape (--no-verify) -> Pass"
+    "Pass"
+    (classify_shape Test_helpers.float_check_not_verified ci_cpu_opencl) ;
+
+  (* F2 expiry signal. The NOTE is what lets the suppression die once the CI ICD
+     is fixed, so its presence AND its absence are both part of the contract. *)
+  print_endline "expiry NOTE on the `Pass path:" ;
+  check
+    "correct result on the known-issue device -> NOTE printed"
+    true
+    (note_printed ~dev:ci_cpu_opencl ~shape:clean_shape) ;
+  check
+    "correct result on a GPU device -> no NOTE"
+    false
+    (note_printed ~dev:dgpu_opencl ~shape:clean_shape) ;
+  check
+    "correct result on Native -> no NOTE"
+    false
+    (note_printed ~dev:native_cpu ~shape:clean_shape) ;
+  check
+    "--no-verify on the known-issue device -> no NOTE (nothing was compared)"
+    false
+    (note_printed
+       ~dev:ci_cpu_opencl
+       ~shape:Test_helpers.float_check_not_verified) ;
+  check
+    "flake shape on the known-issue device -> no NOTE (not a correct result)"
+    false
+    (note_printed ~dev:ci_cpu_opencl ~shape:flake_shape) ;
 
   if !failures = 0 then print_endline "\nAll classifier checks PASSED"
   else begin
