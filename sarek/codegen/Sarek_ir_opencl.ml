@@ -216,17 +216,22 @@ let rec gen_expr buf = function
       gen_expr buf else_ ;
       Buffer.add_char buf ')'
   | EMatch (scrut, cases) when Sarek_ir_codegen.ematch_binds_payload cases ->
-      (* #75: a match EXPRESSION lowers to a nested ternary, which has nowhere
-         to declare a payload binder — bind it by substituting the same payload
-         read the [SMatch] arm declares, then emit the (now binder-free) match.
-         Shared with every other backend; see
-         {!Sarek_ir_codegen.subst_ematch_payloads}. *)
+      (* #75: a match EXPRESSION lowers to a nested ternary, which has nowhere to
+         declare a payload binder — bind it by substituting the same payload
+         read the [SMatch] arm declares (the C-family tagged union), then emit the
+         (now binder-free) match. One shared, capture-avoiding pass for every
+         backend; see {!Sarek_ir_codegen.subst_ematch_payloads}. *)
       gen_expr
         buf
         (EMatch
            ( scrut,
              Sarek_ir_codegen.subst_ematch_payloads
-               ~union_field:(Some "data")
+               ~layout:Sarek_ir_codegen.c_family_payload_layout
+               ~raise_:(fun msg ->
+                 Codegen_error.raise_error
+                   (Codegen_error.unsupported_construct
+                      "match-expression payload binding"
+                      msg))
                scrut
                cases ))
   | EMatch (_, []) ->
@@ -533,9 +538,14 @@ and gen_match_case buf indent scrutinee pattern body =
           Buffer.add_string buf var_name ;
           Buffer.add_string buf " = " ;
           Buffer.add_string buf scrutinee ;
-          Buffer.add_string buf ".data." ;
-          Buffer.add_string buf cname ;
-          Buffer.add_string buf "_v;\n"
+          Buffer.add_string
+            buf
+            (Sarek_ir_codegen.payload_suffix
+               Sarek_ir_codegen.c_family_payload_layout
+               ~cname
+               ~arity:1
+               0) ;
+          Buffer.add_string buf ";\n"
       | vars, Some types when List.length vars = List.length types ->
           (* Multiple payloads: access data.Constructor_v._0, ._1, etc. *)
           List.iteri
@@ -546,9 +556,14 @@ and gen_match_case buf indent scrutinee pattern body =
               Buffer.add_string buf var_name ;
               Buffer.add_string buf " = " ;
               Buffer.add_string buf scrutinee ;
-              Buffer.add_string buf ".data." ;
-              Buffer.add_string buf cname ;
-              Buffer.add_string buf (Printf.sprintf "_v._%d;\n" i))
+              Buffer.add_string
+                buf
+                (Sarek_ir_codegen.payload_suffix
+                   Sarek_ir_codegen.c_family_payload_layout
+                   ~cname
+                   ~arity:(List.length vars)
+                   i) ;
+              Buffer.add_string buf ";\n")
             (List.combine vars types)
       | [], _ | _, None | _, Some [] -> () (* No bindings needed *)
       | _ ->

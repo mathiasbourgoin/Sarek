@@ -70,6 +70,6 @@
 (test
  (name test_ematch_payload_binding)
  (modules test_ematch_payload_binding)
- (libraries sarek_ir sarek_codegen sarek_backend_error alcotest)
+ (libraries sarek_ir sarek_codegen sarek_backend_error alcotest unix)
  (instrumentation
   (backend bisect_ppx)))

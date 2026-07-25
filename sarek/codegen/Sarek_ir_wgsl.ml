@@ -594,18 +594,22 @@ let rec gen_expr buf = function
       gen_expr buf cond ;
       Buffer.add_char buf ')'
   | EMatch (scrut, cases) when Sarek_ir_codegen.ematch_binds_payload cases ->
-      (* #75 (supersedes the #73 fail-loud stopgap): a match EXPRESSION lowers
-         to nested [select()] calls, which has nowhere to declare a payload binder — bind it
-         by substituting the same payload read the [SMatch] arm declares (this
-         backend flattens payloads into the variant struct, hence no union
-         field), then emit the (now binder-free) match. Shared with every other
+      (* #75: a match EXPRESSION lowers to nested [select()] calls, which has nowhere to
+         declare a payload binder — bind it by substituting the same payload
+         read the [SMatch] arm declares (WGSL payloads are indexed sibling fields), then emit the
+         (now binder-free) match. One shared, capture-avoiding pass for every
          backend; see {!Sarek_ir_codegen.subst_ematch_payloads}. *)
       gen_expr
         buf
         (EMatch
            ( scrut,
              Sarek_ir_codegen.subst_ematch_payloads
-               ~union_field:None
+               ~layout:Sarek_ir_codegen.wgsl_payload_layout
+               ~raise_:(fun msg ->
+                 Codegen_error.raise_error
+                   (Codegen_error.unsupported_construct
+                      "match-expression payload binding"
+                      msg))
                scrut
                cases ))
   | EMatch (_, []) ->
@@ -818,9 +822,14 @@ and gen_match_pattern buf indent scrutinee cname bindings find_constr_types =
       Buffer.add_string buf (wgsl_type_of_elttype ty) ;
       Buffer.add_string buf " = " ;
       Buffer.add_string buf scrutinee ;
-      Buffer.add_char buf '.' ;
-      Buffer.add_string buf cname ;
-      Buffer.add_string buf "_v;\n"
+      Buffer.add_string
+        buf
+        (Sarek_ir_codegen.payload_suffix
+           Sarek_ir_codegen.wgsl_payload_layout
+           ~cname
+           ~arity:1
+           0) ;
+      Buffer.add_string buf ";\n"
   | vars, Some types when List.length vars = List.length types ->
       List.iteri
         (fun i (var_name, ty) ->
@@ -832,9 +841,14 @@ and gen_match_pattern buf indent scrutinee cname bindings find_constr_types =
           Buffer.add_string buf (wgsl_type_of_elttype ty) ;
           Buffer.add_string buf " = " ;
           Buffer.add_string buf scrutinee ;
-          Buffer.add_char buf '.' ;
-          Buffer.add_string buf cname ;
-          Buffer.add_string buf (Printf.sprintf "_v._%d;\n" i))
+          Buffer.add_string
+            buf
+            (Sarek_ir_codegen.payload_suffix
+               Sarek_ir_codegen.wgsl_payload_layout
+               ~cname
+               ~arity:(List.length vars)
+               i) ;
+          Buffer.add_string buf ";\n")
         (List.combine vars types)
   | [], _ | _, None | _, Some [] -> ()
   | _ ->

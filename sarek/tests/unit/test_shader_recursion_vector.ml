@@ -832,24 +832,39 @@ let test_glsl_ematch_pattern_shadow_rebinds () =
   let glsl =
     Sarek_ir_glsl.generate_with_types ~types:[] (ematch_shadow_kernel ())
   in
-  if not (contains glsl ".OptSome_v") then
+  (* Assert against the ASSIGNMENT LINE, never the whole module. Every generated
+     module contains ".OptSome_v" already — the variant constructor function
+     assigns it — so a whole-source search here would be satisfied by the
+     preamble and would hold whatever the match arm actually reads. Verified:
+     a kernel whose arms read no payload at all still yields a module
+     containing that string. *)
+  let arm =
+    match
+      List.filter
+        (fun l -> contains l "outv[tid] = ")
+        (String.split_on_char '\n' glsl)
+    with
+    | [l] -> l
+    | _ -> Alcotest.failf "expected exactly one assignment line in:\n%s" glsl
+  in
+  if not (contains arm ".OptSome_v") then
     Alcotest.failf
       "the OptSome arm must read the payload (.OptSome_v); the binder was \
        dropped, so the arm reads an unrelated same-named value:\n\
        %s"
-      glsl ;
-  if not (contains glsl "sarek_pc_shadow_width_1") then
+      arm ;
+  if not (contains arm "sarek_pc_shadow_width_1") then
     Alcotest.failf
       "the OptNone arm must read the outer local under its renamed name \
        (sarek_pc_shadow_width_1), not the push constant:\n\
        %s"
-      glsl ;
-  if contains glsl "sarek_pc_shadow_width_2" then
+      arm ;
+  if contains arm "sarek_pc_shadow_width_2" then
     Alcotest.failf
       "the payload binder must be substituted away, not renamed and left \
        undeclared:\n\
        %s"
-      glsl ;
+      arm ;
   if not (Lazy.force glslang_available) then begin
     Printf.printf "  SKIP: glslangValidator not on PATH\n%!" ;
     Alcotest.skip ()

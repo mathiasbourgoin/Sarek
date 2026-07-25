@@ -83,6 +83,39 @@ let silent_kirc =
           dst.(tid) <- got +. (r *. 0.0)
         end]
 
+type pick = Pick of int32 | NoPick [@@sarek.type]
+
+(* CAPTURE. The value substituted for the outer arm's binder is built from the
+   OUTER scrutinee and carries FREE VARIABLES — the index `tid` inside
+   `src.(tid)`. The inner match rebinds that exact name.
+
+   If the arms are rewritten one node at a time as the backend walks down, the
+   inner rewrite reaches the already-injected outer term and substitutes `tid`
+   inside it, so the kernel reads `src[p.data.Pick_v]` where the source says
+   `src.(tid)`. It compiles on every vendor compiler and returns wrong numbers,
+   which is the failure mode this whole change exists to remove — reintroduced
+   by the fix itself. The CPU paths bind properly and disagree with the GPUs,
+   which is what makes it observable here. *)
+let capture_kirc =
+  snd
+    [%kernel
+      fun (src : float32 vector) (dst : float32 vector) (n : int32) ->
+        let tid = thread_idx_x + (block_dim_x * block_idx_x) in
+        if tid < n then begin
+          let p = if tid < n then Pick 0 else NoPick in
+          let got =
+            match if tid < n then Circle src.(tid) else Square 99.0 with
+            | Circle r -> ( match p with Pick tid -> r | NoPick -> 0.0)
+            | Square q -> q
+          in
+          dst.(tid) <- got
+        end]
+
+(* Every element takes the Circle arm, so the answer is just src.(tid). Under
+   capture the index collapses to Pick's payload (0) and every element reads
+   src.(0) instead. *)
+let capture_reference _i v = v
+
 (* The oracle, shared by both kernels. *)
 let reference i v = if i mod 2 = 0 then v *. 2.0 else v +. 7.0
 
@@ -95,7 +128,7 @@ let ir_of name k =
 
 let any_failure = ref false
 
-let run_on ~ir dev =
+let run_on ~ir ~reference dev =
   let src = Vector.create Vector.float32 n in
   let dst = Vector.create Vector.float32 n in
   for i = 0 to n - 1 do
@@ -150,7 +183,7 @@ let () =
   if Array.length devs = 0 then print_endline "  no devices — skipped"
   else
     List.iter
-      (fun (name, k) ->
+      (fun (name, k, reference) ->
         Printf.printf "-- %s --\n%!" name ;
         let ir = ir_of name k in
         Array.iter
@@ -158,7 +191,7 @@ let () =
             let label =
               Printf.sprintf "[%s] %s" dev.Device.framework dev.Device.name
             in
-            match run_on ~ir dev with
+            match run_on ~ir ~reference dev with
             | None -> Printf.printf "  %s: PASSED\n%!" label
             | Some detail ->
                 any_failure := true ;
@@ -175,7 +208,8 @@ let () =
                   (Printexc.to_string e))
           devs)
       [
-        ("distinct binders (undeclared-identifier shape)", kirc);
-        ("colliding binders (silent-wrong shape)", silent_kirc);
+        ("distinct binders (undeclared-identifier shape)", kirc, reference);
+        ("colliding binders (silent-wrong shape)", silent_kirc, reference);
+        ("nested rebinding (capture shape)", capture_kirc, capture_reference);
       ] ;
   if !any_failure then exit 1 else print_endline "OK"

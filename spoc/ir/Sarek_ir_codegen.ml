@@ -205,7 +205,7 @@ let rename_shadowing_locals ~collides ~fresh_name body =
 (** {1 Match-expression payload bindings}
 
     A match STATEMENT ([SMatch]) lowers to a [switch] whose arms are blocks, so
-    each backend's [gen_match_pattern] can open the arm with real destructuring
+    each backend's [gen_match_pattern] opens the arm with real destructuring
     declarations ([T r = <scrut>.data.C_v;]). A match EXPRESSION ([EMatch]) has
     no such place: every backend lowers it to a nested ternary / [select()],
     which is an expression, and C has no declaration in expression position.
@@ -217,137 +217,235 @@ let rename_shadowing_locals ~collides ~fresh_name body =
     same name happens to be in scope — the kernel computes with a stale value
     and returns a plausible wrong answer, with no diagnostic anywhere (#75).
 
-    The fix is to bind the payload the only way expression position allows: by
-    SUBSTITUTING each binder with the payload access path itself. That path is
-    exactly the right-hand side the [SMatch] declaration already emits, so the
-    two paths agree by construction, and the substitution lives here — once —
-    rather than as a sixth per-backend copy (#94). *)
+    Expression position admits exactly one binding mechanism: SUBSTITUTING each
+    binder by the payload read. {!payload_layout} is the single description of
+    where a payload lives, and it feeds BOTH this substitution and each
+    backend's [SMatch] declaration ({!payload_suffix}), so the two paths cannot
+    drift apart (#94) — they are the same function, not two spellings that
+    happen to agree. *)
+
+(** Where a constructor's payloads live inside the emitted variant value. The
+    backends genuinely differ, and an earlier version of this code assumed they
+    did not: WGSL flattens a multi-payload constructor into INDEXED SIBLING
+    fields ([C_v_0], [C_v_1]), while the C family and GLSL nest ([C_v._0]).
+    Emitting the nested spelling for WGSL produces
+    ["invalid field accessor 'C_v'"] from naga. Keep the three side by side so
+    the next backend has to state which one it is. *)
+type payload_layout = {
+  union : string option;
+      (** Member the payloads sit under ([Some "data"] for the C-family tagged
+          union, [None] where they are fields of the variant struct itself). *)
+  indexed : bool;
+      (** [true] when payload [i] of a multi-payload constructor is the sibling
+          field [<C>_v_<i>]; [false] when it is [<C>_v._<i>]. *)
+}
+
+(** CUDA / OpenCL / Metal: [<scrut>.data.<C>_v] and [<scrut>.data.<C>_v._<i>].
+    The three emit byte-identical variant preambles. *)
+let c_family_payload_layout = {union = Some "data"; indexed = false}
+
+(** GLSL: no union (payloads are struct fields), multi-payload hoisted to a
+    named nested struct — [<scrut>.<C>_v._<i>]. See {!gen_variant_def_glsl}. *)
+let glsl_payload_layout = {union = None; indexed = false}
+
+(** WGSL: no union AND no nested struct — payload [i] is its own top-level field
+    [<C>_v_<i>], as declared by the WGSL variant emitter. *)
+let wgsl_payload_layout = {union = None; indexed = true}
+
+(** Field chain from a scrutinee value down to payload [i] of constructor
+    [cname], whose pattern binds [arity] names. A one-payload constructor is
+    always [<C>_v] regardless of layout. *)
+let payload_fields layout ~cname ~arity i =
+  let leaf =
+    if arity <= 1 then [cname ^ "_v"]
+    else if layout.indexed then [Printf.sprintf "%s_v_%d" cname i]
+    else [cname ^ "_v"; Printf.sprintf "_%d" i]
+  in
+  match layout.union with None -> leaf | Some u -> u :: leaf
+
+(** The payload chain as a source suffix ([".data.C_v._0"]) to append to an
+    already-rendered scrutinee. This is what the [SMatch] declaration path
+    emits; {!subst_ematch_payloads} builds the same chain as an expression. *)
+let payload_suffix layout ~cname ~arity i =
+  String.concat
+    ""
+    (List.map (fun f -> "." ^ f) (payload_fields layout ~cname ~arity i))
+
+(** The payload chain as an IR projection off [scrut]. *)
+let payload_access layout ~cname ~arity i scrut =
+  List.fold_left
+    (fun e f -> Sarek_ir_types.ERecordField (e, f))
+    scrut
+    (payload_fields layout ~cname ~arity i)
 
 (** [true] iff some case of a match expression binds at least one name, i.e. iff
     {!subst_ematch_payloads} would change anything. Backends use it as the guard
-    on the rewrite arm; because the rewrite clears the binder lists, the guard
-    is false on the rewritten node and the rewrite cannot loop. *)
+    on the rewrite arm; the rewrite clears the binder lists THROUGHOUT the
+    subtree, so the guard is false on every node of the result and the rewrite
+    neither loops nor runs twice. *)
 let ematch_binds_payload (cases : (Sarek_ir_types.pattern * 'a) list) =
   let open Sarek_ir_types in
   List.exists (function PConstr (_, _ :: _), _ -> true | _ -> false) cases
 
-(** [subst_ematch_payloads ~union_field scrutinee cases] replaces every payload
-    binder of every case with the corresponding payload read of [scrutinee], and
-    clears the binder lists (the binders are consumed — nothing downstream reads
-    them; the backends only use the constructor name, for the tag test).
+(** [subst_ematch_payloads ~layout ~raise_ scrutinee cases] replaces every
+    payload binder in [cases] — and in every match expression NESTED inside them
+    — by the corresponding payload read, and clears the binder lists (backends
+    only need the constructor name, for the tag test).
 
-    [union_field] is the ONLY backend-specific input: the C-family tagged union
-    nests payloads under a [data] member ([Some "data"] ⇒ [<scrut>.data.C_v] /
-    [<scrut>.data.C_v._<i>]), while GLSL and WGSL flatten them straight into the
-    variant struct ([None] ⇒ [<scrut>.C_v]). Both spellings match what that
-    backend's [gen_match_pattern] emits for [SMatch].
+    WHY ONE PASS OVER THE WHOLE SUBTREE, and not one per node as the backend
+    walks down. Substitution injects a term built from the OUTER scrutinee, and
+    that term has free variables. If an inner match were rewritten by a separate
+    later call, its own binders would be substituted into those injected
+    variables and capture them. That is not hypothetical: with
 
-    A one-payload constructor reads [C_v]; an n-payload one reads [C_v._<i>] —
-    the same arity split {!gen_variant_def} uses when laying the payload out.
+    {[
+      match if tid < n then Circle src.(tid) else Square 99. with
+      | Circle r -> ( match p with Pick tid -> r | NoPick -> 0.)
+      | Square q -> q
+    ]}
+
+    the inner binder [tid] captured the [tid] inside the injected scrutinee and
+    the kernel read [src[p.data.Pick_v]] where the source says [src.(tid)] —
+    compiling cleanly and returning wrong numbers on all four GPU paths while
+    the CPU oracles disagreed. Rewriting the entire subtree in one traversal
+    binds each binder exactly once, in its own scope: a replacement term is
+    installed at a leaf and never revisited.
+
+    [layout] says where payloads live (see {!payload_layout}); it is shared with
+    the [SMatch] declaration path.
+
+    Capture-avoidance covers both directions: an inner binder shadows an outer
+    mapping (dropped from the environment), and an inner binder never rewrites
+    an outer replacement term (never traversed again).
 
     The variable pattern [match e with x -> ...], which the PPX lowers to
     [PConstr ("", [x])], binds the whole scrutinee rather than a payload, so [x]
     is substituted by [scrutinee] itself.
 
-    Substitution is capture-avoiding: a nested [EMatch] arm that rebinds the
-    same name drops it from the environment, so the inner body keeps reading the
-    inner payload. Only [EMatch] binds names inside an expression, so that is
-    the only shadowing form to handle here.
+    [raise_] reports a binder shape that has no lowering, and must not return
+    (it exists because each backend raises through its own error functor and
+    [spoc/ir] deliberately has no backend dependencies — same convention as
+    {!reject_feature}). Two shapes qualify, both requiring a vector-typed
+    payload and so unreachable from the current DSL, whose variant payloads are
+    scalars: [EArrayLen] of a binder (a payload has no companion
+    [sarek_<name>_length] argument) and [EArrayRead] of a binder. #73's guard
+    covered both; they are refused rather than assumed away.
 
-    [scrutinee] is duplicated once per substituted occurrence. IR expressions
-    are pure by construction (see {!Sarek_ir_types.expr}) so this is
-    semantics-preserving, and the tag test already re-emits the scrutinee once
-    per case, so it is not a new property of the lowering.
-
-    Not handled: [EArrayLen] of a payload binder. A vector-typed payload has no
-    companion [sarek_<name>_length] argument to read, so that shape has no
-    correct lowering at all; it is left untouched (pre-existing, and unreachable
-    from the current DSL, whose variant payloads are scalars). *)
-let subst_ematch_payloads ~(union_field : string option)
+    SCRUTINEE DUPLICATION. [scrutinee] is re-emitted once per substituted
+    occurrence, on top of the once-per-case the tag test already did, and this
+    nests multiplicatively. It is not free: it costs code size and register
+    pressure, and it is only SEMANTICALLY safe because the expressions Sarek
+    lowers into a match scrutinee are pure. That is a property of the lowering,
+    NOT of the [expr] type — [EIntrinsic] covers the atomics, which are
+    side-effecting expressions — so a scrutinee containing an atomic is refused
+    through [raise_] rather than silently executed several times. *)
+let subst_ematch_payloads ~(layout : payload_layout) ~(raise_ : string -> unit)
     (scrutinee : Sarek_ir_types.expr)
     (cases : (Sarek_ir_types.pattern * Sarek_ir_types.expr) list) :
     (Sarek_ir_types.pattern * Sarek_ir_types.expr) list =
   let open Sarek_ir_types in
   let module SM = Map.Make (String) in
-  (* The [i]-th payload read of constructor [cname], whose pattern binds
-     [arity] names — the same access path [gen_match_pattern] declares. *)
-  let payload_access ~cname ~arity i =
-    let union =
-      match union_field with
-      | None -> scrutinee
-      | Some f -> ERecordField (scrutinee, f)
-    in
-    let field = ERecordField (union, cname ^ "_v") in
-    if arity <= 1 then field else ERecordField (field, Printf.sprintf "_%d" i)
+  (* [raise_] must not return; the backstop turns a backend that forgets to
+     raise into a loud failure rather than silently-wrong output. *)
+  let fail msg =
+    raise_ msg ;
+    failwith ("Sarek_ir_codegen.subst_ematch_payloads: " ^ msg)
   in
-  let rec subst env e =
+  (* An atomic intrinsic in the scrutinee would be executed once per emitted
+     copy. Refuse rather than duplicate a side effect. *)
+  let rec has_atomic e =
+    let starts_with_atomic n =
+      String.length n >= 6 && String.sub n 0 6 = "atomic"
+    in
+    match e with
+    | EIntrinsic (_, name, args) ->
+        starts_with_atomic name || List.exists has_atomic args
+    | EConst _ | EVar _ | EArrayLen _ -> false
+    | EUnop (_, a) | ECast (_, a) | ERecordField (a, _) -> has_atomic a
+    | EBinop (_, a, b) | EArrayReadExpr (a, b) -> has_atomic a || has_atomic b
+    | EArrayRead (_, i) -> has_atomic i
+    | EArrayCreate (_, s, _) -> has_atomic s
+    | ETuple es | EVariant (_, _, es) -> List.exists has_atomic es
+    | EApp (f, args) -> has_atomic f || List.exists has_atomic args
+    | ERecord (_, fs) -> List.exists (fun (_, v) -> has_atomic v) fs
+    | EIf (c, t, f) -> has_atomic c || has_atomic t || has_atomic f
+    | EMatch (s, cs) ->
+        has_atomic s || List.exists (fun (_, b) -> has_atomic b) cs
+  in
+  let rec rewrite env e =
     match e with
     | EConst _ -> e
     | EVar v -> (
         match SM.find_opt v.var_name env with Some r -> r | None -> e)
-    | EBinop (op, a, b) -> EBinop (op, subst env a, subst env b)
-    | EUnop (op, a) -> EUnop (op, subst env a)
-    | EArrayRead (arr, i) -> (
-        let i = subst env i in
-        (* A substituted array name is no longer an identifier, so the read has
-           to become the expression-based form. *)
-        match SM.find_opt arr env with
-        | Some base -> EArrayReadExpr (base, i)
-        | None -> EArrayRead (arr, i))
-    | EArrayReadExpr (b, i) -> EArrayReadExpr (subst env b, subst env i)
-    | ERecordField (e, f) -> ERecordField (subst env e, f)
-    | EIntrinsic (ns, n, args) -> EIntrinsic (ns, n, List.map (subst env) args)
-    | ECast (t, e) -> ECast (t, subst env e)
-    | ETuple es -> ETuple (List.map (subst env) es)
-    | EApp (f, args) -> EApp (subst env f, List.map (subst env) args)
+    | EBinop (op, a, b) -> EBinop (op, rewrite env a, rewrite env b)
+    | EUnop (op, a) -> EUnop (op, rewrite env a)
+    | EArrayRead (arr, i) ->
+        if SM.mem arr env then
+          fail
+            (Printf.sprintf
+               "the match arm indexes into its payload binder %S; a \
+                vector-typed constructor payload has no lowering in expression \
+                position"
+               arr)
+        else EArrayRead (arr, rewrite env i)
+    | EArrayLen n ->
+        if SM.mem n env then
+          fail
+            (Printf.sprintf
+               "the match arm takes the length of its payload binder %S; a \
+                payload carries no companion sarek_%s_length argument"
+               n
+               n)
+        else e
+    | EArrayReadExpr (b, i) -> EArrayReadExpr (rewrite env b, rewrite env i)
+    | ERecordField (e, f) -> ERecordField (rewrite env e, f)
+    | EIntrinsic (ns, n, args) -> EIntrinsic (ns, n, List.map (rewrite env) args)
+    | ECast (t, e) -> ECast (t, rewrite env e)
+    | ETuple es -> ETuple (List.map (rewrite env) es)
+    | EApp (f, args) -> EApp (rewrite env f, List.map (rewrite env) args)
     | ERecord (n, fs) ->
-        ERecord (n, List.map (fun (k, x) -> (k, subst env x)) fs)
-    | EVariant (t, c, args) -> EVariant (t, c, List.map (subst env) args)
-    | EArrayLen _ -> e
-    | EArrayCreate (t, s, m) -> EArrayCreate (t, subst env s, m)
-    | EIf (c, t, f) -> EIf (subst env c, subst env t, subst env f)
+        ERecord (n, List.map (fun (k, x) -> (k, rewrite env x)) fs)
+    | EVariant (t, c, args) -> EVariant (t, c, List.map (rewrite env) args)
+    | EArrayCreate (t, s, m) -> EArrayCreate (t, rewrite env s, m)
+    | EIf (c, t, f) -> EIf (rewrite env c, rewrite env t, rewrite env f)
     | EMatch (s, cs) ->
-        (* The inner match's own binders are resolved when the backend reaches
-           that node (against the inner scrutinee); here they only need to
-           shadow the outer ones. *)
-        EMatch
-          ( subst env s,
-            List.map
-              (fun (p, b) ->
-                let env =
-                  match p with
-                  | PWild -> env
-                  | PConstr (_, names) ->
-                      List.fold_left (fun env n -> SM.remove n env) env names
-                in
-                (p, subst env b))
-              cs )
-  in
-  List.map
-    (fun (pat, body) ->
-      match pat with
-      | PWild | PConstr (_, []) -> (pat, body)
-      (* [match e with x -> ...]: [x] is the whole scrutinee, not a payload. *)
-      | PConstr ("", [x]) ->
-          (PConstr ("", []), subst (SM.singleton x scrutinee) body)
-      | PConstr (cname, names) ->
+        (* Bind the inner match HERE, against its own (already rewritten)
+           scrutinee. Deferring it to a later per-node call is what allowed
+           inner binders to capture outer replacement terms. *)
+        let s = rewrite env s in
+        EMatch (s, List.map (bind_case env s) cs)
+  and bind_case env scrut (pat, body) =
+    match pat with
+    | PWild | PConstr (_, []) -> (pat, rewrite env body)
+    | PConstr ("", [x]) ->
+        (* [match e with x -> ..]: the whole scrutinee, not a payload. *)
+        (PConstr ("", []), rewrite (SM.add x scrut env) body)
+    | PConstr (cname, names) ->
+        if has_atomic scrut then
+          fail
+            "the match scrutinee performs an atomic operation, which binding a \
+             payload would duplicate (the lowering re-emits the scrutinee per \
+             use)"
+        else
           let arity = List.length names in
-          let env =
+          let env, _ =
             List.fold_left
               (fun (env, i) n ->
                 (* [_] is the throwaway binder: never referenced, and mapping it
-                   would rewrite an unrelated identifier if one existed. *)
+                   would rewrite an unrelated identifier if one existed. It
+                   still SHADOWS, so drop any outer mapping. *)
                 let env =
-                  if n = "_" then env
-                  else SM.add n (payload_access ~cname ~arity i) env
+                  if n = "_" then SM.remove n env
+                  else
+                    SM.add n (payload_access layout ~cname ~arity i scrut) env
                 in
                 (env, i + 1))
-              (SM.empty, 0)
+              (env, 0)
               names
-            |> fst
           in
-          (PConstr (cname, []), subst env body))
-    cases
+          (PConstr (cname, []), rewrite env body)
+  in
+  List.map (bind_case SM.empty scrutinee) cases
 
 (** Emit a C/MSL tagged-union variant type (enum + typedef struct + union +
     inline constructors). [type_of_elttype] and [constructor_prefix] are the

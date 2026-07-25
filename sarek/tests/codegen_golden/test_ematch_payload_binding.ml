@@ -38,6 +38,7 @@ module Opencl = Sarek_codegen.Sarek_ir_opencl
 module Metal = Sarek_codegen.Sarek_ir_metal
 module Glsl = Sarek_codegen.Sarek_ir_glsl
 module Wgsl = Sarek_codegen.Sarek_ir_wgsl
+module Backend_error = Sarek_backend_error.Backend_error
 
 let make_var ?(mut = false) name ty =
   {var_name = name; var_id = 0; var_type = ty; var_mutable = mut}
@@ -216,6 +217,67 @@ let silent_wrong_kernel =
     kern_native_fn = None;
   }
 
+(* CAPTURE. The outer arm's replacement term is built from the OUTER scrutinee
+   and therefore has FREE VARIABLES — here the index `idx` inside
+   `shp.(idx)`. The inner match then rebinds that very name (`Pick idx`).
+
+   Substituting the inner binder into the already-injected outer term captures
+   it: the arm ends up reading `shp[p.data.Pick_v]` where the source says
+   `shp.(idx)`. That is valid code on every backend, it compiles clean, and it
+   returns wrong numbers — the exact failure mode this whole change exists to
+   remove, reintroduced by the fix itself if the rewrite is applied per-node as
+   the backend walks down instead of once over the whole subtree.
+
+   Handling only the other half of capture (an inner binder shadowing an outer
+   MAPPING) is not enough, and a test whose two matches share one scrutinee
+   cannot tell the two halves apart. *)
+let capture_kernel =
+  let shp = make_var "shp" (TVec opt_type) in
+  let out = make_var "out" (TVec TFloat32) in
+  let pick_constrs = [("NoPick", []); ("Pick", [TInt32])] in
+  let pick_type = TVariant ("Choice", pick_constrs) in
+  let p = make_var "p" pick_type in
+  let idx = make_var "idx" TInt32 in
+  let inner =
+    EMatch
+      ( EVar p,
+        [
+          (* rebinds `idx`, the free variable of the injected outer term *)
+          (PConstr ("Pick", ["idx"]), v "y");
+          (PConstr ("NoPick", []), EConst (CFloat32 0.0));
+        ] )
+  in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( p,
+            EVariant ("Choice", "Pick", [EConst (CInt32 0l)]),
+            SAssign
+              ( LArrayElem ("out", EVar idx),
+                EMatch
+                  ( EArrayRead ("shp", EVar idx),
+                    [
+                      (PConstr ("OptSome", ["y"]), inner);
+                      (PConstr ("OptNone", []), EConst (CFloat32 0.0));
+                    ] ) ) ) )
+  in
+  {
+    kern_name = "ematch_capture_probe";
+    kern_params =
+      [
+        DParam (shp, Some {arr_elttype = opt_type; arr_memspace = Global});
+        DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      ];
+    kern_locals = [];
+    kern_body = body;
+    kern_types = [];
+    kern_variants = [("Opt", opt_constrs); ("Choice", pick_constrs)];
+    kern_funcs = [];
+    kern_native_fn = None;
+  }
+
 (* `match e with x -> ...`: the PPX lowers a plain variable pattern to
    PConstr ("", [x]), which binds the WHOLE scrutinee rather than a payload.
    Same discard, and #73's fail-loud guard rejected it outright. *)
@@ -272,40 +334,214 @@ let pwild_kernel =
       (PWild, EConst (CFloat32 0.0));
     ]
 
+(* SHAPES WITH NO LOWERING. #73's guard checked these explicitly (its
+   [expr_mentions] covered [EArrayLen] and [EArrayRead] of a binder); replacing
+   that guard with a real fix must not quietly drop the coverage. All three need
+   a vector-typed payload or an effectful scrutinee, so they are unreachable
+   from today's DSL — which is a reason to assert the refusal, not to assume it.
+   Emitting for them would produce an undeclared identifier (the first two) or
+   silently run an atomic once per re-emitted copy of the scrutinee (the
+   third). *)
+let array_len_of_binder_kernel =
+  kernel_with
+    ~vname:"Opt"
+    ~constrs:opt_constrs
+    ~elt:opt_type
+    [
+      (PConstr ("OptSome", ["y"]), ECast (TFloat32, EArrayLen "y"));
+      (PConstr ("OptNone", []), EConst (CFloat32 0.0));
+    ]
+
+let array_read_of_binder_kernel =
+  kernel_with
+    ~vname:"Opt"
+    ~constrs:opt_constrs
+    ~elt:opt_type
+    [
+      (PConstr ("OptSome", ["y"]), EArrayRead ("y", EConst (CInt32 0l)));
+      (PConstr ("OptNone", []), EConst (CFloat32 0.0));
+    ]
+
+(* An atomic in the scrutinee would be performed once per emitted copy: the tag
+   test already re-emits it per case, and each substituted binder adds another.
+   IR expressions are NOT pure in general — [EIntrinsic] covers the atomics — so
+   this is refused rather than duplicated. *)
+let atomic_scrutinee_kernel =
+  let scrut = make_var "opt" (TVec opt_type) in
+  let out = make_var "out" (TVec TFloat32) in
+  let idx = make_var "idx" TInt32 in
+  {
+    kern_name = "ematch_atomic_scrutinee";
+    kern_params =
+      [
+        DParam (scrut, Some {arr_elttype = opt_type; arr_memspace = Global});
+        DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      ];
+    kern_locals = [];
+    kern_body =
+      SLet
+        ( idx,
+          EIntrinsic ([], "global_thread_id", []),
+          SAssign
+            ( LArrayElem ("out", EVar idx),
+              EMatch
+                ( EIntrinsic ([], "atomic_add", [EVar scrut; EVar idx]),
+                  [
+                    ( PConstr ("OptSome", ["y"]),
+                      EBinop (Add, v "y", EConst (CFloat32 1.0)) );
+                    (PConstr ("OptNone", []), EConst (CFloat32 0.0));
+                  ] ) ) );
+    kern_types = [];
+    kern_variants = [("Opt", opt_constrs)];
+    kern_funcs = [];
+    kern_native_fn = None;
+  }
+
+(* The SAME multi-payload destructuring as a match STATEMENT. Both paths now
+   read their accessor from one [payload_layout], so this pins the property the
+   fix actually rests on: EMatch and SMatch cannot drift apart. Asserting only
+   "EMatch matches SMatch" would be satisfied by both being wrong together —
+   which is exactly what happened on WGSL, where both spelled a nested [_v._0]
+   that the variant declaration never emitted — so each is also compared against
+   a literal written out per backend. *)
+let smatch_multi_kernel =
+  let scrut = make_var "opt" (TVec pair_type) in
+  let out = make_var "out" (TVec TFloat32) in
+  let idx = make_var "idx" TInt32 in
+  {
+    kern_name = "smatch_multi_probe";
+    kern_params =
+      [
+        DParam (scrut, Some {arr_elttype = pair_type; arr_memspace = Global});
+        DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      ];
+    kern_locals = [];
+    kern_body =
+      SLet
+        ( idx,
+          EIntrinsic ([], "global_thread_id", []),
+          SMatch
+            ( EArrayRead ("opt", EVar idx),
+              [
+                ( PConstr ("MkPair", ["a"; "b"]),
+                  SAssign
+                    (LArrayElem ("out", EVar idx), EBinop (Add, v "a", v "b"))
+                );
+                ( PConstr ("MkOne", ["c"]),
+                  SAssign (LArrayElem ("out", EVar idx), v "c") );
+              ] ) );
+    kern_types = [];
+    kern_variants = [("Pair", pair_constrs)];
+    kern_funcs = [];
+    kern_native_fn = None;
+  }
+
 (* --- backends ------------------------------------------------------------ *)
 
-(* [union] is the extra hop the C-family tagged union needs ([.data.]); the
-   shader backends flatten payloads straight into the variant struct. *)
-type backend = {label : string; gen : kernel -> string; union : string}
+(* The expected accessor spellings are written out LITERALLY here, per backend,
+   rather than derived from Sarek_ir_codegen.payload_suffix — deriving them from
+   the function under test would make this file agree with any spelling that
+   function produces, including a wrong one. That is precisely how the first
+   version of this test pinned WGSL's invalid `MkPair_v._0`: it applied the
+   C-family/GLSL spelling uniformly to all five backends and stayed green while
+   naga rejected the shader.
+
+   The three layouts really do differ. WGSL flattens a multi-payload
+   constructor into indexed SIBLING fields; the C family and GLSL nest. *)
+type backend = {
+  label : string;
+  gen : kernel -> string;
+  single : string -> string;  (** [cname] -> accessor for a 1-payload ctor *)
+  multi : string -> int -> string;  (** [cname] -> [i] -> accessor *)
+  validate : (string -> (unit, string) result) option;
+      (** External shader validator, when one exists for this backend. *)
+}
+
+(* --- external validators -------------------------------------------------- *)
+
+let read_file path =
+  let ic = open_in_bin path in
+  let n = in_channel_length ic in
+  let s = really_input_string ic n in
+  close_in ic ;
+  s
+
+let run_validator ~exe ~ext ~args src =
+  let base = Filename.temp_file "sarek_payload_" "" in
+  let file = base ^ ext in
+  let err = base ^ ".err" in
+  let oc = open_out file in
+  output_string oc src ;
+  close_out oc ;
+  let cmd =
+    Printf.sprintf
+      "%s %s %s >%s 2>&1"
+      exe
+      args
+      (Filename.quote file)
+      (Filename.quote err)
+  in
+  let rc = Unix.system cmd in
+  let out = read_file err in
+  List.iter (fun f -> try Sys.remove f with _ -> ()) [file; err; base] ;
+  match rc with Unix.WEXITED 0 -> Ok () | _ -> Error out
+
+let tool_available exe =
+  lazy
+    (Unix.system (Printf.sprintf "command -v %s >/dev/null 2>&1" exe)
+    = Unix.WEXITED 0)
+
+let glslang_available = tool_available "glslangValidator"
+
+let naga_available = tool_available "naga"
+
+let glslang_ok src =
+  run_validator
+    ~exe:"glslangValidator"
+    ~ext:".comp"
+    ~args:"-V -S comp -o /dev/null"
+    src
+
+let naga_ok src = run_validator ~exe:"naga" ~ext:".wgsl" ~args:"" src
+
+let c_family label gen =
+  {
+    label;
+    gen;
+    single = (fun c -> ".data." ^ c ^ "_v");
+    multi = (fun c i -> Printf.sprintf ".data.%s_v._%d" c i);
+    validate = None;
+  }
 
 let backends =
   [
-    {
-      label = "CUDA";
-      gen = (fun k -> Cuda.generate_with_types ~types:[] k);
-      union = ".data.";
-    };
-    {
-      label = "OpenCL";
-      gen = (fun k -> Opencl.generate_with_types ~types:[] k);
-      union = ".data.";
-    };
-    {
-      label = "Metal";
-      gen = (fun k -> Metal.generate_with_types ~types:[] k);
-      union = ".data.";
-    };
+    c_family "CUDA" (fun k -> Cuda.generate_with_types ~types:[] k);
+    c_family "OpenCL" (fun k -> Opencl.generate_with_types ~types:[] k);
+    c_family "Metal" (fun k -> Metal.generate_with_types ~types:[] k);
     {
       label = "GLSL";
       gen = (fun k -> Glsl.generate_with_types ~types:[] k);
-      union = ".";
+      single = (fun c -> "." ^ c ^ "_v");
+      multi = (fun c i -> Printf.sprintf ".%s_v._%d" c i);
+      validate = Some glslang_ok;
     };
     {
       label = "WGSL";
       gen = (fun k -> Wgsl.generate_with_types ~types:[] k);
-      union = ".";
+      single = (fun c -> "." ^ c ^ "_v");
+      (* Sibling fields, NOT a nested struct — see the WGSL variant emitter. *)
+      multi = (fun c i -> Printf.sprintf ".%s_v_%d" c i);
+      validate = Some naga_ok;
     };
   ]
+
+let available b =
+  match b.label with
+  | "GLSL" -> Lazy.force glslang_available
+  | "WGSL" -> Lazy.force naga_available
+  | _ -> false
+
+(* --- assertions ---------------------------------------------------------- *)
 
 let generate b k =
   try b.gen k
@@ -315,13 +551,13 @@ let generate b k =
       b.label
       (Printexc.to_string e)
 
-(* THE ASSIGNMENT LINE, not the whole module, is what every assertion below
-   inspects. The variant preamble each backend emits already contains the
-   payload access path (the constructor function assigns [r.data.C_v = v]), so
-   a whole-source search would be satisfied by the preamble alone and would
-   stay green with the match lowering still broken. The kernel body here is a
-   single [<out>[idx] = <match>;] line ([out] is spelled [outv] on GLSL, where
-   [out] is reserved — hence matching on the index, not the name). *)
+(* THE ASSIGNMENT LINE, not the whole module, is what the string assertions
+   inspect. The variant preamble each backend emits already contains the payload
+   access path (the constructor function assigns [r.data.C_v = v]), so a
+   whole-source search would be satisfied by the preamble alone and would stay
+   green with the match lowering still broken. The kernel body here is a single
+   [<out>[idx] = <match>;] line ([out] is spelled [outv] on GLSL, where [out] is
+   reserved — hence matching on the index, not the name). *)
 let assign_line b k =
   let src = generate b k in
   let lines = String.split_on_char '\n' src in
@@ -340,12 +576,14 @@ let assign_line b k =
         b.label
         (List.length ls)
 
-(* --- assertions ---------------------------------------------------------- *)
+let expected_access b (cname, arity, i) =
+  if arity <= 1 then b.single cname else b.multi cname i
 
 let check_payload_bound b ~kernel ~binders ~accesses () =
   let line = assign_line b kernel in
   List.iter
-    (fun needle ->
+    (fun spec ->
+      let needle = expected_access b spec in
       Alcotest.(check bool)
         (Printf.sprintf
            "%s: the match reads the payload as %S — found: %s"
@@ -354,7 +592,7 @@ let check_payload_bound b ~kernel ~binders ~accesses () =
            line)
         true
         (contains ~haystack:line ~needle))
-    (List.map (fun (c, suffix) -> b.union ^ c ^ "_v" ^ suffix) accesses) ;
+    accesses ;
   List.iter
     (fun name ->
       Alcotest.(check bool)
@@ -369,6 +607,36 @@ let check_payload_bound b ~kernel ~binders ~accesses () =
         (mentions_identifier ~src:line ~name))
     binders
 
+(* THE VALIDATOR GATE. String assertions cannot tell a valid accessor from an
+   invalid one — the first version of this file happily pinned WGSL's
+   `MkPair_v._0`, a field that does not exist, and naga rejects it with
+   "invalid field accessor". Every kernel that binds a payload is therefore also
+   handed to the real shader compiler. Reported as SKIP, never as a green OK,
+   when the tool is absent: without it the check did not happen. *)
+let check_validates b ~what kernel () =
+  match b.validate with
+  | None -> Alcotest.skip () (* no external validator for this backend *)
+  | Some validate -> (
+      let src = generate b kernel in
+      if not (available b) then begin
+        Printf.printf "  SKIP: no validator on PATH for %s\n%!" b.label ;
+        Alcotest.skip ()
+      end
+      else
+        match validate src with
+        | Ok () -> ()
+        | Error e ->
+            Alcotest.failf
+              "%s: the shader compiler rejected the generated %s payload \
+               binding:\n\
+               %s\n\
+               --- shader ---\n\
+               %s"
+              b.label
+              what
+              e
+              src)
+
 (* The inner arm's `y` must read the INNER scrutinee. Both matches share the
    same scrutinee expression here, so correctness is pinned by: no dangling
    `y`, and a payload read per arm (>= 2 on the one assignment line). *)
@@ -381,7 +649,7 @@ let check_shadowing b () =
        line)
     false
     (mentions_identifier ~src:line ~name:"y") ;
-  let needle = b.union ^ "OptSome_v" in
+  let needle = b.single "OptSome" in
   let count =
     let nl = String.length needle and sl = String.length line in
     let rec loop i acc =
@@ -424,7 +692,63 @@ let check_var_pattern b () =
        b.label
        line)
     true
-    (contains ~haystack:line ~needle:(b.union ^ "OptSome_v"))
+    (contains ~haystack:line ~needle:(b.single "OptSome"))
+
+(* The injected term must still index with `tid`. Capture shows up as the inner
+   payload read appearing in INDEX position. *)
+let check_no_capture b () =
+  let line = assign_line b capture_kernel in
+  Alcotest.(check bool)
+    (Printf.sprintf
+       "%s: the outer arm still indexes with the enclosing `idx`, not the \
+        inner match's binder — found: %s"
+       b.label
+       line)
+    true
+    (contains ~haystack:line ~needle:"shp[idx]") ;
+  Alcotest.(check bool)
+    (Printf.sprintf
+       "%s: the inner binder must NOT have been substituted into the outer \
+        replacement term (capture) — found: %s"
+       b.label
+       line)
+    false
+    (contains ~haystack:line ~needle:(b.single "Pick" ^ "]"))
+
+(* These must be REFUSED, loudly and with a located error — never emitted. *)
+let check_refused b ~what kernel () =
+  match b.gen kernel with
+  | (_ : string) ->
+      Alcotest.failf
+        "%s: %s has no correct lowering, but generation succeeded — that emits \
+         an undeclared identifier or a duplicated side effect"
+        b.label
+        what
+  | exception
+      Backend_error.Backend_error
+        (Backend_error.Codegen
+           {error = Backend_error.Unsupported_construct {construct; _}; _}) ->
+      Alcotest.(check string)
+        (Printf.sprintf "%s: names the construct" b.label)
+        "match-expression payload binding"
+        construct
+
+(* The statement path must declare its payloads from the same accessor the
+   expression path substitutes. *)
+let check_smatch_agrees b () =
+  let src = generate b smatch_multi_kernel in
+  List.iter
+    (fun spec ->
+      let needle = expected_access b spec in
+      Alcotest.(check bool)
+        (Printf.sprintf
+           "%s: the SMatch declaration reads %S, the same accessor the EMatch \
+            substitution uses"
+           b.label
+           needle)
+        true
+        (contains ~haystack:src ~needle))
+    [("MkPair", 2, 0); ("MkPair", 2, 1); ("MkOne", 1, 0)]
 
 (* Shapes the fix must leave alone: they bind nothing usable, so the assignment
    must still be a pure tag dispatch with no payload read at all. *)
@@ -441,7 +765,7 @@ let check_unaffected ~what kernel b () =
        what
        line)
     false
-    (contains ~haystack:line ~needle:(b.union ^ "OptSome_v"))
+    (contains ~haystack:line ~needle:(b.single "OptSome"))
 
 let () =
   let open Alcotest in
@@ -457,26 +781,49 @@ let () =
             b
             ~kernel:single_payload_kernel
             ~binders:["y"]
-            ~accesses:[("OptSome", "")]);
+            ~accesses:[("OptSome", 1, 0)]);
       per_backend "multi-payload" (fun b ->
           check_payload_bound
             b
             ~kernel:multi_payload_kernel
             ~binders:["a"; "b"; "c"]
-            ~accesses:[("MkPair", "._0"); ("MkPair", "._1"); ("MkOne", "")]);
+            ~accesses:[("MkPair", 2, 0); ("MkPair", 2, 1); ("MkOne", 1, 0)]);
       per_backend "single-case-shortcut" (fun b ->
           check_payload_bound
             b
             ~kernel:single_case_kernel
             ~binders:["y"]
-            ~accesses:[("OptSome", "")]);
+            ~accesses:[("OptSome", 1, 0)]);
       per_backend "nested-shadowing" check_shadowing;
+      per_backend "no-capture-of-injected-free-vars" check_no_capture;
+      per_backend "smatch-uses-the-same-accessor" check_smatch_agrees;
+      per_backend "refuses-array-len-of-binder" (fun b ->
+          check_refused
+            b
+            ~what:"EArrayLen of a payload binder"
+            array_len_of_binder_kernel);
+      per_backend "refuses-array-read-of-binder" (fun b ->
+          check_refused
+            b
+            ~what:"EArrayRead of a payload binder"
+            array_read_of_binder_kernel);
+      per_backend "refuses-atomic-scrutinee" (fun b ->
+          check_refused
+            b
+            ~what:"an atomic in the match scrutinee"
+            atomic_scrutinee_kernel);
+      per_backend "validates-single-payload" (fun b ->
+          check_validates b ~what:"single-payload" single_payload_kernel);
+      per_backend "validates-multi-payload" (fun b ->
+          check_validates b ~what:"multi-payload" multi_payload_kernel);
+      per_backend "validates-no-capture" (fun b ->
+          check_validates b ~what:"nested/capture" capture_kernel);
       per_backend "silent-wrong-shadowed-binder" (fun b ->
           check_payload_bound
             b
             ~kernel:silent_wrong_kernel
             ~binders:["r"]
-            ~accesses:[("OptSome", "")]);
+            ~accesses:[("OptSome", 1, 0)]);
       per_backend "variable-pattern" check_var_pattern;
       per_backend
         "tag-only-unaffected"
