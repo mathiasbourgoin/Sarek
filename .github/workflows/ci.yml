@@ -208,6 +208,11 @@ jobs:
   formal-proofs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Least privilege: this job only reads the checkout and runs rocq in a
+    # container. Without an explicit block it would inherit the repository
+    # default token scope (zizmor: excessive-permissions).
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
