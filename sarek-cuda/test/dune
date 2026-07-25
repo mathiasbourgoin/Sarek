@@ -56,6 +56,18 @@
  (instrumentation
   (backend bisect_ppx)))
 
+; NVRTC compile gate for the CUDA-C emitter. Host-side only: nvrtcCompileProgram
+; needs no CUDA device, so this runs on CPU-only CI. Skips when libnvrtc cannot
+; be dlopen'd; ci/assert-toolchain.sh is what turns a missing libnvrtc in the CI
+; image into a build failure instead of a silent skip.
+
+(test
+ (name test_cuda_nvrtc_gate)
+ (modules test_cuda_nvrtc_gate)
+ (libraries sarek_cuda sarek.codegen spoc.ir alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
+
 (test
  (name test_ptx_localarr_probe)
  (modules test_ptx_localarr_probe)

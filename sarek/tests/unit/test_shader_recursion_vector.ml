@@ -483,7 +483,14 @@ let glslang_ok glsl =
   match rc with Unix.WEXITED 0 -> Ok () | _ -> Error out
 
 (** Validate WGSL with naga (front-end + validation). naga infers the input
-    language from the [.wgsl] extension. *)
+    language from the [.wgsl] extension.
+
+    Invocation note: naga-cli's [--validate] takes a numeric ValidationFlags
+    BITMASK, not a keyword, so the former ["--validate all"] made naga exit
+    non-zero on argument parsing ("invalid digit found in string") for every
+    input — the gate could not ever have passed once naga was on PATH. With a
+    single positional argument and no output file, naga performs full validation
+    by default and prints "Validation successful". *)
 let naga_ok wgsl =
   let base = Filename.temp_file "sarek_wgsl_" "" in
   let src = base ^ ".wgsl" in
@@ -492,10 +499,7 @@ let naga_ok wgsl =
   output_string oc wgsl ;
   close_out oc ;
   let cmd =
-    Printf.sprintf
-      "naga --validate all %s >%s 2>&1"
-      (Filename.quote src)
-      (Filename.quote err)
+    Printf.sprintf "naga %s >%s 2>&1" (Filename.quote src) (Filename.quote err)
   in
   let rc = Unix.system cmd in
   let out = read_file err in

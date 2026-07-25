@@ -123,8 +123,32 @@ let wgsl_reserved_keywords =
     "sarek_nwg";
   ]
 
-(** Escape reserved WGSL keywords by adding 'v' suffix. *)
+(** Escape identifiers that WGSL forbids.
+
+    Two distinct rules, in order:
+
+    - {b Reserved prefix} (WGSL §4.4.1): an identifier must not start with a
+      double underscore. The frontend's tail-recursion elimination
+      ([Sarek_tailrec_elim]) renames every eliminated loop parameter to
+      ["__" ^ name], and the native backend emits ["__v%d"]/["__m%d"]
+      temporaries, so any kernel whose recursion is turned into a loop reached
+      this emitter with a [__]-prefixed variable. C-family targets (CUDA,
+      OpenCL, GLSL, Metal) accept those names, WGSL rejects them outright at
+      parse time ("Identifier starts with a reserved prefix"), which made the
+      emitted shader unusable on every WebGPU implementation. Re-prefixing with
+      ["sarek"] keeps the name recognisable and moves the double underscore off
+      the front, where it is legal.
+    - {b Reserved keywords}: escaped by appending a ['v'] suffix.
+
+    Both rewrites are injective except for a source identifier that already
+    literally spells the escaped form (e.g. a user variable named [sarek__i]);
+    that is the same theoretical collision the keyword suffix has, documented
+    below with the shadowing limitation. *)
 let escape_wgsl_name name =
+  let name =
+    if String.length name >= 2 && String.sub name 0 2 = "__" then "sarek" ^ name
+    else name
+  in
   if List.mem name wgsl_reserved_keywords then name ^ "v" else name
 
 (** Map Sarek IR element type to WGSL type string. Float64 (f64) is not

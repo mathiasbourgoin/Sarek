@@ -57,6 +57,17 @@ let ci_cpu_opencl =
     ~framework:"OpenCL"
     ~is_cpu:true
 
+(* pocl's CPU device, the conformant CPU ICD added to the CI image so the tests
+   this suppression soft-fails regain real coverage (#79). Also
+   CL_DEVICE_TYPE=CPU, so it satisfies is_cpu_opencl_device — the carve-out in
+   classify_cpu_opencl_math_result is what keeps its failures hard. Two names,
+   one per pocl naming era: "pthread-" (1.x, Ubuntu 22.04) and "cpu-" (3.x+). *)
+let pocl_cpu_pthread =
+  device ~name:"pthread-znver3" ~framework:"OpenCL" ~is_cpu:true
+
+let pocl_cpu_modern =
+  device ~name:"cpu-znver4-AMD EPYC 9V45" ~framework:"OpenCL" ~is_cpu:true
+
 (* The campaign workstation's iGPU under rusticl: CL_DEVICE_TYPE=GPU, but named
    after the CPU socket. A name heuristic would misclassify this one. *)
 let igpu_named_like_a_cpu =
@@ -270,6 +281,40 @@ let () =
     "Fail"
     (classify_shape (shape ~first_bad:(Some 4) ~bad_count:60 ()) dgpu_opencl) ;
 
+  (* pocl carve-out (#79). pocl is CL_DEVICE_TYPE=CPU on OpenCL, so it passes
+     is_cpu_opencl_device; if it were not carved out, the exact flake shape
+     would be excused on it and adding a conformant ICD to the CI image would
+     have bought no coverage. Both naming eras must Fail. *)
+  print_endline "pocl (conformant CPU ICD) is never excused:" ;
+  check
+    "flake shape on pocl (pthread- name) -> Fail"
+    "Fail"
+    (classify_shape
+       (shape ~first_bad:(Some 4) ~bad_count:60 ())
+       pocl_cpu_pthread) ;
+  check
+    "flake shape on pocl (cpu- name) -> Fail"
+    "Fail"
+    (classify_shape
+       (shape ~first_bad:(Some 4) ~bad_count:60 ())
+       pocl_cpu_modern) ;
+  check
+    "is_pocl_device on pocl (pthread-) -> true"
+    true
+    (Test_helpers.is_pocl_device pocl_cpu_pthread) ;
+  check
+    "is_pocl_device on pocl (cpu-) -> true"
+    true
+    (Test_helpers.is_pocl_device pocl_cpu_modern) ;
+  check
+    "is_pocl_device on the Intel oneAPI CPU device -> false"
+    false
+    (Test_helpers.is_pocl_device ci_cpu_opencl) ;
+  check
+    "is_pocl_device on Native -> false"
+    false
+    (Test_helpers.is_pocl_device native_cpu) ;
+
   print_endline "classify_cpu_opencl_math_result, correct result:" ;
   check "CPU-OpenCL -> Pass" "Pass" (classify_ok ci_cpu_opencl) ;
   check "Native -> Pass" "Pass" (classify_ok native_cpu) ;
@@ -293,6 +338,12 @@ let () =
     "correct result on Native -> no NOTE"
     false
     (note_printed ~dev:native_cpu ~shape:clean_shape) ;
+  (* pocl is not the device whose defect the suppression tracks, so a correct
+     result from it is not an expiry signal for the Intel flake. *)
+  check
+    "correct result on pocl -> no NOTE"
+    false
+    (note_printed ~dev:pocl_cpu_pthread ~shape:clean_shape) ;
   check
     "--no-verify on the known-issue device -> no NOTE (nothing was compared)"
     false

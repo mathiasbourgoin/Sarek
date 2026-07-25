@@ -366,6 +366,32 @@ let classify_fp64_result ~framework ~device ~within_tol ~transcendental
 let is_cpu_opencl_device (dev : Device.t) =
   Device.is_opencl dev && Device.is_cpu dev
 
+(** CL_DEVICE_NAME prefixes pocl uses for its CPU device: ["pthread-"] on the
+    1.x series (what Ubuntu 22.04 ships) and ["cpu-"] from 3.x on. *)
+let pocl_device_name_prefixes = ["pthread-"; "cpu-"]
+
+(** [true] iff [dev] is pocl's CPU device.
+
+    Needed because the CPU-OpenCL known-issue suppression below is keyed on
+    "some CPU OpenCL device", and the CI image now registers TWO CPU ICDs: the
+    Intel oneAPI CPU runtime (the defective one) and pocl (added for exactly
+    this reason — see task #79). Left unnarrowed, the suppression would excuse
+    genuine pocl wrongness too, and adding a conformant ICD would have bought no
+    real coverage at all.
+
+    This does sniff the device name, which [is_cpu_opencl_device] deliberately
+    avoids — but here the alternative is worse: the device-type query cannot
+    distinguish two CPU ICDs, and SPOC's [Device.t] carries no platform or
+    vendor field. The failure mode is guarded rather than argued away:
+    [ci/assert-toolchain.sh] asserts that a device matching these prefixes
+    really enumerates in the CI image, so a pocl rename fails the build loudly
+    instead of quietly re-widening the suppression. *)
+let is_pocl_device (dev : Device.t) =
+  Device.is_opencl dev
+  && List.exists
+       (fun p -> String.starts_with ~prefix:p (String.lowercase_ascii dev.name))
+       pocl_device_name_prefixes
+
 (** KNOWN-ISSUE label for the CPU-OpenCL float32 transcendental flake. *)
 let cpu_opencl_float32_math_label =
   "CPU-OpenCL float32 transcendentals (sin/cos/exp/sqrt) are miscompiled by \
@@ -466,6 +492,9 @@ let cpu_opencl_math_lane_width = 4
     failure must also match the flake's SHAPE. [`Known_issue] iff ALL of
 
     - [is_cpu_opencl_device dev] — the ICD really reports CL_DEVICE_TYPE=CPU;
+    - [not (is_pocl_device dev)] — pocl is the conformant CPU ICD added to the
+      CI image so these tests regain real coverage (#79), so it is never
+      excused: any wrongness from pocl is a hard failure whatever its shape;
     - [first_bad_index >= cpu_opencl_math_lane_width] (= 4) — the scalar
       prologue is intact. A wrong intrinsic-name mapping or a swapped operand in
       an emitter is wrong from element 0, and a kernel that never executed is
@@ -483,8 +512,10 @@ let cpu_opencl_math_lane_width = 4
     CPU-OpenCL device is excused — e.g. a dropped final work-group leaving the
     0.0 pre-fill in the buffer tail. That is the deliberate trade that
     suppresses the flake. It is still covered on Native, Interpreter and every
-    GPU device; it is NOT covered on CI's only OpenCL device, which is why
-    adding a conformant CPU ICD (pocl) to the CI image is tracked separately.
+    GPU device — and, since pocl joined the CI image, on a conformant CPU OpenCL
+    device too, which is the point of the [is_pocl_device] carve-out: the
+    residual now applies only to the Intel runtime, not to "CPU OpenCL" as a
+    class.
 
     Suppression review: this KNOWN-ISSUE exists only until the CI OpenCL ICD is
     fixed or replaced (task #74). Re-evaluate by 2027-01-01, or earlier if the
@@ -511,7 +542,8 @@ let classify_cpu_opencl_math_result ~dev ~(shape : float_check_shape)
        Gated on [total > 0]: under --no-verify nothing was compared (see
        [float_check_not_verified]), and claiming a CORRECT result there would be
        a misleading expiry signal. *)
-    if is_cpu_opencl_device dev && shape.total > 0 then
+    if is_cpu_opencl_device dev && (not (is_pocl_device dev)) && shape.total > 0
+    then
       Printf.printf
         "NOTE: known-issue device produced a CORRECT result — re-evaluate the \
          CPU-OpenCL suppression (task #74)\n\
@@ -520,6 +552,11 @@ let classify_cpu_opencl_math_result ~dev ~(shape : float_check_shape)
   end
   else if
     is_cpu_opencl_device dev
+    (* pocl is a conformant ICD and is in the CI image precisely so that the
+       tests this suppression soft-fails get real coverage from SOMETHING
+       (#79). Excusing pocl would defeat that, so it is explicitly outside the
+       suppression: a pocl miscomputation is always a hard failure. *)
+    && (not (is_pocl_device dev))
     && shape.bad_count < shape.total
     &&
     match shape.first_bad_index with

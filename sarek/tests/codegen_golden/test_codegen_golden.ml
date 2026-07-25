@@ -2180,6 +2180,12 @@ let glslang_ok glsl =
   List.iter (fun f -> try Sys.remove f with _ -> ()) [src; spv; err; base] ;
   match rc with Unix.WEXITED 0 -> Ok () | _ -> Error out
 
+(** Invocation note: naga-cli's [--validate] flag takes a numeric
+    ValidationFlags BITMASK, not a keyword, so the former ["--validate all"]
+    exited non-zero during argument parsing for every input ("invalid digit
+    found in string") — this sweep could not ever have passed once naga was on
+    PATH. A single positional argument with no output file makes naga run the
+    full front-end + validator and print "Validation successful". *)
 let naga_ok wgsl =
   let base = Filename.temp_file "sarek_golden_wgsl_" "" in
   let src = base ^ ".wgsl" in
@@ -2188,10 +2194,7 @@ let naga_ok wgsl =
   output_string oc wgsl ;
   close_out oc ;
   let cmd =
-    Printf.sprintf
-      "naga --validate all %s >%s 2>&1"
-      (Filename.quote src)
-      (Filename.quote err)
+    Printf.sprintf "naga %s >%s 2>&1" (Filename.quote src) (Filename.quote err)
   in
   let rc = Unix.system cmd in
   let out = read_file err in
