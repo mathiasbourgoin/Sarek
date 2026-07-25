@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "bundle_version": "1.6.0",
-  "channel": "stable",
+  "bundle_version": "1.6.0+spoc.1",
+  "channel": "local-patched",
   "source_ref": "main",
   "files": [
     {
@@ -54,7 +54,7 @@
     },
     {
       "path": "scripts/lib/xruntime/xruntime-classify.js",
-      "sha256": "7ec41ea72e73ebc450043f5369c6de6a136857f428669e528cd432554e6a7e27"
+      "sha256": "a7ee8c03a4281ffcc033591cba15614296a86b71517c9f327a78e39bdaf91806"
     },
     {
       "path": "scripts/lib/xruntime/xruntime-digest.js",
@@ -62,7 +62,7 @@
     },
     {
       "path": "scripts/lib/xruntime/xruntime-journal.js",
-      "sha256": "aa3901eb3a8b4ef37cceb228cb58eff70581a122a95fe513fd06a5e5205a54fc"
+      "sha256": "766b6e0b6c2be4cd168dedbb1ea0dc0f1ff8f8a9cd7f0c752f174a8f8b807b5b"
     },
     {
       "path": "scripts/review-normalize.js",
@@ -75,11 +75,11 @@
     },
     {
       "path": "scripts/xruntime-review.js",
-      "sha256": "fab61681d4d1c6c296c20822043324b6f3459836ebe1611700877c9a4742e0cd"
+      "sha256": "d9f29fe3674b48d8361a79b330f66cbe9a8ba6c5ab9b1b899f5909463361d95b"
     },
     {
       "path": "scripts/REVIEW-BUNDLE.md",
-      "sha256": "2b1be2c09d68450062801b09f54b7dd828843deec3da05d7538342ccc2ef0347",
+      "sha256": "711606341d12c99f84d32f9c2a6a47de9d7ec9a58bec675f8b1c68bb76f4b354",
       "kind": "doc"
     },
     {
@@ -96,6 +96,25 @@
       "path": "tools/data-schema/fixtures/review-finding/invalid/missing-specialist.jsonl",
       "sha256": "ad6aa589d47ff9659a04aba83d1c9cd0216a0b07f8cd24be88e3a7547508b338",
       "kind": "fixture"
+    },
+    {
+      "path": "scripts/lib/xruntime/xruntime-contract.js",
+      "sha256": "64d594e6e0591cfa30eba24e6f18271e42024667957da33bbcea3ae85a742583",
+      "local_patch": true
+    }
+  ],
+  "local_patches": [
+    {
+      "ref": "backlog #102",
+      "summary": "Fault attribution for cross-runtime probe outcomes: a non-conforming OUTPUT is a caller fault and must not arm the runtime circuit breaker. Adds --emit-contract and scripts/lib/xruntime/xruntime-contract.js.",
+      "paths": [
+        "scripts/lib/xruntime/xruntime-classify.js",
+        "scripts/lib/xruntime/xruntime-journal.js",
+        "scripts/lib/xruntime/xruntime-contract.js",
+        "scripts/xruntime-review.js"
+      ],
+      "reapply_on_upgrade": true,
+      "tests": "scripts/xruntime-caller-fault.test.js"
     }
   ]
 }

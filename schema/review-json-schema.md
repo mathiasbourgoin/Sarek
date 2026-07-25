@@ -349,6 +349,18 @@ handles a strict subset:
   matching `runtime`, `cycle`, and `digest`. No match → `unattested-invocation`, exit 1.
   `skipped-degraded` and `blocked` are never corroborated.
 
+- **`fault` (SPOC-local, backlog #102)** — present on `status: "degraded"` entries and on the
+  corresponding journal line. `"runtime"` means the runtime or its environment failed (never
+  started, never finished, mutated the tree, or answered with nothing). `"caller"` means the
+  runtime ran and answered but the answer did not satisfy the output contract — a prompt defect,
+  not a runtime defect.
+
+  Only `fault: "runtime"` may arm the cross-runtime circuit breaker. A degraded entry with
+  `fault: "caller"` never suppresses a later probe at the same digest; the fix is to append
+  `node scripts/xruntime-review.js --emit-contract` to the probe prompt and re-probe. An entry
+  written before this field existed carries no `fault` key and is read as `"runtime"`, so the
+  change never silently un-arms a degradation already on disk.
+
 > **Key asymmetry, easy to get wrong:** the verdict writes `config_digest`; the journal writes
 > `digest`. Same value, different key. The gate matches `cross_runtime[rt].config_digest` against
 > `journalEntry.digest` — never `config_digest` against `config_digest`.

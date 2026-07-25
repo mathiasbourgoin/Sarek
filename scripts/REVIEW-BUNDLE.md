@@ -10,6 +10,21 @@ any bundle file or the manifest.** A local edit will be detected as "modified" o
 verify/upgrade/remove and handled conservatively (skipped with a warning, or refused outright) —
 see the recovery guidance those commands print if that happens.
 
+## Local patches (this consumer)
+
+The rule above is "do not hand-edit". Where SPOC has had to, the divergence is declared rather
+than hidden: `review-bundle.manifest.json` carries `channel: "local-patched"`, a
+`bundle_version` suffixed `+spoc.N`, and a `local_patches[]` entry naming every touched path, the
+reason, and the test that covers it. `review-bundle-verify.js` still passes, because the manifest
+hashes were regenerated — the manifest remains an honest sentinel against *undeclared* drift.
+
+An upgrade will overwrite these files. Re-apply every `local_patches[]` entry with
+`reapply_on_upgrade: true` afterwards and re-run its tests, or the fix silently regresses.
+
+| Ref | What | Why it could not wait for upstream |
+|-----|------|-----------------------------------|
+| #102 | Fault attribution on cross-runtime outcomes (`fault: "runtime" \| "caller"`), `--emit-contract`, `scripts/lib/xruntime/xruntime-contract.js` | A malformed probe *output* armed the runtime circuit breaker as though the runtime had failed, which then suppressed probes for unrelated work. Covered by `scripts/xruntime-caller-fault.test.js`. |
+
 ## Commands
 
 Run verification from the consumer repo root. Install, upgrade, and removal remain owned by the

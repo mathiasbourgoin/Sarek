@@ -54,12 +54,43 @@ function validateFindingsArray(candidate) {
   return candidate.every((f) => validator.validate(f).valid);
 }
 
+// #102: fault attribution. Every non-healthy outcome is blamed on exactly one
+// side, and only a `runtime` fault may arm the circuit breaker.
+//
+//   runtime — the runtime or its environment misbehaved: it never started
+//             (spawn-error), never finished (timeout), mutated the tree
+//             (tree-mutation), or ran and returned nothing at all
+//             (empty-output). Re-probing it at the same digest is wasted work,
+//             which is what the breaker exists to prevent.
+//
+//   caller  — the runtime ran and answered; the answer did not satisfy a
+//             contract the CALLER is responsible for stating
+//             (non-conforming-output). The runtime is not known to be
+//             unhealthy, so suppressing every later probe punishes unrelated
+//             work for one bad prompt. Fix the prompt — see
+//             `xruntime-review.js --emit-contract` — and probe again.
+const FAULT_BY_OUTCOME = {
+  "spawn-error": "runtime",
+  timeout: "runtime",
+  "tree-mutation": "runtime",
+  "empty-output": "runtime",
+  "non-conforming-output": "caller",
+};
+
+function faultFor(outcome) {
+  return FAULT_BY_OUTCOME[outcome] || "runtime";
+}
+
 function classifyOutput(stdout) {
   const trimmed = (stdout || "").trim();
-  if (trimmed === "") return { outcome: "empty-output" };
+  if (trimmed === "") return { outcome: "empty-output", fault: "runtime" };
   const parsed = extractJson(trimmed);
   if (!parsed.ok || !validateFindingsArray(parsed.value)) {
-    return { outcome: "non-conforming-output", excerpt: trimmed.slice(0, 500) };
+    return {
+      outcome: "non-conforming-output",
+      fault: "caller",
+      excerpt: trimmed.slice(0, 500),
+    };
   }
   return { outcome: "healthy", findings: parsed.value };
 }
@@ -69,8 +100,17 @@ function classifyOutput(stdout) {
 // uncorroborated.
 function classify({ exitCode, stderr, durationS, timeoutS, stdout }) {
   const corroborated = classifyExitCode(exitCode, stderr, durationS, timeoutS);
-  if (corroborated) return { outcome: corroborated };
+  if (corroborated) return { outcome: corroborated, fault: faultFor(corroborated) };
   return classifyOutput(stdout);
 }
 
-module.exports = { classifyExitCode, extractJson, validateFindingsArray, classifyOutput, classify, isSpawnError };
+module.exports = {
+  classifyExitCode,
+  extractJson,
+  validateFindingsArray,
+  classifyOutput,
+  classify,
+  isSpawnError,
+  faultFor,
+  FAULT_BY_OUTCOME,
+};

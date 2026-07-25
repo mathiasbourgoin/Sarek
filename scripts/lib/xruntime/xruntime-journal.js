@@ -124,17 +124,33 @@ function readLatestJournalEntry(root, task, runtime, digest) {
 //       branch never fires (nothing to prove "same cycle" against; falls
 //       back to (1) only, preserving pre-E-5 behavior).
 // `--human-retry` always bypasses both.
+//
+// #102: neither enforcement input may fire on a CALLER-fault degradation. A
+// malformed probe OUTPUT means the runtime ran and answered — the answer did
+// not match a contract the caller failed to state. Arming the breaker there
+// converts one bad prompt into a suppression of every later probe at that
+// digest, degrading unrelated work; that is what happened when four parallel
+// passes all tripped `opencode`. Entries written before fault attribution
+// existed carry no `fault` key and keep the old runtime-fault reading, so this
+// never silently un-arms a genuine degradation already on disk.
+function isCallerFault(entry) {
+  return !!(entry && entry.fault === "caller");
+}
+
 function shouldRefuseDegraded({ reviewJson, journalEntry, runtime, digest, humanRetry, currentCycle }) {
   if (humanRetry) return false;
 
   if (reviewJson && reviewJson.status === "NO-GO") {
     const entry = reviewJson.cross_runtime && reviewJson.cross_runtime[runtime];
-    if (entry && entry.status === "degraded" && entry.config_digest === digest) return true;
+    if (entry && entry.status === "degraded" && entry.config_digest === digest && !isCallerFault(entry)) {
+      return true;
+    }
   }
 
   if (
     journalEntry &&
     journalEntry.outcome === "degraded" &&
+    !isCallerFault(journalEntry) &&
     currentCycle !== null &&
     currentCycle !== undefined &&
     journalEntry.cycle === currentCycle
@@ -154,4 +170,5 @@ module.exports = {
   readReviewJson,
   readLatestJournalEntry,
   shouldRefuseDegraded,
+  isCallerFault,
 };

@@ -19,6 +19,8 @@
 //     [--skip "<reason>"]
 //   node scripts/xruntime-review.js <codex|opencode> --task <slug>
 //     --phase qa --check-availability [--write] [--human-retry]
+//   node scripts/xruntime-review.js --emit-contract
+//     (prints the machine-parsed output contract; no runtime is invoked)
 //
 // INV-6: the prompt is NEVER a positional CLI argument (removed, breaking —
 // this script is the sole caller) — a large diff embedded positionally could
@@ -47,6 +49,7 @@ const crypto = require("crypto");
 const { spawnSync } = require("child_process");
 const { computeDigest, computeDigests } = require("./lib/xruntime/xruntime-digest");
 const { classify, isSpawnError } = require("./lib/xruntime/xruntime-classify");
+const { OUTPUT_CONTRACT, CONTRACT_VERSION } = require("./lib/xruntime/xruntime-contract");
 const {
   validSlug,
   warnIfBriefsNotIgnored,
@@ -76,6 +79,7 @@ function parseArgs(argv) {
     timeout: 480,
     humanRetry: false,
     skip: null,
+    emitContract: false,
   };
   const positionals = [];
   for (let i = 0; i < argv.length; i++) {
@@ -90,6 +94,7 @@ function parseArgs(argv) {
     else if (a === "--timeout") out.timeout = parseInt(argv[++i], 10);
     else if (a === "--human-retry") out.humanRetry = true;
     else if (a === "--skip") out.skip = argv[++i];
+    else if (a === "--emit-contract") out.emitContract = true;
     else positionals.push(a);
   }
   out.runtime = positionals[0] || null;
@@ -122,6 +127,7 @@ function classifySpawnFailure(result, durationS) {
   return {
     status: "degraded",
     reason: "spawn-error",
+    fault: "runtime",
     findings: [],
     runtimeExit: null,
     durationS,
@@ -149,9 +155,13 @@ function classifyWrapperResult(result, durationS, timeoutS) {
   }
   // FR-091: non-conforming-output carries an excerpt for human inspection —
   // thread it through to both the journal and the stdout result (below).
+  // #102: `fault` decides whether this degradation may arm the breaker. It is
+  // carried on the outcome, journaled, and echoed in the stdout result so the
+  // persisted cross_runtime entry keeps the attribution too.
   return {
     status: "degraded",
     reason: classification.outcome,
+    fault: classification.fault || "runtime",
     findings: [],
     runtimeExit: exitCode,
     durationS,
@@ -207,6 +217,7 @@ function finish(root, args, digest, outcome) {
   // FR-091: excerpt is present only for non-conforming-output — never a key
   // with a null/undefined value cluttering every other journal line.
   if (outcome.excerpt !== undefined) entry.excerpt = outcome.excerpt;
+  if (outcome.fault !== undefined) entry.fault = outcome.fault; // #102: breaker input
   if (outcome.spawnErrorCode !== undefined) entry.spawn_error_code = outcome.spawnErrorCode;
   if (outcome.promptDigest !== undefined) entry.prompt_digest = outcome.promptDigest; // INV-6: digest only, never the prompt
   const appended = appendJournalLine(root, args.task, entry);
@@ -220,6 +231,16 @@ function finish(root, args, digest, outcome) {
     journal_line: appended.line,
   };
   if (outcome.excerpt !== undefined) result.excerpt = outcome.excerpt;
+  if (outcome.fault !== undefined) result.fault = outcome.fault;
+  // #102: a caller-fault degradation is actionable, so say what the action is.
+  // Without this the operator sees "degraded" and blames the runtime, which is
+  // precisely the misattribution the breaker used to institutionalize.
+  if (outcome.fault === "caller") {
+    result.remedy =
+      "Non-conforming output is a CALLER fault: the prompt did not state the output contract. " +
+      "Append `node scripts/xruntime-review.js --emit-contract` to the prompt and re-probe. " +
+      "The breaker was NOT armed.";
+  }
   // E-10/INV-7: the explicit human-skip decision carries the first-class
   // {reason, actor, digest, round, ts} shape the verdict schema accepts —
   // config_digest/reason/status are already above; add actor/round/ts here.
@@ -266,7 +287,8 @@ function validateArgsOrFail(args) {
       2,
       "usage: xruntime-review.js <codex|opencode> --task <slug> (--prompt-file <path> | stdin) " +
         '[--round N] [--cycle N] [--write] [--timeout S] [--human-retry] [--skip "<reason>"] ' +
-        "or: --phase qa --check-availability [--write] [--human-retry]"
+        "or: --phase qa --check-availability [--write] [--human-retry] " +
+        "or: --emit-contract (prints the output contract, invokes nothing)"
     );
   }
   if (!validSlug(args.task)) fail(2, `--task slug invalid or missing (must match [a-z0-9-]+): ${args.task}`);
@@ -378,6 +400,14 @@ function tryFinishEarly(root, args, digest, versionProbeTimedOut) {
 
 function main(argv) {
   const args = parseArgs(argv);
+  // #102: --emit-contract is a pure query — it prints the contract a caller
+  // must paste into its probe prompt and exits. No task, no runtime, no
+  // journal. It exists so the contract stops being prose each caller
+  // paraphrases (and therefore stops being a caller fault nobody can fix).
+  if (args.emitContract) {
+    process.stdout.write(OUTPUT_CONTRACT + "\n");
+    process.exit(0);
+  }
   validateArgsOrFail(args);
 
   const root = process.cwd();
@@ -416,7 +446,7 @@ function main(argv) {
   finish(root, args, digest, outcome);
 }
 
-module.exports = { parseArgs, runWrapper, finish, finishQaAvailability, main };
+module.exports = { parseArgs, runWrapper, finish, finishQaAvailability, main, OUTPUT_CONTRACT, CONTRACT_VERSION };
 
 if (require.main === module) {
   main(process.argv.slice(2));
