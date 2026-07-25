@@ -1168,3 +1168,29 @@
    RUSTICL_FEATURES
    fp64
    (run %{dep:test_ktype_record_f64_arith.exe}))))
+
+; -----------------------------------------------------------------------
+; Runtime kernel-cache regressions (#86).
+;
+; Two separate executables on purpose: the teardown case CRASHES (SIGSEGV)
+; rather than failing an assertion when the outer memo is not invalidated, so
+; it must not share a binary with anything else. Both are self-verifying (exit
+; nonzero on mismatch) and skip with a printed reason - exit 0 - when the
+; devices they need are not enumerated, so they gate in the default runtest
+; alias on every machine.
+; -----------------------------------------------------------------------
+
+(executables
+ (names test_runtime_cache_device_key test_runtime_cache_teardown)
+ (modules test_runtime_cache_device_key test_runtime_cache_teardown)
+ (libraries spoc_core test_helpers))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_runtime_cache_device_key.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_runtime_cache_teardown.exe})))

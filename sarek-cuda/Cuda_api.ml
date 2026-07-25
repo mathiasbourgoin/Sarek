@@ -276,6 +276,9 @@ module Device = struct
        can't be returned by [Kernel.compile_cached] after the context is
        recreated. *)
     Hashtbl.remove device_cache dev.id ;
+    (* Notify layers above this backend BEFORE the local hooks unload modules:
+       they memoize values that close over the handles those hooks release. *)
+    Spoc_framework.Cache_hooks.notify_device_destroy dev.id ;
     List.iter (fun hook -> hook dev.id) !device_destroy_hooks ;
     retire_device dev.id ;
     check "cuCtxDestroy" (cuCtxDestroy dev.context)

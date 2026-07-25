@@ -44,26 +44,66 @@ let all_devices ?framework () =
   in
   Device.init ~frameworks ()
 
-(** Kernel source cache: (device_framework, kernel_name, source_hash) ->
-    compiled. Guarded against concurrent multi-domain access by
-    [Spoc_framework.Guarded_cache] (this is the cross-backend entry point most
-    multi-domain code hits). [destroy] is a no-op: the compiled [Kernel.t]
-    handles are owned by the per-backend caches reached through
-    [Kernel.compile_cached], which release them on their own [clear_cache];
-    clearing this outer layer only drops the memoization. *)
-let kernel_cache :
-    (string * string * int, Kernel.t) Spoc_framework.Guarded_cache.t =
+(** Outer kernel memo, keyed by {!Spoc_framework.Compile_cache.make_key} so this
+    layer keys exactly like the per-backend caches underneath it. Guarded
+    against concurrent multi-domain access by [Spoc_framework.Guarded_cache]
+    (this is the cross-backend entry point most multi-domain code hits).
+
+    The key MUST include device identity. [Device.t.framework] is the backend
+    {e name}, shared by every device of that backend, so keying on it alone
+    aliases all of them — and [Kernel.compile_cached] closes the specific
+    backend kernel into the [Kernel.t] it returns, so a hit would hand device B
+    a kernel built for device A and silently produce wrong results.
+
+    [destroy] is a no-op because the backend handles are owned by the
+    per-backend caches reached through [Kernel.compile_cached] — this layer
+    holds only memoization and must never release anything. That does NOT make
+    this layer safe to leave alone during teardown: those backend caches release
+    the handles these [Kernel.t] closures capture, so the layer has to be
+    dropped whenever they are (see the [Cache_hooks] registrations below). *)
+let kernel_cache : (string, Kernel.t) Spoc_framework.Guarded_cache.t =
   Spoc_framework.Guarded_cache.create ~size:32 ~destroy:(fun _ -> ()) ()
+
+(** Clear the kernel cache *)
+let clear_cache () = Spoc_framework.Guarded_cache.clear kernel_cache
+
+let () =
+  (* Participate in backend teardown. Both directions are handle-invalidating
+     for this layer, and neither is observable from here without the hook. *)
+  Spoc_framework.Cache_hooks.on_clear_all clear_cache ;
+  Spoc_framework.Cache_hooks.on_device_destroy (fun backend_device_id ->
+      (* The hook carries a BACKEND-local device index, while this cache groups
+         by the global [Device.t.id]. Several backends can use the same index,
+         and the notification does not say which fired, so evict every global id
+         that could be it. Over-eviction here only drops memoization (the
+         backend caches own the handles), so erring wide is free; erring narrow
+         would keep serving a released handle. Reading [Device.devices] directly
+         avoids triggering enumeration from inside a teardown path. *)
+      Array.iter
+        (fun (d : Device.t) ->
+          if d.backend_id = backend_device_id then
+            Spoc_framework.Guarded_cache.evict_device kernel_cache d.id)
+        !Device.devices)
 
 (** Compile a kernel from source, with caching *)
 let compile_kernel (device : Device.t) ~(name : string) ~(source : string) :
     Kernel.t =
-  let key = (device.framework, name, Hashtbl.hash source) in
-  Spoc_framework.Guarded_cache.find_or_build kernel_cache ~key (fun () ->
-      Kernel.compile_cached device ~name ~source)
-
-(** Clear the kernel cache *)
-let clear_cache () = Spoc_framework.Guarded_cache.clear kernel_cache
+  let key =
+    Spoc_framework.Compile_cache.make_key
+    (* [id] is already globally unique across backends; the framework name is
+         folded in so the key stays self-describing (and unambiguous even if a
+         caller ever hands us a hand-built [Device.t]). [make_key] digests each
+         component, so the separator cannot be spoofed. *)
+      ~device:(Printf.sprintf "%s#%d" device.Device.framework device.Device.id)
+      ~name
+      ~source
+      ()
+  in
+  Spoc_framework.Guarded_cache.find_or_build
+    kernel_cache
+    ~key
+    ~device_id:device.Device.id
+    (fun () -> Kernel.compile_cached device ~name ~source)
 
 (** Argument builder - collects kernel arguments *)
 type arg =

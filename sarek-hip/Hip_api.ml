@@ -215,6 +215,9 @@ module Device = struct
        selected, mirroring the CUDA backend. HIP has no explicit context to
        destroy under the runtime model, so there is no hipCtxDestroy analog. *)
     Hashtbl.remove device_cache dev.id ;
+    (* Notify layers above this backend BEFORE the local hooks unload modules:
+       they memoize values that close over the handles those hooks release. *)
+    Spoc_framework.Cache_hooks.notify_device_destroy dev.id ;
     List.iter (fun hook -> hook dev.id) !device_destroy_hooks ;
     retire_device dev.id
 end

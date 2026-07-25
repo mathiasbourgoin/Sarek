@@ -154,7 +154,11 @@ let test_concurrent_evict_device () =
   let worker d () =
     for i = 0 to iterations_per_domain - 1 do
       let key = Printf.sprintf "d%d_k%d" d (i mod 64) in
-      let _ = GC.find_or_build cache ~key ~device_id:d build in
+      (* A build whose device is evicted mid-flight is reported rather than
+         installed (the value is destroyed, so conservation below still holds).
+         Expected here: this test evicts concurrently with building on purpose. *)
+      (try ignore (GC.find_or_build cache ~key ~device_id:d build)
+       with GC.Device_destroyed_during_build _ -> ()) ;
       if i mod 500 = 0 then GC.evict_device cache d
     done
   in
@@ -168,6 +172,152 @@ let test_concurrent_evict_device () =
     "retained + destroyed = built (conservation)"
     true
     (GC.length cache + Atomic.get destroys = Atomic.get builds)
+
+(* Deterministic regression test for the insert-after-evict window.
+
+   Domain A misses on key K for device 7 and releases the lock to run the (slow)
+   build. While the build is in flight, device 7 is destroyed, which runs
+   [evict_device 7]. A's entry is not in the table yet, so eviction finds
+   nothing; before the eviction-epoch check, A then re-acquired the lock and
+   INSERTED a value built against a now-dead device, recorded against a dead
+   device id: never unloaded (leak), and served to every later lookup - possibly
+   after the id was recreated, i.e. a launch on a module from a destroyed
+   context. The conservation assertion in [test_concurrent_evict_device] is
+   satisfied by that interleaving, which is why the suite was green.
+
+   Deterministic because the two domains hand off through atomics rather than
+   racing: the eviction is guaranteed to land inside the build window. *)
+let test_evict_device_during_build () =
+  let destroyed = Atomic.make 0 in
+  let cache =
+    GC.create
+      ~destroy:(fun (_ : string) -> ignore (Atomic.fetch_and_add destroyed 1))
+      ()
+  in
+  let build_started = Atomic.make false in
+  let evict_done = Atomic.make false in
+  let builder () =
+    try
+      `Returned
+        (GC.find_or_build cache ~key:"K" ~device_id:7 (fun () ->
+             Atomic.set build_started true ;
+             while not (Atomic.get evict_done) do
+               Domain.cpu_relax ()
+             done ;
+             "module-for-device-7"))
+    with GC.Device_destroyed_during_build id -> `Rejected id
+  in
+  let d = Domain.spawn builder in
+  while not (Atomic.get build_started) do
+    Domain.cpu_relax ()
+  done ;
+  (* Device 7 is destroyed here: its context is gone, its modules must all be
+     unloaded and none may be installed afterwards. *)
+  GC.evict_device cache 7 ;
+  Atomic.set evict_done true ;
+  (match Domain.join d with
+  | `Rejected id ->
+      Alcotest.(check int) "rejection names the destroyed device" 7 id
+  | `Returned v ->
+      Alcotest.failf
+        "find_or_build installed and returned %S for a device destroyed during \
+         the build"
+        v) ;
+  Alcotest.(check int)
+    "the value built for the destroyed device was destroyed, not leaked"
+    1
+    (Atomic.get destroyed) ;
+  Alcotest.(check int)
+    "nothing was installed for the destroyed device"
+    0
+    (GC.length cache) ;
+  (* And the key is genuinely free again: a later lookup rebuilds rather than
+     being served the value compiled against the destroyed device. *)
+  let later =
+    GC.find_or_build cache ~key:"K" ~device_id:7 (fun () -> "freshly-rebuilt")
+  in
+  Alcotest.(check string) "later lookup rebuilds" "freshly-rebuilt" later
+
+(* [clear] must NOT reject an in-flight build: unlike a device teardown it does
+   not invalidate the device, so the value being built is still valid and
+   installing it is correct. Guards against over-applying the epoch check. *)
+let test_clear_during_build_still_installs () =
+  let cache = GC.create ~destroy:(fun (_ : string) -> ()) () in
+  let build_started = Atomic.make false in
+  let clear_done = Atomic.make false in
+  let d =
+    Domain.spawn (fun () ->
+        GC.find_or_build cache ~key:"K" ~device_id:3 (fun () ->
+            Atomic.set build_started true ;
+            while not (Atomic.get clear_done) do
+              Domain.cpu_relax ()
+            done ;
+            "v"))
+  in
+  while not (Atomic.get build_started) do
+    Domain.cpu_relax ()
+  done ;
+  GC.clear cache ;
+  Atomic.set clear_done true ;
+  Alcotest.(check string)
+    "build result installed after a clear"
+    "v"
+    (Domain.join d) ;
+  Alcotest.(check int) "and it is cached" 1 (GC.length cache)
+
+(* A raising [destroy] must not strand the other victims: they are already
+   unlinked from the table, so a bail-out on the first failure leaks them
+   outright. Every victim is attempted; the failure is still reported. *)
+let test_raising_destroy_does_not_strand_victims () =
+  let destroyed = Atomic.make 0 in
+  let cache =
+    GC.create
+      ~destroy:(fun v ->
+        ignore (Atomic.fetch_and_add destroyed 1) ;
+        if v = "boom" then failwith "release failed")
+      ()
+  in
+  List.iter
+    (fun (k, v) ->
+      ignore (GC.find_or_build cache ~key:k ~device_id:1 (fun () -> v)))
+    [("a", "ok1"); ("b", "boom"); ("c", "ok2"); ("d", "ok3")] ;
+  let raised =
+    try
+      GC.clear cache ;
+      false
+    with Failure _ -> true
+  in
+  Alcotest.(check bool) "the failing release is reported" true raised ;
+  Alcotest.(check int) "every victim was attempted" 4 (Atomic.get destroyed) ;
+  Alcotest.(check int) "the table is empty" 0 (GC.length cache)
+
+(* A raising [destroy] on the lost-race path must not destroy the winner: a
+   valid value exists and the caller asked for a value, not for the release
+   error of the copy we threw away. *)
+let test_raising_destroy_on_lost_race_returns_winner () =
+  let cache =
+    GC.create ~destroy:(fun (_ : string) -> failwith "release failed") ()
+  in
+  let build_started = Atomic.make false in
+  let winner_installed = Atomic.make false in
+  let loser =
+    Domain.spawn (fun () ->
+        GC.find_or_build cache ~key:"K" (fun () ->
+            Atomic.set build_started true ;
+            while not (Atomic.get winner_installed) do
+              Domain.cpu_relax ()
+            done ;
+            "loser"))
+  in
+  while not (Atomic.get build_started) do
+    Domain.cpu_relax ()
+  done ;
+  ignore (GC.find_or_build cache ~key:"K" (fun () -> "winner")) ;
+  Atomic.set winner_installed true ;
+  Alcotest.(check string)
+    "loser observes the winner, not the release error"
+    "winner"
+    (Domain.join loser)
 
 (* Runnable red demonstration, OFF by default (would be UB/segfault-prone in
    the suite). With SAREK_GUARDED_CACHE_RED=1 it hammers a *raw* unguarded
@@ -237,6 +387,22 @@ let () =
             "concurrent evict_device"
             `Slow
             test_concurrent_evict_device;
+          Alcotest.test_case
+            "evict_device during an in-flight build (deterministic)"
+            `Quick
+            test_evict_device_during_build;
+          Alcotest.test_case
+            "clear during an in-flight build still installs"
+            `Quick
+            test_clear_during_build_still_installs;
+          Alcotest.test_case
+            "a raising destroy does not strand the other victims"
+            `Quick
+            test_raising_destroy_does_not_strand_victims;
+          Alcotest.test_case
+            "a raising destroy on a lost race still returns the winner"
+            `Quick
+            test_raising_destroy_on_lost_race_returns_winner;
           Alcotest.test_case
             "red demo (unguarded, opt-in)"
             `Quick

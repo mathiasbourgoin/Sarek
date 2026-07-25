@@ -154,8 +154,15 @@ let launch (Kernel (module K)) ~(args : args) ~(grid : Framework_sig.dims)
 
 (** {1 Cache Management} *)
 
-(** Clear all kernel caches *)
+(** Clear all kernel caches.
+
+    The layers ABOVE this one are dropped first: [B.Kernel.clear_cache] releases
+    the backend handles (clReleaseKernel / cuModuleUnload / ...), and any outer
+    memo — notably [Runtime.kernel_cache] — holds [Kernel.t] closures over
+    exactly those handles. Leaving them in place means the next lookup hits the
+    outer memo and launches through a released handle (segfault). *)
 let clear_cache (device : Device.t) : unit =
+  Cache_hooks.notify_clear_all () ;
   match Framework_registry.find_backend device.framework with
   | None -> ()
   | Some (module B : Framework_sig.BACKEND) -> B.Kernel.clear_cache ()
