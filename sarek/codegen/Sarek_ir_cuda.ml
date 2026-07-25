@@ -324,23 +324,7 @@ and cuda_backend =
 
 (** {1 L-value Generation} *)
 
-let rec gen_lvalue buf = function
-  | LVar v -> Buffer.add_string buf v.var_name
-  | LArrayElem (arr, idx) ->
-      Buffer.add_string buf arr ;
-      Buffer.add_char buf '[' ;
-      gen_expr buf idx ;
-      Buffer.add_char buf ']'
-  | LArrayElemExpr (base, idx) ->
-      Buffer.add_char buf '(' ;
-      gen_expr buf base ;
-      Buffer.add_string buf ")[" ;
-      gen_expr buf idx ;
-      Buffer.add_char buf ']'
-  | LRecordField (lv, field) ->
-      gen_lvalue buf lv ;
-      Buffer.add_char buf '.' ;
-      Buffer.add_string buf field
+let gen_lvalue buf lv = Sarek_ir_codegen.gen_lvalue ~gen_expr buf lv
 
 (** {1 Statement Generation} *)
 
@@ -566,31 +550,22 @@ and gen_array_decl buf v elem_ty size mem =
 
 (** {1 Declaration Generation} *)
 
-(** Check if a type is a vector (requires length parameter) *)
-let is_vec_type = function TVec _ -> true | _ -> false
-
-let gen_param buf = function
-  | DParam (v, None) ->
+(* CUDA's array parameter uses [cuda_param_type] (which already carries the
+   [__restrict__] spelling and pointer syntax) and, unlike OpenCL/Metal, emits
+   no address-space qualifier, so it supplies its own [gen_array_param] rather
+   than the shared {!Sarek_ir_codegen.gen_global_array_param}. *)
+let gen_param buf decl =
+  Sarek_ir_codegen.gen_param
+    ~param_type:cuda_param_type
+    ~gen_array_param:(fun buf (v : var) _arr ->
       Buffer.add_string buf (cuda_param_type v.var_type) ;
       Buffer.add_char buf ' ' ;
-      Buffer.add_string buf v.var_name ;
-      (* Add length parameter for vectors *)
-      if is_vec_type v.var_type then begin
-        Buffer.add_string buf ", int sarek_" ;
-        Buffer.add_string buf v.var_name ;
-        Buffer.add_string buf "_length"
-      end
-  | DParam (v, Some _arr) ->
-      (* Array with explicit info - always needs length *)
-      Buffer.add_string buf (cuda_param_type v.var_type) ;
-      Buffer.add_string buf " " ;
-      Buffer.add_string buf v.var_name ;
-      Buffer.add_string buf ", int sarek_" ;
-      Buffer.add_string buf v.var_name ;
-      Buffer.add_string buf "_length"
-  | DLocal _ | DShared _ ->
+      Buffer.add_string buf v.var_name)
+    ~invalid:(fun () ->
       Codegen_error.raise_error
-        (Codegen_error.invalid_memory_space "gen_param" "DLocal or DShared")
+        (Codegen_error.invalid_memory_space "gen_param" "DLocal or DShared"))
+    buf
+    decl
 
 let gen_local buf indent = function
   | DLocal (v, None) ->
@@ -717,20 +692,9 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   List.iter (gen_variant_def buf) k.kern_variants ;
 
   (* Record type definitions *)
-  List.iter
-    (fun (name, fields) ->
-      Buffer.add_string buf "typedef struct {\n" ;
-      List.iter
-        (fun (fname, ftype) ->
-          Buffer.add_string buf "  " ;
-          Buffer.add_string buf (cuda_type_of_elttype ftype) ;
-          Buffer.add_char buf ' ' ;
-          Buffer.add_string buf fname ;
-          Buffer.add_string buf ";\n")
-        fields ;
-      Buffer.add_string buf "} " ;
-      Buffer.add_string buf (mangle_name name) ;
-      Buffer.add_string buf ";\n\n")
+  Sarek_ir_codegen.gen_record_typedefs
+    ~type_of_elttype:cuda_type_of_elttype
+    buf
     types ;
 
   (* Generate helper functions before kernel *)

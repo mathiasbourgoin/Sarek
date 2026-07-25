@@ -49,6 +49,65 @@ val gen_variant_def :
   string * (string * Sarek_ir_types.elttype list) list ->
   unit
 
+(** {1 C-family shared helpers}
+
+    Shared by the C-family backends (CUDA, OpenCL, Metal). GLSL/WGSL and PTX
+    diverge too much to use these. *)
+
+(** [is_vec_type t] is [true] iff [t] is a vector type, i.e. carries an implicit
+    trailing [sarek_<name>_length] kernel argument. *)
+val is_vec_type : Sarek_ir_types.elttype -> bool
+
+(** Emit an l-value (assignment target / read path): [LVar], [LArrayElem],
+    [LArrayElemExpr], [LRecordField]. Identical across the C-family backends;
+    [gen_expr] renders array-index subexpressions. *)
+val gen_lvalue :
+  gen_expr:(Buffer.t -> Sarek_ir_types.expr -> unit) ->
+  Buffer.t ->
+  Sarek_ir_types.lvalue ->
+  unit
+
+(** Emit the array kernel-parameter head
+    [<memspace> <elttype>* restrict <name>], the spelling shared by the OpenCL
+    and Metal backends. [memspace] maps the array's memory space to its
+    qualifier and [type_of_elttype] its element type. CUDA differs (no memspace,
+    [__restrict__]) and does not use this. Intended as the [gen_array_param]
+    argument to {!gen_param}. *)
+val gen_global_array_param :
+  memspace:(Sarek_ir_types.memspace -> string) ->
+  type_of_elttype:(Sarek_ir_types.elttype -> string) ->
+  Buffer.t ->
+  Sarek_ir_types.var ->
+  Sarek_ir_types.array_info ->
+  unit
+
+(** Emit a kernel parameter declaration. Shared skeleton: the scalar case emits
+    [<param_type> <name>] plus a [, int sarek_<name>_length] suffix for vectors;
+    the array-info case emits [gen_array_param] followed by that same length
+    suffix.
+
+    [param_type] spells the scalar/pointer type; [gen_array_param] emits the
+    array-parameter head (see {!gen_global_array_param}); [invalid] rejects a
+    [DLocal]/[DShared] declaration by raising the backend's located error (it
+    never returns). *)
+val gen_param :
+  param_type:(Sarek_ir_types.elttype -> string) ->
+  gen_array_param:
+    (Buffer.t -> Sarek_ir_types.var -> Sarek_ir_types.array_info -> unit) ->
+  invalid:(unit -> unit) ->
+  Buffer.t ->
+  Sarek_ir_types.decl ->
+  unit
+
+(** Emit C-family record type declarations: one [typedef struct { ... } name;]
+    per record, one field per line. Only [type_of_elttype] differs per backend.
+*)
+val gen_record_typedefs :
+  type_of_elttype:(Sarek_ir_types.elttype -> string) ->
+  Buffer.t ->
+  (string * (string * Sarek_ir_types.elttype) list) list ->
+  unit
+
 (** Emit a GLSL variant type. GLSL has no [enum], [typedef], or [union], so tags
     are [const int] declarations, the type is a bare [struct], payloads are flat
     fields, and constructor functions have no qualifier prefix.

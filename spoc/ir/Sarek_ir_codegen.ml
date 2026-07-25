@@ -232,6 +232,100 @@ let gen_variant_def ~type_of_elttype ~constructor_prefix buf (name, constrs) =
       Buffer.add_string buf "  return r;\n}\n\n")
     constrs
 
+(** {1 C-family shared helpers}
+
+    Emitters shared by the C-family backends (CUDA, OpenCL, Metal), whose
+    generated syntax for l-values, kernel parameters, and record typedefs is
+    identical up to a handful of backend-specific spellings threaded in as
+    callbacks. GLSL/WGSL and PTX diverge too much to share these. *)
+
+(** Whether a parameter type carries an implicit trailing [sarek_<name>_length]
+    argument. Only vectors do. Shared verbatim by the C-family backends. *)
+let is_vec_type (t : Sarek_ir_types.elttype) =
+  match t with TVec _ -> true | _ -> false
+
+(** Emit an l-value (assignment target / read path). Identical across the
+    C-family backends; [gen_expr] (used for array-index subexpressions) is the
+    only backend-specific input. *)
+let gen_lvalue ~gen_expr buf lv =
+  let open Sarek_ir_types in
+  let rec go = function
+    | LVar v -> Buffer.add_string buf v.var_name
+    | LArrayElem (arr, idx) ->
+        Buffer.add_string buf arr ;
+        Buffer.add_char buf '[' ;
+        gen_expr buf idx ;
+        Buffer.add_char buf ']'
+    | LArrayElemExpr (base, idx) ->
+        Buffer.add_char buf '(' ;
+        gen_expr buf base ;
+        Buffer.add_string buf ")[" ;
+        gen_expr buf idx ;
+        Buffer.add_char buf ']'
+    | LRecordField (lv, field) ->
+        go lv ;
+        Buffer.add_char buf '.' ;
+        Buffer.add_string buf field
+  in
+  go lv
+
+(** Emit the array-parameter head [<memspace> <elttype>* restrict <name>] — the
+    shape shared by the OpenCL and Metal backends. CUDA spells [restrict]
+    differently and emits no memspace qualifier, so it supplies its own
+    [gen_array_param] to {!gen_param} instead of using this. *)
+let gen_global_array_param ~memspace ~type_of_elttype buf
+    (v : Sarek_ir_types.var) (arr : Sarek_ir_types.array_info) =
+  Buffer.add_string buf (memspace arr.arr_memspace) ;
+  Buffer.add_char buf ' ' ;
+  Buffer.add_string buf (type_of_elttype arr.arr_elttype) ;
+  Buffer.add_string buf "* restrict " ;
+  Buffer.add_string buf v.var_name
+
+(** Emit a kernel parameter declaration. The vector length-suffix and the
+    overall match structure are shared; the backend-specific inputs are:
+    - [param_type]: scalar/pointer type spelling for the no-array-info case;
+    - [gen_array_param]: emit the array-parameter head when [array_info] is
+      present (see {!gen_global_array_param} for the OpenCL/Metal spelling);
+    - [invalid]: reject a [DLocal]/[DShared] declaration by raising the
+      backend's located error (never returns). *)
+let gen_param ~param_type ~gen_array_param ~invalid buf decl =
+  let open Sarek_ir_types in
+  let emit_length name =
+    Buffer.add_string buf ", int sarek_" ;
+    Buffer.add_string buf name ;
+    Buffer.add_string buf "_length"
+  in
+  match decl with
+  | DParam (v, None) ->
+      Buffer.add_string buf (param_type v.var_type) ;
+      Buffer.add_char buf ' ' ;
+      Buffer.add_string buf v.var_name ;
+      if is_vec_type v.var_type then emit_length v.var_name
+  | DParam (v, Some arr) ->
+      gen_array_param buf v arr ;
+      emit_length v.var_name
+  | DLocal _ | DShared _ -> invalid ()
+
+(** Emit C-family record type declarations: one [typedef struct { ... } name;]
+    per record, one field per line. Shared by CUDA/OpenCL/Metal; only
+    [type_of_elttype] differs. *)
+let gen_record_typedefs ~type_of_elttype buf types =
+  List.iter
+    (fun (name, fields) ->
+      Buffer.add_string buf "typedef struct {\n" ;
+      List.iter
+        (fun (fname, ftype) ->
+          Buffer.add_string buf "  " ;
+          Buffer.add_string buf (type_of_elttype ftype) ;
+          Buffer.add_char buf ' ' ;
+          Buffer.add_string buf fname ;
+          Buffer.add_string buf ";\n")
+        fields ;
+      Buffer.add_string buf "} " ;
+      Buffer.add_string buf (mangle_name name) ;
+      Buffer.add_string buf ";\n\n")
+    types
+
 (** Emit a GLSL variant type. GLSL lacks enum/typedef/union, so tags are
     const-int declarations, the type is a bare struct with flat payload fields,
     and constructors have no qualifier prefix. *)

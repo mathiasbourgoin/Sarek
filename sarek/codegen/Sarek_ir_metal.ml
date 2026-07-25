@@ -406,23 +406,7 @@ and metal_backend =
 
 (** {1 L-value Generation} *)
 
-let rec gen_lvalue buf = function
-  | LVar v -> Buffer.add_string buf v.var_name
-  | LArrayElem (arr, idx) ->
-      Buffer.add_string buf arr ;
-      Buffer.add_char buf '[' ;
-      gen_expr buf idx ;
-      Buffer.add_char buf ']'
-  | LArrayElemExpr (base, idx) ->
-      Buffer.add_char buf '(' ;
-      gen_expr buf base ;
-      Buffer.add_string buf ")[" ;
-      gen_expr buf idx ;
-      Buffer.add_char buf ']'
-  | LRecordField (lv, field) ->
-      gen_lvalue buf lv ;
-      Buffer.add_char buf '.' ;
-      Buffer.add_string buf field
+let gen_lvalue buf lv = Sarek_ir_codegen.gen_lvalue ~gen_expr buf lv
 
 (** {1 Statement Generation} *)
 
@@ -638,8 +622,9 @@ let rec gen_stmt buf indent = function
 
 (** {1 Declaration Generation} *)
 
-(** Check if a type is a vector (requires length parameter) *)
-let is_vec_type = function TVec _ -> true | _ -> false
+(** Check if a type is a vector (requires length parameter). Still used by the
+    Metal-specific {!gen_param_metal} below (buffer-index variant). *)
+let is_vec_type = Sarek_ir_codegen.is_vec_type
 
 (** Generate parameter with Metal buffer attributes, returns next buffer index
 *)
@@ -690,30 +675,18 @@ let gen_param_metal buf atomic_vars idx = function
            "gen_param_metal"
            "expected DParam")
 
-let gen_param buf = function
-  | DParam (v, None) ->
-      Buffer.add_string buf (metal_param_type v.var_type) ;
-      Buffer.add_char buf ' ' ;
-      Buffer.add_string buf v.var_name ;
-      (* Add length parameter for vectors *)
-      if is_vec_type v.var_type then begin
-        Buffer.add_string buf ", int sarek_" ;
-        Buffer.add_string buf v.var_name ;
-        Buffer.add_string buf "_length"
-      end
-  | DParam (v, Some arr) ->
-      (* Array with explicit info - always needs length *)
-      Buffer.add_string buf (metal_memspace arr.arr_memspace) ;
-      Buffer.add_char buf ' ' ;
-      Buffer.add_string buf (metal_type_of_elttype arr.arr_elttype) ;
-      Buffer.add_string buf "* restrict " ;
-      Buffer.add_string buf v.var_name ;
-      Buffer.add_string buf ", int sarek_" ;
-      Buffer.add_string buf v.var_name ;
-      Buffer.add_string buf "_length"
-  | DLocal _ | DShared _ ->
+let gen_param buf decl =
+  Sarek_ir_codegen.gen_param
+    ~param_type:metal_param_type
+    ~gen_array_param:
+      (Sarek_ir_codegen.gen_global_array_param
+         ~memspace:metal_memspace
+         ~type_of_elttype:metal_type_of_elttype)
+    ~invalid:(fun () ->
       Codegen_error.raise_error
-        (Codegen_error.unsupported_construct "gen_param" "expected DParam")
+        (Codegen_error.unsupported_construct "gen_param" "expected DParam"))
+    buf
+    decl
 
 (** Collect variable names used in atomic operations *)
 let rec collect_atomic_vars_expr = function
@@ -979,20 +952,9 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   List.iter (gen_variant_def buf) k.kern_variants ;
 
   (* Record type definitions *)
-  List.iter
-    (fun (name, fields) ->
-      Buffer.add_string buf "typedef struct {\n" ;
-      List.iter
-        (fun (fname, ftype) ->
-          Buffer.add_string buf "  " ;
-          Buffer.add_string buf (metal_type_of_elttype ftype) ;
-          Buffer.add_char buf ' ' ;
-          Buffer.add_string buf fname ;
-          Buffer.add_string buf ";\n")
-        fields ;
-      Buffer.add_string buf "} " ;
-      Buffer.add_string buf (mangle_name name) ;
-      Buffer.add_string buf ";\n\n")
+  Sarek_ir_codegen.gen_record_typedefs
+    ~type_of_elttype:metal_type_of_elttype
+    buf
     types ;
 
   (* Generate helper functions before kernel *)
