@@ -89,26 +89,43 @@ let run_kernel_on_device (dev : Device.t) =
   let result = Vector.to_array b_vec in
   result
 
-let verify_result result =
+(** Verify the result and return its failure SHAPE, not just a boolean: the
+    CPU-OpenCL KNOWN-ISSUE classifier gates on where and how widely the result
+    is wrong, so that a total failure (e.g. a kernel that never ran, leaving the
+    output at its 0.0 pre-fill) can never be excused. See
+    [Test_helpers.classify_cpu_opencl_math_result] (#74 / F1). *)
+let verify_result result : Test_helpers.float_check_shape =
   let errors = ref 0 in
+  let first_bad = ref None in
+  let non_finite = ref false in
   for i = 0 to n - 1 do
     let x = Float.pi *. 2.0 *. (float_of_int i /. float_of_int n) in
     let expected = sin x in
-    let diff = abs_float (result.(i) -. expected) in
-    (* Allow 1e-4 absolute tolerance for GPU float32 sin variation *)
-    if diff > 1e-4 then begin
+    let got = result.(i) in
+    if not (Float.is_finite got) then non_finite := true ;
+    let diff = abs_float (got -. expected) in
+    (* Allow 1e-4 absolute tolerance for GPU float32 sin variation. The
+       is_nan guard matters: a NaN result makes every comparison false, so
+       without it a NaN buffer would silently pass. *)
+    if Float.is_nan diff || diff > 1e-4 then begin
+      if !first_bad = None then first_bad := Some i ;
       if !errors < 5 then
         Printf.printf
           "  Mismatch at %d: x=%.4f expected=%.6f got=%.6f diff=%.2e\n"
           i
           x
           expected
-          result.(i)
+          got
           diff ;
       incr errors
     end
   done ;
-  !errors = 0
+  {
+    Test_helpers.first_bad_index = !first_bad;
+    bad_count = !errors;
+    total = n;
+    non_finite = !non_finite;
+  }
 
 let () =
   let cfg = Test_helpers.parse_args "test_float32_sin_pure" in
@@ -126,7 +143,7 @@ let () =
     let verdict =
       Test_helpers.classify_cpu_opencl_math_result
         ~dev
-        ~within_tol:(verify_result result)
+        ~shape:(verify_result result)
         ()
     in
     begin match verdict with
@@ -135,13 +152,21 @@ let () =
           "PASSED: Float32.sin pure-registry e2e on %s\n%!"
           dev.Device.framework
     | `Known_issue label ->
-        (* CPU-OpenCL only; see
+        (* CPU-OpenCL only, and only for the flake's failure shape; see
              Test_helpers.classify_cpu_opencl_math_result. *)
         Printf.printf
           "KNOWN-ISSUE on %s (%s): %s\n%!"
           dev.Device.name
           dev.Device.framework
           label ;
+        Test_helpers.github_warning
+          ~title:"KNOWN-ISSUE (task #74)"
+          (Printf.sprintf
+             "test_float32_sin_pure: float32 sin numeric check SUPPRESSED on \
+              %s (%s) — %s"
+             dev.Device.name
+             dev.Device.framework
+             label) ;
         Printf.printf
           "SKIPPED: Float32.sin on a known-bad CPU-OpenCL device\n%!"
     | `Fail ->

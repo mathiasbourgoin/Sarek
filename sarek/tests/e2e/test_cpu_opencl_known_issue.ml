@@ -16,6 +16,14 @@
  * fabricated so the truth table is checked on every machine, with or without
  * a CPU-OpenCL ICD installed.
  *
+ * Device identity is NOT sufficient (audit finding #74 / F1): the failure SHAPE
+ * is a second, independent gate. On the known-issue device the classifier must
+ * still `Fail when the result is wrong from element 0 (an intrinsic-mapping or
+ * operand regression), wrong from element 1 (a kernel that never executed,
+ * leaving the 0.0 pre-fill), non-finite, or wrong in EVERY element. Only the
+ * documented signature - first bad index at or beyond the 4-wide SSE lane
+ * boundary, finite, and partial - is excused.
+ *
  * Run with: dune exec sarek/tests/e2e/test_cpu_opencl_known_issue.exe
  ******************************************************************************)
 
@@ -89,15 +97,31 @@ let verdict_name = function
   | `Known_issue _ -> "Known_issue"
   | `Fail -> "Fail"
 
-(* A wrong result (within_tol:false) on each device. *)
+let shape ?(total = 256) ?(non_finite = false) ~first_bad ~bad_count () :
+    Test_helpers.float_check_shape =
+  {first_bad_index = first_bad; bad_count; total; non_finite}
+
+(* The real flake signature: first bad element at the 4-wide SSE lane boundary,
+   finite values, only part of the buffer damaged. *)
+let flake_shape = shape ~first_bad:(Some 4) ~bad_count:60 ()
+
+(* A clean result. *)
+let clean_shape = shape ~first_bad:None ~bad_count:0 ()
+
+(* A wrong result carrying the real flake shape, on each device. *)
 let classify dev =
   verdict_name
-    (Test_helpers.classify_cpu_opencl_math_result ~dev ~within_tol:false ())
+    (Test_helpers.classify_cpu_opencl_math_result ~dev ~shape:flake_shape ())
 
 (* A correct result must always be `Pass, even on the known-issue device. *)
 let classify_ok dev =
   verdict_name
-    (Test_helpers.classify_cpu_opencl_math_result ~dev ~within_tol:true ())
+    (Test_helpers.classify_cpu_opencl_math_result ~dev ~shape:clean_shape ())
+
+(* Shape discrimination, always on the known-issue device: only the shape
+   varies, so any `Fail here is attributable to the shape gate alone. *)
+let classify_shape s dev =
+  verdict_name (Test_helpers.classify_cpu_opencl_math_result ~dev ~shape:s ())
 
 let () =
   print_endline "=== CPU-OpenCL KNOWN-ISSUE classifier truth table ===" ;
@@ -127,7 +151,8 @@ let () =
     false
     (Test_helpers.is_cpu_opencl_device vulkan_gpu) ;
 
-  print_endline "classify_cpu_opencl_math_result, wrong result:" ;
+  print_endline
+    "classify_cpu_opencl_math_result, wrong result with the flake shape:" ;
   check "CPU-OpenCL -> Known_issue" "Known_issue" (classify ci_cpu_opencl) ;
   check
     "GPU-OpenCL named like a CPU -> Fail"
@@ -137,6 +162,57 @@ let () =
   check "Native -> Fail" "Fail" (classify native_cpu) ;
   check "Interpreter -> Fail" "Fail" (classify interpreter) ;
   check "Vulkan -> Fail" "Fail" (classify vulkan_gpu) ;
+
+  (* Failure-SHAPE gate (#74 / F1). Device is held constant at the known-issue
+     device, so every `Fail below is the shape gate doing its job. *)
+  print_endline
+    "classify_cpu_opencl_math_result, shape gate on the CPU-OpenCL device:" ;
+  check
+    "first bad index 0 (intrinsic-mapping / operand regression) -> Fail"
+    "Fail"
+    (classify_shape (shape ~first_bad:(Some 0) ~bad_count:256 ()) ci_cpu_opencl) ;
+  check
+    "first bad index 0, partial -> Fail"
+    "Fail"
+    (classify_shape (shape ~first_bad:(Some 0) ~bad_count:60 ()) ci_cpu_opencl) ;
+  check
+    "first bad index 1 (kernel never executed, 0.0 pre-fill) -> Fail"
+    "Fail"
+    (classify_shape (shape ~first_bad:(Some 1) ~bad_count:255 ()) ci_cpu_opencl) ;
+  check
+    "first bad index 3 (still inside the scalar prologue) -> Fail"
+    "Fail"
+    (classify_shape (shape ~first_bad:(Some 3) ~bad_count:60 ()) ci_cpu_opencl) ;
+  check
+    "non-finite (NaN/inf) result -> Fail"
+    "Fail"
+    (classify_shape
+       (shape ~first_bad:(Some 4) ~bad_count:60 ~non_finite:true ())
+       ci_cpu_opencl) ;
+  check
+    "all elements wrong (total failure) -> Fail"
+    "Fail"
+    (classify_shape (shape ~first_bad:(Some 4) ~bad_count:256 ()) ci_cpu_opencl) ;
+  check
+    "first bad index >= 4, finite, partial (the flake) -> Known_issue"
+    "Known_issue"
+    (classify_shape (shape ~first_bad:(Some 4) ~bad_count:60 ()) ci_cpu_opencl) ;
+  check
+    "first bad index 128, finite, partial -> Known_issue"
+    "Known_issue"
+    (classify_shape
+       (shape ~first_bad:(Some 128) ~bad_count:128 ())
+       ci_cpu_opencl) ;
+  check
+    "bad_count > 0 but no first_bad_index (inconsistent shape) -> Fail"
+    "Fail"
+    (classify_shape (shape ~first_bad:None ~bad_count:60 ()) ci_cpu_opencl) ;
+  (* The flake shape on a non-known-issue device is still a hard failure: both
+     gates are required, neither alone suffices. *)
+  check
+    "flake shape on the discrete GPU -> Fail"
+    "Fail"
+    (classify_shape (shape ~first_bad:(Some 4) ~bad_count:60 ()) dgpu_opencl) ;
 
   print_endline "classify_cpu_opencl_math_result, correct result:" ;
   check "CPU-OpenCL -> Pass" "Pass" (classify_ok ci_cpu_opencl) ;

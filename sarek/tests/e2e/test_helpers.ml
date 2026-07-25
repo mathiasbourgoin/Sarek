@@ -278,9 +278,11 @@ let string_contains ~needle haystack =
 
     We key on the OpenCL device name: rusticl reports its Gallium driver as
     ["radeonsi"] in CL_DEVICE_NAME on the campaign hardware (observed: "AMD
-    Radeon RX 7900 XTX (radeonsi, navi31, ...)" and the raphael CPU device), and
-    the ICD/platform identifies itself as ["rusticl"]. We match either token,
-    case-insensitively.
+    Radeon RX 7900 XTX (radeonsi, navi31, ...)" and the CPU-socket-named
+    "raphael_mendocino" device, which despite its name is the integrated GPU and
+    reports CL_DEVICE_TYPE=GPU — verified with clinfo during the #74
+    investigation), and the ICD/platform identifies itself as ["rusticl"]. We
+    match either token, case-insensitively.
 
     Why the device name and NOT the [RUSTICL_FEATURES] env var: the run-rules
     export [RUSTICL_FEATURES=fp64] for the WHOLE test process, so the variable
@@ -369,6 +371,39 @@ let cpu_opencl_float32_math_label =
   "CPU-OpenCL float32 transcendentals (sin/cos/exp/sqrt) are miscompiled by \
    the CI CPU OpenCL runtime on an unrecognised host CPU"
 
+(** Shape of one verified float32 array comparison — what went wrong and where,
+    not merely whether anything did.
+
+    [classify_cpu_opencl_math_result] needs this because a device-identity-only
+    gate is unsound (audit finding #74 / F1): on a CPU-OpenCL device it would
+    turn ANY wrongness of ANY extent into a non-blocking KNOWN-ISSUE, including
+    an all-zeros buffer — exactly what a kernel that never ran leaves behind,
+    since both tests pre-fill their output vector with 0.0.
+
+    - [first_bad_index]: index of the first element outside tolerance, [None] if
+      none.
+    - [bad_count]: how many elements are outside tolerance.
+    - [total]: how many elements were compared.
+    - [non_finite]: a NaN or infinity was seen in the produced or expected
+      values. NaN comparisons are false-y, so a verifier must flag them
+      explicitly rather than let [diff > tol] silently accept them. *)
+type float_check_shape = {
+  first_bad_index : int option;
+  bad_count : int;
+  total : int;
+  non_finite : bool;
+}
+
+(** The shape of a comparison that was not performed (e.g. [--no-verify]):
+    treated exactly like a clean result. *)
+let float_check_not_verified =
+  {first_bad_index = None; bad_count = 0; total = 0; non_finite = false}
+
+(** Vector lane width of the miscompiled CPU-OpenCL math library (SSE, 4 x
+    float32). The observed flake never damages the scalar prologue, so a genuine
+    wrong result at an index below this bound is NEVER the known issue. *)
+let cpu_opencl_math_lane_width = 4
+
 (** Classify one float32 math-intrinsic result, tolerating the documented
     CPU-OpenCL KNOWN-ISSUE.
 
@@ -383,13 +418,54 @@ let cpu_opencl_float32_math_label =
     its parent, on a plain re-run, and on Native / Interpreter / GPU devices, so
     it is a device-runtime defect and not a Sarek codegen regression.
 
-    Strictness is preserved everywhere else: only [is_cpu_opencl_device] devices
-    are eligible for the annotation, so Native, Interpreter, Vulkan, Metal, CUDA
-    and every GPU-OpenCL device still [`Fail] on wrong math. *)
-let classify_cpu_opencl_math_result ~dev ~within_tol
+    Device identity alone is NOT sufficient to annotate (audit finding #74 / F1,
+    and the same discipline [classify_fp64_result] applies for #52 / F5): the
+    failure must also match the flake's SHAPE. [`Known_issue] iff ALL of
+
+    - [is_cpu_opencl_device dev] — the ICD really reports CL_DEVICE_TYPE=CPU;
+    - [first_bad_index >= cpu_opencl_math_lane_width] (= 4) — the scalar
+      prologue is intact. A wrong intrinsic-name mapping or a swapped operand in
+      an emitter is wrong from element 0, and a kernel that never executed is
+      wrong from element 1 (element 0 accidentally matches for sin, since sin 0
+      = 0 = the pre-fill); both must FAIL;
+    - [not non_finite] — a NaN/inf result is never this flake;
+    - [bad_count < total] — a partially wrong buffer. An all-elements-wrong
+      result (dead kernel, dead queue, wrong buffer bound) must always FAIL.
+
+    Everything else [`Fail]s, on every device.
+
+    Suppression review: this KNOWN-ISSUE exists only until the CI OpenCL ICD is
+    fixed or replaced (task #74). Re-evaluate by 2027-01-01, or earlier if the
+    [`Pass]-on-known-issue-device note below starts appearing in CI logs — that
+    note means the device produced a CORRECT result and the suppression may
+    already be dead weight masking future regressions. *)
+let classify_cpu_opencl_math_result ~dev ~(shape : float_check_shape)
     ?(label = cpu_opencl_float32_math_label) () =
-  if within_tol then `Pass
-  else if is_cpu_opencl_device dev then `Known_issue label
+  if shape.bad_count = 0 then begin
+    (* F2: the suppression must be able to expire. Announce every correct
+       result from a device we would otherwise excuse, so a fixed ICD is
+       visible in the log instead of silently keeping the annotation alive. *)
+    if is_cpu_opencl_device dev then
+      Printf.printf
+        "NOTE: known-issue device produced a CORRECT result — re-evaluate the \
+         CPU-OpenCL suppression (task #74)\n\
+         %!" ;
+    `Pass
+  end
+  else if
+    is_cpu_opencl_device dev && (not shape.non_finite)
+    && shape.bad_count < shape.total
+    &&
+    match shape.first_bad_index with
+    | Some i -> i >= cpu_opencl_math_lane_width
+    | None -> false
+  then `Known_issue label
   else `Fail
+
+(** Emit a GitHub Actions warning annotation, so a KNOWN-ISSUE suppression is
+    visible on the checks page and not only to whoever opens the raw log (audit
+    finding #74 / F3). Outside Actions this is just a line of stdout. *)
+let github_warning ~title msg =
+  Printf.printf "::warning title=%s::%s\n%!" title msg
 
 module Benchmarks = Benchmarks
