@@ -52,12 +52,33 @@ let unique (lst : int list) : int list = List.sort_uniq compare lst
 
 (** Deep copy a type, creating fresh type variables with NEW ids for those that
     will be quantified. This ensures the scheme's body is completely independent
-    of unification on the original or instantiated types. *)
+    of unification on the original or instantiated types.
+
+    CONSTRAINT PROPAGATION. [Sarek_types] keeps two registries keyed by tvar ID
+    — "this tvar came from a bare float literal" and "this tvar stood where a
+    numeric type was required, so it may never become float16". Minting a fresh
+    id silently DROPS both, which turns generalization into a hole in the type
+    system: the body of [let[@sarek.module] twice (x : 'a) : 'a = x +. x]
+    records the original [x] as numeric-required, but its generalized copy did
+    not, so a call site could unify the fresh variable with a float16 element
+    and get half arithmetic past the guard.
+
+    Confirmed by construction: that exact helper applied to a [float16 vector]
+    load produced NO Sarek diagnostic, while the identical shape at float32
+    compiled cleanly — i.e. the two differed only in the guard that should have
+    fired and did not. Both registries are therefore carried onto every fresh
+    variable here and in {!instantiate}. *)
 let copy_for_scheme (level : int) (t : typ) : typ * int list =
   (* Map from old tvar id to (new_id, new tvar ref) *)
   let tvar_map : (int, int * typ) Hashtbl.t = Hashtbl.create 8 in
   let quantified = ref [] in
 
+  (* Carry the ID-keyed constraints of [old_id] onto [fresh]. Without this a
+     fresh id is unconstrained and generalization loses the property. *)
+  let inherit_constraints old_id fresh =
+    if is_float_literal_id old_id then register_float_literal fresh ;
+    if is_numeric_required_id old_id then register_numeric_required fresh
+  in
   let rec copy t =
     match repr t with
     | TVar {contents = Unbound (id, l)} when l > level -> (
@@ -68,6 +89,7 @@ let copy_for_scheme (level : int) (t : typ) : typ * int list =
             let new_id = fresh_tvar_id () in
             let fresh = TVar (ref (Unbound (new_id, level))) in
             Hashtbl.add tvar_map id (new_id, fresh) ;
+            inherit_constraints id fresh ;
             quantified := new_id :: !quantified ;
             fresh)
     | TVar {contents = Unbound (id, l)} -> (
@@ -78,6 +100,7 @@ let copy_for_scheme (level : int) (t : typ) : typ * int list =
             let new_id = fresh_tvar_id () in
             let fresh = TVar (ref (Unbound (new_id, l))) in
             Hashtbl.add tvar_map id (new_id, fresh) ;
+            inherit_constraints id fresh ;
             fresh)
     | TVar {contents = Link t'} -> copy t'
     | TVec t -> TVec (copy t)
@@ -107,13 +130,28 @@ let generalize (level : int) (t : typ) : scheme =
 
 (** Instantiate a type scheme by replacing quantified variables with fresh ones.
 
+    Each fresh variable inherits the quantified variable's ID-keyed constraints
+    (see {!copy_for_scheme}); this is the second half of the propagation, and
+    the one a CALL SITE depends on. Skipping it would let [twice a_f16.(tid)]
+    unify the instance with float16 even though the helper's body required a
+    numeric type.
+
     @param s The type scheme to instantiate
     @return A fresh type with all quantified variables replaced *)
 let instantiate (s : scheme) : typ =
   if s.quantified = [] then s.body
   else begin
-    (* Create fresh type variables for each quantified variable *)
-    let subst = List.map (fun id -> (id, fresh_tvar ())) s.quantified in
+    (* Create fresh type variables for each quantified variable, carrying the
+       constraints attached to the quantified id. *)
+    let subst =
+      List.map
+        (fun id ->
+          let fresh = fresh_tvar () in
+          if is_float_literal_id id then register_float_literal fresh ;
+          if is_numeric_required_id id then register_numeric_required fresh ;
+          (id, fresh))
+        s.quantified
+    in
 
     let rec inst t =
       match repr t with

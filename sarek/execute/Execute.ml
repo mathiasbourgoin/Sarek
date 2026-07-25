@@ -285,31 +285,48 @@ let expand_to_run_source_args ?(inject_lengths = true) (args : vector_arg list)
 
 (** {1 Execution Dispatch} *)
 
-(** {1 Launch-time element-type check}
+(** {1 Launch-time argument check}
 
     The [Vec] constructor of {!vector_arg} is existential
     ([Vec : ('a, 'b) Vector.t -> vector_arg]), so a vector's element type is
     ERASED the moment it enters an [~args] list. No OCaml type constraint on the
     generated kernel closure can therefore catch passing a [float32 vector]
     where the kernel declared a [float16 vector] — the mismatch happens on a
-    path where the types are already gone.
+    path where the types are already gone. Executed on gfx1100: such a launch
+    compiled clean and read/wrote 2N bytes of a 4N-byte buffer, producing
+    [1 2 0 0] for input [1 2 3 4], with the Native path catching it only by
+    accident.
 
-    It is not harmless. Executed on gfx1100: a kernel declared
-    [(out : float16 vector) (inp : float16 vector)] launched with two float32
-    vectors compiled clean and read/wrote 2N bytes of a 4N-byte buffer,
-    producing [1 2 0 0] for input [1 2 3 4]. The Native path happened to catch
-    it (via [vec_get_custom]'s type-id comparison) so the failure was GPU-only
-    and silent.
+    The IR is the one place where the DECLARED parameters and the SUPPLIED
+    arguments meet, so the check lives here, and it covers every element type.
 
-    The IR is the one place where the DECLARED element type and the SUPPLIED
-    vector meet, so the check lives here — and it covers every element type, not
-    just f16.
+    ARITY IS CHECKED FIRST, and is an error rather than a precondition for the
+    rest. An earlier version ran the per-argument checks only [if] the counts
+    matched, which made a wrong count silently disable every other check — the
+    conservatism was also a bypass. Worse, a SHORT argument list is a
+    memory-safety problem in its own right and independent of f16: both
+    [Cuda_api.Kernel.launch] and [Hip_api.Kernel.launch] size the
+    kernel-argument array with [CArray.make (ptr void) (List.length args)] and
+    hand [cuLaunchKernel] / [hipModuleLaunchKernel] a bare [CArray.start params]
+    with NO count (the trailing [extra] pointer is NULL). The driver then reads
+    as many entries as the COMPILED signature declares, so a short list makes it
+    read past the end of that array and dereference whatever it finds as a
+    parameter — for a pointer parameter, an arbitrary device address. Rejecting
+    the arity here is what keeps that unreachable.
 
-    Deliberately conservative: it only reports when both sides are unambiguously
-    known, and skips (never fails) when the argument count does not match the
-    parameter count, when the parameter is not a vector, or when either side is
-    a record/variant/custom element. A false rejection here would break every
-    kernel launch in the tree, so "skip unless certain" is the right bias. *)
+    Element types are compared exactly where the runtime kind has an IR
+    counterpart. Where it does not, the check does NOT silently pass: it falls
+    back to comparing PHYSICAL ELEMENT WIDTHS, which is the property that
+    actually matters for buffer striding. That closes the wildcard:
+    [Vector.Char] holds 1-byte elements while source [char] lowers to [TInt32],
+    so a Char vector is accessed through a 4-byte [int*]. (That lowering is
+    PRE-EXISTING — [Sarek_lower_ir.elttype_of_typ] mapped
+    [TReg Char -> Ir.TInt32] before this branch — and is NOT fixed here; the
+    check simply refuses to be the thing that hides it.)
+
+    Still conservative where it must be: a [Custom] (record/variant) element is
+    nominal and both sides derive it from the same registered layout, so its
+    element comparison is skipped deliberately rather than by omission. *)
 let ir_elttype_of_vector_kind : type a b.
     (a, b) Vector.kind -> Sarek_ir_types.elttype option = function
   | Vector.Scalar Vector.Float16 -> Some Sarek_ir_types.TFloat16
@@ -317,43 +334,121 @@ let ir_elttype_of_vector_kind : type a b.
   | Vector.Scalar Vector.Float64 -> Some Sarek_ir_types.TFloat64
   | Vector.Scalar Vector.Int32 -> Some Sarek_ir_types.TInt32
   | Vector.Scalar Vector.Int64 -> Some Sarek_ir_types.TInt64
-  (* Char/Complex32 have no IR element type, and Custom is nominal (records and
-     variants); both are out of scope for this check. *)
+  (* No IR constructor: these fall through to the byte-width comparison, not to
+     an implicit pass. *)
   | Vector.Scalar (Vector.Char | Vector.Complex32) -> None
   | Vector.Custom _ -> None
 
 let elttype_label (t : Sarek_ir_types.elttype) : string =
   Sarek_ir_pp.string_of_elttype t
 
-let check_vector_element_types ~(kernel : string) (ir : Sarek_ir_types.kernel)
+(** Byte width of an IR element type, when it is a scalar. [None] for aggregates
+    (whose width comes from the registered layout, not from this table). *)
+let ir_scalar_width (t : Sarek_ir_types.elttype) : int option =
+  match Sarek_ir_layout.scalar_size t with
+  | n -> Some n
+  | exception Invalid_argument _ -> None
+
+let is_custom_kind : type a b. (a, b) Vector.kind -> bool = function
+  | Vector.Custom _ -> true
+  | Vector.Scalar _ -> false
+
+let arg_label = function
+  | Vec _ -> "a vector"
+  | Int _ | Int32 _ -> "an int32 scalar"
+  | Int64 _ -> "an int64 scalar"
+  | Float32 _ -> "a float32 scalar"
+  | Float64 _ -> "a float64 scalar"
+
+let check_launch_args ~(kernel : string) (ir : Sarek_ir_types.kernel)
     (args : vector_arg list) : unit =
   let params = Array.of_list ir.Sarek_ir_types.kern_params in
-  if Array.length params = List.length args then
-    List.iteri
-      (fun i arg ->
-        match (arg, params.(i)) with
-        | Vec v, Sarek_ir_types.DParam (pv, Some info) -> (
-            match ir_elttype_of_vector_kind (Vector.kind v) with
-            | None -> ()
-            | Some got ->
-                let want = info.Sarek_ir_types.arr_elttype in
-                if got <> want then
-                  Execute_error.raise_error
-                    (Type_mismatch
-                       {
-                         expected = elttype_label want ^ " vector";
-                         actual = elttype_label got ^ " vector";
-                         context =
-                           Printf.sprintf
-                             "kernel %S argument %d (parameter %S): element \
-                              widths differ, so the device would read the \
-                              buffer at the wrong stride"
-                             kernel
-                             i
-                             pv.Sarek_ir_types.var_name;
-                       }))
-        | _ -> ())
-      args
+  let n_params = Array.length params and n_args = List.length args in
+  (* 1. Arity, unconditionally and first. *)
+  if n_params <> n_args then
+    Execute_error.raise_error
+      (Type_mismatch
+         {
+           expected = Printf.sprintf "%d argument(s)" n_params;
+           actual = Printf.sprintf "%d" n_args;
+           context =
+             Printf.sprintf
+               "kernel %S: the launch builds its device argument array from \
+                the                 SUPPLIED count while the driver reads the \
+                COMPILED parameter                 count, so a mismatch is \
+                unsafe, not merely wrong"
+               kernel;
+         }) ;
+  (* 2. Per position: shape, then element type or physical width. *)
+  List.iteri
+    (fun i arg ->
+      let mismatch ~expected ~actual ~why =
+        let pname =
+          match params.(i) with
+          | Sarek_ir_types.DParam (pv, _) -> pv.Sarek_ir_types.var_name
+          | _ -> "?"
+        in
+        Execute_error.raise_error
+          (Type_mismatch
+             {
+               expected;
+               actual;
+               context =
+                 Printf.sprintf
+                   "kernel %S argument %d (parameter %S): %s"
+                   kernel
+                   i
+                   pname
+                   why;
+             })
+      in
+      match (arg, params.(i)) with
+      | Vec v, Sarek_ir_types.DParam (_, Some info) -> (
+          let want = info.Sarek_ir_types.arr_elttype in
+          match ir_elttype_of_vector_kind (Vector.kind v) with
+          | Some got ->
+              if got <> want then
+                mismatch
+                  ~expected:(elttype_label want ^ " vector")
+                  ~actual:(elttype_label got ^ " vector")
+                  ~why:
+                    "element widths differ, so the device would read the \
+                     buffer                      at the wrong stride"
+          | None -> (
+              if
+                (* No IR constructor for this kind. Compare the physical element
+                 widths instead of passing silently. *)
+                not (is_custom_kind (Vector.kind v))
+              then
+                let got_w = Vector.elem_size (Vector.kind v) in
+                match ir_scalar_width want with
+                | None -> ()
+                | Some want_w ->
+                    if got_w <> want_w then
+                      mismatch
+                        ~expected:
+                          (Printf.sprintf
+                             "%s vector (%d-byte elements)"
+                             (elttype_label want)
+                             want_w)
+                        ~actual:(Printf.sprintf "%d-byte elements" got_w)
+                        ~why:
+                          "the host element width does not match the width \
+                           the                            kernel accesses the \
+                           buffer with"))
+      | Vec _, Sarek_ir_types.DParam (_, None) ->
+          mismatch
+            ~expected:"a scalar"
+            ~actual:"a vector"
+            ~why:"the kernel declares a scalar parameter here"
+      | ( ((Int _ | Int32 _ | Int64 _ | Float32 _ | Float64 _) as a),
+          Sarek_ir_types.DParam (_, Some _) ) ->
+          mismatch
+            ~expected:"a vector"
+            ~actual:(arg_label a)
+            ~why:"the kernel declares a vector parameter here"
+      | _ -> ())
+    args
 
 (** Execute a kernel on a device using the unified dispatch mechanism.
 
@@ -391,7 +486,7 @@ let run ~(device : Device.t) ~(name : string)
           | None -> Execute_error.raise_error (Missing_ir {kernel = name})
           | Some ir_lazy -> (
               let ir = Lazy.force ir_lazy in
-              check_vector_element_types ~kernel:name ir args ;
+              check_launch_args ~kernel:name ir args ;
               match B.generate_source ~block ir with
               | None ->
                   Execute_error.raise_error
@@ -435,9 +530,7 @@ let run ~(device : Device.t) ~(name : string)
           let dev = B.Device.get device.backend_id in
           B.Device.set_current dev ;
           let ir_val = Option.map Lazy.force ir in
-          Option.iter
-            (fun ir -> check_vector_element_types ~kernel:name ir args)
-            ir_val ;
+          Option.iter (fun ir -> check_launch_args ~kernel:name ir args) ir_val ;
           let exec_args = vector_args_to_exec_array args in
           B.execute_direct ~native_fn ~ir:ir_val ~block ~grid exec_args
       | Framework_sig.Custom ->
@@ -445,9 +538,7 @@ let run ~(device : Device.t) ~(name : string)
           let dev = B.Device.get device.backend_id in
           B.Device.set_current dev ;
           let ir_val = Option.map Lazy.force ir in
-          Option.iter
-            (fun ir -> check_vector_element_types ~kernel:name ir args)
-            ir_val ;
+          Option.iter (fun ir -> check_launch_args ~kernel:name ir args) ir_val ;
           let exec_args = vector_args_to_exec_array args in
           B.execute_direct ~native_fn ~ir:ir_val ~block ~grid exec_args)
 

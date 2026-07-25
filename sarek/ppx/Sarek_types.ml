@@ -191,7 +191,14 @@ let rec occurs (id : int) (t : typ) : bool =
   | TTuple ts -> List.exists (occurs id) ts
 
 (** Unification error *)
-type unify_error = Cannot_unify of typ * typ | Occurs_check of int * typ
+type unify_error =
+  | Cannot_unify of typ * typ
+  | Occurs_check of int * typ
+  | Float16_where_numeric_required
+      (** A tvar that stood where a numeric type was required was about to be
+          bound to float16. Distinguished from {!Cannot_unify} so the typer can
+          report the actionable f16 message instead of leaking the variable
+          ("Cannot unify types: 't3[0] and float16"). *)
 
 (** A float-literal tvar may only link to a floating-point type or to another
     type variable (which will itself carry the constraint). Linking it to any
@@ -221,8 +228,11 @@ let rec unify (t1 : typ) (t2 : typ) : (unit, unify_error) result =
           Error (Cannot_unify (TVar r, t))
         else if is_numeric_required_id id && is_float16_repr t then
           (* #57 MF4b: a tvar that stood in an arithmetic/comparison operand
-             position can never resolve to the storage-only f16 type. *)
-          Error (Cannot_unify (TVar r, t))
+             position can never resolve to the storage-only f16 type. Reached
+             both directly and — since Sarek_scheme propagates the constraint
+             across generalization — from a polymorphic helper instantiated at
+             f16. *)
+          Error Float16_where_numeric_required
         else begin
           (* Update level for let-polymorphism *)
           (match t with

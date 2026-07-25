@@ -525,6 +525,106 @@ let test_ctypes_still_lacks_a_float16_kind () =
     | exception Failure _ -> false)
 
 (* ------------------------------------------------------------------ *)
+(* 2f. Launch-time argument check                                      *)
+(* ------------------------------------------------------------------ *)
+
+(* [Execute.vector_arg]'s [Vec] is existential, so element types are erased
+   before a launch and no OCaml constraint can police them. These assertions
+   pin [Execute.check_launch_args] directly — device-free, because the check is
+   pure and runs before any backend is touched. *)
+
+module Ex = Sarek.Execute
+module Irt = Sarek_ir_types
+
+let mk_param name elt =
+  Irt.DParam
+    ( {
+        Irt.var_name = name;
+        var_id = 0;
+        var_type = Irt.TVec elt;
+        var_mutable = false;
+      },
+      Some {Irt.arr_elttype = elt; arr_memspace = Irt.Global} )
+
+let mk_scalar_param name ty =
+  Irt.DParam
+    ({Irt.var_name = name; var_id = 0; var_type = ty; var_mutable = false}, None)
+
+let kern params =
+  {
+    Irt.kern_name = "argcheck";
+    kern_params = params;
+    kern_locals = [];
+    kern_body = Irt.SEmpty;
+    kern_types = [];
+    kern_variants = [];
+    kern_funcs = [];
+    kern_native_fn = None;
+  }
+
+let rejects what ir args =
+  match Ex.check_launch_args ~kernel:"argcheck" ir args with
+  | () -> Alcotest.failf "%s: expected a launch-time rejection, got none" what
+  | exception Sarek.Execute_error.Execution_error _ -> ()
+  | exception e ->
+      Alcotest.failf "%s: wrong exception: %s" what (Printexc.to_string e)
+
+let accepts what ir args =
+  match Ex.check_launch_args ~kernel:"argcheck" ir args with
+  | () -> ()
+  | exception e ->
+      Alcotest.failf "%s: unexpected rejection: %s" what (Printexc.to_string e)
+
+let test_argcheck_arity () =
+  let ir = kern [mk_param "out" Irt.TFloat32; mk_param "inp" Irt.TFloat32] in
+  let v () = Vector.create Vector.float32 4 in
+  accepts "matching arity" ir [Ex.Vec (v ()); Ex.Vec (v ())] ;
+  (* SHORT list: this is the memory-safety case. Cuda_api/Hip_api size the
+     kernel-argument array from List.length args and pass cuLaunchKernel /
+     hipModuleLaunchKernel a bare pointer with NO count, so the driver reads as
+     many entries as the compiled signature declares — past the end of the
+     array. *)
+  rejects "short argument list" ir [Ex.Vec (v ())] ;
+  rejects "long argument list" ir [Ex.Vec (v ()); Ex.Vec (v ()); Ex.Int 3]
+
+let test_argcheck_arity_does_not_disable_the_rest () =
+  (* Regression: the element-type check used to run only [if] the counts
+     matched, so a wrong count silently disabled it. Arity is now an error in
+     its own right, and a matching count still gets fully checked. *)
+  let ir = kern [mk_param "out" Irt.TFloat16; mk_param "inp" Irt.TFloat16] in
+  let f32 () = Vector.create Vector.float32 4 in
+  let f16 () = Vector.create Vector.float16 4 in
+  rejects "f32 for f16, matching arity" ir [Ex.Vec (f32 ()); Ex.Vec (f32 ())] ;
+  accepts "f16 for f16" ir [Ex.Vec (f16 ()); Ex.Vec (f16 ())]
+
+let test_argcheck_shape () =
+  let ir = kern [mk_param "out" Irt.TFloat32; mk_scalar_param "n" Irt.TInt32] in
+  let v () = Vector.create Vector.float32 4 in
+  accepts "vector then scalar" ir [Ex.Vec (v ()); Ex.Int 4] ;
+  rejects "scalar where a vector is declared" ir [Ex.Int 1; Ex.Int 4] ;
+  rejects "vector where a scalar is declared" ir [Ex.Vec (v ()); Ex.Vec (v ())]
+
+let test_argcheck_width_fallback_for_unmappable_kinds () =
+  (* [Vector.Char] has no IR constructor. The checker must NOT silently pass it:
+     Char holds 1-byte elements while source `char` lowers to TInt32
+     (Sarek_lower_ir.elttype_of_typ, PRE-EXISTING), so the device would access
+     the buffer through a 4-byte int*. Caught by physical width, not by an IR
+     element-type comparison. *)
+  let ir = kern [mk_param "buf" Irt.TInt32] in
+  let c = Vector.create Vector.char 4 in
+  Alcotest.(check int)
+    "Char elements are 1 byte"
+    1
+    (Vector.elem_size (Vector.kind c)) ;
+  rejects "Char vector against a TInt32 parameter" ir [Ex.Vec c] ;
+  (* An int32 vector against the same parameter is fine, so the rejection is
+     about the width and not about the parameter. *)
+  accepts
+    "int32 vector against a TInt32 parameter"
+    ir
+    [Ex.Vec (Vector.create Vector.int32 4)]
+
+(* ------------------------------------------------------------------ *)
 (* 3. Type system                                                     *)
 (* ------------------------------------------------------------------ *)
 
@@ -669,6 +769,22 @@ let () =
             "ctypes still lacks a Float16 kind"
             `Quick
             test_ctypes_still_lacks_a_float16_kind;
+        ] );
+      ( "launch_argcheck",
+        [
+          Alcotest.test_case
+            "arity is rejected, not assumed"
+            `Quick
+            test_argcheck_arity;
+          Alcotest.test_case
+            "a matching arity is still fully checked"
+            `Quick
+            test_argcheck_arity_does_not_disable_the_rest;
+          Alcotest.test_case "vector/scalar shape" `Quick test_argcheck_shape;
+          Alcotest.test_case
+            "unmappable kinds fall back to physical width (Char)"
+            `Quick
+            test_argcheck_width_fallback_for_unmappable_kinds;
         ] );
       ( "type_system",
         [

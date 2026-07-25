@@ -30,6 +30,7 @@
 ; - test_f16_equality: "float16 is a storage-only type and has no arithmetic"
 ; - test_f16_compare:  "float16 is a storage-only type and has no arithmetic"
 ; - test_f16_scalar_param: "cannot be a scalar kernel parameter"
+; - test_f16_poly_helper: "a polymorphic helper instantiated at float16"
 
 (library
  (name neg_test_unregistered_field)
@@ -306,6 +307,21 @@
 (library
  (name neg_test_f16_scalar_param)
  (modules test_f16_scalar_param)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+; f16 arithmetic reached through let-polymorphic generalization: the guard is
+; keyed by tvar id, and copy_for_scheme/instantiate mint fresh ids. Before the
+; fix the typer accepted this outright.
+
+(library
+ (name neg_test_f16_poly_helper)
+ (modules test_f16_poly_helper)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))

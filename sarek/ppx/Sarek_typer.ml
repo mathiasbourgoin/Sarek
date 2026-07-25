@@ -40,6 +40,18 @@ let unify_or_error t1 t2 loc =
   | Ok () -> Ok ()
   | Error (Cannot_unify (t1, t2)) -> Error [Cannot_unify (t1, t2, loc)]
   | Error (Occurs_check (_, t)) -> Error [Recursive_type (t, loc)]
+  | Error Float16_where_numeric_required ->
+      (* A generalized numeric operand instantiated at f16 — e.g. a polymorphic
+         helper's parameter. Report the same actionable message a directly
+         f16-typed operand gets, rather than "Cannot unify types: 't3[0] and
+         float16", which names a variable the user never wrote. *)
+      Error
+        [
+          Float16_operand
+            ( "a polymorphic helper instantiated at float16 (its body requires \
+               a numeric type)",
+              loc );
+        ]
 
 (** {1 Reserved-Prefix Policy}
 

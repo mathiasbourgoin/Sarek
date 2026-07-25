@@ -116,6 +116,8 @@ test_negative:
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_f16_compare.cma > "$$out" 2>&1; if grep -q "float16 is a storage-only type and has no arithmetic" "$$out"; then echo "  PASS: f16 comparison rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing scalar f16 kernel-parameter rejection..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_f16_scalar_param.cma > "$$out" 2>&1; if grep -q "cannot be a scalar kernel parameter" "$$out"; then echo "  PASS: scalar f16 param rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@echo "Testing f16 through a polymorphic helper (generalization route)..."
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_f16_poly_helper.cma > "$$out" 2>&1; if grep -q "a polymorphic helper instantiated at float16" "$$out"; then echo "  PASS: f16 via polymorphic helper rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing reserved-prefix rejection (kernel param sarek_smod)..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_reserved_prefix_param.cma > "$$out" 2>&1; if grep -q "identifiers beginning with 'sarek_' are reserved" "$$out"; then echo "  PASS: reserved-prefix param rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing reserved-prefix rejection (local let sarek_x)..."
