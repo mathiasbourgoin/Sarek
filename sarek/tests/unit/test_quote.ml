@@ -114,41 +114,6 @@ let test_quote_bool_false () =
   | Pexp_extension _ -> ()
   | _ -> Alcotest.fail "expected false constant"
 
-(* Test: quote_elttype generates Kirc_Ast constructors *)
-let test_quote_elttype_int32 () =
-  let e = Sarek_quote.quote_elttype ~loc:dummy_loc Kirc_Ast.EInt32 in
-  (* [%expr Sarek.Kirc_Ast.EInt32] expands to Pexp_construct *)
-  match e.pexp_desc with
-  | Pexp_construct _ -> ()
-  | Pexp_ident _ -> ()
-  | Pexp_extension _ -> ()
-  | _ -> Alcotest.fail "expected constructor, identifier or extension node"
-
-let test_quote_elttype_float32 () =
-  let e = Sarek_quote.quote_elttype ~loc:dummy_loc Kirc_Ast.EFloat32 in
-  match e.pexp_desc with
-  | Pexp_construct _ -> ()
-  | Pexp_ident _ -> ()
-  | Pexp_extension _ -> ()
-  | _ -> Alcotest.fail "expected constructor, identifier or extension node"
-
-(* Test: quote_memspace generates Kirc_Ast constructors *)
-let test_quote_memspace_local () =
-  let e = Sarek_quote.quote_memspace ~loc:dummy_loc Kirc_Ast.LocalSpace in
-  match e.pexp_desc with
-  | Pexp_construct _ -> ()
-  | Pexp_ident _ -> ()
-  | Pexp_extension _ -> ()
-  | _ -> Alcotest.fail "expected constructor, identifier or extension node"
-
-let test_quote_memspace_shared () =
-  let e = Sarek_quote.quote_memspace ~loc:dummy_loc Kirc_Ast.Shared in
-  match e.pexp_desc with
-  | Pexp_construct _ -> ()
-  | Pexp_ident _ -> ()
-  | Pexp_extension _ -> ()
-  | _ -> Alcotest.fail "expected constructor, identifier or extension node"
-
 (* Test: quote_list generates list construction *)
 let test_quote_list_empty () =
   let e = Sarek_quote.quote_list ~loc:dummy_loc Sarek_quote.quote_int [] in
@@ -413,25 +378,6 @@ let () =
           Alcotest.test_case "quote_string" `Quick test_quote_string;
           Alcotest.test_case "quote_bool true" `Quick test_quote_bool_true;
           Alcotest.test_case "quote_bool false" `Quick test_quote_bool_false;
-        ] );
-      ( "kirc_ast_quoting",
-        [
-          Alcotest.test_case
-            "quote_elttype int32"
-            `Quick
-            test_quote_elttype_int32;
-          Alcotest.test_case
-            "quote_elttype float32"
-            `Quick
-            test_quote_elttype_float32;
-          Alcotest.test_case
-            "quote_memspace local"
-            `Quick
-            test_quote_memspace_local;
-          Alcotest.test_case
-            "quote_memspace shared"
-            `Quick
-            test_quote_memspace_shared;
         ] );
       ( "collection_quoting",
         [

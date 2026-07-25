@@ -19,8 +19,6 @@ User Code ([%kernel ...])
          ↓
     Sarek_tailrec    Tail recursion optimization
          ↓
-    Sarek_lower      Lower to typed AST
-         ↓
     Sarek_lower_ir   Generate Sarek IR
          ↓
     Sarek_quote      Quote as OCaml expression
@@ -339,7 +337,6 @@ type 'a local   = Local of 'a        (* Thread-local / register *)
 ### AST Representations
 - **[Sarek_ast](Sarek_ast.ml)** - Untyped kernel AST
 - **[Sarek_typed_ast](Sarek_typed_ast.ml)** - Typed AST after inference
-- **[Kirc_Ast](Kirc_Ast.ml)** - Legacy IR (deprecated)
 
 ### Safety Analysis & Optimization
 - **[Sarek_convergence](Sarek_convergence.ml)** - Thread-varying analysis, barrier safety
@@ -351,8 +348,8 @@ type 'a local   = Local of 'a        (* Thread-local / register *)
 - **[Sarek_tailrec_bounded](Sarek_tailrec_bounded.ml)** - Bounded recursion (experimental)
 
 ### IR Generation & Code Generation
-- **[Sarek_lower](Sarek_lower.ml)** - Lower typed AST to IR-ready form
 - **[Sarek_lower_ir](Sarek_lower_ir.ml)** - Generate Sarek IR
+- **[Sarek_ctype_gen](Sarek_ctype_gen.ml)** - C struct/union/builder strings for `[%%sarek.type]`
 - **[Sarek_quote](Sarek_quote.ml)** - Quote kernels as OCaml expressions
 - **[Sarek_quote_ir](Sarek_quote_ir.ml)** - Quote IR constructors
 - **[Sarek_native_gen](Sarek_native_gen.ml)** - Native OCaml code generation

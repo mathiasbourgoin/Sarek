@@ -1,4 +1,4 @@
-(dirs common unit e2e negative native new_runtime codegen_golden)
+(dirs unit e2e negative native new_runtime codegen_golden)
 
 (alias
  (name runtest)

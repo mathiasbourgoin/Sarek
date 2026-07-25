@@ -2186,7 +2186,7 @@ let expand_sarek_type ~ctxt payload =
   match payload with
   | PStr ([{pstr_desc = Pstr_type (_rf, [tdecl]); _}] as items) ->
       let ctors =
-        Sarek_lower.constructor_strings_of_core_type_decl ~loc tdecl
+        Sarek_ctype_gen.constructor_strings_of_core_type_decl ~loc tdecl
       in
       let register =
         [%stri

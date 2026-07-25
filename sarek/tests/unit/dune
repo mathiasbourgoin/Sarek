@@ -3,7 +3,6 @@
   test_types
   test_env
   test_typer
-  test_lower
   test_parse
   test_core_primitives
   test_tailrec

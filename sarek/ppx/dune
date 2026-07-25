@@ -44,8 +44,7 @@
  (preprocess
   (pps ppxlib.metaquot))
  (modules
-  Kirc_Ast
-  Sarek_lower
+  Sarek_ctype_gen
   Sarek_quote
   Sarek_native_helpers
   Sarek_native_intrinsics
