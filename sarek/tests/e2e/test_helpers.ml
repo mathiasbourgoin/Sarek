@@ -343,4 +343,53 @@ let classify_fp64_result ~framework ~device ~within_tol ~transcendental
   then `Known_issue label
   else `Fail
 
+(* ========================================================================== *)
+(* CPU-OpenCL float32 math-intrinsic classification                           *)
+(* ========================================================================== *)
+
+(** [true] iff [dev] is an OpenCL device whose CL_DEVICE_TYPE is CPU.
+
+    Unlike [is_rusticl_device], this predicate does NOT sniff the device name:
+    it uses the real OpenCL device-type query. [capabilities.is_cpu] is filled
+    from [CL_DEVICE_TYPE & CL_DEVICE_TYPE_CPU] in [sarek-opencl/Opencl_api.ml],
+    so the predicate holds for ANY CPU-OpenCL ICD (Intel oneAPI CPU runtime,
+    pocl, rusticl-on-llvmpipe, ...) and never for a real GPU, whatever its
+    CL_DEVICE_NAME string happens to say. That matters here: the CI runner's
+    device reports itself as "AMD EPYC 9V45 96-Core Processor", which matches
+    none of the rusticl/radeonsi name tokens, while the two OpenCL devices on
+    the campaign workstation are named after the CPU socket ("AMD Ryzen 9 7950X
+    16-Core Processor (radeonsi, raphael_mendocino)") yet are
+    CL_DEVICE_TYPE=GPU. Name matching would get both cases backwards; the
+    device-type query gets both right. *)
+let is_cpu_opencl_device (dev : Device.t) =
+  Device.is_opencl dev && Device.is_cpu dev
+
+(** KNOWN-ISSUE label for the CPU-OpenCL float32 transcendental flake. *)
+let cpu_opencl_float32_math_label =
+  "CPU-OpenCL float32 transcendentals (sin/cos/exp/sqrt) are miscompiled by \
+   the CI CPU OpenCL runtime on an unrecognised host CPU"
+
+(** Classify one float32 math-intrinsic result, tolerating the documented
+    CPU-OpenCL KNOWN-ISSUE.
+
+    Evidence (PR #282, run 30134740526): the GitHub runner's CPU-OpenCL device
+    ("AMD EPYC 9V45 96-Core Processor", Intel oneAPI CPU runtime, which logs
+    "SYCL CPU RT Warning: Unknown host CPU") intermittently returns wrong values
+    from Float32 sin/cos/exp/sqrt kernels — zeros, neighbouring input elements,
+    or garbage magnitudes (got 3041634.0 for an expected -2.34). Both failures
+    start at element 4, an SSE 4-wide lane boundary: the scalar prologue is
+    correct and the vectorised body is not, i.e. the runtime mis-JITs its vector
+    math library when it cannot identify the host CPU. The same commit passed on
+    its parent, on a plain re-run, and on Native / Interpreter / GPU devices, so
+    it is a device-runtime defect and not a Sarek codegen regression.
+
+    Strictness is preserved everywhere else: only [is_cpu_opencl_device] devices
+    are eligible for the annotation, so Native, Interpreter, Vulkan, Metal, CUDA
+    and every GPU-OpenCL device still [`Fail] on wrong math. *)
+let classify_cpu_opencl_math_result ~dev ~within_tol
+    ?(label = cpu_opencl_float32_math_label) () =
+  if within_tol then `Pass
+  else if is_cpu_opencl_device dev then `Known_issue label
+  else `Fail
+
 module Benchmarks = Benchmarks

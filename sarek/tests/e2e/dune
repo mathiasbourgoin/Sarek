@@ -353,6 +353,11 @@
 (rule
  (alias runtest)
  (action
+  (run %{dep:test_cpu_opencl_known_issue.exe})))
+
+(rule
+ (alias runtest)
+ (action
   (run %{dep:test_domain_pool_stress.exe})))
 
 ; compile-only alias: the assertion IS successful compilation (PPX
@@ -493,6 +498,19 @@
  (name test_float32_sin_pure)
  (modules test_float32_sin_pure)
  (libraries sarek sarek_ir spoc_core test_helpers unix)
+ (preprocess no_preprocessing))
+
+; Strictness guard for the CPU-OpenCL float32-math KNOWN-ISSUE classifier used
+; by test_float32_sin_pure and test_math_intrinsics (flake #74). Device-free:
+; fabricates Device.t records and checks the classifier truth table, so a
+; future widening of the predicate (e.g. back to CL_DEVICE_NAME sniffing, which
+; would swallow a real GPU regression) fails here.
+; Run with: dune exec sarek/tests/e2e/test_cpu_opencl_known_issue.exe
+
+(executable
+ (name test_cpu_opencl_known_issue)
+ (modules test_cpu_opencl_known_issue)
+ (libraries spoc_core spoc.framework test_helpers)
  (preprocess no_preprocessing))
 
 ; Regression test for the DomainPool oversubscription race (dropped block
