@@ -10,13 +10,28 @@
  * It replaces the camlp4-coupled AST from the old implementation.
  ******************************************************************************)
 
-(** Source locations *)
+(** Source locations.
+
+    [loc_bol]/[loc_end_bol] are the ABSOLUTE byte offsets of the start of
+    [loc_line]/[loc_end_line]. They exist because a [Lexing.position] is not
+    (line, column): its [pos_cnum] is an absolute byte offset from the start of
+    the file, and the column is [pos_cnum - pos_bol]. The OCaml driver seeks to
+    [pos_bol] to echo the offending source line under a diagnostic, so a
+    location that keeps only line+column and rebuilds the position with
+    [pos_bol = 0; pos_cnum = column] makes every Sarek diagnostic quote bytes
+    taken from the TOP OF THE FILE instead of the line it names — an accurate
+    message rendered against unrelated source (issue #97).
+
+    Keeping the line-start offset makes {!loc_to_ppxlib} a true inverse of
+    {!loc_of_ppxlib}, which is what {!Sarek_ast} locations are for. *)
 type loc = {
   loc_file : string;
   loc_line : int;
   loc_col : int;
   loc_end_line : int;
   loc_end_col : int;
+  loc_bol : int;  (** absolute byte offset of the start of [loc_line] *)
+  loc_end_bol : int;  (** absolute byte offset of the start of [loc_end_line] *)
 }
 
 let dummy_loc =
@@ -26,6 +41,8 @@ let dummy_loc =
     loc_col = 0;
     loc_end_line = 1;
     loc_end_col = 0;
+    loc_bol = 0;
+    loc_end_bol = 0;
   }
 
 let loc_of_ppxlib (loc : Ppxlib.Location.t) : loc =
@@ -35,6 +52,8 @@ let loc_of_ppxlib (loc : Ppxlib.Location.t) : loc =
     loc_col = loc.loc_start.pos_cnum - loc.loc_start.pos_bol;
     loc_end_line = loc.loc_end.pos_lnum;
     loc_end_col = loc.loc_end.pos_cnum - loc.loc_end.pos_bol;
+    loc_bol = loc.loc_start.pos_bol;
+    loc_end_bol = loc.loc_end.pos_bol;
   }
 
 let loc_to_ppxlib (loc : loc) : Ppxlib.Location.t =
@@ -43,16 +62,16 @@ let loc_to_ppxlib (loc : loc) : Ppxlib.Location.t =
     {
       pos_fname = loc.loc_file;
       pos_lnum = loc.loc_line;
-      pos_bol = 0;
-      pos_cnum = loc.loc_col;
+      pos_bol = loc.loc_bol;
+      pos_cnum = loc.loc_bol + loc.loc_col;
     }
   in
   let pos_end =
     {
       pos_fname = loc.loc_file;
       pos_lnum = loc.loc_end_line;
-      pos_bol = 0;
-      pos_cnum = loc.loc_end_col;
+      pos_bol = loc.loc_end_bol;
+      pos_cnum = loc.loc_end_bol + loc.loc_end_col;
     }
   in
   {loc_start = pos_start; loc_end = pos_end; loc_ghost = false}

@@ -22,6 +22,8 @@ let dummy_loc =
       loc_col = 0;
       loc_end_line = 1;
       loc_end_col = 10;
+      loc_bol = 0;
+      loc_end_bol = 0;
     }
 
 (* Helper: create a simple typed expression *)

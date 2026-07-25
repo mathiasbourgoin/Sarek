@@ -23,6 +23,8 @@ let dummy_sarek_loc : Sarek_ast.loc =
     loc_col = 10;
     loc_end_line = 42;
     loc_end_col = 20;
+    loc_bol = 0;
+    loc_end_bol = 0;
   }
 
 let dummy_loc = Location.none

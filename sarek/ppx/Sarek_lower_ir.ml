@@ -29,8 +29,47 @@ let rec elttype_of_typ (ty : typ) : Ir.elttype =
   | TReg Float16 -> Ir.TFloat16
   | TReg Float32 -> Ir.TFloat32
   | TReg Float64 -> Ir.TFloat64
-  | TReg Char -> Ir.TInt32 (* char represented as int32 *)
-  | TReg (Custom _) -> Ir.TInt32 (* Custom types handled separately *)
+  | TReg Char ->
+      (* WRONG-WIDTH #5. `char` used to lower to [Ir.TInt32] "represented as
+         int32". It is not: [Spoc_core.Vector.char] is a Bigarray of OCaml
+         chars — ONE byte per element — while the device declaration produced
+         from [Ir.TInt32] is `int*`, four. A `char vector` kernel therefore
+         compiled clean and strode the buffer at 4x the host's element size,
+         with no diagnostic anywhere in the pipeline.
+
+         There is no 1-byte element type in the IR to map it to, so the honest
+         answer is to refuse rather than to guess a width. Nothing is lost by
+         refusing: [Execute.check_launch_args] already rejects a [Vector.Char]
+         argument against a [TInt32] parameter on physical width (see
+         test_float16.test_argcheck_width_fallback_for_unmappable_kinds), on
+         BOTH the device and the interpreter entry points — so a `char vector`
+         kernel could never launch on any backend. All this arm changes is WHEN
+         the user is told, and by a message that names the cause.
+
+         Same shape and same remedy as the float16 rejections
+         ([lower_param]'s scalar-parameter arm, Sarek_ir_layout, Soa). *)
+      Ppxlib.Location.raise_errorf
+        ~loc:Ppxlib.Location.none
+        "`char` is not a supported Sarek element type: a host `char` is 1 byte \
+         (Spoc_core.Vector.char) but the device IR has no 1-byte element type, \
+         so it would be accessed through a 4-byte `int`. Use `int32` (and \
+         convert on the host) instead."
+  | TReg (Custom name) ->
+      (* Same class as the [Char] arm above: a registered custom type is a
+         user-declared aggregate whose size comes from its registered layout,
+         so collapsing it to [Ir.TInt32] ("Custom types handled separately")
+         claims a 4-byte scalar for something that is generally neither 4 bytes
+         nor a scalar. Record and variant types reach lowering as
+         [TRecord]/[TVariant] with their fields, which are handled above; a
+         bare [TReg (Custom _)] is a type name that was never registered as a
+         Sarek type (it comes from [%sarek_intrinsic]'s fallback for unknown
+         type names), and its layout is genuinely unknown here. *)
+      Ppxlib.Location.raise_errorf
+        ~loc:Ppxlib.Location.none
+        "Type %S is not a registered Sarek type, so its device size is \
+         unknown. Declare it with [@@sarek.type] (records and variants), or \
+         use a built-in scalar type."
+        name
   | TVec elem_ty -> Ir.TVec (elttype_of_typ elem_ty)
   | TArr (elem_ty, mem) ->
       let ir_mem =
@@ -196,105 +235,26 @@ let memspace_of_memspace (mem : Sarek_types.memspace) : Ir.memspace =
   | Sarek_types.Shared -> Ir.Shared
   | Sarek_types.Local -> Ir.Local
 
-(** Get C type string for a typ *)
-let rec c_type_of_typ ty =
-  match repr ty with
-  | TPrim TInt32 -> "int"
-  | TPrim TBool -> "int"
-  | TPrim TUnit -> "void"
-  | TReg Int -> "int"
-  | TReg Int64 -> "long"
-  | TReg Float32 -> "float"
-  | TReg Float64 -> "double"
-  | TReg Char -> "char"
-  | TReg (Custom name) -> mangle_type_name name
-  | TRecord (name, _) -> "struct " ^ mangle_type_name name ^ "_sarek"
-  | TVariant (name, _) -> "struct " ^ mangle_type_name name ^ "_sarek"
-  | TVec t -> c_type_of_typ t ^ " *"
-  | TArr (t, _) -> c_type_of_typ t ^ " *"
-  | _ -> "int"
+(* REMOVED: [c_type_of_typ] / [record_constructor_strings] /
+   [variant_constructor_strings].
 
-(** Generate C struct definition and builder for record types *)
-let record_constructor_strings name (fields : (string * typ) list) =
-  let name = mangle_type_name name in
-  let struct_name = name ^ "_sarek" in
-  let struct_fields =
-    List.map
-      (fun (fname, fty) -> "  " ^ c_type_of_typ fty ^ " " ^ fname ^ ";")
-      fields
-  in
-  let struct_def =
-    "struct " ^ struct_name ^ " {\n" ^ String.concat "\n" struct_fields ^ "\n};"
-  in
-  let params =
-    String.concat
-      ", "
-      (List.map (fun (fname, fty) -> c_type_of_typ fty ^ " " ^ fname) fields)
-  in
-  let assigns =
-    String.concat
-      "\n"
-      (List.map
-         (fun (fname, _) -> "  res." ^ fname ^ " = " ^ fname ^ ";")
-         fields)
-  in
-  let builder =
-    "struct " ^ struct_name ^ " build_" ^ struct_name ^ "(" ^ params ^ ") {\n"
-    ^ "  struct " ^ struct_name ^ " res;\n" ^ assigns ^ "\n  return res;\n}"
-  in
-  [struct_def; builder]
+   These emitted C struct/union/builder source strings for registered record
+   and variant types, which [lower_kernel] returned and [Sarek_quote] passed
+   to [Sarek.Kirc_types.register_constructor_string]. That function appends to
+   [Kirc_types.constructors], a list that NOTHING in the tree ever reads: the
+   C-family backends build variant/record definitions themselves from
+   [kern_types]/[kern_variants] via [Sarek_ir_codegen.gen_variant_def], and
+   have done so since the Sarek_ir cutover. The strings were write-only.
 
-(** Generate C struct definitions and builders for variant types *)
-let variant_constructor_strings name constrs =
-  let name = mangle_type_name name in
-  let struct_name = name ^ "_sarek" in
-  let constr_structs =
-    List.map
-      (fun (cname, carg) ->
-        let field =
-          match carg with
-          | None -> "  int " ^ name ^ "_sarek_" ^ cname ^ "_t;"
-          | Some ty ->
-              "  " ^ c_type_of_typ ty ^ " " ^ name ^ "_sarek_" ^ cname ^ "_t;"
-        in
-        "struct " ^ name ^ "_sarek_" ^ cname ^ " {\n" ^ field ^ "\n};")
-      constrs
-  in
-  let union_fields =
-    List.map
-      (fun (cname, _) ->
-        "  struct " ^ name ^ "_sarek_" ^ cname ^ " " ^ name ^ "_sarek_" ^ cname
-        ^ ";")
-      constrs
-  in
-  let union_def =
-    "union " ^ name ^ "_sarek_union {\n"
-    ^ String.concat "\n" union_fields
-    ^ "\n};"
-  in
-  let main_struct =
-    "struct " ^ struct_name ^ " {\n" ^ "  int " ^ name ^ "_sarek_tag;\n"
-    ^ "  union " ^ name ^ "_sarek_union " ^ name ^ "_sarek_union;\n" ^ "};"
-  in
-  let builders =
-    List.mapi
-      (fun idx (cname, carg) ->
-        let params, assign =
-          match carg with
-          | None -> ("", "  /* no payload */")
-          | Some ty ->
-              let pname = "v" in
-              ( c_type_of_typ ty ^ " " ^ pname,
-                "  res." ^ name ^ "_sarek_union." ^ name ^ "_sarek_" ^ cname
-                ^ "." ^ name ^ "_sarek_" ^ cname ^ "_t = " ^ pname ^ ";" )
-        in
-        "struct " ^ struct_name ^ " build_" ^ name ^ "_" ^ cname ^ "(" ^ params
-        ^ ") {\n" ^ "  struct " ^ struct_name ^ " res;\n" ^ "  res." ^ name
-        ^ "_sarek_tag = " ^ string_of_int idx ^ ";\n" ^ assign ^ "\n"
-        ^ "  return res;\n}")
-      constrs
-  in
-  constr_structs @ (union_def :: main_struct :: builders)
+   They are removed rather than repaired because they could not be repaired.
+   [c_type_of_typ] ended in the wildcard [| _ -> "int"] — the
+   silently-succeeding shape of the wrong-width family, which declared 2-byte
+   float16 members as 4-byte `int`. Replacing that wildcard with the explicit
+   rejection the class demands immediately broke a real kernel
+   (sarek/tests/e2e/test_static_tag_erasure.ml), because this path is handed
+   types it has no C name for and depended on the placeholder to keep going.
+   A generator that only works while it is silently wrong, and whose output no
+   one reads, is dead weight with a live hazard attached. *)
 
 (* Debug counters for IR lowering *)
 let ir_lower_expr_count = ref 0
@@ -1168,19 +1128,12 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
       Ir.SEmpty
   in
 
-  (* Generate type constructors *)
-  let constructors =
-    List.concat
-      (List.map
-         (function
-           | TTypeRecord {tdecl_name; tdecl_fields; _} ->
-               (* Strip mutability flag from fields *)
-               let fields = List.map (fun (n, ty, _) -> (n, ty)) tdecl_fields in
-               record_constructor_strings tdecl_name fields
-           | TTypeVariant {tdecl_name; tdecl_constructors; _} ->
-               variant_constructor_strings tdecl_name tdecl_constructors)
-         kernel.tkern_type_decls)
-  in
+  (* No C constructor strings are produced any more: the backends emit record
+     and variant definitions themselves from [kern_types]/[kern_variants], and
+     the strings this used to build were only ever appended to a list nobody
+     read. See the REMOVED note near the top of this file. The return type is
+     kept so callers are unchanged. *)
+  let constructors = [] in
 
   (* Lower body *)
   let body_ir = lower_stmt state kernel.tkern_body in

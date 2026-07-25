@@ -2197,7 +2197,15 @@ let kernel_real64_extension =
     Ast_pattern.(single_expr_payload __)
     expand_kernel_real64
 
-(* Register top-level Sarek type declarations *)
+(* Register top-level Sarek type declarations via the [%%sarek.type] EXTENSION.
+
+   NOT WIRED UP: [sarek_type_extension] below is [()], and this function is
+   absent from the driver's rule list, so [%%sarek.type] is rejected by ppxlib
+   as an uninterpreted extension. The live path is the [@@sarek.type]
+   ATTRIBUTE ([sarek_type_rule]). Left in place, with its emitter corrected
+   (see the header of Sarek_ctype_gen), rather than removed — but a caller
+   reviving it must first reconcile that emitter's naming convention with
+   Sarek_ir_codegen's, which is what the backends actually emit. *)
 let expand_sarek_type ~ctxt payload =
   let loc = Expansion_context.Extension.extension_point_loc ctxt in
   match payload with

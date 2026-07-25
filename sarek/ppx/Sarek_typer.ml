@@ -860,7 +860,26 @@ let rec infer (env : t) (expr : expr) : (texpr * t) result =
           (* Regular function application *)
           let ret_ty = fresh_tvar () in
           let expected_fn_ty = TFun (List.map (fun t -> t.ty) targs, ret_ty) in
-          let* () = unify_or_error tfn.ty expected_fn_ty fn.expr_loc in
+          let* () =
+            (* When the callee is NAMED, say so. A bare [Cannot_unify] here
+               reads "Cannot unify types: float32 and float64" and names
+               neither the helper nor why it is constrained, which is the
+               reported failure mode for a polymorphic [@sarek.module] helper
+               instantiated at a non-default element type (#97). *)
+            match unify_or_error tfn.ty expected_fn_ty fn.expr_loc with
+            | Ok () -> Ok ()
+            | Error errs -> (
+                match fn.e with
+                | EVar callee ->
+                    Error
+                      (List.map
+                         (function
+                           | Cannot_unify (t1, t2, l) ->
+                               Instantiation_mismatch {callee; t1; t2; loc = l}
+                           | e -> e)
+                         errs)
+                | _ -> Error errs)
+          in
           Ok (mk_texpr (TEApp (tfn, targs)) (repr ret_ty) loc, env))
   (* Let bindings *)
   | EAssign _ | ELet _ | ELetMut _ | ELetRec _ ->

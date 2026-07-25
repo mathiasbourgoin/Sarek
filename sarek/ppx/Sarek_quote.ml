@@ -460,6 +460,8 @@ let quote_sarek_loc ~loc (l : Sarek_ast.loc) : expression =
       loc_col = [%e quote_int ~loc l.loc_col];
       loc_end_line = [%e quote_int ~loc l.loc_end_line];
       loc_end_col = [%e quote_int ~loc l.loc_end_col];
+      loc_bol = [%e quote_int ~loc l.loc_bol];
+      loc_end_bol = [%e quote_int ~loc l.loc_end_bol];
     }]
 
 (** Quote a Sarek_ast.memspace *)

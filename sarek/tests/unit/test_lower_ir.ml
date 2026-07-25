@@ -121,85 +121,14 @@ let test_memspace_of_memspace_local () =
   let result = Sarek_lower_ir.memspace_of_memspace Sarek_types.Local in
   Alcotest.(check bool) "is Local" true (result = Ir.Local)
 
-(* Test: c_type_of_typ generates C type strings *)
-let test_c_type_of_typ_int () =
-  let ty = Sarek_types.(TPrim TInt32) in
-  let result = Sarek_lower_ir.c_type_of_typ ty in
-  Alcotest.(check string) "C type" "int" result
-
-let test_c_type_of_typ_bool () =
-  let ty = Sarek_types.(TPrim TBool) in
-  let result = Sarek_lower_ir.c_type_of_typ ty in
-  Alcotest.(check string) "C type" "int" result
-
-let test_c_type_of_typ_unit () =
-  let ty = Sarek_types.(TPrim TUnit) in
-  let result = Sarek_lower_ir.c_type_of_typ ty in
-  Alcotest.(check string) "C type" "void" result
-
-let test_c_type_of_typ_float () =
-  let ty = Sarek_types.(TReg Float32) in
-  let result = Sarek_lower_ir.c_type_of_typ ty in
-  Alcotest.(check string) "C type" "float" result
-
-let test_c_type_of_typ_double () =
-  let ty = Sarek_types.(TReg Float64) in
-  let result = Sarek_lower_ir.c_type_of_typ ty in
-  Alcotest.(check string) "C type" "double" result
-
-let test_c_type_of_typ_long () =
-  let ty = Sarek_types.(TReg Int64) in
-  let result = Sarek_lower_ir.c_type_of_typ ty in
-  Alcotest.(check string) "C type" "long" result
-
-let test_c_type_of_typ_char () =
-  let ty = Sarek_types.(TReg Char) in
-  let result = Sarek_lower_ir.c_type_of_typ ty in
-  Alcotest.(check string) "C type" "char" result
-
-let test_c_type_of_typ_custom () =
-  let ty = Sarek_types.(TReg (Custom "MyType")) in
-  let result = Sarek_lower_ir.c_type_of_typ ty in
-  Alcotest.(check string) "C type" "MyType" result
-
-let test_c_type_of_typ_vec_pointer () =
-  let ty = Sarek_types.(TVec (TReg Float32)) in
-  let result = Sarek_lower_ir.c_type_of_typ ty in
-  Alcotest.(check string) "C type" "float *" result
-
-let test_c_type_of_typ_array_pointer () =
-  let ty = Sarek_types.(TArr (TReg Int, Local)) in
-  let result = Sarek_lower_ir.c_type_of_typ ty in
-  Alcotest.(check string) "C type" "int *" result
-
-let test_c_type_of_typ_record_struct () =
-  let ty = Sarek_types.(TRecord ("Point", [("x", TReg Int)])) in
-  let result = Sarek_lower_ir.c_type_of_typ ty in
-  Alcotest.(check string) "C type" "struct Point_sarek" result
-
-let test_c_type_of_typ_record_with_dots () =
-  let ty = Sarek_types.(TRecord ("Mod.Point", [("x", TReg Int)])) in
-  let result = Sarek_lower_ir.c_type_of_typ ty in
-  Alcotest.(check string) "C type mangled" "struct Mod_Point_sarek" result
-
-(* Test: record_constructor_strings generates C code *)
-let test_record_constructor_strings () =
-  let fields = [("x", Sarek_types.(TReg Int)); ("y", Sarek_types.(TReg Int))] in
-  let result = Sarek_lower_ir.record_constructor_strings "Point" fields in
-  (* Returns [struct_def; builder] *)
-  Alcotest.(check int) "two strings" 2 (List.length result) ;
-  let struct_def = List.hd result in
-  Alcotest.(check bool)
-    "struct has fields"
-    true
-    (String.length struct_def > 0 && String.contains struct_def '{')
-
-(* Test: variant_constructor_strings generates C code *)
-let test_variant_constructor_strings () =
-  let constrs = [("None", None); ("Some", Some Sarek_types.(TReg Int))] in
-  let result = Sarek_lower_ir.variant_constructor_strings "Option" constrs in
-  (* Returns list of constructor structs, union, main struct, and builders *)
-  Alcotest.(check bool) "has multiple parts" true (List.length result > 2)
+(* REMOVED: the [c_type_of_typ] and [record_/variant_constructor_strings]
+   cases. Those functions are gone (see the REMOVED note in
+   sarek/ppx/Sarek_lower_ir.ml): they emitted C source strings that were only
+   ever appended to [Kirc_types.constructors], a list nothing reads, and their
+   type mapper ended in a silent [| _ -> "int"] wildcard that could not be made
+   total without breaking real kernels. The type-mapping invariant those tests
+   were nominally about is now enforced, for the LIVE mappers and against the
+   HOST element widths, by sarek/tests/unit/test_type_width_totality.ml. *)
 
 (* Test: ir_binop converts binary operators *)
 let test_ir_binop_add () =
@@ -546,41 +475,6 @@ let () =
           Alcotest.test_case "global" `Quick test_memspace_of_memspace_global;
           Alcotest.test_case "shared" `Quick test_memspace_of_memspace_shared;
           Alcotest.test_case "local" `Quick test_memspace_of_memspace_local;
-        ] );
-      ( "c_type_generation",
-        [
-          Alcotest.test_case "int" `Quick test_c_type_of_typ_int;
-          Alcotest.test_case "bool" `Quick test_c_type_of_typ_bool;
-          Alcotest.test_case "unit" `Quick test_c_type_of_typ_unit;
-          Alcotest.test_case "float" `Quick test_c_type_of_typ_float;
-          Alcotest.test_case "double" `Quick test_c_type_of_typ_double;
-          Alcotest.test_case "long" `Quick test_c_type_of_typ_long;
-          Alcotest.test_case "char" `Quick test_c_type_of_typ_char;
-          Alcotest.test_case "custom" `Quick test_c_type_of_typ_custom;
-          Alcotest.test_case "vec pointer" `Quick test_c_type_of_typ_vec_pointer;
-          Alcotest.test_case
-            "array pointer"
-            `Quick
-            test_c_type_of_typ_array_pointer;
-          Alcotest.test_case
-            "record struct"
-            `Quick
-            test_c_type_of_typ_record_struct;
-          Alcotest.test_case
-            "record with dots"
-            `Quick
-            test_c_type_of_typ_record_with_dots;
-        ] );
-      ( "constructor_generation",
-        [
-          Alcotest.test_case
-            "record constructor"
-            `Quick
-            test_record_constructor_strings;
-          Alcotest.test_case
-            "variant constructor"
-            `Quick
-            test_variant_constructor_strings;
         ] );
       ( "operator_conversion",
         [

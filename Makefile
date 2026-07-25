@@ -134,6 +134,10 @@ test_negative:
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_shared_tuple.cma > "$$out" 2>&1; if grep -q "Tuple-typed shared-memory arrays are not supported" "$$out"; then echo "  PASS: tuple shared array rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing recursive-call vector-swap rejection (tail-recursion + vector)..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_tailrec_vec_swap.cma > "$$out" 2>&1; if grep -q "must pass its own vector parameter" "$$out"; then echo "  PASS: recursive vector-swap rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@echo "Testing char element-type rejection (1-byte host vs 4-byte device stride)..."
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_char_vector.cma > "$$out" 2>&1; if grep -q "is not a supported Sarek element type" "$$out"; then echo "  PASS: char element type rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@echo "Testing polymorphic-helper instantiation diagnostic (names the callee)..."
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_poly_helper_f64.cma > "$$out" 2>&1; if grep -q "'norm' cannot be used at this call site" "$$out"; then echo "  PASS: polymorphic helper instantiation named the callee"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "All negative tests checked (see KNOWN-ISSUE line above for the one non-blocking gap, if any)"
 
 

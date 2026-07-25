@@ -8,8 +8,30 @@
  *
  * C-type / struct-string generation for [%%sarek.type] top-level type
  * registrations. Maps Sarek types (and ppxlib core_types) to the C struct,
- * union and builder-function source strings that the GPU backends splice into
- * generated kernels.
+ * union and builder-function source strings.
+ *
+ * REACHABILITY, stated because it is not obvious: the only caller is
+ * [Sarek_ppx.expand_sarek_type], and the [%%sarek.type] EXTENSION it
+ * implements is NOT registered in the driver's rule list
+ * ([Sarek_ppx.sarek_type_extension] is bound to [()], and the rules are
+ * [sarek_type_rule; sarek_type_private_rule; kernel; kernel.real64;
+ * sarek_include]). Writing [%%sarek.type type t = ...] therefore fails with
+ * ppxlib's "Uninterpreted extension" — loudly, so no user code depends on it.
+ * The live registration path is the [@@sarek.type] ATTRIBUTE, which goes
+ * through [Sarek_ppx.register_sarek_type_decl] and the typed AST; the emitted
+ * device definitions for records and variants come from
+ * [Sarek_ir_codegen.gen_variant_def] and its record counterpart, not from
+ * here. Note also that this module's naming convention (`build_X_sarek`,
+ * `X_sarek_tag`, `union X_sarek_union`) has diverged from what those emitters
+ * produce (`make_<mangled>_<ctor>`, `int tag`, `union {...} data`), so wiring
+ * the extension up would need that reconciled first.
+ *
+ * It is kept and CORRECTED rather than deleted because it is the reference
+ * implementation behind a documented (if presently unwired) entry point, and
+ * because both of its defects — a variant payload type computed and then
+ * discarded, and a wildcard mapping every unknown type to C `int` — are
+ * members of the wrong-width family and would be re-introduced verbatim by
+ * anyone reviving it. sarek/tests/unit/test_ctype_gen.ml pins both.
  ******************************************************************************)
 
 open Ppxlib
@@ -17,11 +39,18 @@ open Sarek_types
 
 let mangle_type_name name = String.map (function '.' -> '_' | c -> c) name
 
+(** C type name for a Sarek type.
+
+    TOTAL — deliberately no [| _ -> "int"] arm. That wildcard answered "int" (4
+    bytes, integer) for every type it did not enumerate, including 2-byte
+    [float16], 1-byte [char] and registered aggregates of arbitrary size, and it
+    did so silently. A type this function cannot name must raise. *)
 let rec c_type_of_typ ty : string =
   match repr ty with
   | TPrim TInt32 -> "int"
   | TPrim TBool -> "int"
   | TPrim TUnit -> "void"
+  | TReg Int -> "int"
   | TReg Int64 -> "long"
   | TReg Float32 -> "float"
   | TReg Float64 -> "double"
@@ -29,7 +58,37 @@ let rec c_type_of_typ ty : string =
   | TVariant (name, _) -> "struct " ^ mangle_type_name name ^ "_sarek"
   | TVec t -> c_type_of_typ t ^ " *"
   | TArr (t, _) -> c_type_of_typ t ^ " *"
-  | _ -> "int"
+  | TReg Float16 ->
+      Location.raise_errorf
+        ~loc:Location.none
+        "float16 has no C type in a generated struct/builder: it is a 2-byte \
+         storage-only element type and the previous wildcard declared it as a \
+         4-byte `int`. Use float32 in aggregate fields."
+  | TReg Char ->
+      Location.raise_errorf
+        ~loc:Location.none
+        "`char` is not a supported Sarek element type: it is 1 byte on the \
+         host and has no 1-byte device counterpart. Use int32."
+  | TReg (Custom name) ->
+      Location.raise_errorf
+        ~loc:Location.none
+        "Type %S is not a registered Sarek type, so its C representation is \
+         unknown. Declare it with [@@sarek.type]."
+        name
+  | TVar _ ->
+      Location.raise_errorf
+        ~loc:Location.none
+        "A type variable has no C representation; annotate with a concrete \
+         type."
+  | TFun _ ->
+      Location.raise_errorf
+        ~loc:Location.none
+        "A function type has no C representation."
+  | TTuple _ ->
+      Location.raise_errorf
+        ~loc:Location.none
+        "A tuple type has no C representation; declare a record type with \
+         [@@sarek.type] instead."
 
 let record_constructor_strings name (fields : (string * typ * bool) list) =
   let name = mangle_type_name name in
@@ -148,8 +207,16 @@ let constructor_strings_of_core_type_decl ~loc (tdecl : type_declaration) =
             match cd.pcd_args with
             | Pcstr_tuple [] -> (cd.pcd_name.txt, None)
             | Pcstr_tuple [ct] ->
-                let _ = typ_of_core_type ~loc ct in
-                (cd.pcd_name.txt, None)
+                (* WRONG-WIDTH #4. This arm used to read
+                     let _ = typ_of_core_type ~loc ct in (cd.pcd_name.txt, None)
+                   — the payload's type was computed (so an unsupported payload
+                   type was still rejected) and then DISCARDED. [None] means
+                   "nullary constructor" to [variant_constructor_strings], so
+                   `Shade of float32` emitted a union member declared
+                   `int col_sarek_Shade_t;` and a builder
+                   `build_col_Shade()` with no parameter at all: the payload
+                   was given the wrong C type AND no way to be set. *)
+                (cd.pcd_name.txt, Some (typ_of_core_type ~loc ct))
             | Pcstr_tuple _ | Pcstr_record _ ->
                 Location.raise_errorf
                   ~loc

@@ -49,6 +49,13 @@ type error =
   | Expression_needs_statement_context of string * loc
   | Invalid_lvalue of loc
   | Function_value_escapes of string * typ * loc
+  | Instantiation_mismatch of {callee : string; t1 : typ; t2 : typ; loc : loc}
+      (** A call site could not be typed against the callee's type. Reported
+          instead of a bare [Cannot_unify] when the callee is NAMED, because the
+          bare form ("Cannot unify types: float32 and float64") gives the user
+          two type names and no indication of which function they came from —
+          the reported failure mode of a polymorphic [@sarek.module] helper
+          instantiated at a non-default element type (#97). *)
   | Float16_operand of string * loc
       (** An f16 value reached an operator. f16 is a storage-only type, so this
           is always a user error with a specific remedy; reporting it as
@@ -91,6 +98,7 @@ let error_loc = function
   | Expression_needs_statement_context (_, loc) -> loc
   | Invalid_lvalue loc -> loc
   | Function_value_escapes (_, _, loc) -> loc
+  | Instantiation_mismatch {loc; _} -> loc
   | Float16_operand (_, loc) -> loc
 
 (** Pretty print an error *)
@@ -215,6 +223,21 @@ let pp_error fmt = function
         msg
         pp_typ
         t
+  | Instantiation_mismatch {callee; t1; t2; _} ->
+      Format.fprintf
+        fmt
+        "'%s' cannot be used at this call site: %a and %a do not match.@ A \
+         [@sarek.module] helper is monomorphised per call site, so a \
+         polymorphic helper can only be instantiated at the element types its \
+         BODY admits — a body using a float32-only operation (the \
+         Sarek_stdlib.Std math intrinsics are float32) cannot be instantiated \
+         at float64. Give the helper a concrete type, or use the \
+         element-type-specific module (e.g. Sarek_float64)."
+        callee
+        pp_typ
+        t1
+        pp_typ
+        t2
   | Float16_operand (what, _) ->
       Format.fprintf
         fmt

@@ -25,25 +25,14 @@ open Sarek_types
 
 (** {1 Location Conversion} *)
 
-(** Convert Sarek_ast.loc to Ppxlib.location *)
+(** Convert Sarek_ast.loc to Ppxlib.location.
+
+    Must agree with {!Sarek_ast.loc_to_ppxlib}: [pos_cnum] is an ABSOLUTE byte
+    offset and [pos_bol] the offset of the line's first byte, so both have to be
+    carried through. Dropping [pos_bol] makes the compiler echo bytes from the
+    top of the file under a diagnostic that names a different line (#97). *)
 let ppxlib_loc_of_sarek (l : Sarek_ast.loc) : location =
-  let pos_start =
-    {
-      Lexing.pos_fname = l.loc_file;
-      pos_lnum = l.loc_line;
-      pos_bol = 0;
-      pos_cnum = l.loc_col;
-    }
-  in
-  let pos_end =
-    {
-      Lexing.pos_fname = l.loc_file;
-      pos_lnum = l.loc_end_line;
-      pos_bol = 0;
-      pos_cnum = l.loc_end_col;
-    }
-  in
-  {loc_start = pos_start; loc_end = pos_end; loc_ghost = false}
+  Sarek_ast.loc_to_ppxlib l
 
 (** {1 Expression Helpers} *)
 
