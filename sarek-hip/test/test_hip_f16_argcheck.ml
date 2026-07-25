@@ -73,20 +73,43 @@ let test_mismatch_rejected dev =
            (String.concat
               " "
               (Array.to_list (Array.map (Printf.sprintf "%g") got))))
-  | exception e ->
-      let msg = Printexc.to_string e in
-      let mentions =
-        let has needle =
-          let nl = String.length needle and hl = String.length msg in
-          let rec go i =
-            i + nl <= hl && (String.sub msg i nl = needle || go (i + 1))
-          in
-          go 0
+  (* ANCHORED on the exception SHAPE, not on a substring. The previous version
+     accepted any message mentioning both "float16" and "float32", which the
+     Native backend's unrelated `vec_get_custom: vector element type mismatch`
+     failure could also have satisfied — i.e. it did not actually prove that
+     Execute's launch-time check was the thing that rejected the launch. *)
+  | exception
+      Sarek.Execute_error.Execution_error
+        (Sarek.Execute_error.Type_mismatch {expected; actual; context}) ->
+      let has needle =
+        let nl = String.length needle and hl = String.length context in
+        let rec go i =
+          i + nl <= hl && (String.sub context i nl = needle || go (i + 1))
         in
-        has "float16" && has "float32"
+        go 0
       in
-      if mentions then report label true " (element-type check)"
-      else report label false (Printf.sprintf " — wrong diagnostic: %s" msg)
+      (* Argument 0 is [out], declared `float16 vector` and supplied as f32. *)
+      let ok =
+        expected = "float16 vector"
+        && actual = "float32 vector" && has "argument 0"
+        && has "(parameter \"out\")"
+      in
+      if ok then report label true " (element-type check)"
+      else
+        report
+          label
+          false
+          (Printf.sprintf
+             " — right exception, wrong detail: expected=%S actual=%S \
+              context=%S"
+             expected
+             actual
+             context)
+  | exception e ->
+      report
+        label
+        false
+        (Printf.sprintf " — wrong diagnostic: %s" (Printexc.to_string e))
 
 (* Control: matching f16 vectors must still run and be correct. *)
 let test_match_still_runs dev =

@@ -279,7 +279,7 @@ let expect_f16_rejected ?tag ~backend ~expected_reason name f =
       Sarek_backend_error.Backend_error.Backend_error
         (Sarek_backend_error.Backend_error.Codegen
            {
-             backend = tag;
+             backend = actual_tag;
              error =
                Sarek_backend_error.Backend_error.Unsupported_construct
                  {construct; reason};
@@ -288,7 +288,7 @@ let expect_f16_rejected ?tag ~backend ~expected_reason name f =
          slice-2 deferral. Matching the exception SHAPE (not [_]) is the point:
          the previous [| exception _ -> ()] would have passed on any unrelated
          failure. *)
-      Alcotest.(check string) (name ^ ": backend tag") tag_expected tag ;
+      Alcotest.(check string) (name ^ ": backend tag") tag_expected actual_tag ;
       Alcotest.(check string) (name ^ ": construct") "f16" construct ;
       (* The reason is compared EXACTLY, not by substring. All four of these are
          now composed by the single shared Sarek_ir_codegen.reject_feature, so

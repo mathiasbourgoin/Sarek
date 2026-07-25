@@ -1067,13 +1067,26 @@ let test_kernel_requirements () =
          [DParam (v_f64, Some {arr_elttype = TFloat64; arr_memspace = Global})]
          SEmpty)
     = [Float64]) ;
-  (* Both widths in one kernel, in declaration order of [all_features]. *)
+  (* Both widths in one kernel: the result is ordered by [all_features], NOT by
+     the order the parameters were declared in. The two cases below differ ONLY
+     in declaration order and must produce the SAME list — with f64 first the
+     two hypotheses are indistinguishable, so the reversed case is what actually
+     pins the canonical ordering. *)
   assert (
     kernel_requirements
       (feature_kern
          [
            DParam (v_f64, Some {arr_elttype = TFloat64; arr_memspace = Global});
            DParam (v_f16, Some {arr_elttype = TFloat16; arr_memspace = Global});
+         ]
+         SEmpty)
+    = [Float64; Float16]) ;
+  assert (
+    kernel_requirements
+      (feature_kern
+         [
+           DParam (v_f16, Some {arr_elttype = TFloat16; arr_memspace = Global});
+           DParam (v_f64, Some {arr_elttype = TFloat64; arr_memspace = Global});
          ]
          SEmpty)
     = [Float64; Float16]) ;

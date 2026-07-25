@@ -188,6 +188,40 @@ let test_kernel ?(shape = f16_scale) ?(suffix = "") dev =
       end
 
 (* ------------------------------------------------------------------ *)
+(* 4. Memory.alloc / set_arg_buffer consistency (CodeRabbit, #290)     *)
+(* ------------------------------------------------------------------ *)
+
+(* [Memory.alloc] accepted [Bigarray.Float16] on the two CPU backends while
+   their [Kernel.set_arg_buffer] silently omitted it from the allowed
+   kind/storage match, so an f16 buffer could be allocated and then not bound.
+   Nothing reached it — the live f16 launch path is Vector-based, not
+   Buffer-based — which is exactly why it needed a test rather than an
+   argument. This binds a real f16 buffer through the public
+   [Kernel.set_arg_buffer] entry point, which is the path that was broken.
+
+   Restricted to the two backends whose accessors were changed; the device
+   backends route buffers through their own drivers. *)
+let test_buffer_bind dev =
+  let fw = dev.Device.framework in
+  if fw = "Native" || fw = "Interpreter" then begin
+    let label = Printf.sprintf "%s f16 buffer binds as arg" fw in
+    match
+      let args = Spoc_core.Kernel.create_args dev in
+      let buf = Spoc_core.Memory.alloc dev n Bigarray.Float16 in
+      Spoc_core.Kernel.set_arg_buffer args 0 buf ;
+      (* Control: the f32 buffer that always worked must still work, so a
+         blanket breakage cannot read as an f16 pass. *)
+      let buf32 = Spoc_core.Memory.alloc dev n Bigarray.Float32 in
+      Spoc_core.Kernel.set_arg_buffer args 1 buf32 ;
+      Spoc_core.Memory.free buf ;
+      Spoc_core.Memory.free buf32
+    with
+    | () -> report label true ""
+    | exception e ->
+        report label false (Printf.sprintf " — %s" (Printexc.to_string e))
+  end
+
+(* ------------------------------------------------------------------ *)
 
 let () =
   Printf.printf "test_f16_host_path (#57 slice 1 review, MF2)\n" ;
@@ -203,6 +237,7 @@ let () =
           dev.Device.name
           dev.Device.framework ;
         test_round_trip dev ;
+        test_buffer_bind dev ;
         test_kernel dev ;
         (* MF4c: the documented `let`-bound conversion shape, executed. *)
         test_kernel ~shape:f16_scale_let_shape ~suffix:" (let shape)" dev)

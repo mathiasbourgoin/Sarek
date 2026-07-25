@@ -586,9 +586,14 @@ end = struct
 
     let set_arg_buffer : type a. args -> int -> a Memory.buffer -> unit =
      fun args idx buf ->
+      (* Float16 is admitted here because [Memory.alloc] /
+         [alloc_zero_copy] admit it: a kind that can be allocated but not
+         bound is an API inconsistency, and the omission was silent rather
+         than diagnosed. *)
       (match (buf.Memory.kind, buf.Memory.storage) with
       | Memory.Scalar_kind Spoc_core.Vector_types.Int32, Bigarray_storage _
       | Memory.Scalar_kind Spoc_core.Vector_types.Int64, Bigarray_storage _
+      | Memory.Scalar_kind Spoc_core.Vector_types.Float16, Bigarray_storage _
       | Memory.Scalar_kind Spoc_core.Vector_types.Float32, Bigarray_storage _
       | Memory.Scalar_kind Spoc_core.Vector_types.Float64, Bigarray_storage _
       | Memory.Custom_kind _, Ctypes_storage _ ->
@@ -636,6 +641,18 @@ end = struct
               Typed_value.TV_Scalar
                 (Typed_value.SV
                    ((module Typed_value.Int64_type), Bigarray.Array1.get ba i))
+          | ( Memory.Scalar_kind Spoc_core.Vector_types.Float16,
+              Bigarray_storage ba ) ->
+              (* f16 is a STORAGE type: there is deliberately no Float16
+                 scalar in Typed_value. The Bigarray.Float16 cell rounds to
+                 binary16 on store and hands the rounded value back on load,
+                 so the element enters as an f32 scalar. Same "reuse the f32
+                 accessor, let the storage kind do the rounding" decision
+                 that Sarek_ir_interp.vector_to_array already makes for f16
+                 VECTORS -- keeping the two paths on one rule, not two. *)
+              Typed_value.TV_Scalar
+                (Typed_value.SV
+                   ((module Typed_value.Float32_type), Bigarray.Array1.get ba i))
           | ( Memory.Scalar_kind Spoc_core.Vector_types.Float32,
               Bigarray_storage ba ) ->
               Typed_value.TV_Scalar
@@ -671,6 +688,17 @@ end = struct
                   Native_error.(
                     raise_error
                       (feature_not_supported "int64 buffer set conversion")))
+          | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+              Memory.Scalar_kind Spoc_core.Vector_types.Float16,
+              Bigarray_storage ba ) -> (
+              (* The narrowing to binary16 happens in the Bigarray cell, not
+                 here -- see the matching note on [get]. *)
+              match S.to_primitive x with
+              | Typed_value.PFloat f -> Bigarray.Array1.set ba i f
+              | _ ->
+                  Native_error.(
+                    raise_error
+                      (feature_not_supported "float16 buffer set conversion")))
           | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
               Memory.Scalar_kind Spoc_core.Vector_types.Float32,
               Bigarray_storage ba ) -> (
