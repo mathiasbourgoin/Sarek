@@ -51,8 +51,13 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
   (ppxlib (>= 0.22.0))
   (ctypes (>= 0.24.0))
   (ctypes-foreign (>= 0.24.0))
+  ; sarek.webgpu_runtime / sarek.transpile_web are public libraries, so they are
+  ; part of @install — js_of_ocaml is a hard runtime dep, not a test-only one.
+  (js_of_ocaml (>= 6.0.0))
+  (js_of_ocaml-ppx (>= 6.0.0))
   (yojson :with-test)
   (alcotest :with-test)
+  (qcheck-core :with-test)
   (bisect_ppx :with-test)))
 
 ; CUDA backend plugin

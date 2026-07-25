@@ -2,7 +2,10 @@
 ;
 ; Depends on js_of_ocaml and sarek_transpile (for the driver). No ctypes, no unix.
 ;
-; Only built explicitly; not included in @install or dune runtest by default.
+; NOTE: this library has a public_name, so it IS part of @install — an earlier
+; version of this comment claimed otherwise, and the release Docker image build
+; broke on the undeclared js_of_ocaml-ppx dependency as a result. Only the
+; test/lessons/spike-worker targets below are build-on-demand.
 ;   dune build sarek/core_js/webgpu/
 ;   dune build sarek/core_js/webgpu/test/runtime_driver.bc.js
 

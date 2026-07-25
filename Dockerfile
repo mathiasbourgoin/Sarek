@@ -18,9 +18,16 @@ USER opam
 WORKDIR /home/opam/Sarek
 
 # 1. Update opam and install build deps
-# We use --debug to see what's happening if it fails
 RUN opam update
-RUN opam install -y dune ppxlib ctypes ctypes-foreign alcotest ocamlfind ocaml-compiler-libs
+# Build deps come from the project's own opam metadata rather than a hand-kept
+# list. The hardcoded list silently drifted from reality — js_of_ocaml-ppx is
+# needed by the public sarek.webgpu_runtime library and was absent, so this
+# image build failed on `Library "js_of_ocaml-ppx" not found` while every local
+# build passed. Deriving them from dune-project makes the declaration
+# load-bearing instead of decorative.
+COPY --chown=opam:opam *.opam dune-project ./
+RUN opam install -y . --deps-only
+RUN opam install -y ocamlfind ocaml-compiler-libs
 
 # 2. Install Jupyter and ZeroMQ
 RUN opam install -y conf-zmq zmq zmq-lwt jupyter

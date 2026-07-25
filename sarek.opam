@@ -20,8 +20,11 @@ depends: [
   "ppxlib" {>= "0.22.0"}
   "ctypes" {>= "0.24.0"}
   "ctypes-foreign" {>= "0.24.0"}
+  "js_of_ocaml" {>= "6.0.0"}
+  "js_of_ocaml-ppx" {>= "6.0.0"}
   "yojson" {with-test}
   "alcotest" {with-test}
+  "qcheck-core" {with-test}
   "bisect_ppx" {with-test}
   "odoc" {with-doc}
 ]
