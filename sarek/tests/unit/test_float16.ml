@@ -689,6 +689,51 @@ let test_argcheck_aggregate_param_rejects_scalar_vector () =
     ir
     [Ex.Vec (Vector.create Vector.int32 4)]
 
+let test_interpreter_entry_point_is_checked_too () =
+  (* [run_interpreter_vectors] used to skip [check_launch_args] entirely, which
+     was the worst place to skip it: the interpreter is the ORACLE the GPU
+     backends are compared against, so an unchecked mismatch here does not just
+     give a wrong answer, it gives a wrong answer that the f16 agreement gates
+     then measure the GPU against.
+
+     The kernel declares two f32 vector parameters. Supplying an f16 vector used
+     to run to completion — [vector_to_interp_array] takes the element type from
+     the HOST vector, and the writeback dispatches on it too, so nothing
+     narrowed and nothing complained. *)
+  let ir = f16_narrow_to_f32_sink_ir () in
+  let f32 () = Vector.create Vector.float32 4 in
+  let run args =
+    Sarek.Execute.run_interpreter_vectors
+      ~ir
+      ~args
+      ~block:(Sarek.Execute.dims1d 4)
+      ~grid:(Sarek.Execute.dims1d 1)
+      ~parallel:false
+  in
+  let rejects_interp what args =
+    match run args with
+    | () -> Alcotest.failf "%s: expected a launch-time rejection, got none" what
+    | exception Sarek.Execute_error.Execution_error _ -> ()
+    | exception e ->
+        Alcotest.failf "%s: wrong exception: %s" what (Printexc.to_string e)
+  in
+  rejects_interp
+    "f16 vector against an f32 interpreter parameter"
+    [Ex.Vec (Vector.create Vector.float16 4); Ex.Vec (f32 ())] ;
+  (* Arity too: the positional zip silently fell back to a "param%d" name. *)
+  rejects_interp "short argument list on the interpreter" [Ex.Vec (f32 ())] ;
+  rejects_interp
+    "long argument list on the interpreter"
+    [Ex.Vec (f32 ()); Ex.Vec (f32 ()); Ex.Int 1] ;
+  (* And the matching shape still runs, so the check is not simply refusing
+     everything. *)
+  match run [Ex.Vec (f32 ()); Ex.Vec (f32 ())] with
+  | () -> ()
+  | exception e ->
+      Alcotest.failf
+        "a matching interpreter launch was rejected: %s"
+        (Printexc.to_string e)
+
 (* ------------------------------------------------------------------ *)
 (* 3. Type system                                                     *)
 (* ------------------------------------------------------------------ *)
@@ -858,6 +903,10 @@ let () =
             "an aggregate parameter rejects a scalar vector"
             `Quick
             test_argcheck_aggregate_param_rejects_scalar_vector;
+          Alcotest.test_case
+            "the interpreter entry point is checked too"
+            `Quick
+            test_interpreter_entry_point_is_checked_too;
         ] );
       ( "type_system",
         [

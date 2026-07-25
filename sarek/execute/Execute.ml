@@ -789,6 +789,20 @@ let interp_array_to_vector : type a b.
 let run_interpreter_vectors ~(ir : Sarek_ir_types.kernel)
     ~(args : vector_arg list) ~(block : Framework_sig.dims)
     ~(grid : Framework_sig.dims) ~(parallel : bool) : unit =
+  (* The SAME launch-time check the three {!run} dispatch paths apply. This
+     entry point used to skip it, which was the worst place to skip it: the
+     interpreter is the ORACLE the GPU backends are checked against, so an
+     unchecked mismatch here does not just produce a wrong answer, it produces a
+     wrong answer that the f16 agreement gates then compare the GPU to.
+
+     Concretely, without this an f32 vector passed to an f16-declared kernel
+     ran to completion: [vector_to_interp_array] yields [VFloat32] from the f32
+     host vector and [interp_array_to_vector] dispatches on the HOST vector's
+     kind, so the writeback never narrows and the interpreter silently returns
+     f32-precision results. The positional zip below would also have quietly
+     renamed or dropped arguments on an arity mismatch (it falls back to
+     "param%d") instead of reporting it. *)
+  check_launch_args ~kernel:ir.Sarek_ir_types.kern_name ir args ;
   (* Set interpreter parallel mode *)
   Sarek_ir_interp.parallel_mode := parallel ;
   (* Convert vector args to interpreter format, tracking arrays for writeback *)

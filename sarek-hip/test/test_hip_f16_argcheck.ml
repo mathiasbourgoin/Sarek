@@ -8,7 +8,7 @@
  *
  * [Execute.vector_arg]'s [Vec] constructor is existential, so the element type
  * is erased before the launch. Before the launch-time check in
- * Execute.check_vector_element_types this compiled clean and, on gfx1100, read
+ * Execute.check_launch_args this compiled clean and, on gfx1100, read
  * and wrote 2N bytes of a 4N-byte buffer: input [1 2 3 4] came back [1 2 0 0].
  * The Native path caught it by accident (type-id comparison), so the corruption
  * was GPU-only and silent.

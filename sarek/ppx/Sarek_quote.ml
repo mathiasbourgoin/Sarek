@@ -69,7 +69,7 @@ let quote_option ~loc quote_elem = function
     In particular: an OCaml constraint cannot police vector element types at all
     on the real launch path, because [Execute.vector_arg]'s [Vec] constructor is
     existential and erases them. That check lives at
-    [Execute.check_vector_element_types]. *)
+    [Execute.check_launch_args]. *)
 let core_type_of_typ ~loc (t : typ) : core_type option =
   match repr t with
   | TPrim TUnit -> Some [%type: unit]
