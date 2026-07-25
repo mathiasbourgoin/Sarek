@@ -193,6 +193,10 @@ let check ctx result =
 
 (** Options forced onto EVERY hiprtc compilation.
 
+    The cross-backend rule this implements — and what every OTHER backend does
+    or fails to do about contraction — is [docs/fp-contraction-policy.md]. Read
+    it before changing anything here.
+
     [-ffp-contract=off] is a CONFORMANCE requirement, not a tuning choice. HIP
     (clang) defaults to [-ffp-contract=fast], which lets the backend fuse a
     multiply into the operation that consumes it — including an f32 multiply

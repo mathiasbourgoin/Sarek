@@ -91,3 +91,14 @@
  (libraries sarek_cuda sarek.codegen spoc.ir alcotest str unix)
  (instrumentation
   (backend bisect_ppx)))
+
+; FP-conformance guard for the nvrtc option array (#111). Pure checks need no
+; toolchain; the FTZ hazard control uses host-side nvcc/nvdisasm (no device)
+; and skips without them.
+
+(test
+ (name test_cuda_fp_conformance)
+ (modules test_cuda_fp_conformance)
+ (libraries sarek_cuda sarek.codegen spoc.ir alcotest str unix)
+ (instrumentation
+  (backend bisect_ppx)))

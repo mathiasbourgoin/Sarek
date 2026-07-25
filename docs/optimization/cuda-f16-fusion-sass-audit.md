@@ -4,6 +4,14 @@
 **Date:** 2026-07-25. **Host:** no NVIDIA GPU. **Toolchain:** CUDA 13.3,
 `ptxas`/`nvdisasm`/`nvcc` V13.3.73, `libnvrtc.so.13.3.33`.
 
+> **Superseded in one respect (#110).** The recommendation at the end of this
+> document — "removing it or keeping it is out of scope" — has since been
+> acted on: the inert `"+f"` barrier was **removed** from the non-HIP branch of
+> `sarek_f32_barrier`, after re-measuring byte-identical cubins on sm_75 through
+> sm_121 for the codegen's current output. Everything else here still stands.
+> The cross-backend rule, and what the other backends do about contraction, is
+> [`docs/fp-contraction-policy.md`](../fp-contraction-policy.md).
+
 ## The question
 
 #290 found that on HIP/gfx1100 the generated C was correct and the machine code

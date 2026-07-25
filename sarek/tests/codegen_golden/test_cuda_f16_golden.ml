@@ -187,11 +187,23 @@ let test_f16_conversions () =
     "barrier is declared"
     src
     "__device__ __forceinline__ float sarek_f32_barrier(float x)" ;
-  (* Both toolchains, because the register constraint is target-specific: "v"
-     for AMDGPU VGPRs, "f" for PTX .f32. A single-platform barrier would leave
-     the other backend silently fusing again. *)
+  (* AMDGPU is where the barrier is load-bearing: the "v" constraint pins the
+     value in a VGPR ahead of the ISel combine that fuses. *)
   check_contains "AMDGPU constraint" src "asm volatile(\"\" : \"+v\"(x))" ;
-  check_contains "PTX constraint" src "asm volatile(\"\" : \"+f\"(x))" ;
+  (* NVIDIA is where it is NOT, and that asymmetry is asserted rather than left
+     to a reader's assumption (#110). The non-HIP branch used to carry a PTX
+     "+f" variant; it was an empty asm template that NVVM erased, so the cubins
+     were byte-identical with and without it — measured on CUDA 13.3
+     (nvcc/ptxas/nvdisasm V13.3.73, host-side, no NVIDIA device) for sm_75
+     through sm_121. Keeping a no-op that reads as protection is what this
+     assertion forbids. What actually keeps the multiply out of the narrowing
+     on NVIDIA is ptxas, machine-checked by
+     sarek-cuda/test/test_cuda_f16_sass.ml; see docs/fp-contraction-policy.md. *)
+  check_absent "no inert PTX barrier" src "\"+f\"" ;
+  check_contains
+    "NVIDIA branch documents why it is empty"
+    src
+    "NVIDIA: intentionally an identity" ;
   ()
 
 let test_non_f16_kernel_unchanged () =

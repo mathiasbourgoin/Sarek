@@ -200,6 +200,10 @@ let float x = float_of_int (Int32.to_int x)
 (******************************************************************************
  * Contraction barrier
  *
+ * Cross-backend policy this implements, including what each OTHER backend does
+ * about contraction and which of those claims are measured rather than
+ * believed: docs/fp-contraction-policy.md.
+ *
  * An error-free transformation is only error-free if the backend compiler
  * evaluates it as written. Floating-point CONTRACTION - fusing a multiply into
  * a neighbouring add or subtract - is enabled by default in PTX, CUDA C and

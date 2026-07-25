@@ -344,12 +344,159 @@ let cuda_include_flags : string list Lazy.t =
   lazy
     (List.map (fun d -> "--include-path=" ^ d) (Lazy.force cuda_include_paths))
 
+(** {2 Floating-point conformance guard}
+
+    Raised when an nvrtc option would change binary32 semantics in a way the
+    interpreter — Sarek's cross-backend oracle — cannot follow. Carries the
+    offending option and why it is refused. *)
+exception Fp_conformance_violation of string
+
+(** Options refused outright, with the reason.
+
+    The rule these encode: Sarek's DSL semantics are IEEE-754 binary32 with
+    every operation rounded as written, and the interpreter implements exactly
+    that. An option that FLUSHES SUBNORMALS or DOWNGRADES a division/square root
+    to an approximate form makes the device disagree with the interpreter on
+    inputs the test suite already uses, and — unlike HIP's contraction case,
+    where appending [-ffp-contract=off] last neutralises the caller — there is
+    no later flag that undoes it. So these are rejected rather than warned
+    about.
+
+    - [-use_fast_math] implies
+      [--ftz=true --prec-div=false --prec-sqrt=false --fmad=true] (CUDA nvrtc
+      documentation, [dependencies/Cuda/nvrtc.h]).
+    - [-ftz=true] flushes binary32 subnormals to zero. MEASURED, host-side on
+      CUDA 13.3 (nvcc/ptxas V13.3.73, no NVIDIA device): compiling the generated
+      [f16_midround] kernel for sm_90 with [-use_fast_math] or [-ftz=true] turns
+      [FMUL]/[FADD] into [FMUL.FTZ]/[FADD.FTZ]. [1e-5] is already lane 5 of the
+      [test_hip_f16] input array, so this is reachable from the existing test
+      data, not a hypothetical.
+    - [--prec-div=false] / [--prec-sqrt=false] select approximate division and
+      square root. Sarek_df64 already spends its whole error budget on the
+      correctly-rounded forms — the PTX emitter switched [div.approx.f32] to
+      [div.rn.f32] for exactly this reason (audit finding M2).
+
+    [--fmad=true] is NOT in this list: it is nvrtc's default, so rejecting it
+    would reject the status quo. Contraction is instead defeated by construction
+    where it matters (see [Sarek_df64]'s contraction barrier). It is warned
+    about, so that a caller who sets it deliberately is told the guarantee it is
+    trading away. *)
+let fp_rejected_options : (string * (string option -> bool) * string) list =
+  let is_true = function Some ("true" | "1") -> true | _ -> false in
+  let is_false = function Some ("false" | "0") -> true | _ -> false in
+  let always _ = true in
+  [
+    ( "use_fast_math",
+      always,
+      "implies --ftz=true --prec-div=false --prec-sqrt=false, which flush \
+       binary32 subnormals and downgrade div/sqrt; the interpreter oracle does \
+       neither" );
+    ( "ftz",
+      is_true,
+      "flushes binary32 subnormals to zero (measured: FMUL.FTZ/FADD.FTZ in the \
+       generated f16 kernel's SASS at sm_90, CUDA 13.3); the interpreter keeps \
+       them, so device and oracle diverge" );
+    ( "prec-div",
+      is_false,
+      "selects approximate binary32 division; Sarek_df64 requires the \
+       correctly-rounded form (div.rn.f32)" );
+    ( "prec-sqrt",
+      is_false,
+      "selects approximate binary32 square root; Sarek_df64's Newton/Karp step \
+       squares the seed error and has no margin for it" );
+  ]
+
+let fp_warned_options : (string * (string option -> bool) * string) list =
+  [
+    ( "fmad",
+      (function Some ("true" | "1") -> true | _ -> false),
+      "re-enables multiply-add contraction; Sarek_df64 defeats contraction by \
+       construction (mul_rn) rather than by flag, but a caller-written kernel \
+       that feeds a live float32 product into a df64 entry point is exposed" );
+  ]
+
+(** Split an nvrtc option into its name (leading dashes stripped) and optional
+    value. [--ftz=true] -> [("ftz", Some "true")]; [-use_fast_math] ->
+    [("use_fast_math", None)]. *)
+let split_nvrtc_option (opt : string) : string * string option =
+  let n = String.length opt in
+  let i = ref 0 in
+  while !i < n && opt.[!i] = '-' do
+    incr i
+  done ;
+  let body = String.sub opt !i (n - !i) in
+  match String.index_opt body '=' with
+  | None -> (body, None)
+  | Some j ->
+      ( String.sub body 0 j,
+        Some (String.sub body (j + 1) (String.length body - j - 1)) )
+
+(** The reason [opt] must be refused, or [None] if it is acceptable. Pure, so
+    the guard can be exercised without libnvrtc or a device. *)
+let fp_rejection_reason (opt : string) : string option =
+  let name, value = split_nvrtc_option opt in
+  List.find_map
+    (fun (n, matches, why) ->
+      if n = name && matches value then
+        Some
+          (Printf.sprintf
+             "nvrtc option %S is refused on the Sarek CUDA path: %s. Sarek's \
+              cross-backend oracle is the interpreter, which evaluates \
+              binary32 exactly as written; see docs/fp-contraction-policy.md."
+             opt
+             why)
+      else None)
+    fp_rejected_options
+
+(** The warning for [opt], or [None]. Pure, for the same reason. *)
+let fp_warning_reason (opt : string) : string option =
+  let name, value = split_nvrtc_option opt in
+  List.find_map
+    (fun (n, matches, why) ->
+      if n = name && matches value then
+        Some
+          (Printf.sprintf
+             "nvrtc option %S relaxes floating-point evaluation: %s. See \
+              docs/fp-contraction-policy.md."
+             opt
+             why)
+      else None)
+    fp_warned_options
+
+(** Reject FP-relaxing options and warn about the merely risky ones.
+
+    Applied at the single point where an option array reaches
+    [nvrtcCompileProgram], so it covers options from any source — a caller, a
+    future environment-variable escape hatch, or a hardcoded flag added by a
+    later maintainer. That placement is the point: the guard is against the
+    option existing at all, not against one particular way of supplying it. *)
+let check_fp_conformance (opts : string list) : unit =
+  List.iter
+    (fun opt ->
+      match fp_rejection_reason opt with
+      | Some msg -> raise (Fp_conformance_violation msg)
+      | None -> (
+          match fp_warning_reason opt with
+          | Some msg -> Spoc_core.Log.warnf Spoc_core.Log.Kernel "%s" msg
+          | None -> ()))
+    opts
+
 (** Compile CUDA source to PTX.
     @param source CUDA C source code
     @param name Optional program name
     @param arch Target architecture (e.g., "compute_75")
+    @param options
+      Extra nvrtc options, prepended to the ones this module supplies. Screened
+      by {!check_fp_conformance}: an option that would break binary32 agreement
+      with the interpreter raises {!Fp_conformance_violation} BEFORE any nvrtc
+      call, so the check is reachable on a host with no CUDA at all.
     @return PTX code as string *)
-let compile_to_ptx ?(name = "kernel") ~arch (source : string) : string =
+let compile_to_ptx ?(name = "kernel") ~arch ?(options = []) (source : string) :
+    string =
+  (* Fail fast, before touching libnvrtc: a bad flag is a programming error in
+     the caller, not a compilation failure. *)
+  check_fp_conformance options ;
+
   (* Create program *)
   let prog = allocate nvrtc_program_ptr (from_voidp nvrtc_program null) in
   check
@@ -384,9 +531,13 @@ let compile_to_ptx ?(name = "kernel") ~arch (source : string) : string =
      no-arch last resort) so a generated `#include <cuda_fp16.h>` resolves —
      nvrtc supplies no default include path of its own. Empty on a host with no
      CUDA headers, in which case the option array is exactly as before. *)
-  let include_opts = Lazy.force cuda_include_flags in
+  let include_opts = options @ Lazy.force cuda_include_flags in
 
   let compile_with_string_opts (opts : string list) =
+    (* Chokepoint. Every array that reaches nvrtcCompileProgram passes here,
+       including the ones this module builds itself, so a flag added later
+       anywhere in this function is screened too. *)
+    check_fp_conformance opts ;
     match opts with
     | [] -> nvrtcCompileProgram prog_handle 0 (from_voidp string null)
     | _ ->

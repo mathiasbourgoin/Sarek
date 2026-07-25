@@ -839,7 +839,21 @@ and gen_var_decl buf indent v_name v_type init_expr =
      NoContraction). Without it some drivers (observed: RADV via glslang)
      simplify error-free transformations like Dekker/Knuth TwoSum, breaking
      algorithms that rely on IEEE-exact rounding of each operation. This
-     matches CUDA/OpenCL codegen semantics (no fast-math contraction). *)
+     matches CUDA/OpenCL codegen semantics (no fast-math contraction).
+
+     WHAT THIS DOES AND DOES NOT BUY, precisely. The FRONT END honours it:
+     measured with glslc 2026.2 / SPIRV-Tools 1.4.350.1 on the generated
+     matrix_mul shader, the SPIR-V carries 2 NoContraction decorations with
+     [precise] and 0 without. NoContraction is then a requirement on the SPIR-V
+     CONSUMER, i.e. the driver, and whether a given driver honours it is NOT
+     established in this repository — the note above and the campaign notes
+     disagree, and neither has a reproducible in-tree measurement behind it.
+     docs/fp-contraction-policy.md section 6 records the disagreement and the
+     experiment that would settle it. Do not restate either side as fact.
+
+     Separately and independently: RADV's GLSL [fma] is not correctly rounded,
+     so Sarek_df64 mul/div sit at ~5.8e-08 there whatever this qualifier does
+     (RX 7900 XTX, Mesa 26.1.4-arch3.1). *)
   (match v_type with
   | TFloat32 | TFloat64 -> Buffer.add_string buf "precise "
   | _ -> ()) ;

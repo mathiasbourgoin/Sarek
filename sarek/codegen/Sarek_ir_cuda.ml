@@ -747,7 +747,34 @@ let cuda_fp16_include =
     [volatile] local also works but spills to scratch, which is why it is not
     used. The price is the un-fused instruction count: 6 VALU ops instead of 2
     per f16 round-trip. Paid only inside kernels that actually narrow to f16 —
-    the declaration is emitted only under [kernel_uses_float16]. *)
+    the declaration is emitted only under [kernel_uses_float16].
+
+    NVIDIA BRANCH: DELIBERATELY EMPTY, and that is a statement about NVIDIA, not
+    an oversight. The non-HIP branch previously carried a PTX-flavoured
+    [asm volatile("" : "+f"(x))]. That barrier was INERT: the assembly template
+    is empty, NVVM erases the block and coalesces the register, and the
+    resulting cubins are byte-identical with and without it. Re-measured for
+    this file's current output on CUDA 13.3 (nvcc/ptxas/nvdisasm V13.3.73,
+    host-side, no NVIDIA device) for sm_75, sm_80, sm_86, sm_89, sm_90, sm_100,
+    sm_120 and sm_121: [cmp] on the cubin says byte-identical on all eight, and
+    the arithmetic stream stays
+    [HADD2.F32 / FMUL / F2FP.F16.F32 / HADD2.F32 / FADD / F2FP.F16.F32] — the
+    f32 multiply and the f32 add both intact and the narrowings separate — with
+    the asm and without it. It was removed rather than kept because a call site
+    reading [sarek_f32_barrier(...)] on the CUDA path advertised a protection
+    that did not exist, and the gap between assumed and actual FP semantics is
+    exactly what produced this bug class.
+
+    WHAT ACTUALLY HOLDS THE GUARANTEE ON NVIDIA: [ptxas] declines to absorb
+    [cvt.rn.f16.f32] into the operation feeding it — hand-written PTX with no
+    inline asm at all gives the same unfused SASS. That is a property of the
+    assembler, not of anything Sarek emits, so it is machine-checked rather than
+    assumed: [sarek-cuda/test/test_cuda_f16_sass.ml] walks generated CUDA ->
+    nvrtc -> PTX -> ptxas -> cubin -> nvdisasm -> SASS on every architecture the
+    local ptxas knows and fails if the discipline breaks. See
+    [docs/fp-contraction-policy.md] and
+    [docs/optimization/cuda-f16-fusion-sass-audit.md]. NO f16 kernel has been
+    EXECUTED on NVIDIA hardware; the claim is a machine-code claim. *)
 let sarek_f32_barrier_decl =
   {|#if defined(__HIP__) || defined(__HIP_PLATFORM_AMD__)
 __device__ __forceinline__ float sarek_f32_barrier(float x) {
@@ -755,8 +782,12 @@ __device__ __forceinline__ float sarek_f32_barrier(float x) {
   return x;
 }
 #else
+/* NVIDIA: intentionally an identity. A PTX opacity barrier here would be an
+   empty asm block that NVVM erases (cubins byte-identical, measured on CUDA
+   13.3 for sm_75..sm_121). What keeps the f32 multiply out of the narrowing on
+   NVIDIA is ptxas itself, checked by test_cuda_f16_sass.ml — not this
+   function. See docs/fp-contraction-policy.md. */
 __device__ __forceinline__ float sarek_f32_barrier(float x) {
-  asm volatile("" : "+f"(x));
   return x;
 }
 #endif
