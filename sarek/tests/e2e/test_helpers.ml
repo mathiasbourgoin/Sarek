@@ -440,6 +440,15 @@ let is_anv_device ~framework ~device =
   framework = "Vulkan"
   && string_contains ~needle:"intel" (String.lowercase_ascii device)
 
+(** One entry of the df64 deviation allowlist.
+
+    - [entry]: the match arm in [df64_known_deviation] that produced this, in a
+      form a reader can find and delete. Surfaced verbatim in the strict-XPASS
+      failure message, so it must stay in step with the arm that returns it.
+    - [label]: the KNOWN-DEVIATION text printed when the deviation is observed
+      as expected. *)
+type df64_deviation = {entry : string; label : string}
+
 (** The documented df64 deviation for [(framework, device, op)], if any.
 
     This is an ALLOWLIST: every device not named here — including NVIDIA Vulkan,
@@ -447,15 +456,31 @@ let is_anv_device ~framework ~device =
     580.119.02) — is held to the strict bound. That is the task #118 fix for the
     LIMITATION previously recorded in test_df64.ml: the old gate keyed on the
     bare ["Vulkan"] framework tag, so a contraction-class regression on NVIDIA
-    Vulkan would have passed silently. *)
+    Vulkan would have passed silently.
+
+    Each arm is an EXPECTED FAILURE in the strict sense (pytest's
+    [xfail(strict=True)]): observing the deviation is tolerated, and NOT
+    observing it fails the run. See [classify_df64_result]. *)
 let df64_known_deviation ~framework ~device ~op =
   match (framework, op) with
   | "Native", _ ->
-      (* The Native backend runs Sarek float32 as OCaml binary64, so every
-         error-free transformation cancels (lo = 0) and df64 degenerates to
-         plain float32 storage precision. Affects ALL ops, and is harmless in
-         practice because Native has real binary64. *)
-      Some "KNOWN-DEVIATION (Native evaluates float32 at binary64; EFTs cancel)"
+      (* NOT AN OPEN BUG. The Native backend runs Sarek float32 as OCaml
+         binary64, so every error-free transformation cancels identically
+         (lo = 0) and df64 degenerates to plain float32 storage precision. That
+         is structural, not a defect to be chased: df64 exists to buy extra
+         precision on devices that lack binary64, and Native HAS binary64, so
+         running df64 there is POINTLESS rather than broken. Nothing downstream
+         is wrong — anyone wanting precision on Native uses float64 (or
+         Sarek_real64, which selects Native_f64 there automatically). The entry
+         covers all five ops because the cancellation is the same for all
+         five. *)
+      Some
+        {
+          entry = "Native, _ (all ops)";
+          label =
+            "KNOWN-DEVIATION (Native evaluates float32 at binary64; EFTs \
+             cancel — df64 on Native is pointless, not broken)";
+        }
   | "Vulkan", ("mul" | "div") when is_radv_device ~framework ~device ->
       (* RADV's GLSL [fma] is not correctly rounded, so TwoProd's error term is
          lost. NOT the ptxas contraction bug (add/sub/sqrt are unaffected and
@@ -463,9 +488,17 @@ let df64_known_deviation ~framework ~device ~op =
          GLSL [precise] qualifier that Sarek_ir_glsl.ml emits on float locals.
          Measured on AMD Radeon RX 7900 XTX (RADV NAVI31), Mesa 26.1.4-arch3.1,
          Vulkan 1.4.354, kernel 7.1.2-3-cachyos: mul 5.84e-08, div 5.86e-08. *)
-      Some "KNOWN-DEVIATION (RADV fma not correctly rounded)"
+      Some
+        {
+          entry = "Vulkan, (mul|div) when is_radv_device";
+          label = "KNOWN-DEVIATION (RADV fma not correctly rounded)";
+        }
   | "Vulkan", ("mul" | "div") when is_anv_device ~framework ~device ->
-      Some "KNOWN-DEVIATION (Mesa ANV mul/div, unmeasured cause)"
+      Some
+        {
+          entry = "Vulkan, (mul|div) when is_anv_device";
+          label = "KNOWN-DEVIATION (Mesa ANV mul/div, unmeasured cause)";
+        }
   | _ -> None
 
 (** Strict df64 contract bound for [op]. *)
@@ -476,24 +509,52 @@ let df64_tol_for_op = function
 (** Classify one df64 op's worst relative error.
 
     - [`Pass]: within the strict contract bound, and no deviation was expected.
-    - [`Xpass label]: within the strict bound on a device the allowlist expects
-      to deviate. Reported loudly, NOT counted as a failure: the code/driver got
-      better and [df64_known_deviation] needs pruning. (Choosing not to fail
-      here is deliberate — an unrelated driver upgrade should not turn the suite
-      red — but it does mean the allowlist can only be pruned by someone reading
-      the output.)
+    - [`Xpass msg]: within the strict bound on a device the allowlist expects to
+      deviate. {b This is a FAILURE} — the allowlist entry is stale and must be
+      deleted. Callers MUST count it towards their failure total and exit
+      nonzero; [msg] already names the arm to remove.
     - [`Known_deviation label]: over the contract bound, on the allowlist, and
-      inside the collapsed band. An explicit expected failure.
+      inside the collapsed band. An expected failure, tolerated.
     - [`Fail]: everything else, including a non-finite error and any error above
-      [df64_collapsed_ceiling] on an allowlisted device. *)
+      [df64_collapsed_ceiling] on an allowlisted device.
+
+    WHY [`Xpass] IS HARD (strict xfail). An earlier revision of this classifier
+    printed XPASS and left the run green, on the reasoning that an unrelated
+    driver upgrade should not turn CI red. That was wrong for the same reason
+    the [test_cuda_f16_sass] / mma-probe bug was wrong (PR #300): a status that
+    is printed but leaves the exit code at 0 is indistinguishable from a pass to
+    everything that consumes the exit code, so the allowlist rots silently and
+    the suite goes on claiming a deviation that no longer exists. It is also
+    what pytest's [xfail(strict=True)] default exists to prevent.
+
+    The cost is small and bounded: the GitHub CI runners have no GPU, so the
+    RADV and ANV arms never evaluate there and cannot flake CI, and when this
+    does fire on a workstation the fix is deleting one match arm from
+    [df64_known_deviation]. *)
 let classify_df64_result ~framework ~device ~op ~err =
   let tol = df64_tol_for_op op in
   let deviation = df64_known_deviation ~framework ~device ~op in
   if Float.is_finite err && err <= tol then
-    match deviation with Some label -> `Xpass label | None -> `Pass
+    match deviation with
+    | Some {entry; label} ->
+        `Xpass
+          (Printf.sprintf
+             "XPASS (STALE ALLOWLIST ENTRY) - %s / %s / %s now MEETS the df64 \
+              contract (%.3g <= %.3g), but Test_helpers.df64_known_deviation \
+              still expects a deviation there. DELETE the match arm [%s]. Was: \
+              %s"
+             framework
+             device
+             op
+             err
+             tol
+             entry
+             label)
+    | None -> `Pass
   else
     match deviation with
-    | Some label when Float.is_finite err && err <= df64_collapsed_ceiling ->
+    | Some {label; _} when Float.is_finite err && err <= df64_collapsed_ceiling
+      ->
         `Known_deviation label
     | _ -> `Fail
 

@@ -50,9 +50,14 @@
   deviations as an explicit expected-failure band — upper end 2^-23, twice the
   float32 unit roundoff — keyed on driver identity (Mesa RADV, Mesa ANV) in
   `Test_helpers.df64_known_deviation`. Degrading past plain float32 now FAILs
-  even on an allowlisted device. Red-proved by replacing `df64_mul` with a
-  plain float32 multiply: the old gate reported PASS on both RADV devices and
-  Native (1.43e-07 vs tol 2.38e-07), the new gate FAILs there.
+  even on an allowlisted device, and so does an allowlisted device that starts
+  MEETING the contract (strict XPASS, as in pytest's `xfail(strict=True)`) —
+  the run goes red naming the match arm to delete, so the allowlist cannot rot
+  behind a green exit code. Red-proved twice: replacing `df64_mul` with a plain
+  float32 multiply (old gate PASS on both RADV devices and Native at 1.43e-07
+  vs tol 2.38e-07, new gate FAIL), and adding a bogus allowlist entry for an op
+  that already meets the contract (all three tests exit 1 with the stale-entry
+  message).
 - Indexed kernel-argument container with strict launch validation, honored
   across all six backends (out-of-order/sparse `set_arg` now correct)
 - Unambiguous, collision-resistant compile-cache keys (kernel name included,

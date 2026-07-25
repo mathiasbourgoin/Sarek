@@ -237,7 +237,9 @@ let run_pass (dev : Device.t) ~(substrate : Real64.substrate) =
       let err = try Hashtbl.find worst op with Not_found -> 0.0 in
       let tol = tol_for ~substrate ~framework ~op in
       let status = op_status ~substrate ~framework ~device ~op ~err ~tol in
-      (match status with `Fail -> incr failures | _ -> ()) ;
+      (* [`Xpass] counts as a failure: see the "WHY [`Xpass] IS HARD" note on
+         Test_helpers.classify_df64_result. *)
+      (match status with `Fail | `Xpass _ -> incr failures | _ -> ()) ;
       Printf.printf
         "    %-5s max rel err %.3g (tol %.3g) %s\n%!"
         op
@@ -247,7 +249,7 @@ let run_pass (dev : Device.t) ~(substrate : Real64.substrate) =
         | `Pass -> "PASS"
         | `Known_issue s -> s
         | `Known_deviation s -> s
-        | `Xpass s -> "XPASS - deviation gone, prune the allowlist: " ^ s
+        | `Xpass msg -> msg
         | `Fail -> "FAIL"))
     ["add"; "sub"; "mul"; "div"; "sqrt"]
 

@@ -178,7 +178,10 @@ let report_op_stats dev =
               Test_helpers.df64_tol_for_op op )
         | _ -> ((if err <= tol then `Pass else `Fail), tol)
       in
-      (match status with `Fail -> incr failures | _ -> ()) ;
+      (* [`Xpass] counts as a failure: a stale allowlist entry that only printed
+         a warning would leave the exit code at 0 and rot unnoticed. See the
+         "WHY [`Xpass] IS HARD" note on Test_helpers.classify_df64_result. *)
+      (match status with `Fail | `Xpass _ -> incr failures | _ -> ()) ;
       Printf.printf
         "  %-6s max rel err %.3g (tol %.3g) %s [%s]\n%!"
         op
@@ -186,8 +189,7 @@ let report_op_stats dev =
         tol
         (match status with
         | `Pass -> "PASS"
-        | `Xpass label ->
-            "XPASS - deviation gone, prune the allowlist: " ^ label
+        | `Xpass msg -> msg
         | `Known_deviation label -> label
         | `Fail -> "FAIL")
         framework)

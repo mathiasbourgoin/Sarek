@@ -66,13 +66,18 @@
  * and 1.42e-14 (2^-46) for mul/div/sqrt.
  *
  * Those tolerances now apply to EVERY device (task #118). The deviating
- * entries below are not given a wider ceiling: they are an allowlist of
+ * entries below are not given a wider ceiling: they are an allowlist of STRICT
  * expected failures in Test_helpers.df64_known_deviation, checked against a
  * two-sided band whose upper end is 2^-23 (twice the float32 unit roundoff)
- * and reported as KNOWN-DEVIATION, never as PASS. Degrading further than plain
- * float32 therefore FAILs even on an allowlisted device, and a device that is
- * NOT on the allowlist - including NVIDIA Vulkan - is held to the full
- * contract. Before that change the deviating backends were checked against
+ * and reported as KNOWN-DEVIATION, never as PASS. Consequences:
+ *   - degrading further than plain float32 FAILs even on an allowlisted device;
+ *   - a device NOT on the allowlist - NVIDIA Vulkan included - is held to the
+ *     full contract;
+ *   - an allowlisted device that starts MEETING the contract also fails the
+ *     run (strict XPASS), naming the match arm to delete. So if a Mesa release
+ *     fixes RADV's fma, the tests go red until the entry below is pruned -
+ *     deliberately, so the allowlist cannot rot while the suite stays green.
+ * Before that change the deviating backends were checked against
  * 2^-22 = 2.38e-07, which a fully collapsed df64 (~5.8e-08) also satisfied:
  * the gate could not tell the bug from the fix.
  *
