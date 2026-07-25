@@ -353,6 +353,20 @@ let is_custom_kind : type a b. (a, b) Vector.kind -> bool = function
   | Vector.Custom _ -> true
   | Vector.Scalar _ -> false
 
+(** IR element type a SCALAR launch argument is tagged with on the host. [Int]
+    and [Int32] denote the same 32-bit slot. [None] for [Vec], which is handled
+    by the vector arms.
+
+    This tag is exactly what decides how many bytes the launch writes into the
+    argument slot, so it is the host side of the same width contract the vector
+    check enforces — see {!check_launch_args}. *)
+let ir_elttype_of_scalar_arg = function
+  | Int _ | Int32 _ -> Some Sarek_ir_types.TInt32
+  | Int64 _ -> Some Sarek_ir_types.TInt64
+  | Float32 _ -> Some Sarek_ir_types.TFloat32
+  | Float64 _ -> Some Sarek_ir_types.TFloat64
+  | Vec _ -> None
+
 let arg_label = function
   | Vec _ -> "a vector"
   | Int _ | Int32 _ -> "an int32 scalar"
@@ -374,9 +388,8 @@ let check_launch_args ~(kernel : string) (ir : Sarek_ir_types.kernel)
            context =
              Printf.sprintf
                "kernel %S: the launch builds its device argument array from \
-                the                 SUPPLIED count while the driver reads the \
-                COMPILED parameter                 count, so a mismatch is \
-                unsafe, not merely wrong"
+                the SUPPLIED count while the driver reads the COMPILED \
+                parameter count, so a mismatch is unsafe, not merely wrong"
                kernel;
          }) ;
   (* 2. Per position: shape, then element type or physical width. *)
@@ -412,8 +425,9 @@ let check_launch_args ~(kernel : string) (ir : Sarek_ir_types.kernel)
                   ~expected:(elttype_label want ^ " vector")
                   ~actual:(elttype_label got ^ " vector")
                   ~why:
-                    "element widths differ, so the device would read the \
-                     buffer                      at the wrong stride"
+                    "the element types differ, so the device would read the \
+                     buffer at the wrong stride or interpret its bits as the \
+                     wrong type"
           | None -> (
               if
                 (* No IR constructor for this kind. Compare the physical element
@@ -422,7 +436,24 @@ let check_launch_args ~(kernel : string) (ir : Sarek_ir_types.kernel)
               then
                 let got_w = Vector.elem_size (Vector.kind v) in
                 match ir_scalar_width want with
-                | None -> ()
+                | None ->
+                    (* [want] has no scalar width, i.e. it is an AGGREGATE
+                       (record/variant/array). We are already inside the
+                       non-[Custom] branch, so the supplied vector holds plain
+                       scalars: there is no layout under which a Char or
+                       Complex32 buffer is a valid record/variant buffer. This
+                       used to fall through to [()], which made the width
+                       fallback silently inapplicable exactly where the shapes
+                       are most different. *)
+                    mismatch
+                      ~expected:(elttype_label want ^ " vector")
+                      ~actual:
+                        (Printf.sprintf
+                           "a scalar vector (%d-byte elements)"
+                           got_w)
+                      ~why:
+                        "the kernel declares an aggregate element type, which \
+                         a scalar vector cannot supply at any width"
                 | Some want_w ->
                     if got_w <> want_w then
                       mismatch
@@ -433,9 +464,8 @@ let check_launch_args ~(kernel : string) (ir : Sarek_ir_types.kernel)
                              want_w)
                         ~actual:(Printf.sprintf "%d-byte elements" got_w)
                         ~why:
-                          "the host element width does not match the width \
-                           the                            kernel accesses the \
-                           buffer with"))
+                          "the host element width does not match the width the \
+                           kernel accesses the buffer with"))
       | Vec _, Sarek_ir_types.DParam (_, None) ->
           mismatch
             ~expected:"a scalar"
@@ -447,7 +477,68 @@ let check_launch_args ~(kernel : string) (ir : Sarek_ir_types.kernel)
             ~expected:"a vector"
             ~actual:(arg_label a)
             ~why:"the kernel declares a vector parameter here"
-      | _ -> ())
+      | ( ((Int _ | Int32 _ | Int64 _ | Float32 _ | Float64 _) as a),
+          Sarek_ir_types.DParam (pv, None) ) -> (
+          (* Scalar against scalar. This is the SAME hazard as the vector arm,
+             not a lesser one: the host tag fixes how wide a slot the launch
+             writes, the driver reads the COMPILED parameter's width, and a
+             narrower host tag against a wider compiled parameter makes the
+             driver read past the value it was given. Leaving this to the
+             catch-all meant scalars had no type check at all. *)
+          let want = pv.Sarek_ir_types.var_type in
+          match ir_elttype_of_scalar_arg a with
+          | None -> ()
+          | Some got -> (
+              match want with
+              | Sarek_ir_types.TInt32 | Sarek_ir_types.TInt64
+              | Sarek_ir_types.TFloat32 | Sarek_ir_types.TFloat64 ->
+                  (* The four types the host can name exactly: compare
+                     exactly, so int-vs-float confusion at equal width is
+                     caught too, matching the vector arm's discipline. *)
+                  if got <> want then
+                    mismatch
+                      ~expected:(elttype_label want ^ " scalar")
+                      ~actual:(elttype_label got ^ " scalar")
+                      ~why:
+                        "the host tags the argument slot with a different type \
+                         than the kernel declares, so the driver reads the \
+                         slot at the wrong width or interprets its bits as the \
+                         wrong type"
+              | _ -> (
+                  (* Not one of the four: [TBool]/[TUnit] share the 32-bit slot
+                     with [TInt32] and are legitimately reached through [Int],
+                     so an exact comparison would reject correct launches.
+                     Fall back to the physical width, which is the property the
+                     driver actually depends on. Aggregates have no scalar
+                     width; they are left alone here rather than guessed at,
+                     the same deliberate conservatism the [Custom] vector case
+                     gets. *)
+                  match (ir_scalar_width got, ir_scalar_width want) with
+                  | Some got_w, Some want_w when got_w <> want_w ->
+                      mismatch
+                        ~expected:
+                          (Printf.sprintf
+                             "%s scalar (%d-byte slot)"
+                             (elttype_label want)
+                             want_w)
+                        ~actual:
+                          (Printf.sprintf
+                             "%s scalar (%d-byte slot)"
+                             (elttype_label got)
+                             got_w)
+                        ~why:
+                          "the host writes a differently-sized argument slot \
+                           than the driver reads"
+                  | _ -> ())))
+      | Vec _, _
+      | Int _, _
+      | Int32 _, _
+      | Int64 _, _
+      | Float32 _, _
+      | Float64 _, _ ->
+          (* Remaining shapes are non-[DParam] declarations (locals/shared),
+             which are not launch arguments. *)
+          ())
     args
 
 (** Execute a kernel on a device using the unified dispatch mechanism.

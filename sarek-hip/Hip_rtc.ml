@@ -215,6 +215,55 @@ let check ctx result =
     contraction changed the result; with contraction off, zero. *)
 let base_options = ["-ffp-contract=off"]
 
+(** Floating-point option classes a caller can pass that would re-enable
+    contraction, or otherwise relax the f32 evaluation discipline, if they took
+    effect. Matched by prefix so [-ffp-contract=fast] and [-ffp-model=fast] are
+    both caught. *)
+let fp_relaxing_option_prefixes =
+  [
+    "-ffp-contract="; "-ffp-model="; "-ffast-math"; "-funsafe-math-optimizations";
+  ]
+
+let has_prefix ~prefix s =
+  String.length s >= String.length prefix
+  && String.sub s 0 (String.length prefix) = prefix
+
+(** Assemble the final hiprtc option array.
+
+    CALLER OPTIONS FIRST, {!base_options} LAST. hiprtc passes its option array
+    straight to clang, and clang resolves conflicting floating-point options by
+    LAST OCCURRENCE — explicitly so for [-ffp-contract] against [-ffast-math]
+    and [-ffp-model]. With the conformance flag placed first (as it was), a
+    caller passing [-ffp-contract=fast], [-ffast-math] or [-ffp-model=fast]
+    would silently reinstate the very contraction {!base_options} exists to
+    forbid, and the f16 device/interpreter agreement would break on the 373
+    inputs measured above. Putting it last makes that unreachable by
+    construction rather than by convention.
+
+    Contraction is then guaranteed off regardless of the caller. The other
+    effects of a fast-math-class flag (reassociation, finite-math-only) are NOT
+    neutralised by [-ffp-contract=off], so those are warned about rather than
+    silently accepted; they are not rejected because [compile_with_options]
+    exists for legitimate rocWMMA include/define threading and we do not want to
+    break that path. *)
+let hiprtc_options (caller_options : string list) : string list =
+  List.iter
+    (fun opt ->
+      if
+        List.exists
+          (fun prefix -> has_prefix ~prefix opt)
+          fp_relaxing_option_prefixes
+      then
+        Spoc_core.Log.warnf
+          Spoc_core.Log.Kernel
+          "hiprtc: caller option %S relaxes floating-point evaluation; \
+           -ffp-contract=off is still enforced (appended last), but other \
+           fast-math effects are not, and f16 device/interpreter bit-agreement \
+           is only guaranteed without them"
+          opt)
+    caller_options ;
+  caller_options @ base_options
+
 (** Compile HIP C++ source to a finalized code object, ready to feed to
     hipModuleLoadData. Returns the code-object bytes as an OCaml string.
 
@@ -245,7 +294,7 @@ let compile_to_code_object ?(name = "kernel") ?arch ?(options = [])
      rocWMMA) plus an optional --offload-arch. When [arch] is None hiprtc
      targets the currently-selected device. *)
   let compile_with lst =
-    let lst = base_options @ lst in
+    let lst = hiprtc_options lst in
     match lst with
     | [] -> hiprtcCompileProgram prog_handle 0 (from_voidp string null)
     | _ ->

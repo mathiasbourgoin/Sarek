@@ -209,12 +209,19 @@ let test_host_roundtrip () =
 
 (* Results are f16 values; both sides went through the same narrowing, so this
    should be EXACT. Compare exactly and report the first mismatch. *)
+(* BIT equality, not [=]. OCaml's [=] on floats says [-0.0 = 0.0], so a backend
+   that dropped the sign of zero would satisfy a gate whose whole claim is
+   "bit-identical". Comparing the binary64 encodings is exact for every value
+   these arrays hold (they are all f16 values widened to float), and NaN is
+   still handled by the both-NaN clause rather than by payload. *)
+let same_bits g e = Int64.bits_of_float g = Int64.bits_of_float e
+
 let compare_exact ?(expected = reference) label got =
   let bad = ref 0 and first = ref None in
   Array.iteri
     (fun i g ->
       let e = expected.(i) in
-      let same = g = e || (g <> g && e <> e) in
+      let same = same_bits g e || (g <> g && e <> e) in
       if not same then (
         incr bad ;
         if !first = None then first := Some (i, g, e)))
@@ -402,7 +409,7 @@ let run_sweep dev =
   let bad = ref 0 and first = ref None in
   for i = 0 to m - 1 do
     let g = Vector.get out i and e = sweep_reference.(i) in
-    if not (g = e || (g <> g && e <> e)) then begin
+    if not (same_bits g e || (g <> g && e <> e)) then begin
       incr bad ;
       if !first = None then first := Some (sweep_inputs.(i), g, e)
     end

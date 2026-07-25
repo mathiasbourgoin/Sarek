@@ -61,6 +61,22 @@
  (action
   (run %{dep:test_hip_rocwmma.exe})))
 
+; #57 slice 1 review: the hiprtc option array must place the -ffp-contract=off
+; conformance flag AFTER caller options, so a caller cannot silently re-enable
+; the multiply/narrow fusion. Pure host test, no device needed.
+
+(executable
+ (name test_hip_rtc_options)
+ (modules test_hip_rtc_options)
+ (libraries sarek_hip spoc_core)
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias e2e-hip)
+ (action
+  (run %{dep:test_hip_rtc_options.exe})))
+
 ; #57 slice 1 review: an f16-vector kernel launched with float32 vectors must be
 ; rejected by Execute's launch-time element-type check, not silently misread at
 ; the wrong stride on the GPU. Self-skips without a device.

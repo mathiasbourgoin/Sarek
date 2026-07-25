@@ -624,6 +624,71 @@ let test_argcheck_width_fallback_for_unmappable_kinds () =
     ir
     [Ex.Vec (Vector.create Vector.int32 4)]
 
+let test_argcheck_scalar_against_scalar () =
+  (* Review gap: scalar-vs-scalar used to reach the catch-all with NO check at
+     all, even though it is the same hazard the vector arm exists for — the
+     host tag fixes the slot width the launch writes, the driver reads the
+     COMPILED parameter's width, and a narrow tag against a wide parameter
+     makes the driver read past the value it was handed. *)
+  let i32 = kern [mk_scalar_param "n" Irt.TInt32] in
+  let i64 = kern [mk_scalar_param "n" Irt.TInt64] in
+  let f32 = kern [mk_scalar_param "x" Irt.TFloat32] in
+  let f64 = kern [mk_scalar_param "x" Irt.TFloat64] in
+  (* Matching tags are accepted. *)
+  accepts "int -> TInt32" i32 [Ex.Int 1] ;
+  accepts "int32 -> TInt32" i32 [Ex.Int32 1l] ;
+  accepts "int64 -> TInt64" i64 [Ex.Int64 1L] ;
+  accepts "float32 -> TFloat32" f32 [Ex.Float32 1.0] ;
+  accepts "float64 -> TFloat64" f64 [Ex.Float64 1.0] ;
+  (* WIDTH mismatches: the memory-safety case. A 4-byte tag against an 8-byte
+     declared parameter is the direction that makes the driver over-read. *)
+  rejects "int32 against a TInt64 parameter" i64 [Ex.Int32 1l] ;
+  rejects "int against a TInt64 parameter" i64 [Ex.Int 1] ;
+  rejects "float32 against a TFloat64 parameter" f64 [Ex.Float32 1.0] ;
+  rejects "int64 against a TInt32 parameter" i32 [Ex.Int64 1L] ;
+  rejects "float64 against a TFloat32 parameter" f32 [Ex.Float64 1.0] ;
+  (* EQUAL-WIDTH type confusion: not a memory-safety bug, but the same
+     discipline the vector arm applies, so int-vs-float at 4 and at 8 bytes is
+     caught too. *)
+  rejects "float32 against a TInt32 parameter" i32 [Ex.Float32 1.0] ;
+  rejects "int32 against a TFloat32 parameter" f32 [Ex.Int32 1l] ;
+  rejects "float64 against a TInt64 parameter" i64 [Ex.Float64 1.0] ;
+  rejects "int64 against a TFloat64 parameter" f64 [Ex.Int64 1L] ;
+  (* CONSERVATISM, deliberate and pinned: TBool/TUnit share the 32-bit slot
+     with TInt32 and are legitimately reached through [Int], so they must NOT
+     be rejected. If this ever starts failing, the scalar arm has become
+     stricter than the host can express. *)
+  accepts
+    "int against a TBool parameter"
+    (kern [mk_scalar_param "b" Irt.TBool])
+    [Ex.Int 1] ;
+  accepts
+    "int against a TUnit parameter"
+    (kern [mk_scalar_param "u" Irt.TUnit])
+    [Ex.Int 0]
+
+let test_argcheck_aggregate_param_rejects_scalar_vector () =
+  (* Review gap: when the supplied vector kind has no IR constructor (Char /
+     Complex32) AND the declared element type is an aggregate, [ir_scalar_width]
+     returns None and the fallback used to pass SILENTLY — the check went quiet
+     exactly where the two shapes are furthest apart. *)
+  let rec_ty = Irt.TRecord ("pt", [("x", Irt.TFloat32); ("y", Irt.TFloat32)]) in
+  let ir = kern [mk_param "buf" rec_ty] in
+  Alcotest.(check bool)
+    "the declared element type really has no scalar width"
+    true
+    (match Sarek_ir_layout.scalar_size rec_ty with
+    | (_ : int) -> false
+    | exception Invalid_argument _ -> true) ;
+  rejects
+    "Char vector against a record parameter"
+    ir
+    [Ex.Vec (Vector.create Vector.char 4)] ;
+  rejects
+    "int32 vector against a record parameter"
+    ir
+    [Ex.Vec (Vector.create Vector.int32 4)]
+
 (* ------------------------------------------------------------------ *)
 (* 3. Type system                                                     *)
 (* ------------------------------------------------------------------ *)
@@ -785,6 +850,14 @@ let () =
             "unmappable kinds fall back to physical width (Char)"
             `Quick
             test_argcheck_width_fallback_for_unmappable_kinds;
+          Alcotest.test_case
+            "scalar arguments are checked against scalar parameters"
+            `Quick
+            test_argcheck_scalar_against_scalar;
+          Alcotest.test_case
+            "an aggregate parameter rejects a scalar vector"
+            `Quick
+            test_argcheck_aggregate_param_rejects_scalar_vector;
         ] );
       ( "type_system",
         [

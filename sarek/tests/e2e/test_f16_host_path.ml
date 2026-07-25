@@ -68,9 +68,16 @@ let test_round_trip dev =
   match
     let v = Vector.create Vector.float16 n in
     Array.iteri (fun i x -> Vector.set v i x) samples ;
-    (* Force a real H2D then D2H through this device. *)
+    (* Force a real H2D then D2H through this device.
+
+       [~force:true] is REQUIRED and is the whole point of this test. After
+       [to_device] the vector's location is [Both], and [Transfer.to_cpu]
+       treats [Both] as already-coherent (`| Both _ -> force`), so the default
+       [~force:false] performs NO device-to-host copy at all — the comparison
+       below would then re-read the untouched host array and pass no matter
+       what the backend's f16 D2H path did. *)
     Transfer.to_device v dev ;
-    Transfer.to_cpu v ;
+    Transfer.to_cpu ~force:true v ;
     Transfer.flush dev ;
     Vector.to_array v
   with
@@ -79,8 +86,14 @@ let test_round_trip dev =
       Array.iteri
         (fun i g ->
           let e = expected.(i) in
-          if !bad = None && not (g = e || (g <> g && e <> e)) then
-            bad := Some (i, g, e))
+          (* BIT equality: [samples] deliberately contains -0.0, and OCaml's
+             [=] says [-0.0 = 0.0], so [=] could not tell whether the round
+             trip preserved the sign of zero — the one thing that sample is
+             there to check. *)
+          let same =
+            Int64.bits_of_float g = Int64.bits_of_float e || (g <> g && e <> e)
+          in
+          if !bad = None && not same then bad := Some (i, g, e))
         got ;
       match !bad with
       | None -> report label true ""
