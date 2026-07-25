@@ -48,6 +48,22 @@ jobs:
       - name: Test alias coverage guard
         run: ./scripts/check-test-alias-coverage.sh
 
+      # An unregistered Alcotest case compiles, the suite reports green, and
+      # the behavior it was written to protect is unguarded. Nothing else in
+      # this pipeline can tell that apart from a passing test.
+      - name: Alcotest case registration guard
+        run: node scripts/check-alcotest-registration.js
+
+      # The harness's own guards. They gate everything else, so they are the
+      # last place a silent regression is acceptable.
+      - name: Harness self-tests
+        run: |
+          set -e
+          node scripts/review-verdict-assemble.test.js
+          node scripts/xruntime-caller-fault.test.js
+          ./scripts/agent-worktree-bootstrap.test.sh
+          ./scripts/roster-implement-posthook.test.sh
+
       - name: Formal proofs admit gate
         run: |
           # Fast LEXICAL tripwire only. It runs without a Rocq toolchain and
