@@ -216,15 +216,32 @@ let nvrtc_available = lazy (Cuda_nvrtc.is_available ())
    no device to target. *)
 let arch = "compute_75"
 
-let compile_ok name cuda =
+(** [true] iff [needle] occurs anywhere in [hay]. *)
+let contains hay needle =
+  let n = String.length needle and h = String.length hay in
+  n <= h
+  &&
+  let rec go i = i + n <= h && (String.sub hay i n = needle || go (i + 1)) in
+  go 0
+
+let compile_ok ~kernel_name name cuda =
   match Cuda_nvrtc.compile_to_ptx ~name ~arch cuda with
   | ptx ->
-      if String.length ptx = 0 then
-        Alcotest.failf "NVRTC returned empty PTX for %s" name ;
-      (* A compiled module must contain the entry point; an empty-but-successful
-         compile would otherwise pass vacuously. *)
-      if not (String.length ptx > 0 && String.length ptx > 32) then
-        Alcotest.failf "NVRTC PTX for %s is implausibly short:\n%s" name ptx ;
+      (* NVRTC can return successfully with PTX that contains no kernel at all —
+         e.g. if the emitter dropped the __global__ qualifier, or emitted the
+         body into a device function nobody calls. Assert the entry point is
+         really there, keyed on the kernel's own name, so a compiling-but-empty
+         module cannot pass. A length threshold cannot do this: NVRTC's PTX
+         header alone clears any plausible bound. *)
+      let entry = ".entry " ^ kernel_name in
+      if not (contains ptx entry) then
+        Alcotest.failf
+          "NVRTC compiled %s but the PTX has no '%s' — the module carries no \
+           kernel:\n\
+           %s"
+          kernel_name
+          entry
+          ptx ;
       Ok ()
   | exception e -> Error (Printexc.to_string e)
 
@@ -245,7 +262,7 @@ let gate_tests () =
                %!"
               name
           else
-            match compile_ok name cuda with
+            match compile_ok ~kernel_name:k.kern_name name cuda with
             | Ok () -> Printf.printf "  nvrtc OK: %s\n%!" name
             | Error e ->
                 Alcotest.failf

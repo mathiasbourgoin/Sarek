@@ -138,6 +138,10 @@ let wgsl_reserved_keywords =
       emitted shader unusable on every WebGPU implementation. Re-prefixing with
       ["sarek"] keeps the name recognisable and moves the double underscore off
       the front, where it is legal.
+    - {b Bare underscore} (same clause): a lone ["_"] is not an identifier in
+      WGSL either — it is the phony-assignment target. An OCaml wildcard or
+      generated placeholder reaching the emitter as ["_"] would produce
+      [let _ : i32 = ...], which naga rejects. Rewritten the same way.
     - {b Reserved keywords}: escaped by appending a ['v'] suffix.
 
     Both rewrites are injective except for a source identifier that already
@@ -146,7 +150,9 @@ let wgsl_reserved_keywords =
     below with the shadowing limitation. *)
 let escape_wgsl_name name =
   let name =
-    if String.length name >= 2 && String.sub name 0 2 = "__" then "sarek" ^ name
+    if name = "_" then "sarek_"
+    else if String.length name >= 2 && String.sub name 0 2 = "__" then
+      "sarek" ^ name
     else name
   in
   if List.mem name wgsl_reserved_keywords then name ^ "v" else name

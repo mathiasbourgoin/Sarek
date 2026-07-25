@@ -143,26 +143,14 @@ jobs:
               eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
               dune runtest'
 
-      # OCL_ICD_VENDORS pins OpenCL device enumeration to pocl for this step.
-      # The image registers two CPU ICDs, and with both visible "the CPU OpenCL
-      # device" is whichever the loader happened to enumerate first — not
-      # something a test can rely on. The Intel oneAPI CPU runtime mis-JITs its
-      # vector math library on the Zen runners (task #74: it logs "Unknown host
-      # CPU", first bad element at index 4, an SSE lane boundary), which is why
-      # the float32 math checks had to be soft-failed on it. Pinning to the
-      # conformant ICD means those checks are enforced for real here; the Intel
-      # runtime stays installed and is still reachable via
-      # OCL_ICD_VENDORS=/etc/OpenCL/vendors-intel or the default
-      # /etc/OpenCL/vendors, which still lists both.
-      #
-      # The suppression itself is narrowed to match: Test_helpers.is_pocl_device
-      # excludes pocl from the known-issue carve-out, so a pocl miscomputation
-      # is a hard failure. Without that, adding a conformant ICD would have
-      # bought nothing.
+      # No OCL_ICD_VENDORS pinning: the image ships exactly one OpenCL ICD, the
+      # Intel oneAPI CPU runtime. Adding pocl as a second, conformant ICD (#79)
+      # and pinning e2e to it made things strictly worse — pocl 1.8 + LLVM 11 on
+      # jammy compiles no kernel at all, so the float32 math tests SKIPPED — and
+      # it moves to a separate experimental PR. See ci/Dockerfile.
       - name: Run fast e2e tests
         run: |
           docker run --rm \
-            -e OCL_ICD_VENDORS=/etc/OpenCL/vendors-pocl \
             -v ${{ github.workspace }}:/work \
             -w /work \
             spoc-ci:latest \
@@ -220,9 +208,6 @@ jobs:
   formal-proofs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    container:
-      image: rocq/rocq-prover:9.1.1
-      options: --user root
 
     steps:
       - name: Checkout code
@@ -230,8 +215,25 @@ jobs:
         with:
           persist-credentials: false
 
+      # Deliberately `docker run` rather than a job-level `container:`.
+      #
+      # A `container:` job does NOT work here, and the failure is silent-ish:
+      # GitHub Actions discards the image ENTRYPOINT (["opam","exec","--"]) and
+      # runs every step through `docker exec sh -e -c`, so the opam switch's
+      # bin/ never reaches PATH and rocq, coqc and rocqchk all look MISSING —
+      # the real binaries live in /home/rocq/.opam/4.14.2+flambda/bin. Adding
+      # `options: --user root` to fix workspace permissions makes it worse: the
+      # switch belongs to the `rocq` user under /home/rocq, so opam refuses it.
+      #
+      # `docker run` honours the ENTRYPOINT, runs as the image's own user, and
+      # matches how every other step in this workflow invokes a container.
       - name: Rebuild and kernel-re-check the Rocq proofs
-        run: ./scripts/check-formal-proofs.sh
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            rocq/rocq-prover:9.1.1 \
+            bash -lc './scripts/check-formal-proofs.sh'
 
   check-generated-code:
     runs-on: ubuntu-latest

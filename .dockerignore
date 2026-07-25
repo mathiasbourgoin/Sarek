@@ -1,0 +1,34 @@
+# Build context for ci/Dockerfile.
+#
+# The Dockerfile COPYs nothing from the repo — it only installs tooling — yet
+# the whole tree was being uploaded to the daemon as context for two jobs
+# (`build` and `check-generated-code`) on every run. On a working tree with
+# _build/ populated that is ~3.8 GB, of which ~3.6 GB is _build and ~155 MB is
+# .git. Excluding the heavy directories keeps the context to the source tree,
+# and changes to _build no longer invalidate the context hash.
+_build/
+_opam/
+_site/
+_coverage/
+.git/
+.github/
+.opam-ci/
+node_modules/
+
+# Editor and OS noise
+*.swp
+*~
+.DS_Store
+
+# Local artefacts
+*.install
+*.cm[ioxat]
+*.cmx[as]
+*.o
+*.a
+*.so
+*.exe
+*.vo
+*.vok
+*.vos
+*.glob

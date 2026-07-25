@@ -136,9 +136,14 @@ rm -rf "$nvrtc_probe"
 
 # CUDA headers: the f16 regression was an unresolvable #include, so assert the
 # header tree the emitter may reference is actually on disk.
+#
+# -L is load-bearing: /usr/local/cuda is a SYMLINK to /usr/local/cuda-<series>,
+# and GNU find does not follow a symlinked starting point unless told to (a
+# trailing slash also works, but -L says what is meant). Without it this check
+# reported the header missing on an image where it was plainly present.
 checks=$((checks + 1))
-fp16=$(find "${CUDA_PATH:-/usr/local/cuda}" /usr/local/cuda -name cuda_fp16.h \
-         2>/dev/null | head -1)
+fp16=$(find -L "${CUDA_PATH:-/usr/local/cuda}" /usr/local/cuda \
+         -name cuda_fp16.h 2>/dev/null | head -1)
 if [ -n "$fp16" ]; then
   ok "CUDA headers present ($fp16)"
 else
@@ -202,61 +207,17 @@ $out"
 fi
 
 # --------------------------------------------------------------------------
-section "OpenCL ICDs"
-if ! command -v clinfo >/dev/null 2>&1; then
-  fail "clinfo is not installed, so the OpenCL device inventory cannot be \
-asserted. Install clinfo (see ci/Dockerfile)."
-else
-  clinfo_out=$(clinfo 2>&1 || true)
-  echo "$clinfo_out" | grep -E '^\s*(Platform Name|Device Name|Device Type)' \
-    | sed 's/^/    /' || true
-
-  checks=$((checks + 1))
-  if echo "$clinfo_out" | grep -qi 'portable computing language\|pocl'; then
-    ok "pocl platform enumerates"
-  else
-    fail "no pocl platform in clinfo output. Task #74 had to classify the Intel \
-oneAPI CPU runtime as a known-issue device, which leaves CI with zero \
-trustworthy OpenCL coverage unless pocl is present and working. Install \
-pocl-opencl-icd (see ci/Dockerfile)."
-  fi
-
-  # The known-issue suppression in sarek/tests/e2e/test_helpers.ml identifies
-  # pocl by CL_DEVICE_NAME prefix ("pthread-" on pocl 1.x, "cpu-" from pocl 3.x
-  # on). If pocl ever renames its CPU device, that predicate stops recognising
-  # it and pocl failures would be silently EXCUSED as the Intel flake. Assert
-  # the prefix here so a rename breaks the build loudly instead.
-  checks=$((checks + 1))
-  if echo "$clinfo_out" | grep -E '^\s*Device Name' \
-       | grep -qE '(pthread-|cpu-)'; then
-    ok "pocl CPU device name matches the prefixes test_helpers.ml keys on"
-  else
-    fail "no OpenCL device name starting with 'pthread-' or 'cpu-'. \
-Test_helpers.is_pocl_device would no longer recognise the conformant device, \
-and the CPU-OpenCL known-issue suppression (#74) would wrongly excuse real \
-pocl failures. Update pocl_device_name_prefixes in \
-sarek/tests/e2e/test_helpers.ml together with this check."
-  fi
-
-  # Deterministic single-ICD selection: each directory must resolve to exactly
-  # one platform, so a CI step can pin one with OCL_ICD_VENDORS.
-  for pair in "vendors-pocl:portable computing language" "vendors-intel:intel"; do
-    dir="/etc/OpenCL/${pair%%:*}"
-    want="${pair#*:}"
-    checks=$((checks + 1))
-    if [ ! -d "$dir" ]; then
-      fail "$dir is missing; OCL_ICD_VENDORS cannot pin a single ICD."
-    elif [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
-      fail "$dir is empty; a package rename probably broke the ICD split in \
-ci/Dockerfile."
-    elif OCL_ICD_VENDORS="$dir" clinfo 2>&1 | grep -qi "$want"; then
-      ok "OCL_ICD_VENDORS=$dir resolves to the expected platform ($want)"
-    else
-      fail "OCL_ICD_VENDORS=$dir did not enumerate a '$want' platform."
-    fi
-  done
-fi
-
+# NOT asserted here: the OpenCL ICD inventory.
+#
+# An earlier revision installed pocl as a second, conformant CPU ICD (task #79)
+# and asserted it enumerated. Measured in this image, pocl 1.8 + LLVM 11 on
+# jammy cannot compile any kernel at all — `error: unknown target CPU 'generic'`
+# — so the assertion would have guarded a device that cannot run a test, while
+# the Intel oneAPI runtime it was meant to replace computed sin/cos/exp/sqrt
+# correctly here (worst relative error 1.3e-07). pocl moves to a separate
+# experimental PR that installs it unpinned and reports whether it can compile
+# on the real GitHub runner. When that lands, the checks belong here.
+#
 # --------------------------------------------------------------------------
 section "Rocq / Coq proof checker"
 # #45: the formal guarantee ("0 admits, N theorems") was enforced by grep only,

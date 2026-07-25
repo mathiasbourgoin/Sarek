@@ -372,20 +372,24 @@ let pocl_device_name_prefixes = ["pthread-"; "cpu-"]
 
 (** [true] iff [dev] is pocl's CPU device.
 
-    Needed because the CPU-OpenCL known-issue suppression below is keyed on
-    "some CPU OpenCL device", and the CI image now registers TWO CPU ICDs: the
-    Intel oneAPI CPU runtime (the defective one) and pocl (added for exactly
-    this reason — see task #79). Left unnarrowed, the suppression would excuse
-    genuine pocl wrongness too, and adding a conformant ICD would have bought no
-    real coverage at all.
+    {b Currently inert: the CI image ships no pocl.} It is kept because it is
+    the precondition for ever adding one. The CPU-OpenCL known-issue suppression
+    below is keyed on "some CPU OpenCL device", and pocl's device is also
+    CL_DEVICE_TYPE=CPU — so a second, conformant CPU ICD would be swallowed by
+    the same carve-out and buy no coverage at all (task #79). This predicate is
+    what makes pocl's failures hard.
+
+    An attempt to install pocl 1.8 on jammy was reverted: it cannot compile a
+    kernel in that image (`error: unknown target CPU 'generic'`), and pinning
+    the E2E tests to it made them SKIP. It moves to a separate experimental PR;
+    this predicate is pre-positioned for it.
 
     This does sniff the device name, which [is_cpu_opencl_device] deliberately
     avoids — but here the alternative is worse: the device-type query cannot
     distinguish two CPU ICDs, and SPOC's [Device.t] carries no platform or
-    vendor field. The failure mode is guarded rather than argued away:
-    [ci/assert-toolchain.sh] asserts that a device matching these prefixes
-    really enumerates in the CI image, so a pocl rename fails the build loudly
-    instead of quietly re-widening the suppression. *)
+    vendor field. When pocl does land, [ci/assert-toolchain.sh] must assert that
+    a device matching these prefixes really enumerates, so a pocl rename fails
+    the build loudly instead of quietly re-widening the suppression. *)
 let is_pocl_device (dev : Device.t) =
   Device.is_opencl dev
   && List.exists
@@ -492,9 +496,9 @@ let cpu_opencl_math_lane_width = 4
     failure must also match the flake's SHAPE. [`Known_issue] iff ALL of
 
     - [is_cpu_opencl_device dev] — the ICD really reports CL_DEVICE_TYPE=CPU;
-    - [not (is_pocl_device dev)] — pocl is the conformant CPU ICD added to the
-      CI image so these tests regain real coverage (#79), so it is never
-      excused: any wrongness from pocl is a hard failure whatever its shape;
+    - [not (is_pocl_device dev)] — if a conformant CPU ICD (pocl) is ever
+      present, it is never excused: any wrongness from it is a hard failure
+      whatever its shape (#79). Inert today; see [is_pocl_device];
     - [first_bad_index >= cpu_opencl_math_lane_width] (= 4) — the scalar
       prologue is intact. A wrong intrinsic-name mapping or a swapped operand in
       an emitter is wrong from element 0, and a kernel that never executed is
@@ -512,10 +516,9 @@ let cpu_opencl_math_lane_width = 4
     CPU-OpenCL device is excused — e.g. a dropped final work-group leaving the
     0.0 pre-fill in the buffer tail. That is the deliberate trade that
     suppresses the flake. It is still covered on Native, Interpreter and every
-    GPU device — and, since pocl joined the CI image, on a conformant CPU OpenCL
-    device too, which is the point of the [is_pocl_device] carve-out: the
-    residual now applies only to the Intel runtime, not to "CPU OpenCL" as a
-    class.
+    GPU device. The [is_pocl_device] carve-out narrows the residual to the Intel
+    runtime rather than to "CPU OpenCL" as a class, so a conformant CPU ICD
+    would close it as soon as one is available in CI.
 
     Suppression review: this KNOWN-ISSUE exists only until the CI OpenCL ICD is
     fixed or replaced (task #74). Re-evaluate by 2027-01-01, or earlier if the
@@ -552,10 +555,10 @@ let classify_cpu_opencl_math_result ~dev ~(shape : float_check_shape)
   end
   else if
     is_cpu_opencl_device dev
-    (* pocl is a conformant ICD and is in the CI image precisely so that the
-       tests this suppression soft-fails get real coverage from SOMETHING
-       (#79). Excusing pocl would defeat that, so it is explicitly outside the
-       suppression: a pocl miscomputation is always a hard failure. *)
+    (* A conformant ICD exists to give these tests real coverage from
+       SOMETHING (#79); excusing it would defeat that, so pocl is explicitly
+       outside the suppression and a pocl miscomputation is always a hard
+       failure. Inert while the CI image ships only the Intel runtime. *)
     && (not (is_pocl_device dev))
     && shape.bad_count < shape.total
     &&

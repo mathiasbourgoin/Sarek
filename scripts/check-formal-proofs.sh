@@ -43,6 +43,11 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
+# How many formal/ projects must be found and checked. Pinned so that a project
+# silently disappearing (a moved _CoqProject, a bad merge) fails the gate
+# instead of quietly shrinking its scope.
+EXPECTED_PROJECTS=3
+
 cd "$(dirname "$0")/.."
 
 if command -v rocq >/dev/null 2>&1; then
@@ -91,11 +96,22 @@ cannot determine the logical path to check."
     # 1. Delete every committed build artefact. A .vo that is never rebuilt is
     #    an unverified binary blob, and re-checking it would only prove it is
     #    self-consistent, not that it matches the .v beside it.
+    #
+    #    The generated makefile and its dependency files go too, and that is not
+    #    tidiness — it is the stale-generated-artefact hazard this script exists
+    #    to catch, biting the script itself. The tracked .CoqMakefile.d files
+    #    hard-code /usr/lib/ocaml/rocq-runtime/rocqworker, the path of a
+    #    system-packaged Rocq. That path exists on a distro install and does not
+    #    exist in the opam-based rocq/rocq-prover image, so reusing them fails
+    #    the build with "No rule to make target" before a single proof is
+    #    checked.
     find . \( -name '*.vo' -o -name '*.vok' -o -name '*.vos' \
-              -o -name '*.glob' \) -exec rm -f {} +
+              -o -name '*.glob' -o -name '*.CoqMakefile.d' \
+              -o -name 'CoqMakefile' -o -name 'CoqMakefile.conf' \) \
+         -exec rm -f {} +
 
-    # 2. Regenerate the makefile from _CoqProject rather than trusting the
-    #    committed CoqMakefile, which is itself generated and could be stale.
+    # 2. Regenerate the makefile from _CoqProject. Never reuse the committed
+    #    CoqMakefile: see above.
     if [ -n "$ROCQ" ]; then
       rocq makefile -f _CoqProject -o CoqMakefile
     else
@@ -115,11 +131,19 @@ cannot determine the logical path to check."
       out=$(coqchk -R theories "$logical" theories/*.vo 2>&1)
     fi
     printf '%s\n' "$out" | tail -3
-    if ! printf '%s\n' "$out" | grep -q "Modules were successfully checked"; then
-      echo "::error::kernel re-check FAILED for $proj"
-      printf '%s\n' "$out"
-      exit 1
-    fi
+    # Substring match on the variable, NOT `printf ... | grep -q`: grep -q exits
+    # on its first match and closes the pipe, printf takes SIGPIPE (141), and
+    # `set -o pipefail` propagates that as a failure. With `rocq check` output
+    # running to thousands of lines this fires reliably, and the check would
+    # report a failure on a run where every proof passed.
+    case "$out" in
+      *"Modules were successfully checked"*) : ;;
+      *)
+        echo "::error::kernel re-check FAILED for $proj"
+        printf '%s\n' "$out"
+        exit 1
+        ;;
+    esac
 
     # 5. Report what the proofs assume. `rocq check` lists axioms rather than
     #    rejecting them, and this repository has one sanctioned escape hatch
@@ -129,17 +153,61 @@ cannot determine the logical path to check."
     #    three proof-ledger.json files currently disagree with each other about
     #    the axiom and theorem counts, so there is no single trustworthy
     #    expected value to compare against yet.
-    if printf '%s\n' "$out" | grep -qiE "^\s*\*\*\* |axiom"; then
+    assumptions=$(printf '%s\n' "$out" | grep -iE "^\s*\*\*\* |axiom" || true)
+    if [ -n "$assumptions" ]; then
       echo "  assumptions reported by the kernel checker:"
-      printf '%s\n' "$out" | grep -iE "^\s*\*\*\* |axiom" | sed 's/^/    /'
+      printf '%s\n' "$assumptions" | sed 's/^/    /'
     fi
 
+    # awk, not bc: bc is not installed in the rocq/rocq-prover image, and under
+    # `set -euo pipefail` its absence failed the job AFTER every proof had
+    # already been checked — a green result reported as red.
     theorems=$(grep -rhcE "^(Theorem|Lemma|Corollary|Proposition|Remark|Fact) " \
-                 theories/*.v | paste -sd+ | bc)
+                 theories/*.v | awk '{s += $1} END {print s + 0}')
     echo "  kernel-verified statements in theories/: $theorems"
+
+    # 6. Put the working tree back.
+    #
+    #    `make -f CoqMakefile` also re-runs extraction, and the extracted .ml /
+    #    .mli files are committed in ocamlformat-formatted form while extraction
+    #    emits them raw. A full run therefore rewrites ~68 tracked files
+    #    (~2.5k insertions / ~4.4k deletions) with semantically identical but
+    #    differently formatted output. Harmless on a throwaway CI checkout,
+    #    destructive for anyone running this documented gate on their own tree.
+    #    Report the drift so it stays visible, then restore.
+    #    The lia/nia decision-procedure caches are pure build residue that the
+    #    tactics drop next to the sources; they are untracked and would
+    #    otherwise be left behind in a developer's tree.
+    rm -f .lia.cache .nia.cache
+
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      drift=$(git status --porcelain -- . 2>/dev/null | grep -v '^?? ' || true)
+      if [ -n "$drift" ]; then
+        n=$(printf '%s\n' "$drift" | wc -l)
+        echo "  NOTE: the build rewrote $n tracked file(s) (extraction output vs" \
+             "the ocamlformat-formatted committed copies); restoring them."
+        git checkout -- . 2>/dev/null || \
+          echo "  WARNING: could not restore; tree left dirty."
+      fi
+    fi
   )
   checked=$((checked + 1))
 done
 
 echo
+# A gate that passes when it found nothing to check is the exact failure mode
+# this script was written to remove. Moving the three _CoqProject files aside
+# used to yield "OK: 0 formal project(s)" and exit 0.
+if [ "$checked" -eq 0 ]; then
+  echo "::error::no formal/ project had a _CoqProject — nothing was verified. \
+This gate must never pass vacuously."
+  exit 1
+fi
+if [ "$checked" -ne "$EXPECTED_PROJECTS" ]; then
+  echo "::error::expected $EXPECTED_PROJECTS formal projects, checked $checked. \
+If a project was added or removed on purpose, update EXPECTED_PROJECTS at the \
+top of this script."
+  exit 1
+fi
+
 echo "OK: $checked formal project(s) rebuilt from source and kernel-re-checked."

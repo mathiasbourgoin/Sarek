@@ -57,11 +57,13 @@ let ci_cpu_opencl =
     ~framework:"OpenCL"
     ~is_cpu:true
 
-(* pocl's CPU device, the conformant CPU ICD added to the CI image so the tests
-   this suppression soft-fails regain real coverage (#79). Also
-   CL_DEVICE_TYPE=CPU, so it satisfies is_cpu_opencl_device — the carve-out in
-   classify_cpu_opencl_math_result is what keeps its failures hard. Two names,
-   one per pocl naming era: "pthread-" (1.x, Ubuntu 22.04) and "cpu-" (3.x+). *)
+(* pocl's CPU device. Not in the CI image today (see Test_helpers.is_pocl_device
+   for why the jammy build was reverted), but CL_DEVICE_TYPE=CPU, so it would
+   satisfy is_cpu_opencl_device the moment one appears — and the carve-out in
+   classify_cpu_opencl_math_result is what would keep its failures hard. Pinning
+   the behaviour now means the experimental pocl PR cannot land the coverage
+   regression silently. Two names, one per pocl naming era: "pthread-" (1.x,
+   Ubuntu 22.04) and "cpu-" (3.x+). *)
 let pocl_cpu_pthread =
   device ~name:"pthread-znver3" ~framework:"OpenCL" ~is_cpu:true
 
@@ -284,7 +286,7 @@ let () =
   (* pocl carve-out (#79). pocl is CL_DEVICE_TYPE=CPU on OpenCL, so it passes
      is_cpu_opencl_device; if it were not carved out, the exact flake shape
      would be excused on it and adding a conformant ICD to the CI image would
-     have bought no coverage. Both naming eras must Fail. *)
+     buy no coverage. Both naming eras must Fail. *)
   print_endline "pocl (conformant CPU ICD) is never excused:" ;
   check
     "flake shape on pocl (pthread- name) -> Fail"

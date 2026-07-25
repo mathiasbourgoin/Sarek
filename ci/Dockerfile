@@ -44,54 +44,49 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 # ran. See ci/assert-toolchain.sh, which turns a future regression of this layer
 # back into a red build instead of a silent return to self-skipping.
 #
+# TOTAL IMAGE COST, measured by summing `docker history` layer sizes for a build
+# of this file against a build of the previous ci/Dockerfile:
+#   baseline           4483 MB
+#   with this file     4834 MB   -> +351 MB
+# broken down as: CUDA layer 304 MB, glslang layer 35.8 MB, naga 6.8 MB, gnupg
+# (needed for the NVIDIA apt keyring) 5 MB, symlink/ldconfig 0.1 MB.
+#
 #   glslang-tools       glslangValidator, the GLSL -> SPIR-V validator used by
 #                       the shader-validation sweep and by the production Vulkan
-#                       path (Sarek_vulkan.Vulkan_api_base). ~3 MB.
-#   spirv-tools         spirv-val, for cross-checking emitted SPIR-V. ~10 MB.
-#   pocl-opencl-icd     a conformant CPU OpenCL ICD. The image's only other ICD
-#                       is Intel's oneAPI CPU runtime, which mis-JITs its vector
-#                       math library on the Zen runners (it logs "Unknown host
-#                       CPU"; first bad element lands at index 4, an SSE lane
-#                       boundary) and therefore had to be classified as a
-#                       known-issue device (task #74) — leaving CI with zero
-#                       trustworthy OpenCL coverage. Both ICDs stay registered;
-#                       see the OCL_ICD_VENDORS split below. ~40 MB with LLVM
-#                       runtime deps.
-#   clinfo              used by ci/assert-toolchain.sh to prove the pocl device
-#                       actually enumerates. <1 MB.
+#                       path (Sarek_vulkan.Vulkan_api_base). 7.4 MB itself, but
+#                       35.8 MB as a layer: on jammy `glslang-tools` has a hard
+#                       `Depends: spirv-tools` (25.5 MB), so spirv-tools arrives
+#                       whether or not it is asked for. It is no longer listed
+#                       explicitly, because nothing in this repository uses
+#                       spirv-val and claiming it as a capability would be
+#                       false — but it cannot actually be removed without
+#                       losing glslangValidator.
+#
+# NOT installed, and why:
+#
+#   pocl-opencl-icd
+#                 A conformant CPU OpenCL ICD is still wanted (task #79: the
+#                 image's only ICD is Intel's oneAPI CPU runtime, classified as
+#                 a known-issue device by #74). But pocl 1.8 + LLVM 11 on jammy
+#                 cannot compile a single kernel in this image: every build
+#                 fails with `error: unknown target CPU 'generic'` against the
+#                 device string `pthread-x86_64-pc-linux-gnu-generic`. Pinning
+#                 e2e to it made test_float32_sin_pure and test_math_intrinsics
+#                 SKIP while `make e2e-fast` logged 11 errors and still exited
+#                 0 — strictly worse than the status quo. Measured in the same
+#                 image, the Intel ICD computed sin/cos/exp/sqrt correctly
+#                 (worst relative error 1.3e-07) and SPOC's own #74 expiry NOTE
+#                 fired to say so. pocl also dragged in ~243 MB of LLVM.
+#                 It moves to a separate experimental PR that installs it
+#                 WITHOUT pinning and logs whether it can compile a kernel on
+#                 the actual GitHub runner (Ice Lake / Zen 3), where LLVM 11 may
+#                 resolve a real target CPU and where #74's flake was first
+#                 seen. The inert Test_helpers.is_pocl_device carve-out stays in
+#                 the tree for that PR to use.
 # ---------------------------------------------------------------------------
 RUN apt-get update && apt-get install --no-install-recommends -y \
-    clinfo \
     glslang-tools \
-    ocl-icd-libopencl1 \
-    pocl-opencl-icd \
-    spirv-tools \
   && rm -rf /var/lib/apt/lists/*
-
-# ---------------------------------------------------------------------------
-# Deterministic OpenCL ICD selection.
-#
-# With two ICDs registered, `clCreateContextFromType`/device enumeration order
-# is up to the loader, so "the CPU OpenCL device" is not a well-defined thing
-# any more. Rather than remove one, keep /etc/OpenCL/vendors holding both (so
-# both are enumerable and comparable) and add two single-entry directories that
-# a CI step can point OCL_ICD_VENDORS at to pin exactly one ICD:
-#
-#   /etc/OpenCL/vendors-pocl   -> the conformant device, used for the float32
-#                                 math E2E tests that #74 had to soft-fail.
-#   /etc/OpenCL/vendors-intel  -> the oneAPI CPU runtime, still available.
-#
-# ci/assert-toolchain.sh checks that each directory resolves to exactly the
-# expected device, so a package rename cannot silently empty one of them.
-# ---------------------------------------------------------------------------
-RUN mkdir -p /etc/OpenCL/vendors-pocl /etc/OpenCL/vendors-intel \
-  && for icd in /etc/OpenCL/vendors/*.icd; do \
-       case "$(basename "$icd")" in \
-         pocl*) cp "$icd" /etc/OpenCL/vendors-pocl/ ;; \
-         *)     cp "$icd" /etc/OpenCL/vendors-intel/ ;; \
-       esac ; \
-     done \
-  && ls -l /etc/OpenCL/vendors /etc/OpenCL/vendors-pocl /etc/OpenCL/vendors-intel
 
 # ---------------------------------------------------------------------------
 # CUDA host-side compilers: ptxas (PTX assembler) and NVRTC (CUDA-C -> PTX).
@@ -110,15 +105,18 @@ RUN mkdir -p /etc/OpenCL/vendors-pocl /etc/OpenCL/vendors-intel \
 #     search list)".
 #
 # Granular packages only — deliberately NOT the `cuda-toolkit` metapackage
-# (multi-GB). Measured installed sizes (`ar p ... | tar -xJ`, du -sm):
-#   cuda-nvcc-12-6        148 MB  (ptxas 31 MB, nvlink 31 MB, nvcc 23 MB,
-#                                  libnvptxcompiler_static.a 60 MB)
-#   cuda-nvrtc-12-6        61 MB  (libnvrtc.so.12 + builtins)
-#   cuda-cudart-dev-12-6    7 MB  (cuda_fp16.h and friends)
-#   cuda-cccl-12-6         15 MB  (pulled in as a cudart-dev dependency)
-#   cuda-crt-12-6 + cuda-cudart-12-6  ~2 MB
+# (multi-GB). Sizes below are `dpkg-query Installed-Size` read out of the BUILT
+# image, dependencies included, not estimates from the .deb payloads:
+#   cuda-nvcc-12-6       147.6 MB  ptxas 31 MB, nvlink 31 MB, nvcc 23 MB,
+#                                  libnvptxcompiler_static.a 60 MB
+#   cuda-nvrtc-12-6       60.5 MB  libnvrtc.so.12 + builtins
+#   cuda-nvvm-12-6        56.1 MB  hard dependency of cuda-nvcc (cicc/libnvvm);
+#                                  not requested, not optional
+#   cuda-cccl-12-6        12.4 MB  dependency of cuda-cudart-dev
+#   cuda-cudart-dev-12-6   6.8 MB  cuda_fp16.h and the rest of the header tree
+#   cuda-crt / cuda-cudart / config / driver-dev   ~2.2 MB
 #   ------------------------------------------------------------------
-#   total                ~233 MB
+#   packages             285.6 MB;  layer as built: 304 MB
 #
 # cuda-nvrtc-dev-12-6 (93 MB: libnvrtc_static.a, libnvptxcompiler_static.a,
 # nvrtc.h) is deliberately NOT installed. Sarek reaches NVRTC by dlopen through
@@ -155,7 +153,9 @@ RUN ln -sfn "/usr/local/cuda-${CUDA_SERIES_DOTTED}" /usr/local/cuda \
        > /etc/ld.so.conf.d/999-cuda.conf \
   && ldconfig \
   && /usr/local/cuda/bin/ptxas --version \
-  && find /usr/local/cuda/ -name cuda_fp16.h | head -1
+  && fp16="$(find -L /usr/local/cuda -name cuda_fp16.h | head -1)" \
+  && [ -n "$fp16" ] \
+  && echo "cuda_fp16.h: $fp16"
 ENV CUDA_PATH=/usr/local/cuda
 ENV PATH=/usr/local/cuda/bin:$PATH
 
