@@ -20,6 +20,17 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    # Least privilege, same precedent as `formal-proofs` (#294): without an
+    # explicit block this job inherits the repository default token scope
+    # (zizmor: excessive-permissions). Every step here only reads the checkout
+    # and runs builds/tests in a container — no `git push`, no `gh`, no
+    # `secrets.*`, no `GITHUB_TOKEN`, and build-push-action runs with
+    # `load: true`, never `push: true`. The `actions/cache`, buildx `type=gha`
+    # cache and `actions/upload-artifact` steps authenticate with the runner's
+    # own job-scoped ACTIONS_RUNTIME_TOKEN, not with GITHUB_TOKEN, so they are
+    # unaffected by this block.
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
@@ -119,8 +130,29 @@ jobs:
               eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
               opam repo add alpha git+https://github.com/kit-ty-kate/opam-alpha-repository.git --set-default || true && \
               opam update && \
-              opam install -y ctypes ctypes-foreign ppxlib alcotest qcheck-core js_of_ocaml js_of_ocaml-ppx js_of_ocaml-compiler && \
+              opam install -y ctypes ctypes-foreign ppxlib alcotest qcheck-core js_of_ocaml js_of_ocaml-ppx js_of_ocaml-compiler ocamlformat.0.28.1 && \
               dune build @install'
+
+      # #122: nothing enforced `.ocamlformat`, so formatting drift accumulated
+      # on main unnoticed (Device.ml, Sarek_float32.ml, test_ir_layout.ml).
+      #
+      # `ocamlformat` is pinned to 0.28.1 to match `version=0.28.1` in
+      # `.ocamlformat`; ocamlformat refuses to run on a version mismatch, so the
+      # pin cannot silently drift from the config. And when ocamlformat is
+      # absent entirely dune fails with "Program ocamlformat not found in the
+      # tree or in PATH" rather than skipping the alias — verified locally — so
+      # unlike the codegen gates this one cannot self-skip into a vacuous green.
+      - name: Formatting gate
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            spoc-ci:latest \
+            bash -lc 'git config --global --add safe.directory /work && \
+              export OPAMROOT=/work/.opam-ci && \
+              eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
+              dune build @fmt'
+
       - name: jsoo-compat gate
         run: |
           docker run --rm \
@@ -261,7 +293,14 @@ jobs:
   check-generated-code:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    
+    # Least privilege, same precedent as `formal-proofs` (#294). This job
+    # regenerates the backend code and asserts the working tree is unchanged;
+    # it only ever *reads* git state (`git diff --quiet` / `--stat`). The
+    # `git commit` on the failure path is text inside an `echo`, telling a
+    # human what to run locally — nothing here writes to the repository.
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
