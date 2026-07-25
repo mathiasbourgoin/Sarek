@@ -215,6 +215,20 @@ let rec gen_expr buf = function
       Buffer.add_string buf " : " ;
       gen_expr buf else_ ;
       Buffer.add_char buf ')'
+  | EMatch (scrut, cases) when Sarek_ir_codegen.ematch_binds_payload cases ->
+      (* #75: a match EXPRESSION lowers to a nested ternary, which has nowhere
+         to declare a payload binder — bind it by substituting the same payload
+         read the [SMatch] arm declares, then emit the (now binder-free) match.
+         Shared with every other backend; see
+         {!Sarek_ir_codegen.subst_ematch_payloads}. *)
+      gen_expr
+        buf
+        (EMatch
+           ( scrut,
+             Sarek_ir_codegen.subst_ematch_payloads
+               ~union_field:(Some "data")
+               scrut
+               cases ))
   | EMatch (_, []) ->
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct "EMatch" "empty match expression")

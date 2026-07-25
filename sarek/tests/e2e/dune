@@ -1207,3 +1207,35 @@
  (alias runtest)
  (action
   (run %{dep:test_runtime_cache_reset_ids.exe})))
+
+; #75 — a match EXPRESSION whose arms bind and use a constructor payload must
+; execute correctly on every device. The binder deliberately shadows a
+; preceding local, so a dropped binding is a silent wrong answer rather than a
+; device-compiler error.
+
+(executable
+ (name test_ematch_payload_e2e)
+ (modules test_ematch_payload_e2e)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  sarek.codegen
+  spoc_core
+  test_helpers
+  sarek_native
+  sarek_interpreter
+  sarek_cuda
+  sarek_opencl
+  sarek_vulkan
+  unix
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_ematch_payload_e2e.exe})))

@@ -202,6 +202,153 @@ let rename_shadowing_locals ~collides ~fresh_name body =
   in
   re_stmt SM.empty body
 
+(** {1 Match-expression payload bindings}
+
+    A match STATEMENT ([SMatch]) lowers to a [switch] whose arms are blocks, so
+    each backend's [gen_match_pattern] can open the arm with real destructuring
+    declarations ([T r = <scrut>.data.C_v;]). A match EXPRESSION ([EMatch]) has
+    no such place: every backend lowers it to a nested ternary / [select()],
+    which is an expression, and C has no declaration in expression position.
+
+    Every backend therefore used to emit the case body with its payload binders
+    left dangling, i.e. [(<scrut>.tag == C) ? (r * r) : ...] with no [r] in
+    scope. On the shader backends that is a device-compiler error; on the
+    C-family backends it is SILENT-WRONG whenever an unrelated variable of the
+    same name happens to be in scope — the kernel computes with a stale value
+    and returns a plausible wrong answer, with no diagnostic anywhere (#75).
+
+    The fix is to bind the payload the only way expression position allows: by
+    SUBSTITUTING each binder with the payload access path itself. That path is
+    exactly the right-hand side the [SMatch] declaration already emits, so the
+    two paths agree by construction, and the substitution lives here — once —
+    rather than as a sixth per-backend copy (#94). *)
+
+(** [true] iff some case of a match expression binds at least one name, i.e. iff
+    {!subst_ematch_payloads} would change anything. Backends use it as the guard
+    on the rewrite arm; because the rewrite clears the binder lists, the guard
+    is false on the rewritten node and the rewrite cannot loop. *)
+let ematch_binds_payload (cases : (Sarek_ir_types.pattern * 'a) list) =
+  let open Sarek_ir_types in
+  List.exists (function PConstr (_, _ :: _), _ -> true | _ -> false) cases
+
+(** [subst_ematch_payloads ~union_field scrutinee cases] replaces every payload
+    binder of every case with the corresponding payload read of [scrutinee], and
+    clears the binder lists (the binders are consumed — nothing downstream reads
+    them; the backends only use the constructor name, for the tag test).
+
+    [union_field] is the ONLY backend-specific input: the C-family tagged union
+    nests payloads under a [data] member ([Some "data"] ⇒ [<scrut>.data.C_v] /
+    [<scrut>.data.C_v._<i>]), while GLSL and WGSL flatten them straight into the
+    variant struct ([None] ⇒ [<scrut>.C_v]). Both spellings match what that
+    backend's [gen_match_pattern] emits for [SMatch].
+
+    A one-payload constructor reads [C_v]; an n-payload one reads [C_v._<i>] —
+    the same arity split {!gen_variant_def} uses when laying the payload out.
+
+    The variable pattern [match e with x -> ...], which the PPX lowers to
+    [PConstr ("", [x])], binds the whole scrutinee rather than a payload, so [x]
+    is substituted by [scrutinee] itself.
+
+    Substitution is capture-avoiding: a nested [EMatch] arm that rebinds the
+    same name drops it from the environment, so the inner body keeps reading the
+    inner payload. Only [EMatch] binds names inside an expression, so that is
+    the only shadowing form to handle here.
+
+    [scrutinee] is duplicated once per substituted occurrence. IR expressions
+    are pure by construction (see {!Sarek_ir_types.expr}) so this is
+    semantics-preserving, and the tag test already re-emits the scrutinee once
+    per case, so it is not a new property of the lowering.
+
+    Not handled: [EArrayLen] of a payload binder. A vector-typed payload has no
+    companion [sarek_<name>_length] argument to read, so that shape has no
+    correct lowering at all; it is left untouched (pre-existing, and unreachable
+    from the current DSL, whose variant payloads are scalars). *)
+let subst_ematch_payloads ~(union_field : string option)
+    (scrutinee : Sarek_ir_types.expr)
+    (cases : (Sarek_ir_types.pattern * Sarek_ir_types.expr) list) :
+    (Sarek_ir_types.pattern * Sarek_ir_types.expr) list =
+  let open Sarek_ir_types in
+  let module SM = Map.Make (String) in
+  (* The [i]-th payload read of constructor [cname], whose pattern binds
+     [arity] names — the same access path [gen_match_pattern] declares. *)
+  let payload_access ~cname ~arity i =
+    let union =
+      match union_field with
+      | None -> scrutinee
+      | Some f -> ERecordField (scrutinee, f)
+    in
+    let field = ERecordField (union, cname ^ "_v") in
+    if arity <= 1 then field else ERecordField (field, Printf.sprintf "_%d" i)
+  in
+  let rec subst env e =
+    match e with
+    | EConst _ -> e
+    | EVar v -> (
+        match SM.find_opt v.var_name env with Some r -> r | None -> e)
+    | EBinop (op, a, b) -> EBinop (op, subst env a, subst env b)
+    | EUnop (op, a) -> EUnop (op, subst env a)
+    | EArrayRead (arr, i) -> (
+        let i = subst env i in
+        (* A substituted array name is no longer an identifier, so the read has
+           to become the expression-based form. *)
+        match SM.find_opt arr env with
+        | Some base -> EArrayReadExpr (base, i)
+        | None -> EArrayRead (arr, i))
+    | EArrayReadExpr (b, i) -> EArrayReadExpr (subst env b, subst env i)
+    | ERecordField (e, f) -> ERecordField (subst env e, f)
+    | EIntrinsic (ns, n, args) -> EIntrinsic (ns, n, List.map (subst env) args)
+    | ECast (t, e) -> ECast (t, subst env e)
+    | ETuple es -> ETuple (List.map (subst env) es)
+    | EApp (f, args) -> EApp (subst env f, List.map (subst env) args)
+    | ERecord (n, fs) ->
+        ERecord (n, List.map (fun (k, x) -> (k, subst env x)) fs)
+    | EVariant (t, c, args) -> EVariant (t, c, List.map (subst env) args)
+    | EArrayLen _ -> e
+    | EArrayCreate (t, s, m) -> EArrayCreate (t, subst env s, m)
+    | EIf (c, t, f) -> EIf (subst env c, subst env t, subst env f)
+    | EMatch (s, cs) ->
+        (* The inner match's own binders are resolved when the backend reaches
+           that node (against the inner scrutinee); here they only need to
+           shadow the outer ones. *)
+        EMatch
+          ( subst env s,
+            List.map
+              (fun (p, b) ->
+                let env =
+                  match p with
+                  | PWild -> env
+                  | PConstr (_, names) ->
+                      List.fold_left (fun env n -> SM.remove n env) env names
+                in
+                (p, subst env b))
+              cs )
+  in
+  List.map
+    (fun (pat, body) ->
+      match pat with
+      | PWild | PConstr (_, []) -> (pat, body)
+      (* [match e with x -> ...]: [x] is the whole scrutinee, not a payload. *)
+      | PConstr ("", [x]) ->
+          (PConstr ("", []), subst (SM.singleton x scrutinee) body)
+      | PConstr (cname, names) ->
+          let arity = List.length names in
+          let env =
+            List.fold_left
+              (fun (env, i) n ->
+                (* [_] is the throwaway binder: never referenced, and mapping it
+                   would rewrite an unrelated identifier if one existed. *)
+                let env =
+                  if n = "_" then env
+                  else SM.add n (payload_access ~cname ~arity i) env
+                in
+                (env, i + 1))
+              (SM.empty, 0)
+              names
+            |> fst
+          in
+          (PConstr (cname, []), subst env body))
+    cases
+
 (** Emit a C/MSL tagged-union variant type (enum + typedef struct + union +
     inline constructors). [type_of_elttype] and [constructor_prefix] are the
     only backend-specific inputs. *)

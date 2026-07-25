@@ -343,10 +343,13 @@ let vec_len_shadow_kernel () =
     name — a wrong-variable read. With the fix the pattern binder gets its own
     fresh name ([sarek_pc_shadow_width_2]).
 
-    This is a semantic assertion, not a glslangValidator case: an [EMatch] arm
-    that references its payload binder is a separate pre-existing backend
-    limitation (no destructuring declaration is emitted for expression-position
-    matches), so the shader is not expected to assemble regardless. *)
+    Since #75 this IS a glslangValidator case. The [EMatch] arm's payload binder
+    is substituted by the payload read itself ([<scrut>.OptSome_v]), so no
+    binder survives into the emitted arm and the shader assembles — which is
+    exactly what makes the fallback arm's outer [width] read observable to the
+    validator rather than only to a string match. (Before #75 the arm emitted an
+    undefined identifier; #73 turned that into an outright refusal to generate.)
+*)
 let ematch_shadow_kernel () =
   let opt_constrs = [("OptNone", []); ("OptSome", [TFloat32])] in
   let opt_type = TVariant ("Opt", opt_constrs) in
@@ -809,38 +812,60 @@ let test_glsl_vec_len_shadow_validates () =
           e
           k
 
-(* #71 gap #2 (silent wrong-var read). Semantic assertion, not a validator gate
-   (EMatch expression binders emit no declaration — see kernel docstring).
+(* #71 gap #2 (silent wrong-var read) + #75 (payload binding), on one kernel.
 
-   [ematch-payload-fail-loud] (#73) superseded the earlier shadow-rename
-   assertion here: an [EMatch] arm that binds AND reads its payload binder is no
-   longer lowered to a wrong-variable ternary read — the GLSL backend now fails
-   loud with a located [Unsupported_construct "match-expression payload
-   binding"] before any code is emitted. This is the correct terminal behavior
-   for that pre-existing limitation (no destructuring declaration exists for
-   expression-position matches), so the guarantee under test is now the raise
-   itself. Red-on-mutation: remove the backend guard and generation succeeds
-   again, emitting silent-wrong / undefined GLSL, and this check fails. *)
+   The arms disagree on purpose: the [OptSome] arm binds a payload named
+   [width], the [OptNone] arm reads the OUTER local also named [width], and a
+   scalar PARAM is named [width] too. Three distinct values, one name. What the
+   generated shader does with each is the whole assertion:
+
+   - the [OptSome] arm must read the PAYLOAD ([.OptSome_v]) — #75. Before it,
+     the binder was dropped: the arm read whatever [width] resolved to, and the
+     GLSL backend then either emitted an undefined identifier or (after #73)
+     refused to generate at all;
+   - the [OptNone] arm must read the outer local under its alpha-renamed name
+     ([sarek_pc_shadow_width_1]), not the push-constant — #71 gap #2;
+   - no binder name may survive anywhere in the arm, renamed or not;
+   - and glslangValidator must ACCEPT the result, which is the part no string
+     assertion can stand in for. *)
 let test_glsl_ematch_pattern_shadow_rebinds () =
-  match
+  let glsl =
     Sarek_ir_glsl.generate_with_types ~types:[] (ematch_shadow_kernel ())
-  with
-  | (_ : string) ->
-      Alcotest.failf
-        "expected a located Unsupported_construct for the payload-using EMatch \
-         arm, but GLSL generation succeeded (silent-wrong / undefined code)"
-  | exception
-      Backend_error.Backend_error
-        (Backend_error.Codegen
-           {backend; error = Backend_error.Unsupported_construct {construct; _}})
-    ->
-      Alcotest.(check string) "backend tag" "Vulkan" backend ;
-      Alcotest.(check string)
-        "names the construct"
-        "match-expression payload binding"
-        construct ;
-      Printf.printf
-        "  fail-loud OK: ematch_shadow (payload binding rejected)\n%!"
+  in
+  if not (contains glsl ".OptSome_v") then
+    Alcotest.failf
+      "the OptSome arm must read the payload (.OptSome_v); the binder was \
+       dropped, so the arm reads an unrelated same-named value:\n\
+       %s"
+      glsl ;
+  if not (contains glsl "sarek_pc_shadow_width_1") then
+    Alcotest.failf
+      "the OptNone arm must read the outer local under its renamed name \
+       (sarek_pc_shadow_width_1), not the push constant:\n\
+       %s"
+      glsl ;
+  if contains glsl "sarek_pc_shadow_width_2" then
+    Alcotest.failf
+      "the payload binder must be substituted away, not renamed and left \
+       undeclared:\n\
+       %s"
+      glsl ;
+  if not (Lazy.force glslang_available) then begin
+    Printf.printf "  SKIP: glslangValidator not on PATH\n%!" ;
+    Alcotest.skip ()
+  end
+  else
+    match glslang_ok glsl with
+    | Ok () -> Printf.printf "  glslangValidator OK: ematch_shadow\n%!"
+    | Error e ->
+        Alcotest.failf
+          "glslangValidator rejected ematch_shadow GLSL (undefined payload \
+           binder?):\n\
+           %s\n\
+           --- shader ---\n\
+           %s"
+          e
+          glsl
 
 let () =
   Alcotest.run
@@ -885,7 +910,7 @@ let () =
             `Quick
             test_glsl_vec_len_shadow_validates;
           Alcotest.test_case
-            "GLSL EMatch payload binding fails loud (#73)"
+            "GLSL EMatch payload binding validates (#75)"
             `Quick
             test_glsl_ematch_pattern_shadow_rebinds;
         ] );

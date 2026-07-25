@@ -68,8 +68,8 @@
   (backend bisect_ppx)))
 
 (test
- (name test_shader_ematch_payload)
- (modules test_shader_ematch_payload)
+ (name test_ematch_payload_binding)
+ (modules test_ematch_payload_binding)
  (libraries sarek_ir sarek_codegen sarek_backend_error alcotest)
  (instrumentation
   (backend bisect_ppx)))

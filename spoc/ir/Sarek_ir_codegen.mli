@@ -63,6 +63,51 @@ val rename_shadowing_locals :
   Sarek_ir_types.stmt ->
   Sarek_ir_types.stmt
 
+(** {1 Match-expression payload bindings}
+
+    A match STATEMENT ([SMatch]) lowers to a [switch] whose arms are blocks, so
+    each backend opens the arm with real destructuring declarations
+    ([T r = <scrut>.data.C_v;]). A match EXPRESSION ([EMatch]) lowers to a
+    nested ternary / [select()] and has nowhere to declare anything, so every
+    backend used to emit the case body with its payload binders left dangling.
+    On the shader backends that is a device-compiler error; on the C-family
+    backends it is SILENT-WRONG when an unrelated same-named variable is in
+    scope — the kernel returns a plausible wrong answer with no diagnostic
+    (#75). Expression position admits exactly one binding mechanism —
+    substituting the binder by the payload read — and it lives here, once,
+    rather than as a per-backend copy (#94). *)
+
+(** [true] iff some case of a match expression binds at least one name, i.e. iff
+    {!subst_ematch_payloads} would change anything. Backends guard their rewrite
+    arm with it; the rewrite clears the binder lists, so the guard is false on
+    the rewritten node and cannot loop. *)
+val ematch_binds_payload : (Sarek_ir_types.pattern * 'a) list -> bool
+
+(** [subst_ematch_payloads ~union_field scrutinee cases] replaces every payload
+    binder of every case by the corresponding payload read of [scrutinee] and
+    clears the binder lists (backends only need the constructor name, for the
+    tag test). The access path is the one that backend's [SMatch] arm already
+    declares, so the two paths agree by construction.
+
+    [union_field] is the only backend-specific input: [Some "data"] for the
+    C-family tagged union ([<scrut>.data.C_v], [<scrut>.data.C_v._<i>] for a
+    multi-payload constructor), [None] for GLSL/WGSL, which flatten payloads
+    into the variant struct ([<scrut>.C_v]).
+
+    Substitution is capture-avoiding — a nested [EMatch] arm rebinding the same
+    name keeps reading its own payload — and the variable pattern
+    [PConstr ("", [x])] (from [match e with x -> ...]) binds the whole
+    scrutinee. [scrutinee] is duplicated per occurrence, which is
+    semantics-preserving because IR expressions are pure and the tag test
+    already re-emits it once per case. [EArrayLen] of a payload binder is left
+    untouched: a vector payload has no companion length argument, so that shape
+    has no correct lowering (pre-existing, unreachable from the DSL). *)
+val subst_ematch_payloads :
+  union_field:string option ->
+  Sarek_ir_types.expr ->
+  (Sarek_ir_types.pattern * Sarek_ir_types.expr) list ->
+  (Sarek_ir_types.pattern * Sarek_ir_types.expr) list
+
 (** Emit a C/MSL tagged-union variant type: an [enum] of constructor tags, a
     [typedef struct] with a [tag] field and a [union] of payloads, and one
     inline constructor function per case.
