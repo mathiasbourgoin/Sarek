@@ -390,6 +390,55 @@ let ematch_shadow_kernel () =
   in
   {k with kern_variants = [("Opt", opt_constrs)]}
 
+(** WGSL scalar-param-shadowing MUTATED local (#72). WGSL accesses scalar params
+    as [params.<name>] field reads, decided per-[EVar] by the global
+    [scalar_param_names] ref, which ignores local scope. A local [let mut width]
+    that shadows a scalar param [width] therefore has every body {e read} of
+    [width] emitted as [params.width] (the immutable uniform), while the
+    declaration and the assignment {e target} use the bare name (writing the
+    local). For a mutated local the two diverge: the writes hit a local nobody
+    reads, and the reads see the never-updated uniform — a silent wrong result
+    (valid WGSL, no error).
+
+    The local's initializer is a constant (NOT [params.width]), so [params.width]
+    appears in the emitted shader {e only} through the buggy body reads: with the
+    scalar-shadow rename pass it must not appear at all, and the local must carry
+    a fresh [sarek_scalar_shadow_*] name. *)
+let wgsl_scalar_shadow_mut_kernel () =
+  let out = make_var "out" (TVec TFloat32) in
+  let width = make_var "width" TInt32 in
+  let tid = make_var "tid" TInt32 in
+  (* mutable local named EXACTLY like the scalar param *)
+  let width_l = {(make_var "width" TInt32) with var_mutable = true} in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SLetMut
+          ( width_l,
+            (* init from a constant, NOT from the param — so any params.width in
+               the output can only come from the buggy body reads below *)
+            EConst (CInt32 1l),
+            SSeq
+              [
+                (* mutate the local: width := width + 1 *)
+                SAssign
+                  (LVar width_l, EBinop (Add, EVar width_l, EConst (CInt32 1l)));
+                (* read the local — the bug emits params.width here *)
+                SAssign
+                  ( LArrayElem ("out", EVar tid),
+                    ECast (TFloat32, EVar width_l) );
+              ] ) )
+  in
+  base_kernel
+    "wgsl_scalar_shadow_mut"
+    [
+      DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (width, None);
+    ]
+    body
+    []
+
 (* ---- validator plumbing (mirrors the ptxas gate) ---- *)
 
 let tool_available cmd =
@@ -608,6 +657,50 @@ let test_wgsl_transpose_naive_validates () =
           e
           wgsl
 
+(* #72: a MUTATED local shadowing a scalar param must be alpha-renamed so its
+   body reads resolve to the local, not the immutable `params.<name>` uniform.
+   Codegen-golden (naga absent): asserts the emitted WGSL tokens directly, no
+   runtime execution. Were naga present this kernel would also be a semantic
+   positive control (writes-then-reads the local). Red-on-mutation: revert the
+   rename pass in Sarek_ir_wgsl and the body reads emit `params.width` (the
+   silent wrong result) while `sarek_scalar_shadow_` never appears. *)
+let test_wgsl_scalar_shadow_mut_local () =
+  let wgsl = Sarek_ir_wgsl.generate (wgsl_scalar_shadow_mut_kernel ()) in
+  (* The mutated shadowing local must be alpha-renamed. *)
+  if not (contains wgsl "sarek_scalar_shadow_width_1") then
+    Alcotest.failf
+      "expected the mutated scalar-param-shadowing local to be alpha-renamed \
+       (sarek_scalar_shadow_width_1):\n\
+       %s"
+      wgsl ;
+  (* The local's init is a constant, so `params.width` can appear ONLY through
+     the buggy body reads of the shadowed local. With the fix it must not. *)
+  if contains wgsl "params.width" then
+    Alcotest.failf
+      "a body reference to the mutated shadowing local was emitted as \
+       `params.width` (reads the uniform, not the local — silent wrong \
+       result):\n\
+       %s"
+      wgsl ;
+  (* The declaration and the mutation must both use the renamed local. *)
+  if not (contains wgsl "var sarek_scalar_shadow_width_1 : i32 = 1i") then
+    Alcotest.failf
+      "expected the mutable local declaration to use the renamed name:\n%s"
+      wgsl ;
+  if not (Lazy.force naga_available) then
+    Printf.printf
+      "  codegen-golden OK: wgsl_scalar_shadow_mut (naga absent — WGSL \
+       assertion is on emitted text, not runtime)\n\
+       %!"
+  else
+    match naga_ok wgsl with
+    | Ok () -> Printf.printf "  naga OK: wgsl_scalar_shadow_mut\n%!"
+    | Error e ->
+        Alcotest.failf
+          "naga rejected wgsl_scalar_shadow_mut WGSL:\n%s\n--- shader ---\n%s"
+          e
+          wgsl
+
 (* #71 gap #1: a match variant binder named like a scalar param must be
    alpha-renamed (gen_match_pattern emits it as a real declaration). Red-on-
    mutation: revert the pattern-binder rename and glslangValidator fails with
@@ -731,6 +824,10 @@ let () =
             "WGSL transpose_naive scalar-param-shadowing local"
             `Quick
             test_wgsl_transpose_naive_validates;
+          Alcotest.test_case
+            "WGSL mutated local shadows scalar param (silent wrong result)"
+            `Quick
+            test_wgsl_scalar_shadow_mut_local;
           Alcotest.test_case
             "GLSL match pattern binder shadows scalar param (unexpected DOT)"
             `Quick
