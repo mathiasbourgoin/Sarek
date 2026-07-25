@@ -16,8 +16,10 @@
     ({!Sarek_ir_ptx_expr.intrinsic_names}) rather than a hand-picked list: it
     builds and assembles at least one kernel per intrinsic NAME, and an
     intrinsic added to the emitter with no kernel recipe here FAILS the recipe
-    test. Assembly self-skips (with a printed reason) when [ptxas] is absent,
-    mirroring the existing gate, so the suite stays green off-CUDA machines. *)
+    test. Kernel GENERATION always runs; only the [ptxas] assembly step
+    self-skips (with a printed reason saying what is still checked) when the
+    tool is absent, so the suite stays green — and still meaningful — off-CUDA
+    machines. *)
 
 open Sarek_ir_types
 open Sarek_codegen
@@ -332,6 +334,129 @@ let test_name_sets_disjoint () =
                (String.concat "; " ds)))
     named_sets
 
+(* ---- registry vs. emitter arms ------------------------------------------- *)
+
+(* The name tables and the emitters' [match] arms are two sources for one fact,
+   hundreds of lines apart: a name declared in a table but with no arm, or an
+   arm added without its table entry, is drift. The unregistered direction is
+   fail-loud at runtime (the name reaches no emitter and becomes [unsupported])
+   but nothing FAILS A TEST — the arm is simply absent from dispatch, from
+   [intrinsic_names] and from this sweep, all at once. Until the categories
+   become single name -> handler registries (which would make this structural),
+   scan the emitter source and require the two to agree exactly. *)
+
+let emitter_source_path () =
+  List.find_opt
+    Sys.file_exists
+    ((match Sys.getenv_opt "SAREK_PTX_EXPR_SRC" with
+       | Some p -> [p]
+       | None -> [])
+    @ [
+        (* cwd is the test's build dir under dune runtest; the file is a
+           declared dep of this test in sarek/tests/unit/dune. *)
+        Filename.concat
+          ".."
+          (Filename.concat ".." "codegen/Sarek_ir_ptx_expr.ml");
+        "sarek/codegen/Sarek_ir_ptx_expr.ml";
+      ])
+
+let read_lines path =
+  let ic = open_in path in
+  let rec go acc =
+    match input_line ic with
+    | l -> go (l :: acc)
+    | exception End_of_file ->
+        close_in ic ;
+        List.rev acc
+  in
+  go []
+
+(* The quoted names of a top-level [match] arm: everything before the [->], so
+   string arguments in the arm's BODY (e.g. ~f32_op:(Some "sqrt.rn.f32")) are
+   not mistaken for patterns. *)
+let pattern_names line =
+  let head =
+    match Str.bounded_split_delim (Str.regexp_string "->") line 2 with
+    | h :: _ -> h
+    | [] -> line
+  in
+  let re = Str.regexp "\"\\([a-z0-9_]+\\)\"" in
+  let rec go i acc =
+    match Str.search_forward re head i with
+    | exception Not_found -> List.rev acc
+    | _ -> go (Str.match_end ()) (Str.matched_group 1 head :: acc)
+  in
+  go 0 []
+
+(** [category, arm names] scraped from the emitter source, in file order. *)
+let arms_by_category lines =
+  let categories =
+    ["index"; "transcendental"; "float_ops"; "bitcast"; "convert"; "atomic"]
+  in
+  let acc = Hashtbl.create 8 in
+  let current = ref None in
+  List.iter
+    (fun line ->
+      (match
+         List.find_opt
+           (fun c -> starts_with ("and emit_intrinsic_" ^ c ^ " ") line)
+           categories
+       with
+      | Some c -> current := Some c
+      | None -> if starts_with "and " line then current := None) ;
+      match !current with
+      | None -> ()
+      | Some c ->
+          let t = String.trim line in
+          if starts_with "| \"" t then
+            let previous = Option.value (Hashtbl.find_opt acc c) ~default:[] in
+            Hashtbl.replace acc c (previous @ pattern_names t))
+    lines ;
+  List.map
+    (fun c -> (c, Option.value (Hashtbl.find_opt acc c) ~default:[]))
+    categories
+
+(** The exported name tables and the emitters' own [match] arms must agree, name
+    for name, in both directions. *)
+let test_arms_match_registry () =
+  match emitter_source_path () with
+  | None ->
+      Alcotest.fail
+        "cannot locate Sarek_ir_ptx_expr.ml to scan its intrinsic match arms \
+         (declare it as a dep of this test, or set SAREK_PTX_EXPR_SRC)"
+  | Some path ->
+      let scraped = arms_by_category (read_lines path) in
+      let registered = named_sets in
+      List.iter
+        (fun (cat, arms) ->
+          let declared =
+            Option.value (List.assoc_opt cat registered) ~default:[]
+          in
+          let arms = List.sort_uniq compare arms in
+          let declared = List.sort_uniq compare declared in
+          let missing = List.filter (fun n -> not (List.mem n declared)) arms in
+          let extra = List.filter (fun n -> not (List.mem n arms)) declared in
+          if missing <> [] then
+            Alcotest.fail
+              (Printf.sprintf
+                 "emit_intrinsic_%s has match arm(s) [%s] that are NOT in \
+                  %s_intrinsic_names — the arm is unreachable: dispatch is by \
+                  name, so the intrinsic is [unsupported] and absent from the \
+                  sweep"
+                 cat
+                 (String.concat "; " missing)
+                 cat) ;
+          if extra <> [] then
+            Alcotest.fail
+              (Printf.sprintf
+                 "%s_intrinsic_names declares [%s] with no matching arm in \
+                  emit_intrinsic_%s — dispatch would route the name to an \
+                  emitter that declines it"
+                 cat
+                 (String.concat "; " extra)
+                 cat))
+        scraped
+
 (** Every dispatched intrinsic name has an assembling kernel recipe above. This
     is the anti-drift check: add an intrinsic to the emitter and this fails
     until the sweep covers it. *)
@@ -357,53 +482,94 @@ let all_cases () =
       | Some cs -> List.map (fun (label, k) -> (n, label, k)) cs)
     Sarek_ir_ptx_expr.intrinsic_names
 
-(** Generate and assemble one kernel per case, reporting per-name pass/fail so a
-    failure names the culprit intrinsic. The whole sweep (114 kernels) costs
-    ~1.3s of ptxas, so it stays on the default [runtest] alias. *)
+(* Opcode forms known to be invalid PTX, checked on the generated text so a
+   CPU-only run catches this class too — without a CUDA toolkit the assembler
+   cannot say so, and this gate exists precisely because such a form shipped.
+   Keep it to forms proven illegal against ptxas, one line per form. *)
+let illegal_opcodes =
+  [
+    ( "cvt.rn.f64.f32",
+      "a rounding modifier on the EXACT f32->f64 widening (ptxas: Illegal \
+       rounding modifier for instruction 'cvt'); emit cvt.f64.f32" );
+  ]
+
+let contains haystack needle =
+  match Str.search_forward (Str.regexp_string needle) haystack 0 with
+  | _ -> true
+  | exception Not_found -> false
+
+(** Generate — and, where [ptxas] exists, assemble — one kernel per case,
+    reporting per-name pass/fail so a failure names the culprit intrinsic. The
+    whole sweep (114 kernels) costs ~1.3s of ptxas, so it stays on the default
+    [runtest] alias.
+
+    GENERATION ALWAYS RUNS, including on CPU-only machines: it is what proves
+    every registered name is actually claimed by an emitter, that the emitter
+    does not decline it, and that the recipe's arguments are accepted. Only the
+    [ptxas] assembly step — the extra layer that catches invalid opcodes such as
+    the [cvt.rn.f64.f32] this gate was built for — is skipped when the tool is
+    absent. *)
 let sweep () =
-  if not (Lazy.force ptxas_available) then
-    Printf.printf "  SKIP: ptxas not on PATH (CPU-only environment)\n%!"
-  else begin
-    let cases = all_cases () in
-    let failures = ref [] in
-    let ok = ref 0 in
-    List.iter
-      (fun (name, label, k) ->
-        match
-          try Ok (Sarek_ir_ptx.generate k)
-          with e -> Error ("codegen raised " ^ Printexc.to_string e)
-        with
-        | Error e ->
-            failures := (name, label, e) :: !failures ;
-            Printf.printf "  FAIL %-28s %s\n%!" label e
-        | Ok ptx -> (
+  let have_ptxas = Lazy.force ptxas_available in
+  if not have_ptxas then
+    Printf.printf
+      "  NOTE: ptxas not on PATH — assembly is skipped, but every intrinsic \
+       kernel is still enumerated and GENERATED (an unclaimed name, a \
+       declining emitter or any codegen exception still fails this test)\n\
+       %!" ;
+  let cases = all_cases () in
+  let failures = ref [] in
+  let generated = ref 0 in
+  let assembled = ref 0 in
+  List.iter
+    (fun (name, label, k) ->
+      match
+        try Ok (Sarek_ir_ptx.generate k)
+        with e -> Error ("codegen raised " ^ Printexc.to_string e)
+      with
+      | Error e ->
+          failures := (name, label, e) :: !failures ;
+          Printf.printf "  FAIL %-28s %s\n%!" label e
+      | Ok ptx -> (
+          incr generated ;
+          List.iter
+            (fun (op, why) ->
+              if contains ptx op then begin
+                let e = Printf.sprintf "emits illegal %s — %s" op why in
+                failures := (name, label, e) :: !failures ;
+                Printf.printf "  FAIL %-28s %s\n%!" label e
+              end)
+            illegal_opcodes ;
+          if not have_ptxas then Printf.printf "  gen  %s\n%!" label
+          else
             match assemble_ok ptx with
             | Ok () ->
-                incr ok ;
+                incr assembled ;
                 Printf.printf "  ok   %s\n%!" label
             | Error err ->
                 failures := (name, label, String.trim err) :: !failures ;
                 Printf.printf "  FAIL %-28s %s\n%!" label (String.trim err)))
-      cases ;
-    Printf.printf
-      "  ptxas sweep: %d/%d cases assembled\n%!"
-      !ok
-      (List.length cases) ;
-    match List.rev !failures with
-    | [] -> ()
-    | fs ->
-        let names = List.sort_uniq compare (List.map (fun (n, _, _) -> n) fs) in
-        Alcotest.fail
-          (Printf.sprintf
-             "ptxas rejected %d kernel(s) — broken intrinsic(s): %s\n%s"
-             (List.length fs)
-             (String.concat ", " names)
-             (String.concat
-                "\n"
-                (List.map
-                   (fun (_, label, e) -> Printf.sprintf "  %s: %s" label e)
-                   fs)))
-  end
+    cases ;
+  Printf.printf
+    "  intrinsic sweep: %d/%d kernels generated, %d assembled%s\n%!"
+    !generated
+    (List.length cases)
+    !assembled
+    (if have_ptxas then "" else " (ptxas absent)") ;
+  match List.rev !failures with
+  | [] -> ()
+  | fs ->
+      let names = List.sort_uniq compare (List.map (fun (n, _, _) -> n) fs) in
+      Alcotest.fail
+        (Printf.sprintf
+           "%d intrinsic kernel(s) rejected — broken intrinsic(s): %s\n%s"
+           (List.length fs)
+           (String.concat ", " names)
+           (String.concat
+              "\n"
+              (List.map
+                 (fun (_, label, e) -> Printf.sprintf "  %s: %s" label e)
+                 fs)))
 
 let () =
   Alcotest.run
@@ -416,6 +582,10 @@ let () =
             `Quick
             test_name_sets_disjoint;
           Alcotest.test_case
+            "emitter match arms and the exported name tables agree"
+            `Quick
+            test_arms_match_registry;
+          Alcotest.test_case
             "every dispatched intrinsic has a sweep kernel"
             `Quick
             test_every_name_has_a_recipe;
@@ -423,7 +593,8 @@ let () =
       ( "ptxas",
         [
           Alcotest.test_case
-            "assembles a kernel per intrinsic name (skips if ptxas absent)"
+            "generates (always) and assembles (if ptxas) a kernel per \
+             intrinsic name"
             `Quick
             sweep;
         ] );

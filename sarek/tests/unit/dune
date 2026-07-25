@@ -66,6 +66,9 @@
 
 (test
  (name test_ptx_intrinsic_sweep)
+ ; The emitter source is a dep: one test scans its intrinsic match arms and
+ ; requires them to agree with the exported name tables.
+ (deps ../../codegen/Sarek_ir_ptx_expr.ml)
  (libraries sarek.codegen alcotest unix str))
 
 ; Shader-validation gate for recursion + vector-parameter helpers.
