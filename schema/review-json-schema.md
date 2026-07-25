@@ -54,9 +54,13 @@ Two ordering traps, both of which have already cost real rounds:
 - **`review-normalize.js` takes a JSON ARRAY of finding objects, never the verdict envelope.**
   Passing the envelope yields `finding file must be a JSON array` and nothing at the call site says
   which is expected. `review-verdict-assemble.js` checks this per-file and names the offending file.
-- **Skipping step 2 makes step 4 unable to detect a novel finding at all.** `first_seen_round` is
-  stamped during normalization against the prior ledger; without it, `isNovelStrikeFinding()`
-  returns false for every finding and no round ever strikes.
+- **Skipping step 2 makes step 4 unable to detect a novel finding at all.** Normalization is what
+  makes fingerprints stable, and stable fingerprints are what separate a novel finding from a
+  carried-forward one. Note that `first_seen_round` itself is **not** stamped by the normalizer —
+  `canonicalizeFindings()` rewrites only `fingerprint`, `fingerprint_v2`, `fid` and `status`, and
+  `schema/review-finding.schema.json` does not require the field — yet `isNovelStrikeFinding()`
+  returns false unless it is numeric and equals the round. A HIGH+ finding that arrives without it
+  is therefore permanently unstrikeable, which is why `review-verdict-assemble.js` refuses one.
 
 ---
 
@@ -102,7 +106,7 @@ $ echo $?
 `violations: []`, exit `0`. The gate passed because it was never given anything to check, and that
 outcome is byte-identical to a genuine pass everywhere a caller looks (exit code, `violations`,
 `cause`). The two knobs that produce it are [`round`](#round) and
-[`rounds_audit[].strike`](#roundsauditstrike) — read those two sections before writing a verdict by
+[`rounds_audit[].strike`](#rounds_auditstrike) — read those two sections before writing a verdict by
 hand.
 
 ---
@@ -113,14 +117,14 @@ Exactly ten. Anything else in the envelope is prose-enforced only.
 
 | Key | Absent | Malformed | What it drives |
 |---|---|---|---|
-| `round` | **skips strike + rounds_audit + trace checks**, warns, still exit 0 | non-number / negative / non-finite → exit 2 | strike classification, `rounds_audit` completeness, trace obligation |
+| `round` | **skips strike + rounds_audit + trace checks**, warns, and exits 0 *unless something else independently violates* (a `no_go_round` at the cap still exits 1) | non-number / negative / non-finite → exit 2 | strike classification, `rounds_audit` completeness, trace obligation |
 | `no_go_round` | defaults to `0` + warning; round-cap can never fire | non-number / negative → exit 2 | the round-cap violation (`no_go_round >= --max-rounds`) |
 | `cycle` | `null`, legacy-safe | non-number → `null`, never fatal | `(cycle, round)` scoping of trace lines |
 | `findings` | `[]`, legacy-safe | present but not an array → exit 2 | ratchet, unencodable-finding, strike classification, red/green |
 | `rounds_audit` | treated as `[]` | non-array → treated as `[]` | past strikes, loop-back completeness, trace obligation |
 | `task` | see below | not a `validSlug` **on a trace-obligated round** → exit 2 | derives the trace + journal sibling paths |
 | `mode` | no scope-gate trace line is required | any value other than `"full"` → same as absent | requires a `scope-gate` trace line when `"full"` |
-| `normalized_by` | no `normalizer` trace line required; triggers the omit-everything warning | any truthy value behaves alike | requires a `normalizer` trace line |
+| `normalized_by` | no `normalizer` trace line required; triggers the omit-everything warning **only if the round is also un-obligated** | any truthy value behaves alike | requires a `normalizer` trace line |
 | `cross_runtime` | no warnings, no corroboration | non-object → ignored | degraded-bookkeeping warnings, journal corroboration |
 | `streak_override` | no override | anything not `{round: <this round>, by: "human"}` → no override | forces this round's `strike` to `false` |
 
@@ -147,6 +151,13 @@ fan-out, empty `rounds_audit`, new cross-runtime probe, `cycle + 1`.
 the `rounds_audit` completeness check, and all trace checks, emits three warnings, and exits 0.
 `scripts/review-verdict-assemble.js` refuses to emit a verdict without it.
 
+**Skipping a round is the quieter half of the same hole.** `computeStreakViolation()` walks
+`round, round-1, …` and stops at the first entry that is not `true`; `computeStrikeMap()` only
+knows about rounds that have a `rounds_audit` entry. Jumping from round 3 to round 7 therefore
+leaves rounds 4–6 absent from the map and erases the streak — with **no** warning, because
+`computeMissingStrikeWarnings()` only inspects entries that exist. The assembler refuses any
+`--round` other than the one the lifecycle witness derives.
+
 Never conflate `round` with `no_go_round` — separate counters, separate reset rules.
 
 ### `no_go_round`
@@ -154,7 +165,10 @@ Never conflate `round` with `no_go_round` — separate counters, separate reset 
 Integer ≥ 0. The **qualifying-only** round-cap backstop: reset to `0` on `GO`, incremented on a
 finding-driven `NO-GO` outside `category: "scope"`. Compared against `--max-rounds`
 (`tunables.max_no_go_rounds`, default 5) to produce the `round-cap` violation. Absent → `0` with a
-warning, which means the cap can never fire; that is a second, quieter vacuity path.
+warning, which means the cap can never fire; that is a second, quieter vacuity path. A counter
+that is *present* but never advances is the same hole with no warning at all, so the assembler
+requires each NO-GO verdict's `--no-go-round` to either hold or advance by exactly one relative to
+the prior verdict.
 
 ### `cycle`
 
@@ -226,7 +240,9 @@ round-1 entry is a warning in prose, not a violation. Write the entry anyway.
 `briefs/<task>-review-trace.jsonl` with ≥1 line for `(task, cycle, round)`, plus one line per
 claimed invocation. Omit it only for a round that genuinely predates the trace mechanism. Never
 fabricate a trace line for a tool that did not run (FR-177/C-3) — running the missed tool is the
-only repair.
+only repair. Because omitting the stamp *removes* the trace obligation rather than failing it,
+`review-verdict-assemble.js` stamps `"1.0"` unconditionally and rejects any other
+`--trace-schema-version`: a round it assembles is a round that ran now, so it always commits.
 
 #### `rounds_audit[].strike`
 
@@ -269,7 +285,11 @@ node scripts/review-verdict-assemble.js --write-strike \
 ```
 
 That command refuses any non-boolean `current_round_strike` — which is also how it catches a gate
-report produced from a verdict that had no `round` (the gate reports `null` there).
+report produced from a verdict that had no `round` (the gate reports `null` there). It additionally
+refuses a report whose `round` does not match the verdict's, and one missing `config.strikes` or
+`trace`: the gate emits both on every exit code it reports on (see §"Gate report") precisely so a
+caller can detect a stale gate script, and a boolean strike computed under superseded rules is
+indistinguishable from a real one once journaled.
 
 Round 1 never strikes. Escalation fires when the last `--strikes` consecutive rounds (all ≥ 2) each
 struck; a strike-free round resets the streak, and non-consecutive strikes never accumulate.
@@ -293,7 +313,8 @@ round-based fixtures keep passing.
 
 `"express" | "fast" | "full"`, read from `briefs/<task>-impl.md`. The gate reads it for exactly one
 thing: `mode === "full"` requires a `scope-gate` trace line on the round. Any other value, including
-absent, requires nothing.
+absent, requires nothing — a typo (`"Full"`) reads to the gate exactly like an omission, so the
+assembler rejects anything outside the three-value enum instead of passing it through.
 
 > **Name collision.** The gate's own *report* also has a `mode`, whose values are
 > `"static" | "full"` (whether `--static` was passed). Same key name, different enum, and `"full"`
@@ -305,7 +326,10 @@ The `normalizer_version` string from `scripts/review-normalize.js` (currently `"
 truthy value **obligates a `normalizer` trace line** for the round — the normalizer self-appends it
 when given `--task`, `--round` and `--cycle` together (all three, or it appends nothing). A
 non-legacy round with neither a trace obligation nor `normalized_by` triggers the loud
-"omit-everything posture" warning (FR-180).
+"omit-everything posture" warning (FR-180) — `computeOmitEverythingWarning()` returns null as soon
+as *either* is present, so it is not an absent-`normalized_by` detector on its own. An
+assembler-produced round always stamps `trace_schema_version` and is therefore always obligated,
+which means it can never raise this warning; it is a signal about hand-written verdicts.
 
 ### `cross_runtime`
 
@@ -331,6 +355,13 @@ handles a strict subset:
 
 Cross-runtime runs are **never** listed in `specialists_run` — the gate corroborates them through
 this field and the `cross-runtime` trace event instead.
+
+> **Assembler gap (known, not fixed here).** `review-verdict-assemble.js` can only *inherit*
+> `cross_runtime` from the prior verdict — `{}` on a fresh cycle — because it has no flag for
+> probe state. A round that really ran a `codex`/`opencode` probe cannot record it without editing
+> the verdict by hand, which is the hand-derivation this tool exists to remove, on the one field
+> that drives `unattested-invocation` (exit 1). Adding a validated probe-state input belongs with
+> the D1 work, not here.
 
 ### `streak_override`
 
@@ -393,7 +424,18 @@ Nothing validates either enum. A typo in `type` routes nowhere; `roster-run` rea
 
 ## Gate report
 
-Persisted verbatim to `briefs/<task>-gate-report.json` each round. Emitted on **every** exit code.
+Persisted verbatim to `briefs/<task>-gate-report.json` each round. Emitted on every exit code the
+gate *reports* on — 0, 1, 3, the legacy skip, and the inconclusive-red/green flavour of 2.
+
+> **Not on an input-rejection exit 2.** `main()` prints the report only after `validateArgsAndReview()`
+> and the `trace.fail` check have passed, so an absent/malformed verdict, an unknown flag, or an
+> invalid `task` slug on a trace-obligated round produces **no report at all**:
+> ```
+> $ node scripts/check-review-convergence.js briefs/nope.json --static 2>/dev/null | wc -c
+> 0
+> ```
+> That matters because `--write-strike` now hard-depends on a report. There is nothing to write back
+> from on those paths — fix the input and re-gate; do not hand-write a report to satisfy the tool.
 
 ```json
 {
@@ -442,7 +484,7 @@ does not exist, or where the enforcer requires something the prose never states.
 | # | Discrepancy | Consequence |
 |---|---|---|
 | D1 | Prose: "any `cross_runtime_findings` entry that is CRITICAL or HIGH (OPEN) sets `status: NO-GO`". The gate never reads `cross_runtime_findings`. | A HIGH cross-runtime finding is invisible to the gate. Only the prose-level mirror into `findings` puts it under the ratchet — forget the mirror and it is unenforced. |
-| D2 | Prose treats `no_go_reason.type` as the routing key. Nothing validates it, and the gate never reads `no_go_reason` at all. | A typo silently routes nowhere. |
+| D2 | Prose treats `no_go_reason.type` as the routing key. The gate never reads `no_go_reason` at all. | A typo silently routes nowhere. Unresolved in the enforcer; `review-verdict-assemble.js` validates both enums at assembly time, so a typo is caught for verdicts it produces — a hand-written one is still unchecked. |
 | D3 | Prose says `strike` is "populated after the gate reports it"; it never says the value must be a *boolean*, and the gate's completeness check does not require it. | `strike: null` passes the completeness check and silently defeats streak escalation. Live in this repo: `briefs/f16-dsl-slice1-review.json`. |
 | D4 | Prose lists `task` as an ordinary field. The gate makes it load-bearing for path derivation and fails **closed (exit 2)** on an invalid slug once the round is trace-obligated. | An innocuous-looking `task` edit turns a working round into a hard degraded-input failure. |
 | D5 | `mode` means `express\|fast\|full` in the verdict and `static\|full` in the gate report. | Copying one into the other silently changes what the gate demands. |
@@ -470,8 +512,10 @@ Two more notes on the enforcer itself, neither a discrepancy:
 `scripts/review-bundle.manifest.json` and verified by `node scripts/review-bundle-verify.js`. Do
 not hand-edit them; see `scripts/REVIEW-BUNDLE.md`.
 
-This document and `scripts/review-verdict-assemble.js` (+ its test) are **repo-local** and
-deliberately absent from the manifest, so a bundle upgrade neither overwrites nor flags them.
+This document, `scripts/review-verdict-assemble.js`, its rule layer
+`scripts/lib/review-verdict-rules.js`, and the test are **repo-local** and deliberately absent from
+the manifest, so a bundle upgrade neither overwrites nor flags them. Note the path: the rule layer
+sits directly in `scripts/lib/`, *not* in the bundle-owned `scripts/lib/review/`.
 
 The assembler's own checks — including the round-cap / streak / `strike: null` cases tabulated
 above, each red-on-mutation against the real gate — run standalone, no test framework:

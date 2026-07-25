@@ -15,37 +15,49 @@
 // without `round`, and never emits `strike: null` (which silently resets
 // novel-finding-streak detection — see schema/review-json-schema.md §"strike").
 //
-// PIPELINE ORDER (also documented at the top of the schema doc — the order is
-// load-bearing: without normalization first, "novel finding" is uncomputable
-// because fingerprints are not stable):
+// FAIL-CLOSED ON OBLIGATION, not just on shape. Emitting a schema-valid
+// envelope is not enough: several of its fields are what the gate consults to
+// decide WHETHER to run a check at all (`round`, `cycle`, `no_go_round`,
+// `mode`, `trace_schema_version`, and the completeness of `findings`). A wrong
+// one buys silence, not a wrong answer — so every one of them is validated
+// against the lifecycle witness or a closed enum here, never passed through.
+//
+// PIPELINE ORDER (also at the top of the schema doc; load-bearing, because
+// without normalization first "novel finding" is uncomputable — fingerprints
+// are not yet stable):
 //
 //   specialists emit findings  →  normalize the ARRAY  →  assemble the verdict
 //     →  run the gate  →  write strikes back  →  route on the verdict
 //
-// This tool owns steps 2, 3 and 5. It delegates step 2 wholesale to
+// This tool owns steps 2, 3 and 5, delegating step 2 wholesale to
 // scripts/review-normalize.js (fingerprinting is never reimplemented here).
 //
 // TWO PHASES — because `strike` is only knowable AFTER the gate reports it:
 //
-//   1) assemble:      node scripts/review-verdict-assemble.js --task <slug> --round <n>
-//                       --cycle <n> --status <GO|NO-GO> --reviewed-sha <sha>
-//                       (--fix-sha <sha> | --fix-sha-reason <text>)
-//                       --specialist <name>=<selection_reason> [...]
-//                       [--findings <file.json> ...] [--out <path>] ...
+//   1) assemble:     --task <slug> --round <n> --cycle <n> --status <GO|NO-GO>
+//                    --reviewed-sha <sha> (--fix-sha <sha> | --fix-sha-reason
+//                    <text>) --specialist <name>=<reason> [...]
+//                    [--findings <file.json> ...] [--out <path>] ...
 //      → writes the draft with NO `strike` key on the current round's entry
-//        (absent, never null — a null would be silently accepted here and
-//        would silently reset the streak once the round becomes a past round).
+//        (absent, never null — a null is silently accepted downstream and
+//        resets the streak once the round becomes a past round).
 //
-//   2) write-strike:  node scripts/review-verdict-assemble.js --write-strike
-//                       --verdict <draft path> --gate-report <gate stdout json>
+//   2) write-strike: --write-strike --verdict <draft> --gate-report <json>
 //      → copies the gate's boolean `current_round_strike` into the entry for
-//        the gate report's own `round`. Refuses anything non-boolean.
+//        the report's own `round`. Refuses anything non-boolean, a mismatched
+//        round, or a report from a stale gate script.
 //
 // Between them, run the gate exactly as roster-review §5.5 prescribes:
 //   node scripts/check-review-convergence.js <draft> --max-rounds N --strikes N
 //
-// Exit codes: 0 success; 2 usage or degraded input (fail-closed, never a
-// half-written verdict).
+// The rule layer — the closed enums, the lifecycle-continuity and append-only
+// rules, disposition application, envelope construction — lives in
+// scripts/lib/review-verdict-rules.js (repo-local too, and likewise absent
+// from the bundle manifest). This file keeps CLI parsing, I/O, and
+// orchestration.
+//
+// Exit codes: 0 success; 2 usage or degraded input (never a half-written
+// verdict).
 "use strict";
 
 const fs = require("fs");
@@ -53,19 +65,26 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const { deriveRoundState } = require("./lib/review/review-lifecycle");
+const {
+  TRACE_SCHEMA_VERSION,
+  fail,
+  warn,
+  parseCount,
+  validateAssembleArgs,
+  parseSpecialists,
+  assertGateReportIsCurrent,
+  carryForwardRoundsAudit,
+  buildAuditEntry,
+  buildVerdict,
+  reportNormalizerSideChannels,
+  applyDispositions,
+  assertStrikeableFindings,
+  carryForwardCrossRuntime,
+  assertGoIsClean,
+  enforceLifecycle,
+} = require("./lib/review-verdict-rules");
 
 const NORMALIZER = path.resolve(__dirname, "review-normalize.js");
-const TRACE_SCHEMA_VERSION = "1.0";
-const STATUSES = new Set(["GO", "NO-GO"]);
-
-function fail(message) {
-  process.stderr.write(`review-verdict-assemble: ${message}\n`);
-  process.exit(2);
-}
-
-function warn(message) {
-  process.stderr.write(`review-verdict-assemble: warning: ${message}\n`);
-}
 
 // ── argument parsing ─────────────────────────────────────────────────────
 const VALUE_FLAGS = {
@@ -101,7 +120,6 @@ function emptyArgs() {
     autoFixes: "0",
     writeStrike: false,
     escalationNeeded: false,
-    allowRejected: false,
   };
 }
 
@@ -114,8 +132,9 @@ function parseArgs(argv) {
     else if (a === "--failed-ac") out.failedAcs.push(requireValue(argv, ++i, a));
     else if (a === "--write-strike") out.writeStrike = true;
     else if (a === "--escalation-needed") out.escalationNeeded = true;
-    else if (a === "--allow-rejected") out.allowRejected = true;
-    else if (VALUE_FLAGS[a]) out[VALUE_FLAGS[a]] = requireValue(argv, ++i, a);
+    else if (a === "--allow-rejected") {
+      fail("--allow-rejected was removed: a schema-invalid finding is never droppable. Fix the finding against schema/review-finding.schema.json instead.");
+    } else if (VALUE_FLAGS[a]) out[VALUE_FLAGS[a]] = requireValue(argv, ++i, a);
     else fail(`unknown flag or stray argument: ${a}`);
   }
   return out;
@@ -125,12 +144,6 @@ function requireValue(argv, index, flag) {
   const value = argv[index];
   if (value === undefined || value.startsWith("--")) fail(`${flag} requires a value`);
   return value;
-}
-
-function parseCount(raw, flag) {
-  const n = Number(raw);
-  if (!Number.isInteger(n) || n < 0) fail(`${flag} must be a non-negative integer (got ${JSON.stringify(raw)})`);
-  return n;
 }
 
 function readJsonFile(filePath, label) {
@@ -143,11 +156,6 @@ function readJsonFile(filePath, label) {
   }
 }
 
-// ── phase 2: write the gate-reported strike back ────────────────────────
-// `strike` is the one field this tool cannot compute: it is the gate's own
-// output. Refusing a non-boolean here is what keeps `strike: null` — which
-// makes computeStrikeMap()'s Map.get() return undefined and thus silently
-// resets the novel-finding streak — out of every verdict this tool touches.
 function runWriteStrike(args) {
   if (!args.verdict) fail("--write-strike requires --verdict <path>");
   if (!args.gateReport) fail("--write-strike requires --gate-report <path>");
@@ -167,6 +175,7 @@ function runWriteStrike(args) {
   if (verdict.round !== report.round) {
     fail(`gate report round (${report.round}) does not match verdict round (${verdict.round}) — wrong report file`);
   }
+  assertGateReportIsCurrent(report);
 
   const entry = (Array.isArray(verdict.rounds_audit) ? verdict.rounds_audit : []).find((e) => e && e.round === report.round);
   if (!entry) fail(`no rounds_audit entry for round ${report.round} — assemble the draft first`);
@@ -176,42 +185,6 @@ function runWriteStrike(args) {
   process.stdout.write(
     `${JSON.stringify({ ok: true, verdict: args.verdict, round: report.round, strike: entry.strike }, null, 2)}\n`
   );
-}
-
-// ── phase 1 validation ───────────────────────────────────────────────────
-function validateAssembleArgs(args) {
-  if (!args.task) fail("--task <slug> is required");
-  if (args.round === undefined) {
-    fail("--round <n> is required — a verdict without `round` makes check-review-convergence.js skip strike and rounds_audit checks entirely (B-8), so the gate passes vacuously. That refusal is the whole point of this tool.");
-  }
-  if (args.cycle === undefined) fail("--cycle <n> is required (the trace mechanism scopes lines by (cycle, round))");
-  if (!STATUSES.has(args.status)) fail(`--status must be one of ${[...STATUSES].join(" | ")}`);
-  if (!args.reviewedSha) fail("--reviewed-sha <sha> is required (rounds_audit completeness, FR-078)");
-  if (!args.fixSha === !args.fixShaReason) {
-    fail("exactly one of --fix-sha <sha> or --fix-sha-reason <text> is required (EC-8: a dirty tree records null + a reason, never a guessed sha)");
-  }
-  if (args.specialists.length === 0) {
-    fail("at least one --specialist <name>=<selection_reason> is required — \"why did this specialist run this round\" must always be answerable");
-  }
-  if (args.status === "NO-GO" && !args.noGoType) fail("--no-go-type is required on a NO-GO verdict");
-  if (args.status === "GO" && args.noGoType) fail("--no-go-type is meaningless on a GO verdict");
-  if (args.status === "GO" && args.noGoRound !== undefined && parseCount(args.noGoRound, "--no-go-round") !== 0) {
-    fail("--no-go-round must be 0 (or omitted) on a GO verdict — no_go_round resets on GO");
-  }
-  if (args.status === "NO-GO" && args.noGoRound === undefined) {
-    fail("--no-go-round <n> is required on a NO-GO verdict — it is the round-cap backstop counter and is NOT derivable from `round` (the two are separate counters with separate reset rules)");
-  }
-}
-
-function parseSpecialists(specs) {
-  return specs.map((raw) => {
-    const idx = raw.indexOf("=");
-    if (idx <= 0) fail(`--specialist must be <name>=<selection_reason> (got ${JSON.stringify(raw)})`);
-    const name = raw.slice(0, idx).trim();
-    const selection_reason = raw.slice(idx + 1).trim();
-    if (!name || !selection_reason) fail(`--specialist ${JSON.stringify(raw)} has an empty name or selection_reason`);
-    return { name, selection_reason };
-  });
 }
 
 // ── normalization (delegated, never reimplemented) ───────────────────────
@@ -254,100 +227,9 @@ function assertFindingFilesAreArrays(files) {
   for (const file of files) {
     const parsed = readJsonFile(file, `--findings file ${file}`);
     if (!Array.isArray(parsed)) {
-      fail(`--findings ${file} is a JSON ${Array.isArray(parsed) ? "array" : typeof parsed} — review-normalize.js requires a JSON ARRAY of finding objects, not a verdict envelope`);
+      fail(`--findings ${file} is a JSON ${parsed === null ? "null" : typeof parsed} — review-normalize.js requires a JSON ARRAY of finding objects, not a verdict envelope`);
     }
   }
-}
-
-// ── rounds_audit carry-forward (append-only) ─────────────────────────────
-// Prior entries are copied through verbatim; a prior entry for the round being
-// assembled is a refusal, not an overwrite — that would mean the round counter
-// never advanced (scripts/lib/review/review-lifecycle.js owns the bump).
-function carryForwardRoundsAudit(priorEntries, round) {
-  const carried = [];
-  for (const entry of priorEntries) {
-    if (!entry || typeof entry !== "object") fail("prior rounds_audit contains a non-object entry — refusing to carry forward unverifiable state");
-    if (entry.round === round) {
-      fail(`prior verdict already has a rounds_audit entry for round ${round} — rounds_audit is append-only. Bump the round via \`node scripts/lib/review/review-lifecycle.js --prior <verdict>\` instead of rewriting it.`);
-    }
-    if (typeof entry.round === "number" && entry.round > round) {
-      fail(`prior verdict has a rounds_audit entry for round ${entry.round}, which is ahead of --round ${round} — refusing to assemble a verdict that would look like it went backwards`);
-    }
-    carried.push(entry);
-  }
-  return carried;
-}
-
-function buildAuditEntry(args, round, specialists) {
-  const entry = { round, reviewed_sha: args.reviewedSha };
-  entry.fix_sha = args.fixSha ? args.fixSha : null;
-  if (!args.fixSha) entry.fix_sha_reason = args.fixShaReason;
-  entry.specialists_run = specialists;
-  if (args.traceSchemaVersion !== "none") entry.trace_schema_version = args.traceSchemaVersion;
-  // NOTE: `strike` is deliberately ABSENT, not null. It is written by
-  // --write-strike after the gate reports current_round_strike.
-  return entry;
-}
-
-function buildNoGoReason(args) {
-  if (args.status === "GO") return null;
-  const reason = { type: args.noGoType };
-  if (args.noGoCause) reason.cause = args.noGoCause;
-  if (args.failedAcs.length > 0) reason.failed_acs = args.failedAcs;
-  return reason;
-}
-
-function buildVerdict({ args, round, cycle, normalized, roundsAudit, crossRuntime }) {
-  const verdict = {
-    task: args.task,
-    date: new Date().toISOString(),
-    status: args.status,
-    mode: args.mode,
-    round,
-    cycle,
-    no_go_round: args.noGoRound === undefined ? 0 : parseCount(args.noGoRound, "--no-go-round"),
-    auto_fixes_applied: parseCount(args.autoFixes, "--auto-fixes"),
-    findings: normalized.findings,
-    cross_runtime_findings: normalized.cross_runtime_findings,
-    cross_runtime: crossRuntime,
-    rounds_audit: roundsAudit,
-    no_go_reason: buildNoGoReason(args),
-    summary: args.summary || "",
-    escalation_needed: args.escalationNeeded,
-    escalation_reason: args.escalationReason || null,
-    normalized_by: normalized.normalizer_version,
-  };
-  if (args.streakOverrideBy) verdict.streak_override = { round, by: args.streakOverrideBy };
-  return verdict;
-}
-
-// Surfaces the normalizer's non-verdict outputs (they have no home in
-// review.json and must not vanish silently, FR-100).
-function reportNormalizerSideChannels(args, normalized) {
-  for (const w of normalized.warnings || []) warn(`review-normalize: ${w}`);
-  for (const d of normalized.probable_duplicates || []) {
-    warn(`review-normalize: probable duplicate needs owner adjudication: ${JSON.stringify(d)}`);
-  }
-  const rejected = normalized.rejected || [];
-  if (rejected.length === 0) return;
-  for (const r of rejected) warn(`review-normalize: REJECTED (schema-invalid) finding: ${r.reason}`);
-  if (!args.allowRejected) {
-    fail(`${rejected.length} finding(s) were rejected as schema-invalid by review-normalize.js — fix them against schema/review-finding.schema.json, or pass --allow-rejected to drop them deliberately`);
-  }
-}
-
-// Cross-checks --round/--cycle against the lifecycle witness rather than
-// re-deriving the rule here. Advisory (a warning), matching review-normalize.js's
-// own treatment of the same disagreement.
-function checkLifecycle(prior, round, cycle) {
-  const derived = deriveRoundState(prior);
-  if (derived.round !== null && derived.round !== round) {
-    warn(`--round ${round} but scripts/lib/review/review-lifecycle.js derives ${derived.round} from the prior verdict`);
-  }
-  if (derived.cycle !== null && derived.cycle !== cycle) {
-    warn(`--cycle ${cycle} but scripts/lib/review/review-lifecycle.js derives ${derived.cycle} from the prior verdict`);
-  }
-  return derived;
 }
 
 function runAssemble(args) {
@@ -360,13 +242,17 @@ function runAssemble(args) {
   const priorPath = args.prior || `briefs/${args.task}-review.json`;
   const priorExists = fs.existsSync(path.resolve(process.cwd(), priorPath));
   const prior = priorExists ? readJsonFile(priorPath, "--prior file") : null;
-  const derived = checkLifecycle(prior, round, cycle);
+  const derived = deriveRoundState(prior);
 
   // Carry-forward is validated BEFORE the normalizer runs so an append-only
-  // violation fails fast instead of after a full normalization pass.
+  // violation fails fast instead of after a full normalization pass. It also
+  // runs BEFORE enforceLifecycle() so that re-emitting an already-journaled
+  // round reports the specific append-only refusal rather than the generic
+  // round-mismatch one.
   const roundsAudit = carryForwardRoundsAudit(derived.roundsAudit, round).concat([
     buildAuditEntry(args, round, parseSpecialists(args.specialists)),
   ]);
+  enforceLifecycle(prior, derived, round, cycle, args);
 
   assertFindingFilesAreArrays(args.findings);
   const normalized = runNormalizer({
@@ -378,7 +264,10 @@ function runAssemble(args) {
     priorPath: priorExists ? priorPath : null,
     gateReportPath: args.gateReport || `briefs/${args.task}-gate-report.json`,
   });
-  reportNormalizerSideChannels(args, normalized);
+  reportNormalizerSideChannels(normalized);
+  applyDispositions(normalized);
+  assertStrikeableFindings(normalized.findings, round);
+  assertGoIsClean(args, normalized.findings);
 
   const verdict = buildVerdict({
     args,
@@ -387,6 +276,7 @@ function runAssemble(args) {
     normalized,
     roundsAudit,
     crossRuntime: derived.crossRuntime,
+    crossRuntimeFindings: carryForwardCrossRuntime(prior, derived.freshCycle, normalized.cross_runtime_findings),
   });
 
   const outPath = path.resolve(process.cwd(), args.out || `briefs/${args.task}-review.json.draft`);

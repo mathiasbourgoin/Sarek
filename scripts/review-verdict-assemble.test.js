@@ -241,7 +241,12 @@ check("MUTATION: all-null strikes below the cap escape the gate entirely (exit 0
   assert.strictEqual(escaped.report.warnings.length, 3);
 });
 
-check("MUTATION: dropping `round` makes the gate skip strike/audit/trace checks (exit 0)", () => {
+// NOTE the exit code: dropping `round` removes the strike/rounds_audit/trace
+// checks, but `no_go_round` (5) still trips the round cap on its own, so the
+// gate exits 1 here for a reason that has nothing to do with the skipped
+// checks. That is what makes the skip dangerous — below the cap (see the
+// preceding case, which sets no_go_round: 2) the same mutation exits 0.
+check("MUTATION: dropping `round` skips strike/audit/trace checks; only round-cap survives (exit 1)", () => {
   const dir = scratch();
   const { final } = driveRounds(dir, 5);
   const verdict = JSON.parse(fs.readFileSync(final, "utf8"));
@@ -334,6 +339,212 @@ check("every specialist entry carries a non-empty selection_reason", () => {
   assert.match(run(ASSEMBLE, base, dir).stderr, /at least one --specialist/);
   assert.match(run(ASSEMBLE, [...base, "--specialist", "reviewer="], dir).stderr, /empty name or selection_reason/);
   assert.match(run(ASSEMBLE, [...base, "--specialist", "reviewer"], dir).stderr, /<name>=<selection_reason>/);
+});
+
+// ── fail-closed on the inputs that decide WHICH gate checks run ──────────
+// Each of the four below is a lever that leaves the verdict schema-valid while
+// switching a gate check off. The assembler must refuse the lever, not emit a
+// verdict the gate will silently under-check.
+
+check("--write-strike refuses a gate report from a stale gate script (no config.strikes / no trace)", () => {
+  const dir = scratch();
+  const { final } = driveRounds(dir, 1);
+  const stale = path.join(dir, "briefs", "stale-report.json");
+
+  // Boolean strike, right round — everything the old checks looked at. Only
+  // the absent `config`/`trace` reveal a gate that predates the current rules.
+  fs.writeFileSync(stale, JSON.stringify({ round: 1, current_round_strike: false }));
+  const noConfig = run(ASSEMBLE, ["--write-strike", "--verdict", final, "--gate-report", stale], dir);
+  assert.strictEqual(noConfig.status, 2);
+  assert.match(noConfig.stderr, /no numeric config\.strikes/);
+
+  fs.writeFileSync(stale, JSON.stringify({ round: 1, current_round_strike: false, config: { strikes: 2 } }));
+  const noTrace = run(ASSEMBLE, ["--write-strike", "--verdict", final, "--gate-report", stale], dir);
+  assert.strictEqual(noTrace.status, 2);
+  assert.match(noTrace.stderr, /no `trace` block/);
+
+  // and nothing was written: the persisted strike is still the real gate's
+  // `false`, not a value copied out of the stale report.
+  assert.strictEqual(JSON.parse(fs.readFileSync(final, "utf8")).rounds_audit[0].strike, false);
+});
+
+check("refuses a SKIPPED round — the hole would erase the streak", () => {
+  const dir = scratch();
+  driveRounds(dir, 2);
+  const r = assembleRound(dir, 4); // lifecycle derives 3
+  assert.strictEqual(r.status, 2);
+  assert.match(r.stderr, /--round 4 but .*derives 3/);
+  assert.match(r.stderr, /erases the novel-finding streak/);
+  assert.strictEqual(fs.existsSync(path.join(dir, "briefs", `${TASK}-review.json.draft`)), false,
+    "a refused round must not leave a draft behind");
+});
+
+check("refuses a --no-go-round that does not hold or advance by one", () => {
+  const dir = scratch();
+  driveRounds(dir, 2); // prior no_go_round === 2
+  const jump = assembleRound(dir, 3, ["--no-go-round", "9"]);
+  assert.strictEqual(jump.status, 2);
+  assert.match(jump.stderr, /does not follow the prior verdict's 2/);
+
+  const frozen = assembleRound(dir, 3, ["--no-go-round", "1"]);
+  assert.strictEqual(frozen.status, 2, "a counter that goes backwards disables the round cap");
+  assert.match(frozen.stderr, /disables the round-cap backstop/);
+
+  // holding is legitimate (a NO-GO round that does not qualify)
+  assert.strictEqual(assembleRound(dir, 3, ["--no-go-round", "2"]).status, 0);
+});
+
+check("refuses the trace-obligation levers: unknown --mode, non-1.0 --trace-schema-version", () => {
+  const dir = scratch();
+  const bogusMode = assembleRound(dir, 1, ["--mode", "Full"]);
+  assert.strictEqual(bogusMode.status, 2, "'Full' !== 'full' — the gate would drop the scope-gate obligation");
+  assert.match(bogusMode.stderr, /--mode must be one of express \| fast \| full/);
+
+  const noTrace = assembleRound(dir, 1, ["--trace-schema-version", "none"]);
+  assert.strictEqual(noTrace.status, 2);
+  assert.match(noTrace.stderr, /--trace-schema-version must be "1\.0"/);
+
+  // and the stamp is unconditional on a round that does assemble
+  assert.strictEqual(assembleRound(dir, 1).status, 0);
+  const entry = JSON.parse(fs.readFileSync(path.join(dir, "briefs", `${TASK}-review.json.draft`), "utf8")).rounds_audit[0];
+  assert.strictEqual(entry.trace_schema_version, "1.0");
+});
+
+check("--allow-rejected no longer exists: a schema-invalid finding is never droppable", () => {
+  const dir = scratch();
+  const bad = path.join("briefs", "bad.json");
+  fs.writeFileSync(path.join(dir, bad), JSON.stringify([{ severity: "HIGH", summary: "no other required keys" }]));
+  const r = run(ASSEMBLE, ["--task", TASK, "--round", "1", "--cycle", "1", "--status", "GO",
+    "--reviewed-sha", "a", "--fix-sha", "b", "--specialist", "reviewer=always",
+    "--findings", bad, "--allow-rejected"], dir);
+  assert.strictEqual(r.status, 2);
+  assert.match(r.stderr, /--allow-rejected was removed/);
+  assert.strictEqual(fs.existsSync(path.join(dir, "briefs", `${TASK}-review.json.draft`)), false);
+});
+
+check("refuses to carry forward a past round whose --write-strike never ran", () => {
+  const dir = scratch();
+  const final = path.join(dir, "briefs", `${TASK}-review.json`);
+  driveRounds(dir, 2);
+
+  // Simulate the two-phase protocol being half-applied: round 2 was gated but
+  // its strike was never written back. computeStrikeMap() cannot see the entry,
+  // so the streak resets across it and the gate's only signal is a warning on
+  // a run that may exit 0.
+  const v = JSON.parse(fs.readFileSync(final, "utf8"));
+  delete v.rounds_audit.find((e) => e.round === 2).strike;
+  fs.writeFileSync(final, JSON.stringify(v, null, 2));
+
+  const r = assembleRound(dir, 3);
+  assert.strictEqual(r.status, 2);
+  assert.match(r.stderr, /round 2 has no boolean `strike`/);
+  assert.match(r.stderr, /silently resets the novel-finding streak/);
+});
+
+// ── findings must survive intake, and must be classifiable ───────────────
+
+check("applies the normalizer's REOPENED disposition so E-4 can actually fire", () => {
+  const dir = scratch();
+  const final = path.join(dir, "briefs", `${TASK}-review.json`);
+  driveRounds(dir, 1);
+
+  // Mark round 1's HIGH as RESOLVED with no linked check. INV-2: a RESOLVED
+  // entry with no check can never be verified, so re-reporting it next round
+  // is always a reopen, never carry-forward noise.
+  const v1 = JSON.parse(fs.readFileSync(final, "utf8"));
+  v1.findings[0].status = "RESOLVED";
+  v1.findings[0].resolved_round = 1;
+  fs.writeFileSync(final, JSON.stringify(v1, null, 2));
+
+  // Round 2 re-reports the SAME finding (same fingerprint), not a novel one.
+  const reReport = [Object.assign(highFinding(1), { first_seen_round: 1 })];
+  fs.writeFileSync(path.join(dir, "briefs", "reviewer-r2.json"), JSON.stringify(reReport));
+  const a = run(ASSEMBLE, ["--task", TASK, "--round", "2", "--cycle", "1", "--status", "NO-GO",
+    "--mode", "full", "--reviewed-sha", "reviewed-2", "--fix-sha", "fix-2",
+    "--specialist", "reviewer=always (owner) on round 2", "--no-go-round", "2",
+    "--no-go-type", "design-not-converging", "--findings", path.join("briefs", "reviewer-r2.json")], dir);
+  assert.strictEqual(a.status, 0, a.stderr);
+  assert.match(a.stderr, /REOPENED .* applied to findings/);
+
+  const draft = JSON.parse(fs.readFileSync(path.join(dir, "briefs", `${TASK}-review.json.draft`), "utf8"));
+  const f = draft.findings.find((x) => x.fingerprint === reReport[0].fingerprint);
+  assert.strictEqual(f.status, "OPEN", "the reopened body must replace the RESOLVED ledger entry");
+  assert.strictEqual(f.reopened_at_round, 2);
+
+  // and the gate can now see it: isReopenedStrikeFinding() keys on exactly this.
+  appendTraces(dir, 2);
+  const g = gate(path.join(dir, "briefs", `${TASK}-review.json.draft`));
+  assert.strictEqual(g.report.current_round_strike, true,
+    "a reopened HIGH must strike (E-4) — it never can if dispositions are dropped");
+});
+
+check("refuses a CRITICAL/HIGH finding with no first_seen_round (silently unstrikeable)", () => {
+  const dir = scratch();
+  const bare = Object.assign(highFinding(1), {});
+  delete bare.first_seen_round;
+  fs.writeFileSync(path.join(dir, "briefs", "bare.json"), JSON.stringify([bare]));
+  const r = run(ASSEMBLE, ["--task", TASK, "--round", "1", "--cycle", "1", "--status", "NO-GO",
+    "--reviewed-sha", "a", "--fix-sha", "b", "--specialist", "reviewer=always",
+    "--no-go-round", "1", "--no-go-type", "design-not-converging",
+    "--findings", path.join("briefs", "bare.json")], dir);
+  // The normalizer does NOT stamp first_seen_round, and isNovelStrikeFinding()
+  // requires it — so without this refusal the round can never strike at all.
+  assert.strictEqual(r.status, 2);
+  assert.match(r.stderr, /missing or future first_seen_round/);
+});
+
+check("refuses GO while a CRITICAL/HIGH is still OPEN", () => {
+  const dir = scratch();
+  fs.writeFileSync(path.join(dir, "briefs", "open.json"), JSON.stringify([highFinding(1)]));
+  const r = run(ASSEMBLE, ["--task", TASK, "--round", "1", "--cycle", "1", "--status", "GO",
+    "--reviewed-sha", "a", "--fix-sha", "b", "--specialist", "reviewer=always",
+    "--findings", path.join("briefs", "open.json")], dir);
+  assert.strictEqual(r.status, 2, "the gate never reads `status`, so nothing else would catch this");
+  assert.match(r.stderr, /open CRITICAL\/HIGH finding/);
+});
+
+check("carries cross_runtime_findings forward within a cycle (augment-only)", () => {
+  const dir = scratch();
+  const final = path.join(dir, "briefs", `${TASK}-review.json`);
+  driveRounds(dir, 1);
+  const v1 = JSON.parse(fs.readFileSync(final, "utf8"));
+  v1.cross_runtime_findings = [Object.assign(highFinding(1), {
+    specialist: "codex-xruntime", fingerprint: "src/xr.ml:1:correctness", path: "src/xr.ml", line: 1,
+  })];
+  fs.writeFileSync(final, JSON.stringify(v1, null, 2));
+
+  assert.strictEqual(assembleRound(dir, 2).status, 0);
+  const draft = JSON.parse(fs.readFileSync(path.join(dir, "briefs", `${TASK}-review.json.draft`), "utf8"));
+  assert.strictEqual(draft.cross_runtime_findings.length, 1,
+    "round 2 supplied no cross-runtime findings, so round 1's must still be there");
+  assert.strictEqual(draft.cross_runtime_findings[0].fingerprint, "src/xr.ml:1:correctness");
+});
+
+// ── the remaining caller-controlled enums ────────────────────────────────
+check("refuses an invalid --task slug (gate exit 2, and it composes the briefs/ paths)", () => {
+  const dir = scratch();
+  const base = ["--round", "1", "--cycle", "1", "--status", "GO", "--reviewed-sha", "a",
+    "--fix-sha", "b", "--specialist", "reviewer=always"];
+  for (const bad of ["My Task", "../pwned"]) {
+    const r = run(ASSEMBLE, ["--task", bad, ...base], dir);
+    assert.strictEqual(r.status, 2, `--task ${JSON.stringify(bad)} was accepted`);
+    assert.match(r.stderr, /is not a valid slug/);
+  }
+  assert.strictEqual(fs.existsSync(path.join(dir, "..", "pwned-review.json.draft")), false);
+});
+
+check("refuses a typo'd --no-go-type / --no-go-cause and a non-human streak override", () => {
+  const dir = scratch();
+  const base = ["--task", TASK, "--round", "1", "--cycle", "1", "--reviewed-sha", "a",
+    "--fix-sha", "b", "--specialist", "reviewer=always"];
+  const noGo = [...base, "--status", "NO-GO", "--no-go-round", "1"];
+
+  assert.match(run(ASSEMBLE, [...noGo, "--no-go-type", "desgin-not-converging"], dir).stderr,
+    /--no-go-type must be one of/);
+  assert.match(run(ASSEMBLE, [...noGo, "--no-go-type", "design-not-converging",
+    "--no-go-cause", "process-incomplete"], dir).stderr, /--no-go-cause must be one of/);
+  assert.match(run(ASSEMBLE, [...base, "--status", "GO", "--streak-override-by", "reviewer-agent"], dir).stderr,
+    /--streak-override-by must be "human"/);
 });
 
 process.stdout.write(`\n${passes} passed, ${failures} failed\n`);
