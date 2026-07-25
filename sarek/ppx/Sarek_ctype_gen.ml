@@ -113,18 +113,6 @@ let variant_constructor_strings name constrs : string list =
   in
   constr_structs @ (union_def :: main_struct :: builders)
 
-let c_type_of_core_type ~loc (ct : core_type) =
-  match ct.ptyp_desc with
-  | Ptyp_constr ({txt = Lident "float32"; _}, _) -> "float"
-  | Ptyp_constr ({txt = Lident "float64"; _}, _) -> "double"
-  | Ptyp_constr ({txt = Lident "float"; _}, _) -> "float"
-  | Ptyp_constr ({txt = Lident "int32"; _}, _) -> "int"
-  | Ptyp_constr ({txt = Lident "int"; _}, _) -> "int"
-  | _ ->
-      Location.raise_errorf
-        ~loc
-        "Unsupported type in Sarek top-level registration"
-
 let typ_of_core_type ~loc (ct : core_type) =
   match ct.ptyp_desc with
   | Ptyp_constr ({txt = Lident "float32"; _}, _) -> TReg Float32

@@ -52,10 +52,6 @@ let quote_list ~loc quote_elem elems =
     elems
     [%expr []]
 
-(** Quote an array *)
-let quote_array ~loc quote_elem elems =
-  [%expr Array.of_list [%e quote_list ~loc quote_elem (Array.to_list elems)]]
-
 (** Quote an option *)
 let quote_option ~loc quote_elem = function
   | None -> [%expr None]
