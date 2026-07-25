@@ -165,18 +165,32 @@ let check ~dev:_ ~op ~tol _i got expected =
   | Some (prev, _) -> if err > prev then Hashtbl.replace op_stats op (err, tol)
   | None -> Hashtbl.replace op_stats op (err, tol)
 
+(* [of_i32] is not a df64 op and keeps its own literal tolerance; every df64
+   arithmetic op goes through the shared classifier in Test_helpers. *)
 let report_op_stats dev =
+  let framework = dev.Device.framework and device = dev.Device.name in
   Hashtbl.iter
     (fun op (err, tol) ->
-      let ok = err <= tol in
-      if not ok then incr failures ;
+      let status, tol =
+        match op with
+        | "add" | "sub" | "mul" | "div" | "sqrt" ->
+            ( Test_helpers.classify_df64_result ~framework ~device ~op ~err,
+              Test_helpers.df64_tol_for_op op )
+        | _ -> ((if err <= tol then `Pass else `Fail), tol)
+      in
+      (match status with `Fail -> incr failures | _ -> ()) ;
       Printf.printf
         "  %-6s max rel err %.3g (tol %.3g) %s [%s]\n%!"
         op
         err
         tol
-        (if ok then "PASS" else "FAIL")
-        dev.Device.framework)
+        (match status with
+        | `Pass -> "PASS"
+        | `Xpass label ->
+            "XPASS - deviation gone, prune the allowlist: " ^ label
+        | `Known_deviation label -> label
+        | `Fail -> "FAIL")
+        framework)
     op_stats ;
   Hashtbl.reset op_stats
 
@@ -223,54 +237,26 @@ let run_ops_test dev =
     ~grid
     () ;
   Transfer.flush dev ;
-  let tol_add =
-    0x1p-47
-    (* Knuth add: ~2 ulp at 2^-48 *)
-  in
-  let tol_mul =
-    0x1p-46
-    (* fast mul drops the lo*lo term: ~4 ulp *)
-  in
-  let tol_dv =
-    0x1p-46
-    (* div/sqrt include a rounded correction step *)
-  in
-  (* Per-backend deviations from the extended-precision contract:
-     - Native evaluates Sarek float32 at OCaml binary64 precision, so the
-       error-free transformations cancel (lo = 0) and df64 degenerates to
-       plain f32 storage precision (~2^-24 relative).  Harmless (Native has
-       real f64) but documented here.
-     - Vulkan (RADV + glslang, and Mesa ANV on Intel): add/sub/sqrt meet the
-       strict contract since float locals are declared [precise], but mul/div
-       lose the two_prod error term because RADV's GLSL [fma] is not
-       correctly rounded. This is NOT the ptxas contraction bug that cost
-       CUDA/PTX and NVIDIA OpenCL their precision; see the PER-BACKEND STATUS
-       and "Contraction barrier" blocks in Sarek_df64.ml.
-     Both are reported as KNOWN-DEVIATION, not silently widened.
+  (* Tolerances and the per-backend deviation allowlist both live in
+     [Test_helpers] now (task #118), so test_df64, test_real64 and
+     test_real64_single_source cannot drift apart. The bounds are derived there
+     from the algorithms' error analysis; the deviating backends are held to a
+     two-sided BAND and reported as KNOWN-DEVIATION rather than being handed a
+     widened ceiling.
 
-     LIMITATION: the widening below keys on [dev.framework] alone, so it
-     applies to EVERY Vulkan device. NVIDIA Vulkan actually meets the full
-     contract (9.07e-15 mul on a GTX 1070), but is checked here against
-     f32_tol, so a future contraction-class regression on NVIDIA Vulkan would
-     pass silently - the same blind spot that hid the CUDA/PTX collapse. The
-     widening should be keyed on the driver/device (RADV, ANV) rather than on
-     "Vulkan". Not changed here: it needs an NVIDIA device to validate, and
-     narrowing it blind risks turning the suite red for the wrong reason. *)
-  let f32_tol = 0x1p-22 in
-  let tol_sqrt = tol_dv in
-  let tol_mul, tol_dv, tol_sqrt, tol_add, deviation =
-    match dev.Device.framework with
-    | "Native" -> (f32_tol, f32_tol, f32_tol, f32_tol, true)
-    | "Vulkan" -> (f32_tol, f32_tol, tol_sqrt, tol_add, true)
-    | _ -> (tol_mul, tol_dv, tol_sqrt, tol_add, false)
-  in
-  if deviation then
-    Printf.printf
-      "  note: %s backend has a KNOWN precision deviation (see test source);\n\
-      \        degraded ops are checked against f32-level tolerance %.3g\n\
-       %!"
-      dev.Device.framework
-      f32_tol ;
+     What was wrong before: the deviating backends were checked against
+     [0x1p-22] = 2.38e-07, four times the float32 unit roundoff. A fully
+     collapsed df64 (5.84e-08 on RADV) and a working one (9.07e-15) both read
+     PASS, so the gate could not distinguish the bug from the fix. The old
+     widening also keyed on the bare "Vulkan" framework tag, which swept in
+     NVIDIA Vulkan — a backend that meets the full contract — and would have
+     hidden a contraction-class regression there. The allowlist in
+     [Test_helpers.df64_known_deviation] is keyed on driver identity (RADV,
+     ANV) instead. *)
+  let tol_add = Test_helpers.df64_tol_add_sub in
+  let tol_mul = Test_helpers.df64_tol_mul_div_sqrt in
+  let tol_dv = tol_mul in
+  let tol_sqrt = tol_mul in
   for i = 0 to n_ops - 1 do
     let x = read_df64 a i and y = read_df64 b i in
     check ~dev ~op:"add" ~tol:tol_add i (read_df64 add_o i) (x +. y) ;
@@ -289,7 +275,13 @@ let run_ops_test dev =
       incr failures ;
       Printf.printf "  FAIL [%s] lt[%d]\n%!" dev.Device.framework i
     end ;
-    check ~dev ~op:"of_i32" ~tol:1e-7 i (Vector.get conv_o i) (float_of_int i)
+    (* Exact, not approximate: every index here is below [n_ops] = 4096 < 2^24,
+       so it is representable in binary32 with no rounding, [df64_of_int32]
+       stores it as (hi = i, lo = 0) and [df64_to_float32] returns hi. The
+       tolerance is therefore 0 — a literal 1e-7 here was another f32-grade
+       gate on a df64 test. Measured 0 on all seven devices enumerated on the
+       campaign workstation. *)
+    check ~dev ~op:"of_i32" ~tol:0.0 i (Vector.get conv_o i) (float_of_int i)
   done ;
   report_op_stats dev
 
@@ -346,7 +338,18 @@ let run_dot_test dev =
     "  dot(2^20): df64 rel err %.3g (f32: %.3g)\n%!"
     df64_err
     f32_err ;
-  (* Worst-case error of n df64 adds is ~n*2^-48; 1e-9 leaves headroom. *)
+  (* Worst-case error of n df64 adds is ~n*2^-48 = 2^20 * 2^-48 = 3.7e-09, so
+     1e-9 is already tighter than the proven bound and is met only because the
+     rounding errors random-walk rather than accumulate.
+
+     THIS GATE DOES NOT DISCRIMINATE a collapsed df64: measured 1.41e-10 on
+     RADV (where mul/div ARE collapsed) versus 2.89e-13 on OpenCL/rusticl and
+     the interpreter — both under 1e-9. It is a smoke test that df64
+     accumulation beats float32 accumulation (3.07e-04 here), nothing more.
+     The discriminating gate is the elementwise ops test above; do not read a
+     green line here as evidence that df64 is intact. Tightening this number
+     to separate 1.41e-10 from 2.89e-13 would be curve-fitting to one dataset,
+     not a derived bound, so it is left alone. *)
   if df64_err > 1e-9 then begin
     incr failures ;
     Printf.printf

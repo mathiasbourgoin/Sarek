@@ -65,6 +65,17 @@
  * test's max relative errors; its tolerance is 7.11e-15 (2^-47) for add/sub
  * and 1.42e-14 (2^-46) for mul/div/sqrt.
  *
+ * Those tolerances now apply to EVERY device (task #118). The deviating
+ * entries below are not given a wider ceiling: they are an allowlist of
+ * expected failures in Test_helpers.df64_known_deviation, checked against a
+ * two-sided band whose upper end is 2^-23 (twice the float32 unit roundoff)
+ * and reported as KNOWN-DEVIATION, never as PASS. Degrading further than plain
+ * float32 therefore FAILs even on an allowlisted device, and a device that is
+ * NOT on the allowlist - including NVIDIA Vulkan - is held to the full
+ * contract. Before that change the deviating backends were checked against
+ * 2^-22 = 2.38e-07, which a fully collapsed df64 (~5.8e-08) also satisfied:
+ * the gate could not tell the bug from the fix.
+ *
  *   Interpreter, sequential and parallel (any host)
  *       full contract. mul 9.07e-15, div 5.08e-15, sqrt 8.53e-15.
  *

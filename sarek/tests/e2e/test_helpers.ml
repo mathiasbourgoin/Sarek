@@ -346,6 +346,158 @@ let classify_fp64_result ~framework ~device ~within_tol ~transcendental
   else `Fail
 
 (* ========================================================================== *)
+(* df64 (double-float) precision classification                               *)
+(* ========================================================================== *)
+
+(* Single source of truth for the Sarek_df64 precision gates, shared by
+   test_df64, test_real64 and test_real64_single_source.
+
+   WHY THIS EXISTS (task #118). All three tests previously widened the
+   tolerance to [0x1p-22] (2.38e-07) on the backends with a documented df64
+   deviation. 0x1p-22 is FOUR TIMES the float32 unit roundoff, so a df64 that
+   had collapsed all the way to plain float32 (measured 5.84e-08 on RADV) and a
+   df64 that met its contract (measured 9.07e-15) BOTH read as PASS. The gate
+   could not tell the bug from the fix — the "threshold wider than the effect"
+   failure mode. It is also how the real-NVIDIA contraction collapse survived
+   in CUDA/PTX and OpenCL undetected.
+
+   The replacement never widens a ceiling. A deviating (framework, device, op)
+   is checked against a two-sided BAND and reported as an explicit
+   KNOWN-DEVIATION, never as PASS:
+
+     err <= df64 contract bound      -> XPASS  (the deviation is gone; the
+                                                allowlist below is stale)
+     contract < err <= collapsed ceiling, and on the allowlist
+                                     -> KNOWN-DEVIATION (expected failure)
+     anything else                   -> FAIL
+
+   So a device that degrades BEYOND plain float32 now fails, a device NOT on
+   the allowlist is always held to the full contract, and a driver fix is
+   surfaced instead of being absorbed. *)
+
+(** Relative-error bound of [df64_add] / [df64_sub].
+
+    Derivation, not a round number. A df64 value is an unevaluated pair of
+    binary32s [hi + lo] with [|lo| <= ulp(hi)/2], i.e. a ~2p = 48-bit
+    significand (p = 24 for binary32). Sarek_df64's add/sub are the Knuth/Dekker
+    two_sum + quick_two_sum sequence, whose classical bound for the
+    double-double form is 2 ulp of the 2p-bit format, i.e. 2 * 2^-(2p) * 2 =
+    2^-(2p-1) = 2^-47 for p = 24. Measured worst case on the contract-meeting
+    backends: add 5.33e-15, sub 6.51e-15, against 2^-47 = 7.11e-15. *)
+let df64_tol_add_sub = 0x1p-47
+
+(** Relative-error bound of [df64_mul] / [df64_div] / [df64_sqrt].
+
+    Same derivation, one binade looser: the fast two_prod-based multiply drops
+    the [lo*lo] cross term and div/sqrt close with a single rounded Newton /
+    Karp correction, which costs the low word its last bit — 4 ulp of the 48-bit
+    format, i.e. 2^-(2p-2) = 2^-46 for p = 24. Measured worst case on the
+    contract-meeting backends: mul 9.07e-15, div 5.08e-15, sqrt 1.08e-14,
+    against 2^-46 = 1.42e-14. *)
+let df64_tol_mul_div_sqrt = 0x1p-46
+
+(** Ceiling of the COLLAPSED band: the worst relative error a df64 op may show
+    while still being explainable as "the extended-precision machinery was lost
+    and only float32 information survived".
+
+    Derivation: the binary32 unit roundoff is u = 2^-24 = 5.96e-08. When
+    TwoProd's error term is lost, [df64_mul] degenerates to a value carrying at
+    most one correctly-rounded binary32 product plus a lo word that no longer
+    corrects it, so the relative error is that of a chain of at most two
+    binary32 roundings: 2u = 2^-23 = 1.19e-07. Measured collapsed values sit
+    just under ONE u — 5.84e-08 (mul) and 5.86e-08 (div) on RADV, 5.9e-08 on
+    Native — so 2u is a real ceiling with one rounding of headroom and not a
+    round number chosen to fit. Anything above it is worse than plain float32
+    and is a genuine FAIL even on an allowlisted device. *)
+let df64_collapsed_ceiling = 0x1p-23
+
+(** [true] iff [device] is a Mesa RADV (AMD Vulkan) device.
+
+    Keyed on the Vulkan [deviceName], which RADV builds as
+    ["AMD Radeon RX 7900 XTX (RADV NAVI31)"] / ["... (RADV RAPHAEL_MENDOCINO)"]
+    — the ["RADV"] token is inserted by the driver itself, not by the board
+    vendor. Same discipline (and same caveat) as [is_rusticl_device]: a driver
+    rename reopens the gate as a plain FAIL, which is the safe direction. *)
+let is_radv_device ~framework ~device =
+  framework = "Vulkan"
+  && string_contains ~needle:"radv" (String.lowercase_ascii device)
+
+(** [true] iff [device] is a Mesa ANV (Intel Vulkan) device.
+
+    ANV reports the marketing name only
+    (["Intel(R) UHD Graphics 630 (CFL GT2)"]) with no driver token, so this
+    matches the vendor string. That is looser than [is_radv_device] and it is
+    the weakest predicate here: it would also match a future non-Mesa Intel
+    Vulkan driver.
+
+    NOT VERIFIED ON THE TASK #118 HARDWARE — there is no Intel GPU on the
+    campaign workstation (RX 7900 XTX + Raphael iGPU only). The entry is carried
+    over from the measurement recorded in Sarek_df64.ml's PER-BACKEND STATUS
+    (UHD Graphics 630, CFL GT2, Mesa ANV: mul/div ~5.8e-08, same shape as RADV).
+    It must be re-measured, and narrowed to a driver token, the first time an
+    Intel device runs this suite. *)
+let is_anv_device ~framework ~device =
+  framework = "Vulkan"
+  && string_contains ~needle:"intel" (String.lowercase_ascii device)
+
+(** The documented df64 deviation for [(framework, device, op)], if any.
+
+    This is an ALLOWLIST: every device not named here — including NVIDIA Vulkan,
+    which meets the full contract (mul 9.07e-15 on a GTX 1070 Max-Q, driver
+    580.119.02) — is held to the strict bound. That is the task #118 fix for the
+    LIMITATION previously recorded in test_df64.ml: the old gate keyed on the
+    bare ["Vulkan"] framework tag, so a contraction-class regression on NVIDIA
+    Vulkan would have passed silently. *)
+let df64_known_deviation ~framework ~device ~op =
+  match (framework, op) with
+  | "Native", _ ->
+      (* The Native backend runs Sarek float32 as OCaml binary64, so every
+         error-free transformation cancels (lo = 0) and df64 degenerates to
+         plain float32 storage precision. Affects ALL ops, and is harmless in
+         practice because Native has real binary64. *)
+      Some "KNOWN-DEVIATION (Native evaluates float32 at binary64; EFTs cancel)"
+  | "Vulkan", ("mul" | "div") when is_radv_device ~framework ~device ->
+      (* RADV's GLSL [fma] is not correctly rounded, so TwoProd's error term is
+         lost. NOT the ptxas contraction bug (add/sub/sqrt are unaffected and
+         meet the contract on the same device). Mesa also does not honour the
+         GLSL [precise] qualifier that Sarek_ir_glsl.ml emits on float locals.
+         Measured on AMD Radeon RX 7900 XTX (RADV NAVI31), Mesa 26.1.4-arch3.1,
+         Vulkan 1.4.354, kernel 7.1.2-3-cachyos: mul 5.84e-08, div 5.86e-08. *)
+      Some "KNOWN-DEVIATION (RADV fma not correctly rounded)"
+  | "Vulkan", ("mul" | "div") when is_anv_device ~framework ~device ->
+      Some "KNOWN-DEVIATION (Mesa ANV mul/div, unmeasured cause)"
+  | _ -> None
+
+(** Strict df64 contract bound for [op]. *)
+let df64_tol_for_op = function
+  | "add" | "sub" -> df64_tol_add_sub
+  | _ -> df64_tol_mul_div_sqrt
+
+(** Classify one df64 op's worst relative error.
+
+    - [`Pass]: within the strict contract bound, and no deviation was expected.
+    - [`Xpass label]: within the strict bound on a device the allowlist expects
+      to deviate. Reported loudly, NOT counted as a failure: the code/driver got
+      better and [df64_known_deviation] needs pruning. (Choosing not to fail
+      here is deliberate — an unrelated driver upgrade should not turn the suite
+      red — but it does mean the allowlist can only be pruned by someone reading
+      the output.)
+    - [`Known_deviation label]: over the contract bound, on the allowlist, and
+      inside the collapsed band. An explicit expected failure.
+    - [`Fail]: everything else, including a non-finite error and any error above
+      [df64_collapsed_ceiling] on an allowlisted device. *)
+let classify_df64_result ~framework ~device ~op ~err =
+  let tol = df64_tol_for_op op in
+  let deviation = df64_known_deviation ~framework ~device ~op in
+  if Float.is_finite err && err <= tol then
+    match deviation with Some label -> `Xpass label | None -> `Pass
+  else
+    match deviation with
+    | Some label when Float.is_finite err && err <= df64_collapsed_ceiling ->
+        `Known_deviation label
+    | _ -> `Fail
+
+(* ========================================================================== *)
 (* CPU-OpenCL float32 math-intrinsic classification                           *)
 (* ========================================================================== *)
 

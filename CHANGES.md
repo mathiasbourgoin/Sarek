@@ -38,6 +38,21 @@
   AMD-only measurements to "CUDA/PTX", which is why this went unseen. NOTE
   `df64_sqrt` on NVIDIA remains above tolerance; see the `KNOWN RESIDUAL`
   block in `sarek/Sarek_df64/Sarek_df64.ml`.
+- df64 precision gates could not distinguish a working df64 from a collapsed
+  one. `test_df64`, `test_real64` and `test_real64_single_source` all widened
+  their tolerance to `0x1p-22` (2.38e-07 — four times the float32 unit
+  roundoff) on the backends with a documented deviation, so a df64 that had
+  degraded all the way to plain float32 (measured 5.84e-08 on RADV) and one
+  meeting its contract (9.07e-15) both read PASS. The widening also keyed on
+  the bare `Vulkan` framework tag, sweeping in NVIDIA Vulkan, which meets the
+  full contract. All three tests now hold every device to the derived contract
+  bound (2^-47 add/sub, 2^-46 mul/div/sqrt) and express the documented
+  deviations as an explicit expected-failure band — upper end 2^-23, twice the
+  float32 unit roundoff — keyed on driver identity (Mesa RADV, Mesa ANV) in
+  `Test_helpers.df64_known_deviation`. Degrading past plain float32 now FAILs
+  even on an allowlisted device. Red-proved by replacing `df64_mul` with a
+  plain float32 multiply: the old gate reported PASS on both RADV devices and
+  Native (1.43e-07 vs tol 2.38e-07), the new gate FAILs there.
 - Indexed kernel-argument container with strict launch validation, honored
   across all six backends (out-of-order/sparse `set_arg` now correct)
 - Unambiguous, collision-resistant compile-cache keys (kernel name included,

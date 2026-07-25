@@ -89,17 +89,16 @@ let rel_error got expected =
   if expected = 0.0 then Stdlib.abs_float got
   else Stdlib.abs_float ((got -. expected) /. expected)
 
-let f32_tol = 0x1p-22
-
-let tol_for ~(substrate : Real64.substrate) ~framework ~op =
+(* Task #118: this used to widen to [0x1p-22] = 2.38e-07 (four times the
+   float32 unit roundoff) on Native and on every Vulkan device, so a collapsed
+   df64 and a working df64 both read PASS. The documented deviations are now an
+   explicit expected-failure band keyed on driver identity in
+   [Test_helpers.df64_known_deviation]; the bounds themselves are derived in
+   [Test_helpers] from the df64 algorithms' error analysis. *)
+let tol_for ~(substrate : Real64.substrate) ~framework:_ ~op =
   match substrate with
   | Real64.Native_f64 -> 1e-12
-  | Real64.Fallback_df64 -> (
-      let base = match op with "add" | "sub" -> 0x1p-47 | _ -> 0x1p-46 in
-      match (framework, op) with
-      | "Native", _ -> f32_tol
-      | "Vulkan", ("mul" | "div") -> f32_tol
-      | _ -> base)
+  | Real64.Fallback_df64 -> Test_helpers.df64_tol_for_op op
 
 (* Classify one op's outcome: PASS within tolerance, the documented rusticl fp64
    div/sqrt KNOWN-ISSUE, or a genuine FAIL. The classifier, the transcendental
@@ -112,17 +111,23 @@ let tol_for ~(substrate : Real64.substrate) ~framework ~op =
    div/sqrt carry the ~1e-8 error while +, -, * stay exact. [transcendental] is
    therefore [Native_f64 && (div|sqrt)]. A non-finite result forces FAIL. *)
 let op_status ~(substrate : Real64.substrate) ~framework ~device ~op ~err ~tol =
-  Test_helpers.classify_fp64_result
-    ~framework
-    ~device
-    ~within_tol:(err <= tol)
-    ~transcendental:
-      (substrate = Real64.Native_f64 && (op = "div" || op = "sqrt"))
-    ~exact_ok:true
-    ~max_rel:err
-    ~non_finite:(not (Float.is_finite err))
-    ~label:"KNOWN-ISSUE (rusticl fp64 sqrt/div)"
-    ()
+  match substrate with
+  | Real64.Fallback_df64 ->
+      (* The df64 fallback uses no fp64 instruction, so the rusticl fp64
+         KNOWN-ISSUE cannot apply and its 1e-5 envelope would swallow a total
+         df64 collapse. *)
+      Test_helpers.classify_df64_result ~framework ~device ~op ~err
+  | Real64.Native_f64 ->
+      Test_helpers.classify_fp64_result
+        ~framework
+        ~device
+        ~within_tol:(err <= tol)
+        ~transcendental:(op = "div" || op = "sqrt")
+        ~exact_ok:true
+        ~max_rel:err
+        ~non_finite:(not (Float.is_finite err))
+        ~label:"KNOWN-ISSUE (rusticl fp64 sqrt/div)"
+        ()
 
 (* ========== One pass on one device with one substrate ===================== *)
 
@@ -192,9 +197,7 @@ let run_pass (dev : Device.t) ~(substrate : Real64.substrate) =
       let err = try Hashtbl.find worst op with Not_found -> 0.0 in
       let tol = tol_for ~substrate ~framework ~op in
       let status = op_status ~substrate ~framework ~device ~op ~err ~tol in
-      (match status with
-      | `Fail -> incr failures
-      | `Pass | `Known_issue _ -> ()) ;
+      (match status with `Fail -> incr failures | _ -> ()) ;
       Printf.printf
         "    %-5s max rel err %.3g (tol %.3g) %s\n%!"
         op
@@ -203,6 +206,8 @@ let run_pass (dev : Device.t) ~(substrate : Real64.substrate) =
         (match status with
         | `Pass -> "PASS"
         | `Known_issue s -> s
+        | `Known_deviation s -> s
+        | `Xpass s -> "XPASS - deviation gone, prune the allowlist: " ^ s
         | `Fail -> "FAIL"))
     ["add"; "sub"; "mul"; "div"; "sqrt"]
 
