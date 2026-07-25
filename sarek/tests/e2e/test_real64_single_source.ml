@@ -89,45 +89,27 @@ let rel_error got expected =
   if expected = 0.0 then Stdlib.abs_float got
   else Stdlib.abs_float ((got -. expected) /. expected)
 
-(* Task #118: this used to widen to [0x1p-22] = 2.38e-07 (four times the
-   float32 unit roundoff) on Native and on every Vulkan device, so a collapsed
-   df64 and a working df64 both read PASS. The documented deviations are now an
-   explicit expected-failure band keyed on driver identity in
-   [Test_helpers.df64_known_deviation]; the bounds themselves are derived in
-   [Test_helpers] from the df64 algorithms' error analysis. *)
+(* Per-op tolerance and per-op classification both live in [Test_helpers] now,
+   as [real64_tol_for] / [classify_real64_result]. They used to be a
+   byte-identical copy in this file and in test_real64_single_source.ml — the
+   same duplication-drift risk that produced the f32-grade df64 tolerances this
+   PR removes. See those functions for the substrate split (the rusticl fp64
+   KNOWN-ISSUE applies only to Native_f64, never to the df64 fallback) and for
+   the task #118 rationale (no per-backend widening; deviations are strict
+   expected failures keyed on driver identity). *)
+let native_f64 substrate = substrate = Real64.Native_f64
+
 let tol_for ~(substrate : Real64.substrate) ~framework:_ ~op =
-  match substrate with
-  | Real64.Native_f64 -> 1e-12
-  | Real64.Fallback_df64 -> Test_helpers.df64_tol_for_op op
+  Test_helpers.real64_tol_for ~native_f64:(native_f64 substrate) ~op
 
-(* Classify one op's outcome: PASS within tolerance, the documented rusticl fp64
-   div/sqrt KNOWN-ISSUE, or a genuine FAIL. The classifier, the transcendental
-   envelope and the rusticl-identity gate all live in [Test_helpers] now (audit
-   #52 / F4, F5); see [Test_helpers.classify_fp64_result] for the full rationale.
-
-   Only the Native_f64 substrate can hit the rusticl div/sqrt error: WITHOUT
-   RUSTICL_FEATURES=fp64 OpenCL reports fp64=false and real64 selects the exact
-   df64 fallback (never annotated); WITH it, Native_f64 is selected and only
-   div/sqrt carry the ~1e-8 error while +, -, * stay exact. [transcendental] is
-   therefore [Native_f64 && (div|sqrt)]. A non-finite result forces FAIL. *)
-let op_status ~(substrate : Real64.substrate) ~framework ~device ~op ~err ~tol =
-  match substrate with
-  | Real64.Fallback_df64 ->
-      (* The df64 fallback uses no fp64 instruction, so the rusticl fp64
-         KNOWN-ISSUE cannot apply and its 1e-5 envelope would swallow a total
-         df64 collapse. *)
-      Test_helpers.classify_df64_result ~framework ~device ~op ~err
-  | Real64.Native_f64 ->
-      Test_helpers.classify_fp64_result
-        ~framework
-        ~device
-        ~within_tol:(err <= tol)
-        ~transcendental:(op = "div" || op = "sqrt")
-        ~exact_ok:true
-        ~max_rel:err
-        ~non_finite:(not (Float.is_finite err))
-        ~label:"KNOWN-ISSUE (rusticl fp64 sqrt/div)"
-        ()
+let op_status ~(substrate : Real64.substrate) ~framework ~device ~op ~err ~tol:_
+    =
+  Test_helpers.classify_real64_result
+    ~native_f64:(native_f64 substrate)
+    ~framework
+    ~device
+    ~op
+    ~err
 
 (* ========== One pass on one device with one substrate ===================== *)
 
@@ -198,19 +180,17 @@ let run_pass (dev : Device.t) ~(substrate : Real64.substrate) =
       let tol = tol_for ~substrate ~framework ~op in
       let status = op_status ~substrate ~framework ~device ~op ~err ~tol in
       (* [`Xpass] counts as a failure: see the "WHY [`Xpass] IS HARD" note on
-         Test_helpers.classify_df64_result. *)
-      (match status with `Fail | `Xpass _ -> incr failures | _ -> ()) ;
+         Test_helpers.classify_df64_result. Suppressed statuses also raise a
+         GitHub Actions annotation, so a deviation is visible on the checks page
+         and not only in the raw log. *)
+      if Test_helpers.df64_status_is_failure status then incr failures ;
+      Test_helpers.annotate_df64_status ~framework ~device ~op ~err ~tol status ;
       Printf.printf
         "    %-5s max rel err %.3g (tol %.3g) %s\n%!"
         op
         err
         tol
-        (match status with
-        | `Pass -> "PASS"
-        | `Known_issue s -> s
-        | `Known_deviation s -> s
-        | `Xpass msg -> msg
-        | `Fail -> "FAIL"))
+        (Test_helpers.string_of_df64_status status))
     ["add"; "sub"; "mul"; "div"; "sqrt"]
 
 (* ========== Main ========== *)

@@ -795,4 +795,103 @@ let classify_cpu_opencl_math_result ~dev ~(shape : float_check_shape)
 let github_warning ~title msg =
   Printf.printf "::warning title=%s::%s\n%!" title msg
 
+(* ========================================================================== *)
+(* df64 / real64 status reporting                                             *)
+(* ========================================================================== *)
+
+(** Human-readable text for a df64/real64 status, as printed in the per-op line.
+
+    [`Known_issue], [`Known_deviation] and [`Xpass] all carry a ready-to-print
+    message from their classifier, so they print it verbatim. *)
+let string_of_df64_status = function
+  | `Pass -> "PASS"
+  | `Known_issue s | `Known_deviation s | `Xpass s -> s
+  | `Fail -> "FAIL"
+
+(** [true] iff the status must count towards the test's failure total.
+
+    [`Xpass] is included: a stale allowlist entry that only warned would leave
+    the exit code at 0 and rot unnoticed. See the "WHY [`Xpass] IS HARD" note on
+    [classify_df64_result]. *)
+let df64_status_is_failure = function `Fail | `Xpass _ -> true | _ -> false
+
+(** Emit the GitHub Actions annotation for a non-[`Pass], non-[`Fail] df64 or
+    real64 status.
+
+    Without this, a suppression exists only in the raw log: a df64 collapse on
+    RADV would be invisible on the checks page even though the run is green by
+    design, which is the same visibility gap audit finding #74 / F3 closed for
+    the CPU-OpenCL known-issue. [`Fail] needs no annotation — it already turns
+    the job red — and [`Xpass] gets one *in addition to* failing the run, so the
+    stale entry is visible without opening the log. *)
+let annotate_df64_status ~framework ~device ~op ~err ~tol status =
+  match status with
+  | `Pass | `Fail -> ()
+  | `Xpass msg -> github_warning ~title:"df64 STALE ALLOWLIST ENTRY" msg
+  | (`Known_deviation label | `Known_issue label) as s ->
+      let kind =
+        match s with
+        | `Known_deviation _ -> "df64 KNOWN-DEVIATION"
+        | _ -> "fp64 KNOWN-ISSUE"
+      in
+      github_warning
+        ~title:kind
+        (Printf.sprintf
+           "%s / %s / %s: max rel err %.3g exceeds the tolerance %.3g and is \
+            SUPPRESSED as an expected failure — %s"
+           framework
+           device
+           op
+           err
+           tol
+           label)
+
+(* ========================================================================== *)
+(* real64 per-substrate tolerance and classification                          *)
+(* ========================================================================== *)
+
+(* Shared by test_real64 and test_real64_single_source, which previously carried
+   byte-identical copies of both functions. Keeping two copies is the same drift
+   risk that produced the f32-grade df64 tolerances in the first place: the df64
+   classifier moved here, but these two wrappers were left behind.
+
+   Parameterised on a plain [~native_f64] flag rather than on
+   [Sarek_real64.substrate], so [test_helpers] does not have to take a
+   dependency on sarek.real64 (it is linked into many tests that have no use for
+   it). Callers pass [substrate = Real64.Native_f64]. *)
+
+(** Relative tolerance for the native binary64 substrate. Not the df64 contract:
+    this path runs real IEEE-754 binary64 instructions, so it is held to a
+    binary64-grade bound with room for one fused/reassociated operation. *)
+let real64_native_f64_tol = 1e-12
+
+(** Per-op relative tolerance for a real64 pass. The df64 substrate gets the
+    derived df64 contract bound with NO per-backend widening; deviations are
+    expressed as strict expected failures in [df64_known_deviation]. *)
+let real64_tol_for ~native_f64 ~op =
+  if native_f64 then real64_native_f64_tol else df64_tol_for_op op
+
+(** Classify one real64 op.
+
+    The two substrates need different classifiers and must not be crossed:
+
+    - [Fallback_df64] uses no fp64 instruction at all, so the rusticl fp64
+      KNOWN-ISSUE cannot apply to it, and that classifier's 1e-5 envelope would
+      swallow a total df64 collapse whole.
+    - [Native_f64] is the only path that can hit the rusticl div/sqrt error, and
+      only for div/sqrt; +, -, * stay exact there. *)
+let classify_real64_result ~native_f64 ~framework ~device ~op ~err =
+  if native_f64 then
+    classify_fp64_result
+      ~framework
+      ~device
+      ~within_tol:(err <= real64_native_f64_tol)
+      ~transcendental:(op = "div" || op = "sqrt")
+      ~exact_ok:true
+      ~max_rel:err
+      ~non_finite:(not (Float.is_finite err))
+      ~label:"KNOWN-ISSUE (rusticl fp64 sqrt/div)"
+      ()
+  else classify_df64_result ~framework ~device ~op ~err
+
 module Benchmarks = Benchmarks

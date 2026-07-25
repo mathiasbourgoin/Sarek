@@ -180,18 +180,18 @@ let report_op_stats dev =
       in
       (* [`Xpass] counts as a failure: a stale allowlist entry that only printed
          a warning would leave the exit code at 0 and rot unnoticed. See the
-         "WHY [`Xpass] IS HARD" note on Test_helpers.classify_df64_result. *)
-      (match status with `Fail | `Xpass _ -> incr failures | _ -> ()) ;
+         "WHY [`Xpass] IS HARD" note on Test_helpers.classify_df64_result.
+         Suppressed statuses also raise a GitHub Actions annotation, so a df64
+         collapse on an allowlisted driver is visible on the checks page and not
+         only in the raw log. *)
+      if Test_helpers.df64_status_is_failure status then incr failures ;
+      Test_helpers.annotate_df64_status ~framework ~device ~op ~err ~tol status ;
       Printf.printf
         "  %-6s max rel err %.3g (tol %.3g) %s [%s]\n%!"
         op
         err
         tol
-        (match status with
-        | `Pass -> "PASS"
-        | `Xpass msg -> msg
-        | `Known_deviation label -> label
-        | `Fail -> "FAIL")
+        (Test_helpers.string_of_df64_status status)
         framework)
     op_stats ;
   Hashtbl.reset op_stats
