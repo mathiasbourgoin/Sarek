@@ -90,6 +90,11 @@
  *       sqrt 1.42e-14 - AT the 1.42e-14 (2^-46) tolerance boundary; both
  *       print as 1.42e-14 at three significant figures, and the measured
  *       value is the larger of the two, so the test records it as failing.
+ *       STALE: this sqrt figure was measured while the PTX backend still
+ *       lowered the f32 [sqrt] intrinsic to [sqrt.approx.f32]. That lowering
+ *       has since been changed to [sqrt.rn.f32] and the figure has NOT been
+ *       remeasured - see KNOWN RESIDUAL below. mul and div are unaffected by
+ *       that change and still stand.
  *       Before the contraction barrier: mul 5.92e-08, div 5.64e-08,
  *       sqrt 2.88e-08, i.e. plain float32.
  *
@@ -130,10 +135,11 @@
  *
  *   Metal, WGSL: UNTESTED.
  *
- * KNOWN RESIDUAL: df64_sqrt on NVIDIA (tracked separately; NOT fixed here)
- *   After the contraction barrier, sqrt still lands at or just above the
+ * KNOWN RESIDUAL: df64_sqrt on NVIDIA (cause found, fix landed, NOT remeasured)
+ *   After the contraction barrier, sqrt still landed at or just above the
  *   2^-46 tolerance on some NVIDIA paths: 1.42e-14 (CUDA/PTX, test_df64) and
  *   1.68e-14 / 1.81e-14 (CUDA/PTX and OpenCL, test_real64's df64 fallback).
+ *   Those are all pre-[sqrt.rn.f32] numbers.
  *
  *   It is NOT the contraction bug - that cost sqrt 2.88e-08, and the barrier
  *   removed it - and it pre-dates the barrier: Vulkan on the same GPU, never
@@ -143,17 +149,24 @@
  *   at 1.08e-14 - it is NOT uniformly poor, and that spread is itself part of
  *   the evidence below.
  *
- *   THE CAUSE IS NOT ESTABLISHED. Do not repeat any cause below as fact
- *   until it has been measured; the reason this library's precision claim
- *   went wrong for four years is that a plausible-sounding statement was
- *   recorded as a finding.
+ *   STATUS: the MECHANISM is established and the lowering has been changed.
+ *   The RESULTING PRECISION HAS NOT BEEN REMEASURED on NVIDIA hardware.
+ *   Keep those two apart. The reason this library's precision claim went
+ *   wrong for four years is that a plausible-sounding statement was recorded
+ *   as a finding, so nothing below may be upgraded from "emitted" to
+ *   "measured" without a run on a real NVIDIA device.
  *
- *   Leading hypothesis, on circumstantial evidence only: the PTX backend
- *   lowers the float32 [sqrt] intrinsic to [sqrt.approx.f32]
- *   (sarek/codegen/Sarek_ir_ptx_expr.ml), which is ~1 ulp rather than
- *   correctly rounded. df64_sqrt uses that result as the Newton seed [y],
- *   and a Karp correction step squares the seed error, so a 2^-23 seed error
- *   lands near 2^-46 - the observed magnitude. Three observations fit:
+ *   ESTABLISHED (by dumping the generated PTX for a df64_sqrt kernel, offline,
+ *   no device needed - see sarek/tests/e2e/test_df64_no_contraction.ml):
+ *   the PTX backend lowered the float32 [sqrt] intrinsic to [sqrt.approx.f32]
+ *   (~1 ulp, not correctly rounded), df64_sqrt used that as its Newton seed
+ *   [y], and [sqrt.approx.f32] was the ONLY non-correctly-rounded instruction
+ *   in the whole emitted df64_sqrt body - every other operation is
+ *   [fma.rn.f32] (the contraction barrier), [div.rn.f32] (audit finding M2),
+ *   or an exact add/sub. A Karp correction step cannot recover an error that
+ *   is already in its own seed.
+ *
+ *   Three observations fit that mechanism:
  *     - the interpreter runs the identical algorithm with a correctly
  *       rounded sqrt and reaches 8.53e-15;
  *     - on the SAME GPU, OpenCL reaches 9.80e-15 while CUDA/PTX sits at
@@ -162,15 +175,25 @@
  *     - the identical bug class was already found and fixed one operator
  *       over: [div.approx.f32] was replaced by [div.rn.f32] in the same
  *       emitter precisely because it "eroded Sarek_df64's error budget"
- *       (audit finding M2). [sqrt.rn.f32] exists and is already emitted
- *       elsewhere in that file.
- *   The cheap experiment is to swap [sqrt.approx.f32] for [sqrt.rn.f32] and
- *   re-measure on NVIDIA; it was NOT run here (no NVIDIA device attached to
- *   this working tree) and it is out of scope for the contraction fix.
- *   Note this also means the "IEEE-exact float32 ops" requirement above is
- *   currently NOT met by the PTX backend for [sqrt].
+ *       (audit finding M2). [sqrt.rn.f32] exists and was already emitted
+ *       elsewhere in that file (hypot).
  *
- *   Unresolved; do not paper over it by widening the tolerance.
+ *   DONE: the emitter now issues [sqrt.rn.f32] for the f32 [sqrt] intrinsic,
+ *   which also brings the "IEEE-exact float32 ops" requirement above back
+ *   into force for [sqrt] on PTX. This is a GLOBAL change - it affects every
+ *   f32 sqrt in every PTX kernel, not only df64.
+ *
+ *   STILL OWED, on an sm_61 NVIDIA device:
+ *     - test_df64 CUDA/PTX sqrt: was 1.42e-14, now ?
+ *     - test_real64 df64-fallback sqrt: was 1.68e-14 / 1.81e-14, now ?
+ *     - the throughput cost on an ordinary f32 sqrt kernel. Statically, at
+ *       sm_86, [sqrt.rn.f32] is ~10 hot-path instructions (MUFU.RSQ + a
+ *       Newton step) against ~4 for [sqrt.approx.f32] (MUFU.SQRT), plus a
+ *       cold denormal/inf/nan slowpath subroutine that normal data never
+ *       enters. Both issue exactly one MUFU op. Not yet timed on sm_61.
+ *
+ *   Until those are measured this stays open. Do not paper over it by
+ *   widening the tolerance.
  *
  * References:
  *   - T.J. Dekker, "A floating-point technique for extending the available

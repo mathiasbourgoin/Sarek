@@ -800,6 +800,35 @@ let test_f32_div_correctly_rounded () =
   if contains ptx "div.approx.f32" then
     Alcotest.fail "plain f32 division must not use div.approx.f32"
 
+(** Plain f32 [sqrt] is correctly rounded, for the same reason division is: the
+    sqrt intrinsic must emit sqrt.rn.f32, not the ~1-ulp sqrt.approx.f32 (which
+    remains reserved for already-approximate intrinsics like rsqrt).
+
+    This lives here, next to the div case, rather than only in the df64 guard:
+    the df64 guard reaches this lowering through a df64_sqrt kernel, so
+    rewriting df64_sqrt would silently un-assert it. sqrt.approx.f32 shipped for
+    years because NOTHING asserted the f32 sqrt lowering anywhere. *)
+let test_f32_sqrt_correctly_rounded () =
+  let out = make_var "out" (TVec TFloat32) in
+  let a = make_var "a" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let av = EArrayRead ("a", EVar tid) in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign
+          ( LArrayElem ("out", EVar tid),
+            EIntrinsic (["Sarek_stdlib"; "Gpu"], "sqrt", [av]) ) )
+  in
+  let mk v = DParam (v, Some {arr_elttype = TFloat32; arr_memspace = Global}) in
+  let k = base_kernel "f32_sqrt" [mk out; mk a] body [] in
+  let ptx = Sarek_ir_ptx.generate k in
+  assert_contains ptx "sqrt.rn.f32" ;
+  (* Anchored: "sqrt.approx.f32" is a substring of "rsqrt.approx.f32". *)
+  if contains ptx " sqrt.approx.f32 " then
+    Alcotest.fail "plain f32 sqrt must not use sqrt.approx.f32"
+
 (** Int64 comparison family, Not/BitNot and min/max must be class-aware (audit
     finding H2): the old code emitted setp.*.s32 / not.b32 / min.s32 on %rd
     (64-bit) registers - invalid PTX, rejected at module load. *)
@@ -2826,6 +2855,10 @@ let () =
             "plain f32 division emits div.rn.f32"
             `Quick
             test_f32_div_correctly_rounded;
+          Alcotest.test_case
+            "plain f32 sqrt emits sqrt.rn.f32"
+            `Quick
+            test_f32_sqrt_correctly_rounded;
           Alcotest.test_case
             "ECast matrix: bool setp/selp + i32<->i64 cvt pairs"
             `Quick

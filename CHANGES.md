@@ -70,9 +70,7 @@
   (`test_df64_no_contraction`) asserts the emitted PTX contains no
   contractable `mul.f32`. The df64 per-backend precision table now names the
   device and toolchain behind every figure — the previous table generalised
-  AMD-only measurements to "CUDA/PTX", which is why this went unseen. NOTE
-  `df64_sqrt` on NVIDIA remains above tolerance; see the `KNOWN RESIDUAL`
-  block in `sarek/Sarek_df64/Sarek_df64.ml`.
+  AMD-only measurements to "CUDA/PTX", which is why this went unseen.
 - df64 precision gates could not distinguish a working df64 from a collapsed
   one. `test_df64`, `test_real64` and `test_real64_single_source` all widened
   their tolerance to `0x1p-22` (2.38e-07 — four times the float32 unit
@@ -93,6 +91,16 @@
   vs tol 2.38e-07, new gate FAIL), and adding a bogus allowlist entry for an op
   that already meets the contract (all three tests exit 1 with the stale-entry
   message).
+- PTX backend emits `sqrt.rn.f32` rather than `sqrt.approx.f32` for the float32
+  `sqrt` intrinsic — the same correctness fix already applied to division
+  (`div.approx.f32` → `div.rn.f32`, audit finding M2), which had missed `sqrt`.
+  Dumping the generated PTX showed `sqrt.approx.f32` (~1 ulp) was the only
+  non-correctly-rounded instruction in the whole `df64_sqrt` body, where it
+  serves as the Newton seed. This is a global change: every f32 sqrt in every
+  PTX kernel is now correctly rounded. NOTE the resulting NVIDIA precision has
+  NOT been remeasured — `df64_sqrt` was above tolerance before this change and
+  the new figure is unknown; see the `KNOWN RESIDUAL` block in
+  `sarek/Sarek_df64/Sarek_df64.ml`.
 - Indexed kernel-argument container with strict launch validation, honored
   across all six backends (out-of-order/sparse `set_arg` now correct)
 - Unambiguous, collision-resistant compile-cache keys (kernel name included,

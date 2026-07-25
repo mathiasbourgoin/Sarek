@@ -145,15 +145,28 @@ let check name ptx =
    correctly rounded, and it was the ONLY non-correctly-rounded instruction in
    the whole emitted df64_sqrt body -- every other op is fma.rn / div.rn / an
    exact add-sub. Same bug class as [div.approx.f32] (audit finding M2), one
-   operator over. This asserts the emitted-PTX property; the precision it buys
-   is measured by test_df64.ml on real NVIDIA hardware. *)
+   operator over.
+
+   SCOPE OF THIS ASSERTION: it proves which instruction is EMITTED, nothing
+   more. It does not measure precision, and the precision this buys on NVIDIA
+   hardware has NOT been remeasured since the lowering changed -- see the
+   KNOWN RESIDUAL block in sarek/Sarek_df64/Sarek_df64.ml for what is and is
+   not established.
+
+   Both needles are anchored with a leading space, because "sqrt.approx.f32"
+   is a SUBSTRING of "rsqrt.approx.f32": [rsqrt] deliberately keeps the
+   approximate form, and rsqrt is the textbook Newton seed for a square root,
+   so an unanchored count here would fail with a message asserting the exact
+   opposite of what happened the day someone reseeds df64_sqrt with it. The
+   [check] function above anchors for the same reason (trailing space on
+   "mul.f32 "). *)
 let check_sqrt_seed ptx =
-  let approx = count "sqrt.approx.f32" ptx in
-  let exact = count "sqrt.rn.f32" ptx in
+  let approx = count " sqrt.approx.f32 " ptx in
+  let exact = count " sqrt.rn.f32 " ptx in
   let ok = approx = 0 && exact > 0 in
   Printf.printf
     "  %-10s sqrt.approx.f32 = %d (want 0), sqrt.rn.f32 = %d (want > 0) %s\n%!"
-    "df64_sqrt"
+    "df64_seed"
     approx
     exact
     (if ok then "PASS" else "FAIL") ;
@@ -161,9 +174,8 @@ let check_sqrt_seed ptx =
     incr failures ;
     Printf.printf
       "    -> df64_sqrt's Newton seed is not correctly rounded; the Karp\n\
-      \       correction cannot recover the seed's error and df64_sqrt loses\n\
-      \       precision on PTX only. See \"KNOWN RESIDUAL\" in\n\
-      \       sarek/Sarek_df64/Sarek_df64.ml.\n\
+      \       correction cannot recover an error already in its own seed.\n\
+      \       See \"KNOWN RESIDUAL\" in sarek/Sarek_df64/Sarek_df64.ml.\n\
        %!"
   end
 
