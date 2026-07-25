@@ -156,6 +156,22 @@ let exec_arg_of_vector : type a b. (a, b) Vector.t -> Framework_sig.exec_arg =
           | Typed_value.PBool _ -> type_error "int64" "bool"
           | Typed_value.PBytes _ -> type_error "int64" "bytes")
       | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+          Vector.Scalar Vector.Float16 ) -> (
+          (* Mirrors the [get] arm above: f16 has no Typed_value module of its
+             own (it is a storage width, not a compute type), so the value
+             arrives as a Float32_type float and [Vector.set] narrows it to
+             binary16 on store. Without this arm, writing an f16 element through
+             the framework's exec-arg interface fell into the catch-all below
+             with "unknown combination" — so an f16 kernel could not run on the
+             Interpreter DEVICE at all, even though test_hip_f16 passes: that
+             test uses [run_interpreter_vectors], which bypasses this path. *)
+          match S.to_primitive x with
+          | Typed_value.PFloat f -> Vector.set v i f
+          | Typed_value.PInt32 _ -> type_error "float16" "int32"
+          | Typed_value.PInt64 _ -> type_error "float16" "int64"
+          | Typed_value.PBool _ -> type_error "float16" "bool"
+          | Typed_value.PBytes _ -> type_error "float16" "bytes")
+      | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
           Vector.Scalar Vector.Float32 ) -> (
           match S.to_primitive x with
           | Typed_value.PFloat f -> Vector.set v i f

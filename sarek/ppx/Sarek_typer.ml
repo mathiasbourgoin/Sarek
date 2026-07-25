@@ -91,12 +91,37 @@ let check_reserved_prefix_all (names : string list) (loc : Sarek_ast.loc) :
     @return Ok () if numeric, Error with type mismatch otherwise
 
     See also: {!Sarek_types.is_numeric} for bool predicate version. *)
-let check_numeric t loc =
+let check_numeric ?(what = "this operator") t loc =
   match repr t with
   | TPrim TInt32 -> Ok ()
   | TReg (Int64 | Int | Float32 | Float64) -> Ok ()
-  | TVar _ -> Ok () (* Will be constrained later *)
+  | TReg Float16 ->
+      (* #57 slice 1 review, MF4b. The fall-through below reported this as
+         [expected int32, got float16], which is both misleading (int32 is not
+         what is wanted) and unactionable. f16 has ONE remedy and the message
+         names it. *)
+      Error [Float16_operand (what, loc)]
+  | TVar _ as tv ->
+      (* An operand type may still be unresolved here. Plain [Ok ()] left it
+         unchecked forever (MF4b): nothing re-examined the operator once
+         unification bound the tvar. Record the constraint instead, so a later
+         link to float16 is refused in [unify]. *)
+      register_numeric_required tv ;
+      Ok ()
   | t -> Error [Type_mismatch {expected = t_int32; got = t; loc}]
+
+(** Reject a float16 operand for an operator that is not numeric-checked (the
+    equality and boolean/bitwise families). f16 is storage-only, so no operator
+    may see it — [Eq]/[Ne] skipped {!check_numeric} entirely, which is how
+    [a.(i) = b.(i)] on a [float16 vector] compiled and emitted
+    [a[tid] == b[tid]] on [__half] (#57 slice 1 review, MF4a). *)
+let reject_float16 ~what t loc =
+  match repr t with
+  | TReg Float16 -> Error [Float16_operand (what, loc)]
+  | TVar _ as tv ->
+      register_numeric_required tv ;
+      Ok ()
+  | _ -> Ok ()
 
 (** Check that a type is integer (int32, int64, int).
 
@@ -177,36 +202,68 @@ let rec type_of_type_expr_ctx env (ctx : tvar_ctx) te =
 let type_of_type_expr_env env te =
   type_of_type_expr_ctx env (fresh_tvar_ctx ~level:env.current_level ()) te
 
+(** Human-readable operator name for diagnostics. *)
+let binop_name = function
+  | Add -> "'+' / '+.'"
+  | Sub -> "'-' / '-.'"
+  | Mul -> "'*' / '*.'"
+  | Div -> "'/' / '/.'"
+  | Mod -> "'mod'"
+  | And -> "'&&'"
+  | Or -> "'||'"
+  | Eq -> "'='"
+  | Ne -> "'<>'"
+  | Lt -> "'<'"
+  | Le -> "'<='"
+  | Gt -> "'>'"
+  | Ge -> "'>='"
+  | Land -> "'land'"
+  | Lor -> "'lor'"
+  | Lxor -> "'lxor'"
+  | Lsl -> "'lsl'"
+  | Lsr -> "'lsr'"
+  | Asr -> "'asr'"
+
 (** Infer type of a binary operation *)
 let infer_binop op t1 t2 loc =
+  let what = binop_name op in
   match op with
   | Add | Sub | Mul | Div ->
       (* Numeric ops: both operands same type, result same type *)
       let* () = unify_or_error t1 t2 loc in
-      let* () = check_numeric t1 loc in
+      let* () = check_numeric ~what t1 loc in
       Ok t1
   | Mod ->
       (* Integer only *)
       let* () = unify_or_error t1 t2 loc in
+      let* () = reject_float16 ~what t1 loc in
       let* () = check_integer t1 loc in
       Ok t1
   | Eq | Ne ->
-      (* Equality: both same type, result bool *)
+      (* Equality: both same type, result bool.
+         No [check_numeric] here on purpose — equality is legal on bool, records
+         and variants. But it is NOT legal on f16, and skipping every check is
+         what let `a.(i) = b.(i)` on a float16 vector compile (MF4a). *)
       let* () = unify_or_error t1 t2 loc in
+      let* () = reject_float16 ~what t1 loc in
+      let* () = reject_float16 ~what t2 loc in
       Ok t_bool
   | Lt | Le | Gt | Ge ->
       (* Comparison: both same numeric type, result bool *)
       let* () = unify_or_error t1 t2 loc in
-      let* () = check_numeric t1 loc in
+      let* () = check_numeric ~what t1 loc in
       Ok t_bool
   | And | Or ->
       (* Boolean ops *)
+      let* () = reject_float16 ~what t1 loc in
+      let* () = reject_float16 ~what t2 loc in
       let* () = check_boolean t1 loc in
       let* () = check_boolean t2 loc in
       Ok t_bool
   | Land | Lor | Lxor | Lsl | Lsr | Asr ->
       (* Bitwise ops: integer only *)
       let* () = unify_or_error t1 t2 loc in
+      let* () = reject_float16 ~what t1 loc in
       let* () = check_integer t1 loc in
       Ok t1
 
@@ -214,12 +271,14 @@ let infer_binop op t1 t2 loc =
 let infer_unop op t loc =
   match op with
   | Neg ->
-      let* () = check_numeric t loc in
+      let* () = check_numeric ~what:"unary '-' / '-.'" t loc in
       Ok t
   | Not ->
+      let* () = reject_float16 ~what:"'not'" t loc in
       let* () = check_boolean t loc in
       Ok t_bool
   | Lnot ->
+      let* () = reject_float16 ~what:"'lnot'" t loc in
       let* () = check_integer t loc in
       Ok t
 

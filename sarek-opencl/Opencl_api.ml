@@ -375,8 +375,13 @@ module Memory = struct
     zero_copy : bool; (* True if using CL_MEM_USE_HOST_PTR - skip transfers *)
   }
 
+  (* Element sizes come from Spoc_core's pure table, NOT from
+     Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind): ctypes' kind GADT
+     has no Float16 arm and raises Failure "Unsupported bigarray kind", so
+     [Vector.create Vector.float16 n] died here with an opaque ctypes error
+     (#57 slice 1 review, MF2). *)
   let alloc context size kind =
-    let elem_size = Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind) in
+    let elem_size = Spoc_core.Memory.bigarray_elem_size kind in
     let bytes = Unsigned.Size_t.of_int (size * elem_size) in
     let err = allocate cl_int 0l in
     let mem =
@@ -393,7 +398,7 @@ module Memory = struct
   (** Allocate buffer with zero-copy using host pointer. For CPU OpenCL devices,
       this avoids memory copies entirely. *)
   let alloc_with_host_ptr context size kind host_ptr =
-    let elem_size = Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind) in
+    let elem_size = Spoc_core.Memory.bigarray_elem_size kind in
     let bytes = Unsigned.Size_t.of_int (size * elem_size) in
     let err = allocate cl_int 0l in
     (* CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR *)
@@ -427,7 +432,10 @@ module Memory = struct
     if dst.zero_copy then ()
     else begin
       let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes src) in
-      let src_ptr = bigarray_start array1 src |> to_voidp in
+      (* Spoc_core.Memory.bigarray_void_ptr, not Ctypes.bigarray_start: the
+         latter has no Float16 arm (MF2), and the former returns a MANAGED
+         pointer that keeps [src] rooted across the blocking enqueue (MF3). *)
+      let src_ptr = Spoc_core.Memory.bigarray_void_ptr src in
       check
         "clEnqueueWriteBuffer"
         (clEnqueueWriteBuffer
@@ -439,7 +447,8 @@ module Memory = struct
            src_ptr
            Unsigned.UInt32.zero
            (from_voidp cl_event null)
-           (from_voidp cl_event null))
+           (from_voidp cl_event null)) ;
+      ignore (Sys.opaque_identity src)
     end
 
   let device_to_host queue ~src ~dst =
@@ -447,7 +456,9 @@ module Memory = struct
     if src.zero_copy then ()
     else begin
       let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes dst) in
-      let dst_ptr = bigarray_start array1 dst |> to_voidp in
+      (* See host_to_device above: MF2 (no Float16 kind in ctypes) and MF3
+         (managed pointer keeps [dst] rooted across this device->host WRITE). *)
+      let dst_ptr = Spoc_core.Memory.bigarray_void_ptr dst in
       check
         "clEnqueueReadBuffer"
         (clEnqueueReadBuffer
@@ -459,7 +470,8 @@ module Memory = struct
            dst_ptr
            Unsigned.UInt32.zero
            (from_voidp cl_event null)
-           (from_voidp cl_event null))
+           (from_voidp cl_event null)) ;
+      ignore (Sys.opaque_identity dst)
     end
 
   (** Transfer from raw pointer to device buffer (for custom types) *)

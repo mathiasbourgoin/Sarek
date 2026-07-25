@@ -174,10 +174,32 @@ end)
     define their own intrinsics and the PPX will reference them correctly.
 
     Examples:
-    - IntrinsicRef (["Float32"], "sin") -> Float32.sin
-    - IntrinsicRef (["Gpu"], "block_barrier") -> Gpu.block_barrier
-    - CorePrimitiveRef "thread_idx_x" -> Gpu.thread_idx_x *)
-let expr_of_intrinsic_ref ~loc (ref : Sarek_env.intrinsic_ref) : expression =
+    - IntrinsicRef (["Sarek_stdlib"; "Float32"], "sin") ->
+      Sarek_stdlib.Float32.sin
+    - IntrinsicRef (["Sarek_stdlib"; "Gpu"], "block_barrier") ->
+      Sarek_stdlib.Gpu.block_barrier
+
+    CORE primitives get NO witness ([None]). They are not stdlib symbols: they
+    live in [Sarek_core_primitives.all], a table compiled into the PPX itself,
+    so their existence is already established before any OCaml code is emitted —
+    there is nothing for a witness to check. The previous behaviour emitted an
+    UNQUALIFIED [Gpu.<name>], naming a module that is not in scope at a user's
+    expansion site, and that broke the f16 feature's documented usage: the
+    mandated shape
+
+    {[
+      let x = float32_of_float16 a.(tid) in ...
+    ]}
+
+    failed with [Unbound module "Gpu"] (#57 slice 1 review, MF4c). It only
+    appeared to work when the conversion sat directly inside a vector store,
+    because [collect_intrinsic_refs] did not descend into [TEVecSet]'s value —
+    the accident that hid this. [float16_of_float32] / [float32_of_float16] have
+    no [Gpu] counterpart at all and could never have resolved: they are
+    deliberately core primitives rather than [%sarek_intrinsic]s because a
+    stdlib type registration needs a [ctype] and Ctypes has no half type. *)
+let expr_of_intrinsic_ref_opt ~loc (ref : Sarek_env.intrinsic_ref) :
+    expression option =
   match ref with
   | Sarek_env.IntrinsicRef (module_path, name) ->
       (* Build longident from module path: ["A"; "B"] + "f" -> A.B.f *)
@@ -187,11 +209,8 @@ let expr_of_intrinsic_ref ~loc (ref : Sarek_env.intrinsic_ref) : expression =
           (Lident (List.hd module_path))
           (List.tl module_path @ [name])
       in
-      Ast_builder.Default.pexp_ident ~loc {txt = lid; loc}
-  | Sarek_env.CorePrimitiveRef name ->
-      (* Core primitives are accessed via Gpu module *)
-      let lid = Ldot (Lident "Gpu", name) in
-      Ast_builder.Default.pexp_ident ~loc {txt = lid; loc}
+      Some (Ast_builder.Default.pexp_ident ~loc {txt = lid; loc})
+  | Sarek_env.CorePrimitiveRef _ -> None
 
 (** Collect all intrinsic function refs from a typed expression *)
 let rec collect_intrinsic_refs (te : texpr) : IntrinsicRefSet.t =
@@ -199,10 +218,20 @@ let rec collect_intrinsic_refs (te : texpr) : IntrinsicRefSet.t =
   | TEUnit | TEBool _ | TEInt _ | TEInt32 _ | TEInt64 _ | TEFloat _ | TEDouble _
   | TEVar _ | TENative _ | TEGlobalRef _ ->
       IntrinsicRefSet.empty
-  | TEVecGet (v, i) | TEVecSet (v, i, _) | TEArrGet (v, i) ->
+  | TEVecGet (v, i) | TEArrGet (v, i) ->
       IntrinsicRefSet.union
         (collect_intrinsic_refs v)
         (collect_intrinsic_refs i)
+  | TEVecSet (v, i, x) ->
+      (* The stored VALUE used to be dropped (it shared the [TEVecGet] arm with
+         a wildcard), so any intrinsic appearing only inside a vector store was
+         never witnessed. That gap is what hid MF4c: the same f16 conversion
+         compiled inside `out.(tid) <- ...` and failed inside `let x = ...`. *)
+      IntrinsicRefSet.union
+        (collect_intrinsic_refs v)
+        (IntrinsicRefSet.union
+           (collect_intrinsic_refs i)
+           (collect_intrinsic_refs x))
   | TEArrSet (a, i, x) ->
       IntrinsicRefSet.union
         (collect_intrinsic_refs a)
@@ -319,7 +348,7 @@ let generate_intrinsic_check ~loc (kernel : tkernel) : expression =
   let refs_from_items = collect_from_module_items kernel.tkern_module_items in
   let all_refs = IntrinsicRefSet.union refs_from_body refs_from_items in
   let ref_list = IntrinsicRefSet.elements all_refs in
-  let fn_exprs = List.map (expr_of_intrinsic_ref ~loc) ref_list in
+  let fn_exprs = List.filter_map (expr_of_intrinsic_ref_opt ~loc) ref_list in
   match fn_exprs with
   | [] -> [%expr ()]
   | exprs ->

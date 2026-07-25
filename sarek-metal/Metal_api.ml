@@ -206,20 +206,25 @@ module Memory = struct
       let contents = mtl_buffer_contents buf in
       {handle = buf; size; elem_size; device; contents}
 
+  (* [Spoc_core.Memory.bigarray_void_ptr] rather than [Ctypes.bigarray_start]:
+     ctypes' kind GADT has no Float16 arm (#57 slice 1 review, MF2), and the
+     helper returns a MANAGED pointer that keeps the array rooted (MF3). *)
   let alloc_bigarray device ba elem_size =
     let size = Bigarray.Array1.dim ba in
     let buf = alloc device size elem_size in
     (* Copy data to GPU *)
-    let ba_ptr = bigarray_start array1 ba in
+    let ba_ptr = Spoc_core.Memory.bigarray_void_ptr ba in
     let byte_size = size * elem_size in
-    memcpy ~dst:buf.contents ~src:(to_voidp ba_ptr) ~size:byte_size ;
+    memcpy ~dst:buf.contents ~src:ba_ptr ~size:byte_size ;
+    ignore (Sys.opaque_identity ba) ;
     buf
 
   let to_bigarray (type a b) buf (kind : (a, b) Bigarray.kind) =
     let ba = Bigarray.Array1.create kind Bigarray.c_layout buf.size in
-    let ba_ptr = bigarray_start array1 ba in
+    let ba_ptr = Spoc_core.Memory.bigarray_void_ptr ba in
     let byte_size = buf.size * buf.elem_size in
-    memcpy ~dst:(to_voidp ba_ptr) ~src:buf.contents ~size:byte_size ;
+    memcpy ~dst:ba_ptr ~src:buf.contents ~size:byte_size ;
+    ignore (Sys.opaque_identity ba) ;
     ba
 
   let release buf = release buf.handle

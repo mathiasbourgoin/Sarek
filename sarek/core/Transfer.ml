@@ -254,9 +254,17 @@ let copy_device_to_host (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
       match vec.host with
       | Vector.Bigarray_storage ba ->
           let ptr, byte_size = Vector_transfer.bigarray_to_ptr ba B.elem_size in
-          B.device_to_host_ptr ptr ~byte_size
+          B.device_to_host_ptr ptr ~byte_size ;
+          (* [device_to_host_ptr] takes a bare [nativeint] address (see
+             Framework_sig.ml:218-223), which is not a GC root, and this is a
+             device->HOST WRITE: if [ba] were collected mid-transfer the backend
+             would write into freed memory. Keep it reachable across the call —
+             without this the transfer was the function's last expression and
+             nothing rooted [ba]. *)
+          ignore (Sys.opaque_identity ba)
       | Vector.Custom_storage {ptr; custom; length} ->
-          B.device_to_host_ptr ptr ~byte_size:(length * custom.elem_size))
+          B.device_to_host_ptr ptr ~byte_size:(length * custom.elem_size) ;
+          ignore (Sys.opaque_identity ptr))
 
 (** Transfer vector data to a device *)
 let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
@@ -300,9 +308,12 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
             Log.Transfer
             "to_device: calling host_ptr_to_device byte_size=%d"
             byte_size ;
-          B.host_ptr_to_device ptr ~byte_size
+          B.host_ptr_to_device ptr ~byte_size ;
+          (* Same keep-alive obligation as [copy_device_to_host] above. *)
+          ignore (Sys.opaque_identity ba)
       | Vector.Custom_storage {ptr; custom; length} ->
-          B.host_ptr_to_device ptr ~byte_size:(length * custom.elem_size)) ;
+          B.host_ptr_to_device ptr ~byte_size:(length * custom.elem_size) ;
+          ignore (Sys.opaque_identity ptr)) ;
       vec.location <- Vector.Both dev
 
 (** Transfer vector data from device to CPU.

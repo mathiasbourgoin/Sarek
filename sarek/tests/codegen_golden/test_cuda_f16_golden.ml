@@ -187,34 +187,206 @@ let test_non_f16_kernel_unchanged () =
   check_contains "extern C header" src "extern \"C\"" ;
   ()
 
-let test_deferred_backends_reject_f16 () =
-  let k = f16_scale_kernel () in
-  let expect_raises name f =
-    match f () with
-    | (_ : string) ->
-        Alcotest.failf
-          "%s: expected f16 to be rejected (slice 2), but generation succeeded"
-          name
-    | exception _ -> ()
+(** An f16 vector PARAMETER that the body never reads. This is the reviewer's
+    exact case: PTX validates aggregate vector element types through a
+    [| _ -> ()] fall-through, and with no f16 expression in the body nothing
+    else ever asks for an f16 type string — so PTX emitted a complete, valid,
+    silently-wrong module with no diagnostic at all. *)
+let f16_untouched_param_kernel () =
+  let out = make_var "out" (TVec TFloat32) in
+  let unused = make_var "hin" (TVec TFloat16) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign (LArrayElem ("out", EVar idx), EConst (CFloat32 1.0)) )
   in
-  expect_raises "opencl" (fun () ->
-      Sarek_ir_opencl.generate_with_types ~types:k.kern_types k) ;
-  expect_raises "glsl" (fun () ->
-      Sarek_ir_glsl.generate_with_types ~types:k.kern_types k) ;
-  expect_raises "metal" (fun () ->
-      Sarek_ir_metal.generate_with_types ~types:k.kern_types k) ;
-  expect_raises "wgsl" (fun () ->
-      Sarek_ir_wgsl.generate_with_types ~types:k.kern_types k) ;
-  ()
+  mk_kernel
+    "f16_untouched_param"
+    [
+      DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (unused, Some {arr_elttype = TFloat16; arr_memspace = Global});
+    ]
+    body
+
+(** An f16 kernel whose ONLY f16 is a local binder. GLSL and WGSL never iterate
+    [kern_locals], so no per-type arm can fire here — only the whole-kernel gate
+    can. *)
+let f16_local_only_kernel () =
+  let out = make_var "out" (TVec TFloat32) in
+  let idx = make_var "idx" TInt32 in
+  let h = make_var "h" TFloat16 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( h,
+            ECast (TFloat16, EConst (CFloat32 1.5)),
+            SAssign (LArrayElem ("out", EVar idx), ECast (TFloat32, EVar h)) )
+      )
+  in
+  let k =
+    mk_kernel
+      "f16_local_only"
+      [DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+      body
+  in
+  {k with kern_locals = [DLocal (h, None)]}
+
+(** An f16 kernel whose only f16 is a HELPER RETURN TYPE. PTX never inspected
+    [hf_ret_type], so it emitted a complete valid module with no diagnostic. *)
+let f16_helper_ret_kernel () =
+  let out = make_var "out" (TVec TFloat32) in
+  let idx = make_var "idx" TInt32 in
+  let helper =
+    {
+      hf_name = "narrow";
+      hf_params = [make_var "x" TFloat32];
+      hf_ret_type = TFloat16;
+      hf_body = SReturn (ECast (TFloat16, EVar (make_var "x" TFloat32)));
+    }
+  in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign (LArrayElem ("out", EVar idx), EConst (CFloat32 0.0)) )
+  in
+  let k =
+    mk_kernel
+      "f16_helper_ret"
+      [DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global})]
+      body
+  in
+  {k with kern_funcs = [helper]}
+
+(** Every backend that defers f16 must REJECT it with its own located
+    diagnostic, at every entry point, for every position f16 can occupy.
+
+    The exception is matched precisely: the previous [| exception _ -> ()]
+    accepted ANY failure, so a Not_found or a Stack_overflow from an unrelated
+    bug would have read as "correctly rejected". *)
+let expect_f16_rejected ?tag ~backend name f =
+  let tag_expected = Option.value tag ~default:backend in
+  match f () with
+  | (_ : string) ->
+      Alcotest.failf
+        "%s: expected f16 to be rejected (slice 2), but generation succeeded"
+        name
+  | exception
+      Sarek_backend_error.Backend_error.Backend_error
+        (Sarek_backend_error.Backend_error.Codegen
+           {
+             backend = tag;
+             error =
+               Sarek_backend_error.Backend_error.Unsupported_construct
+                 {construct; reason};
+           }) ->
+      (* The diagnostic must name the backend, the construct ("f16") and the
+         slice-2 deferral. Matching the exception SHAPE (not [_]) is the point:
+         the previous [| exception _ -> ()] would have passed on any unrelated
+         failure. *)
+      Alcotest.(check string) (name ^ ": backend tag") tag_expected tag ;
+      Alcotest.(check string) (name ^ ": construct") "f16" construct ;
+      let want = backend ^ ": float16 not yet supported" in
+      if not (contains ~needle:want reason) then
+        Alcotest.failf
+          "%s: rejected, but the reason does not name the deferral. Wanted %S \
+           in: %s"
+          name
+          want
+          reason
+  | exception e ->
+      Alcotest.failf
+        "%s: rejected with the WRONG exception (expected Codegen_error): %s"
+        name
+        (Printexc.to_string e)
+
+let test_deferred_backends_reject_f16 () =
+  let each label k =
+    expect_f16_rejected
+      ~backend:"OpenCL"
+      (label ^ "/opencl generate")
+      (fun () -> Sarek_ir_opencl.generate k) ;
+    expect_f16_rejected
+      ~backend:"OpenCL"
+      (label ^ "/opencl generate_with_types")
+      (fun () -> Sarek_ir_opencl.generate_with_types ~types:k.kern_types k) ;
+    (* GLSL's Backend_error tag is "Vulkan" (that is the framework name). *)
+    expect_f16_rejected
+      ~tag:"Vulkan"
+      ~backend:"GLSL"
+      (label ^ "/glsl generate")
+      (fun () -> Sarek_ir_glsl.generate k) ;
+    expect_f16_rejected
+      ~tag:"Vulkan"
+      ~backend:"GLSL"
+      (label ^ "/glsl generate_with_types")
+      (fun () -> Sarek_ir_glsl.generate_with_types ~types:k.kern_types k) ;
+    expect_f16_rejected ~backend:"Metal" (label ^ "/metal generate") (fun () ->
+        Sarek_ir_metal.generate k) ;
+    expect_f16_rejected
+      ~backend:"Metal"
+      (label ^ "/metal generate_with_types")
+      (fun () -> Sarek_ir_metal.generate_with_types ~types:k.kern_types k) ;
+    (* Likewise WGSL's tag is the framework name "WebGPU". *)
+    expect_f16_rejected
+      ~tag:"WebGPU"
+      ~backend:"WGSL"
+      (label ^ "/wgsl generate")
+      (fun () -> Sarek_ir_wgsl.generate k) ;
+    expect_f16_rejected
+      ~tag:"WebGPU"
+      ~backend:"WGSL"
+      (label ^ "/wgsl generate_with_types")
+      (fun () -> Sarek_ir_wgsl.generate_with_types ~types:k.kern_types k)
+  in
+  each "vector-param" (f16_scale_kernel ()) ;
+  each "untouched-param" (f16_untouched_param_kernel ()) ;
+  each "local-only" (f16_local_only_kernel ()) ;
+  each "helper-return" (f16_helper_ret_kernel ())
+
+(** PTX raises its own [Ptx_codegen_error], not [Codegen_error]. Before the
+    whole-kernel gate, BOTH of these emitted complete valid PTX with no
+    diagnostic at all: the f16 vector param fell through a [| _ -> ()] and the
+    helper return type was never inspected. *)
+let test_ptx_rejects_f16 () =
+  let each label k =
+    match Sarek_ir_ptx.generate k with
+    | (ptx : string) ->
+        Alcotest.failf
+          "PTX %s: expected f16 to be rejected (slice 2), but it emitted:\n%s"
+          label
+          ptx
+    | exception Sarek_ir_ptx_types.Ptx_codegen_error msg ->
+        if not (contains ~needle:"float16 not supported by the PTX backend" msg)
+        then Alcotest.failf "PTX %s: unexpected diagnostic: %s" label msg
+    | exception e ->
+        Alcotest.failf
+          "PTX %s: rejected with the WRONG exception: %s"
+          label
+          (Printexc.to_string e)
+  in
+  each "vector-param" (f16_scale_kernel ()) ;
+  each "untouched-param" (f16_untouched_param_kernel ()) ;
+  each "local-only" (f16_local_only_kernel ()) ;
+  each "helper-return" (f16_helper_ret_kernel ())
 
 let test_deferred_backends_still_accept_f32 () =
   (* The rejecting arms must be f16-specific — they must not have broken the
-     backends they were added to. *)
+     backends they were added to. Both entry points, plus PTX. *)
   let k = f32_scale_kernel () in
+  ignore (Sarek_ir_opencl.generate k) ;
   ignore (Sarek_ir_opencl.generate_with_types ~types:k.kern_types k) ;
+  ignore (Sarek_ir_glsl.generate k) ;
   ignore (Sarek_ir_glsl.generate_with_types ~types:k.kern_types k) ;
+  ignore (Sarek_ir_metal.generate k) ;
   ignore (Sarek_ir_metal.generate_with_types ~types:k.kern_types k) ;
+  ignore (Sarek_ir_wgsl.generate k) ;
   ignore (Sarek_ir_wgsl.generate_with_types ~types:k.kern_types k) ;
+  ignore (Sarek_ir_ptx.generate k) ;
   ()
 
 let test_determinism () =
@@ -250,9 +422,13 @@ let () =
       ( "deferred_backends",
         [
           Alcotest.test_case
-            "opencl/glsl/metal/wgsl reject f16"
+            "opencl/glsl/metal/wgsl reject f16 (param, local, helper return)"
             `Quick
             test_deferred_backends_reject_f16;
+          Alcotest.test_case
+            "ptx rejects f16 (param, local, helper return)"
+            `Quick
+            test_ptx_rejects_f16;
           Alcotest.test_case
             "opencl/glsl/metal/wgsl still accept f32"
             `Quick

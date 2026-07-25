@@ -16,16 +16,40 @@
  * `__half` cell.
  ******************************************************************************)
 
-(** Round a value to IEEE binary16 precision.
+(** Narrow a value to IEEE binary16 precision.
+
+    CONTRACT: this is an {b f32 -> binary16} narrowing, not f64 -> binary16. The
+    argument is an OCaml [float] (f64), and the conversion DOUBLE-ROUNDS: f64 ->
+    f32 -> binary16. Double rounding is observable at the overflow boundary —
+    [65519.999999999] gives [infinity], because it rounds to [65520.0] in f32
+    and 65520 is above the binary16 overflow threshold, whereas a single
+    correctly-rounded f64 -> binary16 step would give [65504.0]. Comparable
+    (rarer) discrepancies exist at the subnormal boundary.
+
+    This is NOT a cross-backend divergence and must not be "fixed". Every f16
+    value in Sarek is an f32 value by construction (f16 is a storage type; all
+    arithmetic happens in f32), and [Bigarray.Float16]'s own [set] double-rounds
+    IDENTICALLY — this function IS that [set]. So the two invariants that matter
+    are preserved exactly:
+
+    - "cast-then-store == store": [ECast (TFloat16, e)] followed by an f16 store
+      gives the same bits as the store alone;
+    - interpreter == native == GPU: all three narrow through the same f32 ->
+      binary16 step.
+
+    Replacing this with a correctly-rounded f64 -> binary16 narrowing would
+    BREAK both: the interpreter would stop agreeing with the [Bigarray.Float16]
+    store and with a GPU [__float2half]. The only residual issue is a host-API
+    edge case for callers who hand in an f64 that is not exactly an f32 value.
 
     Implemented by a round-trip through a 1-element [Bigarray.Float16] array
     rather than by hand-rolled bit twiddling. This is deliberate:
-    [Bigarray.Array1.set] on a [Float16] array performs the platform's
-    round-to-nearest-even narrowing, including the subnormal and
-    overflow-to-infinity edge cases that a hand-written version gets wrong, and
-    it is the SAME code path that an f16 [Vector.set] uses. Sharing the
-    narrowing implementation with the storage path is what makes
-    "[ECast (TFloat16, e)] then store" and "store" agree bit-for-bit.
+    [Bigarray.Array1.set] on a [Float16] array performs round-to-nearest-even,
+    including the subnormal and overflow-to-infinity edge cases that a
+    hand-written version gets wrong, and it is the SAME code path that an f16
+    [Vector.set] uses. Sharing the narrowing implementation with the storage
+    path is what makes "[ECast (TFloat16, e)] then store" and "store" agree
+    bit-for-bit.
 
     A fresh 1-element array is allocated per call so the function is reentrant
     (no shared scratch cell across domains). The interpreter is a reference

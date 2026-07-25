@@ -635,8 +635,28 @@ let gen_helper_func buf (hf : helper_func) =
 
 (** {1 Kernel Generation} *)
 
+(** Whole-kernel f16 rejection (#57 slice 1 review).
+
+    The per-type arms above only fire when the emitter actually asks for a type
+    string. Several positions never do: a PTX f16 VECTOR parameter fell through
+    a [| _ -> ()] and an f16 helper RETURN type was never inspected, so PTX
+    emitted complete, valid, silently-wrong modules; the GLSL and WGSL emitters
+    never iterate [kern_locals] at all. One choke point at every public entry
+    point closes the whole class, using the same detector that drives the
+    CUDA/HIP conditional include ({!Sarek_ir_analysis.kernel_uses_float16}: it
+    folds params, locals, body, helper params AND return types, and record and
+    variant field types). *)
+let reject_float16 (k : kernel) : unit =
+  if Sarek_ir_analysis.kernel_uses_float16 k then
+    Codegen_error.raise_error
+      (Codegen_error.unsupported_construct
+         "f16"
+         "OpenCL: float16 not yet supported (#57 slice 2 — needs cl_khr_fp16 \
+          enablement)")
+
 (** Generate complete OpenCL source for a kernel *)
 let generate (k : kernel) : string =
+  reject_float16 k ;
   let buf = Buffer.create large_buffer_size in
 
   (* Generate helper functions before kernel *)
@@ -678,6 +698,7 @@ let gen_variant_def buf v =
 (** Generate OpenCL source with custom type definitions *)
 let generate_with_types ~(types : (string * (string * elttype) list) list)
     (k : kernel) : string =
+  reject_float16 k ;
   (* Set current_variants for SMatch binding extraction *)
   current_variants := k.kern_variants ;
   let buf = Buffer.create large_buffer_size in

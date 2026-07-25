@@ -651,8 +651,15 @@ extern "C" {
     The guard is NOT decoration. This generator is shared verbatim by the HIP
     backend ([sarek-hip/Hip_shared.ml]), and the two toolchains disagree:
 
-    - CUDA (nvcc / nvrtc) needs [#include <cuda_fp16.h>] for [__half] and
-      [__float2half].
+    - CUDA needs [#include <cuda_fp16.h>] for [__half] and [__float2half].
+      Emitting the include is NECESSARY but not by itself SUFFICIENT under
+      nvrtc: nvrtc is a library, not a driver, so it has no default include path
+      and [__half] is not one of its builtins. Without an explicit
+      [--include-path] the very include below fails with
+      [NVRTC_ERROR_COMPILATION] / "could not open source file \"cuda_fp16.h\"
+      (no directories in search list)". Supplying that path is
+      [Cuda_nvrtc.cuda_include_paths]' job; nvcc, by contrast, adds the toolkit
+      include directory itself.
     - HIP compiles through hiprtc, which pre-provides [__half], [half] and
       [__float2half] with no include at all, and which cannot resolve ANY f16
       header — neither [cuda_fp16.h] nor [hip/hip_fp16.h] exists on its search

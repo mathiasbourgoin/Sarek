@@ -253,10 +253,20 @@ let gen_intrinsic_fun ~loc ~gen_mode (ref : intrinsic_ref) args =
              "Unbound module Gpu".
 
              Narrowing MUST round: it shares Sarek_float16.to_float16 with the
-             interpreter and with the Bigarray.Float16 store, which is what makes
-             native, interpreter and GPU agree bit-for-bit. Widening is the
-             identity because an f16 value is already carried as an OCaml
-             float. *)
+             interpreter and with the Bigarray.Float16 store. That is what makes
+             native, interpreter and GPU agree bit-for-bit ON THE VALUES A KERNEL
+             CAN PRODUCE — i.e. f32 values, which is all f16 arithmetic ever sees
+             (f16 is a storage type; every operand is widened to f32 first). The
+             claim is scoped to that: to_float16 is an f32 -> binary16 narrowing
+             and double-rounds an f64 argument (f64 -> f32 -> binary16), so a
+             HOST caller passing an f64 that is not exactly an f32 value can see
+             a result differing from a single correctly-rounded f64 -> binary16
+             step. See Sarek_float16.to_float16's docstring: the double rounding
+             is shared with Bigarray.Float16's own set, so it preserves rather
+             than breaks the cross-backend equivalence.
+
+             Widening is the identity because an f16 value is already carried as
+             an OCaml float. *)
           | "float16_of_float32" -> (
               match args with
               | [x] -> [%expr Sarek.Sarek_float16.to_float16 [%e x]]

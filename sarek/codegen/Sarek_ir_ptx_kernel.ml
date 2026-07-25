@@ -366,6 +366,21 @@ let make_ptx_header ?(sm_target = "sm_86") ?(ptx_version = "8.0") () =
     ptx_version
     sm_target
 
+(** Whole-kernel f16 rejection (#57 slice 1 review).
+
+    The per-type arms above only fire when the emitter actually asks for a type
+    string. Several positions never do: a PTX f16 VECTOR parameter fell through
+    a [| _ -> ()] and an f16 helper RETURN type was never inspected, so PTX
+    emitted complete, valid, silently-wrong modules; the GLSL and WGSL emitters
+    never iterate [kern_locals] at all. One choke point at every public entry
+    point closes the whole class, using the same detector that drives the
+    CUDA/HIP conditional include ({!Sarek_ir_analysis.kernel_uses_float16}: it
+    folds params, locals, body, helper params AND return types, and record and
+    variant field types). *)
+let reject_float16 (k : kernel) : unit =
+  if Sarek_ir_analysis.kernel_uses_float16 k then
+    Sarek_ir_ptx_types.f16_unsupported "kernel uses float16"
+
 (** Generate PTX for a single kernel. Three-phase: (1) emit body to count
     registers, (2) build header with correct register counts, (3) concatenate.
     @param sm_target Override the default [sm_86] target for older hardware.
@@ -376,6 +391,7 @@ let make_ptx_header ?(sm_target = "sm_86") ?(ptx_version = "8.0") () =
       to [[]] (all AoS) — so the standard backend path emits byte-identical PTX
       to before. *)
 let generate ?(sm_target = "sm_86") ?(soa_params = []) (k : kernel) : string =
+  reject_float16 k ;
   let alloc = make_alloc () in
   List.iter
     (fun hf ->

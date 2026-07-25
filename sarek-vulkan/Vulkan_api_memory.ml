@@ -188,7 +188,11 @@ let create_staging_buffer device size usage =
     raise e
 
 let alloc device size kind =
-  let elem_size = Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind) in
+  (* NOT Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind): ctypes' kind
+     GADT has no Float16 arm and raises Failure "Unsupported bigarray kind", so
+     [Vector.create Vector.float16 n] died here with an opaque ctypes error
+     (#57 slice 1 review, MF2). Spoc_core's pure table knows f16 is 2 bytes. *)
+  let elem_size = Spoc_core.Memory.bigarray_elem_size kind in
   let byte_size = size * elem_size in
 
   (* Create buffer *)
@@ -432,13 +436,17 @@ let device_ptr _buf = Nativeint.zero
 *)
 let is_zero_copy _buf = false
 
+(* Host pointers come from [Spoc_core.Memory.bigarray_void_ptr], not
+   [Ctypes.bigarray_start]: the latter raises Failure "Unsupported bigarray
+   kind" for Float16 (#57 slice 1 review, MF2), and the former returns a MANAGED
+   pointer so the bigarray stays GC-rooted across the memcpy (MF3). *)
 let host_to_device ~src ~dst =
   let bytes = Bigarray.Array1.size_in_bytes src in
   match dst.mapped_ptr with
   | Some p ->
-      let src_ptr = bigarray_start array1 src |> to_voidp in
+      let src_ptr = Spoc_core.Memory.bigarray_void_ptr src in
       let _ = memcpy p src_ptr (Unsigned.Size_t.of_int bytes) in
-      ()
+      ignore (Sys.opaque_identity src)
   | None ->
       (* Staging buffer transfer *)
       let staging_buf, staging_mem, staging_ptr =
@@ -449,8 +457,9 @@ let host_to_device ~src ~dst =
         vkFreeMemory dst.device.Device.device staging_mem null
       in
       Fun.protect ~finally:free_staging (fun () ->
-          let src_ptr = bigarray_start array1 src |> to_voidp in
+          let src_ptr = Spoc_core.Memory.bigarray_void_ptr src in
           let _ = memcpy staging_ptr src_ptr (Unsigned.Size_t.of_int bytes) in
+          ignore (Sys.opaque_identity src) ;
 
           run_single_time_command dst.device (fun cmd_buf ->
               let region = make vk_buffer_copy in
@@ -469,9 +478,9 @@ let device_to_host ~src ~dst =
   let bytes = Bigarray.Array1.size_in_bytes dst in
   match src.mapped_ptr with
   | Some p ->
-      let dst_ptr = bigarray_start array1 dst |> to_voidp in
+      let dst_ptr = Spoc_core.Memory.bigarray_void_ptr dst in
       let _ = memcpy dst_ptr p (Unsigned.Size_t.of_int bytes) in
-      ()
+      ignore (Sys.opaque_identity dst)
   | None ->
       (* Staging buffer transfer *)
       let staging_buf, staging_mem, staging_ptr =
@@ -495,9 +504,9 @@ let device_to_host ~src ~dst =
                 (Unsigned.UInt32.of_int 1)
                 (addr region)) ;
 
-          let dst_ptr = bigarray_start array1 dst |> to_voidp in
+          let dst_ptr = Spoc_core.Memory.bigarray_void_ptr dst in
           let _ = memcpy dst_ptr staging_ptr (Unsigned.Size_t.of_int bytes) in
-          ())
+          ignore (Sys.opaque_identity dst))
 
 let host_ptr_to_device ~src_ptr ~byte_size ~dst =
   match dst.mapped_ptr with

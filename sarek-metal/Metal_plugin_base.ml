@@ -103,7 +103,11 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
     type 'a buffer = {buf : 'a Metal_api.Memory.buffer; device_id : int}
 
     let alloc device size kind =
-      let elem_size = Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind) in
+      (* NOT Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind): ctypes'
+         kind GADT has no Float16 arm and raises Failure "Unsupported bigarray
+         kind", so [Vector.create Vector.float16 n] died here with an opaque
+         ctypes error (#57 slice 1 review, MF2). *)
+      let elem_size = Spoc_core.Memory.bigarray_elem_size kind in
       let buf = Metal_api.Memory.alloc device size elem_size in
       {buf; device_id = device.id}
 
@@ -119,27 +123,27 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
 
     let free b = Metal_api.Memory.release b.buf
 
+    (* Host pointers come from [Spoc_core.Memory.bigarray_void_ptr], not
+       [Ctypes.bigarray_start]: the latter raises Failure "Unsupported bigarray
+       kind" for Float16 (MF2), and the former is MANAGED so the bigarray stays
+       GC-rooted across the memcpy (MF3). *)
     let host_to_device ~src ~dst =
       (* Metal shared memory: just memcpy *)
-      let ba_ptr = Ctypes.(bigarray_start array1 src) in
+      let ba_ptr = Spoc_core.Memory.bigarray_void_ptr src in
       let byte_size =
         Bigarray.Array1.dim src * dst.buf.Metal_api.Memory.elem_size
       in
-      Metal_api.memcpy
-        ~dst:dst.buf.contents
-        ~src:(Ctypes.to_voidp ba_ptr)
-        ~size:byte_size
+      Metal_api.memcpy ~dst:dst.buf.contents ~src:ba_ptr ~size:byte_size ;
+      ignore (Sys.opaque_identity src)
 
     let device_to_host ~src ~dst =
       (* Metal shared memory: just memcpy *)
-      let ba_ptr = Ctypes.(bigarray_start array1 dst) in
+      let ba_ptr = Spoc_core.Memory.bigarray_void_ptr dst in
       let byte_size =
         Bigarray.Array1.dim dst * src.buf.Metal_api.Memory.elem_size
       in
-      Metal_api.memcpy
-        ~dst:(Ctypes.to_voidp ba_ptr)
-        ~src:src.buf.contents
-        ~size:byte_size
+      Metal_api.memcpy ~dst:ba_ptr ~src:src.buf.contents ~size:byte_size ;
+      ignore (Sys.opaque_identity dst)
 
     let host_ptr_to_device ~src_ptr ~byte_size ~dst =
       Metal_api.memcpy

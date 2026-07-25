@@ -252,11 +252,19 @@ module Memory = struct
     Device.set_current buf.device ;
     check "hipFree" (hipFree buf.ptr)
 
+  (* The [Sys.opaque_identity] here is the same keep-alive the sibling
+     [load_module_from_code_object] below applies to its code bigarray: the
+     bigarray must stay reachable until hipMemcpy has consumed its address.
+     [Spoc_core.Memory.bigarray_void_ptr] now returns a MANAGED pointer for
+     every kind including f16, so the pointer value itself roots the array —
+     but the explicit keepalive is kept because it is cheap and because the
+     ctypes view here could be inlined away in a future refactor. *)
   let host_to_device ~src ~dst =
     Device.set_current dst.device ;
     let src_ptr = Spoc_core.Memory.bigarray_void_ptr src in
     let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes src) in
     check "hipMemcpyHtoD" (hipMemcpyHtoD dst.ptr src_ptr bytes) ;
+    ignore (Sys.opaque_identity src) ;
     retire_stream dst.device.id default_stream_key
 
   let device_to_host ~src ~dst =
@@ -264,6 +272,7 @@ module Memory = struct
     let dst_ptr = Spoc_core.Memory.bigarray_void_ptr dst in
     let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes dst) in
     check "hipMemcpyDtoH" (hipMemcpyDtoH dst_ptr src.ptr bytes) ;
+    ignore (Sys.opaque_identity dst) ;
     retire_stream src.device.id default_stream_key
 
   let host_ptr_to_device ~src_ptr ~byte_size ~dst =

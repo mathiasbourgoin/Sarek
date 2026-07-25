@@ -49,6 +49,12 @@ type error =
   | Expression_needs_statement_context of string * loc
   | Invalid_lvalue of loc
   | Function_value_escapes of string * typ * loc
+  | Float16_operand of string * loc
+      (** An f16 value reached an operator. f16 is a storage-only type, so this
+          is always a user error with a specific remedy; reporting it as
+          [Type_mismatch {expected = int32}] (what [check_numeric]'s
+          fall-through produced) told the user nothing. The string names the
+          operator. *)
 
 (** Get the location from an error *)
 let error_loc = function
@@ -85,6 +91,7 @@ let error_loc = function
   | Expression_needs_statement_context (_, loc) -> loc
   | Invalid_lvalue loc -> loc
   | Function_value_escapes (_, _, loc) -> loc
+  | Float16_operand (_, loc) -> loc
 
 (** Pretty print an error *)
 let pp_error fmt = function
@@ -208,6 +215,15 @@ let pp_error fmt = function
         msg
         pp_typ
         t
+  | Float16_operand (what, _) ->
+      Format.fprintf
+        fmt
+        "float16 is a storage-only type and has no arithmetic: %s cannot be \
+         applied to a float16 value. Widen to float32 first with \
+         float32_of_float16, and narrow the result back with \
+         float16_of_float32 (e.g. `float16_of_float32 (float32_of_float16 \
+         a.(i) +. float32_of_float16 b.(i))`)."
+        what
 
 (** Convert error to string *)
 let error_to_string e = Format.asprintf "%a" pp_error e

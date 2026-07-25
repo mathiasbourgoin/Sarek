@@ -26,6 +26,9 @@
 ; - test_reserved_prefix_helper: "identifiers beginning with 'sarek_' are reserved"
 ; - test_reserved_prefix_field: "identifiers beginning with 'sarek_' are reserved"
 ; - test_reserved_prefix_for: "identifiers beginning with 'sarek_' are reserved"
+; - test_f16_arith:    "float16 is a storage-only type and has no arithmetic"
+; - test_f16_equality: "float16 is a storage-only type and has no arithmetic"
+; - test_f16_compare:  "float16 is a storage-only type and has no arithmetic"
 
 (library
  (name neg_test_unregistered_field)
@@ -250,6 +253,43 @@
 (library
  (name neg_test_reserved_prefix_for)
  (modules test_reserved_prefix_for)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+; f16 is a storage-only type: no operator may see it (#57 slice 1 review, MF4).
+; test_f16_equality is the one that COMPILED before the fix — the Eq/Ne arm of
+; infer_binop skipped every numeric check and emitted `==` on `__half`.
+
+(library
+ (name neg_test_f16_arith)
+ (modules test_f16_arith)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_f16_equality)
+ (modules test_f16_equality)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_f16_compare)
+ (modules test_f16_compare)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))

@@ -141,6 +141,85 @@ let test_round_is_lossy_where_expected () =
     (F16.to_float16 0.5)
 
 (* ------------------------------------------------------------------ *)
+(* 2c. Rounding is ROUND-TO-NEAREST-EVEN, not just "lossy"            *)
+(* ------------------------------------------------------------------ *)
+
+(* Why these specific constants, and why hard-coded.
+
+   Every assertion above compares one narrowing arm against ANOTHER arm of the
+   same shared semantics ([F16.to_float16] vs the [Bigarray.Float16] store), or
+   asserts only that narrowing is lossy. That makes them tautological with
+   respect to the rounding MODE: two mutant narrowings — ties-away-from-zero and
+   round-toward-zero — pass every hard literal in this file, including
+   3.14159 -> 3.140625 (truncation lands there too). Nothing pinned a TIE.
+
+   These constants are independent, verified binary16 RNE values. Each is an
+   exact tie or a boundary where RNE, ties-away and truncation DISAGREE:
+
+   - 1024.5   -> 1024   : in [1024, 2048) the binary16 spacing is 1, so 1024.5 is
+                          an exact tie between 1024 and 1025. RNE picks the even
+                          significand (1024); ties-away picks 1025.
+   - 2049     -> 2048   : in [2048, 4096) the spacing is 2, so 2049 is an exact
+                          tie between 2048 and 2050. RNE picks 2048 (even);
+                          ties-away picks 2050.
+   - 2051     -> 2052   : also a tie (between 2050 and 2052), but here the EVEN
+                          neighbour is the upper one. This is the assertion that
+                          separates RNE from "ties-toward-zero": a rule that
+                          always rounded ties down would give 2050.
+   - 1+2^-11  -> 1      : 2^-11 is exactly half the gap above 1.0 (which is
+                          2^-10), so this is a tie between 1.0 and 1 + 2^-10.
+                          RNE picks 1.0; ties-away picks 1.0009765625.
+   - -0.0     -> -0.0   : sign preservation, checked on the BITS. A narrowing that
+                          lost the sign of zero would read as 0.0 = -0.0 under a
+                          float comparison. *)
+
+let check_exact name expected got =
+  if got <> expected then
+    Alcotest.failf
+      "%s: expected %.17g, got %.17g (binary16 RNE)"
+      name
+      expected
+      got
+
+let test_round_to_nearest_even_ties () =
+  check_exact "1024.5 ties to even 1024" 1024.0 (F16.to_float16 1024.5) ;
+  check_exact "2049 ties to even 2048" 2048.0 (F16.to_float16 2049.0) ;
+  (* Upper neighbour is the even one here, so this cannot be explained by
+     "ties round down". *)
+  check_exact "2051 ties to even 2052" 2052.0 (F16.to_float16 2051.0) ;
+  check_exact "1 + 2^-11 ties to even 1.0" 1.0 (F16.to_float16 (1.0 +. 0x1p-11)) ;
+  (* Non-tie controls immediately either side, so the above cannot be a
+     coincidence of some blanket rounding direction. *)
+  check_exact "1024.4 rounds down" 1024.0 (F16.to_float16 1024.4) ;
+  check_exact "1024.6 rounds up" 1025.0 (F16.to_float16 1024.6) ;
+  check_exact "2049.5 rounds up" 2050.0 (F16.to_float16 2049.5)
+
+let test_round_preserves_negative_zero () =
+  let z = F16.to_float16 (-0.0) in
+  (* Compared on the SIGN BIT: -0.0 = 0.0 as floats, so a float comparison
+     cannot see this. *)
+  Alcotest.(check bool)
+    "-0.0 stays negative zero"
+    true
+    (Int64.bits_of_float z = Int64.bits_of_float (-0.0)) ;
+  Alcotest.(check bool)
+    "+0.0 stays positive zero"
+    true
+    (Int64.bits_of_float (F16.to_float16 0.0) = Int64.bits_of_float 0.0)
+
+let test_store_agrees_on_ties () =
+  (* The same ties through the STORAGE path, so the "cast-then-store ==
+     store" invariant is pinned at the ties too, not only at non-ties. *)
+  let v = Vector.create Vector.float16 1 in
+  List.iter
+    (fun (x, want) ->
+      Vector.set v 0 x ;
+      check_exact (Printf.sprintf "store %.17g" x) want (Vector.get v 0))
+    [
+      (1024.5, 1024.0); (2049.0, 2048.0); (2051.0, 2052.0); (1.0 +. 0x1p-11, 1.0);
+    ]
+
+(* ------------------------------------------------------------------ *)
 (* 2b. Interpreter ECast narrowing                                     *)
 (* ------------------------------------------------------------------ *)
 
@@ -220,6 +299,115 @@ let test_interp_cast_f32_does_not_narrow () =
   | Interp.VFloat32 f ->
       Alcotest.(check (float 0.)) "f32 cast is value-preserving" 3.14159 f
   | _ -> Alcotest.fail "ECast (TFloat32, _) did not evaluate to a float value"
+
+(* ------------------------------------------------------------------ *)
+(* 2d. End-to-end through the interpreter, with an f32 SINK            *)
+(* ------------------------------------------------------------------ *)
+
+(* The slice-1 claim that ECast (TFloat16, _) narrowing is "not observable
+   end-to-end" is false; it is only unobservable when the sink is itself an f16
+   vector, because the Bigarray.Float16 store re-applies the same narrowing and
+   masks a missing cast.
+
+   Point the SAME kernel at an f32 vector and the difference is loud. Body:
+
+     out_f32[i] <- float32_of_float16 (float16_of_float32 inp_f32[i]) *. 100.0
+
+   with inp[0] = 3.14159:
+     - narrowing present : 3.140625            *. 100 = 314.0625
+     - narrowing missing : 3.14159012...(f32)  *. 100 = 314.15899658203125
+
+   That is ~245 binary16 ulps apart at this magnitude (spacing 0.25 in
+   [256, 512)) — no tolerance can straddle it. Runs on the DEFAULT runtest alias
+   and needs no device, unlike test_hip_f16 which hangs off e2e-hip and builds
+   its CPU reference from to_float16 itself. *)
+
+module Ir = Sarek_ir_types
+
+let f16_narrow_to_f32_sink_ir () =
+  let out =
+    {
+      Ir.var_name = "out";
+      var_id = 0;
+      var_type = Ir.TVec Ir.TFloat32;
+      var_mutable = false;
+    }
+  in
+  let inp =
+    {
+      Ir.var_name = "inp";
+      var_id = 1;
+      var_type = Ir.TVec Ir.TFloat32;
+      var_mutable = false;
+    }
+  in
+  let idx =
+    {Ir.var_name = "idx"; var_id = 2; var_type = Ir.TInt32; var_mutable = false}
+  in
+  let body =
+    Ir.SLet
+      ( idx,
+        Ir.EIntrinsic ([], "global_thread_id", []),
+        Ir.SAssign
+          ( Ir.LArrayElem ("out", Ir.EVar idx),
+            Ir.EBinop
+              ( Ir.Mul,
+                Ir.ECast
+                  ( Ir.TFloat32,
+                    Ir.ECast (Ir.TFloat16, Ir.EArrayRead ("inp", Ir.EVar idx))
+                  ),
+                Ir.EConst (Ir.CFloat32 100.0) ) ) )
+  in
+  {
+    Ir.kern_name = "f16_narrow_f32_sink";
+    kern_params =
+      [
+        Ir.DParam
+          (out, Some {Ir.arr_elttype = Ir.TFloat32; arr_memspace = Ir.Global});
+        Ir.DParam
+          (inp, Some {Ir.arr_elttype = Ir.TFloat32; arr_memspace = Ir.Global});
+      ];
+    kern_locals = [];
+    kern_body = body;
+    kern_types = [];
+    kern_variants = [];
+    kern_funcs = [];
+    kern_native_fn = None;
+  }
+
+let test_interp_e2e_f32_sink () =
+  let n = 4 in
+  let inp = Vector.create Vector.float32 n in
+  let out = Vector.create Vector.float32 n in
+  let samples = [|3.14159; 0.1; 1.0 /. 3.0; 1024.5 /. 100.0|] in
+  Array.iteri (fun i x -> Vector.set inp i x) samples ;
+  for i = 0 to n - 1 do
+    Vector.set out i (-1.0)
+  done ;
+  Sarek.Execute.run_interpreter_vectors
+    ~ir:(f16_narrow_to_f32_sink_ir ())
+    ~args:[Vec out; Vec inp]
+    ~block:(Sarek.Execute.dims1d 4)
+    ~grid:(Sarek.Execute.dims1d 1)
+    ~parallel:false ;
+  let got = Vector.to_array out in
+  (* The pinned constant. Independent of to_float16: 3.140625 is the binary16
+     neighbour of 3.14159 and 3.140625 *. 100. is exact in f32. *)
+  check_exact "3.14159 narrowed then scaled" 314.0625 got.(0) ;
+  (* And it is NOT the un-narrowed value. *)
+  Alcotest.(check bool)
+    "differs from the un-narrowed f32 result"
+    true
+    (abs_float (got.(0) -. (3.14159 *. 100.0)) > 0.05) ;
+  (* The remaining lanes must agree with the narrowing helper scaled in f32, so
+     the whole kernel (not just lane 0) went through the cast. *)
+  Array.iteri
+    (fun i x ->
+      if i > 0 then
+        let want = F16.to_float16 x *. 100.0 in
+        if abs_float (got.(i) -. want) > 1e-4 then
+          Alcotest.failf "lane %d: got %.17g, expected %.17g" i got.(i) want)
+    samples
 
 (* ------------------------------------------------------------------ *)
 (* 3. Type system                                                     *)
@@ -321,6 +509,18 @@ let () =
             "lossy where expected"
             `Quick
             test_round_is_lossy_where_expected;
+          Alcotest.test_case
+            "ties round to nearest EVEN (independent constants)"
+            `Quick
+            test_round_to_nearest_even_ties;
+          Alcotest.test_case
+            "negative zero keeps its sign"
+            `Quick
+            test_round_preserves_negative_zero;
+          Alcotest.test_case
+            "the store agrees at the ties too"
+            `Quick
+            test_store_agrees_on_ties;
         ] );
       ( "interpreter_cast",
         [
@@ -332,6 +532,13 @@ let () =
             "ECast to f32 does not narrow"
             `Quick
             test_interp_cast_f32_does_not_narrow;
+        ] );
+      ( "interp_e2e",
+        [
+          Alcotest.test_case
+            "f32 sink observes ECast (TFloat16) narrowing"
+            `Quick
+            test_interp_e2e_f32_sink;
         ] );
       ( "type_system",
         [

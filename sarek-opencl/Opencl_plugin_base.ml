@@ -109,7 +109,11 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
       else begin
         let state = get_state device.Opencl_api.Device.id in
         let size = Bigarray.Array1.dim ba in
-        let host_ptr = Ctypes.(to_voidp (bigarray_start array1 ba)) in
+        (* Not Ctypes.bigarray_start: no Float16 arm (#57 slice 1 review MF2).
+           CL_MEM_USE_HOST_PTR keeps this address for the buffer's whole
+           lifetime, so the OWNING Vector.t (which holds [ba]) is what roots it
+           — the managed pointer only covers this call. *)
+        let host_ptr = Spoc_core.Memory.bigarray_void_ptr ba in
         let buf =
           Opencl_api.Memory.alloc_with_host_ptr state.context size kind host_ptr
         in

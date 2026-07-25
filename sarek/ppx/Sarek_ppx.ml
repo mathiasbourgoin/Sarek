@@ -1919,6 +1919,14 @@ let expand_kernel ~ctxt payload : expression =
   | Sarek_error.Sarek_error e ->
       let eloc = Sarek_ast.loc_to_ppxlib (Sarek_error.error_loc e) in
       Location.raise_errorf ~loc:eloc "%a" Sarek_error.pp_error e
+  | Location.Error _ as e ->
+      (* An already-located diagnostic (this is how [Sarek_error.report_errors]
+         surfaces typer errors). The catch-all below used to swallow it and
+         re-report it as "Sarek internal error: <text>" pinned to the WHOLE
+         [%kernel] payload, discarding the sub-expression location the typer had
+         computed. Re-raise it untouched so the caret lands on the offending
+         operator. *)
+      raise e
   | e ->
       Location.raise_errorf
         ~loc

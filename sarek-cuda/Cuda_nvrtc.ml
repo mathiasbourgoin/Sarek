@@ -255,6 +255,95 @@ let check ctx result =
   | NVRTC_SUCCESS -> ()
   | err -> raise (Nvrtc_error (err, ctx))
 
+(** {2 CUDA header search path}
+
+    NVRTC has NO default include path. It is a library, not a driver, so it does
+    not inherit the built-in [-I] that nvcc adds, and [__half] is not an nvrtc
+    builtin. A generated kernel that says [#include <cuda_fp16.h>] — which is
+    exactly what the f16 codegen emits, see
+    [Sarek_codegen.Sarek_ir_cuda.cuda_fp16_include] — therefore fails with
+    [NVRTC_ERROR_COMPILATION] and
+
+    {v
+could not open source file "cuda_fp16.h" (no directories in search list)
+    v}
+
+    unless the toolkit's include directory is passed explicitly. Verified
+    against libnvrtc 13.3: byte-identical source compiles to PTX containing
+    [cvt.rn.f16.f32] with the flag and fails without it.
+
+    Discovery order (every surviving candidate is passed, so a partial toolkit
+    layout still resolves):
+
+    - [SAREK_CUDA_INCLUDE] — explicit ':'-separated override, kept if the
+      directory exists;
+    - [CUDA_PATH] / [CUDA_HOME] / [CUDA_ROOT] derived [include] and
+      [targets/<triple>/include];
+    - a short list of conventional install roots.
+
+    Derived and conventional candidates must additionally CONTAIN [cuda_fp16.h].
+    That marker is what keeps the discovery honest: a stale [CUDA_PATH] or a
+    bare [/usr/include] never becomes an [-I] that could shadow a real header.
+    On a machine with no CUDA headers the list is empty and the option array is
+    byte-identical to before, so non-CUDA hosts are unaffected.
+
+    Passed unconditionally rather than gated on the f16 detector: this module
+    never sees the IR, an unused include directory cannot change a kernel that
+    includes nothing, and gating here would leave any future header-using
+    codegen broken in the same way. *)
+let cuda_target_triples =
+  ["x86_64-linux"; "sbsa-linux"; "aarch64-linux"; "ppc64le-linux"]
+
+let cuda_conventional_roots = ["/opt/cuda"; "/usr/local/cuda"; "/usr/lib/cuda"]
+
+let cuda_fp16_header = "cuda_fp16.h"
+
+let is_dir d = try Sys.is_directory d with Sys_error _ -> false
+
+let has_fp16_header d = Sys.file_exists (Filename.concat d cuda_fp16_header)
+
+let env_nonempty v =
+  match Sys.getenv_opt v with Some s when s <> "" -> Some s | _ -> None
+
+(** Existing CUDA include directories, most-specific first, de-duplicated. *)
+let cuda_include_paths : string list Lazy.t =
+  lazy
+    (let override =
+       match env_nonempty "SAREK_CUDA_INCLUDE" with
+       | None -> []
+       | Some s -> String.split_on_char ':' s |> List.filter (fun d -> d <> "")
+     in
+     let roots =
+       List.filter_map env_nonempty ["CUDA_PATH"; "CUDA_HOME"; "CUDA_ROOT"]
+       @ cuda_conventional_roots
+     in
+     let derived =
+       List.concat_map
+         (fun root ->
+           Filename.concat root "include"
+           :: List.map
+                (fun t -> Filename.concat root ("targets/" ^ t ^ "/include"))
+                cuda_target_triples)
+         roots
+     in
+     let keep = List.filter is_dir override in
+     let keep =
+       keep @ List.filter (fun d -> is_dir d && has_fp16_header d) derived
+     in
+     let seen = Hashtbl.create 8 in
+     List.filter
+       (fun d ->
+         if Hashtbl.mem seen d then false
+         else (
+           Hashtbl.replace seen d () ;
+           true))
+       keep)
+
+(** The [--include-path=] flags derived from {!cuda_include_paths}. *)
+let cuda_include_flags : string list Lazy.t =
+  lazy
+    (List.map (fun d -> "--include-path=" ^ d) (Lazy.force cuda_include_paths))
+
 (** Compile CUDA source to PTX.
     @param source CUDA C source code
     @param name Optional program name
@@ -291,24 +380,37 @@ let compile_to_ptx ?(name = "kernel") ~arch (source : string) : string =
     else [arch; "compute_80"; "compute_75"; "compute_70"]
   in
 
-  let compile_with_opts numopts opt_ptr =
-    nvrtcCompileProgram prog_handle numopts opt_ptr
+  (* The CUDA header search path. Prepended to every attempt (including the
+     no-arch last resort) so a generated `#include <cuda_fp16.h>` resolves —
+     nvrtc supplies no default include path of its own. Empty on a host with no
+     CUDA headers, in which case the option array is exactly as before. *)
+  let include_opts = Lazy.force cuda_include_flags in
+
+  let compile_with_string_opts (opts : string list) =
+    match opts with
+    | [] -> nvrtcCompileProgram prog_handle 0 (from_voidp string null)
+    | _ ->
+        let opt_array = CArray.of_list string opts in
+        let res =
+          nvrtcCompileProgram
+            prog_handle
+            (CArray.length opt_array)
+            (CArray.start opt_array)
+        in
+        ignore (Sys.opaque_identity (opts, opt_array)) ;
+        res
   in
 
   let rec try_arch = function
     | [] ->
-        (* Last resort: no arch flag *)
+        (* Last resort: no arch flag (the include path is still supplied) *)
         Spoc_core.Log.warn
           Spoc_core.Log.Kernel
           "NVRTC: falling back to no arch option" ;
-        (compile_with_opts 0 (from_voidp string null), None)
+        (compile_with_string_opts include_opts, None)
     | a :: rest -> (
         let opt_arch = "--gpu-architecture=" ^ a in
-        let opt_array = CArray.of_list string [opt_arch] in
-        let res =
-          compile_with_opts (CArray.length opt_array) (CArray.start opt_array)
-        in
-        ignore (Sys.opaque_identity (opt_arch, opt_array)) ;
+        let res = compile_with_string_opts (opt_arch :: include_opts) in
         match res with
         | NVRTC_SUCCESS -> (res, Some a)
         | NVRTC_ERROR_INVALID_OPTION | NVRTC_ERROR_INVALID_INPUT ->

@@ -350,19 +350,30 @@ let test_quote_sarek_expr_var () =
   | Pexp_record _ -> ()
   | _ -> Alcotest.fail "expected extension or record"
 
-(* Test: expr_of_intrinsic_ref generates intrinsic references *)
+(* Test: expr_of_intrinsic_ref_opt generates STDLIB intrinsic references *)
 let test_expr_of_intrinsic_ref_module () =
   let ref = Sarek_env.IntrinsicRef (["Float32"], "sin") in
-  let e = Sarek_quote.expr_of_intrinsic_ref ~loc:dummy_loc ref in
-  Alcotest.(check bool) "contains sin" true (expr_contains_ident e "sin")
+  match Sarek_quote.expr_of_intrinsic_ref_opt ~loc:dummy_loc ref with
+  | Some e ->
+      Alcotest.(check bool) "contains sin" true (expr_contains_ident e "sin")
+  | None -> Alcotest.fail "a stdlib intrinsic must still get a witness"
 
 let test_expr_of_intrinsic_ref_core () =
+  (* Core primitives get NO witness (#57 slice 1 review, MF4c): they live in the
+     PPX's own Sarek_core_primitives table, not in a stdlib module, and the old
+     unqualified [Gpu.<name>] named a module that is not in scope at the user's
+     expansion site — which broke `let x = float32_of_float16 a.(tid) in ...`
+     with "Unbound module Gpu". *)
   let ref = Sarek_env.CorePrimitiveRef "thread_idx_x" in
-  let e = Sarek_quote.expr_of_intrinsic_ref ~loc:dummy_loc ref in
   Alcotest.(check bool)
-    "contains thread_idx_x"
+    "core primitive gets no stdlib witness"
     true
-    (expr_contains_ident e "thread_idx_x")
+    (Sarek_quote.expr_of_intrinsic_ref_opt ~loc:dummy_loc ref = None) ;
+  let f16 = Sarek_env.CorePrimitiveRef "float32_of_float16" in
+  Alcotest.(check bool)
+    "f16 conversion gets no stdlib witness"
+    true
+    (Sarek_quote.expr_of_intrinsic_ref_opt ~loc:dummy_loc f16 = None)
 
 (* Test suite *)
 let () =

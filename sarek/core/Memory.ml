@@ -54,16 +54,53 @@ let bigarray_elem_size : type a b. (a, b) Bigarray.kind -> int = function
 
     [Ctypes_bigarray.unsafe_address] is the kind-independent primitive (it is
     just [Caml_ba_data_val]) and is used for f16 only, keeping every other
-    element type on the exact pre-existing code path. It is "unsafe" because it
-    does not tie the address's lifetime to the bigarray, so callers must keep
-    the bigarray reachable across the transfer — the two callers below do, and
-    make that explicit with [Sys.opaque_identity]. *)
+    element type on the exact pre-existing code path.
+
+    GC ROOTS (#57 slice 1 review, MF3). The f16 arm must NOT be built with
+    [Ctypes.ptr_of_raw_address]: that is [make_unmanaged], and it silently drops
+    the GC root that [Ctypes.bigarray_start] establishes. ctypes' own
+    [bigarray_start] returns a MANAGED fat pointer —
+    [Fat.make ~managed:(Some (Obj.repr ba)) ~reftyp raw] (ctypes_memory.ml
+    :302-305) — so for every non-f16 kind the pointer VALUE is itself a root for
+    the bigarray, and ctypes' FFI keeps it alive across the call
+    (ctypes_ffi.ml:112-119). Probe, three pointers built over the same shape and
+    then subjected to a major GC with the pointer still live:
+
+    {v
+    f32 bigarray_start (managed)           : freed during ffi call = 0
+    f16 ptr_of_raw_address (unmanaged)     : freed during ffi call = 1
+    f16 Fat.make ~managed (this arm)       : freed during ffi call = 0
+    v}
+
+    So the f16 arm reconstructs the SAME fat-pointer shape as ctypes, over the
+    kind-independent address. That restores pre-existing GC semantics for f16
+    with zero per-caller discipline, rather than asking five call sites to
+    remember a keepalive (three of which did not).
+
+    This does deepen an existing dependency on ctypes internals — already
+    present via [Ctypes_bigarray.unsafe_address] here and via
+    [Ctypes_ptr.voidp = nativeint] at [Vector_transfer]/[Framework_sig] — now
+    also on [Ctypes_static.CPointer] and [Ctypes_ptr.Fat.make]. Both are exposed
+    in [ctypes_static.mli] (the [pointer] GADT) and [ctypes_ptr.ml]'s signature,
+    and they are the only way to express "managed pointer to a Float16 bigarray"
+    while ctypes' kind GADT has no [Float16] arm. If ctypes ever grows one, this
+    whole function collapses back to [bigarray_start].
+
+    Callers converting the result to a bare [nativeint] via
+    [Ctypes.raw_address_of_ptr] strip the root again — that is a SEPARATE
+    obligation, stated verbatim at [Framework_sig.ml:218-223], and it applies to
+    every element type, not just f16. It is discharged with
+    [Sys.opaque_identity] at the sites below and in [Transfer.ml]. *)
 let bigarray_void_ptr : type a b.
     (a, b, Bigarray.c_layout) Bigarray.Array1.t -> unit Ctypes.ptr =
  fun ba ->
   match Bigarray.Array1.kind ba with
   | Bigarray.Float16 ->
-      Ctypes.ptr_of_raw_address (Ctypes_bigarray.unsafe_address ba)
+      Ctypes_static.CPointer
+        (Ctypes_ptr.Fat.make
+           ~managed:(Some (Obj.repr ba))
+           ~reftyp:Ctypes_static.Void
+           (Ctypes_bigarray.unsafe_address ba))
   | _ -> Ctypes.(bigarray_start array1 ba |> to_voidp)
 
 (** {1 Buffer Module Type} *)
@@ -195,8 +232,17 @@ let host_to_device : type a b.
   let src_ptr = bigarray_void_ptr src in
   let byte_size = Bigarray.Array1.dim src * B.elem_size in
   B.host_ptr_to_device src_ptr ~byte_size ;
-  (* Keep [src] reachable until the transfer has consumed the raw address
-     (see bigarray_void_ptr). *)
+  (* Keep [src] reachable until the transfer has consumed the raw address.
+     [B.host_ptr_to_device] converts the pointer to a bare [nativeint] via
+     [Ctypes.raw_address_of_ptr] (see the closures in [alloc] above), and a
+     nativeint is not a GC root — Framework_sig.ml:218-223 states this caller
+     obligation verbatim. It applies to EVERY element type, not only f16.
+
+     There are five callers of [B.host_ptr_to_device] / [B.device_to_host_ptr]:
+     this one, [device_to_host] below, the two raw-pointer forwarders (which
+     pass the obligation up to their own caller), [device_to_device] (whose
+     [tmp] is a live ctypes allocation), and [Transfer.ml]'s vector path — which
+     discharges it the same way. *)
   ignore (Sys.opaque_identity src)
 
 (** Copy data from device to host bigarray. Converts bigarray to pointer

@@ -293,7 +293,12 @@ module Memory = struct
 
   let alloc device size kind =
     Device.set_current device ;
-    let elem_size = Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind) in
+    (* NOT Ctypes_static.sizeof (Ctypes.typ_of_bigarray_kind kind): ctypes'
+       kind GADT has no Float16 arm and raises Failure "Unsupported bigarray
+       kind" there, so [Vector.create Vector.float16 n] died on this line with
+       an opaque ctypes error (#57 slice 1 review, MF2). Spoc_core's pure table
+       knows f16 is 2 bytes; see Spoc_core.Memory.bigarray_elem_size. *)
+    let elem_size = Spoc_core.Memory.bigarray_elem_size kind in
     let bytes = Unsigned.Size_t.of_int (size * elem_size) in
     let ptr = allocate cu_deviceptr Unsigned.UInt64.zero in
     check "cuMemAlloc" (cuMemAlloc ptr bytes) ;
@@ -313,18 +318,26 @@ module Memory = struct
 
   (* A blocking memcpy on the default stream drains all prior launches on that
      stream, so it is a safe point to release the device's retained kernargs. *)
+  (* Both transfers acquire the host pointer through
+     [Spoc_core.Memory.bigarray_void_ptr] rather than [Ctypes.bigarray_start]:
+     the latter raises Failure "Unsupported bigarray kind" for Float16 (#57
+     slice 1 review, MF2). That helper also returns a MANAGED pointer, so the
+     bigarray stays GC-rooted across the memcpy for every element type; the
+     explicit keepalive documents the same obligation locally. *)
   let host_to_device ~src ~dst =
     Device.set_current dst.device ;
-    let src_ptr = bigarray_start array1 src |> to_voidp in
+    let src_ptr = Spoc_core.Memory.bigarray_void_ptr src in
     let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes src) in
     check "cuMemcpyHtoD" (cuMemcpyHtoD dst.ptr src_ptr bytes) ;
+    ignore (Sys.opaque_identity src) ;
     retire_stream dst.device.id default_stream_key
 
   let device_to_host ~src ~dst =
     Device.set_current src.device ;
-    let dst_ptr = bigarray_start array1 dst |> to_voidp in
+    let dst_ptr = Spoc_core.Memory.bigarray_void_ptr dst in
     let bytes = Unsigned.Size_t.of_int (Bigarray.Array1.size_in_bytes dst) in
     check "cuMemcpyDtoH" (cuMemcpyDtoH dst_ptr src.ptr bytes) ;
+    ignore (Sys.opaque_identity dst) ;
     retire_stream src.device.id default_stream_key
 
   (** Transfer from raw pointer to device buffer (for custom types) *)

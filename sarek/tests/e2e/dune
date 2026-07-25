@@ -93,7 +93,8 @@
   test_inline_pragma
   test_nested_types
   test_ktype_mixed_align
-  test_ktype_record_f64_arith)
+  test_ktype_record_f64_arith
+  test_f16_host_path)
  (modules
   test_vector_add
   test_module_const
@@ -132,10 +133,12 @@
   test_bounded_recursion
   test_inline_pragma
   test_nested_types
-  test_ktype_record_f64_arith)
+  test_ktype_record_f64_arith
+  test_f16_host_path)
  (libraries
   sarek
   spoc.ir
+  sarek.interp
   sarek.stdlib
   sarek.float64
   sarek_geometry
@@ -179,6 +182,14 @@
  (alias runtest)
  (action
   (run %{dep:test_vector_add.exe})))
+
+; f16 host path on every enumerated backend (#57 slice 1 review, MF2).
+; CPU-safe: exercises whatever devices are present and self-skips otherwise.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_f16_host_path.exe})))
 
 (rule
  (alias runtest)
