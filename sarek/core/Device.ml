@@ -40,7 +40,8 @@ let resolve_framework fw_name =
 (** Initialize all available backends and enumerate devices *)
 let init
     ?(frameworks =
-      ["CUDA"; "HIP"; "OpenCL"; "Vulkan"; "Metal"; "Native"; "Interpreter"]) () =
+      ["CUDA"; "HIP"; "OpenCL"; "Vulkan"; "Metal"; "Native"; "Interpreter"]) ()
+    =
   if !initialized then !devices
   else begin
     let all_devices = ref [] in

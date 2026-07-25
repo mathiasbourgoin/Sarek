@@ -154,8 +154,9 @@ let test_mixed_align_record () =
     rl.rl_fields ;
   Alcotest.(check int) "mixed_align size" 16 rl.rl_size
 
-(** L8: [{b:f64; a:i32}] reordered largest-first packs tighter: b@0, a@8, size 16
-    (a fits in the trailing 8 bytes; still 16 due to 8-byte struct alignment). *)
+(** L8: [{b:f64; a:i32}] reordered largest-first packs tighter: b@0, a@8, size
+    16 (a fits in the trailing 8 bytes; still 16 due to 8-byte struct
+    alignment). *)
 let test_mixed_align_record_reordered () =
   let rl =
     get_ok
