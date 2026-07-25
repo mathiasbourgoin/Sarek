@@ -1,0 +1,1 @@
+{"severity":"HIGH","confidence":95,"path":"src/example.js","line":42,"category":"correctness","summary":"Example confirmed finding","evidence":"A deterministic fixture demonstrates the issue.","fix":"Apply the bounded correction.","fingerprint":"src/example.js:42:correctness","specialist":"general","status":"OPEN"}

@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ReviewTraceLine",
+  "description": "Canonical shape for one line of briefs/<task>-review-trace.jsonl (spec: specs/r5-trace-enforcement.md FR-160/161) — self-reported evidence that one reviewer tool invocation (scope-gate, normalizer, specialist, cross-runtime corroboration) occurred, appended before its result is used or reported. Validated by the hand-rolled interpreter in scripts/lib/review/finding-schema.js (D-4, zero-dep) which supports only: type, enum, required, properties, additionalProperties, items — any other keyword makes the interpreter throw rather than silently ignore it.",
+  "type": "object",
+  "required": ["schema_version", "ts", "task", "round", "cycle", "event", "actor", "outcome"],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["1.0"] },
+    "ts": { "type": "string" },
+    "task": { "type": "string" },
+    "round": { "type": "integer" },
+    "cycle": { "type": "integer" },
+    "event": { "type": "string", "enum": ["scope-gate", "normalizer", "specialist", "cross-runtime"] },
+    "actor": { "type": "string" },
+    "outcome": { "type": "string", "enum": ["ran", "skipped"] },
+    "detail": { "type": "string" },
+    "digest": { "type": "string" }
+  },
+  "additionalProperties": false
+}

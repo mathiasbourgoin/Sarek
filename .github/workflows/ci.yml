@@ -38,6 +38,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # Runs on the CI checkout, which is exactly the "fresh clone" case: if the
+      # review-tool bundle is workstation-local again, this step is the only
+      # thing that notices. review-bundle-verify alone cannot — an untracked
+      # bundle verifies perfectly on the machine that has it.
+      - name: Review-tool bundle tracked + intact
+        run: ./scripts/check-review-bundle-tracked.sh
+
       - name: Test alias coverage guard
         run: ./scripts/check-test-alias-coverage.sh
 

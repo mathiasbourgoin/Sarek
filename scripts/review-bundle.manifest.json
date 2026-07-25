@@ -1,0 +1,101 @@
+{
+  "schema_version": "1.0",
+  "bundle_version": "1.6.0",
+  "channel": "stable",
+  "source_ref": "main",
+  "files": [
+    {
+      "path": "schema/review-finding.schema.json",
+      "sha256": "792b5440ce43b5b295f26c1cae624adbdc8c73199c96def9d666ef965f4f3ffb"
+    },
+    {
+      "path": "schema/review-trace.schema.json",
+      "sha256": "e1c4b004fdb0ea3ab12428c9bbd091870bfeae905e144260ff5e8991c930879a"
+    },
+    {
+      "path": "scripts/check-review-convergence.js",
+      "sha256": "fafbf46ba7e0e0baacc88537060fef94d3a4373bde27c17cea8f5ddc4d25ee9a"
+    },
+    {
+      "path": "scripts/check-scope-diff.sh",
+      "sha256": "2de18402aec68d60d95c21ac50ec2796a245d04c4ac43856c8d5f078e034fe91"
+    },
+    {
+      "path": "scripts/lib/review/finding-schema.js",
+      "sha256": "a992e3d1d8030043b647756351f2d4761302f81ee59d17deb769b36bf71e2c03"
+    },
+    {
+      "path": "scripts/lib/review/normalize-rules.js",
+      "sha256": "921c36f14e0c84c763ea146752b05e2f9109d66d6d3ecab56d4e0630d8e469cc"
+    },
+    {
+      "path": "scripts/lib/review/redgreen-scratch.js",
+      "sha256": "c9ca5573c123a9b2cc6ff86aea94ca284040cbe139023fdf6acae1774932c890"
+    },
+    {
+      "path": "scripts/lib/review/review-convergence-rules.js",
+      "sha256": "25a067f06fe20093510ceb617e75d8c22895c10040a312013fe30f9ad210a322"
+    },
+    {
+      "path": "scripts/lib/review/review-lifecycle.js",
+      "sha256": "d5544cf6746260116ddbc543c7ce67964bb24ea0214bc91942bf3aa6a1c56a15"
+    },
+    {
+      "path": "scripts/lib/review/review-trace-dispatch.js",
+      "sha256": "059e0bb2f7710a046dff7d8d56151d7a0a5ece46743254f2816658311b01a78c"
+    },
+    {
+      "path": "scripts/lib/review/review-trace-rules.js",
+      "sha256": "eaf1c12fb302a658506cdcc934a6e0a0102852370b147ada69611225d8fdb540"
+    },
+    {
+      "path": "scripts/lib/review/review-trace.js",
+      "sha256": "1a2dea224cbf84105ad919b8d3e335f01086a7c505be2a28ed56835355982a2d"
+    },
+    {
+      "path": "scripts/lib/xruntime/xruntime-classify.js",
+      "sha256": "7ec41ea72e73ebc450043f5369c6de6a136857f428669e528cd432554e6a7e27"
+    },
+    {
+      "path": "scripts/lib/xruntime/xruntime-digest.js",
+      "sha256": "8d82e16eb4501beb51449206a2de81b3612abda3c3f8a7301efa28f3853b2661"
+    },
+    {
+      "path": "scripts/lib/xruntime/xruntime-journal.js",
+      "sha256": "aa3901eb3a8b4ef37cceb228cb58eff70581a122a95fe513fd06a5e5205a54fc"
+    },
+    {
+      "path": "scripts/review-normalize.js",
+      "sha256": "c2bb7feb98b24df15ee5e41edcfa7c28b9f1023ad3a389027d977ca828b4a402"
+    },
+    {
+      "path": "scripts/xruntime-exec.sh",
+      "sha256": "52339c12eb2585e47a2bc0f0612e5e90be58e37024b2c520d0ab03125d252d3d",
+      "shared": true
+    },
+    {
+      "path": "scripts/xruntime-review.js",
+      "sha256": "fab61681d4d1c6c296c20822043324b6f3459836ebe1611700877c9a4742e0cd"
+    },
+    {
+      "path": "scripts/REVIEW-BUNDLE.md",
+      "sha256": "2b1be2c09d68450062801b09f54b7dd828843deec3da05d7538342ccc2ef0347",
+      "kind": "doc"
+    },
+    {
+      "path": "scripts/review-bundle-verify.js",
+      "sha256": "906bb8934d98765b5ce311744e93c1cd781804d2d3fc33aca87cfcf9bf99273b",
+      "kind": "verifier"
+    },
+    {
+      "path": "tools/data-schema/fixtures/review-finding/valid/basic.jsonl",
+      "sha256": "56da9918e462282aceca4869043c83c67b383707843c056d5a1ae59c434a8654",
+      "kind": "fixture"
+    },
+    {
+      "path": "tools/data-schema/fixtures/review-finding/invalid/missing-specialist.jsonl",
+      "sha256": "ad6aa589d47ff9659a04aba83d1c9cd0216a0b07f8cd24be88e3a7547508b338",
+      "kind": "fixture"
+    }
+  ]
+}

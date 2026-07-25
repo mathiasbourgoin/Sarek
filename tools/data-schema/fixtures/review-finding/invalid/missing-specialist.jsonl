@@ -1,0 +1,1 @@
+{"severity":"HIGH","confidence":95,"path":"src/example.js","line":42,"category":"correctness","summary":"Missing required specialist","evidence":"This record intentionally omits a required field.","fix":"Add the missing field.","fingerprint":"src/example.js:42:correctness"}
