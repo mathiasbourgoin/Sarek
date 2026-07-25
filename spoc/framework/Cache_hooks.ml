@@ -13,7 +13,7 @@
 
 let mutex = Mutex.create ()
 
-let device_destroy_hooks : (int -> unit) list ref = ref []
+let device_destroy_hooks : (backend:string -> int -> unit) list ref = ref []
 
 let clear_all_hooks : (unit -> unit) list ref = ref []
 
@@ -36,9 +36,9 @@ let run_all hooks =
     hooks ;
   match !first_exn with None -> () | Some e -> raise e
 
-let notify_device_destroy device_id =
+let notify_device_destroy ~backend device_id =
   let hooks = Mutex.protect mutex (fun () -> !device_destroy_hooks) in
-  run_all (List.map (fun h () -> h device_id) hooks)
+  run_all (List.map (fun h () -> h ~backend device_id) hooks)
 
 let notify_clear_all () =
   let hooks = Mutex.protect mutex (fun () -> !clear_all_hooks) in

@@ -60,32 +60,67 @@ let all_devices ?framework () =
     holds only memoization and must never release anything. That does NOT make
     this layer safe to leave alone during teardown: those backend caches release
     the handles these [Kernel.t] closures capture, so the layer has to be
-    dropped whenever they are (see the [Cache_hooks] registrations below). *)
+    dropped whenever they are (see the [Cache_hooks] registrations below).
+
+    For the same reason the cache is created [~invalidated_by_clear:true]: its
+    values BORROW the backend caches' handles, so a build still in flight when a
+    clear runs closes over a handle the clear releases, and installing it
+    afterwards would poison the memo for the rest of the process. *)
 let kernel_cache : (string, Kernel.t) Spoc_framework.Guarded_cache.t =
-  Spoc_framework.Guarded_cache.create ~size:32 ~destroy:(fun _ -> ()) ()
+  Spoc_framework.Guarded_cache.create
+    ~size:32
+    ~invalidated_by_clear:true
+    ~destroy:(fun _ -> ())
+    ()
 
 (** Clear the kernel cache *)
 let clear_cache () = Spoc_framework.Guarded_cache.clear kernel_cache
+
+(** Does global device [d] belong to the backend family [backend]? Backends
+    register either under the family name ("HIP") or as a "<family>/<variant>"
+    refinement of it ("CUDA/PTX", "CUDA/C"), and a single backend API module can
+    back several of those, so both spellings must match. Mirrors
+    [Device.resolve_framework]. *)
+let device_is_of_backend ~backend (d : Device.t) =
+  String.equal d.framework backend
+  || String.starts_with ~prefix:(backend ^ "/") d.framework
 
 let () =
   (* Participate in backend teardown. Both directions are handle-invalidating
      for this layer, and neither is observable from here without the hook. *)
   Spoc_framework.Cache_hooks.on_clear_all clear_cache ;
-  Spoc_framework.Cache_hooks.on_device_destroy (fun backend_device_id ->
-      (* The hook carries a BACKEND-local device index, while this cache groups
-         by the global [Device.t.id]. Several backends can use the same index,
-         and the notification does not say which fired, so evict every global id
-         that could be it. Over-eviction here only drops memoization (the
-         backend caches own the handles), so erring wide is free; erring narrow
-         would keep serving a released handle. Reading [Device.devices] directly
-         avoids triggering enumeration from inside a teardown path. *)
+  Spoc_framework.Cache_hooks.on_device_destroy (fun ~backend index ->
+      (* The hook identifies the device by (backend family, backend-local
+         index); this cache groups by the global [Device.t.id], so translate.
+         Matching on [index] alone would be wrong, not merely wide: backend
+         indices collide across backends (OpenCL 0, Vulkan 0, HIP 0 all exist),
+         and [evict_device] does not just drop memoization — it also bumps the
+         device's eviction epoch, which ABORTS in-flight builds. Tearing down a
+         HIP device must not make a concurrent OpenCL compile raise.
+
+         Reading [Device.devices] directly avoids triggering enumeration from
+         inside a teardown path. Note the consequence: a device that is not in
+         the enumerated table (a hand-built [Device.t], or an enumeration
+         restricted by [Device.init ~frameworks]) has no global id here, so
+         nothing is evicted for it. Such a device cannot have been used through
+         this cache under its global id either, but a hand-built [Device.t]
+         carrying a colliding id could — a known residual corner, tracked with
+         the wider teardown follow-up. *)
       Array.iter
         (fun (d : Device.t) ->
-          if d.backend_id = backend_device_id then
+          if d.backend_id = index && device_is_of_backend ~backend d then
             Spoc_framework.Guarded_cache.evict_device kernel_cache d.id)
         !Device.devices)
 
-(** Compile a kernel from source, with caching *)
+(** Compile a kernel from source, with caching.
+
+    @raise Spoc_framework.Guarded_cache.Device_destroyed_during_build
+      if [device] is torn down by another domain while this compile is in
+      flight. There is no valid kernel to return in that case.
+    @raise Spoc_framework.Guarded_cache.Cache_cleared_during_build
+      if another domain runs [Kernel.clear_cache] (or [clear_cache] here) while
+      this compile is in flight: the kernel would close over handles that clear
+      released. Retrying after the clear completes succeeds. *)
 let compile_kernel (device : Device.t) ~(name : string) ~(source : string) :
     Kernel.t =
   let key =
@@ -138,7 +173,11 @@ let run_kernel (kernel : Kernel.t) ~(args : Kernel.args) ~(grid : dims)
     ~shared_mem
     ()
 
-(** High-level run function: compile (if needed) and execute *)
+(** High-level run function: compile (if needed) and execute.
+
+    @raise Spoc_framework.Guarded_cache.Device_destroyed_during_build
+    @raise Spoc_framework.Guarded_cache.Cache_cleared_during_build
+      both propagated from {!compile_kernel}; see there. *)
 let run (device : Device.t) ~(name : string) ~(source : string)
     ~(args : arg list) ~(grid : dims) ~(block : dims) ?(shared_mem = 0) () :
     unit =

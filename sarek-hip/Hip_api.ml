@@ -216,10 +216,21 @@ module Device = struct
        destroy under the runtime model, so there is no hipCtxDestroy analog. *)
     Hashtbl.remove device_cache dev.id ;
     (* Notify layers above this backend BEFORE the local hooks unload modules:
-       they memoize values that close over the handles those hooks release. *)
-    Spoc_framework.Cache_hooks.notify_device_destroy dev.id ;
+       they memoize values that close over the handles those hooks release.
+       [notify_device_destroy] re-raises the first failing listener; since
+       [device_cache] has already been emptied, letting it escape here would
+       leave the device unreachable with its modules still loaded. Capture it,
+       finish the teardown, re-raise at the end (mirrors the CUDA backend). *)
+    let listener_exn =
+      match
+        Spoc_framework.Cache_hooks.notify_device_destroy ~backend:"HIP" dev.id
+      with
+      | () -> None
+      | exception e -> Some e
+    in
     List.iter (fun hook -> hook dev.id) !device_destroy_hooks ;
-    retire_device dev.id
+    retire_device dev.id ;
+    Option.iter raise listener_exn
 end
 
 (** {1 Memory Management} *)

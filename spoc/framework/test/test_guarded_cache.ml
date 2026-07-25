@@ -238,9 +238,80 @@ let test_evict_device_during_build () =
   in
   Alcotest.(check string) "later lookup rebuilds" "freshly-rebuilt" later
 
-(* [clear] must NOT reject an in-flight build: unlike a device teardown it does
-   not invalidate the device, so the value being built is still valid and
-   installing it is correct. Guards against over-applying the epoch check. *)
+(* On a BORROWING cache ([~invalidated_by_clear:true]), [clear] must reject an
+   in-flight build.
+
+   The interleaving, which the per-device epoch alone does not cover because no
+   device is destroyed: (1) domain A misses on key K and releases the lock; its
+   build finishes - for a real borrowing cache that means the inner cache handed
+   back a value closing over handle H - but is not installed yet. (2) Domain B
+   clears: the clear walks the table, does not see A's entry, and (in the real
+   system) the layer underneath then releases H. (3) A re-acquires, finds the
+   key absent, and installs. The cache now serves a value over a released handle
+   PERMANENTLY, having survived the very teardown that was in progress.
+
+   Modelled here with a handle whose release is observable, so the assertion is
+   on the poisoning itself ("a later lookup is served a released handle") rather
+   than on a crash. Deterministic: the two domains hand off through atomics. *)
+let test_clear_during_build_rejected_when_borrowing () =
+  (* Stand-in for a backend handle owned by the layer underneath. *)
+  let released = Atomic.make false in
+  let cache =
+    GC.create ~invalidated_by_clear:true ~destroy:(fun (_ : string) -> ()) ()
+  in
+  let build_started = Atomic.make false in
+  let clear_done = Atomic.make false in
+  let builder () =
+    match
+      GC.find_or_build cache ~key:"K" ~device_id:0 (fun () ->
+          Atomic.set build_started true ;
+          while not (Atomic.get clear_done) do
+            Domain.cpu_relax ()
+          done ;
+          "closure-over-handle-1")
+    with
+    | v -> `Returned v
+    | exception GC.Cache_cleared_during_build -> `Rejected
+  in
+  let d = Domain.spawn builder in
+  while not (Atomic.get build_started) do
+    Domain.cpu_relax ()
+  done ;
+  (* The teardown: drop the memo, then the layer underneath releases the handle
+     every cached closure was built over. *)
+  GC.clear cache ;
+  Atomic.set released true ;
+  Atomic.set clear_done true ;
+  (match Domain.join d with
+  | `Rejected -> ()
+  | `Returned v ->
+      Alcotest.failf
+        "a build that finished across a clear was installed and returned %S"
+        v) ;
+  Alcotest.(check int) "nothing survived the clear" 0 (GC.length cache) ;
+  (* The decisive check: a LATER lookup must rebuild against live handles, not
+     be served the closure over the handle the clear released. *)
+  let mutable_seen_released = ref true in
+  let later =
+    GC.find_or_build cache ~key:"K" ~device_id:0 (fun () ->
+        mutable_seen_released := Atomic.get released ;
+        "closure-over-handle-2")
+  in
+  Alcotest.(check string)
+    "a later lookup rebuilds instead of being served the poisoned value"
+    "closure-over-handle-2"
+    later ;
+  Alcotest.(check bool)
+    "and it rebuilt after the release, i.e. against fresh handles"
+    true
+    !mutable_seen_released
+
+(* The mirror image: on an OWNING cache (the default), [clear] must NOT reject
+   an in-flight build. It releases the handles this cache owns; it does not
+   touch the device, so the value being built is still valid and installing it
+   is correct. Guards against applying the generation check globally - the
+   distinction is per-cache, and getting it backwards turns benign concurrent
+   clears into spurious compile failures for every backend. *)
 let test_clear_during_build_still_installs () =
   let cache = GC.create ~destroy:(fun (_ : string) -> ()) () in
   let build_started = Atomic.make false in
@@ -392,7 +463,11 @@ let () =
             `Quick
             test_evict_device_during_build;
           Alcotest.test_case
-            "clear during an in-flight build still installs"
+            "clear during an in-flight build is rejected on a borrowing cache"
+            `Quick
+            test_clear_during_build_rejected_when_borrowing;
+          Alcotest.test_case
+            "clear during an in-flight build still installs on an owning cache"
             `Quick
             test_clear_during_build_still_installs;
           Alcotest.test_case

@@ -30,10 +30,29 @@ type ('k, 'v) t = {
      miss time and re-checked on re-acquire: a change means the value was built
      for a device that no longer exists and must not be installed. *)
   epochs : (int, int) Hashtbl.t;
+  (* Cache-wide generation, bumped by [clear]. Same window as [epochs], but for
+     the whole cache rather than one device. Only consulted when
+     [invalidated_by_clear] is set - see below. *)
+  mutable generation : int;
+  (* Does [clear] invalidate a build that is already in flight?
+     - OWNING caches (every backend's): NO. [clear] releases the handles this
+       cache owns; it does not touch the DEVICE, so a value built during the
+       window is still perfectly valid and installing it is correct.
+     - BORROWING caches (Runtime's outer memo, whose values are closures over
+       another cache's handles): YES. For them [clear] is the announcement that
+       the borrowed handles are about to be released, so a value built during
+       the window closes over a handle that is dead by the time it is installed,
+       and it would then be served for the rest of the process - surviving the
+       very teardown the clear was performing.
+     The distinction is per-cache, not global, which is why it is a create-time
+     flag rather than a blanket rule. *)
+  invalidated_by_clear : bool;
   destroy : 'v -> unit;
 }
 
 exception Device_destroyed_during_build of int
+
+exception Cache_cleared_during_build
 
 let () =
   Printexc.register_printer (function
@@ -43,14 +62,20 @@ let () =
              "Guarded_cache: device %d was destroyed while its kernel was \
               being compiled"
              id)
+    | Cache_cleared_during_build ->
+        Some
+          "Guarded_cache: the cache was cleared while this kernel was being \
+           compiled, and its value borrows handles that the clear released"
     | _ -> None)
 
-let create ?(size = 16) ~destroy () =
+let create ?(size = 16) ?(invalidated_by_clear = false) ~destroy () =
   {
     mutex = Mutex.create ();
     table = Hashtbl.create size;
     keys_by_device = Hashtbl.create 16;
     epochs = Hashtbl.create 16;
+    generation = 0;
+    invalidated_by_clear;
     destroy;
   }
 
@@ -87,18 +112,20 @@ let destroy_discarded t v = try t.destroy v with _ -> ()
 
 let find_or_build t ~key ?device_id build =
   (* Fast path: hit under the lock. On a miss, snapshot the target device's
-     eviction epoch so the post-build re-check can detect a teardown that
-     happened while the lock was released. *)
+     eviction epoch and the cache generation so the post-build re-check can
+     detect a teardown that happened while the lock was released. *)
   let hit_or_epoch =
     Mutex.protect t.mutex (fun () ->
         match Hashtbl.find_opt t.table key with
         | Some v -> Either.Left v
         | None ->
-            Either.Right (Option.map (fun id -> (id, epoch_of t id)) device_id))
+            Either.Right
+              ( Option.map (fun id -> (id, epoch_of t id)) device_id,
+                t.generation ))
   in
   match hit_or_epoch with
   | Either.Left v -> v
-  | Either.Right at_miss -> (
+  | Either.Right (at_miss, generation_at_miss) -> (
       (* Miss: the JIT compile runs with the lock released so it does not
          serialize other domains. *)
       let built = build () in
@@ -115,6 +142,16 @@ let find_or_build t ~key ?device_id build =
                        lookup — possibly after the id is recreated — would be
                        served a value from the old context. *)
                     `Stale id
+                | _
+                  when t.invalidated_by_clear
+                       && t.generation <> generation_at_miss ->
+                    (* Borrowing cache, cleared during the build: the handles
+                       this value closes over were released by that clear, and
+                       the clear has already passed over this table without
+                       seeing the entry. Installing now would poison the cache
+                       permanently — the value survives the very teardown that
+                       was in progress. *)
+                    `Cleared
                 | _ ->
                     Hashtbl.replace t.table key built ;
                     Option.iter
@@ -130,7 +167,10 @@ let find_or_build t ~key ?device_id build =
           winner
       | `Stale id ->
           destroy_discarded t built ;
-          raise (Device_destroyed_during_build id))
+          raise (Device_destroyed_during_build id)
+      | `Cleared ->
+          destroy_discarded t built ;
+          raise Cache_cleared_during_build)
 
 let evict_device t device_id =
   (* Snapshot + unlink under the lock; destroy released outside it. The epoch
@@ -158,12 +198,18 @@ let evict_device t device_id =
   destroy_all t victims
 
 let clear t =
-  (* [epochs] is deliberately NOT reset: the counters are the only record that
-     an in-flight build's device was retired, and clearing them could lose a
-     bump. [clear] itself does not invalidate an in-flight build — the device is
-     still alive, so the value being built is still valid and may be installed. *)
+  (* [epochs] and [generation] are deliberately NOT reset: they are the only
+     record that an in-flight build has been invalidated, and resetting them
+     would lose the bump.
+
+     Whether the generation bump actually invalidates an in-flight build depends
+     on [invalidated_by_clear] (see the type declaration): for an OWNING cache
+     the device is still alive and the value being built is still valid, so it
+     is installed; for a BORROWING cache the clear is releasing the very handles
+     that value closes over, so it must not be. *)
   let victims =
     Mutex.protect t.mutex (fun () ->
+        t.generation <- t.generation + 1 ;
         let vs = Hashtbl.fold (fun _ v acc -> v :: acc) t.table [] in
         Hashtbl.clear t.table ;
         Hashtbl.clear t.keys_by_device ;

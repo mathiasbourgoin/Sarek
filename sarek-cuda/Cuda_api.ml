@@ -277,11 +277,24 @@ module Device = struct
        recreated. *)
     Hashtbl.remove device_cache dev.id ;
     (* Notify layers above this backend BEFORE the local hooks unload modules:
-       they memoize values that close over the handles those hooks release. *)
-    Spoc_framework.Cache_hooks.notify_device_destroy dev.id ;
+       they memoize values that close over the handles those hooks release.
+       [notify_device_destroy] re-raises the first failing listener, and
+       [device_cache] has already been emptied, so letting it escape here would
+       leave the device unreachable with its context still alive and its modules
+       still loaded. Capture it, finish the teardown, re-raise at the end. A
+       failure in the teardown itself (cuCtxDestroy) legitimately wins over a
+       memoization-drop failure. *)
+    let listener_exn =
+      match
+        Spoc_framework.Cache_hooks.notify_device_destroy ~backend:"CUDA" dev.id
+      with
+      | () -> None
+      | exception e -> Some e
+    in
     List.iter (fun hook -> hook dev.id) !device_destroy_hooks ;
     retire_device dev.id ;
-    check "cuCtxDestroy" (cuCtxDestroy dev.context)
+    check "cuCtxDestroy" (cuCtxDestroy dev.context) ;
+    Option.iter raise listener_exn
 end
 
 (** {1 Memory Management} *)

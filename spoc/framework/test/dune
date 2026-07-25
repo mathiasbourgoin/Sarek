@@ -6,5 +6,6 @@
   test_backend_error
   test_kernel_args
   test_compile_cache
-  test_guarded_cache)
+  test_guarded_cache
+  test_cache_hooks)
  (libraries spoc_framework alcotest str))

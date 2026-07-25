@@ -23,19 +23,36 @@
     release backend resources, since they do not own any. Registration and
     notification are safe from any domain: the registry is mutex-guarded and
     callbacks run outside the lock. If a callback raises, the remaining
-    callbacks still run and the first exception is re-raised afterwards. *)
+    callbacks still run and the first exception is re-raised afterwards.
 
-(** [on_device_destroy f] registers [f] to be called with a {e backend-local}
-    device id whenever that device is being torn down. Note the id is the
-    backend's own device index, not a global [Device.id]: a listener that keys
-    by a different id space must widen (never narrow) its invalidation
-    accordingly. *)
-val on_device_destroy : (int -> unit) -> unit
+    {2 Notifying from a teardown path}
 
-(** [notify_device_destroy backend_device_id] runs every callback registered
-    with {!on_device_destroy}. Called by a backend from its device-destroy path,
-    before it releases anything. *)
-val notify_device_destroy : int -> unit
+    Because the first callback failure is re-raised, [notify_*] can throw out of
+    the middle of a device-destroy sequence, where escaping early would skip the
+    release of the very resources the teardown exists to free. A backend calling
+    these from [Device.destroy] must therefore
+    {b complete its teardown first and re-raise afterwards} — capture the
+    exception, unload modules, retire streams, destroy the context, then let it
+    out. The CUDA and HIP backends do exactly this; copy that shape in any new
+    backend. *)
+
+(** [on_device_destroy f] registers [f], called as [f ~backend index] whenever a
+    device is being torn down.
+
+    [backend] is the backend {e family} name as used by [Device.init] /
+    [Device.resolve_framework] (["CUDA"], ["HIP"], ...); a device's
+    [Device.t.framework] either equals it or is a ["<family>/<variant>"]
+    refinement of it (["CUDA/PTX"]), and a listener must treat both as matching.
+    [index] is the backend's own device index, {e not} a global [Device.id]: the
+    pair ([backend], [index]) is what identifies the device across id spaces.
+    Matching on [index] alone aliases unrelated backends' devices. *)
+val on_device_destroy : (backend:string -> int -> unit) -> unit
+
+(** [notify_device_destroy ~backend index] runs every callback registered with
+    {!on_device_destroy}. Called by a backend from its device-destroy path,
+    before it releases anything — see "Notifying from a teardown path" above for
+    the obligation that comes with the re-raise. *)
+val notify_device_destroy : backend:string -> int -> unit
 
 (** [on_clear_all f] registers [f] to be called whenever a backend's whole
     kernel cache is cleared. *)

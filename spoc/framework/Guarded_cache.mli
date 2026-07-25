@@ -59,6 +59,13 @@ type ('k, 'v) t
     against a live device, or propagate). *)
 exception Device_destroyed_during_build of int
 
+(** Raised by {!find_or_build} on a cache created with
+    [~invalidated_by_clear:true] when {!clear} ran while the (unlocked) build
+    was in flight. The value borrows handles that the clear released, so it is
+    [destroy]ed rather than installed. Callers may retry: a fresh build after
+    the clear has completed will borrow live handles again. *)
+exception Cache_cleared_during_build
+
 (** [create ~destroy ()] builds an empty cache. [destroy] is applied to every
     value removed by {!clear} or {!evict_device} (and to the loser of a rare
     concurrent double-compile in {!find_or_build}); it should release the
@@ -73,8 +80,37 @@ exception Device_destroyed_during_build of int
     loser is dropped rather than raised, so it cannot turn a successfully
     resolved value into an intermittent compile failure.
 
-    [size] is the initial table size (default 16). *)
-val create : ?size:int -> destroy:('v -> unit) -> unit -> ('k, 'v) t
+    [size] is the initial table size (default 16).
+
+    [invalidated_by_clear] (default [false]) declares whether the cached values
+    {b own} the resources they refer to or merely {b borrow} them from a cache
+    underneath, and it changes what {!clear} means for a build that is already
+    in flight:
+
+    - [false] — {b owning} cache (every backend's kernel cache). [clear]
+      releases the handles this cache owns; it says nothing about the device, so
+      a value built while the clear was running is still valid and is installed
+      normally.
+    - [true] — {b borrowing} cache (a memo layered on top of another cache, e.g.
+      [Sarek.Runtime]'s outer memo of [Kernel.t] closures over backend handles).
+      For such a cache, [clear] is the signal that the borrowed handles are
+      about to be released. A build that started before the clear and finishes
+      after it closes over a handle that is dead by the time it would be
+      installed — and, because the clear has already walked the table without
+      seeing the not-yet-inserted entry, that dead value would then be served
+      for the rest of the process, outliving the teardown that was in progress.
+      With the flag set, such a build is [destroy]ed and
+      {!Cache_cleared_during_build} is raised instead.
+
+    Set it iff the values borrow. Setting it on an owning cache turns benign
+    concurrent clears into spurious build failures; leaving it off on a
+    borrowing cache is a use-after-free. *)
+val create :
+  ?size:int ->
+  ?invalidated_by_clear:bool ->
+  destroy:('v -> unit) ->
+  unit ->
+  ('k, 'v) t
 
 (** [find_or_build t ~key ?device_id build] returns the cached value for [key],
     compiling it with [build] on a miss.
@@ -102,7 +138,12 @@ val create : ?size:int -> destroy:('v -> unit) -> unit -> ('k, 'v) t
     {!Device_destroyed_during_build} is raised — an entry that is not yet in the
     table cannot be seen by {!evict_device}, so without this check the value
     would be installed against a dead device id (never unloaded, and served to
-    later lookups, including after the id is recreated). *)
+    later lookups, including after the id is recreated).
+
+    On a cache created with [~invalidated_by_clear:true] the cache-wide
+    generation is snapshotted and re-checked the same way, raising
+    {!Cache_cleared_during_build}. This check does not need [device_id]: a clear
+    invalidates every in-flight build on such a cache, not just one device's. *)
 val find_or_build : ('k, 'v) t -> key:'k -> ?device_id:int -> (unit -> 'v) -> 'v
 
 (** [evict_device t device_id] removes and {!destroy}s every value recorded for
@@ -117,7 +158,9 @@ val evict_device : ('k, 'v) t -> int -> unit
 
 (** [clear t] removes and {!destroy}s every cached value and forgets all
     per-device key tracking. Values are snapshotted under the lock and destroyed
-    after it is released. *)
+    after it is released. Also bumps the cache-wide generation, which aborts
+    in-flight builds iff the cache was created with [~invalidated_by_clear:true]
+    (see {!create}). *)
 val clear : ('k, 'v) t -> unit
 
 (** [length t] is the number of entries currently cached (under the lock).
