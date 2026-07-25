@@ -69,5 +69,8 @@ docs/team-proposal-2026-05-29.md
 # Local branch-reconciliation scratch spec (not a published spec)
 /specs/main-master-reconcile.md
 
+# Per-agent scratchpad namespaces created by scripts/agent-worktree-bootstrap.sh
+.agent-scratch/
+
 # Playwright MCP session artifacts
 .playwright-mcp/
