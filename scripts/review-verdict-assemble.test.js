@@ -104,7 +104,7 @@ function appendTraces(dir, round) {
   }
 }
 
-function gate(dir, verdictPath, args = []) {
+function gate(verdictPath, args = []) {
   const r = spawnSync(process.execPath, [GATE, verdictPath, "--max-rounds", "5", "--strikes", "2", "--static", ...args], {
     cwd: REPO,
     encoding: "utf8",
@@ -123,7 +123,7 @@ function driveRounds(dir, upto) {
     const a = assembleRound(dir, round);
     assert.strictEqual(a.status, 0, `assemble round ${round} failed: ${a.stderr}`);
     appendTraces(dir, round);
-    last = gate(dir, draft);
+    last = gate(draft);
     fs.writeFileSync(report, last.raw);
     const w = run(ASSEMBLE, ["--write-strike", "--verdict", draft, "--gate-report", report], dir);
     assert.strictEqual(w.status, 0, `write-strike round ${round} failed: ${w.stderr}`);
@@ -164,7 +164,7 @@ check("round 1 emits no `strike` key until the gate reports it, then a boolean",
 
   appendTraces(dir, 1);
   const report = path.join(dir, "briefs", `${TASK}-gate-report.json`);
-  fs.writeFileSync(report, gate(dir, draft).raw);
+  fs.writeFileSync(report, gate(draft).raw);
   assert.strictEqual(run(ASSEMBLE, ["--write-strike", "--verdict", draft, "--gate-report", report], dir).status, 0);
   assert.strictEqual(JSON.parse(fs.readFileSync(draft, "utf8")).rounds_audit[0].strike, false);
 });
@@ -215,7 +215,7 @@ check("MUTATION: strike:null on a past round silently resets the streak (round-c
   verdict.rounds_audit.find((e) => e.round === 4).strike = null;
   fs.writeFileSync(final, JSON.stringify(verdict, null, 2));
 
-  const mutated = gate(dir, final);
+  const mutated = gate(final);
   assert.strictEqual(mutated.report.cause, "round-cap", "the streak must have been reset by the null");
   assert.deepStrictEqual(mutated.report.violations.map((v) => v.type), ["round-cap"]);
   assert.match(mutated.report.warnings.join("\n"), /round 4 lacks a boolean strike field/);
@@ -230,7 +230,7 @@ check("MUTATION: all-null strikes below the cap escape the gate entirely (exit 0
   verdict.no_go_round = 2; // below --max-rounds, as in the real five-round PR
   fs.writeFileSync(final, JSON.stringify(verdict, null, 2));
 
-  const escaped = gate(dir, final);
+  const escaped = gate(final);
   // Documented defect (schema/review-json-schema.md §strike): five striking
   // rounds, `current_round_strike: true`, and the gate still reports no
   // violation. Warnings only. This is why `strike` must be a boolean.
@@ -248,7 +248,7 @@ check("MUTATION: dropping `round` makes the gate skip strike/audit/trace checks 
   delete verdict.round;
   fs.writeFileSync(final, JSON.stringify(verdict, null, 2));
 
-  const skipped = gate(dir, final);
+  const skipped = gate(final);
   assert.strictEqual(skipped.report.legacy_round, true);
   assert.strictEqual(skipped.report.current_round_strike, null);
   assert.match(skipped.report.warnings.join("\n"), /round key absent — skipping strike and rounds_audit checks/);
