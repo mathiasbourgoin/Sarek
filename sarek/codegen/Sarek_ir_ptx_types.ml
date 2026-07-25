@@ -169,23 +169,30 @@ let new_label a =
 
 (** {1 Type mapping} *)
 
-(* f16 is deliberately NOT supported by the PTX backend in #57 slice 1. The spec
-   carves PTX out as its own reviewable unit (slice 2) because this emitter
-   identifies a value's register class by STRING-PREFIX SNIFFING of register
-   names (see [Sarek_ir_ptx_expr.emit_cast]: is_f64 = name starts "%fd", is_f32 =
-   starts "%f" and not "%fd"). A new "%h" f16 class silently aliases the "%f"
-   prefix test, so every prefix guard has to be audited before f16 registers can
-   exist at all. Rejecting here keeps that unsound state unreachable. *)
-let f16_unsupported what =
+(* An element type this emitter cannot represent. Today that is only f16, which
+   is deliberately out of scope for PTX in #57 slice 1: the spec carves PTX out
+   as its own reviewable unit (slice 2) because this emitter identifies a value's
+   register class by STRING-PREFIX SNIFFING of register names (see
+   [Sarek_ir_ptx_expr.emit_cast]: is_f64 = name starts "%fd", is_f32 = starts
+   "%f" and not "%fd"). A new "%h" f16 class silently aliases the "%f" prefix
+   test, so every prefix guard has to be audited before f16 registers can exist
+   at all. Rejecting here keeps that unsound state unreachable.
+
+   Named for the general case rather than for f16: this module is
+   backend-generic, and bf16 will want the same raiser without a second
+   feature-specific export sitting next to [fail]. *)
+let unsupported_elttype (ty : elttype) what =
   unsupported
-    (what
-   ^ ": float16 not supported by the PTX backend (#57 slice 2 — needs a new %h \
-      register class and an audit of the prefix-based class guards)")
+    (Printf.sprintf
+       "%s: %s not supported by the PTX backend (#57 slice 2 — needs a new %%h \
+        register class and an audit of the prefix-based class guards)"
+       what
+       (Sarek_ir_pp.string_of_elttype ty))
 
 let ptx_reg_type_of = function
   | TInt32 | TBool -> ".u32"
   | TInt64 -> ".u64"
-  | TFloat16 -> f16_unsupported "TFloat16 register type"
+  | TFloat16 -> unsupported_elttype TFloat16 "TFloat16 register type"
   | TFloat32 -> ".f32"
   | TFloat64 -> ".f64"
   | TUnit -> ".u32"
@@ -197,7 +204,7 @@ let ptx_reg_type_of = function
 let new_reg_for_type alloc = function
   | TInt32 | TBool | TUnit -> new_u32 alloc
   | TInt64 -> new_u64 alloc
-  | TFloat16 -> f16_unsupported "TFloat16 new_reg"
+  | TFloat16 -> unsupported_elttype TFloat16 "TFloat16 new_reg"
   | TFloat32 -> new_f32 alloc
   | TFloat64 -> new_f64 alloc
   | TVec _ | TArray _ -> new_u64 alloc
@@ -367,7 +374,7 @@ let rec mov_binding buf ~src ~dst =
 (** {1 Shared-memory declaration helpers} *)
 
 let ptx_align_of_elttype = function
-  | TFloat16 -> f16_unsupported "align of float16"
+  | TFloat16 -> unsupported_elttype TFloat16 "align of float16"
   | TFloat32 | TInt32 | TBool -> 4
   | TFloat64 | TInt64 -> 8
   | TUnit -> 4
@@ -375,7 +382,7 @@ let ptx_align_of_elttype = function
   | TRecord _ | TVariant _ -> unsupported "align of custom type"
 
 let ptx_btype_of_elttype = function
-  | TFloat16 -> f16_unsupported "btype of float16"
+  | TFloat16 -> unsupported_elttype TFloat16 "btype of float16"
   | TFloat32 | TInt32 | TBool | TUnit -> "b32"
   | TFloat64 | TInt64 -> "b64"
   | TVec _ | TArray _ -> "b64"

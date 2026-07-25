@@ -29,6 +29,7 @@
 ; - test_f16_arith:    "float16 is a storage-only type and has no arithmetic"
 ; - test_f16_equality: "float16 is a storage-only type and has no arithmetic"
 ; - test_f16_compare:  "float16 is a storage-only type and has no arithmetic"
+; - test_f16_scalar_param: "cannot be a scalar kernel parameter"
 
 (library
  (name neg_test_unregistered_field)
@@ -290,6 +291,21 @@
 (library
  (name neg_test_f16_compare)
  (modules test_f16_compare)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+; A SCALAR f16 parameter (as opposed to a `float16 vector`) silently produced
+; garbage on HIP/CUDA: there is no float16 arg constructor, so it could only be
+; fed a 4-byte float whose low 2 bytes the device read as a __half.
+
+(library
+ (name neg_test_f16_scalar_param)
+ (modules test_f16_scalar_param)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))

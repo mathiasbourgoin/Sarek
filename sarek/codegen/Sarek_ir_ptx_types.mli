@@ -21,13 +21,16 @@ val fail : string -> 'a
     construct named [what]. *)
 val unsupported : string -> 'a
 
-(** [f16_unsupported what] raises {!Ptx_codegen_error} for a float16 construct.
-    f16 is deliberately out of scope for the PTX backend in #57 slice 1: this
-    emitter derives a value's register class from the register NAME's prefix
-    ([%f] / [%fd] / [%rd]), so introducing a [%h] class requires auditing every
-    such guard first. Shared so the expression emitter reports it identically.
-*)
-val f16_unsupported : string -> 'a
+(** [unsupported_elttype ty what] raises {!Ptx_codegen_error} for an element
+    type this emitter cannot represent, at the site named [what]. Today only
+    [TFloat16] reaches it: f16 is deliberately out of scope for the PTX backend
+    in #57 slice 1, because this emitter derives a value's register class from
+    the register NAME's prefix ([%f] / [%fd] / [%rd]), so introducing a [%h]
+    class requires auditing every such guard first. Shared so the expression
+    emitter, the type mapping and the whole-kernel gate all report it
+    identically — and generic in [ty] so the next width does not need a second
+    feature-specific export next to {!fail}. *)
+val unsupported_elttype : Sarek_ir_types.elttype -> string -> 'a
 
 (** {1 Value bindings} *)
 

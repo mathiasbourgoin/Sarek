@@ -410,6 +410,121 @@ let test_interp_e2e_f32_sink () =
     samples
 
 (* ------------------------------------------------------------------ *)
+(* 2e. GC-root canary for the f16 host pointer                        *)
+(* ------------------------------------------------------------------ *)
+
+(* [Spoc_core.Memory.bigarray_void_ptr] rests on ctypes INTERNALS that no public
+   API covers, and on a SEMANTIC property of them that a type signature cannot
+   express: the fat pointer it builds for a Float16 bigarray must keep that
+   bigarray GC-rooted for as long as the pointer is live, exactly as
+   [Ctypes.bigarray_start] does for every other kind.
+
+   ctypes' kind GADT has no Float16 arm, so [bigarray_start] raises
+   Failure "Unsupported bigarray kind" and the f16 arm has to reconstruct the
+   pointer over the kind-independent [Ctypes_bigarray.unsafe_address]. The first
+   version of that arm used [Ctypes.ptr_of_raw_address], which is
+   [make_unmanaged] — it produced a correct ADDRESS and silently dropped the
+   root, which is a device->host write into possibly-freed memory. The fix
+   rebuilds ctypes' own shape,
+   [Fat.make ~managed:(Some (Obj.repr ba)) ~reftyp:Void addr].
+
+   If a future ctypes changes what [Fat.make]'s [managed] field does while
+   keeping its signature, nothing else in the tree notices: the code still
+   compiles and still produces the right address. This canary is what notices.
+
+   The ASYMMETRY is the whole claim, so both halves are asserted: managed must
+   survive a major GC, unmanaged must not. Without the negative half, a test
+   environment where finalisers simply never run would pass vacuously. *)
+
+let alloc_f16 () = Bigarray.Array1.create Bigarray.Float16 Bigarray.c_layout 64
+
+(* Each pointer is built in its own function so the bigarray cannot stay live in
+   a caller stack slot: the ONLY thing that can root it afterwards is the
+   returned pointer itself. *)
+
+let[@inline never] ptr_via_memory collected =
+  let ba = alloc_f16 () in
+  Gc.finalise (fun _ -> collected := true) ba ;
+  Spoc_core.Memory.bigarray_void_ptr ba
+
+let[@inline never] ptr_unmanaged collected =
+  let ba = alloc_f16 () in
+  Gc.finalise (fun _ -> collected := true) ba ;
+  Ctypes.ptr_of_raw_address (Ctypes_bigarray.unsafe_address ba)
+
+let[@inline never] no_ptr_at_all collected =
+  let ba = alloc_f16 () in
+  Gc.finalise (fun _ -> collected := true) ba ;
+  Bigarray.Array1.dim ba
+
+(* Drop every OCaml reference to the bigarray, force collection, and report
+   whether it was finalised WHILE [keep] is still live — i.e. at the exact
+   moment a transfer would be handing the address to the FFI. *)
+let collected_with_live_pointer make =
+  let collected = ref false in
+  let keep = make collected in
+  Gc.full_major () ;
+  Gc.full_major () ;
+  let verdict = !collected in
+  ignore (Sys.opaque_identity keep) ;
+  verdict
+
+let test_f16_pointer_roots_its_bigarray () =
+  (* Positive control: the finaliser mechanism really does fire here, so the
+     managed assertion below is not vacuous. *)
+  Alcotest.(check bool)
+    "control: with no pointer held, the bigarray IS collected"
+    true
+    (collected_with_live_pointer (fun c -> no_ptr_at_all c)) ;
+  (* The negative half: an unmanaged pointer does NOT root its bigarray. This is
+     the bug that shipped. *)
+  Alcotest.(check bool)
+    "ptr_of_raw_address does NOT root the bigarray"
+    true
+    (collected_with_live_pointer (fun c -> ptr_unmanaged c)) ;
+  (* The property under test: the pointer Spoc_core hands to every backend DOES
+     root it. *)
+  Alcotest.(check bool)
+    "Memory.bigarray_void_ptr roots the f16 bigarray across a major GC"
+    false
+    (collected_with_live_pointer (fun c -> ptr_via_memory c))
+
+let[@inline never] ptr_via_memory_f32 collected =
+  let ba = Bigarray.Array1.create Bigarray.Float32 Bigarray.c_layout 64 in
+  Gc.finalise (fun _ -> collected := true) ba ;
+  Spoc_core.Memory.bigarray_void_ptr ba
+
+let test_non_f16_pointer_still_roots () =
+  (* The f16 arm must match the behaviour of the untouched [bigarray_start] path
+     it sits next to — that parity is the point of reconstructing ctypes' own
+     fat-pointer shape rather than inventing a new one. *)
+  Alcotest.(check bool)
+    "Memory.bigarray_void_ptr roots an f32 bigarray too (unchanged path)"
+    false
+    (collected_with_live_pointer (fun c -> ptr_via_memory_f32 c))
+
+let test_ctypes_still_lacks_a_float16_kind () =
+  (* WHY the f16 arm exists at all. The day ctypes grows a Float16 arm this
+     fails, and the whole function collapses back to [bigarray_start]. *)
+  let raised =
+    match Ctypes.typ_of_bigarray_kind Bigarray.Float16 with
+    | (_ : _ Ctypes.typ) -> false
+    | exception Failure _ -> true
+  in
+  Alcotest.(check bool)
+    "ctypes has no Float16 bigarray kind (if this fails, simplify \
+     Memory.bigarray_void_ptr)"
+    true
+    raised ;
+  (* Contrast: the kinds ctypes does know still work, so the check is specific. *)
+  Alcotest.(check bool)
+    "ctypes does know Float32"
+    true
+    (match Ctypes.typ_of_bigarray_kind Bigarray.Float32 with
+    | (_ : _ Ctypes.typ) -> true
+    | exception Failure _ -> false)
+
+(* ------------------------------------------------------------------ *)
 (* 3. Type system                                                     *)
 (* ------------------------------------------------------------------ *)
 
@@ -539,6 +654,21 @@ let () =
             "f32 sink observes ECast (TFloat16) narrowing"
             `Quick
             test_interp_e2e_f32_sink;
+        ] );
+      ( "gc_roots",
+        [
+          Alcotest.test_case
+            "f16 host pointer roots its bigarray (managed vs unmanaged)"
+            `Quick
+            test_f16_pointer_roots_its_bigarray;
+          Alcotest.test_case
+            "non-f16 pointer still roots"
+            `Quick
+            test_non_f16_pointer_still_roots;
+          Alcotest.test_case
+            "ctypes still lacks a Float16 kind"
+            `Quick
+            test_ctypes_still_lacks_a_float16_kind;
         ] );
       ( "type_system",
         [

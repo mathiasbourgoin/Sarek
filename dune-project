@@ -5,6 +5,15 @@
 
 (generate_opam_files true)
 
+; ctypes >= 0.24.0: the f16 host path depends on ctypes INTERNALS that its
+; public API does not cover — Ctypes_bigarray.unsafe_address (the kind GADT has
+; no Float16 arm, so Ctypes.bigarray_start raises for it) and
+; Ctypes_static.CPointer / Ctypes_ptr.Fat.make, used to rebuild a MANAGED fat
+; pointer so an f16 bigarray stays GC-rooted across a transfer. See
+; sarek/core/Memory.ml's bigarray_void_ptr and the GC-root canary in
+; sarek/tests/unit/test_float16.ml, which fails loudly if those semantics change.
+; 0.24.0 is the version those semantics were verified against.
+
 (source (github mathiasbourgoin/Sarek))
 (license Cecill-B)
 (authors "Mathias Bourgoin")
@@ -22,7 +31,7 @@ Install sarek for the full runtime and DSL.")
  (depends
   (ocaml (>= 5.4.0))
   (dune (>= 3.15))
-  ctypes
+  (ctypes (>= 0.24.0))
   (bisect_ppx :with-test)))
 
 ; Sarek: full runtime, DSL, PPX, stdlib, and CPU backends
@@ -40,8 +49,8 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
   (dune (>= 3.15))
   (spoc (= :version))
   (ppxlib (>= 0.22.0))
-  ctypes
-  ctypes-foreign
+  (ctypes (>= 0.24.0))
+  (ctypes-foreign (>= 0.24.0))
   (yojson :with-test)
   (alcotest :with-test)
   (bisect_ppx :with-test)))
@@ -55,8 +64,8 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
   (ocaml (>= 5.4.0))
   (dune (>= 3.15))
   (sarek (= :version))
-  ctypes
-  ctypes-foreign)
+  (ctypes (>= 0.24.0))
+  (ctypes-foreign (>= 0.24.0)))
  (depopts
   conf-cuda))
 
@@ -69,8 +78,8 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
   (ocaml (>= 5.4.0))
   (dune (>= 3.15))
   (sarek (= :version))
-  ctypes
-  ctypes-foreign))
+  (ctypes (>= 0.24.0))
+  (ctypes-foreign (>= 0.24.0))))
 
 ; OpenCL backend plugin
 (package
@@ -81,8 +90,8 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
   (ocaml (>= 5.4.0))
   (dune (>= 3.15))
   (sarek (= :version))
-  ctypes
-  ctypes-foreign)
+  (ctypes (>= 0.24.0))
+  (ctypes-foreign (>= 0.24.0)))
  (depopts
   conf-opencl))
 
@@ -95,8 +104,8 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
   (ocaml (>= 5.4.0))
   (dune (>= 3.15))
   (sarek (= :version))
-  ctypes
-  ctypes-foreign)
+  (ctypes (>= 0.24.0))
+  (ctypes-foreign (>= 0.24.0)))
  (depopts
   conf-vulkan))
 
@@ -109,5 +118,5 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
   (ocaml (>= 5.4.0))
   (dune (>= 3.15))
   (sarek (= :version))
-  ctypes
-  ctypes-foreign))
+  (ctypes (>= 0.24.0))
+  (ctypes-foreign (>= 0.24.0))))

@@ -268,7 +268,7 @@ let f16_helper_ret_kernel () =
     The exception is matched precisely: the previous [| exception _ -> ()]
     accepted ANY failure, so a Not_found or a Stack_overflow from an unrelated
     bug would have read as "correctly rejected". *)
-let expect_f16_rejected ?tag ~backend name f =
+let expect_f16_rejected ?tag ~backend ~expected_reason name f =
   let tag_expected = Option.value tag ~default:backend in
   match f () with
   | (_ : string) ->
@@ -290,56 +290,80 @@ let expect_f16_rejected ?tag ~backend name f =
          failure. *)
       Alcotest.(check string) (name ^ ": backend tag") tag_expected tag ;
       Alcotest.(check string) (name ^ ": construct") "f16" construct ;
-      let want = backend ^ ": float16 not yet supported" in
-      if not (contains ~needle:want reason) then
-        Alcotest.failf
-          "%s: rejected, but the reason does not name the deferral. Wanted %S \
-           in: %s"
-          name
-          want
-          reason
+      (* The reason is compared EXACTLY, not by substring. All four of these are
+         now composed by the single shared Sarek_ir_codegen.reject_feature, so
+         pinning the whole string is what stops a future edit to that one helper
+         from silently rewording every backend's diagnostic at once. *)
+      Alcotest.(check string) (name ^ ": reason") expected_reason reason
   | exception e ->
       Alcotest.failf
         "%s: rejected with the WRONG exception (expected Codegen_error): %s"
         name
         (Printexc.to_string e)
 
+(* Composed by the single shared Sarek_ir_codegen.reject_feature:
+   "<backend>: <width> not yet supported (#57 slice 2[ — <hint>])".
+   Metal omits the hint (its arm is a one-liner once it can be tested). *)
+let reason_opencl =
+  "OpenCL: float16 not yet supported (#57 slice 2 — needs cl_khr_fp16 \
+   enablement)"
+
+let reason_glsl =
+  "GLSL: float16 not yet supported (#57 slice 2 — needs \
+   GL_EXT_shader_explicit_arithmetic_types_float16)"
+
+let reason_metal = "Metal: float16 not yet supported (#57 slice 2)"
+
+let reason_wgsl =
+  "WGSL: float16 not yet supported (#57 slice 2 — needs a module-top `enable \
+   f16;` directive)"
+
 let test_deferred_backends_reject_f16 () =
   let each label k =
     expect_f16_rejected
       ~backend:"OpenCL"
+      ~expected_reason:reason_opencl
       (label ^ "/opencl generate")
       (fun () -> Sarek_ir_opencl.generate k) ;
     expect_f16_rejected
       ~backend:"OpenCL"
+      ~expected_reason:reason_opencl
       (label ^ "/opencl generate_with_types")
       (fun () -> Sarek_ir_opencl.generate_with_types ~types:k.kern_types k) ;
     (* GLSL's Backend_error tag is "Vulkan" (that is the framework name). *)
     expect_f16_rejected
       ~tag:"Vulkan"
       ~backend:"GLSL"
+      ~expected_reason:reason_glsl
       (label ^ "/glsl generate")
       (fun () -> Sarek_ir_glsl.generate k) ;
     expect_f16_rejected
       ~tag:"Vulkan"
       ~backend:"GLSL"
+      ~expected_reason:reason_glsl
       (label ^ "/glsl generate_with_types")
       (fun () -> Sarek_ir_glsl.generate_with_types ~types:k.kern_types k) ;
-    expect_f16_rejected ~backend:"Metal" (label ^ "/metal generate") (fun () ->
-        Sarek_ir_metal.generate k) ;
     expect_f16_rejected
       ~backend:"Metal"
+      ~expected_reason:reason_metal
+      (label ^ "/metal generate")
+      (fun () -> Sarek_ir_metal.generate k) ;
+    expect_f16_rejected
+      ~backend:"Metal"
+      ~expected_reason:reason_metal
       (label ^ "/metal generate_with_types")
       (fun () -> Sarek_ir_metal.generate_with_types ~types:k.kern_types k) ;
     (* Likewise WGSL's tag is the framework name "WebGPU". *)
     expect_f16_rejected
       ~tag:"WebGPU"
       ~backend:"WGSL"
+      ~expected_reason:reason_wgsl
       (label ^ "/wgsl generate")
       (fun () -> Sarek_ir_wgsl.generate k) ;
     expect_f16_rejected
       ~tag:"WebGPU"
       ~backend:"WGSL"
+      ~expected_reason:reason_wgsl
       (label ^ "/wgsl generate_with_types")
       (fun () -> Sarek_ir_wgsl.generate_with_types ~types:k.kern_types k)
   in

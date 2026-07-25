@@ -1068,29 +1068,24 @@ let params_have_float64 params =
       match decl with DParam (v, _) -> has_float64 v.var_type | _ -> false)
     params
 
-(** Whole-kernel f16 rejection (#57 slice 1 review).
-
-    The per-type arms above only fire when the emitter actually asks for a type
-    string. Several positions never do: a PTX f16 VECTOR parameter fell through
-    a [| _ -> ()] and an f16 helper RETURN type was never inspected, so PTX
-    emitted complete, valid, silently-wrong modules; the GLSL and WGSL emitters
-    never iterate [kern_locals] at all. One choke point at every public entry
-    point closes the whole class, using the same detector that drives the
-    CUDA/HIP conditional include ({!Sarek_ir_analysis.kernel_uses_float16}: it
-    folds params, locals, body, helper params AND return types, and record and
-    variant field types). *)
-let reject_float16 (k : kernel) : unit =
-  if Sarek_ir_analysis.kernel_uses_float16 k then
-    Codegen_error.raise_error
-      (Codegen_error.unsupported_construct
-         "f16"
-         "WGSL: float16 not yet supported (#57 slice 2 — needs a module-top \
-          `enable f16;` directive)")
+(* Slice-2 deferral for this backend. The explanation of WHY a whole-kernel gate
+   is needed (and not just the per-element-type arms) lives once, at
+   {!Sarek_ir_codegen.reject_feature}. Named [_kernel] to distinguish it from
+   [Sarek_typer.reject_float16], which rejects an f16 OPERAND — a different
+   concept at a different layer. *)
+let reject_float16_kernel =
+  Sarek_ir_codegen.reject_feature
+    ~raise_:(fun reason ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct "f16" reason))
+    ~backend:"WGSL"
+    ~hint:"needs a module-top `enable f16;` directive"
+    Sarek_ir_analysis.Float16
 
 (** Generate complete WGSL source for a kernel. *)
 let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
     =
-  reject_float16 k ;
+  reject_float16_kernel k ;
   if params_have_float64 k.kern_params then
     Codegen_error.raise_error
       (Codegen_error.unsupported_construct
@@ -1123,7 +1118,7 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
 (** Generate WGSL source with custom type definitions. *)
 let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
-  reject_float16 k ;
+  reject_float16_kernel k ;
   if params_have_float64 k.kern_params then
     Codegen_error.raise_error
       (Codegen_error.unsupported_construct

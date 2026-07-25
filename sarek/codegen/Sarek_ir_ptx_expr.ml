@@ -1302,7 +1302,7 @@ and emit_cast buf alloc r_src dst_ty : string =
          satisfy — so an f16 source would silently fall through to the
          "cvt.rn.f32.s32" integer path and produce garbage. f16 registers must
          not exist until those guards are made class-aware. *)
-      f16_unsupported "ECast to float16"
+      unsupported_elttype TFloat16 "ECast to float16"
   | TFloat32 ->
       if is_f32 r_src then r_src
       else

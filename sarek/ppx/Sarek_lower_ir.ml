@@ -1014,6 +1014,31 @@ and extract_pattern_vars (pat : tpattern) : string list =
 (** Convert a kernel parameter to IR declaration *)
 let lower_param (p : tparam) : Ir.decl =
   (match repr p.tparam_type with
+  | TReg Float16 ->
+      (* #57 slice 1: the delivered surface is `float16 vector`, NOT a scalar
+         f16 parameter — and nothing else in the pipeline stops one.
+
+         It type-checks, and Sarek_ir_cuda maps it to a by-value `__half`
+         formal. But [Execute.vector_arg] has no float16 constructor, so the
+         only way to supply an argument is [Float32 f], which becomes
+         [ArgFloat32] and pushes a 4-byte C float whose address the device then
+         reads as a 2-byte __half. Executed on gfx1100 with
+         `fun (out : float16 vector) (s : float16) -> out.(tid) <- s` and
+         `Float32 3.14159`: HIP produced 0.000476837158 with no error raised,
+         while the interpreter produced the correct 3.140625 — the two oracles
+         silently disagreed, which is the exact property test_hip_f16 exists to
+         guarantee.
+
+         Same class as the f16 rejections already in place for record fields
+         (Sarek_ir_layout), SoA fields (Soa.ml) and whole kernels (the five
+         backend gates); scalar params were the hole. *)
+      Ppxlib.Location.raise_errorf
+        ~loc:Ppxlib.Location.none
+        "Kernel parameter %S has type float16: f16 is a storage-only element \
+         type and cannot be a scalar kernel parameter. Pass a float32 scalar \
+         and narrow inside the kernel with float16_of_float32, or use a \
+         `float16 vector`."
+        p.tparam_name
   | TTuple _ ->
       Ppxlib.Location.raise_errorf
         ~loc:Ppxlib.Location.none

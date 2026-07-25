@@ -12,8 +12,8 @@ depends: [
   "ocaml" {>= "5.4.0"}
   "dune" {>= "3.15"}
   "sarek" {= version}
-  "ctypes"
-  "ctypes-foreign"
+  "ctypes" {>= "0.24.0"}
+  "ctypes-foreign" {>= "0.24.0"}
   "odoc" {with-doc}
 ]
 depopts: ["conf-cuda"]

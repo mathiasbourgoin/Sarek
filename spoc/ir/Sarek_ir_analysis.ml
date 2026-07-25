@@ -152,114 +152,137 @@ let exists_folder ~leaf ?(type_leaf = fun _ -> false) ~native
     visit_lvalue;
   }
 
-(** {1 Float64 detection}
+(** {1 Numeric-width feature detection}
 
-    The float64 detector has a {e rich} leaf: it inspects element types, not
-    just constructors, at every binder, declaration, cast, and array
-    construction, plus record/variant field types at the kernel level. Its
-    [SNative] arm is deliberately asymmetric vs. the atomics detector:
-    native-block float64 usage is a separate, not-yet-decided question (see KB /
-    review notes), so [SNative] is treated as float64-free. It also does not
-    descend into assignment l-values. *)
-let rec elttype_uses_float64 = function
-  | TFloat64 -> true
-  | TRecord (_, fields) ->
-      List.exists (fun (_, t) -> elttype_uses_float64 t) fields
+    ONE parameterised detector family, not one family per width. Adding a width
+    (bf16 is next) is a constructor in {!feature}, an arm in {!elttype_uses},
+    and a line in {!folder} — not a fresh copy of a rich leaf, a folder and five
+    wrappers. The previous shape had float64 and float16 as two structurally
+    identical families whose own docstring said so.
+
+    The family has a {e rich} leaf: it inspects element types, not just
+    constructors, at every binder, declaration, cast and array construction,
+    plus record/variant field types at the kernel level. Two properties are
+    shared by every width and are deliberate:
+
+    - [SNative] is treated as feature-free. Inline native GPU text is opaque;
+      whether a native block may hand-write a wide type is a separate,
+      not-yet-decided question (see KB / review notes), and a native block that
+      does so is responsible for its own feature declaration. This is asymmetric
+      vs. the atomics detector below, which is conservative there.
+    - Assignment l-values are not descended into.
+
+    The one per-width asymmetry is CONSTANTS: float64 has [CFloat64] literals,
+    float16 has no literal and hence no [CFloat16] constant (see
+    {!Sarek_ir_types.elttype}). An f16 value always enters through
+    [ECast (TFloat16, _)] or an f16-typed binder/parameter, both of which the
+    leaf sees. {!const_uses} expresses that directly rather than by omitting an
+    arm.
+
+    Consumers: [kernel_uses Float64] drives the OpenCL/GLSL fp64
+    pragma/extension, and [kernel_uses Float16] drives both the CUDA/HIP
+    conditional [#include <cuda_fp16.h>] and the slice-2 rejection gate at every
+    backend's [generate] entry (see {!Sarek_ir_codegen.reject_feature}).
+
+    {!kernel_requirements} is the set-valued form: it is what a future
+    [Kernel.requirements] capability field reduces to, and it lives in the right
+    layer already ([spoc/ir], no backend dependencies). *)
+
+type feature = Float64 | Float16
+
+let all_features = [Float64; Float16]
+
+let feature_name = function Float64 -> "float64" | Float16 -> "float16"
+
+(** Does element type [t] mention the width [f], transitively through records,
+    variants, arrays and vectors? *)
+let rec elttype_uses (f : feature) = function
+  | TFloat64 -> f = Float64
+  | TFloat16 -> f = Float16
+  | TRecord (_, fields) -> List.exists (fun (_, t) -> elttype_uses f t) fields
   | TVariant (_, constrs) ->
-      List.exists
-        (fun (_, args) -> List.exists elttype_uses_float64 args)
-        constrs
-  | TArray (elt, _) | TVec elt -> elttype_uses_float64 elt
-  | TInt32 | TInt64 | TFloat16 | TFloat32 | TBool | TUnit -> false
+      List.exists (fun (_, args) -> List.exists (elttype_uses f) args) constrs
+  | TArray (elt, _) | TVec elt -> elttype_uses f elt
+  | TInt32 | TInt64 | TFloat32 | TBool | TUnit -> false
 
-(** Check if a constant is float64 *)
-let const_uses_float64 = function CFloat64 _ -> true | _ -> false
+(** Is constant [c] a literal of width [f]? Only float64 has one; f16 has no
+    literal form, so this is [false] for [Float16] by construction rather than
+    by a missing case. *)
+let const_uses (f : feature) c =
+  match (f, c) with Float64, CFloat64 _ -> true | _ -> false
 
-let float64_leaf = function
-  | EConst c -> const_uses_float64 c
-  | EVar v -> elttype_uses_float64 v.var_type
-  | ECast (ty, _) | EArrayCreate (ty, _, _) -> elttype_uses_float64 ty
+let feature_leaf f = function
+  | EConst c -> const_uses f c
+  | EVar v -> elttype_uses f v.var_type
+  | ECast (ty, _) | EArrayCreate (ty, _, _) -> elttype_uses f ty
   | _ -> false
 
-let float64_folder =
+let folder_of f =
   exists_folder
-    ~leaf:float64_leaf
-    ~type_leaf:elttype_uses_float64
+    ~leaf:(feature_leaf f)
+    ~type_leaf:(elttype_uses f)
     ~native:false
     ~visit_lvalue:false
     ()
 
-(** Check if an expression uses float64 *)
-let expr_uses_float64 e = expr_fold float64_folder false e
+(* Built once per width, so the detectors stay allocation-free at call sites
+   exactly as the former top-level [float64_folder] / [float16_folder] were. *)
+let float64_folder = folder_of Float64
 
-(** Check if a statement uses float64 *)
-let stmt_uses_float64 s = stmt_fold float64_folder false s
+let float16_folder = folder_of Float16
 
-(** Check if a declaration uses float64 *)
-let decl_uses_float64 d = decl_fold float64_folder false d
+let folder = function Float64 -> float64_folder | Float16 -> float16_folder
 
-(** Check if a helper function uses float64 *)
-let helper_uses_float64 hf = helper_fold float64_folder false hf
+(** Does expression [e] use width [f]? *)
+let expr_uses f e = expr_fold (folder f) false e
 
-(** Check if a kernel uses float64 anywhere *)
-let kernel_uses_float64 k = kernel_fold float64_folder false k
+(** Does statement [s] use width [f]? *)
+let stmt_uses f s = stmt_fold (folder f) false s
 
-(** {1 Float16 detection}
+(** Does declaration [d] use width [f]? *)
+let decl_uses f d = decl_fold (folder f) false d
 
-    Structurally identical to the float64 detector above — a rich leaf that
-    inspects element types at every binder, declaration, cast and array
-    construction — reusing the same {!exists_folder} skeleton rather than a new
-    traversal family. Two deliberate asymmetries vs. float64:
+(** Does helper function [hf] use width [f]? *)
+let helper_uses f hf = helper_fold (folder f) false hf
 
-    - There is no [const_uses_float16]: f16 has no literal and hence no
-      [CFloat16] constant (see {!Sarek_ir_types.elttype}). An f16 value always
-      enters through [ECast (TFloat16, _)] or an f16-typed binder/parameter,
-      both of which this detector sees.
-    - [SNative] is treated as f16-free, matching float64: inline native GPU text
-      is opaque, and a native block that hand-writes f16 is responsible for its
-      own feature declaration.
+(** Does kernel [k] use width [f] anywhere — params, locals, body, helper params
+    and return types, and record/variant field types? *)
+let kernel_uses f k = kernel_fold (folder f) false k
 
-    This drives conditional emission of the CUDA/HIP [#include <cuda_fp16.h>]
-    exactly as [kernel_uses_float64] drives the OpenCL/GLSL fp64
-    pragma/extension. *)
-let rec elttype_uses_float16 = function
-  | TFloat16 -> true
-  | TRecord (_, fields) ->
-      List.exists (fun (_, t) -> elttype_uses_float16 t) fields
-  | TVariant (_, constrs) ->
-      List.exists
-        (fun (_, args) -> List.exists elttype_uses_float16 args)
-        constrs
-  | TArray (elt, _) | TVec elt -> elttype_uses_float16 elt
-  | TInt32 | TInt64 | TFloat32 | TFloat64 | TBool | TUnit -> false
+(** The set of numeric-width features kernel [k] requires. The set-valued form
+    of {!kernel_uses}; a future [Kernel.requirements] is this. *)
+let kernel_requirements k = List.filter (fun f -> kernel_uses f k) all_features
 
-let float16_leaf = function
-  | EVar v -> elttype_uses_float16 v.var_type
-  | ECast (ty, _) | EArrayCreate (ty, _, _) -> elttype_uses_float16 ty
-  | _ -> false
+(** {2 Per-width aliases}
 
-let float16_folder =
-  exists_folder
-    ~leaf:float16_leaf
-    ~type_leaf:elttype_uses_float16
-    ~native:false
-    ~visit_lvalue:false
-    ()
+    Thin, so existing call sites and the analysis test suite do not churn. New
+    code should prefer [kernel_uses Float16] over the alias. *)
 
-(** Check if an expression uses float16 *)
-let expr_uses_float16 e = expr_fold float16_folder false e
+let elttype_uses_float64 t = elttype_uses Float64 t
 
-(** Check if a statement uses float16 *)
-let stmt_uses_float16 s = stmt_fold float16_folder false s
+let const_uses_float64 c = const_uses Float64 c
 
-(** Check if a declaration uses float16 *)
-let decl_uses_float16 d = decl_fold float16_folder false d
+let expr_uses_float64 e = expr_uses Float64 e
 
-(** Check if a helper function uses float16 *)
-let helper_uses_float16 hf = helper_fold float16_folder false hf
+let stmt_uses_float64 s = stmt_uses Float64 s
 
-(** Check if a kernel uses float16 anywhere *)
-let kernel_uses_float16 k = kernel_fold float16_folder false k
+let decl_uses_float64 d = decl_uses Float64 d
+
+let helper_uses_float64 hf = helper_uses Float64 hf
+
+let kernel_uses_float64 k = kernel_uses Float64 k
+
+let elttype_uses_float16 t = elttype_uses Float16 t
+
+let expr_uses_float16 e = expr_uses Float16 e
+
+let stmt_uses_float16 s = stmt_uses Float16 s
+
+let decl_uses_float16 d = decl_uses Float16 d
+
+let helper_uses_float16 hf = helper_uses Float16 hf
+
+let kernel_uses_float16 k = kernel_uses Float16 k
 
 (** {1 Atomic-operation detection}
 

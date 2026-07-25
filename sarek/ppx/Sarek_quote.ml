@@ -57,6 +57,19 @@ let quote_option ~loc quote_elem = function
   | None -> [%expr None]
   | Some x -> [%expr Some [%e quote_elem ~loc x]]
 
+(** Optional OCaml type constraint for a kernel parameter.
+
+    NOT ON THE LIVE PATH. The parameter constraints the PPX actually emits come
+    from [Sarek_native_intrinsics.core_type_of_typ], which
+    [Sarek_native_gen.ml:305] uses and which returns [[%type: _]] for EVERY
+    [TVec]; this option-returning variant is referenced only by
+    [sarek/tests/unit/test_quote.ml]. It is kept (and kept correct) because it
+    encodes the intended mapping, but changing it changes no generated code.
+
+    In particular: an OCaml constraint cannot police vector element types at all
+    on the real launch path, because [Execute.vector_arg]'s [Vec] constructor is
+    existential and erases them. That check lives at
+    [Execute.check_vector_element_types]. *)
 let core_type_of_typ ~loc (t : typ) : core_type option =
   match repr t with
   | TPrim TUnit -> Some [%type: unit]
@@ -71,6 +84,14 @@ let core_type_of_typ ~loc (t : typ) : core_type option =
       | TReg Float32 -> Some [%type: (float, _) Spoc_core.Vector.t]
       | TReg Float64 -> Some [%type: (float, _) Spoc_core.Vector.t]
       | TPrim TBool -> Some [%type: (bool, _) Spoc_core.Vector.t]
+      | TReg Float16 ->
+          (* f16 is the one element type whose constraint CAN be made fully
+             tight, because its Bigarray element type is nominal:
+             [(float, float16_elt) Vector.t] vs [(float, float32_elt) Vector.t].
+             The other float arms cannot — [(float, _) Vector.t] accepts f32 and
+             f64 alike. Recorded here for that reason; see the note above for why
+             it does not, on its own, protect anything today. *)
+          Some [%type: (float, Bigarray.float16_elt) Spoc_core.Vector.t]
       | TRecord _ | TVariant _ ->
           (* Don't add type constraint for custom vectors - let OCaml infer *)
           None
@@ -194,10 +215,22 @@ end)
     failed with [Unbound module "Gpu"] (#57 slice 1 review, MF4c). It only
     appeared to work when the conversion sat directly inside a vector store,
     because [collect_intrinsic_refs] did not descend into [TEVecSet]'s value —
-    the accident that hid this. [float16_of_float32] / [float32_of_float16] have
-    no [Gpu] counterpart at all and could never have resolved: they are
-    deliberately core primitives rather than [%sarek_intrinsic]s because a
-    stdlib type registration needs a [ctype] and Ctypes has no half type. *)
+    the accident that hid this.
+
+    BLAST RADIUS of returning [None] for every [CorePrimitiveRef], not just the
+    f16 pair: none, because no such witness could ever resolve. When a name is
+    registered BOTH as a core primitive and as a [%sarek_intrinsic] the stdlib
+    registration wins and the ref is an [IntrinsicRef] with a fully-qualified
+    path — verified on the emitted AST, where [global_thread_id] (present in
+    both [Sarek_core_primitives.all] and [Gpu.ml]) comes out as
+    [Sarek_stdlib.Gpu.global_thread_id]. A [CorePrimitiveRef] therefore only
+    ever names a primitive with NO stdlib counterpart, for which the emitted
+    [Gpu.<name>] was unresolvable in every context. Their existence is checked
+    by the typer against [Sarek_core_primitives.all] regardless.
+    [float16_of_float32] / [float32_of_float16] have no [Gpu] counterpart at all
+    and could never have resolved: they are deliberately core primitives rather
+    than [%sarek_intrinsic]s because a stdlib type registration needs a [ctype]
+    and Ctypes has no half type. *)
 let expr_of_intrinsic_ref_opt ~loc (ref : Sarek_env.intrinsic_ref) :
     expression option =
   match ref with

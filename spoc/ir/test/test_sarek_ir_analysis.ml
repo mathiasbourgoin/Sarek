@@ -986,6 +986,103 @@ let test_kernel_uses_float16 () =
   assert (kernel_uses_float16 (kern_with [] SEmpty) = false) ;
   print_endline "  kernel_uses_float16: OK"
 
+(** {1 Parameterised feature API}
+
+    The per-width [*_uses_float64] / [*_uses_float16] names above are thin
+    aliases over ONE parameterised family. These assertions pin the family
+    itself, so a future width (bf16) is covered by construction rather than by
+    another 200 lines of copied assertions. *)
+
+let feature_kern params body : kernel =
+  {
+    kern_name = "test";
+    kern_params = params;
+    kern_locals = [];
+    kern_body = body;
+    kern_types = [];
+    kern_variants = [];
+    kern_funcs = [];
+    kern_native_fn = None;
+  }
+
+let test_feature_api_agrees_with_aliases () =
+  let v_f16 : var =
+    {var_name = "h"; var_id = 0; var_type = TFloat16; var_mutable = false}
+  in
+  let v_f64 : var =
+    {var_name = "d"; var_id = 1; var_type = TFloat64; var_mutable = false}
+  in
+  let k16 = feature_kern [DParam (v_f16, None)] SEmpty in
+  let k64 = feature_kern [DParam (v_f64, None)] SEmpty in
+  let k32 = feature_kern [] SEmpty in
+  (* The alias is exactly the parameterised call, at every level. *)
+  assert (kernel_uses Float16 k16 = kernel_uses_float16 k16) ;
+  assert (kernel_uses Float64 k64 = kernel_uses_float64 k64) ;
+  assert (elttype_uses Float16 TFloat16 = elttype_uses_float16 TFloat16) ;
+  assert (elttype_uses Float64 TFloat64 = elttype_uses_float64 TFloat64) ;
+  assert (const_uses Float64 (CFloat64 1.0) = const_uses_float64 (CFloat64 1.0)) ;
+  assert (
+    expr_uses Float16 (ECast (TFloat16, EConst (CFloat32 1.0)))
+    = expr_uses_float16 (ECast (TFloat16, EConst (CFloat32 1.0)))) ;
+  assert (stmt_uses Float16 SEmpty = stmt_uses_float16 SEmpty) ;
+  assert (
+    decl_uses Float16 (DParam (v_f16, None))
+    = decl_uses_float16 (DParam (v_f16, None))) ;
+  (* Widths are orthogonal: neither detector sees the other's type. *)
+  assert (kernel_uses Float64 k16 = false) ;
+  assert (kernel_uses Float16 k64 = false) ;
+  assert (kernel_uses Float16 k32 = false) ;
+  assert (kernel_uses Float64 k32 = false) ;
+  print_endline "  feature API agrees with the per-width aliases: OK"
+
+let test_const_uses_is_width_specific () =
+  (* The one deliberate per-width asymmetry: float64 has literals, f16 has none,
+     so [const_uses Float16] is false for EVERY constant — by construction, not
+     by a missing match arm. *)
+  List.iter
+    (fun c -> assert (const_uses Float16 c = false))
+    [CFloat64 1.0; CFloat32 1.0; CInt32 1l; CInt64 1L; CBool true; CUnit] ;
+  assert (const_uses Float64 (CFloat64 1.0) = true) ;
+  assert (const_uses Float64 (CFloat32 1.0) = false) ;
+  print_endline "  const_uses is width-specific: OK"
+
+let test_kernel_requirements () =
+  (* The set-valued form a future [Kernel.requirements] reduces to. *)
+  let v_f16 : var =
+    {var_name = "h"; var_id = 0; var_type = TVec TFloat16; var_mutable = false}
+  in
+  let v_f64 : var =
+    {var_name = "d"; var_id = 1; var_type = TVec TFloat64; var_mutable = false}
+  in
+  assert (kernel_requirements (feature_kern [] SEmpty) = []) ;
+  assert (
+    kernel_requirements
+      (feature_kern
+         [DParam (v_f16, Some {arr_elttype = TFloat16; arr_memspace = Global})]
+         SEmpty)
+    = [Float16]) ;
+  assert (
+    kernel_requirements
+      (feature_kern
+         [DParam (v_f64, Some {arr_elttype = TFloat64; arr_memspace = Global})]
+         SEmpty)
+    = [Float64]) ;
+  (* Both widths in one kernel, in declaration order of [all_features]. *)
+  assert (
+    kernel_requirements
+      (feature_kern
+         [
+           DParam (v_f64, Some {arr_elttype = TFloat64; arr_memspace = Global});
+           DParam (v_f16, Some {arr_elttype = TFloat16; arr_memspace = Global});
+         ]
+         SEmpty)
+    = [Float64; Float16]) ;
+  (* Every feature must be reachable from [all_features]; a new constructor that
+     is not added there would silently never be required. *)
+  assert (List.length all_features = 2) ;
+  assert (List.map feature_name all_features = ["float64"; "float16"]) ;
+  print_endline "  kernel_requirements: OK"
+
 let test_kernel_uses_nonfinite_float64 () =
   (* Positive: +inf constant in the body. *)
   let k_inf = empty_kernel (SExpr (EConst (CFloat64 Float.infinity))) in
@@ -1144,6 +1241,9 @@ let () =
   test_expr_uses_float16 () ;
   test_stmt_decl_uses_float16 () ;
   test_kernel_uses_float16 () ;
+  test_feature_api_agrees_with_aliases () ;
+  test_const_uses_is_width_specific () ;
+  test_kernel_requirements () ;
   test_is_atomic_intrinsic_name () ;
   test_expr_uses_atomics () ;
   test_helper_uses_atomics () ;

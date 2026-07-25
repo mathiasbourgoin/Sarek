@@ -7,6 +7,37 @@
     Metal, Vulkan/GLSL). Extracted to avoid duplication of identical
     variant/struct generation logic. *)
 
+(** [reject_feature ~raise_ ~backend ?hint feature k] raises, via [raise_], when
+    kernel [k] uses a numeric width [feature] that this backend has not
+    implemented yet.
+
+    WHY A WHOLE-KERNEL GATE, and not just the backend's per-element-type match
+    arms: those arms only run when the emitter actually asks for a type string,
+    and several positions never do. PTX validated aggregate vector element types
+    through a [| _ -> ()] fall-through and never inspected [hf_ret_type], so an
+    f16 vector parameter the body did not read, or an f16 helper return type,
+    produced a complete, valid, silently-wrong module with no diagnostic at all.
+    {!Sarek_ir_analysis.kernel_uses} folds params, locals, body, helper params
+    AND return types, and record and variant field types, which closes the
+    class.
+
+    THIS IS WHERE THE NEXT WIDTH GETS WIRED IN. Adding bf16 should be a
+    constructor in {!Sarek_ir_analysis.feature} plus one partial application per
+    backend.
+
+    [raise_] is a parameter because each backend raises through its own error
+    functor (which stamps the backend tag) and [spoc/ir] deliberately has no
+    backend dependencies; it receives the composed reason string. [?hint] is
+    omitted by backends whose deferral has no actionable hint. Call it once per
+    backend, partially applied, so the [generate] entries stay one-liners. *)
+val reject_feature :
+  raise_:(string -> unit) ->
+  backend:string ->
+  ?hint:string ->
+  Sarek_ir_analysis.feature ->
+  Sarek_ir_types.kernel ->
+  unit
+
 (** Mangle an OCaml type name into a valid C/GLSL identifier (e.g.
     "Module.point" -> "Module_point"). Replaces '.' with '_'. *)
 val mangle_name : string -> string

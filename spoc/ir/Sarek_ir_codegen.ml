@@ -10,6 +10,53 @@
  * Metal, and Vulkan IR generators: type-name mangling and variant type emission.
  ******************************************************************************)
 
+(** {1 Whole-kernel feature rejection}
+
+    A backend that has not implemented a numeric width yet must refuse a kernel
+    that uses it, at the [generate] entry point, rather than rely on its
+    per-element-type match arms firing somewhere downstream. Those arms only run
+    when the emitter actually asks for a type string, and several positions
+    never do: PTX validated aggregate vector element types through a [| _ -> ()]
+    fall-through and never inspected [hf_ret_type], so an f16 vector parameter
+    the body did not read, or an f16 helper return type, produced a complete,
+    valid, silently-wrong module with no diagnostic at all.
+    {!Sarek_ir_analysis.kernel_uses} is the choke point that closes the whole
+    class: it folds params, locals, body, helper params AND return types, and
+    record and variant field types.
+
+    This is THE place the next width gets wired in. Adding bf16 should be a
+    constructor in {!Sarek_ir_analysis.feature} plus one partial application per
+    backend — not another copy of this explanation.
+
+    [raise_] is a parameter because each backend raises through its own error
+    functor ([Sarek_backend_error.Backend_error.Make], which stamps the backend
+    tag) and [spoc/ir] deliberately has no backend dependencies. It receives the
+    composed reason string. Backends whose deferral has no actionable hint (e.g.
+    Metal, where the arm is a one-liner once it can be tested) omit [?hint].
+
+    Intended use, once per backend, partially applied so the [generate] entries
+    stay one-liners:
+    {[
+      let reject_float16_kernel =
+        Sarek_ir_codegen.reject_feature
+          ~raise_:(fun reason ->
+            Codegen_error.raise_error
+              (Codegen_error.unsupported_construct "f16" reason))
+          ~backend:"OpenCL"
+          ~hint:"needs cl_khr_fp16 enablement"
+          Sarek_ir_analysis.Float16
+    ]} *)
+let reject_feature ~raise_ ~backend ?hint (feature : Sarek_ir_analysis.feature)
+    (k : Sarek_ir_types.kernel) : unit =
+  if Sarek_ir_analysis.kernel_uses feature k then
+    let detail = match hint with None -> "" | Some h -> " — " ^ h in
+    raise_
+      (Printf.sprintf
+         "%s: %s not yet supported (#57 slice 2%s)"
+         backend
+         (Sarek_ir_analysis.feature_name feature)
+         detail)
+
 (** Mangle OCaml type name to valid C/GLSL identifier (e.g., "Module.point" ->
     "Module_point") *)
 let mangle_name name = String.map (fun c -> if c = '.' then '_' else c) name

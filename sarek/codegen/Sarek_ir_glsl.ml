@@ -1527,31 +1527,26 @@ let rename_pc_shadowing_locals ~pc_names ~len_names body =
       Printf.sprintf "sarek_pc_shadow_%s_%d" (escape_glsl_name orig) n)
     body
 
-(** Whole-kernel f16 rejection (#57 slice 1 review).
-
-    The per-type arms above only fire when the emitter actually asks for a type
-    string. Several positions never do: a PTX f16 VECTOR parameter fell through
-    a [| _ -> ()] and an f16 helper RETURN type was never inspected, so PTX
-    emitted complete, valid, silently-wrong modules; the GLSL and WGSL emitters
-    never iterate [kern_locals] at all. One choke point at every public entry
-    point closes the whole class, using the same detector that drives the
-    CUDA/HIP conditional include ({!Sarek_ir_analysis.kernel_uses_float16}: it
-    folds params, locals, body, helper params AND return types, and record and
-    variant field types). *)
-let reject_float16 (k : kernel) : unit =
-  if Sarek_ir_analysis.kernel_uses_float16 k then
-    Codegen_error.raise_error
-      (Codegen_error.unsupported_construct
-         "f16"
-         "GLSL: float16 not yet supported (#57 slice 2 — needs \
-          GL_EXT_shader_explicit_arithmetic_types_float16)")
+(* Slice-2 deferral for this backend. The explanation of WHY a whole-kernel gate
+   is needed (and not just the per-element-type arms) lives once, at
+   {!Sarek_ir_codegen.reject_feature}. Named [_kernel] to distinguish it from
+   [Sarek_typer.reject_float16], which rejects an f16 OPERAND — a different
+   concept at a different layer. *)
+let reject_float16_kernel =
+  Sarek_ir_codegen.reject_feature
+    ~raise_:(fun reason ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct "f16" reason))
+    ~backend:"GLSL"
+    ~hint:"needs GL_EXT_shader_explicit_arithmetic_types_float16"
+    Sarek_ir_analysis.Float16
 
 (** Generate complete GLSL source for a kernel.
     @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.
 *)
 let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
     =
-  reject_float16 k ;
+  reject_float16_kernel k ;
   (* Inline vector-parameter helpers (buffers cannot be passed as GLSL function
      arguments — see Sarek_ir_inline_vec). *)
   let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"Vulkan" k in
@@ -1675,7 +1670,7 @@ let gen_variant_def buf v =
 *)
 let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
-  reject_float16 k ;
+  reject_float16_kernel k ;
   (* Inline vector-parameter helpers (buffers cannot be passed as GLSL function
      arguments — see Sarek_ir_inline_vec). *)
   let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"Vulkan" k in

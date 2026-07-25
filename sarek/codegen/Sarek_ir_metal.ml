@@ -879,27 +879,22 @@ let pretty_print_metal (source : string) : string =
   process_lines 0 lines ;
   Buffer.contents buf
 
-(** Whole-kernel f16 rejection (#57 slice 1 review).
-
-    The per-type arms above only fire when the emitter actually asks for a type
-    string. Several positions never do: a PTX f16 VECTOR parameter fell through
-    a [| _ -> ()] and an f16 helper RETURN type was never inspected, so PTX
-    emitted complete, valid, silently-wrong modules; the GLSL and WGSL emitters
-    never iterate [kern_locals] at all. One choke point at every public entry
-    point closes the whole class, using the same detector that drives the
-    CUDA/HIP conditional include ({!Sarek_ir_analysis.kernel_uses_float16}: it
-    folds params, locals, body, helper params AND return types, and record and
-    variant field types). *)
-let reject_float16 (k : kernel) : unit =
-  if Sarek_ir_analysis.kernel_uses_float16 k then
-    Codegen_error.raise_error
-      (Codegen_error.unsupported_construct
-         "f16"
-         "Metal: float16 not yet supported (#57 slice 2)")
+(* Slice-2 deferral for this backend. The explanation of WHY a whole-kernel gate
+   is needed (and not just the per-element-type arms) lives once, at
+   {!Sarek_ir_codegen.reject_feature}. Named [_kernel] to distinguish it from
+   [Sarek_typer.reject_float16], which rejects an f16 OPERAND — a different
+   concept at a different layer. *)
+let reject_float16_kernel =
+  Sarek_ir_codegen.reject_feature
+    ~raise_:(fun reason ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct "f16" reason))
+    ~backend:"Metal"
+    Sarek_ir_analysis.Float16
 
 (** Generate complete Metal source for a kernel *)
 let generate (k : kernel) : string =
-  reject_float16 k ;
+  reject_float16_kernel k ;
   let buf = Buffer.create 4096 in
 
   (* Collect variables used with atomic operations *)
@@ -961,7 +956,7 @@ let gen_variant_def buf v =
 (** Generate Metal source with custom type definitions *)
 let generate_with_types ~(types : (string * (string * elttype) list) list)
     (k : kernel) : string =
-  reject_float16 k ;
+  reject_float16_kernel k ;
   (* Set current_variants for SMatch binding extraction *)
   current_variants := k.kern_variants ;
   let buf = Buffer.create 4096 in

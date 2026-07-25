@@ -119,6 +119,18 @@ let rec default_value_for_type ~loc (ty : typ) : expression =
           | _ ->
               (* No constructors? This shouldn't happen, but provide a failsafe *)
               [%expr failwith "Cannot create default value for empty variant"]))
+  | TReg Float16 ->
+      (* f16 has no literal and no zero value the native path can name: it is a
+         storage type carried as an OCaml float, and there is no [CFloat16].
+         Falling through to the catch-all below produced "Cannot create default
+         value for this type", which names neither f16 nor the array that needed
+         the default. Mirrors the deliberate rejection at
+         [Sarek_ir_inline_vec.ml]'s TFloat16 arm, but with a diagnostic. *)
+      [%expr
+        failwith
+          "float16 local arrays are not supported (#57 slice 2): f16 is a \
+           storage-only element type with no default value. Use a float32 \
+           local array and narrow with float16_of_float32 on store."]
   | TReg (Custom _name) ->
       (* For unknown custom types registered via [@sarek.type], we can't generate
          a default without knowing the type structure. This should be rare since

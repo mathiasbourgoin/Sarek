@@ -60,3 +60,29 @@
  (alias e2e-hip)
  (action
   (run %{dep:test_hip_rocwmma.exe})))
+
+; #57 slice 1 review: an f16-vector kernel launched with float32 vectors must be
+; rejected by Execute's launch-time element-type check, not silently misread at
+; the wrong stride on the GPU. Self-skips without a device.
+
+(executable
+ (name test_hip_f16_argcheck)
+ (modules test_hip_f16_argcheck)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.interp
+  sarek_native
+  sarek_ir
+  spoc_core
+  sarek_hip
+  unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias e2e-hip)
+ (action
+  (run %{dep:test_hip_f16_argcheck.exe})))

@@ -26,7 +26,10 @@
   test_kirc_kernel
   test_float16)
  ; Link sarek_stdlib to trigger auto-registration of intrinsics
- (libraries sarek_ppx_lib sarek_stdlib sarek alcotest ppxlib str)
+ ; ctypes is listed explicitly (not relied on transitively via sarek): the
+ ; GC-root canary in test_float16 asserts the managed-vs-unmanaged asymmetry
+ ; of the f16 host pointer directly, so it names Ctypes/Ctypes_bigarray.
+ (libraries sarek_ppx_lib sarek_stdlib sarek alcotest ppxlib str ctypes)
  (preprocess
   (pps ppxlib.metaquot)))
 

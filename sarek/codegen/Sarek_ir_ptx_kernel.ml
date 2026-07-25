@@ -366,20 +366,17 @@ let make_ptx_header ?(sm_target = "sm_86") ?(ptx_version = "8.0") () =
     ptx_version
     sm_target
 
-(** Whole-kernel f16 rejection (#57 slice 1 review).
-
-    The per-type arms above only fire when the emitter actually asks for a type
-    string. Several positions never do: a PTX f16 VECTOR parameter fell through
-    a [| _ -> ()] and an f16 helper RETURN type was never inspected, so PTX
-    emitted complete, valid, silently-wrong modules; the GLSL and WGSL emitters
-    never iterate [kern_locals] at all. One choke point at every public entry
-    point closes the whole class, using the same detector that drives the
-    CUDA/HIP conditional include ({!Sarek_ir_analysis.kernel_uses_float16}: it
-    folds params, locals, body, helper params AND return types, and record and
-    variant field types). *)
-let reject_float16 (k : kernel) : unit =
-  if Sarek_ir_analysis.kernel_uses_float16 k then
-    Sarek_ir_ptx_types.f16_unsupported "kernel uses float16"
+(* Slice-2 deferral. PTX keeps its OWN raiser rather than going through
+   {!Sarek_ir_codegen.reject_feature}'s composed message: the wording in
+   [Sarek_ir_ptx_types.unsupported_elttype] explains the %h register-class audit
+   and is shared verbatim with the expression emitter, so one f16 message for the
+   whole backend is better than two. The detector is still the shared choke
+   point — see reject_feature's docstring for why a whole-kernel gate is needed.
+   [_kernel] distinguishes this from [Sarek_typer.reject_float16], which rejects
+   an f16 OPERAND. *)
+let reject_float16_kernel (k : kernel) : unit =
+  if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Float16 k then
+    Sarek_ir_ptx_types.unsupported_elttype TFloat16 "kernel-level float16 usage"
 
 (** Generate PTX for a single kernel. Three-phase: (1) emit body to count
     registers, (2) build header with correct register counts, (3) concatenate.
@@ -391,7 +388,7 @@ let reject_float16 (k : kernel) : unit =
       to [[]] (all AoS) — so the standard backend path emits byte-identical PTX
       to before. *)
 let generate ?(sm_target = "sm_86") ?(soa_params = []) (k : kernel) : string =
-  reject_float16 k ;
+  reject_float16_kernel k ;
   let alloc = make_alloc () in
   List.iter
     (fun hf ->

@@ -1919,13 +1919,22 @@ let expand_kernel ~ctxt payload : expression =
   | Sarek_error.Sarek_error e ->
       let eloc = Sarek_ast.loc_to_ppxlib (Sarek_error.error_loc e) in
       Location.raise_errorf ~loc:eloc "%a" Sarek_error.pp_error e
-  | Location.Error _ as e ->
+  | Location.Error err as e
+    when (Location.Error.get_location err).loc_start.pos_cnum >= 0
+         && Location.Error.get_location err <> Location.none ->
       (* An already-located diagnostic (this is how [Sarek_error.report_errors]
          surfaces typer errors). The catch-all below used to swallow it and
          re-report it as "Sarek internal error: <text>" pinned to the WHOLE
          [%kernel] payload, discarding the sub-expression location the typer had
          computed. Re-raise it untouched so the caret lands on the offending
-         operator. *)
+         operator.
+
+         GUARDED on the location being real: several lowering-time raisers
+         (lower_param's parameter-shape gate, for one) use
+         [~loc:Location.none] because the node they reject carries no location.
+         Re-raising those untouched would point the caret at line 1 — worse than
+         the kernel's own location. Those fall through to the catch-all below,
+         which is exactly what they got before. *)
       raise e
   | e ->
       Location.raise_errorf

@@ -18,8 +18,8 @@ depends: [
   "dune" {>= "3.15"}
   "spoc" {= version}
   "ppxlib" {>= "0.22.0"}
-  "ctypes"
-  "ctypes-foreign"
+  "ctypes" {>= "0.24.0"}
+  "ctypes-foreign" {>= "0.24.0"}
   "yojson" {with-test}
   "alcotest" {with-test}
   "bisect_ppx" {with-test}
