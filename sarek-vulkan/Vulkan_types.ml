@@ -354,12 +354,12 @@ let app_info_sType = field vk_application_info "sType" uint32_t
 let app_info_pNext = field vk_application_info "pNext" (ptr void)
 
 let app_info_pApplicationName =
-  field vk_application_info "pApplicationName" string_opt
+  field vk_application_info "pApplicationName" (ptr char)
 
 let app_info_applicationVersion =
   field vk_application_info "applicationVersion" uint32_t
 
-let app_info_pEngineName = field vk_application_info "pEngineName" string_opt
+let app_info_pEngineName = field vk_application_info "pEngineName" (ptr char)
 
 let app_info_engineVersion = field vk_application_info "engineVersion" uint32_t
 
@@ -907,8 +907,12 @@ let shader_stage_stage =
 let shader_stage_module =
   field vk_pipeline_shader_stage_create_info "module" vk_shader_module
 
+(* [ptr char], not the [string] view: writing an OCaml string through the
+   [string] view allocates an anonymous C buffer whose only GC root is the fat
+   pointer that [setf] immediately discards, leaving pName dangling. Callers
+   must hold the [CArray.t] themselves and keep it alive past the FFI call. *)
 let shader_stage_pName =
-  field vk_pipeline_shader_stage_create_info "pName" string
+  field vk_pipeline_shader_stage_create_info "pName" (ptr char)
 
 let shader_stage_pSpecializationInfo =
   field vk_pipeline_shader_stage_create_info "pSpecializationInfo" (ptr void)

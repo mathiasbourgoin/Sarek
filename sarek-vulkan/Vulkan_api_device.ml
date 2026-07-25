@@ -74,11 +74,17 @@ let get_or_create_instance () =
   | None ->
       (* Application info *)
       let app_info = make vk_application_info in
+      (* Held explicitly rather than written through ctypes' [string_opt] view:
+         that view allocates an anonymous C buffer rooted only by the fat
+         pointer [setf] discards, so the name would dangle by the time the
+         loader reads it in vkCreateInstance. *)
+      let app_name = CArray.of_string "Sarek" in
+      let engine_name = CArray.of_string "SPOC" in
       setf app_info app_info_sType (u32 vk_structure_type_application_info) ;
       setf app_info app_info_pNext null ;
-      setf app_info app_info_pApplicationName (Some "Sarek") ;
+      setf app_info app_info_pApplicationName (CArray.start app_name) ;
       setf app_info app_info_applicationVersion (Unsigned.UInt32.of_int 1) ;
-      setf app_info app_info_pEngineName (Some "SPOC") ;
+      setf app_info app_info_pEngineName (CArray.start engine_name) ;
       setf app_info app_info_engineVersion (Unsigned.UInt32.of_int 1) ;
       (* Vulkan 1.2 *)
       setf
@@ -108,6 +114,11 @@ let get_or_create_instance () =
 
       let inst = allocate vk_instance_ptr (from_voidp vk_instance null) in
       check "vkCreateInstance" (vkCreateInstance (addr create_info) null inst) ;
+      (* [create_info] holds bare addresses into these; keep them reachable
+         until the driver has finished reading them. *)
+      ignore (Sys.opaque_identity app_info) ;
+      ignore (Sys.opaque_identity app_name) ;
+      ignore (Sys.opaque_identity engine_name) ;
       instance_ref := Some !@inst ;
       !@inst
 
@@ -264,11 +275,11 @@ let get idx =
          features are left at their default (false), matching the previous
          pEnabledFeatures = null behaviour.
 
-         [enabled_features] is bound in this function's scope (not inside
-         the [if]) so the ctypes-managed memory it owns stays alive - and
-         therefore [addr enabled_features] stays valid - across the
-         [vkCreateDevice] call below; a binding local to the [if] branch
-         would let the GC reclaim it before the FFI call runs. *)
+         NOTE: hoisting this binding out of the [if] does NOT by itself keep
+         [addr enabled_features] valid across [vkCreateDevice] - in OCaml a
+         value dies after its last USE, not at the end of its scope, so the
+         GC may reclaim it the moment [setf] has copied the bare address in.
+         The explicit keep-alives after the call are what make it safe. *)
       let enabled_features = make vk_physical_device_features in
       if supports_fp64 then begin
         let enabled_bools = getf enabled_features phys_features_bools in
@@ -290,6 +301,10 @@ let get idx =
       check
         "vkCreateDevice"
         (vkCreateDevice phys_dev (addr dev_create_info) null device) ;
+      (* [dev_create_info] holds bare addresses into all three. *)
+      ignore (Sys.opaque_identity enabled_features) ;
+      ignore (Sys.opaque_identity queue_create_info) ;
+      ignore (Sys.opaque_identity queue_priority) ;
 
       (* Get compute queue *)
       let queue = allocate vk_queue_ptr (from_voidp vk_queue null) in

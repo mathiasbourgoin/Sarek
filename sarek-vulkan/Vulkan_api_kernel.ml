@@ -171,10 +171,19 @@ let create_shader_module device spirv =
        (addr create_info)
        null
        shader_module) ;
+  (* [create_info.pCode] holds a bare address into [code]; [setf] dropped the
+     fat pointer that rooted it, so [code] must be kept reachable across the
+     call or the GC may free the SPIR-V out from under the driver. *)
+  ignore (Sys.opaque_identity code) ;
   !@shader_module
 
 (** Compile GLSL source to compute pipeline *)
 let compile device ~name ~source =
+  (* Same hazard as [launch] below: Vulkan reads through the pointers we store
+     into the *CreateInfo structs during the call, but [setf] keeps only the
+     bare address, dropping the fat pointer that rooted the referent. Every
+     such referent must stay reachable until the call returns. *)
+  let keep = Sys.opaque_identity in
   (* 1. Check cache for SPIR-V *)
   let driver_version =
     let maj, min, patch = device.Device.api_version in
@@ -265,6 +274,7 @@ let compile device ~name ~source =
        (addr dsl_create_info)
        null
        dsl) ;
+  ignore (keep bindings) ;
 
   (* Create pipeline layout *)
   let pl_create_info = make vk_pipeline_layout_create_info in
@@ -301,6 +311,8 @@ let compile device ~name ~source =
        (addr pl_create_info)
        null
        pipeline_layout) ;
+  ignore (keep push_constant_range) ;
+  ignore (keep dsl) ;
 
   (* Create compute pipeline *)
   let stage_info = make vk_pipeline_shader_stage_create_info in
@@ -315,7 +327,11 @@ let compile device ~name ~source =
     shader_stage_stage
     (Unsigned.UInt32.of_int vk_shader_stage_compute_bit) ;
   setf stage_info shader_stage_module shader_module ;
-  setf stage_info shader_stage_pName "main" ;
+  (* Held explicitly: [stage_info] is copied BY VALUE into [pipeline_info]
+     below, so even keeping [stage_info] alive would not root the entry-point
+     string buffer. *)
+  let entry_name = CArray.of_string "main" in
+  setf stage_info shader_stage_pName (CArray.start entry_name) ;
   setf stage_info shader_stage_pSpecializationInfo null ;
 
   let pipeline_info = make vk_compute_pipeline_create_info in
@@ -341,6 +357,8 @@ let compile device ~name ~source =
       pipeline
   in
   check "vkCreateComputePipelines" result ;
+  ignore (keep entry_name) ;
+  ignore (keep stage_info) ;
 
   (* Create descriptor pool *)
   let pool_size = make vk_descriptor_pool_size in
@@ -365,6 +383,7 @@ let compile device ~name ~source =
   check
     "vkCreateDescriptorPool"
     (vkCreateDescriptorPool device.Device.device (addr pool_info) null pool) ;
+  ignore (keep pool_size) ;
 
   (* Allocate persistent descriptor set *)
   let ds_ai = make vk_descriptor_set_allocate_info in
@@ -383,7 +402,7 @@ let compile device ~name ~source =
   check
     "vkAllocateDescriptorSets"
     (vkAllocateDescriptorSets device.Device.device (addr ds_ai) desc_set) ;
-  ignore dsl_ptr ;
+  ignore (keep dsl_ptr) ;
   {
     shader_module;
     pipeline = !@pipeline;
