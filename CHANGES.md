@@ -107,11 +107,14 @@
   Dumping the generated PTX showed `sqrt.approx.f32` (~1 ulp) was the only
   non-correctly-rounded instruction in the whole `df64_sqrt` body, where it
   serves as the Newton seed. This is a global change: every f32 sqrt in every
-  PTX kernel is now correctly rounded. Measured on a GTX 1070 Max-Q (sm_61,
-  CUDA 12.9, driver 580.119.02): `df64_sqrt` 1.42e-14 (failing) → 8.53e-15 in
-  `test_df64`, and 1.68e-14 (failing) → 8.87e-15 in `test_real64`'s df64
-  fallback — both bit-identical to the interpreter, so the seed was the whole
-  defect on this path. Costs ~12% kernel time on a sqrt-dominated benchmark
+  PTX kernel is now correctly rounded. Measured worst-case relative error over
+  each test's own input set, on a GTX 1070 Max-Q (sm_61, CUDA 12.9, driver
+  580.119.02): `df64_sqrt` 1.42e-14 (failing) → 8.53e-15 in `test_df64`, and
+  1.68e-14 (failing) → 8.87e-15 in `test_real64`'s df64 fallback. Both post-fix
+  figures coincide with the interpreter's for the same inputs — agreement
+  between summary statistics, not element-wise identity — so the seed accounted
+  for the whole gap these tests can see. Sampled maxima on one device and
+  toolchain, not bounds. Costs ~12% kernel time on a sqrt-dominated benchmark
   (`bench_nbody` n=4096: 1.535 ms → 1.722 ms); `rsqrt` is unchanged for code
   that wants the fast form. The same bug class remains open in the OpenCL
   backend (no `-cl-fp32-correctly-rounded-divide-sqrt`, sqrt 1.81e-14) and the

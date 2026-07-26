@@ -25,14 +25,20 @@
  *   Sarek_df64.Host to fill/read them.
  *
  * PRECISION CONTRACT
- *   - Relative error, per operation, as actually measured by test_df64.ml on
- *     a backend that meets the contract (see PER-BACKEND STATUS for which):
- *     add 5.3e-15, sub 6.5e-15 (~2^-47); mul 9.1e-15, div 5.1e-15
- *     (~2^-46.6 .. 2^-47.8); sqrt 8.5e-15 on every backend that lowers it to
- *     a correctly rounded f32 sqrt, but see KNOWN RESIDUAL - it still reaches
- *     1.8e-14 on the NVIDIA OpenCL and Vulkan paths. Roughly double the 24-bit
- *     float32 precision. This is a measured range, NOT a proven bound: do
- *     not quote a single "2^-47" figure for the whole op set.
+ *   - Worst-case relative error, per operation, as MEASURED by test_df64.ml
+ *     over ITS OWN input set, on the specific devices and toolchains listed in
+ *     PER-BACKEND STATUS: add 5.3e-15, sub 6.5e-15 (~2^-47); mul 9.1e-15,
+ *     div 5.1e-15 (~2^-46.6 .. 2^-47.8); sqrt 8.5e-15 on the devices where it
+ *     was measured after the correctly-rounded lowering, but see KNOWN
+ *     RESIDUAL - it still reaches 1.8e-14 on the NVIDIA OpenCL and Vulkan
+ *     paths. Roughly double the 24-bit float32 precision.
+ *
+ *     These are SAMPLED MAXIMA, not bounds and not guarantees. They say what
+ *     the worst input in one test happened to produce on one device under one
+ *     toolchain; a different input set, device or compiler may be worse. Do
+ *     not quote a single "2^-47" figure for the whole op set, and do not
+ *     restate any figure here for a device it was not measured on - that
+ *     generalisation is the exact mistake described under PER-BACKEND STATUS.
  *   - Exponent range is that of float32 (~1e-38 .. ~3e38 normalised).
  *     Underflow follows float32. OVERFLOW DOES NOT: once a leading product
  *     or sum reaches an infinity, the error term becomes an infinity of the
@@ -87,13 +93,22 @@
  *
  *   CUDA/PTX on NVIDIA Pascal
  *   (GTX 1070 Max-Q, sm_61, CUDA 12.9, driver 580.119.02)
- *       mul 9.07e-15, div 5.08e-15, sqrt 8.53e-15 - contract met.
+ *       Measured worst-case relative error over test_df64's input set:
+ *       mul 9.07e-15, div 5.08e-15, sqrt 8.53e-15 - contract met on this
+ *       device and toolchain.
  *       The sqrt figure is post-[sqrt.rn.f32] and EXECUTED on that device
  *       (2026-07-26). With the older [sqrt.approx.f32] lowering, measured on
  *       the same box in the same session, it was 1.42e-14 and test_df64
- *       recorded it as failing. 8.53e-15 is bit-for-bit the interpreter's
- *       figure, which is the strongest form this claim can take: the device
- *       now matches the software reference exactly.
+ *       recorded it as failing.
+ *       That 8.53e-15 equals the figure the interpreter reports for the same
+ *       input set. Read that precisely: it is agreement between two SUMMARY
+ *       STATISTICS - the max over the inputs - not a demonstration that the
+ *       device and the interpreter produce identical results element by
+ *       element. No per-element device-vs-interpreter comparison was run for
+ *       df64 (unlike the f16 sweep, which did compare bit patterns). What it
+ *       licenses is: the seed was large enough to account for the whole
+ *       pre-fix gap, and nothing detectable BY THIS TEST remains. It does not
+ *       license "the device matches the software reference".
  *       Before the contraction barrier: mul 5.92e-08, div 5.64e-08,
  *       sqrt 2.88e-08, i.e. plain float32.
  *
@@ -188,14 +203,19 @@
  *   into force for [sqrt] on PTX. This is a GLOBAL change - it affects every
  *   f32 sqrt in every PTX kernel, not only df64.
  *
- *   MEASURED on sm_61 / CUDA 12.9 (one line changed, everything else equal,
- *   both directions built and executed in the same session):
+ *   MEASURED worst-case relative error on a GTX 1070 Max-Q (sm_61, CUDA 12.9,
+ *   driver 580.119.02), one line changed and everything else equal, both
+ *   directions built and executed in the same session. Each figure is the max
+ *   over that test's own input set, on that one device and toolchain:
  *     - test_df64 CUDA/PTX sqrt:          1.42e-14 FAIL -> 8.53e-15 PASS
  *       (test_df64 goes from FAILED(1) to PASSED as a whole)
  *     - test_real64 CUDA/PTX fallback:    1.68e-14 FAIL -> 8.87e-15 PASS
- *   Both land bit-for-bit on the interpreter's figure for the same input set
- *   (8.53e-15 and 8.87e-15 respectively), so the seed was the entire defect
- *   on this path - there is no second contributor left to find.
+ *   Both post-fix figures coincide with what the interpreter reports for the
+ *   same input sets. That is agreement between two summary statistics, not
+ *   evidence of element-wise identity - no per-element comparison was run.
+ *   The honest reading: the seed accounted for the whole gap this test can
+ *   see, and no FURTHER contributor is detectable by it. A different input
+ *   set could still expose one.
  *
  *   COST, measured (bench_nbody n=4096, sqrt-dominated inner loop, sm_61):
  *   1.535 ms / 10.93 GFLOP/s with [sqrt.approx.f32] against 1.722 ms /

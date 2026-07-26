@@ -1809,9 +1809,11 @@ and transcendental_intrinsic_handlers () :
            instruction's result as its Newton seed, and [sqrt.approx.f32] was
            the ONLY non-correctly-rounded instruction in the whole emitted
            df64_sqrt body -- every other op is fma.rn, div.rn, or an exact
-           add/sub. Executed on a GTX 1070 Max-Q (sm_61, CUDA 12.9): df64_sqrt
-           goes from 1.42e-14 (failing 2^-46) to 8.53e-15, the interpreter's
-           own figure, at a cost of ~12% on a sqrt-dominated kernel.
+           add/sub. Executed on a GTX 1070 Max-Q (sm_61, CUDA 12.9): df64_sqrt's
+           measured worst-case relative error over test_df64's input set goes
+           from 1.42e-14 (failing 2^-46) to 8.53e-15, matching what the
+           interpreter reports for the same inputs, at a cost of ~12% on a
+           sqrt-dominated kernel. A sampled maximum on one device, not a bound.
 
            This is a GLOBAL choice, not a per-caller one: there is no separate
            df64 sqrt IR node, so [df64_sqrt] and user code reach this same arm.

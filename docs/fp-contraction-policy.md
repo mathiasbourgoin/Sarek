@@ -119,8 +119,11 @@ Legend for the evidence column:
   `Ptx_codegen_error`), so there is nothing to rely on there yet.
 - **`Sarek_df64` meeting its precision contract on CUDA/PTX and OpenCL on
   NVIDIA Pascal, and on OpenCL on AMD** — `sqrt` on CUDA/PTX is now included
-  (8.53e-15, executed; it was the `sqrt.approx.f32` seed). The OpenCL and
-  Vulkan `sqrt` residuals recorded in `Sarek_df64`'s header are still open.
+  (measured worst-case 8.53e-15 over `test_df64`'s input set on GTX 1070 Max-Q
+  / sm_61 / CUDA 12.9; the cause was the `sqrt.approx.f32` seed). These are
+  sampled maxima on named devices, not bounds — see the caveat at the top of
+  `Sarek_df64`'s PRECISION CONTRACT. The OpenCL and Vulkan `sqrt` residuals
+  recorded in that header are still open.
 - **No `-use_fast_math` / `-ftz=true` reaching nvrtc**, enforced rather than
   documented (§5) — in **both** the inline (`--ftz=true`) and the separated
   (`--ftz true`) spelling, and fail-closed on a bare `--ftz` whose value cannot
@@ -441,11 +444,21 @@ architectures ranges, same answer.
 - **`FMUL.FTZ` was observed, subnormal divergence was not.** §5 shows the flag
   changes the instruction; it does not show a wrong answer, because that
   requires running the kernel.
-- **`Sarek_df64`'s `sqrt` residual on NVIDIA** (1.42e-14 CUDA/PTX, 1.68e-14 /
-  1.81e-14 in `test_real64`) is unexplained. The leading hypothesis —
-  `sqrt.approx.f32` as the Newton seed — has a one-line experiment
-  (`sqrt.rn.f32` instead) that needs an NVIDIA device to evaluate. Recorded in
-  `Sarek_df64`'s header; do not promote it to a cause.
+- **`Sarek_df64`'s `sqrt` residual — CUDA/PTX resolved, OpenCL and Vulkan still
+  open.** The one-line experiment this bullet used to describe as needing an
+  NVIDIA device has been run. On CUDA/PTX the `sqrt.approx.f32` Newton seed was
+  the cause: emitting `sqrt.rn.f32` moves the measured worst-case relative error
+  from 1.42e-14 to 8.53e-15 in `test_df64` and from 1.68e-14 to 8.87e-15 in
+  `test_real64` (GTX 1070 Max-Q / sm_61 / CUDA 12.9), each figure being the max
+  over that test's own input set. Both coincide with the interpreter's figure
+  for the same inputs — agreement between summary statistics, not a
+  demonstration of element-wise identity. The OpenCL residual (1.81e-14) is the **same
+  bug class in a different backend** — `clBuildProgram` is called with no
+  options and OpenCL's default permits a 3-ulp `sqrt`; adding
+  `-cl-fp32-correctly-rounded-divide-sqrt` moves it to 8.87e-15, measured on the
+  same device, tracked as #136. The **Vulkan** residual (1.68e-14 on NVIDIA,
+  while Intel UHD 630 passes at 1.17e-14) has no established cause — that one is
+  still "do not promote a hypothesis to a cause".
 - **Metal is entirely unverified** (no Apple hardware), and it is the one
   backend currently compiled with fast math on.
 
