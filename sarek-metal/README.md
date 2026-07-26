@@ -83,7 +83,7 @@ Metal_error.feature_not_supported "raw pointer arguments"
 | Sarek Intrinsic | Metal C Equivalent | Description |
 |-----------------|-------------------|-------------|
 | `barrier()` | `threadgroup_barrier(mem_flags::mem_threadgroup)` | Threadgroup barrier |
-| `warp_barrier()` | `sub_group_threadgroup_barrier(...)` | Subgroup barrier |
+| `warp_barrier()` | `simdgroup_barrier(mem_flags::mem_threadgroup)` | SIMD-group barrier |
 | `memfence()` | `threadgroup_barrier(mem_flags::mem_device)` | Device memory fence |
 
 ### Atomic Operations

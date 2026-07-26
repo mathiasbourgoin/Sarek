@@ -38,6 +38,7 @@ let space_qualifier = function
 (** Element byte address: shared arrays use 32-bit pointer arithmetic (their
     base is a 32-bit window offset); local and global arrays use 64-bit. *)
 let emit_elt_addr buf alloc r_base r_idx elt_type ~space =
+  check_index_reg "array index" r_idx ;
   match space with
   | Some SpaceShared ->
       let r_off = new_u32 alloc in

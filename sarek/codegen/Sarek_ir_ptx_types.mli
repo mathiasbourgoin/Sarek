@@ -208,6 +208,14 @@ type reg_class = RU32 | RU64 | RF32 | RF64
 (** [reg_class r] is the class of register [r], from its name prefix. *)
 val reg_class : string -> reg_class
 
+(** [check_index_reg what r] raises [unsupported] unless [r] is a 32-bit integer
+    register. Every element-address computation in this backend assumes a u32
+    index ([shl.b32] / [cvt.u64.u32]); a [%rd] or float index silently produced
+    invalid PTX that failed only at ptxas/module-load time. Rejects rather than
+    narrowing, because narrowing a u64 index would silently truncate. [what]
+    names the site (e.g. ["array index"], or the atomic's name). *)
+val check_index_reg : string -> string -> unit
+
 (** [mov_op_of_class c] is the typed PTX mov opcode for class [c]. *)
 val mov_op_of_class : reg_class -> string
 

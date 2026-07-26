@@ -1007,6 +1007,120 @@ let test_atomic_stride_and_space_rejected () =
   | _ -> Alcotest.fail "global-form atomic on shared array should be rejected"
   | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()
 
+(** #70(a): the index register class was never checked. Every address
+    computation — [Sarek_ir_ptx_mem.emit_elt_addr] for ordinary indexing and
+    [intr_atomic_addr] for atomics — treats the index register as 32-bit
+    ([shl.b32] on the shared path, [cvt.u64.u32] on the global one). An index
+    expression that evaluates to a [%rd] (u64) or [%f]/[%fd] (float) register
+    therefore produced text like
+
+    cvt.u64.u32 %rd4, %rd3;
+
+    which is invalid PTX. It failed at ptxas or module load with no Sarek-level
+    message, while the VALUE operand of the very same atomic was already
+    class-checked one line earlier ([intr_check_atom_operand]).
+
+    Both call sites are covered here: a fix in only one of them leaves the same
+    hole in the other. *)
+let test_int64_index_rejected () =
+  let idx64 = make_var "idx64" TInt64 in
+  let a = make_var "a" (TVec TFloat32) in
+  let out = make_var "out" (TVec TFloat32) in
+  let params =
+    [
+      DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+    ]
+  in
+  (* Ordinary array read through an int64 index. *)
+  let read_body =
+    SLet
+      ( idx64,
+        EConst (CInt64 3L),
+        SAssign
+          (LArrayElem ("out", EConst (CInt32 0l)), EArrayRead ("a", EVar idx64))
+      )
+  in
+  (match
+     base_kernel "i64_index_read" params read_body [] |> Sarek_ir_ptx.generate
+   with
+  | ptx ->
+      Alcotest.fail
+        (Printf.sprintf
+           "an int64 array index should be rejected, but PTX was emitted:\n%s"
+           ptx)
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()) ;
+  (* Array write through an int64 index. *)
+  let write_body =
+    SLet
+      ( idx64,
+        EConst (CInt64 3L),
+        SAssign (LArrayElem ("out", EVar idx64), EConst (CFloat32 1.0)) )
+  in
+  (match
+     base_kernel "i64_index_write" params write_body [] |> Sarek_ir_ptx.generate
+   with
+  | ptx ->
+      Alcotest.fail
+        (Printf.sprintf
+           "an int64 array-write index should be rejected, but PTX was emitted:\n\
+            %s"
+           ptx)
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()) ;
+  (* Atomic through an int64 index. *)
+  let acc = make_var "acc" (TVec TInt32) in
+  let atomic_body =
+    SLet
+      ( idx64,
+        EConst (CInt64 3L),
+        SExpr
+          (EIntrinsic
+             ( ["Sarek_stdlib"; "Gpu"],
+               "atomic_add_int32",
+               [EVar acc; EVar idx64; EConst (CInt32 1l)] )) )
+  in
+  match
+    base_kernel
+      "i64_index_atomic"
+      [DParam (acc, Some {arr_elttype = TInt32; arr_memspace = Global})]
+      atomic_body
+      []
+    |> Sarek_ir_ptx.generate
+  with
+  | ptx ->
+      Alcotest.fail
+        (Printf.sprintf
+           "an int64 atomic index should be rejected, but PTX was emitted:\n%s"
+           ptx)
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()
+
+(** Positive control for the check above: an ordinary int32 index must still
+    generate, or the rejection would be indistinguishable from "indexing is
+    broken". *)
+let test_int32_index_still_generates () =
+  let tid = make_var "tid" TInt32 in
+  let a = make_var "a" (TVec TFloat32) in
+  let out = make_var "out" (TVec TFloat32) in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign (LArrayElem ("out", EVar tid), EArrayRead ("a", EVar tid)) )
+  in
+  let ptx =
+    base_kernel
+      "i32_index"
+      [
+        DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
+        DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      ]
+      body
+      []
+    |> Sarek_ir_ptx.generate
+  in
+  assert_contains ptx "cvt.u64.u32" ;
+  assert_contains ptx "ld.global.f32"
+
 (** Check that [ptx] does NOT contain [marker]. *)
 let assert_absent ptx marker ~why =
   let mlen = String.length marker in
@@ -3036,5 +3150,13 @@ let () =
             "SoA leaf name cannot alias a user param named <vec>_soa_<field>"
             `Quick
             test_soa_param_name_collision_safe;
+          Alcotest.test_case
+            "non-u32 array/atomic index is rejected, not emitted as invalid PTX"
+            `Quick
+            test_int64_index_rejected;
+          Alcotest.test_case
+            "int32 index still generates (positive control)"
+            `Quick
+            test_int32_index_still_generates;
         ] );
     ]

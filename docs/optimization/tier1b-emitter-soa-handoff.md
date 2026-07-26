@@ -174,7 +174,8 @@ static), 1.1–1.3× on multi-pointer-param bandwidth-bound kernels. Not started
 
 ### 3. Warp primitives (roadmap "half-built")
 
-`SWarpBarrier` / the `warp_barrier` intrinsic exist and emit `bar.warp.sync`;
+`SWarpBarrier` exists and emits `bar.warp.sync`, but there is no `warp_barrier`
+intrinsic: no PPX syntax constructs the statement, so it is emitter-only today;
 warp **shuffle** (`shfl.sync`) is not modelled in the IR or emitted. Adding it
 is an IR-surface + typer + emitter change (a new intrinsic family), larger than
 either item above and not blocking SoA. Scope as its own task.

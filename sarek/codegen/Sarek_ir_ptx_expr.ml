@@ -1512,6 +1512,9 @@ and intr_new_atom_result alloc = function
    PTX space name and the address register. *)
 and intr_atomic_addr buf alloc (env : env) ~intr ~global_only ~elt_shift arr
     r_idx =
+  (* The VALUE operand is class-checked by intr_check_atom_operand; the index
+     was not, though every address computation below assumes it is u32. *)
+  check_index_reg intr r_idx ;
   let r_base = env_lookup env arr.var_name in
   (* PTX has no atom.local — and per-thread memory needs no atomics. *)
   (match arr_space_of alloc arr.var_name with

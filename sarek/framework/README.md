@@ -131,10 +131,16 @@ warp_id                                   - Warp/wavefront ID
 *Synchronization (4)*:
 ```
 block_barrier      - Block-level barrier (__syncthreads)
-warp_barrier       - Warp-level barrier
-memory_fence       - Memory fence
-memory_fence_block - Block-level memory fence
+warp_barrier       - Warp-level barrier        [classification only]
+memory_fence       - Memory fence              [classification only]
+memory_fence_block - Block-level memory fence  [classification only]
 ```
+
+Only `block_barrier` is a callable kernel primitive. The other three are names
+in this classification table; `warp_barrier` and `memory_fence` reach a backend
+only via the `SWarpBarrier` / `SMemFence` IR statements, which no PPX syntax
+constructs, and `memory_fence_block` / `memory_fence_device` are declared core
+primitives that every GPU backend rejects as unknown intrinsics.
 
 *Atomic Operations (9)*:
 ```

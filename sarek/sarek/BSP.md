@@ -43,8 +43,14 @@ Explicit barriers are also available:
 
 ```ocaml
 Gpu.block_barrier  (* Synchronize all threads in block *)
-Gpu.warp_barrier   (* Synchronize threads within a warp *)
 ```
+
+`block_barrier` is the only synchronisation primitive the front end declares.
+`warp_barrier` and `memory_fence` exist as IR statements (`SWarpBarrier`,
+`SMemFence`) with a lowering in every backend, but no PPX syntax constructs
+them, so they are **not callable from a kernel** today. Earlier revisions of
+this section and of the backend READMEs presented `Gpu.warp_barrier` as
+available; it never was.
 
 ## Convergence Safety
 

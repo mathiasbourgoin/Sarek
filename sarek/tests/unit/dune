@@ -138,3 +138,12 @@
 (test
  (name test_metal_gate)
  (libraries metal_gate alcotest str))
+
+; Per-backend emission of SBarrier / SWarpBarrier / SMemFence. These are six
+; hand-written match arms with nothing holding them to the instruction each
+; target actually has, and the Metal one had drifted to a non-existent MSL
+; function. See the module header for what these assertions are and are not.
+
+(test
+ (name test_sync_stmt_emission)
+ (libraries sarek.codegen sarek_ppx_lib spoc.ir alcotest))

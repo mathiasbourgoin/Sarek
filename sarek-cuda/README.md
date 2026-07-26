@@ -1120,7 +1120,11 @@ atomic_cas : 'a array -> int -> 'a -> 'a -> 'a
 (* Block-level barrier *)
 barrier : unit -> unit           (* __syncthreads() *)
 
-(* Warp-level barrier (CUDA 9.0+) *)
+(* NOT CALLABLE from a kernel: `warp_barrier` and the fences below are IR
+   statements (SWarpBarrier / SMemFence) with a CUDA lowering, but no PPX
+   syntax constructs them and they are not declared as core primitives.
+   `block_barrier` is the only synchronisation name a kernel can write.
+   Listed here as the emitter contract, not as an API. *)
 warp_barrier : unit -> unit      (* __syncwarp() *)
 
 (* Memory fence *)

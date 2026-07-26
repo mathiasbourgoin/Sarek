@@ -286,6 +286,31 @@ let reg_class r =
   else if String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' then RU64
   else RU32
 
+(** Every element-address computation in this backend treats the index register
+    as 32-bit: [shl.b32] on the shared path, [cvt.u64.u32] on the global one
+    (see [Sarek_ir_ptx_mem.emit_elt_addr] and [intr_atomic_addr]). That is the
+    backend-wide invariant — Sarek types array indices as [TInt32] — but it was
+    only ever assumed. An index expression evaluating to a [%rd] or [%f]/[%fd]
+    register produced text like [cvt.u64.u32 %rd4, %rd3;], which is invalid PTX
+    and surfaced only at ptxas/module-load time with no Sarek-level message.
+
+    Reject rather than coerce. Narrowing a u64 index with [cvt.u32.u64] would
+    silently truncate, which is the failure mode this backend already refuses
+    elsewhere (see the M5 stride and space checks); a float index has no meaning
+    at all. [what] names the site so the message says which index. *)
+let check_index_reg what r =
+  match reg_class r with
+  | RU32 -> ()
+  | RU64 ->
+      unsupported
+        (what ^ ": index register " ^ r
+       ^ " is int64; array indices are 32-bit here — convert the index to \
+          int32 first (an implicit narrowing would silently truncate)")
+  | RF32 | RF64 ->
+      unsupported
+        (what ^ ": index register " ^ r
+       ^ " is a float; array indices must be int32")
+
 let mov_op_of_class = function
   | RU32 -> "mov.u32"
   | RU64 -> "mov.u64"

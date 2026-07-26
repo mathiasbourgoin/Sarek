@@ -608,11 +608,16 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf indent ;
       Buffer.add_string buf "threadgroup_barrier(mem_flags::mem_threadgroup);\n"
   | SWarpBarrier ->
-      (* Metal doesn't have warp-level sync, use sub_group_barrier if available *)
+      (* MSL's warp-level ("SIMD-group") barrier is simdgroup_barrier. The old
+         text here, sub_group_threadgroup_barrier, is an OpenCL-shaped name that
+         MSL does not declare, so it would have been a hard MSL compile error.
+         It survived because nothing constructs SWarpBarrier from PPX syntax
+         yet, so the arm has never reached a Metal compiler --- and because the
+         repo's own Metal plugin table (sarek-metal/Metal_plugin.ml) already
+         said simdgroup_barrier, the two disagreed in silence. Pinned by
+         sarek/tests/unit/test_sync_stmt_emission.ml. *)
       Buffer.add_string buf indent ;
-      Buffer.add_string
-        buf
-        "sub_group_threadgroup_barrier(mem_flags::mem_threadgroup);\n"
+      Buffer.add_string buf "simdgroup_barrier(mem_flags::mem_threadgroup);\n"
   | SMemFence ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "threadgroup_barrier(mem_flags::mem_device);\n"
