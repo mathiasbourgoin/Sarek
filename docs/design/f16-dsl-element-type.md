@@ -947,6 +947,16 @@ conversions.
 >    OpenCL and HIP look maximally different at the source level and are the same
 >    compiler underneath. GLSL/Vulkan on RADV is a third front end onto ACO and
 >    should be assumed to carry this defect until measured.
+>
+>    **Do not over-read the RADV result that landed alongside this** (#106/#126,
+>    the `Vulkan / GLSL` row): RADV was measured *not* to contract **7 f32
+>    contraction shapes**, ISA-identical with and without `precise`. That is a
+>    result about `a*b+c`-style f32 contraction. The f16 defect here is a
+>    different combine — a multiply absorbed into the f32→f16 *narrowing*
+>    (`v_fma_mixlo_f16`) — and RADV emits no f16 today because GLSL f16 is still
+>    rejected, so nothing has exercised that path. The f32 null is encouraging
+>    and is **not** a measurement of the f16 narrowing. Slice 2b must sweep the
+>    f16 shapes on RADV directly.
 > 2. *Port the property, not the patch.* The HIP work delivered a barrier; what
 >    was actually reusable was the exhaustive-sweep harness and the bit-identity
 >    property. The barrier itself did not survive a change of front end.

@@ -159,7 +159,9 @@ Legend for the evidence column:
   `OpenCL / rusticl (f16 narrowing)` row. `Sarek_ir_opencl` therefore rejects
   f16 at codegen, which is a *deliberate* refusal backed by a measurement, not
   an unimplemented feature. Re-test before enabling it: the blocker is a Mesa
-  optimiser behaviour and could change with a Mesa release.
+  optimiser behaviour and could change with a Mesa release. That re-test is
+  automated — `sarek-opencl/test/test_opencl_f16_tripwire.ml` fails when the
+  fusion stops happening, so the refusal cannot quietly outlive its reason.
 - **A product you compute yourself staying unfused across a `Sarek_df64`
   boundary.** `[@sarek.module]` bodies are inlined into your kernel, so
   `df64_add_f32 acc (x *. y)` re-creates the exact fusable pattern the library
