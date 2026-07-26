@@ -108,6 +108,16 @@ module Device = struct
     max_clock_freq : int;
     supports_fp64 : bool;
     is_cpu : bool; (* True for CPU OpenCL devices - enables zero-copy *)
+    single_fp_config : int64;
+        (* CL_DEVICE_SINGLE_FP_CONFIG, verbatim. Read once at device
+           construction because [Program.build] needs it on every compile to
+           decide whether -cl-fp32-correctly-rounded-divide-sqrt is LEGAL on
+           this device: the OpenCL spec makes passing that option an error
+           (CL_INVALID_BUILD_OPTIONS) unless CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT
+           is set here. Kept as the raw bitfield rather than a decoded bool so
+           the other bits (notably CL_FP_DENORM, clear on both devices on this
+           machine) stay available without a second query. See
+           [Opencl_fp] for the full audit. *)
   }
 
   let get_devices platform device_type =
@@ -244,6 +254,10 @@ module Device = struct
     let is_cpu = Int64.logand device_type 2L <> 0L in
     (* CL_DEVICE_TYPE_CPU = 2 *)
 
+    (* cl_device_fp_config is a cl_bitfield, i.e. cl_ulong — the same width
+       [get_info_long] already reads for CL_DEVICE_TYPE just above. *)
+    let single_fp_config = get_info_long handle CL_DEVICE_SINGLE_FP_CONFIG in
+
     {
       id = idx;
       handle;
@@ -259,6 +273,7 @@ module Device = struct
       max_clock_freq;
       supports_fp64;
       is_cpu;
+      single_fp_config;
     }
 
   let init () = () (* OpenCL doesn't require explicit init *)
@@ -553,15 +568,44 @@ module Program = struct
     (* Store bigarray in record to prevent GC until after build *)
     {handle = prog; context; _source = ba}
 
+  (** Build a program.
+
+      [options] is what the CALLER wants; it is not what [clBuildProgram]
+      receives. {!Opencl_fp.build_options} screens it — raising
+      {!Opencl_fp.Fp_conformance_violation} on anything that would relax float
+      semantics below docs/fp-contraction-policy.md §1 — and appends the options
+      this backend requires on its own behalf, gated on the device's
+      [CL_DEVICE_SINGLE_FP_CONFIG].
+
+      This is the ONLY place an option string reaches [clBuildProgram], and that
+      is deliberately where the guard sits rather than at the caller: it screens
+      flags a FUTURE maintainer of this module adds itself, not merely a
+      caller's. Same placement argument as [Cuda_nvrtc.compile_with_string_opts]
+      (docs/fp-contraction-policy.md §5).
+
+      Until #136 this function passed [options] straight through, and every
+      caller in the tree passed nothing — so the effective option string was
+      empty and Sarek silently accepted each vendor's default, including a
+      [sqrt] of up to 3 ulp. *)
   let build program ?(options = "") () =
     let devices = CArray.make cl_device_id 1 in
     CArray.set devices 0 program.context.device.Device.handle ;
+    let effective_options =
+      Opencl_fp.build_options
+        ~single_fp_config:program.context.device.Device.single_fp_config
+        ~caller:options
+    in
+    Spoc_core.Log.debugf
+      Spoc_core.Log.Kernel
+      "OpenCL clBuildProgram options: %S (device fp_config 0x%Lx)"
+      effective_options
+      program.context.device.Device.single_fp_config ;
     let result =
       clBuildProgram
         program.handle
         Unsigned.UInt32.one
         (CArray.start devices)
-        options
+        effective_options
         (from_voidp void null)
         (from_voidp void null)
     in

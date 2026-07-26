@@ -4,7 +4,8 @@
   test_sarek_ir_opencl
   test_opencl_cache_two_kernels
   test_opencl_ffi_check_funnel
-  test_opencl_f16_tripwire)
+  test_opencl_f16_tripwire
+  test_opencl_fp_conformance)
  (libraries sarek_opencl sarek_backend_error alcotest str)
  (instrumentation
   (backend bisect_ppx)))

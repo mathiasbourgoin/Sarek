@@ -22,6 +22,7 @@
  (modules
   Opencl_error
   Opencl_types
+  Opencl_fp
   Opencl_bindings
   Opencl_api
   Opencl_plugin_base
