@@ -516,6 +516,119 @@ check("F4 CONTROL: every required key present and well-formed still passes", () 
   assert.strictEqual(status, 0);
 });
 
+// ── the local-patch declaration must be TRUE ─────────────────────────────
+//
+// This file is the `tests` reference of the `backlog #98` entry in
+// scripts/review-bundle.manifest.json's local_patches[], so it is the right
+// place to verify that the entry is not lying. The bundle's guard checks the
+// declaration from the outside; these check it from the inside, and both halves
+// matter for a different reason:
+//
+//   present-in-patched  — a marker that is not there makes the guard report a
+//                         revert that did not happen: a false alarm, which is
+//                         how a correct guard gets mistaken for a broken tool.
+//   absent-in-pristine  — a marker that upstream ALSO contains can never go
+//                         missing, so the guard can never detect a real revert.
+//                         This is the half people skip, and skipping it makes
+//                         the whole mechanism a no-op that reports success.
+//   non-empty           — an empty needle matches every file, silently turning
+//                         the marker mechanism into a no-op reporting success.
+//                         (A guard bug found and fixed on #305; asserted here
+//                         so a future edit cannot reintroduce it from this side.)
+//
+// I verified all three by hand when drafting the entry. Doing it by hand is the
+// wrong shape for precisely the reason this whole task keeps re-teaching, so it
+// is mechanical now.
+const PATCH_REF = "backlog #98";
+const INTENDED_MARKERS = ["review-gate-hardening", "legacy_skip_authorized", "--allow-legacy"];
+
+function readManifest() {
+  const file = path.join(REPO, "scripts", "review-bundle.manifest.json");
+  if (!fs.existsSync(file)) return null;
+  return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+// Markers as declared, or as intended if the entry has not landed yet. The
+// not-yet-landed branch is NOT a skip: it asserts the declaration will be true
+// at the moment it is made, which is the whole point of landing the entry
+// atomically with the wiring.
+function markersUnderTest() {
+  const manifest = readManifest();
+  const declared = manifest && Array.isArray(manifest.local_patches)
+    ? manifest.local_patches.find((p) => p && p.ref === PATCH_REF)
+    : null;
+  if (!declared) return { markers: INTENDED_MARKERS, paths: ["scripts/check-review-convergence.js"], declared: false };
+  const markers = Array.isArray(declared.markers)
+    ? declared.markers
+    : Object.values(declared.markers || {}).flat();
+  return { markers, paths: declared.paths, declared: true };
+}
+
+check("local-patch markers are non-empty (an empty needle matches everything)", () => {
+  const { markers } = markersUnderTest();
+  assert.ok(markers.length > 0, "a reapply_on_upgrade patch with no markers cannot detect its own revert");
+  for (const marker of markers) {
+    assert.strictEqual(typeof marker, "string", `marker ${JSON.stringify(marker)} is not a string`);
+    assert.notStrictEqual(marker.trim(), "", "an empty marker matches every file and silently no-ops the mechanism");
+  }
+});
+
+check("local-patch markers are PRESENT in every patched path", () => {
+  const { markers, paths } = markersUnderTest();
+  for (const rel of paths) {
+    const file = path.join(REPO, rel);
+    assert.ok(fs.existsSync(file), `declared patch path does not exist: ${rel}`);
+    const body = fs.readFileSync(file, "utf8");
+    for (const marker of markers) {
+      assert.ok(body.includes(marker), `marker ${JSON.stringify(marker)} is absent from ${rel} — the guard would report a revert that did not happen`);
+    }
+  }
+});
+
+check("local-patch markers are ABSENT from the pristine upstream file", () => {
+  // The half people skip. A marker upstream ALSO contains can never go missing,
+  // so it can never detect a revert.
+  //
+  // The first version of this check compared against the merge-base and did
+  // `if (upstream.status !== 0) continue` when the path was not tracked there.
+  // Pre-#305 that is every path, so it ran ZERO assertions and reported ok — a
+  // vacuous gate, inside the test whose subject is markers that must be able to
+  // fail. Now it always asserts something real and says which tier it got.
+  const { markers, paths } = markersUnderTest();
+  const mergeBase = spawnSync("git", ["merge-base", "HEAD", "origin/main"], { cwd: REPO, encoding: "utf8" });
+  const base = mergeBase.status === 0 ? mergeBase.stdout.trim() : null;
+
+  let compared = 0;
+  for (const rel of base ? paths : []) {
+    const upstream = spawnSync("git", ["show", `${base}:${rel}`], { cwd: REPO, encoding: "utf8" });
+    if (upstream.status !== 0) continue; // not tracked at the merge-base yet (pre-#305)
+    compared += 1;
+    for (const marker of markers) {
+      assert.ok(
+        !upstream.stdout.includes(marker),
+        `marker ${JSON.stringify(marker)} is ALSO in the upstream ${rel} — it can never go missing, so it can never detect a revert`
+      );
+    }
+  }
+
+  // Weaker tier, but a real assertion rather than an absent one: a marker must
+  // be specific enough that upstream could not plausibly contain it. Runs
+  // ALWAYS, so this check can never report success without checking something.
+  for (const marker of markers) {
+    assert.ok(marker.length >= 8, `marker ${JSON.stringify(marker)} is too short to prove a revert`);
+    assert.ok(
+      /[-_]|[a-z][A-Z]/.test(marker),
+      `marker ${JSON.stringify(marker)} is a single generic word — upstream could contain it, so it cannot prove a revert`
+    );
+  }
+  if (compared === 0) {
+    process.stdout.write(
+      "       (tier: specificity only — no declared path is tracked at the merge-base yet;\n" +
+        "        the upstream-diff tier arms itself once #305 lands and the gate is tracked)\n"
+    );
+  }
+});
+
 // ── teardown ─────────────────────────────────────────────────────────────
 if (scratchDir) fs.rmSync(scratchDir, { recursive: true, force: true });
 
