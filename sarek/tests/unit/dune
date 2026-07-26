@@ -129,4 +129,13 @@
 
 (test
  (name test_opencl_gate)
- (libraries sarek.codegen spoc.ir opencl_gate alcotest str))
+ (libraries sarek.codegen spoc.ir opencl_gate alcotest str unix))
+
+; Negative controls for the Metal validation gate (#139). Layer 2 (xcrun metal)
+; cannot run outside macOS, so layer 1 (address-space text check) is the only
+; cover on the machines this code is written on — these cases are the proof it
+; can go red, driven from the pre-fix golden verbatim. CPU-only, no device.
+
+(test
+ (name test_metal_gate)
+ (libraries metal_gate alcotest))

@@ -38,6 +38,42 @@ val reject_feature :
   Sarek_ir_types.kernel ->
   unit
 
+(** {1 Measured f16 refusals (#57 slices 2a/2b, single-sourced by #138)}
+
+    Two backends left {!reject_feature} because "not yet supported" was false of
+    them: their refusal is a MEASUREMENT, not a queue position. Each is refused
+    in two places — the per-element-type arm of [<backend>_type_of_elttype] and
+    the whole-kernel [reject_float16_kernel] — and each sentence used to be
+    written out at both sites.
+
+    That is not a DRY nit. The sentence carries the number that justifies the
+    refusal, and the two OpenCL copies had already drifted apart before this
+    constant existed: one opened "float16 is not supported — not because the
+    codegen is missing", the other "float16 is refused by measurement, not
+    pending implementation", and only the second was the wording the docs and
+    the goldens cite. Two copies of a measured claim become two claims.
+
+    Single-sourcing also fixes the direction that matters next: when Mesa stops
+    fusing and one of these refusals is lifted, one constant makes every
+    remaining reference to it obviously stale. Duplicates just rot.
+
+    The verbatim expectations in
+    sarek/tests/codegen_golden/test_cuda_f16_golden.ml are NOT a third copy in
+    that sense — they are the golden, deliberately spelled out so that
+    re-folding a backend into the shared composer breaks a test rather than
+    passing silently, and one case there asserts both sites of each backend
+    agree. *)
+
+(** The OpenCL f16 refusal diagnostic. Raised by both
+    [Sarek_ir_opencl.opencl_type_of_elttype] and
+    [Sarek_ir_opencl.reject_float16_kernel]. *)
+val opencl_float16_refusal : string
+
+(** The GLSL f16 refusal diagnostic. Raised by both
+    [Sarek_ir_glsl.glsl_type_of_elttype] and
+    [Sarek_ir_glsl.reject_float16_kernel]. *)
+val glsl_float16_refusal : string
+
 (** Mangle an OCaml type name into a valid C/GLSL identifier (e.g.
     "Module.point" -> "Module_point"). Replaces '.' with '_'. *)
 val mangle_name : string -> string

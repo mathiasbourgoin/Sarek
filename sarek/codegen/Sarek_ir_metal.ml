@@ -663,11 +663,74 @@ let rec gen_stmt buf indent = function
     Metal-specific {!gen_param_metal} below (buffer-index variant). *)
 let is_vec_type = Sarek_ir_codegen.is_vec_type
 
+(* A buffer parameter: pointer into an address space, plus its length.
+
+   ADDRESS SPACE IS [device], NOT [constant], and that is a decision rather than
+   an accident (#139). Metal has no default address space for a pointer
+   parameter, so the choice has to be made explicitly; [constant] is the wrong
+   half of it for a Sarek [vec]:
+
+   - MSL 3.2 §4.2/§4.3: objects in [constant] are read-only for the whole
+     lifetime of the kernel. Sarek vecs are read-write — [record_kernel] writes
+     [pts[idx] = ...] and [variant_kernel] writes [out[idx] = ...] — so
+     [constant] would not compile even if the reference form below were fixed.
+   - [constant] additionally carries an implementation-defined size limit and
+     wants argument data that does not change per dispatch; a Sarek vec is a
+     general MTLBuffer bound with [setBuffer:].
+   - Every other backend already maps a vec param to a mutable global pointer
+     (CUDA [T* __restrict__], OpenCL [__global T* restrict]), and Metal's own
+     {!metal_param_type} and [metal_memspace Global] already say [device]. The
+     [DParam (_, None)] arm was the single place in the backend that disagreed.
+
+   The defect this replaces: that arm treated EVERY [DParam (v, None)] as a
+   scalar and emitted [constant <ty> &name]. For a vec-typed [v],
+   [metal_type_of_elttype] returns a pointer type, so the emission was
+   [constant Point2* &pts] — a reference to a pointer whose POINTEE has no
+   address space, which Metal rejects outright ("must have address space
+   qualifier"). Both such goldens (record_kernel, variant_kernel) had never
+   compiled; nothing on Linux could see it. *)
+let gen_buffer_param buf atomic_vars idx v ~memspace ~elttype =
+  Buffer.add_string buf (metal_memspace memspace) ;
+  Buffer.add_char buf ' ' ;
+  (* Use atomic type if this variable is used with atomics *)
+  let type_str =
+    if List.mem v.var_name atomic_vars then metal_atomic_type_of_elttype elttype
+    else metal_type_of_elttype elttype
+  in
+  Buffer.add_string buf type_str ;
+  Buffer.add_string buf "* " ;
+  Buffer.add_string buf v.var_name ;
+  Buffer.add_string buf " [[buffer(" ;
+  Buffer.add_string buf (string_of_int idx) ;
+  Buffer.add_string buf ")]], constant int &sarek_" ;
+  Buffer.add_string buf v.var_name ;
+  Buffer.add_string buf "_length [[buffer(" ;
+  Buffer.add_string buf (string_of_int (idx + 1)) ;
+  Buffer.add_string buf ")]]" ;
+  idx + 2
+
 (** Generate parameter with Metal buffer attributes, returns next buffer index
 *)
 let gen_param_metal buf atomic_vars idx = function
+  (* Vec/array parameter carrying no [array_info]. The element type and the
+     memory space come from the variable's own type; a bare [TVec] is a global
+     buffer, exactly as {!metal_param_type} already assumed. *)
+  | DParam (v, None) when is_vec_type v.var_type ->
+      let memspace, elttype =
+        match v.var_type with
+        | TVec elt -> (Global, elt)
+        | TArray (elt, ms) -> (ms, elt)
+        | _ ->
+            (* unreachable: [is_vec_type] is exactly TVec | TArray *)
+            Codegen_error.raise_error
+              (Codegen_error.unsupported_construct
+                 "gen_param_metal"
+                 "is_vec_type accepted a non-vec type")
+      in
+      gen_buffer_param buf atomic_vars idx v ~memspace ~elttype
   | DParam (v, None) ->
-      (* Scalar parameter - wrap in constant buffer *)
+      (* Scalar parameter - wrap in constant buffer. A scalar genuinely is
+         uniform and read-only per dispatch, so [constant T &] is right here. *)
       Buffer.add_string buf "constant " ;
       Buffer.add_string buf (metal_type_of_elttype v.var_type) ;
       Buffer.add_string buf " &" ;
@@ -675,37 +738,16 @@ let gen_param_metal buf atomic_vars idx = function
       Buffer.add_string buf " [[buffer(" ;
       Buffer.add_string buf (string_of_int idx) ;
       Buffer.add_string buf ")]]" ;
-      (* Add length parameter for vectors *)
-      if is_vec_type v.var_type then begin
-        Buffer.add_string buf ", constant int &sarek_" ;
-        Buffer.add_string buf v.var_name ;
-        Buffer.add_string buf "_length [[buffer(" ;
-        Buffer.add_string buf (string_of_int (idx + 1)) ;
-        Buffer.add_string buf ")]]" ;
-        idx + 2
-      end
-      else idx + 1
+      idx + 1
   | DParam (v, Some arr) ->
       (* Array with explicit info - always needs length *)
-      Buffer.add_string buf (metal_memspace arr.arr_memspace) ;
-      Buffer.add_char buf ' ' ;
-      (* Use atomic type if this variable is used with atomics *)
-      let type_str =
-        if List.mem v.var_name atomic_vars then
-          metal_atomic_type_of_elttype arr.arr_elttype
-        else metal_type_of_elttype arr.arr_elttype
-      in
-      Buffer.add_string buf type_str ;
-      Buffer.add_string buf "* " ;
-      Buffer.add_string buf v.var_name ;
-      Buffer.add_string buf " [[buffer(" ;
-      Buffer.add_string buf (string_of_int idx) ;
-      Buffer.add_string buf ")]], constant int &sarek_" ;
-      Buffer.add_string buf v.var_name ;
-      Buffer.add_string buf "_length [[buffer(" ;
-      Buffer.add_string buf (string_of_int (idx + 1)) ;
-      Buffer.add_string buf ")]]" ;
-      idx + 2
+      gen_buffer_param
+        buf
+        atomic_vars
+        idx
+        v
+        ~memspace:arr.arr_memspace
+        ~elttype:arr.arr_elttype
   | DLocal _ | DShared _ ->
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct

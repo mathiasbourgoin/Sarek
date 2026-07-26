@@ -1068,9 +1068,35 @@ pass there. This branch touches no OpenCL codegen (its OpenCL changes are all in
 `sarek-opencl/` runtime bindings) and no f64 path, so it cannot be the cause.
 Worth noting nonetheless: cases 7-8 of the same sweep **SKIP** on f64 while
 16-20 **FAIL**, so the sweep's own capability gating is inconsistent — some f64
-cases detect the missing extension and some do not. That is a test-scoping bug
-in the sweep, pre-existing, and a good candidate for the "a skip is not a pass"
-treatment the CUDA gates got.
+cases detect the missing extension and some do not.
+
+**FIXED (#140).** The investigation found something worse than "some paths
+check": *neither* did. Cases 7-8 skipped for a completely unrelated reason — a
+hardcoded `validation_exclusions` entry for `Float64.abs_float` /
+`Float64.copysign`, which are user-callable but absent from
+`Sarek_pure_registry.float64_list` and therefore die at codegen — and would have
+skipped identically on a machine with full fp64. Cases 16-20 simply ran and hit
+the toolchain. There was no fp64 predicate anywhere in the gate.
+
+Note also what the capability *is* here. The sweep never touches a device; it
+compiles with `clang -x cl`. So the authority is not the device's `cl_khr_fp64`
+(`Opencl_api.ml`'s `supports_fp64`, which the e2e suite uses) but whether *this
+clang* can compile a `double` kernel — Apple clang's `arm64-apple-darwin` target
+does not list the extension, so the `#pragma OPENCL EXTENSION cl_khr_fp64 :
+enable` the production path emits is ignored with a warning and `double` is an
+error. `Opencl_clang.fp64_available ()` establishes that by compiling a `double`
+probe, the same way `available ()` establishes clang itself. The sweep now asks
+it **before** the exclusion list, so on a toolchain without fp64 all *seven*
+float64 cases report one verdict for one stated reason.
+
+Reproduced on Linux rather than argued: `SAREK_OPENCL_GATE_NO_FP64=1` adds
+`-cl-ext=-cl_khr_fp64` to every invocation, which makes clang 22.1.6 emit the
+identical `error: use of type 'double' requires cl_khr_fp64 support`. With the
+new predicate disabled that reproduces the M4 split exactly — 7, 8 SKIP and
+16-20 FAIL; with it enabled, seven uniform SKIPs. `ci/assert-toolchain.sh` now
+carries an fp64 positive control so the skip cannot become CI's normal outcome,
+and `test_opencl_gate.ml` re-runs itself under the switch so a suppression that
+did nothing would fail rather than pass.
 
 All six `metal_contraction_pragma` cases pass on the M4.
 
@@ -1085,7 +1111,47 @@ qualifications are device and constant"*.
 **Pre-existing and unrelated to the FP work** — a control run with the pragma
 stripped from those same two sources fails identically. It is a codegen
 correctness bug that had never been observable, because nothing in this project
-had ever compiled Metal on Apple hardware. **Not fixed here**: choosing between
-`device` and `constant` for record and variant buffers is a design decision, not
-a typo. Recorded because it is the clearest illustration of what "unverified
-backend" was actually costing.
+had ever compiled Metal on Apple hardware.
+
+**FIXED (#139), and the design decision is `device`.** The cause: the
+`DParam (v, None)` arm of `gen_param_metal` treated *every* parameter without an
+`array_info` as a scalar and emitted `constant <ty> &name`; for a vec-typed `v`,
+`metal_type_of_elttype` returns a pointer type, so the emission was a reference
+to a pointer whose pointee had no address space.
+
+`constant` is not a live option for a Sarek `vec`, so the choice is not close:
+objects in `constant` are read-only for the lifetime of the kernel (MSL 3.2
+§4.2/§4.3) and both offending kernels *write* through the parameter
+(`pts[idx] = ...`, `out[idx] = ...`), `constant` carries an
+implementation-defined size limit and expects per-dispatch-invariant data, and
+every other backend already lowers a vec parameter to a mutable global pointer
+(CUDA `T* __restrict__`, OpenCL `__global T* restrict`). Metal's own
+`metal_param_type` and `metal_memspace Global` already said `device`; this arm
+was the single place in the backend that disagreed with them.
+
+The gate that would have caught it now exists: `metal_validation_sweep`, with
+`Metal_gate.Metal_addrspace` (layer 1, pure text, no toolchain — so it runs on
+the Linux machines where the defect was introduced) and
+`Metal_gate.Metal_compile` (layer 2, `xcrun metal`, macOS only, honest skip with
+a stated reason elsewhere). Layer 1's red path is driven permanently by
+`sarek/tests/unit/test_metal_gate.ml`, which feeds it the pre-fix golden
+verbatim.
+
+### 10.12 A third defect, found the same way (#132)
+
+`wgsl_validation_sweep`'s corpus contained no multi-field variant payload and,
+worse, no `SMatch` at all — `variant_kernel` only *constructs* variants — so
+every accessor and every `switch` the WGSL match emitter can produce was
+unreachable from any executable gate. The field-naming half of #132 had already
+been closed by PR #306 (`EMatch` and all five `SMatch` paths now share one
+`payload_layout`, and WGSL's `indexed = true` spelling `.MkPair_v_0` matches its
+flat struct). What the coverage hole was still hiding was a different, live bug:
+the emitter wrote `default:` only when the source match had a wildcard arm, and
+WGSL requires exactly one default clause in every `switch`. Every exhaustive
+match therefore produced a module `naga` rejects with *"missing default case"* —
+i.e. the ordinary case. C's `switch` needs no default and GLSL's likewise, so
+WGSL was the odd one out here too, exactly as it was for payload spelling.
+
+Adding `smatch_multi_payload` to the sweep turned it red on the first run;
+emitting a synthetic empty `default` when no `PWild` arm is present turned it
+green.

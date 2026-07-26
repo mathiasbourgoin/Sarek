@@ -484,6 +484,84 @@ let test_determinism () =
   let b = gen k in
   Alcotest.(check string) "two generations agree" a b
 
+(* ---------------------------------------------------------------------------
+   #138: one measured claim, one copy of it.
+
+   OpenCL and GLSL each refuse f16 in TWO places — the per-element-type arm of
+   [<backend>_type_of_elttype] and the whole-kernel [reject_float16_kernel] —
+   and each had its own copy of the sentence. Those sentences are not prose:
+   they carry the MEASUREMENT that justifies the refusal (620/63488 on OpenCL
+   via rusticl, 2912-5075/63488 on GLSL via RADV, both ACO), and a measurement
+   stated twice is a measurement that will eventually be stated two ways.
+
+   It already had been. Before this change the OpenCL pair read:
+
+     elttype arm: "OpenCL: float16 is not supported — not because the codegen
+                   is missing, but because rusticl/radeonsi fuses ..."
+     kernel arm:  "OpenCL: float16 is refused by measurement, not pending
+                   implementation — rusticl/radeonsi fuses ..."
+
+   Same defect, same numbers, two different openings — and only one of them is
+   the wording the docs and this file's [reason_opencl] pin. That is the drift
+   the shared constant removes, and this case is what would have caught it.
+
+   It also guards the direction that matters next: when one backend's fusion is
+   fixed upstream and its refusal is lifted, a single constant makes every
+   remaining reference obviously stale, whereas duplicates just rot. *)
+
+let reason_of_exn name f =
+  match f () with
+  | (_ : string) ->
+      Alcotest.failf "%s: expected an f16 refusal, but it succeeded" name
+  | exception
+      Sarek_backend_error.Backend_error.Backend_error
+        (Sarek_backend_error.Backend_error.Codegen
+           {
+             backend = _;
+             error =
+               Sarek_backend_error.Backend_error.Unsupported_construct
+                 {construct = _; reason};
+           }) ->
+      reason
+  | exception e ->
+      Alcotest.failf
+        "%s: wrong exception (expected Codegen): %s"
+        name
+        (Printexc.to_string e)
+
+(* Both refusal sites of one backend must produce the SAME string. Compared
+   exactly, and compared against the constant the docs cite, so neither site can
+   drift and neither can drift *together* away from [reason_opencl] /
+   [reason_glsl] above. *)
+let check_one_refusal_text ~backend ~expected ~from_elttype ~from_kernel =
+  let a = reason_of_exn (backend ^ "/elttype arm") from_elttype in
+  let b = reason_of_exn (backend ^ "/kernel arm") from_kernel in
+  Alcotest.(check string)
+    (backend
+   ^ ": the per-element-type arm and the whole-kernel arm state the SAME \
+      measured reason")
+    b
+    a ;
+  Alcotest.(check string)
+    (backend ^ ": that reason is the one the docs and goldens pin")
+    expected
+    a
+
+let test_f16_refusal_text_is_single_sourced () =
+  let k = f16_scale_kernel () in
+  check_one_refusal_text
+    ~backend:"OpenCL"
+    ~expected:reason_opencl
+    ~from_elttype:(fun () ->
+      Sarek_codegen.Sarek_ir_opencl.opencl_type_of_elttype TFloat16)
+    ~from_kernel:(fun () -> Sarek_codegen.Sarek_ir_opencl.generate k) ;
+  check_one_refusal_text
+    ~backend:"GLSL"
+    ~expected:reason_glsl
+    ~from_elttype:(fun () ->
+      Sarek_codegen.Sarek_ir_glsl.glsl_type_of_elttype TFloat16)
+    ~from_kernel:(fun () -> Sarek_codegen.Sarek_ir_glsl.generate k)
+
 let () =
   Alcotest.run
     "cuda_f16_golden"
@@ -522,5 +600,9 @@ let () =
             "opencl/glsl/metal/wgsl still accept f32"
             `Quick
             test_deferred_backends_still_accept_f32;
+          Alcotest.test_case
+            "each backend's f16 refusal text has exactly one source (#138)"
+            `Quick
+            test_f16_refusal_text_is_single_sourced;
         ] );
     ]

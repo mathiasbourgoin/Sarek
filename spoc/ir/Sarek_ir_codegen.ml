@@ -67,6 +67,60 @@ let reject_feature ~raise_ ~backend ?hint (feature : Sarek_ir_analysis.feature)
          (Sarek_ir_analysis.feature_name feature)
          detail)
 
+(** {1 Measured f16 refusals (#57 slices 2a/2b, single-sourced by #138)}
+
+    Two backends left {!reject_feature} because "not yet supported" was false of
+    them: their refusal is a MEASUREMENT, not a queue position. Each is refused
+    in two places — the per-element-type arm of [<backend>_type_of_elttype] and
+    the whole-kernel [reject_float16_kernel] — and each sentence used to be
+    written out at both sites.
+
+    That is not a DRY nit. The sentence carries the number that justifies the
+    refusal, and the two OpenCL copies had already drifted apart before this
+    constant existed: one opened "float16 is not supported — not because the
+    codegen is missing", the other "float16 is refused by measurement, not
+    pending implementation", and only the second was the wording the docs and
+    the goldens cite. Two copies of a measured claim become two claims.
+
+    Single-sourcing also fixes the direction that matters next: when Mesa stops
+    fusing and one of these refusals is lifted, one constant makes every
+    remaining reference to it obviously stale. Duplicates just rot.
+
+    The verbatim expectations in
+    sarek/tests/codegen_golden/test_cuda_f16_golden.ml are NOT a third copy in
+    that sense — they are the golden, deliberately spelled out so that
+    re-folding a backend into the shared composer breaks a test rather than
+    passing silently, and one case there asserts both sites of each backend
+    agree. *)
+
+(* Measured 2026-07-26 on RX 7900 XTX (navi31) AND the integrated Raphael iGPU
+   (gfx1036), rusticl/radeonsi. Reproducer:
+   tools/probes/opencl_f16_contraction_probe.c. Full table and method:
+   docs/fp-contraction-policy.md, "OpenCL / rusticl (f16 narrowing)". The long
+   rationale — why the codegen is NOT what is missing, and which barriers were
+   measured not to work — lives on the [TFloat16] arm of
+   [Sarek_ir_opencl.opencl_type_of_elttype]. *)
+let opencl_float16_refusal =
+  "OpenCL: float16 is refused by measurement, not pending implementation — \
+   rusticl/radeonsi fuses the f32 multiply into the f32->f16 narrowing, so \
+   620/63488 binary16 inputs disagree with the interpreter, and no affordable \
+   barrier exists on this path. See docs/fp-contraction-policy.md (#57 slice \
+   2a)."
+
+(* Measured 2026-07-26 on RX 7900 XTX (RADV NAVI31) AND the integrated Raphael
+   iGPU (RADV RAPHAEL_MENDOCINO), Mesa 26.1.4-arch3.1, Vulkan 1.4.354; both
+   devices report identical counts, and the two-narrowing shape fails worse
+   (5075/63488). Gate: sarek-vulkan/test/test_vulkan_f16_tripwire.ml. Full
+   table, ISA and method: docs/fp-contraction-policy.md, "Vulkan / RADV (f16
+   narrowing)". Rationale, and why `precise` does not rescue it, on the
+   [TFloat16] arm of [Sarek_ir_glsl.glsl_type_of_elttype]. *)
+let glsl_float16_refusal =
+  "GLSL: float16 is refused by measurement, not pending implementation — \
+   RADV's ACO backend absorbs the f32->f16 narrowing into the arithmetic that \
+   feeds it, so 2912/63488 binary16 inputs disagree with the interpreter on a \
+   single narrowing, and `precise` does not prevent it. See \
+   docs/fp-contraction-policy.md (#57 slice 2b)."
+
 (** Mangle OCaml type name to valid C/GLSL identifier (e.g., "Module.point" ->
     "Module_point") *)
 let mangle_name name = String.map (fun c -> if c = '.' then '_' else c) name

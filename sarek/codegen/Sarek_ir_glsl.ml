@@ -281,12 +281,7 @@ let rec glsl_type_of_elttype = function
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct
            "f16"
-           "GLSL: float16 is refused by measurement, not pending \
-            implementation — RADV's ACO backend absorbs the f32->f16 narrowing \
-            into the arithmetic that feeds it, so 2912/63488 binary16 inputs \
-            disagree with the interpreter on a single narrowing, and `precise` \
-            does not prevent it. See docs/fp-contraction-policy.md (#57 slice \
-            2b).")
+           Sarek_ir_codegen.glsl_float16_refusal)
   | TFloat32 -> "float"
   | TFloat64 -> "double" (* Requires GL_ARB_gpu_shader_fp64 *)
   | TBool -> "bool"
@@ -1602,11 +1597,7 @@ let reject_float16_kernel (k : kernel) : unit =
     Codegen_error.raise_error
       (Codegen_error.unsupported_construct
          "f16"
-         "GLSL: float16 is refused by measurement, not pending implementation \
-          — RADV's ACO backend absorbs the f32->f16 narrowing into the \
-          arithmetic that feeds it, so 2912/63488 binary16 inputs disagree \
-          with the interpreter on a single narrowing, and `precise` does not \
-          prevent it. See docs/fp-contraction-policy.md (#57 slice 2b).")
+         Sarek_ir_codegen.glsl_float16_refusal)
 
 (** Generate complete GLSL source for a kernel.
     @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.

@@ -464,6 +464,79 @@ let test_mutual_recursion_refused () =
         true
         (contains m "mutually recursive")
 
+(* fp64 capability predicate (#140).
+
+   The sweep asks [Clang.fp64_available ()] before deciding what to do with a
+   float64 kernel, and on this machine the answer is normally "yes" — so the
+   interesting branch is the one that never runs here. That is the branch that
+   split the M4 into two verdicts, so it is the one that has to be driven.
+
+   [SAREK_OPENCL_GATE_NO_FP64=1] removes cl_khr_fp64 from the compiler itself
+   ([-cl-ext=-cl_khr_fp64]), producing the same diagnostic Apple clang gives.
+   This case re-executes the test binary with that variable set and requires the
+   predicate to flip — a self-check on the check, because a suppression switch
+   that quietly does nothing would make every "SKIP (no fp64)" a lie. *)
+let subprocess_reports_no_fp64 () =
+  let exe = Sys.executable_name in
+  let out = Filename.temp_file "sarek_fp64_probe_" ".txt" in
+  let rc =
+    Unix.system
+      (Printf.sprintf
+         "SAREK_OPENCL_GATE_NO_FP64=1 %s --fp64-report >%s 2>&1"
+         (Filename.quote exe)
+         (Filename.quote out))
+  in
+  let text =
+    try
+      let ic = open_in out in
+      let n = in_channel_length ic in
+      let s = really_input_string ic n in
+      close_in ic ;
+      s
+    with _ -> ""
+  in
+  (try Sys.remove out with _ -> ()) ;
+  match rc with Unix.WEXITED 0 -> Some (String.trim text) | _ -> None
+
+let test_fp64_predicate_goes_red_under_suppression () =
+  if not (Clang.available ()) then
+    Printf.printf "  SKIP: %s\n%!" (Clang.why_unavailable ())
+  else begin
+    (* Positive control first: without suppression this clang HAS fp64, so the
+       negative result below is attributable to the switch and not to a
+       toolchain that never had it. *)
+    Alcotest.(check bool)
+      "unsuppressed: this clang compiles a double kernel"
+      true
+      (Clang.fp64_available ()) ;
+    match subprocess_reports_no_fp64 () with
+    | None ->
+        Alcotest.fail "could not re-run this executable with the switch set"
+    | Some report ->
+        if report = "" then
+          Alcotest.fail
+            "SAREK_OPENCL_GATE_NO_FP64=1 left fp64 AVAILABLE. The suppression \
+             switch does nothing, so every \"SKIP (no fp64)\" the sweep prints \
+             is unverifiable." ;
+        Alcotest.(check bool)
+          "the stated reason names cl_khr_fp64"
+          true
+          (try
+             ignore
+               (Str.search_forward (Str.regexp_string "cl_khr_fp64") report 0) ;
+             true
+           with Not_found -> false)
+  end
+
+(* Sub-mode used by the case above. Prints the reason fp64 is unavailable (empty
+   line if it IS available) and exits, so the parent can read the predicate out
+   of a fresh process with a different environment. *)
+let () =
+  if Array.length Sys.argv > 1 && Sys.argv.(1) = "--fp64-report" then begin
+    print_string (Clang.why_no_fp64 ()) ;
+    exit 0
+  end
+
 let () =
   Alcotest.run
     "opencl_gate"
@@ -483,6 +556,10 @@ let () =
             "red on a removed declaration"
             `Quick
             test_clang_red_on_mutation;
+          Alcotest.test_case
+            "the fp64 predicate goes red under suppression"
+            `Quick
+            test_fp64_predicate_goes_red_under_suppression;
         ] );
       ( "layer3_binder_canary",
         [

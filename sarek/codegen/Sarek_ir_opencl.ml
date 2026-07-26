@@ -100,11 +100,7 @@ let rec opencl_type_of_elttype = function
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct
            "f16"
-           "OpenCL: float16 is not supported — not because the codegen is \
-            missing, but because rusticl/radeonsi fuses the f32 multiply into \
-            the f32->f16 narrowing (620/63488 binary16 inputs disagree with \
-            the interpreter) and no affordable source-level barrier exists on \
-            this path. See docs/fp-contraction-policy.md (#57 slice 2a).")
+           Sarek_ir_codegen.opencl_float16_refusal)
   | TFloat32 -> "float"
   | TFloat64 -> "double"
   | TBool -> "int"
@@ -765,11 +761,7 @@ let reject_float16_kernel (k : kernel) : unit =
     Codegen_error.raise_error
       (Codegen_error.unsupported_construct
          "f16"
-         "OpenCL: float16 is refused by measurement, not pending \
-          implementation — rusticl/radeonsi fuses the f32 multiply into the \
-          f32->f16 narrowing, so 620/63488 binary16 inputs disagree with the \
-          interpreter, and no affordable barrier exists on this path. See \
-          docs/fp-contraction-policy.md (#57 slice 2a).")
+         Sarek_ir_codegen.opencl_float16_refusal)
 
 (** {1 Recursion Resolution}
 

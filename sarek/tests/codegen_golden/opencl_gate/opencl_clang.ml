@@ -28,14 +28,34 @@ let write_file f s =
   output_string oc s ;
   close_out oc
 
+(** fp64 SUPPRESSION SWITCH (#140). With [SAREK_OPENCL_GATE_NO_FP64=1] every
+    invocation below gains [-cl-ext=-cl_khr_fp64], which makes this clang refuse
+    [double] with
+
+    {v error: use of type 'double' requires cl_khr_fp64 support v}
+
+    — byte-for-byte the diagnostic Apple clang 17 produces on an M4, where the
+    extension is simply absent from the target. It is a faithful emulation of
+    the toolchain that exposed the split verdict, not a mock of the check: the
+    probe and the corpus go through the same compiler with the same flag, so "no
+    fp64" is established by compiling, exactly as on the real machine.
+
+    That is what makes the skip path below provable on a machine that HAS fp64.
+*)
+let no_fp64_flag =
+  match Sys.getenv_opt "SAREK_OPENCL_GATE_NO_FP64" with
+  | Some ("1" | "true" | "yes") -> " -Xclang -cl-ext=-cl_khr_fp64"
+  | _ -> ""
+
 (** The invocation. [-cl-std=CL1.2] is the language level Sarek's OpenCL backend
     targets; [-finclude-default-header] supplies the OpenCL builtin declarations
     ([get_global_id], [sqrt], ...) that a real ICD injects, without which every
     kernel would fail on builtins rather than on its own defects. *)
 let cmd_for src err =
   Printf.sprintf
-    "clang -x cl -cl-std=CL1.2 -Xclang -finclude-default-header -fsyntax-only \
-     %s >%s 2>&1"
+    "clang -x cl -cl-std=CL1.2 -Xclang -finclude-default-header%s \
+     -fsyntax-only %s >%s 2>&1"
+    no_fp64_flag
     (Filename.quote src)
     (Filename.quote err)
 
@@ -72,3 +92,53 @@ let available () = Lazy.force unavailable_reason = None
 
 let why_unavailable () =
   match Lazy.force unavailable_reason with Some r -> r | None -> ""
+
+(** {1 fp64 capability (#140)}
+
+    THE DEFECT THIS EXISTS FOR. On an Apple M4 the sweep reported two verdicts
+    for one missing capability: [float64_abs_float_path] and
+    [float64_copysign_path] SKIPPED while five other float64 cases FAILED. The
+    real answer was worse than "one path forgot to check": NEITHER path checked.
+    The two that skipped did so for an unrelated hardcoded exclusion (an
+    unmapped [Float64.abs_float] intrinsic that dies at codegen) and would have
+    skipped on a machine with full fp64 too; the five that failed simply ran and
+    hit the toolchain wall. There was no fp64 predicate anywhere in the gate.
+
+    WHAT THE CAPABILITY ACTUALLY IS, here. It is NOT the device's [cl_khr_fp64]
+    — this gate deliberately never touches a device (see the header). The
+    subject is host clang, and Apple clang targeting [arm64-apple-darwin] does
+    not list [cl_khr_fp64] among the extensions that target supports, so
+    [double] is an error in [-x cl] mode regardless of the
+    [#pragma OPENCL EXTENSION cl_khr_fp64 : enable] the production path emits.
+    On the Linux reference machine the same clang invocation accepts it. So the
+    honest predicate is "can THIS clang compile a double kernel", and it is
+    established the same way availability is: by compiling one.
+
+    Established by a POSITIVE CONTROL, like [available] above: the smallest
+    kernel that uses [double]. [SAREK_OPENCL_GATE_NO_FP64=1] (see
+    [no_fp64_flag]) takes the extension away from the compiler itself, so this
+    probe fails for the real reason and the skip path can be driven — and
+    observed — on a machine that does have fp64. A skip nobody has watched
+    happen is not a skip anybody should trust. *)
+let fp64_probe =
+  "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n\
+   __kernel void probe64(__global double *o) { o[get_global_id(0)] = 1.0; }\n"
+
+let no_fp64_reason : string option Lazy.t =
+  lazy
+    (match Lazy.force unavailable_reason with
+    | Some r -> Some ("clang itself is unusable: " ^ r)
+    | None -> (
+        match run_clang fp64_probe with
+        | Ok () -> None
+        | Error e ->
+            Some
+              ("this clang cannot compile an OpenCL kernel using `double` (the \
+                target does not support cl_khr_fp64): " ^ e)))
+
+(** [true] iff the clang this gate drives can compile a [double] OpenCL kernel.
+    The single authority for every float64 case in the sweep. *)
+let fp64_available () = Lazy.force no_fp64_reason = None
+
+let why_no_fp64 () =
+  match Lazy.force no_fp64_reason with Some r -> r | None -> ""

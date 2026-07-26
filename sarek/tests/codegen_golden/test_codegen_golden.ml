@@ -885,8 +885,8 @@ let () =
     \  float x;\n\
     \  float y;\n\
      } Point2;\n\n\
-     kernel void record_kernel(constant Point2* &pts [[buffer(0)]], constant \
-     int &sarek_pts_length [[buffer(1)]],\n\
+     kernel void record_kernel(device Point2* pts [[buffer(0)]], constant int \
+     &sarek_pts_length [[buffer(1)]],\n\
      uint3 __metal_gid [[thread_position_in_grid]],\n\
      uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
      uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
@@ -922,7 +922,7 @@ let () =
     \  return r;\n\
      }\n\n\
      kernel void variant_kernel(device int* flags [[buffer(0)]], constant int \
-     &sarek_flags_length [[buffer(1)]], constant Opt* &out [[buffer(2)]], \
+     &sarek_flags_length [[buffer(1)]], device Opt* out [[buffer(2)]], \
      constant int &sarek_out_length [[buffer(3)]],\n\
      uint3 __metal_gid [[thread_position_in_grid]],\n\
      uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
@@ -2156,8 +2156,6 @@ let tool_available cmd =
 
 let glslang_available = lazy (tool_available "glslangValidator")
 
-let naga_available = lazy (tool_available "naga")
-
 let read_file f =
   try
     let ic = open_in f in
@@ -2209,6 +2207,46 @@ let naga_ok wgsl =
   let out = read_file err in
   List.iter (fun f -> try Sys.remove f with _ -> ()) [src; err; base] ;
   match rc with Unix.WEXITED 0 -> Ok () | _ -> Error out
+
+(* naga availability is a POSITIVE CONTROL, not `command -v` (#132).
+
+   `command -v` answers a question nobody asked. A naga on PATH that cannot
+   validate anything — wrong version, missing shared library, a shim — reports
+   available, and then every case FAILS for a reason that has nothing to do with
+   the shader. Worse in the other direction: when naga is genuinely absent this
+   sweep is the ONLY executable check WGSL has anywhere, so a quiet skip returns
+   the whole backend to unvalidated with a one-line note in a log nobody reads.
+   That is how the WGSL match emitter went uncovered long enough to accumulate
+   two defects (see wgsl_validation_only_kernels above).
+
+   So: probe by validating the smallest well-formed compute module, exactly as
+   Opencl_clang does, and make the skip state its reason. ci/assert-toolchain.sh
+   is what turns a missing naga into a CI FAILURE rather than a skip — the skip
+   stays correct behaviour on a developer machine and is never the normal
+   outcome in CI. *)
+let naga_probe =
+  "@group(0) @binding(0) var<storage, read_write> o : array<i32>;\n\
+  \   @compute @workgroup_size(1)\n\
+  \   fn main(@builtin(global_invocation_id) gid : vec3<u32>) {\n\
+  \    o[gid.x] = 1;\n\
+  \   }\n"
+
+let naga_unavailable_reason : string option Lazy.t =
+  lazy
+    (if not (tool_available "naga") then
+       Some
+         "naga is not on PATH — WGSL then has NO executable validation \
+          anywhere in this repository (ci/assert-toolchain.sh fails CI for \
+          this)"
+     else
+       match naga_ok naga_probe with
+       | Ok () -> None
+       | Error e ->
+           Some
+             ("naga is on PATH but could not validate a trivial compute \
+               module, so it can prove nothing about ours: " ^ e))
+
+let naga_available = lazy (Lazy.force naga_unavailable_reason = None)
 
 (** Per-case exclusions from the validation sweep, each with a cited reason. A
     golden here is still byte-exact-checked above; it is only skipped by the
@@ -2314,7 +2352,74 @@ let glsl_validation_tests () =
                       glsl)))
     (test_kernels () @ glsl_only_kernels ())
 
-(** WGSL corpus = cross-backend kernels + WGSL-only kernels. *)
+(** Kernels that exist only to be run through the WGSL validator, and carry no
+    golden — same discipline as {!opencl_validation_only_kernels} below.
+
+    WHY THIS EXISTS (#132). The sweep corpus had no multi-field variant payload
+    and, worse, no [SMatch] at all: [variant_kernel] only CONSTRUCTS variants
+    (an [SIf] over [EVariant]) and never matches on one. So every accessor and
+    every [switch] the WGSL match emitter can produce was unreachable from any
+    executable gate, and the only coverage of that emitter anywhere was a string
+    comparison in test_ematch_payload_binding.ml. Two separate WGSL defects hid
+    behind that hole; both are named on the arms below. *)
+let wgsl_validation_only_kernels () =
+  (* Pair = MkOne of f32 | MkPair of f32 * f32, matched with SMatch and NO
+     wildcard arm.
+
+     Defect 1 (the one #132 was filed for, and which PR #306 had already
+     closed): the flat struct declares [MkPair_v_0] / [MkPair_v_1] while the
+     accessor used to spell [.MkPair_v._0] — naga: "invalid field accessor
+     'MkPair_v'". Both sites now go through
+     [Sarek_ir_codegen.wgsl_payload_layout], so this arm is the regression check
+     rather than the reproduction.
+
+     Defect 2 (still live when this case was added, fixed in the same commit):
+     the match is exhaustive over the constructors and therefore carries no
+     [PWild] arm, and the emitter only wrote [default:] when it saw one. WGSL
+     requires every [switch] to have exactly one default clause — naga:
+     "missing default case". The C family sidesteps this because C [switch]
+     needs no default, and GLSL likewise, so WGSL is the odd one out here too.
+
+     Both need a multi-payload constructor AND a real match, which is exactly
+     what nothing in the corpus had. *)
+  let pair_constrs =
+    [("MkOne", [TFloat32]); ("MkPair", [TFloat32; TFloat32])]
+  in
+  let pair_ty = TVariant ("Pair", pair_constrs) in
+  let ps = make_var "ps" (TVec pair_ty) in
+  let out = make_var "out" (TVec TFloat32) in
+  let idx = make_var "idx" TInt32 in
+  let a = make_var "a" TFloat32 in
+  let b = make_var "b" TFloat32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SMatch
+          ( EArrayRead ("ps", EVar idx),
+            [
+              ( PConstr ("MkOne", ["a"]),
+                SAssign (LArrayElem ("out", EVar idx), EVar a) );
+              ( PConstr ("MkPair", ["a"; "b"]),
+                SAssign
+                  (LArrayElem ("out", EVar idx), EBinop (Add, EVar a, EVar b))
+              );
+            ] ) )
+  in
+  let k =
+    empty_kernel
+      "smatch_multi_payload"
+      [
+        DParam (ps, None);
+        DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      ]
+      []
+      body
+  in
+  [("smatch_multi_payload", {k with kern_variants = [("Pair", pair_constrs)]})]
+
+(** WGSL corpus = cross-backend kernels + WGSL-only kernels + validation-only
+    kernels. *)
 let wgsl_validation_tests () =
   List.map
     (fun (kernel_name, k) ->
@@ -2333,7 +2438,12 @@ let wgsl_validation_tests () =
               Gen_wgsl.reset_state () ;
               let wgsl = Gen_wgsl.generate_with_types ~types:k.kern_types k in
               if not (Lazy.force naga_available) then begin
-                Printf.printf "  SKIP: naga not on PATH\n%!" ;
+                Printf.printf
+                  "  SKIP: %s — %s\n%!"
+                  kernel_name
+                  (Option.value
+                     (Lazy.force naga_unavailable_reason)
+                     ~default:"") ;
                 Alcotest.skip ()
               end
               else
@@ -2345,7 +2455,7 @@ let wgsl_validation_tests () =
                       kernel_name
                       e
                       wgsl)))
-    (test_kernels () @ wgsl_only_kernels ())
+    (test_kernels () @ wgsl_only_kernels () @ wgsl_validation_only_kernels ())
 
 (** {1 OpenCL validation sweep (#128)}
 
@@ -2453,6 +2563,29 @@ let opencl_validation_tests () =
         (Printf.sprintf "opencl-validate/%s" kernel_name)
         `Quick
         (fun () ->
+          (* CAPABILITY FIRST, exclusions second (#140).
+
+             The order is the fix. Previously the exclusion list was consulted
+             first and nothing consulted fp64 at all, so on a toolchain without
+             it the seven float64 cases in this corpus split into two SKIPs (for
+             an unrelated reason that happened to cover two of them) and five
+             FAILs — one missing capability, two verdicts, and no way to tell
+             from the output which was the real story.
+
+             Asking the capability first makes all seven report the same thing
+             for the same reason when it is absent, and lets the exclusions go
+             back to meaning only what they say: a documented codegen gap,
+             reported wherever fp64 is present. *)
+          if
+            Sarek_ir_analysis.kernel_uses_float64 k
+            && not (Opencl_clang.fp64_available ())
+          then begin
+            Printf.printf
+              "  SKIP (no fp64): opencl/%s — %s\n%!"
+              kernel_name
+              (Opencl_clang.why_no_fp64 ()) ;
+            Alcotest.skip ()
+          end ;
           match excluded "opencl" kernel_name with
           | Some reason ->
               Printf.printf
@@ -2528,6 +2661,99 @@ let opencl_validation_tests () =
                           usrc)
               end))
     (test_kernels () @ glsl_only_kernels () @ opencl_validation_only_kernels ())
+
+(** {1 Metal validation sweep (#139)}
+
+    Metal was the LAST backend with committed goldens and no validator, and it
+    cost exactly what that costs: [record_kernel] and [variant_kernel] had been
+    emitting [constant T* &v] — a reference to a pointer whose pointee has no
+    address space, which Metal rejects outright — and nothing in the project
+    could see it. It was found by running on an Apple M4 (macOS 15.6.1, Apple
+    clang 17), and confirmed pre-existing there against a control with the
+    contraction pragma stripped.
+
+    Two layers, and the split matters more here than anywhere else:
+
+    + {b address space} ({!Metal_gate.Metal_addrspace}) — pure text, no
+      toolchain, so it runs on the Linux machines where this code is written and
+      where the defect was introduced. Covers the class above.
+    + {b compile} ({!Metal_gate.Metal_compile}) — [xcrun metal]. macOS only.
+      Everything a signature check cannot see (bodies, struct layout, intrinsic
+      names) lives here, and on Linux nothing covers it. Its skip says so.
+
+    A green run on Linux therefore means "the signatures are well-formed", not
+    "our Metal is valid" — which is a smaller claim than the other three sweeps
+    make, deliberately stated. *)
+
+module Metal_addrspace = Metal_gate.Metal_addrspace
+module Metal_compile = Metal_gate.Metal_compile
+
+let metal_validation_corpus () = test_kernels () @ metal_only_kernels ()
+
+let metal_validation_tests () =
+  List.map
+    (fun (kernel_name, k) ->
+      Alcotest.test_case
+        (Printf.sprintf "metal-validate/%s" kernel_name)
+        `Quick
+        (fun () ->
+          match excluded "metal" kernel_name with
+          | Some reason ->
+              Printf.printf
+                "  SKIP (excluded): metal/%s — %s\n%!"
+                kernel_name
+                reason ;
+              Alcotest.skip ()
+          | None ->
+              Gen_metal.reset_state () ;
+              let src = Gen_metal.generate_with_types ~types:k.kern_types k in
+              (* Layer 1 — always runs, needs no external tool. *)
+              (match Metal_addrspace.offences src with
+              | [] -> ()
+              | os ->
+                  Alcotest.failf
+                    "generated Metal for %s has parameters Metal's \
+                     address-space rules reject:\n\
+                     %s\n\
+                     --- source ---\n\
+                     %s"
+                    kernel_name
+                    (String.concat "\n" (List.map Metal_addrspace.describe os))
+                    src) ;
+              if not (Metal_compile.available ()) then
+                Printf.printf
+                  "  metal address-space OK: %s (compile layer SKIPPED: %s)\n%!"
+                  kernel_name
+                  (Metal_compile.why_unavailable ())
+              else begin
+                (* Layer 2 — the kernel as we ship it. *)
+                match Metal_compile.run_metal src with
+                | Ok () -> Printf.printf "  metal OK: %s\n%!" kernel_name
+                | Error e ->
+                    Alcotest.failf
+                      "the Metal compiler rejected generated metal/%s:\n\
+                       %s\n\
+                       --- source ---\n\
+                       %s"
+                      kernel_name
+                      e
+                      src
+              end))
+    (metal_validation_corpus ())
+
+(* ANTI-VACUITY CONTROL. The sweep above asserts nothing if its corpus is empty,
+   which is what happens the day a fixture list is renamed. Same reason the
+   contraction-pragma group carries one. *)
+let metal_validation_coverage () =
+  Alcotest.test_case
+    "the metal sweep inspects a non-empty corpus"
+    `Quick
+    (fun () ->
+      let n = List.length (metal_validation_corpus ()) in
+      if n = 0 then
+        Alcotest.fail
+          "the Metal validation corpus is empty, so every metal-validate case \
+           above asserted nothing")
 
 (* The Metal contraction defence, pinned separately from the byte-exact goldens.
 
@@ -2610,6 +2836,8 @@ let () =
         ("glsl_validation_sweep", glsl_validation_tests ());
         ("wgsl_validation_sweep", wgsl_validation_tests ());
         ("opencl_validation_sweep", opencl_validation_tests ());
+        ( "metal_validation_sweep",
+          metal_validation_coverage () :: metal_validation_tests () );
         ( "metal_contraction_pragma",
           metal_contraction_pragma_coverage ()
           :: metal_contraction_pragma_tests () );

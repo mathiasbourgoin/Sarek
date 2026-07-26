@@ -960,6 +960,28 @@ let rec gen_stmt buf indent = function
           gen_stmt buf (indent ^ "    ") body ;
           Buffer.add_string buf (indent ^ "  }\n"))
         cases ;
+      (* WGSL requires EXACTLY ONE default clause in every switch (WGSL spec
+         §9.4.3, "must have exactly one default selector"); naga reports
+         "missing default case" and rejects the whole entry point otherwise.
+         C's switch needs no default and GLSL's likewise, so this is a WGSL-only
+         obligation and the four other backends have nothing to do here.
+
+         A Sarek match that is exhaustive over the constructors carries no
+         [PWild] arm, so without this the emitter produced an invalid module for
+         every such match — i.e. for the ordinary case. It was invisible because
+         no WGSL [SMatch] anywhere in the tree was fed to naga (#132); the
+         corpus case [smatch_multi_payload] in the wgsl_validation_sweep is what
+         made it visible, and is what keeps it visible.
+
+         An empty body is the right lowering: the arm is reachable only for a
+         tag outside the declared constructor set, which the type system already
+         excludes, and WGSL has no trap to put here. *)
+      if not (List.exists (fun (p, _) -> p = PWild) cases) then begin
+        Buffer.add_string buf indent ;
+        Buffer.add_string buf "  default: {\n" ;
+        Buffer.add_string buf indent ;
+        Buffer.add_string buf "  }\n"
+      end ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SReturn e ->

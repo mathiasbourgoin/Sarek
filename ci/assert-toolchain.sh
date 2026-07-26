@@ -16,6 +16,13 @@
 #   sarek-cuda/test/test_cuda_nvrtc_gate.ml       -> libnvrtc
 #     opencl_validation_sweep                     -> clang (OpenCL C)
 #   sarek/tests/unit/test_opencl_gate.ml          -> clang (OpenCL C)
+#     metal_validation_sweep, layer 2              -> xcrun metal (macOS ONLY)
+#
+# The Metal compile layer is the one gate this script cannot assert: `metal`
+# ships inside Xcode and no Linux CI image can have it. That is precisely why
+# metal_validation_sweep carries layer 1 (Metal_gate.Metal_addrspace), a pure
+# text check that needs no toolchain and runs everywhere — see #139, where two
+# committed Metal goldens had never compiled on any machine.
 #   sarek-cuda/test/test_cuda_f16_sass.ml         -> ptxas + nvdisasm
 #   sarek-cuda/test/test_cuda_fp_conformance.ml   -> nvcc + nvdisasm (hazard
 #                                                    control only; the guard
@@ -46,7 +53,7 @@ set -uo pipefail
 # is tautological by construction and can never report a gap on its own.
 #
 # The Rocq section below is deliberately NOT counted; see its comment.
-EXPECTED_CHECKS=12
+EXPECTED_CHECKS=13
 
 failures=0
 checks=0
@@ -301,6 +308,30 @@ CL
     ok "clang compiled a probe OpenCL kernel"
   else
     fail "clang is on PATH but cannot compile a trivial OpenCL kernel:
+$out"
+  fi
+
+  # fp64 (#140). The fp32 probe above deliberately says nothing about `double`,
+  # and that silence is what let the sweep report two verdicts for one missing
+  # capability on an Apple M4: two float64 cases skipped (for an unrelated
+  # hardcoded exclusion) while five failed on
+  #   error: use of type 'double' requires cl_khr_fp64 support
+  # The gate now asks Opencl_clang.fp64_available() first and skips ALL seven
+  # float64 cases with one stated reason when the answer is no. That skip is
+  # honest on a Mac and unacceptable in CI, where fp64 is the whole point of the
+  # float64 corpus — so it is asserted here, exactly as the tool presence is.
+  cat >"$tmpdir/probe64.cl" <<'CL'
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+__kernel void probe64(__global double *o) { o[get_global_id(0)] = 1.0; }
+CL
+  checks=$((checks + 1))
+  if out=$(clang -x cl -cl-std=CL1.2 -Xclang -finclude-default-header \
+             -fsyntax-only "$tmpdir/probe64.cl" 2>&1); then
+    ok "clang compiled a probe OpenCL kernel using double (cl_khr_fp64)"
+  else
+    fail "clang is on PATH but cannot compile an OpenCL kernel using \`double\`. \
+The seven float64 cases of opencl_validation_sweep would then all SKIP with a \
+stated fp64 reason and CI would validate no float64 codegen at all:
 $out"
   fi
   rm -rf "$tmpdir"
