@@ -7,7 +7,7 @@
  * OpenCL floating-point conformance: the build-option string this backend
  * hands to [clBuildProgram], and the screen applied to anything a caller adds.
  *
- * WHY THIS EXISTS (#136)
+ * WHY THIS EXISTS (backlog #136)
  *
  * Until this module, [Opencl_api.Program.build] called [clBuildProgram] with
  * an EMPTY option string. An empty option string is not "no policy": it is a

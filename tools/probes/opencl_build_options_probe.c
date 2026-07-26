@@ -1,9 +1,9 @@
-/* opencl_build_options_probe.c — #136
+/* opencl_build_options_probe.c — backlog #136
  *
  * What is an EMPTY clBuildProgram option string actually accepting, and does
  * setting the options explicitly change anything on the devices at hand?
  *
- * Until #136 the OpenCL backend called clBuildProgram with no options at all,
+ * Until backlog #136 the OpenCL backend called clBuildProgram with no options at all,
  * so it inherited each vendor's default — including a sqrt of up to 3 ulp,
  * which is what made test_real64's df64 fallback fail at 1.81e-14 on NVIDIA.
  * This probe is the instrument that decided the SHAPE of the fix.
@@ -129,7 +129,7 @@ static const char *EFFECT_OPTS[] = {
   "-DSAREK_PROBE_SCALE=1.0000001f",
 };
 static const char *EFFECT_LABELS[] = {
-  "baseline (empty, what Sarek shipped before #136)",
+  "baseline (empty, what Sarek shipped before backlog #136)",
   "-cl-fp32-correctly-rounded-divide-sqrt  (the fix)",
   "-cl-fast-relaxed-math                   (FP LIVENESS CONTROL)",
   "-D<macro>                               (PLUMBING CONTROL)",
@@ -232,15 +232,27 @@ int main(int argc, char **argv) {
     B[i] = (float)((seed >> 8) & 0xFFFFFF) / 4096.0f + 1e-3f;
   }
 
+  /* clGetPlatformIDs / clGetDeviceIDs report the TRUE count through the output
+     parameter even when num_entries caps how many IDs were written, so the
+     returned count can exceed the array. Iterating on it unclamped would read
+     uninitialised stack and hand junk IDs to the runtime. Clamp both. */
   cl_platform_id plats[8]; cl_uint nplat = 0;
   if (clGetPlatformIDs(8, plats, &nplat) != CL_SUCCESS || nplat == 0) {
     printf("no OpenCL platform found\n"); return 1;
+  }
+  if (nplat > 8) {
+    printf("note: %u platforms present, examining the first 8\n", nplat);
+    nplat = 8;
   }
   for (cl_uint p = 0; p < nplat; p++) {
     char pname[256] = {0};
     clGetPlatformInfo(plats[p], CL_PLATFORM_NAME, sizeof pname, pname, NULL);
     cl_device_id devs[8]; cl_uint ndev = 0;
     if (clGetDeviceIDs(plats[p], CL_DEVICE_TYPE_ALL, 8, devs, &ndev) != CL_SUCCESS) continue;
+    if (ndev > 8) {
+      printf("note: %u devices on this platform, examining the first 8\n", ndev);
+      ndev = 8;
+    }
     for (cl_uint d = 0; d < ndev; d++) {
       char dname[256]={0}, dver[128]={0}, drv[128]={0};
       cl_device_fp_config fp = 0;

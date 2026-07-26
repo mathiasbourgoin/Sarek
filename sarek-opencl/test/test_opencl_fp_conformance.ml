@@ -4,7 +4,7 @@
 (******************************************************************************)
 
 (******************************************************************************
- * The OpenCL build-option guard (#136).
+ * The OpenCL build-option guard (backlog #136).
  *
  * Sibling of sarek-cuda/test/test_cuda_fp_conformance.ml, and shaped the same
  * way: the screening half is PURE, so it runs on a host with no OpenCL ICD and

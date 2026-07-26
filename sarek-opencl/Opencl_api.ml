@@ -583,9 +583,9 @@ module Program = struct
       caller's. Same placement argument as [Cuda_nvrtc.compile_with_string_opts]
       (docs/fp-contraction-policy.md §5).
 
-      Until #136 this function passed [options] straight through, and every
-      caller in the tree passed nothing — so the effective option string was
-      empty and Sarek silently accepted each vendor's default, including a
+      Until backlog #136 this function passed [options] straight through, and
+      every caller in the tree passed nothing — so the effective option string
+      was empty and Sarek silently accepted each vendor's default, including a
       [sqrt] of up to 3 ulp. *)
   let build program ?(options = "") () =
     let devices = CArray.make cl_device_id 1 in

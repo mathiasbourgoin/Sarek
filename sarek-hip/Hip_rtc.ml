@@ -223,13 +223,14 @@ let check ctx result =
     barrier/ISel-combine figure. Neither is the number for THIS sentence, and
     the right count for it has not been established, so it is not asserted.)
 
-    {2 The other two options, and why they are here (#136)}
+    {2 The other two options, and why they are here (backlog #136)}
 
     [-fhip-fp32-correctly-rounded-divide-sqrt] and
     [-fno-gpu-flush-denormals-to-zero] are already clang's HIP defaults. They
-    are set anyway, and the reason is the whole subject of #136: an inherited
-    default is a choice nobody made. The OpenCL backend inherited a 3-ulp [sqrt]
-    this way for years, silently, because it passed no build options at all.
+    are set anyway, and the reason is the whole subject of backlog #136: an
+    inherited default is a choice nobody made. The OpenCL backend inherited a
+    3-ulp [sqrt] this way for years, silently, because it passed no build
+    options at all.
 
     MEASURED on this machine, 2026-07-26, ROCm 7.2.4 / AMD clang 22.0.0git,
     gfx1100, on [out = sqrtf(a) + a/b] compiled with
@@ -274,10 +275,10 @@ let base_options =
     effect. Matched by prefix so [-ffp-contract=fast] and [-ffp-model=fast] are
     both caught.
 
-    EXTENDED FOR #136. The first four entries were the original list. Each of
-    the rest was MEASURED to change the emitted gfx1100 code through this exact
-    option ordering (ROCm 7.2.4 / AMD clang 22.0.0git, 2026-07-26) while passing
-    this warning silently:
+    EXTENDED FOR backlog #136. The first four entries were the original list.
+    Each of the rest was MEASURED to change the emitted gfx1100 code through
+    this exact option ordering (ROCm 7.2.4 / AMD clang 22.0.0git, 2026-07-26)
+    while passing this warning silently:
 
     - [-Ofast], [-cl-fast-relaxed-math], [-cl-unsafe-math-optimizations],
       [-fapprox-func] — all degrade divide and [sqrt] to the approximate form,

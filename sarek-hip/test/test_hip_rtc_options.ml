@@ -117,7 +117,7 @@ let () =
     (if mutation_detected then ""
      else Printf.sprintf " — %s did not trip the check" (show bad)) ;
   (* ---------------------------------------------------------------- *)
-  (* 3. #136: the two conformance defaults are set EXPLICITLY, and     *)
+  (* 3. backlog #136: the two conformance defaults are set EXPLICITLY, and     *)
   (*    -ffp-contract=off is still last.                               *)
   (*                                                                   *)
   (*    These two flags are already clang's HIP defaults - MEASURED     *)
@@ -172,8 +172,8 @@ let () =
       "-fno-hip-fp32-correctly-rounded-divide-sqrt";
     ] ;
   (* ---------------------------------------------------------------- *)
-  (* 4. #136: the relaxing-option WARNING list must actually cover the *)
-  (*    options measured to degrade gfx1100 codegen. Before #136 each  *)
+  (* 4. backlog #136: the relaxing-option WARNING list must actually cover the *)
+  (*    options measured to degrade gfx1100 codegen. Before backlog #136 each  *)
   (*    of these passed silently.                                      *)
   (* ---------------------------------------------------------------- *)
   let relaxing s =
