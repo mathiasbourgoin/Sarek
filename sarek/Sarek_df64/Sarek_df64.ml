@@ -28,8 +28,9 @@
  *   - Relative error, per operation, as actually measured by test_df64.ml on
  *     a backend that meets the contract (see PER-BACKEND STATUS for which):
  *     add 5.3e-15, sub 6.5e-15 (~2^-47); mul 9.1e-15, div 5.1e-15
- *     (~2^-46.6 .. 2^-47.8); sqrt 8.5e-15 at best, but see KNOWN RESIDUAL -
- *     it reaches 1.8e-14 on some NVIDIA paths. Roughly double the 24-bit
+ *     (~2^-46.6 .. 2^-47.8); sqrt 8.5e-15 on every backend that lowers it to
+ *     a correctly rounded f32 sqrt, but see KNOWN RESIDUAL - it still reaches
+ *     1.8e-14 on the NVIDIA OpenCL and Vulkan paths. Roughly double the 24-bit
  *     float32 precision. This is a measured range, NOT a proven bound: do
  *     not quote a single "2^-47" figure for the whole op set.
  *   - Exponent range is that of float32 (~1e-38 .. ~3e38 normalised).
@@ -86,23 +87,24 @@
  *
  *   CUDA/PTX on NVIDIA Pascal
  *   (GTX 1070 Max-Q, sm_61, CUDA 12.9, driver 580.119.02)
- *       mul 9.07e-15, div 5.08e-15 - contract met.
- *       sqrt 1.42e-14 - AT the 1.42e-14 (2^-46) tolerance boundary; both
- *       print as 1.42e-14 at three significant figures, and the measured
- *       value is the larger of the two, so the test records it as failing.
- *       STALE: this sqrt figure was measured while the PTX backend still
- *       lowered the f32 [sqrt] intrinsic to [sqrt.approx.f32]. That lowering
- *       has since been changed to [sqrt.rn.f32] and the figure has NOT been
- *       remeasured - see KNOWN RESIDUAL below. mul and div are unaffected by
- *       that change and still stand.
+ *       mul 9.07e-15, div 5.08e-15, sqrt 8.53e-15 - contract met.
+ *       The sqrt figure is post-[sqrt.rn.f32] and EXECUTED on that device
+ *       (2026-07-26). With the older [sqrt.approx.f32] lowering, measured on
+ *       the same box in the same session, it was 1.42e-14 and test_df64
+ *       recorded it as failing. 8.53e-15 is bit-for-bit the interpreter's
+ *       figure, which is the strongest form this claim can take: the device
+ *       now matches the software reference exactly.
  *       Before the contraction barrier: mul 5.92e-08, div 5.64e-08,
  *       sqrt 2.88e-08, i.e. plain float32.
  *
  *   OpenCL on NVIDIA Pascal (same GPU and driver)
- *       mul 9.07e-15, div 5.08e-15, sqrt 9.80e-15 - contract met.
- *       Before the barrier it showed the same collapse as CUDA/PTX
+ *       mul 9.07e-15, div 5.08e-15, sqrt 9.80e-15 - contract met in
+ *       test_df64. Before the barrier it showed the same collapse as CUDA/PTX
  *       (mul 5.92e-08, div 5.85e-08, sqrt 2.88e-08). No OpenCL-specific
  *       change was needed: FP_CONTRACT is defeated by the same barrier.
+ *       test_real64's df64 fallback still fails here at sqrt 1.81e-14; that
+ *       is the SAME bug class as the PTX one, in a different backend, and it
+ *       is not fixed - see KNOWN RESIDUAL.
  *
  *   Vulkan on NVIDIA Pascal (same GPU and driver)
  *       mul 9.07e-15, div 5.08e-15, sqrt 1.24e-14 - contract met, and met
@@ -135,11 +137,15 @@
  *
  *   Metal, WGSL: UNTESTED.
  *
- * KNOWN RESIDUAL: df64_sqrt on NVIDIA (cause found, fix landed, NOT remeasured)
+ * KNOWN RESIDUAL: df64_sqrt on NVIDIA
+ *   (CUDA/PTX: cause found, fixed, REMEASURED and closed 2026-07-26.
+ *    OpenCL and Vulkan: same bug class, still open.)
+ *
  *   After the contraction barrier, sqrt still landed at or just above the
- *   2^-46 tolerance on some NVIDIA paths: 1.42e-14 (CUDA/PTX, test_df64) and
- *   1.68e-14 / 1.81e-14 (CUDA/PTX and OpenCL, test_real64's df64 fallback).
- *   Those are all pre-[sqrt.rn.f32] numbers.
+ *   2^-46 tolerance on several NVIDIA paths: 1.42e-14 (CUDA/PTX, test_df64),
+ *   1.68e-14 (CUDA/PTX, test_real64's df64 fallback), 1.81e-14 (OpenCL, same
+ *   test) and 1.68e-14 (Vulkan, same test). All four reproduced on a GTX 1070
+ *   Max-Q (sm_61, CUDA 12.9, driver 580.119.02) before any change.
  *
  *   It is NOT the contraction bug - that cost sqrt 2.88e-08, and the barrier
  *   removed it - and it pre-dates the barrier: Vulkan on the same GPU, never
@@ -149,12 +155,11 @@
  *   at 1.08e-14 - it is NOT uniformly poor, and that spread is itself part of
  *   the evidence below.
  *
- *   STATUS: the MECHANISM is established and the lowering has been changed.
- *   The RESULTING PRECISION HAS NOT BEEN REMEASURED on NVIDIA hardware.
- *   Keep those two apart. The reason this library's precision claim went
- *   wrong for four years is that a plausible-sounding statement was recorded
- *   as a finding, so nothing below may be upgraded from "emitted" to
- *   "measured" without a run on a real NVIDIA device.
+ *   STATUS: mechanism established, lowering changed, and the resulting
+ *   precision EXECUTED on NVIDIA hardware on 2026-07-26 (GTX 1070 Max-Q,
+ *   sm_61, CUDA 12.9, driver 580.119.02). Both CUDA/PTX rows are closed. The
+ *   OpenCL and Vulkan rows are NOT - they are the same bug class in backends
+ *   this change does not touch, and they are still failing.
  *
  *   ESTABLISHED (by dumping the generated PTX for a df64_sqrt kernel, offline,
  *   no device needed - see sarek/tests/e2e/test_df64_no_contraction.ml):
@@ -183,17 +188,39 @@
  *   into force for [sqrt] on PTX. This is a GLOBAL change - it affects every
  *   f32 sqrt in every PTX kernel, not only df64.
  *
- *   STILL OWED, on an sm_61 NVIDIA device:
- *     - test_df64 CUDA/PTX sqrt: was 1.42e-14, now ?
- *     - test_real64 df64-fallback sqrt: was 1.68e-14 / 1.81e-14, now ?
- *     - the throughput cost on an ordinary f32 sqrt kernel. Statically, at
- *       sm_86, [sqrt.rn.f32] is ~10 hot-path instructions (MUFU.RSQ + a
- *       Newton step) against ~4 for [sqrt.approx.f32] (MUFU.SQRT), plus a
- *       cold denormal/inf/nan slowpath subroutine that normal data never
- *       enters. Both issue exactly one MUFU op. Not yet timed on sm_61.
+ *   MEASURED on sm_61 / CUDA 12.9 (one line changed, everything else equal,
+ *   both directions built and executed in the same session):
+ *     - test_df64 CUDA/PTX sqrt:          1.42e-14 FAIL -> 8.53e-15 PASS
+ *       (test_df64 goes from FAILED(1) to PASSED as a whole)
+ *     - test_real64 CUDA/PTX fallback:    1.68e-14 FAIL -> 8.87e-15 PASS
+ *   Both land bit-for-bit on the interpreter's figure for the same input set
+ *   (8.53e-15 and 8.87e-15 respectively), so the seed was the entire defect
+ *   on this path - there is no second contributor left to find.
  *
- *   Until those are measured this stays open. Do not paper over it by
- *   widening the tolerance.
+ *   COST, measured (bench_nbody n=4096, sqrt-dominated inner loop, sm_61):
+ *   1.543 ms / 10.87 GFLOP/s with [sqrt.approx.f32] against 1.731 ms /
+ *   9.69 GFLOP/s with [sqrt.rn.f32] - about 12% more kernel time, stable to
+ *   ~0.2% across repeats. At sm_61 SASS the hot path goes from 1 MUFU.SQRT +
+ *   2 FMUL (18 instructions) to 1 MUFU.RSQ + 4 FMUL/FFMA and a not-taken
+ *   branch into a cold denormal/inf/nan slowpath (48 instructions). Both
+ *   issue exactly one MUFU on the hot path, which is why the cost is ~12%
+ *   and not ~2.7x. Correctness is the right trade here; code that wants the
+ *   fast form still has [rsqrt], which is unchanged.
+ *
+ *   STILL OPEN - the same bug class in two other backends, both measured
+ *   failing on the same GPU by test_real64's df64 fallback:
+ *     - OpenCL, sqrt 1.81e-14. CAUSE IDENTIFIED AND CONFIRMED BY EXPERIMENT:
+ *       the OpenCL backend calls clBuildProgram with NO build options
+ *       (Opencl_plugin_base.ml), and OpenCL's default permits a sqrt of up to
+ *       3 ulp. Building with [-cl-fp32-correctly-rounded-divide-sqrt] moves
+ *       it to 8.87e-15 PASS - executed on sm_61 on 2026-07-26. That one-line
+ *       change is deliberately NOT part of this fix; it is a different
+ *       backend and belongs in its own change.
+ *     - Vulkan, sqrt 1.68e-14. Same shape, cause not yet established. Note
+ *       Intel UHD 630 Vulkan passes at 1.17e-14 on the same test, so this is
+ *       NVIDIA-glslang-specific, not a Vulkan-wide property.
+ *
+ *   Do not paper over either by widening the tolerance.
  *
  * References:
  *   - T.J. Dekker, "A floating-point technique for extending the available

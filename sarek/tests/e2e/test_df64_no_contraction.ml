@@ -148,10 +148,13 @@ let check name ptx =
    operator over.
 
    SCOPE OF THIS ASSERTION: it proves which instruction is EMITTED, nothing
-   more. It does not measure precision, and the precision this buys on NVIDIA
-   hardware has NOT been remeasured since the lowering changed -- see the
-   KNOWN RESIDUAL block in sarek/Sarek_df64/Sarek_df64.ml for what is and is
-   not established.
+   more -- it does not measure precision, and it runs with no device. The
+   precision it buys HAS since been measured, on a GTX 1070 Max-Q (sm_61,
+   CUDA 12.9): df64_sqrt goes from 1.42e-14 (failing) to 8.53e-15, the
+   interpreter's own figure. Keep the two claims apart anyway: if this
+   assertion ever goes red the seed is wrong again, whatever any precision
+   test happens to say on whatever device CI has that day. See the KNOWN
+   RESIDUAL block in sarek/Sarek_df64/Sarek_df64.ml.
 
    Both needles are anchored with a leading space, because "sqrt.approx.f32"
    is a SUBSTRING of "rsqrt.approx.f32": [rsqrt] deliberately keeps the
