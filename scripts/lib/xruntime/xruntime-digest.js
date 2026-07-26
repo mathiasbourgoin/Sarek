@@ -24,16 +24,34 @@ function probeVersion(runtimeBin) {
     encoding: "utf8",
   });
   const timedOut = !!(result.error && result.error.code === "ETIMEDOUT");
-  const output = timedOut ? "" : (result.stdout || "") + (result.stderr || "");
-  return { timedOut, output };
+  // A spawn-LAYER failure (ENOENT for a runtime that is not installed, EACCES,
+  // EAGAIN) leaves stdout/stderr null. Hashing that produced a perfectly
+  // stable digest of the empty string — a digest that LOOKS like a real
+  // version fingerprint and compares equal across every such failure, so the
+  // breaker could arm at, and later release from, a fingerprint that never
+  // described a runtime at all. Treat it like the timeout case: an explicit
+  // placeholder, never a hash of nothing.
+  const spawnFailed = !!(result.error && !timedOut);
+  const unavailable = timedOut || spawnFailed;
+  const output = unavailable ? "" : (result.stdout || "") + (result.stderr || "");
+  // The CAUSE is reported distinctly from the EFFECT. Both produce the
+  // placeholder digest, but calling a missing binary a "timeout" is the same
+  // misattribution this module exists to avoid.
+  const reason = timedOut
+    ? "version-probe-timeout"
+    : spawnFailed
+      ? `version-probe-spawn-error:${result.error.code}`
+      : null;
+  return { timedOut, unavailable, reason, output };
 }
 
 function computeDigests(runtimeName, runtimeBin, sandboxFlags) {
   const probe = probeVersion(runtimeBin);
-  if (probe.timedOut) {
+  if (probe.unavailable) {
     return {
       digests: Object.fromEntries(sandboxFlags.map((flag) => [flag, `${runtimeName}:version-unavailable`])),
-      versionProbeTimedOut: true,
+      versionProbeTimedOut: true, // retained: existing callers gate on this name
+      versionProbeReason: probe.reason,
     };
   }
   const digests = Object.fromEntries(
@@ -46,12 +64,16 @@ function computeDigests(runtimeName, runtimeBin, sandboxFlags) {
       return [sandboxFlag, `${runtimeName}:${hash}`];
     })
   );
-  return { digests, versionProbeTimedOut: false };
+  return { digests, versionProbeTimedOut: false, versionProbeReason: null };
 }
 
 function computeDigest(runtimeName, runtimeBin, sandboxFlag) {
   const result = computeDigests(runtimeName, runtimeBin, [sandboxFlag]);
-  return { digest: result.digests[sandboxFlag], versionProbeTimedOut: result.versionProbeTimedOut };
+  return {
+    digest: result.digests[sandboxFlag],
+    versionProbeTimedOut: result.versionProbeTimedOut,
+    versionProbeReason: result.versionProbeReason,
+  };
 }
 
 module.exports = { computeDigest, computeDigests, probeVersion, VERSION_PROBE_TIMEOUT_MS };

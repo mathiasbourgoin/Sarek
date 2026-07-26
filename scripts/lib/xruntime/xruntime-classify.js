@@ -74,6 +74,7 @@ const FAULT_BY_OUTCOME = {
   timeout: "runtime",
   "tree-mutation": "runtime",
   "empty-output": "runtime",
+  "runtime-error": "runtime",
   "non-conforming-output": "caller",
 };
 
@@ -81,14 +82,17 @@ function faultFor(outcome) {
   return FAULT_BY_OUTCOME[outcome] || "runtime";
 }
 
+// Fault values are derived through faultFor() rather than written inline:
+// FAULT_BY_OUTCOME is meant to be the single mechanical source of truth for
+// attribution, and a second copy of the mapping is how that guarantee decays.
 function classifyOutput(stdout) {
   const trimmed = (stdout || "").trim();
-  if (trimmed === "") return { outcome: "empty-output", fault: "runtime" };
+  if (trimmed === "") return { outcome: "empty-output", fault: faultFor("empty-output") };
   const parsed = extractJson(trimmed);
   if (!parsed.ok || !validateFindingsArray(parsed.value)) {
     return {
       outcome: "non-conforming-output",
-      fault: "caller",
+      fault: faultFor("non-conforming-output"),
       excerpt: trimmed.slice(0, 500),
     };
   }
@@ -98,9 +102,37 @@ function classifyOutput(stdout) {
 // Top-level classification: exit-code corroboration takes precedence over
 // output inspection (FR-088), which runs only when the exit code is
 // uncorroborated.
+//
+// EXIT STATUS IS CHECKED BEFORE OUTPUT SHAPE, and a nonzero exit is always a
+// runtime fault. Without this, fault attribution had a hole big enough to
+// drive a dying runtime through: classifyExitCode corroborates only exit 3
+// (with the TREE-MUTATED marker) and exit 124 (with a corroborating
+// duration), so exit 1 / 127 / 137 / 139 fell through to classifyOutput —
+// which never looks at the exit code. xruntime-exec.sh merges stderr into
+// stdout, so a crashed runtime's death rattle ("command not found",
+// a stack trace, a partial banner) is not a findings array, and the run was
+// therefore attributed to the CALLER and never armed the breaker. A runtime
+// that dies on every invocation would have been re-probed forever.
+//
+// An uncorroborated nonzero exit is deliberately NOT promoted to a specific
+// cause: `runtime-error` claims only that the process failed, never which
+// way. That keeps D-3's rule intact — a bare exit 3 still does not get to
+// assert `tree-mutation` without the marker — while refusing to let the
+// failure be read as an answer.
 function classify({ exitCode, stderr, durationS, timeoutS, stdout }) {
   const corroborated = classifyExitCode(exitCode, stderr, durationS, timeoutS);
   if (corroborated) return { outcome: corroborated, fault: faultFor(corroborated) };
+
+  if (exitCode !== 0) {
+    const merged = ((stdout || "") + (stderr || "")).trim();
+    return {
+      outcome: "runtime-error",
+      fault: faultFor("runtime-error"),
+      exitCode,
+      excerpt: merged.slice(0, 500),
+    };
+  }
+
   return classifyOutput(stdout);
 }
 

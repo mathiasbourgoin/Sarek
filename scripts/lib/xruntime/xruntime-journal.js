@@ -78,7 +78,27 @@ function readReviewJson(root, task) {
 // as "nothing to refuse against"). A malformed line is fail-closed: its
 // runtime/digest cannot be authenticated, so it may be the very degradation
 // record the breaker needs to enforce.
-function readLatestJournalEntry(root, task, runtime, digest) {
+// CORRUPTION IS BOUNDED BY THE ENFORCEMENT WINDOW. Failing closed on the first
+// unparseable line, however old, poisons the journal permanently: it is
+// append-forever, so one corrupt line anywhere in history blocks every future
+// lookup whose match lies before it — and every lookup for a (runtime, digest)
+// pair that never appears at all. A new digest is exactly what a runtime
+// UPGRADE produces, so the version-change escape hatch, the one way out of an
+// armed breaker, would be the first thing a stale corruption disables.
+//
+// The bound comes from what the corruption could actually change. The only
+// consumer, shouldRefuseDegraded, refuses solely on a degraded entry from the
+// CURRENT cycle; a prior-cycle entry is stale and never refuses even when it
+// parses perfectly. So an unparseable line matters only while it could still
+// belong to the current cycle. Scanning backwards, once a parsed entry proves
+// we have left that cycle, everything older is out of the window (cycle
+// numbers advance monotonically per task) and its corruption cannot change
+// any decision.
+//
+// When `currentCycle` is unknown, the window never closes and the strict
+// fail-closed behaviour is preserved exactly — an unknown cycle learns nothing
+// and must therefore assume the worst.
+function readLatestJournalEntry(root, task, runtime, digest, currentCycle) {
   const p = journalPath(root, task);
   if (!fs.existsSync(p)) return null;
   let lines;
@@ -91,13 +111,26 @@ function readLatestJournalEntry(root, task, runtime, digest) {
   } catch (e) {
     return null;
   }
+
+  const cycleKnown = currentCycle !== null && currentCycle !== undefined;
+  let insideWindow = true;
+
   for (let i = lines.length - 1; i >= 0; i--) {
     let entry;
     try {
       entry = JSON.parse(lines[i]);
     } catch (e) {
-      return { malformed: true, reason: "malformed-journal" };
+      // Unparseable: its runtime/digest cannot be authenticated, so it may be
+      // the degradation record the breaker needs. That only matters while it
+      // could still be in the enforcement window.
+      if (insideWindow) return { malformed: true, reason: "malformed-journal" };
+      continue; // historical corruption, provably irrelevant to this decision
     }
+
+    if (cycleKnown && typeof entry.cycle === "number" && entry.cycle !== currentCycle) {
+      insideWindow = false; // everything from here back predates the current cycle
+    }
+
     if (entry.runtime === runtime && entry.digest === digest) {
       if (entry.outcome === "blocked" && entry.reason === "malformed-journal") {
         return { malformed: true, reason: "malformed-journal" };

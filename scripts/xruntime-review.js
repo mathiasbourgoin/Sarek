@@ -180,7 +180,16 @@ function runWrapper(args) {
   const promptPath = path.join(promptDir, "prompt.txt");
   let result;
   try {
-    fs.writeFileSync(promptPath, args.prompt, { mode: 0o600 });
+    // A full disk or a bad TMPDIR must surface as the helper's own controlled
+    // exit, not an uncaught ENOSPC that kills the process before anything is
+    // journaled — an unjournaled invocation is invisible to the breaker and to
+    // the convergence gate's attestation check.
+    try {
+      fs.writeFileSync(promptPath, args.prompt, { mode: 0o600 });
+    } catch (e) {
+      fs.rmSync(promptDir, { recursive: true, force: true });
+      fail(2, `could not stage the prompt file (${e.code || "write error"}): ${e.message}`);
+    }
     const cmdArgs = [WRAPPER, args.runtime, `--prompt-file=${promptPath}`];
     if (args.write) cmdArgs.push("--write");
     cmdArgs.push("--timeout", String(args.timeout));
@@ -307,12 +316,12 @@ function validateArgsOrFail(args) {
 // existing human-retry/version-change escape hatch. This check is provider-
 // free: it probes only `<runtime> --version` to derive the digest and never
 // invokes xruntime-exec.sh or appends an invocation journal entry.
-function finishQaAvailability(root, args, digest, acceptedDigests, versionProbeTimedOut) {
+function finishQaAvailability(root, args, digest, acceptedDigests, versionProbeTimedOut, versionProbeReason) {
   if (versionProbeTimedOut) {
     process.stdout.write(
       JSON.stringify({
         status: "skipped-degraded",
-        reason: "version-probe-timeout",
+        reason: versionProbeReason || "version-probe-timeout",
         config_digest: digest,
         source: "version-probe",
       }) + "\n"
@@ -356,13 +365,19 @@ function finishQaAvailability(root, args, digest, acceptedDigests, versionProbeT
 // skip, a hung version probe, a malformed persisted verdict (E-8), and the
 // degraded-refusal breaker (D-2/E-5). Returns true once one of these has
 // already called finish()/finishBlocked() and exited — main() should stop.
-function tryFinishEarly(root, args, digest, versionProbeTimedOut) {
+function tryFinishEarly(root, args, digest, versionProbeTimedOut, versionProbeReason) {
   if (args.skip) {
     finish(root, args, digest, { status: "skipped-human", reason: args.skip, runtimeExit: null, durationS: 0 });
     return true;
   }
   if (versionProbeTimedOut) {
-    finish(root, args, digest, { status: "degraded", reason: "version-probe-timeout", runtimeExit: null, durationS: null });
+    finish(root, args, digest, {
+      status: "degraded",
+      reason: versionProbeReason || "version-probe-timeout",
+      fault: "runtime",
+      runtimeExit: null,
+      durationS: null,
+    });
     return true;
   }
 
@@ -373,7 +388,8 @@ function tryFinishEarly(root, args, digest, versionProbeTimedOut) {
   }
 
   const currentCycle = args.cycle === null || Number.isNaN(args.cycle) ? null : args.cycle;
-  const journalEntry = readLatestJournalEntry(root, args.task, args.runtime, digest);
+  // currentCycle bounds how far back a corrupt journal line may fail closed.
+  const journalEntry = readLatestJournalEntry(root, args.task, args.runtime, digest, currentCycle);
   if (journalEntry && journalEntry.malformed) {
     finishBlocked(root, args, digest, "malformed-journal");
     return true;
@@ -418,6 +434,7 @@ function main(argv) {
   let digest;
   let acceptedDigests;
   let versionProbeTimedOut;
+  let versionProbeReason;
   if (args.checkAvailability) {
     // Review normally runs read-only while QA may need workspace-write to
     // rebuild. Probe the runtime version once and accept either standard
@@ -427,19 +444,21 @@ function main(argv) {
     digest = result.digests[sandboxFlag];
     acceptedDigests = Object.values(result.digests);
     versionProbeTimedOut = result.versionProbeTimedOut;
+    versionProbeReason = result.versionProbeReason;
   } else {
     const result = computeDigest(args.runtime, runtimeBin, sandboxFlag);
     digest = result.digest;
     acceptedDigests = [digest];
     versionProbeTimedOut = result.versionProbeTimedOut;
+    versionProbeReason = result.versionProbeReason;
   }
 
   if (args.checkAvailability) {
-    finishQaAvailability(root, args, digest, acceptedDigests, versionProbeTimedOut);
+    finishQaAvailability(root, args, digest, acceptedDigests, versionProbeTimedOut, versionProbeReason);
     return;
   }
 
-  if (tryFinishEarly(root, args, digest, versionProbeTimedOut)) return;
+  if (tryFinishEarly(root, args, digest, versionProbeTimedOut, versionProbeReason)) return;
 
   const outcome = runWrapper(args);
   outcome.promptDigest = promptDigest(args.prompt);

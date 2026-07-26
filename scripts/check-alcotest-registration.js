@@ -42,7 +42,16 @@ function walk(target, acc) {
     return acc;
   }
   if (!stat.isDirectory()) return acc;
-  for (const name of fs.readdirSync(target)) {
+  // Guarded like the statSync above: an unreadable directory (permissions, or
+  // a race with a concurrent build) must not escape as a raw stack trace when
+  // the documented contract is a controlled exit 2.
+  let entries;
+  try {
+    entries = fs.readdirSync(target);
+  } catch {
+    return acc;
+  }
+  for (const name of entries) {
     if (SKIP_DIRS.has(name)) continue;
     walk(path.join(target, name), acc);
   }
@@ -79,10 +88,13 @@ function stripCommentsAndStrings(src) {
   return out;
 }
 
+// Returns { isSuite, orphans } — one read and one comment-strip per file.
+// Reporting the suite COUNT separately used to re-read and re-strip every
+// .ml file in the repo purely to increment a counter.
 function analyze(file) {
   const raw = fs.readFileSync(file, "utf8");
   const code = stripCommentsAndStrings(raw);
-  if (!/Alcotest\s*\.\s*run/.test(code)) return null;
+  if (!/Alcotest\s*\.\s*run/.test(code)) return { isSuite: false, orphans: [] };
 
   const lines = code.split("\n");
   const defs = new Map(); // name -> 1-based definition line
@@ -102,7 +114,7 @@ function analyze(file) {
     });
     if (!referenced) orphans.push({ name, line: defLine });
   }
-  return orphans.length ? { file, orphans } : null;
+  return { isSuite: true, orphans };
 }
 
 function main(argv) {
@@ -129,15 +141,9 @@ function main(argv) {
       console.error(`check-alcotest-registration: cannot read ${f}: ${e.message}`);
       return 2;
     }
-    if (r === null) continue;
-    problems.push(r);
-  }
-  for (const f of files) {
-    try {
-      if (/Alcotest\s*\.\s*run/.test(stripCommentsAndStrings(fs.readFileSync(f, "utf8")))) suites += 1;
-    } catch {
-      /* counted above */
-    }
+    if (!r.isSuite) continue;
+    suites += 1;
+    if (r.orphans.length) problems.push({ file: f, orphans: r.orphans });
   }
 
   if (problems.length) {

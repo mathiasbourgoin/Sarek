@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "bundle_version": "1.6.0+spoc.1",
+  "bundle_version": "1.6.0+spoc.2",
   "channel": "local-patched",
   "source_ref": "main",
   "files": [
@@ -38,7 +38,7 @@
     },
     {
       "path": "scripts/lib/review/review-lifecycle.js",
-      "sha256": "d5544cf6746260116ddbc543c7ce67964bb24ea0214bc91942bf3aa6a1c56a15"
+      "sha256": "dc3169f358dc3b75a8532c2622774c8050867975e8bb184f93036384a4f752b6"
     },
     {
       "path": "scripts/lib/review/review-trace-dispatch.js",
@@ -54,15 +54,15 @@
     },
     {
       "path": "scripts/lib/xruntime/xruntime-classify.js",
-      "sha256": "a7ee8c03a4281ffcc033591cba15614296a86b71517c9f327a78e39bdaf91806"
+      "sha256": "57f959d3c3a05663423fb7cee42c72cfb01e40c78b221b4ab16d1085091cb65b"
     },
     {
       "path": "scripts/lib/xruntime/xruntime-digest.js",
-      "sha256": "8d82e16eb4501beb51449206a2de81b3612abda3c3f8a7301efa28f3853b2661"
+      "sha256": "eaf8ccc7cbac43967efdaf8378900e61baa54c78eefe83694b3e9357e03383d2"
     },
     {
       "path": "scripts/lib/xruntime/xruntime-journal.js",
-      "sha256": "766b6e0b6c2be4cd168dedbb1ea0dc0f1ff8f8a9cd7f0c752f174a8f8b807b5b"
+      "sha256": "786d2d2a5d9016a8263986b5cf23b82e43640db4b8fa852ab04ad355015efc11"
     },
     {
       "path": "scripts/review-normalize.js",
@@ -75,11 +75,11 @@
     },
     {
       "path": "scripts/xruntime-review.js",
-      "sha256": "d9f29fe3674b48d8361a79b330f66cbe9a8ba6c5ab9b1b899f5909463361d95b"
+      "sha256": "2b259af7f2e077e679d81c839568df86e8523a11d56373f965af2e12fe077550"
     },
     {
       "path": "scripts/REVIEW-BUNDLE.md",
-      "sha256": "711606341d12c99f84d32f9c2a6a47de9d7ec9a58bec675f8b1c68bb76f4b354",
+      "sha256": "7ca356423c3476dc2c65071d23bdca9be7faa60aea99cb5a5beb772e86ddd8f3",
       "kind": "doc"
     },
     {
@@ -105,16 +105,52 @@
   ],
   "local_patches": [
     {
-      "ref": "backlog #102",
-      "summary": "Fault attribution for cross-runtime probe outcomes: a non-conforming OUTPUT is a caller fault and must not arm the runtime circuit breaker. Adds --emit-contract and scripts/lib/xruntime/xruntime-contract.js.",
+      "ref": "#102 + F1 — cross-runtime fault attribution",
+      "summary": "Outcomes carry fault: \"runtime\"|\"caller\"; only a runtime fault may arm the breaker. A nonzero exit is always a runtime fault (F1: a crashed runtime was being blamed on the caller). Adds --emit-contract and xruntime-contract.js.",
       "paths": [
         "scripts/lib/xruntime/xruntime-classify.js",
         "scripts/lib/xruntime/xruntime-journal.js",
         "scripts/lib/xruntime/xruntime-contract.js",
+        "scripts/lib/xruntime/xruntime-digest.js",
         "scripts/xruntime-review.js"
       ],
-      "reapply_on_upgrade": true,
-      "tests": "scripts/xruntime-caller-fault.test.js"
+      "markers": {
+        "scripts/lib/xruntime/xruntime-classify.js": [
+          "FAULT_BY_OUTCOME",
+          "runtime-error",
+          "faultFor"
+        ],
+        "scripts/lib/xruntime/xruntime-journal.js": [
+          "isCallerFault",
+          "insideWindow"
+        ],
+        "scripts/lib/xruntime/xruntime-contract.js": [
+          "OUTPUT_CONTRACT"
+        ],
+        "scripts/lib/xruntime/xruntime-digest.js": [
+          "version-probe-spawn-error"
+        ],
+        "scripts/xruntime-review.js": [
+          "--emit-contract",
+          "could not stage the prompt file"
+        ]
+      },
+      "tests": "scripts/xruntime-caller-fault.test.js",
+      "reapply_on_upgrade": true
+    },
+    {
+      "ref": "CodeRabbit review-lifecycle status gate",
+      "summary": "deriveRoundState refuses an unrecognized prior verdict status instead of reading it as a NO-GO continuation, which manufactured attested-looking round state from unverifiable input.",
+      "paths": [
+        "scripts/lib/review/review-lifecycle.js"
+      ],
+      "markers": {
+        "scripts/lib/review/review-lifecycle.js": [
+          "expected \"GO\" or \"NO-GO\""
+        ]
+      },
+      "tests": "scripts/xruntime-caller-fault.test.js",
+      "reapply_on_upgrade": true
     }
   ]
 }

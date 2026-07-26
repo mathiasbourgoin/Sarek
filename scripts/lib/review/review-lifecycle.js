@@ -58,6 +58,22 @@ function deriveRoundState(prior) {
     };
   }
 
+  // Only "GO" and "NO-GO" are verdict statuses. Anything else — a typo, a
+  // truncated write, a hand-edited file — used to fall silently into the
+  // NO-GO continuation below, which does not merely guess: it INCREMENTS the
+  // round and carries rounds_audit and cross_runtime forward out of a verdict
+  // whose validity is unknown, manufacturing attested-looking state from
+  // unverifiable input. Refusing is the conservative direction; continuing
+  // only looked like it.
+  if (prior.status !== "NO-GO") {
+    throw new Error(
+      `review-lifecycle: prior verdict has status ${JSON.stringify(prior.status)}; ` +
+        'expected "GO" or "NO-GO". The round/cycle state cannot be derived from an ' +
+        "unrecognized status — repair or remove the prior briefs/<task>-review.json " +
+        "rather than letting it be read as a NO-GO continuation."
+    );
+  }
+
   const roundsAudit = Array.isArray(prior.rounds_audit) ? prior.rounds_audit : [];
   const crossRuntime = prior.cross_runtime && typeof prior.cross_runtime === "object" ? prior.cross_runtime : {};
   const cycle = typeof prior.cycle === "number" ? prior.cycle : null;

@@ -84,8 +84,18 @@ if [ "$CONSOLIDATE" -eq 1 ] && [ -n "$WORKTREE" ]; then
         continue
       fi
       if [ ! -e "$dst" ]; then
-        mkdir -p "$(dirname "$dst")"
-        cp -a "$src" "$dst"
+        # A swallowed copy failure is the worst outcome available here: the
+        # hook reports "consolidated N files" and exits 0 while the ledger
+        # events the next phase depends on never arrived. Full disk, bad
+        # permissions and a vanished source all land here.
+        if ! mkdir -p "$(dirname "$dst")" 2>/dev/null; then
+          fail "CONSOLIDATION FAILED could not create $(dirname "$dst") — briefs/$rel was not carried over."
+          continue
+        fi
+        if ! cp -a "$src" "$dst" 2>/dev/null; then
+          fail "CONSOLIDATION FAILED could not copy briefs/$rel from the worktree — the next phase will not see it."
+          continue
+        fi
         moved=$((moved+1))
       fi
     done < <(find "$WT_BRIEFS" -type f -print0)

@@ -138,7 +138,48 @@ else
     bash "$SCRIPT" --agent alpha --project "$SOLO" --base HEAD --root "$WTROOT"
 fi
 
-echo "== 8. usage errors"
+echo "== 8. emitted block is safe to eval"
+# The contract says `eval` this output. A path with shell metacharacters must
+# therefore survive it as data, never as code.
+NASTY="$TMP/we ird\$(touch $TMP/PWNED)'q"
+mkdir -p "$NASTY"
+git_quiet init -q "$NASTY"
+echo x > "$NASTY/x"; git_quiet -C "$NASTY" add x; git_quiet -C "$NASTY" commit -qm init
+out="$(bash "$SCRIPT" --agent quoting --project "$NASTY" --base HEAD --root "$TMP/wtq" 2>/dev/null)"; rc=$?
+if [ "$rc" -ne 0 ]; then
+  bad "bootstrap failed on a path with metacharacters (exit $rc)"
+else
+  ( eval "$out" ) >/dev/null 2>&1
+  if [ -e "$TMP/PWNED" ]; then
+    bad "eval of the emitted block EXECUTED embedded code"
+  else
+    ok "eval of the emitted block does not execute embedded code"
+  fi
+  evaled_wt="$(eval "$out"; printf '%s' "$AGENT_WORKTREE")"
+  case "$evaled_wt" in
+    "$TMP/wtq/"*) ok "the eval'd worktree path round-trips intact" ;;
+    *) bad "worktree path mangled by eval: $evaled_wt" ;;
+  esac
+fi
+
+echo "== 9. base freshness cannot pass by failing to check"
+# An unreachable origin must refuse, not read as "confirmed fresh".
+UNREACH="$TMP/unreach"
+git_quiet init -q "$UNREACH"
+echo a > "$UNREACH/a"; git_quiet -C "$UNREACH" add a; git_quiet -C "$UNREACH" commit -qm init
+git_quiet -C "$UNREACH" remote add origin "$TMP/does-not-exist.git"
+git_quiet -C "$UNREACH" update-ref refs/remotes/origin/main "$(git -C "$UNREACH" rev-parse HEAD)"
+expect "refuses when origin cannot be reached" 3 "could not verify base freshness" -- \
+  bash "$SCRIPT" --agent tester --project "$UNREACH" --base origin/main --root "$TMP/wtu" --check-only
+out="$(bash "$SCRIPT" --agent tester --project "$UNREACH" --base origin/main --root "$TMP/wtu" \
+        --allow-stale-base --check-only 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "UNVERIFIED"; then
+  ok "--allow-stale-base proceeds and records that freshness was unverified"
+else
+  bad "--allow-stale-base should proceed with an UNVERIFIED note (exit $rc)"; echo "$out"|sed 's/^/      /'
+fi
+
+echo "== 10. usage errors"
 expect "requires --agent" 2 "--agent <name> is required" -- bash "$SCRIPT" --project "$SOLO"
 expect "rejects a shell-unsafe agent name" 2 "must match" -- bash "$SCRIPT" --agent 'a;rm -rf /'
 

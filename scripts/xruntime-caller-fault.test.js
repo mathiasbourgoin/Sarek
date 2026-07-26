@@ -63,6 +63,66 @@ check("a well-formed empty findings array is healthy, not degraded", () => {
   assert.strictEqual(c.outcome, "healthy");
 });
 
+// ── F1 regression: a dying runtime must never be attributed to the caller ───
+// Every assertion above this block passes exitCode 0. That was the coverage
+// hole: fault attribution was only ever exercised on a runtime that exited
+// cleanly, so the path where a CRASHED runtime's output gets judged against
+// the caller's output contract was never tested at all.
+for (const code of [1, 2, 126, 127, 137, 139]) {
+  check(`exit ${code} with junk on stdout is a RUNTIME fault, not a caller fault`, () => {
+    const c = classify({
+      exitCode: code,
+      stderr: "",
+      durationS: 0.2,
+      timeoutS: 480,
+      // xruntime-exec.sh merges stderr into stdout, so this is what a crashed
+      // runtime actually looks like to the classifier.
+      stdout: "opencode: command not found\nnode:internal/errors\n    throw err;\n",
+    });
+    assert.strictEqual(c.fault, "runtime", `exit ${code} attributed to ${c.fault}`);
+    assert.strictEqual(c.outcome, "runtime-error");
+    assert.strictEqual(c.exitCode, code);
+    assert.ok(/command not found/.test(c.excerpt || ""), "excerpt should carry the wreckage");
+  });
+}
+
+check("a crashed runtime that happens to emit a valid findings array is still a runtime fault", () => {
+  // Output shape must not rescue a nonzero exit: a process that died after
+  // printing something well-formed did not complete its work.
+  const c = classify({ exitCode: 1, stderr: "", durationS: 0.2, timeoutS: 480, stdout: "[]" });
+  assert.strictEqual(c.outcome, "runtime-error");
+  assert.strictEqual(c.fault, "runtime");
+});
+
+check("an uncorroborated exit 3 is a generic runtime-error, never tree-mutation", () => {
+  // D-3 says a bare exit code may not assert a specific cause. It may still
+  // assert that the process failed.
+  const c = classify({ exitCode: 3, stderr: "no marker here", durationS: 1, timeoutS: 480, stdout: "junk" });
+  assert.strictEqual(c.outcome, "runtime-error");
+  assert.strictEqual(c.fault, "runtime");
+});
+
+check("an uncorroborated exit 124 is a generic runtime-error, never timeout", () => {
+  const c = classify({ exitCode: 124, stderr: "", durationS: 0.5, timeoutS: 480, stdout: "junk" });
+  assert.strictEqual(c.outcome, "runtime-error");
+  assert.strictEqual(c.fault, "runtime");
+});
+
+check("positive control: corroborated exit 3 and 124 keep their specific causes", () => {
+  const mutated = classify({ exitCode: 3, stderr: "xruntime-exec: TREE-MUTATED — ...", durationS: 1, timeoutS: 480, stdout: "" });
+  assert.strictEqual(mutated.outcome, "tree-mutation");
+  assert.strictEqual(mutated.fault, "runtime");
+  const timedOut = classify({ exitCode: 124, stderr: "", durationS: 480, timeoutS: 480, stdout: "" });
+  assert.strictEqual(timedOut.outcome, "timeout");
+  assert.strictEqual(timedOut.fault, "runtime");
+});
+
+check("exit 0 with junk output is still a CALLER fault (the #102 case is preserved)", () => {
+  const c = classify({ exitCode: 0, stderr: "", durationS: 1, timeoutS: 480, stdout: "here you go: not json" });
+  assert.strictEqual(c.outcome, "non-conforming-output");
+  assert.strictEqual(c.fault, "caller");
+});
+
 // ── unit: the breaker itself ────────────────────────────────────────────────
 const journalBase = { outcome: "degraded", cycle: 7, runtime: "opencode", digest: "d1" };
 
@@ -115,6 +175,109 @@ check("runtime-fault cross_runtime entry in a NO-GO verdict DOES arm it (positiv
   );
 });
 
+// ── journal corruption must not poison the whole task forever ───────────────
+const { readLatestJournalEntry } = require(path.join(ROOT, "scripts/lib/xruntime/xruntime-journal"));
+
+function journalFixture(lines) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xruntime-journal-"));
+  fs.mkdirSync(path.join(dir, "briefs"));
+  fs.writeFileSync(path.join(dir, "briefs", "jt-xruntime.jsonl"), lines.join("\n") + "\n");
+  return dir;
+}
+const J = (o) => JSON.stringify(o);
+
+check("historical corruption does not block a lookup in a later cycle", () => {
+  const dir = journalFixture([
+    J({ runtime: "opencode", digest: "old", outcome: "degraded", cycle: 1 }),
+    "{{{ corrupted line from cycle 1 }}}",
+    J({ runtime: "opencode", digest: "old", outcome: "healthy", cycle: 1 }),
+    J({ runtime: "opencode", digest: "new", outcome: "healthy", cycle: 5 }),
+  ]);
+  const e = readLatestJournalEntry(dir, "jt", "opencode", "new", 5);
+  assert.ok(e && !e.malformed, "a clean current-cycle match must be returned");
+  assert.strictEqual(e.outcome, "healthy");
+});
+
+check("a brand-new digest is not permanently blocked by old corruption (the escape hatch)", () => {
+  // This is the poison case: a runtime UPGRADE produces a digest that has
+  // never appeared, so the scan runs off the end of the file, past the old
+  // corruption, every single time.
+  const dir = journalFixture([
+    J({ runtime: "opencode", digest: "d1", outcome: "degraded", cycle: 1 }),
+    "}}} truncated write from a crash two months ago",
+    J({ runtime: "opencode", digest: "d1", outcome: "degraded", cycle: 2 }),
+  ]);
+  const e = readLatestJournalEntry(dir, "jt", "opencode", "upgraded-digest", 7);
+  assert.strictEqual(e, null, "an upgraded runtime must be probeable, not blocked by stale corruption");
+});
+
+check("corruption INSIDE the current cycle still fails closed (positive control)", () => {
+  const dir = journalFixture([
+    J({ runtime: "opencode", digest: "d1", outcome: "healthy", cycle: 3 }),
+    "%%% crash-before-persist, current cycle",
+  ]);
+  const e = readLatestJournalEntry(dir, "jt", "opencode", "d1", 3);
+  assert.ok(e && e.malformed, "current-cycle corruption must still block");
+  assert.strictEqual(e.reason, "malformed-journal");
+});
+
+check("with an unknown cycle the strict pre-existing fail-closed behaviour is preserved", () => {
+  const dir = journalFixture([
+    J({ runtime: "opencode", digest: "d1", outcome: "degraded", cycle: 1 }),
+    "### corrupt",
+  ]);
+  const e = readLatestJournalEntry(dir, "jt", "opencode", "never-seen", null);
+  assert.ok(e && e.malformed, "unknown cycle must assume the worst");
+});
+
+// ── lifecycle: an unrecognized verdict status must not be read as NO-GO ─────
+const { deriveRoundState } = require(path.join(ROOT, "scripts/lib/review/review-lifecycle"));
+
+check("a GO prior still starts a fresh cycle (positive control)", () => {
+  const s = deriveRoundState({ status: "GO", cycle: 2, round: 4 });
+  assert.strictEqual(s.round, 1);
+  assert.strictEqual(s.cycle, 3);
+  assert.strictEqual(s.freshCycle, true);
+});
+
+check("a NO-GO prior still continues the cycle (positive control)", () => {
+  const s = deriveRoundState({ status: "NO-GO", cycle: 2, round: 4 });
+  assert.strictEqual(s.round, 5);
+  assert.strictEqual(s.cycle, 2);
+});
+
+check("an unrecognized status is refused, not silently continued as NO-GO", () => {
+  for (const bad of ["GOO", "", "no-go", null, 0, { }]) {
+    assert.throws(
+      () => deriveRoundState({ status: bad, cycle: 2, round: 4, rounds_audit: [{ round: 4 }] }),
+      /expected "GO" or "NO-GO"/,
+      `status ${JSON.stringify(bad)} was accepted`
+    );
+  }
+});
+
+// ── version probe: never hash "nothing" as if it were a version ─────────────
+const { probeVersion, computeDigest } = require(path.join(ROOT, "scripts/lib/xruntime/xruntime-digest"));
+
+check("a missing runtime binary yields a placeholder digest, not a hash of empty output", () => {
+  const r = computeDigest("ghostrt", "/nonexistent/definitely-not-a-runtime", "read-only");
+  assert.strictEqual(r.digest, "ghostrt:version-unavailable");
+  assert.strictEqual(r.versionProbeTimedOut, true);
+  assert.ok(/spawn-error:ENOENT/.test(r.versionProbeReason || ""), `reason was ${r.versionProbeReason}`);
+});
+
+check("the probe reports a missing binary as a spawn error, not as a timeout", () => {
+  const p = probeVersion("/nonexistent/definitely-not-a-runtime");
+  assert.strictEqual(p.timedOut, false, "ENOENT is not a timeout");
+  assert.strictEqual(p.unavailable, true);
+});
+
+check("positive control: a working binary still produces a real hashed digest", () => {
+  const r = computeDigest("echo", "/bin/echo", "read-only");
+  assert.ok(/^echo:[a-f0-9]{16}$/.test(r.digest), `digest was ${r.digest}`);
+  assert.strictEqual(r.versionProbeTimedOut, false);
+});
+
 // ── end-to-end through the real CLI ─────────────────────────────────────────
 // Two consecutive probes in the same cycle. The question is only ever whether
 // the SECOND one ran or was suppressed.
@@ -149,6 +312,25 @@ check("E2E: a malformed answer does not suppress the next probe", () => {
   assert.ok(/--emit-contract/.test(first.remedy || ""), "remedy should point at --emit-contract");
   assert.notStrictEqual(second.status, "skipped-degraded", "breaker was armed by a caller fault");
   assert.strictEqual(second.reason, "non-conforming-output");
+});
+
+check("E2E: a runtime that CRASHES suppresses the next probe (F1 regression)", () => {
+  // The two stubs used elsewhere in this file both exit 0. A dying runtime is
+  // a different path entirely and had no E2E coverage — which is how the
+  // regression reached the branch.
+  const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "xruntime-stub-"));
+  const stub = path.join(binDir, "dying-runtime");
+  fs.writeFileSync(stub, "#!/bin/sh\necho 'opencode: fatal: cannot open display' >&2\nexit 1\n", { mode: 0o755 });
+  try {
+    const { first, second } = probeTwice(stub);
+    assert.strictEqual(first.status, "degraded");
+    assert.strictEqual(first.reason, "runtime-error", `first reason: ${first.reason}`);
+    assert.strictEqual(first.fault, "runtime", "a crashed runtime must not be blamed on the caller");
+    assert.ok(!first.remedy, "a runtime crash must not offer the caller-fault remedy");
+    assert.strictEqual(second.status, "skipped-degraded", "breaker failed to arm on a crashed runtime");
+  } finally {
+    fs.rmSync(binDir, { recursive: true, force: true });
+  }
 });
 
 check("E2E positive control: a silent runtime DOES suppress the next probe", () => {

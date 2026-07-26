@@ -139,7 +139,35 @@ case "$BASE" in
     # condition being checked — the operator would never learn their base was
     # stale, only that it "worked this time".
     LOCAL_SHA="$(git -C "$PROJECT" rev-parse "$BASE^{commit}")"
-    REMOTE_SHA="$(git -C "$PROJECT" ls-remote origin "refs/heads/$REMOTE_BRANCH" 2>/dev/null | cut -f1)"
+
+    # ls-remote is a blocking network call. Left unbounded it hangs the whole
+    # dispatch on a slow or offline network; left unchecked, any failure
+    # (no route, auth, DNS) yields an empty REMOTE_SHA that the comparison
+    # below reads as "confirmed fresh". That is the same fail-open this check
+    # exists to prevent, just relocated from a missing fetch to a missing
+    # network — and it is worse, because it is silent.
+    LS_OUT="$(mktemp)"
+    if timeout 15 git -C "$PROJECT" ls-remote origin "refs/heads/$REMOTE_BRANCH" >"$LS_OUT" 2>&1; then
+      REMOTE_SHA="$(cut -f1 <"$LS_OUT")"
+    else
+      LS_RC=$?
+      LS_ERR="$(head -c 500 "$LS_OUT")"
+      rm -f "$LS_OUT"
+      if [ "$ALLOW_STALE" -eq 1 ]; then
+        STALE_NOTE="base freshness UNVERIFIED (ls-remote failed rc=$LS_RC), accepted via --allow-stale-base"
+        echo "agent-worktree-bootstrap: warning — $STALE_NOTE" >&2
+        REMOTE_SHA=""
+      else
+        [ "$LS_RC" -eq 124 ] && LS_ERR="timed out after 15s"
+        refuse "could not verify base freshness against origin." \
+               "ls-remote exit $LS_RC: $LS_ERR" \
+               "Unverified is not the same as fresh — refusing rather than" \
+               "assuming. Fix connectivity, or pass --allow-stale-base to" \
+               "proceed with the base explicitly unverified."
+      fi
+    fi
+    rm -f "$LS_OUT"
+
     if [ -n "$REMOTE_SHA" ] && [ "$LOCAL_SHA" != "$REMOTE_SHA" ]; then
       if [ "$ALLOW_STALE" -eq 1 ]; then
         STALE_NOTE="STALE base accepted via --allow-stale-base (local $LOCAL_SHA != remote $REMOTE_SHA)"
@@ -217,13 +245,15 @@ mkdir -p "$SCRATCH"
 # rather than climbing out of the worktree.
 [ -e "$WT_PATH/dune-workspace" ] || printf '(lang dune 3.15)\n' > "$WT_PATH/dune-workspace"
 
-cat <<EOF
-AGENT_WORKTREE=$WT_PATH
-AGENT_BRANCH=$BRANCH
-AGENT_BASE=$BASE
-AGENT_SCRATCH=$SCRATCH
-AGENT_DUNE_ROOT=$WT_PATH
-EOF
+# The documented consumption pattern for this block is `eval`, so every value
+# is shell-quoted on the way out. A project directory or --root containing a
+# space, a quote, or `$(...)` would otherwise be executed as code by any caller
+# following the contract — including this script's own test suite.
+printf 'AGENT_WORKTREE=%q\n' "$WT_PATH"
+printf 'AGENT_BRANCH=%q\n' "$BRANCH"
+printf 'AGENT_BASE=%q\n' "$BASE"
+printf 'AGENT_SCRATCH=%q\n' "$SCRATCH"
+printf 'AGENT_DUNE_ROOT=%q\n' "$WT_PATH"
 echo "agent-worktree-bootstrap: ready ($STALE_NOTE)" >&2
 echo "  Build with: dune build --root $WT_PATH" >&2
 echo "  Write scratch files under \$AGENT_SCRATCH — never a bare pr.md at repo root." >&2

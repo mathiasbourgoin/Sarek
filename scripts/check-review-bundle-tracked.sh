@@ -48,6 +48,65 @@ for (const f of m.files) { if (f && typeof f.path === "string") console.log(f.pa
 FAILED=0
 report() { echo "check-review-bundle-tracked: $1" >&2; FAILED=1; }
 
+# ── The worklist must not come only from the file being policed ─────────────
+#
+# Deriving the list of files to check FROM the manifest means the manifest
+# defines its own scope of enforcement. Delete one `files[]` entry and that
+# file simply stops being checked: it is no longer verified, no longer
+# required to be tracked, and both this guard and review-bundle-verify report
+# a clean, fully green result on a bundle that is now missing a gate. The
+# checker agrees with the manifest because it only ever asked the manifest.
+#
+# Two independent sources of expectation close that:
+#
+#   1. DIRECTORY DISCOVERY. scripts/lib/review/, scripts/lib/xruntime/ and
+#      tools/data-schema/fixtures/review-finding/ are wholly bundle-owned.
+#      Every file git tracks under them must appear in files[]. This comes
+#      from the filesystem and the git index, not from the manifest, so a
+#      dropped entry shows up as a tracked file the manifest does not claim.
+#
+#   2. AN ANCHOR LIST IN THIS FILE. The scattered top-level bundle members are
+#      named here, in a different tracked file from the manifest. Dropping a
+#      manifest entry is no longer sufficient — it now requires editing two
+#      tracked files in the same change, which is visible in review.
+#
+# What this still cannot do: stop someone who edits both files deliberately.
+# Nothing self-contained can. The goal is that silent single-file drift fails
+# loudly, not that tampering is impossible.
+BUNDLE_DIRS="scripts/lib/review scripts/lib/xruntime tools/data-schema/fixtures/review-finding"
+ANCHOR_PATHS="
+schema/review-finding.schema.json
+schema/review-trace.schema.json
+scripts/REVIEW-BUNDLE.md
+scripts/check-review-convergence.js
+scripts/check-scope-diff.sh
+scripts/review-bundle-verify.js
+scripts/review-normalize.js
+scripts/xruntime-exec.sh
+scripts/xruntime-review.js
+"
+
+manifest_claims() { printf '%s\n' "$PATHS" | grep -qxF -- "$1"; }
+
+for anchor in $ANCHOR_PATHS; do
+  [ -n "$anchor" ] || continue
+  if ! manifest_claims "$anchor"; then
+    report "MANIFEST OMISSION $anchor — a known bundle member is absent from files[], so nothing verifies it. Restore the entry (or update ANCHOR_PATHS in this script if the bundle genuinely dropped it)."
+  fi
+done
+
+for dir in $BUNDLE_DIRS; do
+  [ -d "$dir" ] || continue
+  while IFS= read -r tracked; do
+    [ -n "$tracked" ] || continue
+    if ! manifest_claims "$tracked"; then
+      report "MANIFEST OMISSION $tracked — tracked under bundle-owned $dir/ but absent from files[], so it is neither hash-verified nor required to stay tracked."
+    fi
+  done <<EOF
+$(git ls-files -- "$dir")
+EOF
+done
+
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
 
@@ -68,6 +127,142 @@ EOF
 
 if ! node scripts/review-bundle-verify.js; then
   report "content verification failed (see review-bundle-verify output above)."
+fi
+
+# ── local_patches[] must be a claim, not a comment ──────────────────────────
+#
+# The manifest declares SPOC-local edits to upstream-owned bundle files, each
+# with reapply_on_upgrade. As written that was documentation and nothing more:
+# an upgrade overwrites the patched file, the installer regenerates the
+# sha256, and review-bundle-verify goes green on a bundle where the fix is
+# gone. The declaration outlived the thing it described.
+#
+# Each patch therefore names MARKERS — strings that exist only because the
+# patch is applied. Marker absent => the patch was reverted, whatever the
+# hashes say. The covering test must also exist and be reachable from CI, so
+# a patch cannot be "verified" by a test nothing runs.
+PATCH_PROBLEMS=$(node -e '
+const fs = require("fs");
+const m = JSON.parse(fs.readFileSync("scripts/review-bundle.manifest.json", "utf8"));
+const patches = Array.isArray(m.local_patches) ? m.local_patches : [];
+const out = [];
+for (const p of patches) {
+  const ref = p && p.ref ? p.ref : "(unnamed patch)";
+  if (!p || p.reapply_on_upgrade !== true) continue;
+  const markers = (p && p.markers) || {};
+  if (Object.keys(markers).length === 0) {
+    out.push(`${ref}: declares reapply_on_upgrade but names no markers — nothing can tell whether it is still applied`);
+    continue;
+  }
+  for (const [file, needles] of Object.entries(markers)) {
+    let text;
+    try { text = fs.readFileSync(file, "utf8"); }
+    catch { out.push(`${ref}: patched file is missing: ${file}`); continue; }
+    for (const needle of needles) {
+      if (!text.includes(needle)) {
+        out.push(`${ref}: marker absent from ${file}: ${JSON.stringify(needle)} — the patch has been reverted (an upgrade probably overwrote it); re-apply it and re-run ${p.tests || "its tests"}`);
+      }
+    }
+  }
+  if (p.tests && !fs.existsSync(p.tests)) {
+    out.push(`${ref}: declares tests ${p.tests}, which does not exist`);
+  }
+}
+for (const line of out) console.log(line);
+')
+if [ -n "$PATCH_PROBLEMS" ]; then
+  while IFS= read -r line; do
+    [ -n "$line" ] && report "LOCAL PATCH $line"
+  done <<EOF
+$PATCH_PROBLEMS
+EOF
+fi
+
+# ── Orphaned tooling: neither tracked nor ignored ───────────────────────────
+#
+# The #108 failure mode generalizes. A tool under scripts/ or schema/ that is
+# neither tracked nor ignored is in exactly the state the review bundle was in:
+# working on this machine, absent from every clone, and invisible because
+# nothing ever asks. It accumulates silently — a second workstation, or the
+# next agent, simply does not have it.
+#
+# This is a WARNING, not a failure, and the reason matters: CI runs on a clean
+# checkout where orphans do not exist by construction, so failing here would
+# be a check that can only ever fire locally and never in the gate. Escalating
+# it would also make one agent's in-progress, not-yet-committed work break
+# another agent's build in a shared checkout. It is reported so the state is
+# named rather than assumed.
+# ── Reachability: a tool nobody tracked can invoke is only half-delivered ───
+#
+# #108 was "the tools do not survive a fresh clone". Tracking them fixes that
+# for the FILES. It does not fix it for the CALLERS: most of these tools are
+# invoked from roster skill prose under .harness/skills/, .claude/commands/
+# and .agents/skills/, all of which are deliberately machine-local. A fresh
+# clone therefore gets every gate and, for some of them, nothing that runs it.
+#
+# The decision (see scripts/REVIEW-BUNDLE.md) is to keep the callers local and
+# make the consequence measurable rather than to fork the roster install into
+# this repo. This block is that measurement: it names, per tool, whether any
+# TRACKED file actually invokes it. Reported, never failed — a tool reachable
+# only from the roster install is the accepted design, not a defect.
+# Reachability is TRANSITIVE and starts from the roots a fresh clone actually
+# executes: the CI workflows and the Makefile. A mention inside a .md or a
+# .json is documentation, not a caller — counting those was the first version
+# of this check, and it reported almost everything "reached" while proving
+# nothing. Only executable carriers (.sh, .js, .yml, Makefile) form edges.
+INVOCABLE="scripts/review-normalize.js scripts/check-review-convergence.js
+scripts/check-scope-diff.sh scripts/xruntime-review.js scripts/xruntime-exec.sh
+scripts/review-verdict-assemble.js scripts/review-bundle-verify.js"
+
+UNREACHED=$(git ls-files -- '*.sh' '*.js' '*.yml' '*.yaml' Makefile 2>/dev/null | node -e '
+const fs = require("fs"), path = require("path");
+const targets = process.argv.slice(1);
+const carriers = fs.readFileSync(0, "utf8").split("\n").filter(Boolean);
+
+// One read per carrier, not one per (carrier, tool) pair.
+const byBase = new Map();
+for (const c of carriers) byBase.set(path.basename(c), c);
+const edges = new Map();
+for (const c of carriers) {
+  let text = "";
+  try { text = fs.readFileSync(c, "utf8"); } catch { continue; }
+  const out = new Set();
+  for (const [base, target] of byBase) {
+    if (target === c) continue;
+    const re = new RegExp("(node|bash|sh|\\./)[^\"\x27\\n]*" + base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    if (re.test(text)) out.add(target);
+  }
+  edges.set(c, out);
+}
+
+// BFS from the roots a fresh clone executes on its own.
+const roots = carriers.filter((c) => c.startsWith(".github/workflows/") || c === "Makefile");
+const seen = new Set(roots);
+const queue = [...roots];
+while (queue.length) {
+  for (const nxt of edges.get(queue.shift()) || []) {
+    if (!seen.has(nxt)) { seen.add(nxt); queue.push(nxt); }
+  }
+}
+for (const t of targets) if (!seen.has(t)) console.log("  " + t);
+' $INVOCABLE)
+if [ -n "$UNREACHED" ]; then
+  echo "" >&2
+  echo "check-review-bundle-tracked: NOTE — tracked, verified, and invoked by no tracked caller:" >&2
+  for u in $UNREACHED; do echo "    $u" >&2; done
+  echo "  These run only from the machine-local roster install (.harness/skills/," >&2
+  echo "  .claude/commands/, .agents/skills/). A fresh clone has the tool but" >&2
+  echo "  nothing that runs it until /recruit installs the roster. Deliberate —" >&2
+  echo "  see the Reachability section of scripts/REVIEW-BUNDLE.md." >&2
+fi
+
+ORPHANS=$(git ls-files --others --exclude-standard -- scripts schema 2>/dev/null)
+if [ -n "$ORPHANS" ]; then
+  echo "" >&2
+  echo "check-review-bundle-tracked: NOTE — tooling present but neither tracked nor ignored:" >&2
+  printf '%s\n' "$ORPHANS" | sed 's/^/    /' >&2
+  echo "  Each of these exists only in this working tree. Track it, ignore it," >&2
+  echo "  or land the PR that owns it — leaving it in this state is how #108 happened." >&2
 fi
 
 if [ "$FAILED" -ne 0 ]; then
