@@ -243,17 +243,17 @@ module Library = struct
 
   (** Compile MSL source.
 
-      Requests Metal's non-fast-math mode (#125). Until this change the options
-      argument was hardcoded [None] AND the binding ignored it regardless, so
-      every Sarek Metal kernel compiled under Metal's fast-math default with no
-      way to turn it off.
+      Requests Metal's non-fast-math mode (backlog #125). Until this change the
+      options argument was hardcoded [None] AND the binding ignored it
+      regardless, so every Sarek Metal kernel compiled under Metal's fast-math
+      default with no way to turn it off.
 
       NOT EXECUTED ON HARDWARE — there is no Apple device on the machine this
       was written on. If [mtl_compile_options_conformant] returns [None] (older
       OS, missing selector, allocation failure) this falls back to null options,
-      i.e. exactly the pre-#125 behaviour, and says so in the log rather than
-      silently. Either way, Metal float results remain outside the guarantee
-      until somebody runs [test_df64] on a Mac; see
+      i.e. exactly the pre-backlog #125 behaviour, and says so in the log rather
+      than silently. Either way, Metal float results remain outside the
+      guarantee until somebody runs [test_df64] on a Mac; see
       docs/fp-contraction-policy.md §11. *)
   let create_from_source device source =
     let options = mtl_compile_options_conformant () in

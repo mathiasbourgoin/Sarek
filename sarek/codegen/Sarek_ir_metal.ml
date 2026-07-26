@@ -921,6 +921,39 @@ let reject_float16_kernel =
     ~backend:"Metal"
     Sarek_ir_analysis.Float16
 
+(** The ONLY thing measured to stop Metal contracting [a*b+c].
+
+    Metal's compile options do NOT do it. Measured on Apple M4 / macOS 15.6.1
+    (24G90) / Apple clang 17.0.0, on [o = a*b + c] over 65536 inputs, restricted
+    to the 8773 elements where the DEVICE's own [fma] differs from the
+    separately-rounded value (so contraction is observable at all):
+
+    | build | contracted | |---|---| | default options | 8773 / 8773 | |
+    [mathMode = MTLMathModeSafe] | **8773 / 8773** | | [mathMode=Safe] +
+    [mathFloatingPointFunctions=Precise] | **8773 / 8773** | |
+    [fastMathEnabled = NO] | **8773 / 8773** | | **this pragma** | **0 / 8773**
+    |
+
+    That is §1 corollary 2 again — "a flag that names the hazard is not a
+    mechanism that prevents it" — and it is why the compile options set in
+    [Metal_bindings.mtl_compile_options_conformant] are NOT a contraction
+    defence and are not described as one. They buy math-function precision; this
+    pragma buys the rounding.
+
+    [#pragma clang fp contract(off)], a [volatile thread] local, a
+    [threadgroup volatile] round-trip and an [as_type] bitcast round-trip were
+    all measured to work too. The pragma is chosen because it is file-scoped,
+    costs no register or memory traffic, and needs no per-expression codegen
+    change — the same reasoning that put [precise] on GLSL locals (§6).
+    [#pragma METAL fp math_mode(safe)] does NOT work: like the [mathMode]
+    property it leaves contraction on. Sweep:
+    [tools/probes/metal_contraction_barrier_probe.m].
+
+    Sarek's rule is IEEE-754 with every operation rounded as written
+    (docs/fp-contraction-policy.md §1), so this is a conformance requirement,
+    not a tuning choice. *)
+let metal_fp_contract_pragma = "#pragma METAL fp contract(off)\n"
+
 (** Generate complete Metal source for a kernel *)
 let generate (k : kernel) : string =
   reject_float16_kernel k ;
@@ -931,7 +964,9 @@ let generate (k : kernel) : string =
 
   (* Metal header *)
   Buffer.add_string buf "#include <metal_stdlib>\n" ;
-  Buffer.add_string buf "using namespace metal;\n\n" ;
+  Buffer.add_string buf "using namespace metal;\n" ;
+  Buffer.add_string buf metal_fp_contract_pragma ;
+  Buffer.add_string buf "\n" ;
 
   (* Generate helper functions before kernel *)
   List.iter (gen_helper_func buf) k.kern_funcs ;
@@ -995,7 +1030,9 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
 
   (* Metal header *)
   Buffer.add_string buf "#include <metal_stdlib>\n" ;
-  Buffer.add_string buf "using namespace metal;\n\n" ;
+  Buffer.add_string buf "using namespace metal;\n" ;
+  Buffer.add_string buf metal_fp_contract_pragma ;
+  Buffer.add_string buf "\n" ;
 
   (* Variant type definitions first (may be needed by records).
      Previously omitted here, unlike the CUDA/OpenCL backends, so Metal kernels

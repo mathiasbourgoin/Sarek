@@ -860,7 +860,8 @@ let () =
     "metal"
     "scalar_vec_add"
     "#include <metal_stdlib>\n\
-     using namespace metal;\n\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
      kernel void scalar_vec_add(device float* a [[buffer(0)]], constant int \
      &sarek_a_length [[buffer(1)]], device float* b [[buffer(2)]], constant \
      int &sarek_b_length [[buffer(3)]], device float* c [[buffer(4)]], \
@@ -878,7 +879,8 @@ let () =
     "metal"
     "record_kernel"
     "#include <metal_stdlib>\n\
-     using namespace metal;\n\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
      typedef struct {\n\
     \  float x;\n\
     \  float y;\n\
@@ -899,7 +901,8 @@ let () =
     "metal"
     "variant_kernel"
     "#include <metal_stdlib>\n\
-     using namespace metal;\n\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
      enum { OptNone = 0, OptSome = 1 };\n\
      typedef struct {\n\
     \  int tag;\n\
@@ -939,7 +942,8 @@ let () =
     "metal"
     "sin_kernel"
     "#include <metal_stdlib>\n\
-     using namespace metal;\n\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
      kernel void sin_kernel(device float* a [[buffer(0)]], constant int \
      &sarek_a_length [[buffer(1)]], device float* b [[buffer(2)]], constant \
      int &sarek_b_length [[buffer(3)]],\n\
@@ -1101,7 +1105,8 @@ let () =
     "metal"
     "float32_sin_path"
     "#include <metal_stdlib>\n\
-     using namespace metal;\n\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
      kernel void float32_sin_path(device float* a [[buffer(0)]], constant int \
      &sarek_a_length [[buffer(1)]], device float* b [[buffer(2)]], constant \
      int &sarek_b_length [[buffer(3)]],\n\
@@ -2046,7 +2051,8 @@ let () =
     "metal"
     "float32_cbrt_path"
     "#include <metal_stdlib>\n\
-     using namespace metal;\n\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
      kernel void float32_cbrt_path(device float* a [[buffer(0)]], constant int \
      &sarek_a_length [[buffer(1)]], device float* b [[buffer(2)]], constant \
      int &sarek_b_length [[buffer(3)]],\n\
@@ -2063,7 +2069,8 @@ let () =
     "metal"
     "float32_hypot_path"
     "#include <metal_stdlib>\n\
-     using namespace metal;\n\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
      kernel void float32_hypot_path(device float* a [[buffer(0)]], constant \
      int &sarek_a_length [[buffer(1)]], device float* b [[buffer(2)]], \
      constant int &sarek_b_length [[buffer(3)]], device float* c \
@@ -2081,7 +2088,8 @@ let () =
     "metal"
     "float32_expm1_path"
     "#include <metal_stdlib>\n\
-     using namespace metal;\n\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
      kernel void float32_expm1_path(device float* a [[buffer(0)]], constant \
      int &sarek_a_length [[buffer(1)]], device float* b [[buffer(2)]], \
      constant int &sarek_b_length [[buffer(3)]],\n\
@@ -2098,7 +2106,8 @@ let () =
     "metal"
     "float32_log1p_path"
     "#include <metal_stdlib>\n\
-     using namespace metal;\n\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
      kernel void float32_log1p_path(device float* a [[buffer(0)]], constant \
      int &sarek_a_length [[buffer(1)]], device float* b [[buffer(2)]], \
      constant int &sarek_b_length [[buffer(3)]],\n\
@@ -2520,6 +2529,65 @@ let opencl_validation_tests () =
               end))
     (test_kernels () @ glsl_only_kernels () @ opencl_validation_only_kernels ())
 
+(* The Metal contraction defence, pinned separately from the byte-exact goldens.
+
+   The goldens above would notice the pragma disappearing, but they would report
+   it as "some Metal source changed", which is the wrong diagnosis for a
+   conformance regression. This says what actually broke and why it matters.
+
+   MEASURED on Apple M4 / macOS 15.6.1 / Apple clang 17.0.0: without this
+   pragma, a*b+c is contracted into an fma on all 8773 observable elements of a
+   65536-input sweep; with it, 0. NO MTLCompileOptions setting achieves that —
+   not mathMode=Safe, not fastMathEnabled=NO. See
+   tools/probes/metal_contraction_barrier_probe.m and
+   docs/fp-contraction-policy.md §11. *)
+let metal_contraction_pragma_tests () =
+  let pragma = "#pragma METAL fp contract(off)" in
+  let contains hay needle =
+    let nh = String.length needle and h = String.length hay in
+    let rec go i =
+      i + nh <= h && (String.sub hay i nh = needle || go (i + 1))
+    in
+    go 0
+  in
+  List.filter_map
+    (fun (kernel_name, k) ->
+      Some
+        (Alcotest.test_case
+           (Printf.sprintf
+              "metal/%s carries the contraction pragma"
+              kernel_name)
+           `Quick
+           (fun () ->
+             metal_backend.reset () ;
+             let actual = metal_backend.generate ~types:[] k in
+             if not (contains actual pragma) then
+               Alcotest.failf
+                 "generated Metal for %s does not contain %S.\n\
+                  Metal contracts a*b+c into an fma by default and NO \
+                  MTLCompileOptions setting prevents it (measured on Apple M4 \
+                  / macOS 15.6.1: mathMode=Safe leaves 8773/8773 elements \
+                  contracted, this pragma leaves 0). Dropping it silently \
+                  removes a rounding docs/fp-contraction-policy.md §1 \
+                  promises, and breaks every error-free transformation in \
+                  Sarek_df64 on Metal."
+                 kernel_name
+                 pragma)))
+    (test_kernels ())
+
+(* ANTI-VACUITY CONTROL: the check above is worthless if it inspects an empty
+   list, which is exactly what happens if the golden fixture names change. *)
+let metal_contraction_pragma_coverage () =
+  Alcotest.test_case
+    "the pragma check inspects a non-empty set of kernels"
+    `Quick
+    (fun () ->
+      let n = List.length (metal_contraction_pragma_tests ()) in
+      if n = 0 then
+        Alcotest.fail
+          "no metal golden kernels were found, so the contraction-pragma check \
+           above asserted nothing")
+
 let () =
   Alcotest.run
     "codegen_golden"
@@ -2531,4 +2599,7 @@ let () =
         ("glsl_validation_sweep", glsl_validation_tests ());
         ("wgsl_validation_sweep", wgsl_validation_tests ());
         ("opencl_validation_sweep", opencl_validation_tests ());
+        ( "metal_contraction_pragma",
+          metal_contraction_pragma_coverage ()
+          :: metal_contraction_pragma_tests () );
       ])

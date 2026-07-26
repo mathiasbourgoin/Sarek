@@ -4,29 +4,26 @@
 (******************************************************************************)
 
 (******************************************************************************
- * MTLCompileOptions fail-soft contract (#125).
+ * MTLCompileOptions fail-soft contract (backlog #125).
  *
- * READ THIS BEFORE TREATING A GREEN RUN AS EVIDENCE OF ANYTHING.
+ * SCOPE. The Metal FP behaviour itself is now MEASURED on hardware — Apple M4,
+ * macOS 15.6.1 (24G90), Apple clang 17.0.0 — by
+ * tools/probes/metal_math_mode_probe.m and
+ * tools/probes/metal_contraction_barrier_probe.m, written up in
+ * docs/fp-contraction-policy.md §11. Those probes, not this file, are what
+ * establish that Metal's defaults are fast on both knobs, that the options are
+ * honoured, and that contraction needs a source pragma instead.
  *
- * #125 makes the Metal backend ask for fastMathEnabled=NO, because Metal's
- * default is fast math ON and the binding previously ignored its options
- * argument outright. NONE of that has been executed on Apple hardware — there
- * is no Apple device on the machine it was written on, and this test does NOT
- * verify it. Whether Metal actually honours the request, and whether Metal
- * float results then agree with the interpreter, are both OPEN. See
- * docs/fp-contraction-policy.md §11.
- *
- * What this file DOES verify, and it is the only claim it makes: the
- * FAIL-SOFT mechanism that is the entire safety argument for landing
- * unverified Objective-C. [mtl_compile_options_conformant] must return [None]
- * — never raise — when the Objective-C runtime is unavailable, because [None]
- * makes the caller pass null options, which is exactly the behaviour that
- * shipped before #125. A host with no libobjc (this Linux box, and CI) is a
- * perfectly good instrument for that one question, and it is the strongest
+ * This file verifies the one thing those probes cannot: the FAIL-SOFT
+ * mechanism, on a host where the Objective-C runtime is ABSENT.
+ * [mtl_compile_options_conformant] must return [None] — never raise — because
+ * [None] makes the caller pass null options, which is exactly the behaviour
+ * that shipped before backlog #125. A machine with no libobjc (this Linux box,
+ * and CI) is the right instrument for that question, and it is the strongest
  * failure the mechanism has to survive: nothing resolves at all.
  *
- * On a Mac this test asserts nothing beyond "it returned without raising",
- * and says so.
+ * On a Mac this test cannot reach that path and skips, rather than passing
+ * while checking nothing.
  ******************************************************************************)
 
 open Sarek_metal
@@ -57,9 +54,10 @@ let test_returns_none_without_objc () =
         Alcotest.failf
           "mtl_compile_options_conformant raised %s instead of returning None. \
            The safety argument for landing this unverified Objective-C is that \
-           every failure degrades to the pre-#125 behaviour (null options); an \
-           escaping exception breaks Metal kernel compilation outright on any \
-           host where the runtime, the class or the selector is missing."
+           every failure degrades to the pre-backlog #125 behaviour (null \
+           options); an escaping exception breaks Metal kernel compilation \
+           outright on any host where the runtime, the class or the selector \
+           is missing."
           (Printexc.to_string e)
 
 (* Called twice: a first call that succeeded in caching something bad, or a
