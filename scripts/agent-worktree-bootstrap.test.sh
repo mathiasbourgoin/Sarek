@@ -179,7 +179,107 @@ else
   bad "--allow-stale-base should proceed with an UNVERIFIED note (exit $rc)"; echo "$out"|sed 's/^/      /'
 fi
 
-echo "== 10. usage errors"
+echo "== 10. no attestation to a check that was not run (F5)"
+# A local base has no remote to compare against. Proceeding is fine; claiming
+# "base freshness verified" is not — the caller cannot then distinguish
+# "checked and fresh" from "never checked".
+out="$(bash "$SCRIPT" --agent tester --project "$SOLO" --base HEAD --root "$TMP/wtf5" --check-only 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "NOT CHECKED"; then
+  ok "a non-origin base reports NOT CHECKED, never 'verified'"
+else
+  bad "non-origin base attested to an unrun check (exit $rc)"; echo "$out"|sed 's/^/      /'
+fi
+if printf '%s' "$out" | grep -qF "base freshness verified"; then
+  bad "output still claims 'base freshness verified' for an unchecked base"
+else
+  ok "the phrase 'base freshness verified' is absent when nothing was checked"
+fi
+# And the positive control: a real, reachable, fresh origin base DOES say verified.
+git_quiet -C "$CLONE" fetch -q origin main
+out="$(bash "$SCRIPT" --agent tester --project "$CLONE" --base origin/main --root "$TMP/wtf5b" --check-only 2>&1)"
+if printf '%s' "$out" | grep -qF "verified against origin/main"; then
+  ok "positive control: a genuinely verified base says so, naming the ref"
+else
+  bad "a verified base failed to report verification"; echo "$out"|sed 's/^/      /'
+fi
+
+echo "== 11. --check-only runs EVERY precondition (F6)"
+# The header promises --check-only runs every check. The collision check used
+# to live after the early exit, so --check-only cleared a directory another
+# agent was live in.
+COLLIDE="$TMP/wtcollide"
+mkdir -p "$COLLIDE/$(basename "$SOLO")-t1"
+echo junk > "$COLLIDE/$(basename "$SOLO")-t1/OTHER_AGENT_IS_HERE"
+expect "refuses an occupied worktree path in --check-only mode" 3 "already exists" -- \
+  bash "$SCRIPT" --agent t1 --project "$SOLO" --base HEAD --root "$COLLIDE" --check-only
+
+echo "== 12. one stray tracked file must not re-open #101 (F6)"
+STRAY="$TMP/strayouter"
+git_quiet init -q "$STRAY"
+echo outer > "$STRAY/README"; git_quiet -C "$STRAY" add README; git_quiet -C "$STRAY" commit -qm init
+mkdir -p "$STRAY/proj/src"
+echo 'let () = ()' > "$STRAY/proj/src/main.ml"
+echo 'stray' > "$STRAY/proj/STRAY.md"
+git_quiet -C "$STRAY" add proj/STRAY.md          # exactly ONE file tracked
+git_quiet -C "$STRAY" commit -qm "one stray file"
+expect "partial tracking is refused, not downgraded to a warning" 3 "PARTIALLY TRACKED" -- \
+  bash "$SCRIPT" --agent tester --project "$STRAY/proj" --base HEAD --check-only
+out="$(bash "$SCRIPT" --agent tester --project "$STRAY/proj" --base HEAD --root "$TMP/wtp" \
+        --allow-partial-tracking --check-only 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "will be ABSENT"; then
+  ok "--allow-partial-tracking proceeds and names what the agent will not have"
+else
+  bad "--allow-partial-tracking should proceed with a warning (exit $rc)"; echo "$out"|sed 's/^/      /'
+fi
+# Positive control: fully tracked subdirectory still proceeds with a warning.
+git_quiet -C "$STRAY" add proj; git_quiet -C "$STRAY" commit -qm "track all of proj"
+out="$(bash "$SCRIPT" --agent tester --project "$STRAY/proj" --base HEAD --root "$TMP/wtp2" --check-only 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "subdirectory of the repo"; then
+  ok "positive control: a FULLY tracked subdirectory still proceeds"
+else
+  bad "fully tracked subdirectory should proceed (exit $rc)"; echo "$out"|sed 's/^/      /'
+fi
+
+echo "== 13. a relative --root must not hang (F7)"
+out="$(cd "$TMP" && timeout 10 bash "$SCRIPT" --agent tester --project "$SOLO" --base HEAD \
+        --root ./relroot --check-only 2>&1)"; rc=$?
+if [ "$rc" -eq 124 ]; then
+  bad "relative --root still hangs (exit 124)"
+elif [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ]; then
+  ok "relative --root terminates (exit $rc), no infinite ancestor walk"
+else
+  bad "relative --root gave unexpected exit $rc"; echo "$out"|sed 's/^/      /'
+fi
+out="$(cd "$TMP" && timeout 10 env AGENT_WORKTREE_ROOT=./envrelroot bash "$SCRIPT" \
+        --agent tester --project "$SOLO" --base HEAD --check-only 2>&1)"; rc=$?
+if [ "$rc" -eq 124 ]; then
+  bad "relative AGENT_WORKTREE_ROOT still hangs"
+else
+  ok "relative AGENT_WORKTREE_ROOT terminates (exit $rc)"
+fi
+
+echo "== 14. option validation covers more than --agent (F7)"
+expect "rejects a --branch git will not accept" 2 "--branch contains" -- \
+  bash "$SCRIPT" --agent tester --project "$SOLO" --branch 'bad branch;rm -rf /'
+expect "rejects a --base with shell metacharacters" 2 "--base contains" -- \
+  bash "$SCRIPT" --agent tester --project "$SOLO" --base 'x$(id)'
+expect "rejects an empty --root" 2 "--root must not be empty" -- \
+  bash "$SCRIPT" --agent tester --project "$SOLO" --root ''
+
+echo "== 15. no machine-specific default root (F11)"
+if grep -q '/mnt/ssd-external-2to' "$SCRIPT"; then
+  bad "script still hardcodes a single workstation's mount as a default"
+else
+  ok "no hardcoded machine-specific path in the script"
+fi
+out="$(env -u AGENT_WORKTREE_ROOT bash "$SCRIPT" --agent tester --project "$SOLO" --base HEAD --check-only 2>&1)"
+if printf '%s' "$out" | grep -qE "worktree=(${XDG_CACHE_HOME:-$HOME/.cache})/agent-worktrees/"; then
+  ok "default root falls back to XDG cache, which exists on any host"
+else
+  bad "unexpected default root"; echo "$out"|sed 's/^/      /'
+fi
+
+echo "== 16. usage errors"
 expect "requires --agent" 2 "--agent <name> is required" -- bash "$SCRIPT" --project "$SOLO"
 expect "rejects a shell-unsafe agent name" 2 "must match" -- bash "$SCRIPT" --agent 'a;rm -rf /'
 

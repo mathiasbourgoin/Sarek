@@ -23,8 +23,14 @@ expect() { # <label> <rc> <substr> -- cmd...
   ok "$label"
 }
 
-mkproj() { # <name> -> echoes path, with a valid ledger
-  local p="$TMP/$1"; mkdir -p "$p/briefs"
+mkproj() { # <name> -> echoes path, with a valid ledger and a minimal OCaml suite
+  local p="$TMP/$1"; mkdir -p "$p/briefs" "$p/t"
+  # Every fixture carries sources, because the hook now (correctly) refuses a
+  # tree where the Alcotest check would examine nothing.
+  cat > "$p/t/test_fixture.ml" <<'ML'
+let test_a () = Alcotest.(check int) "a" 1 1
+let () = Alcotest.run "S" [ ("g", [ Alcotest.test_case "a" `Quick test_a ]) ]
+ML
   cat > "$p/briefs/demo-state.json" <<'JSON'
 { "task": "demo", "mode": "fast", "current_phase": "implement",
   "events": [ { "phase": "implement", "outcome": "COMPLETED", "by": "roster-implement" } ] }
@@ -183,7 +189,82 @@ ML
 expect "reports zero suites rather than claiming a vacuous pass" 0 "0 Alcotest suite(s)" -- node "$ALCO" "$SUITE"
 expect "errors on a target path that does not exist" 2 "does not exist" -- node "$ALCO" "$TMP/nonexistent"
 
-echo "== D. usage"
+echo "== D. the phase this hook exists for must actually have run (F9)"
+# The scenario: /roster-implement dies before appending its event. The ledger
+# is well-formed, the schema is satisfied, and it describes the phase BEFORE
+# implement. Validating it and printing OK is how a skipped phase becomes an
+# inexplicable failure several phases later.
+P="$(mkproj noimpl)"
+cat > "$P/briefs/demo-state.json" <<'JSON'
+{ "task": "demo", "mode": "full", "current_phase": "plan",
+  "events": [ { "phase": "plan", "outcome": "COMPLETED", "by": "roster-plan" } ] }
+JSON
+expect "refuses a ledger with no implement event at all" 1 "there is no implement event anywhere" -- \
+  bash "$HOOK" --task demo --project "$P"
+expect "names it as a stale ledger" 1 "STALE ledger" -- bash "$HOOK" --task demo --project "$P"
+
+# Implement ran, but the ledger has moved past it — also not this hook's moment.
+P="$(mkproj movedon)"
+cat > "$P/briefs/demo-state.json" <<'JSON'
+{ "task": "demo", "mode": "fast", "current_phase": "review",
+  "events": [ { "phase": "implement", "outcome": "COMPLETED" },
+              { "phase": "review", "outcome": "GO" } ] }
+JSON
+expect "refuses when the latest event has moved past implement" 1 "moved on since" -- \
+  bash "$HOOK" --task demo --project "$P"
+
+# Positive control: the ordinary case must still pass, including after a
+# loop-back (review NO-GO then implement again), which is legal.
+P="$(mkproj loopback)"
+cat > "$P/briefs/demo-state.json" <<'JSON'
+{ "task": "demo", "mode": "fast", "current_phase": "implement",
+  "events": [ { "phase": "implement", "outcome": "COMPLETED" },
+              { "phase": "review", "outcome": "NO-GO", "reason": "must-fix" },
+              { "phase": "implement", "outcome": "PARTIAL", "reason": "budget" } ] }
+JSON
+expect "a loop-back ledger ending in implement passes" 0 "latest ledger event is implement" -- \
+  bash "$HOOK" --task demo --project "$P"
+
+# --expect-phase makes the mechanism general rather than implement-only.
+expect "--expect-phase review refuses the same ledger" 1 "expected \"review\"" -- \
+  bash "$HOOK" --task demo --project "$P" --expect-phase review
+
+echo "== E. a check that examined nothing is not a pass (F9)"
+# check-alcotest-registration exits 0 on a tree with no .ml files. Consuming
+# only its exit code turned "I verified nothing" into a green.
+P="$(mkproj noml)"; rm -rf "$P/t"
+expect "zero scanned .ml files fails instead of passing green" 1 "scanned ZERO .ml files" -- \
+  bash "$HOOK" --task demo --project "$P"
+P="$(mkproj withml)"
+expect "positive control: a tree with sources passes" 0 "roster-implement-posthook: OK" -- \
+  bash "$HOOK" --task demo --project "$P"
+
+echo "== F. the hook says which project it validated (F9)"
+P="$(mkproj named)"
+out="$(bash "$HOOK" --task demo --project "$P" 2>&1)"
+if printf '%s' "$out" | grep -qF "project=$P"; then
+  ok "reports the project, task and expected phase it acted on"
+else
+  bad "hook did not state which project it validated"; echo "$out"|sed 's/^/      /'
+fi
+# An auto-detected project with no briefs/ must refuse rather than validate the
+# enclosing repo's ledger — the wrong-repo topology, reached from the other side.
+NOBRIEFS="$TMP/nobriefs"; mkdir -p "$NOBRIEFS/sub"
+git_q_init() { git -c init.defaultBranch=main -c user.email=t@t -c user.name=t init -q "$1"; }
+git_q_init "$NOBRIEFS"
+expect "refuses an auto-detected project with no briefs/" 2 "Pass --project" -- \
+  sh -c "cd '$NOBRIEFS/sub' && bash '$HOOK' --task demo"
+
+echo "== G. the cross-check reports when it did not run (F9)"
+P="$(mkproj nocross)"
+out="$(bash "$HOOK" --task demo --project "$P" 2>&1)"
+if printf '%s' "$out" | grep -qF "NOT cross-checked"; then
+  ok "absence of the jq/skill cross-check is reported, not silently skipped"
+else
+  bad "cross-check absence was silent"; echo "$out"|sed 's/^/      /'
+fi
+
+echo "== H. usage"
 expect "requires --task" 2 "--task <slug> is required" -- bash "$HOOK"
 expect "rejects a malformed task slug" 2 "must match" -- bash "$HOOK" --task "Bad Slug"
 

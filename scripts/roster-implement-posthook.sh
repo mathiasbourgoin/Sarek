@@ -32,6 +32,7 @@ TASK=""
 PROJECT=""
 WORKTREE=""
 CONSOLIDATE=1
+EXPECT_PHASE="implement"
 
 die_usage() { echo "roster-implement-posthook: $1" >&2; exit 2; }
 
@@ -41,6 +42,7 @@ while [ $# -gt 0 ]; do
     --project) PROJECT="${2:-}"; shift ;;
     --worktree) WORKTREE="${2:-}"; shift ;;
     --no-consolidate) CONSOLIDATE=0 ;;
+    --expect-phase) EXPECT_PHASE="${2:-}"; shift ;;
     *) die_usage "unknown option: $1" ;;
   esac
   shift
@@ -51,9 +53,30 @@ case "$TASK" in
   *[!a-z0-9-]*) die_usage "--task must match [a-z0-9-]+ : $TASK" ;;
 esac
 
-PROJECT="${PROJECT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+PROJECT_WAS_DEFAULTED=0
+if [ -z "$PROJECT" ]; then
+  PROJECT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  PROJECT_WAS_DEFAULTED=1
+fi
 [ -d "$PROJECT" ] || die_usage "--project is not a directory: $PROJECT"
 PROJECT="$(cd "$PROJECT" && pwd -P)"
+
+# F9: defaulting to `git rev-parse --show-toplevel` silently resolves to the
+# ENCLOSING repo when run from an untracked project inside another one — the
+# same wrong-repo topology #101 exists to catch, arrived at from the other
+# direction. Assert the project actually looks like the task's home before
+# validating anything about it, and always say which project was used: a hook
+# that validated the wrong repo's ledger would otherwise report a confident OK.
+echo "roster-implement-posthook: project=$PROJECT task=$TASK expect-phase=$EXPECT_PHASE"
+if [ ! -d "$PROJECT/briefs" ]; then
+  if [ "$PROJECT_WAS_DEFAULTED" -eq 1 ]; then
+    die_usage "no briefs/ under the auto-detected project $PROJECT.
+  The project was inferred from the current directory, and git resolved it to
+  that repository — which may not be the task's repo at all. Pass --project
+  explicitly."
+  fi
+  die_usage "no briefs/ under --project $PROJECT"
+fi
 SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
 command -v node >/dev/null 2>&1 || die_usage "node is required"
@@ -122,9 +145,34 @@ if (!r.valid) { for (const m of r.errors) console.error("  " + m); process.exit(
     echo "roster-implement-posthook: ledger schema OK ($LEDGER)."
   fi
 
+  # The schema says the ledger is well-formed. It cannot say the phase this
+  # hook exists for actually ran.
+  if [ -n "$EXPECT_PHASE" ]; then
+    if ! node -e '
+const { expectLatestPhase } = require(process.argv[1]);
+const fs = require("fs");
+let data;
+try { data = JSON.parse(fs.readFileSync(process.argv[2], "utf8")); } catch { process.exit(1); }
+const r = expectLatestPhase(data, process.argv[3]);
+if (!r.valid) { for (const m of r.errors) console.error("  " + m); process.exit(1); }
+' "$SCRIPTS/lib/ledger-schema.js" "$LEDGER" "$EXPECT_PHASE"; then
+      fail "PHASE NOT RECORDED $EXPECT_PHASE (see above) — refusing to hand a stale ledger to the next phase."
+    else
+      echo "roster-implement-posthook: latest ledger event is $EXPECT_PHASE, as expected."
+    fi
+  fi
+
   # Cross-check against the jq predicate the skills actually execute. A
   # disagreement means one of the two is wrong and neither can be trusted.
   SKILL="$PROJECT/.harness/skills/roster-run.md"
+  # The cross-check needs jq AND the untracked roster skill file, so in a fresh
+  # clone it is inert. Silently skipping made "ledger schema OK" mean two
+  # different things depending on the machine. Say which one this was.
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "roster-implement-posthook: NOTE — jq absent; the tracked schema was NOT cross-checked against the jq predicate (single-source verdict)."
+  elif [ ! -f "$SKILL" ]; then
+    echo "roster-implement-posthook: NOTE — $SKILL absent (untracked roster install); the tracked schema was NOT cross-checked (single-source verdict)."
+  fi
   if command -v jq >/dev/null 2>&1 && [ -f "$SKILL" ]; then
     PRED="$(node -e '
 const fs = require("fs");
@@ -152,8 +200,16 @@ try {
 fi
 
 # ── C: Alcotest case registration ───────────────────────────────────────────
-if ! node "$SCRIPTS/check-alcotest-registration.js" "$PROJECT"; then
+# The checker reports how much it actually scanned. Consuming only its exit
+# code throws that away — and "scanned 0 .ml file(s)" exits 0, so a wrong
+# --project produced a confident green from a checker that examined nothing.
+ALCO_OUT="$(node "$SCRIPTS/check-alcotest-registration.js" "$PROJECT" 2>&1)"
+ALCO_RC=$?
+printf '%s\n' "$ALCO_OUT"
+if [ "$ALCO_RC" -ne 0 ]; then
   fail "unregistered Alcotest case(s) — see above."
+elif printf '%s' "$ALCO_OUT" | grep -q "scanned 0 .ml file"; then
+  fail "the Alcotest check scanned ZERO .ml files under $PROJECT — it verified nothing. Wrong --project, or the sources are missing."
 fi
 
 if [ "$FAILED" -ne 0 ]; then
