@@ -42,7 +42,16 @@ while [ $# -gt 0 ]; do
     --project) PROJECT="${2:-}"; shift ;;
     --worktree) WORKTREE="${2:-}"; shift ;;
     --no-consolidate) CONSOLIDATE=0 ;;
-    --expect-phase) EXPECT_PHASE="${2:-}"; shift ;;
+    # F-6: `--expect-phase` as a trailing flag, or with an empty value, left
+    # EXPECT_PHASE empty and the `[ -n ... ]` test below silently skipped the
+    # stale-ledger refusal — exit 1 became exit 0. The fix for "cannot notice a
+    # missing phase" must not be opt-out by accident. There IS an opt-out, but
+    # it is spelled explicitly and it announces itself.
+    --expect-phase)
+      [ $# -ge 2 ] || die_usage "--expect-phase requires a value (phase name, or 'none' to skip the check and say so)"
+      EXPECT_PHASE="$2"
+      [ -n "$EXPECT_PHASE" ] || die_usage "--expect-phase must not be empty; pass a phase name, or 'none' to skip the check explicitly"
+      shift ;;
     *) die_usage "unknown option: $1" ;;
   esac
   shift
@@ -147,7 +156,9 @@ if (!r.valid) { for (const m of r.errors) console.error("  " + m); process.exit(
 
   # The schema says the ledger is well-formed. It cannot say the phase this
   # hook exists for actually ran.
-  if [ -n "$EXPECT_PHASE" ]; then
+  if [ "$EXPECT_PHASE" = "none" ]; then
+    echo "roster-implement-posthook: NOTE — phase check SKIPPED by explicit --expect-phase none; this run does not attest that any phase actually ran."
+  elif [ -n "$EXPECT_PHASE" ]; then
     if ! node -e '
 const { expectLatestPhase } = require(process.argv[1]);
 const fs = require("fs");

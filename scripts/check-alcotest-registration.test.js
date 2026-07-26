@@ -333,18 +333,42 @@ check("a nonexistent target is exit 2, not a silent clean pass", () => {
   assert.ok(/does not exist/.test(r.stderr));
 });
 
-check("an unreadable directory does not escape as a stack trace", () => {
+check("an unreadable directory is reported and exits 2, not silently dropped", () => {
+  // This previously asserted exit 0 — "does not crash" — which blessed the
+  // silent drop: an unreadable directory removes whatever is inside it from
+  // the scan, so `chmod 000` over a directory holding an orphan turned
+  // "1 unregistered case" into "OK, 0 scanned". Guarding the exception fixed
+  // the stack trace and left the vacuous pass. An assertion that encodes the
+  // weaker behaviour promotes it to a specification.
   const dir = fixture({ "test_perm.ml": "let x = 1\n" });
   const locked = path.join(dir, "locked");
   fs.mkdirSync(locked);
+  fs.writeFileSync(
+    path.join(locked, "test_hidden.ml"),
+    'let test_orphan () = Alcotest.(check int) "x" 0 1\nlet () = Alcotest.run "S" []\n'
+  );
   fs.chmodSync(locked, 0o000);
   try {
     const r = runCheck(dir);
-    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}\n${r.all}`);
+    assert.strictEqual(r.code, 2, `expected exit 2, got ${r.code}\n${r.all}`);
+    assert.ok(/UNREADABLE/.test(r.err), `should name the unreadable path:\n${r.err}`);
     assert.ok(!/at Object\./.test(r.err), `raw stack trace leaked:\n${r.err}`);
   } finally {
     fs.chmodSync(locked, 0o755);
   }
+});
+
+check("positive control: the same tree readable reports the orphan inside it", () => {
+  const dir = fixture({ "test_perm.ml": "let x = 1\n" });
+  const locked = path.join(dir, "locked");
+  fs.mkdirSync(locked);
+  fs.writeFileSync(
+    path.join(locked, "test_hidden.ml"),
+    'let test_orphan () = Alcotest.(check int) "x" 0 1\nlet () = Alcotest.run "S" []\n'
+  );
+  const r = runCheck(dir);
+  assert.strictEqual(r.code, 1, `expected exit 1, got ${r.code}\n${r.all}`);
+  assert.ok(/test_orphan/.test(r.err), r.err);
 });
 
 // ── unit: the lexer ────────────────────────────────────────────────────────
@@ -433,6 +457,64 @@ check("the argument scan stops at the list separator and does not swallow the ne
 });
 
 for (const dir of tmpRoots) fs.rmSync(dir, { recursive: true, force: true });
+
+// ── the wrapper layout that used to red correct code (finding 5, false positive)
+check("a suite bound to a name and passed by identifier is not reported as unregistered", () => {
+  const dir = fixture({
+    "helpers.ml": "let case name f = Alcotest.test_case name `Quick f\n",
+    "test_wrap.ml":
+      'let test_alpha () = Alcotest.(check int) "a" 1 1\n' +
+      'let suite = [ ("g", [ Helpers.case "alpha" test_alpha ]) ]\n' +
+      'let () = Alcotest.run "S" suite\n',
+  });
+  const r = runCheck(dir);
+  assert.strictEqual(r.code, 0, `false positive on a valid wrapper layout:\n${r.all}`);
+});
+
+check("an orphan in that same wrapper layout is STILL caught", () => {
+  // The fix widened registration roots to the run call's argument region.
+  // Widening a root set can only weaken detection, so this pins that it did not.
+  const dir = fixture({
+    "helpers.ml": "let case name f = Alcotest.test_case name `Quick f\n",
+    "test_wrap.ml":
+      'let test_alpha () = Alcotest.(check int) "a" 1 1\n' +
+      'let test_forgotten () = Alcotest.(check int) "boom" 0 1\n' +
+      'let suite = [ ("g", [ Helpers.case "alpha" test_alpha ]) ]\n' +
+      'let () = Alcotest.run "S" suite\n',
+  });
+  const r = runCheck(dir);
+  assert.strictEqual(r.code, 1, `orphan missed after the root set was widened:\n${r.all}`);
+  assert.ok(/test_forgotten/.test(r.err), r.err);
+});
+
+check("a literally empty suite still reports the cases defined above it", () => {
+  const dir = fixture({
+    "test_empty.ml":
+      'let test_dead () = Alcotest.(check int) "never" 0 1\n' +
+      'let () = Alcotest.run "S" []\n',
+  });
+  const r = runCheck(dir);
+  assert.strictEqual(r.code, 1, `an empty suite must not read as registered:\n${r.all}`);
+  assert.ok(/test_dead/.test(r.err), r.err);
+});
+
+check("KNOWN LIMITATION is documented for dead-code registration (this asserts the gap, not the fix)", () => {
+  // Recorded deliberately: `if false then [...]` reads as registered because
+  // the case is textually inside the suite expression. Closing it needs OCaml
+  // evaluation. The assertion exists so the limitation cannot be forgotten,
+  // and so that if someone later closes it this test fails loudly and gets
+  // updated rather than the limitation silently outliving its comment.
+  const dir = fixture({
+    "test_dead_branch.ml":
+      'let test_dead () = Alcotest.(check int) "never" 0 1\n' +
+      'let () = Alcotest.run "S" (if false then [ ("g", [ Alcotest.test_case "d" `Quick test_dead ]) ] else [])\n',
+  });
+  const r = runCheck(dir);
+  assert.strictEqual(r.code, 0, "if this now exits 1, the limitation is closed — update the KNOWN LIMITATIONS block");
+  const src = fs.readFileSync(path.resolve(__dirname, "check-alcotest-registration.js"), "utf8");
+  assert.ok(/KNOWN LIMITATIONS/.test(src), "the limitation must stay documented in the source");
+  assert.ok(/if false then/.test(src), "the reproducer must stay in the source");
+});
 
 console.log(results.join("\n"));
 console.log(`\ncheck-alcotest-registration.test: ${pass}/${results.length} passed`);

@@ -52,6 +52,33 @@
 // which can only over-report. A false positive a human dismisses beats a
 // silent pass.
 //
+// ── KNOWN LIMITATIONS (false negatives this check does NOT catch) ──────────
+// These are real and reproducible. They are recorded here rather than fixed
+// because closing them needs analysis this tool does not do — OCaml evaluation
+// or dune awareness — and a fragile approximation of either would produce
+// false positives on valid code, which is how a CI-blocking gate gets turned
+// off. Tracked as a follow-up, not silently accepted.
+//
+//   1. A case registered inside DEAD CODE reads as registered, because it is
+//      textually present in the suite expression:
+//          let test_dead () = Alcotest.(check int) "never" 0 1
+//          let () = Alcotest.run "S"
+//            (if false then [ ("g", [ Alcotest.test_case "d" `Quick test_dead ]) ] else [])
+//      -> OK, exit 0. Deciding this needs constant-folding of OCaml, not
+//      lexing. NOTE the neighbouring case IS caught: a literally empty suite
+//      (`Alcotest.run "S" []`) with cases defined above it reports them.
+//
+//   2. A test file that no dune stanza builds is scanned as though it runs.
+//      Every case in it can be perfectly registered and the binary never
+//      exists. `scripts/check-test-alias-coverage.sh` covers the adjacent
+//      case (an executable with no run rule) for sarek/tests/e2e only.
+//      Closing this properly means reading dune stanzas and matching modules
+//      to executables.
+//
+// Both are FALSE NEGATIVES — this check reporting OK on something broken. It
+// has no known false positives; those are treated as bugs, because a gate that
+// reds correct code gets disabled and then protects nothing.
+//
 // Usage: node scripts/check-alcotest-registration.js [<dir-or-file> ...]
 //        (default: the repo, minus _build/_opam/node_modules)
 // Exit: 0 all registered; 1 at least one orphan; 2 usage/IO error.
@@ -106,11 +133,20 @@ function isTestTreeFile(file) {
   return /^test_.*\.ml$/.test(base) || /_test\.ml$/.test(base);
 }
 
+// Paths the walk could not read. NOT swallowed: a directory that cannot be
+// listed silently shrinks the scanned set, and a chmod 000 on a test directory
+// turned "1 unregistered case" into "OK". Guarding the exception stopped the
+// stack trace but kept the vacuous pass — the covering test asserted only
+// "does not crash", which blessed the silent drop. Unreadable input is now
+// reported and exits 2, the same posture as a target that does not exist.
+const unreadable = [];
+
 function walk(target, acc) {
   let stat;
   try {
     stat = fs.statSync(target);
   } catch {
+    unreadable.push(target);
     return acc;
   }
   if (stat.isFile()) {
@@ -118,13 +154,11 @@ function walk(target, acc) {
     return acc;
   }
   if (!stat.isDirectory()) return acc;
-  // Guarded like the statSync above: an unreadable directory (permissions, or
-  // a race with a concurrent build) must not escape as a raw stack trace when
-  // the documented contract is a controlled exit 2.
   let entries;
   try {
     entries = fs.readdirSync(target);
   } catch {
+    unreadable.push(target);
     return acc;
   }
   for (const name of entries) {
@@ -328,6 +362,31 @@ function collectBindings(code) {
 // The `[ ... ]` suite list handed to Alcotest.run. Bounded by the matching
 // bracket rather than by "to end of file", so a top-level binding written after
 // the run call cannot smuggle itself into the root set.
+// The span of an application's arguments, starting just after the function
+// name. Ends at the first depth-0 point where a new OCaml phrase begins — a
+// `let`/`and`/`module`/`end`/`type` at the start of a line, or `;;` — or at
+// EOF. Bounded on purpose: an unbounded region would sweep in identifiers from
+// unrelated code and quietly mark real orphans as registered.
+function argumentRegion(code, start) {
+  let depth = 0;
+  let i = start;
+  for (; i < code.length; i++) {
+    const c = code[i];
+    if (c === "[" || c === "(" || c === "{") depth += 1;
+    else if (c === "]" || c === ")" || c === "}") {
+      depth -= 1;
+      if (depth < 0) break; // ran out of the enclosing expression
+    } else if (depth === 0) {
+      if (c === ";" && code[i + 1] === ";") break;
+      if (c === "\n") {
+        const rest = code.slice(i + 1);
+        if (/^(let|and|module|end|type|exception|open)\b/.test(rest)) break;
+      }
+    }
+  }
+  return code.slice(start, i);
+}
+
 function collectRunRoots(code, into) {
   const anchors = [/\bAlcotest\s*\.\s*run\b/g];
   if (OPEN_ALCOTEST_RE.test(code)) anchors.push(/(^|[^.\w])run\s*(?:\n\s*)?"/g);
@@ -335,19 +394,19 @@ function collectRunRoots(code, into) {
     anchor.lastIndex = 0;
     let m;
     while ((m = anchor.exec(code)) !== null) {
-      const open = code.indexOf("[", m.index);
-      if (open === -1) continue;
-      let depth = 0;
-      let j = open;
-      for (; j < code.length; j++) {
-        const c = code[j];
-        if (c === "[" || c === "(" || c === "{") depth += 1;
-        else if (c === "]" || c === ")" || c === "}") {
-          depth -= 1;
-          if (depth === 0) break;
-        }
-      }
-      const span = code.slice(open, j + 1);
+      // Take the run call's ARGUMENT REGION, whatever shape it has. Looking
+      // for the next "[" assumed the suite is always a bracket literal at the
+      // call site. The common
+      //     let suite = [ ("g", [ Helpers.case "a" test_a ]) ]
+      //     let () = Alcotest.run "S" suite
+      // layout has no bracket there at all, so the scan either found nothing
+      // or — worse — locked onto an unrelated "[" further down the file. The
+      // first made every case in the file look unregistered: a CI-blocking
+      // false positive on code that runs, which is how a gate gets switched
+      // off. Collecting identifiers from the argument region picks up `suite`,
+      // and the existing liveness closure then reaches the cases through its
+      // body.
+      const span = argumentRegion(code, m.index + m[0].length);
       ANY_IDENT_RE.lastIndex = 0;
       let id;
       while ((id = ANY_IDENT_RE.exec(span)) !== null) into.add(id[0]);
@@ -475,6 +534,21 @@ function main(argv) {
       return 2;
     }
     walk(abs, files);
+  }
+
+  // Checked BEFORE any verdict is computed: a directory that could not be
+  // listed removes whatever was inside it from the scan, and `chmod 000` on a
+  // test directory turned "1 unregistered case" into "OK, 0 scanned". Guarding
+  // the exception only stopped the stack trace; the vacuous pass survived, and
+  // the covering test asserted merely "does not crash", which blessed it.
+  if (unreadable.length) {
+    for (const u of unreadable) {
+      console.error(
+        `check-alcotest-registration: UNREADABLE ${u} — cannot list it, so any test case inside is invisible to this check.`
+      );
+    }
+    console.error("check-alcotest-registration: refusing to report a verdict over a partially-readable tree.");
+    return 2;
   }
 
   let result;
