@@ -46,7 +46,7 @@ set -uo pipefail
 # is tautological by construction and can never report a gap on its own.
 #
 # The Rocq section below is deliberately NOT counted; see its comment.
-EXPECTED_CHECKS=10
+EXPECTED_CHECKS=12
 
 failures=0
 checks=0
