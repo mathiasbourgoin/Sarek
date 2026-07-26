@@ -112,7 +112,14 @@ let split_params (s : string) : string list =
       | c -> Buffer.add_char buf c)
     s ;
   if trim (Buffer.contents buf) <> "" then out := Buffer.contents buf :: !out ;
-  List.rev_map trim !out |> List.rev
+  (* [!out] is accumulated back-to-front, and [List.rev_map] already reverses
+     while mapping — so it alone restores source order. The [List.rev] that used
+     to follow put the list back into reverse, which made the reported offences
+     read bottom-up. Detection was unaffected (each parameter is inspected
+     independently, so no permutation can hide one), but a diagnostic that lists
+     parameters in an order the reader cannot find in the source costs exactly
+     the time this gate is supposed to save. Order is pinned by a test. *)
+  List.rev_map trim !out
 
 let contains_char s c = String.exists (fun x -> x = c) s
 

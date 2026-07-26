@@ -517,10 +517,11 @@ let test_fp64_predicate_goes_red_under_suppression () =
        stronger observation of the two; the suppression branch below exists only
        so the Linux machines can see the same red. *)
     Alcotest.(check bool)
-      "fp64 is natively absent here, and the predicate says so, naming \
-       cl_khr_fp64"
+      "fp64 is natively absent here, and CLANG'S OWN diagnostic says why — \
+       asserted against the raw compiler output, never against our composed \
+       reason, which must not contain the token it is being searched for"
       true
-      (names_cl_khr_fp64 (Clang.why_no_fp64 ()))
+      (names_cl_khr_fp64 (Clang.fp64_diagnostic ()))
   else begin
     (* fp64 IS available, so the interesting branch is the one that never runs
        on this machine — the branch that split the M4 into two verdicts. Drive
@@ -535,17 +536,41 @@ let test_fp64_predicate_goes_red_under_suppression () =
              switch does nothing, so every \"SKIP (no fp64)\" the sweep prints \
              is unverifiable." ;
         Alcotest.(check bool)
-          "the stated reason names cl_khr_fp64"
+          "clang's own diagnostic under suppression names cl_khr_fp64"
           true
           (names_cl_khr_fp64 report)
   end
+
+(* Guards the split above. If someone reintroduces "cl_khr_fp64" into the
+   composed reason, both assertions in the case above silently become
+   unfalsifiable again — they would find the token in our own text. This is the
+   check that keeps them honest, and it is cheap. *)
+let test_composed_reason_does_not_manufacture_the_token () =
+  if Clang.fp64_available () then
+    Alcotest.(check string)
+      "fp64 available => no reason at all"
+      ""
+      (Clang.why_no_fp64 ())
+  else
+    Alcotest.(check bool)
+      "the composed reason must not itself contain `cl_khr_fp64` — only \
+       clang's quoted output may"
+      false
+      (names_cl_khr_fp64
+         (Str.global_replace
+            (Str.regexp_string (Clang.fp64_diagnostic ()))
+            ""
+            (Clang.why_no_fp64 ())))
 
 (* Sub-mode used by the case above. Prints the reason fp64 is unavailable (empty
    line if it IS available) and exits, so the parent can read the predicate out
    of a fresh process with a different environment. *)
 let () =
   if Array.length Sys.argv > 1 && Sys.argv.(1) = "--fp64-report" then begin
-    print_string (Clang.why_no_fp64 ()) ;
+    (* The RAW compiler diagnostic, not the composed reason: the parent asserts
+       cl_khr_fp64 against this, and a composed string of ours carrying that
+       token would make the assertion unfalsifiable. *)
+    print_string (Clang.fp64_diagnostic ()) ;
     exit 0
   end
 
@@ -572,6 +597,10 @@ let () =
             "the fp64 predicate goes red under suppression"
             `Quick
             test_fp64_predicate_goes_red_under_suppression;
+          Alcotest.test_case
+            "the composed fp64 reason does not manufacture `cl_khr_fp64`"
+            `Quick
+            test_composed_reason_does_not_manufacture_the_token;
         ] );
       ( "layer3_binder_canary",
         [

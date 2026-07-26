@@ -124,17 +124,42 @@ let fp64_probe =
   "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n\
    __kernel void probe64(__global double *o) { o[get_global_id(0)] = 1.0; }\n"
 
+(** The fp64 probe's RAW compiler output, kept separate from any wording of
+    ours.
+
+    THE COMPOSED REASON BELOW MUST NOT NAME [cl_khr_fp64], and this split is
+    why. An earlier version wrapped the diagnostic in "(the target does not
+    support cl_khr_fp64)" — so the composed string contained that token whenever
+    the probe failed, {e for any reason at all}. The negative control then
+    asserted "the reason names cl_khr_fp64" against that composed string and was
+    checking our own printf, not clang's behaviour: a probe broken by an
+    unrelated syntax error would have satisfied it. That is a check that cannot
+    fail, which is precisely what this gate exists to rule out.
+
+    So the token is asserted against THIS value, which only clang can put there.
+    [None] when fp64 works, or when clang is unusable for a reason that has
+    nothing to do with fp64. *)
+let no_fp64_diagnostic : string option Lazy.t =
+  lazy
+    (match Lazy.force unavailable_reason with
+    | Some _ -> None
+    | None -> (
+        match run_clang fp64_probe with Ok () -> None | Error e -> Some e))
+
 let no_fp64_reason : string option Lazy.t =
   lazy
     (match Lazy.force unavailable_reason with
     | Some r -> Some ("clang itself is unusable: " ^ r)
     | None -> (
-        match run_clang fp64_probe with
-        | Ok () -> None
-        | Error e ->
+        match Lazy.force no_fp64_diagnostic with
+        | None -> None
+        | Some e ->
+            (* States only what was observed — that this clang rejected a
+               `double` kernel — and then hands over the compiler's own words.
+               No claim about WHY is manufactured here. *)
             Some
-              ("this clang cannot compile an OpenCL kernel using `double` (the \
-                target does not support cl_khr_fp64): " ^ e)))
+              ("this clang cannot compile an OpenCL kernel using `double`: " ^ e)
+        ))
 
 (** [true] iff the clang this gate drives can compile a [double] OpenCL kernel.
     The single authority for every float64 case in the sweep. *)
@@ -142,3 +167,8 @@ let fp64_available () = Lazy.force no_fp64_reason = None
 
 let why_no_fp64 () =
   match Lazy.force no_fp64_reason with Some r -> r | None -> ""
+
+(** The unedited compiler diagnostic from the fp64 probe, or [""]. Assert
+    against this, never against {!why_no_fp64}. *)
+let fp64_diagnostic () =
+  match Lazy.force no_fp64_diagnostic with Some e -> e | None -> ""

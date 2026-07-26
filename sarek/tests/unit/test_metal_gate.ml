@@ -209,6 +209,40 @@ let test_compile_layer_goes_red_on_a_body_defect () =
            with Not_found -> false)
   end
 
+(* Parameter order (CodeRabbit, #316). [split_params] used to reverse the list,
+   so offences were reported bottom-up. Detection never depended on order — each
+   parameter is inspected on its own, so no permutation can hide one — but a
+   diagnostic listing parameters in an order the reader cannot find in the
+   source wastes the time this gate exists to save. Pinned here so it cannot
+   silently flip back, and so the claim "order does not affect detection" is
+   checked rather than asserted: the two-offence kernel below must report BOTH,
+   in source order. *)
+let two_offence_kernel =
+  "#include <metal_stdlib>\n\
+   kernel void k(constant Point2* &first [[buffer(0)]],\n\
+   device float* ok [[buffer(1)]],\n\
+   float* second [[buffer(2)]],\n\
+   uint3 gid [[thread_position_in_grid]]) { }\n"
+
+let test_offences_are_reported_in_source_order () =
+  match Addr.offences two_offence_kernel with
+  | [a; b] ->
+      Alcotest.(check bool)
+        "first offending parameter is the one written first"
+        true
+        (a.Addr.param = "constant Point2* &first [[buffer(0)]]") ;
+      Alcotest.(check bool)
+        "second offending parameter is the one written second"
+        true
+        (b.Addr.param = "float* second [[buffer(2)]]")
+  | os ->
+      Alcotest.failf
+        "expected exactly 2 offences (the well-formed `device float* ok` must \
+         not be one), got %d:\n\
+         %s"
+        (List.length os)
+        (String.concat "\n" (List.map Addr.describe os))
+
 let () =
   Alcotest.run
     "metal_gate"
@@ -235,6 +269,10 @@ let () =
             "the signature parser finds a non-empty parameter list"
             `Quick
             test_signature_is_actually_found;
+          Alcotest.test_case
+            "offences are reported in source order"
+            `Quick
+            test_offences_are_reported_in_source_order;
         ] );
       ( "compile",
         [

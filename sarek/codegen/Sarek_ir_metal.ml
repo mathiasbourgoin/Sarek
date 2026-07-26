@@ -663,6 +663,13 @@ let rec gen_stmt buf indent = function
     Metal-specific {!gen_param_metal} below (buffer-index variant). *)
 let is_vec_type = Sarek_ir_codegen.is_vec_type
 
+(* "Will [metal_type_of_elttype] hand back a pointer?" — a different question
+   from {!is_vec_type}, which asks "does this carry a trailing length argument?"
+   and answers [true] for [TVec] alone. Conflating the two is what let [TArray]
+   parameters reach the scalar arm and emit [constant T* &v]. *)
+let is_pointer_type (t : elttype) =
+  match t with TVec _ | TArray _ -> true | _ -> false
+
 (* A buffer parameter: pointer into an address space, plus its length.
 
    ADDRESS SPACE IS [device], NOT [constant], and that is a decision rather than
@@ -689,7 +696,25 @@ let is_vec_type = Sarek_ir_codegen.is_vec_type
    address space, which Metal rejects outright ("must have address space
    qualifier"). Both such goldens (record_kernel, variant_kernel) had never
    compiled; nothing on Linux could see it. *)
-let gen_buffer_param buf atomic_vars idx v ~memspace ~elttype =
+let gen_buffer_param buf atomic_vars idx v ~memspace ~elttype ~with_length =
+  (* [metal_memspace Local] is [""], so a Local buffer parameter would emit a
+     leading space and then a pointer with NO address space — the other half of
+     MSL 3.2 §4.2, and exactly the shape Metal_gate.Metal_addrspace rejects. The
+     emitter would be producing source its own gate refuses.
+
+     Unreachable from the current corpus, but reachable in principle, and newly
+     so: the [DParam (v, None)] arm above derives the space from the variable's
+     type and passes [TArray (elt, Local)] straight through. Rejecting here
+     keeps the invariant in the emitter, where it belongs, rather than resting
+     on the corpus happening not to contain the case. *)
+  (match memspace with
+  | Local ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "gen_buffer_param"
+           "Metal kernel buffer parameters need an explicit address space \
+            (device or threadgroup); Local has none")
+  | Global | Shared -> ()) ;
   Buffer.add_string buf (metal_memspace memspace) ;
   Buffer.add_char buf ' ' ;
   (* Use atomic type if this variable is used with atomics *)
@@ -702,32 +727,50 @@ let gen_buffer_param buf atomic_vars idx v ~memspace ~elttype =
   Buffer.add_string buf v.var_name ;
   Buffer.add_string buf " [[buffer(" ;
   Buffer.add_string buf (string_of_int idx) ;
-  Buffer.add_string buf ")]], constant int &sarek_" ;
-  Buffer.add_string buf v.var_name ;
-  Buffer.add_string buf "_length [[buffer(" ;
-  Buffer.add_string buf (string_of_int (idx + 1)) ;
   Buffer.add_string buf ")]]" ;
-  idx + 2
+  (* Only a [TVec] carries the implicit trailing [sarek_<name>_length] argument
+     — that is the documented meaning of {!Sarek_ir_codegen.is_vec_type}. A
+     [TArray] has a size known at codegen time and no length argument, so
+     emitting one here would shift every following buffer index past what the
+     host binds. *)
+  if with_length then begin
+    Buffer.add_string buf ", constant int &sarek_" ;
+    Buffer.add_string buf v.var_name ;
+    Buffer.add_string buf "_length [[buffer(" ;
+    Buffer.add_string buf (string_of_int (idx + 1)) ;
+    Buffer.add_string buf ")]]" ;
+    idx + 2
+  end
+  else idx + 1
 
 (** Generate parameter with Metal buffer attributes, returns next buffer index
 *)
 let gen_param_metal buf atomic_vars idx = function
-  (* Vec/array parameter carrying no [array_info]. The element type and the
-     memory space come from the variable's own type; a bare [TVec] is a global
-     buffer, exactly as {!metal_param_type} already assumed. *)
-  | DParam (v, None) when is_vec_type v.var_type ->
-      let memspace, elttype =
+  (* Any POINTER-typed parameter carrying no [array_info]. The element type and
+     the memory space come from the variable's own type; a bare [TVec] is a
+     global buffer, exactly as {!metal_param_type} already assumed.
+
+     The test is deliberately NOT [is_vec_type]: that predicate means "carries a
+     trailing length argument" and is [TVec] only, so guarding on it left
+     [TArray] parameters falling through to the scalar arm below — which emits
+     [constant float* &a], the very #139 reference-to-pointer shape this change
+     exists to remove, in a second constructor. Caught by the Local-address-space
+     test in sarek-metal/test/test_sarek_ir_metal.ml. What matters here is
+     whether [metal_type_of_elttype] will produce a pointer, so that is what is
+     asked. *)
+  | DParam (v, None) when is_pointer_type v.var_type ->
+      let memspace, elttype, with_length =
         match v.var_type with
-        | TVec elt -> (Global, elt)
-        | TArray (elt, ms) -> (ms, elt)
+        | TVec elt -> (Global, elt, true)
+        | TArray (elt, ms) -> (ms, elt, false)
         | _ ->
-            (* unreachable: [is_vec_type] is exactly TVec | TArray *)
+            (* unreachable: [is_pointer_type] is exactly TVec | TArray *)
             Codegen_error.raise_error
               (Codegen_error.unsupported_construct
                  "gen_param_metal"
-                 "is_vec_type accepted a non-vec type")
+                 "is_pointer_type accepted a non-pointer type")
       in
-      gen_buffer_param buf atomic_vars idx v ~memspace ~elttype
+      gen_buffer_param buf atomic_vars idx v ~memspace ~elttype ~with_length
   | DParam (v, None) ->
       (* Scalar parameter - wrap in constant buffer. A scalar genuinely is
          uniform and read-only per dispatch, so [constant T &] is right here. *)
@@ -748,6 +791,7 @@ let gen_param_metal buf atomic_vars idx = function
         v
         ~memspace:arr.arr_memspace
         ~elttype:arr.arr_elttype
+        ~with_length:true
   | DLocal _ | DShared _ ->
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct

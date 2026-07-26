@@ -201,6 +201,61 @@ let test_indent_nested () =
   let nested = Sarek_ir_metal.indent_nested "  " in
   Alcotest.(check string) "indent_nested adds two spaces" "    " nested
 
+(* Local address space on a buffer parameter is REFUSED (#139 / PR #316 review).
+
+   [metal_memspace Local] is "", so without this guard the emitter produced
+   " float* v [[buffer(0)]]" — a pointer with no address space, the other half
+   of MSL 3.2 §4.2 and precisely the shape Metal_gate.Metal_addrspace rejects.
+   The emitter would have been generating source its own gate refuses.
+
+   Both routes are exercised: the explicit [array_info] and the bare [TArray]
+   the DParam-without-info arm derives its space from. The second is the newly
+   reachable one. *)
+let expect_local_refused label decl =
+  let buf = Buffer.create 64 in
+  match Sarek_ir_metal.gen_param_metal buf [] 0 decl with
+  | (_ : int) ->
+      Alcotest.failf
+        "%s: Local was accepted and emitted %S — a pointer with no address \
+         space, which Metal rejects"
+        label
+        (Buffer.contents buf)
+  | exception _ -> ()
+
+let test_local_buffer_param_refused () =
+  let v =
+    {var_name = "v"; var_id = 0; var_type = TFloat32; var_mutable = false}
+  in
+  expect_local_refused
+    "explicit array_info"
+    (DParam (v, Some {arr_elttype = TFloat32; arr_memspace = Local})) ;
+  let a =
+    {
+      var_name = "a";
+      var_id = 0;
+      var_type = TArray (TFloat32, Local);
+      var_mutable = false;
+    }
+  in
+  expect_local_refused "TArray (_, Local) with no array_info" (DParam (a, None)) ;
+  (* Control: Global on the same shapes still emits, so the guard rejects Local
+     specifically rather than everything. *)
+  let g =
+    {
+      var_name = "g";
+      var_id = 0;
+      var_type = TArray (TFloat32, Global);
+      var_mutable = false;
+    }
+  in
+  let buf = Buffer.create 64 in
+  let _ = Sarek_ir_metal.gen_param_metal buf [] 0 (DParam (g, None)) in
+  Alcotest.(check bool)
+    "Global still emits a device pointer"
+    true
+    (String.length (Buffer.contents buf) > 0
+    && String.sub (Buffer.contents buf) 0 6 = "device")
+
 let () =
   Alcotest.run
     "Sarek_ir_metal"
@@ -221,6 +276,13 @@ let () =
       ("atomics", [Alcotest.test_case "atomic operations" `Quick test_atomics]);
       ("types", [Alcotest.test_case "type mapping" `Quick test_type_mapping]);
       ("var_decl", [Alcotest.test_case "var declaration" `Quick test_var_decl]);
+      ( "param_address_space",
+        [
+          Alcotest.test_case
+            "Local buffer parameter is refused"
+            `Quick
+            test_local_buffer_param_refused;
+        ] );
       ( "array_decl",
         [Alcotest.test_case "array declaration" `Quick test_array_decl] );
       ("indent", [Alcotest.test_case "indent helper" `Quick test_indent_nested]);
