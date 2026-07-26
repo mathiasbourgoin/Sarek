@@ -135,6 +135,15 @@ function readLatestJournalEntry(root, task, runtime, digest, currentCycle) {
       if (entry.outcome === "blocked" && entry.reason === "malformed-journal") {
         return { malformed: true, reason: "malformed-journal" };
       }
+      // A REFUSAL IS NOT A PROBE RESULT. FR-095 journals one line per
+      // invocation, including the invocations the breaker refused — so the
+      // newest matching line after an arm is the refusal itself, whose outcome
+      // is "skipped-degraded", which is not "degraded", which cleared the arm.
+      // The breaker therefore suppressed only every OTHER probe: a permanently
+      // broken runtime was re-invoked forever at a 50% duty cycle, which is the
+      // exact waste it exists to prevent. Skipping non-probe records finds the
+      // last real outcome, and the journal keeps its complete audit trail.
+      if (entry.outcome === "skipped-degraded" || entry.outcome === "skipped-human") continue;
       return entry;
     }
   }

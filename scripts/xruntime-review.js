@@ -370,17 +370,13 @@ function tryFinishEarly(root, args, digest, versionProbeTimedOut, versionProbeRe
     finish(root, args, digest, { status: "skipped-human", reason: args.skip, runtimeExit: null, durationS: 0 });
     return true;
   }
-  if (versionProbeTimedOut) {
-    finish(root, args, digest, {
-      status: "degraded",
-      reason: versionProbeReason || "version-probe-timeout",
-      fault: "runtime",
-      runtimeExit: null,
-      durationS: null,
-    });
-    return true;
-  }
 
+  // THE BREAKER IS CONSULTED BEFORE THE VERSION-PROBE SHORT-CIRCUIT. It used
+  // to come after, so a runtime whose binary is absent (ENOENT) took the
+  // version-probe branch on EVERY invocation and never reached the breaker at
+  // all — five of five probes ran against a runtime that cannot possibly work.
+  // The placeholder digest is stable across those invocations, so the journal
+  // does have the evidence; nothing was asking it.
   const reviewJsonResult = readReviewJson(root, args.task);
   if (reviewJsonResult.state === "malformed") {
     finishBlocked(root, args, digest); // E-8: fail closed, never a silent no-state
@@ -408,6 +404,20 @@ function tryFinishEarly(root, args, digest, versionProbeTimedOut, versionProbeRe
       reason: "runtime degraded this cycle with unchanged digest (D-2/E-5)",
       runtimeExit: null,
       durationS: 0,
+    });
+    return true;
+  }
+
+  // Only now: the version probe failed, so there is nothing to invoke. This
+  // runs AFTER the breaker so a repeat of an already-known-dead runtime is
+  // refused rather than re-attempted.
+  if (versionProbeTimedOut) {
+    finish(root, args, digest, {
+      status: "degraded",
+      reason: versionProbeReason || "version-probe-timeout",
+      fault: "runtime",
+      runtimeExit: null,
+      durationS: null,
     });
     return true;
   }

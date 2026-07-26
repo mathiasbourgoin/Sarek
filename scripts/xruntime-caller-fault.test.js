@@ -342,6 +342,97 @@ check("E2E positive control: a silent runtime DOES suppress the next probe", () 
   assert.strictEqual(second.status, "skipped-degraded", "breaker failed to arm on a runtime fault");
 });
 
+// ── the breaker must STAY armed, not alternate ──────────────────────────────
+// Every earlier E2E here inspected probe #2 only, which structurally cannot
+// see an every-other-probe failure: it attests a property that holds at N=2
+// and says nothing about N=3. These run a sequence and assert the whole shape.
+function probeSequence(stubBin, n, extraArgsAt = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xruntime-seq-"));
+  fs.mkdirSync(path.join(dir, "briefs"));
+  const promptFile = path.join(dir, "prompt.txt");
+  fs.writeFileSync(promptFile, "find bugs");
+  const out = [];
+  for (let i = 1; i <= n; i++) {
+    const args = [
+      path.join(ROOT, "scripts/xruntime-review.js"), "opencode",
+      "--task", "seq", "--prompt-file", promptFile,
+      "--cycle", "3", "--round", "1", "--timeout", "20",
+      ...(extraArgsAt[i] || []),
+    ];
+    const r = spawnSync("node", args, {
+      cwd: dir, encoding: "utf8",
+      env: { ...process.env, XRUNTIME_BIN: typeof stubBin === "function" ? stubBin(i) : stubBin },
+    });
+    out.push(JSON.parse(r.stdout.trim().split("\n").pop()).status);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+  return out;
+}
+
+function writeStub(dir, name, body) {
+  const p = path.join(dir, name);
+  fs.writeFileSync(p, body, { mode: 0o755 });
+  return p;
+}
+
+check("six probes against a silent runtime: armed once, then refused every time", () => {
+  const seq = probeSequence("/bin/true", 6);
+  assert.strictEqual(seq[0], "degraded", `first probe: ${seq[0]}`);
+  const rest = seq.slice(1);
+  assert.ok(
+    rest.every((s) => s === "skipped-degraded"),
+    `breaker alternated instead of staying armed: ${seq.join(", ")}`
+  );
+});
+
+check("five probes against an ABSENT binary: the breaker arms (version probe must not bypass it)", () => {
+  const seq = probeSequence("/nonexistent/definitely-not-a-runtime", 5);
+  assert.strictEqual(seq[0], "degraded");
+  assert.ok(
+    seq.slice(1).every((s) => s === "skipped-degraded"),
+    `a runtime that cannot start was re-probed: ${seq.join(", ")}`
+  );
+});
+
+check("positive control: a HEALTHY runtime is probed every time, never refused", () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "xruntime-stubs-"));
+  try {
+    const stub = writeStub(d, "healthy",
+      '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "stub 1.0"; exit 0; fi\necho "[]"\n');
+    const seq = probeSequence(stub, 6);
+    assert.ok(seq.every((s) => s === "healthy"), `breaker over-armed on a healthy runtime: ${seq.join(", ")}`);
+  } finally {
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+check("positive control: --human-retry bypasses an armed breaker", () => {
+  const seq = probeSequence("/bin/true", 3, { 3: ["--human-retry"] });
+  assert.deepStrictEqual(seq, ["degraded", "skipped-degraded", "degraded"], seq.join(", "));
+});
+
+check("positive control: a runtime VERSION change re-probes (the escape hatch)", () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "xruntime-stubs-"));
+  try {
+    const mk = (v) => writeStub(d, `v${v}`,
+      `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "stub ${v}"; exit 0; fi\nexit 0\n`);
+    const a = mk(1), b = mk(2);
+    const seq = probeSequence((i) => (i === 3 ? b : a), 3);
+    assert.deepStrictEqual(seq, ["degraded", "skipped-degraded", "degraded"], seq.join(", "));
+  } finally {
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+check("a refusal record does not clear a prior arm in the journal lookup", () => {
+  const dir = journalFixture([
+    J({ runtime: "opencode", digest: "d1", outcome: "degraded", reason: "empty-output", cycle: 3, fault: "runtime" }),
+    J({ runtime: "opencode", digest: "d1", outcome: "skipped-degraded", cycle: 3 }),
+  ]);
+  const e = readLatestJournalEntry(dir, "jt", "opencode", "d1", 3);
+  assert.strictEqual(e.outcome, "degraded", "the refusal record shadowed the degradation");
+});
+
 check("E2E: --emit-contract prints the contract and invokes nothing", () => {
   const r = spawnSync("node", [path.join(ROOT, "scripts/xruntime-review.js"), "--emit-contract"], {
     encoding: "utf8",

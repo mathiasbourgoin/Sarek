@@ -37,8 +37,35 @@ scripts/REVIEW-BUNDLE.md scripts/check-review-convergence.js scripts/check-scope
 scripts/review-bundle-verify.js scripts/review-normalize.js scripts/xruntime-exec.sh
 scripts/xruntime-review.js"
 DIRFILES="scripts/lib/review/review-trace.js scripts/lib/review/normalize-rules.js
-scripts/lib/xruntime/xruntime-classify.js
+scripts/lib/review/review-lifecycle.js
+scripts/lib/xruntime/xruntime-classify.js scripts/lib/xruntime/xruntime-journal.js
+scripts/lib/xruntime/xruntime-contract.js
 tools/data-schema/fixtures/review-finding/valid/basic.jsonl"
+
+# The guard checks a hardcoded set of (file, marker) pairs independently of the
+# manifest — that is the whole point of it surviving an upgrade that
+# regenerates the manifest. A fixture must therefore model a repo with those
+# patches APPLIED, or every fixture fails for the wrong reason. Content is real
+# code, not comments: a marker satisfied only by a comment does not count.
+fixture_content() { # <relpath>
+  case "$1" in
+    scripts/lib/xruntime/xruntime-classify.js)
+      printf 'const FAULT_BY_OUTCOME = { "runtime-error": "runtime" };
+module.exports = { FAULT_BY_OUTCOME };
+' ;;
+    scripts/lib/xruntime/xruntime-journal.js)
+      printf 'function isCallerFault(e) { return !!(e && e.fault === "caller"); }
+module.exports = { isCallerFault };
+' ;;
+    scripts/lib/xruntime/xruntime-contract.js)
+      printf 'const OUTPUT_CONTRACT = "contract";
+module.exports = { OUTPUT_CONTRACT };
+' ;;
+    scripts/lib/review/review-lifecycle.js)
+      printf '%s\n' 'const MSG = `expected "GO" or "NO-GO"`;' ;;
+    *) printf 'content of %s\n' "$1" ;;
+  esac
+}
 
 # build_fixture <name> -> path to a fresh git repo with a complete, valid bundle
 build_fixture() {
@@ -46,7 +73,7 @@ build_fixture() {
   local f
   for f in $ANCHORS $DIRFILES; do
     mkdir -p "$root/$(dirname "$f")"
-    printf 'content of %s\n' "$f" > "$root/$f"
+    fixture_content "$f" > "$root/$f"
   done
   # The real verifier is the one under test's collaborator — use it, not a stub.
   cp "$VERIFY" "$root/scripts/review-bundle-verify.js"
@@ -177,14 +204,16 @@ echo "== local_patches[] must be an enforced claim, not a comment"
 # consistent and the fix is gone. Only the marker notices.
 patch_fixture() { # <name>
   local root; root="$(build_fixture "$1")"
-  printf 'exports.f = 1; // SPOC-LOCAL-MARKER-XYZ\n' > "$root/scripts/lib/review/normalize-rules.js"
+  # Marker in CODE, not a comment: a marker satisfied only by a comment means
+  # the guard attests something strictly weaker than the covering test does.
+  printf 'const SPOC_LOCAL_MARKER_XYZ = 1;\nexports.f = SPOC_LOCAL_MARKER_XYZ;\n' > "$root/scripts/lib/review/normalize-rules.js"
   node -e '
 const fs=require("fs"),crypto=require("crypto"),path=require("path");
 const root=process.argv[1], p=root+"/scripts/review-bundle.manifest.json";
 const m=JSON.parse(fs.readFileSync(p,"utf8"));
 m.local_patches=[{ref:"demo-patch",reapply_on_upgrade:true,
   paths:["scripts/lib/review/normalize-rules.js"],
-  markers:{"scripts/lib/review/normalize-rules.js":["SPOC-LOCAL-MARKER-XYZ"]}}];
+  markers:{"scripts/lib/review/normalize-rules.js":["SPOC_LOCAL_MARKER_XYZ"]}}];
 for (const e of m.files) e.sha256 = crypto.createHash("sha256")
   .update(fs.readFileSync(path.join(root,e.path))).digest("hex");
 fs.writeFileSync(p, JSON.stringify(m,null,2)+"\n");' "$root"
@@ -219,7 +248,7 @@ expect "a reverted local patch is caught by its marker" 1 "marker absent" -- \
 # and the shape the first outside contributor actually used.
 patch_fixture_array() { # <name>
   local root; root="$(build_fixture "$1")"
-  printf 'exports.f = 1; // SPOC-LOCAL-MARKER-XYZ and legacy_skip_authorized\n' \
+  printf 'const SPOC_LOCAL_MARKER_XYZ = 1;\nconst legacy_skip_authorized = true;\nexports.f = [SPOC_LOCAL_MARKER_XYZ, legacy_skip_authorized];\n' \
     > "$root/scripts/lib/review/normalize-rules.js"
   node -e '
 const fs=require("fs"),crypto=require("crypto"),path=require("path");
@@ -227,7 +256,7 @@ const root=process.argv[1], p=root+"/scripts/review-bundle.manifest.json";
 const m=JSON.parse(fs.readFileSync(p,"utf8"));
 m.local_patches=[{ref:"array-form",reapply_on_upgrade:true,
   paths:["scripts/lib/review/normalize-rules.js"],
-  markers:["SPOC-LOCAL-MARKER-XYZ","legacy_skip_authorized"]}];
+  markers:["SPOC_LOCAL_MARKER_XYZ","legacy_skip_authorized"]}];
 for (const e of m.files) e.sha256 = crypto.createHash("sha256")
   .update(fs.readFileSync(path.join(root,e.path))).digest("hex");
 fs.writeFileSync(p, JSON.stringify(m,null,2)+"\n");' "$root"
@@ -275,6 +304,76 @@ expect "a markers value of the wrong type is named as such" 1 "markers must be a
 
 R="$(malformed_fixture badneedle '{"ref":"x","reapply_on_upgrade":true,"markers":[""],"paths":["scripts/review-normalize.js"]}')"
 expect "an empty-string needle is rejected rather than matching everything" 1 "non-empty strings" -- \
+  bash "$R/scripts/check-review-bundle-tracked.sh" "$R"
+
+# markers: [] passes Array.isArray, [].every() is vacuously true, and
+# Object.fromEntries then yields keys with zero needles — so the "names no
+# markers" check never fired. Executed against a genuinely reverted patch with
+# regenerated hashes, this returned exit 0.
+R="$(malformed_fixture emptyarray '{"ref":"x","reapply_on_upgrade":true,"markers":[],"paths":["scripts/review-normalize.js"]}')"
+expect "markers: [] is rejected as verifying nothing" 1 "empty array" -- \
+  bash "$R/scripts/check-review-bundle-tracked.sh" "$R"
+
+R="$(malformed_fixture emptyobj '{"ref":"x","reapply_on_upgrade":true,"markers":{"scripts/review-normalize.js":[]},"paths":["scripts/review-normalize.js"]}')"
+expect "an object whose only value is an empty needle list is rejected" 1 "names no markers" -- \
+  bash "$R/scripts/check-review-bundle-tracked.sh" "$R"
+
+# A marker keyed on a file the patch does not touch attests nothing.
+R="$(malformed_fixture wrongfile '{"ref":"x","reapply_on_upgrade":true,"markers":{"scripts/REVIEW-BUNDLE.md":["bundle"]},"paths":["scripts/review-normalize.js"]}')"
+expect "a marker in a file outside paths is rejected" 1 "not in paths" -- \
+  bash "$R/scripts/check-review-bundle-tracked.sh" "$R"
+
+# local_patches shape abuse: all of these silently exited 0 before.
+R="$(build_fixture lpobject)"
+node -e '
+const fs=require("fs");const p=process.argv[1]+"/scripts/review-bundle.manifest.json";
+const m=JSON.parse(fs.readFileSync(p,"utf8"));m.local_patches={ref:"not-an-array"};
+fs.writeFileSync(p,JSON.stringify(m,null,2)+"\n");' "$R"
+git_q -C "$R" add -A >/dev/null; git_q -C "$R" commit -qm lpobject >/dev/null
+expect "local_patches as an object is rejected" 1 "local_patches must be an array" -- \
+  bash "$R/scripts/check-review-bundle-tracked.sh" "$R"
+
+R="$(malformed_fixture lpnull 'null')"
+expect "a null local_patches entry is rejected" 1 "is not an object" -- \
+  bash "$R/scripts/check-review-bundle-tracked.sh" "$R"
+
+# A marker satisfied only by a COMMENT is not an applied patch. Left alone, the
+# guard would attest something strictly weaker than the test it claims backs it
+# — green guard, red test.
+R="$(build_fixture commentonly)"
+printf 'exports.f = 1; // SPOC_LOCAL_MARKER_XYZ lives only in this comment\n' \
+  > "$R/scripts/lib/review/normalize-rules.js"
+node -e '
+const fs=require("fs"),crypto=require("crypto"),path=require("path");
+const root=process.argv[1], p=root+"/scripts/review-bundle.manifest.json";
+const m=JSON.parse(fs.readFileSync(p,"utf8"));
+m.local_patches=[{ref:"comment-only",reapply_on_upgrade:true,
+  paths:["scripts/lib/review/normalize-rules.js"],
+  markers:["SPOC_LOCAL_MARKER_XYZ"]}];
+for (const e of m.files) e.sha256 = crypto.createHash("sha256")
+  .update(fs.readFileSync(path.join(root,e.path))).digest("hex");
+fs.writeFileSync(p, JSON.stringify(m,null,2)+"\n");' "$R"
+git_q -C "$R" add -A >/dev/null; git_q -C "$R" commit -qm commentonly >/dev/null
+expect "a marker present only in a comment does not count as applied" 1 "marker absent" -- \
+  bash "$R/scripts/check-review-bundle-tracked.sh" "$R"
+
+# A renamed symbol must not read as an applied patch: plain String.includes let
+# FAULT_BY_OUTCOMEX satisfy FAULT_BY_OUTCOME.
+R="$(build_fixture prefixmatch)"
+printf 'const SPOC_LOCAL_MARKER_XYZ_RENAMED = 1;\nexports.f = SPOC_LOCAL_MARKER_XYZ_RENAMED;\n' \
+  > "$R/scripts/lib/review/normalize-rules.js"
+node -e '
+const fs=require("fs"),crypto=require("crypto"),path=require("path");
+const root=process.argv[1], p=root+"/scripts/review-bundle.manifest.json";
+const m=JSON.parse(fs.readFileSync(p,"utf8"));
+m.local_patches=[{ref:"prefix",reapply_on_upgrade:true,
+  paths:["scripts/lib/review/normalize-rules.js"],
+  markers:["SPOC_LOCAL_MARKER_XYZ"]}];
+for (const e of m.files) e.sha256 = crypto.createHash("sha256")
+  .update(fs.readFileSync(path.join(root,e.path))).digest("hex");
+fs.writeFileSync(p, JSON.stringify(m,null,2)+"\n");' "$R"
+git_q -C "$R" add -A >/dev/null; git_q -C "$R" commit -qm prefix >/dev/null
+expect "a renamed symbol does not satisfy the original marker" 1 "marker absent" -- \
   bash "$R/scripts/check-review-bundle-tracked.sh" "$R"
 
 R="$(build_fixture nomarkers)"

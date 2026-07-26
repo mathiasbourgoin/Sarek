@@ -240,6 +240,38 @@ else
   bad "fully tracked subdirectory should proceed (exit $rc)"; echo "$out"|sed 's/^/      /'
 fi
 
+echo "== 12b. an IGNORED project directory plus one force-added file (#101 verbatim)"
+# The F6 fix closed only the un-ignored case. `git ls-files --others
+# --exclude-standard` treats ignored files as "not missing", so an outer repo
+# that ignores the project and force-adds one file inside it passed as a
+# tracked subdirectory while every source stayed absent from the worktree.
+IGN="$TMP/ignouter"
+git_quiet init -q "$IGN"
+echo outer > "$IGN/README"; git_quiet -C "$IGN" add README; git_quiet -C "$IGN" commit -qm init
+mkdir -p "$IGN/PROJ/src"; echo 'let () = ()' > "$IGN/PROJ/src/main.ml"; echo doc > "$IGN/PROJ/README.md"
+echo 'PROJ/' > "$IGN/.gitignore"
+git_quiet -C "$IGN" add .gitignore
+git_quiet -C "$IGN" add -f PROJ/README.md
+git_quiet -C "$IGN" commit -qm "ignore PROJ, force-add one file"
+expect "refuses when the outer repo's ignore rules cover the project" 3 "ignore rules cover" -- \
+  bash "$SCRIPT" --agent tester --project "$IGN/PROJ" --base HEAD --check-only
+# This one must NOT be overridable: if the enclosing repo says the directory is
+# not its content, worktree isolation of that repo is the wrong instrument.
+expect "--allow-partial-tracking does not rescue an ignored project" 3 "ignore rules cover" -- \
+  bash "$SCRIPT" --agent tester --project "$IGN/PROJ" --base HEAD --allow-partial-tracking --check-only
+# A counter that fails open is worse than no counter: `grep -c` exits 1 on no
+# match, and `[ "" -eq 0 ]` is a syntax error that reads as false.
+CLEAN="$TMP/cleanouter"
+git_quiet init -q "$CLEAN"
+mkdir -p "$CLEAN/PROJ"; echo 'let () = ()' > "$CLEAN/PROJ/main.ml"
+git_quiet -C "$CLEAN" add PROJ; git_quiet -C "$CLEAN" commit -qm init
+out="$(bash "$SCRIPT" --agent tester --project "$CLEAN/PROJ" --base HEAD --check-only 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ] && ! printf '%s' "$out" | grep -qiE "integer expression|unary operator"; then
+  ok "a project with zero missing files counts cleanly (no shell arithmetic error)"
+else
+  bad "empty-count handling leaked a shell error (exit $rc)"; echo "$out"|sed 's/^/      /'
+fi
+
 echo "== 13. a relative --root must not hang (F7)"
 out="$(cd "$TMP" && timeout 10 bash "$SCRIPT" --agent tester --project "$SOLO" --base HEAD \
         --root ./relroot --check-only 2>&1)"; rc=$?

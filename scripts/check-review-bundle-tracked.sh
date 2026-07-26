@@ -144,8 +144,64 @@ fi
 PATCH_PROBLEMS=$(node -e '
 const fs = require("fs");
 const m = JSON.parse(fs.readFileSync("scripts/review-bundle.manifest.json", "utf8"));
-const patches = Array.isArray(m.local_patches) ? m.local_patches : [];
 const out = [];
+
+// ── The mechanism must survive the operation it exists to survive ──────────
+//
+// local_patches[] lives in the manifest, and an upgrade REGENERATES the
+// manifest. So the one event this mechanism is for — an upgrade overwriting a
+// patched file — is also the event that deletes the mechanism describing it.
+// Executed: revert the patch, drop local_patches, regenerate files[] hashes,
+// and the guard reported "OK — bundle tracked, un-ignored, and sha-matched".
+// Same for renaming the key, or setting it to an object, or to entries that
+// are null or strings.
+//
+// This is the F2 class, fixed there for files[] with a second independent
+// source and not carried over to the newer block. The second source here is
+// the same one: a list that lives in THIS file, which an upgrade does not
+// touch. Every pair below must hold regardless of what the manifest says.
+const REQUIRED = [
+  ["scripts/lib/xruntime/xruntime-classify.js", "FAULT_BY_OUTCOME", "#102 fault attribution"],
+  ["scripts/lib/xruntime/xruntime-classify.js", "runtime-error", "F1 nonzero-exit is a runtime fault"],
+  ["scripts/lib/xruntime/xruntime-journal.js", "isCallerFault", "#102 breaker exemption"],
+  ["scripts/lib/xruntime/xruntime-contract.js", "OUTPUT_CONTRACT", "#102 --emit-contract"],
+  ["scripts/lib/review/review-lifecycle.js", "expected \"GO\" or \"NO-GO\"", "verdict-status gate"],
+];
+// Identifier-like markers match on word boundaries. Plain String.includes let
+// FAULT_BY_OUTCOMEX satisfy FAULT_BY_OUTCOME — a renamed symbol reads as an
+// applied patch.
+function present(text, needle) {
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(needle)) {
+    return new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(text);
+  }
+  return text.includes(needle);
+}
+// A marker satisfied only by a comment is not an applied patch — the guard
+// would be strictly weaker than the test it claims to be backed by.
+function stripJsComments(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+}
+function codeOf(file, text) {
+  return file.endsWith(".js") ? stripJsComments(text) : text;
+}
+for (const [file, needle, why] of REQUIRED) {
+  let text;
+  try { text = fs.readFileSync(file, "utf8"); }
+  catch { out.push(`REQUIRED patch file missing: ${file} (${why})`); continue; }
+  if (!present(codeOf(file, text), needle)) {
+    out.push(`REQUIRED marker absent from ${file}: ${JSON.stringify(needle)} (${why}) — this is checked independently of local_patches[], which an upgrade regenerates`);
+  }
+}
+
+if (m.local_patches !== undefined && !Array.isArray(m.local_patches)) {
+  out.push(`local_patches must be an array, got ${Array.isArray(m.local_patches) ? "array" : typeof m.local_patches}`);
+}
+const patches = Array.isArray(m.local_patches) ? m.local_patches : [];
+for (const [i, p] of patches.entries()) {
+  if (!p || typeof p !== "object" || Array.isArray(p)) {
+    out.push(`local_patches[${i}] is not an object (${p === null ? "null" : typeof p})`);
+  }
+}
 for (const p of patches) {
   const ref = p && p.ref ? p.ref : "(unnamed patch)";
   if (!p || p.reapply_on_upgrade !== true) continue;
@@ -165,6 +221,16 @@ for (const p of patches) {
     const paths = Array.isArray(p.paths) ? p.paths : [];
     if (paths.length === 0) {
       out.push(`${ref}: markers is an array but paths is empty — there is no file to look for them in`);
+      continue;
+    }
+    if (rawMarkers.length === 0) {
+      // Array.isArray passes, [].every() is vacuously true, and
+      // Object.fromEntries then yields N keys with zero needles, so the
+      // "names no markers" check below never fires. Executed: markers: []
+      // with the #102 patch genuinely reverted and hashes regenerated
+      // returned exit 0, 23/23 green. markers: {} failed correctly; the
+      // array shape had to be taught the same thing.
+      out.push(`${ref}: markers is an empty array — that verifies nothing; give it the strings that exist only while the patch is applied, or drop reapply_on_upgrade`);
       continue;
     }
     if (!rawMarkers.every((n) => typeof n === "string" && n.length > 0)) {
@@ -188,22 +254,48 @@ for (const p of patches) {
     continue;
   }
 
-  if (Object.keys(markers).length === 0) {
+  const totalNeedles = Object.values(markers).reduce((n, v) => n + v.length, 0);
+  if (Object.keys(markers).length === 0 || totalNeedles === 0) {
     out.push(`${ref}: declares reapply_on_upgrade but names no markers — nothing can tell whether it is still applied`);
     continue;
+  }
+  // A marker keyed on a file the patch does not touch "verifies" the patch
+  // against unrelated content: {"README.md": ["SPOC"]} passed for #102.
+  const declaredPaths = Array.isArray(p.paths) ? p.paths : [];
+  for (const file of Object.keys(markers)) {
+    if (declaredPaths.length && !declaredPaths.includes(file)) {
+      out.push(`${ref}: markers names ${JSON.stringify(file)}, which is not in paths — a marker in a file the patch does not touch attests nothing`);
+    }
   }
   for (const [file, needles] of Object.entries(markers)) {
     let text;
     try { text = fs.readFileSync(file, "utf8"); }
     catch { out.push(`${ref}: patched file is missing: ${file}`); continue; }
     for (const needle of needles) {
-      if (!text.includes(needle)) {
+      if (!present(codeOf(file, text), needle)) {
         out.push(`${ref}: marker absent from ${file}: ${JSON.stringify(needle)} — the patch has been reverted (an upgrade probably overwrote it); re-apply it and re-run ${p.tests || "its tests"}`);
       }
     }
   }
-  if (p.tests && !fs.existsSync(p.tests)) {
-    out.push(`${ref}: declares tests ${p.tests}, which does not exist`);
+  if (p.tests) {
+    if (!fs.existsSync(p.tests)) {
+      out.push(`${ref}: declares tests ${p.tests}, which does not exist`);
+    } else {
+      // The comment above this block promised the covering test is reachable
+      // from CI; only existsSync was implemented. A covering test nothing runs
+      // is the same shape of claim as an unverified marker.
+      const base = p.tests.split("/").pop();
+      let wired = false;
+      const wfDir = ".github/workflows";
+      try {
+        for (const f of fs.readdirSync(wfDir)) {
+          if (fs.readFileSync(`${wfDir}/${f}`, "utf8").includes(base)) { wired = true; break; }
+        }
+      } catch { /* no workflows dir: reported as not wired */ }
+      if (!wired) {
+        out.push(`${ref}: covering test ${p.tests} is not invoked from any CI workflow — a test nothing runs cannot attest the patch`);
+      }
+    }
   }
 }
 for (const line of out) console.log(line);

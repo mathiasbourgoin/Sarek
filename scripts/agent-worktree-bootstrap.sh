@@ -141,9 +141,52 @@ if [ "$TOPLEVEL" != "$PROJECT" ]; then
   # the project's sources? A worktree materializes exactly the TRACKED files,
   # so every non-ignored file the outer repo does not track is a file the agent
   # will not have. Any such file is disqualifying unless the operator overrides.
+  # DECISIVE CASE FIRST: if the outer repo's ignore rules cover the project
+  # directory itself, that repo has declared the project is not its content.
+  # A file force-added inside it (`git add -f PROJ/README.md`) is an anomaly,
+  # not evidence of ownership — yet one such file was enough to satisfy the
+  # tracked-count test and downgrade this to a warning, while the actual
+  # sources stayed ignored and therefore absent from any worktree. That is the
+  # #101 defect verbatim, and ~/dev is one .gitignore line from it.
+  #
+  # No --allow-partial-tracking override here: if the enclosing repo says the
+  # directory is not its content, worktree isolation of that repo is simply the
+  # wrong instrument, not a trade-off to accept.
+  # --no-index is load-bearing: without it check-ignore consults the index, so
+  # the single force-added file MASKS the ignore rule and the check reports
+  # "not ignored" — the anomaly hiding the evidence of itself. --no-index asks
+  # what the ignore rules say, which is the actual question.
+  if git -C "$TOPLEVEL" check-ignore -q --no-index -- "$PROJECT" 2>/dev/null; then
+    refuse "worktree isolation would target the WRONG REPOSITORY." \
+           "project:          $PROJECT" \
+           "enclosing repo:   $TOPLEVEL" \
+           "$TOPLEVEL's ignore rules cover $PROJECT, so that repo does not" \
+           "consider the project its content. A worktree of it would contain" \
+           "only whatever was force-added inside the project — not the sources." \
+           "" \
+           "Redirect: make the project its own repository" \
+           "  git -C $PROJECT init && git -C $PROJECT add -A && git -C $PROJECT commit" \
+           "or dispatch a NON-isolated agent that works in $PROJECT directly."
+  fi
+
   TRACKED_N=$(git -C "$TOPLEVEL" ls-files -- "$PROJECT" 2>/dev/null | wc -l)
-  MISSING=$(git -C "$TOPLEVEL" ls-files --others --exclude-standard -- "$PROJECT" 2>/dev/null)
-  MISSING_N=$(printf '%s' "$MISSING" | grep -c . || true)
+  # Ignored files are absent from a worktree exactly like un-ignored untracked
+  # ones, so both count toward "what the agent will not have". --others alone
+  # excluded the ignored set, which is what let the case above slip past even
+  # before the directory-level rule was considered.
+  UNTRACKED=$(git -C "$TOPLEVEL" ls-files --others --exclude-standard -- "$PROJECT" 2>/dev/null)
+  IGNORED=$(git -C "$TOPLEVEL" ls-files --others --ignored --exclude-standard -- "$PROJECT" 2>/dev/null)
+  MISSING=$(printf '%s\n%s\n' "$UNTRACKED" "$IGNORED" | grep . || true)
+  # `grep -c` exits 1 on no match, which left MISSING_N empty; `[ "" -eq 0 ]`
+  # is a syntax error that reads as false and fell through to the permissive
+  # branch — a counter that fails open is worse than no counter.
+  MISSING_N=$(printf '%s' "$MISSING" | grep -c . 2>/dev/null || true)
+  case "$MISSING_N" in
+    ''|*[!0-9]*) MISSING_N=0 ;;
+  esac
+  case "$TRACKED_N" in
+    ''|*[!0-9]*) TRACKED_N=0 ;;
+  esac
 
   MISSING_SAMPLE="$(printf '%s' "$MISSING" | head -3 | sed 's/^/                    /')"
 

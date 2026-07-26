@@ -62,7 +62,7 @@
     },
     {
       "path": "scripts/lib/xruntime/xruntime-journal.js",
-      "sha256": "786d2d2a5d9016a8263986b5cf23b82e43640db4b8fa852ab04ad355015efc11"
+      "sha256": "25f9bcccfb29be830bd138f3fbe6e71906f99d20546feff435159dcbccdb81c9"
     },
     {
       "path": "scripts/review-normalize.js",
@@ -75,11 +75,11 @@
     },
     {
       "path": "scripts/xruntime-review.js",
-      "sha256": "2b259af7f2e077e679d81c839568df86e8523a11d56373f965af2e12fe077550"
+      "sha256": "ff6fae86b5b935a2c4b31bd383a6069594c90ef806f85e9359fb04f88c33d62b"
     },
     {
       "path": "scripts/REVIEW-BUNDLE.md",
-      "sha256": "7ca356423c3476dc2c65071d23bdca9be7faa60aea99cb5a5beb772e86ddd8f3",
+      "sha256": "bc1090c25819ff6b343ed36a9d7fd7f16a9dad03b695b6473934266822768ce3",
       "kind": "doc"
     },
     {

@@ -59,7 +59,25 @@ An upgrade will overwrite these files. Re-apply every `local_patches[]` entry wi
 exist only while the patch is applied — and `check-review-bundle-tracked.sh` fails if any marker is
 missing. An upgrade that overwrites a patched file regenerates its sha256, so
 `review-bundle-verify` stays green on a tree where the fix is gone; the marker is what notices.
-A patch that declares `reapply_on_upgrade` without markers is itself a failure.
+
+Enforced specifically:
+
+- a `reapply_on_upgrade` patch with no markers, an **empty** `markers` array, or an empty needle
+  list is itself a failure — an empty array passes `Array.isArray` and `[].every()` vacuously, and
+  once returned exit 0 against a genuinely reverted patch
+- a marker found only inside a **comment** does not count; the guard must not attest something
+  weaker than the test backing it
+- an identifier marker matches on word boundaries, so a renamed symbol
+  (`FAULT_BY_OUTCOMEX`) does not satisfy `FAULT_BY_OUTCOME`
+- markers may only name files listed in that patch's `paths`
+- a declared covering test must exist **and be invoked from a CI workflow**
+
+**The critical property: this does not depend on the manifest.** `local_patches[]` lives in the
+manifest, and an upgrade regenerates the manifest — so the one event the mechanism exists to
+survive is also the event that can delete it. Deleting the key, renaming it, or replacing it with
+an object all used to exit 0. `check-review-bundle-tracked.sh` therefore carries its own hardcoded
+`REQUIRED` list of (file, marker) pairs that must hold whatever the manifest says. That list is the
+same second-independent-source pattern used for `files[]`.
 
 ## Commands
 
