@@ -102,3 +102,30 @@
  (alias e2e-hip)
  (action
   (run %{dep:test_hip_f16_argcheck.exe})))
+
+; Exhaustive f16 expression-shape audit for AMDGPU fusion demotion (#106).
+; Sweeps every shape Sarek can emit over all 63488 finite binary16 inputs,
+; three ways: shipping path, generated source verbatim, generated source with
+; the sarek_f32_barrier body deleted. The third column is the harness's own
+; red-on-mutation control.
+
+(executable
+ (name test_hip_f16_shapes)
+ (modules test_hip_f16_shapes)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.interp
+  sarek_codegen
+  sarek_ir
+  spoc_core
+  sarek_hip)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias e2e-hip)
+ (action
+  (run %{dep:test_hip_f16_shapes.exe})))

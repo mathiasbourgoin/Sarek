@@ -3,8 +3,8 @@
 _Cross-backend policy for what a Sarek DSL author may rely on when a device
 compiler is free to fuse, reassociate or flush floating-point operations._
 
-**Status:** normative for this repository. **Issue:** #116 (absorbs #110, #111).
-**Date:** 2026-07-25.
+**Status:** normative for this repository. **Issue:** #116 (absorbs #110, #111);
+§6 answers #126 and the HIP row answers #106. **Date:** 2026-07-26.
 
 Three separate defects in this project came from the same place — the gap
 between the floating-point semantics we assumed a backend had and the ones it
@@ -93,12 +93,12 @@ Legend for the evidence column:
 | backend | what the compiler may contract | what actually prevents it | evidence |
 |---|---|---|---|
 | **Interpreter** | nothing — it is the oracle | it evaluates the IR directly | executed (any host) |
-| **HIP / AMDGPU** | `a*b+c`; **and**, below the FP flags, an f32 multiply into an f32→f16 narrowing, plus f32 add demotion to binary16 | two mechanisms, both required: `-ffp-contract=off` forced **last** in the hiprtc option array (`Hip_rtc.base_options` / `hiprtc_options`), *and* the `asm volatile("" : "+v"(x))` opacity barrier on every narrowing's argument (`Sarek_ir_cuda.sarek_f32_barrier_decl`) | executed (quoted), RX 7900 XTX / gfx1100, ROCm hiprtc: exhaustive sweep of all 63488 finite binary16 inputs — 620 device/interpreter disagreements before the barrier, 0 after. See the caveat in the opening section about the separate, inconsistent "373" |
+| **HIP / AMDGPU** | `a*b+c`; **and**, below the FP flags, an f32 multiply or fma fused into an f32→f16 narrowing (`v_fma_mixlo_f16`), plus f32 add/sub/mul/negate demotion to binary16 (`v_add_f16`, `v_sub_f16`, `v_mul_f16`) | two mechanisms, both required: `-ffp-contract=off` forced **last** in the hiprtc option array (`Hip_rtc.base_options` / `hiprtc_options`), *and* the `asm volatile("" : "+v"(x))` opacity barrier on every narrowing's argument (`Sarek_ir_cuda.sarek_f32_barrier_decl`). One barrier covers every affected shape; none needs a different one | **executed + machine-code**, RX 7900 XTX / gfx1100 **and** Raphael iGPU / gfx1036, ROCm hiprtc: all 20 Sarek-emittable f16 expression shapes swept over all 63488 finite binary16 inputs, **0 disagreements as shipped**; removing the barrier breaks 9 of 20 (reproducing the original 620 exactly on the `f16_midround` shape), and disassembly shows demotion opcodes in 3 further shapes that are demoted yet numerically clean — see [`docs/optimization/amdgpu-f16-fusion-shape-audit.md`](optimization/amdgpu-f16-fusion-shape-audit.md) |
 | **CUDA / nvrtc (f16 narrowing)** | in principle the same fusion — but NVIDIA has no fused multiply-and-convert-to-f16 instruction to fuse *into* | **nothing Sarek emits.** `ptxas` simply declines to absorb `cvt.rn.f16.f32` | **executed**, GTX 1070 Max-Q / sm_61 / CUDA 12.9 / driver 580.119.02: exhaustive sweep of all 63488 finite binary16 inputs, 0 device/interpreter disagreements, with a liveness control proving the sweep can go red (§7). Also machine-code, CUDA 13.3 host tools, sm_75…sm_121 — see §4. Machine-checked by `test_cuda_f16_sass`, which until this change **self-skipped in CI** for want of `nvdisasm` (§7) |
 | **CUDA / nvrtc + PTX (f32 `a*b+c`)** | yes, by default (`-fmad=true` is nvrtc's and ptxas's default, and it applies to PTX input too) | **no flag.** `Sarek_df64` denies the compiler a fusable multiply by routing products through `fma` (`mul_rn`) | executed, GTX 1070 Max-Q / sm_61 / CUDA 12.9 / driver 580.119.02: df64 mul 5.92e-08 → 9.07e-15, div 5.64e-08 → 5.08e-15 |
 | **CUDA — subnormal flushing** | `-use_fast_math` / `-ftz=true` would flush binary32 subnormals | `Cuda_nvrtc.check_fp_conformance` **rejects** those options at the only point an option array reaches `nvrtcCompileProgram` | machine-code + test, CUDA 13.3: the hazard is reproduced (`FMUL.FTZ`/`FADD.FTZ` at sm_90) and the guard is proved to fire — see §5 |
 | **OpenCL** | `FP_CONTRACT` is on by default in OpenCL C | **no flag** — Sarek passes an empty build-option string. Same `mul_rn`-by-construction defence as CUDA | executed, GTX 1070 Max-Q / NVIDIA OpenCL: mul 5.92e-08 → 9.07e-15, sqrt 2.88e-08 → 9.80e-15 with no OpenCL-specific change (quoted). Re-measured here on RX 7900 XTX / Mesa radeonsi: mul 9.07e-15, div 5.08e-15, sqrt 1.08e-14 |
-| **Vulkan / GLSL** | contraction and reassociation of float expressions | `precise` on every float local (`Sarek_ir_glsl.gen_var_decl`), which glslang lowers to SPIR-V `NoContraction` | compiler-output (measured, §6): glslc 2026.2 / SPIRV-Tools 1.4.350.1 emits 2 `NoContraction` decorations for the generated matmul shader, 0 with `precise` stripped. **Whether a given driver honours `NoContraction` is NOT established here** — see §6. Separately, `fma` is not correctly rounded on RADV: df64 mul 5.84e-08 / div 5.86e-08, measured on RX 7900 XTX, Mesa 26.1.4-arch3.1 |
+| **Vulkan / GLSL** | contraction and reassociation of float expressions | `precise` on every float local (`Sarek_ir_glsl.gen_var_decl`), which glslang lowers to SPIR-V `NoContraction` — but on RADV nothing needs preventing: the driver does not contract these shapes even without the decoration | **executed + machine-code**, RX 7900 XTX (RADV NAVI31) and Raphael iGPU (RADV RAPHAEL_MENDOCINO), Mesa 26.1.4-arch3.1: 0 of 7 contraction shapes contracted with or without `precise`, ISA opcode-identical between the two builds, explicit `fma()` controls fused 4/4 — see §6. Decoration emission: compiler-output, glslc 2026.2 + glslangValidator, 18 `NoContraction` with `precise` / 0 without. **Mesa ANV not measured — no Intel GPU on this machine.** Separately, `fma` is not correctly rounded on RADV: df64 mul 5.84e-08 / div 5.86e-08, each the measured worst-case relative error over `test_df64`'s own input set on the named device and driver, not a bound |
 | **Metal** | Metal's default compile options enable fast math | **nothing.** `Metal_api` passes a null `MTLCompileOptions`, and `Metal_bindings.mtl_device_new_library_with_source` *ignores its `_options` argument entirely* | unverified — no Apple hardware in this project's CI or on the machine this policy was written on. Treat Metal float results as outside the guarantee |
 | **WGSL** | unconstrained | nothing | unverified, untested |
 | **Native (OCaml host)** | n/a | n/a | float32 is evaluated at OCaml binary64 precision, so error-free transformations cancel; `Sarek_df64` degrades to ~2^-24 there **by design** |
@@ -110,7 +110,10 @@ Legend for the evidence column:
 **You may rely on, today:**
 
 - **f32 arithmetic agreeing with the interpreter on HIP/AMDGPU**, including f16
-  round-trips.
+  round-trips — confirmed across **every f16 expression shape the DSL can
+  emit**, each swept over the whole finite binary16 domain
+  ([`docs/optimization/amdgpu-f16-fusion-shape-audit.md`](optimization/amdgpu-f16-fusion-shape-audit.md)),
+  on gfx1100 and gfx1036.
 - **The f16 discipline agreeing with the interpreter on NVIDIA**, via the
   CUDA/C (nvrtc) path — executed, GTX 1070 Max-Q / sm_61 / CUDA 12.9 / driver
   580.119.02, exhaustive over all 63488 finite binary16 inputs, **0**
@@ -137,7 +140,14 @@ Legend for the evidence column:
   fast math on, unopposed.
 - **Vulkan `fma` being correctly rounded.** On Mesa RADV it is not, and
   `Sarek_df64` mul/div is ~5.8e-08 there — a *documented*, unfixed deviation,
-  not a bug to rediscover.
+  not a bug to rediscover. Note this is a distinct failure from contraction:
+  RADV does **not** contract (§6).
+- **`precise` protecting you on a driver other than RADV.** On RADV it is inert,
+  because the driver does not contract in the first place; that is a measured
+  property of Mesa 26.1.4-arch3.1 on two devices, not a bound and not a
+  guarantee, and it says nothing about ANV, AMDVLK, proprietary drivers, or a
+  future Mesa. The decoration is emitted and correct — it has simply never been
+  observed to change a result.
 - **f16 on NVIDIA through the PTX backend.** The CUDA/C path is now confirmed
   by execution (above), but `Sarek_ir_ptx` still refuses kernel-level f16
   outright, so "f16 works on CUDA" is true only of CUDA/C.
@@ -313,64 +323,131 @@ kernel.
 
 ---
 
-## 6. Vulkan/GLSL: `precise` is emitted, and honouring it is the driver's job
+## 6. Vulkan/GLSL: `precise` is emitted; RADV has nothing to honour
 
 `Sarek_ir_glsl.gen_var_decl` prefixes every `float`/`double` local with
 `precise`. The front end does lower it:
 
-**Measured** (glslc 2026.2, SPIRV-Tools 1.4.350.1, on the Sarek-generated
-`matrix_mul` compute shader taken verbatim from
-`benchmarks/descriptions/generated/matrix_mul_generated.md`): the SPIR-V carries
-**2 `NoContraction` decorations** on the accumulation `OpFMul`/`OpFAdd`, and
-**0** when `precise` is stripped from the same source.
+**Measured** (glslc 2026.2 and glslangValidator, SPIRV-Tools 1.4.350.1). On the
+Sarek-generated `matrix_mul` compute shader, the SPIR-V carries **2
+`NoContraction` decorations** on the accumulation `OpFMul`/`OpFAdd` and **0**
+when `precise` is stripped. On the 12-shape probe shader described below, **18**
+and **0** respectively — both toolchains agree, which matters because the
+runtime path compiles through `glslangValidator`, not `glslc`.
 
-That is a **compiler-output** claim and it stops there. `NoContraction` is a
-requirement placed on the SPIR-V consumer, i.e. the driver. Whether a given
-driver honours it is a separate question that this measurement does not touch.
+### The question this section used to leave open
 
-**This is an open question in this repository, and the two things written down
-about it disagree.** `Sarek_ir_glsl.ml` says `precise` was added *because* RADV
-was observed simplifying error-free transformations without it — which implies
-RADV honours it. Campaign notes state the opposite, that Mesa ANV and RADV
-ignore it. Neither is backed by a recorded, reproducible measurement in-tree.
-**Do not restate either as fact.**
+Whether a driver *obeys* `NoContraction` is a separate question from whether the
+decoration is emitted, and the two things written down in this repository
+disagreed about the answer. `Sarek_ir_glsl.ml` said `precise` was added
+*because* RADV was observed simplifying error-free transformations without it —
+which implies RADV honours it. Campaign notes said the opposite, that Mesa ANV
+and RADV ignore it. Neither was backed by a recorded measurement.
 
-What *is* measured, and what it does and does not tell us: **re-measured for
-this document on RX 7900 XTX under RADV, Mesa 26.1.4-arch3.1** (`test_df64`,
-2026-07-25) — mul 5.84e-08, div 5.86e-08, against add 5.33e-15, sub 6.51e-15,
-sqrt 1.08e-14, and the interpreter's mul 9.07e-15 / div 5.08e-15 on the same
-run. The same shape appears on the Raphael iGPU under RADV. `Sarek_df64` mul/div
-sat at ~5.8e-08 both **before and after** the
-`mul_rn` contraction barrier. Since that barrier works by removing the fusable
-multiply, a contraction-shaped failure would have been fixed by it. It was not.
-So RADV's deviation has a different cause, consistent with the recorded one —
-RADV's GLSL `fma` is not correctly rounded, which is independently supported by
-the measurement that extending `mul_rn` into `two_sum`/`quick_two_sum`
-*regressed* RADV (add 5.33e-15 → 1.15e-07). That argues RADV is not silently
-contracting; it does **not** establish that RADV honours `NoContraction`.
+**It is now measured, and neither claim survives on RADV.**
 
-**The experiment that would settle it** (not run): a kernel computing
-`precise float p = a*b; out = p + c;` and, separately, `out = fma(a,b,c)`,
-executed on RADV and on ANV. If the two kernels agree, the driver contracted
-despite `NoContraction`.
+### The experiment
 
-Two things it must get right, or it will return a false "they agree":
+`sarek/tests/e2e/test_vulkan_no_contraction.ml`. The same shader is compiled
+twice, differing **only** by the expansion of a `#define` that adds or omits
+`precise` on the float locals, and both are run on the same device, same
+driver, same process.
 
-- **Choose the inputs against the device's MEASURED `fma`, not the correctly
-  rounded one.** This same document establishes that RADV's `fma` is not
-  correctly rounded, so inputs picked so that
-  `fl(fl(a*b)+c) ≠ fma_correct(a,b,c)` may still collide with what RADV's `fma`
-  actually returns. Read the device's `fma` result first, then select inputs on
-  which it differs from the separately-rounded form.
-- **ANV is not available here.** There is no Intel GPU on the machine this
-  policy was written on (AMD RX 7900 XTX and a Raphael iGPU only), so the ANV
-  half cannot be run without different hardware — the same class of gap as
-  everything in §7.
+The discriminator is chosen so a contracted evaluation is not a one-ulp wobble.
+With `a = b = 1 + 2^-12` and `c = -(1 + 2^-11)`, all exactly representable in
+binary32:
 
-Until that is run, treat Vulkan float32 as *contraction-safe by front-end
-declaration only*.
+```
+exact a*b          = 1 + 2^-11 + 2^-24
+fl32(a*b)          = 1 + 2^-11          (2^-24 is exactly half an ulp at 1.0;
+                                         ties-to-even drops it)
+fl32(fl32(a*b)+c)  = 0                  <- multiply then add
+fl32(fma(a,b,c))   = 2^-24 = 5.96e-08   <- contracted
+```
 
----
+Exactly zero against 5.96e-08. There is no tolerance to choose and no way to
+read the result ambiguously.
+
+**The contracted target is measured, not modelled.** This document establishes
+in the same table that RADV's `fma` is not correctly rounded, so predicting
+"what a fused evaluation would return" from an exact-fma model can be wrong on
+precisely this driver — and wrong in the dangerous direction, because a
+mispredicted target makes a genuinely contracted result match neither candidate
+and the shape reads as clean. Every contraction shape is therefore compared
+against a **sibling shape that asks the device for the fused value of the same
+operands** via an explicit `fma()`, never against an IEEE model. Those sibling
+shapes are themselves integrity-checked: an explicit `fma()` that fails to fuse
+means the harness is not being handed a fused value at all, and the test fails
+rather than reporting. (At these particular operands the device's `fma` does
+agree with IEEE — the harness prints that comparison — but nothing depends on
+it doing so.)
+
+Twelve shapes are probed, because "honoured" need not be one yes/no: a driver
+may contract a mul-add but not a mul-sub, and `precise` forbids reassociation as
+well as contraction. The seven contraction-sensitive shapes cover multiply into
+add, into subtract from either side, the same expression with and without a
+named intermediate, the TwoProd error term, and — the shape `precise` was
+actually put in the codegen for — a **loop-carried `acc += a*b` accumulation**
+with a non-constant trip count, i.e. the `matrix_mul` inner loop. Two further
+shapes probe reassociation.
+
+### The result
+
+**Measured on RX 7900 XTX (RADV NAVI31) and on the Raphael iGPU (RADV
+RAPHAEL_MENDOCINO), Mesa 26.1.4-arch3.1, 2026-07-26:**
+
+| | no `precise` | `precise` |
+|---|---|---|
+| contraction shapes contracted | **0 of 7** | **0 of 7** |
+| reassociation shapes reassociated | 0 of 2 | 0 of 2 |
+| explicit `fma()` controls fused | 4 of 4 | 4 of 4 |
+
+Identical on both devices. Confirmed at machine-code level: with `RADV_DEBUG=asm`
+the emitted RDNA ISA is **opcode-for-opcode identical** between the `precise` and
+non-`precise` builds on both devices, and in the *non*-`precise` build — where
+the driver is completely free to fuse — the multiply and the add are separate
+`v_mul_f32` / `v_add_f32` instructions. The `v_fma_f32` instructions present are
+exactly the explicitly-requested `fma()` calls.
+
+**So: RADV does not contract these shapes even when nothing forbids it.**
+
+- The claim that **RADV ignores `NoContraction`** is not supported: the driver
+  never produced a contracted result, decoration or no decoration.
+- The claim that **`precise` was needed because RADV was contracting** is also
+  not supported: with `precise` stripped, RADV still did not contract, and the
+  ISA is unchanged.
+
+What is *not* established is that RADV would honour `NoContraction` if it ever
+did want to contract. This is an **absence of the hazard on this driver and this
+version**, not a demonstration of obedience. The honest status of `precise` on
+RADV is therefore: **inert, and free** — it costs nothing (identical ISA) and it
+is the correct thing to emit for portability, but on RADV today it is not what
+is holding anything up. Keep it; do not credit it.
+
+**Not run: Mesa ANV.** There is no Intel GPU on this machine. The ANV half of
+the original disagreement is a **hardware gap**, not a null result — recorded in
+§7's still-open list.
+
+### This does not explain the df64 deviation, and never could
+
+`Sarek_df64` mul/div sit at ~5.8e-08 on RADV (re-measured for this document on
+RX 7900 XTX, Mesa 26.1.4-arch3.1, `test_df64`, 2026-07-25: mul 5.84e-08, div
+5.86e-08, against add 5.33e-15, sub 6.51e-15, sqrt 1.08e-14, and the
+interpreter's mul 9.07e-15 / div 5.08e-15 on the same run). Every figure here is
+the **measured worst-case relative error over that test's own input set**, on the
+named device and driver — a maximum observed, not a bound proved, and agreement
+between two such maxima is agreement between summary statistics rather than a
+demonstration of element-wise identity. The same shape appears on the Raphael
+iGPU.
+
+That deviation was already known to have a different cause, and this measurement
+independently confirms it. `Sarek_df64` mul/div sat at ~5.8e-08 both **before and
+after** the `mul_rn` contraction barrier; since that barrier works by removing
+the fusable multiply, a contraction-shaped failure would have been fixed by it,
+and it was not. The recorded cause — RADV's GLSL `fma` is not correctly rounded
+— is further supported by extending `mul_rn` into `two_sum`/`quick_two_sum`
+*regressing* RADV (add 5.33e-15 → 1.15e-07). The present result closes the loop:
+RADV is not contracting at all, so contraction cannot be the explanation.
 
 ## 7. What NVIDIA hardware settled, and what is still open
 
@@ -419,8 +496,19 @@ barrier still existed, neutralising it left the sm_61 SASS **byte-identical**
 F2F.F16.F32`, every mandated rounding its own instruction). Two methods, two
 architectures ranges, same answer.
 
-**Still open:**
+**Still open** (the first is not an NVIDIA gap, but it is a hardware gap and
+this is where they are collected):
 
+- **No Intel GPU: the ANV half of §6 is unrun.** The `precise` /
+  `NoContraction` question was originally disputed for **both** Mesa RADV and
+  Mesa ANV. §6 settles RADV by measurement. ANV is **not** measured and cannot
+  be measured here — the experiment requires executing on the driver in
+  question. Nothing in §6 licenses any statement about ANV in either direction,
+  and the campaign note claiming ANV ignores `NoContraction` remains unverified.
+  One run closes it on any Intel box:
+  `dune build @e2e-gpu` enumerates every Vulkan device present and needs no
+  configuration. AMDVLK and the proprietary AMD Vulkan driver are unmeasured for
+  the same reason — different SPIR-V consumers on the very same GPU.
 - **f16 on the PTX backend.** `Sarek_ir_ptx` refuses kernel-level f16 (`#57`
   slice 2). Everything above is the **CUDA/C** path.
 - **One GPU, one architecture.** sm_61 has no tensor cores, no bf16 and no FP8,
@@ -477,3 +565,6 @@ architectures ranges, same answer.
 | `sarek-cuda/test/test_cuda_fp_conformance.ml` | the nvrtc FP-option guard and its hazard control |
 | `sarek-hip/test/test_hip_rtc_options.ml` | proves `-ffp-contract=off` stays last whatever the caller passes |
 | `sarek/tests/e2e/test_df64.ml` | the per-backend precision measurement this policy quotes |
+| `sarek/tests/e2e/test_vulkan_no_contraction.ml` | the §6 experiment: `precise` vs not, same device/driver/run, contracted targets taken from the device's own `fma` (`e2e-gpu` alias) |
+| `sarek-hip/test/test_hip_f16_shapes.ml` | every f16 expression shape swept over all 63488 finite binary16 inputs, with a barrier-removed control that must go red (`e2e-hip` alias) |
+| `scripts/f16_shape_isa_audit.sh` | the ISA half of that audit — catches shapes demoted in machine code but numerically clean |

@@ -1307,3 +1307,30 @@
  (alias runtest)
  (action
   (run %{dep:test_vulkan_cache_device_scope.exe})))
+
+; Measurement (issue #126): does a Vulkan driver HONOUR the SPIR-V
+; NoContraction decoration that Sarek's `precise` float locals lower to?
+; Runs the same shader twice, differing only by `precise`, on every Vulkan
+; device present, and compares each contraction shape against a fused value
+; the DEVICE produced rather than an IEEE model.
+;
+; Classified e2e-gpu, deliberately: there is no Native/Interpreter fallback
+; (the whole point is what a specific driver does), so on a machine with no
+; Vulkan device it can only print [SKIP], and a [SKIP] sitting on the default
+; runtest alias is indistinguishable from a pass. It is NOT e2e-manual either -
+; it has a real failure mode and exits 1 on it: if an explicit fma() fails to
+; fuse, or a result matches neither candidate, the harness is not measuring
+; what it claims and says so. What it deliberately does NOT do is fail because
+; a driver's answer changed - that is a finding to record in
+; docs/fp-contraction-policy.md, not a build to break.
+
+(executable
+ (name test_vulkan_no_contraction)
+ (modules test_vulkan_no_contraction)
+ (optional)
+ (libraries sarek sarek_vulkan spoc_core))
+
+(rule
+ (alias e2e-gpu)
+ (action
+  (run %{dep:test_vulkan_no_contraction.exe})))

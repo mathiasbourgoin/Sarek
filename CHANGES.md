@@ -49,6 +49,29 @@
   `sarek-cuda/test/test_cuda_fp_conformance.ml` reproduces the hazard
   host-side (`-ftz=true` turns `FMUL`/`FADD` into `FMUL.FTZ`/`FADD.FTZ` at
   sm_90, CUDA 13.3) and each of its four cases was proved red by mutation.
+- `sarek/tests/e2e/test_vulkan_no_contraction.ml` (on the `e2e-gpu` alias, so
+  it executes rather than merely building) — settles whether a Vulkan driver
+  honours SPIR-V `NoContraction` (#126). Same shader compiled twice,
+  differing only by `precise`, run on the same device/driver/process; the
+  contracted target is taken from the device's own `fma()` rather than an IEEE
+  model, because RADV's `fma` is not correctly rounded and a modelled target
+  can make a genuinely contracted result read as clean. **Measured on RX 7900
+  XTX (RADV NAVI31) and the Raphael iGPU, Mesa 26.1.4-arch3.1: 0 of 7
+  contraction shapes contracted with or without `precise`, and the emitted RDNA
+  ISA is opcode-identical between the two builds.** Both in-tree claims are
+  refuted: RADV neither ignores the decoration nor needs it. Mesa ANV remains
+  unmeasured — no Intel GPU on this machine.
+- `sarek-hip/test/test_hip_f16_shapes.ml` + `scripts/f16_shape_isa_audit.sh` —
+  exhaustive f16 expression-shape audit for AMDGPU fusion demotion (#106). All
+  20 shapes the DSL can emit, each swept over all 63488 finite binary16 inputs,
+  on gfx1100 and gfx1036: **0 disagreements as shipped**. Removing the opacity
+  barrier breaks 9 of 20 and reproduces the original 620 exactly — the harness
+  was calibrated against that known positive before its nulls were trusted, and
+  it fails closed if the barrier-removed control stops going red. Disassembly
+  additionally shows *four* demotion opcodes, not two (`v_mul_f16` and
+  `v_sub_f16` are new), and three shapes that are demoted in machine code yet
+  numerically clean — which a numeric-only audit would have mis-reported as
+  unaffected. See `docs/optimization/amdgpu-f16-fusion-shape-audit.md`.
 - ZLUDA/AMD support for the CUDA/PTX backend (PTX launch ABI fix)
 - T3-SEMANTIC milestone lock for both formal projects; conformance +
   mutation tests wired into `dune runtest`
