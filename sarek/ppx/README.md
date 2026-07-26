@@ -349,7 +349,6 @@ type 'a local   = Local of 'a        (* Thread-local / register *)
 
 ### IR Generation & Code Generation
 - **[Sarek_lower_ir](Sarek_lower_ir.ml)** - Generate Sarek IR
-- **[Sarek_ctype_gen](Sarek_ctype_gen.ml)** - C struct/union/builder strings for the `[%%sarek.type]` extension (currently unwired — see the module header; the live path is the `[@@sarek.type]` attribute, whose device definitions come from `Sarek_ir_codegen`)
 - **[Sarek_quote](Sarek_quote.ml)** - Quote kernels as OCaml expressions
 - **[Sarek_quote_ir](Sarek_quote_ir.ml)** - Quote IR constructors
 - **[Sarek_native_gen](Sarek_native_gen.ml)** - Native OCaml code generation

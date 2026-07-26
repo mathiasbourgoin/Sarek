@@ -397,8 +397,7 @@ let generate_intrinsic_check ~loc (kernel : tkernel) : expression =
 
 (** Quote a kernel to create a sarek_kernel expression *)
 let quote_kernel ~loc ?(native_kernel : tkernel option)
-    ~(ir_opt : Sarek_ir_ppx.kernel) ~(constructors : string list)
-    (kernel : tkernel) : expression =
+    ~(ir_opt : Sarek_ir_ppx.kernel) (kernel : tkernel) : expression =
   (* Use native_kernel for CPU code generation if provided, otherwise use kernel.
      This allows passing the original kernel (before tailrec transformation)
      for native OCaml, since OCaml handles recursion natively. *)
@@ -409,14 +408,6 @@ let quote_kernel ~loc ?(native_kernel : tkernel option)
   (* Suppress unused variable warnings for legacy args handling *)
   let _ = (args_pat, args_array_expr, list_to_args_pat, list_to_args_expr) in
   [%expr
-    let () =
-      List.iter
-        Sarek.Kirc_types.register_constructor_string
-        [%e
-          Ast_builder.Default.elist
-            ~loc
-            (List.map (Ast_builder.Default.estring ~loc) constructors)]
-    in
     let open Sarek.Kirc_types in
     let _intrinsic_check = [%e generate_intrinsic_check ~loc kernel] in
     (* Native function for host execution (uses Spoc_core.Vector) *)

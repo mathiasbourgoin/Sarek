@@ -1872,7 +1872,7 @@ let expand_kernel ~ctxt payload : expression =
               (Printf.sprintf "[%s] step 7: IR lowering start" kern_name) ;
             Sarek_debug.log_enter "lower_kernel" ;
             let t0 = Unix.gettimeofday () in
-            let kernel, constructors =
+            let kernel =
               try Sarek_lower_ir.lower_kernel tkernel
               with e ->
                 Sarek_debug.log_to_file
@@ -1903,7 +1903,6 @@ let expand_kernel ~ctxt payload : expression =
                 ~loc
                 ~native_kernel
                 ~ir_opt:kernel
-                ~constructors
                 tkernel
             in
             let t1 = Unix.gettimeofday () in
@@ -2196,35 +2195,6 @@ let kernel_real64_extension =
     Extension.Context.expression
     Ast_pattern.(single_expr_payload __)
     expand_kernel_real64
-
-(* Register top-level Sarek type declarations via the [%%sarek.type] EXTENSION.
-
-   NOT WIRED UP: [sarek_type_extension] below is [()], and this function is
-   absent from the driver's rule list, so [%%sarek.type] is rejected by ppxlib
-   as an uninterpreted extension. The live path is the [@@sarek.type]
-   ATTRIBUTE ([sarek_type_rule]). Left in place, with its emitter corrected
-   (see the header of Sarek_ctype_gen), rather than removed — but a caller
-   reviving it must first reconcile that emitter's naming convention with
-   Sarek_ir_codegen's, which is what the backends actually emit. *)
-let expand_sarek_type ~ctxt payload =
-  let loc = Expansion_context.Extension.extension_point_loc ctxt in
-  match payload with
-  | PStr ([{pstr_desc = Pstr_type (_rf, [tdecl]); _}] as items) ->
-      let ctors =
-        Sarek_ctype_gen.constructor_strings_of_core_type_decl ~loc tdecl
-      in
-      let register =
-        [%stri
-          let () =
-            List.iter Sarek.Kirc_types.register_constructor_string [%e ctors]]
-      in
-      items @ [register]
-  | _ ->
-      Location.raise_errorf
-        ~loc
-        "%%sarek.type expects a single type declaration"
-
-let sarek_type_extension = ()
 
 (** Register sarek.module bindings on any structure we process, so libraries can
     publish module items for use in kernels.

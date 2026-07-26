@@ -42,8 +42,3 @@ type ('a, 'b, 'c, 'd) kirc_function = {
 
 type ('a, 'b, 'c, 'd, 'e) sarek_kernel =
   ('a, 'b) spoc_kernel_stub * ('c, 'd, 'e) kirc_kernel
-
-(** Constructor registry for variant types *)
-let constructors : string list ref = ref []
-
-let register_constructor_string s = constructors := s :: !constructors

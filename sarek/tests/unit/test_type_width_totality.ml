@@ -245,33 +245,6 @@ let test_vector_element_width () =
             | Ir.TVec _ -> "TVec"))
     all_scalar_typs
 
-(** The C type-name mapper feeding generated struct/builder source is held to
-    the same standard: no arm may silently answer "int" for a type it does not
-    know. A type it cannot name must raise.
-
-    [Sarek_ctype_gen] is the surviving emitter of that kind (the
-    [Sarek_lower_ir] copy was write-only and has been removed). *)
-let test_c_type_of_typ_has_no_silent_int () =
-  List.iter
-    (fun t ->
-      let label = string_of_typ t in
-      match Sarek_ctype_gen.c_type_of_typ t with
-      | exception Ppxlib.Location.Error _ -> ()
-      | c ->
-          (* "int" is only correct for the 4-byte integer-ish source types. Any
-             other type answering "int" is the wildcard defect. *)
-          if String.equal c "int" then
-            Alcotest.(check bool)
-              (Printf.sprintf
-                 "%s emitted C type \"int\": only 4-byte integer source types \
-                  may do so"
-                 label)
-              true
-              (match t with
-              | T.TReg T.Int | T.TPrim T.TInt32 | T.TPrim T.TBool -> true
-              | _ -> false))
-    all_scalar_typs
-
 let () =
   Alcotest.run
     "type_width_totality"
@@ -294,9 +267,5 @@ let () =
             "vector element stride matches the host element width"
             `Quick
             test_vector_element_width;
-          Alcotest.test_case
-            "c_type_of_typ has no silent int wildcard"
-            `Quick
-            test_c_type_of_typ_has_no_silent_int;
         ] );
     ]

@@ -1057,7 +1057,7 @@ let lower_param (p : tparam) : Ir.decl =
   else Ir.DParam (v, None)
 
 (** Lower a complete kernel *)
-let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
+let lower_kernel (kernel : tkernel) : Ir.kernel =
   (* Reset and log counters *)
   ir_lower_expr_count := 0 ;
   ir_lower_stmt_count := 0 ;
@@ -1128,13 +1128,6 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
       Ir.SEmpty
   in
 
-  (* No C constructor strings are produced any more: the backends emit record
-     and variant definitions themselves from [kern_types]/[kern_variants], and
-     the strings this used to build were only ever appended to a list nobody
-     read. See the REMOVED note near the top of this file. The return type is
-     kept so callers are unchanged. *)
-  let constructors = [] in
-
   (* Lower body *)
   let body_ir = lower_stmt state kernel.tkern_body in
   Sarek_debug.log_to_file
@@ -1165,19 +1158,18 @@ let lower_kernel (kernel : tkernel) : Ir.kernel * string list =
     List.rev state.lowered_funs_order
     |> List.filter_map (fun name -> Hashtbl.find_opt state.lowered_funs name)
   in
-  ( {
-      Ir.kern_name = Option.value kernel.tkern_name ~default:"sarek_kern";
-      (* "kernel" is reserved in OpenCL *)
-      kern_params = List.map lower_param kernel.tkern_params;
-      kern_locals = [];
-      kern_body = full_body;
-      kern_types = types_list;
-      kern_variants = variants_list;
-      kern_funcs = funcs_list;
-      kern_native_fn = None;
-      (* Native fn is added during quoting *)
-    },
-    constructors )
+  {
+    Ir.kern_name = Option.value kernel.tkern_name ~default:"sarek_kern";
+    (* "kernel" is reserved in OpenCL *)
+    kern_params = List.map lower_param kernel.tkern_params;
+    kern_locals = [];
+    kern_body = full_body;
+    kern_types = types_list;
+    kern_variants = variants_list;
+    kern_funcs = funcs_list;
+    kern_native_fn = None;
+    (* Native fn is added during quoting *)
+  }
 
 (** Get the return value declaration for a kernel *)
 let lower_return_value (kernel : tkernel) : Ir.decl option =

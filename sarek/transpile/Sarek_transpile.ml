@@ -300,10 +300,7 @@ let run_pipeline (src : string) : (Sarek_ir_ppx.kernel, error) result =
                       try
                         let mono = Sarek_mono.monomorphize tkernel in
                         let tr = Sarek_tailrec.transform_kernel mono in
-                        let ir_kernel, _warnings =
-                          Sarek_lower_ir.lower_kernel tr
-                        in
-                        Ok ir_kernel
+                        Ok (Sarek_lower_ir.lower_kernel tr)
                       with exn ->
                         Error (Internal_error (Printexc.to_string exn)))))))
 

@@ -20,6 +20,7 @@
 ; - test_tuple_destructure_nonprim: "Tuple values support only scalar components"
 ; - test_fun_param: "Function-typed kernel parameters are not supported"
 ; - test_fun_escape: "Function value escapes"
+; - test_sarek_type_extension: "Uninterpreted extension 'sarek.type'"
 ; - test_unregistered_field: "unknown size/alignment for field type"
 ; - test_reserved_prefix_param: "identifiers beginning with 'sarek_' are reserved"
 ; - test_reserved_prefix_local: "identifiers beginning with 'sarek_' are reserved"
@@ -354,6 +355,17 @@
 (library
  (name neg_test_poly_helper_f64)
  (modules test_poly_helper_f64)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_sarek_type_extension)
+ (modules test_sarek_type_extension)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
