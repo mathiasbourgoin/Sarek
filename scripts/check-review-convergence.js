@@ -15,7 +15,7 @@
 // are keyed by (check, fid) with a fingerprint fallback (E-3).
 //
 // Usage: node scripts/check-review-convergence.js <review.json path>
-//   [--static] [--max-rounds N] [--timeout S] [--strikes N]
+//   [--static] [--max-rounds N] [--timeout S] [--strikes N] [--allow-legacy]
 //
 // Exit contract:
 //   0 = pass (no violations, no degraded input)
@@ -40,10 +40,16 @@
 // executed here (see roster-review.md §5.5) — out of mechanical-verification
 // scope, not a violation.
 //
-// Legacy handling (B-8): when review.json lacks the `round` key (the
-// physical per-cycle counter), strike classification and the rounds_audit
-// completeness check are SKIPPED with a warning — the 17 pre-existing
-// fixtures (keyed on `no_go_round` only) pass unmodified.
+// Legacy handling (B-8, HARDENED): when review.json lacks the `round` key
+// (the physical per-cycle counter), strike classification and the rounds_audit
+// completeness check cannot run. That used to be a WARNING on an exit-0 run —
+// i.e. a gate that could not fail, whose green was byte-identical to a real
+// one. It is now exit 2 unless the caller passes --allow-legacy, which is
+// RECORDED in the report as `legacy_skip_authorized: true` and refused by
+// review-verdict-assemble.js --write-strike. The 17 pre-existing fixtures
+// (keyed on `no_go_round` only) pass with that flag, and only with it.
+// Same treatment for an absent `no_go_round` (D10), under which the round cap
+// could never fire.
 //
 // Config-echo contract (B-4, FIX-6): the JSON report ALWAYS includes
 // `config: {max_rounds, strikes, static}` on every exit code — this is how a
@@ -80,18 +86,37 @@ const {
 } = require("./lib/review/review-convergence-rules");
 const { isFullSha, verifyFinding } = require("./lib/review/redgreen-scratch");
 const { evaluateTrace } = require("./lib/review/review-trace-dispatch");
+// Repo-local (NOT bundle-owned — see scripts/lib/review-gate-hardening.js's
+// header). Turns the eleven recorded prose/enforcer discrepancies
+// (schema/review-json-schema.md §"Prose/enforcer discrepancies", D1..D11) plus
+// three undocumented vacuity paths from warnings-on-an-exit-0-run into
+// fail-closed refusals.
+const { HARDENING_VERSION, evaluateHardening, computeGoConsistencyViolation } = require("./lib/review-gate-hardening");
 
-const KNOWN_FLAGS = new Set(["--static", "--max-rounds", "--timeout", "--strikes"]);
+const KNOWN_FLAGS = new Set(["--static", "--max-rounds", "--timeout", "--strikes", "--allow-legacy"]);
 const DEFAULT_STRIKES = 2;
 
 // B-4: unknown flags are rejected (exit 2) so a stale/mismatched invocation
 // fails loudly instead of silently ignoring a new flag.
 function parseArgs(argv) {
-  const out = { reviewPath: null, static: false, maxRounds: 5, timeout: 120, strikes: DEFAULT_STRIKES, unknownFlag: null };
+  const out = {
+    reviewPath: null,
+    static: false,
+    maxRounds: 5,
+    timeout: 120,
+    strikes: DEFAULT_STRIKES,
+    allowLegacy: false,
+    unknownFlag: null,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--static") {
       out.static = true;
+    } else if (a === "--allow-legacy") {
+      // A RECORDED skip, not a silent one: it is echoed into the report as
+      // `legacy_skip_authorized`, and review-verdict-assemble.js --write-strike
+      // refuses a report carrying it.
+      out.allowLegacy = true;
     } else if (a === "--max-rounds") {
       out.maxRounds = parseInt(argv[++i], 10);
     } else if (a === "--timeout") {
@@ -350,7 +375,13 @@ function buildReport({ args, noGoRound, legacyNoGoRound, round, legacyRound, cur
     round,
     legacy_round: legacyRound,
     current_round_strike: currentRoundStrike,
+    // The recorded-skip field. True means the caller explicitly authorized the
+    // gate to skip checks it could not perform; the run is NOT evidence that
+    // those checks passed, and --write-strike refuses to journal a strike from
+    // a report carrying it.
+    legacy_skip_authorized: args.allowLegacy && (legacyRound || legacyNoGoRound),
     config: { max_rounds: args.maxRounds, strikes: args.strikes, static: args.static },
+    hardening: { version: HARDENING_VERSION },
     cause: selectCause(violations),
     warnings,
     violations,
@@ -382,6 +413,13 @@ function main() {
 
   const violations = [];
 
+  // Fail-closed hardening FIRST: every rule below assumes the envelope is
+  // populated well enough for its answer to mean something. Running it first
+  // is what makes the message name the root cause rather than a symptom.
+  const hardening = evaluateHardening({ review, round, legacyRound, legacyNoGoRound, allowLegacy: args.allowLegacy, findings });
+  if (hardening.fatal) fail(2, hardening.fatal);
+  violations.push(...hardening.violations);
+
   // FR-026: cap violation.
   if (noGoRound >= args.maxRounds) {
     violations.push({
@@ -392,6 +430,10 @@ function main() {
   }
 
   violations.push(...computeFindingViolations(findings));
+  // D1: cross_runtime_findings entries are canonical findings with GO
+  // authority. They were exempt from the ratchet, the provenance check and the
+  // unencodable-finding check purely because nothing ever opened the array.
+  violations.push(...computeFindingViolations(Array.isArray(review.cross_runtime_findings) ? review.cross_runtime_findings : []));
 
   const strikeAudit = evaluateStrikesAndAudit(review, round, legacyRound, findings, args.strikes);
   violations.push(...strikeAudit.violations);
@@ -405,6 +447,11 @@ function main() {
   if (trace.fail) fail(trace.fail.code, trace.fail.message);
   violations.push(...trace.violations);
   warnings.push(...trace.warnings);
+
+  // Evaluated last, over the fully accumulated list: a verdict may not assert
+  // GO while the gate is reporting a design violation (D2).
+  const goConsistency = computeGoConsistencyViolation(review, violations);
+  if (goConsistency) violations.push(goConsistency);
 
   const report = buildReport({
     args,

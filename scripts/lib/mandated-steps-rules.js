@@ -178,7 +178,15 @@ function validateRecordSet(records, task) {
 }
 
 function resolveRequirements({ phase, require: explicit }) {
-  if (Array.isArray(explicit) && explicit.length > 0) {
+  if (Array.isArray(explicit)) {
+    // An empty explicit list must NOT silently fall through to the phase
+    // defaults: the caller asked for a specific requirement set, and answering
+    // with a different one (possibly the empty one) is how an explicit demand
+    // gets discharged by nothing. `null` means "not given"; `[]` means "given
+    // and empty", which is a usage error.
+    if (explicit.length === 0) {
+      return { error: "--require was given but names no steps — refusing to fall back to the phase defaults" };
+    }
     const unknown = explicit.filter((step) => !Object.prototype.hasOwnProperty.call(STEPS, step));
     if (unknown.length > 0) return { error: `--require names unknown step(s): ${unknown.join(", ")}` };
     return { required: explicit };

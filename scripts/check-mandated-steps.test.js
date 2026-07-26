@@ -300,6 +300,42 @@ check("an unknown phase is rejected, not defaulted to `nothing required`", () =>
   assert.match(r.stderr, /Refusing to default/);
 });
 
+// ── the empty/trailing flag class ────────────────────────────────────────
+// A flag GIVEN and a flag OMITTED are different things. Collapsing them made
+// `--require ""` mean "use the phase defaults", so on a phase that mandates
+// nothing an explicit requirement was discharged by nothing: exit 0,
+// required: []. Same shape as the trailing/empty `--expect-phase` opt-out.
+check("an empty or comma-only --require is refused, never a fallback", () => {
+  const dir = scratch();
+  for (const value of ["", ",", " ", ",,"]) {
+    const r = run(["--task", TASK, "--phase", "review", "--require", value], dir);
+    assert.strictEqual(r.status, 2, `--require ${JSON.stringify(value)} must be a usage error, got exit ${r.status}`);
+    assert.match(r.stderr, /names no steps/);
+  }
+  // The control, and the reason this mattered: `review` mandates nothing, so an
+  // empty ledger is a legitimate exit 0 here. That is exactly the clean pass the
+  // fallback used to hand back for `--require ","` — indistinguishable from a
+  // genuine one, on the phase where it was most likely to be reached for.
+  const ok = run(["--task", TASK, "--phase", "review"], dir);
+  assert.strictEqual(ok.status, 0, "review mandates nothing, so an empty ledger is a real pass");
+});
+
+check("an empty --phase is refused", () => {
+  const dir = scratch();
+  const r = run(["--task", TASK, "--phase", ""], dir);
+  assert.strictEqual(r.status, 2);
+  assert.match(r.stderr, /--phase was given but is empty/);
+});
+
+check("a trailing value-flag with no value is refused", () => {
+  const dir = scratch();
+  for (const flag of ["--phase", "--require", "--task", "--step"]) {
+    const r = run(["--task", TASK, flag], dir);
+    assert.strictEqual(r.status, 2, `trailing ${flag} must be a usage error, got exit ${r.status}`);
+    assert.match(r.stderr, /requires a value/);
+  }
+});
+
 check("--require names an unknown step and is rejected", () => {
   const dir = scratch();
   const r = run(["--task", TASK, "--require", "preflight,nonsense"], dir);

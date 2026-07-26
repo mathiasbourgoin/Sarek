@@ -131,13 +131,30 @@ function runRecord(args) {
 }
 
 function runCheck(args) {
-  if (!args.phase && !args.require) usage("--phase <name> is required (or --require <step,step>)");
+  // A flag that was GIVEN and a flag that was omitted are different things, and
+  // collapsing them is how `--require ""` came to mean "require the phase
+  // defaults" — on a phase that mandates nothing, an explicit request for a
+  // requirement silently became exit 0 with required: []. Same shape as the
+  // trailing/empty `--expect-phase` opt-out. So: given-but-empty is a usage
+  // error, never a fallback.
+  const requireGiven = args.require !== undefined;
+  const phaseGiven = args.phase !== undefined;
+  if (phaseGiven && args.phase.trim() === "") {
+    usage("--phase was given but is empty — an empty phase cannot select a requirement set");
+  }
+  if (requireGiven && args.require.split(",").every((s) => s.trim() === "")) {
+    usage(
+      `--require was given but names no steps (${JSON.stringify(args.require)}) — it would silently fall back to the phase defaults, so an explicit requirement would be discharged by nothing`
+    );
+  }
+  if (!phaseGiven && !requireGiven) usage("--phase <name> is required (or --require <step,step>)");
+
   const file = ledgerPath(args);
   const records = readLedger(file);
   const result = evaluate({
     records,
     phase: args.phase,
-    require: args.require ? args.require.split(",").map((s) => s.trim()).filter(Boolean) : null,
+    require: requireGiven ? args.require.split(",").map((s) => s.trim()).filter(Boolean) : null,
     task: args.task,
   });
   if (result.usageError) usage(result.usageError);

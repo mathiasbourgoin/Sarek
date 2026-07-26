@@ -166,6 +166,14 @@ const REQUIRED = [
   ["scripts/lib/xruntime/xruntime-journal.js", "isCallerFault", "#102 breaker exemption"],
   ["scripts/lib/xruntime/xruntime-contract.js", "OUTPUT_CONTRACT", "#102 --emit-contract"],
   ["scripts/lib/review/review-lifecycle.js", "expected \"GO\" or \"NO-GO\"", "verdict-status gate"],
+  // #98. The gate is the one bundle-owned file the fail-closed hardening
+  // patches; scripts/lib/review-gate-hardening.js is repo-local by design, so an
+  // upgrade cannot touch it — but it CAN overwrite the require and the wiring
+  // that reach it, which would restore every hole silently and leave the module
+  // sitting there unused.
+  ["scripts/check-review-convergence.js", "review-gate-hardening", "#98 hardening module is required"],
+  ["scripts/check-review-convergence.js", "evaluateHardening", "#98 hardening is actually invoked, not merely imported"],
+  ["scripts/check-review-convergence.js", "legacy_skip_authorized", "#98 recorded-skip marker reaches the report"],
 ];
 // Identifier-like markers match on word boundaries. Plain String.includes let
 // FAULT_BY_OUTCOMEX satisfy FAULT_BY_OUTCOME — a renamed symbol reads as an

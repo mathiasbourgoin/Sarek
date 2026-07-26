@@ -63,6 +63,14 @@ module.exports = { OUTPUT_CONTRACT };
 ' ;;
     scripts/lib/review/review-lifecycle.js)
       printf '%s\n' 'const MSG = `expected "GO" or "NO-GO"`;' ;;
+    scripts/check-review-convergence.js)
+      # #98 fail-closed hardening, modelled as APPLIED. All three markers are
+      # real code: the require path, the call, and the report field. A comment
+      # would not satisfy the guard, which strips them before matching.
+      printf 'const { evaluateHardening } = require("./lib/review-gate-hardening");
+function main() { const h = evaluateHardening({}); return { legacy_skip_authorized: false, h }; }
+module.exports = { main };
+' ;;
     *) printf 'content of %s\n' "$1" ;;
   esac
 }

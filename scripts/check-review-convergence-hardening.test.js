@@ -539,8 +539,17 @@ check("F4 CONTROL: every required key present and well-formed still passes", () 
 // I verified all three by hand when drafting the entry. Doing it by hand is the
 // wrong shape for precisely the reason this whole task keeps re-teaching, so it
 // is mechanical now.
-const PATCH_REF = "backlog #98";
-const INTENDED_MARKERS = ["review-gate-hardening", "legacy_skip_authorized", "--allow-legacy"];
+// The ref MUST match scripts/review-bundle.manifest.json exactly. It did not,
+// once: the constant said "backlog #98" while the landed entry said
+// "#98 — convergence gate fails closed", so the lookup missed, the
+// not-yet-landed fallback fired, and all three checks below silently graded the
+// INTENDED list instead of the DECLARED one. Adding a marker that upstream also
+// contains changed nothing — the declaration was not being read at all. Hence
+// `#98 patch is DECLARED` below, which fails if this constant ever drifts again.
+const PATCH_REF = "#98 — convergence gate fails closed";
+const PATCH_PATH = "scripts/check-review-convergence.js";
+// A marker of the applied patch, used to decide whether a declaration is OWED.
+const APPLIED_SENTINEL = "evaluateHardening";
 
 function readManifest() {
   const file = path.join(REPO, "scripts", "review-bundle.manifest.json");
@@ -548,21 +557,36 @@ function readManifest() {
   return JSON.parse(fs.readFileSync(file, "utf8"));
 }
 
-// Markers as declared, or as intended if the entry has not landed yet. The
-// not-yet-landed branch is NOT a skip: it asserts the declaration will be true
-// at the moment it is made, which is the whole point of landing the entry
-// atomically with the wiring.
-function markersUnderTest() {
+function declaredPatch() {
   const manifest = readManifest();
-  const declared = manifest && Array.isArray(manifest.local_patches)
-    ? manifest.local_patches.find((p) => p && p.ref === PATCH_REF)
-    : null;
-  if (!declared) return { markers: INTENDED_MARKERS, paths: ["scripts/check-review-convergence.js"], declared: false };
-  const markers = Array.isArray(declared.markers)
-    ? declared.markers
-    : Object.values(declared.markers || {}).flat();
-  return { markers, paths: declared.paths, declared: true };
+  if (!manifest || !Array.isArray(manifest.local_patches)) return null;
+  return manifest.local_patches.find((p) => p && p.ref === PATCH_REF) || null;
 }
+
+function markersUnderTest() {
+  const declared = declaredPatch();
+  assert.ok(declared, `no local_patches[] entry with ref ${JSON.stringify(PATCH_REF)} — nothing to verify`);
+  const markers = Array.isArray(declared.markers) ? declared.markers : Object.values(declared.markers || {}).flat();
+  return { markers, paths: declared.paths || [] };
+}
+
+// The bidirectional consistency the fallback used to hide. An applied patch owes
+// a declaration; the two may not disagree in either direction.
+check("#98 patch is DECLARED whenever it is applied", () => {
+  const gate = fs.readFileSync(path.join(REPO, PATCH_PATH), "utf8");
+  const applied = gate.includes(APPLIED_SENTINEL);
+  const declared = declaredPatch();
+  if (applied) {
+    assert.ok(
+      declared,
+      `${PATCH_PATH} carries the #98 hardening but no local_patches[] entry with ref ${JSON.stringify(PATCH_REF)} declares it — undeclared drift is exactly what the manifest exists to prevent`
+    );
+    assert.ok(declared.reapply_on_upgrade === true, "#98 must declare reapply_on_upgrade: an upgrade overwrites the gate");
+    assert.ok((declared.paths || []).includes(PATCH_PATH), `#98 paths must include ${PATCH_PATH}`);
+  } else {
+    assert.ok(!declared, `local_patches[] declares #98 but ${PATCH_PATH} does not carry it — the declaration is false`);
+  }
+});
 
 check("local-patch markers are non-empty (an empty needle matches everything)", () => {
   const { markers } = markersUnderTest();

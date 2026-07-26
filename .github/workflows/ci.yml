@@ -61,6 +61,11 @@ jobs:
           set -e
           node scripts/review-verdict-assemble.test.js
           node scripts/xruntime-caller-fault.test.js
+          # The #98 local patch's covering test. It is what attests that the
+          # convergence gate still fails closed, so it has to be a test something
+          # actually runs — a `make` target nobody invokes is not that.
+          node scripts/check-review-convergence-hardening.test.js
+          node scripts/check-mandated-steps.test.js
           node scripts/check-alcotest-registration.test.js
           ./scripts/check-review-bundle-tracked.test.sh
           ./scripts/agent-worktree-bootstrap.test.sh

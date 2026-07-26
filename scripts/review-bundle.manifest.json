@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "bundle_version": "1.6.0+spoc.2",
+  "bundle_version": "1.6.0+spoc.3",
   "channel": "local-patched",
   "source_ref": "main",
   "files": [
@@ -14,7 +14,7 @@
     },
     {
       "path": "scripts/check-review-convergence.js",
-      "sha256": "fafbf46ba7e0e0baacc88537060fef94d3a4373bde27c17cea8f5ddc4d25ee9a"
+      "sha256": "3517b40534bf78d47df46c28a4a39c2a6ec52429640397b413a7460424389b69"
     },
     {
       "path": "scripts/check-scope-diff.sh",
@@ -150,6 +150,21 @@
         ]
       },
       "tests": "scripts/xruntime-caller-fault.test.js",
+      "reapply_on_upgrade": true
+    },
+    {
+      "ref": "#98 — convergence gate fails closed",
+      "summary": "An under-populated verdict removed the gate’s ability to check anything and exited 0 with violations: [], byte-identical to a real pass. Wires the gate to scripts/lib/review-gate-hardening.js (repo-local, deliberately NOT bundle-owned so an upgrade cannot silently restore the holes), adds --allow-legacy as a RECORDED skip, and reads cross_runtime_findings. Closes D1-D11 plus G3/G5/G13/G14/G15.",
+      "paths": [
+        "scripts/check-review-convergence.js"
+      ],
+      "markers": [
+        "review-gate-hardening",
+        "evaluateHardening",
+        "legacy_skip_authorized",
+        "--allow-legacy"
+      ],
+      "tests": "scripts/check-review-convergence-hardening.test.js",
       "reapply_on_upgrade": true
     }
   ]
