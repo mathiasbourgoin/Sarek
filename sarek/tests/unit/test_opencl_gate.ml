@@ -498,17 +498,33 @@ let subprocess_reports_no_fp64 () =
   (try Sys.remove out with _ -> ()) ;
   match rc with Unix.WEXITED 0 -> Some (String.trim text) | _ -> None
 
+let names_cl_khr_fp64 text =
+  try
+    ignore (Str.search_forward (Str.regexp_string "cl_khr_fp64") text 0) ;
+    true
+  with Not_found -> false
+
 let test_fp64_predicate_goes_red_under_suppression () =
-  if not (Clang.available ()) then
-    Printf.printf "  SKIP: %s\n%!" (Clang.why_unavailable ())
-  else begin
-    (* Positive control first: without suppression this clang HAS fp64, so the
-       negative result below is attributable to the switch and not to a
-       toolchain that never had it. *)
+  if not (Clang.available ()) then begin
+    Printf.printf "  SKIP: %s\n%!" (Clang.why_unavailable ()) ;
+    Alcotest.skip ()
+  end
+  else if not (Clang.fp64_available ()) then
+    (* THIS MACHINE HAS NO fp64 — an Apple M4 is the case in point, and it is
+       the machine that produced #140. Emulating an absence that is already real
+       proves nothing, so assert the thing that IS observable here instead: the
+       predicate says no, and says why in terms a reader can act on. This is the
+       stronger observation of the two; the suppression branch below exists only
+       so the Linux machines can see the same red. *)
     Alcotest.(check bool)
-      "unsuppressed: this clang compiles a double kernel"
+      "fp64 is natively absent here, and the predicate says so, naming \
+       cl_khr_fp64"
       true
-      (Clang.fp64_available ()) ;
+      (names_cl_khr_fp64 (Clang.why_no_fp64 ()))
+  else begin
+    (* fp64 IS available, so the interesting branch is the one that never runs
+       on this machine — the branch that split the M4 into two verdicts. Drive
+       it by taking the extension away from the compiler itself. *)
     match subprocess_reports_no_fp64 () with
     | None ->
         Alcotest.fail "could not re-run this executable with the switch set"
@@ -521,11 +537,7 @@ let test_fp64_predicate_goes_red_under_suppression () =
         Alcotest.(check bool)
           "the stated reason names cl_khr_fp64"
           true
-          (try
-             ignore
-               (Str.search_forward (Str.regexp_string "cl_khr_fp64") report 0) ;
-             true
-           with Not_found -> false)
+          (names_cl_khr_fp64 report)
   end
 
 (* Sub-mode used by the case above. Prints the reason fp64 is unavailable (empty
