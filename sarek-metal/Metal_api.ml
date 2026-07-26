@@ -251,7 +251,7 @@ module Library = struct
       NOT EXECUTED ON HARDWARE — there is no Apple device on the machine this
       was written on. If [mtl_compile_options_conformant] returns [None] (older
       OS, missing selector, allocation failure) this falls back to null options,
-      i.e. exactly the pre-backlog #125 behaviour, and says so in the log rather
+      i.e. exactly the behaviour before backlog #125, and says so in the log rather
       than silently. Either way, Metal float results remain outside the
       guarantee until somebody runs [test_df64] on a Mac; see
       docs/fp-contraction-policy.md §11. *)

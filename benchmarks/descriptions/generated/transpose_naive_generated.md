@@ -83,6 +83,7 @@ void main() {
 ```metal
 #include <metal_stdlib>
 using namespace metal;
+#pragma METAL fp contract(off)
 
 kernel void sarek_kern(device float* input [[buffer(0)]], constant int &sarek_input_length [[buffer(1)]], device float* output [[buffer(2)]], constant int &sarek_output_length [[buffer(3)]], constant int &width [[buffer(4)]], constant int &height [[buffer(5)]],
 uint3 __metal_gid [[thread_position_in_grid]],

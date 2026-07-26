@@ -130,6 +130,7 @@ void main() {
 ```metal
 #include <metal_stdlib>
 using namespace metal;
+#pragma METAL fp contract(off)
 
 kernel void sarek_kern(device int* input [[buffer(0)]], constant int &sarek_input_length [[buffer(1)]], device atomic_int* histogram [[buffer(2)]], constant int &sarek_histogram_length [[buffer(3)]], constant int &n [[buffer(4)]], constant int &shift [[buffer(5)]], constant int &mask [[buffer(6)]],
 uint3 __metal_gid [[thread_position_in_grid]],

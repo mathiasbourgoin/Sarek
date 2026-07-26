@@ -54,7 +54,7 @@ let test_returns_none_without_objc () =
         Alcotest.failf
           "mtl_compile_options_conformant raised %s instead of returning None. \
            The safety argument for landing this unverified Objective-C is that \
-           every failure degrades to the pre-backlog #125 behaviour (null \
+           every failure degrades to the behaviour before backlog #125 (null \
            options); an escaping exception breaks Metal kernel compilation \
            outright on any host where the runtime, the class or the selector \
            is missing."
