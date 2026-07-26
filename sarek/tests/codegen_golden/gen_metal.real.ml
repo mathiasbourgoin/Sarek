@@ -15,3 +15,9 @@ let reset_state () =
 
 let generate_with_types ~types (k : kernel) =
   Sarek_ir_metal.generate_with_types ~types k
+
+(* Exposed so the contraction-pragma gate can check BOTH preamble sites.
+   [Sarek_ir_metal] emits its header in two places - here and in
+   [generate_with_types] - and a gate that only exercised the latter would let
+   this one drift back to contracting silently. *)
+let generate (k : kernel) = Sarek_ir_metal.generate k

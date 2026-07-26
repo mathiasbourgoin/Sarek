@@ -122,6 +122,7 @@ static int run1(id<MTLDevice> dev, id<MTLCommandQueue> q, id<MTLLibrary> lib,
 
 int main(void){ @autoreleasepool {
   id<MTLDevice> dev=MTLCreateSystemDefaultDevice();
+  if(!dev){ fprintf(stderr,"no Metal device available\n"); return 1; }
   printf("device = %s\n\n", dev.name.UTF8String);
   id<MTLCommandQueue> q=[dev newCommandQueue];
 

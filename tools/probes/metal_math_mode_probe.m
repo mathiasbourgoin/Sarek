@@ -196,10 +196,30 @@ int main(void) {
     };
     int nv = sizeof(variants)/sizeof(variants[0]);
 
-    float *test[16], *dfma[16], *ref[16], *mfn[16];
+    /* Zero-initialised: a variant whose compile fails `continue`s without
+       assigning these, and the cross-variant comparison below tests them for
+       NULL. Indeterminate pointers there would compare garbage and report it
+       as a measurement. */
+    float *test[16] = {0}, *dfma[16] = {0}, *ref[16] = {0}, *mfn[16] = {0};
 
     for (int v = 0; v < nv; v++) {
         MTLCompileOptions *o = [MTLCompileOptions new];
+        /* mathMode / mathFloatingPointFunctions are macOS 15.0+ / iOS 18.0+.
+           Assigning them on an older SDK is an unrecognised selector, i.e. a
+           crash, which would read as "the probe is broken" rather than "this
+           OS cannot express the setting". Report and skip instead. */
+        if (variants[v].set_math_mode >= 0
+            && ![o respondsToSelector:@selector(setMathMode:)]) {
+            printf("  %-58s SKIPPED: setMathMode: unavailable on this OS\n",
+                   variants[v].label);
+            continue;
+        }
+        if (variants[v].set_fp_functions >= 0
+            && ![o respondsToSelector:@selector(setMathFloatingPointFunctions:)]) {
+            printf("  %-58s SKIPPED: setMathFloatingPointFunctions: unavailable\n",
+                   variants[v].label);
+            continue;
+        }
         if (variants[v].set_math_mode >= 0)    o.mathMode = (MTLMathMode)variants[v].set_math_mode;
         if (variants[v].set_fp_functions >= 0) o.mathFloatingPointFunctions = (MTLMathFloatingPointFunctions)variants[v].set_fp_functions;
         if (variants[v].set_fast_math >= 0) {

@@ -159,30 +159,78 @@ static void print_fp_config(cl_device_fp_config fp) {
 
 struct res { float *s, *d; double ms; int max_ulp_s, max_ulp_d; int ok; };
 
+/* Every OpenCL call is checked, and ANY failure leaves out->ok == 0.
+
+   This matters more here than in ordinary code: the whole purpose of this
+   probe is to produce trustworthy numbers, and the previous version ignored
+   every error after the build, then set out->ok = 1 unconditionally. A run
+   where the enqueue silently failed would have reported the contents of a
+   never-written buffer as a measurement. A probe that fabricates results is
+   worse than one that crashes, because the fabrication is quiet. */
+#define CK(expr, what)                                                        \
+  do {                                                                        \
+    cl_int e_ = (expr);                                                       \
+    if (e_ != CL_SUCCESS) {                                                   \
+      printf("    ABORT: %s failed (%d) for option '%s'\n", what, e_, opt);    \
+      goto cleanup;                                                           \
+    }                                                                         \
+  } while (0)
+
+#define CKP(ptr, what)                                                        \
+  do {                                                                        \
+    if ((ptr) == NULL || err != CL_SUCCESS) {                                 \
+      printf("    ABORT: %s failed (%d) for option '%s'\n", what, err, opt);   \
+      goto cleanup;                                                           \
+    }                                                                         \
+  } while (0)
+
 static void run_effect(cl_context ctx, cl_device_id dev, cl_command_queue q,
                        const char *opt, float *A, float *B, struct res *out) {
-  cl_int err;
-  out->ok = 0;
-  cl_program prog = clCreateProgramWithSource(ctx, 1, &SRC, NULL, &err);
-  if (err != CL_SUCCESS) { printf("    (clCreateProgramWithSource failed: %d)\n", err); return; }
-  cl_int b = clBuildProgram(prog, 1, &dev, opt, NULL, NULL);
-  if (b != CL_SUCCESS) { printf("    BUILD FAILED (%d) for option '%s'\n", b, opt); return; }
-  cl_kernel kk = clCreateKernel(prog, "k", &err);
-  cl_kernel kh = clCreateKernel(prog, "hot", &err);
+  cl_int err = CL_SUCCESS;
+  cl_program prog = NULL;
+  cl_kernel kk = NULL, kh = NULL;
+  cl_mem ma = NULL, mb = NULL, ms = NULL, md = NULL, mo = NULL;
   size_t bytes = (size_t)N * 4;
-  cl_mem ma = clCreateBuffer(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, bytes, A, &err);
-  cl_mem mb = clCreateBuffer(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, bytes, B, &err);
-  cl_mem ms = clCreateBuffer(ctx, CL_MEM_WRITE_ONLY, bytes, NULL, &err);
-  cl_mem md = clCreateBuffer(ctx, CL_MEM_WRITE_ONLY, bytes, NULL, &err);
-  cl_mem mo = clCreateBuffer(ctx, CL_MEM_WRITE_ONLY, bytes, NULL, &err);
-  clSetKernelArg(kk,0,sizeof(cl_mem),&ms); clSetKernelArg(kk,1,sizeof(cl_mem),&md);
-  clSetKernelArg(kk,2,sizeof(cl_mem),&ma); clSetKernelArg(kk,3,sizeof(cl_mem),&mb);
   size_t gs = N;
-  clEnqueueNDRangeKernel(q, kk, 1, NULL, &gs, NULL, 0, NULL, NULL);
-  clFinish(q);
-  out->s = malloc(bytes); out->d = malloc(bytes);
-  clEnqueueReadBuffer(q, ms, CL_TRUE, 0, bytes, out->s, 0, NULL, NULL);
-  clEnqueueReadBuffer(q, md, CL_TRUE, 0, bytes, out->d, 0, NULL, NULL);
+  int reps = REPS;
+
+  out->ok = 0;
+  out->s = out->d = NULL;
+
+  prog = clCreateProgramWithSource(ctx, 1, &SRC, NULL, &err);
+  CKP(prog, "clCreateProgramWithSource");
+
+  err = clBuildProgram(prog, 1, &dev, opt, NULL, NULL);
+  if (err != CL_SUCCESS) {
+    printf("    BUILD FAILED (%d) for option '%s'\n", err, opt);
+    goto cleanup;
+  }
+
+  kk = clCreateKernel(prog, "k", &err);   CKP(kk, "clCreateKernel(k)");
+  kh = clCreateKernel(prog, "hot", &err); CKP(kh, "clCreateKernel(hot)");
+
+  ma = clCreateBuffer(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, bytes, A, &err);
+  CKP(ma, "clCreateBuffer(a)");
+  mb = clCreateBuffer(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, bytes, B, &err);
+  CKP(mb, "clCreateBuffer(b)");
+  ms = clCreateBuffer(ctx, CL_MEM_WRITE_ONLY, bytes, NULL, &err); CKP(ms, "clCreateBuffer(sqrt)");
+  md = clCreateBuffer(ctx, CL_MEM_WRITE_ONLY, bytes, NULL, &err); CKP(md, "clCreateBuffer(div)");
+  mo = clCreateBuffer(ctx, CL_MEM_WRITE_ONLY, bytes, NULL, &err); CKP(mo, "clCreateBuffer(hot)");
+
+  CK(clSetKernelArg(kk,0,sizeof(cl_mem),&ms), "clSetKernelArg(k,0)");
+  CK(clSetKernelArg(kk,1,sizeof(cl_mem),&md), "clSetKernelArg(k,1)");
+  CK(clSetKernelArg(kk,2,sizeof(cl_mem),&ma), "clSetKernelArg(k,2)");
+  CK(clSetKernelArg(kk,3,sizeof(cl_mem),&mb), "clSetKernelArg(k,3)");
+
+  CK(clEnqueueNDRangeKernel(q, kk, 1, NULL, &gs, NULL, 0, NULL, NULL), "enqueue(k)");
+  CK(clFinish(q), "clFinish(k)");
+
+  out->s = malloc(bytes);
+  out->d = malloc(bytes);
+  if (!out->s || !out->d) { printf("    ABORT: host allocation failed\n"); goto cleanup; }
+
+  CK(clEnqueueReadBuffer(q, ms, CL_TRUE, 0, bytes, out->s, 0, NULL, NULL), "read(sqrt)");
+  CK(clEnqueueReadBuffer(q, md, CL_TRUE, 0, bytes, out->d, 0, NULL, NULL), "read(div)");
 
   out->max_ulp_s = out->max_ulp_d = 0;
   for (int i = 0; i < N; i++) {
@@ -192,25 +240,39 @@ static void run_effect(cl_context ctx, cl_device_id dev, cl_command_queue q,
     if (u > out->max_ulp_d) out->max_ulp_d = u;
   }
 
-  int reps = REPS;
-  clSetKernelArg(kh,0,sizeof(cl_mem),&mo); clSetKernelArg(kh,1,sizeof(cl_mem),&ma);
-  clSetKernelArg(kh,2,sizeof(cl_mem),&mb); clSetKernelArg(kh,3,sizeof(int),&reps);
-  for (int w = 0; w < 3; w++) clEnqueueNDRangeKernel(q,kh,1,NULL,&gs,NULL,0,NULL,NULL);
-  clFinish(q);
-  double best = 1e30;
-  for (int t = 0; t < 7; t++) {
-    double t0 = now();
-    clEnqueueNDRangeKernel(q, kh, 1, NULL, &gs, NULL, 0, NULL, NULL);
-    clFinish(q);
-    double dt = (now() - t0) * 1000.0;
-    if (dt < best) best = dt;
-  }
-  out->ms = best;
-  out->ok = 1;
+  CK(clSetKernelArg(kh,0,sizeof(cl_mem),&mo), "clSetKernelArg(hot,0)");
+  CK(clSetKernelArg(kh,1,sizeof(cl_mem),&ma), "clSetKernelArg(hot,1)");
+  CK(clSetKernelArg(kh,2,sizeof(cl_mem),&mb), "clSetKernelArg(hot,2)");
+  CK(clSetKernelArg(kh,3,sizeof(int),&reps),  "clSetKernelArg(hot,3)");
 
-  clReleaseMemObject(ma); clReleaseMemObject(mb); clReleaseMemObject(ms);
-  clReleaseMemObject(md); clReleaseMemObject(mo);
-  clReleaseKernel(kk); clReleaseKernel(kh); clReleaseProgram(prog);
+  for (int w = 0; w < 3; w++)
+    CK(clEnqueueNDRangeKernel(q,kh,1,NULL,&gs,NULL,0,NULL,NULL), "warmup(hot)");
+  CK(clFinish(q), "clFinish(warmup)");
+
+  {
+    double best = 1e30;
+    for (int t = 0; t < 7; t++) {
+      double t0 = now();
+      CK(clEnqueueNDRangeKernel(q, kh, 1, NULL, &gs, NULL, 0, NULL, NULL), "enqueue(hot)");
+      CK(clFinish(q), "clFinish(hot)");
+      double dt = (now() - t0) * 1000.0;
+      if (dt < best) best = dt;
+    }
+    out->ms = best;
+  }
+
+  out->ok = 1;   /* reached ONLY if every call above succeeded */
+
+cleanup:
+  if (!out->ok) { free(out->s); free(out->d); out->s = out->d = NULL; }
+  if (ma) clReleaseMemObject(ma);
+  if (mb) clReleaseMemObject(mb);
+  if (ms) clReleaseMemObject(ms);
+  if (md) clReleaseMemObject(md);
+  if (mo) clReleaseMemObject(mo);
+  if (kk) clReleaseKernel(kk);
+  if (kh) clReleaseKernel(kh);
+  if (prog) clReleaseProgram(prog);
 }
 
 int main(int argc, char **argv) {
@@ -224,6 +286,7 @@ int main(int argc, char **argv) {
   }
 
   float *A = malloc((size_t)N*4), *B = malloc((size_t)N*4);
+  if (!A || !B) { fprintf(stderr, "host allocation failed\n"); free(A); free(B); return 1; }
   unsigned seed = 12345;
   for (int i = 0; i < N; i++) {
     seed = seed * 1103515245u + 12345u;
@@ -287,6 +350,11 @@ int main(int argc, char **argv) {
       if (do_effect) {
         printf("  -- effect mode --\n");
         cl_command_queue q = clCreateCommandQueue(ctx, devs[d], 0, &err);
+        if (!q || err != CL_SUCCESS) {
+          printf("    (no command queue: %d) - skipping effect mode\n", err);
+          clReleaseContext(ctx);
+          continue;
+        }
         struct res r[4]; memset(r, 0, sizeof r);
         for (int v = 0; v < N_EFFECT; v++) {
           run_effect(ctx, devs[d], q, EFFECT_OPTS[v], A, B, &r[v]);

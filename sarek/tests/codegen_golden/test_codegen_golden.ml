@@ -2559,20 +2559,31 @@ let metal_contraction_pragma_tests () =
               kernel_name)
            `Quick
            (fun () ->
+             (* BOTH entry points. Sarek_ir_metal has two preamble sites -
+                [generate] and [generate_with_types] - and the pragma was added
+                to each. Checking only the one the goldens happen to use would
+                leave the other free to drift back to contracting silently,
+                which is exactly the hole CodeRabbit found here. *)
              metal_backend.reset () ;
-             let actual = metal_backend.generate ~types:[] k in
-             if not (contains actual pragma) then
-               Alcotest.failf
-                 "generated Metal for %s does not contain %S.\n\
-                  Metal contracts a*b+c into an fma by default and NO \
-                  MTLCompileOptions setting prevents it (measured on Apple M4 \
-                  / macOS 15.6.1: mathMode=Safe leaves 8773/8773 elements \
-                  contracted, this pragma leaves 0). Dropping it silently \
-                  removes a rounding docs/fp-contraction-policy.md §1 \
-                  promises, and breaks every error-free transformation in \
-                  Sarek_df64 on Metal."
-                 kernel_name
-                 pragma)))
+             let via_types = metal_backend.generate ~types:[] k in
+             Gen_metal.reset_state () ;
+             let via_plain = Gen_metal.generate k in
+             List.iter
+               (fun (entry, actual) ->
+                 if not (contains actual pragma) then
+                   Alcotest.failf
+                     "generated Metal for %s via %s does not contain %S.\n\
+                      Metal contracts a*b+c into an fma by default and NO \
+                      MTLCompileOptions setting prevents it (measured on Apple \
+                      M4 / macOS 15.6.1: mathMode=Safe leaves 8773/8773 \
+                      elements contracted, this pragma leaves 0). Dropping it \
+                      silently removes a rounding \
+                      docs/fp-contraction-policy.md §1 promises, and breaks \
+                      every error-free transformation in Sarek_df64 on Metal."
+                     kernel_name
+                     entry
+                     pragma)
+               [("generate_with_types", via_types); ("generate", via_plain)])))
     (test_kernels ())
 
 (* ANTI-VACUITY CONTROL: the check above is worthless if it inspects an empty
