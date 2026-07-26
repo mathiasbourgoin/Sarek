@@ -61,6 +61,7 @@ jobs:
           set -e
           node scripts/review-verdict-assemble.test.js
           node scripts/xruntime-caller-fault.test.js
+          node scripts/check-alcotest-registration.test.js
           ./scripts/check-review-bundle-tracked.test.sh
           ./scripts/agent-worktree-bootstrap.test.sh
           ./scripts/roster-implement-posthook.test.sh
