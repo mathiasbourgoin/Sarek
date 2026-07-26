@@ -149,7 +149,45 @@ const out = [];
 for (const p of patches) {
   const ref = p && p.ref ? p.ref : "(unnamed patch)";
   if (!p || p.reapply_on_upgrade !== true) continue;
-  const markers = (p && p.markers) || {};
+  // `markers` accepts two shapes:
+  //   {file: [needle, ...]}  — per-file, when a patch spans files that each
+  //                            need a different string
+  //   [needle, ...]          — the same needles must appear in every entry of
+  //                            `paths`; the natural form for a single-file patch
+  // The array form is not a convenience afterthought: passing one to an
+  // Object.entries loop yields index keys, and the guard reported
+  // "patched file is missing: 0" — a real defect surfaced the first time
+  // someone outside this file wrote an entry. A malformed markers block must
+  // fail as a malformed markers block, not as three imaginary missing files.
+  const rawMarkers = p && p.markers;
+  let markers;
+  if (Array.isArray(rawMarkers)) {
+    const paths = Array.isArray(p.paths) ? p.paths : [];
+    if (paths.length === 0) {
+      out.push(`${ref}: markers is an array but paths is empty — there is no file to look for them in`);
+      continue;
+    }
+    if (!rawMarkers.every((n) => typeof n === "string" && n.length > 0)) {
+      out.push(`${ref}: markers array must contain only non-empty strings`);
+      continue;
+    }
+    markers = Object.fromEntries(paths.map((f) => [f, rawMarkers]));
+  } else if (rawMarkers && typeof rawMarkers === "object") {
+    markers = rawMarkers;
+    const badValue = Object.entries(markers).find(
+      ([, v]) => !Array.isArray(v) || !v.every((n) => typeof n === "string" && n.length > 0)
+    );
+    if (badValue) {
+      out.push(`${ref}: markers[${JSON.stringify(badValue[0])}] must be an array of non-empty strings`);
+      continue;
+    }
+  } else if (rawMarkers === undefined) {
+    markers = {};
+  } else {
+    out.push(`${ref}: markers must be an object {file: [needle]} or an array [needle], got ${typeof rawMarkers}`);
+    continue;
+  }
+
   if (Object.keys(markers).length === 0) {
     out.push(`${ref}: declares reapply_on_upgrade but names no markers — nothing can tell whether it is still applied`);
     continue;

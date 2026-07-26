@@ -215,6 +215,68 @@ fi
 expect "a reverted local patch is caught by its marker" 1 "marker absent" -- \
   bash "$R/scripts/check-review-bundle-tracked.sh" "$R"
 
+# The array form of `markers`: the natural way to write a single-file patch,
+# and the shape the first outside contributor actually used.
+patch_fixture_array() { # <name>
+  local root; root="$(build_fixture "$1")"
+  printf 'exports.f = 1; // SPOC-LOCAL-MARKER-XYZ and legacy_skip_authorized\n' \
+    > "$root/scripts/lib/review/normalize-rules.js"
+  node -e '
+const fs=require("fs"),crypto=require("crypto"),path=require("path");
+const root=process.argv[1], p=root+"/scripts/review-bundle.manifest.json";
+const m=JSON.parse(fs.readFileSync(p,"utf8"));
+m.local_patches=[{ref:"array-form",reapply_on_upgrade:true,
+  paths:["scripts/lib/review/normalize-rules.js"],
+  markers:["SPOC-LOCAL-MARKER-XYZ","legacy_skip_authorized"]}];
+for (const e of m.files) e.sha256 = crypto.createHash("sha256")
+  .update(fs.readFileSync(path.join(root,e.path))).digest("hex");
+fs.writeFileSync(p, JSON.stringify(m,null,2)+"\n");' "$root"
+  git_q -C "$root" add -A >/dev/null; git_q -C "$root" commit -qm arrayform >/dev/null
+  echo "$root"
+}
+
+R="$(patch_fixture_array arrayok)"
+expect "markers given as an array is accepted" 0 "bundle tracked, un-ignored, and sha-matched" -- \
+  bash "$R/scripts/check-review-bundle-tracked.sh" "$R"
+
+R="$(patch_fixture_array arrayrevert)"
+printf 'exports.f = 1; // pristine upstream\n' > "$R/scripts/lib/review/normalize-rules.js"
+node -e '
+const fs=require("fs"),crypto=require("crypto"),path=require("path");
+const root=process.argv[1], p=root+"/scripts/review-bundle.manifest.json";
+const m=JSON.parse(fs.readFileSync(p,"utf8"));
+for (const e of m.files) e.sha256 = crypto.createHash("sha256")
+  .update(fs.readFileSync(path.join(root,e.path))).digest("hex");
+fs.writeFileSync(p, JSON.stringify(m,null,2)+"\n");' "$R"
+git_q -C "$R" add -A >/dev/null; git_q -C "$R" commit -qm reverted >/dev/null
+expect "a reverted patch declared in array form is still caught" 1 "marker absent" -- \
+  bash "$R/scripts/check-review-bundle-tracked.sh" "$R"
+
+# A malformed markers block must say so, not invent missing files. The array
+# form applied to an empty `paths` used to report "patched file is missing: 0".
+malformed_fixture() { # <name> <json-fragment-for-local_patches>
+  local root; root="$(build_fixture "$1")"
+  node -e '
+const fs=require("fs");const p=process.argv[1]+"/scripts/review-bundle.manifest.json";
+const m=JSON.parse(fs.readFileSync(p,"utf8"));
+m.local_patches=[JSON.parse(process.argv[2])];
+fs.writeFileSync(p,JSON.stringify(m,null,2)+"\n");' "$root" "$2"
+  git_q -C "$root" add -A >/dev/null; git_q -C "$root" commit -qm malformed >/dev/null
+  echo "$root"
+}
+
+R="$(malformed_fixture nopaths '{"ref":"x","reapply_on_upgrade":true,"markers":["a"],"paths":[]}')"
+expect "array markers with no paths reports the real problem" 1 "there is no file to look for them in" -- \
+  bash "$R/scripts/check-review-bundle-tracked.sh" "$R"
+
+R="$(malformed_fixture badtype '{"ref":"x","reapply_on_upgrade":true,"markers":"a-string","paths":["scripts/review-normalize.js"]}')"
+expect "a markers value of the wrong type is named as such" 1 "markers must be an object" -- \
+  bash "$R/scripts/check-review-bundle-tracked.sh" "$R"
+
+R="$(malformed_fixture badneedle '{"ref":"x","reapply_on_upgrade":true,"markers":[""],"paths":["scripts/review-normalize.js"]}')"
+expect "an empty-string needle is rejected rather than matching everything" 1 "non-empty strings" -- \
+  bash "$R/scripts/check-review-bundle-tracked.sh" "$R"
+
 R="$(build_fixture nomarkers)"
 node -e '
 const fs=require("fs");const p=process.argv[1]+"/scripts/review-bundle.manifest.json";
