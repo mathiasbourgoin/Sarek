@@ -34,6 +34,13 @@ actually had:
   Intel UHD Graphics 630). Attributed to a `fma` that is not correctly rounded,
   *not* to contraction — but the two failure modes look identical from the
   outside, and telling them apart took a separate measurement.
+- **Vulkan/RADV, f16.** RADV's ACO backend absorbs an f32→f16 narrowing into
+  whatever arithmetic feeds it, and `precise`/`NoContraction` does not stop it —
+  the decoration is emitted, and the emitted ISA is byte-identical with and
+  without it. **2912 of 63488** finite binary16 inputs disagree with the
+  interpreter on a single narrowing, **5075** on a two-narrowing expression.
+  Third front end onto the same ACO backend as HIP and rusticl, and a wider
+  combine than either. f16 stays refused on this backend (§2, §6).
 
 This document states, per backend, what the compiler is permitted to contract,
 what mechanism (if any) actually prevents it, whether that mechanism is
@@ -99,8 +106,9 @@ Legend for the evidence column:
 | **CUDA — subnormal flushing** | `-use_fast_math` / `-ftz=true` would flush binary32 subnormals | `Cuda_nvrtc.check_fp_conformance` **rejects** those options at the only point an option array reaches `nvrtcCompileProgram` | machine-code + test, CUDA 13.3: the hazard is reproduced (`FMUL.FTZ`/`FADD.FTZ` at sm_90) and the guard is proved to fire — see §5 |
 | **OpenCL** | `FP_CONTRACT` is on by default in OpenCL C | **no flag** — Sarek passes an empty build-option string. Same `mul_rn`-by-construction defence as CUDA | executed, GTX 1070 Max-Q / NVIDIA OpenCL: mul 5.92e-08 → 9.07e-15, sqrt 2.88e-08 → 9.80e-15 with no OpenCL-specific change (quoted). Re-measured here on RX 7900 XTX / Mesa radeonsi: mul 9.07e-15, div 5.08e-15, sqrt 1.08e-14 |
 | **OpenCL / rusticl (f16 narrowing)** | an f32 multiply into the f32→f16 narrowing that consumes it — rounding **once** where the DSL mandates twice. Same defect class as HIP/AMDGPU, same ACO backend | **nothing affordable.** Measured non-fixes, all still 620/63488: `#pragma OPENCL FP_CONTRACT OFF`, a `volatile` local, a `volatile __private` pointer, an `as_half`/`as_ushort` bitcast round-trip, and `convert_half_rte`. HIP's `asm volatile("" : "+v"(x))` **does not compile** here — rusticl goes through SPIR-V, where AMDGPU register constraints do not exist. Only a `volatile __global` round-trip and a `volatile __local` (LDS) round-trip work (both 0/63488), and both cost memory traffic per narrowing; the LDS form additionally needs a workgroup-sized allocation this backend does not control. **Consequence: f16 stays REJECTED in `Sarek_ir_opencl`** | **executed**, 2026-07-26, exhaustive sweep of all 63488 finite binary16 inputs on **two** devices — RX 7900 XTX (navi31) and the integrated Raphael iGPU (gfx1036) — rusticl/radeonsi, DRM 3.64, kernel 7.1.2-3-cachyos. Both report **620/63488**, first divergence at `x=5.68359375` (device 1006.5, interpreter 1006), bit-identical to the HIP figure. Liveness control: the `volatile __global` variant of the same harness reports **0/63488**, so the sweep is proven able to go both red and green. Reproducer: `tools/probes/opencl_f16_contraction_probe.c` |
+| **Vulkan / RADV (f16 narrowing)** | an f32→f16 narrowing absorbs whatever arithmetic feeds it (`v_fma_mixlo_f16`) — the multiply, and also the f32 **add**: the plain two-narrowing kernel compiles to a *single* fused instruction, one rounding where the DSL mandates three. Same ACO backend as HIP and rusticl, reached through a third front end, but a **wider** combine than either | **nothing affordable, and `precise` is not it.** `precise` → SPIR-V `NoContraction` IS honoured (it keeps the f32 multiply as its own `v_fma_mix_f32`) and still leaves 2912/63488, because absorbing a *conversion* is a different combine from contracting `a*b+c`. An f16 bitcast round-trip changes nothing. A `volatile` SSBO round-trip on the f32 intermediates makes ACO drop the intermediate narrowing **entirely** instead (4774/63488). Only forcing the f16 *bit pattern* through global memory works (0/63488), at a global round-trip per narrowing into a scratch buffer this backend does not control. **Consequence: f16 stays REJECTED in `Sarek_ir_glsl`** | **executed**, 2026-07-26, exhaustive sweep of all 63488 finite binary16 inputs on **two** devices — RX 7900 XTX (**RADV NAVI31**) and the integrated Raphael iGPU (**RADV RAPHAEL_MENDOCINO**) — Mesa 26.1.4-arch3.1, Vulkan 1.4.354. Both report identical counts: **2912/63488** on `f16(x*1.1)` (plain and `precise` alike), **5075/63488** on `f16(f16(x*1.1)+1000)` plain, **4776/63488** with `precise`. Calibration: the same host oracle reproduces the independently measured **620** on the HIP/OpenCL kernel shape, and the barriered kernel reports **0/63488**, so the sweep is proven able to go both red and green. Gate: `sarek-vulkan/test/test_vulkan_f16_tripwire.ml` |
 | **OpenCL / pocl on x86 (f16 narrowing)** | in principle the same fusion — but nothing in this stack performs it | **nothing needed.** The naive narrowing already round-trips through binary16 exactly, so the barrier that rusticl requires is unnecessary here | **executed on CI**, 2026-07-26, quoted device `AMD EPYC 7763 64-Core Processor` under pocl on a GitHub-hosted runner: exhaustive sweep of all 63488 finite binary16 inputs, **0** disagreements between the naive and `volatile __local`-barriered narrowings. Observed as a CI failure of `test_opencl_f16_tripwire` before that test was scoped, i.e. the number was produced by a harness that was at the time *trying* to find a difference — so it is a null with the sweep demonstrably live. **This is what localises the defect:** the same source, swept the same way, fuses on ACO and does not fuse here, so the locus is *the ACO backend*, not *OpenCL*. That in turn is the second independent reason to read rusticl and HIP/AMDGPU as one bug seen through two front ends rather than two bugs. Guarded by `test_opencl_f16_tripwire`'s locus check, which fails if any non-ACO implementation is found to fuse |
-| **Vulkan / GLSL** | contraction and reassociation of float expressions | `precise` on every float local (`Sarek_ir_glsl.gen_var_decl`), which glslang lowers to SPIR-V `NoContraction` — but on RADV nothing needs preventing: the driver does not contract these shapes even without the decoration | **executed + machine-code**, RX 7900 XTX (RADV NAVI31) and Raphael iGPU (RADV RAPHAEL_MENDOCINO), Mesa 26.1.4-arch3.1: 0 of 7 contraction shapes contracted with or without `precise`, ISA opcode-identical between the two builds, explicit `fma()` controls fused 4/4 — see §6. Decoration emission: compiler-output, glslc 2026.2 + glslangValidator, 18 `NoContraction` with `precise` / 0 without. **Mesa ANV not measured — no Intel GPU on this machine.** Separately, `fma` is not correctly rounded on RADV: df64 mul 5.84e-08 / div 5.86e-08, each the measured worst-case relative error over `test_df64`'s own input set on the named device and driver, not a bound |
+| **Vulkan / GLSL** | contraction and reassociation of float expressions | `precise` on every float local (`Sarek_ir_glsl.gen_var_decl`), which glslang lowers to SPIR-V `NoContraction` — but on RADV nothing needs preventing *for these shapes*: the driver does not contract them even without the decoration. It is **not** the decoration that is protecting them; RADV was separately observed ignoring `NoContraction` on a combine it does want to perform (§6, f16 narrowing) | **executed + machine-code**, RX 7900 XTX (RADV NAVI31) and Raphael iGPU (RADV RAPHAEL_MENDOCINO), Mesa 26.1.4-arch3.1: 0 of 7 contraction shapes contracted with or without `precise`, ISA opcode-identical between the two builds, explicit `fma()` controls fused 4/4 — see §6. Decoration emission: compiler-output, glslc 2026.2 + glslangValidator, 18 `NoContraction` with `precise` / 0 without. **Mesa ANV not measured — no Intel GPU on this machine.** Separately, `fma` is not correctly rounded on RADV: df64 mul 5.84e-08 / div 5.86e-08, each the measured worst-case relative error over `test_df64`'s own input set on the named device and driver, not a bound |
 | **Metal** | Metal's default compile options enable fast math | **nothing.** `Metal_api` passes a null `MTLCompileOptions`, and `Metal_bindings.mtl_device_new_library_with_source` *ignores its `_options` argument entirely* | unverified — no Apple hardware in this project's CI or on the machine this policy was written on. Treat Metal float results as outside the guarantee |
 | **WGSL** | unconstrained | nothing | unverified, untested |
 | **Native (OCaml host)** | n/a | n/a | float32 is evaluated at OCaml binary64 precision, so error-free transformations cancel; `Sarek_df64` degrades to ~2^-24 there **by design** |
@@ -171,6 +179,24 @@ Legend for the evidence column:
   gets assertions deleted. On a runner with no ACO device the tripwire is
   therefore a no-op, and the C probe is the only artifact CI exercises; the
   tripwire is in practice a developer-workstation gate.
+- **f16 on Vulkan/GLSL, on Mesa RADV.** Measured, not assumed, and *worse* than
+  the OpenCL case: **2912 of 63488** finite binary16 inputs disagree with the
+  interpreter on a single narrowing, and **5075** on the two-narrowing shape,
+  on both the RX 7900 XTX (RADV NAVI31) and the Raphael iGPU (RADV
+  RAPHAEL_MENDOCINO). `Sarek_ir_glsl` therefore rejects f16 at codegen — a
+  *deliberate* refusal backed by a measurement, not an unimplemented feature.
+  **Do not reason from `precise`.** This backend already emits `precise` on
+  every float local, and #106/#126 measured RADV not to contract 7 f32 shapes;
+  neither is evidence about this combine, and the `precise` variant still
+  disagrees on 2912 inputs. Re-test before enabling: the blocker is a Mesa
+  optimiser behaviour and could change with a Mesa release. That re-test is
+  automated — `sarek-vulkan/test/test_vulkan_f16_tripwire.ml` fails when the
+  fusion stops, and separately fails if `precise` starts working, so neither
+  half of the refusal can quietly outlive its reason. It asserts **only on RADV
+  devices** (it keys on `"RADV"` in the Vulkan device name — driver identity,
+  not device model, because the Raphael iGPU's name reads like a CPU and
+  reproduces the defect identically) and **skips visibly** elsewhere, naming
+  the devices it rejected.
 - **A product you compute yourself staying unfused across a `Sarek_df64`
   boundary.** `[@sarek.module]` bodies are inlined into your kernel, so
   `df64_add_f32 acc (x *. y)` re-creates the exact fusable pattern the library
@@ -437,12 +463,47 @@ exactly the explicitly-requested `fma()` calls.
   not supported: with `precise` stripped, RADV still did not contract, and the
   ISA is unchanged.
 
-What is *not* established is that RADV would honour `NoContraction` if it ever
-did want to contract. This is an **absence of the hazard on this driver and this
-version**, not a demonstration of obedience. The honest status of `precise` on
-RADV is therefore: **inert, and free** — it costs nothing (identical ISA) and it
-is the correct thing to emit for portability, but on RADV today it is not what
-is holding anything up. Keep it; do not credit it.
+What is *not* established by the experiment above is that RADV would honour
+`NoContraction` if it ever did want to contract. That was left open here, and
+**#57 slice 2b closed it — negatively.**
+
+### RADV *does* want to contract somewhere, and there it ignores `NoContraction`
+
+Measured 2026-07-26, RX 7900 XTX (RADV NAVI31) and the Raphael iGPU (RADV
+RAPHAEL_MENDOCINO), Mesa 26.1.4-arch3.1. The shape is `float16_t(x * 1.1)` — a
+combine the twelve shapes above do not probe, because it is not `a*b+c`: it is a
+multiply absorbed by the **conversion** that consumes it.
+
+| | no `precise` | `precise` |
+|---|---|---|
+| `NoContraction` decorations in the SPIR-V (`glslangValidator` → `spirv-dis`, reproduced by `tools/probes/vulkan_f16_narrowing_probe.sh`) | **0** | **1**, on the `OpFMul` |
+| emitted RDNA ISA | `v_fma_mixlo_f16 0xcccd, v1, neg(0)` | **byte-identical** |
+| disagreements with the interpreter, all 63488 finite binary16 inputs | 2912 | **2912** |
+| matches a single-rounding model | exactly, 0/63488 | exactly, 0/63488 |
+
+The decoration is emitted, by the same `glslangValidator` the Vulkan runtime
+path actually uses; the driver produces opcode-for-opcode identical machine code
+either way; and that machine code performs one rounding where the SPIR-V asks
+for two. **That is a `NoContraction` violation, observed.**
+
+So the honest status of `precise` on RADV is *not* "inert, and free". It is:
+
+- **inert** for the seven f32 `a*b+c`-family shapes above — RADV does not
+  contract them with or without it, so nothing is being held up;
+- **ignored** for the multiply-into-narrowing combine, where RADV *does*
+  contract and the decoration does not stop it.
+
+Keep emitting it — it is correct for portability and costs nothing. Do not
+credit it with a guarantee on RADV, in either direction: it is not what makes
+f32 safe here, and it is not enough to make f16 safe here. The consequence for
+f16 is the `Vulkan / RADV (f16 narrowing)` row in §2 and the refusal in
+`Sarek_ir_glsl`; the consequence for f32 is that the phrase "contraction-safe by
+front-end declaration" describes what Sarek *emits*, never what RADV *obeys*.
+
+**Generalisable, and the reason this was missed for a whole slice:** the twelve
+shapes were chosen to probe *contraction* as the term is normally used —
+`a*b+c`. A conversion is also an operation that can absorb its operand, and it
+is not in that family. A null result is only as broad as its shape catalogue.
 
 **Not run: Mesa ANV.** There is no Intel GPU on this machine. The ANV half of
 the original disagreement is a **hardware gap**, not a null result — recorded in
@@ -567,6 +628,25 @@ this is where they are collected):
   same device, tracked as #136. The **Vulkan** residual (1.68e-14 on NVIDIA,
   while Intel UHD 630 passes at 1.17e-14) has no established cause — that one is
   still "do not promote a hypothesis to a cause".
+- **f16 on Vulkan/GLSL: what slice 2b did NOT close.** The refusal is measured
+  and gated, but three things remain unmeasured and must not be read into it.
+  (a) **Only RADV.** No non-RADV Vulkan implementation has been measured for
+  this combine — not ANV, not AMDVLK, not NVIDIA, not lavapipe — so "Vulkan
+  fuses" is not a claim this repository makes; "RADV fuses" is. The tripwire
+  deliberately carries no "non-RADV does not fuse" cross-check for that reason,
+  unlike its OpenCL sibling, which has pocl data behind it.
+  (b) **The `shaderFloat16` device feature is not enabled.** Vulkan requires it
+  before a shader may use the SPIR-V `Float16` capability;
+  `Vulkan_api_device` chains no feature structs beyond core
+  `VkPhysicalDeviceFeatures`, and RADV accepts the shaders anyway. The
+  measurement stands — the defect is visible in the ISA, and the barriered
+  control returns bit-exact results on the same un-enabled path — but that
+  plumbing is real work that enabling f16 here would have to do first, and it
+  is not done.
+  (c) **No Sarek-generated shader was involved.** The tripwire compiles raw
+  GLSL, because `Sarek_ir_glsl` refuses f16; it measures the driver, not the
+  codegen. If the refusal is ever lifted, the codegen's own output needs its own
+  exhaustive interpreter-agreement gate — this one does not substitute.
 - **Metal is entirely unverified** (no Apple hardware), and it is the one
   backend currently compiled with fast math on.
 
@@ -580,7 +660,9 @@ this is where they are collected):
 | `sarek/codegen/Sarek_ir_cuda.ml` | `sarek_f32_barrier` — load-bearing on HIP, a documented identity on NVIDIA |
 | `sarek-cuda/Cuda_nvrtc.ml` | `check_fp_conformance` — rejects subnormal-flushing / approximate-div options |
 | `sarek/Sarek_df64/Sarek_df64.ml` | the `mul_rn` contraction barrier, its per-backend precision table, and the caller-side hazard |
-| `sarek/codegen/Sarek_ir_glsl.ml` | `precise` on float locals → SPIR-V `NoContraction` |
+| `sarek/codegen/Sarek_ir_glsl.ml` | `precise` on float locals → SPIR-V `NoContraction`; and the measured f16 refusal |
+| `sarek-vulkan/test/test_vulkan_f16_tripwire.ml` | the RADV f16-fusion tripwire, its calibration and its green control |
+| `tools/probes/vulkan_f16_narrowing_probe.sh` | standalone reproducer for the emitted-but-ignored `NoContraction`; needs no device |
 | `sarek-cuda/test/test_cuda_f16_sass.ml` | the f16 SASS gate (with positive control) |
 | `sarek-cuda/test/test_cuda_fp_conformance.ml` | the nvrtc FP-option guard and its hazard control |
 | `sarek-hip/test/test_hip_rtc_options.ml` | proves `-ffp-contract=off` stays last whatever the caller passes |

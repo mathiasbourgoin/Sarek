@@ -23,3 +23,7 @@
 (test
  (name test_vulkan_error_observability)
  (libraries sarek_vulkan sarek_ir sarek_backend_error alcotest))
+
+(test
+ (name test_vulkan_f16_tripwire)
+ (libraries sarek_vulkan spoc_framework alcotest))

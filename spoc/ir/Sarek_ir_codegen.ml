@@ -42,10 +42,20 @@
           ~raise_:(fun reason ->
             Codegen_error.raise_error
               (Codegen_error.unsupported_construct "f16" reason))
-          ~backend:"OpenCL"
-          ~hint:"needs cl_khr_fp16 enablement"
+          ~backend:"WGSL"
+          ~hint:"needs a module-top `enable f16;` directive"
           Sarek_ir_analysis.Float16
-    ]} *)
+    ]}
+
+    {b Only for backends that are genuinely unimplemented.} The composed
+    sentence says "not YET supported", which is a claim about a queue position,
+    and the hint names what is missing. Two backends have left this composer
+    because both halves became false for them — OpenCL in #57 slice 2a and GLSL
+    in slice 2b — and each now raises its own diagnostic naming a {e measured}
+    blocker (see [Sarek_ir_opencl.reject_float16_kernel] and
+    [Sarek_ir_glsl.reject_float16_kernel]). The example above deliberately uses
+    WGSL rather than OpenCL for that reason. If you are about to add a backend
+    here, check that "not yet supported" is true of it. *)
 let reject_feature ~raise_ ~backend ?hint (feature : Sarek_ir_analysis.feature)
     (k : Sarek_ir_types.kernel) : unit =
   if Sarek_ir_analysis.kernel_uses feature k then

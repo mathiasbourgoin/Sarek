@@ -960,6 +960,71 @@ conversions.
 > 2. *Port the property, not the patch.* The HIP work delivered a barrier; what
 >    was actually reusable was the exhaustive-sweep harness and the bit-identity
 >    property. The barrier itself did not survive a change of front end.
+
+> ### CORRECTION — and for GLSL/Vulkan too, worse than for OpenCL
+>
+> **VERIFIED BY EXECUTION** (#57 slice 2b, 2026-07-26). Rule 1 above told slice
+> 2b to *assume* RADV carries the defect and to *measure* rather than infer it.
+> Measured: it does. Exhaustive sweep of all 63488 finite binary16 inputs, on
+> both local devices (RX 7900 XTX / **RADV NAVI31** and the Raphael iGPU / **RADV
+> RAPHAEL_MENDOCINO**, Mesa 26.1.4-arch3.1, Vulkan 1.4.354), against a
+> host implementation of §6.2's discipline. Both devices report identical
+> counts. The oracle was calibrated first: the same host code reproduces the
+> **620** figure on the HIP/OpenCL kernel shape, and a barriered kernel agrees
+> bit-exactly on all 63488, so the harness is shown able to go both ways before
+> either verdict is read.
+>
+> | kernel shape / source-level defence | disagreements with the discipline |
+> |---|---|
+> | `f16(x*1.1)`, plain | **2912/63488** |
+> | `f16(x*1.1)`, `precise` on the f32 local | **2912/63488** |
+> | `f16(f16(x*1.1) + 1000)`, plain | **5075/63488** |
+> | `f16(f16(x*1.1) + 1000)`, `precise` (what the backend already emits) | **4776/63488** |
+> | … with an f16 bitcast round-trip | 5075/63488 |
+> | … with a volatile SSBO round-trip on the f32 intermediates | 4774/63488 |
+> | … volatile SSBO round-trip **including the f16 bit pattern** | **0/63488** |
+>
+> **Three things this changes, none of which were predictable from the OpenCL
+> result.**
+>
+> *Same locus, different severity.* Rule 1 was right that ACO is the locus, and
+> wrong to imply the count would follow. Through OpenCL C the combine swallows
+> the multiply only. Through SPIR-V it also swallows the f32 **add**: the plain
+> two-narrowing kernel compiles to a *single* `v_fma_mixlo_f16 1.1, x, 1000.0f`
+> — one rounding for an expression the DSL says has three. "One bug seen three
+> times" is right about the compiler and wrong about the blast radius; a third
+> front end is still worth measuring even once the locus is known.
+>
+> *`precise` works, and does not help.* This is the load-bearing result and it
+> resolves a contradiction §6 of `fp-contraction-policy.md` had left open. With
+> `precise` on the f32 local, ACO emits `v_fma_mix_f32 1.1, x, -0` — the
+> multiply survives as its own correctly-rounded f32 operation — and without it,
+> the multiply vanishes into the narrowing. So RADV demonstrably **does** honour
+> SPIR-V `NoContraction`. It simply does not reach: absorbing a *conversion* is
+> a different combine from contracting `a*b+c`, and only the latter is what
+> `NoContraction` forbids. The tempting inference from #106/#126 — "we already
+> emit `precise`, and RADV was measured not to contract 7 f32 shapes, so f16 is
+> safe" — is therefore false, and is now guarded by a named test case.
+>
+> *No affordable barrier, again, and for a new reason.* On OpenCL the working
+> barriers cost memory traffic. Here even that is not enough at the
+> two-narrowing shape: barriering the f32 intermediates makes ACO drop the
+> intermediate narrowing **entirely** rather than materialise a binary16 value
+> (4774/63488, matching a "narrowing elided" model exactly). Only forcing the
+> f16 *bit pattern* through memory restores the discipline.
+>
+> **Outcome: GLSL/Vulkan f16 stays rejected**, with the same shape of
+> justification as OpenCL — a measured refusal plus a tripwire
+> (`sarek-vulkan/test/test_vulkan_f16_tripwire.ml`) that goes red the day the
+> fusion disappears.
+>
+> **A fourth rule, from the shape of this slice.** *A defence that is verified
+> at one layer is not verified at the layer above it.* `precise` →
+> `NoContraction` was verified as far as the SPIR-V (§6, compiler-output tier)
+> and has now been verified as far as the ISA — and it is still the wrong
+> instrument for this hazard. Verifying that a mechanism is *present* is not
+> verifying that it is *sufficient*; those are separate measurements and this
+> project has now conflated them twice.
 - **PTX** — carved out here because of the string-prefix register-class sniffing
   risk (§4). Treat as its own reviewable unit: new `%h` register class, `is_f16`
   guards in `emit_cast`/`emit_bitwise`, `cvt.*.f16.*` conversions, `mov.f16` const.

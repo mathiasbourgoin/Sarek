@@ -227,14 +227,66 @@ let rec glsl_type_of_elttype = function
   | TInt32 -> "int"
   | TInt64 -> "int64_t" (* Requires GL_ARB_gpu_shader_int64 *)
   | TFloat16 ->
-      (* Deferred to #57 slice 2: GLSL spells this `float16_t` and needs both
-         GL_EXT_shader_explicit_arithmetic_types_float16 and (for buffer I/O)
-         GL_EXT_shader_16bit_storage declared in the header. *)
+      (* Still rejected after #57 slice 2b, and — as with OpenCL in slice 2a —
+         NOT for the reason originally recorded here. The old comment said the
+         arm was "deferred" and named
+         GL_EXT_shader_explicit_arithmetic_types_float16 as what was missing.
+         Measured false: that extension compiles through this backend's own
+         glslang/shaderc path and runs on both local RADV devices. The codegen
+         is small ("float16_t" here, a narrowing arm, and two #extension lines).
+
+         What blocks it is that RADV cannot hold Sarek's f16 contract. Slice 1
+         defines f16 as "store f16, compute f32, round on every narrowing", and
+         gates it on BIT-EXACT agreement with the interpreter. RADV's ACO
+         backend absorbs the f32->f16 narrowing into whatever arithmetic feeds
+         it, via v_fma_mixlo_f16 — one rounding where the DSL mandates two.
+
+         This is the SAME backend compiler as the HIP and rusticl defects
+         (ACO), reached through a third front end, but it is NOT the same
+         severity. On HIP/OpenCL the fusion swallows the multiply only. Here it
+         also swallows the f32 add, and — when an f32 barrier is placed around
+         the multiply — it drops the intermediate narrowing altogether rather
+         than materialising a binary16 value. Measured, both local devices,
+         exhaustive over all 63488 finite binary16 inputs:
+
+           kernel shape / source-level defence   disagreements with interpreter
+           f16(x*1.1), plain                                     2912/63488
+           f16(x*1.1), `precise` on the f32 local                2912/63488
+           f16(f16(x*1.1) + 1000), plain                         5075/63488
+           f16(f16(x*1.1) + 1000), `precise` (what this
+             backend already emits on every float local)         4776/63488
+           ... with an f16 bitcast round-trip                    5075/63488
+           ... with a volatile SSBO round-trip on the f32s       4774/63488
+           ... volatile SSBO round-trip incl. the f16 bits          0/63488
+
+         The `precise` row is the load-bearing one. This backend already
+         prefixes every float local with `precise`, which glslang lowers to
+         SPIR-V NoContraction — and that IS honoured: the f32 multiply survives
+         as its own rounding. It simply does not reach the narrowing, because
+         absorbing a conversion is a different combine from contracting a*b+c.
+         So "we already emit precise" is not an argument for enabling f16, and
+         the #106/#126 f32 result (0 of 7 contraction shapes on RADV) does not
+         transfer either — it measured the combine that `precise` does stop.
+
+         The only defence measured to work costs a global-memory round-trip per
+         narrowing, of the f16 bit pattern itself, which this backend cannot
+         emit without a scratch buffer it does not control.
+
+         Measured 2026-07-26 on RX 7900 XTX (RADV NAVI31) AND the integrated
+         Raphael iGPU (RADV RAPHAEL_MENDOCINO), Mesa 26.1.4-arch3.1, Vulkan
+         1.4.354; both devices report identical counts. Gate:
+         sarek-vulkan/test/test_vulkan_f16_tripwire.ml. Full table, ISA and
+         method: docs/fp-contraction-policy.md, "Vulkan / RADV (f16
+         narrowing)". *)
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct
            "f16"
-           "GLSL: float16 not yet supported (#57 slice 2 — needs \
-            GL_EXT_shader_explicit_arithmetic_types_float16)")
+           "GLSL: float16 is refused by measurement, not pending \
+            implementation — RADV's ACO backend absorbs the f32->f16 narrowing \
+            into the arithmetic that feeds it, so 2912/63488 binary16 inputs \
+            disagree with the interpreter on a single narrowing, and `precise` \
+            does not prevent it. See docs/fp-contraction-policy.md (#57 slice \
+            2b).")
   | TFloat32 -> "float"
   | TFloat64 -> "double" (* Requires GL_ARB_gpu_shader_fp64 *)
   | TBool -> "bool"
@@ -1520,19 +1572,41 @@ let rename_pc_shadowing_locals ~pc_names ~len_names body =
       Printf.sprintf "sarek_pc_shadow_%s_%d" (escape_glsl_name orig) n)
     body
 
-(* Slice-2 deferral for this backend. The explanation of WHY a whole-kernel gate
-   is needed (and not just the per-element-type arms) lives once, at
-   {!Sarek_ir_codegen.reject_feature}. Named [_kernel] to distinguish it from
-   [Sarek_typer.reject_float16], which rejects an f16 OPERAND — a different
-   concept at a different layer. *)
-let reject_float16_kernel =
-  Sarek_ir_codegen.reject_feature
-    ~raise_:(fun reason ->
-      Codegen_error.raise_error
-        (Codegen_error.unsupported_construct "f16" reason))
-    ~backend:"GLSL"
-    ~hint:"needs GL_EXT_shader_explicit_arithmetic_types_float16"
-    Sarek_ir_analysis.Float16
+(* GLSL f16 refusal. Like OpenCL's (#57 slice 2a) and unlike Metal's and
+   WGSL's, this deliberately does NOT go through
+   {!Sarek_ir_codegen.reject_feature}, and the divergence is the point.
+
+   [reject_feature] composes "<backend>: float16 not yet supported (#57 slice
+   2 — <hint>)". Both halves were false here, and #57 slice 2b measured them
+   false rather than inferring it:
+
+   - "not YET supported" describes a queue position. GLSL is not in the queue.
+   - the old hint, "needs GL_EXT_shader_explicit_arithmetic_types_float16",
+     named the wrong blocker: that extension compiles and runs on both local
+     RADV devices, and enabling it changes nothing about why f16 is refused.
+
+   The actual blocker, and the reason `precise` does not rescue it, is
+   documented at length on the [TFloat16] arm of {!glsl_type_of_elttype}. The
+   whole-kernel rationale for gating here as well (rather than relying on the
+   per-element-type arm) lives once, at {!Sarek_ir_codegen.reject_feature}.
+
+   Metal and WGSL keep the shared composer precisely so THEY still reword
+   together: those two are genuinely unimplemented, and filing a measured,
+   possibly-permanent refusal under the same heading would lose that
+   distinction.
+
+   Named [_kernel] to distinguish it from [Sarek_typer.reject_float16], which
+   rejects an f16 OPERAND — a different concept at a different layer. *)
+let reject_float16_kernel (k : kernel) : unit =
+  if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Float16 k then
+    Codegen_error.raise_error
+      (Codegen_error.unsupported_construct
+         "f16"
+         "GLSL: float16 is refused by measurement, not pending implementation \
+          — RADV's ACO backend absorbs the f32->f16 narrowing into the \
+          arithmetic that feeds it, so 2912/63488 binary16 inputs disagree \
+          with the interpreter on a single narrowing, and `precise` does not \
+          prevent it. See docs/fp-contraction-policy.md (#57 slice 2b).")
 
 (** Generate complete GLSL source for a kernel.
     @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.

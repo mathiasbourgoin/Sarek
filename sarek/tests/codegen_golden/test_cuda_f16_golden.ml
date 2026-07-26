@@ -362,9 +362,20 @@ let reason_opencl =
    barrier exists on this path. See docs/fp-contraction-policy.md (#57 slice \
    2a)."
 
+(* GLSL left the shared composer for the same reason OpenCL did (#57 slice 2b),
+   and is pinned verbatim here for the same reason: the shared wording said "not
+   YET supported" and blamed
+   GL_EXT_shader_explicit_arithmetic_types_float16. Both were measured false —
+   the extension compiles and runs on both local RADV devices, and the real
+   blocker is that ACO absorbs the f32->f16 narrowing into the arithmetic
+   feeding it. Re-folding GLSL back into the composer breaks this assertion,
+   which is the intent. *)
 let reason_glsl =
-  "GLSL: float16 not yet supported (#57 slice 2 — needs \
-   GL_EXT_shader_explicit_arithmetic_types_float16)"
+  "GLSL: float16 is refused by measurement, not pending implementation — \
+   RADV's ACO backend absorbs the f32->f16 narrowing into the arithmetic that \
+   feeds it, so 2912/63488 binary16 inputs disagree with the interpreter on a \
+   single narrowing, and `precise` does not prevent it. See \
+   docs/fp-contraction-policy.md (#57 slice 2b)."
 
 let reason_metal = "Metal: float16 not yet supported (#57 slice 2)"
 
