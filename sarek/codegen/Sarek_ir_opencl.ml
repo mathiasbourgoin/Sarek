@@ -662,12 +662,13 @@ let gen_helper_signature buf (hf : helper_func) =
 (** Forward declaration for a helper.
 
     Emitted for every helper BEFORE any definition, because [kern_funcs] carries
-    no ordering guarantee: a caller listed before its callee produced [error: use
-    of undeclared identifier 'g'] — invalid OpenCL C that depended purely on list
-    order. Found by the #128 sweep once the recursion classifier stopped refusing
-    helper-to-helper calls; no golden kernel has helpers, which is why the corpus
-    never showed it. Declaring all of them up front makes the order irrelevant
-    rather than relying on the IR producer to topologically sort. *)
+    no ordering guarantee: a caller listed before its callee produced
+    [error: use of undeclared identifier 'g'] — invalid OpenCL C that depended
+    purely on list order. Found by the #128 sweep once the recursion classifier
+    stopped refusing helper-to-helper calls; no golden kernel has helpers, which
+    is why the corpus never showed it. Declaring all of them up front makes the
+    order irrelevant rather than relying on the IR producer to topologically
+    sort. *)
 let gen_helper_proto buf (hf : helper_func) =
   gen_helper_signature buf hf ;
   Buffer.add_string buf ");\n"
