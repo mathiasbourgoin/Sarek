@@ -19,6 +19,17 @@
 // rule below is labelled with its D-number where it has one, plus the three
 // undocumented holes found while auditing the same file (G3/G5/G13).
 //
+// AND THEN IT HAD THE DEFECT ITSELF (G14/G15, review finding F4). The first
+// version guarded `mode` and `status` with `has(review, key) && !VALID(value)`
+// — closing the malformed half and leaving the absent half open, which is the
+// precise defect this module was written to close. Two of five keys, under a
+// comment naming omission as the problem. The structural cause was that every
+// guard was hand-written, so "required" and "well-formed" were two independent
+// decisions per key and getting three of five right looked complete; the fix is
+// the REQUIRED_ENVELOPE_KEYS table, which makes them one decision. Worth
+// keeping in mind when reading the rest of this file: the failure mode is not
+// exotic, it is what writing these checks by hand does by default.
+//
 // THE TWO SHAPES OF FAILURE, and why the split matters
 //
 //   fatal      → exit 2, degraded input. Used when the verdict has removed the
@@ -50,7 +61,8 @@ const { validSlug } = require("./xruntime/xruntime-journal");
 // report as `hardening.version` so a consumer can detect a check-review-
 // convergence.js that predates this module, exactly as it detects a stale
 // script via `config.strikes` and `trace`.
-const HARDENING_VERSION = "1.0.0";
+// 1.1.0 — G14/G15 (review finding F4): absence-blindness inside this module.
+const HARDENING_VERSION = "1.1.0";
 
 const HIGH_PLUS = new Set(["CRITICAL", "HIGH"]);
 // schema/review-finding.schema.json §properties.status. The gate only ever
@@ -119,30 +131,124 @@ function checkLegacyAuthorization({ legacyRound, legacyNoGoRound, allowLegacy })
 // `Array.isArray(x) ? x : []` / `typeof x === "object" || return`. A wrong type
 // therefore silently emptied the check rather than failing it — the same shape
 // as the `findings` hole already closed by FIX-A/CGF-1.
+//
+// G14 (F4): the ELEMENT types matter as much as the container's. Every consumer
+// of these arrays opens with `if (!e || typeof e !== "object") continue;` or
+// `typeof e.round !== "number"`, so a `null` or `"x"` element is skipped in
+// silence — the round it should have represented simply does not exist as far
+// as the strike map is concerned. It happened to surface as a `missing-past-audit`
+// gap only because G5 independently noticed the hole it left behind; on a round
+// with no gap to notice, it was exit 0.
 function checkContainerTypes(review) {
   if (has(review, "rounds_audit") && !Array.isArray(review.rounds_audit)) {
     return "review.json field rounds_audit is present but not an array (degraded input) — it was silently read as [], which empties the past-strike map and the loop-back completeness check";
   }
-  if (
-    has(review, "cross_runtime") &&
-    review.cross_runtime !== null &&
-    (typeof review.cross_runtime !== "object" || Array.isArray(review.cross_runtime))
-  ) {
-    return "review.json field cross_runtime is present but not an object (degraded input) — it was silently ignored, which drops every cross-runtime corroboration check";
+  // No `!== null` carve-out. `cross_runtime: null` is not an object, and
+  // granting it a pass would hand it exactly the "silently ignored, drops every
+  // cross-runtime corroboration check" treatment this message condemns (F4).
+  if (has(review, "cross_runtime") && (typeof review.cross_runtime !== "object" || review.cross_runtime === null || Array.isArray(review.cross_runtime))) {
+    return `review.json field cross_runtime is ${review.cross_runtime === null ? "null" : "present but not an object"} (degraded input) — it was silently ignored, which drops every cross-runtime corroboration check`;
   }
   if (has(review, "cross_runtime_findings") && !Array.isArray(review.cross_runtime_findings)) {
     return "review.json field cross_runtime_findings is present but not an array (degraded input)";
+  }
+  return (
+    checkArrayElements(review, "findings", (e) => (!e || typeof e !== "object" || Array.isArray(e) ? "is not an object" : null)) ||
+    checkArrayElements(review, "cross_runtime_findings", (e) => (!e || typeof e !== "object" || Array.isArray(e) ? "is not an object" : null)) ||
+    checkArrayElements(review, "rounds_audit", (e) => {
+      if (!e || typeof e !== "object" || Array.isArray(e)) return "is not an object";
+      if (typeof e.round !== "number" || !Number.isFinite(e.round)) return "has no numeric `round` — it can never be matched to a round, so it is invisible to the strike map";
+      return null;
+    })
+  );
+}
+
+function checkArrayElements(review, key, validate) {
+  const array = review[key];
+  if (!Array.isArray(array)) return null;
+  for (let i = 0; i < array.length; i++) {
+    const problem = validate(array[i]);
+    if (problem) {
+      return `review.json ${key}[${i}] ${problem} (degraded input) — every consumer skips a malformed element in silence, so it is not a missing entry, it is an entry that cannot be seen`;
+    }
   }
   return null;
 }
 
 // ── G8 (D5) / G7 (D2) / G9 (D4) / G10 (D11) / G11 (D6): envelope keys ────
-// Each of these is a key whose malformed value used to read to the gate
-// exactly like an omission, and whose omission used to remove an obligation
-// rather than fail one.
+//
+// TABLE-DRIVEN ON PURPOSE (G15, review finding F4). The first version of this
+// function hand-wrote one `if` per key, and guarded two of the five with
+// `has(review, key) && !VALID.has(value)` — which checks the malformed half and
+// skips the absent half. That is the exact defect this whole module exists to
+// catch, reproduced inside it, three lines under a comment describing the keys
+// as ones "whose omission used to remove an obligation rather than fail one":
+//
+//   mode: "Full"      -> exit 2, "not one of express | fast | full"
+//   mode key OMITTED  -> exit 0, violations: []      <- the obligation is gone
+//
+// The dropped obligation was real: review-trace-rules.js gates the scope-gate
+// trace line on `mode === "full"`, so omitting the key removed the requirement
+// instead of failing it. `status` omitted likewise disarmed the whole
+// GO-consistency check, whose first line is `if (review.status !== "GO")`.
+//
+// Hand-writing the guards made "is it required" and "is it well-formed" two
+// independent decisions per key, so getting three of five right looked complete.
+// The table makes them ONE decision, and a key cannot be added with half a guard.
+const REQUIRED_ENVELOPE_KEYS = [
+  {
+    key: "task",
+    why: "it derives the trace and journal sibling paths (D4)",
+    check: (v) => (typeof v === "string" && validSlug(v) ? null : `is ${JSON.stringify(v)}, not a valid slug`),
+  },
+  {
+    key: "cycle",
+    why: "without it every numerically-stamped trace line classifies as prior-cycle, so a trace-obligated round reports missing-trace even with the lines on disk (D11)",
+    check: (v) => (typeof v === "number" && Number.isFinite(v) && v >= 1 ? null : `is ${JSON.stringify(v)}, not a finite number >= 1`),
+  },
+  {
+    key: "normalized_by",
+    why: "the findings were never run through scripts/review-normalize.js, so fingerprints are not stable, `novel finding` is uncomputable, and strike classification is not a result (D6)",
+    check: (v) => (typeof v === "string" && v.trim() !== "" ? null : `is ${JSON.stringify(v)}, not a non-empty string`),
+  },
+  {
+    key: "mode",
+    why: "review-trace-rules.js requires a scope-gate trace line only when mode === \"full\", so an absent or misspelled mode DROPS that obligation rather than failing it (D5/F4)",
+    check: (v) =>
+      VERDICT_MODES.has(v)
+        ? null
+        : `is ${JSON.stringify(v)}, not one of ${[...VERDICT_MODES].join(" | ")}. Note the name collision: the gate REPORT's \`mode\` is static|full and is a different field — do not copy one into the other`,
+  },
+  {
+    key: "status",
+    why: "the GO-consistency check opens with `if (review.status !== \"GO\")`, so an absent status disarms it entirely and a NO-GO with no no_go_reason routes nowhere (D2/F4)",
+    check: (v) => (VERDICT_STATUSES.has(v) ? null : `is ${JSON.stringify(v)}, not one of ${[...VERDICT_STATUSES].join(" | ")}`),
+  },
+  {
+    key: "findings",
+    why: "an absent findings array is nothing to ratchet, nothing to strike-classify and nothing to red/green — indistinguishable from a round that found nothing",
+    check: (v) => (Array.isArray(v) ? null : `is ${JSON.stringify(v)}, not an array`),
+  },
+  {
+    key: "cross_runtime_findings",
+    why: "it carries GO authority; omitting the key is how a HIGH cross-runtime finding goes unmirrored without anything to notice (D1/F4)",
+    check: (v) => (Array.isArray(v) ? null : `is ${JSON.stringify(v)}, not an array`),
+  },
+  {
+    key: "rounds_audit",
+    why: "it is the entire past-strike map and the loop-back completeness record; absent, both are empty and every streak check passes vacuously",
+    check: (v) => (Array.isArray(v) ? null : `is ${JSON.stringify(v)}, not an array`),
+  },
+  {
+    key: "cross_runtime",
+    why: "it is what the journal is corroborated against; absent, no probe can ever be found unattested (D9)",
+    check: (v) => (v && typeof v === "object" && !Array.isArray(v) ? null : `is ${JSON.stringify(v)}, not an object`),
+  },
+];
+
 function checkEnvelopeKeys(review, { legacyRound }) {
-  // G8/D5: `mode: "Full"` (or the gate report's own `mode: "static"` copied in
-  // by mistake) reads to the gate as "no scope-gate trace line required".
+  // Malformed-value checks apply to EVERY verdict, including pre-schema ones:
+  // a legacy fixture may omit these keys, but it may not carry a wrong value.
   if (has(review, "mode") && !VERDICT_MODES.has(review.mode)) {
     return (
       `review.json field mode is ${JSON.stringify(review.mode)}, not one of ${[...VERDICT_MODES].join(" | ")} (D5). ` +
@@ -150,37 +256,18 @@ function checkEnvelopeKeys(review, { legacyRound }) {
       "REPORT's `mode` is static|full and is a different field — do not copy one into the other."
     );
   }
-  // G7/D2: the routing key the gate never read. A typo routes nowhere.
   if (has(review, "status") && !VERDICT_STATUSES.has(review.status)) {
     return `review.json field status is ${JSON.stringify(review.status)}, not one of ${[...VERDICT_STATUSES].join(" | ")}`;
   }
   const noGoReasonFatal = checkNoGoReason(review);
   if (noGoReasonFatal) return noGoReasonFatal;
 
-  if (legacyRound) return null; // pre-schema fixtures: already authorized above
+  if (legacyRound) return null; // pre-schema fixtures: the skip is authorized and recorded
 
-  // G9/D4: `task` was load-bearing only once the round was trace-obligated;
-  // on any other round an absent/invalid slug fell through to the B-8 skip.
-  if (typeof review.task !== "string" || !validSlug(review.task)) {
-    return `review.json field task is ${JSON.stringify(review.task)}, not a valid slug — it derives the trace and journal sibling paths (D4)`;
-  }
-  // G10/D11: absent or non-numeric `cycle` silently became null, which filters
-  // every numerically-stamped trace line out as prior-cycle.
-  if (!has(review, "cycle")) {
-    return "review.json has no `cycle` key — every numerically-stamped trace line then classifies as prior-cycle, so a trace-obligated round reports missing-trace even with the lines on disk (D11)";
-  }
-  if (typeof review.cycle !== "number" || !Number.isFinite(review.cycle) || review.cycle < 1) {
-    return `review.json field cycle is ${JSON.stringify(review.cycle)} — must be a finite number >= 1 (D11)`;
-  }
-  // G11/D6: without normalization, fingerprints are not stable, so "novel
-  // finding" is uncomputable and strike classification is meaningless. That
-  // used to be a conditional warning.
-  if (typeof review.normalized_by !== "string" || review.normalized_by.trim() === "") {
-    return (
-      "review.json field normalized_by is absent or empty — the findings were never run through " +
-      "scripts/review-normalize.js, so fingerprints are not stable and `novel finding` is uncomputable. " +
-      "Strike classification on an unnormalized verdict is not a result (D6)."
-    );
+  for (const { key, why, check } of REQUIRED_ENVELOPE_KEYS) {
+    if (!has(review, key)) return `review.json has no \`${key}\` key — ${why}`;
+    const problem = check(review[key]);
+    if (problem) return `review.json field ${key} ${problem} — ${why}`;
   }
   return null;
 }
@@ -270,10 +357,15 @@ function checkCrossRuntime(review) {
         "silently finds nothing."
       );
     }
-    if (has(entry, "status") && !CROSS_RUNTIME_STATUSES.has(entry.status)) {
+    // F4 family, found auditing this function against its own lesson: the
+    // check was `has(entry, "status") && !VALID`, so an entry with NO status
+    // passed. computeCrossRuntimeCorroboration() only corroborates
+    // healthy|degraded|skipped-human, so a statusless entry is never attested —
+    // the omission bought silence exactly as an unrecognised value would have.
+    if (!has(entry, "status") || !CROSS_RUNTIME_STATUSES.has(entry.status)) {
       return (
-        `cross_runtime.${name}.status is ${JSON.stringify(entry.status)}, not one of ` +
-        `${[...CROSS_RUNTIME_STATUSES].join(" | ")} — an unrecognised status is never corroborated and never ` +
+        `cross_runtime.${name}.status is ${has(entry, "status") ? JSON.stringify(entry.status) : "absent"}, not one of ` +
+        `${[...CROSS_RUNTIME_STATUSES].join(" | ")} — an unrecognised or absent status is never corroborated and never ` +
         "warned about, so a runtime that did not run reads exactly like one that did"
       );
     }

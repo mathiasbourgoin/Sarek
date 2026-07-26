@@ -71,6 +71,33 @@ const STEPS = {
 // Which steps each phase mandates. `--require` overrides this; an unknown
 // phase is rejected, never defaulted to "nothing required" (that default would
 // itself be a gate that cannot fail — a typo'd phase would demand nothing).
+//
+// MEASURED BEFORE SHIPPING, not assumed. The first draft of this table also
+// mandated `scope-gate` and `xruntime` on `review`. Measuring against the real
+// artifacts in briefs/ killed that:
+//
+//   36 verdicts, 30 journaled rounds, 16 review traces
+//   scope-gate trace events ..........  9
+//   cross-runtime trace events .......  1
+//   verdicts recording cross_runtime ..  3   (0 with status "healthy")
+//
+// So the requirement would have fired on nearly every round. Under this ledger
+// a `skipped` record discharges it, so it would never have been *unsatisfiable*
+// — but a requirement discharged by boilerplate on 9 rounds out of 10 is an
+// alarm people learn to paste past, which is the same failure as an alarm they
+// learn to ignore.
+//
+// The decisive reason is the second one: both obligations are ALREADY enforced,
+// better, by the trace mechanism — review-trace-rules.js requires a `scope-gate`
+// line whenever mode === "full" (computeRequiredCoverage) and corroborates every
+// claimed probe against the xruntime journal (computeCrossRuntimeCorroboration,
+// exit 1 `unattested-invocation`). Mandating them here too would be a second,
+// weaker record of a fact that already has an authoritative one, and two records
+// of the same fact drift apart.
+//
+// They remain *recordable* — `--require scope-gate,xruntime` opts in — and
+// `degraded-specialist` is recordable but never required, because a step that
+// may legitimately never occur cannot have its absence read as a skip.
 const PHASE_REQUIREMENTS = {
   intake: [],
   question: [],
@@ -78,7 +105,7 @@ const PHASE_REQUIREMENTS = {
   spec: [],
   plan: ["human-gate"],
   implement: ["preflight"],
-  review: ["preflight", "scope-gate", "xruntime"],
+  review: [], // scope-gate + cross-runtime: owned by the trace mechanism (above)
   qa: ["preflight"],
   ship: ["preflight", "human-gate"],
 };

@@ -171,13 +171,15 @@ check("a human-answered gate is recordable as RAN by a human actor", () => {
 });
 
 // ── SCENARIO: the breaker-disabled cross-runtime pass ────────────────────
-check("SCENARIO: a review round with cross-runtime breaker-skipped must say so", () => {
+check("SCENARIO: cross-runtime breaker-skip is recordable, via explicit --require", () => {
+  // `review` mandates neither scope-gate nor xruntime by default — the trace
+  // mechanism owns both, and the measurement in mandated-steps-rules.js showed
+  // requiring them here would fire on nearly every round. They stay opt-in.
   const dir = scratch();
   writeLedger(dir, [
     { ts: "2026-07-25T10:00:22Z", task: TASK, step: "preflight", outcome: "ran", result: "READY", actor: "agent" },
-    { ts: "2026-07-25T10:00:30Z", task: TASK, step: "scope-gate", outcome: "ran", result: "PASS", actor: "agent" },
   ]);
-  const missing = checkPhase(dir, "review");
+  const missing = run(["--task", TASK, "--require", "xruntime"], dir);
   assert.strictEqual(missing.status, 1);
   assert.match(missing.stderr, /no record for mandated step "xruntime"/);
 
@@ -188,7 +190,20 @@ check("SCENARIO: a review round with cross-runtime breaker-skipped must say so",
     ]).status,
     0
   );
-  assert.strictEqual(checkPhase(dir, "review").status, 0);
+  assert.strictEqual(run(["--task", TASK, "--require", "xruntime"], dir).status, 0);
+});
+
+check("MEASURED: `review` mandates nothing by default (the trace mechanism owns it)", () => {
+  // Red-on-mutation for the measurement decision itself: if someone re-adds
+  // scope-gate/xruntime to the review defaults, this goes red and they have to
+  // read why. A ledger with only a preflight record must satisfy `review`.
+  const dir = scratch();
+  writeLedger(dir, [
+    { ts: "2026-07-25T10:00:22Z", task: TASK, step: "preflight", outcome: "ran", result: "READY", actor: "agent" },
+  ]);
+  const r = checkPhase(dir, "review");
+  assert.strictEqual(r.status, 0, `review must not mandate steps the trace mechanism owns: ${r.stderr}`);
+  assert.deepStrictEqual(JSON.parse(r.stdout).required, []);
 });
 
 check("a degraded specialist is repeatable — several may be recorded in one phase", () => {

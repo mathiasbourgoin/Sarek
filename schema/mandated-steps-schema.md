@@ -79,10 +79,44 @@ node scripts/check-mandated-steps.js --task <slug> --phase implement
 |---|---|
 | `plan` | `human-gate` |
 | `implement` | `preflight` |
-| `review` | `preflight`, `scope-gate`, `xruntime` |
+| `review` | — (see below) |
 | `qa` | `preflight` |
 | `ship` | `preflight`, `human-gate` |
 | `intake` `question` `research` `spec` | — (records are still validated) |
+
+### Why `review` mandates nothing — measured, not assumed
+
+The first draft mandated `scope-gate` and `xruntime` on `review`. Measuring against the real
+artifacts in `briefs/` before shipping killed that:
+
+| Signal | Count |
+|---|---|
+| verdict files | 36 |
+| journaled `rounds_audit` rounds | 30 |
+| review trace files | 16 |
+| `scope-gate` trace events | 9 |
+| `cross-runtime` trace events | **1** |
+| verdicts recording `cross_runtime` | 3 (0 with `status: "healthy"`) |
+
+The requirement would have fired on nearly every round. Under this ledger a `skipped` record
+discharges it, so it would never have been *unsatisfiable* — but a requirement discharged by
+boilerplate nine rounds out of ten is an alarm people learn to paste past, which is the same
+failure as one they learn to ignore.
+
+The decisive reason is the second one: **both obligations already have an authoritative enforcer.**
+`review-trace-rules.js` requires a `scope-gate` trace line whenever `mode === "full"`
+(`computeRequiredCoverage`) and corroborates every claimed probe against the xruntime journal
+(`computeCrossRuntimeCorroboration`, exit 1 `unattested-invocation`). Mandating them here as well
+would be a second, weaker record of a fact that already has a stronger one — and two records of the
+same fact drift apart.
+
+Both remain **recordable**, opt-in via `--require scope-gate,xruntime`. `degraded-specialist` is
+recordable but never required: a step that may legitimately never occur cannot have its absence
+read as a skip.
+
+(Method borrowed from PR #305's F9, which measured a proposed phase-order rule against 34 real
+ledgers, found it flagged 7 legitimately, and shipped it as a documented limitation rather than an
+alarm.)
 
 `--require <step,step>` overrides the table. An **unknown phase is rejected**, never defaulted to
 "nothing required" — that default would itself be a gate that cannot fail, since a typo'd phase

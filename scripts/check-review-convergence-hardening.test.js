@@ -354,7 +354,7 @@ check("G8 rejects the gate REPORT's mode enum copied into the verdict", () => {
 check("G9 rejects an absent task on a non-legacy round", () => {
   const verdict = base();
   delete verdict.task;
-  rejects(verdict, /field task is undefined, not a valid slug/);
+  rejects(verdict, /has no `task` key/);
 });
 
 check("G9 rejects a path-traversing task slug", () => {
@@ -376,11 +376,12 @@ check("G10 rejects a stringly-typed cycle (it silently became null)", () => {
 check("G11 rejects a verdict that never went through review-normalize.js", () => {
   const verdict = base();
   delete verdict.normalized_by;
-  rejects(verdict, /normalized_by is absent or empty/);
+  const r = rejects(verdict, /has no `normalized_by` key/);
+  assert.match(r.stderr, /`novel finding` is uncomputable/, "the message must say why, not just which key");
 });
 
 check("G11 rejects an empty normalized_by", () => {
-  rejects(base({ normalized_by: "   " }), /normalized_by is absent or empty/);
+  rejects(base({ normalized_by: "   " }), /field normalized_by is "   ", not a non-empty string/);
 });
 
 // ── G12 / D9 — cross_runtime key asymmetry and status enum ───────────────
@@ -410,6 +411,109 @@ check("G13 rejects a non-array rounds_audit (it was silently read as [])", () =>
 
 check("G13 rejects a non-object cross_runtime (it was silently ignored)", () => {
   rejects(base({ cross_runtime: [] }), /cross_runtime is present but not an object/);
+});
+
+// ── G14/G15 (review finding F4) — absence-blindness in the hardening itself ─
+//
+// The first version of this module guarded `mode` and `status` with
+// `has(review, key) && !VALID.has(value)`: it closed the malformed half and
+// left the omission half open, three lines under a comment describing these as
+// keys "whose omission used to remove an obligation rather than fail one".
+// Measured at the time:
+//
+//   mode: "Full"      -> exit 2, "not one of express | fast | full (D5)"
+//   mode key OMITTED  -> exit 0, violations: []
+//
+// Every case below is paired: the malformed form was ALREADY rejected, so the
+// omitted form is the one that proves the hole is shut. Three of the five keys
+// (`cycle`, `task`, `normalized_by`) did check absence, which is exactly why
+// hand-written guards looked complete — hence the table in the module.
+
+check("F4 rejects an OMITTED mode, not just a misspelled one", () => {
+  // The dropped obligation is real: review-trace-rules.js requires the
+  // scope-gate trace line only when mode === "full".
+  rejects(base({ mode: "Full" }), /field mode is "Full"/); // was already caught
+  const verdict = base();
+  delete verdict.mode;
+  const r = rejects(verdict, /has no `mode` key/); // was exit 0
+  assert.match(r.stderr, /DROPS that obligation rather than failing it/);
+});
+
+check("F4 rejects an OMITTED status, which disarmed the GO-consistency check", () => {
+  // With status present, an unmirrored HIGH yields BOTH violations.
+  const withStatus = reports(base({ status: "GO", cross_runtime_findings: [finding()] }));
+  assert.deepStrictEqual(
+    withStatus.report.violations.map((v) => v.type).sort(),
+    ["go-with-design-violation", "unmirrored-cross-runtime-finding"]
+  );
+  // Deleting the key used to silently drop go-with-design-violation.
+  const verdict = base({ cross_runtime_findings: [finding()] });
+  delete verdict.status;
+  rejects(verdict, /has no `status` key/);
+});
+
+check("F4 rejects an OMITTED cross_runtime_findings, not just a non-array one", () => {
+  rejects(base({ cross_runtime_findings: {} }), /not an array/); // was already caught
+  const verdict = base();
+  delete verdict.cross_runtime_findings;
+  rejects(verdict, /has no `cross_runtime_findings` key/); // was exit 0
+});
+
+check("F4 rejects cross_runtime: null — the carve-out its own message condemned", () => {
+  // checkContainerTypes had an explicit `!== null` exemption, granting null
+  // precisely the "silently ignored" treatment the message warns about.
+  const r = rejects(base({ cross_runtime: null }), /field cross_runtime is null/);
+  assert.match(r.stderr, /drops every cross-runtime corroboration check/);
+});
+
+check("F4 rejects an OMITTED rounds_audit and an OMITTED cross_runtime", () => {
+  const noAudit = base();
+  delete noAudit.rounds_audit;
+  rejects(noAudit, /has no `rounds_audit` key/);
+
+  const noXruntime = base();
+  delete noXruntime.cross_runtime;
+  rejects(noXruntime, /has no `cross_runtime` key/);
+});
+
+check("F4 rejects an OMITTED findings array", () => {
+  const verdict = base();
+  delete verdict.findings;
+  rejects(verdict, /has no `findings` key/);
+});
+
+check("F4 rejects a cross_runtime entry with NO status", () => {
+  // computeCrossRuntimeCorroboration only attests healthy|degraded|skipped-human,
+  // so a statusless entry is never corroborated — the omission bought the same
+  // silence an unrecognised value would have.
+  rejects(base({ cross_runtime: { codex: { config_digest: "abc", round: 1 } } }), /status is absent/);
+});
+
+check("G14 rejects a null / non-object rounds_audit ELEMENT", () => {
+  // The container type was checked; the element types were not. Every consumer
+  // opens with `if (!e || typeof e !== "object") continue`.
+  const audit = (extra) => base({ round: 3, rounds_audit: [auditEntry(1, { strike: false }), extra, auditEntry(3)] });
+  rejects(audit(null), /rounds_audit\[1\] is not an object/);
+  rejects(audit("x"), /rounds_audit\[1\] is not an object/);
+});
+
+check("G14 rejects a rounds_audit element with no numeric round", () => {
+  rejects(
+    base({ round: 3, rounds_audit: [auditEntry(1, { strike: false }), { reviewed_sha: "a", strike: true }, auditEntry(3)] }),
+    /rounds_audit\[1\] has no numeric `round`/
+  );
+});
+
+check("G14 rejects a null element in findings and in cross_runtime_findings", () => {
+  rejects(base({ findings: [null] }), /findings\[0\] is not an object/);
+  rejects(base({ cross_runtime_findings: [finding(), "x"] }), /cross_runtime_findings\[1\] is not an object/);
+});
+
+check("F4 CONTROL: every required key present and well-formed still passes", () => {
+  // The base fixture carries all nine table keys. If this ever goes red, the
+  // table has grown a requirement the assembler does not emit.
+  const { status } = reports(base());
+  assert.strictEqual(status, 0);
 });
 
 // ── teardown ─────────────────────────────────────────────────────────────

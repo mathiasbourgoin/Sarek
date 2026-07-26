@@ -142,12 +142,12 @@ green you used to be getting is the point of the table.
 | `round` | exit 2 unless `--allow-legacy` | non-number / negative / non-finite → exit 2 | skipped strike + `rounds_audit` + trace checks, warned, exit 0 |
 | `no_go_round` | exit 2 unless `--allow-legacy` | non-number / negative → exit 2 | defaulted to `0`; the cap could never fire |
 | `cycle` | exit 2 (non-legacy) | non-number / `< 1` → exit 2 | `null`; every trace line classified as prior-cycle |
-| `findings` | `[]`, legacy-safe | present but not an array → exit 2 | already fail-closed (FIX-A/CGF-1) |
-| `rounds_audit` | treated as `[]` | non-array → exit 2; a gap in rounds `2..round-1` → exit 3 | non-array read as `[]`; a gap erased the streak |
+| `findings` | exit 2 (non-legacy) | non-array → exit 2; a non-object **element** → exit 2 | absent read as `[]`; elements unchecked |
+| `rounds_audit` | exit 2 (non-legacy) | non-array → exit 2; a non-object element or one with no numeric `round` → exit 2; a gap in rounds `2..round-1` → exit 3 | absent/non-array read as `[]`; a gap erased the streak; elements unchecked |
 | `task` | exit 2 (non-legacy) | not a `validSlug` → exit 2 | load-bearing only on a trace-obligated round |
-| `mode` | no scope-gate trace line required | outside `express\|fast\|full` → exit 2 | any other value read exactly like absent |
+| `mode` | exit 2 (non-legacy) | outside `express\|fast\|full` → exit 2 | absent **dropped** the scope-gate trace obligation (G15); any other value read exactly like absent |
 | `normalized_by` | exit 2 (non-legacy) | non-string / empty → exit 2 | a conditional warning |
-| `cross_runtime` | no corroboration | non-object → exit 2; unknown `status` → exit 2; `digest` without `config_digest` → exit 2 | non-object ignored; statuses unvalidated |
+| `cross_runtime` | exit 2 (non-legacy) | non-object or `null` → exit 2; unknown **or absent** entry `status` → exit 2; `digest` without `config_digest` → exit 2 | non-object ignored; `null` explicitly exempted; statuses unvalidated |
 | `streak_override` | no override | anything not `{round: <this round>, by: "human"}` → no override | unchanged |
 
 Three more keys are **validated but not acted on** — they route, and an unvalidated routing key is a
@@ -155,9 +155,9 @@ step that silently does nothing:
 
 | Key | Rule |
 |---|---|
-| `status` | outside `GO\|NO-GO` → exit 2. `GO` while the gate reports a design violation → `go-with-design-violation`, exit 1 |
+| `status` | **absent → exit 2** (its absence disarmed the GO-consistency check entirely, G15); outside `GO\|NO-GO` → exit 2. `GO` while the gate reports a design violation → `go-with-design-violation`, exit 1 |
 | `no_go_reason` | absent on a `NO-GO` → exit 2; `type` outside the routing enum → exit 2; `cause` outside the cause enum → exit 2 |
-| `cross_runtime_findings` | non-array → exit 2; entries are ratchet-checked like `findings`; a `CRITICAL`/`HIGH` `OPEN` entry not mirrored into `findings[]` → `unmirrored-cross-runtime-finding`, exit 1 |
+| `cross_runtime_findings` | **absent → exit 2**; non-array or a non-object element → exit 2; entries are ratchet-checked like `findings`; a `CRITICAL`/`HIGH` `OPEN` entry not mirrored into `findings[]` → `unmirrored-cross-runtime-finding`, exit 1 |
 
 Findings in **both** arrays must carry a `status` inside `OPEN\|RESOLVED\|ACCEPTED`; anything else is
 exit 2, because the gate only ever compares against `RESOLVED` and `ACCEPTED` and a near-miss
@@ -580,6 +580,38 @@ Three further holes, found auditing the same file and not previously recorded:
 | G3 | An absent `round` skipped strike, `rounds_audit` and trace checks and exited 0. | Exit 2 unless `--allow-legacy` records the skip. |
 | G5 | A **gap** in `rounds_audit` (e.g. round 3 → round 7) left the skipped rounds out of the strike map and erased the streak, with no warning, because `computeMissingStrikeWarnings()` only inspects entries that exist. | `missing-past-audit` over `2..round-1` → exit 3. |
 | G13 | `rounds_audit` and `cross_runtime` were coerced (`Array.isArray(x) ? x : []`, `typeof x === "object" \|\| return`), so a wrong type emptied the check instead of failing it. | Present-but-wrong-type → exit 2. |
+
+### G14/G15 — the hardening module had the defect it was written to fix
+
+Found in review (finding F4) *after* D1–D11 and G3/G5/G13 were closed and green.
+
+`checkEnvelopeKeys()` guarded `mode` and `status` with `has(review, key) && !VALID.has(value)` —
+**inspecting only keys that exist** — three lines below a comment calling these keys ones "whose
+omission used to remove an obligation rather than fail one". So the fix closed the malformed half
+and left the omission half open:
+
+```console
+mode: "Full" (typo)  ->  exit 2, "not one of express | fast | full (D5)"
+mode key OMITTED     ->  exit 0, violations: []
+```
+
+The dropped obligation was real: `review-trace-rules.js` requires the `scope-gate` trace line only
+when `mode === "full"`, so omitting the key *removed* the requirement. `status` omitted likewise
+disarmed the GO-consistency check outright, whose first line is `if (review.status !== "GO")`.
+
+The treatment inside a single function was inconsistent — **3 of 5**. `cycle`, `task` and
+`normalized_by` did check absence; `mode` and `status` did not. That inconsistency is the tell:
+each guard was hand-written, so "is it required" and "is it well-formed" were two independent
+decisions per key, and getting three of five right looked complete.
+
+| # | Hole | Now |
+|---|---|---|
+| G14 | Element types were unchecked inside typed containers. Every consumer opens with `if (!e \|\| typeof e !== "object") continue`, so a `null` or `"x"` element in `findings` / `cross_runtime_findings` / `rounds_audit` is skipped **in silence** — not a missing entry, an entry that cannot be seen. It surfaced as a `missing-past-audit` gap only when G5 happened to notice the hole left behind. | Malformed element → exit 2, naming the index. A `rounds_audit` element with no numeric `round` is rejected for the same reason. |
+| G15 | Absence-blindness in the required-key guards themselves (`mode`, `status`), plus the lesser members: an omitted `cross_runtime_findings` / `rounds_audit` / `cross_runtime` / `findings` key, a `cross_runtime` entry with **no** `status` (never corroborated, so a probe that did not run reads like one that did), and an explicit `!== null` carve-out that granted `cross_runtime: null` exactly the "silently ignored" treatment the same function's message condemned. | All exit 2. Presence and well-formedness are now **one** table-driven decision per key (`REQUIRED_ENVELOPE_KEYS`), so a key cannot be added with half a guard. |
+
+**The general lesson, which is the same one G5 taught:** a check written as "if the value is wrong,
+fail" is structurally incapable of noticing that there is no value. Writing these by hand produces
+absence-blindness by default — not occasionally.
 
 Two more notes on the enforcer itself, neither a discrepancy:
 
