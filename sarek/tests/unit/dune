@@ -138,4 +138,4 @@
 
 (test
  (name test_metal_gate)
- (libraries metal_gate alcotest))
+ (libraries metal_gate alcotest str))

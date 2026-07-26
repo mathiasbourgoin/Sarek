@@ -145,6 +145,70 @@ let test_compile_layer_states_its_availability () =
       true
       (String.length (Compile.why_unavailable ()) > 0)
 
+(* Layer 2's own red path.
+
+   The sweep runs layer 1 first, and layer 1 raises, so on a Mac the compile
+   layer is only ever observed SUCCEEDING. A gate that has only ever been seen
+   passing is the thing this file exists to rule out — so drive it red directly,
+   with a defect layer 1 is structurally incapable of seeing.
+
+   The kernel below has a perfectly well-formed signature (layer 1 is silent on
+   it) and an undeclared identifier in the BODY. That asymmetry is the argument
+   for keeping both layers: layer 1 covers the address-space class from Linux,
+   layer 2 covers everything else and only on macOS. *)
+let body_defect_kernel =
+  "#include <metal_stdlib>\n\
+   using namespace metal;\n\
+   kernel void k(device float* a [[buffer(0)]],\n\
+   uint3 gid [[thread_position_in_grid]]) {\n\
+  \  a[gid.x] = no_such_identifier_here;\n\
+   }\n"
+
+let test_compile_layer_goes_red_on_a_body_defect () =
+  if not (Compile.available ()) then begin
+    Printf.printf "  SKIP: %s\n%!" (Compile.why_unavailable ()) ;
+    Alcotest.skip ()
+  end
+  else begin
+    (* Positive control first, so a red result below is attributable to the
+       kernel and not to a driver that rejects everything. *)
+    (match Compile.run_metal Compile.probe with
+    | Ok () -> ()
+    | Error e ->
+        Alcotest.failf
+          "the Metal driver rejected its own probe kernel, so nothing it says \
+           about ours means anything:\n\
+           %s"
+          e) ;
+    (* Layer 1 must be SILENT here — otherwise this case would be proving layer
+       1 again rather than layer 2. *)
+    (match Addr.offences body_defect_kernel with
+    | [] -> ()
+    | os ->
+        Alcotest.failf
+          "layer 1 fired on the body-defect kernel, so this case no longer \
+           isolates layer 2:\n\
+           %s"
+          (String.concat "\n" (List.map Addr.describe os))) ;
+    match Compile.run_metal body_defect_kernel with
+    | Ok () ->
+        Alcotest.fail
+          "the Metal driver ACCEPTED a kernel using an undeclared identifier. \
+           Layer 2 is not compiling what it is given."
+    | Error e ->
+        Alcotest.(check bool)
+          "the failure names the undeclared identifier"
+          true
+          (try
+             ignore
+               (Str.search_forward
+                  (Str.regexp_string "no_such_identifier_here")
+                  e
+                  0) ;
+             true
+           with Not_found -> false)
+  end
+
 let () =
   Alcotest.run
     "metal_gate"
@@ -178,5 +242,9 @@ let () =
             "availability is stated, never silent"
             `Quick
             test_compile_layer_states_its_availability;
+          Alcotest.test_case
+            "red on a body defect layer 1 cannot see"
+            `Quick
+            test_compile_layer_goes_red_on_a_body_defect;
         ] );
     ]
