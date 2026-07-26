@@ -8,8 +8,12 @@
  *
  * [Sarek_hip.Hip_rtc.base_options] carries "-ffp-contract=off", which is a CONFORMANCE
  * requirement: with contraction on, RDNA3 fuses the f32 multiply into the
- * f32->f16 narrowing and the device stops matching the interpreter on 373 of
- * the 63488 finite binary16 inputs.
+ * f32->f16 narrowing and the device stops matching the interpreter on some of
+ * the 63488 finite binary16 inputs. (No count: docs/fp-contraction-policy.md
+ * §2 records that the "373" this line used to carry is one of two mutually
+ * inconsistent in-tree uses of that figure, and that 620 is the barrier/ISel
+ * count for a DIFFERENT population. The right count for this sentence has not
+ * been established.)
  *
  * hiprtc hands its option array straight to clang, and clang resolves
  * conflicting floating-point options by LAST OCCURRENCE. So the conformance
@@ -112,6 +116,107 @@ let () =
     mutation_detected
     (if mutation_detected then ""
      else Printf.sprintf " — %s did not trip the check" (show bad)) ;
+  (* ---------------------------------------------------------------- *)
+  (* 3. #136: the two conformance defaults are set EXPLICITLY, and     *)
+  (*    -ffp-contract=off is still last.                               *)
+  (*                                                                   *)
+  (*    These two flags are already clang's HIP defaults - MEASURED     *)
+  (*    ISA-identical on gfx1100, ROCm 7.2.4 / clang 22.0.0git. They    *)
+  (*    are set anyway so a caller's -fgpu-flush-denormals-to-zero or   *)
+  (*    -fno-hip-fp32-correctly-rounded-divide-sqrt is neutralised by   *)
+  (*    last occurrence (both verified: denorm mode returns to 3,       *)
+  (*    v_div_fixup_f32 returns), and so a future clang default change  *)
+  (*    is a no-op rather than a silent regression.                     *)
+  (* ---------------------------------------------------------------- *)
+  let base = Sarek_hip.Hip_rtc.base_options in
+  List.iter
+    (fun flag ->
+      let present = List.exists (String.equal flag) base in
+      report
+        (Printf.sprintf "base_options sets %s explicitly" flag)
+        present
+        (if present then ""
+         else Printf.sprintf " — base_options = %s" (show base)))
+    [
+      "-fhip-fp32-correctly-rounded-divide-sqrt";
+      "-fno-gpu-flush-denormals-to-zero";
+    ] ;
+  (* The two new flags must NOT displace -ffp-contract=off from last. *)
+  let contract_last =
+    match List.rev base with "-ffp-contract=off" :: _ -> true | _ -> false
+  in
+  report
+    "-ffp-contract=off is still the LAST base option"
+    contract_last
+    (if contract_last then ""
+     else Printf.sprintf " — base_options = %s" (show base)) ;
+  (* And a caller passing the negated forms must still lose to them. *)
+  List.iter
+    (fun opt ->
+      let got = Sarek_hip.Hip_rtc.hiprtc_options [opt] in
+      let neg = last_index_of (String.equal opt) got in
+      let pos =
+        last_index_of
+          (fun s ->
+            s = "-fhip-fp32-correctly-rounded-divide-sqrt"
+            || s = "-fno-gpu-flush-denormals-to-zero")
+          got
+      in
+      let ok = neg >= 0 && pos > neg in
+      report
+        (Printf.sprintf "%s is overridden by a later conformance flag" opt)
+        ok
+        (if ok then "" else Printf.sprintf " — result = %s" (show got)))
+    [
+      "-fgpu-flush-denormals-to-zero";
+      "-fno-hip-fp32-correctly-rounded-divide-sqrt";
+    ] ;
+  (* ---------------------------------------------------------------- *)
+  (* 4. #136: the relaxing-option WARNING list must actually cover the *)
+  (*    options measured to degrade gfx1100 codegen. Before #136 each  *)
+  (*    of these passed silently.                                      *)
+  (* ---------------------------------------------------------------- *)
+  let relaxing s =
+    List.exists
+      (fun prefix -> has_prefix ~prefix s)
+      Sarek_hip.Hip_rtc.fp_relaxing_option_prefixes
+  in
+  List.iter
+    (fun opt ->
+      let ok = relaxing opt in
+      report
+        (Printf.sprintf "%s is recognised as fp-relaxing" opt)
+        ok
+        (if ok then ""
+         else
+           " — measured to change gfx1100 codegen (approximate divide/sqrt, \
+            flushed subnormals, or an unsafe fp atomic) yet passes unwarned"))
+    [
+      "-ffast-math";
+      "-funsafe-math-optimizations";
+      "-ffp-model=fast";
+      "-Ofast";
+      "-cl-fast-relaxed-math";
+      "-cl-unsafe-math-optimizations";
+      "-fapprox-func";
+      "-fgpu-flush-denormals-to-zero";
+      "-fno-hip-fp32-correctly-rounded-divide-sqrt";
+      "-munsafe-fp-atomics";
+    ] ;
+  (* ANTI-VACUITY CONTROL for section 4: the list must not match          *)
+  (* everything. -O3 in particular must NOT be caught by -Ofast, and the  *)
+  (* rocWMMA include/define path must stay warning-free.                  *)
+  List.iter
+    (fun opt ->
+      let ok = not (relaxing opt) in
+      report
+        (Printf.sprintf "%s is NOT flagged (anti-vacuity control)" opt)
+        ok
+        (if ok then ""
+         else
+           " — a benign option is being reported as fp-relaxing, so section 4 \
+            proves nothing"))
+    ["-O3"; "-O2"; "-I/opt/rocm/include"; "-DSAREK=1"; "--offload-arch=gfx1100"] ;
   if !failures = 0 then (
     print_endline "  hiprtc option assembly: PASS" ;
     exit 0)

@@ -215,17 +215,112 @@ let check ctx result =
     — so the defect is specifically the FUSION, not the arithmetic or the
     conversion.
 
-    An exhaustive sweep of all finite binary16 inputs found 373 values on which
-    contraction changed the result; with contraction off, zero. *)
-let base_options = ["-ffp-contract=off"]
+    An exhaustive sweep of all finite binary16 inputs found values on which
+    contraction changed the result; with contraction off, zero. (The count that
+    used to be quoted here was 373. Do not restore it:
+    docs/fp-contraction-policy.md §2 records that 373 appears in-tree for two
+    DIFFERENT populations whose uses contradict each other, and that 620 is the
+    barrier/ISel-combine figure. Neither is the number for THIS sentence, and
+    the right count for it has not been established, so it is not asserted.)
+
+    {2 The other two options, and why they are here (#136)}
+
+    [-fhip-fp32-correctly-rounded-divide-sqrt] and
+    [-fno-gpu-flush-denormals-to-zero] are already clang's HIP defaults. They
+    are set anyway, and the reason is the whole subject of #136: an inherited
+    default is a choice nobody made. The OpenCL backend inherited a 3-ulp [sqrt]
+    this way for years, silently, because it passed no build options at all.
+
+    MEASURED on this machine, 2026-07-26, ROCm 7.2.4 / AMD clang 22.0.0git,
+    gfx1100, on [out = sqrtf(a) + a/b] compiled with
+    [clang++ -x hip --offload-arch=gfx1100 --cuda-device-only -O3 -S]:
+
+    - Adding both flags to today's option list is a NO-OP: the emitted assembly
+      is IDENTICAL over all 13 floating-point instructions. So this costs
+      nothing.
+    - The liveness control confirms the comparison can go non-identical:
+      [-fno-hip-fp32-correctly-rounded-divide-sqrt] drops the emitted code from
+      the refined form ([v_div_scale_f32] / [v_div_fmas_f32] /
+      [v_div_fixup_f32], and [v_sqrt_f32] with [v_fma_f32] Newton residuals) to
+      a bare [v_rcp_f32] / [v_sqrt_f32] with [v_frexp]/[v_ldexp] scaling — 10
+      instructions, no [v_div_fixup_f32].
+    - [-fgpu-flush-denormals-to-zero] moves [.amdhsa_float_denorm_mode_32] from
+      3 (IEEE, subnormals preserved) to 0 (flushed).
+
+    What that buys, given {!hiprtc_options} appends these LAST: a caller passing
+    [-fgpu-flush-denormals-to-zero] or
+    [-fno-hip-fp32-correctly-rounded-divide-sqrt] is now neutralised by
+    last-occurrence, exactly as [-ffp-contract=off] neutralises
+    [-ffp-contract=fast]. Both verified: denorm mode returns to 3, and
+    [v_div_fixup_f32] returns to the output.
+
+    What it does NOT buy, and this is the limit of the whole append-last
+    defence: [-ffast-math] from a caller still removes [v_div_fixup_f32] and is
+    NOT rescued by appending [-fhip-fp32-correctly-rounded-divide-sqrt], because
+    it sets the per-instruction [afn] fast-math flag rather than changing the
+    divide/sqrt lowering default. That class is warned about below and is a
+    candidate for outright rejection — see {!fp_relaxing_option_prefixes}. *)
+let base_options =
+  [
+    "-fhip-fp32-correctly-rounded-divide-sqrt";
+    "-fno-gpu-flush-denormals-to-zero";
+    (* MUST STAY LAST: see {!hiprtc_options}. The two above are order-
+       insensitive against each other; this one is not, against a caller's. *)
+    "-ffp-contract=off";
+  ]
 
 (** Floating-point option classes a caller can pass that would re-enable
     contraction, or otherwise relax the f32 evaluation discipline, if they took
     effect. Matched by prefix so [-ffp-contract=fast] and [-ffp-model=fast] are
-    both caught. *)
+    both caught.
+
+    EXTENDED FOR #136. The first four entries were the original list. Each of
+    the rest was MEASURED to change the emitted gfx1100 code through this exact
+    option ordering (ROCm 7.2.4 / AMD clang 22.0.0git, 2026-07-26) while passing
+    this warning silently:
+
+    - [-Ofast], [-cl-fast-relaxed-math], [-cl-unsafe-math-optimizations],
+      [-fapprox-func] — all degrade divide and [sqrt] to the approximate form,
+      the same result as [-ffast-math], under names the original four prefixes
+      could not see. Note [-Ofast] in particular: a prefix list is the wrong
+      shape for it in general (a [-O] prefix would wrongly catch [-O3]), which
+      is why the full token is listed.
+    - [-fgpu-flush-denormals-to-zero] — moves [.amdhsa_float_denorm_mode_32]
+      from 3 to 0, flushing binary32 subnormals, which
+      docs/fp-contraction-policy.md §1 forbids.
+    - [-fno-hip-fp32-correctly-rounded-divide-sqrt] — removes [v_div_fixup_f32].
+    - [-munsafe-fp-atomics] — swaps the [global_atomic_cmpswap_b32] CAS loop for
+      a hardware [global_atomic_add_f32] whose rounding and denormal behaviour
+      is not the IEEE path.
+
+    THE LAST THREE ARE NOW NEUTRALISED by {!base_options} (verified: denorm mode
+    returns to 3, [v_div_fixup_f32] returns), so for those the warning says
+    "your flag was overridden", not "your flag took effect". THE FIRST FOUR ARE
+    NOT NEUTRALISED BY ANYTHING — measured: appending
+    [-fhip-fp32-correctly-rounded-divide-sqrt] does not restore
+    [v_div_fixup_f32] after [-ffast-math], and no trailing clang option was
+    found that undoes the [-cl-*] spellings at all.
+
+    That asymmetry is the argument for eventually REJECTING the first group
+    rather than warning, as [Cuda_nvrtc.check_fp_conformance] and
+    [Opencl_fp.check_fp_conformance] both do for their unneutralisable options.
+    That is a caller-visible behaviour change and is deliberately NOT made here;
+    this change only stops the options being invisible. *)
 let fp_relaxing_option_prefixes =
   [
-    "-ffp-contract="; "-ffp-model="; "-ffast-math"; "-funsafe-math-optimizations";
+    (* Not neutralisable — reject candidates. *)
+    "-ffp-contract=";
+    "-ffp-model=";
+    "-ffast-math";
+    "-funsafe-math-optimizations";
+    "-Ofast";
+    "-cl-fast-relaxed-math";
+    "-cl-unsafe-math-optimizations";
+    "-fapprox-func";
+    (* Neutralised by [base_options], but the caller should still be told. *)
+    "-fgpu-flush-denormals-to-zero";
+    "-fno-hip-fp32-correctly-rounded-divide-sqrt";
+    "-munsafe-fp-atomics";
   ]
 
 let has_prefix ~prefix s =
@@ -240,9 +335,10 @@ let has_prefix ~prefix s =
     and [-ffp-model]. With the conformance flag placed first (as it was), a
     caller passing [-ffp-contract=fast], [-ffast-math] or [-ffp-model=fast]
     would silently reinstate the very contraction {!base_options} exists to
-    forbid, and the f16 device/interpreter agreement would break on the 373
-    inputs measured above. Putting it last makes that unreachable by
-    construction rather than by convention.
+    forbid, and the f16 device/interpreter agreement would break on the inputs
+    measured above. Putting it last makes that unreachable by construction
+    rather than by convention. (No count is quoted: see {!base_options} on why
+    "373" must not be restored.)
 
     Contraction is then guaranteed off regardless of the caller. The other
     effects of a fast-math-class flag (reassociation, finite-math-only) are NOT
