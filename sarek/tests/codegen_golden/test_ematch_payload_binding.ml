@@ -737,18 +737,65 @@ let check_refused b ~what kernel () =
    expression path substitutes. *)
 let check_smatch_agrees b () =
   let src = generate b smatch_multi_kernel in
+  (* Only the arm DECLARATIONS, which are the lines that project out of the
+     scrutinee [opt[idx]]. The constructor preamble also mentions every
+     accessor ([r.MkPair_v_0 = v0;]), so searching the whole module here would
+     be vacuous — and was: it stayed green under a mutation that changed the
+     emitted accessor on both paths at once. *)
+  let decls =
+    List.filter
+      (fun l -> contains ~haystack:l ~needle:"opt[idx].")
+      (String.split_on_char '\n' src)
+  in
+  if decls = [] then
+    Alcotest.failf
+      "%s: no SMatch destructuring declarations in:\n%s"
+      b.label
+      src ;
+  let decls = String.concat "\n" decls in
   List.iter
     (fun spec ->
       let needle = expected_access b spec in
       Alcotest.(check bool)
         (Printf.sprintf
-           "%s: the SMatch declaration reads %S, the same accessor the EMatch \
-            substitution uses"
+           "%s: the SMatch declaration reads %S — the same accessor the EMatch \
+            substitution uses, and the one the variant declaration emits — \
+            found:\n\
+            %s"
            b.label
-           needle)
+           needle
+           decls)
         true
-        (contains ~haystack:src ~needle))
+        (contains ~haystack:decls ~needle))
     [("MkPair", 2, 0); ("MkPair", 2, 1); ("MkOne", 1, 0)]
+
+(* WHY EVERY STRING ASSERTION IN THIS FILE IS SCOPED TO THE ASSIGNMENT LINE.
+   This is not a style preference, it is the difference between a check and a
+   no-op, so it is asserted rather than left as a comment: a kernel that binds
+   NO payload at all still produces a module containing the payload accessor,
+   because the generated constructor function assigns it
+   ([r.data.OptSome_v = v;]). A whole-module search for that string is therefore
+   satisfied by the preamble alone and holds no matter what the match arm
+   actually reads — which is exactly how the first version of this work left a
+   vacuous assertion in test_shader_recursion_vector.ml. *)
+let check_whole_module_search_would_be_vacuous b () =
+  let accessor = b.single "OptSome" in
+  let src = generate b tag_only_kernel in
+  Alcotest.(check bool)
+    (Printf.sprintf
+       "%s: the preamble alone contains %S, so a whole-module search is \
+        vacuous — assertions must read the assignment line"
+       b.label
+       accessor)
+    true
+    (contains ~haystack:src ~needle:accessor) ;
+  Alcotest.(check bool)
+    (Printf.sprintf
+       "%s: ...while the assignment line of that same payload-free kernel does \
+        NOT contain it"
+       b.label)
+    false
+    (contains ~haystack:(assign_line b tag_only_kernel) ~needle:accessor)
 
 (* Shapes the fix must leave alone: they bind nothing usable, so the assignment
    must still be a pure tag dispatch with no payload read at all. *)
@@ -797,6 +844,9 @@ let () =
       per_backend "nested-shadowing" check_shadowing;
       per_backend "no-capture-of-injected-free-vars" check_no_capture;
       per_backend "smatch-uses-the-same-accessor" check_smatch_agrees;
+      per_backend
+        "whole-module-search-is-vacuous"
+        check_whole_module_search_would_be_vacuous;
       per_backend "refuses-array-len-of-binder" (fun b ->
           check_refused
             b

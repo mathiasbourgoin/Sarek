@@ -128,11 +128,11 @@ let ir_of name k =
 
 let any_failure = ref false
 
-let run_on ~ir ~reference dev =
+let run_on ~ir ~reference ~show dev =
   let src = Vector.create Vector.float32 n in
   let dst = Vector.create Vector.float32 n in
   for i = 0 to n - 1 do
-    Vector.set src i (float_of_int (i + 1) *. 0.5) ;
+    Vector.set src i (float_of_int (i + 1)) ;
     Vector.set dst i 0.0
   done ;
   let threads = 64 in
@@ -150,6 +150,17 @@ let run_on ~ir ~reference dev =
       ]
     () ;
   Transfer.flush dev ;
+  (* Print the leading values when asked. For the capture case the numbers ARE
+     the diagnosis: `1 2 3 4 5 6 7 8` is a correctly-indexed read, while
+     `1 1 1 1 1 1 1 1` is every element collapsing onto src.(0) because the
+     inner binder captured the index inside the injected term. *)
+  if show > 0 then begin
+    Printf.printf "      first %d:" show ;
+    for i = 0 to min (show - 1) (n - 1) do
+      Printf.printf " %g" (Vector.get dst i)
+    done ;
+    Printf.printf "\n%!"
+  end ;
   (* Report the count AND the first offender: "got 1000.0 where 3.0 was
      expected" is the reading that identifies a stale same-named local, which a
      bare pass/fail would hide. *)
@@ -183,7 +194,7 @@ let () =
   if Array.length devs = 0 then print_endline "  no devices — skipped"
   else
     List.iter
-      (fun (name, k, reference) ->
+      (fun (name, k, reference, show) ->
         Printf.printf "-- %s --\n%!" name ;
         let ir = ir_of name k in
         Array.iter
@@ -191,7 +202,7 @@ let () =
             let label =
               Printf.sprintf "[%s] %s" dev.Device.framework dev.Device.name
             in
-            match run_on ~ir ~reference dev with
+            match run_on ~ir ~reference ~show dev with
             | None -> Printf.printf "  %s: PASSED\n%!" label
             | Some detail ->
                 any_failure := true ;
@@ -208,8 +219,11 @@ let () =
                   (Printexc.to_string e))
           devs)
       [
-        ("distinct binders (undeclared-identifier shape)", kirc, reference);
-        ("colliding binders (silent-wrong shape)", silent_kirc, reference);
-        ("nested rebinding (capture shape)", capture_kirc, capture_reference);
+        ("distinct binders (undeclared-identifier shape)", kirc, reference, 0);
+        ("colliding binders (silent-wrong shape)", silent_kirc, reference, 0);
+        (* src.(i) = i+1, so a correctly-indexed read prints 1 2 3 4 5 6 7 8;
+           under capture every element reads src.(0) and it prints 1 1 1 1 1 1
+           1 1. *)
+        ("nested rebinding (capture shape)", capture_kirc, capture_reference, 8);
       ] ;
   if !any_failure then exit 1 else print_endline "OK"
