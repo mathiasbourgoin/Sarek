@@ -241,10 +241,40 @@ end
 module Library = struct
   type t = {handle : mtl_library; device : Device.t}
 
+  (** Compile MSL source.
+
+      Requests Metal's non-fast-math mode (#125). Until this change the options
+      argument was hardcoded [None] AND the binding ignored it regardless, so
+      every Sarek Metal kernel compiled under Metal's fast-math default with no
+      way to turn it off.
+
+      NOT EXECUTED ON HARDWARE — there is no Apple device on the machine this
+      was written on. If [mtl_compile_options_conformant] returns [None] (older
+      OS, missing selector, allocation failure) this falls back to null options,
+      i.e. exactly the pre-#125 behaviour, and says so in the log rather than
+      silently. Either way, Metal float results remain outside the guarantee
+      until somebody runs [test_df64] on a Mac; see
+      docs/fp-contraction-policy.md §11. *)
   let create_from_source device source =
-    match
-      mtl_device_new_library_with_source device.Device.handle source None
-    with
+    let options = mtl_compile_options_conformant () in
+    (match options with
+    | Some _ ->
+        Spoc_core.Log.debugf
+          Spoc_core.Log.Kernel
+          "Metal: compiling with fastMathEnabled=NO (requested, UNVERIFIED on \
+           hardware - see docs/fp-contraction-policy.md §11)"
+    | None ->
+        Spoc_core.Log.warnf
+          Spoc_core.Log.Kernel
+          "Metal: could not build MTLCompileOptions, falling back to Metal's \
+           DEFAULT compile options, which enable FAST MATH. Kernel results may \
+           disagree with the Sarek interpreter on contraction- or \
+           subnormal-sensitive code. See docs/fp-contraction-policy.md §11.") ;
+    let result =
+      mtl_device_new_library_with_source device.Device.handle source options
+    in
+    (match options with Some o -> release o | None -> ()) ;
+    match result with
     | Ok lib -> {handle = lib; device}
     | Error msg ->
         Metal_error.raise_error (Metal_error.compilation_failed source msg)

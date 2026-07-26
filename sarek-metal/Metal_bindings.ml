@@ -260,7 +260,86 @@ let mtl_buffer_length buf =
 
 (** {1 Library API} *)
 
-let mtl_device_new_library_with_source dev source _options =
+(** Build an [MTLCompileOptions] with Metal's fast-math default turned OFF, or
+    [None] if that cannot be done on this host.
+
+    WHY (#125). Metal's default compile options enable fast math, and until this
+    change {!mtl_device_new_library_with_source} took an [_options] argument and
+    IGNORED it while [Metal_api] passed null anyway. So every Sarek Metal kernel
+    compiled with fast math and there was no route to turn it off — not "no
+    policy", but an UNSETTABLE wrong default, which will diverge from the
+    interpreter (the cross-backend oracle, docs/fp-contraction-policy.md §1) on
+    any contraction- or subnormal-sensitive kernel.
+
+    NOT EXECUTED. There is no Apple hardware on the machine this was written on,
+    so not one line of this function has ever run. It typechecks and it is
+    structurally identical to {!nsstring_from_cstring} above (same
+    [objc_getClass] / [alloc] / [init] / typed [objc_msgSend] idiom, which does
+    work in production on Apple hardware) — and that is the entire basis for it.
+    Do not record this as verified anywhere. See docs/fp-contraction-policy.md
+    §11.
+
+    FAIL-SOFT BY CONSTRUCTION. Every failure path returns [None], and [None]
+    makes the caller pass null, which is EXACTLY the behaviour that shipped
+    before this change. So the worst case of this unverified code is the status
+    quo, not a crash: a missing libobjc, a missing class, an OS that does not
+    respond to the selector, or a null allocation all degrade to the old
+    behaviour rather than propagating.
+
+    WHY [setFastMathEnabled:] AND NOT [setMathMode:]. [setMathMode:] with
+    [MTLMathModeSafe] is the modern spelling and [fastMathEnabled] is deprecated
+    in its favour. It is deliberately not used here: [MTLMathMode]'s integer
+    encoding could not be verified on this machine, and passing the wrong
+    constant would silently select FAST math while looking like a fix —
+    precisely the failure this change exists to remove. [setFastMathEnabled:]
+    has one unambiguous meaning and a boolean argument. If someone with a Mac
+    confirms the enum values, switching is a small change; guessing them is not.
+*)
+let mtl_compile_options_conformant () : mtl_compile_options option =
+  try
+    let cls = objc_getClass "MTLCompileOptions" in
+    if is_null cls then None
+    else
+      let obj = objc_msgSend cls (sel_registerName "alloc") in
+      if is_null obj then None
+      else
+        let obj = objc_msgSend obj (sel_registerName "init") in
+        if is_null obj then None
+        else
+          let sel_set = sel_registerName "setFastMathEnabled:" in
+          (* BOOL is [signed char] on x86_64 macOS and [_Bool] on arm64; both
+             are one byte and passed in the low byte of the argument register,
+             so [uchar] is correct on both and ctypes' [bool] would not be. *)
+          let responds =
+            foreign
+              ~from:(get_objc_lib ())
+              "objc_msgSend"
+              (ptr void @-> ptr void @-> ptr void @-> returning uchar)
+          in
+          if
+            Unsigned.UChar.to_int
+              (responds obj (sel_registerName "respondsToSelector:") sel_set)
+            = 0
+          then None
+          else begin
+            let set_bool =
+              foreign
+                ~from:(get_objc_lib ())
+                "objc_msgSend"
+                (ptr void @-> ptr void @-> uchar @-> returning void)
+            in
+            set_bool obj sel_set (Unsigned.UChar.of_int 0) ;
+            Some obj
+          end
+  with _ -> None
+
+(** Compile MSL source into an [MTLLibrary].
+
+    [options] is now HONOURED. Before #125 this function's parameter was named
+    [_options] and dropped on the floor, so the only thing it could ever pass
+    was null — see {!mtl_compile_options_conformant} for what that meant. *)
+let mtl_device_new_library_with_source dev source
+    (options : mtl_compile_options option) =
   let sel = sel_registerName "newLibraryWithSource:options:error:" in
   let source_ns = nsstring_from_cstring source in
   let error_ptr = allocate (ptr void) null in
@@ -268,11 +347,12 @@ let mtl_device_new_library_with_source dev source _options =
     foreign
       ~from:(get_objc_lib ())
       "objc_msgSend"
-      (ptr void @-> ptr void @-> ns_string @-> ptr void
+      (ptr void @-> ptr void @-> ns_string @-> mtl_compile_options
       @-> ptr (ptr void)
       @-> returning mtl_library)
   in
-  let lib = fn dev sel source_ns null error_ptr in
+  let opts = match options with Some o -> o | None -> null in
+  let lib = fn dev sel source_ns opts error_ptr in
   if is_null lib then begin
     let err = !@error_ptr in
     Error (nserror_description err)
