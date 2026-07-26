@@ -27,7 +27,17 @@
   policy: what each backend may contract, what actually prevents it, and
   whether that mechanism is verified or merely believed. The interpreter is
   named as the cross-backend oracle. Linked from every site that previously
-  carried an ad-hoc contraction comment.
+  carried an ad-hoc contraction comment. §7 ("what cannot be verified without
+  NVIDIA hardware") is now partly closed: an f16 kernel HAS been executed on
+  an NVIDIA GPU — GTX 1070 Max-Q, sm_61, CUDA 12.9, driver 580.119.02 —
+  agreeing with the interpreter on all 63488 finite binary16 inputs, with a
+  liveness control (63085 mismatches on deliberately mismatched kernels)
+  proving the sweep can go red. That also settles the tie-rounding question
+  the section named, exercises the *driver's* ptxas rather than the offline
+  one, adds a second toolkit version (12.9, between CI's 12.6 and the
+  document's 13.3), and independently confirms on hardware that the CUDA
+  barrier removed in #110 was inert. sm_61 is below the sm_75…sm_121 range
+  the host-side sweeps cover, so it is a new sample, not a repeat.
 - FP-conformance guard on the CUDA/nvrtc path: `-use_fast_math`, `-ftz=true`,
   `--prec-div=false` and `--prec-sqrt=false` are now REJECTED at the point an
   option array reaches `nvrtcCompileProgram` (`--fmad=true` warns). The guard
@@ -102,7 +112,7 @@
   `test_df64`, and 1.68e-14 (failing) → 8.87e-15 in `test_real64`'s df64
   fallback — both bit-identical to the interpreter, so the seed was the whole
   defect on this path. Costs ~12% kernel time on a sqrt-dominated benchmark
-  (`bench_nbody` n=4096: 1.543 ms → 1.731 ms); `rsqrt` is unchanged for code
+  (`bench_nbody` n=4096: 1.535 ms → 1.722 ms); `rsqrt` is unchanged for code
   that wants the fast form. The same bug class remains open in the OpenCL
   backend (no `-cl-fp32-correctly-rounded-divide-sqrt`, sqrt 1.81e-14) and the
   Vulkan backend (1.68e-14 on NVIDIA); see the `KNOWN RESIDUAL` block in

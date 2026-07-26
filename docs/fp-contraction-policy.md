@@ -94,7 +94,7 @@ Legend for the evidence column:
 |---|---|---|---|
 | **Interpreter** | nothing — it is the oracle | it evaluates the IR directly | executed (any host) |
 | **HIP / AMDGPU** | `a*b+c`; **and**, below the FP flags, an f32 multiply into an f32→f16 narrowing, plus f32 add demotion to binary16 | two mechanisms, both required: `-ffp-contract=off` forced **last** in the hiprtc option array (`Hip_rtc.base_options` / `hiprtc_options`), *and* the `asm volatile("" : "+v"(x))` opacity barrier on every narrowing's argument (`Sarek_ir_cuda.sarek_f32_barrier_decl`) | executed (quoted), RX 7900 XTX / gfx1100, ROCm hiprtc: exhaustive sweep of all 63488 finite binary16 inputs — 620 device/interpreter disagreements before the barrier, 0 after. See the caveat in the opening section about the separate, inconsistent "373" |
-| **CUDA / nvrtc (f16 narrowing)** | in principle the same fusion — but NVIDIA has no fused multiply-and-convert-to-f16 instruction to fuse *into* | **nothing Sarek emits.** `ptxas` simply declines to absorb `cvt.rn.f16.f32` | machine-code, CUDA 13.3 host tools, sm_75…sm_121 — see §4. Machine-checked by `test_cuda_f16_sass`, which until this change **self-skipped in CI** for want of `nvdisasm` (§7) |
+| **CUDA / nvrtc (f16 narrowing)** | in principle the same fusion — but NVIDIA has no fused multiply-and-convert-to-f16 instruction to fuse *into* | **nothing Sarek emits.** `ptxas` simply declines to absorb `cvt.rn.f16.f32` | **executed**, GTX 1070 Max-Q / sm_61 / CUDA 12.9 / driver 580.119.02: exhaustive sweep of all 63488 finite binary16 inputs, 0 device/interpreter disagreements, with a liveness control proving the sweep can go red (§7). Also machine-code, CUDA 13.3 host tools, sm_75…sm_121 — see §4. Machine-checked by `test_cuda_f16_sass`, which until this change **self-skipped in CI** for want of `nvdisasm` (§7) |
 | **CUDA / nvrtc + PTX (f32 `a*b+c`)** | yes, by default (`-fmad=true` is nvrtc's and ptxas's default, and it applies to PTX input too) | **no flag.** `Sarek_df64` denies the compiler a fusable multiply by routing products through `fma` (`mul_rn`) | executed, GTX 1070 Max-Q / sm_61 / CUDA 12.9 / driver 580.119.02: df64 mul 5.92e-08 → 9.07e-15, div 5.64e-08 → 5.08e-15 |
 | **CUDA — subnormal flushing** | `-use_fast_math` / `-ftz=true` would flush binary32 subnormals | `Cuda_nvrtc.check_fp_conformance` **rejects** those options at the only point an option array reaches `nvrtcCompileProgram` | machine-code + test, CUDA 13.3: the hazard is reproduced (`FMUL.FTZ`/`FADD.FTZ` at sm_90) and the guard is proved to fire — see §5 |
 | **OpenCL** | `FP_CONTRACT` is on by default in OpenCL C | **no flag** — Sarek passes an empty build-option string. Same `mul_rn`-by-construction defence as CUDA | executed, GTX 1070 Max-Q / NVIDIA OpenCL: mul 5.92e-08 → 9.07e-15, sqrt 2.88e-08 → 9.80e-15 with no OpenCL-specific change (quoted). Re-measured here on RX 7900 XTX / Mesa radeonsi: mul 9.07e-15, div 5.08e-15, sqrt 1.08e-14 |
@@ -110,11 +110,17 @@ Legend for the evidence column:
 **You may rely on, today:**
 
 - **f32 arithmetic agreeing with the interpreter on HIP/AMDGPU**, including f16
-  round-trips. This is the only backend where the f16 discipline has been
-  confirmed by execution.
+  round-trips.
+- **The f16 discipline agreeing with the interpreter on NVIDIA**, via the
+  CUDA/C (nvrtc) path — executed, GTX 1070 Max-Q / sm_61 / CUDA 12.9 / driver
+  580.119.02, exhaustive over all 63488 finite binary16 inputs, **0**
+  disagreements (§7). Note this is the **CUDA/C** path: the PTX backend
+  refuses kernel-level f16 by design (`#57` slice 2, a located
+  `Ptx_codegen_error`), so there is nothing to rely on there yet.
 - **`Sarek_df64` meeting its precision contract on CUDA/PTX and OpenCL on
-  NVIDIA Pascal, and on OpenCL on AMD** — with the `sqrt` residual recorded in
-  `Sarek_df64`'s header still open.
+  NVIDIA Pascal, and on OpenCL on AMD** — `sqrt` on CUDA/PTX is now included
+  (8.53e-15, executed; it was the `sqrt.approx.f32` seed). The OpenCL and
+  Vulkan `sqrt` residuals recorded in `Sarek_df64`'s header are still open.
 - **No `-use_fast_math` / `-ftz=true` reaching nvrtc**, enforced rather than
   documented (§5) — in **both** the inline (`--ftz=true`) and the separated
   (`--ftz true`) spelling, and fail-closed on a bare `--ftz` whose value cannot
@@ -129,8 +135,9 @@ Legend for the evidence column:
 - **Vulkan `fma` being correctly rounded.** On Mesa RADV it is not, and
   `Sarek_df64` mul/div is ~5.8e-08 there — a *documented*, unfixed deviation,
   not a bug to rediscover.
-- **f16 on NVIDIA hardware.** The codegen question is settled at machine-code
-  level; no f16 kernel has ever been executed on an NVIDIA GPU (§7).
+- **f16 on NVIDIA through the PTX backend.** The CUDA/C path is now confirmed
+  by execution (above), but `Sarek_ir_ptx` still refuses kernel-level f16
+  outright, so "f16 works on CUDA" is true only of CUDA/C.
 - **A product you compute yourself staying unfused across a `Sarek_df64`
   boundary.** `[@sarek.module]` bodies are inlined into your kernel, so
   `df64_add_f32 acc (x *. y)` re-creates the exact fusable pattern the library
@@ -362,26 +369,64 @@ declaration only*.
 
 ---
 
-## 7. What cannot be verified without NVIDIA hardware
+## 7. What NVIDIA hardware settled, and what is still open
 
-There is no NVIDIA GPU on the machine this policy was written on. Host-side
-`ptxas`/`nvdisasm`/`nvcc` (CUDA 13.3) cover more architectures than any single
-GPU would, but they cover a different question. Explicitly still open:
+This section was written when there was no NVIDIA GPU on this project's
+machines. A GTX 1070 Max-Q (**sm_61 Pascal, CUDA 12.9, driver 580.119.02**)
+became available on 2026-07-26 and closed two of its three bullets. Note sm_61
+is *below* the sm_75…sm_121 range the host-side sweeps cover, so it is a
+genuinely different sample rather than a repeat.
 
-- **No f16 CUDA kernel has ever been executed on NVIDIA hardware.** The
-  interpreter-agreement claim for f16 is HIP-only. The remaining gap is narrow —
-  a hardware conversion-rounding question (does `F2FP.F16.F32` round to
-  nearest-even on ties?), not a codegen one — but it is not closed.
-- **Offline `ptxas` is not the driver JIT.** Sarek loads PTX through
-  `cuModuleLoadData`, so on a real machine the assembling compiler is the
-  *driver's* ptxas, a different build from `/opt/cuda/bin/ptxas`. Nothing here
-  constrains it.
-- **One toolkit version.** Every CUDA measurement in this document is CUDA 13.3.
-  CI runs 12.6. The result is stable across eight architectures and every
-  optimisation level and flag combination tried, which is an argument for it
-  being a durable `ptxas` property rather than a 13.3 accident — an argument,
-  not a measurement. **If the SASS gate ever fails on CI at 12.6 while passing
-  at 13.3, that difference is the finding.**
+**CLOSED — f16 executed on NVIDIA hardware.** The interpreter-agreement claim
+for f16 is no longer HIP-only. Exhaustive over all **63488** finite binary16
+inputs, on the `f16_midround` kernel (the one whose mid-expression narrowing is
+the whole point of the discipline):
+
+| check | result |
+|---|---|
+| interpreter vs CPU reference | 0 / 63488 |
+| CUDA vs CPU reference | 0 / 63488 |
+| **CUDA == interpreter, bit-identical** | **0 / 63488** |
+| liveness control (`cuda(scale)` vs `interp(midround)`) | **63085 / 63488** — the sweep can go red |
+
+That also answers the narrow hardware question this bullet used to name: the
+conversion **does** round to nearest-even on ties, since the domain sweep
+contains the ties and none disagreed. At sm_61 the narrowing is `F2F.F16.F32`
+(the unpacked form §4 notes sm_75 emits) rather than the packed `F2FP`.
+
+A zero here would be worthless without the liveness control — see the last row.
+Reporting an exhaustive agreement without showing the harness can produce a
+nonzero is the failure mode this table is shaped to avoid.
+
+**CLOSED — the driver JIT agrees with offline `ptxas`.** These runs load PTX
+through `cuModuleLoadData`, so the assembling compiler was the *driver's* ptxas
+(580.119.02), not `/opt/cuda/bin/ptxas`. It produced interpreter-identical f16
+results and a `Sarek_df64` that meets its contract, so the driver JIT is no
+longer an unconstrained variable — on this driver and this architecture.
+
+**CLOSED — a second toolkit version.** These measurements are **CUDA 12.9**,
+between CI's 12.6 and this document's 13.3. The `ptxas`-declines-to-fuse
+property now has two independent toolkit samples rather than one.
+
+**Independently confirmed: the removed CUDA barrier really was inert.** §4
+concluded that from byte-identical cubins with no device. Executing the
+barrier-free codegen on real hardware gives the same 0/63488 — and while the
+barrier still existed, neutralising it left the sm_61 SASS **byte-identical**
+(`F2F.F32.F16.RZ / FMUL32I / F2F.F16.F32 / F2F.F32.F16.RZ / FADD /
+F2F.F16.F32`, every mandated rounding its own instruction). Two methods, two
+architectures ranges, same answer.
+
+**Still open:**
+
+- **f16 on the PTX backend.** `Sarek_ir_ptx` refuses kernel-level f16 (`#57`
+  slice 2). Everything above is the **CUDA/C** path.
+- **One GPU, one architecture.** sm_61 has no tensor cores, no bf16 and no FP8,
+  so nothing here constrains `mma`, bf16 or FP8 contraction, and no f16
+  *performance* claim can be made from it (f16 runs at 1/64 f32 rate on GP104).
+  Those need Ampere or newer.
+- **Still one driver.** The driver-JIT result above is 580.119.02 on Pascal.
+  **If the SASS gate ever fails on CI at 12.6 while passing at 13.3, that
+  difference is still the finding.**
 
   > **This was not actually being checked.** `nvdisasm` ships in `cuda-nvdisasm`,
   > not in `cuda-nvcc`, and it was **absent from the built CI image** — verified

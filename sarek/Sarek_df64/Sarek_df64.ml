@@ -198,8 +198,8 @@
  *   on this path - there is no second contributor left to find.
  *
  *   COST, measured (bench_nbody n=4096, sqrt-dominated inner loop, sm_61):
- *   1.543 ms / 10.87 GFLOP/s with [sqrt.approx.f32] against 1.731 ms /
- *   9.69 GFLOP/s with [sqrt.rn.f32] - about 12% more kernel time, stable to
+ *   1.535 ms / 10.93 GFLOP/s with [sqrt.approx.f32] against 1.722 ms /
+ *   9.75 GFLOP/s with [sqrt.rn.f32] - about 12% more kernel time, stable to
  *   ~0.2% across repeats. At sm_61 SASS the hot path goes from 1 MUFU.SQRT +
  *   2 FMUL (18 instructions) to 1 MUFU.RSQ + 4 FMUL/FFMA and a not-taken
  *   branch into a cold denormal/inf/nan slowpath (48 instructions). Both
