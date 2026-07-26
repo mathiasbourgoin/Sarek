@@ -340,12 +340,27 @@ let expect_f16_rejected ?tag ~backend ~expected_reason name f =
         name
         (Printexc.to_string e)
 
-(* Composed by the single shared Sarek_ir_codegen.reject_feature:
+(* GLSL, Metal and WGSL are composed by the single shared
+   Sarek_ir_codegen.reject_feature:
    "<backend>: <width> not yet supported (#57 slice 2[ — <hint>])".
-   Metal omits the hint (its arm is a one-liner once it can be tested). *)
+   Metal omits the hint (its arm is a one-liner once it can be tested).
+
+   OpenCL deliberately does NOT use that composer any more (#57 slice 2a), so
+   its expectation is spelled out separately here on purpose. Pinning it
+   verbatim is the point: the shared wording says "not YET supported" and
+   blamed cl_khr_fp16, and both were measured false — cl_khr_fp16 is advertised
+   and usable on both local devices, and the real blocker is that
+   rusticl/radeonsi fuses the f32 multiply into the f32->f16 narrowing
+   (620/63488 binary16 inputs disagree with the interpreter) with no affordable
+   barrier available. If someone later re-folds OpenCL back into the shared
+   composer, this assertion fails and forces them to re-read
+   docs/fp-contraction-policy.md first. *)
 let reason_opencl =
-  "OpenCL: float16 not yet supported (#57 slice 2 — needs cl_khr_fp16 \
-   enablement)"
+  "OpenCL: float16 is refused by measurement, not pending implementation — \
+   rusticl/radeonsi fuses the f32 multiply into the f32->f16 narrowing, so \
+   620/63488 binary16 inputs disagree with the interpreter, and no affordable \
+   barrier exists on this path. See docs/fp-contraction-policy.md (#57 slice \
+   2a)."
 
 let reason_glsl =
   "GLSL: float16 not yet supported (#57 slice 2 — needs \

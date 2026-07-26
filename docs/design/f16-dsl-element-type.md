@@ -910,6 +910,46 @@ conversions.
 - OpenCL, GLSL/Vulkan, WGSL, Metal type strings + literal suffixes + feature
   declarations (§4 table). Each is mechanical *except* WGSL (new supported path,
   module-top `enable f16;`).
+
+> ### CORRECTION — "each is mechanical except WGSL" is refuted for OpenCL
+>
+> **VERIFIED BY EXECUTION** (#57 slice 2a, 2026-07-26). The OpenCL *codegen* is
+> indeed mechanical — `"half"`, a narrowing arm, and a `cl_khr_fp16` pragma.
+> That was never the binding constraint, and pricing this slice by codegen
+> surface repeated §5's error one width later: **the cost of a backend is not
+> the cost of its type string.**
+>
+> On rusticl/radeonsi the ACO backend fuses the f32 multiply into the f32→f16
+> narrowing that consumes it — rounding **once** where §6.2's discipline
+> mandates twice. Exhaustive sweep, all 63488 finite binary16 inputs, on **two**
+> devices (RX 7900 XTX / navi31 and the Raphael iGPU / gfx1036): **620/63488**
+> disagreements, first at `x=5.68359375`. That is the *same defect and the same
+> count* as HIP/AMDGPU — unsurprising in hindsight, since both are ACO, which
+> nobody predicted because the slice plan grouped backends by *language* rather
+> than by *backend compiler*.
+>
+> The difference from HIP is that HIP's fix does not transfer. Measured
+> non-fixes, all still 620/63488: `#pragma OPENCL FP_CONTRACT OFF`, a `volatile`
+> local, a `volatile __private` pointer, an `as_half`/`as_ushort` bitcast
+> round-trip, `convert_half_rte`. HIP's `asm volatile("" : "+v"(x))` does not
+> even compile — rusticl goes through SPIR-V, where AMDGPU register constraints
+> do not exist. Only a `volatile __global` and a `volatile __local` round-trip
+> work (both **0/63488**, which is also the liveness control proving the sweep
+> can go green), and both cost memory traffic per narrowing.
+>
+> **Outcome: OpenCL f16 stays rejected**, now with a measured justification
+> instead of a "not yet implemented" placeholder. Shipping it would have meant a
+> backend silently disagreeing with the interpreter on 620 inputs — exactly the
+> §6.4 failure mode, reintroduced at a different layer.
+>
+> **Two generalizable rules.**
+> 1. *Group backends by their backend compiler, not by their source language.*
+>    OpenCL and HIP look maximally different at the source level and are the same
+>    compiler underneath. GLSL/Vulkan on RADV is a third front end onto ACO and
+>    should be assumed to carry this defect until measured.
+> 2. *Port the property, not the patch.* The HIP work delivered a barrier; what
+>    was actually reusable was the exhaustive-sweep harness and the bit-identity
+>    property. The barrier itself did not survive a change of front end.
 - **PTX** — carved out here because of the string-prefix register-class sniffing
   risk (§4). Treat as its own reviewable unit: new `%h` register class, `is_f16`
   guards in `emit_cast`/`emit_bitwise`, `cvt.*.f16.*` conversions, `mov.f16` const.

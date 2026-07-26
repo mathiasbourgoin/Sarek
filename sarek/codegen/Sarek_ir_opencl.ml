@@ -58,15 +58,53 @@ let rec opencl_type_of_elttype = function
   | TInt32 -> "int"
   | TInt64 -> "long"
   | TFloat16 ->
-      (* Deferred to #57 slice 2: OpenCL spells this "half" but needs
-         `#pragma OPENCL EXTENSION cl_khr_fp16 : enable` prepended (mirroring
-         generate_with_fp64) plus the `h` literal suffix. Reject explicitly
-         rather than emit a type the kernel preamble has not enabled. *)
+      (* Still rejected after #57 slice 2a, but NOT for the reason originally
+         recorded, and not merely "not implemented yet". The blocker is
+         measured, not structural: the codegen itself is a two-line change
+         ("half" here, a narrowing arm in gen_expr, and the cl_khr_fp16 pragma
+         in the preamble).
+
+         What blocks it is that OpenCL on this stack cannot hold Sarek's f16
+         contract. Slice 1 defines f16 as "store f16, compute f32, round on
+         every narrowing", and gates it by requiring the GPU to agree with the
+         interpreter BIT-EXACTLY. On rusticl/radeonsi the ACO backend fuses the
+         f32 multiply into the f32->f16 narrowing that consumes it, rounding
+         ONCE where the DSL mandates twice — the same defect class HIP has, and
+         620 of the 63488 finite binary16 inputs disagree because of it.
+
+         The difference from HIP is that HIP has an affordable fix and OpenCL
+         does not. Every source-level barrier that is expressible here was
+         measured and does NOT work: `#pragma OPENCL FP_CONTRACT OFF`, a
+         `volatile` local, a `volatile __private` pointer, an
+         as_half/as_ushort bitcast round-trip, and convert_half_rte all still
+         report 620/63488. HIP's `asm volatile("" : "+v"(x))` does not even
+         compile (rusticl goes through SPIR-V, where AMDGPU register
+         constraints do not exist). The only two barriers measured to work are
+         a `volatile __global` round-trip and a `volatile __local` (LDS)
+         round-trip, both 0/63488 — and both cost memory traffic per narrowing,
+         with the LDS form additionally needing a workgroup-sized allocation
+         this backend does not control (OpenCL fixes the workgroup size at
+         launch, not at codegen).
+
+         So enabling f16 here would mean shipping a backend that silently
+         disagrees with the interpreter on 620 inputs — precisely the bug slice
+         1 spent a review round removing. It stays rejected until either Mesa
+         stops fusing, or a barrier that costs no memory traffic appears.
+
+         Measured 2026-07-26 on RX 7900 XTX (navi31) AND the integrated Raphael
+         iGPU (gfx1036), rusticl/radeonsi, Mesa via DRM 3.64 / kernel
+         7.1.2-3-cachyos; both devices report 620/63488, first divergence at
+         x=5.68359375 (got 1006.5, interpreter 1006). Reproducer:
+         tools/probes/opencl_f16_contraction_probe.c. Full table and method:
+         docs/fp-contraction-policy.md, "OpenCL / rusticl (f16 narrowing)". *)
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct
            "f16"
-           "OpenCL: float16 not yet supported (#57 slice 2 — needs cl_khr_fp16 \
-            enablement)")
+           "OpenCL: float16 is not supported — not because the codegen is \
+            missing, but because rusticl/radeonsi fuses the f32 multiply into \
+            the f32->f16 narrowing (620/63488 binary16 inputs disagree with \
+            the interpreter) and no affordable source-level barrier exists on \
+            this path. See docs/fp-contraction-policy.md (#57 slice 2a).")
   | TFloat32 -> "float"
   | TFloat64 -> "double"
   | TBool -> "int"
@@ -692,19 +730,46 @@ let gen_helpers buf (funcs : helper_func list) =
 
 (** {1 Kernel Generation} *)
 
-(* Slice-2 deferral for this backend. The explanation of WHY a whole-kernel gate
-   is needed (and not just the per-element-type arms) lives once, at
-   {!Sarek_ir_codegen.reject_feature}. Named [_kernel] to distinguish it from
-   [Sarek_typer.reject_float16], which rejects an f16 OPERAND — a different
-   concept at a different layer. *)
-let reject_float16_kernel =
-  Sarek_ir_codegen.reject_feature
-    ~raise_:(fun reason ->
-      Codegen_error.raise_error
-        (Codegen_error.unsupported_construct "f16" reason))
-    ~backend:"OpenCL"
-    ~hint:"needs cl_khr_fp16 enablement"
-    Sarek_ir_analysis.Float16
+(* OpenCL f16 refusal. This deliberately does NOT go through
+   {!Sarek_ir_codegen.reject_feature}, and the divergence is the point.
+
+   [reject_feature] composes "<backend>: float16 not yet supported (#57 slice
+   2 — <hint>)". Both halves of that sentence are false here, and #57 slice 2a
+   measured them false rather than inferring it:
+
+   - "not YET supported" describes a queue position. OpenCL is not in the
+     queue. The codegen is a two-line change; what is missing is not work.
+   - the old hint, "needs cl_khr_fp16 enablement", named the wrong blocker.
+     [cl_khr_fp16] is advertised and usable on both local devices. Enabling it
+     changes nothing about why f16 is refused.
+
+   The actual blocker: rusticl/radeonsi's ACO backend fuses the f32 multiply
+   into the f32->f16 narrowing that consumes it, rounding once where Sarek's f16
+   discipline mandates twice, so 620 of the 63488 finite binary16 inputs
+   disagree with the interpreter — and no affordable source-level barrier
+   exists on this path (measured: FP_CONTRACT OFF, volatile locals, volatile
+   private pointers, bitcast round-trips and convert_half_rte all leave it at
+   620; HIP's "+v" asm does not compile through SPIR-V). See
+   docs/fp-contraction-policy.md and tools/probes/opencl_f16_contraction_probe.c.
+
+   Keeping the shared wording here would have been actively harmful: it would
+   tell a reader to go enable an extension that is already enabled, and it would
+   file a measured, possibly-permanent refusal under the same heading as three
+   backends that genuinely are just unimplemented. The other three keep the
+   shared composer precisely so THEY still reword together.
+
+   Named [_kernel] to distinguish it from [Sarek_typer.reject_float16], which
+   rejects an f16 OPERAND — a different concept at a different layer. *)
+let reject_float16_kernel (k : kernel) : unit =
+  if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Float16 k then
+    Codegen_error.raise_error
+      (Codegen_error.unsupported_construct
+         "f16"
+         "OpenCL: float16 is refused by measurement, not pending \
+          implementation — rusticl/radeonsi fuses the f32 multiply into the \
+          f32->f16 narrowing, so 620/63488 binary16 inputs disagree with the \
+          interpreter, and no affordable barrier exists on this path. See \
+          docs/fp-contraction-policy.md (#57 slice 2a).")
 
 (** {1 Recursion Resolution}
 
