@@ -237,6 +237,63 @@ let () =
     ~got:(F32.of_int 123)
     ~tolerance:1e-6 ;
 
+  (* Overflow reporting for the stdlib-surface functions (#317 review).
+     The interpreter is this project's cross-backend oracle, so two separate
+     properties matter and are checked separately:
+
+     (i)  VALUE-NEUTRALITY. check_overflow must not perturb any number in the
+          default Silent mode, or every agreement test would be comparing
+          against a shifted reference.
+     (ii) REPORTING. In Exception mode an infinite result must actually raise,
+          or Warn/Exception silently miss it -- the reported defect.
+
+     Each has a negative control, so neither can pass by doing nothing. *)
+  Printf.printf "\nOverflow reporting (expm1 / log1p / hypot):\n" ;
+  F32.set_overflow_mode F32.Silent ;
+  (* (i) values in Silent mode. The overflow threshold below (88.7228394) is
+     bit-identical to C expm1f's, established by an exhaustive sweep of all
+     2^32 binary32 inputs; 100.0 is well past it and 1.0 well below. *)
+  test "Silent: expm1 100.0 = infinity" (F32.expm1 100.0 = infinity) ;
+  test
+    "Silent: expm1 1.0 is finite (negative control for the threshold)"
+    (F32.expm1 1.0 < 2.0 && F32.expm1 1.0 > 1.7) ;
+  test
+    "Silent: log1p (-1.0) = neg_infinity (pole)"
+    (F32.log1p (-1.0) = neg_infinity) ;
+  test
+    "Silent: log1p (-2.0) is NaN, not an infinity (matches C log1pf; \
+     check_overflow must not turn a domain error into a pole)"
+    (Float.is_nan (F32.log1p (-2.0))) ;
+  test "Silent: hypot 3e38 3e38 = infinity" (F32.hypot 3e38 3e38 = infinity) ;
+  (* (ii) reporting in Exception mode. *)
+  F32.set_overflow_mode F32.Exception ;
+  let raises f =
+    try
+      ignore (f () : float) ;
+      false
+    with F32.Float32_overflow _ -> true
+  in
+  test
+    "Exception: expm1 100.0 raises Float32_overflow"
+    (raises (fun () -> F32.expm1 100.0)) ;
+  test
+    "Exception: expm1 1.0 does NOT raise (negative control: the check is not \
+     raising unconditionally)"
+    (not (raises (fun () -> F32.expm1 1.0))) ;
+  test
+    "Exception: log1p (-1.0) raises Float32_overflow"
+    (raises (fun () -> F32.log1p (-1.0))) ;
+  test
+    "Exception: log1p (-2.0) does NOT raise (NaN is not an overflow)"
+    (not (raises (fun () -> F32.log1p (-2.0)))) ;
+  test
+    "Exception: hypot 3e38 3e38 raises Float32_overflow"
+    (raises (fun () -> F32.hypot 3e38 3e38)) ;
+  test
+    "Exception: hypot 1.0 1.0 does NOT raise (negative control)"
+    (not (raises (fun () -> F32.hypot 1.0 1.0))) ;
+  F32.set_overflow_mode F32.Silent ;
+
   (* Summary *)
   Printf.printf "\n========================================\n" ;
   Printf.printf

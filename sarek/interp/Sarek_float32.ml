@@ -224,9 +224,30 @@ let abs_float x = abs x
 
 let minus x y = sub x y
 
-let expm1 x = to_float32 (Stdlib.expm1 x)
+(* check_overflow is value-neutral in the default [Silent] mode -- it returns
+   its argument untouched -- so these three report an infinite result in [Warn]
+   and [Exception] mode without changing a single number the interpreter
+   produces as the cross-backend oracle.
 
-let log1p x = to_float32 (Stdlib.log1p x)
+   Reachability was settled by an exhaustive sweep of all 2^32 binary32 inputs
+   against C's expm1f/log1pf (clang 21, glibc, x86-64), replicating
+   float32_of_float_impl exactly; see the PR for the full table.
+     - expm1 overflows to +inf from x > 88.7228394, and that threshold is
+       BIT-IDENTICAL to expm1f's: 0 spurious and 0 missed overflows over the
+       whole domain, and only 2 inputs in 4.28e9 differ by 1 ulp. So the value
+       was already right; only the reporting was missing (the Major finding).
+     - log1p cannot overflow from any finite input -- its only infinity is the
+       pole at x = -1. It is wired anyway because [log] and [log10] above route
+       their pole through check_overflow too, so this is the house convention
+       rather than a dead gate. NaN is unaffected: check_overflow tests only
+       = infinity / = neg_infinity, and NaN compares false to both, so
+       log1p x < -1. still returns NaN exactly as C's log1pf does.
+     - hypot DOES overflow from finite inputs (first at hypot(6.11e37, 3.35e38)),
+       with 0 spurious and 0 missed over a 1.33e8-pair boundary sweep. *)
+
+let expm1 x = to_float32 (Stdlib.expm1 x) |> check_overflow "expm1"
+
+let log1p x = to_float32 (Stdlib.log1p x) |> check_overflow "log1p"
 
 let hypot x y = to_float32 (Stdlib.hypot x y) |> check_overflow "hypot"
 

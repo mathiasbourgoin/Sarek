@@ -353,9 +353,21 @@ let f32_call_kernel name arity : Sarek_ir_types.kernel =
   }
 
 (* Names reached ONLY through the FFI fallback: absent from the pure registry
-   under this path and from the OpenCL backend's hardcoded arm. *)
+   under this path and from the OpenCL backend's hardcoded arm. expm1 and log1p
+   belong here for the same reason as the other four -- they are declared
+   [dev "expm1f" "expm1"] / [dev "log1pf" "log1p"], so the discarded framework
+   was observable on them too. (Metal polyfills those two in its pre_hook, which
+   is why they were easy to overlook; OpenCL has no pre_hook and took the CUDA
+   spelling straight through.) *)
 let fallback_names =
-  [("abs_float", 1); ("copysign", 2); ("hypot", 2); ("fmod", 2)]
+  [
+    ("abs_float", 1);
+    ("copysign", 2);
+    ("hypot", 2);
+    ("fmod", 2);
+    ("expm1", 1);
+    ("log1p", 1);
+  ]
 
 let opencl_source name arity =
   Sarek_codegen.Sarek_ir_opencl.generate_with_types
