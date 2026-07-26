@@ -16,13 +16,17 @@
 #   sarek-cuda/test/test_cuda_nvrtc_gate.ml       -> libnvrtc
 #     opencl_validation_sweep                     -> clang (OpenCL C)
 #   sarek/tests/unit/test_opencl_gate.ml          -> clang (OpenCL C)
-#     metal_validation_sweep, layer 2              -> xcrun metal (macOS ONLY)
+#     metal_validation_sweep, layer 2              -> Metal driver (macOS ONLY)
 #
-# The Metal compile layer is the one gate this script cannot assert: `metal`
-# ships inside Xcode and no Linux CI image can have it. That is precisely why
-# metal_validation_sweep carries layer 1 (Metal_gate.Metal_addrspace), a pure
-# text check that needs no toolchain and runs everywhere — see #139, where two
-# committed Metal goldens had never compiled on any machine.
+# The Metal compile layer is the one gate this script cannot assert: it needs a
+# Metal device, and no Linux CI image has one. It does NOT need Xcode — it
+# compiles through newLibraryWithSource:, which the Command Line Tools are
+# enough for, deliberately, because the reference M4 has no Xcode and a gate
+# keyed on `xcrun metal` would have skipped on the one machine that could run
+# it. That is also precisely why metal_validation_sweep carries layer 1
+# (Metal_gate.Metal_addrspace), a pure text check that needs no toolchain and
+# runs everywhere — see #139, where two committed Metal goldens had never
+# compiled on any machine.
 #   sarek-cuda/test/test_cuda_f16_sass.ml         -> ptxas + nvdisasm
 #   sarek-cuda/test/test_cuda_fp_conformance.ml   -> nvcc + nvdisasm (hazard
 #                                                    control only; the guard
