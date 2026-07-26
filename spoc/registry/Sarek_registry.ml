@@ -162,14 +162,22 @@ let fun_device_code ?(module_path = []) name dev =
       let path = String.concat "." (module_path @ [name]) in
       failwith ("Unknown intrinsic function: " ^ path)
 
-(** Get device code template for a function, using a minimal device. This is for
-    V2 IR codegens that don't have SPOC device objects. *)
-let fun_device_template ?(module_path = []) name =
+(** Get the device-code template for a function on a given backend. This is for
+    V2 IR codegens that don't have SPOC device objects.
+
+    [framework] is the caller's backend tag ("CUDA", "OpenCL", "Metal", …). It
+    used to be hardcoded to "generic", which [cuda_or_opencl] resolves to the
+    CUDA branch — so every backend reaching this fallback got the CUDA spelling,
+    and an OpenCL or Metal kernel calling e.g. [Float32.abs_float] was emitted
+    as [fabsf(...)]. Neither OpenCL C nor MSL declares [fabsf]; both spell it
+    [fabs]. The stdlib already declares both spellings ([dev "fabsf" "fabs"]);
+    only this lookup was discarding the caller's framework.
+
+    [?framework] defaults to "generic" so existing non-backend callers keep the
+    previous behaviour. *)
+let fun_device_template ?(module_path = []) ?(framework = "generic") name =
   match find_fun ~module_path name with
-  | Some fi ->
-      (* Pass "generic" as the framework string: cuda_or_opencl maps
-         "generic" to the CUDA/default branch, preserving byte-identical output. *)
-      Some (fi.fi_device "generic")
+  | Some fi -> Some (fi.fi_device framework)
   | None -> None
 
 (** Find a record by short name (last component after '.'). This handles cases
@@ -227,7 +235,12 @@ let () =
 
 let cuda_or_opencl (framework : string) cuda_code opencl_code =
   match framework with
-  | "OpenCL" -> opencl_code
+  (* Metal joins OpenCL, not CUDA: across the whole stdlib these two branches
+     differ ONLY in the CUDA `f` suffix (sinf/fabsf/…) — the operator and cast
+     templates are byte-identical in both — and MSL, like OpenCL C, declares the
+     unsuffixed overloads and has no `fabsf`/`sinf`. This matches the spelling
+     Sarek_pure_registry already emits for Metal via its `generic_name`. *)
+  | "OpenCL" | "Metal" -> opencl_code
   | "CUDA" | "Native" | "Interpreter" | _ -> cuda_code
 (* Use CUDA syntax for CUDA, interpreter, and native *)
 

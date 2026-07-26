@@ -340,7 +340,10 @@ and metal_backend =
         else false);
     post_hook =
       (fun buf path name args ->
-        Dispatch.emit_registry_template ~gen_expr buf path name args);
+        (* Same framework tag the pure-registry lookup uses: without it this
+           fallback emitted the CUDA spelling on every backend. *)
+        let framework = Option.value ~default:"Metal" !current_framework in
+        Dispatch.emit_registry_template ~gen_expr ~framework buf path name args);
     on_unknown =
       (fun full ->
         Codegen_error.raise_error (Codegen_error.unknown_intrinsic full));

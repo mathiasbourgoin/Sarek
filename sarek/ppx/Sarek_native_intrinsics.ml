@@ -108,8 +108,14 @@ let map_stdlib_path = function
   | ["Float32"] | ["Sarek_stdlib"; "Float32"] ->
       ["Sarek"; "Sarek_cpu_runtime"; "Float32"]
   | ["Float64"] | ["Sarek_stdlib"; "Float64"] ->
-      (* Float64 is just OCaml float, use stdlib *)
-      ["Float"]
+      (* NOT OCaml's [Stdlib.Float]: that module shares most of the Float64
+         stdlib's names but not all of them, and the mapping below copies the
+         intrinsic name verbatim. [abs_float], [rsqrt], [fmod], [copysign],
+         [of_int32]/[to_int32], [of_float32]/[to_float32], the four [*_float64]
+         arithmetic names and the eight operator forms have no [Float.<name>],
+         so those kernels failed to compile. Sarek_float64_native mirrors the
+         declared surface exactly; see sarek/tests/unit/test_intrinsic_surface.ml. *)
+      ["Sarek"; "Sarek_cpu_runtime"; "Float64"]
   | ["Int32"] | ["Sarek_stdlib"; "Int32"] -> ["Int32"]
   | ["Int64"] | ["Sarek_stdlib"; "Int64"] -> ["Int64"]
   (* Note: Gpu module functions stay as Gpu.* - only specific functions like

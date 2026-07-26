@@ -147,3 +147,23 @@
 (test
  (name test_sync_stmt_emission)
  (libraries sarek.codegen sarek_ppx_lib spoc.ir alcotest))
+
+; Intrinsic-surface reconciliation: derives its expectation from
+; Sarek_registry's link-time record of every let%sarek_intrinsic, and checks it
+; against Sarek_pure_registry (GPU codegen) and Sarek_cpu_runtime (native).
+; Closes the "declared but unroutable" class rather than the reported names.
+
+(test
+ (name test_intrinsic_surface)
+ (libraries
+  sarek
+  sarek.float64
+  sarek.codegen
+  sarek_stdlib
+  sarek_ppx_lib
+  sarek_registry
+  sarek_ir
+  opencl_gate
+  alcotest
+  str
+  unix))

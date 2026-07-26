@@ -197,3 +197,49 @@ let to_int x = int_of_float x
 
 (** Pretty print with float32-appropriate precision *)
 let to_string x = Printf.sprintf "%.7g" x
+
+(******************************************************************************
+ * Sarek stdlib surface mirror
+ *
+ * The native (cpu_kern) backend lowers an [IntrinsicRef (["Float32"], name)] to
+ * the OCaml identifier [Sarek.Sarek_cpu_runtime.Float32.<name>] with the name
+ * copied VERBATIM (sarek/ppx/Sarek_native_intrinsics.ml: map_stdlib_path, then
+ * Sarek_native_helpers.evar_qualified). So every name declared by
+ * sarek/Sarek_stdlib/Float32.ml must exist here under exactly that spelling,
+ * or the kernel does not compile — the user sees "Unbound value
+ * Sarek.Sarek_cpu_runtime.Float32.<name>" pointing into PPX-generated code.
+ *
+ * The seven names below were declared in the stdlib but missing here, so
+ * Float32.abs_float / expm1 / log1p / hypot / copysign / fmod / minus were
+ * unusable from any native kernel. sarek/tests/unit/test_intrinsic_surface.ml
+ * reconciles the two surfaces so this cannot silently recur.
+ *
+ * The four *_float32 aliases mirror the stdlib's explicit arithmetic
+ * intrinsics. They are reachable only when written as qualified calls
+ * (Float32.add_float32 a b); infix `+.` is lowered structurally by the PPX and
+ * never reaches this module.
+ ******************************************************************************)
+
+let abs_float x = abs x
+
+let minus x y = sub x y
+
+let expm1 x = to_float32 (Stdlib.expm1 x)
+
+let log1p x = to_float32 (Stdlib.log1p x)
+
+let hypot x y = to_float32 (Stdlib.hypot x y) |> check_overflow "hypot"
+
+let copysign x y = to_float32 (Stdlib.copysign x y)
+
+(* C [fmod] semantics: sign of the dividend, magnitude < |divisor|.
+   [Float.rem] is OCaml's [fmod]; the stdlib intrinsic uses the same. *)
+let fmod x y = to_float32 (Float.rem x y)
+
+let add_float32 x y = add x y
+
+let sub_float32 x y = sub x y
+
+let mul_float32 x y = mul x y
+
+let div_float32 x y = div x y

@@ -15,6 +15,14 @@
     semantics matching GPU behavior. *)
 module Float32 = Sarek_float32
 
+(** {1 Float64 Module}
+
+    CPU implementations of the [sarek.float64] stdlib surface, mirroring
+    [sarek/Sarek_float64/Float64.ml] name-for-name. This is the target the
+    native backend gives to [Float64.<name>] inside a kernel; it replaced
+    OCaml's [Stdlib.Float], which is missing a third of that surface. *)
+module Float64 = Sarek_float64_native
+
 (** {1 Execution Mode} *)
 
 (** Execution mode for native kernels *)

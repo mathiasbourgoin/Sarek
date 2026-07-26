@@ -133,8 +133,10 @@ let count_placeholders s =
 (** Expand a Metal/CUDA/OpenCL FFI-registry ([Sarek_registry]) device template
     for [path.name]. Returns [false] when the registry has no template (caller
     then raises the unknown-intrinsic error); [true] once emitted. *)
-let emit_registry_template ~gen_expr buf path name args =
-  match Sarek_registry.fun_device_template ~module_path:path name with
+let emit_registry_template ~gen_expr ~framework buf path name args =
+  match
+    Sarek_registry.fun_device_template ~module_path:path ~framework name
+  with
   | None -> false
   | Some template ->
       let arg_strs =

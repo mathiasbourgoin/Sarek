@@ -464,6 +464,11 @@
 
 (rule
  (alias runtest)
+ (action
+  (run %{dep:test_intrinsic_native_surface.exe})))
+
+(rule
+ (alias runtest)
  (enabled_if %{lib-available:sarek_vulkan})
  (action
   (run %{dep:test_vulkan_interleaved_push_constants.exe})))
@@ -515,6 +520,26 @@
  (name test_bare_float_is_float32)
  (modules test_bare_float_is_float32)
  (libraries sarek sarek_native sarek_stdlib sarek_ir spoc_core unix)
+ (preprocess
+  (pps sarek_ppx)))
+
+; The stdlib intrinsics that had no native target symbol. Compiling this file
+; at all is the regression guard (pre-fix: "Unbound value
+; Sarek.Sarek_cpu_runtime.Float32.copysign" from PPX-generated code); the value
+; checks additionally pin each one to its declared `ocaml = ...` semantics.
+; Run with: dune exec sarek/tests/e2e/test_intrinsic_native_surface.exe
+
+(executable
+ (name test_intrinsic_native_surface)
+ (modules test_intrinsic_native_surface)
+ (libraries
+  sarek
+  sarek_native
+  sarek_stdlib
+  sarek.float64
+  sarek_ir
+  spoc_core
+  unix)
  (preprocess
   (pps sarek_ppx)))
 

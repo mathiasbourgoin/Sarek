@@ -12,6 +12,8 @@
 (** Re-export Float32 module for use in generated kernels *)
 module Float32 = Sarek_cpu_runtime_types.Float32
 
+module Float64 = Sarek_cpu_runtime_types.Float64
+
 (** {1 Re-exports from sub-modules} *)
 
 type exec_mode = Sarek_cpu_runtime_types.exec_mode =

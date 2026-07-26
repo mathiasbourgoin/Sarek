@@ -65,14 +65,23 @@ let float32_math_template ~name ~cuda_name ~generic_name =
   | "GLSL" -> glsl_name ~name ~generic_name
   | _ -> generic_name
 
-(** Same as [float32_math_template] but for functions spelled identically on
-    every backend except GLSL (e.g. Float64 math, which has no CUDA [f]-suffix).
-*)
-let generic_math_template name =
+(** Same as [float32_math_template] but for functions with no CUDA [f]-suffix
+    (Float64 math): one device symbol on every backend, modulo the GLSL rename.
+
+    [name] is the SAREK-SOURCE name ([Float64.abs_float]); [generic_name] is the
+    DEVICE symbol to emit ([fabs]). They differ for exactly the entries where
+    the OCaml stdlib spelling is not the C spelling, and keeping them separate
+    is what stops [Float64.abs_float] from emitting a call to a nonexistent
+    [abs_float]. *)
+let named_math_template ~name ~generic_name =
  fun ~framework ->
   match framework with
-  | "GLSL" -> glsl_name ~name ~generic_name:name
-  | _ -> name
+  | "GLSL" -> glsl_name ~name ~generic_name
+  | _ -> generic_name
+
+(** [named_math_template] for the entries whose source name IS the device
+    symbol. *)
+let generic_math_template name = named_math_template ~name ~generic_name:name
 
 (******************************************************************************
  * Standard stdlib registrations (static table — PR-2 design)
@@ -99,24 +108,30 @@ let generic_math_template name =
  * being hand-duplicated per path.
  *
  * [fmod] is deliberately Float64-only (Float64.fmod), NOT a Math.Float64 name,
- * so it too is absent from math_float64_list — but unlike the 11 below it DOES
+ * so it too is absent from math_float64_list — but unlike the 8 below it DOES
  * have interpreter support (eval_float64_math_intrinsic "fmod"), so its absence
  * is an API-surface choice, not the miscompile hazard the note below describes.
  *
  * IMPORTANT — intentional float64 drift (do not "complete" this table):
- * math_float64_list has 16 entries, missing_from_math_float64 lists the 11
+ * math_float64_list has 16 entries; missing_from_math_float64 lists the 11
  * intrinsics present in float64_list but absent from math_float64_list:
  *   exp2, log2, log10, rsqrt, cbrt, round, trunc, fabs, fma, min, max
- * All 11 lack interpreter support (sarek/interp/Sarek_ir_interp_intrinsics.ml
- * eval_float64_math_intrinsic implements only sin/cos/sqrt/exp/log/abs/of_int)
- * and 8 of the 11 (exp2, log2, cbrt, round, trunc, fma, min, max) also lack a
- * Sarek_float64.Float64 stdlib declaration. Registering any of them into the
- * Math.Float64 tables without adding the missing interpreter (and, for those
- * 8, stdlib) support would convert an honest lookup failure into a silent
- * miscompile: codegen would emit a call to a name the interpreter cannot
- * evaluate. See briefs/backend-dry-correctness-step0.md section (e) for the
- * full per-intrinsic evidence table. This is a tracked follow-up boundary,
- * not an oversight.
+ * Of these, 8 (exp2, log2, cbrt, round, trunc, fma, min, max) have NO
+ * Sarek_float64.Float64 stdlib declaration at all and no interpreter arm, so
+ * registering them into the Math.Float64 tables would convert an honest lookup
+ * failure into a silent miscompile: codegen would emit a call to a name the
+ * interpreter cannot evaluate. See briefs/backend-dry-correctness-step0.md
+ * section (e). This is a tracked follow-up boundary, not an oversight.
+ * (log10, rsqrt and fabs DO have interpreter arms — see
+ * sarek/interp/Sarek_ir_interp_intrinsics.ml eval_float64_math_intrinsic, whose
+ * coverage this comment previously understated as "only sin/cos/sqrt/exp/log/
+ * abs/of_int". Their absence from Math.Float64 is an API-surface choice.)
+ *
+ * The reverse direction — a name DECLARED by the stdlib but absent from these
+ * tables — is the defect class closed by
+ * sarek/tests/unit/test_intrinsic_surface.ml: it reconciles these tables
+ * against Sarek_registry's link-time record of every let%sarek_intrinsic, so a
+ * new stdlib intrinsic cannot ship path-unroutable.
  ******************************************************************************)
 
 (** (name, cuda_name, generic_name) — the 32-entry float32 math list, shared
@@ -158,38 +173,55 @@ let float32_list =
     ("fmod", "fmodf", "fmod");
   ]
 
-(** The 27-entry float64 math list (same name on every backend, modulo the GLSL
-    override), shared verbatim across both float64-exposing paths. *)
+(** (sarek_name, device_symbol) — the float64 math list, shared verbatim across
+    both float64-exposing paths. Same symbol on every backend, modulo the GLSL
+    override.
+
+    The pair, rather than a bare name list, is load-bearing: five of these
+    entries ([abs_float], and historically anything else whose OCaml stdlib
+    spelling differs from its C spelling) would otherwise emit a call to a
+    device function that does not exist. That is why adding a name to this table
+    is safe only together with its symbol — see [named_math_template]. *)
 let float64_list =
   [
-    "sin";
-    "cos";
-    "tan";
-    "asin";
-    "acos";
-    "atan";
-    "sinh";
-    "cosh";
-    "tanh";
-    "exp";
-    "exp2";
-    "log";
-    "log2";
-    "log10";
-    "sqrt";
-    "rsqrt";
-    "cbrt";
-    "floor";
-    "ceil";
-    "round";
-    "trunc";
-    "fabs";
-    "pow";
-    "atan2";
-    "fma";
-    "min";
-    "max";
-    "fmod";
+    ("sin", "sin");
+    ("cos", "cos");
+    ("tan", "tan");
+    ("asin", "asin");
+    ("acos", "acos");
+    ("atan", "atan");
+    ("sinh", "sinh");
+    ("cosh", "cosh");
+    ("tanh", "tanh");
+    ("exp", "exp");
+    ("exp2", "exp2");
+    ("log", "log");
+    ("log2", "log2");
+    ("log10", "log10");
+    ("sqrt", "sqrt");
+    ("rsqrt", "rsqrt");
+    ("cbrt", "cbrt");
+    ("floor", "floor");
+    ("ceil", "ceil");
+    ("round", "round");
+    ("trunc", "trunc");
+    ("fabs", "fabs");
+    ("pow", "pow");
+    ("atan2", "atan2");
+    ("fma", "fma");
+    ("min", "min");
+    ("max", "max");
+    ("fmod", "fmod");
+    (* The five entries below are declared by Sarek_float64.Float64 but were
+       absent from this table, so a path-qualified call to any of them raised
+       "Unknown intrinsic" on CUDA, OpenCL and (for abs_float/copysign) Metal.
+       GLSL survived only because its pre_hook polyfills expm1/log1p/hypot/
+       copysign and its `arm` renames abs_float to `abs`. *)
+    ("abs_float", "fabs");
+    ("copysign", "copysign");
+    ("expm1", "expm1");
+    ("log1p", "log1p");
+    ("hypot", "hypot");
   ]
 
 (** The 16-entry Math.Float64 list — intentionally a strict subset of
@@ -225,8 +257,11 @@ let register_float32_path module_path =
 
 let register_float64_path module_path =
   List.iter
-    (fun name ->
-      register_fun ~module_path name ~device:(generic_math_template name))
+    (fun (name, generic_name) ->
+      register_fun
+        ~module_path
+        name
+        ~device:(named_math_template ~name ~generic_name))
     float64_list
 
 let register_math_float64_path module_path =

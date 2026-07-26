@@ -144,3 +144,35 @@ val is_inf : float -> bool
 (** {1 Formatting} *)
 
 val to_string : float -> string
+
+(** {1 Sarek stdlib surface mirror}
+
+    Every name declared by [sarek/Sarek_stdlib/Float32.ml] must exist here under
+    exactly that spelling: the native backend copies the intrinsic name verbatim
+    into [Sarek.Sarek_cpu_runtime.Float32.<name>]. Reconciled by
+    [sarek/tests/unit/test_intrinsic_surface.ml]. *)
+
+(** Stdlib spelling of {!abs}. *)
+val abs_float : float -> float
+
+(** Stdlib spelling of {!sub}. *)
+val minus : float -> float -> float
+
+val expm1 : float -> float
+
+val log1p : float -> float
+
+val hypot : float -> float -> float
+
+val copysign : float -> float -> float
+
+(** C [fmod]: result has the sign of the dividend, magnitude < |divisor|. *)
+val fmod : float -> float -> float
+
+val add_float32 : float -> float -> float
+
+val sub_float32 : float -> float -> float
+
+val mul_float32 : float -> float -> float
+
+val div_float32 : float -> float -> float

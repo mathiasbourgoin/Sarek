@@ -82,6 +82,16 @@ let float64_names =
     "min";
     "max";
     "fmod";
+    (* Declared by Sarek_float64.Float64 but formerly absent from
+       float64_list, so a path-qualified call raised "Unknown intrinsic" on
+       CUDA/OpenCL (and, for abs_float/copysign, Metal). abs_float is the one
+       whose device SYMBOL differs from its Sarek name (fabs) - the reason
+       float64_list is a (name, symbol) list and not a bare name list. *)
+    "abs_float";
+    "copysign";
+    "expm1";
+    "log1p";
+    "hypot";
   ]
 
 let math_float64_names =
@@ -148,7 +158,7 @@ let test_float64_paths () =
     ["Sarek_stdlib_meta"; "Float64"]
     float64_names
     "Sarek_stdlib_meta.Float64" ;
-  print_endline "  Float64 paths expose exactly the 28-entry set: OK"
+  print_endline "  Float64 paths expose exactly the 33-entry set: OK"
 
 let test_math_float64_paths () =
   assert_path_has_all ["Math"; "Float64"] math_float64_names "Math.Float64" ;
@@ -233,10 +243,31 @@ let test_float64_rsqrt_glsl_matches_meta_twin () =
     "  Float64.rsqrt and Sarek_stdlib_meta.Float64.rsqrt agree on GLSL name \
      (inversesqrt): OK"
 
+(** The float64 table is a (sarek_name, device_symbol) list precisely so that a
+    name whose OCaml spelling is not its C spelling emits the C spelling. Pin
+    the one entry where they differ: registering "abs_float" into a bare NAME
+    list would emit a call to abs_float(), which no backend defines - the silent
+    miscompile the table's header comment fences off. *)
+let test_float64_abs_float_emits_fabs () =
+  let device =
+    match fun_device_template ~module_path:["Float64"] "abs_float" with
+    | Some d -> d
+    | None -> failwith "Float64.abs_float not registered"
+  in
+  assert (device ~framework:"CUDA" = "fabs") ;
+  assert (device ~framework:"OpenCL" = "fabs") ;
+  assert (device ~framework:"Metal" = "fabs") ;
+  (* GLSL spells it `abs`; the override is keyed on the SAREK name, so it must
+     survive the name/symbol split. *)
+  assert (device ~framework:"GLSL" = "abs") ;
+  print_endline
+    "  Float64.abs_float emits fabs (abs on GLSL), never abs_float: OK"
+
 let () =
   test_float32_paths () ;
   test_float64_paths () ;
   test_math_float64_paths () ;
   test_math_float64_intentionally_missing () ;
   test_float64_rsqrt_glsl_matches_meta_twin () ;
+  test_float64_abs_float_emits_fabs () ;
   print_endline "All Sarek_pure_registry tests passed!"

@@ -6,6 +6,8 @@
 (** Re-export Float32 module for use in generated kernels *)
 module Float32 = Sarek_float32
 
+module Float64 = Sarek_float64_native
+
 (** Execution mode for native kernels *)
 type exec_mode =
   | Sequential  (** Single-threaded, barriers are no-ops *)
