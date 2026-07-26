@@ -61,7 +61,7 @@ let mtl_library : mtl_library typ = ptr void
 
     Carries the floating-point math mode among other things. Metal's DEFAULT is
     fast math ON, which is why this type exists at all: see [Metal_bindings]
-    ([mtl_compile_options_conformant]) and docs/fp-contraction-policy.md §11. *)
+    ([mtl_compile_options_conformant]) and docs/fp-contraction-policy.md §10. *)
 type mtl_compile_options = unit ptr
 
 let mtl_compile_options : mtl_compile_options typ = ptr void

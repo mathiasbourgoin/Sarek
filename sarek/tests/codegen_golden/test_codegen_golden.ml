@@ -2540,7 +2540,7 @@ let opencl_validation_tests () =
    65536-input sweep; with it, 0. NO MTLCompileOptions setting achieves that —
    not mathMode=Safe, not fastMathEnabled=NO. See
    tools/probes/metal_contraction_barrier_probe.m and
-   docs/fp-contraction-policy.md §11. *)
+   docs/fp-contraction-policy.md §10. *)
 let metal_contraction_pragma_tests () =
   let pragma = "#pragma METAL fp contract(off)" in
   let contains hay needle =

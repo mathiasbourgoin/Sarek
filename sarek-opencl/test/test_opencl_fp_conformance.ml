@@ -12,7 +12,7 @@
  *
  * EVERY CHECK HERE WAS PROVED RED BY MUTATING THE THING IT CHECKS. The table
  * of mutations and the message each produced is in
- * docs/fp-contraction-policy.md §10; if you add a case, add its mutation there
+ * docs/fp-contraction-policy.md §9.5; if you add a case, add its mutation there
  * too. A guard test that has never been seen to fail is not evidence.
  *
  * The two anti-vacuity controls are the important part of this file:

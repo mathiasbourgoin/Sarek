@@ -248,28 +248,38 @@ module Library = struct
       regardless, so every Sarek Metal kernel compiled under Metal's fast-math
       default with no way to turn it off.
 
-      NOT EXECUTED ON HARDWARE — there is no Apple device on the machine this
-      was written on. If [mtl_compile_options_conformant] returns [None] (older
-      OS, missing selector, allocation failure) this falls back to null options,
-      i.e. exactly the behaviour before backlog #125, and says so in the log rather
-      than silently. Either way, Metal float results remain outside the
-      guarantee until somebody runs [test_df64] on a Mac; see
-      docs/fp-contraction-policy.md §11. *)
+      These options are NOT a contraction defence — measured on an Apple M4,
+      [a*b+c] is contracted under every setting of them, and only
+      [Sarek_ir_metal.metal_fp_contract_pragma] in the generated source stops
+      it. What they buy is math-function accuracy, and that much is measured
+      (22135 of 65536 results change on [sqrt(a) + 1/a]).
+
+      If [mtl_compile_options_conformant] returns [None] (older OS, missing
+      selector, allocation failure) this falls back to null options, i.e.
+      exactly the behaviour before backlog #125, and says so in the log rather
+      than silently.
+
+      Metal float results are STILL outside the guarantee: [test_df64] and
+      [test_real64] have never been run on a Mac, so agreement with the
+      interpreter is not established. See docs/fp-contraction-policy.md §10. *)
   let create_from_source device source =
     let options = mtl_compile_options_conformant () in
     (match options with
     | Some _ ->
         Spoc_core.Log.debugf
           Spoc_core.Log.Kernel
-          "Metal: compiling with fastMathEnabled=NO (requested, UNVERIFIED on \
-           hardware - see docs/fp-contraction-policy.md §11)"
+          "Metal: compiling with safe math mode (mathMode=Safe + \
+           mathFloatingPointFunctions=Precise, or fastMathEnabled=NO on macOS \
+           < 15). Contraction is handled separately, by the #pragma METAL fp \
+           contract(off) in the generated source."
     | None ->
         Spoc_core.Log.warnf
           Spoc_core.Log.Kernel
           "Metal: could not build MTLCompileOptions, falling back to Metal's \
-           DEFAULT compile options, which enable FAST MATH. Kernel results may \
-           disagree with the Sarek interpreter on contraction- or \
-           subnormal-sensitive code. See docs/fp-contraction-policy.md §11.") ;
+           DEFAULT compile options, whose math mode is FAST on both knobs \
+           (measured on Apple M4). Single-precision math functions will \
+           resolve to metal::fast and may disagree with the Sarek interpreter. \
+           See docs/fp-contraction-policy.md §10.") ;
     let result =
       mtl_device_new_library_with_source device.Device.handle source options
     in

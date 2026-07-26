@@ -5,7 +5,7 @@
  *
  * That distinction is the whole point. A compile that succeeds proves plumbing,
  * not semantics — the same trap that made the OpenCL FP liveness control
- * valuable (docs/fp-contraction-policy.md §10.2: rusticl accepts every
+ * valuable (docs/fp-contraction-policy.md §9.2: rusticl accepts every
  * -cl-* FP option and honours none of them). Until this probe was run, Sarek
  * asked Metal for non-fast math and had no evidence Metal was listening.
  *
@@ -74,7 +74,7 @@
  * that is source-level: see tools/probes/metal_contraction_barrier_probe.m and
  * Sarek_ir_metal.metal_fp_contract_pragma.
  *
- * Full write-up: docs/fp-contraction-policy.md §11.
+ * Full write-up: docs/fp-contraction-policy.md §10.
  * ---------------------------------------------------------------------------
  */
 #import <Foundation/Foundation.h>

@@ -10,7 +10,7 @@
  * macOS 15.6.1 (24G90), Apple clang 17.0.0 — by
  * tools/probes/metal_math_mode_probe.m and
  * tools/probes/metal_contraction_barrier_probe.m, written up in
- * docs/fp-contraction-policy.md §11. Those probes, not this file, are what
+ * docs/fp-contraction-policy.md §10. Those probes, not this file, are what
  * establish that Metal's defaults are fast on both knobs, that the options are
  * honoured, and that contraction needs a source pragma instead.
  *

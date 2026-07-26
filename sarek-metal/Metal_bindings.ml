@@ -294,7 +294,7 @@ let mtl_math_floating_point_functions_precise = 1L
     - [mathMode=Safe] + [fpFunctions=Precise] changes 22135.
 
     So Metal is NOT in the class of rusticl's OpenCL FP options, which are
-    accepted and discarded (docs/fp-contraction-policy.md §10.2).
+    accepted and discarded (docs/fp-contraction-policy.md §9.2).
 
     WHAT THESE OPTIONS DO NOT BUY: CONTRACTION. Measured on the same device,
     [a*b+c] is contracted into an fma on all 8773 observable elements under
