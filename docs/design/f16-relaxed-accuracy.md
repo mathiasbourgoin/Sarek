@@ -1166,15 +1166,27 @@ saying why, rather than lifting it for symmetry.
 > prerequisite of `GL_KHR_cooperative_matrix` — so slice 2's coopmat plumbing
 > was incomplete independently of the integer work.
 >
-> **Coverage is exhaustive, not sampled.** The full domain of a 16×16×16 u8
-> multiply-add is 256⁵¹² and cannot be enumerated; the domain that matters for
-> an exactness claim can be. There are exactly 65536 ordered pairs of u8 operand
-> values and one multiply-add performs 4096 multiplications, so
-> `A[i][k] = 16k+i` with `B[k][j] = 16t+j` gives dispatch `t` sixteen disjoint
-> 16×16 blocks of the pair space and `t = 0..15` tiles all 65536 exactly once.
-> Sixteen dispatches, every pair, with a nonzero mixed-sign `C`, bit-identical
-> to the oracle on every output. Wrapping accumulation is exact too, and the
-> case asserts that the reference actually wrapped rather than merely running.
+> **Coverage is exhaustive, not sampled — and the derivation is written out
+> because "exhaustive" is usually sampling in disguise.** The full domain of a
+> 16×16×16 u8 multiply-add is 256⁵¹² and cannot be enumerated. The domain that
+> matters for an EXACTNESS claim can be: there are exactly 65536 ordered pairs
+> `(a, b)` of u8 operand values, and the question is whether every one of them
+> is multiplied at least once.
+>
+> Take `A[i][k] = 16k + i` and `B[k][j] = 16t + j` for dispatch `t`, all indices
+> in `0..15`. One multiply-add forms the 4096 products `A[i][k] · B[k][j]` over
+> the `(i, j, k)` triples. Fix `k`: the A-values are `{16k + i : i}` = the block
+> `[16k, 16k+15]`, and the B-values are `{16t + j : j}` = the block
+> `[16t, 16t+15]`, so the 256 pairs at that `k` are exactly the 16×16 block
+> `[16k, 16k+15] × [16t, 16t+15]`. Ranging `k` over `0..15` gives sixteen blocks
+> that are disjoint (their A-ranges are disjoint), for 4096 pairs per dispatch
+> with no repeat. Ranging `t` over `0..15` moves the B-range through all sixteen
+> of its blocks, so the 256 blocks `(k, t)` tile `[0,255] × [0,255]` exactly.
+>
+> **65536 pairs, each exactly once, in sixteen dispatches.** Every one with a
+> nonzero mixed-sign `C`, and bit-identical to the oracle on every one of the
+> 4096 outputs of every tile. Wrapping accumulation is exact too, and that case
+> asserts the reference ACTUALLY wrapped rather than merely running.
 >
 > **The refusal was observed on both halves.** The iGPU advertises no
 > `VK_KHR_cooperative_matrix`; its verdict refuses while the RX 7900 XTX permits
@@ -1185,17 +1197,66 @@ saying why, rather than lifting it for symmetry.
 > the verdict to the list it reads, which is the tautology slice 2's gate test
 > fell into.
 >
-> **Every claim above was proved falsifiable by mutation.** Seven mutations,
-> each producing the failure it promises: B loaded column-major (driver side and
-> codegen side), the shader dropping C, the interpreter oracle dropping C, the
-> codegen swapping A and B (caught by glslang — `UseA` and `UseB` are not
-> interchangeable types), and the launch gate ignoring the configurations.
+> **Every claim above was proved falsifiable by mutation.** Each row below was
+> applied, run on the hardware named above, and observed to produce the failure
+> it promises. The list is the inventory of what is pinned; nothing is
+> summarised as a count.
 >
-> **One result worth carrying forward, because no results-based test can catch
-> it.** With `storageBuffer8BitAccess` never requested, all three numerics tests
-> stay GREEN and only the feature assertion goes red. That is #142's failure
-> mode reproduced for this feature: RADV computes the right answer from an
-> illegal shader. A capability model is the only instrument that can see it.
+> | # | mutation | observed |
+> |---|---|---|
+> | 1 | driver test: shader loads B column-major | `tile 0 diverges at 0: got 19340 want -500` |
+> | 2 | driver test: shader drops C | exhaustive and wraparound cases both red |
+> | 3 | driver test: `storageBuffer8BitAccess` never requested | **only** the plumbing assertion red — see the finding below |
+> | 4 | e2e: codegen emits `ColumnMajor` in `CM_load` | 16 tiles diverge, first `23780` vs `368140` |
+> | 5 | e2e: codegen swaps the A and B operands | glslang rejects the shader — `UseA` and `UseB` are not interchangeable types |
+> | 6 | e2e: interpreter oracle drops C in `CM_muladd` | 16 tiles diverge, first `-500` vs `0` |
+> | 7 | e2e: launch gate returns no configurations | all six refusing devices report `PERMITTED` |
+> | 8 | e2e: the stride-1-B control made a no-op | `the stride-1-B control was ACCEPTED on 16 of 16 tiles` |
+> | 9 | e2e: the C-dropping control made a no-op | `the C-dropping control was ACCEPTED on 16 of 16 tiles` |
+>
+> Rows 8 and 9 mutate the CONTROLS rather than the code under test, and they are
+> here because a positive control is itself a gate that can rot: if the mutated
+> IR a control builds ever stopped differing from the real one, the control
+> would be accepted every time and its assertion would pass forever while
+> checking nothing. Row 8 exists specifically because that control was
+> MISLABELLED — see the note on the stride-1 read below — and a mislabelled
+> control is the shape a vacuous one arrives in.
+>
+> Mutation 1 leaves the identity case (`D = A × I + 0`) **green**, because `I`
+> is symmetric. That is the reason the identity case and the exhaustive case are
+> two separate tests rather than one.
+>
+> **The stride-1-B control is a Hankel read, not a transposed B.** `CM_load`
+> with stride `s` reads `m[r][c] = buf[base + r·s + c]`, so a stride of 1 gives
+> `buf[r + c]`: every row is the previous row shifted by one, and the whole
+> 16×16 fragment comes from the first 31 elements of the buffer. The transpose
+> would be `buf[c·16 + r]` and is not reachable through a row-major stride at
+> all — it needs `gl_CooperativeMatrixLayoutColumnMajor`, which this slice does
+> not emit. The control is valid either way, since all a control must do is
+> compute a genuinely different function; but it was recorded as "transposed B"
+> in an earlier revision of this section and in the test itself, and that was
+> wrong. Both are corrected. The driver-side test's `transpose_b` IS a genuine
+> transpose — it is a host-side reference, not a stride — and is unchanged.
+>
+> **FINDING — a device feature can be missing with every numeric test green, and
+> only a capability assertion can see it.** This is mutation 3 and it is the most
+> instructive result of the slice, so it is recorded as a finding and not as a
+> table row. With `storageBuffer8BitAccess` never requested, the shader is a
+> specification violation — it declares `OpCapability StorageBuffer8BitAccess`
+> against a logical device that never enabled it — and RADV computes the
+> **correct answer anyway**. All three numerics tests stay green; only the
+> feature assertion goes red. That is backlog-142's failure mode reproduced
+> exactly, one feature over: no results-based test can catch it, however
+> exhaustive its inputs, because the results are right. The instrument that sees
+> it is the capability model, and the reason it exists.
+>
+> **The order reversal paid beyond its intent.** Building the integer path first
+> is what surfaced the three missing device features at all — they were read off
+> the SPIR-V that an integer `coopMatMulAdd` emits. Starting from the float side
+> would have found neither `shaderInt8` nor `storageBuffer8BitAccess`, and would
+> have found `vulkanMemoryModel` only by accident, since a float coopmat shader
+> needs it for the same `GL_KHR_memory_scope_semantics` reason and slice 2 had
+> already shipped without noticing.
 >
 > **What this did NOT do**, and each is a refusal in the code rather than an
 > omission:
@@ -1205,7 +1266,16 @@ saying why, rather than lifting it for symmetry.
 >   contract is exactly as unmeasured as it was.
 > - **The scalar-f16 refusal of slice 3-as-written is untouched.**
 > - **Saturating accumulation, column-major layout, workgroup scope.** Each is
->   one enumerant to emit and a second behaviour to verify; none has executed.
+>   one enumerant to emit and a second behaviour to verify against an oracle,
+>   and none is DELIVERED: the codegen refuses all three.
+>
+>   Stated precisely, because mutations 1 and 4 above did emit column-major
+>   shaders and did run them: column-major has executed only as a MUTATION, to
+>   demonstrate that the comparison goes red. It has never been verified against
+>   the interpreter, so nothing is known about whether Sarek would emit it
+>   correctly — which is exactly why it is refused rather than shipped. "Not
+>   executed" would have been the wrong word and it was the word used here
+>   before.
 > - **The PPX surface.** A coopmat kernel is built as IR directly. Nothing in
 >   `[%kernel ...]` produces an `SCoopmat`, and the PPX's parallel `stmt` type
 >   deliberately did not gain the constructor.

@@ -32,7 +32,7 @@
  *
  * Bit-identity against an oracle is worth nothing if the oracle is the same
  * code path. Two positive controls run on the SAME measured GPU output: a
- * C-dropping reference and a transposed-B reference, each computed by the
+ * C-dropping reference and a stride-1-B reference, each computed by the
  * interpreter from a MUTATED IR kernel, and each must be REJECTED. If either
  * is accepted the test fails.
  *
@@ -73,19 +73,18 @@ let frag_a, frag_b, frag_c, frag_d = Sarek_coopmat.fragments_of_config cfg
 
 (** [D = A x B + C], as a Sarek IR kernel.
 
-    [transpose_b] and [drop_c] are the two positive controls, built into the IR
+    [stride1_b] and [drop_c] are the two positive controls, built into the IR
     generator rather than into a separate host reference: a control that takes a
     different path through the code than the thing it controls does not control
-    it. Transposing B is expressed by swapping the load's stride and the
-    within-row step — see below — and dropping C by never loading it, leaving
-    the [CM_decl]'s zero.
+    it. Dropping C is expressed by never loading it, leaving the [CM_decl]'s
+    zero; [stride1_b] loads B with a stride of 1 — see below.
 
     No [global_thread_id] anywhere. One subgroup performs one 16x16x16
     multiply-add cooperatively, and the buffer, index and stride arguments of a
     [coopMatLoad] must be dynamically uniform across that subgroup. A kernel
     that indexed them by thread id would be undefined behaviour on the device
     and would silently differ from the interpreter, which has no subgroup. *)
-let make_ir ?(drop_c = false) ?(transpose_b = false) () : kernel =
+let make_ir ?(drop_c = false) ?(stride1_b = false) () : kernel =
   let v id name ty =
     {var_name = name; var_id = id; var_type = ty; var_mutable = false}
   in
@@ -104,11 +103,24 @@ let make_ir ?(drop_c = false) ?(transpose_b = false) () : kernel =
       SCoopmat (CM_decl {name = "fc"; frag = frag_c});
       SCoopmat (CM_decl {name = "fd"; frag = frag_d});
       load "fa" frag_a "a" mnk;
-      (* A stride of 1 walks the buffer down columns instead of along rows, so
-         the fragment receives B-transposed. It is a real, emittable IR kernel
-         computing a genuinely different function — which is what makes it a
-         control rather than a host-side fudge. *)
-      load "fb" frag_b "b" (if transpose_b then 1 else mnk);
+      (* [CM_load] with stride [s] reads [m.(r).(c) = buf.(base + r*s + c)], so
+         a stride of 1 gives [buf.(r + c)]: every row is the previous row
+         shifted by one, and the whole 16x16 fragment is drawn from the first 31
+         elements of the buffer.
+
+         That is a Hankel read and NOT the transpose, which would be
+         [buf.(c*16 + r)] and is not expressible through the row-major stride at
+         all — reaching it needs gl_CooperativeMatrixLayoutColumnMajor, which
+         this slice deliberately does not emit. An earlier revision of this
+         comment called it "B-transposed"; it was wrong, and a mislabelled
+         control is worse than none because the label is what a later reader
+         audits against.
+
+         What matters for a control is only that it is a real, emittable IR
+         kernel computing a genuinely DIFFERENT function from [D = A*B + C], so
+         that a comparison accepting it would be a comparison accepting
+         anything. A Hankel read is that. *)
+      load "fb" frag_b "b" (if stride1_b then 1 else mnk);
     ]
     @ (if drop_c then [] else [load "fc" frag_c "c" mnk])
     @ [
@@ -324,7 +336,7 @@ let () =
           (* Positive controls, computed by the interpreter from MUTATED IR. *)
           if not (equal gpu (run_interp (make_ir ~drop_c:true ()) ~t)) then
             incr controls_c ;
-          if not (equal gpu (run_interp (make_ir ~transpose_b:true ()) ~t)) then
+          if not (equal gpu (run_interp (make_ir ~stride1_b:true ()) ~t)) then
             incr controls_t
         done ;
         if !controls_c <> mnk then
@@ -335,7 +347,7 @@ let () =
             mnk ;
         if !controls_t <> mnk then
           fail
-            "%s: the transposed-B control was ACCEPTED on %d of %d tiles"
+            "%s: the stride-1-B control was ACCEPTED on %d of %d tiles"
             dev.Device.name
             (mnk - !controls_t)
             mnk ;
