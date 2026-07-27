@@ -1332,6 +1332,209 @@ let test_auto_fuse_pipeline_list_preserves_mismatched_indices () =
   Printf.printf
     "test_auto_fuse_pipeline_list_preserves_mismatched_indices: PASSED\n"
 
+(** {1 backlog-153: eliminating an array whose LENGTH is still used}
+
+    [len(arr)] does not live in the IR. It lowers to the companion
+    [sarek_<arr>_length] launch argument, which every backend emits from the
+    PARAMETER list, so deleting the parameter deletes the length with it and
+    there is no expression to substitute in its place.
+
+    Before the fix, [analyze] could not see a length use at all ([EArrayLen]
+    contributed to neither [reads] nor anything else), so a consumer body of the
+    form [output[tid] = temp[tid] + len(temp)] still looked purely [OneToOne] in
+    [temp]. [can_fuse] said yes, [fuse] dropped the [temp] parameter,
+    [subst_array_read] rewrote the element read and walked straight past the
+    [EArrayLen], and the fused kernel named a parameter that no longer existed.
+
+    The consequence was measured on this shape, on every backend:
+
+    - CUDA / OpenCL / Metal emitted the bare identifier [sarek_temp_length].
+      clang's OpenCL front end:
+      [error: use of undeclared identifier 'sarek_temp_length'].
+    - GLSL emitted it too; glslangValidator:
+      ['sarek_temp_length' : undeclared identifier].
+    - WGSL emitted [params.sarek_temp_length] against a [Params] struct with no
+      such field; naga: [invalid field accessor `sarek_temp_length`].
+    - PTX raised its own [unsupported construct: EArrayLen] refusal.
+    - The interpreter raised [Unbound_variable] from [get_array].
+
+    So the failure was LOUD on every path — a broken build, not a wrong answer,
+    and specifically not the silent wrong-width family. It is still worth
+    refusing at the fusion pass rather than at the vendor compiler: the name in
+    every one of those diagnostics is one the author never wrote, in generated
+    source they never saw, for an array the optimiser deleted. *)
+
+let len_producer =
+  mk_kernel
+    "producer"
+    (SAssign
+       ( LArrayElem ("temp", thread_idx_x),
+         EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l)) ))
+
+(* output[tid] = temp[tid] + len(temp) — an element read AND a length use of
+   the same array. The element read is what makes this fusable-looking; the
+   length use is what makes it unfusable. *)
+let len_consumer =
+  mk_kernel
+    "consumer"
+    (SAssign
+       ( LArrayElem ("output", thread_idx_x),
+         EBinop (Add, EArrayRead ("temp", thread_idx_x), EArrayLen "temp") ))
+
+(** [expr_uses_array] is the predicate that answers "may I delete this array?".
+    It returned [false] for [EArrayLen] — the root of backlog-153. *)
+let test_expr_uses_array_sees_length () =
+  assert (expr_uses_array "temp" (EArrayLen "temp")) ;
+  (* Still discriminating: a length of a DIFFERENT array is not a use. *)
+  assert (not (expr_uses_array "temp" (EArrayLen "other"))) ;
+  (* And it reaches a length nested in ordinary expression structure. *)
+  assert (
+    expr_uses_array "temp" (EBinop (Add, EConst (CInt32 1l), EArrayLen "temp"))) ;
+  assert (stmt_uses_array "temp" len_consumer.kern_body) ;
+  Printf.printf "test_expr_uses_array_sees_length: PASSED\n"
+
+(** [analyze] reports the length use, and does NOT let it corrupt the access
+    pattern — [temp] must still read as [OneToOne], because the reason to refuse
+    is the length, not a pretended gather. *)
+let test_analyze_reports_length_uses () =
+  let info = analyze len_consumer in
+  assert (info.length_uses = ["temp"]) ;
+  assert (
+    match List.assoc_opt "temp" info.reads with
+    | Some (OneToOne _) -> true
+    | _ -> false) ;
+  (* A kernel that takes no length reports none. *)
+  assert ((analyze len_producer).length_uses = []) ;
+  Printf.printf "test_analyze_reports_length_uses: PASSED\n"
+
+(** The three [can_fuse*] guards all refuse the shape. *)
+let test_can_fuse_refuses_length_use () =
+  assert (not (can_fuse len_producer len_consumer "temp")) ;
+  assert (not (can_fuse_stencil len_producer len_consumer "temp")) ;
+  (* And the producer side counts too: its write expression is spliced into
+     the consumer body verbatim, so a length there lands in the fused kernel
+     just the same. *)
+  let producer_takes_len =
+    mk_kernel
+      "producer_len"
+      (SAssign (LArrayElem ("temp", thread_idx_x), EArrayLen "temp"))
+  in
+  let plain_consumer =
+    mk_kernel
+      "consumer"
+      (SAssign
+         (LArrayElem ("output", thread_idx_x), EArrayRead ("temp", thread_idx_x)))
+  in
+  assert (not (can_fuse producer_takes_len plain_consumer "temp")) ;
+  (* Positive control: the same pair WITHOUT the length use still fuses, so
+     the guard is refusing the length and not the shape. *)
+  assert (can_fuse len_producer plain_consumer "temp") ;
+  Printf.printf "test_can_fuse_refuses_length_use: PASSED\n"
+
+(** [auto_fuse_pipeline_list] preserves both stages and names the real reason.
+*)
+let test_auto_fuse_preserves_length_user () =
+  let hint = should_fuse len_producer len_consumer "temp" in
+  assert (hint.decision = DontFuse) ;
+  assert (
+    hint.reason
+    = "len(temp) is used, and the length of an eliminated array cannot be \
+       recovered") ;
+  let pipeline, eliminated, skipped =
+    auto_fuse_pipeline_list [len_producer; len_consumer]
+  in
+  assert (kernel_names pipeline = ["producer"; "consumer"]) ;
+  assert (eliminated = []) ;
+  assert (skipped = [hint.reason]) ;
+  (* fuse_pipeline_list, which does not consult should_fuse, must refuse via
+     can_fuse alone. *)
+  let pipeline', eliminated' =
+    fuse_pipeline_list [len_producer; len_consumer]
+  in
+  assert (kernel_names pipeline' = ["producer"; "consumer"]) ;
+  assert (eliminated' = []) ;
+  Printf.printf "test_auto_fuse_preserves_length_user: PASSED\n"
+
+(** The backstop. [fuse] is public and documented as callable directly, so the
+    guards are not the only way in. Reaching it means an invariant the guards
+    claim to enforce did not hold, and the only alternative to raising is
+    handing back the kernel that produced those five vendor diagnostics. *)
+let test_fuse_rejects_surviving_intermediate () =
+  match fuse len_producer len_consumer "temp" with
+  | exception
+      Sarek.Fusion_error.Fusion_error
+        (Sarek.Fusion_error.Invalid_fusion {kernel; reason}) ->
+      assert (kernel = "consumer_fused") ;
+      (* The message must name the parameter, or it cannot be acted on. *)
+      assert (
+        let re = Str.regexp_string "'temp'" in
+        try
+          ignore (Str.search_forward re reason 0) ;
+          true
+        with Not_found -> false) ;
+      Printf.printf "test_fuse_rejects_surviving_intermediate: PASSED\n"
+  | _ ->
+      Printf.printf
+        "test_fuse_rejects_surviving_intermediate: FAILED (fuse returned a \
+         kernel that still references 'temp')\n" ;
+      assert false
+
+(** End-to-end, on the artefact that actually broke: no backend source may
+    mention [sarek_temp_length]. This is the assertion that pins the observable
+    defect rather than the internal predicate — it goes red on the unfixed pass
+    whatever route the regression takes back in. *)
+let test_no_backend_names_eliminated_length () =
+  let arr name id =
+    DParam
+      ( {
+          var_name = name;
+          var_id = id;
+          var_type = TVec TInt32;
+          var_mutable = true;
+        },
+        Some {arr_elttype = TInt32; arr_memspace = Global} )
+  in
+  let with_params k params = {k with kern_params = params} in
+  let producer = with_params len_producer [arr "input" 1; arr "temp" 2] in
+  let consumer = with_params len_consumer [arr "temp" 2; arr "output" 3] in
+  let pipeline, _, _ = auto_fuse_pipeline_list [producer; consumer] in
+  let mentions_dead_length src =
+    let re = Str.regexp_string "sarek_temp_length" in
+    try
+      ignore (Str.search_forward re src 0) ;
+      true
+    with Not_found -> false
+  in
+  List.iter
+    (fun k ->
+      let declares_temp =
+        List.exists
+          (function
+            | DParam (v, _) -> v.var_name = "temp"
+            | DShared (n, _, _) -> n = "temp"
+            | _ -> false)
+          k.kern_params
+      in
+      List.iter
+        (fun (label, src) ->
+          (* A kernel that still DECLARES temp may of course name its length;
+             a kernel that does not declare it must never do so. *)
+          if (not declares_temp) && mentions_dead_length src then begin
+            Printf.printf
+              "test_no_backend_names_eliminated_length: FAILED (%s source for \
+               %s names sarek_temp_length with no temp parameter)\n"
+              label
+              k.kern_name ;
+            assert false
+          end)
+        [
+          ("CUDA", Sarek_codegen.Sarek_ir_cuda.generate k);
+          ("OpenCL", Sarek_codegen.Sarek_ir_opencl.generate k);
+          ("Metal", Sarek_codegen.Sarek_ir_metal.generate k);
+        ])
+    pipeline ;
+  Printf.printf "test_no_backend_names_eliminated_length: PASSED\n"
+
 let () =
   Printf.printf "=== Fusion Unit Tests ===\n" ;
   test_expr_equal () ;
@@ -1370,4 +1573,11 @@ let () =
   test_auto_fuse_pipeline_list_preserves_dont_fuse () ;
   test_auto_fuse_pipeline_list_mixed_order () ;
   test_auto_fuse_pipeline_list_preserves_mismatched_indices () ;
+  Printf.printf "\n=== backlog-153: length of an eliminated array ===\n" ;
+  test_expr_uses_array_sees_length () ;
+  test_analyze_reports_length_uses () ;
+  test_can_fuse_refuses_length_use () ;
+  test_auto_fuse_preserves_length_user () ;
+  test_fuse_rejects_surviving_intermediate () ;
+  test_no_backend_names_eliminated_length () ;
   Printf.printf "=== All tests passed! ===\n"

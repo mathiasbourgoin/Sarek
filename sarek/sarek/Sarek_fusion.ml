@@ -25,6 +25,18 @@ type access_pattern =
 type fusion_info = {
   reads : (string * access_pattern) list;  (** arrays read *)
   writes : (string * access_pattern) list;  (** arrays written *)
+  length_uses : string list;
+      (** Arrays whose LENGTH the kernel takes ([EArrayLen]), sorted and
+          deduplicated.
+
+          Separate from {!reads} on purpose. A length use is not an element
+          access — it has no index and therefore no {!access_pattern} — so
+          folding it into [reads] would either invent a pattern or corrupt the
+          real one: a body doing [temp[tid] + len(temp)] would stop looking
+          [OneToOne] and the element-wise fusion that IS legal there would be
+          lost. But it is still a reference to the array, and fusion's whole job
+          is deleting the array, so it has to be visible somewhere.
+          [backlog-153] is what happens when it is visible nowhere. *)
   has_barriers : bool;  (** contains barriers *)
   has_atomics : bool;  (** contains atomic ops *)
 }
@@ -62,7 +74,19 @@ let rec expr_uses_array arr expr =
   | ERecord (_, fields) ->
       List.exists (fun (_, e) -> expr_uses_array arr e) fields
   | EVariant (_, _, args) -> List.exists (expr_uses_array arr) args
-  | EArrayLen _ | EArrayCreate _ -> false
+  | EArrayLen a ->
+      (* [len(arr)] IS a use of [arr]: it compiles to the companion
+         [sarek_<arr>_length] launch argument, which exists only while [arr] is
+         a parameter. This case said [false] until backlog-153, which made this
+         predicate — the one that answers "may I delete this array?" — return
+         "no reference" for a body whose only surviving reference was a length.
+         Fusion believed it and dropped the parameter. *)
+      a = arr
+  | EArrayCreate (_, size, _) ->
+      (* The size expression is ordinary code and may read or measure [arr].
+         Recursing costs nothing and keeps this predicate CONSERVATIVE, which
+         is the only direction that is safe for a "may I delete this?" test. *)
+      expr_uses_array arr size
   | EConst _ | EVar _ -> false
   | EArrayReadExpr (base, idx) ->
       expr_uses_array arr base || expr_uses_array arr idx
@@ -320,6 +344,86 @@ let rec collect_reads_stmt acc stmt =
       | CM_store {index; stride; _} ->
           collect_reads_expr (collect_reads_expr acc index) stride)
 
+(** Collect the arrays whose LENGTH an expression takes.
+
+    Deliberately a separate traversal from {!collect_reads_expr} rather than an
+    extra case in it: that one returns [(array, index)] pairs feeding
+    {!analyze_pattern}, and a length use has no index. Giving it a fake one is
+    how a legal element-wise fusion would get misclassified as a gather. *)
+let rec collect_length_uses_expr acc expr =
+  match expr with
+  | EArrayLen arr -> arr :: acc
+  | EArrayRead (_, idx) -> collect_length_uses_expr acc idx
+  | EBinop (_, e1, e2) ->
+      collect_length_uses_expr (collect_length_uses_expr acc e1) e2
+  | EUnop (_, e) | ERecordField (e, _) | ECast (_, e) ->
+      collect_length_uses_expr acc e
+  | EIntrinsic (_, _, args) | EVariant (_, _, args) | ETuple args ->
+      List.fold_left collect_length_uses_expr acc args
+  | EApp (fn, args) ->
+      List.fold_left
+        collect_length_uses_expr
+        (collect_length_uses_expr acc fn)
+        args
+  | ERecord (_, fields) ->
+      List.fold_left
+        (fun acc (_, e) -> collect_length_uses_expr acc e)
+        acc
+        fields
+  | EArrayCreate (_, size, _) -> collect_length_uses_expr acc size
+  | EArrayReadExpr (base, idx) ->
+      collect_length_uses_expr (collect_length_uses_expr acc base) idx
+  | EIf (cond, then_, else_) ->
+      collect_length_uses_expr
+        (collect_length_uses_expr (collect_length_uses_expr acc cond) then_)
+        else_
+  | EMatch (e, cases) ->
+      List.fold_left
+        (fun acc (_, body) -> collect_length_uses_expr acc body)
+        (collect_length_uses_expr acc e)
+        cases
+  | EConst _ | EVar _ -> acc
+
+(** Collect the arrays whose length a statement takes. *)
+let rec collect_length_uses_stmt acc stmt =
+  match stmt with
+  | SAssign (LArrayElem (_, idx), e) ->
+      collect_length_uses_expr (collect_length_uses_expr acc idx) e
+  | SAssign (_, e) | SReturn e | SExpr e -> collect_length_uses_expr acc e
+  | SSeq stmts -> List.fold_left collect_length_uses_stmt acc stmts
+  | SIf (cond, s1, s2) ->
+      let acc =
+        collect_length_uses_stmt (collect_length_uses_expr acc cond) s1
+      in
+      Option.fold ~none:acc ~some:(collect_length_uses_stmt acc) s2
+  | SWhile (cond, body) ->
+      collect_length_uses_stmt (collect_length_uses_expr acc cond) body
+  | SFor (_, start, stop, _, body) ->
+      let acc =
+        collect_length_uses_expr (collect_length_uses_expr acc start) stop
+      in
+      collect_length_uses_stmt acc body
+  | SMatch (e, cases) ->
+      let acc = collect_length_uses_expr acc e in
+      List.fold_left
+        (fun acc (_, s) -> collect_length_uses_stmt acc s)
+        acc
+        cases
+  | SLet (_, e, body) | SLetMut (_, e, body) ->
+      collect_length_uses_stmt (collect_length_uses_expr acc e) body
+  | SPragma (_, body) | SBlock body -> collect_length_uses_stmt acc body
+  | SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ -> acc
+  | SCoopmat op -> (
+      (* A coopmat load or store addresses its buffer through [index] and
+         [stride], which are ordinary expressions and may therefore take a
+         length. The buffer NAME is a use of the array rather than of its
+         length, so it belongs to [stmt_uses_array] and not here — the same
+         split [collect_reads_stmt] makes just above. *)
+      match op with
+      | CM_decl _ | CM_muladd _ -> acc
+      | CM_load {index; stride; _} | CM_store {index; stride; _} ->
+          collect_length_uses_expr (collect_length_uses_expr acc index) stride)
+
 (** Check if statement contains barriers *)
 let rec has_barrier stmt =
   match stmt with
@@ -410,6 +514,8 @@ let analyze (k : kernel) : fusion_info =
   {
     reads = List.map (fun arr -> (arr, analyze_pattern reads arr)) read_arrs;
     writes = List.map (fun arr -> (arr, analyze_pattern writes arr)) write_arrs;
+    length_uses =
+      List.sort_uniq compare (collect_length_uses_stmt [] k.kern_body);
     has_barriers = has_barrier k.kern_body;
     has_atomics = Sarek_ir_analysis.kernel_uses_atomics k;
   }
@@ -443,6 +549,65 @@ let rec find_write_expr stmt arr idx =
          that would reproduce it. [None] is the honest answer and stops the
          fusion attempt. *)
       None
+
+(** Does eliminating [intermediate] destroy a length either kernel still needs?
+
+    [len(arr)] lowers to the companion [sarek_<arr>_length] launch argument
+    ({!Sarek_ir_codegen.gen_param}), which every backend emits from the
+    PARAMETER list. Delete the parameter and the length is gone with it — there
+    is nothing left to substitute the expression with, because the value was
+    never in the IR, only in the launch. So a length use is not a fusion this
+    pass can perform more carefully; it is a fusion it must decline.
+
+    Both kernels are asked. The consumer is the obvious side, but the producer's
+    write expression is spliced verbatim into the consumer body, so a
+    [len(intermediate)] inside it lands in the fused kernel just the same.
+
+    [backlog-153]: before this, [analyze] could not see a length use at all, the
+    three [can_fuse*] guards therefore said yes, and the fused kernel named a
+    parameter that no longer existed. *)
+let length_of_intermediate_needed (producer : kernel) (consumer : kernel)
+    (intermediate : string) : bool =
+  let uses k =
+    List.mem
+      intermediate
+      (List.sort_uniq compare (collect_length_uses_stmt [] k.kern_body))
+  in
+  uses producer || uses consumer
+
+(** Reject a fused kernel that still names the array it was supposed to
+    eliminate.
+
+    A BACKSTOP, not the primary defence — {!length_of_intermediate_needed} and
+    the {!access_pattern} checks are what should keep us out of here. It exists
+    because the primary defence is a set of positive rules about shapes we
+    understand, and this is the negative statement of the actual contract: after
+    [fuse], [intermediate] is not a parameter, so no reference to it may remain
+    anywhere in the body.
+
+    It raises rather than returning the unfused consumer because reaching it
+    means an invariant the guards claim to enforce did not hold, and the
+    alternative to raising is what backlog-153 did: hand the caller a kernel
+    whose only remaining diagnosis is
+    [error: use of undeclared identifier 'sarek_temp_length'] from clang,
+    glslangValidator or naga — a name the author never wrote, in generated
+    source they never saw. *)
+let reject_if_intermediate_survives ~(fn : string) ~(intermediate : string)
+    (fused : kernel) : kernel =
+  if stmt_uses_array intermediate fused.kern_body then
+    Fusion_error.raise_error
+      (Fusion_error.Invalid_fusion
+         {
+           kernel = fused.kern_name;
+           reason =
+             Printf.sprintf
+               "%s eliminated the parameter '%s' but the fused body still \
+                references it; emitting this kernel would produce backend \
+                source naming a parameter that does not exist"
+               fn
+               intermediate;
+         })
+  else fused
 
 (** Check if two kernels can be fused via an intermediate array.
 
@@ -515,6 +680,7 @@ let can_fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
 
   prod_writes_inter && cons_reads_inter && patterns_ok && no_barriers
   && no_atomics && no_coopmat
+  && not (length_of_intermediate_needed producer consumer intermediate)
 
 (** Fuse producer into consumer, eliminating intermediate array.
 
@@ -621,16 +787,19 @@ let fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
               producer.kern_params
           in
 
-          {
-            kern_name = consumer.kern_name ^ "_fused";
-            kern_params = fused_params @ new_params;
-            kern_locals = consumer.kern_locals @ producer.kern_locals;
-            kern_body = fused_body;
-            kern_types = consumer.kern_types @ producer.kern_types;
-            kern_variants = consumer.kern_variants @ producer.kern_variants;
-            kern_funcs = consumer.kern_funcs @ producer.kern_funcs;
-            kern_native_fn = None;
-          })
+          reject_if_intermediate_survives
+            ~fn:"fuse"
+            ~intermediate
+            {
+              kern_name = consumer.kern_name ^ "_fused";
+              kern_params = fused_params @ new_params;
+              kern_locals = consumer.kern_locals @ producer.kern_locals;
+              kern_body = fused_body;
+              kern_types = consumer.kern_types @ producer.kern_types;
+              kern_variants = consumer.kern_variants @ producer.kern_variants;
+              kern_funcs = consumer.kern_funcs @ producer.kern_funcs;
+              kern_native_fn = None;
+            })
 
 (** {1 High-level interface} *)
 
@@ -783,6 +952,7 @@ let can_fuse_reduction (map_kernel : kernel) (reduce_kernel : kernel)
   map_writes_inter
   && Option.is_some reduce_reads_inter
   && no_barriers && no_atomics
+  && not (length_of_intermediate_needed map_kernel reduce_kernel intermediate)
 
 (** Fuse a map kernel into a reduction kernel, eliminating intermediate array.
 
@@ -868,17 +1038,20 @@ let fuse_reduction (map_kernel : kernel) (reduce_kernel : kernel)
               map_kernel.kern_params
           in
 
-          {
-            kern_name = reduce_kernel.kern_name ^ "_fused";
-            kern_params = fused_params @ new_params;
-            kern_locals = reduce_kernel.kern_locals @ map_kernel.kern_locals;
-            kern_body = fused_body;
-            kern_types = reduce_kernel.kern_types @ map_kernel.kern_types;
-            kern_variants =
-              reduce_kernel.kern_variants @ map_kernel.kern_variants;
-            kern_funcs = reduce_kernel.kern_funcs @ map_kernel.kern_funcs;
-            kern_native_fn = None;
-          })
+          reject_if_intermediate_survives
+            ~fn:"fuse_reduction"
+            ~intermediate
+            {
+              kern_name = reduce_kernel.kern_name ^ "_fused";
+              kern_params = fused_params @ new_params;
+              kern_locals = reduce_kernel.kern_locals @ map_kernel.kern_locals;
+              kern_body = fused_body;
+              kern_types = reduce_kernel.kern_types @ map_kernel.kern_types;
+              kern_variants =
+                reduce_kernel.kern_variants @ map_kernel.kern_variants;
+              kern_funcs = reduce_kernel.kern_funcs @ map_kernel.kern_funcs;
+              kern_native_fn = None;
+            })
 
 (** Try to fuse map+reduce, falling back to regular fusion if not applicable *)
 let try_fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
@@ -943,6 +1116,7 @@ let can_fuse_stencil (producer : kernel) (consumer : kernel)
   let no_atomics = (not prod_info.has_atomics) && not cons_info.has_atomics in
 
   prod_writes_inter && cons_stencil && no_barriers && no_atomics
+  && not (length_of_intermediate_needed producer consumer intermediate)
 
 (** Information about fused stencil *)
 type stencil_fusion_info = {
@@ -1134,16 +1308,19 @@ let fuse_stencil (producer : kernel) (consumer : kernel) (intermediate : string)
               producer.kern_params
           in
 
-          {
-            kern_name = consumer.kern_name ^ "_stencil_fused";
-            kern_params = fused_params @ new_params;
-            kern_locals = consumer.kern_locals @ producer.kern_locals;
-            kern_body = fused_body;
-            kern_types = consumer.kern_types @ producer.kern_types;
-            kern_variants = consumer.kern_variants @ producer.kern_variants;
-            kern_funcs = consumer.kern_funcs @ producer.kern_funcs;
-            kern_native_fn = None;
-          })
+          reject_if_intermediate_survives
+            ~fn:"fuse_stencil"
+            ~intermediate
+            {
+              kern_name = consumer.kern_name ^ "_stencil_fused";
+              kern_params = fused_params @ new_params;
+              kern_locals = consumer.kern_locals @ producer.kern_locals;
+              kern_body = fused_body;
+              kern_types = consumer.kern_types @ producer.kern_types;
+              kern_variants = consumer.kern_variants @ producer.kern_variants;
+              kern_funcs = consumer.kern_funcs @ producer.kern_funcs;
+              kern_native_fn = None;
+            })
 
 (** Enhanced try_fuse that includes stencil fusion *)
 let try_fuse_all (producer : kernel) (consumer : kernel) (intermediate : string)
@@ -1204,7 +1381,23 @@ let should_fuse (producer : kernel) (consumer : kernel) (intermediate : string)
      reason). *)
   if prod_info.has_atomics || cons_info.has_atomics then
     {decision = DontFuse; reason = "Atomic operation prevents fusion"}
-    (* Rule 1: Can't fuse if barriers present *)
+    (* Rule 0b: Can't fuse if either kernel takes len(intermediate) — the
+       length lives in the launch arguments, not the IR, so eliminating the
+       parameter destroys it (backlog-153). Checked up here for the same
+       reason Rule 0 is: [try_fuse] would decline anyway now that [can_fuse]
+       knows, but auto_fuse_pipeline_list would then record the reason from
+       whichever later rule matched — "Element-wise producer/consumer" for the
+       type case, which names the property that HELD rather than the one that
+       failed. *)
+  else if length_of_intermediate_needed producer consumer intermediate then
+    {
+      decision = DontFuse;
+      reason =
+        Printf.sprintf
+          "len(%s) is used, and the length of an eliminated array cannot be \
+           recovered"
+          intermediate;
+    } (* Rule 1: Can't fuse if barriers present *)
   else if prod_info.has_barriers || cons_info.has_barriers then
     {decision = DontFuse; reason = "Barrier prevents fusion"}
   else

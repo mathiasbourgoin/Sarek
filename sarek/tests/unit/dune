@@ -70,12 +70,17 @@
  (modules test_cpu_runtime)
  (libraries sarek alcotest))
 
-; Fusion tests use sarek library directly (no ppx needed)
+; Fusion tests use sarek library directly (no ppx needed).
+;
+; sarek.codegen and str are for the backlog-153 cases: the defect there was
+; only OBSERVABLE in emitted backend source (a bare `sarek_temp_length` for a
+; parameter fusion had deleted), so the regression test asserts on generated
+; CUDA/OpenCL/Metal rather than on the IR alone.
 
 (test
  (name test_fusion)
  (modules test_fusion)
- (libraries sarek))
+ (libraries sarek sarek.codegen str))
 
 ; Interpreter tests removed - Sarek_interp was legacy SPOC-dependent
 
