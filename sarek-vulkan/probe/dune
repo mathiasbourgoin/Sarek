@@ -1,0 +1,12 @@
+; #62 slice 1(b) — element-wise model-agreement probe for Vulkan / RADV.
+;
+; An `executable`, not a `test`: it measures a driver to decide whether a
+; contract is deliverable, and a measurement that blocks CI on whatever GPU the
+; runner happens to have is a gate, not a measurement. The gate defending the
+; GLSL f16 refusal is sarek-vulkan/test/test_vulkan_f16_tripwire.ml and is
+; untouched by this directory.
+
+(executable
+ (name probe_vulkan_f16_model_agreement)
+ (modules probe_vulkan_f16_model_agreement)
+ (libraries sarek_vulkan spoc_framework f16_model_set))

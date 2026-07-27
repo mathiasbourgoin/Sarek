@@ -1,0 +1,13 @@
+; #62 slice 1 — the named f16 rounding models of
+; docs/design/f16-relaxed-accuracy.md §1.2, as exact host functions.
+;
+; A library rather than a copy in each probe: the two probes that consume it
+; measure two different driver stacks against the SAME model set, and a model
+; set that differs between the two would make the two verdicts incomparable.
+;
+; No dependency on any backend, and no `public_name`: this is measurement
+; machinery for the slice-1 probes, not shipped API.
+
+(library
+ (name f16_model_set)
+ (modules f16_model_set))

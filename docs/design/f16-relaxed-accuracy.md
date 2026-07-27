@@ -20,6 +20,19 @@ than on the final value, with the counterexample that broke it; and **§8's
 integer-coopmat fallback is Vulkan-only**, because Metal has no integer
 `simdgroup_matrix` at all. **Still no refusal is lifted by this change.**
 
+**Amended 2026-07-27 (slice 1, ACO measurement).** §7 slice 1 has **run**, on
+the two shapes this project has device numbers for. Both ACO stacks are
+**admitted under Regime A** on those shapes: every kernel variant is
+bit-identical to exactly one named closed-form model on 63488/63488 inputs, on
+both local devices, with zero inputs matching no model. **§9.3's open risk is
+closed** — RADV's two-narrowing shape matches a model plain *and* with
+`precise`, and the `precise` puzzle is reconciled at machine-code tier: the
+decoration forbids a multiply-into-**add** contraction and cannot reach a
+**conversion** absorbing its operand. §1.2 gains **two** admitted members and
+one explicitly **refused** named function. **No refusal is lifted by this
+change** — slice 3 is still where that happens, and 18 of the 20 emittable
+shapes remain unmeasured and therefore refused.
+
 **Read §0.1 first.** It is one paragraph and it is the argument every other
 choice here follows from.
 
@@ -146,6 +159,33 @@ compute exactly:
   f32→f16 narrowing is evaluated at binary32 (or better) and narrowed in a
   **single** rounding. Already implemented as `ref_fused` in the same two files,
   and as the `fusedctl` variant of `tools/probes/opencl_f16_contraction_probe.c`.
+
+**Two further members were added on 2026-07-27 by slice 1**, both measured
+element-wise on RADV over the whole finite binary16 domain on two devices
+(`fp-contraction-policy.md` §12.4). They exist because a *two*-narrowing shape
+gives ACO a second combine that a one-narrowing shape cannot exhibit:
+
+- **`S_absorb_all_into_final_narrowing`** — the multiply, the intermediate
+  binary16 narrowing and the f32 add are **all** absorbed into the final
+  narrowing: one rounding where the DSL mandates four. RADV emits this as a
+  single `v_fma_mixlo_f16` taking `x`, `1.1` and `1000`.
+- **`S_f32_mul_then_absorb_add`** — the same, except the multiply keeps its own
+  correctly-rounded binary32 result. This is what `precise` buys on RADV, and
+  therefore **the model the shipped codegen actually runs under**, since
+  `Sarek_ir_glsl.gen_var_decl` emits `precise` on every float local.
+
+**One function is named and deliberately NOT admitted**, and it is the reason
+this section is a set of names rather than a bound:
+
+- **`S_drop_intermediate_narrowing`** — the intermediate binary16 narrowing is
+  dropped outright, the add still rounding to f32. This is the **IGC defect** of
+  `fp-contraction-policy.md` §11.4 — and slice 1 found it is also reachable on
+  RADV, exactly, by barriering the f32 intermediates and nothing else. So the
+  same closed-form function is a plain defect on one stack and an
+  on-demand behaviour on another, it sits at 1 ulp like everything else here,
+  and **the only instrument that keeps it out is that it is not on the list**.
+  §0.1 argued a tolerance could not separate a characterised deviation from this
+  defect; slice 1 turned that argument into a measurement.
 
 This is exact agreement, not a tolerance, so it is strictly *tighter* than
 today's bit-identity requirement in every direction except the one deviation it
@@ -309,21 +349,28 @@ These are the numbers this design holds itself to, for **Regime A** (scalar f16,
 below the Regime A table — Metal's `simdgroup_matrix`, measured 2026-07-27. RADV's
 coopmat numerics remain unmeasured (§4, last paragraph).
 
-**No stack in this table is settled as relaxable.** Both non-zero rows are
-**candidates**, and neither has met the acceptance rule of §1.2: rusticl's
-agreement with `S_fuse_mul_into_narrowing` is established only at the level of a
-count and a first divergence, not element-wise; RADV's is exact for the
-one-narrowing shape and **unmeasured for the two-narrowing shape**. Slice 1 (§7)
-is what would convert either from candidate to admitted, and it may convert
-neither. Read the verdict column as the current status, not as a plan.
+**SLICE 1 RAN, 2026-07-27, and both candidates met the rule — on the two shapes
+it swept.** Every kernel variant on both ACO stacks is bit-identical to exactly
+one named model on **63488 / 63488** inputs, on both local devices, with zero
+inputs matching no model (`fp-contraction-policy.md` §12). rusticl's
+count-and-first-divergence agreement is upgraded to element-wise; RADV's
+two-narrowing shape, §9.3's open risk, matches a closed-form model under `precise`
+*and* without it, and the `precise` puzzle is reconciled at machine-code tier.
+
+**The admission is per shape, and only two of twenty shapes are measured.**
+§1.2's model set is keyed on *(backend, driver, expression shape)* and always
+was, so this is not the per-shape degradation §9.3 feared — but the other 18
+shapes of `docs/optimization/amdgpu-f16-fusion-shape-audit.md` are unmeasured on
+ACO and under §1.5 stay refused. Read the verdict column as the current status,
+not as a plan.
 
 | backend / driver | device(s) | deviation from `S_strict` | matches `S_fuse_mul_into_narrowing`? | evidence | verdict under Regime A |
 |---|---|---|---|---|---|
 | **CUDA / nvrtc** | GTX 1070 Max-Q, sm_61, CUDA 12.9, driver 580.119.02 | **0 / 63488** | n/a | executed | **strict**, unchanged |
 | **HIP / AMDGPU** | RX 7900 XTX (gfx1100), Raphael iGPU (gfx1036), ROCm hiprtc, with the opacity barrier | **0 / 63488**, all 20 emittable shapes | n/a | executed + machine-code | **strict**, unchanged |
-| **OpenCL / rusticl** | RX 7900 XTX + Raphael iGPU, Mesa 26.1.4-arch3.1 | **620 / 63488** on `f16(f16(x*1.1)+1000)` | **count and first-divergence agreement** (620, first divergence `x = 5.68359375`, device 1006.5 vs reference 1006 — identical to `fusedctl`'s deliberate single-rounding on Intel). **Element-wise agreement not established.** | executed | **candidate**, blocked on slice 1 |
+| **OpenCL / rusticl** | RX 7900 XTX + Raphael iGPU, Mesa 26.1.4-arch3.1 | **620 / 63488** on `f16(f16(x*1.1)+1000)`; **2912 / 63488** on `f16(x*1.1)` (newly swept, slice 1) | **YES — bit-identical on 63488 / 63488, on BOTH shapes and BOTH devices.** Green control (`volatile __local` round-trip) reproduces `S_strict` exactly; positive control reproduces the fused model exactly | executed, **element-wise** over the whole finite binary16 domain (`fp-contraction-policy.md` §12.3) | **ADMITTED under Regime A** on the two swept shapes; the other 18 shapes are `Unknown` and stay refused |
 | **OpenCL / pocl (x86), Intel IGC, Intel oneAPI CPU** | AMD EPYC 7763 (CI), Intel Arc Graphics (MTL), Core Ultra 9 185H | **0 / 63488** | n/a | executed | **strict**; refusal is currently over-broad here |
-| **Vulkan / RADV** | RX 7900 XTX (NAVI31) + Raphael iGPU (RAPHAEL_MENDOCINO), Mesa 26.1.4-arch3.1 | **2912 / 63488** on `f16(x*1.1)`; **5075** plain / **4776** with `precise` on `f16(f16(x*1.1)+1000)` | one-narrowing shape: **exact, 0/63488 against a single-rounding model**. Two-narrowing shape: **not measured against any model**, and `precise` changes the count, so a single model does not obviously cover it | executed | **candidate for the one-narrowing shape only**; blocked on slice 1 |
+| **Vulkan / RADV** | RX 7900 XTX (NAVI31) + Raphael iGPU (RAPHAEL_MENDOCINO), Mesa 26.1.4-arch3.1 | **2912 / 63488** on `f16(x*1.1)` (plain and `precise` alike); **5075** plain / **4776** with `precise` on `f16(f16(x*1.1)+1000)` | **YES, each count is a different named model, all bit-identical on 63488 / 63488 on both devices.** `f16(x*1.1)` → `S_fuse_mul_into_narrowing`. `f16(f16(x*1.1)+1000)` plain → `S_absorb_all_into_final_narrowing`; with `precise` → `S_f32_mul_then_absorb_add`, which is **the model the shipped codegen runs under**. `precise` is honoured, not ignored: it forbids a multiply-into-add contraction and cannot reach a conversion absorbing its operand (§9.3) | executed **element-wise**, plus **machine-code** for the reconciliation (`fp-contraction-policy.md` §12.4) | **ADMITTED under Regime A** on the two swept shapes, each with its own named model; the other 18 shapes are `Unknown` and stay refused |
 | **Vulkan / ANV** | Intel Arc Graphics (MTL), Mesa 26.1.2-arch3.1 | **0 / 63488** | n/a | executed | **strict**; refusal is currently over-broad here |
 | **Metal** | Apple M4, macOS 15.6.1 (24G90), Apple clang 17.0.0 (clang-1700.0.13.5), Metal.framework from the Command Line Tools SDK | **0 / 63488** on `f16(x*1.1)` **and 0 / 63488** on `f16(f16(x*1.1)+1000)`; unchanged under `#pragma METAL fp contract(off)`, `#pragma clang fp contract(off)`, a `volatile thread` barrier and an `as_type` bitcast barrier | n/a — no deviation to model. The `fusedctl` control, on the same source, compile options and dispatch, reproduces `S_fuse_mul_into_narrowing` on **63488 / 63488** and reports 2912 / 620 | executed, **element-wise** over the whole finite binary16 domain | **strict**; refusal is currently over-broad here |
 | **WGSL / naga** | — | **never probed** | — | none | **`Unknown` → refused** |
@@ -374,21 +421,22 @@ of §5.4's controls fire.
 
 Three things the Regime A table says that are easy to miss:
 
-1. **The relaxation is a candidate on exactly two stacks** — rusticl and RADV,
-   both ACO — and admitted on none of them yet. Everything else either already
-   meets `S_strict` or has never been measured. Even in the best case this is a
-   much narrower change than "relax f16"; in the worst case (§9.3) it is narrower
-   still, covering one shape on one driver. **Metal has now joined the strict
+1. **The relaxation is admitted on exactly two stacks** — rusticl and RADV,
+   both ACO — **and on two expression shapes**. Everything else either already
+   meets `S_strict` or has never been measured. This is a much narrower change
+   than "relax f16": it is four (stack, shape) pairs, each with a named function
+   attached, and 18 shapes per stack still refused. **Metal joined the strict
    group rather than the candidate group**, which is the outcome that needed no
    relaxation at all.
-2. **The RADV two-narrowing shape is the open risk.** 5075 plain against 4776
-   with `precise` means the decoration *changes the answer* while
-   `fp-contraction-policy.md` §6 shows it produces byte-identical ISA on the
-   one-narrowing shape. Those two facts are not obviously consistent and nobody
-   has reconciled them. If the two-narrowing shape matches no closed-form model,
-   it stays refused and the contract becomes per-shape — a materially worse
-   design, and the owner should hear about it before more effort is spent. Slice 1
-   is the decision point.
+2. **The RADV two-narrowing shape WAS the open risk, and it is closed.** 5075
+   plain against 4776 with `precise` is two different named models, each matched
+   bit-for-bit on 63488/63488, and the ISA says why: `NoContraction` forbids
+   contracting a multiply into an **addition** and cannot reach a **conversion**
+   absorbing its operand. The one-narrowing shape contains no addition, so the
+   decoration binds nothing and the ISA is byte-identical; the two-narrowing
+   shape contains one, so it binds, the multiply survives as its own
+   `v_fma_mix_f32`, and the model changes. Both facts, one mechanism. §9.3
+   records the resolution.
 3. **pocl, IGC, ANV, the Intel CPU runtime and now Metal are refused today for a
    defect they do not have.** `capability-model.md` §5 already records this as the
    over-refusal that follows from having no compiler-identity probe. It is not
@@ -689,7 +737,7 @@ we know the deviation.*
 
 | evidence for the deviation | what the author gets |
 |---|---|
-| exact match to a named closed-form model, swept exhaustively (`S_fuse_mul_into_narrowing` on ACO, if slice 1 confirms it) | a **one-time runtime diagnostic** on first launch of an f16 kernel on that device, naming the model and the doc section, on by default; silenceable only by an explicit call, never by accident |
+| exact match to a named closed-form model, swept exhaustively (on ACO: `S_fuse_mul_into_narrowing`, `S_absorb_all_into_final_narrowing` and `S_f32_mul_then_absorb_add`, all confirmed element-wise by slice 1 on 2026-07-27) | a **one-time runtime diagnostic** on first launch of an f16 kernel on that device, naming the model and the doc section, on by default; silenceable only by an explicit call, never by accident |
 | a *bounded* deviation with no closed form (the coopmat case, §5) | **explicit opt-in required** — `Sarek.accept_relaxed_f16 ~reason` or equivalent, and the launch fails without it |
 | unmeasured | refused, as today |
 
@@ -745,7 +793,7 @@ refusal before slice 3.
 | # | slice | proves | hardware | lifts a refusal? | status |
 |---|---|---|---|---|---|
 | **0** | the contract, as a testable classifier | the gate can tell `S_fuse_mul_into_narrowing` from a dropped narrowing | none (host-only) | no | open — and now also carries §1.3's per-narrowing ceiling |
-| **1** | element-wise model characterisation of ACO scalar f16, all emittable shapes | whether the contract of §1.2 is deliverable at all | RX 7900 XTX (local) | no | open (decision point) |
+| **1** | element-wise model characterisation of ACO scalar f16 | whether the contract of §1.2 is deliverable at all | RX 7900 XTX + Raphael iGPU (local) | no | **DONE 2026-07-27 for 2 of 20 shapes — deliverable; 18 shapes still open** |
 | **2** | `shaderFloat16` + driver-identity + capability plumbing | the gate can be keyed on a driver, not a device name | local, both devices | no | open |
 | **3** | GLSL scalar f16, allowlisted | Sarek-*generated* f16 shaders meet the contract | RX 7900 XTX (local) | **yes**, on an allowlist | open |
 | **4** | #62 Vulkan coopmat, f16×f16→f32 | the tensor-core path, end to end | RX 7900 XTX (local) | yes (new capability) | open |
@@ -812,13 +860,56 @@ Two outcomes, and they are not equally good:
   mitigation (§7 slice 4b's integer component types, which put an
   existing-strict-contract coopmat path within reach regardless).
 
+> **OUTCOME, 2026-07-27 — the first outcome, on the shapes swept.** Executed on
+> both local devices for each stack: `AMD Radeon RX 7900 XTX` and the Raphael
+> iGPU, under rusticl/radeonsi and under RADV, Mesa 26.1.4-arch3.1, Vulkan
+> 1.4.354. Full record in `fp-contraction-policy.md` §12; instruments are
+> `sarek-opencl/probe/probe_opencl_f16_model_agreement.ml`,
+> `sarek-vulkan/probe/probe_vulkan_f16_model_agreement.ml` and the shared
+> `tools/f16_model_set/`.
+>
+> | stack, shape, variant | model | agreement |
+> |---|---|---|
+> | rusticl, `f16(x*1.1)` | `S_fuse_mul_into_narrowing` | 63488 / 63488 |
+> | rusticl, `f16(f16(x*1.1)+1000)` | `S_fuse_mul_into_narrowing` | 63488 / 63488 |
+> | RADV, `f16(x*1.1)`, plain and `precise` | `S_fuse_mul_into_narrowing` | 63488 / 63488 |
+> | RADV, `f16(f16(x*1.1)+1000)`, plain | `S_absorb_all_into_final_narrowing` | 63488 / 63488 |
+> | RADV, `f16(f16(x*1.1)+1000)`, `precise` | `S_f32_mul_then_absorb_add` | 63488 / 63488 |
+>
+> **Zero inputs matched no model, on either stack, on either device.** The
+> ceiling of §1.3, evaluated at the elided narrowing, is met everywhere with
+> zero exceedances — and the same deviations measure 512 to 1.7e6 ulp on the
+> final value, so §1.3's correction is reproduced on 63488 inputs rather than
+> resting on one Metal counterexample.
+>
+> **Two things this slice found that were not on its list.** (i) The
+> `double`-based `fusedctl` control does not build on rusticl, which advertises
+> no `cl_khr_fp64`; the control had to be rebuilt on an f32 pair with a
+> round-to-odd step, the same construction MSL forced on the Metal probe. (ii)
+> ACO **defeats** the obvious two-narrowing positive control — a round-to-odd
+> product narrowed and then added to 1000 is re-absorbed, landing on
+> `S_absorb_all_into_final_narrowing` instead of the fused model. The working
+> control has to push the f16 bit pattern through the SSBO as well. A control
+> that a compiler can optimise away is not a control, and this one was caught
+> only because it reported the wrong model rather than a plausible number.
+>
+> **What is NOT settled: 18 of the 20 shapes.** The catalogue in
+> `docs/optimization/amdgpu-f16-fusion-shape-audit.md` has 20 emittable f16
+> shapes and this swept two. Slice 3 must not lift a refusal beyond the shapes a
+> model has been measured for. There is a single candidate generative rule that
+> produces all five results above — *a narrowing absorbs the whole f32 tree
+> feeding it, cut where `NoContraction` forbids a multiply-add* — but its
+> evidence tier is **unverified as a general rule**, and the remaining 18 shapes
+> are exactly what would confirm or break it (`fp-contraction-policy.md` §12.4).
+
 **This slice reports its outcome upward before the next one starts.** It is a
 decision point, not a task on a list; a green result funds slices 2–4 and a red
 one reopens the contract.
 
 Also upgrade the rusticl row of §2 from count-and-first-divergence agreement to
 element-wise agreement, which is what §1.2 actually requires and which nobody has
-run.
+run. **Done** — and the one-narrowing shape, never previously swept on rusticl,
+was added: 2912/63488, the same figure and the same model as RADV.
 
 ### Slice 2 — plumbing (local, no refusal touched)
 
@@ -1099,30 +1190,63 @@ rest remain interpretations this design is responsible for.
    cannot regress anyone. Worth stating explicitly, because it is the reason this
    can be done at all without a deprecation path.
 
-### 9.3 The open risk, unchanged and deliberately not closed
+### 9.3 The open risk — CLOSED, 2026-07-27
 
-**RADV's `precise` behaviour on the two-narrowing shape is not understood, and it
-is the thing most likely to break this design.** 5075/63488 plain against
-4776/63488 with `precise` means the decoration *changes the answer* — while
-`fp-contraction-policy.md` §6 shows the same decoration produces **byte-identical
-ISA** on the one-narrowing shape, and that the one-narrowing shape matches a
-single-rounding model exactly (0/63488). Those facts are not obviously consistent
-and nobody has reconciled them.
+**RADV's `precise` behaviour on the two-narrowing shape is now understood, and
+it does not break the design.** The risk as written was: 5075/63488 plain
+against 4776/63488 with `precise` means the decoration *changes the answer* —
+while `fp-contraction-policy.md` §6 shows the same decoration produces
+**byte-identical ISA** on the one-narrowing shape, and that the one-narrowing
+shape matches a single-rounding model exactly. Those facts looked inconsistent.
 
-If the two-narrowing shape matches **no** closed-form model, the contract of §1.2
-becomes **per-shape** rather than per-backend. That is materially worse: harder to
-document, harder to explain to a user, and a per-shape allowlist is a maintenance
-object of a different order from a per-driver one.
+**They are consistent, and the mechanism is one sentence.** `NoContraction`
+forbids contracting a multiply into an **addition**. A **conversion** absorbing
+its operand is a different combine and the decoration does not reach it.
 
-**Slice 1 is therefore structured as a decision point, not a task**, and the
-owner should hear the outcome **before slices 2–4 are funded** — not after. See
-§7 slice 1. The mitigation, if it goes the wrong way, is §7 slice 4b's integer
-component types: an integer-only coopmat path lands under the existing strict
-contract and #62 is not blocked on the accuracy question at all.
+- `f16(x*1.1)` contains no addition. The decoration is emitted, binds nothing,
+  and the ISA is byte-identical — `v_fma_mixlo_f16` either way. **RADV is not
+  ignoring the decoration here; the decoration is inapplicable.**
+- `f16(f16(x*1.1)+1000)` contains one, once ACO has elided the intermediate
+  narrowing. The decoration **binds**: the multiply is materialised as its own
+  `v_fma_mix_f32` and only the add is absorbed. The ISA changes, and so does
+  the model — from `S_absorb_all_into_final_narrowing` to
+  `S_f32_mul_then_absorb_add`.
+
+Evidence: **executed** element-wise, 63488/63488 for each model on both local
+RADV devices, plus **machine-code** (`RADV_DEBUG=asm`, one shader per run so
+each dump is attributable). Record: `fp-contraction-policy.md` §12.4.
+
+**So the contract does not become per-shape in the sense feared.** §1.2's model
+set was always keyed on *(backend, driver, expression shape)*; what §9.3 feared
+was a shape matching **no** model, which would have forced a refusal that could
+not be stated as a function. Every shape swept matches one exactly. What the
+result *does* cost is that **`S_fuse_mul_into_narrowing` alone does not cover
+RADV** — the admissible set gains two members (§1.2), and the member in force
+depends on whether the codegen emits `precise`. That is a real maintenance
+obligation and it is the honest price of the outcome.
+
+**What remains open is coverage, not mechanism.** Two of the twenty emittable
+shapes are measured. The remaining 18 are `Unknown` and refused under §1.5, and
+slice 3 must not lift a refusal past them. The single generative rule that
+would collapse the per-shape table back to a per-driver one is stated in
+`fp-contraction-policy.md` §12.4 and is **unverified** at that scope.
+
+The mitigation named here — §7 slice 4b's integer component types — is no longer
+needed as a fallback for the accuracy question, but stays a binding requirement
+of that slice for the reasons §8 gives.
 
 ---
 
 ## 10. Tests added by this change
+
+**None as gates.** The 2026-07-27 slice-1 amendment adds two probe
+**executables** — `sarek-opencl/probe/probe_opencl_f16_model_agreement.ml` and
+`sarek-vulkan/probe/probe_vulkan_f16_model_agreement.ml` — and the model library
+they share, `tools/f16_model_set/`. They are built by `dune build` and run by
+hand; they are deliberately not `(test)` stanzas, because they measure a driver
+in order to decide whether a contract is deliverable and would otherwise block
+CI on whatever GPU a runner happens to have. The two tripwires that defend the
+current refusals are untouched. The original text of this section follows.
 
 **None.** This change adds a design document and three standalone probes, none
 wired into dune, matching the convention of the ones already there:

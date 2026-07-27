@@ -1,0 +1,299 @@
+########## RADV_DEBUG=asm --variant s1_plain ##########
+Compute Shader
+disasm:
+BB0:
+	s_mov_b32 s0, s3                                            ; be800003
+	s_movk_i32 s3, 0x8000                                       ; b0038000
+	s_load_b256 s[8:15], s[2:3], null                           ; f40c0201 f8000000
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	s_delay_alu instid0(VALU_DEP_1)                             ; bf870001
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	s_waitcnt lgkmcnt(0)                                        ; bf89fc07
+	buffer_load_b32 v1, v0, s[12:15], 0 offen                   ; e0500000 80430100
+	s_waitcnt vmcnt(0)                                          ; bf8903f7
+	v_fma_mixlo_f16 v2, 0xcccd, v1, neg(0) op_sel_hi:[0,1,1]    ; cc214002 920202ff 3f8ccccd
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	s_delay_alu instid0(VALU_DEP_1)                             ; bf870001
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+	buffer_store_b32 v2, v0, s[8:11], 0 offen                   ; e0680000 80420200
+	s_endpgm                                                    ; bfb00000
+#62 slice 1(b) — element-wise model agreement, Vulkan / RADV
+host calibration PASSED: 63488-value round-trip; the two §1.2 models separate on exactly 620 (f16(f16(x * 1.1) + 1000)) and 2912 (f16(x * 1.1)); §1.3's x = -907.5 case reproduces at 1 ulp at the narrowing and 512 ulp on the final value.
+SHAPE 1 — f16(x * 1.1)
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :   2912
+SHAPE 2 — f16(f16(x * 1.1) + 1000)
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :    620
+    S_strict                           vs S_absorb_all_into_final_narrowing  :   5075
+    S_strict                           vs S_f32_mul_then_absorb_add          :   4776
+    S_strict                           vs S_drop_intermediate_narrowing      :   4774
+    S_strict                           vs S_fuse_mul_and_absorb_add          :    992
+    S_strict                           vs S_strict_mul_absorb_add            :    372
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :   4896
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :   4851
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :   4849
+    S_fuse_mul_into_narrowing          vs S_fuse_mul_and_absorb_add          :    372
+    S_fuse_mul_into_narrowing          vs S_strict_mul_absorb_add            :    992
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :    482
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :    484
+    S_absorb_all_into_final_narrowing  vs S_fuse_mul_and_absorb_add          :   5240
+    S_absorb_all_into_final_narrowing  vs S_strict_mul_absorb_add            :   5419
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :      2
+    S_f32_mul_then_absorb_add          vs S_fuse_mul_and_absorb_add          :   5195
+    S_f32_mul_then_absorb_add          vs S_strict_mul_absorb_add            :   5120
+    S_drop_intermediate_narrowing      vs S_fuse_mul_and_absorb_add          :   5193
+    S_drop_intermediate_narrowing      vs S_strict_mul_absorb_add            :   5118
+    S_fuse_mul_and_absorb_add          vs S_strict_mul_absorb_add            :    620
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+variant: s1_plain
+GLSL:
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  outb[i] = pack(float16_t(x * 1.1));
+}
+  s1_plain
+    S_strict                           :   2912 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+
+########## RADV_DEBUG=asm --variant s1_precise ##########
+Compute Shader
+disasm:
+BB0:
+	s_mov_b32 s0, s3                                            ; be800003
+	s_movk_i32 s3, 0x8000                                       ; b0038000
+	s_load_b256 s[8:15], s[2:3], null                           ; f40c0201 f8000000
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	s_delay_alu instid0(VALU_DEP_1)                             ; bf870001
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	s_waitcnt lgkmcnt(0)                                        ; bf89fc07
+	buffer_load_b32 v1, v0, s[12:15], 0 offen                   ; e0500000 80430100
+	s_waitcnt vmcnt(0)                                          ; bf8903f7
+	v_fma_mixlo_f16 v2, 0xcccd, v1, neg(0) op_sel_hi:[0,1,1]    ; cc214002 920202ff 3f8ccccd
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	s_delay_alu instid0(VALU_DEP_1)                             ; bf870001
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+	buffer_store_b32 v2, v0, s[8:11], 0 offen                   ; e0680000 80420200
+	s_endpgm                                                    ; bfb00000
+#62 slice 1(b) — element-wise model agreement, Vulkan / RADV
+host calibration PASSED: 63488-value round-trip; the two §1.2 models separate on exactly 620 (f16(f16(x * 1.1) + 1000)) and 2912 (f16(x * 1.1)); §1.3's x = -907.5 case reproduces at 1 ulp at the narrowing and 512 ulp on the final value.
+SHAPE 1 — f16(x * 1.1)
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :   2912
+SHAPE 2 — f16(f16(x * 1.1) + 1000)
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :    620
+    S_strict                           vs S_absorb_all_into_final_narrowing  :   5075
+    S_strict                           vs S_f32_mul_then_absorb_add          :   4776
+    S_strict                           vs S_drop_intermediate_narrowing      :   4774
+    S_strict                           vs S_fuse_mul_and_absorb_add          :    992
+    S_strict                           vs S_strict_mul_absorb_add            :    372
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :   4896
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :   4851
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :   4849
+    S_fuse_mul_into_narrowing          vs S_fuse_mul_and_absorb_add          :    372
+    S_fuse_mul_into_narrowing          vs S_strict_mul_absorb_add            :    992
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :    482
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :    484
+    S_absorb_all_into_final_narrowing  vs S_fuse_mul_and_absorb_add          :   5240
+    S_absorb_all_into_final_narrowing  vs S_strict_mul_absorb_add            :   5419
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :      2
+    S_f32_mul_then_absorb_add          vs S_fuse_mul_and_absorb_add          :   5195
+    S_f32_mul_then_absorb_add          vs S_strict_mul_absorb_add            :   5120
+    S_drop_intermediate_narrowing      vs S_fuse_mul_and_absorb_add          :   5193
+    S_drop_intermediate_narrowing      vs S_strict_mul_absorb_add            :   5118
+    S_fuse_mul_and_absorb_add          vs S_strict_mul_absorb_add            :    620
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+variant: s1_precise
+GLSL:
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  precise float p = x * 1.1;
+  outb[i] = pack(float16_t(p));
+}
+  s1_precise
+    S_strict                           :   2912 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+
+########## RADV_DEBUG=asm --variant s2_plain ##########
+Compute Shader
+disasm:
+BB0:
+	s_mov_b32 s0, s3                                            ; be800003
+	s_movk_i32 s3, 0x8000                                       ; b0038000
+	s_load_b256 s[8:15], s[2:3], null                           ; f40c0201 f8000000
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	s_delay_alu instid0(VALU_DEP_1) | instskip(SKIP_4) | instid1(SALU_CYCLE_1) ; bf8704d1
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	s_waitcnt lgkmcnt(0)                                        ; bf89fc07
+	buffer_load_b32 v1, v0, s[12:15], 0 offen                   ; e0500000 80430100
+	s_mov_b32 s1, 0x447a0000                                    ; be8100ff 447a0000
+	s_waitcnt vmcnt(0)                                          ; bf8903f7
+	v_fma_mixlo_f16 v2, 0xcccd, v1, s1 op_sel_hi:[0,1,0]        ; cc210002 100602ff 3f8ccccd
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	s_delay_alu instid0(VALU_DEP_1)                             ; bf870001
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+	buffer_store_b32 v2, v0, s[8:11], 0 offen                   ; e0680000 80420200
+	s_endpgm                                                    ; bfb00000
+#62 slice 1(b) — element-wise model agreement, Vulkan / RADV
+host calibration PASSED: 63488-value round-trip; the two §1.2 models separate on exactly 620 (f16(f16(x * 1.1) + 1000)) and 2912 (f16(x * 1.1)); §1.3's x = -907.5 case reproduces at 1 ulp at the narrowing and 512 ulp on the final value.
+SHAPE 1 — f16(x * 1.1)
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :   2912
+SHAPE 2 — f16(f16(x * 1.1) + 1000)
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :    620
+    S_strict                           vs S_absorb_all_into_final_narrowing  :   5075
+    S_strict                           vs S_f32_mul_then_absorb_add          :   4776
+    S_strict                           vs S_drop_intermediate_narrowing      :   4774
+    S_strict                           vs S_fuse_mul_and_absorb_add          :    992
+    S_strict                           vs S_strict_mul_absorb_add            :    372
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :   4896
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :   4851
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :   4849
+    S_fuse_mul_into_narrowing          vs S_fuse_mul_and_absorb_add          :    372
+    S_fuse_mul_into_narrowing          vs S_strict_mul_absorb_add            :    992
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :    482
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :    484
+    S_absorb_all_into_final_narrowing  vs S_fuse_mul_and_absorb_add          :   5240
+    S_absorb_all_into_final_narrowing  vs S_strict_mul_absorb_add            :   5419
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :      2
+    S_f32_mul_then_absorb_add          vs S_fuse_mul_and_absorb_add          :   5195
+    S_f32_mul_then_absorb_add          vs S_strict_mul_absorb_add            :   5120
+    S_drop_intermediate_narrowing      vs S_fuse_mul_and_absorb_add          :   5193
+    S_drop_intermediate_narrowing      vs S_strict_mul_absorb_add            :   5118
+    S_fuse_mul_and_absorb_add          vs S_strict_mul_absorb_add            :    620
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+variant: s2_plain
+GLSL:
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float p = x * 1.1;
+  float16_t m = float16_t(p);
+  float q = float(m) + 1000.0;
+  outb[i] = pack(float16_t(q));
+}
+  s2_plain
+    S_strict                           :   5075 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :   4896 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :    482 / 63488 disagreements
+    S_drop_intermediate_narrowing      :    484 / 63488 disagreements
+    S_fuse_mul_and_absorb_add          :   5240 / 63488 disagreements
+    S_strict_mul_absorb_add            :   5419 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0.500044 ulp (denominator: S_strict's value there) / 0.500044 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1.67731e+06 ulp.
+
+########## RADV_DEBUG=asm --variant s2_precise ##########
+Compute Shader
+disasm:
+BB0:
+	s_mov_b32 s0, s3                                            ; be800003
+	s_movk_i32 s3, 0x8000                                       ; b0038000
+	s_load_b256 s[8:15], s[2:3], null                           ; f40c0201 f8000000
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	s_delay_alu instid0(VALU_DEP_1) | instskip(SKIP_4) | instid1(VALU_DEP_1) ; bf8700d1
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	s_waitcnt lgkmcnt(0)                                        ; bf89fc07
+	buffer_load_b32 v1, v0, s[12:15], 0 offen                   ; e0500000 80430100
+	s_waitcnt vmcnt(0)                                          ; bf8903f7
+	v_fma_mix_f32 v1, 0xcccd, v1, neg(0) op_sel_hi:[0,1,0]      ; cc200001 920202ff 3f8ccccd
+	v_fma_mixlo_f16 v2, 1.0, v1, 0x63d0 op_sel_hi:[0,0,1]       ; cc214002 03fe02f2 000063d0
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	s_delay_alu instid0(VALU_DEP_1)                             ; bf870001
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+	buffer_store_b32 v2, v0, s[8:11], 0 offen                   ; e0680000 80420200
+	s_endpgm                                                    ; bfb00000
+#62 slice 1(b) — element-wise model agreement, Vulkan / RADV
+host calibration PASSED: 63488-value round-trip; the two §1.2 models separate on exactly 620 (f16(f16(x * 1.1) + 1000)) and 2912 (f16(x * 1.1)); §1.3's x = -907.5 case reproduces at 1 ulp at the narrowing and 512 ulp on the final value.
+SHAPE 1 — f16(x * 1.1)
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :   2912
+SHAPE 2 — f16(f16(x * 1.1) + 1000)
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :    620
+    S_strict                           vs S_absorb_all_into_final_narrowing  :   5075
+    S_strict                           vs S_f32_mul_then_absorb_add          :   4776
+    S_strict                           vs S_drop_intermediate_narrowing      :   4774
+    S_strict                           vs S_fuse_mul_and_absorb_add          :    992
+    S_strict                           vs S_strict_mul_absorb_add            :    372
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :   4896
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :   4851
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :   4849
+    S_fuse_mul_into_narrowing          vs S_fuse_mul_and_absorb_add          :    372
+    S_fuse_mul_into_narrowing          vs S_strict_mul_absorb_add            :    992
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :    482
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :    484
+    S_absorb_all_into_final_narrowing  vs S_fuse_mul_and_absorb_add          :   5240
+    S_absorb_all_into_final_narrowing  vs S_strict_mul_absorb_add            :   5419
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :      2
+    S_f32_mul_then_absorb_add          vs S_fuse_mul_and_absorb_add          :   5195
+    S_f32_mul_then_absorb_add          vs S_strict_mul_absorb_add            :   5120
+    S_drop_intermediate_narrowing      vs S_fuse_mul_and_absorb_add          :   5193
+    S_drop_intermediate_narrowing      vs S_strict_mul_absorb_add            :   5118
+    S_fuse_mul_and_absorb_add          vs S_strict_mul_absorb_add            :    620
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+variant: s2_precise
+GLSL:
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  precise float p = x * 1.1;
+  float16_t m = float16_t(p);
+  precise float q = float(m) + 1000.0;
+  outb[i] = pack(float16_t(q));
+}
+  s2_precise
+    S_strict                           :   4776 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :   4851 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :    482 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      2 / 63488 disagreements
+    S_fuse_mul_and_absorb_add          :   5195 / 63488 disagreements
+    S_strict_mul_absorb_add            :   5120 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0.5 ulp (denominator: S_strict's value there) / 0.5 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1.67731e+06 ulp.
+

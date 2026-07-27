@@ -1,0 +1,12 @@
+; #62 slice 1(a) — element-wise model-agreement probe for OpenCL / rusticl.
+;
+; An `executable`, not a `test`: it measures a driver to decide whether a
+; contract is deliverable, and a measurement that blocks CI on whatever GPU the
+; runner happens to have is a gate, not a measurement. The gate defending the
+; OpenCL f16 refusal is sarek-opencl/test/test_opencl_f16_tripwire.ml and is
+; untouched by this directory.
+
+(executable
+ (name probe_opencl_f16_model_agreement)
+ (modules probe_opencl_f16_model_agreement)
+ (libraries sarek_opencl spoc_framework f16_model_set))
