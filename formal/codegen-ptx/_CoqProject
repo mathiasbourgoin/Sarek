@@ -6,3 +6,4 @@ theories/PtxStmtSpec.v
 theories/PtxKernelSpec.v
 theories/PtxLayout.v
 extraction/Extract.v
+extraction/LayoutExtract.v

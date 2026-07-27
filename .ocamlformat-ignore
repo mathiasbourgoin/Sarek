@@ -18,3 +18,13 @@ SpocLibs/Samples/Bitonic_sort/Bitonic_sort.ml
 SpocLibs/Sarek_test/comparison/test_comparison.ml
 
 Spoc/Devices.mli
+
+# Rocq extraction output (task #46). Committed RAW, deliberately.
+#
+# scripts/check-formal-proofs.sh regenerates these from theories/PtxLayout.v and
+# byte-compares the result against the committed copy. Formatting them would
+# make every proof run rewrite them and leave the drift check unable to tell a
+# changed definition from a reformat — which is the state Extract.v's five other
+# outputs are in, and the reason they cannot be checked.
+formal/codegen-ptx/extraction/sarek_ptx_layout_model.ml
+formal/codegen-ptx/extraction/sarek_ptx_layout_model.mli

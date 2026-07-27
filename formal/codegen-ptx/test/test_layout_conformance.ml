@@ -3,10 +3,11 @@
  *
  * CMBT conformance harness for the packed aggregate layout model (FR-042).
  *
- * Strategy: [RocqMirror] below is a line-by-line OCaml transcription of the
- * definitions in theories/PtxLayout.v (each function comments its .v source).
- * The suite then checks that the mirror and the production layout module
- * [Sarek_ir_layout] agree on accept/reject AND on all numeric offsets/sizes:
+ * Strategy: [Model] is theories/PtxLayout.v itself, extracted to OCaml by
+ * extraction/LayoutExtract.v (task #46 — it was previously a hand
+ * transcription). The suite checks that the extracted model and the
+ * production layout module [Sarek_ir_layout] agree on accept/reject AND on
+ * all numeric offsets/sizes:
  *
  *   1. exhaustively, on every record shape with 1..4 fields over the scalar
  *      universe {int32, float32, bool, int64, float64} and every variant
@@ -24,163 +25,53 @@
 open Sarek_ir_types
 
 (* ======================================================================= *)
-(** * 1. RocqMirror — hand transcription of theories/PtxLayout.v *)
+(** * 1. The layout model — EXTRACTED from theories/PtxLayout.v *)
 (* ======================================================================= *)
 
-module RocqMirror = struct
-  (* PtxLayout.v [lty]: scalar universe, 4-byte vs 8-byte. *)
-  type lty = L32 | L64
+(* [Model] is Rocq's own extraction of PtxLayout.v, built by
+   extraction/LayoutExtract.v and compiled as the [sarek_ptx_layout_model]
+   library. It is not written; `make -f CoqMakefile` regenerates it and
+   scripts/check-formal-proofs.sh fails if the committed copy differs.
 
-  (* PtxLayout.v [scalar_size]. *)
-  let scalar_size = function L32 -> 4 | L64 -> 8
+   It replaces a 130-line module named [RocqMirror] that opened this file, whose
+   own header called it "a line-by-line OCaml transcription of the definitions
+   in theories/PtxLayout.v". That transcription was the weak link: every
+   theorem in PtxLayout.v was proved about the Rocq definitions and then checked
+   against a copy of them that nothing compared to the original, so an edit to
+   the theory that nobody propagated left this suite green while it tested a
+   model that had stopped being the model. Extracting removes the hop rather
+   than watching it.
 
-  (* PtxLayout.v [scalar_align] (= size for both widths). *)
-  let scalar_align = scalar_size
-
-  (* PtxLayout.v [align_up]: round [off] up to a multiple of [a]. *)
-  let align_up off a = a * ((off + a - 1) / a)
-
-  (* PtxLayout.v [lfield]/[lfields]: record fields are scalar leaves or
-     nested records; no variant constructor exists below top level. *)
-  type lfield = LLeaf of lty | LRec of lfields
-
-  and lfields = LNil | LCons of int * lfield * lfields
-
-  (* PtxLayout.v [falign]/[fsalign]: natural alignment (empty seq = 1). *)
-  let rec falign = function LLeaf t -> scalar_align t | LRec fs -> fsalign fs
-
-  and fsalign = function
-    | LNil -> 1
-    | LCons (_, f, r) -> max (falign f) (fsalign r)
-
-  (* PtxLayout.v [fsize]/[fsend]: aligned (padded) size and running end. *)
-  let rec fsize = function
-    | LLeaf t -> scalar_size t
-    | LRec fs -> align_up (fsend 0 fs) (fsalign fs)
-
-  and fsend off = function
-    | LNil -> off
-    | LCons (_, f, r) -> fsend (align_up off (falign f) + fsize f) r
-
-  (* PtxLayout.v [leaf] (lf_path / lf_ty / lf_off). *)
-  type leaf = {lf_path : int list; lf_ty : lty; lf_off : int}
-
-  (* PtxLayout.v [leaf_size]. *)
-  let leaf_size l = scalar_size l.lf_ty
-
-  (* PtxLayout.v [flatten]/[flattens]: declaration-order leaves, each field
-     rounded up to its natural alignment before placement. *)
-  let rec flatten p off = function
-    | LLeaf t -> [{lf_path = p; lf_ty = t; lf_off = off}]
-    | LRec fs -> flattens p off fs
-
-  and flattens p off = function
-    | LNil -> []
-    | LCons (n, f, r) ->
-        let o = align_up off (falign f) in
-        flatten (p @ [n]) o f @ flattens p (o + fsize f) r
-
-  (* PtxLayout.v [record_leaves] / [record_size] (padded cumulative end). *)
-  let record_leaves fs = flattens [] 0 fs
-
-  let record_size fs = align_up (fsend 0 fs) (fsalign fs)
-
-  (* PtxLayout.v [field_offsets] / [record_field_offsets] (aligned). *)
-  let rec field_offsets off = function
-    | LNil -> []
-    | LCons (n, f, r) ->
-        let o = align_up off (falign f) in
-        (n, o) :: field_offsets (o + fsize f) r
-
-  let record_field_offsets fs = field_offsets 0 fs
-
-  (* PtxLayout.v [tag_offset]/[tag_size]. *)
-  let tag_offset = 0
-
-  let tag_size = 4
-
-  (* PtxLayout.v [ctor_layout]. *)
-  type ctor_layout = {
-    cl_tag : int;
-    cl_leaves : leaf list;
-    cl_payload_size : int;
-  }
-
-  (* PtxLayout.v [number_args]: positional slots _0, _1, ... *)
-  let rec number_args i = function
-    | [] -> LNil
-    | a :: r -> LCons (i, a, number_args (i + 1) r)
-
-  (* PtxLayout.v [ctor_align] / [payload_struct_size]. *)
-  let ctor_align args = fsalign (number_args 0 args)
-
-  let payload_struct_size args =
-    let fs = number_args 0 args in
-    align_up (fsend 0 fs) (fsalign fs)
-
-  (* PtxLayout.v [variant_payload_offset]: max(4, max payload alignment). *)
-  let variant_payload_offset ctors =
-    List.fold_right (fun c acc -> max (ctor_align c) acc) ctors 4
-
-  (* PtxLayout.v [ctor_layouts]: payload placed from [payoff], tag = index. *)
-  let rec ctor_layouts payoff tag = function
-    | [] -> []
-    | c :: r ->
-        {
-          cl_tag = tag;
-          cl_leaves = flattens [tag] payoff (number_args 0 c);
-          cl_payload_size = payload_struct_size c;
-        }
-        :: ctor_layouts payoff (tag + 1) r
-
-  (* PtxLayout.v [max_payload]. *)
-  let max_payload cls =
-    List.fold_right (fun c acc -> max c.cl_payload_size acc) cls 0
-
-  (* PtxLayout.v [variant_size]: round_up(payload_offset + max payload, align). *)
-  let variant_size ctors =
-    let p = variant_payload_offset ctors in
-    align_up (p + max_payload (ctor_layouts p 0 ctors)) p
-
-  (* PtxLayout.v [leaf_aligned]: natural alignment of the absolute offset. *)
-  let leaf_aligned l = l.lf_off mod scalar_align l.lf_ty = 0
-
-  (* PtxLayout.v [record_accepted] (now always true). *)
-  let record_accepted fs = List.for_all leaf_aligned (record_leaves fs)
-
-  (* PtxLayout.v [variant_accepted] (now always true). *)
-  let variant_accepted ctors =
-    let p = variant_payload_offset ctors in
-    List.for_all
-      (fun c -> List.for_all leaf_aligned c.cl_leaves)
-      (ctor_layouts p 0 ctors)
-end
+   The names below are unchanged from the transcription because the
+   transcription used the theory's names; the substitution is [Model] for
+   [RocqMirror] and nothing else. *)
+module Model = Sarek_ptx_layout_model
 
 (* ======================================================================= *)
-(** * 2. Bridge: Sarek_ir_types.elttype shapes -> RocqMirror encoding *)
+(** * 2. Bridge: Sarek_ir_types.elttype shapes -> Model encoding *)
 (* ======================================================================= *)
 
 (* Scalar universe of the conformance domain (TUnit excluded: not part of
    the pinned e2e types nor of the theory's motivating universe). *)
 let scalar_universe = [TInt32; TFloat32; TBool; TInt64; TFloat64]
 
-let rec to_lfield (t : elttype) : RocqMirror.lfield =
+let rec to_lfield (t : elttype) : Model.lfield =
   match t with
-  | TInt32 | TFloat32 | TBool -> RocqMirror.LLeaf RocqMirror.L32
-  | TInt64 | TFloat64 -> RocqMirror.LLeaf RocqMirror.L64
-  | TRecord (_, fields) -> RocqMirror.LRec (to_lfields (List.map snd fields))
-  (* TFloat16 is a 2-byte leaf; the Rocq layout mirror only models L32/L64, and
+  | TInt32 | TFloat32 | TBool -> Model.LLeaf Model.L32
+  | TInt64 | TFloat64 -> Model.LLeaf Model.L64
+  | TRecord (_, fields) -> Model.LRec (to_lfields (List.map snd fields))
+  (* TFloat16 is a 2-byte leaf; the extracted layout model only models L32/L64, and
      f16 aggregate fields are rejected by Sarek_ir_layout.flatten_field anyway
      (#57 slice 1), so f16 is outside the conformance domain. It is likewise
      absent from [scalar_universe] above, so no generated case reaches here. *)
   | TFloat16 | TVariant _ | TArray _ | TVec _ | TUnit ->
       invalid_arg "to_lfield: outside the conformance domain"
 
-and to_lfields (ts : elttype list) : RocqMirror.lfields =
+and to_lfields (ts : elttype list) : Model.lfields =
   List.fold_right
-    (fun (i, t) acc -> RocqMirror.LCons (i, to_lfield t, acc))
+    (fun (i, t) acc -> Model.LCons (i, to_lfield t, acc))
     (List.mapi (fun i t -> (i, t)) ts)
-    RocqMirror.LNil
+    Model.LNil
 
 let rec pp_elttype = function
   | TInt32 -> "i32"
@@ -230,43 +121,40 @@ let check_rejection_kind what = function
         what
         (Sarek_ir_layout.layout_error_message e)
 
-let check_leaves what (m_leaves : RocqMirror.leaf list)
+let check_leaves what (m_leaves : Model.leaf list)
     (o_leaves : Sarek_ir_layout.leaf list) =
   iteri2
     (what ^ ": leaves")
-    (fun k (m : RocqMirror.leaf) (o : Sarek_ir_layout.leaf) ->
+    (fun k (m : Model.leaf) (o : Sarek_ir_layout.leaf) ->
       Alcotest.(check int)
         (Printf.sprintf "%s: leaf %d offset" what k)
-        m.RocqMirror.lf_off
+        m.Model.lf_off
         o.Sarek_ir_layout.leaf_offset ;
       Alcotest.(check int)
         (Printf.sprintf "%s: leaf %d size" what k)
-        (RocqMirror.leaf_size m)
+        (Model.leaf_size m)
         o.Sarek_ir_layout.leaf_size)
     m_leaves
     o_leaves
 
-(* Mirror-vs-OCaml agreement for one record shape. *)
+(* Model-vs-OCaml agreement for one record shape. *)
 let check_record_agreement (fields : (string * elttype) list) =
   let what = "record{" ^ pp_fields fields ^ "}" in
   let fs = to_lfields (List.map snd fields) in
-  let m_ok = RocqMirror.record_accepted fs in
+  let m_ok = Model.record_accepted fs in
   match Sarek_ir_layout.record_layout ~type_name:"t" fields with
   | Error e ->
       check_rejection_kind what e ;
       if m_ok then
-        Alcotest.failf "%s: mirror accepts but Sarek_ir_layout rejects" what
+        Alcotest.failf "%s: model accepts but Sarek_ir_layout rejects" what
   | Ok rl ->
       if not m_ok then
-        Alcotest.failf "%s: Sarek_ir_layout accepts but mirror rejects" what ;
+        Alcotest.failf "%s: Sarek_ir_layout accepts but model rejects" what ;
       Alcotest.(check int)
         (what ^ ": total size")
-        (RocqMirror.record_size fs)
+        (Model.record_size fs)
         rl.Sarek_ir_layout.rl_size ;
-      check_leaves
-        what
-        (RocqMirror.record_leaves fs)
-        rl.Sarek_ir_layout.rl_leaves ;
+      check_leaves what (Model.record_leaves fs) rl.Sarek_ir_layout.rl_leaves ;
       iteri2
         (what ^ ": field offsets")
         (fun k (idx, m_off) (_name, o_off) ->
@@ -278,26 +166,26 @@ let check_record_agreement (fields : (string * elttype) list) =
             (Printf.sprintf "%s: field %d offset" what k)
             m_off
             o_off)
-        (RocqMirror.record_field_offsets fs)
+        (Model.record_field_offsets fs)
         rl.Sarek_ir_layout.rl_fields
 
-(* Mirror-vs-OCaml agreement for one variant shape. *)
+(* Model-vs-OCaml agreement for one variant shape. *)
 let check_variant_agreement (ctors : (string * elttype list) list) =
   let what = "variant[" ^ pp_ctors ctors ^ "]" in
   let m_ctors = List.map (fun (_, args) -> List.map to_lfield args) ctors in
-  let m_ok = RocqMirror.variant_accepted m_ctors in
+  let m_ok = Model.variant_accepted m_ctors in
   match Sarek_ir_layout.variant_layout ~type_name:"t" ctors with
   | Error e ->
       check_rejection_kind what e ;
       if m_ok then
-        Alcotest.failf "%s: mirror accepts but Sarek_ir_layout rejects" what
+        Alcotest.failf "%s: model accepts but Sarek_ir_layout rejects" what
   | Ok vl ->
       if not m_ok then
-        Alcotest.failf "%s: Sarek_ir_layout accepts but mirror rejects" what ;
-      let m_payoff = RocqMirror.variant_payload_offset m_ctors in
+        Alcotest.failf "%s: Sarek_ir_layout accepts but model rejects" what ;
+      let m_payoff = Model.variant_payload_offset m_ctors in
       Alcotest.(check int)
         (what ^ ": tag offset")
-        RocqMirror.tag_offset
+        Model.tag_offset
         vl.Sarek_ir_layout.vl_tag_offset ;
       Alcotest.(check int)
         (what ^ ": payload offset")
@@ -305,14 +193,14 @@ let check_variant_agreement (ctors : (string * elttype list) list) =
         vl.Sarek_ir_layout.vl_payload_offset ;
       Alcotest.(check int)
         (what ^ ": total size")
-        (RocqMirror.variant_size m_ctors)
+        (Model.variant_size m_ctors)
         vl.Sarek_ir_layout.vl_size ;
       iteri2
         (what ^ ": ctors")
-        (fun k (m : RocqMirror.ctor_layout) (o : Sarek_ir_layout.ctor_layout) ->
+        (fun k (m : Model.ctor_layout) (o : Sarek_ir_layout.ctor_layout) ->
           Alcotest.(check int)
             (Printf.sprintf "%s: ctor %d tag" what k)
-            m.RocqMirror.cl_tag
+            m.Model.cl_tag
             o.Sarek_ir_layout.ctor_tag ;
           Alcotest.(check int)
             (Printf.sprintf "%s: ctor %d tag=index" what k)
@@ -320,13 +208,13 @@ let check_variant_agreement (ctors : (string * elttype list) list) =
             o.Sarek_ir_layout.ctor_tag ;
           Alcotest.(check int)
             (Printf.sprintf "%s: ctor %d payload size" what k)
-            m.RocqMirror.cl_payload_size
+            m.Model.cl_payload_size
             o.Sarek_ir_layout.ctor_payload_size ;
           check_leaves
             (Printf.sprintf "%s: ctor %d" what k)
-            m.RocqMirror.cl_leaves
+            m.Model.cl_leaves
             o.Sarek_ir_layout.ctor_leaves)
-        (RocqMirror.ctor_layouts m_payoff 0 m_ctors)
+        (Model.ctor_layouts m_payoff 0 m_ctors)
         vl.Sarek_ir_layout.vl_ctors
 
 (* ======================================================================= *)
@@ -408,23 +296,21 @@ let test_random_nested_records () =
 (** * 6. Host pins — literal offsets/sizes for the e2e test types *)
 (* ======================================================================= *)
 
-(* Asserts a record layout literally on BOTH the mirror and Sarek_ir_layout. *)
+(* Asserts a record layout literally on BOTH the extracted model and Sarek_ir_layout. *)
 let pin_record name fields expected_offsets expected_size =
   let fs = to_lfields (List.map snd fields) in
   Alcotest.(check bool)
-    (name ^ ": mirror accepts")
+    (name ^ ": model accepts")
     true
-    (RocqMirror.record_accepted fs) ;
+    (Model.record_accepted fs) ;
   Alcotest.(check (list int))
-    (name ^ ": mirror offsets")
+    (name ^ ": model offsets")
     expected_offsets
-    (List.map
-       (fun (l : RocqMirror.leaf) -> l.RocqMirror.lf_off)
-       (RocqMirror.record_leaves fs)) ;
+    (List.map (fun (l : Model.leaf) -> l.Model.lf_off) (Model.record_leaves fs)) ;
   Alcotest.(check int)
-    (name ^ ": mirror size")
+    (name ^ ": model size")
     expected_size
-    (RocqMirror.record_size fs) ;
+    (Model.record_size fs) ;
   match Sarek_ir_layout.record_layout ~type_name:name fields with
   | Error e ->
       Alcotest.failf
@@ -469,21 +355,18 @@ let test_pin_particle () =
 (* color = Red | Value of float32 : tag@0, payload@4, size 8, decl-order tags. *)
 let test_pin_color () =
   let ctors = [("Red", []); ("Value", [TFloat32])] in
-  let m_ctors = [[]; [RocqMirror.LLeaf RocqMirror.L32]] in
+  let m_ctors = [[]; [Model.LLeaf Model.L32]] in
   Alcotest.(check bool)
-    "color: mirror accepts"
+    "color: model accepts"
     true
-    (RocqMirror.variant_accepted m_ctors) ;
-  Alcotest.(check int) "color: mirror size" 8 (RocqMirror.variant_size m_ctors) ;
+    (Model.variant_accepted m_ctors) ;
+  Alcotest.(check int) "color: model size" 8 (Model.variant_size m_ctors) ;
   Alcotest.(check (list int))
-    "color: mirror tags"
+    "color: model tags"
     [0; 1]
     (List.map
-       (fun (c : RocqMirror.ctor_layout) -> c.RocqMirror.cl_tag)
-       (RocqMirror.ctor_layouts
-          (RocqMirror.variant_payload_offset m_ctors)
-          0
-          m_ctors)) ;
+       (fun (c : Model.ctor_layout) -> c.Model.cl_tag)
+       (Model.ctor_layouts (Model.variant_payload_offset m_ctors) 0 m_ctors)) ;
   match Sarek_ir_layout.variant_layout ~type_name:"color" ctors with
   | Error e ->
       Alcotest.failf
@@ -518,7 +401,7 @@ let test_pin_color () =
         value_ctor.Sarek_ir_layout.ctor_payload_size
 
 (* L8: mixed-alignment record {a:i32; b:f64} — a@0, b@8 (pad), size 16. Both
-   the mirror and Sarek_ir_layout must agree on the aligned offsets. *)
+   the extracted model and Sarek_ir_layout must agree on the aligned offsets. *)
 let test_pin_mixed_i32_f64 () =
   pin_record "mixed_i32_f64" [("a", TInt32); ("b", TFloat64)] [0; 8] 16
 
@@ -533,19 +416,16 @@ let test_pin_f64_i32 () =
 (* L8: variant with an f64 payload — payload region @8, Some_._0@8, size 16. *)
 let test_pin_f64_variant () =
   let ctors = [("None_", []); ("Some_", [TFloat64])] in
-  let m_ctors = [[]; [RocqMirror.LLeaf RocqMirror.L64]] in
+  let m_ctors = [[]; [Model.LLeaf Model.L64]] in
   Alcotest.(check bool)
-    "f64_variant: mirror accepts"
+    "f64_variant: model accepts"
     true
-    (RocqMirror.variant_accepted m_ctors) ;
+    (Model.variant_accepted m_ctors) ;
   Alcotest.(check int)
-    "f64_variant: mirror payload offset"
+    "f64_variant: model payload offset"
     8
-    (RocqMirror.variant_payload_offset m_ctors) ;
-  Alcotest.(check int)
-    "f64_variant: mirror size"
-    16
-    (RocqMirror.variant_size m_ctors) ;
+    (Model.variant_payload_offset m_ctors) ;
+  Alcotest.(check int) "f64_variant: model size" 16 (Model.variant_size m_ctors) ;
   match Sarek_ir_layout.variant_layout ~type_name:"f64_variant" ctors with
   | Error e ->
       Alcotest.failf

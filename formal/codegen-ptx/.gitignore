@@ -1,3 +1,9 @@
 # Rocq build artifacts — not needed for reproducibility
 *.aux
 .*.aux
+
+# lia/nia proof caches: untracked residue the micromega tactics drop beside the
+# sources. scripts/check-formal-proofs.sh deletes them on every run, so a
+# committed copy is guaranteed stale.
+.lia.cache
+.nia.cache

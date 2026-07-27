@@ -225,6 +225,95 @@ cannot determine the logical path to check."
     #    proof, any missing dependency fails here.
     make -f CoqMakefile -j"$(nproc)"
 
+    # 3b. Extraction drift (task #46).
+    #
+    #     The `make` above re-ran extraction. For the layout model — the one
+    #     extracted artefact this repository compiles and links — the result
+    #     must be byte-identical to the committed copy, because
+    #     test_layout_conformance.ml runs that copy. Without this check the
+    #     chain from PtxLayout.v to the thing actually tested is only as good as
+    #     whoever last remembered to regenerate: an edit to the theory leaves a
+    #     stale model in the tree, and the suite stays green while testing
+    #     something the theorems are no longer about. That is the hand-mirror
+    #     defect #46 removed, reappearing one level up.
+    #
+    #     Deliberately NOT extended to Extract.v's five outputs in the project
+    #     root: those are committed in ocamlformat-formatted form while
+    #     extraction emits them raw, so every run rewrites them and a diff here
+    #     would fail on formatting on every build. That is exactly why the
+    #     layout model is committed raw and listed in .ocamlformat-ignore, and
+    #     why it is the only one that can be checked. (See the restore_tree
+    #     comment above, which exists to paper over precisely that.)
+    #
+    #     CANONICALISED BEFORE COMPARING, and that is not tidiness. The first CI
+    #     run of this check failed on a diff whose entire content was:
+    #
+    #       -  { cl_tag = tag; cl_leaves = (flattens (tag :: []) payoff …);
+    #       -    cl_payload_size =
+    #       +  { cl_tag = tag; cl_leaves =
+    #       +    (flattens (tag :: []) payoff …); cl_payload_size =
+    #
+    #     Identical tokens, different line breaks. Rocq's extractor pretty-prints
+    #     through OCaml's Format, whose breaking decisions differ between the
+    #     OCaml the PROVER was built with — 5.5.0 for a local distro install,
+    #     4.14.2 inside rocq/rocq-prover:9.1.1. A byte-compare of raw extractor
+    #     output is therefore a check on which machine ran the extractor: it
+    #     would have fired on every CI run forever, while being unable to
+    #     distinguish that from the drift it exists to catch. A gate that cries
+    #     wolf is a gate the next person in a hurry deletes, and this one is the
+    #     whole point of #46.
+    #
+    #     ocamlformat is not an option here: the extraction happens in the Rocq
+    #     image, which ships none (verified), and moving the comparison to a job
+    #     that has it would mean moving the extraction to a job that has no Rocq.
+    #     scripts/canonicalize-extraction.py needs only python3, which the image
+    #     does have. Both sides go through it, so what is compared is the model,
+    #     not its wrapping.
+    #
+    #     `git diff --exit-code`, not a pipeline: the exit status is the check.
+    #
+    #     Both preconditions FAIL rather than skip. They were written as one
+    #     `if ... && ...; then` with no else, and running this script in a
+    #     container that could not see the git directory made the entire check
+    #     disappear without a word — the run reported OK having compared
+    #     nothing. A drift gate that silently opts out when its inputs are
+    #     missing is the failure mode this whole script exists to remove, and it
+    #     was reintroduced by the check added to remove it.
+    if [ "$(basename "$PWD")" = "codegen-ptx" ]; then
+      if [ ! -f extraction/sarek_ptx_layout_model.ml ]; then
+        echo "::error::extraction/sarek_ptx_layout_model.ml does not exist \
+after a full rebuild. LayoutExtract.v is meant to produce it, and \
+test_layout_conformance.ml links it — without it there is no model to compare \
+and nothing to test against."
+        exit 1
+      fi
+      if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        echo "::error::not inside a usable git work tree, so the extracted \
+model cannot be compared against the committed copy. Run this where git works \
+(CI checks out a normal clone); a linked worktree whose git directory is not \
+mounted into the container will land here."
+        exit 1
+      fi
+      python3 "$ROOT/scripts/canonicalize-extraction.py" \
+        extraction/sarek_ptx_layout_model.ml \
+        extraction/sarek_ptx_layout_model.mli
+      if ! git diff --exit-code -- \
+             extraction/sarek_ptx_layout_model.ml \
+             extraction/sarek_ptx_layout_model.mli; then
+        echo "::error::the extracted layout model differs from the committed \
+copy. The diff above is in TOKENS, not whitespace — both sides went through \
+scripts/canonicalize-extraction.py. theories/PtxLayout.v changed without \
+extraction/sarek_ptx_layout_model.ml being regenerated, so \
+test_layout_conformance.ml is checking the production layout against a stale \
+model. Regenerate: cd $proj && rocq makefile -f _CoqProject -o CoqMakefile && \
+make -f CoqMakefile && python3 ../../scripts/canonicalize-extraction.py \
+extraction/sarek_ptx_layout_model.ml extraction/sarek_ptx_layout_model.mli, \
+then commit both files."
+        exit 1
+      fi
+      echo "  extracted layout model matches theories/PtxLayout.v"
+    fi
+
     # 4. Kernel re-check. This is the load-bearing step: it re-verifies the
     #    proof terms independently of the elaborator that built them, and
     #    reports the axioms they rest on.

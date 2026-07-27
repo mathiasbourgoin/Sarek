@@ -14,8 +14,12 @@
  (modules test_layout_conformance)
  ; qcheck-core is already in the switch; used only for the seeded random
  ; shape generator (deterministic: fixed Random.State seed).
- (libraries alcotest qcheck-core sarek_ir)
- ; Same relaxation as above for the hand-mirror of PtxLayout.v; 69 allows
- ; the mirror's [lf_path] field, kept write-only for fidelity to the theory.
+ (libraries alcotest qcheck-core sarek_ir sarek_ptx_layout_model)
+ ; -69 allows the extracted [leaf.lf_path] field, which this suite never reads:
+ ; the theory names leaves by nat-index path and the production layout names
+ ; them by string path, so the paths are deliberately not compared (see the
+ ; encoding note at the top of the test). 32/37 are the usual unused-binding
+ ; relaxations. The extracted library silences its own warnings in
+ ; extraction/dune; these apply to the hand-written test code.
  (flags
   (:standard -w -32-37-69)))
