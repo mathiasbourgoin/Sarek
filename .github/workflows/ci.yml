@@ -370,6 +370,14 @@ jobs:
   # is a good result -- "a bare runner cannot run an OpenCL kernel either" is
   # information the project does not have today. Promoting this to a gate is a
   # separate decision that needs a green here first.
+  #
+  # MEASURED 2026-07-27 (run 30282252291): VERDICT=POCL-WORKS. Ubuntu 24.04.4,
+  # pocl 5.0, cpu-haswell device; compiled, ran 1024/1024 elements correctly,
+  # and rejected invalid source. backlog-79's "pocl compiles nothing" was pocl
+  # 1.8 + LLVM 11 on jammy inside the image, not a fact about pocl. See the
+  # header of ci/pocl-runner-probe.sh for what this does and does not license.
+  # Still not promoted to a gate: one green is not a stability record, and this
+  # installs an unpinned apt package.
   pocl-runner-probe:
     runs-on: ubuntu-latest
     timeout-minutes: 15

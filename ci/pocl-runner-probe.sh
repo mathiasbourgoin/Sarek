@@ -23,6 +23,42 @@
 # the container image; whether a bare runner can execute a kernel at all is
 # unmeasured, and that is the gap.
 #
+# MEASURED RESULT, 2026-07-27, run 30282252291 on `ubuntu-latest`:
+#
+#     distro:       Ubuntu 24.04.4 LTS
+#     package:      pocl-opencl-icd 5.0-2.1build3
+#     ICD:          pocl.icd -> libpocl.so.2.12.0
+#     device:       cpu-haswell-AMD EPYC 9V74 80-Core Processor
+#     version:      OpenCL 3.0 PoCL HSTR: cpu-x86_64-pc-linux-gnu-haswell
+#     icd/enumerate/compile/execute/reject : all pass
+#     VERDICT:      POCL-WORKS
+#
+# So the answer to backlog-99 is yes: a bare runner CAN compile and run an
+# OpenCL kernel, 1024/1024 elements correct, and it rejects invalid source.
+#
+# This does not contradict backlog-79, it localises it. That failure was pocl
+# 1.8 against LLVM 11 on jammy, inside the CI image; the runner is noble with
+# pocl 5.0, four major versions on. The conclusion "pocl cannot compile" was
+# never a fact about pocl, only about that pairing — which is exactly why it
+# was worth measuring somewhere else rather than inferring.
+#
+# WHAT IT IMPLIES for the existing OpenCL gates: a second, independent OpenCL
+# execution environment is now known to be available, so the project's OpenCL
+# claims no longer HAVE to rest solely on the image's Intel oneAPI ICD. Two
+# things that follow, neither done here:
+#
+#   * ci/assert-toolchain.sh's "NOT asserted here: the OpenCL ICD inventory"
+#     note says the checks belong there "when that lands". They can now.
+#   * A differential run — the same kernels under oneAPI and under pocl — would
+#     catch the class of bug a single ICD cannot: generated OpenCL that one
+#     runtime accepts and another does not. That is the real prize, and it is a
+#     separate change with a real cost, so it is proposed rather than smuggled
+#     in here.
+#
+# Promoting this job to a gate needs a second consideration this run cannot
+# supply: one green is not a stability record, and pinning CI to an unpinned
+# apt package is how a green turns red on someone else's release schedule.
+#
 # THIS IS NOT A GATE.
 #
 # It installs pocl, reports what happened, and exits 0 regardless. Nothing is
