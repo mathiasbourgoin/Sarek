@@ -1359,3 +1359,22 @@
  (alias e2e-gpu)
  (action
   (run %{dep:test_vulkan_no_contraction.exe})))
+
+; Vulkan-only regression test for #142 (the DEVICE half of GLSL wide types):
+; an int64 Sarek kernel must compile, run, and produce correct 64-bit results
+; on Vulkan. #141 fixed the emitter (GL_ARB_gpu_shader_int64 is now declared);
+; this exercises the second requirement, that the logical device actually
+; ENABLE VkPhysicalDeviceFeatures.shaderInt64, which the SPIR-V
+; `OpCapability Int64` demands. Device-filtered to Vulkan; skips (prints
+; [SKIP], exits 0) if no Vulkan device is present.
+
+(executable
+ (name test_vulkan_int64)
+ (modules test_vulkan_int64)
+ (optional)
+ (libraries sarek_ir sarek_execute sarek_vulkan spoc_core))
+
+(rule
+ (alias e2e-gpu)
+ (action
+  (run %{dep:test_vulkan_int64.exe})))

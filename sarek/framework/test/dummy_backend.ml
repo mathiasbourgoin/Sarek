@@ -85,7 +85,7 @@ module Dummy_backend : BACKEND = struct
         total_global_mem = 1073741824L;
         (* 1GB *)
         compute_capability = (0, 0);
-        supports_fp64 = false;
+        device_features = [];
         supports_atomics = false;
         warp_size = 1;
         max_registers_per_block = 0;

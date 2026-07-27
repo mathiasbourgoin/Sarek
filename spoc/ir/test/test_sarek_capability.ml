@@ -187,8 +187,50 @@ let test_refuse_if_used () =
       failwith "an f32 kernel must NOT be refused (gate fires unconditionally)") ;
   print_endline "  refuse_if_used: fires on f64, silent on f32: OK"
 
+(* #142, the device half. Three properties, each with the control that stops it
+   passing vacuously. *)
+let test_device_verdict () =
+  let open Sarek_ir_analysis in
+  (* 1. An unprobed device refuses. This is the safety property restated at the
+     one call site that will carry real device data, and it is the direction
+     the #142 defect failed in: nothing could describe int64, so int64 was
+     never refused. *)
+  (match device_verdict ~provided:None Int64 with
+  | Unknown why ->
+      check "unprobed device names the feature" (contains why "int64") ;
+      check "unprobed device does not permit" (not (permits (Unknown why)))
+  | Available | Unavailable _ ->
+      failwith "an unprobed device must yield Unknown, not a decision") ;
+  (* 2. A device that provides the feature permits it. Positive control: without
+     this, [device_verdict] could refuse everything and pass (1) and (3). *)
+  check
+    "provided feature permits"
+    (permits (device_verdict ~provided:(Some [Float64; Int64]) Int64)) ;
+  (* 3. The widths are INDEPENDENT. A device list containing only Float64 must
+     refuse Int64 — the exact confusion the old [supports_fp64] bool forced,
+     where the only available answer to "does it do int64" was the fp64 one. *)
+  (match device_verdict ~provided:(Some [Float64]) Int64 with
+  | Unavailable cap ->
+      check "refusal names int64" (cap.cap_name = "int64") ;
+      check "device gap is Device_optional" (cap.cap_kind = Device_optional) ;
+      check "Device_optional needs a device" (kind_needs_device cap.cap_kind) ;
+      let msg = explain ~target:"Fake GPU" cap in
+      check "explain names the target" (contains msg "Fake GPU") ;
+      check "explain names shaderInt64" (contains msg "shaderInt64")
+  | Available -> failwith "an fp64-only device must NOT permit int64"
+  | Unknown _ -> failwith "a probed device must decide, not return Unknown") ;
+  (* 4. And symmetrically, so (3) cannot be passing because Int64 is hardcoded
+     unavailable. *)
+  (match device_verdict ~provided:(Some [Int64]) Float64 with
+  | Unavailable cap ->
+      check "symmetric refusal names float64" (cap.cap_name = "float64")
+  | Available | Unknown _ ->
+      failwith "an int64-only device must NOT permit float64") ;
+  print_endline "  device_verdict: Unknown refuses, widths independent: OK"
+
 let () =
   print_endline "Testing Sarek_capability (#64 slice 1)..." ;
+  test_device_verdict () ;
   test_permits () ;
   test_first_refusal () ;
   test_kind_needs_device () ;

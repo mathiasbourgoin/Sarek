@@ -184,6 +184,26 @@ val refuse_if_used :
   Sarek_ir_types.kernel ->
   unit
 
+(** {1 The device half (#142)} *)
+
+(** The {!Device_optional} capability record for a wide element type a device
+    does not provide. Built per-feature rather than stored as three constants so
+    a new {!Sarek_ir_analysis.feature} is a compile error here, not a silently
+    missing refusal — the shape of the #142 defect was exactly a width nothing
+    in the model could speak about. *)
+val device_lacks_feature : Sarek_ir_analysis.feature -> t
+
+(** [device_verdict ~provided f] judges [f] against a device's own reported
+    feature list.
+
+    [provided = None] yields {!Unknown}, which {!permits} refuses. That is
+    deliberate and is the reason this takes an option rather than a list: a
+    device we could not probe is not a device that supports everything. *)
+val device_verdict :
+  provided:Sarek_ir_analysis.feature list option ->
+  Sarek_ir_analysis.feature ->
+  verdict
+
 (** {1 Known capabilities} *)
 
 (** Metal has no double precision.

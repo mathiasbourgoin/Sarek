@@ -74,7 +74,14 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
           total_global_mem = Int64.of_int (4 * 1024 * 1024 * 1024);
           (* Estimate, Metal doesn't expose this *)
           compute_capability = (0, 0);
-          supports_fp64 = d.supports_fp64;
+          (* [d.supports_fp64] is hardcoded false in Metal_api: MSL has no
+             [double] at all, which is Backend_structural and refused at
+             codegen through Sarek_capability.float64_absent_metal. It is
+             threaded through rather than dropped so the two cannot disagree.
+             MSL does have [long], so int64 is provided. *)
+          device_features =
+            (if d.supports_fp64 then [Sarek_ir_analysis.Float64] else [])
+            @ [Sarek_ir_analysis.Int64];
           supports_atomics = true;
           warp_size = 32;
           (* SIMD width on Apple GPUs *)

@@ -23,6 +23,13 @@ type t = {
       (** Physical-device [shaderFloat64] feature, queried via
           [vkGetPhysicalDeviceFeatures] and mirrored into the logical device's
           [pEnabledFeatures] at creation time (see [get] below). *)
+  supports_int64 : bool;
+      (** Physical-device [shaderInt64] feature, on the same query-and-mirror
+          path as {!supports_fp64}. Both halves matter and only the mirroring
+          half is easy to forget: a kernel whose SPIR-V declares
+          [OpCapability Int64] is legal only against a logical device that
+          ENABLED the feature, so querying it without requesting it would still
+          be the #142 defect. *)
 }
 
 let instance_ref : vk_instance structure ptr option ref = ref None
@@ -218,6 +225,13 @@ let get idx =
         Unsigned.UInt32.to_int (CArray.get supported_bools index) <> 0
       in
       let supports_fp64 = feature_supported shader_float64_field_index in
+      (* #142: [shader_int64_field_index] has existed in Vulkan_types since the
+         features struct was modelled, and nothing read it. GLSL [int64_t]
+         compiles to SPIR-V declaring [OpCapability Int64], which Vulkan makes
+         conditional on this feature being ENABLED on the logical device
+         (VUID-VkShaderModuleCreateInfo-pCode-08740) - not merely supported by
+         the physical one. *)
+      let supports_int64 = feature_supported shader_int64_field_index in
 
       (* Find compute queue family *)
       let queue_family = find_compute_queue_family phys_dev in
@@ -269,27 +283,50 @@ let get idx =
         dev_create_info
         dev_create_ppEnabledExtensionNames
         (from_voidp string null) ;
-      (* Only request shaderFloat64 when the physical device actually
-         reports it - never request an unsupported feature, since that
-         fails vkCreateDevice on hardware without fp64 support. All other
-         features are left at their default (false), matching the previous
-         pEnabledFeatures = null behaviour.
+      (* Request every wide-type feature the physical device actually reports,
+         and only those - requesting an unsupported feature fails
+         vkCreateDevice outright. All other features are left at their default
+         (false), matching the original pEnabledFeatures = null behaviour.
+
+         #142: this used to request shaderFloat64 ALONE, which is how an int64
+         kernel became a spec violation on hardware that fully supports int64.
+         The emitter half (#141) declares GL_ARB_gpu_shader_int64 so the source
+         validates, and glslang lowers it to OpCapability Int64 - but the
+         capability is only legal when the DEVICE has enabled shaderInt64, and
+         nothing here ever did. Measured on an RX 7900 XTX (RADV, Mesa
+         26.1.4-arch3.1): VK_LAYER_KHRONOS_validation reports
+         VUID-VkShaderModuleCreateInfo-pCode-08740 at vkCreateShaderModule,
+         while the kernel still returns CORRECT results - so the defect is
+         silent undefined behaviour on this driver, not a visible failure, and
+         no test that only checks results could have caught it.
+
+         Iterating over a request table rather than open-coding a second [if]
+         is deliberate: the previous shape had one branch per feature, and the
+         way it went wrong was a feature with no branch at all.
 
          NOTE: hoisting this binding out of the [if] does NOT by itself keep
          [addr enabled_features] valid across [vkCreateDevice] - in OCaml a
          value dies after its last USE, not at the end of its scope, so the
          GC may reclaim it the moment [setf] has copied the bare address in.
          The explicit keep-alives after the call are what make it safe. *)
+      let requested_features =
+        List.filter_map
+          (fun (supported, index) -> if supported then Some index else None)
+          [
+            (supports_fp64, shader_float64_field_index);
+            (supports_int64, shader_int64_field_index);
+          ]
+      in
       let enabled_features = make vk_physical_device_features in
-      if supports_fp64 then begin
+      if requested_features <> [] then begin
         let enabled_bools = getf enabled_features phys_features_bools in
         for i = 0 to vk_physical_device_features_field_count - 1 do
           CArray.set enabled_bools i (Unsigned.UInt32.of_int 0)
         done ;
-        CArray.set
-          enabled_bools
-          shader_float64_field_index
-          (Unsigned.UInt32.of_int 1) ;
+        List.iter
+          (fun index ->
+            CArray.set enabled_bools index (Unsigned.UInt32.of_int 1))
+          requested_features ;
         setf
           dev_create_info
           dev_create_pEnabledFeatures
@@ -355,6 +392,7 @@ let get idx =
           memory_properties = mem_props;
           command_pool = !@pool;
           supports_fp64;
+          supports_int64;
         }
       in
       Hashtbl.add device_cache idx dev ;

@@ -541,6 +541,65 @@ let check_launch_args ~(kernel : string) (ir : Sarek_ir_types.kernel)
           ())
     args
 
+(** Refuse a launch whose kernel needs a wide element type the target device
+    does not provide (#142).
+
+    WHY THIS IS A LAUNCH GATE AND NOT A CODEGEN REFUSAL. These are
+    {!Sarek_capability.Device_optional} capabilities:
+    [kind_needs_device Device_optional = true], and
+    [Framework_sig.generate_source] takes no device, so codegen is structurally
+    the wrong place to ask. The device is first in scope here, next to
+    {!check_launch_args}.
+
+    WHAT IT REPLACES. Nothing — that is the defect. Before #142 an int64 kernel
+    on Vulkan reached [vkCreateShaderModule] with SPIR-V declaring
+    [OpCapability Int64] and no [shaderInt64] enabled on the logical device. On
+    an RX 7900 XTX (RADV, Mesa 26.1.4-arch3.1) that is not a crash and not a
+    wrong answer: results are correct and the violation is visible only under
+    VK_LAYER_KHRONOS_validation (VUID-VkShaderModuleCreateInfo-pCode-08740).
+    Silent undefined behaviour on the driver that happens to cope is exactly the
+    failure mode a capability model exists to convert into a diagnostic.
+
+    Routed through {!Sarek_capability.permits} rather than a membership test so
+    an {!Sarek_capability.Unknown} verdict refuses instead of falling through to
+    permitted. *)
+let check_device_capabilities ~(device : Device.t) (ir : Sarek_ir_types.kernel)
+    : unit =
+  let provided =
+    Some device.Device.capabilities.Framework_sig.device_features
+  in
+  (* Deliberately NOT [all_features]. [Float16] is governed by the existing
+     codegen-time refusals (Toolchain_semantic + Policy — the measured ACO
+     narrowing), and nothing probes shaderFloat16 or CUDA sm_53 yet, so no
+     backend can honestly claim f16 in [device_features]. Gating on it here
+     would refuse every working f16 kernel on Native, Interpreter, CUDA and HIP
+     on the strength of a probe that was never written — a refusal with no
+     evidence behind it, which is the mirror image of the #142 defect rather
+     than a fix for it. Widening this list is the work that must come WITH the
+     f16 probe, not before it. *)
+  let gated = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64] in
+  let required =
+    List.filter (fun f -> Sarek_ir_analysis.kernel_uses f ir) gated
+  in
+  match
+    Sarek_capability.first_refusal
+      (List.map (Sarek_capability.device_verdict ~provided) required)
+  with
+  | None -> ()
+  | Some verdict ->
+      let message =
+        match verdict with
+        | Sarek_capability.Unavailable cap ->
+            Sarek_capability.explain ~target:device.Device.name cap
+        | Sarek_capability.Unknown why ->
+            Printf.sprintf "%s: %s" device.Device.name why
+        | Sarek_capability.Available ->
+            (* [first_refusal] returns only non-permitting verdicts. *)
+            assert false
+      in
+      Execute_error.raise_error
+        (Backend_error {backend = device.Device.framework; message})
+
 (** Execute a kernel on a device using the unified dispatch mechanism.
 
     @param device Target device
@@ -578,6 +637,10 @@ let run ~(device : Device.t) ~(name : string)
           | Some ir_lazy -> (
               let ir = Lazy.force ir_lazy in
               check_launch_args ~kernel:name ir args ;
+              (* Before generate_source, so the diagnostic names the missing
+                 device capability rather than letting the backend emit a
+                 shader the device cannot legally load. *)
+              check_device_capabilities ~device ir ;
               match B.generate_source ~block ir with
               | None ->
                   Execute_error.raise_error
@@ -622,6 +685,7 @@ let run ~(device : Device.t) ~(name : string)
           B.Device.set_current dev ;
           let ir_val = Option.map Lazy.force ir in
           Option.iter (fun ir -> check_launch_args ~kernel:name ir args) ir_val ;
+          Option.iter (fun ir -> check_device_capabilities ~device ir) ir_val ;
           let exec_args = vector_args_to_exec_array args in
           B.execute_direct ~native_fn ~ir:ir_val ~block ~grid exec_args
       | Framework_sig.Custom ->
@@ -630,6 +694,7 @@ let run ~(device : Device.t) ~(name : string)
           B.Device.set_current dev ;
           let ir_val = Option.map Lazy.force ir in
           Option.iter (fun ir -> check_launch_args ~kernel:name ir args) ir_val ;
+          Option.iter (fun ir -> check_device_capabilities ~device ir) ir_val ;
           let exec_args = vector_args_to_exec_array args in
           B.execute_direct ~native_fn ~ir:ir_val ~block ~grid exec_args)
 

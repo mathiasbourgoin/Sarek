@@ -129,7 +129,10 @@ let by_framework framework =
 (** Filter devices by capability *)
 let with_fp64 () =
   all () |> Array.to_list
-  |> List.filter (fun d -> d.capabilities.supports_fp64)
+  |> List.filter (fun d ->
+      List.mem
+        Sarek_ir_analysis.Float64
+        d.capabilities.Framework_sig.device_features)
   |> Array.of_list
 
 (** CUDA backends register as "CUDA/PTX" and "CUDA/C"; match the family name or
@@ -202,7 +205,17 @@ let is_gpu d =
 
 (** {2 Capability Queries} *)
 
-let allows_fp64 d = d.capabilities.supports_fp64
+(* Derived from [device_features] rather than stored beside it, so the list
+   stays the single source of truth (#142). The predecessor of this accessor
+   read a [supports_fp64] bool that had no int64 counterpart, which is how an
+   int64 kernel reached a device that had never enabled shaderInt64. *)
+let provides d f = List.mem f d.capabilities.Framework_sig.device_features
+
+let allows_fp64 d = provides d Sarek_ir_analysis.Float64
+
+let allows_int64 d = provides d Sarek_ir_analysis.Int64
+
+let allows_fp16 d = provides d Sarek_ir_analysis.Float16
 
 let supports_atomics d = d.capabilities.supports_atomics
 

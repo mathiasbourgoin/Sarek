@@ -225,7 +225,8 @@ end = struct
         total_global_mem = total_mem;
         compute_capability = (0, 0);
         (* Native has no compute capability *)
-        supports_fp64 = true;
+        (* Host execution: OCaml floats are binary64 and Int64.t is native. *)
+        device_features = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64];
         supports_atomics = true;
         warp_size = 1;
         max_registers_per_block = 0;

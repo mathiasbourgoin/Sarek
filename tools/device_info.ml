@@ -32,7 +32,17 @@ let print_device_info dev =
 
   (* Feature support *)
   let features = ref [] in
-  if cap.supports_fp64 then features := "FP64" :: !features ;
+  (* Report every width the device provides, not just fp64: reading this tool's
+     output was one of the ways an int64 gap could have been noticed, and it
+     could not report a width the capabilities record could not hold (#142).
+     Iterating [all_features] rather than listing them keeps a new width from
+     being silently omitted here. *)
+  List.iter
+    (fun f ->
+      if List.mem f cap.device_features then
+        features :=
+          String.uppercase_ascii (Sarek_ir_analysis.feature_name f) :: !features)
+    (List.rev Sarek_ir_analysis.all_features) ;
   if cap.supports_atomics then features := "Atomics" :: !features ;
   if cap.is_cpu then features := "CPU (zero-copy)" :: !features ;
   if !features <> [] then

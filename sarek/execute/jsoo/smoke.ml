@@ -31,7 +31,7 @@ let () =
       capabilities =
         {
           is_cpu = true;
-          supports_fp64 = false;
+          device_features = [];
           supports_atomics = false;
           compute_capability = (0, 0);
           max_threads_per_block = 1;

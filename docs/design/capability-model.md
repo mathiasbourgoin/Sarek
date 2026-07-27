@@ -102,15 +102,32 @@ strings. Routing it through `Sarek_capability` makes the message uniform and the
 kind explicit. **Deliberately not done here**: #141 is auditing the WGSL backend
 concurrently and this would collide. No WGSL file is touched by slice 1.
 
-**Slice 2 — the dynamic launch gate.** `Execute.run` (`sarek/execute/Execute.ml`)
-is the single point that has both the device and the IR, right beside
-`check_launch_args`; `Framework_sig.generate_source` takes no device, so no
-codegen path can consult capabilities today. Requires extending
-`Framework_sig.capabilities`, which breaks the literal-record tests in
-`spoc/framework/test/` — a cost worth paying once, for a set-valued feature field
-rather than another bool. Also migrates the OpenCL/GLSL f16 refusals from
+**Slice 2 — the dynamic launch gate. Landed in #142, for the wide element types
+only.** `Execute.run` (`sarek/execute/Execute.ml`) is the single point that has
+both the device and the IR, right beside `check_launch_args`;
+`Framework_sig.generate_source` takes no device, so no codegen path can consult
+capabilities. As predicted, this required extending `Framework_sig.capabilities`
+and broke the literal-record tests; the field is the set-valued
+`device_features : Sarek_ir_analysis.feature list`, which **replaces**
+`supports_fp64 : bool` rather than sitting beside it — two fields answering
+overlapping questions is the drift this model exists to prevent.
+`Spoc_core.Device.allows_fp64` / `allows_int64` / `allows_fp16` are derived
+accessors over the one list.
+
+`Execute.check_device_capabilities` runs in all three `run` arms (JIT, Direct,
+Custom) — not only the JIT arm that generates a shader, because the question is
+about the device, not about codegen. It goes through `Sarek_capability.permits`,
+so an `Unknown` verdict refuses.
+
+**Still not done in slice 2:** migrating the OpenCL/GLSL f16 refusals from
 hand-written strings to structured `Toolchain_semantic` + `Policy` values, and
-picks up the GLSL `int64_t` hole (#142).
+probing `shaderFloat16` / CUDA sm_53. The launch gate therefore covers `Float64`
+and `Int64` only, and this is an explicit list in `check_device_capabilities`
+rather than `all_features`. The reason is worth keeping: no backend can honestly
+put `Float16` in `device_features` while no f16 probe exists, so gating on it
+would refuse every working f16 kernel on Native, Interpreter, CUDA and HIP on the
+authority of a measurement nobody took. Widening the gate and writing the probe
+are the same task and must land together.
 
 > **Correction.** Slice 1 recorded this as a GLSL *fp64* hole — "emits `double`
 > while never declaring `GL_ARB_gpu_shader_fp64`". That was **measured false** by
@@ -192,9 +209,48 @@ facts that motivated it is worse than none.
   cheap. Slice 2.
 - **`int64` on Vulkan/GLSL** — `Device_optional`
   (`VkPhysicalDeviceFeatures.shaderInt64` / `GL_ARB_gpu_shader_int64`). #141
-  fixed the emitter half; the *device* half is unprobed, so today a device
-  without the feature fails at shader load rather than at launch with a Sarek
-  diagnostic. #142, slice 2. See the correction under §4 slice 2.
+  fixed the emitter half. **#142 fixed the device half**, and found that the
+  prediction recorded here was wrong in a way worth keeping.
+
+  The expectation was "a device without the feature fails at shader load rather
+  than at launch with a Sarek diagnostic: loud and correct, but unattributed."
+  Measured, it was not loud. `Vulkan_api_device.get` built `pEnabledFeatures`
+  with `shaderFloat64` alone, so **every** int64 kernel ran against a logical
+  device that had never enabled `shaderInt64` — including on hardware that fully
+  supports it. On an RX 7900 XTX (RADV, Mesa 26.1.4-arch3.1, Vulkan 1.4.354) the
+  kernel returns *correct* results and exits 0; the violation is visible only
+  under `VK_LAYER_KHRONOS_validation`, as
+  `VUID-VkShaderModuleCreateInfo-pCode-08740` at `vkCreateShaderModule`
+  (evidence tier: `executed`). So the pre-fix behaviour was silent undefined
+  behaviour on the driver that copes, not a visible failure on the driver that
+  does not — and no results-only test could have caught it. The device-half
+  fix requests both features; the launch gate then attributes a genuinely
+  missing one.
+
+  **This is a correction to how the model reasons, not just a bug that got
+  fixed.** Two inferences failed, and both are the kind this document exists to
+  catch:
+
+  1. *The operative variable was not the one the kind names.* `Device_optional`
+     frames the question as "does the device HAVE it", so the analysis went
+     looking for hardware that lacks `shaderInt64`. But a `Device_optional`
+     capability on an API with explicit feature enablement has **two** gates —
+     supported, and *requested* — and the one that was broken applies to every
+     device including those that fully support the feature. When reading a
+     `Device_optional` row, ask what must be done to *turn the feature on*, not
+     only what the device reports.
+  2. *"It will fail loudly" is a prediction, not a property.* Absent a
+     measurement, the model assumed an unsatisfied requirement surfaces as an
+     error. Undefined behaviour is under no obligation to be loud, and the
+     permissive driver is the common case rather than the exception. A
+     capability claim whose evidence tier is weaker than `executed` should not
+     also assert how the violation *manifests* — that is a second, independent
+     claim needing its own evidence.
+
+  Regression gates: `sarek/tests/e2e/test_vulkan_int64.ml` (runs the kernel;
+  catches wrong 64-bit arithmetic, and catches the VUID when run under the
+  validation layer) and the `device_capability_gate` group in
+  `sarek/tests/unit/test_execute.ml` (catches the gate itself going permissive).
 
 **Correctly NOT in the table — see §5.1 for the rule:**
 

@@ -73,7 +73,13 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
         total_global_mem = d.global_mem_size;
         compute_capability = (0, 0);
         (* OpenCL doesn't have this concept *)
-        supports_fp64 = d.supports_fp64;
+        (* fp64 is the probed [cl_khr_fp64] bit (Opencl_api parses
+           CL_DEVICE_EXTENSIONS). int64 is unconditional: [long] is a required
+           core type in the OpenCL C full profile, not an extension, so unlike
+           Vulkan's shaderInt64 there is no bit to consult. *)
+        device_features =
+          (if d.supports_fp64 then [Sarek_ir_analysis.Float64] else [])
+          @ [Sarek_ir_analysis.Int64];
         supports_atomics = true;
         (* Most OpenCL devices support atomics *)
         warp_size = 32;

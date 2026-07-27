@@ -52,7 +52,9 @@ module Hip : Framework_sig.PLUGIN_BASE = struct
         shared_mem_per_block = d.shared_mem_per_block;
         total_global_mem = d.total_mem;
         compute_capability = d.compute_capability;
-        supports_fp64 = true;
+        (* As CUDA: fp64 and int64 are core on every HIP target. Float16 is
+           omitted for the same reason — unprobed, so not claimed. *)
+        device_features = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64];
         supports_atomics = true;
         warp_size = d.warp_size;
         max_registers_per_block = 65536;

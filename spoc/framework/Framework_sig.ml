@@ -31,7 +31,25 @@ type capabilities = {
   total_global_mem : int64;
   compute_capability : int * int;
       (** (major, minor) for CUDA, (0,0) for OpenCL *)
-  supports_fp64 : bool;
+  device_features : Sarek_ir_analysis.feature list;
+      (** The wide element types this DEVICE provides, as the same vocabulary
+          {!Sarek_ir_analysis.kernel_uses} asks a kernel for. The pairing is the
+          point: a kernel says what it REQUIRES, this says what the device
+          PROVIDES, and a launch gate is one [List.mem] rather than a per-width
+          boolean added to this record every time a width is.
+
+          Replaces the former [supports_fp64 : bool] (#142). It was a single
+          boolean for a question that already had three answers — fp64, f16 and
+          int64 — and the missing one had teeth: an int64 kernel reached
+          [vkCreateShaderModule] declaring [OpCapability Int64] against a
+          logical device that had never enabled [shaderInt64], because nothing
+          in this record could express the int64 half of the question. Read it
+          through {!Sarek_capability.permits}, never by testing membership
+          directly: an unprobed device must not fall into the permitted bucket.
+
+          [Spoc_core.Device.allows_fp64] and [allows_int64] are the derived
+          accessors, so this stays the single source and the two cannot drift.
+      *)
   supports_atomics : bool;
   warp_size : int;
   max_registers_per_block : int;

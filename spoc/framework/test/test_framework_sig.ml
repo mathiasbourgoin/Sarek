@@ -52,7 +52,7 @@ let test_capabilities () =
       shared_mem_per_block = 49152;
       total_global_mem = Int64.of_int (8 * 1024 * 1024 * 1024);
       compute_capability = (7, 5);
-      supports_fp64 = true;
+      device_features = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64];
       supports_atomics = true;
       warp_size = 32;
       max_registers_per_block = 65536;
@@ -63,7 +63,8 @@ let test_capabilities () =
   in
   assert (caps.max_threads_per_block = 1024) ;
   assert (caps.warp_size = 32) ;
-  assert (caps.supports_fp64 = true) ;
+  assert (List.mem Sarek_ir_analysis.Float64 caps.device_features) ;
+  assert (List.mem Sarek_ir_analysis.Int64 caps.device_features) ;
   assert (caps.is_cpu = false) ;
   print_endline "  capabilities: OK"
 
@@ -78,7 +79,7 @@ let test_device () =
       shared_mem_per_block = 16384;
       total_global_mem = Int64.of_int (2 * 1024 * 1024 * 1024);
       compute_capability = (0, 0);
-      supports_fp64 = true;
+      device_features = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64];
       supports_atomics = true;
       warp_size = 64;
       max_registers_per_block = 16384;

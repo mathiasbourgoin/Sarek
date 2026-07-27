@@ -52,7 +52,23 @@ module Vulkan = struct
         shared_mem_per_block = 49152;
         total_global_mem = total_mem;
         compute_capability = (major, minor);
-        supports_fp64 = dev.Vulkan_api.Device.supports_fp64;
+        (* Both entries come from vkGetPhysicalDeviceFeatures and both are
+           mirrored into the logical device's pEnabledFeatures, so this list
+           reports what the device will actually ACCEPT, not merely what the
+           physical device advertises (#142). Float16 is absent deliberately:
+           shaderFloat16 is not probed, and f16 is refused on this backend by
+           policy anyway — claiming it here would be the permissive-default
+           error the capability model exists to prevent. *)
+        device_features =
+          List.concat
+            [
+              (if dev.Vulkan_api.Device.supports_fp64 then
+                 [Sarek_ir_analysis.Float64]
+               else []);
+              (if dev.Vulkan_api.Device.supports_int64 then
+                 [Sarek_ir_analysis.Int64]
+               else []);
+            ];
         supports_atomics = true;
         warp_size = 32;
         (* subgroup size varies by vendor *)

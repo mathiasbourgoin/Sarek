@@ -82,6 +82,68 @@ let refuse_if_used ~raise_ ~target cap (feature : Sarek_ir_analysis.feature)
     (k : Sarek_ir_types.kernel) : unit =
   if Sarek_ir_analysis.kernel_uses feature k then raise_ (explain ~target cap)
 
+let device_lacks_feature (f : Sarek_ir_analysis.feature) =
+  let cap_why, cap_evidence, cap_remedy =
+    match f with
+    | Sarek_ir_analysis.Int64 ->
+        ( "the device does not report VkPhysicalDeviceFeatures.shaderInt64 (or \
+           the backend equivalent), and GLSL int64_t lowers to SPIR-V \
+           declaring OpCapability Int64, which is legal only against a device \
+           that enabled the feature",
+          Quoted
+            "Vulkan specification, VUID-VkShaderModuleCreateInfo-pCode-08740: \
+             a declared SPIR-V capability must have its corresponding \
+             requirement satisfied",
+          Some "Use int32, or select a device that reports int64 support." )
+    | Sarek_ir_analysis.Float64 ->
+        ( "the device does not report double-precision support \
+           (VkPhysicalDeviceFeatures.shaderFloat64 / cl_khr_fp64)",
+          Quoted
+            "Vulkan specification, VUID-VkShaderModuleCreateInfo-pCode-08740, \
+             and OpenCL: cl_khr_fp64 is an optional extension",
+          Some
+            "Use float32, or Sarek_real64 — its Fallback_df64 substrate gives \
+             software double precision on devices without native fp64." )
+    | Sarek_ir_analysis.Float16 ->
+        ( "the device does not report half-precision support \
+           (VkPhysicalDeviceFeatures.shaderFloat16 / cl_khr_fp16)",
+          Quoted
+            "Vulkan specification: shaderFloat16 is an optional feature; \
+             OpenCL: cl_khr_fp16 is an optional extension",
+          Some "Use float32." )
+  in
+  {
+    cap_name = Sarek_ir_analysis.feature_name f;
+    (* Device_optional, emphatically not Backend_structural. The backend CAN
+       spell every one of these types; a particular device may not provide it.
+       Getting this wrong in the permissive direction is #142; getting it wrong
+       in the other direction would refuse kernels that run fine on most
+       hardware. [kind_needs_device] is [true] here, which is what says this
+       must be a launch gate rather than a codegen refusal. *)
+    cap_kind = Device_optional;
+    cap_why;
+    cap_evidence;
+    cap_remedy;
+  }
+
+(** The verdict for [f] against a device advertising [provided].
+
+    [provided] is the device's OWN report. A caller that cannot obtain one must
+    pass [None] and gets [Unknown], which {!permits} refuses — the unprobed
+    device must not land in the permitted bucket, which is the whole safety
+    property of this module. *)
+let device_verdict ~(provided : Sarek_ir_analysis.feature list option)
+    (f : Sarek_ir_analysis.feature) : verdict =
+  match provided with
+  | None ->
+      Unknown
+        (Printf.sprintf
+           "device capabilities were not probed, so %s cannot be confirmed"
+           (Sarek_ir_analysis.feature_name f))
+  | Some features ->
+      if List.mem f features then Available
+      else Unavailable (device_lacks_feature f)
+
 let float64_absent_metal =
   {
     cap_name = "float64";

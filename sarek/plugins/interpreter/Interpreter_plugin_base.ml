@@ -216,7 +216,8 @@ end = struct
         shared_mem_per_block = 1024 * 1024;
         total_global_mem = Int64.of_int (16 * 1024 * 1024 * 1024);
         compute_capability = (0, 0);
-        supports_fp64 = true;
+        (* Host execution: OCaml floats are binary64 and Int64.t is native. *)
+        device_features = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64];
         supports_atomics = true;
         warp_size = (if d.parallel then 32 else 1);
         max_registers_per_block = 0;

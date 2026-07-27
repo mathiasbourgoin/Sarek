@@ -13,9 +13,14 @@
 
 (** {1 Helper to create fake capabilities} *)
 
+(* [supports_fp64] and [supports_int64] stay as separate optional arguments
+   even though the record now carries one list: the tests below assert that the
+   two DERIVED accessors disagree with each other in the right way, which needs
+   the ability to set one width without the other (#142). *)
 let make_fake_caps ?(is_cpu = false) ?(supports_fp64 = true)
-    ?(supports_atomics = true) ?(warp_size = 32) ?(compute_capability = (0, 0))
-    () : Spoc_framework.Framework_sig.capabilities =
+    ?(supports_int64 = true) ?(supports_atomics = true) ?(warp_size = 32)
+    ?(compute_capability = (0, 0)) () :
+    Spoc_framework.Framework_sig.capabilities =
   {
     max_threads_per_block = 256;
     max_block_dims = (256, 256, 64);
@@ -23,7 +28,9 @@ let make_fake_caps ?(is_cpu = false) ?(supports_fp64 = true)
     shared_mem_per_block = 16384;
     total_global_mem = 1073741824L;
     compute_capability;
-    supports_fp64;
+    device_features =
+      ((if supports_fp64 then [Sarek_ir_analysis.Float64] else [])
+      @ if supports_int64 then [Sarek_ir_analysis.Int64] else []);
     supports_atomics;
     warp_size;
     max_registers_per_block = 16384;
@@ -52,7 +59,7 @@ let test_device_type_structure () =
 let test_capabilities_structure () =
   let caps = make_fake_caps ~supports_fp64:true ~warp_size:64 () in
   assert (caps.max_threads_per_block = 256) ;
-  assert (caps.supports_fp64 = true) ;
+  assert (List.mem Sarek_ir_analysis.Float64 caps.device_features) ;
   assert (caps.warp_size = 64) ;
   print_endline "  capabilities structure: OK"
 
@@ -117,6 +124,25 @@ let test_allows_fp64 () =
   assert (Spoc_core.Device.allows_fp64 fp64_dev = true) ;
   assert (Spoc_core.Device.allows_fp64 no_fp64_dev = false) ;
   print_endline "  allows_fp64: OK"
+
+(* #142. The point is not that [allows_int64] works, it is that it is
+   INDEPENDENT of [allows_fp64]. The defect this replaces was a record with an
+   fp64 boolean and no int64 one, so every int64 question was answered by
+   whatever fp64 happened to say. Each assertion below pins one width while the
+   other is false; if the two accessors were ever re-collapsed onto a single
+   field, both cross cases fail. *)
+let test_allows_int64_independent_of_fp64 () =
+  let int64_only =
+    make_fake_caps ~supports_fp64:false ~supports_int64:true ()
+  in
+  let fp64_only = make_fake_caps ~supports_fp64:true ~supports_int64:false () in
+  let int64_dev = make_fake_device ~caps:int64_only () in
+  let fp64_dev = make_fake_device ~caps:fp64_only () in
+  assert (Spoc_core.Device.allows_int64 int64_dev = true) ;
+  assert (Spoc_core.Device.allows_fp64 int64_dev = false) ;
+  assert (Spoc_core.Device.allows_int64 fp64_dev = false) ;
+  assert (Spoc_core.Device.allows_fp64 fp64_dev = true) ;
+  print_endline "  allows_int64 independent of allows_fp64: OK"
 
 let test_supports_atomics () =
   let atomics_caps = make_fake_caps ~supports_atomics:true () in
@@ -303,6 +329,7 @@ let () =
   test_is_cpu () ;
   (* Capability query tests *)
   test_allows_fp64 () ;
+  test_allows_int64_independent_of_fp64 () ;
   test_supports_atomics () ;
   test_compute_capability () ;
   test_warp_size () ;
