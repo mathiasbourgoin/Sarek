@@ -64,6 +64,44 @@ let check_absent what src needle =
   if contains ~needle src then
     Alcotest.failf "%s: expected NOT to find %S in:\n%s" what needle src
 
+(** First index of [needle] at or after [from], or [-1]. *)
+let index_from ~needle ~from haystack =
+  let nl = String.length needle and hl = String.length haystack in
+  let rec go i =
+    if i + nl > hl then -1
+    else if String.sub haystack i nl = needle then i
+    else go (i + 1)
+  in
+  go (max 0 from)
+
+let index_of ~needle haystack = index_from ~needle ~from:0 haystack
+
+(** Drop C block- and line-comments, so a structural assertion about emitted
+    CODE cannot be satisfied — or broken — by prose. Without this, an assertion
+    that a preprocessor arm contains no ["volatile"] goes red the day someone
+    writes the word in the comment explaining why there is none. *)
+let strip_c_comments src =
+  let n = String.length src in
+  let buf = Buffer.create n in
+  let rec go i =
+    if i >= n then ()
+    else if i + 1 < n && src.[i] = '/' && src.[i + 1] = '*' then
+      let rec close j =
+        if j + 1 >= n then n
+        else if src.[j] = '*' && src.[j + 1] = '/' then j + 2
+        else close (j + 1)
+      in
+      go (close (i + 2))
+    else if i + 1 < n && src.[i] = '/' && src.[i + 1] = '/' then
+      let rec eol j = if j >= n || src.[j] = '\n' then j else eol (j + 1) in
+      go (eol (i + 2))
+    else (
+      Buffer.add_char buf src.[i] ;
+      go (i + 1))
+  in
+  go 0 ;
+  Buffer.contents buf
+
 (* ------------------------------------------------------------------ *)
 (* Kernels                                                            *)
 (* ------------------------------------------------------------------ *)
@@ -208,6 +246,103 @@ let test_f16_conversions () =
     "NVIDIA branch documents why it is empty"
     src
     "NVIDIA: intentionally an identity" ;
+  ()
+
+(** The opacity barrier must be SCOPED to the AMD toolchain, not merely present
+    (backlog #144).
+
+    [test_f16_conversions] asserts the AMDGPU [asm volatile] appears and that no
+    PTX ["+f"] variant does. Neither assertion looks at WHERE the asm sits, so
+    both survive the mutation that matters here: widening the barrier so it is
+    also emitted on the non-AMD arm.
+
+    Why that mutation is a defect and not a harmless over-approximation.
+    Measured on Intel Arc Graphics (Meteor Lake-P, Intel Compute Runtime / IGC),
+    2026-07-27, exhaustive over all 63488 finite binary16 inputs
+    (docs/fp-contraction-policy.md §11.3 / §11.4): the naive narrowing is
+    correct — 0/63488 against the host binary16 reference, with the [fusedctl]
+    positive control reproducing ACO's 620/63488 on the same device and run —
+    and every volatile-based barrier makes it WRONG on 4774/63488. IGC folds the
+    [f32(f16(x))] pair across the volatile boundary, a fold valid only when the
+    value is exactly representable in binary16. So on that toolchain the barrier
+    is not redundant, it is the defect.
+
+    IGC cannot receive this particular source today: Sarek's OpenCL, GLSL, Metal
+    and WGSL backends all refuse f16 outright, so the only compilers that ever
+    see [sarek_f32_barrier] are hiprtc and nvrtc, and the preprocessor tells
+    those two apart with certainty. That is a STRUCTURAL argument, and
+    structural arguments are what this repository keeps discovering it had
+    stopped re-checking. This case is the re-check: it pins that the opacity
+    body lives inside the AMD arm and that the other arm is a bare identity, so
+    a future maintainer who "simplifies" the [#if] away, or who adds a barrier
+    on the NVIDIA arm on the strength of an AMD measurement, gets a red rather
+    than a silently portable-looking one.
+
+    Evidence tier for the IGC figures: executed (Intel Arc, IGC). For "the
+    preprocessor is the right discriminator": by-construction. *)
+let test_f16_barrier_is_amd_scoped () =
+  let src = gen (f16_scale_kernel ()) in
+  let guard = "#if defined(__HIP__) || defined(__HIP_PLATFORM_AMD__)" in
+  let i_if = index_of ~needle:guard src in
+  if i_if < 0 then
+    Alcotest.failf
+      "the f32 barrier must be emitted under the AMD toolchain guard %S; it \
+       was not found at all, so nothing scopes the opacity body:\n\
+       %s"
+      guard
+      src ;
+  let i_else = index_from ~needle:"#else" ~from:i_if src in
+  let i_endif = index_from ~needle:"#endif" ~from:i_if src in
+  if not (i_else > i_if && i_endif > i_else) then
+    Alcotest.failf
+      "the AMD guard must be a two-armed #if/#else/#endif (if@%d, else@%d, \
+       endif@%d):\n\
+       %s"
+      i_if
+      i_else
+      i_endif
+      src ;
+  (* The opacity body is inside the AMD arm. *)
+  let i_asm = index_from ~needle:"asm volatile" ~from:i_if src in
+  if not (i_asm > i_if && i_asm < i_else) then
+    Alcotest.failf
+      "the AMDGPU opacity barrier must sit INSIDE the AMD arm of the guard \
+       (if@%d, asm@%d, else@%d). Emitting it outside ships to every toolchain \
+       the barrier was never measured on — and on Intel IGC that same barrier \
+       turns a correct narrowing into 4774/63488 wrong answers \
+       (docs/fp-contraction-policy.md §11.4):\n\
+       %s"
+      i_if
+      i_asm
+      i_else
+      src ;
+  (* And the non-AMD arm carries no barrier of any kind. Comments are stripped
+     first: the arm's whole purpose is a comment explaining why there is no
+     barrier, and that prose must not be able to satisfy or break a check about
+     code. *)
+  let non_amd_arm =
+    strip_c_comments (String.sub src i_else (i_endif - i_else))
+  in
+  List.iter
+    (fun needle ->
+      if contains ~needle non_amd_arm then
+        Alcotest.failf
+          "the non-AMD arm of the barrier guard must be a bare identity, but \
+           it contains %S. A barrier here is not measured-neutral: it is \
+           measured-HARMFUL on Intel IGC (4774/63488) and \
+           measured-zero-instruction on NVIDIA (byte-identical cubins, \
+           sm_75..sm_121). Arm was:\n\
+           %s"
+          needle
+          non_amd_arm)
+    ["asm"; "volatile"] ;
+  (* Non-vacuity: the arm we just proved empty must be the one that really
+     carries the NVIDIA identity, otherwise the substring above could be empty
+     for an unrelated reason. *)
+  check_contains
+    "the non-AMD arm is the NVIDIA identity"
+    non_amd_arm
+    "return x;" ;
   ()
 
 let test_non_f16_kernel_unchanged () =
@@ -395,6 +530,18 @@ let test_deferred_backends_reject_f16 () =
       ~expected_reason:reason_opencl
       (label ^ "/opencl generate_with_types")
       (fun () -> Sarek_ir_opencl.generate_with_types ~types:k.kern_types k) ;
+    (* OpenCL has a THIRD public entry point. It delegates to [generate], so it
+       is covered transitively today — but "covered transitively" is exactly how
+       this repo's previous guard holes were argued, and THIS refusal is what
+       keeps Sarek's f16 narrowing away from IGC, where the ACO barrier is
+       measured to BREAK a correct narrowing (4774/63488, Intel Arc /
+       Meteor Lake-P, docs/fp-contraction-policy.md §11.4). Asserted directly so
+       a future non-delegating implementation cannot reopen it. *)
+    expect_f16_rejected
+      ~backend:"OpenCL"
+      ~expected_reason:reason_opencl
+      (label ^ "/opencl generate_with_fp64")
+      (fun () -> Sarek_ir_opencl.generate_with_fp64 k) ;
     (* GLSL's Backend_error tag is "Vulkan" (that is the framework name). *)
     expect_f16_rejected
       ~tag:"Vulkan"
@@ -577,6 +724,10 @@ let () =
             "conversions use __float2half / C cast"
             `Quick
             test_f16_conversions;
+          Alcotest.test_case
+            "f32 barrier is scoped to the AMD toolchain arm (#144)"
+            `Quick
+            test_f16_barrier_is_amd_scoped;
           Alcotest.test_case
             "non-f16 kernel emits no f16 machinery"
             `Quick
