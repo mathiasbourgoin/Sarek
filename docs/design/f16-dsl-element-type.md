@@ -944,9 +944,19 @@ conversions.
 >
 > **Two generalizable rules.**
 > 1. *Group backends by their backend compiler, not by their source language.*
->    OpenCL and HIP look maximally different at the source level and are the same
->    compiler underneath. GLSL/Vulkan on RADV is a third front end onto ACO and
->    should be assumed to carry this defect until measured.
+>    OpenCL and HIP look maximally different at the source level and hit the
+>    same defect underneath. GLSL/Vulkan on RADV is a second front end onto ACO
+>    and should be assumed to carry this defect until measured.
+>
+>    **Corrected (#145): they are not the same compiler.** rusticl/radeonsi and
+>    RADV compile through **ACO**, Mesa's shader compiler; hiprtc compiles
+>    through **LLVM's AMDGPU backend**. The rule survives — grouping by
+>    compiler still beats grouping by source language — but the group here is
+>    "AMD's two GPU compilers", and the identical 620/63488 is two compilers
+>    agreeing, not one compiler seen twice. That is the stronger reading, and it
+>    is the one that scopes a future barrier correctly: keyed to Mesa/ACO it
+>    would miss hiprtc, keyed to ROCm it would miss rusticl and RADV. See
+>    `docs/fp-contraction-policy.md` §2, "Two AMD compilers".
 >
 >    **Do not over-read the RADV result that landed alongside this** (#106/#126,
 >    the `Vulkan / GLSL` row): RADV was measured *not* to contract **7 f32
@@ -987,7 +997,8 @@ conversions.
 > **Three things this changes, none of which were predictable from the OpenCL
 > result.**
 >
-> *Same locus, different severity.* Rule 1 was right that ACO is the locus, and
+> *Same locus, different severity.* Rule 1 was right that a backend compiler is
+> the locus (ACO here; see its correction above — HIP's is LLVM/AMDGPU), and
 > wrong to imply the count would follow. Through OpenCL C the combine swallows
 > the multiply only. Through SPIR-V it also swallows the f32 **add**: the plain
 > two-narrowing kernel compiles to a *single* `v_fma_mixlo_f16 1.1, x, 1000.0f`

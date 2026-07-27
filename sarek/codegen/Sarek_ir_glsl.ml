@@ -241,8 +241,11 @@ let rec glsl_type_of_elttype = function
          backend absorbs the f32->f16 narrowing into whatever arithmetic feeds
          it, via v_fma_mixlo_f16 — one rounding where the DSL mandates two.
 
-         This is the SAME backend compiler as the HIP and rusticl defects
-         (ACO), reached through a third front end, but it is NOT the same
+         This is the SAME backend compiler as the rusticl defect (ACO, Mesa's
+         shader compiler), reached through a second front end — and the same
+         defect CLASS as HIP, which reaches it through a different compiler
+         entirely (LLVM's AMDGPU backend; see docs/fp-contraction-policy.md §2,
+         "Two AMD compilers"). It is NOT the same
          severity. On HIP/OpenCL the fusion swallows the multiply only. Here it
          also swallows the f32 add, and — when an f32 barrier is placed around
          the multiply — it drops the intermediate narrowing altogether rather

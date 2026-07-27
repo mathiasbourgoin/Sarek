@@ -808,9 +808,49 @@ let cuda_fp16_include =
     local ptxas knows and fails if the discipline breaks. See
     [docs/fp-contraction-policy.md] and
     [docs/optimization/cuda-f16-fusion-sass-audit.md]. NO f16 kernel has been
-    EXECUTED on NVIDIA hardware; the claim is a machine-code claim. *)
+    EXECUTED on NVIDIA hardware; the claim is a machine-code claim.
+
+    WHY THE GUARD NAMES THE PLATFORM AND NOT THE LANGUAGE (backlog #146). The
+    guard is [defined(__HIP_PLATFORM_AMD__)] alone. It used to be
+    [defined(__HIP__) || defined(__HIP_PLATFORM_AMD__)], and the second form
+    reads as though it admits HIP compiled for an NVIDIA target, where ["+v"] is
+    not a valid constraint. Measured on this host, ROCm 7.2.53211:
+
+    - hiprtc predefines BOTH [__HIP__] and [__HIP_PLATFORM_AMD__], and neither
+      [__HIP_PLATFORM_NVIDIA__] nor the legacy [__HIP_PLATFORM_HCC__]. All three
+      candidate guards select the AMD arm and compile the ["+v"] asm — checked
+      with [#error] in the other arm, so "it compiled" proves which arm was
+      taken. Evidence: EXECUTED (hiprtc).
+    - [hip/hip_common.h] auto-enables [__HIP_PLATFORM_AMD__] whenever
+      [__clang__ && __HIP__], and auto-enables [__HIP_PLATFORM_NVIDIA__] only
+      for [__NVCC__] or clang-CUDA WITHOUT [__HIP__]. [hip/linker_types.h] then
+      hard-[#error]s unless exactly one platform macro is set. So under HIP's
+      own headers [__HIP__] IMPLIES the AMD platform: the removed disjunct was
+      redundant, not load-bearing, and the NVIDIA-target-with-[__HIP__]
+      configuration those headers describe cannot arise. Evidence:
+      BY-CONSTRUCTION (the shipped headers).
+    - Both ROCm clang 22.0.0git and upstream clang 22.1.6 refuse
+      [-x hip --offload-arch=sm_61] outright ("unsupported HIP gpu
+      architecture"), so that configuration is not reachable with either
+      compiler on this host either. Evidence: EXECUTED.
+    - ["+v"] IS invalid on NVPTX, independently of HIP: clang rejects
+      [asm volatile("" : "+v"(x))] for [--target=nvptx64-nvidia-cuda] with
+      "invalid output constraint '+v' in asm", and accepts ["+f"]. Evidence:
+      EXECUTED. This is the part that was previously inferred from the
+      constraint vocabulary alone.
+
+    So this is a CLARITY change, not a bug fix: no reachable configuration was
+    mis-served by the old guard. It is made because the asm is AMD-ISA-specific
+    and the guard should say so — [__HIP__] is a LANGUAGE predicate that
+    constrains no target — and because the redundant disjunct has now twice led
+    a reader to conclude the barrier ships to NVPTX. STILL UNVERIFIED: ROCm
+    older than the 4.x rename, where [__HIP_PLATFORM_HCC__] was the platform
+    macro; no such toolchain exists here. If one is ever in play the AMD arm
+    would be skipped and the f16 discipline would fail silently, which is the
+    one direction this file cares about — [test_f16_barrier_is_amd_scoped] pins
+    the guard so the change cannot happen unnoticed. *)
 let sarek_f32_barrier_decl =
-  {|#if defined(__HIP__) || defined(__HIP_PLATFORM_AMD__)
+  {|#if defined(__HIP_PLATFORM_AMD__)
 __device__ __forceinline__ float sarek_f32_barrier(float x) {
   asm volatile("" : "+v"(x));
   return x;

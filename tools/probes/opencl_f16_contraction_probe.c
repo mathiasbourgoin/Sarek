@@ -2,8 +2,11 @@
  *
  * Standalone reproducer for the finding recorded in
  * docs/fp-contraction-policy.md, row "OpenCL / rusticl (f16 narrowing)":
- * the AMDGPU/ACO backend fuses the f32 multiply into the f32->f16 narrowing
- * that consumes it, rounding ONCE where Sarek's f16 discipline mandates twice.
+ * ACO — Mesa's shader compiler, reached here through rusticl/radeonsi — fuses
+ * the f32 multiply into the f32->f16 narrowing that consumes it, rounding ONCE
+ * where Sarek's f16 discipline mandates twice. (HIP hits the same defect with
+ * the same count through a DIFFERENT compiler, LLVM's AMDGPU backend; see
+ * docs/fp-contraction-policy.md §2, "Two AMD compilers".)
  *
  * Deliberately standalone C rather than an OCaml test: it must be able to say
  * something about the OpenCL stack WITHOUT Sarek's codegen in the loop, since

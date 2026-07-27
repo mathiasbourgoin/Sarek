@@ -278,11 +278,20 @@ let test_f16_conversions () =
     on the NVIDIA arm on the strength of an AMD measurement, gets a red rather
     than a silently portable-looking one.
 
+    Extended for #146 with the third thing the guard has to get right, after
+    "the asm is inside the AMD arm" and "the other arm is bare": WHICH MACRO the
+    arm is keyed on. [__HIP__] is a language predicate and constrains no target;
+    [__HIP_PLATFORM_AMD__] names the target that makes ["+v"] legal. The guard
+    carried both as a disjunction, and the redundant one is what made two
+    successive readers conclude the barrier ships to NVPTX.
+
     Evidence tier for the IGC figures: executed (Intel Arc, IGC). For "the
-    preprocessor is the right discriminator": by-construction. *)
+    preprocessor is the right discriminator": by-construction. For ["+v"] being
+    invalid on NVPTX: executed (clang 22.1.6, [--target=nvptx64-nvidia-cuda]
+    rejects it, accepts ["+f"]). *)
 let test_f16_barrier_is_amd_scoped () =
   let src = gen (f16_scale_kernel ()) in
-  let guard = "#if defined(__HIP__) || defined(__HIP_PLATFORM_AMD__)" in
+  let guard = "#if defined(__HIP_PLATFORM_AMD__)" in
   let i_if = index_of ~needle:guard src in
   if i_if < 0 then
     Alcotest.failf
@@ -291,6 +300,30 @@ let test_f16_barrier_is_amd_scoped () =
        %s"
       guard
       src ;
+  (* The guard names the PLATFORM, never the LANGUAGE (#146). [__HIP__] says
+     "this translation unit is HIP", which constrains no target ISA;
+     [__HIP_PLATFORM_AMD__] says "the target is AMD", which is the only thing
+     that makes the "+v" VGPR constraint legal. Measured: clang rejects "+v" for
+     --target=nvptx64-nvidia-cuda ("invalid output constraint '+v' in asm") and
+     accepts "+f". The two are NOT interchangeable keys, even though HIP's own
+     hip_common.h currently makes __HIP__ imply __HIP_PLATFORM_AMD__ under
+     clang — that implication is a header's behaviour, not a language rule, and
+     it is not what this barrier should be resting on. Asserted on the guard
+     LINE rather than on the whole source because the f16 include above
+     legitimately tests __HIP__ (there the question really is "is this HIP",
+     and both arms fail loudly). *)
+  let guard_line =
+    let e = try String.index_from src i_if '\n' with Not_found -> i_if in
+    String.sub src i_if (e - i_if)
+  in
+  if contains ~needle:"defined(__HIP__)" guard_line then
+    Alcotest.failf
+      "the barrier guard must not key on __HIP__: it is a LANGUAGE predicate \
+       and admits any HIP target, while the asm body is AMDGPU-specific (clang \
+       rejects \"+v\" for nvptx64 with \"invalid output constraint\"). Use \
+       __HIP_PLATFORM_AMD__, which names the target. Guard line was:\n\
+       %s"
+      guard_line ;
   let i_else = index_from ~needle:"#else" ~from:i_if src in
   let i_endif = index_from ~needle:"#endif" ~from:i_if src in
   if not (i_else > i_if && i_endif > i_else) then

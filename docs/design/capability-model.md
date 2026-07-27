@@ -15,11 +15,15 @@ a set of capability facts that do not live at the same layer:
 - **Metal has no `double`.** `Sarek_ir_metal.ml` mapped `TFloat64 -> "float"`
   with a comment saying so and no refusal anywhere on the path. No device query
   can report this; it is a property of the Metal Shading Language.
-- **ACO fuses an f32 multiply into the f32→f16 narrowing** regardless of what the
-  driver advertises — 620/63488 disagreements via rusticl, up to 5075/63488 via
-  RADV, on RX 7900 XTX / gfx1100. pocl on x86 does not fuse, which localises the
-  defect to ACO rather than to the device or the API. The device reports the
-  feature; the feature is broken. A device flag says "yes".
+- **AMD's GPU shader compilers fuse an f32 multiply into the f32→f16 narrowing**
+  regardless of what the driver advertises — 620/63488 disagreements via
+  rusticl/radeonsi and up to 5075/63488 via RADV (both **ACO**, Mesa's
+  compiler), and the same 620/63488 via hiprtc (**LLVM's AMDGPU backend**, a
+  different compiler), on RX 7900 XTX / gfx1100. pocl on x86 and Intel IGC do
+  not fuse, which localises the defect to the vendor's shader compilers rather
+  than to the device or the API — note *compilers*, plural: see
+  `docs/fp-contraction-policy.md` §2, "Two AMD compilers". The device reports
+  the feature; the feature is broken. A device flag says "yes".
 - **Apple Silicon OpenCL has no `cl_khr_fp64`** — and the question that actually
   decides whether a build succeeds there is whether the *host* clang can compile
   `double` for that target, not what the device reports.
@@ -45,7 +49,7 @@ diagnostic or a launch gate is the right instrument — that is
 | `Backend_structural` | the target **language** | statically, no device | Metal has no `double`; WebGPU has no `f64` |
 | `Device_optional` | the **device** | needs a device | `cl_khr_fp64`, `shaderFloat16`, sm_53 for f16, tensor cores |
 | `Host_toolchain` | the **host compiler/headers** | needs a host probe | can Apple clang compile `double` for this target; NVRTC needs `cuda_fp16.h` |
-| `Toolchain_semantic` | the **shader compiler** | only measurable | ACO fusing f32 mul into the f16 narrowing |
+| `Toolchain_semantic` | the **shader compiler** | only measurable | ACO *and* LLVM/AMDGPU fusing f32 mul into the f16 narrowing |
 | `Policy` | **us** | statically | f16 refused on OpenCL because we measured it wrong |
 | `Flag_legality` | a **build option × a device bit** | needs a device | `-cl-fp32-correctly-rounded-divide-sqrt` |
 
@@ -54,7 +58,7 @@ Three distinctions do real work and are worth defending:
 **`Toolchain_semantic` vs `Device_optional`.** A device flag and a compiler
 behaviour are different facts about different components, and the compiler one
 must be able to *override a device saying yes*. Any model where a device query
-is the final authority gets ACO wrong.
+is the final authority gets the AMD f16 fusion wrong.
 
 **`Toolchain_semantic` vs `Policy`.** The first is the evidence, the second the
 verdict. A `Toolchain_semantic` fact is revised by a new **measurement**; a
@@ -177,7 +181,7 @@ facts that motivated it is worse than none.
   refuses everything it cannot represent at the right width. It was the
   *precedent* Metal should have followed, not a second instance of the defect.
 - f16 refused on OpenCL and GLSL — representable as `Toolchain_semantic`
-  (evidence: the ACO counts) plus `Policy` (verdict). Currently hand-written
+  (evidence: the AMD f16 fusion counts) plus `Policy` (verdict). Currently hand-written
   strings; slice 2 structures them.
 - Apple Silicon OpenCL / host clang — `Host_toolchain` exists as a kind; no probe
   machinery exists.
@@ -248,9 +252,14 @@ facts that motivated it is worse than none.
   slow" is a third thing it cannot say. This is the affinity half of the backlog
   title and it is genuinely a different model — a cost, not a predicate. Slice 5,
   and it should not be bolted onto `verdict`.
-- **Which shader compiler is in the stack.** The ACO fact is a property of
-  ACO — not of RADV, not of the device, not of OpenCL-vs-Vulkan (it reproduces
-  through three front ends). The model can *say* a capability is
+- **Which shader compiler is in the stack.** The f16-fusion fact is a property
+  of the **shader compiler** — not of RADV, not of the device, not of
+  OpenCL-vs-Vulkan (it reproduces through three front ends). But there are
+  **two** such compilers and both fuse: ACO (reached via rusticl and via RADV)
+  and LLVM's AMDGPU backend (reached via hiprtc). So "identify ACO at runtime"
+  would be the wrong predicate as well as an unavailable one — the right one is
+  "is this an AMD GPU compiler", and the two are not the same set. See
+  `docs/fp-contraction-policy.md` §2. The model can *say* a capability is
   `Toolchain_semantic`, but it has no way to *identify* the compiler at runtime,
   so such a verdict can only be blanket-per-backend. That over-refuses on pocl,
   which measurably does not fuse — and it now over-refuses on Intel IGC too,

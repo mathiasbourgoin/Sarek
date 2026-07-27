@@ -539,16 +539,22 @@ let refusal_is_still_warranted () =
 
    Recording the CI observation was the immediate motive: on an AMD EPYC 7763
    runner under pocl, the naive and barriered kernels agree on all 63488 inputs.
-   That is worth keeping, because it is what separates *the ACO backend* from
-   *OpenCL in general* as the locus of the defect — and it is the second
-   independent reason to believe rusticl and HIP are ONE bug seen twice rather
-   than two coincidentally equal ones.
+   That is worth keeping, because it is what separates *AMD's GPU compilers*
+   from *OpenCL in general* as the locus of the defect.
 
-   docs/fp-contraction-policy.md now states that scoping as a claim. A claim
-   deserves a guard, so this asserts it rather than merely printing it: any
-   NON-ACO OpenCL implementation that DOES fuse would falsify "the locus is
-   ACO", and we want to be told. On every implementation measured so far it
-   passes trivially.
+   It does NOT separate the two AMD compilers from each other, and an earlier
+   version of this comment said it did. rusticl/radeonsi compiles through ACO
+   and hiprtc compiles through LLVM's AMDGPU backend — two different compilers
+   that produce the same 620/63488, which is two compilers agreeing rather than
+   one bug seen twice. See docs/fp-contraction-policy.md §2, "Two AMD
+   compilers".
+
+   docs/fp-contraction-policy.md states that scoping as a claim. A claim
+   deserves a guard, so this asserts it rather than merely printing it: an
+   out-of-scope OpenCL implementation that DOES fuse is something we want to be
+   told about, whether it widens the claim (a non-AMD fuser) or merely widens
+   this test's predicate (an AMD stack outside the "ACO" key). On every
+   implementation measured so far it passes trivially.
 
    The tradeoff is deliberate and stated: this can go red on hardware nobody has
    studied, and that red would be a genuine finding about the doc rather than a
@@ -580,7 +586,7 @@ let non_aco_implementations_do_not_fuse () =
   in
   if out_of_scope = [] then begin
     Printf.printf
-      "[SKIP] no non-ACO OpenCL device present to cross-check the locus-is-ACO \
+      "[SKIP] no out-of-scope OpenCL device present to cross-check the locus \
        claim against\n\
        %!" ;
     Alcotest.skip ()
@@ -628,17 +634,26 @@ let non_aco_implementations_do_not_fuse () =
               let d v = match f16_decode v with Some x -> x | None -> nan in
               let i = match first with Some i -> i | None -> 0 in
               Alcotest.failf
-                "THE LOCUS-IS-ACO CLAIM IS NOW TOO NARROW.\n\n\
-                 %s is NOT an ACO device, yet the naive narrowing disagrees \
-                 with Sarek's f16 discipline on %d of %d finite binary16 \
-                 inputs; first at x=%.9g (naive %.9g, discipline %.9g). The \
-                 discipline is the host reference, calibrated on the same run \
-                 by [host_models_reproduce_the_620], so this device really is \
+                "AN OUT-OF-SCOPE OPENCL IMPLEMENTATION FUSES.\n\n\
+                 %s is outside this test's \"ACO\" device-string scope, yet \
+                 the naive narrowing disagrees with Sarek's f16 discipline on \
+                 %d of %d finite binary16 inputs; first at x=%.9g (naive %.9g, \
+                 discipline %.9g). The discipline is the host reference, \
+                 calibrated on the same run by \
+                 [host_models_reproduce_the_620], so this device really is \
                  skipping a mandated rounding.\n\n\
-                 docs/fp-contraction-policy.md attributes this defect to \
-                 Mesa's ACO backend specifically, and cites the fact that \
-                 non-ACO OpenCL does not fuse as evidence that rusticl and HIP \
-                 are one bug seen twice. This device falsifies that scoping.\n\n\
+                 READ THE DEVICE BEFORE READING THE CLAIM. \
+                 docs/fp-contraction-policy.md §2 (\"Two AMD compilers\") \
+                 attributes this defect to BOTH of AMD's GPU compilers — ACO \
+                 and LLVM's AMDGPU backend — not to ACO alone. The \"ACO\" key \
+                 above selects Mesa stacks, so an AMD GPU reached through a \
+                 non-Mesa OpenCL (ROCm's, which compiles through LLVM/AMDGPU \
+                 like HIP) lands here while being an EXPECTED fuser: that is \
+                 not a falsification, it is the documented behaviour arriving \
+                 through an unkeyed door, and the fix is to widen the scope \
+                 predicate. A NON-AMD implementation fusing is the real \
+                 falsification, and it would mean the locus is not the vendor \
+                 toolchain at all.\n\n\
                  Do NOT fix this by excluding the device from the predicate. \
                  Widen the claim: re-measure with \
                  tools/probes/opencl_f16_contraction_probe.c on this platform \
@@ -682,7 +697,7 @@ let () =
             `Quick
             refusal_is_still_warranted;
           Alcotest.test_case
-            "non-ACO OpenCL implementations do not fuse (locus check)"
+            "out-of-scope OpenCL implementations do not fuse (locus check)"
             `Quick
             non_aco_implementations_do_not_fuse;
         ] );

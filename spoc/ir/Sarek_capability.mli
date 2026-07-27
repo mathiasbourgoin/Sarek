@@ -13,8 +13,10 @@
 
     - Metal has no [double] at all. No device query can tell you that; it is a
       property of the Metal Shading Language.
-    - ACO fuses an f32 multiply into the f32→f16 narrowing regardless of what
-      the driver advertises. The device reports the feature and the feature is
+    - AMD's GPU shader compilers fuse an f32 multiply into the f32→f16 narrowing
+      regardless of what the driver advertises — ACO (via rusticl and via RADV)
+      and LLVM's AMDGPU backend (via hiprtc), two different compilers producing
+      the same 620/63488. The device reports the feature and the feature is
       broken. A device flag would say "yes".
     - Apple Silicon OpenCL reports no [cl_khr_fp64], but the question that
       actually decides whether a build succeeds there is whether the HOST clang
@@ -61,11 +63,13 @@ type kind =
           compile, never by querying a device. *)
   | Toolchain_semantic
       (** The device has the feature, the driver advertises it, and the shader
-          compiler mistranslates it anyway. ACO fusing an f32 multiply into the
-          f32→f16 narrowing is the type case: three front ends, one backend
-          compiler, and pocl on x86 does not do it — which localises the defect
-          to the compiler, not the device and not the API. Cannot be queried at
-          all. Only measured. A device saying "yes" must NOT override this. *)
+          compiler mistranslates it anyway. AMD's GPU compilers fusing an f32
+          multiply into the f32→f16 narrowing is the type case: three front ends
+          onto TWO backend compilers — ACO (rusticl, RADV) and LLVM's AMDGPU
+          backend (hiprtc) — while pocl on x86 and Intel IGC do not do it, which
+          localises the defect to the vendor's compilers, not the device and not
+          the API. Cannot be queried at all. Only measured. A device saying
+          "yes" must NOT override this. *)
   | Policy
       (** We refuse something that works, by decision. Distinct from
           {!Toolchain_semantic}: that kind is the evidence, this is the verdict.

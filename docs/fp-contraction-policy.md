@@ -43,8 +43,10 @@ actually had:
   the decoration is emitted, and the emitted ISA is byte-identical with and
   without it. **2912 of 63488** finite binary16 inputs disagree with the
   interpreter on a single narrowing, **5075** on a two-narrowing expression.
-  Third front end onto the same ACO backend as HIP and rusticl, and a wider
-  combine than either. f16 stays refused on this backend (§2, §6).
+  Second front end onto the same ACO backend as rusticl/radeonsi, and a wider
+  combine than either it or HIP — whose identical-looking fusion comes from a
+  *different* compiler, LLVM's AMDGPU backend (§2, "Two AMD compilers"). f16
+  stays refused on this backend (§2, §6).
 
 This document states, per backend, what the compiler is permitted to contract,
 what mechanism (if any) actually prevents it, whether that mechanism is
@@ -101,6 +103,44 @@ Legend for the evidence column:
 | **by-construction** | the source hands the compiler nothing it can contract; no flag is relied on |
 | **unverified** | believed, documented, or inherited from a vendor's documentation — not measured here |
 
+### Two AMD compilers, not one
+
+Three rows below are AMD GPUs, and it is tempting — this document did it — to
+read them as one compiler behind several front ends. **They are two compilers:**
+
+| stack | front end | compiler that emits the ISA |
+|---|---|---|
+| HIP / hiprtc (ROCm) | HIP C++ | **LLVM's AMDGPU backend** — ROCm ships its own clang/LLVM; `libamd_comgr` is linked against `libLLVMAMDGPUCodeGen`, and §9.6's HIP measurements are `AMD clang 22.0.0git` |
+| OpenCL / rusticl on radeonsi | OpenCL C → SPIR-V | **ACO**, Mesa's shader compiler — named by Mesa in the device string itself: `AMD Radeon RX 7900 XTX (radeonsi, navi31, ACO, DRM 3.64, …)` |
+| Vulkan / RADV | GLSL → SPIR-V | **ACO**, same compiler, second front end |
+
+Evidence: **by-construction** (what the shipped toolchains are made of). No
+measurement below changes, and no measurement below moves tier because of this
+note.
+
+**What the agreement therefore means.** hiprtc and rusticl produce the *same*
+620 of 63488 disagreements with the same first divergence at `x = 5.68359375`.
+Read as one compiler seen twice, that is a single bug. Read correctly, it is the
+stronger statement: **the f32-multiply-into-f16-narrowing fusion is present in
+both of AMD's GPU compilers independently — it is an AMD-toolchain-wide
+behaviour, not an ACO one.** RADV adds a third data point on the ACO side with a
+*wider* combine.
+
+**Why the distinction is load-bearing and not pedantry.** "The locus is ACO" is
+the sentence someone would use to scope a future barrier, a denylist or a
+detection predicate. Scoped to Mesa/ACO, such a predicate misses the
+LLVM/AMDGPU path that HIP takes; scoped to ROCm, it misses rusticl and RADV. The
+`#if defined(__HIP_PLATFORM_AMD__)` guard on `sarek_f32_barrier` (§4, §11.4) is
+correct precisely because it keys on **the toolchain compiling that source**,
+which no cross-compiler generalisation is needed to get right. Where a predicate
+below *is* keyed on the string `"ACO"` (§3's OpenCL tripwire), that key selects
+Mesa devices and only Mesa devices — see the note there.
+
+**What the non-AMD negatives still establish.** pocl/x86, Intel IGC, the Intel
+oneAPI CPU runtime and NVIDIA all decline to fuse (§11.3). That still rules out
+*OpenCL* and *SPIR-V* as the locus. It no longer supports "ACO specifically",
+because the one non-Mesa stack that does fuse is AMD's own.
+
 | backend | what the compiler may contract | what actually prevents it | evidence |
 |---|---|---|---|
 | **Interpreter** | nothing — it is the oracle | it evaluates the IR directly | executed (any host) |
@@ -109,9 +149,9 @@ Legend for the evidence column:
 | **CUDA / nvrtc + PTX (f32 `a*b+c`)** | yes, by default (`-fmad=true` is nvrtc's and ptxas's default, and it applies to PTX input too) | **no flag.** `Sarek_df64` denies the compiler a fusable multiply by routing products through `fma` (`mul_rn`) | executed, GTX 1070 Max-Q / sm_61 / CUDA 12.9 / driver 580.119.02: df64 mul 5.92e-08 → 9.07e-15, div 5.64e-08 → 5.08e-15 |
 | **CUDA — subnormal flushing** | `-use_fast_math` / `-ftz=true` would flush binary32 subnormals | `Cuda_nvrtc.check_fp_conformance` **rejects** those options at the only point an option array reaches `nvrtcCompileProgram` | machine-code + test, CUDA 13.3: the hazard is reproduced (`FMUL.FTZ`/`FADD.FTZ` at sm_90) and the guard is proved to fire — see §5 |
 | **OpenCL** | `FP_CONTRACT` is on by default in OpenCL C, and no build option turns it off | for contraction, **no flag** — same `mul_rn`-by-construction defence as CUDA. For div/sqrt, `Opencl_fp.conformance_options` requests `-cl-fp32-correctly-rounded-divide-sqrt`, **gated** on `CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT` in the device's `CL_DEVICE_SINGLE_FP_CONFIG`; `Opencl_fp.check_fp_conformance` **rejects** the relaxing `-cl-*` options at `Opencl_api.Program.build`, the single point an option string reaches `clBuildProgram` (§9) | executed, GTX 1070 Max-Q / NVIDIA OpenCL: mul 5.92e-08 → 9.07e-15, sqrt 2.88e-08 → 9.80e-15 with no OpenCL-specific change (quoted). Re-measured here on RX 7900 XTX / Mesa radeonsi: mul 9.07e-15, div 5.08e-15, sqrt 1.08e-14 |
-| **OpenCL / rusticl (f16 narrowing)** | an f32 multiply into the f32→f16 narrowing that consumes it — rounding **once** where the DSL mandates twice. Same defect class as HIP/AMDGPU, same ACO backend | **nothing affordable.** Measured non-fixes, all still 620/63488: `#pragma OPENCL FP_CONTRACT OFF`, a `volatile` local, a `volatile __private` pointer, an `as_half`/`as_ushort` bitcast round-trip, and `convert_half_rte`. HIP's `asm volatile("" : "+v"(x))` **does not compile** here — rusticl goes through SPIR-V, where AMDGPU register constraints do not exist. Only a `volatile __global` round-trip and a `volatile __local` (LDS) round-trip work (both 0/63488), and both cost memory traffic per narrowing; the LDS form additionally needs a workgroup-sized allocation this backend does not control. **Consequence: f16 stays REJECTED in `Sarek_ir_opencl`** | **executed**, 2026-07-26, exhaustive sweep of all 63488 finite binary16 inputs on **two** devices — RX 7900 XTX (navi31) and the integrated Raphael iGPU (gfx1036) — rusticl/radeonsi, DRM 3.64, kernel 7.1.2-3-cachyos. Both report **620/63488**, first divergence at `x=5.68359375` (device 1006.5, interpreter 1006), bit-identical to the HIP figure. Liveness control: the `volatile __global` variant of the same harness reports **0/63488**, so the sweep is proven able to go both red and green. Reproducer: `tools/probes/opencl_f16_contraction_probe.c` |
-| **Vulkan / RADV (f16 narrowing)** | an f32→f16 narrowing absorbs whatever arithmetic feeds it (`v_fma_mixlo_f16`) — the multiply, and also the f32 **add**: the plain two-narrowing kernel compiles to a *single* fused instruction, one rounding where the DSL mandates three. Same ACO backend as HIP and rusticl, reached through a third front end, but a **wider** combine than either | **nothing affordable, and `precise` is not it.** `precise` → SPIR-V `NoContraction` IS honoured (it keeps the f32 multiply as its own `v_fma_mix_f32`) and still leaves 2912/63488, because absorbing a *conversion* is a different combine from contracting `a*b+c`. An f16 bitcast round-trip changes nothing. A `volatile` SSBO round-trip on the f32 intermediates makes ACO drop the intermediate narrowing **entirely** instead (4774/63488). Only forcing the f16 *bit pattern* through global memory works (0/63488), at a global round-trip per narrowing into a scratch buffer this backend does not control. **Consequence: f16 stays REJECTED in `Sarek_ir_glsl`** | **executed**, 2026-07-26, exhaustive sweep of all 63488 finite binary16 inputs on **two** devices — RX 7900 XTX (**RADV NAVI31**) and the integrated Raphael iGPU (**RADV RAPHAEL_MENDOCINO**) — Mesa 26.1.4-arch3.1, Vulkan 1.4.354. Both report identical counts: **2912/63488** on `f16(x*1.1)` (plain and `precise` alike), **5075/63488** on `f16(f16(x*1.1)+1000)` plain, **4776/63488** with `precise`. Calibration: the same host oracle reproduces the independently measured **620** on the HIP/OpenCL kernel shape, and the barriered kernel reports **0/63488**, so the sweep is proven able to go both red and green. Gate: `sarek-vulkan/test/test_vulkan_f16_tripwire.ml` |
-| **OpenCL / pocl on x86 (f16 narrowing)** | in principle the same fusion — but nothing in this stack performs it | **nothing needed.** The naive narrowing already round-trips through binary16 exactly, so the barrier that rusticl requires is unnecessary here | **executed on CI**, 2026-07-26, quoted device `AMD EPYC 7763 64-Core Processor` under pocl on a GitHub-hosted runner: exhaustive sweep of all 63488 finite binary16 inputs, **0** disagreements between the naive and `volatile __local`-barriered narrowings. Observed as a CI failure of `test_opencl_f16_tripwire` before that test was scoped, i.e. the number was produced by a harness that was at the time *trying* to find a difference — so it is a null with the sweep demonstrably live. **This is what localises the defect:** the same source, swept the same way, fuses on ACO and does not fuse here, so the locus is *the ACO backend*, not *OpenCL*. That in turn is the second independent reason to read rusticl and HIP/AMDGPU as one bug seen through two front ends rather than two bugs. **Confirmed by a second, independent negative on a real GPU** — Intel Arc Graphics under the Intel Compute Runtime / IGC, a compiler sharing no lineage with Mesa: 0/63488, with the sweep calibrated on the same run against the known 620 (§11.3). Guarded by `test_opencl_f16_tripwire`'s locus check, which fails if any non-ACO implementation is found to fuse — and which was itself wrong until §11.5 |
+| **OpenCL / rusticl (f16 narrowing)** | an f32 multiply into the f32→f16 narrowing that consumes it — rounding **once** where the DSL mandates twice. Same defect class as HIP/AMDGPU, and bit-for-bit the same count — but a **different compiler**: ACO here, LLVM's AMDGPU backend there (see "Two AMD compilers" above) | **nothing affordable.** Measured non-fixes, all still 620/63488: `#pragma OPENCL FP_CONTRACT OFF`, a `volatile` local, a `volatile __private` pointer, an `as_half`/`as_ushort` bitcast round-trip, and `convert_half_rte`. HIP's `asm volatile("" : "+v"(x))` **does not compile** here — rusticl goes through SPIR-V, where AMDGPU register constraints do not exist. Only a `volatile __global` round-trip and a `volatile __local` (LDS) round-trip work (both 0/63488), and both cost memory traffic per narrowing; the LDS form additionally needs a workgroup-sized allocation this backend does not control. **Consequence: f16 stays REJECTED in `Sarek_ir_opencl`** | **executed**, 2026-07-26, exhaustive sweep of all 63488 finite binary16 inputs on **two** devices — RX 7900 XTX (navi31) and the integrated Raphael iGPU (gfx1036) — rusticl/radeonsi, DRM 3.64, kernel 7.1.2-3-cachyos. Both report **620/63488**, first divergence at `x=5.68359375` (device 1006.5, interpreter 1006), bit-identical to the HIP figure. Liveness control: the `volatile __global` variant of the same harness reports **0/63488**, so the sweep is proven able to go both red and green. Reproducer: `tools/probes/opencl_f16_contraction_probe.c` |
+| **Vulkan / RADV (f16 narrowing)** | an f32→f16 narrowing absorbs whatever arithmetic feeds it (`v_fma_mixlo_f16`) — the multiply, and also the f32 **add**: the plain two-narrowing kernel compiles to a *single* fused instruction, one rounding where the DSL mandates three. Same ACO backend as rusticl, reached through a second front end — HIP's identical-count defect comes from LLVM's AMDGPU backend instead — and a **wider** combine than either | **nothing affordable, and `precise` is not it.** `precise` → SPIR-V `NoContraction` IS honoured (it keeps the f32 multiply as its own `v_fma_mix_f32`) and still leaves 2912/63488, because absorbing a *conversion* is a different combine from contracting `a*b+c`. An f16 bitcast round-trip changes nothing. A `volatile` SSBO round-trip on the f32 intermediates makes ACO drop the intermediate narrowing **entirely** instead (4774/63488). Only forcing the f16 *bit pattern* through global memory works (0/63488), at a global round-trip per narrowing into a scratch buffer this backend does not control. **Consequence: f16 stays REJECTED in `Sarek_ir_glsl`** | **executed**, 2026-07-26, exhaustive sweep of all 63488 finite binary16 inputs on **two** devices — RX 7900 XTX (**RADV NAVI31**) and the integrated Raphael iGPU (**RADV RAPHAEL_MENDOCINO**) — Mesa 26.1.4-arch3.1, Vulkan 1.4.354. Both report identical counts: **2912/63488** on `f16(x*1.1)` (plain and `precise` alike), **5075/63488** on `f16(f16(x*1.1)+1000)` plain, **4776/63488** with `precise`. Calibration: the same host oracle reproduces the independently measured **620** on the HIP/OpenCL kernel shape, and the barriered kernel reports **0/63488**, so the sweep is proven able to go both red and green. Gate: `sarek-vulkan/test/test_vulkan_f16_tripwire.ml` |
+| **OpenCL / pocl on x86 (f16 narrowing)** | in principle the same fusion — but nothing in this stack performs it | **nothing needed.** The naive narrowing already round-trips through binary16 exactly, so the barrier that rusticl requires is unnecessary here | **executed on CI**, 2026-07-26, quoted device `AMD EPYC 7763 64-Core Processor` under pocl on a GitHub-hosted runner: exhaustive sweep of all 63488 finite binary16 inputs, **0** disagreements between the naive and `volatile __local`-barriered narrowings. Observed as a CI failure of `test_opencl_f16_tripwire` before that test was scoped, i.e. the number was produced by a harness that was at the time *trying* to find a difference — so it is a null with the sweep demonstrably live. **This is what localises the defect:** the same source, swept the same way, fuses on an AMD GPU compiler and does not fuse here, so the locus is *the AMD GPU compilers*, not *OpenCL* and not *SPIR-V*. Note what it does **not** localise: rusticl and HIP/AMDGPU do not share a compiler (see "Two AMD compilers" above), so their identical 620 is two compilers agreeing, not one bug seen twice. **Confirmed by a second, independent negative on a real GPU** — Intel Arc Graphics under the Intel Compute Runtime / IGC, a compiler sharing no lineage with Mesa: 0/63488, with the sweep calibrated on the same run against the known 620 (§11.3). Guarded by `test_opencl_f16_tripwire`'s locus check, which fails if any OpenCL implementation outside its `"ACO"` device-string scope is found to fuse — and which was itself wrong until §11.5. Read that predicate as "not Mesa", not as "not AMD": an AMD GPU reached through ROCm's OpenCL would be compiled by LLVM's AMDGPU backend, i.e. by a compiler this document expects to fuse, while sitting outside the key |
 | **Vulkan / GLSL** | contraction and reassociation of float expressions | `precise` on every float local (`Sarek_ir_glsl.gen_var_decl`), which glslang lowers to SPIR-V `NoContraction` — but on RADV nothing needs preventing *for these shapes*: the driver does not contract them even without the decoration. It is **not** the decoration that is protecting them; RADV was separately observed ignoring `NoContraction` on a combine it does want to perform (§6, f16 narrowing) | **executed + machine-code**, RX 7900 XTX (RADV NAVI31) and Raphael iGPU (RADV RAPHAEL_MENDOCINO), Mesa 26.1.4-arch3.1: 0 of 7 contraction shapes contracted with or without `precise`, ISA opcode-identical between the two builds, explicit `fma()` controls fused 4/4 — see §6. Decoration emission: compiler-output, glslc 2026.2 + glslangValidator, 18 `NoContraction` with `precise` / 0 without. **Mesa ANV now measured too** (§11.2): Intel Arc Graphics (Meteor Lake-P), Mesa 26.1.2-arch3.1, same 0 of 7 / 0 of 7 with `fma()` controls 4/4 — and unlike RADV, ANV does not fuse the f16 narrowing either, so no combine has been found on ANV where `NoContraction` is ignored. Separately, `fma` is not correctly rounded on RADV: df64 mul 5.84e-08 / div 5.86e-08, each the measured worst-case relative error over `test_df64`'s own input set on the named device and driver, not a bound; ANV shows the same signature (mul 5.84e-08 / div 5.86e-08, §11.1) |
 | **Metal** | contraction of `a*b+c` — **measured, and NOT preventable by any compile option**; separately, both math defaults are the fast one (`mathMode = MTLMathModeFast`, `mathFloatingPointFunctions = ...Fast`, read from a fresh `MTLCompileOptions`) | **two mechanisms, both required**: `#pragma METAL fp contract(off)` in every generated kernel (`Sarek_ir_metal.metal_fp_contract_pragma`) for contraction, *and* `mathMode = Safe` + `mathFloatingPointFunctions = Precise` in `Metal_bindings.mtl_compile_options_conformant` for math-function accuracy (falling back to the deprecated `fastMathEnabled = NO` before macOS 15) | **executed**, Apple M4 / macOS 15.6.1 (24G90) / Apple clang 17.0.0: on the 8773 of 65536 elements where the device's own `fma` differs from the separately-rounded value, `a*b+c` is contracted 8773/8773 under every compile-option setting **including `mathMode=Safe`**, and 0/8773 with the pragma. Options are honoured (16017 and 22135 of 65536 math-function results change), so Metal is not in rusticl's ignore-it class. **Interpreter agreement now executed on the same device**: `test_df64` and `test_real64` PASS on every op and reproduce the interpreter's figures exactly (mul 9.07e-15, add 5.33e-15, sub 6.51e-15, div 5.08e-15, sqrt 8.53e-15) — sampled maxima over each test's input set, not bounds, and agreement between summary statistics rather than element-wise identity. f16 and subnormals unprobed; two record/variant kernels do not compile at all (§10.11). **f64 is refused outright** — MSL has no `double`, and until #141 `TFloat64` was silently emitted as `float`, striding an 8-byte-per-element host buffer at 4; `Sarek_real64` (df64) is the supported route and is the figure quoted above (§10.13) |
 | **WGSL** | unconstrained | nothing | unverified, untested |
@@ -191,7 +231,10 @@ Legend for the evidence column:
   automated — `sarek-opencl/test/test_opencl_f16_tripwire.ml` fails when the
   fusion stops happening, so the refusal cannot quietly outlive its reason.
   That tripwire asserts **only on ACO devices** (it keys on `"ACO"` in the
-  OpenCL device name, which is where Mesa reports its shader compiler) and
+  OpenCL device name, which is where Mesa reports its shader compiler — so the
+  key means "a Mesa stack", not "an AMD GPU": ROCm's OpenCL on the same card
+  compiles through LLVM's AMDGPU backend and is out of scope, see §2's "Two AMD
+  compilers") and
   **skips visibly** elsewhere, naming the devices it rejected. Scoping it was
   not cosmetic: unscoped, it failed on a pocl/x86 CI runner that correctly does
   not fuse — a false positive on a blocking gate, which is the polarity that
@@ -611,8 +654,8 @@ this is where they are collected):
   available on 2026-07-27 and the whole bullet is discharged in **§11**: the
   `NoContraction` question (§11.2), the df64 ANV allowlist entry that had never
   been executed (§11.1), and — as a bonus the bullet did not ask for — the
-  independent OpenCL implementation that confirms the f16 fusion is ACO's
-  (§11.3). The campaign note claiming ANV ignores `NoContraction` is **not
+  independent OpenCL implementation that confirms the f16 fusion belongs to
+  AMD's GPU compilers rather than to OpenCL (§11.3). The campaign note claiming ANV ignores `NoContraction` is **not
   supported**. Scope: **Xe-LPG only**, which is not the Gen9.5 UHD 630 the
   quoted ANV numbers came from (§11.0). **AMDVLK and the proprietary AMD Vulkan
   driver remain unmeasured** — different SPIR-V consumers on the very same GPU.
@@ -1064,8 +1107,9 @@ and the only one; df64 passing either way is consistent with both.
   measured for *equivalence* on macOS 15 but has never run on the pre-15 OS that
   is its only reason to exist.
 - **Subnormals.** Not probed at all on Metal.
-- **f16 on Metal.** Not probed. The three other backends that reach an ACO or
-  NVIDIA compiler each needed a separate exhaustive f16 sweep before anything
+- **f16 on Metal.** Not probed. The three other backends that reach an AMD
+  (ACO or LLVM/AMDGPU) or NVIDIA compiler each needed a separate exhaustive f16
+  sweep before anything
   could be said; Metal has had none.
 - **The two kernels that do not compile** (§10.11) are excluded from every
   figure above, because they never ran.
@@ -1477,7 +1521,7 @@ backend-wide code path, and it is still warranted by RADV; the refusal would
 have to become per-driver to exploit this, and the `shaderFloat16` plumbing §7
 notes as missing is still missing.
 
-### 11.3 The f16 narrowing on Intel OpenCL: **it does not fuse** — ACO's localisation confirmed
+### 11.3 The f16 narrowing on Intel OpenCL: **it does not fuse** — the AMD localisation confirmed
 
 This is the question §2's pocl row calls *"what localises the defect"*. The
 reading before this run: rusticl and HIP are two front ends onto one ACO
@@ -1485,6 +1529,20 @@ backend (620/63488 identical disagreements), RADV is a third and fuses worse,
 and pocl on x86 does not fuse — so the locus is ACO. pocl is a single negative,
 and pocl is also an LLVM-based CPU stack, which is not very far from ACO's
 family. Intel's IGC is a wholly independent implementation on a real GPU.
+
+> **The premise of that reading was wrong, and the correction is recorded in §2
+> ("Two AMD compilers").** hiprtc does *not* compile through ACO: it compiles
+> through **LLVM's AMDGPU backend**, while rusticl/radeonsi and RADV compile
+> through **ACO**, Mesa's shader compiler. Those are two different compilers.
+> The measurements are untouched — 620/63488 on both, same first divergence at
+> `x = 5.68359375` — but what they establish is **not** "one ACO bug seen
+> through two front ends". It is that the f32-multiply-into-f16-narrowing fusion
+> is present in **both** AMD GPU compilers: an AMD-toolchain-wide behaviour.
+> Everything below stands as measured; read "ACO" in it as "the AMD GPU
+> compilers" wherever it is used as a *locus* rather than as the name of the
+> specific Mesa component a given figure came from. Evidence tier for the
+> correction: **by-construction** (toolchain composition); no figure changes
+> tier.
 
 `tools/probes/opencl_f16_contraction_probe.c`, unmodified apart from the new
 control described below, exhaustive over all 63488 finite binary16 inputs, on
@@ -1516,11 +1574,17 @@ reproduces the known positive to the input, and `plain = 0` is a genuine null.
 
 **Result: neither Intel compiler fuses the f32 multiply into the f32→f16
 narrowing.** The naive codegen is already correct on both. This is the **second
-independent negative** for a non-ACO OpenCL implementation, and the first on a
-GPU with a vendor compiler sharing no lineage with Mesa. The reading in §2 is
-confirmed rather than widened: **the defect is ACO's, not OpenCL's and not
+independent negative** for a non-AMD OpenCL implementation, and the first on a
+GPU with a vendor compiler sharing no lineage with either AMD compiler. The
+reading in §2 is confirmed rather than widened on the axis it actually
+constrains: **the defect is AMD's GPU compilers', not OpenCL's and not
 SPIR-V's.** Had Intel fused, the consequence would have been the opposite one —
 a widespread vendor behaviour Sarek must defend against everywhere.
+
+What this run does *not* narrow is which AMD compiler. Both of them fuse
+(§2), so a negative from a third vendor cannot separate them, and no
+measurement here was ever going to: separating ACO from LLVM/AMDGPU needs two
+AMD stacks on the same card, which is exactly the pair already measured.
 
 ### 11.4 Unexpected: on IGC, the barrier that fixes ACO **breaks** a correct narrowing
 
@@ -1569,10 +1633,11 @@ by two facts that are structural rather than probabilistic:
 
 1. **The barrier is emitted from one site and it is preprocessor-scoped.**
    `Sarek_ir_cuda.sarek_f32_barrier_decl` puts the `asm volatile("" : "+v"(x))`
-   body inside `#if defined(__HIP__) || defined(__HIP_PLATFORM_AMD__)`; the other
-   arm is a bare identity (§4). Its only runtime consumers are `Hip_plugin`
-   (hiprtc) and `Cuda_plugin` / `Cuda_c_plugin` (nvrtc). Evidence:
-   **by-construction**.
+   body inside `#if defined(__HIP_PLATFORM_AMD__)`; the other arm is a bare
+   identity (§4). Its only runtime consumers are `Hip_plugin` (hiprtc) and
+   `Cuda_plugin` / `Cuda_c_plugin` (nvrtc). Evidence: **by-construction**.
+   (That guard read `defined(__HIP__) || defined(__HIP_PLATFORM_AMD__)` until
+   §11.4a below.)
 2. **IGC cannot receive that source.** f16 is refused outright by
    `Sarek_ir_opencl`, `Sarek_ir_glsl`, `Sarek_ir_metal` and `Sarek_ir_wgsl` — at
    the per-element-type arm *and* at a whole-kernel gate, across every public
@@ -1596,12 +1661,88 @@ to lie between the AMD guard and its `#else`, and the non-AMD arm to contain no
 non-AMD arm the AMD `"+v"` barrier — a mutation the pre-existing `"+f"`
 assertion does not see, and under which that new case is the only failure.
 
-**Not verified, and deliberately not fixed here:** the guard's `defined(__HIP__)`
-disjunct is also true under `__HIP_PLATFORM_NVIDIA__`, where `"+v"` is not a
-valid constraint. No HIP-on-NVIDIA toolchain exists on this project's machines,
-so the claim that this fails is **unverified**; the failure direction is a loud
-compile error rather than a wrong number, which is why it is recorded rather than
-patched blind.
+### 11.4a The guard now names the platform, and the hazard it was recorded for does not exist (backlog #146)
+
+§11.4 closed with this, and it is the sentence this section exists to correct:
+
+> **Not verified, and deliberately not fixed here:** the guard's
+> `defined(__HIP__)` disjunct is also true under `__HIP_PLATFORM_NVIDIA__`,
+> where `"+v"` is not a valid constraint.
+
+The second half is right and is now measured. The first half is **not supported
+by the toolchain's own headers**, and recording an unverified hazard is only
+useful if the hazard is stated correctly — this one was not.
+
+**What was measured, on this host (ROCm 7.2.53211, `libhiprtc.so.7`),
+reproducer `tools/probes/hip_macro_probe.c`:**
+
+| probe | result | tier |
+|---|---|---|
+| macros hiprtc predefines | `__HIP__` **defined**, `__HIP_PLATFORM_AMD__` **defined**, `__HIP_PLATFORM_NVIDIA__` **not**, legacy `__HIP_PLATFORM_HCC__` **not** | executed |
+| `#if defined(__HIP__) \|\| defined(__HIP_PLATFORM_AMD__)` (old) | selects the AMD arm, `"+v"` compiles | executed |
+| `#if defined(__HIP_PLATFORM_AMD__)` (new) | selects the AMD arm, `"+v"` compiles | executed |
+| a guard nothing defines (**liveness control**) | takes the other arm — `error: NON_AMD_ARM_TAKEN` | executed |
+| `"+v"` under `clang --target=nvptx64-nvidia-cuda` | **rejected** — `invalid output constraint '+v' in asm`; `"+f"` accepted | executed |
+| `clang -x hip --offload-arch=sm_61` | **refused** — `unsupported HIP gpu architecture`, on ROCm clang 22.0.0git *and* upstream clang 22.1.6 | executed |
+
+The arm-selection probes carry their own control: the non-AMD arm holds an
+`#error`, so "it compiled" is what proves the AMD arm was taken rather than
+merely that nothing broke — and the last row shows the same harness reporting
+the other arm on the same run, so `COMPILES` is a live result rather than a
+`#error` that turned out to be unreachable.
+
+**Why `__HIP__ && __HIP_PLATFORM_NVIDIA__` cannot arise.** `hip/hip_common.h`
+auto-enables `__HIP_PLATFORM_AMD__` whenever `__clang__ && __HIP__`, and
+auto-enables `__HIP_PLATFORM_NVIDIA__` only for `__NVCC__`, or for clang-CUDA
+**without** `__HIP__`; `hip/linker_types.h` then hard-`#error`s unless exactly
+one platform macro is set. So under HIP's own headers `__HIP__` **implies** the
+AMD platform, and the NVIDIA-platform route (`hipcc` → `nvcc`, or the
+`nvidia_detail/` wrappers) is the one on which `__HIP__` is never defined at all.
+Evidence: **by-construction**, reading the shipped headers.
+
+**Decision: narrow the guard anyway, to `#if defined(__HIP_PLATFORM_AMD__)`.**
+This is a **clarity change, not a bug fix**, and it is worth being exact about
+which:
+
+- *It fixes no reachable defect.* Nothing was mis-served by the old guard on any
+  configuration reachable with the compilers on this host.
+- *It cannot lose the AMD arm.* Measured directly above, and structurally
+  guaranteed by `hip_common.h`'s implication.
+- *It removes an ambiguity that has now cost two rounds of analysis.* The asm
+  body is AMD-ISA-specific; the guard should name the target, not the source
+  language. A reader who sees `__HIP__` in a guard around AMDGPU inline asm is
+  right to worry, and twice now has.
+- *The residual risk is named rather than absorbed:* ROCm older than the 4.x
+  `__HIP_PLATFORM_HCC__` → `__HIP_PLATFORM_AMD__` rename would define only the
+  legacy macro. No such toolchain exists here, so this is **unverified**. Its
+  failure direction is the bad one — the AMD arm is skipped and the f16
+  discipline fails *silently*, not loudly. That is why the guard is pinned by a
+  test rather than left to review.
+
+**The gate.** `test_f16_barrier_is_amd_scoped` gains a third assertion, on the
+guard **line** rather than the whole source: the barrier's `#if` must not
+contain `defined(__HIP__)`. (The f16 *include* above it legitimately keys on
+`__HIP__` — there the question really is "is this HIP", and both arms of getting
+it wrong fail loudly at compile time.) Proved red by restoring the disjunction,
+in **both orderings**, because they are caught by different assertions and only
+one of them exercises the new code:
+
+| mutation | case that went red | message |
+|---|---|---|
+| `defined(__HIP__) \|\| defined(__HIP_PLATFORM_AMD__)` | `f32 barrier is scoped to the AMD toolchain` | *the f32 barrier must be emitted under the AMD toolchain guard `"#if defined(__HIP_PLATFORM_AMD__)"`; it was not found at all* — the **pre-existing** exact-guard assertion, which the leading disjunct breaks before the new check is reached |
+| `defined(__HIP_PLATFORM_AMD__) \|\| defined(__HIP__)` | same case | *the barrier guard must not key on `__HIP__`* — the **new** assertion; this ordering is the one that slips past the exact-guard search |
+
+One failing case in each run, out of 114 in that suite, and nothing else moved.
+The second row is the one that matters: without it the new check would be
+unreachable, since the first assertion would always fire first — a check that
+cannot fail, in the shape a reviewer would not notice.
+
+**Still unverified after this**, and settleable in one sitting by anyone with the
+toolchain: what a genuine HIP-on-NVIDIA compile predefines. The prediction from
+the headers is that it defines neither `__HIP__` nor `__HIP_PLATFORM_AMD__`
+(the compiler is `nvcc`), so the identity arm is taken and nothing changes.
+Settling it needs no new code: build `tools/probes/hip_macro_probe.c` against a
+HIP-on-NVIDIA install and read the four macro rows.
 
 ### 11.5 The defect this surfaced in our own gate
 
@@ -1615,6 +1756,11 @@ red on Intel Arc and reported:
 > THE LOCUS-IS-ACO CLAIM IS NOW TOO NARROW. `Intel(R) Arc(TM) Graphics` is NOT
 > an ACO device, yet 4774 of 63488 finite binary16 inputs differ between the
 > naive and barriered narrowings — **it fuses too.**
+
+(That is the text as it stood. The check's wording was corrected again under
+#145 — "not an ACO device" is the right *scope* statement but the wrong *locus*
+statement, since the locus is both AMD GPU compilers and the `"ACO"` key selects
+Mesa stacks only. §2, "Two AMD compilers".)
 
 Both sentences are false, and §11.3 shows the plain kernel is correct on all
 63488 inputs. The check compared the plain kernel against the **barriered**
