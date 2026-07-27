@@ -81,6 +81,18 @@ printf '(test (name test_foo))\n' > "$d/lib/test/dune"
 commit_all "$d"
 expect "case3: (data_only_dirs test) hides lib/test" "$d" 1
 
+# --- Case 3b: vendored_dirs is NOT traversal exclusion -- must stay GREEN -----
+# Vendoring changes alias/format/install DEFAULTS; dune still parses vendored
+# dune files and still builds vendored libraries. Flagging this layout would be
+# a false positive, and a guard that cries wolf on a valid layout is a guard
+# somebody disables. Regression test for exactly that mistake.
+d="$(make_repo case3b)"
+mkdir -p "$d/lib/vendored_thing"
+printf '(vendored_dirs vendored_thing)\n\n(library (name foo))\n' > "$d/lib/dune"
+printf '(library (name vendored_lib))\n' > "$d/lib/vendored_thing/dune"
+commit_all "$d"
+expect "case3b: (vendored_dirs X) does NOT flag a buildable vendored dir" "$d" 0
+
 # --- Case 4: exclusion two levels up, not just the immediate parent -----------
 d="$(make_repo case4)"
 mkdir -p "$d/a/b/test"
@@ -123,7 +135,31 @@ printf '(test (name test_foo))\n' > "$d/lib/test/dune"
 commit_all "$d"
 expect "case7: commented-out (dirs) does not count as an exclusion" "$d" 0
 
+# --- Case 8: `;` inside a string is NOT a comment -----------------------------
+# A directory may legitimately be named `a;b`. A regex that strips from `;` to
+# end-of-line eats the closing quote and paren, and the balance check then
+# exits 2 on valid input.
+d="$(make_repo case8)"
+mkdir -p "$d/lib/a;b"
+printf '(dirs "a;b")\n\n(library (name foo))\n' > "$d/lib/dune"
+printf '(test (name test_foo))\n' > "$d/lib/a;b/dune"
+commit_all "$d"
+expect "case8: quoted (dirs \"a;b\") admits the dir it names" "$d" 0
+
+# --- Case 9: parentheses inside a string must not disturb the balance ---------
+# `(dirs "(a;(x)")` is balanced dune; a naive scanner sees three opens and one
+# close. Here the predicate names a directory that is NOT `test`, so the honest
+# answer is 1 (lib/test really is excluded) -- never 2.
+d="$(make_repo case9)"
+mkdir -p "$d/lib/test"
+printf '(dirs "(a;(x)")\n\n(library (name foo))\n' > "$d/lib/dune"
+printf '(test (name test_foo))\n' > "$d/lib/test/dune"
+commit_all "$d"
+expect "case9: quoted parens/semicolon parse, and lib/test is reported hidden" "$d" 1
+
 echo
 echo "passed: $pass   failed: $fail"
 [ "$fail" -eq 0 ] || exit 1
-echo "OK: check-dune-dir-visibility.sh fails on all four invisibility shapes and passes clean trees"
+echo "OK: check-dune-dir-visibility.sh fires on every traversal-exclusion shape,"
+echo "    leaves vendored_dirs and clean trees alone, survives strings containing"
+echo "    ';' and parens, and refuses to guess at predicates it cannot parse"

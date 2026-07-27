@@ -99,6 +99,12 @@ jobs:
           # invisibility shapes and refuses to guess at predicates it cannot
           # parse.
           ./scripts/check-dune-dir-visibility.test.sh
+          # #147 follow-up. Two agents reported different totals for the same
+          # commit because Alcotest singularises ("1 test run.") and a
+          # plural-only grep drops those suites. "0 FAIL of N" is only as
+          # trustworthy as N, so the counting rule gets a covering test like
+          # any other gate.
+          ./scripts/test-suite-counts.test.sh
 
       - name: Formal proofs admit gate
         run: |
