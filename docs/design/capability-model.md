@@ -69,7 +69,7 @@ supported") and it deserves a name that says otherwise.
 
 ## 3. The verdict algebra
 
-```
+```ocaml
 type verdict = Available | Unavailable of t | Unknown of string
 val permits : verdict -> bool   (* Available only *)
 ```
@@ -106,8 +106,18 @@ codegen path can consult capabilities today. Requires extending
 `spoc/framework/test/` — a cost worth paying once, for a set-valued feature field
 rather than another bool. Also migrates the OpenCL/GLSL f16 refusals from
 hand-written strings to structured `Toolchain_semantic` + `Policy` values, and
-fixes the GLSL fp64 hole found during slice 1 (it emits `double` while never
-declaring `GL_ARB_gpu_shader_fp64`).
+picks up the GLSL `int64_t` hole (#142).
+
+> **Correction.** Slice 1 recorded this as a GLSL *fp64* hole — "emits `double`
+> while never declaring `GL_ARB_gpu_shader_fp64`". That was **measured false** by
+> #141: `glsl_header` takes `~uses_float64` and emits the extension, and
+> `glslangValidator` accepts the f64 kernel (exit 0). The real hole is one type
+> over — GLSL `int64_t`, whose `#extension` emission is gated on the float64
+> conditions only, so a plain `int64 vector` kernel emitted a shader glslang
+> rejects. It is `Device_optional`, not `Backend_structural`: GLSL *can* spell
+> `int64_t`, but a Vulkan device may not provide `shaderInt64` — so it needs the
+> device probe that `kind_needs_device Device_optional = true` calls for and
+> that slice 1 deliberately does not build.
 
 **Slice 3 — host-toolchain and flag-legality probes.** Needs machinery that does
 not exist: a host trial-compile, and retention of the OpenCL extension string
@@ -163,6 +173,36 @@ facts that motivated it is worse than none.
   target but not the kernel source line. #64 asked for a *located* error; slice 1
   delivers a named one. The fix is to thread `Sarek_ast.loc` through
   `Sarek_lower_ir` into the IR — slice 4, and a large change on its own.
+
+### 5.1 What does not belong in the table
+
+**A width mismatch with a correct in-language lowering is a codegen bug, not a
+missing capability.**
+
+The first real test of this was Metal `TBool`. It looks identical to the f64
+case — same backend, same silence, same class of wrong answer — and the table is
+right there as a convenient hook. It was correctly declined. A capability entry
+is an assertion that a target **cannot provide** something; filing `TBool` there
+would make the table claim Metal cannot express booleans, which is false. Metal
+has `bool`, and a correct lowering exists (`int`, which CUDA and OpenCL already
+emit). What was wrong was the emitter, and the fix belongs in the emitter.
+
+The test is not "is it silent?" or "is it a width mismatch?" — both are true of
+`TBool` and of Metal f64 alike. It is: **does a correct lowering exist in the
+target language?** If yes, it is a codegen bug however much it resembles a
+capability gap. If no, it is a capability.
+
+This matters more as the table grows, because the pressure runs one way: the
+table is discoverable, it produces a decent diagnostic for free, and filing
+against it feels like progress. Every entry that should have been a codegen fix
+is a permanent false claim about what a target can do, and it removes a working
+feature from users of that backend.
+
+The corollary is that the capability table and a codegen-correctness sweep are
+**complementary instruments, neither subsuming the other**. The sweep finds
+wrong lowerings of things the target supports; the table records things the
+target does not support. A defect found by one is not evidence about the other,
+and "we have a capability model now" is not a reason to stop sweeping.
 
 ## 6. Open decision
 
