@@ -106,16 +106,24 @@ gate cannot separate a characterised deviation from a plain defect here.** That
 is not a hypothesis about tolerances in general; it is arithmetic on two numbers
 this project has already measured.
 
-### 1.2 The contract
+### 1.2 The contract for **scalar f16** arithmetic
 
-> **Sarek's f16 contract, relaxed form.** For each *(backend, driver, expression
-> shape)* Sarek records a finite set of **admissible reference semantics**. The
-> device result must be **bit-identical to one member of that set**, on every
-> input the gate sweeps. The interpreter's semantics — every operation rounded as
-> written, per `fp-contraction-policy.md` §1 — is always a member. Any additional
-> member is a *named, closed-form, measured* alternative, recorded per backend
-> and per driver. A result matching no member is a **failure**, however small the
-> numeric difference.
+**Scope, stated before the rule because it is load-bearing.** What follows governs
+**f16 as a scalar element type** — narrowings, widenings and the arithmetic
+written around them in a DSL kernel. It does **not** govern
+`OpCooperativeMatrixMulAddKHR` or its Metal equivalent, which are accepted under a
+*different* rule (§5) for a reason that is not a matter of effort. §1.6 sets the
+two regimes against each other; read it before quoting either one as "the f16
+contract".
+
+> **Sarek's scalar-f16 contract, relaxed form.** For each *(backend, driver,
+> expression shape)* Sarek records a finite set of **admissible reference
+> semantics**. The device result must be **bit-identical to one member of that
+> set**, on every input the gate sweeps. The interpreter's semantics — every
+> operation rounded as written, per `fp-contraction-policy.md` §1 — is always a
+> member. Any additional member is a *named, closed-form, measured* alternative,
+> recorded per backend and per driver. A result matching no member is a
+> **failure**, however small the numeric difference.
 
 Two named members exist today, and both are functions a host reference can
 compute exactly:
@@ -207,15 +215,53 @@ Stated because a relaxation that leaks is worse than no relaxation.
   no new decision required. This is the single most important structural property
   of the design and §6 is how it is enforced.
 
+### 1.6 Two acceptance regimes, and neither is "the contract" unqualified
+
+The first draft of this document stated §1.2 as though it governed all f16 and
+then accepted cooperative matrix against a numeric bound in §5. Those are two
+incompatible acceptance rules and the document asserted both. They are now
+separated explicitly, and the separation is the *same* scalar/coopmat split
+already argued in §3.1 — carried into the contract rather than left in the
+justification.
+
+| | **Regime A — scalar f16** | **Regime B — cooperative matrix** |
+|---|---|---|
+| governs | f16 as a scalar element type: narrowings, widenings, the arithmetic around them | `OpCooperativeMatrixMulAddKHR` and its Metal equivalent |
+| acceptance rule | **exact** agreement with one member of a finite named model set (§1.2), plus the 1-ulp ceiling (§1.3) | a **derived numeric bound** on `D = A×B + C` (§5) |
+| why that rule | the deviation has a **closed form** — it is one elided rounding, and a host reference can compute it exactly | the deviation is an **ordering freedom over 17 terms**; there is no finite set to enumerate |
+| can the other rule be used? | a bound would admit a known defect — §0.1 | a model set does not exist to be written down |
+| user-facing friction (§6.1) | loud one-time diagnostic | mandatory explicit opt-in |
+| can it migrate? | — | **yes** — if a given implementation's accumulation order is ever pinned to a closed form, that configuration moves to Regime A, and §6.1's friction falls with it |
+
+**The distinction is not stylistic and it is not about effort.** Regime A's rule
+is available because ACO's combine elides exactly one rounding, which is a
+function. Regime B's is not, because the SPIR-V extension grants an ordering
+freedom (§1.4) whose admissible results are combinatorially many. Anyone tempted
+to unify them should note that unifying *downward* — putting scalar f16 on a
+numeric bound — is exactly the move §0.1 shows admits a known defect.
+
+**When quoting this document, name the regime.** "Sarek's f16 contract" is
+ambiguous and the two answers differ in kind, not degree.
+
 ---
 
 ## 2. The per-backend deviation record
 
-These are the numbers this design holds itself to. Every row names the device and
-the driver, per `fp-contraction-policy.md` §1 corollary 3. Evidence tiers are that
-document's.
+These are the numbers this design holds itself to, for **Regime A** (scalar f16,
+§1.2). Every row names the device and the driver, per `fp-contraction-policy.md`
+§1 corollary 3. Evidence tiers are that document's. Regime B has no rows here —
+no coopmat implementation's numerics have been measured at all (§4, last
+paragraph).
 
-| backend / driver | device(s) | deviation from `S_strict` | matches `S_fuse_mul_into_narrowing`? | evidence | verdict under this contract |
+**No stack in this table is settled as relaxable.** Both non-zero rows are
+**candidates**, and neither has met the acceptance rule of §1.2: rusticl's
+agreement with `S_fuse_mul_into_narrowing` is established only at the level of a
+count and a first divergence, not element-wise; RADV's is exact for the
+one-narrowing shape and **unmeasured for the two-narrowing shape**. Slice 1 (§7)
+is what would convert either from candidate to admitted, and it may convert
+neither. Read the verdict column as the current status, not as a plan.
+
+| backend / driver | device(s) | deviation from `S_strict` | matches `S_fuse_mul_into_narrowing`? | evidence | verdict under Regime A |
 |---|---|---|---|---|---|
 | **CUDA / nvrtc** | GTX 1070 Max-Q, sm_61, CUDA 12.9, driver 580.119.02 | **0 / 63488** | n/a | executed | **strict**, unchanged |
 | **HIP / AMDGPU** | RX 7900 XTX (gfx1100), Raphael iGPU (gfx1036), ROCm hiprtc, with the opacity barrier | **0 / 63488**, all 20 emittable shapes | n/a | executed + machine-code | **strict**, unchanged |
@@ -229,9 +275,11 @@ document's.
 
 Three things this table says that are easy to miss:
 
-1. **The relaxation is needed on exactly two stacks** — rusticl and RADV, both
-   ACO. Everything else either already meets `S_strict` or has never been
-   measured. It is a much narrower change than "relax f16".
+1. **The relaxation is a candidate on exactly two stacks** — rusticl and RADV,
+   both ACO — and admitted on none of them yet. Everything else either already
+   meets `S_strict` or has never been measured. Even in the best case this is a
+   much narrower change than "relax f16"; in the worst case (§9.3) it is narrower
+   still, covering one shape on one driver.
 2. **The RADV two-narrowing shape is the open risk.** 5075 plain against 4776
    with `precise` means the decoration *changes the answer* while
    `fp-contraction-policy.md` §6 shows it produces byte-identical ISA on the
@@ -261,9 +309,10 @@ Three things this table says that are easy to miss:
 **The honest sentence.** This is a **weaker guarantee than Sarek held before.**
 Before, an f16 result on a supported backend was bit-identical to the
 interpreter, and the interpreter is the definition of what a Sarek program means;
-after, on two named driver stacks, it is bit-identical to a *named alternative
-rounding* of the same program. A user who diffs two devices bit-for-bit will now
-see differences on those stacks, legitimately. That is the price.
+after, on driver stacks that pass slice 1, it is bit-identical to a *named
+alternative rounding* of the same program (Regime A), or inside a derived bound
+(Regime B). A user who diffs two devices bit-for-bit will now see differences on
+those stacks, legitimately. That is the price.
 
 What it buys is that the tensor-core paths become reachable at all. Neither
 `VK_KHR_cooperative_matrix` (#62) nor Metal `simdgroup_matrix` (#63) can be
@@ -367,43 +416,128 @@ unmeasured on every implementation.
 
 ---
 
-## 5. The coopmat numeric contract (proposed, §4 slice 4a measures it)
+## 5. The coopmat numeric contract (proposed, §7 slice 4a measures it)
 
-`S_strict` and `S_fuse_mul_into_narrowing` are the wrong instruments for a
-16×16×16 MulAdd: the freedom the spec grants is in the *accumulation order*, and
-there are many orders. A derived bound is the right shape, and for the
-f16×f16→**f32** configuration it is tight, for a reason worth stating because it
-makes the configuration choice:
+**This is the second acceptance regime of §1.6, not an instance of §1.2's model
+set.** `S_strict` and `S_fuse_mul_into_narrowing` are the wrong instruments for a
+16×16×16 MulAdd, and not because nobody has written the models down: the freedom
+the specification grants is over the *order* of a 17-term summation, which admits
+combinatorially many distinct correct results. There is no finite set to enumerate,
+so this regime is a derived numeric bound. §1.6 is where the two regimes are set
+against each other and why neither is allowed to be called "the contract"
+unqualified.
+
+### 5.1 What the operation actually computes
+
+`OpCooperativeMatrixMulAddKHR` computes **`D = A × B + C`**, not `A × B`. Each
+output element is
+
+```
+D[m][n]  =  ( Σ_{k=0..K-1} A[m][k] · B[k][n] )  +  C[m][n]
+```
+
+so for the f16×f16→f32 configuration one output element is a sum of **K products
+plus one f32 addend — K + 1 = 17 terms, requiring 16 additions**, in an order the
+specification leaves to the implementation. An earlier draft of this section
+bounded only the products and compared against the dot product alone; that was
+wrong, and a correct result with a nonzero `C` would have failed the gate.
+
+### 5.2 The derivation
 
 - **An f16 × f16 product is exact in binary32.** Two 11-bit significands multiply
-  to at most 22 bits, which fits binary32's 24, and the exponent range of the
-  product is comfortably inside binary32's. Evidence tier: **by-construction**.
-  So the products contribute *no* error at all, whatever order they are formed
-  in.
-- **The only freedom left is the order of the K−1 = 15 binary32 additions.** The
-  classical bound for a summation in any order is
-  `|error| ≤ ((K−1)·u) / (1 − (K−1)·u) · Σ|p_i|` with `u = 2^-24`, i.e.
-  **≤ 8.94e-07 · Σ|p_i|** for K = 16. Stated against `Σ|p_i|` and not against the
-  result, deliberately: a cancelling dot product has unbounded *relative* error
-  under any summation order, and quoting a relative-to-result bound would be the
-  kind of number that cannot fail.
+  to at most 22 bits, which fits binary32's 24, and the product's exponent range
+  is inside binary32's. Evidence tier: **by-construction**. The products
+  contribute *no* error at all, whatever order they are formed in.
+- **`C[m][n]` is a binary32 value supplied by the caller, so it is exact as
+  given.** It contributes no error of its own — but it *does* enter the
+  accumulation, so it is one more term to be summed and one more magnitude in the
+  denominator.
+- **The only freedom left is the order of the 16 binary32 additions.** The
+  classical bound for summing `n` exactly-representable terms in *any* order,
+  using `n − 1` additions, is `|error| ≤ γ_{n−1} · Σ|terms|` with
+  `γ_j = j·u / (1 − j·u)` and `u = 2^-24`. Here `n = K + 1 = 17`, so `j = 16` and
+  `γ_16 = 16·2^-24 / (1 − 16·2^-24) = 9.5368e-07`.
+- **Stated against `Σ|terms|`, never against the result.** A cancelling dot
+  product has unbounded *relative-to-result* error under any summation order, so a
+  relative-to-result bound would be a number that cannot fail. The denominator is
+  `Σ_k |A[m][k]·B[k][n]| + |C[m][n]|`.
+- **The bound assumes the implementation's intermediate accumulation is at
+  least binary32.** If it is wider, the true error is smaller and the bound still
+  holds. If it is *narrower* — an implementation accumulating the f32-result
+  configuration in binary16 — the bound does not hold and the gate fails, which
+  is precisely the defect §5.4's positive control exists to catch.
 
-> **Proposed contract, f16×f16→f32 coopmat:** the device result of a 16×16×16
-> `OpCooperativeMatrixMulAddKHR` must lie within `8.94e-07 · Σ|p_i|` of the
-> exactly-computed dot product, elementwise, where `Σ|p_i|` is computed exactly
-> (the products are exact, §5 bullet 1, so a binary64 host reference is exact for
-> K = 16).
+> **Proposed contract, f16×f16→f32 coopmat, `D = A × B + C`.** For every output
+> element `(m, n)` of a 16×16×16 `OpCooperativeMatrixMulAddKHR`:
+>
+> ```
+> | D_device[m][n] − D_exact[m][n] |  ≤  9.5368e-07 · ( Σ_k |A[m][k]·B[k][n]| + |C[m][n]| )
+> ```
+>
+> where `D_exact` is the **exactly** evaluated `Σ_k A[m][k]·B[k][n] + C[m][n]`.
+>
+> **Degenerate case `C = 0`:** 16 terms, 15 additions, and the bound tightens to
+> `γ_15 = 8.9407e-07 · Σ_k |A[m][k]·B[k][n]|`. The harness should use the tighter
+> constant when it has pinned `C = 0`, and must not use it otherwise.
 
-The same bound for the f16×f16→**f16** configuration is `15 · 2^-11 ≈ 7.3e-03 ·
-Σ|p_i|` — three and a half orders of magnitude looser, and wide enough to hide
-almost any implementation defect. **Recommendation: admit the f32-accumulate
-configuration first, and do not admit the f16-accumulate one without a separate
-argued case.** This is the §11.5 lesson applied before rather than after.
+### 5.3 Computing `D_exact` — binary64 is NOT sufficient in general
 
-**Required positive control**, without which the bound is a gate that cannot
-fail: a host implementation that accumulates in **binary16** must be *rejected*
-by the f32-accumulate gate. It is a five-line reference and it makes the
-difference between a measurement and a formality.
+A second correction to the earlier draft, which asserted that binary64 makes the
+reference exact for K = 16. It does not, and the condition is worth stating
+because the harness must **assert** it rather than assume it.
+
+Each of the 17 terms is an integer multiple of `2^(e_i − 23)`, where `e_i` is its
+binade exponent, and the sum's magnitude is at most `17 · 2^(max e_i + 1)`. So an
+exact representation needs
+
+```
+(max e − min e) + 24 + 1 + ceil(log2 17)  =  span + 30   bits
+```
+
+and binary64 has 53. **Binary64 is exact only when the exponent span of the 17
+terms is at most 23 binades.** That is not a formality: f16 inputs range from
+subnormals near `2^-24` to `65504 ≈ 2^16`, so their products can span roughly 80
+binades — far outside what binary64 can sum exactly.
+
+Two acceptable implementations, and the harness must do one of them explicitly:
+
+- **Restrict the input generator** so the term exponent span is ≤ 23 binades, and
+  **assert that invariant in the harness**, failing loudly if a generated case
+  violates it. Then binary64 is exact and the reference is cheap.
+- **Use an exact accumulator** — exact rational arithmetic, or a fixed-point
+  superaccumulator wide enough for binary32's full exponent range — and lift the
+  input restriction.
+
+The first is recommended for slice 4a and the restriction is a real narrowing of
+coverage that must be recorded alongside the result, not buried in the generator.
+
+### 5.4 Why f32-accumulate first, and the required control
+
+The same derivation does **not** carry over unchanged to the f16×f16→**f16**
+configuration, and the reason is worse than a larger constant: with an f16 result
+type the products are no longer exact in the accumulation format (22 significand
+bits into 11), so the error has a product term as well as an ordering term. Even
+ignoring that, the ordering term alone is `γ_16` at `u = 2^-11`, i.e.
+**≈ 7.87e-03 · Σ|terms|** — four orders of magnitude looser than the f32 case and
+wide enough to hide almost any implementation defect.
+
+**Recommendation: admit the f32-accumulate configuration first, and do not admit
+the f16-accumulate one without a separate argued case and its own derivation.**
+This is the §11.5 lesson applied before rather than after.
+
+**Two positive controls are required**, without which the bound is a gate that
+cannot fail. Each is a deliberately wrong reference that the gate must *reject*:
+
+1. **A binary16-accumulating reference** — catches an implementation that
+   accumulates the f32-result configuration at f16, the defect §5.2's last bullet
+   names.
+2. **A `C`-dropping reference** — catches exactly the error this section was
+   written to fix, so that §5.1's correction is pinned by a test rather than only
+   by a paragraph. It fires only when the gate is exercised with a nonzero `C`,
+   which is therefore mandatory in the input generator.
+
+Both are a few lines each, and they are the difference between a measurement and
+a formality.
 
 ---
 
@@ -609,10 +743,16 @@ and needs nothing from the DSL:
 - **4a — hand-written GLSL coopmat shader, driven through the existing
   `sarek-vulkan` dispatch.** Requires `GL_KHR_cooperative_matrix`, the
   `shaderFloat16` plumbing of slice 2, and a 16×16×16 f16→f32 kernel. Measure
-  against the exact host reference of §5, with the binary16-accumulate negative
-  control. Run the §1.4 determinism tests, including the dispatch-shape
-  variation. **Proves the numeric contract of §5 on a real implementation** —
-  which is today entirely unmeasured — before any IR work is committed to it.
+  against the exact host reference of §5 — which is `D = A × B + C`, **with a
+  nonzero `C` exercised**, not the dot product alone — using the `γ_16` bound of
+  §5.2 and one of §5.3's two exact-reference constructions, with the input-span
+  invariant asserted rather than assumed if binary64 is chosen. Both positive
+  controls of §5.4 are required — a binary16-accumulating reference and a
+  `C`-dropping reference must each be *rejected*, which is what shows the gate can
+  go red at all. Run the §1.4 determinism tests,
+  including the dispatch-shape variation. **Proves the numeric contract of §5 on
+  a real implementation** — which is today entirely unmeasured — before any IR
+  work is committed to it.
 - **4b — the IR fragment type.** The new type class that
   `f16-dsl-element-type.md` §8 slice 3 names and defers. Two shape requirements,
   both cheap now and expensive to retrofit, and **both are binding on this slice
