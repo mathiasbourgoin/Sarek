@@ -227,6 +227,10 @@ end = struct
         (* Native has no compute capability *)
         (* Host execution: OCaml floats are binary64 and Int64.t is native. *)
         device_features = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64];
+        (* backlog-62: no cooperative-matrix probe on this backend. [None] is
+           "not probed", which Sarek_coopmat.verdict maps to Unknown and therefore
+           refuses; an empty list would be a positive claim nobody measured. *)
+        coopmat = None;
         supports_atomics = true;
         warp_size = 1;
         max_registers_per_block = 0;

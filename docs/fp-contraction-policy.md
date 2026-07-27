@@ -739,14 +739,38 @@ this is where they are collected):
   cross-check, unlike its OpenCL sibling: one data point is thin ground for a
   gate, and §11.5 is a demonstration of what a cross-check built on a
   not-quite-valid oracle does when it meets new hardware.
-  (b) **The `shaderFloat16` device feature is not enabled.** Vulkan requires it
-  before a shader may use the SPIR-V `Float16` capability;
-  `Vulkan_api_device` chains no feature structs beyond core
-  `VkPhysicalDeviceFeatures`, and RADV accepts the shaders anyway. The
-  measurement stands — the defect is visible in the ISA, and the barriered
-  control returns bit-exact results on the same un-enabled path — but that
-  plumbing is real work that enabling f16 here would have to do first, and it
-  is not done.
+  (b) ~~**The `shaderFloat16` device feature is not enabled.**~~ **CLOSED
+  2026-07-27 (backlog-62 slice 2).** Vulkan requires the feature before a shader
+  may use the SPIR-V `Float16` capability; `Vulkan_api_device` used to chain no
+  feature structs beyond core `VkPhysicalDeviceFeatures`, and RADV accepted the
+  shaders anyway. It now queries `VkPhysicalDeviceShaderFloat16Int8Features` and
+  `VkPhysicalDevice16BitStorageFeatures` through the `VkPhysicalDeviceFeatures2`
+  chain and **requests both in `VkDeviceCreateInfo.pNext`**, alongside
+  `VK_KHR_cooperative_matrix` where advertised.
+
+  **The measurement is unchanged by enabling it, and that is itself a result.**
+  Run as a controlled A/B on 2026-07-27 — one build, the feature request
+  toggled, `test_vulkan_f16_tripwire` run on each arm, on the RX 7900 XTX (RADV
+  NAVI31) **and** the Raphael iGPU, radv / Mesa 26.1.4-arch3.1, Vulkan 1.4.354:
+
+  | arm | RX 7900 XTX | Raphael iGPU |
+  |---|---|---|
+  | `shaderFloat16` **not** requested (the pre-slice-2 path) | 2912/63488 | 2912/63488 |
+  | `shaderFloat16` requested | 2912/63488 | 2912/63488 |
+
+  First divergence identical on every arm (`x = 8.94069672e-07`, device
+  `0x0011`, discipline `0x0010`), the `precise` variant identical
+  (2912/63488 from the discipline, 0/63488 from the single-rounding model), and
+  all three calibration controls green throughout. So the caveat named a real
+  gap in the plumbing but **not** a confound in the measurement: ACO's
+  absorption of the f32→f16 narrowing does not depend on whether the feature was
+  requested. Evidence tier: **executed**, both arms, same binary, same devices.
+
+  Only the one-narrowing shape was re-run this way; the 4774/63488
+  two-narrowing figure was not re-measured under the A/B.
+
+  What this does **not** do is lift any refusal — `Sarek_ir_glsl` still refuses
+  f16, and that is slice 3.
   (c) **No Sarek-generated shader was involved.** The tripwire compiles raw
   GLSL, because `Sarek_ir_glsl` refuses f16; it measures the driver, not the
   codegen. If the refusal is ever lifted, the codegen's own output needs its own

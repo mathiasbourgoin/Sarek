@@ -56,18 +56,26 @@
  *      about ACO and not about a broken buffer layout, a broken pack/unpack, or
  *      the Float16 caveat in the next paragraph.
  *
- * ONE HONEST CAVEAT ABOUT HOW THESE SHADERS RUN.
+ * A CAVEAT THAT WAS HONEST AND HAS NOW BEEN RETIRED BY MEASUREMENT.
  *
  * Vulkan requires the [shaderFloat16] feature to be enabled at device creation
- * before a shader may use the SPIR-V Float16 capability. Sarek's Vulkan device
- * creation chains no feature structs beyond core VkPhysicalDeviceFeatures, so
- * that feature is NOT enabled; RADV accepts these shaders anyway. That plumbing
- * is part of what enabling f16 on this backend would have to build, and it is
- * listed as still-open in docs/fp-contraction-policy.md. It does not weaken the
- * finding: the defect is visible in the emitted ISA (run this executable under
- * RADV_DEBUG=asm to see v_fma_mixlo_f16 for the plain variant and a separate
- * conversion for the barriered one), and control 3 above shows the same
- * un-enabled path producing bit-exact agreement when the fusion is defeated.
+ * before a shader may use the SPIR-V Float16 capability, and until backlog-62
+ * slice 2 Sarek chained no feature structs beyond core
+ * VkPhysicalDeviceFeatures — so these shaders ran on a path where the feature
+ * was never requested, and RADV accepted them anyway. [Vulkan_api_device] now
+ * queries VkPhysicalDeviceShaderFloat16Int8Features through the Features2 chain
+ * and REQUESTS shaderFloat16 (and storageBuffer16BitAccess) at vkCreateDevice.
+ *
+ * The numbers below did not move. Run as a controlled A/B on 2026-07-27 — one
+ * build, the feature request toggled, this executable run on each arm — both
+ * arms report 2912/63488 on the RX 7900 XTX AND on the Raphael iGPU, with the
+ * same first divergence (x = 8.94069672e-07, device 0x0011, discipline 0x0010),
+ * the same `precise` figures, and all three calibration controls green. So the
+ * caveat named a real gap in the plumbing but not a confound in the
+ * measurement: ACO's absorption of the f32->f16 narrowing does not depend on
+ * whether the feature was requested. The defect remains visible in the emitted
+ * ISA too (run this executable under RADV_DEBUG=asm to see v_fma_mixlo_f16 for
+ * the plain variant and a separate conversion for the barriered one).
  ******************************************************************************)
 
 open Sarek_vulkan

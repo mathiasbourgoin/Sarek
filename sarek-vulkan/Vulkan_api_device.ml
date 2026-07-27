@@ -30,6 +30,63 @@ type t = {
           [OpCapability Int64] is legal only against a logical device that
           ENABLED the feature, so querying it without requesting it would still
           be the #142 defect. *)
+  supports_fp16 : bool;
+      (** [VkPhysicalDeviceShaderFloat16Int8Features.shaderFloat16], queried
+          through the [VkPhysicalDeviceFeatures2] chain and REQUESTED in
+          [VkDeviceCreateInfo.pNext] (backlog-62 slice 2). It is not in core
+          [VkPhysicalDeviceFeatures], which is why it could not be plumbed on
+          the #142 path.
+
+          docs/fp-contraction-policy.md §7(b) records that RADV accepts f16
+          shaders today without this feature enabled. That makes the existing
+          f16 tripwire a measurement of an un-enabled path — fine for measuring
+          a driver, not fine for shipping — and it is precisely the "supported
+          but never requested" shape of #332. Enabling it here does NOT lift any
+          f16 refusal; that is slice 3. *)
+  storage_buffer_16bit : bool;
+      (** [VkPhysicalDevice16BitStorageFeatures.storageBuffer16BitAccess],
+          queried and requested on the same chain. Required before a shader may
+          declare 16-bit types in a storage buffer, which every f16 or
+          cooperative-matrix kernel that reads its operands from memory must do.
+      *)
+  driver_id : int;
+      (** [VkPhysicalDeviceDriverProperties.driverID]. 3 is
+          [VK_DRIVER_ID_MESA_RADV]. This is the driver KEY that
+          docs/fp-contraction-policy.md §11.7 and the [is_anv_device] comment in
+          [Test_helpers] both ask for: an allowlist keyed on a device-NAME
+          substring would match a future non-Mesa driver on the same silicon. *)
+  driver_name : string;  (** e.g. ["radv"]. *)
+  driver_info : string;  (** e.g. ["Mesa 26.1.4-arch3.1"]. *)
+  subgroup_size : int;
+      (** [VkPhysicalDeviceSubgroupProperties.subgroupSize] — the real one, not
+          a constant. Measured 64 on the RX 7900 XTX under radv / Mesa
+          26.1.4-arch3.1, where [Vulkan_plugin_base] reported a hard-coded 32. A
+          cooperative-matrix fragment is distributed across exactly this many
+          invocations, so the wrong value is a wrong ABI. *)
+  coopmat_extension_advertised : bool;
+      (** Whether [vkEnumerateDeviceExtensionProperties] listed
+          [VK_KHR_cooperative_matrix] for this physical device. *)
+  coopmat_enabled : bool;
+      (** Whether the extension was advertised AND
+          [VkPhysicalDeviceCooperativeMatrixFeaturesKHR.cooperativeMatrix] was
+          true, so the extension and the feature were both REQUESTED at
+          [vkCreateDevice].
+
+          Recorded separately from {!coopmat} rather than derived from it,
+          because deriving it is exactly the mistake this pair exists to catch:
+          [ds_configs] comes from a query that answers even for devices without
+          the extension, so a non-empty list is NOT evidence that the device
+          supports anything. The implication
+          [ds_configs <> [] ==> coopmat_enabled] is asserted by
+          [test_vulkan_coopmat_capability], and it is what goes red if the
+          extension check in [probe_coopmat] is ever removed — the gate test
+          alone does not, because it compares the verdict against the same list.
+      *)
+  coopmat : Sarek_coopmat.device_support option;
+      (** Cooperative-matrix support, [None] when it could not be probed at all
+          (loader too old to resolve the entry point). See [probe_coopmat] for
+          why an empty list and [None] must stay distinguishable, and for the
+          measurement that makes the extension check load-bearing. *)
 }
 
 let instance_ref : vk_instance structure ptr option ref = ref None
@@ -138,6 +195,302 @@ let count () =
     (vkEnumeratePhysicalDevices inst n (from_voidp vk_physical_device_ptr null)) ;
   Unsigned.UInt32.to_int !@n
 
+(** {1 Extended feature and property probes (backlog-62 slice 2)} *)
+
+(** Read a NUL-terminated fixed-size C char array into an OCaml string. *)
+let string_of_char_array arr =
+  let n = CArray.length arr in
+  let buf = Buffer.create 64 in
+  (try
+     for i = 0 to n - 1 do
+       let c = CArray.get arr i in
+       if c = '\000' then raise Exit else Buffer.add_char buf c
+     done
+   with Exit -> ()) ;
+  Buffer.contents buf
+
+let u32_is_true v = Unsigned.UInt32.to_int v <> 0
+
+(** Zero a struct's bytes before a [pNext] query.
+
+    A driver that does not recognise an [sType] leaves the struct alone, so
+    without this an unrecognised feature struct would be read out of
+    uninitialised memory — and the failure direction is "feature present", on
+    exactly the devices that lack it. [ctypes]' [make] does not zero. *)
+let zero_struct (type a) (typ : a structure typ) (s : a structure) =
+  let bytes = sizeof typ in
+  let p = coerce (ptr typ) (ptr char) (addr s) in
+  for i = 0 to bytes - 1 do
+    p +@ i <-@ '\000'
+  done
+
+(** The device extension names a physical device advertises. *)
+let device_extension_names phys_dev =
+  let count = allocate uint32_t (Unsigned.UInt32.of_int 0) in
+  check
+    "vkEnumerateDeviceExtensionProperties"
+    (vkEnumerateDeviceExtensionProperties
+       phys_dev
+       (from_voidp char null)
+       count
+       (from_voidp vk_extension_properties null)) ;
+  let n = Unsigned.UInt32.to_int !@count in
+  if n = 0 then []
+  else begin
+    let arr = CArray.make vk_extension_properties n in
+    check
+      "vkEnumerateDeviceExtensionProperties"
+      (vkEnumerateDeviceExtensionProperties
+         phys_dev
+         (from_voidp char null)
+         count
+         (CArray.start arr)) ;
+    List.init n (fun i ->
+        string_of_char_array (getf (CArray.get arr i) ext_props_extensionName))
+  end
+
+type extended_features = {
+  ef_shader_float16 : bool;
+  ef_storage_buffer_16bit : bool;
+  ef_cooperative_matrix : bool;
+  ef_coopmat_robust_buffer_access : bool;
+}
+
+(** Query the three extension feature structs in one [VkPhysicalDeviceFeatures2]
+    chain.
+
+    Chaining a struct whose extension the device does not advertise is harmless
+    — the driver skips an [sType] it does not know, and {!zero_struct}
+    guarantees the fields then read false. What is NOT harmless is calling an
+    extension's own entry point on such a device; see {!probe_coopmat}. *)
+let query_extended_features phys_dev =
+  let coopmat_f = make vk_physical_device_cooperative_matrix_features in
+  zero_struct vk_physical_device_cooperative_matrix_features coopmat_f ;
+  setf
+    coopmat_f
+    coopmat_feat_sType
+    (u32 vk_structure_type_physical_device_cooperative_matrix_features_khr) ;
+  setf coopmat_f coopmat_feat_pNext null ;
+
+  let storage16 = make vk_physical_device_16bit_storage_features in
+  zero_struct vk_physical_device_16bit_storage_features storage16 ;
+  setf
+    storage16
+    storage16_sType
+    (u32 vk_structure_type_physical_device_16bit_storage_features) ;
+  setf storage16 storage16_pNext (to_voidp (addr coopmat_f)) ;
+
+  let f16i8 = make vk_physical_device_shader_float16_int8_features in
+  zero_struct vk_physical_device_shader_float16_int8_features f16i8 ;
+  setf
+    f16i8
+    f16i8_sType
+    (u32 vk_structure_type_physical_device_shader_float16_int8_features) ;
+  setf f16i8 f16i8_pNext (to_voidp (addr storage16)) ;
+
+  let features2 = make vk_physical_device_features_2 in
+  zero_struct vk_physical_device_features_2 features2 ;
+  setf
+    features2
+    features2_sType
+    (u32 vk_structure_type_physical_device_features_2) ;
+  setf features2 features2_pNext (to_voidp (addr f16i8)) ;
+
+  vkGetPhysicalDeviceFeatures2 phys_dev (addr features2) ;
+  (* The chain holds bare addresses into all four. *)
+  ignore (Sys.opaque_identity features2) ;
+  ignore (Sys.opaque_identity f16i8) ;
+  ignore (Sys.opaque_identity storage16) ;
+  ignore (Sys.opaque_identity coopmat_f) ;
+  {
+    ef_shader_float16 = u32_is_true (getf f16i8 f16i8_shaderFloat16);
+    ef_storage_buffer_16bit =
+      u32_is_true (getf storage16 storage16_storageBuffer16BitAccess);
+    ef_cooperative_matrix =
+      u32_is_true (getf coopmat_f coopmat_feat_cooperativeMatrix);
+    ef_coopmat_robust_buffer_access =
+      u32_is_true (getf coopmat_f coopmat_feat_robustBufferAccess);
+  }
+
+type extended_properties = {
+  ep_driver_id : int;
+  ep_driver_name : string;
+  ep_driver_info : string;
+  ep_subgroup_size : int;
+}
+
+(** Driver identity and subgroup size, through one [VkPhysicalDeviceProperties2]
+    chain. Both are core Vulkan 1.1 property structs, so no extension gate. *)
+let query_extended_properties phys_dev =
+  let subgroup = make vk_physical_device_subgroup_properties in
+  zero_struct vk_physical_device_subgroup_properties subgroup ;
+  setf
+    subgroup
+    subgroup_props_sType
+    (u32 vk_structure_type_physical_device_subgroup_properties) ;
+  setf subgroup subgroup_props_pNext null ;
+
+  let driver = make vk_physical_device_driver_properties in
+  zero_struct vk_physical_device_driver_properties driver ;
+  setf
+    driver
+    driver_props_sType
+    (u32 vk_structure_type_physical_device_driver_properties) ;
+  setf driver driver_props_pNext (to_voidp (addr subgroup)) ;
+
+  let props2 = make vk_physical_device_properties_2 in
+  zero_struct vk_physical_device_properties_2 props2 ;
+  setf
+    props2
+    properties2_sType
+    (u32 vk_structure_type_physical_device_properties_2) ;
+  setf props2 properties2_pNext (to_voidp (addr driver)) ;
+
+  vkGetPhysicalDeviceProperties2 phys_dev (addr props2) ;
+  ignore (Sys.opaque_identity props2) ;
+  ignore (Sys.opaque_identity driver) ;
+  ignore (Sys.opaque_identity subgroup) ;
+  {
+    ep_driver_id = Unsigned.UInt32.to_int (getf driver driver_props_driverID);
+    ep_driver_name = string_of_char_array (getf driver driver_props_driverName);
+    ep_driver_info = string_of_char_array (getf driver driver_props_driverInfo);
+    ep_subgroup_size =
+      Unsigned.UInt32.to_int (getf subgroup subgroup_props_subgroupSize);
+  }
+
+(** {2 Cooperative-matrix configuration enumeration} *)
+
+let component_type_of_enum (v : int32) : Sarek_coopmat.component_type option =
+  if v = vk_component_type_float16 then Some Sarek_coopmat.Float16
+  else if v = vk_component_type_float32 then Some Sarek_coopmat.Float32
+  else if v = vk_component_type_uint8 then Some Sarek_coopmat.Uint8
+  else if v = vk_component_type_sint8 then Some Sarek_coopmat.Sint8
+  else if v = vk_component_type_uint32 then Some Sarek_coopmat.Uint32
+  else if v = vk_component_type_sint32 then Some Sarek_coopmat.Sint32
+  else None
+
+let scope_of_enum (v : int32) : Sarek_coopmat.scope option =
+  if v = vk_scope_subgroup then Some Sarek_coopmat.Subgroup
+  else if v = vk_scope_workgroup then Some Sarek_coopmat.Workgroup
+  else if v = vk_scope_device then Some Sarek_coopmat.Device_scope
+  else if v = vk_scope_queue_family then Some Sarek_coopmat.Queue_family
+  else None
+
+(** Probe cooperative-matrix support for one physical device.
+
+    {b The extension check is load-bearing and this is measured, not tidy.}
+    [vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR] is an instance-level
+    entry point that dispatches on the physical device handle, and on this
+    workstation RADV answers it for BOTH local devices: the AMD Ryzen 9 7950X
+    iGPU (RADV RAPHAEL_MENDOCINO), which does not advertise
+    [VK_KHR_cooperative_matrix] and reports [cooperativeMatrix = false], still
+    returns [VK_SUCCESS] and fourteen configurations — the same fourteen as the
+    RX 7900 XTX. Calling an extension entry point on a device that does not
+    support the extension is undefined behaviour, and here the undefined
+    behaviour is a plausible, well-formed, entirely wrong answer.
+
+    So a probe that populated the configuration list from the query alone would
+    report the iGPU as fully cooperative-matrix capable, and every gate
+    downstream would say [Available] for a device that cannot execute the
+    instruction. The order below — extension advertised, THEN feature true, THEN
+    query — is what makes the gate able to refuse.
+
+    [None] is returned only when the loader cannot resolve the entry point at
+    all; that is "not probed", and it refuses. A device that is probed and has
+    nothing returns [Some] with an empty list, which is a different fact. *)
+let probe_coopmat ~instance ~phys_dev ~extensions
+    ~(features : extended_features) ~subgroup_size =
+  let advertised =
+    List.mem vk_khr_cooperative_matrix_extension_name extensions
+  in
+  if not (advertised && features.ef_cooperative_matrix) then
+    Some
+      {
+        Sarek_coopmat.ds_configs = [];
+        ds_robust_buffer_access = false;
+        ds_subgroup_size = subgroup_size;
+        ds_advertised_count = 0;
+      }
+  else
+    match get_physical_device_cooperative_matrix_properties instance with
+    | None -> None
+    | Some query ->
+        let count = allocate uint32_t (Unsigned.UInt32.of_int 0) in
+        check
+          "vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR"
+          (query
+             phys_dev
+             count
+             (from_voidp vk_cooperative_matrix_properties null)) ;
+        let n = Unsigned.UInt32.to_int !@count in
+        let configs =
+          if n = 0 then []
+          else begin
+            let arr = CArray.make vk_cooperative_matrix_properties n in
+            for i = 0 to n - 1 do
+              let e = CArray.get arr i in
+              zero_struct vk_cooperative_matrix_properties e ;
+              setf
+                e
+                coopmat_props_sType
+                (u32 vk_structure_type_cooperative_matrix_properties_khr) ;
+              setf e coopmat_props_pNext null
+            done ;
+            check
+              "vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR"
+              (query phys_dev count (CArray.start arr)) ;
+            List.filter_map
+              (fun i ->
+                let e = CArray.get arr i in
+                let u f = Unsigned.UInt32.to_int (getf e f) in
+                (* A configuration naming a component type or a scope this
+                   build cannot represent is DROPPED, not approximated. The
+                   list is only ever read to decide what may run, so dropping
+                   an entry can only cause a refusal — the safe direction —
+                   whereas mapping an unknown enumerant onto a neighbouring one
+                   would admit an operation with different semantics. *)
+                match
+                  ( component_type_of_enum (getf e coopmat_props_AType),
+                    component_type_of_enum (getf e coopmat_props_BType),
+                    component_type_of_enum (getf e coopmat_props_CType),
+                    component_type_of_enum (getf e coopmat_props_ResultType),
+                    scope_of_enum (getf e coopmat_props_scope) )
+                with
+                | Some a, Some b, Some c, Some result, Some scope ->
+                    Some
+                      {
+                        Sarek_coopmat.cfg_shape =
+                          {
+                            Sarek_coopmat.m = u coopmat_props_MSize;
+                            n = u coopmat_props_NSize;
+                            k = u coopmat_props_KSize;
+                          };
+                        cfg_a = a;
+                        cfg_b = b;
+                        cfg_c = c;
+                        cfg_result = result;
+                        cfg_saturating =
+                          u coopmat_props_saturatingAccumulation <> 0;
+                        cfg_scope = scope;
+                      }
+                | _ ->
+                    Spoc_core.Log.debugf
+                      Spoc_core.Log.Device
+                      "Vulkan coopmat: dropping configuration %d (component \
+                       type or scope not representable)"
+                      i ;
+                    None)
+              (List.init n (fun i -> i))
+          end
+        in
+        Some
+          {
+            Sarek_coopmat.ds_configs = configs;
+            ds_robust_buffer_access = features.ef_coopmat_robust_buffer_access;
+            ds_subgroup_size = subgroup_size;
+            ds_advertised_count = n;
+          }
+
 (** Find compute queue family index *)
 let find_compute_queue_family phys_dev =
   let count = allocate uint32_t (Unsigned.UInt32.of_int 0) in
@@ -233,6 +586,40 @@ let get idx =
          the physical one. *)
       let supports_int64 = feature_supported shader_int64_field_index in
 
+      (* backlog-62 slice 2. Everything below this line is queried through the
+         Features2 / Properties2 pNext chains, which is the only way to reach
+         shaderFloat16, storageBuffer16BitAccess, cooperativeMatrix, the driver
+         identity and the subgroup size. *)
+      let extensions = device_extension_names phys_dev in
+      let ext = query_extended_features phys_dev in
+      let props2 = query_extended_properties phys_dev in
+      let coopmat =
+        probe_coopmat
+          ~instance:inst
+          ~phys_dev
+          ~extensions
+          ~features:ext
+          ~subgroup_size:props2.ep_subgroup_size
+      in
+      let has_ext name = List.mem name extensions in
+      (* #332's lesson, applied: support is not enablement. Each of these is
+         requested only when the device advertises BOTH the extension and the
+         feature, because vkCreateDevice fails outright on a request the device
+         cannot satisfy — and is not requested at all when unsupported, so the
+         behaviour on such a device is byte-identical to before this change. *)
+      let want_fp16 =
+        ext.ef_shader_float16
+        && has_ext vk_khr_shader_float16_int8_extension_name
+      in
+      let want_storage16 =
+        ext.ef_storage_buffer_16bit
+        && has_ext vk_khr_16bit_storage_extension_name
+      in
+      let want_coopmat =
+        ext.ef_cooperative_matrix
+        && has_ext vk_khr_cooperative_matrix_extension_name
+      in
+
       (* Find compute queue family *)
       let queue_family = find_compute_queue_family phys_dev in
 
@@ -275,14 +662,106 @@ let get idx =
         dev_create_info
         dev_create_ppEnabledLayerNames
         (from_voidp string null) ;
+      (* Device extensions, backlog-62 slice 2. Requested only when advertised;
+         the list is empty on a device that advertises none, which restores the
+         previous (count = 0, names = NULL) call exactly.
+
+         The name buffers are held in [ext_name_arrays] and kept alive past
+         vkCreateDevice explicitly. [CArray.of_string] is used rather than
+         ctypes' [string] view for the same reason the instance's application
+         name is: that view allocates an anonymous buffer rooted only by a fat
+         pointer [setf] discards, so the string would dangle before the loader
+         read it. *)
+      let requested_extensions =
+        List.filter_map
+          (fun (wanted, name) -> if wanted then Some name else None)
+          [
+            (want_fp16, vk_khr_shader_float16_int8_extension_name);
+            (want_storage16, vk_khr_16bit_storage_extension_name);
+            (want_coopmat, vk_khr_cooperative_matrix_extension_name);
+          ]
+      in
+      let ext_name_arrays =
+        List.map (fun n -> CArray.of_string n) requested_extensions
+      in
+      let ext_name_ptrs =
+        CArray.of_list (ptr char) (List.map CArray.start ext_name_arrays)
+      in
       setf
         dev_create_info
         dev_create_enabledExtensionCount
-        (Unsigned.UInt32.of_int 0) ;
+        (Unsigned.UInt32.of_int (List.length requested_extensions)) ;
       setf
         dev_create_info
         dev_create_ppEnabledExtensionNames
-        (from_voidp string null) ;
+        (if requested_extensions = [] then from_voidp string null
+         else coerce (ptr (ptr char)) (ptr string) (CArray.start ext_name_ptrs)) ;
+
+      (* The feature pNext chain. Only structs whose feature is both supported
+         and wanted are chained, and each has exactly the requested field set —
+         cooperativeMatrixRobustBufferAccess is deliberately NOT requested, as
+         it carries a further requirement on core robustBufferAccess; the probe
+         RECORDS whether the device offers it without asking for it.
+
+         pEnabledFeatures below stays non-NULL and keeps carrying the core
+         shaderFloat64 / shaderInt64 request. That is legal: the "pEnabledFeatures
+         must be NULL" rule applies only when VkPhysicalDeviceFeatures2 itself
+         is in the chain, and it is not. *)
+      let coopmat_enable =
+        make vk_physical_device_cooperative_matrix_features
+      in
+      zero_struct vk_physical_device_cooperative_matrix_features coopmat_enable ;
+      setf
+        coopmat_enable
+        coopmat_feat_sType
+        (u32 vk_structure_type_physical_device_cooperative_matrix_features_khr) ;
+      setf coopmat_enable coopmat_feat_pNext null ;
+      setf
+        coopmat_enable
+        coopmat_feat_cooperativeMatrix
+        (Unsigned.UInt32.of_int 1) ;
+
+      let storage16_enable = make vk_physical_device_16bit_storage_features in
+      zero_struct vk_physical_device_16bit_storage_features storage16_enable ;
+      setf
+        storage16_enable
+        storage16_sType
+        (u32 vk_structure_type_physical_device_16bit_storage_features) ;
+      setf
+        storage16_enable
+        storage16_storageBuffer16BitAccess
+        (Unsigned.UInt32.of_int 1) ;
+
+      let f16_enable = make vk_physical_device_shader_float16_int8_features in
+      zero_struct vk_physical_device_shader_float16_int8_features f16_enable ;
+      setf
+        f16_enable
+        f16i8_sType
+        (u32 vk_structure_type_physical_device_shader_float16_int8_features) ;
+      setf f16_enable f16i8_shaderFloat16 (Unsigned.UInt32.of_int 1) ;
+
+      let chain_head =
+        List.fold_left
+          (fun next (wanted, set_pnext, self) ->
+            if wanted then begin
+              set_pnext next ;
+              self
+            end
+            else next)
+          null
+          [
+            ( want_coopmat,
+              (fun p -> setf coopmat_enable coopmat_feat_pNext p),
+              to_voidp (addr coopmat_enable) );
+            ( want_storage16,
+              (fun p -> setf storage16_enable storage16_pNext p),
+              to_voidp (addr storage16_enable) );
+            ( want_fp16,
+              (fun p -> setf f16_enable f16i8_pNext p),
+              to_voidp (addr f16_enable) );
+          ]
+      in
+      setf dev_create_info dev_create_pNext chain_head ;
       (* Request every wide-type feature the physical device actually reports,
          and only those - requesting an unsupported feature fails
          vkCreateDevice outright. All other features are left at their default
@@ -338,10 +817,16 @@ let get idx =
       check
         "vkCreateDevice"
         (vkCreateDevice phys_dev (addr dev_create_info) null device) ;
-      (* [dev_create_info] holds bare addresses into all three. *)
+      (* [dev_create_info] holds bare addresses into all of these, and in OCaml
+         a value dies after its last USE rather than at end of scope. *)
       ignore (Sys.opaque_identity enabled_features) ;
       ignore (Sys.opaque_identity queue_create_info) ;
       ignore (Sys.opaque_identity queue_priority) ;
+      ignore (Sys.opaque_identity ext_name_arrays) ;
+      ignore (Sys.opaque_identity ext_name_ptrs) ;
+      ignore (Sys.opaque_identity coopmat_enable) ;
+      ignore (Sys.opaque_identity storage16_enable) ;
+      ignore (Sys.opaque_identity f16_enable) ;
 
       (* Get compute queue *)
       let queue = allocate vk_queue_ptr (from_voidp vk_queue null) in
@@ -393,6 +878,20 @@ let get idx =
           command_pool = !@pool;
           supports_fp64;
           supports_int64;
+          (* Reported as the ENABLED state, not the supported one. On a device
+             where the extension is absent these are false even if some other
+             path could have reached the feature — which is what makes the
+             value safe to hand to a capability gate. *)
+          supports_fp16 = want_fp16;
+          storage_buffer_16bit = want_storage16;
+          driver_id = props2.ep_driver_id;
+          driver_name = props2.ep_driver_name;
+          driver_info = props2.ep_driver_info;
+          subgroup_size = props2.ep_subgroup_size;
+          coopmat_extension_advertised =
+            has_ext vk_khr_cooperative_matrix_extension_name;
+          coopmat_enabled = want_coopmat;
+          coopmat;
         }
       in
       Hashtbl.add device_cache idx dev ;

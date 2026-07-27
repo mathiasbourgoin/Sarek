@@ -32,6 +32,10 @@ let () =
         {
           is_cpu = true;
           device_features = [];
+          (* backlog-62: no cooperative-matrix probe on this backend. [None] is
+             "not probed", which Sarek_coopmat.verdict maps to Unknown and therefore
+             refuses; an empty list would be a positive claim nobody measured. *)
+          coopmat = None;
           supports_atomics = false;
           compute_capability = (0, 0);
           max_threads_per_block = 1;

@@ -86,6 +86,10 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
         device_features =
           ((if d.supports_fp64 then [Sarek_ir_analysis.Float64] else [])
           @ if d.supports_int64 then [Sarek_ir_analysis.Int64] else []);
+        (* backlog-62: no cooperative-matrix probe on this backend. [None] is
+           "not probed", which Sarek_coopmat.verdict maps to Unknown and therefore
+           refuses; an empty list would be a positive claim nobody measured. *)
+        coopmat = None;
         supports_atomics = true;
         (* Most OpenCL devices support atomics *)
         warp_size = 32;

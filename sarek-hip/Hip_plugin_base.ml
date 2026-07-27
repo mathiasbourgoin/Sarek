@@ -55,6 +55,10 @@ module Hip : Framework_sig.PLUGIN_BASE = struct
         (* As CUDA: fp64 and int64 are core on every HIP target. Float16 is
            omitted for the same reason — unprobed, so not claimed. *)
         device_features = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64];
+        (* backlog-62: no cooperative-matrix probe on this backend. [None] is
+           "not probed", which Sarek_coopmat.verdict maps to Unknown and therefore
+           refuses; an empty list would be a positive claim nobody measured. *)
+        coopmat = None;
         supports_atomics = true;
         warp_size = d.warp_size;
         max_registers_per_block = 65536;

@@ -50,8 +50,31 @@ type capabilities = {
           [Spoc_core.Device.allows_fp64] and [allows_int64] are the derived
           accessors, so this stays the single source and the two cannot drift.
       *)
+  coopmat : Sarek_coopmat.device_support option;
+      (** The cooperative-matrix (tensor-core) configurations this DEVICE
+          advertises, or [None] when the backend does not probe for them
+          (backlog-62 slice 2).
+
+          An OPTION rather than a plain list, for the same reason
+          {!Sarek_capability.device_verdict} takes one: an empty list and an
+          unprobed device are different facts, and collapsing them makes
+          "advertises nothing" indistinguishable from "nobody asked". Only the
+          first is evidence. {!Sarek_coopmat.verdict} maps [None] to
+          {!Sarek_capability.Unknown}, which does not permit.
+
+          Read it through {!Sarek_coopmat.verdict} or
+          {!Sarek_coopmat.find_config}, never by matching on the list directly.
+      *)
   supports_atomics : bool;
   warp_size : int;
+      (** Invocations that execute in lockstep — CUDA warp, AMD wavefront,
+          Vulkan/Metal subgroup. Load-bearing for cooperative matrices, whose
+          fragments are distributed across exactly this many invocations
+          ({!Sarek_coopmat.components_per_invocation}), so a wrong value here is
+          a wrong ABI rather than a wrong statistic. The Vulkan backend now
+          reports [VkPhysicalDeviceSubgroupProperties.subgroupSize] instead of a
+          hard-coded 32; on the RX 7900 XTX under radv / Mesa 26.1.4-arch3.1
+          that is 64. *)
   max_registers_per_block : int;
   clock_rate_khz : int;
   multiprocessor_count : int;

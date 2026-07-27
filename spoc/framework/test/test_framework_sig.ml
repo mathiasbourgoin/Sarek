@@ -53,6 +53,10 @@ let test_capabilities () =
       total_global_mem = Int64.of_int (8 * 1024 * 1024 * 1024);
       compute_capability = (7, 5);
       device_features = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64];
+      (* backlog-62: no cooperative-matrix probe on this backend. [None] is
+         "not probed", which Sarek_coopmat.verdict maps to Unknown and therefore
+         refuses; an empty list would be a positive claim nobody measured. *)
+      coopmat = None;
       supports_atomics = true;
       warp_size = 32;
       max_registers_per_block = 65536;
@@ -80,6 +84,10 @@ let test_device () =
       total_global_mem = Int64.of_int (2 * 1024 * 1024 * 1024);
       compute_capability = (0, 0);
       device_features = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64];
+      (* backlog-62: no cooperative-matrix probe on this backend. [None] is
+         "not probed", which Sarek_coopmat.verdict maps to Unknown and therefore
+         refuses; an empty list would be a positive claim nobody measured. *)
+      coopmat = None;
       supports_atomics = true;
       warp_size = 64;
       max_registers_per_block = 16384;

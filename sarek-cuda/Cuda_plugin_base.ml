@@ -58,6 +58,10 @@ module Cuda : Framework_sig.PLUGIN_BASE = struct
            #142, and listing a feature we have not gated would be the
            permissive default this list exists to remove. *)
         device_features = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64];
+        (* backlog-62: no cooperative-matrix probe on this backend. [None] is
+           "not probed", which Sarek_coopmat.verdict maps to Unknown and therefore
+           refuses; an empty list would be a positive claim nobody measured. *)
+        coopmat = None;
         supports_atomics = true;
         warp_size = d.warp_size;
         max_registers_per_block = 65536;

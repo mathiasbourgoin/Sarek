@@ -128,6 +128,80 @@ let vkGetPhysicalDeviceFeatures_lazy =
 let vkGetPhysicalDeviceFeatures dev features =
   Lazy.force vkGetPhysicalDeviceFeatures_lazy dev features
 
+(** {1 Extended feature and property queries (backlog-62 slice 2)} *)
+
+let vkGetPhysicalDeviceFeatures2_lazy =
+  foreign_vk_lazy
+    "vkGetPhysicalDeviceFeatures2"
+    (vk_physical_device_ptr
+    @-> ptr vk_physical_device_features_2
+    @-> returning void)
+
+(** Core Vulkan 1.1, so it resolves by [dlsym] on the loader like any core entry
+    point — unlike the cooperative-matrix query below. *)
+let vkGetPhysicalDeviceFeatures2 dev features2 =
+  Lazy.force vkGetPhysicalDeviceFeatures2_lazy dev features2
+
+let vkGetPhysicalDeviceProperties2_lazy =
+  foreign_vk_lazy
+    "vkGetPhysicalDeviceProperties2"
+    (vk_physical_device_ptr
+    @-> ptr vk_physical_device_properties_2
+    @-> returning void)
+
+let vkGetPhysicalDeviceProperties2 dev properties2 =
+  Lazy.force vkGetPhysicalDeviceProperties2_lazy dev properties2
+
+let vkEnumerateDeviceExtensionProperties_lazy =
+  foreign_vk_lazy
+    "vkEnumerateDeviceExtensionProperties"
+    (vk_physical_device_ptr @-> ptr char @-> ptr uint32_t
+    @-> ptr vk_extension_properties
+    @-> returning vk_result)
+
+let vkEnumerateDeviceExtensionProperties dev layer count props =
+  Lazy.force vkEnumerateDeviceExtensionProperties_lazy dev layer count props
+
+let vkGetInstanceProcAddr_lazy =
+  foreign_vk_lazy
+    "vkGetInstanceProcAddr"
+    (vk_instance_ptr @-> string @-> returning (ptr void))
+
+let vkGetInstanceProcAddr inst name =
+  Lazy.force vkGetInstanceProcAddr_lazy inst name
+
+(** [vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR], resolved through
+    [vkGetInstanceProcAddr] rather than [dlsym].
+
+    Not a stylistic choice. Measured on this workstation: [dlsym] on
+    [libvulkan.so.1] (Arch [vulkan-icd-loader], loader for Mesa 26.1.4-arch3.1)
+    fails with
+    ["undefined symbol: vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR"] —
+    the Khronos loader exports core and promoted entry points as symbols but not
+    every extension one, so a [foreign_vk_lazy] binding for this function would
+    raise [Dl.DL_error] the first time it was forced. [vkGetInstanceProcAddr]
+    returns a valid pointer for the same name on the same loader.
+
+    Returns [None] when the loader does not know the name, which is the honest
+    answer for a build against a loader too old to have heard of the extension.
+    A [None] here becomes an unprobed device, hence [Unknown], hence refused. *)
+let get_physical_device_cooperative_matrix_properties inst =
+  let p =
+    vkGetInstanceProcAddr
+      inst
+      "vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR"
+  in
+  if is_null p then None
+  else
+    Some
+      (coerce
+         (ptr void)
+         (Foreign.funptr
+            (vk_physical_device_ptr @-> ptr uint32_t
+            @-> ptr vk_cooperative_matrix_properties
+            @-> returning vk_result))
+         p)
+
 (** {1 Device Functions} *)
 
 let vkCreateDevice_lazy =

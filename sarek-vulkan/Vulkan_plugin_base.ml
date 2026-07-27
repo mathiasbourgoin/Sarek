@@ -55,10 +55,17 @@ module Vulkan = struct
         (* Both entries come from vkGetPhysicalDeviceFeatures and both are
            mirrored into the logical device's pEnabledFeatures, so this list
            reports what the device will actually ACCEPT, not merely what the
-           physical device advertises (#142). Float16 is absent deliberately:
-           shaderFloat16 is not probed, and f16 is refused on this backend by
-           policy anyway — claiming it here would be the permissive-default
-           error the capability model exists to prevent. *)
+           physical device advertises (#142).
+
+           Float16 joined the list in backlog-62 slice 2, and only because the
+           condition its previous absence was justified by no longer holds:
+           shaderFloat16 is now PROBED (through the VkPhysicalDeviceFeatures2
+           chain) and REQUESTED (in VkDeviceCreateInfo.pNext), so
+           [supports_fp16] is a statement about what this logical device
+           enabled rather than a guess. This does not lift the GLSL f16
+           refusal, which is a Policy/Toolchain_semantic decision at codegen
+           and is slice 3's business: [device_features] says what the DEVICE
+           provides, not what Sarek is willing to emit. *)
         device_features =
           List.concat
             [
@@ -68,10 +75,20 @@ module Vulkan = struct
               (if dev.Vulkan_api.Device.supports_int64 then
                  [Sarek_ir_analysis.Int64]
                else []);
+              (if dev.Vulkan_api.Device.supports_fp16 then
+                 [Sarek_ir_analysis.Float16]
+               else []);
             ];
+        coopmat = dev.Vulkan_api.Device.coopmat;
         supports_atomics = true;
-        warp_size = 32;
-        (* subgroup size varies by vendor *)
+        (* VkPhysicalDeviceSubgroupProperties.subgroupSize, not a constant.
+           This read 32 until backlog-62 slice 2, and 32 is WRONG on the one
+           discrete GPU this project measures on: radv / Mesa 26.1.4-arch3.1
+           reports 64 for the RX 7900 XTX (RADV NAVI31). It reports 64 for the
+           Raphael iGPU too, so the old value was not right for either local
+           device. A cooperative-matrix fragment is distributed across exactly
+           subgroupSize invocations, so this is ABI, not a statistic. *)
+        warp_size = dev.Vulkan_api.Device.subgroup_size;
         max_registers_per_block = 65536;
         clock_rate_khz = 1000000;
         multiprocessor_count = 1;

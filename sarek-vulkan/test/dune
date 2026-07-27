@@ -34,3 +34,8 @@
  (name test_vulkan_f16_tripwire)
  (modules test_vulkan_f16_tripwire)
  (libraries sarek_vulkan spoc_framework alcotest))
+
+(test
+ (name test_vulkan_coopmat_capability)
+ (modules test_vulkan_coopmat_capability)
+ (libraries sarek_vulkan spoc_framework sarek_ir alcotest str))

@@ -876,7 +876,7 @@ refusal before slice 3.
 |---|---|---|---|---|---|
 | **0** | the contract, as a testable classifier | the gate can tell `S_fuse_mul_into_narrowing` from a dropped narrowing | none (host-only) | no | open — and now also carries §1.3's per-narrowing ceiling |
 | **1** | element-wise model characterisation of ACO scalar f16 | whether the contract of §1.2 is deliverable at all | RX 7900 XTX + Raphael iGPU (local) | no | **DONE — all 20 shapes measured (2 in slice 1, the other 18 in backlog-151). Deliverable, and §1.2's set is generated rather than enumerated. 18 shapes measured but NOT admitted.** |
-| **2** | `shaderFloat16` + driver-identity + capability plumbing | the gate can be keyed on a driver, not a device name | local, both devices | no | open |
+| **2** | `shaderFloat16` + driver-identity + capability plumbing | the gate can be keyed on a driver, not a device name | local, both devices | no | **DONE 2026-07-27** — plus the coopmat capability query and the fragment type of slice 4b |
 | **3** | GLSL scalar f16, allowlisted | Sarek-*generated* f16 shaders meet the contract | RX 7900 XTX (local) | **yes**, on an allowlist | open |
 | **4** | backlog-62 Vulkan coopmat, f16×f16→f32 | the tensor-core path, end to end | RX 7900 XTX (local) | yes (new capability) | open |
 | **5** | backlog-63 Metal — **scalar f16 first** | the Metal row of §2 | ladon (M4) | no | **DONE 2026-07-27 — strict, 0/63488** |
@@ -1044,6 +1044,72 @@ was added: 2912/63488, the same figure and the same model as RADV.
 - `Framework_sig.capabilities` gains `supports_fp16` and a coopmat configuration
   list. This is `capability-model.md`'s slice 2 and it breaks the literal-record
   tests in `spoc/framework/test/`, a cost that document already accepts.
+
+> **OUTCOME, 2026-07-27 — done, and it moved two facts this document asserts.**
+> Executed on both local devices (AMD Radeon RX 7900 XTX / RADV NAVI31 and the
+> AMD Ryzen 9 7950X iGPU / RADV RAPHAEL_MENDOCINO), radv, Mesa 26.1.4-arch3.1,
+> Vulkan 1.4.354. Instruments: `sarek-vulkan/test/test_vulkan_coopmat_capability.ml`
+> (device side) and `spoc/ir/test/test_sarek_coopmat.ml` (host side).
+>
+> Delivered: `VkPhysicalDeviceShaderFloat16Int8Features` and
+> `VkPhysicalDevice16BitStorageFeatures` are queried through the
+> `VkPhysicalDeviceFeatures2` chain and **requested** in
+> `VkDeviceCreateInfo.pNext`, alongside `VK_KHR_cooperative_matrix` where
+> advertised; `VkPhysicalDeviceDriverProperties` and
+> `VkPhysicalDeviceSubgroupProperties` are on `Device.t`;
+> `Framework_sig.capabilities` gains `coopmat : Sarek_coopmat.device_support
+> option`; and `Sarek_coopmat` (in `spoc/ir`, beside `Sarek_capability`) carries
+> the configuration vocabulary and **slice 4b's fragment type**, integer
+> component types included.
+>
+> **Two corrections to this document.**
+>
+> 1. **The subgroup size is 64, not 32.** `VkPhysicalDeviceSubgroupProperties.
+>    subgroupSize` reads **64** on *both* local devices. `Vulkan_plugin_base` had
+>    been reporting a hard-coded 32, which was wrong for both. This is ABI, not
+>    a statistic: a 16×16 fragment over 64 invocations is 4 components each, not
+>    8, so any codegen slice written against 32 would have been wrong at the
+>    calling convention. `warp_size` is now the probed value.
+>
+> 2. **The configuration query answers for devices that do not support the
+>    extension, and §4's negative device is only negative if you check the
+>    extension.** `vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR` returns
+>    `VK_SUCCESS` and **all fourteen configurations for the Raphael iGPU** — the
+>    device this document offers as the free negative device, which does not
+>    advertise `VK_KHR_cooperative_matrix` and whose `cooperativeMatrix` feature
+>    reads false. Calling an extension entry point on a device without the
+>    extension is undefined behaviour, and RADV's undefined behaviour here is a
+>    well-formed, plausible, entirely wrong answer. §4's claim is correct as
+>    written — it was measured through the extension list — but a probe that
+>    enumerated configurations first would have contradicted it, and would have
+>    made the `Device_optional` gate unable to refuse anything.
+>
+> **The refusal was observed.** With the extension check in place, the iGPU
+> yields `Unavailable` for 16×16×16 `f16×f16→f32` while the RX 7900 XTX yields
+> `Available`, same driver, same Mesa, same run. Verified falsifiable by
+> mutation: removing the extension check makes the iGPU report all fourteen
+> configurations and both devices permit — and the *gate* test stays green,
+> because it compares the verdict against the same list the verdict reads. Two
+> further checks catch it (`configurations imply the enabled feature`, and a
+> no-drop invariant on the advertised count), and both go red on their
+> respective mutants.
+>
+> **A defect found in the doing, worth recording because it looked like
+> nothing.** A wrong `VkComponentTypeKHR` enumerant table decoded the fourteen
+> advertised configurations into six — including an `f16 × s8 → s32` and a
+> `u8 × u8 → u8` that no hardware advertises — with the other eight silently
+> dropped as unrepresentable. Every number looked plausible and every test
+> passed. The enumerants are now pinned against `vulkan_core.h` by value, and
+> `device_support` carries `ds_advertised_count` so that a dropped configuration
+> is a test failure rather than a smaller list.
+>
+> **`shaderFloat16` enablement did NOT change the f16 measurement.** Controlled
+> A/B, one build, feature request toggled: `test_vulkan_f16_tripwire` reports
+> 2912/63488 on both arms on both devices, same first divergence, all controls
+> green. `fp-contraction-policy.md` §7(b) is closed with the table.
+>
+> **No refusal is lifted.** `Sarek_ir_glsl` still refuses f16; nothing in Sarek
+> emits a cooperative-matrix instruction. Slice 3 and slices 4a/4c are untouched.
 
 ### Slice 3 — lift the GLSL scalar-f16 refusal, on an allowlist (local)
 

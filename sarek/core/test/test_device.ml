@@ -31,6 +31,10 @@ let make_fake_caps ?(is_cpu = false) ?(supports_fp64 = true)
     device_features =
       ((if supports_fp64 then [Sarek_ir_analysis.Float64] else [])
       @ if supports_int64 then [Sarek_ir_analysis.Int64] else []);
+    (* backlog-62: no cooperative-matrix probe on this backend. [None] is
+       "not probed", which Sarek_coopmat.verdict maps to Unknown and therefore
+       refuses; an empty list would be a positive claim nobody measured. *)
+    coopmat = None;
     supports_atomics;
     warp_size;
     max_registers_per_block = 16384;

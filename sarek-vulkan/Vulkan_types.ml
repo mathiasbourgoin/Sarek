@@ -1096,3 +1096,349 @@ let buffer_copy_dstOffset = field vk_buffer_copy "dstOffset" vk_device_size
 let buffer_copy_size = field vk_buffer_copy "size" vk_device_size
 
 let () = seal vk_buffer_copy
+
+(** {1 Extended feature and property queries (backlog-62 slice 2)}
+
+    Everything below is reached through the [pNext] chains of
+    [VkPhysicalDeviceFeatures2] / [VkPhysicalDeviceProperties2], which is the
+    only way to query [shaderFloat16], [storageBuffer16BitAccess],
+    [cooperativeMatrix], the driver identity and the subgroup size. Both entry
+    points are core Vulkan 1.1, and the instance this backend creates requests
+    API 1.2, so neither needs an instance extension.
+
+    Two rules the structs below obey, and both were arrived at the hard way:
+
+    - Every struct is ZEROED and given its [sType] before the query. A driver
+      that does not recognise an [sType] leaves the struct untouched, so an
+      uninitialised struct would be read as "feature present" on exactly the
+      devices that lack it.
+    - A struct chained into a query must be at least as large as the driver
+      believes it to be. [vk_physical_device_properties] above is a TRUNCATED
+      model (it stops after [deviceName] and pads), so it cannot be embedded in
+      [VkPhysicalDeviceProperties2] by value; the properties2 wrapper below
+      carries an opaque blob sized past the real struct instead. *)
+
+let vk_structure_type_physical_device_features_2 = 1000059000
+
+let vk_structure_type_physical_device_properties_2 = 1000059001
+
+let vk_structure_type_physical_device_shader_float16_int8_features = 1000082000
+
+let vk_structure_type_physical_device_16bit_storage_features = 1000083000
+
+let vk_structure_type_physical_device_subgroup_properties = 1000094000
+
+let vk_structure_type_physical_device_driver_properties = 1000196000
+
+let vk_structure_type_physical_device_cooperative_matrix_features_khr =
+  1000506000
+
+let vk_structure_type_cooperative_matrix_properties_khr = 1000506001
+
+(** [VK_KHR_cooperative_matrix]. The extension NAME is what gates the whole
+    path: see [Vulkan_api_device.probe_coopmat] for the measurement that makes
+    checking it mandatory rather than tidy. *)
+let vk_khr_cooperative_matrix_extension_name = "VK_KHR_cooperative_matrix"
+
+let vk_khr_shader_float16_int8_extension_name = "VK_KHR_shader_float16_int8"
+
+let vk_khr_16bit_storage_extension_name = "VK_KHR_16bit_storage"
+
+(** VkExtensionProperties: [char extensionName[256]] then [uint32 specVersion].
+*)
+type vk_extension_properties
+
+let vk_extension_properties : vk_extension_properties structure typ =
+  structure "VkExtensionProperties"
+
+let ext_props_extensionName =
+  field vk_extension_properties "extensionName" (array 256 char)
+
+let ext_props_specVersion = field vk_extension_properties "specVersion" uint32_t
+
+let () = seal vk_extension_properties
+
+(** VkPhysicalDeviceFeatures2. [features] is embedded BY VALUE, and that is safe
+    here only because {!vk_physical_device_features} is modelled exactly — all
+    55 [VkBool32] and nothing omitted — unlike the properties struct. *)
+type vk_physical_device_features_2
+
+let vk_physical_device_features_2 : vk_physical_device_features_2 structure typ
+    =
+  structure "VkPhysicalDeviceFeatures2"
+
+let features2_sType = field vk_physical_device_features_2 "sType" uint32_t
+
+let features2_pNext = field vk_physical_device_features_2 "pNext" (ptr void)
+
+let features2_features =
+  field vk_physical_device_features_2 "features" vk_physical_device_features
+
+let () = seal vk_physical_device_features_2
+
+(** VkPhysicalDeviceProperties2, with the embedded [VkPhysicalDeviceProperties]
+    modelled as an opaque blob.
+
+    The blob must be at least [sizeof(VkPhysicalDeviceProperties)], because the
+    driver writes the whole thing. That is 4 x uint32 + deviceType +
+    deviceName[256] + pipelineCacheUUID[16] + VkPhysicalDeviceLimits (504) +
+    VkPhysicalDeviceSparseProperties (20) ~= 824 bytes; 1024 is comfortably past
+    it and costs nothing, since exactly one of these is made per device query.
+    An [array _ char] has alignment 1, and the blob's offset (16, after a 4-byte
+    [sType] and an 8-aligned [pNext]) is already 8-aligned, so the layout
+    matches the C struct without a named-field model of the limits. *)
+type vk_physical_device_properties_2
+
+let vk_physical_device_properties_2_blob_bytes = 1024
+
+let vk_physical_device_properties_2 :
+    vk_physical_device_properties_2 structure typ =
+  structure "VkPhysicalDeviceProperties2"
+
+let properties2_sType = field vk_physical_device_properties_2 "sType" uint32_t
+
+let properties2_pNext = field vk_physical_device_properties_2 "pNext" (ptr void)
+
+let properties2_properties =
+  field
+    vk_physical_device_properties_2
+    "properties"
+    (array vk_physical_device_properties_2_blob_bytes char)
+
+let () = seal vk_physical_device_properties_2
+
+(** VkPhysicalDeviceShaderFloat16Int8Features *)
+type vk_physical_device_shader_float16_int8_features
+
+let vk_physical_device_shader_float16_int8_features :
+    vk_physical_device_shader_float16_int8_features structure typ =
+  structure "VkPhysicalDeviceShaderFloat16Int8Features"
+
+let f16i8_sType =
+  field vk_physical_device_shader_float16_int8_features "sType" uint32_t
+
+let f16i8_pNext =
+  field vk_physical_device_shader_float16_int8_features "pNext" (ptr void)
+
+let f16i8_shaderFloat16 =
+  field vk_physical_device_shader_float16_int8_features "shaderFloat16" uint32_t
+
+let f16i8_shaderInt8 =
+  field vk_physical_device_shader_float16_int8_features "shaderInt8" uint32_t
+
+let () = seal vk_physical_device_shader_float16_int8_features
+
+(** VkPhysicalDevice16BitStorageFeatures *)
+type vk_physical_device_16bit_storage_features
+
+let vk_physical_device_16bit_storage_features :
+    vk_physical_device_16bit_storage_features structure typ =
+  structure "VkPhysicalDevice16BitStorageFeatures"
+
+let storage16_sType =
+  field vk_physical_device_16bit_storage_features "sType" uint32_t
+
+let storage16_pNext =
+  field vk_physical_device_16bit_storage_features "pNext" (ptr void)
+
+let storage16_storageBuffer16BitAccess =
+  field
+    vk_physical_device_16bit_storage_features
+    "storageBuffer16BitAccess"
+    uint32_t
+
+let storage16_uniformAndStorageBuffer16BitAccess =
+  field
+    vk_physical_device_16bit_storage_features
+    "uniformAndStorageBuffer16BitAccess"
+    uint32_t
+
+let storage16_storagePushConstant16 =
+  field
+    vk_physical_device_16bit_storage_features
+    "storagePushConstant16"
+    uint32_t
+
+let storage16_storageInputOutput16 =
+  field
+    vk_physical_device_16bit_storage_features
+    "storageInputOutput16"
+    uint32_t
+
+let () = seal vk_physical_device_16bit_storage_features
+
+(** VkPhysicalDeviceCooperativeMatrixFeaturesKHR *)
+type vk_physical_device_cooperative_matrix_features
+
+let vk_physical_device_cooperative_matrix_features :
+    vk_physical_device_cooperative_matrix_features structure typ =
+  structure "VkPhysicalDeviceCooperativeMatrixFeaturesKHR"
+
+let coopmat_feat_sType =
+  field vk_physical_device_cooperative_matrix_features "sType" uint32_t
+
+let coopmat_feat_pNext =
+  field vk_physical_device_cooperative_matrix_features "pNext" (ptr void)
+
+let coopmat_feat_cooperativeMatrix =
+  field
+    vk_physical_device_cooperative_matrix_features
+    "cooperativeMatrix"
+    uint32_t
+
+let coopmat_feat_robustBufferAccess =
+  field
+    vk_physical_device_cooperative_matrix_features
+    "cooperativeMatrixRobustBufferAccess"
+    uint32_t
+
+let () = seal vk_physical_device_cooperative_matrix_features
+
+(** VkPhysicalDeviceSubgroupProperties. [subgroupSize] is the one field this
+    backend reads, and it replaces a hard-coded 32 in [Vulkan_plugin_base]. *)
+type vk_physical_device_subgroup_properties
+
+let vk_physical_device_subgroup_properties :
+    vk_physical_device_subgroup_properties structure typ =
+  structure "VkPhysicalDeviceSubgroupProperties"
+
+let subgroup_props_sType =
+  field vk_physical_device_subgroup_properties "sType" uint32_t
+
+let subgroup_props_pNext =
+  field vk_physical_device_subgroup_properties "pNext" (ptr void)
+
+let subgroup_props_subgroupSize =
+  field vk_physical_device_subgroup_properties "subgroupSize" uint32_t
+
+let subgroup_props_supportedStages =
+  field vk_physical_device_subgroup_properties "supportedStages" uint32_t
+
+let subgroup_props_supportedOperations =
+  field vk_physical_device_subgroup_properties "supportedOperations" uint32_t
+
+let subgroup_props_quadOperationsInAllStages =
+  field
+    vk_physical_device_subgroup_properties
+    "quadOperationsInAllStages"
+    uint32_t
+
+let () = seal vk_physical_device_subgroup_properties
+
+(** VkPhysicalDeviceDriverProperties. This is the driver KEY that
+    docs/fp-contraction-policy.md §11.7 asks for: [driverID] is an enumerant (3
+    = [VK_DRIVER_ID_MESA_RADV]), and [driverInfo] carries the Mesa version
+    string, so an allowlist can be keyed on a driver rather than on a substring
+    of a device name. *)
+type vk_physical_device_driver_properties
+
+let vk_physical_device_driver_properties :
+    vk_physical_device_driver_properties structure typ =
+  structure "VkPhysicalDeviceDriverProperties"
+
+let driver_props_sType =
+  field vk_physical_device_driver_properties "sType" uint32_t
+
+let driver_props_pNext =
+  field vk_physical_device_driver_properties "pNext" (ptr void)
+
+let driver_props_driverID =
+  field vk_physical_device_driver_properties "driverID" uint32_t
+
+let driver_props_driverName =
+  field vk_physical_device_driver_properties "driverName" (array 256 char)
+
+let driver_props_driverInfo =
+  field vk_physical_device_driver_properties "driverInfo" (array 256 char)
+
+let driver_props_conformanceVersion =
+  field
+    vk_physical_device_driver_properties
+    "conformanceVersion"
+    (array 4 uint8_t)
+
+let () = seal vk_physical_device_driver_properties
+
+(** VkCooperativeMatrixPropertiesKHR — one advertised configuration.
+
+    [AType]/[BType]/[CType]/[ResultType] are [VkComponentTypeKHR] and [scope] is
+    [VkScopeKHR]; both are C enums, hence [int32_t]. The enumerant values used
+    by {!Vulkan_api_device} are the ones in the probe: f16 = 3, f32 = 4, s8 = 7,
+    s32 = 9, u8 = 0, u32 = 1; subgroup scope = 3. *)
+type vk_cooperative_matrix_properties
+
+let vk_cooperative_matrix_properties :
+    vk_cooperative_matrix_properties structure typ =
+  structure "VkCooperativeMatrixPropertiesKHR"
+
+let coopmat_props_sType =
+  field vk_cooperative_matrix_properties "sType" uint32_t
+
+let coopmat_props_pNext =
+  field vk_cooperative_matrix_properties "pNext" (ptr void)
+
+let coopmat_props_MSize =
+  field vk_cooperative_matrix_properties "MSize" uint32_t
+
+let coopmat_props_NSize =
+  field vk_cooperative_matrix_properties "NSize" uint32_t
+
+let coopmat_props_KSize =
+  field vk_cooperative_matrix_properties "KSize" uint32_t
+
+let coopmat_props_AType = field vk_cooperative_matrix_properties "AType" int32_t
+
+let coopmat_props_BType = field vk_cooperative_matrix_properties "BType" int32_t
+
+let coopmat_props_CType = field vk_cooperative_matrix_properties "CType" int32_t
+
+let coopmat_props_ResultType =
+  field vk_cooperative_matrix_properties "ResultType" int32_t
+
+let coopmat_props_saturatingAccumulation =
+  field vk_cooperative_matrix_properties "saturatingAccumulation" uint32_t
+
+let coopmat_props_scope = field vk_cooperative_matrix_properties "scope" int32_t
+
+let () = seal vk_cooperative_matrix_properties
+
+(** {2 VkComponentTypeKHR and VkScopeKHR enumerants}
+
+    Verbatim from Khronos [vulkan_core.h]. These are NOT in a memorable order —
+    the float types come first and the integer types are interleaved by width
+    rather than by signedness — and an earlier draft of this file guessed them
+    wrong in a way that produced entirely plausible garbage: [f16 * s8 -> s32]
+    and [u8 * u8 -> u8] configurations that no hardware advertises, with eight
+    of the fourteen real ones silently dropped as unrepresentable. Nothing about
+    the resulting values looked malformed. They are pinned by
+    [test_vulkan_coopmat_enumerants] against the same source. *)
+
+let vk_component_type_float16 = 0l
+
+let vk_component_type_float32 = 1l
+
+let vk_component_type_float64 = 2l
+
+let vk_component_type_sint8 = 3l
+
+let vk_component_type_sint16 = 4l
+
+let vk_component_type_sint32 = 5l
+
+let vk_component_type_sint64 = 6l
+
+let vk_component_type_uint8 = 7l
+
+let vk_component_type_uint16 = 8l
+
+let vk_component_type_uint32 = 9l
+
+let vk_component_type_uint64 = 10l
+
+let vk_scope_device = 1l
+
+let vk_scope_workgroup = 2l
+
+let vk_scope_subgroup = 3l
+
+let vk_scope_queue_family = 5l

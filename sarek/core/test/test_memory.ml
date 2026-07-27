@@ -22,6 +22,10 @@ let make_fake_caps () : Spoc_framework.Framework_sig.capabilities =
     total_global_mem = 1073741824L;
     compute_capability = (0, 0);
     device_features = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64];
+    (* backlog-62: no cooperative-matrix probe on this backend. [None] is
+       "not probed", which Sarek_coopmat.verdict maps to Unknown and therefore
+       refuses; an empty list would be a positive claim nobody measured. *)
+    coopmat = None;
     supports_atomics = true;
     warp_size = 32;
     max_registers_per_block = 16384;

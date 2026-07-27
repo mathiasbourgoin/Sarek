@@ -86,6 +86,10 @@ module Dummy_backend : BACKEND = struct
         (* 1GB *)
         compute_capability = (0, 0);
         device_features = [];
+        (* backlog-62: no cooperative-matrix probe on this backend. [None] is
+           "not probed", which Sarek_coopmat.verdict maps to Unknown and therefore
+           refuses; an empty list would be a positive claim nobody measured. *)
+        coopmat = None;
         supports_atomics = false;
         warp_size = 1;
         max_registers_per_block = 0;

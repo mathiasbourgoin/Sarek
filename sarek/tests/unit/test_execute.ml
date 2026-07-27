@@ -180,6 +180,10 @@ let caps_with (features : Sarek_ir_analysis.feature list) :
     total_global_mem = 1073741824L;
     compute_capability = (0, 0);
     device_features = features;
+    (* backlog-62: no cooperative-matrix probe on this backend. [None] is
+       "not probed", which Sarek_coopmat.verdict maps to Unknown and therefore
+       refuses; an empty list would be a positive claim nobody measured. *)
+    coopmat = None;
     supports_atomics = true;
     warp_size = 32;
     max_registers_per_block = 16384;
