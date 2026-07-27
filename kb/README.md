@@ -102,9 +102,24 @@ Large vendored/static assets under `gh-pages/static/**`, `gh-pages/pres_resource
 
 ## Verification Notes
 
+> **Scope: these notes describe the KB review of 2026-05-05 and nothing else.**
+> They are the audit trail for *that* review, not a standing statement about the
+> KB or about later changes to it. They were read as standing once, which is why
+> this header exists: an inaccurate audit trail in the KB's own front matter is
+> the worst place for one, because it is what a reader uses to calibrate how much
+> to trust everything below it. Later work that touches `kb/` records its own
+> verification in its own PR — see `properties.md` and `index.md` for the
+> 2026-07-27 pass (backlog-100), which changed `.gitignore`, `.github/workflows/ci.yml`
+> and `scripts/`, and did run the full suite.
+
+Of the 2026-05-05 review:
+
 - The pre-review dirty worktree was preserved in `stash@{0}` as `pre-review-clean-main-2026-05-05`.
 - The repository was fast-forwarded to `origin/main` before KB work started.
-- Review changes are confined to `kb/`.
-- The repo requires OCaml 5.4.0+; validation should use the repo-local switch (`opam exec --switch=. -- ...` from the repository root), rather than an ambient global switch.
-- Tests/builds were not run for the KB-only Markdown additions; component workers did not modify source files.
+- That review's changes were confined to `kb/`.
+- Tests/builds were not run for that review's KB-only Markdown additions; its component workers did not modify source files.
 - PRs #136, #137, and #138 were reviewed, cleaned to one commit each before merge, and merged one after another with rebase merges. CI was green before each merge.
+
+Standing, not specific to that review:
+
+- The repo requires OCaml 5.4.0+; validation should use the repo-local switch (`opam exec --switch=. -- ...` from the repository root), rather than an ambient global switch.

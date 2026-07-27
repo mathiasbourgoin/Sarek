@@ -39,7 +39,25 @@
 ## Invariants
 
 - Timing should exclude first compilation/driver warmup work; `benchmark_gpu` does a compile-trigger run, warmups, then timed iterations with device synchronization (`benchmarks/common.ml:200-237`).
-- JSON consumers expect a non-empty `results` array with per-device `framework`, timing fields, `throughput_gflops`, and `verified` when available.
+- JSON consumers expect a `results` array whose entries carry per-device `framework`, timing fields, `throughput_gflops`, and `verified` when available.
+  **The array is not guaranteed non-empty, and this file used to say it was.**
+  `Output.write_json` (`benchmarks/output.ml:101-103`) filters through
+  `filter_valid_results` (`:93-99`) before writing, so a run in which *every*
+  device result failed — empty `iterations`, or `median_ms = 0.0` with
+  `verified = Some false` — writes `"results": []`. That is a reachable state, not
+  a hypothetical, and it is the same one the `to_web` failure at `:54` below
+  describes from the consumer end (`benchmarks/to_web.ml:41-44`, "No valid results
+  to convert", `exit 1`).
+  Stated as an invariant the way it was, the sentence was **unsatisfiable in that
+  case** and would have had a reader believe a guarantee the writer does not make.
+  The accurate contract today is: *at least one successful device result is
+  required for a non-empty array, and nothing enforces that there is one.*
+  Deliberately qualified rather than tightened: this file is a descriptive audit of
+  what the code does, and writing a contract the code does not implement would make
+  it wrong in the more dangerous direction. The fix, if a real non-empty guarantee
+  is wanted, is already recorded below under Concrete Improvement Candidates —
+  write failed device records with error messages instead of filtering them out —
+  which also closes the postmortem gap noted at `:63`.
 - Benchmark names in generated JSON must match `BENCHMARK_CONFIGS` variants in `gh-pages/javascripts/benchmark-viewer.js`.
 - `run_all_benchmarks.sh` expects each benchmark to honor `--output` and produce JSON in the temporary run directory (`benchmarks/run_all_benchmarks.sh:109-122`, move-to-`benchmarks/results/` and web-data update at `:174-203`). **Citation fix (2026-07-02):** the previous line refs (`:2328-2341`, `:2393-2421`) were byte offsets mistaken for line numbers — the script is 259 lines total, so those numbers pointed past the end of the file.
 - Generated backend descriptions should be reproducible from `benchmarks/generate_backend_code.ml`; CI enforces this.

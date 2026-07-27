@@ -81,7 +81,7 @@ The operative rule, and the reason `scripts/check-kb-properties.sh` exists at al
 {"id": "PROP-SUITE-COUNT-SINGULAR-TOLERANT", "type": "grep-present", "description": "Alcotest singularises: a suite running exactly one case prints '1 test run.'. A plural-only pattern dropped 15 suites and 11 cases, and two agents reported different totals for the same commit. `tests?` is the whole point of the pattern.", "check": {"file": "scripts/test-suite-counts.sh", "literal": "tests? run"}}
 {"id": "PROP-GLOSSARY-CAPABILITY-KINDS", "type": "grep-present", "description": "glossary.md names the six capability kinds and states that Toolchain_semantic must be able to override a device saying yes. If the constructor is renamed, the glossary silently describes a vocabulary nobody uses; this is the anchor that makes that red instead.", "check": {"file": "spoc/ir/Sarek_capability.mli", "literal": "| Toolchain_semantic"}}
 {"id": "PROP-GLOSSARY-F16-MODEL-NAMES", "type": "grep-present", "description": "S_drop_intermediate_narrowing is named in the model set precisely so it can be excluded: it sits at 1 ulp like every admitted member, and the only instrument keeping it out is that it is not on the admitted list. glossary.md documents that; this anchors the name to the source.", "check": {"file": "tools/f16_model_set/f16_model_set.ml", "literal": "S_drop_intermediate_narrowing"}}
-{"id": "PROP-NO-SILENT-F64-NARROWING", "type": "grep-absent", "description": "No backend may map a 64-bit float to a 32-bit device type. Until the capability model landed, Metal's arm was `| TFloat64 -> \"float\"` with a comment saying Metal has no double — a silent halving of precision with no refusal anywhere on the path. The fix is a refusal (Sarek_capability.float64_absent_metal, kind Backend_structural), not a widening. docs/design/capability-model.md, docs/fp-contraction-policy.md §10.13.", "check": {"paths": ["sarek/codegen"], "suffixes": [".ml"], "literal": "| TFloat64 -> \"float\""}}
+{"id": "PROP-NO-SILENT-F64-NARROWING", "type": "grep-absent", "description": "SCOPE: this catches the HISTORICAL REGRESSION, not the class. It is a literal grep, so only this exact spelling is caught — `TFloat64 -> \"float\"` without the leading pipe, or with different spacing, or reached through a helper, walks past it. That is not hypothetical: a reviewer re-running the mutation independently first wrote `function TFloat64 -> \"float\" | _ -> \"\"` and the check stayed green, correctly. Do not read this as \"no backend may map a 64-bit float to a 32-bit device type\" — that claim is broader than the check, and a reader who takes it that way will over-trust it. What it does pin: until the capability model landed, Metal's arm was `| TFloat64 -> \"float\"` with a comment saying Metal has no double — a silent halving of precision with no refusal anywhere on the path. The fix was a refusal (Sarek_capability.float64_absent_metal, kind Backend_structural), not a widening, and this stops that one arm coming back. The general property is carried by the capability model and stated in prose below. docs/design/capability-model.md, docs/fp-contraction-policy.md §10.13.", "check": {"paths": ["sarek/codegen"], "suffixes": [".ml"], "literal": "| TFloat64 -> \"float\""}}
 ```
 
 ### Reading the block
@@ -101,6 +101,16 @@ The operative rule, and the reason `scripts/check-kb-properties.sh` exists at al
   from it.
 - Prose-reading auditors skip this block (`schema/kb-schema.md`); it is executed, not
   read.
+- **`grep-present` and `grep-absent` pin a spelling, not a property.** Both match a
+  literal. A declaration catches the exact string it names and nothing else: different
+  whitespace, a missing leading `|`, the same construct reached through a helper, all
+  walk past it. So each is a **regression pin on the instance that actually occurred**,
+  and the description says which instance. Read as general properties they will be
+  over-trusted — which is not hypothetical, it is how a reviewer's first mutation of
+  `PROP-NO-SILENT-F64-NARROWING` stayed correctly green. Where the general property
+  matters it is stated in prose below and held by a type or a test, not by a grep. The
+  right instinct on reading one of these is *"this exact regression cannot come back"*,
+  never *"this class is impossible"*.
 
 ## Properties held in prose, and why they are not in the block yet
 
@@ -126,6 +136,13 @@ holds it, and a weak duplicate gate is worse than none — it produces a second 
 - **A width mismatch with a correct in-language lowering is a codegen bug, not a missing
   capability.** `capability-model.md` §5.1. The admission test: *does a correct lowering
   exist in the target language?*
+- **No backend may silently map a 64-bit float to a 32-bit device type.** The general
+  form of `PROP-NO-SILENT-F64-NARROWING`, which pins only the one spelling that
+  regressed. Where the target language genuinely has no `double`, the answer is a
+  *refusal* — `Sarek_capability.float64_absent_metal`, kind `Backend_structural`,
+  refused statically with no device needed — never a widening and never a quiet
+  substitution. Held by the capability model and its tests
+  (`spoc/ir/test/test_sarek_capability.ml`), not by the grep.
 - **The capability table and a codegen-correctness sweep are complementary instruments,
   neither subsuming the other.** A defect found by one is not evidence about the other,
   and "we have a capability model now" is not a reason to stop sweeping.
