@@ -102,6 +102,12 @@ jobs:
           node scripts/check-review-convergence-hardening.test.js
           node scripts/check-mandated-steps.test.js
           node scripts/check-alcotest-registration.test.js
+          # backlog-135. The ledger schema had no covering test of its own --
+          # it was exercised only incidentally by the post-hook's test, which
+          # cares about the hook rather than the rules. The skip record it now
+          # carries exists to REJECT something (a skip that names no reason and
+          # no actor), so it gets a test that watches it reject.
+          node scripts/ledger-schema.test.js
           ./scripts/check-review-bundle-tracked.test.sh
           ./scripts/agent-worktree-bootstrap.test.sh
           ./scripts/roster-implement-posthook.test.sh
