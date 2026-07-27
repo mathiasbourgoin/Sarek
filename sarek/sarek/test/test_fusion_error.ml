@@ -6,14 +6,22 @@
 (** Unit tests for Fusion_error module *)
 
 open Alcotest
-open Fusion_error
+open Sarek.Fusion_error
 
 (** Test error to string conversions *)
 let test_empty_pipeline_error () =
   let err = Empty_pipeline {function_name = "fuse_all"} in
   let msg = error_to_string err in
-  check bool "contains function name" true (Str.string_match (Str.regexp ".*fuse_all.*") msg 0) ;
-  check bool "mentions empty" true (Str.string_match (Str.regexp ".*empty.*") msg 0)
+  check
+    bool
+    "contains function name"
+    true
+    (Str.string_match (Str.regexp ".*fuse_all.*") msg 0) ;
+  check
+    bool
+    "mentions empty"
+    true
+    (Str.string_match (Str.regexp ".*empty.*") msg 0)
 
 let test_fusion_incompatible_error () =
   let err =
@@ -25,28 +33,52 @@ let test_fusion_incompatible_error () =
       }
   in
   let msg = error_to_string err in
-  check bool "contains producer" true (Str.string_match (Str.regexp ".*kernel_a.*") msg 0) ;
-  check bool "contains consumer" true (Str.string_match (Str.regexp ".*kernel_b.*") msg 0) ;
-  check bool "contains reason" true (Str.string_match (Str.regexp ".*data types.*") msg 0)
+  check
+    bool
+    "contains producer"
+    true
+    (Str.string_match (Str.regexp ".*kernel_a.*") msg 0) ;
+  check
+    bool
+    "contains consumer"
+    true
+    (Str.string_match (Str.regexp ".*kernel_b.*") msg 0) ;
+  check
+    bool
+    "contains reason"
+    true
+    (Str.string_match (Str.regexp ".*data types.*") msg 0)
 
 let test_invalid_fusion_error () =
-  let err = Invalid_fusion {kernel = "fused_kernel"; reason = "missing outputs"} in
+  let err =
+    Invalid_fusion {kernel = "fused_kernel"; reason = "missing outputs"}
+  in
   let msg = error_to_string err in
-  check bool "contains kernel name" true (Str.string_match (Str.regexp ".*fused_kernel.*") msg 0) ;
-  check bool "contains reason" true (Str.string_match (Str.regexp ".*outputs.*") msg 0)
+  check
+    bool
+    "contains kernel name"
+    true
+    (Str.string_match (Str.regexp ".*fused_kernel.*") msg 0) ;
+  check
+    bool
+    "contains reason"
+    true
+    (Str.string_match (Str.regexp ".*outputs.*") msg 0)
 
 (** Test raising errors *)
 let test_raise_fusion_error () =
   try
-    raise_error (Empty_pipeline {function_name = "test"}) ;
+    ignore (raise_error (Empty_pipeline {function_name = "test"}) : unit) ;
     fail "Expected exception"
   with Fusion_error _ -> ()
 
 let test_exception_contains_error () =
   try
-    raise_error
-      (Fusion_incompatible
-         {producer = "p"; consumer = "c"; reason = "incompatible"}) ;
+    ignore
+      (raise_error
+         (Fusion_incompatible
+            {producer = "p"; consumer = "c"; reason = "incompatible"})
+        : unit) ;
     fail "Expected exception"
   with Fusion_error err -> (
     match err with
@@ -86,21 +118,17 @@ let test_pattern_match_invalid_fusion () =
 (** Test error construction *)
 let test_construct_empty_pipeline () =
   let err = Empty_pipeline {function_name = "test"} in
-  match err with
-  | Empty_pipeline _ -> ()
-  | _ -> fail "construction failed"
+  match err with Empty_pipeline _ -> () | _ -> fail "construction failed"
 
 let test_construct_incompatible () =
-  let err = Fusion_incompatible {producer = "a"; consumer = "b"; reason = "c"} in
-  match err with
-  | Fusion_incompatible _ -> ()
-  | _ -> fail "construction failed"
+  let err =
+    Fusion_incompatible {producer = "a"; consumer = "b"; reason = "c"}
+  in
+  match err with Fusion_incompatible _ -> () | _ -> fail "construction failed"
 
 let test_construct_invalid_fusion () =
   let err = Invalid_fusion {kernel = "k"; reason = "r"} in
-  match err with
-  | Invalid_fusion _ -> ()
-  | _ -> fail "construction failed"
+  match err with Invalid_fusion _ -> () | _ -> fail "construction failed"
 
 (** Test error message formatting *)
 let test_error_messages_non_empty () =
@@ -121,23 +149,39 @@ let test_error_messages_non_empty () =
 let test_empty_pipeline_mentions_function () =
   let err = Empty_pipeline {function_name = "fuse_pipeline"} in
   let msg = error_to_string err in
-  check bool "mentions function" true
+  check
+    bool
+    "mentions function"
+    true
     (Str.string_match (Str.regexp ".*fuse_pipeline.*") msg 0)
 
 let test_incompatible_shows_both_kernels () =
   let err =
-    Fusion_incompatible {producer = "map"; consumer = "reduce"; reason = "types"}
+    Fusion_incompatible
+      {producer = "map"; consumer = "reduce"; reason = "types"}
   in
   let msg = error_to_string err in
-  check bool "shows producer" true (Str.string_match (Str.regexp ".*map.*") msg 0) ;
-  check bool "shows consumer" true (Str.string_match (Str.regexp ".*reduce.*") msg 0)
+  check
+    bool
+    "shows producer"
+    true
+    (Str.string_match (Str.regexp ".*map.*") msg 0) ;
+  check
+    bool
+    "shows consumer"
+    true
+    (Str.string_match (Str.regexp ".*reduce.*") msg 0)
 
 let test_invalid_fusion_shows_reason () =
   let err =
     Invalid_fusion {kernel = "bad_fuse"; reason = "circular dependency"}
   in
   let msg = error_to_string err in
-  check bool "shows reason" true (Str.string_match (Str.regexp ".*circular.*") msg 0)
+  check
+    bool
+    "shows reason"
+    true
+    (Str.string_match (Str.regexp ".*circular.*") msg 0)
 
 (** Test error type completeness *)
 let test_all_error_types_covered () =
@@ -169,14 +213,22 @@ let () =
       ( "raise_error",
         [
           test_case "raise_fusion_error" `Quick test_raise_fusion_error;
-          test_case "exception_contains_error" `Quick
+          test_case
+            "exception_contains_error"
+            `Quick
             test_exception_contains_error;
         ] );
       ( "pattern_matching",
         [
-          test_case "match_empty_pipeline" `Quick test_pattern_match_empty_pipeline;
+          test_case
+            "match_empty_pipeline"
+            `Quick
+            test_pattern_match_empty_pipeline;
           test_case "match_incompatible" `Quick test_pattern_match_incompatible;
-          test_case "match_invalid_fusion" `Quick test_pattern_match_invalid_fusion;
+          test_case
+            "match_invalid_fusion"
+            `Quick
+            test_pattern_match_invalid_fusion;
         ] );
       ( "construction",
         [
@@ -187,11 +239,18 @@ let () =
       ( "formatting",
         [
           test_case "messages_non_empty" `Quick test_error_messages_non_empty;
-          test_case "empty_mentions_function" `Quick
+          test_case
+            "empty_mentions_function"
+            `Quick
             test_empty_pipeline_mentions_function;
-          test_case "incompatible_shows_kernels" `Quick
+          test_case
+            "incompatible_shows_kernels"
+            `Quick
             test_incompatible_shows_both_kernels;
-          test_case "invalid_shows_reason" `Quick test_invalid_fusion_shows_reason;
+          test_case
+            "invalid_shows_reason"
+            `Quick
+            test_invalid_fusion_shows_reason;
           test_case "all_types_covered" `Quick test_all_error_types_covered;
         ] );
     ]

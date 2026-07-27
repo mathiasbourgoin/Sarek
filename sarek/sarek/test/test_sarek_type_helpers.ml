@@ -6,8 +6,8 @@
 (** Unit tests for Sarek_type_helpers module *)
 
 open Alcotest
-open Sarek_value
-open Sarek_type_helpers
+open Sarek.Sarek_value
+open Sarek.Sarek_type_helpers
 
 (** Mock helper module for testing *)
 module Mock_point_helpers : HELPERS with type t = float * float = struct
@@ -17,10 +17,10 @@ module Mock_point_helpers : HELPERS with type t = float * float = struct
 
   let from_values arr =
     match arr with
-    | [| VFloat64 x; VFloat64 y |] -> (x, y)
+    | [|VFloat64 x; VFloat64 y|] -> (x, y)
     | _ -> failwith "invalid point values"
 
-  let to_values (x, y) = [| VFloat64 x; VFloat64 y |]
+  let to_values (x, y) = [|VFloat64 x; VFloat64 y|]
 
   let get_field (x, y) name =
     match name with
@@ -28,10 +28,10 @@ module Mock_point_helpers : HELPERS with type t = float * float = struct
     | "y" -> VFloat64 y
     | _ -> failwith ("unknown field: " ^ name)
 
-  let to_value (x, y) = VRecord ("point", [| VFloat64 x; VFloat64 y |])
+  let to_value (x, y) = VRecord ("point", [|VFloat64 x; VFloat64 y|])
 
   let from_value = function
-    | VRecord ("point", [| VFloat64 x; VFloat64 y |]) -> (x, y)
+    | VRecord ("point", [|VFloat64 x; VFloat64 y|]) -> (x, y)
     | _ -> failwith "invalid point record"
 end
 
@@ -59,16 +59,16 @@ let test_lookup_missing () =
 let test_from_values () =
   register "from_values_point" (AnyHelpers (module Mock_point_helpers)) ;
   match lookup "from_values_point" with
-  | Some helpers ->
-      let arr = [| VFloat64 3.0; VFloat64 4.0 |] in
+  | Some helpers -> (
+      let arr = [|VFloat64 3.0; VFloat64 4.0|] in
       let v = helpers.from_values arr in
-      (match v with
-      | VRecord ("point", fields) ->
+      match v with
+      | VRecord ("point", fields) -> (
           check int "2 fields" 2 (Array.length fields) ;
           (match fields.(0) with
           | VFloat64 x -> check (float 0.001) "x = 3.0" 3.0 x
           | _ -> fail "wrong x type") ;
-          (match fields.(1) with
+          match fields.(1) with
           | VFloat64 y -> check (float 0.001) "y = 4.0" 4.0 y
           | _ -> fail "wrong y type")
       | _ -> fail "not a record")
@@ -78,14 +78,14 @@ let test_from_values () =
 let test_to_values () =
   register "to_values_point" (AnyHelpers (module Mock_point_helpers)) ;
   match lookup "to_values_point" with
-  | Some helpers ->
-      let v = VRecord ("point", [| VFloat64 1.0; VFloat64 2.0 |]) in
+  | Some helpers -> (
+      let v = VRecord ("point", [|VFloat64 1.0; VFloat64 2.0|]) in
       let arr = helpers.to_values v in
       check int "2 values" 2 (Array.length arr) ;
       (match arr.(0) with
       | VFloat64 x -> check (float 0.001) "x = 1.0" 1.0 x
       | _ -> fail "wrong x type") ;
-      (match arr.(1) with
+      match arr.(1) with
       | VFloat64 y -> check (float 0.001) "y = 2.0" 2.0 y
       | _ -> fail "wrong y type")
   | None -> fail "helper not found"
@@ -94,14 +94,14 @@ let test_to_values () =
 let test_get_field () =
   register "get_field_point" (AnyHelpers (module Mock_point_helpers)) ;
   match lookup "get_field_point" with
-  | Some helpers ->
-      let v = VRecord ("point", [| VFloat64 5.0; VFloat64 6.0 |]) in
+  | Some helpers -> (
+      let v = VRecord ("point", [|VFloat64 5.0; VFloat64 6.0|]) in
       let x = helpers.get_field v "x" in
       (match x with
       | VFloat64 xval -> check (float 0.001) "field x = 5.0" 5.0 xval
       | _ -> fail "wrong x type") ;
       let y = helpers.get_field v "y" in
-      (match y with
+      match y with
       | VFloat64 yval -> check (float 0.001) "field y = 6.0" 6.0 yval
       | _ -> fail "wrong y type")
   | None -> fail "helper not found"
@@ -119,7 +119,10 @@ let test_re_registration () =
   check bool "Initially registered" true (has_helpers "overwrite_test") ;
   (* Re-register - should overwrite *)
   register "overwrite_test" (AnyHelpers (module Mock_point_helpers)) ;
-  check bool "Still registered after overwrite" true
+  check
+    bool
+    "Still registered after overwrite"
+    true
     (has_helpers "overwrite_test")
 
 (** Test AnyHelpers type wrapper *)
@@ -151,7 +154,5 @@ let () =
           test_case "get_field" `Quick test_get_field;
         ] );
       ( "wrapper",
-        [
-          test_case "any_helpers_wrapper" `Quick test_any_helpers_wrapper;
-        ] );
+        [test_case "any_helpers_wrapper" `Quick test_any_helpers_wrapper] );
     ]

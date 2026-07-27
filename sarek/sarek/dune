@@ -1,7 +1,3 @@
-; ir_extract/ contains tools for extracting reference IR
-
-(dirs ir_extract)
-
 ; Main sarek library - V2 path, no SPOC dependency
 ; sarek_interp (FFI-free) provides Sarek_float32/Sarek_value/type helpers.
 ; sarek_execute provides Execute/Execute_error.

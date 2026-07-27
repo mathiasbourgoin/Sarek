@@ -6,7 +6,7 @@
 (** Unit tests for Sarek_value module *)
 
 open Alcotest
-open Sarek_value
+open Sarek.Sarek_value
 
 (** Test value type name reporting *)
 let test_value_type_name_int32 () =
@@ -34,11 +34,11 @@ let test_value_type_name_unit () =
   check string "unit type name" "unit" (value_type_name v)
 
 let test_value_type_name_array () =
-  let v = VArray [| VInt32 1l; VInt32 2l |] in
+  let v = VArray [|VInt32 1l; VInt32 2l|] in
   check string "array type name" "array" (value_type_name v)
 
 let test_value_type_name_record () =
-  let v = VRecord ("point", [| VFloat32 1.0; VFloat32 2.0 |]) in
+  let v = VRecord ("point", [|VFloat32 1.0; VFloat32 2.0|]) in
   check string "record type name" "point" (value_type_name v)
 
 let test_value_type_name_variant () =
@@ -48,17 +48,19 @@ let test_value_type_name_variant () =
 (** Test value construction *)
 let test_construct_int32 () =
   let v = VInt32 123l in
-  match v with VInt32 n -> check int32 "int32 value" 123l n | _ -> fail "wrong type"
+  match v with
+  | VInt32 n -> check int32 "int32 value" 123l n
+  | _ -> fail "wrong type"
 
 let test_construct_array () =
-  let arr = [| VInt32 1l; VInt32 2l; VInt32 3l |] in
+  let arr = [|VInt32 1l; VInt32 2l; VInt32 3l|] in
   let v = VArray arr in
   match v with
   | VArray a -> check int "array length" 3 (Array.length a)
   | _ -> fail "wrong type"
 
 let test_construct_record () =
-  let fields = [| VFloat32 1.0; VFloat32 2.0 |] in
+  let fields = [|VFloat32 1.0; VFloat32 2.0|] in
   let v = VRecord ("point", fields) in
   match v with
   | VRecord (name, f) ->
@@ -76,7 +78,7 @@ let test_construct_variant_none () =
   | _ -> fail "wrong type"
 
 let test_construct_variant_some () =
-  let v = VVariant ("option", 1, [ VInt32 42l ]) in
+  let v = VVariant ("option", 1, [VInt32 42l]) in
   match v with
   | VVariant (name, tag, args) ->
       check string "variant name" "option" name ;
@@ -92,14 +94,15 @@ let test_empty_array () =
   | _ -> fail "wrong type"
 
 let test_nested_array () =
-  let inner = [| VInt32 1l; VInt32 2l |] in
-  let outer = [| VArray inner; VArray inner |] in
+  let inner = [|VInt32 1l; VInt32 2l|] in
+  let outer = [|VArray inner; VArray inner|] in
   let v = VArray outer in
   match v with
-  | VArray a ->
+  | VArray a -> (
       check int "outer array length" 2 (Array.length a) ;
-      (match a.(0) with
-      | VArray inner_a -> check int "inner array length" 2 (Array.length inner_a)
+      match a.(0) with
+      | VArray inner_a ->
+          check int "inner array length" 2 (Array.length inner_a)
       | _ -> fail "inner not array")
   | _ -> fail "wrong type"
 

@@ -48,6 +48,15 @@ jobs:
       - name: Test alias coverage guard
         run: ./scripts/check-test-alias-coverage.sh
 
+      # #147. The alias-coverage guard above assumes dune can SEE the dune file
+      # it is auditing. A `(dirs ...)` stanza can put a whole directory outside
+      # dune's traversal, at which point its tests do not build, do not run and
+      # do not format-check -- and nothing goes red, because to dune there is
+      # nothing there. That is how sarek/sarek/test/'s seven test executables
+      # sat unbuilt behind a stale `(dirs ir_extract)`.
+      - name: Dune directory visibility guard
+        run: ./scripts/check-dune-dir-visibility.sh
+
       # An unregistered Alcotest case compiles, the suite reports green, and
       # the behavior it was written to protect is unguarded. Nothing else in
       # this pipeline can tell that apart from a passing test.
@@ -84,6 +93,12 @@ jobs:
           # can only probe names it was told about, so a name added to one
           # backend and to no list would leave it green having checked nothing.
           ./scripts/check-arm-parity-coverage.sh
+          # #147. Red-path coverage for the visibility guard. A guard against
+          # "green because nothing was looked at" is worth nothing if its own
+          # green is taken on faith, so this asserts it fails on all four
+          # invisibility shapes and refuses to guess at predicates it cannot
+          # parse.
+          ./scripts/check-dune-dir-visibility.test.sh
 
       - name: Formal proofs admit gate
         run: |

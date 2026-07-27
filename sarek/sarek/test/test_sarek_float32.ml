@@ -6,7 +6,7 @@
 (** Unit tests for Sarek_float32 module - float32 precision operations *)
 
 open Alcotest
-open Sarek_float32
+open Sarek.Sarek_float32
 
 (** Helper to check floats with tolerance *)
 let check_float_approx msg expected actual =
@@ -150,8 +150,7 @@ let test_clamp_above_range () =
   check_float_approx "clamp(15.0, 0.0, 10.0) = 10.0" 10.0 result
 
 (** Test predicates *)
-let test_is_finite_normal () =
-  check bool "is_finite(5.0)" true (is_finite 5.0)
+let test_is_finite_normal () = check bool "is_finite(5.0)" true (is_finite 5.0)
 
 let test_is_finite_infinity () =
   check bool "not is_finite(infinity)" false (is_finite infinity)
@@ -159,14 +158,11 @@ let test_is_finite_infinity () =
 let test_is_finite_nan () =
   check bool "not is_finite(NaN)" false (is_finite nan)
 
-let test_is_nan_normal () =
-  check bool "not is_nan(5.0)" false (is_nan 5.0)
+let test_is_nan_normal () = check bool "not is_nan(5.0)" false (is_nan 5.0)
 
-let test_is_nan_nan () =
-  check bool "is_nan(NaN)" true (is_nan nan)
+let test_is_nan_nan () = check bool "is_nan(NaN)" true (is_nan nan)
 
-let test_is_inf_normal () =
-  check bool "not is_inf(5.0)" false (is_inf 5.0)
+let test_is_inf_normal () = check bool "not is_inf(5.0)" false (is_inf 5.0)
 
 let test_is_inf_infinity () =
   check bool "is_inf(infinity)" true (is_inf infinity)
@@ -212,7 +208,13 @@ let test_rsqrt_zero_is_nan () =
 (** Test to_string *)
 let test_to_string () =
   let s = to_string 3.14159 in
-  check bool "to_string produces reasonable output" true (String.length s > 0)
+  (* [Sarek.Sarek_float32] shadows the polymorphic comparison operators with
+     float-only ones, so this integer comparison must be qualified. *)
+  check
+    bool
+    "to_string produces reasonable output"
+    true
+    (Stdlib.( > ) (String.length s) 0)
 
 (** Test precision truncation *)
 let test_to_float32_truncates () =
@@ -226,7 +228,10 @@ let test_to_float32_truncates () =
 let test_overflow_silent () =
   set_overflow_mode Silent ;
   let result = exp 100.0 in
-  check bool "exp(100.0) overflows to infinity in Silent mode" true
+  check
+    bool
+    "exp(100.0) overflows to infinity in Silent mode"
+    true
     (result = infinity)
 
 let test_pow () =
