@@ -42,7 +42,12 @@ Testing `Props'.
 success (ran 12 tests)
 LOG
 
-out="$("$CNT" "$TMP/mixed.log")"
+# --min-suites 0 throughout this block: these logs are deliberately tiny, and
+# the plausibility floor (asserted separately below) would otherwise reject
+# them. Disabling it explicitly is the point -- it is the documented escape,
+# and a covering test that silently depended on the floor being absent would
+# stop noticing when the floor changed.
+out="$("$CNT" --min-suites 0 "$TMP/mixed.log")"
 
 # 61 + 1 + 0 = 62 across 3 alcotest suites. The singular and zero forms are
 # exactly what a `[0-9]+ tests run` pattern drops.
@@ -71,7 +76,7 @@ Testing `A'.
 > [SKIP]        gpu              0   needs hardware.
 1 failure! in 0.001s. 4 tests run.
 LOG
-out2="$("$CNT" "$TMP/redskip.log")"
+out2="$("$CNT" --min-suites 0 "$TMP/redskip.log")"
 check "counts FAIL lines" \
   "$(echo "$out2" | /usr/bin/grep '^FAIL' | /usr/bin/tr -s ' ')" "FAIL : 1"
 check "counts SKIP lines" \
@@ -85,15 +90,128 @@ Test Successful in 0.002s. 61 tests run.
 Testing `B'.
 Test Successful in 0.001s. some-new-format.
 LOG
-"$CNT" "$TMP/drift.log" >/dev/null 2>&1
+"$CNT" --min-suites 0 "$TMP/drift.log" >/dev/null 2>&1
 check "unparseable epilogue exits 2, not a wrong total" "$?" "2"
 
 # Missing file is an error, not a silent zero.
 "$CNT" "$TMP/nope.log" >/dev/null 2>&1
 check "missing log exits 2" "$?" "2"
 
+# ---------------------------------------------------------------------------
+# backlog-150: an empty or unrecognisable log is a USAGE ERROR, never a result.
+#
+# The shipped script accepted all four inputs below and printed
+# "0 cases / 0 FAIL / 0 SKIP", exit 0 -- a green run, reported by the very
+# instrument this repo uses to audit whether its other gates can fail. The
+# cases assert both halves: non-zero exit, AND no count line on stdout, because
+# a caller that greps for `TOTAL` must not find one.
+# ---------------------------------------------------------------------------
+
+: > "$TMP/empty.log"
+
+# Truncated before any suite finished: real `dune test` preamble, cut early.
+cat > "$TMP/trunc-early.log" <<'LOG'
+File "sarek/tests/unit/dune", line 1, characters 0-0:
+Entering directory '/repo'
+Testing `Sarek_float32'.
+This run has ID `IGM5LJHD'.
+
+  [OK]          add                 0   scalar add.
+LOG
+
+# Only skips, no epilogue at all.
+cat > "$TMP/skips-only.log" <<'LOG'
+  [SKIP]        gpu              0   needs hardware.
+  [SKIP]        gpu              1   needs hardware.
+LOG
+
+# Not a test log in the first place -- a build failure, say.
+cat > "$TMP/notalog.log" <<'LOG'
+ocamlfind: Package `sarek' not found
+Command exited with code 2.
+LOG
+
+for case in empty trunc-early skips-only notalog; do
+  got_out="$("$CNT" --min-suites 0 "$TMP/$case.log" 2>/dev/null)"
+  got_rc=$?
+  check "$case log exits non-zero (empty is not a result)" \
+    "$([ "$got_rc" -ne 0 ] && echo nonzero || echo "zero")" "nonzero"
+  check "$case log prints no counts on stdout" \
+    "$(echo "$got_out" | /usr/bin/grep -c 'cases across')" "0"
+done
+
+# Positive control for the four cases above. Without it, "went red on an empty
+# log" and "is red on everything" are the same observation. A log that IS a
+# real run must still come back green and with the right total.
+big=""
+for i in $(seq 1 12); do
+  big="${big}Testing \`Suite_$i'.
+Test Successful in 0.002s. 5 tests run.
+"
+done
+printf '%s' "$big" > "$TMP/plausible.log"
+out3="$("$CNT" "$TMP/plausible.log")"
+check "positive control: a plausible log still exits 0" "$?" "0"
+check "positive control: and counts correctly" \
+  "$(echo "$out3" | /usr/bin/grep '^TOTAL' | /usr/bin/tr -s ' ')" \
+  "TOTAL : 60 cases across 12 suites"
+
+# ---------------------------------------------------------------------------
+# backlog-150: pipe mode must read the caller's pipe.
+#
+# `python3 - <<'PYEOF'` hands python its program on stdin, leaving the program
+# nothing to read. The header's FIRST recommended invocation
+# (`dune test --force 2>&1 | scripts/test-suite-counts.sh`) consequently
+# reported 0 cases for any input whatsoever, exit 0. This is the regression
+# test for that: same log, both routes, same answer.
+# ---------------------------------------------------------------------------
+piped="$(/usr/bin/cat "$TMP/plausible.log" | "$CNT" | /usr/bin/grep '^TOTAL' \
+  | /usr/bin/tr -s ' ')"
+check "pipe mode reads stdin, and agrees with file mode" \
+  "$piped" "TOTAL : 60 cases across 12 suites"
+
+# An empty pipe must be the same usage error an empty file is -- this is the
+# fully-cached `dune test` case, the one that actually happens.
+#
+# --min-suites 0 here is deliberate. Without it the floor also rejects an empty
+# pipe, so the case would pass even with the empty-log gate removed and would
+# be attesting the floor rather than the thing it names.
+: | "$CNT" --min-suites 0 >/dev/null 2>&1
+check "empty pipe exits non-zero" \
+  "$([ "$?" -ne 0 ] && echo nonzero || echo zero)" "nonzero"
+
+# ---------------------------------------------------------------------------
+# backlog-150: the plausibility floor.
+#
+# Partial caching under-reports without tripping either gate above: the suites
+# that do appear parse perfectly, there are just fewer of them. The number
+# looks like a number, which is what makes it worse than nothing.
+# ---------------------------------------------------------------------------
+"$CNT" "$TMP/mixed.log" >/dev/null 2>&1
+check "below the default floor exits 3" "$?" "3"
+
+floor_out="$("$CNT" "$TMP/mixed.log" 2>/dev/null || true)"
+check "below-floor still shows what it parsed" \
+  "$(echo "$floor_out" | /usr/bin/grep -c 'cases across')" "3"
+
+"$CNT" --min-suites 0 "$TMP/mixed.log" >/dev/null 2>&1
+check "--min-suites 0 disables the floor" "$?" "0"
+
+"$CNT" --min-suites 999 "$TMP/plausible.log" >/dev/null 2>&1
+check "floor is honoured at a raised threshold" "$?" "3"
+
+# Argument handling: a malformed invocation is an error, not a default.
+"$CNT" --min-suites nope "$TMP/plausible.log" >/dev/null 2>&1
+check "non-numeric --min-suites exits 2" "$?" "2"
+"$CNT" --bogus >/dev/null 2>&1
+check "unknown option exits 2" "$?" "2"
+"$CNT" "$TMP/plausible.log" "$TMP/mixed.log" >/dev/null 2>&1
+check "two log files exit 2" "$?" "2"
+
 echo
 echo "passed: $pass   failed: $fail"
 [ "$fail" -eq 0 ] || exit 1
 echo "OK: test-suite-counts.sh counts singular/zero/plural Alcotest epilogues,"
-echo "    separates qcheck, and fails closed when the log format drifts"
+echo "    separates qcheck, fails closed when the log format drifts, and"
+echo "    refuses to report a count for an empty, truncated, unrecognisable or"
+echo "    implausibly small log (backlog-150)"
