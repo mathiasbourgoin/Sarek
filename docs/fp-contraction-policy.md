@@ -1438,9 +1438,13 @@ used to test the ceiling, and **the admitted model violates it**. At
 `x = -907.5`: the exact product is `-998.25000216…`, whose binary32 rounding is
 exactly `-998.25` — a binary16 tie in the binade [512, 1024) — which rounds to
 even, giving `S_strict` `-998 + 1000 = 2`. The single-rounding model narrows the
-exact product, is not at the tie, gets `-998.5`, and gives `1.5`. **2 and 1.5 are
-512 ulp of binary16 apart**, because the `+1000` cancels the leading bits away
-and re-scales the ulp.
+exact product, is not at the tie, gets `-998.5`, and gives `1.5`. The deviation
+*at the elided narrowing* is `-998` against `-998.5` — **exactly 1 ulp of
+binary16 there**, as the derivation says. On the **final** value it is
+**512 ulp** measured against 1.5, or **256 ulp** measured against 2.0; the count
+depends on which of the two supplies the denominator, and a gate must say which.
+Either way it is hundreds of ulps against a ceiling of one, because the `+1000`
+cancels the leading bits away and re-scales the ulp.
 
 The §1.3 derivation is sound where it is stated — an elided rounding moves a
 value by at most half an ulp *at the elided step*. What does not follow is the

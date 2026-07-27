@@ -11,6 +11,15 @@ proportional to the strength of the evidence). **No refusal is lifted by this
 change.** **Issues:** #62, #63; depends on the f16 scalar type (#57) and the
 capability model (#64). **Date:** 2026-07-27.
 
+**Amended 2026-07-27 (Metal measurement).** §7 slices 5 and 6 are **done** — an
+Apple M4 became reachable, both probes ran, and the results are wired in: §2
+gains a Metal row (**strict**, 0/63488, no relaxation needed) and the document's
+first **Regime B** rows. Two things changed that are not just new rows: **§1.3's
+ceiling was wrong** and is corrected to evaluate at the elided narrowing rather
+than on the final value, with the counterexample that broke it; and **§8's
+integer-coopmat fallback is Vulkan-only**, because Metal has no integer
+`simdgroup_matrix` at all. **Still no refusal is lifted by this change.**
+
 **Read §0.1 first.** It is one paragraph and it is the argument every other
 choice here follows from.
 
@@ -153,16 +162,63 @@ decide whether it is a near-miss or garbage. Mirroring
 `Test_helpers.df64_collapsed_ceiling`:
 
 > **`f16_relaxed_ceiling`** — no admitted deviation may exceed **1 ulp of the
-> binary16 result**, measured on the final value, with subnormal results compared
-> absolutely against `2^-24` (the binary16 subnormal spacing). Derivation, not a
-> round number: every deviation in the admitted class is the *elision of exactly
-> one round-to-nearest step*, and a single elided rounding moves a value by at
-> most half an ulp at the elided step, which is at most one ulp at the final step.
-> Anything larger is not a rounding difference and must not be filed as one.
+> binary16 value produced by the narrowing at which the rounding was elided**,
+> with subnormal results compared absolutely against `2^-24` (the binary16
+> subnormal spacing). Derivation, not a round number: every deviation in the
+> admitted class is the *elision of exactly one round-to-nearest step*, and a
+> single elided rounding moves a value by at most half an ulp at the elided step,
+> hence at most one ulp of that step's own result. Anything larger is not a
+> rounding difference and must not be filed as one.
+
+**The ceiling is evaluated at the elided narrowing, NOT on the kernel's final
+value, and that is a correction.** The first version of this section said "the
+final value", on the reasoning that half an ulp at the elided step is "at most
+one ulp at the final step". **That last inference is false**, and it was measured
+false on Metal — the one backend swept with a control able to compute the
+admitted model exactly (`fp-contraction-policy.md` §10.14,
+`tools/probes/metal_f16_narrowing_probe.m`).
+
+> **The case that broke it.** Shape `f16(f16(x*1.1) + 1000)` at
+> **`x = -907.5`**. The exact product is `-998.250021636…`, whose binary32
+> rounding is **exactly `-998.25`** — a binary16 tie in the binade [512, 1024),
+> where the ulp is 0.5. `S_strict` rounds that tie to even and gets `-998`, then
+> `-998 + 1000 = ` **`2.0`**. `S_fuse_mul_into_narrowing` narrows the exact
+> product instead, is not sitting on the tie, gets `-998.5`, then
+> `-998.5 + 1000 = ` **`1.5`**.
+>
+> The deviation at the elided narrowing is `-998` against `-998.5`: **exactly 1
+> ulp of binary16 there**, as the derivation says. But 2.0 and 1.5 lie in the
+> binade [1, 2), where the binary16 ulp is `2^-10`, so on the **final** value the
+> same deviation measures **512 ulp** (against the smaller magnitude, 1.5) or
+> **256 ulp** (against 2.0) — the count depends on which of the two you take as
+> the denominator, and a gate must say which. Either way it is hundreds of ulps
+> against a ceiling of one, produced by the *admitted* model on a *conforming*
+> device.
+
+The mechanism is general and has nothing to do with Metal: the `+ 1000` cancels
+the leading bits, so the result lands in a far smaller binade than the value the
+rounding was elided at, and the ulp is re-scaled by the ratio of the two binades.
+Any expression in which a narrowing is followed by a cancelling operation does
+this. A final-value ceiling is therefore not merely loose — it **rejects correct
+results**, which is worse than the failure mode it was written to catch.
+
+**Consequences for the harness.** `classify_f16_result` (§7 slice 0) must
+evaluate the ceiling per *narrowing*, which means the reference models have to
+expose their intermediates rather than only their final value. That is a small
+change to `ref_discipline` / `ref_fused` — they already compute the intermediates
+— but it must be made deliberately, because the natural implementation compares
+only what the kernel wrote to memory. Where a shape's intermediates are not
+observable, the ceiling is **not applicable** and must be reported as such rather
+than silently evaluated on the final value.
 
 The ceiling is **necessary and not sufficient** — §1.1 is the proof, since the
 IGC dropped-narrowing defect sits exactly at 1 ulp. Both checks run; both must
-pass.
+pass. Note that §0.1 and §1.1 are unaffected by this correction and were
+re-read against it: both argue about a deviation *at the narrowing* — the
+dropped-narrowing defect and the fused multiply are compared where they occur —
+so the observation that a pure ulp gate cannot separate them stands exactly as
+written, and if anything is strengthened, since the correct evaluation point is
+now stated rather than left to the reader.
 
 ### 1.4 What "deterministic" means, operationally
 
@@ -249,9 +305,9 @@ ambiguous and the two answers differ in kind, not degree.
 
 These are the numbers this design holds itself to, for **Regime A** (scalar f16,
 §1.2). Every row names the device and the driver, per `fp-contraction-policy.md`
-§1 corollary 3. Evidence tiers are that document's. Regime B has no rows here —
-no coopmat implementation's numerics have been measured at all (§4, last
-paragraph).
+§1 corollary 3. Evidence tiers are that document's. **Regime B now has rows too**,
+below the Regime A table — Metal's `simdgroup_matrix`, measured 2026-07-27. RADV's
+coopmat numerics remain unmeasured (§4, last paragraph).
 
 **No stack in this table is settled as relaxable.** Both non-zero rows are
 **candidates**, and neither has met the acceptance rule of §1.2: rusticl's
@@ -269,17 +325,62 @@ neither. Read the verdict column as the current status, not as a plan.
 | **OpenCL / pocl (x86), Intel IGC, Intel oneAPI CPU** | AMD EPYC 7763 (CI), Intel Arc Graphics (MTL), Core Ultra 9 185H | **0 / 63488** | n/a | executed | **strict**; refusal is currently over-broad here |
 | **Vulkan / RADV** | RX 7900 XTX (NAVI31) + Raphael iGPU (RAPHAEL_MENDOCINO), Mesa 26.1.4-arch3.1 | **2912 / 63488** on `f16(x*1.1)`; **5075** plain / **4776** with `precise` on `f16(f16(x*1.1)+1000)` | one-narrowing shape: **exact, 0/63488 against a single-rounding model**. Two-narrowing shape: **not measured against any model**, and `precise` changes the count, so a single model does not obviously cover it | executed | **candidate for the one-narrowing shape only**; blocked on slice 1 |
 | **Vulkan / ANV** | Intel Arc Graphics (MTL), Mesa 26.1.2-arch3.1 | **0 / 63488** | n/a | executed | **strict**; refusal is currently over-broad here |
-| **Metal** | — | **never probed** | — | none | **`Unknown` → refused.** Needs ladon (§7) |
+| **Metal** | Apple M4, macOS 15.6.1 (24G90), Apple clang 17.0.0 (clang-1700.0.13.5), Metal.framework from the Command Line Tools SDK | **0 / 63488** on `f16(x*1.1)` **and 0 / 63488** on `f16(f16(x*1.1)+1000)`; unchanged under `#pragma METAL fp contract(off)`, `#pragma clang fp contract(off)`, a `volatile thread` barrier and an `as_type` bitcast barrier | n/a — no deviation to model. The `fusedctl` control, on the same source, compile options and dispatch, reproduces `S_fuse_mul_into_narrowing` on **63488 / 63488** and reports 2912 / 620 | executed, **element-wise** over the whole finite binary16 domain | **strict**; refusal is currently over-broad here |
 | **WGSL / naga** | — | **never probed** | — | none | **`Unknown` → refused** |
 | **PTX** | — | refuses kernel-level f16 by design (#57 slice 2) | — | by-construction | nothing to relax |
 
-Three things this table says that are easy to miss:
+**Regime B rows — cooperative matrix (§5), Metal only.** These are the first
+numeric measurements of any cooperative-matrix implementation in this project;
+§4's Vulkan row records availability and explicitly says nothing about what RADV
+*computes*. Instrument: `tools/probes/metal_simdgroup_matrix_probe.m`,
+`fp-contraction-policy.md` §10.15. `D = A×B + C` with `C` nonzero throughout, so
+the constant is `γ_8` and not the `C = 0` degenerate case; §5.3's exactness
+invariant is asserted by the harness (21 binades, 50 bits, binary64 has 53); both
+of §5.4's controls fire.
+
+| configuration | device | within §5's bound? | closed-form model? | evidence | regime |
+|---|---|---|---|---|---|
+| `simdgroup_half8x8 × half8x8 → float8x8`, 8×8×8 | Apple M4, as above | **0 / 65536 outside**; worst 2.67e-07 against `γ_8` = 4.7684e-07 | **YES — bit-equal on 65536 / 65536** to *"initialise the accumulator to `C`, then add the eight products in index order, all in binary32"* | executed, element-wise | **A** (migrated from B — see below) |
+| `simdgroup_half8x8 × half8x8 → half8x8`, 8×8×8 | Apple M4, as above | **0 / 65536 outside**; worst 2.12e-03 against `γ_8` = 3.9216e-03 | **no** — 65520 / 65536 against sequential binary16; the 16 stragglers match neither pairwise binary16 nor a binary32 chain narrowed at the end | executed, element-wise | **B**; §5.4's "do not admit without a separate argued case" now rests on a measurement |
+
+> **This is the first configuration to migrate B → A, and that matters more than
+> the row.** §1.6's last table row says a Regime B configuration moves to Regime A
+> *"if a given implementation's accumulation order is ever pinned to a closed
+> form"*, and §6.1's corollary says friction falls with it, "with no new decision
+> needed". That was written as a mechanism nobody had exercised. It has now been
+> exercised: Metal's f16×f16→f32 `simdgroup_matrix` MulAdd is not merely inside
+> the bound, it **is** a named closed-form function of its inputs, agreed
+> bit-for-bit on every one of 65536 elements. Under §1.6 it is therefore Regime A,
+> and under §6.1 the DSL author gets a **loud one-time diagnostic rather than a
+> mandatory `accept_relaxed_f16` opt-in**. No decision was needed to move it; the
+> measurement moved it. **The migration path is real rather than theoretical**,
+> which is the part that makes the regime split credible rather than a way of
+> having two rules.
+>
+> Scope, stated so the row is not over-read: one implementation, one tile size
+> (8×8×8, the only one Metal offers), `C` drawn from one distribution, and
+> **nothing here constrains RADV**, whose coopmat numerics remain entirely
+> unmeasured. A Regime A verdict is per *(implementation, configuration)*, exactly
+> as §1.2's model set is per *(backend, driver, shape)*.
+>
+> One methodological note, because it is the reason the row says "C FIRST".
+> An earlier revision of the probe pinned `C = 0` and reported 65536/65536
+> against "sequential binary32". That claim was *underdetermined*, not wrong:
+> with `C = 0` the C-first and C-last orders are the same function. A nonzero `C`
+> separates them decisively — 65536 against 51850 — so **the closed form could
+> not have been identified at all without §5.1's insistence that the operation is
+> `A×B + C`.** §5.1 records that correction as having been made on paper; this is
+> it reproduced from the measurement side.
+
+Three things the Regime A table says that are easy to miss:
 
 1. **The relaxation is a candidate on exactly two stacks** — rusticl and RADV,
    both ACO — and admitted on none of them yet. Everything else either already
    meets `S_strict` or has never been measured. Even in the best case this is a
    much narrower change than "relax f16"; in the worst case (§9.3) it is narrower
-   still, covering one shape on one driver.
+   still, covering one shape on one driver. **Metal has now joined the strict
+   group rather than the candidate group**, which is the outcome that needed no
+   relaxation at all.
 2. **The RADV two-narrowing shape is the open risk.** 5075 plain against 4776
    with `precise` means the decoration *changes the answer* while
    `fp-contraction-policy.md` §6 shows it produces byte-identical ISA on the
@@ -288,11 +389,13 @@ Three things this table says that are easy to miss:
    it stays refused and the contract becomes per-shape — a materially worse
    design, and the owner should hear about it before more effort is spent. Slice 1
    is the decision point.
-3. **pocl, IGC, ANV and the Intel CPU runtime are refused today for a defect they
-   do not have.** `capability-model.md` §5 already records this as the
+3. **pocl, IGC, ANV, the Intel CPU runtime and now Metal are refused today for a
+   defect they do not have.** `capability-model.md` §5 already records this as the
    over-refusal that follows from having no compiler-identity probe. It is not
    made worse by this design, and slice 2's `VkPhysicalDeviceDriverProperties`
-   plumbing narrows the Vulkan half of it.
+   plumbing narrows the Vulkan half of it. Metal is the clearest case: it is
+   measured strict **element-wise** on both shapes, which is a stronger evidence
+   tier than any other row in the table carries, and it is still refused.
 
 ---
 
@@ -460,7 +563,11 @@ wrong, and a correct result with a nonzero `C` would have failed the gate.
 - **Stated against `Σ|terms|`, never against the result.** A cancelling dot
   product has unbounded *relative-to-result* error under any summation order, so a
   relative-to-result bound would be a number that cannot fail. The denominator is
-  `Σ_k |A[m][k]·B[k][n]| + |C[m][n]|`.
+  `Σ_k |A[m][k]·B[k][n]| + |C[m][n]|`. **Re-checked against §1.3's correction and
+  unaffected:** the defect that forced §1.3 to move off the final value is
+  cancellation re-scaling the unit of measure, and this bound already refuses to
+  measure against the result for the same underlying reason. Regime B needed no
+  change; Regime A did.
 - **The bound assumes the implementation's intermediate accumulation is at
   least binary32.** If it is wider, the true error is smaller and the bound still
   holds. If it is *narrower* — an implementation accumulating the f32-result
@@ -635,15 +742,15 @@ branch on it rather than discovering it in a diagnostic.
 Each slice names what it proves and what hardware it needs. Nothing below lifts a
 refusal before slice 3.
 
-| # | slice | proves | hardware | lifts a refusal? |
-|---|---|---|---|---|
-| **0** | the contract, as a testable classifier | the gate can tell `S_fuse_mul_into_narrowing` from a dropped narrowing | none (host-only) | no |
-| **1** | element-wise model characterisation of ACO scalar f16, all emittable shapes | whether the contract of §1.2 is deliverable at all | RX 7900 XTX (local) | no |
-| **2** | `shaderFloat16` + driver-identity + capability plumbing | the gate can be keyed on a driver, not a device name | local, both devices | no |
-| **3** | GLSL scalar f16, allowlisted | Sarek-*generated* f16 shaders meet the contract | RX 7900 XTX (local) | **yes**, on an allowlist |
-| **4** | #62 Vulkan coopmat, f16×f16→f32 | the tensor-core path, end to end | RX 7900 XTX (local) | yes (new capability) |
-| **5** | #63 Metal — **scalar f16 first** | the Metal row of §2, which does not exist | **ladon (M4) — permission needed** | no |
-| **6** | #63 Metal `simdgroup_matrix` | the Apple tensor-core path | **ladon** | yes |
+| # | slice | proves | hardware | lifts a refusal? | status |
+|---|---|---|---|---|---|
+| **0** | the contract, as a testable classifier | the gate can tell `S_fuse_mul_into_narrowing` from a dropped narrowing | none (host-only) | no | open — and now also carries §1.3's per-narrowing ceiling |
+| **1** | element-wise model characterisation of ACO scalar f16, all emittable shapes | whether the contract of §1.2 is deliverable at all | RX 7900 XTX (local) | no | open (decision point) |
+| **2** | `shaderFloat16` + driver-identity + capability plumbing | the gate can be keyed on a driver, not a device name | local, both devices | no | open |
+| **3** | GLSL scalar f16, allowlisted | Sarek-*generated* f16 shaders meet the contract | RX 7900 XTX (local) | **yes**, on an allowlist | open |
+| **4** | #62 Vulkan coopmat, f16×f16→f32 | the tensor-core path, end to end | RX 7900 XTX (local) | yes (new capability) | open |
+| **5** | #63 Metal — **scalar f16 first** | the Metal row of §2 | ladon (M4) | no | **DONE 2026-07-27 — strict, 0/63488** |
+| **6** | #63 Metal `simdgroup_matrix` | the Apple tensor-core path | ladon (M4) | yes | **DONE 2026-07-27 — availability + numerics; no integer path** |
 
 ### Slice 0 — make the contract fail-able (host-only, lands first)
 
@@ -659,9 +766,22 @@ recorded there.
 
 Calibration, running with no GPU: the two host models must separate on exactly
 **620** over the finite binary16 domain — the figure independently reproduced on
-hiprtc/gfx1100, rusticl/radeonsi and `fusedctl` on Intel Arc.
-`test_opencl_f16_tripwire` already does this after §11.5 and it is the model to
-copy.
+hiprtc/gfx1100, rusticl/radeonsi, `fusedctl` on Intel Arc, and now by the Metal
+probe's round-to-odd control on the M4 (`fp-contraction-policy.md` §10.14), which
+is four unrelated stacks. `test_opencl_f16_tripwire` already does this after
+§11.5 and it is the model to copy.
+
+**`f16_relaxed_ceiling` is per-narrowing, not per-result (§1.3), and slice 0 is
+where that is built rather than retrofitted.** The models must expose their
+intermediate binary16 values so the ceiling can be evaluated where the rounding
+was elided; a `classify_f16_result` that compares only final values cannot
+implement §1.3 as corrected and will reject correct results on any shape with a
+cancelling operation after a narrowing. Add a host-only calibration for exactly
+that: the shape `f16(f16(x*1.1)+1000)` at **`x = -907.5`**, where the two models
+differ by **1 ulp at the narrowing** and by **512 ulp on the final value** — the
+case that broke the first formulation. It must classify as `Known_relaxation`,
+and a ceiling evaluated on the final value must be shown to *fail* it, or the
+correction is not actually in force.
 
 **Proves, and this is the whole point of the slice:** feed the classifier the
 IGC dropped-narrowing signature (4774/63488, first divergence `x = 0.681640625`)
@@ -759,7 +879,8 @@ and needs nothing from the DSL:
   rather than advisory**:
 
   - **Dimensions are not hard-coded.** Must accommodate 16×16×16 subgroup-scope
-    (Vulkan, measured §4) *and* 8×8×8 (`simdgroup_half8x8`, Metal).
+    (Vulkan, measured §4) *and* 8×8×8 (Metal, measured §7 slice 6 — 8×8 is the
+    **only** size MSL offers, so this is a hard requirement and not a guess).
   - **Component types admit integers from the start** — `u8`/`s8` operands with
     `u32`/`s32` accumulate, including the saturating variants. This is §8's
     recommendation and it is adopted: 12 of the 14 configurations advertised on
@@ -776,6 +897,17 @@ and needs nothing from the DSL:
     contract, and #62 is not blocked on the accuracy question at all. That
     fallback only exists if 4b was built for it.
 
+    **The fallback is #62's, not #63's — measured, not assumed.** Metal has *no*
+    integer `simdgroup_matrix`: the only element types are `half`, `float` and
+    `bfloat`, and integers fail a named `is_simdgroup_matrix_element<T>`
+    static_assert, so the enumeration is closed (§7 slice 6). An earlier reading
+    of this bullet implied every backend had a strict-contract path to fall back
+    on. **#63 does not.** On Metal the tensor-core path is reachable only through
+    the relaxation, which makes #63 strictly more exposed to it than #62 — if the
+    relaxation were withdrawn, #62 could still ship integer configurations and
+    #63 could ship nothing. Admitting integer component types remains right for
+    the reasons above; it is simply not a universal safety net.
+
   The *slicing* is deliberately **not** reordered to put integers first — f16
   scalar is a prerequisite for #63 and for bf16 regardless
   (`f16-dsl-element-type.md` §11.1), so the relaxation work is resequenced rather
@@ -785,35 +917,82 @@ and needs nothing from the DSL:
 - **4c — GLSL codegen for the fragment type**, gated on the `Device_optional`
   coopmat capability. The Raphael iGPU is the free negative device (§4).
 
-### Slices 5 and 6 — #63, Metal (needs ladon; permission not yet requested)
+### Slices 5 and 6 — #63, Metal — **DONE, 2026-07-27**
 
-**#63 cannot start at the matrix layer.** `fp-contraction-policy.md` §3 lists
-Metal f16 on the "may NOT rely on" list with the note that it has **never been
-probed**, and §2's Metal row covers f32 only. There is no Metal row in §2 of this
-document because there is no measurement to put in it. So:
+Both were unschedulable pending access to an Apple GPU. Access was granted, the
+probes were run on ladon, and both slices are complete. Recorded in
+`fp-contraction-policy.md` §10.14 and §10.15; the rows are in §2 above.
 
-- **Slice 5 — scalar f16 on Metal.** A standalone probe in the shape of the
-  existing `tools/probes/metal_math_mode_probe.m` and
-  `metal_contraction_barrier_probe.m`: exhaustive sweep of all 63488 finite
-  binary16 inputs against `S_strict` and `S_fuse_mul_into_narrowing`, with the
-  `fusedctl`-style positive control. Note Metal's contraction defence is a
-  *source pragma* (`#pragma METAL fp contract(off)`) and none of the compile
-  options stop contraction (§2, §10.5 of the policy doc) — so the probe must
-  sweep with and without the pragma. This is a **measurement, not a code
-  change**, and it produces the Metal row that §2 lacks.
-- **Slice 6 — `simdgroup_matrix`.** Enumerate what MSL actually offers on the M4
-  (`simdgroup_half8x8` / `simdgroup_float8x8`), then the 4a-equivalent
-  hand-written kernel against the §5-style derived bound, recomputed for K = 8.
+- **Slice 5 — scalar f16 on Metal. Done: it does not fuse.** 0 / 63488 from
+  `S_strict` on both swept shapes, element-wise, on the naive kernel and under
+  every barrier. Instrument `tools/probes/metal_f16_narrowing_probe.m`. Two
+  results worth carrying forward beyond the row:
+  - `#pragma METAL fp contract(off)` **does not govern this hazard**, in either
+    direction — it does not move the plain kernel and does not disturb the
+    control. That is not inertness: §10.5 measures the same pragma taking
+    `a*b+c` from 8773/8773 to 0/8773 on this device. Contraction of `a*b+c` and
+    absorption of a multiply into an f32→f16 narrowing are two behaviours, and
+    Metal exhibits neither.
+  - The control had to be built differently, and that is a portability note for
+    slice 0: **MSL has no `double`**, so the `fusedctl` construction used on
+    OpenCL is not expressible. The Metal control reconstructs the exact product
+    from a double-float pair with a round-to-odd step. It reproduces **620**,
+    which is now four unrelated stacks agreeing on that figure.
+  - It also produced the counterexample that corrected §1.3. See there.
+- **Slice 6 — `simdgroup_matrix`. Done, and it disproved a planning assumption.**
+  MSL offers exactly three instantiations, all 8×8: `half`, `float`, `bfloat`.
+  Every other size fails `_valid_simdgroup_matrix_size` and every integer type
+  fails `is_simdgroup_matrix_element<T>`, both named `static_assert`s — so this is
+  a **closed enumeration, not a sample**. Numerics are in §2's Regime B rows: the
+  f32-accumulate configuration matches a closed-form model element-wise and
+  migrates to Regime A; the f16-accumulate one does not.
 
-**Ladon usage: not requested, not used.** An M4 is reachable at
-`ssh -i ~/.ssh/id_ed25519 ladon`. Nothing in this document has touched it. The
-minimum ask, if permission is granted, is: build and run two standalone probe
-binaries in a scratch directory, install nothing, change no settings, touch no
-working tree. Slices 5 and 6 are unschedulable until that is agreed.
+> **The integer-coopmat fallback is Vulkan-only. It does not exist on Metal.**
+> §8 and slice 4b both keep an integer configuration as the route that lands
+> under Sarek's *existing strict contract* if slice 1 finds no closed-form model
+> for the ACO shapes — resting on the fact that 12 of the 14 configurations RADV
+> advertises are integer. **That reasoning does not transfer to Metal, and this
+> document previously implied a universal fallback.** There is no integer
+> `simdgroup_matrix` at all, so **#63 has no strict-contract route**: on Metal it
+> is f16 or bf16 or nothing, and it is reachable *only* through the relaxation.
+>
+> Two consequences the plan has to carry:
+> - **Slice 4b's integer requirement keeps its justification but loses its
+>   universality.** Admitting integer component types in the IR fragment type is
+>   still right — it is nearly free at design time, expensive to retrofit, and it
+>   is what keeps #62 deliverable if slice 1 goes badly. But it is a **#62
+>   fallback, not a #62-and-#63 fallback**, and slice 4b should say so rather than
+>   let a reader infer that every backend has a strict-contract path.
+> - **#63 is more exposed to the relaxation than #62 is.** If the relaxation were
+>   ever withdrawn, #62 could still ship its integer configurations and #63 could
+>   ship nothing. That asymmetry did not exist in the plan as written and should
+>   be visible when the two are prioritised against each other.
+>
+> `bfloat` 8×8 is available, is not in the plan anywhere, and has **not** been
+> swept — nothing is claimed about what it computes. It is the obvious cheap
+> extension of slice 6 and needs no new hardware access.
+
+**Ladon usage: requested, granted, used.** Two standalone probe binaries were
+built and run in a scratch directory under `/tmp`; nothing installed, no settings
+changed, no working tree touched. The absence of Xcode (Command Line Tools only,
+so no offline `metal` compiler) turned out not to matter —
+`newLibraryWithSource:options:error:` compiles through the driver at runtime,
+which is the call under test anyway.
+
+**What slices 5 and 6 did NOT cover**, neither needing new hardware access:
+the 20-shape catalogue of
+`docs/optimization/amdgpu-f16-fusion-shape-audit.md` (only two shapes were
+swept), a `bfloat` 8×8 sweep, subnormal-specific analysis, and Metal **codegen** —
+both probes compile hand-written MSL and therefore measure the driver, exactly as
+§7(c) of the policy document says of the GLSL tripwire. A Sarek-generated-shader
+gate is a separate slice.
 
 ### Hardware this plan does not have
 
-- **Apple GPU** — ladon, permission needed. Blocks slices 5–6 entirely.
+- ~~**Apple GPU** — ladon, permission needed. Blocks slices 5–6 entirely.~~
+  **Resolved 2026-07-27**: access granted, slices 5 and 6 both executed on an
+  Apple M4. What Metal still lacks is not hardware but coverage — the 20-shape
+  catalogue, a `bfloat` sweep, and a codegen-side gate.
 - **NVIDIA Ampere or newer** — the GTX 1070 is sm_61 with no tensor cores, no
   bf16 and no FP8 (`capability-model.md` §1). Nothing in this plan constrains the
   CUDA/PTX tensor-core path, and no f16 *performance* claim is available from
@@ -857,6 +1036,18 @@ most of the intended audience.
 > §7 slice 4b. It is nearly free at design time, expensive to retrofit, and it is
 > what keeps a strict-contract coopmat path available as a fallback if slice 1
 > finds no closed-form model for the ACO shapes.
+>
+> **AMENDED 2026-07-27, after the Metal measurement.** This whole section is
+> scoped to **#62**. It reads as though "the cheapest first tensor-core slice
+> needs no relaxation" were a statement about tensor cores in general; it is a
+> statement about *Vulkan*, and it holds only because RADV advertises integer
+> configurations. **Metal advertises none** — `simdgroup_matrix` exists for
+> `half`, `float` and `bfloat` only, integers failing a named static_assert, a
+> closed enumeration (§7 slice 6). So the objection's escape route is unavailable
+> to #63 entirely, and the sequencing argument is stronger than it looked: f16 is
+> not merely a prerequisite for #63 "regardless", it is the **only** element type
+> #63 can be built on. Nothing in the resolution changes; its scope is now
+> stated.
 
 ---
 
@@ -930,8 +1121,13 @@ contract and #62 is not blocked on the accuracy question at all.
 
 ## 10. Tests added by this change
 
-**None.** This change adds a design document and one read-only Vulkan query probe
-(`tools/probes/vulkan_coopmat_probe.c`, standalone, not wired into dune —
-matching the convention of the four probes already there). No Sarek behaviour
-changes, no refusal is lifted, and there is nothing new to gate. The test
-strategy is §7 slice 0, which is the first slice of the follow-on work.
+**None.** This change adds a design document and three standalone probes, none
+wired into dune, matching the convention of the ones already there:
+`tools/probes/vulkan_coopmat_probe.c` (read-only Vulkan query), and — from the
+2026-07-27 amendment — `tools/probes/metal_f16_narrowing_probe.m` and
+`tools/probes/metal_simdgroup_matrix_probe.m`. No Sarek behaviour changes, no
+refusal is lifted, and there is nothing new to gate. The test strategy is §7
+slice 0, which is the first slice of the follow-on work — and which now has two
+extra obligations from the Metal measurement: the ceiling must be evaluated
+per-narrowing (§1.3), and the `x = -907.5` case must be a host-only calibration
+that a final-value ceiling is shown to fail.

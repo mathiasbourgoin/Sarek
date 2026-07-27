@@ -95,8 +95,11 @@
  *      a binary16 tie in the binade [512,1024) and rounds to even -> -998, so
  *      S_strict gives -998 + 1000 = 2. The single-rounding model narrows the
  *      exact product instead, is not at the tie, and gives -998.5 -> 1.5.
- *    2 and 1.5 are **512 ulp of binary16 apart at that magnitude**, because the
- *    +1000 cancels away the leading bits. The half-ulp-at-the-elided-step
+ *    At the ELIDED NARROWING the deviation is -998 vs -998.5, exactly 1 ulp16,
+ *    as the derivation says. On the FINAL value it is 512 ulp16 measured
+ *    against 1.5, or 256 measured against 2.0 — state the denominator; either
+ *    way it is hundreds against a ceiling of one, because the +1000 cancels the
+ *    leading bits away and re-scales the ulp. The half-ulp-at-the-elided-step
  *    derivation in §1.3 is sound; what does not follow is the final-value
  *    restatement, since a later cancellation re-scales the ulp. The ceiling has
  *    to be measured at the narrowing where the rounding was elided, not on the
