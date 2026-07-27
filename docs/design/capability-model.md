@@ -253,8 +253,21 @@ facts that motivated it is worse than none.
   through three front ends). The model can *say* a capability is
   `Toolchain_semantic`, but it has no way to *identify* the compiler at runtime,
   so such a verdict can only be blanket-per-backend. That over-refuses on pocl,
-  which measurably does not fuse. Closing this needs a compiler-identity probe
-  that does not exist.
+  which measurably does not fuse — and it now over-refuses on Intel IGC too,
+  which does not fuse either (`docs/fp-contraction-policy.md` §11.3, executed on
+  Intel Arc / Meteor Lake-P). Closing this needs a compiler-identity probe that
+  does not exist.
+
+  > **This gap does not block the f16 barrier, and backlog #144 asked whether it
+  > did.** The barrier's own scoping never depended on runtime identification:
+  > it is emitted from a single site under `#if defined(__HIP__) ||
+  > defined(__HIP_PLATFORM_AMD__)`, and the compilers that could get it wrong
+  > never receive the source, because f16 is refused at codegen on OpenCL, GLSL,
+  > Metal, WGSL and PTX. A preprocessor conditional is the compiler naming
+  > itself, which is strictly stronger than any device-string or probe-based
+  > identification this model could add. The gap is real for a *future*
+  > `Toolchain_semantic` verdict that must be taken with only a device in hand;
+  > it is not real for this one. See `docs/fp-contraction-policy.md` §11.4.
 - **Source locations.** `Sarek_ir_types.kernel` carries no location and the IR
   has no per-node locations, so a codegen refusal names the capability and the
   target but not the kernel source line. #64 asked for a *located* error; slice 1

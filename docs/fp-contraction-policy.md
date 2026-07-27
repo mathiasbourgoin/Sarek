@@ -1559,6 +1559,50 @@ narrowing barrier in `Sarek_ir_opencl` must be per-implementation and gated on
 an exhaustive agreement sweep for that implementation, never applied backend-wide
 on the strength of an ACO measurement.
 
+**What Sarek actually ships today, checked rather than assumed (backlog #144).**
+The obvious reading of the paragraph above is that the barrier needs to become
+conditional on the shader compiler, and that Sarek therefore needs a way to
+*identify* ACO at runtime — the gap §5 of
+[`docs/design/capability-model.md`](design/capability-model.md) lists as **NOT
+expressible**. That work is not needed, because the barrier is already scoped,
+by two facts that are structural rather than probabilistic:
+
+1. **The barrier is emitted from one site and it is preprocessor-scoped.**
+   `Sarek_ir_cuda.sarek_f32_barrier_decl` puts the `asm volatile("" : "+v"(x))`
+   body inside `#if defined(__HIP__) || defined(__HIP_PLATFORM_AMD__)`; the other
+   arm is a bare identity (§4). Its only runtime consumers are `Hip_plugin`
+   (hiprtc) and `Cuda_plugin` / `Cuda_c_plugin` (nvrtc). Evidence:
+   **by-construction**.
+2. **IGC cannot receive that source.** f16 is refused outright by
+   `Sarek_ir_opencl`, `Sarek_ir_glsl`, `Sarek_ir_metal` and `Sarek_ir_wgsl` — at
+   the per-element-type arm *and* at a whole-kernel gate, across every public
+   `generate*` entry point — and `Sarek_ir_ptx` refuses it too. §11.4's 4774 was
+   measured on `tools/probes/opencl_f16_contraction_probe.c`, a research probe,
+   not on generated Sarek code. Evidence: **by-construction**, machine-checked by
+   `sarek/tests/codegen_golden/test_cuda_f16_golden.ml`.
+
+**A device-string denylist or a runtime ACO probe would both be weaker than what
+is already there.** The `#if` is the compiler identifying *itself* at the moment
+it compiles the source; a `CL_DEVICE_VENDOR` match or a `VK_DRIVER_ID` match is a
+guess about a stack from the outside, and a boot-time fusion probe measures a
+device that never sees this code. Neither would be consulted on the only path
+that emits the barrier. **The right shape of the #144 fix was therefore a gate,
+not a mechanism** — the scoping was correct and unpinned, and "correct and
+unpinned" is how §11.5's own tripwire came to encode a wrong claim.
+
+That gate exists now. `test_f16_barrier_is_amd_scoped` requires the opacity body
+to lie between the AMD guard and its `#else`, and the non-AMD arm to contain no
+`asm`/`volatile` once comments are stripped. It was **proved red** by giving the
+non-AMD arm the AMD `"+v"` barrier — a mutation the pre-existing `"+f"`
+assertion does not see, and under which that new case is the only failure.
+
+**Not verified, and deliberately not fixed here:** the guard's `defined(__HIP__)`
+disjunct is also true under `__HIP_PLATFORM_NVIDIA__`, where `"+v"` is not a
+valid constraint. No HIP-on-NVIDIA toolchain exists on this project's machines,
+so the claim that this fails is **unverified**; the failure direction is a loud
+compile error rather than a wrong number, which is why it is recorded rather than
+patched blind.
+
 ### 11.5 The defect this surfaced in our own gate
 
 `dune runtest` across `sarek`, `sarek-opencl`, `sarek-vulkan` and `spoc` on this
