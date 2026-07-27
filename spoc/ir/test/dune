@@ -3,5 +3,6 @@
   test_sarek_ir_types
   test_sarek_ir_pp
   test_sarek_ir_analysis
+  test_sarek_capability
   test_sarek_pure_registry)
  (libraries sarek_ir))

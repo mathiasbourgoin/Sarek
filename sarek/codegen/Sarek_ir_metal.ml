@@ -55,7 +55,20 @@ let rec metal_type_of_elttype = function
            "f16"
            "Metal: float16 not yet supported (#57 slice 2)")
   | TFloat32 -> "float"
-  | TFloat64 -> "float" (* Metal doesn't support double precision *)
+  | TFloat64 ->
+      (* Until #64 slice 1 this arm was `"float"`, with a comment saying Metal
+         does not support double precision — and no refusal anywhere on the
+         path. A kernel written against binary64 semantics compiled clean and
+         returned binary32 answers: a silent halving of precision, which is the
+         exact defect class #64 exists to make impossible. Metal genuinely has
+         no `double`, so this is Backend_structural and belongs at codegen, not
+         at a launch gate: no device can supply it. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "f64"
+           (Sarek_capability.explain
+              ~target:"Metal"
+              Sarek_capability.float64_absent_metal))
   | TBool -> "bool"
   | TUnit -> "void"
   | TRecord (name, _) -> mangle_name name
@@ -1015,6 +1028,25 @@ let reject_float16_kernel =
     ~backend:"Metal"
     Sarek_ir_analysis.Float16
 
+(* Whole-kernel f64 gate (#64 slice 1). The per-element-type arm above catches
+   every type that reaches the emitter, but not every f64 in a kernel reaches
+   it: the same reasoning that gave f16 a whole-kernel gate on top of its arm
+   applies unchanged. Having both means the refusal cannot be routed around by
+   a path that formats a type some other way.
+
+   Unlike [reject_float16_kernel] this does NOT go through
+   [Sarek_ir_codegen.reject_feature]: that composer says "not YET supported
+   (#57 slice 2)", a claim about a queue position. Metal will never have
+   `double`, so promising future support would be false. *)
+let reject_float64_kernel =
+  Sarek_capability.refuse_if_used
+    ~raise_:(fun reason ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct "f64" reason))
+    ~target:"Metal"
+    Sarek_capability.float64_absent_metal
+    Sarek_ir_analysis.Float64
+
 (** The ONLY thing measured to stop Metal contracting [a*b+c].
 
     Metal's compile options do NOT do it. Measured on Apple M4 / macOS 15.6.1
@@ -1051,6 +1083,7 @@ let metal_fp_contract_pragma = "#pragma METAL fp contract(off)\n"
 (** Generate complete Metal source for a kernel *)
 let generate (k : kernel) : string =
   reject_float16_kernel k ;
+  reject_float64_kernel k ;
   let buf = Buffer.create 4096 in
 
   (* Collect variables used with atomic operations *)
@@ -1115,6 +1148,7 @@ let gen_variant_def buf v =
 let generate_with_types ~(types : (string * (string * elttype) list) list)
     (k : kernel) : string =
   reject_float16_kernel k ;
+  reject_float64_kernel k ;
   (* Set current_variants for SMatch binding extraction *)
   current_variants := k.kern_variants ;
   let buf = Buffer.create 4096 in

@@ -10,6 +10,7 @@
   Sarek_ir_layout
   Sarek_ir_pp
   Sarek_ir_analysis
+  Sarek_capability
   Sarek_ir_codegen
   Sarek_pure_registry)
  (preprocess no_preprocessing)

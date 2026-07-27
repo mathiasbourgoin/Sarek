@@ -171,10 +171,15 @@ let test_type_mapping () =
     "float32 maps to float"
     "float"
     (Sarek_ir_metal.metal_type_of_elttype TFloat32) ;
-  Alcotest.(check string)
-    "float64 maps to float (no double)"
-    "float"
-    (Sarek_ir_metal.metal_type_of_elttype TFloat64) ;
+  (* This assertion used to read `"float64 maps to float (no double)"` and
+     expect `"float"`. It encoded the defect: Metal has no double, so mapping
+     TFloat64 to `float` silently halved the precision of any kernel written
+     against binary64 and the test certified it. #64 slice 1 makes it a
+     refusal; the assertion is inverted to match. *)
+  (match Sarek_ir_metal.metal_type_of_elttype TFloat64 with
+  | (_ : string) ->
+      Alcotest.fail "float64 must be refused by Metal, not mapped to a type"
+  | exception Sarek_backend_error.Backend_error.Backend_error _ -> ()) ;
   Alcotest.(check string)
     "bool maps to bool"
     "bool"
@@ -256,6 +261,97 @@ let test_local_buffer_param_refused () =
     (String.length (Buffer.contents buf) > 0
     && String.sub (Buffer.contents buf) 0 6 = "device")
 
+(* #64 slice 1: the whole-kernel f64 gate at Metal's [generate] entry.
+   [test_type_mapping] covers the per-element-type arm; this covers the gate,
+   which exists so the refusal cannot be routed around by a path that formats a
+   type some other way. Both halves are needed — the f16 gate has the same
+   shape for the same reason. *)
+let mk_vec_kernel elt : kernel =
+  let v = make_var "x" (TVec elt) in
+  {
+    kern_name = "capgate";
+    kern_params = [DParam (v, Some {arr_elttype = elt; arr_memspace = Global})];
+    kern_locals = [];
+    kern_body = SEmpty;
+    kern_types = [];
+    kern_variants = [];
+    kern_funcs = [];
+    kern_native_fn = None;
+  }
+
+let substring_present haystack needle =
+  let nl = String.length needle and hl = String.length haystack in
+  let rec go i =
+    i + nl <= hl && (String.sub haystack i nl = needle || go (i + 1))
+  in
+  nl = 0 || go 0
+
+let test_float64_kernel_gate () =
+  (* Red: an f64 kernel is refused, and the message names the capability and
+     the target rather than failing anonymously. *)
+  (match
+     try Ok (Sarek_ir_metal.generate (mk_vec_kernel TFloat64))
+     with Sarek_backend_error.Backend_error.Backend_error _ as e ->
+       Error (Printexc.to_string e)
+   with
+  | Ok (_ : string) ->
+      Alcotest.fail "Metal must refuse an f64 kernel, not generate source"
+  | Error msg ->
+      Alcotest.(check bool)
+        "refusal names float64"
+        true
+        (substring_present msg "float64") ;
+      Alcotest.(check bool)
+        "refusal names Metal"
+        true
+        (substring_present msg "Metal")) ;
+  (* Positive control: the gate must discriminate. A gate that raised on every
+     kernel would satisfy the assertion above and be useless. *)
+  match Sarek_ir_metal.generate (mk_vec_kernel TFloat32) with
+  | (_ : string) -> ()
+  | exception Sarek_backend_error.Backend_error.Backend_error _ ->
+      Alcotest.fail
+        "Metal must still generate an f32 kernel (gate fires unconditionally)"
+
+(* The case that makes the whole-kernel gate load-bearing rather than
+   defence-in-depth. An f64 LITERAL never reaches [metal_type_of_elttype]:
+   [gen_expr] emits [EConst (CFloat64 f)] as a bare `%.17g` with no type ever
+   consulted and no `f` suffix (Sarek_ir_metal.ml, the CFloat64 arm). With only
+   the per-element-type arm, this kernel — an f32 buffer written from a binary64
+   constant — generated clean and lost the precision silently, exactly as the
+   TFloat64 arm did. Removing [reject_float64_kernel] turns this test red while
+   leaving the TFloat64 one green, which is what says the two checks are not
+   redundant. *)
+let test_float64_literal_gate () =
+  let v = make_var "x" (TVec TFloat32) in
+  let k : kernel =
+    {
+      kern_name = "caplit";
+      kern_params =
+        [DParam (v, Some {arr_elttype = TFloat32; arr_memspace = Global})];
+      kern_locals = [];
+      kern_body =
+        SAssign (LArrayElem ("x", EConst (CInt32 0l)), EConst (CFloat64 3.14));
+      kern_types = [];
+      kern_variants = [];
+      kern_funcs = [];
+      kern_native_fn = None;
+    }
+  in
+  match
+    try Ok (Sarek_ir_metal.generate k)
+    with Sarek_backend_error.Backend_error.Backend_error _ as e ->
+      Error (Printexc.to_string e)
+  with
+  | Ok src ->
+      Alcotest.fail
+        ("Metal must refuse an f64 literal, not emit it silently; got: " ^ src)
+  | Error msg ->
+      Alcotest.(check bool)
+        "literal refusal names float64"
+        true
+        (substring_present msg "float64")
+
 let () =
   Alcotest.run
     "Sarek_ir_metal"
@@ -275,6 +371,11 @@ let () =
       );
       ("atomics", [Alcotest.test_case "atomic operations" `Quick test_atomics]);
       ("types", [Alcotest.test_case "type mapping" `Quick test_type_mapping]);
+      ( "capability",
+        [
+          Alcotest.test_case "f64 kernel gate" `Quick test_float64_kernel_gate;
+          Alcotest.test_case "f64 literal gate" `Quick test_float64_literal_gate;
+        ] );
       ("var_decl", [Alcotest.test_case "var declaration" `Quick test_var_decl]);
       ( "param_address_space",
         [
