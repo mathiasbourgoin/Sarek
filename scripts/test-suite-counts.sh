@@ -36,9 +36,10 @@
 # Verified by removing the gate from test_ptx_stride_spike and re-running: the
 # suite reported "1 failure! in 0.000s. 1 test run." (cuInit, no driver), which
 # is the positive control -- a suite with no registered cases could not have
-# gone red. The 4 accounts for exactly the 23 SKIPs' worth of CUDA-less
-# hardware on the machine that produced the log, and it is expected to be 0 on
-# a runner with a CUDA device.
+# gone red. Between them the four register FIVE cases, so they account for 5 of
+# the 23 SKIPs on the machine that produced the log; the other 18 come from
+# suites that also ran real cases and so are not zero-case. All four are
+# expected to report cases on a runner with a CUDA device.
 #
 # This is NOT the defect this repo has seen before, where a `Printf` "[SKIP]"
 # was swallowed by Alcotest's stdout capture and the case rendered [OK]. These

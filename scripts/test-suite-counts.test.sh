@@ -131,11 +131,16 @@ ocamlfind: Package `sarek' not found
 Command exited with code 2.
 LOG
 
+# Exit code asserted EXACTLY, not merely as non-zero. Gate 1 is specified to
+# exit 2, and "non-zero" would also be satisfied by a python traceback (1) or
+# by the plausibility floor firing instead (3) -- so a crash, or a regression
+# that moved this input from gate 1 to gate 3, would pass a case whose entire
+# purpose is to pin gate 1. A weakened assertion inside the covering test for
+# the check that could not fail is the same class of defect one level up.
 for case in empty trunc-early skips-only notalog; do
   got_out="$("$CNT" --min-suites 0 "$TMP/$case.log" 2>/dev/null)"
   got_rc=$?
-  check "$case log exits non-zero (empty is not a result)" \
-    "$([ "$got_rc" -ne 0 ] && echo nonzero || echo "zero")" "nonzero"
+  check "$case log exits 2 — usage error, not a result" "$got_rc" "2"
   check "$case log prints no counts on stdout" \
     "$(echo "$got_out" | /usr/bin/grep -c 'cases across')" "0"
 done
@@ -176,9 +181,11 @@ check "pipe mode reads stdin, and agrees with file mode" \
 # --min-suites 0 here is deliberate. Without it the floor also rejects an empty
 # pipe, so the case would pass even with the empty-log gate removed and would
 # be attesting the floor rather than the thing it names.
+#
+# Exact 2 for the same reason as the loop above: non-zero would be satisfied by
+# a crash or by the floor firing, neither of which is this gate.
 : | "$CNT" --min-suites 0 >/dev/null 2>&1
-check "empty pipe exits non-zero" \
-  "$([ "$?" -ne 0 ] && echo nonzero || echo zero)" "nonzero"
+check "empty pipe exits 2 — the fully-cached \`dune test\` case" "$?" "2"
 
 # ---------------------------------------------------------------------------
 # backlog-150: the plausibility floor.
