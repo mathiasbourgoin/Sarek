@@ -26,6 +26,7 @@
   test_kirc_kernel
   test_float16
   test_type_width_totality
+  test_host_ir_width_agreement
   test_diagnostic_locations)
  (modules
   test_types
@@ -54,6 +55,7 @@
   test_kirc_kernel
   test_float16
   test_type_width_totality
+  test_host_ir_width_agreement
   test_diagnostic_locations)
  ; Link sarek_stdlib to trigger auto-registration of intrinsics
  ; ctypes is listed explicitly (not relied on transitively via sarek): the

@@ -160,6 +160,35 @@ holds it, and a weak duplicate gate is worse than none — it produces a second 
   refused statically with no device needed — never a widening and never a quiet
   substitution. Held by the capability model and its tests
   (`spoc/ir/test/test_sarek_capability.ml`), not by the grep.
+- **A width sweep must cover three edges, not two.** `source -> IR` and
+  `IR -> device type` were each swept while the third edge — `IR <-> host scalar_kind
+  -> exec-arg dispatch` — had no sweep, and that is the edge the bytes actually cross.
+  `test_host_ir_width_agreement.ml` closes it by pinning
+  `Vector.elem_size = Sarek_ir_layout.scalar_size` (the same denominator the backend
+  sweep uses, so the three segments form one chain rather than three self-consistent
+  fragments) and by requiring every host scalar kind to complete an exec-arg round trip
+  or appear in a pinned refusal list. `width-addition-cost.md` §3.
+- **Half of a new width is invisible to the compiler, and it is the expensive half.**
+  Measured, not estimated: a usable scalar width touches **40** production files;
+  adding the constructors to all four addable vocabularies forces **21** of them, over
+  **seven** build rounds. The other **20** are the FFI layer, host storage, exec-arg
+  dispatch, the conversion primitives and the interpreter narrowing — and every f16
+  soundness bug lived there, none in a match arm. A blast-radius estimate built by
+  grepping exhaustive matches is accurate about the 21 and says nothing about the 20.
+  `width-addition-cost.md` §1, §2.
+- **A pair-match with a catch-all is a dispatch table no constructor can force.**
+  `Execute.exec_arg_of_vector`'s `get` matches on `Vector.kind` (total, so a new host
+  kind forces an arm) while its `set`, forty lines away, matches on a
+  `(typed_value, kind)` pair ending in a catch-all (so nothing does). f16 shipped with
+  the first and not the second, and could not run on the Interpreter device at all.
+  Only a sweep can see this. `width-addition-cost.md` §2.1.
+- **A stdlib affordance one width enjoys is not inherited by its sibling.**
+  `Bigarray.Float16` exists and gives f16 free 2-byte storage, free round-on-store and a
+  float-typed `Vector.get`/`set`; the `Bigarray.kind` GADT is closed and has **no**
+  bfloat16 (executed, OCaml 5.3.0). So bf16 is "f16 again with a different `cvt`" from
+  the IR downward and a storage-layer redesign from the IR upward — the generalisation,
+  one level up, of the Ctypes-mirror lesson in `f16-dsl-element-type.md` §3.3.
+  `width-addition-cost.md` §5.1.
 - **The capability table and a codegen-correctness sweep are complementary instruments,
   neither subsuming the other.** A defect found by one is not evidence about the other,
   and "we have a capability model now" is not a reason to stop sweeping.
