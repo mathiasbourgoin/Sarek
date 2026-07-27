@@ -21,6 +21,13 @@
  *   ./probe fpcontract|volatile|vpriv|bitcast|bitcast2|convert
  *                          # every affordable barrier -> still 620 / 63488
  *   ./probe barrier  0     # HIP's "+v" asm      -> does not compile here
+ *   ./probe fusedctl 0     # POSITIVE CONTROL, deliberately fuses -> 620 / 63488
+ *                          #   on any conforming device; run it whenever a
+ *                          #   variant reports 0, or the 0 is not a result
+ *
+ * Device selection: the loop below scans the first platform that has devices,
+ * so on a multi-platform host use the ICD loader's own filter to choose, e.g.
+ *   OCL_ICD_FILENAMES=/usr/lib/intel-opencl/libigdrcl.so ./probe plain 0
  *
  * Measured 2026-07-26 on RX 7900 XTX (navi31) and the integrated Raphael iGPU
  * (gfx1036), rusticl/radeonsi, DRM 3.64, kernel 7.1.2-3-cachyos. Both devices
@@ -234,6 +241,39 @@ static const char *SRC_VPRIV =
 "  }\n"
 "}\n";
 
+/* Variant N: POSITIVE CONTROL. Not a barrier and not a codegen candidate — a
+   kernel that performs the fusion *deliberately*, so the harness can be shown
+   able to report nonzero on a device that does not fuse on its own.
+
+   This is required to read a 0 from any of the variants above as a result
+   rather than as a broken harness. On rusticl/ACO the contrast is supplied for
+   free (plain 620, vglobal 0), but on a non-fusing stack every variant returns
+   0 and a silently-broken sweep is indistinguishable from a clean one.
+
+   The semantics are chosen to match the ACO combine exactly, not merely to be
+   wrong. `v_fma_mixlo_f16(x, 1.1f, 0)` rounds the EXACT f32 product straight to
+   binary16 — one rounding where the DSL mandates two. Both `x` and the f32
+   constant `1.1f` are exactly representable in binary64, so `(double)x *
+   (double)1.1f` IS that exact product, and narrowing it in one step reproduces
+   the fused value. The host reference is untouched. The expected count is
+   therefore the SAME 620/63488 that ACO produces, on any conforming device —
+   which makes this a calibration against a known figure, not just a liveness
+   smoke test.
+
+   Requires cl_khr_fp64. On a device without it the build fails loudly, which is
+   the correct outcome: it means the calibration was not obtained. */
+static const char *SRC_FUSED_CTL =
+"#pragma OPENCL EXTENSION cl_khr_fp16 : enable\n"
+"#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n"
+"__kernel void midround(__global half *out, __global const half *in, int n) {\n"
+"  int i = get_global_id(0);\n"
+"  if (i < n) {\n"
+"    float x = (float)in[i];\n"
+"    half  m = (half)((double)x * (double)1.1f);\n"
+"    out[i] = (half)((float)m + 1000.0f);\n"
+"  }\n"
+"}\n";
+
 /* ---- binary16 helpers (host reference) ---------------------------------- */
 static float f16_value_of_bits(int b, int *is_finite) {
   int sign = (b & 0x8000) ? -1 : 1;
@@ -263,6 +303,7 @@ int main(int argc, char **argv) {
   if (argc > 1 && strcmp(argv[1], "vlocal") == 0) { src = SRC_VLOCAL; label = "VOLATILE LOCAL(LDS)"; }
   if (argc > 1 && strcmp(argv[1], "vpriv") == 0) { src = SRC_VPRIV; label = "VOLATILE PRIVATE PTR"; }
   if (argc > 1 && strcmp(argv[1], "convert") == 0) { src = SRC_CONVERT; label = "convert_half_rte"; }
+  if (argc > 1 && strcmp(argv[1], "fusedctl") == 0) { src = SRC_FUSED_CTL; label = "FUSED (positive control)"; }
 
   cl_platform_id plats[8]; cl_uint nplat = 0;
   clGetPlatformIDs(8, plats, &nplat);

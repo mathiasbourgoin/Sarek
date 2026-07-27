@@ -140,9 +140,27 @@
  *       does not help, and extending it to two_sum/quick_two_sum makes RADV
  *       strictly worse (see "Contraction barrier").
  *
- *   Vulkan on Intel (UHD Graphics 630, CFL GT2, Mesa ANV)
+ *   Vulkan on Intel (Mesa ANV)
  *       add/sub/sqrt meet the contract, mul/div degrade to ~5.8e-08, same
- *       shape as RADV. UNFIXED, unmeasured cause.
+ *       shape as RADV. UNFIXED.
+ *
+ *       Two devices, two generations, and they agree - but the second does
+ *       NOT confirm the first, it stands beside it:
+ *         - UHD Graphics 630 (CFL GT2, Gen9.5): mul/div ~5.8e-08. QUOTED.
+ *         - Arc Graphics (Meteor Lake-P, Xe-LPG), Mesa 26.1.2-arch3.1,
+ *           Vulkan 1.4.348: MEASURED 2026-07-27, test_df64 mul 5.84e-08 /
+ *           div 5.86e-08 against add 5.33e-15, sub 6.51e-15, sqrt 9.57e-15;
+ *           test_real64 mul 5.93e-08 / div 5.83e-08.
+ *       Different architecture, different generation, a decade of driver work
+ *       apart. Had they disagreed, that would have been a finding about
+ *       generation-dependence, not a correction of either.
+ *
+ *       Cause: same as RADV - a GLSL [fma] that is not correctly rounded.
+ *       Contraction is RULED OUT rather than assumed: on the Arc device
+ *       test_vulkan_no_contraction reports 0 of 7 contraction shapes
+ *       contracted with AND without [precise]. That is an inference from
+ *       elimination plus an identical error signature, not a direct sweep of
+ *       [fma] correct-rounding. See docs/fp-contraction-policy.md 11.1.
  *
  *   Native (OCaml host code)
  *       evaluates float32 at OCaml binary64 precision, so the error-free
@@ -345,7 +363,8 @@ let float x = float_of_int (Int32.to_int x)
  * stating precisely: before, [two_prod]'s HIGH limb was [fl(a*b)] on every
  * backend regardless of fma quality, and only the low limb depended on the
  * fma. Now the high limb is [fma a b 0.0] too, so on a backend whose [fma] is
- * not correctly rounded (RADV, and by inference ANV) the high limb can in
+ * not correctly rounded (RADV, and ANV by the same elimination argument) the
+ * high limb can in
  * principle differ from [fl(a*b)]. No measurable impact: those backends were
  * already at ~5.8e-08 for mul/div before this change and are byte-identical
  * after it. The exposure is newly present but not newly observable.

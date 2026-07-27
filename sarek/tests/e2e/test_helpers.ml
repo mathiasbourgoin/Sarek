@@ -424,18 +424,35 @@ let is_radv_device ~framework ~device =
 
 (** [true] iff [device] is a Mesa ANV (Intel Vulkan) device.
 
-    ANV reports the marketing name only
-    (["Intel(R) UHD Graphics 630 (CFL GT2)"]) with no driver token, so this
-    matches the vendor string. That is looser than [is_radv_device] and it is
-    the weakest predicate here: it would also match a future non-Mesa Intel
-    Vulkan driver.
+    ANV reports the marketing name only —
+    ["Intel(R) UHD Graphics 630 (CFL GT2)"] on the quoted hardware,
+    ["Intel(R) Arc(tm) Graphics (MTL)"] on the hardware this was measured on —
+    with no driver token anywhere in [VkPhysicalDeviceProperties::deviceName].
+    So this matches the vendor string. That is looser than [is_radv_device] and
+    it is the weakest predicate here: it would also match a future non-Mesa
+    Intel Vulkan driver.
 
-    NOT VERIFIED ON THE TASK #118 HARDWARE — there is no Intel GPU on the
-    campaign workstation (RX 7900 XTX + Raphael iGPU only). The entry is carried
-    over from the measurement recorded in Sarek_df64.ml's PER-BACKEND STATUS
-    (UHD Graphics 630, CFL GT2, Mesa ANV: mul/div ~5.8e-08, same shape as RADV).
-    It must be re-measured, and narrowed to a driver token, the first time an
-    Intel device runs this suite. *)
+    NOW MEASURED (backlog #123), and the arm is KEPT because it fired: Intel Arc
+    Graphics (Meteor Lake-P), Mesa ANV 26.1.2-arch3.1, Vulkan 1.4.348,
+    [test_df64] mul 5.84e-08 / div 5.86e-08, [test_real64] mul 5.93e-08 / div
+    5.83e-08, against add 5.33e-15, sub 6.51e-15, sqrt 9.57e-15 on the same run.
+    See docs/fp-contraction-policy.md §11.
+
+    WHY THE VENDOR STRING IS STILL THE KEY, having looked for a better one. A
+    real driver token does exist in the Vulkan API on this driver —
+    [VkPhysicalDeviceDriverProperties] reports [driverName] = "Intel open-source
+    Mesa driver" and a [driverID] of [VK_DRIVER_ID_INTEL_OPEN_SOURCE_MESA], and
+    that struct is Vulkan 1.2 core, so it is available on every device this
+    backend can reach. Sarek does not plumb it:
+    [sarek-vulkan/Vulkan_api_device.ml] fills [Device.name] from
+    [VkPhysicalDeviceProperties::deviceName] and queries nothing else, so no
+    driver token reaches this predicate. Narrowing the key is therefore a
+    Vulkan-backend change (query the driver properties, expose the driver ID on
+    [Device.t]), not a test change, and it is deliberately not bundled into a
+    measurement commit. Until then the vendor string is the strongest key
+    available at this call site, and the failure direction is safe: a non-Mesa
+    Intel Vulkan driver that MEETS the contract trips the strict-XPASS branch
+    below and says so by name, rather than passing silently. *)
 let is_anv_device ~framework ~device =
   framework = "Vulkan"
   && string_contains ~needle:"intel" (String.lowercase_ascii device)
@@ -494,10 +511,33 @@ let df64_known_deviation ~framework ~device ~op =
           label = "KNOWN-DEVIATION (RADV fma not correctly rounded)";
         }
   | "Vulkan", ("mul" | "div") when is_anv_device ~framework ~device ->
+      (* Same shape and the same attribution as the RADV arm above, and now on
+         the same evidence rather than on a quotation. Measured on Intel Arc
+         Graphics (Meteor Lake-P), Mesa ANV 26.1.2-arch3.1, Vulkan 1.4.348:
+         mul 5.84e-08, div 5.86e-08, with add/sub/sqrt meeting the strict bound
+         on the same run — exactly RADV's pattern.
+
+         Contraction is RULED OUT as the cause here, not assumed:
+         test_vulkan_no_contraction reports 0 of 7 contraction shapes contracted
+         on this device with AND without `precise`, so the compiler is not
+         fusing the multiply that closes quick_two_sum. What is left is the same
+         explanation the RADV arm carries — a GLSL `fma` that is not correctly
+         rounded, which loses TwoProd's error term while leaving the add/sub/
+         sqrt paths (which do not use it) intact. That is an inference from
+         elimination plus an identical error signature, not a direct sweep of
+         `fma` correct-rounding, and it is written down that way in
+         docs/fp-contraction-policy.md §11.
+
+         NOTE ON GENERATION. This measurement is Xe-LPG (Meteor Lake Arc). The
+         figure this arm was originally quoted from is UHD Graphics 630 (CFL
+         GT2) — a different architecture and a different generation. It is a
+         second data point for ANV, not a confirmation of the first. *)
       Some
         {
           entry = "Vulkan, (mul|div) when is_anv_device";
-          label = "KNOWN-DEVIATION (Mesa ANV mul/div, unmeasured cause)";
+          label =
+            "KNOWN-DEVIATION (Mesa ANV fma not correctly rounded; contraction \
+             ruled out)";
         }
   | _ -> None
 

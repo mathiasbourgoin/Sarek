@@ -39,7 +39,7 @@
  *       device. One variant, no host float16 arithmetic, fails loudly when the
  *       premise expires.
  *
- * HOW IT AVOIDS NEEDING A HOST BINARY16 REFERENCE.
+ * HOW IT TRIED TO AVOID A HOST BINARY16 REFERENCE, AND WHY IT NO LONGER DOES.
  *
  * Both kernels below compute the same value. They differ only in whether the
  * f32 intermediate is forced through a `volatile __local` round-trip — measured
@@ -53,12 +53,41 @@
  * and no OCaml round-to-binary16 is needed anywhere. Decoding binary16 bits to
  * a float IS needed, but decoding is exact and rounding-free (see [f16_decode]).
  *
- * Self-check: comparing two kernels to each other would report "fusion gone" if
- * BOTH were broken into agreement (say, a build that silently produced two
- * copies of the same source). [sanity_barriered_computes_the_right_thing]
- * closes that by pinning the barriered kernel's output for a known input
- * against a value computed by hand, so agreement can only be reported when the
- * kernels are really computing the intended expression.
+ * THAT INFERENCE IS SOUND ONLY WHERE THE BARRIER IS KNOWN TO WORK, and the
+ * barrier is known to work on exactly one compiler. `plain <> barriered` really
+ * says "one of these two kernels is wrong"; reading it as "plain fused" is a
+ * step that borrows its warrant from the ACO measurement. The first non-ACO GPU
+ * this project ever ran on showed the borrowing was not free: on Intel Arc
+ * Graphics (Meteor Lake-P) the barriered kernel is the wrong one (backlog #123,
+ * docs/fp-contraction-policy.md §11).
+ *
+ * So this file now also carries a HOST reference — [ref_discipline], ported
+ * from the Vulkan tripwire, which needed one from the start because on RADV no
+ * affordable barrier works at all. A host reference is an oracle on every
+ * implementation rather than on one, and it is the same discipline the
+ * interpreter implements. It is used:
+ *
+ *   - in [sanity_barriered_computes_the_right_thing], to check over the whole
+ *     domain that the barrier really is defeating the fusion on the in-scope
+ *     device, instead of trusting a single hand-computed point (Intel passes
+ *     that point while being wrong on 4774 inputs);
+ *   - in [non_aco_implementations_do_not_fuse], as the thing the plain kernel
+ *     is compared against, so the locus cross-check cannot blame the plain
+ *     kernel for the barrier's own defects.
+ *
+ * A REJECTED ALTERNATIVE, recorded because it looks obviously right and is not.
+ * Splitting the expression across two kernel launches, with the binary16
+ * intermediate materialised in a __global buffer, seems to give an oracle by
+ * construction: no compiler can fuse across a dispatch. It does not. The
+ * fusion is multiply-into-narrowing, and BOTH of those live in the first
+ * kernel, so the dispatch boundary separates the wrong pair. Measured: the
+ * two-pass construction reproduces ACO's fused answer exactly, 620/63488 away
+ * from the discipline on RX 7900 XTX. A construction argument is not a
+ * measurement, and this one was wrong.
+ *
+ * The in-scope tripwire itself still compares plain against barriered, which is
+ * correct there and keeps the assertion pointed at the ACO behaviour it was
+ * written for — now with the barrier's validity checked rather than assumed.
  ******************************************************************************)
 
 open Sarek_opencl
@@ -131,6 +160,85 @@ let finite_bits =
   done ;
   Array.of_list !acc
 
+(* ---------------------------------------------------------------------- *)
+(* HOST REFERENCE                                                           *)
+(*                                                                          *)
+(* Ported verbatim from sarek-vulkan/test/test_vulkan_f16_tripwire.ml, which *)
+(* needed a host oracle from the start because on RADV NO affordable barrier *)
+(* works, so it had no barriered kernel to lean on. The duplication follows  *)
+(* the existing precedent in these two files (both already carry their own   *)
+(* [f16_decode] and [finite_bits]); they live in different libraries and a   *)
+(* shared test lib for sixty lines is not worth the build-graph edge.        *)
+(*                                                                          *)
+(* Why it is here now (backlog #123). [non_aco_implementations_do_not_fuse]  *)
+(* used the barriered kernel as its oracle on devices where the barrier had  *)
+(* never been checked. That is only sound on ACO. A host reference is sound  *)
+(* everywhere, and it is the same oracle the interpreter implements.        *)
+(* ---------------------------------------------------------------------- *)
+
+(* Round a binary64 to binary32. Every intermediate below is exactly
+   representable in binary64 before this is applied (a binary16 operand times a
+   binary32 constant needs at most 35 significand bits), so this is a single
+   correct rounding and not a double rounding. *)
+let f32 x = Int32.float_of_bits (Int32.bits_of_float x)
+
+let dec b =
+  match f16_decode b with
+  | Some v -> v
+  | None ->
+      if b land 0x3ff <> 0 then Float.nan
+      else if b land 0x8000 <> 0 then Float.neg_infinity
+      else Float.infinity
+
+let round_even v =
+  let f = Float.floor v in
+  let r = v -. f in
+  if r > 0.5 then f +. 1.0
+  else if r < 0.5 then f
+  else if Float.rem f 2.0 = 0.0 then f
+  else f +. 1.0
+
+(* Round-to-nearest-even of an exactly-represented real to a binary16 bit
+   pattern. [round_even] is exact because [a /. ldexp 1.0 k] is a power-of-two
+   rescale, and the rescaled value is below 2048. *)
+let f16_bits d =
+  if Float.is_nan d then 0x7E00
+  else
+    let s = if d < 0.0 || (d = 0.0 && 1.0 /. d < 0.0) then 0x8000 else 0 in
+    let a = Float.abs d in
+    if a = Float.infinity then s lor 0x7C00
+    else if a = 0.0 then s
+    else
+      (* [frexp] is exact by construction: it returns [(m, k)] with
+         [0.5 <= |m| < 1] and [a = m * 2^k], so the unbiased exponent is
+         [k - 1]. *)
+      let e = snd (Float.frexp a) - 1 in
+      if e < -14 then
+        (* subnormal; a carry out of the 10-bit field lands exactly on the
+           smallest normal, which the bit layout already spells correctly *)
+        s lor int_of_float (round_even (a /. ldexp 1.0 (-24)))
+      else
+        let q = round_even (a /. ldexp 1.0 (e - 10)) in
+        let e, q = if q >= 2048.0 then (e + 1, 1024.0) else (e, q) in
+        if e + 15 >= 31 then s lor 0x7C00
+        else s lor ((e + 15) lsl 10) lor (int_of_float q - 1024)
+
+let c11 = f32 1.1
+
+(* The kernel shape above, f16(f16(x*1.1) + 1000), under Sarek's discipline:
+   the multiply rounds to binary32, then to binary16, then the add rounds to
+   binary32 and the result to binary16. Four roundings, all mandated. *)
+let ref_discipline b =
+  let m = f16_bits (f32 (dec b *. c11)) in
+  f16_bits (f32 (dec m +. 1000.0))
+
+(* The same shape with the multiply absorbed into the narrowing that consumes
+   it: the first binary32 rounding is skipped. This is what ACO produces, and
+   it is the model whose separation from [ref_discipline] is the known 620. *)
+let ref_fused b =
+  let m = f16_bits (dec b *. c11) in
+  f16_bits (f32 (dec m +. 1000.0))
+
 let run_kernel device ~source ~inputs =
   let n = Array.length inputs in
   let host_in = Bigarray.(Array1.create int16_unsigned c_layout n) in
@@ -154,6 +262,17 @@ let run_kernel device ~source ~inputs =
   Backend.Memory.free din ;
   Backend.Memory.free dout ;
   Array.init n (fun i -> host_out.{i})
+
+let count_diffs a b =
+  let d = ref 0 and first = ref None in
+  Array.iteri
+    (fun i x ->
+      if x <> b.(i) then begin
+        incr d ;
+        if !first = None then first := Some i
+      end)
+    a ;
+  (!d, !first)
 
 (* ---------------------------------------------------------------------- *)
 (* SCOPE                                                                    *)
@@ -270,7 +389,7 @@ let sanity_barriered_computes_the_right_thing () =
       in
       let inputs = Array.make n_local one in
       let got = run_kernel device ~source:src_barriered ~inputs in
-      match f16_decode got.(0) with
+      (match f16_decode got.(0) with
       | None ->
           Alcotest.failf
             "barriered kernel returned a non-finite binary16 (bits 0x%04X) for \
@@ -281,7 +400,79 @@ let sanity_barriered_computes_the_right_thing () =
           Alcotest.(check (float 0.001))
             "barriered midround(1.0) = 1001.0 (oracle sanity)"
             1001.0
-            v)
+            v) ;
+      (* The one-point pin above is not enough on its own, and Intel hardware
+         proved it: on Intel Arc the barriered kernel drops the intermediate
+         narrowing on 4774 inputs, yet still returns 1001.0 for x=1.0, because
+         at that operand the dropped rounding does not change the final result.
+         A pin that a broken oracle passes is not a check. So sweep the whole
+         domain against the host reference. *)
+      let inputs = finite_bits in
+      let barriered = run_kernel device ~source:src_barriered ~inputs in
+      let want = Array.map ref_discipline inputs in
+      let diffs, first = count_diffs barriered want in
+      if diffs <> 0 then begin
+        let d v = match f16_decode v with Some x -> x | None -> nan in
+        let i = match first with Some i -> i | None -> 0 in
+        Alcotest.failf
+          "THE TRIPWIRE'S ORACLE IS NOT VALID ON THIS DEVICE.\n\n\
+           On %s the `volatile __local` barriered kernel disagrees with \
+           Sarek's f16 discipline on %d of %d finite binary16 inputs; first at \
+           x=%.9g (barriered %.9g, discipline %.9g).\n\n\
+           The barrier is only known to defeat the fusion on Mesa's ACO \
+           backend. Where it does not, [refusal_is_still_warranted]'s \
+           plain-vs-barriered comparison is measuring the barrier, not the \
+           fusion, and its verdict means nothing on this device.\n\n\
+           Do NOT relax this. Either find a barrier that works for this \
+           implementation, or re-express the tripwire against [ref_discipline] \
+           here too."
+          (Backend.Device.name device)
+          diffs
+          (Array.length inputs)
+          (d inputs.(i))
+          (d barriered.(i))
+          (d want.(i))
+      end)
+
+(* CALIBRATION. Host-only, so it runs everywhere including GPU-less CI. *)
+
+let host_rounding_round_trips () =
+  Array.iter
+    (fun b ->
+      if f16_bits (dec b) <> b then
+        Alcotest.failf
+          "host binary16 rounding is wrong: re-encoding the exact value of \
+           0x%04X gives 0x%04X. The locus cross-check below is measured \
+           against this function, so nothing there means anything until it is \
+           fixed."
+          b
+          (f16_bits (dec b)))
+    finite_bits ;
+  Alcotest.(check int)
+    "the exhaustive finite binary16 domain"
+    63488
+    (Array.length finite_bits)
+
+let host_models_reproduce_the_620 () =
+  let disc = Array.map ref_discipline finite_bits in
+  let fused = Array.map ref_fused finite_bits in
+  let diffs, _ = count_diffs disc fused in
+  if diffs <> 620 then
+    Alcotest.failf
+      "CALIBRATION FAILED — do not read any other result in this file.\n\n\
+       On the kernel shape f16(f16(x*1.1) + 1000), this file's own host models \
+       separate the two-roundings discipline from the fused-first-narrowing \
+       behaviour on %d of %d inputs. It must be 620: that is the figure \
+       measured independently on hiprtc/gfx1100 \
+       (sarek-hip/test/test_hip_f16.ml) and on rusticl/radeonsi \
+       (docs/fp-contraction-policy.md), and reproduced on Intel Arc by the \
+       `fusedctl` variant of tools/probes/opencl_f16_contraction_probe.c.\n\n\
+       Reproducing a known positive is what licenses believing the null that \
+       the locus cross-check reports on a non-fusing device. If this number \
+       moved, [f16_bits], [f32] or [dec] is wrong — fix the host reference, do \
+       not adjust this expectation."
+      diffs
+      (Array.length finite_bits)
 
 let refusal_is_still_warranted () =
   with_in_scope_devices (fun device ->
@@ -364,7 +555,24 @@ let refusal_is_still_warranted () =
    flake. It must not be silenced by narrowing the predicate — the message says
    what to do instead. Out-of-scope devices that cannot build or run the kernel
    at all (no cl_khr_fp16, say) are reported and skipped over, since a device
-   that cannot express the computation says nothing about fusion either way. *)
+   that cannot express the computation says nothing about fusion either way.
+
+   WHAT THIS COMPARES, AND WHY IT CHANGED (backlog #123). It used to compare the
+   plain kernel against the BARRIERED kernel, reading any difference as "the
+   plain kernel fused". That is a comparison with no oracle: the two kernels
+   compute the same expression, so a disagreement proves one of them is wrong
+   and says nothing about which. On ACO the barriered kernel is the right one,
+   which is where the reading came from; the first non-ACO GPU this project ever
+   ran on falsified it. On Intel Arc Graphics (Meteor Lake-P) under the Intel
+   Compute Runtime the plain kernel is correct on all 63488 inputs and the
+   BARRIERED kernel is wrong on 4774 — so the old comparison went red and
+   announced, in its own failure text, that Intel "fuses too" and that the
+   documented locus-is-ACO scoping was falsified. Both statements were the exact
+   opposite of what the hardware does.
+
+   So it now compares the plain kernel against [run_oracle], which is correct by
+   construction rather than by measurement on one vendor's compiler. A red here
+   means the plain kernel really does skip a mandated rounding. *)
 let non_aco_implementations_do_not_fuse () =
   let devices = all_devices () in
   let out_of_scope =
@@ -386,9 +594,10 @@ let non_aco_implementations_do_not_fuse () =
             let inputs = finite_bits in
             let plain = run_kernel device ~source:src_plain ~inputs in
             let barriered = run_kernel device ~source:src_barriered ~inputs in
-            let diffs = ref 0 in
-            Array.iteri (fun i p -> if p <> barriered.(i) then incr diffs) plain ;
-            Ok (!diffs, Array.length inputs)
+            let want = Array.map ref_discipline inputs in
+            let fused, first = count_diffs plain want in
+            let barrier_harm, _ = count_diffs barriered want in
+            Ok (fused, first, barrier_harm, inputs, plain, want)
           with e -> Error (Printexc.to_string e)
         with
         | Error msg ->
@@ -398,34 +607,70 @@ let non_aco_implementations_do_not_fuse () =
                %!"
               name
               msg
-        | Ok (diffs, n) ->
-            Printf.printf "    %s: %d/%d differ\n%!" name diffs n ;
-            if diffs <> 0 then
+        | Ok (fused, first, barrier_harm, inputs, plain, want) ->
+            let n = Array.length inputs in
+            (* The barrier count is reported, never asserted. It is not what
+               this check is about, and on Intel it is nonzero as shipped: the
+               ACO barrier is measured HARMFUL there. Asserting it would pin a
+               permanent red with no action available. The place it must not go
+               unnoticed is where it is load-bearing, and that IS asserted —
+               see [sanity_barriered_computes_the_right_thing]. *)
+            Printf.printf
+              "    %s: plain vs discipline %d/%d differ (barriered vs \
+               discipline %d/%d, reported only)\n\
+               %!"
+              name
+              fused
+              n
+              barrier_harm
+              n ;
+            if fused <> 0 then begin
+              let d v = match f16_decode v with Some x -> x | None -> nan in
+              let i = match first with Some i -> i | None -> 0 in
               Alcotest.failf
                 "THE LOCUS-IS-ACO CLAIM IS NOW TOO NARROW.\n\n\
-                 %s is NOT an ACO device, yet %d of %d finite binary16 inputs \
-                 differ between the naive and barriered narrowings — it fuses \
-                 too.\n\n\
-                 docs/fp-contraction-policy.md currently attributes this \
-                 defect to Mesa's ACO backend specifically, and cites the fact \
-                 that non-ACO OpenCL does not fuse as evidence that rusticl \
-                 and HIP are one bug seen twice. This device falsifies that \
-                 scoping.\n\n\
+                 %s is NOT an ACO device, yet the naive narrowing disagrees \
+                 with Sarek's f16 discipline on %d of %d finite binary16 \
+                 inputs; first at x=%.9g (naive %.9g, discipline %.9g). The \
+                 discipline is the host reference, calibrated on the same run \
+                 by [host_models_reproduce_the_620], so this device really is \
+                 skipping a mandated rounding.\n\n\
+                 docs/fp-contraction-policy.md attributes this defect to \
+                 Mesa's ACO backend specifically, and cites the fact that \
+                 non-ACO OpenCL does not fuse as evidence that rusticl and HIP \
+                 are one bug seen twice. This device falsifies that scoping.\n\n\
                  Do NOT fix this by excluding the device from the predicate. \
                  Widen the claim: re-measure with \
-                 tools/probes/opencl_f16_contraction_probe.c on this platform, \
-                 correct the OpenCL rows in docs/fp-contraction-policy.md, and \
-                 reconsider whether the refusal in Sarek_ir_opencl should be \
-                 stated per-implementation rather than per-backend-compiler."
+                 tools/probes/opencl_f16_contraction_probe.c on this platform \
+                 (its `fusedctl` variant calibrates the sweep against the \
+                 known 620/63488), correct the OpenCL rows in \
+                 docs/fp-contraction-policy.md, and reconsider whether the \
+                 refusal in Sarek_ir_opencl should be stated \
+                 per-implementation rather than per-backend-compiler."
                 name
-                diffs
-                n)
+                fused
+                n
+                (d inputs.(i))
+                (d plain.(i))
+                (d want.(i))
+            end)
       out_of_scope
 
 let () =
   Alcotest.run
     "Opencl_f16_tripwire"
     [
+      ( "calibration",
+        [
+          Alcotest.test_case
+            "host binary16 rounding round-trips every finite input"
+            `Quick
+            host_rounding_round_trips;
+          Alcotest.test_case
+            "host models reproduce the known 620"
+            `Quick
+            host_models_reproduce_the_620;
+        ] );
       ( "refusal_still_warranted",
         [
           Alcotest.test_case
