@@ -878,7 +878,7 @@ refusal before slice 3.
 | **1** | element-wise model characterisation of ACO scalar f16 | whether the contract of §1.2 is deliverable at all | RX 7900 XTX + Raphael iGPU (local) | no | **DONE — all 20 shapes measured (2 in slice 1, the other 18 in backlog-151). Deliverable, and §1.2's set is generated rather than enumerated. 18 shapes measured but NOT admitted.** |
 | **2** | `shaderFloat16` + driver-identity + capability plumbing | the gate can be keyed on a driver, not a device name | local, both devices | no | **DONE 2026-07-27** — plus the coopmat capability query and the fragment type of slice 4b |
 | **3** | GLSL scalar f16, allowlisted | Sarek-*generated* f16 shaders meet the contract | RX 7900 XTX (local) | **yes**, on an allowlist | open |
-| **4** | backlog-62 Vulkan coopmat, f16×f16→f32 | the tensor-core path, end to end | RX 7900 XTX (local) | yes (new capability) | open |
+| **4** | backlog-62 Vulkan coopmat, f16×f16→f32 | the tensor-core path, end to end | RX 7900 XTX (local) | yes (new capability) | **4a/4c DONE for the INTEGER configurations, 2026-07-27 — see below. The f16 half is untouched and 4a's numeric contract is still unmeasured.** |
 | **5** | backlog-63 Metal — **scalar f16 first** | the Metal row of §2 | ladon (M4) | no | **DONE 2026-07-27 — strict, 0/63488** |
 | **6** | backlog-63 Metal `simdgroup_matrix` | the Apple tensor-core path | ladon (M4) | yes | **DONE 2026-07-27 — availability + numerics; no integer path** |
 
@@ -1131,6 +1131,86 @@ lifting it buys nothing but consistency. **Recommend leaving OpenCL refused** an
 saying why, rather than lifting it for symmetry.
 
 ### Slice 4 — backlog-62, Vulkan cooperative-matrix (local)
+
+> **OUTCOME, 2026-07-27 — the INTEGER path is done end to end, and the order of
+> 4a/4b/4c was deliberately inverted.** Executed on RADV, Mesa 26.1.4-arch3.1,
+> Vulkan 1.4.354, on an `AMD Radeon RX 7900 XTX (RADV NAVI31)`, with the
+> `AMD Ryzen 9 7950X` iGPU (`RADV RAPHAEL_MENDOCINO`) as the negative device.
+> Instruments: `sarek-vulkan/test/test_vulkan_coopmat_integer.ml` (driver side,
+> hand-written GLSL), `sarek/tests/e2e/test_coopmat_integer_e2e.ml` (codegen
+> side, Sarek IR through `Sarek_ir_glsl`), and
+> `sarek-vulkan/probe/probe_vulkan_coopmat_configs.ml` (the advertised table).
+>
+> **Why the inversion.** This slice leads with f16 because f16 scalar is a
+> prerequisite for backlog-63 and for bf16 regardless. But 4a's numeric
+> contract — the γ₁₆ bound of §5.2 and the two positive controls of §5.4 — is
+> entirely unmeasured, whereas `SPV_KHR_cooperative_matrix` states that INTEGER
+> accumulation is exact at the precision of the result type. So the integer
+> configurations land under Sarek's **existing strict contract** with no
+> relaxation, no allowlist, no opt-in and no bound to derive, and they are what
+> got a full DSL-to-executed-result path first. §8's argument, delivered.
+>
+> **The advertised table, measured.** All fourteen are 16×16×16 subgroup scope.
+> Twelve integer: `u8×u8`, `u8×s8`, `s8×u8`, `s8×s8`, each with `→u32`, `→s32`
+> and `→s32 saturating`. Two float: `f16×f16→f16` and `f16×f16→f32`. **Every
+> integer configuration has 8-bit operands with a 32-bit accumulator** — there
+> is no wider integer operand type to fall back on.
+>
+> **Three device features slice 2 did not request, all mandatory.** Read off the
+> SPIR-V rather than guessed: `glslc` on a 16×16×16 u8 `coopMatMulAdd` emits
+> `OpCapability Int8`, `StorageBuffer8BitAccess`, `VulkanMemoryModel` and
+> `CooperativeMatrixKHR`; slice 2 enables only the last. `shaderInt8`,
+> `storageBuffer8BitAccess` and `vulkanMemoryModel` are now queried and
+> **requested** at `vkCreateDevice`. **`vulkanMemoryModel` is required by the
+> FLOAT path too** — glslang makes `GL_KHR_memory_scope_semantics` a
+> prerequisite of `GL_KHR_cooperative_matrix` — so slice 2's coopmat plumbing
+> was incomplete independently of the integer work.
+>
+> **Coverage is exhaustive, not sampled.** The full domain of a 16×16×16 u8
+> multiply-add is 256⁵¹² and cannot be enumerated; the domain that matters for
+> an exactness claim can be. There are exactly 65536 ordered pairs of u8 operand
+> values and one multiply-add performs 4096 multiplications, so
+> `A[i][k] = 16k+i` with `B[k][j] = 16t+j` gives dispatch `t` sixteen disjoint
+> 16×16 blocks of the pair space and `t = 0..15` tiles all 65536 exactly once.
+> Sixteen dispatches, every pair, with a nonzero mixed-sign `C`, bit-identical
+> to the oracle on every output. Wrapping accumulation is exact too, and the
+> case asserts that the reference actually wrapped rather than merely running.
+>
+> **The refusal was observed on both halves.** The iGPU advertises no
+> `VK_KHR_cooperative_matrix`; its verdict refuses while the RX 7900 XTX permits
+> in the same run under the same driver build, and the launch gate refuses on
+> six devices (the Vulkan iGPU, both OpenCL devices, Native, and both
+> Interpreter devices). The gate assertion relates two **independently
+> observed** facts — the extension bit and the verdict — rather than comparing
+> the verdict to the list it reads, which is the tautology slice 2's gate test
+> fell into.
+>
+> **Every claim above was proved falsifiable by mutation.** Seven mutations,
+> each producing the failure it promises: B loaded column-major (driver side and
+> codegen side), the shader dropping C, the interpreter oracle dropping C, the
+> codegen swapping A and B (caught by glslang — `UseA` and `UseB` are not
+> interchangeable types), and the launch gate ignoring the configurations.
+>
+> **One result worth carrying forward, because no results-based test can catch
+> it.** With `storageBuffer8BitAccess` never requested, all three numerics tests
+> stay GREEN and only the feature assertion goes red. That is #142's failure
+> mode reproduced for this feature: RADV computes the right answer from an
+> illegal shader. A capability model is the only instrument that can see it.
+>
+> **What this did NOT do**, and each is a refusal in the code rather than an
+> omission:
+> - **The f16 coopmat path.** `Sarek_ir_glsl` refuses float components, and so
+>   does the interpreter — the latter because §5.1's implementation-defined
+>   addition order means no strict oracle exists to compare against. 4a's
+>   contract is exactly as unmeasured as it was.
+> - **The scalar-f16 refusal of slice 3-as-written is untouched.**
+> - **Saturating accumulation, column-major layout, workgroup scope.** Each is
+>   one enumerant to emit and a second behaviour to verify; none has executed.
+> - **The PPX surface.** A coopmat kernel is built as IR directly. Nothing in
+>   `[%kernel ...]` produces an `SCoopmat`, and the PPX's parallel `stmt` type
+>   deliberately did not gain the constructor.
+> - **Metal, CUDA, OpenCL, WGSL, PTX** refuse rather than emit.
+
 
 Sub-sliced deliberately, because 4a is cheap, is the highest-information step,
 and needs nothing from the DSL:
