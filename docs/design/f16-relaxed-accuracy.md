@@ -1,0 +1,617 @@
+# The relaxed f16 accuracy contract, and the tensor-core paths it unblocks
+
+_What Sarek promises about f16 results when bit-identity with the interpreter is
+no longer required, and how #62 (Vulkan cooperative-matrix) and #63 (Metal
+`simdgroup_matrix`) are sliced on top of it._
+
+**Status:** design only. **No refusal is lifted by this change.** **Issues:** #62,
+#63; depends on the f16 scalar type (#57) and the capability model (#64).
+**Date:** 2026-07-27.
+
+Companion documents, neither of which is edited here:
+[`docs/fp-contraction-policy.md`](../fp-contraction-policy.md) is the measurement
+record this design consumes;
+[`docs/design/capability-model.md`](capability-model.md) is the machinery it
+plugs into; [`docs/design/f16-dsl-element-type.md`](f16-dsl-element-type.md) §8
+slice 3 is the scope note this document fills in.
+
+---
+
+## 0. The decision, and what it does not decide
+
+The project owner has ruled that **bit-identical agreement with the interpreter
+is no longer a requirement for f16**, provided the results are correct,
+deterministic, the technical limitation is understood and explained, and all of
+it is documented.
+
+That is a genuine relaxation and it is what makes #62 and #63 reachable. It is
+also not yet a specification. "Correct" without a bound admits anything; and this
+repository has already shipped a gate whose tolerance was wider than the effect
+it existed to detect (`docs/fp-contraction-policy.md` §11.5, backlog #118), where
+the consequence was a fully collapsed implementation reading green.
+
+This document turns the decision into something a test can fail.
+
+**It also declines to apply the relaxation as widely as the decision would
+permit**, for a reason set out in §3: the two things being unblocked cannot hold
+bit-identity for *different* reasons, only one of which is unfixable, and
+relaxing both on the strength of the unfixable one gives away the fixable one for
+free.
+
+---
+
+## 1. What replaces bit-identity
+
+### 1.1 Not an ulp band. A finite set of admissible rounding semantics.
+
+The obvious move is a tolerance: "the device must agree with the interpreter to
+within N ulp of binary16". **Do not take it.** It is measurably unable to do the
+job.
+
+Two behaviours have been observed on the f16 narrowing, and they are not the same
+kind of thing:
+
+| behaviour | where measured | what it is |
+|---|---|---|
+| the f32 multiply is absorbed into the f32→f16 narrowing, rounding **once** where the DSL mandates twice | ACO — hiprtc/gfx1100, rusticl/radeonsi, RADV | a well-defined alternative rounding of the *same* expression |
+| the intermediate binary16 narrowing is **dropped entirely** | IGC on Intel Arc, under a `volatile` barrier (`fp-contraction-policy.md` §11.4) | a different expression |
+
+Both are **at most one ulp of binary16**. §11.4's worked divergence is `x =
+0.681640625`: the device returns `1000.5` where the discipline mandates `1001`,
+and 1000.5 and 1001 are *adjacent* binary16 values (1001 lies in the binade
+[512, 1024), where the binary16 ulp is 0.5). So a 1-ulp band admits both, and a
+band tight enough to exclude the second excludes the first as well. **A pure ulp
+gate cannot separate a characterised deviation from a plain defect here.** That
+is not a hypothesis about tolerances in general; it is arithmetic on two numbers
+this project has already measured.
+
+### 1.2 The contract
+
+> **Sarek's f16 contract, relaxed form.** For each *(backend, driver, expression
+> shape)* Sarek records a finite set of **admissible reference semantics**. The
+> device result must be **bit-identical to one member of that set**, on every
+> input the gate sweeps. The interpreter's semantics — every operation rounded as
+> written, per `fp-contraction-policy.md` §1 — is always a member. Any additional
+> member is a *named, closed-form, measured* alternative, recorded per backend
+> and per driver. A result matching no member is a **failure**, however small the
+> numeric difference.
+
+Two named members exist today, and both are functions a host reference can
+compute exactly:
+
+- **`S_strict`** — the interpreter. f16 arithmetic performed in binary32 and
+  narrowed by an explicit round-to-nearest-even step at every narrowing the
+  source writes. Already implemented twice in-tree, as `ref_discipline` in
+  `sarek-vulkan/test/test_vulkan_f16_tripwire.ml` and its port into
+  `sarek-opencl/test/test_opencl_f16_tripwire.ml`.
+- **`S_fuse_mul_into_narrowing`** — every f32 multiply immediately consumed by an
+  f32→f16 narrowing is evaluated at binary32 (or better) and narrowed in a
+  **single** rounding. Already implemented as `ref_fused` in the same two files,
+  and as the `fusedctl` variant of `tools/probes/opencl_f16_contraction_probe.c`.
+
+This is exact agreement, not a tolerance, so it is strictly *tighter* than
+today's bit-identity requirement in every direction except the one deviation it
+names. It is the same discipline as `Test_helpers.classify_df64_result` — an
+allowlist of specific, argued deviations rather than a widened bound — and it is
+available to us in a stronger form than df64 got, because this deviation has a
+closed form and df64's does not.
+
+### 1.3 The collapse ceiling, kept anyway
+
+The model set is the discriminator; a ceiling is still required, for the case
+where a *new* driver produces something that matches no model and we have to
+decide whether it is a near-miss or garbage. Mirroring
+`Test_helpers.df64_collapsed_ceiling`:
+
+> **`f16_relaxed_ceiling`** — no admitted deviation may exceed **1 ulp of the
+> binary16 result**, measured on the final value, with subnormal results compared
+> absolutely against `2^-24` (the binary16 subnormal spacing). Derivation, not a
+> round number: every deviation in the admitted class is the *elision of exactly
+> one round-to-nearest step*, and a single elided rounding moves a value by at
+> most half an ulp at the elided step, which is at most one ulp at the final step.
+> Anything larger is not a rounding difference and must not be filed as one.
+
+The ceiling is **necessary and not sufficient** — §1.1 is the proof, since the
+IGC dropped-narrowing defect sits exactly at 1 ulp. Both checks run; both must
+pass.
+
+### 1.4 What "deterministic" means, operationally
+
+Promised, and tested:
+
+> **Same input, same physical device, same driver version, same Sarek build, same
+> dispatch shape → bit-identical result, across launches within a process and
+> across processes.**
+
+Not promised, and **measured false** rather than merely doubted: the same result
+across drivers, driver versions, vendors, or architectures. ACO returns one
+answer on `f16(x*1.1)` and nvrtc/IGC/pocl return a different one, on the same
+source, today (`fp-contraction-policy.md` §2, §11.3). Any statement of the strong
+reading would be a false claim, so this document does not make it.
+
+For cooperative-matrix specifically the promise is weaker still, and by
+specification rather than by driver behaviour. `SPV_KHR_cooperative_matrix` says
+of `OpCooperativeMatrixMulAddKHR`, verbatim: **"The order of the operations is
+implementation-dependent"** and **"The internal precision of floating-point
+operations is defined by the client API"**; and the mapping of matrix components
+to invocations is likewise implementation-dependent. Evidence tier for those two
+sentences: **unverified** in this repository's sense — quoted from the Khronos
+SPIR-V registry, not measured here. The consequence is that a coopmat result may
+legitimately depend on the dispatch shape and the subgroup mapping, so §5's
+determinism gate varies the dispatch shape and *reports* rather than asserts
+until it has been measured.
+
+Test shape, all three host-only or single-device, none requiring a second
+machine: (a) re-run the exhaustive sweep in-process and require bit-identical
+output; (b) re-run in a fresh process; (c) for coopmat, vary workgroup size and
+matrix tiling and record whether the result moves.
+
+### 1.5 Scope — what the relaxation does NOT touch
+
+Stated because a relaxation that leaks is worse than no relaxation.
+
+- **f32, f64 and `Sarek_df64` contracts are unchanged.** Nothing here licenses a
+  wider bound for any of them.
+- **A backend that meets `S_strict` is held to `S_strict`.** CUDA/nvrtc and
+  HIP/AMDGPU are 0/63488 today (`fp-contraction-policy.md` §2, §7). They do not
+  gain an allowance because another backend needed one. The admissible set is
+  keyed per backend and per driver; it is not a global widening.
+- **Integer cooperative-matrix configurations stay strict.**
+  `SPV_KHR_cooperative_matrix` states that integer additions "are performed at
+  the precision of *Result Type*, are exact". On the local device 12 of the 14
+  advertised configurations are integer (§4). They need no relaxation at all —
+  see the recommendation in §8.
+- **`Unknown` still does not permit.** The relaxation is an **allowlist**, not a
+  lifting. A driver nobody has swept keeps today's refusal, automatically, with
+  no new decision required. This is the single most important structural property
+  of the design and §6 is how it is enforced.
+
+---
+
+## 2. The per-backend deviation record
+
+These are the numbers this design holds itself to. Every row names the device and
+the driver, per `fp-contraction-policy.md` §1 corollary 3. Evidence tiers are that
+document's.
+
+| backend / driver | device(s) | deviation from `S_strict` | matches `S_fuse_mul_into_narrowing`? | evidence | verdict under this contract |
+|---|---|---|---|---|---|
+| **CUDA / nvrtc** | GTX 1070 Max-Q, sm_61, CUDA 12.9, driver 580.119.02 | **0 / 63488** | n/a | executed | **strict**, unchanged |
+| **HIP / AMDGPU** | RX 7900 XTX (gfx1100), Raphael iGPU (gfx1036), ROCm hiprtc, with the opacity barrier | **0 / 63488**, all 20 emittable shapes | n/a | executed + machine-code | **strict**, unchanged |
+| **OpenCL / rusticl** | RX 7900 XTX + Raphael iGPU, Mesa 26.1.4-arch3.1 | **620 / 63488** on `f16(f16(x*1.1)+1000)` | **count and first-divergence agreement** (620, first divergence `x = 5.68359375`, device 1006.5 vs reference 1006 — identical to `fusedctl`'s deliberate single-rounding on Intel). **Element-wise agreement not established.** | executed | **candidate**, blocked on slice 1 |
+| **OpenCL / pocl (x86), Intel IGC, Intel oneAPI CPU** | AMD EPYC 7763 (CI), Intel Arc Graphics (MTL), Core Ultra 9 185H | **0 / 63488** | n/a | executed | **strict**; refusal is currently over-broad here |
+| **Vulkan / RADV** | RX 7900 XTX (NAVI31) + Raphael iGPU (RAPHAEL_MENDOCINO), Mesa 26.1.4-arch3.1 | **2912 / 63488** on `f16(x*1.1)`; **5075** plain / **4776** with `precise` on `f16(f16(x*1.1)+1000)` | one-narrowing shape: **exact, 0/63488 against a single-rounding model**. Two-narrowing shape: **not measured against any model**, and `precise` changes the count, so a single model does not obviously cover it | executed | **candidate for the one-narrowing shape only**; blocked on slice 1 |
+| **Vulkan / ANV** | Intel Arc Graphics (MTL), Mesa 26.1.2-arch3.1 | **0 / 63488** | n/a | executed | **strict**; refusal is currently over-broad here |
+| **Metal** | — | **never probed** | — | none | **`Unknown` → refused.** Needs ladon (§7) |
+| **WGSL / naga** | — | **never probed** | — | none | **`Unknown` → refused** |
+| **PTX** | — | refuses kernel-level f16 by design (#57 slice 2) | — | by-construction | nothing to relax |
+
+Three things this table says that are easy to miss:
+
+1. **The relaxation is needed on exactly two stacks** — rusticl and RADV, both
+   ACO. Everything else either already meets `S_strict` or has never been
+   measured. It is a much narrower change than "relax f16".
+2. **The RADV two-narrowing shape is the open risk.** 5075 plain against 4776
+   with `precise` means the decoration *changes the answer* while
+   `fp-contraction-policy.md` §6 shows it produces byte-identical ISA on the
+   one-narrowing shape. Those two facts are not obviously consistent and nobody
+   has reconciled them. If the two-narrowing shape matches no closed-form model,
+   it stays refused and the contract becomes per-shape — a materially worse
+   design, and the owner should hear about it before more effort is spent. Slice 1
+   is the decision point.
+3. **pocl, IGC, ANV and the Intel CPU runtime are refused today for a defect they
+   do not have.** `capability-model.md` §5 already records this as the
+   over-refusal that follows from having no compiler-identity probe. It is not
+   made worse by this design, and slice 2's `VkPhysicalDeviceDriverProperties`
+   plumbing narrows the Vulkan half of it.
+
+---
+
+## 3. Why the relaxation is worth it — and why it should not be uniform
+
+**The honest sentence.** This is a **weaker guarantee than Sarek held before.**
+Before, an f16 result on a supported backend was bit-identical to the
+interpreter, and the interpreter is the definition of what a Sarek program means;
+after, on two named driver stacks, it is bit-identical to a *named alternative
+rounding* of the same program. A user who diffs two devices bit-for-bit will now
+see differences on those stacks, legitimately. That is the price.
+
+What it buys is that the tensor-core paths become reachable at all. Neither
+`VK_KHR_cooperative_matrix` (#62) nor Metal `simdgroup_matrix` (#63) can be
+expressed without f16 as a DSL element type on those backends
+(`f16-dsl-element-type.md` §1), and both are the funded direction (ibid. §10 Q2).
+
+**But the two halves are not blocked for the same reason, and this matters.**
+
+- **Cooperative-matrix accumulation cannot be bit-reproduced against any fixed
+  reference, by specification.** The order of operations is
+  implementation-dependent (§1.4). There is no barrier, no flag and no source
+  formulation that recovers it. Here the relaxation is the *only* route.
+- **Scalar f16 on RADV and rusticl can be bit-reproduced, at a cost.**
+  `fp-contraction-policy.md` §2 records a working barrier for each: forcing the
+  f16 bit pattern through a global round-trip gives **0 / 63488** on both stacks.
+  It is rejected as unaffordable (a memory round-trip per narrowing, into a
+  scratch buffer the backend does not currently own), not as impossible. So for
+  the scalar case the relaxation is a **performance decision**, not a reachability
+  one, and it should be presented to the owner as such rather than folded into
+  the coopmat argument.
+
+**Recommendation.** Take the relaxation for both, because the scalar case is a
+prerequisite for the matrix case and paying a global round-trip per narrowing
+inside a matmul inner loop would defeat the purpose. But record it as a
+performance trade in the scalar case, and keep the expensive-but-exact barrier
+documented as a real option — if a future user needs bit-identity more than
+throughput, the mechanism exists and has been measured.
+
+---
+
+## 4. Cooperative-matrix availability on the local device — measured
+
+**Executed 2026-07-27** on this workstation via
+`tools/probes/vulkan_coopmat_probe.c` (committed with this document; it creates a
+Vulkan instance, queries, and destroys it — no device, no shader). Evidence
+tier: **executed**.
+
+**`VK_KHR_cooperative_matrix` IS advertised locally**, on the discrete GPU only:
+
+| | AMD Radeon RX 7900 XTX (RADV NAVI31) | AMD Ryzen 9 7950X (RADV RAPHAEL_MENDOCINO) |
+|---|---|---|
+| driver | radv, Mesa 26.1.4-arch3.1, Vulkan 1.4.354 | radv, Mesa 26.1.4-arch3.1, Vulkan 1.4.354 |
+| `VK_KHR_cooperative_matrix` | **YES** (extension revision 2) | **no** |
+| `cooperativeMatrix` feature | **true** | false |
+| `cooperativeMatrixRobustBufferAccess` | true | — |
+| `cooperativeMatrixSupportedStages` | `SHADER_STAGE_COMPUTE_BIT` only | — |
+| `VK_KHR_shader_float16_int8` / `shaderFloat16` | YES / **true** | YES / **true** |
+| `VK_KHR_16bit_storage` / `storageBuffer16BitAccess` | YES / **true** | YES / **true** |
+
+All 14 advertised configurations on NAVI31 are **M=16, N=16, K=16**, **`scope =
+subgroup`**:
+
+| A | B | C | Result | saturating | count |
+|---|---|---|---|---|---|
+| u8/s8 (all four sign combinations) | u8/s8 | u32 | u32 | no | 4 |
+| u8/s8 (all four) | u8/s8 | s32 | s32 | no | 4 |
+| u8/s8 (all four) | u8/s8 | s32 | s32 | **yes** | 4 |
+| **f16** | **f16** | **f16** | **f16** | no | 1 |
+| **f16** | **f16** | **f32** | **f32** | no | 1 |
+
+Four consequences for the plan:
+
+1. **#62 is not blocked on hardware.** The path can be built and measured
+   locally, end to end.
+2. **Only 2 of 14 configurations need the relaxed contract.** The other 12 are
+   integer, and the SPIR-V extension states integer accumulation is exact — they
+   are deliverable under the *existing* strict contract. See §8.
+3. **`shaderFloat16` is available and Sarek does not enable it.**
+   `fp-contraction-policy.md` §7(b) flags this as real unplumbed work;
+   `sarek-vulkan/Vulkan_api_device.ml` chains no feature structs beyond core
+   `VkPhysicalDeviceFeatures`. The probe confirms the feature is *there* to be
+   enabled, so it is a plumbing slice and not a hardware question.
+4. **The iGPU is a free negative device.** Coopmat is `Device_optional` in
+   `capability-model.md`'s taxonomy, and this box has one device that has it and
+   one that does not, in the same driver — so the capability gate can be tested
+   for both outcomes without any second machine.
+
+**Not measured, and not to be inferred:** nothing here says what RADV's coopmat
+MulAdd *computes*. The probe queries availability. The numeric contract of §5 is
+unmeasured on every implementation.
+
+---
+
+## 5. The coopmat numeric contract (proposed, §4 slice 4a measures it)
+
+`S_strict` and `S_fuse_mul_into_narrowing` are the wrong instruments for a
+16×16×16 MulAdd: the freedom the spec grants is in the *accumulation order*, and
+there are many orders. A derived bound is the right shape, and for the
+f16×f16→**f32** configuration it is tight, for a reason worth stating because it
+makes the configuration choice:
+
+- **An f16 × f16 product is exact in binary32.** Two 11-bit significands multiply
+  to at most 22 bits, which fits binary32's 24, and the exponent range of the
+  product is comfortably inside binary32's. Evidence tier: **by-construction**.
+  So the products contribute *no* error at all, whatever order they are formed
+  in.
+- **The only freedom left is the order of the K−1 = 15 binary32 additions.** The
+  classical bound for a summation in any order is
+  `|error| ≤ ((K−1)·u) / (1 − (K−1)·u) · Σ|p_i|` with `u = 2^-24`, i.e.
+  **≤ 8.94e-07 · Σ|p_i|** for K = 16. Stated against `Σ|p_i|` and not against the
+  result, deliberately: a cancelling dot product has unbounded *relative* error
+  under any summation order, and quoting a relative-to-result bound would be the
+  kind of number that cannot fail.
+
+> **Proposed contract, f16×f16→f32 coopmat:** the device result of a 16×16×16
+> `OpCooperativeMatrixMulAddKHR` must lie within `8.94e-07 · Σ|p_i|` of the
+> exactly-computed dot product, elementwise, where `Σ|p_i|` is computed exactly
+> (the products are exact, §5 bullet 1, so a binary64 host reference is exact for
+> K = 16).
+
+The same bound for the f16×f16→**f16** configuration is `15 · 2^-11 ≈ 7.3e-03 ·
+Σ|p_i|` — three and a half orders of magnitude looser, and wide enough to hide
+almost any implementation defect. **Recommendation: admit the f32-accumulate
+configuration first, and do not admit the f16-accumulate one without a separate
+argued case.** This is the §11.5 lesson applied before rather than after.
+
+**Required positive control**, without which the bound is a gate that cannot
+fail: a host implementation that accumulates in **binary16** must be *rejected*
+by the f32-accumulate gate. It is a five-line reference and it makes the
+difference between a measurement and a formality.
+
+---
+
+## 6. How a DSL author finds out
+
+Silence is not an option; it is the failure mode this repository's recent history
+is made of. The mechanism is `capability-model.md`'s, used as designed and
+without extending it.
+
+**Kinds.** The relaxed path is `Toolchain_semantic` (the evidence: ACO's combine,
+with the measured counts of §2) composed with `Policy` (the verdict: admitted, on
+this allowlist). `capability-model.md` §5 already lists the current refusals as
+"expressible, not yet wired" in exactly this pair; this design turns the verdict
+from *refuse* to *admit-on-allowlist* and leaves the kinds alone.
+
+**Verdict algebra unchanged, and this is the safety property.** No fourth
+constructor — `capability-model.md` §3 is right that adding one should be a
+compile error at the deciding site, and there is no need. Instead:
+
+- `Available` — the (driver, driver version, shape class) triple is on the
+  measured allowlist and the exhaustive sweep is green in CI or on a
+  workstation gate. Strict semantics.
+- `Available` **carrying a relaxation record** — same, but the admitted set has
+  more than one member. The record names the model and cites the row of §2.
+- `Unknown _` — **everything else, including every driver nobody has swept.**
+  Does not permit. Today's refusal is the default and stays the default; a new
+  Mesa release does not silently start emitting relaxed f16.
+
+**Three surfaces, and the choice between them is coupled to the strength of the
+evidence** — which is the point, and is a decision the owner should confirm:
+
+| evidence for the deviation | what the author gets |
+|---|---|
+| exact match to a named closed-form model, swept exhaustively (`S_fuse_mul_into_narrowing` on ACO, if slice 1 confirms it) | a **one-time runtime diagnostic** on first launch of an f16 kernel on that device, naming the model and the doc section, on by default; silenceable only by an explicit call, never by accident |
+| a *bounded* deviation with no closed form (the coopmat case, §5) | **explicit opt-in required** — `Sarek.accept_relaxed_f16 ~reason` or equivalent, and the launch fails without it |
+| unmeasured | refused, as today |
+
+Rationale for the split: an opt-in is how "the limitation is understood" is
+evidenced, and it is cheap where the deviation is exactly characterised and
+expensive where it is not. Making it mandatory everywhere would make the
+tensor-core path unusable by default and defeat the unblock; making it mandatory
+nowhere would make the coopmat bound something a user can meet without ever
+having read what it means. **Flagged as an owner decision, not settled here.**
+
+**Also required, and cheap:** the generated device source carries a header
+comment naming the semantics in force, so anyone reading a dumped kernel sees it;
+and the `Sarek_capability` verdict is queryable before launch so a program can
+branch on it rather than discovering it in a diagnostic.
+
+---
+
+## 7. Slicing plan for #62 and #63
+
+Each slice names what it proves and what hardware it needs. Nothing below lifts a
+refusal before slice 3.
+
+| # | slice | proves | hardware | lifts a refusal? |
+|---|---|---|---|---|
+| **0** | the contract, as a testable classifier | the gate can tell `S_fuse_mul_into_narrowing` from a dropped narrowing | none (host-only) | no |
+| **1** | element-wise model characterisation of ACO scalar f16, all emittable shapes | whether the contract of §1.2 is deliverable at all | RX 7900 XTX (local) | no |
+| **2** | `shaderFloat16` + driver-identity + capability plumbing | the gate can be keyed on a driver, not a device name | local, both devices | no |
+| **3** | GLSL scalar f16, allowlisted | Sarek-*generated* f16 shaders meet the contract | RX 7900 XTX (local) | **yes**, on an allowlist |
+| **4** | #62 Vulkan coopmat, f16×f16→f32 | the tensor-core path, end to end | RX 7900 XTX (local) | yes (new capability) |
+| **5** | #63 Metal — **scalar f16 first** | the Metal row of §2, which does not exist | **ladon (M4) — permission needed** | no |
+| **6** | #63 Metal `simdgroup_matrix` | the Apple tensor-core path | **ladon** | yes |
+
+### Slice 0 — make the contract fail-able (host-only, lands first)
+
+Promote `ref_discipline` / `ref_fused` out of
+`sarek-vulkan/test/test_vulkan_f16_tripwire.ml` and its OpenCL port into a shared
+module, and add to `Test_helpers`, mirroring the df64 machinery one-for-one:
+`f16_admissible_models`, `f16_known_relaxation` (the allowlist, keyed on
+framework × driver predicate × shape class), `f16_relaxed_ceiling`, and
+`classify_f16_result` returning `` `Pass | `Xpass | `Known_relaxation | `Fail ``
+with **strict XPASS** — a driver that stops deviating turns the run red and names
+the arm to delete, exactly as `classify_df64_result` does and for the reason
+recorded there.
+
+Calibration, running with no GPU: the two host models must separate on exactly
+**620** over the finite binary16 domain — the figure independently reproduced on
+hiprtc/gfx1100, rusticl/radeonsi and `fusedctl` on Intel Arc.
+`test_opencl_f16_tripwire` already does this after §11.5 and it is the model to
+copy.
+
+**Proves, and this is the whole point of the slice:** feed the classifier the
+IGC dropped-narrowing signature (4774/63488, first divergence `x = 0.681640625`)
+and require **FAIL**; feed it the ACO signature and require `Known_relaxation`.
+A gate that cannot separate those two is a gate that admits a defect, and §1.1 is
+the argument that no ulp band can.
+
+### Slice 1 — is the contract actually deliverable? (local, decision point)
+
+Today's measurements cover **two** shapes. The HIP f16 shape audit
+(`docs/optimization/amdgpu-f16-fusion-shape-audit.md`) enumerates **all 20**
+Sarek-emittable f16 expression shapes and sweeps each over all 63488 finite
+binary16 inputs. Run that catalogue against `S_strict` and
+`S_fuse_mul_into_narrowing` **element-wise**, on rusticl/radeonsi and on RADV,
+on the RX 7900 XTX and the Raphael iGPU.
+
+Two outcomes, and they are not equally good:
+
+- **Every shape matches a model exactly.** The contract of §1.2 is deliverable as
+  written. Proceed.
+- **Some shape matches no model.** Most likely candidate is the RADV
+  two-narrowing shape, where 5075 plain against 4776 with `precise` already
+  suggests two behaviours rather than one (§2 note 2). Then that shape stays
+  refused, the contract becomes per-shape, and **the owner should be told before
+  slices 2–4 are funded** — a per-shape contract is a materially worse thing to
+  document and to explain to a user than a per-backend one.
+
+Also upgrade the rusticl row of §2 from count-and-first-divergence agreement to
+element-wise agreement, which is what §1.2 actually requires and which nobody has
+run.
+
+### Slice 2 — plumbing (local, no refusal touched)
+
+- `Vulkan_api_device` chains `VkPhysicalDeviceShaderFloat16Int8Features` and
+  `VkPhysicalDevice16BitStorageFeatures` at device creation. Note the
+  measurement in `fp-contraction-policy.md` §7(b): RADV accepts f16 shaders today
+  *without* the feature enabled, so the current tripwire runs on an un-enabled
+  path. That is fine for a driver measurement and is not fine for shipping.
+- Plumb `VkPhysicalDeviceDriverProperties` onto `Device.t` so `driverID` /
+  `driverName` are available. `fp-contraction-policy.md` §11.7 and the
+  `is_anv_device` comment in `Test_helpers` both already ask for this, and the
+  f16 allowlist needs a driver key rather than a device-name substring — the ANV
+  predicate today would match a future non-Mesa Intel driver.
+- `Framework_sig.capabilities` gains `supports_fp16` and a coopmat configuration
+  list. This is `capability-model.md`'s slice 2 and it breaks the literal-record
+  tests in `spoc/framework/test/`, a cost that document already accepts.
+
+### Slice 3 — lift the GLSL scalar-f16 refusal, on an allowlist (local)
+
+`Sarek_ir_glsl.reject_float16_kernel` consults the capability verdict instead of
+refusing unconditionally. `Available` only for allowlisted (driver, driver
+version) pairs; `Unknown` — every other driver, including every future Mesa —
+keeps the current refusal.
+
+Gate: the slice-1 sweep re-run on **Sarek-generated** shaders.
+`fp-contraction-policy.md` §7(c) is explicit that the existing tripwire compiles
+raw GLSL and measures the driver rather than the codegen, and does not substitute
+for a codegen gate. The existing tripwire stays, unchanged, as the driver-side
+half.
+
+OpenCL/rusticl gets the same treatment or is deliberately left refused —
+`Sarek_ir_opencl`'s refusal comment is right that OpenCL has no tensor-core path
+to unlock (`opt-expressivity-gaps.md`: "OpenCL has no portable equivalent"), so
+lifting it buys nothing but consistency. **Recommend leaving OpenCL refused** and
+saying why, rather than lifting it for symmetry.
+
+### Slice 4 — #62, Vulkan cooperative-matrix (local)
+
+Sub-sliced deliberately, because 4a is cheap, is the highest-information step,
+and needs nothing from the DSL:
+
+- **4a — hand-written GLSL coopmat shader, driven through the existing
+  `sarek-vulkan` dispatch.** Requires `GL_KHR_cooperative_matrix`, the
+  `shaderFloat16` plumbing of slice 2, and a 16×16×16 f16→f32 kernel. Measure
+  against the exact host reference of §5, with the binary16-accumulate negative
+  control. Run the §1.4 determinism tests, including the dispatch-shape
+  variation. **Proves the numeric contract of §5 on a real implementation** —
+  which is today entirely unmeasured — before any IR work is committed to it.
+- **4b — the IR fragment type.** The new type class that
+  `f16-dsl-element-type.md` §8 slice 3 names and defers. Shape must accommodate
+  both 16×16×16 subgroup-scope (Vulkan, measured §4) and 8×8×8
+  (`simdgroup_half8x8`, Metal) — do not hard-code 16.
+- **4c — GLSL codegen for the fragment type**, gated on the `Device_optional`
+  coopmat capability. The Raphael iGPU is the free negative device (§4).
+
+### Slices 5 and 6 — #63, Metal (needs ladon; permission not yet requested)
+
+**#63 cannot start at the matrix layer.** `fp-contraction-policy.md` §3 lists
+Metal f16 on the "may NOT rely on" list with the note that it has **never been
+probed**, and §2's Metal row covers f32 only. There is no Metal row in §2 of this
+document because there is no measurement to put in it. So:
+
+- **Slice 5 — scalar f16 on Metal.** A standalone probe in the shape of the
+  existing `tools/probes/metal_math_mode_probe.m` and
+  `metal_contraction_barrier_probe.m`: exhaustive sweep of all 63488 finite
+  binary16 inputs against `S_strict` and `S_fuse_mul_into_narrowing`, with the
+  `fusedctl`-style positive control. Note Metal's contraction defence is a
+  *source pragma* (`#pragma METAL fp contract(off)`) and none of the compile
+  options stop contraction (§2, §10.5 of the policy doc) — so the probe must
+  sweep with and without the pragma. This is a **measurement, not a code
+  change**, and it produces the Metal row that §2 lacks.
+- **Slice 6 — `simdgroup_matrix`.** Enumerate what MSL actually offers on the M4
+  (`simdgroup_half8x8` / `simdgroup_float8x8`), then the 4a-equivalent
+  hand-written kernel against the §5-style derived bound, recomputed for K = 8.
+
+**Ladon usage: not requested, not used.** An M4 is reachable at
+`ssh -i ~/.ssh/id_ed25519 ladon`. Nothing in this document has touched it. The
+minimum ask, if permission is granted, is: build and run two standalone probe
+binaries in a scratch directory, install nothing, change no settings, touch no
+working tree. Slices 5 and 6 are unschedulable until that is agreed.
+
+### Hardware this plan does not have
+
+- **Apple GPU** — ladon, permission needed. Blocks slices 5–6 entirely.
+- **NVIDIA Ampere or newer** — the GTX 1070 is sm_61 with no tensor cores, no
+  bf16 and no FP8 (`capability-model.md` §1). Nothing in this plan constrains the
+  CUDA/PTX tensor-core path, and no f16 *performance* claim is available from
+  local hardware either.
+- **AMDVLK, the proprietary AMD Vulkan driver, NVIDIA's Vulkan driver, lavapipe**
+  — all unmeasured coopmat implementations. Under §1.5 they are `Unknown` and
+  therefore refused, which is the safe direction and requires no extra work.
+
+---
+
+## 8. An argued objection: the cheapest first tensor-core slice needs no relaxation
+
+Recorded because it is a real alternative to the framing of the request.
+
+Of the 14 cooperative-matrix configurations advertised locally (§4), **12 are
+integer**, and `SPV_KHR_cooperative_matrix` states that integer accumulation is
+exact at the precision of the result type. Those configurations are deliverable
+**under Sarek's existing strict contract**, with no accuracy relaxation, no
+allowlist and no `accept_relaxed_f16` opt-in.
+
+They exercise every structurally hard part of #62: the `Device_optional`
+capability gate, the `VkPhysicalDeviceCooperativeMatrixPropertiesKHR` query, the
+`shaderFloat16`-adjacent feature plumbing, the new IR fragment type, the subgroup
+ABI, and the codegen. Only the *numerics* differ.
+
+**So an alternative slicing exists in which #62's whole skeleton lands before any
+part of the accuracy relaxation is used**, and the relaxation is then applied to
+one narrow thing (the f16 accumulate path) with the machinery already proven.
+`u8 × u8 → s32` is also a real workload — quantised inference is the main
+consumer of integer tensor cores.
+
+Against it: the f16 scalar type is a prerequisite for #63 and for bf16 regardless
+(`f16-dsl-element-type.md` §11.1), so the relaxation work is not avoided, only
+resequenced; and an integer-only coopmat path is not what "tensor cores" means to
+most of the intended audience. **Recommendation: do not reorder the plan, but do
+build slice 4b's fragment type to admit integer component types from the start**
+— it is nearly free at design time and expensive to retrofit, and it means the
+strict-contract configurations are available as a fallback if slice 1 goes the
+wrong way.
+
+---
+
+## 9. What is still underspecified in the decision
+
+Recorded plainly, because each one was interpreted rather than read off.
+
+1. **"Globalement corrects" has no operational meaning and it is the load-bearing
+   phrase.** §1 chooses exact agreement with an admitted model set plus a derived
+   ceiling, over an ulp band. The reason is measured, not stylistic (§1.1), but it
+   is still a choice and a different reading of the decision would give a
+   different contract.
+2. **"Déterministe" — the strong reading is already false.** §1.4 promises the
+   weak one (same device, same driver, same build) and says so. If the owner
+   meant the strong reading, the decision cannot be implemented as stated on any
+   backend, including the ones that pass today.
+3. **The decision was taken about "f16" as one thing; it is two.** Coopmat cannot
+   hold bit-identity by specification; scalar f16 on ACO *can*, at the cost of a
+   global round-trip per narrowing (§3). Applying one decision to both means
+   accepting a performance-motivated relaxation under cover of a
+   reachability-motivated one. Recommend the owner confirm that specifically.
+4. **Uniform or per-backend was left open, and per-backend is the honest
+   answer.** A single global tolerance admitting RADV's 5075/63488 is very loose;
+   §2's per-backend, per-driver, per-shape record is what the measurements support
+   and it costs an allowlist that must be maintained. The maintenance burden is
+   real and is the price of the honesty.
+5. **The opt-in question (§6) is not settled.** Whether a relaxed path needs an
+   explicit user acknowledgement, or only a loud diagnostic, is a product decision
+   about friction. The proposal couples it to the strength of the evidence; that
+   coupling is defensible but it is not the only defensible answer.
+6. **Nobody has said what happens to an existing user's results.** f16 is refused
+   on these backends today, so no user can be relying on them — the relaxation
+   cannot regress anyone. Worth stating explicitly, because it is the reason this
+   can be done at all without a deprecation path.
+
+---
+
+## 10. Tests added by this change
+
+**None.** This change adds a design document and one read-only Vulkan query probe
+(`tools/probes/vulkan_coopmat_probe.c`, standalone, not wired into dune —
+matching the convention of the four probes already there). No Sarek behaviour
+changes, no refusal is lifted, and there is nothing new to gate. The test
+strategy is §7 slice 0, which is the first slice of the follow-on work.
