@@ -431,10 +431,11 @@ let obsolete_refusal_message device n =
      re-measure the two-narrowing shapes too — this case covers only the \
      single narrowing, and the two-narrowing shape failed WORSE (5075/63488), \
      (3) record the new measurement in docs/fp-contraction-policy.md, (4) \
-     build the shaderFloat16 device-feature plumbing, which Sarek's Vulkan \
-     device creation still lacks, (5) enable f16 in Sarek_ir_glsl behind the \
-     usual exhaustive interpreter-agreement gate, and (6) delete this test as \
-     part of THAT change, not before it."
+     enable f16 in Sarek_ir_glsl behind the usual exhaustive \
+     interpreter-agreement gate, and (5) delete this test as part of THAT \
+     change, not before it. The shaderFloat16 device-feature plumbing this \
+     step used to call for was built in backlog-62 slice 2 and is no longer \
+     outstanding."
     device
     n
 

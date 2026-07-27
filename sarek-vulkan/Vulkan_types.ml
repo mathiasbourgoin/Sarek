@@ -1362,9 +1362,16 @@ let () = seal vk_physical_device_driver_properties
 (** VkCooperativeMatrixPropertiesKHR — one advertised configuration.
 
     [AType]/[BType]/[CType]/[ResultType] are [VkComponentTypeKHR] and [scope] is
-    [VkScopeKHR]; both are C enums, hence [int32_t]. The enumerant values used
-    by {!Vulkan_api_device} are the ones in the probe: f16 = 3, f32 = 4, s8 = 7,
-    s32 = 9, u8 = 0, u32 = 1; subgroup scope = 3. *)
+    [VkScopeKHR]; both are C enums, hence [int32_t]. For the enumerant values,
+    read the constants below — NOT a restatement here.
+
+    There was a restatement here, and it was wrong (f16 = 3, f32 = 4, s8 = 7,
+    s32 = 9, u8 = 0, u32 = 1: the correct values rotated), in the one file whose
+    entire narrative is a wrong enumerant table producing plausible garbage. It
+    survived because [test_vulkan_coopmat_enumerants] pins the CONSTANTS and
+    nothing pins the PROSE — the same asymmetry, one layer up. Hence no second
+    copy of the numbers: a comment that cannot disagree with the code is the
+    only kind worth having here. *)
 type vk_cooperative_matrix_properties
 
 let vk_cooperative_matrix_properties :

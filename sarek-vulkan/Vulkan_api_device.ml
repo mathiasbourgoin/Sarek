@@ -62,7 +62,15 @@ type t = {
           a constant. Measured 64 on the RX 7900 XTX under radv / Mesa
           26.1.4-arch3.1, where [Vulkan_plugin_base] reported a hard-coded 32. A
           cooperative-matrix fragment is distributed across exactly this many
-          invocations, so the wrong value is a wrong ABI. *)
+          invocations, so the wrong value is a wrong ABI.
+
+          {b Guaranteed positive}: it is [fallback_subgroup_size] rather than
+          the driver's zero when the query came back unwritten, so a consumer
+          may divide by it. {!subgroup_size_probed} says which it is. *)
+  subgroup_size_probed : bool;
+      (** Whether {!subgroup_size} is a measurement rather than the fallback.
+          Both local devices are probed; a [false] here is a test failure, not a
+          degradation to be tolerated. *)
   coopmat_extension_advertised : bool;
       (** Whether [vkEnumerateDeviceExtensionProperties] listed
           [VK_KHR_cooperative_matrix] for this physical device. *)
@@ -317,7 +325,29 @@ type extended_properties = {
   ep_driver_name : string;
   ep_driver_info : string;
   ep_subgroup_size : int;
+      (** Always positive — see {!fallback_subgroup_size}. *)
+  ep_subgroup_size_probed : bool;
+      (** [false] when the driver left [subgroupSize] at the zero {!zero_struct}
+          wrote, so {!ep_subgroup_size} is the fallback rather than a
+          measurement. *)
 }
+
+(** Used only when [VkPhysicalDeviceSubgroupProperties] came back unwritten.
+
+    [zero_struct] zeroes the struct before the query, so a driver that does not
+    recognise the [sType] leaves [subgroupSize = 0] — and zero flowing into
+    [warp_size] is worse than the wrong-but-usable 32 that preceded this work,
+    because any consumer that divides by it faults instead of merely being
+    wrong. 32 is that historical value, kept as the fallback for continuity and
+    for nothing else.
+
+    It is WRONG on both devices this project measures on, which report 64 (RX
+    7900 XTX / RADV NAVI31 and the Ryzen 9 7950X iGPU / RADV RAPHAEL_MENDOCINO,
+    radv / Mesa 26.1.4-arch3.1). So it must never become the silent normal:
+    [ep_subgroup_size_probed] records which of the two a caller is holding, and
+    [test_vulkan_coopmat_capability] asserts that every local device is PROBED —
+    the fallback going live here is a test failure, not a quiet degradation. *)
+let fallback_subgroup_size = 32
 
 (** Driver identity and subgroup size, through one [VkPhysicalDeviceProperties2]
     chain. Both are core Vulkan 1.1 property structs, so no extension gate. *)
@@ -350,12 +380,17 @@ let query_extended_properties phys_dev =
   ignore (Sys.opaque_identity props2) ;
   ignore (Sys.opaque_identity driver) ;
   ignore (Sys.opaque_identity subgroup) ;
+  let reported_subgroup_size =
+    Unsigned.UInt32.to_int (getf subgroup subgroup_props_subgroupSize)
+  in
   {
     ep_driver_id = Unsigned.UInt32.to_int (getf driver driver_props_driverID);
     ep_driver_name = string_of_char_array (getf driver driver_props_driverName);
     ep_driver_info = string_of_char_array (getf driver driver_props_driverInfo);
     ep_subgroup_size =
-      Unsigned.UInt32.to_int (getf subgroup subgroup_props_subgroupSize);
+      (if reported_subgroup_size > 0 then reported_subgroup_size
+       else fallback_subgroup_size);
+    ep_subgroup_size_probed = reported_subgroup_size > 0;
   }
 
 (** {2 Cooperative-matrix configuration enumeration} *)
@@ -602,18 +637,53 @@ let get idx =
           ~subgroup_size:props2.ep_subgroup_size
       in
       let has_ext name = List.mem name extensions in
-      (* #332's lesson, applied: support is not enablement. Each of these is
-         requested only when the device advertises BOTH the extension and the
-         feature, because vkCreateDevice fails outright on a request the device
-         cannot satisfy — and is not requested at all when unsupported, so the
-         behaviour on such a device is byte-identical to before this change. *)
+      (* #332's lesson, applied — and applied in BOTH directions, which the
+         first draft of this block got wrong.
+
+         A feature must be REQUESTED, not merely supported: that is #332. But
+         requiring an extension STRING for a feature that has since been
+         promoted to core is the same error arriving from the other side, and
+         it silently stops requesting a feature the device does support.
+         [VK_KHR_16bit_storage] is core in Vulkan 1.1 and
+         [VK_KHR_shader_float16_int8] is core in Vulkan 1.2; a device at those
+         versions need not advertise the extension string at all, and on such a
+         device an [advertised && supported] conjunction reads false and the
+         feature is never enabled. Both local devices happen to advertise both
+         strings, so the defect is invisible here on the hardware alone.
+
+         Measured by simulation instead, 2026-07-27: hiding the two PROMOTED
+         extension strings from [has_ext] — i.e. presenting an otherwise
+         identical device that supports them only as core — the previous
+         conjunction reported [shaderFloat16=false storageBuffer16=false] on a
+         device that fully supports both, while the form below reports both
+         true and vkCreateDevice still succeeds. The cooperative-matrix arm is
+         unaffected in either run, which is the control: it is a real extension
+         and its string requirement is correct.
+
+         So each promoted feature is gated on the feature bit plus EITHER the
+         core version that promoted it OR the extension string, and only
+         [VK_KHR_cooperative_matrix] — which is a real extension, promoted to
+         nothing — keeps an unconditional string requirement.
+
+         The version that counts is the EFFECTIVE one: an application may not
+         use a core feature above the [apiVersion] its instance requested, and
+         [get_or_create_instance] above requests 1.2. Both promotions are at or
+         below that, so nothing here is reachable-but-refused; the [min] is
+         there so that lowering the instance version cannot silently start
+         requesting features the application is not entitled to. *)
+      let instance_api_version = (1, 2) in
+      let effective_api_version =
+        min (api_major, api_minor) instance_api_version
+      in
+      let api_at_least v = effective_api_version >= v in
       let want_fp16 =
         ext.ef_shader_float16
-        && has_ext vk_khr_shader_float16_int8_extension_name
+        && (api_at_least (1, 2)
+           || has_ext vk_khr_shader_float16_int8_extension_name)
       in
       let want_storage16 =
         ext.ef_storage_buffer_16bit
-        && has_ext vk_khr_16bit_storage_extension_name
+        && (api_at_least (1, 1) || has_ext vk_khr_16bit_storage_extension_name)
       in
       let want_coopmat =
         ext.ef_cooperative_matrix
@@ -674,7 +744,13 @@ let get idx =
          read it. *)
       let requested_extensions =
         List.filter_map
-          (fun (wanted, name) -> if wanted then Some name else None)
+          (fun (wanted, name) ->
+            (* [has_ext] here and not in [want_*]: a promoted feature may be
+               wanted via its core version on a device that does not advertise
+               the string, and requesting an unadvertised extension fails
+               vkCreateDevice. The feature struct is still chained in either
+               case, which is what actually enables the feature. *)
+            if wanted && has_ext name then Some name else None)
           [
             (want_fp16, vk_khr_shader_float16_int8_extension_name);
             (want_storage16, vk_khr_16bit_storage_extension_name);
@@ -888,6 +964,7 @@ let get idx =
           driver_name = props2.ep_driver_name;
           driver_info = props2.ep_driver_info;
           subgroup_size = props2.ep_subgroup_size;
+          subgroup_size_probed = props2.ep_subgroup_size_probed;
           coopmat_extension_advertised =
             has_ext vk_khr_cooperative_matrix_extension_name;
           coopmat_enabled = want_coopmat;

@@ -232,6 +232,17 @@ let test_subgroup_size_is_reported () =
             (Printf.sprintf "device %d subgroup size is positive" i)
             true
             (sg > 0) ;
+          (* Positive is not enough: [Vulkan_api_device] guarantees positivity
+             by falling back to 32 when the query comes back unwritten, so a
+             device could pass the check above while reporting nothing. Both
+             local devices DO report, and this is what stops the fallback from
+             becoming the silent normal — see fallback_subgroup_size. *)
+          Alcotest.(check bool)
+            (Printf.sprintf
+               "device %d subgroup size is a measurement, not the fallback"
+               i)
+            true
+            dev.Vulkan_api_device.subgroup_size_probed ;
           Alcotest.(check int)
             (Printf.sprintf
                "device %d: warp_size is the probed subgroupSize, not a constant"

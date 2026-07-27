@@ -82,12 +82,24 @@ module Vulkan = struct
         coopmat = dev.Vulkan_api.Device.coopmat;
         supports_atomics = true;
         (* VkPhysicalDeviceSubgroupProperties.subgroupSize, not a constant.
-           This read 32 until backlog-62 slice 2, and 32 is WRONG on the one
-           discrete GPU this project measures on: radv / Mesa 26.1.4-arch3.1
-           reports 64 for the RX 7900 XTX (RADV NAVI31). It reports 64 for the
-           Raphael iGPU too, so the old value was not right for either local
-           device. A cooperative-matrix fragment is distributed across exactly
-           subgroupSize invocations, so this is ABI, not a statistic. *)
+           This read a hard-coded 32 until backlog-62 slice 2, and 32 is WRONG
+           on BOTH local devices: radv / Mesa 26.1.4-arch3.1 reports 64 for the
+           RX 7900 XTX (RADV NAVI31) and 64 for the Ryzen 9 7950X iGPU (RADV
+           RAPHAEL_MENDOCINO). A cooperative-matrix fragment is distributed
+           across exactly subgroupSize invocations, so this is ABI, not a
+           statistic — at 64 a 16x16 fragment is 4 components per invocation,
+           not 8.
+
+           Guaranteed positive. [Vulkan_api_device] clamps at the source: the
+           subgroup properties struct is zeroed before the query, so a driver
+           that ignores its sType would otherwise leave 0 here, and a zero
+           warp_size is worse than the wrong-but-usable 32 it replaced — a
+           consumer that divides by it faults rather than merely being wrong.
+           When the query does come back unwritten the value is
+           [Vulkan_api_device.fallback_subgroup_size] (32, the historical
+           value) and [subgroup_size_probed] is false; both local devices are
+           probed, and test_vulkan_coopmat_capability fails if that stops being
+           true, so the fallback cannot quietly become the normal case. *)
         warp_size = dev.Vulkan_api.Device.subgroup_size;
         max_registers_per_block = 65536;
         clock_rate_khz = 1000000;
