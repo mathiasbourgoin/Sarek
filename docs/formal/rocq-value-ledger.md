@@ -203,14 +203,33 @@ instances of a width defect shipped anyway.
 to `lty = L32 | L64` — byte size and natural alignment, nothing else — and reasons
 about *offsets given widths*. `TypeSafetySpec.v` models the typer, and stops at
 the typer. The defective code is `elttype_of_typ`, the placeholder that maps an
-OCaml type to a width, which sits in the lowering *between* the two models and is
-reached by neither. Both models are sound; the join between them is unmodelled.
+OCaml type to a width, which sits in the lowering *between* the two models.
 
-**Lesson.** The models cover the two ends of the pipeline and not the seam, which
-is where these five defects lived. A model of the width mapping itself — trivially
-small, no interesting theorems — would have covered all five. Cheap models of
-boring functions at module boundaries appear to be worth more per line here than
-deep theorems about the ends.
+**And that gap is not an accident of scope — it is a design decision, recorded in
+the theory's own header:**
+
+> This theory deliberately does NOT import or extend `PtxTypes.elttype`; it
+> defines its own small scalar universe `lty` carrying only what layout needs
+> (byte size / natural alignment).
+> — `formal/codegen-ptx/theories/PtxLayout.v`, lines 15–17
+
+So `PtxLayout.v` does not merely fail to reach the width mapping. It **takes
+widths as given, and therefore discards exactly the information the defective
+code gets wrong.** The decoupling is good theory design — it is what keeps the
+layout theorems independent of the type language — and it is also, precisely, the
+hole. Both models are sound. Neither was ever going to see this.
+
+**Lesson — and it is not "build more models".** That would be the platitude, and
+it points the wrong way: the two models here are the deep, interesting ones, and
+making them deeper would not have caught a single one of the five defects. What
+was missing is a model of `elttype_of_typ` itself — a total function from a
+finite type language to a byte width, with no theorems worth stating about it,
+which an exhaustive table would settle in an afternoon.
+
+**Cheap models of boring functions at module boundaries appear to be worth more
+per line here than deep theorems about the ends.** The boring function is where
+the defects were, and it is boring precisely because the interesting models
+abstracted it away — which is the same reason nobody modelled it.
 
 ### M-02 — the silently-succeeding-wildcard family, out of scope
 
