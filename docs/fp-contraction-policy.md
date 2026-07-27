@@ -153,7 +153,7 @@ because the one non-Mesa stack that does fuse is AMD's own.
 | **Vulkan / RADV (f16 narrowing)** | an f32→f16 narrowing absorbs whatever arithmetic feeds it (`v_fma_mixlo_f16`) — the multiply, and also the f32 **add**: the plain two-narrowing kernel compiles to a *single* fused instruction, one rounding where the DSL mandates three. Same ACO backend as rusticl, reached through a second front end — HIP's identical-count defect comes from LLVM's AMDGPU backend instead — and a **wider** combine than either | **nothing affordable, and `precise` is not it.** `precise` → SPIR-V `NoContraction` IS honoured (it keeps the f32 multiply as its own `v_fma_mix_f32`) and still leaves 2912/63488, because absorbing a *conversion* is a different combine from contracting `a*b+c`. An f16 bitcast round-trip changes nothing. A `volatile` SSBO round-trip on the f32 intermediates makes ACO drop the intermediate narrowing **entirely** instead (4774/63488). Only forcing the f16 *bit pattern* through global memory works (0/63488), at a global round-trip per narrowing into a scratch buffer this backend does not control. **Consequence: f16 stays REJECTED in `Sarek_ir_glsl`** | **executed**, 2026-07-26, exhaustive sweep of all 63488 finite binary16 inputs on **two** devices — RX 7900 XTX (**RADV NAVI31**) and the integrated Raphael iGPU (**RADV RAPHAEL_MENDOCINO**) — Mesa 26.1.4-arch3.1, Vulkan 1.4.354. Both report identical counts: **2912/63488** on `f16(x*1.1)` (plain and `precise` alike), **5075/63488** on `f16(f16(x*1.1)+1000)` plain, **4776/63488** with `precise`. Calibration: the same host oracle reproduces the independently measured **620** on the HIP/OpenCL kernel shape, and the barriered kernel reports **0/63488**, so the sweep is proven able to go both red and green. Gate: `sarek-vulkan/test/test_vulkan_f16_tripwire.ml` |
 | **OpenCL / pocl on x86 (f16 narrowing)** | in principle the same fusion — but nothing in this stack performs it | **nothing needed.** The naive narrowing already round-trips through binary16 exactly, so the barrier that rusticl requires is unnecessary here | **executed on CI**, 2026-07-26, quoted device `AMD EPYC 7763 64-Core Processor` under pocl on a GitHub-hosted runner: exhaustive sweep of all 63488 finite binary16 inputs, **0** disagreements between the naive and `volatile __local`-barriered narrowings. Observed as a CI failure of `test_opencl_f16_tripwire` before that test was scoped, i.e. the number was produced by a harness that was at the time *trying* to find a difference — so it is a null with the sweep demonstrably live. **This is what localises the defect:** the same source, swept the same way, fuses on an AMD GPU compiler and does not fuse here, so the locus is *the AMD GPU compilers*, not *OpenCL* and not *SPIR-V*. Note what it does **not** localise: rusticl and HIP/AMDGPU do not share a compiler (see "Two AMD compilers" above), so their identical 620 is two compilers agreeing, not one bug seen twice. **Confirmed by a second, independent negative on a real GPU** — Intel Arc Graphics under the Intel Compute Runtime / IGC, a compiler sharing no lineage with Mesa: 0/63488, with the sweep calibrated on the same run against the known 620 (§11.3). Guarded by `test_opencl_f16_tripwire`'s locus check, which fails if any OpenCL implementation outside its `"ACO"` device-string scope is found to fuse — and which was itself wrong until §11.5. Read that predicate as "not Mesa", not as "not AMD": an AMD GPU reached through ROCm's OpenCL would be compiled by LLVM's AMDGPU backend, i.e. by a compiler this document expects to fuse, while sitting outside the key |
 | **Vulkan / GLSL** | contraction and reassociation of float expressions | `precise` on every float local (`Sarek_ir_glsl.gen_var_decl`), which glslang lowers to SPIR-V `NoContraction` — but on RADV nothing needs preventing *for these shapes*: the driver does not contract them even without the decoration. It is **not** the decoration that is protecting them; RADV was separately observed ignoring `NoContraction` on a combine it does want to perform (§6, f16 narrowing) | **executed + machine-code**, RX 7900 XTX (RADV NAVI31) and Raphael iGPU (RADV RAPHAEL_MENDOCINO), Mesa 26.1.4-arch3.1: 0 of 7 contraction shapes contracted with or without `precise`, ISA opcode-identical between the two builds, explicit `fma()` controls fused 4/4 — see §6. Decoration emission: compiler-output, glslc 2026.2 + glslangValidator, 18 `NoContraction` with `precise` / 0 without. **Mesa ANV now measured too** (§11.2): Intel Arc Graphics (Meteor Lake-P), Mesa 26.1.2-arch3.1, same 0 of 7 / 0 of 7 with `fma()` controls 4/4 — and unlike RADV, ANV does not fuse the f16 narrowing either, so no combine has been found on ANV where `NoContraction` is ignored. Separately, `fma` is not correctly rounded on RADV: df64 mul 5.84e-08 / div 5.86e-08, each the measured worst-case relative error over `test_df64`'s own input set on the named device and driver, not a bound; ANV shows the same signature (mul 5.84e-08 / div 5.86e-08, §11.1) |
-| **Metal** | contraction of `a*b+c` — **measured, and NOT preventable by any compile option**; separately, both math defaults are the fast one (`mathMode = MTLMathModeFast`, `mathFloatingPointFunctions = ...Fast`, read from a fresh `MTLCompileOptions`) | **two mechanisms, both required**: `#pragma METAL fp contract(off)` in every generated kernel (`Sarek_ir_metal.metal_fp_contract_pragma`) for contraction, *and* `mathMode = Safe` + `mathFloatingPointFunctions = Precise` in `Metal_bindings.mtl_compile_options_conformant` for math-function accuracy (falling back to the deprecated `fastMathEnabled = NO` before macOS 15) | **executed**, Apple M4 / macOS 15.6.1 (24G90) / Apple clang 17.0.0: on the 8773 of 65536 elements where the device's own `fma` differs from the separately-rounded value, `a*b+c` is contracted 8773/8773 under every compile-option setting **including `mathMode=Safe`**, and 0/8773 with the pragma. Options are honoured (16017 and 22135 of 65536 math-function results change), so Metal is not in rusticl's ignore-it class. **Interpreter agreement now executed on the same device**: `test_df64` and `test_real64` PASS on every op and reproduce the interpreter's figures exactly (mul 9.07e-15, add 5.33e-15, sub 6.51e-15, div 5.08e-15, sqrt 8.53e-15) — sampled maxima over each test's input set, not bounds, and agreement between summary statistics rather than element-wise identity. f16 and subnormals unprobed; two record/variant kernels do not compile at all (§10.11). **f64 is refused outright** — MSL has no `double`, and until #141 `TFloat64` was silently emitted as `float`, striding an 8-byte-per-element host buffer at 4; `Sarek_real64` (df64) is the supported route and is the figure quoted above (§10.13) |
+| **Metal** | contraction of `a*b+c` — **measured, and NOT preventable by any compile option**; separately, both math defaults are the fast one (`mathMode = MTLMathModeFast`, `mathFloatingPointFunctions = ...Fast`, read from a fresh `MTLCompileOptions`) | **two mechanisms, both required**: `#pragma METAL fp contract(off)` in every generated kernel (`Sarek_ir_metal.metal_fp_contract_pragma`) for contraction, *and* `mathMode = Safe` + `mathFloatingPointFunctions = Precise` in `Metal_bindings.mtl_compile_options_conformant` for math-function accuracy (falling back to the deprecated `fastMathEnabled = NO` before macOS 15) | **executed**, Apple M4 / macOS 15.6.1 (24G90) / Apple clang 17.0.0: on the 8773 of 65536 elements where the device's own `fma` differs from the separately-rounded value, `a*b+c` is contracted 8773/8773 under every compile-option setting **including `mathMode=Safe`**, and 0/8773 with the pragma. Options are honoured (16017 and 22135 of 65536 math-function results change), so Metal is not in rusticl's ignore-it class. **Interpreter agreement now executed on the same device**: `test_df64` and `test_real64` PASS on every op and reproduce the interpreter's figures exactly (mul 9.07e-15, add 5.33e-15, sub 6.51e-15, div 5.08e-15, sqrt 8.53e-15) — sampled maxima over each test's input set, not bounds, and agreement between summary statistics rather than element-wise identity. **The f16 narrowing is now probed and does NOT fuse** — 0/63488 from the discipline on both swept shapes, element-wise, with a validated positive control reproducing 620 (§10.14); the pragma changes nothing there, in either direction, because there is no fusion to prevent. Subnormals still unprobed; two record/variant kernels do not compile at all (§10.11). **f64 is refused outright** — MSL has no `double`, and until #141 `TFloat64` was silently emitted as `float`, striding an 8-byte-per-element host buffer at 4; `Sarek_real64` (df64) is the supported route and is the figure quoted above (§10.13) |
 | **WGSL** | unconstrained | nothing | unverified, untested |
 | **Native (OCaml host)** | n/a | n/a | float32 is evaluated at OCaml binary64 precision, so error-free transformations cancel; `Sarek_df64` degrades to ~2^-24 there **by design** |
 
@@ -198,15 +198,18 @@ because the one non-Mesa stack that does fuse is AMD's own.
 **You may NOT rely on:**
 
 - **WGSL float semantics at all.**
-- **Metal f16, Metal subnormals, and Metal record/variant kernels.** Metal
-  **f32 arithmetic** has moved OFF this list: `test_df64` and `test_real64`
-  agree with the interpreter on every op on an Apple M4 / macOS 15.6.1 / Apple
-  clang 17.0.0 (§10.7), with contraction defeated by
-  `#pragma METAL fp contract(off)` in every generated kernel (§10.5). What is
-  still NOT covered: f16 (never probed on Metal), subnormals (never probed),
-  element-wise identity (the agreement is between summary maxima), any device
-  or OS other than that one, and kernels using **records or variants**, which
-  do not compile on Metal at all (§10.11).
+- **Metal subnormals and Metal record/variant kernels.** Metal **f32
+  arithmetic** has moved OFF this list: `test_df64` and `test_real64` agree with
+  the interpreter on every op on an Apple M4 / macOS 15.6.1 / Apple clang 17.0.0
+  (§10.7), with contraction defeated by `#pragma METAL fp contract(off)` in
+  every generated kernel (§10.5). **The Metal f16 narrowing has now moved off
+  too**, on the strongest evidence in this document: element-wise agreement with
+  the discipline on all 63488 finite binary16 inputs, on both swept shapes, with
+  a validated positive control (§10.14). What is still NOT covered: subnormals
+  (never probed), f32 element-wise identity (that agreement is still between
+  summary maxima — the f16 result *is* element-wise), the f16 shapes beyond the
+  two swept here, any device or OS other than that one, and kernels using
+  **records or variants**, which do not compile on Metal at all (§10.11).
 - **Vulkan `fma` being correctly rounded.** On Mesa RADV it is not, and
   `Sarek_df64` mul/div is ~5.8e-08 there — a *documented*, unfixed deviation,
   not a bug to rediscover. Note this is a distinct failure from contraction:
@@ -733,8 +736,9 @@ this is where they are collected):
   source pragma instead. Full account and the three things still open in §10.
   Interpreter agreement has since been executed on that M4: `test_df64` and
   `test_real64` PASS on every op and reproduce the interpreter's figures
-  exactly (§10.7), so Metal **f32** has left the §3 "may NOT rely on" list.
-  Metal f16, subnormals, and record/variant kernels have not — the last of
+  exactly (§10.7), so Metal **f32** has left the §3 "may NOT rely on" list, and
+  **Metal f16 left it too on 2026-07-27** (§10.14, element-wise over the whole
+  finite binary16 domain). Metal subnormals and record/variant kernels have not — the last of
   those because they do not compile (§10.11).
 
 ---
@@ -751,6 +755,8 @@ this is where they are collected):
 | `tools/probes/opencl_build_options_probe.c` | which OpenCL build options a stack accepts, and whether they do anything — with plumbing and FP liveness controls |
 | `tools/probes/metal_math_mode_probe.m` | Metal's real defaults, and whether its options change results (M4) |
 | `tools/probes/metal_contraction_barrier_probe.m` | the Metal contraction barrier sweep, and the deprecated/modern API equivalence |
+| `tools/probes/metal_f16_narrowing_probe.m` | the exhaustive Metal f16 narrowing sweep against the named rounding models, with the round-to-odd positive control (§10.14) |
+| `tools/probes/metal_simdgroup_matrix_probe.m` | which `simdgroup_matrix` configurations exist on the M4, and what the 8×8×8 f16 MulAdd computes (§10.15) |
 | `sarek/codegen/Sarek_ir_cuda.ml` | `sarek_f32_barrier` — load-bearing on HIP, a documented identity on NVIDIA |
 | `sarek-cuda/Cuda_nvrtc.ml` | `check_fp_conformance` — rejects subnormal-flushing / approximate-div options |
 | `sarek/Sarek_df64/Sarek_df64.ml` | the `mul_rn` contraction barrier, its per-backend precision table, and the caller-side hazard |
@@ -1107,10 +1113,10 @@ and the only one; df64 passing either way is consistent with both.
   measured for *equivalence* on macOS 15 but has never run on the pre-15 OS that
   is its only reason to exist.
 - **Subnormals.** Not probed at all on Metal.
-- **f16 on Metal.** Not probed. The three other backends that reach an AMD
-  (ACO or LLVM/AMDGPU) or NVIDIA compiler each needed a separate exhaustive f16
-  sweep before anything
-  could be said; Metal has had none.
+- ~~**f16 on Metal.** Not probed.~~ **Probed on 2026-07-27 — see §10.14.** The
+  f16 narrowing meets the discipline on all 63488 finite binary16 inputs, on
+  both swept shapes. This bullet is kept struck through rather than deleted
+  because §3's "may NOT rely on" list leaned on it.
 - **The two kernels that do not compile** (§10.11) are excluded from every
   figure above, because they never ran.
 
@@ -1371,6 +1377,165 @@ Found by the backend twin, whose pinned-exemption-set assertion reported the
 duplicate directly. Both `unfold`s are fixed, and both files now assert
 **distinctness** as well as length, which is the property a count alone cannot
 establish.
+
+### 10.14 The f16 narrowing on Metal: **it does not fuse** (#63 slice 5)
+
+§10.9 listed f16 as the largest thing Metal had never been probed for, and
+[`docs/design/f16-relaxed-accuracy.md`](design/f16-relaxed-accuracy.md) §2 has a
+Metal row reading *"never probed → `Unknown` → refused"* for the same reason.
+This is the measurement that fills it.
+
+**Device and toolchain, as §1 corollary 3 requires:** Apple M4, macOS 15.6.1
+(24G90), arm64, Apple clang 17.0.0 (clang-1700.0.13.5), Metal.framework from the
+Command Line Tools SDK. Instrument:
+`tools/probes/metal_f16_narrowing_probe.m`, standalone, in the shape of the two
+Metal probes already in that directory. Evidence tier: **executed**, element-wise
+over the whole finite binary16 domain — not a sampled maximum.
+
+Two shapes, the two the other backends were swept on, each over all 63488 finite
+binary16 inputs, deviation from the discipline (`S_strict`):
+
+| variant | `f16(x*1.1)` | `f16(f16(x*1.1)+1000)` |
+|---|---|---|
+| plain (naive codegen) | **0 / 63488** | **0 / 63488** |
+| `#pragma METAL fp contract(off)` | 0 / 63488 | 0 / 63488 |
+| `#pragma clang fp contract(off)` | 0 / 63488 | 0 / 63488 |
+| `volatile thread` barrier | 0 / 63488 | 0 / 63488 |
+| `as_type` bitcast barrier | 0 / 63488 | 0 / 63488 |
+| **FUSEDCTL — positive control** | **2912 / 63488** | **620 / 63488** |
+
+**Metal is in the strict class.** No barrier is needed, none is emitted, and the
+refusal of f16 in `Sarek_ir_metal` is currently over-broad in the same way §11.3
+found pocl's and IGC's to be.
+
+**Why the zeros are readable.** §11.5 is this document's own record of a null
+that was not a result, so the control is the point. MSL has no `double`, so the
+OpenCL probe's `(double)x * (double)1.1f` control is not expressible; the Metal
+control reconstructs the exact product from a double-float pair and applies a
+round-to-odd step before the narrowing. It is then **validated against the host
+reference element-wise** — 0 of 63488 differ from
+`S_fuse_mul_into_narrowing` — and it reproduces **620**, the figure independently
+measured on hiprtc/gfx1100, on rusticl/radeonsi, and by `fusedctl` on Intel Arc.
+Same source, same compile options, same dispatch as the variants reporting 0. A
+host calibration runs first and refuses to print any device number unless the
+binary16 round-trip is clean and the two models separate on 2912 and 620.
+
+**The pragma does not govern this hazard — and does not need to.** `#pragma
+METAL fp contract(off)` changes nothing on either shape, in either direction: it
+does not move the plain kernel (already strict) and it does not disturb the
+control (620 with and without). That is **not** the pragma being inert; §10.5
+measures it taking `a*b+c` from 8773/8773 to 0/8773 on this device. Contraction
+of `a*b+c` and absorption of a multiply into an f32→f16 narrowing are two
+behaviours, the pragma is measured on one of them, and Metal exhibits neither.
+`Sarek_ir_metal.metal_fp_contract_pragma` keeps its §10.5 justification
+unchanged and gains no new one here.
+
+**A defect this surfaced in the relaxed contract itself, not in Metal.**
+`f16-relaxed-accuracy.md` §1.3 proposes `f16_relaxed_ceiling` — *"no admitted
+deviation may exceed 1 ulp of the binary16 result, measured on the final
+value"*. The validated control computes the admitted model exactly, so it can be
+used to test the ceiling, and **the admitted model violates it**. At
+`x = -907.5`: the exact product is `-998.25000216…`, whose binary32 rounding is
+exactly `-998.25` — a binary16 tie in the binade [512, 1024) — which rounds to
+even, giving `S_strict` `-998 + 1000 = 2`. The single-rounding model narrows the
+exact product, is not at the tie, gets `-998.5`, and gives `1.5`. **2 and 1.5 are
+512 ulp of binary16 apart**, because the `+1000` cancels the leading bits away
+and re-scales the ulp.
+
+The §1.3 derivation is sound where it is stated — an elided rounding moves a
+value by at most half an ulp *at the elided step*. What does not follow is the
+restatement on the final value, once a later operation can cancel. The ceiling
+has to be evaluated at the narrowing where the rounding was elided. This is a
+property of the contract and not of any device; it is recorded here because this
+is where it was measured, and the design document's own §1.3 is where it needs
+fixing.
+
+**Determinism (§1.4 a and b):** the whole sweep is bit-identical across two runs
+in separate processes.
+
+**Not established.** Only the two shapes above — the 20-shape catalogue of
+`docs/optimization/amdgpu-f16-fusion-shape-audit.md` has not been run on Metal.
+Subnormal *inputs* are in the sweep (all 63488 finite values are), but no
+subnormal-specific analysis was done. One device, one OS. And this measures the
+**driver**, from hand-written MSL: it is not a codegen gate, exactly as §7(c)
+says of the GLSL tripwire.
+
+### 10.15 `simdgroup_matrix` on the M4: three configurations, none of them integer
+
+The #63 prerequisite, measured the same day with
+`tools/probes/metal_simdgroup_matrix_probe.m` on the same device and toolchain.
+Evidence tier: **executed**.
+
+`simdgroup_matrix<T, Cols, Rows>` instantiates for exactly three configurations,
+and every other candidate is a compile-time refusal with a named
+`static_assert`, so the enumeration is closed rather than sampled:
+
+| configuration | available |
+|---|---|
+| `half` 8×8 | **yes** |
+| `float` 8×8 | **yes** |
+| `bfloat` 8×8 | **yes** |
+| 16×16, 8×16, 16×8, 4×4, 32×8, 8×32 (any type) | no — `_valid_simdgroup_matrix_size` |
+| `char`, `uchar`, `short`, `int` 8×8 | no — `is_simdgroup_matrix_element<T>` |
+
+`threadExecutionWidth` is 32, so one 8×8 fragment is one full simdgroup. GPU
+families Apple1–9 and Metal3 are all supported and the runtime compiler accepts
+MSL 2.4 through 3.2.
+
+**There is no integer `simdgroup_matrix`, and that removes a fallback.**
+`f16-relaxed-accuracy.md` §8 and §7 slice 4b keep an integer cooperative-matrix
+path as the route that lands *under the existing strict contract* if the ACO
+scalar shapes match no closed-form model — 12 of the 14 configurations RADV
+advertises are integer. **That fallback is Vulkan-only.** #63 has no
+strict-contract route available to it at all; on Metal it is f16/bf16 or
+nothing. `bfloat` 8×8 is available, is not in the current plan, and has not been
+swept — nothing here says what it computes.
+
+**What the f16 MulAdd computes.** 1024 independent 8×8×8 problems, 65536 output
+elements, against an exactly-computed host reference. Anti-vacuity first,
+because the first version of this test drew operands as multiples of 2⁻⁹ in
+[−1, 1] — every product was then a multiple of 2⁻¹⁸ below 8, the sum of 8 of
+them was exactly representable in binary32, every accumulation order agreed, and
+it reported 64/64 exact while measuring nothing. The operands now carry a full
+11-bit significand over a 13-wide exponent range, so the sum needs ~46 bits:
+outside binary32, inside binary64. On that input set sequential and pairwise
+binary32 accumulation differ on 27597/65536, and a host binary16 accumulator is
+rejected by the f32 bound on 65452/65536 — both checks can fail.
+
+| | `half8x8 × half8x8 → float8x8` | `half8x8 × half8x8 → half8x8` |
+|---|---|---|
+| bit-equal to **sequential binary32** accumulate | **65536 / 65536** | 7 / 65536 |
+| bit-equal to pairwise binary32 accumulate | 37939 / 65536 | 5 / 65536 |
+| bit-equal to **sequential binary16** accumulate | 7 / 65536 | **65528 / 65536** |
+| bit-equal to pairwise binary16 accumulate | 9 / 65536 | 41109 / 65536 |
+| worst error / Σ\|pᵢ\| | 2.79e-07 (bound 4.17e-07) | 1.75e-03 (bound 3.43e-03) |
+
+**The f32-accumulate configuration matches a named closed-form model
+element-wise on every element.** That is stronger than `f16-relaxed-accuracy.md`
+§5 anticipated — §5 proposes a *bound* because the accumulation order is
+implementation-dependent, and on this implementation the order is observable and
+is plainly sequential. §6.1's corollary applies directly: friction falls as
+evidence improves, so this configuration belongs in the loud-diagnostic row
+rather than the mandatory-opt-in row. The model cannot separate "exact products
+then sequential adds" from an fma chain and does not need to — an f16 × f16
+product is exact in binary32 (11 + 11 = 22 bits inside 24), so those are the
+same function. Evidence tier for *that* step: **by-construction**.
+
+**The f16-accumulate configuration matches no closed-form model**: 8 elements in
+65536 differ from sequential binary16 by 1–2 ulp16, and match neither pairwise
+binary16 nor a binary32 chain narrowed at the end. §5 recommends not admitting
+that configuration on the width of its bound; the recommendation now also rests
+on the measurement.
+
+**Determinism (§1.4).** Bit-identical across two processes, and bit-identical
+across threadgroup sizes 32 / 64 / 128 / 256 — 0/65536 differ in each case. §1.4
+records that a coopmat result may legitimately move with the dispatch shape and
+that nobody had measured whether it does. On this device, at this tile size, it
+does not.
+
+**Not measured: throughput.** Whether the M4 has dedicated matrix hardware
+behind these three instantiations is not answered here and cannot be read off
+availability; that needs a benchmark against a scalar kernel.
 
 ---
 
