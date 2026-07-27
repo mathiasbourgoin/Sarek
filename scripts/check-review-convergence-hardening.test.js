@@ -548,13 +548,94 @@ check("F4 CONTROL: every required key present and well-formed still passes", () 
 // `#98 patch is DECLARED` below, which fails if this constant ever drifts again.
 const PATCH_REF = "#98 — convergence gate fails closed";
 const PATCH_PATH = "scripts/check-review-convergence.js";
+const MANIFEST_PATH = "scripts/review-bundle.manifest.json";
 // A marker of the applied patch, used to decide whether a declaration is OWED.
 const APPLIED_SENTINEL = "evaluateHardening";
 
 function readManifest() {
-  const file = path.join(REPO, "scripts", "review-bundle.manifest.json");
+  const file = path.join(REPO, MANIFEST_PATH);
   if (!fs.existsSync(file)) return null;
   return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function git(...args) {
+  return spawnSync("git", args, { cwd: REPO, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+}
+
+// ── the pristine upstream ────────────────────────────────────────────────
+//
+// "Pristine upstream" means: the file as the roster bundle last installed it,
+// BEFORE this repo declared a local patch over it. That is the content an
+// upgrade would restore, and therefore the only content against which "could
+// this marker go missing?" is a real question.
+//
+// It is NOT the merge-base, which is what this check used to read. That worked
+// exactly once — on the branch that introduced the patch, whose merge-base
+// predated it. The moment be25ba58 landed on main, merge-base(HEAD, origin/main)
+// started resolving to a commit that CONTAINS the patch, so "upstream" became
+// the patched file itself and every marker was found in it by construction. The
+// check then stood in direct contradiction with its own neighbour
+// ("markers are PRESENT in every patched path"): the same bytes had to contain
+// the markers and not contain them. Unsatisfiable, and permanently red on main
+// for ~28h.
+//
+// The anchor used instead is the manifest, not the gate's own content: walk the
+// commits that touched scripts/review-bundle.manifest.json, newest first, and
+// take the first one whose manifest does not yet declare PATCH_REF. The gate
+// file at that commit is the pre-declaration, upstream-installed content.
+// Anchoring on the declaration rather than on a marker keeps this from being
+// circular — no marker under test participates in choosing the blob it is
+// compared against.
+//
+// Every failure to RESOLVE that blob is a hard failure, never a downgrade. The
+// previous code did `const base = ok ? sha : null` and then iterated `base ? paths : []`,
+// so a checkout without an `origin/main` ref ran zero comparisons and printed
+// "ok". A GitHub `pull_request` checkout is exactly that checkout — see the
+// fetch-depth note in .github/workflows/ci.yml — which is why this file passed
+// on every PR while failing on every push to main.
+function pristineUpstream(rel) {
+  const inRepo = git("rev-parse", "--is-inside-work-tree");
+  assert.strictEqual(
+    inRepo.status,
+    0,
+    "cannot resolve the pristine upstream: not inside a git work tree, so this check would verify nothing"
+  );
+
+  const shallow = git("rev-parse", "--is-shallow-repository");
+  assert.notStrictEqual(
+    shallow.stdout.trim(),
+    "true",
+    `cannot resolve the pristine upstream of ${rel}: this is a SHALLOW clone, so the pre-patch history is not present. ` +
+      "Re-run with full history (CI: set `fetch-depth: 0` on actions/checkout). Reporting ok here is how this check " +
+      "stayed green on every pull request while main was red."
+  );
+
+  const log = git("log", "--format=%H", "HEAD", "--", MANIFEST_PATH);
+  assert.strictEqual(log.status, 0, `cannot list the history of ${MANIFEST_PATH}: ${log.stderr.trim()}`);
+  const commits = log.stdout.split("\n").filter(Boolean);
+
+  let anchor = null;
+  for (const sha of commits) {
+    const manifest = git("show", `${sha}:${MANIFEST_PATH}`);
+    if (manifest.status !== 0) continue;
+    if (!manifest.stdout.includes(PATCH_REF)) {
+      anchor = sha;
+      break;
+    }
+  }
+  assert.ok(
+    anchor,
+    `cannot resolve the pristine upstream of ${rel}: no reachable commit has a ${MANIFEST_PATH} without ` +
+      `${JSON.stringify(PATCH_REF)}. Either the history is truncated, or the declaration has been in the manifest ` +
+      "since the bundle was first tracked — in both cases this check cannot tell a good marker from a useless one, " +
+      "so it fails rather than reporting a tier it did not reach."
+  );
+
+  const blob = git("show", `${anchor}:${rel}`);
+  // The file genuinely not existing upstream is a real, checkable answer (no
+  // marker can be in a file that is not there) — distinct from being unable to
+  // look, which asserted out above.
+  return { anchor, text: blob.status === 0 ? blob.stdout : null };
 }
 
 function declaredPatch() {
@@ -619,25 +700,12 @@ check("local-patch markers are ABSENT from the pristine upstream file", () => {
   // vacuous gate, inside the test whose subject is markers that must be able to
   // fail. Now it always asserts something real and says which tier it got.
   const { markers, paths } = markersUnderTest();
-  const mergeBase = spawnSync("git", ["merge-base", "HEAD", "origin/main"], { cwd: REPO, encoding: "utf8" });
-  const base = mergeBase.status === 0 ? mergeBase.stdout.trim() : null;
 
-  let compared = 0;
-  for (const rel of base ? paths : []) {
-    const upstream = spawnSync("git", ["show", `${base}:${rel}`], { cwd: REPO, encoding: "utf8" });
-    if (upstream.status !== 0) continue; // not tracked at the merge-base yet (pre-#305)
-    compared += 1;
-    for (const marker of markers) {
-      assert.ok(
-        !upstream.stdout.includes(marker),
-        `marker ${JSON.stringify(marker)} is ALSO in the upstream ${rel} — it can never go missing, so it can never detect a revert`
-      );
-    }
-  }
+  assert.ok(paths.length > 0, "the declaration names no paths, so there is no upstream file to compare against");
 
-  // Weaker tier, but a real assertion rather than an absent one: a marker must
-  // be specific enough that upstream could not plausibly contain it. Runs
-  // ALWAYS, so this check can never report success without checking something.
+  // The specificity tier. Cheap, content-free, and it runs first so that an
+  // obviously-useless marker is named as such before the git tier reports it as
+  // merely "also upstream".
   for (const marker of markers) {
     assert.ok(marker.length >= 8, `marker ${JSON.stringify(marker)} is too short to prove a revert`);
     assert.ok(
@@ -645,12 +713,37 @@ check("local-patch markers are ABSENT from the pristine upstream file", () => {
       `marker ${JSON.stringify(marker)} is a single generic word — upstream could contain it, so it cannot prove a revert`
     );
   }
-  if (compared === 0) {
-    process.stdout.write(
-      "       (tier: specificity only — no declared path is tracked at the merge-base yet;\n" +
-        "        the upstream-diff tier arms itself once #305 lands and the gate is tracked)\n"
-    );
+
+  // The upstream tier. Always reached: pristineUpstream() asserts rather than
+  // returning null when it cannot look, so `compared === 0` can no longer be a
+  // silent pass.
+  let compared = 0;
+  let absentUpstream = 0;
+  for (const rel of paths) {
+    const { anchor, text } = pristineUpstream(rel);
+    if (text === null) {
+      absentUpstream += 1;
+      continue;
+    }
+    compared += 1;
+    for (const marker of markers) {
+      assert.ok(
+        !text.includes(marker),
+        `marker ${JSON.stringify(marker)} is ALSO in the pristine upstream ${rel} (as of ${anchor.slice(0, 8)}, the last commit before ` +
+          `${JSON.stringify(PATCH_REF)} was declared) — an upgrade that restored that file would leave the marker in place, so it can never detect a revert`
+      );
+    }
   }
+
+  assert.strictEqual(
+    compared + absentUpstream,
+    paths.length,
+    "not every declared path was resolved against the pristine upstream — a partial pass is a pass that checked less than it claims"
+  );
+  assert.ok(
+    compared > 0,
+    "no declared path existed in the pristine upstream, so nothing was actually compared — the declaration is checking a file the bundle never shipped"
+  );
 });
 
 // ── teardown ─────────────────────────────────────────────────────────────

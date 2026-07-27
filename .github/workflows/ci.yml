@@ -37,6 +37,23 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+          # backlog-152. Load-bearing, not a convenience. The default is
+          # `fetch-depth: 1`, and on a `pull_request` event GitHub fetches
+          # `refs/pull/N/merge` into a detached HEAD with NO
+          # `refs/remotes/origin/main` — so every git-history-dependent gate
+          # here reads a repository in which it cannot look anything up.
+          # `scripts/check-review-convergence-hardening.test.js` did exactly
+          # that: its upstream-diff tier silently ran zero comparisons and
+          # printed ok on every PR, while the same commit failed on push to
+          # main (where checkout DOES create origin/main). Same job name, same
+          # bytes, opposite verdicts, and no `github.event_name` conditional
+          # anywhere — the asymmetry was the checkout, not the workflow. About
+          # twenty PRs merged green onto a main that was already red.
+          #
+          # The gate now fails closed when the history is not there, so a
+          # regression of this line turns the pull_request job RED rather than
+          # returning it to a silent pass.
+          fetch-depth: 0
 
       # Runs on the CI checkout, which is exactly the "fresh clone" case: if the
       # review-tool bundle is workstation-local again, this step is the only
