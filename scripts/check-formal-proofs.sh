@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: CECILL-B
 # SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
 # ---------------------------------------------------------------------------
-# Machine-check the Rocq proofs under formal/ (task #45).
+# Machine-check the Rocq proofs under formal/ (task #45), and the repository's
+# claims about them (task #95).
 #
 # WHAT THIS REPLACES
 #
@@ -22,6 +23,13 @@
 #      `rocq check` re-verifies every proof term against the kernel without
 #      trusting the elaborator that produced it, and prints the axioms each
 #      module depends on.
+#
+# and then (#95) it derives each project's proof-ledger.json from that build and
+# fails if the committed one differs, if the kernel found a project-local axiom
+# formal/axiom-allowlist.txt does not sanction, or if a proof-notes.json
+# annotates a theorem that does not exist. Proving the proofs and proving that
+# what the repository SAYS about them is still true are two different claims;
+# before #95 only the first was checked.
 #
 # The grep gate in .github/workflows/ci.yml is kept as well: it is instant, it
 # runs without a Rocq toolchain, and it catches an `admit.` in review before this

@@ -70,6 +70,13 @@ jobs:
           ./scripts/check-review-bundle-tracked.test.sh
           ./scripts/agent-worktree-bootstrap.test.sh
           ./scripts/roster-implement-posthook.test.sh
+          # #95. Covering test for the proof-ledger/axiom-allowlist gate. It
+          # runs HERE, in the fast job, rather than beside the gate itself in
+          # `formal-proofs`: it needs no Rocq (it synthesises the generated
+          # ledgers), it takes about a second, and putting the enforcement's own
+          # red-path coverage behind a 50-second container pull is how a gate
+          # ends up untested.
+          ./scripts/check-proof-ledger.test.sh
 
       - name: Formal proofs admit gate
         run: |
