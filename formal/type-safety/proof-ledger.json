@@ -1,0 +1,244 @@
+{
+  "schema": 2,
+  "generated_by": "scripts/gen-proof-ledger.py",
+  "do_not_edit": "Generated from theories/*.glob and `rocq check -o`. Regenerate with scripts/gen-proof-ledger.py; scripts/check-formal-proofs.sh fails on drift.",
+  "project": "type-safety",
+  "logical_path": "TypeSafety",
+  "rocq_version": "9.1.1",
+  "counts": {
+    "modules": 12,
+    "theorems": 90,
+    "definitions": 87,
+    "inductives": 43,
+    "records": 0,
+    "axioms_declared": 0,
+    "axioms_project_local": 0,
+    "axioms_toolchain_base": 0
+  },
+  "modules": {
+    "TypeSafety.ConstrSpec": {
+      "theorems": [
+        "check_fields_sound",
+        "constr_expr_ind_strong",
+        "constr_type_preservation",
+        "has_constr_type_det",
+        "infer_constr_type_complete",
+        "infer_constr_type_sound"
+      ],
+      "counts": {
+        "axioms_declared": 0,
+        "definitions": 7,
+        "inductives": 4,
+        "records": 0,
+        "theorems": 6
+      }
+    },
+    "TypeSafety.ControlFlowSpec": {
+      "theorems": [
+        "cf_type_preservation",
+        "has_cf_type_det",
+        "infer_cf_type_complete",
+        "infer_cf_type_sound"
+      ],
+      "counts": {
+        "axioms_declared": 0,
+        "definitions": 5,
+        "inductives": 3,
+        "records": 0,
+        "theorems": 4
+      }
+    },
+    "TypeSafety.FunSpec": {
+      "theorems": [
+        "fun_type_preservation",
+        "has_fun_type_det",
+        "infer_fun_type_complete",
+        "infer_fun_type_sound"
+      ],
+      "counts": {
+        "axioms_declared": 0,
+        "definitions": 4,
+        "inductives": 3,
+        "records": 0,
+        "theorems": 4
+      }
+    },
+    "TypeSafety.GPUSpec": {
+      "theorems": [
+        "gpu_type_preservation",
+        "has_gpu_type_det",
+        "infer_gpu_type_complete",
+        "infer_gpu_type_sound"
+      ],
+      "counts": {
+        "axioms_declared": 0,
+        "definitions": 7,
+        "inductives": 3,
+        "records": 0,
+        "theorems": 4
+      }
+    },
+    "TypeSafety.MutSpec": {
+      "theorems": [
+        "has_mut_type_det",
+        "infer_mut_type_complete",
+        "infer_mut_type_sound",
+        "mut_type_preservation"
+      ],
+      "counts": {
+        "axioms_declared": 0,
+        "definitions": 7,
+        "inductives": 3,
+        "records": 0,
+        "theorems": 4
+      }
+    },
+    "TypeSafety.OperatorSpec": {
+      "theorems": [
+        "has_op_type_det",
+        "infer_op_type_complete",
+        "infer_op_type_sound",
+        "op_type_preservation"
+      ],
+      "counts": {
+        "axioms_declared": 0,
+        "definitions": 12,
+        "inductives": 5,
+        "records": 0,
+        "theorems": 4
+      }
+    },
+    "TypeSafety.PatternSpec": {
+      "theorems": [
+        "check_branches_sound",
+        "has_pat_type_det",
+        "infer_pat_type_complete",
+        "infer_pat_type_sound",
+        "pat_expr_ind_strong",
+        "pat_type_preservation"
+      ],
+      "counts": {
+        "axioms_declared": 0,
+        "definitions": 9,
+        "inductives": 4,
+        "records": 0,
+        "theorems": 6
+      }
+    },
+    "TypeSafety.RegistrySpec": {
+      "theorems": [
+        "field_lookup_sound",
+        "has_rec_type_det",
+        "infer_rec_type_complete",
+        "infer_rec_type_sound",
+        "rec_type_preservation"
+      ],
+      "counts": {
+        "axioms_declared": 0,
+        "definitions": 6,
+        "inductives": 3,
+        "records": 0,
+        "theorems": 5
+      }
+    },
+    "TypeSafety.SpecialSpec": {
+      "theorems": [
+        "has_special_type_det",
+        "infer_special_type_complete",
+        "infer_special_type_sound",
+        "special_type_preservation"
+      ],
+      "counts": {
+        "axioms_declared": 0,
+        "definitions": 5,
+        "inductives": 3,
+        "records": 0,
+        "theorems": 4
+      }
+    },
+    "TypeSafety.TypeSafetySpec": {
+      "theorems": [
+        "expr_ind_strong",
+        "has_type_det",
+        "has_type_det_inner",
+        "has_type_list_det",
+        "infer_list_complete_helper",
+        "infer_list_sound_helper",
+        "infer_lit_bool",
+        "infer_lit_int",
+        "infer_type_complete",
+        "infer_type_complete_inner",
+        "infer_type_etuple",
+        "infer_type_sound",
+        "infer_type_sound_inner",
+        "infer_var_bound",
+        "lookup_env_correct",
+        "lookup_env_sound",
+        "type_preservation"
+      ],
+      "counts": {
+        "axioms_declared": 0,
+        "definitions": 9,
+        "inductives": 8,
+        "records": 0,
+        "theorems": 17
+      }
+    },
+    "TypeSafety.UnifySpec": {
+      "theorems": [
+        "follow_ground_prim",
+        "follow_ground_reg",
+        "follow_ground_tuple",
+        "follow_pvar_none",
+        "occurs_check_blocks_prim",
+        "occurs_check_blocks_reg",
+        "occurs_ground_false",
+        "occurs_ground_reg_false",
+        "pre_type_ind_strong",
+        "prim_type_beq_false",
+        "prim_type_beq_refl",
+        "prim_type_beq_true",
+        "reg_type_beq_false",
+        "reg_type_beq_refl",
+        "reg_type_beq_true",
+        "subst_lookup_head",
+        "unify_fun_prim_prim",
+        "unify_fun_reg_reg",
+        "unify_fun_var_prim",
+        "unify_fun_var_reg",
+        "unify_prim_complete",
+        "unify_prim_sound",
+        "unify_reg_complete",
+        "unify_reg_sound",
+        "unify_var_binds_prim",
+        "unify_var_binds_reg",
+        "unify_zero_none"
+      ],
+      "counts": {
+        "axioms_declared": 0,
+        "definitions": 11,
+        "inductives": 1,
+        "records": 0,
+        "theorems": 27
+      }
+    },
+    "TypeSafety.VecSpec": {
+      "theorems": [
+        "has_mem_type_det",
+        "infer_mem_type_complete",
+        "infer_mem_type_sound",
+        "mem_type_preservation",
+        "sarek_type_eq_dec"
+      ],
+      "counts": {
+        "axioms_declared": 0,
+        "definitions": 5,
+        "inductives": 3,
+        "records": 0,
+        "theorems": 5
+      }
+    }
+  },
+  "axioms_project_local": [],
+  "axioms_toolchain_base": []
+}

@@ -1,0 +1,280 @@
+{
+  "do_not_add_counts": "Human commentary only: the proof TIER (a judgement) and a note on how the proof goes. Every mechanical fact about these theorems \u2014 that they exist, that they are proven, what they assume \u2014 lives in the generated proof-ledger.json and must NOT be restated here. scripts/check-formal-proofs.sh fails if a name below is not a theorem in the generated ledger.",
+  "theorems": {
+    "barrier_free_no_barriers": {
+      "tier": "T3",
+      "note": "T3-S3 main theorem: superstep_free e = true \u2192 barrier_free e = true \u2192 eval produces no EvBarrier events; EWarpPoint may emit EvWarp (intentional)"
+    },
+    "cdcf_check_agreement": {
+      "tier": "T1",
+      "note": "is_varying cond = false (from cdcf=false) \u2192 not_varying_converged_clean clears cond; then IH on body"
+    },
+    "check_env_ESeq": {
+      "tier": "T3",
+      "note": "F-04b: check_env m env (ESeq es) = check_env_seq m env es; definitional equality exposed as a lemma for rewriting"
+    },
+    "check_env_diverged_no_barriers_ss": {
+      "tier": "T3",
+      "note": "T3-S6: resolves the T3-S3 superstep_free side condition over core_frag_ss \u2014 Diverged-clean core_frag_ss expressions are barrier-silent"
+    },
+    "check_env_nonvarying_uniform_args": {
+      "tier": "T3",
+      "note": "Corollary group bridging the non-varying condition uniformity into the sequence/application inner loops used by eval_check_uniform"
+    },
+    "check_env_nonvarying_uniform_seq": {
+      "tier": "T3",
+      "note": "Corollary group bridging the non-varying condition uniformity into the sequence/application inner loops used by eval_check_uniform"
+    },
+    "check_env_seq_cons": {
+      "tier": "T3",
+      "note": "F-04b: check_env_seq m env (e :: rest) = check_env m env e ++ check_env_seq (if has_varying_return env e then Diverged else m) env rest; proof by reflexivity"
+    },
+    "check_env_seq_core_frag": {
+      "tier": "T3",
+      "note": "F-04b soundness bridge: on core_frag elements the flag never fires, so check_env_seq collapses to the flat-map; recovers the pre-F-04b clean hypothesis in eval_check_uniform Part A ESeq."
+    },
+    "check_env_seq_core_frag_ss": {
+      "tier": "T3",
+      "note": "F-04b ss soundness bridge used by eval_check_uniform_ss Part A ESeq."
+    },
+    "check_env_seq_diverged": {
+      "tier": "T3",
+      "note": "F-04b: check_env_seq Diverged env es = concat (map (check_env Diverged env) es); in Diverged mode the flag-threading collapses to plain flat-map, preserving existing Diverged-mode proofs"
+    },
+    "check_env_seq_nil": {
+      "tier": "T3",
+      "note": "F-04b: check_env_seq m env [] = []; proof by reflexivity"
+    },
+    "check_env_sound_core": {
+      "tier": "T3",
+      "note": "T3-S4 main theorem: core_frag e = true \u2192 check_env Converged env e = [] \u2192 barrier_safe vary_val env e; one-liner via proj1 (eval_check_uniform vary_val fuel)"
+    },
+    "check_env_sound_superstep": {
+      "tier": "T3",
+      "note": "T3-S6 main theorem: core_frag_ss e = true \u2192 check_env Converged env e = [] \u2192 barrier_safe vary_val env e; enlarges T3-S4 fragment to include dv=false supersteps"
+    },
+    "check_seq_hom": {
+      "tier": "T0",
+      "note": "trivial: simpl unfolds ESeq to concat(map), then map_app + concat_app closes by reflexivity"
+    },
+    "check_warp_env_diverged_clean_warp_free": {
+      "tier": "T3",
+      "note": "T3-S7 bridge lemma: check_warp_env Diverged env e = [] \u2192 warp_free e = true; ESuperstep does not flag in check_warp_env (no warp hazard at boundary)"
+    },
+    "check_warp_env_diverged_no_warps": {
+      "tier": "T3",
+      "note": "T3-S7: core_frag e = true \u2192 check_warp_env Diverged env e = [] \u2192 eval emits no EvWarp events; dual of check_env_diverged_no_barriers"
+    },
+    "check_warp_sound_core": {
+      "tier": "T3",
+      "note": "T3-S7 main theorem: core_frag e = true \u2192 check_warp_env Converged env e = [] \u2192 warp_safe vary_val env e; warp dual of check_env_sound_core; warp-size parameterization CLOSED (warp_of abstract Section Variable)"
+    },
+    "closed_uniform": {
+      "tier": "T3",
+      "note": "T3-S2 corollary: is_var_free e = true \u2192 is_varying e = false \u2192 eval uniform across all thread ids and variable environments"
+    },
+    "core_frag_impl_ss": {
+      "tier": "T3",
+      "note": "T3-S6: core_frag e = true \u2192 core_frag_ss e = true \u2014 the enlarged fragment subsumes the core"
+    },
+    "core_frag_no_reachable_return": {
+      "tier": "T3",
+      "note": "F-04b bridge: core_frag excludes EReturn, so the reachable-return flag never fires on the verified fragment."
+    },
+    "core_frag_no_varying_return": {
+      "tier": "T3",
+      "note": "F-04b bridge: core_frag excludes EReturn, so the varying-return flag never fires on the verified fragment."
+    },
+    "core_frag_ss_barrier_free_superstep_free": {
+      "tier": "T3",
+      "note": "T3-S6: core_frag_ss e = true \u2192 barrier_free e = true \u2192 superstep_free e = true; a barrier-free core_frag_ss expression has no superstep at all"
+    },
+    "core_frag_ss_no_reachable_return": {
+      "tier": "T3",
+      "note": "F-04b ss analogue: core_frag_ss also excludes EReturn (ESuperstep is ignored by has_reachable_return's structural recursion)."
+    },
+    "core_frag_ss_no_ret": {
+      "tier": "T3",
+      "note": "T3-S6: no core_frag_ss expression returns ORet; superstep body cannot return and cont is ORet-free by induction"
+    },
+    "core_frag_ss_no_varying_return": {
+      "tier": "T3",
+      "note": "F-04b ss analogue of core_frag_no_varying_return."
+    },
+    "diverged_clean_iff_barrier_free": {
+      "tier": "T1",
+      "note": "key: diverged_absorbing \u2014 (if X then D else D) = D \u2014 makes Diverged mode absorbing; proof by expr_list_rect with Plist for ESeq/EApp"
+    },
+    "diverged_clean_no_barriers": {
+      "tier": "T3",
+      "note": "T3-S3 corollary: superstep_free e = true \u2192 check Diverged e = [] \u2192 eval emits no EvBarrier events; follows via diverged_clean_iff_barrier_free"
+    },
+    "env_check_let_alias_catches": {
+      "tier": "T1",
+      "note": "F-02 soundness: varying-aliased EVar as CF condition produces BarrierError under Converged mode; proof uses env_lookup_extend_same + app_eq_nil + discriminate"
+    },
+    "env_let_alias_varying": {
+      "tier": "T1",
+      "note": "F-02 core: if v is varying in env then ELet x v b propagates variability; proof by simpl + rewrite Hv + exact Hb"
+    },
+    "env_lookup_extend_same": {
+      "tier": "T1",
+      "note": "F-02 helper: env_lookup after env_extend with same key returns the stored value; proof by unfold + Nat.eqb_refl + reflexivity"
+    },
+    "env_var_diverged_clean": {
+      "tier": "T1",
+      "note": "F-02: EVar under Diverged mode is barrier-free (EVar carries no barrier); proof by simpl + reflexivity"
+    },
+    "eval_args_no_barrier": {
+      "tier": "T3"
+    },
+    "eval_check_uniform": {
+      "tier": "T3",
+      "note": "T3-S4 combined lemma: simultaneous fuel induction establishing Part A (barrier-trace equality) and Part B (outcome equality for non-varying expressions); Part B feeds back into Part A for condition-uniformity in EIf/EWhile/EFor"
+    },
+    "eval_check_uniform_ss": {
+      "tier": "T3",
+      "note": "T3-S6: combined Part A (barrier-trace) + Part B (outcome) uniformity by fuel induction over core_frag_ss; new ESuperstep case emits implicit [EvBarrier] uniformly on all threads"
+    },
+    "eval_check_warp_uniform": {
+      "tier": "T3",
+      "note": "T3-S7: warp dual of eval_check_uniform \u2014 Part A (erase_barrier trace equality) + Part B (outcome equality) over core_frag with check_warp_env Converged clean; mechanical EBarrier\u2194EWarpPoint substitution of eval_check_uniform"
+    },
+    "eval_concrete_barrier_free_silent": {
+      "tier": "T3",
+      "note": "T3-S8: barrier-silence for eval_concrete; superstep_free \u2227 barrier_free \u2192 no EvBarrier in trace; mirrored by QCheck sem:barrier_free_silent"
+    },
+    "eval_concrete_fuel_monotone": {
+      "tier": "T3",
+      "note": "T3-S8: fuel-monotonicity specialized to eval_concrete; direct application of section theorem eval_fuel_monotone; mirrored by QCheck sem:eval_fuel_monotone"
+    },
+    "eval_seq_no_barrier": {
+      "tier": "T3"
+    },
+    "eval_while_exits_immediately_ss": {
+      "tier": "T3",
+      "note": "T3-S6: core_frag_ss analogue of eval_while_exits_immediately \u2014 a terminating core_frag_ss EWhile exits immediately (cond evaluated to 0)"
+    },
+    "for_loop_fixed_no_barrier": {
+      "tier": "T3"
+    },
+    "hazard_checker_sound": {
+      "tier": "T3",
+      "note": "T3-S5 / F-04b: spec/operational agreement \u2014 check_env flags the hazard AND it is genuinely not barrier_safe; closes the F-04 spec/impl divergence"
+    },
+    "hazard_eval_thread0": {
+      "tier": "T3",
+      "note": "T3-S5: thread 0 evaluates hazard to (ORet 0, []) \u2014 early return, no barrier event; proof by reflexivity"
+    },
+    "hazard_eval_thread1": {
+      "tier": "T3",
+      "note": "T3-S5: thread 1 evaluates hazard to (ONorm 0, [EvBarrier]) \u2014 falls through to barrier; proof by reflexivity"
+    },
+    "hazard_not_barrier_safe": {
+      "tier": "T3",
+      "note": "T3-S5 main theorem: \u00ac barrier_safe hazard_vary [] hazard \u2014 constructive counterexample; erase_warp traces [] vs [EvBarrier] differ across threads"
+    },
+    "hazard_spec_detects": {
+      "tier": "T3",
+      "note": "T3-S5 / F-04b: after the F-04b fix, check_env Converged [] hazard \u2260 [] \u2014 the spec now detects the hazard (supersedes pre-F-04b hazard_checker_blind)"
+    },
+    "is_strongly_uniform_env_irrelevant": {
+      "tier": "T3",
+      "note": "T3-S2: alias of var_free_env_irrelevant; is_var_free e = true \u2192 is_strongly_uniform env1 e = is_strongly_uniform env2 e"
+    },
+    "is_strongly_uniform_impl_is_not_varying": {
+      "tier": "T3",
+      "note": "T3-S2 bridge: is_strongly_uniform env e = true \u2192 is_varying_in_env env e = false \u2014 strictly stronger predicate"
+    },
+    "merge_dim_assoc": {
+      "tier": "T0"
+    },
+    "merge_dim_comm": {
+      "tier": "T0"
+    },
+    "merge_dim_empty_l": {
+      "tier": "T0"
+    },
+    "merge_dim_empty_r": {
+      "tier": "T0"
+    },
+    "merge_dim_idempotent": {
+      "tier": "T0"
+    },
+    "mode_monotone": {
+      "tier": "T1",
+      "note": "EIf/EWhile/EFor case-split on is_varying cond; varying \u2192 inner stays Diverged in both (incl_refl); non-varying \u2192 apply IH for inner exprs"
+    },
+    "no_barrier_app": {
+      "tier": "T3"
+    },
+    "not_varying_converged_clean": {
+      "tier": "T1",
+      "note": "helper for cdcf_check_agreement: is_varying e = false \u2192 all inner modes stay Converged \u2192 EBarrier gives []"
+    },
+    "not_varying_uniform": {
+      "tier": "T3",
+      "note": "T3-S2 main theorem: env_agrees env rho1 rho2 \u2192 is_strongly_uniform env e = true \u2192 eval vary_val fuel t1 rho1 e = eval vary_val fuel t2 rho2 e"
+    },
+    "not_varying_uniform_args": {
+      "tier": "T3",
+      "note": "T3-S2 list variant of not_varying_uniform \u2014 mutual induction companion for EApp/ESeq"
+    },
+    "return_barrier_skip_safe": {
+      "tier": "T2",
+      "note": "T2-RETURN compositionality: forall m e, check m (EReturn e) = check m e \u2014 EReturn is a transparent wrapper for barrier analysis; proof by simpl + reflexivity. Corollary return_converged_clean: barrier_free e \u2192 check Converged (EReturn e) = []"
+    },
+    "semantic_f01_corollary": {
+      "tier": "T3",
+      "note": "T3-S6: conjunction \u2014 susp_hazard is flagged AND not barrier_safe; the F-01 BarrierError is a SOUND rejection grounding superstep_outer_diverged_error at runtime"
+    },
+    "semantic_f01_flagged": {
+      "tier": "T3",
+      "note": "T3-S6: check_env Converged [] susp_hazard \u2260 [] \u2014 the env-threaded checker flags susp_hazard"
+    },
+    "semantic_f01_not_barrier_safe": {
+      "tier": "T3",
+      "note": "T3-S6: \u00ac barrier_safe susp_vary [] susp_hazard \u2014 barrier traces [EvBarrier; EvBarrier] vs [] diverge across env-agreeing threads"
+    },
+    "superstep_outer_diverged_error": {
+      "tier": "T1",
+      "note": "F-01: Diverged entry into ESuperstep with divergent=false yields BarrierError; proof by simpl + discriminate"
+    },
+    "susp_eval_thread0": {
+      "tier": "T3",
+      "note": "T3-S6: thread 0 evaluates susp_hazard to (ONorm 0, [EvBarrier; EvBarrier]); proof by reflexivity"
+    },
+    "susp_eval_thread1": {
+      "tier": "T3",
+      "note": "T3-S6: thread 1 evaluates susp_hazard to (ONorm 0, []); proof by reflexivity"
+    },
+    "var_free_env_irrelevant": {
+      "tier": "T3",
+      "note": "T3-S2: is_var_free e = true \u2192 is_strongly_uniform env1 e = is_strongly_uniform env2 e (EVar-free means env-independent)"
+    },
+    "var_free_is_strongly_uniform_empty": {
+      "tier": "T3",
+      "note": "T3-S2: is_var_free e = true \u2192 is_varying e = false \u2192 is_strongly_uniform [] e = true"
+    },
+    "varying_if_flags_barriers": {
+      "tier": "T1",
+      "note": "is_varying cond \u2192 inner=Diverged; then diverged_clean_iff_barrier_free: \u00acbarrier_free \u2192 check Diverged \u2260 [] \u2192 contradiction"
+    },
+    "warp_diverged_error": {
+      "tier": "T2",
+      "note": "T2-WARP atomic: check_warp Diverged EWarpPoint \u2260 []; models Warp_collective_in_diverged_flow from Sarek_convergence.ml lines 153-155; proof by simpl + discriminate"
+    },
+    "warp_free_no_warps": {
+      "tier": "T3",
+      "note": "T3-S7 trace-silence theorem: superstep_free e = true \u2192 warp_free e = true \u2192 eval emits no EvWarp events; dual of barrier_free_no_barriers"
+    },
+    "warp_mode_monotone": {
+      "tier": "T2",
+      "note": "T2-WARP quantified: forall e, incl (check_warp Converged e) (check_warp Diverged e) \u2014 warp analogue of mode_monotone; proven by expr_list_rect + diverged_absorbing"
+    },
+    "warp_varying_if_flags": {
+      "tier": "T2",
+      "note": "T2-WARP context: forall el, check_warp Converged (EIf EVary EWarpPoint el) \u2260 [] \u2014 EWarpPoint nested under varying EIf is always caught; proof by simpl + discriminate"
+    }
+  }
+}

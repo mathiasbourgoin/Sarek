@@ -49,6 +49,9 @@ set -euo pipefail
 EXPECTED_PROJECTS=3
 
 cd "$(dirname "$0")/.."
+# Absolute, because the per-project steps run in a subshell that has cd'd into
+# formal/<project> and still need to invoke scripts/ from the repository root.
+ROOT=$(pwd)
 
 # Writability pre-flight.
 #
@@ -109,11 +112,28 @@ else
   coqc --version
 fi
 
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "::error::no python3 on PATH. scripts/gen-proof-ledger.py derives each \
+project's proof-ledger.json from the toolchain, and without it the ledger \
+comparison and the axiom allowlist (#95) cannot run at all — which is the \
+state this gate was written to end. rocq/rocq-prover:9.1.1 ships python3."
+  exit 1
+fi
+
 projects=$(find formal -mindepth 1 -maxdepth 1 -type d | sort)
 if [ -z "$projects" ]; then
   echo "::error::no formal/ projects found — this gate would pass vacuously."
   exit 1
 fi
+
+# Generated ledgers land OUTSIDE the project directories, deliberately. The
+# per-project `restore_tree` trap runs `git checkout -- .` inside the project,
+# so a ledger written next to the sources would be reverted to the committed
+# copy before it could be compared against it — the comparison would pass by
+# comparing the committed file with itself. Writing elsewhere is what makes the
+# drift check able to fail.
+LEDGER_OUT=$(mktemp -d)
+trap 'rm -rf "$LEDGER_OUT"' EXIT
 
 checked=0
 
@@ -239,31 +259,24 @@ present: $marker)"
       exit 1
     fi
 
-    # 5. Report what the proofs assume. `rocq check` lists axioms rather than
-    #    rejecting them, and this repository has one sanctioned escape hatch
-    #    (`Parameter` in AGpuSemantics.v — see the admit gate's comment in
-    #    .github/workflows/ci.yml), so this is reported for review rather than
-    #    enforced at zero. Enforcing a specific allowlist is a follow-up: the
-    #    three proof-ledger.json files currently disagree with each other about
-    #    the axiom and theorem counts, so there is no single trustworthy
-    #    expected value to compare against yet.
-    assumptions=$(printf '%s\n' "$out" | grep -iE "^\s*\*\*\* |axiom" || true)
-    if [ -n "$assumptions" ]; then
-      echo "  assumptions reported by the kernel checker:"
-      printf '%s\n' "$assumptions" | sed 's/^/    /'
-    fi
-
-    # awk, not bc: bc is not installed in the rocq/rocq-prover image, and under
-    # `set -euo pipefail` its absence failed the job AFTER every proof had
-    # already been checked — a green result reported as red.
+    # 5. Derive this project's proof ledger from the build that just happened.
     #
-    # `|| true` for the same reason: `grep -c` exits 1 when NO file matched, and
-    # under pipefail that status propagates out of the assignment and `set -e`
-    # kills the run. This is a reporting line, not a gate — a project with no
-    # Theorem/Lemma must print 0, not fail a run whose proofs all checked.
-    theorems=$({ grep -rhcE "^(Theorem|Lemma|Corollary|Proposition|Remark|Fact) " \
-                   theories/*.v || true; } | awk '{s += $1} END {print s + 0}')
-    echo "  kernel-verified statements in theories/: $theorems"
+    #    This REPLACES a grep over `$out` for lines matching /axiom/i, which
+    #    reported ~2200 lines per project because `rocq check`'s trace names
+    #    every Stdlib module it loads and several of them are called
+    #    `...Uint63Axioms` / `...FloatAxioms`. It printed module names, never an
+    #    axiom, and was labelled "assumptions reported by the kernel checker".
+    #
+    #    gen-proof-ledger.py parses the CONTEXT SUMMARY that `rocq check -o`
+    #    prints — the actual transitive assumption closure — and cross-checks it
+    #    against theories/*.glob. It fails loudly if the summary is missing or
+    #    its format changed, so a parse that finds nothing cannot be mistaken
+    #    for a project with no axioms.
+    #
+    #    Written to $LEDGER_OUT, not next to the sources: see the comment where
+    #    LEDGER_OUT is created.
+    python3 "$ROOT/scripts/gen-proof-ledger.py" . \
+      -o "$LEDGER_OUT/$(basename "$PWD").json"
 
     # 6. The working tree is put back by the restore_tree EXIT trap installed
     #    at the top of this subshell, so that it also runs on the failure paths
@@ -288,4 +301,33 @@ top of this script."
   exit 1
 fi
 
+
+# ---------------------------------------------------------------------------
+# Ledger drift, axiom allowlist, note anchors (task #95).
+#
+# Everything above proves the proofs. This proves that what the repository SAYS
+# about the proofs is still true — the half that #45 deliberately left open,
+# because the three hand-written proof-ledger.json files disagreed with each
+# other and there was no trustworthy expected value to compare against.
+#
+# Three checks, each failing for a different reason:
+#
+#   drift     — the committed ledger differs from what this build produced.
+#               Someone edited it, or changed the proofs without regenerating.
+#   allowlist — the kernel found a project-local axiom nobody sanctioned, or an
+#               entry in formal/axiom-allowlist.txt no proof depends on any more.
+#               This is the check the "reported for review rather than enforced"
+#               note used to stand in for.
+#   anchors   — proof-notes.json names a theorem that does not exist. The old
+#               ledgers carried one such entry (an anchor pointing at a PAIR of
+#               lemmas under a name Rocq never saw); nothing could detect it.
+#
+# Runs after the loop, so the per-project restore_tree traps have already put
+# the working tree back and the committed ledgers are the committed ledgers.
+# ---------------------------------------------------------------------------
+echo
+echo "== ledger, axioms, anchors"
+python3 "$ROOT/scripts/check-proof-ledger.py" --generated "$LEDGER_OUT"
+
+echo
 echo "OK: $checked formal project(s) rebuilt from source and kernel-re-checked."

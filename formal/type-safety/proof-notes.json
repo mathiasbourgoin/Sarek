@@ -1,0 +1,287 @@
+{
+  "do_not_add_counts": "Human commentary only: the proof TIER (a judgement) and a note on how the proof goes. Every mechanical fact about these theorems \u2014 that they exist, that they are proven, what they assume \u2014 lives in the generated proof-ledger.json and must NOT be restated here. scripts/check-formal-proofs.sh fails if a name below is not a theorem in the generated ledger.",
+  "theorems": {
+    "cf_type_preservation": {
+      "proof": "split; apply infer_cf_type_sound / infer_cf_type_complete"
+    },
+    "check_branches_sound": {
+      "proof": "induction on branches; destruct head (cname,bvar,body), inversion on the per-body Forall, destruct lookup_constr/infer head body/sarek_type_eq_dec tbody result_ty, apply BHT_cons, recurse with the Forall tail",
+      "role": "helper"
+    },
+    "check_fields_sound": {
+      "proof": "induction on provided; destruct head (fname,fexpr), inversion on per-field Forall, destruct field_lookup/infer fexpr/sarek_type_eq_dec got declared_ty, apply FHT_cons, recurse with the Forall tail",
+      "role": "helper"
+    },
+    "constr_expr_ind_strong": {
+      "proof": "custom strong induction for constr_expr; fix IH 1, nested Forall-list induction over provided fields and a Some/None split for the optional CEConstr payload; Defined so it computes",
+      "role": "helper"
+    },
+    "constr_type_preservation": {
+      "proof": "split; apply infer_constr_type_sound / infer_constr_type_complete"
+    },
+    "expr_ind_strong": {
+      "proof": "custom strong induction principle for expr (Forall hypothesis for ETuple); proved by fix IH 1 with Forall-list nested induction (Defined, so it computes)",
+      "role": "helper"
+    },
+    "field_lookup_sound": {
+      "proof": "induction on fields as [(f, ft) :: rest]; String.eqb_spec for reflection; left/right branches via injection + subst"
+    },
+    "follow_ground_prim": {
+      "proof": "reflexivity (follow is a Definition, iota reduces immediately)"
+    },
+    "follow_ground_reg": {
+      "proof": "reflexivity"
+    },
+    "follow_ground_tuple": {
+      "proof": "reflexivity"
+    },
+    "follow_pvar_none": {
+      "proof": "unfold follow; destruct fuel; simpl; rewrite Hnone"
+    },
+    "fun_type_preservation": {
+      "proof": "split; apply infer_fun_type_sound / infer_fun_type_complete"
+    },
+    "gpu_type_preservation": {
+      "proof": "split; apply infer_gpu_type_sound / infer_gpu_type_complete"
+    },
+    "has_cf_type_det": {
+      "proof": "pose proof infer_cf_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity (infer_cf_type is deterministic as a function)"
+    },
+    "has_constr_type_det": {
+      "proof": "pose proof infer_constr_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity"
+    },
+    "has_fun_type_det": {
+      "proof": "pose proof infer_fun_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity"
+    },
+    "has_gpu_type_det": {
+      "proof": "pose proof infer_gpu_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity"
+    },
+    "has_mem_type_det": {
+      "proof": "pose proof infer_mem_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity (infer_mem_type is deterministic as a function)"
+    },
+    "has_mut_type_det": {
+      "proof": "pose proof infer_mut_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity"
+    },
+    "has_op_type_det": {
+      "proof": "pose proof infer_op_type_complete H1/H2; rewrite Ho1 in Ho2; injection Ho2 as <-; reflexivity"
+    },
+    "has_pat_type_det": {
+      "proof": "pose proof infer_pat_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity"
+    },
+    "has_rec_type_det": {
+      "proof": "pose proof infer_rec_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity (infer_rec_type is deterministic as a function)"
+    },
+    "has_special_type_det": {
+      "proof": "pose proof infer_special_type_complete H1/H2; rewrite Hc1 in Hc2; injection Hc2 as <-; reflexivity"
+    },
+    "has_type_det": {
+      "proof": "induction on first derivation (explicit IH names IH1/IH2 to survive auto-naming), inversion on second; EVar uses lookup_env_correct; ELet chains both IHs after matching the e1 type"
+    },
+    "has_type_det_inner": {
+      "proof": "induction ex using expr_ind_strong; ETuple case delegates to has_type_list_det; the public has_type_det is its instantiation",
+      "role": "helper"
+    },
+    "has_type_list_det": {
+      "proof": "induction on the first Forall2 with ts2 generalized; inversion on the second",
+      "role": "helper"
+    },
+    "infer_cf_type_complete": {
+      "proof": "induction H as [...]; for HCF_Rec: infer_rec_type_complete; for HCF_IfThen/IfElse: rewrite IHcond/IHthen/IHelse, destruct sarek_type_eq_dec X X (left branch, right is exfalso); for HCF_For: rewrite IHlo/IHhi/IHbody, two eq_dec self-checks; for HCF_While: rewrite IHcond/IHbody; for HCF_Seq: rewrite IH1/IH2"
+    },
+    "infer_cf_type_sound": {
+      "proof": "intros env e t H; revert env t H; induction e as [re | cond IHcond then_e IHthen | ...]; for CFRec: infer_rec_type_sound; for CFIfThen/IfElse: destruct cond/then/else results and eq_dec branches, apply HCF_If*; for CFFor: destruct lo/hi/body, apply HCF_For with t_body; for CFWhile: destruct cond/body, HCF_While; for CFSeq: HCF_Seq with t1"
+    },
+    "infer_constr_type_complete": {
+      "proof": "induction H using has_constr_type_mind with P0 := check_fields ... = inl tt; HCT_Pat: infer_pat_type_complete; HCT_Record: rewrite check IH; HCT_ConstrNone: rewrite lookup hyp; HCT_ConstrSome: rewrite lookup hyp + arg IH + sarek_type_eq_dec pty self; FHT_nil: reflexivity; FHT_cons: rewrite lookup hyp + field IH + sarek_type_eq_dec declared_ty self, exact tail IH"
+    },
+    "infer_constr_type_sound": {
+      "proof": "induction e using constr_expr_ind_strong; CEPat: infer_pat_type_sound wrapped as CPatternErr; CERecord: destruct check_fields, apply HCT_Record via check_fields_sound; CEConstr: destruct lookup_constr then payload x arg (4-way) \u2014 Some/Some uses sarek_type_eq_dec + HCT_ConstrSome with explicit pty, None/None uses HCT_ConstrNone, mixed arities discriminate"
+    },
+    "infer_fun_type_complete": {
+      "proof": "induction H; HFT_Op: infer_op_type_complete; HFT_App: rewrite IH1/IH2, sarek_type_eq_dec p_ty self reflexivity; HFT_LetRec: rewrite IH1, sarek_type_eq_dec ret_ty self, exact IH2"
+    },
+    "infer_fun_type_sound": {
+      "proof": "induction e as [oe | fn IHfn arg IHarg | fn_name p_name p_ty ret_ty body IHbody cont IHcont]; FEOp: infer_op_type_sound; FEApp: destruct fn result, destruct tfn to TFun, destruct param list to single p_ty :: nil, destruct arg result, sarek_type_eq_dec targ p_ty, apply HFT_App; FELetRec: destruct body result in extended (p_name,p_ty)::(fn_name,fn_ty)::env, sarek_type_eq_dec tbody ret_ty, apply HFT_LetRec with IHcont on fn-only env"
+    },
+    "infer_gpu_type_complete": {
+      "proof": "induction H (3 judgement cases); HGT_Special: infer_special_type_complete; HGT_LetShared: ty already TArr _ Shared, simpl exposes the recursive call, exact body IH; HGT_Superstep: rewrite body IH + sarek_type_eq_dec (TPrim TUnit) self reflexive"
+    },
+    "infer_gpu_type_sound": {
+      "proof": "induction e (3 gpu_expr cases); GESpecial: infer_special_type_sound wrapped as GSpecialErr; GELetShared: destruct ty (only TArr reaches), destruct mem (only Shared), recurse under ((name,ty)::env) via body IH giving HGT_LetShared; GESuperstep: destruct infer body + sarek_type_eq_dec bt (TPrim TUnit), subst, HGT_Superstep via body IH"
+    },
+    "infer_list_complete_helper": {
+      "proof": "induction on the Forall IH list; inversion on Forall2; rebuilds infer_list_with",
+      "role": "helper"
+    },
+    "infer_list_sound_helper": {
+      "proof": "induction on the Forall IH list; unfolds infer_list_with accumulator",
+      "role": "helper"
+    },
+    "infer_lit_bool": {
+      "proof": "reflexivity"
+    },
+    "infer_lit_int": {
+      "proof": "reflexivity (literal rule computes definitionally)"
+    },
+    "infer_mem_type_complete": {
+      "proof": "intros env0 e0 t0 H; induction H; for HMT_Core: match goal to find has_type hyp, rewrite infer_type_complete; for HMT_VecGet/ArrGet: rewrite IH1 IH2; for HMT_VecSet/ArrSet: rewrite IH1 IH2 IH3, destruct sarek_type_eq_dec elem_t elem_t (left branch)"
+    },
+    "infer_mem_type_sound": {
+      "proof": "intros env e t H; revert env t H; induction e; for MCore: infer_type_sound; for EVecGet/EVecSet: destruct on inl(TVec elem_t) then inl(TPrim TInt32), eapply HMT_VecGet/VecSet; for EArrGet/EArrSet: destruct inl(TArr elem_t ms), eapply HMT_ArrGet/ArrSet with (m:=ms)"
+    },
+    "infer_mut_type_complete": {
+      "proof": "induction H; HMT_Fun: infer_fun_type_complete; HMT_LetMut: rewrite IH1, exact IH2; HMT_Assign: rewrite IH, rewrite lookup hyp, rewrite is_mutable hyp, subst tv, sarek_type_eq_dec tdecl self reflexivity"
+    },
+    "infer_mut_type_sound": {
+      "proof": "induction e as [fe | name init IHinit body IHbody | name value IHvalue]; MEFun: infer_fun_type_sound; MELetMut: destruct init result, apply HMT_LetMut with t:=tinit using IHinit/IHbody on extended (name,t)::env and name::mu; MEAssign: destruct value result, destruct lookup_env env name, destruct is_mutable mu name, sarek_type_eq_dec tv tdecl, apply HMT_Assign"
+    },
+    "infer_op_type_complete": {
+      "proof": "induction H; HOT_CF: infer_cf_type_complete; HOT_NumericBinop/IntegerBinop: rewrite IH1/IH2, eq_dec self, destruct op (discriminate non-matching), destruct is_numeric/is_integer eqn (reflexivity or congruence); HOT_BoolBinop: rewrite IH1/IH2, eq_dec self, nested eq_dec TPrim TBool self; HOT_EqBinop: rewrite IH1/IH2, eq_dec self, destruct op (discriminate), reflexivity; HOT_CmpBinop: similar with is_numeric check; HOT_Neg/HOT_Lnot: rewrite IH, is_numeric/is_integer check; HOT_Not: rewrite IH, eq_dec TPrim TBool self"
+    },
+    "infer_op_type_sound": {
+      "proof": "induction e as [ce | op lhs IHl rhs IHr | op' e' IHop]; OPCf: infer_cf_type_sound; OPBinop: destruct lhs/rhs results, sarek_type_eq_dec t1=t2, then 19-goal destruct op with explicit N-M: goal selectors for NumericBinop/IntegerBinop/BoolBinop/EqBinop/CmpBinop groups; OPUnop: destruct op, Neg: is_numeric check, Not: sarek_type_eq_dec bool check, Lnot: is_integer check"
+    },
+    "infer_pat_type_complete": {
+      "proof": "induction H using has_pat_type_mind with P0 := check_branches ... = inl tt; HPT_Mut: infer_mut_type_complete; HPT_Match: rewrite scrut IH, lookup hyp, head body IH, rest-check IH; BHT_nil: reflexivity; BHT_cons: rewrite lookup hyp + head IH, sarek_type_eq_dec result_ty self, exact tail IH"
+    },
+    "infer_pat_type_sound": {
+      "proof": "induction e using pat_expr_ind_strong; PEMut: infer_mut_type_sound; PEMatch: destruct scrutinee result, destruct tscrut keeping only TVariant, inversion on the branch Forall (destruct on the list itself cannot infer the elimination motive), head branch via lookup_constr + IHscrut + Hhead, remaining via check_branches_sound"
+    },
+    "infer_rec_type_complete": {
+      "proof": "intros env0 e0 t0 H; induction H; for HRT_Mem: match goal for has_mem_type, rewrite infer_mem_type_complete; for HRT_FieldGet: rewrite IH, rewrite field_lookup; for HRT_FieldSet: rewrite IH1, IH2, IH3, destruct sarek_type_eq_dec field_t field_t (left branch)"
+    },
+    "infer_rec_type_sound": {
+      "proof": "intros env e t H; revert env t H; induction e; for RMem: infer_mem_type_sound; for EFieldGet: destruct inl(TRecord rname rflds), destruct field_lookup, HRT_FieldGet via IHe; for EFieldSet: destruct TRecord, field_lookup, value type, sarek_type_eq_dec, HRT_FieldSet via IHe1/IHe2"
+    },
+    "infer_special_type_complete": {
+      "proof": "induction H (4 judgement cases); HST_Constr: infer_constr_type_complete; HST_Return: rewrite body IH; HST_CreateArray: rewrite size IH + sarek_type_eq_dec (TPrim TInt32) self reflexive; HST_Typed: rewrite body IH + sarek_type_eq_dec annot self reflexive"
+    },
+    "infer_special_type_sound": {
+      "proof": "induction e (4 special_expr cases); SEConstr: infer_constr_type_sound wrapped as SConstrErr; SEReturn: destruct allowed (false discriminates), body IH gives HST_Return; SECreateArray: destruct infer size + sarek_type_eq_dec sz (TPrim TInt32), subst, HST_CreateArray via size IH; SETyped: destruct infer body + sarek_type_eq_dec got annot, subst, HST_Typed via body IH"
+    },
+    "infer_type_complete": {
+      "proof": "induction on has_type; HT_Var immediate (rewrite H \u2014 constructor carries lookup_env x = Some t directly); HT_Let rewrites with both IHs"
+    },
+    "infer_type_complete_inner": {
+      "proof": "induction ex using expr_ind_strong; ETuple case delegates to infer_list_complete_helper; the public infer_type_complete is its instantiation",
+      "role": "helper"
+    },
+    "infer_type_etuple": {
+      "proof": "reflexivity (unfolds the ETuple case of infer_type)",
+      "role": "helper"
+    },
+    "infer_type_sound": {
+      "proof": "structural induction on e (env reverted); ELit destruct l + injection + constructor; EVar destruct lookup + HT_Var; ELet destruct infer_type env e1 + HT_Let via two IHs"
+    },
+    "infer_type_sound_inner": {
+      "proof": "induction ex using expr_ind_strong; ETuple case delegates to infer_list_sound_helper; the public infer_type_sound is its instantiation",
+      "role": "helper"
+    },
+    "infer_var_bound": {
+      "proof": "intros env x t H; simpl; rewrite H; reflexivity"
+    },
+    "lookup_env_correct": {
+      "proof": "rewrite H in H'; injection H' as ->; reflexivity (lookup_env is a partial function)"
+    },
+    "lookup_env_sound": {
+      "proof": "induction on env with t generalized; String.eqb case split via String.eqb_eq; left/right"
+    },
+    "mem_type_preservation": {
+      "proof": "split; apply infer_mem_type_sound / infer_mem_type_complete"
+    },
+    "mut_type_preservation": {
+      "proof": "split; apply infer_mut_type_sound / infer_mut_type_complete"
+    },
+    "occurs_check_blocks_prim": {
+      "proof": "reflexivity"
+    },
+    "occurs_check_blocks_reg": {
+      "proof": "reflexivity"
+    },
+    "occurs_ground_false": {
+      "proof": "reflexivity"
+    },
+    "occurs_ground_reg_false": {
+      "proof": "reflexivity"
+    },
+    "op_type_preservation": {
+      "proof": "split; apply infer_op_type_sound / infer_op_type_complete"
+    },
+    "pat_expr_ind_strong": {
+      "proof": "custom strong induction principle for pat_expr (Forall hypothesis over branch bodies); fix IH 1 with nested Forall-list induction (Defined so it computes); the P-scrut argument precedes the branches binder so that 'induction e as [me | scrut IHscrut branches Hbranches]' binds the IHs in the right slots",
+      "role": "helper"
+    },
+    "pat_type_preservation": {
+      "proof": "split; apply infer_pat_type_sound / infer_pat_type_complete"
+    },
+    "pre_type_ind_strong": {
+      "proof": "fix IH 1; induction list with Forall_cons"
+    },
+    "prim_type_beq_false": {
+      "proof": "split; destruct p2; discriminate/contradiction"
+    },
+    "prim_type_beq_refl": {
+      "proof": "destruct p; reflexivity"
+    },
+    "prim_type_beq_true": {
+      "proof": "split; destruct p1 p2; discriminate/reflexivity"
+    },
+    "rec_type_preservation": {
+      "proof": "split; apply infer_rec_type_sound / infer_rec_type_complete"
+    },
+    "reg_type_beq_false": {
+      "proof": "split; destruct r2; discriminate/contradiction"
+    },
+    "reg_type_beq_refl": {
+      "proof": "destruct r; reflexivity"
+    },
+    "reg_type_beq_true": {
+      "proof": "split; destruct r1 r2; discriminate/reflexivity"
+    },
+    "sarek_type_eq_dec": {
+      "proof": "fix IH 1; destruct t1 as [p|r|sv|sa ms|lf sf|lt]; destruct t2 as [...]; prim_type_eq_dec/reg_type_eq_dec/mem_space_eq_dec + inner IHL fix for list cases (TFun/TTuple); injection H as <- _ / <- for each injection step"
+    },
+    "special_type_preservation": {
+      "proof": "split; apply infer_special_type_sound / infer_special_type_complete"
+    },
+    "subst_lookup_head": {
+      "proof": "simpl; rewrite Nat.eqb_refl; reflexivity"
+    },
+    "type_preservation": {
+      "proof": "split into infer_type_sound (->) and infer_type_complete (<-); central T1-SOUND theorem"
+    },
+    "unify_fun_prim_prim": {
+      "proof": "reflexivity (follow Definition + struct fuel annotation enables iota reduction)"
+    },
+    "unify_fun_reg_reg": {
+      "proof": "reflexivity"
+    },
+    "unify_fun_var_prim": {
+      "proof": "unfold follow in Hfoll; simpl; rewrite Hfoll; reflexivity"
+    },
+    "unify_fun_var_reg": {
+      "proof": "unfold follow in Hfoll; simpl; rewrite Hfoll; reflexivity"
+    },
+    "unify_prim_complete": {
+      "proof": "destruct fuel; rewrite unify_fun_prim_prim; prim_type_beq_refl"
+    },
+    "unify_prim_sound": {
+      "proof": "destruct fuel; rewrite unify_fun_prim_prim; destruct prim_type_beq; inversion H; prim_type_beq_true"
+    },
+    "unify_reg_complete": {
+      "proof": "destruct fuel; rewrite unify_fun_reg_reg; reg_type_beq_refl"
+    },
+    "unify_reg_sound": {
+      "proof": "destruct fuel; rewrite unify_fun_reg_reg; reg_type_beq_true"
+    },
+    "unify_var_binds_prim": {
+      "proof": "rewrite unify_fun_var_prim; occurs_ground_false; inversion H; subst_lookup_head"
+    },
+    "unify_var_binds_reg": {
+      "proof": "rewrite unify_fun_var_reg; occurs_ground_reg_false; inversion H; subst_lookup_head"
+    },
+    "unify_zero_none": {
+      "proof": "reflexivity"
+    }
+  }
+}

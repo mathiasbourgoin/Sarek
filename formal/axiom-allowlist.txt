@@ -1,0 +1,29 @@
+# Sanctioned project-local axioms (task #95).
+#
+# Every name here is an `Axiom`/`Parameter` declared under formal/ that the
+# kernel checker reports as a real dependency of a checked proof. Rocq's own
+# primitive-float and int63 axiomatisations are NOT listed: they are inherited
+# through imports, are not this repository's to sanction, and are recorded in
+# full in each project's generated proof-ledger.json under
+# `axioms_toolchain_base` so a new one still shows up in a diff.
+#
+# scripts/check-formal-proofs.sh enforces this list in BOTH directions:
+#   * an axiom the kernel found that is not listed        -> FAIL (unsanctioned)
+#   * a name listed that no proof depends on any more     -> FAIL (stale)
+# The second direction is the point. Without it the list only ever grows, and a
+# gate that cannot shrink stops describing the code within a release or two.
+#
+# Adding a line here is a deliberate act. Say why, in place.
+
+# AGpuSemantics.v models the PTX math intrinsics as uninterpreted functions.
+# The abstract GPU semantics reasons about how a kernel USES sin/cos/fma, never
+# about their numeric results, so axiomatising them keeps the model independent
+# of any particular device's ULP behaviour. Interpreting them would require
+# committing the spec to one hardware rounding story and would prove nothing
+# the codegen theorems need.
+CodegenPtx.AGpuSemantics.cos_f32
+CodegenPtx.AGpuSemantics.cos_f64
+CodegenPtx.AGpuSemantics.fma_f32
+CodegenPtx.AGpuSemantics.fma_f64
+CodegenPtx.AGpuSemantics.sin_f32
+CodegenPtx.AGpuSemantics.sin_f64

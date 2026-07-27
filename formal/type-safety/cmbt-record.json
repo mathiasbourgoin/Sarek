@@ -1,0 +1,114 @@
+{
+  "what_this_is": "Certified model-based-testing campaign record: the conformance runs that cross-checked the Rocq model against the production OCaml typer, and what they found. These are EXECUTION results \u2014 case counts, failures, findings \u2014 which no re-run of the prover reproduces, so they are recorded by hand. Proof counts are not: see the generated proof-ledger.json.",
+  "project": "type-safety",
+  "branch": "formal/convergence-safety-phase1a",
+  "phase": "T3-S8 (GPUSpec, done)",
+  "toolchain": {
+    "rocq": "9.1.1",
+    "ocaml": "5.4.0"
+  },
+  "cmbt": {
+    "id": "T1-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "property": "coq_model_vs_sarek_typer_agree",
+    "qcheck_cases": 2000,
+    "qcheck_pass": 2000,
+    "errors": 0,
+    "fails": 0,
+    "finding": "F-TS-01 (ELet scope leak, RESOLVED)"
+  },
+  "cmbt_t2_unify": {
+    "id": "T2-UNIFY-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "property": "unify_model_vs_sarek_unify_ground",
+    "qcheck_cases": 1000,
+    "qcheck_pass": 1000,
+    "smoke_cases": 15,
+    "smoke_pass": 15,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t2_vec": {
+    "id": "T2-VEC-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t2_registry": {
+    "id": "T2-REGISTRY-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s1": {
+    "id": "T3-S1-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s2": {
+    "id": "T3-S2-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s3": {
+    "id": "T3-S3-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s4": {
+    "id": "T3-S4-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 10,
+    "smoke_pass": 10,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s5": {
+    "id": "T3-S5-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 11,
+    "smoke_pass": 11,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s6": {
+    "id": "T3-S6-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 13,
+    "smoke_pass": 13,
+    "errors": 0,
+    "fails": 0
+  },
+  "cmbt_t3_s7": {
+    "id": "T3-S7-CMBT",
+    "status": "done",
+    "harness": "formal/type-safety/test/test_type_safety_conformance.ml",
+    "smoke_cases": 12,
+    "smoke_pass": 12,
+    "errors": 0,
+    "fails": 0
+  }
+}
