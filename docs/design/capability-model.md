@@ -247,6 +247,20 @@ facts that motivated it is worse than none.
      also assert how the violation *manifests* — that is a second, independent
      claim needing its own evidence.
 
+  3. *The failure mode is confidence about an API's guarantees, not ignorance
+     of a device* — and it recurred inside this very fix. The first version of
+     #142 replaced "we assume fp64" with "we probe fp64", then wrote `Int64`
+     unconditionally for **every** OpenCL device one file over, reasoning that
+     `long` is a core OpenCL C type. It is core only in the FULL profile;
+     an `EMBEDDED_PROFILE` device may omit 64-bit integers, advertising them
+     via `cles_khr_int64`. Same shape as `shaderInt64`: a spec guarantee read
+     one scope wider than it holds. The rule that falls out is mechanical —
+     **before putting a feature in a `device_features` list, name the query
+     that produced it.** If the answer is a sentence about what the API
+     guarantees rather than a value the device returned, it is an assumption
+     wearing a probe's clothing. (Fixed: `Opencl_api` now reads
+     `CL_DEVICE_PROFILE` alongside `CL_DEVICE_EXTENSIONS`.)
+
   Regression gates: `sarek/tests/e2e/test_vulkan_int64.ml` (runs the kernel;
   catches wrong 64-bit arithmetic, and catches the VUID when run under the
   validation layer) and the `device_capability_gate` group in

@@ -22,8 +22,12 @@
  * near 2^40, so a backend that silently narrowed to 32 bits would produce
  * wrong values rather than merely a slower correct answer.
  *
- * Device-filtered to Vulkan only; skips cleanly (prints [SKIP], exits 0) if
- * no Vulkan device is available, or if the device does not report int64.
+ * Device-filtered to Vulkan only, and further to a device that REPORTS int64:
+ * skips cleanly (prints [SKIP], exits 0) if no Vulkan device is available, or
+ * if none of them provides int64. Selecting on the capability rather than on
+ * "the first Vulkan device" matters — on a device without shaderInt64 the
+ * #142 launch gate refuses this kernel, which is correct, and scoring that
+ * refusal as [FAIL] would make the gate look like a bug.
  *
  * Run with: dune exec sarek/tests/e2e/test_vulkan_int64.exe
  ******************************************************************************)
@@ -77,9 +81,33 @@ let make_add_ir () : kernel =
     kern_native_fn = None;
   }
 
-let find_vulkan_device () =
+(* Select a Vulkan device that actually PROVIDES int64, not merely the first
+   Vulkan device.
+
+   Taking [vulkan_devices.(0)] unconditionally was wrong in a way worth naming.
+   On a device without shaderInt64 the launch gate added by #142 refuses the
+   kernel — correctly, that is the feature — and the refusal surfaced here as
+   [FAIL]. So a correct refusal was scored as a defect, and the header text
+   promising a clean [SKIP] described behaviour the code did not have. That is
+   the inverse of the usual skip-shaped hazard: not a skip rendering as a pass,
+   but a correct outcome rendering as a failure.
+
+   It went unnoticed because the failing configuration is one this machine
+   cannot produce — both local Vulkan devices report shaderInt64 — which is
+   precisely why the selector has to be written from the capability rather than
+   from what happens to be plugged in. The refusal path itself is covered by
+   the [device_capability_gate] group in sarek/tests/unit/test_execute.ml,
+   against a synthetic device, so nothing is lost by skipping it here. *)
+let find_int64_vulkan_device () =
   let vulkan_devices = Device.by_framework "Vulkan" in
-  if Array.length vulkan_devices > 0 then Some vulkan_devices.(0) else None
+  let capable =
+    Array.to_list vulkan_devices |> List.filter Device.allows_int64
+  in
+  match capable with
+  | dev :: _ -> `Device dev
+  | [] ->
+      if Array.length vulkan_devices = 0 then `No_vulkan
+      else `No_int64 (Array.length vulkan_devices)
 
 (* Both addends sit near 2^40, so every expected sum is outside int32. *)
 let a_at i = Int64.add 1099511627776L (Int64.of_int i)
@@ -125,11 +153,20 @@ let verify result =
   !errors = 0
 
 let () =
-  match find_vulkan_device () with
-  | None ->
+  match find_int64_vulkan_device () with
+  | `No_vulkan ->
       Printf.printf
         "[SKIP] No Vulkan device available - skipping int64 Vulkan e2e test\n%!"
-  | Some dev -> (
+  | `No_int64 n ->
+      (* Not a failure: the launch gate would refuse this kernel here, and
+         refusing is the correct behaviour under test elsewhere. *)
+      Printf.printf
+        "[SKIP] %d Vulkan device(s) present but none reports int64 \
+         (shaderInt64) - the launch gate would correctly refuse this kernel; \
+         the refusal path is covered by test_execute's device_capability_gate\n\
+         %!"
+        n
+  | `Device dev -> (
       Printf.printf
         "Running int64 add kernel on Vulkan device: %s\n%!"
         dev.Device.name ;

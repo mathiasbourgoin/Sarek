@@ -73,13 +73,19 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
         total_global_mem = d.global_mem_size;
         compute_capability = (0, 0);
         (* OpenCL doesn't have this concept *)
-        (* fp64 is the probed [cl_khr_fp64] bit (Opencl_api parses
-           CL_DEVICE_EXTENSIONS). int64 is unconditional: [long] is a required
-           core type in the OpenCL C full profile, not an extension, so unlike
-           Vulkan's shaderInt64 there is no bit to consult. *)
+        (* BOTH entries are probed (Opencl_api reads CL_DEVICE_EXTENSIONS and
+           CL_DEVICE_PROFILE): fp64 from [cl_khr_fp64]/[cl_amd_fp64], int64
+           from the FULL profile or [cles_khr_int64].
+
+           int64 was unconditional here in the first version of this change,
+           on the reasoning that [long] is a core OpenCL C type. It is core
+           only in the FULL profile, so that was the #142 defect reappearing
+           inside its own fix — confidence about an API guarantee standing in
+           for a device probe. Neither arm asserts anything the device did not
+           report. *)
         device_features =
-          (if d.supports_fp64 then [Sarek_ir_analysis.Float64] else [])
-          @ [Sarek_ir_analysis.Int64];
+          ((if d.supports_fp64 then [Sarek_ir_analysis.Float64] else [])
+          @ if d.supports_int64 then [Sarek_ir_analysis.Int64] else []);
         supports_atomics = true;
         (* Most OpenCL devices support atomics *)
         warp_size = 32;

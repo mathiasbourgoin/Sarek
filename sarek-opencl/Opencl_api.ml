@@ -107,6 +107,10 @@ module Device = struct
     local_mem_size : int64;
     max_clock_freq : int;
     supports_fp64 : bool;
+    supports_int64 : bool;
+        (* 64-bit integer support. Core in the FULL profile; optional in
+           EMBEDDED_PROFILE, where it is gated on [cles_khr_int64]. Probed
+           rather than assumed — see the derivation at the call site. *)
     is_cpu : bool; (* True for CPU OpenCL devices - enables zero-copy *)
     single_fp_config : int64;
         (* CL_DEVICE_SINGLE_FP_CONFIG, verbatim. Read once at device
@@ -249,6 +253,32 @@ module Device = struct
       contains "cl_khr_fp64" extensions || contains "cl_amd_fp64" extensions
     in
 
+    (* 64-bit integer support (#142 follow-up).
+
+       This has to be PROBED, and the reason is the whole point of #142. The
+       first version of the capability list wrote [Int64] unconditionally here,
+       reasoning that [long] is a core OpenCL C type. That is true only of the
+       FULL profile. An EMBEDDED_PROFILE device may omit 64-bit integers
+       entirely, and advertises them — when it has them — through the
+       [cles_khr_int64] extension.
+
+       So the change that replaced "we ASSUME fp64" with "we PROBE fp64"
+       reintroduced, one backend over, a fresh "we ASSUME int64". The model's
+       failure mode is not ignorance about a DEVICE; it is misplaced confidence
+       about an API's GUARANTEES. That is exactly what produced the shaderInt64
+       hole, and it recurred inside the fix for it.
+
+       CL_DEVICE_ADDRESS_BITS is deliberately NOT consulted: it describes
+       pointer width, not the availability of the [long] type, and conflating
+       the two is the same category error one level down. *)
+    let profile = get_info_string handle CL_DEVICE_PROFILE in
+    let supports_int64 =
+      (* Full profile: [long]/[ulong] are core, no extension needed. *)
+      profile = "FULL_PROFILE"
+      (* Embedded profile: optional, gated on the KHR extension. *)
+      || contains "cles_khr_int64" extensions
+    in
+
     (* Check if device is CPU type *)
     let device_type = get_info_long handle CL_DEVICE_TYPE in
     let is_cpu = Int64.logand device_type 2L <> 0L in
@@ -272,6 +302,7 @@ module Device = struct
       local_mem_size;
       max_clock_freq;
       supports_fp64;
+      supports_int64;
       is_cpu;
       single_fp_config;
     }

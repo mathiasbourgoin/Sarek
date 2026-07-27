@@ -105,11 +105,26 @@ let device_lacks_feature (f : Sarek_ir_analysis.feature) =
             "Use float32, or Sarek_real64 — its Fallback_df64 substrate gives \
              software double precision on devices without native fp64." )
     | Sarek_ir_analysis.Float16 ->
+        (* [shaderFloat16] is NOT in core VkPhysicalDeviceFeatures. It lives on
+           VkPhysicalDeviceShaderFloat16Int8Features, queried and enabled by
+           chaining that struct into VkPhysicalDeviceFeatures2 via pNext. The
+           distinction is the difference between a feature you can request and
+           one you cannot reach at all, in a file about where features must be
+           requested — and this whole issue is about a feature that was never
+           requested, so naming the wrong struct here is worse than average.
+
+           The cl_khr_fp16 half was already correct: half precision genuinely
+           is an optional OpenCL extension, and [half] is not a core OpenCL C
+           arithmetic type (unlike [long], whose over-claim is the sibling
+           defect fixed alongside this comment). *)
         ( "the device does not report half-precision support \
-           (VkPhysicalDeviceFeatures.shaderFloat16 / cl_khr_fp16)",
+           (VkPhysicalDeviceShaderFloat16Int8Features.shaderFloat16 / \
+           cl_khr_fp16)",
           Quoted
-            "Vulkan specification: shaderFloat16 is an optional feature; \
-             OpenCL: cl_khr_fp16 is an optional extension",
+            "Vulkan specification: shaderFloat16 is an optional feature of \
+             VkPhysicalDeviceShaderFloat16Int8Features, chained via \
+             VkPhysicalDeviceFeatures2; OpenCL: cl_khr_fp16 is an optional \
+             extension",
           Some "Use float32." )
   in
   {
