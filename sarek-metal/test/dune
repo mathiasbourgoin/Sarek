@@ -2,12 +2,15 @@
 
 (test
  (name test_metal_error)
+ (modules test_metal_error)
  (libraries sarek_metal sarek_backend_error alcotest str))
 
 (test
  (name test_sarek_ir_metal)
+ (modules test_sarek_ir_metal)
  (libraries sarek_metal sarek_ir alcotest str))
 
 (test
  (name test_metal_compile_options)
+ (modules test_metal_compile_options)
  (libraries sarek_metal alcotest))

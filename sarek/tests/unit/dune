@@ -27,6 +27,34 @@
   test_float16
   test_type_width_totality
   test_diagnostic_locations)
+ (modules
+  test_types
+  test_env
+  test_typer
+  test_parse
+  test_core_primitives
+  test_tailrec
+  test_tailrec_analysis
+  test_tailrec_elim
+  test_tailrec_bounded
+  test_tailrec_pragma
+  test_native_helpers
+  test_native_intrinsics
+  test_error
+  test_quote
+  test_lower_ir
+  test_reserved
+  test_ppx_registry
+  test_quote_ir
+  test_convergence
+  test_scheme
+  test_mono
+  test_ir_interp
+  test_execute
+  test_kirc_kernel
+  test_float16
+  test_type_width_totality
+  test_diagnostic_locations)
  ; Link sarek_stdlib to trigger auto-registration of intrinsics
  ; ctypes is listed explicitly (not relied on transitively via sarek): the
  ; GC-root canary in test_float16 asserts the managed-vs-unmanaged asymmetry
@@ -37,12 +65,14 @@
 
 (test
  (name test_cpu_runtime)
+ (modules test_cpu_runtime)
  (libraries sarek alcotest))
 
 ; Fusion tests use sarek library directly (no ppx needed)
 
 (test
  (name test_fusion)
+ (modules test_fusion)
  (libraries sarek))
 
 ; Interpreter tests removed - Sarek_interp was legacy SPOC-dependent
@@ -51,18 +81,21 @@
 
 (test
  (name test_float32)
+ (modules test_float32)
  (libraries sarek))
 
 ; Float64 module tests
 
 (test
  (name test_float64)
+ (modules test_float64)
  (libraries sarek.float64))
 
 ; PTX snapshot test — CPU-only, no CUDA device required
 
 (test
  (name test_ptx_snapshot)
+ (modules test_ptx_snapshot)
  (libraries sarek.codegen alcotest unix str))
 
 ; ptxas sweep over the WHOLE PTX intrinsic surface: one kernel per intrinsic
@@ -71,6 +104,7 @@
 
 (test
  (name test_ptx_intrinsic_sweep)
+ (modules test_ptx_intrinsic_sweep)
  (libraries sarek.codegen alcotest unix str))
 
 ; WGSL identifier escaping: injectivity + legality of escape_wgsl_name, and
@@ -80,6 +114,7 @@
 
 (test
  (name test_wgsl_escape)
+ (modules test_wgsl_escape)
  (libraries sarek.codegen alcotest))
 
 ; Shader-validation gate for recursion + vector-parameter helpers.
@@ -88,6 +123,7 @@
 
 (test
  (name test_shader_recursion_vector)
+ (modules test_shader_recursion_vector)
  (libraries sarek.codegen sarek_backend_error alcotest unix))
 
 ; Software f64 transcendentals for PTX: IR-level accuracy vs the OCaml stdlib
@@ -95,6 +131,7 @@
 
 (test
  (name test_f64_softmath)
+ (modules test_f64_softmath)
  (libraries sarek.codegen spoc.ir alcotest))
 
 ; Aggregate byte-layout test — pins the host ABI (packed offsets, variant
@@ -102,6 +139,7 @@
 
 (test
  (name test_ir_layout)
+ (modules test_ir_layout)
  (libraries spoc.ir alcotest))
 
 ; Regression test: Sarek_ppx.scan_file_for_sarek_types's `with _ -> ()`
@@ -112,12 +150,14 @@
 
 (test
  (name test_ppx_scan_diagnostics)
+ (modules test_ppx_scan_diagnostics)
  (libraries sarek_ppx alcotest))
 
 ; Tier 1a: host-side SoA layout/transpose round-trip (pure ctypes, no device)
 
 (test
  (name test_soa)
+ (modules test_soa)
  (libraries spoc_core spoc.ir ctypes alcotest))
 
 ; Negative controls for the OpenCL validation gate (#127/#128). Proves each
@@ -128,6 +168,7 @@
 
 (test
  (name test_opencl_gate)
+ (modules test_opencl_gate)
  (libraries sarek.codegen spoc.ir opencl_gate alcotest str unix))
 
 ; Negative controls for the Metal validation gate (#139). Layer 2 (xcrun metal)
@@ -137,6 +178,7 @@
 
 (test
  (name test_metal_gate)
+ (modules test_metal_gate)
  (libraries metal_gate alcotest str))
 
 ; Per-backend emission of SBarrier / SWarpBarrier / SMemFence. These are six
@@ -146,6 +188,7 @@
 
 (test
  (name test_sync_stmt_emission)
+ (modules test_sync_stmt_emission)
  (libraries sarek.codegen sarek_ppx_lib spoc.ir alcotest))
 
 ; Cross-backend intrinsic arm parity (#94). Records, per intrinsic, what each of
@@ -154,6 +197,7 @@
 
 (test
  (name test_backend_arm_parity)
+ (modules test_backend_arm_parity)
  (libraries sarek.codegen sarek_ir alcotest))
 
 ; Intrinsic-surface reconciliation: derives its expectation from
@@ -163,6 +207,7 @@
 
 (test
  (name test_intrinsic_surface)
+ (modules test_intrinsic_surface)
  (libraries
   sarek
   sarek.float64
