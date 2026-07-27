@@ -99,6 +99,18 @@ jobs:
       - name: KB properties (code-intel) gate
         run: ./scripts/check-kb-properties.sh
 
+      # backlog-151. The step above enforces that every gate DECLARES whether
+      # it has a red-path test. This one executes the declaration: it copies
+      # each subject into a scratch tree, applies the mutations declared beside
+      # it, and requires the exact exit code and the exact message each one
+      # promises -- with a mandatory positive control first, because "went red"
+      # and "is always red" are otherwise the same observation. It is its own
+      # subject (scripts/prove-red-fixtures/), so a version of it that credited
+      # an immune checker would fail here rather than print a second green.
+      # ~0.5s for 4 subjects and 13 mutations; it never runs the test suite.
+      - name: Prove-red (gates are mutated and observed to fail)
+        run: ./scripts/prove-red.sh
+
       # The harness's own guards. They gate everything else, so they are the
       # last place a silent regression is acceptable.
       - name: Harness self-tests
@@ -169,6 +181,14 @@ jobs:
           # source -- and case 0 is the positive control without which every
           # red below it proves nothing.
           ./scripts/check-kb-properties.test.sh
+          # backlog-151. prove-red.sh exists to catch checkers that cannot
+          # fail, so "prove-red.sh cannot fail" is the most expensive thing
+          # that could go wrong in this repository. Nineteen cases, exact exit
+          # codes throughout (its contract separates 1 = the subject did not
+          # fail from 2 = the mechanism produced no evidence, and an assertion
+          # accepting "non-zero" would not notice those being swapped), and
+          # case 0 is the positive control.
+          ./scripts/prove-red.test.sh
 
       - name: Formal proofs admit gate
         run: |

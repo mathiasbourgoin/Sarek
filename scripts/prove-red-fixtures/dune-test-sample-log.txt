@@ -1,0 +1,25 @@
+Testing `spoc_basic'.
+This run has ID `4F2A0C11-0000-0000-0000-000000000000'.
+
+  [OK]          basic                  0   allocation.
+  [OK]          basic                  1   transfer.
+Test Successful in 0.004s. 12 tests run.
+
+Testing `sarek_ir_singular'.
+This run has ID `4F2A0C11-0000-0000-0000-000000000001'.
+
+  [OK]          lowering               0   one case only.
+Test Successful in 0.010s. 1 test run.
+
+Testing `sarek_codegen'.
+This run has ID `4F2A0C11-0000-0000-0000-000000000002'.
+
+  [SKIP]        codegen                0   ptx snapshot (no ptxas).
+Test Successful in 0.001s. 7 tests run.
+
+random seed: 271828
+generated error fail pass / total     time test name
+[ ]    0    0    0    0 /    4     0.0s roundtrip
+[✓]    4    0    0    4 /    4     0.0s roundtrip
+================================================================================
+success (ran 4 tests)

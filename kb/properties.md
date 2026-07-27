@@ -48,17 +48,24 @@ The operative rule, and the reason `scripts/check-kb-properties.sh` exists at al
 > mutated and observed to fail *with the message it promises*. A positive control is not
 > optional — without it, "went red" and "is always red" are the same observation.
 
+Nine of those twelve were caught by a manual habit that nothing required, so as of
+backlog-151 the rule is mechanical for the checkers that opt in:
+`scripts/prove-red.sh` applies each declared mutation to a scratch copy and asserts the
+exact exit code and the exact message. What it does *not* do is claim to cover every
+checker — see "Reading the block" below.
+
 ## The machine-checked block
 
 ```code-intel
 {"id": "KB-GATE-INVENTORY", "type": "gate-inventory-complete", "description": "Every scripts/* and ci/* a fresh clone executes from CI or the Makefile is declared below, or exempted with a stated reason. Adding a gate to CI without a row here fails. Both directories are scanned because gates do land outside scripts/ — the pocl runner probe and its covering test are under ci/ — and an inventory that knows one directory is complete about a set it chose rather than about what CI runs.", "check": {"carriers": [".github/workflows/ci.yml", "Makefile"], "exempt_manifest": "scripts/review-bundle.manifest.json", "exempt": ["scripts/coverage-unit.sh", "scripts/gpu-bench-check.sh", "ci/Dockerfile"]}}
 {"id": "KB-GATE-SELF", "type": "gate-red-path", "description": "This checker itself. A gate that validates other gates and is not itself proven able to fail is the joke version of this file.", "check": {"tool": "scripts/check-kb-properties.sh", "red_path": "scripts/check-kb-properties.test.sh"}}
+{"id": "KB-GATE-PROVE-RED", "type": "gate-red-path", "description": "Executes the mutation declared beside each subject checker and requires the exact exit code and message it promises, with a mandatory positive control first. This is the step KB-GATE-SELF cannot take: `gate-red-path` above enforces that a red-path test is DECLARED, and a declared red-path test that asserts nothing satisfies it perfectly. Its own spec block breaks a committed fixture gate in the four ways it could lie, so a version of it that credited an immune checker fails rather than printing a second green.", "check": {"tool": "scripts/prove-red.sh", "red_path": "scripts/prove-red.test.sh"}}
 {"id": "KB-GATE-ALCOTEST", "type": "gate-red-path", "description": "An unregistered Alcotest case compiles and the suite reports green having not run it.", "check": {"tool": "scripts/check-alcotest-registration.js", "red_path": "scripts/check-alcotest-registration.test.js"}}
 {"id": "KB-GATE-DUNE-VISIBILITY", "type": "gate-red-path", "description": "A (dirs ...) stanza can put a whole directory outside dune's traversal; to dune there is then nothing there to fail.", "check": {"tool": "scripts/check-dune-dir-visibility.sh", "red_path": "scripts/check-dune-dir-visibility.test.sh"}}
 {"id": "KB-GATE-LICENSE", "type": "gate-red-path", "description": "The pre-backlog-137 finder ended in 2>/dev/null, so a deleted root produced 'All license headers are up-to-date!' about a tree it had not read.", "check": {"tool": "scripts/check-license-headers.sh", "red_path": "scripts/check-license-headers.test.sh"}}
 {"id": "KB-GATE-BUNDLE-TRACKED", "type": "gate-red-path", "description": "An untracked review-tool bundle verifies perfectly on the workstation that has it; only a fresh-clone check notices.", "check": {"tool": "scripts/check-review-bundle-tracked.sh", "red_path": "scripts/check-review-bundle-tracked.test.sh"}}
-{"id": "KB-GATE-ARM-PARITY", "type": "gate-red-path", "description": "Lexical companion to test_backend_arm_parity.ml: a name added to one backend's arm and to no list is invisible to the behavioural test.", "check": {"tool": "scripts/check-arm-parity-coverage.sh", "red_path": null, "reason": "No red-path test yet. Its internal refusals (zero rows parsed, unlocatable arm table, fewer backends scanned than declared) are the anti-vacuity controls, but none of them has been observed firing. Backlog item: give it a .test.sh on the shape of check-dune-dir-visibility.test.sh."}}
-{"id": "KB-GATE-ALIAS-COVERAGE", "type": "gate-red-path", "description": "Guards that every test dune file is reachable from a runtest alias.", "check": {"tool": "scripts/check-test-alias-coverage.sh", "red_path": null, "reason": "No red-path test yet. It is also the gate that check-dune-dir-visibility.sh was added to backstop, because alias coverage assumes dune can see the file it audits — so its failure mode is partly covered by another gate's red path, and partly not."}}
+{"id": "KB-GATE-ARM-PARITY", "type": "gate-red-path", "description": "Lexical companion to test_backend_arm_parity.ml: a name added to one backend's arm and to no list is invisible to the behavioural test. Its red path is a prove-red-spec block beside it rather than a .test.sh, because the three mutations that matter are edits to a scratch copy of the five backend sources and of the matrix — which is what prove-red.sh does — and not a harness. Two of its three internal refusals are now observed firing; the third (scanned != len(backends)) is unreachable while the loop body ends in `scanned += 1`, so mutating it would mutate a tautology.", "check": {"tool": "scripts/check-arm-parity-coverage.sh", "red_path": "scripts/prove-red.sh"}}
+{"id": "KB-GATE-ALIAS-COVERAGE", "type": "gate-red-path", "description": "Guards that every test dune file is reachable from a runtest alias. Its red path is a prove-red-spec block beside it (backlog-151): an unwired executable is exit 1, and both anti-vacuity refusals — a missing dune file and a file that parses to zero declared executables — are exit 2, observed. It remains true that alias coverage assumes dune can see the file it audits, which is what check-dune-dir-visibility.sh backstops.", "check": {"tool": "scripts/check-test-alias-coverage.sh", "red_path": "scripts/prove-red.sh"}}
 {"id": "KB-GATE-FORMAL-ADMIT", "type": "gate-red-path", "description": "Fast lexical tripwire for `Admitted.` in the Rocq sources.", "check": {"tool": "scripts/check-formal-proofs.sh", "red_path": null, "reason": "Deliberately uncovered at this layer: a grep is not a proof and this script does not claim to be the guarantee. The machine-checked guarantee is the formal-proofs job, which rebuilds every .v from scratch, and the ledger/axiom-allowlist gate beside it does have a red-path test (KB-GATE-PROOF-LEDGER)."}}
 {"id": "KB-GATE-OPAM-CLEAN", "type": "gate-red-path", "description": "Guards against a `make opam` regression that dirties the tree.", "check": {"tool": "scripts/check-opam-clean.sh", "red_path": null, "reason": "No red-path test yet. Lowest-value of the uncovered four: it compares a generated file against the tree, so it fails loudly and locally rather than silently, and it has no declared-coverage set that could empty out."}}
 {"id": "KB-GATE-TOOLCHAIN-ASSERT", "type": "gate-red-path", "description": "Every codegen gate self-skips when its tool is absent (ptxas, glslangValidator, naga), so a SKIP is how the whole codegen-validation story silently disappears. This asserts the tools are present AND runnable, and carries an fp64 positive control so the skip cannot become CI's normal outcome.", "check": {"tool": "ci/assert-toolchain.sh", "red_path": null, "reason": "No red-path test yet, and it is the highest-value of the uncovered gates: its subject is exactly the shape this file is about. It does hard-fail rather than warn (nvdisasm section), and it carries its own positive control, but neither has been observed firing. Best candidate for the first application of the approved scripts/prove-red.sh."}}
@@ -89,9 +96,19 @@ The operative rule, and the reason `scripts/check-kb-properties.sh` exists at al
 - `gate-red-path` enforces **declaration** completeness, not **coverage** completeness. A
   gate with no red-path test passes — but only by saying so, here, with a reason. That is
   a deliberately weaker contract than "every gate is proven able to fail"; the strong
-  version fails today on five gates, and a gate that is red on arrival gets disabled
-  rather than fixed. The strong part is `KB-GATE-INVENTORY`: a gate cannot reach CI
-  without a row saying which of the two it is.
+  version fails today on three gates (`check-formal-proofs.sh`, `check-opam-clean.sh`,
+  `ci/assert-toolchain.sh`), and a gate that is red on arrival gets disabled rather than
+  fixed. The strong part is `KB-GATE-INVENTORY`: a gate cannot reach CI without a row
+  saying which of the two it is.
+- **A declared red path is not an executed one.** A `red_path` naming a test that asserts
+  nothing satisfies the row above perfectly, which is why `scripts/prove-red.sh`
+  (backlog-151) exists: it applies the mutation declared *beside* a subject checker and
+  requires the exact exit code and the exact message that checker promises, after a
+  mandatory positive control. Coverage is opt-in, one deliberate edit at a time, and
+  pinned by `EXPECTED_SUBJECTS` so it cannot shrink in silence — the same
+  declaration-over-coverage trade as the bullet above, and for the same reason. A
+  `red_path` of `scripts/prove-red.sh` means the evidence is a spec block beside the gate
+  rather than a `.test.sh` beside it.
 - `invocation: "manual"` says CI runs the covering test but not the tool. It is a real
   weakening and it always carries a reason.
 - Review-bundle members are exempt by **delegation**, not by opinion:

@@ -99,3 +99,54 @@ if missing:
 print("OK: %d backends scanned, every arm name covered by %d matrix rows."
       % (scanned, len(covered)))
 PY
+
+# ---------------------------------------------------------------------------
+# Red-path evidence for this gate, executed by scripts/prove-red.sh
+# (backlog-151). kb/properties.md recorded this one as `red_path: null` with the
+# note that its three internal refusals -- zero rows parsed, an unlocatable arm
+# table, fewer backends scanned than declared -- "are the anti-vacuity controls,
+# but none of them has been observed firing". Two of the three are observed
+# below; the third (`scanned != len(backends)`) is unreachable while the loop
+# body ends in `scanned += 1`, so mutating it would be mutating a tautology
+# rather than the gate.
+#
+# The mutations edit a scratch copy of the five backend sources and of the
+# matrix. They never touch the working tree.
+#
+# BEGIN prove-red-spec
+# copy: scripts/check-arm-parity-coverage.sh
+# copy: sarek/tests/unit/test_backend_arm_parity.ml
+# copy: sarek/codegen/Sarek_ir_cuda.ml
+# copy: sarek/codegen/Sarek_ir_opencl.ml
+# copy: sarek/codegen/Sarek_ir_metal.ml
+# copy: sarek/codegen/Sarek_ir_wgsl.ml
+# copy: sarek/codegen/Sarek_ir_glsl.ml
+# invoke: scripts/check-arm-parity-coverage.sh
+# baseline-exit: 0
+# baseline-message: 5 backends scanned, every arm name covered
+#
+# mutation: uncovered-arm
+#   desc: a name is added to one backend's arm table and to no list. This is the whole point of the gate: test_backend_arm_parity.ml can only probe names it was told about, so this name would otherwise be invisible to it and the suite would stay green having verified nothing about it.
+#   apply: python3 - <<'PYEOF'
+#   apply: p = "sarek/codegen/Sarek_ir_glsl.ml"
+#   apply: s = open(p, encoding="utf-8").read()
+#   apply: i = s.index("arm =")
+#   apply: j = s.index("| _ -> None)", i)
+#   apply: open(p, "w", encoding="utf-8").write(s[:j] + '| "zz_prove_red_probe" -> Some "zz"\n        ' + s[j:])
+#   apply: PYEOF
+#   expect-exit: 1
+#   expect-message: zz_prove_red_probe
+#
+# mutation: matrix-emptied
+#   desc: the matrix parses to zero rows. An empty `covered` set makes every arm name trivially absent OR trivially present depending on the comparison; the gate must refuse rather than answer from nothing.
+#   apply: printf 'let names = []\n' > sarek/tests/unit/test_backend_arm_parity.ml
+#   expect-exit: 1
+#   expect-message: no rows parsed out of
+#
+# mutation: matrix-deleted
+#   desc: the file this gate compares against is gone -- an environment mutation. Without the explicit refusal it would compare against nothing and pass.
+#   apply: rm -f sarek/tests/unit/test_backend_arm_parity.ml
+#   expect-exit: 1
+#   expect-message: is missing
+# END prove-red-spec
+# ---------------------------------------------------------------------------

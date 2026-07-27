@@ -251,3 +251,47 @@ if suites < min_suites:
 PYEOF
 )
 python3 -c "$PYPROG" "$SRC" "$MIN_SUITES"
+
+# ---------------------------------------------------------------------------
+# Red-path evidence, executed by scripts/prove-red.sh (backlog-151).
+#
+# This tool already has a covering test. It is a subject here anyway, and only
+# for one reason: two of its three failure modes are mutations of the
+# ENVIRONMENT rather than of any file -- an empty stdin and a missing
+# --min-suites -- and if the mechanism that is supposed to police the
+# gate-vacuous class could only edit source files it would miss the shape it
+# was built for. `empty-stdin` is the literal backlog-150 defect: the advertised
+# pipe form returned "0 cases / 0 FAIL", exit 0, for a genuine 1644-case log.
+#
+# `below-floor` pins exit 3 specifically. This script's contract distinguishes
+# 2 (not a result) from 3 (a result below the plausibility floor), and an
+# assertion that accepted "non-zero" would not notice the two being confused.
+#
+# BEGIN prove-red-spec
+# copy: scripts/test-suite-counts.sh
+# copy: scripts/prove-red-fixtures/dune-test-sample-log.txt
+# invoke: scripts/test-suite-counts.sh
+# baseline-argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0
+# baseline-exit: 0
+# baseline-message: TOTAL    :    24 cases across   4 suites
+#
+# mutation: empty-stdin
+#   desc: the pipe form with nothing on stdin -- a fully-cached `dune test` prints exactly this. The absence of a measurement must not share an output shape with a result.
+#   stdin: empty
+#   argv: --min-suites 0
+#   expect-exit: 2
+#   expect-message: no test-suite output recognised
+#
+# mutation: truncated-epilogue
+#   desc: every suite epilogue loses its case count, as a log cut mid-write does. Three "Test Successful" markers and zero parsed counts must be a refusal, not a confident total of 0.
+#   apply: sed -i 's/ [0-9]* tests\? run\.//' scripts/prove-red-fixtures/dune-test-sample-log.txt
+#   expect-exit: 2
+#   expect-message: the log is truncated or the format has drifted
+#
+# mutation: below-floor
+#   desc: the same log counted without --min-suites 0. Four suites is a plausible-looking number and a partially-cached run produces exactly that, so it is exit 3 -- neither a pass nor the same failure as an unreadable log.
+#   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt
+#   expect-exit: 3
+#   expect-message: below the plausibility floor
+# END prove-red-spec
+# ---------------------------------------------------------------------------
