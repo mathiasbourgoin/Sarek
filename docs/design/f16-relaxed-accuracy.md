@@ -925,7 +925,9 @@ probes were run on ladon, and both slices are complete. Recorded in
 
 - **Slice 5 — scalar f16 on Metal. Done: it does not fuse.** 0 / 63488 from
   `S_strict` on both swept shapes, element-wise, on the naive kernel and under
-  every barrier. Instrument `tools/probes/metal_f16_narrowing_probe.m`. Two
+  every barrier — and the control goes red on **each** shape separately
+  (2912 / 63488 on `f16(x*1.1)`, 620 / 63488 on `f16(f16(x*1.1)+1000)`), so
+  neither zero rests on discrimination demonstrated only for the other shape. Instrument `tools/probes/metal_f16_narrowing_probe.m`. Two
   results worth carrying forward beyond the row:
   - `#pragma METAL fp contract(off)` **does not govern this hazard**, in either
     direction — it does not move the plain kernel and does not disturb the
@@ -936,8 +938,9 @@ probes were run on ladon, and both slices are complete. Recorded in
   - The control had to be built differently, and that is a portability note for
     slice 0: **MSL has no `double`**, so the `fusedctl` construction used on
     OpenCL is not expressible. The Metal control reconstructs the exact product
-    from a double-float pair with a round-to-odd step. It reproduces **620**,
-    which is now four unrelated stacks agreeing on that figure.
+    from a double-float pair with a round-to-odd step. It reproduces **2912** on
+    the one-narrowing shape and **620** on the two-narrowing shape; the 620 is
+    now four unrelated stacks agreeing on that figure.
   - It also produced the counterexample that corrected §1.3. See there.
 - **Slice 6 — `simdgroup_matrix`. Done, and it disproved a planning assumption.**
   MSL offers exactly three instantiations, all 8×8: `half`, `float`, `bfloat`.
