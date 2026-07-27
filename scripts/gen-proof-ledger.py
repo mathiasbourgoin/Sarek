@@ -251,7 +251,11 @@ def kernel_axioms(project_dir, logical):
 
 
 def build_ledger(project_dir, rocq_version):
-    project = os.path.basename(os.path.normpath(project_dir))
+    # abspath, not normpath: the gate invokes this with `.` from inside the
+    # project directory, and normpath(".") is "." — which produced a ledger
+    # naming the project "." that differed from the committed one in exactly one
+    # field, reported as "differs in the per-module theorem lists".
+    project = os.path.basename(os.path.abspath(project_dir))
     logical = logical_path(project_dir)
     inventory = read_globs(project_dir)
     closure = kernel_axioms(project_dir, logical)

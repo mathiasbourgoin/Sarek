@@ -110,8 +110,14 @@ def main():
         with open(committed_path, encoding="utf-8") as fh:
             committed_text = fh.read()
 
+        gen = json.loads(gen_text)
+        # Accumulated BEFORE the drift check returns. The axiom allowlist must
+        # be judged against what the kernel actually found, not against what
+        # survived an earlier check: skipping this on drift made every sanctioned
+        # axiom look stale and buried the real failure under six false ones.
+        all_local_axioms.update(gen["axioms_project_local"])
+
         if committed_text != gen_text:
-            gen = json.loads(gen_text)
             com = json.loads(committed_text)
             detail = []
             for key in sorted(set(gen.get("counts", {})) | set(com.get("counts", {}))):
@@ -132,9 +138,6 @@ def main():
                  % (project, "\n".join(detail) or
                     "      (differs in the per-module theorem lists)", project))
             continue
-
-        gen = json.loads(gen_text)
-        all_local_axioms.update(gen["axioms_project_local"])
 
         theorems = {
             name
