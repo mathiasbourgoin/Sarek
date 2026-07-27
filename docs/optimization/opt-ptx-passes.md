@@ -595,24 +595,24 @@ opportunistically (e.g. bundled with whichever other pass touches
 | 3 | `ld.global.nc` for read-only params | Real, arch-dependent (1.1-1.3x on multi-pointer-param kernels) | S | **High** |
 | 7 | Register-reuse pass (recycle dead virtual regs) | Potentially order-of-magnitude on inline-heavy/recursive kernels; benefits ZLUDA occupancy specifically | M-L | **High** (own project) |
 | 8 | `.maxntid` launch-bounds hint | Real 10-30% on register-bound kernels, IF block size known at codegen time | S (gated on a scoping check) | Medium |
-| 1 | Address-arithmetic CSE | Mostly ptxas-shadowed in-block; feeds #7's register-pressure reduction | S-M | Medium |
+| 1 | Address-arithmetic CSE | Mostly ptxas-shadowed in-block; feeds pass 7's register-pressure reduction | S-M | Medium |
 | 2 | Vectorized `ld/st.v2/v4` | Real if ptxas misses it (likely already recovers our exact addressing shape — verify first) | M-L | Low-Medium (verify before building) |
 | 12 | Constant folding | Near-zero runtime (ptxas already does this); free PTX hygiene | S | Low (opportunistic) |
 | 5 | Induction-variable strength reduction | Real but small, narrow (tight loops w/ aggregate indexing) | M | Low |
 | 6 | Cost-based `selp`-vs-branch | Real only for expensive divergent arms; not evidenced in current kernels | M | Low (documented gap, not scheduled) |
-| 9 | Loop unrolling (literal bounds) | Mostly subsumed by #1/#5 once those exist; ptxas already unrolls small loops | M-L | Low |
+| 9 | Loop unrolling (literal bounds) | Mostly subsumed by passes 1 and 5 once those exist; ptxas already unrolls small loops | M-L | Low |
 | 11 | Shared-memory bank-conflict padding | Large but narrow (2D strided tiles); may not apply — `DShared` is 1D today | M-L / possibly N/A | Low (verify language surface first) |
 | 4 | `ld.param` re-load elimination | N/A — already done by construction | — | N/A |
 | 10 | Barrier/divergence optimization | N/A — current behavior is already the safe baseline | — | N/A (safety constraint, not a gain candidate) |
 
 ## Top-3 recommendation, with reasoning
 
-1. **`ld.global.nc` for read-only params (#3).** Best gain/cost ratio in the
+1. **`ld.global.nc` for read-only params (pass 3).** Best gain/cost ratio in the
    set: a small, provably-safe static write-set check unlocks a real
    cache-path win precisely where ptxas's own alias inference is weakest
    (multi-pointer-param kernels, which is the norm for Sarek kernels reading
    several input arrays).
-2. **Register-reuse pass (#7).** Not cheap, but it's the only candidate with
+2. **Register-reuse pass (pass 7).** Not cheap, but it's the only candidate with
    plausible order-of-magnitude upside, targets a kernel class the project
    already tracks (`fib`, deep `[@sarek.inline]`), and compounds with the
    ZLUDA interest — AMDGPU-path register allocation is less mature than
@@ -620,16 +620,16 @@ opportunistically (e.g. bundled with whichever other pass touches
    survive into real occupancy loss there than on NVIDIA. Scope it as its
    own M-L project with an explicit design for the branch/match-join
    liveness-safety question before writing code.
-3. **`.maxntid` launch-bounds hint (#8)**, *conditional on a quick scoping
+3. **`.maxntid` launch-bounds hint (pass 8)**, *conditional on a quick scoping
    check*: confirm whether block/launch dimensions are available at
    PTX-generation time in the current `Execute` pipeline. If yes, this is a
-   cheap, well-understood, real win and should be pulled ahead of #7 in
+   cheap, well-understood, real win and should be pulled ahead of pass 7 in
    sequencing (much lower cost for a comparable gain class on register-bound
    kernels). If block size truly is only known at launch time with no
    PTX-generation-time hook, drop it from the near-term queue.
 
-Everything else in the list is either already-done (#4), a safety constraint
-rather than a gain (#10), speculative pending a cheap verification experiment
-before committing implementation cost (#2, #11), or real-but-marginal enough
+Everything else in the list is either already-done (pass 4), a safety constraint
+rather than a gain (pass 10), speculative pending a cheap verification experiment
+before committing implementation cost (passes 2 and 11), or real-but-marginal enough
 that it should ride along with other work rather than being scheduled on its
-own (#1, #12, #5, #6, #9).
+own (passes 1, 12, 5, 6 and 9).

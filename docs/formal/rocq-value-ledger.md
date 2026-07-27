@@ -193,7 +193,7 @@ discovery, and conflating the two is how these ledgers stop being believed.
 |---|---|
 | Date | 2026-07 |
 | Instances | 5 in a single day (helper return type, variant payload, `Char` stride, …) |
-| Tracked as | audit 2026-07-24 items #55, #244, #261 |
+| Tracked as | audit 2026-07-24 items backlog-55, backlog-244, backlog-261 |
 
 Element widths and aggregate layout are exactly what `formal/codegen-ptx`
 (`PtxLayout.v`) and `formal/type-safety` (`TypeSafetySpec.v`) are about, and five
@@ -231,7 +231,7 @@ per line here than deep theorems about the ends.** The boring function is where
 the defects were, and it is boring precisely because the interesting models
 abstracted it away — which is the same reason nobody modelled it.
 
-**That model now exists in executable form, on both halves of the seam** (#141):
+**That model now exists in executable form, on both halves of the seam** (backlog-141):
 
 - `sarek/tests/unit/test_type_width_totality.ml` — source type → IR element
   type, the `elttype_of_typ` this entry names;
@@ -275,7 +275,7 @@ exhaustiveness checker rather than by `Coq`'s. For a function with no theorems
 worth stating, that trade looks right, and it is the cheapest available reading
 of this lesson. It does not extend to anything with an interesting invariant.
 
-**A caveat this entry should carry, because #141 supplied it.** The
+**A caveat this entry should carry, because backlog-141 supplied it.** The
 front-half validator had been green since it was written while **not sweeping
 two of its ten members**: its `unfold` pushed the successor instead of the
 element just visited, dropping the first of each chain and duplicating the last,
@@ -292,7 +292,7 @@ its favour.
 |---|---|
 | Date | 2026-07 |
 | Instances | 4 in a single day |
-| Tracked as | audit 2026-07-24 items #48, #49; backlog #94 |
+| Tracked as | audit 2026-07-24 items backlog-48, backlog-49; backlog-94 |
 
 Backend intrinsic dispatch emitting a raw name and returning `Ok` for an unknown
 intrinsic, producing invalid device code.
@@ -309,7 +309,7 @@ the cheapest instrument.
 
 | | |
 |---|---|
-| Date | 2026-07-24 (audit), fixed 2026-07-27 (#46) |
+| Date | 2026-07-24 (audit), fixed 2026-07-27 (backlog-46) |
 
 `test_layout_conformance.ml` checked the production layout module against a
 130-line **hand transcription** of `PtxLayout.v`. Every theorem proved about the
@@ -332,7 +332,7 @@ claims about a chain that had an unchecked link in it until 2026-07-27.
 | | |
 |---|---|
 | Date | 2026-07-27 |
-| Work | backlog #46 — extract `PtxLayout.v` to OCaml, drop the transcription |
+| Work | backlog-46 — extract `PtxLayout.v` to OCaml, drop the transcription |
 | Defects found | **0** |
 
 When the 130-line hand transcription was replaced by Rocq's own extraction, the
@@ -350,7 +350,7 @@ than absorb.
 | | |
 |---|---|
 | Date | 2026-07-27 |
-| Work | backlog #95 — generate the ledger, enforce the axiom allowlist |
+| Work | backlog-95 — generate the ledger, enforce the axiom allowlist |
 | Spec/impl defects found | **0** |
 | Apparatus defects found | 4 of 5 count figures wrong, 1 phantom anchor |
 

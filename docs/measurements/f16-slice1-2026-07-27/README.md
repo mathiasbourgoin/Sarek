@@ -1,4 +1,4 @@
-# #62 slice 1 — preserved run output, 2026-07-27
+# backlog-62 slice 1 — preserved run output, 2026-07-27
 
 The numbers in
 [`docs/fp-contraction-policy.md`](../../fp-contraction-policy.md) §12 and in

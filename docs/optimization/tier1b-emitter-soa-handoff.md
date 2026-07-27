@@ -5,7 +5,7 @@ the correctness/benchmark evidence, and the precise Tier 1c handoff._
 
 Companion to [tier1a-soa-pinned-handoff.md](tier1a-soa-pinned-handoff.md)
 (host + transfer half) and [opt-spoc-runtime.md](opt-spoc-runtime.md) §1
-(SoA) / [opt-ptx-passes.md](opt-ptx-passes.md) (#3 `ld.global.nc`, warp prims).
+(SoA) / [opt-ptx-passes.md](opt-ptx-passes.md) (pass 3, `ld.global.nc`, and warp prims).
 
 ## What shipped — the PTX emitter's SoA lowering
 
@@ -163,7 +163,7 @@ and proven. When it lands, extend `test_soa_emitter_equiv` to drive SoA through
 > a kernel mixing a SoA vector `x` (field `y`) with a scalar param `x_soa_y`
 > compiles to distinct PTX operands.
 
-### 2. `ld.global.nc` for read-only params (roadmap #3 — High, cost S)
+### 2. `ld.global.nc` for read-only params (opt-ptx-passes.md pass 3 — High, cost S)
 
 Independent of SoA. A single write-set pass over `kern_body` (+ inlined
 `hf_body`s) collecting `DParam` array names ever used as an `EArrayWrite` /

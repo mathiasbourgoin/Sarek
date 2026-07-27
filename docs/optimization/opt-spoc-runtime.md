@@ -572,7 +572,7 @@ further.
 |---|------|---------------|------|----------|
 | 1 | SoA↔AoS custom vectors | AoS-only, packed, 1/3-efficiency strided access on partial-field reads | M | **Pursue, opt-in per-vector, flat records only** |
 | 2 | Pinned host memory | Not present (plain Bigarray/Ctypes heap memory, blocking memcpy) | S-M | **High** |
-| 3 | Async transfers + streams | Launch-side streams exist + kernarg retention; transfer-side is 100% blocking | M | Medium-high, after #2 |
+| 3 | Async transfers + streams | Launch-side streams exist + kernarg retention; transfer-side is 100% blocking | M | Medium-high, after row 2 (pinned host memory) |
 | 4 | Kernel fusion | Elementwise/reduction/stencil vertical fusion already implemented, DAG/multi-reduce missing | M (extension) | Medium |
 | 5 | Transfer avoidance | Already implemented via 5-state location machine; only multi-GPU peer-copy path missing | S | Low-medium |
 | 6 | Allocation pooling | Per-vector buffer reuse exists; no cross-vector size-bucketed pool | S-M | Medium |

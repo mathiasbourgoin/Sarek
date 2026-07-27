@@ -3,8 +3,8 @@
 _Cross-backend policy for what a Sarek DSL author may rely on when a device
 compiler is free to fuse, reassociate or flush floating-point operations._
 
-**Status:** normative for this repository. **Issue:** #116 (absorbs #110, #111);
-§6 answers #126, the HIP row answers #106, and §11 answers backlog #123.
+**Status:** normative for this repository. **Tracked as:** backlog-116 (absorbs backlog-110, backlog-111);
+§6 answers backlog-126, the HIP row answers backlog-106, and §11 answers backlog-123.
 **Date:** 2026-07-27.
 
 Three separate defects in this project came from the same place — the gap
@@ -152,11 +152,11 @@ because the one non-Mesa stack that does fuse is AMD's own.
 | **CUDA / nvrtc + PTX (f32 `a*b+c`)** | yes, by default (`-fmad=true` is nvrtc's and ptxas's default, and it applies to PTX input too) | **no flag.** `Sarek_df64` denies the compiler a fusable multiply by routing products through `fma` (`mul_rn`) | executed, GTX 1070 Max-Q / sm_61 / CUDA 12.9 / driver 580.119.02: df64 mul 5.92e-08 → 9.07e-15, div 5.64e-08 → 5.08e-15 |
 | **CUDA — subnormal flushing** | `-use_fast_math` / `-ftz=true` would flush binary32 subnormals | `Cuda_nvrtc.check_fp_conformance` **rejects** those options at the only point an option array reaches `nvrtcCompileProgram` | machine-code + test, CUDA 13.3: the hazard is reproduced (`FMUL.FTZ`/`FADD.FTZ` at sm_90) and the guard is proved to fire — see §5 |
 | **OpenCL** | `FP_CONTRACT` is on by default in OpenCL C, and no build option turns it off | for contraction, **no flag** — same `mul_rn`-by-construction defence as CUDA. For div/sqrt, `Opencl_fp.conformance_options` requests `-cl-fp32-correctly-rounded-divide-sqrt`, **gated** on `CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT` in the device's `CL_DEVICE_SINGLE_FP_CONFIG`; `Opencl_fp.check_fp_conformance` **rejects** the relaxing `-cl-*` options at `Opencl_api.Program.build`, the single point an option string reaches `clBuildProgram` (§9) | executed, GTX 1070 Max-Q / NVIDIA OpenCL: mul 5.92e-08 → 9.07e-15, sqrt 2.88e-08 → 9.80e-15 with no OpenCL-specific change (quoted). Re-measured here on RX 7900 XTX / Mesa radeonsi: mul 9.07e-15, div 5.08e-15, sqrt 1.08e-14 |
-| **OpenCL / rusticl (f16 narrowing)** | an f32 multiply into the f32→f16 narrowing that consumes it — rounding **once** where the DSL mandates twice. Same defect class as HIP/AMDGPU, and bit-for-bit the same count — but a **different compiler**: ACO here, LLVM's AMDGPU backend there (see "Two AMD compilers" above) | **nothing affordable.** Measured non-fixes, all still 620/63488: `#pragma OPENCL FP_CONTRACT OFF`, a `volatile` local, a `volatile __private` pointer, an `as_half`/`as_ushort` bitcast round-trip, and `convert_half_rte`. HIP's `asm volatile("" : "+v"(x))` **does not compile** here — rusticl goes through SPIR-V, where AMDGPU register constraints do not exist. Only a `volatile __global` round-trip and a `volatile __local` (LDS) round-trip work (both 0/63488), and both cost memory traffic per narrowing; the LDS form additionally needs a workgroup-sized allocation this backend does not control. **Consequence: f16 stays REJECTED in `Sarek_ir_opencl`** | **executed**, 2026-07-26, exhaustive sweep of all 63488 finite binary16 inputs on **two** devices — RX 7900 XTX (navi31) and the integrated Raphael iGPU (gfx1036) — rusticl/radeonsi, DRM 3.64, kernel 7.1.2-3-cachyos. Both report **620/63488**, first divergence at `x=5.68359375` (device 1006.5, interpreter 1006), bit-identical to the HIP figure. Liveness control: the `volatile __global` variant of the same harness reports **0/63488**, so the sweep is proven able to go both red and green. Reproducer: `tools/probes/opencl_f16_contraction_probe.c`. **Upgraded 2026-07-27 to ELEMENT-WISE model agreement (#62 slice 1, §12.3):** the plain kernel is bit-identical to `S_fuse_mul_into_narrowing` on **63488 / 63488** inputs on both devices, on this shape *and* on `f16(x*1.1)` (2912/63488 against the discipline, never previously swept here). The `double`-based `fusedctl` control does **not** build on rusticl, which advertises no `cl_khr_fp64`; the replacement control carries the exact product as an f32 pair and rounds to odd. Instrument: `sarek-opencl/probe/probe_opencl_f16_model_agreement.ml` |
-| **Vulkan / RADV (f16 narrowing)** | an f32→f16 narrowing absorbs whatever arithmetic feeds it (`v_fma_mixlo_f16`) — the multiply, and also the f32 **add**: the plain two-narrowing kernel compiles to a *single* fused instruction, one rounding where the DSL mandates three. Same ACO backend as rusticl, reached through a second front end — HIP's identical-count defect comes from LLVM's AMDGPU backend instead — and a **wider** combine than either | **nothing affordable, and `precise` is not it.** `precise` → SPIR-V `NoContraction` IS honoured (it keeps the f32 multiply as its own `v_fma_mix_f32`) and still leaves 2912/63488, because absorbing a *conversion* is a different combine from contracting `a*b+c`. An f16 bitcast round-trip changes nothing. A `volatile` SSBO round-trip on the f32 intermediates makes ACO drop the intermediate narrowing **entirely** instead (4774/63488). Only forcing the f16 *bit pattern* through global memory works (0/63488), at a global round-trip per narrowing into a scratch buffer this backend does not control. **Consequence: f16 stays REJECTED in `Sarek_ir_glsl`** | **executed**, 2026-07-26, exhaustive sweep of all 63488 finite binary16 inputs on **two** devices — RX 7900 XTX (**RADV NAVI31**) and the integrated Raphael iGPU (**RADV RAPHAEL_MENDOCINO**) — Mesa 26.1.4-arch3.1, Vulkan 1.4.354. Both report identical counts: **2912/63488** on `f16(x*1.1)` (plain and `precise` alike), **5075/63488** on `f16(f16(x*1.1)+1000)` plain, **4776/63488** with `precise`. Calibration: the same host oracle reproduces the independently measured **620** on the HIP/OpenCL kernel shape, and the barriered kernel reports **0/63488**, so the sweep is proven able to go both red and green. Gate: `sarek-vulkan/test/test_vulkan_f16_tripwire.ml`. **Upgraded 2026-07-27 to ELEMENT-WISE model agreement (#62 slice 1, §12.4):** each of those counts is a named closed-form function matched on **63488 / 63488** on both devices — plain `f16(x*1.1)` and `precise` `f16(x*1.1)` are `S_fuse_mul_into_narrowing`; plain `f16(f16(x*1.1)+1000)` is `S_absorb_all_into_final_narrowing` (a **single** `v_fma_mixlo_f16` over x, 1.1 and 1000); the same shape with `precise` is `S_f32_mul_then_absorb_add` (`v_fma_mix_f32` then `v_fma_mixlo_f16`); the f32-barriered variant is `S_drop_intermediate_narrowing`. `precise` is **honoured**, not ignored — it forbids a multiply-into-ADD contraction and cannot reach a conversion absorbing its operand, which is why it is byte-identical on the shape with no addition and changes the answer on the shape with one. Instrument: `sarek-vulkan/probe/probe_vulkan_f16_model_agreement.ml` |
+| **OpenCL / rusticl (f16 narrowing)** | an f32 multiply into the f32→f16 narrowing that consumes it — rounding **once** where the DSL mandates twice. Same defect class as HIP/AMDGPU, and bit-for-bit the same count — but a **different compiler**: ACO here, LLVM's AMDGPU backend there (see "Two AMD compilers" above) | **nothing affordable.** Measured non-fixes, all still 620/63488: `#pragma OPENCL FP_CONTRACT OFF`, a `volatile` local, a `volatile __private` pointer, an `as_half`/`as_ushort` bitcast round-trip, and `convert_half_rte`. HIP's `asm volatile("" : "+v"(x))` **does not compile** here — rusticl goes through SPIR-V, where AMDGPU register constraints do not exist. Only a `volatile __global` round-trip and a `volatile __local` (LDS) round-trip work (both 0/63488), and both cost memory traffic per narrowing; the LDS form additionally needs a workgroup-sized allocation this backend does not control. **Consequence: f16 stays REJECTED in `Sarek_ir_opencl`** | **executed**, 2026-07-26, exhaustive sweep of all 63488 finite binary16 inputs on **two** devices — RX 7900 XTX (navi31) and the integrated Raphael iGPU (gfx1036) — rusticl/radeonsi, DRM 3.64, kernel 7.1.2-3-cachyos. Both report **620/63488**, first divergence at `x=5.68359375` (device 1006.5, interpreter 1006), bit-identical to the HIP figure. Liveness control: the `volatile __global` variant of the same harness reports **0/63488**, so the sweep is proven able to go both red and green. Reproducer: `tools/probes/opencl_f16_contraction_probe.c`. **Upgraded 2026-07-27 to ELEMENT-WISE model agreement (backlog-62 slice 1, §12.3):** the plain kernel is bit-identical to `S_fuse_mul_into_narrowing` on **63488 / 63488** inputs on both devices, on this shape *and* on `f16(x*1.1)` (2912/63488 against the discipline, never previously swept here). The `double`-based `fusedctl` control does **not** build on rusticl, which advertises no `cl_khr_fp64`; the replacement control carries the exact product as an f32 pair and rounds to odd. Instrument: `sarek-opencl/probe/probe_opencl_f16_model_agreement.ml` |
+| **Vulkan / RADV (f16 narrowing)** | an f32→f16 narrowing absorbs whatever arithmetic feeds it (`v_fma_mixlo_f16`) — the multiply, and also the f32 **add**: the plain two-narrowing kernel compiles to a *single* fused instruction, one rounding where the DSL mandates three. Same ACO backend as rusticl, reached through a second front end — HIP's identical-count defect comes from LLVM's AMDGPU backend instead — and a **wider** combine than either | **nothing affordable, and `precise` is not it.** `precise` → SPIR-V `NoContraction` IS honoured (it keeps the f32 multiply as its own `v_fma_mix_f32`) and still leaves 2912/63488, because absorbing a *conversion* is a different combine from contracting `a*b+c`. An f16 bitcast round-trip changes nothing. A `volatile` SSBO round-trip on the f32 intermediates makes ACO drop the intermediate narrowing **entirely** instead (4774/63488). Only forcing the f16 *bit pattern* through global memory works (0/63488), at a global round-trip per narrowing into a scratch buffer this backend does not control. **Consequence: f16 stays REJECTED in `Sarek_ir_glsl`** | **executed**, 2026-07-26, exhaustive sweep of all 63488 finite binary16 inputs on **two** devices — RX 7900 XTX (**RADV NAVI31**) and the integrated Raphael iGPU (**RADV RAPHAEL_MENDOCINO**) — Mesa 26.1.4-arch3.1, Vulkan 1.4.354. Both report identical counts: **2912/63488** on `f16(x*1.1)` (plain and `precise` alike), **5075/63488** on `f16(f16(x*1.1)+1000)` plain, **4776/63488** with `precise`. Calibration: the same host oracle reproduces the independently measured **620** on the HIP/OpenCL kernel shape, and the barriered kernel reports **0/63488**, so the sweep is proven able to go both red and green. Gate: `sarek-vulkan/test/test_vulkan_f16_tripwire.ml`. **Upgraded 2026-07-27 to ELEMENT-WISE model agreement (backlog-62 slice 1, §12.4):** each of those counts is a named closed-form function matched on **63488 / 63488** on both devices — plain `f16(x*1.1)` and `precise` `f16(x*1.1)` are `S_fuse_mul_into_narrowing`; plain `f16(f16(x*1.1)+1000)` is `S_absorb_all_into_final_narrowing` (a **single** `v_fma_mixlo_f16` over x, 1.1 and 1000); the same shape with `precise` is `S_f32_mul_then_absorb_add` (`v_fma_mix_f32` then `v_fma_mixlo_f16`); the f32-barriered variant is `S_drop_intermediate_narrowing`. `precise` is **honoured**, not ignored — it forbids a multiply-into-ADD contraction and cannot reach a conversion absorbing its operand, which is why it is byte-identical on the shape with no addition and changes the answer on the shape with one. Instrument: `sarek-vulkan/probe/probe_vulkan_f16_model_agreement.ml` |
 | **OpenCL / pocl on x86 (f16 narrowing)** | in principle the same fusion — but nothing in this stack performs it | **nothing needed.** The naive narrowing already round-trips through binary16 exactly, so the barrier that rusticl requires is unnecessary here | **executed on CI**, 2026-07-26, quoted device `AMD EPYC 7763 64-Core Processor` under pocl on a GitHub-hosted runner: exhaustive sweep of all 63488 finite binary16 inputs, **0** disagreements between the naive and `volatile __local`-barriered narrowings. Observed as a CI failure of `test_opencl_f16_tripwire` before that test was scoped, i.e. the number was produced by a harness that was at the time *trying* to find a difference — so it is a null with the sweep demonstrably live. **This is what localises the defect:** the same source, swept the same way, fuses on an AMD GPU compiler and does not fuse here, so the locus is *the AMD GPU compilers*, not *OpenCL* and not *SPIR-V*. Note what it does **not** localise: rusticl and HIP/AMDGPU do not share a compiler (see "Two AMD compilers" above), so their identical 620 is two compilers agreeing, not one bug seen twice. **Confirmed by a second, independent negative on a real GPU** — Intel Arc Graphics under the Intel Compute Runtime / IGC, a compiler sharing no lineage with Mesa: 0/63488, with the sweep calibrated on the same run against the known 620 (§11.3). Guarded by `test_opencl_f16_tripwire`'s locus check, which fails if any OpenCL implementation outside its `"ACO"` device-string scope is found to fuse — and which was itself wrong until §11.5. Read that predicate as "not Mesa", not as "not AMD": an AMD GPU reached through ROCm's OpenCL would be compiled by LLVM's AMDGPU backend, i.e. by a compiler this document expects to fuse, while sitting outside the key |
 | **Vulkan / GLSL** | contraction and reassociation of float expressions | `precise` on every float local (`Sarek_ir_glsl.gen_var_decl`), which glslang lowers to SPIR-V `NoContraction` — but on RADV nothing needs preventing *for these shapes*: the driver does not contract them even without the decoration. It is **not** the decoration that is protecting them; RADV was separately observed ignoring `NoContraction` on a combine it does want to perform (§6, f16 narrowing) | **executed + machine-code**, RX 7900 XTX (RADV NAVI31) and Raphael iGPU (RADV RAPHAEL_MENDOCINO), Mesa 26.1.4-arch3.1: 0 of 7 contraction shapes contracted with or without `precise`, ISA opcode-identical between the two builds, explicit `fma()` controls fused 4/4 — see §6. Decoration emission: compiler-output, glslc 2026.2 + glslangValidator, 18 `NoContraction` with `precise` / 0 without. **Mesa ANV now measured too** (§11.2): Intel Arc Graphics (Meteor Lake-P), Mesa 26.1.2-arch3.1, same 0 of 7 / 0 of 7 with `fma()` controls 4/4 — and unlike RADV, ANV does not fuse the f16 narrowing either, so no combine has been found on ANV where `NoContraction` is ignored. Separately, `fma` is not correctly rounded on RADV: df64 mul 5.84e-08 / div 5.86e-08, each the measured worst-case relative error over `test_df64`'s own input set on the named device and driver, not a bound; ANV shows the same signature (mul 5.84e-08 / div 5.86e-08, §11.1) |
-| **Metal** | contraction of `a*b+c` — **measured, and NOT preventable by any compile option**; separately, both math defaults are the fast one (`mathMode = MTLMathModeFast`, `mathFloatingPointFunctions = ...Fast`, read from a fresh `MTLCompileOptions`) | **two mechanisms, both required**: `#pragma METAL fp contract(off)` in every generated kernel (`Sarek_ir_metal.metal_fp_contract_pragma`) for contraction, *and* `mathMode = Safe` + `mathFloatingPointFunctions = Precise` in `Metal_bindings.mtl_compile_options_conformant` for math-function accuracy (falling back to the deprecated `fastMathEnabled = NO` before macOS 15) | **executed**, Apple M4 / macOS 15.6.1 (24G90) / Apple clang 17.0.0: on the 8773 of 65536 elements where the device's own `fma` differs from the separately-rounded value, `a*b+c` is contracted 8773/8773 under every compile-option setting **including `mathMode=Safe`**, and 0/8773 with the pragma. Options are honoured (16017 and 22135 of 65536 math-function results change), so Metal is not in rusticl's ignore-it class. **Interpreter agreement now executed on the same device**: `test_df64` and `test_real64` PASS on every op and reproduce the interpreter's figures exactly (mul 9.07e-15, add 5.33e-15, sub 6.51e-15, div 5.08e-15, sqrt 8.53e-15) — sampled maxima over each test's input set, not bounds, and agreement between summary statistics rather than element-wise identity. **The f16 narrowing is now probed and does NOT fuse** — 0/63488 from the discipline on **both** swept shapes, element-wise, with a validated positive control that goes red on **both**: the same control reports **2912/63488** on `f16(x*1.1)` and **620/63488** on `f16(f16(x*1.1)+1000)`, the latter being the figure already measured on hiprtc/gfx1100, rusticl/radeonsi and Intel Arc (§10.14). Two shapes, two independently-nonzero controls, two zeros; the pragma changes nothing there, in either direction, because there is no fusion to prevent. Subnormals still unprobed; two record/variant kernels do not compile at all (§10.11). **f64 is refused outright** — MSL has no `double`, and until #141 `TFloat64` was silently emitted as `float`, striding an 8-byte-per-element host buffer at 4; `Sarek_real64` (df64) is the supported route and is the figure quoted above (§10.13) |
+| **Metal** | contraction of `a*b+c` — **measured, and NOT preventable by any compile option**; separately, both math defaults are the fast one (`mathMode = MTLMathModeFast`, `mathFloatingPointFunctions = ...Fast`, read from a fresh `MTLCompileOptions`) | **two mechanisms, both required**: `#pragma METAL fp contract(off)` in every generated kernel (`Sarek_ir_metal.metal_fp_contract_pragma`) for contraction, *and* `mathMode = Safe` + `mathFloatingPointFunctions = Precise` in `Metal_bindings.mtl_compile_options_conformant` for math-function accuracy (falling back to the deprecated `fastMathEnabled = NO` before macOS 15) | **executed**, Apple M4 / macOS 15.6.1 (24G90) / Apple clang 17.0.0: on the 8773 of 65536 elements where the device's own `fma` differs from the separately-rounded value, `a*b+c` is contracted 8773/8773 under every compile-option setting **including `mathMode=Safe`**, and 0/8773 with the pragma. Options are honoured (16017 and 22135 of 65536 math-function results change), so Metal is not in rusticl's ignore-it class. **Interpreter agreement now executed on the same device**: `test_df64` and `test_real64` PASS on every op and reproduce the interpreter's figures exactly (mul 9.07e-15, add 5.33e-15, sub 6.51e-15, div 5.08e-15, sqrt 8.53e-15) — sampled maxima over each test's input set, not bounds, and agreement between summary statistics rather than element-wise identity. **The f16 narrowing is now probed and does NOT fuse** — 0/63488 from the discipline on **both** swept shapes, element-wise, with a validated positive control that goes red on **both**: the same control reports **2912/63488** on `f16(x*1.1)` and **620/63488** on `f16(f16(x*1.1)+1000)`, the latter being the figure already measured on hiprtc/gfx1100, rusticl/radeonsi and Intel Arc (§10.14). Two shapes, two independently-nonzero controls, two zeros; the pragma changes nothing there, in either direction, because there is no fusion to prevent. Subnormals still unprobed; two record/variant kernels do not compile at all (§10.11). **f64 is refused outright** — MSL has no `double`, and until backlog-141 `TFloat64` was silently emitted as `float`, striding an 8-byte-per-element host buffer at 4; `Sarek_real64` (df64) is the supported route and is the figure quoted above (§10.13) |
 | **WGSL** | unconstrained | nothing | unverified, untested |
 | **Native (OCaml host)** | n/a | n/a | float32 is evaluated at OCaml binary64 precision, so error-free transformations cancel; `Sarek_df64` degrades to ~2^-24 there **by design** |
 
@@ -175,7 +175,7 @@ because the one non-Mesa stack that does fuse is AMD's own.
   CUDA/C (nvrtc) path — executed, GTX 1070 Max-Q / sm_61 / CUDA 12.9 / driver
   580.119.02, exhaustive over all 63488 finite binary16 inputs, **0**
   disagreements (§7). Note this is the **CUDA/C** path: the PTX backend
-  refuses kernel-level f16 by design (`#57` slice 2, a located
+  refuses kernel-level f16 by design (backlog-57 slice 2, a located
   `Ptx_codegen_error`), so there is nothing to rely on there yet.
 - **`Sarek_df64` meeting its precision contract on CUDA/PTX and OpenCL on
   NVIDIA Pascal, and on OpenCL on AMD** — `sqrt` on CUDA/PTX is now included
@@ -255,7 +255,7 @@ because the one non-Mesa stack that does fuse is AMD's own.
   RAPHAEL_MENDOCINO). `Sarek_ir_glsl` therefore rejects f16 at codegen — a
   *deliberate* refusal backed by a measurement, not an unimplemented feature.
   **Do not reason from `precise`.** This backend already emits `precise` on
-  every float local, and #106/#126 measured RADV not to contract 7 f32 shapes;
+  every float local, and backlog-106/backlog-126 measured RADV not to contract 7 f32 shapes;
   neither is evidence about this combine, and the `precise` variant still
   disagrees on 2912 inputs. Re-test before enabling: the blocker is a Mesa
   optimiser behaviour and could change with a Mesa release. That re-test is
@@ -284,7 +284,7 @@ two worked examples.
 
 ---
 
-## 4. CUDA f16: the barrier bought nothing *at the narrowing*, and has been removed (#110)
+## 4. CUDA f16: the barrier bought nothing *at the narrowing*, and has been removed (backlog-110)
 
 The AMDGPU fix added an opacity barrier around every f32→f16 narrowing. A
 PTX-flavoured variant, `asm volatile("" : "+f"(x))`, was added to the non-HIP
@@ -374,7 +374,7 @@ Full per-architecture detail, flag sweep and residual risk:
 
 ---
 
-## 5. CUDA: `-use_fast_math` / `-ftz=true` are refused (#111)
+## 5. CUDA: `-use_fast_math` / `-ftz=true` are refused (backlog-111)
 
 `-use_fast_math` implies `--ftz=true --prec-div=false --prec-sqrt=false
 --fmad=true`. `-ftz=true` alone flushes binary32 subnormals. Unlike the HIP
@@ -534,7 +534,7 @@ exactly the explicitly-requested `fma()` calls.
 
 What is *not* established by the experiment above is that RADV would honour
 `NoContraction` if it ever did want to contract. That was left open here, and
-**#57 slice 2b closed it — negatively.**
+**backlog-57 slice 2b closed it — negatively.**
 
 ### RADV *does* want to contract somewhere, and there it ignores `NoContraction`
 
@@ -562,7 +562,7 @@ So the honest status of `precise` on RADV is *not* "inert, and free". It is:
 - **ignored** for the multiply-into-narrowing combine, where RADV *does*
   contract and the decoration does not stop it.
 
-> **AMENDED 2026-07-27 (#62 slice 1, §12.4): "ignored" is the wrong word, and
+> **AMENDED 2026-07-27 (backlog-62 slice 1, §12.4): "ignored" is the wrong word, and
 > the right one changes what may be inferred.** The decoration is *inapplicable*
 > here, not disobeyed. `NoContraction` forbids contracting a multiply into an
 > **addition**; a **conversion** absorbing its operand is a different combine
@@ -684,7 +684,7 @@ this is where they are collected):
   supported**. Scope: **Xe-LPG only**, which is not the Gen9.5 UHD 630 the
   quoted ANV numbers came from (§11.0). **AMDVLK and the proprietary AMD Vulkan
   driver remain unmeasured** — different SPIR-V consumers on the very same GPU.
-- **f16 on the PTX backend.** `Sarek_ir_ptx` refuses kernel-level f16 (`#57`
+- **f16 on the PTX backend.** `Sarek_ir_ptx` refuses kernel-level f16 (backlog-57
   slice 2). Everything above is the **CUDA/C** path.
 - **One GPU, one architecture.** sm_61 has no tensor cores, no bf16 and no FP8,
   so nothing here constrains `mma`, bf16 or FP8 contraction, and no f16
@@ -719,7 +719,7 @@ this is where they are collected):
   bug class in a different backend** — `clBuildProgram` is called with no
   options and OpenCL's default permits a 3-ulp `sqrt`; adding
   `-cl-fp32-correctly-rounded-divide-sqrt` moves it to 8.87e-15, measured on the
-  same device. **Fixed in backlog #136 (§9)** — but the fix could not be
+  same device. **Fixed in backlog-136 (§9)** — but the fix could not be
   re-measured here: the red does not reproduce on this machine's OpenCL devices
   (rusticl/radeonsi reports `sqrt` 9.68e-15, a PASS) and rusticl ignores FP
   build options outright. The **Vulkan** residual (1.68e-14 on NVIDIA,
@@ -796,7 +796,7 @@ this is where they are collected):
 
 ---
 
-## 9. OpenCL and HIP: what an unset option was choosing (backlog #136)
+## 9. OpenCL and HIP: what an unset option was choosing (backlog-136)
 
 `Opencl_api.Program.build` called `clBuildProgram` with an **empty option
 string**, and every caller in the tree passed nothing. An empty option string
@@ -815,7 +815,7 @@ accurate default selected by passing nothing.
 OpenCL `sqrt` at **1.81e-14** against a 1.42e-14 tolerance — a FAIL — and
 building with `-cl-fp32-correctly-rounded-divide-sqrt` moved it to **8.87e-15**,
 a PASS coinciding with the interpreter's figure for the same input set.
-Measured during #298 on that device.
+Measured during PR #298 on that device.
 
 **That device is not on this machine, and the red does not reproduce here.**
 Measured 2026-07-26, `test_real64` on rusticl/radeonsi 26.1.4-arch3.1: OpenCL
@@ -960,7 +960,7 @@ semantics by passing `-ffast-math` and reading a warning.
 
 ---
 
-## 10. Metal: measured on an M4 — and the compile options were the wrong lever (backlog #125)
+## 10. Metal: measured on an M4 — and the compile options were the wrong lever (backlog-125)
 
 This section was written as "a statement about code, not behaviour", because
 there was no Apple hardware. An Apple M4 became available on 2026-07-26, and the
@@ -1162,7 +1162,7 @@ Worth noting nonetheless: cases 7-8 of the same sweep **SKIP** on f64 while
 16-20 **FAIL**, so the sweep's own capability gating is inconsistent — some f64
 cases detect the missing extension and some do not.
 
-**FIXED (#140).** The investigation found something worse than "some paths
+**FIXED (backlog-140).** The investigation found something worse than "some paths
 check": *neither* did. Cases 7-8 skipped for a completely unrelated reason — a
 hardcoded `validation_exclusions` entry for `Float64.abs_float` /
 `Float64.copysign`, which are user-callable but absent from
@@ -1205,7 +1205,7 @@ stripped from those same two sources fails identically. It is a codegen
 correctness bug that had never been observable, because nothing in this project
 had ever compiled Metal on Apple hardware.
 
-**FIXED (#139), and the design decision is `device`.** The cause: the
+**FIXED (backlog-139), and the design decision is `device`.** The cause: the
 `DParam (v, None)` arm of `gen_param_metal` treated *every* parameter without an
 `array_info` as a scalar and emitted `constant <ty> &name`; for a vec-typed `v`,
 `metal_type_of_elttype` returns a pointer type, so the emission was a reference
@@ -1229,12 +1229,12 @@ a stated reason elsewhere). Layer 1's red path is driven permanently by
 `sarek/tests/unit/test_metal_gate.ml`, which feeds it the pre-fix golden
 verbatim.
 
-### 10.12 A third defect, found the same way (#132)
+### 10.12 A third defect, found the same way (backlog-132)
 
 `wgsl_validation_sweep`'s corpus contained no multi-field variant payload and,
 worse, no `SMatch` at all — `variant_kernel` only *constructs* variants — so
 every accessor and every `switch` the WGSL match emitter can produce was
-unreachable from any executable gate. The field-naming half of #132 had already
+unreachable from any executable gate. The field-naming half of backlog-132 had already
 been closed by PR #306 (`EMatch` and all five `SMatch` paths now share one
 `payload_layout`, and WGSL's `indexed = true` spelling `.MkPair_v_0` matches its
 flat struct). What the coverage hole was still hiding was a different, live bug:
@@ -1248,7 +1248,7 @@ Adding `smatch_multi_payload` to the sweep turned it red on the first run;
 emitting a synthetic empty `default` when no `PWild` arm is present turned it
 green.
 
-### 10.13 A fourth defect, found the same way (#141): Metal silently halved f64
+### 10.13 A fourth defect, found the same way (backlog-141): Metal silently halved f64
 
 Not a contraction defect, but it belongs here because it is a *float-semantics*
 claim the codebase was making and getting wrong, and because §10's Metal work is
@@ -1288,9 +1288,9 @@ carrying the remedy — so the fact is stated once and the diagnostic says which
 *kind* of unavailability the author is looking at. See
 [`docs/design/capability-model.md`](design/capability-model.md).
 
-Both entry points were found twice, independently: #64 reasoned down from the
+Both entry points were found twice, independently: backlog-64 reasoned down from the
 capability model and was motivated by the f64 **literal** assigned into an f32
-buffer; #141 reasoned up from the emitted source and was motivated by the f64
+buffer; backlog-141 reasoned up from the emitted source and was motivated by the f64
 **local**. Neither shape reaches the other's detector, and both searches landed
 on the same `kernel_uses Float64` gate at the same two `generate` entries. That
 is the argument that {arm, whole-kernel} is the complete set rather than the set
@@ -1357,7 +1357,7 @@ than assumed:
 
 #### A fifth defect the same sweep turned up: GLSL int64 with no extension
 
-Loud rather than silent, so not the #141 narrowing class, but broken all the
+Loud rather than silent, so not the backlog-141 narrowing class, but broken all the
 same. `glsl_type_of_elttype` maps `TInt64` to `int64_t` at the correct width —
 but that spelling does not exist under plain `#version 450`; it needs
 `#extension GL_ARB_gpu_shader_int64 : require`. That extension was gated on the
@@ -1384,7 +1384,7 @@ that retracted a slice-1 claim: `glsl_header` takes
 the generated f64 kernel at exit 0. `docs/design/capability-model.md` §4
 records the retraction in place. The *capability* half of int64-on-Vulkan —
 `VkPhysicalDeviceFeatures.shaderInt64`, which is `Device_optional` and needs a
-device probe — is #142; only the emitter half is fixed here.
+device probe — is backlog-142; only the emitter half is fixed here.
 
 #### And one in the precedent test itself
 
@@ -1402,7 +1402,7 @@ duplicate directly. Both `unfold`s are fixed, and both files now assert
 **distinctness** as well as length, which is the property a count alone cannot
 establish.
 
-### 10.14 The f16 narrowing on Metal: **it does not fuse** (#63 slice 5)
+### 10.14 The f16 narrowing on Metal: **it does not fuse** (backlog-63 slice 5)
 
 §10.9 listed f16 as the largest thing Metal had never been probed for, and
 [`docs/design/f16-relaxed-accuracy.md`](design/f16-relaxed-accuracy.md) §2 has a
@@ -1494,7 +1494,7 @@ says of the GLSL tripwire.
 
 ### 10.15 `simdgroup_matrix` on the M4: three configurations, none of them integer
 
-The #63 prerequisite, measured the same day with
+The backlog-63 prerequisite, measured the same day with
 `tools/probes/metal_simdgroup_matrix_probe.m` on the same device and toolchain.
 Evidence tier: **executed**.
 
@@ -1518,7 +1518,7 @@ MSL 2.4 through 3.2.
 `f16-relaxed-accuracy.md` §8 and §7 slice 4b keep an integer cooperative-matrix
 path as the route that lands *under the existing strict contract* if the ACO
 scalar shapes match no closed-form model — 12 of the 14 configurations RADV
-advertises are integer. **That fallback is Vulkan-only.** #63 has no
+advertises are integer. **That fallback is Vulkan-only.** backlog-63 has no
 strict-contract route available to it at all; on Metal it is f16/bf16 or
 nothing. `bfloat` 8×8 is available, is not in the current plan, and has not been
 swept — nothing here says what it computes.
@@ -1603,7 +1603,7 @@ availability; that needs a benchmark against a scalar kernel.
 
 ---
 
-## 11. Measured on Intel: Meteor Lake Arc, ANV and the Intel Compute Runtime (backlog #123)
+## 11. Measured on Intel: Meteor Lake Arc, ANV and the Intel Compute Runtime (backlog-123)
 
 An Intel machine became available on 2026-07-27. It is the first Intel GPU this
 project has ever executed on, and it closes three things at once: the df64 ANV
@@ -1852,7 +1852,7 @@ narrowing barrier in `Sarek_ir_opencl` must be per-implementation and gated on
 an exhaustive agreement sweep for that implementation, never applied backend-wide
 on the strength of an ACO measurement.
 
-**What Sarek actually ships today, checked rather than assumed (backlog #144).**
+**What Sarek actually ships today, checked rather than assumed (backlog-144).**
 The obvious reading of the paragraph above is that the barrier needs to become
 conditional on the shader compiler, and that Sarek therefore needs a way to
 *identify* ACO at runtime — the gap §5 of
@@ -1880,7 +1880,7 @@ is already there.** The `#if` is the compiler identifying *itself* at the moment
 it compiles the source; a `CL_DEVICE_VENDOR` match or a `VK_DRIVER_ID` match is a
 guess about a stack from the outside, and a boot-time fusion probe measures a
 device that never sees this code. Neither would be consulted on the only path
-that emits the barrier. **The right shape of the #144 fix was therefore a gate,
+that emits the barrier. **The right shape of the backlog-144 fix was therefore a gate,
 not a mechanism** — the scoping was correct and unpinned, and "correct and
 unpinned" is how §11.5's own tripwire came to encode a wrong claim.
 
@@ -1890,7 +1890,7 @@ to lie between the AMD guard and its `#else`, and the non-AMD arm to contain no
 non-AMD arm the AMD `"+v"` barrier — a mutation the pre-existing `"+f"`
 assertion does not see, and under which that new case is the only failure.
 
-### 11.4a The guard now names the platform, and the hazard it was recorded for does not exist (backlog #146)
+### 11.4a The guard now names the platform, and the hazard it was recorded for does not exist (backlog-146)
 
 §11.4 closed with this, and it is the sentence this section exists to correct:
 
@@ -1987,7 +1987,7 @@ red on Intel Arc and reported:
 > naive and barriered narrowings — **it fuses too.**
 
 (That is the text as it stood. The check's wording was corrected again under
-#145 — "not an ACO device" is the right *scope* statement but the wrong *locus*
+backlog-145 — "not an ACO device" is the right *scope* statement but the wrong *locus*
 statement, since the locus is both AMD GPU compilers and the `"ACO"` key selects
 Mesa stacks only. §2, "Two AMD compilers".)
 
@@ -2081,7 +2081,7 @@ Two environmental notes, neither a defect in this repository:
 
 ---
 
-## 12. ACO's f16 models, measured element-wise — and the `precise` reconciliation (#62 slice 1)
+## 12. ACO's f16 models, measured element-wise — and the `precise` reconciliation (backlog-62 slice 1)
 
 **Executed 2026-07-27** on this workstation. This section is the measurement
 record for slice 1 of

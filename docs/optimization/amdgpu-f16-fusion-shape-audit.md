@@ -1,6 +1,6 @@
 # AMDGPU f16 fusion/demotion: exhaustive shape audit
 
-_Issue #106. Measured 2026-07-25/26 on **AMD Radeon RX 7900 XTX (gfx1100)** and
+_Tracked as backlog-106. Measured 2026-07-25/26 on **AMD Radeon RX 7900 XTX (gfx1100)** and
 **AMD Ryzen 9 7950X iGPU (gfx1036)**, ROCm hiprtc, `-ffp-contract=off` forced
 last per `Hip_rtc.base_options`. Disassembly via `hipcc`/ROCm LLVM for gfx1100._
 
@@ -186,6 +186,6 @@ Hint:   Did you mean Sarek.Sarek_cpu_runtime.Float32.of_float?
 
 The same name mismatch affects `expm1`, `log1p`, `hypot`, `copysign`, `fmod` and
 `minus`, all declared in `sarek/Sarek_stdlib/Float32.ml` with no counterpart in
-`sarek/interp/Sarek_float32.ml`. Not fixed here — out of scope for #106, and it
+`sarek/interp/Sarek_float32.ml`. Not fixed here — out of scope for backlog-106, and it
 wants its own test — but it is why this audit uses `0. -. x` for negation and
 `sqrt (x *. x)` rather than `sqrt (abs_float x)`.

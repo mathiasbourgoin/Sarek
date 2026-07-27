@@ -1,15 +1,15 @@
 # The relaxed f16 accuracy contract, and the tensor-core paths it unblocks
 
 _What Sarek promises about f16 results when bit-identity with the interpreter is
-no longer required, and how #62 (Vulkan cooperative-matrix) and #63 (Metal
+no longer required, and how backlog-62 (Vulkan cooperative-matrix) and backlog-63 (Metal
 `simdgroup_matrix`) are sliced on top of it._
 
 **Status:** design only; the two decisions this document opened were taken by the
 project owner on 2026-07-27 and are recorded as decided in **§3** (scalar f16 is
 relaxed, as an explicit performance trade) and **§6** (user-facing friction is
 proportional to the strength of the evidence). **No refusal is lifted by this
-change.** **Issues:** #62, #63; depends on the f16 scalar type (#57) and the
-capability model (#64). **Date:** 2026-07-27.
+change.** **Tracked as:** backlog-62, backlog-63; depends on the f16 scalar type (backlog-57) and the
+capability model (backlog-64). **Date:** 2026-07-27.
 
 **Amended 2026-07-27 (Metal measurement).** §7 slices 5 and 6 are **done** — an
 Apple M4 became reachable, both probes ran, and the results are wired in: §2
@@ -52,10 +52,10 @@ is no longer a requirement for f16**, provided the results are correct,
 deterministic, the technical limitation is understood and explained, and all of
 it is documented.
 
-That is a genuine relaxation and it is what makes #62 and #63 reachable. It is
+That is a genuine relaxation and it is what makes backlog-62 and backlog-63 reachable. It is
 also not yet a specification. "Correct" without a bound admits anything; and this
 repository has already shipped a gate whose tolerance was wider than the effect
-it existed to detect (`docs/fp-contraction-policy.md` §11.5, backlog #118), where
+it existed to detect (`docs/fp-contraction-policy.md` §11.5, backlog-118), where
 the consequence was a fully collapsed implementation reading green.
 
 This document turns the decision into something a test can fail.
@@ -374,7 +374,7 @@ not as a plan.
 | **Vulkan / ANV** | Intel Arc Graphics (MTL), Mesa 26.1.2-arch3.1 | **0 / 63488** | n/a | executed | **strict**; refusal is currently over-broad here |
 | **Metal** | Apple M4, macOS 15.6.1 (24G90), Apple clang 17.0.0 (clang-1700.0.13.5), Metal.framework from the Command Line Tools SDK | **0 / 63488** on `f16(x*1.1)` **and 0 / 63488** on `f16(f16(x*1.1)+1000)`; unchanged under `#pragma METAL fp contract(off)`, `#pragma clang fp contract(off)`, a `volatile thread` barrier and an `as_type` bitcast barrier | n/a — no deviation to model. The `fusedctl` control, on the same source, compile options and dispatch, reproduces `S_fuse_mul_into_narrowing` on **63488 / 63488** and reports 2912 / 620 | executed, **element-wise** over the whole finite binary16 domain | **strict**; refusal is currently over-broad here |
 | **WGSL / naga** | — | **never probed** | — | none | **`Unknown` → refused** |
-| **PTX** | — | refuses kernel-level f16 by design (#57 slice 2) | — | by-construction | nothing to relax |
+| **PTX** | — | refuses kernel-level f16 by design (backlog-57 slice 2) | — | by-construction | nothing to relax |
 
 **Regime B rows — cooperative matrix (§5), Metal only.** These are the first
 numeric measurements of any cooperative-matrix implementation in this project;
@@ -466,7 +466,7 @@ alternative rounding* of the same program (Regime A), or inside a derived bound
 those stacks, legitimately. That is the price.
 
 What it buys is that the tensor-core paths become reachable at all. Neither
-`VK_KHR_cooperative_matrix` (#62) nor Metal `simdgroup_matrix` (#63) can be
+`VK_KHR_cooperative_matrix` (backlog-62) nor Metal `simdgroup_matrix` (backlog-63) can be
 expressed without f16 as a DSL element type on those backends
 (`f16-dsl-element-type.md` §1), and both are the funded direction (ibid. §10 Q2).
 
@@ -546,7 +546,7 @@ subgroup`**:
 
 Four consequences for the plan:
 
-1. **#62 is not blocked on hardware.** The path can be built and measured
+1. **backlog-62 is not blocked on hardware.** The path can be built and measured
    locally, end to end.
 2. **Only 2 of 14 configurations need the relaxed contract.** The other 12 are
    integer, and the SPIR-V extension states integer accumulation is exact — they
@@ -755,7 +755,7 @@ Three constraints pin the answer:
    ruling's third clause.
 2. **Mandatory everywhere defeats the unblock.** If every f16 kernel needs an
    acknowledgement before it will run, the tensor-core path is unusable by
-   default, and #62/#63 were unblocked in order to be used.
+   default, and backlog-62/backlog-63 were unblocked in order to be used.
 3. **Mandatory nowhere makes the coopmat bound meaningless.** §5's bound is a
    *bound*, not an identity: a user can be inside it and still be getting an
    answer that depends on the driver's accumulation order. Someone who has not
@@ -785,7 +785,7 @@ branch on it rather than discovering it in a diagnostic.
 
 ---
 
-## 7. Slicing plan for #62 and #63
+## 7. Slicing plan for backlog-62 and backlog-63
 
 Each slice names what it proves and what hardware it needs. Nothing below lifts a
 refusal before slice 3.
@@ -796,9 +796,9 @@ refusal before slice 3.
 | **1** | element-wise model characterisation of ACO scalar f16 | whether the contract of §1.2 is deliverable at all | RX 7900 XTX + Raphael iGPU (local) | no | **DONE 2026-07-27 for 2 of 20 shapes — deliverable; 18 shapes still open** |
 | **2** | `shaderFloat16` + driver-identity + capability plumbing | the gate can be keyed on a driver, not a device name | local, both devices | no | open |
 | **3** | GLSL scalar f16, allowlisted | Sarek-*generated* f16 shaders meet the contract | RX 7900 XTX (local) | **yes**, on an allowlist | open |
-| **4** | #62 Vulkan coopmat, f16×f16→f32 | the tensor-core path, end to end | RX 7900 XTX (local) | yes (new capability) | open |
-| **5** | #63 Metal — **scalar f16 first** | the Metal row of §2 | ladon (M4) | no | **DONE 2026-07-27 — strict, 0/63488** |
-| **6** | #63 Metal `simdgroup_matrix` | the Apple tensor-core path | ladon (M4) | yes | **DONE 2026-07-27 — availability + numerics; no integer path** |
+| **4** | backlog-62 Vulkan coopmat, f16×f16→f32 | the tensor-core path, end to end | RX 7900 XTX (local) | yes (new capability) | open |
+| **5** | backlog-63 Metal — **scalar f16 first** | the Metal row of §2 | ladon (M4) | no | **DONE 2026-07-27 — strict, 0/63488** |
+| **6** | backlog-63 Metal `simdgroup_matrix` | the Apple tensor-core path | ladon (M4) | yes | **DONE 2026-07-27 — availability + numerics; no integer path** |
 
 ### Slice 0 — make the contract fail-able (host-only, lands first)
 
@@ -946,7 +946,7 @@ to unlock (`opt-expressivity-gaps.md`: "OpenCL has no portable equivalent"), so
 lifting it buys nothing but consistency. **Recommend leaving OpenCL refused** and
 saying why, rather than lifting it for symmetry.
 
-### Slice 4 — #62, Vulkan cooperative-matrix (local)
+### Slice 4 — backlog-62, Vulkan cooperative-matrix (local)
 
 Sub-sliced deliberately, because 4a is cheap, is the highest-information step,
 and needs nothing from the DSL:
@@ -985,22 +985,22 @@ and needs nothing from the DSL:
     It is also the **fallback if slice 1 goes the wrong way**: if the ACO shapes
     fail to match a closed-form model and the scalar contract has to become
     per-shape, an integer-only coopmat path still lands, still under the strict
-    contract, and #62 is not blocked on the accuracy question at all. That
+    contract, and backlog-62 is not blocked on the accuracy question at all. That
     fallback only exists if 4b was built for it.
 
-    **The fallback is #62's, not #63's — measured, not assumed.** Metal has *no*
+    **The fallback is backlog-62's, not backlog-63's — measured, not assumed.** Metal has *no*
     integer `simdgroup_matrix`: the only element types are `half`, `float` and
     `bfloat`, and integers fail a named `is_simdgroup_matrix_element<T>`
     static_assert, so the enumeration is closed (§7 slice 6). An earlier reading
     of this bullet implied every backend had a strict-contract path to fall back
-    on. **#63 does not.** On Metal the tensor-core path is reachable only through
-    the relaxation, which makes #63 strictly more exposed to it than #62 — if the
-    relaxation were withdrawn, #62 could still ship integer configurations and
-    #63 could ship nothing. Admitting integer component types remains right for
+    on. **backlog-63 does not.** On Metal the tensor-core path is reachable only through
+    the relaxation, which makes backlog-63 strictly more exposed to it than backlog-62 — if the
+    relaxation were withdrawn, backlog-62 could still ship integer configurations and
+    backlog-63 could ship nothing. Admitting integer component types remains right for
     the reasons above; it is simply not a universal safety net.
 
   The *slicing* is deliberately **not** reordered to put integers first — f16
-  scalar is a prerequisite for #63 and for bf16 regardless
+  scalar is a prerequisite for backlog-63 and for bf16 regardless
   (`f16-dsl-element-type.md` §11.1), so the relaxation work is resequenced rather
   than avoided, and an integer-only tensor-core path is not what the intended
   audience means by "tensor cores". The type admits integers; the plan still
@@ -1008,7 +1008,7 @@ and needs nothing from the DSL:
 - **4c — GLSL codegen for the fragment type**, gated on the `Device_optional`
   coopmat capability. The Raphael iGPU is the free negative device (§4).
 
-### Slices 5 and 6 — #63, Metal — **DONE, 2026-07-27**
+### Slices 5 and 6 — backlog-63, Metal — **DONE, 2026-07-27**
 
 Both were unschedulable pending access to an Apple GPU. Access was granted, the
 probes were run on ladon, and both slices are complete. Recorded in
@@ -1047,18 +1047,18 @@ probes were run on ladon, and both slices are complete. Recorded in
 > for the ACO shapes — resting on the fact that 12 of the 14 configurations RADV
 > advertises are integer. **That reasoning does not transfer to Metal, and this
 > document previously implied a universal fallback.** There is no integer
-> `simdgroup_matrix` at all, so **#63 has no strict-contract route**: on Metal it
+> `simdgroup_matrix` at all, so **backlog-63 has no strict-contract route**: on Metal it
 > is f16 or bf16 or nothing, and it is reachable *only* through the relaxation.
 >
 > Two consequences the plan has to carry:
 > - **Slice 4b's integer requirement keeps its justification but loses its
 >   universality.** Admitting integer component types in the IR fragment type is
 >   still right — it is nearly free at design time, expensive to retrofit, and it
->   is what keeps #62 deliverable if slice 1 goes badly. But it is a **#62
->   fallback, not a #62-and-#63 fallback**, and slice 4b should say so rather than
+>   is what keeps backlog-62 deliverable if slice 1 goes badly. But it is a **backlog-62
+>   fallback, not a backlog-62-and-backlog-63 fallback**, and slice 4b should say so rather than
 >   let a reader infer that every backend has a strict-contract path.
-> - **#63 is more exposed to the relaxation than #62 is.** If the relaxation were
->   ever withdrawn, #62 could still ship its integer configurations and #63 could
+> - **backlog-63 is more exposed to the relaxation than backlog-62 is.** If the relaxation were
+>   ever withdrawn, backlog-62 could still ship its integer configurations and backlog-63 could
 >   ship nothing. That asymmetry did not exist in the plan as written and should
 >   be visible when the two are prioritised against each other.
 >
@@ -1107,18 +1107,18 @@ exact at the precision of the result type. Those configurations are deliverable
 **under Sarek's existing strict contract**, with no accuracy relaxation, no
 allowlist and no `accept_relaxed_f16` opt-in.
 
-They exercise every structurally hard part of #62: the `Device_optional`
+They exercise every structurally hard part of backlog-62: the `Device_optional`
 capability gate, the `VkPhysicalDeviceCooperativeMatrixPropertiesKHR` query, the
 `shaderFloat16`-adjacent feature plumbing, the new IR fragment type, the subgroup
 ABI, and the codegen. Only the *numerics* differ.
 
-**So an alternative slicing exists in which #62's whole skeleton lands before any
+**So an alternative slicing exists in which backlog-62's whole skeleton lands before any
 part of the accuracy relaxation is used**, and the relaxation is then applied to
 one narrow thing (the f16 accumulate path) with the machinery already proven.
 `u8 × u8 → s32` is also a real workload — quantised inference is the main
 consumer of integer tensor cores.
 
-Against it: the f16 scalar type is a prerequisite for #63 and for bf16 regardless
+Against it: the f16 scalar type is a prerequisite for backlog-63 and for bf16 regardless
 (`f16-dsl-element-type.md` §11.1), so the relaxation work is not avoided, only
 resequenced; and an integer-only coopmat path is not what "tensor cores" means to
 most of the intended audience.
@@ -1132,15 +1132,15 @@ most of the intended audience.
 > finds no closed-form model for the ACO shapes.
 >
 > **AMENDED 2026-07-27, after the Metal measurement.** This whole section is
-> scoped to **#62**. It reads as though "the cheapest first tensor-core slice
+> scoped to **backlog-62**. It reads as though "the cheapest first tensor-core slice
 > needs no relaxation" were a statement about tensor cores in general; it is a
 > statement about *Vulkan*, and it holds only because RADV advertises integer
 > configurations. **Metal advertises none** — `simdgroup_matrix` exists for
 > `half`, `float` and `bfloat` only, integers failing a named static_assert, a
 > closed enumeration (§7 slice 6). So the objection's escape route is unavailable
-> to #63 entirely, and the sequencing argument is stronger than it looked: f16 is
-> not merely a prerequisite for #63 "regardless", it is the **only** element type
-> #63 can be built on. Nothing in the resolution changes; its scope is now
+> to backlog-63 entirely, and the sequencing argument is stronger than it looked: f16 is
+> not merely a prerequisite for backlog-63 "regardless", it is the **only** element type
+> backlog-63 can be built on. Nothing in the resolution changes; its scope is now
 > stated.
 
 ---

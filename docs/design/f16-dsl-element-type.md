@@ -1,6 +1,6 @@
 # Design Spec: f16 (half-precision float) as a Sarek DSL element type
 
-**Task:** #57 (`f16-dsl-element-type`) — roster RESEARCH + SPEC phase.
+**Task:** backlog-57 (`f16-dsl-element-type`) — roster RESEARCH + SPEC phase.
 **Status:** DESIGN SPEC, **AMENDED POST-IMPLEMENTATION**. The original text was
 written before any code existed; slice 1 was then built (PR #290) and proved parts
 of this spec wrong. Those parts are corrected **in place**, next to the claim they
@@ -8,7 +8,7 @@ refute, and flagged with a `CORRECTION` callout. The spec is deliberately kept a
 design document rather than rewritten into an implementation report — the point of
 keeping the wrong claims visible is that the *next* width's spec gets written
 better.
-**Date:** written 2026-07-25; amended 2026-07-25 (post PR #290 / #291).
+**Date:** written 2026-07-25; amended 2026-07-25 (post PR #290 / PR #291).
 **Method:** float32 / float64 traced end-to-end as the template; each layer mapped
 to what f16 needs, with `file:line` anchors verified against the worktree.
 
@@ -22,8 +22,8 @@ to what f16 needs, with `file:line` anchors verified against the worktree.
   reasoned-not-verified unless a callout upgrades it.
 
 **Anchor hygiene.** All `file:line` anchors in the original text were verified
-against the worktree at writing time. They have since drifted: PR #77 factorized
-the C-family codegen, PR #78 (`ba375a36`) deleted `Kirc_Ast.ml` and
+against the worktree at writing time. They have since drifted: backlog-77 factorized
+the C-family codegen, PR #291 (`ba375a36`, backlog-78) deleted `Kirc_Ast.ml` and
 `Sarek_lower.ml` outright, and PR #290 itself moved things. Anchors re-verified
 during this amendment carry their current line; anchors that could not be
 re-verified are marked *(approx.)* rather than guessed at.
@@ -34,7 +34,7 @@ re-verified are marked *(approx.)* rather than guessed at.
 
 Slice 1 shipped as **PR #290** (`feat/f16-dsl-slice1`, three commits: initial
 implementation, review-round-1 must-fixes, review-round-2 duplication collapse +
-soundness holes). **PR #291 / issue #78** (`ba375a36`) separately deleted the dead
+soundness holes). **PR #291** (`ba375a36`, backlog-78) separately deleted the dead
 legacy `Kirc_Ast` path (~2,215 lines removed). Together they change five things in
 this spec:
 
@@ -65,8 +65,8 @@ conversions (§6.3), the slice plan (§8), the type-system exclusion of f16 from
 ## 0. TL;DR
 
 - **f16 SCALAR is the prerequisite** that unlocks every tensor-core path in Sarek:
-  Vulkan cooperative-matrix (#62), Metal `simdgroup_matrix` (#63), HIP rocWMMA from
-  `[%kernel]` (#44 étape B). None are reachable until the DSL can express an f16
+  Vulkan cooperative-matrix (backlog-62), Metal `simdgroup_matrix` (backlog-63), HIP rocWMMA from
+  `[%kernel]` (backlog-44 étape B). None are reachable until the DSL can express an f16
   element type. This spec covers the f16 **scalar** type; f16 **matrix/fragment**
   types are a delineated follow-on (§8, slice 3).
 - **The host storage layer is the EASY part, not the hard part** — contrary to a
@@ -120,7 +120,7 @@ conversions (§6.3), the slice plan (§8), the type-system exclusion of f16 from
 - **Recommended capability gating:** add `supports_fp16` to the device
   capabilities record and reuse the exact `kernel_uses_float64` →
   emit-pragma/extension machinery (a parallel `kernel_uses_float16` detector),
-  plus a launch-time gate — the #64 static-where-known + dynamic-gate model.
+  plus a launch-time gate — the backlog-64 static-where-known + dynamic-gate model.
   **Half held** — the `kernel_uses_float16` detector shipped, generalized into a
   `feature` type; the `supports_fp16` capability field and launch gate did not. See
   the CORRECTION in §7.
@@ -132,10 +132,10 @@ conversions (§6.3), the slice plan (§8), the type-system exclusion of f16 from
 The expressivity-gap analysis already ranks these
 (`docs/optimization/opt-expressivity-gaps.md:82,86`):
 
-- **#62 Vulkan cooperative-matrix** (`VK_KHR_cooperative_matrix`) — cross-vendor
+- **backlog-62 Vulkan cooperative-matrix** (`VK_KHR_cooperative_matrix`) — cross-vendor
   tensor path. Cooperative-matrix fragments are typically f16-input / f32-accumulate.
-- **#63 Metal `simdgroup_matrix`** — `simdgroup_half8x8` fragments are f16.
-- **#44 étape B HIP rocWMMA** — the `mma`-probe (`docs/optimization/l15b-mma-probe.md`)
+- **backlog-63 Metal `simdgroup_matrix`** — `simdgroup_half8x8` fragments are f16.
+- **backlog-44 étape B HIP rocWMMA** — the `mma`-probe (`docs/optimization/l15b-mma-probe.md`)
   shows the WMMA path assembles but is not reachable from `[%kernel]` today; the
   probe kernel itself is `...f32.f16.f16.f32` — f16 inputs.
 
@@ -168,7 +168,7 @@ central structural fact that sizes the work.
 Adding f16 means adding a constructor in **each** vocabulary and extending every
 exhaustive match over it. The blast radius is enumerated in §5.
 
-> **CORRECTION (verified, PR #290 + #291/#78).** "Three vocabularies" was the
+> **CORRECTION (verified, PR #290 and PR #291 / backlog-78).** "Three vocabularies" was the
 > central structural claim of this spec and it framed the cost wrongly in both
 > directions.
 >
@@ -177,7 +177,7 @@ exhaustive match over it. The blast radius is enumerated in §5.
 > (`Kirc_Ast.ml:47`, `:248-249`, `Sarek_lower.ml:219-220`, `Sarek_quote.ml:51-52`),
 > of which a new width forces exactly **one**: `lower_reg_elttype`. Slice 1 did not
 > even add a constructor — it added a twelve-line *rejection* arm, because the path
-> was already dead. **PR #291 (`ba375a36`, issue #78) then deleted `Kirc_Ast.ml` and
+> was already dead. **PR #291 (`ba375a36`, backlog-78) then deleted `Kirc_Ast.ml` and
 > `Sarek_lower.ml` outright** (~2,215 lines). The legacy IR is no longer a
 > consideration for any future width, and §10 question 1 is answered.
 >
@@ -306,7 +306,7 @@ the same free round-trip verified in §3.1.
 >
 > **What the implementation had to do instead** — two kind-independent helpers in
 > `sarek/core/Memory.ml` (mainline: `bigarray_elem_size` at `:22`;
-> `bigarray_void_ptr` added by #290 at `:94`), then patch *every* allocation and
+> `bigarray_void_ptr` added by PR #290 at `:94`), then patch *every* allocation and
 > transfer site:
 >
 > | Backend | sites patched |
@@ -369,7 +369,7 @@ the same free round-trip verified in §3.1.
 `Ptyp_constr {txt=Lident "float32"} -> TReg Float32`. Add `"float16" -> TReg Float16`
 (and optionally `"half"` as an alias — fork §6.1).
 
-> **CORRECTION + HELD.** The `Sarek_lower.ml` anchor is dead (file deleted by #291);
+> **CORRECTION + HELD.** The `Sarek_lower.ml` anchor is dead (file deleted by PR #291);
 > annotation resolution for the live path is `Sarek_types.ml:458`
 > (`TEConstr ("float16", []) -> t_float16`). `"half"` was **not** added as an alias.
 >
@@ -548,7 +548,7 @@ OpenCL `:109,116`, GLSL `:333,353` (double uses `"lf"`), Metal `:113,120`, WGSL
 `:242`, PTX `Sarek_ir_ptx_expr.ml:436,440` (hex bit-pattern). f16 literals (if
 adopted, §6.1) mirror these with the per-backend suffix column above.
 
-**Feature-declaration mechanism (the #64 tie-in).** The OpenCL and GLSL paths are the
+**Feature-declaration mechanism (the backlog-64 tie-in).** The OpenCL and GLSL paths are the
 model: a `Sarek_ir_analysis.kernel_uses_float64 k` predicate gates a prepended
 pragma / `#extension` line. f16 adds a **parallel `kernel_uses_float16`** detector
 (§3.2 / §5) and reuses the identical prepend structure. See §7.
@@ -580,7 +580,7 @@ pragma / `#extension` line. f16 adds a **parallel `kernel_uses_float16`** detect
 `include`s the shared codegen but must be audited for local elttype matches. HIP
 reuses CUDA codegen verbatim (`sarek-hip/Hip_plugin.ml:36`, `Hip_shared.ml:12-13`).
 
-> **Anchor note.** PR #77 factorized the C-family codegen into `Sarek_ir_codegen`
+> **Anchor note.** backlog-77 factorized the C-family codegen into `Sarek_ir_codegen`
 > and shifted everything below ~line 600 in the emitters. Current: CUDA
 > `cuda_header` `656 → 631`; OpenCL `generate_with_fp64` `755-759 → 713-717`; Metal
 > `generate` `909 → 875` (the `#include <metal_stdlib>` is `:882`); WGSL `:1233` is
@@ -794,11 +794,11 @@ params (not just vectors) are wanted early.
 > every place the wider one can be substituted is a silent-truncation site* —
 > enumerate them before shipping.
 
-### 6.5 Capability gating — see §7 (it is the #64 tie-in, treated as its own section).
+### 6.5 Capability gating — see §7 (it is the backlog-64 tie-in, treated as its own section).
 
 ---
 
-## 7. Capability gating (#64 tie-in)
+## 7. Capability gating (backlog-64 tie-in)
 
 f16 support is **not universal** (many OpenCL/Vulkan devices lack it; WebGPU requires
 the `shader-f16` feature; older PTX targets pre-sm_53). An f16 kernel on a
@@ -836,7 +836,7 @@ df64-style substrate machine unless a concrete no-f16-storage device appears.
 
 **⚠ WANT HUMAN INPUT:** whether the launch-time gate should be a hard error or a
 warn-and-emulate-in-f32 fallback. My recommendation is **hard error** (Sarek's
-proof-tier discipline favors explicit over silent), but this composes with #64's
+proof-tier discipline favors explicit over silent), but this composes with backlog-64's
 policy and is the kind of call that should be made deliberately.
 
 > ### CORRECTION — §7 was not built in slice 1, and only half of it should be
@@ -862,7 +862,7 @@ policy and is the kind of call that should be made deliberately.
 > can read a false value from.
 >
 > **The hard-error-vs-fallback question is therefore still open**, but its scope
-> shrank: the recommendation of hard error stands, and #64 should decide it for the
+> shrank: the recommendation of hard error stands, and backlog-64 should decide it for the
 > whole `feature` set at once rather than per width — which is what
 > `kernel_requirements : kernel -> feature list` (`Sarek_ir_analysis.ml:254`) was
 > added to enable.
@@ -901,7 +901,7 @@ conversions.
 - Native/interp: `VFloat16`/`Float16_type` sharing `PFloat`; reuse `get_f32`+rounding
   (§6.4).
 - **One GPU backend: recommend CUDA/HIP** (simplest feature decl — a single
-  `#include`; and it is the tensor-core target for #44). `TFloat16 -> "half"`.
+  `#include`; and it is the tensor-core target for backlog-44). `TFloat16 -> "half"`.
 - Capability: `supports_fp16` field + `kernel_uses_float16` detector + launch gate
   (§7).
 - **Deliberately excludes PTX** (see slice 2 rationale).
@@ -913,7 +913,7 @@ conversions.
 
 > ### CORRECTION — "each is mechanical except WGSL" is refuted for OpenCL
 >
-> **VERIFIED BY EXECUTION** (#57 slice 2a, 2026-07-26). The OpenCL *codegen* is
+> **VERIFIED BY EXECUTION** (backlog-57 slice 2a, 2026-07-26). The OpenCL *codegen* is
 > indeed mechanical — `"half"`, a narrowing arm, and a `cl_khr_fp16` pragma.
 > That was never the binding constraint, and pricing this slice by codegen
 > surface repeated §5's error one width later: **the cost of a backend is not
@@ -948,7 +948,7 @@ conversions.
 >    same defect underneath. GLSL/Vulkan on RADV is a second front end onto ACO
 >    and should be assumed to carry this defect until measured.
 >
->    **Corrected (#145): they are not the same compiler.** rusticl/radeonsi and
+>    **Corrected (backlog-145): they are not the same compiler.** rusticl/radeonsi and
 >    RADV compile through **ACO**, Mesa's shader compiler; hiprtc compiles
 >    through **LLVM's AMDGPU backend**. The rule survives — grouping by
 >    compiler still beats grouping by source language — but the group here is
@@ -958,7 +958,7 @@ conversions.
 >    would miss hiprtc, keyed to ROCm it would miss rusticl and RADV. See
 >    `docs/fp-contraction-policy.md` §2, "Two AMD compilers".
 >
->    **Do not over-read the RADV result that landed alongside this** (#106/#126,
+>    **Do not over-read the RADV result that landed alongside this** (backlog-106 / backlog-126,
 >    the `Vulkan / GLSL` row): RADV was measured *not* to contract **7 f32
 >    contraction shapes**, ISA-identical with and without `precise`. That is a
 >    result about `a*b+c`-style f32 contraction. The f16 defect here is a
@@ -973,7 +973,7 @@ conversions.
 
 > ### CORRECTION — and for GLSL/Vulkan too, worse than for OpenCL
 >
-> **VERIFIED BY EXECUTION** (#57 slice 2b, 2026-07-26). Rule 1 above told slice
+> **VERIFIED BY EXECUTION** (backlog-57 slice 2b, 2026-07-26). Rule 1 above told slice
 > 2b to *assume* RADV carries the defect and to *measure* rather than infer it.
 > Measured: it does. Exhaustive sweep of all 63488 finite binary16 inputs, on
 > both local devices (RX 7900 XTX / **RADV NAVI31** and the Raphael iGPU / **RADV
@@ -1013,7 +1013,7 @@ conversions.
 > the multiply vanishes into the narrowing. So RADV demonstrably **does** honour
 > SPIR-V `NoContraction`. It simply does not reach: absorbing a *conversion* is
 > a different combine from contracting `a*b+c`, and only the latter is what
-> `NoContraction` forbids. The tempting inference from #106/#126 — "we already
+> `NoContraction` forbids. The tempting inference from backlog-106 / backlog-126 — "we already
 > emit `precise`, and RADV was measured not to contract 7 f32 shapes, so f16 is
 > safe" — is therefore false, and is now guarded by a named test case.
 >
@@ -1042,7 +1042,7 @@ conversions.
 - Per-plugin `Sarek_ir_<backend>.ml` audit (§4).
 
 ### Slice 3 — f16 matrix / tensor-core types (the unlock; separate spec)
-**This slice is a follow-on and deserves its own design spec.** It is where #62/#63/#44
+**This slice is a follow-on and deserves its own design spec.** It is where backlog-62 / backlog-63 / backlog-44
 are actually delivered:
 - Packed f16 math (`half2`/`f16x2`, `hfma2`) — the throughput win.
 - An f16 **fragment/matrix** element type in the IR (a new type class, not just a
@@ -1052,7 +1052,7 @@ are actually delivered:
 - Gated by the same `supports_fp16` + a new `supports_cooperative_matrix`-class
   capability.
 
-Slice 3 is explicitly **out of scope** for #57; #57 delivers slices 1–2 (f16 scalar).
+Slice 3 is explicitly **out of scope** for backlog-57; backlog-57 delivers slices 1–2 (f16 scalar).
 The matrix layer is named here only to fix the relationship.
 
 ---
@@ -1080,7 +1080,7 @@ The matrix layer is named here only to fix the relationship.
 > **Direction 1 — `Kirc_Ast` was priced far too high (measured).** `Kirc_Ast.elttype`
 > had **4 constructors and 4 use sites** across the entire tree, exactly **one** of
 > which a new width forces (`lower_reg_elttype`). One line. Slice 1 spent that line
-> on a *rejection*, since the path was already dead. **PR #291 (`ba375a36`, #78) has
+> on a *rejection*, since the path was already dead. **PR #291 (`ba375a36`, backlog-78) has
 > since deleted `Kirc_Ast.ml` and `Sarek_lower.ml` entirely (~2,215 lines).** It is
 > no longer a consideration. The "roughly halve slice 1–2 cost" estimate above was
 > off by an order of magnitude, and a later follow-up investigation repeated the
@@ -1156,15 +1156,15 @@ The matrix layer is named here only to fix the relationship.
 1. **Legacy IR:** is `Kirc_Ast` still required, or may f16 target only `Sarek_ir`?
    (Halves the blast radius if the latter.)
    > **ANSWERED: not required, and gone.** It was fully dead. f16 rejects it; PR
-   > #291 deleted it. It was also never worth half the blast radius — one line (§9).
+   > PR #291 deleted it. It was also never worth half the blast radius — one line (§9).
 2. **Strategic:** is slice 3 (tensor cores) funded? If not, is f16 storage/interchange
    alone worth slices 1–2? (§9.)
    > **ANSWERED: the coopmat-first tensor-core strategy is the funded direction**,
    > which is what makes bf16 rather than f8/f4 the next width (§11).
 3. **Launch gate policy:** hard error vs warn-and-emulate on an f16-lacking device
-   (§7). Composes with #64.
+   (§7). Composes with backlog-64.
    > **STILL OPEN, scope reduced.** Slice 1 needs no launch gate — unsupported
-   > backends reject at codegen. Decide it in #64 for the whole `feature` set at
+   > backends reject at codegen. Decide it in backlog-64 for the whole `feature` set at
    > once (§7).
 4. **Surface taste:** `half` alias alongside `float16`, or `float16` only? (§6.1.)
    > **ANSWERED: `float16` only.** `half` stays reserved but unbound.
@@ -1191,7 +1191,7 @@ these are directional, not verified.
   exactly why it is the right second instance for learning what generalizes.
 - **It fits the funded strategy.** bf16 is among the supported component types of
   `VK_KHR_cooperative_matrix`, so it lands inside the coopmat-first tensor-core path
-  (#62) rather than beside it.
+  (backlog-62) rather than beside it.
 - **Hardware coverage is broad:** NVIDIA Ampere and later, AMD RDNA3 / CDNA2 and
   later, Apple, Intel.
 - **Local testability caveat, stated up front.** RADV on the RX 7900 XTX advertises

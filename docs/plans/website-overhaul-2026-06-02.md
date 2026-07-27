@@ -35,16 +35,16 @@ Architectural prerequisite for the playground (Phase 2) and good design regardle
 
 ## Phase 1 — Quick, high-trust wins (ship first)
 
-**1a. Docs from tested examples (#2).** A build step renders the example pages
+**1a. Docs from tested examples.** A build step renders the example pages
 (vector_add, matrix_mul, reduction, transpose) from `sarek/tests/e2e/*.ml` sources +
 their kernels, so published examples always compile and match the current API. Kills the
 outdated-example drift (audit C1/D3) structurally.
 
-**1b. Backend × feature compatibility matrix (#3).** Generate a single table — backends ×
+**1b. Backend × feature compatibility matrix.** Generate a single table — backends ×
 {fp64, atomics, shared mem, variants, records, barriers, subgroups} × platforms — from
 backend capability flags + `kb/backends/*`. Answers the perennial "does Metal do fp64?".
 
-## Phase 2 — Flagship: in-browser transpiler playground (#1)
+## Phase 2 — Flagship: in-browser transpiler playground
 
 - Compile `Sarek_transpile.of_source` (Phase 0) to JS with **js_of_ocaml** (parsing OCaml
   source in-browser via compiler-libs/ppxlib — proven by existing OCaml playgrounds).
@@ -57,7 +57,7 @@ backend capability flags + `kb/backends/*`. Answers the perennial "does Metal do
 
 ## Phase 3 — Depth
 
-**3a. "The Sarek Book" (#4, reframed).** A structured, accessible **book/tutorial** — not a
+**3a. "The Sarek Book" (reframed).** A structured, accessible **book/tutorial** — not a
 KB dump. Progressive track: first kernel → memory & transfers → reductions → custom types
 (records/variants) → multi-backend → performance/convergence → writing a backend. Rich and
 comprehensive, but **auto-synced**: code snippets from tested sources (Phase 1a), the DSL
@@ -66,7 +66,7 @@ chapters distilled (curated, rewritten for readability) from `kb/` — with a bu
 that flags when referenced symbols/files drift. The KB stays the internal source of truth;
 the Book is the readable, public, synced surface over it.
 
-**3b. Interactive benchmarks portal (#5).** Turn the JSON dashboard into an explorable
+**3b. Interactive benchmarks portal.** Turn the JSON dashboard into an explorable
 performance story: cross-device/backend comparison, hardware filters, historical trends,
 per-kernel generated-code view, "reproduce this" commands. Fix the `benchmark-viewer.js`
 `innerHTML` stored-XSS (audit F1) as part of the rebuild.

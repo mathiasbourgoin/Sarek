@@ -2,8 +2,8 @@
 
 _What a kernel requires, what a target provides, and which layer knows._
 
-**Status:** slice 1 landed; slices 2–5 proposed. **Issue:** #64 (absorbs the
-capability half of #57 §7). **Date:** 2026-07-27.
+**Status:** slice 1 landed; slices 2–5 proposed. **Tracked as:** backlog-64 (absorbs the
+capability half of backlog-57 §7). **Date:** 2026-07-27.
 
 ---
 
@@ -99,10 +99,10 @@ that was actively producing wrong answers.
 **Slice 1b — route WGSL f64 through the table.** WGSL already refuses f64, but
 via a bespoke `has_float64` / `params_have_float64` path with hand-written
 strings. Routing it through `Sarek_capability` makes the message uniform and the
-kind explicit. **Deliberately not done here**: #141 is auditing the WGSL backend
+kind explicit. **Deliberately not done here**: backlog-141 is auditing the WGSL backend
 concurrently and this would collide. No WGSL file is touched by slice 1.
 
-**Slice 2 — the dynamic launch gate. Landed in #142, for the wide element types
+**Slice 2 — the dynamic launch gate. Landed in backlog-142, for the wide element types
 only.** `Execute.run` (`sarek/execute/Execute.ml`) is the single point that has
 both the device and the IR, right beside `check_launch_args`;
 `Framework_sig.generate_source` takes no device, so no codegen path can consult
@@ -131,7 +131,7 @@ are the same task and must land together.
 
 > **Correction.** Slice 1 recorded this as a GLSL *fp64* hole — "emits `double`
 > while never declaring `GL_ARB_gpu_shader_fp64`". That was **measured false** by
-> #141: `glsl_header` takes `~uses_float64` and emits the extension, and
+> backlog-141: `glsl_header` takes `~uses_float64` and emits the extension, and
 > `glslangValidator` accepts the f64 kernel (exit 0). The real hole is one type
 > over — GLSL `int64_t`, whose `#extension` emission is gated on the float64
 > conditions only, so a plain `int64 vector` kernel emitted a shader glslang
@@ -140,7 +140,7 @@ are the same task and must land together.
 > device probe that `kind_needs_device Device_optional = true` calls for and
 > that slice 1 deliberately does not build.
 >
-> **Emitter half fixed in #141**, so #142 is the device probe only. The two
+> **Emitter half fixed in backlog-141**, so backlog-142 is the device probe only. The two
 > float64 conditions the `#extension` was gated on were the softmath helpers
 > that bit-cast a double and a non-finite f64 literal spelled via
 > `int64BitsToDouble`; `Sarek_ir_analysis.Int64` is now OR-ed in, so the line is
@@ -148,7 +148,7 @@ are the same task and must land together.
 > was `syntax error, unexpected IDENTIFIER` at exit 2, exit 0 after. Regression
 > gate: `glsl-validate/int64_only_store`, a validation-only kernel whose only
 > wide type is int64 — the shape the corpus lacked, which is why the gap
-> survived. Until #142 lands, a device without `shaderInt64` still fails at
+> survived. Until backlog-142 lands, a device without `shaderInt64` still fails at
 > shader load rather than at launch with a Sarek diagnostic: loud and correct,
 > but unattributed.
 
@@ -174,14 +174,14 @@ facts that motivated it is worse than none.
   independently tested — an f64 *literal* never reaches the type arm at all, and
   neither does an f64 *local* whose only appearance is its declared type.
 
-  Those two motivating shapes were found independently — the literal by #64
-  reasoning down from the capability model, the local by #141 reasoning up from
+  Those two motivating shapes were found independently — the literal by backlog-64
+  reasoning down from the capability model, the local by backlog-141 reasoning up from
   the emitted source — and both searches landed on the same detector
   (`Sarek_ir_analysis.kernel_uses Float64`) at the same two `generate` entries.
   Convergence from opposite directions is the argument that {arm, whole-kernel}
   is the *complete* set of entry points, not merely the set someone thought of.
 
-  #141 also revised the severity. Slice 1 described the pre-fix behaviour as "a
+  backlog-141 also revised the severity. Slice 1 described the pre-fix behaviour as "a
   silent halving of precision"; it was worse than that. The IR element type
   fixes the buffer stride as well as the arithmetic, and `Vector.float64` is 8
   bytes per element, so `device float*` strode the host buffer at 4 and every
@@ -191,8 +191,8 @@ facts that motivated it is worse than none.
 
 **Expressible, not yet wired:**
 
-- WGSL/WebGPU has no `f64` — same kind, deferred to slice 1b (#141
-  coordination). #141's backend-wide sweep confirms slice 1b is a pure
+- WGSL/WebGPU has no `f64` — same kind, deferred to slice 1b (backlog-141
+  coordination). backlog-141's backend-wide sweep confirms slice 1b is a pure
   refactor and finds nothing for it to fix: WGSL already refuses `TFloat64`,
   `TInt64` and `TFloat16` with located errors, and is the only backend that
   refuses everything it cannot represent at the right width. It was the
@@ -208,8 +208,8 @@ facts that motivated it is worse than none.
   `compute_capability` is already in the capabilities record, so the probe is
   cheap. Slice 2.
 - **`int64` on Vulkan/GLSL** — `Device_optional`
-  (`VkPhysicalDeviceFeatures.shaderInt64` / `GL_ARB_gpu_shader_int64`). #141
-  fixed the emitter half. **#142 fixed the device half**, and found that the
+  (`VkPhysicalDeviceFeatures.shaderInt64` / `GL_ARB_gpu_shader_int64`). backlog-141
+  fixed the emitter half. **backlog-142 fixed the device half**, and found that the
   prediction recorded here was wrong in a way worth keeping.
 
   The expectation was "a device without the feature fails at shader load rather
@@ -249,7 +249,7 @@ facts that motivated it is worse than none.
 
   3. *The failure mode is confidence about an API's guarantees, not ignorance
      of a device* — and it recurred inside this very fix. The first version of
-     #142 replaced "we assume fp64" with "we probe fp64", then wrote `Int64`
+     backlog-142 replaced "we assume fp64" with "we probe fp64", then wrote `Int64`
      unconditionally for **every** OpenCL device one file over, reasoning that
      `long` is a core OpenCL C type. It is core only in the FULL profile;
      an `EMBEDDED_PROFILE` device may omit 64-bit integers, advertising them
@@ -273,7 +273,7 @@ facts that motivated it is worse than none.
   (`Sarek_ir_layout.scalar_size TBool = 4`, mirroring `Sarek_ppx`), and `bool`
   is an accepted `[@@sarek.type]` record field — so host `{bool;bool;int}` at
   0/4/8, size 12, met an emitted `typedef struct { bool a; bool b; int n; }` at
-  0/1/4, size 8. Fixed in the emitter (#141): Metal now emits `int`.
+  0/1/4, size 8. Fixed in the emitter (backlog-141): Metal now emits `int`.
 
   The instrument that catches this class is not this table but the totality
   sweep — `sarek/tests/codegen_golden/test_backend_type_width_totality.ml`. For
@@ -337,7 +337,7 @@ facts that motivated it is worse than none.
   Intel Arc / Meteor Lake-P). Closing this needs a compiler-identity probe that
   does not exist.
 
-  > **This gap does not block the f16 barrier, and backlog #144 asked whether it
+  > **This gap does not block the f16 barrier, and backlog-144 asked whether it
   > did.** The barrier's own scoping never depended on runtime identification:
   > it is emitted from a single site under `#if defined(__HIP__) ||
   > defined(__HIP_PLATFORM_AMD__)`, and the compilers that could get it wrong
@@ -349,7 +349,7 @@ facts that motivated it is worse than none.
   > it is not real for this one. See `docs/fp-contraction-policy.md` §11.4.
 - **Source locations.** `Sarek_ir_types.kernel` carries no location and the IR
   has no per-node locations, so a codegen refusal names the capability and the
-  target but not the kernel source line. #64 asked for a *located* error; slice 1
+  target but not the kernel source line. backlog-64 asked for a *located* error; slice 1
   delivers a named one. The fix is to thread `Sarek_ast.loc` through
   `Sarek_lower_ir` into the IR — slice 4, and a large change on its own.
 

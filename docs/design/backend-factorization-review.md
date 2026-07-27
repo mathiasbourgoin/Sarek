@@ -1,4 +1,4 @@
-# Backend / Plugin Factorization Review (#58)
+# Backend / Plugin Factorization Review (backlog-58)
 
 **Status:** DESIGN REVIEW — analysis only, no code change proposed for merge here.
 **Date:** 2026-07-25
@@ -21,9 +21,9 @@ one of them: a **shared helper module with per-backend data/closures passed in**
 
 | Precedent | Home | PR | Shape |
 |---|---|---|---|
-| Kernel-compilation cache | `spoc/framework/Guarded_cache.ml` | #275 / #66 | shared module |
-| `gen_intrinsic` (5 backends → 1) | `sarek/codegen/Sarek_ir_intrinsic_dispatch.ml` | #276 / #49 | table-driven dispatcher |
-| 7 `*_uses_*` detectors → 1 | `spoc/ir/Sarek_ir_analysis.ml` (`expr_fold`/`stmt_fold` + `'a folder`) | #277 / #47 | generic fold, per-node record |
+| Kernel-compilation cache | `spoc/framework/Guarded_cache.ml` | PR #275 / backlog-66 | shared module |
+| `gen_intrinsic` (5 backends → 1) | `sarek/codegen/Sarek_ir_intrinsic_dispatch.ml` | PR #276 / backlog-49 | table-driven dispatcher |
+| 7 `*_uses_*` detectors → 1 | `spoc/ir/Sarek_ir_analysis.ml` (`expr_fold`/`stmt_fold` + `'a folder`) | PR #277 / backlog-47 | generic fold, per-node record |
 | Variant-type emission | `spoc/ir/Sarek_ir_codegen.ml` (`mangle_name`, `gen_variant_def ~type_of_elttype`, `gen_variant_def_glsl`) | — | shared module, callback for the one backend-specific datum |
 | Backend error funnel | `Sarek_backend_error.Backend_error.Make(struct let name end)` | — | functor; each `*_error.ml` is ~20 lines |
 | Backend codegen re-export | `sarek-*/Sarek_ir_*.ml` are 9-line `include Sarek_codegen.*` shims | — | codegen already lives once in `sarek_codegen` |
@@ -56,8 +56,8 @@ some lines back).
 
 | # | Opportunity | Dup. today | LOC saved | Value | Safety | Rank | Task tie |
 |---|---|---|---|---|---|---|---|
-| 1 | Shadow-rename twins (GLSL/WGSL) → shared IR pre-pass | ~110 of ~118 lines identical | ~100 | High | High | **1** | #71/#72 (PR #282/#283) |
-| 2 | EMatch/SMatch payload handling → shared helper + fix divergence | guard dup ×2, SMatch handler dup ×5, EMatch discard dup ×5 | ~80–120 | High | High | **2** | #73/#75 (PR #284) |
+| 1 | Shadow-rename twins (GLSL/WGSL) → shared IR pre-pass | ~110 of ~118 lines identical | ~100 | High | High | **1** | backlog-71 / backlog-72 (PR #282, PR #283) |
+| 2 | EMatch/SMatch payload handling → shared helper + fix divergence | guard dup ×2, SMatch handler dup ×5, EMatch discard dup ×5 | ~80–120 | High | High | **2** | backlog-73 / backlog-75 (PR #284) |
 | 3 | C-family `gen_param`/`is_vec_type`/record typedef → `Sarek_ir_codegen` | verbatim ×3 | ~60–70 | Med | High | **3** | — |
 | 4 | `gen_lvalue` shared traversal (5 backends) | 4 arms ×5, identical | ~40 | Med | High | **4** | — |
 | 5 | `gen_expr` mechanical arms + `gen_stmt` control-flow (C-family trio) | ~90% of trio traversal | large (~hundreds) | High | Med | **5** | — |
@@ -116,12 +116,12 @@ fully captured by the two closures. `test_glsl_name_collision.ml` + golden tests
 The one judgment call: whether to keep the counters per-backend (they must, for name stability of
 each backend's golden files) — the `~fresh_name` closure owns its own counter, so this is fine.
 **Recommend as the first factorization.** Highest value×safety: real duplication, tiny blast
-radius, direct test coverage, and it consolidates two fixes (#71/#72, PRs #282/#283) that were
+radius, direct test coverage, and it consolidates two fixes (backlog-71 / backlog-72, PR #282 and PR #283) that were
 landed in parallel and produced the twin.
 
 ---
 
-### Opportunity 2 — EMatch/SMatch payload handling → shared helper + close the divergence  **[RANK 2]** (ties #75)
+### Opportunity 2 — EMatch/SMatch payload handling → shared helper + close the divergence  **[RANK 2]** (ties backlog-75)
 
 This is the messiest area and the most valuable to get right, because it is **both** duplication
 **and** a live correctness divergence. Three distinct sub-problems are tangled together — keep them
@@ -137,7 +137,7 @@ writes `PConstr (name, _)` — **dropping the binder list**:
 - CUDA `Sarek_ir_cuda.ml:190-219` (discard at `:208`), OpenCL `:208-237` (`:226`),
   Metal `:212-239` (`:228`) — **no guard, silently wrong** if a body uses a binder.
 - GLSL `:482-516` and WGSL `:348-384` added a fail-loud guard (`case_binds_used_payload`,
-  GLSL `:299-328`, WGSL `:196-223`) that raises `unsupported_construct` instead — the #73 fix
+  GLSL `:299-328`, WGSL `:196-223`) that raises `unsupported_construct` instead — the backlog-73 fix
   (PR #284). The `.tag == name` emitter itself (GLSL `:504`, WGSL `:378`) is still the same snippet.
 
 So today CUDA/OpenCL/Metal **silently emit undefined-identifier code** while GLSL/WGSL fail loud —
@@ -160,14 +160,14 @@ All five backends emit a `switch(scrut.tag)` that *does* bind payloads via
    iteri-over-payload loop are identical; only the field-access spelling (`.data.Ctor_v._N` vs
    GLSL/WGSL member syntax) and the decl form vary, both injectable.
 
-**The honest limit (judgment call, ties #75).** A shared *ternary/select* helper unifies the
+**The honest limit (judgment call, ties backlog-75).** A shared *ternary/select* helper unifies the
 fail-loud behavior and de-dups the emitter, but it does **not** make payload-using
 match-*expressions* compile on the ternary backends — a nested ternary is a single expression with
 nowhere to introduce a declaration, which is exactly why GLSL/WGSL chose to fail loud. Genuinely
 supporting payloads in expression position requires **promoting EMatch to SMatch-style lowering**
 (hoist to statement position with real binder decls), which PTX and the interpreter already do.
-That is a *feature*, not a factorization, and should be tracked as such under #75. **Do not
-conflate "fix #75 in one place" with "make it compile":** the factorization delivers *uniform
+That is a *feature*, not a factorization, and should be tracked as such under backlog-75. **Do not
+conflate "fix backlog-75 in one place" with "make it compile":** the factorization delivers *uniform
 fail-loud + one guard site + one SMatch handler*; the feature is a separate follow-up.
 
 **Risk.** Low-Med. Extending the guard to 3 more backends changes their behavior from
@@ -289,10 +289,10 @@ Ordered by value × safety, smallest-blast-radius-first so each lands independen
 golden tests:
 
 1. **Opportunity 1 — shadow-rename twins.** Isolated, ~100 LOC, direct test cover, consolidates
-   #71/#72. Do first.
+   backlog-71 / backlog-72. Do first.
 2. **Opportunity 2a — EMatch guard: share + extend to CUDA/OpenCL/Metal.** Closes the silent-wrong
-   divergence (a real correctness bug), then 2b (share the SMatch handler). Ties #75; explicitly
-   file the "EMatch→SMatch promotion for payload support" as a *separate feature* under #75, not
+   divergence (a real correctness bug), then 2b (share the SMatch handler). Ties backlog-75; explicitly
+   file the "EMatch→SMatch promotion for payload support" as a *separate feature* under backlog-75, not
    part of this factorization.
 3. **Opportunity 3 — C-family `gen_param`/`is_vec_type`/record typedef into `Sarek_ir_codegen`.**
    Proven callback idiom, verbatim duplication, low risk.
@@ -308,9 +308,9 @@ readability/flexibility tradeoff — it is deliberately last.
 
 ## 5. Open judgment calls for the reviewer
 
-- **#75 semantics.** Does #75 want *uniform fail-loud* on payload-using match-expressions (op. 2a
+- **backlog-75 semantics.** Does backlog-75 want *uniform fail-loud* on payload-using match-expressions (op. 2a
   suffices) or *actual payload support* (needs the separate EMatch→SMatch promotion feature)? This
-  changes whether op. 2 "closes" #75 or only de-risks it.
+  changes whether op. 2 "closes" backlog-75 or only de-risks it.
 - **How far to push op. 5.** C-family trio only, or through GLSL? My recommendation: trio first,
   GLSL only if the trio abstraction stays readable; never WGSL.
 - **Counter/name-stability.** The shadow-rename fresh-name counters and prefixes are per-backend by

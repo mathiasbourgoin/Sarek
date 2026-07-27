@@ -82,7 +82,7 @@ cost. The doc framing should lead with these, not apologize for them.
 | 2 | **Half precision (f16/bf16)** + packed math | PTX `.f16`/`.f16x2`, `__half2`, `hfma2`; Triton `tl.float16`/`tl.bfloat16` native | New numeric type end-to-end: PPX type + typer rule, IR type, 6 codegen emitters, host-side packing in `Vector`/`Bigarray` (no f16 in OCaml `Bigarray` — needs a packed-int16 bit-reinterpret layer) | High for ML workloads; zero relevance for the FP32/FP64 numeric-kernel user base this project currently serves | L | P2 |
 | 3 | **Grid-stride loop idiom** | A `for` loop with `blockDim.x*gridDim.x` stride; pure convention, no language support in CUDA either | Nothing — already expressible today with `global_thread_id`, `block_dim_x`, `grid_dim_x` (all in `Sarek_core_primitives.ml:75-179`) and an ordinary bounded loop | None — non-gap | — | N/A |
 | 4 | **Multi-dimensional strided views (Triton tile model)** | Triton `tl.load`/`tl.store` over block pointers with masks, 2D/3D tiles, compiler-managed vectorization/coalescing; CUDA/OpenCL: manual `row*width+col` (same as Sarek today) | Two separable asks — see the dedicated section (c) below | View layer: Medium value, Medium cost. Tile-programming model: different compiler, out of scope | View: M / Tile: XL (out of scope) | View: **P1**, Tile: not recommended |
-| 5 | **Block-level reduce/scan in stdlib** | CUB (`cub::BlockReduce`), Triton `tl.sum`/`tl.max`/associative_scan | A `[@sarek.module]` library building on warp prims (once #1 lands) + shared-memory tree pattern, generic over `+`/`min`/`max`/user monoid | High — every one of `test_reduce.ml`/`test_scan.ml`/`test_histogram.ml`/`test_sort.ml` currently hand-rolls this per-kernel with no shared abstraction | M (blocked on #1) | **P1** |
+| 5 | **Block-level reduce/scan in stdlib** | CUB (`cub::BlockReduce`), Triton `tl.sum`/`tl.max`/associative_scan | A `[@sarek.module]` library building on warp prims (once gap 1 lands) + shared-memory tree pattern, generic over `+`/`min`/`max`/user monoid | High — every one of `test_reduce.ml`/`test_scan.ml`/`test_histogram.ml`/`test_sort.ml` currently hand-rolls this per-kernel with no shared abstraction | M (blocked on gap 1) | **P1** |
 | 6 | **Tensor cores / `mma`/`wmma`** | PTX `mma.sync`, CUDA `wmma::` API, Triton `tl.dot` (lowers to tensor cores transparently) | New instruction class in IR + PTX emitter `mma.sync` support + matching ABI in the other 5 backends (Metal has its own `simdgroup_matrix`, Vulkan needs `VK_KHR_cooperative_matrix`, OpenCL has no portable equivalent) | High in principle (matmul/conv-bound ML), but every other backend either lacks a real equivalent or needs a distinct extension path — this fragments the "one kernel, six backends" value prop rather than extending it | XL | **doc-only** — not recommended as an implementation target now |
 | 7 | **Dynamic parallelism / cooperative groups / cluster sync** | CUDA `cudaLaunchDevice`/cooperative-groups API, Hopper cluster/`cga` primitives | New launch model, host-device re-entrancy, backend-specific (OpenCL/Vulkan/Metal have no equivalent at all) | Low — niche even in native CUDA; no equivalent to target on 5 of 6 backends | XL | **verdict: skip** |
 | 8 | **`printf`/`assert` in kernels** | PTX `vprintf` (device-side, host-buffered); OpenCL 1.2+ `printf` built-in; Metal/Vulkan: no portable device printf | IR node + PTX `vprintf` call convention (varargs marshalling through `.param` space — same class of problem L10 already flags indirect calls as blocked by) + OpenCL builtin passthrough; Metal/Vulkan/WGSL: no target, document as CUDA/OpenCL-only debug feature | Very high DX value — today a wrong-answer kernel bug means bisecting via host-side dumps only | M | **P0** |
@@ -90,7 +90,7 @@ cost. The doc framing should lead with these, not apologize for them.
 | 10 | **Texture/surface memory** | CUDA texture objects (hardware interpolation/clamping, 2D cache locality), OpenCL images | Full new resource type: PPX annotation, IR node, 4 backends' texture-binding ABI, host-side image upload path | Low relative to cost — niche outside graphics/image-processing kernels, and none of the current e2e test surface (compute-oriented) exercises it | L | **verdict: skip** (revisit only if a graphics-kernel use case appears) |
 | 11 | **Occupancy/launch-tuning surface** (`launch_bounds`) | CUDA `__launch_bounds__(maxThreads, minBlocks)` — hints the compiler for register allocation | A PPX attribute forwarded to the PTX emitter's register-budget decision (today implicit, not user-tunable) | Medium — matters once a kernel is register-bound; today the user has no lever at all, whereas CUDA gives one | S | P2 |
 | 12 | **Kernel templates/metaprogramming** | already covered in (a).3 — Sarek's OCaml-level polymorphism is a genuine structural win here, not a gap | — | — | — | (a) |
-| 13 | **Stdlib breadth** (sort networks, prefix-sum, histogram as reusable modules) | CUB, Thrust, Triton's growing `tl.*` library | `[@sarek.module]`-based libraries; mechanically straightforward once #1/#5 exist, since the *kernels* for these already exist as e2e tests and just need extracting into a reusable, generic (not per-test-hardcoded) form | High — closes the gap between "the pattern is demonstrated" and "the pattern is a one-line library call" | S–M per primitive (bitonic sort M, prefix-sum S once #5 lands, histogram S) | P1 |
+| 13 | **Stdlib breadth** (sort networks, prefix-sum, histogram as reusable modules) | CUB, Thrust, Triton's growing `tl.*` library | `[@sarek.module]`-based libraries; mechanically straightforward once gaps 1 and 5 exist, since the *kernels* for these already exist as e2e tests and just need extracting into a reusable, generic (not per-test-hardcoded) form | High — closes the gap between "the pattern is demonstrated" and "the pattern is a one-line library call" | S–M per primitive (bitonic sort M, prefix-sum S once gap 5 lands, histogram S) | P1 |
 
 ---
 
@@ -148,7 +148,7 @@ effort, not a backlog item alongside L8/L9/L10.
 Ranked by (user value × how much of the remaining engineering is
 "already half-done" evidence found in the tree):
 
-1. **Finish warp-level primitives (#1).** The semantic layer already
+1. **Finish warp-level primitives (gap 1).** The semantic layer already
    exists and is tested (`Sarek_core_primitives.ml:380-457`, convergence
    checks in `test_warp_diverged.ml`, `test_core_primitives.ml`) — but
    *zero* backend emits them (`grep` for `warp_shuffle`/`shfl`/`ballot`
@@ -157,25 +157,25 @@ Ranked by (user value × how much of the remaining engineering is
    design work (variance/convergence semantics) is done, only the
    mechanical emitter work (PTX `shfl.sync` variants, OpenCL/Vulkan/Metal
    `sub_group_*`/`simd_*` intrinsics) remains, and it directly unblocks
-   #5 and #13.
-2. **`printf`/`assert` in kernels (#8).** Highest DX-value-per-cost item
+   gaps 5 and 13.
+2. **`printf`/`assert` in kernels (gap 8).** Highest DX-value-per-cost item
    on the list; PTX and OpenCL both have a real target, and the current
    debug workflow (host-side dump-and-diff) is a genuine friction point
    for every kernel author today.
-3. **Multi-dim strided view layer (#4, ask 1 only — not the tile model).**
+3. **Multi-dim strided view layer (gap 4, ask 1 only — not the tile model).**
    Removes a real, recurring bug class (manual stride arithmetic) at
    library cost, with no IR/codegen changes required.
-4. **Block-level reduce/scan stdlib (#5) + broader stdlib breadth (#13).**
-   Bundled because #5 is a prerequisite pattern for #13's prefix-sum/
+4. **Block-level reduce/scan stdlib (gap 5) + broader stdlib breadth (gap 13).**
+   Bundled because gap 5 is a prerequisite pattern for gap 13's prefix-sum/
    histogram entries, and because the *kernels* already exist as e2e
    tests today — this is "extract and genericize," not "invent."
-5. **Occupancy hint surface, `launch_bounds` (#11).** Cheapest item with
+5. **Occupancy hint surface, `launch_bounds` (gap 11).** Cheapest item with
    a real user complaint behind it (no register-budget lever today),
    good low-risk filler once 1-4 are underway.
 
 Explicitly **not** recommended for the near-term roadmap: tensor cores/
-`mma` (#6, doc-only), dynamic parallelism/cooperative groups (#7, skip),
-texture/surface memory (#10, skip), and the Triton tile-programming model
+`mma` (gap 6, doc-only), dynamic parallelism/cooperative groups (gap 7, skip),
+texture/surface memory (gap 10, skip), and the Triton tile-programming model
 proper (different compiler, out of scope as argued in (c)). Half
-precision (#2) and constant memory (#9) are real but lower priority than
+precision (gap 2) and constant memory (gap 9) are real but lower priority than
 the shortlist given the project's current FP32/FP64 numeric-kernel focus.

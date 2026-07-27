@@ -1,10 +1,10 @@
 # CUDA f16 fusion audit — SASS-level, no NVIDIA device
 
-**Issue:** #107. **Follows:** #290 (`feat/f16-dsl-slice1`, head `434b13ff`).
+**Tracked as:** backlog-107. **Follows:** PR #290 (`feat/f16-dsl-slice1`, head `434b13ff`).
 **Date:** 2026-07-25. **Host:** no NVIDIA GPU. **Toolchain:** CUDA 13.3,
 `ptxas`/`nvdisasm`/`nvcc` V13.3.73, `libnvrtc.so.13.3.33`.
 
-> **Superseded in one respect (#110).** The recommendation at the end of this
+> **Superseded in one respect (backlog-110).** The recommendation at the end of this
 > document — "removing it or keeping it is out of scope" — has since been
 > acted on: the inert `"+f"` barrier was **removed** from the non-HIP branch of
 > `sarek_f32_barrier`, after re-measuring byte-identical cubins on sm_75 through
@@ -14,7 +14,7 @@
 
 ## The question
 
-#290 found that on HIP/gfx1100 the generated C was correct and the machine code
+PR #290 found that on HIP/gfx1100 the generated C was correct and the machine code
 was not. An AMDGPU ISel combine emitted
 
 ```
@@ -43,7 +43,7 @@ that contributes **zero PTX instructions**; the PTX instruction stream is
 identical with and without it, and the resulting cubins are byte-identical on
 all seven targets. The non-fusion comes from `ptxas`, not from the barrier.
 
-> **Correction (#116).** An earlier wording here said NVVM "erases" the block.
+> **Correction (backlog-116).** An earlier wording here said NVVM "erases" the block.
 > It does not: the barriered PTX keeps the `// begin/end inline asm` markers and
 > renumbers virtual registers (`%f<9>` against `%f<5>`, as the diff below in
 > fact shows). What is true is that it emits no instruction, so `ptxas` receives
@@ -145,7 +145,7 @@ generator picks.
 
 ## Flags do not change it (checked, not assumed)
 
-The lesson of #290 is that the obvious flag did nothing, so every flag below was
+The lesson of PR #290 is that the obvious flag did nothing, so every flag below was
 measured rather than reasoned about. Assembled for sm_90, both source variants:
 
 | nvcc flags | arithmetic stream |
@@ -230,7 +230,7 @@ What has **not** been shown:
 The `"+f"` barrier on the CUDA path costs nothing measurable — the cubins are
 byte-identical, so it is zero instructions and zero registers — but it also buys
 nothing, and it reads as protection that is not there. Removing it or keeping it
-is a codegen change and is out of scope for #107; the SASS gate makes the
+is a codegen change and is out of scope for backlog-107; the SASS gate makes the
 guarantee checkable either way, and would catch it if a future toolchain started
 fusing.
 
