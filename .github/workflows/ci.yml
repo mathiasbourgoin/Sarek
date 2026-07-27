@@ -89,6 +89,16 @@ jobs:
       - name: Alcotest case registration guard
         run: node scripts/check-alcotest-registration.js
 
+      # backlog-100. Executes the fenced `code-intel` declarations in
+      # kb/properties.md. The roster's own runner for that block
+      # (scripts/code-intel-resolve.js) is not installed here and no skill
+      # declares `capability: code-intel`, so roster-qa's documented behaviour
+      # would be RESULT: skip -- a block of invariants that reads as enforced
+      # and is executed by nothing. This step is what makes it real on a fresh
+      # clone. Exit 2 means the block is malformed, which is never a skip.
+      - name: KB properties (code-intel) gate
+        run: ./scripts/check-kb-properties.sh
+
       # The harness's own guards. They gate everything else, so they are the
       # last place a silent regression is acceptable.
       - name: Harness self-tests
@@ -153,6 +163,12 @@ jobs:
           # (a stub compiler supplies the stage results) and needs no pocl, so
           # it runs here rather than in the probe job.
           ./ci/pocl-runner-probe.test.sh
+          # backlog-100. The KB gate audits whether other gates can fail, so
+          # taking its own green on faith would be the joke version of it. All
+          # five check types are mutated -- both the declaration and the target
+          # source -- and case 0 is the positive control without which every
+          # red below it proves nothing.
+          ./scripts/check-kb-properties.test.sh
 
       - name: Formal proofs admit gate
         run: |
