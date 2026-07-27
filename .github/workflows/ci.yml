@@ -77,6 +77,13 @@ jobs:
           # red-path coverage behind a 50-second container pull is how a gate
           # ends up untested.
           ./scripts/check-proof-ledger.test.sh
+          # #94. Lexical companion to sarek/tests/unit/test_backend_arm_parity.ml:
+          # asserts every intrinsic name matched by any backend's `arm` table has
+          # a row in that test's matrix. The test itself probes BEHAVIOUR (it has
+          # to — pre_hook/post_hook handle names that appear in no arm), but it
+          # can only probe names it was told about, so a name added to one
+          # backend and to no list would leave it green having checked nothing.
+          ./scripts/check-arm-parity-coverage.sh
 
       - name: Formal proofs admit gate
         run: |

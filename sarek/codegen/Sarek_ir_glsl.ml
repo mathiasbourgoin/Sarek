@@ -713,6 +713,7 @@ and glsl_backend =
           true)
         else false);
     post_hook = (fun _ _ _ _ -> false);
+    invalid_arg_count = bad_arity;
     on_unknown =
       (fun full ->
         Codegen_error.raise_error (Codegen_error.unknown_intrinsic full));
@@ -794,15 +795,25 @@ and glsl_backend =
         | "float" ->
             Some
               (fun buf args ->
-                Buffer.add_string buf "float(" ;
-                (match args with [e] -> gen_expr buf e | _ -> ()) ;
-                Buffer.add_char buf ')')
+                Dispatch.emit_unary
+                  ~gen_expr
+                  ~invalid_arg_count:bad_arity
+                  buf
+                  ~prefix:"float("
+                  ~suffix:")"
+                  ~opname:"float"
+                  args)
         | "int_of_float" ->
             Some
               (fun buf args ->
-                Buffer.add_string buf "int(" ;
-                (match args with [e] -> gen_expr buf e | _ -> ()) ;
-                Buffer.add_char buf ')')
+                Dispatch.emit_unary
+                  ~gen_expr
+                  ~invalid_arg_count:bad_arity
+                  buf
+                  ~prefix:"int("
+                  ~suffix:")"
+                  ~opname:"int_of_float"
+                  args)
         | _ -> None);
   }
 

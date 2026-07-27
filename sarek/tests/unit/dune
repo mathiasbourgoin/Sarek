@@ -148,6 +148,14 @@
  (name test_sync_stmt_emission)
  (libraries sarek.codegen sarek_ppx_lib spoc.ir alcotest))
 
+; Cross-backend intrinsic arm parity (#94). Records, per intrinsic, what each of
+; the five source backends does with it — so a divergence gained or lost is a
+; deliberate table edit rather than something a user of one backend discovers.
+
+(test
+ (name test_backend_arm_parity)
+ (libraries sarek.codegen sarek_ir alcotest))
+
 ; Intrinsic-surface reconciliation: derives its expectation from
 ; Sarek_registry's link-time record of every let%sarek_intrinsic, and checks it
 ; against Sarek_pure_registry (GPU codegen) and Sarek_cpu_runtime (native).

@@ -44,6 +44,13 @@ type 'e spec = {
   on_unknown : string -> unit;
       (** Raise the backend's located [unknown_intrinsic] error. Never returns.
       *)
+  invalid_arg_count : string -> int -> int -> unit;
+      (** Raise the backend's located invalid-argument-count error, given the
+          operation name, the expected count and the given one. Never returns.
+          Each backend already had this as a local [bad_arity] for
+          {!emit_atomic}; putting it in the spec is what lets the shared
+          pipeline enforce {!intrinsic_arity} centrally instead of at ~130
+          identical call sites. *)
 }
 
 (** The thread/grid position intrinsics, identical across all five backends. *)
@@ -75,6 +82,63 @@ let thread_intrinsic_names =
     "global_size";
   ]
 
+(** Argument count of the intrinsics whose arity is the same on every backend.
+
+    Checked once, centrally, in {!gen_intrinsic}. It has to be central: the
+    lowering for these names is [emit_call], which takes whatever argument list
+    it is handed and writes [callee(a, b, c)] — so [sin(x, y)] used to emit
+    verbatim on all five backends and the pipeline returned [Ok]. There are ~26
+    such names per backend and the call sites are identical, which is precisely
+    why the check does not belong at the call sites (audit #94).
+
+    Deliberately NOT listed here:
+
+    - the atomics, which accept both [(addr, value)] and [(arr, idx, value)] —
+      {!emit_atomic} checks them against the form it was given;
+    - [float] / [int_of_float] / [rsqrt], guarded at their arms by
+      {!emit_unary}, whose wrapper text differs per backend;
+    - [block_barrier], which ignores its arguments on every backend;
+    - anything reached through [pre_hook] or the FFI registry, where the arity
+      is the polyfill's or the template's business, not this table's.
+
+    A name absent from this table is unconstrained, which is the safe default:
+    an entry here rejects code, so a wrong entry breaks a working kernel. *)
+let intrinsic_arity =
+  [
+    ("acos", 1);
+    ("asin", 1);
+    ("atan", 1);
+    ("atan2", 2);
+    ("cbrt", 1);
+    ("ceil", 1);
+    ("cos", 1);
+    ("cosh", 1);
+    ("exp", 1);
+    ("exp2", 1);
+    ("fabs", 1);
+    ("floor", 1);
+    ("fma", 3);
+    ("log", 1);
+    ("log10", 1);
+    ("log2", 1);
+    ("max", 2);
+    ("min", 2);
+    ("pow", 2);
+    ("round", 1);
+    (* [rsqrt] is guarded at WGSL's arm by [emit_unary] too, because its wrapper
+       text is `(1.0f / sqrt(...))` rather than a call. It is listed here
+       regardless: the other four backends reach it through [emit_call], where
+       nothing checked, and a guard that covers one of five backends is the
+       shape this table exists to remove. *)
+    ("rsqrt", 1);
+    ("sin", 1);
+    ("sinh", 1);
+    ("sqrt", 1);
+    ("tan", 1);
+    ("tanh", 1);
+    ("trunc", 1);
+  ]
+
 (** The dotted OCaml source name of an intrinsic ([Float64.log10], [sin], ...).
 *)
 let full_name path name =
@@ -88,6 +152,32 @@ let emit_args ~gen_expr buf args =
       if i > 0 then Buffer.add_string buf ", " ;
       gen_expr buf e)
     args
+
+(** Emit a fixed-arity wrapper [prefix arg suffix], failing loudly on any other
+    argument count.
+
+    This exists because the shape it replaces did not. Four backend arms were
+    written as
+
+    {[
+      Buffer.add_string buf "f32(" ;
+      (match args with [e] -> gen_expr buf e | _ -> ()) ;
+      Buffer.add_char buf ')'
+    ]}
+
+    — a wildcard that SUCCEEDS on the wrong argument count, emitting [f32()]
+    with no argument at all and returning normally, so the pipeline yields [Ok]
+    and the defect surfaces as a shader-compiler error with no connection to the
+    kernel that caused it. That is the same failure mode as the raw-name
+    fall-through audit #48 closed for unknown intrinsics; it survived inside the
+    arms that WERE handled (audit #94). *)
+let emit_unary ~gen_expr ~invalid_arg_count buf ~prefix ~suffix ~opname args =
+  match args with
+  | [e] ->
+      Buffer.add_string buf prefix ;
+      gen_expr buf e ;
+      Buffer.add_string buf suffix
+  | _ -> invalid_arg_count opname 1 (List.length args)
 
 (** Emit a plain call [callee(arg0, arg1, ...)]. *)
 let emit_call ~gen_expr buf callee args =
@@ -133,7 +223,8 @@ let count_placeholders s =
 (** Expand a Metal/CUDA/OpenCL FFI-registry ([Sarek_registry]) device template
     for [path.name]. Returns [false] when the registry has no template (caller
     then raises the unknown-intrinsic error); [true] once emitted. *)
-let emit_registry_template ~gen_expr ~framework buf path name args =
+let emit_registry_template ~gen_expr ~framework ~invalid_arg_count buf path name
+    args =
   match
     Sarek_registry.fun_device_template ~module_path:path ~framework name
   with
@@ -166,7 +257,19 @@ let emit_registry_template ~gen_expr ~framework buf path name args =
                 arg1
                 arg2
                 arg3
-          | _ -> template ^ "(" ^ String.concat ", " arg_strs ^ ")"
+          | _ ->
+              (* A template with N placeholders applied to M <> N arguments.
+                 This used to fall back to `template(args...)`, which emits the
+                 template TEXT — `%s` and all — as if it were a function name,
+                 and returns normally: the registry's operator or cast shape is
+                 discarded and the pipeline reports success. There is no reading
+                 of a placeholder/argument mismatch under which the right answer
+                 is to emit something; it is a registry declaration that does
+                 not match its call site, and it has to say so. *)
+              invalid_arg_count
+                (full_name path name)
+                num_placeholders
+                (List.length arg_strs)
       in
       Buffer.add_string buf result ;
       true
@@ -176,6 +279,14 @@ let emit_registry_template ~gen_expr ~framework buf path name args =
     thread list, arm, post_hook, else raise via on_unknown (audit #48). *)
 let gen_intrinsic (spec : 'e spec) buf path name (args : 'e list) =
   let full = full_name path name in
+  (* Arity first, before any lowering path can emit. See [intrinsic_arity]: the
+     lowering these names reach is [emit_call], which formats whatever argument
+     list it is given, so without this `sin(x, y)` produced valid-looking source
+     calling a device function with the wrong signature on all five backends. *)
+  (match List.assoc_opt name intrinsic_arity with
+  | Some expected when List.length args <> expected ->
+      spec.invalid_arg_count name expected (List.length args)
+  | _ -> ()) ;
   if spec.pre_hook buf ~full_name:full path name args then ()
   else
     let pure_registry_hit =

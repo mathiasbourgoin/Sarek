@@ -333,7 +333,15 @@ and opencl_backend =
         (* Same framework tag the pure-registry lookup uses: without it this
            fallback emitted the CUDA spelling on every backend. *)
         let framework = Option.value ~default:"OpenCL" !current_framework in
-        Dispatch.emit_registry_template ~gen_expr ~framework buf path name args);
+        Dispatch.emit_registry_template
+          ~gen_expr
+          ~framework
+          ~invalid_arg_count:bad_arity
+          buf
+          path
+          name
+          args);
+    invalid_arg_count = bad_arity;
     on_unknown =
       (fun full ->
         Codegen_error.raise_error (Codegen_error.unknown_intrinsic full));

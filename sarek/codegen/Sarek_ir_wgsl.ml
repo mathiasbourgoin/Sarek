@@ -706,6 +706,7 @@ and wgsl_backend =
                 (Codegen_error.invalid_arg_count "fmod" 2 (List.length args))
         else false);
     post_hook = (fun _ _ _ _ -> false);
+    invalid_arg_count = bad_arity;
     on_unknown =
       (fun full ->
         Codegen_error.raise_error (Codegen_error.unknown_intrinsic full));
@@ -721,11 +722,16 @@ and wgsl_backend =
         | "rsqrt" ->
             Some
               (fun buf args ->
-                Buffer.add_string buf "(1.0f / sqrt(" ;
-                (match args with
-                | [e] -> gen_expr buf e
-                | _ -> Dispatch.emit_args ~gen_expr buf args) ;
-                Buffer.add_string buf "))")
+                (* Was: `| _ -> emit_args`, which on the wrong argument count
+                   emitted `(1.0f / sqrt(a, b))` and returned Ok. *)
+                Dispatch.emit_unary
+                  ~gen_expr
+                  ~invalid_arg_count:bad_arity
+                  buf
+                  ~prefix:"(1.0f / sqrt("
+                  ~suffix:"))"
+                  ~opname:"rsqrt"
+                  args)
         | "block_barrier" ->
             Some (fun buf _ -> Buffer.add_string buf "workgroupBarrier()")
         | "atomic_add" | "atomic_add_int32" | "atomic_add_global_int32" ->
@@ -773,15 +779,25 @@ and wgsl_backend =
         | "float" ->
             Some
               (fun buf args ->
-                Buffer.add_string buf "f32(" ;
-                (match args with [e] -> gen_expr buf e | _ -> ()) ;
-                Buffer.add_char buf ')')
+                Dispatch.emit_unary
+                  ~gen_expr
+                  ~invalid_arg_count:bad_arity
+                  buf
+                  ~prefix:"f32("
+                  ~suffix:")"
+                  ~opname:"float"
+                  args)
         | "int_of_float" ->
             Some
               (fun buf args ->
-                Buffer.add_string buf "i32(" ;
-                (match args with [e] -> gen_expr buf e | _ -> ()) ;
-                Buffer.add_char buf ')')
+                Dispatch.emit_unary
+                  ~gen_expr
+                  ~invalid_arg_count:bad_arity
+                  buf
+                  ~prefix:"i32("
+                  ~suffix:")"
+                  ~opname:"int_of_float"
+                  args)
         | _ -> None);
   }
 
