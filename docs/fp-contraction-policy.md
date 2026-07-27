@@ -2329,3 +2329,310 @@ half a binary32 ulp, and `0.5 + 2^-13/2 ≈ 0.50006`.
   counts each time, which is §1.4(b); §1.4(a)'s in-process repeat and the
   dispatch-shape variation were not run.
 - **Non-ACO Vulkan and non-Mesa OpenCL on AMD.** Unchanged from §7 and §11.7.
+
+## 13. The other 18 shapes: §12.4's generative rule is FALSE, and the corrected one is local (backlog-151)
+
+**Executed 2026-07-27** on this workstation, on all four local ACO devices. This
+is the measurement §12.4 asked for in its last paragraph: it stated one
+candidate rule that produced all five of slice 1's results —
+
+> *An f32→f16 narrowing absorbs the entire f32 expression tree feeding it,
+> evaluating it exactly and rounding once — intermediate binary16 narrowings
+> included, hence elided — cut wherever SPIR-V `NoContraction` forbids a
+> multiply-add contraction, at which cut a correctly-rounded binary32 value is
+> materialised.*
+
+— marked it **unverified as a general rule**, and named the remaining 18 of the
+20 emittable shapes of
+[`docs/optimization/amdgpu-f16-fusion-shape-audit.md`](optimization/amdgpu-f16-fusion-shape-audit.md)
+as exactly what would confirm or break it. **It is broken**, on three shapes, on
+both stacks, with the machine code for each. A corrected rule is stated in §13.4
+and holds on 12 of 12 discriminating shapes on RADV and 11 of 12 on rusticl.
+
+This matters structurally rather than as coverage. §12.4 put it plainly: the
+rule "is the difference between a contract keyed on a driver and a lookup table
+keyed on every expression a user might write". §13.5 answers that question, and
+the answer is neither of those two.
+
+Instruments, committed with this section:
+`tools/f16_shape_catalogue/f16_shape_catalogue.ml` (the catalogue, the exact
+evaluator and the rule as code), its host-only probe
+`tools/f16_shape_catalogue/probe/probe_f16_shape_separation.ml`, and a
+`--catalogue` mode added to slice 1's two probes rather than a third and fourth
+probe. Raw output: `docs/measurements/f16-shapes-2026-07-27/`.
+
+### 13.1 The models are GENERATORS, and they are pinned to slice 1 before anything is read
+
+§12 hand-wrote seven closed forms for two shapes. Twenty shapes cannot be
+handled that way without the answer to §13.5's question being decided by the
+instrument. So each of §1.2's named members is restated as a **policy** — a
+decision about which mandated roundings are elided — applied to an expression
+tree. Five policies, twenty shapes.
+
+The hinge is calibration, and it runs before any device is touched. The generic
+evaluator must reproduce §12's **seven hand-written closed forms bit-for-bit on
+all 63488 inputs**, on `f16(x*1.1)` and `f16(f16(x*1.1)+1000)`, and must
+reproduce §12.2's separations — **2912, 620, 5075, 4776, 4774** — computed from
+the generic evaluator rather than from those closed forms. The probes exit
+non-zero and print nothing else if it fails. Without that, agreement on the
+other 18 shapes would be a statement about a new instrument rather than about
+the thing slice 1 measured.
+
+The arithmetic is Shewchuk floating-point expansions plus a sticky flag for
+division, for the reason §12.1 gives: three of the models round to binary16 in a
+single step from a sum spanning 65 bits, and evaluating that in binary64 would
+round first and make the model a *different function* — differing exactly at the
+binary16 ties, which is where §1.3's counterexample lives.
+
+The device source and the host model are generated from the **same tree**, so
+they cannot drift apart and have a sweep measure the drift.
+
+### 13.2 Eight of the twenty shapes cannot discriminate at all, and that is the first result
+
+A shape on which all five policies are the same function over the whole finite
+binary16 domain returns "matches `S_strict`, 0/63488" and that sentence measures
+nothing. Twenty such rows would read as twenty confirmations. So the host pass
+counts the **distinct functions** the policies induce per shape, and labels the
+degenerate ones:
+
+| distinct models | shapes |
+|---|---|
+| **1 — NON-DISCRIMINATING** | A1, A3, A4, A5, A9, A10, A13, C1 |
+| 2 | A2, A7, A8, A11, A12, A14, A15 |
+| 3 | A6 |
+| 4 | B2, B3 |
+| 5 | B1, B4 |
+
+**So the honest denominator is 12, not 20.** A1 and C1 have no arithmetic to
+elide; A3/A4 (add/sub into the narrowing), A9 (`sqrt(x*x)` is `|x|` exactly),
+A10 (negation is exact) and A13 (`x*x` needs 22 bits and is exact in binary32)
+are the four shapes the HIP audit already recorded as **demoted in the machine
+code and clean in the numbers** — the same fact, reached from the model side.
+A5 (`x/3`) joins them: rounding the exact quotient once and rounding it twice
+agree on every one of the 63488 inputs.
+
+### 13.3 What the two ACO stacks return, shape by shape
+
+Both RADV devices returned identical results, and both rusticl devices returned
+identical results. Counts are disagreements with `S_strict` out of 63488;
+`R_*` are the corrected rule's instances (§13.4). Evidence tier: **executed,
+element-wise over the whole finite binary16 domain**, on `AMD Radeon RX 7900 XTX
+(RADV NAVI31)` and `AMD Ryzen 9 7950X (RADV RAPHAEL_MENDOCINO)`, radv / Mesa
+26.1.4-arch3.1 / Vulkan 1.4.354, and on `AMD Radeon RX 7900 XTX (radeonsi,
+navi31, ACO, DRM 3.64, 7.1.2-3-cachyos)` and its Raphael iGPU equivalent.
+
+| shape | models | RADV plain | RADV `precise` | rusticl |
+|---|---|---|---|---|
+| A1 `narrow x` | 1 | 0 | 0 | 0 |
+| A2 `narrow (x*1.1)` | 2 | **2912** `R_local_absorb` | 2912, same | 2912, same |
+| A3 `narrow (x+1000)` | 1 | 0 | 0 | 0 |
+| A4 `narrow (x-1000)` | 1 | 0 | 0 | 0 |
+| A5 `narrow (x/3)` | 1 | 0 | 0 | 0 |
+| A6 `narrow (x*1.1+1000)` | 3 | **484** `R_local_absorb` | **2** `R_local_absorb_nocontract` | **2** `R_local_absorb_opencl` |
+| A7 `narrow ((x+1000)*1.1)` | 2 | **374** `R_local_absorb` | 374, same | 374, same |
+| A8 `narrow (fma x 1.1 1000)` | 2 | **484** `R_local_absorb` | 484, same | 484, same |
+| A9 `narrow (sqrt (x*x))` | 1 | 0 | 0 | 0 |
+| A10 `narrow (0-x)` | 1 | **1 input matches NO model** | same | 0 |
+| A11 `narrow (floor (x*1.1))` | 2 | **0 — `S_strict`** | 0 | 0 |
+| A12 `narrow (x>0 ? x*1.1 : x*0.9)` | 2 | **0 — `S_strict`** | 0 | **2863** `R_local_absorb_opencl` |
+| A13 `narrow (x*x)` | 1 | 0 | 0 | 0 |
+| A14 `narrow (x*1.1*1.1)` | 2 | **308** `R_local_absorb` | 308, same | 308, same |
+| A15 `narrow (x*1.1 + x/3)` | 2 | **744** `R_local_absorb` | **0** `R_local_absorb_nocontract` | **0**, same |
+| B1 `narrow (narrow (x*1.1)+1000)` | 5 | **5075** `R_local_absorb` | **4776** `R_local_absorb_nocontract` | **620** `R_local_absorb_opencl` |
+| B2 `narrow (narrow (x*1.1)*1.1)` | 4 | **17036** `R_local_absorb` | 17036, same | 17036, **the one residual** |
+| B3 `narrow (narrow (x+1000)*1.1)` | 4 | **7803** `R_local_absorb` | 7803, same | **963** `R_local_absorb_opencl` |
+| B4 `narrow (narrow (narrow (x*1.1)+1000)*1.1)` | 5 | **10707 — matched NO SINGLE MODEL under §12.4's rule** | **10707** `R_local_absorb_nocontract` | **1518** `R_local_absorb_opencl` |
+| C1 f16→f16 copy | 1 | 0 | 0 | 0 |
+
+Five of these counts land within one of the HIP audit's barrier-removed figures
+for the same shape — A7 374/374, A8 484/484, A14 308/309, and on rusticl B1
+620/620, B3 963/963, B4 1518/1518 — which is three unrelated compilers agreeing
+on a shape-by-shape signature rather than on one number.
+
+**Zero inputs matched no model anywhere except A10**, and A10 is §13.6.
+
+### 13.4 Why §12.4's rule is false, at machine-code tier
+
+Three shapes break it, and the disassembly says the same thing about all three:
+the absorbing instruction is `v_fma_mixlo_f16`, which takes **one** multiply-add
+and **one** conversion. It is a peephole. It cannot reach past an operation that
+is neither.
+
+`RADV_DEBUG=asm`, RX 7900 XTX (RADV NAVI31), one shader compiled per process so
+each dump is attributable:
+
+| shape / variant | what ACO emits | consequence |
+|---|---|---|
+| **A11** `narrow (floor (x*1.1))`, plain **and** `precise` — byte-identical | `v_fma_mix_f32 v1, 0xcccd, v1` **·** `v_floor_f32_e32 v1, v1` **·** `v_fma_mixlo_f16 v2, 1.0, v1, neg(0)` | the multiply is materialised as its own correctly-rounded f32; the narrowing absorbs only an **identity multiply by 1.0**, i.e. nothing. `S_strict`. |
+| **A12** `narrow (x>0 ? x*1.1 : x*0.9)`, plain **and** `precise` — byte-identical | three `v_fma_mix_f32` **·** `v_cmp_lt_f32` **·** `v_cndmask_b32` **·** `v_fma_mixlo_f16 v4, 1.0, v1, neg(0)` | same: both products are materialised at f32, the select is not absorbable, the narrowing absorbs an identity multiply. `S_strict`. |
+| **B4** plain | `v_fma_mix_f32 v1, 0xcccd, v1, s1` **·** `v_fma_mixlo_f16 v2, 0xcccd, v1, neg(0)` | **two** single-rounding events at **two different precisions**: `x*1.1+1000` contracted into one *binary32* fma, then the final `*1.1` absorbed into the narrowing. No whole-tree model is that. |
+
+B4 is the strongest form of the failure. It matched
+`S_absorb_all_into_final_narrowing` on 63480 of 63488 inputs and
+`S_f32_mul_then_absorb_add` on 63486 — **no single member of the model set
+describes it**, while every individual input matches some member. §1.2 requires
+bit-identity to *one* member on *every* input, so that is a failure of the
+contract as written, and it is the first time the two readings of §1.2 have come
+apart. The harness reports them differently for that reason.
+
+> **The corrected rule, and it is stated as a peephole because that is what the
+> silicon has.**
+>
+> *Each f32→f16 narrowing absorbs the single f32 operation immediately feeding
+> it — a multiply, an add/sub, or an explicit fma — evaluating it exactly from
+> its operands and rounding once. Independently, a multiply feeding an addition
+> is contracted into a single-rounded **binary32** fma. An intermediate binary16
+> narrowing whose value is consumed only by f32 arithmetic may be elided. **Every
+> other f32 operation keeps its own correctly-rounded binary32 result.**
+> `NoContraction` removes the contraction clause only: it does not reach the
+> narrowing's own absorption, nor a plain multiply, nor an explicit fma.*
+>
+> Evidence tier: **executed**, element-wise on 63488 inputs × 12 discriminating
+> shapes × 2 variants × 4 devices, plus **machine-code** for eleven shapes.
+
+It is **one semantics with three boolean knobs**, and the knobs are not a
+degree of freedom left open — each is a measured property of a (driver,
+decoration) pair:
+
+| instance | contract mul+add? | elide intermediate narrowings? | sink a narrowing into a select's arms? | measured on |
+|---|---|---|---|---|
+| `R_local_absorb` | yes | yes | no | RADV, plain |
+| `R_local_absorb_nocontract` | no | yes | no | RADV, `precise` — **what the shipped codegen runs under** |
+| `R_local_absorb_opencl` | no | no | **yes** | rusticl |
+
+All three reduce onto §1.2's existing named members on the two shapes slice 1
+measured, and the calibration asserts it: on A2 all three are
+`S_fuse_mul_into_narrowing`; on B1 they are `S_absorb_all_into_final_narrowing`,
+`S_f32_mul_then_absorb_add` and `S_fuse_mul_into_narrowing` respectively. **The
+four names slice 1 admitted are not four independent members. They are one rule
+seen at three settings on two shapes**, and that could not be seen with two
+shapes.
+
+**Two things the knobs settle that slice 1 could not.**
+
+- **`precise` does NOT cut an explicit `fma()`.** A8's plain and `precise`
+  disassembly are byte-identical — one `v_fma_mixlo_f16 v3, v1, 0xcccd, v2` —
+  so `NoContraction` binds nothing there. That is the literal reading of §12.4's
+  own words: an author-written fma is not a *contraction* of anything. The
+  eager reading, which also cuts it, was implemented first and refuted by this
+  shape; the superseded run is kept at
+  `docs/measurements/f16-shapes-2026-07-27/vulkan-radv-eager-cut.txt` so the
+  choice reads as a measurement rather than as a preference.
+- **The two ACO front ends are NOT the same function.** §12.3 concluded "the two
+  ACO front ends behave identically on both shapes", which was true of the two
+  shapes and is false in general. rusticl **keeps** the intermediate narrowing
+  where RADV elides it (B1, B3, B4), does **not** contract multiply-add (A6,
+  A15 — it matches the `precise` model with no decoration asked for), and
+  **sinks** a narrowing into the arms of a select where RADV does not (A12:
+  2863/63488 against RADV's 0). The backend is shared; the front ends are not,
+  and the f16 allowlist has to be keyed on the pair.
+
+**The one residual: B2, on rusticl.** `narrow(narrow(x*1.1)*1.1)` is the only
+discriminating shape where the corrected rule mispredicts — rusticl elides the
+intermediate narrowing there while keeping it on B1, B3 and B4. The ISA names
+the mechanism and it is not absorption: both stacks emit a single
+`v_fma_mixlo_f16 v2, 0xe148, v1`, whose literal `0x3f9ae148` is **binary32
+1.21** — the compiler has **reassociated and constant-folded `1.1*1.1` across
+the intermediate narrowing**, which requires eliding it. That is a
+reassociation combine sitting beside the absorption one, and this document does
+not model it. RADV's `precise` variant blocks it (A14 `precise` emits two
+instructions where plain emits one), which is the expected behaviour of a
+decoration that forbids reassociation.
+
+### 13.5 Does the model set grow per shape? No — but only after the correction
+
+This is the question §12.4 said the 18 shapes existed to answer.
+
+**Under §12.4's rule as written, the answer would have been yes, and badly.** B4
+plain matches no member, so a per-shape table would need a new entry for it; and
+because that entry is "one binary32 fma then one absorbed multiply", the entry
+for B4 tells you nothing about any other shape. That is a lookup table.
+
+**Under the corrected rule, the answer is no.** §1.2's model set is
+`{S_strict} ∪ {R_local_absorb(shape, knobs)}` — **two names and three bits**,
+for twenty shapes and for any shape a user writes. The four members §1.2 lists
+today are the instances that rule produces on the two shapes slice 1 measured,
+which is why they read as four independent functions.
+
+So the correction is not cosmetic and it is not a downgrade. It replaces four
+measured points with a rule that generates them, and the rule was verified on
+ten shapes it was not fitted to. The cost is that the rule is **per (driver,
+front end, decoration)** rather than per backend, which §12.3 had provisionally
+merged.
+
+### 13.6 A10: RADV returns `-0` for `0.0 - x` at `x = +0`, and the barrier does not fix it
+
+Shape A10 is `narrow(0. - x)`. It is non-discriminating — every model is the
+same function — and on **one** input, `x = +0`, **both RADV devices return
+`0x8000` (`-0`) where IEEE-754 round-to-nearest requires `+0`**: `(+0) − (+0)`
+is `+0` in every rounding mode except round-toward-negative. rusticl returns
+`+0` and is correct.
+
+Three things make this worth a subsection rather than a footnote:
+
+- **It survives the barrier.** The green control forces every temporary through
+  the volatile SSBO and still returns `-0`, so this is not the absorption hazard
+  and no amount of barriering removes it. The likely transform is `0 - x → -x`,
+  which is valid only under a no-signed-zeros assumption nobody asked for.
+- **Under §1.2 as written it is a FAILURE, not a relaxation.** "A result
+  matching no member is a failure, however small the numeric difference" — and
+  this difference is a sign bit on a zero, which is as small as a difference
+  gets while still being one. It is not a candidate for the admissible set,
+  because it is not a rounding at all.
+- **A count-only sweep reports it as `1 / 63488` and nothing else.** It was
+  identifiable only because the harness prints the device bit pattern next to
+  what each model wanted, at the first input matching none. The equivalent
+  hazard in the models themselves was also caught this way and is recorded in
+  the code: an early revision of the division model dropped the sign of `-0/3`,
+  and it showed up as A5 disagreeing with the device on exactly one input.
+
+Not filed as a Sarek defect here — Sarek's f16 GLSL path is refused today and
+§13 lifts nothing — but it is the shape a future slice-3 gate will trip on
+first, and it is the reason the gate must sweep both zeros.
+
+### 13.7 §1.3's ceiling is derived for ONE elided rounding, and B4 has two
+
+§1.3 evaluates the ceiling **at the narrowing where the rounding was elided**,
+deriving 1 ulp from "every deviation in the admitted class is the elision of
+exactly one round-to-nearest step". B4 is the first shape with **two**
+intermediate narrowings, and it therefore has two candidate evaluation points.
+Measured at the outer of them, the admitted model exceeds the ceiling on **719
+of 63488 inputs**, reaching 1638 ulp — because two elisions separate the model
+from `S_strict` there, and the derivation covers one.
+
+Measured at the **innermost** narrowing, where exactly one elision separates
+them, the worst deviation is **0.500044 ulp with zero exceedances** — the same
+figure and the same explanation as §12.5's `S_absorb_all` row (half a binary16
+ulp plus half a binary32 one). On the **final** value the same deviation reaches
+**1.85e+06 ulp**, reproducing §1.3's correction on a third shape.
+
+**§1.3 does not say which narrowing to evaluate at when there is more than one,
+and it must.** The harness evaluates at the innermost and prints the
+intermediate-narrowing count so a shape with more than one is read as *partially*
+covered rather than as a clean pass. Stating the rest of the elisions is left to
+§1.3 rather than settled here.
+
+### 13.8 What this did NOT measure
+
+- **Any driver but ACO.** Nothing here says what nvrtc, IGC, ANV, pocl or Metal
+  do on the 18 shapes; all of them are 0/63488 on the two shapes slice 1 swept
+  and are refused today regardless.
+- **A `precise` equivalent on OpenCL.** rusticl was swept plain only. OpenCL C
+  has no `NoContraction` spelling this project has measured, so
+  `R_local_absorb_opencl`'s `contract = false` is the *default* rusticl
+  behaviour rather than a decoration's effect.
+- **Constant folding across a narrowing**, the B2 residual of §13.4. Its
+  mechanism is identified at machine-code tier and it is not modelled.
+- **One constant, one addend, one divisor.** `1.1`, `1000`, `3` and `0.9`
+  throughout, as in every prior measurement of this hazard, so the counts stay
+  comparable — but the rule is confirmed against one operand pattern per shape,
+  not a family. A15's fdiv happens to agree with correctly-rounded division on
+  all 63488 inputs; SPIR-V permits it not to, and a different divisor might
+  expose that.
+- **The source spelling.** The shapes are emitted in three-address form, one
+  temporary per operation, which is what `Sarek_ir_glsl.gen_var_decl` produces.
+  A12 in particular is a ternary rather than an `if`/`else`, and A11's `floor`
+  result is a named temporary; a different spelling could give a compiler a
+  different peephole to match. This measures a driver on a codegen shape, which
+  is what §7(c) says of every probe in this document.
+- **Sarek-generated shaders.** Still §7 slice 3, unchanged.

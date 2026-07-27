@@ -37,11 +37,35 @@
  * S_strict bit-exactly on the same un-enabled path.
  ******************************************************************************)
 
+(******************************************************************************
+ * backlog-151 EXTENSION — `--catalogue`, the other 18 shapes.
+ *
+ * Slice 1 left one candidate GENERATIVE RULE
+ * (docs/fp-contraction-policy.md §12.4) marked "unverified as a general rule",
+ * and named the remaining 18 of the 20 emittable f16 shapes as what would
+ * settle it. `--catalogue` sweeps all 20 — the two already measured included,
+ * as the regression anchor — against the five POLICIES of
+ * [F16_shape_catalogue], which are slice 1's four named models restated as
+ * functions of an arbitrary expression tree.
+ *
+ * Two hazards this mode is built against, both of which slice 1 hit:
+ *
+ *  - A COUNT-ONLY sweep would miss ACO re-absorbing a control 18 times over,
+ *    exactly as it missed it once on the two-narrowing shape. Every variant
+ *    here is classified ELEMENT-WISE and the harness prints WHICH MODEL
+ *    matched, never a bare count.
+ *  - A shape on which all five policies coincide reports "S_strict, 0/63488"
+ *    while measuring nothing. The host-only separation pass runs first and any
+ *    such shape is labelled NON-DISCRIMINATING in its own row, so that a table
+ *    of zeros cannot be read as twenty confirmations.
+ ******************************************************************************)
+
 open Sarek_vulkan
 module Device = Vulkan_api_device
 module Memory = Vulkan_api_memory
 module Kernel = Vulkan_api_kernel
 module M = F16_model_set
+module C = F16_shape_catalogue
 
 let n_local = 256
 
@@ -355,8 +379,211 @@ let probe_device device =
   in
   report_ceiling M.shape2_models c
 
+(* ---------------------------------------------------------------------- *)
+(* backlog-151 — the 20-shape catalogue                                     *)
+(* ---------------------------------------------------------------------- *)
+
+(* What the generative rule of §12.4 PREDICTS, per variant. Written down before
+   any device is read, so the sweep is a test of a prediction and not a
+   description of an outcome. *)
+let predicted ~precise =
+  if precise then C.rule_precise.C.pname else C.rule_plain.C.pname
+
+(* What the CORRECTED local rule predicts. Stated here, next to the rule it
+   replaces, so both predictions are written down before any device is read. *)
+let predicted_local ~precise =
+  if precise then "R_local_absorb_nocontract" else "R_local_absorb"
+
+type row = {
+  r_id : string;
+  r_distinct : int;
+  r_plain : string;
+  r_precise : string;
+  r_unexpl : int;
+  r_green : string;
+  r_rule : string;
+  r_local : string;
+}
+
+(* §1.2 requires the device result to be bit-identical to ONE member of the set
+   on every input. That is strictly stronger than "every input matches some
+   member", and the difference is not academic: shape B4 plain matches
+   S_absorb_all on 63480 inputs and S_f32_mul_then_absorb_add on 63486, so no
+   single member describes it while every individual input is covered. The two
+   outcomes are therefore named differently. *)
+let name_of c =
+  match c.M.exact_matches with
+  | [] when c.M.unexplained = 0 -> "NO SINGLE MODEL (mixture)"
+  | [] -> Printf.sprintf "NO MODEL (%d unmatched)" c.M.unexplained
+  | [n] -> n
+  | l -> String.concat " = " l
+
+let catalogue_device device =
+  Printf.printf
+    "\n================================================================\n" ;
+  Printf.printf "backlog-151 CATALOGUE — device: %s\n" (describe device) ;
+  Printf.printf
+    "================================================================\n%!" ;
+
+  (* REPORTING CONTROL, host-side. The trap slice 1 hit was a control ACO
+     re-absorbed, caught only because the harness reported the WRONG MODEL
+     rather than an implausible count. So before any device number is read,
+     feed the classifier a host-computed NON-STRICT model and require it to
+     name that model. A classifier that answers "S_strict" to everything would
+     report twenty false confirmations here. *)
+  Printf.printf "\n  --- reporting control (host-injected deviation) ---\n" ;
+  let control_ok = ref true in
+  List.iter
+    (fun sh ->
+      if C.distinct_model_count sh > 1 then begin
+        let models = C.models_of sh in
+        let injected =
+          Array.map (C.result C.rule_plain sh.C.expr) M.finite_bits
+        in
+        let c = M.classify models injected in
+        let got = name_of c in
+        let ok =
+          List.mem C.rule_plain.C.pname c.M.exact_matches && c.M.unexplained = 0
+        in
+        if not ok then control_ok := false ;
+        Printf.printf
+          "    %-4s injected %-34s -> reported %s%s\n"
+          sh.C.id
+          C.rule_plain.C.pname
+          got
+          (if ok then "" else "   *** REPORTING CONTROL BROKEN ***")
+      end)
+    C.shapes ;
+  if not !control_ok then
+    Printf.printf
+      "    *** the classifier does not name an injected deviation; nothing \
+       below is readable ***\n" ;
+
+  let rows = ref [] in
+  List.iter
+    (fun sh ->
+      let models = C.models_with_local sh in
+      let distinct = C.distinct_model_count sh in
+      Printf.printf "\n  --- %s : %s ---\n" sh.C.id sh.C.descr ;
+      if sh.C.discriminating_note <> "" then
+        Printf.printf "    NOTE: %s\n" sh.C.discriminating_note ;
+      if distinct = 1 then
+        Printf.printf
+          "    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on \
+           this shape over all 63488 inputs. Whatever the device returns, this \
+           row is not evidence for or against the rule.\n"
+      else
+        Printf.printf
+          "    the five policies induce %d distinct functions here\n"
+          distinct ;
+      let nin = C.inner_narrowing_count sh.C.expr in
+      if nin > 1 then
+        Printf.printf
+          "    %d intermediate narrowings: §1.3's ceiling is derived for the \
+           elision of ONE rounding, so it is evaluated at the INNERMOST \
+           narrowing and covers only that elision on this shape\n"
+          nin ;
+      (* Same sweep, but the device array is kept so an input matching NO model
+         can be shown as a bit pattern next to what each model wanted. A bare
+         "N inputs match no model" leaves the reader unable to tell a fusion
+         hazard from a sign-of-zero difference, and on this catalogue two shapes
+         turn out to be the latter. *)
+      let sweep_v ~label ~precise ~barrier =
+        let source = C.source ~dialect:C.Glsl ~precise ~barrier sh in
+        let got = run device ~source ~inputs:M.finite_bits in
+        let c = M.classify models got in
+        M.print_classification ~label c ;
+        if c.M.unexplained > 0 then begin
+          let idx = c.M.first_unexplained in
+          let b = M.finite_bits.(idx) in
+          Printf.printf
+            "      first unmatched input x = %.9g (0x%04X): device 0x%04X"
+            (M.dec b)
+            b
+            got.(idx) ;
+          List.iter
+            (fun m -> Printf.printf ", %s 0x%04X" m.M.name (m.M.result b))
+            models ;
+          Printf.printf "\n"
+        end ;
+        c
+      in
+      let cg =
+        sweep_v
+          ~label:"GREEN CONTROL — every temporary through the volatile SSBO"
+          ~precise:false
+          ~barrier:true
+      in
+      if not (List.mem "S_strict" cg.M.exact_matches) then
+        Printf.printf
+          "    *** GREEN CONTROL did not reproduce S_strict: the two rows \
+           below are not attributable to ACO ***\n" ;
+      let cp = sweep_v ~label:"plain" ~precise:false ~barrier:false in
+      report_ceiling models cp ;
+      let cq =
+        sweep_v
+          ~label:"precise (what Sarek_ir_glsl emits)"
+          ~precise:true
+          ~barrier:false
+      in
+      report_ceiling models cq ;
+      let verdict ~want ~precise c =
+        let want = want ~precise in
+        if distinct = 1 then "n/a (non-discriminating)"
+        else if List.mem want c.M.exact_matches then "HOLDS"
+        else if c.M.unexplained > 0 then
+          Printf.sprintf "BROKEN — %d inputs match no model" c.M.unexplained
+        else Printf.sprintf "BROKEN — matched %s, predicts %s" (name_of c) want
+      in
+      let v want =
+        Printf.sprintf
+          "plain -> %s ; precise -> %s"
+          (verdict ~want ~precise:false cp)
+          (verdict ~want ~precise:true cq)
+      in
+      Printf.printf "    §12.4 whole-tree rule: %s\n" (v predicted) ;
+      Printf.printf "    corrected LOCAL rule : %s\n" (v predicted_local) ;
+      rows :=
+        {
+          r_id = sh.C.id;
+          r_distinct = distinct;
+          r_plain = name_of cp;
+          r_precise = name_of cq;
+          r_unexpl = cp.M.unexplained + cq.M.unexplained;
+          r_green = name_of cg;
+          r_rule = v predicted;
+          r_local = v predicted_local;
+        }
+        :: !rows)
+    C.shapes ;
+
+  Printf.printf
+    "\n\n  SUMMARY — %s\n  (rule predicts %s for plain and %s for precise)\n\n"
+    (describe device)
+    C.rule_plain.C.pname
+    C.rule_precise.C.pname ;
+  List.iter
+    (fun r ->
+      Printf.printf
+        "  %-4s  %d distinct models, %d unmatched inputs\n\
+        \        plain   : %s\n\
+        \        precise : %s\n\
+        \        green   : %s\n\
+        \        §12.4 whole-tree rule: %s\n\
+        \        corrected LOCAL rule : %s\n"
+        r.r_id
+        r.r_distinct
+        r.r_unexpl
+        r.r_plain
+        r.r_precise
+        r.r_green
+        r.r_rule
+        r.r_local)
+    (List.rev !rows)
+
 let () =
   let host_only = Array.exists (fun a -> a = "--host-only") Sys.argv in
+  let catalogue = Array.exists (fun a -> a = "--catalogue") Sys.argv in
   Printf.printf
     "#62 slice 1(b) — element-wise model agreement, Vulkan / RADV\n\n" ;
   (try M.calibrate ()
@@ -369,6 +596,20 @@ let () =
      reproduces at 1 ulp at the narrowing and 512 ulp on the final value.\n\n"
     M.shape2_name
     M.shape1_name ;
+
+  if catalogue then begin
+    (try C.calibrate ()
+     with C.Calibration_failed s ->
+       Printf.printf
+         "CATALOGUE CALIBRATION FAILED — read nothing below it:\n  %s\n"
+         s ;
+       exit 1) ;
+    Printf.printf
+      "catalogue calibration PASSED: the five generic policies reproduce slice \
+       1's seven hand-written closed forms bit-for-bit on A2 and B1 over all \
+       63488 inputs, and reproduce the recorded separations 2912 / 620 / 5075 \
+       / 4776 / 4774 from the generic evaluator.\n\n"
+  end ;
 
   Printf.printf "SHAPE 1 — %s\n" M.shape1_name ;
   let sep1 = M.separation_matrix M.shape1_models in
@@ -398,11 +639,37 @@ let () =
         | l -> String.concat "; " (List.map describe l)) ;
       exit 2
   | ds -> (
-      let rec only i =
+      let rec flag name i =
         if i + 1 >= Array.length Sys.argv then None
-        else if Sys.argv.(i) = "--variant" then Some Sys.argv.(i + 1)
-        else only (i + 1)
+        else if Sys.argv.(i) = name then Some Sys.argv.(i + 1)
+        else flag name (i + 1)
       in
-      match only 1 with
-      | Some v -> probe_one (List.hd ds) v
-      | None -> List.iter probe_device ds)
+      match flag "--shape" 1 with
+      | Some id ->
+          (* One shape, one variant, one shader compiled — so RADV_DEBUG=asm
+             produces an ISA dump attributable to a single shader. With a full
+             catalogue run, sixty shaders are compiled in sequence and reading
+             the ISA means guessing, which is not a machine-code tier. *)
+          let sh = C.shape_by_id id in
+          let variant =
+            match flag "--variant" 1 with Some v -> v | None -> "plain"
+          in
+          let precise = variant = "precise" and barrier = variant = "barrier" in
+          let source = C.source ~dialect:C.Glsl ~precise ~barrier sh in
+          let device = List.hd ds in
+          Printf.printf
+            "device: %s\nshape: %s (%s)\nvariant: %s\nGLSL:\n%s\n"
+            (describe device)
+            sh.C.id
+            sh.C.descr
+            variant
+            source ;
+          let models = C.models_with_local sh in
+          let c = sweep device ~label:variant ~source ~models in
+          report_ceiling models c
+      | None -> (
+          match flag "--variant" 1 with
+          | Some v when not catalogue -> probe_one (List.hd ds) v
+          | _ ->
+              if catalogue then List.iter catalogue_device ds
+              else List.iter probe_device ds))

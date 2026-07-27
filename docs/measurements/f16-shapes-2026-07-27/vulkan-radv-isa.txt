@@ -1,0 +1,323 @@
+################ shape A2 / variant plain ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mixlo_f16 v2, 0xcccd, v1, neg(0) op_sel_hi:[0,1,1]    ; cc214002 920202ff 3f8ccccd
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: A2 (narrow (x *. 1.1))
+variant: plain
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_opencl              :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape A2 / variant precise ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mixlo_f16 v2, 0xcccd, v1, neg(0) op_sel_hi:[0,1,1]    ; cc214002 920202ff 3f8ccccd
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: A2 (narrow (x *. 1.1))
+variant: precise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_opencl              :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape A6 / variant plain ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mixlo_f16 v2, 0xcccd, v1, s1 op_sel_hi:[0,1,0]        ; cc210002 100602ff 3f8ccccd
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: A6 (narrow (x *. 1.1 +. 1000.))
+variant: plain
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape A6 / variant precise ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mix_f32 v1, 0xcccd, v1, neg(0) op_sel_hi:[0,1,0]      ; cc200001 920202ff 3f8ccccd
+	v_fma_mixlo_f16 v2, 1.0, v1, 0x63d0 op_sel_hi:[0,0,1]       ; cc214002 03fe02f2 000063d0
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: A6 (narrow (x *. 1.1 +. 1000.))
+variant: precise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_opencl              :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape A7 / variant plain ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mix_f32 v1, 1.0, v1, lit(0x447a0000) op_sel_hi:[0,1,0] ; cc200001 13fe02f2 447a0000
+	v_fma_mixlo_f16 v2, 0xcccd, v1, neg(0) op_sel_hi:[0,0,1]    ; cc214002 820202ff 3f8ccccd
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: A7 (narrow ((x +. 1000.) *. 1.1))
+variant: plain
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_opencl              :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape A7 / variant precise ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mix_f32 v1, 1.0, v1, lit(0x447a0000) op_sel_hi:[0,1,0] ; cc200001 13fe02f2 447a0000
+	v_fma_mixlo_f16 v2, 0xcccd, v1, neg(0) op_sel_hi:[0,0,1]    ; cc214002 820202ff 3f8ccccd
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: A7 (narrow ((x +. 1000.) *. 1.1))
+variant: precise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_opencl              :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape A8 / variant plain ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_mov_b32_e32 v2, 0x447a0000                                ; 7e0402ff 447a0000
+	v_fma_mixlo_f16 v3, v1, 0xcccd, v2 op_sel_hi:[1,0,0]        ; cc210003 0c09ff01 3f8ccccd
+	v_mov_b16_e32 v3.h, 0                                       ; 7f063880
+	v_cvt_u32_u16_e32 v3, v3.l                                  ; 7e06d703
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: A8 (narrow (fma x 1.1 1000.))
+variant: plain
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_opencl              :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape A8 / variant precise ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_mov_b32_e32 v2, 0x447a0000                                ; 7e0402ff 447a0000
+	v_fma_mixlo_f16 v3, v1, 0xcccd, v2 op_sel_hi:[1,0,0]        ; cc210003 0c09ff01 3f8ccccd
+	v_mov_b16_e32 v3.h, 0                                       ; 7f063880
+	v_cvt_u32_u16_e32 v3, v3.l                                  ; 7e06d703
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: A8 (narrow (fma x 1.1 1000.))
+variant: precise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_opencl              :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape A11 / variant plain ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mix_f32 v1, 0xcccd, v1, neg(0) op_sel_hi:[0,1,0]      ; cc200001 920202ff 3f8ccccd
+	v_floor_f32_e32 v1, v1                                      ; 7e024901
+	v_fma_mixlo_f16 v2, 1.0, v1, neg(0) op_sel_hi:[0,0,1]       ; cc214002 820202f2
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: A11 (narrow (floor (x *. 1.1)))
+variant: plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_opencl              :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape A11 / variant precise ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mix_f32 v1, 0xcccd, v1, neg(0) op_sel_hi:[0,1,0]      ; cc200001 920202ff 3f8ccccd
+	v_floor_f32_e32 v1, v1                                      ; 7e024901
+	v_fma_mixlo_f16 v2, 1.0, v1, neg(0) op_sel_hi:[0,0,1]       ; cc214002 820202f2
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: A11 (narrow (floor (x *. 1.1)))
+variant: precise
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_opencl              :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape A12 / variant plain ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mix_f32 v2, v1, 1.0, neg(0) op_sel_hi:[1,0,0]         ; cc200002 8a01e501
+	v_fma_mix_f32 v3, 0xcccd, v1, neg(0) op_sel_hi:[0,1,0]      ; cc200003 920202ff 3f8ccccd
+	v_fma_mix_f32 v1, 0x6666, v1, neg(0) op_sel_hi:[0,1,0]      ; cc200001 920202ff 3f666666
+	v_cmp_lt_f32_e32 vcc, 0, v2                                 ; 7c220480
+	v_cndmask_b32_e32 v1, v1, v3, vcc                           ; 02020701
+	v_fma_mixlo_f16 v4, 1.0, v1, neg(0) op_sel_hi:[0,0,1]       ; cc214004 820202f2
+	v_mov_b16_e32 v4.h, 0                                       ; 7f083880
+	v_cvt_u32_u16_e32 v4, v4.l                                  ; 7e08d704
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: A12 (narrow (if x>0. then x*.1.1 else x*.0.9))
+variant: plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape A12 / variant precise ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mix_f32 v2, v1, 1.0, neg(0) op_sel_hi:[1,0,0]         ; cc200002 8a01e501
+	v_fma_mix_f32 v3, 0xcccd, v1, neg(0) op_sel_hi:[0,1,0]      ; cc200003 920202ff 3f8ccccd
+	v_fma_mix_f32 v1, 0x6666, v1, neg(0) op_sel_hi:[0,1,0]      ; cc200001 920202ff 3f666666
+	v_cmp_lt_f32_e32 vcc, 0, v2                                 ; 7c220480
+	v_cndmask_b32_e32 v1, v1, v3, vcc                           ; 02020701
+	v_fma_mixlo_f16 v4, 1.0, v1, neg(0) op_sel_hi:[0,0,1]       ; cc214004 820202f2
+	v_mov_b16_e32 v4.h, 0                                       ; 7f083880
+	v_cvt_u32_u16_e32 v4, v4.l                                  ; 7e08d704
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: A12 (narrow (if x>0. then x*.1.1 else x*.0.9))
+variant: precise
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape A14 / variant plain ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mixlo_f16 v2, 0xe148, v1, neg(0) op_sel_hi:[0,1,1]    ; cc214002 920202ff 3f9ae148
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: A14 (narrow (x *. 1.1 *. 1.1))
+variant: plain
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_opencl              :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape A14 / variant precise ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mix_f32 v1, 0xcccd, v1, neg(0) op_sel_hi:[0,1,0]      ; cc200001 920202ff 3f8ccccd
+	v_fma_mixlo_f16 v2, 0xcccd, v1, neg(0) op_sel_hi:[0,0,1]    ; cc214002 820202ff 3f8ccccd
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: A14 (narrow (x *. 1.1 *. 1.1))
+variant: precise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_opencl              :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape B1 / variant plain ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mixlo_f16 v2, 0xcccd, v1, s1 op_sel_hi:[0,1,0]        ; cc210002 100602ff 3f8ccccd
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: B1 (narrow (narrow (x *. 1.1) +. 1000.))
+variant: plain
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape B1 / variant precise ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mix_f32 v1, 0xcccd, v1, neg(0) op_sel_hi:[0,1,0]      ; cc200001 920202ff 3f8ccccd
+	v_fma_mixlo_f16 v2, 1.0, v1, 0x63d0 op_sel_hi:[0,0,1]       ; cc214002 03fe02f2 000063d0
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: B1 (narrow (narrow (x *. 1.1) +. 1000.))
+variant: precise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape B2 / variant plain ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mixlo_f16 v2, 0xe148, v1, neg(0) op_sel_hi:[0,1,1]    ; cc214002 920202ff 3f9ae148
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: B2 (narrow (narrow (x *. 1.1) *. 1.1))
+variant: plain
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape B2 / variant precise ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mix_f32 v1, 0xcccd, v1, neg(0) op_sel_hi:[0,1,0]      ; cc200001 920202ff 3f8ccccd
+	v_fma_mixlo_f16 v2, 0xcccd, v1, neg(0) op_sel_hi:[0,0,1]    ; cc214002 820202ff 3f8ccccd
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: B2 (narrow (narrow (x *. 1.1) *. 1.1))
+variant: precise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape B3 / variant plain ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mix_f32 v1, 1.0, v1, lit(0x447a0000) op_sel_hi:[0,1,0] ; cc200001 13fe02f2 447a0000
+	v_fma_mixlo_f16 v2, 0xcccd, v1, neg(0) op_sel_hi:[0,0,1]    ; cc214002 820202ff 3f8ccccd
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: B3 (narrow (narrow (x +. 1000.) *. 1.1))
+variant: plain
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape B3 / variant precise ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mix_f32 v1, 1.0, v1, lit(0x447a0000) op_sel_hi:[0,1,0] ; cc200001 13fe02f2 447a0000
+	v_fma_mixlo_f16 v2, 0xcccd, v1, neg(0) op_sel_hi:[0,0,1]    ; cc214002 820202ff 3f8ccccd
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: B3 (narrow (narrow (x +. 1000.) *. 1.1))
+variant: precise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape B4 / variant plain ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mix_f32 v1, 0xcccd, v1, s1 op_sel_hi:[0,1,0]          ; cc200001 100602ff 3f8ccccd
+	v_fma_mixlo_f16 v2, 0xcccd, v1, neg(0) op_sel_hi:[0,0,1]    ; cc214002 820202ff 3f8ccccd
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: B4 (narrow (narrow (narrow (x *. 1.1) +. 1000.) *. 1.1))
+variant: plain
+    R_local_absorb                     :      0 / 63488 disagreements   <== EXACT, element-wise
+################ shape B4 / variant precise ################
+	v_lshl_add_u32 v0, s0, 8, v0                                ; d6460000 04011000
+	v_lshlrev_b32_e32 v0, 2, v0                                 ; 30000082
+	v_fma_mix_f32 v1, 0xcccd, v1, neg(0) op_sel_hi:[0,1,0]      ; cc200001 920202ff 3f8ccccd
+	v_add_f32_e32 v1, 0x447a0000, v1                            ; 060202ff 447a0000
+	v_fma_mixlo_f16 v2, 0xcccd, v1, neg(0) op_sel_hi:[0,0,1]    ; cc214002 820202ff 3f8ccccd
+	v_mov_b16_e32 v2.h, 0                                       ; 7f043880
+	v_cvt_u32_u16_e32 v2, v2.l                                  ; 7e04d702
+device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+shape: B4 (narrow (narrow (narrow (x *. 1.1) +. 1000.) *. 1.1))
+variant: precise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    R_local_absorb_nocontract          :      0 / 63488 disagreements   <== EXACT, element-wise

@@ -9,4 +9,4 @@
 (executable
  (name probe_vulkan_f16_model_agreement)
  (modules probe_vulkan_f16_model_agreement)
- (libraries sarek_vulkan spoc_framework f16_model_set))
+ (libraries sarek_vulkan spoc_framework f16_model_set f16_shape_catalogue))

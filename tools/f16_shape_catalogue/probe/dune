@@ -1,0 +1,10 @@
+; backlog-151 — host-only separation analysis for the 20-shape catalogue.
+;
+; An `executable`, not a `test`, for the same reason the slice-1 probes are:
+; it measures whether a contract is deliverable, it does not defend an
+; invariant. The gates defending the f16 refusals are untouched.
+
+(executable
+ (name probe_f16_shape_separation)
+ (modules probe_f16_shape_separation)
+ (libraries f16_model_set f16_shape_catalogue))

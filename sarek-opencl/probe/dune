@@ -9,4 +9,4 @@
 (executable
  (name probe_opencl_f16_model_agreement)
  (modules probe_opencl_f16_model_agreement)
- (libraries sarek_opencl spoc_framework f16_model_set))
+ (libraries sarek_opencl spoc_framework f16_model_set f16_shape_catalogue))

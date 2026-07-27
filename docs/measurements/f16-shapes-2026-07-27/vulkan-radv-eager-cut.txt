@@ -1,0 +1,1433 @@
+#62 slice 1(b) — element-wise model agreement, Vulkan / RADV
+
+host calibration PASSED: 63488-value round-trip; the two §1.2 models separate on exactly 620 (f16(f16(x * 1.1) + 1000)) and 2912 (f16(x * 1.1)); §1.3's x = -907.5 case reproduces at 1 ulp at the narrowing and 512 ulp on the final value.
+
+catalogue calibration PASSED: the five generic policies reproduce slice 1's seven hand-written closed forms bit-for-bit on A2 and B1 over all 63488 inputs, and reproduce the recorded separations 2912 / 620 / 5075 / 4776 / 4774 from the generic evaluator.
+
+SHAPE 1 — f16(x * 1.1)
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :   2912
+
+SHAPE 2 — f16(f16(x * 1.1) + 1000)
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :    620
+    S_strict                           vs S_absorb_all_into_final_narrowing  :   5075
+    S_strict                           vs S_f32_mul_then_absorb_add          :   4776
+    S_strict                           vs S_drop_intermediate_narrowing      :   4774
+    S_strict                           vs S_fuse_mul_and_absorb_add          :    992
+    S_strict                           vs S_strict_mul_absorb_add            :    372
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :   4896
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :   4851
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :   4849
+    S_fuse_mul_into_narrowing          vs S_fuse_mul_and_absorb_add          :    372
+    S_fuse_mul_into_narrowing          vs S_strict_mul_absorb_add            :    992
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :    482
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :    484
+    S_absorb_all_into_final_narrowing  vs S_fuse_mul_and_absorb_add          :   5240
+    S_absorb_all_into_final_narrowing  vs S_strict_mul_absorb_add            :   5419
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :      2
+    S_f32_mul_then_absorb_add          vs S_fuse_mul_and_absorb_add          :   5195
+    S_f32_mul_then_absorb_add          vs S_strict_mul_absorb_add            :   5120
+    S_drop_intermediate_narrowing      vs S_fuse_mul_and_absorb_add          :   5193
+    S_drop_intermediate_narrowing      vs S_strict_mul_absorb_add            :   5118
+    S_fuse_mul_and_absorb_add          vs S_strict_mul_absorb_add            :    620
+
+================================================================
+backlog-151 CATALOGUE — device: AMD Radeon RX 7900 XTX (RADV NAVI31)
+================================================================
+
+  --- reporting control (host-injected deviation) ---
+    A2   injected S_absorb_all_into_final_narrowing  -> reported S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add
+    A6   injected S_absorb_all_into_final_narrowing  -> reported S_absorb_all_into_final_narrowing
+    A7   injected S_absorb_all_into_final_narrowing  -> reported S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add
+    A8   injected S_absorb_all_into_final_narrowing  -> reported S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing
+    A11  injected S_absorb_all_into_final_narrowing  -> reported S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add
+    A12  injected S_absorb_all_into_final_narrowing  -> reported S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add
+    A14  injected S_absorb_all_into_final_narrowing  -> reported S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add
+    A15  injected S_absorb_all_into_final_narrowing  -> reported S_absorb_all_into_final_narrowing
+    B1   injected S_absorb_all_into_final_narrowing  -> reported S_absorb_all_into_final_narrowing
+    B2   injected S_absorb_all_into_final_narrowing  -> reported S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add
+    B3   injected S_absorb_all_into_final_narrowing  -> reported S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add
+    B4   injected S_absorb_all_into_final_narrowing  -> reported S_absorb_all_into_final_narrowing
+
+  --- A1 : narrow x ---
+    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on this shape over all 63488 inputs. Whatever the device returns, this row is not evidence for or against the rule.
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> n/a (non-discriminating) ; precise -> n/a (non-discriminating)
+
+  --- A2 : narrow (x *. 1.1) ---
+    the five policies induce 2 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :   2912 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :   2912 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :   2912 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :   2912 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :   2912 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :   2912 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :   2912 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE HOLDS
+
+  --- A3 : narrow (x +. 1000.) ---
+    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on this shape over all 63488 inputs. Whatever the device returns, this row is not evidence for or against the rule.
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> n/a (non-discriminating) ; precise -> n/a (non-discriminating)
+
+  --- A4 : narrow (x -. 1000.) ---
+    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on this shape over all 63488 inputs. Whatever the device returns, this row is not evidence for or against the rule.
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> n/a (non-discriminating) ; precise -> n/a (non-discriminating)
+
+  --- A5 : narrow (x /. 3.) ---
+    NOTE: DIVISION: Vulkan/SPIR-V allow OpFDiv 2.5 ULP, so a mismatch here is evidence about fdiv precision and NOT about the absorption rule
+    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on this shape over all 63488 inputs. Whatever the device returns, this row is not evidence for or against the rule.
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      1 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      1 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      1 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      1 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      1 / 63488 disagreements
+    *** 1 inputs match NO named model; first at x = -0 (0x8000) ***
+    *** GREEN CONTROL did not reproduce S_strict: the two rows below are not attributable to ACO ***
+  plain
+    S_strict                           :      1 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      1 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      1 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      1 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      1 / 63488 disagreements
+    *** 1 inputs match NO named model; first at x = -0 (0x8000) ***
+    §1.3 ceiling: NOT EVALUATED — no model matched, so there is no admitted deviation to measure.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      1 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      1 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      1 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      1 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      1 / 63488 disagreements
+    *** 1 inputs match NO named model; first at x = -0 (0x8000) ***
+    §1.3 ceiling: NOT EVALUATED — no model matched, so there is no admitted deviation to measure.
+    rule verdict: plain -> n/a (non-discriminating) ; precise -> n/a (non-discriminating)
+
+  --- A6 : narrow (x *. 1.1 +. 1000.) ---
+    the five policies induce 3 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :    484 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      2 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :    484 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :    484 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :    482 / 63488 disagreements
+    S_drop_intermediate_narrowing      :    484 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      2 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      2 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :    482 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      2 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE HOLDS
+
+  --- A7 : narrow ((x +. 1000.) *. 1.1) ---
+    the five policies induce 2 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :    374 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :    374 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :    374 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :    374 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :    374 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :    374 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :    374 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE HOLDS
+
+  --- A8 : narrow (fma x 1.1 1000.) ---
+    the five policies induce 2 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :    484 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :    484 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :    484 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :    484 / 63488 disagreements
+    S_drop_intermediate_narrowing      :    484 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :    484 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :    484 / 63488 disagreements
+    S_drop_intermediate_narrowing      :    484 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE BROKEN — matched S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing, rule predicts S_f32_mul_then_absorb_add
+
+  --- A9 : narrow (sqrt (x *. x)) ---
+    NOTE: SQRT: exact here only because sqrt(x*x) = |x| for a binary16 x; the device's sqrt precision is separately specified
+    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on this shape over all 63488 inputs. Whatever the device returns, this row is not evidence for or against the rule.
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> n/a (non-discriminating) ; precise -> n/a (non-discriminating)
+
+  --- A10 : narrow (0. -. x) ---
+    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on this shape over all 63488 inputs. Whatever the device returns, this row is not evidence for or against the rule.
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      1 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      1 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      1 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      1 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      1 / 63488 disagreements
+    *** 1 inputs match NO named model; first at x = 0 (0x0000) ***
+    *** GREEN CONTROL did not reproduce S_strict: the two rows below are not attributable to ACO ***
+  plain
+    S_strict                           :      1 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      1 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      1 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      1 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      1 / 63488 disagreements
+    *** 1 inputs match NO named model; first at x = 0 (0x0000) ***
+    §1.3 ceiling: NOT EVALUATED — no model matched, so there is no admitted deviation to measure.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      1 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      1 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      1 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      1 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      1 / 63488 disagreements
+    *** 1 inputs match NO named model; first at x = 0 (0x0000) ***
+    §1.3 ceiling: NOT EVALUATED — no model matched, so there is no admitted deviation to measure.
+    rule verdict: plain -> n/a (non-discriminating) ; precise -> n/a (non-discriminating)
+
+  --- A11 : narrow (floor (x *. 1.1)) ---
+    the five policies induce 2 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :    472 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :    472 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :    472 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :    472 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :    472 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :    472 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> RULE BROKEN — matched S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing, rule predicts S_absorb_all_into_final_narrowing ; precise -> RULE BROKEN — matched S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing, rule predicts S_f32_mul_then_absorb_add
+
+  --- A12 : narrow (if x>0. then x*.1.1 else x*.0.9) ---
+    the five policies induce 2 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :   2863 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :   2863 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :   2863 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :   2863 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :   2863 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :   2863 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> RULE BROKEN — matched S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing, rule predicts S_absorb_all_into_final_narrowing ; precise -> RULE BROKEN — matched S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing, rule predicts S_f32_mul_then_absorb_add
+
+  --- A13 : narrow (x *. x) ---
+    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on this shape over all 63488 inputs. Whatever the device returns, this row is not evidence for or against the rule.
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> n/a (non-discriminating) ; precise -> n/a (non-discriminating)
+
+  --- A14 : narrow (x *. 1.1 *. 1.1) ---
+    the five policies induce 2 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :    308 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :    308 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :    308 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :    308 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :    308 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :    308 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :    308 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE HOLDS
+
+  --- A15 : narrow (x *. 1.1 +. x /. 3.) ---
+    NOTE: DIVISION: as A5 — an fdiv mismatch is not evidence about absorption
+    the five policies induce 3 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      1 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      1 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :    744 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      1 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    *** GREEN CONTROL did not reproduce S_strict: the two rows below are not attributable to ACO ***
+  plain
+    S_strict                           :    745 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :    745 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :    744 / 63488 disagreements
+    S_drop_intermediate_narrowing      :    745 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      1 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      1 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :    744 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      1 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE HOLDS
+
+  --- B1 : narrow (narrow (x *. 1.1) +. 1000.) ---
+    the five policies induce 5 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :    620 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :   5075 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :   4776 / 63488 disagreements
+    S_drop_intermediate_narrowing      :   4774 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :   5075 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :   4896 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :    482 / 63488 disagreements
+    S_drop_intermediate_narrowing      :    484 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0.500044 ulp (denominator: S_strict's value there) / 0.500044 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1.67731e+06 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :   4776 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :   4851 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :    482 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      2 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0.5 ulp (denominator: S_strict's value there) / 0.5 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1.67731e+06 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE HOLDS
+
+  --- B2 : narrow (narrow (x *. 1.1) *. 1.1) ---
+    the five policies induce 4 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :   5368 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :  17036 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :  17036 / 63488 disagreements
+    S_drop_intermediate_narrowing      :  16728 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :  17036 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :  16786 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :    308 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0.500044 ulp (denominator: S_strict's value there) / 0.500044 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0.5 ulp (denominator: S_strict's value there) / 0.5 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :  17036 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :  16786 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :    308 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0.500044 ulp (denominator: S_strict's value there) / 0.500044 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0.5 ulp (denominator: S_strict's value there) / 0.5 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE HOLDS
+
+  --- B3 : narrow (narrow (x +. 1000.) *. 1.1) ---
+    the five policies induce 4 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :    963 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :   7803 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :   7803 / 63488 disagreements
+    S_drop_intermediate_narrowing      :   7431 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :   7803 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :   7434 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :    374 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0.5 ulp (denominator: S_strict's value there) / 0.5 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0.5 ulp (denominator: S_strict's value there) / 0.5 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :   7803 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :   7434 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :    374 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0.5 ulp (denominator: S_strict's value there) / 0.5 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0.5 ulp (denominator: S_strict's value there) / 0.5 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE HOLDS
+
+  --- B4 : narrow (narrow (narrow (x *. 1.1) +. 1000.) *. 1.1) ---
+    the five policies induce 5 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :   1518 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :  10706 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :  10707 / 63488 disagreements
+    S_drop_intermediate_narrowing      :  10671 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :  10707 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :  10733 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      8 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      2 / 63488 disagreements
+    S_drop_intermediate_narrowing      :     59 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling: NOT EVALUATED — no model matched, so there is no admitted deviation to measure.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :  10707 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :  10733 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :     10 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :     59 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 1.67731e+06 ulp (denominator: S_strict's value there) / 1638 ulp (denominator: the model's own value there); 719 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1.84525e+06 ulp.
+    rule verdict: plain -> RULE BROKEN — matched NO MODEL, rule predicts S_absorb_all_into_final_narrowing ; precise -> RULE HOLDS
+
+  --- C1 : out.(i) <- inp.(i)   (f16 -> f16 copy, no cast) ---
+    NOTE: NO NARROWING AT ALL: there is nothing for any policy to elide, so every model coincides by construction
+    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on this shape over all 63488 inputs. Whatever the device returns, this row is not evidence for or against the rule.
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> n/a (non-discriminating) ; precise -> n/a (non-discriminating)
+
+
+  SUMMARY — AMD Radeon RX 7900 XTX (RADV NAVI31)
+  (rule predicts S_absorb_all_into_final_narrowing for plain and S_f32_mul_then_absorb_add for precise)
+
+  id   models plain                              precise                            unexpl.  green control
+  A1   1      S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing 0        S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing
+  A2   2      S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add 0        S_strict = S_drop_intermediate_narrowing
+  A3   1      S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing 0        S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing
+  A4   1      S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing 0        S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing
+  A5   1      NO MODEL                           NO MODEL                           2        NO MODEL
+  A6   3      S_absorb_all_into_final_narrowing  S_f32_mul_then_absorb_add          0        S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing
+  A7   2      S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add 0        S_strict = S_drop_intermediate_narrowing
+  A8   2      S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing 0        S_strict = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing
+  A9   1      S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing 0        S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing
+  A10  1      NO MODEL                           NO MODEL                           2        NO MODEL
+  A11  2      S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing 0        S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing
+  A12  2      S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing 0        S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing
+  A13  1      S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing 0        S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing
+  A14  2      S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add 0        S_strict = S_drop_intermediate_narrowing
+  A15  3      S_absorb_all_into_final_narrowing  S_f32_mul_then_absorb_add          0        S_f32_mul_then_absorb_add
+  B1   5      S_absorb_all_into_final_narrowing  S_f32_mul_then_absorb_add          0        S_strict
+  B2   4      S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add 0        S_strict
+  B3   4      S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add 0        S_strict
+  B4   5      NO MODEL                           S_f32_mul_then_absorb_add          0        S_strict
+  C1   1      S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing 0        S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing
+
+================================================================
+backlog-151 CATALOGUE — device: AMD Ryzen 9 7950X 16-Core Processor (RADV RAPHAEL_MENDOCINO)
+================================================================
+
+  --- reporting control (host-injected deviation) ---
+    A2   injected S_absorb_all_into_final_narrowing  -> reported S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add
+    A6   injected S_absorb_all_into_final_narrowing  -> reported S_absorb_all_into_final_narrowing
+    A7   injected S_absorb_all_into_final_narrowing  -> reported S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add
+    A8   injected S_absorb_all_into_final_narrowing  -> reported S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing
+    A11  injected S_absorb_all_into_final_narrowing  -> reported S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add
+    A12  injected S_absorb_all_into_final_narrowing  -> reported S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add
+    A14  injected S_absorb_all_into_final_narrowing  -> reported S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add
+    A15  injected S_absorb_all_into_final_narrowing  -> reported S_absorb_all_into_final_narrowing
+    B1   injected S_absorb_all_into_final_narrowing  -> reported S_absorb_all_into_final_narrowing
+    B2   injected S_absorb_all_into_final_narrowing  -> reported S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add
+    B3   injected S_absorb_all_into_final_narrowing  -> reported S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add
+    B4   injected S_absorb_all_into_final_narrowing  -> reported S_absorb_all_into_final_narrowing
+
+  --- A1 : narrow x ---
+    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on this shape over all 63488 inputs. Whatever the device returns, this row is not evidence for or against the rule.
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> n/a (non-discriminating) ; precise -> n/a (non-discriminating)
+
+  --- A2 : narrow (x *. 1.1) ---
+    the five policies induce 2 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :   2912 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :   2912 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :   2912 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :   2912 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :   2912 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :   2912 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :   2912 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE HOLDS
+
+  --- A3 : narrow (x +. 1000.) ---
+    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on this shape over all 63488 inputs. Whatever the device returns, this row is not evidence for or against the rule.
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> n/a (non-discriminating) ; precise -> n/a (non-discriminating)
+
+  --- A4 : narrow (x -. 1000.) ---
+    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on this shape over all 63488 inputs. Whatever the device returns, this row is not evidence for or against the rule.
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> n/a (non-discriminating) ; precise -> n/a (non-discriminating)
+
+  --- A5 : narrow (x /. 3.) ---
+    NOTE: DIVISION: Vulkan/SPIR-V allow OpFDiv 2.5 ULP, so a mismatch here is evidence about fdiv precision and NOT about the absorption rule
+    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on this shape over all 63488 inputs. Whatever the device returns, this row is not evidence for or against the rule.
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      1 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      1 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      1 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      1 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      1 / 63488 disagreements
+    *** 1 inputs match NO named model; first at x = -0 (0x8000) ***
+    *** GREEN CONTROL did not reproduce S_strict: the two rows below are not attributable to ACO ***
+  plain
+    S_strict                           :      1 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      1 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      1 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      1 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      1 / 63488 disagreements
+    *** 1 inputs match NO named model; first at x = -0 (0x8000) ***
+    §1.3 ceiling: NOT EVALUATED — no model matched, so there is no admitted deviation to measure.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      1 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      1 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      1 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      1 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      1 / 63488 disagreements
+    *** 1 inputs match NO named model; first at x = -0 (0x8000) ***
+    §1.3 ceiling: NOT EVALUATED — no model matched, so there is no admitted deviation to measure.
+    rule verdict: plain -> n/a (non-discriminating) ; precise -> n/a (non-discriminating)
+
+  --- A6 : narrow (x *. 1.1 +. 1000.) ---
+    the five policies induce 3 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :    484 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      2 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :    484 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :    484 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :    482 / 63488 disagreements
+    S_drop_intermediate_narrowing      :    484 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      2 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      2 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :    482 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      2 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE HOLDS
+
+  --- A7 : narrow ((x +. 1000.) *. 1.1) ---
+    the five policies induce 2 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :    374 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :    374 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :    374 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :    374 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :    374 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :    374 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :    374 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE HOLDS
+
+  --- A8 : narrow (fma x 1.1 1000.) ---
+    the five policies induce 2 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :    484 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :    484 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :    484 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :    484 / 63488 disagreements
+    S_drop_intermediate_narrowing      :    484 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :    484 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :    484 / 63488 disagreements
+    S_drop_intermediate_narrowing      :    484 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE BROKEN — matched S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing, rule predicts S_f32_mul_then_absorb_add
+
+  --- A9 : narrow (sqrt (x *. x)) ---
+    NOTE: SQRT: exact here only because sqrt(x*x) = |x| for a binary16 x; the device's sqrt precision is separately specified
+    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on this shape over all 63488 inputs. Whatever the device returns, this row is not evidence for or against the rule.
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> n/a (non-discriminating) ; precise -> n/a (non-discriminating)
+
+  --- A10 : narrow (0. -. x) ---
+    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on this shape over all 63488 inputs. Whatever the device returns, this row is not evidence for or against the rule.
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      1 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      1 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      1 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      1 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      1 / 63488 disagreements
+    *** 1 inputs match NO named model; first at x = 0 (0x0000) ***
+    *** GREEN CONTROL did not reproduce S_strict: the two rows below are not attributable to ACO ***
+  plain
+    S_strict                           :      1 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      1 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      1 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      1 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      1 / 63488 disagreements
+    *** 1 inputs match NO named model; first at x = 0 (0x0000) ***
+    §1.3 ceiling: NOT EVALUATED — no model matched, so there is no admitted deviation to measure.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      1 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      1 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      1 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      1 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      1 / 63488 disagreements
+    *** 1 inputs match NO named model; first at x = 0 (0x0000) ***
+    §1.3 ceiling: NOT EVALUATED — no model matched, so there is no admitted deviation to measure.
+    rule verdict: plain -> n/a (non-discriminating) ; precise -> n/a (non-discriminating)
+
+  --- A11 : narrow (floor (x *. 1.1)) ---
+    the five policies induce 2 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :    472 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :    472 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :    472 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :    472 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :    472 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :    472 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> RULE BROKEN — matched S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing, rule predicts S_absorb_all_into_final_narrowing ; precise -> RULE BROKEN — matched S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing, rule predicts S_f32_mul_then_absorb_add
+
+  --- A12 : narrow (if x>0. then x*.1.1 else x*.0.9) ---
+    the five policies induce 2 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :   2863 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :   2863 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :   2863 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :   2863 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :   2863 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :   2863 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> RULE BROKEN — matched S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing, rule predicts S_absorb_all_into_final_narrowing ; precise -> RULE BROKEN — matched S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing, rule predicts S_f32_mul_then_absorb_add
+
+  --- A13 : narrow (x *. x) ---
+    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on this shape over all 63488 inputs. Whatever the device returns, this row is not evidence for or against the rule.
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> n/a (non-discriminating) ; precise -> n/a (non-discriminating)
+
+  --- A14 : narrow (x *. 1.1 *. 1.1) ---
+    the five policies induce 2 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :    308 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :    308 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :    308 / 63488 disagreements
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :    308 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :    308 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :    308 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :    308 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE HOLDS
+
+  --- A15 : narrow (x *. 1.1 +. x /. 3.) ---
+    NOTE: DIVISION: as A5 — an fdiv mismatch is not evidence about absorption
+    the five policies induce 3 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      1 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      1 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :    744 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      1 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    *** GREEN CONTROL did not reproduce S_strict: the two rows below are not attributable to ACO ***
+  plain
+    S_strict                           :    745 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :    745 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :    744 / 63488 disagreements
+    S_drop_intermediate_narrowing      :    745 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 1 ulp (denominator: S_strict's value there) / 1 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      1 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :      1 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :    744 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      1 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE HOLDS
+
+  --- B1 : narrow (narrow (x *. 1.1) +. 1000.) ---
+    the five policies induce 5 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :    620 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :   5075 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :   4776 / 63488 disagreements
+    S_drop_intermediate_narrowing      :   4774 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :   5075 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :   4896 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :    482 / 63488 disagreements
+    S_drop_intermediate_narrowing      :    484 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0.500044 ulp (denominator: S_strict's value there) / 0.500044 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1.67731e+06 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :   4776 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :   4851 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :    482 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      2 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0.5 ulp (denominator: S_strict's value there) / 0.5 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1.67731e+06 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE HOLDS
+
+  --- B2 : narrow (narrow (x *. 1.1) *. 1.1) ---
+    the five policies induce 4 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :   5368 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :  17036 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :  17036 / 63488 disagreements
+    S_drop_intermediate_narrowing      :  16728 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :  17036 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :  16786 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :    308 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0.500044 ulp (denominator: S_strict's value there) / 0.500044 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0.5 ulp (denominator: S_strict's value there) / 0.5 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :  17036 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :  16786 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :    308 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0.500044 ulp (denominator: S_strict's value there) / 0.500044 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0.5 ulp (denominator: S_strict's value there) / 0.5 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE HOLDS
+
+  --- B3 : narrow (narrow (x +. 1000.) *. 1.1) ---
+    the five policies induce 4 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :    963 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :   7803 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :   7803 / 63488 disagreements
+    S_drop_intermediate_narrowing      :   7431 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :   7803 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :   7434 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :    374 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0.5 ulp (denominator: S_strict's value there) / 0.5 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0.5 ulp (denominator: S_strict's value there) / 0.5 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :   7803 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :   7434 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :    374 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0.5 ulp (denominator: S_strict's value there) / 0.5 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0.5 ulp (denominator: S_strict's value there) / 0.5 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1 ulp.
+    rule verdict: plain -> RULE HOLDS ; precise -> RULE HOLDS
+
+  --- B4 : narrow (narrow (narrow (x *. 1.1) +. 1000.) *. 1.1) ---
+    the five policies induce 5 distinct functions here
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :   1518 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :  10706 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :  10707 / 63488 disagreements
+    S_drop_intermediate_narrowing      :  10671 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :  10707 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :  10733 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :      8 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      2 / 63488 disagreements
+    S_drop_intermediate_narrowing      :     59 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling: NOT EVALUATED — no model matched, so there is no admitted deviation to measure.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :  10707 / 63488 disagreements
+    S_fuse_mul_into_narrowing          :  10733 / 63488 disagreements
+    S_absorb_all_into_final_narrowing  :     10 / 63488 disagreements
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :     59 / 63488 disagreements
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 1.67731e+06 ulp (denominator: S_strict's value there) / 1638 ulp (denominator: the model's own value there); 719 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 1.84525e+06 ulp.
+    rule verdict: plain -> RULE BROKEN — matched NO MODEL, rule predicts S_absorb_all_into_final_narrowing ; precise -> RULE HOLDS
+
+  --- C1 : out.(i) <- inp.(i)   (f16 -> f16 copy, no cast) ---
+    NOTE: NO NARROWING AT ALL: there is nothing for any policy to elide, so every model coincides by construction
+    NON-DISCRIMINATING: all five policies are the SAME FUNCTION on this shape over all 63488 inputs. Whatever the device returns, this row is not evidence for or against the rule.
+  GREEN CONTROL — every temporary through the volatile SSBO
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+  plain
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+  precise (what Sarek_ir_glsl emits)
+    S_strict                           :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_fuse_mul_into_narrowing          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_absorb_all_into_final_narrowing  :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_f32_mul_then_absorb_add          :      0 / 63488 disagreements   <== EXACT, element-wise
+    S_drop_intermediate_narrowing      :      0 / 63488 disagreements   <== EXACT, element-wise
+    every input matches at least one named model (0 unexplained)
+    §1.3 ceiling, evaluated AT THE ELIDED NARROWING (not on the final value):
+    S_strict                           : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_fuse_mul_into_narrowing          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_absorb_all_into_final_narrowing  : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_f32_mul_then_absorb_add          : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    S_drop_intermediate_narrowing      : at the elided narrowing, worst = 0 ulp (denominator: S_strict's value there) / 0 ulp (denominator: the model's own value there); 0 inputs exceed 1 ulp under BOTH denominators. On the FINAL value the same deviation reaches 0 ulp.
+    rule verdict: plain -> n/a (non-discriminating) ; precise -> n/a (non-discriminating)
+
+
+  SUMMARY — AMD Ryzen 9 7950X 16-Core Processor (RADV RAPHAEL_MENDOCINO)
+  (rule predicts S_absorb_all_into_final_narrowing for plain and S_f32_mul_then_absorb_add for precise)
+
+  id   models plain                              precise                            unexpl.  green control
+  A1   1      S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing 0        S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing
+  A2   2      S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add 0        S_strict = S_drop_intermediate_narrowing
+  A3   1      S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing 0        S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing
+  A4   1      S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing 0        S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing
+  A5   1      NO MODEL                           NO MODEL                           2        NO MODEL
+  A6   3      S_absorb_all_into_final_narrowing  S_f32_mul_then_absorb_add          0        S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing
+  A7   2      S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add 0        S_strict = S_drop_intermediate_narrowing
+  A8   2      S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing 0        S_strict = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing
+  A9   1      S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing 0        S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing
+  A10  1      NO MODEL                           NO MODEL                           2        NO MODEL
+  A11  2      S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing 0        S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing
+  A12  2      S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing 0        S_strict = S_fuse_mul_into_narrowing = S_drop_intermediate_narrowing
+  A13  1      S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing 0        S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing
+  A14  2      S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add 0        S_strict = S_drop_intermediate_narrowing
+  A15  3      S_absorb_all_into_final_narrowing  S_f32_mul_then_absorb_add          0        S_f32_mul_then_absorb_add
+  B1   5      S_absorb_all_into_final_narrowing  S_f32_mul_then_absorb_add          0        S_strict
+  B2   4      S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add 0        S_strict
+  B3   4      S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add 0        S_strict
+  B4   5      NO MODEL                           S_f32_mul_then_absorb_add          0        S_strict
+  C1   1      S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing 0        S_strict = S_fuse_mul_into_narrowing = S_absorb_all_into_final_narrowing = S_f32_mul_then_absorb_add = S_drop_intermediate_narrowing

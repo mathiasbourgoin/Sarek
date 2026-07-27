@@ -30,6 +30,7 @@
 open Sarek_opencl
 module Backend = Opencl_plugin_base.Opencl
 module M = F16_model_set
+module C = F16_shape_catalogue
 
 let n_local = 256
 
@@ -283,8 +284,112 @@ let probe_device device =
 
   (c1, c2)
 
+(* ---------------------------------------------------------------------- *)
+(* backlog-151 — the 20-shape catalogue on the OTHER ACO front end          *)
+(*                                                                          *)
+(* rusticl compiles the same ACO backend through a different front end, so   *)
+(* the corrected local rule of F16_shape_catalogue is a claim about ACO only *)
+(* if both front ends produce it. There is no `precise` here: OpenCL C has   *)
+(* no NoContraction spelling that slice 1 measured, so this sweep runs the   *)
+(* plain kernel and the green control, and the rule is tested in its         *)
+(* contraction-allowed form alone.                                          *)
+(* ---------------------------------------------------------------------- *)
+
+let name_of c =
+  match c.M.exact_matches with
+  | [] when c.M.unexplained = 0 -> "NO SINGLE MODEL (mixture)"
+  | [] -> Printf.sprintf "NO MODEL (%d unmatched)" c.M.unexplained
+  | [n] -> n
+  | l -> String.concat " = " l
+
+let catalogue_device device =
+  Printf.printf
+    "\n================================================================\n" ;
+  Printf.printf "backlog-151 CATALOGUE — device: %s\n" (describe device) ;
+  Printf.printf
+    "================================================================\n%!" ;
+  let rows = ref [] in
+  List.iter
+    (fun sh ->
+      let models = C.models_with_local sh in
+      let distinct = C.distinct_model_count sh in
+      Printf.printf "\n  --- %s : %s ---\n" sh.C.id sh.C.descr ;
+      if sh.C.discriminating_note <> "" then
+        Printf.printf "    NOTE: %s\n" sh.C.discriminating_note ;
+      if distinct = 1 then
+        Printf.printf
+          "    NON-DISCRIMINATING: all five slice-1 policies are the SAME \
+           FUNCTION here; whatever the device returns is not evidence about \
+           the rule.\n" ;
+      let run_v ~label ~barrier =
+        let source = C.source ~dialect:C.Opencl ~precise:false ~barrier sh in
+        let got, c = sweep device ~label ~source ~models in
+        if c.M.unexplained > 0 then begin
+          let idx = c.M.first_unexplained in
+          let b = M.finite_bits.(idx) in
+          Printf.printf
+            "      first unmatched input x = %.9g (0x%04X): device 0x%04X"
+            (M.dec b)
+            b
+            got.(idx) ;
+          List.iter
+            (fun m -> Printf.printf ", %s 0x%04X" m.M.name (m.M.result b))
+            models ;
+          Printf.printf "\n"
+        end ;
+        c
+      in
+      let cg =
+        run_v
+          ~label:"GREEN CONTROL — every temporary through the volatile __local"
+          ~barrier:true
+      in
+      if not (List.mem "S_strict" cg.M.exact_matches) then
+        Printf.printf
+          "    *** GREEN CONTROL did not reproduce S_strict: the row below is \
+           not attributable to ACO ***\n" ;
+      let cp = run_v ~label:"plain" ~barrier:false in
+      report_ceiling models cp ;
+      let verdict want =
+        if distinct = 1 then "n/a (non-discriminating)"
+        else if List.mem want cp.M.exact_matches then "HOLDS"
+        else if cp.M.unexplained > 0 then
+          Printf.sprintf "BROKEN — %d inputs match no model" cp.M.unexplained
+        else Printf.sprintf "BROKEN — matched %s, predicts %s" (name_of cp) want
+      in
+      Printf.printf
+        "    §12.4 whole-tree rule: %s\n    corrected LOCAL rule : %s\n"
+        (verdict C.rule_plain.C.pname)
+        (verdict C.aco_opencl.C.lname) ;
+      rows :=
+        ( sh.C.id,
+          distinct,
+          name_of cp,
+          name_of cg,
+          verdict C.rule_plain.C.pname,
+          verdict C.aco_opencl.C.lname )
+        :: !rows)
+    C.shapes ;
+  Printf.printf "\n\n  SUMMARY — %s\n\n" (describe device) ;
+  List.iter
+    (fun (id, d, p, g, r, l) ->
+      Printf.printf
+        "  %-4s  %d distinct models\n\
+        \        plain : %s\n\
+        \        green : %s\n\
+        \        §12.4 whole-tree rule: %s\n\
+        \        corrected LOCAL rule : %s\n"
+        id
+        d
+        p
+        g
+        r
+        l)
+    (List.rev !rows)
+
 let () =
   let host_only = Array.exists (fun a -> a = "--host-only") Sys.argv in
+  let catalogue = Array.exists (fun a -> a = "--catalogue") Sys.argv in
   Printf.printf
     "#62 slice 1(a) — element-wise model agreement, OpenCL / rusticl\n\n" ;
   (try M.calibrate ()
@@ -325,4 +430,18 @@ let () =
         | [] -> "no OpenCL devices at all"
         | l -> String.concat "; " (List.map describe l)) ;
       exit 2
-  | ds -> List.iter (fun d -> ignore (probe_device d)) ds
+  | ds ->
+      if catalogue then begin
+        (try C.calibrate ()
+         with C.Calibration_failed s ->
+           Printf.printf
+             "CATALOGUE CALIBRATION FAILED — read nothing below it:\n  %s\n"
+             s ;
+           exit 1) ;
+        Printf.printf
+          "catalogue calibration PASSED: the generic policies reproduce slice \
+           1's hand-written closed forms bit-for-bit on A2 and B1 over all \
+           63488 inputs, and the corrected local rule reduces onto them.\n" ;
+        List.iter catalogue_device ds
+      end
+      else List.iter (fun d -> ignore (probe_device d)) ds

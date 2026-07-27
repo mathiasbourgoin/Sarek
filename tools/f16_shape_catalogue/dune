@@ -1,0 +1,15 @@
+; backlog-151 — the 20-shape f16 expression catalogue, and the generative rule
+; of docs/fp-contraction-policy.md §12.4 written as five POLICIES rather than
+; as one closed form per shape.
+;
+; A separate library from f16_model_set rather than a second module inside it:
+; that library's single module carries the library's own name, which makes it
+; the library interface, and slice 1's probes consume it as such. Extending it
+; in place would change how it is referenced. This one depends on it and adds.
+;
+; No `public_name`: measurement machinery, not shipped API.
+
+(library
+ (name f16_shape_catalogue)
+ (modules f16_shape_catalogue)
+ (libraries f16_model_set))

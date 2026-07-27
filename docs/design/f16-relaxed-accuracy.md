@@ -33,6 +33,23 @@ one explicitly **refused** named function. **No refusal is lifted by this
 change** — slice 3 is still where that happens, and 18 of the 20 emittable
 shapes remain unmeasured and therefore refused.
 
+**Amended 2026-07-27 (backlog-151, the other 18 shapes).** The 18 shapes slice 1
+left unmeasured have been swept, on both ACO stacks and all four local devices.
+Three things changed and none of them lifts a refusal. **(i)** Slice 1's
+candidate generative rule is **false** — absorption is a *local* peephole, not a
+whole-tree property, and shapes A11, A12 and B4 break it with the machine code
+for each (`fp-contraction-policy.md` §13.4). **(ii)** The corrected rule holds on
+12 of 12 discriminating shapes on RADV and 11 of 12 on rusticl, and it means
+**§1.2's model set does not grow per shape** — the four members below are *one
+rule at three settings*, not four independent functions (§1.2's new note, and
+§13.5). **(iii)** Two facts this document asserted are narrowed: the two ACO
+front ends are **not** the same function on shapes slice 1 did not sweep, and
+§1.3's ceiling needs an evaluation point stated when a shape has more than one
+intermediate narrowing (§1.3's new note). Separately, RADV returns `-0` for
+`0.0 - x` at `x = +0` on one input, through every barrier — a **failure** under
+§1.2 rather than a relaxation, recorded at §13.6. **The other 18 shapes remain
+refused**: slice 3 is still where a refusal is lifted.
+
 **Read §0.1 first.** It is one paragraph and it is the argument every other
 choice here follows from.
 
@@ -187,6 +204,33 @@ this section is a set of names rather than a bound:
   §0.1 argued a tolerance could not separate a characterised deviation from this
   defect; slice 1 turned that argument into a measurement.
 
+> **These four are ONE rule at three settings, not four members — measured
+> 2026-07-27 (backlog-151).** Read as a list, §1.2 invites the question this
+> design was most exposed to: does the list grow with every expression a user
+> writes? It does not, and the reason is that the list is not primitive. All
+> four are what a single *local* rule produces on the two shapes slice 1
+> measured:
+>
+> *each f32→f16 narrowing absorbs the single f32 operation immediately feeding
+> it — a multiply, an add/sub, or an explicit fma — rounding it once; a multiply
+> feeding an addition is separately contracted into a single-rounded **binary32**
+> fma; an intermediate binary16 narrowing consumed only by f32 arithmetic may be
+> elided; **every other f32 operation keeps its own correctly-rounded binary32
+> result**.*
+>
+> Three booleans — contract, elide, sink-into-a-select — pick the setting, and
+> each is a measured property of a (driver, front end, decoration) triple rather
+> than a free parameter. `fp-contraction-policy.md` §13.4 has the settings, the
+> verification on ten shapes the rule was not fitted to, and the disassembly.
+> **So the model set is `{S_strict}` plus one generator, for any shape.** §13.5
+> is the argument that this is the difference between a contract and a lookup
+> table, and it is the whole reason the 18 shapes were worth sweeping.
+>
+> The rule is **not** the one slice 1 proposed. That one absorbed the *whole*
+> tree and is refuted at machine-code tier: `v_fma_mixlo_f16` takes one
+> multiply-add and one conversion, so a `v_floor_f32` or a `v_cndmask_b32`
+> between the multiply and the narrowing stops it dead (§13.4).
+
 This is exact agreement, not a tolerance, so it is strictly *tighter* than
 today's bit-identity requirement in every direction except the one deviation it
 names. It is the same discipline as `Test_helpers.classify_df64_result` — an
@@ -250,6 +294,25 @@ change to `ref_discipline` / `ref_fused` — they already compute the intermedia
 only what the kernel wrote to memory. Where a shape's intermediates are not
 observable, the ceiling is **not applicable** and must be reported as such rather
 than silently evaluated on the final value.
+
+> **And it needs a point named when a shape has more than one intermediate
+> narrowing — measured 2026-07-27 (backlog-151).** "At the elided narrowing" is
+> unambiguous for every shape this document had seen, all of which have at most
+> one. Shape B4 of the catalogue,
+> `f16(f16(f16(x*1.1)+1000)*1.1)`, has two, and the two answers differ by three
+> orders of magnitude: at the **outer** narrowing the admitted model exceeds the
+> ceiling on **719 of 63488** inputs and reaches 1638 ulp, because two elisions
+> separate it from `S_strict` there and the derivation above covers exactly one;
+> at the **innermost**, where one elision separates them, it is **0.500044 ulp
+> with zero exceedances**. (On the final value the same deviation reaches
+> **1.85e+06 ulp**, which is this correction reproduced on a third shape.)
+>
+> The harness evaluates at the innermost narrowing and reports the
+> intermediate-narrowing count, so a shape with more than one reads as
+> *partially* covered rather than as a clean pass. **What the ceiling should say
+> about the remaining elisions is not settled here** and is work for slice 0,
+> which is where `classify_f16_result` is built. `fp-contraction-policy.md`
+> §13.7.
 
 The ceiling is **necessary and not sufficient** — §1.1 is the proof, since the
 IGC dropped-narrowing defect sits exactly at 1 ulp. Both checks run; both must
@@ -357,12 +420,31 @@ count-and-first-divergence agreement is upgraded to element-wise; RADV's
 two-narrowing shape, §9.3's open risk, matches a closed-form model under `precise`
 *and* without it, and the `precise` puzzle is reconciled at machine-code tier.
 
-**The admission is per shape, and only two of twenty shapes are measured.**
+**The admission is per shape, and only two of twenty shapes are ADMITTED.**
 §1.2's model set is keyed on *(backend, driver, expression shape)* and always
-was, so this is not the per-shape degradation §9.3 feared — but the other 18
-shapes of `docs/optimization/amdgpu-f16-fusion-shape-audit.md` are unmeasured on
-ACO and under §1.5 stay refused. Read the verdict column as the current status,
-not as a plan.
+was, so this is not the per-shape degradation §9.3 feared. **All twenty shapes
+are now MEASURED** (backlog-151, `fp-contraction-policy.md` §13) — but measured
+is not admitted, and under §1.5 the other 18 stay refused until slice 3 decides.
+Read the verdict column as the current status, not as a plan.
+
+**Three things backlog-151 changed in this table's reading, none of which moves a
+verdict.**
+
+1. **The rusticl and RADV rows are not the same function.** §12.3 concluded
+   "the two ACO front ends behave identically on both shapes"; that was true of
+   those two shapes and is false in general. rusticl keeps the intermediate
+   narrowing where RADV elides it, does not contract multiply-add without being
+   asked, and sinks a narrowing into the arms of a select where RADV does not
+   (2863/63488 against RADV's 0 on the same shape). The allowlist has to be
+   keyed on the **front end** as well as the backend.
+2. **`precise` is inert on more shapes than §9.3's reconciliation implied.** It
+   changes the model on exactly two of the twelve discriminating shapes; on the
+   rest, including an explicit `fma()`, the disassembly is byte-identical
+   (§13.4).
+3. **One shape, A10 `f16(0. - x)`, returns a result matching NO model on RADV**
+   — `-0` where IEEE requires `+0`, at `x = +0`, through every barrier. Under
+   §1.2 that is a **failure**, not a candidate for the admissible set: it is not
+   a rounding. rusticl is correct on it. §13.6.
 
 | backend / driver | device(s) | deviation from `S_strict` | matches `S_fuse_mul_into_narrowing`? | evidence | verdict under Regime A |
 |---|---|---|---|---|---|
@@ -793,7 +875,7 @@ refusal before slice 3.
 | # | slice | proves | hardware | lifts a refusal? | status |
 |---|---|---|---|---|---|
 | **0** | the contract, as a testable classifier | the gate can tell `S_fuse_mul_into_narrowing` from a dropped narrowing | none (host-only) | no | open — and now also carries §1.3's per-narrowing ceiling |
-| **1** | element-wise model characterisation of ACO scalar f16 | whether the contract of §1.2 is deliverable at all | RX 7900 XTX + Raphael iGPU (local) | no | **DONE 2026-07-27 for 2 of 20 shapes — deliverable; 18 shapes still open** |
+| **1** | element-wise model characterisation of ACO scalar f16 | whether the contract of §1.2 is deliverable at all | RX 7900 XTX + Raphael iGPU (local) | no | **DONE — all 20 shapes measured (2 in slice 1, the other 18 in backlog-151). Deliverable, and §1.2's set is generated rather than enumerated. 18 shapes measured but NOT admitted.** |
 | **2** | `shaderFloat16` + driver-identity + capability plumbing | the gate can be keyed on a driver, not a device name | local, both devices | no | open |
 | **3** | GLSL scalar f16, allowlisted | Sarek-*generated* f16 shaders meet the contract | RX 7900 XTX (local) | **yes**, on an allowlist | open |
 | **4** | backlog-62 Vulkan coopmat, f16×f16→f32 | the tensor-core path, end to end | RX 7900 XTX (local) | yes (new capability) | open |
@@ -901,6 +983,42 @@ Two outcomes, and they are not equally good:
 > feeding it, cut where `NoContraction` forbids a multiply-add* — but its
 > evidence tier is **unverified as a general rule**, and the remaining 18 shapes
 > are exactly what would confirm or break it (`fp-contraction-policy.md` §12.4).
+
+> **SETTLED, 2026-07-27 (backlog-151) — and the rule was WRONG.** All 18 were
+> swept, on RADV and rusticl, on all four local devices, element-wise over the
+> whole finite binary16 domain. Full record in `fp-contraction-policy.md` §13;
+> raw output in `docs/measurements/f16-shapes-2026-07-27/`.
+>
+> - **The rule is false.** Absorption is a *local* peephole, and the
+>   disassembly is why: `v_fma_mixlo_f16` takes one multiply-add and one
+>   conversion, so it cannot reach past anything else. `f16(floor(x*1.1))` and
+>   `f16(x>0 ? x*1.1 : x*0.9)` come back **`S_strict`** where the rule predicts
+>   absorption, with the intervening `v_floor_f32` / `v_cndmask_b32` visible in
+>   the ISA. `f16(f16(f16(x*1.1)+1000)*1.1)` is worse: it matches **no single
+>   member of the model set at all** — 63480/63488 against one member and
+>   63486/63488 against another — because ACO performs *two* single-rounding
+>   events at *two* precisions, contracting `x*1.1+1000` into one binary32 fma
+>   and only then absorbing the final multiply.
+> - **The corrected rule is local, and it holds** on 12 of 12 discriminating
+>   shapes on RADV (plain and `precise`) and 11 of 12 on rusticl, verified on
+>   ten shapes it was not fitted to. §13.4 states it; §1.2 carries it.
+> - **The model set does NOT grow per shape** — the outcome this slice was a
+>   decision point for. It is `{S_strict}` plus one generator with three
+>   measured booleans, for any shape a user writes. §13.5.
+> - **Only 12 of the 20 shapes can discriminate at all.** On the other eight
+>   every model is the same function, so a device sweep of them measures
+>   nothing; four of those eight are the shapes the HIP audit already recorded
+>   as *demoted in the machine code and clean in the numbers*. §13.2.
+> - **One residual and one defect.** rusticl mispredicts on
+>   `f16(f16(x*1.1)*1.1)`, where both stacks constant-fold `1.1*1.1` into
+>   binary32 `1.21` **across** the intermediate narrowing — a reassociation
+>   combine, not an absorption one, identified by the literal `0x3f9ae148` in
+>   the ISA and not modelled here (§13.4). And RADV returns `-0` for `0.0 - x`
+>   at `x = +0`, through every barrier, which is a §1.2 **failure** rather than
+>   a relaxation (§13.6).
+>
+> **No refusal is lifted by this.** Slice 3 is still where that happens, and it
+> now has a rule to gate on rather than four measured points.
 
 **This slice reports its outcome upward before the next one starts.** It is a
 decision point, not a task on a list; a green result funds slices 2–4 and a red

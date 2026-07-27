@@ -1,0 +1,1266 @@
+backlog-151 — the 20-shape f16 catalogue, host-only separation analysis
+
+CALIBRATION PASSED.
+  - slice 1's four host checks (63488 round-trip, 620, 2912, x = -907.5);
+  - all 20 shapes x 5 policies are exactly computable;
+  - the GENERIC evaluator reproduces slice 1's seven hand-written closed
+    forms bit-for-bit on A2 and B1, all 63488 inputs;
+  - and reproduces the recorded separations 2912 / 620 / 5075 / 4776 /
+    4774 from the generic evaluator rather than from those closed forms.
+
+SHAPE DISCRIMINATION — how many DISTINCT functions the five policies
+induce on each shape over all 63488 finite binary16 inputs.
+
+  id   shape                                          distinct models
+  A1   narrow x                                       1   <== NON-DISCRIMINATING: a device sweep of this shape measures nothing
+  A2   narrow (x *. 1.1)                              2
+  A3   narrow (x +. 1000.)                            1   <== NON-DISCRIMINATING: a device sweep of this shape measures nothing
+  A4   narrow (x -. 1000.)                            1   <== NON-DISCRIMINATING: a device sweep of this shape measures nothing
+  A5   narrow (x /. 3.)                               1   <== NON-DISCRIMINATING: a device sweep of this shape measures nothing
+  A6   narrow (x *. 1.1 +. 1000.)                     3
+  A7   narrow ((x +. 1000.) *. 1.1)                   2
+  A8   narrow (fma x 1.1 1000.)                       2
+  A9   narrow (sqrt (x *. x))                         1   <== NON-DISCRIMINATING: a device sweep of this shape measures nothing
+  A10  narrow (0. -. x)                               1   <== NON-DISCRIMINATING: a device sweep of this shape measures nothing
+  A11  narrow (floor (x *. 1.1))                      2
+  A12  narrow (if x>0. then x*.1.1 else x*.0.9)       2
+  A13  narrow (x *. x)                                1   <== NON-DISCRIMINATING: a device sweep of this shape measures nothing
+  A14  narrow (x *. 1.1 *. 1.1)                       2
+  A15  narrow (x *. 1.1 +. x /. 3.)                   2
+  B1   narrow (narrow (x *. 1.1) +. 1000.)            5
+  B2   narrow (narrow (x *. 1.1) *. 1.1)              4
+  B3   narrow (narrow (x +. 1000.) *. 1.1)            4
+  B4   narrow (narrow (narrow (x *. 1.1) +. 1000.) *. 1.1) 5
+  C1   out.(i) <- inp.(i)   (f16 -> f16 copy, no cast) 1   <== NON-DISCRIMINATING: a device sweep of this shape measures nothing
+
+
+PER-SHAPE PAIRWISE SEPARATION
+
+--- A1 : narrow x ---
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :      0
+    S_strict                           vs S_absorb_all_into_final_narrowing  :      0
+    S_strict                           vs S_f32_mul_then_absorb_add          :      0
+    S_strict                           vs S_drop_intermediate_narrowing      :      0
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :      0
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :      0
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :      0
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :      0
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :      0
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :      0
+    *** S_f32_mul_then_absorb_add and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_absorb_all_into_final_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_absorb_all_into_final_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_fuse_mul_into_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- A2 : narrow (x *. 1.1) ---
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :   2912
+    S_strict                           vs S_absorb_all_into_final_narrowing  :   2912
+    S_strict                           vs S_f32_mul_then_absorb_add          :   2912
+    S_strict                           vs S_drop_intermediate_narrowing      :      0
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :      0
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :      0
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :   2912
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :      0
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :   2912
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :   2912
+    *** S_absorb_all_into_final_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- A3 : narrow (x +. 1000.) ---
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :      0
+    S_strict                           vs S_absorb_all_into_final_narrowing  :      0
+    S_strict                           vs S_f32_mul_then_absorb_add          :      0
+    S_strict                           vs S_drop_intermediate_narrowing      :      0
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :      0
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :      0
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :      0
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :      0
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :      0
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :      0
+    *** S_f32_mul_then_absorb_add and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_absorb_all_into_final_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_absorb_all_into_final_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_fuse_mul_into_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- A4 : narrow (x -. 1000.) ---
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :      0
+    S_strict                           vs S_absorb_all_into_final_narrowing  :      0
+    S_strict                           vs S_f32_mul_then_absorb_add          :      0
+    S_strict                           vs S_drop_intermediate_narrowing      :      0
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :      0
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :      0
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :      0
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :      0
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :      0
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :      0
+    *** S_f32_mul_then_absorb_add and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_absorb_all_into_final_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_absorb_all_into_final_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_fuse_mul_into_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- A5 : narrow (x /. 3.) ---
+  NOTE: DIVISION: Vulkan/SPIR-V allow OpFDiv 2.5 ULP, so a mismatch here is evidence about fdiv precision and NOT about the absorption rule
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :      0
+    S_strict                           vs S_absorb_all_into_final_narrowing  :      0
+    S_strict                           vs S_f32_mul_then_absorb_add          :      0
+    S_strict                           vs S_drop_intermediate_narrowing      :      0
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :      0
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :      0
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :      0
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :      0
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :      0
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :      0
+    *** S_f32_mul_then_absorb_add and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_absorb_all_into_final_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_absorb_all_into_final_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_fuse_mul_into_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- A6 : narrow (x *. 1.1 +. 1000.) ---
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :      0
+    S_strict                           vs S_absorb_all_into_final_narrowing  :    484
+    S_strict                           vs S_f32_mul_then_absorb_add          :      2
+    S_strict                           vs S_drop_intermediate_narrowing      :      0
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :    484
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :      2
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :      0
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :    482
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :    484
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :      2
+    *** S_fuse_mul_into_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_fuse_mul_into_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- A7 : narrow ((x +. 1000.) *. 1.1) ---
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :    374
+    S_strict                           vs S_absorb_all_into_final_narrowing  :    374
+    S_strict                           vs S_f32_mul_then_absorb_add          :    374
+    S_strict                           vs S_drop_intermediate_narrowing      :      0
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :      0
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :      0
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :    374
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :      0
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :    374
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :    374
+    *** S_absorb_all_into_final_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- A8 : narrow (fma x 1.1 1000.) ---
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :    484
+    S_strict                           vs S_absorb_all_into_final_narrowing  :    484
+    S_strict                           vs S_f32_mul_then_absorb_add          :    484
+    S_strict                           vs S_drop_intermediate_narrowing      :      0
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :      0
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :      0
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :    484
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :      0
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :    484
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :    484
+    *** S_absorb_all_into_final_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- A9 : narrow (sqrt (x *. x)) ---
+  NOTE: SQRT: exact here only because sqrt(x*x) = |x| for a binary16 x; the device's sqrt precision is separately specified
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :      0
+    S_strict                           vs S_absorb_all_into_final_narrowing  :      0
+    S_strict                           vs S_f32_mul_then_absorb_add          :      0
+    S_strict                           vs S_drop_intermediate_narrowing      :      0
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :      0
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :      0
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :      0
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :      0
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :      0
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :      0
+    *** S_f32_mul_then_absorb_add and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_absorb_all_into_final_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_absorb_all_into_final_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_fuse_mul_into_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- A10 : narrow (0. -. x) ---
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :      0
+    S_strict                           vs S_absorb_all_into_final_narrowing  :      0
+    S_strict                           vs S_f32_mul_then_absorb_add          :      0
+    S_strict                           vs S_drop_intermediate_narrowing      :      0
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :      0
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :      0
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :      0
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :      0
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :      0
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :      0
+    *** S_f32_mul_then_absorb_add and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_absorb_all_into_final_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_absorb_all_into_final_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_fuse_mul_into_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- A11 : narrow (floor (x *. 1.1)) ---
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :      0
+    S_strict                           vs S_absorb_all_into_final_narrowing  :    472
+    S_strict                           vs S_f32_mul_then_absorb_add          :    472
+    S_strict                           vs S_drop_intermediate_narrowing      :      0
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :    472
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :    472
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :      0
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :      0
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :    472
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :    472
+    *** S_absorb_all_into_final_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_fuse_mul_into_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- A12 : narrow (if x>0. then x*.1.1 else x*.0.9) ---
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :      0
+    S_strict                           vs S_absorb_all_into_final_narrowing  :   2863
+    S_strict                           vs S_f32_mul_then_absorb_add          :   2863
+    S_strict                           vs S_drop_intermediate_narrowing      :      0
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :   2863
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :   2863
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :      0
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :      0
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :   2863
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :   2863
+    *** S_absorb_all_into_final_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_fuse_mul_into_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- A13 : narrow (x *. x) ---
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :      0
+    S_strict                           vs S_absorb_all_into_final_narrowing  :      0
+    S_strict                           vs S_f32_mul_then_absorb_add          :      0
+    S_strict                           vs S_drop_intermediate_narrowing      :      0
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :      0
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :      0
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :      0
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :      0
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :      0
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :      0
+    *** S_f32_mul_then_absorb_add and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_absorb_all_into_final_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_absorb_all_into_final_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_fuse_mul_into_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- A14 : narrow (x *. 1.1 *. 1.1) ---
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :    308
+    S_strict                           vs S_absorb_all_into_final_narrowing  :    308
+    S_strict                           vs S_f32_mul_then_absorb_add          :    308
+    S_strict                           vs S_drop_intermediate_narrowing      :      0
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :      0
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :      0
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :    308
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :      0
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :    308
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :    308
+    *** S_absorb_all_into_final_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- A15 : narrow (x *. 1.1 +. x /. 3.) ---
+  NOTE: DIVISION: as A5 — an fdiv mismatch is not evidence about absorption
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :      0
+    S_strict                           vs S_absorb_all_into_final_narrowing  :    744
+    S_strict                           vs S_f32_mul_then_absorb_add          :      0
+    S_strict                           vs S_drop_intermediate_narrowing      :      0
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :    744
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :      0
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :      0
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :    744
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :    744
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :      0
+    *** S_f32_mul_then_absorb_add and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_fuse_mul_into_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- B1 : narrow (narrow (x *. 1.1) +. 1000.) ---
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :    620
+    S_strict                           vs S_absorb_all_into_final_narrowing  :   5075
+    S_strict                           vs S_f32_mul_then_absorb_add          :   4776
+    S_strict                           vs S_drop_intermediate_narrowing      :   4774
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :   4896
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :   4851
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :   4849
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :    482
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :    484
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :      2
+
+--- B2 : narrow (narrow (x *. 1.1) *. 1.1) ---
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :   5368
+    S_strict                           vs S_absorb_all_into_final_narrowing  :  17036
+    S_strict                           vs S_f32_mul_then_absorb_add          :  17036
+    S_strict                           vs S_drop_intermediate_narrowing      :  16728
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :  16786
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :  16786
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :  17094
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :      0
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :    308
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :    308
+    *** S_absorb_all_into_final_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- B3 : narrow (narrow (x +. 1000.) *. 1.1) ---
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :    963
+    S_strict                           vs S_absorb_all_into_final_narrowing  :   7803
+    S_strict                           vs S_f32_mul_then_absorb_add          :   7803
+    S_strict                           vs S_drop_intermediate_narrowing      :   7431
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :   7434
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :   7434
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :   7808
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :      0
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :    374
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :    374
+    *** S_absorb_all_into_final_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+--- B4 : narrow (narrow (narrow (x *. 1.1) +. 1000.) *. 1.1) ---
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :   1518
+    S_strict                           vs S_absorb_all_into_final_narrowing  :  10706
+    S_strict                           vs S_f32_mul_then_absorb_add          :  10707
+    S_strict                           vs S_drop_intermediate_narrowing      :  10671
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :  10734
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :  10733
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :  10771
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :     10
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :     57
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :     59
+
+--- C1 : out.(i) <- inp.(i)   (f16 -> f16 copy, no cast) ---
+  NOTE: NO NARROWING AT ALL: there is nothing for any policy to elide, so every model coincides by construction
+  pairwise model separation (inputs where the two differ):
+    S_strict                           vs S_fuse_mul_into_narrowing          :      0
+    S_strict                           vs S_absorb_all_into_final_narrowing  :      0
+    S_strict                           vs S_f32_mul_then_absorb_add          :      0
+    S_strict                           vs S_drop_intermediate_narrowing      :      0
+    S_fuse_mul_into_narrowing          vs S_absorb_all_into_final_narrowing  :      0
+    S_fuse_mul_into_narrowing          vs S_f32_mul_then_absorb_add          :      0
+    S_fuse_mul_into_narrowing          vs S_drop_intermediate_narrowing      :      0
+    S_absorb_all_into_final_narrowing  vs S_f32_mul_then_absorb_add          :      0
+    S_absorb_all_into_final_narrowing  vs S_drop_intermediate_narrowing      :      0
+    S_f32_mul_then_absorb_add          vs S_drop_intermediate_narrowing      :      0
+    *** S_f32_mul_then_absorb_add and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_absorb_all_into_final_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_absorb_all_into_final_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_fuse_mul_into_narrowing and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_drop_intermediate_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_f32_mul_then_absorb_add COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_absorb_all_into_final_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+    *** S_strict and S_fuse_mul_into_narrowing COINCIDE on the whole domain: a device matching one matches the other, and the pair discriminates nothing ***
+
+
+GENERATED SOURCE — GLSL, plain, one per shape
+
+--- A1 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  outb[i] = pack(float16_t(x));
+}
+
+--- A2 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = x * 1.1;
+  outb[i] = pack(float16_t(t1));
+}
+
+--- A3 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = x + 1000.0;
+  outb[i] = pack(float16_t(t1));
+}
+
+--- A4 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = x - 1000.0;
+  outb[i] = pack(float16_t(t1));
+}
+
+--- A5 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = x / 3.0;
+  outb[i] = pack(float16_t(t1));
+}
+
+--- A6 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = x * 1.1;
+  float t2 = t1 + 1000.0;
+  outb[i] = pack(float16_t(t2));
+}
+
+--- A7 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = x + 1000.0;
+  float t2 = t1 * 1.1;
+  outb[i] = pack(float16_t(t2));
+}
+
+--- A8 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = fma(x, 1.1, 1000.0);
+  outb[i] = pack(float16_t(t1));
+}
+
+--- A9 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = x * x;
+  float t2 = sqrt(t1);
+  outb[i] = pack(float16_t(t2));
+}
+
+--- A10 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = 0.0 - x;
+  outb[i] = pack(float16_t(t1));
+}
+
+--- A11 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = x * 1.1;
+  float t2 = floor(t1);
+  outb[i] = pack(float16_t(t2));
+}
+
+--- A12 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = x * 1.1;
+  float t2 = x * 0.9;
+  float t3 = (x > 0.0) ? t1 : t2;
+  outb[i] = pack(float16_t(t3));
+}
+
+--- A13 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = x * x;
+  outb[i] = pack(float16_t(t1));
+}
+
+--- A14 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = x * 1.1;
+  float t2 = t1 * 1.1;
+  outb[i] = pack(float16_t(t2));
+}
+
+--- A15 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = x / 3.0;
+  float t2 = x * 1.1;
+  float t3 = t2 + t1;
+  outb[i] = pack(float16_t(t3));
+}
+
+--- B1 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = x * 1.1;
+  float16_t t2 = float16_t(t1);
+  float t3 = float(t2);
+  float t4 = t3 + 1000.0;
+  outb[i] = pack(float16_t(t4));
+}
+
+--- B2 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = x * 1.1;
+  float16_t t2 = float16_t(t1);
+  float t3 = float(t2);
+  float t4 = t3 * 1.1;
+  outb[i] = pack(float16_t(t4));
+}
+
+--- B3 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = x + 1000.0;
+  float16_t t2 = float16_t(t1);
+  float t3 = float(t2);
+  float t4 = t3 * 1.1;
+  outb[i] = pack(float16_t(t4));
+}
+
+--- B4 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  float t1 = x * 1.1;
+  float16_t t2 = float16_t(t1);
+  float t3 = float(t2);
+  float t4 = t3 + 1000.0;
+  float16_t t5 = float16_t(t4);
+  float t6 = float(t5);
+  float t7 = t6 * 1.1;
+  outb[i] = pack(float16_t(t7));
+}
+
+--- C1 ---
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) volatile buffer Out { uint outb[]; };
+layout(std430, binding = 1) readonly buffer In { uint inb[]; };
+uint pack(float16_t r) {
+  return packFloat2x16(f16vec2(r, float16_t(0.0))) & 0xFFFFu;
+}
+void main() {
+  uint i = gl_GlobalInvocationID.x;
+  float x = float(unpackFloat2x16(inb[i]).x);
+  outb[i] = inb[i] & 0xFFFFu;
+}
+
+
+GENERATED SOURCE — OpenCL C, plain, one per shape
+
+--- A1 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  out[i] = as_ushort((half)(x));
+  }
+}
+
+--- A2 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = x * 1.1f;
+  out[i] = as_ushort((half)(t1));
+  }
+}
+
+--- A3 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = x + 1000.0f;
+  out[i] = as_ushort((half)(t1));
+  }
+}
+
+--- A4 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = x - 1000.0f;
+  out[i] = as_ushort((half)(t1));
+  }
+}
+
+--- A5 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = x / 3.0f;
+  out[i] = as_ushort((half)(t1));
+  }
+}
+
+--- A6 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = x * 1.1f;
+  float t2 = t1 + 1000.0f;
+  out[i] = as_ushort((half)(t2));
+  }
+}
+
+--- A7 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = x + 1000.0f;
+  float t2 = t1 * 1.1f;
+  out[i] = as_ushort((half)(t2));
+  }
+}
+
+--- A8 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = fma(x, 1.1f, 1000.0f);
+  out[i] = as_ushort((half)(t1));
+  }
+}
+
+--- A9 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = x * x;
+  float t2 = sqrt(t1);
+  out[i] = as_ushort((half)(t2));
+  }
+}
+
+--- A10 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = 0.0f - x;
+  out[i] = as_ushort((half)(t1));
+  }
+}
+
+--- A11 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = x * 1.1f;
+  float t2 = floor(t1);
+  out[i] = as_ushort((half)(t2));
+  }
+}
+
+--- A12 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = x * 1.1f;
+  float t2 = x * 0.9f;
+  float t3 = (x > 0.0f) ? t1 : t2;
+  out[i] = as_ushort((half)(t3));
+  }
+}
+
+--- A13 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = x * x;
+  out[i] = as_ushort((half)(t1));
+  }
+}
+
+--- A14 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = x * 1.1f;
+  float t2 = t1 * 1.1f;
+  out[i] = as_ushort((half)(t2));
+  }
+}
+
+--- A15 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = x / 3.0f;
+  float t2 = x * 1.1f;
+  float t3 = t2 + t1;
+  out[i] = as_ushort((half)(t3));
+  }
+}
+
+--- B1 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = x * 1.1f;
+  half t2 = (half)(t1);
+  float t3 = (float)t2;
+  float t4 = t3 + 1000.0f;
+  out[i] = as_ushort((half)(t4));
+  }
+}
+
+--- B2 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = x * 1.1f;
+  half t2 = (half)(t1);
+  float t3 = (float)t2;
+  float t4 = t3 * 1.1f;
+  out[i] = as_ushort((half)(t4));
+  }
+}
+
+--- B3 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = x + 1000.0f;
+  half t2 = (half)(t1);
+  float t3 = (float)t2;
+  float t4 = t3 * 1.1f;
+  out[i] = as_ushort((half)(t4));
+  }
+}
+
+--- B4 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  float t1 = x * 1.1f;
+  half t2 = (half)(t1);
+  float t3 = (float)t2;
+  float t4 = t3 + 1000.0f;
+  half t5 = (half)(t4);
+  float t6 = (float)t5;
+  float t7 = t6 * 1.1f;
+  out[i] = as_ushort((half)(t7));
+  }
+}
+
+--- C1 ---
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+/* named `midround` so slice 1's probe can compile it through its existing
+   run_kernel, which looks that entry point up by name.
+
+   `out` is VOLATILE, mirroring the GLSL side where the SSBO is declared
+   volatile. Without it the barrier variant is not a barrier: the f16 round
+   trip goes through `out[i]`, and a non-volatile store is forwardable, so the
+   compiler removes exactly the narrowing the control exists to preserve. That
+   was measured, not feared — shape B2's green control reported
+   S_drop_intermediate_narrowing until this qualifier was added. */
+__kernel void midround(
+    __global volatile ushort *out, __global const ushort *in, int n) {
+  __local volatile float s[256];
+  int i = get_global_id(0);
+  int l = get_local_id(0);
+  (void)s; (void)l;
+  if (i < n) {
+    float x = (float)as_half(in[i]);
+  out[i] = in[i];
+  }
+}
