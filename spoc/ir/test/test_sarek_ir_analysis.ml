@@ -1092,8 +1092,10 @@ let test_kernel_requirements () =
     = [Float64; Float16]) ;
   (* Every feature must be reachable from [all_features]; a new constructor that
      is not added there would silently never be required. *)
-  assert (List.length all_features = 3) ;
-  assert (List.map feature_name all_features = ["float64"; "float16"; "int64"]) ;
+  assert (List.length all_features = 4) ;
+  assert (
+    List.map feature_name all_features
+    = ["float64"; "float16"; "int64"; "cooperative-matrix"]) ;
   (* [Int64], added in #141 so the GLSL backend can gate
      `#extension GL_ARB_gpu_shader_int64` on the user's own int64 and not only
      on the software-f64 helpers that bit-cast a double. *)
@@ -1248,6 +1250,112 @@ let test_kernel_float64_intrinsics () =
 
 (** {1 Main} *)
 
+(* ------------------------------------------------------------------ *)
+(* Cooperative matrix — backlog-62 slice 3                             *)
+(* ------------------------------------------------------------------ *)
+
+let cm_shape = {Sarek_coopmat_types.m = 16; n = 16; k = 16}
+
+let cm_cfg =
+  {
+    Sarek_coopmat_types.cfg_shape = cm_shape;
+    cfg_a = Sarek_coopmat_types.Uint8;
+    cfg_b = Sarek_coopmat_types.Uint8;
+    cfg_c = Sarek_coopmat_types.Sint32;
+    cfg_result = Sarek_coopmat_types.Sint32;
+    cfg_saturating = false;
+    cfg_scope = Sarek_coopmat_types.Subgroup;
+  }
+
+let cm_frag_a, cm_frag_b, cm_frag_c, cm_frag_d =
+  Sarek_coopmat_types.fragments_of_config cm_cfg
+
+let test_coopmat_detection () =
+  let u8_param =
+    {var_name = "a"; var_id = 0; var_type = TVec TUint8; var_mutable = false}
+  in
+  let muladd =
+    SCoopmat (CM_muladd {dst = "d"; a = "a"; b = "b"; c = "c"; cfg = cm_cfg})
+  in
+  (* An SCoopmat statement alone is enough. Nothing about it is an expression or
+     an element type, so before the [fs] hook existed no folder could see it. *)
+  assert (kernel_uses Coopmat (empty_kernel muladd)) ;
+  assert (kernel_has_coopmat_op (empty_kernel muladd)) ;
+  (* A TUint8 buffer alone reports the FEATURE but not an OPERATION. That
+     distinction is what lets the GLSL backend emit the int8 extension without
+     the cooperative-matrix one, and it is asserted in BOTH directions because
+     collapsing the two is the easy mistake. *)
+  let k_u8 =
+    feature_kern
+      [DParam (u8_param, Some {arr_elttype = TUint8; arr_memspace = Global})]
+      SEmpty
+  in
+  assert (kernel_uses Coopmat k_u8) ;
+  assert (not (kernel_has_coopmat_op k_u8)) ;
+  (* And an ordinary kernel trips neither. *)
+  assert (not (kernel_uses Coopmat (empty_kernel SEmpty))) ;
+  assert (not (kernel_has_coopmat_op (empty_kernel SEmpty))) ;
+  (* Coopmat must not be triggered by, nor trigger, the numeric widths. *)
+  assert (not (kernel_uses Float16 (empty_kernel muladd))) ;
+  assert (not (kernel_uses Int64 (empty_kernel muladd))) ;
+  assert (not (kernel_uses Float64 k_u8)) ;
+  print_endline "  coopmat detection: OK"
+
+let test_coopmat_configs () =
+  (* Only CM_muladd carries a configuration. A kernel that loads and stores a
+     fragment without multiplying needs no ADVERTISED configuration at all, and
+     reporting one would refuse it on a device that can run it. *)
+  let idx = EConst (CInt32 0l) in
+  let load_store =
+    SSeq
+      [
+        SCoopmat (CM_decl {name = "f"; frag = cm_frag_a});
+        SCoopmat
+          (CM_load
+             {dst = "f"; frag = cm_frag_a; src = "a"; index = idx; stride = idx});
+        SCoopmat
+          (CM_store
+             {src = "f"; frag = cm_frag_a; dst = "b"; index = idx; stride = idx});
+      ]
+  in
+  assert (kernel_coopmat_configs (empty_kernel load_store) = []) ;
+  assert (kernel_has_coopmat_op (empty_kernel load_store)) ;
+  (* One multiply-add, one configuration. *)
+  let one =
+    SCoopmat (CM_muladd {dst = "d"; a = "a"; b = "b"; c = "c"; cfg = cm_cfg})
+  in
+  assert (kernel_coopmat_configs (empty_kernel one) = [cm_cfg]) ;
+  (* Two multiply-adds with the SAME configuration deduplicate; the launch gate
+     asks the device once, not once per statement. *)
+  assert (kernel_coopmat_configs (empty_kernel (SSeq [one; one])) = [cm_cfg]) ;
+  (* Two DIFFERENT configurations are both reported — including two that differ
+     only in [cfg_saturating], which compute different functions and are two
+     distinct advertised configurations on the local device. *)
+  let sat_cfg = {cm_cfg with Sarek_coopmat_types.cfg_saturating = true} in
+  let two =
+    SSeq
+      [
+        one;
+        SCoopmat
+          (CM_muladd {dst = "d"; a = "a"; b = "b"; c = "c"; cfg = sat_cfg});
+      ]
+  in
+  assert (List.length (kernel_coopmat_configs (empty_kernel two)) = 2) ;
+  (* Nested inside control flow, which is where a hand-written walk would have
+     missed it. *)
+  let nested = SIf (EConst (CBool true), SBlock (SSeq [one]), None) in
+  assert (kernel_coopmat_configs (empty_kernel nested) = [cm_cfg]) ;
+  (* And inside a HELPER function, which [kernel_fold] also visits. *)
+  let hf =
+    {hf_name = "h"; hf_params = []; hf_ret_type = TUnit; hf_body = one}
+  in
+  let k = empty_kernel SEmpty in
+  assert (kernel_coopmat_configs {k with kern_funcs = [hf]} = [cm_cfg]) ;
+  ignore cm_frag_b ;
+  ignore cm_frag_c ;
+  ignore cm_frag_d ;
+  print_endline "  coopmat configs: OK"
+
 let () =
   print_endline "Sarek_ir_analysis tests:" ;
   test_elttype_float64 () ;
@@ -1302,4 +1410,6 @@ let () =
   test_kernel_uses_nonfinite_float64 () ;
   test_kernel_uses_intrinsic () ;
   test_kernel_float64_intrinsics () ;
+  test_coopmat_detection () ;
+  test_coopmat_configs () ;
   print_endline "All Sarek_ir_analysis tests passed!"

@@ -49,6 +49,20 @@ let rec cuda_type_of_elttype = function
   | TFloat16 -> "__half"
   | TFloat32 -> "float"
   | TFloat64 -> "double"
+  | TUint8 ->
+      (* Not "CUDA has no 8-bit integer" — it has several. The refusal is that
+         [TUint8] carries a promise this backend cannot keep: it exists only as
+         the element type of a cooperative-matrix operand buffer, and mapping it
+         to `unsigned char` here would let a kernel written for the tensor-core
+         path compile into scalar CUDA that silently computes something else.
+         Mapping it becomes correct the day CUDA grows a wmma lowering, not
+         before. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "uint8"
+           "CUDA: uint8 is a cooperative-matrix operand element type, emitted \
+            only by the Vulkan backend, and CUDA has no cooperative-matrix \
+            path")
   | TBool -> "int"
   | TUnit -> "void"
   | TRecord (name, _) -> mangle_name name
@@ -516,6 +530,18 @@ let rec gen_stmt buf indent = function
       gen_stmt buf (indent ^ "  ") body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
+  | SCoopmat _ ->
+      (* CUDA does have tensor cores, but reaching them means the wmma
+         fragment API, whose fragment types, ldmatrix layouts and per-shape
+         constraints are a lowering nobody has written or measured here. An
+         approximation emitted from this arm would be a scalar loop wearing a
+         tensor-core name, so the statement is refused outright. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "cooperative matrix"
+           "CUDA: the CUDA backend has no cooperative-matrix path; \
+            cooperative-matrix statements are emitted only by the Vulkan \
+            backend")
 
 (** Helper: Generate record field assignment *)
 and gen_record_assign buf indent lv fields =

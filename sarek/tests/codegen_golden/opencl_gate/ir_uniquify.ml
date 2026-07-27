@@ -146,6 +146,18 @@ let rec ustmt (env : env) (s : stmt) : stmt =
       SLetMut (v', x, ustmt env' b)
   | SPragma (h, b) -> SPragma (h, r b)
   | SBlock b -> SBlock (r b)
+  | SCoopmat op ->
+      (* Mirrors [Sarek_ir_codegen.rename_shadowing_locals]: fragment names are
+         not [var]s, are never in [env], and must not be looked up there — only
+         the index and stride expressions can mention a renamed variable. *)
+      SCoopmat
+        (match op with
+        | CM_decl _ -> op
+        | CM_load req ->
+            CM_load {req with index = e req.index; stride = e req.stride}
+        | CM_store req ->
+            CM_store {req with index = e req.index; stride = e req.stride}
+        | CM_muladd _ -> op)
 
 and ucase_stmt env p b =
   match p with

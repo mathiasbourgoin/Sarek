@@ -44,6 +44,19 @@ open Sarek_ir_types
 type 'a folder = {
   fe : 'a -> expr -> 'a;
   ft : 'a -> elttype -> 'a;
+  fs : 'a -> stmt -> 'a;
+      (** Combine the accumulator with a STATEMENT node, before the traversal
+          descends into it. The counterpart of {!fe} for the imperative half,
+          added in backlog-62 slice 3 because [SCoopmat] is the first IR node
+          whose feature content is neither an expression nor an element type: a
+          cooperative-matrix multiply-add carries a
+          {!Sarek_coopmat_types.config}, and a config is what the device gate is
+          keyed on.
+
+          Families that do not inspect statements leave this at the identity,
+          which reproduces the pre-slice-3 behaviour exactly — the hook fires at
+          every statement, so a non-identity value here is a deliberate
+          statement-level detector and never an accident of traversal order. *)
   fnative : 'a -> 'a;
   visit_lvalue : bool;
 }
@@ -76,7 +89,9 @@ let rec lvalue_fold f acc = function
   | LArrayElemExpr (base, idx) -> expr_fold f (expr_fold f acc base) idx
   | LRecordField (lv, _) -> lvalue_fold f acc lv
 
-let rec stmt_fold f acc = function
+let rec stmt_fold f acc stmt =
+  let acc = f.fs acc stmt in
+  match stmt with
   | SAssign (lv, e) ->
       let acc = if f.visit_lvalue then lvalue_fold f acc lv else acc in
       expr_fold f acc e
@@ -101,6 +116,15 @@ let rec stmt_fold f acc = function
       stmt_fold f (expr_fold f acc e) body
   | SPragma (_, body) | SBlock body -> stmt_fold f acc body
   | SNative _ -> f.fnative acc
+  | SCoopmat op -> (
+      (* The fragment's own component type is NOT routed through [ft]. [ft] is
+         the elttype hook, and a fragment is not an elttype — that is the whole
+         reason [SCoopmat] exists rather than a [TCoopmat] constructor. A family
+         that wants to see fragments uses [fs]. *)
+      match op with
+      | CM_decl _ | CM_muladd _ -> acc
+      | CM_load {index; stride; _} | CM_store {index; stride; _} ->
+          expr_fold f (expr_fold f acc index) stride)
 
 let decl_fold f acc = function
   | DParam (v, arr_info) ->
@@ -143,11 +167,12 @@ let kernel_fold f acc k =
     node (and may inspect embedded types); [type_leaf] fires per binder/decl
     type; [native] is the [SNative] verdict; [visit_lvalue] controls whether
     [SAssign] descends into its l-value. *)
-let exists_folder ~leaf ?(type_leaf = fun _ -> false) ~native
-    ?(visit_lvalue = true) () =
+let exists_folder ~leaf ?(type_leaf = fun _ -> false)
+    ?(stmt_leaf = fun _ -> false) ~native ?(visit_lvalue = true) () =
   {
     fe = (fun acc e -> acc || leaf e);
     ft = (fun acc t -> acc || type_leaf t);
+    fs = (fun acc s -> acc || stmt_leaf s);
     fnative = (if native then fun _ -> true else fun acc -> acc);
     visit_lvalue;
   }
@@ -188,14 +213,15 @@ let exists_folder ~leaf ?(type_leaf = fun _ -> false) ~native
     [Kernel.requirements] capability field reduces to, and it lives in the right
     layer already ([spoc/ir], no backend dependencies). *)
 
-type feature = Float64 | Float16 | Int64
+type feature = Float64 | Float16 | Int64 | Coopmat
 
-let all_features = [Float64; Float16; Int64]
+let all_features = [Float64; Float16; Int64; Coopmat]
 
 let feature_name = function
   | Float64 -> "float64"
   | Float16 -> "float16"
   | Int64 -> "int64"
+  | Coopmat -> "cooperative-matrix"
 
 (** Does element type [t] mention the width [f], transitively through records,
     variants, arrays and vectors? *)
@@ -207,6 +233,14 @@ let rec elttype_uses (f : feature) = function
   | TVariant (_, constrs) ->
       List.exists (fun (_, args) -> List.exists (elttype_uses f) args) constrs
   | TArray (elt, _) | TVec elt -> elttype_uses f elt
+  (* [TUint8] counts as Coopmat, and this is load-bearing rather than tidy. It
+     is the element type of a cooperative-matrix OPERAND BUFFER and exists for
+     nothing else, so a kernel that declares one already needs shaderInt8 and
+     storageBuffer8BitAccess on the device and the int8 extension in the shader
+     — whether or not it also reaches a multiply-add. Reporting it as
+     feature-free would let a kernel acquire the 8-bit requirement without
+     passing the gate that checks for it. *)
+  | TUint8 -> f = Coopmat
   | TInt32 | TFloat32 | TBool | TUnit -> false
 
 (** Is constant [c] a literal of width [f]? [Float64] and [Int64] each have one
@@ -224,10 +258,22 @@ let feature_leaf f = function
   | ECast (ty, _) | EArrayCreate (ty, _, _) -> elttype_uses f ty
   | _ -> false
 
+(** A statement mentions [f] when it is an [SCoopmat] and [f] is [Coopmat].
+
+    Written as an explicit match on the feature rather than
+    [f = Coopmat && is_coopmat s] so that a future statement-level feature (a
+    barrier class, a printf) is a compile error here rather than a silent false.
+*)
+let feature_stmt_leaf f s =
+  match (f, s) with
+  | Coopmat, SCoopmat _ -> true
+  | (Coopmat | Float64 | Float16 | Int64), _ -> false
+
 let folder_of f =
   exists_folder
     ~leaf:(feature_leaf f)
     ~type_leaf:(elttype_uses f)
+    ~stmt_leaf:(feature_stmt_leaf f)
     ~native:false
     ~visit_lvalue:false
     ()
@@ -240,10 +286,13 @@ let float16_folder = folder_of Float16
 
 let int64_folder = folder_of Int64
 
+let coopmat_folder = folder_of Coopmat
+
 let folder = function
   | Float64 -> float64_folder
   | Float16 -> float16_folder
   | Int64 -> int64_folder
+  | Coopmat -> coopmat_folder
 
 (** Does expression [e] use width [f]? *)
 let expr_uses f e = expr_fold (folder f) false e
@@ -437,6 +486,7 @@ let kernel_float64_intrinsics k =
           | EIntrinsic (path, name, _) when path_is_float64 path -> name :: acc
           | _ -> acc);
       ft = (fun acc _ -> acc);
+      fs = (fun acc _ -> acc);
       fnative = (fun acc -> acc);
       visit_lvalue = true;
     }
@@ -483,3 +533,58 @@ let kernel_uses_intrinsic name k =
     | _ -> false
   in
   kernel_fold (exists_folder ~leaf ~native:true ()) false k
+
+(** {1 Cooperative-matrix extraction — backlog-62 slice 3}
+
+    {!kernel_uses} [Coopmat] answers a yes/no question, and a yes/no answer is
+    not enough for the launch gate. [Device_optional] capabilities are decided
+    per CONFIGURATION: the RX 7900 XTX advertises fourteen and the same device
+    that permits [u8 x u8 + s32 -> s32] refuses [f16 x f16 -> f16 saturating].
+    So the gate needs the configurations a kernel actually asks for, and this is
+    where they are collected — in [spoc/ir], with no backend dependency, on the
+    same traversal skeleton as every other detector rather than a bespoke walk.
+*)
+
+(** Every cooperative-matrix operation in the kernel, in traversal order.
+
+    Uses the {!folder.fs} hook, which is why that hook exists: a coopmat
+    operation is neither an expression nor an element type, so no pre-slice-3
+    hook could see one. *)
+let kernel_coopmat_ops k =
+  let folder =
+    {
+      fe = (fun acc _ -> acc);
+      ft = (fun acc _ -> acc);
+      fs = (fun acc -> function SCoopmat op -> op :: acc | _ -> acc);
+      fnative = (fun acc -> acc);
+      visit_lvalue = false;
+    }
+  in
+  List.rev (kernel_fold folder [] k)
+
+(** Whether the kernel contains a cooperative-matrix OPERATION.
+
+    Strictly stronger than [kernel_uses Coopmat], which is also true for a
+    kernel that merely declares a [TUint8] buffer. The distinction is what lets
+    the GLSL backend emit the 8-bit extension without the cooperative-matrix
+    one: a kernel that never reaches a multiply-add must not carry a shader
+    requirement the device gate was never asked about. *)
+let kernel_has_coopmat_op k = kernel_coopmat_ops k <> []
+
+(** The distinct configurations a kernel's multiply-adds require.
+
+    Only {!Sarek_ir_types.CM_muladd} carries a configuration, and deliberately:
+    a load or a store constrains the fragment's component type and shape but
+    says nothing about which multiply-add the device must provide, and it is the
+    multiply-add that [VK_KHR_cooperative_matrix] enumerates. A kernel that
+    loads and stores a fragment without ever multiplying needs no advertised
+    configuration at all, and reporting one would refuse it on a device that can
+    run it perfectly well. *)
+let kernel_coopmat_configs k =
+  List.sort_uniq
+    compare
+    (List.filter_map
+       (function
+         | CM_muladd {cfg; _} -> Some cfg
+         | CM_decl _ | CM_load _ | CM_store _ -> None)
+       (kernel_coopmat_ops k))

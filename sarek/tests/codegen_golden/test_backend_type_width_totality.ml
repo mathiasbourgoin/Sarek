@@ -68,7 +68,8 @@ open Sarek_codegen
 
 let next_elt : elttype -> elttype option = function
   | TInt32 -> Some TInt64
-  | TInt64 -> Some TFloat16
+  | TInt64 -> Some TUint8
+  | TUint8 -> Some TFloat16
   | TFloat16 -> Some TFloat32
   | TFloat32 -> Some TFloat64
   | TFloat64 -> Some TBool
@@ -93,6 +94,7 @@ let name_of_elt = function
   | TInt32 -> "TInt32"
   | TInt64 -> "TInt64"
   | TFloat16 -> "TFloat16"
+  | TUint8 -> "TUint8"
   | TFloat32 -> "TFloat32"
   | TFloat64 -> "TFloat64"
   | TBool -> "TBool"
@@ -160,6 +162,19 @@ let metal_width = function
    i.e. the same 4-byte slot the host writes. *)
 let glsl_width = function
   | "int" -> Some (Bytes 4)
+  (* backlog-62 slice 3, and MEASURED like the `bool` row above rather than
+     assumed from the name. glslc --target-env=vulkan1.3 on a u8 cooperative-
+     matrix shader whose operands are `uint8_t a[]` in an std430 storage buffer,
+     then spirv-dis:
+
+       %uchar = OpTypeInt 8 0
+       OpDecorate %_runtimearr_uchar ArrayStride 1
+
+     i.e. the 1-byte slot the host writes, and NOT padded to 4 the way `bool`
+     is. That distinction is the whole reason this validator exists: an 8-bit
+     element silently occupying 4 bytes on the device would make every
+     cooperative-matrix operand load read one value in four. *)
+  | "uint8_t" -> Some (Bytes 1)
   | "int64_t" -> Some (Bytes 8)
   | "float16_t" -> Some (Bytes 2)
   | "float" -> Some (Bytes 4)
@@ -274,7 +289,7 @@ let run_mapper b t =
 let test_enumeration_is_complete () =
   Alcotest.(check int)
     "scalar elttype constructors swept"
-    7
+    8
     (List.length all_scalar_elts) ;
   Alcotest.(check int) "backends swept" 6 (List.length backends) ;
   (* A count alone does not prove the chain was walked correctly — see the

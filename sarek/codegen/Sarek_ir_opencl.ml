@@ -101,6 +101,19 @@ let rec opencl_type_of_elttype = function
         (Codegen_error.unsupported_construct
            "f16"
            Sarek_ir_codegen.opencl_float16_refusal)
+  | TUint8 ->
+      (* OpenCL C spells an 8-bit unsigned integer `uchar` perfectly well; that
+         is not what is being refused. [TUint8] reaches the IR only as the
+         element type of a cooperative-matrix operand buffer, and OpenCL has no
+         cooperative-matrix path to load it into. Mapping the type would let the
+         buffer through while the matching [SCoopmat] statement is refused, i.e.
+         it would move the diagnostic away from the construct that caused it. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "uint8"
+           "OpenCL: uint8 is a cooperative-matrix operand element type, \
+            emitted only by the Vulkan backend, and OpenCL has no \
+            cooperative-matrix path")
   | TFloat32 -> "float"
   | TFloat64 -> "double"
   | TBool -> "int"
@@ -558,6 +571,17 @@ let rec gen_stmt buf indent = function
       gen_stmt buf (indent ^ "  ") body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
+  | SCoopmat _ ->
+      (* Reached only if a kernel slipped past [reject_coopmat_kernel] — a
+         helper body compiled outside [generate], say. The arm is kept a hard
+         refusal rather than a no-op so that the failure mode is a diagnostic
+         and not a kernel that quietly omits its matrix multiply. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "cooperative matrix"
+           "OpenCL: the OpenCL backend has no cooperative-matrix path; \
+            cooperative-matrix statements are emitted only by the Vulkan \
+            backend")
 
 (** Generate a pattern match case (extracted helper) *)
 and gen_match_case buf indent scrutinee pattern body =
@@ -774,6 +798,25 @@ let reject_float16_kernel (k : kernel) : unit =
          "f16"
          Sarek_ir_codegen.opencl_float16_refusal)
 
+(* The cooperative-matrix counterpart, at the same whole-kernel choke point and
+   for the same reason the f16 gate is there: a refusal that only fires from
+   inside the statement walk names whichever node happened to be reached first,
+   while the thing the user has to change is a property of the KERNEL. Note this
+   also catches a kernel that merely declares a [TUint8] buffer without ever
+   reaching a multiply-add, which the per-statement arm cannot see.
+
+   Deliberately not {!Sarek_ir_codegen.reject_feature}: that composer hardcodes
+   "not yet supported (#57 slice 2)", and citing the f16 slice for a
+   cooperative-matrix refusal would send a reader to the wrong history. *)
+let reject_coopmat_kernel (k : kernel) : unit =
+  if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k then
+    Codegen_error.raise_error
+      (Codegen_error.unsupported_construct
+         "cooperative matrix"
+         "OpenCL: the OpenCL backend has no cooperative-matrix path; \
+          cooperative matrices and their uint8 operand buffers are emitted \
+          only by the Vulkan backend (backlog-62)")
+
 (** {1 Recursion Resolution}
 
     OpenCL C forbids recursion outright (OpenCL C 1.2 §6.9.e, 3.0 §6.9.5: "the
@@ -840,6 +883,18 @@ let rec zero_expr (t : elttype) : expr =
            "recursion"
            "OpenCL: a recursive helper returning an array, vector or f16 \
             cannot have its residual call elided; rewrite it without recursion")
+  | TUint8 ->
+      (* A zero of this type would be spellable — but a helper cannot return a
+         cooperative-matrix operand element in the first place, since nothing
+         but [CM_load]/[CM_store] ever touches one. Reaching here means the type
+         escaped its intended scope, which is worth a diagnostic rather than a
+         plausible-looking literal. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "uint8"
+           "OpenCL: uint8 is a cooperative-matrix operand element type, \
+            emitted only by the Vulkan backend, and cannot be the return type \
+            of a helper")
 
 (** Inline budget declared by [hf], parsed from an [SPragma] at its body root.
 
@@ -920,6 +975,17 @@ let rec map_stmt (f : expr -> expr) (s : stmt) : stmt =
   | SLetMut (v, x, b) -> SLetMut (v, e x, r b)
   | SPragma (h, b) -> SPragma (h, r b)
   | SBlock b -> SBlock (r b)
+  | SCoopmat op ->
+      (* This walk is used both to SCAN for helper calls and to REWRITE residual
+         ones, so it must descend into every expression a statement holds — the
+         index and the stride here. Fragment and buffer names are not
+         expressions and stay as they are; substituting one would replace a
+         named buffer with a term [CM_load] has no field to hold. *)
+      SCoopmat
+        (match op with
+        | CM_decl _ | CM_muladd _ -> op
+        | CM_load r -> CM_load {r with index = e r.index; stride = e r.stride}
+        | CM_store r -> CM_store {r with index = e r.index; stride = e r.stride})
 
 (** Names of helper functions called (directly) from [s]. *)
 let called_helpers (helpers : string list) (s : stmt) : string list =
@@ -1049,6 +1115,7 @@ let resolve_recursive_helpers (k : kernel) : kernel =
 (** Generate complete OpenCL source for a kernel *)
 let generate (k : kernel) : string =
   reject_float16_kernel k ;
+  reject_coopmat_kernel k ;
   let k = resolve_recursive_helpers k in
   let buf = Buffer.create large_buffer_size in
 
@@ -1092,6 +1159,7 @@ let gen_variant_def buf v =
 let generate_with_types ~(types : (string * (string * elttype) list) list)
     (k : kernel) : string =
   reject_float16_kernel k ;
+  reject_coopmat_kernel k ;
   let k = resolve_recursive_helpers k in
   (* Set current_variants for SMatch binding extraction *)
   current_variants := k.kern_variants ;

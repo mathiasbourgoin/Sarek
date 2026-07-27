@@ -849,6 +849,15 @@ let rec fold_stmt_exprs f acc s =
   | SLet (_, e, body) | SLetMut (_, e, body) ->
       fold_stmt_exprs f (fold_expr f acc e) body
   | SPragma (_, body) | SBlock body -> fold_stmt_exprs f acc body
+  | SCoopmat op -> (
+      (* The index and the stride are ordinary expressions and can perfectly
+         well hold an f64 intrinsic call, which is what this fold is looking
+         for. The fragment and buffer names are not expressions and have no
+         sub-terms to visit. *)
+      match op with
+      | CM_decl _ | CM_muladd _ -> acc
+      | CM_load {index; stride; _} | CM_store {index; stride; _} ->
+          fold_expr f (fold_expr f acc index) stride)
 
 let is_softmath_helper_name name =
   let p = "__sarek_f64_" in

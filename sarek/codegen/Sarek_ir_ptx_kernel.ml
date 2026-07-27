@@ -34,6 +34,18 @@ let soa_leaves_of_param param_name (elt : elttype) : (string * elttype) list =
                     unsupported (#57 slice 2)"
                    param_name
                    fname)
+          | TUint8 ->
+              (* Not a width limitation: a uint8 field is a cooperative-matrix
+                 operand element, and the statements that give it meaning are
+                 refused by this backend, so splitting it into its own SoA leaf
+                 would manufacture a buffer nothing can read. *)
+              fail
+                (Printf.sprintf
+                   "PTX codegen: SoA parameter '%s': uint8 field '%s' is a \
+                    cooperative-matrix operand element type, emitted only by \
+                    the Vulkan backend"
+                   param_name
+                   fname)
           | TRecord _ ->
               fail
                 (Printf.sprintf
@@ -227,6 +239,18 @@ let emit_params buf alloc (env : env) ~(soa_params : string list)
                     the PTX backend does not support (#57 slice 2 — needs a \
                     %%h register class)"
                    v.var_name)
+          | TUint8 ->
+              (* A scalar uint8 parameter is not something the surface language
+                 can build; the type exists only as a cooperative-matrix operand
+                 buffer element, so seeing one here means the kernel targeted
+                 the wrong backend rather than that PTX is missing a width. *)
+              fail
+                (Printf.sprintf
+                   "PTX codegen: kernel parameter '%s' has type uint8, a \
+                    cooperative-matrix operand element type emitted only by \
+                    the Vulkan backend; the PTX backend has no \
+                    cooperative-matrix path"
+                   v.var_name)
           | TRecord (tname, _) | TVariant (tname, _) ->
               (* C-17 / FR-030: by-value aggregate params have no host
                  marshalling; a TVec of the same type IS accepted (EC-11). *)
@@ -378,6 +402,18 @@ let reject_float16_kernel (k : kernel) : unit =
   if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Float16 k then
     Sarek_ir_ptx_types.unsupported_elttype TFloat16 "kernel-level float16 usage"
 
+(* The cooperative-matrix gate, sharing the f16 gate's placement and its reason
+   for existing: a per-node refusal names whichever node the emitter happened to
+   reach, and a [TUint8] operand buffer that is only ever stored to reaches
+   none. It also covers helper bodies, which [emit_stmt] visits through a
+   different entry. *)
+let reject_coopmat_kernel (k : kernel) : unit =
+  if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k then
+    Sarek_ir_ptx_types.unsupported
+      "kernel-level cooperative-matrix usage: cooperative matrices and their \
+       uint8 operand buffers are emitted only by the Vulkan backend \
+       (backlog-62)"
+
 (** Generate PTX for a single kernel. Three-phase: (1) emit body to count
     registers, (2) build header with correct register counts, (3) concatenate.
     @param sm_target Override the default [sm_86] target for older hardware.
@@ -389,6 +425,7 @@ let reject_float16_kernel (k : kernel) : unit =
       to before. *)
 let generate ?(sm_target = "sm_86") ?(soa_params = []) (k : kernel) : string =
   reject_float16_kernel k ;
+  reject_coopmat_kernel k ;
   let alloc = make_alloc () in
   List.iter
     (fun hf ->

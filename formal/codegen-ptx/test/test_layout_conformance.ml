@@ -63,8 +63,13 @@ let rec to_lfield (t : elttype) : Model.lfield =
   (* TFloat16 is a 2-byte leaf; the extracted layout model only models L32/L64, and
      f16 aggregate fields are rejected by Sarek_ir_layout.flatten_field anyway
      (#57 slice 1), so f16 is outside the conformance domain. It is likewise
-     absent from [scalar_universe] above, so no generated case reaches here. *)
-  | TFloat16 | TVariant _ | TArray _ | TVec _ | TUnit ->
+     absent from [scalar_universe] above, so no generated case reaches here.
+
+     TUint8 is outside the domain for a different reason: it is a
+     cooperative-matrix operand element type, and the PTX backend this model
+     mirrors refuses it outright, so there is no PTX layout for it to conform
+     to. *)
+  | TFloat16 | TUint8 | TVariant _ | TArray _ | TVec _ | TUnit ->
       invalid_arg "to_lfield: outside the conformance domain"
 
 and to_lfields (ts : elttype list) : Model.lfields =
@@ -77,6 +82,7 @@ let rec pp_elttype = function
   | TInt32 -> "i32"
   | TInt64 -> "i64"
   | TFloat16 -> "f16"
+  | TUint8 -> "u8"
   | TFloat32 -> "f32"
   | TFloat64 -> "f64"
   | TBool -> "bool"

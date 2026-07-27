@@ -1241,6 +1241,13 @@ and emit_cast buf alloc r_src dst_ty : string =
          "cvt.rn.f32.s32" integer path and produce garbage. f16 registers must
          not exist until those guards are made class-aware. *)
       unsupported_elttype TFloat16 "ECast to float16"
+  | TUint8 ->
+      (* Unreachable through any front end — no cast to or from a
+         cooperative-matrix operand element type is producible from the surface
+         syntax, by design. Kept a refusal rather than a truncating u32 path so
+         that if some rewrite ever synthesizes one, it is a diagnostic instead
+         of a silent narrowing. *)
+      unsupported_coopmat_elttype "ECast to uint8"
   | TFloat32 ->
       if is_f32 r_src then r_src
       else

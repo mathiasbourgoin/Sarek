@@ -244,6 +244,7 @@ let interp_env () =
     arrays = Hashtbl.create 4;
     shared = Hashtbl.create 4;
     funcs = Hashtbl.create 4;
+    coopmats = Hashtbl.create 4;
   }
 
 let interp_state () =

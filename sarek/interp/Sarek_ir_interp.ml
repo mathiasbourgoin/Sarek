@@ -55,6 +55,7 @@ type env = Sarek_ir_interp_value.env = {
   arrays : (string, value array) Hashtbl.t;
   shared : (string, value array) Hashtbl.t;
   funcs : (string, Sarek_ir_types.helper_func) Hashtbl.t;
+  coopmats : (string, value array) Hashtbl.t;
 }
 
 let create_env = Sarek_ir_interp_value.create_env

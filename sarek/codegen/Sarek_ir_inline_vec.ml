@@ -172,6 +172,37 @@ let rec subst_stmt ~rename_binders subst s =
   | SLetMut (v, e, b) -> SLetMut (sb v, se e, ss b)
   | SPragma (h, b) -> SPragma (h, ss b)
   | SBlock b -> SBlock (ss b)
+  | SCoopmat op ->
+      (* [src] and [dst] here name a BUFFER, in the same namespace as
+         [EArrayRead]'s string, so they take [sub] exactly as that case does —
+         a coopmat load from a helper's vector parameter has to be redirected to
+         the caller's buffer like any other access, and an alpha-renamed local
+         has to follow its binder.
+
+         The fragment names are the ones left alone: they live in their own
+         namespace, [subst] never contains one, and passing them through [sub]
+         would let a fragment that happens to share a name with a substituted
+         variable be silently redirected. *)
+      SCoopmat
+        (match op with
+        | CM_decl _ -> op
+        | CM_load r ->
+            CM_load
+              {
+                r with
+                src = sub subst r.src;
+                index = se r.index;
+                stride = se r.stride;
+              }
+        | CM_store r ->
+            CM_store
+              {
+                r with
+                dst = sub subst r.dst;
+                index = se r.index;
+                stride = se r.stride;
+              }
+        | CM_muladd _ -> op)
 
 (* ------------------------------------------------------------------ *)
 (* Binder collection (for alpha-renaming)                              *)
@@ -207,6 +238,13 @@ let collect_binders s =
           cases
     | SAssign _ | SReturn _ | SExpr _ | SBarrier | SWarpBarrier | SMemFence
     | SEmpty | SNative _ ->
+        ()
+    | SCoopmat _ ->
+        (* A [CM_decl] introduces a FRAGMENT name, not a local variable, and
+           this list exists to find names that could capture a substituted-in
+           buffer reference. Fragments are in a namespace of their own where no
+           such collision is expressible, so contributing one here would only
+           trigger spurious alpha-renaming of unrelated locals. *)
         ()
   in
   go s ;
@@ -247,7 +285,9 @@ let rec rewrite_returns ctx sink s =
       assert_no_return ctx s ;
       s
   | ( SAssign _ | SExpr _ | SBarrier | SWarpBarrier | SMemFence | SEmpty
-    | SNative _ ) as s ->
+    | SNative _ | SCoopmat _ ) as s ->
+      (* An [SCoopmat] is not a return and holds no statement to descend into,
+         so it passes through untouched like the other effect-only forms. *)
       s
 
 (** Verify [s] contains no [SReturn] anywhere (used for non-tail sub-statements
@@ -268,7 +308,9 @@ and assert_no_return ctx s =
     | SMatch (_, cases) -> List.iter (fun (_, b) -> chk b) cases
     | SLet (_, _, b) | SLetMut (_, _, b) -> chk b
     | SAssign _ | SExpr _ | SBarrier | SWarpBarrier | SMemFence | SEmpty
-    | SNative _ ->
+    | SNative _ | SCoopmat _ ->
+        (* No [SReturn] can hide inside an [SCoopmat]: it carries expressions
+           and names, never a nested statement. *)
         ()
   in
   chk s
@@ -284,13 +326,18 @@ let default_expr ctx = function
   | TFloat64 -> EConst (CFloat64 0.0)
   | TBool -> EConst (CBool false)
   | TUnit -> EConst CUnit
-  | (TFloat16 | TRecord _ | TVariant _ | TArray _ | TVec _) as t ->
+  | (TFloat16 | TUint8 | TRecord _ | TVariant _ | TArray _ | TVec _) as t ->
       (* TFloat16 has no default initializer here because f16 has no IR
          constant (no literal, by design — see Sarek_ir_types.elttype): there is
          no [CFloat16 0.0] to return. An f16-returning helper would need an
          [ECast (TFloat16, EConst (CFloat32 0.0))] temporary; that is only
          reachable once f16 helper inlining is actually exercised, so reject
-         with the existing diagnostic rather than guess. *)
+         with the existing diagnostic rather than guess.
+
+         TUint8 joins it for a stronger reason: a cooperative-matrix operand
+         element cannot be a helper's return type at all — no expression
+         produces or consumes one — so this arm is a shape the front end cannot
+         build, and inventing a zero for it would only hide that. *)
       fail
         ctx
         "recursion+vector helper"
@@ -302,6 +349,7 @@ let default_expr ctx = function
            | TVariant (n, _) -> "variant " ^ n
            | TArray _ -> "an array"
            | TFloat16 -> "float16"
+           | TUint8 -> "uint8 (a Vulkan cooperative-matrix operand element)"
            | _ -> "a vector"))
 
 (* ------------------------------------------------------------------ *)
@@ -529,6 +577,24 @@ and inline_stmt ctx s : stmt =
   | SBlock b -> SBlock (inline_stmt ctx b)
   | SPragma (hints, b) -> SPragma (hints, inline_stmt ctx b)
   | (SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _) as s -> s
+  | SCoopmat op ->
+      (* The index and the stride are ordinary expressions and may contain a
+         call to a vector-parameter helper, so they get the same hoist-then-
+         rebuild treatment as every other expression-carrying statement. The
+         fragment and buffer names hold no calls to hoist. *)
+      let h, op' =
+        match op with
+        | CM_decl _ | CM_muladd _ -> ([], op)
+        | CM_load r ->
+            let h1, index = hoist_expr ctx r.index in
+            let h2, stride = hoist_expr ctx r.stride in
+            (h1 @ h2, CM_load {r with index; stride})
+        | CM_store r ->
+            let h1, index = hoist_expr ctx r.index in
+            let h2, stride = hoist_expr ctx r.stride in
+            (h1 @ h2, CM_store {r with index; stride})
+      in
+      with_hoisted ctx h (SCoopmat op')
 
 (* ------------------------------------------------------------------ *)
 (* Entry point                                                         *)

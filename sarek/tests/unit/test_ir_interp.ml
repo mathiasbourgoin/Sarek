@@ -17,6 +17,7 @@ let make_env () =
     arrays = Hashtbl.create 8;
     shared = Hashtbl.create 8;
     funcs = Hashtbl.create 8;
+    coopmats = Hashtbl.create 4;
   }
 
 (** Helper to create a test thread state *)

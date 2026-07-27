@@ -424,6 +424,17 @@ let rec wgsl_type_of_elttype = function
            "f16"
            "WGSL: float16 not yet supported (#57 slice 2 — needs a module-top \
             `enable f16;` directive)")
+  | TUint8 ->
+      (* Core WebGPU has no 8-bit scalar at all, but even if it did this arm
+         would refuse: [TUint8] is not a general integer type here, it is the
+         element type of a cooperative-matrix operand buffer, and WGSL has no
+         cooperative-matrix construct to consume one. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "uint8"
+           "WGSL: uint8 is a cooperative-matrix operand element type, emitted \
+            only by the Vulkan backend, and WGSL has no cooperative-matrix \
+            path")
   | TFloat32 -> "f32"
   | TFloat64 ->
       Codegen_error.raise_error
@@ -444,7 +455,7 @@ let rec has_float64 = function
   | TRecord (_, fields) -> List.exists (fun (_, t) -> has_float64 t) fields
   | TVariant (_, constrs) ->
       List.exists (fun (_, ts) -> List.exists has_float64 ts) constrs
-  | TInt32 | TInt64 | TFloat16 | TFloat32 | TBool | TUnit -> false
+  | TInt32 | TInt64 | TFloat16 | TFloat32 | TBool | TUnit | TUint8 -> false
 
 (** {1 Thread Intrinsics}
 
@@ -1051,6 +1062,17 @@ let rec gen_stmt buf indent = function
       gen_stmt buf (indent_nested indent) body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
+  | SCoopmat _ ->
+      (* Core WebGPU has no cooperative-matrix construct — the subgroup-matrix
+         proposal is not in the shipped specification — so unlike the [SNative]
+         arm above there is no comment-and-continue that would still produce a
+         module computing what the kernel asked for. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "cooperative matrix"
+           "WGSL: the WGSL backend has no cooperative-matrix path; \
+            cooperative-matrix statements are emitted only by the Vulkan \
+            backend")
 
 (** {1 Helper Function Generation} *)
 
@@ -1230,6 +1252,12 @@ let rec collect_workgroup_decls (s : stmt) : (string * elttype * expr) list =
   | SEmpty | SBarrier | SWarpBarrier | SMemFence | SNative _ | SExpr _
   | SAssign _ | SReturn _ ->
       []
+  | SCoopmat _ ->
+      (* No workgroup storage to hoist: a fragment is a subgroup-cooperative
+         value, not an array, and the buffers a load names are parameters. The
+         statement itself is refused later by [gen_stmt]; returning [] here
+         keeps that refusal the one the user sees. *)
+      []
 
 let gen_workgroup_module_decls buf (decls : (string * elttype * expr) list) =
   if decls <> [] then begin
@@ -1386,10 +1414,26 @@ let reject_float16_kernel =
     ~hint:"needs a module-top `enable f16;` directive"
     Sarek_ir_analysis.Float16
 
+(* Whole-kernel cooperative-matrix gate, at the same choke point and for the
+   reason given at {!Sarek_ir_codegen.reject_feature}: the per-node arms see
+   only what the emitter reaches, and a [TUint8] parameter that is never loaded
+   from carries the feature without reaching any of them. Not routed through
+   [reject_feature] because its composed sentence hardcodes "#57 slice 2", which
+   is the f16 history and not this one. *)
+let reject_coopmat_kernel (k : kernel) : unit =
+  if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k then
+    Codegen_error.raise_error
+      (Codegen_error.unsupported_construct
+         "cooperative matrix"
+         "WGSL: the WGSL backend has no cooperative-matrix path; cooperative \
+          matrices and their uint8 operand buffers are emitted only by the \
+          Vulkan backend (backlog-62)")
+
 (** Generate complete WGSL source for a kernel. *)
 let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
     =
   reject_float16_kernel k ;
+  reject_coopmat_kernel k ;
   if params_have_float64 k.kern_params then
     Codegen_error.raise_error
       (Codegen_error.unsupported_construct
@@ -1423,6 +1467,7 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
 let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
   reject_float16_kernel k ;
+  reject_coopmat_kernel k ;
   if params_have_float64 k.kern_params then
     Codegen_error.raise_error
       (Codegen_error.unsupported_construct

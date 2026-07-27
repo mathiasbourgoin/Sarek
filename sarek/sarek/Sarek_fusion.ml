@@ -168,6 +168,32 @@ let rec subst_array_read_stmt arr idx_var replacement stmt =
       SPragma (hints, subst_array_read_stmt arr idx_var replacement body)
   | SBlock body -> SBlock (subst_array_read_stmt arr idx_var replacement body)
   | SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ -> stmt
+  | SCoopmat op ->
+      (* The index and the stride are ordinary expressions and are rewritten.
+         The buffer name is NOT: [replacement] is an expression, and a
+         cooperative-matrix load has no field that can hold one — its source
+         must stay a named buffer. So when this statement is the very access
+         being fused away, the statement is left exactly as it was rather than
+         half-rewritten. That is safe only because [can_fuse] refuses any
+         kernel carrying a cooperative-matrix statement in the first place; the
+         bail-out here is the second half of that pair, not a lone hope. *)
+      let names_arr =
+        match op with
+        | CM_load {src; _} -> src = arr
+        | CM_store {dst; _} -> dst = arr
+        | CM_decl _ | CM_muladd _ -> false
+      in
+      if names_arr then stmt
+      else
+        SCoopmat
+          (match op with
+          | CM_decl _ | CM_muladd _ -> op
+          | CM_load r ->
+              CM_load
+                {r with index = subst_e r.index; stride = subst_e r.stride}
+          | CM_store r ->
+              CM_store
+                {r with index = subst_e r.index; stride = subst_e r.stride})
 
 (** Check if statement uses an array *)
 let rec stmt_uses_array arr stmt =
@@ -191,6 +217,16 @@ let rec stmt_uses_array arr stmt =
       expr_uses_array arr e || stmt_uses_array arr body
   | SPragma (_, body) | SBlock body -> stmt_uses_array arr body
   | SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ -> false
+  | SCoopmat op -> (
+      (* [src]/[dst] name a buffer in the same namespace this predicate is
+         asking about, so a coopmat load counts as a use of its source just as
+         an [EArrayRead] would. Missing it would let a pass conclude an array
+         is dead while a cooperative-matrix load still reads it. *)
+      match op with
+      | CM_decl _ | CM_muladd _ -> false
+      | CM_load {src = name; index; stride; _}
+      | CM_store {dst = name; index; stride; _} ->
+          name = arr || expr_uses_array arr index || expr_uses_array arr stride)
 
 (** {1 Analysis} *)
 
@@ -240,6 +276,14 @@ let rec collect_writes_stmt acc stmt =
   | SReturn _ | SExpr _ | SBarrier | SWarpBarrier | SMemFence | SEmpty
   | SNative _ ->
       acc
+  | SCoopmat op -> (
+      (* A store is the only cooperative-matrix operation that writes memory,
+         and it writes [dst] at [index]. A load writes nothing addressable: its
+         destination is a fragment, which lives in no buffer this analysis can
+         name. *)
+      match op with
+      | CM_store {dst; index; _} -> (dst, index) :: acc
+      | CM_decl _ | CM_load _ | CM_muladd _ -> acc)
 
 (** Collect all array reads from a statement *)
 let rec collect_reads_stmt acc stmt =
@@ -264,6 +308,17 @@ let rec collect_reads_stmt acc stmt =
       collect_reads_stmt (collect_reads_expr acc e) body
   | SPragma (_, body) | SBlock body -> collect_reads_stmt acc body
   | SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ -> acc
+  | SCoopmat op -> (
+      (* A load reads [src] at [index]; both forms additionally read whatever
+         their index and stride expressions read. A store's own buffer access is
+         a write and is reported by [collect_writes_stmt] instead. *)
+      match op with
+      | CM_decl _ | CM_muladd _ -> acc
+      | CM_load {src; index; stride; _} ->
+          let acc = collect_reads_expr (collect_reads_expr acc index) stride in
+          (src, index) :: acc
+      | CM_store {index; stride; _} ->
+          collect_reads_expr (collect_reads_expr acc index) stride)
 
 (** Check if statement contains barriers *)
 let rec has_barrier stmt =
@@ -278,6 +333,13 @@ let rec has_barrier stmt =
     ->
       has_barrier body
   | SAssign _ | SReturn _ | SExpr _ | SMemFence | SEmpty | SNative _ -> false
+  | SCoopmat _ ->
+      (* Not a barrier. A cooperative-matrix operation IS subgroup-collective,
+         but that is a convergence requirement on the invocations reaching it,
+         not an ordering point this predicate's callers care about — they use it
+         to decide whether two kernels can be merged across a synchronisation
+         edge, and there is none here. *)
+      false
 
 (** Extract constant offset from index expression. Returns Some (base, offset)
     if idx = base + const or base - const. *)
@@ -375,6 +437,12 @@ let rec find_write_expr stmt arr idx =
   | SAssign _ | SReturn _ | SExpr _ | SBarrier | SWarpBarrier | SMemFence
   | SEmpty | SNative _ ->
       None
+  | SCoopmat _ ->
+      (* A cooperative-matrix store writes a whole tile through a fragment, not
+         a single element as an expression, so there is no [expr] to hand back
+         that would reproduce it. [None] is the honest answer and stops the
+         fusion attempt. *)
+      None
 
 (** Check if two kernels can be fused via an intermediate array.
 
@@ -433,8 +501,20 @@ let can_fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
      kernel would silently change its semantics. *)
   let no_atomics = (not prod_info.has_atomics) && not cons_info.has_atomics in
 
+  (* No cooperative matrices in either. Fusion works by replacing an
+     [EArrayRead] of the intermediate with the producer's expression and then
+     DROPPING the intermediate parameter; a [CM_load] names its source buffer
+     rather than reading it through an expression, so there is nothing to
+     substitute and the load would be left pointing at a parameter that no
+     longer exists. Refusing the whole kernel pair is the conservative reading
+     and matches how atomics are handled just above. *)
+  let no_coopmat =
+    (not (Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat producer))
+    && not (Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat consumer)
+  in
+
   prod_writes_inter && cons_reads_inter && patterns_ok && no_barriers
-  && no_atomics
+  && no_atomics && no_coopmat
 
 (** Fuse producer into consumer, eliminating intermediate array.
 

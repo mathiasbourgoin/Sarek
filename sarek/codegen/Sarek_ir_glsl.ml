@@ -285,6 +285,17 @@ let rec glsl_type_of_elttype = function
         (Codegen_error.unsupported_construct
            "f16"
            Sarek_ir_codegen.glsl_float16_refusal)
+  | TUint8 ->
+      (* Spelled under GL_EXT_shader_explicit_arithmetic_types_int8, which
+         {!glsl_header} emits whenever the kernel mentions this type at all. The
+         extension is not optional in the way the fp64 one is: [uint8_t] does
+         not parse under plain [#version 450].
+
+         Unlike every other arm of this function, nothing arithmetic is ever
+         generated at this type — see {!Sarek_ir_types.TUint8}. It appears in
+         exactly two positions: the element type of a storage buffer, and the
+         component type of a cooperative-matrix fragment. *)
+      "uint8_t"
   | TFloat32 -> "float"
   | TFloat64 -> "double" (* Requires GL_ARB_gpu_shader_fp64 *)
   | TBool -> "bool"
@@ -936,6 +947,147 @@ and gen_array_decl buf indent v_name elem_ty size =
   gen_expr buf size ;
   Buffer.add_string buf "];\n"
 
+(** {1 Cooperative matrix — backlog-62 slice 3}
+
+    The GLSL surface is [GL_KHR_cooperative_matrix]: a
+    [coopmat<T, scope, rows, cols, use>] type, [coopMatLoad] / [coopMatStore]
+    against a storage buffer, and [coopMatMulAdd]. Every one of these functions
+    is total on the IR it is given and raises where the IR admits something this
+    extension cannot spell, rather than emitting text that glslang would reject
+    with a message about a line the user never wrote. *)
+
+(** The GLSL scalar type of a fragment component.
+
+    Deliberately NOT routed through {!glsl_type_of_elttype}: the IR element
+    types and the cooperative-matrix component types are different alphabets
+    that happen to overlap, and there is no [elttype] at all for [s8], [u32] or
+    [f16]-as-a-coopmat-component. Mapping them through a shared function would
+    force one of the two to grow constructors it has no other use for. *)
+let glsl_coopmat_component (c : Sarek_coopmat_types.component_type) =
+  match c with
+  | Sarek_coopmat_types.Uint8 -> "uint8_t"
+  | Sarek_coopmat_types.Sint8 -> "int8_t"
+  | Sarek_coopmat_types.Uint32 -> "uint32_t"
+  | Sarek_coopmat_types.Sint32 -> "int32_t"
+  | Sarek_coopmat_types.Float16 ->
+      (* The f16 REFUSAL is not lifted by this slice, and this is where it is
+         enforced for the coopmat path specifically. Slice 4a's numeric contract
+         — the gamma_16 bound of docs/design/f16-relaxed-accuracy.md §5.2 and
+         its two positive controls — is entirely unmeasured, and §7 is explicit
+         that slice 3 must not lift a refusal past what a model has been
+         measured for. The integer configurations need none of it:
+         SPV_KHR_cooperative_matrix states integer accumulation is exact, so
+         they land under the EXISTING strict contract. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "f16 cooperative matrix"
+           "the numeric contract for float cooperative-matrix accumulation is \
+            unmeasured (docs/design/f16-relaxed-accuracy.md §5, slice 4a). The \
+            INTEGER configurations are available and are under the strict \
+            contract.")
+  | Sarek_coopmat_types.Float32 ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "f32 cooperative matrix"
+           "the numeric contract for float cooperative-matrix accumulation is \
+            unmeasured (docs/design/f16-relaxed-accuracy.md §5, slice 4a). The \
+            INTEGER configurations are available and are under the strict \
+            contract.")
+
+let glsl_coopmat_scope (sc : Sarek_coopmat_types.scope) =
+  match sc with
+  | Sarek_coopmat_types.Subgroup -> "gl_ScopeSubgroup"
+  | Sarek_coopmat_types.Workgroup ->
+      (* Modelled in the IR because an unrepresentable scope must not be
+         silently rewritten to Subgroup (see Sarek_coopmat's interface), and
+         refused here because nothing has executed one: every configuration
+         measured on the local device is subgroup scope, and an emitted scope no
+         hardware has run is a claim without evidence. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "workgroup-scope cooperative matrix"
+           "no local device advertises a workgroup-scope configuration, so \
+            none has been measured")
+  | Sarek_coopmat_types.Device_scope | Sarek_coopmat_types.Queue_family ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "cooperative-matrix scope"
+           "device and queue-family scopes have no GL_KHR_cooperative_matrix \
+            spelling")
+
+let glsl_coopmat_use (u : Sarek_coopmat_types.use) =
+  match u with
+  | Sarek_coopmat_types.Matrix_a -> "gl_MatrixUseA"
+  | Sarek_coopmat_types.Matrix_b -> "gl_MatrixUseB"
+  | Sarek_coopmat_types.Accumulator -> "gl_MatrixUseAccumulator"
+
+(** The full [coopmat<...>] type of a fragment.
+
+    Rows and columns come from {!Sarek_coopmat_types.fragment_dims}, which
+    DERIVES them from the use and the shape (A is m x k, B is k x n, an
+    accumulator is m x n). Emitting [m] and [n] here regardless of use — the
+    obvious wrong version — produces a shader that compiles and computes
+    nonsense on any non-square shape, which is exactly the class of defect the
+    derived dimensions exist to make unspellable. *)
+let glsl_coopmat_type (f : Sarek_coopmat_types.fragment) =
+  let rows, cols = Sarek_coopmat_types.fragment_dims f in
+  Printf.sprintf
+    "coopmat<%s, %s, %d, %d, %s>"
+    (glsl_coopmat_component f.Sarek_coopmat_types.frag_component)
+    (glsl_coopmat_scope f.Sarek_coopmat_types.frag_scope)
+    rows
+    cols
+    (glsl_coopmat_use f.Sarek_coopmat_types.frag_use)
+
+let gen_coopmat_op op =
+  let expr_str e =
+    let b = Buffer.create 32 in
+    gen_expr b e ;
+    Buffer.contents b
+  in
+  match op with
+  | CM_decl {name; frag} ->
+      Printf.sprintf "%s %s;" (glsl_coopmat_type frag) (escape_glsl_name name)
+  | CM_load {dst; frag; src; index; stride} ->
+      (* Row-major only, and only because that is the layout this slice
+         executed. gl_CooperativeMatrixLayoutColumnMajor is one more enumerant
+         and a second layout to verify on hardware. *)
+      ignore frag ;
+      Printf.sprintf
+        "coopMatLoad(%s, %s, %s, %s, gl_CooperativeMatrixLayoutRowMajor);"
+        (escape_glsl_name dst)
+        (escape_glsl_name src)
+        (expr_str index)
+        (expr_str stride)
+  | CM_store {src; frag; dst; index; stride} ->
+      ignore frag ;
+      Printf.sprintf
+        "coopMatStore(%s, %s, %s, %s, gl_CooperativeMatrixLayoutRowMajor);"
+        (escape_glsl_name src)
+        (escape_glsl_name dst)
+        (expr_str index)
+        (expr_str stride)
+  | CM_muladd {dst; a; b; c; cfg} ->
+      (* [coopMatMulAdd]'s optional fourth argument is the operand-saturation
+         flag. It is emitted from the CONFIGURATION rather than left to a
+         default because saturating and non-saturating are two distinct
+         advertised configurations computing two different functions, and the
+         device gate is keyed on which one the kernel asked for — a codegen that
+         dropped the flag would run the wrong one of the two while the gate
+         reported the right one available. *)
+      let sat =
+        if cfg.Sarek_coopmat_types.cfg_saturating then
+          ", gl_CooperativeMatrixOperandsSaturatingAccumulationKHR"
+        else ""
+      in
+      Printf.sprintf
+        "%s = coopMatMulAdd(%s, %s, %s%s);"
+        (escape_glsl_name dst)
+        (escape_glsl_name a)
+        (escape_glsl_name b)
+        (escape_glsl_name c)
+        sat
+
 let rec gen_stmt buf indent = function
   | SEmpty -> ()
   | SSeq stmts -> List.iter (gen_stmt buf indent) stmts
@@ -1068,6 +1220,10 @@ let rec gen_stmt buf indent = function
       gen_stmt buf (indent_nested indent) body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
+  | SCoopmat op ->
+      Buffer.add_string buf indent ;
+      Buffer.add_string buf (gen_coopmat_op op) ;
+      Buffer.add_char buf '\n'
 
 (** {1 Helper Function Generation} *)
 
@@ -1148,7 +1304,7 @@ let gen_helper_func ~pc_names buf (hf : helper_func) =
       Defaults to [false] on the same byte-identity grounds as [uses_float64].
 *)
 let glsl_header ~kernel_name ?(block = (256, 1, 1)) ?(uses_float64 = false)
-    ?(uses_int64 = false) () =
+    ?(uses_int64 = false) ?(uses_coopmat = false) ?(uses_uint8 = false) () =
   let bx, by, bz = block in
   let fp64_extension =
     if uses_float64 then "#extension GL_ARB_gpu_shader_fp64 : require\n" else ""
@@ -1175,15 +1331,42 @@ let glsl_header ~kernel_name ?(block = (256, 1, 1)) ?(uses_float64 = false)
   let int64_extension =
     if uses_int64 then "#extension GL_ARB_gpu_shader_int64 : require\n" else ""
   in
+  (* backlog-62 slice 3. Each of these is REQUIRED rather than declared for
+     tidiness, and the set was read off the SPIR-V rather than guessed: glslc on
+     a 16x16x16 u8 coopMatMulAdd emits OpCapability Int8,
+     StorageBuffer8BitAccess, VulkanMemoryModel and CooperativeMatrixKHR.
+     GL_KHR_memory_scope_semantics is what produces the third, and glslang makes
+     it a prerequisite of GL_KHR_cooperative_matrix — so it belongs to the
+     coopmat line and not to the int8 one, and a float coopmat kernel would need
+     it too.
+
+     The two are separate conditions rather than one, because they are separate
+     facts: a kernel may declare a uint8 buffer without reaching a multiply-add.
+     Emitting the coopmat extension for such a kernel would put a requirement in
+     the shader that the device gate was never asked about. *)
+  let coopmat_extension =
+    if uses_coopmat then
+      "#extension GL_KHR_cooperative_matrix : require\n\
+       #extension GL_KHR_memory_scope_semantics : require\n"
+    else ""
+  in
+  let uint8_extension =
+    if uses_uint8 then
+      "#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require\n\
+       #extension GL_EXT_shader_explicit_arithmetic_types_int32 : require\n"
+    else ""
+  in
   Printf.sprintf
     {|#version 450
-%s%s
+%s%s%s%s
 // Sarek-generated compute shader: %s
 layout(local_size_x = %d, local_size_y = %d, local_size_z = %d) in;
 
 |}
     fp64_extension
     int64_extension
+    coopmat_extension
+    uint8_extension
     kernel_name
     bx
     by
@@ -1272,6 +1455,12 @@ let rec collect_shared_decls (s : stmt) : (string * elttype * expr) list =
       List.concat_map (fun (_, body) -> collect_shared_decls body) cases
   | SEmpty | SBarrier | SWarpBarrier | SMemFence | SNative _ | SExpr _
   | SAssign _ | SReturn _ ->
+      []
+  | SCoopmat _ ->
+      (* A cooperative-matrix statement never introduces a shared array: a
+         fragment is a subgroup-cooperative value with no storage this pass can
+         hoist, and the buffers it loads from are parameters, already declared.
+         This is the final answer, not a slice-3 placeholder. *)
       []
 
 (** Generate shared declarations at module scope *)
@@ -1675,6 +1864,8 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
        ?block
        ~uses_float64:(Sarek_ir_analysis.kernel_uses_float64 k)
        ~uses_int64:!current_needs_int64
+       ~uses_coopmat:(Sarek_ir_analysis.kernel_has_coopmat_op k)
+       ~uses_uint8:(Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k)
        ()) ;
 
   (* Generate buffer bindings *)
@@ -1802,6 +1993,8 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
        ?block
        ~uses_float64:(Sarek_ir_analysis.kernel_uses_float64 k)
        ~uses_int64:!current_needs_int64
+       ~uses_coopmat:(Sarek_ir_analysis.kernel_has_coopmat_op k)
+       ~uses_uint8:(Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k)
        ()) ;
 
   (* Generate record type definitions (simple structs without tag) *)

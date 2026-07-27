@@ -126,6 +126,24 @@ let device_lacks_feature (f : Sarek_ir_analysis.feature) =
              VkPhysicalDeviceFeatures2; OpenCL: cl_khr_fp16 is an optional \
              extension",
           Some "Use float32." )
+    | Sarek_ir_analysis.Coopmat ->
+        (* Reached only through [device_lacks_feature], i.e. by a caller that
+           knows a kernel wants cooperative matrices but has no CONFIGURATION to
+           name. {!Sarek_coopmat.device_lacks_config} is the richer refusal and
+           is what the launch gate uses; this is the one a backend emits when it
+           cannot spell the instruction at all, where naming a configuration
+           would suggest that a different one might work. *)
+        ( "the device advertises no cooperative-matrix support \
+           (VK_KHR_cooperative_matrix and its cooperativeMatrix feature, or \
+           the backend equivalent)",
+          Quoted
+            "Vulkan specification, VK_KHR_cooperative_matrix: cooperative \
+             matrices are an optional device feature, and \
+             SPV_KHR_cooperative_matrix states that INTEGER accumulation is \
+             exact at the precision of the result type",
+          Some
+            "Use an ordinary multiply-accumulate kernel, or select a device \
+             that advertises the cooperative-matrix configuration you need." )
   in
   {
     cap_name = Sarek_ir_analysis.feature_name f;

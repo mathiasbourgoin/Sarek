@@ -41,6 +41,25 @@ type env = {
   arrays : (string, value array) Hashtbl.t;  (** array_name -> data *)
   shared : (string, value array) Hashtbl.t;  (** shared arrays for block *)
   funcs : (string, helper_func) Hashtbl.t;  (** helper functions *)
+  coopmats : (string, value array) Hashtbl.t;
+      (** Cooperative-matrix fragments, by fragment name — backlog-62 slice 3.
+
+          A SEPARATE table from {!vars} and {!arrays} because fragment names are
+          a separate namespace in the IR: a fragment is not a variable and not
+          an array, and merging it into either would make a name collision
+          between a fragment and a variable silently resolve to one of them.
+
+          {b The model.} A subgroup-scope fragment is held collectively by the
+          whole subgroup, with each invocation holding a few components at an
+          implementation-defined position. The interpreter has no subgroup, so
+          it holds the WHOLE matrix redundantly in every invocation and has
+          every invocation perform the whole operation. That is observationally
+          equivalent to the device — a [coopMatStore] then writes the same value
+          to the same location once per invocation instead of once per subgroup
+          — precisely BECAUSE GL_KHR_cooperative_matrix requires the buffer,
+          index and stride arguments to be dynamically uniform across the scope.
+          The redundancy is not an approximation; it is the same function
+          computed the only way a scalar interpreter can compute it. *)
 }
 
 let create_env () =
@@ -50,6 +69,7 @@ let create_env () =
     arrays = Hashtbl.create 16;
     shared = Hashtbl.create 8;
     funcs = Hashtbl.create 8;
+    coopmats = Hashtbl.create 4;
   }
 
 let copy_env env =
@@ -62,6 +82,9 @@ let copy_env env =
     (* shared within block *)
     funcs = env.funcs;
     (* shared *)
+    coopmats = Hashtbl.copy env.coopmats;
+    (* per-invocation, like [vars]: a fragment does not outlive the block that
+       declared it and is never shared between threads. *)
   }
 
 (** Bind a variable in the environment (both by id and name) *)

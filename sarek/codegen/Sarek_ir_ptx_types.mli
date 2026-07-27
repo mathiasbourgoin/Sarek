@@ -32,6 +32,19 @@ val unsupported : string -> 'a
     feature-specific export next to {!fail}. *)
 val unsupported_elttype : Sarek_ir_types.elttype -> string -> 'a
 
+(** [unsupported_coopmat_elttype what] raises {!Ptx_codegen_error} for a
+    [TUint8] reaching the site named [what].
+
+    Kept apart from {!unsupported_elttype} because the two refusals rest on
+    different facts. f16 is blocked by an internal invariant of this emitter,
+    and its message points at the register-class audit that will lift it.
+    [TUint8] is not a general 8-bit integer at all: it is the element type of a
+    cooperative-matrix operand buffer, meaningful only with the [SCoopmat]
+    statements the Vulkan backend emits, so no amount of PTX register work makes
+    it representable here. Merging the two would attach the [%h] explanation to
+    a refusal it does not explain. *)
+val unsupported_coopmat_elttype : string -> 'a
+
 (** {1 Value bindings} *)
 
 (** SROA-decomposed aggregate value: a record is one binding per field (in

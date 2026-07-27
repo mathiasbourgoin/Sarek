@@ -581,9 +581,35 @@ let check_device_capabilities ~(device : Device.t) (ir : Sarek_ir_types.kernel)
   let required =
     List.filter (fun f -> Sarek_ir_analysis.kernel_uses f ir) gated
   in
+  (* backlog-62 slice 3. Cooperative matrices are gated HERE and not in
+     [gated] above, because they are not a [device_features] flag: they are
+     decided per CONFIGURATION. The same RX 7900 XTX that permits
+     [u8 x u8 + s32 -> s32] refuses [f16 x f16 -> f16 saturating], so a boolean
+     "this device has coopmat" would be [Available] for a request the device
+     cannot run — which is the #142 defect in a new place.
+
+     WHY IT IS WIDENED NOW AND WAS NOT AT SLICE 2. Gating at slice 2 would have
+     been a refusal with nothing to refuse: no kernel could reach a
+     cooperative-matrix instruction, so the branch was unreachable and an
+     unreachable gate is not a gate. After this slice a kernel CAN require one.
+
+     [capabilities.coopmat = None] means the backend never probed, which
+     {!Sarek_coopmat.verdict} turns into [Unknown] and
+     {!Sarek_capability.permits} refuses. That is the safe direction and it is
+     load-bearing: every backend other than Vulkan leaves it [None], so a
+     coopmat kernel aimed at CUDA is refused here by the capability model even
+     before the CUDA backend's own codegen refusal — and the diagnostic names
+     the device rather than the emitter. *)
+  let coopmat_verdicts =
+    List.map
+      (Sarek_coopmat.verdict
+         ~support:device.Device.capabilities.Framework_sig.coopmat)
+      (Sarek_ir_analysis.kernel_coopmat_configs ir)
+  in
   match
     Sarek_capability.first_refusal
-      (List.map (Sarek_capability.device_verdict ~provided) required)
+      (List.map (Sarek_capability.device_verdict ~provided) required
+      @ coopmat_verdicts)
   with
   | None -> ()
   | Some verdict ->

@@ -13,6 +13,7 @@ let rec string_of_elttype = function
   | TFloat16 -> "float16"
   | TFloat32 -> "float32"
   | TFloat64 -> "float64"
+  | TUint8 -> "uint8"
   | TBool -> "bool"
   | TUnit -> "unit"
   | TRecord (name, _) -> name
@@ -196,6 +197,47 @@ let rec pp_stmt fmt = function
   | SMemFence -> Format.fprintf fmt "__threadfence();"
   | SBlock body -> Format.fprintf fmt "@[<v 2>{@ %a@]@ }" pp_stmt body
   | SNative _ -> Format.fprintf fmt "/* native code */"
+  | SCoopmat op -> pp_coopmat_op fmt op
+
+and pp_coopmat_op fmt = function
+  | CM_decl {name; frag} ->
+      Format.fprintf
+        fmt
+        "coopmat %s : %s %s %s;"
+        name
+        (Sarek_coopmat_types.use_name frag.Sarek_coopmat_types.frag_use)
+        (Sarek_coopmat_types.shape_name frag.Sarek_coopmat_types.frag_shape)
+        (Sarek_coopmat_types.component_name
+           frag.Sarek_coopmat_types.frag_component)
+  | CM_load {dst; src; index; stride; _} ->
+      Format.fprintf
+        fmt
+        "coopmat_load %s <- %s[%a] stride %a;"
+        dst
+        src
+        pp_expr
+        index
+        pp_expr
+        stride
+  | CM_store {src; dst; index; stride; _} ->
+      Format.fprintf
+        fmt
+        "coopmat_store %s -> %s[%a] stride %a;"
+        src
+        dst
+        pp_expr
+        index
+        pp_expr
+        stride
+  | CM_muladd {dst; a; b; c; cfg} ->
+      Format.fprintf
+        fmt
+        "%s = coopmat_muladd(%s, %s, %s) : %s;"
+        dst
+        a
+        b
+        c
+        (Sarek_coopmat_types.config_name cfg)
 
 and pp_pattern fmt = function
   | PConstr (name, vars) ->

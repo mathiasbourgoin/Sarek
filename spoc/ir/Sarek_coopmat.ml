@@ -3,91 +3,14 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(** Cooperative-matrix vocabulary and fragment type (backlog-62, slices 2 and
-    4b). See the .mli for why integers are admitted from the start and why the
-    device gate cannot be keyed on the configuration list. *)
+(** Cooperative matrix: the DEVICE-facing half (backlog-62 slice 2).
 
-type component_type = Float16 | Float32 | Uint8 | Sint8 | Uint32 | Sint32
+    The vocabulary lives in {!Sarek_coopmat_types}, which this module re-exports
+    wholesale — see there for why the split exists. What is left here is exactly
+    the part that consults {!Sarek_capability}: given a device's probed support,
+    is a requested configuration permitted? *)
 
-let component_name = function
-  | Float16 -> "f16"
-  | Float32 -> "f32"
-  | Uint8 -> "u8"
-  | Sint8 -> "s8"
-  | Uint32 -> "u32"
-  | Sint32 -> "s32"
-
-let component_bits = function
-  | Uint8 | Sint8 -> 8
-  | Float16 -> 16
-  | Float32 | Uint32 | Sint32 -> 32
-
-(* An explicit match on every constructor rather than [<> Float16 && <>
-   Float32]. A new float component type (bf16, fp8) added to the variant must
-   be a compile error here, because the one thing this predicate decides is
-   whether a configuration escapes the accuracy relaxation — and a new float
-   type defaulting to "integer, therefore exact" is the permissive-default
-   failure the capability model exists to prevent. *)
-let component_is_integer = function
-  | Uint8 | Sint8 | Uint32 | Sint32 -> true
-  | Float16 | Float32 -> false
-
-type scope = Subgroup | Workgroup | Device_scope | Queue_family
-
-let scope_name = function
-  | Subgroup -> "subgroup"
-  | Workgroup -> "workgroup"
-  | Device_scope -> "device"
-  | Queue_family -> "queuefamily"
-
-type shape = {m : int; n : int; k : int}
-
-let shape_name s = Printf.sprintf "%dx%dx%d" s.m s.n s.k
-
-type config = {
-  cfg_shape : shape;
-  cfg_a : component_type;
-  cfg_b : component_type;
-  cfg_c : component_type;
-  cfg_result : component_type;
-  cfg_saturating : bool;
-  cfg_scope : scope;
-}
-
-let config_name c =
-  Printf.sprintf
-    "%s %s*%s+%s->%s%s %s"
-    (shape_name c.cfg_shape)
-    (component_name c.cfg_a)
-    (component_name c.cfg_b)
-    (component_name c.cfg_c)
-    (component_name c.cfg_result)
-    (if c.cfg_saturating then " saturating" else "")
-    (scope_name c.cfg_scope)
-
-(* Exactness is a property of the ACCUMULATION, so it is decided by the addend
-   and result types, not by the operand types. The distinction is not academic
-   on this hardware: every configuration the local device advertises has
-   integer operands paired with integer accumulate, but f16*f16 pairs with BOTH
-   f16 and f32 accumulate, and reading the operand types would have called both
-   of those the same thing. *)
-let accumulation_is_exact c =
-  component_is_integer c.cfg_c && component_is_integer c.cfg_result
-
-type accuracy_regime = Strict | Relaxed_bounded
-
-let regime c = if accumulation_is_exact c then Strict else Relaxed_bounded
-
-let regime_name = function
-  | Strict -> "strict"
-  | Relaxed_bounded -> "relaxed-bounded"
-
-type device_support = {
-  ds_configs : config list;
-  ds_robust_buffer_access : bool;
-  ds_subgroup_size : int;
-  ds_advertised_count : int;
-}
+include Sarek_coopmat_types
 
 let device_lacks_config cfg =
   {
@@ -118,26 +41,6 @@ let device_lacks_config cfg =
          advertises this cooperative-matrix configuration.";
   }
 
-let config_matches ~shape ~a ~b ~c ~result cfg =
-  cfg.cfg_shape = shape && cfg.cfg_a = a && cfg.cfg_b = b && cfg.cfg_c = c
-  && cfg.cfg_result = result
-
-let find_config ~support ~shape ~a ~b ~c ~result =
-  match support with
-  | None -> None
-  | Some s -> (
-      let candidates =
-        List.filter (config_matches ~shape ~a ~b ~c ~result) s.ds_configs
-      in
-      (* Prefer the non-saturating variant: it is the one that computes the
-         same function as a plain accumulate, so it is what an unqualified
-         request means. A caller that wants saturation must ask for it, which
-         it cannot do through this function — deliberately, until a slice
-         exists that can emit either. *)
-      match List.find_opt (fun cfg -> not cfg.cfg_saturating) candidates with
-      | Some cfg -> Some cfg
-      | None -> List.nth_opt candidates 0)
-
 let verdict ~support cfg =
   match support with
   | None ->
@@ -160,73 +63,3 @@ let verdict ~support cfg =
           s.ds_configs
       then Sarek_capability.Available
       else Sarek_capability.Unavailable (device_lacks_config cfg)
-
-type use = Matrix_a | Matrix_b | Accumulator
-
-let use_name = function
-  | Matrix_a -> "A"
-  | Matrix_b -> "B"
-  | Accumulator -> "accumulator"
-
-type fragment = {
-  frag_use : use;
-  frag_shape : shape;
-  frag_component : component_type;
-  frag_scope : scope;
-}
-
-let fragment_dims f =
-  let s = f.frag_shape in
-  match f.frag_use with
-  | Matrix_a -> (s.m, s.k)
-  | Matrix_b -> (s.k, s.n)
-  | Accumulator -> (s.m, s.n)
-
-let fragment_components f =
-  let rows, cols = fragment_dims f in
-  rows * cols
-
-let fragments_of_config c =
-  let frag frag_use frag_component =
-    {
-      frag_use;
-      frag_shape = c.cfg_shape;
-      frag_component;
-      frag_scope = c.cfg_scope;
-    }
-  in
-  ( frag Matrix_a c.cfg_a,
-    frag Matrix_b c.cfg_b,
-    frag Accumulator c.cfg_c,
-    frag Accumulator c.cfg_result )
-
-let components_per_invocation ~subgroup_size f =
-  let total = fragment_components f in
-  if subgroup_size <= 0 then
-    Error
-      (Printf.sprintf
-         "subgroup size %d is not positive, so a %s fragment cannot be \
-          distributed"
-         subgroup_size
-         (use_name f.frag_use))
-  else if total mod subgroup_size <> 0 then
-    Error
-      (Printf.sprintf
-         "a %s fragment of %s (%d components) cannot be distributed over a \
-          subgroup of %d invocations: %d does not divide %d"
-         (use_name f.frag_use)
-         (shape_name f.frag_shape)
-         total
-         subgroup_size
-         subgroup_size
-         total)
-  else Ok (total / subgroup_size)
-
-let config_fits_subgroup ~subgroup_size c =
-  let a, b, cc, r = fragments_of_config c in
-  List.for_all
-    (fun f ->
-      match components_per_invocation ~subgroup_size f with
-      | Ok _ -> true
-      | Error _ -> false)
-    [a; b; cc; r]

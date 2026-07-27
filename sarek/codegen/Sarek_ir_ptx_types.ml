@@ -189,10 +189,27 @@ let unsupported_elttype (ty : elttype) what =
        what
        (Sarek_ir_pp.string_of_elttype ty))
 
+(* The cooperative-matrix counterpart of {!unsupported_elttype}, kept separate
+   because the two refusals have nothing in common but their shape. f16 is
+   blocked by an internal invariant of THIS emitter (the prefix-sniffed register
+   classes) and cites the slice that will lift it; [TUint8] is blocked because
+   it is not a general 8-bit integer at all — it is the element type of a
+   cooperative-matrix operand buffer, meaningful only alongside the [SCoopmat]
+   statements the Vulkan backend emits. Sharing one message would attach the %h
+   register-class explanation to a refusal it does not explain. *)
+let unsupported_coopmat_elttype what =
+  unsupported
+    (Printf.sprintf
+       "%s: uint8 is a cooperative-matrix operand element type, emitted only \
+        by the Vulkan backend, and the PTX backend has no cooperative-matrix \
+        path"
+       what)
+
 let ptx_reg_type_of = function
   | TInt32 | TBool -> ".u32"
   | TInt64 -> ".u64"
   | TFloat16 -> unsupported_elttype TFloat16 "TFloat16 register type"
+  | TUint8 -> unsupported_coopmat_elttype "TUint8 register type"
   | TFloat32 -> ".f32"
   | TFloat64 -> ".f64"
   | TUnit -> ".u32"
@@ -205,6 +222,7 @@ let new_reg_for_type alloc = function
   | TInt32 | TBool | TUnit -> new_u32 alloc
   | TInt64 -> new_u64 alloc
   | TFloat16 -> unsupported_elttype TFloat16 "TFloat16 new_reg"
+  | TUint8 -> unsupported_coopmat_elttype "TUint8 new_reg"
   | TFloat32 -> new_f32 alloc
   | TFloat64 -> new_f64 alloc
   | TVec _ | TArray _ -> new_u64 alloc
@@ -400,6 +418,7 @@ let rec mov_binding buf ~src ~dst =
 
 let ptx_align_of_elttype = function
   | TFloat16 -> unsupported_elttype TFloat16 "align of float16"
+  | TUint8 -> unsupported_coopmat_elttype "align of uint8"
   | TFloat32 | TInt32 | TBool -> 4
   | TFloat64 | TInt64 -> 8
   | TUnit -> 4
@@ -408,6 +427,7 @@ let ptx_align_of_elttype = function
 
 let ptx_btype_of_elttype = function
   | TFloat16 -> unsupported_elttype TFloat16 "btype of float16"
+  | TUint8 -> unsupported_coopmat_elttype "btype of uint8"
   | TFloat32 | TInt32 | TBool | TUnit -> "b32"
   | TFloat64 | TInt64 -> "b64"
   | TVec _ | TArray _ -> "b64"

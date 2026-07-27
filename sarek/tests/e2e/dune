@@ -1378,3 +1378,27 @@
  (alias e2e-gpu)
  (action
   (run %{dep:test_vulkan_int64.exe})))
+
+; backlog-62 slice 3 — the integer coopmat path end to end: hand-built IR with
+; SCoopmat statements, emitted by Sarek_ir_glsl, executed on the GPU, compared
+; bit-for-bit against the interpreter. e2e-gpu: it needs a device advertising an
+; integer cooperative-matrix configuration, and skips (does not fail) otherwise.
+
+(executable
+ (name test_coopmat_integer_e2e)
+ (modules test_coopmat_integer_e2e)
+ (libraries
+  sarek
+  sarek_ir
+  sarek_codegen
+  sarek_vulkan
+  spoc_core
+  spoc_framework
+  test_helpers
+  unix)
+ (preprocess no_preprocessing))
+
+(rule
+ (alias e2e-gpu)
+ (action
+  (run %{dep:test_coopmat_integer_e2e.exe})))

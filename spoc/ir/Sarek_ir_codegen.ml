@@ -263,6 +263,31 @@ let rename_shadowing_locals ~collides ~fresh_name body =
     | SPragma (ss, b) -> SPragma (ss, re_stmt env b)
     | SBlock b -> SBlock (re_stmt env b)
     | SNative _ as s -> s
+    | SCoopmat op ->
+        (* Fragment names are NOT [var]s and are not in [env], so they are not
+           renamed. Only the index and stride EXPRESSIONS can mention a renamed
+           variable, and they are rewritten. Renaming a fragment here would be
+           wrong in the direction that matters: [env] maps variable names, and a
+           fragment that happened to share a name with a shadowed variable would
+           be silently redirected. *)
+        SCoopmat
+          (match op with
+          | CM_decl _ -> op
+          | CM_load r ->
+              CM_load
+                {
+                  r with
+                  index = re_expr env r.index;
+                  stride = re_expr env r.stride;
+                }
+          | CM_store r ->
+              CM_store
+                {
+                  r with
+                  index = re_expr env r.index;
+                  stride = re_expr env r.stride;
+                }
+          | CM_muladd _ -> op)
   in
   re_stmt SM.empty body
 

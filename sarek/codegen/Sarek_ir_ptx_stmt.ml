@@ -210,6 +210,16 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
       Buffer.add_string buf code ;
       if String.length code > 0 && code.[String.length code - 1] <> '\n' then
         Buffer.add_char buf '\n'
+  | SCoopmat _ ->
+      (* PTX does reach tensor cores, through wmma/mma — but with its own
+         fragment register layout, its own per-shape instruction names and a
+         warp-level convention this emitter's scalar register model knows
+         nothing about. There is no partial lowering worth emitting, and
+         [reject_coopmat_kernel] normally refuses such a kernel before the walk
+         starts; this arm covers the paths that enter the emitter directly. *)
+      unsupported
+        "cooperative matrix: the PTX backend has no cooperative-matrix path; \
+         cooperative-matrix statements are emitted only by the Vulkan backend"
 
 and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
   match lv with
