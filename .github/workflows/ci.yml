@@ -144,6 +144,15 @@ jobs:
           # is the positive control without which "went red" and "is always
           # red" would be the same observation.
           ./scripts/check-license-headers.test.sh
+          # backlog-99. The pocl probe is informational and exits 0 by design,
+          # which is the shape that rots unnoticed: nothing reads its exit
+          # code, so a probe that stopped measuring would keep printing a
+          # verdict indistinguishable from a real one. This asserts the verdict
+          # tracks the stages, and that no combination of failures -- including
+          # a probe that never built -- can report POCL-WORKS. It is hermetic
+          # (a stub compiler supplies the stage results) and needs no pocl, so
+          # it runs here rather than in the probe job.
+          ./ci/pocl-runner-probe.test.sh
 
       - name: Formal proofs admit gate
         run: |
@@ -341,6 +350,62 @@ jobs:
   # rocq/rocq-prover image already ships the exact version these proofs were
   # developed against, and pinning it here costs an image pull instead of a
   # multi-minute Rocq build baked into every CI image rebuild.
+  # backlog-99. EXPERIMENTAL, INFORMATIONAL, GATES NOTHING.
+  #
+  # Every OpenCL claim this project makes rests on one runtime: the Intel
+  # oneAPI CPU ICD inside ci/Dockerfile. Nobody has measured what a bare
+  # GitHub runner does, so there is no second, independent OpenCL execution
+  # environment and no way to tell an oneAPI-specific result from a real one.
+  #
+  # backlog-79 tried pocl once, in the image, and pinned e2e to it: pocl 1.8 +
+  # LLVM 11 on jammy compiled no kernel, the float32 tests SKIPPED, and CI went
+  # green having validated nothing. ci/assert-toolchain.sh records that and
+  # says the retry belongs in "a separate experimental PR that installs it
+  # unpinned and reports whether it can compile on the real GitHub runner".
+  # This is that. The measured failure was a property of jammy's pocl, and
+  # ubuntu-latest ships one several major versions newer.
+  #
+  # Deliberately: `continue-on-error` and a probe that exits 0 on its own. No
+  # test is redirected to pocl, no gate consults the verdict, and a red result
+  # is a good result -- "a bare runner cannot run an OpenCL kernel either" is
+  # information the project does not have today. Promoting this to a gate is a
+  # separate decision that needs a green here first.
+  pocl-runner-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Unpinned on purpose: whatever the runner's distribution ships is the
+      # thing being measured. Pinning a version would answer a question nobody
+      # asked.
+      - name: Install pocl
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pocl-opencl-icd ocl-icd-opencl-dev clinfo
+          apt-cache policy pocl-opencl-icd || true
+
+      - name: Probe whether pocl can compile and run a kernel
+        run: ./ci/pocl-runner-probe.sh
+
+      # The verdict is the deliverable, so it goes somewhere a human reads
+      # without opening the log.
+      - name: Record the verdict in the job summary
+        if: always()
+        run: |
+          {
+            echo "## pocl on a bare runner (backlog-99)"
+            echo
+            echo '```'
+            ./ci/pocl-runner-probe.sh 2>&1 | tail -30
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   formal-proofs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
