@@ -79,3 +79,18 @@
  (libraries sarek_ir sarek_codegen sarek_backend_error alcotest unix)
  (instrumentation
   (backend bisect_ppx)))
+
+; CLASS VALIDATOR for the backend half of the type-mapping surface (#141):
+; IR element type -> device type string. The unit-test twin
+; (sarek/tests/unit/test_type_width_totality.ml) covers the front half, source
+; type -> IR element type, and stops at the IR. Flags make warning 8 an error
+; so a new elttype constructor breaks compilation IN THE TEST.
+
+(test
+ (name test_backend_type_width_totality)
+ (modules test_backend_type_width_totality)
+ (flags
+  (:standard -w +8 -warn-error +8))
+ (libraries sarek_ir sarek_codegen alcotest)
+ (instrumentation
+  (backend bisect_ppx)))

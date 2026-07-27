@@ -54,7 +54,20 @@ module Device = struct
     name : string;
     max_threads_per_threadgroup : mtl_size structure;
     max_threadgroup_memory : int;
-    supports_fp64 : bool; (* Metal always supports FP64 on macOS *)
+    (* Always [false]. The Metal Shading Language has no `double` type on any
+       Apple GPU, so this is a property of MSL rather than of the device, and
+       [get] below sets it unconditionally.
+
+       This field carried the comment "Metal always supports FP64 on macOS"
+       until #141 — the exact opposite of the value set eleven lines below it,
+       and of the truth. Sarek_real64 reads this field and selects
+       [Fallback_df64] (double-float: an unevaluated pair of binary32, ~2^-46,
+       needing no hardware fp64), which is the supported route to extra
+       precision on Metal and is measured coherent on an Apple M4. The Metal
+       codegen refuses [TFloat64] outright — see
+       [Sarek_capability.float64_absent_metal], the [Backend_structural] entry
+       this fact is now stated in exactly once. *)
+    supports_fp64 : bool;
     is_cpu : bool; (* Metal doesn't distinguish CPU/GPU - always false *)
   }
 

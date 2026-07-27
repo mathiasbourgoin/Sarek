@@ -118,6 +118,18 @@ picks up the GLSL `int64_t` hole (#142).
 > `int64_t`, but a Vulkan device may not provide `shaderInt64` — so it needs the
 > device probe that `kind_needs_device Device_optional = true` calls for and
 > that slice 1 deliberately does not build.
+>
+> **Emitter half fixed in #141**, so #142 is the device probe only. The two
+> float64 conditions the `#extension` was gated on were the softmath helpers
+> that bit-cast a double and a non-finite f64 literal spelled via
+> `int64BitsToDouble`; `Sarek_ir_analysis.Int64` is now OR-ed in, so the line is
+> emitted whenever the kernel uses int64 at all. The rejection before the fix
+> was `syntax error, unexpected IDENTIFIER` at exit 2, exit 0 after. Regression
+> gate: `glsl-validate/int64_only_store`, a validation-only kernel whose only
+> wide type is int64 — the shape the corpus lacked, which is why the gap
+> survived. Until #142 lands, a device without `shaderInt64` still fails at
+> shader load rather than at launch with a Sarek diagnostic: loud and correct,
+> but unattributed.
 
 **Slice 3 — host-toolchain and flag-legality probes.** Needs machinery that does
 not exist: a host trial-compile, and retention of the OpenCL extension string
@@ -138,11 +150,32 @@ facts that motivated it is worse than none.
 
 - Metal has no `double`. `Backend_structural`, refused at codegen, both at the
   per-element-type arm and at a whole-kernel gate. Both are load-bearing and
-  independently tested — an f64 *literal* never reaches the type arm at all.
+  independently tested — an f64 *literal* never reaches the type arm at all, and
+  neither does an f64 *local* whose only appearance is its declared type.
+
+  Those two motivating shapes were found independently — the literal by #64
+  reasoning down from the capability model, the local by #141 reasoning up from
+  the emitted source — and both searches landed on the same detector
+  (`Sarek_ir_analysis.kernel_uses Float64`) at the same two `generate` entries.
+  Convergence from opposite directions is the argument that {arm, whole-kernel}
+  is the *complete* set of entry points, not merely the set someone thought of.
+
+  #141 also revised the severity. Slice 1 described the pre-fix behaviour as "a
+  silent halving of precision"; it was worse than that. The IR element type
+  fixes the buffer stride as well as the arithmetic, and `Vector.float64` is 8
+  bytes per element, so `device float*` strode the host buffer at 4 and every
+  element after the first was a bit-half of its neighbour. The kernel did not
+  lose precision, it read a different array — a wrong-answer defect, not a
+  quality-of-result one.
 
 **Expressible, not yet wired:**
 
-- WGSL/WebGPU has no `f64` — same kind, deferred to slice 1b (#141 coordination).
+- WGSL/WebGPU has no `f64` — same kind, deferred to slice 1b (#141
+  coordination). #141's backend-wide sweep confirms slice 1b is a pure
+  refactor and finds nothing for it to fix: WGSL already refuses `TFloat64`,
+  `TInt64` and `TFloat16` with located errors, and is the only backend that
+  refuses everything it cannot represent at the right width. It was the
+  *precedent* Metal should have followed, not a second instance of the defect.
 - f16 refused on OpenCL and GLSL — representable as `Toolchain_semantic`
   (evidence: the ACO counts) plus `Policy` (verdict). Currently hand-written
   strings; slice 2 structures them.
@@ -153,6 +186,60 @@ facts that motivated it is worse than none.
 - Pascal sm_61 has no tensor cores / bf16 / FP8 — `Device_optional`, and
   `compute_capability` is already in the capabilities record, so the probe is
   cheap. Slice 2.
+- **`int64` on Vulkan/GLSL** — `Device_optional`
+  (`VkPhysicalDeviceFeatures.shaderInt64` / `GL_ARB_gpu_shader_int64`). #141
+  fixed the emitter half; the *device* half is unprobed, so today a device
+  without the feature fails at shader load rather than at launch with a Sarek
+  diagnostic. #142, slice 2. See the correction under §4 slice 2.
+
+**Correctly NOT in the table — see §5.1 for the rule:**
+
+- **Metal `TBool`** was the case that prompted §5.1, and the numbers behind it:
+  MSL `bool` is one byte, the host gives a Sarek `bool` a 4-byte slot
+  (`Sarek_ir_layout.scalar_size TBool = 4`, mirroring `Sarek_ppx`), and `bool`
+  is an accepted `[@@sarek.type]` record field — so host `{bool;bool;int}` at
+  0/4/8, size 12, met an emitted `typedef struct { bool a; bool b; int n; }` at
+  0/1/4, size 8. Fixed in the emitter (#141): Metal now emits `int`.
+
+  The instrument that catches this class is not this table but the totality
+  sweep — `sarek/tests/codegen_golden/test_backend_type_width_totality.ml`. For
+  every backend and every scalar element type it admits exactly **three**
+  outcomes, and it is worth stating all three, because a reader who believes it
+  is two will misread the third as impossible:
+
+  1. the emitted device type occupies exactly `Sarek_ir_layout.scalar_size`
+     bytes — the host's own width;
+  2. the mapper **refuses**, with a diagnostic (`Match_failure`, `Not_found`,
+     `Invalid_argument` and `Failure` are rejected as refusals — an incomplete
+     match is not a policy);
+  3. the device type is recorded as having **no memory form at all**, which
+     exempts it from the width check.
+
+  Outcome 3 is an escape hatch, and it is the one that could be used to defeat
+  the sweep, so it is pinned rather than merely permitted: the complete set
+  lives in `expected_no_memory_form`, and
+  `test_no_memory_form_set_is_exactly_as_recorded` fails on **any** addition or
+  removal. Widening it is a deliberate edit to a literal list, not something a
+  codegen change can do quietly.
+
+  Today that set is six entries, and they are there for two different reasons —
+  a distinction anyone deciding whether their own case belongs there needs:
+
+  - `TUnit` on all five of Metal, CUDA, OpenCL, GLSL and WGSL — **no object
+    representation at all**. C's `void` is not a value, so there is nothing to
+    give a width to; WGSL has no unit type whatsoever and the emitter writes a
+    comment (`/* unit */`), which is not a type either.
+  - `TBool` on WGSL — a **real value the language will not let you put in a
+    buffer**. WGSL `bool` exists and is perfectly usable in registers; it is
+    simply not host-shareable, and `naga` refuses it in a storage binding
+    ("The type is not host-shareable") rather than choosing a width. The
+    failure is loud and at shader-load time, never a wrong stride.
+
+  If a candidate is neither — if the target *would* accept it in a buffer at
+  some width — then it is outcome 1 or outcome 2, not outcome 3.
+
+  This sweep is the concrete form of §5.1's closing point about complementary
+  instruments.
 
 **NOT expressible, and not fixed by any planned slice:**
 

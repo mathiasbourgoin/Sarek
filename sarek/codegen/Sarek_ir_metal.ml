@@ -58,18 +58,59 @@ let rec metal_type_of_elttype = function
   | TFloat64 ->
       (* Until #64 slice 1 this arm was `"float"`, with a comment saying Metal
          does not support double precision — and no refusal anywhere on the
-         path. A kernel written against binary64 semantics compiled clean and
-         returned binary32 answers: a silent halving of precision, which is the
-         exact defect class #64 exists to make impossible. Metal genuinely has
-         no `double`, so this is Backend_structural and belongs at codegen, not
-         at a launch gate: no device can supply it. *)
+         path. Metal genuinely has no `double`, so this is Backend_structural
+         and belongs at codegen, not at a launch gate: no device can supply it.
+
+         #141 established that the cost is WORSE than the halved precision this
+         comment originally claimed, and the correction matters because it moves
+         the defect from quality-of-result to wrong-answer. The IR element type
+         also fixes the BUFFER STRIDE: a `float64 vector` is 8 bytes per element
+         on the host (Spoc_core.Vector.float64), so `device float* v` strode it
+         at 4 and every element after the first was a bit-half of its neighbour.
+         The kernel did not lose precision — it read a different array. Captured
+         before the fix, the emitted kernel for out.(i) <- inp.(i) * 2.0 in
+         float64 was, verbatim,
+         `kernel void f64_scale(device float* out ..., device float* inp ...)`,
+         with no diagnostic on any channel.
+
+         Same family as the `[@@sarek.type]` payload emitted as `int` and the
+         `Char` vector read at 4-byte stride: a type computed and then narrowed
+         without saying so. The class validator over the whole backend
+         type-mapping surface is
+         sarek/tests/codegen_golden/test_backend_type_width_totality.ml. *)
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct
            "f64"
            (Sarek_capability.explain
               ~target:"Metal"
               Sarek_capability.float64_absent_metal))
-  | TBool -> "bool"
+  | TBool ->
+      (* "int", not "bool", and this is a width fix, not a style choice. The
+         host gives a Sarek `bool` a 4-byte slot everywhere it has a layout:
+         Sarek_ppx's field-size mapping returns 4 for `bool`, and
+         Sarek_ir_layout.scalar_size TBool is 4 to match it. MSL `bool` is ONE
+         byte (MSL spec, size/alignment of scalar data types), so a
+         [@@sarek.type] record with bool fields desynced silently — host
+         {bool;bool;int} lays out at 0/4/8, size 12, while the emitted
+         `typedef struct { bool a; bool b; int n; }` lays out at 0/1/4, size 8.
+         CUDA and OpenCL both already emit `int` here for exactly this reason;
+         Metal was the odd one out. GLSL/WGSL also spell it `bool`, but neither
+         is a silent case: glslang lowers a storage-buffer bool to a 32-bit uint
+         (verified — OpMemberDecorate Offset 0/4, ArrayStride 8), and naga
+         refuses a bool in a storage struct outright ("The type is not
+         host-shareable").
+
+         Deliberately NOT a {!Sarek_capability} entry. The test that decides it
+         is docs/design/capability-model.md §5.1, and it is NOT "is it silent"
+         nor "is it a width mismatch" — both are equally true of this arm and of
+         the TFloat64 one above. It is: DOES A CORRECT LOWERING EXIST IN THE
+         TARGET LANGUAGE? For f64 there is none, so it is a capability. For
+         bool there is — `int`, at the host's width, which CUDA and OpenCL
+         already emit — so it is a codegen bug and the fix belongs here. Filing
+         it as Backend_structural would make the table claim Metal cannot
+         express booleans, which is false, and would remove a working feature
+         from users of this backend. *)
+      "int"
   | TUnit -> "void"
   | TRecord (name, _) -> mangle_name name
   | TVariant (name, _) -> mangle_name name
@@ -1045,7 +1086,19 @@ let reject_float16_kernel =
    Unlike [reject_float16_kernel] this does NOT go through
    [Sarek_ir_codegen.reject_feature]: that composer says "not YET supported
    (#57 slice 2)", a claim about a queue position. Metal will never have
-   `double`, so promising future support would be false. *)
+   `double`, so promising future support would be false.
+
+   CONVERGENT: #141 arrived at this same second entry point independently, from
+   the opposite direction — auditing the emitted source rather than the
+   capability model — and reached the identical detector
+   ([Sarek_ir_analysis.kernel_uses Float64], already the driver of the
+   OpenCL/GLSL fp64 pragma/extension) with the identical placement at both
+   [generate] entries. #141's route in was the f64 LOCAL, captured verbatim from
+   the pre-fix emitter as `float x = 0.10000000000000001;`; #64's was the f64
+   LITERAL assigned into an f32 buffer, which the type arm never sees at all.
+   Two searches, two motivating shapes, one gate. That agreement is the reason
+   to believe {arm, whole-kernel} is the COMPLETE set of entry points rather
+   than the two somebody happened to think of. *)
 let reject_float64_kernel =
   Sarek_capability.refuse_if_used
     ~raise_:(fun reason ->

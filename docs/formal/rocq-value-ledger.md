@@ -231,6 +231,61 @@ per line here than deep theorems about the ends.** The boring function is where
 the defects were, and it is boring precisely because the interesting models
 abstracted it away — which is the same reason nobody modelled it.
 
+**That model now exists in executable form, on both halves of the seam** (#141):
+
+- `sarek/tests/unit/test_type_width_totality.ml` — source type → IR element
+  type, the `elttype_of_typ` this entry names;
+- `sarek/tests/codegen_golden/test_backend_type_width_totality.ml` — IR element
+  type → device type string, for all six backends, against
+  `Sarek_ir_layout.scalar_size`.
+
+Each enumerates its finite type language by unfolding a **wildcard-free**
+successor chain, so a new constructor is a compile error *in the test* rather
+than a silently unswept case. Their contracts are not identical, and the
+difference matters to anyone reading them as models:
+
+- the **front half** is two-outcome — `elttype_of_typ` must either preserve the
+  byte width or reject with a located error;
+- the **backend half** is three-outcome — the emitted device type must occupy
+  exactly `Sarek_ir_layout.scalar_size` bytes, or the mapper must refuse with a
+  diagnostic, or the device type must be recorded as having **no memory form at
+  all** and thereby exempted from the width check.
+
+That third outcome is a real escape hatch and is treated as one. Its complete
+set is pinned in `expected_no_memory_form` — six entries today, for two
+different reasons: `TUnit` on all five of Metal/CUDA/OpenCL/GLSL/WGSL (no object
+representation at all — C's `void` is not a value, and WGSL has no unit type),
+plus WGSL's `TBool` (a real value the language will not let into a buffer;
+`naga` refuses it rather than picking a width).
+`test_no_memory_form_set_is_exactly_as_recorded` fails on
+any addition or removal, so widening the exemption is a deliberate edit to a
+literal list rather than something a codegen change can do quietly. A model
+whose admissible-outcome count is misreported is a model of something else, so
+this is stated here in the same terms as the code.
+
+That is exactly "the exhaustive table settled in an afternoon", and it found the
+two the seam was still hiding on the device side — Metal's
+`TFloat64 -> "float"` (8 bytes read at 4) and `TBool -> "bool"` (4 read at 1).
+
+**What this is and is not.** It is proof by exhaustive cases over a finite
+domain, which is the same argument a Rocq model of a total function would make;
+the difference is only *when* it is checked — `dune runtest` rather than
+`rocq check` — and that the enumeration's totality is enforced by OCaml's
+exhaustiveness checker rather than by `Coq`'s. For a function with no theorems
+worth stating, that trade looks right, and it is the cheapest available reading
+of this lesson. It does not extend to anything with an interesting invariant.
+
+**A caveat this entry should carry, because #141 supplied it.** The
+front-half validator had been green since it was written while **not sweeping
+two of its ten members**: its `unfold` pushed the successor instead of the
+element just visited, dropping the first of each chain and duplicating the last,
+and its own anti-vacuity length check could not see this because one duplicate
+exactly compensated for one omission. A cheap model is only worth its line count
+if the enumeration it rests on is *checked to be the enumeration it claims* —
+both files now assert distinctness as well as length. Machine-checked totality
+is the thing Rocq would have given for free here, and is the honest argument in
+its favour.
+
 ### M-02 — the silently-succeeding-wildcard family, out of scope
 
 | | |

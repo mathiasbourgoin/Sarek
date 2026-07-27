@@ -1134,18 +1134,41 @@ let gen_helper_func ~pc_names buf (hf : helper_func) =
       declaring it explicitly keeps the generated source correct against
       stricter/non-glslang GLSL compilers and documents the requirement in the
       emitted shader. Defaults to [false] so kernels that do not use float64
-      never carry the extension. *)
+      never carry the extension.
+    @param uses_int64
+      Whether the kernel needs [int64_t] — either as a user element type, or for
+      the bit manipulation the software f64 transcendentals and the non-finite
+      f64 literal path perform. When [true], emits
+      [#extension GL_ARB_gpu_shader_int64 : require]. Unlike the fp64 line this
+      one is NOT optional: [int64_t] does not parse under plain [#version 450]
+      without it (glslangValidator: "syntax error, unexpected IDENTIFIER").
+      Defaults to [false] on the same byte-identity grounds as [uses_float64].
+*)
 let glsl_header ~kernel_name ?(block = (256, 1, 1)) ?(uses_float64 = false)
     ?(uses_int64 = false) () =
   let bx, by, bz = block in
   let fp64_extension =
     if uses_float64 then "#extension GL_ARB_gpu_shader_fp64 : require\n" else ""
   in
-  (* [GL_ARB_gpu_shader_int64] is required only by the software f64
-     transcendentals, which reinterpret a double's bits as an [int64_t] to
-     extract its exponent/mantissa. Emitted after the fp64 line (a kernel that
-     needs int64 necessarily uses fp64) so its absence keeps every other shader
-     byte-identical. *)
+  (* [GL_ARB_gpu_shader_int64] has THREE triggers, and this comment used to name
+     only the first two — which is precisely how #141's defect survived:
+
+       1. the software f64 transcendentals, which reinterpret a double's bits as
+          an [int64_t] to extract its exponent/mantissa;
+       2. a non-finite f64 constant, spelled via [int64BitsToDouble];
+       3. the user's own [int64] — a plain [int64 vector] kernel, no float64
+          anywhere.
+
+     The old comment also asserted that "a kernel that needs int64 necessarily
+     uses fp64". That was false, and it was load-bearing: it is the reason the
+     extension was gated on the two float64 conditions alone, so trigger 3
+     emitted [int64_t] with no [#extension] line and glslang rejected the
+     shader. Both claims are corrected here rather than deleted, because the
+     ORDERING below still depends on one of them being read correctly: the int64
+     line is emitted after the fp64 line so that a kernel using neither, or only
+     fp64, stays byte-identical to its committed golden. That is a statement
+     about the ORDER of two independent lines, not about one implying the
+     other. *)
   let int64_extension =
     if uses_int64 then "#extension GL_ARB_gpu_shader_int64 : require\n" else ""
   in
@@ -1513,9 +1536,25 @@ let compute_f64_softmath (k : kernel) =
      constant (emitted via int64BitsToDouble in gen_expr — GLSL has no inf/nan
      literal). Gating on both keeps a user-reachable [Float64.infinity] with no
      transcendental from emitting int64 ops without the extension. *)
+  (* AND, third, by the user's own int64: [glsl_type_of_elttype] maps [TInt64]
+     to "int64_t" at the correct width, but that spelling does not EXIST under
+     plain #version 450. Before #141 the extension was gated on the two f64
+     conditions above only, so a kernel over a plain `int64 vector` emitted
+
+       layout(std430, ...) buffer Buffer_outv { int64_t outv[]; };
+
+     with no #extension line, which glslangValidator rejects with
+     "'' : syntax error, unexpected IDENTIFIER" — reproduced, exit 2. Loud
+     rather than silent, so not the #141 narrowing class, but found by the same
+     sweep and broken all the same. [kernel_uses Int64] is the general detector
+     ([Sarek_ir_analysis.Int64], added with this fix); the two f64-specific
+     conditions stay because a kernel can need int64 OPS without an int64 TYPE
+     (the softmath helpers bit-cast a double, and int64BitsToDouble spells a
+     non-finite f64 literal). *)
   current_needs_int64 :=
     List.exists Sarek_ir_softmath.uses_int64 helpers
-    || Sarek_ir_analysis.kernel_uses_nonfinite_float64 k ;
+    || Sarek_ir_analysis.kernel_uses_nonfinite_float64 k
+    || Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Int64 k ;
   current_f64_needs_copysign :=
     List.exists Sarek_ir_softmath.uses_copysign helpers
 

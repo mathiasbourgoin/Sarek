@@ -64,9 +64,19 @@ let next_prim : T.prim_type -> T.prim_type option = function
   | T.TBool -> Some T.TUnit
   | T.TUnit -> None
 
+(* The accumulator must carry [x], the element just visited — not [y], the
+   successor about to be visited. Pushing [y] (as this did until #141) drops the
+   FIRST element of the chain and duplicates the LAST, so [T.Int] and
+   [T.TPrim T.TInt32] were never actually swept by any assertion below. The
+   length checks in [test_enumeration_is_complete] did not catch it because one
+   duplicate exactly compensated for one omission: 7 and 3 were still 7 and 3.
+   That is the "gates that cannot fail" pattern this file was written to close,
+   found in this file. Found by the sibling validator
+   sarek/tests/codegen_golden/test_backend_type_width_totality.ml, whose
+   pinned-set assertion reported the duplicate directly. *)
 let unfold next first =
   let rec go acc x =
-    match next x with Some y -> go (y :: acc) y | None -> List.rev (x :: acc)
+    match next x with Some y -> go (x :: acc) y | None -> List.rev (x :: acc)
   in
   go [] first
 
@@ -131,7 +141,17 @@ let test_enumeration_is_complete () =
   Alcotest.(check int)
     "scalar source types swept"
     10
-    (List.length all_scalar_typs)
+    (List.length all_scalar_typs) ;
+  (* A count alone does not prove the chain was walked correctly: the [unfold]
+     bug fixed in #141 kept the count at 10 while omitting one type and
+     duplicating another. Distinctness is what actually rules that out. *)
+  let labels = List.map string_of_typ all_scalar_typs in
+  let distinct = List.sort_uniq compare labels in
+  if List.length distinct <> List.length labels then
+    Alcotest.failf
+      "the enumeration contains duplicates, so it is walking the successor \
+       chain wrong and some source type is going unswept: %s"
+      (String.concat ", " labels)
 
 (** THE INVARIANT. For every scalar source type, [elttype_of_typ] must either
     reject it or preserve its byte width. *)

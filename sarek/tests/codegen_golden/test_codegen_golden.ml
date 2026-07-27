@@ -2312,6 +2312,40 @@ let validation_exclusions : ((string * string) * string) list =
 
 let excluded backend name = List.assoc_opt (backend, name) validation_exclusions
 
+(** Kernels that exist only to be run through the GLSL validator, and carry no
+    golden — same discipline as {!opencl_validation_only_kernels} below.
+
+    WHY THIS EXISTS (#141). [glsl_type_of_elttype] maps [TInt64] to "int64_t",
+    which is the right WIDTH but not a spelling that exists under plain
+    [#version 450]: it needs [#extension GL_ARB_gpu_shader_int64 : require].
+    That extension was gated on the two float64 conditions only — the softmath
+    helpers that bit-cast a double, and a non-finite f64 literal — so a kernel
+    over a plain [int64 vector], with no float64 anywhere, emitted [int64_t]
+    with no extension line at all. glslangValidator rejects it:
+
+    ERROR: :6: '' : syntax error, unexpected IDENTIFIER
+
+    reproduced at exit 2 before the fix, exit 0 after. Nothing in the corpus
+    used int64 except through the f64 transcendentals, which is precisely why
+    the gap survived — hence a kernel whose ONLY wide type is int64. *)
+let glsl_validation_only_kernels () =
+  let out = make_var "out" (TVec TInt64) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SAssign (LArrayElem ("out", EVar idx), EConst (CInt64 7L)) )
+  in
+  let k =
+    empty_kernel
+      "int64_only_store"
+      [DParam (out, Some {arr_elttype = TInt64; arr_memspace = Global})]
+      []
+      body
+  in
+  [("int64_only_store", k)]
+
 (** GLSL corpus = cross-backend kernels + GLSL-only kernels. *)
 let glsl_validation_tests () =
   List.map
@@ -2350,7 +2384,7 @@ let glsl_validation_tests () =
                       kernel_name
                       e
                       glsl)))
-    (test_kernels () @ glsl_only_kernels ())
+    (test_kernels () @ glsl_only_kernels () @ glsl_validation_only_kernels ())
 
 (** Kernels that exist only to be run through the WGSL validator, and carry no
     golden — same discipline as {!opencl_validation_only_kernels} below.

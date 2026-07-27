@@ -113,7 +113,7 @@ Legend for the evidence column:
 | **Vulkan / RADV (f16 narrowing)** | an f32→f16 narrowing absorbs whatever arithmetic feeds it (`v_fma_mixlo_f16`) — the multiply, and also the f32 **add**: the plain two-narrowing kernel compiles to a *single* fused instruction, one rounding where the DSL mandates three. Same ACO backend as HIP and rusticl, reached through a third front end, but a **wider** combine than either | **nothing affordable, and `precise` is not it.** `precise` → SPIR-V `NoContraction` IS honoured (it keeps the f32 multiply as its own `v_fma_mix_f32`) and still leaves 2912/63488, because absorbing a *conversion* is a different combine from contracting `a*b+c`. An f16 bitcast round-trip changes nothing. A `volatile` SSBO round-trip on the f32 intermediates makes ACO drop the intermediate narrowing **entirely** instead (4774/63488). Only forcing the f16 *bit pattern* through global memory works (0/63488), at a global round-trip per narrowing into a scratch buffer this backend does not control. **Consequence: f16 stays REJECTED in `Sarek_ir_glsl`** | **executed**, 2026-07-26, exhaustive sweep of all 63488 finite binary16 inputs on **two** devices — RX 7900 XTX (**RADV NAVI31**) and the integrated Raphael iGPU (**RADV RAPHAEL_MENDOCINO**) — Mesa 26.1.4-arch3.1, Vulkan 1.4.354. Both report identical counts: **2912/63488** on `f16(x*1.1)` (plain and `precise` alike), **5075/63488** on `f16(f16(x*1.1)+1000)` plain, **4776/63488** with `precise`. Calibration: the same host oracle reproduces the independently measured **620** on the HIP/OpenCL kernel shape, and the barriered kernel reports **0/63488**, so the sweep is proven able to go both red and green. Gate: `sarek-vulkan/test/test_vulkan_f16_tripwire.ml` |
 | **OpenCL / pocl on x86 (f16 narrowing)** | in principle the same fusion — but nothing in this stack performs it | **nothing needed.** The naive narrowing already round-trips through binary16 exactly, so the barrier that rusticl requires is unnecessary here | **executed on CI**, 2026-07-26, quoted device `AMD EPYC 7763 64-Core Processor` under pocl on a GitHub-hosted runner: exhaustive sweep of all 63488 finite binary16 inputs, **0** disagreements between the naive and `volatile __local`-barriered narrowings. Observed as a CI failure of `test_opencl_f16_tripwire` before that test was scoped, i.e. the number was produced by a harness that was at the time *trying* to find a difference — so it is a null with the sweep demonstrably live. **This is what localises the defect:** the same source, swept the same way, fuses on ACO and does not fuse here, so the locus is *the ACO backend*, not *OpenCL*. That in turn is the second independent reason to read rusticl and HIP/AMDGPU as one bug seen through two front ends rather than two bugs. **Confirmed by a second, independent negative on a real GPU** — Intel Arc Graphics under the Intel Compute Runtime / IGC, a compiler sharing no lineage with Mesa: 0/63488, with the sweep calibrated on the same run against the known 620 (§11.3). Guarded by `test_opencl_f16_tripwire`'s locus check, which fails if any non-ACO implementation is found to fuse — and which was itself wrong until §11.5 |
 | **Vulkan / GLSL** | contraction and reassociation of float expressions | `precise` on every float local (`Sarek_ir_glsl.gen_var_decl`), which glslang lowers to SPIR-V `NoContraction` — but on RADV nothing needs preventing *for these shapes*: the driver does not contract them even without the decoration. It is **not** the decoration that is protecting them; RADV was separately observed ignoring `NoContraction` on a combine it does want to perform (§6, f16 narrowing) | **executed + machine-code**, RX 7900 XTX (RADV NAVI31) and Raphael iGPU (RADV RAPHAEL_MENDOCINO), Mesa 26.1.4-arch3.1: 0 of 7 contraction shapes contracted with or without `precise`, ISA opcode-identical between the two builds, explicit `fma()` controls fused 4/4 — see §6. Decoration emission: compiler-output, glslc 2026.2 + glslangValidator, 18 `NoContraction` with `precise` / 0 without. **Mesa ANV now measured too** (§11.2): Intel Arc Graphics (Meteor Lake-P), Mesa 26.1.2-arch3.1, same 0 of 7 / 0 of 7 with `fma()` controls 4/4 — and unlike RADV, ANV does not fuse the f16 narrowing either, so no combine has been found on ANV where `NoContraction` is ignored. Separately, `fma` is not correctly rounded on RADV: df64 mul 5.84e-08 / div 5.86e-08, each the measured worst-case relative error over `test_df64`'s own input set on the named device and driver, not a bound; ANV shows the same signature (mul 5.84e-08 / div 5.86e-08, §11.1) |
-| **Metal** | contraction of `a*b+c` — **measured, and NOT preventable by any compile option**; separately, both math defaults are the fast one (`mathMode = MTLMathModeFast`, `mathFloatingPointFunctions = ...Fast`, read from a fresh `MTLCompileOptions`) | **two mechanisms, both required**: `#pragma METAL fp contract(off)` in every generated kernel (`Sarek_ir_metal.metal_fp_contract_pragma`) for contraction, *and* `mathMode = Safe` + `mathFloatingPointFunctions = Precise` in `Metal_bindings.mtl_compile_options_conformant` for math-function accuracy (falling back to the deprecated `fastMathEnabled = NO` before macOS 15) | **executed**, Apple M4 / macOS 15.6.1 (24G90) / Apple clang 17.0.0: on the 8773 of 65536 elements where the device's own `fma` differs from the separately-rounded value, `a*b+c` is contracted 8773/8773 under every compile-option setting **including `mathMode=Safe`**, and 0/8773 with the pragma. Options are honoured (16017 and 22135 of 65536 math-function results change), so Metal is not in rusticl's ignore-it class. **Interpreter agreement now executed on the same device**: `test_df64` and `test_real64` PASS on every op and reproduce the interpreter's figures exactly (mul 9.07e-15, add 5.33e-15, sub 6.51e-15, div 5.08e-15, sqrt 8.53e-15) — sampled maxima over each test's input set, not bounds, and agreement between summary statistics rather than element-wise identity. f16 and subnormals unprobed; two record/variant kernels do not compile at all (§10.11) |
+| **Metal** | contraction of `a*b+c` — **measured, and NOT preventable by any compile option**; separately, both math defaults are the fast one (`mathMode = MTLMathModeFast`, `mathFloatingPointFunctions = ...Fast`, read from a fresh `MTLCompileOptions`) | **two mechanisms, both required**: `#pragma METAL fp contract(off)` in every generated kernel (`Sarek_ir_metal.metal_fp_contract_pragma`) for contraction, *and* `mathMode = Safe` + `mathFloatingPointFunctions = Precise` in `Metal_bindings.mtl_compile_options_conformant` for math-function accuracy (falling back to the deprecated `fastMathEnabled = NO` before macOS 15) | **executed**, Apple M4 / macOS 15.6.1 (24G90) / Apple clang 17.0.0: on the 8773 of 65536 elements where the device's own `fma` differs from the separately-rounded value, `a*b+c` is contracted 8773/8773 under every compile-option setting **including `mathMode=Safe`**, and 0/8773 with the pragma. Options are honoured (16017 and 22135 of 65536 math-function results change), so Metal is not in rusticl's ignore-it class. **Interpreter agreement now executed on the same device**: `test_df64` and `test_real64` PASS on every op and reproduce the interpreter's figures exactly (mul 9.07e-15, add 5.33e-15, sub 6.51e-15, div 5.08e-15, sqrt 8.53e-15) — sampled maxima over each test's input set, not bounds, and agreement between summary statistics rather than element-wise identity. f16 and subnormals unprobed; two record/variant kernels do not compile at all (§10.11). **f64 is refused outright** — MSL has no `double`, and until #141 `TFloat64` was silently emitted as `float`, striding an 8-byte-per-element host buffer at 4; `Sarek_real64` (df64) is the supported route and is the figure quoted above (§10.13) |
 | **WGSL** | unconstrained | nothing | unverified, untested |
 | **Native (OCaml host)** | n/a | n/a | float32 is evaluated at OCaml binary64 precision, so error-free transformations cancel; `Sarek_df64` degrades to ~2^-24 there **by design** |
 
@@ -1173,6 +1173,160 @@ WGSL was the odd one out here too, exactly as it was for payload spelling.
 Adding `smatch_multi_payload` to the sweep turned it red on the first run;
 emitting a synthetic empty `default` when no `PWild` arm is present turned it
 green.
+
+### 10.13 A fourth defect, found the same way (#141): Metal silently halved f64
+
+Not a contraction defect, but it belongs here because it is a *float-semantics*
+claim the codebase was making and getting wrong, and because §10's Metal work is
+what makes the correct answer available.
+
+`Sarek_ir_metal.metal_type_of_elttype` mapped `TFloat64` to `"float"`, under the
+comment *"Metal doesn't support double precision"* — a true statement used to
+justify the wrong conclusion. There was **no refusal anywhere**: a kernel
+declared over `float64` compiled, ran, and returned a plausible wrong answer.
+
+**Captured before the fix.** For `out.(i) <- inp.(i) *. 2.0` in float64, the
+emitter produced, verbatim:
+
+```cpp
+kernel void f64_scale(device float* out [[buffer(0)]], constant int &sarek_out_length [[buffer(1)]], device float* inp [[buffer(2)]], ...
+```
+
+and for an f64 *local*:
+
+```cpp
+  float x = 0.10000000000000001;
+```
+
+both with no diagnostic on any channel. Note that the cost is **worse than
+halved precision**: the IR element type also fixes the buffer stride, and
+`Spoc_core.Vector.float64` is 8 bytes per element, so `device float*` strode the
+host's buffer at 4 — every element after the first was a bit-half of a
+neighbour. The kernel did not lose precision, it read a different array.
+
+**The fix is a refusal, not a widening**, because MSL has no `double` on any
+Apple GPU and never will. Both the element-type arm and a whole-kernel gate
+(`Sarek_ir_metal.reject_float64_kernel`, on the existing
+`Sarek_ir_analysis.kernel_uses Float64` detector, so an f64 that appears only as
+a `CFloat64` literal or an f64-typed local is also caught) render the same
+`Sarek_capability` row — `float64_absent_metal`, kind `Backend_structural`,
+carrying the remedy — so the fact is stated once and the diagnostic says which
+*kind* of unavailability the author is looking at. See
+[`docs/design/capability-model.md`](design/capability-model.md).
+
+Both entry points were found twice, independently: #64 reasoned down from the
+capability model and was motivated by the f64 **literal** assigned into an f32
+buffer; #141 reasoned up from the emitted source and was motivated by the f64
+**local**. Neither shape reaches the other's detector, and both searches landed
+on the same `kernel_uses Float64` gate at the same two `generate` entries. That
+is the argument that {arm, whole-kernel} is the complete set rather than the set
+somebody happened to think of.
+
+**`Sarek_real64` is that route and it was never broken.** df64 is *double-float*
+— an unevaluated pair of binary32 giving ~2⁻⁴⁶ — so it needs no hardware fp64;
+that is its purpose. `Metal_api.Device` reports `supports_fp64 = false`, and
+`Sarek_real64` already selects `Fallback_df64` on that basis. Measured on the M4
+(§10.7): mul 9.07e-15, add 5.33e-15, sub 6.51e-15, div 5.08e-15, sqrt 8.53e-15.
+
+**The contradicting comment is the reason this survived.** `Metal_api.ml`
+documented the field as *"Metal always supports FP64 on macOS"* — the exact
+opposite of the truth, eleven lines above the `supports_fp64 = false` that sets
+it. A comment that says the opposite of its code is not a documentation nit; it
+is how a defect gets read past. Corrected.
+
+#### The class, swept
+
+The point fix closes one arm. The class is *any place a requested element type
+is mapped to a narrower one without a refusal*, and it is now swept by
+`sarek/tests/codegen_golden/test_backend_type_width_totality.ml`: for every
+backend and every scalar IR element type, the mapper must either raise a
+diagnostic or name a device type of exactly `Sarek_ir_layout.scalar_size` bytes.
+That file is the backend twin of `sarek/tests/unit/test_type_width_totality.ml`,
+which enforces the same rule on the *front* half (source type → IR element
+type) and stops at the IR.
+
+The full sweep found **two** silent narrowings, both on Metal, and **no others**:
+
+| backend | `TInt64` | `TFloat16` | `TFloat64` | `TBool` |
+|---|---|---|---|---|
+| **Metal** | `long` ✓ 8 | refused | **`float` ✗ 4 vs 8** | **`bool` ✗ 1 vs 4** |
+| **CUDA** | `long long` ✓ 8 | `__half` ✓ 2 | `double` ✓ 8 | `int` ✓ 4 |
+| **OpenCL** | `long` ✓ 8 | refused | `double` ✓ 8 | `int` ✓ 4 |
+| **GLSL** | `int64_t` ✓ 8 | refused | `double` ✓ 8 | `bool` ✓ 4 (see below) |
+| **WGSL** | refused | refused | refused | `bool` — no memory form (see below) |
+| **PTX** | `.u64` ✓ 8 | refused | `.f64` ✓ 8 | `.u32` ✓ 4 |
+
+`TBool` is the second Metal narrowing and it is reachable — and it is a codegen
+bug, not a capability gap, by the test `docs/design/capability-model.md` §5.1
+sets out: not "is it silent" nor "is it a width mismatch" (both are equally true
+of it and of f64), but **does a correct lowering exist in the target language?**
+For f64 there is none; for bool there is. The host gives a
+Sarek `bool` a 4-byte slot (`Sarek_ppx`'s field-size mapping, mirrored by
+`Sarek_ir_layout.scalar_size TBool = 4`), MSL `bool` is **one** byte, and `bool`
+is an accepted `[@@sarek.type]` record field type. Host `{bool;bool;int}` lays
+out at 0/4/8, size 12; the emitted `typedef struct { bool a; bool b; int n; }`
+lays out at 0/1/4, size 8. Metal now emits `int`, which is what CUDA and OpenCL
+already did.
+
+The other two `bool` spellings are **not** silent, and this was checked rather
+than assumed:
+
+- **GLSL** — glslang lowers a `bool` member of an std430 storage buffer to a
+  32-bit uint, i.e. the host's own width. Verified on the emitted bool-record
+  shader: `glslangValidator -V --target-env vulkan1.2` exits 0, and `spirv-dis`
+  shows `%Flagged_0 = OpTypeStruct %uint %int`, `OpMemberDecorate ... Offset 0`
+  / `Offset 4`, `ArrayStride 8`.
+- **WGSL** — `bool` has no memory form at all there, and `naga` refuses it in a
+  storage binding rather than choosing a width: *"The type is not
+  host-shareable"*. A bool that reaches a buffer is a hard validation failure at
+  shader-load time, never a wrong stride.
+
+#### A fifth defect the same sweep turned up: GLSL int64 with no extension
+
+Loud rather than silent, so not the #141 narrowing class, but broken all the
+same. `glsl_type_of_elttype` maps `TInt64` to `int64_t` at the correct width —
+but that spelling does not exist under plain `#version 450`; it needs
+`#extension GL_ARB_gpu_shader_int64 : require`. That extension was gated on the
+two *float64* conditions only (the softmath helpers that bit-cast a double, and
+a non-finite f64 literal spelled via `int64BitsToDouble`), because nothing in
+the corpus reached int64 any other way. A kernel over a plain `int64 vector`,
+with no float64 anywhere, therefore emitted:
+
+```glsl
+layout(std430, set=0, binding = 0) buffer Buffer_outv { int64_t outv[]; };
+```
+
+with no `#extension` line. `glslangValidator` rejects it —
+`ERROR: :7: '' : syntax error, unexpected IDENTIFIER`, exit 2 — reproduced
+before the fix and exit 0 after. The gate is `glsl-validate/int64_only_store`, a
+validation-only kernel (no golden) whose only wide type is int64, which is
+exactly the shape the corpus lacked. `Sarek_ir_analysis.feature` gained an
+`Int64` constructor to drive it.
+
+The *fp64* extension, by contrast, was already correct and is the measurement
+that retracted a slice-1 claim: `glsl_header` takes
+`~uses_float64:(kernel_uses_float64 k)` and emits
+`#extension GL_ARB_gpu_shader_fp64 : require`, and `glslangValidator` accepts
+the generated f64 kernel at exit 0. `docs/design/capability-model.md` §4
+records the retraction in place. The *capability* half of int64-on-Vulkan —
+`VkPhysicalDeviceFeatures.shaderInt64`, which is `Device_optional` and needs a
+device probe — is #142; only the emitter half is fixed here.
+
+#### And one in the precedent test itself
+
+`sarek/tests/unit/test_type_width_totality.ml` builds its source-type
+enumeration by unfolding a total successor chain, specifically so the list
+cannot drift from the type. Its `unfold` pushed the *successor* onto the
+accumulator instead of the element just visited, so it dropped the **first**
+element of every chain and duplicated the **last**: `T.Int` and
+`T.TPrim T.TInt32` were never swept by any assertion in that file. Its
+anti-vacuity check did not catch it, because one duplicate exactly compensated
+for one omission — the lengths were still 7, 3 and 10.
+
+Found by the backend twin, whose pinned-exemption-set assertion reported the
+duplicate directly. Both `unfold`s are fixed, and both files now assert
+**distinctness** as well as length, which is the property a count alone cannot
+establish.
 
 ---
 

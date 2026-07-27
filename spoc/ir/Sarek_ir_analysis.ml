@@ -188,28 +188,35 @@ let exists_folder ~leaf ?(type_leaf = fun _ -> false) ~native
     [Kernel.requirements] capability field reduces to, and it lives in the right
     layer already ([spoc/ir], no backend dependencies). *)
 
-type feature = Float64 | Float16
+type feature = Float64 | Float16 | Int64
 
-let all_features = [Float64; Float16]
+let all_features = [Float64; Float16; Int64]
 
-let feature_name = function Float64 -> "float64" | Float16 -> "float16"
+let feature_name = function
+  | Float64 -> "float64"
+  | Float16 -> "float16"
+  | Int64 -> "int64"
 
 (** Does element type [t] mention the width [f], transitively through records,
     variants, arrays and vectors? *)
 let rec elttype_uses (f : feature) = function
   | TFloat64 -> f = Float64
   | TFloat16 -> f = Float16
+  | TInt64 -> f = Int64
   | TRecord (_, fields) -> List.exists (fun (_, t) -> elttype_uses f t) fields
   | TVariant (_, constrs) ->
       List.exists (fun (_, args) -> List.exists (elttype_uses f) args) constrs
   | TArray (elt, _) | TVec elt -> elttype_uses f elt
-  | TInt32 | TInt64 | TFloat32 | TBool | TUnit -> false
+  | TInt32 | TFloat32 | TBool | TUnit -> false
 
-(** Is constant [c] a literal of width [f]? Only float64 has one; f16 has no
-    literal form, so this is [false] for [Float16] by construction rather than
-    by a missing case. *)
+(** Is constant [c] a literal of width [f]? [Float64] and [Int64] each have one
+    ([CFloat64], [CInt64]); f16 has no literal form, so this is [false] for
+    [Float16] by construction rather than by a missing case. *)
 let const_uses (f : feature) c =
-  match (f, c) with Float64, CFloat64 _ -> true | _ -> false
+  match (f, c) with
+  | Float64, CFloat64 _ -> true
+  | Int64, CInt64 _ -> true
+  | _ -> false
 
 let feature_leaf f = function
   | EConst c -> const_uses f c
@@ -231,7 +238,12 @@ let float64_folder = folder_of Float64
 
 let float16_folder = folder_of Float16
 
-let folder = function Float64 -> float64_folder | Float16 -> float16_folder
+let int64_folder = folder_of Int64
+
+let folder = function
+  | Float64 -> float64_folder
+  | Float16 -> float16_folder
+  | Int64 -> int64_folder
 
 (** Does expression [e] use width [f]? *)
 let expr_uses f e = expr_fold (folder f) false e

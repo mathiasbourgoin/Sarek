@@ -172,17 +172,31 @@ let test_type_mapping () =
     "float"
     (Sarek_ir_metal.metal_type_of_elttype TFloat32) ;
   (* This assertion used to read `"float64 maps to float (no double)"` and
-     expect `"float"`. It encoded the defect: Metal has no double, so mapping
-     TFloat64 to `float` silently halved the precision of any kernel written
-     against binary64 and the test certified it. #64 slice 1 makes it a
-     refusal; the assertion is inverted to match. *)
+     expect `"float"`. It encoded the defect and certified it as the contract.
+     Metal has no double, which is a reason to REFUSE, not a licence to hand
+     back half the width. #64 slice 1 makes it a refusal; the assertion is
+     inverted to match.
+
+     The severity is higher than "silently halved the precision", which is how
+     this was originally described: the IR element type also fixes the buffer
+     stride, and the host lays a float64 out in 8 bytes, so `device float*`
+     strode the buffer at 4 and every element after the first was a bit-half of
+     its neighbour (#141). Wrong answer, not degraded answer. *)
   (match Sarek_ir_metal.metal_type_of_elttype TFloat64 with
   | (_ : string) ->
       Alcotest.fail "float64 must be refused by Metal, not mapped to a type"
   | exception Sarek_backend_error.Backend_error.Backend_error _ -> ()) ;
+  (* MSL `bool` is 1 byte; the host gives a Sarek bool a 4-byte slot
+     (Sarek_ir_layout.scalar_size TBool = 4, mirroring Sarek_ppx), so a bool
+     record field desynced silently — host {bool;bool;int} at 0/4/8 size 12
+     against a device struct at 0/1/4 size 8. CUDA and OpenCL already emit `int`
+     here. Not a capability refusal, by the §5.1 test: a correct lowering
+     exists in the target language, so it is a codegen bug and gets emitted
+     correctly rather than refused. Width invariant swept for every backend by
+     sarek/tests/codegen_golden/test_backend_type_width_totality.ml. *)
   Alcotest.(check string)
-    "bool maps to bool"
-    "bool"
+    "bool maps to int (host bool slot is 4 bytes, MSL bool is 1)"
+    "int"
     (Sarek_ir_metal.metal_type_of_elttype TBool)
 
 let test_var_decl () =
