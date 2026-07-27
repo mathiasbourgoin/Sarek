@@ -4,9 +4,15 @@ _What Sarek promises about f16 results when bit-identity with the interpreter is
 no longer required, and how #62 (Vulkan cooperative-matrix) and #63 (Metal
 `simdgroup_matrix`) are sliced on top of it._
 
-**Status:** design only. **No refusal is lifted by this change.** **Issues:** #62,
-#63; depends on the f16 scalar type (#57) and the capability model (#64).
-**Date:** 2026-07-27.
+**Status:** design only; the two decisions this document opened were taken by the
+project owner on 2026-07-27 and are recorded as decided in **§3** (scalar f16 is
+relaxed, as an explicit performance trade) and **§6** (user-facing friction is
+proportional to the strength of the evidence). **No refusal is lifted by this
+change.** **Issues:** #62, #63; depends on the f16 scalar type (#57) and the
+capability model (#64). **Date:** 2026-07-27.
+
+**Read §0.1 first.** It is one paragraph and it is the argument every other
+choice here follows from.
 
 Companion documents, neither of which is edited here:
 [`docs/fp-contraction-policy.md`](../fp-contraction-policy.md) is the measurement
@@ -32,11 +38,47 @@ the consequence was a fully collapsed implementation reading green.
 
 This document turns the decision into something a test can fail.
 
-**It also declines to apply the relaxation as widely as the decision would
-permit**, for a reason set out in §3: the two things being unblocked cannot hold
-bit-identity for *different* reasons, only one of which is unfixable, and
-relaxing both on the strength of the unfixable one gives away the fixable one for
-free.
+### 0.1 The one argument to read before anything else
+
+The natural way to spend a relaxation is a tolerance: *"within N ulp of the
+interpreter"*. **It cannot work here, and the reason is arithmetic on two numbers
+this project has already measured**, not a matter of taste.
+
+Two behaviours have been observed on the f16 narrowing. One is a characterised
+alternative rounding of the same expression — ACO absorbs the f32 multiply into
+the f32→f16 narrowing, rounding once where the DSL mandates twice. The other is a
+plain defect — IGC, under a `volatile` barrier, drops the intermediate binary16
+narrowing altogether, which is a *different expression*
+(`fp-contraction-policy.md` §11.4).
+
+**Both are at most one ulp of binary16.** §11.4's worked divergence is
+`x = 0.681640625`, where the device returns `1000.5` and the discipline mandates
+`1001` — and 1000.5 and 1001 are **adjacent binary16 values** (1001 lies in the
+binade [512, 1024), where the binary16 ulp is 0.5). So any band wide enough to
+admit the first is wide enough to admit the second, and any band tight enough to
+exclude the second excludes the first as well.
+
+**A pure ulp gate cannot separate a characterised deviation from a plain defect
+on this hazard.** That is why the contract in §1.2 is a *set of named,
+closed-form reference semantics compared exactly*, and not a tolerance — and why
+the 1-ulp ceiling of §1.3 is kept as a necessary check while being explicitly
+declared insufficient on its own. Everything else in this document follows from
+that one observation.
+
+### 0.2 The two decisions the first draft left open, now taken
+
+This document was first circulated with two questions marked as owner decisions.
+Both have been settled and are recorded as decided, with the reasoning kept so it
+can be re-derived:
+
+- **Scalar f16: relax — recorded explicitly as a performance trade, not a
+  reachability one.** §3.
+- **User-facing friction is proportional to the strength of the evidence.** §6.
+
+**The document still declines to apply the relaxation as one undifferentiated
+thing**, for the reason set out in §3: the two paths being unblocked cannot hold
+bit-identity for *different* reasons, only one of which is unfixable, and letting
+the unfixable one carry the fixable one would give the fixable one away for free.
 
 ---
 
@@ -44,9 +86,8 @@ free.
 
 ### 1.1 Not an ulp band. A finite set of admissible rounding semantics.
 
-The obvious move is a tolerance: "the device must agree with the interpreter to
-within N ulp of binary16". **Do not take it.** It is measurably unable to do the
-job.
+The short form of this is §0.1 and it is the argument the whole design rests on.
+Here is the measurement behind it.
 
 Two behaviours have been observed on the f16 narrowing, and they are not the same
 kind of thing:
@@ -207,7 +248,15 @@ Three things this table says that are easy to miss:
 
 ---
 
-## 3. Why the relaxation is worth it — and why it should not be uniform
+## 3. Why the relaxation is worth it — and why it is not uniform
+
+> **DECIDED (2026-07-27).** Take the relaxation for scalar f16 as well as for
+> cooperative matrix — and record the scalar half explicitly as a **performance
+> trade**, because that is what it is. The exact mechanism is kept documented and
+> available; it is not being taken away, it is being declined by default on cost
+> grounds. The reasoning is below and is deliberately preserved, because the two
+> halves of the relaxation are justified by two different arguments and a later
+> reader must be able to tell them apart.
 
 **The honest sentence.** This is a **weaker guarantee than Sarek held before.**
 Before, an f16 result on a supported backend was bit-identical to the
@@ -227,21 +276,41 @@ expressed without f16 as a DSL element type on those backends
   reference, by specification.** The order of operations is
   implementation-dependent (§1.4). There is no barrier, no flag and no source
   formulation that recovers it. Here the relaxation is the *only* route.
-- **Scalar f16 on RADV and rusticl can be bit-reproduced, at a cost.**
-  `fp-contraction-policy.md` §2 records a working barrier for each: forcing the
-  f16 bit pattern through a global round-trip gives **0 / 63488** on both stacks.
-  It is rejected as unaffordable (a memory round-trip per narrowing, into a
-  scratch buffer the backend does not currently own), not as impossible. So for
-  the scalar case the relaxation is a **performance decision**, not a reachability
-  one, and it should be presented to the owner as such rather than folded into
-  the coopmat argument.
+- **Scalar f16 on RADV and rusticl CAN be bit-reproduced, and the mechanism is
+  measured.** `fp-contraction-policy.md` §2 records a working barrier for each:
+  forcing the f16 **bit pattern** through a global-memory round-trip gives
+  **0 / 63488** — on rusticl/radeonsi (`volatile __global` round-trip) and on
+  RADV (the f16 bit pattern through global memory), on the RX 7900 XTX and the
+  Raphael iGPU, Mesa 26.1.4-arch3.1. It is exact. It was rejected on **cost** — a
+  memory round-trip per narrowing, into a scratch buffer neither backend
+  currently owns — and not on impossibility.
 
-**Recommendation.** Take the relaxation for both, because the scalar case is a
-prerequisite for the matrix case and paying a global round-trip per narrowing
-inside a matmul inner loop would defeat the purpose. But record it as a
-performance trade in the scalar case, and keep the expensive-but-exact barrier
-documented as a real option — if a future user needs bit-identity more than
-throughput, the mechanism exists and has been measured.
+### 3.1 The scalar decision, stated plainly
+
+**Sarek declines an available exact mechanism for scalar f16 on ACO stacks, and
+accepts a characterised one-rounding deviation instead, in exchange for
+throughput.** That is a performance choice. It is not the same kind of statement
+as the coopmat one, where no mechanism exists at any price.
+
+The trade is taken because the scalar type is a prerequisite for the matrix path,
+and a global-memory round-trip **per narrowing, inside a matmul inner loop**,
+would consume exactly the bandwidth the tensor-core path is being built to save.
+Paying it there would make the unblock self-defeating.
+
+**The exact route stays documented and reachable.** If a user's requirement is
+bit-reproducibility across stacks rather than throughput, the mechanism exists,
+has been measured at 0/63488 on both ACO stacks, and is written down in
+`fp-contraction-policy.md` §2 (the `OpenCL / rusticl (f16 narrowing)` and
+`Vulkan / RADV (f16 narrowing)` rows). Nothing in this design deletes it or makes
+it harder to reintroduce; a future opt-in barrier mode is a small, self-contained
+change on top of the slice-3 codegen. It is declined by default, not removed.
+
+**Consequences to keep in view.** Because this half is a cost decision and not a
+physics one, it is the half that should be **revisited when the cost changes** —
+a Mesa release that stops fusing (the existing tripwires already go red on
+exactly that), a cheaper barrier shape, or a workload whose narrowings are not in
+an inner loop. The coopmat half will never be revisited on those grounds, because
+no measurement can move a specification.
 
 ---
 
@@ -340,6 +409,15 @@ difference between a measurement and a formality.
 
 ## 6. How a DSL author finds out
 
+> **DECIDED (2026-07-27).** **User-facing friction is proportional to the
+> strength of the evidence for the deviation.** Where the deviation is exactly
+> characterised — a named closed-form model, agreed with bit-for-bit over an
+> exhaustive sweep — the author gets a loud one-time diagnostic and the code
+> runs. Where the deviation is only *bounded* — the coopmat case, where the
+> specification grants a freedom no reference can pin down — the author must
+> explicitly opt in, and the launch fails without it. The rule and its derivation
+> are §6.1.
+
 Silence is not an option; it is the failure mode this repository's recent history
 is made of. The mechanism is `capability-model.md`'s, used as designed and
 without extending it.
@@ -363,8 +441,10 @@ compile error at the deciding site, and there is no need. Instead:
   Does not permit. Today's refusal is the default and stays the default; a new
   Mesa release does not silently start emitting relaxed f16.
 
-**Three surfaces, and the choice between them is coupled to the strength of the
-evidence** — which is the point, and is a decision the owner should confirm:
+### 6.1 The friction rule, and why it is shaped this way
+
+**The rule.** *How much the user is made to say yes is proportional to how poorly
+we know the deviation.*
 
 | evidence for the deviation | what the author gets |
 |---|---|
@@ -372,12 +452,42 @@ evidence** — which is the point, and is a decision the owner should confirm:
 | a *bounded* deviation with no closed form (the coopmat case, §5) | **explicit opt-in required** — `Sarek.accept_relaxed_f16 ~reason` or equivalent, and the launch fails without it |
 | unmeasured | refused, as today |
 
-Rationale for the split: an opt-in is how "the limitation is understood" is
-evidenced, and it is cheap where the deviation is exactly characterised and
-expensive where it is not. Making it mandatory everywhere would make the
-tensor-core path unusable by default and defeat the unblock; making it mandatory
-nowhere would make the coopmat bound something a user can meet without ever
-having read what it means. **Flagged as an owner decision, not settled here.**
+**The derivation, kept because someone will want to re-derive it.** The owner's
+ruling asks for four things, and one of them — *"la limitation technique est
+comprise"* — is a property of the **user**, not of the code. Nothing in a test
+suite can establish it. The only instrument that can is making the user say so.
+So the question is not *whether* to ask, but *when* asking earns its cost.
+
+Three constraints pin the answer:
+
+1. **An opt-in is the only evidence of understanding we can collect.** A
+   diagnostic evidences that we *told* them; a required call evidences that they
+   *read* it. Those are different facts and only the second discharges the
+   ruling's third clause.
+2. **Mandatory everywhere defeats the unblock.** If every f16 kernel needs an
+   acknowledgement before it will run, the tensor-core path is unusable by
+   default, and #62/#63 were unblocked in order to be used.
+3. **Mandatory nowhere makes the coopmat bound meaningless.** §5's bound is a
+   *bound*, not an identity: a user can be inside it and still be getting an
+   answer that depends on the driver's accumulation order. Someone who has not
+   understood that will read a passing run as a reproducible one.
+
+Constraints 2 and 3 pull in opposite directions, so the split has to fall
+somewhere; the strength of the evidence is the right place for it to fall,
+because it is exactly the axis along which the *risk of misreading a passing run*
+varies. Where the deviation matches a closed-form model bit-for-bit over the
+whole finite domain, a user who ignores the diagnostic still gets a result that
+is a *specific, documented, deterministic* function of their input — the worst
+case is a surprise, not a silent wrongness. Where the deviation is only bounded,
+the same ignored diagnostic leaves them believing something that is not true. The
+friction is spent where the failure mode is worse.
+
+**Corollary, and it is the useful part of the rule.** Friction is not a fixed
+property of a backend — it *falls* as evidence improves. If slice 4a finds that a
+given implementation's coopmat MulAdd matches a closed-form accumulation order
+exactly, that configuration moves from the opt-in row to the diagnostic row, with
+no new decision needed. The rule is written to make that a measurement outcome
+rather than a negotiation.
 
 **Also required, and cheap:** the generated device source carries a header
 comment naming the semantics in force, so anyone reading a dumped kernel sees it;
@@ -441,9 +551,16 @@ Two outcomes, and they are not equally good:
 - **Some shape matches no model.** Most likely candidate is the RADV
   two-narrowing shape, where 5075 plain against 4776 with `precise` already
   suggests two behaviours rather than one (§2 note 2). Then that shape stays
-  refused, the contract becomes per-shape, and **the owner should be told before
-  slices 2–4 are funded** — a per-shape contract is a materially worse thing to
-  document and to explain to a user than a per-backend one.
+  refused, the contract becomes per-shape, and **the owner is told before slices
+  2–4 are funded** — a per-shape contract is a materially worse thing to document
+  and to explain to a user than a per-backend one. This is the open risk of the
+  whole design and it is written up as such in **§9.3**, together with the
+  mitigation (§7 slice 4b's integer component types, which put an
+  existing-strict-contract coopmat path within reach regardless).
+
+**This slice reports its outcome upward before the next one starts.** It is a
+decision point, not a task on a list; a green result funds slices 2–4 and a red
+one reopens the contract.
 
 Also upgrade the rusticl row of §2 from count-and-first-divergence agreement to
 element-wise agreement, which is what §1.2 actually requires and which nobody has
@@ -497,9 +614,34 @@ and needs nothing from the DSL:
   variation. **Proves the numeric contract of §5 on a real implementation** —
   which is today entirely unmeasured — before any IR work is committed to it.
 - **4b — the IR fragment type.** The new type class that
-  `f16-dsl-element-type.md` §8 slice 3 names and defers. Shape must accommodate
-  both 16×16×16 subgroup-scope (Vulkan, measured §4) and 8×8×8
-  (`simdgroup_half8x8`, Metal) — do not hard-code 16.
+  `f16-dsl-element-type.md` §8 slice 3 names and defers. Two shape requirements,
+  both cheap now and expensive to retrofit, and **both are binding on this slice
+  rather than advisory**:
+
+  - **Dimensions are not hard-coded.** Must accommodate 16×16×16 subgroup-scope
+    (Vulkan, measured §4) *and* 8×8×8 (`simdgroup_half8x8`, Metal).
+  - **Component types admit integers from the start** — `u8`/`s8` operands with
+    `u32`/`s32` accumulate, including the saturating variants. This is §8's
+    recommendation and it is adopted: 12 of the 14 configurations advertised on
+    the local device are integer, `SPV_KHR_cooperative_matrix` states integer
+    accumulation is *exact* at the precision of the result type, and those
+    configurations are therefore deliverable under Sarek's **existing strict
+    contract** with no relaxation, no allowlist and no opt-in. Building the type
+    to admit them costs almost nothing at design time and is a wide, invasive
+    change afterwards.
+
+    It is also the **fallback if slice 1 goes the wrong way**: if the ACO shapes
+    fail to match a closed-form model and the scalar contract has to become
+    per-shape, an integer-only coopmat path still lands, still under the strict
+    contract, and #62 is not blocked on the accuracy question at all. That
+    fallback only exists if 4b was built for it.
+
+  The *slicing* is deliberately **not** reordered to put integers first — f16
+  scalar is a prerequisite for #63 and for bf16 regardless
+  (`f16-dsl-element-type.md` §11.1), so the relaxation work is resequenced rather
+  than avoided, and an integer-only tensor-core path is not what the intended
+  audience means by "tensor cores". The type admits integers; the plan still
+  leads with f16.
 - **4c — GLSL codegen for the fragment type**, gated on the `Device_optional`
   coopmat capability. The Raphael iGPU is the free negative device (§4).
 
@@ -566,45 +708,83 @@ consumer of integer tensor cores.
 Against it: the f16 scalar type is a prerequisite for #63 and for bf16 regardless
 (`f16-dsl-element-type.md` §11.1), so the relaxation work is not avoided, only
 resequenced; and an integer-only coopmat path is not what "tensor cores" means to
-most of the intended audience. **Recommendation: do not reorder the plan, but do
-build slice 4b's fragment type to admit integer component types from the start**
-— it is nearly free at design time and expensive to retrofit, and it means the
-strict-contract configurations are available as a fallback if slice 1 goes the
-wrong way.
+most of the intended audience.
+
+> **RESOLVED (2026-07-27) — the objection is taken in its type-design half and
+> declined in its sequencing half.** The plan is **not** reordered. Slice 4b's
+> fragment type **must** admit integer component types from the start, and that
+> is now a binding requirement of the slice rather than a recommendation — see
+> §7 slice 4b. It is nearly free at design time, expensive to retrofit, and it is
+> what keeps a strict-contract coopmat path available as a fallback if slice 1
+> finds no closed-form model for the ACO shapes.
 
 ---
 
-## 9. What is still underspecified in the decision
+## 9. Where the decision was interpreted, and where it has since been settled
 
-Recorded plainly, because each one was interpreted rather than read off.
+Recorded plainly, because none of these was read off the ruling — each was a
+reading. Two have since been decided by the owner and are marked as such; the
+rest remain interpretations this design is responsible for.
+
+### 9.1 Settled
+
+3. **The decision was taken about "f16" as one thing; it is two.** Coopmat cannot
+   hold bit-identity by specification; scalar f16 on ACO *can*, at the measured
+   cost of a global round-trip per narrowing (§3).
+   > **DECIDED (2026-07-27): relax both, and record the scalar half explicitly as
+   > a performance trade.** The exact barrier stays documented and available. The
+   > coopmat reachability argument is not permitted to carry the scalar case;
+   > §3.1 states the scalar decision on its own terms, including that it is the
+   > half that should be revisited if the cost ever changes.
+5. **The opt-in question (§6).** Whether a relaxed path needs an explicit user
+   acknowledgement or only a loud diagnostic is a product decision about friction.
+   > **DECIDED (2026-07-27): friction proportional to the strength of the
+   > evidence** — loud one-time diagnostic where the deviation matches a
+   > closed-form model bit-for-bit over an exhaustive sweep, mandatory explicit
+   > opt-in where it is only bounded. §6.1 records the derivation and the
+   > corollary that friction *falls* as evidence improves, with no new decision
+   > required.
+
+### 9.2 Still this design's interpretation, not the owner's words
 
 1. **"Globalement corrects" has no operational meaning and it is the load-bearing
-   phrase.** §1 chooses exact agreement with an admitted model set plus a derived
-   ceiling, over an ulp band. The reason is measured, not stylistic (§1.1), but it
-   is still a choice and a different reading of the decision would give a
-   different contract.
+   phrase.** §0.1/§1 choose exact agreement with an admitted model set plus a
+   derived ceiling, over an ulp band. The reason is measured, not stylistic, but
+   it is still a choice and a different reading would give a different contract.
 2. **"Déterministe" — the strong reading is already false.** §1.4 promises the
-   weak one (same device, same driver, same build) and says so. If the owner
-   meant the strong reading, the decision cannot be implemented as stated on any
-   backend, including the ones that pass today.
-3. **The decision was taken about "f16" as one thing; it is two.** Coopmat cannot
-   hold bit-identity by specification; scalar f16 on ACO *can*, at the cost of a
-   global round-trip per narrowing (§3). Applying one decision to both means
-   accepting a performance-motivated relaxation under cover of a
-   reachability-motivated one. Recommend the owner confirm that specifically.
+   weak one (same device, same driver version, same build) and says so. If the
+   owner meant the strong reading, the decision cannot be implemented as stated
+   on any backend, including the ones that pass today.
 4. **Uniform or per-backend was left open, and per-backend is the honest
    answer.** A single global tolerance admitting RADV's 5075/63488 is very loose;
    §2's per-backend, per-driver, per-shape record is what the measurements support
    and it costs an allowlist that must be maintained. The maintenance burden is
    real and is the price of the honesty.
-5. **The opt-in question (§6) is not settled.** Whether a relaxed path needs an
-   explicit user acknowledgement, or only a loud diagnostic, is a product decision
-   about friction. The proposal couples it to the strength of the evidence; that
-   coupling is defensible but it is not the only defensible answer.
 6. **Nobody has said what happens to an existing user's results.** f16 is refused
    on these backends today, so no user can be relying on them — the relaxation
    cannot regress anyone. Worth stating explicitly, because it is the reason this
    can be done at all without a deprecation path.
+
+### 9.3 The open risk, unchanged and deliberately not closed
+
+**RADV's `precise` behaviour on the two-narrowing shape is not understood, and it
+is the thing most likely to break this design.** 5075/63488 plain against
+4776/63488 with `precise` means the decoration *changes the answer* — while
+`fp-contraction-policy.md` §6 shows the same decoration produces **byte-identical
+ISA** on the one-narrowing shape, and that the one-narrowing shape matches a
+single-rounding model exactly (0/63488). Those facts are not obviously consistent
+and nobody has reconciled them.
+
+If the two-narrowing shape matches **no** closed-form model, the contract of §1.2
+becomes **per-shape** rather than per-backend. That is materially worse: harder to
+document, harder to explain to a user, and a per-shape allowlist is a maintenance
+object of a different order from a per-driver one.
+
+**Slice 1 is therefore structured as a decision point, not a task**, and the
+owner should hear the outcome **before slices 2–4 are funded** — not after. See
+§7 slice 1. The mitigation, if it goes the wrong way, is §7 slice 4b's integer
+component types: an integer-only coopmat path lands under the existing strict
+contract and #62 is not blocked on the accuracy question at all.
 
 ---
 
