@@ -344,6 +344,10 @@ end = struct
               Interpreter_error.(
                 raise_error (feature_not_supported "custom type set accessor")));
           name = "custom";
+          (* Placeholder descriptor: [alloc_custom] is given only [elem_size],
+             no element type, and its accessors raise. There is no field list
+             to state. *)
+          ir_fields = None;
         }
       in
       {

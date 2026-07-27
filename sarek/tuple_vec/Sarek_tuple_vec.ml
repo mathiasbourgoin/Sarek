@@ -205,6 +205,8 @@ let pair (a : 'a component) (b : 'b component) : ('a * 'b) Vector.custom_type =
         let base = idx * size in
         a.c_write ptr (base + o0) x ;
         b.c_write ptr (base + o1) y);
+    (* Same [fields] that produced [rl], hence [size] and [o0]/[o1] above. *)
+    ir_fields = Some fields;
   }
 
 (** [triple a b c] is the [custom_type] for a [(a, b, c)] tuple vector element.
@@ -243,4 +245,6 @@ let triple (a : 'a component) (b : 'b component) (c : 'c component) :
         a.c_write ptr (base + o0) x ;
         b.c_write ptr (base + o1) y ;
         c.c_write ptr (base + o2) z);
+    (* Same [fields] that produced [rl], hence [size] and [o0]/[o1]/[o2]. *)
+    ir_fields = Some fields;
   }

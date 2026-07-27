@@ -103,6 +103,25 @@ module Make (Ops : CUSTOM_OPS) = struct
     get : Ops.handle -> int -> 'a;
     set : Ops.handle -> int -> 'a -> unit;
     name : string;
+    ir_fields : (string * Sarek_ir_types.elttype) list option;
+        (** Immediate fields of the element type, in declaration order, when the
+            element is a flat scalar record whose byte layout is derivable by
+            {!Sarek_ir_layout.record_layout}. [None] means "layout not derivable
+            here" — variants, hand-written descriptors, and any record with a
+            field type outside the six the host marshaller can read/write.
+            Consumers must treat [None] as "no SoA", never as "no fields".
+
+            Trust contract: [ir_fields] carries exactly the same trust as
+            [elem_size] — it is metadata *about* ['a], not a witness *of* it,
+            and the type system does not relate the two. What makes it sound is
+            that the producer derives [ir_fields], [elem_size] and [get]/[set]
+            from one source. Concretely, for a PPX-generated record all four
+            come from [Sarek_ppx.aligned_record_offsets]; for {!Sarek_tuple_vec}
+            all four come from one [Sarek_ir_layout.record_layout] call. A
+            producer that derives them separately can desynchronize them
+            silently, which is wrong data rather than a type error — see
+            [test_ir_fields.ml], which pins the agreement by probing the bytes
+            [set] actually writes. *)
   }
 
   and (_, _) kind =

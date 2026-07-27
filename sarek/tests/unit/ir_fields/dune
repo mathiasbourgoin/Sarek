@@ -1,0 +1,13 @@
+; ir-fields: the SoA field list [@@sarek.type] puts on custom_type, checked
+; against the bytes the generated get/set actually touch. Isolated in its own
+; directory so the sarek_ppx preprocessing does not collide with the metaquot
+; test group in the parent unit/ directory (same reason as
+; ktype_variant_field/).
+
+(test
+ (name test_ir_fields)
+ (libraries sarek spoc_core spoc.ir ctypes alcotest)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))

@@ -100,6 +100,17 @@ module Make (Ops : CUSTOM_OPS) : sig
     get : Ops.handle -> int -> 'a;
     set : Ops.handle -> int -> 'a -> unit;
     name : string;
+    ir_fields : (string * Sarek_ir_types.elttype) list option;
+        (** Immediate fields of the element type in declaration order, when the
+            element is a flat scalar record whose byte layout is derivable by
+            {!Sarek_ir_layout.record_layout}; [None] when it is not (variants,
+            hand-written descriptors, unsupported field types). [None] means "no
+            SoA plan derivable", never "no fields".
+
+            Carries the same trust as [elem_size]: it is untyped metadata about
+            ['a] that the type system does not relate to [get]/[set]. It is
+            sound only because each producer derives the field list, the size
+            and the accessors from a single layout computation. *)
   }
 
   and (_, _) kind =

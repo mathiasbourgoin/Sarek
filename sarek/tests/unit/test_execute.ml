@@ -38,6 +38,11 @@ let point_custom : point Vector.custom_type =
     get;
     set;
     name = "point";
+    (* Hand-written descriptor: [get]/[set] above are written by hand, not
+       derived from a layout, so nothing keeps a field list in step with them.
+       [None] is the correct answer for that shape even though this particular
+       layout happens to be SoA-derivable. *)
+    ir_fields = None;
   }
 
 (** {1 Tests for vector argument types} *)
