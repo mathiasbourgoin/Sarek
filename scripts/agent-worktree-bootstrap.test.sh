@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: CECILL-B
+# SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
 # Tests for scripts/agent-worktree-bootstrap.sh.
 #
 # A guard nobody has watched trigger is not a guard. Every check in the

@@ -57,6 +57,15 @@ jobs:
       - name: Dune directory visibility guard
         run: ./scripts/check-dune-dir-visibility.sh
 
+      # #137. This checker existed for months, exited 1 on `main`, and was
+      # referenced by no workflow and no Makefile target -- the fourth
+      # "declared gate that nothing invokes" found in this repo. It is wired
+      # here, and its red path is covered in the harness block below.
+      # Exit 2 means the coverage declaration is broken (a root moved), not
+      # that a header is missing; see scripts/check-license-headers.sh.
+      - name: License header guard
+        run: ./scripts/check-license-headers.sh
+
       # An unregistered Alcotest case compiles, the suite reports green, and
       # the behavior it was written to protect is unguarded. Nothing else in
       # this pipeline can tell that apart from a passing test.
@@ -105,6 +114,13 @@ jobs:
           # trustworthy as N, so the counting rule gets a covering test like
           # any other gate.
           ./scripts/test-suite-counts.test.sh
+          # #137. Red-path coverage for the license guard. Its pre-#137 finder
+          # ended in `2>/dev/null`, so deleting a whole declared root made it
+          # print "All license headers are up-to-date!" about a tree it had
+          # not read. Cases 4 and 5 assert that shape is now exit 2, and case 0
+          # is the positive control without which "went red" and "is always
+          # red" would be the same observation.
+          ./scripts/check-license-headers.test.sh
 
       - name: Formal proofs admit gate
         run: |

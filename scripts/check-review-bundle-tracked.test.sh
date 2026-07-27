@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: CECILL-B
+# SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
 # Tests for scripts/check-review-bundle-tracked.sh.
 #
 # The guard is load-bearing: it is the only thing standing between the project

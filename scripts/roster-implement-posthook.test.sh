@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: CECILL-B
+# SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
 # Tests for scripts/roster-implement-posthook.sh and the two checkers it runs.
 #
 # Every check gets a constructed bad input and an asserted refusal, plus a

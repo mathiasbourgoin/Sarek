@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: CECILL-B
+# SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
 # Guard against silently-unwired test executables (the "vacuous e2e" failure
 # mode fixed in 2026-07: an (executable) with no run rule builds green but
 # never executes). Fails if any executable declared in sarek/tests/e2e/dune

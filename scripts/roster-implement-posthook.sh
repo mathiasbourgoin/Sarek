@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: CECILL-B
+# SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
 # roster-implement-posthook.sh — runs after /roster-implement, before review.
 #
 # Backlog #103. Three things that were left to prose discipline and therefore

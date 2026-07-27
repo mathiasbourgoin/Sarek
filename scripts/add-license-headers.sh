@@ -93,7 +93,15 @@ apply_change() {
         fi
         rm -f "$tmpfile"
     else
-        mv "$tmpfile" "$file"
+        # Write THROUGH the existing file rather than `mv`-ing the temp file
+        # onto it. mktemp creates 0600, and `mv` carries that mode across, so
+        # the previous `mv` silently stripped the executable bit from every
+        # script it stamped -- i.e. running the fixer on scripts/ left the
+        # whole tooling directory non-executable and CI failing with
+        # "Permission denied". Redirecting into $file preserves its mode,
+        # owner and inode.
+        cat "$tmpfile" > "$file"
+        rm -f "$tmpfile"
         echo -e "${GREEN}${label}${NC}: $file"
         UPDATED_COUNT=$((UPDATED_COUNT + 1))
     fi
@@ -251,10 +259,12 @@ EOF
     
     # Append original content
     cat "$file" >> "$tmpfile"
-    
-    # Replace original file
-    mv "$tmpfile" "$file"
-    
+
+    # Write through, not `mv` -- see apply_change for why mode preservation
+    # matters here.
+    cat "$tmpfile" > "$file"
+    rm -f "$tmpfile"
+
     echo -e "${GREEN}UPDATED${NC}: $file"
     UPDATED_COUNT=$((UPDATED_COUNT + 1))
 }
@@ -263,27 +273,133 @@ echo "Adding SPDX license headers..."
 echo "License: $LICENSE"
 echo ""
 
+# ---------------------------------------------------------------------------
+# Coverage scope (#137)
+# ---------------------------------------------------------------------------
+# What is covered is declared here, once, in named lists — not buried in a
+# find expression. Two properties this buys us:
+#
+#   1. A missing root is LOUD. The find calls used to end in `2>/dev/null`,
+#      so renaming or deleting a root directory made find print nothing,
+#      the read loop body never ran, and the gate passed having inspected
+#      no files at all. Every root is now asserted to exist, and the
+#      candidate set is asserted non-empty, before any file is examined.
+#
+#   2. Exemptions are an explicit, reviewable list (EXEMPT_GLOBS) with a
+#      stated reason each, rather than an anonymous `! -path` accumulating
+#      in a find invocation nobody reads.
+#
+# NOT covered, deliberately: scripts/**/*.js and scripts/lib/**/*.js (14
+# files at the time of writing). JavaScript needs a `//` header and no
+# emitter in this script produces one; adding that is a separate change.
+# The omission is recorded here so it is a decision rather than an accident
+# of the find expression.
+
+# Roots holding first-party OCaml sources (*.ml, *.mli).
+OCAML_ROOTS=(sarek sarek-cuda sarek-opencl sarek-vulkan sarek-metal spoc)
+
+# Roots holding first-party tooling. `*.sh` and `*.py` share the `#` comment
+# syntax, so add_shell_header serves both.
+SCRIPT_ROOTS=(scripts ci)
+
+# The only sanctioned way to leave a matching file out. Each entry is a
+# find -path glob plus the reason it is not ours to stamp.
+EXEMPT_GLOBS=(
+    '*/dependencies/*'  # vendored third-party sources — not ours to relicense
+    '*/_build/*'        # dune build output — generated, never committed
+    '*/_opam/*'         # local opam switch — not project source
+    '*/.*'              # dotfile dirs (.git, .github metadata, editor state)
+
+    # Review-tool bundle members. scripts/REVIEW-BUNDLE.md: "These files are
+    # upstream-owned and generated [...] Do not hand-edit any bundle file or
+    # the manifest." Each is pinned by sha256 in review-bundle.manifest.json,
+    # so a header here fails review-bundle-verify immediately and is silently
+    # reverted by the next roster upgrade anyway. Stamping them once already
+    # turned check-review-bundle-tracked.sh red with two SHA MISMATCHes.
+    #
+    # This list is kept by hand rather than derived from the manifest: the
+    # manifest is itself a bundle file, and reading it to decide what to skip
+    # would let an upstream change quietly widen our exemptions.
+    'scripts/check-scope-diff.sh'
+    'scripts/xruntime-exec.sh'
+)
+
+# An exemption for a file that no longer exists is an exemption nobody is
+# reading. Any entry without a wildcard is an exact path and must resolve.
+for glob in "${EXEMPT_GLOBS[@]}"; do
+    case "$glob" in
+        *'*'*) ;;
+        *)
+            if [ ! -e "$glob" ]; then
+                echo "ERROR: stale exemption in EXEMPT_GLOBS: $glob does not exist." >&2
+                echo "       Remove it, or point it at the file's new path." >&2
+                exit 2
+            fi
+            ;;
+    esac
+done
+
+# Build the shared `! -path GLOB ...` argument vector once.
+EXEMPT_ARGS=()
+for glob in "${EXEMPT_GLOBS[@]}"; do
+    EXEMPT_ARGS+=(! -path "$glob")
+done
+
+# Fail loudly if a declared root has moved. Without this the loops below
+# silently inspect nothing and the gate reports success.
+require_roots() {
+    local label="$1"; shift
+    local missing=()
+    local root
+    for root in "$@"; do
+        [ -d "$root" ] || missing+=("$root")
+    done
+    if [ ${#missing[@]} -gt 0 ]; then
+        echo "ERROR: $label root(s) not found: ${missing[*]}" >&2
+        echo "       Update the *_ROOTS list in scripts/add-license-headers.sh." >&2
+        echo "       Refusing to report success on an un-inspected tree." >&2
+        exit 2
+    fi
+}
+
+# A gate that examined zero files is not a passing gate.
+require_nonempty() {
+    local label="$1"
+    local count="$2"
+    if [ "$count" -eq 0 ]; then
+        echo "ERROR: $label matched 0 files." >&2
+        echo "       Either the roots or EXEMPT_GLOBS in" >&2
+        echo "       scripts/add-license-headers.sh no longer describe this tree." >&2
+        exit 2
+    fi
+}
+
 # Process OCaml files
 echo -e "${BLUE}Processing OCaml files...${NC}"
+require_roots "OCaml" "${OCAML_ROOTS[@]}"
+OCAML_SEEN=0
 while IFS= read -r -d '' file; do
+    OCAML_SEEN=$((OCAML_SEEN + 1))
     add_ocaml_header "$file"
-done < <(find sarek sarek-cuda sarek-opencl sarek-vulkan sarek-metal spoc \
+done < <(find "${OCAML_ROOTS[@]}" \
     -type f \( -name "*.ml" -o -name "*.mli" \) \
-    ! -path "*/.*" \
-    ! -path "*/_build/*" \
-    ! -path "*/_opam/*" \
-    ! -path "*/dependencies/*" \
-    -print0 2>/dev/null)
+    "${EXEMPT_ARGS[@]}" \
+    -print0)
+require_nonempty "OCaml sources" "$OCAML_SEEN"
 
-# Process shell scripts
+# Process shell and Python tooling
 echo ""
-echo -e "${BLUE}Processing shell scripts...${NC}"
+echo -e "${BLUE}Processing shell and Python scripts...${NC}"
+require_roots "Script" "${SCRIPT_ROOTS[@]}"
+SCRIPT_SEEN=0
 while IFS= read -r -d '' file; do
+    SCRIPT_SEEN=$((SCRIPT_SEEN + 1))
     add_shell_header "$file"
-done < <(find scripts ci \
-    -type f -name "*.sh" \
-    ! -path "*/.*" \
-    -print0 2>/dev/null)
+done < <(find "${SCRIPT_ROOTS[@]}" \
+    -type f \( -name "*.sh" -o -name "*.py" \) \
+    "${EXEMPT_ARGS[@]}" \
+    -print0)
+require_nonempty "Shell/Python tooling" "$SCRIPT_SEEN"
 
 # Process dune files (optional - uncomment if needed)
 # echo ""

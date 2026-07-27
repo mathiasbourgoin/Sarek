@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: CECILL-B
+# SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
 # agent-worktree-bootstrap.sh — safe dispatch of a worktree-isolated agent.
 #
 # Backlog #101. Four independent ways `isolation: "worktree"` silently produces

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: CECILL-B
+# SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
 # check-review-bundle-tracked.sh — the review-tool bundle must survive a fresh clone.
 #
 # Failure mode this guard exists for (backlog #108): every deterministic quality
