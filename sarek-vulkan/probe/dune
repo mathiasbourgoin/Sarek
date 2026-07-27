@@ -10,3 +10,11 @@
  (name probe_vulkan_f16_model_agreement)
  (modules probe_vulkan_f16_model_agreement)
  (libraries sarek_vulkan spoc_framework f16_model_set f16_shape_catalogue))
+
+; backlog-62 slice 3 — dumps the advertised coopmat configuration table. Same
+; executable-not-test rationale as above: it measures a driver.
+
+(executable
+ (name probe_vulkan_coopmat_configs)
+ (modules probe_vulkan_coopmat_configs)
+ (libraries sarek_vulkan sarek_ir spoc_framework))

@@ -39,3 +39,14 @@
  (name test_vulkan_coopmat_capability)
  (modules test_vulkan_coopmat_capability)
  (libraries sarek_vulkan spoc_framework sarek_ir alcotest str))
+
+; backlog-62 slice 3 — the integer coopmat path, executed against an exact host
+; oracle. A `test` and not a `probe` because the claim it defends (integer
+; accumulation is exact, so this path is under the STRICT contract) is a claim
+; Sarek ships, not a driver measurement: it skips where there is no coopmat
+; device and must be red where there is one and the answer is wrong.
+
+(test
+ (name test_vulkan_coopmat_integer)
+ (modules test_vulkan_coopmat_integer)
+ (libraries sarek_vulkan spoc_framework sarek_ir alcotest astring))

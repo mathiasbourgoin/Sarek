@@ -49,6 +49,29 @@ type t = {
           declare 16-bit types in a storage buffer, which every f16 or
           cooperative-matrix kernel that reads its operands from memory must do.
       *)
+  supports_int8 : bool;
+      (** [VkPhysicalDeviceShaderFloat16Int8Features.shaderInt8], on the same
+          chain as {!supports_fp16} (backlog-62 slice 3).
+
+          Every INTEGER cooperative-matrix configuration the local RX 7900 XTX
+          advertises has 8-bit operands — measured, all twelve of them — so a
+          shader that reaches [coopMatMulAdd] on the strict-contract path
+          declares [OpCapability Int8]. Querying without requesting would be
+          #142 verbatim. *)
+  storage_buffer_8bit : bool;
+      (** [VkPhysicalDevice8BitStorageFeatures.storageBuffer8BitAccess]
+          (backlog-62 slice 3). [coopMatLoad] requires the backing array's
+          element type to match the fragment's component type, so an 8-bit
+          fragment loaded from memory declares
+          [OpCapability StorageBuffer8BitAccess]. There is no route to an
+          integer fragment that avoids it: the operand buffer cannot be widened
+          without changing which instruction is emitted. *)
+  vulkan_memory_model : bool;
+      (** [VkPhysicalDeviceVulkanMemoryModelFeatures.vulkanMemoryModel]
+          (backlog-62 slice 3). glslang makes [GL_KHR_memory_scope_semantics] a
+          prerequisite of [GL_KHR_cooperative_matrix], and it lowers to
+          [OpCapability VulkanMemoryModel] — so this is required by the FLOAT
+          coopmat path too, and slice 2 shipped without it. *)
   driver_id : int;
       (** [VkPhysicalDeviceDriverProperties.driverID]. 3 is
           [VK_DRIVER_ID_MESA_RADV]. This is the driver KEY that
@@ -259,12 +282,15 @@ let device_extension_names phys_dev =
 
 type extended_features = {
   ef_shader_float16 : bool;
+  ef_shader_int8 : bool;
   ef_storage_buffer_16bit : bool;
+  ef_storage_buffer_8bit : bool;
+  ef_vulkan_memory_model : bool;
   ef_cooperative_matrix : bool;
   ef_coopmat_robust_buffer_access : bool;
 }
 
-(** Query the three extension feature structs in one [VkPhysicalDeviceFeatures2]
+(** Query the extension feature structs in one [VkPhysicalDeviceFeatures2]
     chain.
 
     Chaining a struct whose extension the device does not advertise is harmless
@@ -272,13 +298,29 @@ type extended_features = {
     guarantees the fields then read false. What is NOT harmless is calling an
     extension's own entry point on such a device; see {!probe_coopmat}. *)
 let query_extended_features phys_dev =
+  let memmodel = make vk_physical_device_vulkan_memory_model_features in
+  zero_struct vk_physical_device_vulkan_memory_model_features memmodel ;
+  setf
+    memmodel
+    memmodel_sType
+    (u32 vk_structure_type_physical_device_vulkan_memory_model_features) ;
+  setf memmodel memmodel_pNext null ;
+
+  let storage8 = make vk_physical_device_8bit_storage_features in
+  zero_struct vk_physical_device_8bit_storage_features storage8 ;
+  setf
+    storage8
+    storage8_sType
+    (u32 vk_structure_type_physical_device_8bit_storage_features) ;
+  setf storage8 storage8_pNext (to_voidp (addr memmodel)) ;
+
   let coopmat_f = make vk_physical_device_cooperative_matrix_features in
   zero_struct vk_physical_device_cooperative_matrix_features coopmat_f ;
   setf
     coopmat_f
     coopmat_feat_sType
     (u32 vk_structure_type_physical_device_cooperative_matrix_features_khr) ;
-  setf coopmat_f coopmat_feat_pNext null ;
+  setf coopmat_f coopmat_feat_pNext (to_voidp (addr storage8)) ;
 
   let storage16 = make vk_physical_device_16bit_storage_features in
   zero_struct vk_physical_device_16bit_storage_features storage16 ;
@@ -305,15 +347,22 @@ let query_extended_features phys_dev =
   setf features2 features2_pNext (to_voidp (addr f16i8)) ;
 
   vkGetPhysicalDeviceFeatures2 phys_dev (addr features2) ;
-  (* The chain holds bare addresses into all four. *)
+  (* The chain holds bare addresses into all six. *)
   ignore (Sys.opaque_identity features2) ;
   ignore (Sys.opaque_identity f16i8) ;
   ignore (Sys.opaque_identity storage16) ;
   ignore (Sys.opaque_identity coopmat_f) ;
+  ignore (Sys.opaque_identity storage8) ;
+  ignore (Sys.opaque_identity memmodel) ;
   {
     ef_shader_float16 = u32_is_true (getf f16i8 f16i8_shaderFloat16);
+    ef_shader_int8 = u32_is_true (getf f16i8 f16i8_shaderInt8);
     ef_storage_buffer_16bit =
       u32_is_true (getf storage16 storage16_storageBuffer16BitAccess);
+    ef_storage_buffer_8bit =
+      u32_is_true (getf storage8 storage8_storageBuffer8BitAccess);
+    ef_vulkan_memory_model =
+      u32_is_true (getf memmodel memmodel_vulkanMemoryModel);
     ef_cooperative_matrix =
       u32_is_true (getf coopmat_f coopmat_feat_cooperativeMatrix);
     ef_coopmat_robust_buffer_access =
@@ -689,6 +738,25 @@ let get idx =
         ext.ef_cooperative_matrix
         && has_ext vk_khr_cooperative_matrix_extension_name
       in
+      (* backlog-62 slice 3, and each follows the same promoted-feature rule as
+         its 16-bit sibling above. VK_KHR_8bit_storage is core in Vulkan 1.2;
+         VK_KHR_shader_float16_int8 (which carries shaderInt8) is core in 1.2;
+         VK_KHR_vulkan_memory_model is core in 1.2. All three are at the
+         effective instance version, so all three are reachable here. *)
+      let want_int8 =
+        ext.ef_shader_int8
+        && (api_at_least (1, 2)
+           || has_ext vk_khr_shader_float16_int8_extension_name)
+      in
+      let want_storage8 =
+        ext.ef_storage_buffer_8bit
+        && (api_at_least (1, 2) || has_ext vk_khr_8bit_storage_extension_name)
+      in
+      let want_memory_model =
+        ext.ef_vulkan_memory_model
+        && (api_at_least (1, 2)
+           || has_ext vk_khr_vulkan_memory_model_extension_name)
+      in
 
       (* Find compute queue family *)
       let queue_family = find_compute_queue_family phys_dev in
@@ -752,8 +820,10 @@ let get idx =
                case, which is what actually enables the feature. *)
             if wanted && has_ext name then Some name else None)
           [
-            (want_fp16, vk_khr_shader_float16_int8_extension_name);
+            (want_fp16 || want_int8, vk_khr_shader_float16_int8_extension_name);
             (want_storage16, vk_khr_16bit_storage_extension_name);
+            (want_storage8, vk_khr_8bit_storage_extension_name);
+            (want_memory_model, vk_khr_vulkan_memory_model_extension_name);
             (want_coopmat, vk_khr_cooperative_matrix_extension_name);
           ]
       in
@@ -808,13 +878,47 @@ let get idx =
         storage16_storageBuffer16BitAccess
         (Unsigned.UInt32.of_int 1) ;
 
+      let storage8_enable = make vk_physical_device_8bit_storage_features in
+      zero_struct vk_physical_device_8bit_storage_features storage8_enable ;
+      setf
+        storage8_enable
+        storage8_sType
+        (u32 vk_structure_type_physical_device_8bit_storage_features) ;
+      setf
+        storage8_enable
+        storage8_storageBuffer8BitAccess
+        (Unsigned.UInt32.of_int 1) ;
+
+      let memmodel_enable =
+        make vk_physical_device_vulkan_memory_model_features
+      in
+      zero_struct
+        vk_physical_device_vulkan_memory_model_features
+        memmodel_enable ;
+      setf
+        memmodel_enable
+        memmodel_sType
+        (u32 vk_structure_type_physical_device_vulkan_memory_model_features) ;
+      setf memmodel_enable memmodel_vulkanMemoryModel (Unsigned.UInt32.of_int 1) ;
+
+      (* ONE VkPhysicalDeviceShaderFloat16Int8Features carries BOTH booleans.
+         Chaining the struct twice — once per feature — is not a way to request
+         two features; the second instance would be a duplicate sType in the
+         pNext chain, which the specification does not permit. *)
       let f16_enable = make vk_physical_device_shader_float16_int8_features in
       zero_struct vk_physical_device_shader_float16_int8_features f16_enable ;
       setf
         f16_enable
         f16i8_sType
         (u32 vk_structure_type_physical_device_shader_float16_int8_features) ;
-      setf f16_enable f16i8_shaderFloat16 (Unsigned.UInt32.of_int 1) ;
+      setf
+        f16_enable
+        f16i8_shaderFloat16
+        (Unsigned.UInt32.of_int (if want_fp16 then 1 else 0)) ;
+      setf
+        f16_enable
+        f16i8_shaderInt8
+        (Unsigned.UInt32.of_int (if want_int8 then 1 else 0)) ;
 
       let chain_head =
         List.fold_left
@@ -832,7 +936,13 @@ let get idx =
             ( want_storage16,
               (fun p -> setf storage16_enable storage16_pNext p),
               to_voidp (addr storage16_enable) );
-            ( want_fp16,
+            ( want_storage8,
+              (fun p -> setf storage8_enable storage8_pNext p),
+              to_voidp (addr storage8_enable) );
+            ( want_memory_model,
+              (fun p -> setf memmodel_enable memmodel_pNext p),
+              to_voidp (addr memmodel_enable) );
+            ( want_fp16 || want_int8,
               (fun p -> setf f16_enable f16i8_pNext p),
               to_voidp (addr f16_enable) );
           ]
@@ -903,6 +1013,8 @@ let get idx =
       ignore (Sys.opaque_identity coopmat_enable) ;
       ignore (Sys.opaque_identity storage16_enable) ;
       ignore (Sys.opaque_identity f16_enable) ;
+      ignore (Sys.opaque_identity storage8_enable) ;
+      ignore (Sys.opaque_identity memmodel_enable) ;
 
       (* Get compute queue *)
       let queue = allocate vk_queue_ptr (from_voidp vk_queue null) in
@@ -960,6 +1072,9 @@ let get idx =
              value safe to hand to a capability gate. *)
           supports_fp16 = want_fp16;
           storage_buffer_16bit = want_storage16;
+          supports_int8 = want_int8;
+          storage_buffer_8bit = want_storage8;
+          vulkan_memory_model = want_memory_model;
           driver_id = props2.ep_driver_id;
           driver_name = props2.ep_driver_name;
           driver_info = props2.ep_driver_info;

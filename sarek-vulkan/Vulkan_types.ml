@@ -1126,6 +1126,23 @@ let vk_structure_type_physical_device_shader_float16_int8_features = 1000082000
 
 let vk_structure_type_physical_device_16bit_storage_features = 1000083000
 
+(** backlog-62 slice 3. The three enumerants below are what the INTEGER
+    cooperative-matrix path needs and the f16 path did not.
+
+    Measured, not guessed: [glslc --target-env=vulkan1.3] on a 16x16x16
+    [u8 x u8 -> s32] [coopMatMulAdd] emits exactly [OpCapability Int8],
+    [OpCapability StorageBuffer8BitAccess], [OpCapability VulkanMemoryModel] and
+    [OpCapability CooperativeMatrixKHR]. Slice 2 enables only the last. The
+    first three are conditional on [shaderInt8], [storageBuffer8BitAccess] and
+    [vulkanMemoryModel] being ENABLED on the logical device, exactly as #142's
+    [shaderInt64] was, and with the same failure mode: RADV computes the right
+    answer anyway and the violation is visible only under
+    VK_LAYER_KHRONOS_validation. *)
+
+let vk_structure_type_physical_device_8bit_storage_features = 1000177000
+
+let vk_structure_type_physical_device_vulkan_memory_model_features = 1000211000
+
 let vk_structure_type_physical_device_subgroup_properties = 1000094000
 
 let vk_structure_type_physical_device_driver_properties = 1000196000
@@ -1143,6 +1160,10 @@ let vk_khr_cooperative_matrix_extension_name = "VK_KHR_cooperative_matrix"
 let vk_khr_shader_float16_int8_extension_name = "VK_KHR_shader_float16_int8"
 
 let vk_khr_16bit_storage_extension_name = "VK_KHR_16bit_storage"
+
+let vk_khr_8bit_storage_extension_name = "VK_KHR_8bit_storage"
+
+let vk_khr_vulkan_memory_model_extension_name = "VK_KHR_vulkan_memory_model"
 
 (** VkExtensionProperties: [char extensionName[256]] then [uint32 specVersion].
 *)
@@ -1266,6 +1287,80 @@ let storage16_storageInputOutput16 =
     uint32_t
 
 let () = seal vk_physical_device_16bit_storage_features
+
+(** VkPhysicalDevice8BitStorageFeatures — backlog-62 slice 3.
+
+    Field order and count are pinned against [vulkan_core.h]; the struct is
+    passed by ADDRESS in a pNext chain, so a short or misordered layout is read
+    past its end by the driver rather than diagnosed. Three feature booleans,
+    the last two of which Sarek never requests. *)
+type vk_physical_device_8bit_storage_features
+
+let vk_physical_device_8bit_storage_features :
+    vk_physical_device_8bit_storage_features structure typ =
+  structure "VkPhysicalDevice8BitStorageFeatures"
+
+let storage8_sType =
+  field vk_physical_device_8bit_storage_features "sType" uint32_t
+
+let storage8_pNext =
+  field vk_physical_device_8bit_storage_features "pNext" (ptr void)
+
+let storage8_storageBuffer8BitAccess =
+  field
+    vk_physical_device_8bit_storage_features
+    "storageBuffer8BitAccess"
+    uint32_t
+
+let storage8_uniformAndStorageBuffer8BitAccess =
+  field
+    vk_physical_device_8bit_storage_features
+    "uniformAndStorageBuffer8BitAccess"
+    uint32_t
+
+let storage8_storagePushConstant8 =
+  field vk_physical_device_8bit_storage_features "storagePushConstant8" uint32_t
+
+let () = seal vk_physical_device_8bit_storage_features
+
+(** VkPhysicalDeviceVulkanMemoryModelFeatures — backlog-62 slice 3.
+
+    [GL_KHR_memory_scope_semantics] is a hard prerequisite of
+    [GL_KHR_cooperative_matrix] in glslang, and it lowers to
+    [OpCapability VulkanMemoryModel]. Without [vulkanMemoryModel] enabled on the
+    logical device, a cooperative-matrix shader is a specification violation
+    however correct its results look. *)
+type vk_physical_device_vulkan_memory_model_features
+
+let vk_physical_device_vulkan_memory_model_features :
+    vk_physical_device_vulkan_memory_model_features structure typ =
+  structure "VkPhysicalDeviceVulkanMemoryModelFeatures"
+
+let memmodel_sType =
+  field vk_physical_device_vulkan_memory_model_features "sType" uint32_t
+
+let memmodel_pNext =
+  field vk_physical_device_vulkan_memory_model_features "pNext" (ptr void)
+
+let memmodel_vulkanMemoryModel =
+  field
+    vk_physical_device_vulkan_memory_model_features
+    "vulkanMemoryModel"
+    uint32_t
+
+let memmodel_vulkanMemoryModelDeviceScope =
+  field
+    vk_physical_device_vulkan_memory_model_features
+    "vulkanMemoryModelDeviceScope"
+    uint32_t
+
+let memmodel_vulkanMemoryModelAvailabilityVisibilityChains =
+  field
+    vk_physical_device_vulkan_memory_model_features
+    "vulkanMemoryModelAvailabilityVisibilityChains"
+    uint32_t
+
+let () = seal vk_physical_device_vulkan_memory_model_features
 
 (** VkPhysicalDeviceCooperativeMatrixFeaturesKHR *)
 type vk_physical_device_cooperative_matrix_features
