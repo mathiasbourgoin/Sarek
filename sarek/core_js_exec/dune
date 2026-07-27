@@ -41,5 +41,10 @@
   Transfer_jsx
   Log_jsx
   Spoc_core
-  Sarek_ir_interp)
+  Sarek_ir_interp
+  ; backlog-154: Execute.ml (copied into jsoo/ verbatim) now applies the
+  ; interpreter's own capability gate, so the jsoo build needs the module that
+  ; states it. Pulled from ../interp/ by the copy_files above, like the rest of
+  ; the interpreter stack — one source, recompiled against the jsoo Spoc_core.
+  Sarek_interp_capability)
  (preprocess no_preprocessing))

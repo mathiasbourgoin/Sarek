@@ -61,7 +61,18 @@
  ; ctypes is listed explicitly (not relied on transitively via sarek): the
  ; GC-root canary in test_float16 asserts the managed-vs-unmanaged asymmetry
  ; of the f16 host pointer directly, so it names Ctypes/Ctypes_bigarray.
- (libraries sarek_ppx_lib sarek_stdlib sarek alcotest ppxlib str ctypes)
+ ; sarek.interp: test_execute drives Sarek_interp_capability directly — the
+ ; interpreter's own launch gate (backlog-154), which is not reachable through
+ ; the Sarek.Execute surface.
+ (libraries
+  sarek_ppx_lib
+  sarek_stdlib
+  sarek
+  sarek.interp
+  alcotest
+  ppxlib
+  str
+  ctypes)
  (preprocess
   (pps ppxlib.metaquot)))
 

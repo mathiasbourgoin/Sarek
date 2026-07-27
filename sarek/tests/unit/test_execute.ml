@@ -267,12 +267,196 @@ let test_float64_refused_without_device_support () =
   | Some msg ->
       check bool "diagnostic names float64" true (contains_sub msg "float64")
 
+(** {1 The interpreter's own capability gate (backlog-154)}
+
+    [run_interpreter_vectors] applied [check_launch_args] and no capability
+    gate, so the cross-backend numeric ORACLE was the one execution path with
+    none. The asymmetry was visible in a single run of
+    [test_coopmat_integer_e2e] on this workstation: [check_device_capabilities]
+    refused the Interpreter device for a kernel that [run_interpreter_vectors]
+    then evaluated to 65536 bit-exact results.
+
+    These cases drive [Sarek_interp_capability] directly rather than through
+    [run_interpreter_vectors], which needs live vectors; the property under test
+    is entirely the kernel/capability pair. The e2e coopmat suite covers the
+    wired path.
+
+    Read {!Sarek_interp_capability} for the argument about what an interpreter
+    should advertise. In one line: what its evaluator implements, stated by
+    construction — never "unprobed", and never everything. *)
+
+let interp_refusal ir =
+  Option.map
+    (fun v ->
+      match v with
+      | Sarek_capability.Unavailable cap ->
+          Sarek_capability.explain ~target:"CPU Interpreter" cap
+      | Sarek_capability.Unknown why -> why
+      | Sarek_capability.Available -> fail "first_refusal returned Available")
+    (Sarek_interp.Sarek_interp_capability.first_refusal ir)
+
+let coopmat_kernel (comp : Sarek_coopmat.component_type) : Sarek_ir_types.kernel
+    =
+  let open Sarek_ir_types in
+  let shape = {Sarek_coopmat.m = 16; n = 16; k = 16} in
+  let cfg =
+    {
+      Sarek_coopmat.cfg_shape = shape;
+      cfg_a = comp;
+      cfg_b = comp;
+      cfg_c = Sarek_coopmat.Sint32;
+      cfg_result = Sarek_coopmat.Sint32;
+      cfg_saturating = false;
+      cfg_scope = Sarek_coopmat.Subgroup;
+    }
+  in
+  {
+    kern_name = "interp_coopmat_probe";
+    kern_params = [];
+    kern_locals = [];
+    kern_body =
+      SCoopmat (CM_muladd {dst = "fd"; a = "fa"; b = "fb"; c = "fc"; cfg});
+    kern_types = [];
+    kern_variants = [];
+    kern_funcs = [];
+    kern_native_fn = None;
+  }
+
+(* THE POSITIVE CONTROL, and it is the load-bearing one. A gate observed only
+   refusing is indistinguishable from one that refuses unconditionally — and
+   refusing unconditionally is exactly what the DEVICE gate does to the
+   interpreter (coopmat = None -> Unknown), which is the defect. This case is
+   the assertion that the new gate did not simply reproduce it. *)
+let test_interp_permits_integer_coopmat () =
+  match interp_refusal (coopmat_kernel Sarek_coopmat.Uint8) with
+  | None -> ()
+  | Some msg ->
+      fail
+        (Printf.sprintf
+           "the interpreter evaluates integer cooperative matrices \
+            (Sarek_ir_interp_eval.exec_coopmat) and is the oracle the GPU \
+            backends are compared against, yet its own gate refused: %s"
+           msg)
+
+(* And it still refuses what the evaluator refuses — at the launch gate now,
+   rather than from inside exec_coopmat after a partial writeback. *)
+let test_interp_refuses_float_coopmat () =
+  match interp_refusal (coopmat_kernel Sarek_coopmat.Float16) with
+  | None ->
+      fail
+        "float cooperative-matrix accumulation has no single right answer \
+         (SPV_KHR_cooperative_matrix leaves the addition order to the \
+         implementation), so a strict oracle must refuse it"
+  | Some msg ->
+      check bool "diagnostic names f16" true (contains_sub msg "f16") ;
+      check
+        bool
+        "diagnostic names the interpreter"
+        true
+        (contains_sub msg "CPU Interpreter")
+
+(* The second instance of the same gap, and the reason this is not a
+   coopmat-specific fix. Both plugins reported [Float64; Int64], omitting an
+   f16 they implement; nothing refused only because check_device_capabilities
+   excludes Float16 from its gated list for an unrelated reason. The
+   interpreter gate DOES gate f16, against its own by-construction claim, so
+   this assertion has teeth: drop Float16 from device_features and it goes
+   red. *)
+let test_interp_declares_float16 () =
+  check
+    bool
+    "the interpreter advertises the f16 that Sarek_float16 implements"
+    true
+    (List.mem
+       Sarek_ir_analysis.Float16
+       Sarek_interp.Sarek_interp_capability.device_features) ;
+  match interp_refusal (kernel_over Sarek_ir_types.TFloat16) with
+  | None -> ()
+  | Some msg -> fail ("an f16 kernel must reach the interpreter: " ^ msg)
+
+(* THE GATE MUST BE WIRED, not merely correct.
+
+   Every case above drives Sarek_interp_capability directly, and every one of
+   them stays green if the call in run_interpreter_vectors is deleted — which
+   is the whole defect restored. That is the "unwired declaration" shape: a
+   checker that is right about everything and consulted by nobody. This case is
+   the only one that goes red on that deletion, so it is the one that actually
+   pins backlog-154.
+
+   It also pins WHICH error: before the gate, this kernel reached
+   Sarek_ir_interp_eval.coopmat_refuse_float from inside the evaluation, after
+   the run had begun and could have written back. Now it is refused at the
+   launch gate, as an Execute Backend_error, before anything runs. *)
+let test_run_interpreter_vectors_is_gated () =
+  match
+    run_interpreter_vectors
+      ~ir:(coopmat_kernel Sarek_coopmat.Float16)
+      ~args:[]
+      ~block:(dims1d 1)
+      ~grid:(dims1d 1)
+      ~parallel:false
+  with
+  | () ->
+      fail
+        "run_interpreter_vectors ran a float cooperative-matrix kernel: the \
+         interpreter capability gate is not wired into the oracle entry point \
+         (backlog-154)"
+  | exception
+      Sarek.Execute_error.Execution_error
+        (Sarek.Execute_error.Backend_error {backend; message}) ->
+      check string "refused as the Interpreter backend" "Interpreter" backend ;
+      check
+        bool
+        "diagnostic names the capability"
+        true
+        (contains_sub message "coopmat")
+  | exception e ->
+      fail
+        ("expected the launch gate's Backend_error, got a deeper failure — \
+          which means the kernel started running: " ^ Printexc.to_string e)
+
+(* The gate is not vacuous on the feature axis either: a feature the
+   interpreter does NOT provide is refused. Uses a deliberately-emptied
+   provided-list through the same code path the real one uses. *)
+let test_interp_feature_gate_can_refuse () =
+  match
+    Sarek_capability.device_verdict
+      ~provided:(Some [Sarek_ir_analysis.Int64])
+      Sarek_ir_analysis.Float64
+  with
+  | Sarek_capability.Available ->
+      fail "device_verdict permitted a feature absent from the provided list"
+  | _ -> ()
+
 (** {1 Test suite} *)
 
 let () =
   run
     "Execute"
     [
+      ( "interpreter_capability_gate",
+        [
+          test_case
+            "integer coopmat permitted (positive control)"
+            `Quick
+            test_interp_permits_integer_coopmat;
+          test_case
+            "float coopmat refused at the launch gate"
+            `Quick
+            test_interp_refuses_float_coopmat;
+          test_case
+            "f16 declared and permitted"
+            `Quick
+            test_interp_declares_float16;
+          test_case
+            "feature gate can refuse"
+            `Quick
+            test_interp_feature_gate_can_refuse;
+          test_case
+            "run_interpreter_vectors is gated (the wiring)"
+            `Quick
+            test_run_interpreter_vectors_is_gated;
+        ] );
       ( "device_capability_gate",
         [
           test_case

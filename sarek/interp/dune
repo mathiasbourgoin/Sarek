@@ -16,6 +16,7 @@
   Sarek_ir_interp_intrinsics
   Sarek_ir_interp_eval
   Sarek_ir_interp
+  Sarek_interp_capability
   Sarek_type_helpers
   Interp_error)
  (preprocess no_preprocessing)

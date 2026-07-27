@@ -9,6 +9,9 @@
   spoc_framework
   spoc_framework_registry
   sarek
+  ; backlog-154: the capability list this plugin reports is the evaluator's own
+  ; declaration, not a restatement of it.
+  sarek_interp
   (re_export spoc_core))
  (modules Interpreter_error Interpreter_plugin_base Interpreter_plugin)
  (preprocess no_preprocessing))

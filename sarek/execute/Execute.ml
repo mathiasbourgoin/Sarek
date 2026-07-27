@@ -541,6 +541,24 @@ let check_launch_args ~(kernel : string) (ir : Sarek_ir_types.kernel)
           ())
     args
 
+(** Render a non-permitting verdict and raise it as a [Backend_error].
+
+    Shared by {!check_device_capabilities} and {!check_interpreter_capabilities}
+    so the two launch gates cannot drift into describing the same refusal
+    differently — which is a real hazard here, since backlog-154 was two gates
+    disagreeing about the same kernel. *)
+let raise_capability_refusal ~(backend : string) ~(target : string)
+    (verdict : Sarek_capability.verdict) : 'a =
+  let message =
+    match verdict with
+    | Sarek_capability.Unavailable cap -> Sarek_capability.explain ~target cap
+    | Sarek_capability.Unknown why -> Printf.sprintf "%s: %s" target why
+    | Sarek_capability.Available ->
+        (* [first_refusal] returns only non-permitting verdicts. *)
+        assert false
+  in
+  Execute_error.raise_error (Backend_error {backend; message})
+
 (** Refuse a launch whose kernel needs a wide element type the target device
     does not provide (#142).
 
@@ -613,18 +631,40 @@ let check_device_capabilities ~(device : Device.t) (ir : Sarek_ir_types.kernel)
   with
   | None -> ()
   | Some verdict ->
-      let message =
-        match verdict with
-        | Sarek_capability.Unavailable cap ->
-            Sarek_capability.explain ~target:device.Device.name cap
-        | Sarek_capability.Unknown why ->
-            Printf.sprintf "%s: %s" device.Device.name why
-        | Sarek_capability.Available ->
-            (* [first_refusal] returns only non-permitting verdicts. *)
-            assert false
-      in
-      Execute_error.raise_error
-        (Backend_error {backend = device.Device.framework; message})
+      raise_capability_refusal
+        ~backend:device.Device.framework
+        ~target:device.Device.name
+        verdict
+
+(** The launch gate for {!run_interpreter_vectors} (backlog-154).
+
+    [run_interpreter_vectors] applied {!check_launch_args} and NOT
+    {!check_device_capabilities}, so the interpreter — the cross-backend numeric
+    oracle — was the one execution path with no capability gate on it. The
+    asymmetry was observable: in one run of [test_coopmat_integer_e2e] on this
+    workstation, [check_device_capabilities] printed
+    [launch gate refuses on CPU Interpreter (Sequential)] for the same kernel
+    [run_interpreter_vectors] then evaluated to 65536 bit-exact results.
+
+    Note what could NOT be done about that: calling {!check_device_capabilities}
+    here. It needs a [Device.t], this entry point has none by design, and — the
+    substantive half — the interpreter's [Framework_sig.capabilities] says
+    [coopmat = None], which means "not probed", which refuses. Wiring the device
+    gate in would have taken the oracle offline rather than closed a hole. The
+    bypass was load-bearing, which is why the fix is a capability answer for the
+    interpreter and not a call to someone else's.
+
+    {!Sarek_interp_capability} is that answer, and it lives beside the evaluator
+    that justifies it. See its interface for the argument about what an
+    interpreter should advertise. *)
+let check_interpreter_capabilities (ir : Sarek_ir_types.kernel) : unit =
+  match Sarek_interp_capability.first_refusal ir with
+  | None -> ()
+  | Some verdict ->
+      raise_capability_refusal
+        ~backend:"Interpreter"
+        ~target:"CPU Interpreter"
+        verdict
 
 (** Execute a kernel on a device using the unified dispatch mechanism.
 
@@ -894,6 +934,11 @@ let run_interpreter_vectors ~(ir : Sarek_ir_types.kernel)
      renamed or dropped arguments on an arity mismatch (it falls back to
      "param%d") instead of reporting it. *)
   check_launch_args ~kernel:ir.Sarek_ir_types.kern_name ir args ;
+  (* The capability half of the same discipline (backlog-154). Placed next to
+     check_launch_args because the two together are what the three [run]
+     dispatch paths apply, and this entry point had only the first. See
+     {!check_interpreter_capabilities}. *)
+  check_interpreter_capabilities ir ;
   (* Set interpreter parallel mode *)
   Sarek_ir_interp.parallel_mode := parallel ;
   (* Convert vector args to interpreter format, tracking arrays for writeback *)

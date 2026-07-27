@@ -216,8 +216,14 @@ end = struct
         shared_mem_per_block = 1024 * 1024;
         total_global_mem = Int64.of_int (16 * 1024 * 1024 * 1024);
         compute_capability = (0, 0);
-        (* Host execution: OCaml floats are binary64 and Int64.t is native. *)
-        device_features = [Sarek_ir_analysis.Float64; Sarek_ir_analysis.Int64];
+        (* Read from the evaluator's own declaration rather than restated here
+           (backlog-154). It said [Float64; Int64], omitting the [Float16] that
+           Sarek_float16 implements and that interp_array_to_vector rounds
+           through a Bigarray.Float16 cell on writeback — an under-claim that
+           was harmless only because check_device_capabilities excludes Float16
+           from its gated list, for an unrelated reason. Sharing the list is
+           what stops a declaration and its evaluator drifting again. *)
+        device_features = Sarek_interp.Sarek_interp_capability.device_features;
         (* backlog-62: no cooperative-matrix probe on this backend. [None] is
            "not probed", which Sarek_coopmat.verdict maps to Unknown and therefore
            refuses; an empty list would be a positive claim nobody measured. *)
