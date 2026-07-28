@@ -1360,10 +1360,11 @@ let gen_bindings buf params =
     that is not a scalar param, so [gen_expr]'s [scalar_param_names] check never
     matches it. The initializer is evaluated in the outer scope, so it still
     expands to [params.<name>], preserving semantics. Unlike GLSL there is no
-    vector-length ([_len]) collision: WGSL emits vector length as the field
-    access [params.sarek_<arr>_length] ({!EArrayLen}), hardcoded with a
-    [params.] prefix independent of any local, so a local cannot alias it — the
-    collision set is scalar params only. WGSL-only. *)
+    vector-length collision: both spell the length [sarek_<arr>_length]
+    ({!EArrayLen}), but WGSL emits it as the field access
+    [params.sarek_<arr>_length], hardcoded with a [params.] prefix independent
+    of any local, so a local cannot alias it — the collision set is scalar
+    params only. WGSL-only. *)
 let rename_scalar_shadowing_locals ~scalar_names body =
   Sarek_ir_codegen.rename_shadowing_locals
     ~collides:(fun name ->

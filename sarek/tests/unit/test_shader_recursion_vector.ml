@@ -299,16 +299,29 @@ let match_pc_shadow_kernel () =
   {k with kern_variants = [("Opt", opt_constrs)]}
 
 (** Vector-length-macro shadow (#71, Minor): each vector param [v] emits a
-    length macro [#define v_len pc.v_len]. A local named [<vec>_len] collides
-    with it: [int data_len = ...;] → [int pc.data_len = ...;] → "unexpected
-    DOT". [pc_names] excludes vectors, so the pre-pass must additionally treat
-    the [_len] macro names as collisions. *)
+    length macro [#define sarek_v_length pc.sarek_v_length]. A local named like
+    that macro collides with it: [int sarek_data_length = ...;] →
+    [int pc.sarek_data_length = ...;] → "unexpected DOT". [pc_names] excludes
+    vectors, so the pre-pass must additionally treat the length macro names as
+    collisions.
+
+    The colliding local is spelled [sarek_data_length], not [data_len]:
+    backlog-156 renamed the macro to the cross-backend [sarek_<v>_length]
+    spelling, so [data_len] now names no macro and this case must follow the
+    rename to keep probing a real collision.
+
+    It does {e not} go quietly green if left un-retargeted — measured: with the
+    local back at [data_len] the case fails at the first assertion below,
+    "expected the vector-_len-shadowing local to be alpha-renamed
+    (sarek_pc_shadow_*)", because nothing collides so nothing is renamed. The
+    retarget keeps the case testing what it is named for; it is not repairing a
+    vacuous check. *)
 let vec_len_shadow_kernel () =
   let data = make_var "data" (TVec TFloat32) in
   let out = make_var "out" (TVec TFloat32) in
   let tid = make_var "tid" TInt32 in
   (* local named EXACTLY like the [data] vector's length macro *)
-  let data_len_l = make_var "data_len" TInt32 in
+  let data_len_l = make_var "sarek_data_length" TInt32 in
   let body =
     SLet
       ( tid,
@@ -318,7 +331,8 @@ let vec_len_shadow_kernel () =
             EConst (CInt32 0l),
             SAssign
               ( LArrayElem ("out", EVar tid),
-                EArrayRead ("data", EVar (make_var "data_len" TInt32)) ) ) )
+                EArrayRead ("data", EVar (make_var "sarek_data_length" TInt32))
+              ) ) )
   in
   base_kernel
     "vec_len_shadow"
@@ -776,10 +790,10 @@ let test_glsl_match_pattern_pc_shadow_validates () =
           e
           k
 
-(* #71 gap #3: a local named like a vector-length macro (`data_len`) must be
-   alpha-renamed. Red-on-mutation: drop the `_len` names from the pre-pass
-   collision set and glslangValidator fails with "unexpected DOT" on
-   `int pc.data_len = ...`. *)
+(* #71 gap #3: a local named like a vector-length macro (`sarek_data_length`)
+   must be alpha-renamed. Red-on-mutation: drop the length names from the
+   pre-pass collision set and glslangValidator fails with "unexpected DOT" on
+   `int pc.sarek_data_length = ...`. *)
 let test_glsl_vec_len_shadow_validates () =
   let k = Sarek_ir_glsl.generate (vec_len_shadow_kernel ()) in
   if not (contains k "sarek_pc_shadow_") then
@@ -788,7 +802,7 @@ let test_glsl_vec_len_shadow_validates () =
        (sarek_pc_shadow_*):\n\
        %s"
       k ;
-  if contains k "int data_len =" then
+  if contains k "int sarek_data_length =" then
     Alcotest.failf
       "a vector-_len-shadowing local declaration survived unrenamed:\n%s"
       k ;
@@ -921,7 +935,7 @@ let () =
             `Quick
             test_glsl_match_pattern_pc_shadow_validates;
           Alcotest.test_case
-            "GLSL local shadows vector _len macro (unexpected DOT)"
+            "GLSL local shadows vector length macro (unexpected DOT)"
             `Quick
             test_glsl_vec_len_shadow_validates;
           Alcotest.test_case

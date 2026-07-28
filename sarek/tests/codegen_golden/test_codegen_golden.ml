@@ -973,13 +973,13 @@ let () =
     \  float c[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
-    \  int c_len;\n\
+    \  int sarek_a_length;\n\
+    \  int sarek_b_length;\n\
+    \  int sarek_c_length;\n\
      } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\
-     #define c_len pc.c_len\n\n\
+     #define sarek_a_length pc.sarek_a_length\n\
+     #define sarek_b_length pc.sarek_b_length\n\
+     #define sarek_c_length pc.sarek_c_length\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  c[idx] = (a[idx] + b[idx]);\n\
@@ -999,9 +999,9 @@ let () =
     \  Point2 pts[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int pts_len;\n\
+    \  int sarek_pts_length;\n\
      } pc;\n\n\
-     #define pts_len pc.pts_len\n\n\
+     #define sarek_pts_length pc.sarek_pts_length\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  Point2 p = pts[idx];\n\
@@ -1038,11 +1038,11 @@ let () =
     \  Opt outv[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int flags_len;\n\
-    \  int outv_len;\n\
+    \  int sarek_flags_length;\n\
+    \  int sarek_outv_length;\n\
      } pc;\n\n\
-     #define flags_len pc.flags_len\n\
-     #define outv_len pc.outv_len\n\n\
+     #define sarek_flags_length pc.sarek_flags_length\n\
+     #define sarek_outv_length pc.sarek_outv_length\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  int flag = flags[idx];\n\
@@ -1066,11 +1066,11 @@ let () =
     \  float b[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
+    \  int sarek_a_length;\n\
+    \  int sarek_b_length;\n\
      } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\n\
+     #define sarek_a_length pc.sarek_a_length\n\
+     #define sarek_b_length pc.sarek_b_length\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  b[idx] = sin(a[idx]);\n\
@@ -1133,11 +1133,11 @@ let () =
     \  float b[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
+    \  int sarek_a_length;\n\
+    \  int sarek_b_length;\n\
      } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\n\
+     #define sarek_a_length pc.sarek_a_length\n\
+     #define sarek_b_length pc.sarek_b_length\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  b[idx] = sin(a[idx]);\n\
@@ -1423,11 +1423,11 @@ let () =
     \  float b[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
+    \  int sarek_a_length;\n\
+    \  int sarek_b_length;\n\
      } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\n\
+     #define sarek_a_length pc.sarek_a_length\n\
+     #define sarek_b_length pc.sarek_b_length\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  b[idx] = inversesqrt(a[idx]);\n\
@@ -1446,11 +1446,11 @@ let () =
     \  float b[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
+    \  int sarek_a_length;\n\
+    \  int sarek_b_length;\n\
      } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\n\
+     #define sarek_a_length pc.sarek_a_length\n\
+     #define sarek_b_length pc.sarek_b_length\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  b[idx] = abs(a[idx]);\n\
@@ -1470,11 +1470,11 @@ let () =
     \  double b[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
+    \  int sarek_a_length;\n\
+    \  int sarek_b_length;\n\
      } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\n\
+     #define sarek_a_length pc.sarek_a_length\n\
+     #define sarek_b_length pc.sarek_b_length\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  b[idx] = abs(a[idx]);\n\
@@ -1497,13 +1497,13 @@ let () =
     \  double c[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
-    \  int c_len;\n\
+    \  int sarek_a_length;\n\
+    \  int sarek_b_length;\n\
+    \  int sarek_c_length;\n\
      } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\
-     #define c_len pc.c_len\n\n\
+     #define sarek_a_length pc.sarek_a_length\n\
+     #define sarek_b_length pc.sarek_b_length\n\
+     #define sarek_c_length pc.sarek_c_length\n\n\
      float sarek_copysign(float x, float y) { return \
      uintBitsToFloat((floatBitsToUint(x) & 0x7FFFFFFFu) | (floatBitsToUint(y) \
      & 0x80000000u)); }\n\n\
@@ -1531,13 +1531,13 @@ let () =
     \  float c[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
-    \  int c_len;\n\
+    \  int sarek_a_length;\n\
+    \  int sarek_b_length;\n\
+    \  int sarek_c_length;\n\
      } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\
-     #define c_len pc.c_len\n\n\
+     #define sarek_a_length pc.sarek_a_length\n\
+     #define sarek_b_length pc.sarek_b_length\n\
+     #define sarek_c_length pc.sarek_c_length\n\n\
      float sarek_copysign(float x, float y) { return \
      uintBitsToFloat((floatBitsToUint(x) & 0x7FFFFFFFu) | (floatBitsToUint(y) \
      & 0x80000000u)); }\n\n\
@@ -1563,13 +1563,13 @@ let () =
     \  double c[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
-    \  int c_len;\n\
+    \  int sarek_a_length;\n\
+    \  int sarek_b_length;\n\
+    \  int sarek_c_length;\n\
      } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\
-     #define c_len pc.c_len\n\n\
+     #define sarek_a_length pc.sarek_a_length\n\
+     #define sarek_b_length pc.sarek_b_length\n\
+     #define sarek_c_length pc.sarek_c_length\n\n\
      float sarek_fmod(float x, float y) {\n\
     \  float ay = abs(y);\n\
     \  if (isnan(x) || isnan(y) || isinf(x) || ay == 0.0) return \
@@ -1618,13 +1618,13 @@ let () =
     \  float c[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
-    \  int c_len;\n\
+    \  int sarek_a_length;\n\
+    \  int sarek_b_length;\n\
+    \  int sarek_c_length;\n\
      } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\
-     #define c_len pc.c_len\n\n\
+     #define sarek_a_length pc.sarek_a_length\n\
+     #define sarek_b_length pc.sarek_b_length\n\
+     #define sarek_c_length pc.sarek_c_length\n\n\
      float sarek_fmod(float x, float y) {\n\
     \  float ay = abs(y);\n\
     \  if (isnan(x) || isnan(y) || isinf(x) || ay == 0.0) return \
@@ -1659,13 +1659,13 @@ let () =
     \  float c[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
-    \  int c_len;\n\
+    \  int sarek_a_length;\n\
+    \  int sarek_b_length;\n\
+    \  int sarek_c_length;\n\
      } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\
-     #define c_len pc.c_len\n\n\
+     #define sarek_a_length pc.sarek_a_length\n\
+     #define sarek_b_length pc.sarek_b_length\n\
+     #define sarek_c_length pc.sarek_c_length\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  c[idx] = atan(a[idx], b[idx]);\n\
@@ -1684,11 +1684,11 @@ let () =
     \  float b[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
+    \  int sarek_a_length;\n\
+    \  int sarek_b_length;\n\
      } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\n\
+     #define sarek_a_length pc.sarek_a_length\n\
+     #define sarek_b_length pc.sarek_b_length\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  b[idx] = (sign(a[idx]) * pow(abs(a[idx]), 1.0 / 3.0));\n\
@@ -1710,13 +1710,13 @@ let () =
     \  float c[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
-    \  int c_len;\n\
+    \  int sarek_a_length;\n\
+    \  int sarek_b_length;\n\
+    \  int sarek_c_length;\n\
      } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\
-     #define c_len pc.c_len\n\n\
+     #define sarek_a_length pc.sarek_a_length\n\
+     #define sarek_b_length pc.sarek_b_length\n\
+     #define sarek_c_length pc.sarek_c_length\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  c[idx] = sqrt((a[idx]) * (a[idx]) + (b[idx]) * (b[idx]));\n\
@@ -1735,11 +1735,11 @@ let () =
     \  float b[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
+    \  int sarek_a_length;\n\
+    \  int sarek_b_length;\n\
      } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\n\
+     #define sarek_a_length pc.sarek_a_length\n\
+     #define sarek_b_length pc.sarek_b_length\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  b[idx] = (exp(a[idx]) - 1.0);\n\
@@ -1758,11 +1758,11 @@ let () =
     \  float b[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
+    \  int sarek_a_length;\n\
+    \  int sarek_b_length;\n\
      } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\n\
+     #define sarek_a_length pc.sarek_a_length\n\
+     #define sarek_b_length pc.sarek_b_length\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  b[idx] = log(1.0 + (a[idx]));\n\
@@ -1781,11 +1781,11 @@ let () =
     \  float b[];\n\
      };\n\
      layout(push_constant) uniform PushConstants {\n\
-    \  int a_len;\n\
-    \  int b_len;\n\
+    \  int sarek_a_length;\n\
+    \  int sarek_b_length;\n\
      } pc;\n\n\
-     #define a_len pc.a_len\n\
-     #define b_len pc.b_len\n\n\
+     #define sarek_a_length pc.sarek_a_length\n\
+     #define sarek_b_length pc.sarek_b_length\n\n\
      void main() {\n\
     \  int idx = int(gl_GlobalInvocationID.x);\n\
     \  b[idx] = (log(a[idx]) / log(10.0));\n\
@@ -1808,12 +1808,12 @@ layout(std430, set=0, binding = 1) buffer Buffer_b {
   double b[];
 };
 layout(push_constant) uniform PushConstants {
-  int a_len;
-  int b_len;
+  int sarek_a_length;
+  int sarek_b_length;
 } pc;
 
-#define a_len pc.a_len
-#define b_len pc.b_len
+#define sarek_a_length pc.sarek_a_length
+#define sarek_b_length pc.sarek_b_length
 
 double sarek_f64_log(double);
 double sarek_f64_log10(double);
@@ -1859,12 +1859,12 @@ layout(std430, set=0, binding = 1) buffer Buffer_b {
   double b[];
 };
 layout(push_constant) uniform PushConstants {
-  int a_len;
-  int b_len;
+  int sarek_a_length;
+  int sarek_b_length;
 } pc;
 
-#define a_len pc.a_len
-#define b_len pc.b_len
+#define sarek_a_length pc.sarek_a_length
+#define sarek_b_length pc.sarek_b_length
 
 double sarek_f64_exp(double);
 double sarek_f64_log(double);
@@ -1928,12 +1928,12 @@ layout(std430, set=0, binding = 1) buffer Buffer_b {
   double b[];
 };
 layout(push_constant) uniform PushConstants {
-  int a_len;
-  int b_len;
+  int sarek_a_length;
+  int sarek_b_length;
 } pc;
 
-#define a_len pc.a_len
-#define b_len pc.b_len
+#define sarek_a_length pc.sarek_a_length
+#define sarek_b_length pc.sarek_b_length
 
 double sarek_f64_exp(double);
 
@@ -1977,12 +1977,12 @@ layout(std430, set=0, binding = 1) buffer Buffer_b {
   double b[];
 };
 layout(push_constant) uniform PushConstants {
-  int a_len;
-  int b_len;
+  int sarek_a_length;
+  int sarek_b_length;
 } pc;
 
-#define a_len pc.a_len
-#define b_len pc.b_len
+#define sarek_a_length pc.sarek_a_length
+#define sarek_b_length pc.sarek_b_length
 
 double sarek_f64_log(double);
 

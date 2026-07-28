@@ -41,6 +41,7 @@ each of which actually happened here:
 | A calibration is pinned at one hand-computed input, and a broken oracle passes the pin | `test_opencl_f16_tripwire`'s oracle pinned at `x = 1.0` (§11.5) |
 | A count-only sweep reports `1 / 63488` and nothing else, hiding *which* value was wrong | RADV returning `-0` for `0.0 - x` at `x = +0` (§13.6) |
 | An empty declared set turns a strict check into a permissive one | any `exempt`/roots list that no longer names anything |
+| An emitter names one concept twice — declaring it under one spelling and using it under another — and nothing compares its two halves | `Sarek_ir_glsl` declared `<v>_len` and used `sarek_<v>_length` for `EArrayLen`; unreachable from surface Sarek (no `len` primitive exists), so no test, example or user could observe it (backlog-156) |
 
 The operative rule, and the reason `scripts/check-kb-properties.sh` exists at all:
 

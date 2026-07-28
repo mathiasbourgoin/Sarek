@@ -216,11 +216,30 @@ let mangle_softmath_ident name =
   else name
 
 (** Escape reserved GLSL keywords by adding 'v' suffix (avoids double underscore
-    with _len), and re-spell software-transcendental helper names
-    ({!mangle_softmath_ident}). *)
+    with the [_length] suffix of {!glsl_array_length_name}), and re-spell
+    software-transcendental helper names ({!mangle_softmath_ident}). *)
 let escape_glsl_name name =
   let name = mangle_softmath_ident name in
   if List.mem name glsl_reserved_keywords then name ^ "v" else name
+
+(** The GLSL identifier carrying the length of vector parameter [name].
+
+    {b One definition, deliberately.} This name has two halves that must agree:
+    {!gen_push_constants} {e declares} it (a push-constant field plus a
+    [#define] alias), and {!gen_expr} {e uses} it for [EArrayLen]. Before
+    backlog-156 those were two separate string constructions in this same file —
+    [<name>_len] on the declaring side, [sarek_<name>_length] on the using side
+    — and nothing compared them, so every kernel taking a length emitted GLSL
+    naming an identifier the shader never declared. Route both halves (and the
+    shadowing sets in {!generate_with_types}) through here so the disagreement
+    is not expressible.
+
+    The spelling is the cross-backend one: CUDA, OpenCL, Metal and WGSL all call
+    this [sarek_<name>_length], and so does PTX, via
+    {!Sarek_ir_ptx_types.length_param_name} — five of the six emitters, with
+    GLSL the odd one out until now. The [sarek_] prefix also keeps the
+    identifier out of the user namespace, unlike the old bare [<name>_len]. *)
+let glsl_array_length_name name = "sarek_" ^ escape_glsl_name name ^ "_length"
 
 (** Map Sarek IR element type to GLSL type string *)
 let rec glsl_type_of_elttype = function
@@ -494,8 +513,7 @@ let rec gen_expr buf = function
           gen_expr buf e)
         args ;
       Buffer.add_char buf ')'
-  | EArrayLen arr ->
-      Buffer.add_string buf ("sarek_" ^ escape_glsl_name arr ^ "_length")
+  | EArrayLen arr -> Buffer.add_string buf (glsl_array_length_name arr)
   | EArrayCreate _ ->
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct
@@ -1406,8 +1424,8 @@ let gen_push_constants buf params =
     (* Add length parameter for each vector *)
     List.iter
       (fun v ->
-        let name = escape_glsl_name v.var_name in
-        Buffer.add_string buf (Printf.sprintf "  int %s_len;\n" name))
+        let name = glsl_array_length_name v.var_name in
+        Buffer.add_string buf (Printf.sprintf "  int %s;\n" name))
       vectors ;
     (* Add user-defined scalar parameters *)
     List.iter
@@ -1421,10 +1439,8 @@ let gen_push_constants buf params =
     (* Define convenience aliases for push constants *)
     List.iter
       (fun v ->
-        let name = escape_glsl_name v.var_name in
-        Buffer.add_string
-          buf
-          (Printf.sprintf "#define %s_len pc.%s_len\n" name name))
+        let name = glsl_array_length_name v.var_name in
+        Buffer.add_string buf (Printf.sprintf "#define %s pc.%s\n" name name))
       vectors ;
     List.iter
       (fun v ->
@@ -1782,13 +1798,14 @@ let gen_f64_softmath_helpers ~pc_names buf =
 
     Scalar params are exposed to the body as preprocessor macros
     ([#define width pc.width]), and each vector param exposes a length macro
-    ([#define v_len pc.v_len]); a macro rewrites {e every} matching token in
-    [main] — including the declared name of a local. A helper inlined at its
-    call site (e.g. a [[@sarek.module]] function whose formal is named like a
-    kernel scalar) emits a self-binding [int width = width;], which the macro
-    turns into [int pc.width = pc.width;] — a syntax error ("unexpected DOT").
-    Helper {e functions} already dodge this via the [#undef]/[#define] guards in
-    {!gen_helper_func}, but a body-inlined binder has no such guard.
+    ([#define sarek_v_length pc.sarek_v_length]); a macro rewrites {e every}
+    matching token in [main] — including the declared name of a local. A helper
+    inlined at its call site (e.g. a [[@sarek.module]] function whose formal is
+    named like a kernel scalar) emits a self-binding [int width = width;], which
+    the macro turns into [int pc.width = pc.width;] — a syntax error
+    ("unexpected DOT"). Helper {e functions} already dodge this via the
+    [#undef]/[#define] guards in {!gen_helper_func}, but a body-inlined binder
+    has no such guard.
 
     Both scalar-param macros ([pc_names]) and vector-length macros ([len_names])
     are treated as collisions; a colliding binder is rewritten to a fresh
@@ -1801,8 +1818,9 @@ let rename_pc_shadowing_locals ~pc_names ~len_names body =
   Sarek_ir_codegen.rename_shadowing_locals
     ~collides:(fun name ->
       (* A local collides if its escaped name matches a scalar-param macro
-         ([#define name pc.name]) or a vector-length macro ([#define vec_len
-         pc.vec_len]); either would rewrite the declared identifier to [pc....]. *)
+         ([#define name pc.name]) or a vector-length macro
+         ([#define sarek_vec_length pc.sarek_vec_length]); either would rewrite
+         the declared identifier to [pc....]. *)
       let n = escape_glsl_name name in
       List.mem n pc_names || List.mem n len_names)
     ~fresh_name:(fun orig n ->
@@ -1890,20 +1908,21 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
         match decl with
         | DParam (v, _) -> (
             match v.var_type with
-            | TVec _ -> None (* vectors don't get macros, only their _len *)
+            | TVec _ -> None (* vectors don't get macros, only their length *)
             | _ -> Some (escape_glsl_name v.var_name))
         | _ -> None)
       k.kern_params
   in
-  (* Vector params emit a length macro [#define <vec>_len pc.<vec>_len]; a local
-     named [<vec>_len] collides with it (see rename_pc_shadowing_locals). *)
+  (* Vector params emit a length macro
+     [#define sarek_<vec>_length pc.sarek_<vec>_length]; a local named
+     [sarek_<vec>_length] collides with it (see rename_pc_shadowing_locals). *)
   let len_names =
     List.filter_map
       (fun decl ->
         match decl with
         | DParam (v, _) -> (
             match v.var_type with
-            | TVec _ -> Some (escape_glsl_name v.var_name ^ "_len")
+            | TVec _ -> Some (glsl_array_length_name v.var_name)
             | _ -> None)
         | _ -> None)
       k.kern_params
@@ -2025,20 +2044,21 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
         match decl with
         | DParam (v, _) -> (
             match v.var_type with
-            | TVec _ -> None (* vectors don't get macros, only their _len *)
+            | TVec _ -> None (* vectors don't get macros, only their length *)
             | _ -> Some (escape_glsl_name v.var_name))
         | _ -> None)
       k.kern_params
   in
-  (* Vector params emit a length macro [#define <vec>_len pc.<vec>_len]; a local
-     named [<vec>_len] collides with it (see rename_pc_shadowing_locals). *)
+  (* Vector params emit a length macro
+     [#define sarek_<vec>_length pc.sarek_<vec>_length]; a local named
+     [sarek_<vec>_length] collides with it (see rename_pc_shadowing_locals). *)
   let len_names =
     List.filter_map
       (fun decl ->
         match decl with
         | DParam (v, _) -> (
             match v.var_type with
-            | TVec _ -> Some (escape_glsl_name v.var_name ^ "_len")
+            | TVec _ -> Some (glsl_array_length_name v.var_name)
             | _ -> None)
         | _ -> None)
       k.kern_params

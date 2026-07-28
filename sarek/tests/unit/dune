@@ -218,6 +218,15 @@
  (modules test_backend_arm_parity)
  (libraries sarek.codegen sarek_ir alcotest))
 
+; An emitter must declare every name it uses (backlog-156). Within ONE backend,
+; between the half that declares a generated identifier and the half that uses
+; it — the axis the cross-backend arm-parity matrix cannot see.
+
+(test
+ (name test_emitted_name_declared)
+ (modules test_emitted_name_declared)
+ (libraries sarek.codegen sarek_ir alcotest unix))
+
 ; Intrinsic-surface reconciliation: derives its expectation from
 ; Sarek_registry's link-time record of every let%sarek_intrinsic, and checks it
 ; against Sarek_pure_registry (GPU codegen) and Sarek_cpu_runtime (native).
