@@ -587,7 +587,23 @@ and assign_lvalue state env lv value =
   | LArrayElem (arr, idx_expr) ->
       let a = get_array env arr in
       let i = to_int (eval_expr state env idx_expr) in
-      a.(i) <- value
+      (* Same check as the LArrayElemExpr arm below, which had it while this one
+         did not — adjacent arms of one function disagreeing about whether an
+         out-of-range store is an interpreter error or an OCaml one.
+
+         NOT a memory-safety fix, and the backlog entry that claimed it was is
+         wrong: OCaml bounds-checks [a.(i) <- v] and raises
+         Invalid_argument "index out of bounds", so nothing was ever corrupted.
+         What was wrong is the DIAGNOSTIC. An interpreter that is the
+         cross-backend oracle should say which array, which index and what
+         length, the way error_to_string does — an opaque Invalid_argument names
+         none of the three, and on a GPU backend the same store is genuine
+         undefined behaviour, so this is the one place able to describe it. *)
+      if i < 0 || i >= Array.length a then
+        Interp_error.raise_error
+          (Array_bounds_error
+             {array_name = arr; index = i; length = Array.length a})
+      else a.(i) <- value
   | LArrayElemExpr (base_expr, idx_expr) ->
       let a =
         match eval_expr state env base_expr with

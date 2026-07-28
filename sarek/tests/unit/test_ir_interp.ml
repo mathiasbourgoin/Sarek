@@ -416,6 +416,60 @@ let test_stmt_assign () =
   | VInt32 n -> check int32 "assign" 99l n
   | _ -> fail "expected VInt32"
 
+(* An out-of-range store through LArrayElem must be the INTERPRETER's error, not
+   OCaml's. Both arms of assign_lvalue reject it — OCaml bounds-checks arrays, so
+   nothing was ever corrupted and the backlog entry claiming memory unsafety was
+   wrong — but LArrayElem raised a bare Invalid_argument naming neither the
+   array, the index nor the length, while the LArrayElemExpr arm beside it
+   raised Array_bounds_error naming all three. Matching the CONSTRUCTOR rather
+   than the rendered message: a reworded error_to_string must not silently
+   reclassify this. *)
+let test_stmt_assign_out_of_bounds () =
+  let env = make_env () in
+  let state = make_state () in
+  Hashtbl.add env.arrays "output" (Array.make 5 (VInt32 0l)) ;
+  let stmt =
+    SAssign (LArrayElem ("output", EConst (CInt32 7l)), EConst (CInt32 99l))
+  in
+  match exec_stmt state env stmt with
+  | () -> fail "expected an out-of-bounds store to raise"
+  | exception
+      Sarek.Interp_error.Interpreter_error
+        (Sarek.Interp_error.Array_bounds_error {array_name; index; length}) ->
+      check string "names the array" "output" array_name ;
+      check int "names the index" 7 index ;
+      check int "names the length" 5 length
+  | exception Invalid_argument _ ->
+      fail
+        "raised OCaml's Invalid_argument: the store is caught, but the \
+         diagnostic names neither array, index nor length"
+
+(* Uncaught, an interpreter error used to print as an opaque constructor with
+   none of error_to_string's detail, so every test reporting one carried its own
+   `describe` wrapper. The three sibling error modules register a printer; this
+   one did not. Asserts the printer is REACHED (the message is the detailed one)
+   rather than that some string is non-empty — Printexc always returns
+   something, so a length check would pass without the printer. *)
+let test_interp_error_has_printer () =
+  let e =
+    Sarek.Interp_error.Interpreter_error
+      (Sarek.Interp_error.Array_bounds_error
+         {array_name = "buf"; index = 9; length = 4})
+  in
+  let s = Printexc.to_string e in
+  let contains hay needle =
+    let nh = String.length hay and nn = String.length needle in
+    let rec go i =
+      i + nn <= nh && (String.sub hay i nn = needle || go (i + 1))
+    in
+    nn > 0 && go 0
+  in
+  check
+    bool
+    "printer reached (not the opaque constructor)"
+    true
+    (contains s "buf" && contains s "9" && contains s "4")
+
 let test_stmt_let () =
   let env = make_env () in
   let state = make_state () in
@@ -547,6 +601,8 @@ let () =
       ( "statements",
         [
           test_case "assign" `Quick test_stmt_assign;
+          test_case "assign_out_of_bounds" `Quick test_stmt_assign_out_of_bounds;
+          test_case "error_has_printer" `Quick test_interp_error_has_printer;
           test_case "let_binding" `Quick test_stmt_let;
           test_case "if_stmt" `Quick test_stmt_if;
           test_case "while_loop" `Quick test_stmt_while;

@@ -57,3 +57,14 @@ let error_to_string = function
 
 (** Raise an interpreter error *)
 let raise_error err = raise (Interpreter_error err)
+
+(* Uncaught, [Interpreter_error] printed as an opaque constructor with none of
+   [error_to_string]'s detail, so every test that had to report one carried its
+   own `describe` wrapper — see the one in
+   sarek/tests/e2e/test_helper_scoping.ml, written for exactly this. The three
+   sibling error modules (Execute_error, Fusion_error, Kirc_error) all register a
+   printer; this one was the odd one out. *)
+let () =
+  Printexc.register_printer (function
+    | Interpreter_error err -> Some (error_to_string err)
+    | _ -> None)

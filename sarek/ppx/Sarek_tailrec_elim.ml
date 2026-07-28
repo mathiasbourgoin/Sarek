@@ -392,6 +392,14 @@ let eliminate_tail_recursion (fname : string) (params : tparam list)
       | TReg Int64 -> {te = TEInt64 0L; ty = result_ty; te_loc = loc}
       | TReg Float32 -> {te = TEFloat 0.0; ty = result_ty; te_loc = loc}
       | TReg Float64 -> {te = TEDouble 0.0; ty = result_ty; te_loc = loc}
+      (* Float16 used to fall through to the [TEInt 0] wildcard below, giving a
+         tail-recursive f16 helper an INT-shaped initializer carrying an f16
+         type. Latent rather than observed — the value is overwritten before
+         use, which is why nothing caught it — but the wildcard's justification
+         ("it's just a placeholder") is exactly the silently-succeeding-wildcard
+         shape #94 exists to refuse, so the arm is spelled out. TEFloat, not
+         TEDouble: f16 narrows from binary32 on every backend that has it. *)
+      | TReg Float16 -> {te = TEFloat 0.0; ty = result_ty; te_loc = loc}
       | TReg Char -> {te = TEInt 0; ty = result_ty; te_loc = loc}
       | TReg (Custom _) -> {te = TEInt 0; ty = result_ty; te_loc = loc}
       | TPrim TBool -> {te = TEBool false; ty = result_ty; te_loc = loc}
