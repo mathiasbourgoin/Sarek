@@ -263,7 +263,6 @@ let ir_lower_stmt_count = ref 0
 
 (** Lowering state *)
 type state = {
-  mutable next_var_id : int;
   fun_map : (string, tparam list * texpr) Hashtbl.t;
   lowering_stack : (string, unit) Hashtbl.t;
   lowered_funs : (string, Ir.helper_func) Hashtbl.t;
@@ -280,7 +279,6 @@ type state = {
 
 let create_state fun_map =
   {
-    next_var_id = 0;
     fun_map;
     lowering_stack = Hashtbl.create 8;
     lowered_funs = Hashtbl.create 8;
@@ -289,17 +287,13 @@ let create_state fun_map =
     variants = Hashtbl.create 8;
   }
 
-(* DEAD as of this writing: [fresh_id] has no caller, and [next_var_id] is
-   touched only by it. Flagged rather than deleted (pre-existing dead code
-   outside this change's scope) but flagged deliberately, because a commit
-   message on this branch described it as one of three LIVE id allocators and
-   that was wrong — the live ones are the typer's [fresh_var_id] and, until it
-   was unified with it, the tail-recursion transform's. The only other live id
-   convention is the NEGATIVE range for tuple temporaries below. *)
-let fresh_id state =
-  let id = state.next_var_id in
-  state.next_var_id <- id + 1 ;
-  id
+(* There is ONE id allocator: the typer's [Sarek_typed_ast.fresh_var_id]. A
+   third one used to appear to live here ([fresh_id] over a [next_var_id] field)
+   and was deleted with its field — it had no caller, and a commit message that
+   called it live was wrong. The tail-recursion transform draws from the typer
+   directly, so a transform id cannot collide with a typer id by construction.
+   The only other id convention is the NEGATIVE range for tuple temporaries
+   below, disjoint from the typer's by sign. *)
 
 (** Register the synthesized [_tup_*] record for a primitive-component tuple in
     the codegen types table, so a kernel-local slot typed by that record (see
