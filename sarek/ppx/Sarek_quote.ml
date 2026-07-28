@@ -37,7 +37,8 @@ let quote_int32 ~loc i =
   [%expr [%e Ast_builder.Default.eint ~loc (Int32.to_int i)]]
 
 (** Quote a float as OCaml expression *)
-let quote_float ~loc f = Ast_builder.Default.efloat ~loc (string_of_float f)
+let quote_float ~loc f =
+  Ast_builder.Default.efloat ~loc (Sarek_float_literal.to_source f)
 
 (** Quote a string as OCaml expression *)
 let quote_string ~loc s = Ast_builder.Default.estring ~loc s

@@ -22,7 +22,8 @@ let quote_int32 ~loc i =
 let quote_int64 ~loc i =
   [%expr Int64.of_int [%e Ast_builder.Default.eint ~loc (Int64.to_int i)]]
 
-let quote_float ~loc f = Ast_builder.Default.efloat ~loc (string_of_float f)
+let quote_float ~loc f =
+  Ast_builder.Default.efloat ~loc (Sarek_float_literal.to_source f)
 
 let quote_string ~loc s = Ast_builder.Default.estring ~loc s
 

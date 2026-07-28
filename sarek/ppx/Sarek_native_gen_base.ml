@@ -95,7 +95,7 @@ let gen_literal ~loc (te : texpr) : expression =
       (* Generate int64 literal using Int64.of_int *)
       [%expr Int64.of_int [%e Ast_builder.Default.eint ~loc (Int64.to_int n)]]
   | TEFloat f | TEDouble f ->
-      Ast_builder.Default.efloat ~loc (string_of_float f)
+      Ast_builder.Default.efloat ~loc (Sarek_float_literal.to_source f)
   | _ -> failwith "gen_literal: not a literal expression"
 
 (** Generate variable reference (local, module-level, qualified) *)

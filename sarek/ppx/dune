@@ -8,6 +8,7 @@
  (preprocess
   (pps ppxlib.metaquot))
  (modules
+  Sarek_float_literal
   Sarek_types
   Sarek_scheme
   Sarek_core_primitives
