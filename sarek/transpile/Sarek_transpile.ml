@@ -236,13 +236,35 @@ let set_framework backend =
    carries [kern_types]/[kern_variants] across from the frontend, so calling
    [generate] here silently discarded them and a transpiled kernel using a
    `[@@sarek.type]` record emitted e.g. `point p = (point){...};` with `point`
-   never declared — invalid C on every one of the five backends (backlog-155). *)
+   never declared — invalid C on every one of the five backends (backlog-155).
+
+   OpenCL takes [generate_with_fp64], which is [generate_with_types] plus a
+   conditional `#pragma OPENCL EXTENSION cl_khr_fp64 : enable`, because a
+   float64 kernel DOES reach here — measured, not assumed: transpiling
+   `fun (a : float64 vector) (b : float64 vector) -> b.(i) <- a.(i) +. a.(i)`
+   through [of_source OpenCL] emitted `__global double* restrict a` and, before
+   this line changed, no pragma anywhere in the output.
+
+   Whether that omission is FATAL is implementation-dependent, and the honest
+   answer measured here is "not on the implementation this box has": Mesa
+   rusticl 3.0 (clang 22) on an RX 7900 XTX, on the radeonsi CPU device and on
+   llvmpipe, built the pragma-less source with clBuildProgram = CL_SUCCESS,
+   including under `-cl-std=CL1.2`, with an invalid-source control correctly
+   refused. clang enables cl_khr_fp64 by default for every target that has
+   fp64, so no clang-based ICD will care. The reasons to emit it anyway are
+   that the OpenCL C spec makes the pragma the way an application enables the
+   extension (so a non-clang ICD may demand it and none is reachable here to
+   ask), and that {!Opencl_plugin.generate_source} — the RUNTIME path for the
+   same IR — already calls [generate_with_fp64]. Two emission paths for one
+   backend that disagree on the prologue is the divergence backlog-155 was
+   about. It costs nothing: [kernel_uses_float64] is false for every float32
+   kernel, so their output is byte-identical. *)
 let emit_backend backend (k : Sarek_ir_ppx.kernel) =
   let k_types = Sarek_ir_conv.conv_kernel k in
   let types = k_types.Sarek_ir_types.kern_types in
   match backend with
   | CUDA -> Sarek_ir_cuda.generate_with_types ~types k_types
-  | OpenCL -> Sarek_ir_opencl.generate_with_types ~types k_types
+  | OpenCL -> Sarek_ir_opencl.generate_with_fp64 ~types k_types
   | Metal -> Sarek_ir_metal.generate_with_types ~types k_types
   | GLSL -> Sarek_ir_glsl.generate_with_types ~types k_types
   | WGSL -> Sarek_ir_wgsl.generate_with_types ~types k_types

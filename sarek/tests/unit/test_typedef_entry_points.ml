@@ -322,6 +322,81 @@ let test_transpile_declares_records () =
         src)
     transpile_cases
 
+(* ------------------------------------------------------------------ *)
+(* The transpiler's OpenCL arm: the fp64 pragma, not just the typedefs *)
+(* ------------------------------------------------------------------ *)
+
+(** [Sarek_transpile.emit_backend]'s OpenCL arm was fixed to
+    [generate_with_types] along with the other four, which restored the typedefs
+    and left the fp64 pragma still missing — [generate_with_fp64] is the entry
+    point that composes both, and nothing on the transpile path added the pragma
+    anywhere (grep for `cl_khr` over Sarek_transpile.ml returned nothing).
+
+    That a float64 kernel REACHES that arm is the thing this pair pins. It is
+    not obvious: the transpiler could plausibly have refused fp64 upstream, at
+    the typer or the lowering, in which case the pragma would be dead code and
+    the arm's choice would not matter. It does not refuse — the first case here
+    fails at [transpile_ocl] rather than at an assertion if that ever changes,
+    and the message says so.
+
+    The float32 control is the falsifier. Without it, "the output contains the
+    pragma" is also satisfied by prefixing every OpenCL kernel unconditionally,
+    which would be a different bug (a pragma naming an extension the program
+    does not use, on every float32 kernel the transpiler emits). *)
+
+let fp64_kernel_src =
+  "fun (a : float64 vector) (b : float64 vector) ->\n\
+  \  let i = global_thread_id in\n\
+  \  b.(i) <- a.(i) +. a.(i)"
+
+let f32_kernel_src =
+  "fun (a : float32 vector) (b : float32 vector) ->\n\
+  \  let i = global_thread_id in\n\
+  \  b.(i) <- a.(i) +. a.(i)"
+
+let fp64_pragma = "#pragma OPENCL EXTENSION cl_khr_fp64 : enable"
+
+let transpile_ocl ~ctx src =
+  match Sarek_transpile.of_source Sarek_transpile.OpenCL src with
+  | Ok s -> s
+  | Error e ->
+      Alcotest.failf
+        "%s: transpile failed, so this case proves nothing: %s"
+        ctx
+        (Sarek_transpile.string_of_error e)
+
+let test_transpile_opencl_fp64_emits_pragma () =
+  let src = transpile_ocl ~ctx:"transpiler/OpenCL fp64" fp64_kernel_src in
+  (* Vacuity guard: if the emitted kernel does not actually use `double`, the
+     pragma assertion below is about a kernel that never needed it. *)
+  Alcotest.(check bool)
+    (Printf.sprintf
+       "the fp64 kernel really does emit `double` — otherwise the pragma check \
+        is vacuous. Emitted source:\n\
+        %s"
+       src)
+    true
+    (contains src "double") ;
+  (* Order matters as much as presence: an extension pragma below the code that
+     uses the extension enables nothing. *)
+  check_declared_before_use
+    ~ctx:"transpiler/OpenCL fp64"
+    ~decl:fp64_pragma
+    ~use:"double"
+    src
+
+let test_transpile_opencl_float32_omits_pragma () =
+  let src = transpile_ocl ~ctx:"transpiler/OpenCL float32" f32_kernel_src in
+  Alcotest.(check bool)
+    (Printf.sprintf
+       "control: a float32 kernel must NOT carry the fp64 pragma — the prefix \
+        is conditional on the kernel using float64, not unconditional. Emitted \
+        source:\n\
+        %s"
+       src)
+    false
+    (contains src fp64_pragma)
+
 let () =
   Alcotest.run
     "typedef_entry_points"
@@ -355,5 +430,13 @@ let () =
             "of_source and of_source_with_abi declare records before using them"
             `Quick
             test_transpile_declares_records;
+          Alcotest.test_case
+            "of_source OpenCL enables cl_khr_fp64 above the first `double`"
+            `Quick
+            test_transpile_opencl_fp64_emits_pragma;
+          Alcotest.test_case
+            "control: a float32 kernel gets no fp64 pragma"
+            `Quick
+            test_transpile_opencl_float32_omits_pragma;
         ] );
     ]
