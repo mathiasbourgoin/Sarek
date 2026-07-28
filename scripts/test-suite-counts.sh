@@ -156,12 +156,38 @@
 #                     prints `Command [17] exited with code 3:`. The fixture is
 #                     dune-verbose-command-exit-log.txt.
 #
+#                     The signal half is measured too, and separately, because
+#                     it is a different branch of the alternation and a fixture
+#                     of the exit-code form cannot exercise it. Measured:
+#                     appending
+#                         let () =
+#                           let a : int array = Obj.magic "probe" in
+#                           print_int (Array.unsafe_get a 1_000_000_000)
+#                     to the same file and re-running the same command prints
+#                     `Command [17] got signal SEGV:` at column 0, dune exit 1.
+#                     The fixture is dune-verbose-signal-log.txt. (The read has
+#                     to be OBSERVED -- `ignore (Array.unsafe_get ...)` is dead
+#                     code and gets eliminated, and that run exits 0.)
+#
+#                     Both `\d+` fields are real degrees of freedom, not
+#                     decoration, and the covering test asserts them
+#                     BEHAVIOURALLY rather than through the fixtures: a fixture
+#                     pins one job number and one exit code, so narrowing the
+#                     pattern to that fixture's own literals -- `\[\d+\]` to
+#                     `\[17\]`, `code \d+` to `code 3` -- would be invisible to
+#                     every fixture-driven case. Synthetic logs carrying a
+#                     different job number and a different exit code
+#                     (`Command [4] exited with code 127:`) and a different
+#                     signal (`Command [259] got signal ABRT:`) are what make
+#                     those narrowings go red.
+#
 # The bracketed job number is not decoration, it is the whole reason this line
 # is spelled out here. Until this review the pattern was `Command exited with
 # code N.` -- no job number, and a period instead of a colon. That form matches
 # NOTHING dune 3.24.1 emits in any display mode (default, short, progress,
 # verbose), so the alternative had been dead since it was written. `Command got
-# signal .*` was dead for the same reason (real: `Command [4] got signal SEGV:`),
+# signal .*` was dead for the same reason -- the real form carries a job number
+# and a colon, and dune-verbose-signal-log.txt is a captured instance of it --
 # and `Had N errors` is a dune 2.x form this version never prints at all --
 # measured with `dune build`, `dune build -k` and `dune build --display short
 # -k` over two independently-broken modules. All three are gone.
@@ -580,12 +606,29 @@ python3 -c "$PYPROG" "$SRC" "$MIN_SUITES" "$RUNNER_EXIT"
 # failure log is a guess at what dune prints, and both of these exist because
 # the previous guess was wrong.
 #
+# A fourth fixture closes the half that still had none (backlog-157 close-out):
+#
+#   dune-verbose-signal-log.txt
+#       the same command again, with the wild-read probe from THE MARKER SET
+#       appended instead of `let () = exit 3`. Dune exit 1, and its report is
+#       `Command [17] got signal SEGV:`. Until this fixture existed the
+#       `got signal` branch of the pattern was guarded by nothing anywhere in
+#       the repository -- no fixture, no covering-test case, no KB anchor --
+#       while the header above cited it as measured. Replacing the whole branch
+#       with a nonsense literal was green against all three gates, which is the
+#       same shape (a pattern asserted rather than exercised) that put the
+#       previous guess in the file.
+#
+# Its counts are the same plausible-looking 46 cases across 6 suites, 0 FAIL,
+# so it exercises the defect exactly as the other three do.
+#
 # BEGIN prove-red-spec
 # copy: scripts/test-suite-counts.sh
 # copy: scripts/prove-red-fixtures/dune-test-sample-log.txt
 # copy: scripts/prove-red-fixtures/dune-test-failed-build-log.txt
 # copy: scripts/prove-red-fixtures/dune-test-warning-as-error-log.txt
 # copy: scripts/prove-red-fixtures/dune-verbose-command-exit-log.txt
+# copy: scripts/prove-red-fixtures/dune-verbose-signal-log.txt
 # invoke: scripts/test-suite-counts.sh
 # baseline-argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0
 # baseline-exit: 0
@@ -631,6 +674,12 @@ python3 -c "$PYPROG" "$SRC" "$MIN_SUITES" "$RUNNER_EXIT"
 # mutation: verbose-command-exit-log
 #   desc: a real --display verbose log of a runtest rule that failed at RUNTIME rather than at compile time. Dune's wording is `Command [17] exited with code 3:`; the pattern this gate shipped with was `Command exited with code N.`, which matches nothing dune 3.24.1 emits in any display mode. This pins the measured wording against the guessed one.
 #   argv: scripts/prove-red-fixtures/dune-verbose-command-exit-log.txt --min-suites 0
+#   expect-exit: 4
+#   expect-message: a log of a run that did not complete
+#
+# mutation: verbose-signal-log
+#   desc: a real --display verbose log of a runtest rule killed by SIGSEGV. Dune's wording is `Command [17] got signal SEGV:`, and until this fixture landed the whole `got signal` branch of the pattern was guarded by nothing -- replacing it with a nonsense literal was green against the covering test, prove-red and the KB check alike, exactly as the guessed `Command got signal .*` had been green while matching nothing dune emits.
+#   argv: scripts/prove-red-fixtures/dune-verbose-signal-log.txt --min-suites 0
 #   expect-exit: 4
 #   expect-message: a log of a run that did not complete
 #

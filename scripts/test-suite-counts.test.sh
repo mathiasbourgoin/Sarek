@@ -287,7 +287,8 @@ check "and no [FAIL] in it — the pre-fix report was '0 FAIL'" \
 # suites, 0 FAIL" -- against the first version of gate 0.
 WARN_LOG="$FIXTURES/dune-test-warning-as-error-log.txt"
 VERBOSE_LOG="$FIXTURES/dune-verbose-command-exit-log.txt"
-for f in "$WARN_LOG" "$VERBOSE_LOG"; do
+SIGNAL_LOG="$FIXTURES/dune-verbose-signal-log.txt"
+for f in "$WARN_LOG" "$VERBOSE_LOG" "$SIGNAL_LOG"; do
   [ -f "$f" ] || { echo "  FAIL: fixture missing: $f"; fail=$((fail + 1)); }
 done
 
@@ -328,8 +329,89 @@ check "and the fixture really carries dune's bracketed wording" \
      "$VERBOSE_LOG")" "1"
 check "the guessed wording appears in no real dune log we have" \
   "$(/usr/bin/grep -c 'Command exited with code' "$WARN_LOG" \
-     "$VERBOSE_LOG" "$FAILED_BUILD_LOG" | /usr/bin/awk -F: '{s+=$2} END {print s}')" \
+     "$VERBOSE_LOG" "$FAILED_BUILD_LOG" "$SIGNAL_LOG" \
+     | /usr/bin/awk -F: '{s+=$2} END {print s}')" \
   "0"
+
+# --- the OTHER half of the Command alternation (backlog-157 close-out) ------
+#
+# `got signal` is a separate branch of the pattern and no fixture of the
+# exit-code form can reach it. Until this block existed the branch was guarded
+# by nothing anywhere in the repository -- replacing `got signal \S+` with a
+# nonsense literal was green against the covering test, prove-red and the KB
+# check alike, which is precisely the state the guessed `Command got signal .*`
+# had been in: asserted in a header, exercised by nothing.
+#
+# The fixture is REAL, generated exactly as the one above was: the same
+#   dune test spoc/ir spoc/registry spoc/framework --force -j 1 --display verbose
+# with a wild read appended to spoc/registry/test/test_sarek_registry.ml
+# instead of `let () = exit 3`:
+#   let () = let a : int array = Obj.magic "probe" in
+#            print_int (Array.unsafe_get a 1_000_000_000)
+# Dune exit 1, and its report is `Command [17] got signal SEGV:`. The read must
+# be OBSERVED -- `ignore (Array.unsafe_get ...)` is eliminated as dead code and
+# that run exits 0.
+got_out="$("$CNT" --min-suites 0 "$SIGNAL_LOG" 2>/dev/null)"
+got_rc=$?
+check "verbose signal-killed log exits 4" "$got_rc" "4"
+check "verbose signal-killed log prints no counts on stdout" \
+  "$(echo "$got_out" | /usr/bin/grep -c 'cases across')" "0"
+
+# Fixture integrity, mirroring the bracketed-wording assertion above: the two
+# cases above would also pass if the fixture were matched for some unrelated
+# reason, and the whole point of this fixture is the wording it carries.
+check "and the fixture really carries dune's got-signal wording" \
+  "$(/usr/bin/grep -cE '^Command \[[0-9]+\] got signal [A-Z]+:' \
+     "$SIGNAL_LOG")" "1"
+
+# Positive control for the fixture, not for the gate.
+signal_prefix="$(/usr/bin/grep -oE '[0-9]+ tests? run' "$SIGNAL_LOG" \
+  | /usr/bin/awk '{s+=$1} END {print s+0" "NR}')"
+check "signal fixture still yields a plausible total (46, 6)" \
+  "$signal_prefix" "46 6"
+
+# --- the two \d+ fields, asserted BEHAVIOURALLY -----------------------------
+#
+# A fixture pins exactly one job number and one exit code, so `\[\d+\]` and
+# `code \d+` collapse to `\[17\]` and `code 3` without any fixture-driven case
+# noticing -- measured on this branch: that narrowing was green against the
+# covering test, prove-red and the KB check together. Both fields are real
+# degrees of freedom (dune numbers jobs by scheduling order and reports the
+# process's actual status), so they are asserted with logs whose values are
+# deliberately NOT the fixtures'.
+cat > "$TMP/other-job-and-code.log" <<'LOG'
+Testing `A'.
+Test Successful in 0.002s. 61 tests run.
+Command [4] exited with code 127:
+LOG
+"$CNT" --min-suites 0 "$TMP/other-job-and-code.log" >/dev/null 2>&1
+check "a job number and exit code other than the fixture's [17]/3 still exit 4" \
+  "$?" "4"
+
+cat > "$TMP/other-job-and-signal.log" <<'LOG'
+Testing `A'.
+Test Successful in 0.002s. 61 tests run.
+Command [259] got signal ABRT:
+LOG
+"$CNT" --min-suites 0 "$TMP/other-job-and-signal.log" >/dev/null 2>&1
+check "a job number and signal other than the fixture's [17]/SEGV still exit 4" \
+  "$?" "4"
+
+# ...and the false-positive control the Command half was missing entirely, the
+# counterpart of the tolerated-GPU-error case the Error half already has. The
+# scan's premise is COLUMN 0; an indented line of the same shape is a test's own
+# output, not dune's, and must still be counted.
+cat > "$TMP/indented-command-line.log" <<'LOG'
+Testing `A'.
+  [OK]          proc_runner                   0   Command [7] exited with code 9: handled.
+  Command [7] exited with code 9:
+Test Successful in 0.002s. 61 tests run.
+LOG
+out4c="$("$CNT" --min-suites 0 "$TMP/indented-command-line.log")"
+check "indented Command-shaped output is NOT a runner failure" "$?" "0"
+check "and is still counted" \
+  "$(echo "$out4c" | /usr/bin/grep '^TOTAL' | /usr/bin/tr -s ' ')" \
+  "TOTAL : 61 cases across 1 suites"
 
 # --- the marker must be dune's voice, not a test's -------------------------
 #
@@ -438,6 +520,17 @@ check "--runner-exit 0 suppresses the marker scan" "$?" "0"
 # suppressed the scan" and "the scan stopped working" read identically.
 "$CNT" --min-suites 0 "$WARN_LOG" >/dev/null 2>&1
 check "control: the same log without the flag is still exit 4" "$?" "4"
+
+# ...and the LIMIT of that authority, which nothing else pins. `--runner-exit 0`
+# outranks the marker SCAN and nothing else: the scan guesses at whether the run
+# finished and the caller's exit status settles that question, but the
+# plausibility floor asks a different one -- whether the log covers the tree --
+# and an exit status has nothing to say about it. `dune test spoc/ir` exits 0
+# and still reports four suites. Without this case, quietly extending the flag's
+# suppression from gate 0 to gate 3 would be invisible.
+"$CNT" --runner-exit 0 "$TMP/mixed.log" >/dev/null 2>&1
+check "--runner-exit 0 does NOT suppress the plausibility floor (3, not 0)" \
+  "$?" "3"
 
 # A missing or malformed value is a usage error (2), never a silent default of
 # zero -- defaulting to "the run was fine" is the shape this whole file exists
