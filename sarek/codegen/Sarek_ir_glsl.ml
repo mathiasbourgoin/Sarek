@@ -230,9 +230,13 @@ let escape_glsl_name name =
     backlog-156 those were two separate string constructions in this same file —
     [<name>_len] on the declaring side, [sarek_<name>_length] on the using side
     — and nothing compared them, so every kernel taking a length emitted GLSL
-    naming an identifier the shader never declared. Route both halves (and the
-    shadowing sets in {!generate_with_types}) through here so the disagreement
-    is not expressible.
+    naming an identifier the shader never declared. Both halves go through here
+    so the disagreement is not expressible.
+
+    The shadowing sets that {!rename_pc_shadowing_locals} matches against are
+    the same name and would be a third place to spell it, so they do not spell
+    it either: {!param_macro_names} calls this, and {!generate} and
+    {!generate_with_types} both call {!param_macro_names}.
 
     The spelling is the cross-backend one: CUDA, OpenCL, Metal and WGSL all call
     this [sarek_<name>_length], and so does PTX, via
@@ -1793,6 +1797,51 @@ let gen_f64_softmath_helpers ~pc_names buf =
       Buffer.add_char buf '\n' ;
       List.iter (gen_helper_func ~pc_names buf) helpers
 
+(** The two macro-name sets a kernel's parameter list induces, as one value:
+    [(pc_names, len_names)].
+
+    {b One construction, deliberately.} {!gen_push_constants} emits a
+    [#define <s> pc.<s>] for every scalar parameter and a
+    [#define sarek_<v>_length pc.sarek_<v>_length] for every vector parameter;
+    {!rename_pc_shadowing_locals} needs both sets to know which body locals
+    those macros would rewrite. Both {!generate} and {!generate_with_types} need
+    them, and until backlog-156's close-out each built them by its own copy of
+    this [filter_map] pair. That is the same two-halves-one-concept shape
+    {!glsl_array_length_name} exists to close, one level up: reverting either
+    copy alone left the whole tree green while the other entry point emitted
+    GLSL glslangValidator rejects with "unexpected DOT". So there is one
+    construction and both entry points call it — the copies cannot drift because
+    there are no copies.
+
+    Note which entry point production uses: [Vulkan_plugin] calls
+    {!generate_with_types}; {!generate} is reached only from the transpiler and
+    the benchmark generator. A check that exercises only one of them is checking
+    the other one's twin. *)
+let param_macro_names params =
+  let pc_names =
+    List.filter_map
+      (fun decl ->
+        match decl with
+        | DParam (v, _) -> (
+            match v.var_type with
+            | TVec _ -> None (* vectors don't get macros, only their length *)
+            | _ -> Some (escape_glsl_name v.var_name))
+        | _ -> None)
+      params
+  in
+  let len_names =
+    List.filter_map
+      (fun decl ->
+        match decl with
+        | DParam (v, _) -> (
+            match v.var_type with
+            | TVec _ -> Some (glsl_array_length_name v.var_name)
+            | _ -> None)
+        | _ -> None)
+      params
+  in
+  (pc_names, len_names)
+
 (** Alpha-rename kernel-body binders whose name collides with a push-constant
     macro.
 
@@ -1902,31 +1951,9 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
 
   (* Generate push constants and collect scalar names for macro collision handling *)
   gen_push_constants buf k.kern_params ;
-  let pc_names =
-    List.filter_map
-      (fun decl ->
-        match decl with
-        | DParam (v, _) -> (
-            match v.var_type with
-            | TVec _ -> None (* vectors don't get macros, only their length *)
-            | _ -> Some (escape_glsl_name v.var_name))
-        | _ -> None)
-      k.kern_params
-  in
-  (* Vector params emit a length macro
-     [#define sarek_<vec>_length pc.sarek_<vec>_length]; a local named
-     [sarek_<vec>_length] collides with it (see rename_pc_shadowing_locals). *)
-  let len_names =
-    List.filter_map
-      (fun decl ->
-        match decl with
-        | DParam (v, _) -> (
-            match v.var_type with
-            | TVec _ -> Some (glsl_array_length_name v.var_name)
-            | _ -> None)
-        | _ -> None)
-      k.kern_params
-  in
+  (* Scalar-param macros and vector-length macros, from the single
+     construction both entry points share (see [param_macro_names]). *)
+  let pc_names, len_names = param_macro_names k.kern_params in
 
   (* Generate shared declarations at module scope (GLSL requirement) *)
   let shared_decls = collect_shared_decls k.kern_body in
@@ -2038,31 +2065,9 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
 
   (* Generate push constants and collect scalar names for macro collision handling *)
   gen_push_constants buf k.kern_params ;
-  let pc_names =
-    List.filter_map
-      (fun decl ->
-        match decl with
-        | DParam (v, _) -> (
-            match v.var_type with
-            | TVec _ -> None (* vectors don't get macros, only their length *)
-            | _ -> Some (escape_glsl_name v.var_name))
-        | _ -> None)
-      k.kern_params
-  in
-  (* Vector params emit a length macro
-     [#define sarek_<vec>_length pc.sarek_<vec>_length]; a local named
-     [sarek_<vec>_length] collides with it (see rename_pc_shadowing_locals). *)
-  let len_names =
-    List.filter_map
-      (fun decl ->
-        match decl with
-        | DParam (v, _) -> (
-            match v.var_type with
-            | TVec _ -> Some (glsl_array_length_name v.var_name)
-            | _ -> None)
-        | _ -> None)
-      k.kern_params
-  in
+  (* Scalar-param macros and vector-length macros, from the single
+     construction both entry points share (see [param_macro_names]). *)
+  let pc_names, len_names = param_macro_names k.kern_params in
 
   (* Generate shared declarations at module scope (GLSL requirement) *)
   let shared_decls = collect_shared_decls k.kern_body in

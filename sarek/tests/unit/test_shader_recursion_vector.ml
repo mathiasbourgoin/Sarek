@@ -793,18 +793,36 @@ let test_glsl_match_pattern_pc_shadow_validates () =
 (* #71 gap #3: a local named like a vector-length macro (`sarek_data_length`)
    must be alpha-renamed. Red-on-mutation: drop the length names from the
    pre-pass collision set and glslangValidator fails with "unexpected DOT" on
-   `int pc.sarek_data_length = ...`. *)
-let test_glsl_vec_len_shadow_validates () =
-  let k = Sarek_ir_glsl.generate (vec_len_shadow_kernel ()) in
+   `int pc.sarek_data_length = ...`.
+
+   RUN ON BOTH ENTRY POINTS, and that is not redundancy. Sarek_ir_glsl exposes
+   two: [generate] and [generate_with_types]. They are separate functions with
+   separate bodies, and the one PRODUCTION uses is the second —
+   sarek-vulkan/Vulkan_plugin.ml calls [generate_with_types]; [generate] is
+   reached only from Sarek_transpile and the benchmark generator. While each
+   built its own copy of the length-macro collision set, this case exercising
+   only [generate] left the shipped path unchecked: reverting the
+   [generate_with_types] copy alone kept the whole tree green while the Vulkan
+   backend emitted GLSL glslangValidator rejects with "unexpected DOT". The
+   copies are now one function ([Sarek_ir_glsl.param_macro_names]); this
+   parameterised pair is what would have caught the drift, and is what fails if
+   the two bodies are ever allowed to diverge again. *)
+let vec_len_shadow_validates ~entry ~gen () =
+  let k = gen (vec_len_shadow_kernel ()) in
   if not (contains k "sarek_pc_shadow_") then
     Alcotest.failf
-      "expected the vector-_len-shadowing local to be alpha-renamed \
+      "[%s] expected the vector-_len-shadowing local to be alpha-renamed \
        (sarek_pc_shadow_*):\n\
        %s"
+      entry
       k ;
   if contains k "int sarek_data_length =" then
     Alcotest.failf
-      "a vector-_len-shadowing local declaration survived unrenamed:\n%s"
+      "[%s] a vector-_len-shadowing local declaration survived unrenamed — the \
+       length-macro collision set this entry point uses does not contain \
+       sarek_data_length:\n\
+       %s"
+      entry
       k ;
   if not (Lazy.force glslang_available) then begin
     Printf.printf "  SKIP: glslangValidator not on PATH\n%!" ;
@@ -816,15 +834,26 @@ let test_glsl_vec_len_shadow_validates () =
   end
   else
     match glslang_ok k with
-    | Ok () -> Printf.printf "  glslangValidator OK: vec_len_shadow\n%!"
+    | Ok () ->
+        Printf.printf "  glslangValidator OK: vec_len_shadow [%s]\n%!" entry
     | Error e ->
         Alcotest.failf
-          "glslangValidator rejected vec_len_shadow GLSL (unexpected DOT?):\n\
+          "[%s] glslangValidator rejected vec_len_shadow GLSL (unexpected DOT?):\n\
            %s\n\
            --- shader ---\n\
            %s"
+          entry
           e
           k
+
+let test_glsl_vec_len_shadow_validates =
+  vec_len_shadow_validates ~entry:"generate" ~gen:Sarek_ir_glsl.generate
+
+(* The entry point sarek-vulkan/Vulkan_plugin.ml actually calls. *)
+let test_glsl_vec_len_shadow_with_types_validates =
+  vec_len_shadow_validates
+    ~entry:"generate_with_types"
+    ~gen:(Sarek_ir_glsl.generate_with_types ~types:[])
 
 (* #71 gap #2 (silent wrong-var read) + #75 (payload binding), on one kernel.
 
@@ -935,9 +964,14 @@ let () =
             `Quick
             test_glsl_match_pattern_pc_shadow_validates;
           Alcotest.test_case
-            "GLSL local shadows vector length macro (unexpected DOT)"
+            "GLSL local shadows vector length macro (unexpected DOT) [generate]"
             `Quick
             test_glsl_vec_len_shadow_validates;
+          Alcotest.test_case
+            "GLSL local shadows vector length macro (unexpected DOT) \
+             [generate_with_types — the Vulkan path]"
+            `Quick
+            test_glsl_vec_len_shadow_with_types_validates;
           Alcotest.test_case
             "GLSL EMatch payload binding validates (#75)"
             `Quick

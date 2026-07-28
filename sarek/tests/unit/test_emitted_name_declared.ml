@@ -78,6 +78,24 @@
  * tool the GLSL row is therefore SINGLETON-ONLY, and the two limits compose —
  * measured: with the mutation above and glslangValidator off PATH, all 12 cases
  * report [OK] and the suite exits 0 on a shader that does not compile.
+ *
+ * And it sees only ONE POLARITY of the disagreement. The difference is
+ * `free = SS.diff (singletons src) (singletons base)`, so every identifier the
+ * parameter-declaration machinery emits appears in BOTH outputs and cancels
+ * regardless of whether it is spelled correctly. The declaring half is
+ * baseline-invariant and hence outside the difference: this check's witness is
+ * always a USE-side singleton, and it can see a declaring-side defect only
+ * indirectly, when that defect happens to strand a use. A declaration that is
+ * wrong but strands nothing cancels and is invisible — measured, not assumed:
+ * spelling the push-constant FIELD `a_len` while the `#define` alias and the
+ * `EArrayLen` use site both keep `sarek_a_length` leaves all ten
+ * [singleton-free] cases green and is caught only by [device-compiler] below.
+ * Since backlog-156 was itself a declaring/using disagreement, the half this
+ * instrument caught was its using half. For the declaring half the validator,
+ * not the singleton set, is the only oracle — which is why the device-compiler
+ * cases are part of the check rather than a bonus — and, per the preceding
+ * paragraph, why a runner without glslangValidator has no oracle for the
+ * declaring half at all.
  ******************************************************************************)
 
 open Sarek_ir_types
