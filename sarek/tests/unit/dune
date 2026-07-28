@@ -227,6 +227,16 @@
  (modules test_emitted_name_declared)
  (libraries sarek.codegen sarek_ir alcotest unix))
 
+; A backend's two entry points must agree (backlog-155). generate is defined as
+; generate_with_types ~types:k.kern_types, so their outputs must be byte-equal;
+; each used to be a separate copy of the emit sequence that dropped the
+; type-declaration step. Agreement, not correctness — the goldens own that.
+
+(test
+ (name test_entry_point_agreement)
+ (modules test_entry_point_agreement)
+ (libraries sarek.codegen sarek_ir alcotest))
+
 ; Intrinsic-surface reconciliation: derives its expectation from
 ; Sarek_registry's link-time record of every let%sarek_intrinsic, and checks it
 ; against Sarek_pure_registry (GPU codegen) and Sarek_cpu_runtime (native).
