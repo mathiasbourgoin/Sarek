@@ -231,9 +231,12 @@ LOG
 "$CNT" --min-suites 0 "$TMP/build-failed.log" >/dev/null 2>&1
 check "a build failure in the log exits 5" "$?" "5"
 
+# The count still surfaces, but LABELLED partial — the reordering (exit 5 now
+# runs before the count block) is what changed the wording, and "partial" is the
+# more honest framing for a total taken over a run that died.
 bf_out="$("$CNT" --min-suites 0 "$TMP/build-failed.log" 2>&1 || true)"
 check "build failure still shows the partial count" \
-  "$(echo "$bf_out" | /usr/bin/grep -c 'cases across')" "3"
+  "$(echo "$bf_out" | /usr/bin/grep -c 'ran before the failure')" "1"
 
 # --dune-exit is authoritative: the log parses clean, dune says otherwise.
 "$CNT" --min-suites 0 --dune-exit 1 "$TMP/mixed.log" >/dev/null 2>&1
@@ -260,6 +263,34 @@ check "failing cases exit 4, not 0" "$?" "4"
 fail_out="$("$CNT" --min-suites 0 "$TMP/failing.log" 2>&1 || true)"
 check "failing-case counts are still printed" \
   "$(echo "$fail_out" | /usr/bin/grep -c 'FAIL     : 2')" "1"
+
+# PRECEDENCE, at the DEFAULT floor. The first version of this change ran the
+# completion check last, so these two cases reported 2 and 3 — "not a test log"
+# and "caching problem" — for a run whose build had failed. Both non-zero, so
+# neither was a false green, but both misclassified the failure and told the
+# caller to re-run instead of to fix the build. CodeRabbit caught it on #357.
+#
+# Deliberately WITHOUT --min-suites 0: the floor is exactly what used to
+# pre-empt the completion check, so disabling it would test the wrong thing.
+cat > "$TMP/build-failed-early.log" <<'LOG'
+File "sarek/tests/unit/test_thing.ml", line 12, characters 0-1:
+Error: Syntax error
+LOG
+"$CNT" "$TMP/build-failed-early.log" >/dev/null 2>&1
+check "build failure with NO epilogue exits 5, not 2" "$?" "5"
+
+"$CNT" "$TMP/mixed.log" >/dev/null 2>&1
+check "  (control) same log, no build error, is below-floor 3" "$?" "3"
+
+"$CNT" --dune-exit 1 "$TMP/mixed.log" >/dev/null 2>&1
+check "--dune-exit 1 under the default floor exits 5, not 3" "$?" "5"
+
+printf '' > "$TMP/empty.log"
+"$CNT" --dune-exit 1 "$TMP/empty.log" >/dev/null 2>&1
+check "--dune-exit 1 on an EMPTY log exits 5, not 2" "$?" "5"
+
+"$CNT" "$TMP/empty.log" >/dev/null 2>&1
+check "  (control) empty log with no dune-exit is still 2" "$?" "2"
 
 # A build failure OUTRANKS failing cases: if the run died, the FAIL tally is a
 # count over a partial run and "2 tests failed" would understate it.

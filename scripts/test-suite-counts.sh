@@ -93,14 +93,33 @@
 # counts still print in both cases -- they are useful, they just must not pass
 # for green in a chain.
 #
-# The build-failure check is a LOG HEURISTIC (`^Error` / `^File "` at column 0,
-# which is dune's own formatting), and heuristics in a gate are what this file
+# PRECEDENCE, and it is load-bearing. Exit 5 is checked FIRST and outranks 2, 3
+# and 4. The first version of this change put the completion check last, which
+# made the claim "--dune-exit is authoritative" false: a build error before the
+# first suite epilogue tripped the empty-log gate (exit 2, "not a test log"),
+# and one after only a few suites tripped the floor gate (exit 3, "caching or
+# invocation problem"). Neither was a false green, but both told the caller to
+# re-run when the correct instruction was to fix the build -- and a fact three
+# earlier gates can pre-empt is a fallback, not an authority. Caught by review
+# on PR #357, not by me.
+#
+# The consequence to state plainly: a run that died with failing cases ALREADY
+# reported is exit 5, not 4. That is deliberate. Its FAIL tally is taken over a
+# partial run, so 4 ("complete, N failures") would understate it.
+#
+# The build-failure check is a LOG HEURISTIC (`^Error:` at column 0, which is
+# dune's own formatting), and heuristics in a gate are what this file
 # spends 60 lines arguing against. So it is the fallback, not the mechanism:
 # --dune-exit lets the caller pass the one authoritative fact the script cannot
 # derive from a log. Measured before choosing the pattern: 0 matches in a green
 # 4885-line log and 0 in a log of genuinely FAILING alcotest cases (alcotest
 # indents, dune does not), so the heuristic does not confuse a red test with a
 # broken build -- which is exactly why they are separate exit codes.
+#
+# The pattern was `^Error:|^File "` for one revision and that was too broad:
+# dune prints the `File "..."` line above a WARNING too, and above a truncated
+# preamble, so a tree that merely warns read as a failed run. This file's own
+# trunc-early fixture caught it.
 #
 # Usage:
 #   scripts/test-suite-counts.sh [--min-suites N] [--dune-exit N] <logfile>
@@ -127,9 +146,11 @@
 #   3  counts printed but below the plausibility floor. NOT a result either.
 #   4  counts printed and complete, but the run had FAILING CASES. A count, not
 #      a pass.
-#   5  counts printed but the run DID NOT COMPLETE -- a build failure in the log,
-#      or a non-zero --dune-exit with no failing case to explain it. The total is
-#      a partial count of the suites that ran before the run died.
+#   5  the run DID NOT COMPLETE -- a build failure in the log, or a non-zero
+#      --dune-exit. Any count printed is only the suites that ran before it
+#      died. CHECKED FIRST: 5 outranks 2, 3 and 4, so a failed run reports 5
+#      even when the log is empty, below the floor, or already shows failing
+#      cases.
 #
 # NOTE: `dune test` without --force prints nothing for suites whose results are
 # cached, so an incremental run will under-report. Always --force for a total.
@@ -255,13 +276,21 @@ min_suites = int(sys.argv[2])
 dune_exit = sys.argv[3] if len(sys.argv) > 3 else ""
 text = sys.stdin.read() if src == "-" else open(src, errors="replace").read()
 
-# Dune reports compile errors at column 0 (`File "x.ml", line 1:` / `Error: ...`)
-# while alcotest indents everything it prints. Measured on this repo before the
-# pattern was chosen: 0 matches in a green 4885-line log AND 0 in a log of
-# genuinely failing alcotest cases, 2 matches in a log whose build was broken on
-# purpose. So this separates "the build died" from "a test failed", which is why
+# Dune reports a compile error as `Error: ...` at column 0, while alcotest
+# indents everything it prints. Measured before the pattern was chosen: 0
+# matches in a green 4885-line log AND 0 in a log of genuinely FAILING alcotest
+# cases, so this separates "the build died" from "a test failed" — which is why
 # they get different exit codes rather than one catch-all.
-build_errors = re.findall(r"(?m)^(?:Error:|File \")", text)
+#
+# `^Error:` ONLY, deliberately. The first version also matched `^File "`, on the
+# reasoning that dune prints `File "x.ml", line 1:` above the error. It does —
+# but it prints the same line above a WARNING, and above a truncated preamble.
+# This file's own trunc-early fixture opens with `File "sarek/tests/unit/dune",
+# line 1, characters 0-0:` and started reporting exit 5 for a log whose build
+# never failed. A tree that merely warns would have been called a failed run.
+# The error line is the one that means an error; the File line means dune has
+# something to say about a file.
+build_errors = re.findall(r"(?m)^Error:", text)
 
 # Alcotest: "Test Successful in 0.004s. 61 tests run." and the SINGULAR
 # "1 test run." / "0 test run.". Matching `tests?` is the whole point.
@@ -280,6 +309,46 @@ epilogues = len(re.findall(r"Test Successful in", text)) + len(
     re.findall(r"\d+ failures?!", text)
 )
 
+suites = len(alco) + len(qcheck)
+
+# GATE 0 -- did the run COMPLETE? (backlog-157, moved ahead of everything by
+# CodeRabbit on PR #357)
+#
+# This was GATE 4, after the empty-log and floor gates, and that ordering made
+# the PR's own claim -- "--dune-exit is authoritative" -- FALSE. Two ways:
+#
+#   a build error before the first suite epilogue leaves nothing to parse, so
+#   the empty-log gate fired first and reported exit 2, "not a test log";
+#   a build error after only a few suites fired the floor gate and reported
+#   exit 3, "caching or invocation problem".
+#
+# Both are non-zero, so neither was a false green -- but both MISCLASSIFY a
+# failed run as a malformed input, and in both the caller was told to re-run
+# rather than to fix the build. An authoritative fact that three earlier gates
+# can pre-empt is not authoritative; it is a fallback. So it goes first.
+#
+# Exit 5 therefore OUTRANKS 2, 3 and 4: a run that did not complete is not
+# described by any of them, whatever its log happens to parse to.
+if dune_exit not in ("", "0") or build_errors:
+    if suites:
+        print(f"partial: {sum(alco) + sum(qcheck)} case(s) across {suites} suite(s) "
+              "ran before the failure")
+    else:
+        print("partial: no suite completed before the failure")
+    if dune_exit not in ("", "0"):
+        print()
+        print(f"ERROR: the `dune test` that produced this log exited {dune_exit}, so "
+              "the run did not succeed and any count above is only the suites that "
+              "ran before it stopped. Not a result.")
+    else:
+        print()
+        print(f"ERROR: this log contains {len(build_errors)} dune/compiler error "
+              "marker(s) at column 0, so the run did not complete and any count "
+              "above is only the suites built before the failure. Fix the build and "
+              "re-run; pass --dune-exit to make this authoritative rather than "
+              "inferred.")
+    sys.exit(5)
+
 # GATE 1 -- did we read a test log at all? (backlog-150)
 #
 # This runs BEFORE any count is printed, because the failure being prevented is
@@ -290,7 +359,6 @@ epilogues = len(re.findall(r"Test Successful in", text)) + len(
 # case-counts alone: a log truncated mid-epilogue has a "Test Successful in"
 # with no number after it, and that is a drift/truncation error (gate 2), not
 # an empty log. Only when NOTHING matched is the input simply not a test log.
-suites = len(alco) + len(qcheck)
 if epilogues == 0 and suites == 0:
     what = "stdin" if src == "-" else src
     print(f"ERROR: no test-suite output recognised in {what}.", file=sys.stderr)
@@ -340,37 +408,9 @@ if suites < min_suites:
           "--min-suites 0 if you meant to count a small log.")
     sys.exit(3)
 
-# GATE 4 -- did the run COMPLETE? (backlog-157)
-#
-# Gates 1-3 all ask whether the total is complete for the suites present. None
-# asked the prior question. `dune test --force` builds and runs suite by suite,
-# so a compile error part-way through leaves every earlier epilogue intact:
-# measured on this repo, breaking one test file gives 45 parsed suites that
-# satisfy gate 2 (45 epilogues, 45 counts) and gate 3 (45 > 10). A plausible
-# total, exit 0, off a `dune test` that exited 1.
-#
-# --dune-exit is authoritative when given, because it is the one fact a log
-# cannot carry. The log heuristic is the fallback for the pipe form, which
-# structurally cannot see dune's status (`a | b` reports b's).
-if dune_exit not in ("", "0"):
-    print()
-    print(f"ERROR: the `dune test` that produced this log exited {dune_exit}, so "
-          "the run did not succeed and this total counts only the suites that "
-          "ran before it stopped. Not a result.")
-    sys.exit(5)
-
-if build_errors:
-    print()
-    print(f"ERROR: this log contains {len(build_errors)} dune/compiler error "
-          "marker(s) at column 0, so the run did not complete and the total "
-          "above counts only the suites built before the failure. Fix the build "
-          "and re-run; pass --dune-exit to make this authoritative rather than "
-          "inferred.")
-    sys.exit(5)
-
 # GATE 5 -- were there failing CASES? (backlog-157)
 #
-# Separate from gate 4 on purpose: a complete run with red tests is a different
+# Separate from gate 0 on purpose: a complete run with red tests is a different
 # fact from a run that died, and collapsing them would make the exit code unable
 # to say which. Printing `FAIL : 3` and exiting 0 meant
 # `test-suite-counts.sh log && echo all good` printed "all good" -- the counts
