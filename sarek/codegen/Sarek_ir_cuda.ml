@@ -903,44 +903,6 @@ let cuda_header_for (k : kernel) =
     cuda_fp16_include ^ sarek_f32_barrier_decl ^ cuda_header
   else cuda_header
 
-(** Generate complete CUDA source for a kernel *)
-let generate (k : kernel) : string =
-  let buf = Buffer.create 4096 in
-
-  (* Header *)
-  Buffer.add_string buf (cuda_header_for k) ;
-
-  (* Generate helper functions before kernel *)
-  List.iter (gen_helper_func buf) k.kern_funcs ;
-
-  (* Kernel signature *)
-  Buffer.add_string buf "__global__ void " ;
-  Buffer.add_string buf k.kern_name ;
-  Buffer.add_char buf '(' ;
-
-  (* Parameters *)
-  List.iteri
-    (fun i p ->
-      if i > 0 then Buffer.add_string buf ", " ;
-      gen_param buf p)
-    k.kern_params ;
-
-  Buffer.add_string buf ") {\n" ;
-
-  (* Local declarations *)
-  List.iter (gen_local buf "  ") k.kern_locals ;
-
-  (* Body *)
-  gen_stmt buf "  " k.kern_body ;
-
-  (* Close kernel *)
-  Buffer.add_string buf "}\n" ;
-
-  (* Close extern "C" *)
-  Buffer.add_string buf "}\n" ;
-
-  Buffer.contents buf
-
 (** Generate CUDA variant type definition *)
 let gen_variant_def buf v =
   Sarek_ir_codegen.gen_variant_def
@@ -998,3 +960,15 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   Buffer.add_string buf "}\n" ;
 
   Buffer.contents buf
+
+(** Generate complete CUDA source for a kernel.
+
+    A special case of {!generate_with_types} with the kernel's OWN type
+    declarations, which is the only thing every production caller ever passed:
+    [~types] has exactly the type of the [kern_types] field
+    ([Sarek_ir_types.kernel]), so the parameter was redundant with the record it
+    travels in. This used to be a separate 30-80 line copy of the emit sequence
+    that silently omitted record typedefs, variant typedefs and
+    [current_variants] — source referencing an undeclared struct, with no error.
+    Delegating keeps one emit path per backend. *)
+let generate (k : kernel) : string = generate_with_types ~types:k.kern_types k

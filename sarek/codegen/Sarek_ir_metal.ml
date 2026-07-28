@@ -1180,63 +1180,6 @@ let reject_coopmat_kernel (k : kernel) : unit =
     not a tuning choice. *)
 let metal_fp_contract_pragma = "#pragma METAL fp contract(off)\n"
 
-(** Generate complete Metal source for a kernel *)
-let generate (k : kernel) : string =
-  reject_float16_kernel k ;
-  reject_float64_kernel k ;
-  reject_coopmat_kernel k ;
-  let buf = Buffer.create 4096 in
-
-  (* Collect variables used with atomic operations *)
-  let atomic_vars = collect_atomic_vars_stmt k.kern_body in
-
-  (* Metal header *)
-  Buffer.add_string buf "#include <metal_stdlib>\n" ;
-  Buffer.add_string buf "using namespace metal;\n" ;
-  Buffer.add_string buf metal_fp_contract_pragma ;
-  Buffer.add_string buf "\n" ;
-
-  (* Generate helper functions before kernel *)
-  List.iter (gen_helper_func buf) k.kern_funcs ;
-
-  (* Kernel signature *)
-  Buffer.add_string buf "kernel void " ;
-  Buffer.add_string buf k.kern_name ;
-  Buffer.add_char buf '(' ;
-
-  (* Parameters with buffer attributes *)
-  let buffer_idx = ref 0 in
-  List.iteri
-    (fun i p ->
-      if i > 0 then Buffer.add_string buf ", " ;
-      buffer_idx := gen_param_metal buf atomic_vars !buffer_idx p)
-    k.kern_params ;
-
-  (* Add thread position parameters *)
-  if !buffer_idx > 0 then Buffer.add_string buf ", " ;
-  Buffer.add_string buf "\n  uint3 __metal_gid [[thread_position_in_grid]],\n" ;
-  Buffer.add_string
-    buf
-    "  uint3 __metal_tid [[thread_position_in_threadgroup]],\n" ;
-  Buffer.add_string
-    buf
-    "  uint3 __metal_bid [[threadgroup_position_in_grid]],\n" ;
-  Buffer.add_string buf "  uint3 __metal_tpg [[threads_per_threadgroup]],\n" ;
-  Buffer.add_string buf "  uint3 __metal_num_groups [[threadgroups_per_grid]]" ;
-
-  Buffer.add_string buf ") {\n" ;
-
-  (* Local declarations *)
-  List.iter (gen_local buf "  " atomic_vars) k.kern_locals ;
-
-  (* Body *)
-  gen_stmt buf "  " k.kern_body ;
-
-  (* Close kernel *)
-  Buffer.add_string buf "}\n" ;
-
-  pretty_print_metal (Buffer.contents buf)
-
 (** Generate variant type definition for Metal *)
 let gen_variant_def buf v =
   Sarek_ir_codegen.gen_variant_def
@@ -1317,3 +1260,15 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
 
   (* Pretty-print the generated code *)
   pretty_print_metal (Buffer.contents buf)
+
+(** Generate complete Metal source for a kernel.
+
+    A special case of {!generate_with_types} with the kernel's OWN type
+    declarations, which is the only thing every production caller ever passed:
+    [~types] has exactly the type of the [kern_types] field
+    ([Sarek_ir_types.kernel]), so the parameter was redundant with the record it
+    travels in. This used to be a separate 30-80 line copy of the emit sequence
+    that silently omitted record typedefs, variant typedefs and
+    [current_variants] — source referencing an undeclared struct, with no error.
+    Delegating keeps one emit path per backend. *)
+let generate (k : kernel) : string = generate_with_types ~types:k.kern_types k

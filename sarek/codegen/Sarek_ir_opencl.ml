@@ -1112,41 +1112,6 @@ let resolve_recursive_helpers (k : kernel) : kernel =
     funcs ;
   k
 
-(** Generate complete OpenCL source for a kernel *)
-let generate (k : kernel) : string =
-  reject_float16_kernel k ;
-  reject_coopmat_kernel k ;
-  let k = resolve_recursive_helpers k in
-  let buf = Buffer.create large_buffer_size in
-
-  (* Generate helper functions before kernel *)
-  gen_helpers buf k.kern_funcs ;
-
-  (* Kernel signature *)
-  Buffer.add_string buf "__kernel void " ;
-  Buffer.add_string buf k.kern_name ;
-  Buffer.add_char buf '(' ;
-
-  (* Parameters *)
-  List.iteri
-    (fun i p ->
-      if i > 0 then Buffer.add_string buf ", " ;
-      gen_param buf p)
-    k.kern_params ;
-
-  Buffer.add_string buf ") {\n" ;
-
-  (* Local declarations *)
-  List.iter (gen_local buf "  ") k.kern_locals ;
-
-  (* Body *)
-  gen_stmt buf "  " k.kern_body ;
-
-  (* Close kernel *)
-  Buffer.add_string buf "}\n" ;
-
-  Buffer.contents buf
-
 (** Generate variant type definition for OpenCL *)
 let gen_variant_def buf v =
   Sarek_ir_codegen.gen_variant_def
@@ -1201,6 +1166,18 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   Buffer.add_string buf "}\n" ;
 
   Buffer.contents buf
+
+(** Generate complete OpenCL source for a kernel.
+
+    A special case of {!generate_with_types} with the kernel's OWN type
+    declarations, which is the only thing every production caller ever passed:
+    [~types] has exactly the type of the [kern_types] field
+    ([Sarek_ir_types.kernel]), so the parameter was redundant with the record it
+    travels in. This used to be a separate 30-80 line copy of the emit sequence
+    that silently omitted record typedefs, variant typedefs and
+    [current_variants] — source referencing an undeclared struct, with no error.
+    Delegating keeps one emit path per backend. *)
+let generate (k : kernel) : string = generate_with_types ~types:k.kern_types k
 
 (** Generate OpenCL source with double precision extension if needed *)
 let generate_with_fp64 (k : kernel) : string =

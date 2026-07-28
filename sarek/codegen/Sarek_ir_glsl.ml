@@ -1970,90 +1970,6 @@ let reject_float16_kernel (k : kernel) : unit =
          "f16"
          Sarek_ir_codegen.glsl_float16_refusal)
 
-(** Generate complete GLSL source for a kernel.
-    @param block Optional workgroup dimensions (x, y, z). Defaults to 256x1x1.
-*)
-let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
-    =
-  reject_float16_kernel k ;
-  (* Inline vector-parameter helpers (buffers cannot be passed as GLSL function
-     arguments — see Sarek_ir_inline_vec). *)
-  let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"Vulkan" k in
-  (* Clear per-kernel state *)
-  Hashtbl.clear helper_vec_param_indices ;
-  current_smod_name := compute_smod_name k ;
-  current_copysign_name := compute_copysign_name k ;
-  current_fmod_name := compute_fmod_name k ;
-  compute_f64_softmath k ;
-  let buf = Buffer.create 1024 in
-  Buffer.add_string
-    buf
-    (glsl_header
-       ~kernel_name:k.kern_name
-       ?block
-       ~uses_float64:(Sarek_ir_analysis.kernel_uses_float64 k)
-       ~uses_int64:!current_needs_int64
-       ~uses_coopmat:(Sarek_ir_analysis.kernel_has_coopmat_op k)
-       ~uses_uint8:(Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k)
-       ()) ;
-
-  (* Generate buffer bindings *)
-  let binding_idx = ref 0 in
-  List.iter
-    (fun decl ->
-      match decl with
-      | DParam (v, _) -> (
-          match v.var_type with
-          | TVec elem_type ->
-              gen_buffer_binding buf !binding_idx v elem_type ;
-              incr binding_idx
-          | _ -> ())
-      | _ -> ())
-    k.kern_params ;
-
-  (* Generate push constants and collect scalar names for macro collision handling *)
-  gen_push_constants buf k.kern_params ;
-  (* Scalar-param macros and vector-length macros, from the single
-     construction both entry points share (see [param_macro_names]). *)
-  let pc_names, len_names = param_macro_names k.kern_params in
-
-  (* Generate shared declarations at module scope (GLSL requirement) *)
-  let shared_decls = collect_shared_decls k.kern_body in
-  gen_shared_decls buf shared_decls ;
-
-  (* Emit the integer-remainder helper (before user helpers, which may call
-     it) when the kernel uses [mod]. *)
-  gen_smod_helper buf k ;
-
-  (* Emit the sign-copy helper (before user helpers, which may call it) when
-     the kernel uses [copysign]. *)
-  gen_copysign_helper buf k ;
-
-  (* Emit the C-fmod helper (before user helpers, which may call it) when the
-     kernel uses [fmod]. *)
-  gen_fmod_helper buf k ;
-
-  (* Emit the software f64-transcendental helper family (forward-declared,
-     after copysign which they may call, before user helpers which may call
-     them) when the kernel invokes a [Float64] transcendental. *)
-  gen_f64_softmath_helpers ~pc_names ~len_names buf ;
-
-  (* Generate helper functions *)
-  List.iter (gen_helper_func ~pc_names ~len_names buf) k.kern_funcs ;
-
-  (* Generate main function. Alpha-rename any body local that shadows a scalar
-     push-constant macro first (see rename_pc_shadowing_locals). *)
-  Buffer.add_string buf "void main() {\n" ;
-  gen_stmt
-    buf
-    "  "
-    (rename_pc_shadowing_locals ~pc_names ~len_names k.kern_body) ;
-  Buffer.add_string buf "}\n" ;
-
-  let shader = Buffer.contents buf in
-  log (Printf.sprintf "[GLSL] Generated shader:\n%s" shader) ;
-  shader
-
 (** Generate GLSL record type definition - simple struct without tag *)
 let gen_record_def buf (name, fields) =
   let mangled = mangle_name name in
@@ -2167,3 +2083,16 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   let shader = Buffer.contents buf in
   log (Printf.sprintf "[GLSL] Generated shader:\n%s" shader) ;
   shader
+
+(** Generate complete GLSL source for a kernel.
+
+    A special case of {!generate_with_types} with the kernel's OWN type
+    declarations, which is the only thing every production caller ever passed:
+    [~types] has exactly the type of the [kern_types] field
+    ([Sarek_ir_types.kernel]), so the parameter was redundant with the record it
+    travels in. This used to be a separate 30-80 line copy of the emit sequence
+    that silently omitted record typedefs, variant typedefs and
+    [current_variants] — source referencing an undeclared struct, with no error.
+    Delegating keeps one emit path per backend. *)
+let generate ?block ?log (k : kernel) : string =
+  generate_with_types ?block ?log ~types:k.kern_types k

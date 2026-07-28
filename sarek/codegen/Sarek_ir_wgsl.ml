@@ -1457,40 +1457,6 @@ let reject_coopmat_kernel (k : kernel) : unit =
           matrices and their uint8 operand buffers are emitted only by the \
           Vulkan backend (backlog-62)")
 
-(** Generate complete WGSL source for a kernel. *)
-let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
-    =
-  reject_float16_kernel k ;
-  reject_coopmat_kernel k ;
-  if params_have_float64 k.kern_params then
-    Codegen_error.raise_error
-      (Codegen_error.unsupported_construct
-         "f64 parameter"
-         "WGSL: f64 unsupported — WebGPU has no float64 type") ;
-  (* Inline vector-parameter helpers (buffers cannot be passed as WGSL function
-     arguments — see Sarek_ir_inline_vec). *)
-  let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"WGSL" k in
-  scalar_param_names := [] ;
-  current_variants := k.kern_variants ;
-  let buf = Buffer.create 1024 in
-  let scalars = gen_bindings buf k.kern_params in
-  scalar_param_names := scalars ;
-  let wg_decls = collect_workgroup_decls k.kern_body in
-  gen_workgroup_module_decls buf wg_decls ;
-  gen_fmod_helper buf k ;
-  List.iter (gen_helper_func ~scalar_names:scalars buf) k.kern_funcs ;
-  Buffer.add_string buf (wgsl_header ~kernel_name:k.kern_name ?block ()) ;
-  (* Alpha-rename any body local that shadows a scalar param first (see
-     rename_scalar_shadowing_locals). *)
-  gen_stmt
-    buf
-    "  "
-    (rename_scalar_shadowing_locals ~scalar_names:scalars k.kern_body) ;
-  Buffer.add_string buf "}\n" ;
-  let shader = Buffer.contents buf in
-  log (Printf.sprintf "[WGSL] Generated shader:\n%s" shader) ;
-  shader
-
 (** Generate WGSL source with custom type definitions. *)
 let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
@@ -1526,6 +1492,19 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   let shader = Buffer.contents buf in
   log (Printf.sprintf "[WGSL] Generated shader:\n%s" shader) ;
   shader
+
+(** Generate complete WGSL source for a kernel.
+
+    A special case of {!generate_with_types} with the kernel's OWN type
+    declarations, which is the only thing every production caller ever passed:
+    [~types] has exactly the type of the [kern_types] field
+    ([Sarek_ir_types.kernel]), so the parameter was redundant with the record it
+    travels in. This used to be a separate 30-80 line copy of the emit sequence
+    that silently omitted record typedefs, variant typedefs and
+    [current_variants] — source referencing an undeclared struct, with no error.
+    Delegating keeps one emit path per backend. *)
+let generate ?block ?log (k : kernel) : string =
+  generate_with_types ?block ?log ~types:k.kern_types k
 
 (** {1 ABI descriptor} *)
 
