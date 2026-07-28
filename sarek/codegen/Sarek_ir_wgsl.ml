@@ -1074,9 +1074,75 @@ let rec gen_stmt buf indent = function
             cooperative-matrix statements are emitted only by the Vulkan \
             backend")
 
+(** Alpha-rename kernel-body binders whose name collides with a scalar kernel
+    param.
+
+    Scalar params are accessed in the body as [params.<name>]; {!gen_expr}
+    decides this per-[EVar] by checking the {e global} [scalar_param_names] ref,
+    which ignores local scope. A local [let width = …] (or [let mut width = …])
+    that shadows a scalar param [width] therefore has every body reference to
+    [width] wrongly emitted as [params.width] — reading the uniform instead of
+    the local. For an immutable self-binding local ([let width = params.width])
+    this is accidentally correct; for a {e mutated} shadowing local it is a
+    silent wrong result (valid WGSL, no error): the declaration uses the bare
+    name ([var width : i32 = params.width;]) so writes hit the local, but every
+    read is redirected to the immutable uniform.
+
+    This mirrors the GLSL backend's {!Sarek_ir_glsl.rename_pc_shadowing_locals};
+    both delegate the shared traversal to
+    {!Sarek_ir_codegen.rename_shadowing_locals}. Each colliding binder (and its
+    in-scope references) is rewritten to a fresh [sarek_scalar_shadow_*] name
+    that is not a scalar param, so [gen_expr]'s [scalar_param_names] check never
+    matches it. The initializer is evaluated in the outer scope, so it still
+    expands to [params.<name>], preserving semantics. Unlike GLSL there is no
+    vector-length collision: both spell the length [sarek_<arr>_length]
+    ({!EArrayLen}), but WGSL emits it as the field access
+    [params.sarek_<arr>_length], hardcoded with a [params.] prefix independent
+    of any local, so a local cannot alias it — the collision set is scalar
+    params only. WGSL-only. *)
+let rename_scalar_shadowing_locals ~scalar_names body =
+  Sarek_ir_codegen.rename_shadowing_locals
+    ~collides:(fun name ->
+      (* A local collides if its name matches a scalar param — the exact check
+         [gen_expr] performs on [EVar] against [scalar_param_names] (raw
+         names). *)
+      List.mem name scalar_names)
+    ~fresh_name:(fun orig n ->
+      Printf.sprintf "sarek_scalar_shadow_%s_%d" (escape_wgsl_name orig) n)
+    body
+
+(** {1 Main generate functions} *)
+
 (** {1 Helper Function Generation} *)
 
-let gen_helper_func buf (hf : helper_func) =
+let gen_helper_func ~scalar_names buf (hf : helper_func) =
+  (* Inside a helper, its own FORMALS shadow the kernel's scalars lexically, and
+     a helper BODY LOCAL named like a kernel scalar is a collision to rename.
+     Neither was handled, and both are SILENT on WGSL — there is no preprocessor
+     to reject anything, so the substitution just produces a wrong value:
+
+       - formal: [twice (n : int32) = n * 3l] under a kernel scalar [n] emitted
+         [return (params.n * 3i)] — the argument is ignored and the uniform is
+         read instead. Fixed by REMOVING the formals from the substitution set
+         for the duration of this helper, which is what lexical scoping means;
+         renaming them would be wrong, since the caller passes them positionally.
+       - body local: [bump q = let n = q + 1 in n * 2] emitted a declaration
+         nothing reads plus [return (params.n * 2i)]. Fixed by the existing
+         rename pass, which until now ran over [kern_body] only.
+
+     GLSL escapes the formal half because [gen_helper_func] there wraps each
+     helper in [#undef]/[#define] for colliding PARAMETER names; that guard is
+     exactly what WGSL has no equivalent of. *)
+  let formal_names = List.map (fun (v : var) -> v.var_name) hf.hf_params in
+  let shadowed = List.filter (fun n -> not (List.mem n formal_names)) in
+  let scalar_names = shadowed scalar_names in
+  let hf =
+    {hf with hf_body = rename_scalar_shadowing_locals ~scalar_names hf.hf_body}
+  in
+  let saved_scalars = !scalar_param_names in
+  scalar_param_names := shadowed saved_scalars ;
+  Fun.protect ~finally:(fun () -> scalar_param_names := saved_scalars)
+  @@ fun () ->
   let non_vec_params =
     List.filter
       (fun (v : var) -> match v.var_type with TVec _ -> false | _ -> true)
@@ -1339,45 +1405,6 @@ let gen_bindings buf params =
 
 (** {1 Scalar-param shadow renaming} *)
 
-(** Alpha-rename kernel-body binders whose name collides with a scalar kernel
-    param.
-
-    Scalar params are accessed in the body as [params.<name>]; {!gen_expr}
-    decides this per-[EVar] by checking the {e global} [scalar_param_names] ref,
-    which ignores local scope. A local [let width = …] (or [let mut width = …])
-    that shadows a scalar param [width] therefore has every body reference to
-    [width] wrongly emitted as [params.width] — reading the uniform instead of
-    the local. For an immutable self-binding local ([let width = params.width])
-    this is accidentally correct; for a {e mutated} shadowing local it is a
-    silent wrong result (valid WGSL, no error): the declaration uses the bare
-    name ([var width : i32 = params.width;]) so writes hit the local, but every
-    read is redirected to the immutable uniform.
-
-    This mirrors the GLSL backend's {!Sarek_ir_glsl.rename_pc_shadowing_locals};
-    both delegate the shared traversal to
-    {!Sarek_ir_codegen.rename_shadowing_locals}. Each colliding binder (and its
-    in-scope references) is rewritten to a fresh [sarek_scalar_shadow_*] name
-    that is not a scalar param, so [gen_expr]'s [scalar_param_names] check never
-    matches it. The initializer is evaluated in the outer scope, so it still
-    expands to [params.<name>], preserving semantics. Unlike GLSL there is no
-    vector-length collision: both spell the length [sarek_<arr>_length]
-    ({!EArrayLen}), but WGSL emits it as the field access
-    [params.sarek_<arr>_length], hardcoded with a [params.] prefix independent
-    of any local, so a local cannot alias it — the collision set is scalar
-    params only. WGSL-only. *)
-let rename_scalar_shadowing_locals ~scalar_names body =
-  Sarek_ir_codegen.rename_shadowing_locals
-    ~collides:(fun name ->
-      (* A local collides if its name matches a scalar param — the exact check
-         [gen_expr] performs on [EVar] against [scalar_param_names] (raw
-         names). *)
-      List.mem name scalar_names)
-    ~fresh_name:(fun orig n ->
-      Printf.sprintf "sarek_scalar_shadow_%s_%d" (escape_wgsl_name orig) n)
-    body
-
-(** {1 Main generate functions} *)
-
 let wgsl_header ~kernel_name ?(block = (256, 1, 1)) () =
   let bx, by, bz = block in
   Printf.sprintf
@@ -1451,7 +1478,7 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
   let wg_decls = collect_workgroup_decls k.kern_body in
   gen_workgroup_module_decls buf wg_decls ;
   gen_fmod_helper buf k ;
-  List.iter (gen_helper_func buf) k.kern_funcs ;
+  List.iter (gen_helper_func ~scalar_names:scalars buf) k.kern_funcs ;
   Buffer.add_string buf (wgsl_header ~kernel_name:k.kern_name ?block ()) ;
   (* Alpha-rename any body local that shadows a scalar param first (see
      rename_scalar_shadowing_locals). *)
@@ -1487,7 +1514,7 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   let wg_decls = collect_workgroup_decls k.kern_body in
   gen_workgroup_module_decls buf wg_decls ;
   gen_fmod_helper buf k ;
-  List.iter (gen_helper_func buf) k.kern_funcs ;
+  List.iter (gen_helper_func ~scalar_names:scalars buf) k.kern_funcs ;
   Buffer.add_string buf (wgsl_header ~kernel_name:k.kern_name ?block ()) ;
   (* Alpha-rename any body local that shadows a scalar param first (see
      rename_scalar_shadowing_locals). *)

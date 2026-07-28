@@ -94,3 +94,21 @@
  (libraries sarek_ir sarek_codegen alcotest)
  (instrumentation
   (backend bisect_ppx)))
+
+; A local inside a HELPER FUNCTION named like a scalar kernel parameter. GLSL
+; rejected the shader; WGSL substituted params.<name> for the local and returned
+; a wrong number silently. Asserts on the emitted source: the WGSL half has no
+; device in this suite, and a device check would only report "failed to compile".
+; Run with: dune exec sarek/tests/codegen_golden/test_helper_local_shadowing.exe
+
+(executable
+ (name test_helper_local_shadowing)
+ (modules test_helper_local_shadowing)
+ (libraries sarek sarek.stdlib sarek_ir sarek_codegen spoc_core)
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_helper_local_shadowing.exe})))

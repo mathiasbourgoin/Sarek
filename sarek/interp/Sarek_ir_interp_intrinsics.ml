@@ -481,6 +481,56 @@ let eval_float64_math_intrinsic name args =
             (Unsupported_operation
                {operation = "of_int (float64)"; reason = "requires 1 argument"})
       )
+  (* The Float64 conversions that every implementation agrees on. All three are
+     declared in Sarek_float64/Float64.ml and type-check in the DSL, so the
+     interpreter - the cross-backend ORACLE - must evaluate them or it cannot
+     run kernels the frontend accepts. int32 is the DSL's integer type (thread
+     ids, loop counters), so [of_int32] is the one user code reaches for first.
+
+     [of_int32] and [of_float32] are exact (widening). [to_int32] agrees with
+     the device template [(int)(x)], with the registry's [ocaml] field and with
+     Sarek_float64_native.ml, all four truncating toward zero - FOR VALUES
+     REPRESENTABLE IN INT32. Outside that range and for NaN, OCaml's
+     [Int32.of_float] and GLSL's [int(double)] are each unspecified, and they
+     are unspecified independently: this is agreement on the defined domain, not
+     an oracle guarantee everywhere.
+
+     [to_int] and [to_float32] are deliberately ABSENT. Their device templates
+     round/truncate while their [ocaml] field - which Sarek_float64_native.ml
+     mirrors and executes - is [Stdlib.int_of_float] (63-bit) and the IDENTITY
+     respectively. Three implementations already disagree; implementing them
+     here would make that disagreement reachable on one more backend rather
+     than settle it. Tracked separately. *)
+  | "of_int32" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (Int32.to_float (to_int32 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {
+                 operation = "of_int32 (float64)";
+                 reason = "requires 1 argument";
+               }))
+  | "to_int32" -> (
+      match args with
+      | arg :: _ -> Some (VInt32 (Int32.of_float (to_float64 arg)))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {
+                 operation = "to_int32 (float64)";
+                 reason = "requires 1 argument";
+               }))
+  | "of_float32" -> (
+      match args with
+      | arg :: _ -> Some (VFloat64 (to_float32 arg))
+      | [] ->
+          Interp_error.raise_error
+            (Unsupported_operation
+               {
+                 operation = "of_float32 (float64)";
+                 reason = "requires 1 argument";
+               }))
   | "expm1" -> (
       match args with
       | arg :: _ -> Some (VFloat64 (Float.expm1 (to_float64 arg)))

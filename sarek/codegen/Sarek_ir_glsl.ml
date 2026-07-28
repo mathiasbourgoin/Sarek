@@ -380,6 +380,43 @@ let f64_root_helpers name =
 
 (** {1 Expression Generation} *)
 
+(** The [Float64] scalar conversion intrinsics that every implementation agrees
+    on: [of_int], [of_int32], [of_float32], [to_int32].
+
+    They are declared in Sarek_float64/Float64.ml and type-check in the DSL, but
+    had no GLSL arm at all, so any kernel using one died with "Unknown
+    intrinsic" — notably [Float64.of_int32], which is the conversion user code
+    reaches for first since int32 is the DSL's integer type.
+
+    Two are DELIBERATELY ABSENT. [to_int] and [to_float32] are declared with
+    device templates that round/truncate while their [ocaml] field — which is
+    what Sarek_float64_native.ml mirrors and executes — is [Stdlib.int_of_float]
+    (63-bit) and the IDENTITY respectively. So three implementations already
+    answer differently, and adding GLSL arms would make that disagreement
+    reachable on another backend rather than resolve it. Deciding those two
+    semantics is tracked separately.
+
+    This lives in [pre_hook] rather than [arm] because the module path is needed
+    to scope it, and only [pre_hook] receives it. The scoping is deliberate: the
+    match is on bare NAME, and [pre_hook] runs BEFORE the path-qualified pure
+    registry, so without the [is_f64] guard any module declaring [of_int] or
+    [to_int32] would be silently captured here and lowered as a GLSL constructor
+    cast, shadowing its own device template. Float32 declares both names today.
+*)
+let glsl_conversions = ["of_int"; "of_int32"; "of_float32"; "to_int32"]
+
+let gen_glsl_conversion buf ~gen_expr name args =
+  let target = match name with "to_int32" -> "int" | _ -> "double" in
+  match args with
+  | [e] ->
+      Buffer.add_string buf target ;
+      Buffer.add_char buf '(' ;
+      gen_expr buf e ;
+      Buffer.add_char buf ')'
+  | _ ->
+      Codegen_error.raise_error
+        (Codegen_error.invalid_arg_count name 1 (List.length args))
+
 let rec gen_expr buf = function
   | EConst (CInt32 n) -> Buffer.add_string buf (Int32.to_string n)
   | EConst (CInt64 n) -> Buffer.add_string buf (Int64.to_string n ^ "L")
@@ -746,6 +783,9 @@ and glsl_backend =
           true)
         else if name = "fmod" then (
           Dispatch.emit_call ~gen_expr buf !current_fmod_name args ;
+          true)
+        else if is_f64 && List.mem name glsl_conversions then (
+          gen_glsl_conversion buf ~gen_expr name args ;
           true)
         else false);
     post_hook = (fun _ _ _ _ -> false);
@@ -1249,12 +1289,62 @@ let rec gen_stmt buf indent = function
 
 (** {1 Helper Function Generation} *)
 
+(** Alpha-rename kernel-body binders whose name collides with a push-constant
+    macro.
+
+    Scalar params are exposed to the body as preprocessor macros
+    ([#define width pc.width]), and each vector param exposes a length macro
+    ([#define sarek_v_length pc.sarek_v_length]); a macro rewrites {e every}
+    matching token in [main] — including the declared name of a local. A helper
+    inlined at its call site (e.g. a [[@sarek.module]] function whose formal is
+    named like a kernel scalar) emits a self-binding [int width = width;], which
+    the macro turns into [int pc.width = pc.width;] — a syntax error
+    ("unexpected DOT"). Helper {e functions} are guarded too, but only partly by
+    the [#undef]/[#define] dance in {!gen_helper_func}: that dance is computed
+    from PARAMETER names alone, so a helper whose BODY declares a local named
+    like a scalar kernel param was never covered. That is why {!gen_helper_func}
+    now runs this pass over every helper body it emits — on GLSL the symptom is
+    a hard glslang rejection, and on the WGSL twin (which has no macros but does
+    substitute) it is a silently wrong value.
+
+    Both scalar-param macros ([pc_names]) and vector-length macros ([len_names])
+    are treated as collisions; a colliding binder is rewritten to a fresh
+    [sarek_pc_shadow_*] name that no macro touches, so semantics are preserved
+    and the declaration is valid. Delegates the shared traversal to
+    {!Sarek_ir_codegen.rename_shadowing_locals}, supplying only the GLSL
+    collision set (escaped-name membership in [pc_names]/[len_names]) and
+    fresh-name scheme. GLSL-only: no other backend uses macros for params. *)
+let rename_pc_shadowing_locals ~pc_names ~len_names body =
+  Sarek_ir_codegen.rename_shadowing_locals
+    ~collides:(fun name ->
+      (* A local collides if its escaped name matches a scalar-param macro
+         ([#define name pc.name]) or a vector-length macro
+         ([#define sarek_vec_length pc.sarek_vec_length]); either would rewrite
+         the declared identifier to [pc....]. *)
+      let n = escape_glsl_name name in
+      List.mem n pc_names || List.mem n len_names)
+    ~fresh_name:(fun orig n ->
+      Printf.sprintf "sarek_pc_shadow_%s_%d" (escape_glsl_name orig) n)
+    body
+
 (** Generate helper function with #undef/#define guards to avoid macro
     collisions. Push constant macros (e.g., #define max_iter pc.max_iter) would
     otherwise expand function parameters with the same name, causing syntax
     errors.
     @param pc_names Set of push constant names that have macros defined *)
-let gen_helper_func ~pc_names buf (hf : helper_func) =
+let gen_helper_func ~pc_names ~len_names buf (hf : helper_func) =
+  (* Body locals, not just parameters. [colliding_names] below is computed from
+     parameter names, so before this a helper whose body declared a local named
+     like a scalar kernel param emitted [int pc.n = ...] and glslang rejected
+     the shader. Renaming here covers user helpers AND the generated softmath
+     family in one place, keyed on the ACTUAL macro set rather than on a naming
+     convention. *)
+  let hf =
+    {
+      hf with
+      hf_body = rename_pc_shadowing_locals ~pc_names ~len_names hf.hf_body;
+    }
+  in
   (* Filter out vector parameters - in GLSL, buffer arrays can't be passed as
      function parameters. They are accessed directly via global buffer names. *)
   let vec_indices =
@@ -1273,8 +1363,14 @@ let gen_helper_func ~pc_names buf (hf : helper_func) =
   let param_names =
     List.map (fun (v : var) -> escape_glsl_name v.var_name) non_vec_params
   in
+  (* [len_names] as well as [pc_names]: a vector-length macro
+     ([#define sarek_v_length pc.sarek_v_length]) rewrites a colliding parameter
+     name exactly as a scalar-param macro does. Checking only [pc_names] left
+     that half unguarded. *)
   let colliding_names =
-    List.filter (fun name -> List.mem name pc_names) param_names
+    List.filter
+      (fun name -> List.mem name pc_names || List.mem name len_names)
+      param_names
   in
   (* #undef colliding names before the function *)
   List.iter
@@ -1777,7 +1873,7 @@ let compute_f64_softmath (k : kernel) =
     [#undef]/[#define] guarding as user helpers). Emitted after [sarek_copysign]
     (which the bodies may call) and before user helpers (which may call these).
 *)
-let gen_f64_softmath_helpers ~pc_names buf =
+let gen_f64_softmath_helpers ~pc_names ~len_names buf =
   match !current_f64_helpers with
   | [] -> ()
   | helpers ->
@@ -1795,7 +1891,7 @@ let gen_f64_softmath_helpers ~pc_names buf =
           Buffer.add_string buf ");\n")
         helpers ;
       Buffer.add_char buf '\n' ;
-      List.iter (gen_helper_func ~pc_names buf) helpers
+      List.iter (gen_helper_func ~pc_names ~len_names buf) helpers
 
 (** The two macro-name sets a kernel's parameter list induces, as one value:
     [(pc_names, len_names)].
@@ -1841,40 +1937,6 @@ let param_macro_names params =
       params
   in
   (pc_names, len_names)
-
-(** Alpha-rename kernel-body binders whose name collides with a push-constant
-    macro.
-
-    Scalar params are exposed to the body as preprocessor macros
-    ([#define width pc.width]), and each vector param exposes a length macro
-    ([#define sarek_v_length pc.sarek_v_length]); a macro rewrites {e every}
-    matching token in [main] — including the declared name of a local. A helper
-    inlined at its call site (e.g. a [[@sarek.module]] function whose formal is
-    named like a kernel scalar) emits a self-binding [int width = width;], which
-    the macro turns into [int pc.width = pc.width;] — a syntax error
-    ("unexpected DOT"). Helper {e functions} already dodge this via the
-    [#undef]/[#define] guards in {!gen_helper_func}, but a body-inlined binder
-    has no such guard.
-
-    Both scalar-param macros ([pc_names]) and vector-length macros ([len_names])
-    are treated as collisions; a colliding binder is rewritten to a fresh
-    [sarek_pc_shadow_*] name that no macro touches, so semantics are preserved
-    and the declaration is valid. Delegates the shared traversal to
-    {!Sarek_ir_codegen.rename_shadowing_locals}, supplying only the GLSL
-    collision set (escaped-name membership in [pc_names]/[len_names]) and
-    fresh-name scheme. GLSL-only: no other backend uses macros for params. *)
-let rename_pc_shadowing_locals ~pc_names ~len_names body =
-  Sarek_ir_codegen.rename_shadowing_locals
-    ~collides:(fun name ->
-      (* A local collides if its escaped name matches a scalar-param macro
-         ([#define name pc.name]) or a vector-length macro
-         ([#define sarek_vec_length pc.sarek_vec_length]); either would rewrite
-         the declared identifier to [pc....]. *)
-      let n = escape_glsl_name name in
-      List.mem n pc_names || List.mem n len_names)
-    ~fresh_name:(fun orig n ->
-      Printf.sprintf "sarek_pc_shadow_%s_%d" (escape_glsl_name orig) n)
-    body
 
 (* GLSL f16 refusal. Like OpenCL's (#57 slice 2a) and unlike Metal's and
    WGSL's, this deliberately does NOT go through
@@ -1974,10 +2036,10 @@ let generate ?block ?(log : string -> unit = fun _ -> ()) (k : kernel) : string
   (* Emit the software f64-transcendental helper family (forward-declared,
      after copysign which they may call, before user helpers which may call
      them) when the kernel invokes a [Float64] transcendental. *)
-  gen_f64_softmath_helpers ~pc_names buf ;
+  gen_f64_softmath_helpers ~pc_names ~len_names buf ;
 
   (* Generate helper functions *)
-  List.iter (gen_helper_func ~pc_names buf) k.kern_funcs ;
+  List.iter (gen_helper_func ~pc_names ~len_names buf) k.kern_funcs ;
 
   (* Generate main function. Alpha-rename any body local that shadows a scalar
      push-constant macro first (see rename_pc_shadowing_locals). *)
@@ -2088,10 +2150,10 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   (* Emit the software f64-transcendental helper family (forward-declared,
      after copysign which they may call, before user helpers which may call
      them) when the kernel invokes a [Float64] transcendental. *)
-  gen_f64_softmath_helpers ~pc_names buf ;
+  gen_f64_softmath_helpers ~pc_names ~len_names buf ;
 
   (* Generate helper functions *)
-  List.iter (gen_helper_func ~pc_names buf) k.kern_funcs ;
+  List.iter (gen_helper_func ~pc_names ~len_names buf) k.kern_funcs ;
 
   (* Generate main function. Alpha-rename any body local that shadows a scalar
      push-constant macro first (see rename_pc_shadowing_locals). *)
