@@ -143,8 +143,55 @@ let () =
   expect
     "WGSL: the scalar field is still reachable (guard not disabled)"
     (contains wgsl "params.n") ;
-  expect "GLSL: helper still doubles its renamed local" (contains glsl "* 2)") ;
-  expect "WGSL: helper still doubles its renamed local" (contains wgsl "* 2i)") ;
+  (* The USE must resolve to the renamed local, not merely the declaration.
+     An earlier version asserted only [contains "* 2)"], which matches both the
+     correct output AND a half-rename where the declaration moved but the use
+     stayed [n]: GLSL would preprocess that use to [pc.n], and
+     [return (pc.n * 2);] COMPILES — so neither the textual check nor the
+     glslangValidator gate would have caught it. Only the declaration side is
+     syntactically invalid. CodeRabbit caught this; it is the same
+     passes-for-a-narrower-reason shape as the rest of this branch.
+
+     Asserting the declaration and the use carry the SAME renamed identifier is
+     what actually pins the behaviour, so the renamed name is read out of the
+     emitted source rather than hardcoded. *)
+  let renamed_use ~decl_prefix ~use_suffix src =
+    match String.index_opt src 's' with
+    | None -> false
+    | Some _ -> (
+        let rec find i =
+          if i + String.length decl_prefix > String.length src then None
+          else if String.sub src i (String.length decl_prefix) = decl_prefix
+          then (
+            let j = ref (i + String.length decl_prefix) in
+            while
+              !j < String.length src
+              &&
+              match src.[!j] with
+              | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' -> true
+              | _ -> false
+            do
+              incr j
+            done ;
+            Some (String.sub src i (!j - i)))
+          else find (i + 1)
+        in
+        match find 0 with
+        | None -> false
+        | Some name -> contains src ("return (" ^ name ^ use_suffix))
+  in
+  expect
+    "GLSL: the USE resolves to the same renamed local as the declaration"
+    (renamed_use ~decl_prefix:"sarek_pc_shadow_" ~use_suffix:" * 2)" glsl) ;
+  expect
+    "WGSL: the USE resolves to the same renamed local as the declaration"
+    (renamed_use ~decl_prefix:"sarek_scalar_shadow_" ~use_suffix:" * 2i)" wgsl) ;
+  expect
+    "GLSL: the helper never reads the push constant"
+    (not (contains glsl "pc.n *")) ;
+  expect
+    "WGSL: the helper never reads the uniform"
+    (not (contains wgsl "params.n *")) ;
   (* Formal-parameter collision. *)
   let fglsl = Sarek_codegen.Sarek_ir_glsl.generate formal_ir in
   let fwgsl = Sarek_codegen.Sarek_ir_wgsl.generate formal_ir in
