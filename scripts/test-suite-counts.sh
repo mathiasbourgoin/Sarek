@@ -104,10 +104,9 @@
 #                     away. Non-zero is exit 4 and no counts.
 #
 #   the log itself    dune reports its own failures in the log, unindented and
-#                     at column 0 (`Error:`, `Command exited with code N.`,
-#                     `Command got signal`). This scan is UNCONDITIONAL,
-#                     because --runner-exit cannot be required: in the pipe
-#                     form this header recommends first,
+#                     at column 0. This scan runs whenever the caller has NOT
+#                     said `--runner-exit 0`, because --runner-exit cannot be
+#                     required: in the pipe form this header recommends first,
 #                     `dune test --force 2>&1 | scripts/test-suite-counts.sh`,
 #                     the caller has no exit status to pass yet -- PIPESTATUS
 #                     only exists after the pipeline it would have to be inside
@@ -119,10 +118,71 @@
 # print anything; --runner-exit misses every caller who has not been told about
 # it, which on the day it lands is all of them.
 #
-# The scan's false-positive risk was measured, not asserted: on the 4793-line
-# log of the clean run above, `^Error: `, `^Command exited with code` and
-# `^Command got signal` match zero lines between them. Alcotest indents its
-# case lines and dune captures test stdout, so column 0 is dune's own voice.
+# `--runner-exit 0` SUPPRESSES the scan, and that is deliberate. The two
+# sources are not equal evidence: the caller's exit status is the fact itself,
+# the scan is a guess at that fact from text. When both are available the fact
+# wins. This is not a theoretical concession -- column 0 in this repository's
+# logs is NOT reliably dune's own voice, which the paragraph below measures.
+# Without the suppression the weaker source could veto the stronger one, and
+# the only remedy left to the caller would be to stop passing the flag.
+#
+# THE MARKER SET, MEASURED (backlog-157 review)
+#
+# Every pattern below was measured against dune 3.24.1 on this tree, in both
+# directions, and the measurements are why the set is what it is. Re-measure
+# after a dune upgrade; a frozen fixture cannot notice dune rewording itself.
+#
+#   `^Error: `        emitted for a compile error. Measured: `dune build` on a
+#                     file with an unbound identifier prints
+#                     `Error: Unbound value "aaa"` at column 0.
+#
+#   `^Error (`        emitted for a warning promoted to an error, which is how
+#                     this tree's dev profile fails MOST builds. Measured:
+#                     appending `let unused_backlog157_probe x = x + 1` to
+#                     spoc/registry/test/test_sarek_registry.ml and running
+#                     `dune test spoc/ir spoc/registry spoc/framework --force
+#                     -j 1` prints
+#                     `Error (warning 32 [unused-value-declaration]): ...`
+#                     at column 0, dune exit 1. Before this review the script
+#                     matched `^Error: ` only, so it read that log as
+#                     "46 cases across 6 suites, 0 FAIL", exit 0 -- the exact
+#                     backlog-157 defect, surviving the backlog-157 fix. The
+#                     fixture is dune-test-warning-as-error-log.txt.
+#
+#   `^Command [N] exited with code N:` / `^Command [N] got signal SIG:`
+#                     emitted under --display verbose for a runtest rule that
+#                     failed at RUNTIME. Measured: appending `let () = exit 3`
+#                     to the same file and re-running with --display verbose
+#                     prints `Command [17] exited with code 3:`. The fixture is
+#                     dune-verbose-command-exit-log.txt.
+#
+# The bracketed job number is not decoration, it is the whole reason this line
+# is spelled out here. Until this review the pattern was `Command exited with
+# code N.` -- no job number, and a period instead of a colon. That form matches
+# NOTHING dune 3.24.1 emits in any display mode (default, short, progress,
+# verbose), so the alternative had been dead since it was written. `Command got
+# signal .*` was dead for the same reason (real: `Command [4] got signal SEGV:`),
+# and `Had N errors` is a dune 2.x form this version never prints at all --
+# measured with `dune build`, `dune build -k` and `dune build --display short
+# -k` over two independently-broken modules. All three are gone.
+#
+# Note what that leaves uncovered, because it is a real hole and not an
+# oversight: in dune 3.24.1's DEFAULT display a runtest rule that fails at
+# runtime prints no column-0 marker whatsoever -- only a
+# `File "…/dune", lines …:` header and the action's own output. Measured on a
+# five-line probe project and again on this tree. The scan cannot see that
+# case; --runner-exit is the only defence for it. `^File "` is not a marker
+# candidate: the same shape introduces ordinary non-fatal warnings.
+#
+# The scan's false-positive risk was measured too, not asserted: on the
+# 4793-line log of the clean run above, and on a 6000-line full-suite log from
+# a machine with a GPU, the pattern set matches zero lines. The tempting wider
+# form `^Error\b` matches 65 lines in that GPU log -- `Error executing LLVM
+# compilation action.` from pocl, and `Error on <device>: ...` from
+# sarek/tests/e2e/Benchmarks.ml:247, which prints exactly that for a GPU error
+# it then TOLERATES. Column 0 is not reliably dune's voice on this tree: dune
+# passes an e2e rule's own stdout straight through, unindented. Hence
+# `^Error(?::| \()` and not `^Error\b` -- do not re-widen it.
 #
 # Usage:
 #   scripts/test-suite-counts.sh [--min-suites N] [--runner-exit N] <logfile>
@@ -135,11 +195,16 @@
 #
 #   --runner-exit N  exit status of the command that produced the log. Non-zero
 #                    means the run did not complete, so no counts are printed
-#                    and the exit is 4. Pass it whenever you have it:
+#                    and the exit is 4. Zero is the caller ASSERTING that the
+#                    run completed, and suppresses the marker scan. Pass it
+#                    whenever you have it:
 #                        dune test --force >log 2>&1; rc=$?
 #                        scripts/test-suite-counts.sh --runner-exit "$rc" log
 #                    In the pipe form use `${PIPESTATUS[0]}` afterwards, or
 #                    redirect to a file and use the two-line form above.
+#                    Given-but-empty (`--runner-exit ""`, which is what the
+#                    two-line form above degrades to if `rc` is unset) is a
+#                    USAGE ERROR (exit 2), not a fallback to "not given".
 #
 # Exit codes:
 #   0  counts printed and trustworthy
@@ -160,6 +225,10 @@ MIN_SUITES=10
 # must not collapse: 0 is an assertion that the run completed, empty is the
 # absence of one. Only the marker scan defends the second case.
 RUNNER_EXIT=""
+# ...and "the caller did not pass the flag" is a THIRD state, tracked
+# separately, because the flag's value is a string and the empty string is a
+# legal thing to type. See the validation below.
+RUNNER_EXIT_GIVEN=0
 SRC=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -175,10 +244,12 @@ while [ $# -gt 0 ]; do
     --runner-exit)
       [ $# -ge 2 ] || { echo "ERROR: --runner-exit needs a value" >&2; exit 2; }
       RUNNER_EXIT="$2"
+      RUNNER_EXIT_GIVEN=1
       shift 2
       ;;
     --runner-exit=*)
       RUNNER_EXIT="${1#--runner-exit=}"
+      RUNNER_EXIT_GIVEN=1
       shift
       ;;
     -h|--help)
@@ -188,7 +259,9 @@ usage: scripts/test-suite-counts.sh [--min-suites N] [--runner-exit N] <logfile>
 
   --min-suites N   plausibility floor (default 10); 0 disables it.
   --runner-exit N  exit status of the command that produced the log. Non-zero
-                   means the run did not complete: no counts, exit 4.
+                   means the run did not complete: no counts, exit 4. Zero
+                   asserts that it did, and suppresses the marker scan. An
+                   empty value is a usage error, not "not given".
 
 exit 0  counts printed and trustworthy
 exit 2  usage error, or no recognisable test output -- NOT a result
@@ -217,10 +290,34 @@ case "$MIN_SUITES" in
   ''|*[!0-9]*) echo "ERROR: --min-suites must be a non-negative integer, got: $MIN_SUITES" >&2; exit 2 ;;
 esac
 
-# Only validated when given; "" is the sentinel for "not given" and is passed
-# through to the parser as such.
-if [ -n "$RUNNER_EXIT" ]; then
+# "" is the sentinel the parser reads as "the caller did not say", so a caller
+# who DID say, but said nothing, must not land on it. Measured on this branch
+# before the fix:
+#
+#     scripts/test-suite-counts.sh --runner-exit "" plausible.log
+#     TOTAL    :    60 cases across  12 suites   ... exit 0
+#
+# -- the gate silently absent, and the same for `--runner-exit=`. That is not a
+# hypothetical typo. It is what the two-line form this header recommends
+# degrades to when `rc` is unset or misspelled:
+#
+#     dune test --force >log 2>&1; rc=$?
+#     scripts/test-suite-counts.sh --runner-exit "$RC" log   # <-- wrong name
+#
+# A gate whose caller believes it is armed and which is not is worse than no
+# gate. Given-but-empty is never a fallback -- the same rule the empty-log
+# refusal above is built on, and this was a live instance of breaking it.
+if [ "$RUNNER_EXIT_GIVEN" = 1 ]; then
   case "$RUNNER_EXIT" in
+    '')
+      echo "ERROR: --runner-exit was given an empty value." >&2
+      echo "       That is not the same as omitting the flag: omitting it" >&2
+      echo "       leaves the marker scan as the only defence, whereas an" >&2
+      echo "       empty value usually means the variable you passed is unset" >&2
+      echo "       or misspelled, and the gate you think you armed is not." >&2
+      echo "       Pass the runner's actual exit status, or omit the flag." >&2
+      exit 2
+      ;;
     *[!0-9]*) echo "ERROR: --runner-exit must be a non-negative integer, got: $RUNNER_EXIT" >&2; exit 2 ;;
   esac
 fi
@@ -304,15 +401,28 @@ if runner_exit not in ("", "0"):
     )
     sys.exit(4)
 
-# Dune reports its own failures at column 0; Alcotest indents its case lines and
-# dune captures test stdout, so an unindented match is dune's voice, not a
-# test's. Measured on a 4793-line log of a clean run: zero matches.
-runner_failure = re.search(
-    r"^(?:Error: .*|Command exited with code \d+\.|Command got signal .*|"
-    r"Had \d+ errors?.*)$",
-    text,
-    re.MULTILINE,
-)
+# The caller stating `--runner-exit 0` is an assertion that the run completed,
+# from the one place that actually knows. It outranks the scan, which only
+# infers the same fact from text -- see THE MARKER SET in the header for why
+# column 0 on this tree is not reliably dune's own voice (Benchmarks.ml prints
+# unindented `Error on <device>: ...` for a GPU failure it then tolerates).
+# Skipping the scan here is what keeps the weaker source from vetoing the
+# stronger one.
+#
+# Every pattern below is a form dune 3.24.1 was MEASURED emitting; the header
+# records each measurement and the three dead alternatives that were removed.
+# `^Error(?::| \()` and not `^Error\b`: the wider form matches 65 lines of
+# ordinary tolerated-GPU-error test output in a real full-suite log.
+runner_failure = None
+if runner_exit != "0":
+    runner_failure = re.search(
+        r"^(?:"
+        r"Error(?::| \().*"
+        r"|Command \[\d+\] (?:exited with code \d+|got signal \S+):.*"
+        r")$",
+        text,
+        re.MULTILINE,
+    )
 if runner_failure is not None:
     line_no = text.count("\n", 0, runner_failure.start()) + 1
     quoted = runner_failure.group(0)
@@ -445,10 +555,37 @@ python3 -c "$PYPROG" "$SRC" "$MIN_SUITES" "$RUNNER_EXIT"
 # hand-written failure log is a guess at what dune prints, and the gate below
 # is a claim about what dune actually prints.
 #
+# The other two fixtures are real logs of the same shape, produced the same
+# way and added by the backlog-157 review, which measured both of them going
+# GREEN (exit 0, "46 cases across 6 suites, 0 FAIL") against the first version
+# of this gate:
+#
+#   dune-test-warning-as-error-log.txt
+#       `dune test spoc/ir spoc/registry spoc/framework --force -j 1` with
+#       `let unused_backlog157_probe x = x + 1` appended to
+#       spoc/registry/test/test_sarek_registry.ml. Dune exit 1. Its failure
+#       report is `Error (warning 32 [unused-value-declaration]): ...`, which
+#       a `^Error: ` pattern does not match -- and warnings-as-errors is how
+#       this tree's dev profile fails most builds, so this was the common case,
+#       not the exotic one.
+#
+#   dune-verbose-command-exit-log.txt
+#       the same command with `let () = exit 3` appended instead and
+#       `--display verbose` added. Dune exit 1, and its report is
+#       `Command [17] exited with code 3:` -- with a job number and a colon,
+#       which is why the pattern this gate shipped with (`Command exited with
+#       code N.`) matched nothing dune actually writes.
+#
+# Neither is hand-authored, and that is the point twice over: a hand-written
+# failure log is a guess at what dune prints, and both of these exist because
+# the previous guess was wrong.
+#
 # BEGIN prove-red-spec
 # copy: scripts/test-suite-counts.sh
 # copy: scripts/prove-red-fixtures/dune-test-sample-log.txt
 # copy: scripts/prove-red-fixtures/dune-test-failed-build-log.txt
+# copy: scripts/prove-red-fixtures/dune-test-warning-as-error-log.txt
+# copy: scripts/prove-red-fixtures/dune-verbose-command-exit-log.txt
 # invoke: scripts/test-suite-counts.sh
 # baseline-argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0
 # baseline-exit: 0
@@ -484,5 +621,23 @@ python3 -c "$PYPROG" "$SRC" "$MIN_SUITES" "$RUNNER_EXIT"
 #   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0 --runner-exit 1
 #   expect-exit: 4
 #   expect-message: the runner exited 1
+#
+# mutation: warning-as-error-log
+#   desc: a real `dune test` log whose build died on a warning promoted to an error -- `Error (warning 32 ...)`, which is how this tree's dev profile fails most builds. The first version of this gate matched `^Error: ` only and read this log as "46 cases across 6 suites, 0 FAIL", exit 0. It is here so a narrowing of the pattern cannot silently un-cover the common case.
+#   argv: scripts/prove-red-fixtures/dune-test-warning-as-error-log.txt --min-suites 0
+#   expect-exit: 4
+#   expect-message: a log of a run that did not complete
+#
+# mutation: verbose-command-exit-log
+#   desc: a real --display verbose log of a runtest rule that failed at RUNTIME rather than at compile time. Dune's wording is `Command [17] exited with code 3:`; the pattern this gate shipped with was `Command exited with code N.`, which matches nothing dune 3.24.1 emits in any display mode. This pins the measured wording against the guessed one.
+#   argv: scripts/prove-red-fixtures/dune-verbose-command-exit-log.txt --min-suites 0
+#   expect-exit: 4
+#   expect-message: a log of a run that did not complete
+#
+# mutation: runner-exit-empty
+#   desc: the flag given with an empty value -- what `--runner-exit "$rc"` becomes when `rc` is unset or misspelled. Measured on this branch before the review: the gate silently vanished and the counter exited 0. Given-but-empty is a usage error (2), never a fallback to "not given", and 2 is asserted exactly so a regression to "not given" (0) or to the failure path (4) both stay red.
+#   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0 --runner-exit=
+#   expect-exit: 2
+#   expect-message: given an empty value
 # END prove-red-spec
 # ---------------------------------------------------------------------------

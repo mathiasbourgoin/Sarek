@@ -160,9 +160,18 @@ jobs:
           # any other gate. backlog-157 added the case that N is worth nothing
           # at all when the run did not finish: a `dune test` that died on a
           # compile error measured 1692 cases across 116 suites here, against a
-          # true 1697/117, 0 FAIL, exit 0. Its fixture is a real log of that
-          # run, so this step is also what notices if dune stops reporting its
-          # own failures the way the scan expects.
+          # true 1697/117, 0 FAIL, exit 0.
+          #
+          # Its fixtures are real logs of runs like that, and they pin the
+          # SCRIPT: a pattern that stops matching dune's wording goes red here.
+          # They cannot pin DUNE. Being frozen files, they keep matching the
+          # wording dune used on the day they were captured, so if dune rewords
+          # its failure report this step stays green while the scan silently
+          # stops seeing real failures. Only re-measuring against the installed
+          # dune catches that, and the counter's header records how (it was
+          # measured against 3.24.1, and three of the four patterns it shipped
+          # with turned out to match nothing that version emits). Re-measure
+          # after a dune upgrade.
           ./scripts/test-suite-counts.test.sh
           # #137. Red-path coverage for the license guard. Its pre-#137 finder
           # ended in `2>/dev/null`, so deleting a whole declared root made it

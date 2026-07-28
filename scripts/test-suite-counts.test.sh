@@ -126,13 +126,14 @@ cat > "$TMP/skips-only.log" <<'LOG'
 LOG
 
 # Not a test log in the first place. This fixture used to end
-# "Command exited with code 2." and it has been dropped deliberately: since
-# backlog-157 that line is a RUNNER-FAILURE marker and would route this input
-# to gate 0 (exit 4) instead of gate 1 (exit 2). Both answers are defensible
-# for that text, which is exactly why the case must not straddle them -- a
-# gate-1 case that passes because gate 0 fired first has stopped testing
-# gate 1. The "Command exited" shape is asserted below, against gate 0, where
-# it belongs.
+# "Command exited with code 2." and that line has been dropped deliberately.
+# The backlog-157 reason was that it would route this input to gate 0 (exit 4)
+# instead of gate 1 (exit 2), and a gate-1 case that passes because gate 0
+# fired first has stopped testing gate 1. The review measurement gives a
+# second, better reason to keep it out: dune 3.24.1 does not write that line in
+# any display mode, so as a fixture it was attesting a wording nothing emits.
+# The shapes dune ACTUALLY writes are asserted below, against gate 0, from real
+# logs.
 cat > "$TMP/notalog.log" <<'LOG'
 ocamlfind: Package `sarek' not found
 LOG
@@ -278,15 +279,57 @@ check "fixture still yields a plausible-looking total (46 cases, 6 suites)" \
 check "and no [FAIL] in it — the pre-fix report was '0 FAIL'" \
   "$(/usr/bin/grep -c '\[FAIL\]' "$FAILED_BUILD_LOG")" "0"
 
-# The other dune failure shape, the one lifted out of the notalog fixture.
-cat > "$TMP/cmd-exited.log" <<'LOG'
-Testing `A'.
-Test Successful in 0.002s. 61 tests run.
-File "sarek/tests/unit/dune", line 3, characters 0-0:
-Command exited with code 2.
-LOG
-"$CNT" --min-suites 0 "$TMP/cmd-exited.log" >/dev/null 2>&1
-check "'Command exited with code N.' is a runner failure, exit 4" "$?" "4"
+# --- the other two real dune failure shapes (backlog-157 review) ------------
+#
+# Both fixtures are REAL logs, generated the same way as the one above and for
+# the same reason: the shape they carry was previously GUESSED, and the guess
+# was wrong. Each was measured going green -- exit 0, "46 cases across 6
+# suites, 0 FAIL" -- against the first version of gate 0.
+WARN_LOG="$FIXTURES/dune-test-warning-as-error-log.txt"
+VERBOSE_LOG="$FIXTURES/dune-verbose-command-exit-log.txt"
+for f in "$WARN_LOG" "$VERBOSE_LOG"; do
+  [ -f "$f" ] || { echo "  FAIL: fixture missing: $f"; fail=$((fail + 1)); }
+done
+
+# `dune test spoc/ir spoc/registry spoc/framework --force -j 1` with
+# `let unused_backlog157_probe x = x + 1` appended to
+# spoc/registry/test/test_sarek_registry.ml. Dune exit 1, and its failure
+# report is `Error (warning 32 [unused-value-declaration]): ...` -- NOT
+# `Error: `, which is all the shipped pattern matched. Warnings-as-errors is
+# how this tree's dev profile fails most builds, so this was the common case.
+got_out="$("$CNT" --min-suites 0 "$WARN_LOG" 2>/dev/null)"
+got_rc=$?
+check "warning-as-error build log exits 4" "$got_rc" "4"
+check "warning-as-error build log prints no counts on stdout" \
+  "$(echo "$got_out" | /usr/bin/grep -c 'cases across')" "0"
+
+# Positive control for the fixture, not for the gate: if this stops being a
+# plausible-looking total the fixture has stopped exercising the defect.
+warn_prefix="$(/usr/bin/grep -oE '[0-9]+ tests? run' "$WARN_LOG" \
+  | /usr/bin/awk '{s+=$1} END {print s+0" "NR}')"
+check "warning-as-error fixture still yields a plausible total (46, 6)" \
+  "$warn_prefix" "46 6"
+
+# The same command with `let () = exit 3` appended instead and --display
+# verbose added: a runtest rule that failed at RUNTIME. Dune writes
+# `Command [17] exited with code 3:` -- a job number and a colon. The pattern
+# this gate shipped with, `Command exited with code N.`, matches nothing dune
+# 3.24.1 emits in any display mode, so it had been dead since it was written.
+got_out="$("$CNT" --min-suites 0 "$VERBOSE_LOG" 2>/dev/null)"
+got_rc=$?
+check "verbose runtime-failure log exits 4" "$got_rc" "4"
+check "verbose runtime-failure log prints no counts on stdout" \
+  "$(echo "$got_out" | /usr/bin/grep -c 'cases across')" "0"
+
+# The wording is asserted directly, because the two cases above would also
+# pass if the fixture were matched for some unrelated reason.
+check "and the fixture really carries dune's bracketed wording" \
+  "$(/usr/bin/grep -cE '^Command \[[0-9]+\] exited with code [0-9]+:' \
+     "$VERBOSE_LOG")" "1"
+check "the guessed wording appears in no real dune log we have" \
+  "$(/usr/bin/grep -c 'Command exited with code' "$WARN_LOG" \
+     "$VERBOSE_LOG" "$FAILED_BUILD_LOG" | /usr/bin/awk -F: '{s+=$2} END {print s}')" \
+  "0"
 
 # --- the marker must be dune's voice, not a test's -------------------------
 #
@@ -306,6 +349,41 @@ check "indented test output mentioning Error is NOT a runner failure" "$?" "0"
 check "and is still counted" \
   "$(echo "$out4" | /usr/bin/grep '^TOTAL' | /usr/bin/tr -s ' ')" \
   "TOTAL : 61 cases across 1 suites"
+
+# ...and the harder half of the same claim: column 0 is NOT reliably dune's own
+# voice on this tree. Dune passes an e2e rule's stdout straight through,
+# unindented, and two things in a real full-suite run start a column-0 line
+# with the word Error while the run is going perfectly well:
+#
+#   sarek/tests/e2e/Benchmarks.ml:247  `Error on %s: %s` for a GPU error the
+#                                      very next line then TOLERATES
+#   pocl/LLVM                          `Error executing LLVM compilation action.`
+#
+# Measured together in one real 6000-line log from a machine with a GPU: 65
+# lines match `^Error\b` and zero match the pattern this script uses. That is
+# the whole reason it is `^Error(?::| \()` and not `^Error\b`. This case is the
+# guard on that difference -- widen the pattern and it goes red here first.
+cat > "$TMP/tolerated-gpu-error.log" <<'LOG'
+Testing `E2e'.
+Test Successful in 0.002s. 61 tests run.
+Error executing LLVM compilation action.
+Error on AMD Radeon RX 7900 XTX (radeonsi, navi31): [OpenCL Runtime] failed
+Errors were tolerated; the CPU baseline passed.
+LOG
+out4b="$("$CNT" --min-suites 0 "$TMP/tolerated-gpu-error.log")"
+check "column-0 tolerated-GPU-error output is NOT a runner failure" "$?" "0"
+check "and is still counted" \
+  "$(echo "$out4b" | /usr/bin/grep '^TOTAL' | /usr/bin/tr -s ' ')" \
+  "TOTAL : 61 cases across 1 suites"
+
+# Positive control for the case above: the same log with dune's own wording
+# added must go red. Without this, "the pattern is narrow" and "the pattern
+# matches nothing" are the same observation.
+/usr/bin/cat "$TMP/tolerated-gpu-error.log" > "$TMP/tolerated-plus-real.log"
+echo 'Error (warning 32 [unused-value-declaration]): unused value probe.' \
+  >> "$TMP/tolerated-plus-real.log"
+"$CNT" --min-suites 0 "$TMP/tolerated-plus-real.log" >/dev/null 2>&1
+check "positive control: the same log plus a real dune Error exits 4" "$?" "4"
 
 # --- the reported line number ----------------------------------------------
 #
@@ -345,6 +423,22 @@ check "--runner-exit 0 counts identically to no flag at all" \
   "$(echo "$out5" | /usr/bin/grep '^TOTAL' | /usr/bin/tr -s ' ')" \
   "TOTAL : 60 cases across 12 suites"
 
+# --- --runner-exit 0 outranks the marker scan (backlog-157 review) ----------
+#
+# The two sources are not equal evidence. The caller's exit status IS the fact;
+# the scan guesses at the fact from text, and the case above shows the guess
+# firing on text dune never wrote. When both are present the fact wins, so a
+# caller who knows the run completed is not held hostage by a heuristic whose
+# only remedy would be to stop passing the flag.
+"$CNT" --min-suites 0 --runner-exit 0 "$WARN_LOG" >/dev/null 2>&1
+check "--runner-exit 0 suppresses the marker scan" "$?" "0"
+
+# ...and the control WITHOUT which the case above proves nothing: the very same
+# log, same argv minus the flag, must still be exit 4. Otherwise "the flag
+# suppressed the scan" and "the scan stopped working" read identically.
+"$CNT" --min-suites 0 "$WARN_LOG" >/dev/null 2>&1
+check "control: the same log without the flag is still exit 4" "$?" "4"
+
 # A missing or malformed value is a usage error (2), never a silent default of
 # zero -- defaulting to "the run was fine" is the shape this whole file exists
 # to refuse.
@@ -352,6 +446,29 @@ check "--runner-exit 0 counts identically to no flag at all" \
 check "non-numeric --runner-exit exits 2" "$?" "2"
 "$CNT" --runner-exit >/dev/null 2>&1
 check "--runner-exit with no value exits 2" "$?" "2"
+
+# --- given-but-empty is a usage error, not "not given" (backlog-157 review) --
+#
+# Measured on this branch before the review, both forms below printed
+# "TOTAL : 60 cases across 12 suites" and exited 0: the empty string is the
+# parser's sentinel for "the caller did not say", so a caller who said nothing
+# landed on it and the gate silently vanished. That is not a contrived typo --
+# it is exactly what the two-line invocation this tool documents degrades to
+# when `rc` is unset or misspelled, and the caller has no way to tell.
+#
+# Exit 2 asserted exactly. "Non-zero" would also be satisfied by 4, which is
+# the wrong answer here (the log is fine; the INVOCATION is not), and by a
+# python traceback.
+"$CNT" --min-suites 0 --runner-exit "" "$TMP/plausible.log" >/dev/null 2>&1
+check "--runner-exit \"\" exits 2, not a silent fallback to \"not given\"" "$?" "2"
+"$CNT" --min-suites 0 --runner-exit= "$TMP/plausible.log" >/dev/null 2>&1
+check "--runner-exit= (equals form) exits 2 too" "$?" "2"
+check "--runner-exit \"\" prints no counts on stdout" \
+  "$("$CNT" --min-suites 0 --runner-exit "" "$TMP/plausible.log" 2>/dev/null \
+     | /usr/bin/grep -c 'cases across')" "0"
+check "--runner-exit \"\" says what is wrong with the invocation" \
+  "$("$CNT" --min-suites 0 --runner-exit "" "$TMP/plausible.log" 2>&1 >/dev/null \
+     | /usr/bin/grep -c 'given an empty value')" "1"
 
 # Pipe form: --runner-exit is unavailable there (PIPESTATUS does not exist yet
 # inside the pipeline), so the marker scan is the ONLY defence and has to work
@@ -369,4 +486,7 @@ echo "    separates qcheck, fails closed when the log format drifts, refuses to"
 echo "    report a count for an empty, truncated, unrecognisable or implausibly"
 echo "    small log (backlog-150), and refuses one for a run that did not"
 echo "    complete -- by the caller's exit code or the runner's own failure"
-echo "    report in the log (backlog-157)"
+echo "    report in the log (backlog-157), in the wordings dune 3.24.1 was"
+echo "    measured emitting and not the three it never emitted, without"
+echo "    mistaking a tolerated GPU error for one, and refusing an empty"
+echo "    --runner-exit rather than reading it as \"not given\""
