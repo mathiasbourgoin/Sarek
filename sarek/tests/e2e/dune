@@ -1455,3 +1455,30 @@
  (alias runtest)
  (action
   (run %{dep:test_tailrec_vector_param.exe})))
+
+; Helper-function scoping in the interpreter, checked against the GPU backends.
+; Three defects that each produced a silently wrong number on the oracle:
+; positional helper param ids, a callee inheriting the caller's scope, and
+; get_array preferring the kernel's vectors over the callee's own bindings.
+; Run with: dune exec sarek/tests/e2e/test_helper_scoping.exe
+
+(executable
+ (name test_helper_scoping)
+ (modules test_helper_scoping)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.float64
+  sarek_ir
+  sarek_interpreter
+  spoc_core
+  test_helpers
+  unix
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_helper_scoping.exe})))

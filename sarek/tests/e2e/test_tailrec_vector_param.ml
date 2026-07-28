@@ -90,8 +90,6 @@ let labels =
 
 let slots = Array.length labels
 
-let is_interpreter framework = framework = "Interpreter"
-
 let describe = function
   | Sarek_interp.Interp_error.Interpreter_error e ->
       Sarek_interp.Interp_error.error_to_string e
@@ -157,8 +155,6 @@ let () =
   let devs = Device.init () in
   let ran = ref 0 in
   let failures = ref 0 in
-  let interpreters_run = ref 0 in
-  let gap_seen = ref 0 in
   Array.iter
     (fun (dev : Device.t) ->
       let framework = dev.Device.framework in
@@ -167,7 +163,6 @@ let () =
          kernel at all - skipping it is correct, not a silent pass. *)
       if native || Device.allows_fp64 dev then begin
         incr ran ;
-        if is_interpreter framework then incr interpreters_run ;
         try
           let got = run_on_device dev ir in
           let bad = ref 0 in
@@ -189,52 +184,14 @@ let () =
             (if !bad = 0 then "PASS" else "FAIL") ;
           if !bad <> 0 then incr failures
         with e ->
-          (* DOCUMENTED GAP, not a failure. Helper C passes a vector as a helper
-             PARAMETER; the interpreter binds arguments into [vars] while
-             [get_array] looks only in [arrays]/[shared], so it refuses. That is
-             the LOUD behaviour, and it is deliberately still in place: the
-             one-line fallback that makes it run is not sufficient on its own,
-             because helper parameter ids and body-local ids come from two
-             overlapping numbering spaces and a tail-recursion temporary can
-             clobber a parameter — a single-helper fold then returns 0 on the
-             interpreter where Vulkan and Native return 4, silently. Trading a
-             loud refusal for a sometimes-wrong number is a regression, so the
-             repair lands with the id fix rather than ahead of it.
-
-             When that lands this branch stops being taken and the test goes
-             RED — on purpose. That is the reminder to delete this arm and let
-             helper C be asserted on every device like A and B. *)
-          let expected_gap =
-            (* Match the CONSTRUCTOR, not the rendered text: a reworded
-               error_to_string would otherwise silently reclassify this
-               documented gap as a generic ERROR and fail for an unrelated
-               reason. *)
-            is_interpreter framework
-            &&
-            match e with
-            | Sarek_interp.Interp_error.Interpreter_error
-                (Sarek_interp.Interp_error.Unbound_variable
-                   {name = "v"; context = "get_array"}) ->
-                true
-            | _ -> false
-          in
-          if expected_gap then incr gap_seen ;
           Printf.printf
-            "  %-11s %-40s %s (%s)\n%!"
+            "  %-11s %-40s ERROR (%s)\n%!"
             framework
             dev.Device.name
-            (if expected_gap then "KNOWN-GAP" else "ERROR")
             (describe e) ;
-          if not expected_gap then incr failures
+          incr failures
       end)
     devs ;
-  if !gap_seen = 0 && !interpreters_run > 0 then begin
-    print_endline
-      "test_tailrec_vector_param: the interpreter no longer refuses a vector \
-       helper parameter — the id-allocation fix has landed. Delete the \
-       KNOWN-GAP arm and assert helper C on every device." ;
-    exit 1
-  end ;
   (* A run that reached no device proves nothing; report it as a failure rather
      than exiting 0 on an empty device list. *)
   if !ran = 0 then begin
