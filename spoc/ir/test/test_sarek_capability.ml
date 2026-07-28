@@ -152,14 +152,9 @@ let mk_kernel elt : kernel =
     {var_name = "x"; var_id = 0; var_type = TVec elt; var_mutable = false}
   in
   {
+    default_kernel with
     kern_name = "test";
     kern_params = [DParam (v, Some {arr_elttype = elt; arr_memspace = Global})];
-    kern_locals = [];
-    kern_body = SEmpty;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 exception Refused of string

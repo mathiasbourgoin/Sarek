@@ -101,18 +101,15 @@ let kernel_with ~vname ~constrs ~elt cases =
             EMatch (EArrayRead ("opt", EVar idx), cases) ) )
   in
   {
+    default_kernel with
     kern_name = "ematch_payload_probe";
     kern_params =
       [
         DParam (scrut, Some {arr_elttype = elt; arr_memspace = Global});
         DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
       ];
-    kern_locals = [];
     kern_body = body;
-    kern_types = [];
     kern_variants = [(vname, constrs)];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 let v name = EVar (make_var name TFloat32)
@@ -203,18 +200,15 @@ let silent_wrong_kernel =
                     ] ) ) ) )
   in
   {
+    default_kernel with
     kern_name = "ematch_silent_wrong_probe";
     kern_params =
       [
         DParam (scrut, Some {arr_elttype = opt_type; arr_memspace = Global});
         DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
       ];
-    kern_locals = [];
     kern_body = body;
-    kern_types = [];
     kern_variants = [("Opt", opt_constrs)];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 (* CAPTURE. The outer arm's replacement term is built from the OUTER scrutinee
@@ -264,18 +258,15 @@ let capture_kernel =
                     ] ) ) ) )
   in
   {
+    default_kernel with
     kern_name = "ematch_capture_probe";
     kern_params =
       [
         DParam (shp, Some {arr_elttype = opt_type; arr_memspace = Global});
         DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
       ];
-    kern_locals = [];
     kern_body = body;
-    kern_types = [];
     kern_variants = [("Opt", opt_constrs); ("Choice", pick_constrs)];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 (* `match e with x -> ...`: the PPX lowers a plain variable pattern to
@@ -371,13 +362,13 @@ let atomic_scrutinee_kernel =
   let out = make_var "out" (TVec TFloat32) in
   let idx = make_var "idx" TInt32 in
   {
+    default_kernel with
     kern_name = "ematch_atomic_scrutinee";
     kern_params =
       [
         DParam (scrut, Some {arr_elttype = opt_type; arr_memspace = Global});
         DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
       ];
-    kern_locals = [];
     kern_body =
       SLet
         ( idx,
@@ -391,10 +382,7 @@ let atomic_scrutinee_kernel =
                       EBinop (Add, v "y", EConst (CFloat32 1.0)) );
                     (PConstr ("OptNone", []), EConst (CFloat32 0.0));
                   ] ) ) );
-    kern_types = [];
     kern_variants = [("Opt", opt_constrs)];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 (* The SAME multi-payload destructuring as a match STATEMENT. Both paths now
@@ -409,13 +397,13 @@ let smatch_multi_kernel =
   let out = make_var "out" (TVec TFloat32) in
   let idx = make_var "idx" TInt32 in
   {
+    default_kernel with
     kern_name = "smatch_multi_probe";
     kern_params =
       [
         DParam (scrut, Some {arr_elttype = pair_type; arr_memspace = Global});
         DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
       ];
-    kern_locals = [];
     kern_body =
       SLet
         ( idx,
@@ -430,10 +418,7 @@ let smatch_multi_kernel =
                 ( PConstr ("MkOne", ["c"]),
                   SAssign (LArrayElem ("out", EVar idx), v "c") );
               ] ) );
-    kern_types = [];
     kern_variants = [("Pair", pair_constrs)];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 (* --- backends ------------------------------------------------------------ *)

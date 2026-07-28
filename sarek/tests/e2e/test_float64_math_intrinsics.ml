@@ -60,18 +60,14 @@ let make_unary_ir name : kernel =
             EIntrinsic (["Float64"], name, [EArrayRead ("a", EVar idx)]) ) )
   in
   {
+    default_kernel with
     kern_name = "float64_" ^ name ^ "_unary";
     kern_params =
       [
         DParam (a, Some {arr_elttype = TFloat64; arr_memspace = Global});
         DParam (b, Some {arr_elttype = TFloat64; arr_memspace = Global});
       ];
-    kern_locals = [];
     kern_body = body;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 let make_binary_ir name : kernel =
@@ -99,6 +95,7 @@ let make_binary_ir name : kernel =
                 [EArrayRead ("a", EVar idx); EArrayRead ("b", EVar idx)] ) ) )
   in
   {
+    default_kernel with
     kern_name = "float64_" ^ name ^ "_binary";
     kern_params =
       [
@@ -106,12 +103,7 @@ let make_binary_ir name : kernel =
         DParam (b, Some {arr_elttype = TFloat64; arr_memspace = Global});
         DParam (c, Some {arr_elttype = TFloat64; arr_memspace = Global});
       ];
-    kern_locals = [];
     kern_body = body;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 (** {1 Function specs}

@@ -214,15 +214,10 @@ let kernel_over elt : Sarek_ir_types.kernel =
     {var_name = "dst"; var_id = 0; var_type = TVec elt; var_mutable = false}
   in
   {
+    default_kernel with
     kern_name = "cap_probe";
     kern_params =
       [DParam (dst, Some {arr_elttype = elt; arr_memspace = Global})];
-    kern_locals = [];
-    kern_body = SEmpty;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 let refusal_of ~device ir =
@@ -316,15 +311,10 @@ let coopmat_kernel (comp : Sarek_coopmat.component_type) : Sarek_ir_types.kernel
     }
   in
   {
+    default_kernel with
     kern_name = "interp_coopmat_probe";
-    kern_params = [];
-    kern_locals = [];
     kern_body =
       SCoopmat (CM_muladd {dst = "fd"; a = "fa"; b = "fb"; c = "fc"; cfg});
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 (* THE POSITIVE CONTROL, and it is the load-bearing one. A gate observed only

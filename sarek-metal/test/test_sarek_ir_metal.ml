@@ -283,14 +283,9 @@ let test_local_buffer_param_refused () =
 let mk_vec_kernel elt : kernel =
   let v = make_var "x" (TVec elt) in
   {
+    default_kernel with
     kern_name = "capgate";
     kern_params = [DParam (v, Some {arr_elttype = elt; arr_memspace = Global})];
-    kern_locals = [];
-    kern_body = SEmpty;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 let substring_present haystack needle =
@@ -340,16 +335,12 @@ let test_float64_literal_gate () =
   let v = make_var "x" (TVec TFloat32) in
   let k : kernel =
     {
+      default_kernel with
       kern_name = "caplit";
       kern_params =
         [DParam (v, Some {arr_elttype = TFloat32; arr_memspace = Global})];
-      kern_locals = [];
       kern_body =
         SAssign (LArrayElem ("x", EConst (CInt32 0l)), EConst (CFloat64 3.14));
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
     }
   in
   match

@@ -259,6 +259,7 @@ let test_pp_kernel () =
   in
   let k : kernel =
     {
+      default_kernel with
       kern_name = "simple_kernel";
       kern_params =
         [
@@ -266,12 +267,7 @@ let test_pp_kernel () =
             (input_var, Some {arr_elttype = TFloat32; arr_memspace = Global});
           DParam (n_var, None);
         ];
-      kern_locals = [];
       kern_body = SReturn (EConst CUnit);
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
     }
   in
   let s = pp_to_string pp_kernel k in

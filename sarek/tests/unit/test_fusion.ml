@@ -19,16 +19,7 @@ let thread_idx_x = EIntrinsic (["Gpu"], "thread_idx_x", [])
 
 (** Helper to create a minimal kernel record *)
 let mk_kernel name body =
-  {
-    kern_name = name;
-    kern_params = [];
-    kern_locals = [];
-    kern_body = body;
-    kern_types = [];
-    kern_funcs = [];
-    kern_native_fn = None;
-    kern_variants = [];
-  }
+  {default_kernel with kern_name = name; kern_body = body}
 
 let kernel_names kernels = List.map (fun k -> k.kern_name) kernels
 
@@ -40,18 +31,7 @@ let test_analyze_one_to_one () =
       ( LArrayElem ("output", thread_idx_x),
         EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l)) )
   in
-  let kernel =
-    {
-      kern_name = "scale";
-      kern_params = [];
-      kern_locals = [];
-      kern_body = body;
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
-    }
-  in
+  let kernel = {default_kernel with kern_name = "scale"; kern_body = body} in
   let info = analyze kernel in
   assert (List.length info.reads = 1) ;
   assert (List.length info.writes = 1) ;
@@ -75,16 +55,7 @@ let test_analyze_with_barrier () =
       ]
   in
   let kernel =
-    {
-      kern_name = "with_barrier";
-      kern_params = [];
-      kern_locals = [];
-      kern_body = body;
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
-    }
+    {default_kernel with kern_name = "with_barrier"; kern_body = body}
   in
   let info = analyze kernel in
   assert info.has_barriers ;
@@ -95,35 +66,25 @@ let test_can_fuse_compatible () =
   (* Producer: temp[i] = input[i] * 2 *)
   let producer =
     {
+      default_kernel with
       kern_name = "producer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("temp", thread_idx_x),
             EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   (* Consumer: output[i] = temp[i] + 1 *)
   let consumer =
     {
+      default_kernel with
       kern_name = "consumer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
             EBinop (Add, EArrayRead ("temp", thread_idx_x), EConst (CInt32 1l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let result = can_fuse producer consumer "temp" in
@@ -134,9 +95,8 @@ let test_can_fuse_compatible () =
 let test_can_fuse_with_barrier () =
   let producer =
     {
+      default_kernel with
       kern_name = "producer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SSeq
           [
@@ -145,25 +105,16 @@ let test_can_fuse_with_barrier () =
                 EArrayRead ("input", thread_idx_x) );
             SBarrier;
           ];
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let consumer =
     {
+      default_kernel with
       kern_name = "consumer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
             EArrayRead ("temp", thread_idx_x) );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let result = can_fuse producer consumer "temp" in
@@ -176,9 +127,8 @@ let test_can_fuse_with_barrier () =
 let test_can_fuse_with_direct_atomic () =
   let producer =
     {
+      default_kernel with
       kern_name = "producer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SSeq
           [
@@ -189,25 +139,16 @@ let test_can_fuse_with_direct_atomic () =
               ( LArrayElem ("temp", thread_idx_x),
                 EArrayRead ("input", thread_idx_x) );
           ];
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let consumer =
     {
+      default_kernel with
       kern_name = "consumer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
             EArrayRead ("temp", thread_idx_x) );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let result = can_fuse producer consumer "temp" in
@@ -235,31 +176,22 @@ let test_can_fuse_with_atomic_in_helper () =
   in
   let producer =
     {
+      default_kernel with
       kern_name = "producer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           (LArrayElem ("temp", thread_idx_x), EArrayRead ("input", thread_idx_x));
-      kern_types = [];
       kern_funcs = [atomic_helper];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let consumer =
     {
+      default_kernel with
       kern_name = "consumer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
             EArrayRead ("temp", thread_idx_x) );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let result = can_fuse producer consumer "temp" in
@@ -277,9 +209,8 @@ let test_can_fuse_with_atomic_in_assign_lvalue () =
   in
   let producer =
     {
+      default_kernel with
       kern_name = "producer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SSeq
           [
@@ -288,25 +219,16 @@ let test_can_fuse_with_atomic_in_assign_lvalue () =
               ( LArrayElem ("temp", thread_idx_x),
                 EArrayRead ("input", thread_idx_x) );
           ];
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let consumer =
     {
+      default_kernel with
       kern_name = "consumer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
             EArrayRead ("temp", thread_idx_x) );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let result = can_fuse producer consumer "temp" in
@@ -317,34 +239,24 @@ let test_can_fuse_with_atomic_in_assign_lvalue () =
 let test_can_fuse_no_atomics_regression () =
   let producer =
     {
+      default_kernel with
       kern_name = "producer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("temp", thread_idx_x),
             EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let consumer =
     {
+      default_kernel with
       kern_name = "consumer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
             EBinop (Add, EArrayRead ("temp", thread_idx_x), EConst (CInt32 1l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let result = can_fuse producer consumer "temp" in
@@ -356,35 +268,25 @@ let test_fuse_simple () =
   (* Producer: temp[i] = input[i] * 2 *)
   let producer =
     {
+      default_kernel with
       kern_name = "producer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("temp", thread_idx_x),
             EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   (* Consumer: output[i] = temp[i] + 1 *)
   let consumer =
     {
+      default_kernel with
       kern_name = "consumer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
             EBinop (Add, EArrayRead ("temp", thread_idx_x), EConst (CInt32 1l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let fused = fuse producer consumer "temp" in
@@ -402,50 +304,35 @@ let test_fuse_pipeline () =
   (* K1: a[i] = input[i] * 2 *)
   let k1 =
     {
+      default_kernel with
       kern_name = "k1";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("a", thread_idx_x),
             EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   (* K2: b[i] = a[i] + 1 *)
   let k2 =
     {
+      default_kernel with
       kern_name = "k2";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("b", thread_idx_x),
             EBinop (Add, EArrayRead ("a", thread_idx_x), EConst (CInt32 1l)) );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   (* K3: output[i] = b[i] * 3 *)
   let k3 =
     {
+      default_kernel with
       kern_name = "k3";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
             EBinop (Mul, EArrayRead ("b", thread_idx_x), EConst (CInt32 3l)) );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let fused, eliminated = fuse_pipeline [k1; k2; k3] in
@@ -619,9 +506,8 @@ let test_is_reduction_kernel () =
   in
   let kernel =
     {
+      default_kernel with
       kern_name = "reduce_sum";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SSeq
           [
@@ -636,10 +522,6 @@ let test_is_reduction_kernel () =
                     EBinop (Add, EVar acc, EArrayRead ("temp", EVar loop_var))
                   ) );
           ];
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let result = is_reduction_kernel kernel "temp" in
@@ -651,18 +533,13 @@ let test_can_fuse_reduction () =
   (* Map: temp[i] = input[i] * 2 *)
   let map_kernel =
     {
+      default_kernel with
       kern_name = "map";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("temp", thread_idx_x),
             EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   (* Reduce: sum = fold(+, temp) *)
@@ -674,9 +551,8 @@ let test_can_fuse_reduction () =
   in
   let reduce_kernel =
     {
+      default_kernel with
       kern_name = "reduce";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SSeq
           [
@@ -691,10 +567,6 @@ let test_can_fuse_reduction () =
                     EBinop (Add, EVar acc, EArrayRead ("temp", EVar loop_var))
                   ) );
           ];
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let result = can_fuse_reduction map_kernel reduce_kernel "temp" in
@@ -706,18 +578,13 @@ let test_fuse_reduction () =
   (* Map: temp[thread_idx_x] = input[thread_idx_x] * 2 *)
   let map_kernel =
     {
+      default_kernel with
       kern_name = "map";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("temp", thread_idx_x),
             EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   (* Reduce: sum = fold(+, temp) with loop var i *)
@@ -729,9 +596,8 @@ let test_fuse_reduction () =
   in
   let reduce_kernel =
     {
+      default_kernel with
       kern_name = "reduce";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SSeq
           [
@@ -746,10 +612,6 @@ let test_fuse_reduction () =
                     EBinop (Add, EVar acc, EArrayRead ("temp", EVar loop_var))
                   ) );
           ];
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let fused = fuse_reduction map_kernel reduce_kernel "temp" in
@@ -764,18 +626,13 @@ let test_try_fuse_reduction () =
   (* Map: temp[i] = input[i] * 2 *)
   let map_kernel =
     {
+      default_kernel with
       kern_name = "map";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("temp", thread_idx_x),
             EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let loop_var =
@@ -786,9 +643,8 @@ let test_try_fuse_reduction () =
   in
   let reduce_kernel =
     {
+      default_kernel with
       kern_name = "reduce";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SSeq
           [
@@ -803,10 +659,6 @@ let test_try_fuse_reduction () =
                     EBinop (Add, EVar acc, EArrayRead ("temp", EVar loop_var))
                   ) );
           ];
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let result = try_fuse map_kernel reduce_kernel "temp" in
@@ -818,9 +670,8 @@ let test_stencil_pattern () =
   (* Kernel: output[i] = (input[i-1] + input[i] + input[i+1]) / 3 *)
   let kernel =
     {
+      default_kernel with
       kern_name = "blur";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
@@ -838,10 +689,6 @@ let test_stencil_pattern () =
                       ("input", EBinop (Add, thread_idx_x, EConst (CInt32 1l)))
                   ),
                 EConst (CInt32 3l) ) );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let info = analyze kernel in
@@ -868,9 +715,8 @@ let test_can_fuse_stencil () =
   (* Producer: temp[i] = input[i-1] + input[i+1] *)
   let producer =
     {
+      default_kernel with
       kern_name = "producer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("temp", thread_idx_x),
@@ -880,18 +726,13 @@ let test_can_fuse_stencil () =
                   ("input", EBinop (Sub, thread_idx_x, EConst (CInt32 1l))),
                 EArrayRead
                   ("input", EBinop (Add, thread_idx_x, EConst (CInt32 1l))) ) );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   (* Consumer: output[i] = temp[i-1] + temp[i] + temp[i+1] *)
   let consumer =
     {
+      default_kernel with
       kern_name = "consumer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
@@ -904,10 +745,6 @@ let test_can_fuse_stencil () =
                     EArrayRead ("temp", thread_idx_x) ),
                 EArrayRead
                   ("temp", EBinop (Add, thread_idx_x, EConst (CInt32 1l))) ) );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let result = can_fuse_stencil producer consumer "temp" in
@@ -919,26 +756,20 @@ let test_fuse_stencil () =
   (* Producer: temp[i] = input[i] * 2 (simple case) *)
   let producer =
     {
+      default_kernel with
       kern_name = "producer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("temp", thread_idx_x),
             EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   (* Consumer: output[i] = temp[i-1] + temp[i+1] *)
   let consumer =
     {
+      default_kernel with
       kern_name = "consumer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
@@ -948,10 +779,6 @@ let test_fuse_stencil () =
                   ("temp", EBinop (Sub, thread_idx_x, EConst (CInt32 1l))),
                 EArrayRead
                   ("temp", EBinop (Add, thread_idx_x, EConst (CInt32 1l))) ) );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let fused = fuse_stencil producer consumer "temp" in
@@ -966,34 +793,24 @@ let test_try_fuse_all () =
   (* Simple OneToOne case should use vertical fusion *)
   let producer =
     {
+      default_kernel with
       kern_name = "producer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("temp", thread_idx_x),
             EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let consumer =
     {
+      default_kernel with
       kern_name = "consumer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
             EBinop (Add, EArrayRead ("temp", thread_idx_x), EConst (CInt32 1l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let result = try_fuse_all producer consumer "temp" in
@@ -1004,34 +821,24 @@ let test_try_fuse_all () =
 let test_should_fuse_one_to_one () =
   let producer =
     {
+      default_kernel with
       kern_name = "producer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("temp", thread_idx_x),
             EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let consumer =
     {
+      default_kernel with
       kern_name = "consumer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
             EBinop (Add, EArrayRead ("temp", thread_idx_x), EConst (CInt32 1l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let hint = should_fuse producer consumer "temp" in
@@ -1042,9 +849,8 @@ let test_should_fuse_one_to_one () =
 let test_should_fuse_barrier () =
   let producer =
     {
+      default_kernel with
       kern_name = "producer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SSeq
           [
@@ -1053,25 +859,16 @@ let test_should_fuse_barrier () =
                 EArrayRead ("input", thread_idx_x) );
             SBarrier;
           ];
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let consumer =
     {
+      default_kernel with
       kern_name = "consumer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
             EArrayRead ("temp", thread_idx_x) );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let hint = should_fuse producer consumer "temp" in
@@ -1082,26 +879,20 @@ let test_should_fuse_barrier () =
 let test_should_fuse_small_stencil () =
   let producer =
     {
+      default_kernel with
       kern_name = "producer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("temp", thread_idx_x),
             EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   (* Consumer reads temp[i-1], temp[i], temp[i+1] *)
   let consumer =
     {
+      default_kernel with
       kern_name = "consumer";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
@@ -1114,10 +905,6 @@ let test_should_fuse_small_stencil () =
                     EArrayRead ("temp", thread_idx_x) ),
                 EArrayRead
                   ("temp", EBinop (Add, thread_idx_x, EConst (CInt32 1l))) ) );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let hint = should_fuse producer consumer "temp" in
@@ -1129,50 +916,35 @@ let test_auto_fuse_pipeline () =
   (* K1: a[i] = input[i] * 2 *)
   let k1 =
     {
+      default_kernel with
       kern_name = "k1";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("a", thread_idx_x),
             EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   (* K2: b[i] = a[i] + 1 *)
   let k2 =
     {
+      default_kernel with
       kern_name = "k2";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("b", thread_idx_x),
             EBinop (Add, EArrayRead ("a", thread_idx_x), EConst (CInt32 1l)) );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   (* K3: output[i] = b[i] * 3 *)
   let k3 =
     {
+      default_kernel with
       kern_name = "k3";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
             EBinop (Mul, EArrayRead ("b", thread_idx_x), EConst (CInt32 3l)) );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let fused, eliminated, skipped = auto_fuse_pipeline [k1; k2; k3] in
@@ -1191,26 +963,20 @@ let test_auto_fuse_pipeline_skip_stencil () =
   (* K1: temp[i] = input[i] * 2 *)
   let k1 =
     {
+      default_kernel with
       kern_name = "k1";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("temp", thread_idx_x),
             EBinop (Mul, EArrayRead ("input", thread_idx_x), EConst (CInt32 2l))
           );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   (* K2: output[i] = temp[i-1] + temp[i+1] (stencil) *)
   let k2 =
     {
+      default_kernel with
       kern_name = "k2";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LArrayElem ("output", thread_idx_x),
@@ -1220,10 +986,6 @@ let test_auto_fuse_pipeline_skip_stencil () =
                   ("temp", EBinop (Sub, thread_idx_x, EConst (CInt32 1l))),
                 EArrayRead
                   ("temp", EBinop (Add, thread_idx_x, EConst (CInt32 1l))) ) );
-      kern_types = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-      kern_variants = [];
     }
   in
   let fused, eliminated, skipped = auto_fuse_pipeline_list [k1; k2] in

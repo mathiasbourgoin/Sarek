@@ -101,18 +101,14 @@ let arr a ty = EVar (mk a (TVec ty))
 
 let kernel label out e =
   {
+    default_kernel with
     kern_name = "k_" ^ label;
     kern_params = params;
-    kern_locals = [];
     kern_body =
       SLet
         ( tid,
           EIntrinsic ([], "global_thread_id", []),
           SAssign (LArrayElem (out, EVar tid), e) );
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 let f32_path = ["Sarek_stdlib"; "Float32"]

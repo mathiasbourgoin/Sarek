@@ -35,14 +35,11 @@ let make_var name ty =
 
 let base_kernel name params body funcs =
   {
+    default_kernel with
     kern_name = name;
     kern_params = params;
-    kern_locals = [];
     kern_body = body;
-    kern_types = [];
-    kern_variants = [];
     kern_funcs = funcs;
-    kern_native_fn = None;
   }
 
 (** A vector-reduction helper in the exact shape the tail-recursion elimination

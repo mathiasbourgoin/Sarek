@@ -82,15 +82,11 @@ let make_localarr_kernel () : kernel =
               ] ) )
   in
   {
+    default_kernel with
     kern_name = "localarr_probe";
     kern_params =
       [DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global})];
-    kern_locals = [];
     kern_body = body;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 let emitted_ptx () =

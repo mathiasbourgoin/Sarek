@@ -72,6 +72,7 @@ let make_fma_ir () : kernel =
                 EArrayRead ("c", EVar idx) ) ) )
   in
   {
+    default_kernel with
     kern_name = "float64_fma_vulkan";
     kern_params =
       [
@@ -80,12 +81,7 @@ let make_fma_ir () : kernel =
         DParam (c, Some {arr_elttype = TFloat64; arr_memspace = Global});
         DParam (dst, Some {arr_elttype = TFloat64; arr_memspace = Global});
       ];
-    kern_locals = [];
     kern_body = body;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 let find_vulkan_device () =

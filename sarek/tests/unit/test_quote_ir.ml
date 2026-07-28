@@ -592,17 +592,7 @@ let test_quote_decl_shared () =
 
 let test_quote_kernel_simple () =
   let kern =
-    Ir.
-      {
-        kern_name = "test_kernel";
-        kern_params = [];
-        kern_locals = [];
-        kern_body = Ir.SEmpty;
-        kern_types = [];
-        kern_variants = [];
-        kern_funcs = [];
-        kern_native_fn = None;
-      }
+    Ir.{default_kernel with kern_name = "test_kernel"; kern_body = Ir.SEmpty}
   in
   let e = Sarek_quote_ir.quote_kernel ~loc:dummy_loc kern in
   (* Just check it produces an expression *)
@@ -618,14 +608,10 @@ let test_quote_kernel_with_params () =
   let kern =
     Ir.
       {
+        default_kernel with
         kern_name = "kernel_with_params";
         kern_params = [Ir.DParam (v, None)];
-        kern_locals = [];
         kern_body = Ir.SEmpty;
-        kern_types = [];
-        kern_variants = [];
-        kern_funcs = [];
-        kern_native_fn = None;
       }
   in
   let e = Sarek_quote_ir.quote_kernel ~loc:dummy_loc kern in
@@ -638,14 +624,10 @@ let test_quote_kernel_with_types () =
   let kern =
     Ir.
       {
+        default_kernel with
         kern_name = "kernel_with_types";
-        kern_params = [];
-        kern_locals = [];
         kern_body = Ir.SEmpty;
         kern_types = [("Point", [("x", Ir.TInt32); ("y", Ir.TInt32)])];
-        kern_variants = [];
-        kern_funcs = [];
-        kern_native_fn = None;
       }
   in
   let e = Sarek_quote_ir.quote_kernel ~loc:dummy_loc kern in
@@ -658,14 +640,10 @@ let test_quote_kernel_with_variants () =
   let kern =
     Ir.
       {
+        default_kernel with
         kern_name = "kernel_with_variants";
-        kern_params = [];
-        kern_locals = [];
         kern_body = Ir.SEmpty;
-        kern_types = [];
         kern_variants = [("Option", [("Some", [Ir.TInt32]); ("None", [])])];
-        kern_funcs = [];
-        kern_native_fn = None;
       }
   in
   let e = Sarek_quote_ir.quote_kernel ~loc:dummy_loc kern in
@@ -690,14 +668,10 @@ let test_quote_kernel_with_helper_funcs () =
   let kern =
     Ir.
       {
+        default_kernel with
         kern_name = "kernel_with_helpers";
-        kern_params = [];
-        kern_locals = [];
         kern_body = Ir.SEmpty;
-        kern_types = [];
-        kern_variants = [];
         kern_funcs = [hf];
-        kern_native_fn = None;
       }
   in
   let e = Sarek_quote_ir.quote_kernel ~loc:dummy_loc kern in

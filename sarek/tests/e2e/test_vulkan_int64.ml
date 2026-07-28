@@ -66,6 +66,7 @@ let make_add_ir () : kernel =
           ) )
   in
   {
+    default_kernel with
     kern_name = "int64_add_vulkan";
     kern_params =
       [
@@ -73,12 +74,7 @@ let make_add_ir () : kernel =
         DParam (b, Some {arr_elttype = TInt64; arr_memspace = Global});
         DParam (dst, Some {arr_elttype = TInt64; arr_memspace = Global});
       ];
-    kern_locals = [];
     kern_body = body;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 (* Select a Vulkan device that actually PROVIDES int64, not merely the first

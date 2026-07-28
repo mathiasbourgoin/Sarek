@@ -29,14 +29,10 @@ let make_var name ty =
 
 let kernel_with ~params ~funcs =
   {
+    default_kernel with
     kern_name = "collision_probe";
     kern_params = params;
-    kern_locals = [];
-    kern_body = SEmpty;
-    kern_types = [];
-    kern_variants = [];
     kern_funcs = funcs;
-    kern_native_fn = None;
   }
 
 (* No collision: the default base name is returned verbatim. *)

@@ -116,18 +116,14 @@ let kernel_with rhs =
   let a = make_var "a" (TVec TFloat32) in
   let c = make_var "c" (TVec TFloat32) in
   {
+    default_kernel with
     kern_name = "emitted_name_probe";
     kern_params =
       [
         DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
         DParam (c, Some {arr_elttype = TFloat32; arr_memspace = Global});
       ];
-    kern_locals = [];
     kern_body = SAssign (LArrayElem ("c", EConst (CInt32 0l)), rhs);
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 (* ------------------------------------------------------------------------ *)

@@ -29,14 +29,11 @@ let make_var name ty =
 
 let empty_kernel name params locals body =
   {
+    default_kernel with
     kern_name = name;
     kern_params = params;
     kern_locals = locals;
     kern_body = body;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 (** Kernel 1: scalar vector-add. Equivalent to: fun (a : float32 vec) (b :

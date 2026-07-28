@@ -49,18 +49,14 @@ let make_float32_sin_ir () : kernel =
             EIntrinsic (["Float32"], "sin", [EArrayRead ("a", EVar idx)]) ) )
   in
   {
+    default_kernel with
     kern_name = "float32_sin_pure";
     kern_params =
       [
         DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
         DParam (b, Some {arr_elttype = TFloat32; arr_memspace = Global});
       ];
-    kern_locals = [];
     kern_body = body;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 let n = 256

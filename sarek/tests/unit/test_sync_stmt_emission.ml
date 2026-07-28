@@ -37,14 +37,10 @@ let sync_kernel stmt : kernel =
     {var_name = "tid"; var_id = 1; var_type = TInt32; var_mutable = false}
   in
   {
+    default_kernel with
     kern_name = "sync_probe";
     kern_params =
       [DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global})];
-    kern_locals = [];
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
     kern_body =
       SLet
         ( tid,

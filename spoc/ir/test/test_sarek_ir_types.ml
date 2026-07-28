@@ -360,6 +360,7 @@ let test_kernel () =
   in
   let k : kernel =
     {
+      default_kernel with
       kern_name = "vector_add";
       kern_params =
         [
@@ -368,12 +369,6 @@ let test_kernel () =
           DParam
             (output_var, Some {arr_elttype = TFloat32; arr_memspace = Global});
         ];
-      kern_locals = [];
-      kern_body = SEmpty;
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
     }
   in
   assert (k.kern_name = "vector_add") ;

@@ -791,6 +791,7 @@ let fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
             ~fn:"fuse"
             ~intermediate
             {
+              default_kernel with
               kern_name = consumer.kern_name ^ "_fused";
               kern_params = fused_params @ new_params;
               kern_locals = consumer.kern_locals @ producer.kern_locals;
@@ -798,7 +799,6 @@ let fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
               kern_types = consumer.kern_types @ producer.kern_types;
               kern_variants = consumer.kern_variants @ producer.kern_variants;
               kern_funcs = consumer.kern_funcs @ producer.kern_funcs;
-              kern_native_fn = None;
             })
 
 (** {1 High-level interface} *)
@@ -1042,6 +1042,7 @@ let fuse_reduction (map_kernel : kernel) (reduce_kernel : kernel)
             ~fn:"fuse_reduction"
             ~intermediate
             {
+              default_kernel with
               kern_name = reduce_kernel.kern_name ^ "_fused";
               kern_params = fused_params @ new_params;
               kern_locals = reduce_kernel.kern_locals @ map_kernel.kern_locals;
@@ -1050,7 +1051,6 @@ let fuse_reduction (map_kernel : kernel) (reduce_kernel : kernel)
               kern_variants =
                 reduce_kernel.kern_variants @ map_kernel.kern_variants;
               kern_funcs = reduce_kernel.kern_funcs @ map_kernel.kern_funcs;
-              kern_native_fn = None;
             })
 
 (** Try to fuse map+reduce, falling back to regular fusion if not applicable *)
@@ -1312,6 +1312,7 @@ let fuse_stencil (producer : kernel) (consumer : kernel) (intermediate : string)
             ~fn:"fuse_stencil"
             ~intermediate
             {
+              default_kernel with
               kern_name = consumer.kern_name ^ "_stencil_fused";
               kern_params = fused_params @ new_params;
               kern_locals = consumer.kern_locals @ producer.kern_locals;
@@ -1319,7 +1320,6 @@ let fuse_stencil (producer : kernel) (consumer : kernel) (intermediate : string)
               kern_types = consumer.kern_types @ producer.kern_types;
               kern_variants = consumer.kern_variants @ producer.kern_variants;
               kern_funcs = consumer.kern_funcs @ producer.kern_funcs;
-              kern_native_fn = None;
             })
 
 (** Enhanced try_fuse that includes stencil fusion *)

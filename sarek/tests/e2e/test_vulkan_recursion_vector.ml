@@ -131,18 +131,15 @@ let make_ir () : kernel =
             None ) )
   in
   {
+    default_kernel with
     kern_name = "recursion_vector_vulkan";
     kern_params =
       [
         DParam (data, Some {arr_elttype = TFloat32; arr_memspace = Global});
         DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
       ];
-    kern_locals = [];
     kern_body = body;
-    kern_types = [];
-    kern_variants = [];
     kern_funcs = [sum_range_helper ()];
-    kern_native_fn = None;
   }
 
 let find_vulkan_device () =

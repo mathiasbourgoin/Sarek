@@ -55,15 +55,11 @@ let make_ir () : kernel =
             EBinop (Add, EVar idx, EConst (CInt32 1l)) ) )
   in
   {
+    default_kernel with
     kern_name = "domain_pool_stress";
     kern_params =
       [DParam (dst, Some {arr_elttype = TInt32; arr_memspace = Global})];
-    kern_locals = [];
     kern_body = body;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 let block_size = 64

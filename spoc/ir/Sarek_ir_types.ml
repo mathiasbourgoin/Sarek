@@ -387,3 +387,41 @@ type kernel = {
   kern_native_fn : native_fn_t option;
       (** Optional pre-compiled native function for CPU execution *)
 }
+
+(** A kernel with every field at its empty value, for use as the base of a
+    record update: [{default_kernel with kern_name = "k"; kern_body = b}].
+
+    WHY THIS EXISTS. OCaml requires every field at every record literal, so
+    adding one field to {!kernel} used to mean editing all 119 construction
+    sites in the tree — which is why the type has been avoided rather than
+    extended. A record UPDATE names only the fields it sets, so once a site is
+    written this way a new field costs it nothing.
+
+    Prefer this over spelling out the empty fields. {!make_kernel} is the same
+    thing with labels, for new code that would otherwise set most fields. *)
+let default_kernel =
+  {
+    kern_name = "";
+    kern_params = [];
+    kern_locals = [];
+    kern_body = SEmpty;
+    kern_types = [];
+    kern_variants = [];
+    kern_funcs = [];
+    kern_native_fn = None;
+  }
+
+(** {!default_kernel} with labels. [~name] and [~body] are required because a
+    kernel with neither is not a kernel; everything else defaults to empty. *)
+let make_kernel ?(params = []) ?(locals = []) ?(types = []) ?(variants = [])
+    ?(funcs = []) ?native_fn ~name ~body () =
+  {
+    kern_name = name;
+    kern_params = params;
+    kern_locals = locals;
+    kern_body = body;
+    kern_types = types;
+    kern_variants = variants;
+    kern_funcs = funcs;
+    kern_native_fn = native_fn;
+  }

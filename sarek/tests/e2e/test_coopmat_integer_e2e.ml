@@ -131,6 +131,7 @@ let make_ir ?(drop_c = false) ?(stride1_b = false) () : kernel =
       ]
   in
   {
+    default_kernel with
     kern_name = "coopmat_u8_s32";
     kern_params =
       [
@@ -139,12 +140,7 @@ let make_ir ?(drop_c = false) ?(stride1_b = false) () : kernel =
         DParam (c, Some {arr_elttype = TInt32; arr_memspace = Global});
         DParam (d, Some {arr_elttype = TInt32; arr_memspace = Global});
       ];
-    kern_locals = [];
     kern_body = SSeq stmts;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 (* ------------------------------------------------------------------ *)

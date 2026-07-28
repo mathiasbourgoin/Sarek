@@ -29,16 +29,7 @@ let make_var name ty =
   {var_name = name; var_id = 0; var_type = ty; var_mutable = false}
 
 let mk_kernel name params body =
-  {
-    kern_name = name;
-    kern_params = params;
-    kern_locals = [];
-    kern_body = body;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
-  }
+  {default_kernel with kern_name = name; kern_params = params; kern_body = body}
 
 let reset () =
   Sarek_ir_cuda.current_framework := None ;

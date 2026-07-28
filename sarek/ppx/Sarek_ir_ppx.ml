@@ -167,3 +167,23 @@ type kernel = {
       (** Placeholder for native function - actual function added during quoting
       *)
 }
+
+(** Base for a record update, mirroring {!Sarek_ir_types.default_kernel}.
+
+    This module's [kernel] and {!Sarek_ir_types.kernel} are two structurally
+    parallel records bridged by [Sarek_ir_conv.conv_kernel]: this one is what
+    lowering PRODUCES, the other is what the backends CONSUME. A field added to
+    one almost always has to be added to the other and threaded through the
+    converter, so both get the same escape hatch — otherwise migrating one type
+    and not the other just moves the problem. *)
+let default_kernel =
+  {
+    kern_name = "";
+    kern_params = [];
+    kern_locals = [];
+    kern_body = SEmpty;
+    kern_types = [];
+    kern_variants = [];
+    kern_funcs = [];
+    kern_native_fn = None;
+  }

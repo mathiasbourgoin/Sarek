@@ -299,30 +299,20 @@ let test_kernel_uses_float64_params () =
 
   let k_f64 : kernel =
     {
+      default_kernel with
       kern_name = "test";
       kern_params =
         [DParam (v_f64, Some {arr_elttype = TFloat64; arr_memspace = Global})];
-      kern_locals = [];
-      kern_body = SEmpty;
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
     }
   in
   assert (kernel_uses_float64 k_f64 = true) ;
 
   let k_f32 : kernel =
     {
+      default_kernel with
       kern_name = "test";
       kern_params =
         [DParam (v_f32, Some {arr_elttype = TFloat32; arr_memspace = Global})];
-      kern_locals = [];
-      kern_body = SEmpty;
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
     }
   in
   assert (kernel_uses_float64 k_f32 = false) ;
@@ -332,28 +322,18 @@ let test_kernel_uses_float64_params () =
 let test_kernel_uses_float64_types () =
   let k_with_f64_type : kernel =
     {
+      default_kernel with
       kern_name = "test";
-      kern_params = [];
-      kern_locals = [];
-      kern_body = SEmpty;
       kern_types = [("point", [("x", TFloat64); ("y", TFloat64)])];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
     }
   in
   assert (kernel_uses_float64 k_with_f64_type = true) ;
 
   let k_with_f32_type : kernel =
     {
+      default_kernel with
       kern_name = "test";
-      kern_params = [];
-      kern_locals = [];
-      kern_body = SEmpty;
       kern_types = [("point", [("x", TFloat32); ("y", TFloat32)])];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
     }
   in
   assert (kernel_uses_float64 k_with_f32_type = false) ;
@@ -363,14 +343,9 @@ let test_kernel_uses_float64_types () =
 let test_kernel_uses_float64_variants () =
   let k_with_f64_variant : kernel =
     {
+      default_kernel with
       kern_name = "test";
-      kern_params = [];
-      kern_locals = [];
-      kern_body = SEmpty;
-      kern_types = [];
       kern_variants = [("number", [("Float", [TFloat64])])];
-      kern_funcs = [];
-      kern_native_fn = None;
     }
   in
   assert (kernel_uses_float64 k_with_f64_variant = true) ;
@@ -445,33 +420,17 @@ let test_helper_uses_atomics () =
 let test_kernel_uses_atomics_direct () =
   let k_direct : kernel =
     {
+      default_kernel with
       kern_name = "test";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SExpr
           (EIntrinsic
              ([], "atomic_add_int32", [EConst (CInt32 0l); EConst (CInt32 1l)]));
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
     }
   in
   assert (kernel_uses_atomics k_direct = true) ;
 
-  let k_none : kernel =
-    {
-      kern_name = "test";
-      kern_params = [];
-      kern_locals = [];
-      kern_body = SEmpty;
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-    }
-  in
+  let k_none : kernel = {default_kernel with kern_name = "test"} in
   assert (kernel_uses_atomics k_none = false) ;
   print_endline "  kernel_uses_atomics direct: OK"
 
@@ -492,16 +451,7 @@ let test_kernel_uses_atomics_in_helper () =
     }
   in
   let k_helper_atomic : kernel =
-    {
-      kern_name = "test";
-      kern_params = [];
-      kern_locals = [];
-      kern_body = SEmpty;
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [hf_atomic];
-      kern_native_fn = None;
-    }
+    {default_kernel with kern_name = "test"; kern_funcs = [hf_atomic]}
   in
   assert (kernel_uses_atomics k_helper_atomic = true) ;
   print_endline "  kernel_uses_atomics via helper: OK"
@@ -537,14 +487,9 @@ let test_kernel_uses_atomics_in_assign_lvalue () =
   in
   let k_lvalue_atomic : kernel =
     {
+      default_kernel with
       kern_name = "test";
-      kern_params = [];
-      kern_locals = [];
       kern_body = SAssign (LArrayElem ("arr", atomic_idx), EConst (CInt32 5l));
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
     }
   in
   assert (kernel_uses_atomics k_lvalue_atomic = true) ;
@@ -563,14 +508,9 @@ let test_kernel_uses_atomics_snative () =
      here". Pre-fix this returned false unconditionally. *)
   let k_native : kernel =
     {
+      default_kernel with
       kern_name = "test";
-      kern_params = [];
-      kern_locals = [];
       kern_body = SNative {gpu = dummy_native_gpu; ocaml = dummy_native_ocaml};
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
     }
   in
   assert (kernel_uses_atomics k_native = true) ;
@@ -617,32 +557,16 @@ let test_kernel_uses_int_mod_in_record_field_lvalue () =
   let mod_idx = EBinop (Mod, EConst (CInt32 7l), EConst (CInt32 2l)) in
   let k_lvalue_mod : kernel =
     {
+      default_kernel with
       kern_name = "test";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LRecordField (LArrayElem ("arr", mod_idx), "field"),
             EConst (CInt32 5l) );
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
     }
   in
   assert (kernel_uses_int_mod k_lvalue_mod = true) ;
-  let k_none : kernel =
-    {
-      kern_name = "test";
-      kern_params = [];
-      kern_locals = [];
-      kern_body = SEmpty;
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-    }
-  in
+  let k_none : kernel = {default_kernel with kern_name = "test"} in
   assert (kernel_uses_int_mod k_none = false) ;
   print_endline "  kernel_uses_int_mod via record-field lvalue: OK"
 
@@ -726,32 +650,16 @@ let test_kernel_uses_copysign_in_record_field_lvalue () =
   in
   let k_lvalue_cs : kernel =
     {
+      default_kernel with
       kern_name = "test";
-      kern_params = [];
-      kern_locals = [];
       kern_body =
         SAssign
           ( LRecordField (LArrayElem ("arr", cs_idx), "field"),
             EConst (CInt32 5l) );
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
     }
   in
   assert (kernel_uses_copysign k_lvalue_cs = true) ;
-  let k_none : kernel =
-    {
-      kern_name = "test";
-      kern_params = [];
-      kern_locals = [];
-      kern_body = SEmpty;
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
-    }
-  in
+  let k_none : kernel = {default_kernel with kern_name = "test"} in
   assert (kernel_uses_copysign k_none = false) ;
   print_endline "  kernel_uses_copysign via record-field lvalue: OK"
 
@@ -773,16 +681,7 @@ let test_kernel_uses_copysign_in_helper () =
     }
   in
   let k : kernel =
-    {
-      kern_name = "test";
-      kern_params = [];
-      kern_locals = [];
-      kern_body = SEmpty;
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [hf_cs];
-      kern_native_fn = None;
-    }
+    {default_kernel with kern_name = "test"; kern_funcs = [hf_cs]}
   in
   assert (kernel_uses_copysign k = true) ;
   print_endline "  kernel_uses_copysign via helper: OK"
@@ -795,16 +694,7 @@ let test_kernel_uses_copysign_in_helper () =
     non-finite-free (native code carries its own literals). *)
 
 let empty_kernel body : kernel =
-  {
-    kern_name = "test";
-    kern_params = [];
-    kern_locals = [];
-    kern_body = body;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
-  }
+  {default_kernel with kern_name = "test"; kern_body = body}
 
 (** {1 Float16 detection Tests}
 
@@ -929,14 +819,10 @@ let test_kernel_uses_float16 () =
   in
   let kern_with params body : kernel =
     {
+      default_kernel with
       kern_name = "test";
       kern_params = params;
-      kern_locals = [];
       kern_body = body;
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
     }
   in
   (* Positive: an f16 vector parameter. This is the case that must switch the
@@ -995,14 +881,10 @@ let test_kernel_uses_float16 () =
 
 let feature_kern params body : kernel =
   {
+    default_kernel with
     kern_name = "test";
     kern_params = params;
-    kern_locals = [];
     kern_body = body;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 let test_feature_api_agrees_with_aliases () =

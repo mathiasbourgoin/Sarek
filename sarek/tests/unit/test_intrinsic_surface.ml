@@ -329,17 +329,13 @@ let f32_call_kernel name arity : Sarek_ir_types.kernel =
   in
   let arg = EArrayRead ("a", EVar idx) in
   {
+    default_kernel with
     kern_name = "ffi_fallback_" ^ name;
     kern_params =
       [
         DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
         DParam (b, Some {arr_elttype = TFloat32; arr_memspace = Global});
       ];
-    kern_locals = [];
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
     kern_body =
       SLet
         ( idx,

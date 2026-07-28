@@ -81,19 +81,15 @@ let kernel_calling ~name ~arity =
   let arg = EArrayRead ("a", EConst (CInt32 0l)) in
   let args = List.init arity (fun _ -> arg) in
   {
+    default_kernel with
     kern_name = "arm_parity_probe";
     kern_params =
       [
         DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
         DParam (c, Some {arr_elttype = TFloat32; arr_memspace = Global});
       ];
-    kern_locals = [];
     kern_body =
       SAssign (LArrayElem ("c", EConst (CInt32 0l)), EIntrinsic ([], name, args));
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 let backends =

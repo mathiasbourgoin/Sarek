@@ -788,14 +788,11 @@ let make_var name ty =
 
 let make_kernel ?(params = []) ?(locals = []) ?(body = SEmpty) name =
   {
+    default_kernel with
     kern_name = name;
     kern_params = params;
     kern_locals = locals;
     kern_body = body;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 (* AC-1: DShared TFloat32 static → .shared .align 4 .b32 + st.shared.f32 *)

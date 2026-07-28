@@ -464,13 +464,13 @@ let f64_scale_kernel () =
   let inp = make_var "inp" (TVec TFloat64) in
   let idx = make_var "idx" TInt32 in
   {
+    default_kernel with
     kern_name = "f64_scale";
     kern_params =
       [
         DParam (out, Some {arr_elttype = TFloat64; arr_memspace = Global});
         DParam (inp, Some {arr_elttype = TFloat64; arr_memspace = Global});
       ];
-    kern_locals = [];
     kern_body =
       SLet
         ( idx,
@@ -479,10 +479,6 @@ let f64_scale_kernel () =
             ( LArrayElem ("out", EVar idx),
               EBinop (Mul, EArrayRead ("inp", EVar idx), EConst (CFloat64 2.0))
             ) );
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 (** f64 reachable ONLY through a constant and an f64-typed local — the shape the
@@ -493,10 +489,10 @@ let f64_local_kernel () =
   let x = make_var "x" TFloat64 in
   let idx = make_var "idx" TInt32 in
   {
+    default_kernel with
     kern_name = "f64_local";
     kern_params =
       [DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global})];
-    kern_locals = [];
     kern_body =
       SLet
         ( idx,
@@ -506,10 +502,6 @@ let f64_local_kernel () =
               EConst (CFloat64 0.1),
               SAssign (LArrayElem ("out", EVar idx), ECast (TFloat32, EVar x))
             ) );
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 let expect_metal_kernel_refused label gen =
@@ -543,13 +535,13 @@ let test_metal_still_accepts_f32 () =
   let idx = make_var "idx" TInt32 in
   let k =
     {
+      default_kernel with
       kern_name = "f32_scale";
       kern_params =
         [
           DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
           DParam (inp, Some {arr_elttype = TFloat32; arr_memspace = Global});
         ];
-      kern_locals = [];
       kern_body =
         SLet
           ( idx,
@@ -558,10 +550,6 @@ let test_metal_still_accepts_f32 () =
               ( LArrayElem ("out", EVar idx),
                 EBinop (Mul, EArrayRead ("inp", EVar idx), EConst (CFloat32 2.0))
               ) );
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
     }
   in
   ignore (Sarek_ir_metal.generate k) ;

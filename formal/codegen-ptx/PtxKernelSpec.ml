@@ -98,6 +98,7 @@ let ex_st = {regs = ex_empty_regs; tc = ex_zero_tc; mem = ex_zero_mem}
 
 let ex_k_no_shared =
   {
+    default_kernel with
     kern_name =
       String
         ( Ascii (false, true, true, true, false, true, true, false),
@@ -151,7 +152,6 @@ let ex_k_no_shared =
                                               true,
                                               false ),
                                           EmptyString ) ) ) ) ) ) ) ) );
-    kern_params = [];
     kern_shared = [];
     kern_body = ISEmpty;
   }
@@ -1138,6 +1138,7 @@ let ex_shared_decl =
 
 let ex_k_with_shared =
   {
+    default_kernel with
     kern_name =
       String
         ( Ascii (true, true, true, false, true, true, true, false),
@@ -1212,7 +1213,6 @@ let ex_k_with_shared =
                                                       false ),
                                                   EmptyString ) ) ) ) ) ) ) ) )
             ) );
-    kern_params = [];
     kern_shared = ex_shared_decl :: [];
     kern_body = ISEmpty;
   }

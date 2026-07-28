@@ -59,6 +59,7 @@ let demo_vector_add_ptx () : string =
   in
   let k =
     {
+      default_kernel with
       kern_name = "vector_add";
       kern_params =
         [
@@ -67,12 +68,7 @@ let demo_vector_add_ptx () : string =
           DParam (c, Some {arr_elttype = TFloat32; arr_memspace = Global});
           DParam (n, None);
         ];
-      kern_locals = [];
       kern_body = body;
-      kern_types = [];
-      kern_variants = [];
-      kern_funcs = [];
-      kern_native_fn = None;
     }
   in
   generate k

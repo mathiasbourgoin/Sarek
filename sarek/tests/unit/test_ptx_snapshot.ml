@@ -38,6 +38,7 @@ let make_vector_add_kernel () : kernel =
             None ) )
   in
   {
+    default_kernel with
     kern_name = "vector_add";
     kern_params =
       [
@@ -46,12 +47,7 @@ let make_vector_add_kernel () : kernel =
         DParam (c, Some {arr_elttype = TFloat32; arr_memspace = Global});
         DParam (n, None);
       ];
-    kern_locals = [];
     kern_body = body;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
   }
 
 (** Check that [ptx] contains [marker]; fail with a readable message if not. *)
@@ -127,14 +123,11 @@ let make_var name ty =
 
 let base_kernel name params body funcs =
   {
+    default_kernel with
     kern_name = name;
     kern_params = params;
-    kern_locals = [];
     kern_body = body;
-    kern_types = [];
-    kern_variants = [];
     kern_funcs = funcs;
-    kern_native_fn = None;
   }
 
 (** Shared-array reduction shape: let%shared sdata = 256 lowers to SLet (sdata,

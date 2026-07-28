@@ -35,16 +35,7 @@ let make_var ?(mut = false) name ty =
   {var_name = name; var_id = 0; var_type = ty; var_mutable = mut}
 
 let base_kernel name params body =
-  {
-    kern_name = name;
-    kern_params = params;
-    kern_locals = [];
-    kern_body = body;
-    kern_types = [];
-    kern_variants = [];
-    kern_funcs = [];
-    kern_native_fn = None;
-  }
+  {default_kernel with kern_name = name; kern_params = params; kern_body = body}
 
 let vec name ty = DParam (make_var name (TVec ty), None)
 
