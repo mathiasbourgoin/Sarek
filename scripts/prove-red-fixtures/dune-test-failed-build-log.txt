@@ -156,7 +156,7 @@ This run has ID `SW4WQ1BS'.
   [OK]          subgroup ABI                   0   components per invocation.
   [OK]          subgroup ABI                   1   config fits subgroup.
 
-Full test results in `/mnt/ssd-external-2to/spoc-pr-wt/d157/_build/default/spoc/ir/test/_build/_tests/Sarek_coopmat'.
+Full test results in `/workspace/sarek/_build/default/spoc/ir/test/_build/_tests/Sarek_coopmat'.
 Test Successful in 0.001s. 13 tests run.
   float32 paths expose exactly the 33-entry set: OK
   Float64 paths expose exactly the 33-entry set: OK
@@ -215,7 +215,7 @@ This run has ID `T2O2N6S1'.
   [OK]          backends            0   multiple backends.
   [OK]          exceptions          0   exception handling.
 
-Full test results in `/mnt/ssd-external-2to/spoc-pr-wt/d157/_build/default/spoc/framework/test/_build/_tests/Backend_error'.
+Full test results in `/workspace/sarek/_build/default/spoc/framework/test/_build/_tests/Backend_error'.
 Test Successful in 0.000s. 5 tests run.
 Testing `Kernel_args'.
 This run has ID `G5VON1FX'.
@@ -229,7 +229,7 @@ This run has ID `G5VON1FX'.
   [OK]          validation             2   unexpected index beyond range.
   [OK]          validation             3   negative expected_count.
 
-Full test results in `/mnt/ssd-external-2to/spoc-pr-wt/d157/_build/default/spoc/framework/test/_build/_tests/Kernel_args'.
+Full test results in `/workspace/sarek/_build/default/spoc/framework/test/_build/_tests/Kernel_args'.
 Test Successful in 0.000s. 8 tests run.
 Testing `Compile_cache'.
 This run has ID `5W3BVGVQ'.
@@ -241,7 +241,7 @@ This run has ID `5W3BVGVQ'.
   [OK]          options               0   option order canonicalized.
   [OK]          options               1   different option values -> differen...
 
-Full test results in `/mnt/ssd-external-2to/spoc-pr-wt/d157/_build/default/spoc/framework/test/_build/_tests/Compile_cache'.
+Full test results in `/workspace/sarek/_build/default/spoc/framework/test/_build/_tests/Compile_cache'.
 Test Successful in 0.000s. 6 tests run.
 Testing `Guarded_cache'.
 This run has ID `X8967HK0'.
@@ -256,7 +256,7 @@ This run has ID `X8967HK0'.
   [OK]          concurrency          7   a raising destroy on a lost race sti...
   [OK]          concurrency          8   red demo (unguarded, opt-in).
 
-Full test results in `/mnt/ssd-external-2to/spoc-pr-wt/d157/_build/default/spoc/framework/test/_build/_tests/Guarded_cache'.
+Full test results in `/workspace/sarek/_build/default/spoc/framework/test/_build/_tests/Guarded_cache'.
 Test Successful in 0.061s. 9 tests run.
 Testing `Cache_hooks'.
 This run has ID `6230ATGN'.
@@ -267,5 +267,5 @@ This run has ID `6230ATGN'.
   [OK]          notification                            1   a failing listene...
   [OK]          around_clear failure isolation          0   a failing listene...
 
-Full test results in `/mnt/ssd-external-2to/spoc-pr-wt/d157/_build/default/spoc/framework/test/_build/_tests/Cache_hooks'.
+Full test results in `/workspace/sarek/_build/default/spoc/framework/test/_build/_tests/Cache_hooks'.
 Test Successful in 0.000s. 5 tests run.

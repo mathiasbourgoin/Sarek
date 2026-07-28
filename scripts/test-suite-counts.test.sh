@@ -247,7 +247,7 @@ FAILED_BUILD_LOG="$FIXTURES/dune-test-failed-build-log.txt"
 [ -f "$FAILED_BUILD_LOG" ] || {
   echo "  FAIL: fixture missing: $FAILED_BUILD_LOG"; fail=$((fail + 1)); }
 
-# The fixture is a REAL log, not a written one: the complete unedited output of
+# The fixture is a REAL log, not a written one: the complete output of
 #   dune test spoc/ir spoc/registry spoc/framework --force -j 1
 # with one unbound identifier appended to
 # spoc/registry/test/test_sarek_registry.ml. Dune exited 1; six suites ran
@@ -369,6 +369,31 @@ signal_prefix="$(/usr/bin/grep -oE '[0-9]+ tests? run' "$SIGNAL_LOG" \
   | /usr/bin/awk '{s+=$1} END {print s+0" "NR}')"
 check "signal fixture still yields a plausible total (46, 6)" \
   "$signal_prefix" "46 6"
+
+# --- fixture hygiene: the captures are committed to a PUBLIC repository -----
+#
+# Every fixture here is a real capture, and a raw capture names the machine it
+# was taken on -- `/home/<developer>/...` in dune's shared-cache header and in
+# the absolute compiler path of each `Running[N]:` line, and the absolute
+# worktree path in `Workspace root root:` and every `Full test results in`
+# line. That is a leak in a committed artefact, and it is a leak that comes
+# BACK every time somebody regenerates a fixture with the documented command.
+#
+# So the sanitisation is asserted, not remembered. The rule is stated as an
+# exact set rather than a count: the only /home, /mnt or /Users path root that
+# may appear in any committed fixture is the `/home/user` placeholder. The
+# workspace placeholder (/workspace/sarek) is deliberately outside all three
+# roots, so it does not have to be enumerated here and cannot be confused with
+# a real one.
+#
+# This is a hygiene assertion and NOT a marker assertion, which is the whole
+# reason it can be stated this bluntly: none of dune's three failure markers
+# contains a path, so no sanitisation this check permits can reach one. The
+# marker assertions directly above and below are what hold that half.
+fixture_path_roots="$(/usr/bin/grep -hoE '/(home|mnt|Users)/[A-Za-z0-9_.-]+' \
+  "$FIXTURES"/*.txt | /usr/bin/sort -u | /usr/bin/tr '\n' ' ')"
+check "no fixture leaks a developer path root (only the /home/user placeholder)" \
+  "$fixture_path_roots" "/home/user "
 
 # --- the two \d+ fields, asserted BEHAVIOURALLY -----------------------------
 #

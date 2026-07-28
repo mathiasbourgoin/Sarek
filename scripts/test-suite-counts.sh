@@ -569,7 +569,7 @@ python3 -c "$PYPROG" "$SRC" "$MIN_SUITES" "$RUNNER_EXIT"
 # answer from 0 on a log that gates 1-3 are content with.
 #
 # The fixture `dune-test-failed-build-log.txt` is a real log, not a written
-# one. It is the complete, unedited output of
+# one. It is the complete output of
 #
 #     dune test spoc/ir spoc/registry spoc/framework --force -j 1
 #
@@ -621,6 +621,25 @@ python3 -c "$PYPROG" "$SRC" "$MIN_SUITES" "$RUNNER_EXIT"
 #
 # Its counts are the same plausible-looking 46 cases across 6 suites, 0 FAIL,
 # so it exercises the defect exactly as the other three do.
+#
+# THE ONE EDIT MADE TO ALL FOUR CAPTURES
+#
+# Absolute paths are rewritten to placeholders, because these files are
+# committed to a public repository and a raw capture carries the capturing
+# machine's username and worktree layout:
+#
+#     <workspace root>            -> /workspace/sarek
+#     <opam switch prefix>        -> /workspace/sarek/_opam
+#     <dune shared-cache root>    -> /home/user/.cache/dune
+#
+# The substitution is path-only and line-preserving: every line count, every
+# suite epilogue and every one of dune's own failure markers -- `^Error(?::|
+# \()`, `^Command [N] exited with code N:`, `^Command [N] got signal SIG:` --
+# is byte-identical to the capture. None of the three markers contains a path,
+# which is why sanitising cannot reach them; the covering test asserts each
+# one's presence by regex against the committed files, so a sanitiser that
+# damaged one would be caught there rather than here. When regenerating a
+# fixture, re-apply the same three substitutions.
 #
 # BEGIN prove-red-spec
 # copy: scripts/test-suite-counts.sh
