@@ -157,7 +157,12 @@ jobs:
           # commit because Alcotest singularises ("1 test run.") and a
           # plural-only grep drops those suites. "0 FAIL of N" is only as
           # trustworthy as N, so the counting rule gets a covering test like
-          # any other gate.
+          # any other gate. backlog-157 added the case that N is worth nothing
+          # at all when the run did not finish: a `dune test` that died on a
+          # compile error measured 1692 cases across 116 suites here, against a
+          # true 1697/117, 0 FAIL, exit 0. Its fixture is a real log of that
+          # run, so this step is also what notices if dune stops reporting its
+          # own failures the way the scan expects.
           ./scripts/test-suite-counts.test.sh
           # #137. Red-path coverage for the license guard. Its pre-#137 finder
           # ended in `2>/dev/null`, so deleting a whole declared root made it

@@ -71,8 +71,61 @@
 # --min-suites (default 10) the counts are printed *and* the exit is 3, so the
 # caller sees what was parsed and is still told not to quote it.
 #
+# AND IT REFUSES TO ANSWER FOR A RUN THAT DID NOT FINISH (backlog-157)
+#
+# The floor is not enough, and the measurement that says so was taken on this
+# tree. A clean `dune test --force` here is 1697 cases across 117 suites, dune
+# exit 0. Append one unbound identifier to sarek/tests/unit/test_soa.ml and
+# re-run: dune exits 1 on the compile error, and this script -- the version
+# with all three gates above -- printed
+#
+#     TOTAL    :  1692 cases across 116 suites
+#     FAIL     : 0
+#
+# exit 0. That is 99.7% of the true case count and 99.1% of the true suite
+# count, from a run that did not build. Every gate above is satisfied: the log
+# is not empty, every epilogue in it parses, and 116 clears any floor a real
+# run of this repository could set. The number looks like a number because it
+# very nearly is one.
+#
+# That kills the obvious fix. A floor derived from the true total, or an
+# expected-suite count supplied by the caller, would need a tolerance tighter
+# than one suite in 117 to catch this -- and a tolerance that tight rejects
+# every legitimately scoped run (`dune test spoc/ir`), which is the invocation
+# the floor's own escape hatch, --min-suites 0, exists to serve. An instrument
+# cannot be both.
+#
+# What separates the two cases is not the size of the number. It is whether the
+# process that produced the log finished, and that fact is not in the counts at
+# all. So this script now asks for it twice, from the two places it can be had:
+#
+#   --runner-exit N   the caller states the runner's exit status. The caller
+#                     always knows it and, before backlog-157, always threw it
+#                     away. Non-zero is exit 4 and no counts.
+#
+#   the log itself    dune reports its own failures in the log, unindented and
+#                     at column 0 (`Error:`, `Command exited with code N.`,
+#                     `Command got signal`). This scan is UNCONDITIONAL,
+#                     because --runner-exit cannot be required: in the pipe
+#                     form this header recommends first,
+#                     `dune test --force 2>&1 | scripts/test-suite-counts.sh`,
+#                     the caller has no exit status to pass yet -- PIPESTATUS
+#                     only exists after the pipeline it would have to be inside
+#                     of. A flag that the advertised invocation structurally
+#                     cannot supply is not a flag that can be mandatory.
+#
+# Neither alone is sufficient and that is why both are here. The marker scan
+# misses a runner killed by a signal, a timeout, or an OOM kill, none of which
+# print anything; --runner-exit misses every caller who has not been told about
+# it, which on the day it lands is all of them.
+#
+# The scan's false-positive risk was measured, not asserted: on the 4793-line
+# log of the clean run above, `^Error: `, `^Command exited with code` and
+# `^Command got signal` match zero lines between them. Alcotest indents its
+# case lines and dune captures test stdout, so column 0 is dune's own voice.
+#
 # Usage:
-#   scripts/test-suite-counts.sh [--min-suites N] <logfile>
+#   scripts/test-suite-counts.sh [--min-suites N] [--runner-exit N] <logfile>
 #   dune test --force 2>&1 | scripts/test-suite-counts.sh [--min-suites N]
 #
 #   --min-suites N   floor below which a total is treated as an invocation
@@ -80,17 +133,33 @@
 #                    counting a deliberately small log, as the covering test
 #                    does.
 #
+#   --runner-exit N  exit status of the command that produced the log. Non-zero
+#                    means the run did not complete, so no counts are printed
+#                    and the exit is 4. Pass it whenever you have it:
+#                        dune test --force >log 2>&1; rc=$?
+#                        scripts/test-suite-counts.sh --runner-exit "$rc" log
+#                    In the pipe form use `${PIPESTATUS[0]}` afterwards, or
+#                    redirect to a file and use the two-line form above.
+#
 # Exit codes:
 #   0  counts printed and trustworthy
 #   2  usage error: no such file, no recognisable test output, or a log format
 #      this script can no longer parse. NOT a result.
 #   3  counts printed but below the plausibility floor. NOT a result either.
+#   4  the run that produced this log did not complete -- the caller said so
+#      via --runner-exit, or the log carries the runner's own failure report.
+#      No counts are printed. NOT a result, and distinct from 2 and 3 because
+#      the remedy is different: fix the build, do not re-invoke the counter.
 #
 # NOTE: `dune test` without --force prints nothing for suites whose results are
 # cached, so an incremental run will under-report. Always --force for a total.
 set -euo pipefail
 
 MIN_SUITES=10
+# Empty means "the caller did not say". That is not the same as 0, and the two
+# must not collapse: 0 is an assertion that the run completed, empty is the
+# absence of one. Only the marker scan defends the second case.
+RUNNER_EXIT=""
 SRC=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -103,16 +172,28 @@ while [ $# -gt 0 ]; do
       MIN_SUITES="${1#--min-suites=}"
       shift
       ;;
+    --runner-exit)
+      [ $# -ge 2 ] || { echo "ERROR: --runner-exit needs a value" >&2; exit 2; }
+      RUNNER_EXIT="$2"
+      shift 2
+      ;;
+    --runner-exit=*)
+      RUNNER_EXIT="${1#--runner-exit=}"
+      shift
+      ;;
     -h|--help)
       cat <<'USAGE'
-usage: scripts/test-suite-counts.sh [--min-suites N] <logfile>
+usage: scripts/test-suite-counts.sh [--min-suites N] [--runner-exit N] <logfile>
    or: dune test --force 2>&1 | scripts/test-suite-counts.sh [--min-suites N]
 
   --min-suites N   plausibility floor (default 10); 0 disables it.
+  --runner-exit N  exit status of the command that produced the log. Non-zero
+                   means the run did not complete: no counts, exit 4.
 
 exit 0  counts printed and trustworthy
 exit 2  usage error, or no recognisable test output -- NOT a result
 exit 3  counts printed but below the plausibility floor -- NOT a result
+exit 4  the run that produced the log did not complete -- NOT a result
 USAGE
       exit 0
       ;;
@@ -135,6 +216,14 @@ done
 case "$MIN_SUITES" in
   ''|*[!0-9]*) echo "ERROR: --min-suites must be a non-negative integer, got: $MIN_SUITES" >&2; exit 2 ;;
 esac
+
+# Only validated when given; "" is the sentinel for "not given" and is passed
+# through to the parser as such.
+if [ -n "$RUNNER_EXIT" ]; then
+  case "$RUNNER_EXIT" in
+    *[!0-9]*) echo "ERROR: --runner-exit must be a non-negative integer, got: $RUNNER_EXIT" >&2; exit 2 ;;
+  esac
+fi
 
 SRC="${SRC:--}"
 if [ "$SRC" != "-" ] && [ ! -f "$SRC" ]; then
@@ -170,7 +259,81 @@ import sys
 
 src = sys.argv[1]
 min_suites = int(sys.argv[2])
-text = sys.stdin.read() if src == "-" else open(src, errors="replace").read()
+runner_exit = sys.argv[3]  # "" when the caller did not say
+
+# newline="" / .buffer: NO universal-newline translation, and that is not
+# incidental. Python's text mode rewrites a bare \r to \n, and this repository's
+# logs are full of bare \r -- qcheck's progress bar redraws one line per
+# generation. The first draft of gate 0 read the log in text mode and reported
+# the compile error in the 4793-line sample at "line 301"; grep says 240, and
+# the difference is exactly the 61 carriage returns before it. Worse than a
+# wrong number in a message: translation also manufactures line starts, so a
+# `^`-anchored pattern would match mid-progress-bar text that dune never
+# emitted at column 0, which is the entire premise of the scan below.
+if src == "-":
+    text = sys.stdin.buffer.read().decode(errors="replace")
+else:
+    text = open(src, errors="replace", newline="").read()
+
+what = "stdin" if src == "-" else src
+
+# GATE 0 -- did the run that produced this log actually finish? (backlog-157)
+#
+# First, because it is the only gate that can be true of a log every other gate
+# accepts. A `dune test` that dies on a compile error still emits, verbatim and
+# parseable, the epilogue of every suite that ran before the failure: on this
+# tree that measured 1692 cases across 116 suites out of a true 1697/117, with
+# 0 FAIL and exit 0. Gates 1-3 have nothing to object to. The missing fact is
+# not in the counts.
+#
+# Two independent sources for it, because neither covers the other's blind
+# spot. See the header: --runner-exit cannot be mandatory (the pipe form has no
+# exit status to give), and the marker scan cannot see a signal or an OOM kill.
+if runner_exit not in ("", "0"):
+    print(
+        f"ERROR: the runner exited {runner_exit}, so {what} is a log of a run "
+        "that did not complete.",
+        file=sys.stderr,
+    )
+    print(
+        "       The suites that did run would parse perfectly and the total\n"
+        "       would look like a total -- but an unknown number of suites\n"
+        "       never ran, and '0 FAIL' over an unknown denominator is not a\n"
+        "       measurement. No counts are printed. Fix the run, then count.",
+        file=sys.stderr,
+    )
+    sys.exit(4)
+
+# Dune reports its own failures at column 0; Alcotest indents its case lines and
+# dune captures test stdout, so an unindented match is dune's voice, not a
+# test's. Measured on a 4793-line log of a clean run: zero matches.
+runner_failure = re.search(
+    r"^(?:Error: .*|Command exited with code \d+\.|Command got signal .*|"
+    r"Had \d+ errors?.*)$",
+    text,
+    re.MULTILINE,
+)
+if runner_failure is not None:
+    line_no = text.count("\n", 0, runner_failure.start()) + 1
+    quoted = runner_failure.group(0)
+    if len(quoted) > 100:
+        quoted = quoted[:97] + "..."
+    print(
+        f"ERROR: {what} is a log of a run that did not complete -- the runner "
+        f"reported its own failure at line {line_no}:",
+        file=sys.stderr,
+    )
+    print(f"           {quoted}", file=sys.stderr)
+    print(
+        "       Every suite that ran before that point parses perfectly, so a\n"
+        "       count here looks like a result and is not one: an unknown\n"
+        "       number of suites never ran. No counts are printed.\n"
+        "       If this really is test output and not the runner's, the\n"
+        "       pattern in scripts/test-suite-counts.sh needs narrowing --\n"
+        "       do not widen the caller's tolerance instead.",
+        file=sys.stderr,
+    )
+    sys.exit(4)
 
 # Alcotest: "Test Successful in 0.004s. 61 tests run." and the SINGULAR
 # "1 test run." / "0 test run.". Matching `tests?` is the whole point.
@@ -201,7 +364,6 @@ epilogues = len(re.findall(r"Test Successful in", text)) + len(
 # an empty log. Only when NOTHING matched is the input simply not a test log.
 suites = len(alco) + len(qcheck)
 if epilogues == 0 and suites == 0:
-    what = "stdin" if src == "-" else src
     print(f"ERROR: no test-suite output recognised in {what}.", file=sys.stderr)
     print(
         "       This is not a result of zero cases -- it is the absence of a\n"
@@ -250,7 +412,7 @@ if suites < min_suites:
     sys.exit(3)
 PYEOF
 )
-python3 -c "$PYPROG" "$SRC" "$MIN_SUITES"
+python3 -c "$PYPROG" "$SRC" "$MIN_SUITES" "$RUNNER_EXIT"
 
 # ---------------------------------------------------------------------------
 # Red-path evidence, executed by scripts/prove-red.sh (backlog-151).
@@ -266,10 +428,27 @@ python3 -c "$PYPROG" "$SRC" "$MIN_SUITES"
 # `below-floor` pins exit 3 specifically. This script's contract distinguishes
 # 2 (not a result) from 3 (a result below the plausibility floor), and an
 # assertion that accepted "non-zero" would not notice the two being confused.
+# `failed-build-log` and `runner-exit-nonzero` pin 4 for the same reason, and
+# with more at stake: 4 is the code whose whole purpose is to be a DIFFERENT
+# answer from 0 on a log that gates 1-3 are content with.
+#
+# The fixture `dune-test-failed-build-log.txt` is a real log, not a written
+# one. It is the complete, unedited output of
+#
+#     dune test spoc/ir spoc/registry spoc/framework --force -j 1
+#
+# on this tree with one unbound identifier appended to
+# spoc/registry/test/test_sarek_registry.ml. Dune exited 1. Six suites ran and
+# their epilogues are intact: this script, before backlog-157, read it as
+# "46 cases across 6 suites, 0 FAIL", exit 0. Regenerating it is that one
+# command; nothing about it is hand-authored, which is the point -- a
+# hand-written failure log is a guess at what dune prints, and the gate below
+# is a claim about what dune actually prints.
 #
 # BEGIN prove-red-spec
 # copy: scripts/test-suite-counts.sh
 # copy: scripts/prove-red-fixtures/dune-test-sample-log.txt
+# copy: scripts/prove-red-fixtures/dune-test-failed-build-log.txt
 # invoke: scripts/test-suite-counts.sh
 # baseline-argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0
 # baseline-exit: 0
@@ -293,5 +472,17 @@ python3 -c "$PYPROG" "$SRC" "$MIN_SUITES"
 #   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt
 #   expect-exit: 3
 #   expect-message: below the plausibility floor
+#
+# mutation: failed-build-log
+#   desc: a genuine `dune test` log from a build that failed -- dune exited 1, six suites had already run and every epilogue parses. This is backlog-157: gates 1-3 are all satisfied and the pre-fix answer was "46 cases across 6 suites, 0 FAIL", exit 0. Exit 4, no counts.
+#   argv: scripts/prove-red-fixtures/dune-test-failed-build-log.txt --min-suites 0
+#   expect-exit: 4
+#   expect-message: a log of a run that did not complete
+#
+# mutation: runner-exit-nonzero
+#   desc: the caller states the runner's exit status and it is not zero. Same clean log as the baseline, which passes every other gate -- so this pins the flag alone, with no help from the marker scan. It is the half that covers a runner killed by a signal or a timeout, which prints no marker at all.
+#   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0 --runner-exit 1
+#   expect-exit: 4
+#   expect-message: the runner exited 1
 # END prove-red-spec
 # ---------------------------------------------------------------------------
