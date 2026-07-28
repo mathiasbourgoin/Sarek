@@ -87,6 +87,59 @@ let copy_env env =
        declared it and is never shared between threads. *)
   }
 
+(** Environment for a HELPER CALL: the callee's own scope, not a copy of the
+    caller's.
+
+    [copy_env] duplicates [vars]/[vars_by_name], which is right for a nested
+    block — a block sees its enclosing locals — and wrong for a function call:
+    carrying the caller's bindings in makes the callee's lookups depend on ids
+    and names not in its scope, and since [lookup_var] resolves by id before
+    name, a caller binding can answer a callee reference.
+
+    "A helper sees only its parameters" would be the clean statement and it is
+    NOT true of this language: a module-level constant ([MConst]) is declared
+    before the helpers and IS lexically visible in their bodies, yet lowering
+    emits it as an [SLet] at the head of the KERNEL body — into [vars], the one
+    table this does not alias. Such a kernel is broken on both sides of this
+    change today (it fails on the base revision too, for an unrelated
+    positional-id reason), so nothing regresses here — but the scope model below
+    is narrower than the surface language, and the two must be reconciled BEFORE
+    the [hf_params] follow-up lands: that fix would turn a masked failure into a
+    hard [Unbound_variable] which [copy_env] was accidentally covering.
+
+    No test distinguishes this from copy semantics: reverting it leaves the
+    whole suite green, measured by two independent review passes. That is not
+    because it is decoration — it is the PRECONDITION that makes [get_array]'s
+    new precedence sound. That lookup consults [vars_by_name] BEFORE [arrays] so
+    a helper's formal shadows a kernel array of the same name; under copy
+    semantics [vars_by_name] also holds the CALLER's locals, so the same
+    precedence would let a caller binding answer a lookup that should reach the
+    kernel's array. The two changes are one change and land together.
+
+    No test separates them because a caller local holding an array value is not
+    expressible today: kernel vectors live in [arrays], and a [let rec] in the
+    kernel body — which could close over one — is rejected at parse time. So the
+    dependency is argued, not measured, and this says which of the two it is.
+
+    [coopmats] is fresh where [copy_env] copied it. A fragment belongs to the
+    block that declared it, which is right for one the helper declares itself;
+    if coopmat ops in helper bodies ever become expressible against a
+    KERNEL-scope fragment, this must alias [coopmats] too.
+
+    [arrays], [shared] and [funcs] stay ALIASED, deliberately: kernel buffers,
+    block-shared memory and the helper table are genuinely global to the
+    invocation, and [arrays] in particular is shared across threads by design,
+    so it must not be copied. *)
+let callee_env env =
+  {
+    vars = Hashtbl.create 8;
+    vars_by_name = Hashtbl.create 8;
+    arrays = env.arrays;
+    shared = env.shared;
+    funcs = env.funcs;
+    coopmats = Hashtbl.create 4;
+  }
+
 (** Bind a variable in the environment (both by id and name) *)
 let bind_var env (v : var) value =
   Hashtbl.replace env.vars v.var_id value ;

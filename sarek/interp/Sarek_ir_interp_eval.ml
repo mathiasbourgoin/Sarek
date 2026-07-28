@@ -269,35 +269,39 @@ and eval_expr state env expr =
   (* Function application *)
   | EApp (fn_expr, args) -> eval_app state env fn_expr args
 
-(* KNOWN GAP — a vector passed as a HELPER FUNCTION PARAMETER is not reachable
-   here. [eval_app] binds arguments with [bind_var], which writes
-   [vars]/[vars_by_name], while this looks only in [arrays]/[shared] — the
-   KERNEL's own parameters. Indexing a vector parameter inside a helper
-   therefore raises "Unbound variable '<param>' in get_array", so a
-   tail-recursive fold over a vector runs on every backend except the
-   interpreter.
+(* Vector lookup, innermost scope first.
 
-   A [vars_by_name] fallback here does make those folds run, and was written and
-   then deliberately REVERTED, because on its own it trades a loud failure for a
-   silent wrong answer. Helper parameter ids come from the typer's [tparam_id]
-   space while body locals come from the kernel-wide [fresh_id] counter
-   (Sarek_lower_ir.ml), the two spaces overlap, and [lookup_var] resolves by id
-   before name — so a tail-recursion temporary can carry the same id as a
-   parameter and clobber it. Observed with the fallback in place: a
-   single-helper [vsum acc v k n] fold over four 1.0s returns 0 on the
-   interpreter where Vulkan and Native both return 4, with no error. Which
-   kernels are affected depends only on id numbering, so a passing test proves
-   nothing about the next kernel.
+   A vector reaches a helper as a PARAMETER, bound by [eval_app] through
+   [bind_var] — so it lives in [vars_by_name], not in [arrays], which holds the
+   KERNEL's own parameters. That table is therefore consulted FIRST: a helper's
+   formal shadows a kernel array of the same name, which is what lexical scoping
+   means and what every GPU backend does. Checking [arrays] first made the
+   shadowing case silently read the wrong buffer — measured: a helper folding
+   over its formal [src] while the kernel also had a vector [src] folded the
+   KERNEL's array, returning 400 instead of 4 on the interpreter while Vulkan and
+   Native both returned 4.
 
-   The repair is to make helper ids unique, and it lands with the fallback and
-   with the lookup-precedence question it raises (a helper's vector formal that
-   shares a name with a kernel array must shadow it, not lose to it). *)
+   The lookup is read-only and must stay so: [arrays] is aliased rather than
+   copied into a callee scope because kernel buffers are shared across threads by
+   design, so registering a binding there would be a cross-thread write.
+
+   This fallback existed briefly on its own and was reverted, because alone it
+   traded a loud [Unbound_variable] for a silently wrong number: the
+   tail-recursion transform allocated its loop scaffolding from a counter
+   starting at 0, colliding with the typer's parameter ids. That is fixed in
+   Sarek_tailrec_elim.ml, and a helper call now gets its own scope
+   ([callee_env]) rather than a copy of the caller's, so the fallback can be
+   reinstated. *)
 and get_array env name =
-  try Hashtbl.find env.arrays name
-  with Not_found -> (
-    try Hashtbl.find env.shared name
-    with Not_found ->
-      Interp_error.raise_error (Unbound_variable {name; context = "get_array"}))
+  match Hashtbl.find_opt env.vars_by_name name with
+  | Some (VArray data) -> data
+  | _ -> (
+      try Hashtbl.find env.arrays name
+      with Not_found -> (
+        try Hashtbl.find env.shared name
+        with Not_found ->
+          Interp_error.raise_error
+            (Unbound_variable {name; context = "get_array"})))
 
 and eval_app state env fn_expr args =
   match fn_expr with
@@ -309,7 +313,7 @@ and eval_app state env fn_expr args =
       | Some hf ->
           (* Call helper function *)
           let arg_vals = List.map (eval_expr state env) args in
-          let local_env = copy_env env in
+          let local_env = callee_env env in
           List.iter2
             (fun param arg -> bind_var local_env param arg)
             hf.hf_params
