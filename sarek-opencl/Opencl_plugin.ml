@@ -189,13 +189,11 @@ module Backend : Framework_sig.BACKEND = struct
       returning [None]. *)
   let generate_source ?block:_ ?soa_params:_ (ir : Sarek_ir_types.kernel) :
       string option =
-    let source = Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir in
-    (* Add FP64 pragma if kernel uses double precision *)
-    let source =
-      if Sarek_ir_analysis.kernel_uses_float64 ir then
-        "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n\n" ^ source
-      else source
-    in
+    (* The runtime path and the public [generate_with_fp64] re-export below are
+       now the SAME function. They used to be two hand-kept copies of "typedefs
+       + pragma", and the copy behind the re-export had lost the typedefs
+       (backlog-155). One emitter means the divergence cannot recur. *)
+    let source = Sarek_ir_opencl.generate_with_fp64 ~types:ir.kern_types ir in
     Spoc_core.Log.debug Kernel ("OpenCL source:\n" ^ source) ;
     Some source
 
@@ -300,5 +298,9 @@ let find_intrinsic = Opencl_intrinsics.find
 (** Generate OpenCL source with custom types *)
 let generate_with_types = Sarek_ir_opencl.generate_with_types
 
-(** Generate OpenCL source with FP64 extension if needed *)
+(** Generate OpenCL source with the FP64 extension pragma if needed. Takes
+    [~types] (normally [ir.kern_types]) — see
+    {!Sarek_ir_opencl.generate_with_fp64} for why the label is required rather
+    than optional. This is the exact function the backend's own
+    [generate_source] runs. *)
 let generate_with_fp64 = Sarek_ir_opencl.generate_with_fp64

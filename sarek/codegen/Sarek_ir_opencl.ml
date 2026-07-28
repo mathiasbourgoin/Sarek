@@ -1202,9 +1202,24 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
 
   Buffer.contents buf
 
-(** Generate OpenCL source with double precision extension if needed *)
-let generate_with_fp64 (k : kernel) : string =
-  let source = generate k in
+(** Generate OpenCL source with the double-precision extension pragma if the
+    kernel needs it.
+
+    [types] is REQUIRED and not defaulted on purpose. This function used to
+    delegate to {!generate}, which emits no record typedefs and no variant
+    definitions, so a kernel carrying a [[@@sarek.type]] record produced OpenCL
+    C referring to struct types that were never declared (backlog-155). An
+    optional [?types] defaulting to [[]] would have reproduced that silent drop
+    at every call site that forgot it; a required label makes the caller name
+    what it is emitting. Pass [~types:k.kern_types] unless you have a reason not
+    to.
+
+    The pragma is orthogonal to type emission: this is exactly
+    {!generate_with_types} with a prefix, and it is the single OpenCL emission
+    entry point that composes the two. *)
+let generate_with_fp64 ~(types : (string * (string * elttype) list) list)
+    (k : kernel) : string =
+  let source = generate_with_types ~types k in
   if Sarek_ir_analysis.kernel_uses_float64 k then
     "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n\n" ^ source
   else source

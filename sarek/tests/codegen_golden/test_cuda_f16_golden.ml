@@ -563,18 +563,20 @@ let test_deferred_backends_reject_f16 () =
       ~expected_reason:reason_opencl
       (label ^ "/opencl generate_with_types")
       (fun () -> Sarek_ir_opencl.generate_with_types ~types:k.kern_types k) ;
-    (* OpenCL has a THIRD public entry point. It delegates to [generate], so it
-       is covered transitively today — but "covered transitively" is exactly how
-       this repo's previous guard holes were argued, and THIS refusal is what
-       keeps Sarek's f16 narrowing away from IGC, where the ACO barrier is
-       measured to BREAK a correct narrowing (4774/63488, Intel Arc /
-       Meteor Lake-P, docs/fp-contraction-policy.md §11.4). Asserted directly so
-       a future non-delegating implementation cannot reopen it. *)
+    (* OpenCL has a THIRD public entry point. It delegates to
+       [generate_with_types] (it delegated to [generate] until backlog-155, and
+       so emitted no record typedefs), so it is covered transitively today — but
+       "covered transitively" is exactly how this repo's previous guard holes
+       were argued, and THIS refusal is what keeps Sarek's f16 narrowing away
+       from IGC, where the ACO barrier is measured to BREAK a correct narrowing
+       (4774/63488, Intel Arc / Meteor Lake-P,
+       docs/fp-contraction-policy.md §11.4). Asserted directly so a future
+       non-delegating implementation cannot reopen it. *)
     expect_f16_rejected
       ~backend:"OpenCL"
       ~expected_reason:reason_opencl
       (label ^ "/opencl generate_with_fp64")
-      (fun () -> Sarek_ir_opencl.generate_with_fp64 k) ;
+      (fun () -> Sarek_ir_opencl.generate_with_fp64 ~types:k.kern_types k) ;
     (* GLSL's Backend_error tag is "Vulkan" (that is the framework name). *)
     expect_f16_rejected
       ~tag:"Vulkan"

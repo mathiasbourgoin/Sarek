@@ -189,6 +189,24 @@
  (modules test_opencl_gate)
  (libraries sarek.codegen spoc.ir opencl_gate alcotest str unix))
 
+; backlog-155: every public emission entry point that accepts a kernel carrying
+; kern_types must declare those records, not silently route to the typedef-less
+; `generate`. Covers OpenCL's third entry point (generate_with_fp64) and the
+; whole public transpiler surface (all five backends). Each assertion is paired
+; with a control against the typedef-less emitter so it cannot pass vacuously.
+; CPU-only, no device.
+
+(test
+ (name test_typedef_entry_points)
+ (modules test_typedef_entry_points)
+ (libraries
+  sarek.codegen
+  sarek.transpile
+  sarek_stdlib
+  sarek_stdlib_meta
+  spoc.ir
+  alcotest))
+
 ; Negative controls for the Metal validation gate (#139). Layer 2 (xcrun metal)
 ; cannot run outside macOS, so layer 1 (address-space text check) is the only
 ; cover on the machines this code is written on — these cases are the proof it

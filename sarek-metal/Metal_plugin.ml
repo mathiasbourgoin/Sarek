@@ -277,5 +277,11 @@ let find_intrinsic = Metal_intrinsics.find
 (** Generate Metal source with custom types *)
 let generate_with_types = Sarek_ir_metal.generate_with_types
 
-(** Generate Metal source for a kernel *)
-let generate_source = Sarek_ir_metal.generate
+(** Generate Metal source for a kernel.
+
+    Takes [~types] (normally [ir.kern_types]) and routes through
+    {!Sarek_ir_metal.generate_with_types}, same as the backend's own
+    [Backend.generate_source]. It used to alias {!Sarek_ir_metal.generate},
+    which emits no record typedefs and no variant definitions — under a name
+    that reads exactly like the runtime path it was NOT (backlog-155). *)
+let generate_source ~types ir = Sarek_ir_metal.generate_with_types ~types ir

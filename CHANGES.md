@@ -92,6 +92,22 @@
 
 ### Fixed
 
+- Three public emission entry points routed to a backend's typedef-less
+  `generate` instead of `generate_with_types`, so a kernel carrying a
+  `[@@sarek.type]` record emitted source naming struct types that were never
+  declared. The one with real reach is `Sarek_transpile.of_source` — the whole
+  public transpiler API, all five backends — which emitted
+  `point p = (point){1.0f, 2.0f};` with no `typedef struct {…} point;` anywhere
+  above it, on CUDA, OpenCL, Metal, GLSL and WGSL alike. The other two are
+  `Sarek_ir_opencl.generate_with_fp64` (re-exported as
+  `Opencl_plugin.generate_with_fp64`) and `Metal_plugin.generate_source`, a
+  top-level alias of `Sarek_ir_metal.generate` under the same name as the
+  runtime path that does use `generate_with_types`. `generate_with_fp64` and
+  `Metal_plugin.generate_source` now take a required `~types`; the OpenCL
+  backend's own `generate_source` was two hand-kept copies of "typedefs +
+  pragma" and now calls `generate_with_fp64` so the two cannot diverge again.
+  Guarded by `test_typedef_entry_points`, each assertion paired with a control
+  against the typedef-less emitter so it cannot pass vacuously (backlog-155).
 - `Sarek_df64` silently ran at plain float32 precision on real NVIDIA
   hardware (CUDA/PTX and NVIDIA OpenCL): `ptxas` contracted the multiply in
   `two_prod` into the `add`/`sub` of the `quick_two_sum` closing `df64_mul`,

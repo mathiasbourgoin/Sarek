@@ -231,14 +231,21 @@ let set_framework backend =
   Sarek_ir_metal.current_framework := Some name ;
   Sarek_ir_wgsl.current_framework := Some name
 
+(* Each backend's [generate] emits the kernel body but NO record typedefs and no
+   variant definitions; only [generate_with_types] does. [conv_kernel] faithfully
+   carries [kern_types]/[kern_variants] across from the frontend, so calling
+   [generate] here silently discarded them and a transpiled kernel using a
+   `[@@sarek.type]` record emitted e.g. `point p = (point){...};` with `point`
+   never declared — invalid C on every one of the five backends (backlog-155). *)
 let emit_backend backend (k : Sarek_ir_ppx.kernel) =
   let k_types = Sarek_ir_conv.conv_kernel k in
+  let types = k_types.Sarek_ir_types.kern_types in
   match backend with
-  | CUDA -> Sarek_ir_cuda.generate k_types
-  | OpenCL -> Sarek_ir_opencl.generate k_types
-  | Metal -> Sarek_ir_metal.generate k_types
-  | GLSL -> Sarek_ir_glsl.generate k_types
-  | WGSL -> Sarek_ir_wgsl.generate k_types
+  | CUDA -> Sarek_ir_cuda.generate_with_types ~types k_types
+  | OpenCL -> Sarek_ir_opencl.generate_with_types ~types k_types
+  | Metal -> Sarek_ir_metal.generate_with_types ~types k_types
+  | GLSL -> Sarek_ir_glsl.generate_with_types ~types k_types
+  | WGSL -> Sarek_ir_wgsl.generate_with_types ~types k_types
 
 (******************************************************************************)
 (* Main pipeline                                                              *)
@@ -337,7 +344,12 @@ let of_source_with_abi (backend : backend) (src : string) :
       | Ok ppx_kernel -> (
           try
             let ir_kernel = Sarek_ir_conv.conv_kernel ppx_kernel in
-            let code = Sarek_ir_wgsl.generate ir_kernel in
+            (* Same typedef-dropping trap as [emit_backend] above (backlog-155). *)
+            let code =
+              Sarek_ir_wgsl.generate_with_types
+                ~types:ir_kernel.Sarek_ir_types.kern_types
+                ir_kernel
+            in
             let abi_t = Sarek_ir_wgsl.abi ir_kernel in
             let abi_json = Sarek_wgsl_abi.to_json abi_t in
             Ok (code, abi_json)
