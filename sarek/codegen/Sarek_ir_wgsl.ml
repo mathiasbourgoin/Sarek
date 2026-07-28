@@ -716,6 +716,15 @@ and wgsl_backend =
               Codegen_error.raise_error
                 (Codegen_error.invalid_arg_count "fmod" 2 (List.length args))
         else false);
+    (* INERT ON PURPOSE (backlog-159), not an unfinished symmetry. The three
+       C-family backends wire [Dispatch.emit_registry_template] here; doing the
+       same for WGSL would route intrinsics through
+       [Sarek_registry.cuda_or_opencl], a TWO-WAY C-family dispatch whose
+       wildcard is the CUDA branch — so all 133 stdlib intrinsics registered
+       through it would hand WGSL `sinf`/`fabsf`/`powf`, names no shader
+       compiler declares. Returning [false] means fall-through raises
+       [unknown_intrinsic] instead: loud, and correct. That registry now REFUSES
+       WGSL rather than guessing, so wiring this fails by name. *)
     post_hook = (fun _ _ _ _ -> false);
     invalid_arg_count = bad_arity;
     on_unknown =

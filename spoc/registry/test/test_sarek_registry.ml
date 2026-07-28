@@ -236,6 +236,70 @@ let test_cuda_or_opencl () =
   assert (cuda_or_opencl "Native" "cuda_code" "opencl_code" = "cuda_code") ;
   print_endline "  cuda_or_opencl: OK"
 
+(* backlog-159. A shading language must NOT be served by this two-way dispatch:
+   both branches are C-family, and the wildcard sends anything unrecognised to
+   CUDA, so GLSL/WGSL used to be handed `sinf`/`fabsf` — names no shader compiler
+   declares. It was never reached (the GLSL/WGSL post_hooks are inert), which is
+   why nothing caught it; the refusal is what keeps it unreachable BY DESIGN
+   rather than by accident, so wiring those post_hooks fails by name instead of
+   emitting C into a shader. *)
+let test_shading_languages_are_refused () =
+  List.iter
+    (fun fw ->
+      match cuda_or_opencl fw "sinf" "sin" with
+      | s ->
+          failwith
+            (Printf.sprintf
+               "cuda_or_opencl %S returned %S instead of refusing: a shading \
+                language must not be given a C-family spelling"
+               fw
+               s)
+      | exception Sarek_registry.No_device_spelling {framework; cuda} ->
+          assert (framework = fw) ;
+          assert (cuda = "sinf"))
+    ["GLSL"; "WGSL"] ;
+  (* The five frameworks this dispatch DOES serve must be unaffected. Listed
+     explicitly rather than sampled: the point of the change is that it narrows
+     the wildcard, so the cases still falling through are the assertion. *)
+  List.iter
+    (fun (fw, expected) ->
+      let got = cuda_or_opencl fw "cuda_code" "opencl_code" in
+      if got <> expected then
+        failwith
+          (Printf.sprintf
+             "cuda_or_opencl %S: expected %S, got %S"
+             fw
+             expected
+             got))
+    [
+      ("CUDA", "cuda_code");
+      ("OpenCL", "opencl_code");
+      ("Metal", "opencl_code");
+      ("Native", "cuda_code");
+      ("Interpreter", "cuda_code");
+      (* "generic" is the live default of fun_device_template and keeps C-family
+         semantics — refusing it would break that entry point. *)
+      ("generic", "cuda_code");
+    ] ;
+  (* The printer must be registered, or the guard reports as an opaque
+     constructor naming neither the framework nor the spelling it refused. *)
+  let msg =
+    match cuda_or_opencl "GLSL" "fabsf" "fabs" with
+    | _ -> assert false
+    | exception e -> Printexc.to_string e
+  in
+  let contains hay needle =
+    let nh = String.length hay and nn = String.length needle in
+    let rec go i =
+      i + nn <= nh && (String.sub hay i nn = needle || go (i + 1))
+    in
+    nn > 0 && go 0
+  in
+  assert (contains msg "GLSL") ;
+  assert (contains msg "fabsf") ;
+  print_endline
+    "  shading languages refused (GLSL/WGSL), 6 C-family unchanged: OK"
+
 (** {1 Main} *)
 
 let () =
@@ -257,4 +321,5 @@ let () =
   test_fun_device_code () ;
   test_fun_device_template () ;
   test_cuda_or_opencl () ;
+  test_shading_languages_are_refused () ;
   print_endline "All Sarek_registry tests passed!"
