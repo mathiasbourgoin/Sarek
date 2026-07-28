@@ -51,17 +51,17 @@ layout(std430, set=0, binding = 2) buffer Buffer_counters {
   int counters[];
 };
 layout(push_constant) uniform PushConstants {
-  int inputv_len;
-  int outputv_len;
-  int counters_len;
+  int sarek_inputv_length;
+  int sarek_outputv_length;
+  int sarek_counters_length;
   int n;
   int shift;
   int mask;
 } pc;
 
-#define inputv_len pc.inputv_len
-#define outputv_len pc.outputv_len
-#define counters_len pc.counters_len
+#define sarek_inputv_length pc.sarek_inputv_length
+#define sarek_outputv_length pc.sarek_outputv_length
+#define sarek_counters_length pc.sarek_counters_length
 #define n pc.n
 #define shift pc.shift
 #define mask pc.mask

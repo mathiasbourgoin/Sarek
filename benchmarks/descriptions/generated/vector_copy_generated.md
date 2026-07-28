@@ -42,13 +42,13 @@ layout(std430, set=0, binding = 1) buffer Buffer_b {
   float b[];
 };
 layout(push_constant) uniform PushConstants {
-  int a_len;
-  int b_len;
+  int sarek_a_length;
+  int sarek_b_length;
   int n;
 } pc;
 
-#define a_len pc.a_len
-#define b_len pc.b_len
+#define sarek_a_length pc.sarek_a_length
+#define sarek_b_length pc.sarek_b_length
 #define n pc.n
 
 void main() {

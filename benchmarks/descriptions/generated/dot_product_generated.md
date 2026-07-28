@@ -161,15 +161,15 @@ layout(std430, set=0, binding = 2) buffer Buffer_outputv {
   float outputv[];
 };
 layout(push_constant) uniform PushConstants {
-  int a_len;
-  int b_len;
-  int outputv_len;
+  int sarek_a_length;
+  int sarek_b_length;
+  int sarek_outputv_length;
   int n;
 } pc;
 
-#define a_len pc.a_len
-#define b_len pc.b_len
-#define outputv_len pc.outputv_len
+#define sarek_a_length pc.sarek_a_length
+#define sarek_b_length pc.sarek_b_length
+#define sarek_outputv_length pc.sarek_outputv_length
 #define n pc.n
 
 // Shared memory

@@ -82,15 +82,15 @@ layout(std430, set=0, binding = 1) buffer Buffer_histogram {
   int histogram[];
 };
 layout(push_constant) uniform PushConstants {
-  int inputv_len;
-  int histogram_len;
+  int sarek_inputv_length;
+  int sarek_histogram_length;
   int n;
   int shift;
   int mask;
 } pc;
 
-#define inputv_len pc.inputv_len
-#define histogram_len pc.histogram_len
+#define sarek_inputv_length pc.sarek_inputv_length
+#define sarek_histogram_length pc.sarek_histogram_length
 #define n pc.n
 #define shift pc.shift
 #define mask pc.mask

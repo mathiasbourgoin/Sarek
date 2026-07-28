@@ -63,13 +63,13 @@ layout(std430, set=0, binding = 0) buffer Buffer_outputv {
   int outputv[];
 };
 layout(push_constant) uniform PushConstants {
-  int outputv_len;
+  int sarek_outputv_length;
   int width;
   int height;
   int max_iter;
 } pc;
 
-#define outputv_len pc.outputv_len
+#define sarek_outputv_length pc.sarek_outputv_length
 #define width pc.width
 #define height pc.height
 #define max_iter pc.max_iter

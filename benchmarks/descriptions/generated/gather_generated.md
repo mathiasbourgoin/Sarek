@@ -47,15 +47,15 @@ layout(std430, set=0, binding = 2) buffer Buffer_outputv {
   int outputv[];
 };
 layout(push_constant) uniform PushConstants {
-  int inputv_len;
-  int indices_len;
-  int outputv_len;
+  int sarek_inputv_length;
+  int sarek_indices_length;
+  int sarek_outputv_length;
   int n;
 } pc;
 
-#define inputv_len pc.inputv_len
-#define indices_len pc.indices_len
-#define outputv_len pc.outputv_len
+#define sarek_inputv_length pc.sarek_inputv_length
+#define sarek_indices_length pc.sarek_indices_length
+#define sarek_outputv_length pc.sarek_outputv_length
 #define n pc.n
 
 void main() {
