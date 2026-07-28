@@ -319,6 +319,49 @@ function computeFindingViolations(findings) {
   return violations;
 }
 
+// ── provenance of `red_verified` (BOTH modes) ───────────────────────────
+// backlog-163.
+//
+// `red_verified` is GATE-PRODUCED, never author-written: this script emits it
+// inside `checks[]` and roster-review merges that back into review.json (see
+// the comment above the report write). So a finding carrying
+// `red_verified: true` WITHOUT a `check` string cannot have come from here —
+// the verification loop below skips every finding whose `check` is not a
+// string, so it never looked at that finding at all. The value is either
+// hand-written or stale from an earlier verdict shape. Both are a claim of
+// verification with no mechanism behind it.
+//
+// This is not hypothetical. The only review verdict in this tree
+// (briefs/helper-scoping-review.json, status GO, round 1) has 12 findings, of
+// which TWO carry exactly that combination — written during the session that
+// produced PR #354/#355, by me, by hand. The gate could not have objected,
+// because until now nothing in this file READ the field; `red_verified`
+// appeared only in a comment.
+//
+// Runs in --static too, deliberately. Static mode skips VERIFICATION (it does
+// not execute checks), but this is not a verification — it is a structural
+// property of the input document, and static mode is the one the routing table
+// calls on every resume edge. A provenance check that the cheap mode skips
+// would be absent exactly where verdicts are re-read without re-running.
+function checkRedVerifiedProvenance(findings) {
+  const violations = [];
+  for (const f of findings) {
+    if (!f || typeof f !== "object") continue;
+    if (f.red_verified !== true) continue;
+    if (typeof f.check === "string" && f.check.trim() !== "") continue;
+    violations.push({
+      type: "red-verified-without-check",
+      cause: "review-integrity-failure",
+      fingerprint: f.fingerprint || f.id || f.title || "(unnamed finding)",
+      detail:
+        "finding claims red_verified: true but carries no `check` — this field " +
+        "is produced by the gate and merged back, so a value without the input " +
+        "that produces it was not verified by anything (backlog-163)",
+    });
+  }
+  return violations;
+}
+
 // ── red-before-green verification (full mode only) ──────────────────────
 // FR-035..FR-039. Returns { violations, checks, anyInconclusive }.
 function runRedGreenVerification(findings, args) {
@@ -433,7 +476,20 @@ function main() {
   // D1: cross_runtime_findings entries are canonical findings with GO
   // authority. They were exempt from the ratchet, the provenance check and the
   // unencodable-finding check purely because nothing ever opened the array.
-  violations.push(...computeFindingViolations(Array.isArray(review.cross_runtime_findings) ? review.cross_runtime_findings : []));
+  const crossRuntime = Array.isArray(review.cross_runtime_findings) ? review.cross_runtime_findings : [];
+  violations.push(...computeFindingViolations(crossRuntime));
+
+  // backlog-163, scope corrected by review on PR #361. The provenance check
+  // first lived inside runRedGreenVerification, which takes `findings` alone —
+  // so a cross-runtime finding could carry `red_verified: true` with no check
+  // and never be looked at. The comment directly above already named that trap
+  // ("exempt from ... the provenance check ... purely because nothing ever
+  // opened the array") for three earlier checks, and I walked into it anyway
+  // with a NEW one. It runs over both arrays here, beside its sibling, rather
+  // than inside a function whose name says verification: provenance is a
+  // property of the document, and burying it there is what scoped it wrongly.
+  violations.push(...checkRedVerifiedProvenance(findings));
+  violations.push(...checkRedVerifiedProvenance(crossRuntime));
 
   const strikeAudit = evaluateStrikesAndAudit(review, round, legacyRound, findings, args.strikes);
   violations.push(...strikeAudit.violations);
@@ -478,4 +534,11 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { parseArgs, isFullSha, evaluateStrikesAndAudit, buildReport, decideExit };
+module.exports = {
+  parseArgs,
+  isFullSha,
+  evaluateStrikesAndAudit,
+  buildReport,
+  decideExit,
+  checkRedVerifiedProvenance,
+};

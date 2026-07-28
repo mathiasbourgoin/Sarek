@@ -669,6 +669,91 @@ check("#98 patch is DECLARED whenever it is applied", () => {
   }
 });
 
+// ── backlog-163: `red_verified` provenance ───────────────────────────────
+//
+// The filed defect ("the gate reads a missing review.json and passes, inert for
+// 4 rounds") DOES NOT EXIST — the gate fails closed on a missing file, verified
+// by running it. The real hole was next to it: `red_verified` is emitted by the
+// gate inside `checks[]` and merged back by roster-review, yet nothing in the
+// gate ever READ the field. It appeared in one comment. So a verdict could
+// assert `red_verified: true` on a finding with no `check` at all — a claim of
+// verification with nothing behind it — and the gate had no objection.
+//
+// This is not hypothetical: the only review verdict in the tree
+// (briefs/helper-scoping-review.json, status GO) carries exactly that on two of
+// its twelve findings. Written by hand, by me, during the session that produced
+// #354/#355.
+// Parameterised over every shape the implementation treats as absent. The
+// guard is `typeof check === "string" && check.trim() !== ""`, so it covers
+// three; asserting only `null` would let a regression that accepts `""` or
+// whitespace through — an assertion narrower than the code it guards.
+for (const [label, checkValue] of [
+  ["null", null],
+  ["absent", undefined],
+  ["empty string", ""],
+  ["whitespace only", "   "],
+]) {
+  check(`a finding claiming red_verified with check = ${label} is REFUSED`, () => {
+    const f = finding({ red_verified: true, check: checkValue });
+    if (checkValue === undefined) delete f.check;
+    const { status, report } = reports(base({ findings: [f] }));
+    assert.strictEqual(status, 1, "a forged verification claim must be a violation, not a pass");
+    const v = report.violations.filter((x) => x.type === "red-verified-without-check");
+    assert.strictEqual(v.length, 1, `expected exactly one provenance violation, got ${JSON.stringify(report.violations)}`);
+    assert.match(v[0].detail, /produced by the gate/, "the message must say WHY the combination is impossible");
+  });
+}
+
+// Scope, caught by review on #361. cross_runtime_findings are canonical
+// findings with GO authority and main() already runs the sibling structural
+// check over them; the provenance check first lived inside
+// runRedGreenVerification, which takes `findings` alone, so this array bypassed
+// it entirely. The in-source comment above that call had already named this
+// exact trap for three earlier checks.
+check("a CROSS-RUNTIME finding claiming red_verified without a check is REFUSED", () => {
+  const { status, report } = reports(
+    base({
+      findings: [],
+      cross_runtime_findings: [finding({ red_verified: true, check: null })],
+    })
+  );
+  assert.strictEqual(status, 1, "cross_runtime_findings must not be a bypass");
+  assert.strictEqual(
+    report.violations.filter((x) => x.type === "red-verified-without-check").length,
+    1,
+    `expected the cross-runtime finding to be flagged, got ${JSON.stringify(report.violations)}`
+  );
+});
+
+// Positive control. Without it, "refuses a forged claim" and "refuses every
+// finding" are the same observation — and the second would make the gate
+// useless rather than strict.
+check("a finding with red_verified AND a check is NOT refused", () => {
+  const { report } = reports(
+    base({
+      findings: [finding({ red_verified: true, check: "scripts/some-check.js" })],
+    })
+  );
+  assert.strictEqual(
+    report.violations.filter((x) => x.type === "red-verified-without-check").length,
+    0,
+    "a finding that carries the input the gate verifies must pass provenance"
+  );
+});
+
+// The check must survive --static, which is the mode the routing table calls on
+// every resume edge. Provenance is a structural property of the document, not a
+// verification, so the cheap mode has no reason to skip it — and skipping it
+// there would leave the hole open exactly where verdicts are re-read without
+// being re-run. runGate always passes --static, so the case above already
+// exercises this; asserted explicitly so a future "optimisation" that moves the
+// check behind the full-mode guard goes red here rather than silently.
+check("provenance is enforced in --static, not only in full mode", () => {
+  const { checkRedVerifiedProvenance } = require(GATE);
+  const staticViolations = checkRedVerifiedProvenance([{ red_verified: true, check: null, fingerprint: "f" }]);
+  assert.strictEqual(staticViolations.length, 1, "the pure function must flag it independently of mode");
+});
+
 check("local-patch markers are non-empty (an empty needle matches everything)", () => {
   const { markers } = markersUnderTest();
   assert.ok(markers.length > 0, "a reapply_on_upgrade patch with no markers cannot detect its own revert");
