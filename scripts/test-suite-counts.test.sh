@@ -207,9 +207,87 @@ check "--min-suites 0 disables the floor" "$?" "0"
 "$CNT" --min-suites 999 "$TMP/plausible.log" >/dev/null 2>&1
 check "floor is honoured at a raised threshold" "$?" "3"
 
+# ---------------------------------------------------------------------------
+# backlog-157: did the RUN succeed? Gates 1-3 only ever asked whether the total
+# was complete for the suites present.
+#
+# The build-failure log below is the shape that made this necessary: `dune test
+# --force` builds and runs suite by suite, so a compile error part-way through
+# leaves every earlier epilogue intact. Measured on the real tree, that is 45
+# parsed suites -- past the floor, consistent with their epilogues -- reported as
+# a plausible total with exit 0 off a `dune test` that exited 1.
+# ---------------------------------------------------------------------------
+cat > "$TMP/build-failed.log" <<'LOG'
+Testing `Sarek_float32'.
+Test Successful in 0.002s. 61 tests run.
+Testing `Solo'.
+Test Successful in 0.001s. 1 test run.
+File "sarek/tests/unit/test_thing.ml", line 12, characters 0-1:
+12 | x
+     ^
+Error: Syntax error
+LOG
+
+"$CNT" --min-suites 0 "$TMP/build-failed.log" >/dev/null 2>&1
+check "a build failure in the log exits 5" "$?" "5"
+
+bf_out="$("$CNT" --min-suites 0 "$TMP/build-failed.log" 2>&1 || true)"
+check "build failure still shows the partial count" \
+  "$(echo "$bf_out" | /usr/bin/grep -c 'cases across')" "3"
+
+# --dune-exit is authoritative: the log parses clean, dune says otherwise.
+"$CNT" --min-suites 0 --dune-exit 1 "$TMP/mixed.log" >/dev/null 2>&1
+check "--dune-exit 1 on a clean log exits 5" "$?" "5"
+"$CNT" --min-suites 0 --dune-exit 0 "$TMP/mixed.log" >/dev/null 2>&1
+check "--dune-exit 0 on a clean log stays 0" "$?" "0"
+
+# Failing CASES are a different fact from a run that died, and the exit code has
+# to be able to say which -- collapsing them would lose that.
+cat > "$TMP/failing.log" <<'LOG'
+Testing `Sarek_float32'.
+  [FAIL]        some suite    0   a case....
+  [FAIL]        some suite    1   another....
+2 failures! in 0.010s. 61 tests run.
+Testing `Solo'.
+Test Successful in 0.001s. 1 test run.
+Testing `Third'.
+Test Successful in 0.001s. 3 tests run.
+LOG
+
+"$CNT" --min-suites 0 "$TMP/failing.log" >/dev/null 2>&1
+check "failing cases exit 4, not 0" "$?" "4"
+
+fail_out="$("$CNT" --min-suites 0 "$TMP/failing.log" 2>&1 || true)"
+check "failing-case counts are still printed" \
+  "$(echo "$fail_out" | /usr/bin/grep -c 'FAIL     : 2')" "1"
+
+# A build failure OUTRANKS failing cases: if the run died, the FAIL tally is a
+# count over a partial run and "2 tests failed" would understate it.
+cat > "$TMP/both.log" <<'LOG'
+Testing `Sarek_float32'.
+  [FAIL]        some suite    0   a case....
+1 failure! in 0.010s. 61 tests run.
+File "sarek/tests/unit/test_thing.ml", line 12, characters 0-1:
+Error: Syntax error
+LOG
+"$CNT" --min-suites 0 "$TMP/both.log" >/dev/null 2>&1
+check "a died run outranks its failing cases (5, not 4)" "$?" "5"
+
 # Argument handling: a malformed invocation is an error, not a default.
 "$CNT" --min-suites nope "$TMP/plausible.log" >/dev/null 2>&1
 check "non-numeric --min-suites exits 2" "$?" "2"
+"$CNT" --dune-exit nope "$TMP/plausible.log" >/dev/null 2>&1
+check "non-numeric --dune-exit exits 2" "$?" "2"
+
+# GIVEN-EMPTY IS NOT NOT-GIVEN. `--dune-exit "$UNSET"` expands to an empty
+# string; accepting it would silently demote the authoritative check back to the
+# log heuristic and let a failed run exit 0 -- the very shape --dune-exit was
+# added to close, reached through the flag that closes it. Found by testing the
+# flag rather than by reading it.
+"$CNT" --dune-exit "" "$TMP/plausible.log" >/dev/null 2>&1
+check "empty --dune-exit exits 2 (not silently ignored)" "$?" "2"
+"$CNT" --min-suites 0 "$TMP/mixed.log" >/dev/null 2>&1
+check "omitting --dune-exit entirely is still fine" "$?" "0"
 "$CNT" --bogus >/dev/null 2>&1
 check "unknown option exits 2" "$?" "2"
 "$CNT" "$TMP/plausible.log" "$TMP/mixed.log" >/dev/null 2>&1
@@ -221,4 +299,7 @@ echo "passed: $pass   failed: $fail"
 echo "OK: test-suite-counts.sh counts singular/zero/plural Alcotest epilogues,"
 echo "    separates qcheck, fails closed when the log format drifts, and"
 echo "    refuses to report a count for an empty, truncated, unrecognisable or"
-echo "    implausibly small log (backlog-150)"
+echo "    implausibly small log (backlog-150); and refuses to pass for green"
+echo "    off a run that failed -- build failure or non-zero --dune-exit is 5,"
+echo "    failing cases are 4, and a died run outranks its own FAIL tally"
+echo "    (backlog-157)"

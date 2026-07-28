@@ -71,26 +71,73 @@
 # --min-suites (default 10) the counts are printed *and* the exit is 3, so the
 # caller sees what was parsed and is still told not to quote it.
 #
+# AND A GREEN COUNT OFF A RUN THAT FAILED (backlog-157)
+#
+# Gates 1-3 all ask "is this total complete", and none of them asked the prior
+# question: did the run this log came from SUCCEED. Two ways it did not, and
+# neither was caught.
+#
+# A BUILD FAILURE PART-WAY THROUGH. `dune test --force` builds and runs suite by
+# suite, so a compile error in one test leaves a log with every earlier suite's
+# epilogue intact. Measured on this repo: breaking one test file yields 45 parsed
+# suites, gate 2 satisfied (45 epilogues, 45 counts), gate 3 satisfied (45 > 10)
+# -- a plausible total, exit 0, off a `dune test` that exited 1. The number is
+# not wrong for what it counted; it is wrong as an answer to "how many tests are
+# there", and that is the question it gets asked.
+#
+# FAILING CASES. `FAIL : 3` printed with exit 0 means
+# `test-suite-counts.sh log && echo all good` prints "all good". The counts are
+# honest; the exit code is not, because the shell reads only the code.
+#
+# So: failing cases are exit 4, and a run that did not complete is exit 5. The
+# counts still print in both cases -- they are useful, they just must not pass
+# for green in a chain.
+#
+# The build-failure check is a LOG HEURISTIC (`^Error` / `^File "` at column 0,
+# which is dune's own formatting), and heuristics in a gate are what this file
+# spends 60 lines arguing against. So it is the fallback, not the mechanism:
+# --dune-exit lets the caller pass the one authoritative fact the script cannot
+# derive from a log. Measured before choosing the pattern: 0 matches in a green
+# 4885-line log and 0 in a log of genuinely FAILING alcotest cases (alcotest
+# indents, dune does not), so the heuristic does not confuse a red test with a
+# broken build -- which is exactly why they are separate exit codes.
+#
 # Usage:
-#   scripts/test-suite-counts.sh [--min-suites N] <logfile>
+#   scripts/test-suite-counts.sh [--min-suites N] [--dune-exit N] <logfile>
 #   dune test --force 2>&1 | scripts/test-suite-counts.sh [--min-suites N]
+#
+#   RECOMMENDED, because it carries dune's verdict instead of inferring it:
+#     dune test --force > t.log 2>&1; scripts/test-suite-counts.sh --dune-exit $? t.log
+#
+#   The pipe form CANNOT see dune's exit status -- in `a | b` the shell reports
+#   b's code, and `set -o pipefail` is the caller's to set, not this script's.
+#   It stays supported and falls back to the log heuristic.
 #
 #   --min-suites N   floor below which a total is treated as an invocation
 #                    problem (exit 3). 0 disables the floor; use it when
 #                    counting a deliberately small log, as the covering test
 #                    does.
+#   --dune-exit N    the exit status of the `dune test` that produced this log.
+#                    Non-zero means the run failed, whatever the log parses to.
 #
 # Exit codes:
 #   0  counts printed and trustworthy
 #   2  usage error: no such file, no recognisable test output, or a log format
 #      this script can no longer parse. NOT a result.
 #   3  counts printed but below the plausibility floor. NOT a result either.
+#   4  counts printed and complete, but the run had FAILING CASES. A count, not
+#      a pass.
+#   5  counts printed but the run DID NOT COMPLETE -- a build failure in the log,
+#      or a non-zero --dune-exit with no failing case to explain it. The total is
+#      a partial count of the suites that ran before the run died.
 #
 # NOTE: `dune test` without --force prints nothing for suites whose results are
 # cached, so an incremental run will under-report. Always --force for a total.
 set -euo pipefail
 
 MIN_SUITES=10
+DUNE_EXIT=""
+DUNE_EXIT_GIVEN=""
 SRC=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -103,16 +150,34 @@ while [ $# -gt 0 ]; do
       MIN_SUITES="${1#--min-suites=}"
       shift
       ;;
+    --dune-exit)
+      [ $# -ge 2 ] || { echo "ERROR: --dune-exit needs a value" >&2; exit 2; }
+      DUNE_EXIT="$2"
+      DUNE_EXIT_GIVEN=1
+      shift 2
+      ;;
+    --dune-exit=*)
+      DUNE_EXIT="${1#--dune-exit=}"
+      DUNE_EXIT_GIVEN=1
+      shift
+      ;;
     -h|--help)
       cat <<'USAGE'
-usage: scripts/test-suite-counts.sh [--min-suites N] <logfile>
+usage: scripts/test-suite-counts.sh [--min-suites N] [--dune-exit N] <logfile>
    or: dune test --force 2>&1 | scripts/test-suite-counts.sh [--min-suites N]
 
+recommended, so the counter is told dune's verdict rather than inferring it:
+  dune test --force > t.log 2>&1; scripts/test-suite-counts.sh --dune-exit $? t.log
+
   --min-suites N   plausibility floor (default 10); 0 disables it.
+  --dune-exit N    exit status of the `dune test` that produced the log.
 
 exit 0  counts printed and trustworthy
 exit 2  usage error, or no recognisable test output -- NOT a result
 exit 3  counts printed but below the plausibility floor -- NOT a result
+exit 4  counts complete but the run had FAILING CASES -- a count, not a pass
+exit 5  the run DID NOT COMPLETE (build failure / non-zero --dune-exit) -- the
+        total is a partial count of the suites that ran before it died
 USAGE
       exit 0
       ;;
@@ -135,6 +200,21 @@ done
 case "$MIN_SUITES" in
   ''|*[!0-9]*) echo "ERROR: --min-suites must be a non-negative integer, got: $MIN_SUITES" >&2; exit 2 ;;
 esac
+
+# Validated rather than passed through, and "given empty" is NOT "not given".
+# `--dune-exit "$SOME_UNSET_VAR"` yields an empty string; accepting it would
+# silently demote an authoritative check to the log heuristic and let a failed
+# run exit 0 -- the exact shape this file exists to refuse, reached through the
+# flag added to prevent it. So a present-but-unparseable value is a usage error;
+# only an ABSENT flag means "nobody asked dune".
+if [ -n "${DUNE_EXIT_GIVEN:-}" ]; then
+  case "$DUNE_EXIT" in
+    ''|*[!0-9]*)
+      echo "ERROR: --dune-exit must be a non-negative integer, got: '$DUNE_EXIT'" >&2
+      exit 2
+      ;;
+  esac
+fi
 
 SRC="${SRC:--}"
 if [ "$SRC" != "-" ] && [ ! -f "$SRC" ]; then
@@ -170,7 +250,18 @@ import sys
 
 src = sys.argv[1]
 min_suites = int(sys.argv[2])
+# "" when the caller did not pass --dune-exit. Absent is not the same as 0: one
+# is "dune said it succeeded", the other is "nobody asked dune".
+dune_exit = sys.argv[3] if len(sys.argv) > 3 else ""
 text = sys.stdin.read() if src == "-" else open(src, errors="replace").read()
+
+# Dune reports compile errors at column 0 (`File "x.ml", line 1:` / `Error: ...`)
+# while alcotest indents everything it prints. Measured on this repo before the
+# pattern was chosen: 0 matches in a green 4885-line log AND 0 in a log of
+# genuinely failing alcotest cases, 2 matches in a log whose build was broken on
+# purpose. So this separates "the build died" from "a test failed", which is why
+# they get different exit codes rather than one catch-all.
+build_errors = re.findall(r"(?m)^(?:Error:|File \")", text)
 
 # Alcotest: "Test Successful in 0.004s. 61 tests run." and the SINGULAR
 # "1 test run." / "0 test run.". Matching `tests?` is the whole point.
@@ -248,9 +339,51 @@ if suites < min_suites:
           "quote these numbers. Re-run with `dune test --force`, or pass "
           "--min-suites 0 if you meant to count a small log.")
     sys.exit(3)
+
+# GATE 4 -- did the run COMPLETE? (backlog-157)
+#
+# Gates 1-3 all ask whether the total is complete for the suites present. None
+# asked the prior question. `dune test --force` builds and runs suite by suite,
+# so a compile error part-way through leaves every earlier epilogue intact:
+# measured on this repo, breaking one test file gives 45 parsed suites that
+# satisfy gate 2 (45 epilogues, 45 counts) and gate 3 (45 > 10). A plausible
+# total, exit 0, off a `dune test` that exited 1.
+#
+# --dune-exit is authoritative when given, because it is the one fact a log
+# cannot carry. The log heuristic is the fallback for the pipe form, which
+# structurally cannot see dune's status (`a | b` reports b's).
+if dune_exit not in ("", "0"):
+    print()
+    print(f"ERROR: the `dune test` that produced this log exited {dune_exit}, so "
+          "the run did not succeed and this total counts only the suites that "
+          "ran before it stopped. Not a result.")
+    sys.exit(5)
+
+if build_errors:
+    print()
+    print(f"ERROR: this log contains {len(build_errors)} dune/compiler error "
+          "marker(s) at column 0, so the run did not complete and the total "
+          "above counts only the suites built before the failure. Fix the build "
+          "and re-run; pass --dune-exit to make this authoritative rather than "
+          "inferred.")
+    sys.exit(5)
+
+# GATE 5 -- were there failing CASES? (backlog-157)
+#
+# Separate from gate 4 on purpose: a complete run with red tests is a different
+# fact from a run that died, and collapsing them would make the exit code unable
+# to say which. Printing `FAIL : 3` and exiting 0 meant
+# `test-suite-counts.sh log && echo all good` printed "all good" -- the counts
+# were honest and the exit code was not, and a shell reads only the code.
+if fails > 0:
+    print()
+    print(f"ERROR: {fails} failing case(s) in this log. The counts above are "
+          "complete and trustworthy; this is NOT a passing run, and the exit "
+          "code says so because a caller chaining on `&&` reads only that.")
+    sys.exit(4)
 PYEOF
 )
-python3 -c "$PYPROG" "$SRC" "$MIN_SUITES"
+python3 -c "$PYPROG" "$SRC" "$MIN_SUITES" "$DUNE_EXIT"
 
 # ---------------------------------------------------------------------------
 # Red-path evidence, executed by scripts/prove-red.sh (backlog-151).
@@ -293,5 +426,25 @@ python3 -c "$PYPROG" "$SRC" "$MIN_SUITES"
 #   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt
 #   expect-exit: 3
 #   expect-message: below the plausibility floor
+#
+# mutation: build-failed
+#   desc: a dune compile error appended to an otherwise clean log -- the shape `dune test --force` leaves when a suite fails to build part-way through, with every earlier epilogue intact. A plausible total off a run that exited 1 must be exit 5, not a pass.
+#   apply: printf 'File "sarek/tests/unit/test_thing.ml", line 12, characters 0-1:\nError: Syntax error\n' >> scripts/prove-red-fixtures/dune-test-sample-log.txt
+#   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0
+#   expect-exit: 5
+#   expect-message: dune/compiler error marker
+#
+# mutation: dune-exit-nonzero
+#   desc: the log parses clean and dune says the run failed. An ENVIRONMENT mutation, like empty-stdin: no file changes, and the authoritative fact is one a log cannot carry.
+#   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0 --dune-exit 1
+#   expect-exit: 5
+#   expect-message: did not succeed
+#
+# mutation: failing-cases
+#   desc: a [FAIL] marker in the log. Printing `FAIL : 1` and exiting 0 made `test-suite-counts.sh log && echo ok` print ok -- honest counts, dishonest exit code, and a shell reads only the code. Distinct from build-failed because a complete-but-red run is a different fact from a run that died.
+#   apply: sed -i '1i\  [FAIL]        some suite    0   a case....' scripts/prove-red-fixtures/dune-test-sample-log.txt
+#   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0
+#   expect-exit: 4
+#   expect-message: failing case
 # END prove-red-spec
 # ---------------------------------------------------------------------------
