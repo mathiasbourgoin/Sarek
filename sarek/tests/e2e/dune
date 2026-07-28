@@ -1402,3 +1402,56 @@
  (alias e2e-gpu)
  (action
   (run %{dep:test_coopmat_integer_e2e.exe})))
+
+; float64 literal precision, Float64 scalar conversions, and the softmath
+; helper name collision on GLSL. One sub-expression per output slot, compared
+; bit-for-bit with OCaml binary64. The scalar parameter is deliberately named
+; `n` — see the header; renaming it disarms the collision guard.
+; Run with: dune exec sarek/tests/e2e/test_f64_scalar_conversions.exe
+
+(executable
+ (name test_f64_scalar_conversions)
+ (modules test_f64_scalar_conversions)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.float64
+  sarek_ir
+  sarek_interpreter
+  spoc_core
+  test_helpers
+  unix
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_f64_scalar_conversions.exe})))
+
+; Tail-recursive helpers taking a vector parameter, on every fp64 device, plus
+; a codegen assertion that the self call is eliminated rather than executed.
+; Run with: dune exec sarek/tests/e2e/test_tailrec_vector_param.exe
+
+(executable
+ (name test_tailrec_vector_param)
+ (modules test_tailrec_vector_param)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.float64
+  sarek_ir
+  sarek_codegen
+  sarek_interpreter
+  spoc_core
+  test_helpers
+  unix
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_tailrec_vector_param.exe})))
