@@ -289,6 +289,13 @@ let create_state fun_map =
     variants = Hashtbl.create 8;
   }
 
+(* DEAD as of this writing: [fresh_id] has no caller, and [next_var_id] is
+   touched only by it. Flagged rather than deleted (pre-existing dead code
+   outside this change's scope) but flagged deliberately, because a commit
+   message on this branch described it as one of three LIVE id allocators and
+   that was wrong — the live ones are the typer's [fresh_var_id] and, until it
+   was unified with it, the tail-recursion transform's. The only other live id
+   convention is the NEGATIVE range for tuple temporaries below. *)
 let fresh_id state =
   let id = state.next_var_id in
   state.next_var_id <- id + 1 ;

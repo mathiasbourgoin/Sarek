@@ -15,10 +15,37 @@ open Sarek_types
 
 (** {1 Tail Recursion Elimination} *)
 
-(** Fresh variable ID generator for transformation (thread-safe) *)
-let transform_var_counter = Atomic.make 0
+(** Fresh variable id for the loop scaffolding — drawn from THE typer's
+    allocator, not a second one.
 
-let fresh_transform_id () = Atomic.fetch_and_add transform_var_counter 1
+    There used to be a private [Atomic.make 0] here, and starting at 0 put the
+    scaffolding in the same range as the [tparam_id]s it was scaffolding. On
+    [vsum acc v k n] the [_result] temporary took id 3 and so did the parameter
+    [n]; the interpreter's [lookup_var] resolves by id before name, so the
+    temporary answered every reference to [n], the loop bound became 0, and a
+    fold over four 1.0s returned 0 while Vulkan and Native returned 4 —
+    silently, on the cross-backend oracle. With one body-local [let] added the
+    same kernel either returned 0 or did not terminate, depending on how many
+    kernels the process had already compiled, because the counter was global and
+    persisted across them.
+
+    Two intermediate fixes were tried and both were worse than this one. Seeding
+    a private counter above the PARAMETER ids relocated the collision onto the
+    first body-local (max(param_id)+1 is exactly its id, since the typer types a
+    body straight after its parameters). Seeding above the typer's whole counter
+    worked but coupled two files through a counter read, and left a second
+    allocator alive to drift.
+
+    Drawing from the typer removes the class rather than the instance: there is
+    one monotonic source of variable ids, so a transform id cannot equal a typer
+    id by construction and nothing has to be kept in sync. The only other id
+    convention in the pipeline is the NEGATIVE range used for tuple temporaries
+    (Sarek_lower_ir.ml), which is disjoint by construction and untouched.
+
+    Nothing pins these ids: codegen emits [var_name] and never [var_id], no
+    golden or snapshot depends on them, and test_tailrec_elim asserts only
+    relative ordering. Verified before making the change, not after. *)
+let fresh_transform_id () = Sarek_typed_ast.fresh_var_id ()
 
 (** Transform a tail-recursive function into a loop.
 
