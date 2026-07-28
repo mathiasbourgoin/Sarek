@@ -190,11 +190,16 @@
  (libraries sarek.codegen spoc.ir opencl_gate alcotest str unix))
 
 ; backlog-155: every public emission entry point that accepts a kernel carrying
-; kern_types must declare those records, not silently route to the typedef-less
-; `generate`. Covers OpenCL's third entry point (generate_with_fp64) and the
-; whole public transpiler surface (all five backends). Each assertion is paired
-; with a control against the typedef-less emitter so it cannot pass vacuously.
-; CPU-only, no device.
+; kern_types/kern_variants must declare those types ABOVE the code using them,
+; not silently route to the typedef-less `generate`. Covers OpenCL's third
+; entry point (generate_with_fp64, records AND variants) and the whole public
+; transpiler surface — of_source on all five backends plus of_source_with_abi,
+; which is a second emission path and not a wrapper over the first. Every
+; marker pair is checked for ORDER, not presence: a typedef emitted below its
+; use passes a `contains` check and no compiler. Each assertion is paired with
+; a control against the typedef-less emitter so it cannot pass vacuously.
+; Metal's entry point is covered in sarek-metal/test — sarek_metal is
+; (optional) and not linkable from here. CPU-only, no device.
 
 (test
  (name test_typedef_entry_points)

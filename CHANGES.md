@@ -106,8 +106,13 @@
   `Metal_plugin.generate_source` now take a required `~types`; the OpenCL
   backend's own `generate_source` was two hand-kept copies of "typedefs +
   pragma" and now calls `generate_with_fp64` so the two cannot diverge again.
-  Guarded by `test_typedef_entry_points`, each assertion paired with a control
-  against the typedef-less emitter so it cannot pass vacuously (backlog-155).
+  Guarded by `test_typedef_entry_points` (OpenCL + transpiler) and
+  `test_metal_plugin_entry_points` (the Metal entry point, which is only
+  callable from `sarek-metal/test` because `sarek_metal` is an optional
+  library). Every marker pair is checked for ORDER, not presence — a typedef
+  emitted BELOW the code that uses it satisfies a substring check and no
+  compiler — and each assertion is paired with a control against the
+  typedef-less emitter so it cannot pass vacuously (backlog-155).
 - `Sarek_df64` silently ran at plain float32 precision on real NVIDIA
   hardware (CUDA/PTX and NVIDIA OpenCL): `ptxas` contracted the multiply in
   `two_prod` into the `add`/`sub` of the `quick_two_sum` closing `df64_mul`,

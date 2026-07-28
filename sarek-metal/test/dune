@@ -14,3 +14,15 @@
  (name test_metal_compile_options)
  (modules test_metal_compile_options)
  (libraries sarek_metal alcotest))
+
+; backlog-155: Metal_plugin.generate_source used to alias the typedef-less
+; Sarek_ir_metal.generate. It has no caller outside its own file, so this is
+; the only place its signature is type-checked against a use and the only
+; place its routing is executed. sarek_metal is (optional) and only linkable
+; from this directory, which is why the Metal case is not in
+; sarek/tests/unit/test_typedef_entry_points.ml with the others.
+
+(test
+ (name test_metal_plugin_entry_points)
+ (modules test_metal_plugin_entry_points)
+ (libraries sarek_metal sarek_ir alcotest))
