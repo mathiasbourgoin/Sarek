@@ -346,6 +346,28 @@ let test_negative_device_refuses () =
          refuses, in the same run, under the same driver build. Without this the
          two arms above could both be vacuous. *)
       let permits = List.exists (fun d -> d.permits) devs in
+      (* But UNOBSERVABLE is not VIOLATED. On a host where no device advertises
+         the extension at all, this control cannot be satisfied by any correct
+         implementation, so asserting it reports a hardware inventory as a code
+         defect. Measured on echydna (GTX 1070 Max-Q + Intel UHD 630, neither of
+         which supports VK_KHR_cooperative_matrix): the two refusal arms passed
+         and this line failed, taking `dune test` to exit 1. It is green on the
+         dev box only because the RX 7900 XTX (RDNA3) does support it — so the
+         suite's verdict was a property of the machine, not of the code.
+         RECORDED rather than silently passed, per this repo's rule that a
+         skipped obligation must say so: what is unverified here is specifically
+         that the gate is not refusing vacuously. The refusal arms above already
+         ran, and would have failed had a no-extension device permitted. *)
+      if not permits then begin
+        Printf.printf
+          "  [SKIP] separation UNPROVEN on this host: no device advertises \
+           VK_KHR_cooperative_matrix (%s). The refusal arms DID run; what is \
+           unverified is that the gate separates rather than refusing \
+           everything. Re-run on a coopmat-capable device to close it.\n\
+           %!"
+          (String.concat ", " (List.map (fun d -> d.dev.Device.name) devs)) ;
+        Alcotest.skip ()
+      end ;
       Alcotest.(check bool)
         "some device permits, so the refusal above is a separation"
         true
