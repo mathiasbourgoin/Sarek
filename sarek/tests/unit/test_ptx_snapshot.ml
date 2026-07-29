@@ -1136,6 +1136,92 @@ let assert_absent ptx marker ~why =
          why
          ptx)
 
+(** backlog-167: the Float64 scalar conversions must EMIT on PTX.
+
+    [Float64.of_int32] raised "unsupported construct: intrinsic: of_int32" on
+    CUDA/PTX while passing on OpenCL, Vulkan, Native and the Interpreter —
+    measured on a GTX 1070 Max-Q (sm_61, CUDA 12.9). The CPU-passes/device-fails
+    shape: the only coverage these intrinsics had was device-EXECUTION tests,
+    and those skip on a host with no CUDA device, so the suite was green here
+    and red on real hardware. test_f64_scalar_conversions and
+    test_tailrec_vector_param both hit it.
+
+    THIS IS THE TEST THAT WOULD HAVE CAUGHT IT WITHOUT NVIDIA HARDWARE, which is
+    the whole point of putting it here — PTX text generation needs no device.
+
+    Each conversion is asserted on its own emitted instruction, individually, so
+    dropping one name from the dispatch table fails on that name rather than
+    somewhere vague. [of_int] and [to_int] were already routed before
+    backlog-167 and are covered here too, so a regression in the shared arms is
+    caught. *)
+let test_f64_conversions_emit () =
+  let check_one name arg_ty out_elt want_instr =
+    let x = make_var "x" arg_ty in
+    let out = make_var "out" (TVec out_elt) in
+    let ptx =
+      base_kernel
+        ("f64_conv_" ^ name)
+        [
+          DParam (x, None);
+          DParam (out, Some {arr_elttype = out_elt; arr_memspace = Global});
+        ]
+        (SAssign
+           ( LArrayElem ("out", EConst (CInt32 0l)),
+             EIntrinsic (["Float64"], name, [EVar x]) ))
+        []
+      |> Sarek_ir_ptx.generate
+    in
+    assert_contains ptx want_instr ;
+    ptx
+  in
+  ignore (check_one "of_int32" TInt32 TFloat64 "cvt.rn.f64.s32") ;
+  ignore (check_one "of_int" TInt32 TFloat64 "cvt.rn.f64.s32") ;
+  ignore (check_one "to_int32" TFloat64 TInt32 "cvt.rzi.s32.f64") ;
+  (* Exact widening, so NO rounding modifier: ptxas rejects [cvt.rn.f64.f32]
+     outright ("Illegal modifier"). Assert both polarities on the same emitted
+     text — the instruction is present AND the illegal spelling is not — because
+     the presence check alone is satisfied by a string that CONTAINS it. *)
+  let widen = check_one "of_float32" TFloat32 TFloat64 "cvt.f64.f32" in
+  assert_absent
+    widen
+    "cvt.rn.f64.f32"
+    ~why:"f32 -> f64 is exact; ptxas rejects a rounding modifier on it"
+
+(** [to_float32] is the one conversion PTX still refuses, and this pins that the
+    backlog-167 fix did not quietly widen the set.
+
+    Sarek_ir_glsl's [glsl_conversions] omits BOTH [to_int] and [to_float32]
+    because their device templates round/truncate while the [ocaml] field Native
+    mirrors is [Stdlib.int_of_float] (63-bit) and the IDENTITY respectively —
+    three implementations already disagree. PTX is NOT symmetric with GLSL here:
+    it has accepted [to_int] since its conversion table existed (asserted
+    above), so that half of the disagreement is already reachable on this
+    backend. Only [to_float32] is genuinely unrouted, and it stays that way
+    until the semantics are settled rather than acquiring a third implementation
+    by accident. *)
+let test_f64_to_float32_still_refused () =
+  let x = make_var "x" TFloat64 in
+  let out = make_var "out" (TVec TFloat32) in
+  let k =
+    base_kernel
+      "f64_to_float32"
+      [
+        DParam (x, None);
+        DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      ]
+      (SAssign
+         ( LArrayElem ("out", EConst (CInt32 0l)),
+           EIntrinsic (["Float64"], "to_float32", [EVar x]) ))
+      []
+  in
+  match Sarek_ir_ptx.generate k with
+  | _ ->
+      Alcotest.fail
+        "Float64.to_float32 emitted PTX. Its semantics disagree across Native \
+         (identity), the device templates (narrowing) and GLSL (refused); it \
+         must stay refused until that is decided, not routed in passing."
+  | exception Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error _ -> ()
+
 let point_ty = TRecord ("point", [("x", TFloat32); ("y", TFloat32)])
 
 (** Local record construct + field reads live entirely in registers: the record
@@ -3158,5 +3244,14 @@ let () =
             "int32 index still generates (positive control)"
             `Quick
             test_int32_index_still_generates;
+          Alcotest.test_case
+            "Float64 scalar conversions EMIT on PTX (backlog-167)"
+            `Quick
+            test_f64_conversions_emit;
+          Alcotest.test_case
+            "Float64.to_float32 stays refused: semantics undecided \
+             (backlog-167)"
+            `Quick
+            test_f64_to_float32_still_refused;
         ] );
     ]

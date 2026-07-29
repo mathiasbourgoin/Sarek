@@ -2124,12 +2124,35 @@ and convert_intrinsic_handlers () : (string list * intrinsic_handler) list =
     ( ["int_of_float"; "int_of_float64"],
       fun buf alloc env _path name args ->
         Some (intr_unary_cast buf alloc env name TInt32 args) );
-    ( ["of_int"],
+    (* [of_int32] and [of_float32] widen to the module's own float width, so
+       they ride the same path-dependent arm as [of_int]. They were the actual
+       backlog-167 gap: unrouted here, [Float64.of_int32] died with "unsupported
+       construct: intrinsic: of_int32" on CUDA/PTX while passing on OpenCL,
+       Vulkan, Native and the Interpreter — CPU-passes/device-fails, invisible on
+       a host with no NVIDIA device because the PTX legs skip there.
+       test_f64_scalar_conversions and test_tailrec_vector_param both hit it.
+
+       No new emitter: [intr_unary_cast] already reaches [emit_cast], which emits
+       the right instructions ([cvt.rn.f64.s32] for the int widening, the exact
+       [cvt.f64.f32] with NO rounding modifier for f32->f64 — ptxas rejects
+       [cvt.rn.f64.f32] — and [cvt.rzi.s32.f64] for the truncation). Only the
+       NAMES were missing, which is why this is a dispatch entry, not codegen. *)
+    ( ["of_int"; "of_int32"; "of_float32"],
       fun buf alloc env path name args ->
         if List.exists (fun p -> p = "Float64") path then
           Some (intr_unary_cast buf alloc env name TFloat64 args)
         else Some (intr_unary_cast buf alloc env name TFloat32 args) );
-    ( ["to_int"],
+    (* [to_float32] is deliberately NOT here, and this is the one place PTX and
+       GLSL disagree: Sarek_ir_glsl's [glsl_conversions] omits BOTH [to_int] and
+       [to_float32] because their device templates round/truncate while the
+       [ocaml] field Native mirrors is [Stdlib.int_of_float] (63-bit) and the
+       IDENTITY respectively — three implementations already disagree. PTX has
+       accepted [to_int] since this table existed, so that half of the
+       disagreement is already reachable here; do not read the [to_int] arm as an
+       endorsement. Deciding the two semantics stays a separate item; this change
+       does not widen the set, because "while I am here" is how an unresolved
+       semantic acquires a third implementation. *)
+    ( ["to_int"; "to_int32"],
       fun buf alloc env _path name args ->
         Some (intr_unary_cast buf alloc env name TInt32 args) );
   ]
