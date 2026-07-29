@@ -1,0 +1,6 @@
+; Fixture: one target that is unwired ON PURPOSE and declared in the fixture's
+; own declaration file. It is the positive control — the gate must stay green on
+; a legitimately-unwired, declared target, otherwise "refuses an undeclared one"
+; and "refuses every unwired one" are the same observation.
+(executable
+ (name fixture_exempt))

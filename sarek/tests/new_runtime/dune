@@ -31,3 +31,20 @@
  ; broke `dune build` on machines with CUDA_PATH set but libnvrtc absent.
  (flags
   (:standard -w -33)))
+
+; backlog-69: WIRED. Both were declared as executables with no run rule, so
+; they built green and never executed. Both pass, verified before wiring.
+; test_runtime_comparison keeps its `enabled_if CUDA_PATH` guard, so dune skips
+; it entirely on a runner without CUDA rather than reporting a skip as a pass.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_native_runtime.exe})))
+
+(rule
+ (alias runtest)
+ (enabled_if
+  (<> %{env:CUDA_PATH=} ""))
+ (action
+  (run %{dep:test_runtime_comparison.exe})))

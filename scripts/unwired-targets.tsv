@@ -1,0 +1,67 @@
+# Executables and tests that are DECLARED in a dune file but wired to no alias
+# or rule — with the reason, one per line (backlog-69).
+#
+# WHY THIS FILE EXISTS. scripts/check-test-alias-coverage.sh guards against the
+# "vacuous test" shape: an (executable) with no run rule builds green and never
+# executes. It only looked at sarek/tests/e2e/dune, one hardcoded path. Widened
+# to the whole tree it finds 45 unwired targets out of 275 — and 40 of those are
+# legitimately not runnable by `dune test`. A gate that reports 45 red on 39
+# non-problems gets switched off, so the widening is only shippable together
+# with a declaration: each unwired target states WHY, and anything unwired
+# without a declaration is red.
+#
+# THE CHECK RUNS IN BOTH DIRECTIONS, and the second is what stops this file
+# rotting. An unwired target with no line here is red. A line here for a target
+# that is now WIRED, or that no longer exists, is ALSO red — otherwise a stale
+# exemption would silently keep covering something that had been fixed or
+# deleted, which is the same "declared but unverified" shape the declaration is
+# supposed to close.
+#
+# Format:  <dune file>::<target>\t<reason-tag>\t<justification>
+# Tags:    benchmark | browser-target | hardware-probe | tool
+#
+# ADDING A LINE IS A DECISION, not a way to silence the gate. If the target is a
+# TEST that could run, wire it instead — that is what happened to the five this
+# widening surfaced (test_transpile_proof, gate_numeric, gate_framework,
+# test_native_runtime, test_runtime_comparison), two of which were GATES that
+# nothing invoked.
+benchmarks/dune::aggregate	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_bitonic_sort	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_conv2d	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_dot_product	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_gather_scatter	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_histogram	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_mandelbrot	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_matrix_mul	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_matrix_mul_tiled	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_nbody	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_pinned_transfer	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_radix_sort	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_reduction	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_reduction_max	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_scan	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_soa_aos	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_soa_emitter	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_stencil_2d	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_stream_triad	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_transpose	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_transpose_tiled	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_vector_add	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::bench_vector_copy	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::deduplicate_results	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::generate_backend_code	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::to_csv	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+benchmarks/dune::to_web	benchmark	GPU timing loop, run by benchmarks/run_all_benchmarks.sh. Wiring it to runtest would put device-dependent timing on CPU-only CI.
+sarek/core_js/test/dune::smoke	browser-target	js_of_ocaml target; the artifact is JavaScript for a browser or worker, not a runnable native test.
+sarek/core_js/webgpu/lessons/dune::compose_driver	browser-target	js_of_ocaml target; the artifact is JavaScript for a browser or worker, not a runnable native test.
+sarek/core_js/webgpu/spike-worker/dune::worker_spike	browser-target	js_of_ocaml target; the artifact is JavaScript for a browser or worker, not a runnable native test.
+sarek/core_js/webgpu/test/dune::runtime_driver	browser-target	js_of_ocaml target; the artifact is JavaScript for a browser or worker, not a runnable native test.
+sarek/execute/jsoo/dune::smoke	browser-target	js_of_ocaml smoke target; the artifact is JavaScript, not a native executable.
+sarek/plugins/webgpu/spike/numeric_core/dune::test_numeric_spike	browser-target	WebGPU spike; needs a browser with a GPU adapter, which no CI runner here provides.
+sarek/plugins/webgpu/spike/webgpu_binding/dune::webgpu_jsoo_spike	browser-target	WebGPU spike; needs a browser with a GPU adapter, which no CI runner here provides.
+sarek/transpile/web/dune::transpile_js	browser-target	js_of_ocaml transpiler bundle; built by the docs job, not executed.
+sarek-opencl/probe/dune::probe_opencl_f16_model_agreement	hardware-probe	Hardware capability probe: it reports what a specific device advertises. There is no device on a CPU-only runner, so a wired run would be a skip reported as a pass.
+sarek-vulkan/probe/dune::probe_vulkan_coopmat_configs	hardware-probe	Hardware capability probe: it reports what a specific device advertises. There is no device on a CPU-only runner, so a wired run would be a skip reported as a pass.
+sarek-vulkan/probe/dune::probe_vulkan_f16_model_agreement	hardware-probe	Hardware capability probe: it reports what a specific device advertises. There is no device on a CPU-only runner, so a wired run would be a skip reported as a pass.
+tools/dune::device_info	tool	Operator tool, not a test: it prints the local device inventory.
+tools/f16_shape_catalogue/probe/dune::probe_f16_shape_separation	hardware-probe	Hardware capability probe: it reports what a specific device advertises. There is no device on a CPU-only runner, so a wired run would be a skip reported as a pass.

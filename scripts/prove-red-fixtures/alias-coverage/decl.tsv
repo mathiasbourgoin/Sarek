@@ -1,0 +1,2 @@
+# Fixture declaration for the alias-coverage prove-red spec.
+exempt/dune::fixture_exempt	benchmark	unwired on purpose; the positive control

@@ -15,3 +15,14 @@
 ;  (modules test_transpile_proof)
 ;  (libraries sarek_transpile sarek_stdlib_meta)
 ;  (modes js))
+
+; backlog-69: WIRED. This is the only test of the transpiler, and it had never
+; run — no alias, no script, no CI step. That matters more than it sounds: the
+; transpiler routes all five backends through the plain `generate`, which #356
+; found to be a lossy copy dropping record and variant typedefs. Passing when
+; wired (verified before wiring, so this does not turn CI red).
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_transpile_proof.exe})))

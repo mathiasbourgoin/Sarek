@@ -10,3 +10,10 @@
  (modules gate_framework)
  (libraries spoc_framework)
  (preprocess no_preprocessing))
+
+; backlog-69: WIRED. Same as sarek/core/ffi_free_gate: a gate nobody called.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:gate_framework.exe})))

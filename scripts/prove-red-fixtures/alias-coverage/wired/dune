@@ -1,0 +1,9 @@
+; Fixture for scripts/check-test-alias-coverage.sh's prove-red spec: one target
+; wired to runtest, which must NOT be reported.
+(executable
+ (name fixture_wired))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:fixture_wired.exe})))

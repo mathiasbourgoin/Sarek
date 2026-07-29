@@ -16,3 +16,11 @@
  (modules gate_numeric)
  (libraries spoc_core_base stub_ops)
  (preprocess no_preprocessing))
+
+; backlog-69: WIRED. A GATE that nothing invoked — the exact shape this repo
+; keeps closing. Passing when wired, verified before wiring.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:gate_numeric.exe})))
