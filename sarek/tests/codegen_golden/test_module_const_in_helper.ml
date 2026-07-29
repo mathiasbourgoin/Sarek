@@ -77,6 +77,28 @@ let dynamic_const_kernel =
       let t = global_thread_id in
       if t < 1l then out.(0l) <- bump 10l]
 
+(* THE NEGATIVE CASE, from review on #362. `gain` is a module constant AND the
+   name of a local inside `twice`, which does not reference the constant at all.
+
+   The first version of the fix collected every `EVar` name in the helper body,
+   locally-bound ones included, on the reasoning that over-approximating only
+   costs a dead declaration. It does not: the backends emit `SLet` FLAT, so the
+   prefixed constant and the local became two declarations of `gain` in one
+   block — a redeclaration error on a helper that compiled before the fix. The
+   kernel body references `gain` too, so the constant is still live and still
+   declared there; only the helper must not get a copy. *)
+let shadow_const_kernel =
+  [%kernel
+    let open Std in
+    let (gain : float32) = 3.0 in
+    let twice (x : float32) : float32 =
+      let gain = 2.0 in
+      x *. gain
+    in
+    fun (out : float32 vector) (src : float32 vector) ->
+      let t = global_thread_id in
+      if t < 1l then out.(0l) <- twice src.(0l) +. gain]
+
 (* Index of the first occurrence, or -1. Ordering is the property: a declaration
    emitted AFTER the helper that uses it is exactly as broken as none. *)
 let index_of hay needle =
@@ -165,6 +187,91 @@ let declares_before_use ~src ~const_name ~helper_name =
       in
       starts_with " = " || starts_with " : "
 
+(* The helper's own body, brace-matched. The first-mention predicate above
+   deliberately runs to end-of-source because a later mention cannot make a bare
+   first use look like a declaration. COUNTING is the opposite: the kernel body
+   declares the constant too, so an unbounded region would always read 2 and the
+   check would be red on the fix and on the defect alike. All five emitted
+   languages brace their function bodies, so matching is enough. *)
+let helper_body ~src ~helper_name =
+  let sig_at = index_of src (helper_name ^ "(") in
+  if sig_at < 0 then None
+  else
+    let n = String.length src in
+    let rec find_open i =
+      if i >= n then None
+      else if src.[i] = '{' then Some i
+      else find_open (i + 1)
+    in
+    match find_open sig_at with
+    | None -> None
+    | Some o ->
+        let rec close i depth =
+          if i >= n then None
+          else
+            match src.[i] with
+            | '{' -> close (i + 1) (depth + 1)
+            | '}' -> if depth = 1 then Some i else close (i + 1) (depth - 1)
+            | _ -> close (i + 1) depth
+        in
+        Option.map (fun c -> String.sub src o (c - o + 1)) (close o 0)
+
+(* Occurrences of [name] in declaration position — the same two spellings
+   [declares_before_use] enumerates, for the same reason. *)
+let declaration_count body name =
+  let nb = String.length body and nn = String.length name in
+  let starts_at i tok =
+    let nt = String.length tok in
+    i + nt <= nb && String.sub body i nt = tok
+  in
+  let rec go i acc =
+    if i + nn > nb then acc
+    else if
+      String.sub body i nn = name
+      && (starts_at (i + nn) " = " || starts_at (i + nn) " : ")
+    then go (i + nn) (acc + 1)
+    else go (i + 1) acc
+  in
+  go 0 0
+
+(* The negative case, from review on #362: a helper whose local merely SHARES a
+   module constant's name must get exactly ONE declaration of it — its own. Two
+   is the redeclaration the over-approximating collector produced; zero would
+   mean the local itself went missing. *)
+let check_shadow name gen ~const_name ~helper_name ir =
+  match gen ir with
+  | src -> (
+      match helper_body ~src ~helper_name with
+      | None ->
+          expect
+            (Printf.sprintf
+               "%s/shadow: helper %s found in output"
+               name
+               helper_name)
+            false
+      | Some body ->
+          let c = declaration_count body const_name in
+          expect
+            (Printf.sprintf
+               "%s/shadow: %s declared exactly once in %s (got %d)"
+               name
+               const_name
+               helper_name
+               c)
+            (c = 1) ;
+          if name = "GLSL" && glslang_available then
+            expect
+              (Printf.sprintf
+                 "%s/shadow: glslangValidator accepts the shader"
+                 name)
+              (glslang_ok src))
+  | exception e ->
+      Printf.printf
+        "  %-62s REFUSED (%s)\n%!"
+        (Printf.sprintf "%s/shadow" name)
+        ( Printexc.to_string e |> fun s ->
+          String.sub s 0 (min 60 (String.length s)) )
+
 let check_backend name gen ~const_name ~helper_name kernel_label ir =
   match gen ir with
   | src ->
@@ -230,6 +337,17 @@ let () =
         ~helper_name:"bump"
         "dynamic"
         (ir_of dynamic_const_kernel))
+    backends ;
+  print_endline "" ;
+  print_endline "  --- a helper-local that only SHARES the constant's name ---" ;
+  List.iter
+    (fun (name, gen) ->
+      check_shadow
+        name
+        gen
+        ~const_name:"gain"
+        ~helper_name:"twice"
+        (ir_of shadow_const_kernel))
     backends ;
   if Sys.getenv_opt "DUMP" <> None then
     List.iter

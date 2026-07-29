@@ -289,85 +289,129 @@ let ir_lower_stmt_count = ref 0
    initializer containing a BARRIER it would change convergence, so that case is
    refused rather than duplicated. *)
 
-(* Names referenced by an IR statement. Deliberately over-approximate: it
-   collects every [EVar]/[LVar] name, including ones bound locally inside the
-   body, so a local shadowing a module constant makes the constant look
-   referenced and gets its (unused, shadowed) [SLet] prefixed. Over-approximating
-   costs a dead declaration; under-approximating would emit an undeclared
-   identifier, which is the defect being fixed. *)
-let rec expr_names (e : Ir.expr) (acc : (string, unit) Hashtbl.t) : unit =
+(* FREE names of an IR statement: every [EVar]/[LVar] name that is not bound by
+   an enclosing binder. [bound] carries the binders in scope at each point.
+
+   The first version took no [bound] and collected every name, including
+   locally-bound ones, on the reasoning that over-approximating only costs a dead
+   declaration. It does not. The C-family backends emit [SLet] FLAT — [T name =
+   e;] followed by the body at the same indent, no braces — so a helper-local
+   [let c = ...] that merely SHARES a module constant's name made the constant
+   look referenced, got its [SLet] prefixed, and produced two [float c] in one
+   block: a redeclaration error on a helper that compiled fine before. Caught by
+   review on #362.
+
+   Binders covered: [SLet], [SLetMut], [SFor]. NOT match-pattern binders — those
+   stay uncovered, so a pattern-bound name still reads as free. That is the safe
+   direction (it can only over-approximate, never emit an undeclared identifier),
+   and it is why the fold below refuses a residual collision rather than assuming
+   this set is complete. *)
+let rec expr_names (e : Ir.expr) (bound : string list)
+    (acc : (string, unit) Hashtbl.t) : unit =
+  let add n = if not (List.mem n bound) then Hashtbl.replace acc n () in
+  let go a = expr_names a bound acc in
   match e with
-  | Ir.EVar v -> Hashtbl.replace acc v.Ir.var_name ()
+  | Ir.EVar v -> add v.Ir.var_name
   | Ir.EConst _ -> ()
   | Ir.EBinop (_, a, b) ->
-      expr_names a acc ;
-      expr_names b acc
-  | Ir.EUnop (_, a) -> expr_names a acc
+      go a ;
+      go b
+  | Ir.EUnop (_, a) -> go a
   | Ir.EArrayRead (n, i) ->
-      Hashtbl.replace acc n () ;
-      expr_names i acc
+      add n ;
+      go i
   | Ir.EArrayReadExpr (b, i) ->
-      expr_names b acc ;
-      expr_names i acc
-  | Ir.ERecordField (b, _) -> expr_names b acc
-  | Ir.EIntrinsic (_, _, args) -> List.iter (fun a -> expr_names a acc) args
-  | Ir.ECast (_, a) -> expr_names a acc
-  | Ir.ETuple es -> List.iter (fun a -> expr_names a acc) es
+      go b ;
+      go i
+  | Ir.ERecordField (b, _) -> go b
+  | Ir.EIntrinsic (_, _, args) -> List.iter go args
+  | Ir.ECast (_, a) -> go a
+  | Ir.ETuple es -> List.iter go es
   | Ir.EApp (f, args) ->
-      expr_names f acc ;
-      List.iter (fun a -> expr_names a acc) args
-  | Ir.ERecord (_, fs) -> List.iter (fun (_, a) -> expr_names a acc) fs
-  | Ir.EVariant (_, _, args) -> List.iter (fun a -> expr_names a acc) args
-  | Ir.EArrayLen n -> Hashtbl.replace acc n ()
-  | Ir.EArrayCreate (_, sz, _) -> expr_names sz acc
+      go f ;
+      List.iter go args
+  | Ir.ERecord (_, fs) -> List.iter (fun (_, a) -> go a) fs
+  | Ir.EVariant (_, _, args) -> List.iter go args
+  | Ir.EArrayLen n -> add n
+  | Ir.EArrayCreate (_, sz, _) -> go sz
   | Ir.EIf (c, t, e2) ->
-      expr_names c acc ;
-      expr_names t acc ;
-      expr_names e2 acc
+      go c ;
+      go t ;
+      go e2
   | Ir.EMatch (sc, cases) ->
-      expr_names sc acc ;
-      List.iter (fun (_, a) -> expr_names a acc) cases
+      go sc ;
+      List.iter (fun (_, a) -> go a) cases
 
-and lvalue_names (lv : Ir.lvalue) (acc : (string, unit) Hashtbl.t) : unit =
+and lvalue_names (lv : Ir.lvalue) (bound : string list)
+    (acc : (string, unit) Hashtbl.t) : unit =
+  let add n = if not (List.mem n bound) then Hashtbl.replace acc n () in
   match lv with
-  | Ir.LVar v -> Hashtbl.replace acc v.Ir.var_name ()
+  | Ir.LVar v -> add v.Ir.var_name
   | Ir.LArrayElem (n, i) ->
-      Hashtbl.replace acc n () ;
-      expr_names i acc
+      add n ;
+      expr_names i bound acc
   | Ir.LArrayElemExpr (b, i) ->
-      expr_names b acc ;
-      expr_names i acc
-  | Ir.LRecordField (b, _) -> lvalue_names b acc
+      expr_names b bound acc ;
+      expr_names i bound acc
+  | Ir.LRecordField (b, _) -> lvalue_names b bound acc
 
-and stmt_names (st : Ir.stmt) (acc : (string, unit) Hashtbl.t) : unit =
+and stmt_names (st : Ir.stmt) (bound : string list)
+    (acc : (string, unit) Hashtbl.t) : unit =
+  let goe e = expr_names e bound acc in
+  let gos s = stmt_names s bound acc in
   match st with
   | Ir.SAssign (lv, e) ->
-      lvalue_names lv acc ;
-      expr_names e acc
-  | Ir.SSeq sts -> List.iter (fun s -> stmt_names s acc) sts
+      lvalue_names lv bound acc ;
+      goe e
+  | Ir.SSeq sts -> List.iter gos sts
   | Ir.SIf (c, t, e) ->
-      expr_names c acc ;
-      stmt_names t acc ;
-      Option.iter (fun s -> stmt_names s acc) e
+      goe c ;
+      gos t ;
+      Option.iter gos e
   | Ir.SWhile (c, b) ->
-      expr_names c acc ;
-      stmt_names b acc
-  | Ir.SFor (_, lo, hi, _, b) ->
-      expr_names lo acc ;
-      expr_names hi acc ;
-      stmt_names b acc
+      goe c ;
+      gos b
+  | Ir.SFor (v, lo, hi, _, b) ->
+      (* The bounds are evaluated outside the binding, the body inside it. *)
+      goe lo ;
+      goe hi ;
+      stmt_names b (v.Ir.var_name :: bound) acc
   | Ir.SMatch (sc, cases) ->
-      expr_names sc acc ;
-      List.iter (fun (_, s) -> stmt_names s acc) cases
-  | Ir.SReturn e -> expr_names e acc
-  | Ir.SExpr e -> expr_names e acc
-  | Ir.SLet (_, e, b) | Ir.SLetMut (_, e, b) ->
-      expr_names e acc ;
-      stmt_names b acc
-  | Ir.SPragma (_, b) -> stmt_names b acc
-  | Ir.SBlock b -> stmt_names b acc
+      goe sc ;
+      List.iter (fun (_, s) -> gos s) cases
+  | Ir.SReturn e -> goe e
+  | Ir.SExpr e -> goe e
+  | Ir.SLet (v, e, b) | Ir.SLetMut (v, e, b) ->
+      (* Same asymmetry: [let c = c *. 2.] genuinely references the outer [c], so
+         the initializer is walked with the OLD scope. *)
+      goe e ;
+      stmt_names b (v.Ir.var_name :: bound) acc
+  | Ir.SPragma (_, b) -> gos b
+  | Ir.SBlock b -> gos b
   | Ir.SBarrier | Ir.SWarpBarrier | Ir.SMemFence | Ir.SEmpty -> ()
   | Ir.SNative _ -> ()
+
+(* Every name BOUND anywhere in a statement, at any depth. Used to detect the
+   residual case the free-name fix cannot make safe: a helper that both
+   references a module constant and rebinds that same name ([let c = c *. 2.]).
+   The reference is real, so the constant must be prefixed; the rebinding then
+   emits a second declaration of the same identifier in the same flat block.
+   There is no correct code to emit, so the fold refuses. *)
+let rec stmt_binders (st : Ir.stmt) (acc : (string, unit) Hashtbl.t) : unit =
+  match st with
+  | Ir.SLet (v, _, b) | Ir.SLetMut (v, _, b) | Ir.SFor (v, _, _, _, b) ->
+      Hashtbl.replace acc v.Ir.var_name () ;
+      stmt_binders b acc
+  | Ir.SSeq sts -> List.iter (fun s -> stmt_binders s acc) sts
+  | Ir.SIf (_, t, e) ->
+      stmt_binders t acc ;
+      Option.iter (fun s -> stmt_binders s acc) e
+  | Ir.SWhile (_, b) -> stmt_binders b acc
+  | Ir.SMatch (_, cases) -> List.iter (fun (_, s) -> stmt_binders s acc) cases
+  | Ir.SPragma (_, b) | Ir.SBlock b -> stmt_binders b acc
+  | Ir.SAssign _ | Ir.SReturn _ | Ir.SExpr _ | Ir.SBarrier | Ir.SWarpBarrier
+  | Ir.SMemFence | Ir.SEmpty | Ir.SNative _ ->
+      ()
 
 (* Does this initializer contain a synchronising operation? Prefixing would
    duplicate it per call site, which changes convergence, so that case is REFUSED
@@ -771,7 +815,7 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
                drag an unreferenced barrier into the refusal path. *)
             let referenced =
               let acc = Hashtbl.create 8 in
-              stmt_names fun_body_ir acc ;
+              stmt_names fun_body_ir [] acc ;
               let rec close () =
                 let added = ref false in
                 Hashtbl.iter
@@ -780,7 +824,7 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
                     | None -> ()
                     | Some (_, init) ->
                         let sub = Hashtbl.create 4 in
-                        expr_names init sub ;
+                        expr_names init [] sub ;
                         Hashtbl.iter
                           (fun n () ->
                             if
@@ -797,10 +841,34 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
               close () ;
               acc
             in
+            (* Names the helper binds anywhere, at any depth. A constant that is
+               both referenced AND rebound cannot be prefixed: the backends emit
+               [SLet] flat, so the prefix and the rebinding are two declarations
+               of one identifier in one block. Refused below rather than emitted.
+               Caught by review on #362. *)
+            let helper_binders =
+              let acc = Hashtbl.create 8 in
+              stmt_binders fun_body_ir acc ;
+              acc
+            in
             let fun_body_ir =
               List.fold_left
                 (fun body name ->
                   if not (Hashtbl.mem referenced name) then body
+                  else if Hashtbl.mem helper_binders name then
+                    Ppxlib.Location.raise_errorf
+                      ~loc:helper_loc
+                      "Helper %S both references module constant %S and binds \
+                       a local of the same name. The constant has to be \
+                       declared inside the helper to be visible there, and the \
+                       generated device code declares locals in one flat \
+                       scope, so that would emit two declarations of %S in the \
+                       same block. Rename the local, or pass the constant in \
+                       as a parameter of %S."
+                      name_of_helper
+                      name
+                      name
+                      name_of_helper
                   else
                     match Hashtbl.find_opt state.mod_consts name with
                     | None -> body
