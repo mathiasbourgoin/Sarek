@@ -145,6 +145,16 @@ module Make (Ops : CUSTOM_OPS) : sig
     soa_gather : unit -> unit;
     soa_to_device : Ops.device_t -> unit;
     soa_leaf_bufs : Ops.device_t -> Ops.device_buf list;
+    soa_from_device : Ops.device_t -> unit;
+        (** Inverse of [soa_to_device]: read every leaf back, then gather into
+            the packed AoS host buffer. Without it a kernel's output is silently
+            lost — the packed device buffer an ordinary [Transfer.to_cpu] reads
+            is the one the SoA launch did not write. *)
+    soa_leaves_live : bool ref;
+        (** Set by [soa_to_device]; only READ elsewhere. It is what lets the
+            read-back path follow the launch's ABI decision instead of
+            re-deriving it. [false] whenever the launch used the packed AoS ABI
+            (an external source, or any non-CUDA/PTX backend). *)
   }
 
   and ('a, 'b) t = {

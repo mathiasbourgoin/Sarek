@@ -186,6 +186,33 @@ module Make (Ops : CUSTOM_OPS) = struct
             compiled for the jsoo target too, where [Soa_vector] does not exist
             (sarek/execute/jsoo/dune copies Execute.ml but not Soa_launch.ml),
             so it can never name the SoA modules directly. *)
+    soa_from_device : Ops.device_t -> unit;
+        (** The inverse of {!soa_to_device}: read every leaf back from [device],
+            then gather into the packed AoS host buffer.
+
+            Without this a kernel's OUTPUT is silently lost. A launch that took
+            the SoA ABI wrote into the N leaf buffers, and the packed device
+            buffer it did not touch is what an ordinary [Transfer.to_cpu]
+            downloads — so the host would see whatever the AoS buffer last held,
+            with no error anywhere. Paired with {!soa_leaves_live} below, which
+            is what says the leaves are the ones holding the results. *)
+    soa_leaves_live : bool ref;
+        (** Have the leaf buffers been written by an SoA-ABI launch?
+
+            The launch site and the read-back site must not answer "SoA or AoS?"
+            independently — that is the same divergence hazard the single
+            [soa_dispatch] predicate exists to prevent, one step later in the
+            round trip. So this is not a second predicate: {!soa_to_device} sets
+            it, and read-back only READS it. A launch that never took the SoA
+            ABI (an external source through [Execute.run_source], or any non-PTX
+            backend) leaves it [false], and read-back then correctly downloads
+            the packed buffer.
+
+            A [bool ref] rather than a mutable field so that the closure which
+            performs the upload can set it itself. A mutable field would have to
+            be set by the CALLER after invoking [soa_to_device] — exactly the
+            "do the first and forget the second" split that closure is shaped to
+            make impossible. *)
   }
 
   and ('a, 'b) t = {

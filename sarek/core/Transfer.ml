@@ -350,11 +350,25 @@ let to_cpu ?(force = false) (type a b) (vec : (a, b) Vector.t) : unit =
       "to_cpu: transferring from dev=%d (force=%b)"
       dev.id
       force ;
-    match Vector.get_buffer vec dev with
-    | None -> failwith "to_cpu: no device buffer to transfer from"
-    | Some _ ->
-        copy_device_to_host vec dev ;
+    match vec.Vector.soa with
+    | Some b when !(b.Vector.soa_leaves_live) ->
+        (* The launch took the SoA ABI, so the results are in the N leaf buffers
+           and the packed device buffer this function would otherwise download
+           was never written. Reading it back would hand the caller the
+           pre-launch host contents with no error anywhere.
+
+           The condition reads the flag the UPLOAD set; it does not re-decide
+           "SoA or AoS?" from the device or the vector's shape. A second
+           independent answer to that question is how a round trip ends up
+           uploading leaves and downloading a packed buffer. *)
+        b.Vector.soa_from_device dev ;
         vec.location <- Vector.Both dev
+    | Some _ | None -> (
+        match Vector.get_buffer vec dev with
+        | None -> failwith "to_cpu: no device buffer to transfer from"
+        | Some _ ->
+            copy_device_to_host vec dev ;
+            vec.location <- Vector.Both dev)
   end
   else
     Log.debugf

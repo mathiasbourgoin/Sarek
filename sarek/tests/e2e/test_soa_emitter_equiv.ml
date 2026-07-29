@@ -810,6 +810,83 @@ let check_transparent dev n =
     (if !ok then "OK" else "FAILED") ;
   !ok
 
+(* Transparent OUTPUT round-trip: a kernel writes the y leaf and the host reads
+   the result back with a plain [Vector.get] — no leaf iteration, no explicit
+   gather. That is the whole claim of the transparent path, and it is a different
+   claim from {!check_roundtrip}, which does the D2H and the gather BY HAND
+   because [Soa_launch.run_soa] documents that as the caller's job.
+
+   Nothing covered it before, and the gap was not cosmetic: [check_transparent]
+   above writes its results into a separate plain [out] vector, so it holds the
+   SoA vector INPUT-only. With the SoA ABI selected, a launch writes the N leaf
+   buffers and leaves the packed AoS buffer untouched — which is precisely what
+   an ordinary [Transfer.to_cpu] downloads. Every assertion above would still
+   have passed while a kernel's output was silently discarded.
+
+   CUDA/PTX only, and the reason is a defect elsewhere rather than a property of
+   this path. Extending it to every device would be the stronger test — the same
+   [Vector.get] should return the same answer through the packed AoS fallback —
+   but [pts.(tid).y <- …] does not work on the two CPU backends: the Interpreter
+   REFUSES it (Sarek_ir_interp_eval.assign_lvalue's [LRecordField] arm raises
+   [Unsupported_operation "record field assignment"]), and Native accepts it and
+   silently drops the store (measured: y unchanged at 1 where 2 was expected).
+   That is tracked as backlog-172 and is not this case's subject; asserting the
+   non-PTX arm here would pin a red on an unrelated gap. When 172 lands, drop the
+   [is_ptx] guard — the assertion below needs no other change. *)
+let check_transparent_roundtrip dev n =
+  let threads = min 128 n in
+  let block = dims threads and grid = dims ((n + threads - 1) / threads) in
+  let sv = Soa_vector.create_transparent point3d_custom n in
+  let orig i =
+    {
+      x = float_of_int i;
+      y = (float_of_int i *. 0.5) +. 1.0;
+      z = float_of_int (n - i);
+    }
+  in
+  for i = 0 to n - 1 do
+    Vector.set sv i (orig i)
+  done ;
+  let ir = ir_of p3_scale_y_kernel in
+  Sarek.Execute.run_vectors
+    ~device:dev
+    ~ir
+    ~args:[Vec sv; Int n]
+    ~block
+    ~grid
+    () ;
+  Transfer.flush dev ;
+  let ok = ref true in
+  for i = 0 to n - 1 do
+    (* Plain host read. No Soa_vector.leaves, no Soa_vector.gather. *)
+    let got = Vector.get sv i in
+    let o = orig i in
+    if
+      Float.abs (got.y -. (o.y *. 2.0)) > 1e-3
+      || Float.abs (got.x -. o.x) > 1e-3
+      || Float.abs (got.z -. o.z) > 1e-3
+    then begin
+      if !ok then
+        Printf.printf
+          "  transparent round-trip mismatch @%d: got {x=%g;y=%g;z=%g} want \
+           {x=%g;y=%g;z=%g}\n\
+           %!"
+          i
+          got.x
+          got.y
+          got.z
+          o.x
+          (o.y *. 2.0)
+          o.z ;
+      ok := false
+    end
+  done ;
+  Printf.printf
+    "  %-56s %s\n%!"
+    "transparent SoA output read back (PTX: leaf D2H + gather)"
+    (if !ok then "OK" else "FAILED") ;
+  !ok
+
 (* The two integer-leaf device rows the handoff left open. Driven through the
    TRANSPARENT path, so one case covers both the mixed-width leaf addressing and
    the generic dispatch. Each leaf is compared to the reference independently. *)
@@ -989,6 +1066,16 @@ let () =
       if dev_can_f64 && not (check "dpair(f64)" dev n run_dpair) then
         ok := false ;
       if not (check_transparent dev n) then ok := false ;
+      (* Transparent OUTPUT read-back. PTX-gated — see the case's header for why
+         the non-PTX arm is blocked on backlog-172 rather than omitted. *)
+      if is_ptx dev then begin
+        if not (check_transparent_roundtrip dev n) then ok := false
+      end
+      else
+        Printf.printf
+          "  %-56s %s\n%!"
+          "transparent SoA output read back"
+          "SKIP (non-PTX: v.(i).f <- blocked on backlog-172)" ;
       if not (check_mixed_widths dev n) then ok := false ;
       (* Item 3: SoA launch must be rejected (never wrong data) on non-PTX. *)
       if not (check_gate dev) then ok := false ;

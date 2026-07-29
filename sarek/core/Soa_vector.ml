@@ -136,6 +136,9 @@ let create_transparent (custom : 'a Vector.custom_type) (length : int) :
              dev.Device.id)
   in
   let v = t.aos in
+  (* Set by [soa_to_device] below and only read by the read-back path, so that
+     read-back follows the launch's ABI decision rather than re-deriving it. *)
+  let leaves_live = ref false in
   v.Vector.soa <-
     Some
       {
@@ -143,10 +146,33 @@ let create_transparent (custom : 'a Vector.custom_type) (length : int) :
         soa_aos_stride = t.plan.Soa.aos_stride;
         soa_scatter = (fun () -> scatter t);
         soa_gather = (fun () -> gather t);
+        soa_leaves_live = leaves_live;
         soa_to_device =
           (fun dev ->
             scatter t ;
-            Array.iter (fun (Leaf lv) -> Transfer.to_device lv dev) t.leaves);
+            Array.iter (fun (Leaf lv) -> Transfer.to_device lv dev) t.leaves ;
+            leaves_live := true ;
+            (* The AoS vector itself gets no device buffer under this ABI — the
+               leaves hold the data — so without this its location stays [CPU]
+               and EVERY read-back path short-circuits: [Transfer.to_cpu],
+               [Transfer.sync] and the auto-sync callback all treat [CPU] as
+               "nothing on a device to fetch" and return before looking at the
+               SoA binding at all. Recording the device as authoritative and the
+               host copy as stale is not bookkeeping; it is what makes the
+               read-back reachable. *)
+            v.Vector.location <- Vector.Stale_CPU dev);
+        soa_from_device =
+          (fun _dev ->
+            (* [~force:true]: after a launch the leaves are [Vector.Both dev] —
+               the host copy is the pre-launch scatter, the device copy is the
+               result — and an unforced [to_cpu] treats [Both] as already in
+               sync and returns without reading anything back. That is exactly
+               the silent-stale-output failure this closure exists to prevent,
+               so the force is load-bearing and not defensive. *)
+            Array.iter
+              (fun (Leaf lv) -> Transfer.to_cpu ~force:true lv)
+              t.leaves ;
+            gather t);
         soa_leaf_bufs =
           (fun dev -> Array.to_list (Array.map (leaf_buf dev) t.leaves));
       } ;

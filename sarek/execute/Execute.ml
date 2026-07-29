@@ -259,18 +259,31 @@ let get_device_buffer (type a b) (v : (a, b) Vector.t) (dev : Device.t) :
    The CUDA/PTX restriction is the documented "never wrong data" fallback: only
    that backend's emitter lowers a record param to N base pointers, so on every
    other backend the vector stays exactly what it also is — an ordinary packed
-   AoS custom vector — and takes the untouched path. *)
+   AoS custom vector — and takes the untouched path.
 
-(** Transfer all V2 Vector args to device *)
-let soa_dispatch (type a b) (v : (a, b) Vector.t) (dev : Device.t) :
-    Vector.soa_binding option =
+   [soa_abi] is the caller's statement that the kernel about to run was emitted
+   by Sarek with [~soa_params] — i.e. that its signature really is N leaf
+   pointers plus one shared length. The two generated-JIT sites pass [true]
+   explicitly and everything else defaults to [false], because the dangerous
+   direction is an EXTERNAL kernel: [run_source] hands the backend a source
+   string Sarek did not emit, whose parameter block is the packed [(ptr, len)]
+   pair, and binding N leaf pointers to it is not a crash but silently wrong
+   data. A default of [true] would make that the behaviour any new caller
+   inherits by omission. *)
+let soa_dispatch (type a b) ~(soa_abi : bool) (v : (a, b) Vector.t)
+    (dev : Device.t) : Vector.soa_binding option =
   match v.Vector.soa with
-  | Some b when dev.Device.framework = "CUDA/PTX" -> Some b
+  | Some b when soa_abi && dev.Device.framework = "CUDA/PTX" -> Some b
   | Some _ | None -> None
 
 (* Kernel param names at the positions holding an SoA-dispatched vector.
    Positional, because that is the only correspondence there is: [vector_arg] is
-   existential, so nothing relates an argument to a parameter but its index. *)
+   existential, so nothing relates an argument to a parameter but its index.
+
+   [~soa_abi:true] is fixed here rather than a parameter: this function's whole
+   purpose is to compute the [~soa_params] argument to [generate_source], so it
+   is only ever reached on the generated-JIT path, and it is what MAKES that
+   kernel's signature the N-pointer one. *)
 let soa_param_names (ir : Sarek_ir_types.kernel) (args : vector_arg list)
     (dev : Device.t) : string list =
   let param_names =
@@ -283,16 +296,17 @@ let soa_param_names (ir : Sarek_ir_types.kernel) (args : vector_arg list)
   List.filteri
     (fun i _ ->
       match List.nth_opt args i with
-      | Some (Vec v) -> soa_dispatch v dev <> None
+      | Some (Vec v) -> soa_dispatch ~soa_abi:true v dev <> None
       | _ -> false)
     param_names
 
-let transfer_vectors_to_device (args : vector_arg list) (dev : Device.t) : unit
-    =
+(** Transfer all V2 Vector args to device *)
+let transfer_vectors_to_device ?(soa_abi = false) (args : vector_arg list)
+    (dev : Device.t) : unit =
   List.iter
     (function
       | Vec v -> (
-          match soa_dispatch v dev with
+          match soa_dispatch ~soa_abi v dev with
           | Some b -> b.Vector.soa_to_device dev
           | None -> Transfer.to_device v dev)
       | _ -> ())
@@ -309,17 +323,18 @@ let transfer_vectors_to_device (args : vector_arg list) (dev : Device.t) : unit
     happens to immediately follow a buffer (which is exactly what a
     [~inject_lengths:false] caller can pass) - see
     {!Framework_sig.run_source_arg}. *)
-let expand_to_run_source_args ?(inject_lengths = true) (args : vector_arg list)
-    (dev : Device.t) : Framework_sig.run_source_arg list =
+let expand_to_run_source_args ?(inject_lengths = true) ?(soa_abi = false)
+    (args : vector_arg list) (dev : Device.t) :
+    Framework_sig.run_source_arg list =
   List.concat_map
     (function
-      | Vec v when soa_dispatch v dev <> None ->
+      | Vec v when soa_dispatch ~soa_abi v dev <> None ->
           (* N leaf base pointers in leaf (record declaration) order, then ONE
              shared length — exactly the param block Sarek_ir_ptx.emit_params
              produces for a ~soa_params vector. The length is emitted even under
              ~inject_lengths:false: it is not an injected convenience here but a
              declared parameter of that ABI. *)
-          let b = Option.get (soa_dispatch v dev) in
+          let b = Option.get (soa_dispatch ~soa_abi v dev) in
           let len = Vector.length v in
           let leaf_args =
             List.map
@@ -793,7 +808,12 @@ let run ~(device : Device.t) ~(name : string)
                        })
               | Some source ->
                   (* Convert vector args to run_source_arg format (auto-injects lengths) *)
-                  let rs_args = expand_to_run_source_args args device in
+                  (* ~soa_abi:true: this is the generated-JIT path, and the
+                     source just produced above was emitted with the matching
+                     ~soa_params. *)
+                  let rs_args =
+                    expand_to_run_source_args ~soa_abi:true args device
+                  in
                   (* Set current device *)
                   let dev = B.Device.get device.backend_id in
                   B.Device.set_current dev ;
@@ -1094,8 +1114,10 @@ let run_vectors ~(device : Device.t) ~(ir : Sarek_ir_types.kernel)
      2. Pass vector_args to run (it expands for JIT, passes direct for Direct)
      3. Mark stale (CPU backends: no-op due to zero-copy) *)
 
-  (* 1. Transfer all vectors to device *)
-  transfer_vectors_to_device args device ;
+  (* 1. Transfer all vectors to device. ~soa_abi:true — this entry point runs a
+     Sarek-generated kernel, so an SoA-bound vector's leaves are what the launch
+     will read. [Execute.run_source] deliberately does NOT pass it. *)
+  transfer_vectors_to_device ~soa_abi:true args device ;
 
   (* 2. Dispatch via run - it handles expansion per backend *)
   run
