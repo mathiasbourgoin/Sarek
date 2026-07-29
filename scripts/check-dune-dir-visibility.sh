@@ -205,6 +205,19 @@ tracked = subprocess.run(
 ).stdout.decode().split("\0")
 dune_files = sorted({p for p in tracked if p == "dune" or p.endswith("/dune")})
 
+# Fixture dune files under scripts/prove-red-fixtures/ are INPUTS to another
+# gate's mutation tests, not build directories. They are invisible to dune, and
+# that is deliberate and permanent -- they exist to be parsed by
+# check-test-alias-coverage.sh, never built. Reporting them is true by the letter
+# of this check and meaningless in fact.
+#
+# Second gate to need this exclusion (the first was
+# check-test-alias-coverage.sh, which introduced the tree). If a THIRD
+# dune-walking gate appears, factor the rule out rather than adding a third copy
+# -- three hand-maintained copies of one convention is how the copies start
+# disagreeing.
+dune_files = [p for p in dune_files if not p.startswith("scripts/prove-red-fixtures/")]
+
 if not dune_files:
     print("ERROR: no tracked dune files found -- run from the repo root")
     sys.exit(2)
