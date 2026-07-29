@@ -139,6 +139,44 @@ module Make (Ops : CUSTOM_OPS) = struct
       }
         -> ('a, unit) host_storage
 
+  (** Opt-in Structure-of-Arrays binding for a custom (flat-record) vector
+      (backlog-54). Present iff the vector was created with [~layout:SoA].
+
+      {b Why this is a field of closures and ints, and NOT a [host_storage]
+         constructor carrying a [Soa.plan].} The Tier 1b handoff doc proposed
+      the latter; it is not buildable. This library is deliberately FFI-free and
+      is compiled to [.bc.js] as well as [.bc] — its dune stanza must not list
+      [ctypes], and [sarek/core/ffi_free_gate] enforces that at build time.
+      [Soa]/[Soa_vector] live in [spoc_core] and use [Ctypes] directly to copy
+      raw words, and [Vector_types] is above this layer too, so naming any of
+      them here would either break that gate or force the plan representation to
+      be duplicated across the layer boundary — a drift hazard of exactly the
+      kind the [ir_fields] trust note warns about.
+
+      So the layer inversion is resolved with behaviour instead of types: the
+      producer ({!Vector.create} in [spoc_core], which may use ctypes freely)
+      supplies the transpose as closures plus the two plain numbers a launch
+      needs. Nothing ctypes-shaped crosses down, and this stays a value a jsoo
+      build can hold.
+
+      Choosing a record field over a GADT constructor is also what makes this
+      affordable: a new [host_storage] constructor forces all 51 match arms
+      across 5 files; a field forces only the 6 sites that build this record,
+      all of them in this file. It keeps the same property that made the GADT
+      attractive — the compiler finds every site — without the fan-out, and
+      without a hidden global side table keyed by vector id. *)
+  and soa_binding = {
+    soa_num_leaves : int;
+        (** Number of scalar leaves = number of base pointers a launch binds. *)
+    soa_aos_stride : int;  (** Packed AoS element size, in bytes. *)
+    soa_scatter : unit -> unit;
+        (** Transpose the AoS host buffer into the N per-leaf host buffers. Call
+            before transferring the leaves to a device. *)
+    soa_gather : unit -> unit;
+        (** Transpose the N per-leaf host buffers back into the AoS host buffer.
+            Call after reading leaves back from a device that wrote them. *)
+  }
+
   and ('a, 'b) t = {
     host : ('a, 'b) host_storage;
     device_buffers : (int, Ops.device_buf) Hashtbl.t;
@@ -147,6 +185,11 @@ module Make (Ops : CUSTOM_OPS) = struct
     mutable location : location;
     mutable auto_sync : bool;
     id : int;
+    mutable soa : soa_binding option;
+        (** [None] for every vector except one created with [~layout:SoA]. Read
+            by the launch path to decide whether to bind N leaf pointers instead
+            of one packed buffer; ignored by every host-side operation, which is
+            why [get]/[set] and the PPX accessors need no changes at all. *)
   }
 
   (** {2 Kind helpers — delegated to Spoc_core_base_scalar} *)
@@ -246,6 +289,7 @@ module Make (Ops : CUSTOM_OPS) = struct
         location = CPU;
         auto_sync = true;
         id = !next_id;
+        soa = None;
       }
     in
     (match dev with Some d -> vec.location <- Stale_GPU d | None -> ()) ;
@@ -267,6 +311,7 @@ module Make (Ops : CUSTOM_OPS) = struct
             location = CPU;
             auto_sync = true;
             id = !next_id;
+            soa = None;
           }
         in
         (match dev with Some d -> vec.location <- Stale_GPU d | None -> ()) ;
@@ -287,6 +332,7 @@ module Make (Ops : CUSTOM_OPS) = struct
       location = CPU;
       auto_sync = true;
       id = !next_id;
+      soa = None;
     }
 
   let of_raw_handle (c : 'a custom_type) (raw : nativeint) (length : int) :
@@ -301,6 +347,7 @@ module Make (Ops : CUSTOM_OPS) = struct
       location = CPU;
       auto_sync = true;
       id = !next_id;
+      soa = None;
     }
 
   (** {2 Accessors} *)
@@ -396,6 +443,7 @@ module Make (Ops : CUSTOM_OPS) = struct
       location = CPU;
       auto_sync = vec.auto_sync;
       id = !next_id;
+      soa = None;
     }
 
   let sub_vector_host (type a b) (vec : (a, b) t) ~(start : int) ~(len : int) :
@@ -425,6 +473,7 @@ module Make (Ops : CUSTOM_OPS) = struct
       location = CPU;
       auto_sync = vec.auto_sync;
       id = !next_id;
+      soa = None;
     }
 
   let sub_vector (type a b) (vec : (a, b) t) ~(start : int) ~(len : int)
