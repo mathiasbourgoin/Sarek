@@ -358,7 +358,23 @@ let test_negative_device_refuses () =
          skipped obligation must say so: what is unverified here is specifically
          that the gate is not refusing vacuously. The refusal arms above already
          ran, and would have failed had a no-extension device permitted. *)
-      if not permits then begin
+      (* The skip predicate is the EXTENSION BIT, not the verdict — caught by
+         review on #369, and it is the difference between a narrow escape and a
+         hole. `not permits` is true whenever nothing passes Sarek's full
+         configuration verdict, and that INCLUDES a device which advertises
+         VK_KHR_cooperative_matrix and is nonetheless refused because some other
+         required capability is missing. That case is a live gate/config
+         regression and must still FAIL; skipping it would hide precisely what
+         this control exists for, while the message claimed the extension was
+         absent. A predicate wider than its own diagnostic — the same defect
+         class this branch was opened to fix, one level up.
+         So: skip only when NO device advertises the extension, which is the
+         genuinely unobservable case. Advertised-but-refused still reaches the
+         assertion below. *)
+      let advertises =
+        List.exists (fun d -> d.dev.Device.coopmat_extension_advertised) devs
+      in
+      if not advertises then begin
         Printf.printf
           "  [SKIP] separation UNPROVEN on this host: no device advertises \
            VK_KHR_cooperative_matrix (%s). The refusal arms DID run; what is \
