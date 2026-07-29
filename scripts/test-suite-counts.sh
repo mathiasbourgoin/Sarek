@@ -107,8 +107,9 @@
 # reported is exit 5, not 4. That is deliberate. Its FAIL tally is taken over a
 # partial run, so 4 ("complete, N failures") would understate it.
 #
-# The build-failure check is a LOG HEURISTIC (`^Error:` at column 0, which is
-# dune's own formatting), and heuristics in a gate are what this file
+# The build-failure check is a LOG HEURISTIC (an `Error:` or `Error (<...>):`
+# label at column 0, which is dune's own formatting; the two spellings are
+# argued below), and heuristics in a gate are what this file
 # spends 60 lines arguing against. So it is the fallback, not the mechanism:
 # --dune-exit lets the caller pass the one authoritative fact the script cannot
 # derive from a log. Measured before choosing the pattern: 0 matches in a green
@@ -292,8 +293,9 @@ min_suites = int(sys.argv[2])
 dune_exit = sys.argv[3] if len(sys.argv) > 3 else ""
 text = sys.stdin.read() if src == "-" else open(src, errors="replace").read()
 
-# Dune reports a compile error as `Error: ...` at column 0, while alcotest
-# indents everything it prints. Measured before the pattern was chosen: 0
+# Dune reports a compile error with an `Error` label at column 0 -- `Error: ...`
+# or `Error (warning N [...]): ...` -- while alcotest indents everything it
+# prints. Measured before the pattern was chosen: 0
 # matches in a green 4885-line log AND 0 in a log of genuinely FAILING alcotest
 # cases, so this separates "the build died" from "a test failed" — which is why
 # they get different exit codes rather than one catch-all.
