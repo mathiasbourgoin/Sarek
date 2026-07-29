@@ -747,6 +747,10 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
                tuple-component error rather than miscompiling. *)
             register_tuple_type state ret_ty ;
             let name_of_helper = name in
+            (* Captured HERE, where [body] is still the helper's texpr: inside the
+               prefixing fold below, [body] is the accumulator statement and
+               shadows it. *)
+            let helper_loc = Sarek_ast.loc_to_ppxlib body.te_loc in
             Hashtbl.add state.lowering_stack name () ;
             let fun_body_ir = lower_stmt state body in
             Hashtbl.remove state.lowering_stack name ;
@@ -807,9 +811,19 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
                                convergence, so this is refused rather than
                                silently changed. Names both the constant and the
                                intrinsic: "a barrier somewhere" is not actionable.
-                            *)
+
+                               LOCATED at the helper's body, not
+                               [Location.none]. The first version passed
+                               [Location.none] while the commit message and the
+                               PR body both claimed "a located error" — the claim
+                               was wider than the code, and a refusal the user
+                               cannot place in their source is barely better than
+                               a silent one. This file already threads real
+                               locations for comparable refusals (the [lsr] error
+                               and the shared-memory rejections), so there was no
+                               reason to drop it here. Caught by review on #362. *)
                             Ppxlib.Location.raise_errorf
-                              ~loc:Ppxlib.Location.none
+                              ~loc:helper_loc
                               "Module constant %S is referenced by helper %S \
                                and its initializer calls %S, a synchronising \
                                operation. Making it visible to the helper \
