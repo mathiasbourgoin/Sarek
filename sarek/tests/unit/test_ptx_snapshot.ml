@@ -876,6 +876,69 @@ let test_int64_compare_minmax_markers () =
   if contains ptx "setp.lt.s32" || contains ptx "not.b32" then
     Alcotest.fail "32-bit instruction emitted for 64-bit operand"
 
+(** The [Ne] member of that same comparison family, which the H2 test above left
+    uncovered on float operands. Float [<>] must lower to the UNORDERED
+    not-equal (setp.neu.f32/f64). The ordered setp.ne.f32/f64 is false when
+    either operand is NaN, contradicting C's [!=] (every C-family backend), the
+    native path's OCaml [<>] and the interpreter's structural [<>] - a silent
+    wrong answer on PTX only. Integer [<>] keeps the ordered [ne] (no NaN), and
+    float [=] keeps the ordered setp.eq.f32/f64 on purpose: C's [==] is false
+    for NaN too, so the Eq/Ne asymmetry is correct and must not be "fixed". *)
+let test_float_ne_unordered_markers () =
+  let fa = make_var "fa" (TVec TFloat32) in
+  let da = make_var "da" (TVec TFloat64) in
+  let out = make_var "out" (TVec TInt32) in
+  let tid = make_var "tid" TInt32 in
+  let store e = SAssign (LArrayElem ("out", EVar tid), e) in
+  let body =
+    SLet
+      ( tid,
+        EIntrinsic ([], "global_thread_id", []),
+        SSeq
+          [
+            store
+              (EBinop (Ne, EArrayRead ("fa", EVar tid), EConst (CFloat32 1.0)));
+            store
+              (EBinop (Ne, EArrayRead ("da", EVar tid), EConst (CFloat64 1.0)));
+            (* Eq must stay ordered, and integer Ne must stay ordered. *)
+            store
+              (EBinop (Eq, EArrayRead ("fa", EVar tid), EConst (CFloat32 1.0)));
+            store (EBinop (Ne, EVar tid, EConst (CInt32 3l)));
+          ] )
+  in
+  let k =
+    base_kernel
+      "float_ne"
+      [
+        DParam (fa, Some {arr_elttype = TFloat32; arr_memspace = Global});
+        DParam (da, Some {arr_elttype = TFloat64; arr_memspace = Global});
+        DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global});
+      ]
+      body
+      []
+  in
+  let ptx = Sarek_ir_ptx.generate k in
+  (* Positive polarity: the unordered form is what float [<>] emits. *)
+  assert_contains ptx "setp.neu.f32" ;
+  assert_contains ptx "setp.neu.f64" ;
+  (* Negative polarity: the ordered float form must be absent. Both halves are
+     needed - "setp.neu.f32" contains neither "setp.ne.f32" nor
+     "setp.ne.f64" as a substring, so a lone positive assertion above would
+     still pass against an emitter that emits BOTH forms, and a lone negative
+     assertion would pass against an emitter that emits neither. A one-sided
+     marker assertion on this file has misfired before. *)
+  if contains ptx "setp.ne.f32" then
+    Alcotest.fail "float <> emitted ordered setp.ne.f32: NaN <> x would be 0" ;
+  if contains ptx "setp.ne.f64" then
+    Alcotest.fail "float <> emitted ordered setp.ne.f64: NaN <> x would be 0" ;
+  (* Scope guard: the fix is Ne-on-float only. *)
+  assert_contains ptx "setp.eq.f32" ;
+  assert_contains ptx "setp.ne.u32" ;
+  if contains ptx "setp.equ.f32" then
+    Alcotest.fail "float = must stay ordered setp.eq.f32 (NaN = NaN is false)" ;
+  if contains ptx "setp.neu.u32" then
+    Alcotest.fail "integer <> must stay setp.ne.u32 (no unordered int form)"
+
 (** ECast scalar-matrix coverage: bool casts normalize to a u32 0/1 via
     setp+selp (float sources use unordered neu so NaN -> 1, matching C); i32 ->
     i64 sign-extends (cvt.s64.s32); i64 -> i32 truncates (cvt.u32.u64). *)
@@ -3051,6 +3114,10 @@ let () =
             "int64 compare/not/min emit 64-bit forms"
             `Quick
             test_int64_compare_minmax_markers;
+          Alcotest.test_case
+            "float <> emits unordered setp.neu, not ordered setp.ne"
+            `Quick
+            test_float_ne_unordered_markers;
           Alcotest.test_case
             "plain f32 division emits div.rn.f32"
             `Quick

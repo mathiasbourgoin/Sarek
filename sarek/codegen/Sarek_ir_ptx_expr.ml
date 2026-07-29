@@ -1147,10 +1147,28 @@ and emit_binop buf alloc env op e1 e2 : string =
          which is invalid PTX and fails at module load. Sarek ints are
          signed, so the integer forms are s32/s64 (sign matters for
          Lt/Le/Gt/Ge; for Eq/Ne it is irrelevant but harmless). *)
+      let is_float = is_f64 r1 || is_f32 r1 in
       let cmp =
         match op with
         | Eq -> "eq"
-        | Ne -> "ne"
+        (* Float [<>] must use the UNORDERED not-equal (setp.neu), not
+           setp.ne: setp.ne.f32/f64 is ORDERED, so it is false when either
+           operand is NaN, while C's [!=] - what every C-family backend emits -
+           and the interpreter's structural [<>] are both true. Left as
+           setp.ne, [nan <> x] silently returned 0 on PTX and 1 everywhere
+           else. Same reasoning as the ECast-to-bool path below, which already
+           uses setp.neu.f32/f64 so that (bool)NaN = 1.
+           Do NOT "fix" Eq to match - the asymmetry is deliberate. C's [==] is
+           also false for NaN, so the ordered setp.eq.f32/f64 is already
+           correct there; the unordered setp.equ would wrongly make
+           [nan = nan] true.
+           Integers have no NaN, so they keep the ordered [ne].
+           Formal spec note: formal/codegen-ptx models [PNe] on F32/F64 as
+           [negb (PrimFloat.eqb a b)] over Rocq's IEEE-754 float, i.e. the
+           unordered form - the model already specified this and cannot see the
+           defect, because nothing in formal/ maps a [ptx_cmp_tag] to a setp
+           mnemonic. See docs/formal/rocq-value-ledger.md, M-04. *)
+        | Ne -> if is_float then "neu" else "ne"
         | Lt -> "lt"
         | Le -> "le"
         | Gt -> "gt"

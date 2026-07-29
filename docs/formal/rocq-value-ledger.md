@@ -323,6 +323,55 @@ least-checked link was inside the verification apparatus rather than in the code
 it verified. Worth remembering when reading any of the catches above: they are
 claims about a chain that had an unchecked link in it until 2026-07-27.
 
+### M-04 — the model had the right answer and could not be asked the question
+
+| | |
+|---|---|
+| Date | 2026-07-30 |
+| Instances | 1 (`Ne` on float operands in the PTX emitter) |
+| Where | `sarek/codegen/Sarek_ir_ptx_expr.ml`, comparison-family arm |
+| Fixed in | `fix/ptx-float-ne-nan` |
+
+Float `<>` lowered to `setp.ne.f32`/`setp.ne.f64`. Those are PTX's **ordered**
+not-equal, false as soon as an operand is NaN, while every other backend emits
+C's `!=` or uses OCaml's structural `<>`, both true. `nan <> x` returned 0 on
+PTX and 1 everywhere else.
+
+**The model does not have this wrong.** `formal/codegen-ptx` models `float` as
+Rocq's primitive IEEE-754 float (`Stdlib.Floats`), so `PNe` on `F32`/`F64` is
+`negb (eqb a b)` with `PrimFloat.eqb` — IEEE `==`, false for NaN — which makes
+the specified `Ne` the **unordered** one, exactly what the fix emits. The
+hand-written OCaml mirror in `formal/codegen-ptx/test/test_codegen_ptx_conformance.ml`
+agrees (`nat_cmp (a <> b)` on OCaml floats). Both halves of the apparatus
+specified the correct semantics and the implementation shipped the other one.
+
+**Why it was missed, specifically.** The model stops one layer above the
+defect. `ptx_cmp_tag` is an abstract tag — `PEq | PNe | PLt | PLe | PGt | PGe` —
+and nothing in `formal/` maps a tag to a **setp mnemonic**: the string `setp`
+appears in those theories only in comments. `ptx_cmp_agrees` (`PtxExprSpec.v`)
+proves that IR-level and PTX-level *evaluation* agree, but both sides are the
+same abstract semantics, so the theorem is a tag-mapping identity. The choice
+between `ne` and `neu` is instruction selection, which is unmodelled, and the
+tag `PNe` is a single name covering two different PTX instructions with
+different NaN behaviour.
+
+**Counterfactual — review would have found this, and did.** No proof failed and
+no conformance run produced a counterexample; the divergence was found by
+reading the opcode table next to the `ECast`-to-bool path 160 lines below, which
+already used `setp.neu` with a comment explaining why. Recorded as a miss rather
+than a catch on those grounds.
+
+**Same shape as M-01 above, and the same lesson.** The interesting model
+abstracted away the boring mapping, and the defect was in the boring mapping.
+What would have caught it is not a deeper semantics but a total function from
+`ptx_cmp_tag` × operand class to a mnemonic string, exhaustively tabulated —
+which is what the added marker assertions in `test_ptx_snapshot.ml`
+(`test_float_ne_unordered_markers`) now do for this one row, in the cheap
+executable form M-01 argued for. It is not yet a table over the whole family;
+that remains open, and `Lt/Le/Gt/Ge` on floats are ordered on both sides
+(`PrimFloat.ltb`/`leb` are false on NaN, matching `setp.lt`/`setp.le`), so the
+family's remaining exposure is `Eq` only, and `Eq` is correct.
+
 ## Null results
 
 <a id="n-01"></a>
