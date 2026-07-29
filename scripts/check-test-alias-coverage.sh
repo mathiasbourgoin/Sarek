@@ -80,8 +80,24 @@ def toplevel_forms(s):
 
 total_declared = 0
 unwired = []          # keys that are unwired in the tree
+
+# This gate's OWN prove-red fixtures are dune files describing deliberately
+# unwired targets. Once the walk went whole-tree they were scanned as if they
+# were real, and CI reported `alias-coverage/exempt/dune::fixture_exempt` as an
+# undeclared unwired target — correct by the letter, meaningless in fact. Never
+# seen locally because every local run passed the fixture dir as the root.
+#
+# The exclusion is conditional on the root, and that is the load-bearing part:
+# when prove-red invokes this WITH the fixture dir as root, the fixtures are the
+# subject and must still be scanned. A blanket skip would make those mutations
+# find nothing, which is why the `unwired-executable` mutation is what catches a
+# regression here — it asserts UNWIRED is still detected inside that tree.
+root_in_fixtures = "prove-red-fixtures" in root.resolve().parts
+
 for dune in sorted(root.rglob("dune")):
     if "_build" in dune.parts:
+        continue
+    if not root_in_fixtures and "prove-red-fixtures" in dune.parts:
         continue
     raw = dune.read_text()
     # Strip line comments so names mentioned in prose do not count as wiring.
