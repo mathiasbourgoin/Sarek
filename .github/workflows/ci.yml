@@ -122,6 +122,16 @@ jobs:
 
       # The harness's own guards. They gate everything else, so they are the
       # last place a silent regression is acceptable.
+      # backlog-164: a RESOLVED CodeRabbit finding must arrive with a test, or a
+      # recorded escape. pull_request only — it needs a PR number and the review
+      # threads. `if:` rather than a silent no-op so a push build does not look
+      # like it ran this and found nothing.
+      - name: Resolved review findings carry a test
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-review-finding-tests.js "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}"
+
       - name: Harness self-tests
         run: |
           set -e
@@ -131,6 +141,9 @@ jobs:
           # convergence gate still fails closed, so it has to be a test something
           # actually runs — a `make` target nobody invokes is not that.
           node scripts/check-review-convergence-hardening.test.js
+          # backlog-164's covering test. Offline (fixtures via --threads/--files),
+          # so it needs no token and runs on push as well as pull_request.
+          node scripts/check-review-finding-tests.test.js
           node scripts/check-mandated-steps.test.js
           node scripts/check-alcotest-registration.test.js
           # backlog-135. The ledger schema had no covering test of its own --

@@ -1,0 +1,15 @@
+# Recorded escapes for backlog-164's gate: a RESOLVED CodeRabbit finding whose fix
+# legitimately carries no test.
+#
+# Format, tab-separated, all three fields mandatory and non-blank:
+#   <cr-comment-id>	<reason>	<by>
+#
+# The id is the `cr-comment:v1:<hex>` marker in the finding's body — line numbers
+# are NOT usable as a key (the API returns `line: null`).
+#
+# Legitimate reasons exist: a doc/comment correction, or a finding you REFUTED
+# rather than fixed. They just have to be written down. A blank reason or a blank
+# owner is a usage error (exit 2), not an excuse — the silent skip is the thing
+# this file exists to prevent.
+#
+# Empty of entries on purpose: nothing has needed one yet.
