@@ -139,52 +139,70 @@ add_ocaml_header() {
         # kept appending a duplicate SPDX-FileCopyrightText line for the same
         # person (root cause of the sarek/codegen/Sarek_ir_ptx_stmt.mli
         # header mangling).
-        if head -"$header_end_line" "$file" 2>/dev/null | grep "SPDX-FileCopyrightText:" | grep -qi "$contributor_email"; then
-            # Contributor exists - check if year needs updating.
+        # -F, and matched on the BRACKETED address. Without -F the email is a
+        # REGEX, so every "." matches any character: two distinct contributors
+        # whose addresses differ only where a dot sits would match each other,
+        # which now means a false DUPLICATE below and a spurious exit 2 on a
+        # correct header. Any of [ ] * ^ $ \ in an address would be worse than
+        # loose -- it would be a grep error. Bracketing pins the match to a whole
+        # address rather than a substring of a longer one. -i stays: providers
+        # are case-insensitive by spec (see the note below).
+        local email_pat="<$contributor_email>"
+        if head -"$header_end_line" "$file" 2>/dev/null | grep "SPDX-FileCopyrightText:" | grep -qiF "$email_pat"; then
+            # Contributor exists - check if the year needs updating.
             #
             # This grep can match MORE THAN ONE line: a header carrying two
             # copyright lines for the same email is exactly what the duplicate
-            # bug above produces. A multi-line value then reached the `sed -i
-            # "s/$existing_years..."` below, which is not a well-formed s
-            # command -- sed died with "unterminated `s' command", the fixer
-            # exited 1 mid-walk having silently skipped every remaining file,
-            # and it never said WHICH file. Refuse explicitly and name it,
-            # because a duplicate line is itself the defect to fix (four files
-            # in this repo had one), not a state to paper over by taking the
-            # first match.
+            # bug noted above produces. A multi-line value then reached a
+            # `sed "s/$existing_years..."`, which is not a well-formed s command
+            # -- sed died with "unterminated `s' command", the fixer exited 1
+            # mid-walk having silently skipped every remaining file, and it never
+            # said WHICH file. Refuse explicitly and name it, because a duplicate
+            # line is itself the defect to fix (four files in this repo had one),
+            # not a state to paper over by taking the first match.
             local matches
-            matches=$(head -"$header_end_line" "$file" | grep "SPDX-FileCopyrightText:" | grep -ci "$contributor_email")
+            matches=$(head -"$header_end_line" "$file" | grep "SPDX-FileCopyrightText:" | grep -ciF "$email_pat")
             if [ "$matches" -gt 1 ]; then
-                echo -e "${RED}DUPLICATE${NC}: $file has $matches SPDX-FileCopyrightText lines for <$contributor_email>; remove the extra one (this script cannot choose between them)" >&2
+                echo -e "${RED}DUPLICATE${NC}: $file has $matches SPDX-FileCopyrightText lines for $email_pat; remove the extra one (this script cannot choose between them)" >&2
                 DUPLICATE_COUNT=$((DUPLICATE_COUNT + 1))
                 return
             fi
-            local contributor_line=$(head -"$header_end_line" "$file" | grep "SPDX-FileCopyrightText:" | grep -i "$contributor_email")
+            local contributor_line lineno
+            contributor_line=$(head -"$header_end_line" "$file" | grep "SPDX-FileCopyrightText:" | grep -iF "$email_pat")
+            lineno=$(head -"$header_end_line" "$file" | grep -n "SPDX-FileCopyrightText:" | grep -iF "$email_pat" | cut -d: -f1)
             local existing_years=$(echo "$contributor_line" | grep -oP '\d{4}(-\d{4})?' | head -1)
             local first_year=$(echo "$existing_years" | cut -d- -f1)
 
+            # Decide the new year span first, then rewrite the line by NUMBER.
+            #
+            # The year is substituted with bash ${var/pat/repl}, which is glob and
+            # not regex, and the year is digits plus a dash -- no metacharacters.
+            # The old code interpolated the email into a sed PATTERN, which had
+            # the same regex defect as the greps above; targeting the line we
+            # already located removes regex from this path entirely. Carrying the
+            # rest of the line verbatim also preserves the address's existing
+            # casing, which the old code needed a \1 backreference to do.
+            local new_years="" label=""
             if [[ "$existing_years" =~ - ]]; then
-                # Has year range - check if last year matches
                 local end_year=$(echo "$existing_years" | cut -d- -f2)
                 if [ "$last_commit_year" != "$end_year" ]; then
-                    # Update year range (operate on a copy so --check never
-                    # touches the real file; \1 preserves the email's
-                    # existing casing, the match itself is case-insensitive).
-                    local tmpfile=$(mktemp)
-                    cp "$file" "$tmpfile"
-                    sed -i "s/$existing_years\(.*$contributor_email\)/$first_year-$last_commit_year\1/I" "$tmpfile"
-                    apply_change "$file" "$tmpfile" "UPDATED YEAR ($first_year-$end_year -> $first_year-$last_commit_year)"
-                    return
+                    new_years="$first_year-$last_commit_year"
+                    label="UPDATED YEAR ($first_year-$end_year -> $new_years)"
                 fi
             else
-                # Single year - check if we need range
                 if [ "$last_commit_year" != "$first_year" ]; then
-                    local tmpfile=$(mktemp)
-                    cp "$file" "$tmpfile"
-                    sed -i "s/$first_year\(.*$contributor_email\)/$first_year-$last_commit_year\1/I" "$tmpfile"
-                    apply_change "$file" "$tmpfile" "UPDATED YEAR ($first_year -> $first_year-$last_commit_year)"
-                    return
+                    new_years="$first_year-$last_commit_year"
+                    label="UPDATED YEAR ($first_year -> $new_years)"
                 fi
+            fi
+
+            if [ -n "$new_years" ]; then
+                local new_line="${contributor_line/$existing_years/$new_years}"
+                local tmpfile=$(mktemp)
+                awk -v ln="$lineno" -v repl="$new_line" \
+                    'NR==ln {print repl; next} {print}' "$file" > "$tmpfile"
+                apply_change "$file" "$tmpfile" "$label"
+                return
             fi
 
             echo -e "${YELLOW}SKIP${NC}: $file (already up-to-date)"

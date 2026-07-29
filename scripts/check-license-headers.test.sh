@@ -244,6 +244,85 @@ else
   pass=$((pass + 1))
 fi
 
+# --- Case 11: the year-update path actually updates the year -----------------
+# This path had NO case before, which is how it could be rewritten (from a
+# `sed` interpolating the email into a regex, to an awk rewrite of the located
+# line) with the suite still reading 12/12 green. A refactor of an uncovered
+# path is indistinguishable from a break of it.
+d="$(make_project case11)"
+sed -i 's/2026 Mathias/2019 Mathias/' "$d/sarek/covered.ml"
+out="$(cd "$d" && ./scripts/add-license-headers.sh 2>&1)"
+line="$(grep 'SPDX-FileCopyrightText' "$d/sarek/covered.ml")"
+this_year="$(date +%Y)"
+if ! printf '%s' "$out" | grep -qF "UPDATED YEAR"; then
+  echo "  FAIL: case11: a stale year was not reported as UPDATED YEAR"
+  echo "$out" | sed 's/^/        /'
+  fail=$((fail + 1))
+elif ! printf '%s' "$line" | grep -qF "2019-$this_year"; then
+  echo "  FAIL: case11: expected the span 2019-$this_year, got: $line"
+  fail=$((fail + 1))
+elif ! printf '%s' "$line" | grep -qF "<mathias.bourgoin@gmail.com>"; then
+  echo "  FAIL: case11: the rewrite lost or mangled the address: $line"
+  fail=$((fail + 1))
+else
+  echo "  PASS: case11: stale single year becomes a span, address intact"
+  pass=$((pass + 1))
+fi
+
+# --- Case 12: the address is matched LITERALLY, not as a regex ---------------
+# The email went into `grep -i` unquoted-as-regex, so every "." matched any
+# character. A DIFFERENT contributor whose address differs only where the dots
+# sit ("mathiasXbourgoin@gmailXcom" vs "mathias.bourgoin@gmail.com" — the same
+# string with only the dots replaced) satisfied that grep. The fixer then believed the
+# maintainer already had a line, took the year-update branch, and never added
+# the maintainer's own copyright — a missing attribution, silently.
+#
+# Asserted on the OUTCOME (the maintainer's exact address must end up in the
+# file) rather than on a message, so it holds however the branch is worded.
+d="$(make_project case12)"
+# NB the @ is kept. It is LITERAL in the regex, so an address that also
+# replaces it (mathiasXbourgoinXgmail.com) does not match the buggy pattern
+# either, and the case would pass against the defect it claims to catch — the
+# first cut of this case did exactly that. Only the DOTS may differ.
+foreign='(* SPDX-FileCopyrightText: 2020 Someone Else <mathiasXbourgoin@gmailXcom> *)'
+awk -v line="$foreign" '
+  /SPDX-License-Identifier/ { print; print line; next }
+  !/SPDX-FileCopyrightText/ { print }
+' "$d/sarek/covered.ml" > "$d/sarek/covered.ml.tmp" && mv "$d/sarek/covered.ml.tmp" "$d/sarek/covered.ml"
+out="$(cd "$d" && ./scripts/add-license-headers.sh 2>&1)"
+if printf '%s' "$out" | grep -qF "DUPLICATE"; then
+  echo "  FAIL: case12: a foreign address was mistaken for this contributor (DUPLICATE)"
+  echo "$out" | sed 's/^/        /'
+  fail=$((fail + 1))
+elif ! grep -qF '<mathias.bourgoin@gmail.com>' "$d/sarek/covered.ml"; then
+  echo "  FAIL: case12: the maintainer's own copyright line was never added"
+  grep 'SPDX-' "$d/sarek/covered.ml" | sed 's/^/        /'
+  fail=$((fail + 1))
+else
+  echo "  PASS: case12: a regex-matching but different address is not this contributor"
+  pass=$((pass + 1))
+fi
+
+# --- Case 13: case-insensitive matching SURVIVED the switch to -F ------------
+# -i is load-bearing and documented in the fixer: providers are case-insensitive
+# by spec, and a case-sensitive match previously made a differently-cased
+# address look like a new contributor on every run, appending a duplicate line
+# each time. Adding -F must not have dropped that, so this pins the opposite
+# polarity of case12: same address, different casing, must be the SAME person —
+# no second line appended.
+d="$(make_project case13)"
+sed -i 's/<mathias\.bourgoin@gmail\.com>/<Mathias.Bourgoin@Gmail.Com>/' "$d/sarek/covered.ml"
+out="$(cd "$d" && ./scripts/add-license-headers.sh 2>&1)"
+n="$(grep -c 'SPDX-FileCopyrightText' "$d/sarek/covered.ml")"
+if [ "$n" != 1 ]; then
+  echo "  FAIL: case13: differently-cased address produced $n copyright lines, expected 1"
+  grep 'SPDX-' "$d/sarek/covered.ml" | sed 's/^/        /'
+  fail=$((fail + 1))
+else
+  echo "  PASS: case13: differently-cased address is still the same contributor"
+  pass=$((pass + 1))
+fi
+
 echo ""
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
