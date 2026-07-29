@@ -1,0 +1,271 @@
+Sarek_ir_types tests:
+  memspace: OK
+  elttype primitives: OK
+  elttype record: OK
+  elttype variant: OK
+  elttype array: OK
+  elttype vec: OK
+  var: OK
+  var mutable: OK
+  const int32: OK
+  const int64: OK
+  const float32: OK
+  const float64: OK
+  const bool: OK
+  const unit: OK
+  binop: OK
+  unop: OK
+  expr const: OK
+  expr var: OK
+  expr binop: OK
+  expr intrinsic: OK
+  expr record: OK
+  expr if: OK
+  lvalue var: OK
+  lvalue array: OK
+  stmt assign: OK
+  stmt seq: OK
+  stmt if: OK
+  stmt for: OK
+  stmt barrier: OK
+  stmt let: OK
+  stmt pragma: OK
+  decl param: OK
+  decl local: OK
+  decl shared: OK
+  kernel: OK
+  helper_func: OK
+  native_arg: OK
+  vec_length: OK
+  pattern: OK
+All Sarek_ir_types tests passed!
+Sarek_ir_pp tests:
+  string_of_elttype primitives: OK
+  string_of_elttype record: OK
+  string_of_elttype variant: OK
+  string_of_elttype array: OK
+  string_of_elttype vec: OK
+  string_of_memspace: OK
+  string_of_binop: OK
+  string_of_unop: OK
+  pp_expr const: OK
+  pp_expr var: OK
+  pp_expr binop: OK
+  pp_expr unop: OK
+  pp_expr array_read: OK
+  pp_expr intrinsic: OK
+  pp_expr record: OK
+  pp_expr if: OK
+  pp_stmt assign: OK
+  pp_stmt barrier: OK
+  pp_stmt warp_barrier: OK
+  pp_stmt mem_fence: OK
+  pp_stmt return: OK
+  pp_stmt empty: OK
+  pp_decl param: OK
+  pp_decl param array: OK
+  pp_decl local: OK
+  pp_decl shared: OK
+  pp_kernel: OK
+  pp_pattern: OK
+All Sarek_ir_pp tests passed!
+Sarek_ir_analysis tests:
+  elttype_uses_float64 primitives: OK
+  elttype_uses_float64 record: OK
+  elttype_uses_float64 variant: OK
+  elttype_uses_float64 array: OK
+  elttype_uses_float64 vec: OK
+  const_uses_float64: OK
+  expr_uses_float64 const: OK
+  expr_uses_float64 var: OK
+  expr_uses_float64 binop: OK
+  expr_uses_float64 cast: OK
+  expr_uses_float64 intrinsic: OK
+  expr_uses_float64 if: OK
+  stmt_uses_float64 assign: OK
+  stmt_uses_float64 seq: OK
+  stmt_uses_float64 if: OK
+  stmt_uses_float64 for: OK
+  stmt_uses_float64 let: OK
+  stmt_uses_float64 barrier/empty: OK
+  decl_uses_float64 param: OK
+  decl_uses_float64 local: OK
+  decl_uses_float64 shared: OK
+  helper_uses_float64: OK
+  kernel_uses_float64 params: OK
+  kernel_uses_float64 types: OK
+  kernel_uses_float64 variants: OK
+  elttype_uses_float16 primitives: OK
+  elttype_uses_float16 nested: OK
+  expr_uses_float16: OK
+  stmt/decl_uses_float16: OK
+  kernel_uses_float16: OK
+  feature API agrees with the per-width aliases: OK
+  const_uses is width-specific: OK
+  kernel_requirements: OK
+  is_atomic_intrinsic_name: OK
+  expr_uses_atomics: OK
+  helper_uses_atomics: OK
+  kernel_uses_atomics direct: OK
+  kernel_uses_atomics via helper: OK
+  lvalue_uses_atomics: OK
+  kernel_uses_atomics via assign lvalue: OK
+  kernel_uses_atomics via SNative (conservative): OK
+  expr_uses_int_mod: OK
+  lvalue_uses_int_mod: OK
+  kernel_uses_int_mod via record-field lvalue: OK
+  is_copysign_intrinsic_name: OK
+  expr_uses_copysign: OK
+  lvalue_uses_copysign: OK
+  kernel_uses_copysign via record-field lvalue: OK
+  kernel_uses_copysign via helper: OK
+  kernel_uses_nonfinite_float64: OK
+  kernel_uses_intrinsic: OK
+  kernel_float64_intrinsics: OK
+  coopmat detection: OK
+  coopmat configs: OK
+All Sarek_ir_analysis tests passed!
+Testing Sarek_capability (#64 slice 1)...
+  device_verdict: Unknown refuses, widths independent: OK
+  permits: Unknown does not permit: OK
+  first_refusal: OK
+  kind_needs_device: OK
+  kind_name: OK
+  evidence: OK
+  explain: OK
+  refuse_if_used: fires on f64, silent on f32: OK
+All Sarek_capability tests passed!
+Testing `Sarek_coopmat'.
+This run has ID `QN2LBYVT'.
+
+  [OK]          local hardware record          0   NAVI31: 14 configurations,...
+  [OK]          accuracy regime                0   integer accumulate is exac...
+  [OK]          accuracy regime                1   component classification.
+  [OK]          device verdict                 0   unprobed device is refused.
+  [OK]          device verdict                 1   capable device permits (po...
+  [OK]          device verdict                 2   probed device with no supp...
+  [OK]          device verdict                 3   unadvertised configuration...
+  [OK]          device verdict                 4   find_config.
+  [OK]          fragment type                  0   dimensions are derived fro...
+  [OK]          fragment type                  1   integer component types ar...
+  [OK]          fragment type                  2   Metal's 8x8 is expressible.
+  [OK]          subgroup ABI                   0   components per invocation.
+  [OK]          subgroup ABI                   1   config fits subgroup.
+
+Full test results in `/workspace/sarek/_build/default/spoc/ir/test/_build/_tests/Sarek_coopmat'.
+Test Successful in 0.001s. 13 tests run.
+  float32 paths expose exactly the 33-entry set: OK
+  Float64 paths expose exactly the 33-entry set: OK
+  Math.Float64 paths expose exactly the 16-entry set: OK
+  Math.Float64 paths still omit the 11 unsupported intrinsics: OK
+  Float64.rsqrt and Sarek_stdlib_meta.Float64.rsqrt agree on GLSL name (inversesqrt): OK
+  Float64.abs_float emits fabs (abs on GLSL), never abs_float: OK
+All Sarek_pure_registry tests passed!
+File "spoc/registry/test/test_sarek_registry.ml", line 262, characters 4-27:
+262 | let unused_backlog157_probe x = x + 1
+          ^^^^^^^^^^^^^^^^^^^^^^^
+Error (warning 32 [unused-value-declaration]): unused value unused_backlog157_probe.
+Framework_sig tests:
+  dims_1d: OK
+  dims_2d: OK
+  dims_3d: OK
+  dims record: OK
+  capabilities: OK
+  device: OK
+  execution_model: OK
+  source_lang: OK
+  convergence: OK
+  exec_arg basic: OK
+  run_source_arg: OK
+All Framework_sig tests passed!
+Typed_value tests:
+  PInt32: OK
+  PInt64: OK
+  PFloat: OK
+  PBool: OK
+  PBytes: OK
+  Int32_type: OK
+  Int64_type: OK
+  Float32_type: OK
+  Float64_type: OK
+  Bool_type: OK
+  Registry.find_scalar: OK
+  Registry.list_scalars: OK
+  Registry.register_scalar (custom): OK
+  scalar_value: OK
+  typed_value (scalar): OK
+  exec_arg_of_typed_value: OK
+  typed_value_of_exec_arg (Int32): OK
+  typed_value_of_exec_arg (Float64): OK
+  type_name_of_exec_arg: OK
+  field_desc: OK
+All Typed_value tests passed!
+Device_type tests:
+  Device_type.t = Framework_sig.device: OK
+  Device_type fields: OK
+  Device_type CPU device: OK
+  Cross-module compatibility: OK
+All Device_type tests passed!
+Testing `Backend_error'.
+This run has ID `388EUDXT'.
+
+  [OK]          codegen             0   codegen errors.
+  [OK]          runtime             0   runtime errors.
+  [OK]          plugin              0   plugin errors.
+  [OK]          backends            0   multiple backends.
+  [OK]          exceptions          0   exception handling.
+
+Full test results in `/workspace/sarek/_build/default/spoc/framework/test/_build/_tests/Backend_error'.
+Test Successful in 0.000s. 5 tests run.
+Testing `Kernel_args'.
+This run has ID `TD61S3U6'.
+
+  [OK]          ordering               0   out of order set.
+  [OK]          ordering               1   to_sorted_list.
+  [OK]          ordering               2   count.
+  [OK]          last-set-wins          0   duplicate idx last wins.
+  [OK]          validation             0   gap detection.
+  [OK]          validation             1   count mismatch extra.
+  [OK]          validation             2   unexpected index beyond range.
+  [OK]          validation             3   negative expected_count.
+
+Full test results in `/workspace/sarek/_build/default/spoc/framework/test/_build/_tests/Kernel_args'.
+Test Successful in 0.000s. 8 tests run.
+Testing `Compile_cache'.
+This run has ID `0GE9XOVU'.
+
+  [OK]          key_identity          0   same inputs same key.
+  [OK]          key_identity          1   same source, different kernel name ...
+  [OK]          key_identity          2   different device -> different key.
+  [OK]          key_identity          3   different source -> different key.
+  [OK]          options               0   option order canonicalized.
+  [OK]          options               1   different option values -> differen...
+
+Full test results in `/workspace/sarek/_build/default/spoc/framework/test/_build/_tests/Compile_cache'.
+Test Successful in 0.000s. 6 tests run.
+Testing `Guarded_cache'.
+This run has ID `S7BRJ15Q'.
+
+  [OK]          concurrency          0   stress: shared + distinct keys, N do...
+  [OK]          concurrency          1   concurrent clear vs find_or_build.
+  [OK]          concurrency          2   concurrent evict_device.
+  [OK]          concurrency          3   evict_device during an in-flight bui...
+  [OK]          concurrency          4   clear during an in-flight build is r...
+  [OK]          concurrency          5   clear during an in-flight build stil...
+  [OK]          concurrency          6   a raising destroy does not strand th...
+  [OK]          concurrency          7   a raising destroy on a lost race sti...
+  [OK]          concurrency          8   red demo (unguarded, opt-in).
+
+Full test results in `/workspace/sarek/_build/default/spoc/framework/test/_build/_tests/Guarded_cache'.
+Test Successful in 0.062s. 9 tests run.
+Testing `Cache_hooks'.
+This run has ID `MURWW51U'.
+
+  [OK]          around_clear                            0   notifies on both ...
+  [OK]          around_clear                            1   nested scopes not...
+  [OK]          notification                            0   device destroy ca...
+  [OK]          notification                            1   a failing listene...
+  [OK]          around_clear failure isolation          0   a failing listene...
+
+Full test results in `/workspace/sarek/_build/default/spoc/framework/test/_build/_tests/Cache_hooks'.
+Test Successful in 0.000s. 5 tests run.

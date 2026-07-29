@@ -121,6 +121,22 @@
 # preamble, so a tree that merely warns read as a failed run. This file's own
 # trunc-early fixture caught it.
 #
+# Then it was `^Error:` alone, and THAT was too narrow — the correction
+# overshot. A warning promoted to an error (this repo builds with warnings as
+# errors) is printed by the compiler as
+#
+#     Error (warning 32 [unused-value-declaration]): unused value foo.
+#
+# which has no colon after `Error`, so `^Error:` never matched it. Measured on a
+# real captured log of exactly that failure: exit 0 and a clean
+# "46 cases across 6 suites" for a run whose build never completed — the precise
+# false green this gate exists to prevent, reintroduced by its own fix.
+#
+# The pattern therefore accepts `Error:` and `Error (<...>):`, and NOT a bare
+# `^Error ` — a test that prints "Error handling works" starts a line with
+# `Error ` and must not be read as a broken build. Requiring the closing `):`
+# keeps the parenthesised form tight.
+#
 # Usage:
 #   scripts/test-suite-counts.sh [--min-suites N] [--dune-exit N] <logfile>
 #   dune test --force 2>&1 | scripts/test-suite-counts.sh [--min-suites N]
@@ -282,15 +298,20 @@ text = sys.stdin.read() if src == "-" else open(src, errors="replace").read()
 # cases, so this separates "the build died" from "a test failed" — which is why
 # they get different exit codes rather than one catch-all.
 #
-# `^Error:` ONLY, deliberately. The first version also matched `^File "`, on the
-# reasoning that dune prints `File "x.ml", line 1:` above the error. It does —
-# but it prints the same line above a WARNING, and above a truncated preamble.
-# This file's own trunc-early fixture opens with `File "sarek/tests/unit/dune",
-# line 1, characters 0-0:` and started reporting exit 5 for a log whose build
-# never failed. A tree that merely warns would have been called a failed run.
-# The error line is the one that means an error; the File line means dune has
-# something to say about a file.
-build_errors = re.findall(r"(?m)^Error:", text)
+# An `Error` LABEL at column 0, deliberately not `^File "`. The first version
+# also matched `^File "`, on the reasoning that dune prints `File "x.ml", line 1:`
+# above the error. It does — but it prints the same line above a WARNING, and
+# above a truncated preamble. This file's own trunc-early fixture opens with
+# `File "sarek/tests/unit/dune", line 1, characters 0-0:` and started reporting
+# exit 5 for a log whose build never failed. A tree that merely warns would have
+# been called a failed run. The error line is the one that means an error; the
+# File line means dune has something to say about a file.
+#
+# Both spellings of the label, because narrowing to `^Error:` alone missed
+# warning-as-error ("Error (warning 32 [...]): ...") and reintroduced a false
+# green — see the header. A bare `^Error ` is NOT accepted: a test printing
+# "Error handling works" would match it.
+build_errors = re.findall(r"(?m)^Error(?::| \([^)\n]*\):)", text)
 
 # Alcotest: "Test Successful in 0.004s. 61 tests run." and the SINGULAR
 # "1 test run." / "0 test run.". Matching `tests?` is the whole point.
@@ -486,5 +507,19 @@ python3 -c "$PYPROG" "$SRC" "$MIN_SUITES" "$DUNE_EXIT"
 #   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0
 #   expect-exit: 4
 #   expect-message: failing case
+#
+# mutation: warning-as-error
+#   desc: the same shape as build-failed but with the spelling the compiler actually uses when a warning is promoted -- `Error (warning 32 [...]):`, no colon after Error. The `^Error:` pattern missed it entirely and reported a clean total for a run whose build never completed. Kept as its own mutation because build-failed passes on a pattern that has this hole.
+#   apply: printf 'File "sarek/ppx/Sarek_lower_ir.ml", line 850, characters 16-30:\nError (warning 26 [unused-var]): unused variable helper_binders.\n' >> scripts/prove-red-fixtures/dune-test-sample-log.txt
+#   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0
+#   expect-exit: 5
+#   expect-message: dune/compiler error marker
 # END prove-red-spec
+#
+# The other polarity -- a test that PRINTS "Error handling works" must NOT read
+# as a broken build -- is deliberately NOT a mutation above. A prove-red mutation
+# asserts the subject CATCHES a defect; a case whose correct answer is the
+# baseline verdict asserts the opposite, and prove-red.sh's immune-checker
+# rejects it by design ("asserts the subject did not notice"). That control lives
+# in scripts/test-suite-counts.test.sh, which is where a negative case belongs.
 # ---------------------------------------------------------------------------

@@ -11,6 +11,15 @@ set -uo pipefail
 CNT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/test-suite-counts.sh"
 [ -x "$CNT" ] || { echo "FAIL: $CNT not found or not executable"; exit 2; }
 
+# Real captured dune logs, used where the exact spelling the compiler emits is
+# the subject. Asserted present rather than left to fail as a mystery exit code:
+# a missing fixture makes `cat` produce nothing, which the counter reports as
+# "no output recognised" (2) — a number that looks like an unrelated bug.
+FIXTURES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/prove-red-fixtures"
+for f in dune-test-sample-log.txt dune-test-warning-as-error-log.txt; do
+  [ -f "$FIXTURES/$f" ] || { echo "FAIL: fixture $FIXTURES/$f is missing"; exit 2; }
+done
+
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/suite-counts-test.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -303,6 +312,40 @@ Error: Syntax error
 LOG
 "$CNT" --min-suites 0 "$TMP/both.log" >/dev/null 2>&1
 check "a died run outranks its failing cases (5, not 4)" "$?" "5"
+
+# WARNING-AS-ERROR. This repo builds with warnings as errors, and the compiler
+# prints that failure as `Error (warning 32 [...]): ...` — no colon after
+# `Error`, so the `^Error:` pattern this file's own gate narrowed to never
+# matched it. Measured on the real captured log below: exit 0 and a clean
+# "46 cases across 6 suites" for a run whose build never completed.
+#
+# The fixture is a REAL 271-line dune log rather than a two-line heredoc,
+# because the whole defect is in the exact spelling the compiler emits — a
+# hand-written approximation is where a wrong guess about that spelling hides.
+"$CNT" --min-suites 0 "$FIXTURES/dune-test-warning-as-error-log.txt" >/dev/null 2>&1
+check "a warning-as-error build failure exits 5, not 0" "$?" "5"
+
+# The composite is the dangerous shape, and the one the plausibility floor does
+# NOT save: enough suites completed to clear the floor, then the build died. The
+# single-fixture case above is only 6 suites, so on its own it would also have
+# been caught by the floor for an unrelated reason.
+{ cat "$FIXTURES/dune-test-sample-log.txt" "$FIXTURES/dune-test-sample-log.txt" \
+       "$FIXTURES/dune-test-sample-log.txt" "$FIXTURES/dune-test-sample-log.txt" \
+       "$FIXTURES/dune-test-sample-log.txt"
+  printf 'File "sarek/ppx/Sarek_lower_ir.ml", line 850, characters 16-30:\n'
+  printf 'Error (warning 26 [unused-var]): unused variable helper_binders.\n'
+} > "$TMP/warn-after-suites.log"
+"$CNT" "$TMP/warn-after-suites.log" >/dev/null 2>&1
+check "warning-as-error AFTER enough suites to clear the floor is 5, not 0" "$?" "5"
+
+# The control that keeps the widened pattern from becoming the `^File "` mistake
+# in the other direction. A bare `^Error ` is NOT an error label: a test that
+# prints a line starting with "Error handling..." must still read as a clean run.
+{ cat "$FIXTURES/dune-test-sample-log.txt"
+  printf 'Error handling works as expected\n'
+} > "$TMP/prints-error-word.log"
+"$CNT" --min-suites 0 "$TMP/prints-error-word.log" >/dev/null 2>&1
+check "  (control) a test PRINTING \"Error handling...\" is still 0" "$?" "0"
 
 # Argument handling: a malformed invocation is an error, not a default.
 "$CNT" --min-suites nope "$TMP/plausible.log" >/dev/null 2>&1
