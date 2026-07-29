@@ -1542,3 +1542,41 @@
  (alias runtest)
  (action
   (run %{dep:test_hf_param_identity.exe})))
+
+; backlog-180 (H3): a helper PARAMETER whose name matches a module constant.
+; The backlog-160 constant-prefixing pass collected referenced names with an
+; empty bound list for parameters, so a parameter sharing a constant's name got
+; that constant's SLet prefixed into a body already binding the identifier —
+; hard compile error on the device backends, and on the interpreter the prefix
+; overwrote the parameter so the helper silently ignored its argument. Both a
+; collision case and a still-must-prefix case, so the fix cannot be "never
+; prefix".
+
+(executable
+ (name test_helper_param_const_collision)
+ (modules test_helper_param_const_collision)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  sarek.codegen
+  spoc_core
+  sarek_native
+  sarek_interpreter
+  sarek_cuda
+  sarek_opencl
+  sarek_vulkan
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx))
+ ; -26/-27 in addition to the usual set: the collision kernel's module constant
+ ; is deliberately shadowed by the helper parameter, so the generated native
+ ; OCaml never reads it. That unused binding is the shadowing WORKING, not a
+ ; defect in the test.
+ (flags
+  (:standard -w -26-27-32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_helper_param_const_collision.exe})))

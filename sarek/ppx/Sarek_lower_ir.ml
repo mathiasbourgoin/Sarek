@@ -831,9 +831,32 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
                actually referenced are prefixed — prefixing all of them would
                evaluate initializers the helper does not need and, worse, would
                drag an unreferenced barrier into the refusal path. *)
+            (* The helper's PARAMETER names. They are binders exactly as much as
+               [SLet]/[SLetMut]/[SFor] are, and the [expr_names] header above
+               documents the redeclaration bug for those — the fix landed for
+               locals (review on #362) and stopped one binder class short.
+
+               Read off [params] here rather than [hf_params], which is not built
+               until further down; both come from the same list, so there is no
+               second source of truth. *)
+            let param_names =
+              List.map (fun (p : tparam) -> p.tparam_name) params
+            in
             let referenced =
               let acc = Hashtbl.create 8 in
-              stmt_names fun_body_ir [] acc ;
+              (* Seeded with the parameter names, NOT [] — a parameter that
+                 merely shares a module constant's name made the constant look
+                 referenced, so its [SLet] got prefixed into a body that already
+                 binds that identifier as a parameter. Two declarations of one
+                 name in one flat scope: a hard compile error on all five device
+                 backends for a helper that compiled before, and on the
+                 interpreter the prefix overwrites the parameter, so the helper
+                 silently ignores its argument.
+
+                 The refusal message below advises "pass the constant in as a
+                 parameter", which was precisely the unchecked case — the
+                 guidance walked the user into the defect. *)
+              stmt_names fun_body_ir param_names acc ;
               let rec close () =
                 let added = ref false in
                 Hashtbl.iter
@@ -867,6 +890,16 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
             let helper_binders =
               let acc = Hashtbl.create 8 in
               stmt_binders fun_body_ir acc ;
+              (* Parameters too, and this is not redundant with seeding
+                 [referenced] above. That seeding only covers a constant named
+                 DIRECTLY by the body. The transitive closure below also pulls in
+                 constants named by the INITIALIZER of a referenced constant, and
+                 those enter [referenced] regardless of what the parameters
+                 shadow — so a constant reachable only through another
+                 constant's initializer could still collide with a parameter.
+                 Present here, that case takes the refusal path instead of
+                 emitting the collision. *)
+              List.iter (fun n -> Hashtbl.replace acc n ()) param_names ;
               acc
             in
             let fun_body_ir =
