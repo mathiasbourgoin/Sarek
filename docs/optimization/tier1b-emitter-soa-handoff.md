@@ -172,27 +172,31 @@ and proven. When it lands, extend `test_soa_emitter_equiv` to drive SoA through
 > returns 64/64. The collision is one-directional and fully closed, because a user
 > param cannot itself be `sarek_`-prefixed (#258 reserves it).
 >
-> Do NOT redo this as part of Tier 1c. The original text is kept below because it
-> records why the hazard was real and why (a) was chosen over (b).
+> Do NOT redo this as part of Tier 1c.
 >
-> **PRECONDITION — generated param-name namespace (latent today, MUST fix in
-> Tier 1c).** The emitter mangles each SoA leaf param as
-> `param_<vec>_soa_<field>` (`Sarek_ir_ptx_kernel.emit_params`). This can
-> **collide** with a distinct user vector/scalar parameter whose own generated
-> name is `param_<vec>_soa_<field>` — e.g. a user param literally named
-> `x_soa_y` alongside a SoA vector `x` with field `y`. The reserved `sarek_`
-> prefix does **not** cover this infix mangle. It is unreachable today because
-> `~soa_params` is only ever passed by the emitter's own tests (never from user
-> code), but the moment Tier 1c lets a user opt a vector into SoA it becomes a
-> real (silently-wrong-PTX) hazard. Tier 1c **MUST** close it, by either:
-> (a) `sarek_`-prefixing the generated SoA params
-> (`param_sarek_soa_<vec>_<field>`) so they live in the already-reserved
-> namespace and cannot alias a user name; or (b) validating the kernel's param
-> names against the generated SoA pattern and rejecting a collision with a
-> precise error. Option (a) is preferred (no user-facing rejection, consistent
-> with the existing `sarek_<vec>_length` convention). Add a regression test that
-> a kernel mixing a SoA vector `x` (field `y`) with a scalar param `x_soa_y`
-> compiles to distinct PTX operands.
+> #### Historical record — why the hazard was real, and why (a) beat (b)
+>
+> Rewritten into the past tense after review on PR #366: the paragraph below used
+> to be a live "MUST fix in Tier 1c" instruction, and leaving it in the
+> imperative next to a CLOSED banner is exactly how completed work gets reopened
+> by a reader who skims. Kept for the rationale, not as a task.
+>
+> The emitter **used to** mangle each SoA leaf param as `param_<vec>_soa_<field>`
+> (`Sarek_ir_ptx_kernel.emit_params`). That **could** collide with a distinct user
+> vector/scalar parameter whose own generated name was `param_<vec>_soa_<field>` —
+> e.g. a user param literally named `x_soa_y` alongside a SoA vector `x` with
+> field `y`. The reserved `sarek_` prefix did **not** cover that infix mangle. It
+> was unreachable at the time because `~soa_params` was only ever passed by the
+> emitter's own tests, never from user code — but it would have become a real
+> silently-wrong-PTX hazard the moment Tier 1c let a user opt a vector into SoA.
+>
+> Two closures were considered: (a) `sarek_`-prefixing the generated SoA params so
+> they live in the already-reserved namespace and cannot alias a user name; or
+> (b) validating the kernel's param names against the generated SoA pattern and
+> rejecting a collision with a precise error. **(a) was chosen** — no user-facing
+> rejection, and consistent with the existing `sarek_<vec>_length` convention.
+> (b) would have made a legal program fail for a reason the user could not act on
+> without renaming their own parameter.
 
 ### 2. `ld.global.nc` for read-only params (opt-ptx-passes.md pass 3 — High, cost S)
 
