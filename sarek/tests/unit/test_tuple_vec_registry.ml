@@ -34,9 +34,17 @@
  *   OCaml 5 toolchain does not ship. The stress loop below does hammer
  *   [lookup_shape] from every domain while registrations are in flight, so a
  *   corrupted table or a torn read shows up as a wrong value or an exception,
- *   but that is a probabilistic bonus and NOT the gate: reverting 3aa4c1b9 or
- *   the [lookup_shape] lock alone is expected to leave this test green, and
- *   that limit is stated here rather than papered over.
+ *   but that is a probabilistic bonus and NOT the gate.
+ *
+ *   That limit is MEASURED, not assumed. Three variants of Sarek_tuple_vec.ml
+ *   were built and each run 20 times:
+ *     - build-and-insert unguarded (pre-ac896b73)  -> 20/20 RED
+ *     - unlocked fast path + locked double-check
+ *       (3aa4c1b9 reverted, still single-winner)   -> 20/20 GREEN
+ *     - [lookup_shape] read unlocked
+ *       (339c8e2c reverted)                        -> 20/20 GREEN
+ *   So this file pins ac896b73 and nothing more. Closing the remaining two
+ *   needs a race detector, which is a toolchain change, not a test.
  *
  * NON-VACUITY
  *   The registry is process-global and each shape can only be raced ONCE per

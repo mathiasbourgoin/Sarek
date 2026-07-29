@@ -95,14 +95,14 @@ let make_sim ~cap ~fanout ~seed =
 (** One frontier "kernel launch" over the half-open window from [level_base] up
     to [snapshot_tail]. *)
 let sim_launch s ~level_base ~snapshot_tail =
-  s.launches := !(s.launches) @ [(level_base, snapshot_tail)] ;
+  s.launches := (level_base, snapshot_tail) :: !(s.launches) ;
   for i = level_base to snapshot_tail - 1 do
     if not (Hashtbl.mem s.written i) then
       s.bad_tickets := (level_base, snapshot_tail, i) :: !(s.bad_tickets)
   done ;
   for i = level_base to snapshot_tail - 1 do
     let u = Int32.to_int (Vector.get s.q.Host.slots (i mod s.cap)) in
-    s.visits := !(s.visits) @ [u] ;
+    s.visits := u :: !(s.visits) ;
     for _ = 1 to s.fanout u do
       (* t = atomic_add(TAIL, 1); head = TAIL-unrelated read of HEAD *)
       let t = Host.tail s.q in
@@ -126,6 +126,13 @@ let drive_sim s ~max_levels =
       sim_launch s ~level_base ~snapshot_tail)
     ~max_levels
 
+(* Both are accumulated head-first (appending with [@] is quadratic, and the
+   reverted-fix run below launches levels whose windows grow by a factor of the
+   fanout - it must fail on an assertion, not by taking forever). *)
+let launches s = List.rev !(s.launches)
+
+let visits s = List.rev !(s.visits)
+
 (* ------------------------------------------------------------------ *)
 
 let windows = Alcotest.(list (pair int int))
@@ -148,13 +155,15 @@ let overflow_stops_the_driver () =
      L1 window (1,4): 9 pushes, tickets 4..12; 8..12 overflow -> TAIL=13
      L2 would be window (4,13), whose tickets 8..12 were never written. *)
   let s = make_sim ~cap:8 ~fanout:(fun _ -> 3) ~seed:[|0|] in
-  let levels = drive_sim s ~max_levels:20 in
+  let levels = drive_sim s ~max_levels:4 in
+  (* max_levels is 4, deliberately above the expected 2: the OVERFLOW guard has
+     to be what stops the driver, not the bound. *)
   Alcotest.(check int) "levels launched before the overflow" 2 levels ;
   Alcotest.check
     windows
     "exactly the two pre-overflow windows"
     [(0, 1); (1, 4)]
-    !(s.launches) ;
+    (launches s) ;
   (* The overflow really happened - without this the case above could pass by
      the frontier simply having drained. *)
   Alcotest.(check bool)
@@ -170,16 +179,16 @@ let overflow_stops_the_driver () =
   Alcotest.(check bool)
     "no item processed twice"
     false
-    (has_duplicate !(s.visits))
+    (has_duplicate (visits s))
 
 (** POSITIVE POLARITY, minimal form: OVERFLOW already set on entry. Not one
     launch may happen. *)
 let overflow_set_on_entry_launches_nothing () =
   let s = make_sim ~cap:8 ~fanout:(fun _ -> 3) ~seed:[|0|] in
   Host.set_ctrl s.q Ctrl.overflow 1 ;
-  let levels = drive_sim s ~max_levels:20 in
+  let levels = drive_sim s ~max_levels:4 in
   Alcotest.(check int) "no level launched" 0 levels ;
-  Alcotest.check windows "no window handed to launch" [] !(s.launches)
+  Alcotest.check windows "no window handed to launch" [] (launches s)
 
 (** NEGATIVE POLARITY: the guard must not cut a healthy run short. A 15-node
     binary tree in a ring of 64 - no overflow is possible - must run to its
@@ -194,12 +203,12 @@ let no_overflow_runs_to_fixpoint () =
     windows
     "the full level-synchronous window sequence"
     [(0, 1); (1, 3); (3, 7); (7, 15)]
-    !(s.launches) ;
+    (launches s) ;
   Alcotest.(check int) "overflow never set" 0 (Host.overflow s.q) ;
   Alcotest.(check (list int))
     "every node visited exactly once, in BFS order"
     (List.init 15 (fun i -> i))
-    !(s.visits) ;
+    (visits s) ;
   Alcotest.(check (list (triple int int int)))
     "no unwritten ticket"
     []
@@ -216,7 +225,7 @@ let max_levels_still_respected () =
     windows
     "only the first two windows"
     [(0, 1); (1, 3)]
-    !(s.launches)
+    (launches s)
 
 let () =
   Alcotest.run
