@@ -700,6 +700,71 @@ let check_short_arg_list dev =
         Printf.printf "FAILED (refused, but not on arity: %s)\n%!" msg ;
         false
       end
+(* The TRANSPARENT path (backlog-54): Soa_vector.create_transparent + the
+   GENERIC Execute.run_vectors, with no SoA-specific launch entry point. This is
+   what the item is actually about — the caller opts a vector into SoA storage
+   and then launches normally.
+
+   Two properties, and they need different devices to be interesting:
+
+   - on CUDA/PTX the result must equal the AoS result (same kernel, same IR,
+     N-leaf ABI instead of one packed pointer);
+   - on every OTHER backend it must ALSO equal the AoS result, by silently taking
+     the packed path — that is the documented "never wrong data" fallback, and
+     asserting it here is the only thing that distinguishes "the fallback works"
+     from "the fallback was never exercised". This machine has no NVIDIA device,
+     so locally it is the fallback half that runs, and it would catch a
+     soa_dispatch predicate that fired on the wrong backend.
+
+   Correctness is checked against the pure-OCaml reference rather than against a
+   second GPU run, so a bug common to both device paths cannot hide. *)
+let check_transparent dev n =
+  let threads = min 128 n in
+  let block = dims threads and grid = dims ((n + threads - 1) / threads) in
+  let sv = Soa_vector.create_transparent point3d_custom n in
+  for i = 0 to n - 1 do
+    Vector.set
+      sv
+      i
+      {
+        x = float_of_int i;
+        y = (float_of_int i *. 0.5) +. 1.0;
+        z = float_of_int (n - i);
+      }
+  done ;
+  let out = Vector.create Vector.float32 n in
+  let ir = ir_of p3_kernel in
+  Sarek.Execute.run_vectors
+    ~device:dev
+    ~ir
+    ~args:[Vec sv; Vec out; Int n]
+    ~block
+    ~grid
+    () ;
+  Transfer.flush dev ;
+  let ok = ref true in
+  for i = 0 to n - 1 do
+    let want =
+      float_of_int i +. ((float_of_int i *. 0.5) +. 1.0) +. float_of_int (n - i)
+    in
+    let got = Vector.get out i in
+    if Float.abs (got -. want) > 1e-3 then begin
+      if !ok then
+        Printf.printf
+          "  transparent SoA mismatch @%d: got=%g want=%g\n%!"
+          i
+          got
+          want ;
+      ok := false
+    end
+  done ;
+  Printf.printf
+    "  %-56s %s\n%!"
+    (Printf.sprintf
+       "transparent SoA == reference (%s)"
+       (if is_ptx dev then "PTX: N-leaf ABI" else "non-PTX: AoS fallback"))
+    (if !ok then "OK" else "FAILED") ;
+  !ok
 
 let check_layout_wired dev =
   let ir = ir_of p3_kernel in
@@ -766,6 +831,7 @@ let () =
          f64 custom-vector gap that is out of scope for this emitter test and is
          exercised elsewhere.) *)
       if is_ptx dev && not (check "dpair(f64)" dev n run_dpair) then ok := false ;
+      if not (check_transparent dev n) then ok := false ;
       (* Item 3: SoA launch must be rejected (never wrong data) on non-PTX. *)
       if not (check_gate dev) then ok := false ;
       (* Wiring + ordering: a mismatched must surface the LAYOUT error,

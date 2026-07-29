@@ -102,3 +102,52 @@ let gather t =
     ~leaves:(leaf_ptrs t)
     ~length:t.length
     ~aos:(Vector.to_ctypes_ptr t.aos)
+
+(* ── Transparent SoA: a plain Vector the generic launch path can dispatch on ──
+   backlog-54. Returns the AoS vector with its [soa] binding populated, so
+   [Execute.run] can bind the N-leaf ABI without ever naming this module.
+
+   Why that indirection exists: sarek/execute/jsoo/dune copies Execute.ml but
+   NOT Soa_launch.ml, so Execute.ml is compiled in a build where Soa_vector does
+   not exist. It therefore cannot call into here — the binding's closures are the
+   only channel, which is why they are closures and not a plan.
+
+   Why the constructor is HERE and not [Vector.create ~layout:SoA] as the Tier 1b
+   handoff proposed: Soa_vector depends on Vector, so putting it there would be a
+   layer inversion. The transparency that the item is actually about is at the
+   LAUNCH site — the user calls the generic Execute.run and the N-pointer ABI is
+   selected for them — and that is unaffected by which module names the
+   constructor. *)
+let create_transparent (custom : 'a Vector.custom_type) (length : int) :
+    ('a, unit) Vector.t =
+  let t = create custom length in
+  let leaf_buf (dev : Device.t) (Leaf lv) =
+    match Vector.get_buffer lv dev with
+    | Some b -> b
+    | None ->
+        (* Unreachable via the launch path: soa_to_device runs first and
+           allocates every leaf. Loud rather than silent, because a missing leaf
+           buffer would otherwise bind a short argument list to an N-pointer
+           signature — the kernel would then read whatever followed. *)
+        invalid_arg
+          (Printf.sprintf
+             "Soa_vector: leaf buffer not allocated on device %d; \
+              soa_to_device must run before soa_leaf_bufs"
+             dev.Device.id)
+  in
+  let v = t.aos in
+  v.Vector.soa <-
+    Some
+      {
+        Vector.soa_num_leaves = num_leaves t;
+        soa_aos_stride = t.plan.Soa.aos_stride;
+        soa_scatter = (fun () -> scatter t);
+        soa_gather = (fun () -> gather t);
+        soa_to_device =
+          (fun dev ->
+            scatter t ;
+            Array.iter (fun (Leaf lv) -> Transfer.to_device lv dev) t.leaves);
+        soa_leaf_bufs =
+          (fun dev -> Array.to_list (Array.map (leaf_buf dev) t.leaves));
+      } ;
+  v

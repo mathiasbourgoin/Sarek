@@ -175,6 +175,17 @@ module Make (Ops : CUSTOM_OPS) = struct
     soa_gather : unit -> unit;
         (** Transpose the N per-leaf host buffers back into the AoS host buffer.
             Call after reading leaves back from a device that wrote them. *)
+    soa_to_device : Ops.device_t -> unit;
+        (** Scatter, then transfer every leaf to [device]. One closure rather
+            than "scatter" + "transfer" separately, so a caller cannot do the
+            first and forget the second. *)
+    soa_leaf_bufs : Ops.device_t -> Ops.device_buf list;
+        (** The N leaf device buffers in {!Soa.plan} leaf (record declaration)
+            order — exactly the order the emitted PTX param block expects. Typed
+            in [Ops] terms, which is what lets [Execute.ml] consume it: it is
+            compiled for the jsoo target too, where [Soa_vector] does not exist
+            (sarek/execute/jsoo/dune copies Execute.ml but not Soa_launch.ml),
+            so it can never name the SoA modules directly. *)
   }
 
   and ('a, 'b) t = {

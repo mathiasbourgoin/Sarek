@@ -246,10 +246,57 @@ let get_device_buffer (type a b) (v : (a, b) Vector.t) (dev : Device.t) :
         (Transfer_failed
            {vector = "unknown"; reason = "Vector has no device buffer"})
 
+(* An SoA-bound vector transfers its N LEAVES, not its packed AoS buffer
+   (backlog-54). soa_to_device scatters first, so a host [set] made before the
+   launch is always reflected on the device — the same coherence contract
+   Soa_launch documents.
+
+   [soa_dispatch] is the ONE predicate that decides SoA vs AoS, so the transfer
+   and the argument expansion below cannot disagree about which ABI a launch
+   uses. Two sites answering that question separately is how you get N leaf
+   buffers transferred and a single packed pointer bound, or the reverse.
+
+   The CUDA/PTX restriction is the documented "never wrong data" fallback: only
+   that backend's emitter lowers a record param to N base pointers, so on every
+   other backend the vector stays exactly what it also is — an ordinary packed
+   AoS custom vector — and takes the untouched path. *)
+
 (** Transfer all V2 Vector args to device *)
+let soa_dispatch (type a b) (v : (a, b) Vector.t) (dev : Device.t) :
+    Vector.soa_binding option =
+  match v.Vector.soa with
+  | Some b when dev.Device.framework = "CUDA/PTX" -> Some b
+  | Some _ | None -> None
+
+(* Kernel param names at the positions holding an SoA-dispatched vector.
+   Positional, because that is the only correspondence there is: [vector_arg] is
+   existential, so nothing relates an argument to a parameter but its index. *)
+let soa_param_names (ir : Sarek_ir_types.kernel) (args : vector_arg list)
+    (dev : Device.t) : string list =
+  let param_names =
+    List.filter_map
+      (function
+        | Sarek_ir_types.DParam (v, _) -> Some v.Sarek_ir_types.var_name
+        | _ -> None)
+      ir.Sarek_ir_types.kern_params
+  in
+  List.filteri
+    (fun i _ ->
+      match List.nth_opt args i with
+      | Some (Vec v) -> soa_dispatch v dev <> None
+      | _ -> false)
+    param_names
+
 let transfer_vectors_to_device (args : vector_arg list) (dev : Device.t) : unit
     =
-  List.iter (function Vec v -> Transfer.to_device v dev | _ -> ()) args
+  List.iter
+    (function
+      | Vec v -> (
+          match soa_dispatch v dev with
+          | Some b -> b.Vector.soa_to_device dev
+          | None -> Transfer.to_device v dev)
+      | _ -> ())
+    args
 
 (** Expand vector args to run_source_arg format.
     @param inject_lengths
@@ -266,6 +313,23 @@ let expand_to_run_source_args ?(inject_lengths = true) (args : vector_arg list)
     (dev : Device.t) : Framework_sig.run_source_arg list =
   List.concat_map
     (function
+      | Vec v when soa_dispatch v dev <> None ->
+          (* N leaf base pointers in leaf (record declaration) order, then ONE
+             shared length — exactly the param block Sarek_ir_ptx.emit_params
+             produces for a ~soa_params vector. The length is emitted even under
+             ~inject_lengths:false: it is not an injected convenience here but a
+             declared parameter of that ABI. *)
+          let b = Option.get (soa_dispatch v dev) in
+          let len = Vector.length v in
+          let leaf_args =
+            List.map
+              (fun buf ->
+                let (module B : Vector.DEVICE_BUFFER) = buf in
+                Framework_sig.RSA_Buffer
+                  {binder = B.bind_to_kargs; length = len})
+              (b.Vector.soa_leaf_bufs dev)
+          in
+          leaf_args @ [Framework_sig.RSA_Vector_Length (Int32.of_int len)]
       | Vec v ->
           let buf = get_device_buffer v dev in
           let (module B : Vector.DEVICE_BUFFER) = buf in
@@ -707,7 +771,16 @@ let run ~(device : Device.t) ~(name : string)
                  device capability rather than letting the backend emit a
                  shader the device cannot legally load. *)
               check_device_capabilities ~device ir ;
-              match B.generate_source ~block ir with
+              (* SoA param names, derived from the ARGUMENTS by the same
+                 predicate the transfer and expansion use (backlog-54). The
+                 emitted signature and the bound argument list are then two
+                 consequences of one decision rather than two decisions that
+                 could disagree — a disagreement here is not a crash but N
+                 pointers bound to a packed-AoS param block, i.e. silently wrong
+                 data. Empty list on every non-CUDA/PTX backend, where
+                 generate_source ignores it anyway. *)
+              let soa_params = soa_param_names ir args device in
+              match B.generate_source ~block ~soa_params ir with
               | None ->
                   Execute_error.raise_error
                     (Compilation_failed
