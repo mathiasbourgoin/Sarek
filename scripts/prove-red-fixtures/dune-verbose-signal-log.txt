@@ -1,0 +1,333 @@
+Shared cache enabled cache_enabled: Disabed
+Shared cache location root_dir: "/home/user/.cache/dune/db"
+Workspace root root: "/workspace/sarek"
+Dune context context: { name = "default"
+; kind = "default"
+; profile = Dev
+; merlin = true
+; fdo_target_exe = None
+; build_dir = In_build_dir "default"
+; instrument_with = []
+}
+Running[1]: (cd _build/default && /workspace/sarek/_opam/bin/ocamlopt.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -g -I spoc/registry/test/.test_sarek_registry.eobjs/byte -I spoc/registry/test/.test_sarek_registry.eobjs/native -I spoc/registry/.sarek_registry.objs/byte -I spoc/registry/.sarek_registry.objs/native -cmi-file spoc/registry/test/.test_sarek_registry.eobjs/byte/dune__exe__Test_sarek_registry.cmi -no-alias-deps -opaque -o spoc/registry/test/.test_sarek_registry.eobjs/native/dune__exe__Test_sarek_registry.cmx -c -impl spoc/registry/test/test_sarek_registry.ml)
+Running[2]: (cd _build/default/spoc/ir/test && ./test_sarek_ir_types.exe)
+Output[2]:
+Sarek_ir_types tests:
+  memspace: OK
+  elttype primitives: OK
+  elttype record: OK
+  elttype variant: OK
+  elttype array: OK
+  elttype vec: OK
+  var: OK
+  var mutable: OK
+  const int32: OK
+  const int64: OK
+  const float32: OK
+  const float64: OK
+  const bool: OK
+  const unit: OK
+  binop: OK
+  unop: OK
+  expr const: OK
+  expr var: OK
+  expr binop: OK
+  expr intrinsic: OK
+  expr record: OK
+  expr if: OK
+  lvalue var: OK
+  lvalue array: OK
+  stmt assign: OK
+  stmt seq: OK
+  stmt if: OK
+  stmt for: OK
+  stmt barrier: OK
+  stmt let: OK
+  stmt pragma: OK
+  decl param: OK
+  decl local: OK
+  decl shared: OK
+  kernel: OK
+  helper_func: OK
+  native_arg: OK
+  vec_length: OK
+  pattern: OK
+All Sarek_ir_types tests passed!
+Running[3]: (cd _build/default/spoc/ir/test && ./test_sarek_ir_pp.exe)
+Output[3]:
+Sarek_ir_pp tests:
+  string_of_elttype primitives: OK
+  string_of_elttype record: OK
+  string_of_elttype variant: OK
+  string_of_elttype array: OK
+  string_of_elttype vec: OK
+  string_of_memspace: OK
+  string_of_binop: OK
+  string_of_unop: OK
+  pp_expr const: OK
+  pp_expr var: OK
+  pp_expr binop: OK
+  pp_expr unop: OK
+  pp_expr array_read: OK
+  pp_expr intrinsic: OK
+  pp_expr record: OK
+  pp_expr if: OK
+  pp_stmt assign: OK
+  pp_stmt barrier: OK
+  pp_stmt warp_barrier: OK
+  pp_stmt mem_fence: OK
+  pp_stmt return: OK
+  pp_stmt empty: OK
+  pp_decl param: OK
+  pp_decl param array: OK
+  pp_decl local: OK
+  pp_decl shared: OK
+  pp_kernel: OK
+  pp_pattern: OK
+All Sarek_ir_pp tests passed!
+Running[4]: (cd _build/default/spoc/ir/test && ./test_sarek_ir_analysis.exe)
+Output[4]:
+Sarek_ir_analysis tests:
+  elttype_uses_float64 primitives: OK
+  elttype_uses_float64 record: OK
+  elttype_uses_float64 variant: OK
+  elttype_uses_float64 array: OK
+  elttype_uses_float64 vec: OK
+  const_uses_float64: OK
+  expr_uses_float64 const: OK
+  expr_uses_float64 var: OK
+  expr_uses_float64 binop: OK
+  expr_uses_float64 cast: OK
+  expr_uses_float64 intrinsic: OK
+  expr_uses_float64 if: OK
+  stmt_uses_float64 assign: OK
+  stmt_uses_float64 seq: OK
+  stmt_uses_float64 if: OK
+  stmt_uses_float64 for: OK
+  stmt_uses_float64 let: OK
+  stmt_uses_float64 barrier/empty: OK
+  decl_uses_float64 param: OK
+  decl_uses_float64 local: OK
+  decl_uses_float64 shared: OK
+  helper_uses_float64: OK
+  kernel_uses_float64 params: OK
+  kernel_uses_float64 types: OK
+  kernel_uses_float64 variants: OK
+  elttype_uses_float16 primitives: OK
+  elttype_uses_float16 nested: OK
+  expr_uses_float16: OK
+  stmt/decl_uses_float16: OK
+  kernel_uses_float16: OK
+  feature API agrees with the per-width aliases: OK
+  const_uses is width-specific: OK
+  kernel_requirements: OK
+  is_atomic_intrinsic_name: OK
+  expr_uses_atomics: OK
+  helper_uses_atomics: OK
+  kernel_uses_atomics direct: OK
+  kernel_uses_atomics via helper: OK
+  lvalue_uses_atomics: OK
+  kernel_uses_atomics via assign lvalue: OK
+  kernel_uses_atomics via SNative (conservative): OK
+  expr_uses_int_mod: OK
+  lvalue_uses_int_mod: OK
+  kernel_uses_int_mod via record-field lvalue: OK
+  is_copysign_intrinsic_name: OK
+  expr_uses_copysign: OK
+  lvalue_uses_copysign: OK
+  kernel_uses_copysign via record-field lvalue: OK
+  kernel_uses_copysign via helper: OK
+  kernel_uses_nonfinite_float64: OK
+  kernel_uses_intrinsic: OK
+  kernel_float64_intrinsics: OK
+  coopmat detection: OK
+  coopmat configs: OK
+All Sarek_ir_analysis tests passed!
+Running[5]: (cd _build/default/spoc/ir/test && ./test_sarek_capability.exe)
+Output[5]:
+Testing Sarek_capability (#64 slice 1)...
+  device_verdict: Unknown refuses, widths independent: OK
+  permits: Unknown does not permit: OK
+  first_refusal: OK
+  kind_needs_device: OK
+  kind_name: OK
+  evidence: OK
+  explain: OK
+  refuse_if_used: fires on f64, silent on f32: OK
+All Sarek_capability tests passed!
+Running[6]: (cd _build/default/spoc/ir/test && ./test_sarek_coopmat.exe)
+Output[6]:
+Testing `Sarek_coopmat'.
+This run has ID `K2VS1UF2'.
+
+  [OK]          local hardware record          0   NAVI31: 14 configurations,...
+  [OK]          accuracy regime                0   integer accumulate is exac...
+  [OK]          accuracy regime                1   component classification.
+  [OK]          device verdict                 0   unprobed device is refused.
+  [OK]          device verdict                 1   capable device permits (po...
+  [OK]          device verdict                 2   probed device with no supp...
+  [OK]          device verdict                 3   unadvertised configuration...
+  [OK]          device verdict                 4   find_config.
+  [OK]          fragment type                  0   dimensions are derived fro...
+  [OK]          fragment type                  1   integer component types ar...
+  [OK]          fragment type                  2   Metal's 8x8 is expressible.
+  [OK]          subgroup ABI                   0   components per invocation.
+  [OK]          subgroup ABI                   1   config fits subgroup.
+
+Full test results in `/workspace/sarek/_build/default/spoc/ir/test/_build/_tests/Sarek_coopmat'.
+Test Successful in 0.001s. 13 tests run.
+Running[7]: (cd _build/default/spoc/ir/test && ./test_sarek_pure_registry.exe)
+Output[7]:
+  float32 paths expose exactly the 33-entry set: OK
+  Float64 paths expose exactly the 33-entry set: OK
+  Math.Float64 paths expose exactly the 16-entry set: OK
+  Math.Float64 paths still omit the 11 unsupported intrinsics: OK
+  Float64.rsqrt and Sarek_stdlib_meta.Float64.rsqrt agree on GLSL name (inversesqrt): OK
+  Float64.abs_float emits fabs (abs on GLSL), never abs_float: OK
+All Sarek_pure_registry tests passed!
+Running[8]: (cd _build/default/spoc/framework/test && ./test_framework_sig.exe)
+Output[8]:
+Framework_sig tests:
+  dims_1d: OK
+  dims_2d: OK
+  dims_3d: OK
+  dims record: OK
+  capabilities: OK
+  device: OK
+  execution_model: OK
+  source_lang: OK
+  convergence: OK
+  exec_arg basic: OK
+  run_source_arg: OK
+All Framework_sig tests passed!
+Running[9]: (cd _build/default/spoc/framework/test && ./test_typed_value.exe)
+Output[9]:
+Typed_value tests:
+  PInt32: OK
+  PInt64: OK
+  PFloat: OK
+  PBool: OK
+  PBytes: OK
+  Int32_type: OK
+  Int64_type: OK
+  Float32_type: OK
+  Float64_type: OK
+  Bool_type: OK
+  Registry.find_scalar: OK
+  Registry.list_scalars: OK
+  Registry.register_scalar (custom): OK
+  scalar_value: OK
+  typed_value (scalar): OK
+  exec_arg_of_typed_value: OK
+  typed_value_of_exec_arg (Int32): OK
+  typed_value_of_exec_arg (Float64): OK
+  type_name_of_exec_arg: OK
+  field_desc: OK
+All Typed_value tests passed!
+Running[10]: (cd _build/default/spoc/framework/test && ./test_device_type.exe)
+Output[10]:
+Device_type tests:
+  Device_type.t = Framework_sig.device: OK
+  Device_type fields: OK
+  Device_type CPU device: OK
+  Cross-module compatibility: OK
+All Device_type tests passed!
+Running[11]: (cd _build/default/spoc/framework/test && ./test_backend_error.exe)
+Output[11]:
+Testing `Backend_error'.
+This run has ID `EP7RMAPU'.
+
+  [OK]          codegen             0   codegen errors.
+  [OK]          runtime             0   runtime errors.
+  [OK]          plugin              0   plugin errors.
+  [OK]          backends            0   multiple backends.
+  [OK]          exceptions          0   exception handling.
+
+Full test results in `/workspace/sarek/_build/default/spoc/framework/test/_build/_tests/Backend_error'.
+Test Successful in 0.000s. 5 tests run.
+Running[12]: (cd _build/default/spoc/framework/test && ./test_kernel_args.exe)
+Output[12]:
+Testing `Kernel_args'.
+This run has ID `6SU1XTLX'.
+
+  [OK]          ordering               0   out of order set.
+  [OK]          ordering               1   to_sorted_list.
+  [OK]          ordering               2   count.
+  [OK]          last-set-wins          0   duplicate idx last wins.
+  [OK]          validation             0   gap detection.
+  [OK]          validation             1   count mismatch extra.
+  [OK]          validation             2   unexpected index beyond range.
+  [OK]          validation             3   negative expected_count.
+
+Full test results in `/workspace/sarek/_build/default/spoc/framework/test/_build/_tests/Kernel_args'.
+Test Successful in 0.000s. 8 tests run.
+Running[13]: (cd _build/default/spoc/framework/test && ./test_compile_cache.exe)
+Output[13]:
+Testing `Compile_cache'.
+This run has ID `EKJAFE6C'.
+
+  [OK]          key_identity          0   same inputs same key.
+  [OK]          key_identity          1   same source, different kernel name ...
+  [OK]          key_identity          2   different device -> different key.
+  [OK]          key_identity          3   different source -> different key.
+  [OK]          options               0   option order canonicalized.
+  [OK]          options               1   different option values -> differen...
+
+Full test results in `/workspace/sarek/_build/default/spoc/framework/test/_build/_tests/Compile_cache'.
+Test Successful in 0.000s. 6 tests run.
+Running[14]: (cd _build/default/spoc/framework/test && ./test_guarded_cache.exe)
+Output[14]:
+Testing `Guarded_cache'.
+This run has ID `7L6XJ82J'.
+
+  [OK]          concurrency          0   stress: shared + distinct keys, N do...
+  [OK]          concurrency          1   concurrent clear vs find_or_build.
+  [OK]          concurrency          2   concurrent evict_device.
+  [OK]          concurrency          3   evict_device during an in-flight bui...
+  [OK]          concurrency          4   clear during an in-flight build is r...
+  [OK]          concurrency          5   clear during an in-flight build stil...
+  [OK]          concurrency          6   a raising destroy does not strand th...
+  [OK]          concurrency          7   a raising destroy on a lost race sti...
+  [OK]          concurrency          8   red demo (unguarded, opt-in).
+
+Full test results in `/workspace/sarek/_build/default/spoc/framework/test/_build/_tests/Guarded_cache'.
+Test Successful in 0.060s. 9 tests run.
+Running[15]: (cd _build/default/spoc/framework/test && ./test_cache_hooks.exe)
+Output[15]:
+Testing `Cache_hooks'.
+This run has ID `G3NDABSA'.
+
+  [OK]          around_clear                            0   notifies on both ...
+  [OK]          around_clear                            1   nested scopes not...
+  [OK]          notification                            0   device destroy ca...
+  [OK]          notification                            1   a failing listene...
+  [OK]          around_clear failure isolation          0   a failing listene...
+
+Full test results in `/workspace/sarek/_build/default/spoc/framework/test/_build/_tests/Cache_hooks'.
+Test Successful in 0.000s. 5 tests run.
+Running[16]: (cd _build/default && /workspace/sarek/_opam/bin/ocamlopt.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -g -o spoc/registry/test/test_sarek_registry.exe spoc/registry/sarek_registry.cmxa spoc/registry/test/.test_sarek_registry.eobjs/native/dune__exe__Test_sarek_registry.cmx)
+Running[17]: (cd _build/default/spoc/registry/test && ./test_sarek_registry.exe)
+File "spoc/registry/test/dune", line 2, characters 8-27:
+2 |  (names test_sarek_registry)
+            ^^^^^^^^^^^^^^^^^^^
+Command [17] got signal SEGV:
+$ (cd _build/default/spoc/registry/test && ./test_sarek_registry.exe)
+Sarek_registry tests:
+  builtin types: OK
+  register_type: OK
+  find_type: OK
+  type_device_code: OK
+  register_record: OK
+  find_record: OK
+  record_fields: OK
+  find_record_by_short_name: OK
+  register_variant: OK
+  find_variant: OK
+  variant_constructors: OK
+  register_fun: OK
+  register_fun with module: OK
+  find_fun: OK
+  fun_device_code: OK
+  fun_device_template: OK
+  cuda_or_opencl: OK
+All Sarek_registry tests passed!

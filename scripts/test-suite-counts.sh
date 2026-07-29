@@ -313,7 +313,12 @@ text = sys.stdin.read() if src == "-" else open(src, errors="replace").read()
 # warning-as-error ("Error (warning 32 [...]): ...") and reintroduced a false
 # green — see the header. A bare `^Error ` is NOT accepted: a test printing
 # "Error handling works" would match it.
-build_errors = re.findall(r"(?m)^Error(?::| \([^)\n]*\):)", text)
+build_errors = re.findall(
+    r"(?m)^(?:Error(?::| \([^)\n]*\):)"
+    r"|Command \[\d+\] got signal \w+"
+    r"|Command \[\d+\] exited with code (?!0\b)\d+)",
+    text,
+)
 
 # Alcotest: "Test Successful in 0.004s. 61 tests run." and the SINGULAR
 # "1 test run." / "0 test run.". Matching `tests?` is the whole point.
@@ -513,6 +518,20 @@ python3 -c "$PYPROG" "$SRC" "$MIN_SUITES" "$DUNE_EXIT"
 # mutation: warning-as-error
 #   desc: the same shape as build-failed but with the spelling the compiler actually uses when a warning is promoted -- `Error (warning 32 [...]):`, no colon after Error. The `^Error:` pattern missed it entirely and reported a clean total for a run whose build never completed. Kept as its own mutation because build-failed passes on a pattern that has this hole.
 #   apply: printf 'File "sarek/ppx/Sarek_lower_ir.ml", line 850, characters 16-30:\nError (warning 26 [unused-var]): unused variable helper_binders.\n' >> scripts/prove-red-fixtures/dune-test-sample-log.txt
+#   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0
+#   expect-exit: 5
+#   expect-message: dune/compiler error marker
+#
+# mutation: verbose-command-exit
+#   desc: under `dune test --verbose` a test binary that exits non-zero is reported as "Command [N] exited with code M:" -- no Error label at all, so the Error-only pattern read the whole run as clean. Distinct from build-failed because nothing failed to BUILD; a compiled test ran and returned failure.
+#   apply: printf 'Command [17] exited with code 3:\n' >> scripts/prove-red-fixtures/dune-test-sample-log.txt
+#   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0
+#   expect-exit: 5
+#   expect-message: dune/compiler error marker
+#
+# mutation: verbose-command-signal
+#   desc: the same shape for a test killed by a signal -- "Command [N] got signal SEGV:". Its own mutation because a segfaulting test is the case this repo has actually hit (backlog-53/80, RADV driver segfaults) and it must not be reported as a clean count.
+#   apply: printf 'Command [17] got signal SEGV:\n' >> scripts/prove-red-fixtures/dune-test-sample-log.txt
 #   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0
 #   expect-exit: 5
 #   expect-message: dune/compiler error marker

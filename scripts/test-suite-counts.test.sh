@@ -16,7 +16,8 @@ CNT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/test-suite-counts.sh"
 # a missing fixture makes `cat` produce nothing, which the counter reports as
 # "no output recognised" (2) — a number that looks like an unrelated bug.
 FIXTURES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/prove-red-fixtures"
-for f in dune-test-sample-log.txt dune-test-warning-as-error-log.txt; do
+for f in dune-test-sample-log.txt dune-test-warning-as-error-log.txt \
+         dune-verbose-command-exit-log.txt dune-verbose-signal-log.txt; do
   [ -f "$FIXTURES/$f" ] || { echo "FAIL: fixture $FIXTURES/$f is missing"; exit 2; }
 done
 
@@ -346,6 +347,32 @@ check "warning-as-error AFTER enough suites to clear the floor is 5, not 0" "$?"
 } > "$TMP/prints-error-word.log"
 "$CNT" --min-suites 0 "$TMP/prints-error-word.log" >/dev/null 2>&1
 check "  (control) a test PRINTING \"Error handling...\" is still 0" "$?" "0"
+
+# DUNE --verbose COMMAND FAILURES. Under `dune test --verbose` a test binary that
+# exits non-zero or dies on a signal is reported not as `Error:` but as
+#     Command [17] exited with code 3:
+#     Command [17] got signal SEGV:
+# so the `Error`-label pattern never matched either. Measured on two real captured
+# logs: exit 0 and a clean "46 cases across 6 suites" for runs that FAILED.
+# Third instance of this class after `^File "` (too broad) and `^Error:` (too
+# narrow) — the heuristic has now been wrong in both directions and in a third
+# spelling, which is the argument for --dune-exit being the authority and this
+# being only the fallback.
+"$CNT" --min-suites 0 "$FIXTURES/dune-verbose-command-exit-log.txt" >/dev/null 2>&1
+check "a --verbose command exiting non-zero is 5, not 0" "$?" "5"
+
+"$CNT" --min-suites 0 "$FIXTURES/dune-verbose-signal-log.txt" >/dev/null 2>&1
+check "a --verbose command killed by a signal is 5, not 0" "$?" "5"
+
+# Both controls that keep this widening from becoming the `^File "` mistake again.
+# `exited with code 0` is dune reporting SUCCESS and must not read as a failure;
+# an INDENTED mention is test output, not dune's own report.
+{ cat "$FIXTURES/dune-test-sample-log.txt"
+  printf 'Command [17] exited with code 0:\n'
+  printf '  a test printed: Command [3] got signal handling right\n'
+} > "$TMP/verbose-benign.log"
+"$CNT" --min-suites 0 "$TMP/verbose-benign.log" >/dev/null 2>&1
+check "  (control) 'exited with code 0' + an indented mention stay 0" "$?" "0"
 
 # Argument handling: a malformed invocation is an error, not a default.
 "$CNT" --min-suites nope "$TMP/plausible.log" >/dev/null 2>&1
