@@ -179,6 +179,33 @@ let convert_recipes =
         ("to_int_f32", f32_path, "af32", "oi32");
         ("to_int_f64", f64_path, "af64", "oi32");
       ] );
+    (* backlog-167. These three joined the emitter's conversion table and this
+       gate caught their absence here by name, which is the whole point of it:
+       test_ptx_snapshot asserts the instruction TEXT (cvt.rn.f64.s32, the
+       modifier-free cvt.f64.f32, cvt.rzi.s32.f64), but only ptxas assembling a
+       real kernel proves those spellings are legal. Both module paths are
+       covered because the dispatch arm is path-dependent — it widens to f64
+       under Float64 and to f32 otherwise — so a single path would leave half the
+       arm unassembled. *)
+    ( "of_int32",
+      [
+        ("of_int32_f32", f32_path, "ai32", "of32");
+        ("of_int32_f64", f64_path, "ai32", "of64");
+      ] );
+    ( "of_float32",
+      [
+        (* Under Float64 this is the exact f32 -> f64 widening. Under Float32 it
+           is the identity, which emit_cast returns as the source register
+           unchanged — worth assembling anyway, since "emits nothing" is a claim
+           about the emitter that ptxas can check. *)
+        ("of_float32_f32", f32_path, "af32", "of32");
+        ("of_float32_f64", f64_path, "af32", "of64");
+      ] );
+    ( "to_int32",
+      [
+        ("to_int32_f32", f32_path, "af32", "oi32");
+        ("to_int32_f64", f64_path, "af64", "oi32");
+      ] );
   ]
 
 (* Atomics: (argument shape, element type). The array operand comes first, then
