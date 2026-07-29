@@ -313,12 +313,18 @@ text = sys.stdin.read() if src == "-" else open(src, errors="replace").read()
 # warning-as-error ("Error (warning 32 [...]): ...") and reintroduced a false
 # green — see the header. A bare `^Error ` is NOT accepted: a test printing
 # "Error handling works" would match it.
-build_errors = re.findall(
-    r"(?m)^(?:Error(?::| \([^)\n]*\):)"
-    r"|Command \[\d+\] got signal \w+"
-    r"|Command \[\d+\] exited with code (?!0\b)\d+)",
+# TWO categories, kept apart on purpose. Both mean "the run did not complete",
+# so both are exit 5 — but they call for DIFFERENT actions, and a diagnostic that
+# says "Fix the build" to someone whose build succeeded and whose test segfaulted
+# has sent them to the wrong place. Caught by review on #367: the collection was
+# named build_errors and every match was reported as a "dune/compiler error",
+# which became false the moment runtime command failures joined it.
+compile_errors = re.findall(r"(?m)^Error(?::| \([^)\n]*\):)", text)
+command_failures = re.findall(
+    r"(?m)^Command \[\d+\] (?:got signal \w+|exited with code (?!0\b)\d+)",
     text,
 )
+run_failed_markers = len(compile_errors) + len(command_failures)
 
 # Alcotest: "Test Successful in 0.004s. 61 tests run." and the SINGULAR
 # "1 test run." / "0 test run.". Matching `tests?` is the whole point.
@@ -357,7 +363,7 @@ suites = len(alco) + len(qcheck)
 #
 # Exit 5 therefore OUTRANKS 2, 3 and 4: a run that did not complete is not
 # described by any of them, whatever its log happens to parse to.
-if dune_exit not in ("", "0") or build_errors:
+if dune_exit not in ("", "0") or run_failed_markers:
     if suites:
         print(f"partial: {sum(alco) + sum(qcheck)} case(s) across {suites} suite(s) "
               "ran before the failure")
@@ -370,11 +376,19 @@ if dune_exit not in ("", "0") or build_errors:
               "ran before it stopped. Not a result.")
     else:
         print()
-        print(f"ERROR: this log contains {len(build_errors)} dune/compiler error "
-              "marker(s) at column 0, so the run did not complete and any count "
-              "above is only the suites built before the failure. Fix the build and "
-              "re-run; pass --dune-exit to make this authoritative rather than "
-              "inferred.")
+        what = []
+        if compile_errors:
+            what.append(f"{len(compile_errors)} compiler error marker(s) "
+                        "(the build failed -- fix the build)")
+        if command_failures:
+            what.append(f"{len(command_failures)} failed-command marker(s) "
+                        f"[{'; '.join(command_failures)}] (the build succeeded and a "
+                        "test command exited non-zero or died on a signal -- fix the "
+                        "test, not the build)")
+        print(f"ERROR: this log contains {' and '.join(what)} at column 0, so the "
+              "run did not complete and any count above is only the suites that ran "
+              "before the failure. Pass --dune-exit to make this authoritative "
+              "rather than inferred.")
     sys.exit(5)
 
 # GATE 1 -- did we read a test log at all? (backlog-150)
@@ -500,7 +514,7 @@ python3 -c "$PYPROG" "$SRC" "$MIN_SUITES" "$DUNE_EXIT"
 #   apply: printf 'File "sarek/tests/unit/test_thing.ml", line 12, characters 0-1:\nError: Syntax error\n' >> scripts/prove-red-fixtures/dune-test-sample-log.txt
 #   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0
 #   expect-exit: 5
-#   expect-message: dune/compiler error marker
+#   expect-message: compiler error marker
 #
 # mutation: dune-exit-nonzero
 #   desc: the log parses clean and dune says the run failed. An ENVIRONMENT mutation, like empty-stdin: no file changes, and the authoritative fact is one a log cannot carry.
@@ -520,21 +534,21 @@ python3 -c "$PYPROG" "$SRC" "$MIN_SUITES" "$DUNE_EXIT"
 #   apply: printf 'File "sarek/ppx/Sarek_lower_ir.ml", line 850, characters 16-30:\nError (warning 26 [unused-var]): unused variable helper_binders.\n' >> scripts/prove-red-fixtures/dune-test-sample-log.txt
 #   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0
 #   expect-exit: 5
-#   expect-message: dune/compiler error marker
+#   expect-message: compiler error marker
 #
 # mutation: verbose-command-exit
 #   desc: under `dune test --verbose` a test binary that exits non-zero is reported as "Command [N] exited with code M:" -- no Error label at all, so the Error-only pattern read the whole run as clean. Distinct from build-failed because nothing failed to BUILD; a compiled test ran and returned failure.
 #   apply: printf 'Command [17] exited with code 3:\n' >> scripts/prove-red-fixtures/dune-test-sample-log.txt
 #   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0
 #   expect-exit: 5
-#   expect-message: dune/compiler error marker
+#   expect-message: failed-command marker
 #
 # mutation: verbose-command-signal
 #   desc: the same shape for a test killed by a signal -- "Command [N] got signal SEGV:". Its own mutation because a segfaulting test is the case this repo has actually hit (backlog-53/80, RADV driver segfaults) and it must not be reported as a clean count.
 #   apply: printf 'Command [17] got signal SEGV:\n' >> scripts/prove-red-fixtures/dune-test-sample-log.txt
 #   argv: scripts/prove-red-fixtures/dune-test-sample-log.txt --min-suites 0
 #   expect-exit: 5
-#   expect-message: dune/compiler error marker
+#   expect-message: failed-command marker
 # END prove-red-spec
 #
 # The other polarity -- a test that PRINTS "Error handling works" must NOT read

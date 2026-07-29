@@ -245,8 +245,14 @@ check "a build failure in the log exits 5" "$?" "5"
 # runs before the count block) is what changed the wording, and "partial" is the
 # more honest framing for a total taken over a run that died.
 bf_out="$("$CNT" --min-suites 0 "$TMP/build-failed.log" 2>&1 || true)"
+# Anchored on the `partial:` LINE, not on a bare substring. It used to grep for
+# "ran before the failure" anywhere in the output, which silently also matched
+# the ERROR paragraph once #367 reworded it from "suites built before" to "suites
+# that ran before" — count 1 became 2 and the case failed for a reason that had
+# nothing to do with the partial count. The assertion was looser than its own
+# name ("shows the partial count"), so it was coupled to prose it does not own.
 check "build failure still shows the partial count" \
-  "$(echo "$bf_out" | /usr/bin/grep -c 'ran before the failure')" "1"
+  "$(echo "$bf_out" | /usr/bin/grep -cE '^partial: .* ran before the failure')" "1"
 
 # --dune-exit is authoritative: the log parses clean, dune says otherwise.
 "$CNT" --min-suites 0 --dune-exit 1 "$TMP/mixed.log" >/dev/null 2>&1
