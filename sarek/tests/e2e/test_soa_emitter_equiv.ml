@@ -451,13 +451,198 @@ let check_roundtrip dev n =
       false
   end
 
+(* ── the ~fields precondition is ENFORCED, not just documented ──────────────
+   Soa_vector.create takes the record's field layout as an argument, and its .mli
+   warns that a wrong list transposes against the wrong byte offsets and yields
+   "silently transposed / corrupted data with no error" — adding that it "cannot
+   be checked". True at [create], which has no kernel. False at the LAUNCH, which
+   holds the kernel IR and therefore the authoritative TRecord. These cases pin
+   that the launch compares the two and refuses.
+
+   Device-independent by construction: the check is a pure function of (param
+   name, kernel element type, declared plan), so it runs on this machine with no
+   NVIDIA device. It is also ordered BEFORE run_soa's PTX gate precisely so the
+   refusal is reachable off a CUDA host — behind the gate it could only ever fire
+   where the gate passes, which is what would have made it untestable here. *)
+
+let xyz_ty =
+  Sarek_ir_types.TRecord
+    ("point3d", [("x", TFloat32); ("y", TFloat32); ("z", TFloat32)])
+
+let mixed_ty = Sarek_ir_types.TRecord ("mixed", [("a", TInt32); ("b", TFloat64)])
+
+(* [check_soa_layout] raises via Execute_error.raise_error; a refusal is any
+   Execution_error whose rendering mentions the parameter. Asserting on the
+   MESSAGE as well as the exception, because "raised something" would also be
+   satisfied by an unrelated failure inside the plan builders. *)
+let contains hay needle =
+  let nh = String.length hay and nn = String.length needle in
+  let rec go i =
+    if i + nn > nh then false
+    else if String.sub hay i nn = needle then true
+    else go (i + 1)
+  in
+  nn = 0 || go 0
+
+let refuses ~label ~param ~kernel_ty ~declared ~expect_substr =
+  match Sarek.Soa_launch.check_soa_layout ~param ~kernel_ty ~declared with
+  | () ->
+      Printf.printf "  %-56s FAIL (accepted a mismatch)\n%!" label ;
+      false
+  | exception Sarek.Execute_error.Execution_error e ->
+      let msg = Sarek.Execute_error.error_to_string e in
+      let has_param = contains msg param in
+      let has_expect = contains msg expect_substr in
+      if has_param && has_expect then (
+        Printf.printf "  %-56s OK (refused)\n%!" label ;
+        true)
+      else (
+        Printf.printf
+          "  %-56s FAIL (refused, but message names neither %S nor %S: %s)\n%!"
+          label
+          param
+          expect_substr
+          msg ;
+        false)
+
+let check_layout_validation () =
+  let authoritative = Soa.plan_of_elttype xyz_ty in
+  let ok = ref true in
+  print_endline "  --- ~fields precondition enforced at launch ---" ;
+  (* POSITIVE CONTROL first. Without it, "refuses a wrong list" and "refuses
+     every list" are the same observation, and the second would make SoA
+     unusable rather than safe. *)
+  if
+    match
+      Sarek.Soa_launch.check_soa_layout
+        ~param:"pts"
+        ~kernel_ty:(Some xyz_ty)
+        ~declared:authoritative
+    with
+    | () -> true
+    | exception e ->
+        Printf.printf
+          "  %-56s FAIL (rejected the CORRECT layout: %s)\n%!"
+          "matching ~fields is accepted"
+          (Printexc.to_string e) ;
+        false
+  then Printf.printf "  %-56s OK\n%!" "matching ~fields is accepted"
+  else ok := false ;
+  (* Wrong ORDER: same fields, same widths, permuted. The offsets move, so the
+     transpose would read every field from the wrong column. *)
+  if
+    not
+      (refuses
+         ~label:"permuted ~fields is refused"
+         ~param:"pts"
+         ~kernel_ty:(Some xyz_ty)
+         ~declared:
+           (Soa.plan
+              ~name:"point3d"
+              [("y", Sarek_ir_types.TFloat32); ("x", TFloat32); ("z", TFloat32)])
+         ~expect_substr:"wrong byte offsets")
+  then ok := false ;
+  (* Wrong WIDTH at the same position: f32 declared where the record has f64.
+     This is the case a name-and-order-only comparison would accept. *)
+  if
+    not
+      (refuses
+         ~label:"wrong leaf WIDTH is refused"
+         ~param:"m"
+         ~kernel_ty:(Some mixed_ty)
+         ~declared:
+           (Soa.plan
+              ~name:"mixed"
+              [("a", Sarek_ir_types.TInt32); ("b", TFloat32)])
+         ~expect_substr:"wrong byte offsets")
+  then ok := false ;
+  (* MISSING field: fewer leaves than the record has. *)
+  if
+    not
+      (refuses
+         ~label:"missing field is refused"
+         ~param:"pts"
+         ~kernel_ty:(Some xyz_ty)
+         ~declared:
+           (Soa.plan
+              ~name:"point3d"
+              [("x", Sarek_ir_types.TFloat32); ("y", TFloat32)])
+         ~expect_substr:"wrong byte offsets")
+  then ok := false ;
+  (* A SoA argument bound to a SCALAR parameter: there is no record to compare
+     against, and N leaf pointers cannot bind to it. *)
+  if
+    not
+      (refuses
+         ~label:"SoA bound to a non-array param is refused"
+         ~param:"scalar"
+         ~kernel_ty:None
+         ~declared:authoritative
+         ~expect_substr:"non-array")
+  then ok := false ;
+  !ok
+
+(* The WIRING, which the direct calls above cannot establish: run_soa must
+   actually consult the check. Driven on ANY device, including non-PTX, and that
+   is the point — a mismatched ~fields list must surface the LAYOUT error rather
+   than the CUDA/PTX device gate. If the check sat behind the gate (where it
+   originally was) this case would report the gate message instead, so it pins
+   the ordering as well as the call. *)
+let check_layout_wired dev =
+  let ir = ir_of p3_kernel in
+  let sv =
+    (* Permuted vs point3d's declaration order (x, y, z). Same widths, so only
+       the offsets/paths disagree — the subtle end of the mismatch space. *)
+    Soa_vector.create
+      point3d_custom
+      ~fields:Sarek_ir_types.[("y", TFloat32); ("x", TFloat32); ("z", TFloat32)]
+      8
+  in
+  let out = Vector.create Vector.float32 8 in
+  match
+    Soa_launch.run_soa
+      ~device:dev
+      ~ir
+      ~args:
+        [
+          Soa_launch.SA_Soa sv;
+          Soa_launch.SA_Reg (Sarek.Execute.Vec out);
+          Soa_launch.SA_Reg (Sarek.Execute.Int 8);
+        ]
+      ~block:(dims 8)
+      ~grid:(dims 1)
+      ()
+  with
+  | () ->
+      Printf.printf
+        "  %-56s FAIL (ran with a mismatched ~fields)\n%!"
+        "run_soa consults the layout check"
+      |> fun () -> false
+  | exception Sarek.Execute_error.Execution_error e ->
+      let msg = Sarek.Execute_error.error_to_string e in
+      if contains msg "wrong byte offsets" then (
+        Printf.printf "  %-56s OK\n%!" "run_soa consults the layout check" ;
+        true)
+      else (
+        Printf.printf
+          "  %-56s FAIL (raised, but not the layout error: %s)\n%!"
+          "run_soa consults the layout check"
+          msg ;
+        false)
+
 let () =
   Benchmarks.init () ;
   let n = 1024 in
+  (* Device-independent, so it runs BEFORE the no-device early exit — otherwise
+     a machine with no device would report SKIPPED while silently not checking a
+     property that needs no device at all. *)
+  let layout_ok = check_layout_validation () in
   let devs = Device.all () in
   if Array.length devs = 0 then (
-    print_endline "test_soa_emitter_equiv: no device - SKIPPED" ;
-    exit 0) ;
+    print_endline
+      "test_soa_emitter_equiv: no device - SKIPPED (layout validation still \
+       checked above)" ;
+    exit (if layout_ok then 0 else 1)) ;
   let any_ptx = Array.exists is_ptx devs in
   if not any_ptx then
     print_endline
@@ -476,7 +661,10 @@ let () =
       if is_ptx dev && not (check "dpair(f64)" dev n run_dpair) then ok := false ;
       (* Item 3: SoA launch must be rejected (never wrong data) on non-PTX. *)
       if not (check_gate dev) then ok := false ;
+      (* Wiring + ordering: a mismatched ~fields must surface the LAYOUT error,
+         not the device gate, on this very non-PTX device. *)
+      if not (check_layout_wired dev) then ok := false ;
       (* Leaf-write round-trip (D2H + gather) on CUDA/PTX. *)
       if is_ptx dev && not (check_roundtrip dev n) then ok := false)
     devs ;
-  if not !ok then exit 1
+  if not (!ok && layout_ok) then exit 1

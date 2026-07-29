@@ -35,13 +35,112 @@ type soa_arg =
   | SA_Soa : 'a Soa_vector.t -> soa_arg
   | SA_Reg of Execute.vector_arg
 
-(** Names of the kernel's [DParam]s, in declaration order. *)
-let kernel_param_names (ir : Sarek_ir_types.kernel) : string list =
+(** The kernel's [DParam]s as [(name, array element type)], in declaration
+    order. ONE source of positional truth: [run_soa] aligns [args] with this
+    list by index, both to name the SoA params and to validate their layout, so
+    the two must not be derived by separate traversals that could disagree. *)
+let kernel_params_info (ir : Sarek_ir_types.kernel) :
+    (string * Sarek_ir_types.elttype option) list =
   List.filter_map
     (function
-      | Sarek_ir_types.DParam (v, _) -> Some v.Sarek_ir_types.var_name
+      | Sarek_ir_types.DParam (v, arr) ->
+          Some
+            ( v.Sarek_ir_types.var_name,
+              Option.map (fun a -> a.Sarek_ir_types.arr_elttype) arr )
       | _ -> None)
     ir.Sarek_ir_types.kern_params
+
+(** Names of the kernel's [DParam]s, in declaration order. *)
+let kernel_param_names (ir : Sarek_ir_types.kernel) : string list =
+  List.map fst (kernel_params_info ir)
+
+let describe_leaf (l : Soa.leaf) : string =
+  Printf.sprintf
+    "%s:%s@%d+%d"
+    l.Soa.path
+    (Sarek_ir_pp.string_of_elttype l.Soa.ty)
+    l.Soa.aos_offset
+    l.Soa.size
+
+let describe_leaves (leaves : Soa.leaf list) : string =
+  String.concat ", " (List.map describe_leaf leaves)
+
+(* The [~fields] precondition, ENFORCED rather than documented.
+   [Soa_vector.create] takes the record's field layout as an argument because the
+   PPX [custom_type] carries no layout, and its .mli states that a wrong list
+   (wrong order, wrong widths, missing/extra field) makes scatter/gather
+   transpose against the wrong byte offsets and yields "silently transposed /
+   corrupted data with no error" — adding that it "cannot be checked".
+   That is true where it is written, at [create], which never sees a kernel. It
+   is NOT true HERE: [run_soa] receives the kernel IR, whose [DParam] carries the
+   authoritative [TRecord] for that very parameter. So the launch can derive the
+   real plan and compare it against the one the vector will actually transpose
+   with, turning silent corruption into a refusal at the last moment before any
+   data moves.
+   Compared: the LEAF LIST and the AoS stride — the two things scatter/gather
+   index with. Deliberately NOT the plan's [name]: the declared and authoritative
+   plans get their names from different places (the caller's [~fields] label vs
+   the record's own type name), so comparing it would reject correct programs.
+   An assertion wider than the property is its own defect. *)
+let check_soa_layout ~(param : string)
+    ~(kernel_ty : Sarek_ir_types.elttype option) ~(declared : Soa.plan) : unit =
+  match kernel_ty with
+  | None ->
+      raise_error
+        (Type_mismatch
+           {
+             expected = "an array parameter of flat-record element type";
+             actual = "a non-array (scalar) parameter";
+             context =
+               Printf.sprintf
+                 "SoA argument bound to kernel parameter %S: a SoA vector \
+                  supplies N leaf base pointers, which only an array parameter \
+                  can receive"
+                 param;
+           })
+  | Some ty -> (
+      match Soa.plan_of_elttype ty with
+      | exception Soa.Unsupported msg ->
+          raise_error
+            (Type_mismatch
+               {
+                 expected = "a flat-record element type (SoA-representable)";
+                 actual = Sarek_ir_pp.string_of_elttype ty;
+                 context =
+                   Printf.sprintf
+                     "SoA argument bound to kernel parameter %S: %s"
+                     param
+                     msg;
+               })
+      | authoritative ->
+          if
+            authoritative.Soa.leaves <> declared.Soa.leaves
+            || authoritative.Soa.aos_stride <> declared.Soa.aos_stride
+          then
+            raise_error
+              (Type_mismatch
+                 {
+                   expected =
+                     Printf.sprintf
+                       "leaves [%s] stride %d (from the kernel's record type)"
+                       (describe_leaves authoritative.Soa.leaves)
+                       authoritative.Soa.aos_stride;
+                   actual =
+                     Printf.sprintf
+                       "leaves [%s] stride %d (from the ~fields given to \
+                        Soa_vector.create)"
+                       (describe_leaves declared.Soa.leaves)
+                       declared.Soa.aos_stride;
+                   context =
+                     Printf.sprintf
+                       "SoA layout for kernel parameter %S. The ~fields list \
+                        must match the record's declaration order and types \
+                        exactly; it does not, so scatter/gather would \
+                        transpose against the wrong byte offsets and the \
+                        kernel would read silently corrupted data. Refused \
+                        before any transfer"
+                       param;
+                 }))
 
 (** [run_source_arg]s for one regular vector: (buffer, length). *)
 let rs_args_of_reg_vector (type a b) (v : (a, b) Vector.t) (dev : Device.t) :
@@ -114,6 +213,50 @@ let run_soa ~(device : Device.t) ~(ir : Sarek_ir_types.kernel)
              message = "Backend not found in registry";
            })
   | Some (module B : Framework_sig.BACKEND) ->
+      (* SoA parameter names = kernel param name at each SA_Soa position. *)
+      let params_info = kernel_params_info ir in
+      let param_names = List.map fst params_info in
+      (* Enforce the ~fields precondition BEFORE anything is scattered or
+         transferred: a mismatch is refused at zero cost, and no device buffer is
+         left holding half-transposed data.
+         ORDERED BEFORE the PTX gate, deliberately. A wrong ~fields list is an
+         error in the CALL — true whatever device it is dispatched to — so
+         reporting it first is more useful than telling the caller to switch
+         devices and only then, on a CUDA host, discovering their layout was
+         wrong all along. It also makes this check reachable on a machine with no
+         NVIDIA device, which is what lets it be tested at all; behind the gate
+         it could only ever run where the gate passes. A CORRECT call is
+         unaffected: the layout check passes and the gate then fires exactly as
+         before. *)
+      List.iteri
+        (fun i arg ->
+          match arg with
+          | SA_Soa sv -> (
+              match List.nth_opt params_info i with
+              | Some (name, kernel_ty) ->
+                  check_soa_layout
+                    ~param:name
+                    ~kernel_ty
+                    ~declared:(Soa_vector.plan sv)
+              | None ->
+                  raise_error
+                    (Type_mismatch
+                       {
+                         expected =
+                           Printf.sprintf
+                             "at most %d arguments (the kernel's parameter \
+                              count)"
+                             (List.length params_info);
+                         actual =
+                           Printf.sprintf "%d arguments" (List.length args);
+                         context =
+                           Printf.sprintf
+                             "SoA argument at position %d has no corresponding \
+                              kernel parameter"
+                             i;
+                       }))
+          | SA_Reg _ -> ())
+        args ;
       (* Gate: SoA lowering is PTX-only. Never emit the SoA N-pointer ABI for a
          backend that generates AoS code. *)
       if not (List.mem Framework_sig.PTX B.supported_source_langs) then
@@ -127,8 +270,6 @@ let run_soa ~(device : Device.t) ~(ir : Sarek_ir_types.kernel)
                     the AoS host vector through run_vectors for other \
                     backends)";
              }) ;
-      (* SoA parameter names = kernel param name at each SA_Soa position. *)
-      let param_names = kernel_param_names ir in
       let soa_params =
         List.filteri
           (fun i _ ->
