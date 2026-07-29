@@ -143,6 +143,8 @@ module Make (Ops : CUSTOM_OPS) : sig
     soa_aos_stride : int;
     soa_scatter : unit -> unit;
     soa_gather : unit -> unit;
+    soa_to_device : Ops.device_t -> unit;
+    soa_leaf_bufs : Ops.device_t -> Ops.device_buf list;
   }
 
   and ('a, 'b) t = {

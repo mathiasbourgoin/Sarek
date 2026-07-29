@@ -93,3 +93,20 @@ val scatter : 'a t -> unit
 (** [gather t] transposes the N per-leaf host buffers back into the AoS host
     buffer (call after reading leaves back from a device that wrote them). *)
 val gather : 'a t -> unit
+
+(** [create_transparent custom length] is a SoA custom vector presented as an
+    ordinary {!Vector.t}: the generic {!Sarek.Execute.run_vectors} recognises it
+    and binds the N-leaf ABI on CUDA/PTX, falling back to the packed AoS path on
+    every other backend. Callers need no SoA-specific launch entry point
+    (backlog-54).
+
+    The returned vector IS the AoS source of truth — [Vector.get]/[set] and the
+    PPX accessors work on it exactly as on any custom vector, and the transpose
+    to and from the per-leaf buffers happens inside the launch.
+
+    Use this rather than {!create} + {!Sarek.Soa_launch.run_soa} unless you need
+    to drive the leaves yourself. {!create} remains the lower-level entry point.
+
+    Raises {!Soa.Unsupported} on an element type with no derivable flat-record
+    layout, exactly as {!create} does. *)
+val create_transparent : 'a Vector.custom_type -> int -> ('a, unit) Vector.t
