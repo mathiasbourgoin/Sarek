@@ -4,7 +4,7 @@
 
 [![Build Status](https://github.com/mathiasbourgoin/Sarek/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiasbourgoin/Sarek/actions)
 
-Sarek is a PPX-based DSL that lets you write GPU kernels directly in OCaml syntax. Kernels compile to multiple backends (CUDA, OpenCL, Vulkan, Metal) without code changes.
+Sarek is a PPX-based DSL that lets you write GPU kernels directly in OCaml syntax. Kernels compile to multiple backends (CUDA, HIP, OpenCL, Vulkan, Metal) without code changes, plus WGSL for the browser and two CPU backends.
 
 ## What is Sarek?
 
@@ -22,10 +22,21 @@ This codebase has undergone significant modernization (2024-2026):
 - **Plugin-based architecture** for extensible backend support
 - **Test coverage** with unit and end-to-end tests
 - **Documentation** for all major components
-- **WGSL/WebGPU codegen** — a 5th transpiler backend emitting WGSL for browser-side execution
+- **WGSL/WebGPU codegen** — a transpiler target emitting WGSL for browser-side execution
 - **In-browser Playground** — live kernel transpiler at [mathiasbourgoin.github.io/Sarek/playground.html](https://mathiasbourgoin.github.io/Sarek/playground.html)
 - **Interactive Learn course** — edit and run Sarek kernels on your GPU in the browser at [mathiasbourgoin.github.io/Sarek/learn/](https://mathiasbourgoin.github.io/Sarek/learn/)
-- **PTX direct emitter** *(experimental)* — `Sarek_ir_ptx` emits NVIDIA PTX directly from Sarek IR, bypassing NVRTC; validated on real hardware; foundation for formal backend verification
+- **PTX direct emitter** — `Sarek_ir_ptx` emits NVIDIA PTX directly from Sarek IR, bypassing NVRTC. It is the **default** device path of the CUDA backend (`Cuda_ptx_plugin`); the NVRTC/C path remains available as `Cuda_c_plugin`
+- **HIP backend** (`sarek-hip`) — native ROCm/hiprtc backend for AMD GPUs, not going through ZLUDA. Measured against OpenCL and Vulkan on an RX 7900 XTX in [docs/benchmarks/hip-vs-opencl-vulkan-2026-07-24.md](docs/benchmarks/hip-vs-opencl-vulkan-2026-07-24.md)
+- **float16 element type** — `float16` vectors and kernel values, with compute-in-f32 semantics and explicit narrowing. Codegen exists on the CUDA-C / HIP path only; every other backend refuses `f16` with a stated, measured reason (see [docs/design/f16-dsl-element-type.md](docs/design/f16-dsl-element-type.md) and the `TFloat16` arms of each generator)
+- **Structure-of-Arrays device layout** — a record-typed vector parameter can be lowered as SoA (one coalesced device array per scalar leaf) instead of packed AoS; CUDA/PTX only, via `Spoc_core.Soa_vector` + `Sarek.Soa_launch.run_soa`. Design and measurements in [docs/optimization/tier1b-emitter-soa-handoff.md](docs/optimization/tier1b-emitter-soa-handoff.md)
+- **In-tree kernel libraries**, all written in pure Sarek rather than per-backend:
+  `Sarek_gemm` (shared-memory tiled SGEMM; every backend with a block-shared-memory
+  model — i.e. all but the sequential Interpreter), `Sarek_worklist` (dynamic
+  parallelism over an atomic work queue, serving the use cases CUDA CDP targets
+  without any device-side launch mechanism), `Sarek_df64` / `Sarek_real64`
+  (double-float software extended precision for devices with no usable `float64`)
+- **Machine-checked formal models** — three Rocq projects under `formal/` (`convergence-safety`, `type-safety`, `codegen-ptx`), rebuilt from scratch and `coqchk`-verified by a dedicated CI job. Counts are not hand-maintained: `scripts/check-formal-proofs.sh` regenerates each `proof-ledger.json` and fails on drift
+- **Executable codegen gates in CI** — the CI image ships CUDA 12.6 `ptxas`/`nvdisasm`/NVRTC, `glslangValidator`, `naga` and OpenCL-capable `clang`, and `ci/assert-toolchain.sh` fails the job if any of them is missing, so a self-skipping gate can no longer report success
 
 The framework is actively maintained and uses modern OCaml features while preserving compatibility with existing SPOC code.
 
@@ -50,23 +61,37 @@ Kernels compile to multiple backends automatically without code changes.
 
 ### Backend Support
 
-| Backend | Target | Status | Documentation |
-|---------|--------|--------|---------------|
-| **CUDA** | NVIDIA GPUs | ✓ | [sarek-cuda/](sarek-cuda/) |
-| **OpenCL** | Multi-vendor GPUs/CPUs | ✓ | [sarek-opencl/](sarek-opencl/) |
-| **Vulkan** | Cross-platform GPUs | ✓ | [sarek-vulkan/](sarek-vulkan/) |
-| **Metal** | Apple Silicon/Intel Macs | ✓ | [sarek-metal/](sarek-metal/) |
-| **Native** | CPU (parallel) | ✓ | [sarek/plugins/native/](sarek/plugins/native/) |
-| **Interpreter** | CPU (debugging) | ✓ | [sarek/plugins/interpreter/](sarek/plugins/interpreter/) |
-| **PTX (direct)** | NVIDIA GPUs | ⚗️ Experimental | [sarek/codegen/Sarek\_ir\_ptx.ml](sarek/codegen/Sarek_ir_ptx.ml) |
+Devices that appear in `Device.init` / `sarek-device-info`:
+
+| Backend | Framework name | Target | Status | Documentation |
+|---------|----------------|--------|--------|---------------|
+| **CUDA/PTX** | `CUDA/PTX` | NVIDIA GPUs (and AMD via ZLUDA) | ✓ default CUDA path | [sarek/codegen/Sarek\_ir\_ptx.ml](sarek/codegen/Sarek_ir_ptx.ml) |
+| **CUDA/C** | `CUDA/C` | NVIDIA GPUs, via NVRTC | ✓ | [sarek-cuda/](sarek-cuda/) |
+| **HIP** | `HIP` | AMD GPUs, via ROCm/hiprtc | ✓ | [sarek-hip/Hip\_plugin.ml](sarek-hip/Hip_plugin.ml) — no package README yet; measurements in [docs/benchmarks/](docs/benchmarks/hip-vs-opencl-vulkan-2026-07-24.md) |
+| **OpenCL** | `OpenCL` | Multi-vendor GPUs/CPUs | ✓ | [sarek-opencl/](sarek-opencl/) |
+| **Vulkan** | `Vulkan` | Cross-platform GPUs, GLSL→SPIR-V | ✓ | [sarek-vulkan/](sarek-vulkan/) |
+| **Metal** | `Metal` | Apple Silicon/Intel Macs | ✓ | [sarek-metal/](sarek-metal/) |
+| **Native** | `Native` | CPU (parallel, OCaml 5 domains) | ✓ | [sarek/plugins/native/](sarek/plugins/native/) |
+| **Interpreter** | `Interpreter` | CPU (debugging) | ✓ | [sarek/plugins/interpreter/](sarek/plugins/interpreter/) |
+
+Not a device — a code-generation target only:
+
+| Target | What it produces | Status | Documentation |
+|--------|------------------|--------|---------------|
+| **WGSL** | WGSL compute shaders (`@compute @workgroup_size(...)`) for a JavaScript WebGPU host; validated in CI with `naga` | ✓ codegen; **no OCaml-side runtime** — `sarek/plugins/webgpu` is an inert stub whose `is_available ()` returns `false`, so WGSL never appears in device enumeration | [sarek/codegen/Sarek\_ir\_wgsl.ml](sarek/codegen/Sarek_ir_wgsl.ml), [gh-pages/docs/backends.md](gh-pages/docs/backends.md) |
+
+The CUDA family registers as two frameworks (`CUDA/PTX` and `CUDA/C`); use
+`Device.filter_cuda ()` to match both.
 
 ### Core Features
 
 - **Type Safety**: GADTs and phantom types for compile-time guarantees
 - **Zero-Copy**: Efficient memory sharing between host and device
 - **Automatic Selection**: Runtime backend selection based on available hardware
-- **Intrinsics**: Extensive library of GPU intrinsics (math, atomics, barriers)
-- **Custom Types**: Support for records and variants in kernels
+- **Intrinsics**: Extensive library of GPU intrinsics (math, atomics, barriers). The PTX emitter lowers 83 intrinsic names natively, enumerated from its own dispatch registry (`Sarek_ir_ptx_expr.intrinsic_registry`)
+- **Custom Types**: Support for records and variants in kernels, laid out with the aligned C-ABI rule shared by the host PPX, the C-family backends and the PTX emitter
+- **Numeric widths**: `int32`, `int64`, `float32`, `float64`; `float16` on the CUDA-C/HIP path; `Sarek_df64` / `Sarek_real64` for software extended precision where a device has no usable `float64`
+- **Capability refusals over silent fallback**: a kernel using a width or feature a target cannot honour is refused with a stated reason and provenance rather than quietly downgraded — see [docs/design/capability-model.md](docs/design/capability-model.md)
 - **Debug Logging**: Controlled via `SAREK_DEBUG` environment variable
 
 ### Framework Architecture
@@ -78,27 +103,39 @@ spoc/              Low-level SDK and plugin interface
 └── registry/      Intrinsic function registry
 
 sarek/             Runtime and PPX compiler
-├── core/          Device abstraction and memory management
+├── core/          Device abstraction and memory management (incl. Soa_vector)
+├── core_base/     Vector representation and host storage
+├── codegen/       All code generators: PTX, CUDA C, OpenCL C, GLSL, MSL, WGSL
+├── execute/       Launch pipeline (Execute, Soa_launch)
 ├── framework/     Framework integration
+├── interp/        IR interpreter
 ├── ppx/           Sarek PPX compiler
 ├── sarek/         Unified execution dispatcher
-└── plugins/       Native and Interpreter backends
+├── transpile/     Standalone / in-browser transpiler
+├── plugins/       Native and Interpreter backends (+ inert WebGPU stub)
+└── Sarek_*/       Kernel libraries: stdlib, gemm, worklist, df64, real64,
+                   float64, geometry, tuple_vec
 
 GPU Backends:
-├── sarek-cuda/    NVIDIA CUDA backend
+├── sarek-cuda/    NVIDIA CUDA backend (CUDA/PTX default, CUDA/C via NVRTC)
+├── sarek-hip/     AMD ROCm/HIP backend
 ├── sarek-opencl/  OpenCL backend (multi-vendor)
 ├── sarek-vulkan/  Vulkan/GLSL backend
 └── sarek-metal/   Apple Metal backend
 
-Experimental:
-└── sarek/codegen/Sarek_ir_ptx.ml   Direct PTX emitter (experimental)
+Formal models (Rocq):
+├── formal/convergence-safety/   Barrier-safety analysis
+├── formal/type-safety/          Sarek PPX type system
+└── formal/codegen-ptx/          PTX emission + aggregate byte layout
 ```
 
-## Experimental Features
+## The PTX Direct Emitter (`Sarek_ir_ptx`)
 
-### PTX Direct Emitter (`Sarek_ir_ptx`)
-
-> ⚠️ **Experimental — validated on real hardware, not yet exercised by CI on GPUs.**
+> **Assembled by `ptxas` in CI on every run; GPU *execution* in CI is still absent.**
+> The emitter is no longer an experiment sitting beside the CUDA backend — it *is*
+> the CUDA backend's default device path. What CI cannot do is run a kernel: no
+> runner has a GPU, so every device e2e test skips there and device validation
+> remains manual (RX 7900 XTX under ZLUDA, GTX 1070).
 
 `Sarek_ir_ptx` emits NVIDIA PTX directly from Sarek IR, bypassing NVRTC entirely. It is the default device path of the CUDA backend (`Cuda_ptx_plugin`); the NVRTC/C path remains available as `Cuda_c_plugin`.
 
@@ -111,10 +148,48 @@ Experimental:
 - float64 softmath library (trig, exp/log family, hypot, fma, …) with an interpreter oracle
 - Parameterised SM target (`?sm_target`, default `sm_86`); `Cuda_api.Kernel.load_from_ptx` adapts `.target` to the device's actual SM (tested: GTX 1070, sm_61; AMD RX 7900 XTX via ZLUDA)
 
+**How the generated PTX is validated:**
+
+- **`ptxas` assembly, on the whole intrinsic surface.** `sarek/tests/unit/test_ptx_intrinsic_sweep.ml`
+  builds one kernel per registered intrinsic name and width — 83 names today —
+  enumerated from the emitter's *own* dispatch registry
+  (`Sarek_ir_ptx_expr.intrinsic_registry`), not from a hand-picked list, and
+  assembles each with `ptxas`. Adding an intrinsic to the emitter without adding
+  a sweep recipe fails `test_every_name_has_a_recipe`, so the gate cannot drift
+  behind the emitter. `sarek/tests/unit/test_ptx_snapshot.ml` assembles a
+  smaller set of regression and SoA kernels on top of its PTX-text assertions.
+- **The gate cannot self-skip green in CI.** Both gates skip cleanly when `ptxas`
+  is absent, which is right on a developer machine and was a disaster in CI:
+  the earlier image had no CUDA at all, so the gates printed SKIP and the job
+  passed having validated nothing. `ci/Dockerfile` now installs CUDA 12.6
+  `ptxas`/`nvdisasm`/NVRTC + headers, and `ci/assert-toolchain.sh` runs before
+  any test step and **fails** if `ptxas` is missing or cannot assemble a probe
+  module — it runs each tool rather than `command -v`-ing it, because a
+  present-but-broken binary skips just as silently as an absent one.
+- **`nvdisasm` SASS inspection** for the f16 f32-discipline gate
+  (`sarek-cuda/test/test_cuda_f16_sass.ml`), likewise asserted present.
+
 **Known gaps:**
-- The formal proofs cover the aggregate byte layout and a scalar statement/expression fragment of a Rocq-side model; the production emitter is conformance-tested against that model, not extracted from it
-- No `ptxas` validation gate or GPU execution in CI yet — GPU validation is manual
-- Warp-level primitives are modeled in the IR but not emitted by any backend yet
+- **Proof-to-production link is uneven.** The *aggregate byte layout* half is
+  extracted: `formal/codegen-ptx/extraction/LayoutExtract.v` extracts
+  `theories/PtxLayout.v` to OCaml, and the conformance suite runs the theory's
+  own definitions against `Sarek_ir_layout`. The *expression/statement/kernel*
+  half is not: `formal/codegen-ptx/test/test_codegen_ptx_conformance.ml` still
+  checks a hand-written OCaml mirror of the Rocq definitions, and the five `.ml`
+  files `Extract.v` produces are committed but linked by nothing. Either way the
+  production emitter is conformance-tested against the model, not extracted from it.
+- **No GPU execution in CI.** See the note above; device validation is manual.
+- **Warp primitives are emitted but not reachable from kernel source.**
+  `SWarpBarrier` and `SMemFence` are lowered by all six generators —
+  `bar.warp.sync` on PTX, `__syncwarp()` on CUDA, `sub_group_barrier` on OpenCL,
+  `simdgroup_barrier` on Metal, `subgroupBarrier()` on GLSL and WGSL, each pinned
+  by `sarek/tests/unit/test_sync_stmt_emission.ml`. What is missing is the front
+  end: no PPX surface syntax constructs either statement (`block_barrier` is the
+  only sync name the front end declares), so today they are reachable only from
+  hand-built IR. Warp **shuffle**/vote/ballot are a separate, larger gap — not
+  modelled in the IR and emitted by no backend.
+- **`f16` is refused by this emitter.** `Sarek_ir_ptx_types` has no `TFloat16`
+  register type; f16 codegen exists on the CUDA-C/HIP path only.
 
 **Intended purpose:** foundation for formal verification of the CUDA backend, developed in `formal/codegen-ptx/` alongside `specs/ptx-records-variants.md` and `specs/ptx-dshared-formal.md`.
 
@@ -146,7 +221,19 @@ For NVIDIA GPUs, especially newer architectures:
 
 **Note**: The "CUDA Version" shown by `nvidia-smi` indicates the maximum CUDA runtime API version your driver supports. This may differ from your installed CUDA toolkit version, which is normal. For example, driver 575 with CUDA toolkit 12.9 will show "CUDA Version: 12.9" in `nvidia-smi`.
 
-#### AMD GPUs via ZLUDA
+#### AMD GPUs
+
+Two paths, both real:
+
+- **`sarek-hip`** — the native ROCm path (hiprtc → gfx code object →
+  `hipModuleLaunchKernel`), no ZLUDA involved. It reuses the CUDA-C generator
+  verbatim, because HIP C++ is source-compatible with the CUDA-C subset Sarek
+  emits. Measured against OpenCL and Vulkan on an RX 7900 XTX in
+  [docs/benchmarks/hip-vs-opencl-vulkan-2026-07-24.md](docs/benchmarks/hip-vs-opencl-vulkan-2026-07-24.md).
+- **CUDA/PTX under ZLUDA** — described below; this is the path the PTX emitter's
+  device evidence comes from.
+
+##### CUDA/PTX via ZLUDA
 
 The CUDA backend also runs on AMD GPUs through [ZLUDA](https://github.com/vosen/ZLUDA), a CUDA implementation on top of ROCm. ZLUDA ships the CUDA driver API but not NVRTC, so only the CUDA/PTX backend (the default) is available. Records, variants, match expressions and shared memory are all supported by the PTX emitter, so typical Sarek kernels run unmodified; only kernels that explicitly select the CUDA/C (NVRTC) backend will not run.
 
@@ -217,7 +304,7 @@ make benchmarks
 
 The fast benchmarks use small problem sizes and complete in ~20 seconds, while the full benchmark suite exercises all backends with larger datasets.
 
-**Benchmark Suite**: 6 comprehensive benchmarks covering compute-bound (matrix multiplication, Mandelbrot), memory-bound (vector addition, reduction), and optimization patterns (transpose naive vs tiled). Results are published to an [interactive web viewer](https://mathiasbourgoin.github.io/Sarek/benchmarks/) with multiple visualization modes.
+**Benchmark Suite**: 22 benchmarks (`benchmarks/bench_*.ml`) covering compute-bound (matrix multiplication naive/tiled, Mandelbrot, n-body, conv2d), memory-bound (vector add/copy, stream triad, reduction, stencil, gather/scatter), irregular (histogram, bitonic and radix sort, scan), and layout/transfer optimisation patterns (transpose naive vs tiled, AoS vs SoA, pinned transfer). Results are published to an [interactive web viewer](https://mathiasbourgoin.github.io/Sarek/benchmarks/) with multiple visualization modes.
 
 ## Usage
 
