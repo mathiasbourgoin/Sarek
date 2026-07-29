@@ -94,7 +94,31 @@ let scatter t =
     t.plan
     ~aos:(Vector.to_ctypes_ptr t.aos)
     ~length:t.length
-    ~leaves:(leaf_ptrs t)
+    ~leaves:(leaf_ptrs t) ;
+  (* The transpose above writes each leaf's HOST buffer through a raw ctypes
+     pointer, which performs no location bookkeeping. So without this a leaf
+     keeps whatever location it already had — and after a previous launch that
+     is [Both dev], on which [Transfer.to_device] logs "skip (Both)" and returns
+     without copying. A SECOND launch on the same vector then ran against the
+     FIRST launch's device data, silently, with no user workaround.
+
+     Marking [Stale_GPU dev] is the accurate statement and not a nudge: the host
+     copy is the one just written and the device copy is now out of date. It is
+     also the one location [to_device] does not short-circuit.
+
+     Only leaves that actually HAVE a buffer on a device are touched; a leaf
+     never transferred stays [CPU], which is already correct.
+
+     Done here rather than in the [soa_to_device] closure so the explicit
+     [Soa_launch.run_soa] path gets it too — both callers scatter through this
+     function, and this invariant must not have two answers. *)
+  Array.iter
+    (fun (Leaf lv) ->
+      match lv.Vector.location with
+      | Vector.Both d | Vector.GPU d | Vector.Stale_CPU d ->
+          lv.Vector.location <- Vector.Stale_GPU d
+      | Vector.CPU | Vector.Stale_GPU _ -> ())
+    t.leaves
 
 let gather t =
   Soa.gather

@@ -93,10 +93,28 @@ let set : type a b. (a, b) t -> int -> a -> unit =
          "Vector.set: index %d out of bounds [0, %d)"
          idx
          vec.length) ;
+  (* Same [ensure_cpu_sync] [get] does immediately above, and its absence here
+     was silent data loss on every vector, not just SoA ones (backlog-181).
+
+     A write is a READ-MODIFY-WRITE of the buffer: it replaces one element and
+     keeps the other [length - 1]. So on [Stale_CPU] — the state a vector is in
+     after a kernel wrote it and before anything read it back — the old code left
+     the host holding one NEW element beside [length - 1] STALE ones, and left
+     the location saying [Stale_CPU]. The next [get] (or the next
+     [Soa_vector.scatter], which calls [ensure_cpu_sync] for exactly this reason)
+     then pulled the whole buffer down from the device and overwrote the new
+     element along with everything else. The write vanished with no diagnostic.
+
+     Pulling first makes the rest of the buffer current, so the [Both] arm below
+     fires and correctly marks the device stale. *)
+  ensure_cpu_sync vec ;
   (match vec.host with
   | Bigarray_storage ba -> Bigarray.Array1.set ba idx value
   | Custom_storage {ptr; custom; _} -> custom.set ptr idx value) ;
-  (* Mark GPU as stale if we had synced data *)
+  (* Mark GPU as stale if we had synced data. [Stale_CPU] is no longer reachable
+     here — [ensure_cpu_sync] above turns it into [Both] — so the remaining
+     no-op cases are the two with genuinely nothing to invalidate: [CPU] has no
+     device copy, and [Stale_GPU] is already marked. *)
   match vec.location with
   | Both d -> vec.location <- Stale_GPU d
   | GPU d -> vec.location <- Stale_GPU d
