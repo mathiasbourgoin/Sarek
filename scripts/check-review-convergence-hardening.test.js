@@ -614,11 +614,30 @@ function pristineUpstream(rel) {
   assert.strictEqual(log.status, 0, `cannot list the history of ${MANIFEST_PATH}: ${log.stderr.trim()}`);
   const commits = log.stdout.split("\n").filter(Boolean);
 
+  // PARSE the manifest at each commit; do not substring-search its bytes. The
+  // first version did `manifest.stdout.includes(PATCH_REF)`, and the manifest
+  // stores the ref with an ESCAPED em-dash ("#98 — convergence gate fails
+  // closed") while PATCH_REF here is a literal one. So the test was always
+  // false, every commit looked like it predated the declaration, and the anchor
+  // became the NEWEST manifest commit — putting this check back in exactly the
+  // HEAD-against-HEAD state the comment above says it was rewritten to escape.
+  // declaredPatch() compares `p.ref === PATCH_REF` against JSON.parse'd refs, so
+  // the two halves of one mechanism disagreed about encoding; both now decode.
   let anchor = null;
   for (const sha of commits) {
     const manifest = git("show", `${sha}:${MANIFEST_PATH}`);
     if (manifest.status !== 0) continue;
-    if (!manifest.stdout.includes(PATCH_REF)) {
+    let refs;
+    try {
+      const parsed = JSON.parse(manifest.stdout);
+      refs = (Array.isArray(parsed.local_patches) ? parsed.local_patches : []).map((p) => p && p.ref);
+    } catch {
+      // An unparseable manifest cannot answer "was the patch declared here?" —
+      // skip it rather than guessing, and let the `anchor` assertion below fire
+      // if no commit ever answers.
+      continue;
+    }
+    if (!refs.includes(PATCH_REF)) {
       anchor = sha;
       break;
     }
@@ -728,11 +747,20 @@ check("a CROSS-RUNTIME finding claiming red_verified without a check is REFUSED"
 // Positive control. Without it, "refuses a forged claim" and "refuses every
 // finding" are the same observation — and the second would make the gate
 // useless rather than strict.
+// Its own name claims acceptance, so it asserts the exit status too, caught by
+// review on #361: filtering for the absence of ONE violation type leaves the
+// case green when the gate exits 1 for any other reason, which is the same
+// "unusable gate" outcome the control exists to rule out.
 check("a finding with red_verified AND a check is NOT refused", () => {
-  const { report } = reports(
+  const { status, report } = reports(
     base({
       findings: [finding({ red_verified: true, check: "scripts/some-check.js" })],
     })
+  );
+  assert.strictEqual(
+    status,
+    0,
+    `valid provenance must be ACCEPTED, not merely un-flagged: ${JSON.stringify(report.violations)}`
   );
   assert.strictEqual(
     report.violations.filter((x) => x.type === "red-verified-without-check").length,
@@ -773,6 +801,25 @@ check("local-patch markers are PRESENT in every patched path", () => {
       assert.ok(body.includes(marker), `marker ${JSON.stringify(marker)} is absent from ${rel} — the guard would report a revert that did not happen`);
     }
   }
+});
+
+// The anchor resolution's own gate, caught on #361 by the escaped-em-dash bug
+// above. Asserting "the anchor's manifest lacks PATCH_REF" would be a tautology
+// — the loop selects on exactly that. So assert the CONTENT side instead: the
+// gate file at the anchor must not carry the applied patch's sentinel. That is
+// independent evidence, so ANY future way of resolving the anchor onto a patched
+// commit goes red here, naming the anchor, instead of surfacing as an
+// unsatisfiable marker assertion in the check below.
+check("the pristine-upstream anchor predates the patch it is the baseline for", () => {
+  const { anchor } = pristineUpstream(PATCH_PATH);
+  const blob = git("show", `${anchor}:${PATCH_PATH}`);
+  assert.strictEqual(blob.status, 0, `the anchor ${anchor.slice(0, 8)} has no ${PATCH_PATH} to compare against`);
+  assert.ok(
+    !blob.stdout.includes(APPLIED_SENTINEL),
+    `the resolved pristine-upstream anchor ${anchor.slice(0, 8)} ALREADY contains ${JSON.stringify(APPLIED_SENTINEL)}, ` +
+      "so it is not pre-patch content and every marker is present in it by construction — the anchor resolution is broken, " +
+      "not the markers"
+  );
 });
 
 check("local-patch markers are ABSENT from the pristine upstream file", () => {
