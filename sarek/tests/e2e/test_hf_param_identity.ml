@@ -95,8 +95,15 @@ let fp32_devices () =
   Array.to_list (Device.init ())
   |> List.filter (fun (d : Device.t) ->
       let f = d.Device.framework in
+      (* Metal included after review on #363. The defect is in lowering, so it
+         reaches every backend; omitting Metal dropped the one platform where
+         this would first be seen by a user on Apple hardware. Matches the
+         framework lists in test_defunc and test_ematch_payload_e2e. Not
+         observable from this host — Device.init returns no Metal device on
+         Linux, so the addition is inert here and verified only by matching the
+         convention. *)
       f = "Native" || f = "Interpreter" || f = "OpenCL" || f = "CUDA"
-      || f = "Vulkan")
+      || f = "Vulkan" || f = "Metal")
 
 let run (dev : Device.t) ir =
   try
