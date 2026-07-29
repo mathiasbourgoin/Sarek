@@ -202,6 +202,48 @@ else
   fail=$((fail + 1))
 fi
 
+# --- Case 10: a duplicate copyright line is named, not a nameless sed crash ---
+# Two SPDX-FileCopyrightText lines for the SAME email made the year-update grep
+# return two lines, which went into `sed -i "s/$existing_years..."` as a
+# multi-line value. sed died with "unterminated `s' command", the fixer exited 1
+# partway through its walk having silently skipped every remaining file, and it
+# never printed the offending path -- so the operator saw a red run with no
+# location. Four files in this repo were in exactly that state.
+#
+# Both halves are asserted, because the exit status alone is satisfied by the
+# old crash too: it must exit 2 (not 1, which is "files need updating") AND name
+# the file AND say what is wrong with it.
+d="$(make_project case10)"
+dup_line='(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)'
+# Insert a second, identical copyright line inside the header block.
+awk -v line="$dup_line" '
+  /SPDX-FileCopyrightText:/ && !done { print; print line; done=1; next }
+  { print }
+' "$d/sarek/covered.ml" > "$d/sarek/covered.ml.tmp" && mv "$d/sarek/covered.ml.tmp" "$d/sarek/covered.ml"
+
+out="$(cd "$d" && ./scripts/add-license-headers.sh --check 2>&1)"
+got=$?
+if [ "$got" != 2 ]; then
+  echo "  FAIL: case10: duplicate copyright line -- expected exit 2, got $got"
+  echo "$out" | sed 's/^/        /'
+  fail=$((fail + 1))
+elif ! printf '%s' "$out" | grep -qF -- "sarek/covered.ml"; then
+  echo "  FAIL: case10: exit 2 as expected, but the output never named sarek/covered.ml"
+  echo "$out" | sed 's/^/        /'
+  fail=$((fail + 1))
+elif ! printf '%s' "$out" | grep -qF -- "DUPLICATE"; then
+  echo "  FAIL: case10: exit 2 and named the file, but never said what was wrong"
+  echo "$out" | sed 's/^/        /'
+  fail=$((fail + 1))
+elif printf '%s' "$out" | grep -qF -- "unterminated"; then
+  echo "  FAIL: case10: sed still crashed rather than the duplicate being refused"
+  echo "$out" | sed 's/^/        /'
+  fail=$((fail + 1))
+else
+  echo "  PASS: case10: duplicate copyright line is refused by path (exit 2)"
+  pass=$((pass + 1))
+fi
+
 echo ""
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1

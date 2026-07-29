@@ -35,6 +35,7 @@ MAINTAINER="Mathias Bourgoin <mathias.bourgoin@gmail.com>"
 
 # Colors
 GREEN='\033[0;32m'
+RED='\033[0;31m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
@@ -42,6 +43,10 @@ NC='\033[0m'
 # Counters
 UPDATED_COUNT=0
 SKIPPED_COUNT=0
+# Files carrying two copyright lines for the same contributor. Not fixable
+# here (this script cannot choose which to keep), so it reports and exits
+# non-zero rather than feeding a multi-line value to sed and dying namelessly.
+DUPLICATE_COUNT=0
 
 # Get copyright info from git
 get_copyright_years() {
@@ -135,9 +140,27 @@ add_ocaml_header() {
         # person (root cause of the sarek/codegen/Sarek_ir_ptx_stmt.mli
         # header mangling).
         if head -"$header_end_line" "$file" 2>/dev/null | grep "SPDX-FileCopyrightText:" | grep -qi "$contributor_email"; then
-            # Contributor exists - check if year needs updating
+            # Contributor exists - check if year needs updating.
+            #
+            # This grep can match MORE THAN ONE line: a header carrying two
+            # copyright lines for the same email is exactly what the duplicate
+            # bug above produces. A multi-line value then reached the `sed -i
+            # "s/$existing_years..."` below, which is not a well-formed s
+            # command -- sed died with "unterminated `s' command", the fixer
+            # exited 1 mid-walk having silently skipped every remaining file,
+            # and it never said WHICH file. Refuse explicitly and name it,
+            # because a duplicate line is itself the defect to fix (four files
+            # in this repo had one), not a state to paper over by taking the
+            # first match.
+            local matches
+            matches=$(head -"$header_end_line" "$file" | grep "SPDX-FileCopyrightText:" | grep -ci "$contributor_email")
+            if [ "$matches" -gt 1 ]; then
+                echo -e "${RED}DUPLICATE${NC}: $file has $matches SPDX-FileCopyrightText lines for <$contributor_email>; remove the extra one (this script cannot choose between them)" >&2
+                DUPLICATE_COUNT=$((DUPLICATE_COUNT + 1))
+                return
+            fi
             local contributor_line=$(head -"$header_end_line" "$file" | grep "SPDX-FileCopyrightText:" | grep -i "$contributor_email")
-            local existing_years=$(echo "$contributor_line" | grep -oP '\d{4}(-\d{4})?')
+            local existing_years=$(echo "$contributor_line" | grep -oP '\d{4}(-\d{4})?' | head -1)
             local first_year=$(echo "$existing_years" | cut -d- -f1)
 
             if [[ "$existing_years" =~ - ]]; then
@@ -424,7 +447,15 @@ else
     echo "Files updated: $UPDATED_COUNT"
 fi
 echo "Files skipped: $SKIPPED_COUNT"
+if [ $DUPLICATE_COUNT -gt 0 ]; then
+    echo -e "${RED}Files with duplicate copyright lines: $DUPLICATE_COUNT${NC} (listed above; fix by hand)"
+fi
 echo ""
+
+# A duplicate is a real defect and must not read as success in either mode.
+if [ $DUPLICATE_COUNT -gt 0 ]; then
+    exit 2
+fi
 
 if $DRY_RUN; then
     if [ $UPDATED_COUNT -gt 0 ]; then
