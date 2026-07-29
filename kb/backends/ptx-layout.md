@@ -86,8 +86,12 @@ round-trip on RX 7900 XTX.
 
 ## PTX backend limits (quick reference)
 
-Full reference with quoted error messages, file:line citations, and execution-model
-rationale: `roster/ptx-limits-campaign/L10-inherent-limits.md`.
+The campaign note that held the full reference (quoted error messages, file:line
+citations, execution-model rationale) is internal-backlog material and is not in
+this repository — see CONTRIBUTING.md, "The backlog is not public". The in-repo
+authorities for what follows are the emitter's own refusal messages
+(`sarek/codegen/Sarek_ir_ptx_*.ml`), `spoc/ir/Sarek_ir_layout.ml`, and
+`formal/codegen-ptx/theories/PtxLayout.v`.
 
 | Construct | Status | Workaround |
 |---|---|---|
@@ -95,11 +99,12 @@ rationale: `roster/ptx-limits-campaign/L10-inherent-limits.md`.
 | Unbounded recursion without `sarek.inline N` | permanent (contract) | Rewrite as tail recursion (auto-transformed to a loop), or annotate with `pragma ["sarek.inline N"]` for a sufficient bounded depth. |
 | Tuples stored in global vectors | permanent | Bind with `let` and use components individually, or use a registered record type (`[@@sarek.type]`) instead. |
 | Variants nested below top level in aggregates | permanent | Hoist the variant to its own vector, or flatten its payload into the enclosing record as explicit scalar fields + tag. |
-| Mixed-alignment aggregates | done — L8 (aligned host ABI) | Supported natively (C-ABI aligned). Optional: order fields largest-alignment-first to minimise padding. See `roster/ptx-limits-campaign/L8-aligned-host-abi.md`. |
+| Mixed-alignment aggregates | done — campaign item L8 (aligned host ABI) | Supported natively (C-ABI aligned). Optional: order fields largest-alignment-first to minimise padding. Evidence in-repo: `PtxLayout.v` (`record_leaf_aligned`, `record_always_accepted`) and the "mixed-alignment pins (L8)" group of `formal/codegen-ptx/test/test_layout_conformance.ml`. |
 | f64 transcendentals (sin/cos/tan/exp/log/log10/sinh/cosh/tanh/pow) | done | None needed — landed via `Sarek_ir_ptx_softmath`. |
 | asin/acos/atan/atan2/expm1/log1p (f32 and f64) | done — L2 (in-PR) | None needed — f64 via `Sarek_ir_ptx_softmath` (fdlibm algorithms); f32 computes in f64 and rounds back (`cvt.rn.f32.f64`). |
-| Dynamic/non-literal shared memory size | scheduled — L6 | Declare `let%shared` arrays with a compile-time positive integer literal size. |
-| Local (per-thread private) arrays | scheduled — L7 | No supported workaround today; avoid indexable local arrays (use named scalars, or move data to global/shared memory with an explicit size). |
+| Dynamic shared memory (size supplied at launch) | done — campaign item L6 | None needed. A `DShared` with `size_opt = None` emits a **module-scope** `.extern .shared .align N .bNN name[];` (function scope is what ZLUDA rejects at `cuModuleLoadData`) and the byte size travels `Execute.run_vectors ~shared_mem` → `run_source ~shared_mem` → `cuLaunchKernel`, exactly like `extern __shared__` in raw CUDA. `Sarek_ir_ptx_kernel.emit_locals`; covered by the `dynamic-extern-region` case of `formal/codegen-ptx/test/test_codegen_ptx_conformance.ml`. PTX allows one such region per kernel, and a second is a stated codegen error rather than silent aliasing. |
+| Non-literal **static** shared-memory size | still unsupported | Declare `let%shared` arrays with a compile-time positive integer literal size, or use the dynamic region above. `emit_locals` accepts only `Some (EConst (CInt32 n))` with `n > 0`. |
+| Local (per-thread private) arrays | done — campaign item L7 | None needed — `create_array n Local` emits a `.local .align N .bNN name[n];` declaration and `ld.local`/`st.local` accesses (`Sarek_ir_ptx_stmt`, `Sarek_ir_ptx_mem`). Note a *`DLocal` of array type* is still refused, deliberately: a `DLocal` carries no size, so it could only produce an uninitialised pointer with no allocation behind it — the message points at `create_array n Local` instead. |
 | Aggregate payload args in variant vector elements | permanent | Flatten nested-record payload arguments into scalar constructor fields. |
 | Shared-memory aggregate (record/variant) arrays | permanent | Use a global vector parameter for record/variant arrays, or restrict shared arrays to native scalar element types. |
-| Record/variant kernel params by value | NO-GO — L9 (EC-11 workaround shipped) | Pass fields as separate scalar params, or wrap in a 1-element vector (`Vector.create_custom`). See `roster/ptx-limits-campaign/L9-byvalue-aggregate-params.md`. |
+| Record/variant kernel params by value | NO-GO — campaign item L9 (EC-11 workaround shipped) | Pass fields as separate scalar params, or wrap in a 1-element vector (`Vector.create_custom`). |

@@ -1,14 +1,18 @@
 # Sarek_worklist — portable dynamic parallelism (L16)
 
-Date: 2026-07-23. Branch: `feat/sarek-worklist`. Design source:
-`roster/ptx-limits-campaign/L16-dynamic-parallelism.md` (verdict: GO Route B
-`Sarek_worklist`, NO-GO native CDP).
+Date: 2026-07-23. Branch: `feat/sarek-worklist`. Design source: the
+limits-campaign note for item L16, "dynamic parallelism" (verdict: GO Route B
+`Sarek_worklist`, NO-GO native CDP). That note is internal-backlog material and
+is not in this repository — see CONTRIBUTING.md, "The backlog is not public".
+Its CDP-vs-worklist reasoning is summarised under "CDP-vs-worklist rationale"
+below, so nothing here depends on being able to open it.
 
 ## What this delivers
 A pure-Sarek work-queue library serving the irregular-work / frontier /
 tree-recursion use cases that CUDA dynamic parallelism (CDP) targets, on all
 runnable backends, with no per-backend launch mechanism (CDP is absent on
-ZLUDA/Metal/WGSL and unreliable on OpenCL 2.0 device-enqueue — see the doc §2).
+ZLUDA/Metal/WGSL and unreliable on OpenCL 2.0 device-enqueue — see
+"CDP-vs-worklist rationale" below).
 
 ## Key empirical findings (this environment)
 - Global atomics available to kernels: `atomic_add_global_int32`,
@@ -57,7 +61,7 @@ ZLUDA/Metal/WGSL and unreliable on OpenCL 2.0 device-enqueue — see the doc §2
 ## Control-vector layout (int32 vector, length 4)
 `[0]=HEAD  [1]=TAIL  [2]=OUTSTANDING  [3]=OVERFLOW`; plus a `slots` ring vector.
 
-## CDP-vs-worklist rationale (from the doc)
+## CDP-vs-worklist rationale (summarised from the off-repo L16 note)
 CDP is frequently slower than a well-written worklist for its own headline
 workload (many small irregular tasks), and exists cleanly on only 1 of 6
 backends. The worklist serves the same *use cases* portably. Route B's one real

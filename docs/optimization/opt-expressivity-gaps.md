@@ -5,9 +5,12 @@ Status: reference document (read-only on code; no code changed). Date:
 
 ## Purpose
 
-The `ptx-limits-campaign` docs so far (L8/L9/L10) catalog what the PTX
-backend *rejects today* for constructs Sarek's type system otherwise
-allows. This document looks the other way: what does Sarek's surface
+The limits-campaign notes for items L8/L9/L10 catalog what the PTX backend
+*rejects today* for constructs Sarek's type system otherwise allows. Those notes
+are internal-backlog material and are not in this repository (CONTRIBUTING.md:
+"The backlog is not public"); the in-repo summary of the same ground is
+[../../kb/backends/ptx-layout.md](../../kb/backends/ptx-layout.md), "PTX backend
+limits (quick reference)". This document looks the other way: what does Sarek's surface
 language and stdlib *not let the user say at all*, that CUDA, OpenCL C, or
 Triton do — and where does that absence force a user off Sarek entirely, or
 into a slower hand-rolled formulation. Target framing per the campaign

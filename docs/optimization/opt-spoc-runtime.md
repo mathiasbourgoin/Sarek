@@ -5,15 +5,42 @@ changing the surface DSL. Grounded in the actual code as of this branch
 (`reconcile/queue-2026-07-01`). No code was modified; this is an evaluation
 doc only.
 
-Companion docs in this directory (`L8-aligned-host-abi.md`,
-`L9-byvalue-aggregate-params.md`, `L10-inherent-limits.md`) cover ABI/param
-limits; this doc is scoped to *runtime performance*, not ABI legality.
+ABI/param legality is covered by the limits-campaign notes for items L8/L9/L10.
+Those notes are internal-backlog material and are **not** in this repository
+(CONTRIBUTING.md: "The backlog is not public") — an earlier version of this
+paragraph called them "companion docs in this directory", which sent readers
+looking for three files that were never here. The in-repo authorities are
+[../../kb/backends/ptx-layout.md](../../kb/backends/ptx-layout.md) (limits
+quick-reference) and `formal/codegen-ptx/theories/PtxLayout.v` (the proved
+layout model). This doc is scoped to *runtime performance*, not ABI legality.
 
 ---
 
 ## 1. SoA↔AoS for custom vectors (headline item)
 
-### 1.1 Current state — AoS, packed, no padding
+### 1.1 Current state — AoS (was: "packed, no padding")
+
+> **RETRACTION (2026-07-30) — the packed premise below is stale; the AoS half of
+> the conclusion is not.** This section was written against a PACKED aggregate
+> layout with no padding, and says so in several places (including the quoted
+> `Sarek_ir_layout` module comment). Campaign item L8 has since migrated the host
+> PPX, `spoc/ir/Sarek_ir_layout.ml` and `formal/codegen-ptx/theories/PtxLayout.v`
+> from PACKED to **ALIGNED (C-ABI)**: each field is placed at the next offset
+> satisfying its natural alignment, padding is inserted, and the total size is
+> rounded to the struct's maximum member alignment. Two consequences for the text
+> below: the `Misaligned_field` *rejection* it describes is now dead on the record
+> path (`record_always_accepted`), and `point3d` offsets 0/4/8 with `elem_size =
+> 12` remain correct only because all three fields are 4-byte — a `{i32; f64}`
+> record is now accepted at 0/8 size 16 where the packed path rejected it.
+>
+> Everything the argument for SoA actually rests on — one base pointer, one
+> device buffer, strided per-field access, the 1/3-efficiency uncoalesced read —
+> is unchanged by alignment, so the analysis and the priority stand. The premise
+> is corrected here rather than throughout, because rewriting the section would
+> lose the record of what the AoS path looked like when SoA was scoped. For the
+> current rule, read `PtxLayout.v`'s header and
+> [../../kb/backends/ptx-layout.md](../../kb/backends/ptx-layout.md), not this
+> section.
 
 A `custom_type` vector (e.g. a `point3d = {x:float32; y:float32; z:float32}`
 vector) is laid out **packed AoS** on both host and device, and the two sides
