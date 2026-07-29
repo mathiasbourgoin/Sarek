@@ -112,3 +112,30 @@
  (alias runtest)
  (action
   (run %{dep:test_helper_local_shadowing.exe})))
+
+; A module-level constant referenced from a HELPER body (backlog-160). The
+; frontend accepts it, but Sarek_lower_ir puts module constants in the KERNEL
+; body while helpers are emitted out-of-line — so the helper names an identifier
+; its translation unit never declares. Seven paths break; only Native works,
+; which makes it a CPU-passes / device-fails divergence.
+;
+; Asserts declaration-BEFORE-use ordering, not mere presence: a declaration
+; emitted after the helper is exactly as broken as none, and `contains "scale"`
+; would accept it. GLSL additionally goes through glslangValidator.
+;
+; The `dynamic` kernel is the DISCRIMINATOR, not extra coverage — it is what
+; distinguishes prefixing the SLet into the helper (works) from hoisting the
+; constant to a top-level `const` (illegal for a thread-dependent initializer).
+; Run with: dune exec sarek/tests/codegen_golden/test_module_const_in_helper.exe
+
+(executable
+ (name test_module_const_in_helper)
+ (modules test_module_const_in_helper)
+ (libraries sarek sarek.stdlib sarek_ir sarek_codegen spoc_core)
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_module_const_in_helper.exe})))
