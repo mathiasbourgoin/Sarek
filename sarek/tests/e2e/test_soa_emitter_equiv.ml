@@ -78,6 +78,50 @@ let p3_scale_y_kernel =
         let tid = thread_idx_x + (block_idx_x * block_dim_x) in
         if tid < n then pts.(tid).y <- pts.(tid).y *. 2.0]
 
+(* INTEGER leaf combos, executed on device. The Tier 1b handoff shipped these two
+   at the PTX-instruction and ptxas-assembly level only and marked device
+   execution "(Tier 1c)" — the row it could not fill, because it needs a CUDA/PTX
+   device. ZLUDA provides one.
+
+   Not redundant with point3d/dpair: those are uniform-width (3 x 4B, 2 x 8B),
+   while these MIX widths, which is what makes the per-leaf stride and the AoS
+   padding distinguishable. [mixed] is 4B then 8B (pad after the i32),
+   [longpair] is 8B then 4B (trailing pad) — the two orders put the padding in
+   different places. *)
+type mixed = {i : int32; d : float64} [@@sarek.type]
+
+type longpair = {p : int64; q : int32} [@@sarek.type]
+
+(* Each leaf goes to its OWN output array, at its own width. Deliberately no
+   int<->float conversion: a conversion folds both leaves into one number, and a
+   per-leaf stride error could then be masked by a compensating error in the
+   other leaf. Separate outputs make each leaf independently falsifiable. *)
+let mixed_kernel =
+  snd
+    [%kernel
+      fun (mv : mixed vector)
+          (oi : int32 vector)
+          (od : float64 vector)
+          (n : int32) ->
+        let tid = thread_idx_x + (block_idx_x * block_dim_x) in
+        if tid < n then begin
+          oi.(tid) <- mv.(tid).i ;
+          od.(tid) <- mv.(tid).d
+        end]
+
+let longpair_kernel =
+  snd
+    [%kernel
+      fun (lv : longpair vector)
+          (op : int64 vector)
+          (oq : int32 vector)
+          (n : int32) ->
+        let tid = thread_idx_x + (block_idx_x * block_dim_x) in
+        if tid < n then begin
+          op.(tid) <- lv.(tid).p ;
+          oq.(tid) <- lv.(tid).q
+        end]
+
 let ir_of kirc =
   match kirc.Sarek.Kirc_types.body_ir with
   | Some ir -> ir
@@ -766,6 +810,95 @@ let check_transparent dev n =
     (if !ok then "OK" else "FAILED") ;
   !ok
 
+(* The two integer-leaf device rows the handoff left open. Driven through the
+   TRANSPARENT path, so one case covers both the mixed-width leaf addressing and
+   the generic dispatch. Each leaf is compared to the reference independently. *)
+let check_mixed_widths dev n =
+  let threads = min 128 n in
+  let block = dims threads and grid = dims ((n + threads - 1) / threads) in
+  let ok = ref true in
+  let report label good =
+    Printf.printf
+      "  %-56s %s\n%!"
+      (Printf.sprintf
+         "%s (%s)"
+         label
+         (if is_ptx dev then "PTX: N-leaf ABI" else "non-PTX: AoS fallback"))
+      (if good then "OK" else "FAILED") ;
+    if not good then ok := false
+  in
+  (* i32 + f64. Gated on the DEVICE's fp64 capability rather than on
+     "CUDA/PTX only" the way the dpair row is: the f64 leaf makes this an fp64
+     kernel, and the launch gate refuses it on a device that does not report
+     double precision (radeonsi/OpenCL here). Keying on the capability rather
+     than the framework runs the row on every device that can actually execute
+     it — and keeps this test measuring SoA leaf addressing rather than
+     re-discovering the fp64 gate. A CPU backend evaluates in OCaml doubles, so
+     it is always able. *)
+  let f = dev.Device.framework in
+  let can_f64 = f = "Native" || f = "Interpreter" || Device.allows_fp64 dev in
+  if not can_f64 then
+    Printf.printf
+      "  %-56s SKIP (device reports no fp64)\n%!"
+      "SoA i32+f64 leaves == reference"
+  else begin
+    let mv = Soa_vector.create_transparent mixed_custom n in
+    for k = 0 to n - 1 do
+      Vector.set mv k {i = Int32.of_int (k * 3); d = float_of_int k *. 0.25}
+    done ;
+    let oi = Vector.create Vector.int32 n in
+    let od = Vector.create Vector.float64 n in
+    Sarek.Execute.run_vectors
+      ~device:dev
+      ~ir:(ir_of mixed_kernel)
+      ~args:[Vec mv; Vec oi; Vec od; Int n]
+      ~block
+      ~grid
+      () ;
+    Transfer.flush dev ;
+    let good = ref true in
+    for k = 0 to n - 1 do
+      if Int32.to_int (Vector.get oi k) <> k * 3 then good := false ;
+      if Float.abs (Vector.get od k -. (float_of_int k *. 0.25)) > 1e-12 then
+        good := false
+    done ;
+    report "SoA i32+f64 leaves == reference" !good
+  end ;
+  (* i64 + i32. No f64 leaf, but a 64-bit INTEGER one, which is its own
+     device-optional capability (shaderInt64 on Vulkan) — same reasoning, same
+     shape of gate. *)
+  let can_i64 = f = "Native" || f = "Interpreter" || Device.allows_int64 dev in
+  if not can_i64 then
+    Printf.printf
+      "  %-56s SKIP (device reports no int64)\n%!"
+      "SoA i64+i32 leaves == reference"
+  else begin
+    let lv = Soa_vector.create_transparent longpair_custom n in
+    for k = 0 to n - 1 do
+      Vector.set
+        lv
+        k
+        {p = Int64.of_int ((k * 1000003) + 7); q = Int32.of_int (k - 5)}
+    done ;
+    let op = Vector.create Vector.int64 n in
+    let oq = Vector.create Vector.int32 n in
+    Sarek.Execute.run_vectors
+      ~device:dev
+      ~ir:(ir_of longpair_kernel)
+      ~args:[Vec lv; Vec op; Vec oq; Int n]
+      ~block
+      ~grid
+      () ;
+    Transfer.flush dev ;
+    let good = ref true in
+    for k = 0 to n - 1 do
+      if Int64.to_int (Vector.get op k) <> (k * 1000003) + 7 then good := false ;
+      if Int32.to_int (Vector.get oq k) <> k - 5 then good := false
+    done ;
+    report "SoA i64+i32 leaves == reference" !good
+  end ;
+  !ok
+
 let check_layout_wired dev =
   let ir = ir_of p3_kernel in
   let sv = Soa_vector.create dpair_custom 8 in
@@ -832,6 +965,7 @@ let () =
          exercised elsewhere.) *)
       if is_ptx dev && not (check "dpair(f64)" dev n run_dpair) then ok := false ;
       if not (check_transparent dev n) then ok := false ;
+      if not (check_mixed_widths dev n) then ok := false ;
       (* Item 3: SoA launch must be rejected (never wrong data) on non-PTX. *)
       if not (check_gate dev) then ok := false ;
       (* Wiring + ordering: a mismatched must surface the LAYOUT error,

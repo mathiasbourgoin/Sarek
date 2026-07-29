@@ -72,13 +72,28 @@ existing enumeration — the STOP condition in the task did not fire).
 |---|---|---|---|
 | f32 × 3 (`point3d`) | ✓ | ✓ | ✓ |
 | f64 × 2 (`dpair`) | ✓ | ✓ | ✓ |
-| i32 + f64 (`{i;d}`) | ✓ | ✓ (`soa_mixed`) | (Tier 1c) |
-| i64 + i32 (`{p;q}`) | ✓ (`ld.global.s64`+`s32`) | ✓ (`soa_long`) | (Tier 1c) |
+| i32 + f64 (`{i;d}`) | ✓ | ✓ (`soa_mixed`) | ✓ (2026-07-30, ZLUDA) |
+| i64 + i32 (`{p;q}`) | ✓ (`ld.global.s64`+`s32`) | ✓ (`soa_long`) | ✓ (2026-07-30, ZLUDA) |
 
 All three SoA kernels (`soa_field_sum_f32`, `soa_mixed_i32_f64`,
 `soa_long_i64_i32`) go through `test_ptxas_assembles`; the i32+f64 and i64+i32
-combos additionally have dedicated marker tests. Device e2e for the two integer
-combos folds into Tier 1c with the launch plumbing.
+combos additionally have dedicated marker tests.
+
+**Device e2e for the two integer combos: DONE 2026-07-30.** They were open only
+for want of a CUDA/PTX device; ZLUDA on the RX 7900 XTX provides one.
+`check_mixed_widths` in `test_soa_emitter_equiv.ml` drives both through the
+TRANSPARENT path (`Soa_vector.create_transparent` + the generic
+`Execute.run_vectors`), so one case covers the mixed-width leaf addressing and
+the generic dispatch together. Each leaf is written to its own output array at
+its own width — deliberately no int<->float conversion, since a conversion folds
+both leaves into one number and a per-leaf stride error could then be masked by a
+compensating error in the other leaf.
+
+Observed: both rows OK on the N-leaf PTX ABI (2 ZLUDA devices) and OK on the AoS
+fallback (5 non-PTX devices); the i32+f64 row SKIPs on the 2 devices that report
+no fp64. The rows are gated on the DEVICE CAPABILITY (`Device.allows_fp64` /
+`allows_int64`) rather than on `framework = "CUDA/PTX"` the way the dpair row is,
+so they run wherever they can actually execute instead of only on PTX.
 
 ## Benchmark — the emitter's coalescing win (`benchmarks/bench_soa_emitter`)
 
