@@ -1472,6 +1472,24 @@ let generate_interp_helpers ~loc (td : type_declaration) : structure_item list =
                     [%stri let from_values = [%e from_values_fn]];
                     [%stri let to_values = [%e to_values_fn]];
                     [%stri let get_field = [%e get_field_fn]];
+                    (* Same [labels] list that produced [to_values] and
+                       [get_field] just above, so a name's position here is its
+                       index in the [VRecord]'s value array by construction
+                       rather than by convention. That is what lets the
+                       interpreter WRITE a field (backlog-172); [get_field] only
+                       reads, and the [to_values]/[from_value] round trip
+                       copies. *)
+                    [%stri
+                      let field_names =
+                        [%e
+                          Ast_builder.Default.elist
+                            ~loc
+                            (List.map
+                               (fun (ld : label_declaration) ->
+                                 Ast_builder.Default.estring
+                                   ~loc
+                                   ld.pld_name.txt)
+                               labels)]];
                     [%stri
                       let to_value record =
                         Sarek.Sarek_value.VRecord
@@ -1678,6 +1696,11 @@ let generate_interp_helpers ~loc (td : type_declaration) : structure_item list =
                             Ast_builder.Default.estring
                               ~loc
                               (type_name ^ " is a variant: no named fields")]];
+                    (* Empty, consistent with [get_field] above: a variant has
+                       no named fields, so every [field_index] lookup returns
+                       [None] and a field store on it is refused by name rather
+                       than writing some arbitrary slot. *)
+                    [%stri let field_names = []];
                   ]));
         [%stri
           let () =

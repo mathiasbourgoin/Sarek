@@ -1619,3 +1619,34 @@
  (alias runtest)
  (action
   (run %{dep:test_record_nested_struct_order.exe})))
+
+; backlog-172: in-place record-field store on a vector element (v.(i).f <- e).
+; Worked on CUDA/PTX; the Interpreter REFUSED it and Native accepted it and
+; silently dropped the store. Asserts on every available device, and checks the
+; neighbouring fields too, because a dropped store is indistinguishable from a
+; kernel that never ran unless the values are read back and compared.
+
+(executable
+ (name test_record_field_store)
+ (modules test_record_field_store)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  sarek.codegen
+  spoc_core
+  sarek_native
+  sarek_interpreter
+  sarek_cuda
+  sarek_opencl
+  sarek_vulkan
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_record_field_store.exe})))

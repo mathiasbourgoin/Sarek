@@ -580,6 +580,71 @@ and exec_coopmat state env op =
       done ;
       Hashtbl.replace env.coopmats dst out
 
+(* Read the value currently AT an lvalue, sharing rather than copying.
+
+   Distinct from [eval_expr] on an equivalent expression, and the distinction is
+   the whole point: a [VRecord]'s [value array] is mutable, so a shared read lets
+   [assign_lvalue]'s [LRecordField] arm store into the element in place, whereas
+   anything that reconstructs the record (the [to_values]/[from_value] pair, which
+   goes through the OCaml record) yields a temporary and the store is lost.
+
+   No [LVar] mutation concern: binding is by [bind_var], and this only ever reads. *)
+and read_lvalue state env lv =
+  match lv with
+  | LVar v -> lookup_var env v
+  | LArrayElem (arr, idx_expr) ->
+      let a = get_array env arr in
+      let i = to_int (eval_expr state env idx_expr) in
+      if i < 0 || i >= Array.length a then
+        Interp_error.raise_error
+          (Array_bounds_error
+             {array_name = arr; index = i; length = Array.length a})
+      else a.(i)
+  | LArrayElemExpr (base_expr, idx_expr) ->
+      let a =
+        match eval_expr state env base_expr with
+        | VArray arr -> arr
+        | _ ->
+            Interp_error.raise_error
+              (Not_an_array {expr = "LArrayElemExpr base"})
+      in
+      let i = to_int (eval_expr state env idx_expr) in
+      if i < 0 || i >= Array.length a then
+        Interp_error.raise_error
+          (Array_bounds_error
+             {array_name = "LArrayElemExpr"; index = i; length = Array.length a})
+      else a.(i)
+  | LRecordField (inner, field) -> (
+      (* Nested: [r.a.b <- v] reads [r.a] here, then the caller stores into [b].
+         Sharing all the way down is what makes the nested store land. *)
+      match read_lvalue state env inner with
+      | VRecord (type_name, fields) as vrec -> (
+          match Sarek_type_helpers.lookup type_name with
+          | Some h -> h.Sarek_type_helpers.get_field vrec field
+          | None -> (
+              match positional_field_index field with
+              | Some idx when idx < Array.length fields -> fields.(idx)
+              | _ ->
+                  Interp_error.raise_error
+                    (Not_a_record
+                       {
+                         expr =
+                           Printf.sprintf
+                             "unregistered record %s has no field %s"
+                             type_name
+                             field;
+                       })))
+      | v ->
+          Interp_error.raise_error
+            (Not_a_record
+               {
+                 expr =
+                   Printf.sprintf
+                     "base of .%s (got %s)"
+                     field
+                     (Sarek_value.value_type_name v);
+               }))
+
 and assign_lvalue state env lv value =
   (* Store values directly - VRecord is handled by ERecordField *)
   match lv with
@@ -618,15 +683,78 @@ and assign_lvalue state env lv value =
           (Array_bounds_error
              {array_name = "LArrayElemExpr"; index = i; length = Array.length a})
       else a.(i) <- value
-  | LRecordField (base_lv, _field) ->
-      (* Record field assignment is complex - simplified here *)
-      ignore base_lv ;
-      Interp_error.raise_error
-        (Unsupported_operation
-           {
-             operation = "record field assignment";
-             reason = "not fully supported";
-           })
+  | LRecordField (base_lv, field) -> (
+      (* backlog-172. [VRecord (name, fields)] holds a MUTABLE [value array], and
+         reading the record out of its container hands back that same array
+         rather than a copy — so mutating a slot mutates the element in place,
+         which is what makes this expressible at all.
+
+         It must be [read_lvalue] and not [eval_expr] on a reconstructed
+         expression: the [to_values]/[from_value] pair round-trips through the
+         OCaml record and therefore COPIES, so a store through it would land in a
+         temporary and vanish. That is the shape of the Native-backend half of
+         172, which is still open. *)
+      match read_lvalue state env base_lv with
+      | VRecord (type_name, fields) -> (
+          let index =
+            (* Registry first, positional second — the same order [ERecordField]
+               uses when READING. It matters: a declared record whose field is
+               literally named [_0] must resolve through its own declaration
+               order, not through the tuple convention. *)
+            match Sarek_type_helpers.lookup type_name with
+            | Some h -> (
+                match h.Sarek_type_helpers.field_index field with
+                | Some idx -> Some idx
+                | None -> positional_field_index field)
+            | None ->
+                (* Synthesized tuple records (L13, [_tup_*]) use positional field
+                   names [_0], [_1], … and are never in the record registry. *)
+                positional_field_index field
+          in
+          match index with
+          | Some idx when idx < Array.length fields -> fields.(idx) <- value
+          | Some idx ->
+              (* Registry and value disagree on the arity of the same type. Loud,
+                 because the alternative is writing outside the record or
+                 silently dropping the store — and a dropped store is exactly the
+                 failure mode this arm replaces. *)
+              Interp_error.raise_error
+                (Unsupported_operation
+                   {
+                     operation =
+                       Printf.sprintf
+                         "record field assignment %s.%s"
+                         type_name
+                         field;
+                     reason =
+                       Printf.sprintf
+                         "field index %d is out of range for a %d-field value"
+                         idx
+                         (Array.length fields);
+                   })
+          | None ->
+              Interp_error.raise_error
+                (Unsupported_operation
+                   {
+                     operation =
+                       Printf.sprintf
+                         "record field assignment %s.%s"
+                         type_name
+                         field;
+                     reason =
+                       "no such field (the type is not registered as a record, \
+                        or has no field of that name)";
+                   }))
+      | v ->
+          Interp_error.raise_error
+            (Not_a_record
+               {
+                 expr =
+                   Printf.sprintf
+                     "assignment target of .%s (got %s)"
+                     field
+                     (Sarek_value.value_type_name v);
+               }))
 
 and exec_stmt_for_return state env stmt =
   match stmt with
