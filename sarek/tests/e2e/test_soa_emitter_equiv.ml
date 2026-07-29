@@ -828,13 +828,18 @@ let check_mixed_widths dev n =
     if not good then ok := false
   in
   (* i32 + f64. Gated on the DEVICE's fp64 capability rather than on
-     "CUDA/PTX only" the way the dpair row is: the f64 leaf makes this an fp64
-     kernel, and the launch gate refuses it on a device that does not report
-     double precision (radeonsi/OpenCL here). Keying on the capability rather
-     than the framework runs the row on every device that can actually execute
-     it — and keeps this test measuring SoA leaf addressing rather than
-     re-discovering the fp64 gate. A CPU backend evaluates in OCaml doubles, so
-     it is always able. *)
+     "CUDA/PTX only": the f64 leaf makes this an fp64 kernel, and the launch
+     gate refuses it wherever the driver does not ADVERTISE double precision.
+
+     Note what the skip does and does not mean. On this host the two OpenCL
+     devices are rusticl, which does not expose cl_khr_fp64 unless
+     RUSTICL_FEATURES=fp64 is set — measured both ways with clinfo and with this
+     test, which goes from 5 OK + 2 SKIP to 7 OK with the variable. The RX 7900
+     XTX has fp64 in hardware. So a skip here reports a DRIVER CONFIGURATION,
+     never a hardware limitation, and the gate is still correct: emitting an fp64
+     kernel against a driver that has not enabled the extension is exactly what
+     it must refuse. A CPU backend evaluates in OCaml doubles and is always
+     able. *)
   let f = dev.Device.framework in
   let can_f64 = f = "Native" || f = "Interpreter" || Device.allows_fp64 dev in
   if not can_f64 then
@@ -959,11 +964,30 @@ let () =
       (* point3d (f32) runs everywhere: cross-backend AoS + reference, plus the
          PTX SoA leg. *)
       if not (check "point3d(f32)" dev n run_p3) then ok := false ;
-      (* dpair (f64) exists to prove the f64 SoA leaf on PTX; run it on CUDA/PTX
-         only. (Some non-PTX backends — e.g. OpenCL/radeonsi — have an unrelated
-         f64 custom-vector gap that is out of scope for this emitter test and is
-         exercised elsewhere.) *)
-      if is_ptx dev && not (check "dpair(f64)" dev n run_dpair) then ok := false ;
+      (* dpair (f64) proves the 8-byte SoA leaf. Gated on the DEVICE's fp64
+         capability, not on CUDA/PTX.
+
+         CORRECTED 2026-07-30 — the previous restriction to PTX was justified as
+         "some non-PTX backends, e.g. OpenCL/radeonsi, have an unrelated f64
+         custom-vector gap". That attribution is wrong. Measured: with
+         RUSTICL_FEATURES=fp64 set, this row PASSES on OpenCL/radeonsi (both
+         devices), Vulkan, Native and the Interpreter. There is no f64
+         custom-vector gap; rusticl simply does not advertise cl_khr_fp64 unless
+         that variable is set, and Sarek's fp64 launch gate then correctly
+         refuses. clinfo agrees: "Double-precision Floating-point support (n/a)"
+         becomes "(cl_khr_fp64)" with the variable set. The RX 7900 XTX has fp64
+         in hardware, so nothing about the DEVICE was ever the reason.
+
+         Keying on the capability therefore turns a 1-device row into a 7-device
+         one (or 5 + 2 honest skips without the variable), and stops the test
+         asserting a device limitation that does not exist. *)
+      let dev_can_f64 =
+        dev.Device.framework = "Native"
+        || dev.Device.framework = "Interpreter"
+        || Device.allows_fp64 dev
+      in
+      if dev_can_f64 && not (check "dpair(f64)" dev n run_dpair) then
+        ok := false ;
       if not (check_transparent dev n) then ok := false ;
       if not (check_mixed_widths dev n) then ok := false ;
       (* Item 3: SoA launch must be rejected (never wrong data) on non-PTX. *)
