@@ -261,6 +261,157 @@ let ir_lower_expr_count = ref 0
 
 let ir_lower_stmt_count = ref 0
 
+(* ── module constants referenced from a helper body (backlog-160) ─────────
+   A module constant is lexically visible inside a helper, but lowering puts it
+   in the KERNEL body while helpers are emitted out-of-line — so the helper names
+   an identifier its translation unit never declares. Emitted CUDA, verbatim:
+
+     __device__ float apply(float x) { return (x * scale); }
+     __global__ void k(...) { float scale = 2.0f; ... }
+
+   SEVEN paths break that way (CUDA-C, OpenCL, Metal, GLSL, WGSL, PTX and the
+   Interpreter); only Native works, because it emits an OCaml [let] the helper
+   closes over. A CPU-passes / device-fails divergence.
+
+   THE FIX IS TO PREFIX, NOT TO HOIST. Emitting the constants as top-level
+   [const] / [__constant] / [constant] / [__device__ const] declarations was the
+   first plan and it is unsound: a module-constant initializer is an arbitrary
+   kernel expression — the pipeline explicitly anticipates thread-dependent ones
+   (Sarek_convergence analyses thread/block and barrier usage) — and every one of
+   those storage classes requires a compile-time-constant initializer. Hoisting
+   [let (base : int32) = thread_idx_x] would break a kernel that compiles today.
+   Prefixing the [SLet] into the helper body handles both shapes, needs no IR
+   field and no backend change, and fixes all seven paths in one place.
+
+   ACCEPTED COST, stated because it is a real semantic change: the initializer is
+   evaluated once PER HELPER CALL instead of once per kernel. For a constant that
+   is what it says it is, that is redundant work and nothing else. For an
+   initializer containing a BARRIER it would change convergence, so that case is
+   refused rather than duplicated. *)
+
+(* Names referenced by an IR statement. Deliberately over-approximate: it
+   collects every [EVar]/[LVar] name, including ones bound locally inside the
+   body, so a local shadowing a module constant makes the constant look
+   referenced and gets its (unused, shadowed) [SLet] prefixed. Over-approximating
+   costs a dead declaration; under-approximating would emit an undeclared
+   identifier, which is the defect being fixed. *)
+let rec expr_names (e : Ir.expr) (acc : (string, unit) Hashtbl.t) : unit =
+  match e with
+  | Ir.EVar v -> Hashtbl.replace acc v.Ir.var_name ()
+  | Ir.EConst _ -> ()
+  | Ir.EBinop (_, a, b) ->
+      expr_names a acc ;
+      expr_names b acc
+  | Ir.EUnop (_, a) -> expr_names a acc
+  | Ir.EArrayRead (n, i) ->
+      Hashtbl.replace acc n () ;
+      expr_names i acc
+  | Ir.EArrayReadExpr (b, i) ->
+      expr_names b acc ;
+      expr_names i acc
+  | Ir.ERecordField (b, _) -> expr_names b acc
+  | Ir.EIntrinsic (_, _, args) -> List.iter (fun a -> expr_names a acc) args
+  | Ir.ECast (_, a) -> expr_names a acc
+  | Ir.ETuple es -> List.iter (fun a -> expr_names a acc) es
+  | Ir.EApp (f, args) ->
+      expr_names f acc ;
+      List.iter (fun a -> expr_names a acc) args
+  | Ir.ERecord (_, fs) -> List.iter (fun (_, a) -> expr_names a acc) fs
+  | Ir.EVariant (_, _, args) -> List.iter (fun a -> expr_names a acc) args
+  | Ir.EArrayLen n -> Hashtbl.replace acc n ()
+  | Ir.EArrayCreate (_, sz, _) -> expr_names sz acc
+  | Ir.EIf (c, t, e2) ->
+      expr_names c acc ;
+      expr_names t acc ;
+      expr_names e2 acc
+  | Ir.EMatch (sc, cases) ->
+      expr_names sc acc ;
+      List.iter (fun (_, a) -> expr_names a acc) cases
+
+and lvalue_names (lv : Ir.lvalue) (acc : (string, unit) Hashtbl.t) : unit =
+  match lv with
+  | Ir.LVar v -> Hashtbl.replace acc v.Ir.var_name ()
+  | Ir.LArrayElem (n, i) ->
+      Hashtbl.replace acc n () ;
+      expr_names i acc
+  | Ir.LArrayElemExpr (b, i) ->
+      expr_names b acc ;
+      expr_names i acc
+  | Ir.LRecordField (b, _) -> lvalue_names b acc
+
+and stmt_names (st : Ir.stmt) (acc : (string, unit) Hashtbl.t) : unit =
+  match st with
+  | Ir.SAssign (lv, e) ->
+      lvalue_names lv acc ;
+      expr_names e acc
+  | Ir.SSeq sts -> List.iter (fun s -> stmt_names s acc) sts
+  | Ir.SIf (c, t, e) ->
+      expr_names c acc ;
+      stmt_names t acc ;
+      Option.iter (fun s -> stmt_names s acc) e
+  | Ir.SWhile (c, b) ->
+      expr_names c acc ;
+      stmt_names b acc
+  | Ir.SFor (_, lo, hi, _, b) ->
+      expr_names lo acc ;
+      expr_names hi acc ;
+      stmt_names b acc
+  | Ir.SMatch (sc, cases) ->
+      expr_names sc acc ;
+      List.iter (fun (_, s) -> stmt_names s acc) cases
+  | Ir.SReturn e -> expr_names e acc
+  | Ir.SExpr e -> expr_names e acc
+  | Ir.SLet (_, e, b) | Ir.SLetMut (_, e, b) ->
+      expr_names e acc ;
+      stmt_names b acc
+  | Ir.SPragma (_, b) -> stmt_names b acc
+  | Ir.SBlock b -> stmt_names b acc
+  | Ir.SBarrier | Ir.SWarpBarrier | Ir.SMemFence | Ir.SEmpty -> ()
+  | Ir.SNative _ -> ()
+
+(* Does this initializer contain a synchronising operation? Prefixing would
+   duplicate it per call site, which changes convergence, so that case is REFUSED
+   rather than duplicated.
+
+   The first version of this function returned [false] unconditionally, reasoning
+   that only the statement forms carry a barrier and an [Ir.expr] cannot. The
+   first half is true — no [Ir.expr] constructor holds an [Ir.stmt] — and the
+   conclusion was still wrong: barriers reach the IR as INTRINSICS
+   (Sarek_core_primitives registers [block_barrier], [memory_fence_block],
+   [memory_fence_device]; [warp_barrier] joined them in backlog-70), and
+   [EIntrinsic] is an expression. A guard that cannot fire is the defect class
+   this repository keeps closing, so it is named here rather than quietly left.
+
+   Matched by NAME because that is what the IR carries at this point: lowering
+   does not turn these into [SBarrier], it leaves them as intrinsic calls (there
+   is no barrier-specific arm in this file). If a name is added to the primitive
+   table without being added here, this guard silently stops covering it — which
+   is why the list is stated in one place and the refusal message names the
+   intrinsic it found. *)
+let synchronising_intrinsics =
+  ["block_barrier"; "warp_barrier"; "memory_fence_block"; "memory_fence_device"]
+
+let rec expr_barrier (e : Ir.expr) : string option =
+  let first =
+    List.fold_left
+      (fun acc x -> match acc with Some _ -> acc | None -> expr_barrier x)
+      None
+  in
+  match e with
+  | Ir.EIntrinsic (_, name, args) ->
+      if List.mem name synchronising_intrinsics then Some name else first args
+  | Ir.EConst _ | Ir.EVar _ | Ir.EArrayLen _ -> None
+  | Ir.EBinop (_, a, b) | Ir.EArrayReadExpr (a, b) -> first [a; b]
+  | Ir.EUnop (_, a) | Ir.ECast (_, a) | Ir.ERecordField (a, _) -> expr_barrier a
+  | Ir.EArrayRead (_, i) -> expr_barrier i
+  | Ir.EArrayCreate (_, sz, _) -> expr_barrier sz
+  | Ir.ETuple es -> first es
+  | Ir.EApp (f, args) -> first (f :: args)
+  | Ir.ERecord (_, fs) -> first (List.map snd fs)
+  | Ir.EVariant (_, _, args) -> first args
+  | Ir.EIf (c, t, e2) -> first [c; t; e2]
+  | Ir.EMatch (sc, cases) -> first (sc :: List.map snd cases)
+
 (** Lowering state *)
 type state = {
   mutable next_var_id : int;
@@ -276,6 +427,16 @@ type state = {
   variants : (string, (string * Ir.elttype list) list) Hashtbl.t;
       (** Collected variant types: type_name ->
           [(constructor_name, payload_types); ...] *)
+  mod_consts : (string, Ir.var * Ir.expr) Hashtbl.t;
+      (** Module-level constants, by name, with their LOWERED initializer
+          (backlog-160). A helper body that names one must carry its own [SLet]:
+          the kernel-body copy is in a different scope, and helpers are emitted
+          out-of-line. See [prefix_referenced_consts]. *)
+  mutable mod_consts_order : string list;
+      (** Declaration order, reversed. Prefixing must be deterministic AND must
+          respect dependency order — a later constant may reference an earlier
+          one — so the prefix is emitted in declaration order, not hashtable
+          order. *)
 }
 
 let create_state fun_map =
@@ -287,6 +448,8 @@ let create_state fun_map =
     lowered_funs_order = [];
     types = Hashtbl.create 8;
     variants = Hashtbl.create 8;
+    mod_consts = Hashtbl.create 8;
+    mod_consts_order = [];
   }
 
 (* DEAD as of this writing: [fresh_id] has no caller, and [next_var_id] is
@@ -583,11 +746,87 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
                no other site did. A non-primitive tuple return raises the located
                tuple-component error rather than miscompiling. *)
             register_tuple_type state ret_ty ;
+            let name_of_helper = name in
             Hashtbl.add state.lowering_stack name () ;
             let fun_body_ir = lower_stmt state body in
             Hashtbl.remove state.lowering_stack name ;
             (* Use make_returning to add return statements without re-traversing *)
             let fun_body_ir = make_returning fun_body_ir in
+            (* backlog-160: give the helper its own copy of every module constant
+               it references. Without this the emitted device function names an
+               identifier declared only in the kernel body — see the header above
+               [expr_names] for the emitted CUDA and for why hoisting to a
+               top-level [const] is unsound.
+
+               TRANSITIVE, and that is not decoration: a constant's initializer
+               may reference an earlier constant, so a fixpoint is taken over the
+               referenced set before prefixing. Prefixed in DECLARATION order, so
+               a dependency is declared before its user. Only the constants
+               actually referenced are prefixed — prefixing all of them would
+               evaluate initializers the helper does not need and, worse, would
+               drag an unreferenced barrier into the refusal path. *)
+            let referenced =
+              let acc = Hashtbl.create 8 in
+              stmt_names fun_body_ir acc ;
+              let rec close () =
+                let added = ref false in
+                Hashtbl.iter
+                  (fun name _ ->
+                    match Hashtbl.find_opt state.mod_consts name with
+                    | None -> ()
+                    | Some (_, init) ->
+                        let sub = Hashtbl.create 4 in
+                        expr_names init sub ;
+                        Hashtbl.iter
+                          (fun n () ->
+                            if
+                              Hashtbl.mem state.mod_consts n
+                              && not (Hashtbl.mem acc n)
+                            then begin
+                              Hashtbl.replace acc n () ;
+                              added := true
+                            end)
+                          sub)
+                  (Hashtbl.copy acc) ;
+                if !added then close ()
+              in
+              close () ;
+              acc
+            in
+            let fun_body_ir =
+              List.fold_left
+                (fun body name ->
+                  if not (Hashtbl.mem referenced name) then body
+                  else
+                    match Hashtbl.find_opt state.mod_consts name with
+                    | None -> body
+                    | Some (v, init) -> (
+                        match expr_barrier init with
+                        | Some intr ->
+                            (* Duplicating a barrier per call site changes
+                               convergence, so this is refused rather than
+                               silently changed. Names both the constant and the
+                               intrinsic: "a barrier somewhere" is not actionable.
+                            *)
+                            Ppxlib.Location.raise_errorf
+                              ~loc:Ppxlib.Location.none
+                              "Module constant %S is referenced by helper %S \
+                               and its initializer calls %S, a synchronising \
+                               operation. Making it visible to the helper \
+                               means evaluating the initializer once per call, \
+                               which would execute %S once per call site and \
+                               change convergence. Move the value into a \
+                               parameter of %S, or compute it in the kernel \
+                               body and pass it in."
+                              name
+                              name_of_helper
+                              intr
+                              intr
+                              name_of_helper
+                        | None -> Ir.SSeq [Ir.SLet (v, init, Ir.SEmpty); body]))
+                fun_body_ir
+                (List.rev state.mod_consts_order)
+            in
             (* Convert tparam list to var list *)
             let hf_params =
               List.mapi
@@ -1129,7 +1368,25 @@ let lower_kernel (kernel : tkernel) : Ir.kernel =
         match item with
         | TMConst (name, id, ty, expr) ->
             let v = make_var name id ty false in
-            Ir.SSeq [Ir.SLet (v, lower_expr state expr, Ir.SEmpty); acc]
+            let init = lower_expr state expr in
+            (* backlog-160: record it so a helper body that names this constant
+               can carry its own SLet. Populated HERE, while the kernel-body copy
+               is built, which is before the body is lowered — and helpers are
+               lowered lazily FROM the body, so by the time any helper needs a
+               constant, every constant is registered.
+
+               The residual ordering case, checked and stated rather than left
+               implicit: a helper can also be lowered while a CONSTANT's own
+               initializer is lowered (a constant may call a module function). At
+               that moment the constants declared after it are not yet in the
+               table, so such a helper gets only the earlier ones. That is the
+               correct scope — OCaml's own scoping gives the initializer access to
+               earlier bindings only — so the limitation matches the language
+               rather than being a gap. A helper referencing a LATER constant is
+               not expressible. *)
+            Hashtbl.replace state.mod_consts name (v, init) ;
+            state.mod_consts_order <- name :: state.mod_consts_order ;
+            Ir.SSeq [Ir.SLet (v, init, Ir.SEmpty); acc]
         | TMFun _ -> acc)
       all_mod_items
       Ir.SEmpty
