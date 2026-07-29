@@ -11,12 +11,33 @@
  * of "referenced" names was collected with an EMPTY bound list for parameters,
  * so a parameter that merely shares a constant's name made the constant look
  * free — and its declaration got prefixed into a body that already binds that
- * identifier as a parameter. Two declarations of one name in one flat scope:
+ * identifier as a parameter.
  *
- *   device backends: hard compile error, on a helper that compiled before.
- *   interpreter:     the prefix OVERWRITES the parameter, so the helper
- *                    silently ignores its argument and computes from the
- *                    constant instead. Wrong data, no diagnostic.
+ * MEASURED pre-fix behaviour, per backend, on this host. It does NOT match the
+ * "device backends hard-error, interpreter silently overwrites" split the
+ * finding was reported with — the two halves are swapped, and the real one is
+ * worse:
+ *
+ *   Interpreter x2  OK        — correct. It does NOT silently ignore the
+ *                               argument, contrary to the report.
+ *   Native          OK        — correct.
+ *   CUDA/PTX x2     got 200, want 2   <- SILENTLY WRONG DATA
+ *   OpenCL x2       compile failure (loud)
+ *   Vulkan x2       compile failure (loud)
+ *
+ * PTX is the silent one because it does not emit a flat C scope of named
+ * locals: it allocates registers, so a duplicated [SLet] never collides
+ * textually. The prefixed constant simply overwrote the parameter's register
+ * and the helper computed 100.0 *. 2.0 for every element.
+ *
+ * That inversion matters for how much this is worth. A silent bug on the
+ * INTERPRETER would be caught by any cross-backend differential test, because
+ * the interpreter is the oracle and it would disagree with the GPUs. Here the
+ * oracle is RIGHT and only a real GPU backend is wrong, so agreement-with-
+ * interpreter is exactly the check that would have caught it — and no test of
+ * this shape existed.
+ *
+ * Metal and HIP are unmeasured (no such device on this host).
  *
  * The [expr_names] header documents this exact redeclaration bug for LOCAL
  * binders ([SLet]/[SLetMut]/[SFor], "caught by review on #362"); the fix landed
