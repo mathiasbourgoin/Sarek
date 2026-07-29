@@ -28,6 +28,10 @@ module Mock_point_helpers : HELPERS with type t = float * float = struct
     | "y" -> VFloat64 y
     | _ -> failwith ("unknown field: " ^ name)
 
+  (* Same order as [to_values] above, which is the contract [field_index]
+     depends on. *)
+  let field_names = ["x"; "y"]
+
   let to_value (x, y) = VRecord ("point", [|VFloat64 x; VFloat64 y|])
 
   let from_value = function
@@ -106,6 +110,52 @@ let test_get_field () =
       | _ -> fail "wrong y type")
   | None -> fail "helper not found"
 
+(* [field_index] is what makes a field STORE possible (backlog-172), so the
+   property that matters is not just "returns a number" but that the number
+   agrees with [to_values]' order — an index off by one writes a different field
+   and is wrong data, not an error. Checked against [to_values] directly rather
+   than against a hardcoded 0/1, so the two cannot be made to agree by editing
+   only the test. *)
+let test_field_index () =
+  register "field_index_point" (AnyHelpers (module Mock_point_helpers)) ;
+  match lookup "field_index_point" with
+  | Some helpers ->
+      let values =
+        helpers.to_values (VRecord ("point", [|VFloat64 5.0; VFloat64 6.0|]))
+      in
+      let index_of name =
+        match helpers.field_index name with
+        | Some i -> i
+        | None -> fail ("no index for field " ^ name)
+      in
+      (* The slot [field_index] names must hold the value [get_field] returns. *)
+      List.iter
+        (fun (name, expected) ->
+          let i = index_of name in
+          match values.(i) with
+          | VFloat64 v ->
+              check
+                (float 0.001)
+                (Printf.sprintf "field %s is at slot %d" name i)
+                expected
+                v
+          | _ -> fail ("wrong type at slot for " ^ name))
+        [("x", 5.0); ("y", 6.0)] ;
+      (* Distinct fields must not collide on one slot. *)
+      check
+        bool
+        "x and y are different slots"
+        true
+        (index_of "x" <> index_of "y") ;
+      (* An absent field is [None], not slot 0 — writing slot 0 for an unknown
+         name is precisely the silent-wrong-field failure. *)
+      check
+        bool
+        "unknown field has no index"
+        true
+        (helpers.field_index "nope" = None)
+  | None -> fail "helper not found"
+
 (** Test multiple type registrations *)
 let test_multiple_registrations () =
   register "type_a" (AnyHelpers (module Mock_point_helpers)) ;
@@ -152,6 +202,10 @@ let () =
           test_case "from_values" `Quick test_from_values;
           test_case "to_values" `Quick test_to_values;
           test_case "get_field" `Quick test_get_field;
+          test_case
+            "field_index agrees with to_values order"
+            `Quick
+            test_field_index;
         ] );
       ( "wrapper",
         [test_case "any_helpers_wrapper" `Quick test_any_helpers_wrapper] );

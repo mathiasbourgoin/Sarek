@@ -95,7 +95,7 @@ let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
           (* Not a record type - shouldn't happen, but use unqualified name *)
           let field_lid = {txt = Lident field_name; loc} in
           Ast_builder.Default.pexp_field ~loc rec_e field_lid)
-  | TEFieldSet (record, field_name, _field_idx, value) ->
+  | TEFieldSet (record, field_name, _field_idx, value) -> (
       let rec_e = gen_expr ~loc record in
       let val_e = gen_expr ~loc value in
       (* Note: mutable record fields with first-class modules would need setters.
@@ -122,7 +122,49 @@ let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
                 {txt = Lident field_name; loc})
         | _ -> {txt = Lident field_name; loc}
       in
-      Ast_builder.Default.pexp_setfield ~loc rec_e field_lid val_e
+      match record.te with
+      | TEVecGet (vec, idx) ->
+          (* backlog-172. [v.(i).f <- e] on a VECTOR element cannot be a
+             [setfield]: [Vector.get] marshals the element out of the vector's
+             storage and returns a fresh record, so the store landed in a
+             temporary and was silently discarded — the kernel appeared to run
+             and the vector kept its old values, with no error on any path.
+
+             A functional update written back through the same [kernel_set] that
+             [TEVecSet] uses, rather than making the field mutable and storing
+             into it: the record's fields may legitimately be immutable, and a
+             read-modify-write is the only shape that is correct either way.
+
+             The element is fetched ONCE into [sarek_fs_base] so that the index
+             expression is evaluated once too — [v.(f i).x <- e] must not call
+             [f] twice, and the naive expansion does. *)
+          let vec_e = gen_expr ~loc vec in
+          let idx_e = gen_expr ~loc idx in
+          let updated =
+            Ast_builder.Default.pexp_record
+              ~loc
+              [(field_lid, val_e)]
+              (Some [%expr sarek_fs_base])
+          in
+          if ctx.use_native_arg then
+            [%expr
+              let sarek_fs_idx = Int32.to_int [%e idx_e] in
+              let sarek_fs_vec = [%e vec_e] in
+              let sarek_fs_base = sarek_fs_vec#get sarek_fs_idx in
+              sarek_fs_vec#set sarek_fs_idx [%e updated]]
+          else
+            [%expr
+              let sarek_fs_idx = Int32.to_int [%e idx_e] in
+              let sarek_fs_vec = [%e vec_e] in
+              let sarek_fs_base =
+                Spoc_core.Vector.get sarek_fs_vec sarek_fs_idx
+              in
+              Spoc_core.Vector.kernel_set sarek_fs_vec sarek_fs_idx [%e updated]]
+      | _ ->
+          (* A record held in a local (or a shared-memory array element) IS
+             mutated in place; nothing marshals it, so a setfield is both correct
+             and the cheaper code. *)
+          Ast_builder.Default.pexp_setfield ~loc rec_e field_lid val_e)
   | _ -> failwith "gen_memory_access: not a memory access expression"
 
 (** Generate let bindings (let, let mut, assignment) *)
