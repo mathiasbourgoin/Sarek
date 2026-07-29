@@ -27,3 +27,18 @@
  (libraries spoc_framework_registry spoc_framework alcotest)
  (instrumentation
   (backend bisect_ppx)))
+
+; Probe-exception policy of the three availability accessors (available,
+; available_backends, best_backend). The registry used to swallow EVERY
+; exception from is_available, so a real Out_of_memory reached the user as
+; "no backends found"; 22745124 fixed one accessor and 339c8e2c the other two.
+; Own executable because the registry is process-global and this suite needs a
+; backend whose probe raises on demand, which must not leak into the other
+; suites' view of what is registered.
+
+(test
+ (name test_registry_probe_policy)
+ (modules test_registry_probe_policy probe_backend)
+ (libraries spoc_framework_registry spoc_framework alcotest)
+ (instrumentation
+  (backend bisect_ppx)))

@@ -272,3 +272,23 @@
  (name test_lower_ir_refusal_triggers)
  (modules test_lower_ir_refusal_triggers)
  (libraries sarek_frontend))
+; Audit finding M8: Sarek_worklist.Host.drive must stop at the first OVERFLOW.
+; The e2e worklist test needs a device and never calls drive on an overflowing
+; queue, so the guard at Sarek_worklist.ml:208 was pinned by nothing. drive is
+; pure host logic, so this drives it against a simulated device - CPU-only.
+
+(test
+ (name test_worklist_drive)
+ (modules test_worklist_drive)
+ (libraries sarek.worklist spoc_core alcotest))
+
+; Audit finding L1: the tuple-shape registry's build-and-insert must be
+; single-winner, so concurrent first-time builders of one shape all observe the
+; SAME custom_type (hence the same Type_id the Native path resolves through
+; descriptor_by_name). Multi-domain; see the file header for what this test can
+; and cannot decide about the data-race half of the fix.
+
+(test
+ (name test_tuple_vec_registry)
+ (modules test_tuple_vec_registry)
+ (libraries sarek.tuple_vec spoc_core spoc.ir alcotest))
