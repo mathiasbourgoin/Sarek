@@ -257,3 +257,18 @@
   alcotest
   str
   unix))
+
+; backlog-165: the TRIGGER CONDITIONS of Sarek_lower_ir's two ppx-time refusals
+; (barrier-bearing constant initializer; a helper that both references and
+; rebinds a constant name). Both refusals are `raise_errorf`s and this tree has
+; no negative-compile infrastructure, so before this test each was code observed
+; firing exactly once by hand. This pins the PREDICATES that decide to refuse,
+; not the raise — see the test's header for that boundary stated explicitly.
+;
+; Links sarek_frontend directly (a plain wrapped-false library with no .mli),
+; the same way sarek/tests/e2e/test_stdlib_meta_proof does.
+
+(test
+ (name test_lower_ir_refusal_triggers)
+ (modules test_lower_ir_refusal_triggers)
+ (libraries sarek_frontend))
