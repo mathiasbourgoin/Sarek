@@ -589,10 +589,32 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
             (* Use make_returning to add return statements without re-traversing *)
             let fun_body_ir = make_returning fun_body_ir in
             (* Convert tparam list to var list *)
+            (* backlog-158: the parameter's identity is the TYPER's id, not its
+               position. This was [List.mapi] handing each parameter its index
+               while [p.tparam_id] — the id every use site inside the body
+               carries — was destructured and discarded. The interpreter's
+               [lookup_var] resolves by id before name, so a reference resolved to
+               whichever parameter occupied that slot, and the name fallback was
+               silently load-bearing: it only rescued the cases where the id
+               lookup missed entirely.
+
+               Wrong exactly for 1 <= c <= n-1, where c is the global typer
+               counter when these parameters are allocated and n their count
+               (c = 0 makes positional and typer ids coincide by accident; c >= n
+               makes every lookup miss and fall back safely). A module constant
+               declared ahead of the helper puts c at 1, which is why the probe
+               needs one and why it must be the first kernel in a fresh file — the
+               counter is global and persists.
+
+               Measured, not reasoned: `combine a b c d = a +. b +. c` with
+               arguments 1 2 3 4 returned 9 on the Interpreter and 6 on OpenCL,
+               Vulkan and Native. Safe to change because every other consumer of
+               [hf_params] keys by NAME (PTX, GLSL, WGSL, inline_vec) and no
+               golden pins these ids. *)
             let hf_params =
-              List.mapi
-                (fun i (p : tparam) ->
-                  make_var p.tparam_name i p.tparam_type false)
+              List.map
+                (fun (p : tparam) ->
+                  make_var p.tparam_name p.tparam_id p.tparam_type false)
                 params
             in
             let helper_func : Ir.helper_func =
