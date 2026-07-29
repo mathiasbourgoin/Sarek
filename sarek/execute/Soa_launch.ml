@@ -65,23 +65,25 @@ let describe_leaf (l : Soa.leaf) : string =
 let describe_leaves (leaves : Soa.leaf list) : string =
   String.concat ", " (List.map describe_leaf leaves)
 
-(* The [~fields] precondition, ENFORCED rather than documented.
-   [Soa_vector.create] takes the record's field layout as an argument because the
-   PPX [custom_type] carries no layout, and its .mli states that a wrong list
-   (wrong order, wrong widths, missing/extra field) makes scatter/gather
-   transpose against the wrong byte offsets and yields "silently transposed /
-   corrupted data with no error" — adding that it "cannot be checked".
-   That is true where it is written, at [create], which never sees a kernel. It
-   is NOT true HERE: [run_soa] receives the kernel IR, whose [DParam] carries the
-   authoritative [TRecord] for that very parameter. So the launch can derive the
-   real plan and compare it against the one the vector will actually transpose
-   with, turning silent corruption into a refusal at the last moment before any
-   data moves.
+(* The vector's layout vs the KERNEL's — two independent declarations.
+   This used to guard a caller-supplied [~fields] list: [Soa_vector.create] took
+   the record's field layout as an argument, and a wrong one transposed against
+   the wrong byte offsets, which was silent corruption rather than an error.
+   [create] now DERIVES the layout from [custom_type.ir_fields], so that
+   particular hazard is closed at the source and this is no longer the only thing
+   standing between a wrong list and bad data.
+   It still guards a real and DIFFERENT axis, which is why it stays. [create]
+   sees only the vector's element type; [run_soa] additionally holds the kernel
+   IR, whose [DParam] carries the authoritative [TRecord] for that very
+   parameter. Nothing relates the two — [SA_Soa] is existential — so binding a
+   vector of one record type to a parameter of another is expressible and would
+   have the kernel read N leaf pointers under the wrong layout. Deriving inside
+   [create] cannot detect that; only the launch can.
    Compared: the LEAF LIST and the AoS stride — the two things scatter/gather
-   index with. Deliberately NOT the plan's [name]: the declared and authoritative
-   plans get their names from different places (the caller's [~fields] label vs
-   the record's own type name), so comparing it would reject correct programs.
-   An assertion wider than the property is its own defect. *)
+   index with. Deliberately NOT the plan's [name]: the two plans get their names
+   from different places (the vector's own type name vs the kernel record's), so
+   comparing it would reject correct programs. An assertion wider than the
+   property is its own defect. *)
 let check_soa_layout ~(param : string)
     ~(kernel_ty : Sarek_ir_types.elttype option) ~(declared : Soa.plan) : unit =
   match kernel_ty with
@@ -127,15 +129,15 @@ let check_soa_layout ~(param : string)
                        authoritative.Soa.aos_stride;
                    actual =
                      Printf.sprintf
-                       "leaves [%s] stride %d (from the ~fields given to \
-                        Soa_vector.create)"
+                       "leaves [%s] stride %d (from the SoA vector's own \
+                        element type)"
                        (describe_leaves declared.Soa.leaves)
                        declared.Soa.aos_stride;
                    context =
                      Printf.sprintf
-                       "SoA layout for kernel parameter %S. The ~fields list \
-                        must match the record's declaration order and types \
-                        exactly; it does not, so scatter/gather would \
+                       "SoA layout for kernel parameter %S. The SoA vector's \
+                        element type must match the record this parameter \
+                        declares; it does not, so scatter/gather would \
                         transpose against the wrong byte offsets and the \
                         kernel would read silently corrupted data. Refused \
                         before any transfer"
@@ -216,11 +218,11 @@ let run_soa ~(device : Device.t) ~(ir : Sarek_ir_types.kernel)
       (* SoA parameter names = kernel param name at each SA_Soa position. *)
       let params_info = kernel_params_info ir in
       let param_names = List.map fst params_info in
-      (* Enforce the ~fields precondition BEFORE anything is scattered or
-         transferred: a mismatch is refused at zero cost, and no device buffer is
-         left holding half-transposed data.
-         ORDERED BEFORE the PTX gate, deliberately. A wrong ~fields list is an
-         error in the CALL — true whatever device it is dispatched to — so
+      (* Check the layout BEFORE anything is scattered or transferred: a
+         mismatch is refused at zero cost, and no device buffer is left holding
+         half-transposed data.
+         ORDERED BEFORE the PTX gate, deliberately. A vector bound to a
+         parameter of a different record type is an error in the CALL — true whatever device it is dispatched to — so
          reporting it first is more useful than telling the caller to switch
          devices and only then, on a CUDA host, discovering their layout was
          wrong all along. It also makes this check reachable on a machine with no

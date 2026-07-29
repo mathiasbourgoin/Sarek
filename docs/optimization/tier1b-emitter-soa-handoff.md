@@ -128,10 +128,30 @@ codegen-level `~soa_params` knob:
 > for it, not work that is wholly outstanding. Read them as the plan for
 > transparency, not as a to-do list of missing plumbing.
 >
-> Separately shipped on the launch path: the `~fields` precondition is now
-> ENFORCED there (PR #366) rather than documented — `run_soa` compares the
-> declared plan against the kernel's authoritative `TRecord` and refuses a
-> mismatch instead of transposing silently-corrupt data.
+> Separately shipped on the launch path: the layout is CHECKED there (PR #366)
+> rather than documented — `run_soa` compares the vector's plan against the
+> kernel's authoritative `TRecord` and refuses a mismatch instead of transposing
+> silently-corrupt data.
+>
+> **UPDATE — the `~fields` argument is gone (slice 1 of this item).**
+> `Soa_vector.create` no longer takes the field layout; it DERIVES it from
+> `custom_type.ir_fields`, which the PPX populates for every `[@@sarek.type]`
+> record from the same `aligned_record_offsets` call that produces
+> `elem_size`/`get`/`set`. The premise both this doc and the code stated — "the
+> PPX `custom_type` carries no record layout" — was stale. That closes the
+> hazard at the source instead of intercepting it: there is no longer a second
+> description of the layout available to disagree with the first, so a
+> caller-supplied wrong list is not expressible.
+>
+> The PR #366 launch check STAYS, on a different axis. `create` sees only the
+> vector's element type; the launch also holds the kernel's `DParam`. `SA_Soa` is
+> existential, so binding a vector of one record type to a parameter of another
+> still typechecks — and that is what the check now refuses. The wiring test was
+> re-expressed accordingly (a `dpair` vector bound to a `point3d` parameter),
+> because its old mechanism, passing a permuted `~fields`, became impossible.
+>
+> So of the transparency bullets below, the LAYOUT blocker is closed. What
+> remains is the backend threading and the 1-buffer-per-device table.
 
 - **Host storage variant** (`Spoc_core_base.host_storage`, GADT at
   `sarek/core_base/Spoc_core_base.ml:111-120`): add `Custom_storage_soa` holding

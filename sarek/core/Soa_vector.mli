@@ -24,12 +24,16 @@
  * only. This module is pure host storage + transpose and is backend-agnostic.
  *
  * This is deliberately layered above {!Vector} + {!Soa} rather than being a new
- * constructor on the core [host_storage] GADT: the PPX [custom_type] carries no
- * record layout (so the field list must be supplied here), and a fully
- * transparent [Vector.create ~layout:SoA] + generic [Execute.run] auto-dispatch
- * would additionally require threading SoA param names through every backend and
- * generalising the 1-buffer-per-device table — deferred (see
+ * constructor on the core [host_storage] GADT. A fully transparent
+ * [Vector.create ~layout:SoA] + generic [Execute.run] auto-dispatch would
+ * require threading SoA param names through every backend and generalising the
+ * 1-buffer-per-device table — deferred (see
  * docs/optimization/tier1b-emitter-soa-handoff.md and the impl brief).
+ *
+ * The layout half of that deferral is now closed: the leaf enumeration is
+ * derived from [custom_type.ir_fields] rather than supplied by the caller, so
+ * "the custom_type carries no record layout" is no longer a reason this cannot
+ * be transparent. What remains is the backend threading and the buffer table.
  ******************************************************************************)
 
 (** A per-leaf host buffer, type-erased: a width-matched scalar vector used as a
@@ -39,26 +43,23 @@ type packed_leaf = Leaf : ('e, 'f) Vector.t -> packed_leaf
 (** A SoA custom vector of element type ['a]. *)
 type 'a t
 
-(** [create custom ~fields length] builds a SoA custom vector of [length]
-    elements. [custom] is the PPX-generated custom type (the AoS source of
-    truth); [fields] is the record's field layout [(name, scalar type)].
+(** [create custom length] builds a SoA custom vector of [length] elements.
+    [custom] is the PPX-generated custom type (the AoS source of truth), and the
+    leaf layout is {b derived} from it via [custom.ir_fields].
 
-    {b Precondition — [fields] MUST match the record's declaration order and
-       types exactly.} The [custom_type] carries no layout, so this cannot be
-    checked: [fields] is the sole description of how the packed AoS element is
-    split into leaves. If it disagrees with the actual record layout (wrong
-    order, wrong widths, missing/extra field), {!scatter}/{!gather} transpose
-    against the wrong byte offsets and the vector carries
-    {e silently transposed / corrupted} data with no error. Pass exactly the
-    fields the [[@@sarek.type]] record declares, in order — the same list the
-    kernel IR's [TRecord] uses.
+    There is deliberately no [~fields] parameter. There used to be one, on the
+    premise that the [custom_type] carried no layout; [ir_fields] now does, and
+    the PPX fills it for every [[@@sarek.type]] record from the same source as
+    [elem_size]/[get]/[set]. A caller-supplied list was the only way for the
+    described layout to disagree with the real one — and that disagreement was
+    not an error but {e silently transposed data}, since {!scatter}/{!gather}
+    would index at the wrong byte offsets. Deriving makes that unreachable
+    instead of checking for it.
 
-    Raises {!Soa.Unsupported} if [fields] is not a flat record. *)
-val create :
-  'a Vector.custom_type ->
-  fields:(string * Sarek_ir_types.elttype) list ->
-  int ->
-  'a t
+    Raises {!Soa.Unsupported} if the element type has no derivable flat-record
+    layout ([ir_fields = None], i.e. a variant) or is otherwise not
+    SoA-representable. *)
+val create : 'a Vector.custom_type -> int -> 'a t
 
 (** The AoS host vector (source of truth). Use it for the non-PTX host fallback
     (drive it through the ordinary {!Sarek.Execute.run_vectors} AoS path). *)

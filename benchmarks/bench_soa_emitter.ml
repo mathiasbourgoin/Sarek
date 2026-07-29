@@ -71,19 +71,6 @@ let median arr =
   let n = Array.length a in
   if n = 0 then 0.0 else a.(n / 2)
 
-let fields =
-  Sarek_ir_types.
-    [
-      ("f0", TFloat32);
-      ("f1", TFloat32);
-      ("f2", TFloat32);
-      ("f3", TFloat32);
-      ("f4", TFloat32);
-      ("f5", TFloat32);
-      ("f6", TFloat32);
-      ("f7", TFloat32);
-    ]
-
 let is_ptx (dev : Device.t) = dev.Device.framework = "CUDA/PTX"
 
 (* Median wall time (ms) of [launch] over [iters], after [warmup] launches. *)
@@ -104,7 +91,7 @@ let run dev n =
   let ir = ir_of kernel in
   (* Storage via the real user-facing SoA API (Tier 1c). The SoA vector owns
      the AoS host buffer (used for the AoS leg) + the N per-leaf buffers. *)
-  let sv = Soa_vector.create wide_custom ~fields n in
+  let sv = Soa_vector.create wide_custom n in
   let pts = Soa_vector.aos_vector sv in
   for i = 0 to n - 1 do
     let v = float_of_int i in

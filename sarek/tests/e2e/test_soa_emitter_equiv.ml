@@ -195,13 +195,7 @@ let run_p3 dev n =
   let out_api =
     if not (is_ptx dev) then None
     else begin
-      let sv =
-        Soa_vector.create
-          point3d_custom
-          ~fields:
-            Sarek_ir_types.[("x", TFloat32); ("y", TFloat32); ("z", TFloat32)]
-          n
-      in
+      let sv = Soa_vector.create point3d_custom n in
       for i = 0 to n - 1 do
         Soa_vector.set
           sv
@@ -266,12 +260,7 @@ let run_dpair dev n =
   let out_api =
     if not (is_ptx dev) then None
     else begin
-      let sv =
-        Soa_vector.create
-          dpair_custom
-          ~fields:Sarek_ir_types.[("u", TFloat64); ("v", TFloat64)]
-          n
-      in
+      let sv = Soa_vector.create dpair_custom n in
       for i = 0 to n - 1 do
         Soa_vector.set
           sv
@@ -351,13 +340,7 @@ let check_gate dev =
   else begin
     Printf.printf "SoA-gate [%s] %s: %!" dev.Device.framework dev.Device.name ;
     let ir = ir_of p3_kernel in
-    let sv =
-      Soa_vector.create
-        point3d_custom
-        ~fields:
-          Sarek_ir_types.[("x", TFloat32); ("y", TFloat32); ("z", TFloat32)]
-        16
-    in
+    let sv = Soa_vector.create point3d_custom 16 in
     let out = Vector.create Vector.float32 16 in
     match
       run_soa_via_api dev ir ~sv ~out ~n:16 ~block:(dims 16) ~grid:(dims 1)
@@ -384,13 +367,7 @@ let check_roundtrip dev n =
     try
       let threads = min 128 n in
       let block = dims threads and grid = dims ((n + threads - 1) / threads) in
-      let sv =
-        Soa_vector.create
-          point3d_custom
-          ~fields:
-            Sarek_ir_types.[("x", TFloat32); ("y", TFloat32); ("z", TFloat32)]
-          n
-      in
+      let sv = Soa_vector.create point3d_custom n in
       let orig i =
         {
           x = float_of_int i;
@@ -451,13 +428,23 @@ let check_roundtrip dev n =
       false
   end
 
-(* ── the ~fields precondition is ENFORCED, not just documented ──────────────
-   Soa_vector.create takes the record's field layout as an argument, and its .mli
-   warns that a wrong list transposes against the wrong byte offsets and yields
-   "silently transposed / corrupted data with no error" — adding that it "cannot
-   be checked". True at [create], which has no kernel. False at the LAUNCH, which
-   holds the kernel IR and therefore the authoritative TRecord. These cases pin
-   that the launch compares the two and refuses.
+(* ── the launch still checks the layout, on a DIFFERENT axis than create ─────
+   History, because it changes what these cases are for. [Soa_vector.create] used
+   to take the field layout as a [~fields] argument, and a wrong list transposed
+   against the wrong byte offsets — silently corrupted data, not an error. The
+   launch check below existed to catch that at the last moment before any data
+   moved. [create] now DERIVES the layout from [custom_type.ir_fields], so a
+   caller can no longer describe it wrongly and that particular hazard is gone at
+   the source rather than intercepted here.
+
+   These cases are still real, and still guard something [create] cannot see:
+   [create] knows only the VECTOR's element type, while the launch also holds the
+   KERNEL's [DParam] [TRecord]. Those are two independent declarations, and
+   binding a vector of one record type to a kernel parameter of another is still
+   expressible — a mismatch that no amount of deriving inside [create] can
+   detect. That is the axis these cases pin, which is why they build their
+   declared plans by hand instead of going through [create]: the point is
+   precisely to present the check with a plan that disagrees with the kernel.
 
    Device-independent by construction: the check is a pure function of (param
    name, kernel element type, declared plan), so it runs on this machine with no
@@ -505,10 +492,67 @@ let refuses ~label ~param ~kernel_ty ~declared ~expect_substr =
           msg ;
         false)
 
+(* The DERIVATION, which replaced the [~fields] argument (backlog-54 slice 1).
+   [Soa_vector.create] now builds its plan from [custom_type.ir_fields], so this
+   asserts the derived plan is the RIGHT one — the leaf list and stride these
+   records used to be given by hand. Without it, deriving from a wrong source
+   (say a reversed or truncated [ir_fields]) would still typecheck, still refuse
+   nothing, and silently transpose at the wrong offsets: exactly the failure the
+   argument's removal was meant to make unreachable.
+
+   Device-independent — [create] allocates host buffers and touches no device, so
+   this runs on a machine with no GPU at all. Stride is asserted alongside the
+   leaves because the two are what scatter/gather index with, and a plan can have
+   correct leaves with a wrong stride (padding), which would corrupt every
+   element after the first. *)
+let check_field_derivation () =
+  let ok = ref true in
+  let check_plan label (plan : Soa.plan) ~expect_leaves ~expect_stride =
+    let got =
+      List.map
+        (fun (l : Soa.leaf) -> (l.Soa.path, l.Soa.aos_offset, l.Soa.size))
+        plan.Soa.leaves
+    in
+    if got <> expect_leaves then (
+      let show l =
+        String.concat
+          ", "
+          (List.map (fun (p, o, s) -> Printf.sprintf "%s@%d:%d" p o s) l)
+      in
+      Printf.printf
+        "  %-56s FAIL (leaves [%s], expected [%s])\n%!"
+        label
+        (show got)
+        (show expect_leaves) ;
+      ok := false)
+    else if plan.Soa.aos_stride <> expect_stride then (
+      Printf.printf
+        "  %-56s FAIL (stride %d, expected %d)\n%!"
+        label
+        plan.Soa.aos_stride
+        expect_stride ;
+      ok := false)
+    else Printf.printf "  %-56s OK\n%!" label
+  in
+  (* point3d: three 4-byte f32 leaves, packed, stride 12. *)
+  check_plan
+    "derived plan for point3d (3 x f32)"
+    (Soa_vector.plan (Soa_vector.create point3d_custom 4))
+    ~expect_leaves:[("x", 0, 4); ("y", 4, 4); ("z", 8, 4)]
+    ~expect_stride:12 ;
+  (* dpair: two 8-byte f64 leaves, stride 16. A different width AND a different
+     leaf count, so a derivation hard-wired to point3d cannot pass both. *)
+  check_plan
+    "derived plan for dpair (2 x f64)"
+    (Soa_vector.plan (Soa_vector.create dpair_custom 4))
+    ~expect_leaves:[("u", 0, 8); ("v", 8, 8)]
+    ~expect_stride:16 ;
+  !ok
+
 let check_layout_validation () =
   let authoritative = Soa.plan_of_elttype xyz_ty in
   let ok = ref true in
-  print_endline "  --- ~fields precondition enforced at launch ---" ;
+  print_endline "  --- precondition enforced at launch ---" ;
   (* POSITIVE CONTROL first. Without it, "refuses a wrong list" and "refuses
      every list" are the same observation, and the second would make SoA
      unusable rather than safe. *)
@@ -523,17 +567,17 @@ let check_layout_validation () =
     | exception e ->
         Printf.printf
           "  %-56s FAIL (rejected the CORRECT layout: %s)\n%!"
-          "matching ~fields is accepted"
+          "matching is accepted"
           (Printexc.to_string e) ;
         false
-  then Printf.printf "  %-56s OK\n%!" "matching ~fields is accepted"
+  then Printf.printf "  %-56s OK\n%!" "matching is accepted"
   else ok := false ;
   (* Wrong ORDER: same fields, same widths, permuted. The offsets move, so the
      transpose would read every field from the wrong column. *)
   if
     not
       (refuses
-         ~label:"permuted ~fields is refused"
+         ~label:"permuted is refused"
          ~param:"pts"
          ~kernel_ty:(Some xyz_ty)
          ~declared:
@@ -584,20 +628,24 @@ let check_layout_validation () =
 
 (* The WIRING, which the direct calls above cannot establish: run_soa must
    actually consult the check. Driven on ANY device, including non-PTX, and that
-   is the point — a mismatched ~fields list must surface the LAYOUT error rather
-   than the CUDA/PTX device gate. If the check sat behind the gate (where it
-   originally was) this case would report the gate message instead, so it pins
-   the ordering as well as the call. *)
+   is the point — the mismatch must surface the LAYOUT error rather than the
+   CUDA/PTX device gate. If the check sat behind the gate (where it originally
+   was) this case would report the gate message instead, so it pins the ordering
+   as well as the call.
+
+   The mismatch is now built by binding a SoA vector of the WRONG RECORD TYPE to
+   the parameter, not by handing [create] a wrong field list. That is a
+   deliberate change of mechanism, forced by [create] deriving its layout from
+   [ir_fields]: a permuted list is no longer expressible, so the case that used
+   one could no longer fail for its stated reason. What IS still expressible is
+   this: [SA_Soa] is existential ([SA_Soa : 'a Soa_vector.t -> soa_arg]), so the
+   type system does not relate the vector's element type to the parameter's, and
+   a [dpair] vector (2 x f64, stride 16) binds to a [point3d] parameter (3 x f32,
+   stride 12) without complaint. Both the leaf list and the stride disagree, so
+   the launch check is what stands between that and a kernel reading garbage. *)
 let check_layout_wired dev =
   let ir = ir_of p3_kernel in
-  let sv =
-    (* Permuted vs point3d's declaration order (x, y, z). Same widths, so only
-       the offsets/paths disagree — the subtle end of the mismatch space. *)
-    Soa_vector.create
-      point3d_custom
-      ~fields:Sarek_ir_types.[("y", TFloat32); ("x", TFloat32); ("z", TFloat32)]
-      8
-  in
+  let sv = Soa_vector.create dpair_custom 8 in
   let out = Vector.create Vector.float32 8 in
   match
     Soa_launch.run_soa
@@ -615,7 +663,7 @@ let check_layout_wired dev =
   with
   | () ->
       Printf.printf
-        "  %-56s FAIL (ran with a mismatched ~fields)\n%!"
+        "  %-56s FAIL (ran with a mismatched record type)\n%!"
         "run_soa consults the layout check"
       |> fun () -> false
   | exception Sarek.Execute_error.Execution_error e ->
@@ -636,7 +684,8 @@ let () =
   (* Device-independent, so it runs BEFORE the no-device early exit — otherwise
      a machine with no device would report SKIPPED while silently not checking a
      property that needs no device at all. *)
-  let layout_ok = check_layout_validation () in
+  let derive_ok = check_field_derivation () in
+  let layout_ok = check_layout_validation () && derive_ok in
   let devs = Device.all () in
   if Array.length devs = 0 then (
     print_endline
@@ -661,7 +710,7 @@ let () =
       if is_ptx dev && not (check "dpair(f64)" dev n run_dpair) then ok := false ;
       (* Item 3: SoA launch must be rejected (never wrong data) on non-PTX. *)
       if not (check_gate dev) then ok := false ;
-      (* Wiring + ordering: a mismatched ~fields must surface the LAYOUT error,
+      (* Wiring + ordering: a mismatched must surface the LAYOUT error,
          not the device gate, on this very non-PTX device. *)
       if not (check_layout_wired dev) then ok := false ;
       (* Leaf-write round-trip (D2H + gather) on CUDA/PTX. *)

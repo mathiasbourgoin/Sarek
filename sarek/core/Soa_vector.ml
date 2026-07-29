@@ -28,8 +28,39 @@ let leaf_vector_of_size length size : packed_leaf =
            "Soa_vector: unsupported leaf byte size %d (expected 4 or 8)"
            size)
 
-let create (custom : 'a Vector.custom_type)
-    ~(fields : (string * Sarek_ir_types.elttype) list) (length : int) : 'a t =
+(* The leaf layout is DERIVED from the element type, never supplied. [create]
+   used to take a [~fields] list, on the stated premise that "the PPX
+   [custom_type] carries no layout" — which stopped being true once
+   [custom_type.ir_fields] landed. The PPX populates it for every
+   [[@@sarek.type]] record (Sarek_ppx.ml), from the same
+   [aligned_record_offsets] call that produces [elem_size]/[get]/[set], and
+   [test_ir_fields.ml] pins that agreement against the bytes [set] actually
+   writes.
+
+   Deriving it removes a hazard rather than documenting one: a caller-supplied
+   list that disagreed with the real record (wrong order, wrong widths,
+   missing/extra field) made scatter/gather transpose against the wrong byte
+   offsets, which is silently corrupted data and not an error. That failure mode
+   is now unreachable — there is no longer a second description of the layout to
+   disagree with the first.
+
+   [ir_fields = None] means "no derivable flat-scalar layout", which the
+   [custom_type] doc requires consumers to read as "no SoA". The only producer
+   that sets it is the variant deriver, and [Soa.plan] rejects a non-flat-record
+   anyway, so this refuses exactly the element types SoA could never represent. *)
+let create (custom : 'a Vector.custom_type) (length : int) : 'a t =
+  let fields =
+    match custom.Vector.ir_fields with
+    | Some fields -> fields
+    | None ->
+        raise
+          (Soa.Unsupported
+             (Printf.sprintf
+                "element type %S has no derivable flat-record layout \
+                 (custom_type.ir_fields is None), so it cannot be stored as \
+                 Structure-of-Arrays"
+                custom.Vector.name))
+  in
   let plan = Soa.plan ~name:custom.Vector.name fields in
   let aos = Vector.create_custom custom length in
   let leaves =
