@@ -833,6 +833,72 @@ let check_transparent dev n =
    That is tracked as backlog-172 and is not this case's subject; asserting the
    non-PTX arm here would pin a red on an unrelated gap. When 172 lands, drop the
    [is_ptx] guard — the assertion below needs no other change. *)
+(* TWO launches on ONE vector, with different host data in between (H5,
+   backlog-181). This is the case no existing test constructs — every other one
+   allocates a fresh vector — and that is exactly why the defect was invisible to
+   a green suite rather than merely untested.
+
+   [Soa_vector.scatter] writes each leaf's host buffer through a raw ctypes
+   pointer, which does no location bookkeeping. After the first launch a leaf
+   sits at [Both dev], and [Transfer.to_device] short-circuits that state
+   ("skip (Both)") — so the second launch ran against the FIRST launch's device
+   data. Silent, and with no user workaround.
+
+   The assertion that matters is the SECOND launch's: the first would pass either
+   way. And the two rounds' inputs must not be scalar multiples of each other,
+   or a stale-input result could coincide with a correct one. Round 1 doubles
+   y = i+1; round 2 starts from y = 1000-i, so a stale second round yields
+   4*(i+1) and a correct one 2*(1000-i) — never equal for i in range. *)
+let check_relaunch dev n =
+  let threads = min 128 n in
+  let block = dims threads and grid = dims ((n + threads - 1) / threads) in
+  let sv = Soa_vector.create_transparent point3d_custom n in
+  let ir = ir_of p3_scale_y_kernel in
+  let launch () =
+    Sarek.Execute.run_vectors
+      ~device:dev
+      ~ir
+      ~args:[Vec sv; Int n]
+      ~block
+      ~grid
+      () ;
+    Transfer.flush dev
+  in
+  let fill y_of =
+    for i = 0 to n - 1 do
+      Vector.set sv i {x = float_of_int i; y = y_of i; z = float_of_int (n - i)}
+    done
+  in
+  (* Round 1 — passes with or without the fix; it is here to establish the
+     post-launch leaf state that the bug depends on. *)
+  fill (fun i -> float_of_int (i + 1)) ;
+  launch () ;
+  (* Round 2 — the real assertion. [Vector.set] below reads the results back
+     first (auto-sync -> leaf D2H -> gather), so this also exercises the write
+     path landing on top of a device-authoritative vector. *)
+  fill (fun i -> float_of_int (1000 - i)) ;
+  launch () ;
+  let ok = ref true in
+  for i = 0 to n - 1 do
+    let want = float_of_int (1000 - i) *. 2.0 in
+    let got = (Vector.get sv i).y in
+    if Float.abs (got -. want) > 1e-3 then begin
+      if !ok then
+        Printf.printf
+          "  relaunch mismatch @%d: got=%g want=%g (stale would be %g)\n%!"
+          i
+          got
+          want
+          (float_of_int (i + 1) *. 4.0) ;
+      ok := false
+    end
+  done ;
+  Printf.printf
+    "  %-56s %s\n%!"
+    "second launch sees the second host write"
+    (if !ok then "OK" else "FAILED") ;
+  !ok
+
 let check_transparent_roundtrip dev n =
   let threads = min 128 n in
   let block = dims threads and grid = dims ((n + threads - 1) / threads) in
@@ -1069,7 +1135,11 @@ let () =
       (* Transparent OUTPUT read-back. PTX-gated — see the case's header for why
          the non-PTX arm is blocked on backlog-172 rather than omitted. *)
       if is_ptx dev then begin
-        if not (check_transparent_roundtrip dev n) then ok := false
+        if not (check_transparent_roundtrip dev n) then ok := false ;
+        (* H5 (backlog-181): relaunch on the SAME vector. PTX-gated for the same
+           reason as the case above — `v.(i).f <- e` is blocked on the two CPU
+           backends until backlog-172 lands. *)
+        if not (check_relaunch dev n) then ok := false
       end
       else
         Printf.printf
