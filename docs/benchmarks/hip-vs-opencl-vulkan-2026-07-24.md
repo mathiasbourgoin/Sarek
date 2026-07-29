@@ -7,7 +7,7 @@
 
 | | |
 |---|---|
-| Host | tartarus (AMD Ryzen 9 7950X, 16-core) |
+| Host | AMD Ryzen 9 7950X, 16-core |
 | Discrete GPU (device under test) | AMD Radeon RX 7900 XTX — gfx1100 / Navi31 |
 | iGPU (present, **not** the comparison target) | Ryzen 9 7950X integrated (gfx1036 / Raphael) |
 | HIP backend | ROCm 7.2.4 (hipModuleLaunchKernel path) |

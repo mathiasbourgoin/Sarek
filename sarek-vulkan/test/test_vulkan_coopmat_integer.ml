@@ -349,8 +349,8 @@ let test_negative_device_refuses () =
       (* But UNOBSERVABLE is not VIOLATED. On a host where no device advertises
          the extension at all, this control cannot be satisfied by any correct
          implementation, so asserting it reports a hardware inventory as a code
-         defect. Measured on echydna (GTX 1070 Max-Q + Intel UHD 630, neither of
-         which supports VK_KHR_cooperative_matrix): the two refusal arms passed
+         defect. Measured on a host whose only GPUs were a GTX 1070 Max-Q and an
+         Intel UHD 630, neither of which supports VK_KHR_cooperative_matrix: the two refusal arms passed
          and this line failed, taking `dune test` to exit 1. It is green on the
          dev box only because the RX 7900 XTX (RDNA3) does support it — so the
          suite's verdict was a property of the machine, not of the code.

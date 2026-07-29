@@ -200,7 +200,7 @@ The verification bar for a width on this project is bit-exact agreement between
 the interpreter and a real device. For bf16 on this host:
 
 - **CUDA** — `__nv_bfloat16` needs sm_80. There is no NVIDIA device on this box,
-  and echydna is sm_61. `nvrtc` would compile it host-side, but a compile is not
+  and the only NVIDIA GPU reachable from it is sm_61 (GTX 1070 Max-Q). `nvrtc` would compile it host-side, but a compile is not
   the agreement gate.
 - **HIP** — gfx1100 has bf16 in its ISA and `hiprtc` is available, so this is the
   one plausible backend. But CUDA and HIP **share `Sarek_ir_cuda.ml` verbatim**,

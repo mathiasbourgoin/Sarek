@@ -879,8 +879,8 @@ refusal before slice 3.
 | **2** | `shaderFloat16` + driver-identity + capability plumbing | the gate can be keyed on a driver, not a device name | local, both devices | no | **DONE 2026-07-27** — plus the coopmat capability query and the fragment type of slice 4b |
 | **3** | GLSL scalar f16, allowlisted | Sarek-*generated* f16 shaders meet the contract | RX 7900 XTX (local) | **yes**, on an allowlist | open |
 | **4** | backlog-62 Vulkan coopmat, f16×f16→f32 | the tensor-core path, end to end | RX 7900 XTX (local) | yes (new capability) | **4a/4c DONE for the INTEGER configurations, 2026-07-27 — see below. The f16 half is untouched and 4a's numeric contract is still unmeasured.** |
-| **5** | backlog-63 Metal — **scalar f16 first** | the Metal row of §2 | ladon (M4) | no | **DONE 2026-07-27 — strict, 0/63488** |
-| **6** | backlog-63 Metal `simdgroup_matrix` | the Apple tensor-core path | ladon (M4) | yes | **DONE 2026-07-27 — availability + numerics; no integer path** |
+| **5** | backlog-63 Metal — **scalar f16 first** | the Metal row of §2 | Apple M4 | no | **DONE 2026-07-27 — strict, 0/63488** |
+| **6** | backlog-63 Metal `simdgroup_matrix` | the Apple tensor-core path | Apple M4 | yes | **DONE 2026-07-27 — availability + numerics; no integer path** |
 
 ### Slice 0 — make the contract fail-able (host-only, lands first)
 
@@ -1345,7 +1345,7 @@ and needs nothing from the DSL:
 ### Slices 5 and 6 — backlog-63, Metal — **DONE, 2026-07-27**
 
 Both were unschedulable pending access to an Apple GPU. Access was granted, the
-probes were run on ladon, and both slices are complete. Recorded in
+probes were run on an Apple M4, and both slices are complete. Recorded in
 `fp-contraction-policy.md` §10.14 and §10.15; the rows are in §2 above.
 
 - **Slice 5 — scalar f16 on Metal. Done: it does not fuse.** 0 / 63488 from
@@ -1400,7 +1400,7 @@ probes were run on ladon, and both slices are complete. Recorded in
 > swept — nothing is claimed about what it computes. It is the obvious cheap
 > extension of slice 6 and needs no new hardware access.
 
-**Ladon usage: requested, granted, used.** Two standalone probe binaries were
+**Apple M4 access: requested, granted, used.** Two standalone probe binaries were
 built and run in a scratch directory under `/tmp`; nothing installed, no settings
 changed, no working tree touched. The absence of Xcode (Command Line Tools only,
 so no offline `metal` compiler) turned out not to matter —
@@ -1417,7 +1417,7 @@ gate is a separate slice.
 
 ### Hardware this plan does not have
 
-- ~~**Apple GPU** — ladon, permission needed. Blocks slices 5–6 entirely.~~
+- ~~**Apple GPU** — an Apple M4 machine, permission needed. Blocks slices 5–6 entirely.~~
   **Resolved 2026-07-27**: access granted, slices 5 and 6 both executed on an
   Apple M4. What Metal still lacks is not hardware but coverage — the 20-shape
   catalogue, a `bfloat` sweep, and a codegen-side gate.
