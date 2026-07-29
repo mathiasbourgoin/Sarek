@@ -115,6 +115,24 @@ a single custom-vector argument.)
 The emitter is ready; what remains is making SoA reachable without the
 codegen-level `~soa_params` knob:
 
+> **STATUS (2026-07-29) — partly superseded.** The host and launch halves were
+> since built, but NOT by the design sketched below. `Spoc_core.Soa_vector` layers
+> SoA storage *above* `Vector` + `Soa` (an AoS vector as source of truth + N
+> width-matched scalar leaf vectors) instead of adding a `host_storage` GADT
+> constructor, and `Sarek.Soa_launch.run_soa` is a separate CUDA/PTX-only entry
+> point instead of generalising `Execute.run`. That deliberately avoided the ~25
+> forced GADT match sites and the 1-buffer-per-device table, at the cost of not
+> being *transparent*. So what actually remains of this item is the transparency
+> itself — `Vector.create ~layout:SoA` and auto-dispatch from the generic
+> `Execute.run` — and the bullets below describe the design that would be needed
+> for it, not work that is wholly outstanding. Read them as the plan for
+> transparency, not as a to-do list of missing plumbing.
+>
+> Separately shipped on the launch path: the `~fields` precondition is now
+> ENFORCED there (PR #366) rather than documented — `run_soa` compares the
+> declared plan against the kernel's authoritative `TRecord` and refuses a
+> mismatch instead of transposing silently-corrupt data.
+
 - **Host storage variant** (`Spoc_core_base.host_storage`, GADT at
   `sarek/core_base/Spoc_core_base.ml:111-120`): add `Custom_storage_soa` holding
   the AoS host buffer (keep host `get`/`set` and the PPX accessors **unchanged**
@@ -144,6 +162,19 @@ bulk of the SoA cost; it was descoped here so the emitter could ship complete
 and proven. When it lands, extend `test_soa_emitter_equiv` to drive SoA through
 `Vector.create ~layout:SoA` + `run_vectors`, and add the i32/i64 device rows.
 
+> **✅ CLOSED (2026-07-29) — was: PRECONDITION, generated param-name namespace.**
+> Option (a) shipped in `63ab6df1`: the emitter now mangles leaves as
+> `param_sarek_soa_<vec>_<field>`, inside the already-reserved `sarek_`
+> namespace, so it cannot alias a user name. The requested regression test exists
+> — `test_soa_param_name_collision_safe` in `sarek/tests/unit/test_ptx_snapshot.ml`
+> — and was re-verified as a real gate rather than a passing formality: reverting
+> the mangle to the old infix form turns that case red (5 failures), restoring it
+> returns 64/64. The collision is one-directional and fully closed, because a user
+> param cannot itself be `sarek_`-prefixed (#258 reserves it).
+>
+> Do NOT redo this as part of Tier 1c. The original text is kept below because it
+> records why the hazard was real and why (a) was chosen over (b).
+>
 > **PRECONDITION — generated param-name namespace (latent today, MUST fix in
 > Tier 1c).** The emitter mangles each SoA leaf param as
 > `param_<vec>_soa_<field>` (`Sarek_ir_ptx_kernel.emit_params`). This can
