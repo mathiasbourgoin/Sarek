@@ -1482,3 +1482,34 @@
  (alias runtest)
  (action
   (run %{dep:test_helper_scoping.exe})))
+
+; A helper parameter has ONE identity (backlog-158). hf_params gave each param
+; its POSITIONAL index as var_id while every use site carried the typer's id, and
+; the interpreter resolves by id before name — so with a module constant ahead of
+; the helper (which puts the ids inside the 1 <= c <= n-1 failure window) every
+; reference was off by one.
+;
+; MUST be its own file: the typer's id counter is global and persists across
+; kernels, so a probe placed after other kernels falls outside the window and
+; passes with and without the fix. That is exactly why the previous probe
+; (test_helper_scoping case D) could not fail — that, and equal arguments.
+; Run with: dune exec sarek/tests/e2e/test_hf_param_identity.exe
+
+(executable
+ (name test_hf_param_identity)
+ (modules test_hf_param_identity)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  sarek_interpreter
+  spoc_core
+  test_helpers
+  unix)
+ (preprocess
+  (pps sarek_ppx)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_hf_param_identity.exe})))
