@@ -14,7 +14,7 @@
     },
     {
       "path": "scripts/check-review-convergence.js",
-      "sha256": "3517b40534bf78d47df46c28a4a39c2a6ec52429640397b413a7460424389b69"
+      "sha256": "352d226650b96897f5910e6f45b15b9cd18a5b1a39e68848b919f6b83a644639"
     },
     {
       "path": "scripts/check-scope-diff.sh",
@@ -105,7 +105,7 @@
   ],
   "local_patches": [
     {
-      "ref": "#102 + F1 — cross-runtime fault attribution",
+      "ref": "#102 + F1 \u2014 cross-runtime fault attribution",
       "summary": "Outcomes carry fault: \"runtime\"|\"caller\"; only a runtime fault may arm the breaker. A nonzero exit is always a runtime fault (F1: a crashed runtime was being blamed on the caller). Adds --emit-contract and xruntime-contract.js.",
       "paths": [
         "scripts/lib/xruntime/xruntime-classify.js",
@@ -153,8 +153,8 @@
       "reapply_on_upgrade": true
     },
     {
-      "ref": "#98 — convergence gate fails closed",
-      "summary": "An under-populated verdict removed the gate’s ability to check anything and exited 0 with violations: [], byte-identical to a real pass. Wires the gate to scripts/lib/review-gate-hardening.js (repo-local, deliberately NOT bundle-owned so an upgrade cannot silently restore the holes), adds --allow-legacy as a RECORDED skip, and reads cross_runtime_findings. Closes D1-D11 plus G3/G5/G13/G14/G15.",
+      "ref": "#98 \u2014 convergence gate fails closed",
+      "summary": "An under-populated verdict removed the gate\u2019s ability to check anything and exited 0 with violations: [], byte-identical to a real pass. Wires the gate to scripts/lib/review-gate-hardening.js (repo-local, deliberately NOT bundle-owned so an upgrade cannot silently restore the holes), adds --allow-legacy as a RECORDED skip, and reads cross_runtime_findings. Closes D1-D11 plus G3/G5/G13/G14/G15.",
       "paths": [
         "scripts/check-review-convergence.js"
       ],
@@ -164,6 +164,21 @@
         "legacy_skip_authorized",
         "--allow-legacy"
       ],
+      "tests": "scripts/check-review-convergence-hardening.test.js",
+      "reapply_on_upgrade": true
+    },
+    {
+      "ref": "backlog-163 \u2014 red_verified provenance",
+      "summary": "checkRedVerifiedProvenance refuses a finding claiming red_verified: true with no `check`. That field is GATE-PRODUCED (emitted in checks[] and merged back by roster-review), so a value without the input that produces it was verified by nothing. Runs over BOTH findings and cross_runtime_findings, and in --static, which is the mode the routing table calls on every resume edge.",
+      "paths": [
+        "scripts/check-review-convergence.js"
+      ],
+      "markers": {
+        "scripts/check-review-convergence.js": [
+          "checkRedVerifiedProvenance",
+          "red-verified-without-check"
+        ]
+      },
       "tests": "scripts/check-review-convergence-hardening.test.js",
       "reapply_on_upgrade": true
     }
