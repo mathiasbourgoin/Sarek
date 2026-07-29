@@ -52,12 +52,39 @@ type ('a, 'b) vector = ('a, 'b) Vector.t
    so a store that overruns in either direction is visible. *)
 type triple = {a : float32; b : float32; c : float32} [@@sarek.type]
 
+(* The SAME record with mutable fields, because Native's pre-fix behaviour was
+   TWO different failures and only this one is silent.
+
+   With immutable fields the old codegen did not compile at all: the emitted
+   setfield produced "The record field b is not mutable" — loud, but
+   misdiagnosed, since the problem was never mutability. That error is what
+   pushed a user to add [mutable], and THEN the store compiled and was silently
+   discarded (point3d in test_soa_emitter_equiv carries exactly that [mutable]
+   with a comment describing it as necessary "to write a leaf in place").
+
+   So the immutable case alone would prove-red as a build failure and never
+   exercise the silent path. Both are pinned, and after the fix [mutable] is not
+   required for either. *)
+type mtriple = {
+  mutable ma : float32;
+  mutable mb : float32;
+  mutable mc : float32;
+}
+[@@sarek.type]
+
 let scale_b =
   snd
     [%kernel
       fun (v : triple vector) (n : int32) ->
         let tid = thread_idx_x + (block_idx_x * block_dim_x) in
         if tid < n then v.(tid).b <- v.(tid).b *. 2.0]
+
+let scale_mb =
+  snd
+    [%kernel
+      fun (v : mtriple vector) (n : int32) ->
+        let tid = thread_idx_x + (block_idx_x * block_dim_x) in
+        if tid < n then v.(tid).mb <- v.(tid).mb *. 2.0]
 
 let ir_of kirc =
   match kirc.Sarek.Kirc_types.body_ir with
@@ -69,16 +96,23 @@ let n = 64
 let orig i =
   {a = float_of_int i; b = float_of_int (i + 1); c = float_of_int (i + 2)}
 
-let run_on (dev : Device.t) : bool =
-  Printf.printf "field-store [%s] %s: %!" dev.Device.framework dev.Device.name ;
-  let v = Vector.create_custom triple_custom n in
-  for i = 0 to n - 1 do
-    Vector.set v i (orig i)
-  done ;
+let morig i =
+  {ma = float_of_int i; mb = float_of_int (i + 1); mc = float_of_int (i + 2)}
+
+(* One checker over both record shapes. [read] returns the three field values in
+   (target, witness1, witness2) order so the assertions below are shape-agnostic
+   and cannot drift apart between the two cases. *)
+let run_case (dev : Device.t) ~(label : string) ~kernel ~make ~read : bool =
+  Printf.printf
+    "field-store %-9s [%s] %s: %!"
+    label
+    dev.Device.framework
+    dev.Device.name ;
+  let v = make () in
   match
     Sarek.Execute.run_vectors
       ~device:dev
-      ~ir:(ir_of scale_b)
+      ~ir:(ir_of kernel)
       ~args:[Vec v; Int n]
       ~block:(Sarek.Execute.dims1d (min 64 n))
       ~grid:(Sarek.Execute.dims1d ((n + 63) / 64))
@@ -95,7 +129,7 @@ let run_on (dev : Device.t) : bool =
       let ok = ref true in
       let reported = ref 0 in
       for i = 0 to n - 1 do
-        let got = Vector.get v i and o = orig i in
+        let tgt, w1, w2 = read v i in
         let bad name got want =
           if Float.abs (got -. want) > 1e-4 then begin
             ok := false ;
@@ -105,12 +139,49 @@ let run_on (dev : Device.t) : bool =
             end
           end
         in
-        bad "b (the store target)" got.b (o.b *. 2.0) ;
-        bad "a (must be untouched)" got.a o.a ;
-        bad "c (must be untouched)" got.c o.c
+        (* The written field doubled; the two witnesses untouched. Checking the
+           witnesses is not padding: a read-modify-write that rebuilt the record
+           from defaults would satisfy the first assertion and destroy the
+           rest. *)
+        bad "target" tgt (float_of_int (i + 1) *. 2.0) ;
+        bad "witness 1 (must be untouched)" w1 (float_of_int i) ;
+        bad "witness 2 (must be untouched)" w2 (float_of_int (i + 2))
       done ;
       if !ok then Printf.printf "OK\n%!" else Printf.printf "\n  FAILED\n%!" ;
       !ok
+
+let run_on (dev : Device.t) : bool =
+  let immutable_ok =
+    run_case
+      dev
+      ~label:"immutable"
+      ~kernel:scale_b
+      ~make:(fun () ->
+        let v = Vector.create_custom triple_custom n in
+        for i = 0 to n - 1 do
+          Vector.set v i (orig i)
+        done ;
+        v)
+      ~read:(fun v i ->
+        let p = Vector.get v i in
+        (p.b, p.a, p.c))
+  in
+  let mutable_ok =
+    run_case
+      dev
+      ~label:"mutable"
+      ~kernel:scale_mb
+      ~make:(fun () ->
+        let v = Vector.create_custom mtriple_custom n in
+        for i = 0 to n - 1 do
+          Vector.set v i (morig i)
+        done ;
+        v)
+      ~read:(fun v i ->
+        let p = Vector.get v i in
+        (p.mb, p.ma, p.mc))
+  in
+  immutable_ok && mutable_ok
 
 let () =
   let devs =
