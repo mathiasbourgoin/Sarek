@@ -43,7 +43,7 @@ Default `runtest` depends on the `unit`, `e2e`, and `codegen_golden` aliases, pl
 
 - Confirmed (known issue, headline finding of the 2026-07-02 audit): the e2e `runtest` alias (`sarek/tests/e2e/dune:147-181`) is build-only — it depends on 32 `.exe` targets with no `(action (run ...))`, so `dune runtest` compiles but never runs any of them. CI's actual e2e execution is `make e2e-fast`, which runs only 5 tests (`test_vector_add`, `test_matrix_mul`, `test_reduce`, `test_transpose`, `test_math_intrinsics`; `Makefile:247-262`). `test_scan`, `test_sort`, `test_histogram`, `test_convolution`, `test_stencil`, `test_nbody_ppx`, `test_ray_ppx`, and the rest of the 32 never execute in CI.
 - Confirmed: `sarek/tests/e2e/dune:68-69`, `sarek/tests/e2e/dune:105-106`, and `sarek/tests/e2e/dune:160-161` disable cross-module type and registered-constant e2e tests due to PPX registration issues.
-- Stale (corrected 2026-07-02): the negative suite is not merely comment-documented — `make test_negative` (`Makefile:82-95`) does grep the built output for the exact expected message on 6 of the 8 documented cases (all but `test_warp_diverged` and `test_convention_kernel_fail`, see `kb/sarek/tests/negative.md`). The real gap is narrower: those 2 of 8 cases are never invoked by any Makefile target, and the whole negative suite (`--profile=negative`) is absent from CI (`.github/workflows/ci.yml` has no negative/`test_negative` step).
+- Stale, twice over (re-measured 2026-07-29): the "6 of 8" and "2 of 8 never invoked" figures, and the "absent from CI" claim, are all superseded. `make test_negative` now builds and greps for the exact expected message on **all 29** declared cases — measured by set-comparing the `(name neg_*)` stanzas in `sarek/tests/negative/dune` against the `neg_*` targets the recipe builds; the two sets are equal. CI runs the target (`.github/workflows/ci.yml`, "Run negative tests"). See `kb/sarek/tests/negative.md` for the per-case detail.
 - Confirmed: `sarek/tests/new_runtime/` is not wired into top-level default `runtest` in `sarek/tests/dune:1-15`.
 - Confirmed: `sarek/tests/native/dune:1-2` has no active executables.
 
@@ -52,7 +52,7 @@ Default `runtest` depends on the `unit`, `e2e`, and `codegen_golden` aliases, pl
 - E2E runtime cost is high and backend-dependent; failures may be environment-specific.
 - Disabled e2e tests can hide regressions in registration semantics.
 - (Retired 2026-07-25, task #78: "common neutral-kernel generators still mention old camlp4 syntax and may become stale if not consumed regularly" — the generators were never consumed and are deleted.)
-- Negative compile tests that only expect failure can pass for the wrong reason (still true for the 2 of 8 cases that assert nothing — see `kb/sarek/tests/negative.md`).
+- Negative compile tests that only expect failure can pass for the wrong reason. No longer true of any declared case — every one asserts an exact message, and `scripts/check-negative-case-coverage.sh` (KB-GATE-NEGATIVE-CASE-COVERAGE) fails CI if a case is declared without one, which is the hole that made this risk real: a case with no assertion is never built, and a negative case's absence is indistinguishable from its success. What REMAINS true is weaker and unmechanizable — a coincidental substring match, and `test_superstep_diverged`'s deliberate non-blocking KNOWN-ISSUE fallback (see `kb/sarek/tests/negative.md`).
 - The e2e `runtest` alias's build-only nature (above) means CI green on `dune runtest` says nothing about runtime correctness for 27 of the 32 aliased e2e executables.
 
 ## Related Tests
@@ -67,7 +67,7 @@ Default `runtest` depends on the `unit`, `e2e`, and `codegen_golden` aliases, pl
 ## Missing Tests
 
 - Top-level alias or CI job for `sarek/tests/new_runtime`.
-- Exact-output negative test harness for `test_warp_diverged` and `test_convention_kernel_fail` (the 2 of 8 cases with no grep check anywhere), and CI wiring for the negative suite as a whole.
+- (Resolved) Exact-output checks for `test_warp_diverged` and `test_convention_kernel_fail`, and CI wiring for the negative suite, both exist. Still missing: negative cases for indirect convergence false negatives, duplicate fields/constructors, and memory-space mismatches (listed in `kb/sarek/tests/negative.md`).
 - Reactivation or replacement of disabled registration e2e tests.
 - Native directory tests or removal of the placeholder.
 - Actual `run` actions on the e2e `runtest` alias so `dune runtest` executes what it builds.

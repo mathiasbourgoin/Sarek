@@ -351,6 +351,15 @@ jobs:
               eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
               make test_negative'
 
+      # Ordered AFTER test_negative on purpose. This does not run any negative
+      # case; it checks that every case DECLARED in sarek/tests/negative/dune is
+      # actually asserted by the test_negative recipe. A case with no assertion
+      # is never built, so it never runs — and since a negative case is
+      # "expected to fail", its absence is indistinguishable from its success.
+      # Needs no toolchain, so it runs on the host rather than in the image.
+      - name: Check every negative case is asserted (backlog-165)
+        run: ./scripts/check-negative-case-coverage.sh
+
       - name: Run coverage
         continue-on-error: true
         run: |
