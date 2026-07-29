@@ -128,6 +128,23 @@ module Make (Ops : CUSTOM_OPS) : sig
       }
         -> ('a, unit) host_storage
 
+  (** Opt-in Structure-of-Arrays binding for a custom (flat-record) vector
+      (backlog-54); present iff the vector was created with [~layout:SoA].
+
+      Deliberately closures and plain ints rather than a [Soa.plan]. This
+      library is FFI-free and also builds as [.bc.js]
+      ([sarek/core/ffi_free_gate] enforces both), while [Soa]/[Soa_vector] use
+      [Ctypes] and live above it — so the transpose crosses down as behaviour,
+      not as types. See the implementation for the full rationale, including why
+      this is a record field instead of the [host_storage] constructor the Tier
+      1b handoff proposed. *)
+  and soa_binding = {
+    soa_num_leaves : int;
+    soa_aos_stride : int;
+    soa_scatter : unit -> unit;
+    soa_gather : unit -> unit;
+  }
+
   and ('a, 'b) t = {
     host : ('a, 'b) host_storage;
     device_buffers : (int, Ops.device_buf) Hashtbl.t;
@@ -136,6 +153,10 @@ module Make (Ops : CUSTOM_OPS) : sig
     mutable location : location;
     mutable auto_sync : bool;
     id : int;
+    mutable soa : soa_binding option;
+        (** [None] for every vector but one created with [~layout:SoA]. Read
+            only by the launch path; every host-side operation ignores it, which
+            is why [get]/[set] and the PPX accessors are unchanged. *)
   }
 
   (** {2 Kind helpers — pure} *)
