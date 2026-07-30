@@ -380,6 +380,17 @@ jobs:
       - name: Check the tvar id space has one allocator
         run: ./scripts/check-tvar-id-allocator.sh
 
+      # Two documentation gates, both host-side (no toolchain). They exist
+      # because the things they check are invisible to the build: a badge is an
+      # image, so a URL naming the wrong repository still renders; and a path in
+      # a comment is read by nobody, so a citation into an unpublished directory
+      # survives every sweep. Both were live on main until backlog-188.
+      - name: Check README CI links name this repository (backlog-188)
+        run: ./scripts/check-readme-repo-links.sh
+
+      - name: Check cited paths resolve to tracked files (backlog-188)
+        run: ./scripts/check-cited-paths-exist.sh
+
       - name: Run coverage
         continue-on-error: true
         run: |

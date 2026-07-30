@@ -31,20 +31,26 @@ if [ ! -f "$README" ]; then
   exit 2
 fi
 
-remote="$(git config --get remote.origin.url 2>/dev/null || true)"
-if [ -z "$remote" ]; then
-  echo "check-readme-repo-links: no remote.origin.url — cannot derive the expected repository" >&2
-  exit 2
+# GITHUB_REPOSITORY is already owner/repo and is what Actions considers this
+# repository to be, so prefer it when running in CI; fall back to the remote
+# for a local run. Either way the expected name is DERIVED, never written here.
+if [ -n "${GITHUB_REPOSITORY:-}" ]; then
+  slug="$GITHUB_REPOSITORY"
+else
+  remote="$(git config --get remote.origin.url 2>/dev/null || true)"
+  if [ -z "$remote" ]; then
+    echo "check-readme-repo-links: no GITHUB_REPOSITORY and no remote.origin.url — cannot derive the expected repository" >&2
+    exit 2
+  fi
+  # git@github.com:owner/repo.git and https://github.com/owner/repo(.git) both
+  # reduce to owner/repo.
+  slug="$(printf '%s' "$remote" \
+    | sed -E 's#^git@github\.com:##; s#^https?://github\.com/##; s#\.git$##')"
 fi
-
-# git@github.com:owner/repo.git and https://github.com/owner/repo(.git) both
-# reduce to owner/repo.
-slug="$(printf '%s' "$remote" \
-  | sed -E 's#^git@github\.com:##; s#^https?://github\.com/##; s#\.git$##')"
 case "$slug" in
   */*) : ;;
   *)
-    echo "check-readme-repo-links: could not parse owner/repo out of remote '$remote'" >&2
+    echo "check-readme-repo-links: could not parse owner/repo out of '$slug'" >&2
     exit 2
     ;;
 esac
