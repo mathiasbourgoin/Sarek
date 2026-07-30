@@ -41,6 +41,38 @@
  *   - zero resolved findings                    -> exit 0, but SAYS so, so a
  *                                                  clean line cannot be read as
  *                                                  "the findings were checked"
+ *   - a PAGED read that could not be completed  -> exit 2 (see below)
+ *
+ * PAGINATION, which was a live hole rather than a hypothetical one
+ *
+ * `reviewThreads(first:100)` with no cursor loop silently truncates: a finding
+ * that lives on page 2 is invisible, and the gate then prints NOTHING TO VERIFY
+ * or a clean pass while a real unexcused finding sits there. That is precisely
+ * the "verified nothing that reads as verified something" shape the FAIL-CLOSED
+ * list above exists to forbid, so this now follows pageInfo.hasNextPage /
+ * endCursor with `after:` until the connection is exhausted, and refuses (exit 2)
+ * if the walk cannot COMPLETE — a page that errors, a missing or malformed
+ * pageInfo, hasNextPage:true with no endCursor to follow, or the page budget
+ * being hit. A partial read must never be able to look like a clean one.
+ *
+ * Measured, not assumed, on the same axis for the changed-file list:
+ * `gh pr view <pr> --json files` returned exactly 100 paths for PR #388, whose
+ * real diff is 294 files; `gh api .../pulls/<pr>/files --paginate` returned all
+ * 294. The truncated list is the DANGEROUS direction here — dropping the one
+ * test path in the tail turns an accepted PR into a REFUSED one, but worse, it
+ * makes the verdict depend on where in the diff a file happens to sort. So the
+ * file list comes from the paginated REST endpoint.
+ *
+ * HOW A FIXTURE EXPRESSES PAGES (offline `--threads FILE`)
+ *
+ * It does not, deliberately. A fixture is ONE GraphQL document, i.e. one page,
+ * and the offline path cannot fetch a second one — there is nothing to fetch
+ * from. So: the fixture must carry a pageInfo (a real response always does; its
+ * absence means the document is hand-rolled or the schema moved, and either way
+ * nothing can be concluded), and if that pageInfo says hasNextPage:true the
+ * offline path refuses with exit 2 rather than reporting on the visible page.
+ * Multi-page ACCUMULATION is therefore tested through the online path with a
+ * stub `gh` on PATH, not through the fixture.
  *
  * Usage:
  *   node scripts/check-review-finding-tests.js <pr-number> [--repo owner/name]
@@ -100,46 +132,134 @@ function parseArgs(argv) {
   return o;
 }
 
-/** Resolved CodeRabbit findings, as [{id, path}]. Fails closed on no data. */
-function fetchThreads(opt) {
+/* 100 threads per page. The budget exists so a cursor that never advances ends
+   as a REFUSAL rather than as an unbounded loop; 50 pages is 5000 threads, far
+   past any real review, so hitting it means something is wrong, not that the PR
+   is unusually chatty. */
+const THREADS_PER_PAGE = 100;
+const MAX_THREAD_PAGES = 50;
+
+/** Refuse, naming the page, because a partial read is a read of nothing. */
+function refusePartial(msg) {
+  console.error(
+    `ERROR: the review-thread pagination could not be completed, so NOTHING was ` +
+      `verified: ${msg}`
+  );
+  console.error(
+    "A partially-read thread list is not a clean one: a resolved finding on an " +
+      "unread page would be invisible here and the gate would pass. Refusing to " +
+      "report a verdict."
+  );
+  process.exit(2);
+}
+
+/** One page of the reviewThreads connection, as a parsed document. */
+function fetchThreadPage(opt, after) {
+  const [owner, name] = opt.repo.split("/");
+  if (!owner || !name) usage(`--repo must be owner/name, got ${opt.repo}`);
+  const cursor = after ? `,after:"${after}"` : "";
+  // comments(first:1) is INTENTIONAL and is not the same bug as the thread
+  // connection was: only the FIRST comment of a thread is CodeRabbit's finding
+  // body, which is where the author login and the cr-comment id live. Replies
+  // are human discussion and are never read, so there is nothing on a second
+  // page of comments for this gate to miss. Do not "fix" it into a cursor loop.
+  const q =
+    `{repository(owner:"${owner}",name:"${name}"){pullRequest(number:${opt.pr})` +
+    `{reviewThreads(first:${THREADS_PER_PAGE}${cursor})` +
+    `{pageInfo{hasNextPage endCursor}` +
+    `nodes{isResolved path resolvedBy{login} comments(first:1){nodes{author{login} body}}}}}}}`;
   let raw;
-  if (opt.threads) {
-    raw = fs.readFileSync(opt.threads, "utf8");
-  } else {
-    const [owner, name] = opt.repo.split("/");
-    if (!owner || !name) usage(`--repo must be owner/name, got ${opt.repo}`);
-    const q = `{repository(owner:"${owner}",name:"${name}"){pullRequest(number:${opt.pr}){reviewThreads(first:100){nodes{isResolved path resolvedBy{login} comments(first:1){nodes{author{login} body}}}}}}}`;
-    try {
-      raw = execFileSync("gh", ["api", "graphql", "-f", `query=${q}`], {
-        encoding: "utf8",
-        maxBuffer: 64 * 1024 * 1024,
-      });
-    } catch (e) {
-      console.error(
-        `ERROR: the GraphQL query failed, so NOTHING was verified: ${
-          e.stderr || e.message
-        }`
-      );
-      process.exit(2);
-    }
-  }
-  let doc;
   try {
-    doc = JSON.parse(raw);
+    raw = execFileSync("gh", ["api", "graphql", "-f", `query=${q}`], {
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  } catch (e) {
+    if (after) refusePartial(`the query for the page after ${after} failed: ${e.stderr || e.message}`);
+    console.error(
+      `ERROR: the GraphQL query failed, so NOTHING was verified: ${
+        e.stderr || e.message
+      }`
+    );
+    process.exit(2);
+  }
+  return parseThreadDoc(raw);
+}
+
+function parseThreadDoc(raw) {
+  try {
+    return JSON.parse(raw);
   } catch (e) {
     console.error(`ERROR: thread data is not JSON, so nothing was verified: ${e.message}`);
     process.exit(2);
   }
-  const nodes = doc?.data?.repository?.pullRequest?.reviewThreads?.nodes;
-  if (!Array.isArray(nodes)) {
-    // The empty-input trap: an auth failure or a schema change gives a document
-    // with no nodes array, which must not read as "no findings".
-    console.error(
-      "ERROR: no reviewThreads array in the response — auth failure, wrong PR, " +
-        "or a schema change. Refusing to report a verdict."
-    );
-    process.exit(2);
+}
+
+/**
+ * Every reviewThreads node on the PR, accumulated across pages.
+ *
+ * The empty-input trap is applied PER PAGE: a page whose nodes are not an array
+ * is an auth failure or a schema change, and must not read as "the connection
+ * ended here".
+ */
+function fetchThreadNodes(opt) {
+  const all = [];
+  let after = null;
+  for (let page = 1; page <= MAX_THREAD_PAGES; page++) {
+    const doc = opt.threads
+      ? parseThreadDoc(fs.readFileSync(opt.threads, "utf8"))
+      : fetchThreadPage(opt, after);
+    const conn = doc?.data?.repository?.pullRequest?.reviewThreads;
+    const nodes = conn?.nodes;
+    if (!Array.isArray(nodes)) {
+      // The empty-input trap: an auth failure or a schema change gives a document
+      // with no nodes array, which must not read as "no findings".
+      console.error(
+        "ERROR: no reviewThreads array in the response — auth failure, wrong PR, " +
+          "or a schema change. Refusing to report a verdict." +
+          (page > 1 ? ` (on page ${page})` : "")
+      );
+      process.exit(2);
+    }
+    all.push(...nodes);
+
+    const pi = conn.pageInfo;
+    if (!pi || typeof pi !== "object" || typeof pi.hasNextPage !== "boolean")
+      refusePartial(
+        `page ${page} carries no usable pageInfo{hasNextPage endCursor}. Without it ` +
+          `there is no way to tell a complete connection from a truncated one` +
+          (opt.threads ? ", and a hand-rolled fixture must not be trusted to be complete" : "")
+      );
+    if (!pi.hasNextPage) return all;
+    if (opt.threads)
+      refusePartial(
+        `the offline fixture declares hasNextPage:true, and the offline path has ` +
+          `nowhere to fetch page 2 from — a fixture is one GraphQL document, i.e. ` +
+          `one page. Use a fixture whose connection is complete, or exercise ` +
+          `multi-page accumulation through the live path`
+      );
+    if (typeof pi.endCursor !== "string" || pi.endCursor === "")
+      refusePartial(
+        `page ${page} says hasNextPage:true but gives no endCursor to follow, so ` +
+          `the remaining threads are unreachable`
+      );
+    if (pi.endCursor === after)
+      refusePartial(
+        `page ${page} returned the same endCursor as the previous page (${after}), ` +
+          `so the walk is not advancing`
+      );
+    after = pi.endCursor;
   }
+  refusePartial(
+    `the page budget of ${MAX_THREAD_PAGES} pages (${
+      MAX_THREAD_PAGES * THREADS_PER_PAGE
+    } threads) was exhausted and the connection still reports more`
+  );
+}
+
+/** Resolved CodeRabbit findings, as [{id, path}]. Fails closed on no data. */
+function fetchThreads(opt) {
+  const nodes = fetchThreadNodes(opt);
   const findings = [];
   for (const n of nodes) {
     if (!n || n.isResolved !== true) continue;
@@ -160,10 +280,32 @@ function fetchFiles(opt) {
     const raw = fs.readFileSync(opt.files, "utf8");
     return raw.split("\n").map((s) => s.trim()).filter(Boolean);
   }
+  // NOT `gh pr view --json files`: that connection is capped at 100 and gives no
+  // signal that it truncated. MEASURED on PR #388 (294 changed files) —
+  // `gh pr view 388 --json files --jq '.files[].path'` printed 100 paths, while
+  // `gh api .../pulls/388/files --paginate --jq '.[].filename'` printed all 294,
+  // and the 294 are a strict superset of the 100. --paginate walks the Link header
+  // to exhaustion and exits nonzero if any page fails, which is caught below, so a
+  // short read cannot be mistaken for the whole diff.
+  //
+  // `.filename`, not `.path`: the REST representation of a changed file names the
+  // field `filename` (only the GraphQL/`gh pr view` shape calls it `path`). Worth
+  // stating because getting it wrong is SILENT in the counting sense — `.[].path`
+  // over the REST payload yields one empty line per file, so a naive `wc -l` still
+  // reports 294 while every path is blank. What caught it was the zero-files trap
+  // below, which is the reason that trap is there.
   try {
+    const [owner, name] = opt.repo.split("/");
+    if (!owner || !name) usage(`--repo must be owner/name, got ${opt.repo}`);
     const out = execFileSync(
       "gh",
-      ["pr", "view", opt.pr, "--repo", opt.repo, "--json", "files", "--jq", ".files[].path"],
+      [
+        "api",
+        `repos/${owner}/${name}/pulls/${opt.pr}/files`,
+        "--paginate",
+        "--jq",
+        ".[].filename",
+      ],
       { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
     );
     const files = out.split("\n").map((s) => s.trim()).filter(Boolean);

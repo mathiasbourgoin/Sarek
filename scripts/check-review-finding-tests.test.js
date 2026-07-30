@@ -3,11 +3,13 @@
 /**
  * Covering test for check-review-finding-tests.js (backlog-164).
  *
- * Offline throughout: the subject accepts --threads/--files so every case is a
- * fixture, and CI needs no network and no GitHub token. The live path is
- * exercised by hand against real PRs; what is pinned here is the DECISION table,
- * including every fail-closed branch — because "verified nothing" is the failure
- * mode this gate is most likely to have.
+ * No network and no GitHub token, throughout. Most cases go through the subject's
+ * own --threads/--files fixture path; the PAGINATION cases cannot, because a
+ * fixture is one GraphQL document and paging is by definition about the second
+ * one, so those drive the live cursor loop with a stub `gh` on PATH (see stubGh).
+ * What is pinned here is the DECISION table, including every fail-closed branch —
+ * because "verified nothing" is the failure mode this gate is most likely to have,
+ * and a truncated read that looks clean is exactly that failure.
  */
 
 const fs = require("fs");
@@ -55,13 +57,22 @@ function write(name, content) {
   return p;
 }
 
-/** A GraphQL-shaped document with the given threads. */
-function threadsDoc(threads) {
+/**
+ * A GraphQL-shaped document with the given threads.
+ *
+ * `pageInfo` defaults to a COMPLETE connection. It is present by default because
+ * the subject requires it: a real response always carries it, so its absence
+ * means the document is hand-rolled or the schema moved, and in neither case can
+ * completeness be concluded. Pass `pageInfo: null` to omit it entirely, or an
+ * explicit object to declare truncation.
+ */
+function threadsDoc(threads, pageInfo = { hasNextPage: false, endCursor: null }) {
   return JSON.stringify({
     data: {
       repository: {
         pullRequest: {
           reviewThreads: {
+            ...(pageInfo === null ? {} : { pageInfo }),
             nodes: threads.map((t) => ({
               isResolved: t.resolved !== false,
               path: t.path || "src/thing.ml",
@@ -84,9 +95,50 @@ function threadsDoc(threads) {
   });
 }
 
-function run(args) {
-  const r = spawnSync("node", [SUBJECT, ...args], { encoding: "utf8" });
+function run(args, extraPath) {
+  const env = extraPath
+    ? { ...process.env, PATH: `${extraPath}${path.delimiter}${process.env.PATH}` }
+    : process.env;
+  const r = spawnSync("node", [SUBJECT, ...args], { encoding: "utf8", env });
   return { status: r.status, out: (r.stdout || "") + (r.stderr || "") };
+}
+
+/**
+ * A directory holding a stub `gh` that the subject will find on PATH.
+ *
+ * Multi-page accumulation cannot be expressed as a fixture — a fixture is ONE
+ * GraphQL document, i.e. one page, and the offline path has nowhere to fetch a
+ * second from (which is itself a case below). So the paging cases drive the LIVE
+ * code path with a fake `gh`: same execFileSync, same cursor loop, no network.
+ * `page2` is the shell body used when the query carries `after:`, so a test can
+ * make page 2 return threads, return junk, or fail outright.
+ */
+function stubGh(name, { page1, page2, files }) {
+  const dir = path.join(TMP, name);
+  fs.mkdirSync(dir, { recursive: true });
+  // A JSON document contains no single quote, so single-quoting it is safe and
+  // keeps the whole branch on one line — a heredoc cannot be used inside a `case`
+  // arm without its terminator colliding with the `;;`.
+  const emit = (body) =>
+    body.startsWith("!")
+      ? body.slice(1) // a raw shell fragment: let the stub fail or misbehave
+      : `printf '%s' '${body}'`;
+  fs.writeFileSync(
+    path.join(dir, "gh"),
+    `#!/bin/sh
+case "$*" in
+  *graphql*)
+    case "$*" in
+      *'after:'*) ${emit(page2)} ;;
+      *) ${emit(page1)} ;;
+    esac
+    ;;
+  *) printf '%s\\n' ${files.map((f) => `'${f}'`).join(" ")} ;;
+esac
+`,
+    { mode: 0o755 }
+  );
+  return dir;
 }
 
 console.log("check-review-finding-tests.js covering test");
@@ -187,6 +239,157 @@ check("a non-CodeRabbit thread is out of scope (exit 0)", r.status, 0);
 r = run(["1", "--threads", write("t-unres.json", threadsDoc([{ id: "eee555", resolved: false }])),
          "--files", noTests, "--escapes", emptyEsc]);
 check("an UNRESOLVED finding is out of scope (exit 0)", r.status, 0);
+
+// ── pagination ───────────────────────────────────────────────────────────────
+// The hole this section exists for: reviewThreads(first:100) with no cursor loop
+// silently truncates, so a resolved finding on page 2 was invisible and the gate
+// printed NOTHING TO VERIFY over it. Every case here fails against the
+// single-page version.
+const NO_TEST_FILES = ["src/a.ml", "README.md"];
+
+// Accumulation. The ONLY finding lives on page 2; page 1 is a full page of
+// out-of-scope threads. If the walk stops at page 1 the subject sees zero
+// findings and exits 0 saying NOTHING TO VERIFY, so this case is the direct
+// negation of the bug.
+const pageOneFiller = Array.from({ length: 100 }, (_, i) => ({
+  id: `fa11e${i}`,
+  resolved: false,
+}));
+r = run(
+  ["1", "--escapes", emptyEsc],
+  stubGh("s-accum", {
+    page1: threadsDoc(pageOneFiller, { hasNextPage: true, endCursor: "CUR1" }),
+    page2: threadsDoc([{ id: "2f00da" }]),
+    files: NO_TEST_FILES,
+  })
+);
+checkRefused("a finding found only on PAGE 2 is seen", r, "2f00da");
+check("  and the walk did not stop at page 1", /NOTHING TO VERIFY/.test(r.out), false);
+
+// The same shape, but the page-2 finding is the one that must be EXCUSED. A gate
+// that only ever refuses harder on more data is not the same as one that reads
+// the data.
+r = run(
+  ["1", "--escapes", write("e-p2.tsv", "2f00da\ta doc-only correction\tmathias\n")],
+  stubGh("s-accum2", {
+    page1: threadsDoc(pageOneFiller, { hasNextPage: true, endCursor: "CUR1" }),
+    page2: threadsDoc([{ id: "2f00da" }]),
+    files: NO_TEST_FILES,
+  })
+);
+check("  a page-2 finding can be excused by its recorded escape", r.status, 0);
+check("  and the page-2 id is what the output names", /2f00da/.test(r.out), true);
+
+// Fail closed on a walk that cannot COMPLETE. Each of these would otherwise be
+// reported as a verdict over a partial read.
+// `says` is per-case rather than one shared regex: a shared "NOTHING was
+// verified" assertion would be wider than any single branch and would keep
+// passing if two distinct causes collapsed into one message.
+const partialCases = {
+  "a page-2 query that FAILS": {
+    page2: "!echo 'gh: boom' >&2; exit 1",
+    says: /the page after CUR1 failed/,
+  },
+  "hasNextPage:true with a NULL endCursor": {
+    page1: threadsDoc(pageOneFiller, { hasNextPage: true, endCursor: null }),
+    says: /no endCursor to follow/,
+  },
+  "hasNextPage:true with an absent endCursor": {
+    page1: threadsDoc(pageOneFiller, { hasNextPage: true }),
+    says: /no endCursor to follow/,
+  },
+  // Takes the pre-existing empty-input trap rather than the pagination refusal,
+  // and must name the page — otherwise "the connection ended here" and "page 2
+  // came back unusable" read the same.
+  "a page 2 with no nodes array": { page2: "{}", says: /on page 2/ },
+  "a cursor that does not advance": {
+    page2: threadsDoc([{ id: "2f00da" }], { hasNextPage: true, endCursor: "CUR1" }),
+    says: /not advancing/,
+  },
+};
+for (const [desc, over] of Object.entries(partialCases)) {
+  r = run(
+    ["1", "--escapes", emptyEsc],
+    stubGh(`s-${desc.replace(/[^a-z0-9]/gi, "_")}`, {
+      page1: threadsDoc(pageOneFiller, { hasNextPage: true, endCursor: "CUR1" }),
+      page2: threadsDoc([{ id: "2f00da" }]),
+      files: NO_TEST_FILES,
+      ...over,
+    })
+  );
+  check(`incomplete pagination fails closed: ${desc} is exit 2`, r.status, 2);
+  check(
+    `  and says WHICH incompleteness: ${desc}`,
+    over.says.test(r.out),
+    true
+  );
+}
+
+// A page budget must end as a refusal, not as an unbounded loop or a verdict.
+// Every page advances its cursor and every page claims another, so the only way
+// out is the budget.
+r = run(
+  ["1", "--escapes", emptyEsc],
+  stubGh("s-budget", {
+    page1: threadsDoc(pageOneFiller, { hasNextPage: true, endCursor: "CUR1" }),
+    // A shell fragment: a fresh cursor each call, so the walk never terminates
+    // on its own and never repeats a cursor either.
+    page2:
+      "!n=$(date +%s%N); printf '%s' '" +
+      threadsDoc([], { hasNextPage: true, endCursor: "__CUR__" }).replace(
+        "__CUR__",
+        "'\"$n\"'"
+      ) +
+      "'",
+    files: NO_TEST_FILES,
+  })
+);
+check("the page budget is a refusal, not a loop or a verdict", r.status, 2);
+check("  and names the budget", /page budget/.test(r.out), true);
+
+// The zero-files trap on the LIVE path. Untested until now, and it is what caught
+// a real defect while this section was being written: the REST payload names the
+// field `filename`, so `--jq '.[].path'` returned one BLANK line per file and a
+// `wc -l` sanity check still said 294. Blank paths are indistinguishable from a
+// dropped list, and the only thing standing between that and a confident verdict
+// over an empty diff is this trap.
+r = run(
+  ["1", "--escapes", emptyEsc],
+  stubGh("s-nofiles", {
+    page1: threadsDoc([{ id: "aaa111" }]),
+    page2: "!exit 1",
+    files: [],
+  })
+);
+check("a live file list that comes back EMPTY is exit 2, not a verdict", r.status, 2);
+check("  and refuses to verify against nothing", /against nothing/.test(r.out), true);
+
+// The offline path, whose honest answer is "I cannot".
+r = run([
+  "1",
+  "--threads",
+  write("t-truncated.json", threadsDoc([{ id: "aaa111" }], { hasNextPage: true, endCursor: "CUR1" })),
+  "--files",
+  noTests,
+  "--escapes",
+  emptyEsc,
+]);
+check("a fixture declaring hasNextPage:true is exit 2, not a verdict on page 1", r.status, 2);
+check("  and says why the offline path cannot continue", /nowhere to fetch page 2/.test(r.out), true);
+
+// A document with no pageInfo at all cannot be told apart from a truncated one,
+// so it is not accepted either.
+r = run([
+  "1",
+  "--threads",
+  write("t-nopageinfo.json", threadsDoc([{ id: "aaa111" }], null)),
+  "--files",
+  noTests,
+  "--escapes",
+  emptyEsc,
+]);
+check("a document with NO pageInfo is exit 2", r.status, 2);
+check("  and says pageInfo is what is missing", /pageInfo/.test(r.out), true);
 
 // ── usage ────────────────────────────────────────────────────────────────────
 check("no PR number is a usage error", run([]).status, 2);
