@@ -9,5 +9,10 @@
 # This target is the invoker. The `e2e-fixture` alias is not self-executing, so
 # without this line it is unreachable and DIRECTION 3 must say so -- which is
 # exactly what the `alias-unreachable` mutation checks.
+# DIRECTORY-SCOPED on purpose. `@wired/e2e-fixture` builds the alias in wired/
+# and below, which is where the rule declaring it lives. This is the form that
+# a `@`-must-be-immediately-before-the-name pattern could not see, so the green
+# baseline of this spec is itself the pin: revert alias_is_built to that pattern
+# and this baseline goes red instead of silently losing the capability.
 fixture-e2e:
-	dune build @e2e-fixture
+	dune build @wired/e2e-fixture

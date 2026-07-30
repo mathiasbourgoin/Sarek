@@ -186,8 +186,20 @@ if undeclared or stale:
 # `e2e-gpu`, 12 executables, invoked from nowhere. One level of reachability
 # short.
 #
-# Self-executing aliases need no invoker: dune runs them itself.
-SELF_EXECUTING = {"runtest", "default", "fmt", "all", "install", "check", "doc"}
+# Self-executing aliases need no invoker: dune runs them itself. `dune build`
+# builds @default, which depends on @all; `dune runtest` builds @runtest; @fmt is
+# built by this repo's own `dune build @fmt` formatting gate.
+#
+# `check`, `doc` and `install` were in this set and are NOT self-executing --
+# nothing builds them unless something names them. Keeping them here meant a rule
+# attached to `(alias check)` was skipped as though dune ran it, which is the
+# gate's own vacuous-pass shape: the exemption was granted by the name of the
+# alias rather than by any evidence it gets built. Removing them costs nothing on
+# this tree (its only rule aliases are runtest, e2e-gpu and e2e-hip) and closes
+# the hole. `doc` is genuinely reachable anyway when it is used -- docs.yml runs
+# `dune build @doc` -- so it now passes on evidence rather than by assumption.
+# Reported by CodeRabbit on PR #383.
+SELF_EXECUTING = {"runtest", "default", "fmt", "all"}
 
 rule_aliases = {}
 for dune in sorted(root.rglob("dune")):
@@ -256,9 +268,32 @@ if invoker_count == 0:
 # name must END at a word boundary.
 
 def alias_is_built(alias, text):
-    """True only if some `dune build`-shaped command names this exact alias."""
+    """True only if some `dune build`-shaped command names this exact alias.
+
+    A DIRECTORY-SCOPED invocation counts: `dune build @somedir/somealias` builds
+    `somealias` in somedir/ and below, and the `@@` form is the same thing
+    restricted to that one directory -- both are how dune is actually driven. The
+    previous pattern required the alias name to sit immediately after `@`, so
+    every prefixed form read as UNREACHABLE and the gate would have demanded an
+    exemption for an alias CI really did build. That direction of error is the
+    expensive one: a gate that reports a correct tree dirty gets switched off, and
+    its true findings go with it. Reported by CodeRabbit on PR #383.
+
+    The example above uses deliberately fake names. Writing a REAL alias here
+    makes this very file wire it: scripts/* is invoker text, `#`-comments are
+    stripped before the search but a Python docstring is not, and an earlier draft
+    of this docstring said `@sarek-hip/e2e-hip` -- which made alias::e2e-hip read
+    as reachable and turned its exemption STALE. Same trap the DIRECTION 3 notes
+    above record against a ci.yml comment, one layer in.
+
+    The trailing `(?![\\w/-])` still does the anti-prefix work it was added for --
+    alias `e2e` is not satisfied by `@e2e-hip`, since the lookahead rejects the
+    `-`, and the optional directory groups cannot rescue the match because they
+    each require a `/`.
+    """
     pat = re.compile(
-        r"dune\s+(?:build|exec|runtest|test)[^\n;&|]*?@"
+        r"dune\s+(?:build|exec|runtest|test)[^\n;&|]*?@@?"
+        + r"(?:[A-Za-z0-9_.-]+/)*"
         + re.escape(alias)
         + r"(?![\w/-])"
     )
@@ -326,9 +361,22 @@ PYEOF
 #   apply: python3 - <<'PYEOF'
 #   apply: p = "scripts/prove-red-fixtures/alias-coverage/Makefile"
 #   apply: s = open(p, encoding="utf-8").read()
-#   apply: old = "\tdune build @e2e-fixture\n"
+#   apply: old = "\tdune build @wired/e2e-fixture\n"
 #   apply: assert s.count(old) == 1, ("invoker line not unique: %d" % s.count(old))
 #   apply: s = s.replace(old, "\t@echo nothing\n")
+#   apply: open(p, "w", encoding="utf-8").write(s)
+#   apply: PYEOF
+#   expect-exit: 1
+#   expect-message: e2e-fixture
+#
+# mutation: alias-prefix-collision
+#   desc: the invoker builds `@e2e`, a strict PREFIX of the declared `e2e-fixture` alias. It must NOT count as building it. Without the trailing word-boundary lookahead in alias_is_built this reported the alias reachable, so a future short alias would have been satisfied by an unrelated longer one that merely starts the same way. Pins the guard in the same breath as the directory-prefix support added beside it, since a pattern loose enough to accept `@dir/name` is exactly the one at risk of accepting `@name-suffix`.
+#   apply: python3 - <<'PYEOF'
+#   apply: p = "scripts/prove-red-fixtures/alias-coverage/Makefile"
+#   apply: s = open(p, encoding="utf-8").read()
+#   apply: old = "\tdune build @wired/e2e-fixture\n"
+#   apply: assert s.count(old) == 1, ("invoker line not unique: %d" % s.count(old))
+#   apply: s = s.replace(old, "\tdune build @wired/e2e\n")
 #   apply: open(p, "w", encoding="utf-8").write(s)
 #   apply: PYEOF
 #   expect-exit: 1
