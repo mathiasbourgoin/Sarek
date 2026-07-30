@@ -150,6 +150,51 @@ jobs:
             await gh.rest.issues.update({ owner: a, repo: b, body: d });
 '
 
+# --- FLOW MAPPINGS (found by running this gate's own attack list) -----------
+# `- {name: x, run: a, run: b}` was INVISIBLE to the block-mapping scanner:
+# STEP_START needs `word:` right after the dash, so the line matched nothing,
+# the step was never counted, and the gate returned exit 0 on a step that runs
+# the wrong command. That is the exact defect this gate exists for, in a syntax
+# it could not see.
+check "red: flow mapping with a duplicate run" 1 "does not do what its name says" 'name: CI
+jobs:
+  build:
+    steps:
+      - {name: x, run: correct, run: WRONG}
+'
+
+check "red: flow mapping with no action at all" 1 "it does nothing" 'name: CI
+jobs:
+  build:
+    steps:
+      - {name: x}
+'
+
+# The two false positives that would make the fix worse than the hole.
+check "green: a legitimate single-action flow mapping" 0 "OK" 'name: CI
+jobs:
+  build:
+    steps:
+      - {name: x, run: a}
+'
+
+check "green: a nested with{} is not a duplicate step key" 0 "OK" 'name: CI
+jobs:
+  build:
+    steps:
+      - {name: x, with: {a: 1, a: 2}, run: a}
+'
+
+# A flow mapping the scanner cannot bound on one line must be REFUSED, not
+# skipped: a step it cannot analyse must never be reported well-formed.
+check "red: multi-line flow mapping is refused, not skipped" 1 "cannot analyse" 'name: CI
+jobs:
+  build:
+    steps:
+      - {name: x,
+         run: a}
+'
+
 # --- fails closed ----------------------------------------------------------
 # No workflow files. Exit 2, never 0: a check with nothing to read must refuse
 # rather than report success on a tree it never examined.
