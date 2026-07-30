@@ -59,8 +59,14 @@
  *
  *      CUDA/PTX does NOT have the gap at all: the direct PTX emitter declares no
  *      C structs, so there is no declaration order to get wrong. Measured under
- *      ZLUDA on an RX 7900 XTX and on a Ryzen 9 7950X — both CUDA/PTX devices
+ *      ZLUDA on an RX 7900 XTX and on a Ryzen 9 7950X (ZLUDA-on-AMD both times;
+ *      there is no NVIDIA hardware on this machine) — both CUDA/PTX devices
  *      compile BOTH nested kernels and produce correct values at both levels.
+ *      That measurement is what the dune rule's LD_LIBRARY_PATH exists for: the
+ *      gate enumerated 7 devices and printed no CUDA/PTX row at all, so the
+ *      sentence above was not reproducible by the test that states it. The run
+ *      now also prints a named NOT-MEASURED-HERE line for any framework this
+ *      header makes a claim about and the run did not enumerate.
  *      Metal and HIP are untested here (no such device on this machine), so
  *      nothing is claimed about them; they are not on the allowlist, and a
  *      failure on either is reported as a failure.
@@ -212,7 +218,13 @@ let glsl_shader_path (msg : string) : string option =
    Both forms are needed and having only the GLSL one is a way this can read
    green while checking nothing: the OpenCL generator emits the anonymous-typedef
    form, so "struct Ty" is absent from its output, the declaration is never
-   found, and a genuinely out-of-order source reports as in-order. *)
+   found, and a genuinely out-of-order source reports as in-order.
+
+   That hazard was named here and then left uncovered: every source the
+   message-predicate self-check below assembles is GLSL, so reverting to the
+   GLSL-only form kept printing "11 case(s) OK" and the regression appeared only
+   on a machine with a live OpenCL device. The self-check attached to
+   {!uses_type_before_declaring} covers BOTH spellings without a device. *)
 let declaration_offset (src : string) (ty : string) : int option =
   match (find_sub src ("struct " ^ ty), find_sub src ("} " ^ ty ^ ";")) with
   | Some a, Some b -> Some (min a b)
@@ -230,6 +242,188 @@ let uses_type_before_declaring (src : string) (ty : string) : bool =
   match (find_sub src ty, declaration_offset src ty) with
   | Some use, Some decl -> use < decl
   | _ -> false
+
+(* Both polarities of {!uses_type_before_declaring} / {!declaration_offset}, over
+   synthetic sources, with NO device involved.
+
+   This exists because the two-dialect [declaration_offset] landed behind a gate
+   that could not fail without a live OpenCL device. Revert it to the GLSL-only
+   form — drop the [find_sub src ("} " ^ ty ^ ";")] arm — and the 11-case
+   predicate self-check below still printed "11 case(s) OK": every shader it
+   assembles is GLSL, so the typedef arm was never reached, and the regression
+   surfaced only on a machine that enumerates an OpenCL device. The neighbouring
+   MESSAGE predicate got 11 device-free cases and this one got zero.
+
+   So the OpenCL-spelling cases are the load-bearing ones here: cases 1 and 2
+   would still pass with the typedef arm removed. Cases 3 and 4 would not.
+
+   Runs before the message-predicate self-check and before any device, for the
+   same reason that one does: a broken source-inspection predicate must not be
+   discovered halfway through a device sweep. *)
+let () =
+  (* The real emitted symbols, so a case cannot pass on a name shape the
+     generators never produce. [..._outer] does not contain [..._triple], which
+     is what makes "first occurrence of the needle" a use of the inner type. *)
+  let inner = "Test_record_field_store_triple" in
+  let outer = "Test_record_field_store_outer" in
+  (* GLSL, the .comp dialect: `struct Ty { ... };`. *)
+  let glsl_bad =
+    Printf.sprintf
+      "#version 450\n\
+       struct %s {\n\
+      \  float tag;\n\
+      \  %s mid;\n\
+       };\n\
+       struct %s {\n\
+      \  float a;\n\
+       };\n"
+      outer
+      inner
+      inner
+  in
+  let glsl_good =
+    Printf.sprintf
+      "#version 450\n\
+       struct %s {\n\
+      \  float a;\n\
+       };\n\
+       struct %s {\n\
+      \  float tag;\n\
+      \  %s mid;\n\
+       };\n"
+      inner
+      outer
+      inner
+  in
+  (* OpenCL C and CUDA C, the anonymous-typedef dialect: `typedef struct { ... }
+     Ty;`. The string "struct Ty" NEVER appears, which is exactly why the
+     GLSL-only form reported this out-of-order source as in-order. *)
+  let ocl_bad =
+    Printf.sprintf
+      "typedef struct {\n\
+      \  float tag;\n\
+      \  %s mid;\n\
+       } %s;\n\
+       typedef struct {\n\
+      \  float a;\n\
+       } %s;\n"
+      inner
+      outer
+      inner
+  in
+  let ocl_good =
+    Printf.sprintf
+      "typedef struct {\n\
+      \  float a;\n\
+       } %s;\n\
+       typedef struct {\n\
+      \  float tag;\n\
+      \  %s mid;\n\
+       } %s;\n"
+      inner
+      inner
+      outer
+  in
+  let cases =
+    [
+      (* 1. GLSL, enclosing struct emitted first: the gap. *)
+      (true, "glsl: struct Ty, used before declared", glsl_bad, inner);
+      (* 2. GLSL, dependency order: no gap. *)
+      (false, "glsl: struct Ty, declared before used", glsl_good, inner);
+      (* 3. OpenCL typedef, enclosing struct emitted first: the gap, in the
+         spelling the OpenCL generator actually emits. THIS is the case the
+         GLSL-only form gets wrong — it finds no declaration at all and answers
+         false, so a genuinely out-of-order OpenCL source reads as in-order and
+         a real compile failure stops being tolerated (or, in
+         [predict_struct_gap], a tolerated one stops being predicted). *)
+      ( true,
+        "opencl: typedef struct } Ty;, used before declared",
+        ocl_bad,
+        inner );
+      (* 4. OpenCL typedef, dependency order: no gap. Pinned as well as (3):
+         with only (3) the predicate could be [fun _ _ -> true] on this
+         dialect. *)
+      ( false,
+        "opencl: typedef struct } Ty;, declared before used",
+        ocl_good,
+        inner );
+      (* 5. Used and NEVER declared, both dialects. FALSE is the answer this
+         must give, and it is the fail-closed direction rather than an
+         oversight: backlog-203 is a mis-ORDERING of a declaration that IS
+         emitted, so a source that never declares the type at all is a
+         DIFFERENT defect — a dropped typedef — and must not be tolerated as
+         the known gap. Answering true here would let a generator that stopped
+         emitting the struct entirely hide behind backlog-203. *)
+      ( false,
+        "glsl: used, never declared",
+        Printf.sprintf "#version 450\nstruct %s {\n  %s mid;\n};\n" outer inner,
+        inner );
+      ( false,
+        "opencl: used, never declared",
+        Printf.sprintf "typedef struct {\n  %s mid;\n} %s;\n" inner outer,
+        inner );
+      (* 6. Declared and never used: no gap. *)
+      ( false,
+        "glsl: declared, never used",
+        Printf.sprintf "#version 450\nstruct %s {\n  float a;\n};\n" inner,
+        inner );
+      ( false,
+        "opencl: declared, never used",
+        Printf.sprintf "typedef struct {\n  float a;\n} %s;\n" inner,
+        inner );
+      (* 7. The type is absent from the source entirely — a PTX-style emitter
+         that declares no structs. No prediction, so no gap. *)
+      (false, "no structs at all", "#version 450\nvoid main() {}\n", inner);
+      (* 8. A LONGER name containing the needle must not stand in for it: the
+         source declares and uses only [..._triple_extra], and nothing is
+         claimed about [..._triple]. [find_sub] is a substring search, so the
+         use offset and the declaration offset both land inside the longer name
+         and the comparison comes out false either way — pinned so that a future
+         "search for the bare name" rewrite that answers true here is caught. *)
+      ( false,
+        "glsl: only a longer name containing the needle",
+        Printf.sprintf
+          "#version 450\n\
+           struct %s_extra {\n\
+          \  float a;\n\
+           };\n\
+           struct %s {\n\
+          \  %s_extra mid;\n\
+           };\n"
+          inner
+          outer
+          inner,
+        inner );
+    ]
+  in
+  let bad =
+    List.filter
+      (fun (want, _, src, ty) ->
+        not (Bool.equal (uses_type_before_declaring src ty) want))
+      cases
+  in
+  if bad <> [] then begin
+    List.iter
+      (fun (want, label, _, _) ->
+        Printf.printf
+          "uses_type_before_declaring self-check: %s should be %b and is not\n\
+           %!"
+          label
+          want)
+      bad ;
+    exit 1
+  end ;
+  Printf.printf
+    "uses_type_before_declaring self-check: %d case(s) OK (%d gap, %d no-gap; \
+     %d GLSL-spelling, %d OpenCL-typedef-spelling)\n\
+     %!"
+    (List.length cases)
+    (List.length (List.filter (fun (w, _, _, _) -> w) cases))
+    (List.length (List.filter (fun (w, _, _, _) -> not w) cases))
+    (List.length
+       (List.filter (fun (_, l, _, _) -> contains_sub l "glsl:") cases))
+    (List.length
+       (List.filter (fun (_, l, _, _) -> contains_sub l "opencl:") cases))
 
 (* backlog-203. The ONLY tolerated failure is the struct-ordering gap,
    and it has to be recognised in two different dialects because the two
@@ -821,5 +1015,42 @@ let () =
   end ;
   let any_failure = ref false in
   Array.iter (fun dev -> if not (run_on dev) then any_failure := true) devs ;
-  Printf.printf "%d device(s) exercised\n%!" (Array.length devs) ;
+  (* A device class this file's header makes a claim ABOUT must not be able to
+     go missing quietly.
+
+     The header states that CUDA/PTX compiles BOTH nested kernels and produces
+     correct values at both levels, "measured under ZLUDA on an RX 7900 XTX and
+     on a Ryzen 9 7950X", and [predict_struct_gap]'s reason for keeping CUDA/PTX
+     OFF the tolerated allowlist rests on that measurement. Under `dune runtest`
+     without ZLUDA on the loader path, this file enumerated 7 devices, printed
+     ZERO CUDA/PTX rows, and exited 0 — the claim was not reproduced and nothing
+     said so. The dune rule now sets LD_LIBRARY_PATH so the device is present
+     where it exists; this line is what makes its absence visible where it does
+     not.
+
+     NOT a failure: a machine with no ZLUDA and no CUDA driver legitimately has
+     no such device, and failing there would make the suite unrunnable rather
+     than honest. It is a loud named skip, which is the difference between "the
+     header's measurement was not reproduced here" and a false green. *)
+  let frameworks_seen =
+    Array.to_list devs |> List.map (fun (d : Device.t) -> d.Device.framework)
+  in
+  List.iter
+    (fun fw ->
+      if not (List.mem fw frameworks_seen) then
+        Printf.printf
+          "NOT MEASURED HERE: no %s device was enumerated, so the header's %s \
+           claim (both nested kernels compile and land at both levels, and the \
+           reason %s is off [struct_emitting_frameworks]) is NOT reproduced by \
+           this run. Put ZLUDA on LD_LIBRARY_PATH, or run on a CUDA host, to \
+           exercise it.\n\
+           %!"
+          fw
+          fw
+          fw)
+    ["CUDA/PTX"] ;
+  Printf.printf
+    "%d device(s) exercised (frameworks: %s)\n%!"
+    (Array.length devs)
+    (String.concat ", " (List.sort_uniq String.compare frameworks_seen)) ;
   if !any_failure then exit 1

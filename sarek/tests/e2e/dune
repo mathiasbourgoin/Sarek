@@ -1646,10 +1646,40 @@
  (flags
   (:standard -w -32-33-34-69)))
 
+; LD_LIBRARY_PATH is set so the ZLUDA CUDA/PTX driver is reachable and the
+; CUDA/PTX legs of this test RUN in the default gate.
+;
+; They did not. The test's header states that CUDA/PTX compiles BOTH nested
+; kernels and lands the store at both levels, "measured under ZLUDA" on two
+; devices, and [predict_struct_gap]'s reason for keeping CUDA/PTX OFF the
+; tolerated-failure allowlist rests on that same measurement. Nothing put ZLUDA
+; on the loader path, so a plain `dune runtest` enumerated 7 devices, printed
+; ZERO CUDA/PTX rows and exited 0: the gate could not reproduce either claim.
+; Two changes close it — the test now prints a named NOT-MEASURED-HERE line for
+; any framework its header claims and the run did not enumerate (so a silent
+; drop is impossible even where this rule finds nothing), and this rule makes
+; the device present where it exists.
+;
+; $HOME/opt/zluda is the location the rules further up already document as this
+; project's ZLUDA checkout. Trade-offs, stated rather than assumed:
+;   - a machine WITHOUT ZLUDA: the loader ignores a nonexistent directory, so
+;     the rule is a no-op and the test prints its NOT-MEASURED-HERE line. No new
+;     failure.
+;   - a machine with a NATIVE CUDA driver: libcuda.so.1 is on the default loader
+;     path, so replacing LD_LIBRARY_PATH does not hide it. A host that reaches
+;     its CUDA driver ONLY through an inherited LD_LIBRARY_PATH loses the PTX
+;     leg here — and gets the loud named line, not a false green.
+; Same precedent as the RUSTICL_FEATURES=fp64 rule above: set the variable that
+; makes a leg actually exercised, rather than documenting it in a comment and
+; letting the leg quietly not run.
+
 (rule
  (alias runtest)
  (action
-  (run %{dep:test_record_field_store.exe})))
+  (setenv
+   LD_LIBRARY_PATH
+   %{env:HOME=}/opt/zluda
+   (run %{dep:test_record_field_store.exe}))))
 
 ; backlog-172 round 3: a record bound to a LOCAL is a COPY on every backend.
 ; The field-store fix made the Interpreter write THROUGH the local into vector
@@ -1677,7 +1707,16 @@
  (flags
   (:standard -w -32-33-34-69)))
 
+; Same ZLUDA path, for the same reason and with the same trade-offs as the rule
+; above. This test's header measurement line names CUDA-PTX x2 among the
+; backends that leave vector storage alone, and states the nested case's scope
+; as "the two CPU backends plus CUDA/PTX". Without this, the gate enumerated 7
+; devices and had nothing to say about the other two.
+
 (rule
  (alias runtest)
  (action
-  (run %{dep:test_record_local_alias_agreement.exe})))
+  (setenv
+   LD_LIBRARY_PATH
+   %{env:HOME=}/opt/zluda
+   (run %{dep:test_record_local_alias_agreement.exe}))))
