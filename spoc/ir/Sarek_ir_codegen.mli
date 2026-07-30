@@ -266,9 +266,35 @@ val gen_param :
   Sarek_ir_types.decl ->
   unit
 
+(** Raised by {!sort_record_types_by_dependency} when the record declarations
+    form a cycle, carrying the unplaced type names. A cycle has no valid
+    emission order, so it is refused rather than emitted in input order. *)
+exception Record_type_cycle of string list
+
+(** Mangled names of every record type reachable from a field type, through
+    arrays, vectors, variant payloads and nested record fields. Sorted and
+    deduplicated; safe on a cyclic [elttype] value. *)
+val referenced_record_names : Sarek_ir_types.elttype -> string list
+
+(** Order record declarations so a struct comes after every struct its field
+    types reference (backlog-203: list order is not dependency order, because
+    the PPX prepends registry-reachable types to the payload's own).
+
+    Stable: records with no dependency between them keep their relative input
+    position, so an already-correctly-ordered list is returned unchanged and
+    committed goldens do not churn.
+
+    @raise Record_type_cycle
+      if the declarations form a cycle. Unreachable through the PPX — it refuses
+      a self- or forward-referencing record field at alignment-resolution time —
+      but load-bearing for hand-built IR. *)
+val sort_record_types_by_dependency :
+  (string * (string * Sarek_ir_types.elttype) list) list ->
+  (string * (string * Sarek_ir_types.elttype) list) list
+
 (** Emit C-family record type declarations: one [typedef struct { ... } name;]
     per record, one field per line. Only [type_of_elttype] differs per backend.
-*)
+    Declarations are emitted in {!sort_record_types_by_dependency} order. *)
 val gen_record_typedefs :
   type_of_elttype:(Sarek_ir_types.elttype -> string) ->
   Buffer.t ->
