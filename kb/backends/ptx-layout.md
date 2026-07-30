@@ -4,7 +4,8 @@ Operational specification of the byte layout used by the PTX direct emitter for
 aggregate values, introduced by the `ptx-records-variants` task (2026-07-22).
 Single source of truth in code: `spoc/ir/Sarek_ir_layout.ml` (all offsets, sizes,
 strides — no emission site computes its own offsets). Formal mirror:
-`formal/codegen-ptx/theories/PtxLayout.v` (12 theorems, 0 admits) + conformance suite
+`formal/codegen-ptx/theories/PtxLayout.v` (50 proved statements — 12 written with the
+`Theorem` keyword, 38 with `Lemma`; 0 admits, 0 axioms) + conformance suite
 `formal/codegen-ptx/test/test_layout_conformance.ml` (32 063 shapes, zero divergence).
 
 **L8 update (2026-07-23):** the host aggregate ABI moved from PACKED to ALIGNED
@@ -88,7 +89,8 @@ round-trip on RX 7900 XTX.
 
 The campaign note that held the full reference (quoted error messages, file:line
 citations, execution-model rationale) is internal-backlog material and is not in
-this repository — see CONTRIBUTING.md, "The backlog is not public". The in-repo
+this repository — see CONTRIBUTING.md § "Referring to issues, PRs and backlog
+items", which states "The backlog is not public." The in-repo
 authorities for what follows are the emitter's own refusal messages
 (`sarek/codegen/Sarek_ir_ptx_*.ml`), `spoc/ir/Sarek_ir_layout.ml`, and
 `formal/codegen-ptx/theories/PtxLayout.v`.
