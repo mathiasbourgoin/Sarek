@@ -254,8 +254,18 @@ let uses_type_before_declaring (src : string) (ty : string) : bool =
    surfaced only on a machine that enumerates an OpenCL device. The neighbouring
    MESSAGE predicate got 11 device-free cases and this one got zero.
 
-   So the OpenCL-spelling cases are the load-bearing ones here: cases 1 and 2
-   would still pass with the typedef arm removed. Cases 3 and 4 would not.
+   So case 3 is the load-bearing one here, and it is the ONLY one of the four:
+   measured by replacing the typedef arm with [None], cases 1, 2 AND 4 still
+   pass and only case 3 goes red ("opencl: typedef struct } Ty;, used before
+   declared should be true and is not"). Case 4 cannot constrain that arm — with
+   the arm gone [declaration_offset ocl_good] finds nothing,
+   [uses_type_before_declaring] falls to its [| _ -> false] arm, and [false] is
+   the answer case 4 wanted. It still rules out a [fun _ _ -> true] predicate on
+   this dialect, which is what its own comment claims and all it claims.
+
+   That leaves the arm constrained in one direction only, so the FOUND-IT
+   direction is asserted separately and first, on [declaration_offset] itself
+   rather than through the offset comparison — see the block below.
 
    Runs before the message-predicate self-check and before any device, for the
    same reason that one does: a broken source-inspection predicate must not be
@@ -324,6 +334,51 @@ let () =
       inner
       outer
   in
+  (* The typedef arm, asserted DIRECTLY and in the FOUND-IT direction, before
+     the case list below.
+
+     [uses_type_before_declaring] answers a comparison of two offsets, so every
+     [false] case of it conflates "the declaration was found, and it comes
+     first" with "no declaration was found at all" — which is exactly why case 4
+     survives the arm's removal and why the four cases together pin the arm in
+     one direction only. This asserts the offset itself: in the anonymous-typedef
+     dialect the declaration must be LOCATED in both sources, in-order and
+     out-of-order alike, and neither may answer [None].
+
+     FIRST, not last, so it has its own red: the case loop below exits 1 on case
+     3 the moment the arm is gone, and an assertion placed after it would never
+     run to be observed failing.
+
+     BOTH sources reported before exiting, not the first one only. Exiting inside
+     the loop would make the in-order source — the one carrying the coverage case
+     4 cannot give — unobservable behind the out-of-order source, which is the
+     same short-circuit this block was added to escape one level up. *)
+  let unlocated =
+    List.filter
+      (fun (_, src) -> declaration_offset src inner = None)
+      [
+        ("opencl: out-of-order source", ocl_bad);
+        ("opencl: in-order source", ocl_good);
+      ]
+  in
+  if unlocated <> [] then begin
+    List.iter
+      (fun (label, _) ->
+        Printf.printf
+          "declaration_offset self-check: %s — the anonymous-typedef \
+           declaration of %s was not located at all, so the `} Ty;` arm is \
+           missing or narrowed\n\
+           %!"
+          label
+          inner)
+      unlocated ;
+    exit 1
+  end ;
+  Printf.printf
+    "declaration_offset self-check: the OpenCL typedef arm located %s in both \
+     typedef sources\n\
+     %!"
+    inner ;
   let cases =
     [
       (* 1. GLSL, enclosing struct emitted first: the gap. *)
@@ -1049,24 +1104,54 @@ let () =
      NOT a failure: a machine with no ZLUDA and no CUDA driver legitimately has
      no such device, and failing there would make the suite unrunnable rather
      than honest. It is a loud named skip, which is the difference between "the
-     header's measurement was not reproduced here" and a false green. *)
+     header's measurement was not reproduced here" and a false green.
+
+     EVERY framework the header makes a claim about, not CUDA/PTX alone. The list
+     held only CUDA/PTX while the sentence introducing it said "any framework
+     this header makes a claim about", and the header makes measured claims about
+     five — so on a CPU-only host the OpenCL and Vulkan claims went unreproduced
+     in exactly the silence this mechanism exists to break, and the sentence was
+     wider than the list under it. Each framework carries its OWN claim text,
+     because one generic sentence stretched over five different measurements
+     would be that same defect again, one level down. *)
   let frameworks_seen =
     Array.to_list devs |> List.map (fun (d : Device.t) -> d.Device.framework)
   in
+  let claimed_frameworks =
+    [
+      ( "Interpreter",
+        "the store lands at depth 1 and nested, the pre-fix \
+         Unsupported_operation \"record field assignment\" refusal being gone"
+      );
+      ( "Native",
+        "the store lands at depth 1 and nested rather than being dropped into \
+         the temporary record Vector.get marshalled out" );
+      ( "CUDA/PTX",
+        "both nested kernels compile and land at both levels, which is also \
+         why CUDA/PTX is off the tolerated allowlist \
+         [struct_emitting_frameworks] — put ZLUDA on LD_LIBRARY_PATH, or run \
+         on a CUDA host, to exercise it" );
+      ( "OpenCL",
+        "[mouter] compiles, runs and passes while [outer] fails with clang's \
+         \"unknown type name\" — the two sides of the backlog-203 ordering gap \
+         that [predict_struct_gap] decides between" );
+      ( "Vulkan",
+        "[mouter] compiles, runs and passes while [outer] fails with glslang's \
+         bare parse error — the two sides of the backlog-203 ordering gap that \
+         [predict_struct_gap] decides between" );
+    ]
+  in
   List.iter
-    (fun fw ->
+    (fun (fw, claim) ->
       if not (List.mem fw frameworks_seen) then
         Printf.printf
           "NOT MEASURED HERE: no %s device was enumerated, so the header's %s \
-           claim (both nested kernels compile and land at both levels, and the \
-           reason %s is off [struct_emitting_frameworks]) is NOT reproduced by \
-           this run. Put ZLUDA on LD_LIBRARY_PATH, or run on a CUDA host, to \
-           exercise it.\n\
+           claim (%s) is NOT reproduced by this run.\n\
            %!"
           fw
           fw
-          fw)
-    ["CUDA/PTX"] ;
+          claim)
+    claimed_frameworks ;
   Printf.printf
     "%d device(s) exercised (frameworks: %s)\n%!"
     (Array.length devs)

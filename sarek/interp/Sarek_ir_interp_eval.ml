@@ -726,8 +726,11 @@ and assign_lvalue state env lv value =
          It must be [read_lvalue] and not [eval_expr] on a reconstructed
          expression: the [to_values]/[from_value] pair round-trips through the
          OCaml record and therefore COPIES, so a store through it would land in a
-         temporary and vanish. That is the shape of the Native-backend half of
-         172, which is still open. *)
+         temporary and vanish. That is the shape the Native backend had, and it
+         is fixed in this same change (see the [TEVecGet] arm of [TEFieldSet] in
+         sarek/ppx/Sarek_native_gen_expr.ml) — by a read-modify-write back into
+         vector storage rather than by an in-place mutation, because on that path
+         nothing hands back the storage to mutate. *)
       match read_lvalue state env base_lv with
       | VRecord (type_name, fields) -> (
           let index =

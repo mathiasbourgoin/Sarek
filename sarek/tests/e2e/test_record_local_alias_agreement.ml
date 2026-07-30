@@ -307,8 +307,13 @@ let uses_type_before_declaring (src : string) (ty : string) : bool =
    with only the GLSL arm, [nested_can_compile] answers "can compile" for an
    out-of-order OpenCL source and the nested case is launched into a compile
    failure that this file reports as a hard failure. Nothing without a live
-   OpenCL device would have caught that. Cases 3 and 4 are the load-bearing
-   ones — 1 and 2 pass with the typedef arm removed.
+   OpenCL device would have caught that. Case 3 is the load-bearing one, and it
+   is the only one: measured by removing the typedef arm, cases 1, 2 AND 4 still
+   pass and only case 3 goes red ("opencl: used before declared should be true
+   and is not"). Case 4 cannot constrain that arm — with the arm gone [decl] is
+   [None], the match falls to [| _ -> false], and [false] is the answer case 4
+   wanted. It still rules out a constant-true predicate on this dialect, which
+   is all it is for.
 
    Runs before any device, so a broken predicate is not discovered mid-sweep. *)
 let () =

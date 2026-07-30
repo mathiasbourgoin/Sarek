@@ -133,6 +133,26 @@ let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
              into it: the record's fields may legitimately be immutable, and a
              read-modify-write is the only shape that is correct either way.
 
+             WHAT THAT COSTS, stated because it is a real difference and not a
+             detail: this makes a one-field store a WHOLE-ELEMENT read-modify-
+             write. Element [i] is read, one field is replaced, and all of it is
+             written back. So two threads storing DIFFERENT fields of the SAME
+             element lose one of the two writes on this backend, where the
+             C-family and PTX emitters address the field directly and the
+             interpreter mutates [fields.(idx)] in place — all three of which
+             keep both writes. The CPU runtime really does run threads
+             concurrently on domains (Sarek_cpu_runtime.ml), so the window is
+             not theoretical.
+
+             That is READ OFF THIS EXPANSION AND THE THREE OTHER BACKENDS, not
+             observed: no kernel in the test suite has two writers per element,
+             so no committed test covers it and none of the "witness field
+             untouched" assertions can see it. It is not a regression — before
+             this change the store was dropped on every thread — but it is a new
+             Native-vs-everything-else divergence in a fix whose purpose is
+             CPU/GPU agreement, and closing it needs a per-field write path on
+             this backend rather than a comment. Tracked as backlog-207.
+
              NESTED targets ([v.(i).f.g <- e]) rebuild every level on the way
              back out. Matching only the depth-1 shape is what left the nested
              form silently dropped on this backend after the depth-1 fix: the
@@ -153,15 +173,26 @@ let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
                 (* An inline first-class-module type is reached through a
                    generated GETTER and has no setter, so there is no label to
                    put in a record-update expression. Refuse loudly: silently
-                   emitting a setfield here is precisely the bug being fixed. *)
+                   emitting a setfield here is precisely the bug being fixed.
+
+                   The message must not name an ATTRIBUTE. What lands in
+                   [ctx.inline_types] is a record declared INSIDE the [%kernel]
+                   payload — [Sarek_native_gen.inline_type_decls] keeps exactly
+                   the [tkern_type_decls] whose name carries no '.' — and such a
+                   declaration bears no attribute at all. An earlier wording said
+                   "[%%sarek.type] record", which is wrong twice: the construct
+                   is not attributed, and in a [raise_errorf] format [%%] renders
+                   as a single [%], so the reader was sent looking for
+                   [%sarek.type] when the attribute that does exist is spelled
+                   [@@sarek.type] and is not what they have. *)
                 Location.raise_errorf
                   ~loc
-                  "Sarek: cannot assign to field %S of an inline \
-                   [%%sarek.type] record stored in a vector. Inline types are \
-                   accessed through generated getters and have no setters, so \
-                   this store cannot be expressed. Declare the record as a \
-                   named type outside the kernel, or build the updated element \
-                   and assign it with v.(i) <- ..."
+                  "Sarek: cannot assign to field %S of a record type declared \
+                   inside the kernel and stored in a vector. Such types are \
+                   read through generated getters and have no setters, so this \
+                   store cannot be expressed. Move the type declaration \
+                   outside the kernel, or build the updated element and assign \
+                   it with v.(i) <- ..."
                   f
           in
           (* Rebuild outwards: the innermost update takes the new value, and
@@ -237,11 +268,14 @@ let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
           | Field_lid lid ->
               Ast_builder.Default.pexp_setfield ~loc rec_e lid val_e
           | Field_fcm _ ->
+              (* Same naming point as the vector-base refusal above: the
+                 construct is a record declared inside the [%kernel] payload and
+                 bears no attribute, so the message names no attribute. *)
               Location.raise_errorf
                 ~loc
-                "Sarek: cannot assign to field %S of an inline [%%sarek.type] \
-                 record. Inline types are accessed through generated getters \
-                 and have no setters. Declare the record as a named type \
+                "Sarek: cannot assign to field %S of a record type declared \
+                 inside the kernel. Such types are read through generated \
+                 getters and have no setters. Move the type declaration \
                  outside the kernel."
                 field_name))
   | _ -> failwith "gen_memory_access: not a memory access expression"
