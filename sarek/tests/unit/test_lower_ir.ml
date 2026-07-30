@@ -233,7 +233,7 @@ let test_lower_param () =
    same Ir.Shr constructor, which every consumer emits as an *arithmetic*
    shift ([>>] on signed CUDA/OpenCL/Metal/GLSL/WGSL int types, shr.s32 on
    PTX, Int32.shift_right in the interpreter - see
-   briefs/fix-critical-semantics-evidence.md, G phase 1). [asr] is correct;
+   the unpublished fix-critical-semantics-evidence.md note, G phase 1). [asr] is correct;
    [lsr] on a negative operand silently returned the wrong (sign-extended)
    value. These tests lower a real Sarek_ast.Lsr/Asr binop end-to-end
    (lower_expr -> Sarek_ir_conv.conv_expr -> the runtime interpreter) and

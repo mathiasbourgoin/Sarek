@@ -9,7 +9,7 @@
  * These tests snapshot the exact name set registered under each of the 8
  * module paths, so that a refactor of the registration tables (deduplicating
  * the shared static lists) cannot silently change which intrinsics resolve
- * under a given path. See briefs/backend-dry-correctness-step0.md (d)/(e)
+ * under a given path. See the unpublished backend-dry-correctness-step0.md note (d)/(e)
  * for the full audit this snapshot is derived from.
  ******************************************************************************)
 

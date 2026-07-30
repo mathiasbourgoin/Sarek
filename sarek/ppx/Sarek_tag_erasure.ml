@@ -10,7 +10,9 @@
  * (Sarek_defunc) / tail-recursion elimination and BEFORE lowering
  * (Sarek_lower_ir), on the DEVICE-lowered kernel only: the un-erased
  * [native_kernel] captured earlier in Sarek_ppx keeps the tag and stays the
- * OCaml reference path. See roster/ptx-limits-campaign/L14-static-tag-erasure.md.
+ * OCaml reference path. (A design note L14-static-tag-erasure.md exists but
+ * is NOT part of this repository - unpublished working directory; the pass is
+ * described in full below so the note is not needed to read it.)
  *
  * The tag stays in the typed AST for typing / OCaml-side exhaustiveness
  * checking; this pass erases it for code generation wherever the live

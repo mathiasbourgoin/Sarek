@@ -12,9 +12,11 @@
  * helper body, so that lowering never has to emit an `EApp` whose callee is
  * anything other than a directly-named helper.
  *
- * Design: L12-defunctionalization.md (roster/ptx-limits-campaign). This
- * implements the capture-free Tier 0 subset via *application distribution*
- * rather than a synthesized Reynolds tag variant:
+ * Design: L12-defunctionalization.md, a note that is NOT part of this
+ * repository (it lived in an unpublished working directory - do not look for
+ * it in a clone). What this file implements, stated here so the design does
+ * not depend on that note: the capture-free Tier 0 subset via *application
+ * distribution* rather than a synthesized Reynolds tag variant:
  *
  *   - `let f = g in ... f x ...`         (single static candidate, L12 4.1)
  *       -> the binding is dropped and every `f a...` becomes `g a...`,

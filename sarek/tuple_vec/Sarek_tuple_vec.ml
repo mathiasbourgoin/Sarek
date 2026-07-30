@@ -19,8 +19,9 @@
  * Scope (this tier): tuples of two or three scalar-primitive components,
  * running on CUDA/PTX, OpenCL, Vulkan and Native. Native shares the [Type_id]
  * with generated kernel code through the process-wide registry below. The
- * Interpreter path needs value-model unification and is a follow-up (see
- * roster/ptx-limits-campaign/L13-tuple-vectors.md).
+ * Interpreter path needs value-model unification and is a follow-up. (Design
+ * note L13-tuple-vectors.md is NOT part of this repository - unpublished
+ * working directory; do not look for it in a clone.)
  ******************************************************************************)
 
 module Vector = Spoc_core.Vector

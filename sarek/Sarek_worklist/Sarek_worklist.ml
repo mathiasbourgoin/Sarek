@@ -11,10 +11,12 @@
  * ZLUDA, OpenCL, Vulkan, Metal, WGSL, Native, Interpreter) - using only atomics
  * Sarek already ships. No device-side kernel-launch mechanism is needed: the
  * launch happens once, host-side, like any other kernel; all "dynamic" behavior
- * flows through the queue. See roster/ptx-limits-campaign/L16-dynamic-
- * parallelism.md for the CDP-vs-worklist rationale (CDP is frequently slower
- * than a good worklist for its own headline workload and exists cleanly on only
- * 1 of 6 backends).
+ * flows through the queue. The CDP-vs-worklist rationale is summarised here
+ * rather than cited: CDP is frequently slower than a good worklist for its own
+ * headline workload, and exists cleanly on only 1 of 6 backends. (It was
+ * argued at length in a design note, L16-dynamic-parallelism.md, which is NOT
+ * part of this repository - it lived in a working directory that was never
+ * published, so do not look for it in a clone.)
  *
  * QUEUE LAYOUT
  *   A control vector [ctrl] (int32, length {!Ctrl.size}) holds the counters:

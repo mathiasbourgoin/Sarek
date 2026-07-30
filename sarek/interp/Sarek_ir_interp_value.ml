@@ -345,7 +345,7 @@ let eval_binop op v1 v2 =
          and PTX emits shr.s32/shr.s64. [lsr] is lowered to a separate
          expression tree in Sarek_lower_ir.ml precisely because this node is
          arithmetic - see G phase 1 in
-         briefs/fix-critical-semantics-evidence.md. *)
+         the unpublished fix-critical-semantics-evidence.md note. *)
       match v1 with
       | VInt64 a -> VInt64 (Int64.shift_right a (to_int v2))
       | _ -> VInt32 (Int32.shift_right (to_int32 v1) (to_int v2)))

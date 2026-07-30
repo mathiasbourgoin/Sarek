@@ -1212,7 +1212,7 @@ and emit_binop buf alloc env op e1 e2 : string =
          int type; the interpreter uses Int32.shift_right). [lsr] is lowered
          to a separate expression tree in Sarek_lower_ir.ml precisely
          because this node is arithmetic - see G phase 1 in
-         briefs/fix-critical-semantics-evidence.md. Formal spec note:
+         the unpublished fix-critical-semantics-evidence.md note. Formal spec note:
          formal/codegen-ptx/theories/PtxTypes.v models Shr as a logical
          Nat.shiftr on U32; that model was written against the old (wrong)
          shr.u32 emission and is now out of sync with this fix. formal/ is

@@ -302,10 +302,11 @@ let is_rusticl_device ~framework ~device =
 
     rusticl / Mesa fp64 (with RUSTICL_FEATURES=fp64) computes fp64 division and
     sqrt at only ~single precision while +, -, * stay exact. Measured directly
-    with a hand-written OpenCL C repro (briefs/opencl-f64-while-loop-impl.md,
-    harness clprobe.c) on both rusticl devices: sqrt/div rel err ~1.8e-8, mul
-    ~4e-16. Vulkan/RADV on the same GPU is exact, so this is a driver
-    limitation, not a Sarek codegen artefact (evidence: PR #266). *)
+    with a hand-written OpenCL C repro (the unpublished
+    opencl-f64-while-loop-impl.md note, harness clprobe.c) on both rusticl
+    devices: sqrt/div rel err ~1.8e-8, mul ~4e-16. Vulkan/RADV on the same GPU
+    is exact, so this is a driver limitation, not a Sarek codegen artefact
+    (evidence: PR #266). *)
 let opencl_fp64_transcendental_envelope = 1e-5
 
 (** Classify one fp64 result as [`Pass], the documented rusticl fp64 div/sqrt

@@ -13,7 +13,7 @@
      happen to accept it). A compound in shared memory is therefore rejected at
      the [let%shared] boundary, mirroring lower_param's tuple-parameter
      rejection — a clean located compile error, not unproven codegen.
-     See briefs/helper-return-wrong-width-impl.md (round 2). *)
+     See the unpublished helper-return-wrong-width-impl.md note (round 2). *)
 
 let () =
   let bad_kernel =
