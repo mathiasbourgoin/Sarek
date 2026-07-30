@@ -12,10 +12,18 @@
  *
  *   Interpreter: REFUSED, raising Unsupported_operation "record field
  *                assignment" / "not fully supported".
- *   Native:      ACCEPTED and silently dropped the store. The generated OCaml
- *                was a setfield on the fresh record Vector.get had just
- *                marshalled out of storage, so the write hit a temporary. No
- *                error on any path; the vector simply kept its old values.
+ *   Native:      TWO failure modes, split by whether the field is mutable. On a
+ *                MUTABLE field it ACCEPTED the store and silently dropped it:
+ *                the generated OCaml was a setfield on the fresh record
+ *                Vector.get had just marshalled out of storage, so the write hit
+ *                a temporary, no error was raised on any path, and the vector
+ *                simply kept its old values. On an IMMUTABLE field the same
+ *                setfield did not COMPILE ("The record field b is not mutable")
+ *                — loud, but misdiagnosed, since mutability was never the
+ *                problem. Both are pinned below ([triple] and [mtriple]); "no
+ *                error on any path" holds of the mutable half and not of the
+ *                construct, and the mutable half is the dangerous one because
+ *                the immutable error is what pushed users into it.
  *
  * The Native half is the dangerous one, and it is why this test asserts on
  * EVERY available device rather than on the one that was broken loudly. A
@@ -1113,7 +1121,18 @@ let () =
      in exactly the silence this mechanism exists to break, and the sentence was
      wider than the list under it. Each framework carries its OWN claim text,
      because one generic sentence stretched over five different measurements
-     would be that same defect again, one level down. *)
+     would be that same defect again, one level down.
+
+     WHAT THE ABSENCE OF A LINE DOES AND DOES NOT MEAN. This tracks ENUMERATION
+     only. No line for framework F means a device of that framework ran and
+     asserted; it does NOT mean the specific polarity named in F's claim text was
+     the one exercised. [predict_struct_gap] reads the order out of the source it
+     was actually handed, so if the emission order ever changed, [outer] and
+     [mouter] could both land on the same side of the gap and the run would still
+     be green with no line printed — having verified something narrower than the
+     sentence. Each claim text is therefore worded as what the HEADER states, not
+     as a summary of what a green run proved; pinning the polarity itself is what
+     the [predicted_gap] comparison in [run_on] does, per kernel and per device. *)
   let frameworks_seen =
     Array.to_list devs |> List.map (fun (d : Device.t) -> d.Device.framework)
   in

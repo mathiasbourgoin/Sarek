@@ -126,7 +126,16 @@ let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
              [setfield]: [Vector.get] marshals the element out of the vector's
              storage and returns a fresh record, so the store landed in a
              temporary and was silently discarded — the kernel appeared to run
-             and the vector kept its old values, with no error on any path.
+             and the vector kept its old values.
+
+             "Silently" applies to a MUTABLE field, which is the reachable half
+             and the dangerous one. With an immutable field the emitted setfield
+             did not compile at all ("The record field b is not mutable"), which
+             is loud but misdiagnosed — mutability was never the problem — and is
+             what pushed users to add [mutable] and so into the silent half. Both
+             are pinned by test_record_field_store.ml ([triple] and [mtriple]);
+             saying "no error on any path" of the whole construct would be wider
+             than either.
 
              A functional update written back through the same [kernel_set] that
              [TEVecSet] uses, rather than making the field mutable and storing
@@ -137,12 +146,18 @@ let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
              detail: this makes a one-field store a WHOLE-ELEMENT read-modify-
              write. Element [i] is read, one field is replaced, and all of it is
              written back. So two threads storing DIFFERENT fields of the SAME
-             element lose one of the two writes on this backend, where the
-             C-family and PTX emitters address the field directly and the
-             interpreter mutates [fields.(idx)] in place — all three of which
-             keep both writes. The CPU runtime really does run threads
-             concurrently on domains (Sarek_cpu_runtime.ml), so the window is
-             not theoretical.
+             element are a LOST-UPDATE RACE on this backend, where the C-family
+             and PTX emitters address the field directly and the interpreter
+             mutates [fields.(idx)] in place — three paths on which the two
+             stores touch disjoint locations and cannot interfere at all.
+
+             A RACE, not a guaranteed loss, and the difference is the honest
+             statement: an interleaving that reads both elements before either
+             writes back loses one store, and a serialised interleaving loses
+             neither. So this is not reproducible on demand — which is what makes
+             it worth a comment rather than less. The CPU runtime does run threads
+             concurrently on domains (Sarek_cpu_runtime.ml), so the interleaving
+             is available; nothing here makes it certain.
 
              That is READ OFF THIS EXPANSION AND THE THREE OTHER BACKENDS, not
              observed: no kernel in the test suite has two writers per element,
@@ -175,24 +190,36 @@ let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
                    put in a record-update expression. Refuse loudly: silently
                    emitting a setfield here is precisely the bug being fixed.
 
-                   The message must not name an ATTRIBUTE. What lands in
-                   [ctx.inline_types] is a record declared INSIDE the [%kernel]
-                   payload — [Sarek_native_gen.inline_type_decls] keeps exactly
-                   the [tkern_type_decls] whose name carries no '.' — and such a
-                   declaration bears no attribute at all. An earlier wording said
-                   "[%%sarek.type] record", which is wrong twice: the construct
-                   is not attributed, and in a [raise_errorf] format [%%] renders
-                   as a single [%], so the reader was sent looking for
-                   [%sarek.type] when the attribute that does exist is spelled
-                   [@@sarek.type] and is not what they have. *)
+                   NAMING THE CONSTRUCT, and the two ways this message got it
+                   wrong. What lands in [ctx.inline_types] is a record declared
+                   INSIDE the [%kernel] payload — [Sarek_native_gen
+                   .inline_type_decls] keeps exactly the [tkern_type_decls] whose
+                   name carries no '.' — and such a declaration bears no
+                   attribute. The original wording called it an "[%%sarek.type]
+                   record", which is wrong twice over: the construct is not
+                   attributed, and in a [raise_errorf] format [%%] renders as a
+                   single [%], so the reader went looking for [%sarek.type],
+                   which is nothing.
+
+                   The correction to that then overshot in the other direction by
+                   dropping the attribute from the ADVICE as well. Moving the
+                   declaration out of the kernel is not sufficient on its own: an
+                   out-of-kernel type is Sarek-visible only once registered, and
+                   [@@sarek.type] is what registers it ([Sarek_ppx]'s scan keys on
+                   exactly that attribute and on [sarek.type_private]). So the
+                   fix names the attribute in the advice and not in the diagnosis.
+
+                   FOUR [@]s: Format renders [@@] as one [@], so [@@@@sarek.type]
+                   is what puts [@@sarek.type] in front of the user. Verified on
+                   the rendered output, not on this literal. *)
                 Location.raise_errorf
                   ~loc
                   "Sarek: cannot assign to field %S of a record type declared \
                    inside the kernel and stored in a vector. Such types are \
                    read through generated getters and have no setters, so this \
-                   store cannot be expressed. Move the type declaration \
-                   outside the kernel, or build the updated element and assign \
-                   it with v.(i) <- ..."
+                   store cannot be expressed. Move the type declaration out of \
+                   the kernel and register it with [@@@@sarek.type], or build \
+                   the updated element and assign it with v.(i) <- ..."
                   f
           in
           (* Rebuild outwards: the innermost update takes the new value, and
@@ -270,13 +297,16 @@ let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
           | Field_fcm _ ->
               (* Same naming point as the vector-base refusal above: the
                  construct is a record declared inside the [%kernel] payload and
-                 bears no attribute, so the message names no attribute. *)
+                 bears no attribute, so the DIAGNOSIS names none — while the
+                 ADVICE does, because moving the declaration out is not enough on
+                 its own without [@@sarek.type] to register it. Four [@]s for the
+                 same Format reason. *)
               Location.raise_errorf
                 ~loc
                 "Sarek: cannot assign to field %S of a record type declared \
                  inside the kernel. Such types are read through generated \
-                 getters and have no setters. Move the type declaration \
-                 outside the kernel."
+                 getters and have no setters. Move the type declaration out of \
+                 the kernel and register it with [@@@@sarek.type]."
                 field_name))
   | _ -> failwith "gen_memory_access: not a memory access expression"
 

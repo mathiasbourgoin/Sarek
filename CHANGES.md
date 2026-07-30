@@ -144,31 +144,47 @@
 - `v.(i).f <- e` — an in-place record-field store on a vector element — did
   something different on each CPU backend, while working on CUDA/PTX. The
   Interpreter **refused** it (`Unsupported_operation "record field assignment"
-  / "not fully supported"`). Native **accepted it and silently dropped the
-  store**: the generated OCaml was a setfield on the fresh record
-  `Vector.get` had just marshalled out of storage, so the write hit a temporary
-  and the vector kept its old values, with no error on any path. The nested form
-  `v.(i).f.g <- e` was dropped on **both** CPU backends for a second reason
-  (the Interpreter read the intermediate record through the registry's copying
-  `get_field`; Native matched only the depth-1 shape), so fixing depth 1 alone
-  would have left it. Asserted on every enumerated device, reading the values
-  back and checking the neighbouring fields at both levels, because a dropped
-  store is otherwise indistinguishable from a kernel that never ran.
+  / "not fully supported"`). Native had two failure modes split by mutability:
+  on a **mutable** field it accepted the store and **silently dropped** it — the
+  generated OCaml was a setfield on the fresh record `Vector.get` had just
+  marshalled out of storage, so the write hit a temporary, nothing raised, and
+  the vector kept its old values — while on an **immutable** field the same
+  setfield did not compile (`The record field b is not mutable`), loud but
+  misdiagnosed, which is what pushed users to add `mutable` and so into the
+  silent half. Both halves are pinned.
+
+  The nested form `v.(i).f.g <- e` needed a second fix on top of the depth-1
+  one, on both CPU backends: with depth 1 fixed the Interpreter still read the
+  intermediate record through the registry's copying `get_field` and Native still
+  matched only the depth-1 shape, so the chained store was silently dropped by
+  both. (Before either fix the Interpreter refused every field store, nested or
+  not; the silent nested drop is the state the depth-1 fix alone would have
+  shipped.) Asserted on every enumerated device, reading the values back and
+  checking the neighbouring fields at both levels, because a dropped store is
+  otherwise indistinguishable from a kernel that never ran.
 
   Two limits, stated rather than implied. On Native the store is now a
-  whole-element read-modify-write, so two threads writing *different* fields of
-  the *same* element lose one write there, where the C-family, PTX and
-  interpreter paths keep both — read off the expansion, covered by no test
-  (backlog-207). And a record type declared *inside* the kernel payload is read
-  through a generated getter that has no setter, so a store to one is now
-  **refused with a message** instead of silently emitting a setfield.
+  whole-element read-modify-write, which makes two threads writing *different*
+  fields of the *same* element a lost-update **race** there — an interleaving
+  that reads both elements before either writes back loses one store, a
+  serialised one loses neither — where the C-family, PTX and interpreter paths
+  touch disjoint locations and cannot interfere. Read off the expansion, not
+  observed, and covered by no test (backlog-207). And a record type declared
+  *inside* the kernel payload is read through a generated getter that has no
+  setter, so a store to one is now **refused with a message** instead of silently
+  emitting a setfield.
 
 - A record bound to a `let` inside a kernel was a live window onto vector
   storage in the Interpreter rather than a copy, so mutating the local mutated
-  the vector element it came from. Detaching it copies through nested records
-  and variant payloads, and refuses a chain deeper than 64 links rather than
-  looping on a cyclic value. The depth-65 refusal is read off the marshaller and
-  `bind_var`, not observed, and no committed test covers a 65-link chain.
+  the vector element it came from. Detaching it copies through nested records and
+  variant payloads, and refuses a chain deeper than 64 links. What that guard
+  replaces is not a hang: the recursion is not tail-recursive, so an unguarded
+  cyclic value dies with `Stack_overflow` — an untyped crash naming neither the
+  value nor the binding — after tens of seconds of allocation and GC thrash
+  (measured on one host; the seconds are a property of that `ulimit -s`, so the
+  direction is the claim, not the figure). The depth-65 refusal itself is read
+  off the marshaller and `bind_var`, not observed, and no committed test covers a
+  65-link chain.
 
 - `Sarek_df64` silently ran at plain float32 precision on real NVIDIA
   hardware (CUDA/PTX and NVIDIA OpenCL): `ptxas` contracted the multiply in
