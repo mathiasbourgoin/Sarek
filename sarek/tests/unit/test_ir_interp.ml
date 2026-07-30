@@ -226,7 +226,7 @@ let test_binop_lt () =
 
 let test_binop_shr_negative_is_arithmetic () =
   (* Ir.Shr is arithmetic (sign-extending) on every consumer - see G phase 1
-     in briefs/fix-critical-semantics-evidence.md. (-16) >> 2 must be -4,
+     in the unpublished fix-critical-semantics-evidence.md note. (-16) >> 2 must be -4,
      not the logical-shift result 1073741820. *)
   let env = make_env () in
   let state = make_state () in

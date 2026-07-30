@@ -15,7 +15,7 @@
  * helper delegates the field to it, so the field decodes/encodes as a
  * [VVariant].
  *
- * Scope (see briefs/deriver-variant-fields-impl.md): the interpreter is
+ * Scope (see the unpublished deriver-variant-fields-impl.md note): the interpreter is
  * value-based (no byte layout), so the NON-erasable / runtime-selected case
  * works here on Interpreter + Native. Device backends (CUDA/OpenCL/Vulkan)
  * would need a nested-variant byte layout in Sarek_ir_layout, which is

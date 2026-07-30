@@ -2,7 +2,7 @@
 
 **SIMT Abstraction for Runtime Extensible Kernels**
 
-[![Build Status](https://github.com/mathiasbourgoin/SPOC/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiasbourgoin/SPOC/actions)
+[![Build Status](https://github.com/mathiasbourgoin/Sarek/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiasbourgoin/Sarek/actions)
 
 Sarek is a PPX-based DSL that lets you write GPU kernels directly in OCaml syntax. Kernels compile to multiple backends (CUDA, OpenCL, Vulkan, Metal) without code changes.
 

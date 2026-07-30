@@ -120,7 +120,7 @@ let generic_math_template name = named_math_template ~name ~generic_name:name
  * Sarek_float64.Float64 stdlib declaration at all and no interpreter arm, so
  * registering them into the Math.Float64 tables would convert an honest lookup
  * failure into a silent miscompile: codegen would emit a call to a name the
- * interpreter cannot evaluate. See briefs/backend-dry-correctness-step0.md
+ * interpreter cannot evaluate. See the unpublished backend-dry-correctness-step0.md note
  * section (e). This is a tracked follow-up boundary, not an oversight.
  * (log10, rsqrt and fabs DO have interpreter arms — see
  * sarek/interp/Sarek_ir_interp_intrinsics.ml eval_float64_math_intrinsic, whose

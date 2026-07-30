@@ -552,7 +552,7 @@ let ir_binop (op : binop) (_ty : typ) : Ir.binop =
       (* Never reached: TEBinop (Lsr, _, _) is intercepted in lower_expr
          and rewritten via lower_lsr into a logical-shift expression tree,
          because Ir.Shr is arithmetic on every backend (see
-         briefs/fix-critical-semantics-evidence.md, G phase 1). Kept here
+         the unpublished fix-critical-semantics-evidence.md note, G phase 1). Kept here
          so this match stays a total, honest structural map of
          Sarek_ast.binop. *)
       Ir.Shr
@@ -626,10 +626,10 @@ let is_trivial_ir_expr (e : Ir.expr) : bool =
     Ir.Shr is emitted as an *arithmetic* (sign-extending) shift by every
     consumer (CUDA/OpenCL/Metal/GLSL/WGSL emit plain [>>] on a signed C/GLSL int
     type; PTX and the interpreter use [shr.s32]/[Int32.shift_right] - see G
-    phase 1 in briefs/fix-critical-semantics-evidence.md). There is no IR node
-    for a logical shift and none may be added (formal/codegen-ptx models [Shr]
-    itself), so [lsr] is expressed via the classic arithmetic-shift identity,
-    width-aware via [width_bits]:
+    phase 1 in the unpublished fix-critical-semantics-evidence.md note). There
+    is no IR node for a logical shift and none may be added (formal/codegen-ptx
+    models [Shr] itself), so [lsr] is expressed via the classic arithmetic-shift
+    identity, width-aware via [width_bits]:
 
     {[
       lshr (a, n)
