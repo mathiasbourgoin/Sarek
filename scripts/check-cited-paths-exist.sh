@@ -30,7 +30,11 @@
 #     formal/codegen-ptx/test/ means formal/codegen-ptx/theories/PtxLayout.v.
 #     A citation resolves from the repo root or ANY ancestor of the citing file,
 #     which is how a reader resolves it.
-#  3. PTX mnemonics that lex like paths — `ld/st.shared` is not a shell script.
+#  3. OCaml quoted-string literals -- {| ... |} and {id| ... |id}. 46 files here
+#     use them to hold raw PTX/CUDA source, which contains both "(*" sequences
+#     and real-looking paths. Unhandled, a {| would open a phantom comment and
+#     swallow the code after it into the scan (CodeRabbit, PR #387).
+#  4. PTX mnemonics that lex like paths — `ld/st.shared` is not a shell script.
 #     The extension must end the token; without that guard `st.shared` matched
 #     `st.sh` and three prose lines read as dangling citations.
 #
@@ -116,9 +120,24 @@ def comments_only(src):
     i, n = 0, len(src)
     depth = 0          # comment nesting depth; 0 = not in a comment
     in_string = False  # inside "..." (only tracked outside comments)
+    quoted_close = None  # inside {id|...|id}: the exact closing delimiter
+    # OCaml quoted-string literals. 46 files here use them, and they hold raw
+    # PTX/CUDA text that contains "(*" and paths -- so an unhandled {| would
+    # open a phantom comment and swallow real code into the scan.
+    QUOTED_OPEN = re.compile(r"\{([A-Za-z_][A-Za-z0-9_']*)?\|")
     while i < n:
         c = src[i]
         two = src[i : i + 2]
+        if quoted_close is not None:
+            # Opaque text until the matching |id}. Blank it; keep newlines.
+            if src.startswith(quoted_close, i):
+                out.append(" " * len(quoted_close))
+                i += len(quoted_close)
+                quoted_close = None
+                continue
+            out.append("\n" if c == "\n" else " ")
+            i += 1
+            continue
         if depth == 0 and in_string:
             # Blank the literal's contents; an escaped quote does not close it.
             if c == "\\" and i + 1 < n:
@@ -136,6 +155,13 @@ def comments_only(src):
             out.append(" ")
             i += 1
             continue
+        if depth == 0 and c == "{":
+            m = QUOTED_OPEN.match(src, i)
+            if m:
+                quoted_close = "|" + (m.group(1) or "") + "}"
+                out.append(" " * (m.end() - i))
+                i = m.end()
+                continue
         if two == "(*":
             depth += 1
             out.append("  ")
