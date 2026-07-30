@@ -163,22 +163,27 @@ let count_sub hay needle =
     in
     go 0 0
 
-(* One (backend, shape) cell: [dep] must be declared before [user], the
-   reference that creates the edge must still be present, and both declarations
-   must exist at all. *)
+(* One (backend, shape) cell. RETURNS its problems rather than raising: the
+   sweep must report EVERY failing cell, not only the first one. Alcotest's
+   [failf] aborts the case, and the two halves of this gap are one backend apart
+   in the table — a fail-fast sweep would have named CUDA and said nothing about
+   the other four, which is the shape of report that made the gap look like one
+   family's problem in the first place. *)
 let check_cell ~b ~shape ~dep ~user ~src =
   let where = Printf.sprintf "%s / %s" b.bname shape in
   let dep_at = find_sub src (b.anchor dep) in
   let user_at = find_sub src (b.anchor user) in
+  let problems = ref [] in
+  let problem fmt = Printf.ksprintf (fun s -> problems := s :: !problems) fmt in
   if dep_at < 0 then
-    Alcotest.failf
+    problem
       "%s: no declaration of %S found (looked for %S) in:\n%s"
       where
       dep
       (b.anchor dep)
       src ;
   if user_at < 0 then
-    Alcotest.failf
+    problem
       "%s: no declaration of %S found (looked for %S) in:\n%s"
       where
       user
@@ -190,28 +195,42 @@ let check_cell ~b ~shape ~dep ~user ~src =
      while the edge under test had disappeared. *)
   let occurrences = count_sub src dep in
   if occurrences < 2 then
-    Alcotest.failf
+    problem
       "%s: %S occurs %d time(s) — the reference that creates the edge is gone, \
-       so the order assertion below would be vacuous:\n\
+       so the order assertion would be vacuous:\n\
        %s"
       where
       dep
       occurrences
       src ;
-  if dep_at > user_at then
-    Alcotest.failf
+  (* Only compare positions that were actually found: two -1s compare as
+     ordered, which is how a sweep over a backend that emitted nothing at all
+     reads green. *)
+  if dep_at >= 0 && user_at >= 0 && dep_at > user_at then
+    problem
       "%s: %S is declared at %d, AFTER %S at %d, which references it:\n%s"
       where
       dep
       dep_at
       user
       user_at
-      src
+      src ;
+  List.rev !problems
+
+(* Report every failing cell of one shape's sweep in one message. *)
+let report shape problems =
+  if problems <> [] then
+    Alcotest.failf
+      "%s: %d of %d backend(s) failed:\n\n%s"
+      shape
+      (List.length problems)
+      (List.length backends)
+      (String.concat "\n\n" problems)
 
 (* Shape A — a variant whose payload is a record. The C family emitted variants
    before records, so this was its red half. *)
 let test_variant_with_record_payload () =
-  List.iter
+  List.concat_map
     (fun b ->
       let k =
         kernel_with
@@ -226,11 +245,12 @@ let test_variant_with_record_payload () =
         ~user:user_variant_name
         ~src)
     backends
+  |> report "shape A: variant with a record payload"
 
 (* Shape B — a record whose field type is a variant. GLSL and WGSL emitted
    records before variants, so this was their red half. *)
 let test_record_with_variant_field () =
-  List.iter
+  List.concat_map
     (fun b ->
       let k = kernel_with ~variants:[(dep_variant_name, dep_variant_constrs)] in
       let src =
@@ -245,6 +265,7 @@ let test_record_with_variant_field () =
         ~user:user_record_name
         ~src)
     backends
+  |> report "shape B: record with a variant field"
 
 let test_backend_count () =
   Alcotest.(check int)
