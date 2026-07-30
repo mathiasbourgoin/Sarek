@@ -83,6 +83,15 @@ jobs:
       - name: Workflow steps well-formed (backlog-186)
         run: ./scripts/check-workflow-steps.sh
 
+      # The step above reads workflow STRUCTURE; it is satisfied by one
+      # well-formed `run:` key whatever that key runs, and in what environment.
+      # backlog-186's HIP compile-gate then failed a SECOND time on exactly that
+      # blind spot: the right command as a host `run:`, in a job that provisions
+      # no host switch, dead at `dune: command not found`. Same deliverable
+      # missing, different route. See scripts/check-workflow-toolchain-env.sh.
+      - name: Workflow toolchain environment guard (backlog-186)
+        run: ./scripts/check-workflow-toolchain-env.sh
+
       # #137. This checker existed for months, exited 1 on `main`, and was
       # referenced by no workflow and no Makefile target -- the fourth
       # "declared gate that nothing invokes" found in this repo. It is wired
@@ -182,6 +191,11 @@ jobs:
           ./scripts/check-cited-paths-exist.test.sh
           ./scripts/check-readme-repo-links.test.sh
           ./scripts/check-workflow-steps.test.sh
+          # Its sibling, for the environment half of the same class. Same reason
+          # for a .test.sh over a prove-red-spec block (git rev-parse), and its
+          # first red case is likewise the real defect: `run: dune build
+          # @sarek-hip/all` on the host of a container-only job.
+          ./scripts/check-workflow-toolchain-env.test.sh
           # #94. Lexical companion to sarek/tests/unit/test_backend_arm_parity.ml:
           # asserts every intrinsic name matched by any backend's `arm` table has
           # a row in that test's matrix. The test itself probes BEHAVIOUR (it has
@@ -422,8 +436,37 @@ jobs:
       # `run` keys. YAML keeps the last, so the step NAMED for the HIP gate ran
       # check-negative-case-coverage.sh and the HIP compile-gate -- the whole
       # point of backlog-186 -- never executed. Caught by CodeRabbit on PR #383.
+      #
+      # THEN it failed a SECOND time, in a different way. The fix above restored
+      # the intended command but as a HOST `run:`, copying the shape of the
+      # negative-case step directly above -- whose comment says in as many words
+      # that it "needs no toolchain, so it runs on the host". This step DOES need
+      # the toolchain. This job provisions none on the host: there is no
+      # ocaml/setup-ocaml here, every OCaml action goes through spoc-ci:latest.
+      # So the step died at `dune: command not found`, exit 127, and backlog-186
+      # STILL had not compile-gated a single line. Two different mistakes, one
+      # step, same net effect both times: ~1.9k lines of backend and 6 test
+      # executables outside every automated path.
+      #
+      # Nothing mechanical was watching either time, and that is the actual
+      # defect. `sarek-hip` is a DIRECTORY alias, so it is not one of the three
+      # `(alias ...)` rule aliases DIRECTION 3 of check-test-alias-coverage.sh
+      # tracks -- measured: splitting this command across a line continuation
+      # leaves that gate at exit 0. Yet scripts/unwired-targets.tsv's
+      # `alias::e2e-hip` exemption justifies itself with "until then ci.yml
+      # compile-gates the same targets via @sarek-hip/all". So this step is what
+      # makes that exemption honest, and no gate checked it existed or ran.
+      # check-workflow-toolchain-env.sh now covers the class that broke it here.
       - name: Compile-gate the HIP backend and its tests
-        run: dune build @sarek-hip/all
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            spoc-ci:latest \
+            bash -lc 'git config --global --add safe.directory /work && \
+              export OPAMROOT=/work/.opam-ci && \
+              eval $(opam env --switch=${{ matrix.ocaml-compiler }}) && \
+              dune build @sarek-hip/all'
 
       - name: Check the tvar id space has one allocator
         run: ./scripts/check-tvar-id-allocator.sh
