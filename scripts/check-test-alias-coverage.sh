@@ -290,10 +290,24 @@ PYEOF
 # copy: scripts/prove-red-fixtures/alias-coverage/decl.tsv
 # copy: scripts/prove-red-fixtures/alias-coverage/wired/dune
 # copy: scripts/prove-red-fixtures/alias-coverage/exempt/dune
+# copy: scripts/prove-red-fixtures/alias-coverage/Makefile
 # invoke: scripts/check-test-alias-coverage.sh
 # baseline-argv: scripts/prove-red-fixtures/alias-coverage scripts/prove-red-fixtures/alias-coverage/decl.tsv
 # baseline-exit: 0
 # baseline-message: 1 unwired, all declared with a reason
+#
+# mutation: alias-unreachable
+#   desc: remove the Makefile's `dune build @e2e-fixture` line, leaving a non-self-executing alias that nothing builds. This is DIRECTION 3's own defect -- a dune file wired to an alias that no workflow, Makefile or script ever invokes, so its tests are declared, built by nobody and run by nobody. Without this mutation DIRECTION 3 was covered by nothing: the fixture had no invoker at all, the gate exited 2, and the baseline was not green (observed in CI on PR #383).
+#   apply: python3 - <<'PYEOF'
+#   apply: p = "scripts/prove-red-fixtures/alias-coverage/Makefile"
+#   apply: s = open(p, encoding="utf-8").read()
+#   apply: old = "\tdune build @e2e-fixture\n"
+#   apply: assert s.count(old) == 1, ("invoker line not unique: %d" % s.count(old))
+#   apply: s = s.replace(old, "\t@echo nothing\n")
+#   apply: open(p, "w", encoding="utf-8").write(s)
+#   apply: PYEOF
+#   expect-exit: 1
+#   expect-message: e2e-fixture
 #
 # mutation: unwired-undeclared
 #   desc: a target declared with no alias, no run rule and no line in the declaration — the "builds green, never executes" shape this gate exists for.

@@ -7,3 +7,12 @@
  (alias runtest)
  (action
   (run %{dep:fixture_wired.exe})))
+
+; A NON-self-executing alias: dune will not run it on its own, so it is only
+; reachable if some invoker (Makefile / workflow / script) builds it. This is
+; what gives DIRECTION 3 -- alias reachability -- real content in the fixture,
+; rather than a direction that silently does not apply.
+(rule
+ (alias e2e-fixture)
+ (action
+  (run %{dep:fixture_wired.exe})))
