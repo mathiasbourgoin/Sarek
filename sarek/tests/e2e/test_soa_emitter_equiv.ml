@@ -643,6 +643,64 @@ let check_layout_validation () =
    a [dpair] vector (2 x f64, stride 16) binds to a [point3d] parameter (3 x f32,
    stride 12) without complaint. Both the leaf list and the stride disagree, so
    the launch check is what stands between that and a kernel reading garbage. *)
+(* A SHORT argument list must be refused ON ARITY (backlog-182, H4).
+
+   run_soa called B.run_source directly and never reached
+   Execute.check_launch_args. That check's own message says why it matters: the
+   launch sizes its device argument array from the SUPPLIED count (Cuda_api.launch:
+   CArray.make (ptr void) (List.length args); Hip_api.launch likewise) while the
+   driver reads the COMPILED parameter count. A short list therefore leaves the
+   driver reading slots past the end of that array and dereferencing whatever it
+   finds as a device address. The array is correctly sized FOR THE LIST and wrong
+   FOR THE KERNEL.
+
+   The positional loop already refused too MANY arguments at an SA_Soa position
+   (List.nth_opt returning None); it said nothing about too FEW.
+
+   ASSERTS THE MESSAGE, not merely that something was raised, and that is what
+   makes this case able to fail. Pre-fix, a short list is still refused on a
+   non-PTX device -- but by the CUDA/PTX gate, for an unrelated reason. Only the
+   arity wording separates "refused because the call is wrong" from "refused
+   because the device is wrong".
+
+   Deliberately NOT asserted by observing a crash: an out-of-bounds read is not a
+   reliable observation, and a test whose red state is a segfault is not
+   evidence. *)
+let check_short_arg_list dev =
+  Printf.printf "SoA-arity  [%s] %s: %!" dev.Device.framework dev.Device.name ;
+  let sv = Soa_vector.create point3d_custom 16 in
+  let ir = ir_of p3_kernel in
+  let contains hay needle =
+    let n = String.length needle and m = String.length hay in
+    let rec go i = i + n <= m && (String.sub hay i n = needle || go (i + 1)) in
+    go 0
+  in
+  (* p3_kernel takes (pts, out, n) -- three parameters. Supply two. *)
+  match
+    Soa_launch.run_soa
+      ~device:dev
+      ~ir
+      ~args:[Soa_launch.SA_Soa sv; Soa_launch.SA_Reg (Sarek.Execute.Int 16)]
+      ~block:(dims 16)
+      ~grid:(dims 1)
+      ()
+  with
+  | () ->
+      Printf.printf "FAILED (a 2-arg call to a 3-param kernel was accepted)\n%!" ;
+      false
+  | exception Sarek.Execute_error.Execution_error err ->
+      let msg = Sarek.Execute_error.error_to_string err in
+      (* Matching the count language rather than an exact string, so a reworded
+         diagnostic still passes while a refusal for a DIFFERENT reason fails. *)
+      if contains msg "argument" && contains msg "3" then begin
+        Printf.printf "refused on arity OK\n%!" ;
+        true
+      end
+      else begin
+        Printf.printf "FAILED (refused, but not on arity: %s)\n%!" msg ;
+        false
+      end
+
 let check_layout_wired dev =
   let ir = ir_of p3_kernel in
   let sv = Soa_vector.create dpair_custom 8 in
@@ -713,6 +771,10 @@ let () =
       (* Wiring + ordering: a mismatched must surface the LAYOUT error,
          not the device gate, on this very non-PTX device. *)
       if not (check_layout_wired dev) then ok := false ;
+      (* H4: a short arg list must be refused on ARITY, on every device — the
+         check is device-independent, which is what makes it testable without a
+         CUDA host. *)
+      if not (check_short_arg_list dev) then ok := false ;
       (* Leaf-write round-trip (D2H + gather) on CUDA/PTX. *)
       if is_ptx dev && not (check_roundtrip dev n) then ok := false)
     devs ;

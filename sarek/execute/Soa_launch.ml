@@ -215,6 +215,43 @@ let run_soa ~(device : Device.t) ~(ir : Sarek_ir_types.kernel)
              message = "Backend not found in registry";
            })
   | Some (module B : Framework_sig.BACKEND) ->
+      (* Arity and per-position types, through the SAME check every other
+         launch path uses (backlog-182, H4). This path called B.run_source
+         directly and never reached it.
+
+         It is memory safety, not tidiness, and check_launch_args' own message
+         states why: the launch builds its device argument array from the
+         SUPPLIED count (Cuda_api.launch: CArray.make (ptr void) (List.length
+         args); Hip_api.launch likewise) while the driver reads the COMPILED
+         parameter count. So a SHORT list leaves the driver reading slots past
+         the end of that array and dereferencing whatever it finds as a device
+         address. Note the array is correctly sized FOR THE LIST and wrong FOR
+         THE KERNEL — which is why no amount of care inside [launch] can fix it:
+         [launch] does not know the kernel's arity. Only a check holding the IR
+         can, and this is it.
+
+         The positional loop below did have an arity guard, but only "at most":
+         [List.nth_opt params_info i] returning [None] catches too MANY
+         arguments at an SA_Soa position and says nothing about too FEW. That is
+         also the mechanism behind the accepted-mismatch case — omit an early
+         scalar and every later SA_Soa is compared against the WRONG parameter,
+         because index i no longer means what it did. check_launch_args does
+         arity FIRST and unconditionally, so both are closed before any
+         positional comparison is trusted.
+
+         Mapping each soa_arg to the vector_arg it stands for: an SA_Soa is its
+         AoS vector, which carries the record element type the check needs; an
+         SA_Reg is already one. The arities correspond 1:1 because the kernel IR
+         still declares ONE parameter per record vector — the expansion into N
+         leaf pointers happens in the emitter, under ~soa_params, not here. *)
+      Execute.check_launch_args
+        ~kernel:ir.Sarek_ir_types.kern_name
+        ir
+        (List.map
+           (function
+             | SA_Soa sv -> Execute.Vec (Soa_vector.aos_vector sv)
+             | SA_Reg a -> a)
+           args) ;
       (* SoA parameter names = kernel param name at each SA_Soa position. *)
       let params_info = kernel_params_info ir in
       let param_names = List.map fst params_info in
