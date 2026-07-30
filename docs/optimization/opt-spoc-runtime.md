@@ -64,7 +64,7 @@ are required to agree byte-for-byte:
   (`sarek-cuda/Cuda_api.ml:303-308`, `Memory.alloc_custom`); one base pointer
   is bound as a single kernel parameter (`Sarek_ir_ptx_kernel.ml:69-93`: one
   `.param .u64` + one `.param .u32` length, **not** one pointer per field).
-- **Device addressing (`spoc/codegen/Sarek_ir_ptx_mem.ml`)** —
+- **Device addressing (`sarek/codegen/Sarek_ir_ptx_mem.ml`)** —
   `emit_agg_elem_addr` (lines 191-205) computes the *element* base address as
   `r_base + idx * stride` where `stride = elt_stride t` = the full packed
   struct size (12 for `point3d`, from `Sarek_ir_layout.elttype_layout`).
@@ -127,8 +127,9 @@ just a new *consumer* of the existing flattening.
   count, so `Kernel_args`/`RSA_Buffer`/`bind_to_kargs`
   (`sarek/core/Transfer.ml:37-89`, `Framework_sig.exec_arg`) all need to bind
   N buffers per vector argument instead of 1. This is mechanical but touches
-  the ABI surface documented in `L9-byvalue-aggregate-params.md` — budget
-  real effort here, not just codegen.
+  the ABI surface covered by the L9 limits-campaign note (internal backlog, not
+  in this repository — see the header above) — budget real effort here, not just
+  codegen.
 
 **(c) Transparent-choice design.** Two viable knobs, not mutually exclusive:
   - *Per-vector layout tag at creation*: `Vector.create ~layout:AoS|SoA kind
@@ -215,7 +216,7 @@ plumbing N buffers through `Vector_types`'s `device_buffers` table,
 binding, and the kernel-parameter arity change in
 `Sarek_ir_ptx_kernel.ml` — all mechanical, well-specified by the existing
 `Sarek_ir_layout.leaf` list, but touching several files each requiring care
-around the `L9-byvalue-aggregate-params.md` ABI constraints.
+around the L9 ABI constraints (limits-campaign note, internal backlog).
 
 **Verdict: pursue, opt-in per-vector, v1 = flat records only (reject nested
 records / variants — variants don't have a well-defined SoA split by tag).**

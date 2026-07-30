@@ -179,11 +179,19 @@ let check_warp_barrier_not_callable () =
     Categories rather than a name whitelist, so that a newly added fence is
     caught by this guard instead of quietly satisfying it. *)
 let check_declared_sync_name_set () =
-  let declared =
+  let matched =
     Sarek_core_primitives.primitives
     |> List.filter (fun (p : Sarek_core_primitives.primitive) ->
         p.category = "sync" || p.category = "fence")
+  in
+  let declared =
+    matched
     |> List.map (fun (p : Sarek_core_primitives.primitive) -> p.name)
+    |> List.sort compare
+  in
+  let categories =
+    matched
+    |> List.map (fun (p : Sarek_core_primitives.primitive) -> p.category)
     |> List.sort compare
   in
   Alcotest.(check (list string))
@@ -192,12 +200,16 @@ let check_declared_sync_name_set () =
      this set"
     ["block_barrier"; "memory_fence_block"; "memory_fence_device"]
     declared ;
-  (* Positive control: the filter is not vacuously empty, and the categories it
-     names are really the ones carrying these primitives. *)
-  Alcotest.(check int)
-    "positive control: the category filter matched a non-empty set"
-    3
-    (List.length declared)
+  (* Not entailed by the name set above, and not entailing it: the names say
+     nothing about which of the two categories each one came from, so a primitive
+     re-categorised from "fence" to "sync" leaves the name check green and is
+     caught only here. Pinning the split keeps BOTH disjuncts of the filter
+     load-bearing -- a vacuous one would otherwise be invisible. *)
+  Alcotest.(check (list string))
+    "the split across the two filtered categories is one \"sync\" and two \
+     \"fence\" -- neither disjunct of the filter is vacuous"
+    ["fence"; "fence"; "sync"]
+    categories
 
 let () =
   Alcotest.run
