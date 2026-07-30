@@ -34,14 +34,26 @@ open Sarek_metal
    which machine can answer the question. *)
 let objc_runtime_absent () = not (Metal_bindings.is_available ())
 
+(* One shared skip, so no case can skip SILENTLY. [test_is_repeatable] used to
+   call [Alcotest.skip ()] bare, which on a Mac printed nothing at all: the
+   reader saw a [SKIP] under a group named "fail-soft without an Objective-C
+   runtime" and had no way to tell that the runtime being PRESENT is the reason.
+   A skip that does not say why is indistinguishable from a skip for the wrong
+   reason — the family of defect this repo keeps finding. *)
+let skip_because_runtime_present name =
+  Printf.printf
+    "[SKIP] %s: Metal IS available on this host, so the fail-soft path (which \
+     requires the Objective-C runtime to be ABSENT) cannot be reached here. \
+     Linux and CI answer this question; the Metal FP behaviour itself is \
+     measured separately by tools/probes/metal_math_mode_probe.m and \
+     metal_contraction_barrier_probe.m — see docs/fp-contraction-policy.md.\n\
+     %!"
+    name ;
+  Alcotest.skip ()
+
 let test_returns_none_without_objc () =
-  if not (objc_runtime_absent ()) then begin
-    Printf.printf
-      "[SKIP] Metal is available on this host, so the no-Objective-C fail-soft \
-       path cannot be reached here\n\
-       %!" ;
-    Alcotest.skip ()
-  end
+  if not (objc_runtime_absent ()) then
+    skip_because_runtime_present "returns None rather than raising"
   else
     match Metal_bindings.mtl_compile_options_conformant () with
     | None -> ()
@@ -63,7 +75,8 @@ let test_returns_none_without_objc () =
 (* Called twice: a first call that succeeded in caching something bad, or a
    lazy that raised once and is now poisoned, must not change the answer. *)
 let test_is_repeatable () =
-  if not (objc_runtime_absent ()) then Alcotest.skip ()
+  if not (objc_runtime_absent ()) then
+    skip_because_runtime_present "is repeatable"
   else
     let attempt n =
       match Metal_bindings.mtl_compile_options_conformant () with
@@ -80,7 +93,12 @@ let () =
   Alcotest.run
     "Metal_compile_options"
     [
-      ( "fail-soft without an Objective-C runtime",
+      (* Named for the PROPERTY, not for the host condition. The old name,
+         "fail-soft without an Objective-C runtime", read backwards wherever it
+         mattered most: on a Mac the cases SKIP precisely because the runtime is
+         PRESENT, so a reader saw [SKIP] under a heading naming its absence and
+         reasonably concluded the Mac lacked libobjc. *)
+      ( "mtl_compile_options_conformant fails soft (runtime-absent hosts only)",
         [
           Alcotest.test_case
             "returns None rather than raising"
