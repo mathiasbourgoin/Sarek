@@ -551,6 +551,108 @@ let test_parse_expr_lambda_rejected () =
   with Parse_error_exn (msg, _) ->
     Alcotest.(check bool) "has useful error message" true (String.length msg > 0)
 
+(* ------------------------------------------------------------------------- *)
+(* backlog-192: the refusal boundary, for the shapes a negative-compile case
+   cannot reach.
+
+   Every refusal added by the sweep has a negative-compile case in
+   sarek/tests/negative asserting on the compiler's real stderr — except the ones
+   below, which the OCaml PARSER cannot produce, so no source file can trigger
+   them. They are built here as AST nodes directly. A refusal with no reachable
+   input is not automatically dead code (ppxlib hands us the same types from
+   elsewhere), but it IS unfalsifiable from source, and an unfalsifiable claim is
+   what this repository keeps getting wrong. So these assert on the node.        *)
+
+(* Substring test. Asserting that a refusal message is non-empty (which is what
+   test_parse_expr_lambda_rejected above does) passes for ANY refusal, including
+   one raised by a different site for a different reason, so these cases assert
+   on the text. *)
+let contains haystack needle =
+  let n = String.length needle and h = String.length haystack in
+  let rec go i =
+    i + n <= h && (String.sub haystack i n = needle || go (i + 1))
+  in
+  n = 0 || go 0
+
+(* [r.F(X).f] is a SYNTAX ERROR in OCaml: the grammar's field position is
+   mk_longident(mod_longident, LIDENT) and mod_longident has no
+   functor-application production (checked with `ocamlc -stop-after parsing` on
+   `let f r = r.F(X).lbl`, which reports "Syntax error"). Before backlog-192 this
+   arm fell back to the literal field name "field". *)
+let test_parse_record_field_lapply_refused () =
+  let loc = Location.none in
+  let open Ppxlib.Ast_builder.Default in
+  (* The constructor is written where a [longident loc] is EXPECTED, so
+     type-directed disambiguation resolves it; a bare [let l = Lapply ...] does
+     not typecheck here because this file does not open Ppxlib. *)
+  let expr =
+    pexp_record
+      ~loc
+      [({txt = Lapply (Lident "F", Lident "X"); loc}, eint ~loc 1)]
+      None
+  in
+  try
+    ignore (parse_expression expr) ;
+    Alcotest.fail
+      "a Lapply record-field longident must be refused, not renamed to \
+       \"field\""
+  with Parse_error_exn (msg, _) ->
+    Alcotest.(check bool)
+      "names the functor application"
+      true
+      (contains msg "functor application")
+
+(* [let open F(X) in e] parses to Pexp_open over a Pmod_APPLY, not over a
+   Pmod_ident carrying a Lapply longident (checked the same way), so this arm is
+   unreachable from source too. The reachable defect it replaces was the [| _ ->
+   []] beside it: see test_parse_expr_open_deep_path below. *)
+let test_parse_open_lapply_refused () =
+  let loc = Location.none in
+  let open Ppxlib.Ast_builder.Default in
+  let expr =
+    pexp_open
+      ~loc
+      (open_infos
+         ~loc
+         ~override:Fresh
+         ~expr:(pmod_ident ~loc {txt = Lapply (Lident "F", Lident "X"); loc}))
+      (eint ~loc 1)
+  in
+  try
+    ignore (parse_expression expr) ;
+    Alcotest.fail "a Lapply module path in let-open must be refused"
+  with Parse_error_exn (msg, _) ->
+    Alcotest.(check bool)
+      "names the functor application"
+      true
+      (contains msg "functor application")
+
+(* The reachable half of the same site. A path DEEPER than [M.N] used to flatten
+   to the EMPTY path, and an empty path is not inert: Sarek_native_gen_expr's
+   TEOpen arm reaches `failwith "empty module path in TEOpen"` and
+   Sarek_env.open_module treats it as a no-op. Measured before the fix, a kernel
+   containing `let open A.B.C in` failed with
+   `Sarek internal error: Failure("empty module path in TEOpen")`. *)
+let test_parse_expr_open_deep_path () =
+  let loc = Location.none in
+  let open Ppxlib.Ast_builder.Default in
+  let expr =
+    pexp_open
+      ~loc
+      (open_infos
+         ~loc
+         ~override:Fresh
+         ~expr:(pmod_ident ~loc {txt = Ldot (Ldot (Lident "A", "B"), "C"); loc}))
+      (eint ~loc 1)
+  in
+  match (parse_expression expr).e with
+  | EOpen (["A"; "B"; "C"], _) -> ()
+  | EOpen (p, _) ->
+      Alcotest.failf
+        "three-deep open flattened to [%s], not [A; B; C]"
+        (String.concat "; " p)
+  | _ -> Alcotest.fail "expected EOpen"
+
 (* Test suite *)
 let () =
   Alcotest.run
@@ -628,5 +730,22 @@ let () =
             "lambda rejected"
             `Quick
             test_parse_expr_lambda_rejected;
+        ] );
+      (* backlog-192: shapes the OCaml parser cannot produce, so no
+         negative-compile case can reach them. *)
+      ( "refusal boundary (unreachable from source)",
+        [
+          Alcotest.test_case
+            "Lapply record field refused"
+            `Quick
+            test_parse_record_field_lapply_refused;
+          Alcotest.test_case
+            "Lapply let-open refused"
+            `Quick
+            test_parse_open_lapply_refused;
+          Alcotest.test_case
+            "three-deep let-open keeps its whole path"
+            `Quick
+            test_parse_expr_open_deep_path;
         ] );
     ]

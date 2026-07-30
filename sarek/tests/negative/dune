@@ -42,6 +42,30 @@
 ; - test_when_guard: "`when` guards on match cases are not supported in kernels"
 ; - test_inline_type_field_store: "cannot assign to field ... of a record type
 ;   declared inside the kernel" + "register it with [@@sarek.type]"
+; - test_record_update: "functional record update" (backlog-192)
+; - test_labelled_arg: "labelled or optional argument" (backlog-192)
+; - test_kernel_return_type: "return-type annotation on a kernel" (backlog-192)
+; - test_tuple_let_annotation: "type annotation on a tuple-pattern" (backlog-192)
+; - test_annotation_arity: "fewer arrows than the function has parameters" (backlog-192)
+; - test_module_const_no_type: "needs a type annotation" (backlog-192)
+; - test_module_item_dropped: "exception declaration is not supported in a kernel module" (backlog-192)
+; - test_module_not_structure: "only a literal structure is supported here" (backlog-192)
+; - test_payload_type_params: "parameterised type" (backlog-192)
+; - test_payload_type_alias: "a type alias" (backlog-192)
+; - test_payload_gadt: "GADT-style constructor declaration" (backlog-192)
+; - test_wildcard_type: "wildcard type annotation" (backlog-192)
+; - test_labelled_arrow_type: "labelled or optional argument in a function type" (backlog-192)
+; - test_functor_type_path: "functor application in a type path" (backlog-192)
+; - test_alias_binder: "as` alias in a kernel binder" (backlog-192)
+; - test_binding_coercion: "coercion on a `let` binding" (backlog-192)
+; - test_return_coercion: "coercion in a function's return position" (backlog-192)
+; - test_existential_pattern: "existential type binder" (backlog-192)
+; - test_superstep_attribute: "on a superstep binding is not interpreted" (backlog-192)
+; - test_local_annotation_read: "Cannot unify types" (backlog-192)
+; - test_helper_return_read: "Cannot unify types" (backlog-192)
+; - test_module_helper_return_read: "Cannot unify types" (backlog-192)
+; - test_expr_table_try: "try ... with` is not supported in kernels" (backlog-192)
+; - test_pattern_table_or: "or-pattern" (backlog-192)
 
 (library
  (name neg_test_unregistered_field)
@@ -461,6 +485,270 @@
 (library
  (name neg_test_inline_type_field_store)
  (modules test_inline_type_field_store)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_record_update)
+ (modules test_record_update)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_labelled_arg)
+ (modules test_labelled_arg)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_kernel_return_type)
+ (modules test_kernel_return_type)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_tuple_let_annotation)
+ (modules test_tuple_let_annotation)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_annotation_arity)
+ (modules test_annotation_arity)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_module_const_no_type)
+ (modules test_module_const_no_type)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_module_item_dropped)
+ (modules test_module_item_dropped)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_module_not_structure)
+ (modules test_module_not_structure)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_payload_type_params)
+ (modules test_payload_type_params)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_payload_type_alias)
+ (modules test_payload_type_alias)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_payload_gadt)
+ (modules test_payload_gadt)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_wildcard_type)
+ (modules test_wildcard_type)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_labelled_arrow_type)
+ (modules test_labelled_arrow_type)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_functor_type_path)
+ (modules test_functor_type_path)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_alias_binder)
+ (modules test_alias_binder)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_binding_coercion)
+ (modules test_binding_coercion)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_return_coercion)
+ (modules test_return_coercion)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_existential_pattern)
+ (modules test_existential_pattern)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_superstep_attribute)
+ (modules test_superstep_attribute)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_local_annotation_read)
+ (modules test_local_annotation_read)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_helper_return_read)
+ (modules test_helper_return_read)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_module_helper_return_read)
+ (modules test_module_helper_return_read)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_expr_table_try)
+ (modules test_expr_table_try)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_pattern_table_or)
+ (modules test_pattern_table_or)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
