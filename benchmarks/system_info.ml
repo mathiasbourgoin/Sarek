@@ -168,14 +168,6 @@ let get_os_info () =
     String.trim os
   with _ -> "unknown"
 
-let get_kernel_info () =
-  try
-    let ic = Unix.open_process_in "uname -r" in
-    let kernel = input_line ic in
-    let _ = Unix.close_process_in ic in
-    String.trim kernel
-  with _ -> "unknown"
-
 let get_cpu_info () =
   let os = get_os_info () in
   try
@@ -315,10 +307,22 @@ let get_device_info (dev : Device.t) dev_id =
 (* The label an operator may set to keep two same-hardware machines apart.
    Two boxes with the same OS and GPU vendor derive the SAME label and their
    runs would be merged by the dedup key -- that is why the override exists.
-   It is REFUSED when it equals the hostname, which is the mistake it is here
-   to prevent: an opt-in escape hatch that silently reintroduced the leak
-   would be worse than no escape hatch. *)
-let machine_label_env = "SAREK_BENCH_MACHINE"
+
+   The policy itself lives in [Machine_label.resolve], which is Stdlib-only so
+   the red-path harness can execute it against the same case table as the
+   commit gate's regex. Two things it enforces, in this order: the override is
+   REFUSED (hard [failwith]) when it equals the hostname -- the mistake this
+   override is here to prevent, since an escape hatch that silently
+   reintroduced the leak would be worse than no escape hatch -- and it is then
+   refused unless it has the label shape the commit gate accepts, so an
+   operator cannot end up with results that cannot be committed.
+
+   Only the OVERRIDE is shape-checked. The DERIVED label is not: on an OS
+   outside the shape's enumeration (uname -s says e.g. FreeBSD) the derived
+   label is still what the producer uses, exactly as before -- widening the
+   accept-list to cover more platforms is a separate decision, and failing a
+   benchmark run over it here would be a new refusal, not this change. *)
+let machine_label_env = Machine_label.env_var
 
 let get_machine_label ~os ~cpu_model ~devices =
   let derived =
@@ -327,20 +331,10 @@ let get_machine_label ~os ~cpu_model ~devices =
       (String.lowercase_ascii os)
       (gpu_vendor_of devices cpu_model)
   in
-  match Sys.getenv_opt machine_label_env with
-  | None | Some "" -> derived
-  | Some override ->
-      let host = read_hostname_for_rejection_check () in
-      let norm s = String.lowercase_ascii (String.trim s) in
-      if norm override = norm host then
-        failwith
-          (Printf.sprintf
-             "%s is set to the machine's hostname. That is the identifier \
-              benchmark output must not carry (backlog-168). Choose an opaque \
-              label such as %S."
-             machine_label_env
-             derived)
-      else String.trim override
+  Machine_label.resolve
+    ~derived
+    ~override:(Sys.getenv_opt machine_label_env)
+    ~hostname:read_hostname_for_rejection_check
 
 let collect devices =
   let os = get_os_info () in
