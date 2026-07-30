@@ -148,6 +148,7 @@ semantics + emitter correctness theorems, `AGpuSemantics.v` /
 re-cutting rather than resuming as written.
 
 **Phases**:
+
 | Phase | Status | Notes |
 |-------|--------|-------|
 | Spec plan (PTX-focused) | READY | cuda-semantics-spec-2026-06-13.md |
