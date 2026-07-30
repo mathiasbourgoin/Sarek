@@ -82,6 +82,80 @@ Inductive ptx_binop_tag :=
 Inductive ptx_cmp_tag :=
   | PEq | PNe | PLt | PLe | PGt | PGe.
 
+(* ------------------------------------------------------------------ *)
+(** * The setp MNEMONIC (backlog-187)
+ *
+ * Everything above this point models what a comparison MEANS. Nothing modelled
+ * what it is SPELLED, and that gap is why 79 theorems did not see the defect of
+ * backlog-173: the emitter wrote [setp.ne.f32] where PTX requires the UNORDERED
+ * [setp.neu.f32], and [ptx_cmp_agrees] could not notice because it relates the
+ * model to a mirror of itself — [setp] appears nowhere in this development
+ * except in comments.
+ *
+ * So the mnemonic is modelled HERE, once, and the OCaml side asserts the real
+ * emitter against it. A proof about an abstraction that is never connected to
+ * the artefact cannot constrain the artefact.
+ *)
+(* ------------------------------------------------------------------ *)
+
+Definition ptx_type_is_float (t : ptx_type) : bool :=
+  match t with
+  | PTX_F32 | PTX_F64 => true
+  | PTX_U32 | PTX_U64 | PTX_Pred => false
+  end.
+
+(** The comparison root of a [setp] instruction, e.g. the ["neu"] of
+    [setp.neu.f32]. The TYPE suffix is written separately by the emitter and
+    carries signedness; this is only the comparison part.
+
+    The float/integer split exists for exactly one tag. On floats a comparison
+    may be ORDERED (false whenever either operand is NaN) or UNORDERED (true in
+    that case), and C's semantics — which every other Sarek backend inherits by
+    emitting [!=] or OCaml's structural [<>] — put [!=] in the unordered class
+    and [==] in the ordered one. PTX spells those [neu] and [eq].
+
+    The asymmetry is therefore deliberate and load-bearing: [PEq] must stay
+    ordered, because C's [==] is ALSO false for NaN, and the unordered [equ]
+    would wrongly make [nan = nan] true. [ptx_cmp_eq_ordered_everywhere] below
+    pins that so a future reader cannot "fix" the asymmetry away. *)
+Definition ptx_cmp_mnemonic (op : ptx_cmp_tag) (t : ptx_type) : string :=
+  match op with
+  | PEq => "eq"
+  | PNe => if ptx_type_is_float t then "neu" else "ne"
+  | PLt => "lt"
+  | PLe => "le"
+  | PGt => "gt"
+  | PGe => "ge"
+  end.
+
+(** Float [<>] is UNORDERED. This is the property whose violation shipped. *)
+Lemma ptx_cmp_ne_unordered_on_floats :
+  forall t, ptx_type_is_float t = true -> ptx_cmp_mnemonic PNe t = "neu".
+Proof. intros t Hf; destruct t; simpl in *; try discriminate Hf; reflexivity. Qed.
+
+(** Integer [<>] stays ordered: integers have no NaN, so there is nothing for an
+    unordered form to mean. *)
+Lemma ptx_cmp_ne_ordered_on_non_floats :
+  forall t, ptx_type_is_float t = false -> ptx_cmp_mnemonic PNe t = "ne".
+Proof. intros t Hf; destruct t; simpl in *; try discriminate Hf; reflexivity. Qed.
+
+(** [PEq] is ordered on EVERY type, floats included, and that is not an
+    oversight — see the definition's comment. Stated as a fact so that making
+    [PEq] mirror [PNe] becomes a proof failure rather than a plausible tidy-up. *)
+Lemma ptx_cmp_eq_ordered_everywhere :
+  forall t, ptx_cmp_mnemonic PEq t = "eq".
+Proof. intros t; destruct t; reflexivity. Qed.
+
+(** The two float mnemonics for equality-shaped comparisons DIFFER, which is the
+    one-line statement of the whole defect: an emitter that used one root for
+    both would satisfy every other theorem in this development. *)
+Lemma ptx_cmp_float_eq_ne_differ :
+  forall t, ptx_type_is_float t = true ->
+    ptx_cmp_mnemonic PEq t <> ptx_cmp_mnemonic PNe t.
+Proof.
+  intros t Hf; destruct t; simpl in *; try discriminate Hf; discriminate.
+Qed.
+
 (** Math intrinsic tags (unary, operating on a specific element type).
  *  f32 and f64 variants are kept separate so that the evaluation function
  *  is type-unambiguous and [eval_ir_ptx_eq] can be proved without a typing
