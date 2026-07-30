@@ -19,8 +19,11 @@ PtxStmtSpec, PtxKernelSpec, PtxLayout.
 | Project-local axioms / `Parameter`s | 6 | the f32/f64 `sin`/`cos`/`fma` of `AGpuSemantics.v`, all six sanctioned in `formal/axiom-allowlist.txt` |
 | Toolchain-base axioms (inherited) | 99 | `counts.axioms_toolchain_base` — Rocq's own primitive-float/int63 axiomatisation, not ours to sanction |
 
-Per module (`counts.theorems`): PtxLayout 50, PtxTypes 16, AGpuSemantics 5,
-PtxExprSpec 4, PtxKernelSpec 2, PtxStmtSpec 2.
+Per module — from the ledger's top-level `modules` key, as
+`modules["CodegenPtx.<M>"].counts.theorems`, **not** from `counts.theorems`
+(that one is the project-wide scalar 79 cited in the table above): PtxLayout 50,
+PtxTypes 16, AGpuSemantics 5, PtxExprSpec 4, PtxKernelSpec 2, PtxStmtSpec 2 —
+summing to 79.
 
 The axiom allowlist is enforced in **both** directions — an axiom the kernel
 found that is not listed fails, and a listed name no proof depends on any more
@@ -89,8 +92,11 @@ close the mirror↔theory hop.
 ### Layout suite — runs the extracted theory
 
 `test/test_layout_conformance.ml` (Alcotest + qcheck-core seeded generator):
-**11** cases in five groups, checking the **extracted** `PtxLayout.v` against
-`Sarek_ir_layout` for accept/reject and all offsets/sizes:
+**11** cases in four Alcotest groups — `exhaustive` (2), `random` (1),
+`host-pins` (4), `mixed-alignment pins (L8)` (4) — checking the **extracted**
+`PtxLayout.v` against
+`Sarek_ir_layout` for accept/reject and all offsets/sizes. The bullets below
+group by *subject*, so the first two are both inside the `exhaustive` group:
 
 - exhaustive records ≤4 fields over {i32,f32,bool,i64,f64} (780 shapes);
 - exhaustive variants ≤3 ctors × ≤2 args (30 783 shapes);

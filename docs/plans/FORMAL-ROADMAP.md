@@ -36,7 +36,7 @@ semantics 4/4.
 | Task | Status | Notes |
 |------|--------|-------|
 | T3-GATE | DONE | Full ladder T3-S1..S8 approved 2026-06-13 |
-| T3-S1 Semantic domain + big-step evaluator | DONE | commit fbfb3656; ConvergenceSemantics.v |
+| T3-S1 Semantic domain + big-step evaluator | DONE | `formal/convergence-safety/theories/ConvergenceSemantics.v`. The commit this row used to cite, `fbfb3656`, is in zero remote branches — unresolvable in a fresh clone. On `main` the file arrives with `21d67ec9` (the T3-S2 commit) |
 | T3-S2 Uniformity soundness of is_varying_in_env | **DONE** | was "IN FLIGHT (workflow wf_315cd2a1 running)"; `eval_check_uniform`, `check_env_nonvarying_uniform_*`, `is_strongly_uniform_*` are all in the ledger |
 | T3-S3 Trace silence of barrier-free exprs | **DONE** | was PENDING; `eval_concrete_barrier_free_silent`, `barrier_free_no_barriers`, `eval_seq_no_barrier` |
 | T3-S4 Core semantic soundness of check_env | **DONE** | was PENDING; `check_env_sound_core` + `core_frag` bridges |
@@ -60,11 +60,25 @@ the Future-streams table below, where its row is now marked shipped rather than
 **Why PTX over CUDA C**: NVCC is an unverifiable black box; PTX is a published virtual ISA; bar.sync maps 1-to-1 to abstract EBarrier.
 
 **Phase A — Spike**: **DONE AND VALIDATED** (2026-06-13)
-- `sarek/codegen/Sarek_ir_ptx.ml` — PTX emitter from Sarek IR (commit 1da95861)
+- `sarek/codegen/Sarek_ir_ptx.ml` — PTX emitter from Sarek IR. (This row used to
+  cite commit `1da95861`, which is in zero remote branches and so unresolvable
+  in a fresh clone; the spike lands on `main` as `6cbb0a21` "feat(ptx-spike):
+  PTX emitter, external kernel loading, and end-to-end test".) The file is now a
+  thin re-export façade over `Sarek_ir_ptx_{types,mem,expr,stmt,kernel}`
 - `sarek-cuda/test/test_ptx_external.ml` — end-to-end test: load PTX via cuModuleLoadData, verify vector_add results
 - Validated by ptxas (static) and on real NVIDIA hardware (GTX 1070, sm_61): **0.186s, correct results**
-- `Cuda_api.Kernel.load_from_ptx` auto-adapts .target to device SM — PTX built for sm_86 loads on any SM ≥ 6.1 (commit f6c14c2a)
-- Generator parameterized: `Sarek_ir_ptx.generate ?sm_target` (default sm_86)
+- `Cuda_api.Kernel.load_from_ptx` auto-adapts `.target` to the device SM:
+  `Cuda_api.with_sm_target` rewrites every `.target` line to the device's own
+  `sm_<major><minor>`, unconditionally. So PTX built for sm_86 loads on an older
+  device *provided the body uses no instruction newer than that device* — the
+  rewrite makes the directive agree, it does not translate instructions. sm_61
+  is the version actually validated (above). (This row used to cite commit
+  `f6c14c2a`, unresolvable in a fresh clone, and to claim "any SM ≥ 6.1"; no
+  lower bound is enforced in the code, so the bound is dropped rather than
+  restated.)
+- Generator parameterized: `Sarek_ir_ptx.generate ?sm_target` (default `sm_86`)
+  — `Sarek_ir_ptx.generate` re-exports `Sarek_ir_ptx_kernel.generate`, whose
+  `.mli` carries the optional argument
 
 **Phase B — Full backend implementation**: **DONE**, and it is the shipping path,
 not a branch. Both bullets that were "PLANNED" here have landed:
@@ -157,7 +171,7 @@ deleted — deleting them would lose the prereq chain that predicted them._
 
 | Project | Priority | Prereqs | Notes |
 |---------|----------|---------|-------|
-| type-safety of Sarek PPX | **SHIPPED** | convergence-safety T3 done ✓ | `formal/type-safety/`, T3-SEMANTIC MILESTONE LOCKED 2026-06-15, merged to `master` @ d72a2e6a (PR #202) and ported to `main` 2026-07-01. Ledger: **90 theorems, 0 admits, 0 axioms** across 12 modules. Was listed here as "not in scope yet" |
+| type-safety of Sarek PPX | **SHIPPED** | convergence-safety T3 done ✓ | `formal/type-safety/` is on `origin/main` (scaffolded in `73083c1f`, milestone recorded on `main` by `c3f2578b` "T3-SEMANTIC milestone lock on main — both projects", 2026-07-02); its own `STATUS.md` records T3-SEMANTIC MILESTONE LOCKED 2026-06-15. Ledger: **90 theorems, 0 admits, 0 axioms** across 12 modules. Was listed here as "not in scope yet" |
 | PTX emitter correctness | **PARTLY DONE** | — | Done as `formal/codegen-ptx/` (79 theorems, 0 admits, 6 sanctioned math `Parameter`s), not as a `cuda-semantics` sub-project. `emit_expr_correct` / `emit_stmt_correct` / `emit_kernel_correct` hold against a Rocq-side model; `PtxLayout.v` covers the aggregate byte ABI and is the one half checked against production via **extraction**. Remaining: extract the expr/stmt/kernel model too, so the conformance suite stops going through a hand mirror |
 | sarek-opencl formal verification | MEDIUM | cuda-semantics methodology | Same shape, different target ISA |
 | sarek-vulkan / sarek-metal | MEDIUM | Above | |
@@ -191,10 +205,12 @@ deleted — deleting them would lose the prereq chain that predicted them._
    `coqchk`, re-extracts `PtxLayout.v` and byte-compares against the committed
    copy, and enforces `formal/axiom-allowlist.txt` in both directions.
 4. Work happens on `main` now — all three projects are there. The old per-phase
-   branches still on `origin` (`formal/type-safety-phase1a..d`,
-   `formal/codegen-ptx-phase1`) are historical, and
-   `formal/convergence-safety-phase1a` — which step 2 of this list used to tell
-   you to `git log` — no longer exists on `origin` at all.
+   branches are historical, and — checked against `git branch -r` on
+   2026-07-30 — only some of them are still fetchable:
+   `formal/type-safety-phase1a..d` are on `origin`;
+   `formal/codegen-ptx-phase1` exists **only as a local branch here**, so a
+   fresh clone will not have it; and `formal/convergence-safety-phase1a` —
+   which step 2 of this list used to tell you to `git log` — is on neither.
    `formal/convergence-safety/formal-verif-autopilot.workflow.js` is still in
    the tree, but the ladder it drove is finished, so there are no T3 ticks left
    for it to take.

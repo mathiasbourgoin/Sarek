@@ -57,13 +57,22 @@ cost. The doc framing should lead with these, not apologize for them.
    parameter; Sarek gives it for free because its aliasing model already
    guarantees no user-visible pointer aliasing between kernel vector
    arguments.
-4. **Six backends from one kernel source** (CUDA/PTX, OpenCL, Vulkan,
-   Metal, WGSL, Native, Interpreter — `sarek/codegen/Sarek_ir_{cuda,opencl,
-   metal,glsl,wgsl,ptx_*}.ml`, `sarek/plugins/{native,interpreter}`).
+4. **Eight device backends plus a WGSL codegen target, from one kernel
+   source.** The eight that appear in `Device.init` are CUDA/PTX, CUDA/C, HIP,
+   OpenCL, Vulkan, Metal, Native and Interpreter; WGSL emits but registers no
+   device (`sarek/plugins/webgpu` reports `is_available () = false`). They are
+   served by six code generators — `sarek/codegen/Sarek_ir_{cuda,opencl,metal,
+   glsl,wgsl,ptx_*}.ml` — because CUDA/C and HIP share `Sarek_ir_cuda`
+   (`sarek-hip/Hip_plugin.ml` calls `Sarek_ir_cuda.generate_with_types`) —
+   plus `sarek/plugins/{native,interpreter}`, which execute the IR rather than
+   emitting source.
    Triton targets NVIDIA/AMD GPUs through its own compiler stack; CUDA is
    NVIDIA-only; OpenCL is portable but is what Sarek compiles *to*, not an
    alternative to it. No single-source path in the CUDA/Triton world
    reaches Vulkan/Metal/WGSL from the same kernel body.
+   (Corrected 2026-07-30: this item read "**Six** backends from one kernel
+   source" and then listed **seven**, omitting HIP and CUDA/C entirely. Six is
+   the *code-generator* count, not the backend count — the two were conflated.)
 5. **Compile-time convergence/variance analysis as a real static check**,
    not a runtime UB trap. `Sarek_core_primitives.ml`'s `variance` lattice
    (`Uniform ≤ BlockVarying ≤ WarpVarying ≤ ThreadVarying`) plus

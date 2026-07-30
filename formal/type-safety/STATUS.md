@@ -5,7 +5,7 @@
 **Host profile**: SPOC/sarek
 **Architecture**: 3-layer
 **Phase**: T3-SEMANTIC — MILESTONE LOCKED (T3-S1 through T3-S8, 2026-06-15)
-**Merged**: originally to `master` @ d72a2e6a (2026-06-15, PR #202); ported to `main` 2026-07-01 (proof artifacts regenerated, coqchk re-run on `main`'s tree)
+**Merged**: on `origin/main`. Checked 2026-07-30: this line used to read "originally to `master` @ d72a2e6a (2026-06-15, PR #202)", but there is no `master` or `origin/master` branch in this repository, and `d72a2e6a` is contained in **zero** remote branches — a fresh clone cannot resolve it, so it is not usable as a citation. What *is* reachable: `73083c1f` scaffolded this project and `c3f2578b` ("T3-SEMANTIC milestone lock on main — both projects", 2026-07-02) recorded the milestone on `main`; both are ancestors of `origin/main`. The port to `main` regenerated the proof artifacts and re-ran `coqchk` on `main`'s tree.
 **Toolchain**: Rocq 9.1.1 / OCaml 5.4.0
 
 ## Scoreboard
@@ -454,7 +454,7 @@ No T3-S9 is scoped. If a new task is identified post-lock, open it separately.
 ```text
 Resume TypeSafety (apparatus v1.2.1, grade A, MILESTONE LOCKED 2026-06-15).
 State: 90 theorems (78 headline + 12 auxiliary) across 12 spec files, 0 admits, 0 axioms.
-T3-SEMANTIC complete (T3-S1..S8). Originally merged to `master` @ d72a2e6a (PR #202); ported to `main` 2026-07-01.
+T3-SEMANTIC complete (T3-S1..S8). On `origin/main` (milestone recorded by c3f2578b; d72a2e6a is unreachable — see the Merged line).
 Non-vacuousness: 41 Examples, M1+M2 mutation tests green.
 Next project: codegen-cuda via /formal-init.
 ```

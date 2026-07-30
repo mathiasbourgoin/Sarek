@@ -27,7 +27,13 @@ This codebase has undergone significant modernization (2024-2026):
 - **Interactive Learn course** — edit and run Sarek kernels on your GPU in the browser at [mathiasbourgoin.github.io/Sarek/learn/](https://mathiasbourgoin.github.io/Sarek/learn/)
 - **PTX direct emitter** — `Sarek_ir_ptx` emits NVIDIA PTX directly from Sarek IR, bypassing NVRTC. It is the **default** device path of the CUDA backend (`Cuda_ptx_plugin`); the NVRTC/C path remains available as `Cuda_c_plugin`
 - **HIP backend** (`sarek-hip`) — native ROCm/hiprtc backend for AMD GPUs, not going through ZLUDA. Measured against OpenCL and Vulkan on an RX 7900 XTX in [docs/benchmarks/hip-vs-opencl-vulkan-2026-07-24.md](docs/benchmarks/hip-vs-opencl-vulkan-2026-07-24.md)
-- **float16 element type** — `float16` vectors and kernel values, with compute-in-f32 semantics and explicit narrowing. Codegen exists on the CUDA-C / HIP path only; every other backend refuses `f16` with a stated, measured reason (see [docs/design/f16-dsl-element-type.md](docs/design/f16-dsl-element-type.md) and the `TFloat16` arms of each generator)
+- **float16 element type** — `float16` vectors and kernel values, with compute-in-f32 semantics and explicit narrowing. Codegen exists on the CUDA-C / HIP path only (both go through `Sarek_ir_cuda`), and the Interpreter also runs `f16`: it lists `Float16` in `Sarek_interp_capability.device_features` and rounds through IEEE binary16 in `Sarek_float16`. The remaining targets refuse it — but *not* all for the same kind of reason, and the difference matters:
+  - **refused by measurement** — OpenCL (rusticl/radeonsi) and GLSL/Vulkan (RADV's ACO): the driver absorbs the f32→f16 narrowing into the arithmetic feeding it, so a measured fraction of binary16 inputs disagrees with the interpreter — 620/63488 on OpenCL, 2912/63488 on GLSL — and the available remedy does not work (no affordable barrier on the OpenCL path; `precise` does not prevent it on GLSL). Devices, counts and reproducers in [docs/fp-contraction-policy.md](docs/fp-contraction-policy.md)
+  - **refused by an emitter-internal invariant** — PTX: `Sarek_ir_ptx_types` derives a value's register class from the register *name* prefix (`%f`/`%fd`/`%rd`), so adding a `%h` class requires auditing every such guard first
+  - **not implemented yet** — Metal and WGSL: both arms raise `unsupported_construct` and say so ("not yet supported (#57 slice 2)"); these are deferrals, not measured refusals
+  - Native does not list `Float16` among its device features at all; it carries f16 vectors as a storage type only
+
+  See [docs/design/f16-dsl-element-type.md](docs/design/f16-dsl-element-type.md) and the `TFloat16` arms of each generator
 - **Structure-of-Arrays device layout** — a record-typed vector parameter can be lowered as SoA (one coalesced device array per scalar leaf) instead of packed AoS; CUDA/PTX only, via `Spoc_core.Soa_vector` + `Sarek.Soa_launch.run_soa`. Design and measurements in [docs/optimization/tier1b-emitter-soa-handoff.md](docs/optimization/tier1b-emitter-soa-handoff.md)
 - **In-tree kernel libraries**, all written in pure Sarek rather than per-backend:
   `Sarek_gemm` (shared-memory tiled SGEMM; every backend with a block-shared-memory
@@ -78,10 +84,23 @@ Not a device — a code-generation target only:
 
 | Target | What it produces | Status | Documentation |
 |--------|------------------|--------|---------------|
-| **WGSL** | WGSL compute shaders (`@compute @workgroup_size(...)`) for a JavaScript WebGPU host; validated in CI with `naga` | ✓ codegen; **no OCaml-side runtime** — `sarek/plugins/webgpu` is an inert stub whose `is_available ()` returns `false`, so WGSL never appears in device enumeration | [sarek/codegen/Sarek\_ir\_wgsl.ml](sarek/codegen/Sarek_ir_wgsl.ml), [gh-pages/docs/backends.md](gh-pages/docs/backends.md) |
+| **WGSL** | WGSL compute shaders (`@compute @workgroup_size(...)`) for a JavaScript WebGPU host; validated in CI with `naga` | ✓ codegen; **no OCaml-side runtime** — `sarek/plugins/webgpu` is an inert stub whose `is_available ()` returns `false`, so WGSL never appears in device enumeration | [sarek/codegen/Sarek\_ir\_wgsl.ml](sarek/codegen/Sarek_ir_wgsl.ml) |
 
 The CUDA family registers as two frameworks (`CUDA/PTX` and `CUDA/C`); use
 `Device.filter_cuda ()` to match both.
+
+> **The published backend page is stale against the two tables above, and is
+> deliberately not linked from them.** `gh-pages/docs/backends.md` — which is
+> what [mathiasbourgoin.github.io/Sarek/](https://mathiasbourgoin.github.io/Sarek/)
+> serves — still has a single `CUDA` row with no `HIP` row and no
+> `CUDA/PTX`-vs-`CUDA/C` split, and its "CUDA Backend" section says the backend
+> targets NVIDIA GPUs "using the CUDA Driver API and NVRTC", which is the
+> `CUDA/C` path, not the PTX path that is now the default. Its *WGSL* section
+> (WGSL is a transpiler target, not a device plugin) does agree with the table
+> above. Bringing the published page in line is a website change with its own
+> audience and its own row-by-row verification, so it is filed as follow-up work
+> rather than folded in here — but it is named here so the divergence is not
+> silent, and so this table is not read as endorsing that page.
 
 ### Core Features
 
@@ -90,7 +109,7 @@ The CUDA family registers as two frameworks (`CUDA/PTX` and `CUDA/C`); use
 - **Automatic Selection**: Runtime backend selection based on available hardware
 - **Intrinsics**: Extensive library of GPU intrinsics (math, atomics, barriers). The PTX emitter lowers 83 intrinsic names natively, enumerated from its own dispatch registry (`Sarek_ir_ptx_expr.intrinsic_registry`)
 - **Custom Types**: Support for records and variants in kernels, laid out with the aligned C-ABI rule shared by the host PPX, the C-family backends and the PTX emitter
-- **Numeric widths**: `int32`, `int64`, `float32`, `float64`; `float16` on the CUDA-C/HIP path; `Sarek_df64` / `Sarek_real64` for software extended precision where a device has no usable `float64`
+- **Numeric widths**: `int32`, `int64`, `float32`, `float64`; `float16` on the CUDA-C/HIP path and in the Interpreter (refused elsewhere — see the float16 bullet above for which refusals are measured and which are unimplemented); `Sarek_df64` / `Sarek_real64` for software extended precision where a device has no usable `float64`
 - **Capability refusals over silent fallback**: a kernel using a width or feature a target cannot honour is refused with a stated reason and provenance rather than quietly downgraded — see [docs/design/capability-model.md](docs/design/capability-model.md)
 - **Debug Logging**: Controlled via `SAREK_DEBUG` environment variable
 
@@ -176,18 +195,31 @@ Formal models (Rocq):
   own definitions against `Sarek_ir_layout`. The *expression/statement/kernel*
   half is not: `formal/codegen-ptx/test/test_codegen_ptx_conformance.ml` still
   checks a hand-written OCaml mirror of the Rocq definitions, and the five `.ml`
-  files `Extract.v` produces are committed but linked by nothing. Either way the
-  production emitter is conformance-tested against the model, not extracted from it.
+  files `Extract.v` produces are committed but linked by nothing. On that half
+  the *production* emitter is not compared to the model at all — the mirror is
+  compared to the mirror's own spec. The only cases in that suite that invoke
+  production code are the 7 in the `ptx-dshared` group, which call the real
+  `Sarek_codegen.Sarek_ir_ptx_kernel.generate` and inspect its PTX text against
+  the shared-memory acceptance criteria of `specs/ptx-dshared-formal.md` — a
+  string/exception check on the emitter's output, still not a check against the
+  Rocq model. So: extraction links theory to production on the layout half; on
+  the expr/stmt/kernel half neither extraction nor conformance reaches the
+  production emitter.
 - **No GPU execution in CI.** See the note above; device validation is manual.
 - **Warp primitives are emitted but not reachable from kernel source.**
   `SWarpBarrier` and `SMemFence` are lowered by all six generators —
   `bar.warp.sync` on PTX, `__syncwarp()` on CUDA, `sub_group_barrier` on OpenCL,
   `simdgroup_barrier` on Metal, `subgroupBarrier()` on GLSL and WGSL, each pinned
   by `sarek/tests/unit/test_sync_stmt_emission.ml`. What is missing is the front
-  end: no PPX surface syntax constructs either statement (`block_barrier` is the
-  only sync name the front end declares), so today they are reachable only from
-  hand-built IR. Warp **shuffle**/vote/ballot are a separate, larger gap — not
-  modelled in the IR and emitted by no backend.
+  end: no PPX surface syntax constructs either statement, so today they are
+  reachable only from hand-built IR. The front end does declare four
+  synchronising intrinsic *names* — `block_barrier`, `warp_barrier`,
+  `memory_fence_block`, `memory_fence_device`
+  (`Sarek_lower_ir.synchronising_intrinsics`) — but lowering leaves all four as
+  `EIntrinsic` expression calls and never builds `SWarpBarrier` or `SMemFence`
+  from them, which is why those two statements have no surface spelling. Warp
+  **shuffle**/vote/ballot are a separate, larger gap — not modelled in the IR
+  and emitted by no backend.
 - **`f16` is refused by this emitter.** `Sarek_ir_ptx_types` has no `TFloat16`
   register type; f16 codegen exists on the CUDA-C/HIP path only.
 
