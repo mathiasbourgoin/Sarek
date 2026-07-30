@@ -44,8 +44,18 @@
  * - tag = index:      [ctor_tag_is_index]
  *
  * Conformance with the OCaml layout function is established by CMBT in
- * test/test_layout_conformance.ml (FR-042), which hand-mirrors the definitions
- * below.
+ * test/test_layout_conformance.ml (FR-042), which runs the definitions below
+ * DIRECTLY: extraction/LayoutExtract.v extracts them to
+ * extraction/sarek_ptx_layout_model.ml, and the suite links that library.
+ *
+ * That suite used to hand-mirror these definitions in a 150-line OCaml module
+ * called RocqMirror, which is what this comment described. The transcription
+ * was a hop nothing compared to the original, so every theorem below was proved
+ * about these definitions and then checked against a copy that could silently
+ * stop matching them (task #46). The hop is gone; scripts/check-formal-proofs.sh
+ * regenerates the extraction and byte-compares it against the committed copy,
+ * so editing this file without regenerating fails CI rather than leaving the
+ * conformance suite checking a stale model.
  *
  * No [Admitted] is used anywhere in this file.
  *)
