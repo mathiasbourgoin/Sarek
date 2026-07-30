@@ -396,6 +396,15 @@ jobs:
       # "expected to fail", its absence is indistinguishable from its success.
       # Needs no toolchain, so it runs on the host rather than in the image.
       - name: Check every negative case is asserted (backlog-165)
+      # Compile-gate the HIP backend (backlog-186). Its tests live on the
+      # @e2e-hip alias and need a ROCm device no hosted runner has, so they
+      # cannot RUN here — but ~1.9k lines of backend and 6 test executables can
+      # still be type-checked and linked, which catches the whole invalid-code
+      # class for free. Building the DIRECTORY alias, not @e2e-hip: @e2e-hip
+      # would execute the rules and fail for want of a device.
+      - name: Compile-gate the HIP backend and its tests
+        run: dune build @sarek-hip/all
+
         run: ./scripts/check-negative-case-coverage.sh
 
       - name: Check the tvar id space has one allocator
