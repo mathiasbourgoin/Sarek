@@ -7,8 +7,8 @@
   "rocq_version": "9.1.1",
   "counts": {
     "modules": 6,
-    "theorems": 79,
-    "definitions": 60,
+    "theorems": 83,
+    "definitions": 62,
     "inductives": 18,
     "records": 8,
     "axioms_declared": 6,
@@ -143,6 +143,10 @@
         "agpu_eval_ptx_litu32",
         "agpu_eval_ptx_litu64",
         "agpu_eval_ptx_tidx",
+        "ptx_cmp_eq_ordered_everywhere",
+        "ptx_cmp_float_eq_ne_differ",
+        "ptx_cmp_ne_ordered_on_non_floats",
+        "ptx_cmp_ne_unordered_on_floats",
         "ptx_reg_type_of_array",
         "ptx_reg_type_of_bool",
         "ptx_reg_type_of_float32",
@@ -155,10 +159,10 @@
       ],
       "counts": {
         "axioms_declared": 0,
-        "definitions": 5,
+        "definitions": 7,
         "inductives": 6,
         "records": 0,
-        "theorems": 16
+        "theorems": 20
       }
     }
   },
