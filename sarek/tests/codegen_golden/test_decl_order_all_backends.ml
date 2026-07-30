@@ -38,10 +38,12 @@
  *   - a missing declaration ANCHOR is a failure, not a skip: if a backend stops
  *     emitting one of the two declarations the assertion has nothing to compare
  *     and says so, rather than comparing two -1s and finding them ordered;
- *   - the referenced name must occur at least TWICE in the emitted source (its
- *     own declaration, plus at least one reference to it). A backend that
- *     emitted the declarations but dropped the field/payload that creates the
- *     edge would otherwise satisfy the ordering assertion vacuously;
+ *   - the referenced name must be named INSIDE the referencing declaration's own
+ *     body. A backend that emitted both declarations but dropped the
+ *     field/payload that creates the edge would otherwise satisfy the ordering
+ *     assertion vacuously — and counting the name across the WHOLE source would
+ *     not catch that either, because a variant's emission repeats its own type
+ *     name in every constructor signature;
  *   - the anchors are per-family spellings, not a generic "first occurrence of
  *     the name". In the C family a typedef names its type only at the END, so
  *     "first occurrence" is satisfied by the WRONG order too — the very
@@ -92,19 +94,69 @@ let kernel_with ~variants =
     kern_variants = variants;
   }
 
-(* Where a name becomes usable in each family's syntax.
+(* Where a name becomes usable in each family's syntax, and where its own
+   declaration BODY starts and ends.
 
-   C family: a typedef names its type on the CLOSING line, so this is the point
-   after which the name exists. GLSL and WGSL open with the name, and
-   declarations do not nest, so the opening line orders them just as exactly. *)
-let c_anchor name = "} " ^ name ^ ";"
+   C family: a typedef names its type on the CLOSING line, so the anchor is the
+   point after which the name exists, and the body runs back to the matching
+   [typedef struct {]. GLSL and WGSL open with the name, and declarations do not
+   nest, so the opening line orders them just as exactly and the body runs
+   forward to the first closing brace. *)
+type family = {
+  anchor : string -> string;
+  (* [body src name] is [name]'s own declaration text, or [None] if the
+     declaration is not there at all. *)
+  body : string -> string -> string option;
+}
 
-let struct_anchor name = "struct " ^ name ^ " {"
+let find_sub_from hay needle start =
+  let nl = String.length needle and hl = String.length hay in
+  let rec go i =
+    if i + nl > hl then -1
+    else if String.sub hay i nl = needle then i
+    else go (i + 1)
+  in
+  if start < 0 then -1 else go start
+
+let find_sub hay needle = find_sub_from hay needle 0
+
+let rfind_sub_before hay needle limit =
+  let nl = String.length needle in
+  let rec go i =
+    if i < 0 then -1
+    else if i + nl <= String.length hay && String.sub hay i nl = needle then i
+    else go (i - 1)
+  in
+  go (min limit (String.length hay - nl))
+
+let c_family =
+  {
+    anchor = (fun name -> "} " ^ name ^ ";");
+    body =
+      (fun src name ->
+        let e = find_sub src ("} " ^ name ^ ";") in
+        if e < 0 then None
+        else
+          let s = rfind_sub_before src "typedef struct {" e in
+          if s < 0 then None else Some (String.sub src s (e - s)));
+  }
+
+let struct_family =
+  {
+    anchor = (fun name -> "struct " ^ name ^ " {");
+    body =
+      (fun src name ->
+        let s = find_sub src ("struct " ^ name ^ " {") in
+        if s < 0 then None
+        else
+          let e = find_sub_from src "}" s in
+          if e < 0 then None else Some (String.sub src s (e - s)));
+  }
 
 type backend = {
   bname : string;
   generate : types:(string * (string * elttype) list) list -> kernel -> string;
-  anchor : string -> string;
+  family : family;
 }
 
 (* All five generators that emit struct declarations. PTX is absent on purpose:
@@ -116,93 +168,87 @@ let backends =
     {
       bname = "CUDA (also HIP, via Hip_plugin)";
       generate = (fun ~types k -> Sarek_ir_cuda.generate_with_types ~types k);
-      anchor = c_anchor;
+      family = c_family;
     };
     {
       bname = "OpenCL";
       generate = (fun ~types k -> Sarek_ir_opencl.generate_with_types ~types k);
-      anchor = c_anchor;
+      family = c_family;
     };
     {
       bname = "Metal";
       generate = (fun ~types k -> Sarek_ir_metal.generate_with_types ~types k);
-      anchor = c_anchor;
+      family = c_family;
     };
     {
       bname = "GLSL (Vulkan)";
       generate = (fun ~types k -> Sarek_ir_glsl.generate_with_types ~types k);
-      anchor = struct_anchor;
+      family = struct_family;
     };
     {
       bname = "WGSL";
       generate = (fun ~types k -> Sarek_ir_wgsl.generate_with_types ~types k);
-      anchor = struct_anchor;
+      family = struct_family;
     };
   ]
 
 (* Deleting a backend from the sweep must be a failure, not a quieter run. *)
 let expected_backends = 5
 
-let find_sub hay needle =
-  let nl = String.length needle and hl = String.length hay in
-  let rec go i =
-    if i + nl > hl then -1
-    else if String.sub hay i nl = needle then i
-    else go (i + 1)
-  in
-  go 0
-
-let count_sub hay needle =
-  let nl = String.length needle and hl = String.length hay in
-  if nl = 0 then 0
-  else
-    let rec go i acc =
-      if i + nl > hl then acc
-      else if String.sub hay i nl = needle then go (i + 1) (acc + 1)
-      else go (i + 1) acc
-    in
-    go 0 0
-
-(* One (backend, shape) cell. RETURNS its problems rather than raising: the
-   sweep must report EVERY failing cell, not only the first one. Alcotest's
-   [failf] aborts the case, and the two halves of this gap are one backend apart
-   in the table — a fail-fast sweep would have named CUDA and said nothing about
-   the other four, which is the shape of report that made the gap look like one
-   family's problem in the first place. *)
+(* One (backend, shape) cell. RETURNS its problems, tagged with the backend,
+   rather than raising: the sweep must report EVERY failing cell, not only the
+   first one. Alcotest's [failf] aborts the case, and the two halves of this gap
+   are one backend apart in the table — a fail-fast sweep would have named CUDA
+   and said nothing about the other four, which is the shape of report that made
+   the gap look like one family's problem in the first place. *)
 let check_cell ~b ~shape ~dep ~user ~src =
   let where = Printf.sprintf "%s / %s" b.bname shape in
-  let dep_at = find_sub src (b.anchor dep) in
-  let user_at = find_sub src (b.anchor user) in
+  let anchor = b.family.anchor in
+  let dep_at = find_sub src (anchor dep) in
+  let user_at = find_sub src (anchor user) in
   let problems = ref [] in
-  let problem fmt = Printf.ksprintf (fun s -> problems := s :: !problems) fmt in
+  let problem fmt =
+    Printf.ksprintf (fun s -> problems := (b.bname, s) :: !problems) fmt
+  in
   if dep_at < 0 then
     problem
       "%s: no declaration of %S found (looked for %S) in:\n%s"
       where
       dep
-      (b.anchor dep)
+      (anchor dep)
       src ;
   if user_at < 0 then
     problem
       "%s: no declaration of %S found (looked for %S) in:\n%s"
       where
       user
-      (b.anchor user)
+      (anchor user)
       src ;
-  (* Vacuity guard: [dep] must appear as its own declaration AND at least once
-     more, as the reference inside [user]. Without this, a generator that
-     emitted two independent declarations would satisfy the order assertion
-     while the edge under test had disappeared. *)
-  let occurrences = count_sub src dep in
-  if occurrences < 2 then
-    problem
-      "%s: %S occurs %d time(s) — the reference that creates the edge is gone, \
-       so the order assertion would be vacuous:\n\
-       %s"
-      where
-      dep
-      occurrences
-      src ;
+  (* Vacuity guard. [dep] must be named INSIDE [user]'s own declaration body,
+     which is the reference that creates the edge under test. Counting [dep]
+     across the whole source instead would be vacuous for shape B: a variant's
+     emission repeats its own type name in every constructor signature, so the
+     count stays high after the record field naming it is dropped, and on the C
+     family — which declares variants first anyway — the order assertion below
+     would then pass with no edge left to order. *)
+  (match b.family.body src user with
+  | None ->
+      (* Already reported as a missing declaration above; no second problem. *)
+      ()
+  | Some body ->
+      if find_sub body dep < 0 then
+        problem
+          "%s: %S is not named inside %S's own declaration body, so the edge \
+           under test is gone and the order assertion would be vacuous. Body \
+           was:\n\
+           %s\n\
+           Full source:\n\
+           %s"
+          where
+          dep
+          user
+          body
+          src) ;
   (* Only compare positions that were actually found: two -1s compare as
      ordered, which is how a sweep over a backend that emitted nothing at all
      reads green. *)
@@ -217,15 +263,22 @@ let check_cell ~b ~shape ~dep ~user ~src =
       src ;
   List.rev !problems
 
-(* Report every failing cell of one shape's sweep in one message. *)
+(* Report every failing cell of one shape's sweep in one message. One backend can
+   contribute more than one problem, so the two counts are reported separately —
+   "N problems" is not "N backends". *)
 let report shape problems =
   if problems <> [] then
+    let failed_backends =
+      List.sort_uniq String.compare (List.map fst problems)
+    in
     Alcotest.failf
-      "%s: %d of %d backend(s) failed:\n\n%s"
+      "%s: %d problem(s) across %d of %d backend(s) (%s):\n\n%s"
       shape
       (List.length problems)
+      (List.length failed_backends)
       (List.length backends)
-      (String.concat "\n\n" problems)
+      (String.concat ", " failed_backends)
+      (String.concat "\n\n" (List.map snd problems))
 
 (* Shape A — a variant whose payload is a record. The C family emitted variants
    before records, so this was its red half. *)

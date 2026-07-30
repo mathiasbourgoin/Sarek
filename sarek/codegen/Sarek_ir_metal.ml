@@ -1180,14 +1180,6 @@ let reject_coopmat_kernel (k : kernel) : unit =
     not a tuning choice. *)
 let metal_fp_contract_pragma = "#pragma METAL fp contract(off)\n"
 
-(** Generate variant type definition for Metal *)
-let gen_variant_def buf v =
-  Sarek_ir_codegen.gen_variant_def
-    ~type_of_elttype:metal_type_of_elttype
-    ~constructor_prefix:"static inline"
-    buf
-    v
-
 (** Generate Metal source with custom type definitions *)
 let generate_with_types ~(types : (string * (string * elttype) list) list)
     (k : kernel) : string =
@@ -1214,15 +1206,12 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
      CUDA/OpenCL backends, so Metal kernels using variant types emitted no
      typedef; emitting them keeps Metal consistent with the rest of the
      C family. *)
-  Sarek_ir_codegen.gen_type_decls
-    ~emit_record:
-      (Sarek_ir_codegen.gen_record_typedef
-         ~type_of_elttype:metal_type_of_elttype)
-    ~emit_variant:gen_variant_def
+  Sarek_ir_codegen.gen_c_type_decls
+    ~type_of_elttype:metal_type_of_elttype
+    ~constructor_prefix:"static inline"
     buf
-    (Sarek_ir_codegen.decls_variants_first
-       ~records:types
-       ~variants:k.kern_variants) ;
+    ~records:types
+    ~variants:k.kern_variants ;
 
   (* Generate helper functions before kernel *)
   List.iter (gen_helper_func buf) k.kern_funcs ;

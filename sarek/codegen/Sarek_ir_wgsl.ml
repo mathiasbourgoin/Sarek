@@ -1489,10 +1489,10 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   Sarek_ir_codegen.gen_type_decls
     ~emit_record:gen_record_def
     ~emit_variant:gen_variant_def
+    ~tie_break:Sarek_ir_codegen.Records_first
     buf
-    (Sarek_ir_codegen.decls_records_first
-       ~records:types
-       ~variants:k.kern_variants) ;
+    ~records:types
+    ~variants:k.kern_variants ;
   let scalars = gen_bindings buf k.kern_params in
   scalar_param_names := scalars ;
   let wg_decls = collect_workgroup_decls k.kern_body in
