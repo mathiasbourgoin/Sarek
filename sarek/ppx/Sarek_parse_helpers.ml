@@ -13,22 +13,59 @@ exception Parse_error_exn of string * Location.t
 
 let loc_to_sloc loc = Sarek_ast.loc_of_ppxlib loc
 
-(** Parse a core_type to type_expr *)
+(** A functor application inside a type path ([F(X).t]). [flatten] used to
+    return [[]] for it, so the type came out named [""] — and an unresolvable
+    name is turned into an empty placeholder record by
+    [Sarek_types.type_of_type_expr], not into an error. *)
+let functor_type_path_msg =
+  "a functor application in a type path (`F(X).t`) is not supported in a \
+   kernel: kernel types are resolved by NAME against the types registered with \
+   [@@sarek.type], and a functor application has no name to register. Alias \
+   the result outside the kernel (`module M = F(X)`) and write `M.t`."
+
+(** A labelled or optional argument in an ARROW TYPE. [Ptyp_arrow]'s label used
+    to be read as [_], so [x:int -> int] and [int -> int] parsed to the same
+    [TEArrow] — the label was dropped from the type while the corresponding
+    parameter is refused outright by [collect_fun_params]. *)
+let labelled_arrow_type_msg =
+  "a labelled or optional argument in a function type (`x:t -> u`, `?x:t -> \
+   u`) is not supported in a kernel: kernel functions take positional \
+   arguments only (a labelled PARAMETER is refused for the same reason), so \
+   the label would have to be dropped from the type. Write `t -> u`."
+
+(** Parse a core_type to type_expr.
+
+    The final arm refuses rather than returning a placeholder: it used to answer
+    [TEConstr ("unknown", [])] for every core_type shape not listed, and
+    [Sarek_types.type_of_type_expr] maps an unrecognised constructor to
+    [TRecord (name, [])] — an empty record type. So an annotation the parser
+    could not read became a phantom type named ["unknown"] that unified with
+    nothing and was reported, if at all, as a type error somewhere else
+    (backlog-192). *)
 let rec parse_type (ct : core_type) : Sarek_ast.type_expr =
   match ct.ptyp_desc with
   | Ptyp_constr ({txt; _}, args) ->
       let rec flatten = function
         | Longident.Lident s -> [s]
         | Longident.Ldot (li, s) -> flatten li @ [s]
-        | Longident.Lapply _ -> []
+        | Longident.Lapply _ ->
+            raise (Parse_error_exn (functor_type_path_msg, ct.ptyp_loc))
       in
       let name = String.concat "." (flatten txt) in
       Sarek_ast.TEConstr (name, List.map parse_type args)
+  (* [Ptyp_poly]'s quantifier list is deliberately not read: it binds the type
+     variables that [Ptyp_var] below already carries by name, so nothing about
+     the type is lost by looking through it. *)
   | Ptyp_poly (_, ct) -> parse_type ct
   | Ptyp_var name -> Sarek_ast.TEVar name
-  | Ptyp_arrow (_, t1, t2) -> Sarek_ast.TEArrow (parse_type t1, parse_type t2)
+  | Ptyp_arrow (Nolabel, t1, t2) ->
+      Sarek_ast.TEArrow (parse_type t1, parse_type t2)
+  | Ptyp_arrow ((Labelled _ | Optional _), _, _) ->
+      raise (Parse_error_exn (labelled_arrow_type_msg, ct.ptyp_loc))
   | Ptyp_tuple ts -> Sarek_ast.TETuple (List.map parse_type ts)
-  | _ -> Sarek_ast.TEConstr ("unknown", [])
+  | d ->
+      raise
+        (Parse_error_exn (Sarek_unsupported.core_type_refusal d, ct.ptyp_loc))
 
 let parse_record_fields labels =
   List.map
@@ -41,24 +78,39 @@ let parse_record_fields labels =
       (name, is_mut, ty))
     labels
 
+(** A GADT-style constructor declaration ([C : int -> t]). [pcd_res] and
+    [pcd_vars] were never read, so the return type and the existential binders
+    were dropped and the constructor was recorded as if it had been written
+    [C of int] — for a parameterised type that is a different declaration. *)
+let gadt_constructor_msg =
+  "a GADT-style constructor declaration (`C : t -> u`, `C : type a. ...`) is \
+   not supported in a kernel type: a variant is lowered to a tag plus one \
+   payload whose type is fixed by the declaration, so a per-constructor return \
+   type has nowhere to go. Write `C of t`."
+
 let parse_variant_constructors constrs =
-  let parse_arg = function
+  let parse_arg loc = function
     | Pcstr_tuple [] -> None
     | Pcstr_tuple [arg] -> Some (parse_type arg)
     | Pcstr_tuple _ ->
         raise
           (Parse_error_exn
-             ( "Constructors with multiple arguments are not supported",
-               Location.none ))
+             ("Constructors with multiple arguments are not supported", loc))
     | Pcstr_record _ ->
         raise
           (Parse_error_exn
-             ("Record constructors are not supported in kernels", Location.none))
+             ("Record constructors are not supported in kernels", loc))
   in
   List.map
     (fun (cd : constructor_declaration) ->
+      (* [pcd_attributes] is deliberately not read here: attributes on a
+         constructor are interpreted (if at all) by Sarek_ppx on the original
+         type declaration, which still holds them. [pcd_res]/[pcd_vars] are a
+         different case — nothing downstream reads them, so they are refused. *)
+      if cd.pcd_res <> None || cd.pcd_vars <> [] then
+        raise (Parse_error_exn (gadt_constructor_msg, cd.pcd_loc)) ;
       let name = cd.pcd_name.txt in
-      let arg = parse_arg cd.pcd_args in
+      let arg = parse_arg cd.pcd_loc cd.pcd_args in
       (name, arg))
     constrs
 
@@ -70,12 +122,64 @@ let rec extract_type_from_pattern (pat : Ppxlib.pattern) :
   | Ppat_alias (p, _) -> extract_type_from_pattern p
   | _ -> None
 
+(** An [as] alias in a BINDER position ([let (p as x) = e], [fun (p as x) ->]).
+    [extract_name_from_pattern] used to answer the alias name and throw the
+    inner pattern away, so every name [p] bound was silently absent from the
+    kernel environment and surfaced later as an unbound variable — pointing at
+    the USE, not at the alias. *)
+let alias_binder_msg =
+  "an `as` alias in a kernel binder (`let (p as x) = e`, `fun (p as x) ->`) is \
+   not supported: only the alias name is bound, and the names inside `p` would \
+   silently not exist. Bind the value under one name and destructure it in a \
+   `let` or a `match` of its own."
+
+(** [let x :> t = e] — a coercion on a binding. *)
+let binding_coercion_msg =
+  "a coercion on a `let` binding (`let x :> t = e`) is not supported in a \
+   kernel: there is no subtyping in the kernel type system, so a coercion has \
+   nothing to mean. Use a type annotation (`let x : t = e`)."
+
+(** [let f : type a. ...] — a locally abstract type on a binding. *)
+let binding_univars_msg =
+  "a locally abstract type on a `let` binding (`let f : type a. a -> a = ...`) \
+   is not supported in a kernel: every kernel-local function is monomorphised \
+   at its call sites, so it cannot carry a quantified type."
+
+(** The declared type of a [let] binding, from EITHER spelling.
+
+    [let (x : t) = e] puts the annotation in the PATTERN ([Ppat_constraint]).
+    [let x : t = e] — the spelling almost everything in this tree uses — puts it
+    in [pvb_constraint] instead, and that field was never read: the annotation
+    was silently dropped, so a kernel-local [let sum : float = ...] was typed by
+    inference with the declared width ignored, and an annotated module constant
+    was dropped entirely by [Sarek_parse.parse_payload] for want of a type
+    (backlog-192).
+
+    Both are read here, pattern first. *)
+let binding_type (vb : Ppxlib.value_binding) : Sarek_ast.type_expr option =
+  let from_pattern =
+    match vb.pvb_pat.ppat_desc with
+    | Ppat_constraint (_, ct) -> Some (parse_type ct)
+    | _ -> None
+  in
+  match from_pattern with
+  | Some _ as t -> t
+  | None -> (
+      match vb.pvb_constraint with
+      | None -> None
+      | Some (Pvc_constraint {locally_abstract_univars = []; typ}) ->
+          Some (parse_type typ)
+      | Some (Pvc_constraint {locally_abstract_univars = _ :: _; _}) ->
+          raise (Parse_error_exn (binding_univars_msg, vb.pvb_loc))
+      | Some (Pvc_coercion _) ->
+          raise (Parse_error_exn (binding_coercion_msg, vb.pvb_loc)))
+
 (** Extract variable name from a Ppxlib pattern *)
 let rec extract_name_from_pattern (pat : Ppxlib.pattern) : string option =
   match pat.ppat_desc with
   | Ppat_var {txt; _} -> Some txt
   | Ppat_constraint (p, _) -> extract_name_from_pattern p
-  | Ppat_alias (_, {txt; _}) -> Some txt
+  | Ppat_alias _ -> raise (Parse_error_exn (alias_binder_msg, pat.ppat_loc))
   | Ppat_any -> Some "_"
   | _ -> None
 
@@ -100,6 +204,15 @@ let extract_param_from_pattern (pat : Ppxlib.pattern) : Sarek_ast.param =
     Sarek_ast.param_loc = loc_of_ppxlib pat.ppat_loc;
   }
 
+(** Existential type binders on a constructor pattern ([C (type a) p]). The
+    binder list in [Ppat_construct]'s payload was read as [_], so the pattern
+    parsed as the plain [C p] and the locally abstract type simply was not
+    there. *)
+let existential_pattern_msg =
+  "an existential type binder in a constructor pattern (`C (type a) p`) is not \
+   supported in a kernel: it comes with a GADT declaration, which a kernel \
+   variant cannot be. Match the constructor without the binder."
+
 (** Parse a Ppxlib pattern to Sarek pattern *)
 let rec parse_pattern (pat : Ppxlib.pattern) : Sarek_ast.pattern =
   let loc = loc_of_ppxlib pat.ppat_loc in
@@ -107,13 +220,21 @@ let rec parse_pattern (pat : Ppxlib.pattern) : Sarek_ast.pattern =
     match pat.ppat_desc with
     | Ppat_any -> Sarek_ast.PAny
     | Ppat_var {txt; _} -> Sarek_ast.PVar txt
+    (* The annotation is deliberately looked THROUGH rather than read: a
+       pattern's type is fixed by the scrutinee and by the constructor
+       declaration, so the annotation cannot change what is lowered. This is
+       what makes the documented [let ((a, b) : t) = e] spelling work. *)
     | Ppat_constraint (p, _) -> (parse_pattern p).Sarek_ast.pat
     | Ppat_construct ({txt = Lident name; _}, None) ->
         Sarek_ast.PConstr (name, None)
-    | Ppat_construct ({txt = Lident name; _}, Some (_, arg)) ->
+    | Ppat_construct ({txt = Lident name; _}, Some ([], arg)) ->
         Sarek_ast.PConstr (name, Some (parse_pattern arg))
+    | Ppat_construct ({txt = Lident _; _}, Some (_ :: _, _)) ->
+        raise (Parse_error_exn (existential_pattern_msg, pat.ppat_loc))
     | Ppat_tuple ps -> Sarek_ast.PTuple (List.map parse_pattern ps)
-    | _ -> raise (Parse_error_exn ("Unsupported pattern", pat.ppat_loc))
+    | d ->
+        raise
+          (Parse_error_exn (Sarek_unsupported.pattern_refusal d, pat.ppat_loc))
   in
   {Sarek_ast.pat = pat_desc; Sarek_ast.pat_loc = loc}
 
@@ -207,6 +328,38 @@ let expression_at_loc (root : expression) (loc : Location.t) =
   !found
 
 let pattern_of_param (p : Ppxlib.pattern) : Ppxlib.pattern = p
+
+(** A coercion in a function's return position ([fun x :> t -> e]). *)
+let return_coercion_msg =
+  "a coercion in a function's return position (`fun x :> t -> e`, `let f x :> \
+   t = e`) is not supported in a kernel: there is no subtyping in the kernel \
+   type system, so a coercion has nothing to mean. Use a type annotation (`: \
+   t`)."
+
+(** The return-type annotation of a function expression, if it has one.
+
+    [Pexp_function]'s [type_constraint option] slot is where OCaml >= 5.1 puts
+    the [: t] of [let f (x : int32) : int32 = ...] — NOT in the pattern. It was
+    read as [_] by [collect_fun_params], so every kernel helper's declared
+    return type was silently discarded and the helper's result type came from
+    inference alone (backlog-192).
+
+    Only the OUTERMOST function's constraint is returned, which is the only one
+    a single-arrow-chain [let f a b : t = ...] can have: OCaml puts every
+    parameter of such a definition in ONE [Pexp_function], so a nested one comes
+    from an explicit inner [fun], whose return type belongs to that inner
+    function and not to the binding. *)
+let fun_return_type (expr : expression) : Sarek_ast.type_expr option =
+  let module P = Ast_502.Parsetree in
+  match (expression_to_502 expr).P.pexp_desc with
+  | P.Pexp_function (_, Some (P.Pconstraint ct), _) ->
+      Some
+        (parse_type
+           (From_502.copy_core_type ct |> Selected_ast.of_ocaml Core_type))
+  | P.Pexp_function (_, Some (P.Pcoerce _), _) ->
+      raise (Parse_error_exn (return_coercion_msg, expr.pexp_loc))
+  | P.Pexp_function (_, None, _) -> None
+  | _ -> None
 
 let collect_fun_params (expr : expression) :
     Ppxlib.pattern list * fun_body option =

@@ -107,6 +107,141 @@ let when_guard_msg =
    becomes `| C x -> if cond then a else b`, where `b` is what the arm below \
    would have computed for the same constructor."
 
+(** [{ r with f = e }] — functional record update.
+
+    [Pexp_record]'s second component is the [with] base. It was read as [_base]
+    and never used, so [{ r with x = 1.0 }] parsed to exactly the same [ERecord]
+    as [{ x = 1.0 }]: every field NOT mentioned was left unset, and the lowering
+    emits a struct initialiser for it. On a device that is an uninitialised
+    field read as whatever the memory held — a wrong answer with no diagnostic,
+    the same shape as the dropped [when] guard (backlog-192). *)
+let record_update_msg =
+  "functional record update (`{ r with f = e }`) is not supported in kernels \
+   (not yet implemented). Sarek's record literal is lowered to a struct \
+   initialiser and there is no copy-then-overwrite form for it, so the base \
+   record would be discarded and every field you did not name would be left \
+   uninitialised. Name every field, reading the ones you are not changing from \
+   the base: `{ f = e; g = r.g }`."
+
+(** A record field named through a functor application. The field longident used
+    to fall back to the literal name ["field"] for anything that was not
+    [Lident]/[Ldot] — a field name the record almost certainly does not have, so
+    the drop surfaced (if at all) as an unrelated unknown-field error.
+
+    UNREACHABLE from OCaml source: the grammar's field position is
+    [mk_longident(mod_longident, LIDENT)] and [mod_longident] has no
+    functor-application production, so [r.F(X).f] is a syntax error — checked
+    with [ocamlc -stop-after parsing] on [let f r = r.F(X).lbl], which reports
+    "Syntax error". The arm exists so that no [Longident] shape can reach a
+    fabricated field name if that ever changes. *)
+let record_field_path_msg =
+  "this record field cannot be named through a functor application (`F(X).f`) \
+   in a kernel: fields are resolved by NAME against the record type. Write the \
+   bare field name."
+
+(** A labelled or optional argument at a CALL SITE. [Pexp_apply]'s argument list
+    is [(arg_label * expression) list] and the label was read as [_], so
+    [f ~b:2 ~a:1] was lowered as the positional [f 2 1] — silently passing the
+    arguments in written order rather than in declared order. A labelled
+    PARAMETER is already refused by [collect_fun_params], so no kernel-visible
+    function can legitimately be called this way. *)
+let labelled_argument_msg =
+  "a labelled or optional argument (`f ~x:e`, `f ?x:e`) is not supported in a \
+   kernel call: arguments are passed positionally, so the label would be \
+   dropped and the arguments would be passed in the order they are WRITTEN, \
+   not the order they are declared. Kernel functions cannot declare labelled \
+   parameters either. Pass the arguments positionally."
+
+(** A functor application in the module path of [let open ... in].
+
+    UNREACHABLE from OCaml source: [let open F(X) in e] parses to [Pexp_open]
+    over a [Pmod_apply], not over a [Pmod_ident] carrying a [Lapply] longident
+    (checked with [ocamlc -stop-after parsing]), and [Pmod_apply] is refused by
+    [parse_expression]'s final arm through [Sarek_unsupported]. The arm is kept
+    so the [Longident] match stays total: the reachable defect it replaces was
+    the [| _ -> []] beside it, which mapped every path DEEPER than [M.N] to the
+    empty path — and an empty path is not inert, [Sarek_native_gen_expr]'s
+    [TEOpen] arm reaches [failwith "empty module path in TEOpen"]. Measured on
+    this tree before the fix: a kernel containing [let open A.B.C in] failed
+    with "Sarek internal error: Failure(\"empty module path in TEOpen\")". *)
+let functor_open_msg =
+  "a functor application in `let open ... in` (`let open F(X) in e`) is not \
+   supported in a kernel: the open is re-emitted as a module path in generated \
+   native code, and a functor application is not a path. Alias it outside the \
+   kernel (`module M = F(X)`) and write `let open M in`."
+
+(** A return-type annotation on the kernel function itself. There is no slot for
+    it in [Sarek_ast.kernel] — [kern_params] and [kern_body] are the whole
+    signature — so it was read by nobody. *)
+let kernel_return_type_msg =
+  "a return-type annotation on a kernel (`[%kernel fun (a : int32 vector) : \
+   unit -> ...]`) is not supported: a kernel returns nothing to the host, so \
+   there is no return type to check the annotation against and it would be \
+   discarded. Remove it; annotate the parameters instead."
+
+(** Both payload readers used to handle an unannotated module constant
+    inconsistently: the [let module] fold DROPPED the binding (so a kernel using
+    it failed with an unbound variable pointing at the USE), while the top-level
+    fold refused it with a message that was false for the [let x : t = e]
+    spelling, whose annotation neither of them looked at. *)
+let module_const_needs_type_msg =
+  "a constant declared for a kernel needs a type annotation (`let x : float32 \
+   = 1.0`): Sarek has no expression-level inference for a module constant, and \
+   without a type there is nothing to generate a device declaration from. \
+   Annotate it, or move it inside the kernel body where inference runs."
+
+(** Apply a declared result type to a function body as a constraint.
+
+    [Sarek_ast.MFun] has no type field, so a module-item helper's declared
+    result type had nowhere to go and was dropped. [ETyped] carries it without
+    changing any representation: [Sarek_typer]'s [ETyped] arm unifies and
+    returns the INNER typed expression with the substituted type, so no node
+    reaches the IR and no lowering pass sees anything new. *)
+let constrain_body (ty : Sarek_ast.type_expr option) (body : Sarek_ast.expr) :
+    Sarek_ast.expr =
+  match ty with
+  | None -> body
+  | Some t ->
+      {
+        Sarek_ast.e = Sarek_ast.ETyped (body, t);
+        Sarek_ast.expr_loc = body.Sarek_ast.expr_loc;
+      }
+
+(** The declared RESULT type of a [let] binding with [nparams] parameters.
+
+    Three spellings reach here and only one of them had a reader before
+    backlog-192: [let (x : t) = e] (in the pattern, read), [let x : t = e] (in
+    [pvb_constraint] — dropped), and [let f x : t = e] (in [Pexp_function]'s
+    constraint slot — dropped). The second is the spelling nearly everything in
+    this tree uses.
+
+    For a function the whole-binding annotation is the ARROW type, and every
+    slot that can hold it downstream holds a RESULT type, so one arrow is peeled
+    per parameter. An annotation with too few arrows is refused rather than
+    half-applied. *)
+let binding_result_type (vb : value_binding) (nparams : int) :
+    Sarek_ast.type_expr option =
+  match (binding_type vb, nparams) with
+  | None, 0 -> None
+  | None, _ -> fun_return_type vb.pvb_expr
+  | Some t, 0 -> Some t
+  | Some t, n -> (
+      let rec peel n t =
+        if n = 0 then Some t
+        else
+          match t with Sarek_ast.TEArrow (_, r) -> peel (n - 1) r | _ -> None
+      in
+      match peel n t with
+      | Some r -> Some r
+      | None ->
+          raise
+            (Parse_error_exn
+               ( "this annotation has fewer arrows than the function has \
+                  parameters, so Sarek cannot tell which part of it is the \
+                  result type. Annotate the result instead (`let f x : t = \
+                  ...`), or give the full arrow type.",
+                 vb.pvb_pat.ppat_loc )))
+
 (** Parse let%shared: let%shared name : type [= size] in body Syntax: let%shared
     tile : float32 array in body let%shared tile : float32 array = 64 in body *)
 let rec parse_let_shared parse_expr (expr : expression) : Sarek_ast.expr_desc =
@@ -173,12 +308,29 @@ and parse_superstep parse_expr (expr : expression) : Sarek_ast.expr_desc =
             raise
               (Parse_error_exn ("Expected superstep name", pvb_pat.ppat_loc))
       in
-      (* Check for ~divergent attribute *)
+      (* Check for the divergent attribute. Any OTHER attribute used to be
+         skipped in silence, so a misspelling ([@divergnt]) read as "not
+         divergent" and the convergence checker was applied to a step the user
+         had declared divergent (backlog-192). *)
       let divergent =
         List.exists
           (fun (attr : attribute) -> attr.attr_name.txt = "divergent")
           pvb_attributes
       in
+      List.iter
+        (fun (attr : attribute) ->
+          if attr.attr_name.txt <> "divergent" then
+            raise
+              (Parse_error_exn
+                 ( Printf.sprintf
+                     "the attribute `%s` on a superstep binding is not \
+                      interpreted: `divergent` is the only one a superstep \
+                      reads, and an attribute nothing reads is silently \
+                      discarded. Remove it, or write `divergent` if that is \
+                      what you meant."
+                     attr.attr_name.txt,
+                   attr.attr_loc )))
+        pvb_attributes ;
       let body = parse_expr step_body in
       let cont = parse_expr cont_expr in
       Sarek_ast.ESuperstep (name, divergent, body, cont)
@@ -250,9 +402,12 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
         ( {pexp_desc = Pexp_ident {txt = Lident ":="; _}; _},
           [(Nolabel, lhs); (Nolabel, rhs)] ) ->
         parse_assign_form lhs rhs
-    (* a.(i) syntax - array access *)
-    | Pexp_apply (arr, [(Nolabel, idx)]) when is_array_access expr ->
-        Sarek_ast.EArrGet (parse_expression arr, parse_expression idx)
+    (* `a.(i)` needs no arm of its own: OCaml desugars it to `Array.get a i`,
+       which the two Array.get arms above match. The arm that used to sit here
+       was guarded by [is_array_access], a function whose body was the literal
+       [false] with a comment calling itself "a simplified check" — so it never
+       fired, and it advertised a syntax route that did not exist. Removed with
+       the function (backlog-192). *)
     (* Pragma - pragma ["opt1"; "opt2"] body - must come before binary ops *)
     | Pexp_apply
         ( {pexp_desc = Pexp_ident {txt = Lident "pragma"; _}; _},
@@ -285,11 +440,21 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
     (* Function application *)
     | Pexp_apply (fn, args) ->
         let fn_expr = parse_expression fn in
-        let arg_exprs = List.map (fun (_, e) -> parse_expression e) args in
+        let arg_exprs =
+          List.map
+            (fun (label, e) ->
+              (* The label used to be read as [_] and dropped, turning [f ~b:2
+                 ~a:1] into the positional [f 2 1] (backlog-192). *)
+              (match label with
+              | Nolabel -> ()
+              | Labelled _ | Optional _ ->
+                  raise (Parse_error_exn (labelled_argument_msg, e.pexp_loc))) ;
+              parse_expression e)
+            args
+        in
         Sarek_ast.EApp (fn_expr, arg_exprs)
     (* Let binding *)
-    | Pexp_let (Nonrecursive, [{pvb_pat; pvb_expr; _}], body) ->
-        parse_let_form pvb_pat pvb_expr body
+    | Pexp_let (Nonrecursive, [vb], body) -> parse_let_form vb body
     (* If-then-else *)
     | Pexp_ifthenelse (cond, then_e, else_opt) ->
         Sarek_ast.EIf
@@ -334,12 +499,22 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
         in
         Sarek_ast.EMatch (parse_expression scrutinee, parsed_cases)
     (* Record construction *)
-    | Pexp_record (fields, _base) ->
+    | Pexp_record (fields, base) ->
+        (* The [with] base used to be read as [_base] and dropped, so
+           [{ r with x = e }] became [{ x = e }] and every unnamed field was left
+           uninitialised on the device (backlog-192). *)
+        (match base with
+        | Some b -> raise (Parse_error_exn (record_update_msg, b.pexp_loc))
+        | None -> ()) ;
         let parsed_fields =
           List.map
-            (fun ({txt; _}, e) ->
+            (fun ({txt; loc = fld_loc}, e) ->
               let name =
-                match txt with Lident n -> n | Ldot (_, n) -> n | _ -> "field"
+                match txt with
+                | Lident n -> n
+                | Ldot (_, n) -> n
+                | Lapply _ ->
+                    raise (Parse_error_exn (record_field_path_msg, fld_loc))
               in
               (name, parse_expression e))
             fields
@@ -361,14 +536,22 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
     | Pexp_constraint (e, ty) ->
         Sarek_ast.ETyped (parse_expression e, parse_type ty)
     (* Open expression *)
-    | Pexp_open ({popen_expr = {pmod_desc = Pmod_ident {txt; _}; _}; _}, e) ->
-        let path =
-          match txt with
+    | Pexp_open
+        ({popen_expr = {pmod_desc = Pmod_ident {txt; loc = mod_loc}; _}; _}, e)
+      ->
+        (* Depths beyond [M.N] used to flatten to the EMPTY path, which
+           Sarek_native_gen_expr turns into `failwith "empty module path in
+           TEOpen"` rather than a diagnostic, and which Sarek_env.open_module
+           treats as a silent no-op (backlog-192). Flatten at any depth; refuse
+           only what is not a path. [popen_override] is deliberately not read:
+           `open!` differs from `open` only in whether OCaml warns about
+           shadowing, which is settled before the kernel is parsed. *)
+        let rec flatten = function
           | Lident n -> [n]
-          | Ldot (Lident m, n) -> [m; n]
-          | _ -> []
+          | Ldot (li, n) -> flatten li @ [n]
+          | Lapply _ -> raise (Parse_error_exn (functor_open_msg, mod_loc))
         in
-        Sarek_ast.EOpen (path, parse_expression e)
+        Sarek_ast.EOpen (flatten txt, parse_expression e)
     (* Lambda - for local functions in kernels *)
     | _ when is_function_expression expr ->
         raise
@@ -414,7 +597,16 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
         ( {txt = "superstep"; _},
           PStr [{pstr_desc = Pstr_eval (inner_expr, _); _}] ) ->
         parse_superstep parse_expression inner_expr
-    | _ -> raise (Parse_error_exn ("Unsupported expression", expr.pexp_loc))
+    (* The refusal names the construct. It used to say "Unsupported expression"
+       for every one of the ~20 expression forms that reach here, which told the
+       user nothing about which part of their kernel was the problem
+       (backlog-192). Sarek_unsupported's table has no wildcard arm, so a new
+       ppxlib constructor stops the build instead of reaching a user as
+       silence. *)
+    | d ->
+        raise
+          (Parse_error_exn
+             (Sarek_unsupported.expression_refusal d, expr.pexp_loc))
   in
   {Sarek_ast.e; Sarek_ast.expr_loc = loc}
 
@@ -486,8 +678,9 @@ and parse_binop_or_app_form (expr : expression) (op : string) (e1 : expression)
           [parse_expression e1; parse_expression e2] )
 
 (** Extract body for let binding arm *)
-and parse_let_form (pvb_pat : pattern) (pvb_expr : expression)
-    (body : expression) : Sarek_ast.expr_desc =
+and parse_let_form (vb : value_binding) (body : expression) :
+    Sarek_ast.expr_desc =
+  let pvb_pat = vb.pvb_pat and pvb_expr = vb.pvb_expr in
   (* A tuple-pattern let ([let (a, b) = e in body]) is not a named binding;
      desugar it to the single-arm tuple [match] the lowering already handles as
      a positional-record destructure ([let ..], line ~800 of
@@ -500,23 +693,44 @@ and parse_let_form (pvb_pat : pattern) (pvb_expr : expression)
     | Ppat_constraint (p, _) -> is_tuple_pattern p
     | _ -> false
   in
-  if is_tuple_pattern pvb_pat then
+  if is_tuple_pattern pvb_pat then begin
+    (* A tuple-pattern binding has nowhere to put a type: [EMatch] carries none.
+       Reading the annotation and discarding it is the defect this sweep is
+       about, so it is refused instead. *)
+    (match binding_type vb with
+    | Some _ ->
+        raise
+          (Parse_error_exn
+             ( "a type annotation on a tuple-pattern `let` (`let (a, b) : t = \
+                e`) is not supported in a kernel: the binding is lowered to a \
+                single-arm `match`, which carries no type, so the annotation \
+                would be discarded. Annotate the bound expression instead \
+                (`let (a, b) = (e : t)`).",
+               pvb_pat.ppat_loc ))
+    | None -> ()) ;
     Sarek_ast.EMatch
       ( parse_expression pvb_expr,
         [(parse_pattern pvb_pat, parse_expression body)] )
-  else parse_named_let_form pvb_pat pvb_expr body
+  end
+  else parse_named_let_form vb body
 
-and parse_named_let_form (pvb_pat : pattern) (pvb_expr : expression)
-    (body : expression) : Sarek_ast.expr_desc =
+and parse_named_let_form (vb : value_binding) (body : expression) :
+    Sarek_ast.expr_desc =
+  let pvb_pat = vb.pvb_pat and pvb_expr = vb.pvb_expr in
   let name =
     match extract_name_from_pattern pvb_pat with
     | Some n -> n
     | None ->
         raise (Parse_error_exn ("Expected variable pattern", pvb_pat.ppat_loc))
   in
-  let ty = extract_type_from_pattern pvb_pat in
   (* Detect function definitions and emit ELetRec for local functions *)
   let fun_params, fun_body = collect_fun_params pvb_expr in
+  (* [ELetRec]'s type slot is the RESULT type (Sarek_typer's [ret_ty_opt]), and
+     [binding_result_type] is what makes all three annotation spellings reach it.
+     The old code read only the pattern one and put it in UNPEELED, so the one
+     spelling that did reach the slot ([let (f : a -> b) = fun x -> ...]) unified
+     an arrow against the body's type. *)
+  let ty = binding_result_type vb (List.length fun_params) in
   if fun_params <> [] then
     match fun_body with
     | Some (Fun_body body_expr) ->
@@ -555,15 +769,97 @@ and parse_named_let_form (pvb_pat : pattern) (pvb_expr : expression)
       Sarek_ast.ELet
         (name, ty, parse_expression value_expr, parse_expression body)
 
-(** Check if an expression is an array access *)
-and is_array_access (_expr : expression) : bool =
-  (* This is a simplified check - real implementation would need more context *)
-  false
+(** Every field of a kernel-payload [type_declaration] that [parse_payload] does
+    not read, refused rather than dropped.
+
+    A payload type declaration is consumed by the PPX and never reaches OCaml,
+    so a field nobody reads here is a field nobody reads at all. The two
+    attributes Sarek itself declares are accepted and ignored on purpose: inside
+    a payload every type declaration is already a Sarek type, so [@@sarek.type]
+    there is redundant rather than dropped. *)
+let check_payload_type_decl (td : type_declaration) : unit =
+  let loc = td.ptype_loc in
+  if td.ptype_params <> [] then
+    raise
+      (Parse_error_exn
+         ( "a parameterised type (`type 'a t = ...`) is not supported in a \
+            kernel: a device struct has one fixed layout, and a type parameter \
+            would give it one per instantiation. Declare the type at each \
+            element type you need.",
+           loc )) ;
+  if td.ptype_cstrs <> [] then
+    raise
+      (Parse_error_exn
+         ( "a type constraint (`constraint 'a = t`) is not supported in a \
+            kernel type declaration: it constrains a type parameter, and \
+            kernel types have none.",
+           loc )) ;
+  (match td.ptype_private with
+  | Private ->
+      raise
+        (Parse_error_exn
+           ( "a private type (`type t = private ...`) is not supported in a \
+              kernel: the generated device code and the generated accessors \
+              read the representation directly, so privacy could not be \
+              enforced and would be silently ignored.",
+             loc ))
+  | Public -> ()) ;
+  (match (td.ptype_kind, td.ptype_manifest) with
+  | Ptype_abstract, Some _ ->
+      raise
+        (Parse_error_exn
+           ( "a type alias (`type t = u`) is not supported in a kernel: types \
+              are resolved by name and no alias is followed, so uses of `t` \
+              would not find `u`. Use `u` directly.",
+             loc ))
+  | Ptype_abstract, None ->
+      raise
+        (Parse_error_exn
+           ( "an abstract type (`type t`) is not supported in a kernel: it has \
+              no representation to generate a device struct from.",
+             loc ))
+  | Ptype_open, _ ->
+      raise
+        (Parse_error_exn
+           ( "an extensible variant (`type t = ..`) is not supported in a \
+              kernel: a variant's device representation is fixed by its \
+              declaration order, which a later extension would change.",
+             loc ))
+  | (Ptype_record _ | Ptype_variant _), Some _ ->
+      raise
+        (Parse_error_exn
+           ( "a type declaration with both a manifest and a representation \
+              (`type t = u = { ... }`) is not supported in a kernel: only the \
+              representation is read, so the manifest would be discarded.",
+             loc ))
+  | (Ptype_record _ | Ptype_variant _), None -> ()) ;
+  List.iter
+    (fun (attr : attribute) ->
+      match attr.attr_name.txt with
+      | "sarek.type" | "sarek.type_private" -> ()
+      | other ->
+          raise
+            (Parse_error_exn
+               ( Printf.sprintf
+                   "the attribute `%s` on a type declaration inside a kernel \
+                    is not interpreted by anything: a kernel payload is \
+                    consumed by the PPX and never reaches OCaml, so the \
+                    attribute would be silently discarded. Remove it, or \
+                    declare the type outside the kernel where OCaml can see \
+                    it."
+                   other,
+                 attr.attr_loc )))
+    td.ptype_attributes
 
 (** Parse a function expression into a kernel *)
 let parse_kernel_function (expr : expression) : Sarek_ast.kernel =
   let loc = loc_of_ppxlib expr.pexp_loc in
   let params, body = collect_fun_params expr in
+  (* [Sarek_ast.kernel] has no return-type field, so a return annotation on the
+     kernel function had nowhere to go and was dropped (backlog-192). *)
+  (match fun_return_type expr with
+  | Some _ -> raise (Parse_error_exn (kernel_return_type_msg, expr.pexp_loc))
+  | None -> ()) ;
   match body with
   | Some (Fun_cases _) ->
       raise
@@ -602,6 +898,14 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
               List.map
                 (fun (td : type_declaration) ->
                   let loc = td.ptype_loc in
+                  (* Fields of [type_declaration] that had no reader at all: type
+                     parameters, constraints, privacy, the manifest and the
+                     attributes were all dropped in silence (backlog-192).
+                     [Pstr_type]'s own rec_flag is deliberately not read: a kernel
+                     type cannot refer to another kernel type in its fields (the
+                     lowering has no recursive struct), so `nonrec` and the
+                     default describe the same set of accepted declarations. *)
+                  check_payload_type_decl td ;
                   match td.ptype_kind with
                   | Ptype_record labels ->
                       Sarek_ast.Type_record
@@ -641,7 +945,6 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
                           (Parse_error_exn
                              ("Expected variable pattern", vb.pvb_pat.ppat_loc))
                   in
-                  let ty = extract_type_from_pattern vb.pvb_pat in
                   let params, body =
                     match collect_fun_params vb.pvb_expr with
                     | params, Some (Fun_body fn_body) when params <> [] ->
@@ -654,6 +957,7 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
                                vb.pvb_expr.pexp_loc ))
                     | _ -> ([], vb.pvb_expr)
                   in
+                  let ty = binding_result_type vb (List.length params) in
                   if params <> [] then
                     let parsed_params =
                       List.map
@@ -662,39 +966,88 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
                         params
                     in
                     let fn_body = parse_expression body in
-                    Sarek_ast.MFun (name, is_recursive, parsed_params, fn_body)
+                    Sarek_ast.MFun
+                      ( name,
+                        is_recursive,
+                        parsed_params,
+                        constrain_body ty fn_body )
                     :: acc
                   else
                     let value = parse_expression vb.pvb_expr in
                     match ty with
                     | Some t -> Sarek_ast.MConst (name, t, value) :: acc
-                    | None -> acc)
+                    | None ->
+                        (* The binding used to be DROPPED here — an unannotated
+                           module constant was simply not registered, so a kernel
+                           referring to it failed with an unbound variable
+                           pointing at the USE (backlog-192). The top-level
+                           payload path already refused this; the two now
+                           agree. *)
+                        raise
+                          (Parse_error_exn
+                             (module_const_needs_type_msg, vb.pvb_pat.ppat_loc)))
                 mods_acc
                 vbs
             in
             (types_acc, mods)
-        | _ -> (types_acc, mods_acc))
+        (* Everything else used to return the accumulator UNCHANGED, so a
+           declaration written inside a kernel module was silently absent from
+           the kernel environment (backlog-192). *)
+        | d ->
+            raise
+              (Parse_error_exn
+                 (Sarek_unsupported.structure_item_refusal d, item.pstr_loc)))
       ([], [])
       items
   in
 
   let rec collect_mods types_acc mods_acc e =
     match e.pexp_desc with
+    (* [_name] is deliberately not read: [tdecl_module] stays [None] for a
+       payload-local module, which is what makes its types resolvable by their
+       BARE name inside this kernel ([Sarek_typer] qualifies the registered name
+       when [tdecl_module] is [Some]). Writing the name in would make `M.t`
+       required and `t` unresolvable, changing every payload that declares one. *)
     | Pexp_letmodule ({txt = Some _name; _}, mod_expr, body) ->
         let inner_types, inner_mods =
           match mod_expr.pmod_desc with
           | Pmod_structure items -> parse_module_items_from_structure items
-          | _ -> ([], [])
+          (* Every other module expression used to contribute ([], []) — a
+             payload's `let module M = N in` or `let module M = F(X) in` brought
+             in NOTHING, silently (backlog-192). *)
+          | _ ->
+              raise
+                (Parse_error_exn
+                   ( "only a literal structure is supported here (`let module \
+                      M = struct ... end in`): a kernel payload's types and \
+                      helpers are read out of that structure, and there is \
+                      nothing to read out of a module path, a functor \
+                      application or a functor. Write the declarations out.",
+                     mod_expr.pmod_loc ))
         in
         collect_mods
           (List.rev_append inner_types types_acc)
           (List.rev_append inner_mods mods_acc)
           body
+    | Pexp_letmodule ({txt = None; loc = anon_loc; _}, _, _) ->
+        raise
+          (Parse_error_exn
+             ( "an anonymous module (`let module _ = struct ... end in`) is \
+                not supported at the top of a kernel payload: it used to fall \
+                through as if it were the kernel function itself, which fails \
+                later with the unrelated \"Kernel must be a function\". Give \
+                it a name.",
+               anon_loc ))
     | Pexp_open (_, body) ->
-        (* Skip past 'let open M in' and continue collecting *)
+        (* Skip past 'let open M in' and continue collecting. The opened path is
+           deliberately dropped rather than turned into an EOpen: names in a
+           kernel payload are resolved against Sarek's own environment, which the
+           open does not populate. Inside the kernel BODY the same construct IS
+           kept, because the native backend re-emits it. *)
         collect_mods types_acc mods_acc body
-    | Pexp_let (rec_flag, [{pvb_pat; pvb_expr; _}], body) ->
+    | Pexp_let (rec_flag, [vb], body) ->
         (* Capture top-level let as module const/fun *)
+        let pvb_pat = vb.pvb_pat and pvb_expr = vb.pvb_expr in
         let is_recursive = rec_flag = Recursive in
         let name =
           match extract_name_from_pattern pvb_pat with
@@ -703,17 +1056,18 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
               raise
                 (Parse_error_exn ("Expected variable pattern", pvb_pat.ppat_loc))
         in
-        let ty = extract_type_from_pattern pvb_pat in
         let module_items =
           match collect_fun_params pvb_expr with
           | params, Some (Fun_body fn_body) when params <> [] ->
+              let ty = binding_result_type vb (List.length params) in
               let parsed_params =
                 List.map
                   (fun p -> extract_param_from_pattern (pattern_of_param p))
                   params
               in
               let fn_body = parse_expression fn_body in
-              Sarek_ast.MFun (name, is_recursive, parsed_params, fn_body)
+              Sarek_ast.MFun
+                (name, is_recursive, parsed_params, constrain_body ty fn_body)
               :: mods_acc
           | _, Some (Fun_cases _) ->
               raise
@@ -723,17 +1077,24 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
           | _ ->
               let value = parse_expression pvb_expr in
               let ty =
-                match ty with
+                match binding_result_type vb 0 with
                 | Some t -> t
                 | None ->
                     raise
                       (Parse_error_exn
-                         ( "Module constants must have type annotations",
-                           pvb_pat.ppat_loc ))
+                         (module_const_needs_type_msg, pvb_pat.ppat_loc))
               in
               Sarek_ast.MConst (name, ty, value) :: mods_acc
         in
         collect_mods types_acc module_items body
+    | Pexp_let (_, (_ :: _ :: _ as vbs), _) ->
+        raise
+          (Parse_error_exn
+             ( "simultaneous bindings (`let a = ... and b = ... in`) are not \
+                supported at the top of a kernel payload: only the FIRST was \
+                ever looked at and the rest fell through as if they were the \
+                kernel function. Write them as separate `let`s.",
+               (List.nth vbs 1).pvb_loc ))
     | _ -> (List.rev types_acc, List.rev mods_acc, e)
   in
   let type_decls, module_items, core = collect_mods [] [] payload in
