@@ -101,15 +101,25 @@ if not sources:
 tracked = set(ls())
 
 # The prose trees. Every markdown file tracked at the repo root or under one of
-# these, and nothing else. The four excluded trees are excluded for a stated
-# reason, not by oversight:
+# these, and nothing else. That leaves 89 tracked .md files unscanned, and the
+# list below is the WHOLE of it rather than the three trees this comment first
+# named — an exclusion list that reads as exhaustive and is not is how a gate
+# starts overstating its coverage:
 #
-#   benchmarks/  machine-written result write-ups, full of device paths and
+#   benchmarks/  (43) machine-written result write-ups, full of device paths and
 #                driver hashes that are not citations of anything in this repo;
-#   .github/     issue and PR templates, whose "paths" are instructions to the
-#                person filling the form;
-#   sarek*/ spoc/ per-directory READMEs — in scope for a later pass, left out
-#                here only to keep this gate's first landing triageable.
+#   .github/     (21) agent definitions and workflow notes, whose "paths" are
+#                instructions to the reader rather than pointers into the tree;
+#   sarek*/ spoc/ (22) per-library documents — in scope for a later pass, left
+#                out here only to keep this gate's first landing triageable. NOT
+#                only READMEs: sarek/sarek/BSP.md, sarek/sarek/FUSION.md,
+#                sarek-cuda/CHANGELOG.md and spoc/framework/Backend_error.md are
+#                in this set too;
+#   schema/      (2) JSON-schema documents for the agent harness;
+#   scripts/     (1) scripts/REVIEW-BUNDLE.md. This one is a real gap and not a
+#                category: KB-GATE-INVENTORY delegates its exemption reasoning to
+#                that file, so it is full of live script paths and none of them
+#                is checked here.
 #
 # formal/ IS in scope: `formal/type-safety/STATUS.md` carried one of the two
 # symptoms of the unreachable-sha defect below (the same false sentence as
