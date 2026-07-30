@@ -307,9 +307,10 @@ end = struct
       not a cosmetic asymmetry: [soa_free_leaves] used to CLEAR the flag on a
       per-device free, which made this function answer [false] for a device
       whose leaves were still live, and the drain-before-free in
-      {!free_all_buffers} consults exactly this answer. It now re-derives the
-      flag from the leaves that survive, so a per-device release cannot disown
-      another device's. *)
+      {!free_all_buffers} consults exactly this answer. It now NARROWS the flag
+      — still set iff it already was and some leaf survives — so a per-device
+      release cannot disown another device's, and a release cannot resurrect
+      ownership a packed launch gave up either. *)
   let has_device_data (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : bool
       =
     Option.is_some (Vector.get_buffer vec dev)
@@ -430,10 +431,10 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
 
          Reaching here with the flag set means the host copy was authoritative or
          in sync first — that is what makes the upload above meaningful, and it is
-         what every path into this arm establishes: the migration arm three lines
-         up has just drained the other device through [read_back_to_host], and the
-         remaining locations ([CPU], [Both d], [Stale_GPU d]) each assert the host
-         copy is not behind. So this does not discard a pending leaf result; it
+         what every path into this arm establishes: the migration arm at the top of
+         this function has just drained the other device through
+         [read_back_to_host], and the remaining locations ([CPU], [Both d],
+         [Stale_GPU d]) each assert the host copy is not behind. So this does not discard a pending leaf result; it
          stops [read_back_to_host] from answering a question about [dev] by
          reading leaves on another device, which is the one thing the whole-vector
          flag cannot express (see {!Read_back.has_device_data}).

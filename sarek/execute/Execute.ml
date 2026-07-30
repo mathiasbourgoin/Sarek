@@ -332,29 +332,44 @@ let transfer_vectors_to_device ?(soa_abi = false) (args : vector_arg list)
                  buffer holding pre-SoA-launch bytes, or against no buffer at all
                  (the transparent path never allocates one, so the argument
                  expansion then raises [Transfer_failed]). *)
-              (* The gather runs UNCONDITIONALLY, through the binding's own
-                 [soa_from_device] rather than through [Transfer.to_cpu]. That is
-                 the only shape that is safe next to the line below it: clearing
-                 the flag is what makes the SoA arm of [Transfer.read_back_to_host]
-                 unreachable, and nothing ever sets the flag again, so a gather
-                 that can be SKIPPED means the launch's output can be stranded in
-                 the leaves with no path back to the host.
+              (* Gather where the LEAVES are the newer copy, skip where the HOST
+                 is, clear the flag either way. Two separate reasons, and the
+                 asymmetry between them is deliberate:
 
-                 [Transfer.to_cpu] can skip: it consults [v.location] and returns
-                 without reading anything on [Both]. Today every [Both] on a
-                 leaf-live vector is one where the host copy already IS the
-                 gathered result (only [to_cpu]/[sync]/[free_buffer] record it, each
-                 after a real read-back), so the previous unforced call did not
-                 produce wrong data. It made the correctness of THIS site depend on
-                 an invariant spanning four functions in another module; calling the
-                 gather directly is what makes that dependence go away.
+                 - the SKIP arms are a correctness requirement, and getting this
+                   wrong is how this round's first attempt lost data. [CPU] and
+                   [Stale_GPU] assert the host copy is the newer one, and on a
+                   leaf-live vector [Stale_GPU] is reachable through the public
+                   API: a transparent launch leaves [Stale_CPU dev], and a host
+                   [Vector.set]/[unsafe_set]/[fill] then gathers, writes the
+                   element and records [Stale_GPU dev] (Vector.ml). An
+                   unconditional gather replays the leaves OVER that write and it
+                   vanishes with no diagnostic — the backlog-181/190 class on the
+                   packed-after-SoA path. Pinned by
+                   [check_host_write_survives_packed].
+                 - deciding it HERE rather than delegating to [Transfer.to_cpu]'s
+                   [needs_transfer] is not a bug fix, and no test distinguishes the
+                   two. An unforced [to_cpu] also skips on [Both], and whether that
+                   is safe depends on the three functions that record [Both] doing
+                   so only after a real read-back — which they do, so the host
+                   there already holds the gathered result and the gather this arm
+                   performs is redundant today. The point is that clearing the flag
+                   on the next line makes the SoA arm of
+                   [Transfer.read_back_to_host] unreachable until the next
+                   transparent launch sets the flag again, so what may be skipped
+                   is a property this site must state rather than inherit from
+                   another module.
 
-                 [Transfer.to_cpu ~force:true] would also do it, but the jsoo build
-                 compiles this same file against [Transfer_jsx], whose [to_cpu]
-                 takes no [~force] — the binding closure is available in both. *)
+                 [Transfer.to_cpu ~force:true] is not the shape either way: it
+                 would gather on [Stale_GPU] (the data-loss arm above), and the
+                 jsoo build compiles this same file against [Transfer_jsx], whose
+                 [to_cpu] takes no [~force]. *)
               (match v.Vector.soa with
               | Some b when !(b.Vector.soa_leaves_live) ->
-                  b.Vector.soa_from_device dev ;
+                  (match v.Vector.location with
+                  | Vector.GPU _ | Vector.Stale_CPU _ | Vector.Both _ ->
+                      b.Vector.soa_from_device dev
+                  | Vector.CPU | Vector.Stale_GPU _ -> ()) ;
                   b.Vector.soa_leaves_live := false ;
                   v.Vector.location <- Vector.Stale_GPU dev
               | Some _ | None -> ()) ;

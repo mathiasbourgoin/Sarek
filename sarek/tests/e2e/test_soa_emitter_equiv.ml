@@ -1336,6 +1336,96 @@ let check_transparent_roundtrip dev n =
    launch has no buffer to bind, because the transparent path never allocates
    one), which is why the exception is caught and reported rather than left to
    abort the binary: a red state that is a crash is not an observation. *)
+(* A HOST WRITE between a transparent launch and a packed one must survive.
+
+   Same two launches as {!check_soa_then_packed}, with one statement added
+   between them, and that statement is the whole case: after the transparent
+   launch the vector is [Stale_CPU dev] with the leaves authoritative, and
+   [Vector.set] gathers them, writes the element, and records [Stale_GPU dev] —
+   the host copy is now the NEWER one while [soa_leaves_live] still says
+   "leaves".
+
+   The packed launch must then normalise that flag WITHOUT re-gathering. A gather
+   there replays the leaves over the host write and the write vanishes with no
+   diagnostic. Found by review of this round's first attempt, which made the
+   gather unconditional for the opposite failure (a gather skipped on a
+   device-authoritative location strands the launch output in the leaves) — the
+   two are one condition, on which copy is authoritative, and the case exists
+   because pinning only one of them is what let the other in.
+
+   Distinguishable in both directions. y0 = i+1; the transparent launch doubles y
+   to 2*y0; the host write sets y := 100+i, which is neither a multiple nor a
+   scalar function of y0; the packed launch doubles that to 2*(100+i). Discarding
+   the host write gives 4*y0 = 4*(i+1) instead, and 2*(100+i) = 4*(i+1) has no
+   integer solution for i >= 0. *)
+let check_host_write_survives_packed dev n =
+  let threads = min 128 n in
+  let block = dims threads and grid = dims ((n + threads - 1) / threads) in
+  let sv = Soa_vector.create_transparent point3d_custom n in
+  let y0 i = float_of_int (i + 1) in
+  for i = 0 to n - 1 do
+    Vector.set sv i {x = float_of_int i; y = y0 i; z = float_of_int (n - i)}
+  done ;
+  let ir = ir_of p3_scale_y_kernel in
+  let written i = float_of_int (100 + i) in
+  let ok = ref true in
+  (match
+     Sarek.Execute.run_vectors
+       ~device:dev
+       ~ir
+       ~args:[Vec sv; Int n]
+       ~block
+       ~grid
+       () ;
+     Transfer.flush dev ;
+     (* The host write. Gathers the leaves first (auto-sync), so what it lands on
+        top of is the transparent launch's result, and leaves the vector
+        [Stale_GPU dev]. *)
+     for i = 0 to n - 1 do
+       Vector.set
+         sv
+         i
+         {x = float_of_int i; y = written i; z = float_of_int (n - i)}
+     done ;
+     (* PACKED launch: run_source defaults to ~soa_abi:false. *)
+     Sarek.Execute.run_source
+       ~device:dev
+       ~source:(Sarek_ir_ptx.generate ir)
+       ~lang:Sarek.Execute.PTX
+       ~kernel_name:ir.Sarek_ir_types.kern_name
+       ~block
+       ~grid
+       [Sarek.Execute.Vec sv; Sarek.Execute.Int n] ;
+     Transfer.flush dev
+   with
+  | exception e ->
+      Printf.printf
+        "  host write then packed launch raised: %s\n%!"
+        (Printexc.to_string e) ;
+      ok := false
+  | () ->
+      let first = ref true in
+      for i = 0 to n - 1 do
+        let got = (Vector.get sv i).y and want = written i *. 2.0 in
+        if Float.abs (got -. want) > 1e-3 && !first then begin
+          first := false ;
+          Printf.printf
+            "  host write lost @%d: got=%g want=%g (re-gathered leaves would \
+             give %g)\n\
+             %!"
+            i
+            got
+            want
+            (y0 i *. 4.0) ;
+          ok := false
+        end
+      done) ;
+  Printf.printf
+    "  %-56s %s\n%!"
+    "a host write between an SoA and a packed launch survives"
+    (if !ok then "OK" else "FAILED") ;
+  !ok
+
 let check_soa_then_packed dev n =
   let threads = min 128 n in
   let block = dims threads and grid = dims ((n + threads - 1) / threads) in
@@ -1894,9 +1984,11 @@ let () =
       (* The skip is NAMED. Gating the call on [dev_can_f64] alone printed
          nothing at all on a device without fp64, and a row that prints nothing is
          indistinguishable from one that passed — the exact skip-as-pass shape the
-         guarded cases below were restructured to make unrepresentable, and this
-         is the last plain capability gate in the driver loop. Same wording as the
-         two arms of [check_mixed_widths], which report the same capability. *)
+         guarded cases below were restructured to make unrepresentable. Same
+         wording as the fp64 arm of [check_mixed_widths] (its other arm reports
+         int64, a different capability). Not the last bare gate in this loop:
+         [check_roundtrip] at the end is still [if is_ptx dev && …] and prints
+         nothing on a non-PTX device. *)
       if not dev_can_f64 then
         Printf.printf
           "SoA-emitter dpair(f64) [%s] %s: SKIP (device reports no fp64)\n%!"
@@ -1999,6 +2091,11 @@ let () =
         [
           ( "packed AoS launch after a transparent SoA one",
             fun () -> check_soa_then_packed dev n );
+          (* Same pair of launches with a HOST WRITE in between: the flag must be
+             normalised without the gather replaying the leaves over it. The two
+             cases pin the two directions of one condition. *)
+          ( "a host write between an SoA and a packed launch survives",
+            fun () -> check_host_write_survives_packed dev n );
           ( "free_all_buffers preserves a transparent SoA result",
             fun () -> check_free_preserves_soa dev n );
           (* And the free must RELEASE, not merely preserve — a separate claim

@@ -995,8 +995,8 @@
 
 ; Cross-device migration of a transparent SoA vector: Transfer.to_device to a
 ; device the vector is NOT resident on drains the source device first, and that
-; drain bypassed the SoA-aware read-back. Needs two devices, one CUDA/PTX; skips
-; loudly (exit 0) otherwise. Same ZLUDA path as the rule above, prepended for the
+; drain bypassed the SoA-aware read-back. Needs two devices, at least one
+; CUDA/PTX (its leaf-ownership case needs both); skips loudly (exit 0) otherwise. Same ZLUDA path as the rule above, prepended for the
 ; same reason.
 
 (executable
