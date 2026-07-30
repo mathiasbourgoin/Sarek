@@ -74,6 +74,15 @@ jobs:
       - name: Dune directory visibility guard
         run: ./scripts/check-dune-dir-visibility.sh
 
+      # This workflow's own structure. A step inserted before another step's
+      # `run:` line leaves the first with no action and gives the second two,
+      # and YAML keeps the last silently -- so a step runs something other than
+      # what it is named while the log shows a green check under the right name.
+      # That happened to this very file (backlog-186's HIP compile-gate never
+      # executed once), and nothing else here reads the workflow structurally.
+      - name: Workflow steps well-formed (backlog-186)
+        run: ./scripts/check-workflow-steps.sh
+
       # #137. This checker existed for months, exited 1 on `main`, and was
       # referenced by no workflow and no Makefile target -- the fourth
       # "declared gate that nothing invokes" found in this repo. It is wired
@@ -396,16 +405,22 @@ jobs:
       # "expected to fail", its absence is indistinguishable from its success.
       # Needs no toolchain, so it runs on the host rather than in the image.
       - name: Check every negative case is asserted (backlog-165)
+        run: ./scripts/check-negative-case-coverage.sh
+
       # Compile-gate the HIP backend (backlog-186). Its tests live on the
       # @e2e-hip alias and need a ROCm device no hosted runner has, so they
       # cannot RUN here — but ~1.9k lines of backend and 6 test executables can
       # still be type-checked and linked, which catches the whole invalid-code
       # class for free. Building the DIRECTORY alias, not @e2e-hip: @e2e-hip
       # would execute the rules and fail for want of a device.
+      #
+      # This step was originally inserted BEFORE the negative-case `run:` line
+      # above, which left that step with no action at all and gave this one two
+      # `run` keys. YAML keeps the last, so the step NAMED for the HIP gate ran
+      # check-negative-case-coverage.sh and the HIP compile-gate -- the whole
+      # point of backlog-186 -- never executed. Caught by CodeRabbit on PR #383.
       - name: Compile-gate the HIP backend and its tests
         run: dune build @sarek-hip/all
-
-        run: ./scripts/check-negative-case-coverage.sh
 
       - name: Check the tvar id space has one allocator
         run: ./scripts/check-tvar-id-allocator.sh
