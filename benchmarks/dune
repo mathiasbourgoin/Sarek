@@ -3,7 +3,7 @@
 
 (library
  (name benchmark_common)
- (modules common system_info output benchmark_runner)
+ (modules common machine_label system_info output benchmark_runner)
  (libraries spoc_core benchmark_backends yojson unix))
 
 ; Backend loader with conditional GPU backend support

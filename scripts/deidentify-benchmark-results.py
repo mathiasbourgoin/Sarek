@@ -127,6 +127,32 @@ def machine_label(system):
     return f"{os_name}-{gpu_vendor(system)}"
 
 
+# A payload may legally carry the derived label plus the bounded disambiguating
+# suffix an operator set through SAREK_BENCH_MACHINE (see
+# scripts/machine-label-shape.sh for the shape and the bound). Without this, a
+# suffixed payload looked "wrong" to the relabeller: it was rewritten
+# linux-amd-b -> linux-amd, which strips the only thing telling two
+# same-hardware machines apart AND desynchronizes the payload from its own
+# filename, which still carries the producer's suffixed label. Same defect class
+# as the darwin-apple relabelling, one field over.
+SUFFIX_MAX_LEN = 8
+
+
+def keeps_label(existing, derived):
+    """True if `existing` is `derived`, or `derived` plus a legal suffix."""
+    if not isinstance(existing, str):
+        return False
+    if existing == derived:
+        return True
+    if not existing.startswith(derived + "-"):
+        return False
+    suffix = existing[len(derived) + 1:]
+    return (
+        1 <= len(suffix) <= SUFFIX_MAX_LEN
+        and all(("0" <= c <= "9") or ("a" <= c <= "z") for c in suffix)
+    )
+
+
 def systems_of(doc):
     """Every `system` block in a payload, whichever shape the file uses."""
     if isinstance(doc, dict) and isinstance(doc.get("results"), list):
@@ -145,7 +171,11 @@ def scrub(doc):
     collisions = {}
     for system in systems_of(doc):
         present = [f for f in STRIPPED if f in system]
-        label = machine_label(system)
+        derived = machine_label(system)
+        # An operator-set suffix is kept, not relabelled away: it is the only
+        # thing separating two same-hardware machines, and the filename carries
+        # it too.
+        label = system["machine"] if keeps_label(system.get("machine"), derived) else derived
         # Record what each label absorbed, so a merge cannot pass unnoticed.
         collisions.setdefault(label, set()).add(system.get("hostname", "<none>"))
         if not present and system.get("machine") == label:

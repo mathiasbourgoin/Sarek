@@ -36,6 +36,18 @@ DEIDENT="scripts/deidentify-benchmark-results.py"
 [ -f "$DEIDENT" ] || { echo "::error::$DEIDENT missing" >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "::error::python3 required" >&2; exit 2; }
 
+# The label shape is defined once, in scripts/machine-label-shape.sh, and shared
+# with the producer's override validation (benchmarks/machine_label.ml). Sourced
+# rather than restated: two independently written regexes for one rule is how
+# drift starts. Fails closed -- without the shape this gate cannot tell a label
+# from a hostname, and a check that cannot decide is not a pass.
+SHAPE="scripts/machine-label-shape.sh"
+# shellcheck source=scripts/machine-label-shape.sh
+[ -f "$SHAPE" ] && . "$SHAPE" \
+  || { echo "::error::$SHAPE missing -- cannot decide what a legal machine label is" >&2; exit 2; }
+[ -n "${MACHINE_LABEL_PATH_SHAPE:-}" ] \
+  || { echo "::error::$SHAPE defined no MACHINE_LABEL_PATH_SHAPE" >&2; exit 2; }
+
 failed=0
 
 # --- 1. payloads -----------------------------------------------------------
@@ -55,18 +67,22 @@ fi
 # --- 2. paths --------------------------------------------------------------
 # The 263 files were named <hostname>_<benchmark>_<size>_<ISO timestamp>.json.
 # A machine LABEL is allowed in that position; a hostname is not, and the two
-# are not distinguishable by pattern -- so require the label to be one of the
-# derived <os>-<vendor> forms the producer can actually emit.
+# are not distinguishable by pattern -- so require the label to have the shape
+# the producer can actually emit: <os>-<vendor>, optionally plus the bounded
+# disambiguating suffix (see $SHAPE for the shape and why it is bounded).
 #
 # Deliberately NOT a blocklist of the three known hostnames: that would pass a
-# fourth machine, which is how this class survives.
+# fourth machine, which is how this class survives. The enumerated <os>-<vendor>
+# prefix is what refuses a bare hostname -- `drangleic` cannot acquire one, and
+# the suffix cannot supply it either since the prefix is mandatory.
 bad_paths=$(git ls-files -- 'benchmarks/results/*' 2>/dev/null \
   | grep -E '/[^/]+_[a-z_0-9]+_[0-9]+_[0-9]{4}-[0-9]{2}-[0-9]{2}' \
-  | grep -vE '/(linux|darwin|windows)-(nvidia|amd|intel|apple|unknown)_' || true)
+  | grep -vE "$MACHINE_LABEL_PATH_SHAPE" || true)
 if [ -n "$bad_paths" ]; then
   echo "::error::tracked result path(s) are not named after a derived machine label:"
   printf '  %s\n' $bad_paths
-  echo "  Expected <os>-<vendor>_<benchmark>_<size>_<timestamp>.json."
+  echo "  Expected <os>-<vendor>[-<suffix>]_<benchmark>_<size>_<timestamp>.json,"
+  echo "  matching $MACHINE_LABEL_SHAPE"
   echo "  If that leading token is a hostname, it must not be committed."
   failed=1
 fi

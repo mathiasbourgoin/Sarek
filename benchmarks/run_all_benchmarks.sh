@@ -203,15 +203,24 @@ print(labels.pop() if len(labels) == 1 else "")
   # The label comes out of a JSON payload and reaches a `rm` glob, so it is
   # validated against the filename-safe label contract before it is used as a
   # path fragment. SAREK_BENCH_MACHINE lets an operator set this string to
-  # anything -- get_machine_label only refuses the hostname -- so `*` (which
-  # would expand to every machine's results) and `../..` (which would leave
-  # benchmarks/results entirely) are both reachable without this check.
-  # Narrower still is enforced on what may be COMMITTED, independently, by
-  # scripts/check-no-machine-identifiers.sh; this one is about not deleting the
-  # wrong files locally.
-  if [ -n "${MACHINE}" ] && ! printf '%s' "${MACHINE}" | grep -qE '^[a-z0-9]+-[a-z0-9]+$'; then
-    echo "  ! Machine label '${MACHINE}' is not filename-safe (<os>-<vendor>," \
-         "lowercase alphanumeric); refusing to use it as a path. Keeping old results."
+  # anything -- and this reads a label out of a payload that may predate any
+  # validation -- so `*` (which would expand to every machine's results) and
+  # `../..` (which would leave benchmarks/results entirely) are both reachable
+  # without this check.
+  #
+  # DELIBERATELY LOOSER than the label shape in scripts/machine-label-shape.sh:
+  # this predicate is about not deleting the wrong files locally, and refusing
+  # to clean up because an old payload's os token is not in an enumeration
+  # would be the wrong failure. It admits the optional third segment for the
+  # same reason the shape does -- without it, the one machine that NEEDS the
+  # disambiguating suffix is the one whose old results silently stop being
+  # cleaned. What may be COMMITTED is enforced independently, and narrower, by
+  # scripts/check-no-machine-identifiers.sh.
+  if [ -n "${MACHINE}" ] \
+     && ! printf '%s' "${MACHINE}" | grep -qE '^[a-z0-9]+-[a-z0-9]+(-[a-z0-9]{1,8})?$'; then
+    echo "  ! Machine label '${MACHINE}' is not filename-safe" \
+         "(<os>-<vendor>[-<suffix>], lowercase alphanumeric);" \
+         "refusing to use it as a path. Keeping old results."
     MACHINE=""
   fi
 
