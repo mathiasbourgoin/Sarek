@@ -265,6 +265,176 @@ jobs:
           dune build @sarek-hip/all
 '
 
+# --- apt provisioning -------------------------------------------------------
+# ci.yml's build job installs `ocaml-nox` with apt so
+# scripts/check-no-machine-identifiers.test.sh can drive benchmarks/machine_label.ml
+# through the toplevel. That job DOES provision the toolchain, just not with
+# ocaml/setup-ocaml. Every case below exists to keep that recognition from
+# degenerating into a blanket exemption.
+
+check "green: apt-get + version assertion provisions ocaml for later steps" 0 "OK" 'name: CI
+jobs:
+  build:
+    steps:
+      - name: OCaml toplevel for the label-shape harness
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ocaml-nox
+          ocaml -version
+      - name: Label-shape harness
+        run: |
+          set -e
+          ocaml benchmarks/machine_label.ml
+'
+
+# The green line must NAME the apt provisioning. A recognition this gate performs
+# silently is one no reader can audit, which is how the setup-ocaml exemption is
+# already handled.
+check "green: the apt-provisioned step count is named" 0 "1 step(s) provision a host tool via apt-get" 'name: CI
+jobs:
+  build:
+    steps:
+      - name: Toplevel
+        run: |
+          sudo apt-get install -y ocaml-nox
+          ocaml -version
+      - name: Harness
+        run: ocaml thing.ml
+'
+
+# --- the original defect must STILL be red ----------------------------------
+# THE load-bearing case. Installing ocaml-nox does not put `dune` on PATH, so
+# backlog-186's actual failure -- a host `dune build @sarek-hip/all` in this very
+# job -- must still be found AFTER the apt step. If this goes green the gate has
+# been loosened into uselessness.
+check "red: host dune is still caught in a job that apt-installed only ocaml" 1 "runs \`dune\` on the HOST" 'name: CI
+jobs:
+  build:
+    steps:
+      - name: Toplevel
+        run: |
+          sudo apt-get install -y --no-install-recommends ocaml-nox
+          ocaml -version
+      - name: Compile-gate the HIP backend and its tests
+        run: dune build @sarek-hip/all
+'
+
+# `make` ships on the runner, so its variant is the silent one. ocaml-nox does
+# not provide it either.
+check "red: host make is still caught after an apt ocaml install" 1 "runs \`make\` on the HOST" 'name: CI
+jobs:
+  build:
+    steps:
+      - name: Toplevel
+        run: |
+          sudo apt-get install -y ocaml-nox
+          ocaml -version
+      - name: Fast e2e
+        run: make e2e-fast
+'
+
+# The pre-#389 shape: a host `ocaml` with no apt-get anywhere in the job. This is
+# what the gate said about ci.yml before the toplevel step existed, and it must
+# keep saying it.
+check "red: host ocaml with no provisioning at all is still caught" 1 "runs \`ocaml\` on the HOST" 'name: CI
+jobs:
+  build:
+    steps:
+      - name: In image
+        run: |
+          docker run --rm spoc-ci:latest bash -lc '"'"'dune build'"'"'
+      - name: Label-shape harness
+        run: ocaml benchmarks/machine_label.ml
+'
+
+# --- the assertion is load-bearing, not decoration --------------------------
+# `apt-get install` exiting 0 is not the same claim as the binary resolving on
+# PATH. Without the version assertion the job has made a claim, not a
+# demonstration, and this gate does not accept claims.
+check "red: apt-get install with no version assertion provisions nothing" 1 "no earlier \`apt-get install\`" 'name: CI
+jobs:
+  build:
+    steps:
+      - name: Toplevel
+        run: sudo apt-get install -y --no-install-recommends ocaml-nox
+      - name: Harness
+        run: ocaml benchmarks/machine_label.ml
+'
+
+# The package table is an allow-list, so an unknown package provisions nothing --
+# otherwise any apt-get in the job would launder every later toolchain call.
+check "red: an unrelated apt package does not provision the toolchain" 1 "runs \`ocaml\` on the HOST" 'name: CI
+jobs:
+  build:
+    steps:
+      - name: Tools
+        run: |
+          sudo apt-get install -y jq
+          jq --version
+      - name: Harness
+        run: ocaml benchmarks/machine_label.ml
+'
+
+# --- provisioning is ORDERED -------------------------------------------------
+# "the job installs it somewhere" must not excuse a step that runs BEFORE the
+# install. That is the exit-127 shape with an alibi.
+check "red: a use before the install step is still caught" 1 "runs \`ocaml\` on the HOST" 'name: CI
+jobs:
+  build:
+    steps:
+      - name: Harness, too early
+        run: ocaml benchmarks/machine_label.ml
+      - name: Toplevel
+        run: |
+          sudo apt-get install -y ocaml-nox
+          ocaml -version
+'
+
+# Same rule inside one step: the install must precede the use textually.
+check "red: a use before the install within one step is still caught" 1 "comes LATER in this same step" 'name: CI
+jobs:
+  build:
+    steps:
+      - name: Both, wrong order
+        run: |
+          ocaml benchmarks/machine_label.ml
+          sudo apt-get install -y ocaml-nox
+          ocaml -version
+'
+
+# --- provisioning does not cross a job boundary -----------------------------
+# Each job gets its own runner, so job B inherits nothing from job A.
+check "red: apt provisioning in one job does not carry into another" 1 "job 'other' runs" 'name: CI
+jobs:
+  build:
+    steps:
+      - name: Toplevel
+        run: |
+          sudo apt-get install -y ocaml-nox
+          ocaml -version
+      - name: Harness
+        run: ocaml thing.ml
+  other:
+    steps:
+      - name: Harness with no switch
+        run: ocaml thing.ml
+'
+
+# --- an apt-get inside the container provisions the CONTAINER ---------------
+# The host PATH is untouched by an install that happens in `docker run`, so this
+# must not read as host provisioning.
+check "red: apt-get inside docker run does not provision the host" 1 "runs \`ocaml\` on the HOST" 'name: CI
+jobs:
+  build:
+    steps:
+      - name: In image
+        run: |
+          docker run --rm spoc-ci:latest \
+            bash -lc '"'"'apt-get install -y ocaml-nox && ocaml -version'"'"'
+      - name: Harness
+        run: ocaml benchmarks/machine_label.ml
+'
+
 # --- anti-vacuity: fail closed ---------------------------------------------
 # The sibling gate printed "OK — 0 steps" on a file it could not parse. Zero
 # host steps in view means this gate verified nothing, and that is exit 2.
