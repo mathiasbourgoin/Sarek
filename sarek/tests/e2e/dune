@@ -1726,12 +1726,14 @@
 ; record/variant cross-kind declaration order (backlog-211): a dependency edge
 ; BETWEEN a record and a variant declaration must be ordered too. backlog-203
 ; sorted records among themselves inside each family's own emission loop, and
-; the families disagree on which loop runs first, so the cross edge was ordered
-; by neither. Shape A (variant with a record payload) was red on the C family
-; and green on GLSL/WGSL; shape B (record with a variant field) was the exact
-; inverse. Both shapes run here on every available device with no per-backend
-; tolerance. The families this host has no hardware for (CUDA/HIP/Metal) and
-; WGSL (no device at all) are pinned in
+; the families disagreed on which loop ran first, so the cross edge was ordered
+; by neither; all five generators now emit both kinds from one interleaved pass.
+; Shape A (variant with a record payload) was red on the C family and green on
+; GLSL/WGSL; shape B (record with a variant field) was the exact inverse. Both
+; shapes run here on every available device with no per-backend tolerance, and
+; the run refuses to print a pass line if no declaration-emitting device was
+; present. The families this host has no hardware for (CUDA/HIP/Metal) and WGSL
+; (no device at all) are pinned device-independently in
 ; sarek/tests/codegen_golden/test_decl_order_all_backends.ml instead.
 
 (executable
@@ -1750,8 +1752,13 @@
   sarek_backend_error)
  (preprocess
   (pps sarek_ppx))
+ ; -32-33-34 only, narrower than the neighbouring stanzas' -32-33-34-69: the
+ ; deriver's generated code carries unused values, an unused open and unused
+ ; types. -69 (unused field) is NOT needed here and is left ON, so a record
+ ; field this test declares and never reads is a build error rather than
+ ; silence — which matters in a file whose subject is record fields.
  (flags
-  (:standard -w -32-33-34-69)))
+  (:standard -w -32-33-34)))
 
 (rule
  (alias runtest)

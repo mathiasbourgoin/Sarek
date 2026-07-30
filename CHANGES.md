@@ -78,6 +78,19 @@
 
 ### Changed
 
+- **BREAKING (`Sarek_ir_codegen`, shipped in `spoc.opam`'s `spoc.ir` library).**
+  The record-declaration ordering surface added for backlog-203 is replaced by
+  one that also orders variants (see the backlog-211 entry under Fixed).
+  Removed: `sort_record_types_by_dependency`, `referenced_record_names`,
+  `gen_record_typedefs`. Renamed: `Record_type_cycle` → `Type_decl_cycle`, which
+  now reports a cycle with either kind on it. Added: `type_decl`, `tie_break`,
+  `sort_type_decls_by_dependency`, `referenced_type_names`, `gen_type_decls`,
+  `gen_c_type_decls`. No compatibility aliases, deliberately: an alias for
+  `sort_record_types_by_dependency` would still compile inside a per-kind
+  emission loop and silently reintroduce the cross-kind bug. The three C-family
+  backends also lose their local `gen_variant_def` wrappers —
+  `gen_c_type_decls` takes `~constructor_prefix` directly. Nothing outside
+  `spoc/ir` and its tests referenced any of the removed names.
 - Breaking: `Sarek_type_helpers.HELPERS` gained a required `val field_names :
   string list` — the immediate field names in `to_values` order. An in-place
   record-field store needs a field's POSITION in the `VRecord`'s value array,
@@ -133,8 +146,8 @@
   type*), and is kept as a backstop for hand-built IR. Interpreter and Native
   were never affected — they carry values, not struct declarations. This orders
   records against records only; the two cross-kind halves it left live are the
-  entry below, which also renamed the two identifiers named here to
-  `sort_type_decls_by_dependency` and `Type_decl_cycle`.
+  entry below, which also replaced the two identifiers named here — see the
+  BREAKING note under Changed for what they became.
 - A dependency edge CROSSING between a record declaration and a variant
   declaration was ordered by nothing, because each backend family sorted one
   kind inside its own emission loop and the families disagreed on which loop ran
@@ -153,17 +166,21 @@
   so a literal-constructor reproducer is green on every device while covering
   nothing. All five generators that declare struct types (CUDA — also HIP —
   OpenCL, Metal, GLSL, WGSL) now emit records and variants from ONE interleaved
-  topological pass over a single declaration list,
-  `Sarek_ir_codegen.gen_type_decls`, instead of two per-kind loops. The
-  tie-break is still the incoming index and each family passes its declarations
-  in the order its two loops used to run, so an edge-free kernel's emitted source
-  is byte-identical and no committed golden moved. `Record_type_cycle` is renamed
-  `Type_decl_cycle` because it now reports a cycle with either kind on it, and
-  `referenced_record_names` becomes `referenced_type_names` because it now
-  reports variant names too; its visited set stays keyed on PHYSICAL node
-  identity, so a cyclic `elttype` value still terminates whatever closes the
-  cycle — including `let rec t = TVec t`, which has neither a record nor a
-  variant on it. Interpreter, Native and PTX were never affected: the first two
+  topological pass over both lists together, `Sarek_ir_codegen.gen_type_decls`,
+  instead of two per-kind loops. The tie-break is still the incoming index and
+  each backend passes a `~tie_break` naming the order its own two loops used to
+  run, so an edge-free kernel's emitted source is byte-identical and no committed
+  golden moved. Node identity in the sort is the POSITION in the list, not the
+  type name: a name-keyed self-edge drop discards a record's genuine edge to a
+  SAME-NAMED variant, which `mangle_name` and fusion can both produce, and that
+  is precisely the edge class this entry is about. The cyclic-value guard stays
+  keyed on PHYSICAL node identity, so a cyclic `elttype` value still terminates
+  whatever closes the cycle — including `let rec t = TVec t`, which has neither a
+  record nor a variant on it. What this does NOT fix: a type referenced but never
+  declared. The PPX registers a variant in `kern_variants` without registering a
+  record that appears only in its payload, and no ordering pass can supply a
+  declaration that is absent — it still surfaces as the backend's own *unknown
+  type name*. Interpreter, Native and PTX were never affected: the first two
   carry values, and the PTX emitter declares no struct types.
 
 - `v.(i).f <- e` — an in-place record-field store on a vector element — did

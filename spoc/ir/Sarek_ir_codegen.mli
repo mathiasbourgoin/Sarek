@@ -273,22 +273,39 @@ val gen_param :
     so it is refused rather than emitted in input order. A declaration whose own
     field or payload type is ITSELF is NOT reported here: the self-edge is
     dropped so the diagnostic stays about cycles between declarations, and the
-    backend's field-type emission is what reports it. *)
+    backend's field-type emission is what reports it.
+
+    It escapes {!gen_type_decls}, so it can surface from any of the five
+    backends' [generate_with_types]; a [Printexc] printer is registered for it
+    so the carried names reach the user instead of [Type_decl_cycle(_)]. *)
 exception Type_decl_cycle of string list
 
-(** One record or variant type declaration. Both kinds travel in one list so
-    that a dependency edge crossing between them can be ordered (see
-    {!gen_type_decls}). *)
+(** One record or variant type declaration. Both kinds travel in one list inside
+    {!sort_type_decls_by_dependency} so that a dependency edge crossing between
+    them can be ordered (see {!gen_type_decls}). *)
 type type_decl =
   | Record_decl of string * (string * Sarek_ir_types.elttype) list
   | Variant_decl of string * (string * Sarek_ir_types.elttype list) list
 
+(** Which of the two kinds a backend family emitted first, back when it ran two
+    per-kind loops. It decides the TIE-BREAK in {!gen_type_decls} and nothing
+    else: anything with a real dependency edge is reordered either way. Passing
+    the order a family's loops already produced is what keeps an edge-free
+    kernel's emitted source byte-identical, so committed goldens do not churn.
+*)
+type tie_break =
+  | Variants_first  (** CUDA, OpenCL, Metal, and HIP via the CUDA generator. *)
+  | Records_first  (** GLSL and WGSL. *)
+
 (** Mangled names of every record AND variant type reachable from a type,
     through arrays, vectors, variant payloads and nested record fields. Sorted
-    and deduplicated. Terminates on a cyclic [elttype] value whatever closes the
-    cycle — the visited set is keyed on physical node identity, not on a type
-    name, so a cycle closed by [TVec]/[TArray] alone, with neither a record nor
-    a variant on it, is caught too. *)
+    and deduplicated.
+
+    Terminates on a cyclic [elttype] value whatever closes the cycle: the
+    visited set is keyed on physical node identity, not on a type name, so a
+    cycle closed by [TVec]/[TArray] alone — with neither a record nor a variant
+    on it — is caught too. Exported so the tests can exercise that termination
+    directly; no production caller outside this module uses it. *)
 val referenced_type_names : Sarek_ir_types.elttype -> string list
 
 (** Order record and variant declarations so a declaration comes after every
@@ -299,10 +316,22 @@ val referenced_type_names : Sarek_ir_types.elttype -> string list
     (backlog-211, where each family sorted one kind inside its own loop and the
     cross edge was ordered by neither).
 
-    Stable: declarations with no dependency between them keep their relative
-    input position — the tie-break is the incoming index, not the name and not
-    the kind — so a list already in emission order is returned unchanged and
-    committed goldens do not churn.
+    Tie-break is the incoming index, never the name and never the kind, so a
+    list already in a valid emission order is returned UNCHANGED — that is the
+    property committed goldens rest on, and an edge-free list is a special case
+    of it. It is NOT stability in the general sense: a blocked declaration is
+    overtaken by later independent ones, so [[a (needs c); b; c]] comes out
+    [[b; c; a]], reversing the unrelated [a] and [b]. Input order is preserved
+    only among the declarations ready at the same step.
+
+    Node identity is the POSITION in the list. Two same-named declarations are
+    therefore two nodes, and a record's edge to a same-named variant is kept — a
+    name-keyed self-edge drop would lose exactly that edge. A reference to a
+    type that is in the list is an edge; a reference to one that is not is
+    neither an edge nor an error here, and surfaces later as the backend's own
+    "unknown type name".
+
+    Exported for the tests; {!gen_type_decls} is the only production caller.
 
     @raise Type_decl_cycle
       if the declarations form a cycle between distinct declarations; a
@@ -314,44 +343,21 @@ val referenced_type_names : Sarek_ir_types.elttype -> string list
       not a guard anything presently depends on. *)
 val sort_type_decls_by_dependency : type_decl list -> type_decl list
 
-(** [decls_variants_first ~records ~variants] tags and concatenates the two
-    lists in the order the C-family backends (CUDA/OpenCL/Metal, and HIP through
-    the CUDA generator) ran their two emission loops. Only the tie-break depends
-    on this; passing a family's historical order is what keeps an edge-free
-    kernel's emitted source byte-identical. *)
-val decls_variants_first :
-  records:(string * (string * Sarek_ir_types.elttype) list) list ->
-  variants:(string * (string * Sarek_ir_types.elttype list) list) list ->
-  type_decl list
-
-(** The mirror of {!decls_variants_first} for GLSL and WGSL, which ran records
-    then variants. *)
-val decls_records_first :
-  records:(string * (string * Sarek_ir_types.elttype) list) list ->
-  variants:(string * (string * Sarek_ir_types.elttype list) list) list ->
-  type_decl list
-
-(** Emit one C-family record declaration: [typedef struct { ... } name;], one
-    field per line. Only [type_of_elttype] differs per backend. Intended as the
-    [emit_record] argument to {!gen_type_decls}. *)
-val gen_record_typedef :
-  type_of_elttype:(Sarek_ir_types.elttype -> string) ->
-  Buffer.t ->
-  string * (string * Sarek_ir_types.elttype) list ->
-  unit
-
 (** Emit a backend's record and variant declarations from ONE
-    {!sort_type_decls_by_dependency} pass over a single declaration list,
-    dispatching each entry to [emit_record] or [emit_variant]. Every backend
-    that emits struct declarations (CUDA, OpenCL, Metal, HIP via CUDA, GLSL,
-    WGSL) goes through this; PTX declares no types and does not.
+    {!sort_type_decls_by_dependency} pass over both lists together, dispatching
+    each entry to [emit_record] or [emit_variant]. Every backend that emits
+    struct declarations (CUDA, OpenCL, Metal, HIP via CUDA, GLSL, WGSL) goes
+    through this; PTX declares no types and does not.
+
+    The two emitters cannot be swapped by accident: their payload types differ
+    ([(string * elttype) list] versus [(string * elttype list) list]).
 
     It orders exactly the declarations it is handed, by the type references
     inside their own fields and payloads. It orders NOTHING ELSE the backend
-    emits — headers, bindings, helper functions are the caller's sequencing —
-    and it does not make an unorderable input emittable: see {!Type_decl_cycle}
-    for a cycle, and a self-referencing declaration is emitted in place with its
-    self-edge dropped.
+    emits — headers, bindings and helper functions are the caller's sequencing —
+    and it does not make an unorderable or incomplete input emittable: see
+    {!Type_decl_cycle} for a cycle, and {!sort_type_decls_by_dependency} for the
+    self-reference and undeclared-reference cases.
 
     @raise Type_decl_cycle see {!sort_type_decls_by_dependency}. *)
 val gen_type_decls :
@@ -359,8 +365,29 @@ val gen_type_decls :
     (Buffer.t -> string * (string * Sarek_ir_types.elttype) list -> unit) ->
   emit_variant:
     (Buffer.t -> string * (string * Sarek_ir_types.elttype list) list -> unit) ->
+  tie_break:tie_break ->
   Buffer.t ->
-  type_decl list ->
+  records:(string * (string * Sarek_ir_types.elttype) list) list ->
+  variants:(string * (string * Sarek_ir_types.elttype list) list) list ->
+  unit
+
+(** {!gen_type_decls} specialised to the C family (CUDA, OpenCL, Metal, and HIP
+    through the CUDA generator): records are emitted as
+    [typedef struct { ... } name;] by the shared emitter and variants by
+    {!gen_variant_def}, so a backend supplies only [type_of_elttype] and
+    [constructor_prefix] — the two things that differ between them.
+
+    This is the only route to the shared C-family record emitter. That emitter
+    is deliberately not exported on its own: a record loop with no sort in it is
+    the shape backlog-203 fixed.
+
+    @raise Type_decl_cycle see {!sort_type_decls_by_dependency}. *)
+val gen_c_type_decls :
+  type_of_elttype:(Sarek_ir_types.elttype -> string) ->
+  constructor_prefix:string ->
+  Buffer.t ->
+  records:(string * (string * Sarek_ir_types.elttype) list) list ->
+  variants:(string * (string * Sarek_ir_types.elttype list) list) list ->
   unit
 
 (** Emit a GLSL variant type. GLSL has no [enum], [typedef], or [union], so tags

@@ -21,9 +21,11 @@
  * These tests pin the sort at the level the device e2e test cannot reach:
  *   - the ORDER produced for every edge direction, including the two cross-kind
  *     ones, with no device and no backend generator involved;
- *   - STABILITY, which no device can observe: two independent declarations must
- *     keep their input order, or every committed golden churns on unrelated
- *     edits;
+ *   - the TIE-BREAK, which no device can observe: a list already in a valid
+ *     emission order must come back unchanged, or every committed golden churns
+ *     on unrelated edits — together with the case pinning what is deliberately
+ *     NOT guaranteed, namely that a BLOCKED declaration is overtaken by later
+ *     independent ones, so this is not stability in the general sense;
  *   - the CYCLE refusal, which the PPX front end cannot produce at all.
  *
  * The five real backend generators are pinned separately, in
@@ -53,6 +55,19 @@ let tagged_names decls = List.map tagged_name decls
 let rec_decls types =
   List.map (fun (n, f) -> Sarek_ir_codegen.Record_decl (n, f)) types
 
+let var_decls variants =
+  List.map (fun (n, c) -> Sarek_ir_codegen.Variant_decl (n, c)) variants
+
+(* The two family tie-break orders, spelled out here rather than imported: the
+   shared module expresses them as the [tie_break] argument to [gen_type_decls]
+   and does not export a list-building helper, so these mirror what
+   [gen_type_decls] does internally. The dispatch tests below drive the real
+   thing through [gen_type_decls] itself, so a divergence between these two lines
+   and the shared module cannot hide a defect — it would show up there. *)
+let variants_first ~records ~variants = var_decls variants @ rec_decls records
+
+let records_first ~records ~variants = rec_decls records @ var_decls variants
+
 (* The records-only entry point the backlog-203 cases were written against:
    wrap each record, sort, read the names back. *)
 let sort_records types =
@@ -75,8 +90,16 @@ exception Timed_out
    reads as a hung test rather than a failing one, and `dune runtest` imposes no
    timeout of its own — the only thing that would eventually notice is a CI job
    limit, with no message naming the cause. SIGALRM turns the hang into a named
-   assertion: the walk allocates on every step (it conses onto the visited set),
-   so there is a poll point for the signal to be delivered at. *)
+   assertion.
+
+   Do NOT justify that by "the walk allocates on every step". It does today, but
+   the regression this deadline exists to catch is a guard that stops recording
+   nodes, and under that guard the [TVec] cycle allocates nothing at all — the
+   justification would be absent for exactly the shape that hangs. What makes the
+   signal deliverable is OCaml's safepoints (>= 4.14) at function entry and loop
+   back-edges, which a non-allocating recursive walk hits regardless. Measured:
+   with the visited set narrowed to named nodes only, this fires on the [TVec]
+   case with its own message. *)
 let within_deadline ~seconds ~what f =
   let prev =
     Sys.signal Sys.sigalrm (Sys.Signal_handle (fun _ -> raise Timed_out))
@@ -149,8 +172,8 @@ let test_two_independent_nested () =
     (sort_records input) ;
   print_endline "  two independent nested types: both before the user: OK"
 
-(* Stability, stated as its own property: an input with no dependencies at all
-   comes back byte-identical, in a name order no comparison function would
+(* The tie-break, stated as its own property: an input with no dependencies at
+   all comes back byte-identical, in a name order no comparison function would
    produce. This is what keeps committed goldens from churning. *)
 let test_stable_on_independent_records () =
   let input =
@@ -165,13 +188,35 @@ let test_stable_on_independent_records () =
   print_endline "  independent records keep their input order: OK"
 
 (* An already dependency-ordered list is returned unchanged — the sort is a
-   no-op on every type list that compiled before this change. *)
+   no-op on every type list that compiled before this change. Together with the
+   previous case this is the WHOLE ordering guarantee; the next case pins what
+   is deliberately NOT guaranteed. *)
 let test_noop_on_sorted_input () =
   let input =
     [("leaf", leaf_fields); ("mid", mid_fields); ("top", [("s", mid)])]
   in
   check_order "already sorted" ["leaf"; "mid"; "top"] (sort_records input) ;
   print_endline "  already-ordered input is unchanged: OK"
+
+(* NOT stable in the general sense, and pinned so nobody documents that it is.
+   A BLOCKED declaration is overtaken by later independent ones, so two entries
+   with no dependency between them can still swap: [outer] needs [triple], so
+   [lone] and [triple] are both placed ahead of it and [lone] ends up before
+   [outer] though it started after. The .mli says exactly this, and this case is
+   what stops that sentence from drifting back to "stable". *)
+let test_not_stable_when_an_entry_is_blocked () =
+  let input =
+    [
+      ("outer", [("mid", triple)]);
+      ("lone", leaf_fields);
+      ("triple", triple_fields);
+    ]
+  in
+  check_order
+    "blocked entry is overtaken"
+    ["lone"; "triple"; "outer"]
+    (sort_records input) ;
+  print_endline "  a blocked entry is overtaken by later independent ones: OK"
 
 (* A record referenced through an array or a variant payload is still a
    dependency: the struct has to exist before the type that names it. *)
@@ -210,7 +255,7 @@ let flagv = TVariant (flagv_name, [("Off", []); ("Level", [TFloat32])])
    half: OpenCL failed with `unknown type name` on the union member. *)
 let test_variant_payload_record_is_ordered () =
   let input =
-    Sarek_ir_codegen.decls_variants_first
+    variants_first
       ~records:[("leaf", leaf_fields)]
       ~variants:[("probe", probe_constrs)]
   in
@@ -225,7 +270,7 @@ let test_variant_payload_record_is_ordered () =
    half: Vulkan failed with a syntax error at the field line. *)
 let test_record_variant_field_is_ordered () =
   let input =
-    Sarek_ir_codegen.decls_records_first
+    records_first
       ~records:[("gauge", [("gk", flagv); ("gv", TFloat32)])]
       ~variants:[(flagv_name, [("Off", []); ("Level", [TFloat32])])]
   in
@@ -276,6 +321,30 @@ let test_both_cross_edges_in_one_pass () =
          "both-cross-edges: expected 4 declarations, got [%s]"
          (String.concat "; " got)) ;
   print_endline "  both cross directions ordered in one pass: OK"
+
+(* Node identity is the POSITION, not the name, and this is the case that
+   distinguishes the two. A record and a variant that share a mangled name — and
+   they can, because [mangle_name] maps [M.t] and [M_t] to the same string, and
+   fusion concatenates two kernels' type lists without deduplicating — form a
+   GENUINE cross-kind edge when the record's field type is the variant. A
+   name-keyed self-edge drop reads that edge as a self-reference and discards it,
+   leaving the record emitted first: exactly the ordering this whole change
+   exists to prevent, reintroduced by the identity choice alone. *)
+let test_same_name_record_and_variant_edge_survives () =
+  let same = "t" in
+  let same_variant = TVariant (same, [("Off", []); ("Level", [TFloat32])]) in
+  let input =
+    records_first
+      ~records:[(same, [("k", same_variant); ("v", TFloat32)])]
+      ~variants:[(same, [("Off", []); ("Level", [TFloat32])])]
+  in
+  check_order
+    "same-named record and variant"
+    ["variant:t"; "record:t"]
+    (tagged_names (Sarek_ir_codegen.sort_type_decls_by_dependency input)) ;
+  print_endline
+    "  a record's edge to a SAME-NAMED variant is kept, not read as a \
+     self-edge: OK"
 
 (* A cross-kind cycle: the record's field type is the variant and the variant's
    payload is the record. Unorderable, so it must be refused rather than
@@ -368,32 +437,67 @@ let test_gen_type_decls_dispatch_and_order () =
   let emit_variant buf (name, _) =
     Buffer.add_string buf (Printf.sprintf "V(%s) " name)
   in
-  let run decls =
+  let run ~tie_break ~records ~variants =
     let buf = Buffer.create 64 in
-    Sarek_ir_codegen.gen_type_decls ~emit_record ~emit_variant buf decls ;
+    Sarek_ir_codegen.gen_type_decls
+      ~emit_record
+      ~emit_variant
+      ~tie_break
+      buf
+      ~records
+      ~variants ;
     String.trim (Buffer.contents buf)
   in
-  (* C-family shape: variant payload is a record, variants-first input. *)
+  (* C-family shape: variant payload is a record, Variants_first tie-break. *)
   check_order
     "gen_type_decls on a variant-with-record-payload"
     ["R(leaf) V(probe)"]
     [
       run
-        (Sarek_ir_codegen.decls_variants_first
-           ~records:[("leaf", leaf_fields)]
-           ~variants:[("probe", probe_constrs)]);
+        ~tie_break:Sarek_ir_codegen.Variants_first
+        ~records:[("leaf", leaf_fields)]
+        ~variants:[("probe", probe_constrs)];
     ] ;
-  (* GLSL/WGSL shape: record field is a variant, records-first input. *)
+  (* GLSL/WGSL shape: record field is a variant, Records_first tie-break. *)
   check_order
     "gen_type_decls on a record-with-variant-field"
     ["V(flagv) R(gauge)"]
     [
       run
-        (Sarek_ir_codegen.decls_records_first
-           ~records:[("gauge", [("gk", flagv); ("gv", TFloat32)])]
-           ~variants:[(flagv_name, [("Off", []); ("Level", [TFloat32])])]);
+        ~tie_break:Sarek_ir_codegen.Records_first
+        ~records:[("gauge", [("gk", flagv); ("gv", TFloat32)])]
+        ~variants:[(flagv_name, [("Off", []); ("Level", [TFloat32])])];
     ] ;
-  print_endline "  gen_type_decls dispatches by kind, in sorted order: OK"
+  (* THE GOLDEN-NON-CHURN PROPERTY, on a MIXED edge-free set, once per
+     tie-break. This is the property three docstrings and a changelog entry rest
+     on — "an edge-free type list is emitted byte-identically, so no committed
+     golden moves" — and until now nothing exercised it with BOTH kinds present.
+     The record-only stability cases above cannot: they never mix. *)
+  let edge_free_records = [("zeta", leaf_fields); ("alpha", leaf_fields)] in
+  let edge_free_variants =
+    [("vone", [("A", [])]); ("vtwo", [("B", [TFloat32])])]
+  in
+  check_order
+    "edge-free mixed set, Variants_first, is emitted in input order"
+    ["V(vone) V(vtwo) R(zeta) R(alpha)"]
+    [
+      run
+        ~tie_break:Sarek_ir_codegen.Variants_first
+        ~records:edge_free_records
+        ~variants:edge_free_variants;
+    ] ;
+  check_order
+    "edge-free mixed set, Records_first, is emitted in input order"
+    ["R(zeta) R(alpha) V(vone) V(vtwo)"]
+    [
+      run
+        ~tie_break:Sarek_ir_codegen.Records_first
+        ~records:edge_free_records
+        ~variants:edge_free_variants;
+    ] ;
+  print_endline "  gen_type_decls dispatches by kind, in sorted order: OK" ;
+  print_endline
+    "  an edge-free mixed set is emitted in input order, both tie-breaks: OK"
 
 (* The C-family record emitter itself, at the level the shared module owns: one
    [typedef struct] per record, and the inner struct before the field naming
@@ -405,12 +509,12 @@ let test_c_family_emission_order () =
     | _ -> "int"
   in
   let buf = Buffer.create 256 in
-  Sarek_ir_codegen.gen_type_decls
-    ~emit_record:(Sarek_ir_codegen.gen_record_typedef ~type_of_elttype)
-    ~emit_variant:(fun _ _ ->
-      failwith "C-family emission: no variant in this input")
+  Sarek_ir_codegen.gen_c_type_decls
+    ~type_of_elttype
+    ~constructor_prefix:"static inline"
     buf
-    (rec_decls [("outer", [("mid", triple)]); ("triple", triple_fields)]) ;
+    ~records:[("outer", [("mid", triple)]); ("triple", triple_fields)]
+    ~variants:[] ;
   let src = Buffer.contents buf in
   let idx needle =
     let nl = String.length needle and hl = String.length src in
@@ -432,7 +536,7 @@ let test_c_family_emission_order () =
          use_triple
          decl_triple
          src) ;
-  print_endline "  gen_record_typedef declares the inner struct first: OK"
+  print_endline "  gen_c_type_decls declares the inner struct first: OK"
 
 (* [referenced_type_names] must terminate on a cyclic elttype VALUE, not just
    on a finite tree — the sort calls it on IR nobody promised is acyclic.
@@ -487,10 +591,12 @@ let () =
   test_two_independent_nested () ;
   test_stable_on_independent_records () ;
   test_noop_on_sorted_input () ;
+  test_not_stable_when_an_entry_is_blocked () ;
   test_dependency_through_array_and_variant () ;
   test_variant_payload_record_is_ordered () ;
   test_record_variant_field_is_ordered () ;
   test_both_cross_edges_in_one_pass () ;
+  test_same_name_record_and_variant_edge_survives () ;
   test_cross_kind_cycle_is_refused () ;
   test_variant_self_payload_does_not_raise () ;
   test_cycle_is_refused () ;

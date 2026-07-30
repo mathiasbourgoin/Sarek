@@ -1112,14 +1112,6 @@ let resolve_recursive_helpers (k : kernel) : kernel =
     funcs ;
   k
 
-(** Generate variant type definition for OpenCL *)
-let gen_variant_def buf v =
-  Sarek_ir_codegen.gen_variant_def
-    ~type_of_elttype:opencl_type_of_elttype
-    ~constructor_prefix:"static inline"
-    buf
-    v
-
 (** Generate OpenCL source with custom type definitions *)
 let generate_with_types ~(types : (string * (string * elttype) list) list)
     (k : kernel) : string =
@@ -1133,15 +1125,12 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   (* Record and variant type definitions, ordered TOGETHER in one pass: a
      variant with a record payload and a record with a variant-typed field are
      both reachable, and two per-kind loops order neither (backlog-211). *)
-  Sarek_ir_codegen.gen_type_decls
-    ~emit_record:
-      (Sarek_ir_codegen.gen_record_typedef
-         ~type_of_elttype:opencl_type_of_elttype)
-    ~emit_variant:gen_variant_def
+  Sarek_ir_codegen.gen_c_type_decls
+    ~type_of_elttype:opencl_type_of_elttype
+    ~constructor_prefix:"static inline"
     buf
-    (Sarek_ir_codegen.decls_variants_first
-       ~records:types
-       ~variants:k.kern_variants) ;
+    ~records:types
+    ~variants:k.kern_variants ;
 
   (* Generate helper functions before kernel *)
   gen_helpers buf k.kern_funcs ;

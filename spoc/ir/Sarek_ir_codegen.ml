@@ -689,6 +689,21 @@ let gen_param ~param_type ~gen_array_param ~invalid buf decl =
 
 exception Type_decl_cycle of string list
 
+(* The whole point of the payload is the diagnostic, and this exception now
+   escapes five backends' [generate_with_types] (it used to reach only two).
+   Without a printer OCaml renders it [Type_decl_cycle(_)] and the names are
+   lost — the Vulkan plugin deliberately lets codegen exceptions propagate to the
+   caller, so what the user sees is whatever [Printexc.to_string] produces. *)
+let () =
+  Printexc.register_printer (function
+    | Type_decl_cycle names ->
+        Some
+          (Printf.sprintf
+             "Sarek_ir_codegen.Type_decl_cycle: no valid emission order for \
+              the type declarations [%s] — they form a dependency cycle"
+             (String.concat "; " names))
+    | _ -> None)
+
 (** One record or variant type declaration. The two kinds are carried in a
     SINGLE list so that {!sort_type_decls_by_dependency} can order a record
     against a variant, which is the whole point of backlog-211: before it, each
@@ -708,15 +723,18 @@ let type_decl_name = function Record_decl (n, _) | Variant_decl (n, _) -> n
     {!Sarek_ir_types.elttype} value.
 
     [seen] is keyed on PHYSICAL IDENTITY of the node, not on a type name. A
-    name-keyed guard only closes cycles that pass through the kind it keys on,
-    and a cyclic value need not pass through any named node at all:
+    name-keyed guard only closes cycles that pass through a node of the kind it
+    keys on, and a cyclic value need not pass through any named node at all —
     [let rec t = TVec t], [let rec t = TRecord ("r", [("f", t)])] and
     [let rec t = TVariant ("c", [("C", [t])])] are all accepted by OCaml's
     recursive-value rule, and the first has neither a record nor a variant on
-    the cycle. Keyed on names, those shapes looped forever. Skipping a
-    physically re-visited node cannot lose a name — the accumulators already
-    hold everything reachable from it — so the general guard does not narrow the
-    result. *)
+    the cycle. Which of the three a name-keyed guard hangs on depends on which
+    names it holds: keyed on record names alone, the [TVec] and [TVariant]
+    shapes looped forever (that is the measured regression backlog-203 fixed);
+    keyed on record AND variant names, the [TVec] shape still does. Identity
+    closes all three unconditionally, and skipping a physically re-visited node
+    cannot lose a name — everything reachable from it is accumulated by the walk
+    that first entered it — so the general guard does not narrow the result. *)
 let referenced_type_names (ty : Sarek_ir_types.elttype) : string list =
   let open Sarek_ir_types in
   let acc = ref [] in
@@ -752,12 +770,40 @@ let referenced_type_names (ty : Sarek_ir_types.elttype) : string list =
     CROSS-KIND edge unordered (backlog-211), and the two halves of that gap are
     measured in the {!gen_type_decls} comment.
 
-    {b Stability.} Two declarations with no dependency between them keep their
-    relative position in the input list — ties break on the incoming index, not
-    on the name or the kind — so passing a family's declarations in the order
-    that family already emitted them leaves an edge-free type list
-    byte-identical and committed goldens do not churn. That is what
-    {!decls_variants_first} and {!decls_records_first} are for.
+    {b What "stable" means here, exactly.} At each step the READY declaration
+    with the lowest incoming index is placed — ties break on the input position,
+    never on the name or the kind. Two consequences, and they are the whole
+    guarantee:
+
+    - an input already in a valid emission order comes back UNCHANGED (every
+      prefix is placeable in turn), and an edge-free input is a special case of
+      that. This is what keeps committed goldens from churning, and it is why
+      {!gen_type_decls} takes a [~tie_break] naming the order each backend
+      family already emitted its two loops in.
+    - it is NOT stable in the general sense. A blocked declaration is overtaken
+      by later independent ones, so two declarations with no dependency between
+      them can still swap: [[a (needs c); b; c]] comes out [[b; c; a]] — [a] and
+      [b] are unrelated and their order is reversed. The order is a valid
+      topological one; the relative order of unrelated declarations is preserved
+      only among those ready at the same step.
+
+    {b Node identity is the POSITION in the list, not the type name.} Names
+    match a reference against the declarations that could satisfy it; the edge
+    itself, the self-edge drop and the placed set are all keyed on the incoming
+    index. Keying them on the name collapses two same-named declarations into
+    one node — reachable, because {!mangle_name} maps [M.t] and [M_t] to the
+    same string and fusion concatenates two kernels' type lists without
+    deduplicating — and, worse, drops a GENUINE cross-kind edge whenever a
+    record and a variant share a name, which is exactly the edge class this pass
+    exists to order.
+
+    {b A reference to something not in the list is not an edge.} Only declared
+    types can be ordered, so a type referenced but never declared produces no
+    edge and no error here; it surfaces later as the backend's own "unknown type
+    name". That hole is reachable — the PPX registers a variant in
+    [kern_variants] without registering a record that appears only in its
+    payload — but it is a MISSING declaration, not a misordered one, and no
+    ordering pass can fix it.
 
     {b Cycles.} A declaration cycle has no valid emission order, so it raises
     {!Type_decl_cycle} with the names still unplaced rather than falling back to
@@ -768,13 +814,16 @@ let referenced_type_names (ty : Sarek_ir_types.elttype) : string list =
     later type is refused there first ("unknown alignment for field type
     '...'"), and no cycle can reach codegen through the PPX front end. It is
     kept for the IR-constructed-by-hand path (fusion, tests, a future front
-    end), where nothing else would notice. *)
+    end), where nothing else would notice.
+
+    Exported for the tests: no production caller outside this module uses it —
+    {!gen_type_decls} is the only one — and the order it produces is far easier
+    to assert on directly than through five backends' emitted source. *)
 let sort_type_decls_by_dependency (decls : type_decl list) : type_decl list =
-  let declared = List.map (fun d -> mangle_name (type_decl_name d)) decls in
   let indexed = List.mapi (fun i d -> (i, d)) decls in
-  (* Every declared type this declaration's own types reference. A record's
-     field types and a variant's payload types are walked by the same
-     function, so an edge is found whichever kind sits at either end. *)
+  (* Every type this declaration's own field/payload types reference. A record's
+     field types and a variant's payload types are walked by the same function,
+     so an edge is found whichever kind sits at either end. *)
   let referenced = function
     | Record_decl (_, fields) ->
         List.concat_map (fun (_, fty) -> referenced_type_names fty) fields
@@ -783,52 +832,57 @@ let sort_type_decls_by_dependency (decls : type_decl list) : type_decl list =
           (fun (_, args) -> List.concat_map referenced_type_names args)
           constrs
   in
-  (* Dependencies of one entry: the declared types it references, minus itself
-     (a self-reference cannot be satisfied by ordering, and dropping it keeps
-     the diagnostic about real cycles). *)
-  let deps (_, d) =
-    let self = mangle_name (type_decl_name d) in
-    referenced d |> List.filter (fun x -> x <> self && List.mem x declared)
+  (* Dependencies of one entry, as INCOMING INDICES: every OTHER declaration in
+     the list whose name this one references. Dropping index [i] itself is what
+     makes a self-referencing declaration emittable in place (a self-reference
+     cannot be satisfied by ordering) while KEEPING a record's edge to a
+     same-named variant, which a name-keyed drop would lose. Computed once per
+     declaration, before the placement loop, not re-walked on every placement. *)
+  let deps_of (i, d) =
+    let refs = referenced d in
+    List.filter_map
+      (fun (j, e) ->
+        if j <> i && List.mem (mangle_name (type_decl_name e)) refs then Some j
+        else None)
+      indexed
   in
-  let remaining = ref indexed and placed = ref [] and out = ref [] in
+  let entries = List.map (fun e -> (e, deps_of e)) indexed in
+  let remaining = ref entries and placed = ref [] and out = ref [] in
   let rec loop () =
     if !remaining <> [] then
       match
         List.find_opt
-          (fun e -> List.for_all (fun d -> List.mem d !placed) (deps e))
+          (fun (_, ds) -> List.for_all (fun j -> List.mem j !placed) ds)
           !remaining
       with
-      | Some (i, d) ->
+      | Some (((i, d), _) as entry) ->
           out := d :: !out ;
-          placed := mangle_name (type_decl_name d) :: !placed ;
-          remaining := List.filter (fun (j, _) -> j <> i) !remaining ;
+          placed := i :: !placed ;
+          remaining := List.filter (fun e -> e != entry) !remaining ;
           loop ()
       | None ->
           raise
             (Type_decl_cycle
-               (List.map (fun (_, d) -> type_decl_name d) !remaining))
+               (List.map (fun ((_, d), _) -> type_decl_name d) !remaining))
   in
   loop () ;
   List.rev !out
 
-(** The declaration list in the order the C-family backends (CUDA/OpenCL/Metal,
-    and HIP through the CUDA generator) emitted their two loops: variants, then
-    records. Only the TIE-BREAK depends on this — the sort reorders anything
-    with a real edge — but passing the family's historical order keeps every
-    edge-free kernel's source byte-identical. *)
-let decls_variants_first ~records ~variants =
-  List.map (fun (n, c) -> Variant_decl (n, c)) variants
-  @ List.map (fun (n, f) -> Record_decl (n, f)) records
+(** Which of the two kinds a backend family emitted first, back when it ran two
+    loops. This decides the TIE-BREAK only — {!sort_type_decls_by_dependency}
+    reorders anything with a real edge either way — but passing the order a
+    family's loops already produced is what keeps every edge-free kernel's
+    emitted source byte-identical, so committed goldens do not churn. *)
+type tie_break =
+  | Variants_first  (** CUDA, OpenCL, Metal, and HIP via the CUDA generator. *)
+  | Records_first  (** GLSL and WGSL. *)
 
-(** The mirror of {!decls_variants_first} for GLSL and WGSL, which emitted
-    records then variants. *)
-let decls_records_first ~records ~variants =
-  List.map (fun (n, f) -> Record_decl (n, f)) records
-  @ List.map (fun (n, c) -> Variant_decl (n, c)) variants
-
-(** Emit one C-family record declaration: [typedef struct { ... } name;], one
-    field per line. Shared by CUDA/OpenCL/Metal; only [type_of_elttype] differs.
-    Intended as the [emit_record] argument to {!gen_type_decls}. *)
+(* Emit one C-family record declaration: [typedef struct { ... } name;], one
+   field per line. Shared by CUDA/OpenCL/Metal; only [type_of_elttype] differs.
+   Deliberately NOT exported: a bare record-list emitter with no sort in it is
+   exactly the shape backlog-203 fixed, and a caller who reached for this one
+   directly would silently reintroduce it. {!gen_c_type_decls} is the only way
+   in from outside. *)
 let gen_record_typedef ~type_of_elttype buf (name, fields) =
   Buffer.add_string buf "typedef struct {\n" ;
   List.iter
@@ -872,20 +926,46 @@ let gen_record_typedef ~type_of_elttype buf (name, fields) =
     order pin, including the families this host has no hardware for, is
     sarek/tests/codegen_golden/test_decl_order_all_backends.ml.
 
-    {b What this orders, and what it does not.} It orders the declarations it is
-    given, by the type references inside their own fields and payloads. It does
-    not reorder anything else a backend emits — helper functions, bindings,
-    headers — and it does not make an unorderable input emittable: a cycle
-    between distinct declarations raises {!Type_decl_cycle}, and a declaration
-    that references ITSELF is emitted in place with the self-edge dropped, so a
-    self-referential field is still reported by the backend's own field-type
-    emission and not here. *)
-let gen_type_decls ~emit_record ~emit_variant buf decls =
+    {b What this orders, and what it does not.} It orders the two declaration
+    lists it is handed, by the type references inside their own fields and
+    payloads, in all four edge directions. It does NOT reorder anything else a
+    backend emits — headers, bindings and helper functions are the caller's
+    sequencing — and it does not make an unorderable or incomplete input
+    emittable: a cycle between distinct declarations raises {!Type_decl_cycle};
+    a declaration referencing ITSELF is emitted in place with the self-edge
+    dropped, so a self-referential field is still reported by the backend's own
+    field-type emission; and a reference to a type in neither list is not an
+    edge at all — see {!sort_type_decls_by_dependency}. *)
+let gen_type_decls ~emit_record ~emit_variant ~tie_break buf ~records ~variants
+    =
+  let rs = List.map (fun (n, f) -> Record_decl (n, f)) records in
+  let vs = List.map (fun (n, c) -> Variant_decl (n, c)) variants in
+  let decls =
+    match tie_break with Variants_first -> vs @ rs | Records_first -> rs @ vs
+  in
   List.iter
     (function
       | Record_decl (n, fields) -> emit_record buf (n, fields)
       | Variant_decl (n, constrs) -> emit_variant buf (n, constrs))
     (sort_type_decls_by_dependency decls)
+
+(** {!gen_type_decls} specialised to the C family (CUDA, OpenCL, Metal, and HIP
+    through the CUDA generator): the record emitter is the shared
+    [typedef struct] one and the variant emitter is {!gen_variant_def}, so a
+    backend supplies only the two things that actually differ between them.
+
+    This is also the ONLY route to the shared C-family record emitter. Exposing
+    that emitter on its own would hand a caller a record loop with no sort in
+    it, which is the shape backlog-203 fixed. *)
+let gen_c_type_decls ~type_of_elttype ~constructor_prefix buf ~records ~variants
+    =
+  gen_type_decls
+    ~emit_record:(gen_record_typedef ~type_of_elttype)
+    ~emit_variant:(gen_variant_def ~type_of_elttype ~constructor_prefix)
+    ~tie_break:Variants_first
+    buf
+    ~records
+    ~variants
 
 (** Emit a GLSL variant type. GLSL lacks enum/typedef/union, so tags are
     const-int declarations, the type is a bare struct with flat payload fields,

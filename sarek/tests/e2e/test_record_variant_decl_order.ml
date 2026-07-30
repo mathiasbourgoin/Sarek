@@ -7,19 +7,22 @@
  * E2E test: a dependency edge that CROSSES between a record declaration and a
  * variant declaration must be ordered (backlog-211).
  *
- * backlog-203 sorted record declarations among THEMSELVES, and each backend
- * family runs that sort inside its own emission loop. The two loops are
- * separate, and the families disagree on which one runs first, so a cross-kind
- * edge was ordered by neither:
+ * WHAT THIS USED TO DO, in the past tense, because it is fixed. backlog-203
+ * sorted record declarations among THEMSELVES, and each backend family RAN that
+ * sort inside its own emission loop. The two loops were separate and the
+ * families disagreed on which one ran first, so a cross-kind edge was ordered by
+ * neither:
  *
- *   - the C family (OpenCL/CUDA/HIP/Metal) emits VARIANTS then RECORDS, so a
- *     variant with a RECORD payload names a struct declared later;
- *   - GLSL and WGSL emit RECORDS then VARIANTS, so a record with a
- *     VARIANT-TYPED field names a struct declared later.
+ *   - the C family (OpenCL/CUDA/HIP/Metal) EMITTED VARIANTS then RECORDS, so a
+ *     variant with a RECORD payload named a struct declared later;
+ *   - GLSL and WGSL EMITTED RECORDS then VARIANTS, so a record with a
+ *     VARIANT-TYPED field named a struct declared later.
  *
- * Each family is therefore red on exactly the shape the other family is green
- * on. That is why a reproducer built on one shape alone reports the gap fixed,
- * and why BOTH shapes are here, as two separate kernels:
+ * All five generators now emit both kinds from ONE interleaved dependency pass
+ * (Sarek_ir_codegen.gen_type_decls), so neither shape is family-specific any
+ * more. Before that, each family was red on exactly the shape the other family
+ * was green on — which is why a reproducer built on one shape alone reported the
+ * gap fixed, and why BOTH shapes are here, as two separate kernels:
  *
  *   Shape A — variant with a record payload  (`At of probe_pt`)
  *             red on the C family, green on GLSL/WGSL before the fix.
@@ -35,10 +38,19 @@
  * Every available device must PASS both shapes. There is no per-backend
  * tolerance: a device that fails makes the process exit non-zero.
  *
- * DEVICE COVERAGE IS WHAT THE HOST HAS. This host has OpenCL and Vulkan (two
- * devices each) plus Interpreter/Native; it has no NVIDIA, HIP or Metal
- * hardware, and there is no WGSL device at all. The emission ORDER for those
- * families is pinned device-independently in
+ * DEVICE COVERAGE IS WHAT THE HOST HAS, AND THIS FILE SAYS SO OUT LOUD. Only a
+ * backend that DECLARES struct types can observe this defect; Interpreter and
+ * Native carry values and emit no declaration at all. So a host with only those
+ * two would run every case, pass every case, and have verified nothing — and
+ * "ALL PASSED" would be a lie in the one direction that matters. The summary
+ * below therefore counts the devices from declaration-emitting frameworks and
+ * refuses to print a pass line when that count is zero; it still exits 0,
+ * because CI legitimately has no GPU, but it does not claim a verification it
+ * did not make.
+ *
+ * This host has OpenCL and Vulkan (two devices each) plus Interpreter/Native; it
+ * has no NVIDIA, HIP or Metal hardware, and there is no WGSL device at all. The
+ * emission ORDER for those families is pinned device-independently in
  * sarek/tests/codegen_golden/test_decl_order_all_backends.ml, which is where a
  * regression is caught on a machine with zero devices.
  ******************************************************************************)
@@ -162,6 +174,12 @@ let run_case ~dev ~name ~kirc ~expected =
     Printf.printf "FAILED (%s)\n%!" (Printexc.to_string e) ;
     false
 
+(* The frameworks whose generators emit struct declarations. Interpreter and
+   Native are absent on purpose: they carry values, so they cannot observe a
+   declaration order at all, and counting them as coverage is how this file would
+   report a pass it had not earned. *)
+let declaring_frameworks = ["CUDA"; "OpenCL"; "Vulkan"; "Metal"]
+
 let () =
   print_endline
     "=== record/variant cross-kind declaration order (backlog-211) ===" ;
@@ -170,9 +188,11 @@ let () =
     print_endline "No devices found - nothing to verify" ;
     exit 0
   end ;
+  let declaring = ref 0 in
   let any_failure = ref false in
   Array.iter
     (fun dev ->
+      if List.mem dev.Device.framework declaring_frameworks then incr declaring ;
       let check b = if not b then any_failure := true in
       check
         (run_case
@@ -191,4 +211,15 @@ let () =
     print_endline "FAILED: at least one device/case did not verify" ;
     exit 1
   end ;
-  print_endline "ALL PASSED"
+  if !declaring = 0 then begin
+    Printf.printf
+      "NOTHING VERIFIED: %d device(s) ran, none of them from a \
+       declaration-emitting framework (%s). Interpreter and Native emit no \
+       struct declaration, so neither shape was exercised here. The \
+       device-independent pin is \
+       sarek/tests/codegen_golden/test_decl_order_all_backends.ml.\n"
+      (Array.length devs)
+      (String.concat "/" declaring_frameworks) ;
+    exit 0
+  end ;
+  Printf.printf "ALL PASSED on %d declaration-emitting device(s)\n" !declaring
