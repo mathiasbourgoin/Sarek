@@ -616,24 +616,39 @@ and read_lvalue state env lv =
       else a.(i)
   | LRecordField (inner, field) -> (
       (* Nested: [r.a.b <- v] reads [r.a] here, then the caller stores into [b].
-         Sharing all the way down is what makes the nested store land. *)
+         Sharing all the way down is what makes the nested store land.
+
+         So this MUST index [fields] directly. It used to call the registry's
+         [get_field], which is [H.get_field (H.from_value v)] — a round trip
+         through the OCaml record, i.e. a COPY. That made the depth-1 store work
+         (its base is read by another path) while silently dropping the nested
+         one: [v.(i).f.g <- e] stored into a temporary that was then discarded.
+         The bug survived because it only bit REGISTERED types — an unregistered
+         record already took the positional branch below, which shares — so the
+         synthesized/tuple cases looked correct and hid it (backlog-172).
+
+         [field_index] comes from [HELPERS.field_names], generated from the same
+         [labels] list as [to_values] and [get_field], so the position it
+         returns is the position in this [value array] by construction. *)
       match read_lvalue state env inner with
-      | VRecord (type_name, fields) as vrec -> (
-          match Sarek_type_helpers.lookup type_name with
-          | Some h -> h.Sarek_type_helpers.get_field vrec field
-          | None -> (
-              match positional_field_index field with
-              | Some idx when idx < Array.length fields -> fields.(idx)
-              | _ ->
-                  Interp_error.raise_error
-                    (Not_a_record
-                       {
-                         expr =
-                           Printf.sprintf
-                             "unregistered record %s has no field %s"
-                             type_name
-                             field;
-                       })))
+      | VRecord (type_name, fields) -> (
+          let idx =
+            match Sarek_type_helpers.lookup type_name with
+            | Some h -> h.Sarek_type_helpers.field_index field
+            | None -> positional_field_index field
+          in
+          match idx with
+          | Some i when i >= 0 && i < Array.length fields -> fields.(i)
+          | _ ->
+              Interp_error.raise_error
+                (Not_a_record
+                   {
+                     expr =
+                       Printf.sprintf
+                         "record %s has no field %s"
+                         type_name
+                         field;
+                   }))
       | v ->
           Interp_error.raise_error
             (Not_a_record
