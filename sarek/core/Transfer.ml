@@ -422,9 +422,11 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
       vec.location <- Vector.Both dev ;
       (* The packed buffer on [dev] now holds host storage, so a read-back must
          read IT and not the leaves — and only this arm may say so, because only
-         this arm uploaded anything. The two skip arms above upload nothing (a
-         [Stale_CPU dev] transparent vector is exactly the case where the leaves
-         ARE the device copy), so clearing there would disown live leaves.
+         this arm uploaded anything. The three already-resident arms above
+         ([GPU], [Both], [Stale_CPU], each on [dev] itself) upload nothing — and
+         [Stale_CPU dev] on a transparent vector is exactly the case where the
+         leaves ARE the device copy — so clearing there would disown live
+         leaves.
 
          Reaching here with the flag set means the host copy was authoritative or
          in sync first — that is what makes the upload above meaningful, and it is

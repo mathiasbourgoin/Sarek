@@ -236,15 +236,31 @@ let create_transparent (custom : 'a Vector.custom_type) (length : int) :
                device the results were NOT on discarded them.
 
                One rule for both cases, so there is no [None] special case to
-               drift: after freeing, the leaves are authoritative iff some leaf
-               still has a device buffer somewhere. For [None] every leaf was
-               just released on every device, so this evaluates to [false] — and
-               it does so by observing the leaves rather than by asserting what
-               the loop above was supposed to have done. *)
+               drift: after freeing, the leaves are authoritative iff they
+               already WERE and some leaf still has a device buffer somewhere.
+               For [None] every leaf was just released on every device, so the
+               second conjunct is [false] — and it is so by observing the leaves
+               rather than by asserting what the loop above was supposed to have
+               done.
+
+               The first conjunct is not redundant, and leaving it out was a
+               resurrection bug: allocation is not authority. A packed launch
+               CLEARS this flag after gathering the leaves into host storage
+               (Execute.transfer_vectors_to_device), and the leaves it gathered
+               stay allocated on their device — so deriving from allocation alone
+               turned the flag back ON for leaves that now hold PRE-packed-launch
+               data. Measured (test_soa_cross_device_migration,
+               "a free does not resurrect stale leaf ownership"): SoA launch on
+               A, packed launch on B, [free_buffer sv B], packed launch again —
+               the last launch gathered A's stale leaves over the host copy of
+               B's result and ran on them. Narrowing only: this can clear the
+               flag, never set it. *)
             leaves_live :=
-              Array.exists
-                (fun (Leaf lv) -> Hashtbl.length lv.Vector.device_buffers > 0)
-                t.leaves);
+              !leaves_live
+              && Array.exists
+                   (fun (Leaf lv) ->
+                     Hashtbl.length lv.Vector.device_buffers > 0)
+                   t.leaves);
         soa_leaf_bufs =
           (fun dev -> Array.to_list (Array.map (leaf_buf dev) t.leaves));
       } ;

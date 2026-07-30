@@ -1005,6 +1005,7 @@
  (libraries
   sarek
   sarek.stdlib
+  sarek.codegen
   sarek_ir
   spoc_core
   test_helpers
