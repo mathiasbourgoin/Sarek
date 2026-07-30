@@ -239,11 +239,36 @@ if invoker_count == 0:
           "would be a vacuous pass")
     sys.exit(2)
 
+# An alias is REACHABLE only if something actually BUILDS it. A bare "@name"
+# appearing anywhere in the invoker text is not that.
+#
+# The previous test was `("@" + alias) in blob` after stripping #-comments, and
+# an adversarial review broke it in two ways:
+#   - a script containing `echo "we deliberately do not build @e2e-fixture"`
+#     satisfied reachability, so a ci.yml step `name:` field, an echo, or a
+#     Python docstring all counted as wiring. The stripped-comments note claimed
+#     "a name MENTIONED IN PROSE is not wiring", which held only for #-prefixed
+#     prose.
+#   - the match was a PREFIX match, so a future alias `e2e` would be satisfied
+#     by the existing string `@e2e-hip`. No live collision, but latent.
+#
+# Now it must appear as an argument to a command that builds it, and the alias
+# name must END at a word boundary.
+
+def alias_is_built(alias, text):
+    """True only if some `dune build`-shaped command names this exact alias."""
+    pat = re.compile(
+        r"dune\s+(?:build|exec|runtest|test)[^\n;&|]*?@"
+        + re.escape(alias)
+        + r"(?![\w/-])"
+    )
+    return pat.search(text) is not None
+
 unreachable = []
 for alias, files in sorted(rule_aliases.items()):
     if alias in SELF_EXECUTING:
         continue
-    if ("@" + alias) in blob:
+    if alias_is_built(alias, blob):
         continue
     unreachable.append((alias, files))
 
