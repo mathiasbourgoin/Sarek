@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# STUB. Not ptxas. Exists only so ci/assert-toolchain.sh can reach a GREEN
+# baseline on a host with no CUDA toolkit, which is the precondition
+# scripts/prove-red.sh requires before any mutation proves anything
+# (backlog-176). It satisfies exactly the two contracts the gate depends on and
+# nothing else:
+#   --version                                    -> exit 0
+#   --compile-only --gpu-name X -o OUT IN        -> exit 0 AND create OUT
+# The second half matters: the nvdisasm probe disassembles the cubin this
+# writes, so a stub that only exited 0 would leave that chain untested and the
+# baseline red for the wrong reason.
+set -uo pipefail
+out=""
+prev=""
+for a in "$@"; do
+  case "$prev" in -o) out="$a" ;; esac
+  prev="$a"
+done
+case " $* " in
+  *" --version "*) echo "ptxas: STUB for prove-red (backlog-176), not a real assembler"; exit 0 ;;
+esac
+if [ -n "$out" ]; then
+  # The byte content is irrelevant to the gate; only existence and the
+  # nvdisasm stub's ability to name the entry point are.
+  printf 'STUB-CUBIN probe\n' > "$out"
+  exit 0
+fi
+echo "ptxas stub: unrecognised invocation: $*" >&2
+exit 1

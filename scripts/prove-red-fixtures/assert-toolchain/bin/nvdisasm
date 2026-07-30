@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# STUB. Not nvdisasm. See bin/ptxas for why these exist (backlog-176).
+# Contracts the gate depends on:
+#   --version   -> exit 0
+#   -c FILE     -> exit 0 AND print text containing the entry-point name, which
+#                  the gate greps for ('probe'). Printing nothing would fail the
+#                  grep and make the baseline red for the wrong reason.
+set -uo pipefail
+case " $* " in
+  *" --version "*) echo "nvdisasm: STUB for prove-red (backlog-176), not a real disassembler"; exit 0 ;;
+esac
+for a in "$@"; do
+  if [ -f "$a" ]; then
+    echo "// STUB disassembly (input path deliberately not echoed --"
+    echo "// it contains the entry-point name the gate greps for)"
+    echo "        .text.probe:"
+    exit 0
+  fi
+done
+echo "nvdisasm stub: no readable input in: $*" >&2
+exit 1
