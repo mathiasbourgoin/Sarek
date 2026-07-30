@@ -20,7 +20,7 @@ module Transfer = Spoc_core.Transfer
    called Sarek_cuda.Cuda_plugin.init/Sarek_opencl.Opencl_plugin.init,
    which never registered Native/Interpreter at all, so the
    Interpreter/Native device preference below could never actually find
-   them (see briefs/make-tests-actually-run-impl-notes.md). *)
+   them (see the unpublished make-tests-actually-run notes). *)
 let () =
   Sarek_cuda.Cuda_plugin.init () ;
   Sarek_opencl.Opencl_plugin.init () ;

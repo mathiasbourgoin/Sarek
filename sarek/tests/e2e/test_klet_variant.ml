@@ -7,7 +7,7 @@
  * E2E test for Sarek PPX with a top-level variant type used as a real
  * `shape vector` kernel parameter.
  *
- * HISTORY (finding 3, briefs/make-tests-actually-run-impl-notes.md): an
+ * HISTORY (finding 3, the unpublished make-tests-actually-run notes): an
  * earlier attempt combined this top-level `[@@sarek.type] shape` variant
  * with a *kernel-local klet helper function* (`area`) that pattern-matched
  * on `shape`. That combination hit a genuine ppx bug (fully-qualified
@@ -35,7 +35,7 @@ module Transfer = Spoc_core.Transfer
    called Sarek_cuda.Cuda_plugin.init/Sarek_opencl.Opencl_plugin.init,
    which never registered Native/Interpreter at all, so the
    Interpreter/Native device preference below could never actually find
-   them (see briefs/make-tests-actually-run-impl-notes.md, finding 2). *)
+   them (see the unpublished make-tests-actually-run notes, finding 2). *)
 let () =
   Sarek_cuda.Cuda_plugin.init () ;
   Sarek_opencl.Opencl_plugin.init () ;
@@ -86,7 +86,7 @@ let () =
      the "Interpreter present -> skip" branch first (Interpreter is
      always-available, so Interpreter-first would make the Native-only
      guard below fire unconditionally and the test would never actually
-     assert anything - see briefs/make-tests-actually-run-impl-notes.md). *)
+     assert anything - see the unpublished make-tests-actually-run notes). *)
   let dev =
     match Array.find_opt (fun d -> d.Device.framework = "Native") devs with
     | Some d -> d
