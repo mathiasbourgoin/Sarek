@@ -140,6 +140,8 @@ test_negative:
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_char_vector.cma > "$$out" 2>&1; if grep -q "is not a supported Sarek element type" "$$out"; then echo "  PASS: char element type rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing polymorphic-helper instantiation diagnostic (names the callee)..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_poly_helper_f64.cma > "$$out" 2>&1; if grep -q "'norm' cannot be used at this call site" "$$out"; then echo "  PASS: polymorphic helper instantiation named the callee"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@echo "Testing helper-parameter / module-constant collision (backlog-180 H3)..."
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_helper_param_shadows_const.cma > "$$out" 2>&1; if grep -q "has a parameter named" "$$out" && grep -q "is NOT a fix here" "$$out"; then echo "  PASS: helper-parameter/module-constant collision rejected, naming the parameter"; else echo "  FAIL: expected the parameter-collision wording (and its negated advice); got:"; cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "All negative tests checked (see KNOWN-ISSUE line above for the one non-blocking gap, if any)"
 
 
