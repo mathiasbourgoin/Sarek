@@ -48,6 +48,7 @@ module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
 module Soa_vector = Spoc_core.Soa_vector
+module Gpu_memory = Spoc_core.Gpu_memory
 module Benchmarks = Test_helpers.Benchmarks
 
 type ('a, 'b) vector = ('a, 'b) Vector.t
@@ -141,6 +142,146 @@ let check ~label ~(packed_first : bool) (src : Device.t) (dst : Device.t) =
   Printf.printf "  %-58s %s\n%!" label (if !ok then "OK" else "FAILED") ;
   !ok
 
+(* [free_buffer] is PER-DEVICE; [soa_leaves_live] is WHOLE-VECTOR. Those two
+   scopes only agree when the free covered every device, and [soa_free_leaves]
+   used to assign [false] regardless — so releasing one device disowned the
+   leaves still live on every other one.
+
+   The consequence is data loss, not a leak, and this case is built to show that
+   rather than to count bytes. [free_buffer sv other] is called on a device this
+   vector has NOTHING on: no packed buffer, no leaves, and [other] is not what
+   [location] names, so every arm of the function correctly declines to touch
+   anything. It is as close to a no-op as the API offers. Pre-fix it still
+   cleared the flag, and the very next read-back — of results sitting untouched
+   in [src]'s leaves — followed the packed buffer instead. On this path there is
+   no packed buffer, so it raises; give the vector one first and it returns
+   pre-launch bytes silently, which is the same pair of failures the migration
+   arm had.
+
+   Deliberately NO [to_cpu] before the free: draining first would move the
+   results to host storage by another route and the case would pass unfixed.
+
+   The byte split the reviewer measured is asserted too, as a second and weaker
+   observation: [free_buffer sv dst] after a migration must release [dst]'s
+   packed buffer and leave [src]'s leaves alone — a per-device free that freed
+   both would be a different bug in the opposite direction. *)
+let check_per_device_leaf_free (src : Device.t) (other : Device.t) =
+  let sv = Soa_vector.create_transparent point3d_custom n in
+  let y0 i = float_of_int (i + 1) in
+  for i = 0 to n - 1 do
+    Vector.set sv i {x = float_of_int i; y = y0 i; z = float_of_int (n - i)}
+  done ;
+  Gc.full_major () ;
+  let ok = ref true in
+  let fail fmt =
+    Printf.ksprintf
+      (fun s ->
+        Printf.printf "  %s\n%!" s ;
+        ok := false)
+      fmt
+  in
+  let base = Gpu_memory.usage () in
+  Sarek.Execute.run_vectors
+    ~device:src
+    ~ir:(ir_of scale_y_kernel)
+    ~args:[Vec sv; Int n]
+    ~block:(Sarek.Execute.dims1d threads)
+    ~grid:(Sarek.Execute.dims1d ((n + threads - 1) / threads))
+    () ;
+  Transfer.flush src ;
+  let leaves_bytes = Gpu_memory.usage () - base in
+  if leaves_bytes <= 0 then
+    fail
+      "the launch allocated %d bytes on %s, so the release assertions below \
+       would be vacuous"
+      leaves_bytes
+      src.Device.name ;
+  (* Half 1: freeing a device the vector holds nothing on must not disown the
+     device it does. *)
+  Transfer.free_buffer sv other ;
+  if not (Transfer.has_device_data sv src) then
+    fail
+      "after free_buffer on %s (which holds nothing), has_device_data says %s \
+       holds nothing either — the whole-vector leaf flag was cleared by a \
+       per-device free"
+      other.Device.name
+      src.Device.name ;
+  if Gpu_memory.usage () - base <> leaves_bytes then
+    fail
+      "free_buffer on %s released %d bytes; it holds none of this vector's \
+       memory and must release nothing"
+      other.Device.name
+      (leaves_bytes - (Gpu_memory.usage () - base)) ;
+  (match Transfer.to_cpu ~force:true sv with
+  | () ->
+      for i = 0 to n - 1 do
+        let got = (Vector.get sv i).y and want = y0 i *. 2.0 in
+        if Float.abs (got -. want) > 1e-3 && !ok then
+          fail
+            "read-back after free_buffer on an unrelated device is wrong @%d: \
+             got=%g want=%g (the pre-launch host value is %g)"
+            i
+            got
+            want
+            (y0 i)
+      done
+  | exception e ->
+      fail
+        "to_cpu after free_buffer on an unrelated device raised: %s"
+        (Printexc.to_string e)) ;
+  Transfer.free_all_buffers sv ;
+  ignore (Sys.opaque_identity sv) ;
+  (* Half 2: the byte split of a per-device free after a real migration. *)
+  let sv2 = Soa_vector.create_transparent point3d_custom n in
+  for i = 0 to n - 1 do
+    Vector.set sv2 i {x = float_of_int i; y = y0 i; z = float_of_int (n - i)}
+  done ;
+  Gc.full_major () ;
+  let base2 = Gpu_memory.usage () in
+  Sarek.Execute.run_vectors
+    ~device:src
+    ~ir:(ir_of scale_y_kernel)
+    ~args:[Vec sv2; Int n]
+    ~block:(Sarek.Execute.dims1d threads)
+    ~grid:(Sarek.Execute.dims1d ((n + threads - 1) / threads))
+    () ;
+  Transfer.flush src ;
+  let after_launch2 = Gpu_memory.usage () in
+  Transfer.to_device sv2 other ;
+  let after_migration = Gpu_memory.usage () in
+  let packed_bytes = after_migration - after_launch2 in
+  if packed_bytes <= 0 then
+    fail
+      "the migration to %s allocated %d bytes, so the split below is not \
+       measurable"
+      other.Device.name
+      packed_bytes ;
+  Transfer.free_buffer sv2 other ;
+  let released = after_migration - Gpu_memory.usage () in
+  if released <> packed_bytes then
+    fail
+      "free_buffer on %s released %d bytes, want exactly its own %d (%s's \
+       leaves hold the other %d and are not this call's to free)"
+      other.Device.name
+      released
+      packed_bytes
+      src.Device.name
+      (after_launch2 - base2) ;
+  Transfer.free_all_buffers sv2 ;
+  if Gpu_memory.usage () > base2 then
+    fail
+      "after free_buffer on %s and free_all_buffers, %d bytes are still held — \
+       the per-device free orphaned %s's leaves"
+      other.Device.name
+      (Gpu_memory.usage () - base2)
+      src.Device.name ;
+  ignore (Sys.opaque_identity sv2) ;
+  Printf.printf
+    "  %-58s %s\n%!"
+    "a per-device free keeps another device's leaves"
+    (if !ok then "OK" else "FAILED") ;
+  !ok
+
 let () =
   (* REGISTER the backends before asking for devices. [Device.init] only
      enumerates frameworks that have registered themselves, and registration is a
@@ -206,4 +347,9 @@ let () =
               src
               dst
           in
-          if not (a && b) then exit 1)
+          (* Same two-device fixture, a different question: not "does the
+             migration drain correctly" but "does a PER-DEVICE free respect the
+             device boundary". It lives here because this is the only test with
+             two devices in hand. *)
+          let c = check_per_device_leaf_free src dst in
+          if not (a && b && c) then exit 1)

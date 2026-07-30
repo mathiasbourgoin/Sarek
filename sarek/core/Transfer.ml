@@ -239,89 +239,128 @@ let ensure_buffer (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
 
 (** {1 Transfer Operations} *)
 
-(** Copy vector data from a device buffer to CPU storage. *)
-let copy_device_to_host (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
-    unit =
-  match Vector.get_buffer vec dev with
-  | None -> failwith "to_cpu: no device buffer to transfer from"
-  | Some buf -> (
-      let (module B : Vector.DEVICE_BUFFER) = buf in
-      Log.debugf
-        Log.Transfer
-        "to_cpu: got buffer ptr=%Ld size=%d"
-        (Int64.of_nativeint B.device_ptr)
-        B.size ;
-      match vec.host with
-      | Vector.Bigarray_storage ba ->
-          let ptr, byte_size = Vector_transfer.bigarray_to_ptr ba B.elem_size in
-          B.device_to_host_ptr ptr ~byte_size ;
-          (* [device_to_host_ptr] takes a bare [nativeint] address (see
+(** Everything that reads device memory back into host storage, and NOTHING
+    else. The module exists for its signature: [copy_device_to_host] is defined
+    inside and deliberately absent from it, so the only code that can call the
+    packed-buffer read directly is {!Read_back.read_back_to_host} below.
+
+    That is the enforcement the previous version of this claim lacked. It said
+    the call sites were "exhaustive BY CONSTRUCTION" while nothing constructed
+    anything: there is no [Transfer.mli], so every top-level binding in this
+    file is exported and a fifth direct caller compiled fine. The claim happened
+    to be true when it was written — it was re-audited, and it held — but an
+    audited fact and an enforced one differ exactly where it matters, which is
+    the next person to add a read-back path. Three of the four existing call
+    sites were added or corrected in this branch precisely because they had
+    bypassed the decision, so "someone adds a fifth and bypasses it too" is the
+    observed failure mode, not a hypothetical one.
+
+    Now a bypass does not compile. *)
+module Read_back : sig
+  val has_device_data : ('a, 'b) Vector.t -> Device.t -> bool
+
+  val read_back_to_host : ('a, 'b) Vector.t -> Device.t -> unit
+end = struct
+  (** Copy vector data from a device buffer to CPU storage. *)
+  let copy_device_to_host (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
+      unit =
+    match Vector.get_buffer vec dev with
+    | None -> failwith "to_cpu: no device buffer to transfer from"
+    | Some buf -> (
+        let (module B : Vector.DEVICE_BUFFER) = buf in
+        Log.debugf
+          Log.Transfer
+          "to_cpu: got buffer ptr=%Ld size=%d"
+          (Int64.of_nativeint B.device_ptr)
+          B.size ;
+        match vec.host with
+        | Vector.Bigarray_storage ba ->
+            let ptr, byte_size =
+              Vector_transfer.bigarray_to_ptr ba B.elem_size
+            in
+            B.device_to_host_ptr ptr ~byte_size ;
+            (* [device_to_host_ptr] takes a bare [nativeint] address (see
              Framework_sig.ml:218-223), which is not a GC root, and this is a
              device->HOST WRITE: if [ba] were collected mid-transfer the backend
              would write into freed memory. Keep it reachable across the call —
              without this the transfer was the function's last expression and
              nothing rooted [ba]. *)
-          ignore (Sys.opaque_identity ba)
-      | Vector.Custom_storage {ptr; custom; length} ->
-          B.device_to_host_ptr ptr ~byte_size:(length * custom.elem_size) ;
-          ignore (Sys.opaque_identity ptr))
+            ignore (Sys.opaque_identity ba)
+        | Vector.Custom_storage {ptr; custom; length} ->
+            B.device_to_host_ptr ptr ~byte_size:(length * custom.elem_size) ;
+            ignore (Sys.opaque_identity ptr))
 
-(** Is there device-resident data for [vec] that a read-back could actually
-    fetch? Two disjoint sources, and under the SoA ABI it is the second one: the
-    packed buffer is not merely stale there, it was never allocated.
+  (** Is there device-resident data for [vec] that a read-back could actually
+      fetch? Two disjoint sources, and under the SoA ABI it is the second one:
+      the packed buffer is not merely stale there, it was never allocated.
 
-    [dev] selects the packed buffer, and the SoA arm ignores it: the binding
-    holds ONE [soa_leaves_live] flag for the whole vector, not one per device,
-    so it cannot answer "on [dev]" and does not pretend to. Unreachable as a
-    difference today — every caller passes the device the vector's own
-    [location] names, so the two questions coincide — and making the flag
-    per-device is the change that would let this arm honour [dev]. Until then
-    the honest reading of the result is "somewhere on a device", not "on [dev]".
-*)
-let has_device_data (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : bool =
-  Option.is_some (Vector.get_buffer vec dev)
-  ||
-  match vec.Vector.soa with
-  | Some b -> !(b.Vector.soa_leaves_live)
-  | None -> false
+      [dev] selects the packed buffer, and the SoA arm ignores it: the binding
+      holds ONE [soa_leaves_live] flag for the whole vector, not one per device,
+      so it cannot answer "on [dev]" and does not pretend to. Unreachable as a
+      difference today — both callers pass the device the vector's own
+      [location] names, so the two questions coincide — and making the flag
+      per-device is the change that would let this arm honour [dev]. Until then
+      the honest reading of the result is "somewhere on a device", not "on
+      [dev]".
 
-(** The ONE place that decides WHERE a read-back reads from, shared by every
-    path in this module that pulls device data into host storage. As of
-    2026-07-30 that is four call sites, and the list is exhaustive by
-    construction — {!copy_device_to_host} is called directly nowhere else:
+      That the flag is whole-vector while {!free_buffer} releases per-device is
+      not a cosmetic asymmetry: [soa_free_leaves] used to CLEAR the flag on a
+      per-device free, which made this function answer [false] for a device
+      whose leaves were still live, and the drain-before-free in
+      {!free_all_buffers} consults exactly this answer. It now re-derives the
+      flag from the leaves that survive, so a per-device release cannot disown
+      another device's. *)
+  let has_device_data (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : bool
+      =
+    Option.is_some (Vector.get_buffer vec dev)
+    ||
+    match vec.Vector.soa with
+    | Some b -> !(b.Vector.soa_leaves_live)
+    | None -> false
 
-    - {!to_cpu} (and {!sync} through it) — the explicit read-back;
-    - {!to_device}'s cross-device MIGRATION arm — a vector resident on one
-      device is drained to the host before being uploaded to another;
-    - {!free_buffer} and {!free_all_buffers} — drain before release.
+  (** The ONE place that decides WHERE a read-back reads from, shared by every
+      path in this module that pulls device data into host storage. As of
+      2026-07-30 that is four call sites, and the list is exhaustive because
+      [copy_device_to_host] is not in the enclosing module's signature — a fifth
+      direct caller does not compile:
 
-    It exists as a function because those paths did not have this decision: they
-    called {!copy_device_to_host} directly, so after a transparent SoA launch
-    they downloaded a packed buffer the kernel never wrote (silently discarding
-    the output) or, with no packed buffer at all, failed with "no device buffer
-    to transfer from" from inside a free or a migration.
+      - {!to_cpu} (and {!sync} through it) — the explicit read-back;
+      - {!to_device}'s cross-device MIGRATION arm — a vector resident on one
+        device is drained to the host before being uploaded to another;
+      - {!free_buffer} and {!free_all_buffers} — drain before release.
 
-    An earlier version of this comment claimed the migration arm already shared
-    this decision. It did not — it still called {!copy_device_to_host} — and
-    both halves of the failure pair above were reachable through it (measured
-    2026-07-30 on two CUDA/PTX devices: the raise with no packed buffer, and
-    silent wrong data with one present). [check_cross_device_soa] in
-    [test_soa_emitter_equiv.ml] now pins both.
+      It exists as a function because those paths did not have this decision:
+      they called {!copy_device_to_host} directly, so after a transparent SoA
+      launch they downloaded a packed buffer the kernel never wrote (silently
+      discarding the output) or, with no packed buffer at all, failed with "no
+      device buffer to transfer from" from inside a free or a migration.
 
-    The condition reads the flag the UPLOAD set; it does not re-decide "SoA or
-    AoS?" from the device or the vector's shape. A second independent answer to
-    that question is how a round trip ends up uploading leaves and downloading a
-    packed buffer. *)
-let read_back_to_host (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit
-    =
-  match vec.Vector.soa with
-  | Some b when !(b.Vector.soa_leaves_live) ->
-      (* The launch took the SoA ABI, so the results are in the N leaf buffers
-         and the packed device buffer this function would otherwise download was
-         never written. Reading it back would hand the caller the pre-launch
-         host contents with no error anywhere. *)
-      b.Vector.soa_from_device dev
-  | Some _ | None -> copy_device_to_host vec dev
+      An earlier version of this comment claimed the migration arm already
+      shared this decision. It did not — it still called {!copy_device_to_host}
+      — and both halves of the failure pair above were reachable through it
+      (measured 2026-07-30 on two CUDA/PTX devices: the raise with no packed
+      buffer, and silent wrong data with one present). [check_cross_device_soa]
+      in [test_soa_emitter_equiv.ml] now pins both.
+
+      The condition reads the flag the UPLOAD set; it does not re-decide "SoA or
+      AoS?" from the device or the vector's shape. A second independent answer
+      to that question is how a round trip ends up uploading leaves and
+      downloading a packed buffer. *)
+  let read_back_to_host (type a b) (vec : (a, b) Vector.t) (dev : Device.t) :
+      unit =
+    match vec.Vector.soa with
+    | Some b when !(b.Vector.soa_leaves_live) ->
+        (* The launch took the SoA ABI, so the results are in the N leaf buffers
+           and the packed device buffer this function would otherwise download
+           was never written. Reading it back would hand the caller the
+           pre-launch host contents with no error anywhere. *)
+        b.Vector.soa_from_device dev
+    | Some _ | None -> copy_device_to_host vec dev
+end
+
+let has_device_data = Read_back.has_device_data
+
+let read_back_to_host = Read_back.read_back_to_host
 
 (** Transfer vector data to a device *)
 let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
@@ -452,41 +491,76 @@ let sync (type a b) (vec : (a, b) Vector.t) : unit =
 
 (** {1 Buffer Cleanup} *)
 
-(** Free device buffer for a vector *)
+(** Release the device memory [vec] holds on [dev], draining it to host storage
+    first.
+
+    FOUR steps, and not one of them may sit inside [get_buffer]'s [Some] arm.
+    Under the SoA ABI the leaves are the only device memory the vector has and
+    the packed buffer is never allocated, so on a transparent vector
+    [get_buffer] returns [None] ALWAYS — an early return there does not skip a
+    corner case, it skips the whole function.
+
+    The previous version of this comment already said "under the SoA ABI they
+    are the only device memory this vector has" while the bookkeeping below it
+    still lived in the [Some buf] arm and assumed a packed buffer existed. That
+    mismatch was the bug, not a wording slip: the location reset is the only
+    code here that assigns [CPU], so a transparent SoA vector came out of this
+    function with its leaves freed and [location] still naming [dev]. Two
+    measured consequences, both on a vector whose data was intact in host
+    storage:
+
+    - [to_cpu ~force:true] raised
+      [Failure "to_cpu: no device buffer to transfer from"] — [Both dev] plus
+      [force] means "read the device back", and there is nothing there to read;
+    - [to_device] on the same device took the "skip (Both)" short-circuit and
+      allocated nothing, reinstating the exact short-circuit the [Stale_CPU]
+      work earlier in this branch exists to eliminate.
+
+    {!free_all_buffers} was never exposed to this because it assigns [CPU]
+    unconditionally at the end. This function now does the same, scoped to
+    [dev]. *)
 let free_buffer (vec : (_, _) Vector.t) (dev : Device.t) : unit =
-  (* Read back BEFORE freeing, and through {!read_back_to_host}, which is why
-     this now sits OUTSIDE the [get_buffer] match: an SoA-dispatched vector has
-     no packed buffer of its own, so the old [None -> ()] early return threw the
-     output of a transparent launch away outright. [has_device_data] keeps the
-     no-op for the case that return was actually for — an AoS vector with
-     nothing on this device. *)
+  (* 1. Read back BEFORE freeing, and through {!read_back_to_host}: an
+     SoA-dispatched vector has no packed buffer of its own, so the old
+     [None -> ()] early return threw the output of a transparent launch away
+     outright. [has_device_data] keeps the no-op for the case that return was
+     actually for — an AoS vector with nothing on this device. *)
   (match vec.location with
   | (Vector.GPU d | Vector.Stale_CPU d)
     when d.id = dev.id && has_device_data vec dev ->
       read_back_to_host vec dev ;
       vec.location <- Vector.Both dev
   | _ -> ()) ;
-  (* Release the LEAVES too. Under the SoA ABI they are the only device memory
-     this vector has — the packed buffer below is never allocated — so without
-     this the call returned having freed nothing at all. Ordered after the
-     read-back above and before the flag it clears is needed again. *)
+  (* 2. Release the LEAVES. Under the SoA ABI they are the only device memory
+     this vector has, so without this the call returned having freed nothing at
+     all. Ordered after the read-back above and before the flag it updates is
+     needed again. *)
   (match vec.Vector.soa with
   | Some b -> b.Vector.soa_free_leaves (Some dev)
   | None -> ()) ;
-  match Vector.get_buffer vec dev with
+  (* 3. Release the packed buffer, if this vector ever had one on [dev]. *)
+  (match Vector.get_buffer vec dev with
   | None -> ()
-  | Some buf -> (
+  | Some buf ->
       let (module B : Vector.DEVICE_BUFFER) = buf in
       B.free () ;
       Gpu_memory.track_free (B.size * B.elem_size) ;
-      Hashtbl.remove vec.device_buffers dev.id ;
-      (* Update location *)
-      match vec.location with
-      | Vector.GPU d when d.id = dev.id -> vec.location <- Vector.CPU
-      | Vector.Both d when d.id = dev.id -> vec.location <- Vector.CPU
-      | Vector.Stale_CPU d when d.id = dev.id -> vec.location <- Vector.CPU
-      | Vector.Stale_GPU d when d.id = dev.id -> vec.location <- Vector.CPU
-      | _ -> ())
+      Hashtbl.remove vec.device_buffers dev.id) ;
+  (* 4. Location. Outside step 3's [Some] arm, which is the whole fix: steps 2
+     and 3 together released everything this vector held on [dev], whether that
+     was leaves, a packed buffer, or both, so the state that follows is the same
+     in all three cases and [CPU] is it.
+
+     Guarded on the device alone rather than per-constructor: every
+     device-naming constructor asserts something about [dev]'s contents, and
+     after steps 2-3 [dev] holds nothing, so all four collapse to the same
+     answer. A location naming a DIFFERENT device is untouched — that device's
+     memory was not freed. *)
+  match vec.location with
+  | (Vector.GPU d | Vector.Both d | Vector.Stale_CPU d | Vector.Stale_GPU d)
+    when d.id = dev.id ->
+      vec.location <- Vector.CPU
+  | _ -> ()
 
 (** Free all device buffers for a vector *)
 let free_all_buffers (vec : (_, _) Vector.t) : unit =

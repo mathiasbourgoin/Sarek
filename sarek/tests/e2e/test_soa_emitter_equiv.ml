@@ -138,6 +138,140 @@ let is_ptx (dev : Device.t) = dev.Device.framework = "CUDA/PTX"
 
 let dims threads = Sarek.Execute.dims1d threads
 
+(* ── Guarded cases: the reason a case is skipped, and the devices it is true of ──
+
+   A skip line is a CLAIM about a class of devices, and this file has now got
+   that claim wrong twice in a row, each time while fixing the previous attempt:
+
+     round 2: the guarded cases printed NOTHING on a non-PTX device. Silent
+              no-op and pass are the same observation — skip-as-pass.
+     round 3: every guarded case got a NAMED skip line. But the name was wired to
+              the guard [is_ptx], and one of the two reasons — backlog-172 — is
+              true only of the two CPU backends. So four cases printed
+              "blocked on backlog-172" on OpenCL x2 and Vulkan x2, four devices
+              where the construct works fine. 16 real assertions withheld under a
+              false reason, among them the ONLY non-PTX coverage of the
+              Vector.unsafe_set / Vector.fill Stale_CPU write-loss fix, which is
+              host-side and not PTX-specific at all.
+
+   The shape of both failures is the same: the guard and the reason were two
+   independent statements, and nothing checked that they agreed. So a reason is
+   no longer a string handed to an else-branch. It is a record that carries its
+   own predicate, and the predicate is what SELECTS it — a case is skipped
+   because some blocker applies, and the line printed is that blocker's. A reason
+   printed on a device its predicate does not describe is now unrepresentable.
+
+   [applies] takes the framework NAME rather than a [Device.t] so that
+   {!check_skip_reason_scope} can evaluate it over every framework Sarek can
+   enumerate, not merely the ones plugged into the host running the suite. Both
+   real blockers are framework-level facts, so nothing is lost. *)
+type blocker = {
+  reason : string;
+      (** Printed verbatim as the skip line. Must be true of every framework in
+          [describes] and of no other. *)
+  applies : string -> bool;
+      (** [applies framework]: is a case carrying this blocker unrunnable there?
+      *)
+  describes : string list;
+      (** The frameworks [reason] claims to be about. Compared against [applies]
+          over the whole framework universe by {!check_skip_reason_scope} — this
+          is the second, independent statement, deliberately written out rather
+          than derived, because a check that derives its expectation from the
+          thing it checks cannot fail. *)
+}
+
+(* Every framework Sarek can enumerate. The universe {!check_skip_reason_scope}
+   quantifies over; a blocker predicate that fires outside its [describes] on ANY
+   of these is a false claim waiting for that device to appear, whether or not
+   this host has one. *)
+let all_frameworks =
+  ["CUDA/PTX"; "OpenCL"; "Vulkan"; "Metal"; "Native"; "Interpreter"]
+
+(* `v.(i).f <- e` from inside a kernel — a record-field store — is unsupported on
+   the two CPU backends and ONLY those two: the Interpreter raises
+   [Unsupported_operation "record field assignment"]
+   (Sarek_ir_interp_eval.assign_lvalue, [LRecordField] arm), and Native accepts
+   it and silently drops the store (measured: y unchanged at 1 where 2 was
+   expected). Tracked as backlog-172; when it lands, this blocker is deleted and
+   the cases it guards need no other change.
+
+   It has nothing to do with CUDA/PTX. Measured 2026-07-30 on this host: all four
+   cases carrying this blocker PASS on OpenCL x2 (radeonsi: RX 7900 XTX +
+   7950X iGPU) and Vulkan x2 (RADV: same two), through the packed AoS fallback —
+   which is the stronger assertion anyway, since the same [Vector.get] must
+   return the same answer under either ABI. *)
+let blocker_cpu_field_store =
+  {
+    reason = "SKIP (v.(i).f <- unsupported on this CPU backend: backlog-172)";
+    applies = (fun fw -> fw = "Native" || fw = "Interpreter");
+    describes = ["Native"; "Interpreter"];
+  }
+
+(* The SoA ABI is selected on CUDA/PTX and nowhere else. Unlike the blocker
+   above this is by design and permanent, not a defect that will lift — which is
+   why the two are separate records rather than one merged "not supported here". *)
+let blocker_needs_soa_abi =
+  {
+    reason = "SKIP (needs CUDA/PTX: the SoA ABI dispatches nowhere else)";
+    applies = (fun fw -> fw <> "CUDA/PTX");
+    describes = ["OpenCL"; "Vulkan"; "Metal"; "Native"; "Interpreter"];
+  }
+
+let all_blockers = [blocker_cpu_field_store; blocker_needs_soa_abi]
+
+(* THE check that would have caught round 3, and it needs no device at all — so
+   it runs on a CUDA-less host, and before the no-device early exit.
+
+   For each blocker, evaluate [applies] over {!all_frameworks} and compare the
+   set that fires with the set the reason claims to describe. With round 3's
+   wiring the backlog-172 reason fired on OpenCL, Vulkan and Metal, none of which
+   it describes, and this would have printed all three and failed.
+
+   [describes] is also required to be a subset of the universe, so a typo
+   ("Cuda/PTX") shows up as a named failure instead of quietly shrinking the
+   expected set to nothing. *)
+let check_skip_reason_scope () =
+  let ok = ref true in
+  List.iter
+    (fun b ->
+      let unknown =
+        List.filter (fun fw -> not (List.mem fw all_frameworks)) b.describes
+      in
+      if unknown <> [] then begin
+        Printf.printf
+          "  skip reason %S names framework(s) Sarek cannot enumerate: [%s]\n%!"
+          b.reason
+          (String.concat "; " unknown) ;
+        ok := false
+      end ;
+      let fires = List.filter b.applies all_frameworks in
+      let sorted = List.sort_uniq compare in
+      if sorted fires <> sorted b.describes then begin
+        Printf.printf
+          "  skip reason %S fires on [%s] but describes [%s]\n%!"
+          b.reason
+          (String.concat "; " fires)
+          (String.concat "; " b.describes) ;
+        ok := false
+      end)
+    all_blockers ;
+  Printf.printf
+    "  %-56s %s\n%!"
+    "each skip reason is true of exactly the devices it prints on"
+    (if !ok then "OK" else "FAILED") ;
+  !ok
+
+(* Run [body], or print the reason of the FIRST blocker that applies to this
+   device. The printed reason is selected by the predicate, which is what keeps
+   it honest — there is no else-branch holding a second opinion. *)
+let guarded (dev : Device.t) ~(blockers : blocker list) ~(label : string)
+    (body : unit -> bool) =
+  match List.find_opt (fun b -> b.applies dev.Device.framework) blockers with
+  | Some b ->
+      Printf.printf "  %-56s %s\n%!" label b.reason ;
+      true
+  | None -> body ()
+
 (* Launch the SoA compilation of [ir] whose first param (a flat 2/3-field record
    vector) is lowered SoA. [leaves] are the per-leaf scalar vectors (declaration
    order); [out] the scalar output. Arg order mirrors the emitted param block:
@@ -836,16 +970,21 @@ let check_transparent dev n =
    an ordinary [Transfer.to_cpu] downloads. Every assertion above would still
    have passed while a kernel's output was silently discarded.
 
-   CUDA/PTX only, and the reason is a defect elsewhere rather than a property of
-   this path. Extending it to every device would be the stronger test — the same
-   [Vector.get] should return the same answer through the packed AoS fallback —
-   but [pts.(tid).y <- …] does not work on the two CPU backends: the Interpreter
-   REFUSES it (Sarek_ir_interp_eval.assign_lvalue's [LRecordField] arm raises
-   [Unsupported_operation "record field assignment"]), and Native accepts it and
-   silently drops the store (measured: y unchanged at 1 where 2 was expected).
-   That is tracked as backlog-172 and is not this case's subject; asserting the
-   non-PTX arm here would pin a red on an unrelated gap. When 172 lands, drop the
-   [is_ptx] guard — the assertion below needs no other change. *)
+   Runs on every device EXCEPT the two CPU backends — see
+   {!blocker_cpu_field_store}. The stronger test was always the wider one: the
+   same [Vector.get] should return the same answer through the packed AoS
+   fallback, and as of 2026-07-30 it is asserted there, on OpenCL x2 and Vulkan
+   x2 as well as on CUDA/PTX.
+
+   Until round 4 this was gated on [is_ptx], with the CPU-backend defect
+   (backlog-172) given as the reason. The defect is real — the Interpreter
+   REFUSES [pts.(tid).y <- …] (Sarek_ir_interp_eval.assign_lvalue's
+   [LRecordField] arm raises [Unsupported_operation "record field assignment"])
+   and Native accepts it and silently drops the store (measured: y unchanged at 1
+   where 2 was expected) — but it is a defect of those two backends only, and
+   using it to withhold the case from OpenCL and Vulkan withheld four real
+   assertions under a reason false of all four devices. When 172 lands, delete
+   the blocker; the assertion below needs no other change. *)
 (* TWO launches on ONE vector, with different host data in between (H5,
    backlog-181). This is the case no existing test constructs — every other one
    allocates a fresh vector — and that is exactly why the defect was invisible to
@@ -964,7 +1103,15 @@ let check_transparent_roundtrip dev n =
   done ;
   Printf.printf
     "  %-56s %s\n%!"
-    "transparent SoA output read back (PTX: leaf D2H + gather)"
+    (Printf.sprintf
+       "transparent SoA output read back (%s)"
+       (* The label named the PTX mechanism unconditionally while the case now
+          runs on OpenCL and Vulkan too, where the round trip goes through the
+          packed AoS buffer. Same claim, two mechanisms — and naming the wrong
+          one is the same species of false line as a skip reason that does not
+          describe its device. *)
+       (if is_ptx dev then "PTX: leaf D2H + gather"
+        else "non-PTX: packed AoS fallback"))
     (if !ok then "OK" else "FAILED") ;
   !ok
 
@@ -1189,6 +1336,170 @@ let check_free_releases_leaves dev n =
     (if ok then "OK" else "FAILED") ;
   ok
 
+(* [free_buffer] — the SINGLE-device free — must leave the vector in a coherent
+   state, and nothing covered it: every case above frees through
+   [free_all_buffers]. That gap is why the incoherence shipped, so this case
+   exists as much for the coverage as for the assertion.
+
+   [free_all_buffers] escapes the bug by assigning [CPU] unconditionally at the
+   end. [free_buffer] kept its location reset INSIDE the [get_buffer] [Some buf]
+   arm, and under this ABI there is never a packed buffer — so the [None -> ()]
+   arm was taken ALWAYS, after the leaves had already been released. The vector
+   came back with its device memory gone and [location] still [Both dev].
+
+   Three assertions, because "coherent" is three separate observable claims and
+   the location value itself is the least of them:
+
+   1. [location = CPU]. The direct statement. Checked first so a failure names
+      the cause rather than a downstream symptom.
+   2. [to_cpu ~force:true] must not raise. [Both dev] + [force] means "read the
+      device back"; with the leaves gone there is nothing to read and
+      [copy_device_to_host] raises [Failure "to_cpu: no device buffer to transfer
+      from"] — on a vector whose data is intact in host storage. The data is
+      re-checked after the call, so a [to_cpu] that returns quietly having
+      overwritten the host copy is not mistaken for a pass.
+   3. [to_device] on the same device must ALLOCATE. This is the one that matters
+      most: with [location] left at [Both dev], [to_device] logs "skip (Both)"
+      and returns having allocated nothing — reinstating the very [skip (Both)]
+      short-circuit the [Stale_CPU]/scatter work earlier in this branch was
+      written to eliminate. Asserted in BYTES via [Gpu_memory.usage()], because
+      "did not raise" is exactly what the broken version also does.
+
+   [allocated_before_free > 0] is asserted too: without it a launch that
+   allocated nothing would make claim 3 vacuous. *)
+let check_free_buffer_coherent dev n =
+  let threads = min 128 n in
+  let block = dims threads and grid = dims ((n + threads - 1) / threads) in
+  let sv = Soa_vector.create_transparent point3d_custom n in
+  let y0 i = float_of_int (i + 1) in
+  for i = 0 to n - 1 do
+    Vector.set sv i {x = float_of_int i; y = y0 i; z = float_of_int (n - i)}
+  done ;
+  Gc.full_major () ;
+  let before = Gpu_memory.usage () in
+  Sarek.Execute.run_vectors
+    ~device:dev
+    ~ir:(ir_of p3_scale_y_kernel)
+    ~args:[Vec sv; Int n]
+    ~block
+    ~grid
+    () ;
+  Transfer.flush dev ;
+  let after_launch = Gpu_memory.usage () in
+  Transfer.free_buffer sv dev ;
+  let ok = ref true in
+  let fail fmt =
+    Printf.ksprintf
+      (fun s ->
+        Printf.printf "  %s\n%!" s ;
+        ok := false)
+      fmt
+  in
+  if after_launch - before <= 0 then
+    fail
+      "the launch allocated %d bytes, so the re-upload claim below would be \
+       vacuous"
+      (after_launch - before) ;
+  (* Claim 1. *)
+  (match sv.Vector.location with
+  | Vector.CPU -> ()
+  | Vector.GPU d ->
+      fail "location after free_buffer: GPU %d, want CPU" d.Device.id
+  | Vector.Both d ->
+      fail
+        "location after free_buffer: Both %d, want CPU — the leaves were freed \
+         and the location still names the device"
+        d.Device.id
+  | Vector.Stale_CPU d ->
+      fail "location after free_buffer: Stale_CPU %d, want CPU" d.Device.id
+  | Vector.Stale_GPU d ->
+      fail "location after free_buffer: Stale_GPU %d, want CPU" d.Device.id) ;
+  (* Claim 2. *)
+  (match Transfer.to_cpu ~force:true sv with
+  | () ->
+      for i = 0 to n - 1 do
+        let got = (Vector.get sv i).y and want = y0 i *. 2.0 in
+        if Float.abs (got -. want) > 1e-3 && !ok then
+          fail
+            "to_cpu after free_buffer corrupted @%d: got=%g want=%g \
+             (pre-launch host value is %g)"
+            i
+            got
+            want
+            (y0 i)
+      done
+  | exception e ->
+      fail
+        "to_cpu ~force:true after free_buffer raised: %s"
+        (Printexc.to_string e)) ;
+  (* Claim 3. *)
+  let before_reupload = Gpu_memory.usage () in
+  (match Transfer.to_device sv dev with
+  | () ->
+      let reallocated = Gpu_memory.usage () - before_reupload in
+      if reallocated <= 0 then
+        fail
+          "to_device after free_buffer allocated %d bytes — it took the \
+           skip-when-already-resident short-circuit on a vector with no device \
+           memory left"
+          reallocated
+  | exception e ->
+      fail "to_device after free_buffer raised: %s" (Printexc.to_string e)) ;
+  (* Claims 4 and 5. Round 3 verified both BY HAND against its own version of
+     [free_buffer]; this round restructured that function's control flow — all
+     four steps moved out of the [get_buffer] [Some] arm — so a hand check of the
+     old shape says nothing about the new one. Asserted here instead.
+
+     4. Double free. The second call must be a no-op, not a double release: the
+        leaves are gone, the packed buffer is gone, and [location] is already
+        [CPU], so every step must decline. Step 4 in particular must not fire on
+        a [CPU] location.
+     5. Free, then relaunch. [location = CPU] is what makes this reachable at
+        all — the scatter + upload has to run again from host storage — and the
+        result must be the SECOND launch's, not the first's. y is doubled twice
+        from the same host values, so a relaunch that reused stale device data
+        would give 2*y0 where 4*y0 is expected. *)
+  (match Transfer.free_buffer sv dev with
+  | () -> ()
+  | exception e -> fail "second free_buffer raised: %s" (Printexc.to_string e)) ;
+  (match
+     Sarek.Execute.run_vectors
+       ~device:dev
+       ~ir:(ir_of p3_scale_y_kernel)
+       ~args:[Vec sv; Int n]
+       ~block
+       ~grid
+       () ;
+     Transfer.flush dev
+   with
+  | () ->
+      for i = 0 to n - 1 do
+        (* Round 1 doubled y0 to 2*y0 and [to_cpu] above gathered it into host
+           storage, so this second launch doubles that to 4*y0. Stale device data
+           would leave 2*y0 — never equal for y0 > 0. *)
+        let got = (Vector.get sv i).y and want = y0 i *. 4.0 in
+        if Float.abs (got -. want) > 1e-3 && !ok then
+          fail
+            "relaunch after free_buffer is wrong @%d: got=%g want=%g (the \
+             first launch's result is %g)"
+            i
+            got
+            want
+            (y0 i *. 2.0)
+      done
+  | exception e ->
+      fail "relaunch after free_buffer raised: %s" (Printexc.to_string e)) ;
+  Transfer.free_all_buffers sv ;
+  (* Load-bearing, as in {!check_free_releases_leaves}: a collected [sv] frees
+     its own leaves through the finalizer and the byte deltas above stop meaning
+     what they say. *)
+  ignore (Sys.opaque_identity sv) ;
+  Printf.printf
+    "  %-56s %s\n%!"
+    "free_buffer leaves the vector coherent (location/re-read/re-upload)"
+    (if !ok then "OK" else "FAILED") ;
+  !ok
+
 (* The two integer-leaf device rows the handoff left open. Driven through the
    TRANSPARENT path, so one case covers both the mixed-width leaf addressing and
    the generic dispatch. Each leaf is compared to the reference independently. *)
@@ -1325,7 +1636,13 @@ let () =
      a machine with no device would report SKIPPED while silently not checking a
      property that needs no device at all. *)
   let derive_ok = check_field_derivation () in
-  let layout_ok = check_layout_validation () && derive_ok in
+  (* Also device-independent, and deliberately so — it quantifies over every
+     framework Sarek can enumerate rather than over the ones present here, so a
+     skip reason that is false of a device class stays caught on a host that has
+     no such device. Before the no-device exit for the same reason as the two
+     above. *)
+  let scope_ok = check_skip_reason_scope () in
+  let layout_ok = check_layout_validation () && derive_ok && scope_ok in
   let devs = Device.all () in
   if Array.length devs = 0 then (
     print_endline
@@ -1368,113 +1685,116 @@ let () =
       if dev_can_f64 && not (check "dpair(f64)" dev n run_dpair) then
         ok := false ;
       if not (check_transparent dev n) then ok := false ;
-      (* Transparent OUTPUT read-back. PTX-gated — see the case's header for why
-         the non-PTX arm is blocked on backlog-172 rather than omitted. *)
-      if is_ptx dev then begin
-        if not (check_transparent_roundtrip dev n) then ok := false ;
-        (* H5 (backlog-181): relaunch on the SAME vector. PTX-gated for the same
-           reason as the case above — `v.(i).f <- e` is blocked on the two CPU
-           backends until backlog-172 lands. *)
-        (* One case per host writer (backlog-190). Vector.set was fixed with H5;
-           unsafe_set carried the identical Stale_CPU arm and fill's was a wider
-           catch-all. Separate cases so a fix to one cannot make the others read
-           as covered. kernel_set is deliberately absent: it is documented to skip
-           location handling entirely, because a per-element update would race
-           across the threads it exists to serve. *)
-        List.iter
-          (fun (writer_name, write, y_expected, stale_note) ->
-            if
-              not
-                (check_relaunch
-                   dev
-                   n
-                   ~writer_name
-                   ~write
-                   ~y_expected
-                   ~stale_note)
-            then ok := false)
-          [
-            ( "Vector.set",
-              (fun sv n y_of ->
-                for i = 0 to n - 1 do
-                  Vector.set
-                    sv
-                    i
-                    {x = float_of_int i; y = y_of i; z = float_of_int (n - i)}
-                done),
-              (fun i -> float_of_int (1000 - i) *. 2.0),
-              fun i -> float_of_int (i + 1) *. 4.0 );
-            ( "Vector.unsafe_set",
-              (fun sv n y_of ->
-                for i = 0 to n - 1 do
-                  Vector.unsafe_set
-                    sv
-                    i
-                    {x = float_of_int i; y = y_of i; z = float_of_int (n - i)}
-                done),
-              (fun i -> float_of_int (1000 - i) *. 2.0),
-              fun i -> float_of_int (i + 1) *. 4.0 );
-            (* fill writes ONE value to every element, so both the expectation
+      (* Transparent OUTPUT read-back. Its only blocker is the CPU field-store
+         gap, NOT the SoA ABI: on OpenCL/Vulkan the launch takes the packed AoS
+         fallback and the same [Vector.get] must return the same answer, which is
+         the stronger claim. Round 3 gated this on [is_ptx] and printed the
+         backlog-172 reason on four devices that reason is false of. *)
+      if
+        not
+          (guarded
+             dev
+             ~blockers:[blocker_cpu_field_store]
+             ~label:"transparent SoA output read back"
+             (fun () -> check_transparent_roundtrip dev n))
+      then ok := false ;
+      (* H5 (backlog-181): relaunch on the SAME vector. Same single blocker —
+         `v.(i).f <- e` is what the kernel does, so the two CPU backends cannot
+         run it, and every other backend can.
+
+         One case per host writer (backlog-190). Vector.set was fixed with H5;
+         unsafe_set carried the identical Stale_CPU arm and fill's was a wider
+         catch-all. Separate cases so a fix to one cannot make the others read as
+         covered. That write-loss is HOST-side and not PTX-specific, so running
+         these three on OpenCL and Vulkan is not padding: before round 4 the fix
+         had no non-PTX coverage anywhere in the suite. kernel_set is deliberately
+         absent: it is documented to skip location handling entirely, because a
+         per-element update would race across the threads it exists to serve. *)
+      List.iter
+        (fun (writer_name, write, y_expected, stale_note) ->
+          if
+            not
+              (guarded
+                 dev
+                 ~blockers:[blocker_cpu_field_store]
+                 ~label:
+                   (Printf.sprintf
+                      "second launch sees the second host write (%s)"
+                      writer_name)
+                 (fun () ->
+                   check_relaunch
+                     dev
+                     n
+                     ~writer_name
+                     ~write
+                     ~y_expected
+                     ~stale_note))
+          then ok := false)
+        [
+          ( "Vector.set",
+            (fun sv n y_of ->
+              for i = 0 to n - 1 do
+                Vector.set
+                  sv
+                  i
+                  {x = float_of_int i; y = y_of i; z = float_of_int (n - i)}
+              done),
+            (fun i -> float_of_int (1000 - i) *. 2.0),
+            fun i -> float_of_int (i + 1) *. 4.0 );
+          ( "Vector.unsafe_set",
+            (fun sv n y_of ->
+              for i = 0 to n - 1 do
+                Vector.unsafe_set
+                  sv
+                  i
+                  {x = float_of_int i; y = y_of i; z = float_of_int (n - i)}
+              done),
+            (fun i -> float_of_int (1000 - i) *. 2.0),
+            fun i -> float_of_int (i + 1) *. 4.0 );
+          (* fill writes ONE value to every element, so both the expectation
                and the stale value are uniform. It takes y_of 0: round 1 fills
                y=1 which the kernel doubles to 2; round 2 fills y=1000, doubled
                to 2000. A stale round 2 would re-double round 1's result to 4 --
                far from 2000, so the two cannot be confused. *)
-            ( "Vector.fill",
-              (fun sv n y_of ->
-                Vector.fill sv {x = 0.0; y = y_of 0; z = float_of_int n}),
-              (fun _ -> 2000.0),
-              fun _ -> 4.0 );
-          ] ;
-        (* Whose ABI does read-back follow? The two cases below are the two ways
-           that question got a stale answer, and they are separate cases because
-           the two paths that asked it are separate: the LAUNCH path
-           (Execute.transfer_vectors_to_device, which never cleared the flag) and
-           the CLEANUP path (Transfer.free_*, which had no SoA arm at all). *)
-        if not (check_soa_then_packed dev n) then ok := false ;
-        if not (check_free_preserves_soa dev n) then ok := false ;
-        (* And the free must RELEASE, not merely preserve — a separate claim from
-           the case above, which passed while zero bytes came back. *)
-        if not (check_free_releases_leaves dev n) then ok := false
-      end
-      else begin
-        (* ONE skip line PER GUARDED CASE, each naming the device class it needs
-           and why it was absent.
+          ( "Vector.fill",
+            (fun sv n y_of ->
+              Vector.fill sv {x = 0.0; y = y_of 0; z = float_of_int n}),
+            (fun _ -> 2000.0),
+            fun _ -> 4.0 );
+        ] ;
+      (* The cases below genuinely need the SoA ABI itself — they are about which
+         ABI a read-back or a free follows, so a device that never selects the
+         SoA ABI has no such question to get wrong. That reason is by design and
+         permanent, which is why it is a different blocker from the one above and
+         is not collapsed into a single "not supported here".
 
-           Before 2026-07-30 this else-branch printed a single line, for
-           [check_transparent_roundtrip] only. The three [check_relaunch]
-           writers, [check_soa_then_packed] and [check_free_preserves_soa]
-           printed NOTHING — so on a host where no CUDA/PTX device enumerates
-           (which, with no LD_LIBRARY_PATH for ZLUDA, was every default `dune
-           runtest`) five assertions were absent from the output and from the
-           verdict, and the alias still exited 0. A silent no-op and a pass are
-           the same observation, which is the whole failure.
-
-           The two reasons are genuinely different and are not collapsed:
-           backlog-172 is a defect that will LIFT the guard on the first four
-           cases when it lands; the SoA ABI dispatching only on CUDA/PTX is by
-           design and permanent for the last three. *)
-        let skip_172 label =
-          Printf.printf
-            "  %-56s %s\n%!"
-            label
-            "SKIP (non-PTX: v.(i).f <- blocked on backlog-172)"
-        in
-        let skip_ptx label =
-          Printf.printf
-            "  %-56s %s\n%!"
-            label
-            "SKIP (needs CUDA/PTX: the SoA ABI dispatches nowhere else)"
-        in
-        skip_172 "transparent SoA output read back" ;
-        List.iter
-          (fun w ->
-            skip_172
-              (Printf.sprintf "second launch sees the second host write (%s)" w))
-          ["Vector.set"; "Vector.unsafe_set"; "Vector.fill"] ;
-        skip_ptx "packed AoS launch after a transparent SoA one" ;
-        skip_ptx "free_all_buffers preserves a transparent SoA result" ;
-        skip_ptx "free_all_buffers RELEASES a transparent SoA vector's leaves"
-      end ;
+         Whose ABI does read-back follow? The first two are the two ways that
+         question got a stale answer, and they are separate cases because the two
+         paths that asked it are separate: the LAUNCH path
+         (Execute.transfer_vectors_to_device, which never cleared the flag) and
+         the CLEANUP path (Transfer.free_*, which had no SoA arm at all). *)
+      List.iter
+        (fun (label, body) ->
+          if
+            not
+              (guarded dev ~blockers:[blocker_needs_soa_abi] ~label (fun () ->
+                   body ()))
+          then ok := false)
+        [
+          ( "packed AoS launch after a transparent SoA one",
+            fun () -> check_soa_then_packed dev n );
+          ( "free_all_buffers preserves a transparent SoA result",
+            fun () -> check_free_preserves_soa dev n );
+          (* And the free must RELEASE, not merely preserve — a separate claim
+             from the case above, which passed while zero bytes came back. *)
+          ( "free_all_buffers RELEASES a transparent SoA vector's leaves",
+            fun () -> check_free_releases_leaves dev n );
+          (* free_buffer, the SINGLE-device free, was covered by nothing at all —
+             every case above frees through free_all_buffers, which is why its
+             incoherent location bookkeeping shipped. *)
+          ( "free_buffer leaves the vector coherent (location/re-read/re-upload)",
+            fun () -> check_free_buffer_coherent dev n );
+        ] ;
       if not (check_mixed_widths dev n) then ok := false ;
       (* Item 3: SoA launch must be rejected (never wrong data) on non-PTX. *)
       if not (check_gate dev) then ok := false ;
