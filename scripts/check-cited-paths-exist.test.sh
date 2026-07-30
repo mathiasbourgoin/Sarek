@@ -318,34 +318,45 @@ See [a phantom page](Nowhere.html).
 # one (committed on a branch that is then deleted: the object survives, and no
 # branch contains it — the exact shape of d72a2e6a and 1da95861).
 # Echoes "<repo> <reachable-sha> <orphan-sha>".
+#
+# Every git call goes through `git -C` rather than a `cd` subshell, and the two
+# shas are captured into variables rather than passed through a temp file. The
+# first version used both, and in CI the orphan sha came back EMPTY: three cases
+# then substituted nothing, cited no sha at all, and passed for the wrong reason
+# while the local run was green. A fixture builder that can silently produce an
+# inert fixture is the same failure this gate exists to prevent, so `checksha`
+# below now asserts the substitution actually happened.
 mkshafixture() {
-  local d
+  local d ok orphan br
   d="$(mktemp -d)"
-  (
-    cd "$d" || exit 2
-    git init --quiet -b main .
-    git config user.email t@example.invalid
-    git config user.name t
-    mkdir -p sub scripts docs
-    printf 'let real = 1\n' >sub/Existing.ml
-    printf 'let x = 1\n' >sub/Thing.ml
-    printf '# Index\n\nNothing cited here.\n' >docs/Index.md
-    git add -A
-    git commit --quiet -m reachable
-    # A remote-tracking ref, which is what reachability is measured against.
-    git update-ref refs/remotes/origin/main HEAD
-    git checkout --quiet -b doomed
-    printf 'let y = 2\n' >>sub/Thing.ml
-    git add -A
-    git commit --quiet -m orphan
-    git rev-parse --short=8 HEAD >/tmp/.orphan.$$
-    git checkout --quiet main
-    git branch --quiet -D doomed
-  ) >/dev/null 2>&1
-  printf '%s %s %s' "$d" \
-    "$(git -C "$d" rev-parse --short=8 refs/remotes/origin/main)" \
-    "$(cat "/tmp/.orphan.$$")"
-  rm -f "/tmp/.orphan.$$"
+  git -C "$d" init --quiet . >/dev/null 2>&1 || return 1
+  git -C "$d" config user.email t@example.invalid
+  git -C "$d" config user.name t
+  git -C "$d" config commit.gpgsign false
+  mkdir -p "$d/sub" "$d/scripts" "$d/docs"
+  printf 'let real = 1\n' >"$d/sub/Existing.ml"
+  printf 'let x = 1\n' >"$d/sub/Thing.ml"
+  printf '# Index\n\nNothing cited here.\n' >"$d/docs/Index.md"
+  git -C "$d" add -A >/dev/null 2>&1
+  git -C "$d" commit --quiet -m reachable >/dev/null 2>&1 || return 1
+  ok="$(git -C "$d" rev-parse --short=8 HEAD 2>/dev/null)"
+  # The initial branch name is whatever this git's init.defaultBranch says, so
+  # ask rather than assume: `git init -b main` is not portable to every runner,
+  # and a failed init is how the first version of this fixture went inert.
+  br="$(git -C "$d" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  # The ORPHAN: committed on a detached HEAD, which no branch will ever contain.
+  # The object survives; `git branch -r --contains` is empty. That is the exact
+  # shape of d72a2e6a and 1da95861 -- present, unreachable.
+  git -C "$d" checkout --quiet --detach HEAD >/dev/null 2>&1 || return 1
+  printf 'let y = 2\n' >>"$d/sub/Thing.ml"
+  git -C "$d" add -A >/dev/null 2>&1
+  git -C "$d" commit --quiet -m orphan >/dev/null 2>&1 || return 1
+  orphan="$(git -C "$d" rev-parse --short=8 HEAD 2>/dev/null)"
+  git -C "$d" checkout --quiet "$br" >/dev/null 2>&1 || return 1
+  # A remote-tracking ref: reachability is measured against refs/remotes/*, and
+  # this is the only ref the reachable sha needs to be contained in.
+  git -C "$d" update-ref refs/remotes/origin/main "$ok" >/dev/null 2>&1 || return 1
+  printf '%s %s %s' "$d" "$ok" "$orphan"
 }
 
 # $1 = case name, $2 = expected exit, $3 = expected message substring,
@@ -356,8 +367,26 @@ checksha() {
   d="${fx%% *}"
   ok="$(printf '%s' "$fx" | cut -d' ' -f2)"
   orphan="$(printf '%s' "$fx" | cut -d' ' -f3)"
+  # A fixture that came back without its shas substitutes the empty string, and
+  # then the document cites no sha at all: every case would pass, having checked
+  # nothing. That is what happened in CI on the first version of this file, so
+  # the builder's output is now asserted rather than assumed.
+  if [ -z "$d" ] || [ ${#ok} -ne 8 ] || [ ${#orphan} -ne 8 ] || [ "$ok" = "$orphan" ]; then
+    echo "FAIL $name: sha fixture is unusable (repo='$d' reachable='$ok' orphan='$orphan')"
+    rm -rf "$d"
+    fail=$((fail + 1))
+    return
+  fi
   body="${body//%REACHABLE%/$ok}"
   body="${body//%ORPHAN%/$orphan}"
+  case "$body" in
+    *%REACHABLE%* | *%ORPHAN%*)
+      echo "FAIL $name: a placeholder survived substitution"
+      rm -rf "$d"
+      fail=$((fail + 1))
+      return
+      ;;
+  esac
   printf '%s' "$body" >"$d/docs/Doc.md"
   git -C "$d" add -A >/dev/null 2>&1
   git -C "$d" commit --quiet -m doc >/dev/null 2>&1
@@ -436,6 +465,11 @@ commit 0000000abcdef1
 fx="$(mkshafixture)"
 d="${fx%% *}"
 orphan="$(printf '%s' "$fx" | cut -d" " -f3)"
+[ ${#orphan} -eq 8 ] || {
+  echo "FAIL: sha fixture produced no orphan sha; the two exemption-scope cases" \
+    "below would pass having cited nothing"
+  fail=$((fail + 1))
+}
 printf '# Doc\n\nThe old note cited `%s`, which no clone can resolve.\n' \
   "$orphan" >"$d/docs/Doc.md"
 printf 'docs/Doc.md::%s\tquoted in order to say it is unreachable\n' \
@@ -477,6 +511,11 @@ fi
 fx="$(mkshafixture)"
 d="${fx%% *}"
 orphan="$(printf '%s' "$fx" | cut -d" " -f3)"
+[ ${#orphan} -eq 8 ] || {
+  echo "FAIL: sha fixture produced no orphan sha; the shallow-clone case below" \
+    "would pass having cited nothing"
+  fail=$((fail + 1))
+}
 printf '# Doc\n\nFixed in `%s`.\n' "$orphan" >"$d/docs/Doc.md"
 git -C "$d" add -A >/dev/null 2>&1
 git -C "$d" commit --quiet -m doc >/dev/null 2>&1
