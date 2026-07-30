@@ -521,6 +521,24 @@ let glslang_error_lines (msg : string) : string list =
    diagnostic about one stand in for the other. *)
 let quoted (ty : string) = "'" ^ ty ^ "'"
 
+(* WHEN THIS PREDICATE MAY BE DELETED, and why not yet.
+
+   PR #394 (the dependency sort in [Sarek_ir_codegen]) asks for this predicate
+   and the sibling tolerance in [test_record_local_alias_agreement.ml] to go,
+   on the grounds that it fixes the gap they tolerate. That is the right
+   follow-up in the wrong order, and the order is the whole content of this
+   note: #394 is OPEN and its fix is on NO branch merged into `main`
+   ([sort_record_types_by_dependency] does not occur in `origin/main`), and the
+   gap is still measured live here — 4 device rows (OpenCL ×2, Vulkan ×2) took
+   the known-gap branch on the rebase of this PR onto current `main`.
+
+   Deleting it before #394 lands would not surface the gap, it would hide it in
+   the one place nobody looks: CI enumerates no GPU, so those 4 rows do not run
+   there at all. CI would stay green while every OpenCL or Vulkan host went red
+   — a deletion whose only observable effect is on the machines that are not
+   watching. So the deletion is gated on #394 being merged, not on #376 landing,
+   and it is not performed here. *)
+
 (* [~inner] is the emitted struct symbol of the type that is used before it is
    declared — one per nested record shape under test. *)
 let is_backlog203_struct_gap ~(inner : string) (msg : string) : bool =
