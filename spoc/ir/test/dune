@@ -7,4 +7,4 @@
   test_sarek_coopmat
   test_sarek_pure_registry
   test_sarek_ir_codegen_record_order)
- (libraries sarek_ir alcotest str))
+ (libraries sarek_ir alcotest str unix))
