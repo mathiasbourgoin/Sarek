@@ -263,6 +263,31 @@ let callee_env env =
     rules refuse a variant nested below the top level, and 64 links pass — 65 is
     the first that does not.
 
+    What was and was not observed, because the paragraph above is prose and
+    NOTHING IN THE TREE GOES RED IF IT STOPS BEING TRUE. The 65-link chain was
+    generated, compiled and run once by hand, in round 5; the probe was reverted
+    rather than committed, so no test covers it. That the refusal then FIRES at
+    depth 65 is weaker still — it is read off the marshaller and [bind_var], not
+    observed, since no kernel binding a [t0] local was written.
+
+    Be precise about which way that fails, because the two halves fail
+    differently. If the ppx later grows a chain-length cap, or the marshaller
+    starts flattening, then the CONCLUSION drawn below stays safe: the guard would
+    merely be conservative about a false positive that can no longer happen. But
+    the FACTUAL sentences above ("compiles and links clean", "nothing caps chain
+    length") would simply be false — stale, and stated with more confidence than
+    an unchecked claim earns. That is a documentation rot risk, not a correctness
+    risk, and it is the honest characterisation. It is the same shape as the
+    defect this round exists to fix, one order weaker.
+
+    Left uncovered on purpose. A committed fixture here would pin the ABSENCE of a
+    ppx limitation, so it would fire at anyone who later adds a chain-length cap —
+    a change nobody has argued against — and read as a promise that deep chains
+    are supported, which is the opposite of this note's point. If coverage is ever
+    wanted, pin the boundary on THIS side instead, where the behaviour actually
+    matters and the ppx is not involved: [nest 64] is copied and [nest 65] is
+    refused, six lines in test_detach_record_depth.ml, no ppx compile.
+
     So the honest bound is: 64 is far above anything PLAUSIBLE, not above
     anything expressible, and far below a stack overflow. The trade is kept
     deliberately. The false positive needs a hand-written 65-link chain of

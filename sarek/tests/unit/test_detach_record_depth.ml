@@ -146,7 +146,8 @@ let test_legal_nesting_still_copies () =
   (* Comfortably below the bound, and deeper than anything this repository's
      kernel types declare (the deepest is two levels). NOT deeper than a kernel
      type can express: a chain of 65 distinct [@@sarek.type] records compiles,
-     and would be refused — see the note on [detach_record]. A guard that
+     and would be refused — see the note on [detach_record], which also records
+     that this was checked by hand once and is covered by no test. A guard that
      refused everything would fail here. *)
   let depth = 16 in
   let orig = nest depth in
