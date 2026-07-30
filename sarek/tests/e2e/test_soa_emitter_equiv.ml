@@ -190,17 +190,37 @@ type blocker = {
    asserting it was "every framework Sarek can enumerate". It was not, and the
    comment is what made that unfalsifiable. Three names were missing:
 
-     - "CUDA/C"  — sarek-cuda/Cuda_c_plugin.ml, [let name = "CUDA/C"], entered
-                   into the table by [Framework_registry.register_backend].
-                   [Device.ml:32] documents "<family>/<variant>" names as first
-                   class, so "CUDA/PTX" and "CUDA/C" are two frameworks, not two
-                   spellings of one.
-     - "WebGPU"  — sarek/plugins/webgpu/Webgpu_plugin.ml, likewise a
-                   [register_backend] backend that produces devices whose
-                   [framework] field carries that name.
-     - "HIP"     — requested by [Device.init]'s default framework list
-                   ([Device.ml:42-43]) and special-cased by [Device.is_gpu]
-                   ([:203]), with no registering backend today.
+     - "CUDA/C"  — sarek-cuda/Cuda_c_plugin.ml, [let name = "CUDA/C"] ([:26]),
+                   entered into the table by
+                   [Framework_registry.register_backend] ([:89]).
+                   [Device.ml:30-34] documents "<family>/<variant>" names as
+                   first class, so "CUDA/PTX" and "CUDA/C" are two frameworks,
+                   not two spellings of one.
+     - "WebGPU"  — sarek/plugins/webgpu/Webgpu_plugin.ml, [let name = "WebGPU"]
+                   ([:43]), likewise a [register_backend] backend ([:191]) that
+                   produces devices whose [framework] field carries that name.
+     - "HIP"     — sarek-hip/Hip_plugin.ml, likewise a [register_backend]
+                   backend ([:86]) under [let name = "HIP"]
+                   ([Hip_plugin_base.ml:17]), forced at module init on [:93]. It
+                   is additionally requested by [Device.init]'s default framework
+                   list ([Device.ml:41-43]) and special-cased by [Device.is_gpu]
+                   ([:203]). Round 5 of this comment (and its commit message,
+                   which cannot be rewritten) said HIP had "no registering
+                   backend today"; that was false, and this bullet supersedes it.
+
+   All three sit in one category, and it is the category the union below exists
+   for: a [register_backend] backend whose name is absent from THIS host's table
+   only because nothing forced its registration or [is_available ()] returned
+   false. None of them is a name Sarek cannot produce a [Device.t] for.
+
+   One name in [Device.init]'s default list is deliberately NOT in the floor: the
+   bare family name "CUDA" ([Device.ml:43]), which [Device.is_cuda_framework]
+   ([:140]) also recognises. No backend registers under it — [resolve_framework]
+   ([:35-38]) expands a family name to the registered variants, so no [Device.t]
+   ever carries "CUDA" in its [framework] field, and the floor is a set of names
+   a device can actually have (which is what [applies] and [describes] are
+   quantified over). If a backend ever did register under the bare name, the
+   staleness check below would name it rather than let it pass.
 
    Adding them makes round 4's own wiring FAIL: [blocker_needs_soa_abi] fired on
    all three while describing none of them, so the guarantee two comments above —
@@ -218,15 +238,20 @@ type blocker = {
 
    Why the registry is not the sole source either, though that would be
    drift-proof by construction: a backend enters that table only when something
-   forces its registration AND its [is_available ()] returns true on this host —
-   [Cuda_ptx_plugin.ml:80-95] and [Cuda_c_plugin.ml:80-99] are both [lazy] behind
-   an explicit [register ()]. The table is a snapshot of what this host can run,
-   not of what Sarek can name. Two consequences, both fatal to deriving from it:
-   in THIS executable [Backend_loader.init] forces only [Cuda_plugin.init], which
-   forces only the PTX plugin ([Cuda_plugin.ml:11]), so "CUDA/C" never appears in
-   the table however complete the tree is; and on a CUDA-less host "CUDA/PTX"
-   would drop out of the universe, leaving [describes] naming a framework the
-   universe no longer contains. Deriving from the registry would shrink the
+   forces its registration AND its [is_available ()] returns true on this host.
+   Every plugin's [registered_backend] is [lazy], and the forcing comes in two
+   shapes: at module init unless the backend is env-disabled
+   ([Cuda_ptx_plugin.ml:99], [Hip_plugin.ml:93], [Webgpu_plugin.ml:195]), or only
+   from an explicit [register ()] call ([Cuda_c_plugin.ml:98-99]). The table is a
+   snapshot of what this host can run, not of what Sarek can name. Three
+   consequences, all fatal to deriving from it: in THIS executable
+   [Backend_loader.init] forces only [Cuda_plugin.init], which forces only the
+   PTX plugin ([Cuda_plugin.ml:11]), so "CUDA/C" never appears in the table
+   however complete the tree is; "HIP" and "WebGPU" cannot appear either, because
+   module-init forcing needs the module to be LINKED and neither sarek-hip nor
+   the webgpu plugin is in this executable's [libraries]; and on a CUDA-less host
+   "CUDA/PTX" would drop out of the universe, leaving [describes] naming a
+   framework the universe no longer contains. Deriving from the registry would shrink the
    universe to the local hardware — precisely what taking a framework NAME rather
    than a [Device.t] exists to avoid.
 
