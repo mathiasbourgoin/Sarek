@@ -11,6 +11,55 @@ open Sarek_types
 open Sarek_native_helpers
 open Sarek_native_gen_base
 
+(* How a field of a record type is READ and WRITTEN in generated OCaml.
+
+   Inline types registered in [ctx.inline_types] are reached through a
+   first-class-module getter, and there is deliberately no corresponding
+   SETTER (see the [Fcm_no_setter] refusal below) -- so the distinction is
+   load-bearing, not cosmetic. *)
+type field_access =
+  | Field_lid of Longident.t Location.loc
+      (** An ordinary record label, usable in both [pexp_field] and
+          [pexp_record]'s override list -- so both readable and writable. *)
+  | Field_fcm of string
+      (** Inline first-class-module accessor name. READ-ONLY. *)
+
+let field_access_of ~loc ~ctx ty field_name =
+  match repr ty with
+  | TRecord (type_name, _) -> (
+      (* type_name may be "Module.type" or just "type" *)
+      match String.rindex_opt type_name '.' with
+      | Some _ when is_same_module ctx type_name ->
+          Field_lid {txt = Lident field_name; loc}
+      | Some idx ->
+          let module_path = String.sub type_name 0 idx in
+          let parts = String.split_on_char '.' module_path in
+          let rec build_lid = function
+            | [] -> Lident field_name
+            | [m] -> Ldot (Lident m, field_name)
+            | m :: rest -> Ldot (build_lid rest, m)
+          in
+          Field_lid {txt = build_lid (List.rev parts); loc}
+      | None ->
+          if StringSet.mem type_name ctx.inline_types then
+            Field_fcm (field_getter_name type_name field_name)
+          else Field_lid {txt = Lident field_name; loc})
+  | _ ->
+      (* Not a record type - shouldn't happen, but use unqualified name *)
+      Field_lid {txt = Lident field_name; loc}
+
+let gen_field_read ~loc ~ctx rec_e ty field_name =
+  match field_access_of ~loc ~ctx ty field_name with
+  | Field_lid lid -> Ast_builder.Default.pexp_field ~loc rec_e lid
+  | Field_fcm fn_name ->
+      let method_call =
+        Ast_builder.Default.pexp_send
+          ~loc
+          (evar ~loc types_module_var)
+          {txt = fn_name; loc}
+      in
+      Ast_builder.Default.pexp_apply ~loc method_call [(Nolabel, rec_e)]
+
 (** Generate memory access operations (vectors, arrays, record fields) *)
 let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
   match te.te with
@@ -51,78 +100,27 @@ let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
      For Geometry_lib.point, we need p.Geometry_lib.x, not p.x.
      For inline types using first-class modules, call __types.get_type_field.
      For same-module types, use unqualified field names. *)
-  | TEFieldGet (record, field_name, _field_idx) -> (
+  | TEFieldGet (record, field_name, _field_idx) ->
       let rec_e = gen_expr ~loc record in
-      match repr record.ty with
-      | TRecord (type_name, _) -> (
-          (* type_name may be "Module.type" or just "type" *)
-          match String.rindex_opt type_name '.' with
-          | Some _ when is_same_module ctx type_name ->
-              (* Same-module type - use unqualified field access *)
-              let field_lid = {txt = Lident field_name; loc} in
-              Ast_builder.Default.pexp_field ~loc rec_e field_lid
-          | Some idx ->
-              (* External qualified type - use qualified field access *)
-              let module_path = String.sub type_name 0 idx in
-              let parts = String.split_on_char '.' module_path in
-              let rec build_lid = function
-                | [] -> Lident field_name
-                | [m] -> Ldot (Lident m, field_name)
-                | m :: rest -> Ldot (build_lid rest, m)
-              in
-              let field_lid = {txt = build_lid (List.rev parts); loc} in
-              Ast_builder.Default.pexp_field ~loc rec_e field_lid
-          | None ->
-              (* Inline type - check if using first-class module approach *)
-              if StringSet.mem type_name ctx.inline_types then
-                (* Use accessor: __types#get_typename_fieldname record *)
-                let fn_name = field_getter_name type_name field_name in
-                let method_call =
-                  Ast_builder.Default.pexp_send
-                    ~loc
-                    (evar ~loc types_module_var)
-                    {txt = fn_name; loc}
-                in
-                Ast_builder.Default.pexp_apply
-                  ~loc
-                  method_call
-                  [(Nolabel, rec_e)]
-              else
-                (* Direct field access *)
-                let field_lid = {txt = Lident field_name; loc} in
-                Ast_builder.Default.pexp_field ~loc rec_e field_lid)
-      | _ ->
-          (* Not a record type - shouldn't happen, but use unqualified name *)
-          let field_lid = {txt = Lident field_name; loc} in
-          Ast_builder.Default.pexp_field ~loc rec_e field_lid)
+      gen_field_read ~loc ~ctx rec_e record.ty field_name
   | TEFieldSet (record, field_name, _field_idx, value) -> (
-      let rec_e = gen_expr ~loc record in
       let val_e = gen_expr ~loc value in
-      (* Note: mutable record fields with first-class modules would need setters.
-         For now we don't support mutable fields in inline types with FCM. *)
-      let field_lid =
-        match repr record.ty with
-        | TRecord (type_name, _) -> (
-            match String.rindex_opt type_name '.' with
-            | Some _ when is_same_module ctx type_name ->
-                (* Same-module type - use unqualified field access *)
-                {txt = Lident field_name; loc}
-            | Some idx ->
-                (* External qualified type - use qualified field access *)
-                let module_path = String.sub type_name 0 idx in
-                let parts = String.split_on_char '.' module_path in
-                let rec build_lid = function
-                  | [] -> Lident field_name
-                  | [m] -> Ldot (Lident m, field_name)
-                  | m :: rest -> Ldot (build_lid rest, m)
-                in
-                {txt = build_lid (List.rev parts); loc}
-            | None ->
-                (* Inline type - use unqualified name *)
-                {txt = Lident field_name; loc})
-        | _ -> {txt = Lident field_name; loc}
+      (* Decompose the assignment target into the chain of fields leading to it,
+         plus whatever the chain bottoms out at.
+
+         [v.(i).f.g <- e] arrives as
+           TEFieldSet (TEFieldGet (TEVecGet (v, i), "f"), "g", _, e)
+         so the path from the vector ELEMENT to the target is ["f"; "g"], and
+         each step is paired with the type of the record that CONTAINS it --
+         which is what decides how the field is named. *)
+      let rec decompose te acc =
+        match te.te with
+        | TEFieldGet (inner, f, _) -> decompose inner ((inner.ty, f) :: acc)
+        | _ -> (te, acc)
       in
-      match record.te with
+      let base, prefix = decompose record [] in
+      let path = prefix @ [(record.ty, field_name)] in
+      match base.te with
       | TEVecGet (vec, idx) ->
           (* backlog-172. [v.(i).f <- e] on a VECTOR element cannot be a
              [setfield]: [Vector.get] marshals the element out of the vector's
@@ -135,17 +133,64 @@ let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
              into it: the record's fields may legitimately be immutable, and a
              read-modify-write is the only shape that is correct either way.
 
+             NESTED targets ([v.(i).f.g <- e]) rebuild every level on the way
+             back out. Matching only the depth-1 shape is what left the nested
+             form silently dropped on this backend after the depth-1 fix: the
+             chained lvalue fell through to the [setfield] branch below and
+             stored into the record [Vector.get] had just marshalled out. The
+             C-family backends recurse structurally, which is why only the two
+             CPU paths were affected.
+
              The element is fetched ONCE into [sarek_fs_base] so that the index
              expression is evaluated once too — [v.(f i).x <- e] must not call
              [f] twice, and the naive expansion does. *)
           let vec_e = gen_expr ~loc vec in
           let idx_e = gen_expr ~loc idx in
-          let updated =
-            Ast_builder.Default.pexp_record
-              ~loc
-              [(field_lid, val_e)]
-              (Some [%expr sarek_fs_base])
+          let field_lid_exn ty f =
+            match field_access_of ~loc ~ctx ty f with
+            | Field_lid lid -> lid
+            | Field_fcm _ ->
+                (* An inline first-class-module type is reached through a
+                   generated GETTER and has no setter, so there is no label to
+                   put in a record-update expression. Refuse loudly: silently
+                   emitting a setfield here is precisely the bug being fixed. *)
+                Location.raise_errorf
+                  ~loc
+                  "Sarek: cannot assign to field %S of an inline \
+                   [%%sarek.type] record stored in a vector. Inline types are \
+                   accessed through generated getters and have no setters, so \
+                   this store cannot be expressed. Declare the record as a \
+                   named type outside the kernel, or build the updated element \
+                   and assign it with v.(i) <- ..."
+                  f
           in
+          (* Rebuild outwards: the innermost update takes the new value, and
+             each enclosing level is reconstructed around it. *)
+          let rec build base_e = function
+            | [] ->
+                (* [decompose] always appends the assigned field, so [path] has
+                   at least one element and this is unreachable. Raising rather
+                   than returning [val_e] keeps it that way. *)
+                Location.raise_errorf
+                  ~loc
+                  "Sarek internal error: empty field path in TEFieldSet"
+            | [(ty, f)] ->
+                Ast_builder.Default.pexp_record
+                  ~loc
+                  [(field_lid_exn ty f, val_e)]
+                  (Some base_e)
+            | (ty, f) :: rest ->
+                let lid = field_lid_exn ty f in
+                let inner_base =
+                  Ast_builder.Default.pexp_field ~loc base_e lid
+                in
+                let inner = build inner_base rest in
+                Ast_builder.Default.pexp_record
+                  ~loc
+                  [(lid, inner)]
+                  (Some base_e)
+          in
+          let updated = build [%expr sarek_fs_base] path in
           if ctx.use_native_arg then
             [%expr
               let sarek_fs_idx = Int32.to_int [%e idx_e] in
@@ -160,11 +205,26 @@ let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
                 Spoc_core.Vector.get sarek_fs_vec sarek_fs_idx
               in
               Spoc_core.Vector.kernel_set sarek_fs_vec sarek_fs_idx [%e updated]]
-      | _ ->
+      | _ -> (
           (* A record held in a local (or a shared-memory array element) IS
              mutated in place; nothing marshals it, so a setfield is both correct
-             and the cheaper code. *)
-          Ast_builder.Default.pexp_setfield ~loc rec_e field_lid val_e)
+             and the cheaper code.
+
+             This stays correct at depth too: [l.f] hands back the sub-record
+             itself, not a copy, so [l.f.g <- e] mutates the same allocation.
+             That is why only the vector base above needed the rebuild. *)
+          let rec_e = gen_expr ~loc record in
+          match field_access_of ~loc ~ctx record.ty field_name with
+          | Field_lid lid ->
+              Ast_builder.Default.pexp_setfield ~loc rec_e lid val_e
+          | Field_fcm _ ->
+              Location.raise_errorf
+                ~loc
+                "Sarek: cannot assign to field %S of an inline [%%sarek.type] \
+                 record. Inline types are accessed through generated getters \
+                 and have no setters. Declare the record as a named type \
+                 outside the kernel."
+                field_name))
   | _ -> failwith "gen_memory_access: not a memory access expression"
 
 (** Generate let bindings (let, let mut, assignment) *)

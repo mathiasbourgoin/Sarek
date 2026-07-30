@@ -28,6 +28,24 @@
  *      record from defaults would satisfy (1) and destroy the rest.
  *   3. A store into the SECOND field of a mixed record lands in that field and
  *      not in the first, which is what a wrong field index looks like.
+ *   4. A CHAINED target, v.(i).mid.b <- e, lands on the two CPU backends — with
+ *      witnesses at BOTH levels. The depth-1 fix did not cover this: the
+ *      interpreter read the intermediate record through the registry's copying
+ *      get_field, and Native matched only the depth-1 shape, so both silently
+ *      dropped it. Nesting is where "it works now" and "the shape I fixed works
+ *      now" come apart.
+ *
+ *      On the C-family backends this case cannot run AT ALL yet, for a reason
+ *      that has nothing to do with the store: a record type with a
+ *      record-typed FIELD gets its own struct emitted but not its dependency,
+ *      so the kernel fails to compile with "unknown type name <inner struct>".
+ *      Measured to affect a READ-ONLY nested kernel identically, so it is a
+ *      struct-declaration gap, not a store gap (backlog-203).
+ *
+ *      That expectation is pinned in BOTH directions rather than skipped: the
+ *      CPU backends must land the store, and a C-family backend must fail with
+ *      exactly that error. A C-family device that started compiling it, or one
+ *      that failed differently, is a change this test reports.
  *
  * Every device failure makes the process exit non-zero.
  ******************************************************************************)
@@ -72,6 +90,12 @@ type mtriple = {
 }
 [@@sarek.type]
 
+(* Nested target. [outer] holds a whole [triple], so v.(i).mid.b <- e has to
+   rebuild TWO levels on the way back into vector storage. The [tag] and the
+   sibling fields of [mid] are witnesses: rebuilding either level from defaults
+   satisfies "the target changed" and destroys something else. *)
+type outer = {tag : float32; mid : triple} [@@sarek.type]
+
 let scale_b =
   snd
     [%kernel
@@ -85,6 +109,24 @@ let scale_mb =
       fun (v : mtriple vector) (n : int32) ->
         let tid = thread_idx_x + (block_idx_x * block_dim_x) in
         if tid < n then v.(tid).mb <- v.(tid).mb *. 2.0]
+
+let scale_nested =
+  snd
+    [%kernel
+      fun (v : outer vector) (n : int32) ->
+        let tid = thread_idx_x + (block_idx_x * block_dim_x) in
+        if tid < n then v.(tid).mid.b <- v.(tid).mid.b *. 2.0]
+
+(* No String.contains_sub in the stdlib; spelled out so the message match above
+   is an exact substring test rather than a looser regex. *)
+let contains_sub (hay : string) (needle : string) : bool =
+  let nh = String.length needle and hl = String.length hay in
+  if nh = 0 then true
+  else
+    let rec go i =
+      i + nh <= hl && (String.equal (String.sub hay i nh) needle || go (i + 1))
+    in
+    go 0
 
 let ir_of kirc =
   match kirc.Sarek.Kirc_types.body_ir with
@@ -181,7 +223,95 @@ let run_on (dev : Device.t) : bool =
         let p = Vector.get v i in
         (p.mb, p.ma, p.mc))
   in
-  immutable_ok && mutable_ok
+  (* The nested case carries its own checker: [run_case] reports one target and
+     two witnesses, and this needs three witnesses across two levels. It is also
+     the only case with a per-family expectation (see backlog-203 in the header),
+     so it cannot reuse [run_case]'s "a refusal is always a failure" rule. *)
+  let nested_ok =
+    Printf.printf
+      "field-store %-9s [%s] %s: %!"
+      "nested"
+      dev.Device.framework
+      dev.Device.name ;
+    let v = Vector.create_custom outer_custom n in
+    for i = 0 to n - 1 do
+      Vector.set v i {tag = float_of_int (1000 + i); mid = orig i}
+    done ;
+    match
+      Sarek.Execute.run_vectors
+        ~device:dev
+        ~ir:(ir_of scale_nested)
+        ~args:[Vec v; Int n]
+        ~block:(Sarek.Execute.dims1d (min 64 n))
+        ~grid:(Sarek.Execute.dims1d ((n + 63) / 64))
+        ()
+    with
+    | exception e ->
+        let msg = Printexc.to_string e in
+        (* backlog-203. The ONLY tolerated failure is the struct-dependency gap,
+           matched on the inner struct's actual emitted name so a different
+           compile error cannot pass as this one. Tolerated on the C-family
+           backends only — on Interpreter or Native it would mean the fix
+           regressed. *)
+        let is_struct_gap =
+          contains_sub msg "unknown type name"
+          && contains_sub msg "Test_record_field_store_triple"
+        in
+        let c_family =
+          match dev.Device.framework with
+          | "Interpreter" | "Native" -> false
+          | _ -> true
+        in
+        if is_struct_gap && c_family then begin
+          Printf.printf
+            "known gap (backlog-203: nested struct not declared) — expected\n%!" ;
+          true
+        end
+        else begin
+          Printf.printf "FAILED (raised: %s)\n%!" msg ;
+          false
+        end
+    | () ->
+        if
+          match dev.Device.framework with
+          | "Interpreter" | "Native" -> false
+          | _ -> true
+        then
+          (* Not a failure — the C-family gap is fixed and this test's
+             expectation is now stale. Say so loudly rather than quietly
+             passing, because the header claims this cannot compile here. *)
+          Printf.printf
+            "\n\
+            \  NOTE: compiled on %s, so backlog-203 is fixed — drop the \
+             known-gap branch above\n\
+             %!"
+            dev.Device.framework ;
+        Transfer.flush dev ;
+        let ok = ref true in
+        let reported = ref 0 in
+        for i = 0 to n - 1 do
+          let p = Vector.get v i in
+          let bad name got want =
+            if Float.abs (got -. want) > 1e-4 then begin
+              ok := false ;
+              if !reported < 3 then begin
+                incr reported ;
+                Printf.printf "\n  @%d %s: got %g want %g" i name got want
+              end
+            end
+          in
+          bad "mid.b (target)" p.mid.b (float_of_int (i + 1) *. 2.0) ;
+          (* Same level as the target. *)
+          bad "mid.a (untouched)" p.mid.a (float_of_int i) ;
+          bad "mid.c (untouched)" p.mid.c (float_of_int (i + 2)) ;
+          (* OUTER level: a rebuild that dropped the enclosing record would show
+             up here and nowhere else. *)
+          bad "tag (untouched, outer level)" p.tag (float_of_int (1000 + i))
+        done ;
+        if !ok then Printf.printf "OK\n%!" else Printf.printf "\n  FAILED\n%!" ;
+        !ok
+  in
+  immutable_ok && mutable_ok && nested_ok
 
 let () =
   let devs =
