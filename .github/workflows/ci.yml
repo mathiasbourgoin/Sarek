@@ -140,6 +140,14 @@ jobs:
           # red-path coverage behind a 50-second container pull is how a gate
           # ends up untested.
           ./scripts/check-proof-ledger.test.sh
+          # backlog-188's two documentation gates. Both are git-aware -- one
+          # resolves citations against `git ls-files`, the other derives the
+          # expected repo from GITHUB_REPOSITORY or the remote -- so neither can
+          # live in a prove-red-spec block: prove-red.sh's scratch is a bare
+          # mktemp directory with no git, where both exit 2 and no green
+          # baseline is possible. Each harness builds its own throwaway repo.
+          ./scripts/check-cited-paths-exist.test.sh
+          ./scripts/check-readme-repo-links.test.sh
           # #94. Lexical companion to sarek/tests/unit/test_backend_arm_parity.ml:
           # asserts every intrinsic name matched by any backend's `arm` table has
           # a row in that test's matrix. The test itself probes BEHAVIOUR (it has
