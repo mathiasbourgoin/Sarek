@@ -19,7 +19,15 @@
  * on the INTERPRETER and no test noticed. Measured on the pre-fix tip
  * (1b18e090), with 4 elements and `let e = v.(tid) in e.p <- 42.0`:
  *
- *   Native 0 1 2 3 | OpenCL x2 0 1 2 3 | Vulkan x2 0 1 2 3 | Interpreter 42 42 42 42
+ *   Native 0 1 2 3 | OpenCL x2 0 1 2 3 | Vulkan x2 0 1 2 3 |
+ *   CUDA-PTX x2 0 1 2 3 | Interpreter 42 42 42 42
+ *
+ * The CUDA-PTX pair is the one this file's gate could not reproduce on its own:
+ * the dune rule now puts ZLUDA on LD_LIBRARY_PATH so the two CUDA/PTX devices
+ * are enumerated, and the run prints a named NOT-MEASURED-HERE line for that
+ * framework when they are not — rather than exiting 0 having exercised 7 of 9
+ * devices with nothing to say about it. Every CUDA/PTX row here is
+ * ZLUDA-on-AMD; there is no NVIDIA hardware on this machine.
  *
  * The interpreter wrote THROUGH the local into vector storage: [read_lvalue]'s
  * [LVar] arm hands back the [VRecord]'s [value array] itself, and for the
@@ -291,6 +299,117 @@ let uses_type_before_declaring (src : string) (ty : string) : bool =
   in
   match (find_sub src ty, decl) with Some use, Some d -> use < d | _ -> false
 
+(* Both polarities of the above, over synthetic sources, with no device.
+
+   This is a second COPY of the predicate (the two tests are separate [modules]
+   stanzas and cannot share it), so it carries the same hazard the comment above
+   names, and the same one the sibling file was found to have left uncovered:
+   with only the GLSL arm, [nested_can_compile] answers "can compile" for an
+   out-of-order OpenCL source and the nested case is launched into a compile
+   failure that this file reports as a hard failure. Nothing without a live
+   OpenCL device would have caught that. Cases 3 and 4 are the load-bearing
+   ones — 1 and 2 pass with the typedef arm removed.
+
+   Runs before any device, so a broken predicate is not discovered mid-sweep. *)
+let () =
+  let inner = "Test_record_local_alias_agreement_l1" in
+  let outer = "Test_record_local_alias_agreement_l2" in
+  let cases =
+    [
+      (* GLSL spelling: `struct Ty { ... };` *)
+      ( true,
+        "glsl: used before declared",
+        Printf.sprintf
+          "#version 450\n\
+           struct %s {\n\
+          \  float tag;\n\
+          \  %s sub;\n\
+           };\n\
+           struct %s {\n\
+          \  float p;\n\
+           };\n"
+          outer
+          inner
+          inner );
+      ( false,
+        "glsl: declared before used",
+        Printf.sprintf
+          "#version 450\n\
+           struct %s {\n\
+          \  float p;\n\
+           };\n\
+           struct %s {\n\
+          \  float tag;\n\
+          \  %s sub;\n\
+           };\n"
+          inner
+          outer
+          inner );
+      (* OpenCL C spelling: `typedef struct { ... } Ty;` — "struct Ty" never
+         appears, which is why the GLSL-only form finds no declaration and
+         wrongly answers false. *)
+      ( true,
+        "opencl: used before declared",
+        Printf.sprintf
+          "typedef struct {\n\
+          \  float tag;\n\
+          \  %s sub;\n\
+           } %s;\n\
+           typedef struct {\n\
+          \  float p;\n\
+           } %s;\n"
+          inner
+          outer
+          inner );
+      ( false,
+        "opencl: declared before used",
+        Printf.sprintf
+          "typedef struct {\n\
+          \  float p;\n\
+           } %s;\n\
+           typedef struct {\n\
+          \  float tag;\n\
+          \  %s sub;\n\
+           } %s;\n"
+          inner
+          inner
+          outer );
+      (* Used and never declared: false, and fail-closed on purpose — a dropped
+         typedef is a different defect from a mis-ordered one, and
+         [nested_can_compile] must not silently decline to launch because of
+         it. *)
+      ( false,
+        "used, never declared",
+        Printf.sprintf "#version 450\nstruct %s {\n  %s sub;\n};\n" outer inner
+      );
+      (* No struct declarations at all — the CUDA/PTX shape. *)
+      (false, "no structs at all", "#version 450\nvoid main() {}\n");
+    ]
+  in
+  let bad =
+    List.filter
+      (fun (want, _, src) ->
+        not (Bool.equal (uses_type_before_declaring src inner) want))
+      cases
+  in
+  if bad <> [] then begin
+    List.iter
+      (fun (want, label, _) ->
+        Printf.printf
+          "uses_type_before_declaring self-check: %s should be %b and is not\n\
+           %!"
+          label
+          want)
+      bad ;
+    exit 1
+  end ;
+  Printf.printf
+    "uses_type_before_declaring self-check: %d case(s) OK (%d gap, %d no-gap)\n\
+     %!"
+    (List.length cases)
+    (List.length (List.filter (fun (w, _, _) -> w) cases))
+    (List.length (List.filter (fun (w, _, _) -> not w) cases))
+
 let nested_can_compile (dev : Device.t) : bool =
   match List.assoc_opt dev.Device.framework struct_emitting_frameworks with
   | None -> true
@@ -345,5 +464,36 @@ let () =
         any_failure := true
       end)
     nested_must_run_on ;
-  Printf.printf "%d device(s) exercised\n%!" (Array.length devs) ;
+  (* Same rule as test_record_field_store.ml: a device class this file's header
+     makes a claim ABOUT must not be able to go missing quietly.
+
+     The header's measurement line names CUDA-PTX x2 among the backends that
+     read back [0 1 2 3], and the nested case's scope is stated as "the two CPU
+     backends plus CUDA/PTX". Without ZLUDA on the loader path this file
+     enumerated 7 devices, printed no CUDA/PTX row at all, and exited 0. The
+     dune rule now sets LD_LIBRARY_PATH; this line reports the absence where
+     there is genuinely no such device.
+
+     A loud named skip rather than a failure, for the reason given in the
+     sibling file: a host with neither ZLUDA nor a CUDA driver has no such
+     device, and the honest report is "not reproduced here", not a hard stop. *)
+  let frameworks_seen =
+    Array.to_list devs |> List.map (fun (d : Device.t) -> d.Device.framework)
+  in
+  List.iter
+    (fun fw ->
+      if not (List.mem fw frameworks_seen) then
+        Printf.printf
+          "NOT MEASURED HERE: no %s device was enumerated, so the header's %s \
+           rows (storage untouched at both depths, nested case included) are \
+           NOT reproduced by this run. Put ZLUDA on LD_LIBRARY_PATH, or run on \
+           a CUDA host, to exercise it.\n\
+           %!"
+          fw
+          fw)
+    ["CUDA/PTX"] ;
+  Printf.printf
+    "%d device(s) exercised (frameworks: %s)\n%!"
+    (Array.length devs)
+    (String.concat ", " (List.sort_uniq String.compare frameworks_seen)) ;
   if !any_failure then exit 1

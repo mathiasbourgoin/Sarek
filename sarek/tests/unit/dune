@@ -81,6 +81,19 @@
  (modules test_cpu_runtime)
  (libraries sarek alcotest))
 
+; The depth bound on Sarek_ir_interp_value.detach_record (backlog-172 round 4).
+; A cyclic [value] is not constructible through the DSL — [@@sarek.type] refuses
+; a self-referential field type for lack of a layout — but IS constructible at
+; the OCaml level through the mutable [value array] a [VRecord] carries, which
+; is what this test does. So the guard is checkable with no device and without
+; relying on the unreachability argument holding forever. Own executable because
+; it drives sarek.interp directly.
+
+(test
+ (name test_detach_record_depth)
+ (modules test_detach_record_depth)
+ (libraries sarek.interp alcotest))
+
 ; Fusion tests use sarek library directly (no ppx needed).
 ;
 ; sarek.codegen and str are for the backlog-153 cases: the defect there was

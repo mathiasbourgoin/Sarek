@@ -164,14 +164,72 @@ let callee_env env =
     It deliberately stops at [VArray]. An array binding must keep aliasing: a
     kernel buffer is shared across threads by design and block-shared memory is
     shared within the block, so copying one would break both. Arrays are
-    reference-like on every backend; records are values. *)
-let rec detach_record (v : value) : value =
-  match v with
-  | VRecord (name, fields) -> VRecord (name, Array.map detach_record fields)
-  | VVariant (ty, tag, args) -> VVariant (ty, tag, List.map detach_record args)
-  | VArray _ | VInt32 _ | VInt64 _ | VFloat32 _ | VFloat64 _ | VBool _ | VUnit
-    ->
-      v
+    reference-like on every backend; records are values.
+
+    {b Depth bound.} The recursion is bounded by {!detach_max_depth} and raises
+    past it. Two things are true at once here and the guard exists because of
+    the gap between them.
+
+    A cyclic [value] is not constructible through the DSL. A back-edge needs a
+    type whose field (or variant payload) type is the type itself, and
+    [[@@sarek.type]] refuses that at declaration:
+
+    {[
+      type rec_r = {here : float32; next : rec_r} [@@sarek.type]
+
+      type rec_v = A | B of rec_v [@@sarek.type]
+    ]}
+
+    both fail to compile with "sarek: unknown alignment for field type 'rec_r' -
+    register it with [%ktype] before using it as a record/variant field",
+    because a field type must already be registered and registration happens at
+    the end of the very declaration that would close the loop. Neither arm of
+    the recursion below has a source-level way in. (Verified by compiling both.)
+
+    But that argument is a property of the PPX, in another module, and this
+    function's parameter is a bare [value]. The interpreter is dynamically typed
+    over [value], and the in-place field store this whole file exists for writes
+    [fields.(i) <- e] with no check that [e]'s shape is the field's declared
+    type; a future emitter change, a relaxed layout rule, or any other producer
+    of [value] could close a loop that no declaration did. So the argument is
+    recorded rather than relied on, and the guard turns the residual case from a
+    hang into a diagnosable error. An infinite loop is worse than an error.
+
+    The bound is on DEPTH, not on visited identity, because a legitimate nesting
+    depth is small (it is the record/variant nesting of a kernel type, which the
+    layout rules already bound) while pointer-identity tracking would cost an
+    allocation per bind on the hot path. 64 is far above anything expressible
+    and far below a stack overflow. *)
+
+let detach_max_depth = 64
+
+let detach_record (v : value) : value =
+  let rec go depth v =
+    if depth > detach_max_depth then
+      Interp_error.raise_error
+        (Interp_error.Unsupported_operation
+           {
+             operation = "record copy-at-bind";
+             reason =
+               Printf.sprintf
+                 "nesting deeper than %d while detaching a record for a local \
+                  binding — a [@@sarek.type] declaration cannot nest this \
+                  deeply (a self-referential field type is refused for lack of \
+                  a layout), so this is either a cyclic value built outside \
+                  the PPX or a genuinely unsupported type"
+                 detach_max_depth;
+           })
+    else
+      match v with
+      | VRecord (name, fields) ->
+          VRecord (name, Array.map (go (depth + 1)) fields)
+      | VVariant (ty, tag, args) ->
+          VVariant (ty, tag, List.map (go (depth + 1)) args)
+      | VArray _ | VInt32 _ | VInt64 _ | VFloat32 _ | VFloat64 _ | VBool _
+      | VUnit ->
+          v
+  in
+  go 0 v
 
 (** Bind a variable in the environment (both by id and name).
 
