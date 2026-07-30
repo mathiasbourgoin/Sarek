@@ -184,8 +184,10 @@ if [ ${RESULT_COUNT} -gt 0 ]; then
   # NAMED after three personal machines (backlog-168). The label now comes from
   # the results themselves -- whatever the benchmarks actually wrote -- so this
   # cannot drift from the producer, and it never touches the hostname.
-  if [ "$CLEAN_OLD" = true ]; then
-    MACHINE=$(python3 -c '
+  # Derived unconditionally, BEFORE the --clean guard: the label is also what
+  # the final "git commit -m" hint prints, and deriving it only when deleting
+  # meant --no-clean fell back to the literal "your-machine-label".
+  MACHINE=$(python3 -c '
 import json, sys, pathlib
 labels = set()
 for p in pathlib.Path(sys.argv[1]).glob("*.json"):
@@ -197,14 +199,39 @@ for p in pathlib.Path(sys.argv[1]).glob("*.json"):
 # results. Zero or several labels means do nothing and say so.
 print(labels.pop() if len(labels) == 1 else "")
 ' "${RUN_DIR}" 2>/dev/null)
+
+  # The label comes out of a JSON payload and reaches a `rm` glob, so it is
+  # validated against the filename-safe label contract before it is used as a
+  # path fragment. SAREK_BENCH_MACHINE lets an operator set this string to
+  # anything -- get_machine_label only refuses the hostname -- so `*` (which
+  # would expand to every machine's results) and `../..` (which would leave
+  # benchmarks/results entirely) are both reachable without this check.
+  # Narrower still is enforced on what may be COMMITTED, independently, by
+  # scripts/check-no-machine-identifiers.sh; this one is about not deleting the
+  # wrong files locally.
+  if [ -n "${MACHINE}" ] && ! printf '%s' "${MACHINE}" | grep -qE '^[a-z0-9]+-[a-z0-9]+$'; then
+    echo "  ! Machine label '${MACHINE}' is not filename-safe (<os>-<vendor>," \
+         "lowercase alphanumeric); refusing to use it as a path. Keeping old results."
+    MACHINE=""
+  fi
+
+  if [ "$CLEAN_OLD" = true ]; then
     if [ -n "${MACHINE}" ]; then
-      OLD_COUNT=$(ls -1 benchmarks/results/${MACHINE}_*.json 2>/dev/null | wc -l)
-      if [ ${OLD_COUNT} -gt 0 ]; then
-        rm -f benchmarks/results/${MACHINE}_*.json
-        echo "  ✓ Removed ${OLD_COUNT} old results for ${MACHINE}"
+      # Enumerated with a quoted glob inside benchmarks/results only, and
+      # removed with `rm --`, so a leading-dash or otherwise odd label cannot
+      # turn into an option.
+      # `if` rather than `[ -f "$f" ] && ...`: set -e is active here, and a
+      # trailing failed && list as the last command of a loop body aborts the run.
+      OLD_FILES=()
+      for f in "benchmarks/results/${MACHINE}"_*.json; do
+        if [ -f "$f" ]; then OLD_FILES+=("$f"); fi
+      done
+      if [ ${#OLD_FILES[@]} -gt 0 ]; then
+        rm -f -- "${OLD_FILES[@]}"
+        echo "  ✓ Removed ${#OLD_FILES[@]} old results for ${MACHINE}"
       fi
     else
-      echo "  ! Could not determine a single machine label from ${RUN_DIR};" \
+      echo "  ! Could not determine a single usable machine label from ${RUN_DIR};" \
            "keeping old results (use --no-clean to silence this)"
     fi
   fi

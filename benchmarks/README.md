@@ -74,18 +74,26 @@ dune exec benchmarks/bench_matrix_mul.exe -- \
   --sizes 512,1024,2048,4096 \
   --iterations 20 \
   --warmup 5 \
-  --output results/
+  --output benchmarks/results/
 
-# Run on current machine and save to a machine-specific directory.
-# Use an opaque label, not $(hostname) -- these paths get committed.
-MACHINE=linux-nvidia
-mkdir -p results/${MACHINE}
-dune exec benchmarks/bench_matrix_mul.exe -- --output results/${MACHINE}/
-dune exec benchmarks/bench_vector_add.exe -- --output results/${MACHINE}/
-dune exec benchmarks/bench_reduction.exe -- --output results/${MACHINE}/
-dune exec benchmarks/bench_transpose.exe -- --output results/${MACHINE}/
-dune exec benchmarks/bench_transpose_tiled.exe -- --output results/${MACHINE}/
-dune exec benchmarks/bench_mandelbrot.exe -- --output results/${MACHINE}/
+# Run on the current machine, into the directory the tooling actually reads.
+#
+# There is no machine directory to create and no label to type. The benchmark
+# DERIVES its own label (<os>-<gpu-vendor>, e.g. linux-nvidia) and that label
+# already prefixes every output filename, so results from different machines
+# stay apart in one flat directory. This is also the layout the deduplicator
+# scans -- it reads benchmarks/results/ directly and does not descend into
+# subdirectories, so files written to results/<machine>/ are invisible to it.
+#
+# SAREK_BENCH_MACHINE overrides the label for a local run; it is refused if it
+# equals the hostname, because a machine label is published and a hostname must
+# not be. Tracked results must still carry a derived <os>-<vendor> label.
+dune exec benchmarks/bench_matrix_mul.exe -- --output benchmarks/results/
+dune exec benchmarks/bench_vector_add.exe -- --output benchmarks/results/
+dune exec benchmarks/bench_reduction.exe -- --output benchmarks/results/
+dune exec benchmarks/bench_transpose.exe -- --output benchmarks/results/
+dune exec benchmarks/bench_transpose_tiled.exe -- --output benchmarks/results/
+dune exec benchmarks/bench_mandelbrot.exe -- --output benchmarks/results/
 ```
 
 ### Publishing Results to Web Viewer
@@ -97,7 +105,7 @@ dune build benchmarks/to_web.exe
 # Convert benchmark results to web format
 dune exec benchmarks/to_web.exe -- \
   gh-pages/benchmarks/data/latest.json \
-  results/*.json
+  benchmarks/results/*.json
 
 # The web viewer will automatically display the results at:
 # https://mathiasbourgoin.github.io/Sarek/benchmarks/
@@ -109,18 +117,24 @@ dune exec benchmarks/to_web.exe -- \
 # Build aggregation tools
 dune build benchmarks/aggregate.exe benchmarks/to_csv.exe
 
-# Combine results from multiple machines
+# Combine results from multiple machines. They share one flat directory; the
+# derived <os>-<vendor> label prefixing each filename is what keeps them apart.
 dune exec benchmarks/aggregate.exe -- \
   aggregated_results.json \
-  results/machine1/*.json \
-  results/machine2/*.json \
-  results/machine3/*.json
+  benchmarks/results/*.json
+
+# Or restrict to particular machines by their label prefix
+dune exec benchmarks/aggregate.exe -- \
+  aggregated_results.json \
+  benchmarks/results/linux-nvidia_*.json \
+  benchmarks/results/darwin-apple_*.json
 
 # Convert to CSV for spreadsheet analysis
 dune exec benchmarks/to_csv.exe -- aggregated_results.json results.csv
 
 # Or convert individual runs
-dune exec benchmarks/to_csv.exe -- results/linux-intel_matrix_mul_naive_256_*.json
+dune exec benchmarks/to_csv.exe -- \
+  benchmarks/results/linux-intel_matrix_mul_naive_256_*.json
 ```
 
 ## Data Format
@@ -189,30 +203,26 @@ Each benchmark run produces a **self-contained JSON file** with all metadata:
 
 ### Step 1 Alternative: Run Benchmarks Individually
 
+The command is the SAME on every machine -- there is no per-machine directory
+to name. Each benchmark derives its own `<os>-<gpu-vendor>` label and prefixes
+its output filenames with it, so one flat `benchmarks/results/` holds all three
+machines without collisions, and the deduplicator (which does not descend into
+subdirectories) can see them.
+
 ```bash
-# Machine 1 (NVIDIA GPU)
-mkdir -p results/nvidia-rtx3090
-dune exec benchmarks/bench_matrix_mul.exe -- --output results/nvidia-rtx3090/
-dune exec benchmarks/bench_vector_add.exe -- --output results/nvidia-rtx3090/
-dune exec benchmarks/bench_reduction.exe -- --output results/nvidia-rtx3090/
-dune exec benchmarks/bench_transpose.exe -- --output results/nvidia-rtx3090/
-dune exec benchmarks/bench_transpose_tiled.exe -- --output results/nvidia-rtx3090/
+# On each machine in turn -- machine 1 (NVIDIA), 2 (AMD), 3 (Apple Silicon):
+dune exec benchmarks/bench_matrix_mul.exe -- --output benchmarks/results/
+dune exec benchmarks/bench_vector_add.exe -- --output benchmarks/results/
+dune exec benchmarks/bench_reduction.exe -- --output benchmarks/results/
+dune exec benchmarks/bench_transpose.exe -- --output benchmarks/results/
+dune exec benchmarks/bench_transpose_tiled.exe -- --output benchmarks/results/
 
-# Machine 2 (AMD GPU)
-mkdir -p results/amd-rx7900
-dune exec benchmarks/bench_matrix_mul.exe -- --output results/amd-rx7900/
-dune exec benchmarks/bench_vector_add.exe -- --output results/amd-rx7900/
-dune exec benchmarks/bench_reduction.exe -- --output results/amd-rx7900/
-dune exec benchmarks/bench_transpose.exe -- --output results/amd-rx7900/
-dune exec benchmarks/bench_transpose_tiled.exe -- --output results/amd-rx7900/
-
-# Machine 3 (Apple Silicon)
-mkdir -p results/apple-m3
-dune exec benchmarks/bench_matrix_mul.exe -- --output results/apple-m3/
-dune exec benchmarks/bench_vector_add.exe -- --output results/apple-m3/
-dune exec benchmarks/bench_reduction.exe -- --output results/apple-m3/
-dune exec benchmarks/bench_transpose.exe -- --output results/apple-m3/
-dune exec benchmarks/bench_transpose_tiled.exe -- --output results/apple-m3/
+# If two machines share an os AND a GPU vendor their runs merge under one
+# label. SAREK_BENCH_MACHINE overrides the label for a local run (it is refused
+# if it equals the hostname). Note that results COMMITTED to this repository
+# must still be named after a derived <os>-<vendor> label --
+# scripts/check-no-machine-identifiers.sh enforces that on tracked paths -- so
+# use the override for local comparison, not to introduce a new public label.
 ```
 
 ### Step 2: Aggregate and Publish
@@ -220,13 +230,13 @@ dune exec benchmarks/bench_transpose_tiled.exe -- --output results/apple-m3/
 ```bash
 # Combine all results
 dune exec benchmarks/aggregate.exe -- \
-  results/aggregated.json \
-  results/*/*.json
+  benchmarks/results/aggregated.json \
+  benchmarks/results/*.json
 
 # Convert to web format for GitHub Pages
 dune exec benchmarks/to_web.exe -- \
   gh-pages/benchmarks/data/latest.json \
-  results/*/*.json
+  benchmarks/results/*.json
 
 # Commit and push to publish
 git add gh-pages/benchmarks/data/latest.json

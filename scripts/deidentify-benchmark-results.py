@@ -50,23 +50,74 @@ import sys
 STRIPPED = ("hostname", "kernel", "memory_gb")
 
 
+VENDOR_TOKENS = (
+    ("nvidia", "nvidia"), ("geforce", "nvidia"), ("rtx", "nvidia"),
+    ("radeon", "amd"), ("gfx", "amd"), ("amd", "amd"),
+    ("arc", "intel"), ("intel", "intel"),
+    ("apple", "apple"), ("m1", "apple"), ("m2", "apple"),
+    ("m3", "apple"), ("m4", "apple"),
+)
+
+# Highest first. Used INSTEAD of device order, see gpu_vendor.
+VENDOR_PRIORITY = ("nvidia", "amd", "intel", "apple")
+
+# CPU by construction.
+CPU_BACKENDS = ("native", "interpreter")
+
+# Backends on which a CPU can appear as a device, so a name resembling the CPU
+# model means "this is the CPU". On CUDA/Metal/Vulkan/HIP a device is a GPU by
+# construction and must NOT be excluded by name -- on a unified-memory SoC the
+# GPU's name IS the CPU's name. An unrecognised/absent backend is treated as
+# possibly-CPU, which is the conservative reading for older payloads.
+GPU_ONLY_BACKENDS = ("cuda", "metal", "vulkan", "hip")
+
+
+def _normalize(text):
+    """Lowercase, collapse whitespace runs, trim."""
+    return " ".join((text or "").lower().split())
+
+
+def _is_cpu_device(dev, cpu_model):
+    backend = _normalize(dev.get("framework") or dev.get("backend") or "")
+    if backend in CPU_BACKENDS:
+        return True
+    if backend in GPU_ONLY_BACKENDS:
+        return False
+    name = _normalize(dev.get("name"))
+    cpu = _normalize(cpu_model)
+    # "unknown" is the producer's CPU-probe FAILURE value, not a CPU name.
+    if not cpu or cpu == "unknown":
+        return False
+    return cpu in name or name in cpu
+
+
 def gpu_vendor(system):
-    """Vendor of the first non-CPU device, from names we are keeping anyway."""
-    cpu_model = ((system.get("cpu") or {}).get("model") or "").lower()
+    """Vendor of the machine's GPU, from names we are keeping anyway.
+
+    Mirrors System_info.gpu_vendor_of in benchmarks/system_info.ml, and must
+    keep mirroring it: this function RELABELS payloads, so if the two derive
+    different labels the scrubber rewrites a correctly-labelled file and
+    desynchronizes it from its own filename (which carries the producer's
+    label). Verified against the published payload, which is unchanged by this.
+
+    Order-independent: the vendor is chosen from the whole set of surviving
+    matches by VENDOR_PRIORITY, never by device enumeration order, so a
+    multi-GPU payload cannot relabel just because devices were listed
+    differently.
+    """
+    cpu_model = (system.get("cpu") or {}).get("model") or ""
+    vendors = set()
     for dev in system.get("devices") or []:
-        name = (dev.get("name") or "").lower()
-        # A CPU listed as an OpenCL device is not the GPU we want to name.
-        if name and name == cpu_model:
+        if _is_cpu_device(dev, cpu_model):
             continue
-        for token, vendor in (
-            ("nvidia", "nvidia"), ("geforce", "nvidia"), ("rtx", "nvidia"),
-            ("radeon", "amd"), ("amd", "amd"), ("gfx", "amd"),
-            ("arc", "intel"), ("intel", "intel"),
-            ("apple", "apple"), ("m1", "apple"), ("m2", "apple"),
-            ("m3", "apple"), ("m4", "apple"),
-        ):
+        name = _normalize(dev.get("name"))
+        for token, vendor in VENDOR_TOKENS:
             if token in name:
-                return vendor
+                vendors.add(vendor)
+                break
+    for vendor in VENDOR_PRIORITY:
+        if vendor in vendors:
+            return vendor
     return "unknown"
 
 
@@ -142,12 +193,21 @@ def main(argv):
             continue
 
         count, collisions = scrub(doc)
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(doc, handle, indent=2, sort_keys=True)
-            handle.write("\n")
+        # Only write when something was actually stripped or relabelled. The
+        # write is a re-serialization (indent=2, sort_keys=True), so doing it
+        # unconditionally rewrote every already-clean file it was pointed at
+        # and produced pure-formatting diffs unrelated to de-identification --
+        # noise that makes a real scrub harder to see in review. Nothing
+        # depends on this tool normalizing formatting: the CI gate uses
+        # --check, which reads fields and ignores layout.
+        if count:
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(doc, handle, indent=2, sort_keys=True)
+                handle.write("\n")
         merged = {k: v for k, v in collisions.items() if len(v) > 1}
         print(f"{path}: scrubbed {count} system block(s) -> "
-              f"{len(collisions)} machine label(s)")
+              f"{len(collisions)} machine label(s)"
+              f"{'' if count else ' (already clean, not rewritten)'}")
         for label, hosts in sorted(merged.items()):
             print(f"  NOTE: {label} merges {len(hosts)} distinct sources "
                   f"-- their runs are now indistinguishable")
