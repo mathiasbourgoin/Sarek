@@ -37,16 +37,36 @@ let parse_type = Sarek_parse_helpers.parse_type
     [pc_lhs] and [pc_rhs] and never looked at [pc_guard]. The guard was dropped
     in the PARSER — upstream of type-checking, of every lowering pass and of
     backend selection — so the arm became unconditional in the one AST all
-    backends are generated from. A kernel with a guarded arm compiled with no
-    diagnostic and computed a different function than its source says.
+    backends are generated from. The kernel compiled and computed a different
+    function than its source says.
+
+    How silent that was depends on the arm shape, and the two halves pull
+    against each other. A wrong-ANSWER repro needs two arms on the SAME
+    constructor, one guarded and one not — the guard is then the only thing
+    choosing between them, so dropping it changes the result. But dropping it
+    also leaves two syntactically identical arms, which is exactly OCaml's
+    warning 11 [redundant-case]; under the [(:standard -w -32-33-34-69)] flags
+    the e2e suites use, 11 is left on as an error. So for the shape that
+    demonstrates a wrong answer there WAS a diagnostic, just one pointing at a
+    redundant case rather than at a dropped guard. The genuinely silent shapes
+    are the ones where no two arms share a constructor: the guard is dropped
+    with nothing to make the arms look redundant, and the arm becomes
+    unconditional with no warning at all. Either way the refusal is the fix —
+    this is not a bug you can rely on warning 11 to catch.
 
     Why this refuses rather than lowering the guard. Three things would have to
     change together, and none of them is local:
 
     - [Sarek_ir_ppx]'s [EMatch] and [SMatch] hold [(pattern * _) list]. There is
-      no guard slot to lower INTO, so the IR type has to change, and with it
-      every consumer: the CUDA, OpenCL, Metal and PTX emitters, the tag-erasure
-      and vector-inlining traversals, and the native and interpreter evaluators.
+      no guard slot to lower INTO, so a guard needs a new field on the match
+      node — and not on one type. There are two IRs: [Sarek_ir_ppx] (the PPX
+      compile-time IR, in sarek_frontend) and [Sarek_ir_types] ([spoc/ir], the
+      runtime types the code generators read), bridged by [Sarek_ir_conv]; the
+      device emitters consume the SECOND, and [Sarek_ast] carries a third
+      like-named [EMatch] on the surface AST. The field has to be threaded
+      through each representation and through the conversion between them, and
+      the set of places that read those constructors is large and open — see the
+      paragraph below the bullets.
     - Every C-family emitter builds a match as a nested tag ternary whose LAST
       arm is emitted unconditionally, and the PTX emitter branches to the last
       arm unconditionally. A guarded arm has to be able to FALL THROUGH to the
@@ -56,6 +76,23 @@ let parse_type = Sarek_parse_helpers.parse_type
       syntactically but not semantically, so once guards exist a match can fail
       at run time — and the device backends have no trap to fail INTO (the
       interpreter's [Pattern_match_failure] has no GPU counterpart).
+
+    On the first bullet's blast radius: it is not a closed list, and this
+    comment does not try to close it. [git grep -l "EMatch\|SMatch"] reports 37
+    non-test source files, spread over [sarek/ppx], [sarek/codegen],
+    [sarek/interp], [sarek/transpile], [sarek/sarek] and [spoc/ir], plus the
+    negative and golden tests and the [formal/type-safety] Rocq models with
+    their extracted [PatternModel]/[ConstrModel]. Among them: at least the six
+    device emitters ([Sarek_ir_cuda], [Sarek_ir_opencl], [Sarek_ir_metal],
+    [Sarek_ir_ptx] with its [_expr]/[_stmt] halves, [Sarek_ir_glsl],
+    [Sarek_ir_wgsl]) and roughly a dozen IR passes and traversals (tag erasure,
+    vector inlining, softmath, monomorphisation, defunctionalisation, the three
+    tailrec passes, convergence analysis, fusion, [Sarek_lower_ir],
+    [Sarek_ir_conv], and [spoc/ir]'s analysis/codegen/pp), alongside the native
+    and interpreter evaluators. Re-run the grep for the current set rather than
+    trusting an enumeration: an earlier round of this comment stated it as a
+    closed "every consumer" list that named four emitters and omitted, among
+    others, [Sarek_ir_glsl] and [Sarek_ir_wgsl].
 
     So this is "not yet supported", not "cannot be supported": the guarded-arm
     subset that is always followed by an unguarded arm for the same constructor

@@ -19,10 +19,24 @@
    first arm is unconditional and EVERY element gets r *. 2.0.
 
    Measured on this tree before the fix, with exactly this kernel: it compiled
-   with no diagnostic and returned the dropped-guard answer on all 9 devices
-   present here — Interpreter (sequential + parallel), Native, CUDA/PTX x2
-   (ZLUDA on AMD), OpenCL x2 (radeonsi), Vulkan x2 (RADV). 10/64 elements wrong,
-   0/64 wrong against the dropped-guard oracle, on every one of them.
+   and returned the dropped-guard answer on all 9 devices present here —
+   Interpreter (sequential + parallel), Native, CUDA/PTX x2 (ZLUDA on AMD),
+   OpenCL x2 (radeonsi), Vulkan x2 (RADV). 10/64 elements wrong, 0/64 wrong
+   against the dropped-guard oracle, on every one of them.
+
+   It compiled, but NOT with no diagnostic — and the two facts are linked. What
+   makes the guard load-bearing above is that both Circle arms exist; drop the
+   guard and they become syntactically identical, which is warning 11
+   [redundant-case]. Under the e2e suites' flags ((:standard -w -32-33-34-69),
+   which leave 11 on) that is a hard error. So the very shape needed to show a
+   wrong ANSWER is the shape the compiler complains about, just for the wrong
+   reason: a redundant case, not a discarded guard. The silent shapes are the
+   ones where no two arms share a constructor — there the guard disappears with
+   no warning at all, and the arm is simply unconditional. This case
+   deliberately picks the wrong-answer shape over the silent one, because a
+   demonstrated wrong result is the stronger statement of the defect; the price
+   is that "compiled with no diagnostic", which earlier revisions of this header
+   and of kb/sarek/ppx/parser.md asserted, is false of this kernel.
 
    Expected error:
      "`when` guards on match cases are not supported in kernels"
