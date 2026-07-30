@@ -135,16 +135,36 @@ let unsafe_get : type a b. (a, b) t -> int -> a =
 
 let unsafe_set : type a b. (a, b) t -> int -> a -> unit =
  fun vec idx value ->
+  (* Same [ensure_cpu_sync] as [set] (backlog-190). This function is documented
+     as "no bounds check" and says NOTHING about staleness, so the only
+     difference a caller can reasonably expect from [set] is the bounds check.
+     Differing from it silently on a CORRECTNESS property is worse than either
+     alternative: it is a partial write into a host buffer that is stale relative
+     to the device, which the next read then discards wholesale.
+
+     The cost is a branch, not a copy: [ensure_cpu_sync] tests [auto_sync] and
+     the location and returns immediately unless the vector is actually
+     [Stale_CPU]. It allocates nothing, so the "unsafe" performance contract is
+     intact. *)
+  ensure_cpu_sync vec ;
   (match vec.host with
   | Bigarray_storage ba -> Bigarray.Array1.unsafe_set ba idx value
   | Custom_storage {ptr; custom; _} -> custom.set ptr idx value) ;
+  (* [Stale_CPU] is unreachable after the sync above, exactly as in [set]. *)
   match vec.location with
   | Both d -> vec.location <- Stale_GPU d
   | GPU d -> vec.location <- Stale_GPU d
   | CPU | Stale_CPU _ | Stale_GPU _ -> ()
 
-(** Kernel-safe set: no bounds check, no location update. Use this in parallel
-    kernel execution where:
+(** Kernel-safe set: no bounds check, no location update, AND no staleness sync.
+    After backlog-190 this is the only host writer exempt from the staleness
+    handling [set]/[unsafe_set]/[fill] all now perform, so the exemption is
+    stated rather than left as a difference a reader has to notice. It is
+    deliberate: a per-element location update would race across the threads this
+    function exists to serve, and the kernel already owns the buffer for the
+    duration of the launch.
+
+    Use this in parallel kernel execution where:
     - Bounds are guaranteed by kernel logic
     - Location tracking is not needed (data stays on same device)
     - Multiple threads may write to different indices concurrently *)
@@ -243,10 +263,25 @@ let fill : type a b. (a, b) t -> a -> unit =
       for i = 0 to length - 1 do
         custom.set ptr i value
       done) ;
+  (* NO [ensure_cpu_sync] here, and that is a decision rather than an omission
+     (backlog-190): [fill] overwrites EVERY element, so nothing of the old buffer
+     survives and pulling it down from the device first would be pure waste. What
+     [fill] does need — and previously lacked — is to mark the device stale from
+     [Stale_CPU] as well, because afterwards the host is wholly authoritative.
+
+     The arms are spelled out instead of the previous [| _ -> ()]. That catch-all
+     is how this class hid: it silently absorbed [Stale_CPU] alongside the two
+     cases that genuinely have nothing to invalidate, and a reader could not tell
+     which were deliberate. *)
   match vec.location with
   | Both d -> vec.location <- Stale_GPU d
   | GPU d -> vec.location <- Stale_GPU d
-  | _ -> ()
+  | Stale_CPU d ->
+      (* Was [| _ -> ()]. The host now holds all-new data, so the DEVICE copy is
+         the stale one — the opposite of what the location said. *)
+      vec.location <- Stale_GPU d
+  | CPU -> () (* no device copy to invalidate *)
+  | Stale_GPU _ -> () (* already marked *)
 
 (** Initialize with a function *)
 let init : type a b. (a, b) kind -> int -> (int -> a) -> (a, b) t =
