@@ -350,9 +350,20 @@ def resolves_any(citation, citing_file):
       - a directory (`../benchmarks/`);
       - the RENDERED page of a markdown source. gh-pages is a Jekyll site, so
         `[backends](backends.html)` addresses the page built from
-        `gh-pages/docs/backends.md`. Thirteen such links exist and every one is
-        correct; demanding a tracked `.html` would fail them all and teach the
-        next author that this gate is noise.
+        `gh-pages/docs/backends.md`. Seventeen link targets in this tree resolve
+        ONLY through this rule (counted by deleting it: `git ls-files`-tracked
+        `.html` accounts for four more, `../playground.html` and
+        `../spoc_docs/index.html`), and every one of the seventeen has its
+        markdown source tracked beside it. Demanding a tracked `.html` would
+        fail them all and teach the next author that this gate is noise.
+
+        The rule is NOT scoped to gh-pages/, though the Jekyll rationale above
+        is: all twenty-one live instances are under gh-pages/, so scoping it
+        would change no verdict today, and it is left global because a second
+        published tree would otherwise need the gate edited before its first
+        link. The cost is stated rather than hidden: in an UNPUBLISHED tree a
+        link to `x.html` beside a tracked `x.md` resolves here and 404s for the
+        reader.
     """
     if resolves(citation, citing_file):
         return True
