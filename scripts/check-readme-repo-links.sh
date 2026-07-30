@@ -66,22 +66,53 @@ if ! printf '%s' "$slug" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
   exit 2
 fi
 
-# Every github.com/<owner>/<repo> occurrence on a line that is a CI surface:
-# an Actions link, or a workflow badge image.
+# CI surfaces, matched PER URL rather than per line, case-insensitively, and
+# including the shields.io form.
+#
+# Four holes the adversarial review found in the previous version:
+#   - case-sensitive host: `https://GitHub.com/owner/OTHER/...badge.svg` renders
+#     on GitHub, names the wrong repo, and was accepted at exit 0.
+#   - shields.io: `img.shields.io/github/actions/workflow/status/owner/OTHER/...`
+#     is the most common badge host, and switching to it silently emptied the
+#     gate's coverage entirely.
+#   - per-LINE scoping broke this gate's own documented promise: a talk-PDF link
+#     under mathiasbourgoin/SPOC sharing a line with an Actions link was flagged,
+#     though the header says those are deliberately not checked.
+#   - a README with NO CI surface at all exited 0 saying every link was fine, so
+#     DELETING the badge was invisible.
 bad=0
-while IFS=: read -r lineno line; do
-  [ -n "$lineno" ] || continue
-  found="$(printf '%s' "$line" \
-    | grep -oE 'github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+' \
-    | sed 's#github\.com/##' | sort -u)"
-  for got in $found; do
-    if [ "$got" != "$slug" ]; then
-      echo "$README:$lineno: CI link names '$got' but this repository is '$slug'"
-      echo "    $line"
-      bad=1
-    fi
-  done
-done < <(grep -nE 'actions/workflows/[^ )]*badge\.svg|github\.com/[^ )]*/actions' "$README")
+found_any=0
+# Normalise to lowercase for host/path matching, but report the original line.
+while IFS= read -r pair; do
+  [ -n "$pair" ] || continue
+  lineno="${pair%%:*}"
+  url="${pair#*:}"
+  lower="$(printf '%s' "$url" | tr '[:upper:]' '[:lower:]')"
+  got=""
+  case "$lower" in
+    *img.shields.io/github/actions/workflow/status/*)
+      got="$(printf '%s' "$url" | sed -E 's#.*[Ss]tatus/([^/]+/[^/]+).*#\1#')"
+      ;;
+    *github.com/*/actions*)
+      got="$(printf '%s' "$url" | sed -E 's#.*github\.com/([^/]+/[^/]+)/actions.*#\1#')"
+      ;;
+  esac
+  [ -n "$got" ] || continue
+  found_any=1
+  if [ "$got" != "$slug" ]; then
+    line="$(sed -n "${lineno}p" "$README")"
+    echo "$README:$lineno: CI link names '$got' but this repository is '$slug'"
+    echo "    $url"
+    bad=1
+  fi
+done < <(grep -noE 'https?://[^ )"]+' "$README")
+
+if [ "$found_any" -eq 0 ]; then
+  echo "check-readme-repo-links: $README has no CI badge or Actions link at all." >&2
+  echo "  Exit 2, not 0: a gate that examined no CI surface has not verified one." >&2
+  echo "  If the badge was removed on purpose, this gate has nothing left to guard." >&2
+  exit 2
+fi
 
 if [ "$bad" -ne 0 ]; then
   echo
