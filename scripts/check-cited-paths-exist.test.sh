@@ -110,6 +110,36 @@ check "red: a path quoted INSIDE a comment is still a citation" 1 "is not a trac
 let x = 1
 '
 
+# --- OCaml quoted-string literals (CodeRabbit, PR #387) ---------------------
+# 46 files here hold raw PTX/CUDA text in {| ... |}. That text contains "(*"
+# sequences and real-looking paths, so an unhandled {| opens a phantom comment
+# and swallows the code after it into the scan.
+check "green: a path inside a {| |} quoted string is not a citation" 0 "OK" \
+  'let ptx = {|.version 8.0
+// roster/gone/L99-note.md
+|}
+let x = 1
+'
+
+# The delimited form, and the case that actually bites: a "(*" inside the
+# literal must not open a comment that swallows what follows.
+check "green: {id| |id} holding an unbalanced (* does not open a comment" 0 "OK" \
+  'let src = {ptx|(* this is data, not a comment
+roster/gone/L99-note.md
+|ptx}
+let x = 1
+'
+
+# The positive control for the pair above: with the literal closed, a REAL
+# citation after it is still found. Without this, "handled {|" would be
+# indistinguishable from "stopped scanning at the first {|".
+check "red: a real citation AFTER a quoted string is still found" 1 "is not a tracked file" \
+  'let ptx = {|.version 8.0
+|}
+(* See roster/gone/L99-note.md for the design. *)
+let x = 1
+'
+
 # --- documentation placeholders are not citations --------------------------
 check "green: path/to/ placeholder" 0 "OK" \
   '(* Usage: put it at path/to/Thing.ml and go. *)

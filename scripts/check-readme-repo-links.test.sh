@@ -26,14 +26,15 @@ pass=0
 fail=0
 
 # $1 = case name, $2 = GITHUB_REPOSITORY ("" = unset, use the remote),
-# $3 = expected exit, $4 = expected message substring, $5 = README body
+# $3 = expected exit, $4 = expected message substring, $5 = README body,
+# $6 = remote URL (optional; defaults to the scp-like form)
 check() {
-  local name="$1" slug="$2" want="$3" msg="$4" body="$5" d out code
+  local name="$1" slug="$2" want="$3" msg="$4" body="$5" remote="${6:-git@github.com:owner/repo.git}" d out code
   d="$(mktemp -d)"
   (
     cd "$d" || exit 2
     git init --quiet .
-    git remote add origin git@github.com:owner/repo.git
+    git remote add origin "$remote"
   ) >/dev/null 2>&1
   printf '%s' "$body" >"$d/README.md"
   if [ -n "$slug" ]; then
@@ -72,6 +73,15 @@ BAD_LINK='See [CI](https://github.com/someone/else/actions) for status.
 check "green: badge matches GITHUB_REPOSITORY" "owner/repo" 0 "OK" "$GOOD"
 check "green: badge matches the git remote (no GITHUB_REPOSITORY)" "" 0 "OK" "$GOOD"
 
+# All four GitHub remote spellings must reduce to owner/repo. The ssh:// form
+# was NOT normalized: the sed left "ssh://git@github.com/owner/repo", which
+# contains a slash and so satisfied the old `*/*` test, after which no CI link
+# could match — a correct README failing on a correct repo, on the local
+# fallback path only (CodeRabbit, PR #387).
+check "green: ssh:// remote" "" 0 "OK" "$GOOD" "ssh://git@github.com/owner/repo.git"
+check "green: https:// remote" "" 0 "OK" "$GOOD" "https://github.com/owner/repo.git"
+check "green: git:// remote" "" 0 "OK" "$GOOD" "git://github.com/owner/repo.git"
+
 # --- the defect this gate exists for ---------------------------------------
 # README.md:5 pointed at mathiasbourgoin/SPOC for the whole Sarek rework. A badge
 # is an image: it renders, so a URL naming another repository looks fine while
@@ -86,6 +96,10 @@ check "red: GITHUB_REPOSITORY disagrees with the README" "someone/else" 1 "but t
 
 # --- fails closed ----------------------------------------------------------
 check "red: unparseable slug is exit 2, not a pass" "noslash" 2 "could not parse" "$GOOD"
+# The slug must match owner/repo EXACTLY. "contains a slash" is what let the
+# un-normalized ssh:// URI through as though it were a slug.
+check "red: a slug with a space is not owner/repo" "own er/repo" 2 "could not parse" "$GOOD"
+check "red: a three-segment slug is not owner/repo" "a/b/c" 2 "could not parse" "$GOOD"
 
 # A missing README must refuse rather than report success on a file it never read
 # — the same shape as the license gate's pre-backlog-137 `2>/dev/null` bug.

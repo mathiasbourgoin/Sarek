@@ -44,18 +44,27 @@ else
     echo "check-readme-repo-links: no GITHUB_REPOSITORY and no remote.origin.url — cannot derive the expected repository" >&2
     exit 2
   fi
-  # git@github.com:owner/repo.git and https://github.com/owner/repo(.git) both
-  # reduce to owner/repo.
+  # All four GitHub remote spellings reduce to owner/repo:
+  #   git@github.com:owner/repo.git
+  #   https://github.com/owner/repo(.git)
+  #   ssh://git@github.com/owner/repo.git   <- was NOT handled, see below
+  #   git://github.com/owner/repo.git
+  #
+  # The ssh:// form matters: without its rule the sed left
+  # "ssh://git@github.com/owner/repo", which contains a slash and so passed the
+  # old `*/*` test, and then no CI link could ever match it -- a correct README
+  # failing on a correct repo, during local fallback only. Reported by
+  # CodeRabbit on PR #387.
   slug="$(printf '%s' "$remote" \
-    | sed -E 's#^git@github\.com:##; s#^https?://github\.com/##; s#\.git$##')"
+    | sed -E 's#^ssh://git@github\.com/##; s#^git://github\.com/##;
+               s#^git@github\.com:##; s#^https?://github\.com/##; s#\.git$##; s#/$##')"
 fi
-case "$slug" in
-  */*) : ;;
-  *)
-    echo "check-readme-repo-links: could not parse owner/repo out of '$slug'" >&2
-    exit 2
-    ;;
-esac
+# EXACT owner/repo, not merely "contains a slash". The weaker test is what let
+# the un-normalized ssh:// URI through as if it were a slug.
+if ! printf '%s' "$slug" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
+  echo "check-readme-repo-links: could not parse owner/repo out of '$slug'" >&2
+  exit 2
+fi
 
 # Every github.com/<owner>/<repo> occurrence on a line that is a CI surface:
 # an Actions link, or a workflow badge image.
