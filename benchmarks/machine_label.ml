@@ -61,6 +61,34 @@ let is_wellformed label =
       && is_legal_suffix suffix
   | _ -> false
 
+(* [is_derived_variant ~derived label] -- the derived label itself, or the
+   derived label plus one bounded suffix.
+
+   Shape-legality is NOT enough for an override, and the difference is not
+   cosmetic. `SAREK_BENCH_MACHINE=linux-intel-b` on an AMD box has the shape, so
+   the producer wrote it into the payload AND into every filename -- but
+   scripts/deidentify-benchmark-results.py derives the label from the payload's
+   own hardware and keeps an existing one only when it is the derived label plus
+   a legal suffix, so it rewrote the field back to `linux-amd` while the file it
+   sits in stayed named `linux-intel-b_...`. A payload disagreeing with its own
+   name is the same desynchronization backlog-168b set out to remove, one field
+   over (CodeRabbit, PR #389).
+
+   Tying the override to [derived] is also what the suffix is FOR: it separates
+   two machines with the SAME hardware. Re-badging a machine as different
+   hardware was never the purpose, and the scrubber would not honour it.
+
+   Note this is deliberately stricter than [is_wellformed] rather than a
+   replacement for it: the producer refusing something the commit gate would
+   accept costs an operator one error message, whereas the producer accepting
+   something the gate refuses is a run whose results cannot be committed. *)
+let is_derived_variant ~derived label =
+  let dn = String.length derived and n = String.length label in
+  label = derived
+  || n > dn + 1
+     && String.sub label 0 (dn + 1) = derived ^ "-"
+     && is_legal_suffix (String.sub label (dn + 1) (n - dn - 1))
+
 let env_var = "SAREK_BENCH_MACHINE"
 
 let norm s = String.lowercase_ascii (String.trim s)
@@ -71,6 +99,12 @@ let norm s = String.lowercase_ascii (String.trim s)
    [hostname] is a thunk: reading it is the one sanctioned use of the machine's
    hostname (backlog-168), and it must not be read at all when there is no
    override to compare it against.
+
+   Three refusals, in this order, none of them a warning:
+     1. the override equals the hostname;
+     2. it does not have the label shape the commit gate accepts;
+     3. it has the shape but is not THIS machine's derived label (or that label
+        plus a suffix) -- see [is_derived_variant].
 
    ORDER IS LOAD-BEARING. The hostname refusal comes FIRST and stays a hard
    [failwith]. A hostname that happens to have a legal shape is conceivable
@@ -107,4 +141,22 @@ let resolve ~derived ~override ~hostname =
                derived
                suffix_max_len
                (derived ^ "-b"))
+        else if not (is_derived_variant ~derived label) then
+          failwith
+            (Printf.sprintf
+               "%s=%S is a well-formed label, but not one for THIS machine. \
+                The suffix is there to tell two machines with the SAME \
+                hardware apart, so an override must be %S, or %S plus a short \
+                suffix (1-%d chars of [a-z0-9]), e.g. %S. A different base \
+                would be relabelled to %S by \
+                scripts/deidentify-benchmark-results.py while the filenames \
+                kept %S, leaving each payload disagreeing with its own name."
+               env_var
+               label
+               derived
+               derived
+               suffix_max_len
+               (derived ^ "-b")
+               derived
+               label)
         else label

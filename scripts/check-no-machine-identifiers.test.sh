@@ -93,6 +93,15 @@ SUFFIX_PAYLOAD='{"benchmark":{"name":"vector_add"},"system":{"machine":"linux-am
 LONG_SUFFIX_NAME='benchmarks/results/linux-amd-123456789_vector_add_1024_2026-07-30T00-00-00.json'
 UPPER_SUFFIX_NAME='benchmarks/results/linux-amd-B_vector_add_1024_2026-07-30T00-00-00.json'
 HOSTNAME_NAME='benchmarks/results/drangleic_vector_add_1024_2026-07-30T00-00-00.json'
+# A hostname-named file under a DIRECTORY that carries a label-shaped name. The
+# allowlist used to be the label alone, unanchored, so this path matched it two
+# components away from the filename it was supposed to be vouching for and the
+# hostname was committable (CodeRabbit, PR #389).
+DIR_DISGUISE_NAME='benchmarks/results/linux-amd_/drangleic_vector_add_1024_2026-07-30T00-00-00.json'
+# The other polarity of that anchoring, so binding the label to the filename
+# cannot become "the label must be in the top directory": a correctly named file
+# nested one level down stays committable.
+NESTED_GOOD_NAME='benchmarks/results/archive/linux-amd_vector_add_1024_2026-07-30T00-00-00.json'
 
 # --- green baselines -------------------------------------------------------
 # Pinned as green so a future tightening cannot start refusing legitimate data
@@ -126,6 +135,17 @@ check "red: a bare hostname is still refused after the suffix was admitted" 1 \
   "not named after a derived machine label" \
   "$HOSTNAME_NAME" "$CLEAN_PAYLOAD"
 
+# --- red 2c: the allowlist is bound to the FILENAME, not to the path ---------
+# A label anywhere in the path used to excuse the filename, so a directory named
+# `linux-amd_` vouched for a hostname beside it.
+check "red: a label-shaped directory does not excuse a hostname filename" 1 \
+  "not named after a derived machine label" \
+  "$DIR_DISGUISE_NAME" "$CLEAN_PAYLOAD"
+
+check "green: a correctly labelled file in a subdirectory is still committable" 0 \
+  "no machine identifier" \
+  "$NESTED_GOOD_NAME" "$CLEAN_PAYLOAD"
+
 # --- fails closed on a missing shape definition ----------------------------
 # The shape now lives in scripts/machine-label-shape.sh so the gate and the
 # producer cannot drift. A gate that cannot read the shape cannot tell a label
@@ -134,7 +154,9 @@ tmp_noshape="$(mktemp -d)" || exit 2
 mkdir -p "$tmp_noshape/scripts"
 cp "$GATE_SRC" "$tmp_noshape/scripts/check-no-machine-identifiers.sh"
 cp "$DEIDENT_SRC" "$tmp_noshape/scripts/deidentify-benchmark-results.py"
-(cd "$tmp_noshape" && git init -q . && git add -A) >/dev/null 2>&1
+(cd "$tmp_noshape" && git init -q . && git add -A) >/dev/null 2>&1 \
+  || { echo "::error::fixture repo setup failed (missing-shape case)" >&2
+       rm -rf "$tmp_noshape"; exit 2; }
 out="$(bash "$tmp_noshape/scripts/check-no-machine-identifiers.sh" 2>&1)"; got=$?
 if [ "$got" -eq 2 ] && printf '%s' "$out" | grep -qF "cannot decide what a legal machine label is"; then
   echo "PASS red: missing machine-label-shape.sh is exit 2 (exit $got)"
@@ -527,6 +549,7 @@ let case name ~derived ~override ~hostname =
       if contains m "hostname. That is the identifier" then "refused:hostname"
       else if contains m "does not have the machine-label shape" then
         "refused:shape"
+      else if contains m "but not one for THIS machine" then "refused:base"
       else "refused:unrecognised-message"
   in
   print_string (name ^ " " ^ outcome ^ "\n")
@@ -550,7 +573,20 @@ let () =
   case "suffix-too-long" ~derived:"linux-amd" ~override:(Some "linux-amd-123456789") ~hostname:(host "drangleic") ;
   case "suffix-illegal-char" ~derived:"linux-amd" ~override:(Some "linux-amd-B") ~hostname:(host "drangleic") ;
   case "unknown-vendor" ~derived:"linux-amd" ~override:(Some "linux-banana") ~hostname:(host "drangleic") ;
-  case "glob" ~derived:"linux-amd" ~override:(Some "*") ~hostname:(host "drangleic")
+  case "glob" ~derived:"linux-amd" ~override:(Some "*") ~hostname:(host "drangleic") ;
+  (* Well-formed, and refused anyway: the scrubber derives the label from the
+     payload's hardware, so a different BASE comes back relabelled while the
+     filename keeps the operator's -- the payload would disagree with its own
+     name. Both polarities: a different vendor, a different os, and the same
+     base with a suffix still accepted (see `suffixed` above). *)
+  case "other-vendor-base" ~derived:"linux-amd" ~override:(Some "linux-intel-b") ~hostname:(host "drangleic") ;
+  case "other-os-base" ~derived:"linux-amd" ~override:(Some "darwin-amd") ~hostname:(host "drangleic") ;
+  (* The derived label is NOT shape-checked (an OS outside the enumeration still
+     produces results), so a suffix on such a base must be refused by the SHAPE
+     rule -- being a legitimate variant of the derived label does not make it
+     committable. *)
+  case "unshaped-derived-suffixed" ~derived:"freebsd-nvidia" ~override:(Some "freebsd-nvidia-b") ~hostname:(host "drangleic") ;
+  case "unshaped-derived-exact" ~derived:"freebsd-nvidia" ~override:(Some "freebsd-nvidia") ~hostname:(host "drangleic")
 OCAML_DRIVER
 RESOLVE_OUT="$(ocaml "$DRIVERS/resolve_driver.ml" 2>&1)"
 resolve_status=$?
@@ -584,6 +620,10 @@ resolve_case suffix-too-long              "refused:shape"
 resolve_case suffix-illegal-char          "refused:shape"
 resolve_case unknown-vendor               "refused:shape"
 resolve_case glob                         "refused:shape"
+resolve_case other-vendor-base            "refused:base"
+resolve_case other-os-base                "refused:base"
+resolve_case unshaped-derived-suffixed    "refused:shape"
+resolve_case unshaped-derived-exact       "refused:shape"
 rm -rf "$DRIVERS"
 
 echo ""

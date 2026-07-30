@@ -47,6 +47,8 @@ SHAPE="scripts/machine-label-shape.sh"
   || { echo "::error::$SHAPE missing -- cannot decide what a legal machine label is" >&2; exit 2; }
 [ -n "${MACHINE_LABEL_PATH_SHAPE:-}" ] \
   || { echo "::error::$SHAPE defined no MACHINE_LABEL_PATH_SHAPE" >&2; exit 2; }
+[ -n "${MACHINE_LABEL_RESULT_TAIL:-}" ] \
+  || { echo "::error::$SHAPE defined no MACHINE_LABEL_RESULT_TAIL" >&2; exit 2; }
 
 failed=0
 
@@ -75,8 +77,13 @@ fi
 # fourth machine, which is how this class survives. The enumerated <os>-<vendor>
 # prefix is what refuses a bare hostname -- `drangleic` cannot acquire one, and
 # the suffix cannot supply it either since the prefix is mandatory.
+#
+# Both patterns are composed from $SHAPE's ONE definition of the filename tail,
+# so the label the allowlist looks for is anchored to the same path component as
+# the name that made the file a candidate. A label-only allowlist was satisfied
+# by a sibling DIRECTORY (see MACHINE_LABEL_PATH_SHAPE).
 bad_paths=$(git ls-files -- 'benchmarks/results/*' 2>/dev/null \
-  | grep -E '/[^/]+_[a-z_0-9]+_[0-9]+_[0-9]{4}-[0-9]{2}-[0-9]{2}' \
+  | grep -E "/[^/]+${MACHINE_LABEL_RESULT_TAIL}" \
   | grep -vE "$MACHINE_LABEL_PATH_SHAPE" || true)
 if [ -n "$bad_paths" ]; then
   echo "::error::tracked result path(s) are not named after a derived machine label:"

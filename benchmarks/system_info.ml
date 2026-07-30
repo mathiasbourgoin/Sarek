@@ -310,12 +310,16 @@ let get_device_info (dev : Device.t) dev_id =
 
    The policy itself lives in [Machine_label.resolve], which is Stdlib-only so
    the red-path harness can execute it against the same case table as the
-   commit gate's regex. Two things it enforces, in this order: the override is
+   commit gate's regex. Three things it enforces, in this order: the override is
    REFUSED (hard [failwith]) when it equals the hostname -- the mistake this
    override is here to prevent, since an escape hatch that silently
-   reintroduced the leak would be worse than no escape hatch -- and it is then
-   refused unless it has the label shape the commit gate accepts, so an
-   operator cannot end up with results that cannot be committed.
+   reintroduced the leak would be worse than no escape hatch -- then refused
+   unless it has the label shape the commit gate accepts, so an operator cannot
+   end up with results that cannot be committed, and finally refused unless it
+   is the DERIVED label or that label plus a suffix: the scrubber recomputes the
+   label from the payload's own hardware, so an override claiming different
+   hardware comes back relabelled while the filenames keep the operator's
+   version.
 
    Only the OVERRIDE is shape-checked. The DERIVED label is not: on an OS
    outside the shape's enumeration (uname -s says e.g. FreeBSD) the derived
