@@ -70,6 +70,16 @@ if not files:
 # belong to, including ones that appear AFTER a blank line -- that is precisely
 # how the orphaned `run:` attached itself to the wrong step.
 STEP_START = re.compile(r"^(\s*)-\s+(\w[\w-]*):")
+# `steps:` opens the ONLY list whose dash-items are steps. Without this scope,
+# STEP_START matched `^- word:` anywhere, so a `strategy.matrix.include:` entry
+# (`- os: ubuntu-latest`) read as a step and was reported as "has neither run:
+# nor uses:" -- measured exit 1 on a valid workflow. This tree happens not to use
+# matrix `include:` (its matrix lists are plain scalars, `- ubuntu-latest`, which
+# have no colon and so never matched), so the false positive was latent rather
+# than live. Latent is not harmless: a gate that fires on a correct workflow gets
+# switched off, and takes its true findings with it. Reported by CodeRabbit on
+# PR #383.
+STEPS_KEY = re.compile(r"^(\s*)steps:\s*(#.*)?$")
 # A step written as a YAML FLOW mapping: `- {name: x, run: a, run: b}`. The
 # block-mapping scanner below cannot see one -- STEP_START needs `word:` right
 # after the dash, so the line matches nothing and the step is INVISIBLE, which
@@ -115,6 +125,8 @@ for f in files:
     # Indentation of a step's DIRECT children: the `- ` marker's indent plus the
     # two columns the dash and space occupy.
     skip_until_indent = None  # inside a block scalar; None = not in one
+    steps_indent = None       # indent of the `steps:` key we are inside; None = outside
+    item_indent = None        # indent of THIS list's dash-items, from the first one
     for i, line in enumerate(lines, 1):
         if skip_until_indent is not None:
             if not line.strip():
@@ -124,6 +136,26 @@ for f in files:
                 continue  # still inside the block scalar's text
             skip_until_indent = None
         if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        line_ind = len(line) - len(line.lstrip())
+        # Left the steps list: step items are indented deeper than their `steps:`
+        # key, so anything at or left of it ends the list (the next job key, or
+        # the next job).
+        if steps_indent is not None and line_ind <= steps_indent:
+            close(cur)
+            cur = None
+            steps_indent = None
+            item_indent = None
+        sm = STEPS_KEY.match(line)
+        if sm:
+            close(cur)
+            cur = None
+            steps_indent = len(sm.group(1))
+            item_indent = None
+            continue
+        if steps_indent is None:
+            # Outside any `steps:` list. A dash-item here is matrix/`with:` data,
+            # not a step, and must not be analysed OR counted.
             continue
         fm = FLOW_STEP.match(line)
         if fm:
@@ -175,9 +207,23 @@ for f in files:
             cur = None
             continue
         m = STEP_START.match(line)
+        if m and item_indent is not None and len(m.group(1)) != item_indent:
+            # A dash-item nested DEEPER than this steps list's own items: a
+            # multi-object `with:` value, e.g.
+            #     - uses: x
+            #       with:
+            #         entries:
+            #           - name: a
+            # `- name: a` is data. Treating it as a step both closed the real step
+            # early (losing its remaining keys) and added a phantom actionless one.
+            # Fall through: KEY does not match a line starting with `-`, so it is
+            # ignored rather than recorded.
+            m = None
         if m:
             close(cur)
             indent = len(m.group(1))
+            if item_indent is None:
+                item_indent = indent
             nm = None
             if m.group(2) == "name":
                 nm = line.split(":", 1)[1].strip()
@@ -189,7 +235,19 @@ for f in files:
             child_indent = line.index(m.group(2))
             cur = (indent, i, nm, [(m.group(2), i)], child_indent)
             if BLOCK_SCALAR.match(line.split(":", 1)[1]):
-                skip_until_indent = child_indent - 1
+                # `child_indent`, NOT `child_indent - 1`, and the same value the
+                # sibling-key branch below uses -- both branches mean "a key at
+                # child_indent whose value is a block scalar", so they have to
+                # agree. The skip test is `cur_ind > skip_until_indent`, so the
+                # off-by-one swallowed lines at cur_ind == child_indent, which is
+                # exactly where a step's SIBLING KEYS sit. A step whose first key
+                # is itself a block scalar (`- run: |`, no preceding `name:`)
+                # therefore had every later key eaten as block-scalar text --
+                # including a second `run:`/`uses:`. Measured: `- run: |` plus a
+                # sibling `uses:` reported "OK — 1 steps ... exactly one action"
+                # at exit 0, so the gate's core duplicate-action check was dead
+                # for that shape. Reported by CodeRabbit on PR #383.
+                skip_until_indent = child_indent
             continue
         if cur is not None:
             km = KEY.match(line)

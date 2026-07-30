@@ -150,6 +150,112 @@ jobs:
             await gh.rest.issues.update({ owner: a, repo: b, body: d });
 '
 
+# --- the block-scalar skip BOUNDARY (CodeRabbit, PR #383) -------------------
+# When a step's FIRST key is itself a block scalar (`- run: |`, no preceding
+# `name:`), skip_until_indent was set to child_indent - 1 while the sibling-key
+# branch used child_indent. The skip test is `cur_ind > skip_until_indent`, so
+# the off-by-one swallowed lines AT child_indent -- exactly where sibling keys
+# sit. Every key after the block scalar was eaten as block-scalar text,
+# including a second action, and this shape reported "OK — 1 steps ... exactly
+# one action" at exit 0. The gate's core check, dead, on a shape GitHub accepts.
+check "red: first-key block scalar must not swallow a sibling uses:" 1 "2 actions" 'name: CI
+jobs:
+  build:
+    steps:
+      - run: |
+          echo "the first key IS the block scalar"
+        uses: actions/checkout@v4
+'
+
+# The duplicate-KEY half of the same hole.
+check "red: first-key block scalar must not swallow a duplicate key" 1 "repeats key" 'name: CI
+jobs:
+  build:
+    steps:
+      - run: |
+          echo hi
+        name: A
+        name: B
+'
+
+# And the boundary must still do its job: a sibling key is at child_indent, the
+# scalar TEXT is deeper. A fix that swallowed nothing would re-break the
+# JavaScript case above, so pin the discrimination directly.
+check "green: first-key block scalar still hides its own deeper text" 0 "OK" 'name: CI
+jobs:
+  build:
+    steps:
+      - run: |
+          echo "owner: a"
+          echo "run: not-a-key"
+        name: Only one action here
+'
+
+# --- dash-items that are NOT steps (CodeRabbit, PR #383) --------------------
+# STEP_START matched `^- word:` anywhere in the file, so a matrix `include:`
+# entry read as a step and was reported "has neither run: nor uses:" — exit 1 on
+# a perfectly valid workflow. This tree's own matrix lists are plain scalars
+# (`- ubuntu-latest`, no colon), which is why it never fired here; a gate that
+# false-positives gets switched off, and its true findings go with it.
+check "green: a matrix include entry is not a step" 0 "OK" 'name: CI
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            ocaml: 5.4.0
+    steps:
+      - name: Real step
+        run: echo hi
+'
+
+# The same hole one level in: a multi-object `with:` value inside a real step.
+# Treating `- name: a` as a step both closed the real step early (losing the keys
+# after it) and added a phantom actionless step.
+check "green: a nested list inside with: is not a step" 0 "OK" 'name: CI
+jobs:
+  build:
+    steps:
+      - uses: some/action@v1
+        with:
+          entries:
+            - name: a
+              value: b
+            - name: c
+              value: d
+      - name: Second
+        run: echo hi
+'
+
+# Scoping must not go so far that it stops seeing real steps. A duplicate action
+# in a step that FOLLOWS a matrix include must still be caught — otherwise
+# "scoped to steps:" would be indistinguishable from "stopped scanning".
+check "red: a duplicate action after a matrix include is still caught" 1 "2 actions" 'name: CI
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+    steps:
+      - name: Broken
+        run: one
+        uses: actions/checkout@v4
+'
+
+# Two jobs, each with its own steps: list. The second list must be scanned too.
+check "red: the steps list of a SECOND job is still scanned" 1 "does nothing" 'name: CI
+jobs:
+  first:
+    steps:
+      - name: Fine
+        run: echo hi
+  second:
+    steps:
+      - name: Dead
+'
+
 # --- FLOW MAPPINGS (found by running this gate's own attack list) -----------
 # `- {name: x, run: a, run: b}` was INVISIBLE to the block-mapping scanner:
 # STEP_START needs `word:` right after the dash, so the line matched nothing,
