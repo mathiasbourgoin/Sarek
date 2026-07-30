@@ -353,13 +353,15 @@ let transfer_vectors_to_device ?(soa_abi = false) (args : vector_arg list)
 
                    The case analysis is over LOCATIONS, so it inherits whatever
                    the location bookkeeping is worth: with auto-sync disabled
-                   ([Vector.set_auto_sync] or [Transfer.disable_auto]) a host
-                   write after a transparent launch leaves the vector at
-                   [Stale_CPU dev] with the write pending, and the gather arm
-                   below then replays the leaves over it. That is the pre-existing
-                   auto-sync-off hazard [Vector.ml] documents, not something this
-                   condition can decide, and it is named here rather than left to
-                   be read as covered.
+                   ([Vector.set_auto_sync] or [Transfer.disable_auto]) a
+                   [Vector.set]/[unsafe_set] after a transparent launch leaves the
+                   vector at [Stale_CPU dev] with the write pending, and the
+                   gather arm below then replays the leaves over it. ([Vector.fill]
+                   is unaffected: it never gathers and records [Stale_GPU dev]
+                   either way, which this arm skips.) Stated here rather than
+                   cited: no doc comment in [Vector.ml] describes that
+                   consequence of disabling auto-sync, so there is nothing to
+                   point at, and it is not something this condition can decide.
                  - deciding it HERE rather than delegating to [Transfer.to_cpu]'s
                    [needs_transfer] is not a bug fix, and no test distinguishes the
                    two. An unforced [to_cpu] also skips on [Both]. Whether that is
@@ -367,9 +369,10 @@ let transfer_vectors_to_device ?(soa_abi = false) (args : vector_arg list)
                    vector — [to_cpu] and [sync] after a real read-back, and
                    [free_buffer] after its drain — so the host copy there already
                    holds the gathered result and the gather this arm performs is
-                   redundant today. ([Transfer.to_device] also records [Both], on
-                   an upload rather than a read-back, and that path clears this
-                   flag itself.) The point is that clearing the flag
+                   redundant today. ([Transfer.to_device] also records [Both] —
+                   twice: after its migration read-back and again after the
+                   upload — and that path clears this flag itself before it
+                   returns.) The point is that clearing the flag
                    on the next line makes the SoA arm of
                    [Transfer.read_back_to_host] unreachable until the next
                    transparent launch sets the flag again, so what may be skipped
