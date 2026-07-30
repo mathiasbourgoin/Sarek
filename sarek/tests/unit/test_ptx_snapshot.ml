@@ -1199,6 +1199,117 @@ let assert_absent ptx marker ~why =
          why
          ptx)
 
+(** The comparison family SYSTEMATICALLY: all 6 tags at all 4 register widths,
+    asserted against what the emitter actually writes (backlog-187).
+
+    WHY THE [Ne] CASE ABOVE IS NOT ENOUGH. [test_float_ne_unordered_markers]
+    pins 4 of these 24 tag x width combinations. The other 20 were unpinned, and
+    that gap is exactly how the ordered-[setp.ne] defect (backlog-173) survived:
+    the Rocq development in formal/codegen-ptx had modelled [PNe] on F32/F64
+    correctly the whole time, but nothing in it mapped a [ptx_cmp_tag] to a setp
+    MNEMONIC, so the model had no way to disagree with the emitter.
+    [CodegenPtx.PtxTypes.ptx_cmp_mnemonic] now carries that mapping and is
+    machine-checked; [root] below is its OCaml transcription, and this case is
+    the edge that binds the transcription to the artefact that actually ships.
+
+    [root] must stay a transcription, not a second opinion: if it ever disagrees
+    with [ptx_cmp_mnemonic] the fix is to correct whichever one is wrong.
+    [suffix] mirrors a different thing - the emitter's width rule (the
+    [let ty = ...] beside the [setp] emission in Sarek_ir_ptx_expr.ml), which
+    the Rocq model deliberately does not cover because it is a register-naming
+    detail of this backend and not part of the comparison's semantics. *)
+let test_cmp_mnemonic_table () =
+  (* Transcription of CodegenPtx.PtxTypes.ptx_cmp_mnemonic (formal/codegen-ptx,
+     theories/PtxTypes.v) - the opcode root, which IS comparison semantics. *)
+  let root op ~is_float =
+    match op with
+    | Eq -> "eq"
+    | Ne -> if is_float then "neu" else "ne"
+    | Lt -> "lt"
+    | Le -> "le"
+    | Gt -> "gt"
+    | Ge -> "ge"
+    | _ -> Alcotest.fail "test bug: non-comparison tag in the table"
+  in
+  (* Mirror of the emitter's width suffix, which is NOT modelled in Rocq. Note
+     it keys off the ROOT and not the tag: at 32 bits eq/ne take u32 while the
+     four orderings take s32. *)
+  let suffix op width =
+    match width with
+    | "f32" -> "f32"
+    | "f64" -> "f64"
+    | "i64" -> "s64"
+    | _ -> ( match op with Eq | Ne -> "u32" | _ -> "s32")
+  in
+  let tags = [Eq; Ne; Lt; Le; Gt; Ge] in
+  let i32v = make_var "i32v" (TVec TInt32) in
+  let i64v = make_var "i64v" (TVec TInt64) in
+  let f32v = make_var "f32v" (TVec TFloat32) in
+  let f64v = make_var "f64v" (TVec TFloat64) in
+  let out = make_var "out" (TVec TInt32) in
+  let tid = make_var "tid" TInt32 in
+  let widths =
+    [
+      ("i32", i32v, TInt32, EConst (CInt32 3l));
+      ("i64", i64v, TInt64, EConst (CInt64 3L));
+      ("f32", f32v, TFloat32, EConst (CFloat32 1.0));
+      ("f64", f64v, TFloat64, EConst (CFloat64 1.0));
+    ]
+  in
+  (* ONE comparison per kernel, deliberately. A single kernel containing all 24
+     comparisons is a gate that cannot fail: it asserts only that the SET of 24
+     markers is PRESENT, so swapping the [Lt] and [Gt] opcode roots in the
+     emitter leaves every marker present and the case green. Measured - that
+     mutation was green against exactly such a table before this restructuring.
+     Isolating each comparison lets the absence of the five sibling roots carry
+     the tag<->mnemonic binding, which is the whole property being tested. *)
+  let ptx_for (_, v, elt, k) op =
+    let body =
+      SLet
+        ( tid,
+          EIntrinsic ([], "global_thread_id", []),
+          SAssign
+            ( LArrayElem ("out", EVar tid),
+              EBinop (op, EArrayRead (v.var_name, EVar tid), k) ) )
+    in
+    Sarek_ir_ptx.generate
+      (base_kernel
+         "cmp_one"
+         [
+           DParam (v, Some {arr_elttype = elt; arr_memspace = Global});
+           DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global});
+         ]
+         body
+         [])
+  in
+  List.iter
+    (fun ((width, _, _, _) as w) ->
+      let is_float = width = "f32" || width = "f64" in
+      let marker op =
+        Printf.sprintf "setp.%s.%s" (root op ~is_float) (suffix op width)
+      in
+      List.iter
+        (fun op ->
+          let ptx = ptx_for w op in
+          assert_contains ptx (marker op) ;
+          (* The binding half: no OTHER tag's mnemonic may appear for this one
+             comparison. This is what a permutation of the roots trips. *)
+          List.iter
+            (fun other ->
+              if marker other <> marker op then
+                assert_absent
+                  ptx
+                  (marker other)
+                  ~why:
+                    (Printf.sprintf
+                       "kernel holds a single %s comparison at %s, so no other \
+                        comparison mnemonic may be emitted"
+                       (root op ~is_float)
+                       width))
+            tags)
+        tags)
+    widths
+
 (** backlog-167: the Float64 scalar conversions must EMIT on PTX.
 
     [Float64.of_int32] raised "unsupported construct: intrinsic: of_int32" on
@@ -3118,6 +3229,10 @@ let () =
             "float <> emits unordered setp.neu, not ordered setp.ne"
             `Quick
             test_float_ne_unordered_markers;
+          Alcotest.test_case
+            "every cmp tag at every width matches ptx_cmp_mnemonic"
+            `Quick
+            test_cmp_mnemonic_table;
           Alcotest.test_case
             "plain f32 division emits div.rn.f32"
             `Quick
