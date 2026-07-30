@@ -34,6 +34,7 @@
 ; - test_f16_poly_helper: "a polymorphic helper instantiated at float16"
 ; - test_char_vector: "`char` is not a supported Sarek element type"
 ; - test_poly_helper_f64: "'norm' cannot be used at this call site"
+; - test_when_guard: "`when` guards on match cases are not supported in kernels"
 
 (library
  (name neg_test_unregistered_field)
@@ -355,6 +356,24 @@
 (library
  (name neg_test_poly_helper_f64)
  (modules test_poly_helper_f64)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+; A `when` guard on a match case (backlog-191). Sarek_parse's Pexp_match arm
+; never read pc_guard, so the guard was dropped in the PARSER — upstream of the
+; typer, of every lowering pass and of backend selection. The guard here is
+; load-bearing, so before the fix this kernel compiled with no diagnostic and
+; returned the dropped-guard answer on all 9 devices present. Self-contained on
+; purpose (no `open Spoc`/`open Kirc` — backlog-208).
+
+(library
+ (name neg_test_when_guard)
+ (modules test_when_guard)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))

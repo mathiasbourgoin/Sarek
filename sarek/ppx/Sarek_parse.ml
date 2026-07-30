@@ -31,6 +31,45 @@ let parse_unop = Sarek_parse_helpers.parse_unop
 
 let parse_type = Sarek_parse_helpers.parse_type
 
+(** The refusal for a [when] guard on a match case (backlog-191).
+
+    Before this refusal existed, [parse_expression]'s [Pexp_match] arm read
+    [pc_lhs] and [pc_rhs] and never looked at [pc_guard]. The guard was dropped
+    in the PARSER — upstream of type-checking, of every lowering pass and of
+    backend selection — so the arm became unconditional in the one AST all
+    backends are generated from. A kernel with a guarded arm compiled with no
+    diagnostic and computed a different function than its source says.
+
+    Why this refuses rather than lowering the guard. Three things would have to
+    change together, and none of them is local:
+
+    - [Sarek_ir_ppx]'s [EMatch] and [SMatch] hold [(pattern * _) list]. There is
+      no guard slot to lower INTO, so the IR type has to change, and with it
+      every consumer: the CUDA, OpenCL, Metal and PTX emitters, the tag-erasure
+      and vector-inlining traversals, and the native and interpreter evaluators.
+    - Every C-family emitter builds a match as a nested tag ternary whose LAST
+      arm is emitted unconditionally, and the PTX emitter branches to the last
+      arm unconditionally. A guarded arm has to be able to FALL THROUGH to the
+      next one, which that shape cannot express.
+    - Exhaustiveness ([Sarek_ir_ptx_expr.check_match_exhaustive]) reasons on
+      constructor coverage alone. A guarded arm covers its constructor
+      syntactically but not semantically, so once guards exist a match can fail
+      at run time — and the device backends have no trap to fail INTO (the
+      interpreter's [Pattern_match_failure] has no GPU counterpart).
+
+    So this is "not yet supported", not "cannot be supported": the guarded-arm
+    subset that is always followed by an unguarded arm for the same constructor
+    is implementable. It is a feature with an IR change in it, not a fix, and
+    until it is built a refusal is the only honest answer. *)
+let when_guard_msg =
+  "`when` guards on match cases are not supported in kernels (not yet \
+   implemented). Sarek's match IR has no guard slot, so this guard would be \
+   discarded and the arm would match unconditionally — the kernel would \
+   compile and run, computing something other than what this source says. \
+   Rewrite the guard as an `if` inside the arm body: `| C x when cond -> a` \
+   becomes `| C x -> if cond then a else b`, where `b` is what the arm below \
+   would have computed for the same constructor."
+
 (** Parse let%shared: let%shared name : type [= size] in body Syntax: let%shared
     tile : float32 array in body let%shared tile : float32 array = 64 in body *)
 let rec parse_let_shared parse_expr (expr : expression) : Sarek_ast.expr_desc =
@@ -242,6 +281,15 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
         let parsed_cases =
           List.map
             (fun case ->
+              (* A [when] guard has no representation anywhere downstream:
+                 [Sarek_ir_ppx]'s [EMatch]/[SMatch] carry [(pattern * _) list]
+                 with no guard slot, so the guard used to be dropped HERE and
+                 the arm became unconditional. Refuse instead of silently
+                 changing the program's meaning (backlog-191). *)
+              (match case.pc_guard with
+              | Some guard ->
+                  raise (Parse_error_exn (when_guard_msg, guard.pexp_loc))
+              | None -> ()) ;
               let pat = parse_pattern case.pc_lhs in
               let body = parse_expression case.pc_rhs in
               (pat, body))
