@@ -286,6 +286,12 @@ jobs:
           # accepting "non-zero" would not notice those being swapped), and
           # case 0 is the positive control.
           ./scripts/prove-red.test.sh
+          # backlog-193. Seven cases: both defect shapes (a name the PPX
+          # never had, and a name Format collapses on screen) plus the four
+          # ways this gate could read green while checking nothing -- a
+          # comment, a printf conversion, an empty name table, and the test
+          # tree it deliberately excludes. Case 0 is the positive control.
+          ./scripts/check-ppx-construct-names.test.sh
 
       - name: Formal proofs admit gate
         run: |
@@ -521,6 +527,16 @@ jobs:
       # turns this step RED rather than turning it into a silent pass.
       - name: Check cited paths and commit shas resolve (backlog-188/210/204)
         run: ./scripts/check-cited-paths-exist.sh
+
+      # backlog-193. A third lexical gate, same reason: an error message is a
+      # claim, and nothing read it. Four PPX refusals told the user to register
+      # a type with [%%ktype] -- a construct this tree has never had -- and
+      # sixteen more named [@@sarek.type] inside a Format string, where "@@"
+      # prints as "@" and the advice becomes a different, unusable attribute.
+      # Both shapes are invisible to the build and to every test that asserts on
+      # the refusal rather than on the advice.
+      - name: Check PPX messages name constructs that exist (backlog-193)
+        run: ./scripts/check-ppx-construct-names.sh
 
       - name: Run coverage
         continue-on-error: true

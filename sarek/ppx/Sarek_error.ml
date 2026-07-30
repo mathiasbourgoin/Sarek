@@ -178,7 +178,7 @@ let pp_error fmt = function
   | Unsupported_type_in_registration (type_desc, _) ->
       Format.fprintf
         fmt
-        "Unsupported type in [@@sarek.type] registration: %s"
+        "Unsupported type in [@@@@sarek.type] registration: %s"
         type_desc
   | Unsupported_constructor_form _ ->
       Format.fprintf
@@ -188,7 +188,7 @@ let pp_error fmt = function
   | Unsupported_registration_form _ ->
       Format.fprintf
         fmt
-        "Only record and variant types can be registered with [@@sarek.type]"
+        "Only record and variant types can be registered with [@@@@sarek.type]"
   | Unsupported_tuple_in_variant _ ->
       Format.fprintf
         fmt
@@ -201,7 +201,7 @@ let pp_error fmt = function
       Format.fprintf
         fmt
         "Unknown type in variant constructor: %s. Custom types must be \
-         registered with [@@sarek.type]"
+         registered with [@@@@sarek.type]"
         name
   | Expression_needs_statement_context (expr_type, _) ->
       Format.fprintf

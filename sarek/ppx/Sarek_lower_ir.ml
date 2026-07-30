@@ -67,7 +67,7 @@ let rec elttype_of_typ (ty : typ) : Ir.elttype =
       Ppxlib.Location.raise_errorf
         ~loc:Ppxlib.Location.none
         "Type %S is not a registered Sarek type, so its device size is \
-         unknown. Declare it with [@@sarek.type] (records and variants), or \
+         unknown. Declare it with [@@@@sarek.type] (records and variants), or \
          use a built-in scalar type."
         name
   | TVec elem_ty -> Ir.TVec (elttype_of_typ elem_ty)
@@ -1468,7 +1468,7 @@ let lower_param (p : tparam) : Ir.decl =
           Ppxlib.Location.raise_errorf
             ~loc:Ppxlib.Location.none
             "Arrays of tuples are not supported as kernel parameters; declare \
-             a record type with [@@sarek.type] instead, or use a vector."
+             a record type with [@@@@sarek.type] instead, or use a vector."
       | TFun _ ->
           Ppxlib.Location.raise_errorf
             ~loc:Ppxlib.Location.none

@@ -201,7 +201,9 @@ let rec core_type_to_sarek_type_expr ~loc (ct : core_type) =
   | Ptyp_tuple l ->
       Sarek_ast.TETuple (List.map (core_type_to_sarek_type_expr ~loc) l)
   | _ ->
-      Location.raise_errorf ~loc "Unsupported type expression in [@@sarek.type]"
+      Location.raise_errorf
+        ~loc
+        "Unsupported type expression in [@@@@sarek.type]"
 
 let module_name_of_loc loc =
   let file = loc.loc_start.pos_fname in
@@ -242,15 +244,18 @@ let get_type_size_from_core_type (ct : core_type) : int =
       with Not_found ->
         Location.raise_errorf
           ~loc:ct.ptyp_loc
-          "sarek: unknown size for field type '%s' - register it with \
-           [%%ktype] before using it as a record/variant field (a silent \
-           default would corrupt the host/device layout)"
+          "sarek: unknown size for field type '%s' - if '%s' is a record or a \
+           variant, declare it with [@@@@sarek.type]; if it is an alias, use \
+           the aliased type directly (an alias cannot carry [@@@@sarek.type]). \
+           A silent default would corrupt the host/device layout."
+          type_name
           type_name)
   | _ ->
       Location.raise_errorf
         ~loc:ct.ptyp_loc
         "sarek: unsupported field type in a GPU record/variant - only scalar \
-         types and [%%ktype]-registered names are supported here"
+         types and record/variant types declared with [@@@@sarek.type] are \
+         supported here"
 
 (* Natural alignment of a field type, mirroring Sarek_ir_layout.elttype_align:
    4 for 32-bit scalars, 8 for int64/float64, and the registered alignment for a
@@ -270,15 +275,19 @@ let get_type_align_from_core_type (ct : core_type) : int =
       with Not_found ->
         Location.raise_errorf
           ~loc:ct.ptyp_loc
-          "sarek: unknown alignment for field type '%s' - register it with \
-           [%%ktype] before using it as a record/variant field (a silent \
-           default would corrupt the host/device layout)"
+          "sarek: unknown alignment for field type '%s' - if '%s' is a record \
+           or a variant, declare it with [@@@@sarek.type]; if it is an alias, \
+           use the aliased type directly (an alias cannot carry \
+           [@@@@sarek.type]). A silent default would corrupt the host/device \
+           layout."
+          type_name
           type_name)
   | _ ->
       Location.raise_errorf
         ~loc:ct.ptyp_loc
         "sarek: unsupported field type in a GPU record/variant - only scalar \
-         types and [%%ktype]-registered names are supported here"
+         types and record/variant types declared with [@@@@sarek.type] are \
+         supported here"
 
 (* Aligned immediate-field offset table for a record: each field placed at the
    next offset satisfying its natural alignment. Returns (name, offset, type)
@@ -403,7 +412,7 @@ let register_sarek_type_decl ~loc (td : type_declaration) =
               | Pcstr_record _ ->
                   Location.raise_errorf
                     ~loc
-                    "Inline records not supported in [@@sarek.type]")
+                    "Inline records not supported in [@@@@sarek.type]")
             constrs
         in
         Sarek_ast.Type_variant
@@ -416,7 +425,7 @@ let register_sarek_type_decl ~loc (td : type_declaration) =
     | _ ->
         Location.raise_errorf
           ~loc
-          "Only record or variant types can be used with [@@sarek.type]"
+          "Only record or variant types can be used with [@@@@sarek.type]"
   in
   registered_types := tdecl :: !registered_types ;
   ()
@@ -1513,7 +1522,7 @@ let generate_interp_helpers ~loc (td : type_declaration) : structure_item list =
         | Pcstr_record _ ->
             Location.raise_errorf
               ~loc
-              "sarek: inline records in [@@sarek.type] variant constructors \
+              "sarek: inline records in [@@@@sarek.type] variant constructors \
                are not supported"
       in
       (* to_value: C (a, b, ..) -> VVariant (full_name, tag, [Va; Vb; ..]) *)
@@ -2108,7 +2117,7 @@ module Real64_lowering = struct
   let reject_unsupported ~loc op =
     Location.raise_errorf
       ~loc
-      "[%%kernel.real64]: operation '%s' is not part of the real64 contract. \
+      "[%%%%kernel.real64]: operation '%s' is not part of the real64 contract. \
        real64 exposes only +. -. *. /. and sqrt (the intersection of the \
        native-f64 and df64 fallback substrates; the df64 fallback has no \
        transcendentals)."
