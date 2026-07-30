@@ -257,22 +257,46 @@ function fetchThreadNodes(opt) {
   );
 }
 
-/** Resolved CodeRabbit findings, as [{id, path}]. Fails closed on no data. */
+/**
+ * Resolved CodeRabbit findings, split by WHO resolved them. Fails closed on no
+ * data. Returns {findings, humanResolved}, both [{id, path}] (humanResolved
+ * entries also carry resolvedBy).
+ *
+ * `humanResolved` is returned rather than dropped, and that is the whole point
+ * of the split. Both lists are out of this gate's enforcement scope in the same
+ * way — only CodeRabbit-resolved threads are third-party attestation that the
+ * fix landed — but a dropped list made the gate MISREPORT the PR: with one
+ * CodeRabbit finding that the author had resolved, it printed "0 resolved
+ * CodeRabbit finding(s)" and "no resolved CodeRabbit findings on this PR", and
+ * both are false. There was one. A scope decision has to read as a scope
+ * decision; stated as a count of zero it reads as an all-clear, and the actor
+ * who reaches this branch is exactly the actor the gate constrains — an author
+ * resolving a CodeRabbit thread is routine, not exotic.
+ */
 function fetchThreads(opt) {
   const nodes = fetchThreadNodes(opt);
   const findings = [];
+  const humanResolved = [];
   for (const n of nodes) {
     if (!n || n.isResolved !== true) continue;
     const c = n.comments?.nodes?.[0];
     const author = c?.author?.login || "";
-    // Only CodeRabbit's own findings, resolved by CodeRabbit itself. A thread a
-    // human resolved is self-attestation and is out of scope for this gate.
+    // Not a CodeRabbit finding at all: never this gate's subject, and not
+    // reported, because there is nothing about the review to misstate.
     if (!/^coderabbitai/i.test(author)) continue;
-    if (!/^coderabbitai/i.test(n.resolvedBy?.login || "")) continue;
     const m = /cr-comment:v1:([0-9a-f]+)/.exec(c?.body || "");
-    findings.push({ id: m ? m[1] : null, path: n.path || "(no path)" });
+    const rec = { id: m ? m[1] : null, path: n.path || "(no path)" };
+    // A CodeRabbit finding resolved by anyone but CodeRabbit is
+    // self-attestation: out of scope to ENFORCE, but counted and named so the
+    // clean line cannot be read as "there were none".
+    const resolver = n.resolvedBy?.login || "";
+    if (!/^coderabbitai/i.test(resolver)) {
+      humanResolved.push({ ...rec, resolvedBy: resolver || "(unknown)" });
+      continue;
+    }
+    findings.push(rec);
   }
-  return findings;
+  return { findings, humanResolved };
 }
 
 function fetchFiles(opt) {
@@ -351,18 +375,36 @@ function readEscapes(file) {
 
 function main() {
   const opt = parseArgs(process.argv.slice(2));
-  const findings = fetchThreads(opt);
+  const { findings, humanResolved } = fetchThreads(opt);
   const files = fetchFiles(opt);
   const escapes = readEscapes(opt.escapes);
   const testPaths = files.filter((f) => IS_TEST_PATH.test(f));
 
-  console.log(`PR #${opt.pr}: ${findings.length} resolved CodeRabbit finding(s), ` +
+  console.log(`PR #${opt.pr}: ${findings.length} resolved CodeRabbit finding(s) in scope, ` +
+              `${humanResolved.length} human-resolved (out of scope), ` +
               `${files.length} changed file(s), ${testPaths.length} test path(s)`);
 
   if (findings.length === 0) {
     // Says so explicitly: a clean line here means "nothing to check", NOT
-    // "the findings were checked and carried tests".
-    console.log("NOTHING TO VERIFY: no resolved CodeRabbit findings on this PR.");
+    // "the findings were checked and carried tests". And the two reasons a PR
+    // can have nothing to check are NOT the same fact, so they do not share a
+    // sentence — see fetchThreads. Distinguishing them is asserted in
+    // check-review-finding-tests.test.js, not left to this comment.
+    if (humanResolved.length > 0) {
+      console.log(
+        `NOTHING TO VERIFY: no CodeRabbit-resolved findings, but ` +
+          `${humanResolved.length} CodeRabbit finding(s) on this PR were resolved by a ` +
+          `human and are DELIBERATELY NOT CHECKED (self-attestation, not ` +
+          `third-party confirmation the fix landed):`
+      );
+      for (const f of humanResolved) {
+        console.log(
+          `  ${f.id || "(no cr-comment id)"}  ${f.path} — resolved by ${f.resolvedBy}`
+        );
+      }
+    } else {
+      console.log("NOTHING TO VERIFY: no resolved CodeRabbit findings on this PR.");
+    }
     process.exit(0);
   }
 
