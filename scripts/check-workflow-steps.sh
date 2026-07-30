@@ -181,10 +181,15 @@ for f in files:
             nm = None
             if m.group(2) == "name":
                 nm = line.split(":", 1)[1].strip()
-            # Direct children sit two columns right of the dash.
-            cur = (indent, i, nm, [(m.group(2), i)], indent + 2)
+            # Child indent DERIVED from where the first key actually sits, not
+            # assumed to be dash+2. `-   name: A` / `    run: one` (three spaces
+            # after the dash) is valid and common, and the hardcoded dash+2
+            # rejected it with "has neither run: nor uses:" — a false positive
+            # whose message was also wrong, since the step does have an action.
+            child_indent = line.index(m.group(2))
+            cur = (indent, i, nm, [(m.group(2), i)], child_indent)
             if BLOCK_SCALAR.match(line.split(":", 1)[1]):
-                skip_until_indent = indent + 2 - 1
+                skip_until_indent = child_indent - 1
             continue
         if cur is not None:
             km = KEY.match(line)
@@ -209,6 +214,25 @@ if problems:
     print(f"{len(problems)} malformed workflow step(s). A step with no action is dead;")
     print("a step with two actions runs only the last one, under the other's name.")
     sys.exit(1)
+
+# A gate that examined ZERO steps has verified nothing. The previous version
+# printed "OK — 0 steps ..." and exited 0, so a workflow written entirely in a
+# form the scanner cannot see reported full coverage of a file it had not read.
+# The fail-closed case below covered zero FILES; it never covered zero STEPS.
+# Found by adversarial review, reproduced on a flow-mapping-only workflow.
+if steps_seen == 0:
+    print(
+        f"check-workflow-steps: examined {len(files)} workflow file(s) and "
+        f"recognised ZERO steps.",
+        file=sys.stderr,
+    )
+    print(
+        "  Exit 2, not 0: either the files contain no steps (in which case this "
+        "gate is guarding nothing) or they use a step form this scanner cannot "
+        "parse. Both need a human, and neither is a pass.",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 print(
     f"check-workflow-steps: OK — {steps_seen} steps across {len(files)} workflow file(s), "

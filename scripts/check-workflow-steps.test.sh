@@ -195,6 +195,46 @@ jobs:
          run: a}
 '
 
+# --- zero recognised steps is exit 2, not a pass ----------------------------
+# The previous version printed "OK — 0 steps across 1 workflow file(s)" and
+# exited 0, so a workflow written entirely in a form the scanner cannot see
+# reported full coverage of a file it had not read. The fail-closed case below
+# covers zero FILES; it never covered zero STEPS. Found by adversarial review.
+check "red: a workflow with no steps at all is exit 2" 2 "recognised ZERO steps" 'name: CI
+jobs:
+  build:
+    runs-on: ubuntu-latest
+'
+
+# --- child indent is DERIVED, not assumed to be dash+2 ----------------------
+# `-   name: A` with the keys at that deeper column is valid, common YAML. The
+# hardcoded dash+2 rejected it as "has neither run: nor uses:" -- a false
+# positive whose message was also wrong, since the step does have an action.
+check "green: dash + 3 spaces is not a false positive" 0 "OK" 'name: CI
+jobs:
+  build:
+    steps:
+      -   name: A
+          run: one
+'
+
+# And the real defects must still be caught at that indentation.
+check "red: duplicate run at a 3-space indent" 1 "does not do what its name says" 'name: CI
+jobs:
+  build:
+    steps:
+      -   name: A
+          run: one
+          run: WRONG
+'
+
+check "red: no action at a 3-space indent" 1 "it does nothing" 'name: CI
+jobs:
+  build:
+    steps:
+      -   name: A
+'
+
 # --- fails closed ----------------------------------------------------------
 # No workflow files. Exit 2, never 0: a check with nothing to read must refuse
 # rather than report success on a tree it never examined.
