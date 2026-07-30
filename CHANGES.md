@@ -116,7 +116,9 @@
   variants first, a variant with a record payload names a struct declared later
   (measured on OpenCL, `error: unknown type name 'Probe_pt'`); on GLSL/WGSL,
   which emit records first, the mirror case is a record with a variant-typed
-  field.
+  field (measured on Vulkan/RADV, `syntax error, unexpected IDENTIFIER`). Each
+  half is reachable from ordinary `[@@sarek.type]` source and each passes on the
+  family the other fails on.
 - `Sarek_df64` silently ran at plain float32 precision on real NVIDIA
   hardware (CUDA/PTX and NVIDIA OpenCL): `ptxas` contracted the multiply in
   `two_prod` into the `add`/`sub` of the `quick_two_sum` closing `df64_mul`,

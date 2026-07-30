@@ -796,10 +796,13 @@ let sort_record_types_by_dependency
     the kernel still fails to compile — measured on OpenCL (radeonsi):
     [error: unknown type name 'Probe_pt'], reachable from ordinary
     [[@@sarek.type]] source. GLSL/WGSL emit records BEFORE variants and so have
-    the mirror half of the same gap: a record with a variant-typed field. Both
-    halves are the same defect class as backlog-203 and neither is fixed here;
-    ordering records against variants needs one interleaved loop per backend
-    family. *)
+    the mirror half: a record with a variant-typed field, measured red on Vulkan
+    (RADV, both devices) as [syntax error, unexpected IDENTIFIER] at the field
+    line while the SAME kernel passes on OpenCL. Each half is reachable from the
+    PPX and each is green on exactly the family the other one fails on, which is
+    why neither showed up in the backlog-203 reproducer. Both are the same
+    defect class and neither is fixed here; ordering records against variants
+    needs one interleaved loop per backend family. *)
 let gen_record_typedefs ~type_of_elttype buf types =
   List.iter
     (fun (name, fields) ->
