@@ -192,8 +192,16 @@ let callee_env env =
     [fields.(i) <- e] with no check that [e]'s shape is the field's declared
     type; a future emitter change, a relaxed layout rule, or any other producer
     of [value] could close a loop that no declaration did. So the argument is
-    recorded rather than relied on, and the guard turns the residual case from a
-    hang into a diagnosable error. An infinite loop is worse than an error.
+    recorded rather than relied on.
+
+    What the guard buys, measured rather than asserted: the recursion is not
+    tail recursive, so an unguarded cyclic value does not hang — it dies with
+    [Stack_overflow] after about a second (measured by removing the guard and
+    running test_detach_record_depth.ml). That is still worth replacing. A
+    [Stack_overflow] escaping through the interpreter is an untyped crash naming
+    neither the value nor the binding; this raises [Unsupported_operation] with
+    the operation and the bound in it. A diagnosable error is better than a
+    crash.
 
     The bound is on DEPTH, not on visited identity, because a legitimate nesting
     depth is small (it is the record/variant nesting of a kernel type, which the

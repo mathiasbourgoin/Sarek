@@ -9,7 +9,16 @@
  * backlog-172 round 4. [detach_record] is the copy-at-bind that makes a record
  * bound to a LOCAL a value rather than a window onto vector storage. It recurses
  * through [VRecord] fields and [VVariant] payloads, and had no depth or cycle
- * guard: on a cyclic [value] it would spin forever.
+ * guard.
+ *
+ * What that costs, MEASURED rather than assumed — the round-4 note said "an
+ * infinite loop", and removing the guard produces something else: the recursion
+ * is not tail-recursive, so each level allocates a frame and a cyclic value dies
+ * with [Stack overflow] after about a second, not a hang. That is still worth
+ * guarding. A [Stack_overflow] escaping through the interpreter is an untyped
+ * crash with no indication of which value or which binding caused it, where the
+ * guard raises [Unsupported_operation] naming the operation and the bound. The
+ * claim is "a diagnosable error instead of a crash", not "instead of a hang".
  *
  * A cyclic value is not constructible through the DSL — [@@sarek.type] refuses a
  * self-referential field type for lack of a layout, so no declaration can close
@@ -22,10 +31,9 @@
  * Three cases, because a depth guard is exactly the shape that passes by
  * refusing everything:
  *
- *   1. A cyclic record TERMINATES with an error rather than hanging. This is the
- *      case the guard exists for, and it is run under a timeout-free but
- *      bounded shape: if the guard is removed this test does not fail, it hangs,
- *      so the red proof for it is "the runtest alias never finishes".
+ *   1. A cyclic record terminates with the TYPED refusal. Measured red: with the
+ *      guard removed this case reports `[exception] Stack overflow` and the
+ *      suite exits 1.
  *   2. A cyclic VARIANT payload does too — the second recursion arm, which a
  *      guard placed only on the record arm would miss.
  *   3. A legal deep nesting (below the bound) still COPIES correctly, at every
@@ -79,10 +87,8 @@ let rec shares_array (a : V.value) (b : V.value) : bool =
   | _ -> false
 
 let test_cyclic_record_terminates () =
-  (* Terminates with an error. Without the guard this call does not return, so
-     the red proof is a hang of the runtest alias rather than a failed
-     assertion — stated here so a future reader does not mistake a timeout for
-     an unrelated flake. *)
+  (* Terminates with the TYPED refusal, not with [Stack_overflow] — which is
+     what the unguarded recursion actually produced when this was measured red. *)
   match V.detach_record (cyclic_record ()) with
   | _ ->
       Alcotest.fail
