@@ -129,7 +129,10 @@ module Make (Ops : CUSTOM_OPS) : sig
         -> ('a, unit) host_storage
 
   (** Opt-in Structure-of-Arrays binding for a custom (flat-record) vector
-      (backlog-54); present iff the vector was created with [~layout:SoA].
+      (backlog-54); present iff the vector came from
+      [Soa_vector.create_transparent], its only producer. There is no
+      [Vector.create ~layout:SoA] and no [layout] parameter — the Tier 1b
+      handoff proposed one and it was rejected as a layer inversion.
 
       Deliberately closures and plain ints rather than a [Soa.plan]. This
       library is FFI-free and also builds as [.bc.js]
@@ -150,11 +153,25 @@ module Make (Ops : CUSTOM_OPS) : sig
             the packed AoS host buffer. Without it a kernel's output is silently
             lost — the packed device buffer an ordinary [Transfer.to_cpu] reads
             is the one the SoA launch did not write. *)
+    soa_free_leaves : Ops.device_t option -> unit;
+        (** Release the leaf device buffers — [Some dev] on that device, [None]
+            on every device — and clear [soa_leaves_live]. Without it
+            [Transfer.free_all_buffers] released ZERO bytes on a transparent SoA
+            vector (the packed buffer it iterates is never allocated under this
+            ABI): a leak, not wrong data, since each leaf also carries a
+            [Gpu_memory.register_finalizer]. *)
     soa_leaves_live : bool ref;
-        (** Set by [soa_to_device]; only READ elsewhere. It is what lets the
-            read-back path follow the launch's ABI decision instead of
-            re-deriving it. [false] whenever the launch used the packed AoS ABI
-            (an external source, or any non-CUDA/PTX backend). *)
+        (** Does the device hold results in the LEAVES rather than in the packed
+            AoS buffer? What lets the read-back path follow the launch's ABI
+            decision instead of re-deriving it.
+
+            Three writers, and only three — [soa_to_device] sets it,
+            [soa_free_leaves] clears it (the freed leaves hold nothing), and
+            [Execute.transfer_vectors_to_device] clears it when a launch takes
+            the packed ABI, so it states the ABI of the MOST RECENT operation
+            rather than of some operation. Every read-back path only READS it.
+            [false] whenever the launch used the packed AoS ABI — an external
+            source through [run_source], or any non-CUDA/PTX backend. *)
   }
 
   and ('a, 'b) t = {
@@ -166,9 +183,10 @@ module Make (Ops : CUSTOM_OPS) : sig
     mutable auto_sync : bool;
     id : int;
     mutable soa : soa_binding option;
-        (** [None] for every vector but one created with [~layout:SoA]. Read
-            only by the launch path; every host-side operation ignores it, which
-            is why [get]/[set] and the PPX accessors are unchanged. *)
+        (** [None] for every vector but one from [Soa_vector.create_transparent]
+            (no [~layout] parameter exists — see {!soa_binding}). Read only by
+            the launch path; every host-side operation ignores it, which is why
+            [get]/[set] and the PPX accessors are unchanged. *)
   }
 
   (** {2 Kind helpers — pure} *)

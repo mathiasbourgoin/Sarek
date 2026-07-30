@@ -89,9 +89,12 @@ its own width — deliberately no int<->float conversion, since a conversion fol
 both leaves into one number and a per-leaf stride error could then be masked by a
 compensating error in the other leaf.
 
-Observed: both rows OK on the N-leaf PTX ABI (2 ZLUDA devices) and OK on the AoS
-fallback (5 non-PTX devices); the i32+f64 row SKIPs on the 2 devices that report
-no fp64. The rows are gated on the DEVICE CAPABILITY (`Device.allows_fp64` /
+Observed: both rows OK on the N-leaf PTX ABI (2 ZLUDA devices). On the AoS
+fallback the two rows differ and are counted separately — the earlier single "5
+non-PTX devices" figure was the i32+f64 count applied to both: the **i64+i32** row
+is OK on **all 7** non-PTX devices, while the **i32+f64** row is OK on **5** and
+SKIPs on the 2 rusticl OpenCL devices that do not report fp64. The rows are gated
+on the DEVICE CAPABILITY (`Device.allows_fp64` /
 `allows_int64`) rather than on `framework = "CUDA/PTX"` the way the dpair row is,
 so they run wherever they can actually execute instead of only on PTX.
 

@@ -197,6 +197,34 @@ let create_transparent (custom : 'a Vector.custom_type) (length : int) :
               (fun (Leaf lv) -> Transfer.to_cpu ~force:true lv)
               t.leaves ;
             gather t);
+        soa_free_leaves =
+          (fun dev ->
+            (* No read-back here. The CALLER (Transfer.free_buffer /
+               free_all_buffers) drains through [read_back_to_host] first, and
+               doing it again here would either be redundant or — once the flag
+               below is cleared — read the packed buffer instead. One drain, at
+               the site that owns the ordering.
+
+               [Transfer.free_buffer]/[free_all_buffers] on a LEAF, not
+               [B.free ()] directly: the leaves are ordinary scalar vectors, so
+               they get the location bookkeeping and the [Gpu_memory.track_free]
+               accounting for free, and a leaf whose buffer is already gone is a
+               no-op rather than a double free. *)
+            (match dev with
+            | Some d ->
+                Array.iter (fun (Leaf lv) -> Transfer.free_buffer lv d) t.leaves
+            | None ->
+                Array.iter
+                  (fun (Leaf lv) -> Transfer.free_all_buffers lv)
+                  t.leaves) ;
+            (* The leaves now hold nothing a read-back could fetch, so the flag
+               that says "the leaves are authoritative" must stop saying it —
+               otherwise the next read-back follows freed buffers. Safe to clear
+               unconditionally even for the [Some d] case: this binding has one
+               flag for the whole vector, not one per device (see
+               [Transfer.has_device_data]), so there is no per-device answer to
+               preserve. *)
+            leaves_live := false);
         soa_leaf_bufs =
           (fun dev -> Array.to_list (Array.map (leaf_buf dev) t.leaves));
       } ;

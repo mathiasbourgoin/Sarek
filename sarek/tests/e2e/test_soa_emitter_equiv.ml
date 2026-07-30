@@ -32,6 +32,7 @@
 module Device = Spoc_core.Device
 module Vector = Spoc_core.Vector
 module Transfer = Spoc_core.Transfer
+module Gpu_memory = Spoc_core.Gpu_memory
 module Soa = Spoc_core.Soa
 module Soa_vector = Spoc_core.Soa_vector
 module Soa_launch = Sarek.Soa_launch
@@ -491,10 +492,11 @@ let check_roundtrip dev n =
    precisely to present the check with a plan that disagrees with the kernel.
 
    Device-independent by construction: the check is a pure function of (param
-   name, kernel element type, declared plan), so it runs on this machine with no
-   NVIDIA device. It is also ordered BEFORE run_soa's PTX gate precisely so the
-   refusal is reachable off a CUDA host — behind the gate it could only ever fire
-   where the gate passes, which is what would have made it untestable here. *)
+   name, kernel element type, declared plan), so it runs on every device this
+   host enumerates, CUDA/PTX or not. It is also ordered BEFORE run_soa's PTX gate
+   precisely so the refusal is reachable on a NON-PTX device — behind the gate it
+   could only ever fire where the gate passes, and it would then be asserting
+   nothing on the 7 non-PTX devices here. *)
 
 let xyz_ty =
   Sarek_ir_types.TRecord
@@ -757,9 +759,19 @@ let check_short_arg_list dev =
    - on every OTHER backend it must ALSO equal the AoS result, by silently taking
      the packed path — that is the documented "never wrong data" fallback, and
      asserting it here is the only thing that distinguishes "the fallback works"
-     from "the fallback was never exercised". This machine has no NVIDIA device,
-     so locally it is the fallback half that runs, and it would catch a
-     soa_dispatch predicate that fired on the wrong backend.
+     from "the fallback was never exercised". It would catch a soa_dispatch
+     predicate that fired on the wrong backend.
+
+     CORRECTED 2026-07-30 — this comment used to add "this machine has no NVIDIA
+     device, so locally it is the fallback half that runs", which contradicted the
+     header of the integer-combo cases in this same file ("it needs a CUDA/PTX
+     device. ZLUDA provides one") and pointed a reader away from the arm that
+     carries every fix in this file. Measured: 9 devices enumerate here and TWO of
+     them are CUDA/PTX — ZLUDA on an AMD RX 7900 XTX, reached with
+     LD_LIBRARY_PATH=$HOME/opt/zluda. There is no NVIDIA hardware in this host,
+     which is the grain of truth the wrong half grew from, but "no NVIDIA device"
+     and "no CUDA/PTX device" are not the same statement and only the second one
+     is what [is_ptx] tests. BOTH halves run locally.
 
    Correctness is checked against the pure-OCaml reference rather than against a
    second GPU run, so a bug common to both device paths cannot hide. *)
@@ -1108,6 +1120,75 @@ let check_free_preserves_soa dev n =
     (if !ok then "OK" else "FAILED") ;
   !ok
 
+(* Freeing must also RELEASE something. Correctness and reclamation are two
+   different claims, and {!check_free_preserves_soa} above only makes the first:
+   it proves the data survives the free. It passed while the free released ZERO
+   bytes.
+
+   Under this ABI the AoS vector never gets a packed buffer, so
+   [Transfer.free_all_buffers] iterated an EMPTY [device_buffers] table and
+   returned successfully having freed nothing. Measured with
+   [Gpu_memory.usage()] at n=32: 3840 B before the launch, 4224 B after the
+   free — a delta of +384 = 32 x 3 leaves x 4 B, i.e. exactly the memory the call
+   was asked to release still held.
+
+   Not a correctness bug, which is why nothing caught it: every leaf carries a
+   [Gpu_memory.register_finalizer], so the bytes come back once the structure
+   becomes unreachable. What the caller lost is the only thing an explicit free
+   offers over the GC — releasing at a moment it chooses, while the vector is
+   still live. So this case keeps [sv] reachable across the measurement
+   ([Sys.opaque_identity] below): let it be collected and the finalizer frees the
+   leaves for us and the assertion passes on the unfixed code.
+
+   [allocated > 0] is asserted, not assumed. Without it a launch that allocated
+   nothing would give released = allocated = 0 and the case would pass while
+   checking nothing at all. *)
+let check_free_releases_leaves dev n =
+  let threads = min 128 n in
+  let block = dims threads and grid = dims ((n + threads - 1) / threads) in
+  let sv = Soa_vector.create_transparent point3d_custom n in
+  for i = 0 to n - 1 do
+    Vector.set
+      sv
+      i
+      {x = float_of_int i; y = float_of_int (i + 1); z = float_of_int (n - i)}
+  done ;
+  (* Flush finalizers pending from earlier cases BEFORE the baseline, so their
+     bytes are not counted against this one. *)
+  Gc.full_major () ;
+  let before = Gpu_memory.usage () in
+  Sarek.Execute.run_vectors
+    ~device:dev
+    ~ir:(ir_of p3_scale_y_kernel)
+    ~args:[Vec sv; Int n]
+    ~block
+    ~grid
+    () ;
+  Transfer.flush dev ;
+  let after_launch = Gpu_memory.usage () in
+  Transfer.free_all_buffers sv ;
+  let after_free = Gpu_memory.usage () in
+  (* Load-bearing: see the header. A collected [sv] frees its own leaves. *)
+  ignore (Sys.opaque_identity sv) ;
+  let allocated = after_launch - before in
+  let released = after_launch - after_free in
+  let ok = allocated > 0 && released >= allocated in
+  if not ok then
+    Printf.printf
+      "  free_all_buffers released %d of the %d bytes the launch allocated \
+       (usage: %d before -> %d after launch -> %d after free)\n\
+       %!"
+      released
+      allocated
+      before
+      after_launch
+      after_free ;
+  Printf.printf
+    "  %-56s %s\n%!"
+    "free_all_buffers RELEASES a transparent SoA vector's leaves"
+    (if ok then "OK" else "FAILED") ;
+  ok
+
 (* The two integer-leaf device rows the handoff left open. Driven through the
    TRANSPARENT path, so one case covers both the mixed-width leaf addressing and
    the generic dispatch. Each leaf is compared to the reference independently. *)
@@ -1350,13 +1431,50 @@ let () =
            (Execute.transfer_vectors_to_device, which never cleared the flag) and
            the CLEANUP path (Transfer.free_*, which had no SoA arm at all). *)
         if not (check_soa_then_packed dev n) then ok := false ;
-        if not (check_free_preserves_soa dev n) then ok := false
+        if not (check_free_preserves_soa dev n) then ok := false ;
+        (* And the free must RELEASE, not merely preserve — a separate claim from
+           the case above, which passed while zero bytes came back. *)
+        if not (check_free_releases_leaves dev n) then ok := false
       end
-      else
-        Printf.printf
-          "  %-56s %s\n%!"
-          "transparent SoA output read back"
-          "SKIP (non-PTX: v.(i).f <- blocked on backlog-172)" ;
+      else begin
+        (* ONE skip line PER GUARDED CASE, each naming the device class it needs
+           and why it was absent.
+
+           Before 2026-07-30 this else-branch printed a single line, for
+           [check_transparent_roundtrip] only. The three [check_relaunch]
+           writers, [check_soa_then_packed] and [check_free_preserves_soa]
+           printed NOTHING — so on a host where no CUDA/PTX device enumerates
+           (which, with no LD_LIBRARY_PATH for ZLUDA, was every default `dune
+           runtest`) five assertions were absent from the output and from the
+           verdict, and the alias still exited 0. A silent no-op and a pass are
+           the same observation, which is the whole failure.
+
+           The two reasons are genuinely different and are not collapsed:
+           backlog-172 is a defect that will LIFT the guard on the first four
+           cases when it lands; the SoA ABI dispatching only on CUDA/PTX is by
+           design and permanent for the last three. *)
+        let skip_172 label =
+          Printf.printf
+            "  %-56s %s\n%!"
+            label
+            "SKIP (non-PTX: v.(i).f <- blocked on backlog-172)"
+        in
+        let skip_ptx label =
+          Printf.printf
+            "  %-56s %s\n%!"
+            label
+            "SKIP (needs CUDA/PTX: the SoA ABI dispatches nowhere else)"
+        in
+        skip_172 "transparent SoA output read back" ;
+        List.iter
+          (fun w ->
+            skip_172
+              (Printf.sprintf "second launch sees the second host write (%s)" w))
+          ["Vector.set"; "Vector.unsafe_set"; "Vector.fill"] ;
+        skip_ptx "packed AoS launch after a transparent SoA one" ;
+        skip_ptx "free_all_buffers preserves a transparent SoA result" ;
+        skip_ptx "free_all_buffers RELEASES a transparent SoA vector's leaves"
+      end ;
       if not (check_mixed_widths dev n) then ok := false ;
       (* Item 3: SoA launch must be rejected (never wrong data) on non-PTX. *)
       if not (check_gate dev) then ok := false ;

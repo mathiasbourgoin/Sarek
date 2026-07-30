@@ -953,10 +953,74 @@
  (flags
   (:standard -w -32-33-34-69)))
 
+; LD_LIBRARY_PATH is set so the ZLUDA CUDA/PTX driver is actually reachable and
+; the PTX-gated cases in this test RUN in the default gate.
+;
+; They did not. Every one of them is behind [if is_ptx dev], nothing in this file
+; put ZLUDA on the loader path (it appeared only in COMMENTS, on the two rules
+; below), and so a plain `dune runtest` enumerated no CUDA/PTX device and four
+; cases — the three [check_relaunch] writers, [check_soa_then_packed] and
+; [check_free_preserves_soa] — printed ZERO lines and asserted nothing while the
+; alias read green. That is the skip-as-pass shape. Two changes close it: the test
+; now prints a named skip line for every guarded case (so a silent no-op is
+; impossible even where this rule finds nothing), and this rule makes the device
+; present where it exists.
+;
+; $HOME/opt/zluda is the location the neighbouring rules already document as this
+; project's ZLUDA checkout. The trade-offs of setting it here, stated rather than
+; assumed:
+;   - a machine WITHOUT ZLUDA: the loader ignores a nonexistent directory, so the
+;     rule is a no-op and the cases print their skip lines. No new failure.
+;   - a machine with a NATIVE CUDA driver: libcuda.so.1 lives on the default
+;     loader path, so replacing LD_LIBRARY_PATH does not hide it. A host that
+;     reaches its CUDA driver ONLY through an inherited LD_LIBRARY_PATH loses the
+;     PTX leg here — and gets the loud skip, not a false green.
+; Same precedent as the RUSTICL_FEATURES=fp64 rule further down: set the variable
+; that makes a leg actually exercised, rather than documenting it in a comment and
+; letting the leg quietly not run.
+
 (rule
  (alias runtest)
  (action
-  (run %{dep:test_soa_emitter_equiv.exe})))
+  (setenv
+   LD_LIBRARY_PATH
+   %{env:HOME=}/opt/zluda
+   (run %{dep:test_soa_emitter_equiv.exe}))))
+
+; Cross-device migration of a transparent SoA vector: Transfer.to_device to a
+; device the vector is NOT resident on drains the source device first, and that
+; drain bypassed the SoA-aware read-back. Needs two devices, one CUDA/PTX; skips
+; loudly (exit 0) otherwise. Same ZLUDA path as the rule above, for the same
+; reason.
+
+(executable
+ (name test_soa_cross_device_migration)
+ (modules test_soa_cross_device_migration)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  spoc_core
+  test_helpers
+  sarek_native
+  sarek_interpreter
+  sarek_cuda
+  sarek_opencl
+  sarek_vulkan
+  unix
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (setenv
+   LD_LIBRARY_PATH
+   %{env:HOME=}/opt/zluda
+   (run %{dep:test_soa_cross_device_migration.exe}))))
 
 ; L17b polymorphic bare float literals: bare (unsuffixed) literals inferred as
 ; float64 from an f64 context, executed on all devices vs an OCaml f64 reference.
