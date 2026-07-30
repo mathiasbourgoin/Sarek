@@ -160,11 +160,12 @@ let create_transparent (custom : 'a Vector.custom_type) (length : int) :
              dev.Device.id)
   in
   let v = t.aos in
-  (* SET only by [soa_to_device] below; cleared or narrowed by three other
-     writers outside this module (see [soa_leaves_live]'s doc in
-     Spoc_core_base.ml for the exhaustive list). No reader re-derives "SoA or
-     AoS?" from the vector's shape — that is the point of the flag, so that
-     read-back follows the launch's ABI decision. *)
+  (* SET only by [soa_to_device] below. Three other writers can clear or narrow
+     it: [soa_free_leaves], also in this record, narrows it; and
+     [Execute.transfer_vectors_to_device] and [Transfer.to_device] clear it. That
+     list is exhaustive — see [soa_leaves_live]'s doc in Spoc_core_base.ml. No
+     reader re-derives "SoA or AoS?" from the vector's shape; that is the point of
+     the flag, so that read-back follows the launch's ABI decision. *)
   let leaves_live = ref false in
   v.Vector.soa <-
     Some

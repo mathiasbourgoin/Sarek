@@ -1353,11 +1353,17 @@ let check_transparent_roundtrip dev n =
    two are one condition, on which copy is authoritative, and the case exists
    because pinning only one of them is what let the other in.
 
-   Distinguishable in both directions. y0 = i+1; the transparent launch doubles y
-   to 2*y0; the host write sets y := 100+i, which is neither a multiple nor a
-   scalar function of y0; the packed launch doubles that to 2*(100+i). Discarding
-   the host write gives 4*y0 = 4*(i+1) instead, and 2*(100+i) = 4*(i+1) has no
-   integer solution for i >= 0. *)
+   Distinguishable at EVERY index, which took a second attempt. y0 = i+1; the
+   transparent launch doubles y to 2*y0; the host write sets y := i + 0.5; the
+   packed launch doubles that to 2i+1. Discarding the host write gives 4*y0 =
+   4i+4 instead. 2i+1 = 4i+4 has the single solution i = -1.5, so the two never
+   coincide on an index — whereas the first version of this case wrote y := 100+i
+   and 2*(100+i) = 4*(i+1) holds at i = 98, inside the n = 1024 range. It would
+   still have failed (at i = 0, and the loop checks every index), but one row of
+   the check was asserting nothing.
+
+   The half-integer is also what makes the write independent of the leaf value in
+   the ONE way that matters here: 2i+1 is odd and 4i+4 is a multiple of 4. *)
 let check_host_write_survives_packed dev n =
   let threads = min 128 n in
   let block = dims threads and grid = dims ((n + threads - 1) / threads) in
@@ -1367,7 +1373,7 @@ let check_host_write_survives_packed dev n =
     Vector.set sv i {x = float_of_int i; y = y0 i; z = float_of_int (n - i)}
   done ;
   let ir = ir_of p3_scale_y_kernel in
-  let written i = float_of_int (100 + i) in
+  let written i = float_of_int i +. 0.5 in
   let ok = ref true in
   (match
      Sarek.Execute.run_vectors
@@ -1378,9 +1384,14 @@ let check_host_write_survives_packed dev n =
        ~grid
        () ;
      Transfer.flush dev ;
-     (* The host write. Gathers the leaves first (auto-sync), so what it lands on
-        top of is the transparent launch's result, and leaves the vector
-        [Stale_GPU dev]. *)
+     (* The host write. With auto-sync on (the default, and this suite does not
+        disable it) [Vector.set] gathers the leaves first, so what it lands on top
+        of is the transparent launch's result, and it leaves the vector
+        [Stale_GPU dev]. That precondition is named because it is load-bearing:
+        with auto-sync OFF the gather does not happen and the vector stays
+        [Stale_CPU dev] with a pending host write, which is the pre-existing
+        auto-sync-off hazard [Vector.ml] documents and NOT what this case
+        covers. *)
      for i = 0 to n - 1 do
        Vector.set
          sv

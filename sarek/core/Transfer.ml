@@ -434,7 +434,8 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
          what every path into this arm establishes: the migration arm at the top of
          this function has just drained the other device through
          [read_back_to_host], and the remaining locations ([CPU], [Both d],
-         [Stale_GPU d]) each assert the host copy is not behind. So this does not discard a pending leaf result; it
+         [Stale_GPU d]) each assert the host copy is not behind. So this does not
+         discard a pending leaf result; it
          stops [read_back_to_host] from answering a question about [dev] by
          reading leaves on another device, which is the one thing the whole-vector
          flag cannot express (see {!Read_back.has_device_data}).

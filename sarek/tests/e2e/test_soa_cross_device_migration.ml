@@ -165,10 +165,20 @@ let check ~label ~(packed_first : bool) (src : Device.t) (dst : Device.t) =
      that are still ALLOCATED. Allocation is not authority: a free on a device the
      leaves are not on turned the flag back ON.
 
-   With the gather gated on [location] (an unforced [to_cpu]) the resurrected flag
-   was harmless — the location said CPU and the gather was skipped anyway. Made
-   unconditional, it becomes data loss: the next packed launch gathers the stale
-   leaves OVER the host copy of the newer packed result and runs on them.
+   WHAT IS ASSERTED, and why it is the FLAG and not only the data. The flag is
+   the property: after a packed launch has taken ownership away from the leaves, no
+   free may hand it back. The data consequence depends on a second thing — which
+   locations the packed launch's gather runs on — and that is now gated on
+   [location] (Execute.transfer_vectors_to_device), which after [free_buffer]
+   reports [CPU] and skips. So with the data check ALONE this case reads green with
+   the fix removed: measured, it printed OK against a [soa_free_leaves] whose
+   derivation had the previous value dropped. It was a gate that could not fail for
+   one commit, which is exactly why the invariant is read directly here.
+
+   The data check stays as a second, weaker observation: it is what the resurrected
+   flag DID cost when the gather was unconditional (the next packed launch gathered
+   the stale leaves over the host copy of the newer result and ran on them), and it
+   is the shape the failure takes again if the gather condition is ever widened.
 
    Needs two devices, which is why it lives in this file: the free has to happen
    on a device the leaves are NOT on, or the leaves are freed and the flag would
@@ -238,6 +248,22 @@ let check_free_does_not_resurrect_leaves (src : Device.t) (dst : Device.t) =
         "FAILED" ;
       false
   | () ->
+      (* THE INVARIANT, read directly. [soa_leaves_live] is reachable from the
+         test because the binding is a public field of [Vector.t]; a vector with no
+         binding at all would be a different bug and is reported as one rather
+         than passing by default. *)
+      (match sv.Vector.soa with
+      | Some b when !(b.Vector.soa_leaves_live) ->
+          fail
+            "free_buffer on %s resurrected leaf ownership: soa_leaves_live is \
+             true again, and the leaves it points at hold the \
+             pre-packed-launch data"
+            dst.Device.name
+      | Some _ -> ()
+      | None ->
+          fail
+            "the vector lost its SoA binding, so this case asserted nothing \
+             about leaf ownership") ;
       let host_after_free = Array.init n (fun i -> (Vector.get sv i).y) in
       let mismatched = ref 0 in
       for i = 0 to n - 1 do
