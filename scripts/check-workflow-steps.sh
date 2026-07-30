@@ -70,6 +70,15 @@ if not files:
 # belong to, including ones that appear AFTER a blank line -- that is precisely
 # how the orphaned `run:` attached itself to the wrong step.
 STEP_START = re.compile(r"^(\s*)-\s+(\w[\w-]*):")
+# A step written as a YAML FLOW mapping: `- {name: x, run: a, run: b}`. The
+# block-mapping scanner below cannot see one -- STEP_START needs `word:` right
+# after the dash, so the line matches nothing and the step is INVISIBLE, which
+# is worse than a miss: `steps_seen` does not even count it. Found by running
+# this gate's own attack list against it (flow mapping with a duplicate `run`
+# was accepted, exit 0). Single-line flow mappings are parsed here; anything
+# more exotic is REFUSED rather than skipped.
+FLOW_STEP = re.compile(r"^(\s*)-\s*\{(.*)\}\s*$")
+FLOW_STEP_OPEN = re.compile(r"^\s*-\s*\{")
 KEY = re.compile(r"^(\s*)([\w-]+):(.*)$")
 # `key: |`, `key: >-`, `key: |+` … everything indented under it is opaque text.
 BLOCK_SCALAR = re.compile(r"^\s*[|>][+-]?\s*(#.*)?$")
@@ -115,6 +124,55 @@ for f in files:
                 continue  # still inside the block scalar's text
             skip_until_indent = None
         if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        fm = FLOW_STEP.match(line)
+        if fm:
+            close(cur)
+            cur = None
+            steps_seen += 1
+            # Split on top-level commas only; a nested {..} or [..] value is one
+            # item. Keys are what precedes the first colon of each item.
+            inner, depth_b, item, items = fm.group(2), 0, [], []
+            for ch in inner:
+                if ch in "{[":
+                    depth_b += 1
+                elif ch in "}]":
+                    depth_b -= 1
+                if ch == "," and depth_b == 0:
+                    items.append("".join(item))
+                    item = []
+                else:
+                    item.append(ch)
+            items.append("".join(item))
+            fkeys = [it.split(":", 1)[0].strip() for it in items if ":" in it]
+            label = next(
+                (it.split(":", 1)[1].strip() for it in items
+                 if it.split(":", 1)[0].strip() == "name"),
+                f"(flow mapping, line {i})",
+            )
+            facts = [k for k in fkeys if k in ("run", "uses")]
+            if len(facts) == 0:
+                problems.append(
+                    f"{f}:{i}: step {label!r} has neither `run:` nor `uses:` — it does nothing"
+                )
+            elif len(facts) > 1:
+                problems.append(
+                    f"{f}:{i}: step {label!r} has {len(facts)} actions in one flow "
+                    f"mapping — YAML keeps the LAST, so this step does not do what "
+                    f"its name says"
+                )
+            for d in sorted({k for k in fkeys if fkeys.count(k) > 1}):
+                problems.append(f"{f}:{i}: step {label!r} repeats key {d!r}")
+            continue
+        if FLOW_STEP_OPEN.match(line):
+            # A flow mapping this scanner cannot bound on one line. Refuse: a
+            # step it cannot analyse must not be reported as well-formed.
+            problems.append(
+                f"{f}:{i}: step is a multi-line flow mapping, which this gate "
+                f"cannot analyse — rewrite it as a block mapping so it can be checked"
+            )
+            close(cur)
+            cur = None
             continue
         m = STEP_START.match(line)
         if m:
