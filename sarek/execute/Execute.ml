@@ -387,20 +387,16 @@ let expand_to_run_source_args ?(inject_lengths = true) ?(soa_abi = false)
           let b = Option.get (soa_dispatch ~soa_abi v dev) in
           let len = Vector.length v in
           let bufs = b.Vector.soa_leaf_bufs dev in
-          (* The binding declares its leaf count ([soa_num_leaves]) and separately
-             produces the buffers, and it is the DECLARED count that reached the
-             emitter: [soa_param_names] marks this parameter as SoA and
-             [Sarek_ir_ptx.emit_params] then expands it from the record's
-             registered layout. Two derivations of one number, and this is the one
-             place they meet, so it is the only place that can compare them.
-
-             Checked rather than assumed because the consequence of a short list
-             is not a wrong result but a driver over-read: [Cuda_api.Kernel.launch]
-             sizes the argument array with [List.length args] and passes
+          (* The binding declares a leaf count ([soa_num_leaves]) and separately
+             produces the buffers; this is the only place those two meet, so it is
+             the only place that can compare them. A disagreement is not a wrong
+             result but a malformed kernel-argument array:
+             [Cuda_api.Kernel.launch] sizes it with [List.length args] and passes
              [cuLaunchKernel] a bare pointer with no count (the same mechanism
-             [check_launch_args] documents at the ARITY level below), so the driver
-             reads past the end and dereferences whatever follows as a leaf
-             pointer.
+             [check_launch_args] documents at the ARITY level below), so a SHORT
+             list makes the driver read past the end and dereference whatever
+             follows as a leaf pointer, and a LONG one shifts every parameter
+             after this vector.
 
              Not reachable through [Soa_vector.create_transparent] today: its
              [soa_leaf_bufs] maps over the leaf array, so it returns exactly
@@ -408,7 +404,22 @@ let expand_to_run_source_args ?(inject_lengths = true) ?(soa_abi = false)
              buffer on [dev] (Soa_vector.ml:148-160). The binding is a record of
              closures crossing a module boundary that exists precisely so
              [Execute] cannot see [Soa_vector] — the count agreement is therefore
-             a cross-module convention, and this makes it a checked one. *)
+             a cross-module convention, and this makes it a checked one.
+
+             WHAT IT DOES NOT CHECK, because both sides of the comparison come
+             from the VECTOR: that the vector's leaf count is the one the KERNEL
+             declares. The emitter derives the parameter block from the [TRecord]
+             on the kernel's own [DParam], so a transparent vector bound to a
+             parameter of a DIFFERENT record type disagrees with the generated
+             signature while satisfying this check. [Soa_launch.run_soa] has that
+             comparison ([check_soa_layout], on the whole plan rather than the
+             count); the generic transparent path does not, and did not before
+             this check either — [check_launch_args] skips the element comparison
+             for [Custom] elements on the grounds that both sides derive from one
+             registered layout, which is the assumption the SoA ABI makes
+             load-bearing. Not closed here: [Execute] cannot call [Soa_launch]
+             (the dependency runs the other way) and this function does not have
+             the IR. *)
           let got = List.length bufs in
           if got <> b.Vector.soa_num_leaves then
             Execute_error.raise_error
@@ -418,10 +429,9 @@ let expand_to_run_source_args ?(inject_lengths = true) ?(soa_abi = false)
                    reason =
                      Printf.sprintf
                        "the SoA binding produced %d leaf buffer(s) on device \
-                        %d but declares %d leaves, which is the count the \
-                        kernel's parameter block was generated from; binding \
-                        this list would hand the driver a short \
-                        kernel-argument array"
+                        %d but declares %d leaves; binding a list of the wrong \
+                        length to the generated N-pointer parameter block \
+                        hands the driver a malformed kernel-argument array"
                        got
                        dev.Device.id
                        b.Vector.soa_num_leaves;

@@ -55,6 +55,11 @@ module Soa_vector = Spoc_core.Soa_vector
 module Gpu_memory = Spoc_core.Gpu_memory
 module Benchmarks = Test_helpers.Benchmarks
 
+(* [Sarek_ir_ptx.generate], for the PACKED run_source launch in
+   {!check_free_does_not_resurrect_leaves}: run_vectors would take the SoA ABI on
+   a CUDA/PTX device, and that case needs the packed one on such a device. *)
+open Sarek_codegen
+
 type ('a, 'b) vector = ('a, 'b) Vector.t
 
 type float32 = float
@@ -145,6 +150,136 @@ let check ~label ~(packed_first : bool) (src : Device.t) (dst : Device.t) =
       done) ;
   Printf.printf "  %-58s %s\n%!" label (if !ok then "OK" else "FAILED") ;
   !ok
+
+(* A free must not RESURRECT leaf ownership the previous launch gave up.
+   Found by a cross-runtime review of the round-5 fix that made the packed
+   launch's gather unconditional, and it is a defect of the two together:
+
+   - [Execute.transfer_vectors_to_device], on a launch that takes the PACKED ABI,
+     gathers the leaves into host storage and then CLEARS [soa_leaves_live]. The
+     leaves it gathered are not freed — they stay allocated on their device,
+     holding what is now the previous generation of the data.
+   - [Soa_vector]'s [soa_free_leaves] then re-derived that flag from the leaves
+     that are still ALLOCATED. Allocation is not authority: a free on a device the
+     leaves are not on turned the flag back ON.
+
+   With the gather gated on [location] (an unforced [to_cpu]) the resurrected flag
+   was harmless — the location said CPU and the gather was skipped anyway. Made
+   unconditional, it becomes data loss: the next packed launch gathers the stale
+   leaves OVER the host copy of the newer packed result and runs on them.
+
+   Needs two devices, which is why it lives in this file: the free has to happen
+   on a device the leaves are NOT on, or the leaves are freed and the flag would
+   go false either way. Single-device suites cannot construct it.
+
+   [Vector.get] is deliberately called before the LAST launch as well as after:
+   without pinning the host copy at that point, "the final value is wrong" could
+   also be read as the packed launch having produced it, and the point is that the
+   input it consumed was replaced behind it. *)
+let check_free_does_not_resurrect_leaves (src : Device.t) (dst : Device.t) =
+  let sv = Soa_vector.create_transparent point3d_custom n in
+  let y0 i = float_of_int (i + 1) in
+  for i = 0 to n - 1 do
+    Vector.set sv i {x = float_of_int i; y = y0 i; z = float_of_int (n - i)}
+  done ;
+  let ok = ref true in
+  let fail fmt =
+    Printf.ksprintf
+      (fun s ->
+        Printf.printf "  %s\n%!" s ;
+        ok := false)
+      fmt
+  in
+  let ir = ir_of scale_y_kernel in
+  let block = Sarek.Execute.dims1d threads in
+  let grid = Sarek.Execute.dims1d ((n + threads - 1) / threads) in
+  let packed_launch dev =
+    (* run_source defaults to ~soa_abi:false, so this is the PACKED ABI even on a
+       CUDA/PTX device — the sequence needs a packed launch on a device where the
+       SoA one would otherwise be selected. *)
+    Sarek.Execute.run_source
+      ~device:dev
+      ~source:(Sarek_ir_ptx.generate ir)
+      ~lang:Sarek.Execute.PTX
+      ~kernel_name:ir.Sarek_ir_types.kern_name
+      ~block
+      ~grid
+      [Sarek.Execute.Vec sv; Sarek.Execute.Int n] ;
+    Transfer.flush dev
+  in
+  match
+    (* 1. TRANSPARENT launch on src: y := 2*y0 in the leaves, which src owns. *)
+    Sarek.Execute.run_vectors
+      ~device:src
+      ~ir
+      ~args:[Vec sv; Int n]
+      ~block
+      ~grid
+      () ;
+    Transfer.flush src ;
+    (* 2. PACKED launch on dst: gathers (host := 2*y0), clears the ownership
+       flag, uploads, doubles again on the device. src's leaves still hold
+       2*y0. *)
+    packed_launch dst ;
+    (* 3. Per-device free on dst. Drains dst into host storage (4*y0) and
+       releases dst's packed buffer; src's leaves are correctly left alone. This
+       is where the flag used to come back to life. *)
+    Transfer.free_buffer sv dst
+  with
+  | exception e ->
+      fail
+        "the SoA -> packed -> free sequence raised: %s"
+        (Printexc.to_string e) ;
+      Printf.printf
+        "  %-58s %s\n%!"
+        "a free does not resurrect stale leaf ownership"
+        "FAILED" ;
+      false
+  | () ->
+      let host_after_free = Array.init n (fun i -> (Vector.get sv i).y) in
+      let mismatched = ref 0 in
+      for i = 0 to n - 1 do
+        if Float.abs (host_after_free.(i) -. (y0 i *. 4.0)) > 1e-3 then
+          incr mismatched
+      done ;
+      if !mismatched > 0 then
+        fail
+          "the drain in free_buffer did not bring back dst's result: %d of %d \
+           indices differ (@0 got=%g want=%g); the claim below would then be \
+           about the wrong starting value"
+          !mismatched
+          n
+          host_after_free.(0)
+          (y0 0 *. 4.0) ;
+      (* 4. Another PACKED launch. Its input must be the host copy asserted just
+         above, not src's leaves. *)
+      (match packed_launch src with
+      | () ->
+          let first = ref true in
+          for i = 0 to n - 1 do
+            let got = (Vector.get sv i).y and want = y0 i *. 8.0 in
+            if Float.abs (got -. want) > 1e-3 && !first then begin
+              first := false ;
+              fail
+                "packed relaunch after the free ran on stale leaves @%d: \
+                 got=%g want=%g (src's leaves from step 1 would give %g)"
+                i
+                got
+                want
+                (y0 i *. 4.0)
+            end
+          done
+      | exception e ->
+          fail
+            "the packed relaunch after the free raised: %s"
+            (Printexc.to_string e)) ;
+      Transfer.free_all_buffers sv ;
+      ignore (Sys.opaque_identity sv) ;
+      Printf.printf
+        "  %-58s %s\n%!"
+        "a free does not resurrect stale leaf ownership"
+        (if !ok then "OK" else "FAILED") ;
+      !ok
 
 (* [free_buffer] is PER-DEVICE; [soa_leaves_live] is WHOLE-VECTOR. Those two
    scopes only agree when the free covered every device, and [soa_free_leaves]
@@ -368,4 +503,7 @@ let () =
              device boundary". It lives here because this is the only test with
              two devices in hand. *)
           let c = check_per_device_leaf_free src dst in
-          if not (a && b && c) then exit 1)
+          (* Also two-device-only: the free has to land on a device the leaves are
+             not on for the ownership flag to be resurrectable at all. *)
+          let d = check_free_does_not_resurrect_leaves src dst in
+          if not (a && b && c && d) then exit 1)

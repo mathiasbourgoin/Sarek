@@ -155,27 +155,33 @@ module Make (Ops : CUSTOM_OPS) : sig
             is the one the SoA launch did not write. *)
     soa_free_leaves : Ops.device_t option -> unit;
         (** Release the leaf device buffers — [Some dev] on that device, [None]
-            on every device — then RE-DERIVE [soa_leaves_live] from the leaves
-            still allocated. Without the release, [Transfer.free_all_buffers]
-            returned ZERO bytes on a transparent SoA vector (the packed buffer
-            it iterates is never allocated under this ABI): a leak, not wrong
-            data, since each leaf also carries a
-            [Gpu_memory.register_finalizer]. Without the re-derivation — it used
-            to assign [false] — a per-device free disowned live leaves on every
-            OTHER device, and that IS wrong data: the drain-before-free consults
-            this flag. *)
+            on every device — then NARROW [soa_leaves_live]: still set iff it
+            already was and some leaf survives. Without the release,
+            [Transfer.free_all_buffers] returned ZERO bytes on a transparent SoA
+            vector (the packed buffer it iterates is never allocated under this
+            ABI): a leak, not wrong data, since each leaf also carries a
+            [Gpu_memory.register_finalizer]. Without consulting the surviving
+            leaves — it used to assign [false] — a per-device free disowned live
+            leaves on every OTHER device, and that IS wrong data: the
+            drain-before-free consults this flag. Without the conjunction with
+            the PREVIOUS value it was wrong in the mirror direction: a packed
+            launch clears the flag and leaves those buffers allocated, so
+            deriving from allocation alone resurrected ownership of leaves that
+            had already been gathered and given up. *)
     soa_leaves_live : bool ref;
         (** Does the device hold results in the LEAVES rather than in the packed
             AoS buffer? What lets the read-back path follow the launch's ABI
             decision instead of re-deriving it.
 
-            Three writers, and only three — [soa_to_device] sets it,
-            [soa_free_leaves] re-derives it from the surviving leaves, and
-            [Execute.transfer_vectors_to_device] clears it when a launch takes
-            the packed ABI, so it states the ABI of the MOST RECENT operation
-            rather than of some operation. Every read-back path only READS it.
-            [false] whenever the launch used the packed AoS ABI — an external
-            source through [run_source], or any non-CUDA/PTX backend. *)
+            Four writers, and only four, of which exactly one can SET it:
+            [soa_to_device] sets it; [Execute.transfer_vectors_to_device] clears
+            it when a launch takes the packed ABI; [Transfer.to_device] clears
+            it after a packed host->device upload; [soa_free_leaves] narrows it.
+            So it states the ABI of the most recent operation that made a device
+            copy authoritative, rather than of some operation. Every read-back
+            path only READS it. [false] whenever the launch used the packed AoS
+            ABI — an external source through [run_source], or any non-CUDA/PTX
+            backend. *)
   }
 
   and ('a, 'b) t = {

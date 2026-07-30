@@ -206,14 +206,17 @@ module Make (Ops : CUSTOM_OPS) = struct
             is what says the leaves are the ones holding the results. *)
     soa_free_leaves : Ops.device_t option -> unit;
         (** Release the leaf device buffers: [Some dev] frees them on that
-            device only, [None] on every device. Then RE-DERIVES
-            {!soa_leaves_live} from the leaves that are still allocated, rather
-            than clearing it: a freed leaf holds nothing a read-back could
-            fetch, but the flag covers the whole vector, so a [Some dev] free
-            must leave it set while leaves survive on another device. Clearing
-            it unconditionally made [free_buffer] on device B disown live leaves
-            on device A, and the drain-before-free then skipped A — freeing a
-            device the results were not on discarded them.
+            device only, [None] on every device. Then NARROWS {!soa_leaves_live}
+            — still set iff it already was and some leaf survives the free —
+            rather than clearing it: a freed leaf holds nothing a read-back
+            could fetch, but the flag covers the whole vector, so a [Some dev]
+            free must leave it set while leaves survive on another device.
+            Clearing it unconditionally made [free_buffer] on device B disown
+            live leaves on device A, and the drain-before-free then skipped A —
+            freeing a device the results were not on discarded them. Deriving it
+            from the surviving leaves alone is the mirror-image bug: it turned
+            the flag back ON for leaves a packed launch had already gathered and
+            given up.
 
             Its absence was a LEAK rather than a correctness bug, which is why
             it is easy to miss. Under this ABI the packed AoS buffer is never
@@ -238,19 +241,32 @@ module Make (Ops : CUSTOM_OPS) = struct
             [Execute.run_source], or any non-PTX backend) leaves it [false], and
             read-back then correctly downloads the packed buffer.
 
-            THREE writers, and the list is exhaustive — anything else that flips
-            this is a bug: {!soa_to_device} sets it; {!soa_free_leaves}
-            re-derives it from the leaves that survive the free; and
-            [Execute.transfer_vectors_to_device] clears it when a launch takes
-            the packed ABI. Between them it states the ABI of the MOST RECENT
-            operation, not of some operation — which is the property the
-            read-back paths rely on and the one that was missing when nothing
-            ever cleared it.
+            FOUR writers, and the list is exhaustive — anything else that flips
+            this is a bug. Exactly ONE of them can set it:
 
-            Note what "clears it" cost in {!soa_free_leaves}: this flag is
+            - {!soa_to_device} SETS it: the upload it performs is what makes the
+              leaves the device-side copy;
+            - [Execute.transfer_vectors_to_device] CLEARS it when a launch takes
+              the packed ABI, after gathering the leaves into host storage;
+            - [Transfer.to_device] CLEARS it after a packed host->device upload,
+              which makes the packed buffer on that device a faithful copy of
+              host storage;
+            - {!soa_free_leaves} NARROWS it: still set iff it already was AND
+              some leaf survives the free.
+
+            Between them it states the ABI of the MOST RECENT operation that
+            made a device copy authoritative, not of some operation — which is
+            the property the read-back paths rely on and the one that was
+            missing when nothing ever cleared it.
+
+            Note what {!soa_free_leaves} must and must not do. This flag is
             whole-vector while that free is per-device, so the two only agree
-            when the free covered every device. Deriving instead of assigning is
-            what keeps a single flag honest across a per-device release.
+            when the free covered every device: assigning [false] there disowned
+            leaves still live on another device. But deriving it from the
+            surviving leaves ALONE is the opposite error — allocation is not
+            authority, and a launch that gave up leaf ownership leaves those
+            buffers allocated — so it is a conjunction with the previous value:
+            that free can clear this flag, never set it.
 
             A [bool ref] rather than a mutable field so that the closure which
             performs the upload can set it itself. A mutable field would have to
