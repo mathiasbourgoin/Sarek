@@ -332,9 +332,29 @@ let transfer_vectors_to_device ?(soa_abi = false) (args : vector_arg list)
                  buffer holding pre-SoA-launch bytes, or against no buffer at all
                  (the transparent path never allocates one, so the argument
                  expansion then raises [Transfer_failed]). *)
+              (* The gather runs UNCONDITIONALLY, through the binding's own
+                 [soa_from_device] rather than through [Transfer.to_cpu]. That is
+                 the only shape that is safe next to the line below it: clearing
+                 the flag is what makes the SoA arm of [Transfer.read_back_to_host]
+                 unreachable, and nothing ever sets the flag again, so a gather
+                 that can be SKIPPED means the launch's output can be stranded in
+                 the leaves with no path back to the host.
+
+                 [Transfer.to_cpu] can skip: it consults [v.location] and returns
+                 without reading anything on [Both]. Today every [Both] on a
+                 leaf-live vector is one where the host copy already IS the
+                 gathered result (only [to_cpu]/[sync]/[free_buffer] record it, each
+                 after a real read-back), so the previous unforced call did not
+                 produce wrong data. It made the correctness of THIS site depend on
+                 an invariant spanning four functions in another module; calling the
+                 gather directly is what makes that dependence go away.
+
+                 [Transfer.to_cpu ~force:true] would also do it, but the jsoo build
+                 compiles this same file against [Transfer_jsx], whose [to_cpu]
+                 takes no [~force] — the binding closure is available in both. *)
               (match v.Vector.soa with
               | Some b when !(b.Vector.soa_leaves_live) ->
-                  Transfer.to_cpu v ;
+                  b.Vector.soa_from_device dev ;
                   b.Vector.soa_leaves_live := false ;
                   v.Vector.location <- Vector.Stale_GPU dev
               | Some _ | None -> ()) ;
@@ -366,13 +386,53 @@ let expand_to_run_source_args ?(inject_lengths = true) ?(soa_abi = false)
              declared parameter of that ABI. *)
           let b = Option.get (soa_dispatch ~soa_abi v dev) in
           let len = Vector.length v in
+          let bufs = b.Vector.soa_leaf_bufs dev in
+          (* The binding declares its leaf count ([soa_num_leaves]) and separately
+             produces the buffers, and it is the DECLARED count that reached the
+             emitter: [soa_param_names] marks this parameter as SoA and
+             [Sarek_ir_ptx.emit_params] then expands it from the record's
+             registered layout. Two derivations of one number, and this is the one
+             place they meet, so it is the only place that can compare them.
+
+             Checked rather than assumed because the consequence of a short list
+             is not a wrong result but a driver over-read: [Cuda_api.Kernel.launch]
+             sizes the argument array with [List.length args] and passes
+             [cuLaunchKernel] a bare pointer with no count (the same mechanism
+             [check_launch_args] documents at the ARITY level below), so the driver
+             reads past the end and dereferences whatever follows as a leaf
+             pointer.
+
+             Not reachable through [Soa_vector.create_transparent] today: its
+             [soa_leaf_bufs] maps over the leaf array, so it returns exactly
+             [soa_num_leaves] buffers or raises [invalid_arg] for a leaf with no
+             buffer on [dev] (Soa_vector.ml:148-160). The binding is a record of
+             closures crossing a module boundary that exists precisely so
+             [Execute] cannot see [Soa_vector] — the count agreement is therefore
+             a cross-module convention, and this makes it a checked one. *)
+          let got = List.length bufs in
+          if got <> b.Vector.soa_num_leaves then
+            Execute_error.raise_error
+              (Transfer_failed
+                 {
+                   vector = "SoA-dispatched vector";
+                   reason =
+                     Printf.sprintf
+                       "the SoA binding produced %d leaf buffer(s) on device \
+                        %d but declares %d leaves, which is the count the \
+                        kernel's parameter block was generated from; binding \
+                        this list would hand the driver a short \
+                        kernel-argument array"
+                       got
+                       dev.Device.id
+                       b.Vector.soa_num_leaves;
+                 }) ;
           let leaf_args =
             List.map
               (fun buf ->
                 let (module B : Vector.DEVICE_BUFFER) = buf in
                 Framework_sig.RSA_Buffer
                   {binder = B.bind_to_kargs; length = len})
-              (b.Vector.soa_leaf_bufs dev)
+              bufs
           in
           leaf_args @ [Framework_sig.RSA_Vector_Length (Int32.of_int len)]
       | Vec v ->

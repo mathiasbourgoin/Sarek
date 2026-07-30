@@ -34,8 +34,12 @@
  * pipeline requires to be self-contained; and half A's pre-fix red state is a
  * RAISE, so a shared binary would abort before the other half reported.
  *
- * Exit codes: 0 = pass (including an honest skip), 1 = an assertion fired,
- * 2 = setup could not produce the device pair this needs.
+ * Exit codes: 0 = pass, INCLUDING both honest skips (no CUDA/PTX device, or only
+ * one device to migrate between) — an absent device is not a regression, and
+ * every skip prints a line naming the class it needed; 1 = an assertion fired.
+ * There is no third code: a previous version of this header documented
+ * "2 = setup could not produce the device pair this needs" while both skip paths
+ * exit 0, so the row described a state this file cannot reach.
  *
  * Needs TWO devices, at least one of them CUDA/PTX (the SoA ABI dispatches
  * nowhere else). Locally that is ZLUDA on an AMD RX 7900 XTX — a CUDA/PTX
@@ -309,7 +313,19 @@ let () =
   | src :: _ -> (
       (* [dst] only has to be a DIFFERENT device — it receives an ordinary packed
          upload, so any framework will do. Another CUDA/PTX device is preferred
-         so the pair is homogeneous. *)
+         so the pair is homogeneous.
+
+         "Any framework" includes the CPU backends, and that holds for the BYTE
+         assertions in [check_per_device_leaf_free] too, which is the half that
+         could plausibly depend on it: the accounting is not the backend's.
+         [Transfer.ensure_buffer] calls [Gpu_memory.track_alloc (size *
+         elem_size)] for every framework (Transfer.ml:232) on a wrapper whose
+         [size]/[elem_size] come from the requested length and element size
+         (Transfer.ml:150-152), and [free_buffer] tracks the same product back. So
+         a Native or Interpreter [dst] still yields a non-zero packed-byte delta
+         and the split is still measurable — no GPU-only restriction on [dst] is
+         needed, and adding one would drop the heterogeneous pair, which is the
+         more interesting migration. *)
       let others =
         Array.to_list devs
         |> List.filter (fun (d : Device.t) -> d.Device.id <> src.Device.id)
