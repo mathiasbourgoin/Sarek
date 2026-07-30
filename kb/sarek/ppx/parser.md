@@ -130,7 +130,7 @@ Class-comparable arms the OCaml *parser* cannot produce are marked
 | `Pexp_construct` qualified `M.C e` | final arm | refused, generic | refused, names it |
 | `Pexp_variant` `` `Tag `` | final arm | refused, generic | refused, names it |
 | `Pexp_record` field list | `parse_expression` | implemented | implemented |
-| `Pexp_record` **`with` base** | `parse_expression` | **SILENTLY DROPPED**: `{r with x=e}` == `{x=e}`, every other field left uninitialised on the device | **refused**, `test_record_update` |
+| `Pexp_record` **`with` base** | `parse_expression` | **DROPPED**: `{r with x=e}` parsed as `{x=e}`, base gone. NOT silent, measured: OCaml rejects the re-emitted native literal with `Some record fields are undefined: y` on the user's `with` line, never mentioning the `with`. A bad diagnostic, not wrong device code | **refused**, `test_record_update` |
 | `Pexp_record` field longident `Lapply` | `parse_expression` | **DROPPED** to the invented field name `"field"` | **refused** — **unreachable** from source (`r.F(X).f` is a syntax error; `ocamlc -stop-after parsing` on `let f r = r.F(X).lbl` reports "Syntax error"), so asserted on the AST node in `test_parse.ml` |
 | `Pexp_field` `r.f` | `parse_expression` | implemented | implemented |
 | `Pexp_field` qualified `r.M.f` | final arm | refused, generic | refused, names it |
@@ -205,7 +205,7 @@ field nobody reads here is a field nobody reads at all.
 | construct | site | before | after |
 |---|---|---|---|
 | `ptype_name`, `Ptype_record`, `Ptype_variant` | `parse_payload` | implemented | implemented |
-| `ptype_params` (`type 'a t`) | `check_payload_type_decl` | **SILENTLY DROPPED** | **refused**, `test_payload_type_params` |
+| `ptype_params` (`type 'a t`) | `check_payload_type_decl` | **DROPPED**. Not silent for the measured shape (a field mentioning the parameter): OCaml rejects the re-emitted declaration with `A type wildcard _ is not allowed in this type declaration`, pinned to the whole payload and naming nothing the user wrote. The parameter-unused shape was not measured | **refused**, `test_payload_type_params` |
 | `ptype_cstrs` (`constraint 'a = t`) | same | **SILENTLY DROPPED** | **refused** (no committed case: see below) |
 | `ptype_private` | same | **SILENTLY DROPPED** | **refused** (no committed case: see below) |
 | `ptype_manifest` with `Ptype_abstract` (`type t = u`) | same | refused, "Unsupported type declaration in kernel payload" | refused, names the alias and says aliases are not followed, `test_payload_type_alias` |
@@ -223,8 +223,8 @@ field nobody reads here is a field nobody reads at all.
 | construct | site | before | after |
 |---|---|---|---|
 | `Pstr_type`, `Pstr_value` | `parse_module_items_from_structure` | implemented | implemented |
-| `Pstr_value` with no params and no annotation | same | **SILENTLY DROPPED** — the binding was not registered, so the kernel failed with an unbound variable at the USE | **refused**, `test_module_const_no_type` |
-| `Pstr_eval`, `Pstr_primitive`, `Pstr_typext`, `Pstr_exception`, `Pstr_module`, `Pstr_recmodule`, `Pstr_modtype`, `Pstr_open`, `Pstr_class`, `Pstr_class_type`, `Pstr_include`, `Pstr_attribute`, `Pstr_extension` | same, last arm | **SILENTLY DROPPED** — the fold returned its accumulator unchanged | **refused**, each named (`test_module_item_dropped`) |
+| `Pstr_value` with no params and no annotation | same | **DROPPED** — the binding was not registered. That the fold discarded it is mechanical (it returned its accumulator); the CONSEQUENCE was not isolated by measurement, because with the refusal removed this case fails with `Unbound module M`, which the probing showed is a pre-existing limitation of the payload `let module` route (bare-name registration) and not the drop | **refused**, `test_module_const_no_type` |
+| `Pstr_eval`, `Pstr_primitive`, `Pstr_typext`, `Pstr_exception`, `Pstr_module`, `Pstr_recmodule`, `Pstr_modtype`, `Pstr_open`, `Pstr_class`, `Pstr_class_type`, `Pstr_include`, `Pstr_attribute`, `Pstr_extension` | same, last arm | **DROPPED** — the fold returned its accumulator unchanged, which is mechanical. Same caveat as the row above: the residual error with the refusal removed (`Unbound module M`) is the payload `let module` route's own limitation, not a measurement of the drop's consequence | **refused**, each named (`test_module_item_dropped`) |
 
 ### `module_expr_desc` and the payload top — `Sarek_parse.collect_mods`
 

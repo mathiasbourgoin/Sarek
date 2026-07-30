@@ -111,17 +111,35 @@ let when_guard_msg =
 
     [Pexp_record]'s second component is the [with] base. It was read as [_base]
     and never used, so [{ r with x = 1.0 }] parsed to exactly the same [ERecord]
-    as [{ x = 1.0 }]: every field NOT mentioned was left unset, and the lowering
-    emits a struct initialiser for it. On a device that is an uninitialised
-    field read as whatever the memory held — a wrong answer with no diagnostic,
-    the same shape as the dropped [when] guard (backlog-192). *)
+    as [{ x = 1.0 }] and the base was gone (backlog-192).
+
+    It was NOT silent, and an earlier revision of this comment and of
+    record_update_msg said it was. Measured on this tree by removing this
+    refusal and building sarek/tests/negative/test_record_update.ml: the kernel
+    fails to compile with OCaml's own
+
+    Error: Some record fields are undefined: y
+
+    pinned to the user's [{ p with x = 1.0 }] expression. The mechanism is that
+    the PPX re-emits the record literal into the generated native fallback with
+    the original location, so OCaml sees a literal missing a field and rejects
+    it. Any [with] that actually omits a field omits it there too, so this is
+    not a property of that one case — but "silently wrong device code", the
+    [when] guard's failure mode, is not what this was. What it was is a
+    diagnostic that names a missing field and never mentions that the [with] was
+    discarded, which is why the refusal is still worth having.
+
+    The refusal is also not "cannot be supported": there is no
+    copy-then-overwrite form in the record lowering, and adding one is a
+    feature. *)
 let record_update_msg =
   "functional record update (`{ r with f = e }`) is not supported in kernels \
    (not yet implemented). Sarek's record literal is lowered to a struct \
-   initialiser and there is no copy-then-overwrite form for it, so the base \
-   record would be discarded and every field you did not name would be left \
-   uninitialised. Name every field, reading the ones you are not changing from \
-   the base: `{ f = e; g = r.g }`."
+   initialiser with no copy-then-overwrite form, so the base record is dropped \
+   and only the fields you name are set — which the compiler then reports as \
+   an undefined field somewhere else, without saying that the `with` was the \
+   cause. Name every field, reading the ones you are not changing from the \
+   base: `{ f = e; g = r.g }`."
 
 (** A record field named through a functor application. The field longident used
     to fall back to the literal name ["field"] for anything that was not

@@ -5,10 +5,17 @@
 
 (* Negative test: A parameterised type in a kernel payload must be REFUSED (backlog-192).
 
-   `ptype_params` had no reader. A payload type declaration never reaches OCaml,
-   so a field nobody reads here is a field nobody reads at all: this declared a
-   `box` whose device layout depends on `'a`, and Sarek recorded it as if the
-   parameter were not there. *)
+   `ptype_params` had no reader, so Sarek recorded this as if the parameter were
+   not there. Measured by removing the refusal and rebuilding: the pre-fix
+   behaviour for THIS shape (a field mentioning the parameter) is OCaml's
+
+     Error: A type wildcard _ is not allowed in this type declaration.
+
+   pinned to the whole `[%kernel]` payload -- an error that names nothing the
+   user wrote, arising because the parameter-less re-emission turns `'a` into
+   `_`. So it was a bad diagnostic in the wrong place, not silence. Whether a
+   parameterised type NONE of whose fields mention the parameter was silent was
+   not measured, and nothing here claims it either way. *)
 
 let k =
   [%kernel
