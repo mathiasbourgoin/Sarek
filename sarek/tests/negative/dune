@@ -40,6 +40,8 @@
 ; - test_char_vector: "`char` is not a supported Sarek element type"
 ; - test_poly_helper_f64: "'norm' cannot be used at this call site"
 ; - test_when_guard: "`when` guards on match cases are not supported in kernels"
+; - test_inline_type_field_store: "cannot assign to field ... of a record type
+;   declared inside the kernel" + "register it with [@@sarek.type]"
 
 (library
  (name neg_test_unregistered_field)
@@ -442,6 +444,23 @@
 (library
  (name neg_test_sarek_include_advice)
  (modules test_sarek_include_advice)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+; backlog-172: a field store into a record type declared INSIDE the kernel is
+; refused -- such a type is read through a generated first-class-module getter
+; and has no setter. Asserts the refusal AND its ADVICE, including the "@@"
+; that Format would otherwise collapse to "@" (same class as the two cases
+; above). Self-contained on purpose (no `open`) -- see the header comment.
+
+(library
+ (name neg_test_inline_type_field_store)
+ (modules test_inline_type_field_store)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
