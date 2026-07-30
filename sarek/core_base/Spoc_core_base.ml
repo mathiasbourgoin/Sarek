@@ -527,6 +527,16 @@ module Make (Ops : CUSTOM_OPS) = struct
       location = CPU;
       auto_sync = vec.auto_sync;
       id = !next_id;
+      (* The copy is AoS-only BY DESIGN, and this is the one [soa] decision in
+         this module that a reader could mistake for an omission. A binding's
+         closures capture the SOURCE vector's leaves — inheriting it would give
+         the copy a fast path that scatters from, and gathers into, memory the
+         copy does not own, so a launch on the copy would write the original's
+         leaves. Copying the leaves as well is a different feature, not a smaller
+         one: it needs a per-device duplicate of every leaf buffer. Dropping the
+         binding costs nothing but speed — the copy is still a complete packed AoS
+         vector, which is what every non-CUDA/PTX launch of the original uses
+         anyway. *)
       soa = None;
     }
 
@@ -557,6 +567,12 @@ module Make (Ops : CUSTOM_OPS) = struct
       location = CPU;
       auto_sync = vec.auto_sync;
       id = !next_id;
+      (* AoS-only for a stronger reason than {!copy_host_only} above: a
+         subvector's length is [len], while the parent binding's leaves are
+         [vec.length] long and its plan's scatter/gather run over that whole
+         length. There is no offset anywhere in the binding to narrow, so the
+         parent's binding does not describe this vector at all — it is not a
+         speed choice here but the only correct answer. *)
       soa = None;
     }
 

@@ -393,7 +393,7 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
   | Vector.Both d when d.id = dev.id -> Log.debug Log.Transfer "-> skip (Both)"
   | Vector.Stale_CPU d when d.id = dev.id ->
       Log.debug Log.Transfer "-> skip (Stale_CPU)"
-  | _ ->
+  | _ -> (
       (* Ensure buffer exists and transfer *)
       let buf = ensure_buffer vec dev in
       let (module B : Vector.DEVICE_BUFFER) = buf in
@@ -419,7 +419,32 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
       | Vector.Custom_storage {ptr; custom; length} ->
           B.host_ptr_to_device ptr ~byte_size:(length * custom.elem_size) ;
           ignore (Sys.opaque_identity ptr)) ;
-      vec.location <- Vector.Both dev
+      vec.location <- Vector.Both dev ;
+      (* The packed buffer on [dev] now holds host storage, so a read-back must
+         read IT and not the leaves — and only this arm may say so, because only
+         this arm uploaded anything. The two skip arms above upload nothing (a
+         [Stale_CPU dev] transparent vector is exactly the case where the leaves
+         ARE the device copy), so clearing there would disown live leaves.
+
+         Reaching here with the flag set means the host copy was authoritative or
+         in sync first — that is what makes the upload above meaningful, and it is
+         what every path into this arm establishes: the migration arm three lines
+         up has just drained the other device through [read_back_to_host], and the
+         remaining locations ([CPU], [Both d], [Stale_GPU d]) each assert the host
+         copy is not behind. So this does not discard a pending leaf result; it
+         stops [read_back_to_host] from answering a question about [dev] by
+         reading leaves on another device, which is the one thing the whole-vector
+         flag cannot express (see {!Read_back.has_device_data}).
+
+         [Execute.transfer_vectors_to_device] normalises the same flag on the
+         packed-launch path. That site is not this one: it runs before a LAUNCH
+         and gathers first, this one after an UPLOAD that has already made the
+         host copy authoritative. Both exist because the flag names the ABI of the
+         most recent operation that made a device copy authoritative, and an
+         upload is such an operation. *)
+      match vec.Vector.soa with
+      | Some b -> b.Vector.soa_leaves_live := false
+      | None -> ())
 
 (** Transfer vector data from device to CPU.
     @param force

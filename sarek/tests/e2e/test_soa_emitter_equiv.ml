@@ -796,7 +796,15 @@ let xyz_ty =
   Sarek_ir_types.TRecord
     ("point3d", [("x", TFloat32); ("y", TFloat32); ("z", TFloat32)])
 
-let mixed_ty = Sarek_ir_types.TRecord ("mixed", [("a", TInt32); ("b", TFloat64)])
+(* A hand-built record type that exists ONLY as a layout-mismatch fixture. Named
+   [mismatch_ty] over the record "ab_pair", deliberately not "mixed": the real
+   [mixed] record declared above this file's kernels is [{i : int32; d : float64}]
+   and a fixture sharing its name reads as a description of it. Nothing compares
+   the NAME — [Soa_launch.check_soa_layout] compares leaves and stride only
+   (Soa_launch.ml:117-121) — so the rename cannot change what these cases
+   assert. *)
+let mismatch_ty =
+  Sarek_ir_types.TRecord ("ab_pair", [("a", TInt32); ("b", TFloat64)])
 
 (* [check_soa_layout] raises via Execute_error.raise_error; a refusal is any
    Execution_error whose rendering mentions the parameter. Asserting on the
@@ -887,6 +895,28 @@ let check_field_derivation () =
     (Soa_vector.plan (Soa_vector.create dpair_custom 4))
     ~expect_leaves:[("u", 0, 8); ("v", 8, 8)]
     ~expect_stride:16 ;
+  (* The two MIXED-width records, which point3d and dpair cannot cover: both are
+     uniform-width, so neither can distinguish a correct offset from one that
+     ignores alignment padding. These two put the padding in different places —
+     [mixed] is 4B then 8B, so the f64 leaf is at 8 and not at 4; [longpair] is 8B
+     then 4B, so the stride is 16 and not 12 (trailing pad).
+
+     Here rather than only in [check_mixed_widths] because that case needs a
+     device — a CUDA/PTX one for the SoA leg, and fp64/int64 capability for the
+     leaves — while an offset or stride regression is a property of the derived
+     plan alone. On a host with no GPU, and in this repository's CI, the device
+     case cannot run at all, so without these two rows the padding-sensitive
+     layouts have no check that executes there. *)
+  check_plan
+    "derived plan for mixed (i32 then f64: pad after the i32)"
+    (Soa_vector.plan (Soa_vector.create mixed_custom 4))
+    ~expect_leaves:[("i", 0, 4); ("d", 8, 8)]
+    ~expect_stride:16 ;
+  check_plan
+    "derived plan for longpair (i64 then i32: trailing pad)"
+    (Soa_vector.plan (Soa_vector.create longpair_custom 4))
+    ~expect_leaves:[("p", 0, 8); ("q", 8, 4)]
+    ~expect_stride:16 ;
   !ok
 
 let check_layout_validation () =
@@ -933,10 +963,10 @@ let check_layout_validation () =
       (refuses
          ~label:"wrong leaf WIDTH is refused"
          ~param:"m"
-         ~kernel_ty:(Some mixed_ty)
+         ~kernel_ty:(Some mismatch_ty)
          ~declared:
            (Soa.plan
-              ~name:"mixed"
+              ~name:"ab_pair"
               [("a", Sarek_ir_types.TInt32); ("b", TFloat32)])
          ~expect_substr:"wrong byte offsets")
   then ok := false ;
@@ -1161,6 +1191,14 @@ let check_transparent dev n =
    or a stale-input result could coincide with a correct one. Round 1 doubles
    y = i+1; round 2 starts from y = 1000-i, so a stale second round yields
    4*(i+1) and a correct one 2*(1000-i) — never equal for i in range. *)
+(* ONE definition of this case's label, because it is printed from two places
+   that must not drift: the pass/FAILED line at the end of [check_relaunch] and
+   the [guarded] SKIP line at the call site, which is printed INSTEAD of running
+   the function. Two [Printf.sprintf]s meant a reword in one desynchronised the
+   skip row from the pass row for the same case. *)
+let relaunch_label writer_name =
+  Printf.sprintf "second launch sees the second host write (%s)" writer_name
+
 let check_relaunch dev n ~writer_name ~write ~y_expected ~stale_note =
   let threads = min 128 n in
   let block = dims threads and grid = dims ((n + threads - 1) / threads) in
@@ -1209,7 +1247,7 @@ let check_relaunch dev n ~writer_name ~write ~y_expected ~stale_note =
   done ;
   Printf.printf
     "  %-56s %s\n%!"
-    (Printf.sprintf "second launch sees the second host write (%s)" writer_name)
+    (relaunch_label writer_name)
     (if !ok then "OK" else "FAILED") ;
   !ok
 
@@ -1574,19 +1612,26 @@ let check_free_buffer_coherent dev n =
       fail "location after free_buffer: Stale_CPU %d, want CPU" d.Device.id
   | Vector.Stale_GPU d ->
       fail "location after free_buffer: Stale_GPU %d, want CPU" d.Device.id) ;
-  (* Claim 2. *)
+  (* Claim 2. [first_mismatch] is per-CLAIM, not the function-wide [ok]: gating
+     the print on [!ok] made claim 1 (or claim 3) failing suppress every index
+     line here and in claim 5, so the case reported FAILED naming a claim while
+     printing no evidence for the claim that actually broke. One ref per loop
+     keeps "print only the first index" without letting one claim silence
+     another. *)
+  let first_mismatch = ref true in
   (match Transfer.to_cpu ~force:true sv with
   | () ->
       for i = 0 to n - 1 do
         let got = (Vector.get sv i).y and want = y0 i *. 2.0 in
-        if Float.abs (got -. want) > 1e-3 && !ok then
+        if Float.abs (got -. want) > 1e-3 && !first_mismatch then (
+          first_mismatch := false ;
           fail
             "to_cpu after free_buffer corrupted @%d: got=%g want=%g \
              (pre-launch host value is %g)"
             i
             got
             want
-            (y0 i)
+            (y0 i))
       done
   | exception e ->
       fail
@@ -1633,19 +1678,22 @@ let check_free_buffer_coherent dev n =
      Transfer.flush dev
    with
   | () ->
+      (* Claim 5's own first-mismatch ref, for the reason given at claim 2. *)
+      let first_mismatch = ref true in
       for i = 0 to n - 1 do
         (* Round 1 doubled y0 to 2*y0 and [to_cpu] above gathered it into host
            storage, so this second launch doubles that to 4*y0. Stale device data
            would leave 2*y0 — never equal for y0 > 0. *)
         let got = (Vector.get sv i).y and want = y0 i *. 4.0 in
-        if Float.abs (got -. want) > 1e-3 && !ok then
+        if Float.abs (got -. want) > 1e-3 && !first_mismatch then (
+          first_mismatch := false ;
           fail
             "relaunch after free_buffer is wrong @%d: got=%g want=%g (the \
              first launch's result is %g)"
             i
             got
             want
-            (y0 i *. 2.0)
+            (y0 i *. 2.0))
       done
   | exception e ->
       fail "relaunch after free_buffer raised: %s" (Printexc.to_string e)) ;
@@ -1843,8 +1891,18 @@ let () =
         || dev.Device.framework = "Interpreter"
         || Device.allows_fp64 dev
       in
-      if dev_can_f64 && not (check "dpair(f64)" dev n run_dpair) then
-        ok := false ;
+      (* The skip is NAMED. Gating the call on [dev_can_f64] alone printed
+         nothing at all on a device without fp64, and a row that prints nothing is
+         indistinguishable from one that passed — the exact skip-as-pass shape the
+         guarded cases below were restructured to make unrepresentable, and this
+         is the last plain capability gate in the driver loop. Same wording as the
+         two arms of [check_mixed_widths], which report the same capability. *)
+      if not dev_can_f64 then
+        Printf.printf
+          "SoA-emitter dpair(f64) [%s] %s: SKIP (device reports no fp64)\n%!"
+          dev.Device.framework
+          dev.Device.name
+      else if not (check "dpair(f64)" dev n run_dpair) then ok := false ;
       if not (check_transparent dev n) then ok := false ;
       (* Transparent OUTPUT read-back. Its only blocker is the CPU field-store
          gap, NOT the SoA ABI: on OpenCL/Vulkan the launch takes the packed AoS
@@ -1878,10 +1936,7 @@ let () =
               (guarded
                  dev
                  ~blockers:[blocker_cpu_field_store]
-                 ~label:
-                   (Printf.sprintf
-                      "second launch sees the second host write (%s)"
-                      writer_name)
+                 ~label:(relaunch_label writer_name)
                  (fun () ->
                    check_relaunch
                      dev

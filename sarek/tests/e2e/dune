@@ -972,9 +972,15 @@
 ;   - a machine WITHOUT ZLUDA: the loader ignores a nonexistent directory, so the
 ;     rule is a no-op and the cases print their skip lines. No new failure.
 ;   - a machine with a NATIVE CUDA driver: libcuda.so.1 lives on the default
-;     loader path, so replacing LD_LIBRARY_PATH does not hide it. A host that
-;     reaches its CUDA driver ONLY through an inherited LD_LIBRARY_PATH loses the
-;     PTX leg here — and gets the loud skip, not a false green.
+;     loader path, so this rule does not hide it.
+; PREPENDED, not assigned. The first version assigned, and the loss was not
+; limited to the CUDA driver this rule is about: this test asserts on every device
+; the host enumerates, so a host that reaches its OpenCL ICD, Vulkan loader or
+; Mesa drivers through an inherited LD_LIBRARY_PATH lost THOSE devices too — they
+; simply stop enumerating, which costs real rows and fails nothing.
+; %{env:LD_LIBRARY_PATH=} expands to the empty string when the variable is unset,
+; leaving a trailing colon; the loader reads an empty entry as the current
+; directory, which under dune is the sandboxed build directory.
 ; Same precedent as the RUSTICL_FEATURES=fp64 rule further down: set the variable
 ; that makes a leg actually exercised, rather than documenting it in a comment and
 ; letting the leg quietly not run.
@@ -984,14 +990,14 @@
  (action
   (setenv
    LD_LIBRARY_PATH
-   %{env:HOME=}/opt/zluda
+   %{env:HOME=}/opt/zluda:%{env:LD_LIBRARY_PATH=}
    (run %{dep:test_soa_emitter_equiv.exe}))))
 
 ; Cross-device migration of a transparent SoA vector: Transfer.to_device to a
 ; device the vector is NOT resident on drains the source device first, and that
 ; drain bypassed the SoA-aware read-back. Needs two devices, one CUDA/PTX; skips
-; loudly (exit 0) otherwise. Same ZLUDA path as the rule above, for the same
-; reason.
+; loudly (exit 0) otherwise. Same ZLUDA path as the rule above, prepended for the
+; same reason.
 
 (executable
  (name test_soa_cross_device_migration)
@@ -1019,7 +1025,7 @@
  (action
   (setenv
    LD_LIBRARY_PATH
-   %{env:HOME=}/opt/zluda
+   %{env:HOME=}/opt/zluda:%{env:LD_LIBRARY_PATH=}
    (run %{dep:test_soa_cross_device_migration.exe}))))
 
 ; L17b polymorphic bare float literals: bare (unsuffixed) literals inferred as
