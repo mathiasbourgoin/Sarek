@@ -36,16 +36,23 @@
  *      now" come apart.
  *
  *      On the C-family backends this case cannot run AT ALL yet, for a reason
- *      that has nothing to do with the store: a record type with a
- *      record-typed FIELD gets its own struct emitted but not its dependency,
- *      so the kernel fails to compile with "unknown type name <inner struct>".
+ *      that has nothing to do with the store: the record typedefs are emitted
+ *      in [kern_types] order with no dependency sort, so [outer] — which names
+ *      [triple] as a field type — is written out BEFORE [triple] and the kernel
+ *      does not compile. The dependency is emitted, just too late; both
+ *      generators feed the same unsorted list through
+ *      Sarek_ir_codegen.gen_record_typedefs / Sarek_ir_glsl.gen_record_def.
  *      Measured to affect a READ-ONLY nested kernel identically, so it is a
- *      struct-declaration gap, not a store gap (backlog-203).
+ *      struct-ordering gap, not a store gap (backlog-203).
  *
  *      That expectation is pinned in BOTH directions rather than skipped: the
  *      CPU backends must land the store, and a C-family backend must fail with
  *      exactly that error. A C-family device that started compiling it, or one
- *      that failed differently, is a change this test reports.
+ *      that failed differently, is a change this test reports. The two C-family
+ *      compilers word it completely differently — clang names the type, glslang
+ *      reports a bare parse error and never echoes the identifier — so the pin
+ *      is a two-clause disjunction; each clause states what it admits and what
+ *      it excludes at the predicate.
  *
  * Every device failure makes the process exit non-zero.
  ******************************************************************************)
@@ -117,16 +124,258 @@ let scale_nested =
         let tid = thread_idx_x + (block_idx_x * block_dim_x) in
         if tid < n then v.(tid).mid.b <- v.(tid).mid.b *. 2.0]
 
-(* No String.contains_sub in the stdlib; spelled out so the message match above
-   is an exact substring test rather than a looser regex. *)
-let contains_sub (hay : string) (needle : string) : bool =
+(* No String.index_sub in the stdlib; spelled out so the message matches below
+   are exact substring tests rather than looser regexes. Offsets (not just a
+   bool) because the GLSL clause has to compare the POSITION of a type's use
+   against the position of its declaration. *)
+let find_sub (hay : string) (needle : string) : int option =
   let nh = String.length needle and hl = String.length hay in
-  if nh = 0 then true
+  if nh = 0 then Some 0
   else
     let rec go i =
-      i + nh <= hl && (String.equal (String.sub hay i nh) needle || go (i + 1))
+      if i + nh > hl then None
+      else if String.equal (String.sub hay i nh) needle then Some i
+      else go (i + 1)
     in
     go 0
+
+let contains_sub (hay : string) (needle : string) : bool =
+  Option.is_some (find_sub hay needle)
+
+let read_file (path : string) : string option =
+  try
+    let ic = open_in_bin path in
+    let s = really_input_string ic (in_channel_length ic) in
+    close_in ic ;
+    Some s
+  with _ -> None
+
+(* The shader path glslangValidator echoed. It appears twice in the log — once
+   alone on its own line, once as the "<path>:<line>:" prefix — and this picks
+   the bare occurrence by requiring the whole whitespace-delimited token to end
+   in ".comp". Returns None when the log carries no such token, which is the
+   case whenever Vulkan compiled through libshaderc instead of the CLI. *)
+let glsl_shader_path (msg : string) : string option =
+  String.split_on_char '\n' msg
+  |> List.concat_map (String.split_on_char ' ')
+  |> List.find_opt (fun tok ->
+      let n = String.length tok in
+      n > 6
+      && Char.equal tok.[0] '/'
+      && String.equal (String.sub tok (n - 5) 5) ".comp")
+
+(* Does [src] USE the type name before it DECLARES it? This is the textual
+   signature of backlog-203: the record typedefs are emitted in [kern_types]
+   order with no dependency sort, so the enclosing struct — which names the
+   inner one as a field type — is written out first. *)
+let uses_type_before_declaring (src : string) (ty : string) : bool =
+  match (find_sub src ty, find_sub src ("struct " ^ ty)) with
+  | Some use, Some decl -> use < decl
+  | _ -> false
+
+(* backlog-203. The ONLY tolerated failure is the struct-ordering gap,
+   and it has to be recognised in two different dialects because the two
+   C-family compilers describe it with completely different words.
+   Tolerated on the C-family backends only — on Interpreter or Native it
+   would mean the fix regressed.
+
+   Clause A — clang-family diagnostics (OpenCL here; CUDA/HIP/Metal
+   would land here too). Verbatim, from the OpenCL log:
+
+     input.cl:3:3: error: unknown type name
+     'Test_record_field_store_triple'
+
+   ADMITS: a diagnostic that both says "unknown type name" and names the
+   inner struct's emitted symbol. EXCLUDES: every other clang
+   diagnostic, and an unknown-type error about any OTHER type — which is
+   what a store lowered to a bogus type would look like.
+
+   Clause B — glslang. Its message is the reason the original predicate
+   read Vulkan as a hard failure: glslang never echoes the offending
+   identifier. Verbatim, from the Vulkan log:
+
+     ERROR: /tmp/sarek_deea56.comp:8: '' :  syntax error, unexpected
+     IDENTIFIER, expecting RIGHT_BRACE
+
+   There is nothing in that text tying it to this gap, so the message
+   alone cannot carry the pin and clause B is a conjunction of two:
+
+     B1 the glslang parse-error shape an undeclared type produces when
+        used as a struct member: the parser is inside a brace body and
+        meets an IDENTIFIER where a `}` or a known type keyword must be.
+        ADMITS only that one wording. EXCLUDES every semantic error
+        (including glslang's own "undeclared identifier"), every other
+        syntax error, and both link-stage errors — the "Missing entry
+        point" line is downstream of this one and is not matched.
+
+     B2 the shader source itself — recovered from the path glslang
+        printed, which is still on disk because the Vulkan CLI path
+        raises before it unlinks the .comp on a failed compile — uses
+        Test_record_field_store_triple at an earlier byte offset than it
+        declares it. ADMITS only a shader with THIS type emitted after
+        its user. EXCLUDES a syntax error in a shader whose structs are
+        in dependency order, a syntax error about some other type, and
+        the case where the shader cannot be read at all: B2 is then
+        false and the device FAILS, because an unsubstantiated claim
+        must not pass as a substantiated one.
+
+   What B1 ∧ B2 does NOT exclude, stated rather than papered over: a
+   second, unrelated glslang parse error of exactly that shape occurring
+   in a shader that ALSO has the ordering problem. Binding the reported
+   line number to the line of the first use would close that, and is not
+   worth the parsing until it happens. *)
+let is_backlog203_struct_gap (msg : string) : bool =
+  let clause_a =
+    contains_sub msg "unknown type name"
+    && contains_sub msg "Test_record_field_store_triple"
+  in
+  let clause_b1 =
+    contains_sub
+      msg
+      "syntax error, unexpected IDENTIFIER, expecting RIGHT_BRACE"
+  in
+  let clause_b2 =
+    match Option.bind (glsl_shader_path msg) read_file with
+    | None -> false
+    | Some src ->
+        uses_type_before_declaring src "Test_record_field_store_triple"
+  in
+  let clause_b = clause_b1 && clause_b2 in
+  clause_a || clause_b
+
+(* Both polarities of {!is_backlog203_struct_gap}, pinned mechanically rather
+   than in prose. A tolerated-failure predicate is exactly the shape that rots
+   into "any failure passes": the accept cases would still hold if the whole
+   predicate were [fun _ -> true], so the REJECT cases are what actually
+   constrains it, and the two accept cases alone would have let the widening go
+   unnoticed. The two shaders are assembled here at runtime — the accept case
+   needs a real file on disk for clause B2 to read, and a fixture checked in
+   beside the test could drift from the wording it is supposed to match.
+
+   Runs before any device: a broken predicate must not be discovered halfway
+   through a device sweep. *)
+let () =
+  let write suffix contents =
+    let path = Filename.temp_file "sarek_selfcheck_" suffix in
+    let oc = open_out path in
+    output_string oc contents ;
+    close_out oc ;
+    path
+  in
+  (* Emitted the way backlog-203 emits it: user before dependency. *)
+  let bad_order =
+    write
+      ".comp"
+      "#version 450\n\
+       struct Test_record_field_store_outer {\n\
+      \  float tag;\n\
+      \  Test_record_field_store_triple mid;\n\
+       };\n\
+       struct Test_record_field_store_triple {\n\
+      \  float a;\n\
+       };\n"
+  in
+  (* The same two structs in dependency order — what a fixed emitter writes. *)
+  let good_order =
+    write
+      ".comp"
+      "#version 450\n\
+       struct Test_record_field_store_triple {\n\
+      \  float a;\n\
+       };\n\
+       struct Test_record_field_store_outer {\n\
+      \  float tag;\n\
+      \  Test_record_field_store_triple mid;\n\
+       };\n"
+  in
+  let glslang_syntax_error path =
+    Printf.sprintf
+      "[Vulkan Runtime] Compilation failed for:\n\n\n\
+       Compiler log:\n\
+       glslangValidator failed:\n\
+       %s\n\
+       ERROR: %s:4: '' :  syntax error, unexpected IDENTIFIER, expecting \
+       RIGHT_BRACE\n\
+       ERROR: 1 compilation errors.  No code generated.\n"
+      path
+      path
+  in
+  let cases =
+    [
+      (* ACCEPT — clause A, the OpenCL log verbatim. *)
+      ( true,
+        "opencl: verbatim",
+        "[OpenCL Runtime] Compilation failed for:\n\
+         OpenCL kernel\n\n\
+         Compiler log:\n\
+         input.cl:3:3: error: unknown type name 'Test_record_field_store_triple'\n\
+        \    3 |   Test_record_field_store_triple mid;\n\
+        \      |   ^\n\
+         Error executing LLVM compilation action.\n" );
+      (* ACCEPT — clause B, the Vulkan log verbatim, shader present and
+         out of order. *)
+      (true, "vulkan: verbatim", glslang_syntax_error bad_order);
+      (* REJECT — clause A's wording about a DIFFERENT type. This is what a
+         store lowered against a bogus record type would look like, and it must
+         not hide behind backlog-203. *)
+      ( false,
+        "opencl: unknown type name, other type",
+        "input.cl:3:3: error: unknown type name 'Test_record_field_store_quad'"
+      );
+      (* REJECT — clause A's type name in some OTHER clang diagnostic. *)
+      ( false,
+        "opencl: other diagnostic naming the type",
+        "input.cl:9:5: error: no member named 'q' in \
+         'Test_record_field_store_triple'" );
+      (* REJECT — glslang's OTHER way of reporting an undeclared name. Close
+         enough to the tolerated one to be worth pinning: same root cause
+         family, different message, so B1 must not admit it. *)
+      ( false,
+        "vulkan: undeclared identifier",
+        Printf.sprintf
+          "glslangValidator failed:\n\
+           %s\n\
+           ERROR: %s:4: 'Test_record_field_store_triple' : undeclared identifier\n"
+          bad_order
+          bad_order );
+      (* REJECT — B1's exact wording, but the shader declares its structs in
+         dependency order, so the parse error is about something else. *)
+      ( false,
+        "vulkan: syntax error, shader well-ordered",
+        glslang_syntax_error good_order );
+      (* REJECT — B1's exact wording, but the shader is gone. Unverifiable is
+         not the same as verified. *)
+      ( false,
+        "vulkan: syntax error, shader unreadable",
+        glslang_syntax_error "/tmp/sarek_selfcheck_absent_00000.comp" );
+      (* REJECT — a refusal from somewhere else entirely. *)
+      ( false,
+        "unrelated refusal",
+        "Unsupported_operation(\"record field assignment\")" );
+    ]
+  in
+  let bad =
+    List.filter
+      (fun (want, _, msg) ->
+        not (Bool.equal (is_backlog203_struct_gap msg) want))
+      cases
+  in
+  List.iter (fun p -> try Sys.remove p with _ -> ()) [bad_order; good_order] ;
+  if bad <> [] then begin
+    List.iter
+      (fun (want, label, _) ->
+        Printf.printf
+          "backlog-203 predicate self-check: %s should be %b and is not\n%!"
+          label
+          want)
+      bad ;
+    exit 1
+  end ;
+  Printf.printf
+    "backlog-203 predicate self-check: %d case(s) OK (%d accept, %d reject)\n%!"
+    (List.length cases)
+    (List.length (List.filter (fun (w, _, _) -> w) cases))
+    (List.length (List.filter (fun (w, _, _) -> not w) cases))
 
 let ir_of kirc =
   match kirc.Sarek.Kirc_types.body_ir with
@@ -248,15 +497,7 @@ let run_on (dev : Device.t) : bool =
     with
     | exception e ->
         let msg = Printexc.to_string e in
-        (* backlog-203. The ONLY tolerated failure is the struct-dependency gap,
-           matched on the inner struct's actual emitted name so a different
-           compile error cannot pass as this one. Tolerated on the C-family
-           backends only — on Interpreter or Native it would mean the fix
-           regressed. *)
-        let is_struct_gap =
-          contains_sub msg "unknown type name"
-          && contains_sub msg "Test_record_field_store_triple"
-        in
+        let is_struct_gap = is_backlog203_struct_gap msg in
         let c_family =
           match dev.Device.framework with
           | "Interpreter" | "Native" -> false
@@ -264,7 +505,9 @@ let run_on (dev : Device.t) : bool =
         in
         if is_struct_gap && c_family then begin
           Printf.printf
-            "known gap (backlog-203: nested struct not declared) — expected\n%!" ;
+            "known gap (backlog-203: nested struct emitted after its user) — \
+             expected\n\
+             %!" ;
           true
         end
         else begin
