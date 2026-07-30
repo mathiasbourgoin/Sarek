@@ -134,6 +134,8 @@ test_negative:
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_sarek_type_extension.cma > "$$out" 2>&1; if grep -q "Uninterpreted extension 'sarek.type'" "$$out"; then echo "  PASS: [%%sarek.type] extension rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing unregistered record field-type rejection (aligned ABI safety)..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_unregistered_field.cma > "$$out" 2>&1; if grep -qE "unknown (size|alignment) for field type" "$$out"; then echo "  PASS: unregistered field type rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
+	@echo "Testing unregistered-field ADVICE names a real construct (backlog-193)..."
+	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_ktype_advice.cma > "$$out" 2>&1; if grep -q "declare it with \[@@sarek.type\]" "$$out" && grep -q "an alias cannot carry \[@@sarek.type\]" "$$out"; then echo "  PASS: advice names [@@sarek.type] (not the nonexistent [%%ktype], and not the collapsed [@sarek.type])"; else echo "  FAIL: expected the [@@sarek.type] advice with both @ signs; got:"; cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing tuple-typed shared-memory array rejection..."
 	@out=$$(mktemp); dune build --profile=negative sarek/tests/negative/neg_test_shared_tuple.cma > "$$out" 2>&1; if grep -q "Tuple-typed shared-memory arrays are not supported" "$$out"; then echo "  PASS: tuple shared array rejected"; else cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"
 	@echo "Testing recursive-call vector-swap rejection (tail-recursion + vector)..."
