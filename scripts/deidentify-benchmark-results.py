@@ -135,6 +135,10 @@ def machine_label(system):
 # same-hardware machines apart AND desynchronizes the payload from its own
 # filename, which still carries the producer's suffixed label. Same defect class
 # as the darwin-apple relabelling, one field over.
+#
+# This is the same rule as Machine_label.is_derived_variant, which is what the
+# producer accepts as an override -- deliberately the same rule, since the
+# desynchronization above is what any disagreement between them produces.
 SUFFIX_MAX_LEN = 8
 
 

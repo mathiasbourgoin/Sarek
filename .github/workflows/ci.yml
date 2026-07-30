@@ -132,6 +132,39 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/check-review-finding-tests.js "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}"
 
+      # backlog-168b. scripts/check-no-machine-identifiers.test.sh, in the block
+      # below, runs BOTH statements of the machine-label shape -- the gate's
+      # sourced bash regex and the producer's OCaml matcher in
+      # benchmarks/machine_label.ml -- over one case table, plus the override
+      # policy, because a comment saying they must agree cannot fail. That needs
+      # an `ocaml` on PATH; nothing else in this block does, and the harness
+      # exits 2 without one. So the toolchain is PROVIDED here rather than the
+      # comparison being skipped: a skip-as-pass is the exact failure mode this
+      # gate exists to close.
+      #
+      # Why apt and not spoc-ci:latest, where the rest of the OCaml work runs:
+      # that image installs `opam` but no compiler (ci/Dockerfile), so `ocaml`
+      # only exists after "Build CI image" AND "Build SPOC packages" have
+      # created the switch in .opam-ci -- moving a fail-closed harness behind
+      # the two slowest steps in the job. The harness also drives
+      # scripts/deidentify-benchmark-results.py, and ci/Dockerfile installs no
+      # python3 either; relying on the oneAPI base image to happen to carry one
+      # is the kind of undeclared dependency the image's own toolchain assertion
+      # exists to prevent.
+      #
+      # A distribution toplevel is enough, and checking that is part of the
+      # point: machine_label.ml depends on Stdlib alone by construction (that is
+      # why it is a separate module), so a version-specific dependency creeping
+      # into it turns this step red instead of going unnoticed.
+      - name: OCaml toplevel for the cross-language label-shape harness
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ocaml-nox
+          # Not decoration: `apt-get install` succeeding is not the same claim
+          # as `ocaml` being runnable, and the harness's exit 2 would otherwise
+          # be the first thing to notice.
+          ocaml -version
+
       - name: Harness self-tests
         run: |
           set -e

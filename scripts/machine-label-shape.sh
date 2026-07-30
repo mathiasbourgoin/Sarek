@@ -57,6 +57,24 @@ MACHINE_LABEL_SUFFIX='(-[a-z0-9]{1,8})?'
 # The label shape as a whole-string ERE.
 MACHINE_LABEL_SHAPE="^${MACHINE_LABEL_OS}-${MACHINE_LABEL_VENDOR}${MACHINE_LABEL_SUFFIX}\$"
 
-# The same shape occupying the leading component of a result filename, i.e.
-# `.../<label>_<benchmark>_<size>_<timestamp>.json`.
-MACHINE_LABEL_PATH_SHAPE="/${MACHINE_LABEL_OS}-${MACHINE_LABEL_VENDOR}${MACHINE_LABEL_SUFFIX}_"
+# The rest of a result filename after the label, i.e. the
+# `_<benchmark>_<size>_<ISO date>` of
+# `.../<label>_<benchmark>_<size>_<timestamp>.json`. Defined HERE because
+# check-no-machine-identifiers.sh needs it twice -- once to select the files it
+# judges, once to say where in the name the label must sit -- and two
+# independently written copies of it is the same drift this file exists to
+# prevent. Note `[a-z_0-9]`, which excludes '/': that is what confines a match
+# to a single path component.
+MACHINE_LABEL_RESULT_TAIL='_[a-z_0-9]+_[0-9]+_[0-9]{4}-[0-9]{2}-[0-9]{2}'
+
+# The same shape occupying the leading component of a result FILENAME.
+#
+# The tail is part of the pattern, and it is load-bearing rather than
+# decoration: the label alone (`/<label>_`) matched anywhere in the path, so a
+# DIRECTORY could satisfy it on a file's behalf --
+# `benchmarks/results/linux-amd_/drangleic_vector_add_1024_2026-07-30T00-00-00.json`
+# was selected as a result file by the tail and then excused as well-labelled by
+# `/linux-amd_` two components to its left, and the hostname was committable
+# (CodeRabbit, PR #389). With the tail attached, the label and the name it
+# labels have to be the same component.
+MACHINE_LABEL_PATH_SHAPE="/${MACHINE_LABEL_OS}-${MACHINE_LABEL_VENDOR}${MACHINE_LABEL_SUFFIX}${MACHINE_LABEL_RESULT_TAIL}"
