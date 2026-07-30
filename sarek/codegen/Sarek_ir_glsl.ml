@@ -2030,15 +2030,18 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
        ~uses_uint8:(Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k)
        ()) ;
 
-  (* Generate record type definitions (simple structs without tag), inner
-     structs first — GLSL requires a struct type to be declared before the
-     field that names it (backlog-203). *)
-  List.iter
-    (gen_record_def buf)
-    (Sarek_ir_codegen.sort_record_types_by_dependency types) ;
-
-  (* Generate variant type definitions (structs with tag) *)
-  List.iter (gen_variant_def buf) k.kern_variants ;
+  (* Generate record (plain struct) and variant (struct with tag) definitions
+     from ONE dependency-ordered pass: GLSL requires a struct type to be
+     declared before the field that names it (backlog-203), and that holds for a
+     record naming a variant just as much as for a record naming a record — two
+     per-kind loops order neither direction of the cross edge (backlog-211). *)
+  Sarek_ir_codegen.gen_type_decls
+    ~emit_record:gen_record_def
+    ~emit_variant:gen_variant_def
+    buf
+    (Sarek_ir_codegen.decls_records_first
+       ~records:types
+       ~variants:k.kern_variants) ;
 
   (* Generate buffer bindings *)
   let binding_idx = ref 0 in

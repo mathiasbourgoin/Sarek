@@ -687,22 +687,37 @@ let gen_param ~param_type ~gen_array_param ~invalid buf decl =
       emit_length v.var_name
   | DLocal _ | DShared _ -> invalid ()
 
-exception Record_type_cycle of string list
+exception Type_decl_cycle of string list
 
-(** Mangled names of every record type mentioned anywhere inside [ty]'s type
-    tree, including through arrays, vectors, variant payloads and the fields of
-    a nested record. The walk is over a graph, not a guaranteed-finite tree, so
-    it terminates on a cyclic {!Sarek_ir_types.elttype} value.
+(** One record or variant type declaration. The two kinds are carried in a
+    SINGLE list so that {!sort_type_decls_by_dependency} can order a record
+    against a variant, which is the whole point of backlog-211: before it, each
+    backend family sorted records inside its own loop and emitted variants from
+    a second loop, so an edge crossing between the two kinds was ordered by
+    neither. *)
+type type_decl =
+  | Record_decl of string * (string * Sarek_ir_types.elttype) list
+  | Variant_decl of string * (string * Sarek_ir_types.elttype list) list
 
-    [seen] is keyed on PHYSICAL IDENTITY of the node, not on a record name. A
-    name-keyed guard only closes cycles that pass through a [TRecord], and a
-    cyclic value need not: [let rec t = TVec t] and
-    [let rec t = TVariant ("c", [("C", [t])])] are both accepted by OCaml's
-    recursive-value rule and both close without a [TRecord] on the cycle. Keyed
-    on names, those two shapes looped forever. Skipping a physically re-visited
-    node cannot lose a name — [acc] already holds everything reachable from it —
-    so the general guard does not narrow the result. *)
-let referenced_record_names (ty : Sarek_ir_types.elttype) : string list =
+let type_decl_name = function Record_decl (n, _) | Variant_decl (n, _) -> n
+
+(** Mangled names of every record AND variant type mentioned anywhere inside
+    [ty]'s type tree, including through arrays, vectors, variant payloads and
+    the fields of a nested record. Sorted and deduplicated. The walk is over a
+    graph, not a guaranteed-finite tree, so it terminates on a cyclic
+    {!Sarek_ir_types.elttype} value.
+
+    [seen] is keyed on PHYSICAL IDENTITY of the node, not on a type name. A
+    name-keyed guard only closes cycles that pass through the kind it keys on,
+    and a cyclic value need not pass through any named node at all:
+    [let rec t = TVec t], [let rec t = TRecord ("r", [("f", t)])] and
+    [let rec t = TVariant ("c", [("C", [t])])] are all accepted by OCaml's
+    recursive-value rule, and the first has neither a record nor a variant on
+    the cycle. Keyed on names, those shapes looped forever. Skipping a
+    physically re-visited node cannot lose a name — the accumulators already
+    hold everything reachable from it — so the general guard does not narrow the
+    result. *)
+let referenced_type_names (ty : Sarek_ir_types.elttype) : string list =
   let open Sarek_ir_types in
   let acc = ref [] in
   let seen = ref [] in
@@ -713,7 +728,8 @@ let referenced_record_names (ty : Sarek_ir_types.elttype) : string list =
       | TRecord (name, fields) ->
           acc := mangle_name name :: !acc ;
           List.iter (fun (_, fty) -> go fty) fields
-      | TVariant (_, constrs) ->
+      | TVariant (name, constrs) ->
+          acc := mangle_name name :: !acc ;
           List.iter (fun (_, args) -> List.iter go args) constrs
       | TArray (elt, _) | TVec elt -> go elt
       | TInt32 | TInt64 | TFloat16 | TFloat32 | TFloat64 | TUint8 | TBool
@@ -724,45 +740,55 @@ let referenced_record_names (ty : Sarek_ir_types.elttype) : string list =
   go ty ;
   List.sort_uniq String.compare !acc
 
-(** Order record declarations so that a struct is emitted only after every
-    struct its field types reference.
+(** Order record and variant declarations so that a declaration is emitted only
+    after every declaration its own types reference — records against records,
+    variants against variants, and either against the other.
 
     The emission loops used to walk [kern_types] in list order, and that order
     is not a dependency order: the PPX prepends the types reachable through the
     registry to the ones declared in the kernel's own payload, so a record with
-    a record-typed field could be emitted ahead of the struct it names. Every
-    C-family backend then failed to compile the kernel
-    ([unknown type name '<Inner>']) and GLSL/WGSL failed to parse the field
-    line. This is that missing sort (backlog-203).
+    a record-typed field could be emitted ahead of the struct it names
+    (backlog-203). Sorting records inside each family's own loop left the
+    CROSS-KIND edge unordered (backlog-211), and the two halves of that gap are
+    measured in the {!gen_type_decls} comment.
 
-    {b Stability.} Two records with no dependency between them keep their
+    {b Stability.} Two declarations with no dependency between them keep their
     relative position in the input list — ties break on the incoming index, not
-    on the name — so adding this sort leaves the emission of an
-    already-correctly-ordered type list byte-identical and committed goldens do
-    not churn.
+    on the name or the kind — so passing a family's declarations in the order
+    that family already emitted them leaves an edge-free type list
+    byte-identical and committed goldens do not churn. That is what
+    {!decls_variants_first} and {!decls_records_first} are for.
 
-    {b Cycles.} A record cycle has no valid emission order, so it raises
-    {!Record_type_cycle} with the names still unplaced rather than falling back
-    to input order — a silently wrong order is the very defect this function
-    exists to remove. Note the check is a backstop, not a live guard: the PPX
-    resolves a record field's alignment from a registry populated when the
-    field's own type declaration was processed, so a record whose field type is
-    itself or a later type is refused there first ("unknown alignment for field
-    type '...'"), and no cycle can reach codegen through the PPX front end. It
-    is kept for the IR-constructed-by-hand path (fusion, tests, a future front
+    {b Cycles.} A declaration cycle has no valid emission order, so it raises
+    {!Type_decl_cycle} with the names still unplaced rather than falling back to
+    input order — a silently wrong order is the very defect this function exists
+    to remove. Note the check is a backstop, not a live guard: the PPX resolves
+    a record field's alignment from a registry populated when the field's own
+    type declaration was processed, so a record whose field type is itself or a
+    later type is refused there first ("unknown alignment for field type
+    '...'"), and no cycle can reach codegen through the PPX front end. It is
+    kept for the IR-constructed-by-hand path (fusion, tests, a future front
     end), where nothing else would notice. *)
-let sort_record_types_by_dependency
-    (types : (string * (string * Sarek_ir_types.elttype) list) list) :
-    (string * (string * Sarek_ir_types.elttype) list) list =
-  let declared = List.map (fun (name, _) -> mangle_name name) types in
-  let indexed = List.mapi (fun i entry -> (i, entry)) types in
-  (* Dependencies of one entry: the declared records its fields reference,
-     minus itself (a self-reference cannot be satisfied by ordering, and
-     dropping it keeps the diagnostic about real cycles). *)
-  let deps (_, (name, fields)) =
-    let self = mangle_name name in
-    List.concat_map (fun (_, fty) -> referenced_record_names fty) fields
-    |> List.filter (fun d -> d <> self && List.mem d declared)
+let sort_type_decls_by_dependency (decls : type_decl list) : type_decl list =
+  let declared = List.map (fun d -> mangle_name (type_decl_name d)) decls in
+  let indexed = List.mapi (fun i d -> (i, d)) decls in
+  (* Every declared type this declaration's own types reference. A record's
+     field types and a variant's payload types are walked by the same
+     function, so an edge is found whichever kind sits at either end. *)
+  let referenced = function
+    | Record_decl (_, fields) ->
+        List.concat_map (fun (_, fty) -> referenced_type_names fty) fields
+    | Variant_decl (_, constrs) ->
+        List.concat_map
+          (fun (_, args) -> List.concat_map referenced_type_names args)
+          constrs
+  in
+  (* Dependencies of one entry: the declared types it references, minus itself
+     (a self-reference cannot be satisfied by ordering, and dropping it keeps
+     the diagnostic about real cycles). *)
+  let deps (_, d) =
+    let self = mangle_name (type_decl_name d) in
+    referenced d |> List.filter (fun x -> x <> self && List.mem x declared)
   in
   let remaining = ref indexed and placed = ref [] and out = ref [] in
   let rec loop () =
@@ -772,53 +798,94 @@ let sort_record_types_by_dependency
           (fun e -> List.for_all (fun d -> List.mem d !placed) (deps e))
           !remaining
       with
-      | Some ((i, (name, _)) as entry) ->
-          out := snd entry :: !out ;
-          placed := mangle_name name :: !placed ;
+      | Some (i, d) ->
+          out := d :: !out ;
+          placed := mangle_name (type_decl_name d) :: !placed ;
           remaining := List.filter (fun (j, _) -> j <> i) !remaining ;
           loop ()
       | None ->
           raise
-            (Record_type_cycle
-               (List.map (fun (_, (name, _)) -> name) !remaining))
+            (Type_decl_cycle
+               (List.map (fun (_, d) -> type_decl_name d) !remaining))
   in
   loop () ;
   List.rev !out
 
-(** Emit C-family record type declarations: one [typedef struct { ... } name;]
-    per record, one field per line. Shared by CUDA/OpenCL/Metal; only
-    [type_of_elttype] differs. Records are emitted in dependency order among
-    THEMSELVES (see {!sort_record_types_by_dependency}).
+(** The declaration list in the order the C-family backends (CUDA/OpenCL/Metal,
+    and HIP through the CUDA generator) emitted their two loops: variants, then
+    records. Only the TIE-BREAK depends on this — the sort reorders anything
+    with a real edge — but passing the family's historical order keeps every
+    edge-free kernel's source byte-identical. *)
+let decls_variants_first ~records ~variants =
+  List.map (fun (n, c) -> Variant_decl (n, c)) variants
+  @ List.map (fun (n, f) -> Record_decl (n, f)) records
 
-    Records only, and that boundary is not yet where it should be. The C-family
-    callers run {!gen_variant_def} BEFORE this function, so a variant with a
-    record payload emits [<Record> <C>_v;] ahead of that record's typedef and
-    the kernel still fails to compile — measured on OpenCL (radeonsi):
-    [error: unknown type name 'Probe_pt'], reachable from ordinary
-    [[@@sarek.type]] source. GLSL/WGSL emit records BEFORE variants and so have
-    the mirror half: a record with a variant-typed field, measured red on Vulkan
-    (RADV, both devices) as [syntax error, unexpected IDENTIFIER] at the field
-    line while the SAME kernel passes on OpenCL. Each half is reachable from the
-    PPX and each is green on exactly the family the other one fails on, which is
-    why neither showed up in the backlog-203 reproducer. Both are the same
-    defect class and neither is fixed here; ordering records against variants
-    needs one interleaved loop per backend family. *)
-let gen_record_typedefs ~type_of_elttype buf types =
+(** The mirror of {!decls_variants_first} for GLSL and WGSL, which emitted
+    records then variants. *)
+let decls_records_first ~records ~variants =
+  List.map (fun (n, f) -> Record_decl (n, f)) records
+  @ List.map (fun (n, c) -> Variant_decl (n, c)) variants
+
+(** Emit one C-family record declaration: [typedef struct { ... } name;], one
+    field per line. Shared by CUDA/OpenCL/Metal; only [type_of_elttype] differs.
+    Intended as the [emit_record] argument to {!gen_type_decls}. *)
+let gen_record_typedef ~type_of_elttype buf (name, fields) =
+  Buffer.add_string buf "typedef struct {\n" ;
   List.iter
-    (fun (name, fields) ->
-      Buffer.add_string buf "typedef struct {\n" ;
-      List.iter
-        (fun (fname, ftype) ->
-          Buffer.add_string buf "  " ;
-          Buffer.add_string buf (type_of_elttype ftype) ;
-          Buffer.add_char buf ' ' ;
-          Buffer.add_string buf fname ;
-          Buffer.add_string buf ";\n")
-        fields ;
-      Buffer.add_string buf "} " ;
-      Buffer.add_string buf (mangle_name name) ;
-      Buffer.add_string buf ";\n\n")
-    (sort_record_types_by_dependency types)
+    (fun (fname, ftype) ->
+      Buffer.add_string buf "  " ;
+      Buffer.add_string buf (type_of_elttype ftype) ;
+      Buffer.add_char buf ' ' ;
+      Buffer.add_string buf fname ;
+      Buffer.add_string buf ";\n")
+    fields ;
+  Buffer.add_string buf "} " ;
+  Buffer.add_string buf (mangle_name name) ;
+  Buffer.add_string buf ";\n\n"
+
+(** Emit a backend's record AND variant declarations from ONE interleaved
+    dependency-ordered pass over a single declaration list, dispatching each
+    entry to [emit_record] or [emit_variant].
+
+    This replaces the two per-kind loops every backend family used to run, and
+    the reason it has to is that each family was red on exactly the shape the
+    other family was green on (backlog-211), measured on this host:
+
+    - the C family emitted variants then records, so a variant with a RECORD
+      payload named a struct declared later. Measured on both OpenCL devices
+      (radeonsi navi31 and raphael_mendocino):
+      [error: unknown type name 'Test_record_variant_decl_order_probe_pt'] at
+      the union member — while the same kernel compiled and ran on both Vulkan
+      devices.
+    - GLSL and WGSL emitted records then variants, so a record with a
+      VARIANT-TYPED field named a struct declared later. Measured on both Vulkan
+      devices (RADV NAVI31 and RADV RAPHAEL_MENDOCINO):
+      [syntax error, unexpected IDENTIFIER] at the field line — while the same
+      kernel compiled and ran on both OpenCL devices.
+
+    Both shapes are reachable from ordinary [[@@sarek.type]] source, and
+    reaching them needs a RUNTIME-SELECTED constructor: static tag erasure
+    (Sarek_tag_erasure, L14 S1/S2) reduces a variant-typed local or record field
+    written by a literal constructor application, and an erased variant never
+    reaches [kern_variants] at all. The e2e reproducer for both halves is
+    sarek/tests/e2e/test_record_variant_decl_order.ml; the device-independent
+    order pin, including the families this host has no hardware for, is
+    sarek/tests/codegen_golden/test_decl_order_all_backends.ml.
+
+    {b What this orders, and what it does not.} It orders the declarations it is
+    given, by the type references inside their own fields and payloads. It does
+    not reorder anything else a backend emits — helper functions, bindings,
+    headers — and it does not make an unorderable input emittable: a cycle
+    between distinct declarations raises {!Type_decl_cycle}, and a declaration
+    that references ITSELF is emitted in place with the self-edge dropped, so a
+    self-referential field is still reported by the backend's own field-type
+    emission and not here. *)
+let gen_type_decls ~emit_record ~emit_variant buf decls =
+  List.iter
+    (function
+      | Record_decl (n, fields) -> emit_record buf (n, fields)
+      | Variant_decl (n, constrs) -> emit_variant buf (n, constrs))
+    (sort_type_decls_by_dependency decls)
 
 (** Emit a GLSL variant type. GLSL lacks enum/typedef/union, so tags are
     const-int declarations, the type is a bare struct with flat payload fields,

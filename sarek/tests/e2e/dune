@@ -1722,3 +1722,38 @@
    LD_LIBRARY_PATH
    %{env:HOME=}/opt/zluda
    (run %{dep:test_record_local_alias_agreement.exe}))))
+
+; record/variant cross-kind declaration order (backlog-211): a dependency edge
+; BETWEEN a record and a variant declaration must be ordered too. backlog-203
+; sorted records among themselves inside each family's own emission loop, and
+; the families disagree on which loop runs first, so the cross edge was ordered
+; by neither. Shape A (variant with a record payload) was red on the C family
+; and green on GLSL/WGSL; shape B (record with a variant field) was the exact
+; inverse. Both shapes run here on every available device with no per-backend
+; tolerance. The families this host has no hardware for (CUDA/HIP/Metal) and
+; WGSL (no device at all) are pinned in
+; sarek/tests/codegen_golden/test_decl_order_all_backends.ml instead.
+
+(executable
+ (name test_record_variant_decl_order)
+ (modules test_record_variant_decl_order)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  spoc_core
+  sarek_native
+  sarek_interpreter
+  sarek_cuda
+  sarek_opencl
+  sarek_vulkan
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_record_variant_decl_order.exe})))

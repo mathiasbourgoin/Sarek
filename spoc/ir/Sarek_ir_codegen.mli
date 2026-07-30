@@ -266,57 +266,101 @@ val gen_param :
   Sarek_ir_types.decl ->
   unit
 
-(** Raised by {!sort_record_types_by_dependency} when the record declarations
+(** Raised by {!sort_type_decls_by_dependency} when the declarations it is given
     form a cycle between DISTINCT declarations, carrying the unplaced type
-    names. Such a cycle has no valid emission order, so it is refused rather
-    than emitted in input order. A record whose own field type is itself is NOT
-    reported here: the self-edge is dropped so the diagnostic stays about cycles
-    between declarations, and the backend's field-type emission is what reports
-    it. *)
-exception Record_type_cycle of string list
+    names. Either kind can be on the cycle — record to record, variant to
+    variant, or one through the other. Such a cycle has no valid emission order,
+    so it is refused rather than emitted in input order. A declaration whose own
+    field or payload type is ITSELF is NOT reported here: the self-edge is
+    dropped so the diagnostic stays about cycles between declarations, and the
+    backend's field-type emission is what reports it. *)
+exception Type_decl_cycle of string list
 
-(** Mangled names of every record type reachable from a field type, through
-    arrays, vectors, variant payloads and nested record fields. Sorted and
-    deduplicated. Terminates on a cyclic [elttype] value whatever closes the
-    cycle — the visited set is keyed on physical node identity, not on a record
-    name, so a cycle through [TVec]/[TArray]/[TVariant] alone is caught too. *)
-val referenced_record_names : Sarek_ir_types.elttype -> string list
+(** One record or variant type declaration. Both kinds travel in one list so
+    that a dependency edge crossing between them can be ordered (see
+    {!gen_type_decls}). *)
+type type_decl =
+  | Record_decl of string * (string * Sarek_ir_types.elttype) list
+  | Variant_decl of string * (string * Sarek_ir_types.elttype list) list
 
-(** Order record declarations so a struct comes after every struct its field
-    types reference (backlog-203: list order is not dependency order, because
-    the PPX prepends registry-reachable types to the payload's own).
+(** Mangled names of every record AND variant type reachable from a type,
+    through arrays, vectors, variant payloads and nested record fields. Sorted
+    and deduplicated. Terminates on a cyclic [elttype] value whatever closes the
+    cycle — the visited set is keyed on physical node identity, not on a type
+    name, so a cycle closed by [TVec]/[TArray] alone, with neither a record nor
+    a variant on it, is caught too. *)
+val referenced_type_names : Sarek_ir_types.elttype -> string list
 
-    Stable: records with no dependency between them keep their relative input
-    position, so an already-correctly-ordered list is returned unchanged and
+(** Order record and variant declarations so a declaration comes after every
+    declaration its own field/payload types reference. Covers all four edge
+    directions: record to record and variant to variant (backlog-203, where list
+    order is not dependency order because the PPX prepends registry-reachable
+    types to the payload's own), and record to variant and variant to record
+    (backlog-211, where each family sorted one kind inside its own loop and the
+    cross edge was ordered by neither).
+
+    Stable: declarations with no dependency between them keep their relative
+    input position — the tie-break is the incoming index, not the name and not
+    the kind — so a list already in emission order is returned unchanged and
     committed goldens do not churn.
 
-    Records only. Variant declarations are emitted by a separate loop, and the
-    two loops disagree on order across backends, so this does not order a record
-    against a variant either way (see {!gen_record_typedefs}).
-
-    @raise Record_type_cycle
+    @raise Type_decl_cycle
       if the declarations form a cycle between distinct declarations; a
-      self-referencing field is dropped, not reported. No current caller can
-      reach it: the PPX refuses a self- or forward-referencing record field at
-      alignment-resolution time, and fusion only concatenates two PPX-produced
-      (hence acyclic) type lists. It is a backstop for hand-built IR — tests
-      today, a future front end — where nothing else would notice, not a guard
-      anything presently depends on. *)
-val sort_record_types_by_dependency :
-  (string * (string * Sarek_ir_types.elttype) list) list ->
-  (string * (string * Sarek_ir_types.elttype) list) list
+      self-referencing field or payload is dropped, not reported. No current
+      caller can reach it: the PPX refuses a self- or forward-referencing record
+      field at alignment-resolution time, and fusion only concatenates two
+      PPX-produced (hence acyclic) type lists. It is a backstop for hand-built
+      IR — tests today, a future front end — where nothing else would notice,
+      not a guard anything presently depends on. *)
+val sort_type_decls_by_dependency : type_decl list -> type_decl list
 
-(** Emit C-family record type declarations: one [typedef struct { ... } name;]
-    per record, one field per line. Only [type_of_elttype] differs per backend.
-    Records are emitted in {!sort_record_types_by_dependency} order among
-    themselves — NOT against variants: the C-family callers emit variants first,
-    so a variant with a record payload still names a struct declared later and
-    still fails to compile. See the implementation comment for the measured
-    OpenCL error and the mirror GLSL/WGSL half. *)
-val gen_record_typedefs :
+(** [decls_variants_first ~records ~variants] tags and concatenates the two
+    lists in the order the C-family backends (CUDA/OpenCL/Metal, and HIP through
+    the CUDA generator) ran their two emission loops. Only the tie-break depends
+    on this; passing a family's historical order is what keeps an edge-free
+    kernel's emitted source byte-identical. *)
+val decls_variants_first :
+  records:(string * (string * Sarek_ir_types.elttype) list) list ->
+  variants:(string * (string * Sarek_ir_types.elttype list) list) list ->
+  type_decl list
+
+(** The mirror of {!decls_variants_first} for GLSL and WGSL, which ran records
+    then variants. *)
+val decls_records_first :
+  records:(string * (string * Sarek_ir_types.elttype) list) list ->
+  variants:(string * (string * Sarek_ir_types.elttype list) list) list ->
+  type_decl list
+
+(** Emit one C-family record declaration: [typedef struct { ... } name;], one
+    field per line. Only [type_of_elttype] differs per backend. Intended as the
+    [emit_record] argument to {!gen_type_decls}. *)
+val gen_record_typedef :
   type_of_elttype:(Sarek_ir_types.elttype -> string) ->
   Buffer.t ->
-  (string * (string * Sarek_ir_types.elttype) list) list ->
+  string * (string * Sarek_ir_types.elttype) list ->
+  unit
+
+(** Emit a backend's record and variant declarations from ONE
+    {!sort_type_decls_by_dependency} pass over a single declaration list,
+    dispatching each entry to [emit_record] or [emit_variant]. Every backend
+    that emits struct declarations (CUDA, OpenCL, Metal, HIP via CUDA, GLSL,
+    WGSL) goes through this; PTX declares no types and does not.
+
+    It orders exactly the declarations it is handed, by the type references
+    inside their own fields and payloads. It orders NOTHING ELSE the backend
+    emits — headers, bindings, helper functions are the caller's sequencing —
+    and it does not make an unorderable input emittable: see {!Type_decl_cycle}
+    for a cycle, and a self-referencing declaration is emitted in place with its
+    self-edge dropped.
+
+    @raise Type_decl_cycle see {!sort_type_decls_by_dependency}. *)
+val gen_type_decls :
+  emit_record:
+    (Buffer.t -> string * (string * Sarek_ir_types.elttype) list -> unit) ->
+  emit_variant:
+    (Buffer.t -> string * (string * Sarek_ir_types.elttype list) list -> unit) ->
+  Buffer.t ->
+  type_decl list ->
   unit
 
 (** Emit a GLSL variant type. GLSL has no [enum], [typedef], or [union], so tags

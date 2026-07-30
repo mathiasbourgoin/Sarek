@@ -1482,12 +1482,17 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   scalar_param_names := [] ;
   current_variants := k.kern_variants ;
   let buf = Buffer.create 1024 in
-  (* Inner structs first: WGSL, like GLSL, requires a struct type to be
-     declared before the field that names it (backlog-203). *)
-  List.iter
-    (gen_record_def buf)
-    (Sarek_ir_codegen.sort_record_types_by_dependency types) ;
-  List.iter (gen_variant_def buf) k.kern_variants ;
+  (* Inner structs first: WGSL, like GLSL, requires a struct type to be declared
+     before the field that names it (backlog-203) — records and variants in ONE
+     dependency-ordered pass, because the edge can cross between the two kinds
+     and two per-kind loops order neither direction (backlog-211). *)
+  Sarek_ir_codegen.gen_type_decls
+    ~emit_record:gen_record_def
+    ~emit_variant:gen_variant_def
+    buf
+    (Sarek_ir_codegen.decls_records_first
+       ~records:types
+       ~variants:k.kern_variants) ;
   let scalars = gen_bindings buf k.kern_params in
   scalar_param_names := scalars ;
   let wg_decls = collect_workgroup_decls k.kern_body in
