@@ -744,6 +744,7 @@ let check_short_arg_list dev =
         Printf.printf "FAILED (refused, but not on arity: %s)\n%!" msg ;
         false
       end
+
 (* The TRANSPARENT path (backlog-54): Soa_vector.create_transparent + the
    GENERIC Execute.run_vectors, with no SoA-specific launch entry point. This is
    what the item is actually about — the caller opts a vector into SoA storage
@@ -952,6 +953,158 @@ let check_transparent_roundtrip dev n =
   Printf.printf
     "  %-56s %s\n%!"
     "transparent SoA output read back (PTX: leaf D2H + gather)"
+    (if !ok then "OK" else "FAILED") ;
+  !ok
+
+(* SoA ABI, then PACKED AoS ABI, on ONE vector, with NO host read-back in
+   between.
+
+   [soa_leaves_live] was only ever set — nothing cleared it. So once a transparent
+   CUDA/PTX launch had run, EVERY later read-back on that vector followed the
+   leaves for the rest of its life, no matter which ABI the most recent launch
+   actually used. [Execute.run_source] deliberately keeps the packed ABI (it hands
+   the backend a source string Sarek did not emit), which makes this sequence
+   reachable through the public API with no unusual step.
+
+   The second launch is the assertion; the first would pass either way. And the
+   missing read-back in between is the whole point — inserting one would clear the
+   staleness by accident and the case would pass unfixed.
+
+   The packed source is the SAME IR compiled WITHOUT ~soa_params rather than
+   hand-written PTX, so this case cannot pass or fail for a PTX-authoring reason.
+
+   Both expectations are distinguishable: y0 = i+1, each launch doubles y, so the
+   correct answer is 4*(i+1) and following the stale leaves gives 2*(i+1) —
+   never equal. Pre-fix the failure is in fact LOUDER than that (the packed
+   launch has no buffer to bind, because the transparent path never allocates
+   one), which is why the exception is caught and reported rather than left to
+   abort the binary: a red state that is a crash is not an observation. *)
+let check_soa_then_packed dev n =
+  let threads = min 128 n in
+  let block = dims threads and grid = dims ((n + threads - 1) / threads) in
+  let sv = Soa_vector.create_transparent point3d_custom n in
+  let y0 i = float_of_int (i + 1) in
+  for i = 0 to n - 1 do
+    Vector.set sv i {x = float_of_int i; y = y0 i; z = float_of_int (n - i)}
+  done ;
+  let ir = ir_of p3_scale_y_kernel in
+  let outcome =
+    match
+      (* Launch 1 — TRANSPARENT. run_vectors passes ~soa_abi:true, so on CUDA/PTX
+         this binds the N-leaf ABI, writes the y LEAF, and leaves the vector
+         SoA-owned. *)
+      Sarek.Execute.run_vectors
+        ~device:dev
+        ~ir
+        ~args:[Vec sv; Int n]
+        ~block
+        ~grid
+        () ;
+      Transfer.flush dev ;
+      (* Launch 2 — PACKED. run_source defaults to ~soa_abi:false. *)
+      Sarek.Execute.run_source
+        ~device:dev
+        ~source:(Sarek_ir_ptx.generate ir)
+        ~lang:Sarek.Execute.PTX
+        ~kernel_name:ir.Sarek_ir_types.kern_name
+        ~block
+        ~grid
+        [Sarek.Execute.Vec sv; Sarek.Execute.Int n] ;
+      Transfer.flush dev
+    with
+    | () -> None
+    | exception e -> Some (Printexc.to_string e)
+  in
+  let ok = ref true in
+  (match outcome with
+  | Some msg ->
+      Printf.printf "  packed launch after a transparent one raised: %s\n%!" msg ;
+      ok := false
+  | None ->
+      for i = 0 to n - 1 do
+        let got = (Vector.get sv i).y in
+        let want = y0 i *. 4.0 in
+        if Float.abs (got -. want) > 1e-3 then begin
+          if !ok then
+            Printf.printf
+              "  SoA->packed mismatch @%d: got=%g want=%g (stale leaves would \
+               be %g)\n\
+               %!"
+              i
+              got
+              want
+              (y0 i *. 2.0) ;
+          ok := false
+        end
+      done) ;
+  Printf.printf
+    "  %-56s %s\n%!"
+    "packed AoS launch after a transparent SoA one"
+    (if !ok then "OK" else "FAILED") ;
+  !ok
+
+(* Freeing the device buffers must not throw the results away.
+
+   [Transfer.free_buffer] and [free_all_buffers] read a vector back before
+   releasing its memory — but they called [copy_device_to_host] DIRECTLY, so
+   they had no SoA arm. After a transparent launch there is no packed buffer at
+   all, so [free_all_buffers] raised "no device buffer to transfer from" from
+   inside cleanup, and [free_buffer]'s [get_buffer = None -> ()] early return
+   discarded the output silently.
+
+   No explicit [to_cpu] before the free, deliberately: that is the sequence with
+   the defect, and adding one would make this case pass unfixed. Both a raised
+   exception and wrong data are reported the same way, so either red state is an
+   observation rather than an abort. *)
+let check_free_preserves_soa dev n =
+  let threads = min 128 n in
+  let block = dims threads and grid = dims ((n + threads - 1) / threads) in
+  let sv = Soa_vector.create_transparent point3d_custom n in
+  let y0 i = float_of_int (i + 1) in
+  for i = 0 to n - 1 do
+    Vector.set sv i {x = float_of_int i; y = y0 i; z = float_of_int (n - i)}
+  done ;
+  let ir = ir_of p3_scale_y_kernel in
+  let outcome =
+    match
+      Sarek.Execute.run_vectors
+        ~device:dev
+        ~ir
+        ~args:[Vec sv; Int n]
+        ~block
+        ~grid
+        () ;
+      Transfer.flush dev ;
+      Transfer.free_all_buffers sv
+    with
+    | () -> None
+    | exception e -> Some (Printexc.to_string e)
+  in
+  let ok = ref true in
+  (match outcome with
+  | Some msg ->
+      Printf.printf "  free_all_buffers raised: %s\n%!" msg ;
+      ok := false
+  | None ->
+      for i = 0 to n - 1 do
+        let got = (Vector.get sv i).y in
+        let want = y0 i *. 2.0 in
+        if Float.abs (got -. want) > 1e-3 then begin
+          if !ok then
+            Printf.printf
+              "  free-then-read mismatch @%d: got=%g want=%g (pre-launch host \
+               value is %g)\n\
+               %!"
+              i
+              got
+              want
+              (y0 i) ;
+          ok := false
+        end
+      done) ;
+  Printf.printf
+    "  %-56s %s\n%!"
+    "free_all_buffers preserves a transparent SoA result"
     (if !ok then "OK" else "FAILED") ;
   !ok
 
@@ -1190,7 +1343,14 @@ let () =
                 Vector.fill sv {x = 0.0; y = y_of 0; z = float_of_int n}),
               (fun _ -> 2000.0),
               fun _ -> 4.0 );
-          ]
+          ] ;
+        (* Whose ABI does read-back follow? The two cases below are the two ways
+           that question got a stale answer, and they are separate cases because
+           the two paths that asked it are separate: the LAUNCH path
+           (Execute.transfer_vectors_to_device, which never cleared the flag) and
+           the CLEANUP path (Transfer.free_*, which had no SoA arm at all). *)
+        if not (check_soa_then_packed dev n) then ok := false ;
+        if not (check_free_preserves_soa dev n) then ok := false
       end
       else
         Printf.printf

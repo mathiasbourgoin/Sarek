@@ -316,6 +316,41 @@ let to_device (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit =
           ignore (Sys.opaque_identity ptr)) ;
       vec.location <- Vector.Both dev
 
+(** Is there device-resident data for [vec] on [dev] that a read-back could
+    actually fetch? Two disjoint sources, and under the SoA ABI it is the second
+    one: the packed buffer is not merely stale there, it was never allocated. *)
+let has_device_data (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : bool =
+  Option.is_some (Vector.get_buffer vec dev)
+  ||
+  match vec.Vector.soa with
+  | Some b -> !(b.Vector.soa_leaves_live)
+  | None -> false
+
+(** The ONE place that decides WHERE a read-back reads from, shared by every
+    path that pulls device data into host storage — [to_cpu] and both buffer
+    cleanup paths.
+
+    It exists as a function because the cleanup paths did not have this
+    decision: they called {!copy_device_to_host} directly, so after a
+    transparent SoA launch they downloaded a packed buffer the kernel never
+    wrote (silently discarding the output) or, with no packed buffer at all,
+    failed with "no device buffer to transfer from" from inside a free.
+
+    The condition reads the flag the UPLOAD set; it does not re-decide "SoA or
+    AoS?" from the device or the vector's shape. A second independent answer to
+    that question is how a round trip ends up uploading leaves and downloading a
+    packed buffer. *)
+let read_back_to_host (type a b) (vec : (a, b) Vector.t) (dev : Device.t) : unit
+    =
+  match vec.Vector.soa with
+  | Some b when !(b.Vector.soa_leaves_live) ->
+      (* The launch took the SoA ABI, so the results are in the N leaf buffers
+         and the packed device buffer this function would otherwise download was
+         never written. Reading it back would hand the caller the pre-launch
+         host contents with no error anywhere. *)
+      b.Vector.soa_from_device dev
+  | Some _ | None -> copy_device_to_host vec dev
+
 (** Transfer vector data from device to CPU.
     @param force
       If true, always transfer even if location is Both (useful after kernel
@@ -350,25 +385,12 @@ let to_cpu ?(force = false) (type a b) (vec : (a, b) Vector.t) : unit =
       "to_cpu: transferring from dev=%d (force=%b)"
       dev.id
       force ;
-    match vec.Vector.soa with
-    | Some b when !(b.Vector.soa_leaves_live) ->
-        (* The launch took the SoA ABI, so the results are in the N leaf buffers
-           and the packed device buffer this function would otherwise download
-           was never written. Reading it back would hand the caller the
-           pre-launch host contents with no error anywhere.
-
-           The condition reads the flag the UPLOAD set; it does not re-decide
-           "SoA or AoS?" from the device or the vector's shape. A second
-           independent answer to that question is how a round trip ends up
-           uploading leaves and downloading a packed buffer. *)
-        b.Vector.soa_from_device dev ;
-        vec.location <- Vector.Both dev
-    | Some _ | None -> (
-        match Vector.get_buffer vec dev with
-        | None -> failwith "to_cpu: no device buffer to transfer from"
-        | Some _ ->
-            copy_device_to_host vec dev ;
-            vec.location <- Vector.Both dev)
+    (* [read_back_to_host] carries the SoA-vs-packed decision; the packed arm's
+       own "no device buffer to transfer from" failure comes from
+       [copy_device_to_host], so the precondition stays where the read happens
+       rather than being re-derived here. *)
+    read_back_to_host vec dev ;
+    vec.location <- Vector.Both dev
   end
   else
     Log.debugf
@@ -401,14 +423,21 @@ let sync (type a b) (vec : (a, b) Vector.t) : unit =
 
 (** Free device buffer for a vector *)
 let free_buffer (vec : (_, _) Vector.t) (dev : Device.t) : unit =
+  (* Read back BEFORE freeing, and through {!read_back_to_host}, which is why
+     this now sits OUTSIDE the [get_buffer] match: an SoA-dispatched vector has
+     no packed buffer of its own, so the old [None -> ()] early return threw the
+     output of a transparent launch away outright. [has_device_data] keeps the
+     no-op for the case that return was actually for — an AoS vector with
+     nothing on this device. *)
+  (match vec.location with
+  | (Vector.GPU d | Vector.Stale_CPU d)
+    when d.id = dev.id && has_device_data vec dev ->
+      read_back_to_host vec dev ;
+      vec.location <- Vector.Both dev
+  | _ -> ()) ;
   match Vector.get_buffer vec dev with
   | None -> ()
   | Some buf -> (
-      (match vec.location with
-      | (Vector.GPU d | Vector.Stale_CPU d) when d.id = dev.id ->
-          copy_device_to_host vec dev ;
-          vec.location <- Vector.Both dev
-      | _ -> ()) ;
       let (module B : Vector.DEVICE_BUFFER) = buf in
       B.free () ;
       Gpu_memory.track_free (B.size * B.elem_size) ;
@@ -423,9 +452,15 @@ let free_buffer (vec : (_, _) Vector.t) (dev : Device.t) : unit =
 
 (** Free all device buffers for a vector *)
 let free_all_buffers (vec : (_, _) Vector.t) : unit =
+  (* Same SoA-aware read-back as {!free_buffer}. Pre-fix this arm called
+     [copy_device_to_host] on a vector whose packed buffer does not exist after a
+     transparent launch, so freeing without an explicit [to_cpu] raised
+     "no device buffer to transfer from" from inside cleanup — and, when a packed
+     buffer DID exist from an earlier AoS launch, silently overwrote the host
+     storage with its pre-SoA-launch contents. *)
   (match vec.location with
-  | Vector.GPU d | Vector.Stale_CPU d ->
-      copy_device_to_host vec d ;
+  | (Vector.GPU d | Vector.Stale_CPU d) when has_device_data vec d ->
+      read_back_to_host vec d ;
       vec.location <- Vector.CPU
   | _ -> ()) ;
   Hashtbl.iter

@@ -308,7 +308,37 @@ let transfer_vectors_to_device ?(soa_abi = false) (args : vector_arg list)
       | Vec v -> (
           match soa_dispatch ~soa_abi v dev with
           | Some b -> b.Vector.soa_to_device dev
-          | None -> Transfer.to_device v dev)
+          | None ->
+              (* This launch takes the PACKED AoS ABI. If an EARLIER launch on
+                 this vector took the SoA one, its results are still sitting in
+                 the leaves and [soa_leaves_live] still says so — and nothing
+                 else ever clears it, so read-back would keep following leaves
+                 for the rest of the vector's life and silently discard whatever
+                 the packed kernel writes. The reachable sequence is a
+                 transparent CUDA/PTX launch followed by [run_source] on the same
+                 vector.
+
+                 The flag is therefore normalised on BOTH outcomes of the one
+                 [soa_dispatch] predicate, so it states the ABI of the MOST
+                 RECENT launch rather than of some launch.
+
+                 Clearing it is not enough on its own, and the two extra lines
+                 are not bookkeeping: after an SoA launch the AUTHORITATIVE copy
+                 is the leaves, so the gather has to happen before this launch
+                 can upload anything meaningful, and the location then has to be
+                 one [to_device] does not short-circuit. It records [Stale_CPU d]
+                 on this very device, which [to_device] skips ("skip
+                 (Stale_CPU)") — leaving the packed launch to run against a
+                 buffer holding pre-SoA-launch bytes, or against no buffer at all
+                 (the transparent path never allocates one, so the argument
+                 expansion then raises [Transfer_failed]). *)
+              (match v.Vector.soa with
+              | Some b when !(b.Vector.soa_leaves_live) ->
+                  Transfer.to_cpu v ;
+                  b.Vector.soa_leaves_live := false ;
+                  v.Vector.location <- Vector.Stale_GPU dev
+              | Some _ | None -> ()) ;
+              Transfer.to_device v dev)
       | _ -> ())
     args
 
