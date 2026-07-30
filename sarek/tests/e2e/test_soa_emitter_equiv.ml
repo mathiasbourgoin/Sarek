@@ -162,9 +162,11 @@ let dims threads = Sarek.Execute.dims1d threads
    printed on a device its predicate does not describe is now unrepresentable.
 
    [applies] takes the framework NAME rather than a [Device.t] so that
-   {!check_skip_reason_scope} can evaluate it over every framework Sarek can
-   enumerate, not merely the ones plugged into the host running the suite. Both
-   real blockers are framework-level facts, so nothing is lost. *)
+   {!check_skip_reason_scope} can evaluate it over a declared, host-independent
+   set of framework names (see {!declared_frameworks} for what that set is and,
+   as importantly, what it does not claim to be) rather than merely the backends
+   plugged into the host running the suite. Both real blockers are
+   framework-level facts, so nothing is lost. *)
 type blocker = {
   reason : string;
       (** Printed verbatim as the skip line. Must be true of every framework in
@@ -180,12 +182,76 @@ type blocker = {
           thing it checks cannot fail. *)
 }
 
-(* Every framework Sarek can enumerate. The universe {!check_skip_reason_scope}
-   quantifies over; a blocker predicate that fires outside its [describes] on ANY
-   of these is a false claim waiting for that device to appear, whether or not
-   this host has one. *)
-let all_frameworks =
-  ["CUDA/PTX"; "OpenCL"; "Vulkan"; "Metal"; "Native"; "Interpreter"]
+(* The universe {!check_skip_reason_scope} quantifies over: a blocker predicate
+   that fires outside its [describes] on ANY member is a false claim waiting for
+   that device to appear, whether or not this host has one.
+
+   Round 4 wrote this as a hand-maintained list of six names under a comment
+   asserting it was "every framework Sarek can enumerate". It was not, and the
+   comment is what made that unfalsifiable. Three names were missing:
+
+     - "CUDA/C"  — sarek-cuda/Cuda_c_plugin.ml, [let name = "CUDA/C"], entered
+                   into the table by [Framework_registry.register_backend].
+                   [Device.ml:32] documents "<family>/<variant>" names as first
+                   class, so "CUDA/PTX" and "CUDA/C" are two frameworks, not two
+                   spellings of one.
+     - "WebGPU"  — sarek/plugins/webgpu/Webgpu_plugin.ml, likewise a
+                   [register_backend] backend that produces devices whose
+                   [framework] field carries that name.
+     - "HIP"     — requested by [Device.init]'s default framework list
+                   ([Device.ml:42-43]) and special-cased by [Device.is_gpu]
+                   ([:203]), with no registering backend today.
+
+   Adding them makes round 4's own wiring FAIL: [blocker_needs_soa_abi] fired on
+   all three while describing none of them, so the guarantee two comments above —
+   "a reason printed on a device its predicate does not describe is now
+   unrepresentable" — was false of exactly the frameworks the list had dropped.
+
+   The omissions are the symptom. The defect is a hand-maintained list that only
+   a reader's diligence keeps in step with the plugin tree, so the list stops
+   being the sole source: the universe is the declared floor below UNION every
+   name in [Framework_registry.all_backend_names ()] at check time, and
+   {!check_skip_reason_scope} additionally fails if the registry holds a name the
+   floor does not declare. A backend added later joins the universe on its own,
+   and is reported as a staleness failure here rather than silently widening a
+   blocker's claim.
+
+   Why the registry is not the sole source either, though that would be
+   drift-proof by construction: a backend enters that table only when something
+   forces its registration AND its [is_available ()] returns true on this host —
+   [Cuda_ptx_plugin.ml:80-95] and [Cuda_c_plugin.ml:80-99] are both [lazy] behind
+   an explicit [register ()]. The table is a snapshot of what this host can run,
+   not of what Sarek can name. Two consequences, both fatal to deriving from it:
+   in THIS executable [Backend_loader.init] forces only [Cuda_plugin.init], which
+   forces only the PTX plugin ([Cuda_plugin.ml:11]), so "CUDA/C" never appears in
+   the table however complete the tree is; and on a CUDA-less host "CUDA/PTX"
+   would drop out of the universe, leaving [describes] naming a framework the
+   universe no longer contains. Deriving from the registry would shrink the
+   universe to the local hardware — precisely what taking a framework NAME rather
+   than a [Device.t] exists to avoid.
+
+   So: the floor buys host-independence, the union buys anti-drift, and the
+   staleness check makes a stale floor a named failure instead of a quiet gap.
+   The check prints both halves, so a run shows which source contributed what
+   rather than leaving the union's second half to be assumed. *)
+let declared_frameworks =
+  [
+    "CUDA/PTX";
+    "CUDA/C";
+    "HIP";
+    "OpenCL";
+    "Vulkan";
+    "Metal";
+    "WebGPU";
+    "Native";
+    "Interpreter";
+  ]
+
+let registered_frameworks () =
+  Spoc_framework_registry.Framework_registry.all_backend_names ()
+
+let all_frameworks () =
+  List.sort_uniq compare (declared_frameworks @ registered_frameworks ())
 
 (* `v.(i).f <- e` from inside a kernel — a record-field store — is unsupported on
    the two CPU backends and ONLY those two: the Interpreter raises
@@ -199,7 +265,14 @@ let all_frameworks =
    cases carrying this blocker PASS on OpenCL x2 (radeonsi: RX 7900 XTX +
    7950X iGPU) and Vulkan x2 (RADV: same two), through the packed AoS fallback —
    which is the stronger assertion anyway, since the same [Vector.get] must
-   return the same answer under either ABI. *)
+   return the same answer under either ABI.
+
+   On the three frameworks in {!declared_frameworks} that no device here provides
+   — CUDA/C, WebGPU, HIP — this blocker not applying is a claim about the SCOPE OF
+   BACKLOG-172, which is a defect of the two CPU backends' lvalue handling, and
+   not a measured pass. Those cases are skipped there by
+   {!blocker_needs_soa_abi} in any case, so the distinction costs no coverage
+   today; it is stated so the [describes] set is not read as evidence it is not. *)
 let blocker_cpu_field_store =
   {
     reason = "SKIP (v.(i).f <- unsupported on this CPU backend: backlog-172)";
@@ -209,12 +282,35 @@ let blocker_cpu_field_store =
 
 (* The SoA ABI is selected on CUDA/PTX and nowhere else. Unlike the blocker
    above this is by design and permanent, not a defect that will lift — which is
-   why the two are separate records rather than one merged "not supported here". *)
+   why the two are separate records rather than one merged "not supported here".
+
+   [Execute.ml:276] gates the SoA path on [framework = "CUDA/PTX"], a string
+   equality against that one name, so the skip is semantically right on the three
+   frameworks round 4's universe had omitted: CUDA/C is a DIFFERENT registered
+   backend name and does not satisfy that equality, and neither do WebGPU or HIP.
+   [describes] therefore widens to every declared framework except "CUDA/PTX" —
+   the reason was already true of them, only unstated. It is written out in full
+   rather than as [List.filter (( <> ) "CUDA/PTX") declared_frameworks] on
+   purpose: derived from the universe it would agree with [applies] by
+   construction and the comparison could never fail, which is the property the
+   [describes] field exists to have. The cost is that a backend registered later
+   fails this check until someone restates the claim; that is the alarm, not a
+   defect. *)
 let blocker_needs_soa_abi =
   {
     reason = "SKIP (needs CUDA/PTX: the SoA ABI dispatches nowhere else)";
     applies = (fun fw -> fw <> "CUDA/PTX");
-    describes = ["OpenCL"; "Vulkan"; "Metal"; "Native"; "Interpreter"];
+    describes =
+      [
+        "CUDA/C";
+        "HIP";
+        "OpenCL";
+        "Vulkan";
+        "Metal";
+        "WebGPU";
+        "Native";
+        "Interpreter";
+      ];
   }
 
 let all_blockers = [blocker_cpu_field_store; blocker_needs_soa_abi]
@@ -229,9 +325,48 @@ let all_blockers = [blocker_cpu_field_store; blocker_needs_soa_abi]
 
    [describes] is also required to be a subset of the universe, so a typo
    ("Cuda/PTX") shows up as a named failure instead of quietly shrinking the
-   expected set to nothing. *)
+   expected set to nothing.
+
+   Three things are printed before the verdict, because a universe that shrank —
+   to the empty list, to the floor alone, or to a floor that no longer covers the
+   plugin tree — would otherwise satisfy every comparison below vacuously: the
+   registry names actually found at this point, the universe the comparisons run
+   over, and a named failure for any registered name the floor does not declare.
+   [Benchmarks.init] (the first statement of [main]) runs [Backend_loader.init],
+   so the registry is populated by the time this runs; the printed list is the
+   evidence, not the assumption. *)
 let check_skip_reason_scope () =
   let ok = ref true in
+  let registered = registered_frameworks () in
+  let all_frameworks = all_frameworks () in
+  Printf.printf
+    "  skip-reason universe: %d declared, registry contributed [%s], \
+     quantifying over [%s]\n\
+     %!"
+    (List.length declared_frameworks)
+    (String.concat "; " (List.sort compare registered))
+    (String.concat "; " all_frameworks) ;
+  (* A registered backend the floor does not declare means the floor is stale:
+     the union above already put it in the universe, so the blocker comparisons
+     did cover it, but a name nobody wrote down is a name nobody checked the
+     claims against. Fail here so it is restated deliberately. *)
+  let undeclared =
+    List.filter (fun fw -> not (List.mem fw declared_frameworks)) registered
+  in
+  if undeclared <> [] then begin
+    Printf.printf
+      "  registered backend(s) missing from the declared framework floor: [%s]\n\
+       %!"
+      (String.concat "; " (List.sort compare undeclared)) ;
+    ok := false
+  end ;
+  if registered = [] then begin
+    Printf.printf
+      "  the backend registry is empty here — the union half of the universe \
+       contributed nothing, so this check ran against the declared floor alone\n\
+       %!" ;
+    ok := false
+  end ;
   List.iter
     (fun b ->
       let unknown =
@@ -1636,11 +1771,12 @@ let () =
      a machine with no device would report SKIPPED while silently not checking a
      property that needs no device at all. *)
   let derive_ok = check_field_derivation () in
-  (* Also device-independent, and deliberately so — it quantifies over every
-     framework Sarek can enumerate rather than over the ones present here, so a
-     skip reason that is false of a device class stays caught on a host that has
-     no such device. Before the no-device exit for the same reason as the two
-     above. *)
+  (* Also device-independent, and deliberately so — it quantifies over the
+     declared framework floor unioned with the registered backends rather than
+     over the devices present here, so a skip reason that is false of a device
+     class stays caught on a host that has no such device. Before the no-device
+     exit for the same reason as the two above. It must stay AFTER
+     [Benchmarks.init] above, which is what populates the registry half. *)
   let scope_ok = check_skip_reason_scope () in
   let layout_ok = check_layout_validation () && derive_ok && scope_ok in
   let devs = Device.all () in
