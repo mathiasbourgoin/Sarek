@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: CECILL-B
+# SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
 # Assert that README's CI badge and Actions links name THIS repository.
 #
 # WHY THIS EXISTS. README.md line 5 carried
