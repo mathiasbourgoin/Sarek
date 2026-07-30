@@ -272,6 +272,7 @@
  (name test_lower_ir_refusal_triggers)
  (modules test_lower_ir_refusal_triggers)
  (libraries sarek_frontend))
+
 ; Audit finding M8: Sarek_worklist.Host.drive must stop at the first OVERFLOW.
 ; The e2e worklist test needs a device and never calls drive on an overflowing
 ; queue, so the guard at Sarek_worklist.ml:208 was pinned by nothing. drive is
