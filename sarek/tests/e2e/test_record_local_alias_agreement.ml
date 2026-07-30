@@ -45,19 +45,23 @@
  * Two depths, because a shallow copy passes the first and fails the second:
  *
  *   A. depth 1 — `let e = v.(tid) in e.p <- 42.0`. Runs on EVERY device.
- *   B. nested  — `let e = v.(tid) in e.sub.p <- 42.0`. Runs on every device
- *      whose emitted source can be COMPILED, which here is the two CPU backends
- *      plus CUDA/PTX. Not a per-backend exclusion: [l2] names [l1] as a field
- *      type and the record typedefs are emitted in [kern_types] order with no
- *      dependency sort (backlog-203), and for THIS kernel that order puts l2
- *      before l1 — measured from the generated source, per backend, not assumed.
- *      OpenCL and Vulkan therefore cannot build it; the same defect does not bite
- *      the sibling shapes in test_record_field_store.ml, and CUDA/PTX declares no
- *      structs at all. The wording of that compile failure is pinned in both
- *      directions by test_record_field_store.ml, which owns the predicate; this
- *      file does not duplicate it. What IS pinned here is that the nested case
- *      actually RAN on both CPU frameworks — a nested case that quietly
- *      exercised nothing would read the same as one that agreed.
+ *   B. nested  — `let e = v.(tid) in e.sub.p <- 42.0`. Also runs on EVERY device,
+ *      with nothing skipped and no source inspection deciding whether to try.
+ *
+ *      It did not always. [l2] names [l1] as a field type, record typedefs were
+ *      emitted in [kern_types] order with no dependency sort (backlog-203), and
+ *      for THIS kernel that order put l2 before l1 — so OpenCL and Vulkan could
+ *      not build the nested kernel and this file skipped them, deciding per
+ *      backend from the generated source. That ordering bug is fixed on `main`
+ *      ([Sarek_ir_codegen.sort_record_types_by_dependency], #394), so the skip
+ *      predicate, the two-dialect source inspector behind it and its self-check
+ *      are deleted rather than left to be satisfied by nothing. A skip that
+ *      outlives its reason is how a test stops testing without ever going red.
+ *
+ *      What is still pinned is that the nested case actually RAN on both CPU
+ *      frameworks — with no skip left, that can now only fail if a plugin did not
+ *      enumerate, but a nested case that quietly exercised nothing would still
+ *      read the same as one that agreed.
  *
  * Every disagreement makes the process exit non-zero.
  ******************************************************************************)
@@ -241,190 +245,7 @@ let case_nested (dev : Device.t) : bool =
       if !ok then Printf.printf "OK\n%!" else Printf.printf "\n  FAILED\n%!" ;
       !ok
 
-(* Whether the nested case can even be COMPILED on a device, decided from the
-   emitted source rather than from the framework name.
-
-   [l2] names [l1] as a field type, and the record typedefs are emitted in
-   [kern_types] order with no dependency sort (backlog-203), so a backend that
-   declares C-like structs may see the enclosing struct before the inner one.
-   Measured for THIS kernel: the emitted OpenCL declares
-   Test_record_local_alias_agreement_l2 before ..._l1, so OpenCL and Vulkan
-   cannot compile it. That polarity — a compile failure with exactly the
-   backlog-203 wording — is pinned in both directions by
-   test_record_field_store.ml, which owns the compiler-wording predicate; this
-   file does not duplicate it and simply does not launch what cannot build.
-
-   Not a per-backend claim: the same file measured [mouter]/[mtriple] emitted in
-   dependency order and compiling fine on both. And CUDA/PTX declares no structs
-   at all, so it is NOT excused here — the nested case runs there.
-
-   The two frameworks the nested case must have actually run on, so that a
-   file-wide "not exercised" cannot read as a pass, are asserted below. *)
-let struct_emitting_frameworks :
-    (string
-    * (types:(string * (string * Sarek_ir_types.elttype) list) list ->
-      Sarek_ir_types.kernel ->
-      string))
-    list =
-  [
-    ("OpenCL", Sarek_codegen.Sarek_ir_opencl.generate_with_types);
-    ( "Vulkan",
-      fun ~types ir -> Sarek_codegen.Sarek_ir_glsl.generate_with_types ~types ir
-    );
-  ]
-
 let nested_must_run_on = ["Interpreter"; "Native"]
-
-let find_sub (hay : string) (needle : string) : int option =
-  let nh = String.length needle and hl = String.length hay in
-  if nh = 0 then Some 0
-  else
-    let rec go i =
-      if i + nh > hl then None
-      else if String.equal (String.sub hay i nh) needle then Some i
-      else go (i + 1)
-    in
-    go 0
-
-(* Declared as [struct Ty {...}] (GLSL) or as [typedef struct {...} Ty;]
-   (OpenCL C) — both spellings, because looking only for the first reports the
-   OpenCL output as in-order when it is not. *)
-let uses_type_before_declaring (src : string) (ty : string) : bool =
-  let decl =
-    match (find_sub src ("struct " ^ ty), find_sub src ("} " ^ ty ^ ";")) with
-    | Some a, Some b -> Some (min a b)
-    | Some a, None -> Some a
-    | None, Some b -> Some b
-    | None, None -> None
-  in
-  match (find_sub src ty, decl) with Some use, Some d -> use < d | _ -> false
-
-(* Both polarities of the above, over synthetic sources, with no device.
-
-   This is a second COPY of the predicate (the two tests are separate [modules]
-   stanzas and cannot share it), so it carries the same hazard the comment above
-   names, and the same one the sibling file was found to have left uncovered:
-   with only the GLSL arm, [nested_can_compile] answers "can compile" for an
-   out-of-order OpenCL source and the nested case is launched into a compile
-   failure that this file reports as a hard failure. Nothing without a live
-   OpenCL device would have caught that. Case 3 is the load-bearing one, and it
-   is the only one: measured by removing the typedef arm, cases 1, 2 AND 4 still
-   pass and only case 3 goes red ("opencl: used before declared should be true
-   and is not"). Case 4 cannot constrain that arm — with the arm gone [decl] is
-   [None], the match falls to [| _ -> false], and [false] is the answer case 4
-   wanted. It still rules out a constant-true predicate on this dialect, which
-   is all it is for.
-
-   Runs before any device, so a broken predicate is not discovered mid-sweep. *)
-let () =
-  let inner = "Test_record_local_alias_agreement_l1" in
-  let outer = "Test_record_local_alias_agreement_l2" in
-  let cases =
-    [
-      (* GLSL spelling: `struct Ty { ... };` *)
-      ( true,
-        "glsl: used before declared",
-        Printf.sprintf
-          "#version 450\n\
-           struct %s {\n\
-          \  float tag;\n\
-          \  %s sub;\n\
-           };\n\
-           struct %s {\n\
-          \  float p;\n\
-           };\n"
-          outer
-          inner
-          inner );
-      ( false,
-        "glsl: declared before used",
-        Printf.sprintf
-          "#version 450\n\
-           struct %s {\n\
-          \  float p;\n\
-           };\n\
-           struct %s {\n\
-          \  float tag;\n\
-          \  %s sub;\n\
-           };\n"
-          inner
-          outer
-          inner );
-      (* OpenCL C spelling: `typedef struct { ... } Ty;` — "struct Ty" never
-         appears, which is why the GLSL-only form finds no declaration and
-         wrongly answers false. *)
-      ( true,
-        "opencl: used before declared",
-        Printf.sprintf
-          "typedef struct {\n\
-          \  float tag;\n\
-          \  %s sub;\n\
-           } %s;\n\
-           typedef struct {\n\
-          \  float p;\n\
-           } %s;\n"
-          inner
-          outer
-          inner );
-      ( false,
-        "opencl: declared before used",
-        Printf.sprintf
-          "typedef struct {\n\
-          \  float p;\n\
-           } %s;\n\
-           typedef struct {\n\
-          \  float tag;\n\
-          \  %s sub;\n\
-           } %s;\n"
-          inner
-          inner
-          outer );
-      (* Used and never declared: false, and fail-closed on purpose — a dropped
-         typedef is a different defect from a mis-ordered one, and
-         [nested_can_compile] must not silently decline to launch because of
-         it. *)
-      ( false,
-        "used, never declared",
-        Printf.sprintf "#version 450\nstruct %s {\n  %s sub;\n};\n" outer inner
-      );
-      (* No struct declarations at all — the CUDA/PTX shape. *)
-      (false, "no structs at all", "#version 450\nvoid main() {}\n");
-    ]
-  in
-  let bad =
-    List.filter
-      (fun (want, _, src) ->
-        not (Bool.equal (uses_type_before_declaring src inner) want))
-      cases
-  in
-  if bad <> [] then begin
-    List.iter
-      (fun (want, label, _) ->
-        Printf.printf
-          "uses_type_before_declaring self-check: %s should be %b and is not\n\
-           %!"
-          label
-          want)
-      bad ;
-    exit 1
-  end ;
-  Printf.printf
-    "uses_type_before_declaring self-check: %d case(s) OK (%d gap, %d no-gap)\n\
-     %!"
-    (List.length cases)
-    (List.length (List.filter (fun (w, _, _) -> w) cases))
-    (List.length (List.filter (fun (w, _, _) -> not w) cases))
-
-let nested_can_compile (dev : Device.t) : bool =
-  match List.assoc_opt dev.Device.framework struct_emitting_frameworks with
-  | None -> true
-  | Some generate ->
-      let ir = ir_of k_local_nested in
-      let types = ir.Sarek_ir_types.kern_types in
-      not
-        (uses_type_before_declaring
-           (generate ~types ir)
-           "Test_record_local_alias_agreement_l1")
 
 let () =
   let devs =
@@ -442,22 +263,25 @@ let () =
   Array.iter
     (fun (dev : Device.t) ->
       if not (case_depth1 dev) then any_failure := true ;
-      if nested_can_compile dev then begin
-        nested_ran := dev.Device.framework :: !nested_ran ;
-        if not (case_nested dev) then any_failure := true
-      end
-      else
-        Printf.printf
-          "local-alias nested [%s] %s: not launched — the emitted source \
-           declares l2 before l1, so this backend cannot compile it \
-           (backlog-203, measured from the generated source; the wording of \
-           that failure is pinned by test_record_field_store.ml)\n\
-           %!"
-          dev.Device.framework
-          dev.Device.name)
+      (* The nested case is launched on EVERY device, with no source inspection
+         deciding whether to try.
+
+         It used to be gated by a [nested_can_compile] predicate: [l2] names [l1]
+         as a field type, record typedefs were emitted in [kern_types] order with
+         no dependency sort (backlog-203), and for this kernel that order put [l2]
+         first — so OpenCL and Vulkan could not compile it and the case was skipped
+         there with a printed reason. That ordering bug is fixed on `main`
+         ([Sarek_ir_codegen.sort_record_types_by_dependency], #394), so the gate,
+         the two-dialect source inspector behind it and its self-check are all
+         deleted. A skip predicate outliving the reason for the skip is how a test
+         stops testing without going red: this one would have declined to launch on
+         both shader backends for as long as it lived, whatever the codegen did. *)
+      nested_ran := dev.Device.framework :: !nested_ran ;
+      if not (case_nested dev) then any_failure := true)
     devs ;
-  (* A nested case that ran on neither CPU framework would print nothing but
-     "not exercised" lines and still exit 0. Require both. *)
+  (* Kept as a non-vacuity floor even though nothing is skipped any more: it now
+     fails only if a CPU plugin did not enumerate at all, which is the remaining
+     way this half could assert nothing while exiting 0. *)
   List.iter
     (fun fw ->
       if not (List.mem fw !nested_ran) then begin
