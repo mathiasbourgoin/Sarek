@@ -140,7 +140,15 @@ module Make (Ops : CUSTOM_OPS) = struct
         -> ('a, unit) host_storage
 
   (** Opt-in Structure-of-Arrays binding for a custom (flat-record) vector
-      (backlog-54). Present iff the vector was created with [~layout:SoA].
+      (backlog-54). Present iff the vector came from
+      [Soa_vector.create_transparent], which is the only producer of this
+      record.
+
+      There is no [Vector.create ~layout:SoA] and no [layout] parameter
+      anywhere; that shape was PROPOSED by the Tier 1b handoff and rejected —
+      see [Soa_vector.ml]'s [create_transparent] comment for why (it would
+      invert the [Vector] -> [Soa_vector] dependency, and the transparency the
+      item is about is at the LAUNCH site, not at the constructor).
 
       {b Why this is a field of closures and ints, and NOT a [host_storage]
          constructor carrying a [Soa.plan].} The Tier 1b handoff doc proposed
@@ -196,17 +204,42 @@ module Make (Ops : CUSTOM_OPS) = struct
             downloads — so the host would see whatever the AoS buffer last held,
             with no error anywhere. Paired with {!soa_leaves_live} below, which
             is what says the leaves are the ones holding the results. *)
+    soa_free_leaves : Ops.device_t option -> unit;
+        (** Release the leaf device buffers: [Some dev] frees them on that
+            device only, [None] on every device. Clears {!soa_leaves_live},
+            because after this the leaves hold nothing a read-back could fetch.
+
+            Its absence was a LEAK rather than a correctness bug, which is why
+            it is easy to miss. Under this ABI the packed AoS buffer is never
+            allocated, so [Transfer.free_all_buffers] iterated an EMPTY
+            [device_buffers] table and returned having released zero bytes —
+            measured 2026-07-30 with [Gpu_memory.usage()]: 3840 B before a
+            launch, 4224 B after the free (delta +384 = 32 elements x 3 leaves x
+            4 B, i.e. the leaves the call was asked to release). The data was
+            still correct afterwards, and the leaves were still reclaimed
+            EVENTUALLY — each carries a [Gpu_memory.register_finalizer] — so
+            nothing looked wrong. What the caller lost was the one thing an
+            explicit free is for: releasing the memory at a time it chooses,
+            while the structure is still reachable. *)
     soa_leaves_live : bool ref;
         (** Have the leaf buffers been written by an SoA-ABI launch?
 
             The launch site and the read-back site must not answer "SoA or AoS?"
             independently — that is the same divergence hazard the single
             [soa_dispatch] predicate exists to prevent, one step later in the
-            round trip. So this is not a second predicate: {!soa_to_device} sets
-            it, and read-back only READS it. A launch that never took the SoA
-            ABI (an external source through [Execute.run_source], or any non-PTX
-            backend) leaves it [false], and read-back then correctly downloads
-            the packed buffer.
+            round trip. So this is not a second predicate: read-back only READS
+            it. A launch that never took the SoA ABI (an external source through
+            [Execute.run_source], or any non-PTX backend) leaves it [false], and
+            read-back then correctly downloads the packed buffer.
+
+            THREE writers, and the list is exhaustive — anything else that flips
+            this is a bug: {!soa_to_device} sets it; {!soa_free_leaves} clears
+            it, because freed leaves hold nothing a read-back could fetch; and
+            [Execute.transfer_vectors_to_device] clears it when a launch takes
+            the packed ABI. Between them it states the ABI of the MOST RECENT
+            operation, not of some operation — which is the property the
+            read-back paths rely on and the one that was missing when nothing
+            ever cleared it.
 
             A [bool ref] rather than a mutable field so that the closure which
             performs the upload can set it itself. A mutable field would have to
@@ -224,10 +257,12 @@ module Make (Ops : CUSTOM_OPS) = struct
     mutable auto_sync : bool;
     id : int;
     mutable soa : soa_binding option;
-        (** [None] for every vector except one created with [~layout:SoA]. Read
-            by the launch path to decide whether to bind N leaf pointers instead
-            of one packed buffer; ignored by every host-side operation, which is
-            why [get]/[set] and the PPX accessors need no changes at all. *)
+        (** [None] for every vector except one from
+            [Soa_vector.create_transparent] (there is no [~layout] parameter —
+            see {!soa_binding}). Read by the launch path to decide whether to
+            bind N leaf pointers instead of one packed buffer; ignored by every
+            host-side operation, which is why [get]/[set] and the PPX accessors
+            need no changes at all. *)
   }
 
   (** {2 Kind helpers — delegated to Spoc_core_base_scalar} *)
