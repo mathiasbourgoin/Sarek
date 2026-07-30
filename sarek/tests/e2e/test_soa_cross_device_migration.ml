@@ -153,6 +153,83 @@ let check ~label ~(packed_first : bool) (src : Device.t) (dst : Device.t) =
   Printf.printf "  %-58s %s\n%!" label (if !ok then "OK" else "FAILED") ;
   !ok
 
+(* SoA -> SoA on a DIFFERENT device, with no host read-back in between.
+
+   Raised in review of round 5: [soa_to_device] always [scatter]s the AoS host
+   buffer before uploading leaves, and [Execute.transfer_vectors_to_device] calls
+   that closure directly rather than going through [Transfer.to_device]. So if
+   nothing drains device A first, the second launch would scatter PRE-A host bytes
+   into B's leaves and B would run on them, losing A's output — and every case
+   above covers SoA -> PACKED, where [Transfer.to_device]'s migration arm is what
+   does the drain. The sequence really was uncovered.
+
+   It does not lose the output, and the drain is inside [scatter]:
+   [Soa_vector.scatter] opens with [Vector.ensure_cpu_sync t.aos], which on the
+   [Stale_CPU A] a transparent launch leaves fires the sync callback, and that
+   reaches [Transfer.to_cpu] -> [read_back_to_host] -> the SoA arm -> A's leaves.
+   Asserted rather than argued, because that chain is four indirections long and
+   two of them are function pointers.
+
+   The precondition is auto-sync, exactly as in
+   [check_host_write_survives_packed]: [ensure_cpu_sync] is a no-op when
+   [auto_sync] is false on the vector or auto mode is off globally
+   (Vector_transfer.ml), and this case does not disable either.
+
+   y0 = i+1; each launch doubles y, so two launches give 4*y0 and a second launch
+   fed pre-A host bytes gives 2*y0 — never equal for y0 > 0. *)
+let check_soa_then_soa_other_device (src : Device.t) (dst : Device.t) =
+  let sv = Soa_vector.create_transparent point3d_custom n in
+  let y0 i = float_of_int (i + 1) in
+  for i = 0 to n - 1 do
+    Vector.set sv i {x = float_of_int i; y = y0 i; z = float_of_int (n - i)}
+  done ;
+  let ok = ref true in
+  let launch dev =
+    Sarek.Execute.run_vectors
+      ~device:dev
+      ~ir:(ir_of scale_y_kernel)
+      ~args:[Vec sv; Int n]
+      ~block:(Sarek.Execute.dims1d threads)
+      ~grid:(Sarek.Execute.dims1d ((n + threads - 1) / threads))
+      () ;
+    Transfer.flush dev
+  in
+  (match
+     launch src ;
+     (* No read-back here, deliberately: inserting one would drain A by another
+        route and the case would pass without the drain inside [scatter]. *)
+     launch dst
+   with
+  | exception e ->
+      Printf.printf
+        "  the SoA -> SoA relaunch on another device raised: %s\n%!"
+        (Printexc.to_string e) ;
+      ok := false
+  | () ->
+      let first = ref true in
+      for i = 0 to n - 1 do
+        let got = (Vector.get sv i).y and want = y0 i *. 4.0 in
+        if Float.abs (got -. want) > 1e-3 && !first then begin
+          first := false ;
+          Printf.printf
+            "  second SoA launch ran on pre-first-launch host bytes @%d: \
+             got=%g want=%g (scattering the un-drained host copy gives %g)\n\
+             %!"
+            i
+            got
+            want
+            (y0 i *. 2.0) ;
+          ok := false
+        end
+      done) ;
+  Transfer.free_all_buffers sv ;
+  ignore (Sys.opaque_identity sv) ;
+  Printf.printf
+    "  %-58s %s\n%!"
+    "a second SoA launch on another device sees the first"
+    (if !ok then "OK" else "FAILED") ;
+  !ok
+
 (* A free must not RESURRECT leaf ownership the previous launch gave up.
    Found by a cross-runtime review of the round-5 fix that made the packed
    launch's gather unconditional, and it is a defect of the two together:
@@ -542,6 +619,22 @@ let () =
              backend but Cuda_ptx_plugin. A heterogeneous pair would make this
              file exit 1 on an environment shortfall rather than on an assertion,
              so it is a NAMED skip instead. *)
+          (* Both of the last two need a CUDA/PTX [dst]: this one because the SoA
+             ABI dispatches on no other backend, so a non-PTX [dst] would take
+             the packed path and the case would be a duplicate of [a] and [b]. *)
+          let e =
+            if is_ptx dst then check_soa_then_soa_other_device src dst
+            else begin
+              Printf.printf
+                "  %-58s SKIP (needs a SECOND CUDA/PTX device; %s is %s, where \
+                 the SoA ABI does not dispatch)\n\
+                 %!"
+                "a second SoA launch on another device sees the first"
+                dst.Device.name
+                dst.Device.framework ;
+              true
+            end
+          in
           let d =
             if is_ptx dst then check_free_does_not_resurrect_leaves src dst
             else begin
@@ -555,4 +648,4 @@ let () =
               true
             end
           in
-          if not (a && b && c && d) then exit 1)
+          if not (a && b && c && d && e) then exit 1)
