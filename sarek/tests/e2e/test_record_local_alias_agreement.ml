@@ -309,6 +309,45 @@ let () =
   let frameworks_seen =
     Array.to_list devs |> List.map (fun (d : Device.t) -> d.Device.framework)
   in
+  let claimed_frameworks = ["CUDA/PTX"] in
+  (* Same self-check as the sibling file, and see the long note there for the
+     version of it that was wrong. The key must be the name a device REPORTS
+     ("CUDA/PTX"), not the family name [Device.init ~frameworks] accepts as a
+     request ("CUDA"); a key no device can report makes the [List.mem] below
+     unconditionally false, so this loud named skip would fire on a run where the
+     CUDA leg executed and passed, indistinguishable in the log from an honest
+     skip. Checked against enumerated devices and only in the direction that
+     carries information — the family is present but the exact name is not — so a
+     host with no CUDA driver still gets the skip rather than a failure. It
+     therefore cannot fire in CI, which enumerates no device. *)
+  let family fw =
+    match String.index_opt fw '/' with
+    | Some i -> String.sub fw 0 i
+    | None -> fw
+  in
+  let bad_keys =
+    List.filter
+      (fun fw ->
+        (not (List.mem fw frameworks_seen))
+        && List.exists
+             (fun s -> String.equal (family s) (family fw))
+             frameworks_seen)
+      claimed_frameworks
+  in
+  if bad_keys <> [] then begin
+    List.iter
+      (fun fw ->
+        Printf.printf
+          "claimed framework key %S matches no enumerated framework, but its \
+           family %S IS enumerated — the key is the wrong vocabulary. \
+           Enumerated: %s\n\
+           %!"
+          fw
+          (family fw)
+          (String.concat ", " (List.sort_uniq String.compare frameworks_seen)))
+      bad_keys ;
+    exit 1
+  end ;
   List.iter
     (fun fw ->
       if not (List.mem fw frameworks_seen) then
@@ -320,7 +359,7 @@ let () =
            %!"
           fw
           fw)
-    ["CUDA/PTX"] ;
+    claimed_frameworks ;
   Printf.printf
     "%d device(s) exercised (frameworks: %s)\n%!"
     (Array.length devs)

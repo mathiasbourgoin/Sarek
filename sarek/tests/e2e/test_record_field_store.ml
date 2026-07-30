@@ -438,6 +438,75 @@ let () =
          bought here — before it, [outer] did not compile at all" );
     ]
   in
+  (* EVERY KEY ABOVE MUST BE A NAME A BACKEND ACTUALLY REGISTERS UNDER.
+
+     [frameworks_seen] is built from [d.Device.framework], which is the resolved
+     BACKEND name — "CUDA/PTX" — not the family name "CUDA" that
+     [Device.init ~frameworks] accepts as a request. [Device.resolve_framework]
+     expands a family to its registered variants ("CUDA" -> "CUDA/PTX",
+     "CUDA/C"), so the two vocabularies are different and only one of them can
+     appear on the left of the [List.mem] below.
+
+     Get that wrong in either direction and this whole mechanism inverts into the
+     thing it exists to prevent: a key no device can ever report makes
+     [List.mem] unconditionally false, so the loud named skip fires on a run
+     where the leg DID execute and pass. A skip predicate that cannot be false is
+     the same defect as an assertion that cannot fail, and it is not detectable by
+     reading the output — the line looks exactly like an honest skip.
+
+     HOW IT IS CHECKED, and the version of this check that was wrong. The first
+     attempt compared each key against
+     [Framework_registry.all_backend_names ()], on the assumption that
+     registration is independent of hardware. Measured: it is not.
+     [Cuda_plugin.init ()] registers nothing when no CUDA driver loads, so
+     without ZLUDA on the loader path "CUDA/PTX" is absent from the registry and
+     that check turned this file's intended loud skip into a hard failure on
+     every driver-less host. It replaced a false green with a false red, which is
+     not an improvement.
+
+     So the comparison is against the devices actually enumerated, in the one
+     direction that carries information:
+
+       - a key that matches an enumerated framework exactly  -> fine;
+       - a key that matches NOTHING but whose FAMILY is enumerated -> FAIL, the
+         key is the wrong vocabulary for a device that is right here ("CUDA" when
+         the device reports "CUDA/PTX");
+       - a key that matches nothing and whose family is absent -> the honest loud
+         skip, which is the whole point of the list.
+
+     Stated plainly because it bounds the check: this can only fire on a host that
+     HAS the device. It cannot fire in CI, which enumerates none. It is a guard
+     against the vocabulary mistake being reintroduced on a developer machine or a
+     GPU runner, not a CI gate. *)
+  let family fw =
+    match String.index_opt fw '/' with
+    | Some i -> String.sub fw 0 i
+    | None -> fw
+  in
+  let bad_keys =
+    List.filter
+      (fun (fw, _) ->
+        (not (List.mem fw frameworks_seen))
+        && List.exists
+             (fun seen -> String.equal (family seen) (family fw))
+             frameworks_seen)
+      claimed_frameworks
+  in
+  if bad_keys <> [] then begin
+    List.iter
+      (fun (fw, _) ->
+        Printf.printf
+          "claimed_frameworks key %S matches no enumerated framework, but its \
+           family %S IS enumerated — the key is the wrong vocabulary (a device \
+           reports the BACKEND name, not the family name Device.init accepts). \
+           Enumerated: %s\n\
+           %!"
+          fw
+          (family fw)
+          (String.concat ", " (List.sort_uniq String.compare frameworks_seen)))
+      bad_keys ;
+    exit 1
+  end ;
   List.iter
     (fun (fw, claim) ->
       if not (List.mem fw frameworks_seen) then
