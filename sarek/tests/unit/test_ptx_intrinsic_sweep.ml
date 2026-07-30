@@ -6,11 +6,12 @@
 (** ptxas gate over the WHOLE PTX intrinsic surface.
 
     The hand-picked ptxas gate in test_ptx_snapshot.ml assembles five kernels;
-    the intrinsic surface is 80 names. That gap let an invalid opcode ship: the
-    f32→f64 widening of [Float32.{asin,acos,atan,atan2,expm1,log1p}] emitted
-    [cvt.rn.f64.f32], which PTX forbids on an exact widening — the kernels
-    generated fine, passed a substring snapshot test that asserted the invalid
-    opcode, and died at [cuModuleLoadData].
+    the intrinsic surface is the whole of {!Sarek_ir_ptx_expr.intrinsic_names},
+    two orders of magnitude more work per name. That gap let an invalid opcode
+    ship: the f32→f64 widening of [Float32.{asin,acos,atan,atan2,expm1,log1p}]
+    emitted [cvt.rn.f64.f32], which PTX forbids on an exact widening — the
+    kernels generated fine, passed a substring snapshot test that asserted the
+    invalid opcode, and died at [cuModuleLoadData].
 
     So this gate is driven by the emitter's own dispatch registry
     ({!Sarek_ir_ptx_expr.intrinsic_registry}) rather than a hand-picked list: it
@@ -422,8 +423,15 @@ let contains haystack needle =
 
 (** Generate — and, where [ptxas] exists, assemble — one kernel per case,
     reporting per-name pass/fail so a failure names the culprit intrinsic. The
-    whole sweep (114 kernels) costs ~1.3s of ptxas, so it stays on the default
-    [runtest] alias.
+    whole sweep costs on the order of a second of ptxas, so it stays on the
+    default [runtest] alias.
+
+    NO COUNT IS WRITTEN HERE. This comment used to say "114 kernels" and the
+    header used to say "80 names"; by the time anyone checked, the real figures
+    were 120 and higher, because both are DERIVED from the emitter's registry
+    and neither had a reader. A number in a comment beside a number the program
+    can compute is drift with extra steps. [sweep] prints both counts on every
+    run instead.
 
     GENERATION ALWAYS RUNS, including on CPU-only machines: it is what proves
     every registered name is actually claimed by an emitter, that the emitter
@@ -473,9 +481,12 @@ let sweep () =
                 Printf.printf "  FAIL %-28s %s\n%!" label (String.trim err)))
     cases ;
   Printf.printf
-    "  intrinsic sweep: %d/%d kernels generated, %d assembled%s\n%!"
+    "  intrinsic sweep: %d/%d kernels generated over %d registered intrinsic \
+     names, %d assembled%s\n\
+     %!"
     !generated
     (List.length cases)
+    (List.length Sarek_ir_ptx_expr.intrinsic_names)
     !assembled
     (if have_ptxas then "" else " (ptxas absent)") ;
   match List.rev !failures with

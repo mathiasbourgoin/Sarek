@@ -92,3 +92,30 @@ skills-meta/
 
 # Playwright MCP session artifacts
 .playwright-mcp/
+
+# Rocq extraction output from formal/codegen-ptx/extraction/Extract.v.
+#
+# `Extraction Library` writes these to the project root, and every proof run
+# rewrites them, so tracking them meant a dirty tree after each `make -f
+# CoqMakefile`. They were tracked for a long time anyway, and were dead weight
+# the whole time: they do not compile as they stand (they open Datatypes/List/
+# Nat, modules that exist only if the Stdlib is extracted alongside them), no
+# dune stanza names them, and no gate diffs them -- so unlike
+# extraction/sarek_ptx_layout_model.ml, which IS linked and IS byte-compared by
+# scripts/check-formal-proofs.sh, a committed copy proved nothing.
+#
+# Extract.v itself stays in the build: compiling it asserts the theories remain
+# extractable. Migrating these five modules to the self-contained
+# `Extraction "file.ml"` form that the layout model uses -- and then linking
+# them, which is what would let the conformance suite test the extracted model
+# instead of its own transcription -- is separate work (backlog-187).
+/formal/codegen-ptx/AGpuSemantics.ml
+/formal/codegen-ptx/AGpuSemantics.mli
+/formal/codegen-ptx/PtxExprSpec.ml
+/formal/codegen-ptx/PtxExprSpec.mli
+/formal/codegen-ptx/PtxKernelSpec.ml
+/formal/codegen-ptx/PtxKernelSpec.mli
+/formal/codegen-ptx/PtxStmtSpec.ml
+/formal/codegen-ptx/PtxStmtSpec.mli
+/formal/codegen-ptx/PtxTypes.ml
+/formal/codegen-ptx/PtxTypes.mli

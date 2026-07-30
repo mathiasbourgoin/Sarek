@@ -24,7 +24,11 @@ Spoc/Devices.mli
 # scripts/check-formal-proofs.sh regenerates these from theories/PtxLayout.v and
 # byte-compares the result against the committed copy. Formatting them would
 # make every proof run rewrite them and leave the drift check unable to tell a
-# changed definition from a reformat — which is the state Extract.v's five other
-# outputs are in, and the reason they cannot be checked.
+# changed definition from a reformat.
+#
+# Extract.v's five other outputs are in no such check, which is why they are now
+# untracked rather than committed raw (backlog-188): nothing compiled them and
+# nothing diffed them, so the committed copies asserted nothing. They do not
+# appear here because they are gitignored.
 formal/codegen-ptx/extraction/sarek_ptx_layout_model.ml
 formal/codegen-ptx/extraction/sarek_ptx_layout_model.mli
