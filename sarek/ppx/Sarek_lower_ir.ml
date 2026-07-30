@@ -494,7 +494,18 @@ let create_state fun_map =
     mod_consts_order = [];
   }
 
-(* There is ONE id allocator: the typer's [Sarek_typed_ast.fresh_var_id]. A
+(* There is ONE id allocator PER ID SPACE, and the distinction is load-bearing.
+   TERM-variable ids come from the typer's [Sarek_typed_ast.fresh_var_id]; TYPE
+   variable ids come from [Sarek_types.fresh_tvar_id]. They are separate
+   [Atomic]s, both starting at 0, so they are NOT interchangeable and a value
+   from one is meaningless in the other's space.
+
+   This note previously said only "There is ONE id allocator: fresh_var_id",
+   which read as though that counter served everything — and while it said so,
+   Sarek_typer really did build one tvar from it (backlog-183). Since
+   [float_literal_ids] and [numeric_required_ids] are keyed on tvar ids and read
+   inside [unify], that leak could reject a legal program. Enforced now by
+   scripts/check-tvar-id-allocator.sh rather than by this paragraph. A
    third one used to appear to live here ([fresh_id] over a [next_var_id] field)
    and was deleted with its field — it had no caller, and a commit message that
    called it live was wrong. The tail-recursion transform draws from the typer

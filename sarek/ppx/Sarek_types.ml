@@ -106,8 +106,17 @@ let fresh_tvar ?(level = 0) () : typ =
       the GPGPU default.
 
     The registry is process-global but scoped per kernel: it is cleared at the
-    start of each [infer_kernel] and whenever the tvar counter is reset. IDs are
-    monotonic within a kernel so no stale collision is possible. *)
+    start of each [infer_kernel] and whenever the tvar counter is reset.
+
+    IDs are monotonic within a kernel so no stale collision is possible — and
+    that holds only because every tvar id comes from {!fresh_tvar_id}. It was
+    briefly untrue: one site in [Sarek_typer] drew a tvar id from the TERM
+    variable counter (backlog-183), which made this id space non-injective and
+    therefore made a lookup in this very registry able to hit a tvar that never
+    came from a float literal — rejecting a legal program. The single-allocator
+    premise this sentence rests on is now enforced mechanically by
+    scripts/check-tvar-id-allocator.sh, because a premise stated only here is
+    exactly what failed. *)
 
 (** IDs of tvars that originate from bare float literals. *)
 let float_literal_ids : (int, unit) Hashtbl.t = Hashtbl.create 16

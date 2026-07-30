@@ -1260,7 +1260,20 @@ let infer_kernel (env : t) (kernel : Sarek_ast.kernel) : tkernel result =
                  so it can reference itself in its body *)
               let param_types = List.map (fun p -> p.tparam_type) tparams in
               let ret_type_var =
-                TVar (ref (Unbound (fresh_var_id (), env_inner.current_level)))
+                (* [fresh_tvar_id], NOT [fresh_var_id] (backlog-183). This was
+                   the only site in the tree drawing a TYPE-variable id from the
+                   TERM-variable counter ([Sarek_typed_ast.var_id_counter]);
+                   every other tvar uses [Sarek_types.tvar_counter]. Two separate
+                   [Atomic]s, both starting at 0, so the two id spaces overlapped.
+
+                   Not cosmetic since [float_literal_ids] and
+                   [numeric_required_ids] landed: both are keyed on tvar ids and
+                   consulted inside [unify] as set membership, so an id leaked
+                   from the term counter could be spuriously present in one of
+                   them and REJECT A LEGAL PROGRAM. Reachable for any kernel with
+                   a recursive local function, which is what this placeholder is
+                   for. *)
+                TVar (ref (Unbound (fresh_tvar_id (), env_inner.current_level)))
               in
               let fn_ty_placeholder = TFun (param_types, ret_type_var) in
               let env_body =

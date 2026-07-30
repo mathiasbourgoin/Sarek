@@ -360,6 +360,9 @@ jobs:
       - name: Check every negative case is asserted (backlog-165)
         run: ./scripts/check-negative-case-coverage.sh
 
+      - name: Check the tvar id space has one allocator
+        run: ./scripts/check-tvar-id-allocator.sh
+
       - name: Run coverage
         continue-on-error: true
         run: |
