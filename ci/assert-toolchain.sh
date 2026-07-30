@@ -396,3 +396,82 @@ this script if the removal was deliberate."
   exit 1
 fi
 echo "toolchain assertion OK: $checks/$EXPECTED_CHECKS checks passed."
+
+# ---------------------------------------------------------------------------
+# Red-path evidence, executed by scripts/prove-red.sh (backlog-176).
+#
+# WHY THIS TOOK TWO AUDITS TO ARRIVE, since the reason is instructive rather
+# than embarrassing: this script is green only inside ci/Dockerfile's image. On a
+# developer host it exits 1 because ptxas, nvdisasm and the CUDA header tree are
+# absent (measured: 3 of 11 checks fail). prove-red.sh refuses a subject whose
+# unmutated baseline is not green — "every red below it would prove nothing" —
+# so no spec was possible until something made green reachable off-image.
+# scripts/prove-red-fixtures/assert-toolchain/ is that: a wrapper that puts stub
+# ptxas/nvdisasm and a cuda_fp16.h marker on PATH/CUDA_PATH. clang,
+# glslangValidator and naga are genuinely present on a normal host and are
+# deliberately NOT stubbed — faking a tool that is really there would weaken the
+# baseline for nothing.
+#
+# The baseline reaches 13/13, which matters beyond being green: the
+# EXPECTED_CHECKS drift guard is only reachable when zero checks fail, so
+# off-image it could never run at all. The `check-vanished` mutation below is the
+# first time that branch has been observed firing — the branch whose own comment
+# says "'N of N' is tautological by construction and can never report a gap on
+# its own".
+#
+# ON fail() ACCOUNTING, stated rather than left as a gap: there is no
+# single-variable mutation that proves it in isolation, because from a green
+# baseline there is no failure for a miscounting fail() to lose. It is pinned
+# TRANSITIVELY instead — the three tool mutations below all reach exit 1 only via
+# fail() incrementing `failures`, so a fail() that stopped counting would turn
+# all three green and prove-red would report three DID NOT FAILs.
+#
+# BEGIN prove-red-spec
+# copy: ci/assert-toolchain.sh
+# copy: scripts/prove-red-fixtures/assert-toolchain/run-with-stubs.sh
+# copy: scripts/prove-red-fixtures/assert-toolchain/bin/ptxas
+# copy: scripts/prove-red-fixtures/assert-toolchain/bin/nvdisasm
+# copy: scripts/prove-red-fixtures/assert-toolchain/cuda/include/cuda_fp16.h
+# invoke: scripts/prove-red-fixtures/assert-toolchain/run-with-stubs.sh
+# baseline-exit: 0
+# baseline-message: toolchain assertion OK: 13/13 checks passed
+#
+# mutation: ptxas-absent
+#   desc: remove ptxas from PATH entirely. This is the historical disaster verbatim — the previous CI image carried none of these tools, every codegen gate printed SKIP, and CI was green having validated nothing. It is also how a generated #include <cuda_fp16.h> that NVRTC cannot resolve shipped.
+#   apply: rm -f scripts/prove-red-fixtures/assert-toolchain/bin/ptxas
+#   expect-exit: 1
+#   expect-message: ptxas is not on PATH
+#
+# mutation: nvdisasm-present-but-broken
+#   desc: nvdisasm stays on PATH and keeps exiting 0, but stops naming the entry point in its disassembly, so the gate's grep fails. Proves the CHAIN probe rather than mere presence — the script's own header says a present-but-broken binary "skips just as silently as an absent one", and this is the only mutation that tests that claim.
+#   apply: python3 - <<'PYEOF'
+#   apply: p = "scripts/prove-red-fixtures/assert-toolchain/bin/nvdisasm"
+#   apply: s = open(p, encoding="utf-8").read()
+#   apply: old = '    echo "        .text.probe:"'
+#   apply: assert s.count(old) == 1, ("anchor count %d" % s.count(old))
+#   apply: s = s.replace(old, '    echo "        .text.NOTHING_USEFUL:"')
+#   apply: open(p, "w", encoding="utf-8").write(s)
+#   apply: PYEOF
+#   expect-exit: 1
+#   expect-message: cannot disassemble a freshly assembled cubin
+#
+# mutation: cuda-header-tree-missing
+#   desc: delete the cuda_fp16.h marker. The f16 regression this gate exists for was an unresolvable include, so the header tree must really be on disk — a tool-presence check alone would not have caught it.
+#   apply: rm -f scripts/prove-red-fixtures/assert-toolchain/cuda/include/cuda_fp16.h
+#   expect-exit: 1
+#   expect-message: cuda_fp16.h not found
+#
+# mutation: check-vanished
+#   desc: delete one run_check so `checks` becomes 12 with ZERO failures. This is the drift guard, and this mutation is the first time it has been observed firing: off-image the failures>0 branch always exits first, so the guard was unreachable. Its own comment is the claim being tested — that "N of N" cannot report a gap on its own.
+#   apply: python3 - <<'PYEOF'
+#   apply: p = "ci/assert-toolchain.sh"
+#   apply: s = open(p, encoding="utf-8").read()
+#   apply: old = '  run_check "naga --version" naga --version\n'
+#   apply: assert s.count(old) == 1, ("anchor count %d" % s.count(old))
+#   apply: s = s.replace(old, "")
+#   apply: open(p, "w", encoding="utf-8").write(s)
+#   apply: PYEOF
+#   expect-exit: 1
+#   expect-message: checks, expected
+# END prove-red-spec
+# ---------------------------------------------------------------------------
