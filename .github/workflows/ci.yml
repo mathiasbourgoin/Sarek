@@ -286,11 +286,16 @@ jobs:
           # accepting "non-zero" would not notice those being swapped), and
           # case 0 is the positive control.
           ./scripts/prove-red.test.sh
-          # backlog-193. Seven cases: both defect shapes (a name the PPX
-          # never had, and a name Format collapses on screen) plus the four
-          # ways this gate could read green while checking nothing -- a
-          # comment, a printf conversion, an empty name table, and the test
-          # tree it deliberately excludes. Case 0 is the positive control.
+          # backlog-193. Thirteen cases: every defect shape (a name the PPX
+          # never had; a name Format collapses on screen; the OPPOSITE polarity,
+          # an over-escaped expression extension; and either of those on a
+          # construct named WITH A PAYLOAD) plus the six ways this gate could
+          # read green while checking nothing -- a comment, a printf conversion,
+          # an empty name table, no parseable declaration context, an
+          # unclassifiable one, and a long comment pushing a format string out
+          # of Format-attribution reach -- plus the test tree it deliberately
+          # excludes and a correct single-sigil spelling that must NOT fire.
+          # Case 0 is the positive control.
           ./scripts/check-ppx-construct-names.test.sh
 
       - name: Formal proofs admit gate
@@ -524,8 +529,12 @@ jobs:
       # backlog-193. A third lexical gate, same reason: an error message is a
       # claim, and nothing read it. Four PPX refusals told the user to register
       # a type with [%%ktype] -- a construct this tree has never had -- and
-      # sixteen more named [@@sarek.type] inside a Format string, where "@@"
-      # prints as "@" and the advice becomes a different, unusable attribute.
+      # fourteen sites in total (those four included) named a construct inside a
+      # Format string at the wrong sigil count, where "@@" prints as "@" and
+      # "%%" prints as "%", so the advice becomes a different, unusable
+      # construct. The required count comes from the ppxlib declaration CONTEXT,
+      # so BOTH polarities are checked: an expression extension is written with
+      # ONE sigil and doubling it is a defect in the other direction.
       # Both shapes are invisible to the build and to every test that asserts on
       # the refusal rather than on the advice.
       - name: Check PPX messages name constructs that exist (backlog-193)

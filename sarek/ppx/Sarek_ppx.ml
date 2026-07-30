@@ -2114,10 +2114,16 @@ module Real64_lowering = struct
   let ident ~loc name =
     Ast_builder.Default.pexp_ident ~loc {txt = Lident name; loc}
 
+  (* TWO sigils in the format string below, one on screen, and that is correct:
+     kernel.real64 is declared in Extension.Context.expression, so the user
+     writes [%kernel.real64 ...] with a single '%'. The first backlog-193 sweep
+     doubled it to four on the flat rule "a doubled sigil in a Format string is a
+     bug", which turned a true message into one naming a structure-item
+     extension that does not exist. *)
   let reject_unsupported ~loc op =
     Location.raise_errorf
       ~loc
-      "[%%%%kernel.real64]: operation '%s' is not part of the real64 contract. \
+      "[%%kernel.real64]: operation '%s' is not part of the real64 contract. \
        real64 exposes only +. -. *. /. and sqrt (the intersection of the \
        native-f64 and df64 fallback substrates; the df64 fallback has no \
        transcendentals)."
@@ -2374,14 +2380,21 @@ let process_structure_for_module_items (str : structure) : structure =
   in
   str @ extra_items
 
-(** [%sarek_include "path/to/file.ml"] - Include types and module items from
+(** [%%sarek_include "path/to/file.ml"] - Include types and module items from
     another file.
 
     This scans the specified file for [@@sarek.type] and [@sarek.module]
     declarations and registers them for use in kernels in the current file. The
     path is relative to the current file's directory.
 
-    Usage: [%sarek_include "registered_defs.ml"]
+    Declared in [Extension.Context.structure_item], so the bracketed spelling
+    takes TWO percent signs; the single-% [%sarek_include "f.ml"] is a
+    structure-level expression and is refused as an uninterpreted extension. The
+    [let%sarek_include] form below is the same structure-item extension.
+
+    Usage: [%%sarek_include "registered_defs.ml"], or
+    [let%sarek_include _ = "registered_defs.ml"] as every call site in this tree
+    writes it.
 
     let kernel =
     [%kernel fun ... -> let open Registered_defs in ... use types and functions
@@ -2509,11 +2522,20 @@ let expand_sarek_include ~ctxt payload =
       ignore (scan_file_for_sarek_types full_path : string option) ;
       (* Return empty structure item - the side effect is registration *)
       [%stri let () = ()]
+  (* Four sigils in the format string below, two on screen. It is a Format
+     string, so "%%" prints a single "%" -- and sarek_include is declared in
+     Extension.Context.structure_item, so the single-% spelling
+     [%sarek_include "f.ml"] is NOT this extension: it parses as a
+     structure-level expression and comes back "Uninterpreted extension
+     'sarek_include'" (measured both ways). The let%-form is the one single-%
+     spelling that IS this extension (let%foo at structure level is a
+     Pstr_extension), and it is what every call site in this tree writes, so both
+     are named. *)
   | None ->
       Location.raise_errorf
         ~loc
-        "%%sarek_include expects a string path, e.g. [%%sarek_include \
-         \"file.ml\"]"
+        "[%%%%sarek_include] expects a string path, e.g. [%%%%sarek_include \
+         \"file.ml\"] or let%%sarek_include _ = \"file.ml\""
 
 let sarek_include_extension =
   Extension.V3.declare

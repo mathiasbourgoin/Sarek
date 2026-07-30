@@ -28,9 +28,16 @@
 #                 prints as `%`. So the literal "[@@sarek.type]" reaches the
 #                 user as "[@sarek.type]" -- a DIFFERENT construct (a single-@
 #                 attribute cannot sit on a type declaration, so the advice
-#                 fails). Sixteen sites were in this state, including the four
-#                 above after their `ktype` was corrected. The fix is to double
-#                 them ("[@@@@sarek.type]"); this check requires that.
+#                 fails). Fourteen sites were in this state when this was
+#                 written, four of them the `ktype` messages above.
+#
+#                 The requirement is the DECLARED spelling, not "more sigils".
+#                 How many the user writes is a property of the ppxlib
+#                 declaration CONTEXT: an expression extension is [%kernel ...]
+#                 with ONE '%', so "[%%kernel ...]" in a Format string is already
+#                 correct and doubling it is a defect in the other direction --
+#                 which is what a flat rule did to [%kernel.real64] on the first
+#                 sweep. Both polarities are checked, against the context.
 #
 # Scope is `git ls-files`, not the filesystem, and excludes sarek/tests/: a
 # negative test's whole job is to name a spelling that must be REFUSED (see
@@ -40,6 +47,12 @@
 #
 # Only string literals are read. Comments are stripped first -- a comment is not
 # a claim made to a user, and prose about a construct is not advice to use it.
+#
+# NOT in scope: a construct the PPX matches by hand on the AST rather than
+# declaring through ppxlib (`native`, `sarek.module`). Its name is in the table,
+# because the table is built from string literals, but no declaration context is
+# parseable, so the RENDER half says nothing about it. A stated false negative,
+# preferred over guessing a sigil count.
 #
 # Exit: 0 clean - 1 a message names a construct the user cannot write - 2 the
 # check could not run (fails closed).
@@ -158,7 +171,90 @@ def is_known(name):
             or name.startswith("ocaml.")
             or name.split(".")[0] in BUILTIN)
 
-CONSTRUCT = re.compile(r"\[(@{1,4}|%{1,4})([A-Za-z_][A-Za-z0-9_.']*)\]")
+# ---------------------------------------------------------------------------
+# How many sigils each construct is WRITTEN with, derived from the ppxlib
+# declaration site. This is not decoration: the number is a property of the
+# CONTEXT, not of the construct kind, and getting it from the kind alone is what
+# made the first version of this check wrong in both directions.
+#
+#   Extension.Context.structure_item  -> [%%sarek_include ...]   two
+#   Extension.Context.expression      -> [%kernel.real64 ...]    ONE
+#   Attribute.Context.type_declaration-> [@@sarek.type]          two
+#   Attribute.Context.expression      -> [@attr]                 one
+#
+# So "a doubled sigil in a Format string is a bug" is false: for a single-sigil
+# construct the doubling is exactly what produces the right output. The first
+# sweep applied the flat rule to [%kernel.real64] -- an EXPRESSION extension,
+# where "[%%kernel.real64]" was already correct -- and turned a true message into
+# "[%%kernel.real64]", which is not a spelling that extension answers to.
+#
+# A name never declared through Attribute.declare / Extension.declare (sarek's
+# `native` and `sarek.module` are matched by hand on the AST) gets NO entry, and
+# the render half then says nothing about it. That is a stated false negative,
+# preferred over a guess. A DECLARED construct in a context this table cannot
+# classify is exit 2: the check cannot decide, so it has not cleared anything.
+# ---------------------------------------------------------------------------
+ITEM_ATTR = {
+    "type_declaration", "type_extension", "type_exception", "value_binding",
+    "value_description", "module_binding", "module_declaration",
+    "module_type_declaration", "class_declaration", "class_type_declaration",
+    "extension_constructor", "open_description", "include_infos",
+}
+NODE_ATTR = {
+    "expression", "pattern", "core_type", "label_declaration",
+    "constructor_declaration", "row_field", "object_type_field", "class_field",
+    "class_type_field", "module_expr", "module_type",
+}
+ITEM_EXT = {"structure_item", "signature_item"}
+NODE_EXT = {
+    "expression", "pattern", "core_type", "class_expr", "class_type",
+    "module_expr", "module_type", "class_field", "class_type_field",
+}
+
+DECL = re.compile(r"\b(Attribute|Extension)(?:\.V\d+)?\.declare\s+"
+                  r'"([^"]+)"\s+'
+                  r"(?:Attribute|Extension)\.Context\.([A-Za-z_]+)")
+
+# name -> (sigil char, how many of them the user writes)
+spelling = {}
+for f in ppx_files:
+    for m in DECL.finditer(open(f, errors="replace").read()):
+        kind, name, ctx = m.group(1), m.group(2), m.group(3)
+        if kind == "Attribute":
+            want = ("@", 2) if ctx in ITEM_ATTR else (
+                   ("@", 1) if ctx in NODE_ATTR else None)
+        else:
+            want = ("%", 2) if ctx in ITEM_EXT else (
+                   ("%", 1) if ctx in NODE_EXT else None)
+        if want is None:
+            print(f"::error::{f}: {kind}.declare \"{name}\" uses an unclassified "
+                  f"context '{ctx}' -- this check cannot tell how many sigils "
+                  f"that construct is written with, so it has not cleared "
+                  f"anything. Add '{ctx}' to the table in this script.",
+                  file=sys.stderr)
+            sys.exit(2)
+        prev = spelling.get(name)
+        if prev is not None and prev != want:
+            print(f"::error::{f}: \"{name}\" is declared in two contexts with "
+                  f"different spellings ({prev} vs {want}) -- the render check "
+                  f"cannot pick one", file=sys.stderr)
+            sys.exit(2)
+        spelling[name] = want
+if not spelling:
+    print("::error::no Attribute.declare / Extension.declare site parsed under "
+          "sarek/ppx/ -- the render half would then check nothing at all",
+          file=sys.stderr)
+    sys.exit(2)
+
+# The name need not be followed immediately by `]`. An earlier version required
+# it, and that made the gate blind to every construct named WITH A PAYLOAD --
+# which is most of them, and is exactly the shape it walked past on the first
+# sweep: `[%%sarek_include \"file.ml\"]` in Sarek_ppx's own payload refusal
+# reached the user as `[%sarek_include \"file.ml\"]`, a spelling the extension
+# does not answer to ("Uninterpreted extension 'sarek_include'"). A lookahead on
+# `]`, whitespace or end-of-string keeps the anchor that stops the name running
+# into surrounding prose, without requiring the construct to be argument-free.
+CONSTRUCT = re.compile(r"\[(@{1,4}|%{1,4})([A-Za-z_][A-Za-z0-9_.']*)(?=\]|\s|$)")
 
 # `[%s]`, `[%d]`, `[%Ld]` are printf conversions inside literal brackets, not
 # extension points -- messages are full of them. Every ppxlib construct spelling
@@ -187,7 +283,13 @@ NONFMT = re.compile(r"\bPrintf\.(?:sprintf|printf|eprintf|fprintf|ksprintf|kprin
                     r"|\bScanf\.\w+|\bexn_of\w*|\bError\b|\bOk\b")
 # A format string is an argument of its call, so it is close to it. Beyond this
 # many bytes the nearest preceding call head is not evidence of anything.
-FMT_REACH = 600
+#
+# Counted in NON-BLANK bytes. Comments are blanked to spaces with their offsets
+# preserved, so a raw byte distance let a long comment between a call and its own
+# format string push the literal out of reach -- which silently turns the render
+# check OFF for that site, the failure shape where a gate reads green because it
+# checked nothing. Whitespace and comments now cost nothing.
+FMT_REACH = 200
 
 sources = [f for f in tracked("*.ml", "*.mli")
            if not f.startswith("sarek/tests/")]
@@ -215,7 +317,11 @@ for f in sources:
             if pos >= off:
                 break
             best = (pos, is_fmt)
-        return best is not None and best[1] and off - best[0] <= FMT_REACH
+        if best is None or not best[1]:
+            return False
+        gap = len(blanked[best[0]:off]) - blanked.count(" ", best[0], off) \
+            - blanked.count("\n", best[0], off)
+        return gap <= FMT_REACH
 
     for off, text in strs:
         if "[" not in text:
@@ -227,11 +333,24 @@ for f in sources:
             sigil, name = m.group(1), m.group(2)
             if is_printf_conversion(sigil, name):
                 continue
+            # The match no longer includes the closing bracket, so reconstruct a
+            # readable spelling: `...]` when a payload follows, `]` when not.
+            tail = "]" if text[m.end():m.end() + 1] == "]" else " ...]"
             if not is_known(name):
-                name_viol.append((f, ln, m.group(0), name))
-            if in_fmt and sigil in ("@@", "%%"):
-                render_viol.append((f, ln, m.group(0),
-                                    "[" + sigil[0] + name + "]"))
+                name_viol.append((f, ln, m.group(0) + tail, name))
+            want = spelling.get(name)
+            if want is None:
+                continue
+            # What the user actually sees. In a Format string each PAIR of
+            # sigils collapses to one; a leftover single '@' survives ('@@@'
+            # prints '@@'). An odd run of '%' cannot occur -- it would start a
+            # conversion and the format string would not typecheck.
+            shown = (len(sigil) // 2 + len(sigil) % 2) if in_fmt else len(sigil)
+            if (sigil[0], shown) != want:
+                render_viol.append(
+                    (f, ln, m.group(0) + tail,
+                     "[" + sigil[0] * shown + name + tail,
+                     "[" + want[0] * want[1] + name + tail))
 
 failed = 0
 if name_viol:
@@ -240,12 +359,15 @@ if name_viol:
         print(f"  {f}:{ln}: {whole} -- no '{name}' is declared under sarek/ppx/")
     failed = 1
 if render_viol:
-    print("::error::message text will not render the construct it names "
-          "(Format collapses '@@'->'@' and '%%'->'%'):")
-    for f, ln, whole, rendered in render_viol:
-        print(f"  {f}:{ln}: source {whole} reaches the user as {rendered}")
-    print("  Fix: double the sigil in the format string "
-          "(\"[@@@@sarek.type]\" prints \"[@@sarek.type]\").")
+    print("::error::message text does not reach the user as the spelling the "
+          "construct is declared with (in a Format string '@@'->'@', '%%'->'%'):")
+    for f, ln, whole, rendered, want in render_viol:
+        print(f"  {f}:{ln}: source {whole} reaches the user as {rendered}, "
+              f"but the construct is written {want}")
+    print("  Fix: adjust the sigil COUNT in the format string so the rendered "
+          "spelling matches -- \"[@@@@sarek.type]\" prints \"[@@sarek.type]\" "
+          "for a type-declaration attribute, while an expression extension is "
+          "already right as \"[%%kernel.real64]\" printing \"[%kernel.real64]\".")
     failed = 1
 
 if failed:
