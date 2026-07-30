@@ -17,7 +17,7 @@ Arguments:
   output_dir              Base directory for results (default: benchmarks/results)
                           Results saved to output_dir/run_TIMESTAMP/
   --generate-backend-code Also regenerate backend code for all benchmarks
-  --no-clean              Do not remove old results from this hostname before saving
+  --no-clean              Do not remove this machine's old results before saving
 
 Examples:
   $0                              # Save to benchmarks/results/run_TIMESTAMP/
@@ -26,7 +26,7 @@ Examples:
   make benchmarks                 # Same as running script directly
 
 After running:
-  1. Old results from this hostname are automatically replaced (use --no-clean to keep them)
+  1. This machine's old results are automatically replaced (use --no-clean to keep them)
   2. Review new results in benchmarks/results/
   3. Commit updated benchmarks/results/*.json files in PR
   4. Optionally run 'make bench-deduplicate' to check for cross-host duplicates
@@ -178,13 +178,34 @@ echo ""
 # Move results to benchmarks/results/ for git tracking and CI
 echo "Moving results to benchmarks/results/ for git tracking..."
 if [ ${RESULT_COUNT} -gt 0 ]; then
-  # Remove old results from this hostname to prevent duplicates
+  # Remove this machine's previous results to prevent duplicates.
+  #
+  # This used to glob on $(hostname), which is why 263 committed files were
+  # NAMED after three personal machines (backlog-168). The label now comes from
+  # the results themselves -- whatever the benchmarks actually wrote -- so this
+  # cannot drift from the producer, and it never touches the hostname.
   if [ "$CLEAN_OLD" = true ]; then
-    HOSTNAME=$(hostname)
-    OLD_COUNT=$(ls -1 benchmarks/results/${HOSTNAME}_*.json 2>/dev/null | wc -l)
-    if [ ${OLD_COUNT} -gt 0 ]; then
-      rm -f benchmarks/results/${HOSTNAME}_*.json
-      echo "  ✓ Removed ${OLD_COUNT} old results from ${HOSTNAME}"
+    MACHINE=$(python3 -c '
+import json, sys, pathlib
+labels = set()
+for p in pathlib.Path(sys.argv[1]).glob("*.json"):
+    try:
+        labels.add(json.loads(p.read_text())["system"]["machine"])
+    except Exception:
+        pass
+# Refuse to guess: deleting by the wrong label would delete another machine s
+# results. Zero or several labels means do nothing and say so.
+print(labels.pop() if len(labels) == 1 else "")
+' "${RUN_DIR}" 2>/dev/null)
+    if [ -n "${MACHINE}" ]; then
+      OLD_COUNT=$(ls -1 benchmarks/results/${MACHINE}_*.json 2>/dev/null | wc -l)
+      if [ ${OLD_COUNT} -gt 0 ]; then
+        rm -f benchmarks/results/${MACHINE}_*.json
+        echo "  ✓ Removed ${OLD_COUNT} old results for ${MACHINE}"
+      fi
+    else
+      echo "  ! Could not determine a single machine label from ${RUN_DIR};" \
+           "keeping old results (use --no-clean to silence this)"
     fi
   fi
 
@@ -243,7 +264,7 @@ fi
 echo ""
 echo "  3. Commit and push:"
 if [ ${#FAILED_BENCHMARKS[@]} -gt 0 ]; then
-  echo "     git commit -m \"Add benchmark results from $(hostname) ($(date +%Y-%m-%d))"
+  echo "     git commit -m \"Add benchmark results (${MACHINE:-your-machine-label}, $(date +%Y-%m-%d))"
   echo ""
   echo "Failed benchmarks (excluded from results):"
   for bench in "${FAILED_BENCHMARKS[@]}"; do
@@ -251,7 +272,7 @@ if [ ${#FAILED_BENCHMARKS[@]} -gt 0 ]; then
   done
   echo "\""
 else
-  echo "     git commit -m \"Add benchmark results from $(hostname) ($(date +%Y-%m-%d))\""
+  echo "     git commit -m \"Add benchmark results (${MACHINE:-your-machine-label}, $(date +%Y-%m-%d))\""
 fi
 echo "     git push origin <your-branch>"
 echo ""

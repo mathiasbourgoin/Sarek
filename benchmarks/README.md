@@ -76,14 +76,16 @@ dune exec benchmarks/bench_matrix_mul.exe -- \
   --warmup 5 \
   --output results/
 
-# Run on current machine and save to machine-specific directory
-mkdir -p results/$(hostname)
-dune exec benchmarks/bench_matrix_mul.exe -- --output results/$(hostname)/
-dune exec benchmarks/bench_vector_add.exe -- --output results/$(hostname)/
-dune exec benchmarks/bench_reduction.exe -- --output results/$(hostname)/
-dune exec benchmarks/bench_transpose.exe -- --output results/$(hostname)/
-dune exec benchmarks/bench_transpose_tiled.exe -- --output results/$(hostname)/
-dune exec benchmarks/bench_mandelbrot.exe -- --output results/$(hostname)/
+# Run on current machine and save to a machine-specific directory.
+# Use an opaque label, not $(hostname) -- these paths get committed.
+MACHINE=linux-nvidia
+mkdir -p results/${MACHINE}
+dune exec benchmarks/bench_matrix_mul.exe -- --output results/${MACHINE}/
+dune exec benchmarks/bench_vector_add.exe -- --output results/${MACHINE}/
+dune exec benchmarks/bench_reduction.exe -- --output results/${MACHINE}/
+dune exec benchmarks/bench_transpose.exe -- --output results/${MACHINE}/
+dune exec benchmarks/bench_transpose_tiled.exe -- --output results/${MACHINE}/
+dune exec benchmarks/bench_mandelbrot.exe -- --output results/${MACHINE}/
 ```
 
 ### Publishing Results to Web Viewer
@@ -118,7 +120,7 @@ dune exec benchmarks/aggregate.exe -- \
 dune exec benchmarks/to_csv.exe -- aggregated_results.json results.csv
 
 # Or convert individual runs
-dune exec benchmarks/to_csv.exe -- results/cachyos_matrix_mul_naive_256_*.json
+dune exec benchmarks/to_csv.exe -- results/linux-intel_matrix_mul_naive_256_*.json
 ```
 
 ## Data Format
@@ -139,10 +141,9 @@ Each benchmark run produces a **self-contained JSON file** with all metadata:
     }
   },
   "system": {
-    "hostname": "gpu-workstation-01",
-    "os": "Linux 6.1.0",
+    "machine": "linux-nvidia",
+    "os": "Linux",
     "cpu": {"model": "AMD Ryzen 9 5950X", "cores": 16},
-    "memory_gb": 64,
     "devices": [
       {
         "id": 0,

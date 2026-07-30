@@ -12,7 +12,7 @@ let charts = {
 };
 let currentBenchmark = 'matrix_mul';
 let currentMetric = 'throughput'; // 'time' or 'throughput'
-let currentSystem = 'all'; // 'all' or specific hostname
+let currentSystem = 'all'; // 'all' or a specific machine label
 let currentViewMode = 'single'; // 'single', 'comparison', 'ranking', 'matrix'
 
 // Color palette for different backends
@@ -231,11 +231,12 @@ function populateSystemFilter() {
     const systemCounts = new Map(); // Track duplicates
     
     benchmarkData.results.forEach(result => {
-        if (result.system && result.system.hostname) {
-            const hostname = result.system.hostname;
-            
-            // Create unique system ID based on hostname + all GPUs
-            let systemId = hostname;
+        // `machine` is an opaque label, never a hostname (backlog-168).
+        if (result.system && result.system.machine) {
+            const machine = result.system.machine;
+
+            // Create unique system ID based on machine label + all GPUs
+            let systemId = machine;
             let gpuNames = [];
             
             if (result.system.devices && result.system.devices.length > 0) {
@@ -261,13 +262,13 @@ function populateSystemFilter() {
                 
                 // Create unique ID including GPU info
                 if (gpuNames.length > 0) {
-                    systemId = `${hostname}_${gpuNames.join('_')}`;
+                    systemId = `${machine}_${gpuNames.join('_')}`;
                 }
             }
             
             if (!systemsMap.has(systemId)) {
                 // Create descriptive label
-                let label = hostname;
+                let label = machine;
                 
                 if (gpuNames.length > 0) {
                     if (gpuNames.length === 1) {
@@ -278,7 +279,7 @@ function populateSystemFilter() {
                     }
                 }
                 
-                // Track if this label already exists (same hostname + GPU combo)
+                // Track if this label already exists (same machine + GPU combo)
                 const baseLabel = label;
                 const labelCount = systemCounts.get(baseLabel) || 0;
                 systemCounts.set(baseLabel, labelCount + 1);
@@ -296,7 +297,7 @@ function populateSystemFilter() {
                 }
                 
                 systemsMap.set(systemId, {
-                    hostname: hostname,
+                    machine: machine,
                     label: label
                 });
             }
@@ -311,7 +312,7 @@ function populateSystemFilter() {
         .sort((a, b) => a[1].label.localeCompare(b[1].label))
         .forEach(([systemId, info]) => {
             const option = document.createElement('option');
-            option.value = info.hostname; // Still use hostname as value for filtering
+            option.value = info.machine; // machine label is the filter value
             option.textContent = info.label;
             option.dataset.systemId = systemId; // Store full ID for reference
             systemSelect.appendChild(option);
@@ -944,13 +945,13 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
         
         // Filter by system if not "all"
         if (currentSystem !== 'all') {
-            if (!result.system || result.system.hostname !== currentSystem) {
+            if (!result.system || result.system.machine !== currentSystem) {
                 return;
             }
         } else {
             // When showing "all systems", filter out test systems
-            if (result.system && result.system.hostname && 
-                result.system.hostname.toLowerCase().includes('test')) {
+            if (result.system && result.system.machine && 
+                result.system.machine.toLowerCase().includes('test')) {
                 return;
             }
         }
@@ -976,7 +977,7 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
             
             // Create system suffix for "All Systems" view
             let systemSuffix = '';
-            if (currentSystem === 'all' && result.system && result.system.hostname) {
+            if (currentSystem === 'all' && result.system && result.system.machine) {
                 // Shorten GPU name for compact display
                 let gpuName = deviceName
                     .replace('Intel(R) ', '')
@@ -985,7 +986,7 @@ function prepareChartData(benchmarkName, selectedBackends, showCpu) {
                     .replace('(tm)', '')
                     .replace(' Graphics', '')
                     .trim();
-                systemSuffix = ` @ ${result.system.hostname}`;
+                systemSuffix = ` @ ${result.system.machine}`;
             }
             
             const key = `${deviceName} (${framework})${systemSuffix}`;
@@ -1048,16 +1049,16 @@ function updateSystemInfo() {
     // Collect all unique systems from results
     const systemsMap = new Map();
     benchmarkData.results.forEach(result => {
-        if (result.system && result.system.hostname) {
-            const hostname = result.system.hostname;
-            if (!systemsMap.has(hostname)) {
-                systemsMap.set(hostname, {
+        if (result.system && result.system.machine) {
+            const machine = result.system.machine;
+            if (!systemsMap.has(machine)) {
+                systemsMap.set(machine, {
                     system: result.system,
                     benchmark: result.benchmark,
                     count: 0
                 });
             }
-            systemsMap.get(hostname).count++;
+            systemsMap.get(machine).count++;
         }
     });
     
@@ -1070,7 +1071,7 @@ function updateSystemInfo() {
     html += `<p style="color: #666; font-size: 0.9em;">Data collected from ${systemsMap.size} system${systemsMap.size > 1 ? 's' : ''}</p>`;
     
     // Show each system
-    Array.from(systemsMap.entries()).forEach(([hostname, data], index) => {
+    Array.from(systemsMap.entries()).forEach(([machine, data], index) => {
         const system = data.system;
         const benchmark = data.benchmark;
         
@@ -1080,10 +1081,14 @@ function updateSystemInfo() {
         // benchmark JSON (merged via PR) and must be escaped before joining
         // into this HTML string.
         html += '<table style="width: 100%; font-family: monospace; font-size: 0.9em;">';
-        html += `<tr><td><strong>Hostname:</strong></td><td>${escapeHtml(system.hostname || 'N/A')}</td></tr>`;
-        html += `<tr><td><strong>OS:</strong></td><td>${escapeHtml(system.os || 'N/A')} ${escapeHtml(system.kernel || '')}</td></tr>`;
+        // Hostname, kernel version and host memory are deliberately NOT
+        // collected any more (backlog-168) -- they identified the contributor's
+        // machine and its patch level without telling a reader anything about
+        // the benchmark. `machine` is an opaque grouping label. CPU and device
+        // models stay: a number is unreadable without the hardware behind it.
+        html += `<tr><td><strong>Machine:</strong></td><td>${escapeHtml(system.machine || 'N/A')}</td></tr>`;
+        html += `<tr><td><strong>OS:</strong></td><td>${escapeHtml(system.os || 'N/A')}</td></tr>`;
         html += `<tr><td><strong>CPU:</strong></td><td>${escapeHtml(system.cpu?.model || 'N/A')} (${escapeHtml(system.cpu?.cores ?? 'N/A')} cores)</td></tr>`;
-        html += `<tr><td><strong>Memory:</strong></td><td>${system.memory_gb ? escapeHtml(system.memory_gb.toFixed(1)) : 'N/A'} GB</td></tr>`;
         if (benchmark) {
             html += `<tr><td><strong>Results:</strong></td><td>${data.count} benchmark${data.count > 1 ? 's' : ''}</td></tr>`;
         }
@@ -1882,7 +1887,7 @@ function createRankingChart(config) {
     benchmarkData.results
         .filter(r => r.benchmark && variants.includes(r.benchmark.name) && shouldIncludeResult(r))
         .forEach(result => {
-            const systemName = result.system?.hostname || 'Unknown';
+            const systemName = result.system?.machine || 'Unknown';
             
             // Iterate through ALL device results
             if (!result.results || !Array.isArray(result.results)) return;
@@ -1999,13 +2004,13 @@ function createRankingChart(config) {
 function shouldIncludeResult(result) {
     // Filter by currentSystem
     if (currentSystem !== 'all') {
-        if (!result.system || result.system.hostname !== currentSystem) {
+        if (!result.system || result.system.machine !== currentSystem) {
             return false;
         }
     } else {
         // When showing "all systems", filter out test systems
-        if (result.system && result.system.hostname && 
-            result.system.hostname.toLowerCase().includes('test')) {
+        if (result.system && result.system.machine && 
+            result.system.machine.toLowerCase().includes('test')) {
             return false;
         }
     }

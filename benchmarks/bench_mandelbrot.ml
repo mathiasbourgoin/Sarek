@@ -351,6 +351,7 @@ let run config =
           ~output_dir:config.output_dir
           ~benchmark_name:"mandelbrot"
           ~size:(size * size)
+          ~machine:system_info.machine
       in
       Output.write_json filename result ;
       Printf.printf "Written: %s\n" filename ;

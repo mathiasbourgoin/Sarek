@@ -45,7 +45,7 @@ let result_to_csv_rows json =
   let iterations =
     benchmark |> member "parameters" |> member "iterations" |> to_int
   in
-  let hostname = system |> member "hostname" |> to_string in
+  let machine = system |> member "machine" |> to_string in
   let timestamp = benchmark |> member "timestamp" |> to_string in
 
   List.map
@@ -65,7 +65,7 @@ let result_to_csv_rows json =
 
       Printf.sprintf
         "%s,%s,%d,%d,%s,%s,%s,%f,%f,%f,%f,%f,%b,%s"
-        (escape_csv_field hostname)
+        (escape_csv_field machine)
         timestamp
         size
         iterations
@@ -90,7 +90,7 @@ let json_to_csv json output_file =
   (* Write header *)
   Printf.fprintf
     out_channel
-    "hostname,timestamp,size,iterations,benchmark,device,framework,mean_ms,stddev_ms,median_ms,min_ms,max_ms,verified,throughput_gflops\n" ;
+    "machine,timestamp,size,iterations,benchmark,device,framework,mean_ms,stddev_ms,median_ms,min_ms,max_ms,verified,throughput_gflops\n" ;
 
   (* Extract and write rows *)
   let results = extract_results json in

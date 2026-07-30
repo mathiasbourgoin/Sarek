@@ -163,7 +163,11 @@ let run_benchmark ~benchmark_name ~config ~run_fn =
 
       (* Write JSON output *)
       let filename =
-        Output.make_filename ~output_dir:config.output_dir ~benchmark_name ~size
+        Output.make_filename
+          ~output_dir:config.output_dir
+          ~benchmark_name
+          ~size
+          ~machine:system_info.machine
       in
       Output.write_json filename result ;
       Printf.printf "\nResults written to: %s\n" filename ;

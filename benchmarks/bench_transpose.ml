@@ -343,6 +343,7 @@ let () =
           ~output_dir:!config.output_dir
           ~benchmark_name:"transpose_naive"
           ~size
+          ~machine:system_info.machine
       in
       Output.write_json filename result ;
       Printf.printf "\nResults written to: %s\n" filename ;

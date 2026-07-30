@@ -20,21 +20,71 @@ type device_info = {
 }
 
 type system_info = {
-  hostname : string;
+  (* [machine] is an OPAQUE grouping label, never a hostname -- see
+     [get_machine_label]. Deliberately absent from this record: the hostname
+     (an identity) and the kernel version (a patch level). Both used to be
+     collected and both were published; backlog-168 removed them. Host-level
+     memory_gb went with them: no chart read it, and it narrows a machine.
+     Kept: os, cpu, devices -- a benchmark number is unreadable without the
+     hardware that produced it, so hardware model is NOT the line. Identity
+     and patch level are. *)
+  machine : string;
   os : string;
-  kernel : string;
   cpu : cpu_info;
-  memory_gb : float;
   devices : device_info list;
 }
 
-let get_hostname () =
+(* PRIVATE. The only legitimate use is rejecting an override that IS the
+   hostname (see [get_machine_label]). This value must never reach a payload,
+   a filename, or a CSV row -- that was backlog-168. *)
+let read_hostname_for_rejection_check () =
   try
     let ic = Unix.open_process_in "hostname" in
     let hostname = input_line ic in
     let _ = Unix.close_process_in ic in
     String.trim hostname
   with _ -> "unknown"
+
+(* Vendor of the first device that is not just the CPU-as-OpenCL-device.
+   Derived from names we publish anyway, so it discloses nothing new. *)
+let gpu_vendor_of devices cpu_model =
+  let lower s = String.lowercase_ascii s in
+  let contains hay needle =
+    let nh = String.length needle and hl = String.length hay in
+    let rec go i =
+      i + nh <= hl && (String.sub hay i nh = needle || go (i + 1))
+    in
+    nh > 0 && go 0
+  in
+  let vendor_of name =
+    let n = lower name in
+    let table =
+      [
+        ("nvidia", "nvidia");
+        ("geforce", "nvidia");
+        ("rtx", "nvidia");
+        ("radeon", "amd");
+        ("gfx", "amd");
+        ("amd", "amd");
+        ("arc", "intel");
+        ("intel", "intel");
+        ("apple", "apple");
+        ("m1", "apple");
+        ("m2", "apple");
+        ("m3", "apple");
+        ("m4", "apple");
+      ]
+    in
+    List.find_map
+      (fun (tok, v) -> if contains n tok then Some v else None)
+      table
+  in
+  let candidates =
+    List.filter (fun d -> lower d.name <> lower cpu_model) devices
+  in
+  match List.find_map (fun d -> vendor_of d.name) candidates with
+  | Some v -> v
+  | None -> "unknown"
 
 let get_os_info () =
   try
@@ -188,23 +238,50 @@ let get_device_info (dev : Device.t) dev_id =
     (* Could be extended per framework *)
   }
 
+(* The label an operator may set to keep two same-hardware machines apart.
+   Two boxes with the same OS and GPU vendor derive the SAME label and their
+   runs would be merged by the dedup key -- that is why the override exists.
+   It is REFUSED when it equals the hostname, which is the mistake it is here
+   to prevent: an opt-in escape hatch that silently reintroduced the leak
+   would be worse than no escape hatch. *)
+let machine_label_env = "SAREK_BENCH_MACHINE"
+
+let get_machine_label ~os ~cpu_model ~devices =
+  let derived =
+    Printf.sprintf
+      "%s-%s"
+      (String.lowercase_ascii os)
+      (gpu_vendor_of devices cpu_model)
+  in
+  match Sys.getenv_opt machine_label_env with
+  | None | Some "" -> derived
+  | Some override ->
+      let host = read_hostname_for_rejection_check () in
+      let norm s = String.lowercase_ascii (String.trim s) in
+      if norm override = norm host then
+        failwith
+          (Printf.sprintf
+             "%s is set to the machine's hostname. That is the identifier \
+              benchmark output must not carry (backlog-168). Choose an opaque \
+              label such as %S."
+             machine_label_env
+             derived)
+      else String.trim override
+
 let collect devices =
-  let hostname = get_hostname () in
   let os = get_os_info () in
-  let kernel = get_kernel_info () in
   let cpu = get_cpu_info () in
-  let memory_gb = get_memory_gb () in
   let devices =
     Array.to_list devices |> List.mapi (fun i dev -> get_device_info dev i)
   in
-  {hostname; os; kernel; cpu; memory_gb; devices}
+  let machine = get_machine_label ~os ~cpu_model:cpu.model ~devices in
+  {machine; os; cpu; devices}
 
 let to_json (info : system_info) =
   `Assoc
     [
-      ("hostname", `String info.hostname);
+      ("machine", `String info.machine);
       ("os", `String info.os);
-      ("kernel", `String info.kernel);
       ( "cpu",
         `Assoc
           [
@@ -212,7 +289,6 @@ let to_json (info : system_info) =
             ("cores", `Int info.cpu.cores);
             ("threads", `Int info.cpu.threads);
           ] );
-      ("memory_gb", `Float info.memory_gb);
       ( "devices",
         `List
           (List.map

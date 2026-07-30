@@ -3,7 +3,7 @@
    Usage: dune exec benchmarks/deduplicate_results.exe -- [--dry-run] [--keep-latest]
    
    This script identifies and removes duplicate benchmark results based on:
-   - Same hostname
+   - Same machine label
    - Same benchmark name
    - Same size/parameters
    - Same device name and backend
@@ -16,7 +16,7 @@
 open Yojson.Basic.Util
 
 type result_key = {
-  hostname : string;
+  machine : string;
   benchmark_name : string;
   size : string;
   device_name : string;
@@ -52,7 +52,7 @@ let parse_json_file path =
         timestamp = benchmark |> member "timestamp" |> to_string;
         key =
           {
-            hostname = system |> member "hostname" |> to_string;
+            machine = system |> member "machine" |> to_string;
             benchmark_name = benchmark |> member "name" |> to_string;
             size =
               benchmark |> member "parameters" |> member "size" |> to_int
@@ -75,7 +75,7 @@ let parse_json_file path =
 let key_to_string key =
   Printf.sprintf
     "%s/%s/%s/%s/%s"
-    key.hostname
+    key.machine
     key.benchmark_name
     key.size
     key.device_name
@@ -114,7 +114,7 @@ let print_help () =
   print_endline "" ;
   print_endline
     "This script identifies and removes duplicate benchmark results based on:" ;
-  print_endline "  - Same hostname" ;
+  print_endline "  - Same machine label" ;
   print_endline "  - Same benchmark name" ;
   print_endline "  - Same size/parameters" ;
   print_endline "  - Same device name and backend" ;
