@@ -32,4 +32,4 @@ the value expression. Should have been built from the pre-value env (vars restor
 **Fix**: Restore `vars` to pre-value state before building body env
 (`env_clean = {env_after with vars = env_in.vars}`), preserving `current_level` and
 all other unification side-state from `env_after`.
-See commit: 20b79b36 (fix(typer): F-TS-01 — restore ELet body env to pre-value variable scope)
+See commit: c232a566 (fix(typer): F-TS-01 — restore ELet body env to pre-value variable scope)

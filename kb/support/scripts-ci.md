@@ -25,7 +25,7 @@
 - `.github/workflows/deploy-pr-preview.yml`: same-repo PR preview deployment under `preview/pr-N/`.
 - `.github/workflows/cleanup-pr-preview.yml`: removes preview directory on PR close.
 - `.github/workflows/ghcr-image.yml`: builds/pushes interactive image to GHCR.
-- `.github/workflows/retarget-prs.yml`: retargets stacked PRs after a base branch is merged.
+- `.github/workflows/retarget-prs.yml`: **deleted** — retargeted stacked PRs after a base branch was merged. Only its write-up, `.github/workflows/RETARGET_PRS.md`, survives; annotated rather than dropped per the KB dead-entry policy.
 - `.github/workflows/block-master-prs.yml`: **added to inventory 2026-07-02.** Triggers on `pull_request` targeting `branches: [master]` and unconditionally fails with an `::error::` message instructing the author to retarget onto `main`, since `master` is a stale branch that diverged from `main` in 2019 (several PRs — #201/#202/#205/#206 — were previously misdirected there via stale local `origin/HEAD` symrefs).
 - `.github/agents/*.agent.md`: minimal activation wrappers that instruct the agent to load `_bmad/...` persona files.
 

@@ -335,7 +335,7 @@ To make `Sarek_ir_ptx` a real backend:
    `generate_with_types : types:... -> kernel -> string` is exactly what
    the driver wrapper expects.
 
-5. A golden test analogous to `tests/codegen_golden/gen_cuda.real.ml` could
+5. A golden test analogous to `sarek/tests/codegen_golden/gen_cuda.real.ml` could
    be added as `gen_ptx.real.ml` following the existing harness pattern.
 
 ---

@@ -191,7 +191,7 @@ Formal models (Rocq):
 **Known gaps:**
 - **Proof-to-production link is uneven.** The *aggregate byte layout* half is
   extracted: `formal/codegen-ptx/extraction/LayoutExtract.v` extracts
-  `theories/PtxLayout.v` to OCaml, and the conformance suite runs the theory's
+  `formal/codegen-ptx/theories/PtxLayout.v` to OCaml, and the conformance suite runs the theory's
   own definitions against `Sarek_ir_layout`. The *expression/statement/kernel*
   half is not: `formal/codegen-ptx/test/test_codegen_ptx_conformance.ml` still
   checks a hand-written OCaml mirror of the Rocq definitions, and the five `.ml`

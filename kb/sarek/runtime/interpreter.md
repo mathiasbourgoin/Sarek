@@ -60,7 +60,7 @@ Reviewed interpreter runtime files: the `Sarek_ir_interp*` module family (now th
 
 ## Related Tests
 
-- `sarek/interp/test/test_interp_error.ml` (or colocated equivalent): interpreter error formatting.
+- `sarek/sarek/test/test_interp_error.ml`: interpreter error formatting.
 - `sarek/plugins/interpreter/test/test_interpreter_error.ml`: plugin error formatting.
 - General Sarek value/type tests exercise supporting representations, but not full interpreter execution semantics.
 

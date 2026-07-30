@@ -34,7 +34,7 @@ front-matter uses it, then delete (or point it at `modern.css`).
 
 | # | Finding | Sev | Status |
 |---|---|---|---|
-| B1 | No backend/device-selection guide: `SPOC_DISABLE_{GPU,CUDA,OPENCL,VULKAN,METAL}`, per-test `--vulkan/--native/--interpreter/-d`, device enumeration | H | ✅ new `docs/device_selection.md` |
+| B1 | No backend/device-selection guide: `SPOC_DISABLE_{GPU,CUDA,OPENCL,VULKAN,METAL}`, per-test `--vulkan/--native/--interpreter/-d`, device enumeration | H | ✅ new `gh-pages/docs/device_selection.md` |
 | B2 | FAQ lacks operational troubleshooting (driver faults, "context lost", ICD setup, backend disabling) | H | ✅ troubleshooting section added to `faq.md` |
 | B3 | No user-facing Sarek DSL reference (intrinsics, `[%kernel]`/`let%shared`/`let%superstep`, types). "API" nav points to low-level odoc only | M | 🔧 |
 | B4 | `CONTRIBUTING.md` and the rich `kb/` are not linked from the site | M | 🔧 |
@@ -77,8 +77,8 @@ front-matter uses it, then delete (or point it at `modern.css`).
 ## Implemented in this PR
 - **A1** dropdown hover bridge (CSS).
 - **A2** accessible dropdown — `<button>` toggle, `aria-expanded`/`aria-controls`, click + keyboard (Enter/Space/Esc) + outside-click close, `:focus-visible`; CSS `:hover` retained for mouse.
-- **B1/E1** new `docs/device_selection.md`.
-- **B2/E2** troubleshooting section in `docs/faq.md` (covers the real-world Renoir/clover OpenCL fault).
+- **B1/E1** new `gh-pages/docs/device_selection.md`.
+- **B2/E2** troubleshooting section in `gh-pages/docs/faq.md` (covers the real-world Renoir/clover OpenCL fault).
 
 ## Deferred (proposed, not applied)
 Everything marked 🔧. The larger reasons not to auto-apply now:

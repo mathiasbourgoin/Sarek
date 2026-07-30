@@ -80,7 +80,7 @@ Sources consolidated: `formal/convergence-safety/findings/DIVERGENCE_FINDINGS.md
 | Where | `sarek/ppx/Sarek_typer.ml` (`infer_let_binding`) |
 | Found by | differential QCheck, extracted Rocq model vs the production typer |
 | Counterexample | `let y = (let x = 0 in 0) in x` |
-| Status | fixed, `20b79b36`; regression in `test_type_safety_conformance.ml` |
+| Status | fixed, `c232a566`; regression in `test_type_safety_conformance.ml` |
 
 Inner `let` bindings inside a let-*value* leaked into the continuation body: the
 typer accepted `x` as in scope where correct lexical scoping rejects it as
@@ -149,7 +149,7 @@ could have made.
 | Date | 2026-06 |
 | Severity | specification incompleteness |
 | Kind | spec gap — **no shipped defect** |
-| Where | `theories/ConvergenceSpec.v` (model), mirroring `Sarek_convergence.ml:144` |
+| Where | `formal/convergence-safety/theories/ConvergenceSpec.v` (model), mirroring `Sarek_convergence.ml:144` |
 | Status | model extended (`EWarpPoint`, `WarpError`, `check_warp`), proven |
 
 The real checker emits `Warp_collective_in_diverged_flow` as a distinct error
