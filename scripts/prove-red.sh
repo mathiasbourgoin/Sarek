@@ -83,9 +83,26 @@
 #      sentence at the top of this file.
 #   2. A MUTATION MUST ACTUALLY MUTATE. After `apply:` runs, the scratch tree
 #      is re-fingerprinted (path, mode, sha256, symlink-ness). If nothing
-#      changed and the mutation overrides neither stdin nor argv, that is exit 2
-#      -- a no-op mutation would let a subject collect a red it did not earn.
-#      An `apply:` that itself fails is exit 2 for the same reason.
+#      changed, that is exit 2 -- unconditionally, and in particular whether or
+#      not the mutation ALSO overrides stdin or argv. A no-op mutation would let
+#      a subject collect a red it did not earn. An `apply:` that itself fails is
+#      exit 2 for the same reason. This check once excused a mutation that
+#      overrode stdin or argv, on the theory that such a mutation was an
+#      environment mutation; that was wrong twice over -- 15 of the 30 mutations
+#      here declare BOTH an `apply:` and an override, and the measured instance
+#      was a `perl -0pi` whose pattern did not match beside an `argv:`, which
+#      exited 0 having edited nothing and was credited a red (backlog-209). A
+#      mutation that declares no `apply:` at all never reaches the check, which
+#      is the case the exemption was actually for.
+#
+#   2b. A DUNE ALIAS IS NOT A RUN. `invoke:`, `baseline-argv:` and `argv:` may
+#      not build a dune alias (`dune test`, `dune runtest`, `dune build @NAME`)
+#      without `--force`: dune serves aliases from cache, so the second run
+#      prints nothing and exits 0 having executed nothing, and a zero-output
+#      cached run is indistinguishable from a clean one. The subject's run is
+#      the evidence this script credits, so it must be a run. `apply:` is not
+#      inspected -- see `dune_alias_without_force` for why, and for why the
+#      no-op check covers that side instead.
 #   3. DECLARED == EXECUTED, AND FOUND == EXPECTED. Refusing to report success
 #      over a spec this script did not fully run is copied from
 #      check-kb-properties.sh; the subject-count pin is the `EXPECTED_PROJECTS`
@@ -93,11 +110,16 @@
 #      ci/assert-toolchain.sh. A subject silently dropping out of the scan is
 #      how a strict check becomes a permissive one.
 #   4. IT IS ITS OWN SUBJECT. This script carries a prove-red-spec block whose
-#      mutations break a committed fixture gate in the four ways this tool can
-#      lie -- an immune checker, a checker red on arrival, a subject that
-#      vanishes, and a declared message the gate never prints -- and require
-#      this script to report each one. `scripts/prove-red.test.sh` is the
-#      covering test that asserts those same four shapes with exact exit codes.
+#      mutations break a committed fixture gate in every way this tool can lie
+#      -- an immune checker, a checker red on arrival, a subject that vanishes,
+#      a declared message the gate never prints, a `perl -0pi` whose pattern
+#      does not match, a `sed` addressed to a line that does not exist, and a
+#      dune alias standing in for a run -- and require this script to report
+#      each one. `scripts/prove-red.test.sh` is the covering test that asserts
+#      those same shapes with exact exit codes, plus the opposite polarity for
+#      each of the last three: an override-only mutation with no `apply:` stays
+#      green, and neither `--force` nor a non-alias `dune build <target>` is
+#      flagged.
 #
 # The recursion stops there, and it is worth saying where: prove-red.test.sh has
 # no red-path of its own. It is a test with exact assertions rather than a gate
@@ -126,7 +148,8 @@
 #      fails with a different code or a different message than it promises
 #   2  the mechanism could not produce evidence: a malformed or missing spec, a
 #      subject red on arrival, a mutation that changed nothing or failed to
-#      apply, a subject count that does not match the pin, a `copy:` target git
+#      apply, a checked run that builds a dune alias without `--force`, a
+#      subject count that does not match the pin, a `copy:` target git
 #      does not track (present here, absent on a fresh clone), a timed-out run.
 #      Never a skip -- an unusable declaration reporting 0 would be this file's
 #      own failure mode.
@@ -226,6 +249,46 @@ def strip_comment(line):
                 s = s[1:]
             return s
     return s
+
+
+def dune_alias_without_force(argv_str):
+    """True if this argv vector builds a dune ALIAS and does not pass --force.
+
+    Dune caches alias results. A second `dune runtest` -- same tree, different
+    ambient environment -- prints NOTHING and exits 0 off the cache, and a
+    zero-output cached run is indistinguishable from a clean one. Measured: two
+    of three ambient-`LD_LIBRARY_PATH` checks in one session read as passes
+    that way; only `--force` actually re-ran them.
+
+    That matters here because the subject's run IS the evidence: its exit code
+    and its output are what this script credits. An alias run served from cache
+    credits a red (or a green) earned under some earlier environment.
+
+    Only argv-shaped keys are inspected -- `invoke:`, `baseline-argv:`, `argv:`.
+    `apply:` is deliberately excluded: it is arbitrary shell that legitimately
+    WRITES dune command lines into fixture files (check-test-alias-coverage.sh
+    and check-negative-case-coverage.sh both do), and telling a command that is
+    run from a string that is written needs a shell parser. A pattern that
+    cannot tell them apart would be a claim wider than its code. The exposure
+    is covered from the other side instead: a `dune` alias an `apply:` really
+    runs, served from cache, changes no file in the scratch tree, and a no-op
+    `apply:` is now exit 2 unconditionally."""
+    try:
+        toks = shlex.split(argv_str)
+    except ValueError:
+        return False
+    names = [os.path.basename(t) for t in toks]
+    if "dune" not in names:
+        return False
+    rest = toks[names.index("dune") + 1:]
+    if "--force" in rest or "-f" in rest:
+        return False
+    # `dune test` / `dune runtest` build @runtest; `dune build @NAME` (including
+    # a directory-scoped `@dir/NAME`) builds that alias. A plain
+    # `dune build path/to/target.exe` is not an alias and is not cached in a way
+    # that can produce a silent zero-output pass.
+    return any(t.startswith("@") or t in ("test", "runtest", "fmt")
+               for t in rest)
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +418,21 @@ def parse(rel, text):
         if v is not None and v != "empty" and not v.startswith("file:"):
             die("%s mutation `%s`: `stdin` must be `empty` or `file:PATH`, got "
                 "%r." % (rel, m["id"], v))
+
+    argv_sites = [("invoke", header["invoke"]),
+                  ("baseline-argv", header.get("baseline-argv", ""))]
+    for m in muts:
+        if "argv" in m:
+            argv_sites.append(("mutation `%s` argv" % m["id"], m["argv"]))
+    for what, val in argv_sites:
+        if val and dune_alias_without_force(val):
+            die("%s: `%s` builds a dune ALIAS without `--force`: %s\n"
+                "        Dune caches aliases. A cached `dune test`/`dune "
+                "runtest`/`dune build @NAME` prints nothing and exits 0 without "
+                "running anything, so a zero-output cached run and a genuinely "
+                "clean run are the same observation -- and this script would "
+                "credit that as the subject's verdict. Add `--force`."
+                % (rel, what, val))
 
     return header, muts
 
@@ -538,12 +616,36 @@ try:
                     die("%s mutation `%s`: the `apply:` script exited %d. A "
                         "mutation that failed to apply proves nothing about "
                         "the subject." % (rel, m["id"], p.returncode))
-                if fingerprint(scratch) == before and "stdin" not in m \
-                        and "argv" not in m:
-                    die("%s mutation `%s`: `apply:` ran successfully and "
-                        "changed no file in the scratch tree. The subject "
-                        "would be about to collect a red it did not earn."
-                        % (rel, m["id"]))
+                # Unconditional: a declared `apply:` that edited nothing is a
+                # broken declaration whether or not the mutation ALSO overrides
+                # stdin or argv. This condition used to carry `and "stdin" not
+                # in m and "argv" not in m`, which excused exactly the measured
+                # instance -- a `perl -0pi` whose pattern did not match, in a
+                # mutation that also declared `argv:`. The subject ran
+                # unmodified, went red for its own reasons, and the red was
+                # credited. The exemption was meant for mutations that declare
+                # no `apply:` at all; those never reach this branch, because it
+                # is guarded by `if m["apply"]`.
+                if fingerprint(scratch) == before:
+                    die("%s mutation `%s`: `apply:` ran successfully (exit 0) "
+                        "and changed NOTHING in the scratch tree -- no file "
+                        "content, mode, symlink target or directory differs "
+                        "from the pre-`apply:` fingerprint. The subject was "
+                        "about to collect a red it did not earn.\n"
+                        "        This is what a `sed`/`perl -0pi` whose pattern "
+                        "did not match looks like from outside: exit 0, having "
+                        "edited no byte. Anchor the pattern against the current "
+                        "file, or make the apply verify itself (`grep -q`, "
+                        "`assert s.count(needle) == 1`).\n"
+                        "        A `stdin:` or `argv:` override does not excuse "
+                        "this: the override changes the invocation, but a "
+                        "declared `apply:` that edited nothing is a broken "
+                        "declaration either way.\n"
+                        "        the `apply:` script for `%s` in %s, verbatim:\n"
+                        "%s"
+                        % (rel, m["id"], m["id"], rel,
+                           "\n".join("        | %s" % l
+                                     for l in script.split("\n"))))
             argv = invoke + (shlex.split(m["argv"]) if "argv" in m else base_argv)
             data = stdin_bytes(m.get("stdin", header.get("baseline-stdin")),
                                scratch, rel, "mutation `%s` stdin" % m["id"])
@@ -658,5 +760,46 @@ python3 -c "$PYPROG" "$ROOT" "$EXPECT" "$VERBOSE"
 #   argv: --root scripts/prove-red-fixtures/root --expect-subjects 1
 #   expect-exit: 1
 #   expect-message: never mentioned
+#
+# mutation: noop-perl-pattern-under-override
+#   desc: the fixture's mutation is rewritten to a `perl -0pi` whose pattern is not in the file, AND given a `stdin:` override. This is the measured instance (backlog-209): perl exits 0 having edited nothing, the fingerprint check used to be skipped whenever `stdin:` or `argv:` was overridden, so the UNMODIFIED subject's red was credited. 15 of this repository's 30 mutations declared both an `apply:` and an override, i.e. sat in that exempted zone.
+#   apply: python3 - <<'PYEOF'
+#   apply: p = "scripts/prove-red-fixtures/root/scripts/fixture-gate.sh"
+#   apply: s = open(p, encoding="utf-8").read()
+#   apply: old = "#   apply: printf 'nothing here\\n' > data/input.txt\n"
+#   apply: new = "#   apply: perl -0pi -e 's/PATTERN-THAT-IS-NOT-IN-THE-FILE/x/' data/input.txt\n#   stdin: empty\n"
+#   apply: assert s.count(old) == 1, "the fixture's apply line moved; this mutation no longer reproduces the shape"
+#   apply: open(p, "w", encoding="utf-8").write(s.replace(old, new))
+#   apply: PYEOF
+#   argv: --root scripts/prove-red-fixtures/root --expect-subjects 1
+#   expect-exit: 2
+#   expect-message: changed NOTHING in the scratch tree
+#
+# mutation: noop-sed-line-absent-under-override
+#   desc: the same family by the other common mechanism -- a `sed -i` addressed to a line number the file does not have. It rewrites the file byte-identically and exits 0, so only a content fingerprint can tell it apart from a mutation that landed. Also given an override, so it too used to be exempt.
+#   apply: python3 - <<'PYEOF'
+#   apply: p = "scripts/prove-red-fixtures/root/scripts/fixture-gate.sh"
+#   apply: s = open(p, encoding="utf-8").read()
+#   apply: old = "#   apply: printf 'nothing here\\n' > data/input.txt\n"
+#   apply: new = "#   apply: sed -i '99999s/MARKER-OK/nope/' data/input.txt\n#   stdin: empty\n"
+#   apply: assert s.count(old) == 1, "the fixture's apply line moved; this mutation no longer reproduces the shape"
+#   apply: open(p, "w", encoding="utf-8").write(s.replace(old, new))
+#   apply: PYEOF
+#   argv: --root scripts/prove-red-fixtures/root --expect-subjects 1
+#   expect-exit: 2
+#   expect-message: changed NOTHING in the scratch tree
+#
+# mutation: cached-dune-alias-as-the-checked-run
+#   desc: the fixture declares a dune ALIAS as the run whose verdict is credited, without --force. Dune serves aliases from cache: the second run prints nothing and exits 0 having executed nothing, and this script cannot tell that from a clean run. Measured in one session as two of three ambient-LD_LIBRARY_PATH checks reading as passes off the cache.
+#   apply: python3 - <<'PYEOF'
+#   apply: p = "scripts/prove-red-fixtures/root/scripts/fixture-gate.sh"
+#   apply: s = open(p, encoding="utf-8").read()
+#   apply: old = "# invoke: scripts/fixture-gate.sh\n"
+#   apply: assert s.count(old) == 1, "the fixture's invoke line moved"
+#   apply: open(p, "w", encoding="utf-8").write(s.replace(old, "# invoke: dune runtest\n"))
+#   apply: PYEOF
+#   argv: --root scripts/prove-red-fixtures/root --expect-subjects 1
+#   expect-exit: 2
+#   expect-message: builds a dune ALIAS without
 # END prove-red-spec
 # ---------------------------------------------------------------------------

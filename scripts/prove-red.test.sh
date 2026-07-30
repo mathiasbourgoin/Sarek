@@ -281,7 +281,7 @@ cat >> "$d/scripts/gate.sh" <<'SPEC'
 # END prove-red-spec
 SPEC
 expect "case10: an apply that changes no file is exit 2" \
-  "$d" 1 2 "changed no file"
+  "$d" 1 2 "changed NOTHING in the scratch tree"
 
 # --- Case 11: an apply that fails --------------------------------------------
 d="$(newroot case11)"
@@ -380,6 +380,157 @@ d="$TMPROOT/case17"
 mkdir -p "$d"
 expect "case17: a root with no scripts/ and no ci/ is exit 2" \
   "$d" 0 2 "scan read nothing"
+
+# --- Cases 19-24: the no-op mutation under an override, and cached aliases ----
+# backlog-209. Case 10 above covers a no-op `apply:` in a mutation that declares
+# nothing else. The condition used to carry `and "stdin" not in m and "argv" not
+# in m`, so a no-op `apply:` in a mutation that ALSO overrode stdin or argv was
+# never fingerprinted at all -- and 15 of this repository's 30 mutations declare
+# both. Cases 19-22 are that hole, by both of the mechanisms that produced it.
+#
+# Case 19's gate is the sharp one: it fails when its stdin is empty, so the
+# subject goes red for the OVERRIDE's reason with the declared code and the
+# declared message while the file edit never happened. Against the pre-fix
+# script this root exits 0 with "every declared mutation produced its declared
+# exit code and message" -- a green over a mutation that never landed, which is
+# the whole defect.
+
+# stdin_gate <path> -- red when stdin is empty, red when the input is wrong.
+stdin_gate() {
+  cat > "$1" <<'GATE'
+#!/usr/bin/env bash
+set -uo pipefail
+if [ -z "$(cat)" ]; then
+  echo "::error::nothing on stdin"
+  exit 1
+fi
+if ! grep -q MARKER-OK data/input.txt; then
+  echo "::error::data/input.txt does not carry MARKER-OK"
+  exit 1
+fi
+echo "OK: input is well-formed"
+GATE
+  chmod +x "$1"
+}
+
+# noop_spec <path> <apply-line> <override-line> -- a spec whose single mutation
+# runs an apply that cannot change anything, plus an override.
+noop_spec() {
+  cat >> "$1" <<SPEC
+# BEGIN prove-red-spec
+# copy: scripts/gate.sh
+# copy: data/input.txt
+# invoke: scripts/gate.sh
+# baseline-stdin: file:data/input.txt
+# baseline-exit: 0
+# baseline-message: OK: input is well-formed
+#
+# mutation: never-landed
+#   desc: an apply that exits 0 having edited no byte, in a mutation that also overrides the invocation
+#   apply: $2
+#   $3
+#   expect-exit: 1
+#   expect-message: ::error::
+# END prove-red-spec
+SPEC
+}
+
+d="$(newroot case19)"
+stdin_gate "$d/scripts/gate.sh"
+noop_spec "$d/scripts/gate.sh" \
+  "perl -0pi -e 's/PATTERN-THAT-IS-NOT-IN-THE-FILE/x/' data/input.txt" "stdin: empty"
+expect "case19: a no-op perl apply under a stdin: override is exit 2, not a credited red" \
+  "$d" 1 2 "changed NOTHING in the scratch tree"
+# The message must name BOTH the mutation and the subject, and show the pattern:
+# a silently-non-matching pattern is invisible otherwise.
+expect "case19b: the refusal names the mutation, the subject, and the apply verbatim" \
+  "$d" 1 2 "the \`apply:\` script for \`never-landed\` in scripts/gate.sh, verbatim"
+expect "case19c: the refusal prints the pattern that did not match" \
+  "$d" 1 2 "PATTERN-THAT-IS-NOT-IN-THE-FILE"
+
+d="$(newroot case20)"
+stdin_gate "$d/scripts/gate.sh"
+noop_spec "$d/scripts/gate.sh" \
+  "sed -i '99999s/MARKER-OK/nope/' data/input.txt" "stdin: empty"
+expect "case20: a sed addressed to a line that does not exist is exit 2" \
+  "$d" 1 2 "changed NOTHING in the scratch tree"
+
+d="$(newroot case21)"
+gate_body "$d/scripts/gate.sh"
+noop_spec "$d/scripts/gate.sh" "true" "argv: --ignored-by-this-gate"
+expect "case21: a no-op apply under an argv: override is exit 2" \
+  "$d" 1 2 "changed NOTHING in the scratch tree"
+
+# The other polarity: a mutation that overrides the invocation and declares NO
+# `apply:` at all is legitimate (test-suite-counts.sh's empty-stdin, below-floor
+# and dune-exit-nonzero are exactly this) and must stay green. Without this the
+# fix above could have been "fingerprint everything", which would be red on
+# arrival across three live mutations.
+d="$(newroot case22)"
+stdin_gate "$d/scripts/gate.sh"
+cat >> "$d/scripts/gate.sh" <<'SPEC'
+# BEGIN prove-red-spec
+# copy: scripts/gate.sh
+# copy: data/input.txt
+# invoke: scripts/gate.sh
+# baseline-stdin: file:data/input.txt
+# baseline-exit: 0
+# baseline-message: OK: input is well-formed
+#
+# mutation: environment-only
+#   desc: no apply at all -- the mutation IS the empty stdin
+#   stdin: empty
+#   expect-exit: 1
+#   expect-message: nothing on stdin
+# END prove-red-spec
+SPEC
+expect "case22: an override-only mutation with no apply: is still GREEN" \
+  "$d" 1 0 "1 mutation(s)"
+
+# --- Cases 23-24: a dune alias as the checked run ----------------------------
+# Dune serves aliases from cache: a second `dune runtest` under a different
+# ambient environment prints NOTHING and exits 0 having run nothing. Measured as
+# two of three ambient-LD_LIBRARY_PATH checks reading as passes off the cache.
+# The subject's run is what this script credits, so a cached alias would hand it
+# a verdict earned under some earlier environment.
+d="$(newroot case23)"
+gate_body "$d/scripts/gate.sh"
+good_spec "$d/scripts/gate.sh"
+sed -i 's|^# invoke: scripts/gate.sh$|# invoke: dune runtest|' "$d/scripts/gate.sh"
+expect "case23: a dune alias as the checked run without --force is exit 2" \
+  "$d" 1 2 "builds a dune ALIAS without"
+
+# The other polarity, twice: `--force` and a non-alias target must both get PAST
+# the guard. They fail later for unrelated reasons -- the discriminator is the
+# message, not the code. A guard that fired on every `dune` would be a claim
+# wider than its code.
+expect_without() {
+  local desc="$1" root="$2" n="$3" forbidden="$4"
+  local out
+  out="$("$TOOL" --root "$root" --expect-subjects "$n" 2>&1)"
+  if printf '%s' "$out" | grep -qF -- "$forbidden"; then
+    echo "  FAIL: $desc -- output mentioned '$forbidden' and must not"
+    printf '%s\n' "$out" | sed 's/^/        /'
+    fail=$((fail + 1))
+    return
+  fi
+  echo "  PASS: $desc"
+  pass=$((pass + 1))
+}
+
+d="$(newroot case24)"
+gate_body "$d/scripts/gate.sh"
+good_spec "$d/scripts/gate.sh"
+sed -i 's|^# invoke: scripts/gate.sh$|# invoke: dune runtest --force|' "$d/scripts/gate.sh"
+expect_without "case24: \`dune runtest --force\` is not flagged by the alias guard" \
+  "$d" 1 "builds a dune ALIAS without"
+
+d="$(newroot case25)"
+gate_body "$d/scripts/gate.sh"
+good_spec "$d/scripts/gate.sh"
+sed -i 's|^# invoke: scripts/gate.sh$|# invoke: dune build sarek/x.exe|' "$d/scripts/gate.sh"
+expect_without "case25: \`dune build <target>\` is not an alias and is not flagged" \
+  "$d" 1 "builds a dune ALIAS without"
 
 echo ""
 echo "  $pass passed, $fail failed"
