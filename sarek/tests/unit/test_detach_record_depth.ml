@@ -11,14 +11,36 @@
  * through [VRecord] fields and [VVariant] payloads, and had no depth or cycle
  * guard.
  *
- * What that costs, MEASURED rather than assumed — the round-4 note said "an
- * infinite loop", and removing the guard produces something else: the recursion
- * is not tail-recursive, so each level allocates a frame and a cyclic value dies
- * with [Stack overflow] after about a second, not a hang. That is still worth
- * guarding. A [Stack_overflow] escaping through the interpreter is an untyped
- * crash with no indication of which value or which binding caused it, where the
- * guard raises [Unsupported_operation] naming the operation and the bound. The
- * claim is "a diagnosable error instead of a crash", not "instead of a hang".
+ * What that costs, MEASURED rather than assumed, and re-measured in round 5
+ * because the round-4 numbers were wrong twice over. Round 4 first said "an
+ * infinite loop"; the correction to it said "about a second", which is off by
+ * roughly 36x. Removing the guard produces neither. The recursion is not
+ * tail-recursive AND every level runs an [Array.map] over the fields
+ * (Sarek_ir_interp_value.ml, in [detach_record]), so each level allocates; the
+ * descent is dominated by allocation and GC, not by a fast stack walk, and it
+ * ends in [Stack overflow] rather than hanging.
+ *
+ * Measured on one host — Linux x86-64, OCaml 5.3.0, [ulimit -s] 8192,
+ * [OCAMLRUNPARAM] unset — with the guard disabled in place ([false && depth >
+ * detach_max_depth]):
+ *
+ *   - this suite exited 1, reporting `[exception] Stack overflow` for cases 1
+ *     and 2, in 62.4s / 63.5s / 71.4s over three runs (it makes two such
+ *     descents, and the machine was not quiet). With the guard restored it
+ *     exits 0 in 0.003s.
+ *   - a standalone probe doing a single cyclic [detach_record], to attribute the
+ *     time to the descent rather than to the harness, raised [Stack_overflow]
+ *     after 36.6s (36.80s / 36.48s / 36.60s over three runs, ~84M minor words).
+ *
+ * That one configuration is all that was measured, and the seconds belong to it
+ * rather than to the code — a larger [ulimit -s] means more levels before the
+ * overflow and so more time. What the guard is justified by is the DIRECTION,
+ * not the figure: tens of seconds of GC thrash ending in an untyped crash, which
+ * is neither a hang nor a failure fast enough to ignore. A [Stack_overflow]
+ * escaping through the interpreter is an untyped crash with no indication of
+ * which value or which binding caused it, where the guard raises
+ * [Unsupported_operation] naming the operation and the bound. The claim is "a
+ * diagnosable error instead of a crash", not "instead of a hang".
  *
  * A cyclic value is not constructible through the DSL — [@@sarek.type] refuses a
  * self-referential field type for lack of a layout, so no declaration can close
@@ -121,8 +143,11 @@ let test_cyclic_variant_terminates () =
         operation
 
 let test_legal_nesting_still_copies () =
-  (* Comfortably below the bound, and deeper than anything a kernel type can
-     express. A guard that refused everything would fail here. *)
+  (* Comfortably below the bound, and deeper than anything this repository's
+     kernel types declare (the deepest is two levels). NOT deeper than a kernel
+     type can express: a chain of 65 distinct [@@sarek.type] records compiles,
+     and would be refused — see the note on [detach_record]. A guard that
+     refused everything would fail here. *)
   let depth = 16 in
   let orig = nest depth in
   let copy = V.detach_record orig in

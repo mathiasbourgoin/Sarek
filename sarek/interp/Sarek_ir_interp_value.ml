@@ -194,20 +194,83 @@ let callee_env env =
     of [value] could close a loop that no declaration did. So the argument is
     recorded rather than relied on.
 
-    What the guard buys, measured rather than asserted: the recursion is not
-    tail recursive, so an unguarded cyclic value does not hang — it dies with
-    [Stack_overflow] after about a second (measured by removing the guard and
-    running test_detach_record_depth.ml). That is still worth replacing. A
+    What the guard buys, measured rather than asserted — and re-measured, since
+    the two previous numbers written here were both wrong. It is not "an infinite
+    loop" (round 4's claim), and it is not "about a second" (the correction to
+    it, off by roughly 36x). The recursion is not tail recursive, so an unguarded
+    cyclic value does not hang; it dies with [Stack_overflow], but slowly,
+    because every level runs the [Array.map] below and so ALLOCATES an array per
+    frame. The cost is dominated by that allocation and the resulting GC work, it
+    is not a fast stack walk.
+
+    Measured on one host — Linux x86-64, OCaml 5.3.0, [ulimit -s] 8192,
+    [OCAMLRUNPARAM] unset — by replacing the [depth > detach_max_depth] test
+    below with [false && depth > detach_max_depth]:
+
+    - a standalone probe building ONE self-referential [VRecord] (the [value
+      array] is mutable, so a field can hold its own record) and calling
+      [detach_record] on it raised [Stack_overflow] after 36.6s of wall clock:
+      36.80s, 36.48s, 36.60s over three runs, CPU time within 2% of wall, about
+      84M minor words allocated on the way down.
+    - the three-case test_detach_record_depth.ml suite, guard disabled, exited 1
+      reporting [exception] Stack overflow, in 62.4s / 63.5s / 71.4s over three
+      runs — noisier than the probe because it makes two such descents and the
+      machine was not quiet. With the guard restored the same suite exits 0 in
+      0.003s.
+
+    Only that one configuration was measured, and the seconds are a property of
+    it, not of the code: a larger [ulimit -s] buys more levels before the
+    overflow and therefore more time. So the load-bearing claim here is the
+    DIRECTION, not the figure — tens of seconds of allocation and GC thrash
+    ending in an untyped crash, rather than a hang, and equally not a fast
+    failure someone could shrug at. It is worth replacing on either reading. A
     [Stack_overflow] escaping through the interpreter is an untyped crash naming
     neither the value nor the binding; this raises [Unsupported_operation] with
     the operation and the bound in it. A diagnosable error is better than a
     crash.
 
-    The bound is on DEPTH, not on visited identity, because a legitimate nesting
-    depth is small (it is the record/variant nesting of a kernel type, which the
-    layout rules already bound) while pointer-identity tracking would cost an
-    allocation per bind on the hot path. 64 is far above anything expressible
-    and far below a stack overflow. *)
+    The bound is on DEPTH, not on visited identity, because pointer-identity
+    tracking would cost an allocation per bind on this hot path, while a
+    legitimate nesting depth is small — the deepest nesting any [@@sarek.type]
+    declaration in this repository reaches is two levels ([colored_point] over
+    [point] in tests/e2e/test_nested_types.ml, [l2] over [l1] in the
+    record-field-store tests).
+
+    "Small" there is a claim about plausible types, not a limit the compiler
+    imposes, and the wording that used to sit here — 64 is "far above anything
+    expressible", the nesting being one "which the layout rules already bound" —
+    asserted the second. Checked, and it is false. A chain of 65 DISTINCT
+    declarations,
+
+      type float32 = float
+      type t64 = {v : float32} [@@sarek.type]
+      type t63 = {f : t64} [@@sarek.type]
+      (* ... one per level, down to ... *)
+      type t0 = {f : t1} [@@sarek.type]
+
+    compiles and links clean through the ppx (built as an executable under
+    tests/e2e/ and run). Nothing caps chain length: each link's size and
+    alignment are resolved by one lookup of the already-registered field type in
+    the ppx's size/alignment tables, so a link costs the same whether it is the
+    2nd or the 65th. The unreachability argument above is about a SELF-referential
+    field type, and a finite chain of DISTINCT types is a different thing — it
+    registers cleanly, innermost first, in declaration order.
+
+    Bound to a LOCAL, that [t0] is 65 nested [VRecord]s (the ppx's marshaller
+    emits one per link rather than flattening), so [t64] is reached at depth 64
+    and its [float32] at depth 65, which trips the test below. A legal type,
+    refused. Two things narrow it: the chain must be RECORDS, since the layout
+    rules refuse a variant nested below the top level, and 64 links pass — 65 is
+    the first that does not.
+
+    So the honest bound is: 64 is far above anything PLAUSIBLE, not above
+    anything expressible, and far below a stack overflow. The trade is kept
+    deliberately. The false positive needs a hand-written 65-link chain of
+    distinct types, and it fails LOUDLY — the refusal below names the operation
+    and the bound, so whoever wrote that chain is told what to raise — whereas
+    identity tracking would tax every record bind in every kernel. If such a type
+    ever shows up in earnest, raise [detach_max_depth]; do not read this comment
+    as a promise that it cannot. *)
 
 let detach_max_depth = 64
 
@@ -221,10 +284,15 @@ let detach_record (v : value) : value =
              reason =
                Printf.sprintf
                  "nesting deeper than %d while detaching a record for a local \
-                  binding — a [@@sarek.type] declaration cannot nest this \
-                  deeply (a self-referential field type is refused for lack of \
-                  a layout), so this is either a cyclic value built outside \
-                  the PPX or a genuinely unsupported type"
+                  binding. The likely cause is a CYCLIC value: a \
+                  self-referential [@@sarek.type] field type is refused for \
+                  lack of a layout, so no declaration produces one, but the \
+                  interpreter's [value] is dynamically typed and an in-place \
+                  field store can close a loop no declaration did. The other \
+                  possibility is a genuine chain of more than %d distinct \
+                  nested record types, which the PPX does accept — if that is \
+                  what this is, raise detach_max_depth"
+                 detach_max_depth
                  detach_max_depth;
            })
     else
