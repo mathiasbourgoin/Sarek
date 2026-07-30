@@ -28,10 +28,15 @@
 >
 > The authority for the current rule is the retraction block in
 > `formal/codegen-ptx/STATUS.md` ("Retraction — this model is no longer
-> packed") together with `PtxLayout.v` itself. Re-validating this spec against
-> the aligned rule is follow-up work; it is flagged rather than rewritten here
-> because revising a VALIDATED spec's normative requirements is a spec-cycle
-> change, not a documentation correction.
+> packed") together with `PtxLayout.v` itself. This spec is flagged rather than
+> rewritten here because bringing it back into line is a **spec cycle**, not a
+> documentation correction: FR-002, FR-003, FR-004 and C-2 have to be revised to
+> the aligned rule, AC-5 / CHECK-5 have to be retired or replaced (they assert a
+> codegen *failure* that aligned layout no longer produces), and the result has
+> to be re-validated and re-dated. None of that is a docs edit, and none of it is
+> in scope for a sweep that only corrects sentences.
+>
+> **Tracked as:** backlog-205
 
 **Status: SUPERSEDED (was VALIDATED 2026-07-22; the layout rule in FR-002/FR-003/FR-004/C-2 is contradicted by the shipped tree — see the banner above)**
 **Date:** 2026-07-22T19:20:00Z
