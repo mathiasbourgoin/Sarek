@@ -95,14 +95,23 @@
 #      mutation that declares no `apply:` at all never reaches the check, which
 #      is the case the exemption was actually for.
 #
-#   2b. A DUNE ALIAS IS NOT A RUN. `invoke:`, `baseline-argv:` and `argv:` may
-#      not build a dune alias (`dune test`, `dune runtest`, `dune build @NAME`)
-#      without `--force`: dune serves aliases from cache, so the second run
-#      prints nothing and exits 0 having executed nothing, and a zero-output
-#      cached run is indistinguishable from a clean one. The subject's run is
-#      the evidence this script credits, so it must be a run. `apply:` is not
-#      inspected -- see `dune_alias_without_force` for why, and for why the
-#      no-op check covers that side instead.
+#   2b. A DUNE ALIAS IS NOT A RUN. The EFFECTIVE checked command -- `invoke:`
+#      concatenated with `baseline-argv:` or with the mutation's `argv:`, the way
+#      the run itself assembles it -- may not build a dune alias (`dune test`,
+#      `dune runtest`, `dune fmt`, `dune build @NAME`) without `--force`: dune
+#      serves aliases from cache, so the second run prints nothing and exits 0
+#      having executed nothing, and a zero-output cached run is
+#      indistinguishable from a clean one. The subject's run is the evidence this
+#      script credits, so it must be a run.
+#      Two deliberate limits, both narrower than the sentence above sounds.
+#      `apply:` is not inspected -- see `dune_alias_without_force` for why, and
+#      for why the no-op check covers that side instead. And a bare
+#      `test`/`runtest`/`fmt` counts only in the subcommand position, so
+#      `dune exec test` is not flagged; an `@alias` argument counts anywhere.
+#      Global options and their separate values are skipped when locating the
+#      subcommand, from a finite list -- an option not on it is assumed to take
+#      no value, which can make this guard MISS but cannot make it fire on a
+#      correct spec.
 #   3. DECLARED == EXECUTED, AND FOUND == EXPECTED. Refusing to report success
 #      over a spec this script did not fully run is copied from
 #      check-kb-properties.sh; the subject-count pin is the `EXPECTED_PROJECTS`
@@ -251,8 +260,26 @@ def strip_comment(line):
     return s
 
 
+# Dune global options that take their value as a SEPARATE token, so the token
+# after them is a value and not the subcommand. Only needed to find the
+# subcommand position; an unknown option is treated as taking no value, which
+# can only make the guard miss, never make it fire on a correct spec.
+DUNE_VALUE_FLAGS = {"--root", "--build-dir", "--profile", "--display",
+                    "--workspace", "--config-file", "--diff-command",
+                    "--default-target", "--cache", "--action-stdout-on-success",
+                    "-j"}
+
+
 def dune_alias_without_force(argv_str):
     """True if this argv vector builds a dune ALIAS and does not pass --force.
+
+    `argv_str` must be the EFFECTIVE command -- `invoke:` concatenated with the
+    `baseline-argv:` or the mutation's `argv:` override, exactly as the run below
+    assembles it. Checking the fields in isolation was this guard's own first
+    version and CodeRabbit was right about it on PR #393: `invoke: dune` beside
+    `baseline-argv: runtest` trips neither field on its own, so a guard reading
+    them separately claimed a coverage it did not have -- the same
+    claim-wider-than-its-code shape this file exists to police.
 
     Dune caches alias results. A second `dune runtest` -- same tree, different
     ambient environment -- prints NOTHING and exits 0 off the cache, and a
@@ -283,12 +310,23 @@ def dune_alias_without_force(argv_str):
     rest = toks[names.index("dune") + 1:]
     if "--force" in rest or "-f" in rest:
         return False
-    # `dune test` / `dune runtest` build @runtest; `dune build @NAME` (including
-    # a directory-scoped `@dir/NAME`) builds that alias. A plain
-    # `dune build path/to/target.exe` is not an alias and is not cached in a way
-    # that can produce a silent zero-output pass.
-    return any(t.startswith("@") or t in ("test", "runtest", "fmt")
-               for t in rest)
+    # An `@alias` argument names an alias wherever it sits: `dune build @fmt`,
+    # `dune --root . build @somedir/somealias`. A plain
+    # `dune build path/to/target.exe` is not an alias.
+    if any(t.startswith("@") for t in rest):
+        return True
+    # A BARE `test`/`runtest`/`fmt` counts only in the SUBCOMMAND position.
+    # Scanning every token instead would flag `dune exec test`, which runs an
+    # executable called test and builds no alias -- and a guard that fires on a
+    # correct spec gets deleted along with its true findings. Leading global
+    # options are skipped, including the separate value of the ones that take
+    # one, so `dune --root . runtest` is still seen.
+    i = 0
+    while i < len(rest) and rest[i].startswith("-"):
+        if rest[i] in DUNE_VALUE_FLAGS:
+            i += 1
+        i += 1
+    return i < len(rest) and rest[i] in ("test", "runtest", "fmt")
 
 
 # ---------------------------------------------------------------------------
@@ -419,11 +457,16 @@ def parse(rel, text):
             die("%s mutation `%s`: `stdin` must be `empty` or `file:PATH`, got "
                 "%r." % (rel, m["id"], v))
 
-    argv_sites = [("invoke", header["invoke"]),
-                  ("baseline-argv", header.get("baseline-argv", ""))]
+    # The EFFECTIVE command, assembled the way the run below assembles it, not
+    # the three fields in isolation -- `invoke: dune` beside `baseline-argv:
+    # runtest` trips neither field alone.
+    invoke_str = header["invoke"]
+    argv_sites = [("invoke + baseline-argv",
+                   (invoke_str + " " + header.get("baseline-argv", "")).strip())]
     for m in muts:
         if "argv" in m:
-            argv_sites.append(("mutation `%s` argv" % m["id"], m["argv"]))
+            argv_sites.append(("invoke + mutation `%s` argv" % m["id"],
+                               (invoke_str + " " + m["argv"]).strip()))
     for what, val in argv_sites:
         if val and dune_alias_without_force(val):
             die("%s: `%s` builds a dune ALIAS without `--force`: %s\n"
