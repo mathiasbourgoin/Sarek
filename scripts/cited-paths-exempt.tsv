@@ -5,5 +5,84 @@
 # This channel exists because the gate otherwise has no remedy: a comment such
 # as "Mirrors OCaml stdlib typing/typecore.ml behaviour" is correct, useful and
 # unfixable, and every sibling gate in this repo has an escape hatch.
+#
+# The first field may also be `citing/file.md::<token>`, which exempts the token
+# in that ONE file. Prefer the scoped form: a bare row waves the token through
+# everywhere, including in a document that gets it wrong later.
+#
+# A row may exempt a COMMIT SHA as well as a path. Same rule, same format.
 typing/typecore.ml	OCaml compiler source, referenced for behavioural parity
 cuda/ptx-isa.md	NVIDIA PTX ISA documentation, external
+
+# --- formal-apparatus: the skill's own doc tree ------------------------------
+# formal/{convergence,type}-safety/ carry the formal-apparatus skill's policy
+# and instruction documents. Those documents cite each other with paths relative
+# to the SKILL root (~/.claude/skills/formal-apparatus/), which is not vendored
+# here and is not meant to be: the skill is the apparatus, the repo is the
+# subject. Where such a citation is written `~/.claude/skills/...` the gate
+# already ignores it as a home-relative path; these are the rows that were
+# written bare.
+docs/coverage.md	formal-apparatus skill doc (~/.claude/skills/formal-apparatus/docs/), not vendored here
+docs/activation.md	formal-apparatus skill doc (~/.claude/skills/formal-apparatus/docs/), not vendored here
+examples/tezos/bakeoff_2026Q2.md	formal-apparatus reference-host (Octez) example, external to this repo
+examples/tezos/conformance_examples.md	formal-apparatus reference-host (Octez) example, external to this repo
+examples/tezos/divergence_examples.md	formal-apparatus reference-host (Octez) example, external to this repo
+examples/tezos/pbt_stack_2026Q2.md	formal-apparatus reference-host (Octez) example, external to this repo
+examples/tezos/session_examples.md	formal-apparatus reference-host (Octez) example, external to this repo
+memory/feedback_audit_doc_scope.md	formal-apparatus skill memory file, lives in the agent harness
+memory/feedback_benchmark_uniform_workload.md	formal-apparatus skill memory file, lives in the agent harness
+memory/feedback_divergence_audit_workflow.md	formal-apparatus skill memory file, lives in the agent harness
+memory/feedback_divergence_finding_closure_atomicity.md	formal-apparatus skill memory file, lives in the agent harness
+memory/feedback_formal_project_docs.md	formal-apparatus skill memory file, lives in the agent harness
+memory/feedback_latex_spec_style.md	formal-apparatus skill memory file, lives in the agent harness
+memory/feedback_next_step_discipline.md	formal-apparatus skill memory file, lives in the agent harness
+memory/feedback_screens_must_run_proto.md	formal-apparatus skill memory file, lives in the agent harness
+formal/convergence-safety/policy/CONFORMANCE_POLICY.md::theories/X.v	placeholder in a policy example ("docstring claims mirror of theories/X.v"), not a path
+formal/convergence-safety/COVERAGE_INSTRUCTIONS.md::test_helpers/convergence-safety_machine.ml	apparatus task template naming the generator a project is expected to add; this project has none
+formal/convergence-safety/report/WORKFLOW_FEEDBACK.md::proof-ledger/proof-ledger.json	skill-improvement note about the APPARATUS's multi-file ledger layout, which this repo does not use
+formal/type-safety/METHODOLOGY.md::policy/CONFORMANCE_POLICY.md	apparatus-relative policy reference; type-safety carries no policy/ tree of its own
+formal/type-safety/METHODOLOGY.md::test_helpers/coverage_probe.ml	the sentence asserts this artifact's ABSENCE in this project ("No test_helpers/coverage_probe.ml")
+formal/type-safety/FILES.md::report/BENCHMARKS.md	the sentence asserts this artifact's ABSENCE ("No report/BENCHMARKS.md: no bake-off has been run")
+
+# --- KB dead-entry records ---------------------------------------------------
+# kb/ deliberately keeps an entry for a deleted file, annotated as deleted,
+# rather than dropping it: "Annotated rather than deleted from this list per KB
+# dead-entry policy" (kb/sarek/runtime/core.md). Those citations name a path in
+# order to record that it is GONE, which is the opposite of the drift this gate
+# exists to catch -- but indistinguishable from it by shape, so each is listed
+# here with the commit that removed it.
+sarek/ppx/Kirc_Ast.ml	deleted in ba375a36 (#78, retire the dead Kirc_Ast lowering path); kb records it as deleted
+sarek/ppx/Sarek_lower.ml	deleted in ba375a36 (#78, retire the dead Kirc_Ast lowering path); kb records it as deleted
+sarek/tests/unit/test_lower.ml	deleted in ba375a36 (#78) with the legacy lowering it tested; kb records it as deleted
+sarek/ppx/Sarek_ctype_gen.ml	deleted in 1abd73fb (retire the [%%sarek.type] extension path); kb records it as deleted
+sarek/core/Vector_storage.ml	deleted in d4275cb2 (#175 native cutover, functor owns storage); kb records it as deleted
+sarek/core/test/test_vector_storage.ml	deleted with Vector_storage.ml (#175); kb states outright that it does not exist
+sarek/sarek/Skeletons.ml	deleted in 7ca31a76 (dead byte-identical copy); kb records it as deleted
+sarek/sarek/Sarek_ir_interp_value.ml	deleted in 7ca31a76 (dead byte-identical copy of sarek/interp/); kb records it as deleted
+kb/sarek/tests/common.md	deleted with sarek/tests/common/ in #78; kb records it as deleted
+.github/workflows/retarget-prs.yml	workflow deleted; only .github/workflows/RETARGET_PRS.md survives, and kb now says so
+
+# --- named-but-absent by design ---------------------------------------------
+kb/index.md::kb/spec.md	names an OPTIONAL kb file the harness reads "only if present"; this repo has none
+kb/glossary.md::skills-meta/health-2026-07-27.md	the sentence itself says this file is workstation-local
+kb/properties.md::.claude/rules/escalation.md	agent-harness rule file, outside the repo by design
+kb/properties.md::schema/kb-schema.md	roster harness schema document, outside the repo by design
+kb/support/dependencies.md::dependencies/THIRD_PARTY.md	an instruction to CREATE this file when headers are first vendored, not a pointer
+gh-pages/benchmarks/ADDING_BENCHMARKS.md::gh-pages/benchmarks/descriptions/fft.md	worked example: the file the reader is being told to write
+docs/formal/rocq-value-ledger.md::convergence-safety/proof-ledger.json	row of a table measuring the three HAND-WRITTEN ledgers as they stood on 2026-07-27, since replaced by the generated one
+docs/formal/rocq-value-ledger.md::convergence-safety/proof-ledger/proof-ledger.json	same table; this nested layout existed when measured and was removed with it
+docs/formal/rocq-value-ledger.md::type-safety/proof-ledger/proof-ledger.json	same table; this nested layout existed when measured and was removed with it
+
+# --- commit shas quoted in order to say they are unreachable -----------------
+# Four documents record the correction of the unreachable-sha defect, and each
+# has to name the bad sha to do it. Scoped to the file that makes the statement:
+# a bare row would also wave the sha through in a document that cites it as
+# evidence again.
+formal/type-safety/STATUS.md::d72a2e6a	quoted to record that it is in zero remote branches; the sentence's subject
+docs/plans/FORMAL-ROADMAP.md::1da95861	quoted to record that it is in zero remote branches; the sentence's subject
+docs/plans/FORMAL-ROADMAP.md::f6c14c2a	quoted to record that it is in zero remote branches; the sentence's subject
+docs/plans/FORMAL-ROADMAP.md::fbfb3656	quoted to record that it is in zero remote branches; the sentence's subject
+specs/ptx-dshared-formal.md::theories/PtxKernelSpec.v	command to run WITH AN EXPLICIT CWD ("run coqc theories/PtxKernelSpec.v in formal/codegen-ptx/"), so the path is relative to that directory
+formal/convergence-safety/PLAN.md::fbfb3656	tick log quoting the pre-rebase sha, now annotated in place as being in zero remote branches, with the reachable 21d67ec9 beside it
+formal/convergence-safety/report/WORKFLOW_FEEDBACK.md::0fdf1107	a coqchk .vo DIGEST, not a commit -- the sentence compares two artifact hashes
+formal/convergence-safety/report/WORKFLOW_FEEDBACK.md::41e0d70a	a coqchk .vo DIGEST, not a commit -- the canonical hash the one above failed to match

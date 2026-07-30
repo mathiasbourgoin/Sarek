@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: CECILL-B
 # SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
-# Every repo-relative path cited in a source comment must resolve to a TRACKED
-# file.
+# Every repo-relative path cited in a source comment OR in a tracked markdown
+# document must resolve to a TRACKED file, and every commit sha cited in one
+# must be REACHABLE from a remote branch.
 #
 # WHY THIS EXISTS. Four source files cited design notes under `roster/` — a
 # working directory that was never published, so no clone has ever had it:
@@ -82,7 +83,7 @@ command -v python3 >/dev/null 2>&1 || {
 }
 
 python3 - <<'PY'
-import os, re, subprocess, sys
+import os, re, subprocess, sys, urllib.parse
 
 
 def ls(*args):
@@ -98,6 +99,29 @@ if not sources:
     print("check-cited-paths-exist: no tracked .ml/.mli files found", file=sys.stderr)
     sys.exit(2)
 tracked = set(ls())
+
+# The prose trees. Every markdown file tracked at the repo root or under one of
+# these, and nothing else. The four excluded trees are excluded for a stated
+# reason, not by oversight:
+#
+#   benchmarks/  machine-written result write-ups, full of device paths and
+#                driver hashes that are not citations of anything in this repo;
+#   .github/     issue and PR templates, whose "paths" are instructions to the
+#                person filling the form;
+#   sarek*/ spoc/ per-directory READMEs — in scope for a later pass, left out
+#                here only to keep this gate's first landing triageable.
+#
+# formal/ IS in scope: `formal/type-safety/STATUS.md` carried one of the two
+# symptoms of the unreachable-sha defect below (the same false sentence as
+# docs/plans/FORMAL-ROADMAP.md), so excluding it would have made the gate blind
+# to half of the very instance that motivated it.
+MD_ROOTS = ("docs/", "kb/", "specs/", "gh-pages/", "formal/")
+md_sources = [
+    f for f in ls("*.md") if "/" not in f or f.startswith(MD_ROOTS)
+]
+if not md_sources:
+    print("check-cited-paths-exist: no tracked .md files found", file=sys.stderr)
+    sys.exit(2)
 
 # The trailing (?![A-Za-z0-9]) is load-bearing: without it "ld/st.shared" in a
 # PTX comment matches "st.sh" and reads as a missing shell script.
@@ -217,6 +241,83 @@ def _unwrap_paths(text):
     return "\n".join(out)
 
 
+# ---------------------------------------------------------------------------
+# Markdown. A SEPARATE extractor, not the OCaml state machine above: in a .md
+# file there is no comment/code distinction to recover, the citation forms are
+# markdown's own (inline links, reference definitions, backticked spans), and
+# the one construct that must be blanked -- a fenced code block -- is delimited
+# by lines, not by nesting.
+# ---------------------------------------------------------------------------
+
+FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
+
+
+def md_prose(src):
+    """Blank fenced code blocks; keep everything else. Newlines preserved.
+
+    Fences are blanked because that is where a markdown file keeps the things
+    that LOOK like citations and are not: shell transcripts, `git log` output,
+    generated ledger dumps, lockfile digests, sample tool output. A path or a
+    hash inside a fence is a specimen being displayed, not a pointer a reader is
+    invited to follow. The cost of this exclusion is real and accepted -- a
+    genuine citation written only inside a fence is not checked -- and it is the
+    reason inline backticked spans OUTSIDE fences are scanned instead of being
+    lumped in with "code".
+    """
+    out, close = [], None
+    for line in src.split("\n"):
+        if close is None:
+            m = FENCE.match(line)
+            if m:
+                close = m.group(1)[0] * 3
+                out.append("")
+                continue
+            out.append(line)
+        else:
+            # Any fence of the same character at least as long as the opener
+            # closes it. Tildes never close backticks and vice versa.
+            m = FENCE.match(line)
+            out.append("")
+            if m and m.group(1)[0] * 3 == close:
+                close = None
+    return "\n".join(out)
+
+
+# [text](target), with optional <> wrapping and an optional "title".
+MD_LINK = re.compile(r"\[[^\]\n]*\]\(\s*<?([^)\s>]*)>?(?:\s+\"[^\"\n]*\")?\s*\)")
+# A reference definition: [label]: target
+MD_REFDEF = re.compile(r"^\s{0,3}\[[^\]\n]+\]:\s*<?([^\s>]+)>?", re.MULTILINE)
+# An inline code span. Backticked paths are the dominant citation form in this
+# repo's docs ("see `sarek/codegen/Sarek_ir.ml`") and are invisible to the two
+# link forms above.
+MD_CODESPAN = re.compile(r"`([^`\n]+)`")
+
+
+def md_link_target(raw):
+    """Normalise a link target, or None if it does not address this repo.
+
+    Excluded, each deliberately:
+      - absolute URLs and mailto:/tel: -- another host's problem;
+      - pure fragments (#section) -- same document;
+      - site-absolute targets (/backends/) -- gh-pages Jekyll permalinks, which
+        address the published SITE, not a path in the working tree;
+      - template placeholders ({{ ... }}).
+    An anchor or query on a real path is STRIPPED rather than excluded, so
+    `docs/x.md#section` is checked as `docs/x.md`: the fragment is the reader's
+    problem, the file is the gate's.
+    """
+    t = raw.strip()
+    if not t or t.startswith(("#", "/", "{")):
+        return None
+    if "://" in t or t.startswith(("mailto:", "tel:")):
+        return None
+    t = t.split("#", 1)[0].split("?", 1)[0]
+    t = urllib.parse.unquote(t)
+    if not t or t.startswith(("#", "{")):
+        return None
+    return t
+
+
 def resolves(citation, citing_file):
     """A citation resolves from the repo root or any ancestor of its file."""
     if citation in tracked:
@@ -230,17 +331,68 @@ def resolves(citation, citing_file):
         d = os.path.dirname(d)
 
 
+# A tracked directory has no entry of its own in `git ls-files`, so a link to
+# one is resolved by prefix.
+tracked_dirs = set()
+for _p in tracked:
+    _d = os.path.dirname(_p)
+    while _d:
+        tracked_dirs.add(_d)
+        _d = os.path.dirname(_d)
+
+
+def resolves_any(citation, citing_file):
+    """As `resolves`, but for a LINK target.
+
+    Two extra forms, both of which a link may legitimately address and a
+    backticked path may not:
+
+      - a directory (`../benchmarks/`);
+      - the RENDERED page of a markdown source. gh-pages is a Jekyll site, so
+        `[backends](backends.html)` addresses the page built from
+        `gh-pages/docs/backends.md`. Thirteen such links exist and every one is
+        correct; demanding a tracked `.html` would fail them all and teach the
+        next author that this gate is noise.
+    """
+    if resolves(citation, citing_file):
+        return True
+    if citation.endswith(".html") and resolves(
+        citation[: -len(".html")] + ".md", citing_file
+    ):
+        return True
+    cand = citation.rstrip("/")
+    if not cand:
+        return False
+    if cand in tracked_dirs:
+        return True
+    d = os.path.dirname(citing_file)
+    while True:
+        if os.path.normpath(os.path.join(d, cand)) in tracked_dirs:
+            return True
+        if not d:
+            return False
+        d = os.path.dirname(d)
+
+
 # Exempt paths: things that are path-shaped and legitimately not in this repo
 # (upstream sources, generated trees, external docs). Every sibling gate has
 # such a channel; without one this gate hard-fails a comment like
 # "Mirrors OCaml stdlib typing/typecore.ml behaviour" with no remedy but to
 # reword until no path-shaped token survives.
+#
+# The same channel carries sha exemptions. A row's first field is either a bare
+# token (exempt everywhere) or `citing/file.md::token`, which exempts it in that
+# ONE file. The scoped form exists because of the sha half: several documents
+# now quote an unreachable sha in order to say it is unreachable, and a bare
+# exemption for such a token would also wave through a NEW wrong citation of it
+# somewhere else.
 EXEMPT_FILE = "scripts/cited-paths-exempt.tsv"
 exempt = set()
+exempt_scoped = set()
 try:
     for line in open(EXEMPT_FILE, encoding="utf-8"):
-        line = line.strip()
-        if not line or line.startswith("#"):
+        line = line.rstrip("\n")
+        if not line.strip() or line.lstrip().startswith("#"):
             continue
         parts = line.split("\t")
         if len(parts) < 2 or not parts[1].strip():
@@ -250,9 +402,37 @@ try:
                 file=sys.stderr,
             )
             sys.exit(2)
-        exempt.add(parts[0].strip())
+        key = parts[0].strip()
+        if "::" in key:
+            f_, _, tok = key.partition("::")
+            exempt_scoped.add((f_.strip(), tok.strip()))
+        else:
+            exempt.add(key)
 except FileNotFoundError:
     pass
+
+
+def is_exempt(token, citing_file):
+    return token in exempt or (citing_file, token) in exempt_scoped
+
+
+def read_source(f):
+    try:
+        return open(f, encoding="utf-8", errors="replace").read()
+    except OSError as e:
+        # NOT `continue`: skipping a source it could not read and then printing
+        # "every path ... resolves" is a vacuous pass over a tree it did not
+        # examine. Refuse instead.
+        print(f"check-cited-paths-exist: cannot read {f}: {e}", file=sys.stderr)
+        sys.exit(2)
+
+
+def lineno_of(raw, token):
+    """First line carrying the token, or None."""
+    return next(
+        (i for i, line in enumerate(raw.splitlines(), 1) if token in line), None
+    )
+
 
 dangling = []
 for f in sources:
@@ -280,7 +460,7 @@ for f in sources:
             continue
         if PLACEHOLDER.search(c) or c.startswith("..."):
             continue
-        if c in exempt:
+        if is_exempt(c, f):
             continue
         if resolves(c, f):
             continue
@@ -296,19 +476,187 @@ for f in sources:
         )
         dangling.append((f, lineno, c))
 
+# --- markdown paths --------------------------------------------------------
+# Same resolution rule (tracked, not present), different extraction. Three
+# forms, in the order a reader meets them.
+md_text = {}
+for f in md_sources:
+    raw = read_source(f)
+    # md_prose blanks fenced lines to "" rather than dropping them, so an offset
+    # into `prose` still has the ORIGINAL line number -- findings point at a real
+    # line even when the same path is cited more than once in a file.
+    prose = md_prose(raw)
+    md_text[f] = (raw, prose)
+    cited = []  # (kind, token, offset in prose)
+    for rx in (MD_LINK, MD_REFDEF):
+        for m in rx.finditer(prose):
+            t = md_link_target(m.group(1))
+            if t:
+                cited.append(("link", t, m.start(1)))
+    # A backticked span is prose, so it is filtered the same way an OCaml
+    # comment is: only path-SHAPED tokens count, and the placeholder and
+    # PTX-mnemonic exclusions still apply.
+    for m in MD_CODESPAN.finditer(prose):
+        span = m.group(1)
+        for cm in CITATION.finditer(span):
+            # An ABSOLUTE or HOME-relative path is not a repo-relative citation.
+            # The regex cannot start a match at "/", so `/home/mathias/dev/SPOC/
+            # sarek/...` pasted from a transcript arrives here as `home/mathias/
+            # ...` and reads as a dangling citation of a directory named "home",
+            # and `~/.claude/skills/formal-apparatus/SKILL.md` as one of a
+            # directory named ".claude". Machine-local absolute paths are
+            # scripts/check-no-machine-identifiers.sh's business; a path under
+            # the agent harness in $HOME is nobody's, and neither is this gate's.
+            #
+            # `$SCRIPT_DIR/add-license-headers.sh` is the same shape for a
+            # different reason: the leading token is a shell variable, so the
+            # citation is a COMMAND, and the file it names lives wherever the
+            # variable points.
+            if cm.start() > 0 and span[cm.start() - 1] in "/$":
+                continue
+            cited.append(("code", cm.group(0), m.start(1) + cm.start()))
+    for kind, c, off in sorted(set(cited)):
+        if "://" in c or "github.com/" in c:
+            continue
+        if PLACEHOLDER.search(c) or c.startswith("..."):
+            continue
+        if is_exempt(c, f):
+            continue
+        # A link may address a directory; a backticked path must be a file --
+        # `kb/` as a bare word in prose is not a citation anybody follows, and
+        # accepting directories there would make every "under sarek/codegen/"
+        # mention resolve for free.
+        if resolves_any(c, f) if kind == "link" else resolves(c, f):
+            continue
+        dangling.append((f, prose.count("\n", 0, off) + 1, c))
+
 for f, lineno, c in dangling:
     print(f"{f}:{lineno if lineno else '?'}: cites '{c}', which is not a tracked file")
 
-if dangling:
+# --- cited shas must be REACHABLE, not merely present ----------------------
+# The defect is not a missing object. `d72a2e6a`, `fbfb3656`, `f6c14c2a` and
+# `1da95861` were all cited as evidence in docs/plans/FORMAL-ROADMAP.md and
+# formal/type-safety/STATUS.md, and all four EXIST in the workstation clone that
+# wrote them -- they were real commits, orphaned by a rebase. Each is contained
+# in ZERO remote branches (a reachable sibling is in 120+), so no fresh clone
+# can resolve any of them: the citation reads as verifiable provenance and is
+# not. An existence check alone would have passed all four. A fifth, 4b15a323,
+# was produced BY the fix for the first three -- an agent cited a sha its own
+# rebase had just orphaned -- which is why this is a gate and not a review note.
+#
+# Range 7..40 also excludes sha256 digests by construction: a 64-hex token fails
+# the trailing boundary, so lockfile and artifact digests never enter.
+SHA = re.compile(r"(?<![0-9A-Za-z])([0-9a-f]{7,40})(?![0-9A-Za-z])")
+
+
+def sha_candidates(text):
+    """Hex tokens that a reader would take for a commit sha."""
+    for m in SHA.finditer(text):
+        tok = m.group(1)
+        # An all-digit run is a number (a line count, a byte size), not a sha.
+        if tok.isdigit():
+            continue
+        i, j = m.start(1), m.end(1)
+        # Part of a longer compound token: `deadbee.md`, `abc1234-rc1`, a hex
+        # colour. The trailing boundary above only rejects letters and digits,
+        # so the separators have to be rejected here.
+        if i > 0 and text[i - 1] in "#":
+            continue
+        if i >= 2 and text[i - 2].isalnum() and text[i - 1] in "._-/":
+            continue
+        if j + 1 < len(text) and text[j] in "._-/" and text[j + 1].isalnum():
+            continue
+        yield tok, m.start(1)
+
+
+def git_ok(*args):
+    return subprocess.run(
+        ["git", *args], capture_output=True, text=True
+    )
+
+
+sha_cites = []  # (file, lineno, token)
+for f in md_sources:
+    raw, prose = md_text[f]
+    seen = set()
+    for tok, off in sha_candidates(prose):
+        if tok in seen or is_exempt(tok, f):
+            continue
+        seen.add(tok)
+        sha_cites.append((f, prose.count("\n", 0, off) + 1, tok))
+
+# FAIL CLOSED. `git branch -r --contains` on a shallow or single-branch clone
+# reports nothing for EVERY sha, reachable or not, so the check would either
+# fail the whole build or -- if someone "fixed" that by treating empty as
+# fine -- pass everything while examining nothing. That second outcome is the
+# vacuous-green failure this repository keeps closing (backlog-152: about twenty
+# PRs merged green onto a main that was already red, because a pull_request
+# checkout had no origin/main and the gate read it as "no differences"). So the
+# preconditions are ASSERTED, and their absence is exit 2 -- never a pass, and
+# never a silent skip. Asserted only when there is at least one sha to check, so
+# that a repository which cites none (and the per-case fixtures in the red-path
+# harness) is not forced to have a remote it does not need.
+if sha_cites:
+    shallow = git_ok("rev-parse", "--is-shallow-repository")
+    if shallow.returncode != 0 or shallow.stdout.strip() != "false":
+        print(
+            "check-cited-paths-exist: this is a SHALLOW clone, in which "
+            "`git branch -r --contains` reports nothing for every sha -- the sha "
+            "reachability check cannot run. Check out with fetch-depth: 0.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    remotes = git_ok("branch", "-r", "--format=%(refname)")
+    if remotes.returncode != 0 or not remotes.stdout.strip():
+        print(
+            "check-cited-paths-exist: no remote-tracking branches "
+            "(refs/remotes/*) in this clone, so reachability is unmeasurable and "
+            "every cited sha would look unreachable. Fetch the remote refs "
+            "(actions/checkout with fetch-depth: 0) before running this gate.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+unreachable = []
+for f, lineno, tok in sha_cites:
+    if git_ok("cat-file", "-e", f"{tok}^{{commit}}").returncode != 0:
+        unreachable.append((f, lineno, tok, "no such commit in this repository"))
+        continue
+    # REMOTE BRANCHES ONLY -- tags deliberately do not count. `actions/checkout`
+    # passes `--no-tags` unless `fetch-tags: true` is set, so `git tag
+    # --contains` is non-empty on the workstation and empty in CI: counting tags
+    # would make the verdict depend on which machine ran the gate, which is the
+    # same asymmetry as backlog-152 (same bytes, same job name, opposite
+    # verdicts). It also mattered here: `d72a2e6a` is contained in the pushed
+    # tag `archive/master` and in no branch, so a tag-counting version of this
+    # check would have called one of the four motivating instances fine.
+    if not git_ok("branch", "-r", "--contains", tok).stdout.strip():
+        unreachable.append(
+            (f, lineno, tok, "exists locally but is in ZERO remote branches")
+        )
+
+for f, lineno, tok, why in unreachable:
+    print(f"{f}:{lineno if lineno else '?'}: cites commit '{tok}': {why}")
+
+if dangling or unreachable:
     print()
-    print(f"{len(dangling)} source comment(s) point at a path no reader can open.")
-    print("Fix the path, reword the comment so it is not a bare path, or add the")
-    print(f"path to {EXEMPT_FILE} with a TAB and a reason if it legitimately")
-    print("lives outside this repository.")
+    if dangling:
+        print(f"{len(dangling)} citation(s) point at a path no reader can open.")
+        print("Fix the path, reword so it is not a bare path, or add the path to")
+        print(f"{EXEMPT_FILE} with a TAB and a reason if it legitimately")
+        print("lives outside this repository.")
+    if unreachable:
+        print(f"{len(unreachable)} cited commit(s) cannot be resolved in a fresh clone.")
+        print("Cite a sha that is an ancestor of a pushed branch (check with")
+        print("`git branch -r --contains <sha>`), or, if the document quotes the")
+        print(f"sha in order to say it is unreachable, add `<file>::<sha>` to")
+        print(f"{EXEMPT_FILE} with a TAB and that reason.")
     sys.exit(1)
 
 print(
     "check-cited-paths-exist: OK — every repo-relative path cited in "
-    f"{len(sources)} tracked .ml/.mli files resolves to a tracked file"
+    f"{len(sources)} tracked .ml/.mli files and {len(md_sources)} tracked .md "
+    f"files resolves to a tracked file, and all {len(sha_cites)} cited commit "
+    "sha(s) are reachable from a remote branch"
 )
 PY

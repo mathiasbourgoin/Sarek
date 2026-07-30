@@ -626,7 +626,7 @@ sites, grouped:
 - **host runtime:** `Spoc_core_base_scalar.ml` (~6 matches, §3.1) +
   `Spoc_core_base.ml`/`.mli`; `Vector.ml:228,306,316`; `Kernel_arg.ml:51,77`;
   `Execute.ml:102+`; `Soa.ml:26`, `Sarek_tuple_vec.ml`;
-  `core_js_exec/Kernel_arg_jsx.ml`.
+  `sarek/core_js_exec/Kernel_arg_jsx.ml`.
 - **plugins:** each `sarek-*/Sarek_ir_<backend>.ml` (§4).
 
 ---
@@ -701,7 +701,7 @@ top of* correct scalar f16, not a prerequisite.
 **Recommendation: explicit intrinsics, no implicit f16↔f32 coercion.** Provide a
 `Float16` stdlib module with `f16_of_float : float32 -> float16` and `float_of_f16 :
 float16 -> float32` (plus `of_int`), mirroring `Float32`/`Float64`
-(`Sarek_stdlib/Float32.ml:166-170`, `Sarek_float64/Float64.ml:23-24`). Lower each to
+(`sarek/Sarek_stdlib/Float32.ml:166-170`, `sarek/Sarek_float64/Float64.ml:23-24`). Lower each to
 `Sarek_ir.ECast (TFloat16, _)` / `ECast (TFloat32, _)`, then per-backend to the
 native convert (CUDA `__float2half`/`__half2float`, PTX `cvt.rn.f16.f32`/`cvt.f32.f16`,
 GLSL `float16_t(x)`/`float(x)`, WGSL `f16(x)`/`f32(x)`, Metal `half(x)`/`float(x)`).
@@ -715,7 +715,7 @@ bare-literal defaulting set, §6.1).
 >
 > **VERIFIED** (PR #290). The *decision* held — explicit conversions, no implicit
 > coercion, lowering to `ECast`. The *mechanism* did not. This section proposed
-> mirroring `Sarek_float64/Float64.ml:23-24`:
+> mirroring `sarek/Sarek_float64/Float64.ml:23-24`:
 >
 > ```ocaml
 > let%sarek_intrinsic float64 = {device = (fun _ -> "double"); ctype = Ctypes.double}

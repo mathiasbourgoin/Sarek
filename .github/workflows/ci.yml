@@ -512,7 +512,14 @@ jobs:
       - name: Check README CI links name this repository (backlog-188)
         run: ./scripts/check-readme-repo-links.sh
 
-      - name: Check cited paths resolve to tracked files (backlog-188)
+      # backlog-210/204 widened this one: it now also scans tracked markdown and
+      # requires every cited commit sha to be REACHABLE from a remote branch,
+      # not merely present. That second half DEPENDS on this job's
+      # `fetch-depth: 0` — `git branch -r --contains` reports nothing for every
+      # sha in a shallow or ref-less checkout. The gate asserts both
+      # preconditions and exits 2 when they fail, so cutting the fetch depth
+      # turns this step RED rather than turning it into a silent pass.
+      - name: Check cited paths and commit shas resolve (backlog-188/210/204)
         run: ./scripts/check-cited-paths-exist.sh
 
       - name: Run coverage

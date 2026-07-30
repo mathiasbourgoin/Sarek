@@ -57,7 +57,7 @@ Reviewed execution-facing files under `sarek/sarek/**` and, following the 2026-0
 - `sarek/sarek/test/test_sarek_value.ml`: runtime value behavior.
 - `sarek/sarek/test/test_sarek_float32.ml`: float32 helper behavior.
 - `sarek/sarek/test/test_sarek_type_helpers.ml`: type helper registration and lookup.
-- `sarek/execute/test/test_execute_error.ml` (or colocated equivalent): execution error formatting.
+- `sarek/sarek/test/test_execute_error.ml`: execution error formatting.
 - `sarek/sarek/test/test_kirc_error.ml`, `test_interp_error.ml`, `test_fusion_error.ml`: error modules.
 
 ## Missing Tests

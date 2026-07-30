@@ -19,7 +19,7 @@
 | T3-GATE | HUMAN DECISION — approve T3-SEMANTIC scope per the breakdown below (whole ladder, or stop at SEMANTIC-CORE) | T3 | **done** (full ladder approved 2026-06-13) | — |
 | T3-S1 | Semantic domain + fuel-indexed big-step evaluator with barrier traces | T3 | **done** (ConvergenceSemantics.v: eval + eval_fuel_monotone + eval_app_seq_compose; 22 theorems, 0 admits, 0 axioms, coqchk passes; 2026-06-13) | — |
 | T3-S2 | Uniformity soundness of `is_varying_in_env` (semantic grounding of EVary) | T3 | **done** (ConvergenceSemantics.v: env_agrees + not_varying_uniform + closed_uniform; 27 theorems, 0 admits, 0 axioms; 2026-06-13) | T3-S1 |
-| T3-S3 | Trace silence of barrier-free expressions | T3 | **done** (ConvergenceSemantics.v: no_barrier_event + superstep_free + barrier_free_no_barriers + diverged_clean_no_barriers; 33 theorems, 0 admits, 0 axioms; commit af9f6b81354e7c6d7c5779c273315bbd6a295eff; 2026-06-13) | T3-S1 |
+| T3-S3 | Trace silence of barrier-free expressions | T3 | **done** (ConvergenceSemantics.v: no_barrier_event + superstep_free + barrier_free_no_barriers + diverged_clean_no_barriers; 33 theorems, 0 admits, 0 axioms; commit 5d850248; 2026-06-13) | T3-S1 |
 | T3-S4 | Core semantic soundness of `check_env` (trace-uniformity theorem) | T3 | **done** (ConvergenceSemantics.v: core_frag + eval_check_uniform + check_env_sound_core; 36 proven, 6 defs, 0 admits, 0 axioms; 2026-06-13) | T3-S2, T3-S3 |
 | T3-S5 | EReturn residual-divergence verdict (formal counterexample or proof; expected F-04) | T3 | **done** (ConvergenceSemantics.v: hazard + hazard_vary + hazard_checker_blind + hazard_eval_thread0/1 + hazard_not_barrier_safe; F-04 filed; 40 proven, 8 defs, 0 admits, 0 axioms; 2026-06-13) | T3-S4 |
 | T3-S6 | ESuperstep semantic grounding (implicit-barrier event; semantic F-01) | T3 | **done** (ConvergenceSemantics.v: core_frag_ss + core_frag_impl_ss + core_frag_ss_no_ret + eval_while_exits_immediately_ss + core_frag_ss_barrier_free_superstep_free + check_env_diverged_no_barriers_ss + eval_check_uniform_ss + check_env_sound_superstep + susp_hazard/susp_vary/susp_eval_thread0/1 + semantic_f01_flagged + semantic_f01_not_barrier_safe + semantic_f01_corollary; T3-S3 side condition resolved; dv=true trust boundary documented; 50 proven, 10 defs, 0 admits, 0 axioms; 2026-06-13) | T3-S4 |
@@ -330,7 +330,7 @@ global decision 4 and is recorded as the T3 trust boundary.
   theorems, 0 admits, 0 axioms, coqchk passes; conformance 17/17 green, extraction 7/7 green,
   live 10/10 green). PR #182 confirmed merged (gh returns []). DOCS-SYNC clean — no drift
   detected. currentTask = T3-S2 (unblocked — T3-S1 done, no hard blockers).
-- Tick 4 (2026-06-13): T3-S1 confirmed DONE (commit fbfb3656; ConvergenceSemantics.v:
+- Tick 4 (2026-06-13): T3-S1 confirmed DONE (commit fbfb3656 on the pre-rebase branch, in zero remote branches; on `main` the file arrives with 21d67ec9; ConvergenceSemantics.v:
   semantic domain + fuel-indexed big-step eval + eval_fuel_monotone + eval_app_seq_compose;
   22 theorems, 0 admits, 0 axioms, coqchk passes; STATUS.md updated).
   DOCS-SYNC: PLAN.md drift fixed (T3-S1 was listed as "open"; corrected to done).

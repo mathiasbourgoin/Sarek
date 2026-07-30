@@ -18,7 +18,12 @@
 
 set -uo pipefail
 
-SUBJECT="$(cd "$(dirname "$0")" && pwd)/check-cited-paths-exist.sh"
+# CITED_PATHS_SUBJECT exists for ONE purpose: the meta-control at the bottom of
+# this file, which points the harness at a stub that always exits 0 and at one
+# that always exits 1, and asserts that this harness FAILS on both. Without it,
+# "all cases passed" is unfalsifiable -- it is a claim about the subject that a
+# harness checking nothing would also print.
+SUBJECT="${CITED_PATHS_SUBJECT:-$(cd "$(dirname "$0")" && pwd)/check-cited-paths-exist.sh}"
 [ -x "$SUBJECT" ] || {
   echo "FAIL: subject not executable: $SUBJECT" >&2
   exit 2
@@ -28,18 +33,26 @@ pass=0
 fail=0
 
 # Build a minimal tracked repo: one .ml file whose comment/body we vary.
-# $1 = file body. Echoes the repo path.
+# $1 = file body, $2 = optional docs/Doc.md body. Echoes the repo path.
+#
+# docs/Index.md is unconditional: the subject exits 2 when a tree has no tracked
+# markdown at all (a repository whose prose it cannot see is one it cannot
+# report coverage of), so every fixture needs at least one .md file. It cites
+# nothing, so it never changes a verdict.
 mkfixture() {
-  local body="$1" d
+  local body="$1" md="${2:-}" d
   d="$(mktemp -d)"
   (
     cd "$d" || exit 2
     git init --quiet .
     git config user.email t@example.invalid
     git config user.name t
-    mkdir -p sub scripts
+    mkdir -p sub scripts docs
     printf '%s' "$body" >sub/Thing.ml
     printf 'let real = 1\n' >sub/Existing.ml
+    printf '# Index\n\nNothing cited here.\n' >docs/Index.md
+    printf '# Real\n\nA real document.\n' >docs/Real.md
+    [ -n "$md" ] && printf '%s' "$md" >docs/Doc.md
     git add -A
     git commit --quiet -m fixture
   ) >/dev/null 2>&1
@@ -47,10 +60,10 @@ mkfixture() {
 }
 
 # $1 = case name, $2 = expected exit, $3 = expected message substring
-# ("" = no message requirement), $4 = file body
+# ("" = no message requirement), $4 = .ml body, $5 = optional docs/Doc.md body
 check() {
-  local name="$1" want="$2" msg="$3" body="$4" d out code
-  d="$(mkfixture "$body")"
+  local name="$1" want="$2" msg="$3" body="$4" md="${5:-}" d out code
+  d="$(mkfixture "$body" "$md")"
   cp "$(dirname "$0")/cited-paths-exempt.tsv" "$d/scripts/" 2>/dev/null || true
   out="$(cd "$d" && bash "$SUBJECT" 2>&1)"
   code=$?
@@ -179,6 +192,329 @@ check "green: an exempted path is not a finding" 0 "OK" \
 let x = 1
 '
 
+# ===========================================================================
+# MARKDOWN (backlog-210). The .ml source list left every tracked .md file
+# unscanned, and the pass message said "every repo-relative path cited in N
+# tracked .ml/.mli files" — a true sentence that reads like whole-repo coverage.
+# PR #378 was bounced three times over false prose in markdown, one of those a
+# path that resolved to nothing; nothing mechanical caught any of them.
+# ===========================================================================
+
+NOOP_ML='let x = 1
+'
+
+# The measured defect: a broken inline link. Before this, exit 0.
+check "red: markdown inline link to a missing file" 1 "is not a tracked file" \
+  "$NOOP_ML" '# Doc
+
+See [the design](gone/design.md) for details.
+'
+
+# Its discriminating partner. Without a green link case, "red on a link" is
+# indistinguishable from "red on any link".
+check "green: markdown inline link to a tracked file" 0 "OK" \
+  "$NOOP_ML" '# Doc
+
+See [the real one](Real.md) and [the source](../sub/Existing.ml).
+'
+
+# A backticked path — the dominant citation form in this repo'"'"'s docs, and
+# invisible to any link-only extractor.
+check "red: markdown backticked path that resolves to nothing" 1 "is not a tracked file" \
+  "$NOOP_ML" '# Doc
+
+The lowering lives in `sub/Gone.ml` these days.
+'
+
+check "green: markdown backticked path that resolves" 0 "OK" \
+  "$NOOP_ML" '# Doc
+
+The lowering lives in `sub/Existing.ml` these days.
+'
+
+# An anchor is the READER'"'"'s problem; the file is the gate'"'"'s. Stripped, not
+# excluded — excluding anchored links would blind the gate to most doc-to-doc
+# citations, which is how this class hid in the first place.
+check "green: an anchor on a real path is stripped, not a reason to skip" 0 "OK" \
+  "$NOOP_ML" '# Doc
+
+See [a section](Real.md#the-part-that-matters).
+'
+
+check "red: an anchor does not rescue a missing file" 1 "is not a tracked file" \
+  "$NOOP_ML" '# Doc
+
+See [a section](Gone.md#the-part-that-matters).
+'
+
+# URLs, mailto:, bare fragments and site-absolute Jekyll permalinks address
+# something other than a path in this tree.
+check "green: URLs, fragments and site-absolute links are not repo paths" 0 "OK" \
+  "$NOOP_ML" '# Doc
+
+See [upstream](https://example.invalid/x.md), [here](#below), [mail](mailto:t@example.invalid)
+and [the site page](/backends/).
+
+## below
+'
+
+# A fenced block is a specimen on display, not a pointer: shell transcripts,
+# `git log` output, generated ledger dumps. Excluded deliberately, which is
+# exactly why inline spans OUTSIDE fences are scanned.
+check "green: a path inside a fenced code block is not a citation" 0 "OK" \
+  "$NOOP_ML" '# Doc
+
+```
+$ cat sub/Gone.ml
+sub/AlsoGone.ml: No such file
+```
+'
+
+# The positive control for the pair above: with the fence closed, a real
+# citation after it is still found. Otherwise "handled fences" would be
+# indistinguishable from "stopped scanning at the first fence".
+check "red: a citation AFTER a fenced block is still found" 1 "is not a tracked file" \
+  "$NOOP_ML" '# Doc
+
+```
+sample output
+```
+
+But the code is in `sub/Gone.ml`.
+'
+
+# An absolute or home-relative path is not a repo-relative citation: the regex
+# cannot start at "/", so `/home/u/repo/sub/Gone.ml` would otherwise be reported
+# as a dangling citation of a directory named "home".
+check "green: absolute and ~/ paths are not repo-relative citations" 0 "OK" \
+  "$NOOP_ML" '# Doc
+
+Pasted from a shell: `/home/u/repo/sub/Gone.ml`, and the skill doc is
+`~/.claude/skills/formal-apparatus/SKILL.md`. `$SCRIPT_DIR/helper.sh` runs it.
+'
+
+# gh-pages is a Jekyll site: [backends](backends.html) addresses the page built
+# from backends.md. Thirteen such links exist here and every one is correct.
+check "green: a .html link resolves via its markdown source" 0 "OK" \
+  "$NOOP_ML" '# Doc
+
+See [the real page](Real.html).
+'
+
+check "red: a .html link with no markdown source behind it" 1 "is not a tracked file" \
+  "$NOOP_ML" '# Doc
+
+See [a phantom page](Nowhere.html).
+'
+
+# ===========================================================================
+# COMMIT SHAS (backlog-204). Five instances in one day. The defect is not a
+# missing object — every one EXISTED in the clone that wrote it. It is
+# unreachable: `git branch -r --contains` is empty, so no fresh clone resolves
+# it. An existence check alone passes all five.
+# ===========================================================================
+
+# Build a repo with a remote-tracking ref, a reachable commit and an ORPHANED
+# one (committed on a branch that is then deleted: the object survives, and no
+# branch contains it — the exact shape of d72a2e6a and 1da95861).
+# Echoes "<repo> <reachable-sha> <orphan-sha>".
+mkshafixture() {
+  local d
+  d="$(mktemp -d)"
+  (
+    cd "$d" || exit 2
+    git init --quiet -b main .
+    git config user.email t@example.invalid
+    git config user.name t
+    mkdir -p sub scripts docs
+    printf 'let real = 1\n' >sub/Existing.ml
+    printf 'let x = 1\n' >sub/Thing.ml
+    printf '# Index\n\nNothing cited here.\n' >docs/Index.md
+    git add -A
+    git commit --quiet -m reachable
+    # A remote-tracking ref, which is what reachability is measured against.
+    git update-ref refs/remotes/origin/main HEAD
+    git checkout --quiet -b doomed
+    printf 'let y = 2\n' >>sub/Thing.ml
+    git add -A
+    git commit --quiet -m orphan
+    git rev-parse --short=8 HEAD >/tmp/.orphan.$$
+    git checkout --quiet main
+    git branch --quiet -D doomed
+  ) >/dev/null 2>&1
+  printf '%s %s %s' "$d" \
+    "$(git -C "$d" rev-parse --short=8 refs/remotes/origin/main)" \
+    "$(cat "/tmp/.orphan.$$")"
+  rm -f "/tmp/.orphan.$$"
+}
+
+# $1 = case name, $2 = expected exit, $3 = expected message substring,
+# $4 = docs/Doc.md body with %REACHABLE% / %ORPHAN% placeholders
+checksha() {
+  local name="$1" want="$2" msg="$3" body="$4" fx d ok orphan out code
+  fx="$(mkshafixture)"
+  d="${fx%% *}"
+  ok="$(printf '%s' "$fx" | cut -d' ' -f2)"
+  orphan="$(printf '%s' "$fx" | cut -d' ' -f3)"
+  body="${body//%REACHABLE%/$ok}"
+  body="${body//%ORPHAN%/$orphan}"
+  printf '%s' "$body" >"$d/docs/Doc.md"
+  git -C "$d" add -A >/dev/null 2>&1
+  git -C "$d" commit --quiet -m doc >/dev/null 2>&1
+  # The commit above moved main; re-point the remote ref so the reachable sha
+  # stays reachable and the orphan stays orphaned.
+  git -C "$d" update-ref refs/remotes/origin/main HEAD >/dev/null 2>&1
+  out="$(cd "$d" && bash "$SUBJECT" 2>&1)"
+  code=$?
+  rm -rf "$d"
+  if [ "$code" != "$want" ]; then
+    echo "FAIL $name: exit $code, wanted $want"
+    printf '%s\n' "$out" | sed 's/^/      /'
+    fail=$((fail + 1))
+    return
+  fi
+  if [ -n "$msg" ] && ! printf '%s' "$out" | grep -qF "$msg"; then
+    echo "FAIL $name: exit $want as wanted, but message did not contain '$msg'"
+    printf '%s\n' "$out" | sed 's/^/      /'
+    fail=$((fail + 1))
+    return
+  fi
+  echo "PASS $name (exit $code)"
+  pass=$((pass + 1))
+}
+
+# The green baseline for this half. A reachable sha must NOT be a finding, or
+# every red below is satisfied by a check that rejects all hex.
+checksha "green: a sha reachable from a remote branch" 0 "OK" '# Doc
+
+Fixed in `%REACHABLE%`.
+'
+
+# The defect itself: the object exists — `git cat-file -e` succeeds — and no
+# remote branch contains it.
+checksha "red: a sha that EXISTS but is in zero remote branches" 1 \
+  "in ZERO remote branches" '# Doc
+
+Fixed in `%ORPHAN%`.
+'
+
+# The other half of the pair: a sha that is not an object at all.
+checksha "red: a sha that is no commit in this repository" 1 \
+  "no such commit" '# Doc
+
+Fixed in `0000000abcdef1`.
+'
+
+# Numbers and digests are not shas. An all-digit run is a count; a 64-hex token
+# is a sha256 and fails the 7..40 boundary by construction.
+checksha "green: a line count and a sha256 digest are not commit shas" 0 "OK" '# Doc
+
+It grew to 1234567 lines; the artifact hashes to
+`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+'
+
+# A hex run that is part of a longer token is not a sha either.
+checksha "green: hex inside a longer token is not a sha" 0 "OK" '# Doc
+
+Tagged `abc1234-rc1`, built from `deadbee.tar.gz`, cache key `1abcdef.2fedcba`.
+'
+
+# A fenced block holds transcripts and lockfile digests. Same exclusion as the
+# path half, for the same reason.
+checksha "green: shas inside a fenced code block are not citations" 0 "OK" '# Doc
+
+```
+commit 0000000abcdef1
+  parent deadbeefcafe12
+```
+'
+
+# The scoped exemption channel: a document that quotes an unreachable sha in
+# order to SAY it is unreachable. Four documents here do exactly that, and a
+# bare exemption would also wave the sha through somewhere it is cited as
+# evidence — so the exemption is keyed on the citing file.
+fx="$(mkshafixture)"
+d="${fx%% *}"
+orphan="$(printf '%s' "$fx" | cut -d" " -f3)"
+printf '# Doc\n\nThe old note cited `%s`, which no clone can resolve.\n' \
+  "$orphan" >"$d/docs/Doc.md"
+printf 'docs/Doc.md::%s\tquoted in order to say it is unreachable\n' \
+  "$orphan" >"$d/scripts/cited-paths-exempt.tsv"
+git -C "$d" add -A >/dev/null 2>&1
+git -C "$d" commit --quiet -m doc >/dev/null 2>&1
+git -C "$d" update-ref refs/remotes/origin/main HEAD >/dev/null 2>&1
+out="$(cd "$d" && bash "$SUBJECT" 2>&1)"
+code=$?
+if [ "$code" = 0 ]; then
+  echo "PASS green: a file-scoped sha exemption is honoured (exit 0)"
+  pass=$((pass + 1))
+else
+  echo "FAIL green: a file-scoped sha exemption is honoured: exit $code, wanted 0"
+  printf '%s\n' "$out" | sed 's/^/      /'
+  fail=$((fail + 1))
+fi
+# ...and the same exemption in the WRONG file does not apply. Without this, a
+# scoped row would be indistinguishable from a bare one.
+printf 'docs/Other.md::%s\tscoped elsewhere on purpose\n' \
+  "$orphan" >"$d/scripts/cited-paths-exempt.tsv"
+out="$(cd "$d" && bash "$SUBJECT" 2>&1)"
+code=$?
+rm -rf "$d"
+if [ "$code" = 1 ]; then
+  echo "PASS red: a sha exemption scoped to another file does not apply (exit 1)"
+  pass=$((pass + 1))
+else
+  echo "FAIL red: a sha exemption scoped to another file does not apply: exit $code, wanted 1"
+  printf '%s\n' "$out" | sed 's/^/      /'
+  fail=$((fail + 1))
+fi
+
+# --- the way this gate would pass while checking nothing --------------------
+# A SHALLOW clone. `git branch -r --contains` reports nothing for EVERY sha
+# there, reachable or not. So a shallow checkout either fails the whole build,
+# or — if someone "fixes" that by reading empty as fine — passes everything
+# while examining nothing. Exit 2 is the only answer that is neither.
+fx="$(mkshafixture)"
+d="${fx%% *}"
+orphan="$(printf '%s' "$fx" | cut -d" " -f3)"
+printf '# Doc\n\nFixed in `%s`.\n' "$orphan" >"$d/docs/Doc.md"
+git -C "$d" add -A >/dev/null 2>&1
+git -C "$d" commit --quiet -m doc >/dev/null 2>&1
+shallow="$(mktemp -d)/clone"
+git clone --quiet --depth 1 "file://$d" "$shallow" >/dev/null 2>&1
+out="$(cd "$shallow" && bash "$SUBJECT" 2>&1)"
+code=$?
+if [ "$code" = 2 ] && printf '%s' "$out" | grep -qF "SHALLOW"; then
+  echo "PASS red: a shallow clone is exit 2, not a pass (exit 2)"
+  pass=$((pass + 1))
+else
+  echo "FAIL red: a shallow clone must be exit 2 with a SHALLOW message: exit $code"
+  printf '%s\n' "$out" | sed 's/^/      /'
+  fail=$((fail + 1))
+fi
+rm -rf "$shallow" "$d"
+
+# The other half of the same hole: a tree with history but NO remote-tracking
+# refs. This is what `actions/checkout` produces at the default fetch-depth on a
+# pull_request event — the backlog-152 shape, where a gate read "no refs" as "no
+# differences" and about twenty PRs merged green onto an already-red main.
+norefs="$(mkfixture 'let x = 1
+' '# Doc
+
+Fixed in `0000000abcdef1`.
+')"
+out="$(cd "$norefs" && bash "$SUBJECT" 2>&1)"
+code=$?
+rm -rf "$norefs"
+if [ "$code" = 2 ] && printf '%s' "$out" | grep -qF "no remote-tracking branches"; then
+  echo "PASS red: no remote-tracking refs is exit 2, not a pass (exit 2)"
+  pass=$((pass + 1))
+else
+  echo "FAIL red: no remote-tracking refs must be exit 2: exit $code"
+  printf '%s\n' "$out" | sed 's/^/      /'
+  fail=$((fail + 1))
+fi
+
 # --- fails closed ----------------------------------------------------------
 # Not a git tree at all. Exit 2, never 0: a check whose inputs are unavailable
 # must refuse rather than report success — the vacuous-green failure mode this
@@ -194,6 +530,31 @@ else
   echo "FAIL red: outside a git tree: exit $code, wanted 2"
   printf '%s\n' "$out" | sed 's/^/      /'
   fail=$((fail + 1))
+fi
+
+# --- meta-control: this harness must be able to FAIL ------------------------
+# "All cases passed" is a claim about the subject. A harness that asserted
+# nothing would print it too. So run the whole file twice more against stub
+# subjects — one that always exits 0, one that always exits 1 — and require both
+# runs to fail. A gate whose own red path cannot go red is the class this repo
+# keeps closing.
+if [ -z "${CITED_PATHS_META:-}" ]; then
+  for stub_code in 0 1; do
+    stub="$(mktemp -d)/always-$stub_code.sh"
+    printf '#!/usr/bin/env bash\nexit %s\n' "$stub_code" >"$stub"
+    chmod +x "$stub"
+    CITED_PATHS_META=1 CITED_PATHS_SUBJECT="$stub" bash "$0" >/dev/null 2>&1
+    meta=$?
+    rm -rf "$(dirname "$stub")"
+    if [ "$meta" -ne 0 ]; then
+      echo "PASS meta: harness rejects a subject that always exits $stub_code"
+      pass=$((pass + 1))
+    else
+      echo "FAIL meta: harness ACCEPTED a subject that always exits $stub_code --" \
+        "it is not checking what it claims to check"
+      fail=$((fail + 1))
+    fi
+  done
 fi
 
 echo

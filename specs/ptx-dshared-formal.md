@@ -45,7 +45,7 @@ As a Sarek kernel author, I want a kernel with `DShared` declarations to compile
 
 5. **Given** a kernel that has both a global `DParam("v", TFloat32)` and `DShared("shmem", TFloat32, Some (EConst (I32 32)))`, **When** PTX is generated, **Then** reads from `v` use `ld.global.f32` and reads from `shmem` use `ld.shared.f32`.
 
-6. **Given** the codegen-ptx conformance suite in `test/test_codegen_ptx_conformance.ml`, **When** `dune runtest formal/codegen-ptx/test/` is run, **Then** all tests pass including at least 2 new tests covering scenarios AC-1 and AC-2 above.
+6. **Given** the codegen-ptx conformance suite in `formal/codegen-ptx/test/test_codegen_ptx_conformance.ml`, **When** `dune runtest formal/codegen-ptx/test/` is run, **Then** all tests pass including at least 2 new tests covering scenarios AC-1 and AC-2 above.
 
 ---
 
@@ -95,7 +95,7 @@ As a formal verification engineer, I want the `emit_kernel_correct` theorem in `
 - **FR-006** [US-1]: `emit_locals` MUST raise `Ptx_codegen_error` containing `"dynamic shared memory"` when `size_opt = None`.
 - **FR-007** [US-1]: `emit_locals` MUST raise `Ptx_codegen_error` containing `"size must be positive"` when `size_opt = Some (EConst (I32 n))` and `n <= 0`.
 - **FR-008** [US-1]: `DShared(name, elt, _)` MUST register `name` in `alloc.arr_elt_types` so `infer_elt_type` finds it.
-- **FR-009** [US-1]: At least 2 new Alcotest conformance tests for DShared MUST be added to `test/test_codegen_ptx_conformance.ml`.
+- **FR-009** [US-1]: At least 2 new Alcotest conformance tests for DShared MUST be added to `formal/codegen-ptx/test/test_codegen_ptx_conformance.ml`.
 
 ### Rocq Formal Proof — DShared Extension
 
