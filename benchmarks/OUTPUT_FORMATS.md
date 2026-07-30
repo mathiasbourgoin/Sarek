@@ -94,7 +94,7 @@ CPU Baseline      & 12.3   & 23.4   & 45.6   & 78.9 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
-\item System: cachyos, Intel Core Ultra 9 185H, 32GB RAM
+\item Machine: linux-intel, Intel Core Ultra 9 185H
 \item Git commit: 0a964f2d, Date: 2026-01-10
 \end{tablenotes}
 \end{table}

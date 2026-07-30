@@ -750,7 +750,7 @@ function createRankingChart(config) {
     benchmarkData.results
         .filter(r => r.benchmark && variants.includes(r.benchmark.name))
         .forEach(result => {
-            const systemName = result.system?.hostname || 'Unknown';
+            const systemName = result.system?.machine || 'Unknown';
             const deviceName = getDeviceName(result);
             const backend = result.results[0]?.framework || 'Unknown';
             const algoName = formatAlgoName(result.benchmark.name);

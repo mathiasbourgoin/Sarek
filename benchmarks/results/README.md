@@ -6,7 +6,7 @@ This directory contains benchmark results from different machines and configurat
 
 Benchmark results are saved as JSON files with the naming pattern:
 ```
-{hostname}_{benchmark_name}_{size}_{timestamp}.json
+{machine}_{benchmark_name}_{size}_{timestamp}.json
 ```
 
 ## Submitting Results
@@ -35,7 +35,7 @@ opam exec -- dune exec benchmarks/deduplicate_results.exe -- --keep-latest
 ```
 
 The tool identifies duplicates based on:
-- Same hostname
+- Same machine label
 - Same benchmark name  
 - Same size/parameters
 - Same device name and backend

@@ -110,7 +110,7 @@ let write_json filename result =
 let write_csv_header oc =
   output_string
     oc
-    "benchmark,timestamp,hostname,device_id,device_name,framework,size,block_size,iterations_count,mean_ms,stddev_ms,median_ms,min_ms,max_ms,throughput_gflops,verified\n"
+    "benchmark,timestamp,machine,device_id,device_name,framework,size,block_size,iterations_count,mean_ms,stddev_ms,median_ms,min_ms,max_ms,throughput_gflops,verified\n"
 
 (** Write single CSV row *)
 let write_csv_row oc result dev_result =
@@ -130,7 +130,7 @@ let write_csv_row oc result dev_result =
     "%s,%s,%s,%d,%s,%s,%d,%d,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%s,%s\n"
     result.params.name
     result.timestamp
-    result.system.hostname
+    result.system.machine
     dev_result.device_id
     dev_result.device_name
     dev_result.framework
@@ -160,14 +160,20 @@ let append_csv filename result =
   List.iter (write_csv_row oc result) result.results ;
   close_out oc
 
+(* [machine] is passed in rather than re-derived here. Re-deriving would mean
+   calling [System_info.collect] with no devices, which yields a DIFFERENT
+   label than the payload's (the label depends on the device list) -- the file
+   would then disagree with its own contents. It also used to be the hostname:
+   263 committed files were named after three personal machines, so scrubbing
+   payloads alone would have left the identifier in every path (backlog-168). *)
+
 (** Generate output filename *)
-let make_filename ~output_dir ~benchmark_name ~size =
+let make_filename ~output_dir ~benchmark_name ~size ~machine =
   let timestamp = Common.timestamp_filename () in
-  let hostname = System_info.get_hostname () in
   Printf.sprintf
     "%s/%s_%s_%d_%s.json"
     output_dir
-    hostname
+    machine
     benchmark_name
     size
     timestamp

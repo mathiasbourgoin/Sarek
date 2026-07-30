@@ -268,8 +268,8 @@ output:
    - Command-line only (current)
 
 4. **Output organization:**
-   - Flat directory with hostname prefixes (current)
-   - Hierarchical: results/hostname/benchmark/
+   - Flat directory with machine-label prefixes (current)
+   - Hierarchical: results/machine/benchmark/
    - Database (SQLite)
 
 ## Next Steps

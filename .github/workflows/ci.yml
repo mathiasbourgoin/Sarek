@@ -99,6 +99,15 @@ jobs:
       - name: KB properties (code-intel) gate
         run: ./scripts/check-kb-properties.sh
 
+      # backlog-168. Three personal hostnames, with exact kernel versions, were
+      # committed in 263 files -- in the FILENAMES as well as the payloads --
+      # and served from the gh-pages dashboard. The producer no longer collects
+      # them; this refuses their return through any of the three surfaces they
+      # actually used (payload, path, producer). Exit 2 outside a git work tree,
+      # because a check that cannot read the tracked set has not cleared it.
+      - name: No machine identifiers in tracked files
+        run: ./scripts/check-no-machine-identifiers.sh
+
       # backlog-151. The step above enforces that every gate DECLARES whether
       # it has a red-path test. This one executes the declaration: it copies
       # each subject into a scratch tree, applies the mutations declared beside
@@ -181,6 +190,14 @@ jobs:
           # source -- and case 0 is the positive control without which every
           # red below it proves nothing.
           ./scripts/check-kb-properties.test.sh
+          # backlog-168. Five independent red shapes, one per surface the leak
+          # actually used, plus two fail-closed cases and three greens pinning
+          # what must NOT be refused (a correctly labelled path, and
+          # system_info.ml's own sanctioned hostname read -- if that were red
+          # the gate would forbid the safety check that rejects an operator
+          # label equal to the hostname). Verified to fail against both an
+          # always-exit-0 and an always-exit-1 stub.
+          ./scripts/check-no-machine-identifiers.test.sh
           # backlog-151. prove-red.sh exists to catch checkers that cannot
           # fail, so "prove-red.sh cannot fail" is the most expensive thing
           # that could go wrong in this repository. Nineteen cases, exact exit

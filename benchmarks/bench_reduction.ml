@@ -311,6 +311,7 @@ let run config =
           ~output_dir:config.output_dir
           ~benchmark_name:"reduction_sum"
           ~size
+          ~machine:system_info.machine
       in
       Output.write_json filename benchmark_result ;
       Printf.printf "Written: %s\n" filename ;
