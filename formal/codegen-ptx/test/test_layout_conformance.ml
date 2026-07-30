@@ -1,7 +1,10 @@
 (******************************************************************************)
 (* test_layout_conformance.ml
  *
- * CMBT conformance harness for the packed aggregate layout model (FR-042).
+ * CMBT conformance harness for the ALIGNED (C-ABI) aggregate layout model
+ * (FR-042). It said "packed" until 2026-07-30; the model migrated to aligned
+ * placement and this header had not followed. See the retraction block in
+ * ../STATUS.md ("Retraction — this model is no longer packed").
  *
  * Strategy: [Model] is theories/PtxLayout.v itself, extracted to OCaml by
  * extraction/LayoutExtract.v (task #46 — it was previously a hand
