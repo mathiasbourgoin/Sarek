@@ -4,9 +4,21 @@ Operational specification of the byte layout used by the PTX direct emitter for
 aggregate values, introduced by the `ptx-records-variants` task (2026-07-22).
 Single source of truth in code: `spoc/ir/Sarek_ir_layout.ml` (all offsets, sizes,
 strides — no emission site computes its own offsets). Formal mirror:
-`formal/codegen-ptx/theories/PtxLayout.v` (50 proved statements — 12 written with the
-`Theorem` keyword, 38 with `Lemma`; 0 admits, 0 axioms) + conformance suite
+`formal/codegen-ptx/theories/PtxLayout.v` (50 proved statements, 0 admits, 0 axioms
+of its own) + conformance suite
 `formal/codegen-ptx/test/test_layout_conformance.ml` (32 063 shapes, zero divergence).
+
+> The authority for that 50 is
+> `formal/codegen-ptx/proof-ledger.json` →
+> `modules["CodegenPtx.PtxLayout"].counts.theorems`, which is generated from the
+> `.glob` files and which `scripts/check-formal-proofs.sh` fails on drift — do not
+> restate it from a hand count. It is also where `formal/codegen-ptx/STATUS.md`'s
+> "50 theorems, 0 Admitted" comes from, so the two agree by construction. This
+> line previously read "12 theorems": that is the number of statements written
+> with the `Theorem` keyword specifically, the other 38 being `Lemma`s, and the
+> ledger counts all 50 together. Nothing in CI compares this sentence to the
+> ledger, so if you change the theory, re-read the ledger rather than trusting
+> the number here.
 
 **L8 update (2026-07-23):** the host aggregate ABI moved from PACKED to ALIGNED
 (C-ABI-compatible). This unlocked mixed-alignment records (`{i32;f64}`) and
