@@ -212,12 +212,22 @@ Formal models (Rocq):
   `simdgroup_barrier` on Metal, `subgroupBarrier()` on GLSL and WGSL, each pinned
   by `sarek/tests/unit/test_sync_stmt_emission.ml`. What is missing is the front
   end: no PPX surface syntax constructs either statement, so today they are
-  reachable only from hand-built IR. The front end does declare four
-  synchronising intrinsic *names* — `block_barrier`, `warp_barrier`,
-  `memory_fence_block`, `memory_fence_device`
-  (`Sarek_lower_ir.synchronising_intrinsics`) — but lowering leaves all four as
-  `EIntrinsic` expression calls and never builds `SWarpBarrier` or `SMemFence`
-  from them, which is why those two statements have no surface spelling. Warp
+  reachable only from hand-built IR. The front end declares **three**
+  synchronising intrinsic *names* — `block_barrier`, `memory_fence_block`,
+  `memory_fence_device` — as entries in `Sarek_core_primitives`' primitive
+  table, which `Sarek_env.with_stdlib` binds into kernel scope; lowering leaves
+  all three as `EIntrinsic` expression calls and never builds `SWarpBarrier` or
+  `SMemFence` from them, which is why those two statements have no surface
+  spelling. `warp_barrier` is **not** among them: no `Sarek_core_primitives`
+  entry and no `let%sarek_intrinsic` in `Sarek_stdlib.Gpu` declares it, so it
+  cannot be named from Sarek source and cannot reach the IR at all — pinned by
+  `sarek/tests/unit/test_sync_stmt_emission.ml` ("warp_barrier is not a
+  declared core primitive", with `block_barrier` as the positive control). The
+  four-name list in `Sarek_lower_ir.synchronising_intrinsics` is not a
+  declaration of surface names: it is the refusal guard for the
+  initializer-prefixing pass, and it carries `warp_barrier` ahead of any
+  declaration on purpose, so that adding the primitive cannot silently escape
+  the refusal. Warp
   **shuffle**/vote/ballot are a separate, larger gap — not modelled in the IR
   and emitted by no backend.
 - **`f16` is refused by this emitter.** `Sarek_ir_ptx_types` has no `TFloat16`

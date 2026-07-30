@@ -33,8 +33,9 @@
 > because revising a VALIDATED spec's normative requirements is a spec-cycle
 > change, not a documentation correction.
 
-**Status: VALIDATED**
+**Status: SUPERSEDED (was VALIDATED 2026-07-22; the layout rule in FR-002/FR-003/FR-004/C-2 is contradicted by the shipped tree — see the banner above)**
 **Date:** 2026-07-22T19:20:00Z
+**Superseded:** 2026-07-30T00:00:00Z
 **Source brief:** `briefs/ptx-records-variants-intake.md` (VALIDATED, Type: feature, Trust boundary: no)
 
 ## Summary

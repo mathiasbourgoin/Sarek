@@ -146,8 +146,9 @@ let check_metal_no_stale_name () =
     (contains src "sub_group_threadgroup_barrier")
 
 (** Scope note, asserted rather than left as prose: no PPX surface syntax
-    constructs [SWarpBarrier] or [SMemFence] today. [block_barrier] is the only
-    sync name the front end declares ([Sarek_core_primitives], [Gpu.ml]); the
+    constructs [SWarpBarrier] or [SMemFence] today. The front end declares THREE
+    synchronising names ([block_barrier] in category "sync",
+    [memory_fence_block] and [memory_fence_device] in category "fence"); the
     [warp_barrier] and [memory_fence] names that several READMEs present as
     callable user API are not declared anywhere, so the arms pinned above are
     reachable only from hand-built IR such as this test. This check pins that
@@ -163,6 +164,40 @@ let check_warp_barrier_not_callable () =
      above is not vacuously false)"
     true
     (Sarek_core_primitives.is_core_primitive "block_barrier")
+
+(** The COUNT, not just the one absent name. README.md's "Warp primitives are
+    emitted but not reachable from kernel source" bullet states that the front
+    end declares three synchronising intrinsic names, and it previously said
+    four -- it had copied the four-element refusal-guard list in
+    [Sarek_lower_ir.synchronising_intrinsics], which is a guard and not a
+    declaration, and no test tied the prose to the table. The absent-name check
+    above would not have caught it: absence of one name says nothing about the
+    size of the set. So enumerate the table and pin the set exactly. Adding or
+    removing a sync/fence primitive fails here and names the diff, which is the
+    prompt to update that README bullet in the same commit.
+
+    Categories rather than a name whitelist, so that a newly added fence is
+    caught by this guard instead of quietly satisfying it. *)
+let check_declared_sync_name_set () =
+  let declared =
+    Sarek_core_primitives.primitives
+    |> List.filter (fun (p : Sarek_core_primitives.primitive) ->
+        p.category = "sync" || p.category = "fence")
+    |> List.map (fun (p : Sarek_core_primitives.primitive) -> p.name)
+    |> List.sort compare
+  in
+  Alcotest.(check (list string))
+    "the front end declares exactly these three synchronising names -- \
+     README's \"declares three synchronising intrinsic *names*\" bullet counts \
+     this set"
+    ["block_barrier"; "memory_fence_block"; "memory_fence_device"]
+    declared ;
+  (* Positive control: the filter is not vacuously empty, and the categories it
+     names are really the ones carrying these primitives. *)
+  Alcotest.(check int)
+    "positive control: the category filter matched a non-empty set"
+    3
+    (List.length declared)
 
 let () =
   Alcotest.run
@@ -183,5 +218,9 @@ let () =
             "warp_barrier is not user-callable"
             `Quick
             check_warp_barrier_not_callable;
+          Alcotest.test_case
+            "declared sync name set is exactly three (README count)"
+            `Quick
+            check_declared_sync_name_set;
         ] );
     ]

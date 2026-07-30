@@ -421,10 +421,23 @@ let rec stmt_binders (st : Ir.stmt) (acc : (string, unit) Hashtbl.t) : unit =
    that only the statement forms carry a barrier and an [Ir.expr] cannot. The
    first half is true — no [Ir.expr] constructor holds an [Ir.stmt] — and the
    conclusion was still wrong: barriers reach the IR as INTRINSICS
-   (Sarek_core_primitives registers [block_barrier], [memory_fence_block],
-   [memory_fence_device]; [warp_barrier] joined them in backlog-70), and
-   [EIntrinsic] is an expression. A guard that cannot fire is the defect class
-   this repository keeps closing, so it is named here rather than quietly left.
+   (Sarek_core_primitives registers [block_barrier], [memory_fence_block] and
+   [memory_fence_device] — those three and no more), and [EIntrinsic] is an
+   expression. A guard that cannot fire is the defect class this repository
+   keeps closing, so it is named here rather than quietly left.
+
+   [warp_barrier] is in the list below WITHOUT being declared anywhere on the
+   front end: it has no Sarek_core_primitives entry and no [%sarek_intrinsic]
+   in Sarek_stdlib.Gpu, so [Sarek_env.with_stdlib] never binds it and no Sarek
+   source can name it. That arm therefore cannot fire on PPX-lowered input
+   today; it fires only on hand-built IR, which is what
+   test_lower_ir_refusal_triggers.ml exercises when it asserts each name
+   individually. That asymmetry is DELIBERATE and the list is left as-is: a
+   name listed before it is declared is inert, whereas a name declared before
+   it is listed is an unrefused duplication bug, so over-listing is the safe
+   direction. (An earlier version of this comment claimed [warp_barrier]
+   "joined them in backlog-70"; that was false and had misled a documentation
+   sweep into telling README's readers there were four callable names.)
 
    Matched by NAME because that is what the IR carries at this point: lowering
    does not turn these into [SBarrier], it leaves them as intrinsic calls (there
