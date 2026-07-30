@@ -24,6 +24,9 @@
 ; - test_unregistered_field: "unknown size/alignment for field type"
 ; - test_ktype_advice: "declare it with [@@sarek.type]" (backlog-193: the
 ;   advice, not just the refusal -- the message named a nonexistent [%%ktype])
+; - test_sarek_include_advice: "[%%sarek_include] expects a string path"
+;   (backlog-193 second sweep: the advice rendered as single-% [%sarek_include],
+;   which is not this extension -- see the case header)
 ; - test_reserved_prefix_param: "identifiers beginning with 'sarek_' are reserved"
 ; - test_reserved_prefix_local: "identifiers beginning with 'sarek_' are reserved"
 ; - test_reserved_prefix_helper: "identifiers beginning with 'sarek_' are reserved"
@@ -422,6 +425,23 @@
 (library
  (name neg_test_ktype_advice)
  (modules test_ktype_advice)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+; backlog-193 (second sweep): the sarek_include payload refusal named
+; [%%sarek_include "file.ml"] in a Format string, so it reached the user as
+; [%sarek_include "file.ml"] -- a spelling the extension does not answer to,
+; because it is declared in structure_item context. Asserts the ADVICE.
+; Self-contained on purpose (no `open`) -- see the header comment.
+
+(library
+ (name neg_test_sarek_include_advice)
+ (modules test_sarek_include_advice)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
