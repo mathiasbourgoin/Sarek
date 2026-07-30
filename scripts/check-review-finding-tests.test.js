@@ -222,17 +222,46 @@ check("unparseable thread data is exit 2", r.status, 2);
 r = run(["1", "--threads", write("t-none.json", threadsDoc([])), "--files", noTests]);
 check("zero resolved findings exits 0", r.status, 0);
 check("  and SAYS nothing was verified", /NOTHING TO VERIFY/.test(r.out), true);
+// The genuinely-empty case must NOT borrow the human-resolved wording, or the
+// two branches below stop being distinguishable in the direction that matters.
+check("  and does not claim a human resolved anything", /resolved by a\s+human/.test(r.out), false);
+check("  and reports zero out-of-scope", /0 human-resolved/.test(r.out), true);
 
 // ── scope: only CodeRabbit's own findings, resolved by CodeRabbit ────────────
-// A HUMAN-resolved thread is self-attestation and out of scope; counting it
-// would make the gate demand tests for things nobody verified were fixed.
+// A HUMAN-resolved thread is self-attestation and out of scope to ENFORCE;
+// counting it as in-scope would make the gate demand tests for things nobody
+// verified were fixed.
+//
+// But the exit code is not the whole claim. This branch used to print "0
+// resolved CodeRabbit finding(s)" and "no resolved CodeRabbit findings on this
+// PR" while one existed and the author had resolved it -- a false statement
+// about the PR, reachable by exactly the actor the gate constrains. The
+// assertions below are on the OUTPUT, because a scope decision that reads as an
+// all-clear is the defect, and status 0 is correct in both branches and so
+// cannot tell them apart.
 r = run(["1", "--threads", write("t-human.json", threadsDoc([{ id: "ccc333", resolvedBy: "mathiasbourgoin" }])),
          "--files", noTests, "--escapes", emptyEsc]);
 check("a HUMAN-resolved thread is out of scope (exit 0)", r.status, 0);
+check("  and is NOT reported as zero findings present",
+      /0 resolved CodeRabbit finding\(s\), /.test(r.out), false);
+check("  and is counted as out-of-scope rather than dropped",
+      /1 human-resolved \(out of scope\)/.test(r.out), true);
+check("  and the clean line says a human resolved it, not that there were none",
+      /resolved by a\s+human/.test(r.out), true);
+check("  and does not print the no-findings-at-all wording",
+      /no resolved CodeRabbit findings on this PR/.test(r.out), false);
+check("  and says the omission is deliberate", /DELIBERATELY NOT CHECKED/.test(r.out), true);
+check("  and NAMES the finding it is not checking", /ccc333/.test(r.out), true);
+check("  and names who resolved it", /mathiasbourgoin/.test(r.out), true);
 
 r = run(["1", "--threads", write("t-other.json", threadsDoc([{ id: "ddd444", author: "someone-else" }])),
          "--files", noTests, "--escapes", emptyEsc]);
 check("a non-CodeRabbit thread is out of scope (exit 0)", r.status, 0);
+// A thread that is not a CodeRabbit finding is not under-reported by being
+// absent -- there is no review claim to misstate -- so it must NOT be counted
+// into the human-resolved tally, or that tally stops meaning what it says.
+check("  and is not counted as a human-resolved CodeRabbit finding",
+      /0 human-resolved/.test(r.out), true);
 
 // An UNRESOLVED CodeRabbit finding is not yet a fix, so it is not this gate's
 // business — the review itself is still blocking.
