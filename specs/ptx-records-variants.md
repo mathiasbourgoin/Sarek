@@ -1,5 +1,38 @@
 # Spec — ptx-records-variants
 
+> ⚠️ **The layout rule in this spec is SUPERSEDED (noted 2026-07-30). Its
+> normative text is left unedited on purpose — it is the record of what was
+> validated on 2026-07-22 — but three of its requirements are now contradicted
+> by the shipped tree, so do not implement from them:**
+>
+> - **FR-002** ("MUST reproduce the host *packed* layout: record offsets =
+>   cumulative `field_byte_size` sums") — campaign item **L8** migrated the host
+>   PPX, `Sarek_ir_layout` and `formal/codegen-ptx/theories/PtxLayout.v` from
+>   PACKED to **ALIGNED (C-ABI)**: fields are placed at the next
+>   naturally-aligned offset, padding is inserted, and the total is rounded up
+>   to the struct's maximum member alignment.
+> - **FR-003** (variant element size `4 + max_payload_bytes`) — the payload now
+>   sits at `P = max(4, max payload member alignment)` and the size is rounded
+>   to the overall alignment, so `4 + max_payload_bytes` is only the special
+>   case where nothing needs more than 4-byte alignment.
+> - **FR-004** and **C-2** ("MUST reject any aggregate placing a scalar leaf at
+>   a non-naturally-aligned offset") — under aligned layout, alignment holds
+>   *unconditionally*: `PtxLayout.v` proves `record_always_accepted` /
+>   `variant_always_accepted`, and `spoc/ir/Sarek_ir_layout.mli` states that
+>   `Misaligned_field` "is retained only as a defensive internal invariant (it
+>   can no longer fire for well-formed input)" — `formal/codegen-ptx/STATUS.md`
+>   calls it dead code on the record path. Mixed-alignment aggregates are now
+>   **laid out correctly** rather than rejected, so AC-5 / CHECK-5, which assert
+>   that such a codegen *fails*, are no longer satisfiable as written. (What is
+>   still rejected: variants nested below top level, and array/vector fields.)
+>
+> The authority for the current rule is the retraction block in
+> `formal/codegen-ptx/STATUS.md` ("Retraction — this model is no longer
+> packed") together with `PtxLayout.v` itself. Re-validating this spec against
+> the aligned rule is follow-up work; it is flagged rather than rewritten here
+> because revising a VALIDATED spec's normative requirements is a spec-cycle
+> change, not a documentation correction.
+
 **Status: VALIDATED**
 **Date:** 2026-07-22T19:20:00Z
 **Source brief:** `briefs/ptx-records-variants-intake.md` (VALIDATED, Type: feature, Trust boundary: no)
