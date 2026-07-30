@@ -137,6 +137,25 @@ and eval_composite_expr state env = function
                            type_name;
                      })
           | None ->
+              (* THIRD tier, and the only resolver that has one — neither
+                 [assign_lvalue] nor [read_lvalue] consults [Sarek_registry].
+                 Is it reachable? Both tables are written by the SAME
+                 [@@sarek.type] expansion under the same key
+                 ([Sarek.Sarek_type_helpers.register] and
+                 [Sarek_registry.register_record], both keyed on the type's full
+                 name), so a type in one is in the other. The only way in is
+                 [Sarek_registry.record_fields]' extra SHORT-NAME fallback, which
+                 [Sarek_type_helpers.lookup] does not have: a [VRecord] carrying
+                 the bare [point] for a type registered as [Geometry_lib.point]
+                 would miss the helpers and hit here.
+                 Measured: instrumented with an eprintf and run over the whole
+                 test suite (dune runtest), this arm was entered ZERO times. So
+                 it is not demonstrably reachable, and it is kept rather than
+                 turned into an error because it is also the only arm that would
+                 catch that short-name shape if the IR ever produced it. Note
+                 that [record_fields] raises [Failure] (not an [Interp_error]) for
+                 an unknown type, so an unregistered record reaching here reports
+                 differently from every other refusal in this file. *)
               let field_infos = Sarek_registry.record_fields type_name in
               let rec find_idx i = function
                 | [] ->
@@ -712,10 +731,30 @@ and assign_lvalue state env lv value =
       match read_lvalue state env base_lv with
       | VRecord (type_name, fields) -> (
           let index =
-            (* Registry first, positional second — the same order [ERecordField]
-               uses when READING. It matters: a declared record whose field is
-               literally named [_0] must resolve through its own declaration
-               order, not through the tuple convention. *)
+            (* Helpers first, positional second. It matters in that order: a
+               declared record whose field is literally named [_0] must resolve
+               through its own declaration order, not through the tuple
+               convention.
+               {b The three resolvers are NOT the same, and saying they are was
+               wrong.} All three consult [Sarek_type_helpers.lookup] first; what
+               they do afterwards differs:
+
+               - [ERecordField] (reading, above): under [Some h] it calls
+                 [h.get_field] and stops — no positional fallback for a
+                 registered type. Under [None] it takes the positional branch if
+                 the name looks positional, and otherwise a THIRD tier,
+                 [Sarek_registry.record_fields], which neither writer has.
+               - this arm (writing): under [Some h] it falls back to positional
+                 when the helper has no such field, and has no registry tier.
+               - [read_lvalue]'s [LRecordField] arm (reading a base to write
+                 through): neither the positional fallback under [Some h] nor the
+                 registry tier.
+
+               They are described rather than unified because unifying them means
+               changing what a READ resolves to, which is a behavioural change
+               outside this fix. The divergences are benign only because the
+               extra tiers are unreached in practice — see the registry-tier note
+               on [ERecordField]. *)
             match Sarek_type_helpers.lookup type_name with
             | Some h -> (
                 match h.Sarek_type_helpers.field_index field with
