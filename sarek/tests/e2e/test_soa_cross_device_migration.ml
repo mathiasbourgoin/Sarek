@@ -34,16 +34,18 @@
  * pipeline requires to be self-contained; and half A's pre-fix red state is a
  * RAISE, so a shared binary would abort before the other half reported.
  *
- * Exit codes: 0 = pass, INCLUDING both honest skips (no CUDA/PTX device, or only
- * one device to migrate between) — an absent device is not a regression, and
- * every skip prints a line naming the class it needed; 1 = an assertion fired.
- * There is no third code: a previous version of this header documented
- * "2 = setup could not produce the device pair this needs" while both skip paths
- * exit 0, so the row described a state this file cannot reach.
+ * Exit codes: 0 = pass, INCLUDING every honest skip (no CUDA/PTX device, only
+ * one device to migrate between, or a second device that is not CUDA/PTX for the
+ * one case that needs that) — an absent device is not a regression, and every
+ * skip prints a line naming the class it needed; 1 = an assertion fired. There is
+ * no third code: a previous version of this header documented "2 = setup could
+ * not produce the device pair this needs" while every skip path exits 0, so the
+ * row described a state this file cannot reach.
  *
  * Needs TWO devices, at least one of them CUDA/PTX (the SoA ABI dispatches
- * nowhere else). Locally that is ZLUDA on an AMD RX 7900 XTX — a CUDA/PTX
- * device, NOT NVIDIA hardware:
+ * nowhere else); the leaf-ownership case additionally needs the SECOND one to be
+ * CUDA/PTX and skips by name without it. Locally both are ZLUDA on AMD hardware
+ * — CUDA/PTX devices, NOT NVIDIA:
  *   LD_LIBRARY_PATH=$HOME/opt/zluda \
  *     dune exec sarek/tests/e2e/test_soa_cross_device_migration.exe
  ******************************************************************************)
@@ -446,9 +448,11 @@ let () =
         (Array.length devs) ;
       exit 0
   | src :: _ -> (
-      (* [dst] only has to be a DIFFERENT device — it receives an ordinary packed
-         upload, so any framework will do. Another CUDA/PTX device is preferred
-         so the pair is homogeneous.
+      (* For the three MIGRATION cases [dst] only has to be a DIFFERENT device —
+         each receives an ordinary packed upload, so any framework will do.
+         Another CUDA/PTX device is preferred so the pair is homogeneous, and the
+         fourth case below REQUIRES that (it launches PTX on [dst]) and skips by
+         name otherwise.
 
          "Any framework" includes the CPU backends, and that holds for the BYTE
          assertions in [check_per_device_leaf_free] too, which is the half that
@@ -458,9 +462,9 @@ let () =
          [size]/[elem_size] come from the requested length and element size
          (Transfer.ml:150-152), and [free_buffer] tracks the same product back. So
          a Native or Interpreter [dst] still yields a non-zero packed-byte delta
-         and the split is still measurable — no GPU-only restriction on [dst] is
-         needed, and adding one would drop the heterogeneous pair, which is the
-         more interesting migration. *)
+         and the split is still measurable — those three cases need no GPU-only
+         restriction on [dst], and imposing one would drop the heterogeneous
+         pair, which is the more interesting migration. *)
       let others =
         Array.to_list devs
         |> List.filter (fun (d : Device.t) -> d.Device.id <> src.Device.id)
@@ -503,7 +507,26 @@ let () =
              device boundary". It lives here because this is the only test with
              two devices in hand. *)
           let c = check_per_device_leaf_free src dst in
-          (* Also two-device-only: the free has to land on a device the leaves are
-             not on for the ownership flag to be resurrectable at all. *)
-          let d = check_free_does_not_resurrect_leaves src dst in
+          (* Also two-device-only: the free has to land on a device the leaves
+             are not on for the ownership flag to be resurrectable at all. But
+             unlike the three above it needs BOTH devices to be CUDA/PTX, because
+             its step 2 is a PACKED launch on [dst] through [run_source ~lang:PTX]
+             and [Execute.run_source] raises [Unsupported_argument] on a backend
+             whose [supported_source_langs] does not list PTX — which is every
+             backend but Cuda_ptx_plugin. A heterogeneous pair would make this
+             file exit 1 on an environment shortfall rather than on an assertion,
+             so it is a NAMED skip instead. *)
+          let d =
+            if is_ptx dst then check_free_does_not_resurrect_leaves src dst
+            else begin
+              Printf.printf
+                "  %-58s SKIP (needs a SECOND CUDA/PTX device; %s is %s, and \
+                 this case launches PTX on it)\n\
+                 %!"
+                "a free does not resurrect stale leaf ownership"
+                dst.Device.name
+                dst.Device.framework ;
+              true
+            end
+          in
           if not (a && b && c && d) then exit 1)
