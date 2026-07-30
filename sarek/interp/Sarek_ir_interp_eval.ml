@@ -734,35 +734,35 @@ and assign_lvalue state env lv value =
       match read_lvalue state env base_lv with
       | VRecord (type_name, fields) -> (
           let index =
-            (* Helpers first, positional second. It matters in that order: a
-               declared record whose field is literally named [_0] must resolve
-               through its own declaration order, not through the tuple
-               convention.
-               {b The three resolvers are NOT the same, and saying they are was
-               wrong.} All three consult [Sarek_type_helpers.lookup] first; what
-               they do afterwards differs:
+            (* Registered types resolve through their helper and STOP. A
+               registered record that has no field of this name is an error here,
+               exactly as it is when the same name is read.
 
-               - [ERecordField] (reading, above): under [Some h] it calls
-                 [h.get_field] and stops — no positional fallback for a
-                 registered type. Under [None] it takes the positional branch if
-                 the name looks positional, and otherwise a THIRD tier,
-                 [Sarek_registry.record_fields], which neither writer has.
-               - this arm (writing): under [Some h] it falls back to positional
-                 when the helper has no such field, and has no registry tier.
-               - [read_lvalue]'s [LRecordField] arm (reading a base to write
-                 through): neither the positional fallback under [Some h] nor the
-                 registry tier.
+               THERE USED TO BE A POSITIONAL FALLBACK UNDER [Some h], and it was
+               a silent wrong-field WRITE waiting to happen. [read_lvalue]'s
+               [LRecordField] arm below resolves a registered type with
+               [h.field_index] alone and raises when it answers [None]; this arm
+               went on to try [positional_field_index]. So for a registered
+               record and a field name that merely LOOKS positional — [_0] — the
+               read of that same name raised "record T has no field _0" while the
+               write landed in slot 0 and reported success. A store that hits the
+               wrong field is strictly worse than the dropped store this arm
+               exists to fix, and "the name cannot occur in practice" is an
+               argument about the front end, not a property of this function.
 
-               They are described rather than unified because unifying them means
-               changing what a READ resolves to, which is a behavioural change
-               outside this fix. The divergences are benign only because the
-               extra tiers are unreached in practice — see the registry-tier note
-               on [ERecordField]. *)
+               Removing it makes write resolution agree with read resolution, and
+               that is the whole change: no currently-passing case relied on the
+               fallback, because reaching it required the helper to lack the field
+               (see test_interp_field_store_resolution.ml, which pins both
+               polarities on a registered type).
+
+               One divergence REMAINS and is deliberately untouched:
+               [ERecordField] (reading, above) has a third tier under [None],
+               [Sarek_registry.record_fields], which neither this arm nor
+               [read_lvalue] has. Adding it here would change which stores
+               succeed, not just which fail, and that is outside this fix. *)
             match Sarek_type_helpers.lookup type_name with
-            | Some h -> (
-                match h.Sarek_type_helpers.field_index field with
-                | Some idx -> Some idx
-                | None -> positional_field_index field)
+            | Some h -> h.Sarek_type_helpers.field_index field
             | None ->
                 (* Synthesized tuple records (L13, [_tup_*]) use positional field
                    names [_0], [_1], … and are never in the record registry. *)

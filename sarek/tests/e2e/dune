@@ -1631,6 +1631,7 @@
  (modules test_record_field_store)
  (libraries
   sarek
+  spoc_framework_registry
   sarek.stdlib
   sarek_ir
   sarek.codegen
@@ -1692,6 +1693,7 @@
  (modules test_record_local_alias_agreement)
  (libraries
   sarek
+  spoc_framework_registry
   sarek.stdlib
   sarek_ir
   sarek.codegen

@@ -94,6 +94,18 @@
  (modules test_detach_record_depth)
  (libraries sarek.interp alcotest))
 
+; backlog-172 round 6. The field-store arm of [assign_lvalue] resolved a field
+; name differently from [read_lvalue]: under a REGISTERED type it fell back to
+; the positional ([_0]) convention when the helper had no such field, so a name
+; the READ refused was WRITTEN into whatever slot sat at that position. Pins that
+; write now refuses exactly what read refuses, that the slots are untouched by
+; the refusal, and — as the positive controls — that a real field still stores.
+
+(test
+ (name test_interp_field_store_resolution)
+ (modules test_interp_field_store_resolution)
+ (libraries sarek.interp sarek_ir alcotest))
+
 ; Fusion tests use sarek library directly (no ppx needed).
 ;
 ; sarek.codegen and str are for the backlog-153 cases: the defect there was
