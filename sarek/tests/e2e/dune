@@ -1546,11 +1546,19 @@
 ; backlog-180 (H3): a helper PARAMETER whose name matches a module constant.
 ; The backlog-160 constant-prefixing pass collected referenced names with an
 ; empty bound list for parameters, so a parameter sharing a constant's name got
-; that constant's SLet prefixed into a body already binding the identifier —
-; hard compile error on the device backends, and on the interpreter the prefix
-; overwrote the parameter so the helper silently ignored its argument. Both a
-; collision case and a still-must-prefix case, so the fix cannot be "never
-; prefix".
+; that constant's SLet prefixed into a body already binding the identifier.
+;
+; The measured pre-fix split, which is NOT "device backends hard-error,
+; interpreter silently overwrites" — that was the reported split and the two
+; halves are swapped:
+;   Interpreter, Native  correct
+;   CUDA/PTX             silently wrong data (200 for want 2); measured through
+;                        ZLUDA on an AMD RX 7900 XTX, there being no NVIDIA
+;                        device on this host
+;   OpenCL, Vulkan       compile failure, "redefinition of 'scale'"
+; Both a collision case and a still-must-prefix case, so the fix cannot be
+; "never prefix". See the test header for the full table and the mutations that
+; make each case red.
 
 (executable
  (name test_helper_param_const_collision)

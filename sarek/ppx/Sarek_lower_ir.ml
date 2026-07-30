@@ -895,18 +895,32 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
                [SLet] flat, so the prefix and the rebinding are two declarations
                of one identifier in one block. Refused below rather than emitted.
                Caught by review on #362. *)
-            let helper_binders =
+            let body_binders =
               let acc = Hashtbl.create 8 in
               stmt_binders fun_body_ir acc ;
-              (* Parameters too, and this is not redundant with seeding
-                 [referenced] above. That seeding only covers a constant named
-                 DIRECTLY by the body. The transitive closure below also pulls in
-                 constants named by the INITIALIZER of a referenced constant, and
-                 those enter [referenced] regardless of what the parameters
-                 shadow — so a constant reachable only through another
-                 constant's initializer could still collide with a parameter.
-                 Present here, that case takes the refusal path instead of
-                 emitting the collision. *)
+              acc
+            in
+            (* Parameters too, and this is not redundant with seeding
+               [referenced] above. That seeding only covers a constant named
+               DIRECTLY by the body. The transitive closure below also pulls in
+               constants named by the INITIALIZER of a referenced constant, and
+               those enter [referenced] regardless of what the parameters
+               shadow — so a constant reachable only through another constant's
+               initializer could still collide with a parameter. Present here,
+               that case takes the refusal path instead of emitting the
+               collision.
+
+               Kept as a SEPARATE table from [body_binders] rather than merged
+               into one, because the refusal message has to say which kind of
+               binder collided and what to do about it, and those differ. For a
+               body-local the advice is "rename the local, or pass the constant
+               in as a parameter"; for a parameter that same advice is circular —
+               the parameter IS the thing it would tell you to add. An earlier
+               revision merged the two and emitted the body-local wording for
+               both, so the parameter case was told to fix the collision by
+               creating it. *)
+            let param_binders =
+              let acc = Hashtbl.create 8 in
               List.iter (fun n -> Hashtbl.replace acc n ()) param_names ;
               acc
             in
@@ -914,7 +928,34 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
               List.fold_left
                 (fun body name ->
                   if not (Hashtbl.mem referenced name) then body
-                  else if Hashtbl.mem helper_binders name then
+                  else if Hashtbl.mem param_binders name then
+                    (* The colliding binder is a PARAMETER. Note the helper does
+                       not necessarily name the constant itself: the seeding
+                       above removes a directly-named one from [referenced], so
+                       the way a parameter-named constant still gets here is
+                       through the initializer of some OTHER constant the helper
+                       does reference. Hence "directly or through" rather than a
+                       flat "references", which would be a claim wider than what
+                       was measured. *)
+                    Ppxlib.Location.raise_errorf
+                      ~loc:helper_loc
+                      "Helper %S has a parameter named %S, and module constant \
+                       %S is needed inside the helper (either named there \
+                       directly or reached through the initializer of another \
+                       constant the helper uses). To be visible, the constant \
+                       has to be declared inside the helper body, and the \
+                       generated device code declares locals in one flat scope \
+                       alongside the parameters — so that would put two \
+                       declarations of %S in the same block. Rename the \
+                       PARAMETER %S, or rename the module constant. Note that \
+                       passing the constant in as a parameter is NOT a fix \
+                       here: a parameter of that name is what collides."
+                      name_of_helper
+                      name
+                      name
+                      name
+                      name
+                  else if Hashtbl.mem body_binders name then
                     Ppxlib.Location.raise_errorf
                       ~loc:helper_loc
                       "Helper %S both references module constant %S and binds \

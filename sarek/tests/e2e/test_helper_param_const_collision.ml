@@ -70,6 +70,40 @@
  *     shadow must still get its copy. Without this case the fix could be
  *     "never prefix anything", which also makes the first case pass while
  *     breaking backlog-160 outright.
+ *
+ * WHICH MUTATION MAKES EACH CASE RED, and whether it reaches EXECUTION. The
+ * table above records a pre-fix state that this test does not re-derive on each
+ * run, so it is evidence only to the extent the mutations below were actually
+ * observed. All three were run on 2026-07-30 with LD_LIBRARY_PATH pointed at
+ * ZLUDA, so all 9 devices were live:
+ *
+ *   Revert BOTH halves of the fix in Sarek_lower_ir.ml (i.e. the file as it is
+ *   on main). Builds cleanly, and the run REACHES EXECUTION and exits 1:
+ *   CUDA/PTX x2 report "got 200 want 2", OpenCL x2 fail with "redefinition of
+ *   'scale'", Vulkan x2 fail to compile, Interpreter x2 and Native pass. This
+ *   is the mutation that reproduces the header table, and it is why the table
+ *   is not merely asserted.
+ *
+ *   Revert ONLY the [referenced] seeding, keeping the parameter names in the
+ *   binder table. This does NOT reach execution: it stops at a BUILD error, the
+ *   refusal guard firing on the collision. Worth stating explicitly, because
+ *   the seeding and the guard shipped in one commit, and the seeding alone is
+ *   therefore not observable through this test — the guard masks it.
+ *
+ *   Replace the seeding call with [ignore] so nothing is ever considered
+ *   referenced (the degenerate "never prefix anything" fix). Builds cleanly and
+ *   REACHES EXECUTION, exit 1, on the prefixing-still-works case: "Unbound
+ *   variable 'offset'" on the Interpreter, "PTX codegen: unbound variable:
+ *   offset" on CUDA/PTX, a compile failure on OpenCL and Vulkan. NOTE that
+ *   Native passes this mutation — it resolves [offset] from the enclosing OCaml
+ *   scope — so Native alone is blind to a missing prefix, and case 2's value
+ *   comes from the other backends.
+ *
+ * The refusal guard's own behaviour is NOT covered here, because it fires
+ * during lowering and so is unobservable from a running test. It is pinned as a
+ * negative-compile case instead:
+ * sarek/tests/negative/test_helper_param_shadows_const.ml, asserted by
+ * `make test_negative`.
  ******************************************************************************)
 
 module Device = Spoc_core.Device
@@ -88,8 +122,15 @@ type float32 = float
 type ('a, 'b) vector = ('a, 'b) Vector.t
 
 (* The helper parameter [scale] shadows the module constant [scale]. Correct
-   behaviour: [boost x] is [x *. 2.0]. Pre-fix, the prefixed constant makes it
-   [100.0 *. 2.0] on the interpreter and a redeclaration error on the rest. *)
+   behaviour: [boost x] is [x *. 2.0].
+
+   Pre-fix, per the measured table in the header — NOT "interpreter silently
+   wrong, everything else a compile error", which is what this comment used to
+   say and which is the reported split rather than the observed one. Observed:
+   the Interpreter and Native are CORRECT; CUDA/PTX silently computes
+   [100.0 *. 2.0] because it allocates registers instead of a flat C scope, so
+   the duplicated declaration overwrites the parameter rather than colliding;
+   OpenCL and Vulkan fail to compile ("redefinition of 'scale'"). *)
 let collision_kernel =
   snd
     [%kernel
@@ -178,10 +219,13 @@ let () =
   let any_failure = ref false in
   Array.iter
     (fun dev ->
-      (* param shadows the constant -> the ARGUMENT must win (x *. 2.0).
-         Pre-fix interpreter answer would be 100.0 *. 2.0 = 200.0 for every
-         element, which this expectation separates by two orders of
-         magnitude. *)
+      (* param shadows the constant -> the ARGUMENT must win (x *. 2.0). The
+         wrong answer is 100.0 *. 2.0 = 200.0 for every element, two orders of
+         magnitude away from the right one, which is what makes the SILENT
+         backend's failure visible at all. Pre-fix that 200.0 was produced by
+         CUDA/PTX (measured through ZLUDA on an AMD RX 7900 XTX); the
+         Interpreter was correct here, so the expectation is not separating an
+         interpreter answer. *)
       if
         not
           (run_case
