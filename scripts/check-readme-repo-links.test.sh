@@ -94,6 +94,30 @@ check "red: a plain Actions link names another repository" "owner/repo" 1 "but t
 # a repo it is not describing.
 check "red: GITHUB_REPOSITORY disagrees with the README" "someone/else" 1 "but this repository is" "$GOOD"
 
+# --- four holes the adversarial review found --------------------------------
+# The line selector was case-sensitive and knew only github.com/.../actions.
+check "red: GitHub.com (uppercase) names another repo" "owner/repo" 1 "but this repository is" \
+  '[![B](https://GitHub.com/owner/OTHER/actions/workflows/ci.yml/badge.svg)](x)
+'
+
+# shields.io is the most common badge host; switching to it silently emptied the
+# gate's coverage entirely.
+check "red: a shields.io badge names another repo" "owner/repo" 1 "but this repository is" \
+  '[![B](https://img.shields.io/github/actions/workflow/status/owner/OTHER/ci.yml)](x)
+'
+
+# Scoping was per-LINE, which broke this gate's OWN documented promise that
+# links into the old SPOC repo are deliberately not checked.
+check "green: a non-CI SPOC link may share a line with a CI link" "owner/repo" 0 "OK" \
+  'See [talk](https://github.com/mathiasbourgoin/SPOC/blob/gh-pages/x.pdf) and CI [here](https://github.com/owner/repo/actions).
+'
+
+# A README with NO CI surface exited 0 saying every link was fine -- so deleting
+# the badge was invisible. A gate that examined no CI surface has verified none.
+check "red: no CI surface at all is exit 2, not a pass" "owner/repo" 2 "no CI badge or Actions link" \
+  '# Just a readme, no badge here.
+'
+
 # --- fails closed ----------------------------------------------------------
 check "red: unparseable slug is exit 2, not a pass" "noslash" 2 "could not parse" "$GOOD"
 # The slug must match owner/repo EXACTLY. "contains a slash" is what let the
