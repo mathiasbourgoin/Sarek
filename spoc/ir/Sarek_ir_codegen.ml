@@ -687,9 +687,98 @@ let gen_param ~param_type ~gen_array_param ~invalid buf decl =
       emit_length v.var_name
   | DLocal _ | DShared _ -> invalid ()
 
+exception Record_type_cycle of string list
+
+(** Mangled names of every record type mentioned anywhere inside [ty]'s type
+    tree, including through arrays, vectors, variant payloads and the fields of
+    a nested record. [seen] stops a cyclic {!Sarek_ir_types.elttype} value from
+    looping — the walk is over a graph, not a guaranteed-finite tree. *)
+let referenced_record_names (ty : Sarek_ir_types.elttype) : string list =
+  let open Sarek_ir_types in
+  let acc = ref [] in
+  let rec go seen ty =
+    match ty with
+    | TRecord (name, fields) ->
+        let mangled = mangle_name name in
+        if not (List.mem mangled seen) then begin
+          acc := mangled :: !acc ;
+          List.iter (fun (_, fty) -> go (mangled :: seen) fty) fields
+        end
+    | TVariant (_, constrs) ->
+        List.iter (fun (_, args) -> List.iter (go seen) args) constrs
+    | TArray (elt, _) | TVec elt -> go seen elt
+    | TInt32 | TInt64 | TFloat16 | TFloat32 | TFloat64 | TUint8 | TBool | TUnit
+      ->
+        ()
+  in
+  go [] ty ;
+  List.sort_uniq String.compare !acc
+
+(** Order record declarations so that a struct is emitted only after every
+    struct its field types reference.
+
+    The emission loops used to walk [kern_types] in list order, and that order
+    is not a dependency order: the PPX prepends the types reachable through the
+    registry to the ones declared in the kernel's own payload, so a record with
+    a record-typed field could be emitted ahead of the struct it names. Every
+    C-family backend then failed to compile the kernel
+    ([unknown type name '<Inner>']) and GLSL/WGSL failed to parse the field
+    line. This is that missing sort (backlog-203).
+
+    {b Stability.} Two records with no dependency between them keep their
+    relative position in the input list — ties break on the incoming index, not
+    on the name — so adding this sort leaves the emission of an
+    already-correctly-ordered type list byte-identical and committed goldens do
+    not churn.
+
+    {b Cycles.} A record cycle has no valid emission order, so it raises
+    {!Record_type_cycle} with the names still unplaced rather than falling back
+    to input order — a silently wrong order is the very defect this function
+    exists to remove. Note the check is a backstop, not a live guard: the PPX
+    resolves a record field's alignment from a registry populated when the
+    field's own type declaration was processed, so a record whose field type is
+    itself or a later type is refused there first ("unknown alignment for field
+    type '...'"), and no cycle can reach codegen through the PPX front end. It
+    is kept for the IR-constructed-by-hand path (fusion, tests, a future front
+    end), where nothing else would notice. *)
+let sort_record_types_by_dependency
+    (types : (string * (string * Sarek_ir_types.elttype) list) list) :
+    (string * (string * Sarek_ir_types.elttype) list) list =
+  let declared = List.map (fun (name, _) -> mangle_name name) types in
+  let indexed = List.mapi (fun i entry -> (i, entry)) types in
+  (* Dependencies of one entry: the declared records its fields reference,
+     minus itself (a self-reference cannot be satisfied by ordering, and
+     dropping it keeps the diagnostic about real cycles). *)
+  let deps (_, (name, fields)) =
+    let self = mangle_name name in
+    List.concat_map (fun (_, fty) -> referenced_record_names fty) fields
+    |> List.filter (fun d -> d <> self && List.mem d declared)
+  in
+  let remaining = ref indexed and placed = ref [] and out = ref [] in
+  let rec loop () =
+    if !remaining <> [] then
+      match
+        List.find_opt
+          (fun e -> List.for_all (fun d -> List.mem d !placed) (deps e))
+          !remaining
+      with
+      | Some ((i, (name, _)) as entry) ->
+          out := snd entry :: !out ;
+          placed := mangle_name name :: !placed ;
+          remaining := List.filter (fun (j, _) -> j <> i) !remaining ;
+          loop ()
+      | None ->
+          raise
+            (Record_type_cycle
+               (List.map (fun (_, (name, _)) -> name) !remaining))
+  in
+  loop () ;
+  List.rev !out
+
 (** Emit C-family record type declarations: one [typedef struct { ... } name;]
     per record, one field per line. Shared by CUDA/OpenCL/Metal; only
-    [type_of_elttype] differs. *)
+    [type_of_elttype] differs. Declarations are emitted in dependency order (see
+    {!sort_record_types_by_dependency}). *)
 let gen_record_typedefs ~type_of_elttype buf types =
   List.iter
     (fun (name, fields) ->
@@ -705,7 +794,7 @@ let gen_record_typedefs ~type_of_elttype buf types =
       Buffer.add_string buf "} " ;
       Buffer.add_string buf (mangle_name name) ;
       Buffer.add_string buf ";\n\n")
-    types
+    (sort_record_types_by_dependency types)
 
 (** Emit a GLSL variant type. GLSL lacks enum/typedef/union, so tags are
     const-int declarations, the type is a bare struct with flat payload fields,

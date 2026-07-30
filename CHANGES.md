@@ -92,6 +92,24 @@
 
 ### Fixed
 
+- A `[@@sarek.type]` record with a record-typed field had its inner struct
+  emitted AFTER the struct that referenced it, so no kernel touching a nested
+  record compiled on any shader backend. Both declaration-emission loops walked
+  `kern_types` in list order, and that is not a dependency order: the PPX
+  prepends the types reachable through the registry to the ones the kernel
+  payload declares. Measured on an RX 7900 XTX host, a read-only nested access
+  (`dst.(tid) <- src.(tid).mid.b`) failed on OpenCL ×2 with
+  `unknown type name 'Test_..._triple'` and on Vulkan ×2 with a glslang parse
+  error at the field line; a three-level chain and two independent nested types
+  failed the same way. `Sarek_ir_codegen.sort_record_types_by_dependency` now
+  orders the declarations, stably — ties break on the incoming list position,
+  so an already-correct order is returned unchanged and no committed golden
+  moved. A record cycle raises `Record_type_cycle` instead of being emitted in
+  some wrong order; that path is unreachable through the PPX, which refuses a
+  self- or mutually-referencing record field while resolving its alignment
+  (measured: both spellings stop at *unknown alignment for field type*), and is
+  kept for hand-built IR. Interpreter and Native were never affected — they
+  carry values, not struct declarations.
 - `Sarek_df64` silently ran at plain float32 precision on real NVIDIA
   hardware (CUDA/PTX and NVIDIA OpenCL): `ptxas` contracted the multiply in
   `two_prod` into the `add`/`sub` of the `quick_two_sum` closing `df64_mul`,

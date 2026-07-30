@@ -1588,3 +1588,34 @@
  (alias runtest)
  (action
   (run %{dep:test_helper_param_const_collision.exe})))
+
+; record-nested-struct-order (backlog-203): a [@@sarek.type] record with a
+; record-typed field must have the inner struct emitted BEFORE the struct that
+; references it. Covers one-level nesting, a three-level chain, and two
+; independent nested types in one record. Runs on every available device with
+; no per-backend tolerance — the C-family "unknown type name" and the
+; GLSL/WGSL parse error at the field line are exactly what it detects.
+
+(executable
+ (name test_record_nested_struct_order)
+ (modules test_record_nested_struct_order)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek_ir
+  spoc_core
+  sarek_native
+  sarek_interpreter
+  sarek_cuda
+  sarek_opencl
+  sarek_vulkan
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_record_nested_struct_order.exe})))
