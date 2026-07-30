@@ -16,6 +16,7 @@
   Sarek_env
   Sarek_error
   Sarek_reserved
+  Sarek_unsupported
   Sarek_parse
   Sarek_parse_helpers
   Sarek_ast
