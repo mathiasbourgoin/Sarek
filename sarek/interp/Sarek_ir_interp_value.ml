@@ -140,8 +140,55 @@ let callee_env env =
     coopmats = Hashtbl.create 4;
   }
 
-(** Bind a variable in the environment (both by id and name) *)
+(** Detach a record value from whatever container it was read out of, so that a
+    LOCAL holding it cannot write back through it.
+
+    A [VRecord] carries a MUTABLE [value array], and reading an element out of a
+    vector hands back that same array rather than a copy — which is precisely
+    what makes [v.(i).f <- e] land in storage
+    ([Sarek_ir_interp_eval.assign_lvalue]'s [LRecordField] arm). A local binding
+    must NOT inherit that sharing: on every other backend
+
+    let e = v.(tid) in e.p <- 42.0
+
+    stores into a copy (the C-family emits a struct-copy local, Native marshals
+    a fresh record out through [Vector.get]) and leaves vector storage alone.
+    Measured with 4 elements: Native / OpenCL x2 / Vulkan x2 / CUDA-PTX x2 all
+    read back [0 1 2 3], while the sharing interpreter read back [42 42 42 42].
+    Pinned by test_record_local_alias_agreement.ml.
+
+    The copy is DEEP through records — a shallow one leaves [e.sub.p <- 42.0]
+    writing into an inner record still shared with storage — and through variant
+    payloads, for the same reason.
+
+    It deliberately stops at [VArray]. An array binding must keep aliasing: a
+    kernel buffer is shared across threads by design and block-shared memory is
+    shared within the block, so copying one would break both. Arrays are
+    reference-like on every backend; records are values. *)
+let rec detach_record (v : value) : value =
+  match v with
+  | VRecord (name, fields) -> VRecord (name, Array.map detach_record fields)
+  | VVariant (ty, tag, args) -> VVariant (ty, tag, List.map detach_record args)
+  | VArray _ | VInt32 _ | VInt64 _ | VFloat32 _ | VFloat64 _ | VBool _ | VUnit
+    ->
+      v
+
+(** Bind a variable in the environment (both by id and name).
+
+    Records are detached on the way in (see {!detach_record}): binding is what
+    creates a LOCAL, and a local record is a value, not a window onto the
+    container it was read from. Every binding site goes through here — [SLet],
+    [SLetMut], the [SFor] loop variable, helper parameters, and a whole-variable
+    assignment — so the rule holds uniformly rather than at whichever site
+    someone remembered.
+
+    NOT covered: the variant-pattern binders in [SMatch]/[EMatch], which write
+    [vars_by_name] directly. Their payloads come from a scrutinee that is itself
+    already a local in every shape expressible today, so there is no container
+    to write back into; if a variant read straight out of a vector ever becomes
+    a match scrutinee, those two sites need this too. *)
 let bind_var env (v : var) value =
+  let value = detach_record value in
   Hashtbl.replace env.vars v.var_id value ;
   Hashtbl.replace env.vars_by_name v.var_name value
 

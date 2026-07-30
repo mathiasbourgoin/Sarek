@@ -206,13 +206,32 @@ let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
               in
               Spoc_core.Vector.kernel_set sarek_fs_vec sarek_fs_idx [%e updated]]
       | _ -> (
-          (* A record held in a local (or a shared-memory array element) IS
-             mutated in place; nothing marshals it, so a setfield is both correct
-             and the cheaper code.
+          (* A record held in a LOCAL is mutated in place; nothing marshals it,
+             so a setfield is both correct and the cheaper code. It stays correct
+             at depth: [l.f] hands back the sub-record itself, not a copy, so
+             [l.f.g <- e] mutates the same allocation. That is why only the
+             vector base above needed the rebuild.
 
-             This stays correct at depth too: [l.f] hands back the sub-record
-             itself, not a copy, so [l.f.g <- e] mutates the same allocation.
-             That is why only the vector base above needed the rebuild. *)
+             This arm ALSO catches a shared-memory array element
+             ([let%shared (s : tri) = 4l] then [s.(i).a <- e]), and there the
+             setfield is emitted onto a record that is NOT this thread's own.
+             Measured, 4 threads, [if tid = 0l then s.(tid).a <- 7.0]:
+
+               Native      7 7 7 7   (want 7 0 0 0)
+               Interpreter raises "assignment target of .a (got unit)"
+
+             The cause is upstream of this file and predates it:
+             [Sarek_cpu_runtime_types.alloc_shared_with_key] allocates with
+             [Array.make size default], so every slot of a shared array of a
+             boxed record type holds the SAME record, and a setfield through any
+             index is visible through all of them. Emitting a functional update
+             here would not fix it either — the slots would still alias.
+
+             Not fixed here: the fix is a per-slot allocation in the CPU shared
+             allocator, plus the Interpreter's own shared-array-of-record gap
+             (its [SLet]/[EArrayCreate Shared] arm initialises custom element
+             types to [VUnit]), and neither is a record-field-store change.
+             Tracked as backlog-206. *)
           let rec_e = gen_expr ~loc record in
           match field_access_of ~loc ~ctx record.ty field_name with
           | Field_lid lid ->
