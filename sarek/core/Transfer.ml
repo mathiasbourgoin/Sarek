@@ -296,12 +296,28 @@ end = struct
 
       [dev] selects the packed buffer, and the SoA arm ignores it: the binding
       holds ONE [soa_leaves_live] flag for the whole vector, not one per device,
-      so it cannot answer "on [dev]" and does not pretend to. Unreachable as a
-      difference today — both callers pass the device the vector's own
-      [location] names, so the two questions coincide — and making the flag
-      per-device is the change that would let this arm honour [dev]. Until then
-      the honest reading of the result is "somewhere on a device", not "on
-      [dev]".
+      so it cannot answer "on [dev]" and does not pretend to. Every caller in
+      this module — all four listed on {!read_back_to_host} below — passes the
+      device the vector's own [location] names, so the two questions coincide
+      there; making the flag per-device is the change that would let this arm
+      honour [dev]. Until then the honest reading of the result is "somewhere on
+      a device", not "on [dev]".
+
+      That whole-vector scope is also a KNOWN EXPOSURE for a caller outside this
+      module, and one this branch does not close (there is no [Transfer.mli], so
+      {!read_back_to_host} is exported). Found by review of PR #375 round 5, and
+      pre-existing: two transparent launches, on A then B, leave leaf buffers on
+      both; [free_buffer sv B] drains B into host storage and releases B's
+      leaves, and the flag stays set because A's are still allocated —
+      correctly, since that is the rule which stops a per-device free from
+      disowning another device's live leaves. But A's leaves are now STALE (they
+      hold the first launch's data, the host holds the second's), and a direct
+      [read_back_to_host sv A] then takes the SoA arm and gathers them over the
+      host copy. No path inside this module reaches it: [to_cpu] returns before
+      the read-back on the [CPU] location a free leaves behind, and the free
+      paths guard on {!has_device_data} plus a device-naming location. Closing
+      it needs the flag to name a device, which is a change to the binding
+      contract and not to this function.
 
       That the flag is whole-vector while {!free_buffer} releases per-device is
       not a cosmetic asymmetry: [soa_free_leaves] used to CLEAR the flag on a

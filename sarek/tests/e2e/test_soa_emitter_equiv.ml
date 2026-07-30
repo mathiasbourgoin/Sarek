@@ -1389,9 +1389,10 @@ let check_host_write_survives_packed dev n =
         of is the transparent launch's result, and it leaves the vector
         [Stale_GPU dev]. That precondition is named because it is load-bearing:
         with auto-sync OFF the gather does not happen and the vector stays
-        [Stale_CPU dev] with a pending host write, which is the pre-existing
-        auto-sync-off hazard [Vector.ml] documents and NOT what this case
-        covers. *)
+        [Stale_CPU dev] with a pending host write, which the packed launch then
+        replays the leaves over. That is a pre-existing consequence of disabling
+        auto-sync — undocumented in [Vector.ml], so stated here rather than cited
+        — and NOT what this case covers. *)
      for i = 0 to n - 1 do
        Vector.set
          sv
