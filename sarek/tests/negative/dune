@@ -382,7 +382,10 @@
 (library
  (name neg_test_helper_param_shadows_const)
  (modules test_helper_param_shadows_const)
- (libraries sarek sarek.stdlib sarek.ppx.lib)
+ ; spoc_core is listed because this case actually USES it (the vector type), so
+ ; that a guard that stops firing yields a clean compile rather than an unbound
+ ; module from a sibling's copied preamble.
+ (libraries sarek sarek.stdlib sarek.ppx.lib spoc_core)
  (preprocess
   (pps sarek_ppx))
  (flags
