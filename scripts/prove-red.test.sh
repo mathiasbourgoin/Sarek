@@ -532,6 +532,47 @@ sed -i 's|^# invoke: scripts/gate.sh$|# invoke: dune build sarek/x.exe|' "$d/scr
 expect_without "case25: \`dune build <target>\` is not an alias and is not flagged" \
   "$d" 1 "builds a dune ALIAS without"
 
+# --- Cases 26-28: the guard must see the EFFECTIVE command --------------------
+# CodeRabbit on PR #393. The first version of the guard tested `invoke:`,
+# `baseline-argv:` and `argv:` as isolated strings, so a spec splitting the tool
+# from its subcommand across two fields tripped neither -- a guard claiming a
+# coverage it did not have, which is the shape this whole file is about. It now
+# tests invoke concatenated with the argv that will actually be appended.
+d="$(newroot case26)"
+gate_body "$d/scripts/gate.sh"
+good_spec "$d/scripts/gate.sh"
+sed -i 's|^# invoke: scripts/gate.sh$|# invoke: dune\n# baseline-argv: runtest|' "$d/scripts/gate.sh"
+expect "case26: a dune alias split across invoke: and baseline-argv: is exit 2" \
+  "$d" 1 2 "builds a dune ALIAS without"
+
+# Same, through a mutation's argv: override rather than the baseline's.
+d="$(newroot case27)"
+gate_body "$d/scripts/gate.sh"
+good_spec "$d/scripts/gate.sh"
+sed -i 's|^# invoke: scripts/gate.sh$|# invoke: dune|' "$d/scripts/gate.sh"
+sed -i 's|^#   expect-exit: 1$|#   argv: runtest\n#   expect-exit: 1|' "$d/scripts/gate.sh"
+expect "case27: a dune alias split across invoke: and a mutation argv: is exit 2" \
+  "$d" 1 2 "builds a dune ALIAS without"
+
+# Global options must not hide the subcommand.
+d="$(newroot case28)"
+gate_body "$d/scripts/gate.sh"
+good_spec "$d/scripts/gate.sh"
+sed -i 's|^# invoke: scripts/gate.sh$|# invoke: dune --root . runtest|' "$d/scripts/gate.sh"
+expect "case28: \`dune --root . runtest\` is still seen as an alias build" \
+  "$d" 1 2 "builds a dune ALIAS without"
+
+# The opposite polarity of narrowing the keyword to the subcommand position:
+# `dune exec test` runs an executable called test and builds no alias. The
+# earlier any-token match flagged it, and a guard that fires on a correct spec
+# gets deleted along with its true findings.
+d="$(newroot case29)"
+gate_body "$d/scripts/gate.sh"
+good_spec "$d/scripts/gate.sh"
+sed -i 's|^# invoke: scripts/gate.sh$|# invoke: dune exec test|' "$d/scripts/gate.sh"
+expect_without "case29: \`dune exec test\` is not an alias build and is not flagged" \
+  "$d" 1 "builds a dune ALIAS without"
+
 echo ""
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
