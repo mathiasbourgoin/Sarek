@@ -206,8 +206,14 @@ module Make (Ops : CUSTOM_OPS) = struct
             is what says the leaves are the ones holding the results. *)
     soa_free_leaves : Ops.device_t option -> unit;
         (** Release the leaf device buffers: [Some dev] frees them on that
-            device only, [None] on every device. Clears {!soa_leaves_live},
-            because after this the leaves hold nothing a read-back could fetch.
+            device only, [None] on every device. Then RE-DERIVES
+            {!soa_leaves_live} from the leaves that are still allocated, rather
+            than clearing it: a freed leaf holds nothing a read-back could
+            fetch, but the flag covers the whole vector, so a [Some dev] free
+            must leave it set while leaves survive on another device. Clearing
+            it unconditionally made [free_buffer] on device B disown live leaves
+            on device A, and the drain-before-free then skipped A — freeing a
+            device the results were not on discarded them.
 
             Its absence was a LEAK rather than a correctness bug, which is why
             it is easy to miss. Under this ABI the packed AoS buffer is never
@@ -233,13 +239,18 @@ module Make (Ops : CUSTOM_OPS) = struct
             read-back then correctly downloads the packed buffer.
 
             THREE writers, and the list is exhaustive — anything else that flips
-            this is a bug: {!soa_to_device} sets it; {!soa_free_leaves} clears
-            it, because freed leaves hold nothing a read-back could fetch; and
+            this is a bug: {!soa_to_device} sets it; {!soa_free_leaves}
+            re-derives it from the leaves that survive the free; and
             [Execute.transfer_vectors_to_device] clears it when a launch takes
             the packed ABI. Between them it states the ABI of the MOST RECENT
             operation, not of some operation — which is the property the
             read-back paths rely on and the one that was missing when nothing
             ever cleared it.
+
+            Note what "clears it" cost in {!soa_free_leaves}: this flag is
+            whole-vector while that free is per-device, so the two only agree
+            when the free covered every device. Deriving instead of assigning is
+            what keeps a single flag honest across a per-device release.
 
             A [bool ref] rather than a mutable field so that the closure which
             performs the upload can set it itself. A mutable field would have to

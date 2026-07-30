@@ -155,18 +155,22 @@ module Make (Ops : CUSTOM_OPS) : sig
             is the one the SoA launch did not write. *)
     soa_free_leaves : Ops.device_t option -> unit;
         (** Release the leaf device buffers — [Some dev] on that device, [None]
-            on every device — and clear [soa_leaves_live]. Without it
-            [Transfer.free_all_buffers] released ZERO bytes on a transparent SoA
-            vector (the packed buffer it iterates is never allocated under this
-            ABI): a leak, not wrong data, since each leaf also carries a
-            [Gpu_memory.register_finalizer]. *)
+            on every device — then RE-DERIVE [soa_leaves_live] from the leaves
+            still allocated. Without the release, [Transfer.free_all_buffers]
+            returned ZERO bytes on a transparent SoA vector (the packed buffer
+            it iterates is never allocated under this ABI): a leak, not wrong
+            data, since each leaf also carries a
+            [Gpu_memory.register_finalizer]. Without the re-derivation — it used
+            to assign [false] — a per-device free disowned live leaves on every
+            OTHER device, and that IS wrong data: the drain-before-free consults
+            this flag. *)
     soa_leaves_live : bool ref;
         (** Does the device hold results in the LEAVES rather than in the packed
             AoS buffer? What lets the read-back path follow the launch's ABI
             decision instead of re-deriving it.
 
             Three writers, and only three — [soa_to_device] sets it,
-            [soa_free_leaves] clears it (the freed leaves hold nothing), and
+            [soa_free_leaves] re-derives it from the surviving leaves, and
             [Execute.transfer_vectors_to_device] clears it when a launch takes
             the packed ABI, so it states the ABI of the MOST RECENT operation
             rather than of some operation. Every read-back path only READS it.

@@ -217,14 +217,34 @@ let create_transparent (custom : 'a Vector.custom_type) (length : int) :
                 Array.iter
                   (fun (Leaf lv) -> Transfer.free_all_buffers lv)
                   t.leaves) ;
-            (* The leaves now hold nothing a read-back could fetch, so the flag
+            (* The freed leaves hold nothing a read-back could fetch, so the flag
                that says "the leaves are authoritative" must stop saying it —
-               otherwise the next read-back follows freed buffers. Safe to clear
-               unconditionally even for the [Some d] case: this binding has one
-               flag for the whole vector, not one per device (see
-               [Transfer.has_device_data]), so there is no per-device answer to
-               preserve. *)
-            leaves_live := false);
+               otherwise the next read-back follows freed buffers.
+
+               DERIVED from what is still allocated, not assigned [false]. The
+               previous version cleared it unconditionally and justified that
+               with "this binding has one flag for the whole vector, so there is
+               no per-device answer to preserve". The premise is right and the
+               conclusion is backwards: precisely BECAUSE the flag covers the
+               whole vector, a per-device free ([Some d]) must not clear it while
+               leaves are still live on another device. Measured after a
+               migration — leaves on A, packed buffer on B — [free_buffer sv B]
+               released B's half and then reported the whole vector leaf-free
+               with A's leaves still allocated. [Transfer.has_device_data sv A]
+               then answered [false], so the drain-before-free in
+               [Transfer.free_buffer]/[free_all_buffers] skipped A: freeing a
+               device the results were NOT on discarded them.
+
+               One rule for both cases, so there is no [None] special case to
+               drift: after freeing, the leaves are authoritative iff some leaf
+               still has a device buffer somewhere. For [None] every leaf was
+               just released on every device, so this evaluates to [false] — and
+               it does so by observing the leaves rather than by asserting what
+               the loop above was supposed to have done. *)
+            leaves_live :=
+              Array.exists
+                (fun (Leaf lv) -> Hashtbl.length lv.Vector.device_buffers > 0)
+                t.leaves);
         soa_leaf_bufs =
           (fun dev -> Array.to_list (Array.map (leaf_buf dev) t.leaves));
       } ;
