@@ -33,6 +33,41 @@ let check_order what expected got =
          (String.concat "; " expected)
          (String.concat "; " got))
 
+exception Timed_out
+
+(* Run [f] under a hard deadline and FAIL if it does not return.
+   [referenced_record_names] walks a graph, so its regression mode is a
+   non-terminating tail-recursive loop, not a wrong answer. Left to itself that
+   reads as a hung test rather than a failing one, and `dune runtest` imposes no
+   timeout of its own — the only thing that would eventually notice is a CI job
+   limit, with no message naming the cause. SIGALRM turns the hang into a named
+   assertion: the walk allocates on every step (it conses onto the visited set),
+   so there is a poll point for the signal to be delivered at. *)
+let within_deadline ~seconds ~what f =
+  let prev =
+    Sys.signal Sys.sigalrm (Sys.Signal_handle (fun _ -> raise Timed_out))
+  in
+  let restore () =
+    ignore (Unix.alarm 0) ;
+    Sys.set_signal Sys.sigalrm prev
+  in
+  ignore (Unix.alarm seconds) ;
+  match f () with
+  | v ->
+      restore () ;
+      v
+  | exception Timed_out ->
+      restore () ;
+      failwith
+        (Printf.sprintf
+           "%s: did not terminate within %ds — the cyclic-value guard no \
+            longer closes this shape"
+           what
+           seconds)
+  | exception e ->
+      restore () ;
+      raise e
+
 let triple_fields = [("a", TFloat32); ("b", TFloat32); ("c", TFloat32)]
 
 let triple = TRecord ("triple", triple_fields)
@@ -221,37 +256,34 @@ let test_c_family_emission_order () =
    cycles below have no [TRecord] on the cycle at all and looped forever (they
    are tail-recursive, so they hang rather than overflow — a test that only
    covered the record shape reported a general "safe on a cyclic value" it had
-   never exercised). A hang has no failure message, so these cases pin
-   termination by returning at all: if the guard regresses, the test process
-   never finishes and dune's timeout is the red. *)
+   never exercised). Each case runs under {!within_deadline} so a regression is a
+   named failure, not a hung process. *)
 let test_referenced_names_terminates_on_cyclic_value () =
+  let check what expected ty =
+    let got =
+      within_deadline ~seconds:10 ~what (fun () ->
+          Sarek_ir_codegen.referenced_record_names ty)
+    in
+    if got <> expected then
+      failwith
+        (Printf.sprintf
+           "%s: expected [%s] got [%s]"
+           what
+           (String.concat "; " expected)
+           (String.concat "; " got))
+  in
   (* Shape 1: the cycle passes through a TRecord. *)
   let rec node = TRecord ("node", [("self", node)]) in
-  let got = Sarek_ir_codegen.referenced_record_names node in
-  if got <> ["node"] then
-    failwith
-      (Printf.sprintf
-         "referenced_record_names: expected [node] got [%s]"
-         (String.concat "; " got)) ;
+  check "referenced_record_names on a TRecord cycle" ["node"] node ;
   (* Shape 2: the cycle is closed by TVec alone — no TRecord on it. *)
   let rec vec_cycle = TVec vec_cycle in
-  let got = Sarek_ir_codegen.referenced_record_names vec_cycle in
-  if got <> [] then
-    failwith
-      (Printf.sprintf
-         "referenced_record_names on a TVec cycle: expected [] got [%s]"
-         (String.concat "; " got)) ;
+  check "referenced_record_names on a TVec cycle" [] vec_cycle ;
   (* Shape 3: the cycle is closed by a TVariant payload — no TRecord on it, but
      a record hangs off the same variant and must still be reported. *)
   let rec var_cycle =
     TVariant ("loop", [("Stop", [leaf]); ("Go", [TArray (var_cycle, Global)])])
   in
-  let got = Sarek_ir_codegen.referenced_record_names var_cycle in
-  if got <> ["leaf"] then
-    failwith
-      (Printf.sprintf
-         "referenced_record_names on a TVariant cycle: expected [leaf] got [%s]"
-         (String.concat "; " got)) ;
+  check "referenced_record_names on a TVariant cycle" ["leaf"] var_cycle ;
   print_endline
     "  referenced_record_names terminates on record/vec/variant cycles: OK"
 
