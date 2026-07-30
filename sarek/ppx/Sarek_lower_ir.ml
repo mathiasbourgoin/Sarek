@@ -848,10 +848,18 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
                  merely shares a module constant's name made the constant look
                  referenced, so its [SLet] got prefixed into a body that already
                  binds that identifier as a parameter. Two declarations of one
-                 name in one flat scope: a hard compile error on all five device
-                 backends for a helper that compiled before, and on the
-                 interpreter the prefix overwrites the parameter, so the helper
-                 silently ignores its argument.
+                 name in one flat scope.
+
+                 MEASURED, per backend — this comment previously stated the
+                 opposite and was left uncorrected when the test header was
+                 fixed in 84fde09b: OpenCL and Vulkan give a LOUD compile error
+                 ("redefinition of 'scale'"), while the Interpreter and Native
+                 are CORRECT and do NOT silently ignore the argument. The silent
+                 case is PTX, which allocates registers rather than emitting a
+                 flat C scope of named locals, so the duplicate [SLet] never
+                 collides textually and simply overwrites the parameter's
+                 register. See the test header for the table and for how the
+                 CUDA/PTX row was obtained (through ZLUDA, not native NVIDIA).
 
                  The refusal message below advises "pass the constant in as a
                  parameter", which was precisely the unchecked case — the

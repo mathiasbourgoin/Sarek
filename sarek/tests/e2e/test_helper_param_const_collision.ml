@@ -13,7 +13,7 @@
  * free — and its declaration got prefixed into a body that already binds that
  * identifier as a parameter.
  *
- * MEASURED pre-fix behaviour, per backend, on this host. It does NOT match the
+ * MEASURED pre-fix behaviour, per backend. It does NOT match the
  * "device backends hard-error, interpreter silently overwrites" split the
  * finding was reported with — the two halves are swapped, and the real one is
  * worse:
@@ -21,7 +21,9 @@
  *   Interpreter x2  OK        — correct. It does NOT silently ignore the
  *                               argument, contrary to the report.
  *   Native          OK        — correct.
- *   CUDA/PTX x2     got 200, want 2   <- SILENTLY WRONG DATA
+ *   CUDA/PTX        got 200, want 2   <- SILENTLY WRONG DATA
+ *                               (measured THROUGH ZLUDA on an AMD RX 7900 XTX,
+ *                               not on native NVIDIA — see the note below)
  *   OpenCL x2       compile failure (loud)
  *   Vulkan x2       compile failure (loud)
  *
@@ -38,6 +40,18 @@
  * this shape existed.
  *
  * Metal and HIP are unmeasured (no such device on this host).
+ *
+ * HOW THE CUDA/PTX ROW WAS OBTAINED, because "on this host" was doing too much
+ * work here. A bare run of this test enumerates four frameworks — Interpreter,
+ * Native, OpenCL, Vulkan — and NO CUDA device; there is no NVIDIA hardware and
+ * no nvidia-smi. The CUDA/PTX row exists only with
+ * LD_LIBRARY_PATH=$HOME/opt/zluda, which puts ZLUDA's CUDA implementation on an
+ * AMD GPU. So the row is a real execution of the real PTX the emitter produced,
+ * but through a reimplementation of the CUDA driver, not through NVIDIA's.
+ * Treat it as strong evidence about the EMITTED PTX and weaker evidence about
+ * what an NVIDIA driver does with it. Verified: without ZLUDA the device list
+ * is [Interpreter, Native, OpenCL, Vulkan]; with it, [CUDA/PTX, Interpreter,
+ * Native, OpenCL, Vulkan].
  *
  * The [expr_names] header documents this exact redeclaration bug for LOCAL
  * binders ([SLet]/[SLetMut]/[SFor], "caught by review on #362"); the fix landed
