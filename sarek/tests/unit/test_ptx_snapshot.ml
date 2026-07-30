@@ -1201,16 +1201,40 @@ let assert_absent ptx marker ~why =
     the Rocq development in formal/codegen-ptx had modelled [PNe] on F32/F64
     correctly the whole time, but nothing in it mapped a [ptx_cmp_tag] to a setp
     MNEMONIC, so the model had no way to disagree with the emitter.
-    [CodegenPtx.PtxTypes.ptx_cmp_mnemonic] now carries that mapping and is
-    machine-checked; [root] below is its OCaml transcription, and this case is
-    the edge that binds the transcription to the artefact that actually ships.
+    [CodegenPtx.PtxTypes.ptx_cmp_mnemonic] now carries that mapping; [root]
+    below is its OCaml transcription, and this case is the edge that binds the
+    transcription to the artefact that actually ships.
+
+    WHAT IS AND IS NOT MACHINE-CHECKED, stated precisely because the first
+    version of this comment said "machine-checked" of the whole mapping and an
+    adversarial review measured otherwise: swapping the [PLt]/[PGt] roots in the
+    Rocq definition left the build at exit 0, so the claim covered 2 of 6 tags.
+    Four ordering lemmas plus a pairwise-distinctness lemma were added in
+    response, and that same mutation is now exit 2. CHECKED IN ROCQ: the opcode
+    ROOT for all six tags - [PNe] on floats and on non-floats, [PEq] everywhere,
+    [PLt]/[PLe]/[PGt]/[PGe], and that all six roots are pairwise distinct at
+    every type. NOT CHECKED IN ROCQ: the width suffix. See below.
 
     [root] must stay a transcription, not a second opinion: if it ever disagrees
     with [ptx_cmp_mnemonic] the fix is to correct whichever one is wrong.
-    [suffix] mirrors a different thing - the emitter's width rule (the
-    [let ty = ...] beside the [setp] emission in Sarek_ir_ptx_expr.ml), which
-    the Rocq model deliberately does not cover because it is a register-naming
-    detail of this backend and not part of the comparison's semantics. *)
+    NOTHING ENFORCES THAT TODAY - the transcription is unbound in both
+    directions, and backlog-46 removed exactly this shape for the layout model
+    on the grounds that "the transcription can no longer drift, because there is
+    no transcription". The route exists (extraction/LayoutExtract.v +
+    canonicalize-extraction.py + the diff gate in check-formal-proofs.sh); a
+    MnemonicExtract.v would be its equivalent here. Recorded, not done.
+
+    [suffix] mirrors the emitter's width rule (the [let ty = ...] beside the
+    [setp] emission in Sarek_ir_ptx_expr.ml). An earlier version of this comment
+    called that a deliberate scope choice - "a register-naming detail, not part
+    of the comparison's semantics" - and that was WRONG for four of the six
+    tags: [setp.lt.s32] and [setp.lt.u32] are different comparisons, and the
+    emitter's own comment forty lines away says so ("sign matters for
+    Lt/Le/Gt/Ge; for Eq/Ne it is irrelevant but harmless"). It is a model
+    LIMITATION, not a choice: Rocq's [ptx_type] has no signed variants at all
+    ([PTX_U32|PTX_U64|PTX_F32|PTX_F64|PTX_Pred]), so signedness is not yet
+    expressible there. The suffix half of every marker below is therefore
+    checked against the EMITTER by this test, and by nothing formal. *)
 let test_cmp_mnemonic_table () =
   (* Transcription of CodegenPtx.PtxTypes.ptx_cmp_mnemonic (formal/codegen-ptx,
      theories/PtxTypes.v) - the opcode root, which IS comparison semantics. *)

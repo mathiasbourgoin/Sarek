@@ -7,7 +7,7 @@
   "rocq_version": "9.1.1",
   "counts": {
     "modules": 6,
-    "theorems": 83,
+    "theorems": 88,
     "definitions": 62,
     "inductives": 18,
     "records": 8,
@@ -145,8 +145,13 @@
         "agpu_eval_ptx_tidx",
         "ptx_cmp_eq_ordered_everywhere",
         "ptx_cmp_float_eq_ne_differ",
+        "ptx_cmp_ge_is_ge",
+        "ptx_cmp_gt_is_gt",
+        "ptx_cmp_le_is_le",
+        "ptx_cmp_lt_is_lt",
         "ptx_cmp_ne_ordered_on_non_floats",
         "ptx_cmp_ne_unordered_on_floats",
+        "ptx_cmp_roots_pairwise_distinct",
         "ptx_reg_type_of_array",
         "ptx_reg_type_of_bool",
         "ptx_reg_type_of_float32",
@@ -162,7 +167,7 @@
         "definitions": 7,
         "inductives": 6,
         "records": 0,
-        "theorems": 20
+        "theorems": 25
       }
     }
   },

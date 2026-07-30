@@ -156,6 +156,50 @@ Proof.
   intros t Hf; destruct t; simpl in *; try discriminate Hf; discriminate.
 Qed.
 
+(** THE FOUR ORDERINGS. Added after an adversarial review measured that the
+    development pinned only [PNe] and [PEq]: swapping the [PLt]/[PGt] roots in
+    the definition left `make theories/PtxTypes.vo` at exit 0, so the mapping
+    was called "machine-checked" while four of its six tags were unconstrained.
+    A permutation of the orderings passed Rocq, passed the OCaml table (an
+    independent transcription) and passed the artefact test.
+
+    Each is stated as an equation on the mnemonic rather than folded into one
+    lemma, so a mutation reports WHICH tag drifted instead of a single opaque
+    unification failure. They hold at every type: unlike [PNe], the orderings
+    take the same root on floats and integers — ordered [lt]/[le]/[gt]/[ge] is
+    false on NaN, which is exactly what C's [<], [<=], [>], [>=] do, so no
+    unordered variant is wanted on either side. *)
+Lemma ptx_cmp_lt_is_lt : forall t, ptx_cmp_mnemonic PLt t = "lt".
+Proof. intros t; destruct t; reflexivity. Qed.
+
+Lemma ptx_cmp_le_is_le : forall t, ptx_cmp_mnemonic PLe t = "le".
+Proof. intros t; destruct t; reflexivity. Qed.
+
+Lemma ptx_cmp_gt_is_gt : forall t, ptx_cmp_mnemonic PGt t = "gt".
+Proof. intros t; destruct t; reflexivity. Qed.
+
+Lemma ptx_cmp_ge_is_ge : forall t, ptx_cmp_mnemonic PGe t = "ge".
+Proof. intros t; destruct t; reflexivity. Qed.
+
+(** The six roots are PAIRWISE DISTINCT at every type. Without this, the four
+    equations above still permit a definition that collapses two tags onto one
+    root — each equation would fail, but only the ones whose root moved. This
+    states the property the artefact test relies on (all 24 markers distinct)
+    inside the model that is supposed to justify it. *)
+Lemma ptx_cmp_roots_pairwise_distinct :
+  forall t,
+    ptx_cmp_mnemonic PEq t <> ptx_cmp_mnemonic PLt t /\
+    ptx_cmp_mnemonic PEq t <> ptx_cmp_mnemonic PLe t /\
+    ptx_cmp_mnemonic PEq t <> ptx_cmp_mnemonic PGt t /\
+    ptx_cmp_mnemonic PEq t <> ptx_cmp_mnemonic PGe t /\
+    ptx_cmp_mnemonic PLt t <> ptx_cmp_mnemonic PLe t /\
+    ptx_cmp_mnemonic PLt t <> ptx_cmp_mnemonic PGt t /\
+    ptx_cmp_mnemonic PLt t <> ptx_cmp_mnemonic PGe t /\
+    ptx_cmp_mnemonic PLe t <> ptx_cmp_mnemonic PGt t /\
+    ptx_cmp_mnemonic PLe t <> ptx_cmp_mnemonic PGe t /\
+    ptx_cmp_mnemonic PGt t <> ptx_cmp_mnemonic PGe t.
+Proof. intros t; destruct t; repeat split; discriminate. Qed.
+
 (** Math intrinsic tags (unary, operating on a specific element type).
  *  f32 and f64 variants are kept separate so that the evaluation function
  *  is type-unambiguous and [eval_ir_ptx_eq] can be proved without a typing
