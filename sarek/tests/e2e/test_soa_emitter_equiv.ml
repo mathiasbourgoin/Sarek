@@ -849,7 +849,7 @@ let check_transparent dev n =
    or a stale-input result could coincide with a correct one. Round 1 doubles
    y = i+1; round 2 starts from y = 1000-i, so a stale second round yields
    4*(i+1) and a correct one 2*(1000-i) — never equal for i in range. *)
-let check_relaunch dev n =
+let check_relaunch dev n ~writer_name ~write ~y_expected ~stale_note =
   let threads = min 128 n in
   let block = dims threads and grid = dims ((n + threads - 1) / threads) in
   let sv = Soa_vector.create_transparent point3d_custom n in
@@ -864,11 +864,13 @@ let check_relaunch dev n =
       () ;
     Transfer.flush dev
   in
-  let fill y_of =
-    for i = 0 to n - 1 do
-      Vector.set sv i {x = float_of_int i; y = y_of i; z = float_of_int (n - i)}
-    done
-  in
+  (* The WRITER is a parameter, because the Stale_CPU write-loss is a property of
+     each host writer separately and not of the SoA path (backlog-190). Vector.set
+     was fixed first; unsafe_set carried the identical arm and fill's was a `| _
+     -> ()` catch-all, wider still. One case per writer, so a fix to one cannot
+     make the others look covered -- which is exactly how the class survived the
+     first fix. *)
+  let fill y_of = write sv n y_of in
   (* Round 1 — passes with or without the fix; it is here to establish the
      post-launch leaf state that the bug depends on. *)
   fill (fun i -> float_of_int (i + 1)) ;
@@ -880,7 +882,7 @@ let check_relaunch dev n =
   launch () ;
   let ok = ref true in
   for i = 0 to n - 1 do
-    let want = float_of_int (1000 - i) *. 2.0 in
+    let want = y_expected i in
     let got = (Vector.get sv i).y in
     if Float.abs (got -. want) > 1e-3 then begin
       if !ok then
@@ -889,13 +891,13 @@ let check_relaunch dev n =
           i
           got
           want
-          (float_of_int (i + 1) *. 4.0) ;
+          (stale_note i) ;
       ok := false
     end
   done ;
   Printf.printf
     "  %-56s %s\n%!"
-    "second launch sees the second host write"
+    (Printf.sprintf "second launch sees the second host write (%s)" writer_name)
     (if !ok then "OK" else "FAILED") ;
   !ok
 
@@ -1139,7 +1141,56 @@ let () =
         (* H5 (backlog-181): relaunch on the SAME vector. PTX-gated for the same
            reason as the case above — `v.(i).f <- e` is blocked on the two CPU
            backends until backlog-172 lands. *)
-        if not (check_relaunch dev n) then ok := false
+        (* One case per host writer (backlog-190). Vector.set was fixed with H5;
+           unsafe_set carried the identical Stale_CPU arm and fill's was a wider
+           catch-all. Separate cases so a fix to one cannot make the others read
+           as covered. kernel_set is deliberately absent: it is documented to skip
+           location handling entirely, because a per-element update would race
+           across the threads it exists to serve. *)
+        List.iter
+          (fun (writer_name, write, y_expected, stale_note) ->
+            if
+              not
+                (check_relaunch
+                   dev
+                   n
+                   ~writer_name
+                   ~write
+                   ~y_expected
+                   ~stale_note)
+            then ok := false)
+          [
+            ( "Vector.set",
+              (fun sv n y_of ->
+                for i = 0 to n - 1 do
+                  Vector.set
+                    sv
+                    i
+                    {x = float_of_int i; y = y_of i; z = float_of_int (n - i)}
+                done),
+              (fun i -> float_of_int (1000 - i) *. 2.0),
+              fun i -> float_of_int (i + 1) *. 4.0 );
+            ( "Vector.unsafe_set",
+              (fun sv n y_of ->
+                for i = 0 to n - 1 do
+                  Vector.unsafe_set
+                    sv
+                    i
+                    {x = float_of_int i; y = y_of i; z = float_of_int (n - i)}
+                done),
+              (fun i -> float_of_int (1000 - i) *. 2.0),
+              fun i -> float_of_int (i + 1) *. 4.0 );
+            (* fill writes ONE value to every element, so both the expectation
+               and the stale value are uniform. It takes y_of 0: round 1 fills
+               y=1 which the kernel doubles to 2; round 2 fills y=1000, doubled
+               to 2000. A stale round 2 would re-double round 1's result to 4 --
+               far from 2000, so the two cannot be confused. *)
+            ( "Vector.fill",
+              (fun sv n y_of ->
+                Vector.fill sv {x = 0.0; y = y_of 0; z = float_of_int n}),
+              (fun _ -> 2000.0),
+              fun _ -> 4.0 );
+          ]
       end
       else
         Printf.printf
