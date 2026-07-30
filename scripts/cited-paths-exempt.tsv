@@ -1,0 +1,9 @@
+# Paths that are path-shaped in a comment and legitimately NOT in this repo.
+# Format: <path><TAB><reason>. A row without a reason is exit 2, not a pass --
+# an exemption whose justification is missing is indistinguishable from a typo.
+#
+# This channel exists because the gate otherwise has no remedy: a comment such
+# as "Mirrors OCaml stdlib typing/typecore.ml behaviour" is correct, useful and
+# unfixable, and every sibling gate in this repo has an escape hatch.
+typing/typecore.ml	OCaml compiler source, referenced for behavioural parity
+cuda/ptx-isa.md	NVIDIA PTX ISA documentation, external
