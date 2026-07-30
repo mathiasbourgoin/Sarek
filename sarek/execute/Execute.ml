@@ -341,19 +341,35 @@ let transfer_vectors_to_device ?(soa_abi = false) (args : vector_arg list)
                    [Stale_GPU] assert the host copy is the newer one, and on a
                    leaf-live vector [Stale_GPU] is reachable through the public
                    API: a transparent launch leaves [Stale_CPU dev], and a host
-                   [Vector.set]/[unsafe_set]/[fill] then gathers, writes the
-                   element and records [Stale_GPU dev] (Vector.ml). An
+                   write then records [Stale_GPU dev] (Vector.ml) — [Vector.set]
+                   and [unsafe_set] gather the leaves first through
+                   [ensure_cpu_sync], while [Vector.fill] deliberately does not
+                   and moves [Stale_CPU dev] straight to [Stale_GPU dev]; the
+                   location this arm reads is the same either way. An
                    unconditional gather replays the leaves OVER that write and it
                    vanishes with no diagnostic — the backlog-181/190 class on the
                    packed-after-SoA path. Pinned by
                    [check_host_write_survives_packed].
+
+                   The case analysis is over LOCATIONS, so it inherits whatever
+                   the location bookkeeping is worth: with auto-sync disabled
+                   ([Vector.set_auto_sync] or [Transfer.disable_auto]) a host
+                   write after a transparent launch leaves the vector at
+                   [Stale_CPU dev] with the write pending, and the gather arm
+                   below then replays the leaves over it. That is the pre-existing
+                   auto-sync-off hazard [Vector.ml] documents, not something this
+                   condition can decide, and it is named here rather than left to
+                   be read as covered.
                  - deciding it HERE rather than delegating to [Transfer.to_cpu]'s
                    [needs_transfer] is not a bug fix, and no test distinguishes the
-                   two. An unforced [to_cpu] also skips on [Both], and whether that
-                   is safe depends on the three functions that record [Both] doing
-                   so only after a real read-back — which they do, so the host
-                   there already holds the gathered result and the gather this arm
-                   performs is redundant today. The point is that clearing the flag
+                   two. An unforced [to_cpu] also skips on [Both]. Whether that is
+                   safe depends on the sites that RECORD [Both] on a leaf-live
+                   vector — [to_cpu] and [sync] after a real read-back, and
+                   [free_buffer] after its drain — so the host copy there already
+                   holds the gathered result and the gather this arm performs is
+                   redundant today. ([Transfer.to_device] also records [Both], on
+                   an upload rather than a read-back, and that path clears this
+                   flag itself.) The point is that clearing the flag
                    on the next line makes the SoA arm of
                    [Transfer.read_back_to_host] unreachable until the next
                    transparent launch sets the flag again, so what may be skipped
