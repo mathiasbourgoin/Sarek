@@ -691,27 +691,37 @@ exception Record_type_cycle of string list
 
 (** Mangled names of every record type mentioned anywhere inside [ty]'s type
     tree, including through arrays, vectors, variant payloads and the fields of
-    a nested record. [seen] stops a cyclic {!Sarek_ir_types.elttype} value from
-    looping — the walk is over a graph, not a guaranteed-finite tree. *)
+    a nested record. The walk is over a graph, not a guaranteed-finite tree, so
+    it terminates on a cyclic {!Sarek_ir_types.elttype} value.
+
+    [seen] is keyed on PHYSICAL IDENTITY of the node, not on a record name. A
+    name-keyed guard only closes cycles that pass through a [TRecord], and a
+    cyclic value need not: [let rec t = TVec t] and
+    [let rec t = TVariant ("c", [("C", [t])])] are both accepted by OCaml's
+    recursive-value rule and both close without a [TRecord] on the cycle. Keyed
+    on names, those two shapes looped forever. Skipping a physically re-visited
+    node cannot lose a name — [acc] already holds everything reachable from it —
+    so the general guard does not narrow the result. *)
 let referenced_record_names (ty : Sarek_ir_types.elttype) : string list =
   let open Sarek_ir_types in
   let acc = ref [] in
-  let rec go seen ty =
-    match ty with
-    | TRecord (name, fields) ->
-        let mangled = mangle_name name in
-        if not (List.mem mangled seen) then begin
-          acc := mangled :: !acc ;
-          List.iter (fun (_, fty) -> go (mangled :: seen) fty) fields
-        end
-    | TVariant (_, constrs) ->
-        List.iter (fun (_, args) -> List.iter (go seen) args) constrs
-    | TArray (elt, _) | TVec elt -> go seen elt
-    | TInt32 | TInt64 | TFloat16 | TFloat32 | TFloat64 | TUint8 | TBool | TUnit
-      ->
-        ()
+  let seen = ref [] in
+  let rec go ty =
+    if not (List.exists (fun s -> s == ty) !seen) then begin
+      seen := ty :: !seen ;
+      match ty with
+      | TRecord (name, fields) ->
+          acc := mangle_name name :: !acc ;
+          List.iter (fun (_, fty) -> go fty) fields
+      | TVariant (_, constrs) ->
+          List.iter (fun (_, args) -> List.iter go args) constrs
+      | TArray (elt, _) | TVec elt -> go elt
+      | TInt32 | TInt64 | TFloat16 | TFloat32 | TFloat64 | TUint8 | TBool
+      | TUnit ->
+          ()
+    end
   in
-  go [] ty ;
+  go ty ;
   List.sort_uniq String.compare !acc
 
 (** Order record declarations so that a struct is emitted only after every
@@ -777,8 +787,19 @@ let sort_record_types_by_dependency
 
 (** Emit C-family record type declarations: one [typedef struct { ... } name;]
     per record, one field per line. Shared by CUDA/OpenCL/Metal; only
-    [type_of_elttype] differs. Declarations are emitted in dependency order (see
-    {!sort_record_types_by_dependency}). *)
+    [type_of_elttype] differs. Records are emitted in dependency order among
+    THEMSELVES (see {!sort_record_types_by_dependency}).
+
+    Records only, and that boundary is not yet where it should be. The C-family
+    callers run {!gen_variant_def} BEFORE this function, so a variant with a
+    record payload emits [<Record> <C>_v;] ahead of that record's typedef and
+    the kernel still fails to compile — measured on OpenCL (radeonsi):
+    [error: unknown type name 'Probe_pt'], reachable from ordinary
+    [[@@sarek.type]] source. GLSL/WGSL emit records BEFORE variants and so have
+    the mirror half of the same gap: a record with a variant-typed field. Both
+    halves are the same defect class as backlog-203 and neither is fixed here;
+    ordering records against variants needs one interleaved loop per backend
+    family. *)
 let gen_record_typedefs ~type_of_elttype buf types =
   List.iter
     (fun (name, fields) ->
