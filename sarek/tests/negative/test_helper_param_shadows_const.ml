@@ -27,13 +27,24 @@
    the guard emitted the body-local wording for a parameter collision, which was
    false twice over: it called the parameter "a local", and it advised "pass the
    constant in as a parameter", which is precisely what collides. Asserting only
-   "some error" would have kept both. *)
+   "some error" would have kept both.
 
-open Spoc
-open Sarek
+   DELIBERATELY SELF-CONTAINED. The sibling negative tests here open [Spoc] and
+   reach for [Kirc], neither of which is in their library dependencies — they
+   only get away with it because the refusal fires before those names are
+   resolved. That makes the guard-stopped-firing case report "Unbound module
+   Spoc" instead of the kernel having compiled, which is a real error in place of
+   the informative one. Measured while proving this case red: with the guard
+   reverted, that is exactly what the first draft of this file printed. So this
+   file depends only on what it uses, and if the refusal ever stops firing it
+   compiles and reaches the [print_endline] below. *)
+
+type float32 = float
+
+type ('a, 'b) vector = ('a, 'b) Spoc_core.Vector.t
 
 let () =
-  let bad_kernel =
+  let _bad_kernel =
     [%kernel
       let open Std in
       let (scale : float32) = 100.0 in
@@ -43,6 +54,4 @@ let () =
         let t = thread_idx_x + (block_idx_x * block_dim_x) in
         if t < n then out.(t) <- shifted src.(t)]
   in
-  let _, kirc = bad_kernel in
-  Kirc.print_ast kirc.Kirc.body ;
   print_endline "This should not print - test should have failed to compile"
