@@ -32,3 +32,20 @@ Spoc/Devices.mli
 # appear here because they are gitignored.
 formal/codegen-ptx/extraction/sarek_ptx_layout_model.ml
 formal/codegen-ptx/extraction/sarek_ptx_layout_model.mli
+
+# Extract.v's five outputs (untracked since backlog-188, see .gitignore). They
+# are regenerated raw by every proof run, so ocamlformat wanting to reformat
+# them made `dune build @fmt` red after each `make -f CoqMakefile` — friction
+# with no upside, since nothing compiles or diffs these files. Listing them
+# here is what actually ends the churn; untracking them alone did not, because
+# dune still sees them on disk.
+formal/codegen-ptx/AGpuSemantics.ml
+formal/codegen-ptx/AGpuSemantics.mli
+formal/codegen-ptx/PtxExprSpec.ml
+formal/codegen-ptx/PtxExprSpec.mli
+formal/codegen-ptx/PtxKernelSpec.ml
+formal/codegen-ptx/PtxKernelSpec.mli
+formal/codegen-ptx/PtxStmtSpec.ml
+formal/codegen-ptx/PtxStmtSpec.mli
+formal/codegen-ptx/PtxTypes.ml
+formal/codegen-ptx/PtxTypes.mli
