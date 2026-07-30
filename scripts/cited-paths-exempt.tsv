@@ -86,3 +86,4 @@ specs/ptx-dshared-formal.md::theories/PtxKernelSpec.v	command to run WITH AN EXP
 formal/convergence-safety/PLAN.md::fbfb3656	tick log quoting the pre-rebase sha, now annotated in place as being in zero remote branches, with the reachable 21d67ec9 beside it
 formal/convergence-safety/report/WORKFLOW_FEEDBACK.md::0fdf1107	a coqchk .vo DIGEST, not a commit -- the sentence compares two artifact hashes
 formal/convergence-safety/report/WORKFLOW_FEEDBACK.md::41e0d70a	a coqchk .vo DIGEST, not a commit -- the canonical hash the one above failed to match
+kb/sarek/ppx/parser.md::lib/ppxlib/ast/ast.ml	the Parsetree definition the enumeration was walked from lives in the INSTALLED ppxlib (5.2.1), not in this repository; the sentence names it so a reader can open the same file in their own switch
