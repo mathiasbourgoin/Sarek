@@ -294,7 +294,8 @@ Pasted from a shell: `/home/u/repo/sub/Gone.ml`, and the skill doc is
 '
 
 # gh-pages is a Jekyll site: [backends](backends.html) addresses the page built
-# from backends.md. Thirteen such links exist here and every one is correct.
+# from backends.md. Seventeen link targets here resolve only through that rule
+# (measured by deleting it and counting the findings) and every one is correct.
 check "green: a .html link resolves via its markdown source" 0 "OK" \
   "$NOOP_ML" '# Doc
 
@@ -359,6 +360,30 @@ mkshafixture() {
   printf '%s %s %s' "$d" "$ok" "$orphan"
 }
 
+# AN UNUSABLE FIXTURE IS NOT INERT -- IT WRITES INTO THE HARNESS'S OWN REPO.
+# `git -C "" add -A` does not fail: an empty -C argument leaves git in the
+# directory it was started from, so a dead `$d` retargets every git call in the
+# block at the repository the harness is RUNNING IN. Measured, on this file:
+# a fixture whose `br` came back empty made `mkshafixture` return 1, the two
+# guards below counted a failure and FELL THROUGH, and the block's
+# `git -C "$d" add -A && commit -m doc && update-ref refs/remotes/origin/main HEAD`
+# committed the reviewer's working tree onto the branch under review and
+# rewrote refs/remotes/origin/main -- a ref shared by every worktree of that
+# clone. Six junk commits, and the mutated harness came back committed, so the
+# next run was inert too. Counting a failure is therefore NOT enough: the guard
+# must ABORT before anything dereferences `$d`.
+#
+# $1 = repo path, $2.. = shas that must each be exactly 8 hex chars.
+usable_fixture() {
+  local d="$1" s
+  shift
+  [ -n "$d" ] && [ -d "$d/.git" ] || return 1
+  for s in "$@"; do
+    [ ${#s} -eq 8 ] || return 1
+  done
+  return 0
+}
+
 # $1 = case name, $2 = expected exit, $3 = expected message substring,
 # $4 = docs/Doc.md body with %REACHABLE% / %ORPHAN% placeholders
 checksha() {
@@ -371,7 +396,7 @@ checksha() {
   # then the document cites no sha at all: every case would pass, having checked
   # nothing. That is what happened in CI on the first version of this file, so
   # the builder's output is now asserted rather than assumed.
-  if [ -z "$d" ] || [ ${#ok} -ne 8 ] || [ ${#orphan} -ne 8 ] || [ "$ok" = "$orphan" ]; then
+  if ! usable_fixture "$d" "$ok" "$orphan" || [ "$ok" = "$orphan" ]; then
     echo "FAIL $name: sha fixture is unusable (repo='$d' reachable='$ok' orphan='$orphan')"
     rm -rf "$d"
     fail=$((fail + 1))
@@ -465,42 +490,49 @@ commit 0000000abcdef1
 fx="$(mkshafixture)"
 d="${fx%% *}"
 orphan="$(printf '%s' "$fx" | cut -d" " -f3)"
-[ ${#orphan} -eq 8 ] || {
-  echo "FAIL: sha fixture produced no orphan sha; the two exemption-scope cases" \
-    "below would pass having cited nothing"
+if ! usable_fixture "$d" "$orphan"; then
+  echo "FAIL: sha fixture is unusable (repo='$d' orphan='$orphan'); the two" \
+    "exemption-scope cases below are SKIPPED rather than run against the" \
+    "harness's own repository"
   fail=$((fail + 1))
-}
-printf '# Doc\n\nThe old note cited `%s`, which no clone can resolve.\n' \
-  "$orphan" >"$d/docs/Doc.md"
-printf 'docs/Doc.md::%s\tquoted in order to say it is unreachable\n' \
-  "$orphan" >"$d/scripts/cited-paths-exempt.tsv"
-git -C "$d" add -A >/dev/null 2>&1
-git -C "$d" commit --quiet -m doc >/dev/null 2>&1
-git -C "$d" update-ref refs/remotes/origin/main HEAD >/dev/null 2>&1
-out="$(cd "$d" && bash "$SUBJECT" 2>&1)"
-code=$?
-if [ "$code" = 0 ]; then
-  echo "PASS green: a file-scoped sha exemption is honoured (exit 0)"
-  pass=$((pass + 1))
+  rm -rf "$d"
 else
-  echo "FAIL green: a file-scoped sha exemption is honoured: exit $code, wanted 0"
-  printf '%s\n' "$out" | sed 's/^/      /'
-  fail=$((fail + 1))
-fi
-# ...and the same exemption in the WRONG file does not apply. Without this, a
-# scoped row would be indistinguishable from a bare one.
-printf 'docs/Other.md::%s\tscoped elsewhere on purpose\n' \
-  "$orphan" >"$d/scripts/cited-paths-exempt.tsv"
-out="$(cd "$d" && bash "$SUBJECT" 2>&1)"
-code=$?
-rm -rf "$d"
-if [ "$code" = 1 ]; then
-  echo "PASS red: a sha exemption scoped to another file does not apply (exit 1)"
-  pass=$((pass + 1))
-else
-  echo "FAIL red: a sha exemption scoped to another file does not apply: exit $code, wanted 1"
-  printf '%s\n' "$out" | sed 's/^/      /'
-  fail=$((fail + 1))
+  printf '# Doc\n\nThe old note cited `%s`, which no clone can resolve.\n' \
+    "$orphan" >"$d/docs/Doc.md"
+  printf 'docs/Doc.md::%s\tquoted in order to say it is unreachable\n' \
+    "$orphan" >"$d/scripts/cited-paths-exempt.tsv"
+  git -C "$d" add -A >/dev/null 2>&1
+  git -C "$d" commit --quiet -m doc >/dev/null 2>&1
+  git -C "$d" update-ref refs/remotes/origin/main HEAD >/dev/null 2>&1
+  out="$(cd "$d" && bash "$SUBJECT" 2>&1)"
+  code=$?
+  if [ "$code" = 0 ]; then
+    echo "PASS green: a file-scoped sha exemption is honoured (exit 0)"
+    pass=$((pass + 1))
+  else
+    echo "FAIL green: a file-scoped sha exemption is honoured: exit $code, wanted 0"
+    printf '%s\n' "$out" | sed 's/^/      /'
+    fail=$((fail + 1))
+  fi
+  # ...and the same exemption in the WRONG file does not apply. Without this, a
+  # scoped row would be indistinguishable from a bare one. The MESSAGE is
+  # asserted as well as the code: this case wanted exit 1, and a `cd` into an
+  # unusable fixture also exits 1 without ever running the subject, so the code
+  # alone was satisfied by a dead fixture -- observed passing that way.
+  printf 'docs/Other.md::%s\tscoped elsewhere on purpose\n' \
+    "$orphan" >"$d/scripts/cited-paths-exempt.tsv"
+  out="$(cd "$d" && bash "$SUBJECT" 2>&1)"
+  code=$?
+  rm -rf "$d"
+  if [ "$code" = 1 ] && printf '%s' "$out" | grep -qF "in ZERO remote branches"; then
+    echo "PASS red: a sha exemption scoped to another file does not apply (exit 1)"
+    pass=$((pass + 1))
+  else
+    echo "FAIL red: a sha exemption scoped to another file does not apply:" \
+      "exit $code, wanted 1 reporting ZERO remote branches"
+    printf '%s\n' "$out" | sed 's/^/      /'
+    fail=$((fail + 1))
+  fi
 fi
 
 # --- the way this gate would pass while checking nothing --------------------
@@ -511,27 +543,30 @@ fi
 fx="$(mkshafixture)"
 d="${fx%% *}"
 orphan="$(printf '%s' "$fx" | cut -d" " -f3)"
-[ ${#orphan} -eq 8 ] || {
-  echo "FAIL: sha fixture produced no orphan sha; the shallow-clone case below" \
-    "would pass having cited nothing"
+if ! usable_fixture "$d" "$orphan"; then
+  echo "FAIL: sha fixture is unusable (repo='$d' orphan='$orphan'); the" \
+    "shallow-clone case below is SKIPPED rather than run against the harness's" \
+    "own repository"
   fail=$((fail + 1))
-}
-printf '# Doc\n\nFixed in `%s`.\n' "$orphan" >"$d/docs/Doc.md"
-git -C "$d" add -A >/dev/null 2>&1
-git -C "$d" commit --quiet -m doc >/dev/null 2>&1
-shallow="$(mktemp -d)/clone"
-git clone --quiet --depth 1 "file://$d" "$shallow" >/dev/null 2>&1
-out="$(cd "$shallow" && bash "$SUBJECT" 2>&1)"
-code=$?
-if [ "$code" = 2 ] && printf '%s' "$out" | grep -qF "SHALLOW"; then
-  echo "PASS red: a shallow clone is exit 2, not a pass (exit 2)"
-  pass=$((pass + 1))
+  rm -rf "$d"
 else
-  echo "FAIL red: a shallow clone must be exit 2 with a SHALLOW message: exit $code"
-  printf '%s\n' "$out" | sed 's/^/      /'
-  fail=$((fail + 1))
+  printf '# Doc\n\nFixed in `%s`.\n' "$orphan" >"$d/docs/Doc.md"
+  git -C "$d" add -A >/dev/null 2>&1
+  git -C "$d" commit --quiet -m doc >/dev/null 2>&1
+  shallow="$(mktemp -d)/clone"
+  git clone --quiet --depth 1 "file://$d" "$shallow" >/dev/null 2>&1
+  out="$(cd "$shallow" && bash "$SUBJECT" 2>&1)"
+  code=$?
+  if [ "$code" = 2 ] && printf '%s' "$out" | grep -qF "SHALLOW"; then
+    echo "PASS red: a shallow clone is exit 2, not a pass (exit 2)"
+    pass=$((pass + 1))
+  else
+    echo "FAIL red: a shallow clone must be exit 2 with a SHALLOW message: exit $code"
+    printf '%s\n' "$out" | sed 's/^/      /'
+    fail=$((fail + 1))
+  fi
+  rm -rf "$shallow" "$d"
 fi
-rm -rf "$shallow" "$d"
 
 # The other half of the same hole: a tree with history but NO remote-tracking
 # refs. This is what `actions/checkout` produces at the default fetch-depth on a
@@ -570,6 +605,39 @@ else
   printf '%s\n' "$out" | sed 's/^/      /'
   fail=$((fail + 1))
 fi
+
+# --- the guard that keeps this file out of its own repository ---------------
+# `usable_fixture` is the only thing standing between a dead fixture and
+# `git -C "" commit` on the branch under review. Edited to `return 0` it would
+# be invisible: every case above still passes on a GOOD fixture. So pin both
+# directions -- it must accept a real fixture and refuse each way one can rot.
+metafx="$(mkshafixture)"
+metad="${metafx%% *}"
+metasha="$(printf '%s' "$metafx" | cut -d' ' -f3)"
+if usable_fixture "$metad" "$metasha"; then
+  echo "PASS meta: usable_fixture accepts a real fixture (exit 0)"
+  pass=$((pass + 1))
+else
+  echo "FAIL meta: usable_fixture rejected a REAL fixture (repo='$metad'" \
+    "sha='$metasha') -- every fixture-backed case above is being skipped"
+  fail=$((fail + 1))
+fi
+refuses() { # $1 = what it is, then the argv usable_fixture must reject
+  local what="$1"
+  shift
+  if usable_fixture "$@"; then
+    echo "FAIL meta: usable_fixture ACCEPTED $what -- a dead fixture then runs" \
+      "\`git -C\` against the repository this harness is running in"
+    fail=$((fail + 1))
+  else
+    echo "PASS meta: usable_fixture refuses $what"
+    pass=$((pass + 1))
+  fi
+}
+refuses "an empty repo path" "" abcd1234
+refuses "a directory that is not a git repo" "$(dirname "$(mktemp -u)")" abcd1234
+refuses "an empty sha" "$metad" ""
+rm -rf "$metad"
 
 # --- meta-control: this harness must be able to FAIL ------------------------
 # "All cases passed" is a claim about the subject. A harness that asserted
