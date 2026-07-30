@@ -121,6 +121,12 @@ def comments_only(src):
     depth = 0          # comment nesting depth; 0 = not in a comment
     in_string = False  # inside "..." (only tracked outside comments)
     quoted_close = None  # inside {id|...|id}: the exact closing delimiter
+    # OCaml CHARACTER literals. `Buffer.add_char buf '"'` would otherwise flip
+    # in_string on and never off, blanking every comment for the rest of the
+    # file. Two tracked files already contain that exact token
+    # (sarek/codegen/Sarek_wgsl_abi.ml:53, benchmarks/to_csv.ml), so the gate
+    # was measurably blind over their tails while reporting full coverage.
+    CHAR_LIT = re.compile(r"'(?:\\.|[^'\\])'")
     # OCaml quoted-string literals. 46 files here use them, and they hold raw
     # PTX/CUDA text that contains "(*" and paths -- so an unhandled {| would
     # open a phantom comment and swallow real code into the scan.
@@ -150,6 +156,12 @@ def comments_only(src):
             out.append("\n" if c == "\n" else " ")
             i += 1
             continue
+        if depth == 0 and c == "'":
+            m = CHAR_LIT.match(src, i)
+            if m:
+                out.append(" " * (m.end() - i))
+                i = m.end()
+                continue
         if depth == 0 and c == '"':
             in_string = True
             out.append(" ")
@@ -182,6 +194,29 @@ def comments_only(src):
     return "".join(out)
 
 
+def _unwrap_paths(text):
+    """Join a line broken mid-path, never mid-prose.
+
+    A trailing "-" is only a continuation if the token it ends already contains
+    a "/" -- that is what distinguishes `roster/ptx-limits-campaign/L16-` from
+    the English word `device-`.
+    """
+    out, lines = [], text.split("\n")
+    i = 0
+    while i < len(lines):
+        cur = lines[i]
+        while cur.endswith("-") and i + 1 < len(lines):
+            tok = cur.split()[-1] if cur.split() else ""
+            if "/" not in tok:
+                break
+            nxt = re.sub(r"^\s*\*?\s*", "", lines[i + 1])
+            cur = cur + nxt
+            i += 1
+        out.append(cur)
+        i += 1
+    return "\n".join(out)
+
+
 def resolves(citation, citing_file):
     """A citation resolves from the repo root or any ancestor of its file."""
     if citation in tracked:
@@ -195,21 +230,57 @@ def resolves(citation, citing_file):
         d = os.path.dirname(d)
 
 
+# Exempt paths: things that are path-shaped and legitimately not in this repo
+# (upstream sources, generated trees, external docs). Every sibling gate has
+# such a channel; without one this gate hard-fails a comment like
+# "Mirrors OCaml stdlib typing/typecore.ml behaviour" with no remedy but to
+# reword until no path-shaped token survives.
+EXEMPT_FILE = "scripts/cited-paths-exempt.tsv"
+exempt = set()
+try:
+    for line in open(EXEMPT_FILE, encoding="utf-8"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 2 or not parts[1].strip():
+            print(
+                f"check-cited-paths-exist: {EXEMPT_FILE}: every exemption needs a "
+                f"TAB-separated reason -- {line!r}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        exempt.add(parts[0].strip())
+except FileNotFoundError:
+    pass
+
 dangling = []
 for f in sources:
     try:
         raw = open(f, encoding="utf-8", errors="replace").read()
-    except OSError:
-        continue
+    except OSError as e:
+        # NOT `continue`: skipping a source it could not read and then printing
+        # "every path ... resolves" is a vacuous pass over a tree it did not
+        # examine. Refuse instead.
+        print(f"check-cited-paths-exist: cannot read {f}: {e}", file=sys.stderr)
+        sys.exit(2)
     # Comments only, THEN join a comment line broken mid-token: a trailing "-"
     # followed by the next line's comment prefix is one path, not two. Line
     # numbers are reported from the ORIGINAL text, so a finding still points at
     # a real line.
-    text = re.sub(r"-\n\s*\*?\s*", "-", comments_only(raw))
+    # Join a citation ocamlformat broke mid-path -- but ONLY when the trailing
+    # token already looks like a path, i.e. contains a "/". Without that guard
+    # the rule joins any hyphenated prose: "The lookup is device-\n * specific/
+    # notes.md aware" fabricated a finding for `device-specific/notes.md`, a
+    # path nobody wrote, and reported it at line "?" because it matches no
+    # single line. ocamlformat wraps hyphenated prose constantly.
+    text = _unwrap_paths(comments_only(raw))
     for c in sorted(set(CITATION.findall(text))):
         if "://" in c or "github.com/" in c:
             continue
         if PLACEHOLDER.search(c) or c.startswith("..."):
+            continue
+        if c in exempt:
             continue
         if resolves(c, f):
             continue
@@ -231,8 +302,9 @@ for f, lineno, c in dangling:
 if dangling:
     print()
     print(f"{len(dangling)} source comment(s) point at a path no reader can open.")
-    print("Either fix the path, or say in the comment that the document is not")
-    print("part of this repository so the pointer is not a dead end.")
+    print("Fix the path, reword the comment so it is not a bare path, or add the")
+    print(f"path to {EXEMPT_FILE} with a TAB and a reason if it legitimately")
+    print("lives outside this repository.")
     sys.exit(1)
 
 print(

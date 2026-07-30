@@ -37,7 +37,7 @@ mkfixture() {
     git init --quiet .
     git config user.email t@example.invalid
     git config user.name t
-    mkdir -p sub
+    mkdir -p sub scripts
     printf '%s' "$body" >sub/Thing.ml
     printf 'let real = 1\n' >sub/Existing.ml
     git add -A
@@ -51,6 +51,7 @@ mkfixture() {
 check() {
   local name="$1" want="$2" msg="$3" body="$4" d out code
   d="$(mkfixture "$body")"
+  cp "$(dirname "$0")/cited-paths-exempt.tsv" "$d/scripts/" 2>/dev/null || true
   out="$(cd "$d" && bash "$SUBJECT" 2>&1)"
   code=$?
   rm -rf "$d"
@@ -143,6 +144,38 @@ let x = 1
 # --- documentation placeholders are not citations --------------------------
 check "green: path/to/ placeholder" 0 "OK" \
   '(* Usage: put it at path/to/Thing.ml and go. *)
+let x = 1
+'
+
+# --- the char-literal hole (found by adversarial review) --------------------
+# `Buffer.add_char buf '"'` flipped in_string on and never off, blanking every
+# comment for the REST OF THE FILE. Two tracked files already contain that exact
+# token, so the gate was measurably blind over their tails while reporting full
+# coverage. The citation below sits after one.
+check "red: a citation after a '\"' char literal is still found" 1 "is not a tracked file" \
+  "let c = '\"'
+(* See roster/gone/note.md for the design. *)
+let x = 1
+"
+
+# --- the hyphen-unwrap must not FABRICATE a citation from prose -------------
+# `re.sub(r"-\n\s*\*?\s*", "-", …)` joined ANY comment line ending in "-", so
+# "The lookup is device-\n * specific/…" invented `device-specific/notes.md`,
+# a path nobody wrote, reported at line "?" because it matches no single line.
+# The unwrap now only joins when the trailing token already contains a "/".
+check "red: prose join no longer invents device-specific/..." 1 "specific/notes.md" \
+  '(* The lookup is device-
+ * specific/notes.md aware. *)
+let x = 1
+'
+
+# --- exemption channel ------------------------------------------------------
+# Without one the gate hard-fails a correct, useful, unfixable comment. Every
+# sibling gate has an escape hatch; this one had none, so its own failure text
+# told users to "say the document is not part of this repository" -- a marker it
+# did not honour.
+check "green: an exempted path is not a finding" 0 "OK" \
+  '(* Mirrors OCaml stdlib typing/typecore.ml behaviour. *)
 let x = 1
 '
 
