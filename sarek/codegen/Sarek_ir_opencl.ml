@@ -1130,14 +1130,18 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   current_variants := k.kern_variants ;
   let buf = Buffer.create large_buffer_size in
 
-  (* Variant type definitions first (may be needed by records) *)
-  List.iter (gen_variant_def buf) k.kern_variants ;
-
-  (* Record type definitions *)
-  Sarek_ir_codegen.gen_record_typedefs
-    ~type_of_elttype:opencl_type_of_elttype
+  (* Record and variant type definitions, ordered TOGETHER in one pass: a
+     variant with a record payload and a record with a variant-typed field are
+     both reachable, and two per-kind loops order neither (backlog-211). *)
+  Sarek_ir_codegen.gen_type_decls
+    ~emit_record:
+      (Sarek_ir_codegen.gen_record_typedef
+         ~type_of_elttype:opencl_type_of_elttype)
+    ~emit_variant:gen_variant_def
     buf
-    types ;
+    (Sarek_ir_codegen.decls_variants_first
+       ~records:types
+       ~variants:k.kern_variants) ;
 
   (* Generate helper functions before kernel *)
   gen_helpers buf k.kern_funcs ;

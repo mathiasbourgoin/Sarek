@@ -921,14 +921,18 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   (* Header *)
   Buffer.add_string buf (cuda_header_for k) ;
 
-  (* Variant type definitions first (may be needed by records) *)
-  List.iter (gen_variant_def buf) k.kern_variants ;
-
-  (* Record type definitions *)
-  Sarek_ir_codegen.gen_record_typedefs
-    ~type_of_elttype:cuda_type_of_elttype
+  (* Record and variant type definitions, ordered TOGETHER in one pass: a
+     variant with a record payload and a record with a variant-typed field are
+     both reachable, and two per-kind loops order neither (backlog-211). *)
+  Sarek_ir_codegen.gen_type_decls
+    ~emit_record:
+      (Sarek_ir_codegen.gen_record_typedef
+         ~type_of_elttype:cuda_type_of_elttype)
+    ~emit_variant:gen_variant_def
     buf
-    types ;
+    (Sarek_ir_codegen.decls_variants_first
+       ~records:types
+       ~variants:k.kern_variants) ;
 
   (* Generate helper functions before kernel *)
   List.iter (gen_helper_func buf) k.kern_funcs ;

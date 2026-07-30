@@ -132,14 +132,39 @@
   alignment (measured: both spellings stop at *unknown alignment for field
   type*), and is kept as a backstop for hand-built IR. Interpreter and Native
   were never affected — they carry values, not struct declarations. This orders
-  records against records only. Records are NOT ordered against variants, and
-  both directions of that gap are still live: on the C family, which emits
-  variants first, a variant with a record payload names a struct declared later
-  (measured on OpenCL, `error: unknown type name 'Probe_pt'`); on GLSL/WGSL,
-  which emit records first, the mirror case is a record with a variant-typed
-  field (measured on Vulkan/RADV, `syntax error, unexpected IDENTIFIER`). Each
-  half is reachable from ordinary `[@@sarek.type]` source and each passes on the
-  family the other fails on.
+  records against records only; the two cross-kind halves it left live are the
+  entry below, which also renamed the two identifiers named here to
+  `sort_type_decls_by_dependency` and `Type_decl_cycle`.
+- A dependency edge CROSSING between a record declaration and a variant
+  declaration was ordered by nothing, because each backend family sorted one
+  kind inside its own emission loop and the families disagreed on which loop ran
+  first. Both halves are reachable from ordinary `[@@sarek.type]` source and both
+  were measured on an RX 7900 XTX / Ryzen 7950X host, two OpenCL devices and two
+  Vulkan devices. A variant with a RECORD payload is red on both OpenCL devices
+  (`error: unknown type name 'Test_record_variant_decl_order_probe_pt'` at the
+  union member) and green on both Vulkan devices; a record with a VARIANT-typed
+  field is the exact inverse — red on both Vulkan devices
+  (`syntax error, unexpected IDENTIFIER` at the field line) and green on both
+  OpenCL devices. Each family being green on the shape the other fails on is why
+  a reproducer built on either half alone reports the ordering fixed. Reaching
+  either half needs a RUNTIME-SELECTED constructor: static tag erasure (L14
+  S1/S2) reduces a variant-typed local or record field written by a literal
+  constructor application, and an erased variant never reaches `kern_variants`,
+  so a literal-constructor reproducer is green on every device while covering
+  nothing. All five generators that declare struct types (CUDA — also HIP —
+  OpenCL, Metal, GLSL, WGSL) now emit records and variants from ONE interleaved
+  topological pass over a single declaration list,
+  `Sarek_ir_codegen.gen_type_decls`, instead of two per-kind loops. The
+  tie-break is still the incoming index and each family passes its declarations
+  in the order its two loops used to run, so an edge-free kernel's emitted source
+  is byte-identical and no committed golden moved. `Record_type_cycle` is renamed
+  `Type_decl_cycle` because it now reports a cycle with either kind on it, and
+  `referenced_record_names` becomes `referenced_type_names` because it now
+  reports variant names too; its visited set stays keyed on PHYSICAL node
+  identity, so a cyclic `elttype` value still terminates whatever closes the
+  cycle — including `let rec t = TVec t`, which has neither a record nor a
+  variant on it. Interpreter, Native and PTX were never affected: the first two
+  carry values, and the PTX emitter declares no struct types.
 
 - `v.(i).f <- e` — an in-place record-field store on a vector element — did
   something different on each CPU backend, while working on CUDA/PTX. The

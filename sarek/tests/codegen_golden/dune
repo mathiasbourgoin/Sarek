@@ -59,6 +59,19 @@
  (instrumentation
   (backend bisect_ppx)))
 
+; Cross-kind declaration order (backlog-211): a variant with a record payload
+; and a record with a variant-typed field, swept over ALL FIVE generators that
+; emit struct declarations. Device-independent on purpose — the e2e reproducer
+; exits 0 with no device, and this host has no NVIDIA/HIP/Metal hardware and no
+; WGSL device at all.
+
+(test
+ (name test_decl_order_all_backends)
+ (modules test_decl_order_all_backends)
+ (libraries sarek_ir sarek_codegen alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
+
 (test
  (name test_glsl_intrinsic_fallback)
  (modules test_glsl_intrinsic_fallback)
