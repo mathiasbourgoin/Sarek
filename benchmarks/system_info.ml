@@ -45,8 +45,34 @@ let read_hostname_for_rejection_check () =
     String.trim hostname
   with _ -> "unknown"
 
-(* Vendor of the first device that is not just the CPU-as-OpenCL-device.
-   Derived from names we publish anyway, so it discloses nothing new. *)
+(* Vendor token for the machine label. Derived from names we publish anyway, so
+   it discloses nothing new.
+
+   This label is load-bearing beyond cosmetics: it is the dedup key AND the
+   leading token of every result FILENAME (see [Output.make_filename]) -- the
+   slot the hostname used to occupy (backlog-168). So it has to be STABLE. Two
+   runs on one machine must derive the same label, or the dedup key splits and
+   the same box shows up as several machines.
+
+   Two things it must therefore not do, both fixed here:
+
+   1. It must not let a CPU device speak for the machine. An OpenCL platform
+      commonly exposes the CPU as a device, and its name is the CPU brand
+      string -- which contains a vendor token ("AMD Ryzen ...", "Intel(R)
+      Core(TM) ..."). Excluding it by [name = cpu_model] does not work: the
+      OpenCL name and /proc/cpuinfo's "model name" differ by whitespace runs
+      and trailing text often enough that the CPU survived the filter and
+      outvoted a real discrete GPU. Excluded now by BACKEND (Native and
+      Interpreter are CPU by construction) and by normalized containment in
+      either direction (which absorbs the whitespace/suffix drift).
+
+   2. It must not depend on device enumeration ORDER. It used to take the first
+      vendor-matching device in [devices], so a discrete + integrated box (or a
+      multi-GPU one) derived a different label whenever the driver enumerated
+      differently between runs. The vendor is now chosen from the whole set of
+      surviving matches by a FIXED priority, so the result is a function of the
+      set and not of the traversal. Discrete vendors rank first, which is also
+      the answer you want on discrete + integrated. *)
 let gpu_vendor_of devices cpu_model =
   let lower s = String.lowercase_ascii s in
   let contains hay needle =
@@ -55,6 +81,23 @@ let gpu_vendor_of devices cpu_model =
       i + nh <= hl && (String.sub hay i nh = needle || go (i + 1))
     in
     nh > 0 && go 0
+  in
+  (* Lowercase, collapse whitespace runs, trim -- so "  Apple  M1 Max " and
+     "Apple M1 Max" compare equal. *)
+  let normalize s =
+    let buf = Buffer.create (String.length s) in
+    String.iter
+      (fun c ->
+        let c = if c = '\t' || c = '\n' || c = '\r' then ' ' else c in
+        if c = ' ' then begin
+          if
+            Buffer.length buf > 0
+            && Buffer.nth buf (Buffer.length buf - 1) <> ' '
+          then Buffer.add_char buf c
+        end
+        else Buffer.add_char buf (Char.lowercase_ascii c))
+      s ;
+    String.trim (Buffer.contents buf)
   in
   let vendor_of name =
     let n = lower name in
@@ -79,10 +122,41 @@ let gpu_vendor_of devices cpu_model =
       (fun (tok, v) -> if contains n tok then Some v else None)
       table
   in
-  let candidates =
-    List.filter (fun d -> lower d.name <> lower cpu_model) devices
+  (* A device that is really the CPU.
+
+     The name test is applied ONLY on backends that can expose a CPU as a
+     device -- in practice OpenCL. That restriction is the whole point: on a
+     unified-memory SoC the GPU's name IS the CPU's name ("Apple M4 Max"), so a
+     name test applied to the Metal device excludes the only GPU on the machine
+     and the label collapses to "unknown". That was the behaviour before this
+     change, under the old [name = cpu_model] exclusion: every Apple Silicon box
+     derived darwin-unknown rather than darwin-apple, and nothing complained
+     because "unknown" is a legal label.
+
+     A CUDA/Metal/Vulkan/HIP device is a GPU by construction, so it is never
+     excluded by name. Native and Interpreter are the CPU by construction, so
+     they are always excluded. Residual corner: a machine whose ONLY backend is
+     OpenCL and whose GPU is named exactly like its CPU is indistinguishable
+     here and still yields "unknown". *)
+  let is_cpu_device d =
+    let backend = lower d.framework in
+    if backend = "native" || backend = "interpreter" then true
+    else if backend <> "opencl" then false
+    else
+      let n = normalize d.name and c = normalize cpu_model in
+      (* "unknown" is [get_cpu_info]'s failure value, not a CPU name; matching
+         on it would exclude every device on a box where the CPU probe failed,
+         turning one probe failure into a label change. *)
+      c <> "" && c <> "unknown" && (contains n c || contains c n)
   in
-  match List.find_map (fun d -> vendor_of d.name) candidates with
+  let vendors =
+    devices
+    |> List.filter (fun d -> not (is_cpu_device d))
+    |> List.filter_map (fun d -> vendor_of d.name)
+  in
+  (* Order-independent: pick by this fixed ranking, never by list position. *)
+  let priority = ["nvidia"; "amd"; "intel"; "apple"] in
+  match List.find_opt (fun v -> List.mem v vendors) priority with
   | Some v -> v
   | None -> "unknown"
 

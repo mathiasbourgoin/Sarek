@@ -35,16 +35,20 @@ This single command will:
 ### 2. Submit Your Results
 
 ```bash
-# Create a new branch. Name it after your hardware, NOT your hostname --
-# a branch name is permanent and public once pushed.
-git checkout -b benchmark-results-rtx4090
+# Create a new branch. Substitute your GPU model for <your-gpu>; name it after
+# your hardware, NOT your hostname -- a branch name is permanent and public
+# once pushed.
+git checkout -b benchmark-results-<your-gpu>
 
-# Add your result files (from the timestamped directory)
-git add results/run_*/
+# Add your result files. run_all_benchmarks.sh moves them out of the
+# timestamped run directory into benchmarks/results/ and removes the run
+# directory, so this is the path to add.
+git add benchmarks/results/*.json
 git add gh-pages/benchmarks/data/latest.json
 
-# Commit with descriptive message
-git commit -m "Add benchmark results for linux-nvidia
+# Commit with descriptive message. <machine-label> is the label the run
+# printed -- the derived <os>-<gpu-vendor>, e.g. linux-nvidia or darwin-apple.
+git commit -m "Add benchmark results for <machine-label>
 
 Hardware:
 - GPU: [Your GPU model, e.g., NVIDIA RTX 4090]
@@ -53,8 +57,8 @@ Hardware:
 - Backend: [CUDA/OpenCL/Vulkan/Metal]
 - OS: [e.g., Ubuntu 24.04, Windows 11, macOS 14]"
 
-# Push and create PR
-git push origin benchmark-results-rtx4090
+# Push and create PR (same branch name as above)
+git push origin benchmark-results-<your-gpu>
 # Then create a Pull Request on GitHub
 ```
 

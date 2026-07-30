@@ -156,6 +156,121 @@ else
 fi
 rm -rf "$tmp"
 
+# --- the scrubber must not rewrite an already-clean payload ----------------
+# It re-serializes (indent=2, sort_keys=True), so an unconditional write turned
+# every already-clean file it was pointed at into a pure-formatting diff. Only
+# a scrub that actually stripped or relabelled something may touch the file.
+tmp="$(mktemp -d)" || exit 2
+printf '%s\n' '{
+    "system": {
+        "machine": "linux-nvidia",
+  "os": "Linux",
+ "devices": [{"name":"NVIDIA RTX 3090"}]
+    },
+ "results": []
+}' > "$tmp/clean.json"
+cp "$tmp/clean.json" "$tmp/clean.before"
+out="$(python3 "$DEIDENT_SRC" "$tmp/clean.json" 2>&1)"; got=$?
+if [ "$got" -eq 0 ] && cmp -s "$tmp/clean.before" "$tmp/clean.json"; then
+  echo "PASS green: an already-clean payload is left byte-identical"
+  pass=$((pass + 1))
+else
+  echo "FAIL green: already-clean payload was rewritten (exit $got)"
+  diff "$tmp/clean.before" "$tmp/clean.json" | sed 's/^/       /'
+  fail=$((fail + 1))
+fi
+# The other polarity, so the skip cannot be a blanket "never write": a payload
+# that DOES carry an identifier must still be rewritten, and end up clean.
+printf '%s\n' '{"system":{"hostname":"myhost","kernel":"6.1.0","os":"Linux",
+ "devices":[{"name":"NVIDIA RTX 3090"}]},"results":[]}' > "$tmp/dirty.json"
+cp "$tmp/dirty.json" "$tmp/dirty.before"
+out="$(python3 "$DEIDENT_SRC" "$tmp/dirty.json" 2>&1)"; got=$?
+if [ "$got" -eq 0 ] && ! cmp -s "$tmp/dirty.before" "$tmp/dirty.json" \
+   && python3 "$DEIDENT_SRC" --check "$tmp/dirty.json" >/dev/null 2>&1; then
+  echo "PASS red: an identifying payload is still rewritten, and comes out clean"
+  pass=$((pass + 1))
+else
+  echo "FAIL red: identifying payload was not rewritten/cleaned (exit $got): $out"
+  fail=$((fail + 1))
+fi
+# The scrubber RELABELS, so its label derivation must agree with the producer's
+# (System_info.gpu_vendor_of). While they disagreed, a correctly labelled
+# Apple-Silicon payload was rewritten darwin-apple -> darwin-unknown: the
+# scrubber corrupted a clean file and desynchronized it from its own filename,
+# which carries the producer's label. The GPU's name equalling the CPU's is the
+# case that split them, so that is the case pinned.
+printf '%s\n' '{
+  "results": [],
+  "system": {
+    "cpu": {
+      "cores": 12,
+      "model": "Apple M4 Max",
+      "threads": 12
+    },
+    "devices": [
+      {
+        "framework": "Metal",
+        "name": "Apple M4 Max"
+      }
+    ],
+    "machine": "darwin-apple",
+    "os": "Darwin"
+  }
+}' > "$tmp/apple.json"
+cp "$tmp/apple.json" "$tmp/apple.before"
+out="$(python3 "$DEIDENT_SRC" "$tmp/apple.json" 2>&1)"; got=$?
+if [ "$got" -eq 0 ] && cmp -s "$tmp/apple.before" "$tmp/apple.json"; then
+  echo "PASS green: scrubber agrees with the producer on darwin-apple"
+  pass=$((pass + 1))
+else
+  echo "FAIL green: scrubber relabelled a correct darwin-apple payload (exit $got)"
+  diff "$tmp/apple.before" "$tmp/apple.json" | sed 's/^/       /'
+  fail=$((fail + 1))
+fi
+rm -rf "$tmp"
+
+# --- the machine label must be filename-safe before it reaches a glob -------
+# run_all_benchmarks.sh interpolates system.machine into an `rm` glob. The
+# label is operator-settable via SAREK_BENCH_MACHINE (get_machine_label only
+# refuses the hostname), so `*` and `../..` are reachable. Pin the predicate
+# the script guards with -- these are the shapes that must not pass.
+#
+# The pattern is EXTRACTED from the script rather than restated here. A copy
+# would let the two drift: someone loosens the script, the test keeps asserting
+# the old pattern and stays green while `*` starts passing again.
+RUNNER="$REPO_ROOT/benchmarks/run_all_benchmarks.sh"
+[ -f "$RUNNER" ] || { echo "::error::missing $RUNNER" >&2; exit 2; }
+LABEL_RE="$(grep -oE "grep -qE '[^']+'" "$RUNNER" | head -1 | sed "s/.*'\(.*\)'/\1/")"
+if [ -z "$LABEL_RE" ]; then
+  echo "::error::could not extract the machine-label pattern from $RUNNER --" >&2
+  echo "::error::the guard may have been removed or reworded; failing closed" >&2
+  exit 2
+fi
+echo "note: machine-label pattern extracted from run_all_benchmarks.sh: $LABEL_RE"
+label_case() {
+  local label="$1" want="$2"   # want: safe | unsafe
+  local got="unsafe"
+  printf '%s' "$label" | grep -qE "$LABEL_RE" && got="safe"
+  if [ "$got" = "$want" ]; then
+    echo "PASS label '$label' is $want"
+    pass=$((pass + 1))
+  else
+    echo "FAIL label '$label' -- wanted $want, got $got"
+    fail=$((fail + 1))
+  fi
+}
+# Derived labels the producer actually emits must keep working, or the cleanup
+# silently stops cleaning and results accumulate under a duplicate key.
+label_case "linux-nvidia" safe
+label_case "darwin-apple" safe
+label_case "linux-unknown" safe
+# The destructive shapes.
+label_case "*"              unsafe   # would expand to every machine's results
+label_case "../../etc"      unsafe   # would leave benchmarks/results entirely
+label_case "linux nvidia"   unsafe   # word-splits into two glob arguments
+label_case "-rf"            unsafe   # would be read as an option without rm --
+label_case ""               unsafe
+
 echo ""
 if [ "$fail" -ne 0 ]; then
   echo "check-no-machine-identifiers.test.sh: $fail case(s) FAILED, $pass passed"

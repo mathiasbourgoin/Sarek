@@ -1,0 +1,7 @@
+; Unit tests for benchmark metadata derivation. The machine label these cover
+; is the token that replaced the hostname in every result filename and in the
+; dedup key (backlog-168), so its stability is load-bearing.
+
+(tests
+ (names test_system_info)
+ (libraries benchmark_common))
