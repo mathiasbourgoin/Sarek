@@ -104,12 +104,19 @@
   failed the same way. `Sarek_ir_codegen.sort_record_types_by_dependency` now
   orders the declarations, stably — ties break on the incoming list position,
   so an already-correct order is returned unchanged and no committed golden
-  moved. A record cycle raises `Record_type_cycle` instead of being emitted in
-  some wrong order; that path is unreachable through the PPX, which refuses a
-  self- or mutually-referencing record field while resolving its alignment
-  (measured: both spellings stop at *unknown alignment for field type*), and is
-  kept for hand-built IR. Interpreter and Native were never affected — they
-  carry values, not struct declarations.
+  moved. A cycle between distinct record declarations raises `Record_type_cycle`
+  instead of being emitted in some wrong order (a self-referencing field is
+  dropped, not reported); that path is unreachable through the PPX, which
+  refuses a self- or mutually-referencing record field while resolving its
+  alignment (measured: both spellings stop at *unknown alignment for field
+  type*), and is kept as a backstop for hand-built IR. Interpreter and Native
+  were never affected — they carry values, not struct declarations. This orders
+  records against records only. Records are NOT ordered against variants, and
+  both directions of that gap are still live: on the C family, which emits
+  variants first, a variant with a record payload names a struct declared later
+  (measured on OpenCL, `error: unknown type name 'Probe_pt'`); on GLSL/WGSL,
+  which emit records first, the mirror case is a record with a variant-typed
+  field.
 - `Sarek_df64` silently ran at plain float32 precision on real NVIDIA
   hardware (CUDA/PTX and NVIDIA OpenCL): `ptxas` contracted the multiply in
   `two_prod` into the `add`/`sub` of the `quick_two_sum` closing `df64_mul`,

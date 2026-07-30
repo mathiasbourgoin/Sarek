@@ -213,9 +213,19 @@ let test_c_family_emission_order () =
   print_endline "  gen_record_typedefs declares the inner struct first: OK"
 
 (* [referenced_record_names] must terminate on a cyclic elttype VALUE, not just
-   on a finite tree — the sort calls it on IR nobody promised is acyclic. *)
+   on a finite tree — the sort calls it on IR nobody promised is acyclic.
+
+   All THREE cycle shapes OCaml's recursive-value rule admits are pinned, not
+   just the record one. The first version of the guard was keyed on the record
+   NAME, which closes a cycle only if a [TRecord] sits on it; the vec and variant
+   cycles below have no [TRecord] on the cycle at all and looped forever (they
+   are tail-recursive, so they hang rather than overflow — a test that only
+   covered the record shape reported a general "safe on a cyclic value" it had
+   never exercised). A hang has no failure message, so these cases pin
+   termination by returning at all: if the guard regresses, the test process
+   never finishes and dune's timeout is the red. *)
 let test_referenced_names_terminates_on_cyclic_value () =
-  (* A genuinely cyclic value: [node]'s only field type IS [node]. *)
+  (* Shape 1: the cycle passes through a TRecord. *)
   let rec node = TRecord ("node", [("self", node)]) in
   let got = Sarek_ir_codegen.referenced_record_names node in
   if got <> ["node"] then
@@ -223,7 +233,27 @@ let test_referenced_names_terminates_on_cyclic_value () =
       (Printf.sprintf
          "referenced_record_names: expected [node] got [%s]"
          (String.concat "; " got)) ;
-  print_endline "  referenced_record_names terminates and dedups: OK"
+  (* Shape 2: the cycle is closed by TVec alone — no TRecord on it. *)
+  let rec vec_cycle = TVec vec_cycle in
+  let got = Sarek_ir_codegen.referenced_record_names vec_cycle in
+  if got <> [] then
+    failwith
+      (Printf.sprintf
+         "referenced_record_names on a TVec cycle: expected [] got [%s]"
+         (String.concat "; " got)) ;
+  (* Shape 3: the cycle is closed by a TVariant payload — no TRecord on it, but
+     a record hangs off the same variant and must still be reported. *)
+  let rec var_cycle =
+    TVariant ("loop", [("Stop", [leaf]); ("Go", [TArray (var_cycle, Global)])])
+  in
+  let got = Sarek_ir_codegen.referenced_record_names var_cycle in
+  if got <> ["leaf"] then
+    failwith
+      (Printf.sprintf
+         "referenced_record_names on a TVariant cycle: expected [leaf] got [%s]"
+         (String.concat "; " got)) ;
+  print_endline
+    "  referenced_record_names terminates on record/vec/variant cycles: OK"
 
 let () =
   print_endline "=== record declaration dependency order (backlog-203) ===" ;

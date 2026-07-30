@@ -267,13 +267,19 @@ val gen_param :
   unit
 
 (** Raised by {!sort_record_types_by_dependency} when the record declarations
-    form a cycle, carrying the unplaced type names. A cycle has no valid
-    emission order, so it is refused rather than emitted in input order. *)
+    form a cycle between DISTINCT declarations, carrying the unplaced type
+    names. Such a cycle has no valid emission order, so it is refused rather
+    than emitted in input order. A record whose own field type is itself is NOT
+    reported here: the self-edge is dropped so the diagnostic stays about cycles
+    between declarations, and the backend's field-type emission is what reports
+    it. *)
 exception Record_type_cycle of string list
 
 (** Mangled names of every record type reachable from a field type, through
     arrays, vectors, variant payloads and nested record fields. Sorted and
-    deduplicated; safe on a cyclic [elttype] value. *)
+    deduplicated. Terminates on a cyclic [elttype] value whatever closes the
+    cycle — the visited set is keyed on physical node identity, not on a record
+    name, so a cycle through [TVec]/[TArray]/[TVariant] alone is caught too. *)
 val referenced_record_names : Sarek_ir_types.elttype -> string list
 
 (** Order record declarations so a struct comes after every struct its field
@@ -284,17 +290,29 @@ val referenced_record_names : Sarek_ir_types.elttype -> string list
     position, so an already-correctly-ordered list is returned unchanged and
     committed goldens do not churn.
 
+    Records only. Variant declarations are emitted by a separate loop, and the
+    two loops disagree on order across backends, so this does not order a record
+    against a variant either way (see {!gen_record_typedefs}).
+
     @raise Record_type_cycle
-      if the declarations form a cycle. Unreachable through the PPX — it refuses
-      a self- or forward-referencing record field at alignment-resolution time —
-      but load-bearing for hand-built IR. *)
+      if the declarations form a cycle between distinct declarations; a
+      self-referencing field is dropped, not reported. No current caller can
+      reach it: the PPX refuses a self- or forward-referencing record field at
+      alignment-resolution time, and fusion only concatenates two PPX-produced
+      (hence acyclic) type lists. It is a backstop for hand-built IR — tests
+      today, a future front end — where nothing else would notice, not a guard
+      anything presently depends on. *)
 val sort_record_types_by_dependency :
   (string * (string * Sarek_ir_types.elttype) list) list ->
   (string * (string * Sarek_ir_types.elttype) list) list
 
 (** Emit C-family record type declarations: one [typedef struct { ... } name;]
     per record, one field per line. Only [type_of_elttype] differs per backend.
-    Declarations are emitted in {!sort_record_types_by_dependency} order. *)
+    Records are emitted in {!sort_record_types_by_dependency} order among
+    themselves — NOT against variants: the C-family callers emit variants first,
+    so a variant with a record payload still names a struct declared later and
+    still fails to compile. See the implementation comment for the measured
+    OpenCL error and the mirror GLSL/WGSL half. *)
 val gen_record_typedefs :
   type_of_elttype:(Sarek_ir_types.elttype -> string) ->
   Buffer.t ->
