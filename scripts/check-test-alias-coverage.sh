@@ -55,7 +55,11 @@ for lineno, line in enumerate(open(decl_path), 1):
         sys.exit(2)
     declared_exempt[parts[0]] = parts[1].strip()
 
-VALID_TAGS = {"benchmark", "browser-target", "hardware-probe", "tool"}
+# Target tags, then the two ALIAS tags (backlog-186): an alias may be
+# legitimately uninvoked in CI only because it needs hardware CI lacks, or
+# because it is an operator-run entry point. Both must still be DECLARED.
+VALID_TAGS = {"benchmark", "browser-target", "hardware-probe", "tool",
+              "gpu-required", "manual-only"}
 bad = {k: v for k, v in declared_exempt.items() if v not in VALID_TAGS}
 if bad:
     for k, v in sorted(bad.items()):
@@ -147,7 +151,12 @@ undeclared = [k for k in unwired if k not in declared_exempt]
 # what stops the file rotting: a stale exemption would keep silently covering a
 # target that has since been wired or deleted.
 unwired_set = set(unwired)
-stale = [k for k in declared_exempt if k not in unwired_set]
+# `alias::` keys live in the same file but belong to DIRECTION 3, which has its
+# own staleness check below. Without this exclusion every alias declaration
+# reads STALE here, because it is not in the TARGET unwired set — two
+# namespaces sharing one declaration file.
+stale = [k for k in declared_exempt
+         if not k.startswith("alias::") and k not in unwired_set]
 
 if undeclared or stale:
     for k in sorted(undeclared):
@@ -166,7 +175,98 @@ if undeclared or stale:
         print("anything, and leaving it there means it silently covers whatever takes that name next.")
     sys.exit(1)
 
-print(f"OK: {total_declared} target(s) across the tree; {len(unwired)} unwired, all declared with a reason")
+# DIRECTION 3 -- an alias that nothing outside dune ever invokes (backlog-186).
+#
+# Directions 1 and 2 ask whether a TARGET is reached by a rule in its own dune
+# file. They do not ask whether the ALIAS that rule attaches to is ever invoked.
+# So attaching tests to a brand-new alias satisfies them completely: the .exe
+# name appears in the file, `declared - referenced` is empty, and the gate says
+# OK. That is exactly how the whole sarek-hip suite sat outside CI while this
+# gate reported 277 targets all accounted for -- 6 rules on `e2e-hip`, 6 on
+# `e2e-gpu`, 12 executables, invoked from nowhere. One level of reachability
+# short.
+#
+# Self-executing aliases need no invoker: dune runs them itself.
+SELF_EXECUTING = {"runtest", "default", "fmt", "all", "install", "check", "doc"}
+
+rule_aliases = {}
+for dune in sorted(root.rglob("dune")):
+    if "_build" in dune.parts:
+        continue
+    if not root_in_fixtures and "prove-red-fixtures" in dune.parts:
+        continue
+    src = re.sub(r";[^\n]*", "", dune.read_text(errors="replace"))
+    for m in re.finditer(r"\(alias\s+([A-Za-z0-9_-]+)\s*\)", src):
+        # A dune file with six rules on one alias must not be listed six times.
+        rel = str(dune.relative_to(root))
+        bucket = rule_aliases.setdefault(m.group(1), [])
+        if rel not in bucket:
+            bucket.append(rel)
+
+# Anything that could invoke an alias. Read from the SCANNED ROOT, so the
+# fixture tree exercises this direction too rather than skipping it -- a
+# direction that silently does not apply is the vacuous-pass shape this whole
+# file exists to prevent.
+invoker_globs = [".github/workflows/*.yml", ".github/workflows/*.yaml",
+                 "Makefile", "makefile", "scripts/*", "ci/*"]
+invoker_text = []
+invoker_count = 0
+for g in invoker_globs:
+    for f in root.glob(g):
+        # The declaration file lives under scripts/ and its JUSTIFICATIONS name
+        # the very aliases they exempt, so counting it as an invoker makes every
+        # declared alias look reachable — and then DIRECTION 3 reports its own
+        # declaration STALE. Caught by this gate on itself.
+        if f.resolve() == pathlib.Path(decl_path).resolve():
+            continue
+        if f.is_file():
+            invoker_count += 1
+            try:
+                invoker_text.append(f.read_text(errors="replace"))
+            except OSError:
+                pass
+# Strip #-comments before testing for an invocation, for exactly the reason
+# the dune scan above strips ;-comments: a name MENTIONED IN PROSE is not
+# wiring. Caught by this gate on its own first run — a ci.yml comment
+# explaining why @e2e-hip is not invoked made @e2e-hip look invoked.
+# Erring toward more reds is the safe direction here: a stripped `#` inside
+# a quoted string can only HIDE an invocation, never invent one.
+blob = "\n".join(re.sub(r"#[^\n]*", "", t) for t in invoker_text)
+
+if invoker_count == 0:
+    print("ERROR: no invoker files (.github/workflows, Makefile, scripts/, ci/) under "
+          f"{root} - cannot tell whether any alias is reachable, and reporting OK "
+          "would be a vacuous pass")
+    sys.exit(2)
+
+unreachable = []
+for alias, files in sorted(rule_aliases.items()):
+    if alias in SELF_EXECUTING:
+        continue
+    if ("@" + alias) in blob:
+        continue
+    unreachable.append((alias, files))
+
+undeclared_aliases = [a for a, _ in unreachable if ("alias::" + a) not in declared_exempt]
+stale_aliases = [k for k in declared_exempt
+                 if k.startswith("alias::")
+                 and k[len("alias::"):] not in {a for a, _ in unreachable}]
+
+if undeclared_aliases or stale_aliases:
+    for a in sorted(undeclared_aliases):
+        files = dict(unreachable)[a]
+        print(f"UNREACHABLE ALIAS: @{a} is attached to rules in {', '.join(files)},")
+        print(f"                   but no workflow, Makefile or script ever invokes @{a}.")
+        print("                   Every target behind it builds and never runs.")
+    for k in sorted(stale_aliases):
+        print(f"STALE:   {decl_path} exempts {k}, but that alias is reachable now (or gone).")
+    print()
+    if undeclared_aliases:
+        print("Either invoke it (a CI step running `dune build @NAME`), or declare it in")
+        print(f"{decl_path} as `alias::NAME` with one of: gpu-required | manual-only.")
+    sys.exit(1)
+
+print(f"OK: {total_declared} target(s) across the tree; {len(unwired)} unwired, all declared with a reason; {len(rule_aliases)} rule alias(es), all reachable or declared")
 PYEOF
 
 # ---------------------------------------------------------------------------
