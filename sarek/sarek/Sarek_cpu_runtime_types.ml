@@ -143,9 +143,11 @@ let alloc_shared_int64 (shared : shared_mem) name size (default : int64) :
     knows how to build one, and passing a value would put the aliasing back no
     matter what this function did with it.
 
-    Unchanged for immediate element types ([char], and the four typed allocators
-    above): they cannot alias, so this costs them one extra closure call per
-    slot at allocation and nothing else. *)
+    Unchanged for the one immediate element type routed through here — [char],
+    from {!Sarek_native_gen_expr.gen_parallel_construct} — which cannot alias
+    and pays one extra closure call per slot at allocation and nothing else. The
+    four typed allocators above do NOT go through this function; they call
+    [Array.make] directly, are untouched, and pay nothing. *)
 let alloc_shared_with_key (type a) (shared : shared_mem)
     (key : a Sarek_ir_types.Type_id.t) name size (mk : unit -> a) : a array =
   match Hashtbl.find_opt shared.custom_arrays name with

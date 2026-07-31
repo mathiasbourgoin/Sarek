@@ -225,9 +225,21 @@ let failf fmt =
    [Device.framework] reports ("CUDA/PTX"), never the family name "CUDA" that
    [Device.init ~frameworks] accepts -- a predicate written against the wrong
    vocabulary is silently always-false, which is the same defect as an assertion
-   that cannot fail. Asserted below rather than trusted: if no enumerated device
-   reports a framework starting with "CUDA", the CUDA leg simply did not run
-   here and says so. *)
+   that cannot fail.
+
+   NOT asserted anywhere in the device loop, and the earlier wording here said
+   it was. What the run does is REPORT: the NOT-MEASURED-HERE list near the
+   bottom prints a named line when no device reports exactly "CUDA/PTX", and
+   that list is explicitly not a failure. The exactness cuts both ways — a host
+   running the "CUDA/C" backend (sarek-cuda/Cuda_c_plugin.ml, not linked by this
+   file) would get the printed line rather than an assertion about a device that
+   did run.
+
+   The thing that IS asserted, with no device at all, is [check_deviceless]
+   below: the PTX generator is invoked directly on this kernel's IR and its
+   refusal message is checked. So the PTX half of backlog-206 has a gate on
+   every host, and this predicate only decides how an enumerated device is
+   scored. *)
 let expects_refusal (dev : Device.t) = dev.Device.framework = "CUDA/PTX"
 
 let run_field_case (dev : Device.t) =
@@ -416,7 +428,146 @@ let run_local_case (dev : Device.t) =
         if !bad then Printf.printf "\n%!" else Printf.printf "OK\n%!"
       end
 
+(* DEVICE-INDEPENDENT SECTION, and it runs FIRST.
+
+   Everything below this point needs a device. CI has no GPU, so on CI the
+   device loop exercises the Interpreter and Native and then PRINTS a
+   NOT-MEASURED-HERE line for OpenCL, Vulkan and CUDA/PTX without failing. That
+   is honest about what ran, but it means the two halves of this fix that
+   affect only those backends — the record-type registration that made OpenCL
+   and Vulkan compile at all, which is 4 of the 9 devices, and the named PTX
+   refusal — have no gate on a GPU-less host: revert either and CI stays green.
+
+   Both are checkable with no device, because both are properties of GENERATED
+   SOURCE. The record type is either in [kern_types] or it is not; the OpenCL
+   and GLSL text either declares the struct before the shared array that names
+   it or it does not; the PTX generator either raises a message naming the array
+   and the type or it does not. Asserted here on the same [k] the device loop
+   runs, so the two cannot drift apart.
+
+   Failures here [exit 1] immediately rather than accumulating: they mean the
+   generated source is wrong, so every device row after them would be reporting
+   on a kernel this file already knows is broken. *)
+let contains (hay : string) (needle : string) : bool =
+  let n = String.length needle and m = String.length hay in
+  let rec go i = i + n <= m && (String.sub hay i n = needle || go (i + 1)) in
+  n = 0 || go 0
+
+(* Index of the first occurrence, [-1] if absent. Used to check DECLARATION
+   ORDER, which a mere "both substrings are present" check cannot see — the
+   struct being emitted after the array that names it is precisely how
+   backlog-203 failed, and it would satisfy a presence-only assertion. *)
+let index_of (hay : string) (needle : string) : int =
+  let n = String.length needle and m = String.length hay in
+  let rec go i =
+    if i + n > m then -1
+    else if String.sub hay i n = needle then i
+    else go (i + 1)
+  in
+  go 0
+
+let deviceless_failures = ref 0
+
+let dfail fmt =
+  Printf.ksprintf
+    (fun s ->
+      incr deviceless_failures ;
+      Printf.printf "DEVICELESS FAILED: %s\n%!" s)
+    fmt
+
+let record_type_name = "Test_shared_record_slots.tri"
+
+let check_deviceless () =
+  let ir = ir_of k in
+  (* 1. The lowerer registered the record type from the shared declaration
+        alone. [tri] appears in no parameter and in no record literal in [k], so
+        before the fix this list did not contain it. *)
+  let names = List.map fst ir.Sarek_ir_types.kern_types in
+  Printf.printf "deviceless: kern_types = [%s]\n%!" (String.concat "; " names) ;
+  if not (List.mem record_type_name names) then
+    dfail
+      "the record type %S is not in kern_types, so no struct-emitting backend \
+       can declare it. This is the OpenCL/Vulkan half of backlog-206."
+      record_type_name ;
+  (* 2. OpenCL and GLSL declare the struct BEFORE the shared array names it.
+        The struct tag is the type name with dots replaced; rather than
+        reimplementing that mangling, look for the array declaration and require
+        SOME earlier occurrence of the mangled name. *)
+  let mangled =
+    String.map (fun c -> if c = '.' then '_' else c) record_type_name
+  in
+  (* STRICTLY BEFORE THE DECLARATION LINE, not merely before the array name.
+
+     The first version of this check compared the first occurrence of the
+     mangled type name against the offset of "s[4]" — and it could not fail.
+     The array declaration is `__local Test_..._tri s[4];`, so the type name
+     occurs ON THAT LINE, a few characters before "s[4]", whether or not any
+     struct was ever defined. Measured: with the registration reverted, the
+     kern_types assertion went red and this one stayed green on both dialects.
+
+     So the anchor is the START OF THE LINE that declares the array, and the
+     requirement is an occurrence of the type name before it. Deliberately not a
+     dialect-specific anchor ("typedef struct" in OpenCL, "struct X {" in GLSL):
+     two spellings would be two things to keep in step with two emitters, and
+     the property — the name is introduced before the line that uses it — is the
+     same in both. *)
+  List.iter
+    (fun (label, src) ->
+      let arr = index_of src "s[4]" in
+      if arr < 0 then
+        dfail "%s source has no shared array declaration for [s]:\n%s" label src
+      else begin
+        let line_start =
+          match String.rindex_from_opt src arr '\n' with
+          | Some i -> i + 1
+          | None -> 0
+        in
+        let before = String.sub src 0 line_start in
+        let decl = index_of before mangled in
+        if decl < 0 then
+          dfail
+            "%s uses the type %S on the shared-array declaration line but \
+             nothing above that line introduces it — the struct definition is \
+             missing, which is the OpenCL/Vulkan half of backlog-206:\n\
+             %s"
+            label
+            mangled
+            src
+      end)
+    [
+      ("OpenCL", Sarek_codegen.Sarek_ir_opencl.generate ir);
+      ("GLSL", Sarek_codegen.Sarek_ir_glsl.generate ir);
+    ] ;
+  (* 3. PTX refuses, and the refusal names the array, the state space and the
+        type. Same predicate the device rows use, so the two cannot disagree
+        about what "named" means. *)
+  (match Sarek_codegen.Sarek_ir_ptx.generate ir with
+  | exception e ->
+      let msg = Printexc.to_string e in
+      if ptx_refusal_is_named ~what:"shared" ~arr:"s" msg then
+        Printf.printf "deviceless: PTX refused, named\n%!"
+      else
+        dfail
+          "PTX refused but the message names neither the shared array nor its \
+           record type: %s"
+          msg
+  | _src ->
+      dfail
+        "PTX generated code for an aggregate shared array. If the PTX backend \
+         gained aggregate state-space addressing, delete this expectation and \
+         assert the emitted code instead.") ;
+  if !deviceless_failures > 0 then begin
+    Printf.printf
+      "%d deviceless failure(s) — not running the device cases on a kernel \
+       whose generated source is already wrong\n\
+       %!"
+      !deviceless_failures ;
+    exit 1
+  end ;
+  Printf.printf "deviceless: OK (no device needed for any of the above)\n%!"
+
 let () =
+  check_deviceless () ;
   let devs =
     Device.init
       ~frameworks:

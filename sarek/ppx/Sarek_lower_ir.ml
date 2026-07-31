@@ -607,12 +607,26 @@ let register_tuple_type (state : state) (ty : typ) : unit =
     registered the type — which is what made this look like a shared-memory gap
     rather than the type-collection gap it is.
 
-    VARIANTS are deliberately NOT handled here. A shared array of a variant is
-    only useful if some constructor application appears in the kernel, and
-    [TEConstr] registers the type; a read-only variant array over never-written
-    shared memory has no defined contents on any backend. Adding a [TVariant]
-    arm would also change what gets emitted for ordinary variant PARAMETERS,
-    which this change has no measurement for. *)
+    VARIANTS are deliberately NOT handled here, and the reason is narrower than
+    it first looks. The common shape — a kernel that puts constructor
+    applications into the array — is covered, because [TEConstr] registers the
+    type into [state.variants]. What is NOT covered, stated rather than left to
+    be discovered: copying a variant in from elsewhere, e.g.
+
+    {[
+      let%shared (s : color) = 4l in
+      s.(tid) <- v.(tid)
+    ]}
+
+    over a variant-element vector parameter, contains no [TEConstr], and the
+    [TVec] arm below bottoms out at [| _ -> ()] for [TVariant] — so on the
+    struct-emitting backends that is the same undeclared-type-name failure this
+    function fixes for records, still open for variants. It is NOT fixed here
+    because adding a [TVariant] arm changes what gets emitted for ordinary
+    variant PARAMETERS too, and this change has no measurement for that; the
+    shape above was reasoned about, not executed. The interpreter and PTX halves
+    of backlog-206 DO handle [TVariant], so the treatment is deliberately uneven
+    and this is where it is uneven. *)
 let rec register_types_from_typ (state : state) (ty : typ) : unit =
   match repr ty with
   | TRecord (name, fields) ->
@@ -1349,10 +1363,18 @@ and lower_stmt (state : state) (te : texpr) : Ir.stmt =
       (* Special case: create_array - need proper array declaration *)
       | TECreateArray (size, elem_ty, mem) ->
           let size_ir = lower_expr state size in
-          (* Same registration point as [TELetShared] below: the element type
-             may appear NOWHERE else in the kernel, and an unregistered record
-             element emits a declaration naming a struct that was never
-             defined. *)
+          (* Same REASON as [TELetShared] below — the element type may appear
+             NOWHERE else in the kernel, and an unregistered record element
+             emits a declaration naming a struct that was never defined — but
+             NOT the same position in its arm, and the difference is worth
+             stating. [TELetShared] registers AFTER its tuple/function refusals;
+             this site has no refusals, so a [create_array n Local] with a
+             primitive-component TUPLE element type now also registers the
+             synthesized [_tup_*] record, where the declaration itself still
+             collapses to [TInt32] through [elttype_of_typ]. The emitted kernel
+             gains an unreferenced struct typedef it did not have before. That
+             is inert output, not a behaviour change a program can observe, and
+             it is recorded here rather than special-cased. *)
           register_types_from_typ state elem_ty ;
           let v = make_var name id (TArr (elem_ty, mem)) false in
           let body_ir = lower_stmt state body in

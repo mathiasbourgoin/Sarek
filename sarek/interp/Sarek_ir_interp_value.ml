@@ -356,6 +356,16 @@ let detach_record (v : value) : value =
     what the device does. It is not a promise that reading an unwritten slot is
     defined.
 
+    [TUint8] gets [VInt32 0l], and that is a GUESS rather than a convention:
+    [TUint8] appears nowhere else in this interpreter, so unlike [TFloat16] —
+    whose [VFloat32] carrier is established by [Sarek_ir_interp_eval] and
+    [Sarek_ir_interp] — nothing here fixes its representation. It exists only as
+    a cooperative-matrix operand element type, which does not reach a kernel
+    array declaration, so the arm is unreachable in practice; it is written this
+    way so that the match is exhaustive rather than because a zero of that type
+    has been agreed. If [TUint8] ever becomes a real element type, decide its
+    carrier before trusting this.
+
     [TArray] and [TVec] elements stay [VUnit]: an array of arrays is not
     expressible as a kernel array element type on any backend, and inventing a
     nested [VArray] of an unknown length here would be a guess.

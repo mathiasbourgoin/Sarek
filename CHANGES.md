@@ -132,8 +132,9 @@
   `assignment target of .a (got unit)`; Native accepted the store and wrote
   EVERY slot (`7 7 7 7`, want `7 0 0 0`); CUDA/PTX ×2 raised
   `unsupported construct: btype of custom type`, naming neither the array nor
-  the type; and OpenCL ×2 and Vulkan ×2 failed inside the DEVICE compiler with
-  `unknown type name`. Three separate causes. (1) Native's
+  the type; and OpenCL ×2 and Vulkan ×2 failed inside the DEVICE compiler,
+  OpenCL with `unknown type name 'Test_..._tri'` and Vulkan with a glslang
+  syntax error at the shared declaration. Three separate causes. (1) Native's
   `alloc_shared_with_key` filled the array with `Array.make size default`, so
   every slot of a boxed element type was the same allocation — it now takes a
   per-slot thunk and calls `Array.init`, and the identical `Array.make` in the
@@ -141,8 +142,14 @@
   record element type to `VUnit`, so there was nothing to store into — it now
   builds a zeroed `VRecord` — or, for a variant with at least one
   constructor, a constructor-0 `VVariant` — per slot in
-  `Sarek_ir_interp_value.alloc_kernel_array`, which replaces four copies of the
-  old init table. (3) OpenCL and Vulkan had no shared-memory gap at all:
+  `Sarek_ir_interp_value.alloc_kernel_array`. That replaces three identical
+  copies of the old init table in `Sarek_ir_interp_eval` plus a fourth, NARROWER
+  one on `Sarek_ir_interp`'s `DShared` kernel-parameter path, which mapped only
+  `TInt32` and `TFloat32` and everything else to `VUnit`. Unifying them
+  therefore also widens that path: `TInt64`, `TFloat64`, `TBool`, `TFloat16` and
+  `TUint8` go from `VUnit` to their typed zeros there. That is a fix, but it is
+  a behaviour change outside backlog-206's shape and it is stated rather than
+  folded into the word "copies". (3) OpenCL and Vulkan had no shared-memory gap at all:
   `register_types_from_typ` ran over PARAMETER types only, so a record named
   nowhere but the shared declaration was never emitted as a `struct`; it is now
   top-level and runs at both kernel-array declaration sites. The tell was that

@@ -9,9 +9,9 @@ repointed to current locations and retained for history.
 
 ## Obj Sites (former)
 
-- `sarek/sarek/Sarek_cpu_runtime_types.ml:126` (`alloc_shared_with_key`): the former
+- `sarek/sarek/Sarek_cpu_runtime_types.ml:151` (`alloc_shared_with_key`): the former
   `Obj.obj (Obj.repr arr)` cast is gone — now a typed `Type_id.equal`/`Refl` match.
-- `sarek/sarek/Sarek_cpu_runtime.mli:84`: now documents typed custom allocation (no
+- `sarek/sarek/Sarek_cpu_runtime.mli:101`: now documents typed custom allocation (no
   `Obj.t`).
 
 ## Assumed Invariant
