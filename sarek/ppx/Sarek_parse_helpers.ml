@@ -240,8 +240,15 @@ let rec parse_pattern (pat : Ppxlib.pattern) : Sarek_ast.pattern =
     | Ppat_var {txt; _} -> Sarek_ast.PVar txt
     (* The annotation is deliberately looked THROUGH rather than read: a
        pattern's type is fixed by the scrutinee and by the constructor
-       declaration, so the annotation cannot change what is lowered. This is
-       what makes the documented [let ((a, b) : t) = e] spelling work. *)
+       declaration, so the annotation cannot change what is lowered.
+
+       An earlier revision added "this is what makes the documented
+       [let ((a, b) : t) = e] spelling work", which is the opposite of what the
+       code does: that spelling is REFUSED by [Sarek_parse.parse_let_form],
+       which raises when [binding_type vb] is [Some] and reads the constraint
+       straight off [pvb_pat]. Looking through it here is why the binding
+       reaches the tuple branch at all — it is not what makes it succeed.
+       Caught by CodeRabbit on #398. *)
     | Ppat_constraint (p, _) -> (parse_pattern p).Sarek_ast.pat
     | Ppat_construct ({txt = Lident name; _}, None) ->
         Sarek_ast.PConstr (name, None)

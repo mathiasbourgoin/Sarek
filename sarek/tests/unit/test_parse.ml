@@ -816,6 +816,73 @@ let test_parse_payload_floating_doc_accepted () =
         "a floating doc paragraph must not be refused, but got: %s"
         msg
 
+(* [Pstr_type (Nonrecursive, [])] — an empty declaration list. The OCaml parser
+   never produces one, but this file constructs [pstr_type] BY HAND, and so does
+   any other PPX whose output reaches a kernel payload, so the fold has to cope.
+   Before the fix the `type nonrec` refusal took its location from
+   [(List.hd decls).ptype_loc] and [List.hd] raised [Failure "hd"], which escapes
+   as an UNLOCATED exception rather than a located [Parse_error_exn] — a refusal
+   that crashes instead of refusing. This case is the reachability proof, since
+   it is constructible right here. *)
+let test_parse_payload_empty_type_decl_list () =
+  (* A RECOGNISABLE location, so "the refusal carries the item's location" is an
+     assertion and not a tautology: with everything at [Location.none] the two
+     are indistinguishable and the check would pass no matter what the code did. *)
+  let item_loc =
+    let p : Lexing.position =
+      {pos_fname = "empty_decls.ml"; pos_lnum = 7; pos_bol = 0; pos_cnum = 3}
+    in
+    {Location.loc_start = p; loc_end = p; loc_ghost = false}
+  in
+  let loc = Location.none in
+  let open Ppxlib.Ast_builder.Default in
+  let module_struct =
+    pmod_structure ~loc [pstr_type ~loc:item_loc Nonrecursive []]
+  in
+  let param_pat =
+    ppat_constraint
+      ~loc
+      (ppat_var ~loc {txt = "v"; loc})
+      (ptyp_constr
+         ~loc
+         {txt = Lident "vector"; loc}
+         [ptyp_constr ~loc {txt = Lident "int32"; loc} []])
+  in
+  let fun_expr =
+    pexp_fun
+      ~loc
+      Nolabel
+      None
+      param_pat
+      (pexp_construct ~loc {txt = Lident "()"; loc} None)
+  in
+  let payload =
+    pexp_letmodule ~loc {txt = Some "M"; loc} module_struct fun_expr
+  in
+  (* [Failure "hd"] is NOT caught here on purpose. Before the fix that is what
+     this payload raised, and letting it escape is what makes Alcotest report
+     the case as an unexpected exception rather than a pass. *)
+  match parse_payload payload with
+  | _ ->
+      Alcotest.fail
+        "an empty `type nonrec` declaration list must be REFUSED, not accepted"
+  | exception Parse_error_exn (msg, refusal_loc) ->
+      let contains hay needle =
+        let n = String.length needle and h = String.length hay in
+        let rec go i =
+          i + n <= h && (String.sub hay i n = needle || go (i + 1))
+        in
+        n = 0 || go 0
+      in
+      Alcotest.(check bool)
+        "the refusal names `type nonrec`"
+        true
+        (contains msg "`type nonrec` is not supported") ;
+      Alcotest.(check string)
+        "the refusal is pinned to the structure ITEM's location"
+        "empty_decls.ml"
+        refusal_loc.Location.loc_start.Lexing.pos_fname
+
 (* Test suite *)
 let () =
   Alcotest.run
@@ -927,5 +994,12 @@ let () =
             "payload floating doc paragraph accepted"
             `Quick
             test_parse_payload_floating_doc_accepted;
+        ] );
+      ( "refusals that must not crash",
+        [
+          Alcotest.test_case
+            "empty type-declaration list is refused, not Failure \"hd\""
+            `Quick
+            test_parse_payload_empty_type_decl_list;
         ] );
     ]
