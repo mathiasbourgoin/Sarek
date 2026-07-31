@@ -15,6 +15,8 @@ PtxStmtSpec, PtxKernelSpec, PtxLayout.
 | Metric | Value | Where it comes from |
 |---|---|---|
 | Theorems | **79** | `proof-ledger.json` → `counts.theorems` |
+| — shipped-artefact (checked against production) | 50 (PtxLayout) | `production-link.json` + `scripts/check-production-link.py` — backlog-201 |
+| — model-only (no mechanical production link) | 29 (PtxTypes, AGpuSemantics, PtxExprSpec, PtxKernelSpec, PtxStmtSpec) | same |
 | Admits | 0 | no `Admitted`/`admit` under `theories/`; `check-formal-proofs.sh` greps for them *and* the Rocq build would fail anyway |
 | Project-local axioms / `Parameter`s | 6 | the f32/f64 `sin`/`cos`/`fma` of `AGpuSemantics.v`, all six sanctioned in `formal/axiom-allowlist.txt` |
 | Toolchain-base axioms (inherited) | 99 | `counts.axioms_toolchain_base` — Rocq's own primitive-float/int63 axiomatisation, not ours to sanction |

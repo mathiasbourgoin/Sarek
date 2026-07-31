@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "purpose": "Hand-authored claims of which theories/<Module>.v are checked, by a differential or extraction-based test, against the ACTUAL shipped production OCaml — not merely against the extracted Rocq model compared to itself, or against a hand-written mirror. This is a distinct question from 'is it proven': every theorem in proof-ledger.json is proven either way. It is the backlog-201 answer to 'model vs production' for this project, made mechanical rather than left to README prose. scripts/check-production-link.py verifies each entry below against the freshly generated ledger (the module must exist and have the theorem count claimed) and the named test file's real content (production_call must appear as a live call, comments stripped — a stale claim whose test regressed must fail, not silently keep being cited).",
+  "modules": {
+    "PtxLayout": {
+      "test_file": "test/test_layout_conformance.ml",
+      "production_call": "Sarek_ir_layout",
+      "note": "extraction/LayoutExtract.v extracts PtxLayout.v to OCaml; test_layout_conformance.ml runs those extracted definitions directly against Sarek_ir_layout for accept/reject and every offset/size (exhaustive + random + host-pin + mixed-alignment groups, 11 Alcotest cases). scripts/check-formal-proofs.sh re-extracts from scratch and byte-compares against the committed extraction on every run, so this link cannot drift silently."
+    }
+  }
+}

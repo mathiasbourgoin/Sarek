@@ -13,10 +13,41 @@ was conducted entirely on conviction. The findings below were not hidden; they
 were recorded in four different places, in four different formats, and never
 counted.
 
+**"280 theorems" is not one claim, and headlining it unqualified would be the
+house defect this project keeps finding elsewhere: a number claiming a wider
+scope of guarantee than its code.** 94 of the 280 are checked, by a differential
+test, against the actual shipped OCaml — the model and the named production
+function are asserted to agree on the same generated inputs (or, for the PTX
+layout theory, the extracted model is run directly against production with no
+mirror in between). The other 186 are proven about the Rocq model only: real,
+machine-checked theorems, most independently QCheck/extraction-validated against
+the extracted model itself, but with no mechanical assertion that the model
+agrees with the code that ships. Neither figure is hand-typed:
+
+```
+$ scripts/check-production-link.py
+...
+shipped-artefact theorems: 94
+model-only theorems:       186
+total (== proof-ledger sum): 280
+```
+
+runs against the committed, drift-checked `proof-ledger.json` files and the
+hand-authored `formal/<project>/production-link.json` declarations, each entry
+of which is verified against the named test file's actual content — a claim
+whose test regresses fails the gate rather than staying cited. See
+`scripts/check-production-link.py`'s module docstring for exactly what
+"shipped-linked" does and does not mean, and the per-module breakdown it
+prints. `formal/convergence-safety/production-link.json` documents its
+`known_gap` explicitly: none of its 111 theorems are shipped-linked today, even
+though `formal/convergence-safety/test/test_convergence_live.ml` calls the real `Sarek_convergence.check_expr`
+— that suite is a fixed-pattern regression harness, not a differential property
+against the model, so it does not establish the link this script checks for.
+
 **This ledger is not an advocacy document.** A ledger that records only hits is
 marketing. Misses are recorded with the same care as catches, and a verification
 investment that produced no defect is recorded as producing no defect — see
-[N-01](#n-01), which is the outcome of the most recent piece of work here.
+[N-01](#n-01) for the first instance and [N-03](#n-03) for the most recent.
 
 ---
 
@@ -424,6 +455,44 @@ proofs, which is a distinct and lesser thing. It does bear on every claim in thi
 file: until 2026-07-27 the counts quoted in `STATUS.md`, in commit messages and in
 the ledgers were not derived from the toolchain, so any of them cited as evidence
 of coverage was citing a number nobody had checked.
+
+### N-03 — headlining the theorem count found no proof defect, and one scope gap
+
+| | |
+|---|---|
+| Date | 2026-07-31 |
+| Work | backlog-201 — headline the shipped-artefact theorem count, split from model-only |
+| Spec/impl defects found | **0** |
+| Apparatus gap found | no mechanical shipped/model distinction existed at any grain |
+
+backlog-95 reconciled *how many* theorems exist; it said nothing about *what
+they are checked against*. Re-verified here first, from a from-scratch rebuild
+(`scripts/check-formal-proofs.sh`): the three ledgers still agree, 79 + 111 + 90
+= 280, axiom allowlist exact match, every `proof-notes.json` anchor real. No
+regression since N-02.
+
+The shipped/model split itself was not previously derivable from anything —
+not the ledger (which has no notion of "production"), not a single source of
+truth, only scattered STATUS.md/README prose that does not cross-check itself
+against the test files it describes. `scripts/check-production-link.py` (new)
+plus one hand-authored `formal/<project>/production-link.json` per project
+close that gap the same way `formal/axiom-allowlist.txt` closed the axiom one:
+a human names the claim, the tool verifies it against the build and the named
+test file's real content, and a claim whose backing test regresses fails
+loudly rather than staying cited. Result: 94 shipped-artefact, 186 model-only.
+
+**Recorded as a null result** because no theorem's proof was found wrong and no
+implementation defect surfaced. What surfaced is a **scope gap**: `formal/type-safety`
+has two modules genuinely differential-tested against production
+(`TypeSafetySpec` via `Sarek_typer.infer`, `UnifySpec` via `Sarek_types.unify`),
+and `formal/codegen-ptx` has one (`PtxLayout`, via extraction run directly
+against `Sarek_ir_layout`) — but `formal/convergence-safety`, the project with
+the most theorems (111), has **zero**, despite `formal/convergence-safety/test/test_convergence_live.ml`
+already calling the real `Sarek_convergence.check_expr`. That test is a
+fixed-pattern regression suite, not a differential property against the
+model, which is precisely the pattern `formal/type-safety`'s T1-CMBT/T2-UNIFY
+harnesses established two projects ago. Closing it is follow-up work, not
+something this task does silently by asserting a link that is not there.
 
 ---
 
