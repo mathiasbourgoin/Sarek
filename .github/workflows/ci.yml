@@ -84,6 +84,23 @@ jobs:
       - name: ppxlib floor guard
         run: ./scripts/check-ppxlib-floor.sh
 
+      # backlog-213. An explicit `dune` entry in a package's `depends` supplies
+      # a second copy of the bound dune already injects from `(lang dune X.Y)`.
+      # Dune 3.23.0 deduplicates the pair unconditionally; 3.23.1 gated that on
+      # `(lang dune 3.23)`, so from 3.23.1 on this project gets
+      # `{>= "3.15" & >= "3.15"}`. The generated .opam files
+      # then depend on which dune ran, and `scripts/check-opam-clean.sh` -- which
+      # sees only the one dune on PATH -- went red on a clean tree for everyone
+      # using the project's own switch. This gate refuses the shape from the
+      # source file: no build and no second toolchain, which is why it can run
+      # this early, before the container exists. It does NOT compare two dunes.
+      # The measurement against the real CI dune is later in THIS job, in the
+      # "Build SPOC packages" step: `dune build @install` followed by
+      # `git diff --exit-code -- '*.opam'`, i.e. one build compared against the
+      # committed bytes.
+      - name: No explicit dune dependency in dune-project (backlog-213)
+        run: ./scripts/check-dune-opam-portability.sh
+
       # This workflow's own structure. A step inserted before another step's
       # `run:` line leaves the first with no action and gives the second two,
       # and YAML keeps the last silently -- so a step runs something other than
@@ -144,9 +161,12 @@ jobs:
       # and "is always red" are otherwise the same observation. It is its own
       # subject (scripts/prove-red-fixtures/), so a version of it that credited
       # an immune checker would fail here rather than print a second green.
-      # Measured 1.4s for 7 subjects and 38 mutations (2026-07-31, PR #384);
-      # it never runs the test suite. The figure was stale at "4 subjects and 13
-      # mutations" and is corrected in the commit that raises the pin.
+      # Measured 1.8s for 8 subjects and 53 mutations (2026-07-31, PR #399);
+      # it never runs the test suite. PR #384 corrected this from a stale
+      # "4 subjects and 13 mutations" to 7/38 and said the figure is corrected in
+      # the commit that raises the pin -- this is that commit, so it moves again
+      # to 8/53 (the eighth subject being check-dune-opam-portability.sh, whose
+      # 15 mutations are the largest single block in the suite).
       - name: Prove-red (gates are mutated and observed to fail)
         run: ./scripts/prove-red.sh
 
@@ -254,6 +274,16 @@ jobs:
           # invisibility shapes and refuses to guess at predicates it cannot
           # parse.
           ./scripts/check-dune-dir-visibility.test.sh
+          # backlog-213 / PR #399. The opam gate reads two command statuses as
+          # data (`cmp` between the two runs, `git diff --exit-code`) under
+          # `set -e`, and both were first written as a bare command plus
+          # `case $?` -- so the shell left AT the command and every diagnostic
+          # was dead code. Two of the three forced conditions still produced the
+          # RIGHT exit code with no message, which is why this harness asserts
+          # the message text on every red case: an exit-code assertion cannot
+          # tell a reached diagnostic from a dead one. It stubs `make` and
+          # `dune`, so it needs no switch and belongs in this job.
+          ./scripts/check-opam-clean.test.sh
           # backlog-192. The ppxlib floor guard exists because a bound was an
           # assertion nothing checked; a guard for that which cannot itself
           # fail would be the same defect one level up. Eight cases: the green
@@ -408,7 +438,55 @@ jobs:
               opam repo add alpha git+https://github.com/kit-ty-kate/opam-alpha-repository.git --set-default || true && \
               opam update && \
               opam install -y ctypes ctypes-foreign ppxlib alcotest qcheck-core js_of_ocaml js_of_ocaml-ppx js_of_ocaml-compiler ocamlformat.0.28.1 && \
-              dune build @install'
+              dune build @install && \
+              git diff --exit-code -- ":(top,glob)*.opam" && \
+              { untracked=$(git ls-files --others --exclude-standard -- ":(top,glob)*.opam"); \
+                if [ -n "$untracked" ]; then \
+                  echo "::error::dune build @install generated .opam file(s) at the repository root that are not committed:"; \
+                  echo "$untracked"; \
+                  exit 1; \
+                fi; }'
+        # backlog-213. `dune build @install` regenerates the tracked .opam files
+        # in place, and until now CI discarded the result without looking --
+        # which is why generated .opam drift was invisible here for the whole
+        # life of the repo and surfaced only on a contributor's own switch. The
+        # diff asserts that what the dune THIS JOB installed generates equals
+        # the committed bytes, so it also catches a future dune generation
+        # change of a shape check-dune-opam-portability.sh does not know about.
+        #
+        # The untracked check beside it is NOT redundant, and CodeRabbit caught
+        # its absence on PR #399: `git diff` compares TRACKED files only, so a
+        # newly declared package whose generated .opam was never committed
+        # produces no diff at all and would sail through. That is the one case
+        # where the committed-bytes comparison is silent rather than wrong.
+        #
+        # BOTH pathspecs are `:(top,glob)*.opam` and the magic is load-bearing.
+        # A bare `*.opam` is matched with FNM_PATHNAME OFF, so `*` crosses `/`
+        # and it means "any .opam at any depth". OPAMROOT here is
+        # /work/.opam-ci -- INSIDE the workspace, and not in .gitignore -- so the
+        # untracked half's first CI run listed 826 files, every one of them a
+        # dependency's own .opam under .opam-ci/.../sources/, and not one of them
+        # from this repository. The guard was correct about a set it had no
+        # business looking at: an assertion wider than its intent, the same class
+        # this PR is otherwise about. `:(glob)` stops `*` at `/` and `:(top)`
+        # anchors to the repo root, which is exactly the seven generated files.
+        # Measured both polarities locally: a planted .opam-ci-probe/.../dep.opam
+        # is invisible to the scoped pathspec and visible to the bare one, and the
+        # scoped tracked listing is precisely the seven root packages.
+        #
+        # Adding `.opam-ci/` to .gitignore would also have silenced it, and was
+        # not done: a pathspec that is only honest because an ignore rule happens
+        # to cover the difference is two copies of one fact, which is the trap
+        # backlog-213 exists to close.
+        #
+        # This is a single build compared against the tree, NOT a two-run
+        # convergence check -- `make opam` twice is scripts/check-opam-clean.sh,
+        # which no workflow runs. Wiring that script in here would be the
+        # stronger end state and is deliberately NOT done in this PR: it shells
+        # out to `make`, runs the build twice more, and its INCONCLUSIVE exit 2
+        # has never been observed inside this container. Adding an unverified
+        # exit-2 path to CI to fix a silent-pass is trading one unmeasured claim
+        # for another. Same shape as the check-generated-code job below.
 
       # #122: nothing enforced `.ocamlformat`, so formatting drift accumulated
       # on main unnoticed (Device.ml, Sarek_float32.ml, test_ir_layout.ml).
