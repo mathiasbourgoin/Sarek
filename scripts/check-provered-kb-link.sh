@@ -55,10 +55,18 @@
 # stdin: execution) -- that duplication would be a second, divergence-prone
 # implementation of the same grammar. "Unparseable" here means only the
 # structural half prove-red.sh's own parser would refuse on before ever
-# running anything: not exactly one BEGIN/END pair, or no `invoke:` key
-# between them. A block that parses but is otherwise broken (a `copy:` target
-# that does not exist, say) is prove-red.sh's own concern to report, the next
-# time it actually runs that subject.
+# running anything: not exactly one BEGIN/END pair, END before BEGIN, a line
+# between them that is not `key: value`, or no `invoke:` key anywhere in that
+# range. A block that parses but is otherwise broken (a `copy:` target that
+# does not exist, say) is prove-red.sh's own concern to report, the next time
+# it actually runs that subject.
+#
+# A block that HAS a marker but fails this structural check is still reported
+# under "carries a `BEGIN prove-red-spec` block" for direction (a) if it also
+# has no matching row -- deliberately: an unparseable block is not a reason to
+# excuse the missing row. Only direction (b) -- a row that already claims
+# `red_path: scripts/prove-red.sh` -- distinguishes "no marker at all" from
+# "marker present but does not parse".
 #
 # Exit codes:
 #   0  every discovered subject is named by a row whose red_path is not null,
@@ -81,6 +89,9 @@
 set -euo pipefail
 
 ROOT="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
+[ -d "$ROOT" ] || { echo "::error::root '$ROOT' is not a directory. This is a" \
+     "mechanism failure, not a linkage finding, so it must be exit 2." >&2; exit 2; }
+ROOT="$(cd "$ROOT" && pwd)"
 cd "$ROOT"
 
 python3 - <<'PY'
@@ -120,7 +131,10 @@ if not os.path.isfile(PROPS):
     fail("%s is missing under %s. There is nothing to cross-check a "
          "prove-red-spec block against." % (PROPS, ROOT))
 
-props_text = open(PROPS, encoding="utf-8", errors="replace").read()
+try:
+    props_text = open(PROPS, encoding="utf-8", errors="replace").read()
+except OSError as exc:
+    fail("%s could not be read: %s" % (PROPS, exc))
 blocks = re.findall(r"^```code-intel[ \t]*\n(.*?)^```[ \t]*$",
                     props_text, re.M | re.S)
 if len(blocks) != 1:
@@ -183,7 +197,7 @@ def discover():
                 has_invoke = False
                 for i in range(starts[0] + 1, ends[0]):
                     raw = strip_comment(lines[i])
-                    if not raw.strip() or raw.startswith("mutation:"):
+                    if not raw.strip():
                         continue
                     if ":" not in raw:
                         ok = False
@@ -204,20 +218,25 @@ live = {rel for rel, ok in subjects.items() if ok}
 
 violations = []
 
-# direction (a): a live block with no row, or a row whose red_path is null.
-for rel in sorted(live):
+# direction (a): ANY discovered marker with no row, or a row whose red_path is
+# null -- including one whose block does not fully parse. An unparseable
+# block is not a reason to excuse the missing row: prove-red.sh's own
+# EXPECTED_SUBJECTS pin is a separate, coarser backstop (it would refuse the
+# whole run over a subject-count mismatch), not a substitute for this row-level
+# report, so this iterates over every `subjects` key rather than only `live`.
+for rel in sorted(subjects):
     if rel not in tool_red_path:
         violations.append(
-            "%s carries a live prove-red-spec block with no matching "
+            "%s carries a `BEGIN prove-red-spec` block with no matching "
             "kb/properties.md gate-red-path row (check.tool == %r). A red "
             "path nothing declares is indistinguishable from no red path at "
             "all -- add a row." % (rel, rel))
     elif tool_red_path[rel] is None:
         violations.append(
-            "%s carries a live prove-red-spec block but its kb/properties.md "
-            "row declares red_path: null. This is the exact state "
-            "ci/assert-toolchain.sh sat in for months before PR #384 fixed "
-            "it by hand -- point red_path at %r (or at a dedicated "
+            "%s carries a `BEGIN prove-red-spec` block but its "
+            "kb/properties.md row declares red_path: null. This is the exact "
+            "state ci/assert-toolchain.sh sat in for months before PR #384 "
+            "fixed it by hand -- point red_path at %r (or at a dedicated "
             "*.test.sh)." % (rel, rel))
 
 # direction (b): a row claiming red_path: scripts/prove-red.sh for a tool
