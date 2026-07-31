@@ -369,12 +369,46 @@ let test_cross_kind_cycle_is_refused () =
            "cross-kind cycle: expected Type_decl_cycle, got [%s]"
            (String.concat "; " (tagged_names order)))
   | exception Sarek_ir_codegen.Type_decl_cycle unplaced ->
-      if List.sort String.compare unplaced <> ["g"; "v"] then
+      if List.sort String.compare unplaced <> ["record g"; "variant v"] then
         failwith
           (Printf.sprintf
              "cross-kind cycle: expected both names unplaced, got [%s]"
              (String.concat "; " unplaced)) ;
       print_endline "  a record/variant cycle raises Type_decl_cycle: OK"
+
+(* The cycle diagnostic has to survive the identity choice this pass rests on.
+   A record and a variant that SHARE a mangled name are two distinct nodes, so
+   they can form a genuine cycle in which every name is the same string — and a
+   payload of bare names renders it as [t; t], which identifies neither
+   declaration and reads like a self-reference (the one thing this pass
+   deliberately does NOT report). The kind is therefore part of the payload. *)
+let test_same_name_cycle_names_both_kinds () =
+  let rec rec_t = TRecord ("t", [("k", var_t)])
+  and var_t = TVariant ("t", [("C", [rec_t])]) in
+  let input =
+    [
+      Sarek_ir_codegen.Record_decl ("t", [("k", var_t)]);
+      Sarek_ir_codegen.Variant_decl ("t", [("C", [rec_t])]);
+    ]
+  in
+  match
+    within_deadline ~seconds:10 ~what:"same-name cycle" (fun () ->
+        Sarek_ir_codegen.sort_type_decls_by_dependency input)
+  with
+  | order ->
+      failwith
+        (Printf.sprintf
+           "same-name cycle: expected Type_decl_cycle, got [%s]"
+           (String.concat "; " (tagged_names order)))
+  | exception Sarek_ir_codegen.Type_decl_cycle unplaced ->
+      if List.sort String.compare unplaced <> ["record t"; "variant t"] then
+        failwith
+          (Printf.sprintf
+             "same-name cycle: the payload must distinguish the two same-named \
+              declarations, got [%s]"
+             (String.concat "; " unplaced)) ;
+      print_endline
+        "  a same-named record/variant cycle names BOTH kinds, not [t; t]: OK"
 
 (* A variant whose own payload is itself is the variant-side mirror of the
    self-referencing record field: not a cycle between distinct declarations, so
@@ -408,7 +442,7 @@ let test_cycle_is_refused () =
            "cycle: expected Type_decl_cycle, got [%s]"
            (String.concat "; " (names order)))
   | exception Sarek_ir_codegen.Type_decl_cycle unplaced ->
-      if List.sort String.compare unplaced <> ["a"; "b"] then
+      if List.sort String.compare unplaced <> ["record a"; "record b"] then
         failwith
           (Printf.sprintf
              "cycle: expected both names unplaced, got [%s]"
@@ -598,6 +632,7 @@ let () =
   test_both_cross_edges_in_one_pass () ;
   test_same_name_record_and_variant_edge_survives () ;
   test_cross_kind_cycle_is_refused () ;
+  test_same_name_cycle_names_both_kinds () ;
   test_variant_self_payload_does_not_raise () ;
   test_cycle_is_refused () ;
   test_self_reference_does_not_raise () ;
