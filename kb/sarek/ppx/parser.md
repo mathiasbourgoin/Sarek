@@ -103,9 +103,12 @@ Walked: every arm of `expression_desc`, `pattern_desc`, `core_type_desc` and
 list of constructs anybody thought of. (An earlier revision of this line said
 "ppxlib 5.2.1". There is no such ppxlib release; 5.2 is the OCaml version whose
 Parsetree shape that file carries, and the two were conflated. Re-check with
-`opam list --installed ppxlib` in `/home/mathias/dev/SPOC/_opam` and by diffing
-its constructor set against the switch's own `lib/ppxlib/astlib/ast_502.ml`,
-which is equal.)
+`opam list --installed ppxlib` in whichever switch you build this repo with,
+and by diffing its constructor set against that switch's own
+`lib/ppxlib/astlib/ast_502.ml`, which is equal. The path used to name one
+developer's local switch directory, which no other maintainer can re-run —
+backlog-168 removed personal machine identifiers from tracked files after they
+reached a published gh-pages site, and this was a fresh one.)
 
 **This walk raised the ppxlib floor, and the bound was raised to match.**
 **Declared ppxlib floor: `0.37.0`.** It used to say `(ppxlib (>= 0.22.0))`,
@@ -137,7 +140,7 @@ replaced the four-argument `Pexp_fun` with the parameterised `Pexp_function`.
 Established by source inspection rather than by a build, because 0.36.0 cannot
 be installed on the OCaml this package requires —
 
-```
+```sh
 opam source ppxlib.0.35.0 --dir=p35 ; grep -c Ptyp_open p35/ast/ast.ml   -> 0
 opam source ppxlib.0.36.0 --dir=p36 ; grep -c Ptyp_open p36/ast/ast.ml   -> 14
 grep -n '| Pexp_fun of' p35/ast/ast.ml  -> 373:  | Pexp_fun of arg_label * …
@@ -166,6 +169,22 @@ already makes the floor unreachable from below, because this package requires
 `ocaml >= 5.4.0` and every ppxlib before 0.37.0 caps itself at `ocaml < 5.4.0`.
 If the OCaml floor is ever lowered, that reasoning expires and the lane becomes
 worth its cost.
+
+**No UPPER bound, deliberately, and this is the second time it has been asked
+for.** CodeRabbit has twice proposed capping or pinning `ppxlib` on the ground
+that a newer selected AST could make the refusal tables drift or stop building.
+The concern is right about the mechanism and wrong about the remedy: drifting
+silently is exactly what the tables are built not to do. Each `*_refusal`
+function matches every arm of its variant with no wildcard, and
+`sarek/ppx/dune` carries `-warn-error +8` on `sarek_frontend`, so a ppxlib that
+grows a constructor **fails the build**, loudly, at the arm that is now missing.
+Measured 2026-07-31 by deleting the `Pexp_try` arm: dev `:standard` exits 1,
+`--profile=release` exits 1 with the flag and 0 without it — which is why the
+flag is there. An upper bound would convert that loud, precise, immediate
+failure into a dependency-resolution refusal that says nothing about which
+constructor appeared, and would need bumping on every ppxlib release whether or
+not anything actually broke. The floor is measured and enforced; the ceiling is
+enforced by the compiler.
 
 Reached from: `sarek/ppx/Sarek_parse.ml` and its callee
 `sarek/ppx/Sarek_parse_helpers.ml`.
@@ -327,35 +346,76 @@ field nobody reads here is a field nobody reads at all.
 ### What is NOT covered, precisely
 
 * `Sarek_ppx.ml` was not walked (see scope, above).
-* **Seven** refusals added here have **no committed negative case**:
+* **EIGHT** refusals added here have **no committed negative case**. Recount the
+  set from the tables with `grep -n 'no committed' kb/sarek/ppx/parser.md` —
+  every row that says so is one of these, and the grep is the check, not this
+  prose:
   `ptype_cstrs`, `ptype_private`, manifest-plus-representation,
   `ptype_attributes`, `locally_abstract_univars`, the anonymous payload module,
-  and the 2+-binding payload `let`. All seven were **executed by hand** during
-  the sweep through a scratch negative stanza and each printed its own message at
-  exit 1 (the outputs are in the PR discussion), so this is not a
-  by-inspection claim — but only the 29 committed cases are wired into
-  `make test_negative`, and an unasserted refusal is one that can rot.
+  the 2+-binding payload `let`, and — added by the adversarial review of this PR
+  — `Pstr_attribute` with a name that is not a documentation comment
+  (`[@@@warning "-32"]` inside a payload module). The first seven were
+  **executed by hand** during the sweep through a scratch negative stanza and
+  each printed its own message at exit 1; all seven were re-executed
+  independently during the adversarial review and reproduced. The eighth was
+  measured the same way, on the probe corpus that found the doc-comment
+  regression. Only the committed cases are wired into `make test_negative`, and
+  an unasserted refusal is one that can rot.
+
+  This list said **seven** while the tables held eight rows, because the review
+  that added the eighth row did not update the count. That is the defect class
+  this document exists to record, so the recount command is now written beside
+  the number.
 * Two refusals are **unreachable from OCaml source** and are asserted on AST
   nodes in `test_parse.ml` instead, each with the check that establishes the
   unreachability written at its definition.
-* **Seven** **residual drops** are documented rather than closed:
-  `popen_override`, `Ptyp_poly`'s quantifiers, a pattern's `Ppat_constraint`, the
-  payload module NAME, the payload-top `open`, `pvb_attributes` on an ordinary
-  kernel-body `let`, and the type-variable weakening of a module-item result
-  annotation. The first three are argued at their site to lose nothing. The
-  payload module NAME is load-bearing as it is. The last three are real remaining
-  holes with a stated reason for staying: the payload-top `open` cannot be closed
-  without breaking `test_inline_node_exhaustion`, the type-variable weakening
-  cannot be refused without breaking `test_module_poly`, and `pvb_attributes` on
-  an ordinary `let` is simply not done — the same three lines as the superstep
-  one, deferred rather than justified. `Pstr_type`'s `rec_flag` was on this list
-  and is now REFUSED instead; `constructor_declaration.pcd_attributes` and
-  `label_declaration.pld_attributes` stay, because those helpers are shared with
-  the top-level route where OCaml is entitled to the attributes.
-* The claim "every arm is now read or refused" holds for the four variants and
-  the record fields listed at the top of this table, in
-  `Sarek_parse.ml` + `Sarek_parse_helpers.ml`, against ppxlib 0.38.0. It is not a
-  claim about the PPX as a whole, and for `module_expr_desc` it is a claim about
-  the DEFAULT being a refusal rather than about the compiler enforcing the
-  enumeration (see that section's note).
+* **TEN** **residual drops** are documented rather than closed, in nine table
+  rows plus one item that has no row. The old count here was **seven**, and it
+  was wrong in two independent ways even before this PR's review touched it: it
+  enumerated seven and then named `pcd_attributes` and `pld_attributes` as also
+  staying, in the same paragraph, without counting them; and the review that
+  added `popen_attributes` to the tables did not update it either. Recount with
+  `grep -n 'residual' kb/sarek/ppx/parser.md` on the table rows — one hit at the
+  `Pstr_value` row is the phrase "residual error" and is not one of these.
+
+  1. `popen_override` — argued at its site to lose nothing.
+  2. `popen_attributes` — added by the adversarial review of this PR; the same
+     class as 4 below, and the scope line had claimed `open_infos` was walked
+     field by field while this field had no row at all.
+  3. a pattern's `Ppat_constraint` — argued at its site to lose nothing.
+  4. `pvb_attributes` on an ordinary kernel-body `let` — a real hole, simply not
+     done. The same three lines as the superstep one, deferred rather than
+     justified.
+  5. `Ptyp_poly`'s quantifiers — argued at its site to lose nothing.
+  6. `constructor_declaration.pcd_attributes` — stays: the helper is shared with
+     the TOP-LEVEL `[@@sarek.type]` route, where the declaration also reaches
+     OCaml and the attributes are its business. Refusing would break code that
+     compiles today.
+  7. `label_declaration.pld_attributes` — same helper, same reason.
+  8. the payload module NAME — load-bearing as it is; writing it in would make
+     `M.t` required and `t` unresolvable.
+  9. the payload-top `open` — cannot be closed without breaking
+     `test_inline_node_exhaustion`. This is the only ARM-level one; the other
+     nine are record fields or a semantic weakening.
+  10. the type-variable weakening of a module-item result annotation
+      (`constrain_body`) — cannot be refused without breaking
+      `test_module_poly`. **This one has no table row**, only a code comment at
+      its site and this entry; it is a weakening rather than a dropped field, so
+      no table column fits it, but that also means no table records it.
+
+  `Pstr_type`'s `rec_flag` was on this list and is now REFUSED instead.
+* **The invariant, stated no wider than it holds.** "Every arm is now read or
+  refused" was too strong: this same document lists ten residual drops, so it
+  contradicted itself four bullets up. What holds, against ppxlib 0.38.0, in
+  `Sarek_parse.ml` + `Sarek_parse_helpers.ml` only:
+
+  * Every **arm** of `expression_desc`, `pattern_desc`, `core_type_desc` and
+    `structure_item_desc` is read or refused, with ONE exception — the
+    payload-top `Pexp_open`, item 9 above, which is still dropped.
+  * Every **record field** listed in the scope paragraph is read, refused, or
+    named in the residual list above. Nine of the ten residuals are fields.
+  * For `module_expr_desc` the claim is weaker again: the DEFAULT is a refusal
+    rather than a drop, but the enumeration is not compiler-enforced there
+    because that variant has no wildcard-free table (see that section's note).
+  * It is not a claim about the PPX as a whole. `Sarek_ppx.ml` was not walked.
 

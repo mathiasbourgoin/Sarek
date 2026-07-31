@@ -662,14 +662,22 @@ metasha="$(printf '%s' "$metafx" | cut -d' ' -f3)"
 # the property here means a regression in `abbrev_sha` fails deterministically,
 # instead of once every eleven runs on a random case.
 metaok="$(printf '%s' "$metafx" | cut -d' ' -f2)"
-case "$metaok$metasha" in
-  *[a-f]*)
+# CONCATENATED, this tested neither sha. `case "$metaok$metasha" in *[a-f]*)`
+# is satisfied by a single letter anywhere in the join, so one all-digit sha
+# beside one containing a letter PASSED -- re-admitting the very draw this case
+# exists to pin, and at a rate (one sha in 43, twice) close to the flake it
+# replaced. The delimiter is what makes the two halves separate assertions;
+# `:` cannot occur in a hex abbreviation, so it cannot be absorbed by either
+# side's glob. Caught by CodeRabbit on PR #398.
+case "$metaok:$metasha" in
+  *[a-f]*:*[a-f]*)
     echo "PASS meta: the fixture's shas are visible to the subject (not all-digit)"
     pass=$((pass + 1))
     ;;
   *)
-    echo "FAIL meta: fixture shas '$metaok'/'$metasha' are all digits;" \
-      "the subject skips those, so every sha case would pass vacuously"
+    echo "FAIL meta: at least one of the fixture shas '$metaok'/'$metasha' is" \
+      "all digits; the subject skips those, so every sha case built on it" \
+      "would pass vacuously"
     fail=$((fail + 1))
     ;;
 esac
