@@ -17,11 +17,16 @@
    Refusing costs nothing: a kernel function's parameters must already carry
    their own annotations (`extract_param_from_pattern` raises "Kernel parameters
    must have type annotations"), so the domain half of a whole-binding arrow is
-   always redundant with them and was never checked against them. *)
+   always redundant with them and was never checked against them.
+
+   The binding below is exactly the motivating shape: the annotation says the
+   domain is `float32` and the parameter says `int32`, and they contradict each
+   other. With the peeling restored this file compiles at exit 0 — measured —
+   because only `int32` (the peeled result) is ever looked at. *)
 
 let k =
   [%kernel
     fun (src : int32 vector) (dst : int32 vector) ->
       let tid = thread_idx_x in
-      let f : int32 = fun (x : int32) -> x + 1l in
+      let f : float32 -> int32 = fun (x : int32) -> x in
       dst.(tid) <- f src.(tid)]
