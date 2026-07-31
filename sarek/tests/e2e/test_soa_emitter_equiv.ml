@@ -700,6 +700,24 @@ let check_gate dev =
    prints the named skip. Returning [true] silently here as well would be the
    skip-as-pass shape twice over, and the guard would then be the only thing
    keeping the row visible. *)
+(* ── backlog-225: what is known about the shape, recorded, NOT fixed ─────────
+   The tracker body was lost, so this comment is the whole of it.
+
+   This case and the [Vector.fill] row of [check_relaunch] have each been seen
+   to fail once, both on ZLUDA's CUDA/PTX view of the AMD Ryzen 9 7950X
+   integrated GPU, and both with the same shape: every index wrong, x and z
+   right, and got.y equal to the value the host wrote — exactly half the
+   expected doubled value. Only y carries information. It is the one leaf the
+   kernel writes, so on x and z a read-back that returned pre-kernel bytes and a
+   store that never landed look the same; the shape does not distinguish them.
+
+   Rare, and not deterministic: twice in some 2,500 executions of this test
+   binary, and never once in a loop driving this case alone. Both
+   occurrences were on the same host, hours apart, this one of them under an
+   unmodified [dune runtest]. The [Vector.fill]
+   occurrence was on a leg that already synchronizes after the
+   launch, so the [Transfer.flush] added below is not established as the cause
+   and is not offered as the fix. No root cause is known. *)
 let check_roundtrip dev n =
   begin
     Printf.printf
@@ -728,6 +746,24 @@ let check_roundtrip dev n =
         ~block
         ~grid
         () ;
+      (* [run_soa] returns as soon as the launch is QUEUED — [Kernel.launch] is
+         a bare [cuLaunchKernel] and neither it nor [run_soa] synchronizes. This
+         case called [Soa_launch.run_soa] directly and went straight on to the
+         read-back with nothing in between; the two launch helpers this file
+         defines for its other cases, [run_soa] and [run_soa_via_api], each end
+         with [Transfer.flush]. (Not a claim about every other launch site in
+         the file — only about those two and this one.)
+
+         Under legacy null-stream semantics the blocking [cuMemcpyDtoH] inside
+         [to_cpu] is already ordered after the launch, so on a conforming driver
+         this line changes nothing. It is here so the case does not REST on that:
+         what it is meant to exercise is the leaf writeback and the gather, and a
+         read-back racing the kernel would report on the driver's stream
+         ordering instead, in the same shape (an unchanged y) as a genuine
+         writeback failure. Not offered as a fix for backlog-225 — see the note
+         at the head of this function; that shape has also been observed on a
+         leg that already flushed. *)
+      Transfer.flush dev ;
       (* Device wrote the y leaf; round-trip explicitly per the run_soa
          contract: D2H every leaf, then gather back into the AoS vector. *)
       Array.iter
@@ -2150,6 +2186,30 @@ let check_layout_wired dev =
           msg ;
         false)
 
+(* ── making the absence of a CUDA/PTX device DEMANDABLE ─────────────────────
+   Every SoA-ABI case in this file prints a named SKIP on a device that is not
+   CUDA/PTX, and the whole binary then exits 0. That is right by default: a
+   device that is simply not present must read as skipped-because-absent, never
+   as a pass and never as a failure. But it also means that a caller reading
+   only the exit code cannot tell a host that exercised the SoA legs from one
+   that skipped every last one of them — which is how a defect in those legs can
+   sit unobserved behind a green run.
+
+   [SAREK_REQUIRE_PTX] lets a caller that BELIEVES it has such a device say so,
+   and be told when it does not. Set to anything other than "" or "0" it turns
+   "no CUDA/PTX device was enumerated" into a failure.
+
+   The claim is exactly that: a device whose [Device.framework] is the string
+   "CUDA/PTX" was ENUMERATED. Enumeration is all it can see from here. It does
+   not assert that any SoA case passed, or that a kernel ran, or that the device
+   is usable — the per-case rows below are what say those things, and they are
+   unaffected by this variable. Nor does it make the PTX leg required: nothing
+   in this repository sets the variable, and unset nothing here changes. *)
+let ptx_required =
+  match Sys.getenv_opt "SAREK_REQUIRE_PTX" with
+  | None | Some "" | Some "0" -> false
+  | Some _ -> true
+
 let () =
   Benchmarks.init () ;
   let n = 1024 in
@@ -2170,12 +2230,24 @@ let () =
     print_endline
       "test_soa_emitter_equiv: no device - SKIPPED (layout validation still \
        checked above)" ;
-    exit (if layout_ok then 0 else 1)) ;
+    if ptx_required then
+      print_endline
+        "test_soa_emitter_equiv: SAREK_REQUIRE_PTX is set and no device at all \
+         was enumerated" ;
+    exit (if layout_ok && not ptx_required then 0 else 1)) ;
   let any_ptx = Array.exists is_ptx devs in
   if not any_ptx then
     print_endline
       "test_soa_emitter_equiv: no CUDA/PTX device - SoA leg skipped (AoS + \
        reference still checked)" ;
+  (* Folded into the final verdict rather than exiting here, so a caller that
+     asked for the PTX leg and did not get it still sees every row this host
+     COULD run. *)
+  let ptx_requirement_ok = any_ptx || not ptx_required in
+  if not ptx_requirement_ok then
+    print_endline
+      "test_soa_emitter_equiv: SAREK_REQUIRE_PTX is set but no enumerated \
+       device reports framework \"CUDA/PTX\"" ;
   let ok = ref true in
   Array.iter
     (fun dev ->
@@ -2209,9 +2281,7 @@ let () =
          indistinguishable from one that passed — the exact skip-as-pass shape the
          guarded cases below were restructured to make unrepresentable. Same
          wording as the fp64 arm of [check_mixed_widths] (its other arm reports
-         int64, a different capability). Not the last bare gate in this loop:
-         [check_roundtrip] at the end is still [if is_ptx dev && …] and prints
-         nothing on a non-PTX device. *)
+         int64, a different capability). *)
       if not dev_can_f64 then
         Printf.printf
           "SoA-emitter dpair(f64) [%s] %s: SKIP (device reports no fp64)\n%!"
@@ -2369,4 +2439,4 @@ let () =
              (fun () -> check_roundtrip dev n))
       then ok := false)
     devs ;
-  if not (!ok && layout_ok) then exit 1
+  if not (!ok && layout_ok && ptx_requirement_ok) then exit 1
