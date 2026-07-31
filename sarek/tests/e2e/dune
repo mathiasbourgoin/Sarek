@@ -978,15 +978,35 @@
 ; the host enumerates, so a host that reaches its OpenCL ICD, Vulkan loader or
 ; Mesa drivers through an inherited LD_LIBRARY_PATH lost THOSE devices too — they
 ; simply stop enumerating, which costs real rows and fails nothing.
-; BOTH %{env:...} defaults are non-empty, and that is a loader-safety requirement
-; rather than tidiness. With an empty default for LD_LIBRARY_PATH the value ends
-; in a colon, and the dynamic loader reads a trailing empty entry as the CURRENT
-; DIRECTORY -- under dune the sandboxed build directory, so any stray .so written
-; there would be a candidate for loading ahead of the system copy. /usr/lib is the
-; harmless stand-in: it is already on the default search path, so naming it adds
-; no directory that was not being searched. With an empty default for HOME the
-; first entry becomes the absolute /opt/zluda, a path outside this checkout that
-; nothing here owns; /nonexistent keeps the entry inert instead.
+; Composed by `sh`, not by (setenv) + %{env:...}, and that is a loader-safety
+; requirement rather than a style choice. An empty entry in LD_LIBRARY_PATH -- a
+; leading, trailing or doubled colon -- is read by the dynamic loader as the
+; CURRENT DIRECTORY, which under dune is the sandboxed build directory, so a
+; stray .so written there would be a candidate ahead of the system copy.
+; %{env:LD_LIBRARY_PATH=default} cannot prevent that: dune substitutes the
+; default only when the variable is UNSET, so a variable that is defined and
+; EMPTY still yields a trailing colon. ${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} is
+; the shell form that distinguishes the two -- the colon and the value appear
+; together or not at all.
+; Scope of that, stated because the obvious reading is wider than the code: this
+; stops the rule from ADDING an empty entry (unset and defined-empty both yield
+; just the ZLUDA directory). It does not sanitize empty components already inside
+; an inherited NON-empty value -- LD_LIBRARY_PATH=":" gives "...zluda::" and
+; "/opt/x:" keeps its trailing colon -- and it cannot, because such a value is
+; already in effect for the loader that starts `sh` itself, before any expression
+; here runs. Sanitising an inherited path is a different job than not corrupting
+; it, and only the second is claimed.
+; ${HOME:?} makes an unset or empty HOME a loud failure of this rule rather than
+; an absolute /opt/zluda, a path outside this checkout that nothing here owns.
+; The case statement is not defensive either: %{dep:...} expands to a path
+; RELATIVE to the action's directory, and `exec` on a bare relative word searches
+; PATH and does not find it -- caught by `dune runtest --force`, which reported
+; "exec: test_soa_emitter_equiv.exe: not found" for both rules. The absolute arm
+; is there so the rule does not depend on that expansion staying relative.
+; Note what this rule does NOT claim: prepending the ZLUDA directory does change
+; loader PRECEDENCE for every name it contains. That is the point of the rule --
+; it is how libcuda.so.1 resolves to ZLUDA -- and it is scoped to these two test
+; executables.
 ; Same precedent as the RUSTICL_FEATURES=fp64 rule further down: set the variable
 ; that makes a leg actually exercised, rather than documenting it in a comment and
 ; letting the leg quietly not run.
@@ -994,10 +1014,11 @@
 (rule
  (alias runtest)
  (action
-  (setenv
-   LD_LIBRARY_PATH
-   %{env:HOME=/nonexistent}/opt/zluda:%{env:LD_LIBRARY_PATH=/usr/lib}
-   (run %{dep:test_soa_emitter_equiv.exe}))))
+  (run
+   sh
+   -c
+   "LD_LIBRARY_PATH=\"${HOME:?}/opt/zluda${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"; export LD_LIBRARY_PATH; case \"$0\" in /*) exec \"$0\";; *) exec \"./$0\";; esac"
+   %{dep:test_soa_emitter_equiv.exe})))
 
 ; Cross-device migration of a transparent SoA vector: Transfer.to_device to a
 ; device the vector is NOT resident on drains the source device first, and that
@@ -1030,10 +1051,11 @@
 (rule
  (alias runtest)
  (action
-  (setenv
-   LD_LIBRARY_PATH
-   %{env:HOME=/nonexistent}/opt/zluda:%{env:LD_LIBRARY_PATH=/usr/lib}
-   (run %{dep:test_soa_cross_device_migration.exe}))))
+  (run
+   sh
+   -c
+   "LD_LIBRARY_PATH=\"${HOME:?}/opt/zluda${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"; export LD_LIBRARY_PATH; case \"$0\" in /*) exec \"$0\";; *) exec \"./$0\";; esac"
+   %{dep:test_soa_cross_device_migration.exe})))
 
 ; L17b polymorphic bare float literals: bare (unsuffixed) literals inferred as
 ; float64 from an f64 context, executed on all devices vs an OCaml f64 reference.
