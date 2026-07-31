@@ -326,3 +326,13 @@
  (name test_tuple_vec_registry)
  (modules test_tuple_vec_registry)
  (libraries sarek.tuple_vec spoc_core spoc.ir alcotest))
+
+(executable
+ (name probe185)
+ (modules probe185)
+ (libraries sarek.codegen spoc.ir sarek_transpile sarek_stdlib_meta))
+
+(executable
+ (name probe185b)
+ (modules probe185b)
+ (libraries sarek.codegen spoc.ir))

@@ -31,12 +31,34 @@ module Dispatch = Sarek_ir_intrinsic_dispatch
 let bad_arity n e g =
   Codegen_error.raise_error (Codegen_error.invalid_arg_count n e g)
 
-(** Current framework string for SNative code generation. Always [None] in
-    normal use; SNative branches check this ref and error if None. *)
-let current_framework : string option ref = ref None
+(** Everything one run of {!generate_with_types} needs to know that is not
+    reachable from the IR node it is currently emitting. It is a VALUE threaded
+    through the emit functions, not module state, and that is the whole point of
+    backlog-185/200: the two fields below used to be module-level [ref]s, so a
+    second generation — on another domain, or simply a later one after
+    {!Sarek_transpile} had written them — read the first one's values.
 
-(** Current kernel's variant definitions (set during generate) *)
-let current_variants : (string * (string * elttype list) list) list ref = ref []
+    [framework] is the tag the pure/FFI registries are queried with and the
+    argument [SNative] passes to its source-producing closure. [None] means "no
+    caller supplied one": the registry queries then fall back to ["CUDA"]
+    (unchanged behaviour, since that is what every runtime caller wants) and
+    [SNative] refuses, because a native block has no correct spelling to emit
+    without knowing the target. Only {!Sarek_transpile} passes it, and now
+    passes it to the ONE emitter it is generating with rather than assigning it
+    into all four C-family emitters' globals.
+
+    [variants] is the kernel's own [kern_variants], read by the [SMatch]/[EMatch]
+    arms to recover a constructor's payload types. Derived from the kernel, so it
+    could be re-derived at each use site; it is carried here because that is
+    where the ref it replaces was read from. *)
+type state = {
+  framework : string option;
+  variants : (string * (string * elttype list) list) list;
+}
+
+(** The state for emitting [k]. [framework] is threaded from the caller. *)
+let state ?framework (k : kernel) : state =
+  {framework; variants = k.kern_variants}
 
 (** {1 Type Mapping} *)
 
@@ -102,7 +124,7 @@ let cuda_thread_intrinsic name =
 
 (** {1 Expression Generation} *)
 
-let rec gen_expr buf = function
+let rec gen_expr st buf = function
   | EConst (CInt32 n) -> Buffer.add_string buf (Int32.to_string n)
   | EConst (CInt64 n) -> Buffer.add_string buf (Int64.to_string n ^ "LL")
   | EConst (CFloat32 f) ->
@@ -119,32 +141,32 @@ let rec gen_expr buf = function
   | EVar v -> Buffer.add_string buf v.var_name
   | EBinop (op, e1, e2) ->
       Buffer.add_char buf '(' ;
-      gen_expr buf e1 ;
+      gen_expr st buf e1 ;
       Buffer.add_string buf (gen_binop op) ;
-      gen_expr buf e2 ;
+      gen_expr st buf e2 ;
       Buffer.add_char buf ')'
   | EUnop (op, e) ->
       Buffer.add_char buf '(' ;
       Buffer.add_string buf (gen_unop op) ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_char buf ')'
   | EArrayRead (arr, idx) ->
       Buffer.add_string buf arr ;
       Buffer.add_char buf '[' ;
-      gen_expr buf idx ;
+      gen_expr st buf idx ;
       Buffer.add_char buf ']'
   | EArrayReadExpr (base, idx) ->
       Buffer.add_char buf '(' ;
-      gen_expr buf base ;
+      gen_expr st buf base ;
       Buffer.add_string buf ")[" ;
-      gen_expr buf idx ;
+      gen_expr st buf idx ;
       Buffer.add_char buf ']'
   | ERecordField (e, field) ->
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_char buf '.' ;
       Buffer.add_string buf field
   | EIntrinsic (path, name, args) ->
-      Dispatch.gen_intrinsic cuda_backend buf path name args
+      Dispatch.gen_intrinsic (cuda_backend st) buf path name args
   | ECast (TFloat16, e) ->
       (* f16 is a storage type: narrow through the documented intrinsic rather
          than a C cast, so the round-to-nearest-even mode is explicit and
@@ -158,13 +180,13 @@ let rec gen_expr buf = function
          DSL promises. See [sarek_f32_barrier_decl] for the measured ISA and why
          neither -ffp-contract=off nor `#pragma clang fp contract` reaches it. *)
       Buffer.add_string buf "__float2half(sarek_f32_barrier(" ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_string buf "))"
   | ECast (ty, e) ->
       Buffer.add_char buf '(' ;
       Buffer.add_string buf (cuda_type_of_elttype ty) ;
       Buffer.add_char buf ')' ;
-      gen_expr buf e
+      gen_expr st buf e
   | ETuple _ ->
       (* backlog-194. This arm used to print a bare brace list, which is
          not an expression in CUDA: measured, clang -x cl rejected the
@@ -184,12 +206,12 @@ let rec gen_expr buf = function
             brace list produced source no device compiler accepts \
             (backlog-194). Use a registered record type.")
   | EApp (fn, args) ->
-      gen_expr buf fn ;
+      gen_expr st buf fn ;
       Buffer.add_char buf '(' ;
       List.iteri
         (fun i e ->
           if i > 0 then Buffer.add_string buf ", " ;
-          gen_expr buf e)
+          gen_expr st buf e)
         args ;
       Buffer.add_char buf ')'
   | ERecord (name, fields) ->
@@ -199,7 +221,7 @@ let rec gen_expr buf = function
       List.iteri
         (fun i (_f, e) ->
           if i > 0 then Buffer.add_string buf ", " ;
-          gen_expr buf e)
+          gen_expr st buf e)
         fields ;
       Buffer.add_string buf "}"
   | EVariant (_, constr, []) -> Buffer.add_string buf constr
@@ -208,7 +230,7 @@ let rec gen_expr buf = function
       List.iteri
         (fun i e ->
           if i > 0 then Buffer.add_string buf ", " ;
-          gen_expr buf e)
+          gen_expr st buf e)
         args ;
       Buffer.add_char buf ')'
   | EArrayLen arr -> Buffer.add_string buf ("sarek_" ^ arr ^ "_length")
@@ -220,11 +242,11 @@ let rec gen_expr buf = function
   | EIf (cond, then_, else_) ->
       (* Ternary operator for value-returning if *)
       Buffer.add_char buf '(' ;
-      gen_expr buf cond ;
+      gen_expr st buf cond ;
       Buffer.add_string buf " ? " ;
-      gen_expr buf then_ ;
+      gen_expr st buf then_ ;
       Buffer.add_string buf " : " ;
-      gen_expr buf else_ ;
+      gen_expr st buf else_ ;
       Buffer.add_char buf ')'
   | EMatch (scrut, cases) when Sarek_ir_codegen.ematch_binds_payload cases ->
       (* #75: a match EXPRESSION lowers to a nested ternary, which has nowhere to
@@ -232,7 +254,7 @@ let rec gen_expr buf = function
          read the [SMatch] arm declares (the C-family tagged union), then emit the
          (now binder-free) match. One shared, capture-avoiding pass for every
          backend; see {!Sarek_ir_codegen.subst_ematch_payloads}. *)
-      gen_expr
+      gen_expr st
         buf
         (EMatch
            ( scrut,
@@ -250,7 +272,7 @@ let rec gen_expr buf = function
         (Codegen_error.unsupported_construct "EMatch" "empty match expression")
   | EMatch (_, [(_, body)]) ->
       (* Single case - just emit the body *)
-      gen_expr buf body
+      gen_expr st buf body
   | EMatch (e, cases) ->
       (* Multi-case match as nested ternary - check tag field *)
       let rec gen_cases = function
@@ -259,17 +281,17 @@ let rec gen_expr buf = function
               (Codegen_error.unsupported_construct
                  "EMatch"
                  "empty match cases after filtering")
-        | [(_, body)] -> gen_expr buf body
+        | [(_, body)] -> gen_expr st buf body
         | (pat, body) :: rest ->
             Buffer.add_char buf '(' ;
             (match pat with
             | PConstr (name, _) ->
                 Buffer.add_char buf '(' ;
-                gen_expr buf e ;
+                gen_expr st buf e ;
                 Buffer.add_string buf (".tag == " ^ name ^ ")")
             | PWild -> Buffer.add_string buf "1") ;
             Buffer.add_string buf " ? " ;
-            gen_expr buf body ;
+            gen_expr st buf body ;
             Buffer.add_string buf " : " ;
             gen_cases rest ;
             Buffer.add_char buf ')'
@@ -298,20 +320,20 @@ and gen_binop = function
 
 and gen_unop = function Neg -> "-" | Not -> "!" | BitNot -> "~"
 
-and cuda_backend =
+and cuda_backend st =
   {
     Dispatch.framework =
-      (fun () -> Option.value ~default:"CUDA" !current_framework);
-    gen_expr;
+      (fun () -> Option.value ~default:"CUDA" st.framework);
+    gen_expr = gen_expr st;
     thread_intrinsic = cuda_thread_intrinsic;
     pre_hook = (fun _ ~full_name:_ _ _ _ -> false);
     post_hook =
       (fun buf path name args ->
         (* Same framework tag the pure-registry lookup uses: without it this
            fallback emitted the CUDA spelling on every backend. *)
-        let framework = Option.value ~default:"CUDA" !current_framework in
+        let framework = Option.value ~default:"CUDA" st.framework in
         Dispatch.emit_registry_template
-          ~gen_expr
+          ~gen_expr:(gen_expr st)
           ~framework
           ~invalid_arg_count:bad_arity
           buf
@@ -329,14 +351,14 @@ and cuda_backend =
         | "tanh" | "exp" | "exp2" | "log" | "log2" | "log10" | "sqrt" | "rsqrt"
         | "cbrt" | "floor" | "ceil" | "round" | "trunc" | "fabs" | "atan2"
         | "pow" | "fma" | "min" | "max" ->
-            Some (fun buf args -> Dispatch.emit_call ~gen_expr buf name args)
+            Some (fun buf args -> Dispatch.emit_call ~gen_expr:(gen_expr st) buf name args)
         | "block_barrier" ->
             Some (fun buf _ -> Buffer.add_string buf "__syncthreads()")
         | "atomic_add" | "atomic_add_int32" | "atomic_add_global_int32" ->
             Some
               (fun buf args ->
                 Dispatch.emit_atomic
-                  ~gen_expr
+                  ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
                   ~callee:"atomicAdd"
@@ -350,7 +372,7 @@ and cuda_backend =
             Some
               (fun buf args ->
                 Dispatch.emit_atomic
-                  ~gen_expr
+                  ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
                   ~callee:"atomicSub"
@@ -364,7 +386,7 @@ and cuda_backend =
             Some
               (fun buf args ->
                 Dispatch.emit_atomic
-                  ~gen_expr
+                  ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
                   ~callee:"atomicMin"
@@ -378,7 +400,7 @@ and cuda_backend =
             Some
               (fun buf args ->
                 Dispatch.emit_atomic
-                  ~gen_expr
+                  ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
                   ~callee:"atomicMax"
@@ -393,45 +415,45 @@ and cuda_backend =
 
 (** {1 L-value Generation} *)
 
-let gen_lvalue buf lv = Sarek_ir_codegen.gen_lvalue ~gen_expr buf lv
+let gen_lvalue st buf lv = Sarek_ir_codegen.gen_lvalue ~gen_expr:(gen_expr st) buf lv
 
 (** {1 Statement Generation} *)
 
-let rec gen_stmt buf indent = function
+let rec gen_stmt st buf indent = function
   | SEmpty -> ()
-  | SSeq stmts -> List.iter (gen_stmt buf indent) stmts
+  | SSeq stmts -> List.iter (gen_stmt st buf indent) stmts
   | SAssign (lv, e) -> (
       (* Special case: CUDA doesn't support compound literals in assignments.
          For record assignments, generate field-by-field initialization. *)
       match e with
-      | ERecord (_, fields) -> gen_record_assign buf indent lv fields
+      | ERecord (_, fields) -> gen_record_assign st buf indent lv fields
       | _ ->
           Buffer.add_string buf indent ;
-          gen_lvalue buf lv ;
+          gen_lvalue st buf lv ;
           Buffer.add_string buf " = " ;
-          gen_expr buf e ;
+          gen_expr st buf e ;
           Buffer.add_string buf ";\n")
   | SIf (cond, then_, else_opt) -> (
       Buffer.add_string buf indent ;
       Buffer.add_string buf "if (" ;
-      gen_expr buf cond ;
+      gen_expr st buf cond ;
       Buffer.add_string buf ") {\n" ;
-      gen_stmt buf (indent ^ "  ") then_ ;
+      gen_stmt st buf (indent ^ "  ") then_ ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}" ;
       match else_opt with
       | None -> Buffer.add_char buf '\n'
       | Some else_ ->
           Buffer.add_string buf " else {\n" ;
-          gen_stmt buf (indent ^ "  ") else_ ;
+          gen_stmt st buf (indent ^ "  ") else_ ;
           Buffer.add_string buf indent ;
           Buffer.add_string buf "}\n")
   | SWhile (cond, body) ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "while (" ;
-      gen_expr buf cond ;
+      gen_expr st buf cond ;
       Buffer.add_string buf ") {\n" ;
-      gen_stmt buf (indent ^ "  ") body ;
+      gen_stmt st buf (indent ^ "  ") body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SFor (v, start, stop, dir, body) ->
@@ -445,22 +467,22 @@ let rec gen_stmt buf indent = function
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf " = " ;
-      gen_expr buf start ;
+      gen_expr st buf start ;
       Buffer.add_string buf "; " ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf (" " ^ op ^ " ") ;
-      gen_expr buf stop ;
+      gen_expr st buf stop ;
       Buffer.add_string buf "; " ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf incr ;
       Buffer.add_string buf ") {\n" ;
-      gen_stmt buf (indent ^ "  ") body ;
+      gen_stmt st buf (indent ^ "  ") body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SMatch (e, cases) ->
       (* Generate scrutinee into a temp buffer to get its string representation *)
       let scrutinee_buf = Buffer.create 64 in
-      gen_expr scrutinee_buf e ;
+      gen_expr st scrutinee_buf e ;
       let scrutinee = Buffer.contents scrutinee_buf in
       Buffer.add_string buf indent ;
       Buffer.add_string buf "switch (" ;
@@ -468,14 +490,14 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf ".tag) {\n" ;
       List.iter
         (fun (pattern, body) ->
-          gen_match_case buf indent scrutinee pattern body)
+          gen_match_case st buf indent scrutinee pattern body)
         cases ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SReturn e ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "return " ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_string buf ";\n"
   | SBarrier ->
       Buffer.add_string buf indent ;
@@ -487,7 +509,7 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf indent ;
       Buffer.add_string buf "__threadfence();\n"
   | SNative {gpu; ocaml = _} -> (
-      match !current_framework with
+      match st.framework with
       | Some framework ->
           let code = gpu ~framework in
           Buffer.add_string buf indent ;
@@ -498,45 +520,45 @@ let rec gen_stmt buf indent = function
           Codegen_error.raise_error
             (Codegen_error.unsupported_construct
                "SNative"
-               "SNative requires device context (set current_framework before \
-                calling generate)"))
+               "SNative requires a target framework: pass ~framework to \
+                generate/generate_with_types"))
   | SExpr e ->
       Buffer.add_string buf indent ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_string buf ";\n"
   | SLet (v, EArrayCreate (elem_ty, size, mem), body) ->
       (* Array declaration: type arr[size]; *)
       Buffer.add_string buf indent ;
-      gen_array_decl buf v elem_ty size mem ;
-      gen_stmt buf indent body
+      gen_array_decl st buf v elem_ty size mem ;
+      gen_stmt st buf indent body
   | SLet (v, e, body) ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf (cuda_type_of_elttype v.var_type) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf " = " ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_string buf ";\n" ;
-      gen_stmt buf indent body
+      gen_stmt st buf indent body
   | SLetMut (v, e, body) ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf (cuda_type_of_elttype v.var_type) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf " = " ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_string buf ";\n" ;
-      gen_stmt buf indent body
+      gen_stmt st buf indent body
   | SPragma (hints, body) ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "#pragma " ;
       Buffer.add_string buf (String.concat " " hints) ;
       Buffer.add_char buf '\n' ;
-      gen_stmt buf indent body
+      gen_stmt st buf indent body
   | SBlock body ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "{\n" ;
-      gen_stmt buf (indent ^ "  ") body ;
+      gen_stmt st buf (indent ^ "  ") body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SCoopmat _ ->
@@ -553,31 +575,31 @@ let rec gen_stmt buf indent = function
             backend")
 
 (** Helper: Generate record field assignment *)
-and gen_record_assign buf indent lv fields =
+and gen_record_assign st buf indent lv fields =
   List.iter
     (fun (fname, fexpr) ->
       Buffer.add_string buf indent ;
-      gen_lvalue buf lv ;
+      gen_lvalue st buf lv ;
       Buffer.add_char buf '.' ;
       Buffer.add_string buf fname ;
       Buffer.add_string buf " = " ;
-      gen_expr buf fexpr ;
+      gen_expr st buf fexpr ;
       Buffer.add_string buf ";\n")
     fields
 
 (** Helper: Generate switch case for pattern match *)
-and gen_match_case buf indent scrutinee pattern body =
+and gen_match_case st buf indent scrutinee pattern body =
   Buffer.add_string buf indent ;
   (match pattern with
   | PConstr (cname, bindings) -> (
-      (* Lookup constructor types from current_variants *)
+      (* Lookup constructor types from the kernel's variants *)
       let find_constr_types cname =
         List.find_map
           (fun (_vname, constrs) ->
             List.find_map
               (fun (cn, args) -> if cn = cname then Some args else None)
               constrs)
-          !current_variants
+          st.variants
       in
       Buffer.add_string buf ("  case " ^ cname ^ ": {\n") ;
       (* Generate bindings: extract payload from scrutinee *)
@@ -625,18 +647,18 @@ and gen_match_case buf indent scrutinee pattern body =
                "matching bindings and constructor"
                "mismatched bindings/args"))
   | PWild -> Buffer.add_string buf "  default: {\n") ;
-  gen_stmt buf (indent ^ "    ") body ;
+  gen_stmt st buf (indent ^ "    ") body ;
   Buffer.add_string buf (indent ^ "    break;\n") ;
   Buffer.add_string buf (indent ^ "  }\n")
 
 (** Helper: Generate array declaration for SLet with EArrayCreate *)
-and gen_array_decl buf v elem_ty size mem =
+and gen_array_decl st buf v elem_ty size mem =
   (match mem with Shared -> Buffer.add_string buf "__shared__ " | _ -> ()) ;
   Buffer.add_string buf (cuda_type_of_elttype elem_ty) ;
   Buffer.add_string buf " " ;
   Buffer.add_string buf v.var_name ;
   Buffer.add_char buf '[' ;
-  gen_expr buf size ;
+  gen_expr st buf size ;
   Buffer.add_string buf "];\n"
 
 (** {1 Declaration Generation} *)
@@ -658,7 +680,7 @@ let gen_param buf decl =
     buf
     decl
 
-let gen_local buf indent = function
+let gen_local st buf indent = function
   | DLocal (v, None) ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf (cuda_type_of_elttype v.var_type) ;
@@ -671,7 +693,7 @@ let gen_local buf indent = function
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf " = " ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_string buf ";\n"
   | DShared (name, elt, None) ->
       Buffer.add_string buf indent ;
@@ -687,7 +709,7 @@ let gen_local buf indent = function
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf name ;
       Buffer.add_char buf '[' ;
-      gen_expr buf size ;
+      gen_expr st buf size ;
       Buffer.add_string buf "];\n"
   | DParam _ ->
       Codegen_error.raise_error
@@ -696,7 +718,7 @@ let gen_local buf indent = function
 (** {1 Helper Function Generation} *)
 
 (** Generate a device helper function *)
-let gen_helper_func buf (hf : helper_func) =
+let gen_helper_func st buf (hf : helper_func) =
   (* __device__ ret_type name(params) { body } *)
   Buffer.add_string buf "__device__ " ;
   Buffer.add_string buf (cuda_type_of_elttype hf.hf_ret_type) ;
@@ -713,7 +735,7 @@ let gen_helper_func buf (hf : helper_func) =
     hf.hf_params ;
   Buffer.add_string buf ") {\n" ;
   (* Body *)
-  gen_stmt buf "  " hf.hf_body ;
+  gen_stmt st buf "  " hf.hf_body ;
   Buffer.add_string buf "}\n\n"
 
 (** {1 Kernel Generation} *)
@@ -912,11 +934,14 @@ let cuda_header_for (k : kernel) =
     cuda_fp16_include ^ sarek_f32_barrier_decl ^ cuda_header
   else cuda_header
 
-(** Generate CUDA source with custom type definitions *)
-let generate_with_types ~(types : (string * (string * elttype) list) list)
-    (k : kernel) : string =
-  (* Set current_variants for SMatch binding extraction *)
-  current_variants := k.kern_variants ;
+(** Generate CUDA source with custom type definitions.
+
+    [?framework] is the target tag for registry lookups and [SNative]; see
+    {!state}. Omitting it is what every runtime caller does and reproduces the
+    pre-backlog-185 behaviour exactly. *)
+let generate_with_types ?framework
+    ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
+  let st = state ?framework k in
   let buf = Buffer.create 4096 in
 
   (* Header *)
@@ -933,7 +958,7 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
     ~variants:k.kern_variants ;
 
   (* Generate helper functions before kernel *)
-  List.iter (gen_helper_func buf) k.kern_funcs ;
+  List.iter (gen_helper_func st buf) k.kern_funcs ;
 
   (* Kernel signature *)
   Buffer.add_string buf "__global__ void " ;
@@ -950,10 +975,10 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   Buffer.add_string buf ") {\n" ;
 
   (* Local declarations *)
-  List.iter (gen_local buf "  ") k.kern_locals ;
+  List.iter (gen_local st buf "  ") k.kern_locals ;
 
   (* Body *)
-  gen_stmt buf "  " k.kern_body ;
+  gen_stmt st buf "  " k.kern_body ;
 
   (* Close kernel *)
   Buffer.add_string buf "}\n" ;
@@ -971,6 +996,7 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
     ([Sarek_ir_types.kernel]), so the parameter was redundant with the record it
     travels in. This used to be a separate 30-80 line copy of the emit sequence
     that silently omitted record typedefs, variant typedefs and
-    [current_variants] — source referencing an undeclared struct, with no error.
-    Delegating keeps one emit path per backend. *)
-let generate (k : kernel) : string = generate_with_types ~types:k.kern_types k
+    the kernel's variants — source referencing an undeclared struct, with no
+    error. Delegating keeps one emit path per backend. *)
+let generate ?framework (k : kernel) : string =
+  generate_with_types ?framework ~types:k.kern_types k
