@@ -215,30 +215,42 @@ let dummy_loc =
 
 open Sarek_codegen
 
-(** Set [current_framework] in each codegen module so the pure registry picks
-    the right device names (e.g. sinf vs sin on CUDA). *)
-let set_framework backend =
-  let name =
-    match backend with
-    | CUDA -> "CUDA"
-    | OpenCL -> "OpenCL"
-    | Metal -> "Metal"
-    | GLSL -> "GLSL"
-    | WGSL -> "WGSL"
-  in
-  Sarek_ir_cuda.current_framework := Some name ;
-  Sarek_ir_opencl.current_framework := Some name ;
-  Sarek_ir_metal.current_framework := Some name ;
-  Sarek_ir_wgsl.current_framework := Some name
+(** The framework tag the pure registry is queried with, so it picks the right
+    device names (e.g. sinf vs sin on CUDA). *)
+let framework_name = function
+  | CUDA -> "CUDA"
+  | OpenCL -> "OpenCL"
+  | Metal -> "Metal"
+  | GLSL -> "GLSL"
+  | WGSL -> "WGSL"
 
+(** Emit [k] for [backend], passing the framework tag to the ONE emitter being
+    used (backlog-185/200).
+
+    This replaces a [set_framework] that assigned {!framework_name} into a
+    module-level [current_framework] ref in FOUR emitters at once, and never
+    cleared any of them. For the emitter actually selected below that assignment
+    was a no-op — every backend's tag equals the default that emitter falls back
+    to, and GLSL reads a constant — so its only observable effect was on the
+    other three: a later [Sarek_ir_cuda.generate] on the runtime path (the
+    [Cuda_c_plugin] JIT route, which passes no framework) read whatever tag the
+    last transpile had left behind and emitted, for a float32 kernel,
+    [sin(a[i])] instead of [sinf(a[i])] — the double-precision function,
+    silently, in valid CUDA C. See
+    [sarek/tests/unit/test_codegen_generation_state.ml].
+
+    GLSL takes no [?framework]: its dispatch spec yields the constant ["GLSL"]
+    and it refuses [SNative] outright, so there is nothing for a tag to select.
+*)
 let emit_backend backend (k : Sarek_ir_ppx.kernel) =
   let k_types = Sarek_ir_conv.conv_kernel k in
+  let framework = framework_name backend in
   match backend with
-  | CUDA -> Sarek_ir_cuda.generate k_types
-  | OpenCL -> Sarek_ir_opencl.generate k_types
-  | Metal -> Sarek_ir_metal.generate k_types
+  | CUDA -> Sarek_ir_cuda.generate ~framework k_types
+  | OpenCL -> Sarek_ir_opencl.generate ~framework k_types
+  | Metal -> Sarek_ir_metal.generate ~framework k_types
   | GLSL -> Sarek_ir_glsl.generate k_types
-  | WGSL -> Sarek_ir_wgsl.generate k_types
+  | WGSL -> Sarek_ir_wgsl.generate ~framework k_types
 
 (******************************************************************************)
 (* Main pipeline                                                              *)
@@ -314,7 +326,6 @@ let of_source (backend : backend) (src : string) : (string, error) result =
   (* Ensure stdlib_meta intrinsics are registered before running the pipeline.
      This is idempotent - multiple calls are safe. *)
   Sarek_stdlib_meta.force_init () ;
-  set_framework backend ;
   match run_pipeline src with
   | Error _ as err -> err
   | Ok ir_kernel -> (
@@ -331,13 +342,13 @@ let of_source_with_abi (backend : backend) (src : string) :
   match backend with
   | WGSL -> (
       Sarek_stdlib_meta.force_init () ;
-      set_framework backend ;
       match run_pipeline src with
       | Error _ as err -> err
       | Ok ppx_kernel -> (
           try
             let ir_kernel = Sarek_ir_conv.conv_kernel ppx_kernel in
-            let code = Sarek_ir_wgsl.generate ir_kernel in
+            let framework = framework_name backend in
+            let code = Sarek_ir_wgsl.generate ~framework ir_kernel in
             let abi_t = Sarek_ir_wgsl.abi ir_kernel in
             let abi_json = Sarek_wgsl_abi.to_json abi_t in
             Ok (code, abi_json)
