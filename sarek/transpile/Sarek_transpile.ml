@@ -228,20 +228,49 @@ let framework_name = function
     used (backlog-185/200).
 
     This replaces a [set_framework] that assigned {!framework_name} into a
-    module-level [current_framework] ref in FOUR emitters at once, and never
-    cleared any of them. For the emitter actually selected below that assignment
-    was a no-op — every backend's tag equals the default that emitter falls back
-    to, and GLSL reads a constant — so its only observable effect was on the
-    other three: a later [Sarek_ir_cuda.generate] on the runtime path (the
-    [Cuda_c_plugin] JIT route, which passes no framework) read whatever tag the
-    last transpile had left behind and emitted, for a float32 kernel,
-    [sin(a[i])] instead of [sinf(a[i])] — the double-precision function,
-    silently, in valid CUDA C. See
-    [sarek/tests/unit/test_codegen_generation_state.ml].
+    module-level [current_framework] ref in FOUR emitters at once (CUDA, OpenCL,
+    Metal, WGSL) and never cleared any of them.
 
-    GLSL takes no [?framework]: its dispatch spec yields the constant ["GLSL"]
-    and it refuses [SNative] outright, so there is nothing for a tag to select.
-*)
+    For the emitter actually selected below, the assignment was a no-op — but
+    NOT because the tag is inert. CUDA's, OpenCL's and Metal's [SNative] arms
+    distinguish [Some _] from [None] absolutely: with a tag they emit the native
+    payload, without one they raise [Codegen_error]. The assignment is a no-op
+    HERE only because [of_source] cannot reach that arm at all — it rejects
+    [%native] upstream in [check_kernel_no_native]
+    (["cannot be transpiled purely"]), and [Sarek_ir_conv] treats an [SNative]
+    that reaches the converter as an internal invariant violation. Every other
+    query the tag feeds — the pure intrinsic registry — does return each
+    backend's own default for its own tag.
+
+    The damage was to the emitters NOT selected. All four were written on every
+    call, so a GLSL transpile — which uses none of them — contaminated all four;
+    a CUDA transpile contaminated the other three. A later generation on the
+    runtime path then read whatever tag the last transpile had left behind. Two
+    directions, both executed and both producing source the device compiler
+    REJECTS:
+
+    - an OpenCL generation after a CUDA transpile emits [sinf(a[i])], and [sinf]
+      does not exist in OpenCL C;
+    - a CUDA generation after a GLSL transpile emits [inversesqrt(a[i])], a GLSL
+      builtin that does not exist in CUDA C.
+
+    (An earlier draft of this comment claimed the CUDA-side leak silently
+    selected the double-precision [sin] in valid CUDA C. That is NOT established
+    and is deliberately not asserted here. The emitted source carries no math
+    header — only [extern "C" {] — so resolution is decided by nvcc's implicit
+    preinclude, and there is no CUDA toolchain on this host to test against. A
+    host clang++ proxy is inconclusive rather than confirming: with [<math.h>]
+    or [<cmath>] plus [using namespace std], [sin(float)] resolves to [sinf];
+    with [<cmath>] alone it resolves to [sin(double)]. The two leak directions
+    above need no such adjudication.)
+
+    See [sarek/tests/unit/test_codegen_generation_state.ml], which pins both.
+
+    GLSL takes no [?framework]: its dispatch spec yields the constant ["GLSL"],
+    so there is nothing for a tag to select. Note it does NOT refuse [SNative] —
+    it emits [/* native code not supported in GLSL */] and continues, a silent
+    drop, and WGSL's arm has the same shape. Making those two actually refuse is
+    filed separately; it is not changed here. *)
 let emit_backend backend (k : Sarek_ir_ppx.kernel) =
   let k_types = Sarek_ir_conv.conv_kernel k in
   let framework = framework_name backend in
