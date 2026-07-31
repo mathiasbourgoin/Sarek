@@ -87,7 +87,35 @@ let get t i = Vector.get t.aos i
 
 let leaf_ptrs t = Array.map (fun (Leaf v) -> Vector.to_ctypes_ptr v) t.leaves
 
+(* backlog-220. [Vector.ensure_cpu_sync] below is a no-op whenever auto-sync is
+   off, REGARDLESS of whether the host copy is actually behind a device's data
+   ([Vector_transfer.ensure_cpu_sync] tests [auto_sync] before it even looks at
+   [location]). So on [Stale_CPU] — the state a device write leaves the AoS
+   vector in — an auto-sync-off [scatter] used to transpose the STALE host
+   bytes into the leaves and return [unit], indistinguishable from a correct
+   call. That is silent data corruption, not a no-op: every subsequent read of
+   this SoA vector's leaves (and anything transferred from them to a device)
+   is now wrong, with nothing in the return type or the logs to say so.
+
+   [CPU]/[GPU]/[Both]/[Stale_GPU] are unaffected: the host buffer already IS
+   the fresh data (or, for pure [GPU], scatter never claimed to fix that
+   pre-existing gap — see [Vector_transfer.ensure_cpu_sync]'s own doc). Only
+   [Stale_CPU] means "a device holds newer data than what scatter is about to
+   read", so only that state is refused. *)
 let scatter t =
+  (match (Vector.location t.aos, Vector.auto_sync t.aos) with
+  | Vector.Stale_CPU _, false ->
+      raise
+        (Soa.Unsupported
+           "Soa_vector.scatter: this vector's host data is out of date and \
+            auto-sync is off, so scattering now would silently copy stale \
+            values to the device buffers instead of refusing. Before \
+            scattering, either call Transfer.to_cpu on its AoS vector \
+            (Soa_vector.aos_vector t) to refresh the host copy, or call \
+            Vector.set_auto_sync on it to turn auto-sync back on.")
+  | (Vector.CPU | Vector.GPU _ | Vector.Both _ | Vector.Stale_GPU _), _
+  | Vector.Stale_CPU _, true ->
+      ()) ;
   (* Make the AoS host copy authoritative before transposing out of it. *)
   Vector.ensure_cpu_sync t.aos ;
   Soa.scatter

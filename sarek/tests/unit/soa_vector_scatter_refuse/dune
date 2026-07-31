@@ -1,0 +1,13 @@
+; backlog-220: Soa_vector.scatter must refuse loudly (not silently transpose
+; stale host bytes) when auto-sync is off. Isolated in its own directory for
+; the same reason as ir_fields/ and ktype_variant_field/: the sarek_ppx
+; preprocessing here would collide with the metaquot test group in the parent
+; unit/ directory.
+
+(test
+ (name test_soa_vector_scatter_refuse)
+ (libraries sarek spoc_core spoc.ir ctypes alcotest)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))

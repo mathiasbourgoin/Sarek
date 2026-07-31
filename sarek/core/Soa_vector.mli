@@ -101,8 +101,12 @@ val set : 'a t -> int -> 'a -> unit
 val get : 'a t -> int -> 'a
 
 (** [scatter t] transposes the AoS host buffer into the N per-leaf host buffers
-    (call before transferring the leaves to a device). Ensures the AoS host copy
-    is current first. *)
+    (call before transferring the leaves to a device). Brings the AoS host copy
+    up to date first when auto-sync is enabled.
+
+    When auto-sync is disabled and the host copy is behind a device's data,
+    there is no way to bring it up to date silently, so [scatter] raises
+    {!Soa.Unsupported} instead of transposing the stale host bytes. *)
 val scatter : 'a t -> unit
 
 (** [gather t] transposes the N per-leaf host buffers back into the AoS host
