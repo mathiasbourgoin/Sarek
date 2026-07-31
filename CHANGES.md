@@ -124,10 +124,13 @@
   and WGSL now raise the same shared `Sarek_ir_codegen.native_block_refusal`
   the other three do, naming what the caller should do instead (express the
   operation in Sarek, or route it through PTX, which is the one backend that
-  still serves `[%native]` directly). Along the way, the per-generation fact
-  each backend needs while emitting (the kernel's variant table) moved from a
-  module-level `ref` — shared and clobbered across generations, including
-  across domains — to a value threaded through the emit calls. The
+  still serves `[%native]` directly). Along the way, the per-generation facts
+  each backend needs while emitting — the kernel's variant table on every
+  backend, plus GLSL's helper names, f64-softmath state and vec-param table,
+  and WGSL's scalar-param names — moved from module-level `ref`s (a
+  module-level `Hashtbl` in the case of GLSL's vec-param table), shared and
+  clobbered across generations including across domains, to a value threaded
+  through the emit calls. The
   `current_framework` tag was not threaded; it was removed outright and
   replaced by a per-backend compile-time constant, so there is no longer a
   module-level slot for it to leak through. The sequential half of this — a
