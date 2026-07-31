@@ -126,6 +126,36 @@
 
 ### Fixed
 
+- A shared-memory array of a record type behaved four different ways across
+  nine devices, none of them right. `let%shared (s : tri) = 4l` followed by
+  `s.(i).a <- e`, measured on this host: the Interpreter ×2 raised
+  `assignment target of .a (got unit)`; Native accepted the store and wrote
+  EVERY slot (`7 7 7 7`, want `7 0 0 0`); CUDA/PTX ×2 raised
+  `unsupported construct: btype of custom type`, naming neither the array nor
+  the type; and OpenCL ×2 and Vulkan ×2 failed inside the DEVICE compiler with
+  `unknown type name`. Three separate causes. (1) Native's
+  `alloc_shared_with_key` filled the array with `Array.make size default`, so
+  every slot of a boxed element type was the same allocation — it now takes a
+  per-slot thunk and calls `Array.init`, and the identical `Array.make` in the
+  `create_array n Local` path is fixed with it. (2) The interpreter mapped a
+  record element type to `VUnit`, so there was nothing to store into — it now
+  builds a zeroed `VRecord` (or a constructor-0 `VVariant`) per slot in
+  `Sarek_ir_interp_value.alloc_kernel_array`, which replaces four copies of the
+  old init table. (3) OpenCL and Vulkan had no shared-memory gap at all:
+  `register_types_from_typ` ran over PARAMETER types only, so a record named
+  nowhere but the shared declaration was never emitted as a `struct`; it is now
+  top-level and runs at both kernel-array declaration sites. The tell was that
+  the same kernel written with a whole-slot store (`s.(tid) <- {...}`) compiled
+  and ran correctly on all seven non-PTX devices throughout, because the record
+  literal registered the type — so a whole-slot-store test would have been green
+  the whole time, and `test_shared_record_slots.ml` exercises both shapes.
+  CUDA/PTX still refuses, and the test asserts the refusal rather than
+  tolerating it: PTX has no struct type and
+  `Sarek_ir_ptx_mem.emit_agg_elem_addr` refuses state-space aggregates on
+  purpose. What changed there is that the message names the array, the element
+  type and the state space. Metal, HIP and WGSL were not measured — no such
+  device on this machine — and nothing is claimed about them.
+
 - A `[@@sarek.type]` record with a record-typed field had its inner struct
   emitted AFTER the struct that referenced it, so no kernel touching a nested
   record compiled on any shader backend. Both declaration-emission loops walked
