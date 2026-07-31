@@ -74,6 +74,16 @@ jobs:
       - name: Dune directory visibility guard
         run: ./scripts/check-dune-dir-visibility.sh
 
+      # backlog-192. The PPX's refusal tables match Parsetree constructors that
+      # do not exist in every ppxlib, and `dune-project` went on declaring
+      # `(ppxlib (>= 0.22.0))` for a tree that could not build at 0.35.0. A
+      # published dependency bound is an assertion until something compares it
+      # against the code; this is that something. It also refuses a tracked
+      # `sarek.opam` that has drifted from `dune-project`, which is the copy
+      # opam clients actually read.
+      - name: ppxlib floor guard
+        run: ./scripts/check-ppxlib-floor.sh
+
       # This workflow's own structure. A step inserted before another step's
       # `run:` line leaves the first with no action and gives the second two,
       # and YAML keeps the last silently -- so a step runs something other than
@@ -242,6 +252,14 @@ jobs:
           # invisibility shapes and refuses to guess at predicates it cannot
           # parse.
           ./scripts/check-dune-dir-visibility.test.sh
+          # backlog-192. The ppxlib floor guard exists because a bound was an
+          # assertion nothing checked; a guard for that which cannot itself
+          # fail would be the same defect one level up. Eight cases: the green
+          # baseline, all three drift rules red, both constructor rules red,
+          # and the two shapes that must exit 2 rather than 0 -- a rule 3 that
+          # matches nothing, and a dune-project the parser cannot read
+          # unambiguously.
+          ./scripts/check-ppxlib-floor.test.sh
           # #147 follow-up. Two agents reported different totals for the same
           # commit because Alcotest singularises ("1 test run.") and a
           # plural-only grep drops those suites. "0 FAIL of N" is only as

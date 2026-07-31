@@ -107,14 +107,65 @@ Parsetree shape that file carries, and the two were conflated. Re-check with
 its constructor set against the switch's own `lib/ppxlib/astlib/ast_502.ml`,
 which is equal.)
 
-**This walk raised the ppxlib floor and the declared bound did not follow.**
-`dune-project:51` still says `(ppxlib (>= 0.22.0))`, which is now false of the
-code: the tables match `Ptyp_open` and the parameterised `Pexp_function`, both
-of which need the OCaml-5.2-shaped AST. Measured on the `octez-setup` switch
-(ppxlib 0.35.0, OCaml 5.3.0, dune 3.23.0): `987b0c30` builds `sarek_frontend`
-at exit 0 and this branch fails at exit 1 with `no constructor "Ptyp_open"` and
-an unmatched `Pexp_fun (_, _, _, _)`. Raising the bound is a maintainer's
-dependency-policy call, so it is recorded rather than changed.
+**This walk raised the ppxlib floor, and the bound was raised to match.**
+**Declared ppxlib floor: `0.37.0`.** It used to say `(ppxlib (>= 0.22.0))`,
+which was false of the code: the tables match `Ptyp_open` and the parameterised
+`Pexp_function`, both of which need the OCaml-5.2-shaped AST. Measured on the
+`octez-setup` switch (ppxlib 0.35.0, OCaml 5.3.0, dune 3.23.0): `987b0c30`
+builds `sarek_frontend` at exit 0 and this branch fails at exit 1 with
+`no constructor "Ptyp_open"` and an unmatched `Pexp_fun (_, _, _, _)`.
+
+The floor was then bisected over the versions that actually exist, in a
+throwaway local switch on OCaml 5.4.0 with dune 3.24.1, destroyed afterwards.
+`opam show ppxlib --field all-versions` gives `… 0.35.0 0.36.0 0.36.2 0.37.0
+0.38.0~5.5preview 0.38.0`, so the candidate set between the known-bad and the
+known-good is four releases, not a range of numbers:
+
+| ppxlib | `opam install` | `dune build sarek/ppx/sarek_frontend.cma` | outcome |
+|---|---|---|---|
+| 0.36.0 | exit 20, `Package conflict!` | not reached | **install-failure** — the package itself caps `"ocaml" {>= "4.08.0" & < "5.4.0"}`, and this project requires `ocaml >= 5.4.0` |
+| 0.36.2 | exit 20, `Package conflict!` | not reached | **install-failure**, same cap |
+| 0.37.0 | exit 0 | **exit 0** | **BUILDS** — the floor |
+| 0.38.0 | exit 0 | exit 0 | builds (the switch this repo develops in) |
+
+`0.38.0~5.5preview` is a prerelease and was not tried; opam will not select it
+without an explicit request.
+
+**Two different floors, and only one of them is expressible.** The floor the
+CODE needs is `0.36.0`: that release already carries `Ptyp_open` and had already
+replaced the four-argument `Pexp_fun` with the parameterised `Pexp_function`.
+Established by source inspection rather than by a build, because 0.36.0 cannot
+be installed on the OCaml this package requires —
+
+```
+opam source ppxlib.0.35.0 --dir=p35 ; grep -c Ptyp_open p35/ast/ast.ml   -> 0
+opam source ppxlib.0.36.0 --dir=p36 ; grep -c Ptyp_open p36/ast/ast.ml   -> 14
+grep -n '| Pexp_fun of' p35/ast/ast.ml  -> 373:  | Pexp_fun of arg_label * …
+grep -n '| Pexp_fun of' p36/ast/ast.ml  -> (no match)
+```
+
+The floor that can be BUILT, and therefore the one declared, is `0.37.0`. A
+declared `0.36.0` would be a bound no run in this repository can support, which
+is the same class of unbacked claim as the `0.22.0` it replaced.
+
+**What keeps this honest from now on: `scripts/check-ppxlib-floor.sh`.** It
+refuses a `dune-project` and a `sarek.opam` that disagree (the tracked `.opam`
+is what opam clients read, and it can go stale behind `dune-project`), refuses a
+floor recorded here that differs from the declared one, and — the rule that ties
+the number to the code — carries a table of Parsetree constructors with the
+first ppxlib release providing each, and refuses a declared floor below the
+introducing release of any constructor the PPX matches. It also exits 2 rather
+than 0 if none of the tabled constructors appears at all, so a rename cannot
+turn rule 3 into a permanent vacuous pass.
+
+**A CI lane on the minimum ppxlib was considered and not built.** It is the only
+thing that would catch a BRAND-NEW constructor raising the floor without anybody
+adding a table row, but it costs a full dependency build (ctypes, js_of_ocaml,
+the runtime) per run, and the return is currently near zero: opam's solver
+already makes the floor unreachable from below, because this package requires
+`ocaml >= 5.4.0` and every ppxlib before 0.37.0 caps itself at `ocaml < 5.4.0`.
+If the OCaml floor is ever lowered, that reasoning expires and the lane becomes
+worth its cost.
 
 Reached from: `sarek/ppx/Sarek_parse.ml` and its callee
 `sarek/ppx/Sarek_parse_helpers.ml`.
