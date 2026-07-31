@@ -233,7 +233,6 @@ let test_recursion_mutual () =
 (** GREEN control: real generator output must be reported clean, so the layer is
     not simply always-red. *)
 let test_recursion_clean () =
-  Ocl.current_variants := [] ;
   let src = Ocl.generate_with_types ~types:[] (plain_kernel ()) in
   Alcotest.(check int)
     "no cycles in real output"
@@ -265,7 +264,6 @@ let skip_without_clang () =
     on for the whole dropped-binder class. *)
 let test_clang_red_on_mutation () =
   skip_without_clang () ;
-  Ocl.current_variants := [] ;
   let src = Ocl.generate_with_types ~types:[] (plain_kernel ()) in
   (match Clang.run_clang src with
   | Ok () -> ()
@@ -327,7 +325,6 @@ let test_canary_makes_names_unique () =
       []
       body
   in
-  Ocl.current_variants := [] ;
   let plain = Ocl.generate_with_types ~types:[] k in
   (* Pre-condition: as written, the same name really is declared twice — this is
      what makes a dropped binder invisible. *)
@@ -353,7 +350,6 @@ let test_canary_makes_names_unique () =
     failure would be uninformative. Structural proxy: the two sources are
     identical once binder names are erased to a canonical token. *)
 let test_canary_is_semantics_preserving () =
-  Ocl.current_variants := [] ;
   let k = plain_kernel () in
   let plain = Ocl.generate_with_types ~types:[] k in
   let canary = Ocl.generate_with_types ~types:[] (Uniquify.uniquify_kernel k) in
@@ -372,7 +368,6 @@ let test_canary_is_semantics_preserving () =
     must contain no self-call at all. Emitting a residual call is the outcome
     that crashed rusticl; a blanket refusal would have regressed the pragma. *)
 let test_budgeted_recursion_is_bounded () =
-  Ocl.current_variants := [] ;
   let src =
     Ocl.generate_with_types ~types:[] (recursive_helper_kernel ~budgeted:true)
   in
@@ -391,7 +386,6 @@ let test_budgeted_recursion_is_bounded () =
 
 (** RED: no pragma, no bound — refuse loudly rather than emit recursion. *)
 let test_unbudgeted_recursion_refused () =
-  Ocl.current_variants := [] ;
   match
     Ocl.generate_with_types ~types:[] (recursive_helper_kernel ~budgeted:false)
   with
@@ -415,7 +409,6 @@ let test_unbudgeted_recursion_refused () =
     false and costs a pragma user a working kernel — the failure direction that
     matters, since a compiler refusing valid input is a regression. *)
 let test_independent_selfrec_not_mutual () =
-  Ocl.current_variants := [] ;
   match Ocl.generate_with_types ~types:[] (nested_selfrec_kernel ()) with
   | exception e ->
       Alcotest.failf
@@ -450,7 +443,6 @@ let test_independent_selfrec_not_mutual () =
 (** RED: mutual recursion is refused even though both helpers carry a pragma —
     the pragma cannot bound a cycle the inliner never rewrites. *)
 let test_mutual_recursion_refused () =
-  Ocl.current_variants := [] ;
   match Ocl.generate_with_types ~types:[] (mutual_kernel ()) with
   | src ->
       Alcotest.failf "expected a refusal for mutual recursion, got:\n%s" src

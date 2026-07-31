@@ -327,12 +327,14 @@
  (modules test_tuple_vec_registry)
  (libraries sarek.tuple_vec spoc_core spoc.ir alcotest))
 
-(executable
- (name probe185)
- (modules probe185)
- (libraries sarek.codegen spoc.ir sarek_transpile sarek_stdlib_meta))
+; backlog-185/200: codegen keeps no state between generations. Two cases, and
+; they fail for two different reasons on the pre-fix tree — a sequential one
+; (a transpile leaving its framework tag in another emitter's global, which
+; silently downgraded CUDA `sinf` to the double-precision `sin`) and a
+; multi-domain one (two generations trading variant tables). CPU-only, no
+; device; spawns two domains.
 
-(executable
- (name probe185b)
- (modules probe185b)
- (libraries sarek.codegen spoc.ir))
+(test
+ (name test_codegen_generation_state)
+ (modules test_codegen_generation_state)
+ (libraries sarek.codegen spoc.ir sarek_transpile sarek_stdlib_meta alcotest))

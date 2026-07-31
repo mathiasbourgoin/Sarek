@@ -85,8 +85,8 @@ let f16_midround_kernel () =
 
 let generated_source () =
   let k = f16_midround_kernel () in
-  Sarek_codegen.Sarek_ir_cuda.current_framework := None ;
-  Sarek_codegen.Sarek_ir_cuda.current_variants := [] ;
+  (* No state to reset before generating: since backlog-185/200 the framework
+     tag and the variant table are per-generation values, not module refs. *)
   Sarek_codegen.Sarek_ir_cuda.generate_with_types ~types:k.kern_types k
 
 (* ------------------------------------------------------------------ *)

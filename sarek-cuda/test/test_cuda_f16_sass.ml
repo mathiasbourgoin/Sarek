@@ -106,10 +106,9 @@ __global__ void f16_native_arith(__half* __restrict__ out,
 }
 |}
 
-let gen k =
-  Sarek_codegen.Sarek_ir_cuda.current_framework := None ;
-  Sarek_codegen.Sarek_ir_cuda.current_variants := [] ;
-  Sarek_codegen.Sarek_ir_cuda.generate_with_types ~types:k.kern_types k
+(* No state to reset before generating: since backlog-185/200 the framework tag
+   and the variant table are per-generation values, not module refs. *)
+let gen k = Sarek_codegen.Sarek_ir_cuda.generate_with_types ~types:k.kern_types k
 
 (* ------------------------------------------------------------------ *)
 (* Toolchain discovery                                                *)

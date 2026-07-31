@@ -648,42 +648,36 @@ let bounds_check_kernel () =
 
 type backend = {
   name : string;
-  reset : unit -> unit;
   generate : types:(string * (string * elttype) list) list -> kernel -> string;
 }
 
 let cuda_backend =
   {
     name = "cuda";
-    reset = Gen_cuda.reset_state;
     generate = Gen_cuda.generate_with_types;
   }
 
 let opencl_backend =
   {
     name = "opencl";
-    reset = Gen_opencl.reset_state;
     generate = Gen_opencl.generate_with_types;
   }
 
 let metal_backend =
   {
     name = "metal";
-    reset = Gen_metal.reset_state;
     generate = Gen_metal.generate_with_types;
   }
 
 let glsl_backend =
   {
     name = "glsl";
-    reset = Gen_glsl.reset_state;
     generate = Gen_glsl.generate_with_types;
   }
 
 let wgsl_backend =
   {
     name = "wgsl";
-    reset = Gen_wgsl.reset_state;
     generate = Gen_wgsl.generate_with_types;
   }
 
@@ -1292,12 +1286,16 @@ let test_kernels () =
 
 (** {1 Test helpers} *)
 
-(** Run backend on kernel twice and assert identical output (determinism check)
-*)
+(** Run backend on kernel twice and assert identical output.
+
+    Until backlog-185/200 each of the two calls was preceded by a per-backend
+    [reset ()] that assigned the emitters' module-level state back to its initial
+    values, so what this checked was "deterministic GIVEN a hand-reset emitter" —
+    the interesting case, a second generation seeing what the first left behind,
+    was the one thing it could not see. The resets are gone because the state
+    they reset is gone, and the two calls now run back to back. *)
 let check_determinism backend kernel_name k =
-  backend.reset () ;
   let first = backend.generate ~types:k.kern_types k in
-  backend.reset () ;
   let second = backend.generate ~types:k.kern_types k in
   if first <> second then
     Alcotest.failf "Non-deterministic output for %s/%s" backend.name kernel_name ;
@@ -1392,7 +1390,6 @@ let wgsl_only_tests () =
         (Printf.sprintf "wgsl/%s" kernel_name)
         `Quick
         (fun () ->
-          Gen_wgsl.reset_state () ;
           let actual = Gen_wgsl.generate_with_types ~types:[] k in
           check_golden "wgsl" kernel_name actual))
     (wgsl_only_kernels ())
@@ -2031,7 +2028,6 @@ let glsl_only_tests () =
         (Printf.sprintf "glsl/%s" kernel_name)
         `Quick
         (fun () ->
-          Gen_glsl.reset_state () ;
           let actual = Gen_glsl.generate_with_types ~types:k.kern_types k in
           check_golden "glsl" kernel_name actual))
     (glsl_only_kernels ())
@@ -2132,7 +2128,6 @@ let metal_only_tests () =
         (Printf.sprintf "metal/%s" kernel_name)
         `Quick
         (fun () ->
-          Gen_metal.reset_state () ;
           let actual = Gen_metal.generate_with_types ~types:k.kern_types k in
           check_golden "metal" kernel_name actual))
     (metal_only_kernels ())
@@ -2362,7 +2357,6 @@ let glsl_validation_tests () =
                  hiding behind a green [OK] on a "glsl-validate/*" name. *)
               Alcotest.skip ()
           | None -> (
-              Gen_glsl.reset_state () ;
               let glsl = Gen_glsl.generate_with_types ~types:k.kern_types k in
               if not (Lazy.force glslang_available) then begin
                 Printf.printf "  SKIP: glslangValidator not on PATH\n%!" ;
@@ -2466,7 +2460,6 @@ let wgsl_validation_tests () =
                 reason ;
               Alcotest.skip ()
           | None -> (
-              Gen_wgsl.reset_state () ;
               let wgsl = Gen_wgsl.generate_with_types ~types:k.kern_types k in
               if not (Lazy.force naga_available) then begin
                 Printf.printf
@@ -2581,7 +2574,6 @@ module Ir_uniquify = Opencl_gate.Ir_uniquify
     generator plus the fp64 preamble the plugin prepends. Validating anything
     else would validate a string we never ship. *)
 let opencl_production_source k =
-  Gen_opencl.reset_state () ;
   let src = Gen_opencl.generate_with_types ~types:k.kern_types k in
   if Sarek_ir_analysis.kernel_uses_float64 k then
     "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n\n" ^ src
@@ -2736,7 +2728,6 @@ let metal_validation_tests () =
                 reason ;
               Alcotest.skip ()
           | None ->
-              Gen_metal.reset_state () ;
               let src = Gen_metal.generate_with_types ~types:k.kern_types k in
               (* Layer 1 — always runs, needs no external tool. *)
               (match Metal_addrspace.offences src with
@@ -2821,9 +2812,7 @@ let metal_contraction_pragma_tests () =
                 to each. Checking only the one the goldens happen to use would
                 leave the other free to drift back to contracting silently,
                 which is exactly the hole CodeRabbit found here. *)
-             metal_backend.reset () ;
              let via_types = metal_backend.generate ~types:[] k in
-             Gen_metal.reset_state () ;
              let via_plain = Gen_metal.generate k in
              List.iter
                (fun (entry, actual) ->

@@ -12,16 +12,22 @@ open Sarek_ir_types
 let make_var name ty =
   {var_name = name; var_id = 0; var_type = ty; var_mutable = false}
 
+(* backlog-185 scaffolding: these tests call the emit functions directly, and
+   those now take the per-generation state as their first argument. No case here
+   uses SNative or a variant pattern, so an empty state carries exactly what the
+   module-level refs it replaces held at their initial values. *)
+let st : Sarek_ir_cuda.state = {framework = None; variants = []}
+
 (** Helper to generate code from an expression *)
 let gen_expr_str e =
   let buf = Buffer.create 256 in
-  Sarek_ir_cuda.gen_expr buf e ;
+  Sarek_ir_cuda.gen_expr st buf e ;
   Buffer.contents buf
 
 (** Helper to generate code from a statement *)
 let gen_stmt_str ?(indent = "") s =
   let buf = Buffer.create 256 in
-  Sarek_ir_cuda.gen_stmt buf indent s ;
+  Sarek_ir_cuda.gen_stmt st buf indent s ;
   Buffer.contents buf
 
 (** Test basic expression generation *)

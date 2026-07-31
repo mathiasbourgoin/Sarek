@@ -31,13 +31,9 @@ let make_var name ty =
 let mk_kernel name params body =
   {default_kernel with kern_name = name; kern_params = params; kern_body = body}
 
-let reset () =
-  Sarek_ir_cuda.current_framework := None ;
-  Sarek_ir_cuda.current_variants := []
-
-let gen k =
-  reset () ;
-  Sarek_ir_cuda.generate_with_types ~types:k.kern_types k
+(* No state to reset before generating: since backlog-185/200 the framework tag
+   and the variant table are per-generation values, not module refs. *)
+let gen k = Sarek_ir_cuda.generate_with_types ~types:k.kern_types k
 
 (** Substring search (no Str dependency in this test's library set). *)
 let contains ~needle haystack =

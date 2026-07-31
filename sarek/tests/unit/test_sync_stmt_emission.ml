@@ -53,9 +53,7 @@ let sync_kernel stmt : kernel =
 let backends =
   [
     ( "CUDA",
-      fun k ->
-        Sarek_codegen.Sarek_ir_cuda.current_framework := None ;
-        Sarek_codegen.Sarek_ir_cuda.generate_with_types ~types:[] k );
+      fun k -> Sarek_codegen.Sarek_ir_cuda.generate_with_types ~types:[] k );
     ( "OpenCL",
       fun k -> Sarek_codegen.Sarek_ir_opencl.generate_with_types ~types:[] k );
     ( "Metal",
