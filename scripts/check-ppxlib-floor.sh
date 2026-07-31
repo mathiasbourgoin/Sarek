@@ -105,10 +105,20 @@ version_ge() {
 used_any=0
 while IFS=$'\t' read -r ctor floor _; do
   [ -n "$ctor" ] || continue
-  # Match the constructor as a pattern or an expression in real PPX source,
-  # not inside a comment. `grep -w` on the bare name is deliberately broad --
-  # a false positive here only ever demands a HIGHER floor, which is the safe
-  # direction; a false negative would let the drift through.
+  # `grep -rqw` on the bare name, over *.ml and *.mli. This DOES match inside
+  # an OCaml comment, and an earlier revision of this comment claimed it did
+  # not -- an inaccurate claim beside a check, which is the defect class this
+  # repository tracks under KB-GATE-PPX-CONSTRUCT-NAMES, committed in the gate
+  # written to prevent the metadata version of it. Caught by CodeRabbit on
+  # PR #398.
+  #
+  # The breadth is kept deliberately, and the comment case is the reason to keep
+  # it rather than an accident to tolerate: a constructor named only in a
+  # comment, or commented out, holds the declared floor UP. That is the safe
+  # direction -- a false positive here can only ever demand a HIGHER floor,
+  # while a false negative would let the drift this gate exists to catch
+  # through. Narrowing it to code would trade a harmless over-demand for a
+  # silent miss.
   if grep -rqw "$ctor" "$PPX_DIR" --include='*.ml' --include='*.mli'; then
     used_any=1
     if ! version_ge "$dp_bound" "$floor"; then
