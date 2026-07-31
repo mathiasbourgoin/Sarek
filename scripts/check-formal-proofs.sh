@@ -92,18 +92,32 @@ rm -f "$probe"
 #
 # FORMAL_ALLOW_DIRTY=1 bypasses this refusal, and by itself that would reopen
 # exactly the loss described above — this was filed as backlog #229 after it
-# happened. So the flag also disables the restore_tree trap's `git checkout`
-# below: with it set, the tree starts however the developer left it and ends
-# however the build left it, restored not at all rather than restored wrong.
+# happened. The flag does NOT change what the restore_tree trap below touches:
+# in every case it restores only the set of paths the build itself owns and
+# regenerates (the .vo/.vok/.vos/.glob/CoqMakefile* artefacts step 1 deletes,
+# and the extracted .ml/.mli files step 3 rewrites) — a set that is knowable in
+# advance and disjoint from a developer's own source edits, so restoring it
+# never discards anything the flag is meant to protect. What the flag changes
+# is scope, not mechanism: without it, this pre-flight also requires formal/ to
+# have been clean on entry, so "restore the build-owned set" and "restore
+# everything" are the same operation; with it, entry may be dirty, and the
+# trap restores only the build-owned set, leaving whatever else you had dirty
+# exactly as it was. Either way, the BUILD ITSELF (`make`, extraction,
+# `rocq makefile`) can still overwrite a build-owned path directly, before the
+# trap ever runs — the flag protects your edits from the trap, not from a
+# build that regenerates a file you happened to have hand-edited.
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   dirty=$(git status --porcelain -- formal | grep -v '^?? ' || true)
   if [ -n "$dirty" ] && [ "${FORMAL_ALLOW_DIRTY:-0}" != "1" ]; then
     echo "::error::formal/ has uncommitted changes to tracked files. This \
-script rebuilds in place and restores the tree afterwards, which would discard \
-them. Commit or stash first, or set FORMAL_ALLOW_DIRTY=1 to run anyway — with \
-the flag set, the per-project restore_tree trap (below) also skips its \
-'git checkout -- .' cleanup, so your uncommitted edits are left in place \
-rather than discarded at exit."
+script rebuilds in place, and the per-project restore_tree trap (below) \
+restores the build-owned artefacts it rewrites — .vo/.vok/.vos/.glob, \
+CoqMakefile*, and the extracted .ml/.mli files — which would discard your \
+edits to those same paths. Commit or stash first, or set FORMAL_ALLOW_DIRTY=1 \
+to run anyway — with the flag set, entry is allowed to be dirty and the trap \
+still restores only the build-owned set, leaving any of your edits outside it \
+untouched; edits INSIDE that set are not protected, from the trap or from the \
+build that regenerates them."
     printf '%s\n' "$dirty" | sed 's/^/    /'
     exit 1
   fi
@@ -186,39 +200,92 @@ cannot determine the logical path to check."
     # very next run with a message about uncommitted changes the developer never
     # made. Restoring unconditionally keeps a failed run repeatable.
     #
-    # Safe precisely because of the dirty-tree check above: the tree was clean
-    # when this started (unless FORMAL_ALLOW_DIRTY=1, handled below), so
-    # anything to restore was produced by this script. The lia/nia caches are
-    # untracked build residue the tactics drop next to the sources; they would
-    # otherwise be left behind, and removing them is not destructive to any
-    # committed or uncommitted work either way, so it runs regardless of the
-    # flag.
+    # WHAT GETS RESTORED, and why it is narrower than "the whole tree" (#229):
     #
-    # FORMAL_ALLOW_DIRTY=1 bypasses the pre-flight refusal above, which means
-    # this trap can no longer assume the tree started clean: `git status`
-    # here would report BOTH the build's own rewrites and whatever uncommitted
-    # edits the developer already had, and `git checkout -- .` cannot tell
-    # them apart. Discarding both is exactly the loss #229 was filed over — the
-    # flag says "tolerate a dirty tree", not "tolerate it at entry and destroy
-    # it at exit" — so with the flag set this trap restores nothing and
-    # leaves the tree exactly as the build left it.
+    # An earlier version restored with a bare `git checkout -- .`, reasoned to
+    # be safe because the dirty-tree pre-flight guaranteed the tree started
+    # clean. That reasoning broke the moment FORMAL_ALLOW_DIRTY=1 let entry be
+    # dirty: `git status` at exit then reports BOTH the build's own rewrites
+    # AND whatever uncommitted edits the developer already had, `git checkout
+    # -- .` cannot tell them apart, and the fix shipped for #229 responded by
+    # having the flag disable the restore ENTIRELY — which meant the six
+    # mutating steps below (the `find -exec rm`, `rocq makefile`, `make`, and
+    # for codegen-ptx the canonicalize step) stayed applied under the flag:
+    # 145 tracked build artefacts deleted or rewritten and never put back. That
+    # left ` D `/` M ` entries that survive the pre-flight's `grep -v '^?? '`,
+    # so the very next UNFLAGGED run refused on drift the developer never
+    # made — an absorbing state, the exact failure this trap exists to
+    # prevent, one flagged run away.
+    #
+    # The actual fix does not need to classify the diff (build drift vs.
+    # pre-existing dirt look identical as a `git status` line either way) —
+    # it only needs the PATH SET, which this script already knows because it
+    # is the one deleting and regenerating those paths: the artefacts step 1
+    # finds (.vo/.vok/.vos/.glob/*.CoqMakefile.d/CoqMakefile/CoqMakefile.conf)
+    # and the extracted .ml/.mli files under extraction/ that `make` and (for
+    # codegen-ptx) canonicalize-extraction.py rewrite. That set is disjoint
+    # from a developer's own source edits (theories/*.v, _CoqProject, ...) by
+    # construction — nothing outside it is ever written by this script — so
+    # restoring exactly that set is safe UNCONDITIONALLY, flag or no flag:
+    #
+    #   * it never discards a developer's own edits, because those live
+    #     outside the build-owned set and this restore never touches outside
+    #     it;
+    #   * it never leaves the 145-artefact absorbing state behind, because the
+    #     build-owned set is exactly what gets restored, flag or no flag.
+    #
+    # BUILD_OWNED_GLOBS below must name the same suffixes as the `find` in
+    # step 1 (kept as two lists rather than one shared array so that pathspec
+    # syntax and `find -name` syntax do not have to share a representation —
+    # but that also means the two can drift, so a change to one's file types
+    # must be mirrored in the other) plus the extraction outputs step 3/3b
+    # rewrite. Restoring per-pattern, not in one `git checkout` call: a glob
+    # pathspec that matches nothing tracked makes `git checkout` exit non-zero
+    # and apply NONE of the pathspecs given alongside it (verified against a
+    # throwaway fixture) — fatal here under `set -e` outside this subshell,
+    # and silently a no-op restore if swallowed as one call. One `checkout`
+    # per pattern means an unmatched pattern (e.g. no `*.CoqMakefile.d` this
+    # project) only skips itself.
+    #
+    # The untracked .lia/.nia caches are unaffected either way: they are build
+    # residue the tactics drop next to the sources, not a build-owned TRACKED
+    # path, so deleting them is not destructive to any committed or
+    # uncommitted work and it runs unconditionally, same as before.
+    BUILD_OWNED_GLOBS=(
+      ':(glob)**/*.vo' ':(glob)**/*.vok' ':(glob)**/*.vos' ':(glob)**/*.glob'
+      ':(glob)**/*.CoqMakefile.d' ':(glob)**/CoqMakefile' \
+      ':(glob)**/CoqMakefile.conf' \
+      ':(glob)**/extraction/*.ml' ':(glob)**/extraction/*.mli'
+    )
     restore_tree() {
       rm -f .lia.cache .nia.cache
-      if [ "${FORMAL_ALLOW_DIRTY:-0}" = "1" ]; then
-        echo "  NOTE: FORMAL_ALLOW_DIRTY=1 — skipping the tree restore. Any" \
-             "build-time rewrites AND your own uncommitted edits are both" \
-             "left as they are; review 'git status -- $proj' yourself."
+      if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         return 0
       fi
-      if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        drift=$(git status --porcelain -- . 2>/dev/null | grep -v '^?? ' || true)
-        if [ -n "$drift" ]; then
-          n=$(printf '%s\n' "$drift" | wc -l)
-          echo "  NOTE: the build rewrote $n tracked file(s) (extraction output" \
-               "vs the ocamlformat-formatted committed copies); restoring them."
-          git checkout -- . 2>/dev/null || \
-            echo "  WARNING: could not restore; tree left dirty."
+      drift=$(git status --porcelain -- "${BUILD_OWNED_GLOBS[@]}" 2>/dev/null \
+               | grep -v '^?? ' || true)
+      if [ -n "$drift" ]; then
+        n=$(printf '%s\n' "$drift" | wc -l)
+        echo "  NOTE: the build rewrote $n build-owned tracked file(s)" \
+             "(.vo/.vok/.vos/.glob, CoqMakefile*, and/or extraction output);" \
+             "restoring them."
+        for pat in "${BUILD_OWNED_GLOBS[@]}"; do
+          git checkout -- "$pat" 2>/dev/null || true
+        done
+        remaining=$(git status --porcelain -- "${BUILD_OWNED_GLOBS[@]}" \
+                     2>/dev/null | grep -v '^?? ' || true)
+        if [ -n "$remaining" ]; then
+          echo "  WARNING: could not restore all build-owned paths; still" \
+               "dirty:"
+          printf '%s\n' "$remaining" | sed 's/^/    /'
         fi
+      fi
+      if [ "${FORMAL_ALLOW_DIRTY:-0}" = "1" ]; then
+        echo "  NOTE: FORMAL_ALLOW_DIRTY=1 — only the build-owned paths above" \
+             "were touched; any pre-existing uncommitted edits of yours" \
+             "outside that set are left exactly as they were. Edits INSIDE" \
+             "that set are not protected, from this trap or from the build" \
+             "step that regenerated them."
       fi
     }
     trap restore_tree EXIT
