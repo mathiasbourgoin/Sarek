@@ -300,9 +300,12 @@ let raise_error err = raise (Backend_error err)
       ([Cuda_shared.bind_args], [Hip_shared.bind_args]) handed to
       [cuLaunchKernel]/[hipModuleLaunchKernel], so N pointers land in a packed
       parameter block — not a crash, silently wrong data;
-    - Metal and OpenCL derive their expected argument count from the indices the
-      caller bound ([Kernel_args.count]), so they have no independent count to
-      disagree with either;
+    - Metal and OpenCL derive their PREFLIGHT count from the indices the caller
+      bound ([Kernel_args.count]), so that check has no source-derived count to
+      disagree with. OpenCL still has a late one it did not put there: binding
+      goes through the checked [clSetKernelArg] funnel
+      ([Opencl_api.Kernel.set_arg_mem]), which raises on [CL_INVALID_ARG_INDEX]
+      once the index runs past the compiled kernel's argument list;
     - Vulkan does have a second, source-derived count
       ([Vulkan_api_kernel.validate_buffer_indices], whose [expected_count] is
       read from the GLSL [binding = N] declarations), so there the mismatch
@@ -325,8 +328,19 @@ let raise_error err = raise (Backend_error err)
     the CUDA/PTX backend that implements SoA and the CUDA/C backend that refuses
     it, so a [Make]-based version could not tell the caller which one answered.
 
-    [[]] returns [()], so every existing caller and the caller-side fast path
-    are byte-for-byte unaffected. *)
+    One case is deliberately refused although it would happen to work: a record
+    with a SINGLE leaf. [Soa.plan] permits it, and at N = 1 the SoA argument
+    list (one leaf buffer plus one length) has the same shape as the AoS one, so
+    the AoS source would bind correctly. It is refused anyway, because that
+    correctness is a coincidence of the leaf count rather than a property of the
+    emitter: the same call means something different the moment the record gains
+    a second field, and a carve-out that silently changes meaning under an
+    unrelated edit is worse than a refusal.
+
+    [[]] returns [()], so every in-tree caller — all of which pass an omitted or
+    empty list — and the caller-side fast path are byte-for-byte unaffected. An
+    out-of-tree caller already passing a non-empty list to one of these five now
+    raises; that is the intended change. *)
 let reject_soa_params ~backend (soa_params : string list) : unit =
   match soa_params with
   | [] -> ()
@@ -336,11 +350,11 @@ let reject_soa_params ~backend (soa_params : string list) : unit =
            ~backend
            (Printf.sprintf
               "Structure-of-Arrays parameter lowering, requested for %s. This \
-               backend's emitter gives every vector parameter the packed \
-               Array-of-Structures form (one binding plus one length), so the \
-               N-leaf-binding argument list an SoA launch produces would not \
-               match the source it generates. Pass the vector through the \
-               ordinary AoS launch path on this backend."
+               backend's emitter has no SoA lowering to select: every vector \
+               parameter gets the packed Array-of-Structures form, one binding \
+               plus one length, which coincides with the N-leaf argument list \
+               an SoA launch produces only for a single-leaf record. Pass the \
+               vector through the ordinary AoS launch path on this backend."
               (String.concat ", " (List.map (Printf.sprintf "'%s'") names))))
 
 (** Print error to stderr *)
