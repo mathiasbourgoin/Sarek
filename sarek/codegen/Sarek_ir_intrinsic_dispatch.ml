@@ -26,17 +26,13 @@ type 'e spec = {
       (** Framework tag passed to [Sarek_pure_registry.fun_device_template]. A
           thunk for historical reasons rather than present necessity: it was one
           when the tag lived in a mutable [current_framework] ref that a caller
-          could rewrite between generations. Since backlog-185/200 each backend
-          builds its whole spec from a per-generation state value, so every
-          implementation of this field is a constant thunk — CUDA, OpenCL, Metal
-          and WGSL close over that state's [framework] field, and GLSL yields
-          the literal ["GLSL"] because its dispatch spec has no tag to select.
-          (Those four are the ones that carried the [current_framework] ref;
-          elsewhere in this tree they are called "the C-family emitters", which
-          fits CUDA/OpenCL/Metal but not WGSL's Rust-like syntax, so they are
-          named here rather than classified.) Left as a thunk because collapsing
-          it to a [string] is a separate, purely cosmetic change to five call
-          sites. *)
+          could rewrite between generations. Since backlog-185/200 all five
+          implementations are [fun () -> "<backend>"] — a literal, the same on
+          every call. Nothing varies it: an intermediate draft threaded a
+          [?framework] argument so a caller could override the tag, but every
+          caller passed a backend its own name, so it was dropped. Left as a
+          thunk because collapsing it to a [string] is a separate, purely
+          cosmetic change to five call sites. *)
   gen_expr : Buffer.t -> 'e -> unit;
       (** The backend's (recursive) expression generator, for call arguments. *)
   thread_intrinsic : string -> string;
