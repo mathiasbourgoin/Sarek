@@ -106,15 +106,37 @@ let leaf_ptrs t = Array.map (fun (Leaf v) -> Vector.to_ctypes_ptr v) t.leaves
    [Stale_CPU] means "a device holds newer data than what scatter is about to
    read", so only that state is refused.
 
-   "Auto-sync will rescue the stale host copy" has TWO independent gates, and
-   the first version of this refusal read only one of them: [Vector.auto_sync]
-   is the PER-VECTOR flag [Vector.set_auto_sync] toggles; [Transfer.is_auto ()]
-   is the GLOBAL mode [Transfer.disable_auto]/[Transfer.enable_auto] toggle for
-   every vector at once. [Vector_transfer.ensure_cpu_sync] only calls the
-   registered sync callback when the per-vector flag is on, and the callback
-   [Transfer.ml] registers only performs the sync when the global mode is also
-   on ([if not !auto_mode then false else (to_cpu vec; true)]) — so a rescue
-   happens if AND ONLY IF both are on. A version of this predicate that checked
+   "Auto-sync is on" has TWO independent caller-facing gates — which is NOT
+   the same set as "a rescue will happen", see below — and the first version
+   of this refusal read only one of them: [Vector.auto_sync] is the PER-VECTOR
+   flag [Vector.set_auto_sync] toggles; [Transfer.is_auto ()] is the GLOBAL
+   mode [Transfer.disable_auto]/[Transfer.enable_auto]/[Transfer.set_auto]
+   toggle for every vector at once. [Vector_transfer.ensure_cpu_sync] only
+   calls the registered sync callback when the per-vector flag is on, and the
+   callback [Transfer.ml] registers only performs the sync when the global
+   mode is also on ([if not !auto_mode then false else (to_cpu vec; true)]) —
+   so with THAT callback installed, a rescue happens if and only if both are
+   on.
+
+   The two gates are not symmetric, and this predicate is deliberately not an
+   exact test of "will a rescue happen":
+     - the per-vector flag is necessary unconditionally —
+       [Vector_transfer.ensure_cpu_sync] tests it itself and returns before
+       looking at anything else;
+     - the global mode is necessary only for the callback [Transfer.ml]
+       installs. Nothing in [Vector_transfer] reads it, and
+       [Vector.register_sync_callback] is public, so a caller can install a
+       callback that ignores it (this item's own test suite does exactly
+       that);
+     - neither is sufficient: [ensure_cpu_sync] does nothing at all when no
+       callback is registered ([| None -> ()]), and it discards the callback's
+       [bool] result either way.
+   Reading both gates therefore errs in one direction only: it can refuse a
+   scatter that a bespoke callback would have rescued, and it never permits
+   one that nothing will. That is the safe side, and it is why this reads
+   gates rather than trying to predict the callback.
+
+   A version of this predicate that checked
    only the per-vector flag refused correctly with the global mode left alone,
    but silently permitted the exact same corruption whenever a caller had
    turned auto-sync off globally ([Transfer.disable_auto ()]) while leaving
@@ -136,8 +158,8 @@ let scatter t =
                Transfer.disable_auto (call Transfer.enable_auto to turn it \
                back on)"
           | false, false ->
-              "auto-sync is off both on this vector (Vector.set_auto_sync) \
-               and globally (Transfer.disable_auto / Transfer.enable_auto)"
+              "auto-sync is off both on this vector (Vector.set_auto_sync) and \
+               globally (Transfer.disable_auto / Transfer.enable_auto)"
           | true, true ->
               (* Unreachable: the enclosing [if] only fires when at least one
                  of the two is [false]. *)
@@ -147,11 +169,11 @@ let scatter t =
           (Soa.Unsupported
              (Printf.sprintf
                 "Soa_vector.scatter: this vector's host data is out of date \
-                 and %s, so nothing will refresh it, and scattering now \
-                 would copy stale values into this vector's per-leaf host \
-                 buffers with no error. Before scattering, call \
-                 Transfer.to_cpu on its AoS vector (Soa_vector.aos_vector) to \
-                 refresh the host copy directly."
+                 and %s, so nothing will refresh it, and scattering now would \
+                 copy stale values into this vector's per-leaf host buffers \
+                 with no error. Before scattering, call Transfer.to_cpu on its \
+                 AoS vector (Soa_vector.aos_vector) to refresh the host copy \
+                 directly."
                 reason))
   | Vector.CPU | Vector.GPU _ | Vector.Both _ | Vector.Stale_GPU _ -> ()) ;
   (* Make the AoS host copy authoritative before transposing out of it. *)
