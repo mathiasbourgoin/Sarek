@@ -370,6 +370,39 @@ chmod +x "$d/scripts/mystery-binary"
 expect "case17: extensionless executable with no shebang is exit 2, not a silent skip" \
   "$d" 2 "no shebang"
 
+# --- Case 18: an earlier unclassifiable file must not truncate the walk ------
+# CodeRabbit (Major): the no-shebang check used to `exit 2` from inside the
+# `while` loop that consumes the `find` stream. `scripts` is walked in full
+# before `ci` (SCRIPT_ROOTS=(scripts ci)), so a no-shebang file under scripts/
+# is always seen before a header problem under ci/ -- with the old code that
+# meant the loop aborted at the no-shebang file and ci/covered.sh's stripped
+# header was never reached, let alone reported: a real header failure lost to
+# an unrelated earlier abort. The fix must finish the whole stream and name
+# BOTH problems, not just the first.
+d="$(make_project case18)"
+printf 'not a script\n' > "$d/scripts/mystery-binary"
+chmod +x "$d/scripts/mystery-binary"
+grep -v 'SPDX-' "$d/ci/covered.sh" > "$d/ci/covered.sh.tmp" && mv "$d/ci/covered.sh.tmp" "$d/ci/covered.sh"
+out="$(cd "$d" && ./scripts/check-license-headers.sh 2>&1)"
+got=$?
+if [ "$got" != 2 ]; then
+  echo "  FAIL: case18: expected exit 2, got $got"
+  echo "$out" | sed 's/^/        /'
+  fail=$((fail + 1))
+elif ! printf '%s' "$out" | grep -qF 'mystery-binary'; then
+  echo "  FAIL: case18: exit 2 as expected, but output never named mystery-binary"
+  echo "$out" | sed 's/^/        /'
+  fail=$((fail + 1))
+elif ! printf '%s' "$out" | grep -qF 'ci/covered.sh'; then
+  echo "  FAIL: case18: exit 2 as expected, but the LATER offender ci/covered.sh" \
+       "was never named -- the walk was truncated at the earlier file"
+  echo "$out" | sed 's/^/        /'
+  fail=$((fail + 1))
+else
+  echo "  PASS: case18: an earlier unclassifiable file does not swallow a later, real header failure (exit 2)"
+  pass=$((pass + 1))
+fi
+
 echo ""
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1

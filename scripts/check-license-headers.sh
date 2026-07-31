@@ -14,10 +14,13 @@
 #   0  every covered file has an up-to-date header
 #   1  at least one covered file needs a header change
 #   2  the coverage declaration itself is broken (a declared root directory
-#      is missing, or the candidate set came out empty). This is NOT a
-#      header problem and must not be "fixed" by running the fixer — it
-#      means the gate would otherwise have passed without inspecting
-#      anything. See the coverage-scope block in add-license-headers.sh.
+#      is missing, or the candidate set came out empty), OR a candidate file
+#      could not be classified (an extensionless executable with no
+#      shebang). None of these are an ordinary header problem and must not
+#      be "fixed" by running the fixer — the first two mean the gate would
+#      otherwise have passed without inspecting anything, and the third
+#      means the gate cannot tell whether the file is in scope at all. See
+#      the coverage-scope block in add-license-headers.sh.
 
 set -e
 
