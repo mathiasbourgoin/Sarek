@@ -56,6 +56,14 @@ let i32 n = EConst (CInt32 (Int32.of_int n))
 
 let i64 n = EConst (CInt64 n)
 
+(** Counter behind {!mkvar}. It is module state, and — unlike the per-kernel
+    emitter state backlog-185/200 removed from the five source backends — it is
+    left that way deliberately: every [mkvar] call in this file happens while
+    {!helpers} is being built, which now happens exactly once, when this module
+    is initialised. So this is a one-shot initialisation counter over an
+    immutable table, not per-generation state, and there is no second generation
+    for it to leak into. That argument depends on {!helpers} being eager; see
+    there. *)
 let vid = ref 0
 
 (** Fresh variable (ids only need to be distinct within one helper body). *)
@@ -754,9 +762,20 @@ let binary name body =
     hf_body = body x y;
   }
 
+(** The whole helper family, built EAGERLY at module initialisation.
+
+    It used to be [lazy], forced from {!all_helpers} / {!helper_by_name} /
+    {!register} — i.e. from inside code generation, on whichever domain got there
+    first. OCaml's [Lazy] is not safe to force concurrently from two domains, and
+    codegen runs unsynchronized on the launch path, so a multi-domain program
+    generating two f64 kernels could force this thunk twice. Building the table
+    is a few hundred immutable IR nodes with no I/O, so the memo was never
+    load-bearing and eager construction costs nothing measurable at startup
+    while removing the last mutable cell in this module that codegen touches.
+
+    Eagerness is also what makes {!vid}'s comment true. *)
 let helpers =
-  lazy
-    [
+  [
       unary "__sarek_f64_exp" exp_body;
       unary "__sarek_f64_log" log_body;
       unary "__sarek_f64_sin" (trig_body ~shift:0);
@@ -768,12 +787,12 @@ let helpers =
       unary "__sarek_f64_tanh" tanh_body;
       binary "__sarek_f64_pow" pow_body;
       unary "__sarek_f64_atan" atan_body;
-      binary "__sarek_f64_atan2" atan2_body;
-      unary "__sarek_f64_asin" asin_body;
-      unary "__sarek_f64_acos" acos_body;
-      unary "__sarek_f64_expm1" expm1_body;
-      unary "__sarek_f64_log1p" log1p_body;
-    ]
+    binary "__sarek_f64_atan2" atan2_body;
+    unary "__sarek_f64_asin" asin_body;
+    unary "__sarek_f64_acos" acos_body;
+    unary "__sarek_f64_expm1" expm1_body;
+    unary "__sarek_f64_log1p" log1p_body;
+  ]
 
 let helper_name = function
   | "exp" -> Some "__sarek_f64_exp"
@@ -795,9 +814,9 @@ let helper_name = function
   | _ -> None
 
 let register funcs =
-  List.iter (fun hf -> Hashtbl.replace funcs hf.hf_name hf) (Lazy.force helpers)
+  List.iter (fun hf -> Hashtbl.replace funcs hf.hf_name hf) helpers
 
-let all_helpers () = Lazy.force helpers
+let all_helpers () = helpers
 
 (** {1 Body introspection}
 
@@ -807,7 +826,7 @@ let all_helpers () = Lazy.force helpers
     GLSL emitter does not duplicate an IR walker. *)
 
 let helper_by_name name =
-  List.find_opt (fun hf -> String.equal hf.hf_name name) (Lazy.force helpers)
+  List.find_opt (fun hf -> String.equal hf.hf_name name) helpers
 
 (** Fold [f] over every subexpression of [e] (pre-order). *)
 let rec fold_expr f acc e =
