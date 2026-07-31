@@ -341,6 +341,30 @@ OCAML_ROOTS=(sarek sarek-cuda sarek-opencl sarek-vulkan sarek-metal spoc)
 
 # Roots holding first-party tooling. `*.sh` and `*.py` share the `#` comment
 # syntax, so add_shell_header serves both.
+#
+# backlog-222: selection here used to be BY EXTENSION only, so an extensionless
+# executable script was invisible to this gate no matter what it contained.
+# Measured on PR #384: the hermetic toolchain stubs under
+# scripts/prove-red-fixtures/assert-toolchain/bin/ (cc, clang,
+# glslangValidator, naga, nvdisasm, ptxas -- backlog-176) carry no extension,
+# and check-license-headers.sh never looked at them; the sibling
+# run-with-stubs.sh, which DOES end in .sh, was checked. The gate's name says
+# "license headers", not "license headers on files with a recognised
+# extension", so the blind spot was the selector, not the roots or the
+# exemptions. The fix widens the find below to also catch an extensionless,
+# EXECUTABLE file under these roots -- shebang is the actual signal that a
+# file is a script, verified against a full sweep of every tracked
+# extensionless file in this repo (110 at the time of writing): exactly 6
+# matched executable-with-no-extension, all 6 already carried a shebang, and
+# both properties coincided exactly (no executable-but-no-shebang file
+# exists, and no shebang-but-not-executable file exists). Everything else
+# extensionless in the tree -- Dockerfile, Makefile, dune, CoqMakefile,
+# _CoqProject, sarek/sarek/META, gh-pages/Gemfile, dependencies/*/LICENCE --
+# is mode 100644 with no shebang, so `-perm -u+x` alone already excludes all
+# of it; none of those needed a new EXEMPT_GLOBS entry. The shebang check in
+# the loop below is a second, independent gate on top of `-perm -u+x`: if a
+# future extensionless executable has no shebang, this script cannot tell
+# whether it is a script at all, and refuses (exit 2) rather than guess.
 SCRIPT_ROOTS=(scripts ci)
 
 # The only sanctioned way to leave a matching file out. Each entry is a
@@ -435,9 +459,26 @@ require_roots "Script" "${SCRIPT_ROOTS[@]}"
 SCRIPT_SEEN=0
 while IFS= read -r -d '' file; do
     SCRIPT_SEEN=$((SCRIPT_SEEN + 1))
+    # backlog-222: the find below also admits an extensionless executable, on
+    # the theory that a shebang is what makes it a script. Confirm that theory
+    # per-file rather than trust the permission bit alone -- an executable
+    # with no shebang is not a script this gate knows how to header, and a
+    # silent skip here would recreate the exact blind spot backlog-222 closed,
+    # one layer down.
+    case "$file" in
+        *.sh|*.py) ;;
+        *)
+            if ! head -c 2 "$file" 2>/dev/null | grep -q '^#!'; then
+                echo "ERROR: $file is an extensionless executable with no shebang." >&2
+                echo "       add-license-headers.sh cannot tell whether it is a script;" >&2
+                echo "       give it a shebang, or add it to EXEMPT_GLOBS with a reason." >&2
+                exit 2
+            fi
+            ;;
+    esac
     add_shell_header "$file"
 done < <(find "${SCRIPT_ROOTS[@]}" \
-    -type f \( -name "*.sh" -o -name "*.py" \) \
+    -type f \( -name "*.sh" -o -name "*.py" -o \( ! -name "*.*" -a -perm -u+x \) \) \
     "${EXEMPT_ARGS[@]}" \
     -print0)
 require_nonempty "Shell/Python tooling" "$SCRIPT_SEEN"
