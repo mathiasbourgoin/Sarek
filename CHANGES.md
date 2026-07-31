@@ -140,9 +140,16 @@
   per-slot thunk and calls `Array.init`, and the identical `Array.make` in the
   `create_array n Local` path is fixed with it. (2) The interpreter mapped a
   record element type to `VUnit`, so there was nothing to store into — it now
-  builds a zeroed `VRecord` — or, for a variant with at least one
-  constructor, a constructor-0 `VVariant` — per slot in
-  `Sarek_ir_interp_value.alloc_kernel_array`. That replaces three identical
+  builds a zeroed `VRecord` — or, for a variant, a `VVariant` carrying the
+  first NULLARY constructor (the first constructor with zeroed payloads if
+  there is no nullary one), which is the same constructor Native's
+  `default_value_for_type` puts in that slot — per slot in
+  `Sarek_ir_interp_value.alloc_kernel_array`. The tag is
+  `Hashtbl.hash ctor mod 256`, the encoding `EVariant` and the two matchers
+  already use and which is now the single `variant_tag_of_ctor`; a positional
+  index there produced a `VVariant` no arm could match, so reading a default
+  variant slot raised `Pattern match failure in SMatch` on the Interpreter
+  while Native answered the nullary constructor. That replaces three identical
   copies of the old init table in `Sarek_ir_interp_eval` plus a fourth, NARROWER
   one on `Sarek_ir_interp`'s `DShared` kernel-parameter path, which mapped only
   `TInt32` and `TFloat32` and everything else to `VUnit`. Unifying them

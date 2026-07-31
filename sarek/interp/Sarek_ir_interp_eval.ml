@@ -173,7 +173,7 @@ and eval_composite_expr state env = function
         )
   | EVariant (ty, ctor, args) ->
       VVariant
-        (ty, Hashtbl.hash ctor mod 256, List.map (eval_expr state env) args)
+        (ty, variant_tag_of_ctor ctor, List.map (eval_expr state env) args)
   | _ ->
       Interp_error.raise_error
         (Pattern_match_failure
@@ -197,7 +197,7 @@ and eval_control_flow state env = function
             Interp_error.raise_error
               (Pattern_match_failure {context = "EMatch"})
         | (PConstr (name, vars), body) :: rest ->
-            if Hashtbl.hash name mod 256 = tag then begin
+            if variant_tag_of_ctor name = tag then begin
               (* Bind the constructor's payload variables positionally, exactly
                  as SMatch does, so an expression-position match on a variant
                  (e.g. [let s = match c.kind with Shade f -> f]) can use the
@@ -383,7 +383,7 @@ and exec_stmt state env stmt =
             Interp_error.raise_error
               (Pattern_match_failure {context = "SMatch"})
         | (PConstr (name, vars), body) :: rest ->
-            if Hashtbl.hash name mod 256 = tag then begin
+            if variant_tag_of_ctor name = tag then begin
               (* Bind pattern variables by name *)
               (match v with
               | VVariant (_, _, args) ->
