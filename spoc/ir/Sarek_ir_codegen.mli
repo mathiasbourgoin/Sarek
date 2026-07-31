@@ -267,13 +267,17 @@ val gen_param :
   unit
 
 (** Raised by {!sort_type_decls_by_dependency} when the declarations it is given
-    form a cycle between DISTINCT declarations, carrying the unplaced type
-    names. Either kind can be on the cycle — record to record, variant to
-    variant, or one through the other. Such a cycle has no valid emission order,
-    so it is refused rather than emitted in input order. A declaration whose own
-    field or payload type is ITSELF is NOT reported here: the self-edge is
-    dropped so the diagnostic stays about cycles between declarations, and the
-    backend's field-type emission is what reports it.
+    form a cycle between DISTINCT declarations, carrying the unplaced
+    declarations as ["record <name>"] / ["variant <name>"] strings. The kind is
+    part of the payload, not decoration: a record and a variant may share a
+    mangled name and are two distinct nodes here, so a bare name list would
+    render such a cycle as [t; t] and identify neither. Either kind can be on
+    the cycle — record to record, variant to variant, or one through the other.
+    Such a cycle has no valid emission order, so it is refused rather than
+    emitted in input order. A declaration whose own field or payload type is
+    ITSELF is NOT reported here: the self-edge is dropped so the diagnostic
+    stays about cycles between declarations, and the backend's field-type
+    emission is what reports it.
 
     It escapes {!gen_type_decls}, so it can surface from any of the five
     backends' [generate_with_types]; a [Printexc] printer is registered for it

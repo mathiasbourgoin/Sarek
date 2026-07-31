@@ -716,6 +716,15 @@ type type_decl =
 
 let type_decl_name = function Record_decl (n, _) | Variant_decl (n, _) -> n
 
+(* The kind, for the cycle diagnostic. This pass treats a record and a variant
+   with the same mangled name as two DISTINCT nodes — that is the whole point of
+   keying identity on the position — so a cycle between such a pair carries the
+   same name twice and [t; t] names neither declaration. Tagging the kind is
+   what makes the message say which two things cannot be ordered. *)
+let type_decl_kind = function
+  | Record_decl _ -> "record"
+  | Variant_decl _ -> "variant"
+
 (** Mangled names of every record AND variant type mentioned anywhere inside
     [ty]'s type tree, including through arrays, vectors, variant payloads and
     the fields of a nested record. Sorted and deduplicated. The walk is over a
@@ -863,7 +872,10 @@ let sort_type_decls_by_dependency (decls : type_decl list) : type_decl list =
       | None ->
           raise
             (Type_decl_cycle
-               (List.map (fun ((_, d), _) -> type_decl_name d) !remaining))
+               (List.map
+                  (fun ((_, d), _) ->
+                    Printf.sprintf "%s %s" (type_decl_kind d) (type_decl_name d))
+                  !remaining))
   in
   loop () ;
   List.rev !out
