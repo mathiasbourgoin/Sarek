@@ -14,9 +14,9 @@ let make_var name ty =
 
 (* backlog-185 scaffolding: these tests call the emit functions directly, and
    those now take the per-generation state as their first argument. No case here
-   uses SNative or a variant pattern, so an empty state carries exactly what the
-   module-level refs it replaces held at their initial values. *)
-let st : Sarek_ir_cuda.state = {framework = None; variants = []}
+   uses a variant pattern, so an empty state carries exactly what the
+   module-level ref it replaces held at its initial value. *)
+let st : Sarek_ir_cuda.state = {variants = []}
 
 (** Helper to generate code from an expression *)
 let gen_expr_str e =

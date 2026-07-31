@@ -215,32 +215,23 @@ let dummy_loc =
 
 open Sarek_codegen
 
-(** The framework tag the pure registry is queried with, so it picks the right
-    device names (e.g. sinf vs sin on CUDA). *)
-let framework_name = function
-  | CUDA -> "CUDA"
-  | OpenCL -> "OpenCL"
-  | Metal -> "Metal"
-  | GLSL -> "GLSL"
-  | WGSL -> "WGSL"
+(** Emit [k] for [backend] (backlog-185/200).
 
-(** Emit [k] for [backend], passing the framework tag to the ONE emitter being
-    used (backlog-185/200).
+    This used to be preceded by a [set_framework] that assigned the selected
+    backend's name into a module-level [current_framework] ref in FOUR emitters
+    at once — CUDA, OpenCL, Metal and WGSL — and never cleared any of them. Its
+    removal is the fix; nothing replaces it, because each emitter now queries
+    the registry under its own name, as a constant.
 
-    This replaces a [set_framework] that assigned {!framework_name} into a
-    module-level [current_framework] ref in FOUR emitters at once (CUDA, OpenCL,
-    Metal, WGSL) and never cleared any of them.
-
-    For the emitter actually selected below, the assignment was a no-op — but
-    NOT because the tag is inert. CUDA's, OpenCL's and Metal's [SNative] arms
-    distinguish [Some _] from [None] absolutely: with a tag they emit the native
-    payload, without one they raise [Codegen_error]. The assignment is a no-op
-    HERE only because [of_source] cannot reach that arm at all — it rejects
-    [%native] upstream in [check_kernel_no_native]
-    (["cannot be transpiled purely"]), and [Sarek_ir_conv] treats an [SNative]
-    that reaches the converter as an internal invariant violation. Every other
-    query the tag feeds — the pure intrinsic registry — does return each
-    backend's own default for its own tag.
+    For the emitter actually selected, the assignment was a no-op — but NOT
+    because the tag was inert. CUDA's, OpenCL's and Metal's [SNative] arms told
+    [Some _] from [None] absolutely: with a tag they emitted the native payload,
+    without one they raised. It was a no-op HERE only because [of_source] cannot
+    reach that arm at all — it rejects [%native] upstream in
+    [check_kernel_no_native] (["cannot be transpiled purely"]), and
+    [Sarek_ir_conv] treats an [SNative] that reaches the converter as an
+    internal invariant violation. Every other query the tag fed — the pure
+    intrinsic registry — returns each backend's own spelling for its own name.
 
     The damage was to the emitters NOT selected. All four were written on every
     call, so a GLSL transpile — which uses none of them — contaminated all four;
@@ -266,20 +257,28 @@ let framework_name = function
 
     See [sarek/tests/unit/test_codegen_generation_state.ml], which pins both.
 
-    GLSL takes no [?framework]: its dispatch spec yields the constant ["GLSL"],
-    so there is nothing for a tag to select. Note it does NOT refuse [SNative] —
-    it emits [/* native code not supported in GLSL */] and continues, a silent
-    drop, and WGSL's arm has the same shape. Making those two actually refuse is
-    filed separately; it is not changed here. *)
+    No emitter takes a framework argument. A mid-refactor draft gave the four a
+    [?framework] so this function could hand the tag to the ONE emitter it
+    selects; that was dropped, because the value it would pass is in every case
+    the backend's own name — the constant each already uses — so no caller could
+    observe the difference, and an untested parameter on a public API looks like
+    protection without being any.
+
+    [SNative] is now refused by all five, with one shared message
+    ({!Sarek_codegen.Sarek_ir_codegen.native_block_refusal}). GLSL and WGSL used
+    to emit [/* native code not supported in <lang> */] and CONTINUE — a shader
+    silently missing the operation. That is fixed here rather than deferred:
+    with no way for any caller to name a target, no source backend can serve a
+    native block, so saying so is the honest end state. (The PTX emitter is
+    unaffected — it supplies its own ["PTX"] tag and really does emit.) *)
 let emit_backend backend (k : Sarek_ir_ppx.kernel) =
   let k_types = Sarek_ir_conv.conv_kernel k in
-  let framework = framework_name backend in
   match backend with
-  | CUDA -> Sarek_ir_cuda.generate ~framework k_types
-  | OpenCL -> Sarek_ir_opencl.generate ~framework k_types
-  | Metal -> Sarek_ir_metal.generate ~framework k_types
+  | CUDA -> Sarek_ir_cuda.generate k_types
+  | OpenCL -> Sarek_ir_opencl.generate k_types
+  | Metal -> Sarek_ir_metal.generate k_types
   | GLSL -> Sarek_ir_glsl.generate k_types
-  | WGSL -> Sarek_ir_wgsl.generate ~framework k_types
+  | WGSL -> Sarek_ir_wgsl.generate k_types
 
 (******************************************************************************)
 (* Main pipeline                                                              *)
@@ -376,8 +375,7 @@ let of_source_with_abi (backend : backend) (src : string) :
       | Ok ppx_kernel -> (
           try
             let ir_kernel = Sarek_ir_conv.conv_kernel ppx_kernel in
-            let framework = framework_name backend in
-            let code = Sarek_ir_wgsl.generate ~framework ir_kernel in
+            let code = Sarek_ir_wgsl.generate ir_kernel in
             let abi_t = Sarek_ir_wgsl.abi ir_kernel in
             let abi_json = Sarek_wgsl_abi.to_json abi_t in
             Ok (code, abi_json)

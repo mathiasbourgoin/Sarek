@@ -40,18 +40,14 @@ let bad_arity n e g =
     {!Sarek_transpile} had written [current_framework] — read the first one's
     values.
 
-    [framework] is the tag {!Sarek_pure_registry.fun_device_template} is queried
-    with, reached through the one [Dispatch.framework] thunk in {!wgsl_backend}
-    — and nowhere else in this emitter. In particular it does {e not} reach
-    [Sarek_registry], because the [post_hook] that would wire that registry is
-    deliberately inert here (see the comment on it), and it does {e not} gate
-    [SNative] the way the C-family emitters' field does: WGSL has no native-code
-    path, so the [SNative] arm emits a comment and continues whatever
-    [framework] holds. [None] means "no caller supplied one" and makes that one
-    query fall back to ["WGSL"] — the pre-backlog-185 behaviour, and what every
-    current in-tree caller gets, since none passes [?framework] yet.
-    {!Sarek_transpile} is the intended caller: it used to assign the framework
-    into all four C-family emitters' globals before generating with one of them.
+    The framework tag is NOT among them. It is the constant ["WGSL"], read at
+    the one [Dispatch.framework] thunk in {!wgsl_backend} and nowhere else in
+    this emitter — in particular it does {e not} reach [Sarek_registry], because
+    the [post_hook] that would wire that registry is deliberately inert here
+    (see the comment on it). An earlier draft of backlog-185/200 threaded it as
+    a [?framework] argument; that was dropped, because no caller ever passed
+    anything but ["WGSL"] and an untested parameter on a public API looks like
+    protection without being any.
 
     [variants] is the kernel's own [kern_variants], read by the [SMatch] arm to
     recover a constructor's payload types. Derived from the kernel, so it could
@@ -67,18 +63,17 @@ let bad_arity n e g =
     scalars lexically. That narrowing is now a rebind of this field for the
     nested emit, so the enclosing generation's value is simply never touched. *)
 type state = {
-  framework : string option;
   variants : (string * (string * elttype list) list) list;
   scalar_params : string list;
 }
 
-(** The state for emitting [k]. [framework] is threaded from the caller.
-    [scalar_params] is a parameter rather than derived from [k] because the
-    authority on which params became [Params] fields is {!gen_bindings}, which
-    emits them; the sole caller passes its result, so the emitted struct and the
-    set [gen_expr] tests against are the same list. *)
-let state ?framework ~scalar_params (k : kernel) : state =
-  {framework; variants = k.kern_variants; scalar_params}
+(** The state for emitting [k]. [scalar_params] is a parameter rather than
+    derived from [k] because the authority on which params became [Params]
+    fields is {!gen_bindings}, which emits them; the sole caller passes its
+    result, so the emitted struct and the set [gen_expr] tests against are the
+    same list. *)
+let state ~scalar_params (k : kernel) : state =
+  {variants = k.kern_variants; scalar_params}
 
 (** {1 Type Mapping} *)
 
@@ -782,7 +777,7 @@ and gen_unop = function Neg -> "-" | Not -> "!" | BitNot -> "~"
 
 and wgsl_backend st =
   {
-    Dispatch.framework = (fun () -> Option.value ~default:"WGSL" st.framework);
+    Dispatch.framework = (fun () -> "WGSL");
     gen_expr = gen_expr st;
     thread_intrinsic = wgsl_thread_intrinsic;
     pre_hook =
@@ -1123,8 +1118,10 @@ let rec gen_stmt st buf indent = function
       Buffer.add_string buf indent ;
       Buffer.add_string buf "storageBarrier();\n"
   | SNative _ ->
-      Buffer.add_string buf indent ;
-      Buffer.add_string buf "/* native code not supported in WGSL */\n"
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "[%native]"
+           Sarek_ir_codegen.native_block_refusal)
   | SExpr e ->
       Buffer.add_string buf indent ;
       gen_expr st buf e ;
@@ -1568,10 +1565,9 @@ let reject_coopmat_kernel (k : kernel) : unit =
 
 (** Generate WGSL source with custom type definitions.
 
-    [?framework] is the target tag registry lookups are made with; see {!state}.
     Omitting it is what every runtime caller does and reproduces the
     pre-backlog-185 behaviour exactly. *)
-let generate_with_types ?framework ?block ?(log : string -> unit = fun _ -> ())
+let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
   reject_float16_kernel k ;
   reject_coopmat_kernel k ;
@@ -1600,7 +1596,7 @@ let generate_with_types ?framework ?block ?(log : string -> unit = fun _ -> ())
      recomputed. Nothing emitted above this point consults it, which is why the
      state can be built here rather than at entry. *)
   let scalars = gen_bindings buf k.kern_params in
-  let st = state ?framework ~scalar_params:scalars k in
+  let st = state ~scalar_params:scalars k in
   let wg_decls = collect_workgroup_decls k.kern_body in
   gen_workgroup_module_decls st buf wg_decls ;
   gen_fmod_helper buf k ;
@@ -1628,8 +1624,8 @@ let generate_with_types ?framework ?block ?(log : string -> unit = fun _ -> ())
     that silently omitted record typedefs, variant typedefs and the kernel's
     variants — source referencing an undeclared struct, with no error.
     Delegating keeps one emit path per backend. *)
-let generate ?framework ?block ?log (k : kernel) : string =
-  generate_with_types ?framework ?block ?log ~types:k.kern_types k
+let generate ?block ?log (k : kernel) : string =
+  generate_with_types ?block ?log ~types:k.kern_types k
 
 (** {1 ABI descriptor} *)
 

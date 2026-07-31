@@ -228,53 +228,69 @@ let foreign_identifier_does_not_leak ~emitter ~emit ~kernel_src ~via ~via_name
     before
     after
 
-(** {1 The [?framework] parameter is actually wired}
+(** {1 Every source backend refuses [%native]}
 
-    Everything above would still pass if [?framework] were deleted outright and
-    each emitter always used its own default: the fix for the headline bug is
-    the REMOVAL of [set_framework], and on every existing path the tag a caller
-    passes equals the default it would have fallen back to. That makes the new
-    parameter inert in production, and a reviewer mutating it away would see a
-    green suite.
+    An [SNative] node carries a closure that produces device source for a named
+    target, and no caller of these five generators supplies one. They used to
+    disagree about that: CUDA, OpenCL and Metal raised, while GLSL and WGSL
+    emitted [/* native code not supported in <lang> */] and CONTINUED — handing
+    back a shader that silently lacks the operation the kernel asked for. These
+    cases pin the single refusal that replaced both behaviours.
 
-    These cases close that hole from the only direction available without making
-    [SNative] reachable (which is a separate item): they pass a tag that is NOT
-    the emitter's own and assert the registry answered under it. Discarding the
-    argument — [state ?framework k] to [state k] — turns every one of them red,
-    because the emitter then answers under its own default.
+    Each asserts the MESSAGE, not merely that something raised. An
+    exception-type-only check cannot tell this refusal from an unrelated failure
+    on the same path — and on GLSL and WGSL, where the arm previously returned
+    normally, it could not tell a refusal from no refusal at all.
 
-    What they do NOT establish: that any production caller benefits. None does
-    today. They pin the wiring, not a user-visible behaviour. *)
+    Not covered here, deliberately: the PTX emitter, which passes the closure
+    its own ["PTX"] tag and really does emit. Refusing there would remove a
+    working path. *)
 
-let framework_tag_reaches_the_registry ~emitter ~generate ~own_spelling
-    ~foreign_tag ~foreign_spelling () =
-  let default_source = generate ?framework:None sin_kernel in
-  Alcotest.check
-    Alcotest.bool
-    (Printf.sprintf
-       "%s with no ~framework must fall back to its own tag and spell \
-        Float32.sin %s. Emitted:\n\
-        %s"
-       emitter
-       own_spelling
-       default_source)
-    true
-    (contains ~needle:own_spelling default_source) ;
-  let tagged_source = generate ?framework:(Some foreign_tag) sin_kernel in
-  Alcotest.check
-    Alcotest.bool
-    (Printf.sprintf
-       "%s given ~framework:%S must query the registry under THAT tag and \
-        spell Float32.sin %s. If this reads %s instead, ~framework is being \
-        discarded and the whole parameter is dead. Emitted:\n\
-        %s"
-       emitter
-       foreign_tag
-       foreign_spelling
-       own_spelling
-       tagged_source)
-    true
-    (contains ~needle:foreign_spelling tagged_source)
+let native_kernel =
+  let out = make_var "out" (TVec TInt32) in
+  {
+    default_kernel with
+    kern_name = "native_kernel";
+    kern_params =
+      [DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global})];
+    kern_body =
+      SNative
+        {
+          gpu = (fun ~framework -> "/* " ^ framework ^ " */");
+          ocaml = {run = (fun ~block:_ ~grid:_ _args -> ())};
+        };
+  }
+
+(** The substring every backend's refusal must carry. Taken from the shared
+    constant rather than retyped, so rewording the message cannot leave this
+    test passing against text no backend emits any more — but kept to a
+    distinctive fragment so incidental rewrapping does not fail it. *)
+let refusal_fragment = "Express the operation in Sarek"
+
+let refuses_native_block ~emitter ~generate () =
+  match generate native_kernel with
+  | source ->
+      Alcotest.failf
+        "%s must refuse a [%%native] block, not emit for it. Before          \
+         backlog-185/200 GLSL and WGSL returned a comment here and \
+         continued,          which is exactly the silent-wrong output this \
+         case exists to catch.          Emitted:\n\
+         %s"
+        emitter
+        source
+  | exception e ->
+      let msg = Printexc.to_string e in
+      Alcotest.check
+        Alcotest.bool
+        (Printf.sprintf
+           "%s's refusal must carry the shared [%%native] diagnostic, so \
+            the             user is told what is unsupported and what to do \
+            instead. A raise             alone is not enough — any unrelated \
+            failure on this path also             raises. Got: %s"
+           emitter
+           msg)
+        true
+        (contains ~needle:refusal_fragment msg)
 
 (** {1 Concurrent generations} *)
 
@@ -397,49 +413,20 @@ let () =
                ~expected:"rsqrtf("
                ~foreign:"inversesqrt(");
         ] );
-      ( "framework_parameter_is_wired",
-        [
-          Alcotest.test_case
-            "CUDA honours a foreign ~framework"
-            `Quick
-            (framework_tag_reaches_the_registry
-               ~emitter:"CUDA"
-               ~generate:(fun ?framework k ->
-                 Sarek_codegen.Sarek_ir_cuda.generate ?framework k)
-               ~own_spelling:"sinf("
-               ~foreign_tag:"OpenCL"
-               ~foreign_spelling:"sin(");
-          Alcotest.test_case
-            "OpenCL honours a foreign ~framework"
-            `Quick
-            (framework_tag_reaches_the_registry
-               ~emitter:"OpenCL"
-               ~generate:(fun ?framework k ->
-                 Sarek_codegen.Sarek_ir_opencl.generate ?framework k)
-               ~own_spelling:"sin("
-               ~foreign_tag:"CUDA"
-               ~foreign_spelling:"sinf(");
-          Alcotest.test_case
-            "Metal honours a foreign ~framework"
-            `Quick
-            (framework_tag_reaches_the_registry
-               ~emitter:"Metal"
-               ~generate:(fun ?framework k ->
-                 Sarek_codegen.Sarek_ir_metal.generate ?framework k)
-               ~own_spelling:"sin("
-               ~foreign_tag:"CUDA"
-               ~foreign_spelling:"sinf(");
-          Alcotest.test_case
-            "WGSL honours a foreign ~framework"
-            `Quick
-            (framework_tag_reaches_the_registry
-               ~emitter:"WGSL"
-               ~generate:(fun ?framework k ->
-                 Sarek_codegen.Sarek_ir_wgsl.generate ?framework k)
-               ~own_spelling:"sin("
-               ~foreign_tag:"CUDA"
-               ~foreign_spelling:"sinf(");
-        ] );
+      ( "native_block_is_refused",
+        List.map
+          (fun (emitter, generate) ->
+            Alcotest.test_case
+              (emitter ^ " refuses a [%native] block")
+              `Quick
+              (refuses_native_block ~emitter ~generate))
+          [
+            ("CUDA", fun k -> Sarek_codegen.Sarek_ir_cuda.generate k);
+            ("OpenCL", fun k -> Sarek_codegen.Sarek_ir_opencl.generate k);
+            ("Metal", fun k -> Sarek_codegen.Sarek_ir_metal.generate k);
+            ("GLSL", fun k -> Sarek_codegen.Sarek_ir_glsl.generate k);
+            ("WGSL", fun k -> Sarek_codegen.Sarek_ir_wgsl.generate k);
+          ] );
       ( "generations_do_not_interleave",
         List.map
           (fun ((name, _) as backend) ->
