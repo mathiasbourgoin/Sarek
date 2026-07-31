@@ -8,6 +8,5 @@
 open Sarek_ir_types
 open Sarek_codegen
 
-
 let generate_with_types ~types (k : kernel) =
   Sarek_ir_cuda.generate_with_types ~types k

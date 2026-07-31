@@ -765,28 +765,29 @@ let binary name body =
 (** The whole helper family, built EAGERLY at module initialisation.
 
     It used to be [lazy], forced from {!all_helpers} / {!helper_by_name} /
-    {!register} — i.e. from inside code generation, on whichever domain got there
-    first. OCaml's [Lazy] is not safe to force concurrently from two domains, and
-    codegen runs unsynchronized on the launch path, so a multi-domain program
-    generating two f64 kernels could force this thunk twice. Building the table
-    is a few hundred immutable IR nodes with no I/O, so the memo was never
-    load-bearing and eager construction costs nothing measurable at startup
-    while removing the last mutable cell in this module that codegen touches.
+    {!register} — i.e. from inside code generation, on whichever domain got
+    there first. OCaml's [Lazy] is not safe to force concurrently from two
+    domains, and codegen runs unsynchronized on the launch path, so a
+    multi-domain program generating two f64 kernels could force this thunk
+    twice. Building the table is a few hundred immutable IR nodes with no I/O,
+    so the memo was never load-bearing and eager construction costs nothing
+    measurable at startup while removing the last mutable cell in this module
+    that codegen touches.
 
     Eagerness is also what makes {!vid}'s comment true. *)
 let helpers =
   [
-      unary "__sarek_f64_exp" exp_body;
-      unary "__sarek_f64_log" log_body;
-      unary "__sarek_f64_sin" (trig_body ~shift:0);
-      unary "__sarek_f64_cos" (trig_body ~shift:1);
-      unary "__sarek_f64_tan" tan_body;
-      unary "__sarek_f64_log10" log10_body;
-      unary "__sarek_f64_sinh" sinh_body;
-      unary "__sarek_f64_cosh" cosh_body;
-      unary "__sarek_f64_tanh" tanh_body;
-      binary "__sarek_f64_pow" pow_body;
-      unary "__sarek_f64_atan" atan_body;
+    unary "__sarek_f64_exp" exp_body;
+    unary "__sarek_f64_log" log_body;
+    unary "__sarek_f64_sin" (trig_body ~shift:0);
+    unary "__sarek_f64_cos" (trig_body ~shift:1);
+    unary "__sarek_f64_tan" tan_body;
+    unary "__sarek_f64_log10" log10_body;
+    unary "__sarek_f64_sinh" sinh_body;
+    unary "__sarek_f64_cosh" cosh_body;
+    unary "__sarek_f64_tanh" tanh_body;
+    binary "__sarek_f64_pow" pow_body;
+    unary "__sarek_f64_atan" atan_body;
     binary "__sarek_f64_atan2" atan2_body;
     unary "__sarek_f64_asin" asin_body;
     unary "__sarek_f64_acos" acos_body;

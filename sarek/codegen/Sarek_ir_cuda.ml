@@ -47,10 +47,10 @@ let bad_arity n e g =
     passes it to the ONE emitter it is generating with rather than assigning it
     into all four C-family emitters' globals.
 
-    [variants] is the kernel's own [kern_variants], read by the [SMatch]/[EMatch]
-    arms to recover a constructor's payload types. Derived from the kernel, so it
-    could be re-derived at each use site; it is carried here because that is
-    where the ref it replaces was read from. *)
+    [variants] is the kernel's own [kern_variants], read by the
+    [SMatch]/[EMatch] arms to recover a constructor's payload types. Derived
+    from the kernel, so it could be re-derived at each use site; it is carried
+    here because that is where the ref it replaces was read from. *)
 type state = {
   framework : string option;
   variants : (string * (string * elttype list) list) list;
@@ -254,7 +254,8 @@ let rec gen_expr st buf = function
          read the [SMatch] arm declares (the C-family tagged union), then emit the
          (now binder-free) match. One shared, capture-avoiding pass for every
          backend; see {!Sarek_ir_codegen.subst_ematch_payloads}. *)
-      gen_expr st
+      gen_expr
+        st
         buf
         (EMatch
            ( scrut,
@@ -322,8 +323,7 @@ and gen_unop = function Neg -> "-" | Not -> "!" | BitNot -> "~"
 
 and cuda_backend st =
   {
-    Dispatch.framework =
-      (fun () -> Option.value ~default:"CUDA" st.framework);
+    Dispatch.framework = (fun () -> Option.value ~default:"CUDA" st.framework);
     gen_expr = gen_expr st;
     thread_intrinsic = cuda_thread_intrinsic;
     pre_hook = (fun _ ~full_name:_ _ _ _ -> false);
@@ -351,7 +351,9 @@ and cuda_backend st =
         | "tanh" | "exp" | "exp2" | "log" | "log2" | "log10" | "sqrt" | "rsqrt"
         | "cbrt" | "floor" | "ceil" | "round" | "trunc" | "fabs" | "atan2"
         | "pow" | "fma" | "min" | "max" ->
-            Some (fun buf args -> Dispatch.emit_call ~gen_expr:(gen_expr st) buf name args)
+            Some
+              (fun buf args ->
+                Dispatch.emit_call ~gen_expr:(gen_expr st) buf name args)
         | "block_barrier" ->
             Some (fun buf _ -> Buffer.add_string buf "__syncthreads()")
         | "atomic_add" | "atomic_add_int32" | "atomic_add_global_int32" ->
@@ -415,7 +417,8 @@ and cuda_backend st =
 
 (** {1 L-value Generation} *)
 
-let gen_lvalue st buf lv = Sarek_ir_codegen.gen_lvalue ~gen_expr:(gen_expr st) buf lv
+let gen_lvalue st buf lv =
+  Sarek_ir_codegen.gen_lvalue ~gen_expr:(gen_expr st) buf lv
 
 (** {1 Statement Generation} *)
 
@@ -995,8 +998,8 @@ let generate_with_types ?framework
     [~types] has exactly the type of the [kern_types] field
     ([Sarek_ir_types.kernel]), so the parameter was redundant with the record it
     travels in. This used to be a separate 30-80 line copy of the emit sequence
-    that silently omitted record typedefs, variant typedefs and
-    the kernel's variants — source referencing an undeclared struct, with no
-    error. Delegating keeps one emit path per backend. *)
+    that silently omitted record typedefs, variant typedefs and the kernel's
+    variants — source referencing an undeclared struct, with no error.
+    Delegating keeps one emit path per backend. *)
 let generate ?framework (k : kernel) : string =
   generate_with_types ?framework ~types:k.kern_types k

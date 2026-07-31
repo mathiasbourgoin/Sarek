@@ -7,7 +7,6 @@
 
 open Sarek_ir_types
 
-
 let generate_with_types ~types:_ (k : kernel) =
   ignore k ;
   "(* Vulkan/GLSL backend unavailable *)"
