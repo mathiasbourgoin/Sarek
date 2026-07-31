@@ -13,7 +13,7 @@
 | Metric | Value |
 |---|---|
 | Theorems proven | 90 (78 headline + 12 auxiliary, all Qed/Defined) |
-| — shipped-artefact (checked against production) | 44 (TypeSafetySpec via `Sarek_typer.infer`, UnifySpec via `Sarek_types.unify`) — `production-link.json` + `scripts/check-production-link.py`, backlog-201 |
+| — checked against production, by random differential sampling, NOT exhaustive (backlog-201) | 44 (TypeSafetySpec via `Sarek_typer.infer`, 2000 cases; UnifySpec via `Sarek_types.unify`, 1000 cases) | `production-link.json` + `scripts/check-production-link.py` — agreement on every input sampled, not a proof transported to the implementation |
 | — model-only (no mechanical production link) | 46 (ConstrSpec, ControlFlowSpec, FunSpec, GPUSpec, MutSpec, OperatorSpec, PatternSpec, RegistrySpec, SpecialSpec, VecSpec) |
 | Admits | 0 |
 | Axioms | 0 |

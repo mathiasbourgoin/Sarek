@@ -77,6 +77,28 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# The two kinds of production link this repository has today, and the ONLY
+# two a production-link.json entry may claim. They are not the same strength
+# of evidence and must never be summed into one undifferentiated "shipped"
+# figure without saying which is which (a review of an earlier draft of this
+# script's callers flagged exactly that flattening):
+#
+#   exhaustive_bounded_plus_random — the model (via extraction, no hand
+#     mirror) is run directly against production over EVERY input up to a
+#     stated finite bound, plus randomised inputs beyond it. Still not
+#     universal (the bound is real), but the strongest evidence this
+#     repository produces.
+#
+#   differential_sampled — a QCheck/property-test generator produces random
+#     inputs and asserts the model and production agree on each. This is
+#     sampling: it establishes agreement on the inputs actually generated,
+#     not universally. A counterexample outside the sampled space is exactly
+#     what this evidence cannot rule out.
+EVIDENCE_KINDS = {
+    "exhaustive_bounded_plus_random": "exhaustive-for-a-bound + random",
+    "differential_sampled": "random sampling only, NOT exhaustive",
+}
+
 failures = []
 
 
@@ -154,7 +176,8 @@ def main():
 
     total_shipped = 0
     total_model = 0
-    rows = []  # (project, module, theorems, shipped?, production_call or None)
+    total_by_evidence = {}  # evidence kind -> theorem count
+    rows = []  # (project, module, theorems, evidence-kind-or-None, production_call or None)
 
     for project in projects:
         ledger = load_ledger(project, args.generated)
@@ -174,7 +197,7 @@ def main():
         modules = ledger.get("modules", {})
         short_to_full = {module_short_name(m): m for m in modules}
 
-        verified_shipped = set()
+        verified_shipped = {}  # module short name -> evidence kind
         for mod_short, spec in declared.items():
             full = short_to_full.get(mod_short)
             if full is None:
@@ -187,10 +210,20 @@ def main():
                 continue
             test_rel = spec.get("test_file")
             call = spec.get("production_call")
+            evidence = spec.get("evidence")
             if not test_rel or not call:
                 fail(
                     "%s/production-link.json entry %r is missing test_file or "
                     "production_call" % (project, mod_short)
+                )
+                continue
+            if evidence not in EVIDENCE_KINDS:
+                fail(
+                    "%s/production-link.json entry %r has evidence=%r, which "
+                    "is not one of %s. A shipped-artefact claim must say which "
+                    "kind of evidence backs it — the two are not the same "
+                    "strength and must not be reported as one undifferentiated "
+                    "figure." % (project, mod_short, evidence, sorted(EVIDENCE_KINDS))
                 )
                 continue
             test_path = os.path.join(ROOT, "formal", project, test_rel)
@@ -218,14 +251,15 @@ def main():
                     % (project, mod_short, call, test_rel)
                 )
                 continue
-            verified_shipped.add(mod_short)
+            verified_shipped[mod_short] = evidence
 
         for full_mod, mod_data in modules.items():
             short = module_short_name(full_mod)
             n_th = mod_data["counts"]["theorems"]
-            is_shipped = short in verified_shipped
-            if is_shipped:
+            evidence = verified_shipped.get(short)
+            if evidence is not None:
                 total_shipped += n_th
+                total_by_evidence[evidence] = total_by_evidence.get(evidence, 0) + n_th
             else:
                 total_model += n_th
             rows.append(
@@ -233,7 +267,7 @@ def main():
                     project,
                     short,
                     n_th,
-                    is_shipped,
+                    evidence,
                     declared.get(short, {}).get("production_call"),
                 )
             )
@@ -243,14 +277,31 @@ def main():
         return 1
 
     print("== shipped-artefact vs model-only theorem split (backlog-201)")
-    for project, short, n_th, is_shipped, call in sorted(rows):
-        tag = "shipped" if is_shipped else "model-only"
+    print("   ('shipped' is itself two different strengths of evidence — see below)")
+    for project, short, n_th, evidence, call in sorted(rows, key=lambda r: (r[0], r[1])):
+        if evidence is None:
+            tag = "model-only"
+        else:
+            tag = "checked against production: %s" % EVIDENCE_KINDS[evidence]
         via = (" via %s" % call) if call else ""
         print("  %-20s %-16s %3d theorems  [%s%s]" % (project, short, n_th, tag, via))
     print()
-    print("shipped-artefact theorems: %d" % total_shipped)
-    print("model-only theorems:       %d" % total_model)
+    print("checked against production, TOTAL: %d" % total_shipped)
+    for kind in EVIDENCE_KINDS:
+        print(
+            "  - %-45s %3d theorems"
+            % (EVIDENCE_KINDS[kind] + ":", total_by_evidence.get(kind, 0))
+        )
+    print("model-only (no mechanical production link): %d" % total_model)
     print("total (== proof-ledger sum): %d" % (total_shipped + total_model))
+    print()
+    print(
+        "NOTE: 'checked against production' means agreement on every input\n"
+        "tested (exhaustive-for-a-bound, or randomly sampled) — it does NOT\n"
+        "mean the theorem is proven to hold of the shipped code universally.\n"
+        "Do not headline these as one figure without naming which evidence\n"
+        "kind backs each part; see docs/formal/rocq-value-ledger.md."
+    )
     return 0
 
 

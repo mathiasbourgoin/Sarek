@@ -1,5 +1,18 @@
 # ConvergenceSafety — Project Status
 
+> **None of this project's 111 theorems is linked to production (backlog-201).**
+> Every theorem here is proven about the Rocq model, or checked against the
+> *extracted* model, or checked against an abstract OCaml model — never against
+> the real `Sarek_convergence.ml` that ships. `test/test_convergence_live.ml`
+> does call the real `Sarek_convergence.check_expr`, and its 12/12 GREEN below is
+> real and worth having, but it is a fixed-pattern regression suite (positive
+> baseline + F-01/F-02 regressions + negative baseline) — it never runs the
+> extracted model on the same input and compares. A reader who sees "111
+> theorems" next to "conformance 18/18, extraction 7/7, semantics 4/4, live
+> 12/12 GREEN" should not conclude any theorem here says something checked
+> against the shipped checker: it doesn't, today. `scripts/check-production-link.py`
+> enforces this — see `production-link.json`'s `known_gap`.
+
 **Grade**: A (apparatus-native)
 **Apparatus version**: 1.2.1
 **Host profile**: SPOC/sarek
@@ -10,15 +23,6 @@
 ## Project
 
 ConvergenceSafety is a formal Rocq specification of the GPU barrier safety analysis for the Sarek frontend of SPOC. It proves correctness properties of `Sarek_convergence.check_expr`, which statically detects barriers placed inside diverged control flow on the abstract `expr` AST. The project covers 20 theorems at Tiers 0–2 (lattice laws through control-flow monotonicity, warp-collective safety, and early-return compositionality) — 16 Theorems + 2 named Lemmas (`env_lookup_extend_same`, `not_varying_converged_clean`) + 2 strengthened warp theorems (`warp_mode_monotone`, `warp_varying_if_flags`) — including the F-01 safety property for `ESuperstep` (Phase 1a), 3 env-threaded F-02 theorems (T2-F02), 3 warp theorems for the `WarpConvergence` error class (T2-WARP), and the `return_barrier_skip_safe` compositionality theorem for `EReturn` (T2-RETURN). Validated by 17 QCheck conformance properties against an abstract OCaml model, 7 extraction tests exercising the extracted `ConvergenceModel` static checkers (including `check_warp` CMBT link), and 4 differential semantics tests (T3-S8) exercising the extracted operational evaluator `eval_concrete`.
-
-**Shipped-artefact vs model-only (backlog-201):** 0 of this project's 111
-theorems are checked against production by the mechanical standard
-`scripts/check-production-link.py` applies (a differential test asserting the
-model and a named `Sarek_*` production function agree on the same inputs).
-`test/test_convergence_live.ml` does call the real `Sarek_convergence.check_expr`,
-but as a fixed-pattern regression suite, not a differential property against
-this project's model — see `production-link.json`'s `known_gap` for the exact
-distinction and what closing it would take.
 
 ## Trust root
 
