@@ -176,14 +176,15 @@ jobs:
       # and "is always red" are otherwise the same observation. It is its own
       # subject (scripts/prove-red-fixtures/), so a version of it that credited
       # an immune checker would fail here rather than print a second green.
-      # Measured 1.8s for 8 subjects and 53 mutations (2026-07-31, PR #399);
-      # it never runs the test suite. PR #384 corrected this from a stale
-      # "4 subjects and 13 mutations" to 7/38 and said the figure is corrected in
-      # the commit that raises the pin -- this is that commit for that PR, so it
-      # moved to 8/53 (the eighth subject being check-dune-opam-portability.sh,
-      # whose 15 mutations are the largest single block in the suite). backlog-218
-      # adds a ninth, scripts/check-provered-kb-link.sh, with 5 mutations of its
-      # own: 9/58.
+      # It never runs the test suite. PR #384 corrected a stale "4 subjects
+      # and 13 mutations" pin to 7/38 and said the figure is corrected in the
+      # commit that raises it; PR #399 moved it to 8/53 (the eighth subject
+      # being check-dune-opam-portability.sh, whose 15 mutations are the
+      # largest single block in the suite). backlog-218 adds a ninth,
+      # scripts/check-provered-kb-link.sh, with 5 mutations of its own: 9/58,
+      # measured at ~2.1s (2026-07-31) -- up from 1.8s at 8/53, since the new
+      # subject's baseline plus five mutation scratch trees each copy the
+      # whole ~1.5MB scripts/ directory.
       - name: Prove-red (gates are mutated and observed to fail)
         run: ./scripts/prove-red.sh
 
