@@ -141,9 +141,10 @@
   `create_array n Local` path is fixed with it. (2) The interpreter mapped a
   record element type to `VUnit`, so there was nothing to store into — it now
   builds a zeroed `VRecord` — or, for a variant, a `VVariant` carrying the
-  first NULLARY constructor (the first constructor with zeroed payloads if
-  there is no nullary one), which is the same constructor Native's
-  `default_value_for_type` puts in that slot — per slot in
+  first NULLARY constructor, the same one Native's `default_value_for_type`
+  picks, falling back to the first constructor with zeroed payloads where
+  there is no nullary one (a case in which Native has no default at all and
+  raises, so the interpreter is more defined there rather than agreeing) — per slot in
   `Sarek_ir_interp_value.alloc_kernel_array`. The tag is
   `Hashtbl.hash ctor mod 256`, the encoding `EVariant` and the two matchers
   already use and which is now the single `variant_tag_of_ctor`; a positional

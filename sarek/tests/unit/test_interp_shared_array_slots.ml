@@ -32,7 +32,7 @@
     is [Hashtbl.hash ctor mod 256], not a positional index, and the first
     version of the fix stored a literal [0] — structurally a fine [VVariant],
     and unmatchable. Pinned against [variant_tag_of_ctor] rather than a
-    hard-coded number. *)
+    hard-coded number, with the limits of that stated at the case itself. *)
 
 open Alcotest
 open Sarek_ir_types
@@ -72,8 +72,19 @@ let test_default_record_is_zeroed () =
    stored a literal [0], which matches the chosen constructor only if its name
    happens to hash to zero, so reading a default slot raised "Pattern match
    failure in SMatch" (measured: Interpreter x2 raised where Native answered the
-   nullary constructor). Asserted as the MATCHER'S PREDICATE rather than as a
-   hard-coded number, so the two cannot drift apart. *)
+   nullary constructor).
+
+   WHAT THIS DOES AND DOES NOT PIN. It asserts the tag through
+   [variant_tag_of_ctor] rather than a hard-coded number, and it asserts the
+   NEGATIVE side too — the tag must not also select the other constructor's arm,
+   which a literal 0 or a constant function would satisfy. It does NOT execute
+   [EMatch]/[SMatch]: no kernel runs here, by design (this file exists to hold
+   on a host with no device and no PPX). The arms and this value are kept in
+   step by CONSTRUCTION instead — both call [variant_tag_of_ctor] — so a matcher
+   that stopped calling it would leave this green. The executed evidence is a
+   whole-kernel read of an unwritten shared slot on the Interpreter and Native,
+   which is not committed because it reads storage this project treats as
+   undefined on a device. *)
 let test_default_variant_is_matchable () =
   match
     default_value_of_elttype (TVariant ("choice", [("Zero", []); ("One", [])]))
@@ -93,10 +104,12 @@ let test_default_variant_is_matchable () =
       check int "no payload" 0 (List.length args)
   | _ -> fail "a variant element type must produce a VVariant"
 
-(* Which constructor: the first NULLARY one, matching what the Native backend's
-   [Sarek_native_helpers.default_value_for_type] puts in the same slot. A
-   CPU-backend disagreement about a freshly declared shared array is the shape
-   of divergence backlog-206 was filed as, so the agreement is pinned. *)
+(* Which constructor: the first NULLARY one, which is also what the Native
+   backend's [Sarek_native_helpers.default_value_for_type] picks. Only the
+   INTERPRETER side is pinned here — Native's choice is a PPX-time expression
+   with no unit test that inspects it, so the agreement is read off the two
+   implementations and measured end-to-end once, not gated. If Native's
+   preference changes, this test stays green. *)
 let test_default_variant_prefers_nullary () =
   match
     default_value_of_elttype (TVariant ("c2", [("A", [TFloat32]); ("B", [])]))
@@ -111,7 +124,10 @@ let test_default_variant_prefers_nullary () =
   | _ -> fail "a variant element type must produce a VVariant"
 
 (* No nullary constructor anywhere: fall back to the first one, payload zeroed.
-   Native does the same. *)
+   NOT "Native does the same" — Native recurses on the argument type and has no
+   arm for a tuple, so a single multi-component constructor reaches
+   [failwith "Cannot create default value for this type"] there. This path is
+   the interpreter being strictly more defined, not the two agreeing. *)
 let test_default_variant_without_nullary () =
   match
     default_value_of_elttype

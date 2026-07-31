@@ -334,11 +334,20 @@ let detach_record (v : value) : value =
 
 (** The interpreter's variant tag for a constructor NAME.
 
-    THE definition, and the only one: {!Sarek_ir_interp_eval}'s [EVariant] arm
-    and both of its matchers ([EMatch], [SMatch]) call this rather than
-    repeating [Hashtbl.hash _ mod 256], so a value built here and an arm
-    selected there cannot drift apart. They were three separate copies of the
-    expression, which is how a fourth copy — a literal [0] — went unnoticed.
+    The definition for everything INSIDE the interpreter, and the whole of it:
+    {!Sarek_ir_interp_eval}'s [EVariant] arm and both of its matchers ([EMatch],
+    [SMatch]) call this rather than repeating [Hashtbl.hash _ mod 256], so a
+    value built here and an arm selected there cannot drift apart. They were
+    three separate copies of the expression, which is how a fourth copy — a
+    literal [0] — went unnoticed.
+
+    ONE copy is left outside: [Sarek_ppx]'s [Ptype_variant] helper emits
+    [Hashtbl.hash "C" mod 256] as a RUNTIME expression into generated user code,
+    so a [@@sarek.type] variant round-trips to the same tag. It could be routed
+    here — the generated code already reaches [Sarek.Sarek_value] by a
+    forwarding alias — and is not, so it is a duplication rather than a
+    boundary. If the encoding here changes, that emitter is the second place to
+    change, and it says so at its own site.
 
     [mod 256] means the encoding is NOT injective: two constructors of the same
     type whose names collide modulo 256 select each other's arms. That is a
@@ -377,12 +386,24 @@ let variant_tag_of_ctor (ctor : string) : int = Hashtbl.hash ctor mod 256
     slot decodes to the constructor this function chose.
 
     The constructor is the first NULLARY one if there is one, else the first
-    constructor with zeroed payloads. That is not an aesthetic preference: it is
-    what the Native backend's {!Sarek_native_gen_expr} default does
-    ([Sarek_native_helpers.default_value_for_type] searches for a nullary
-    constructor first), and a CPU-backend disagreement about the contents of a
-    freshly declared shared array is the exact shape of divergence backlog-206
-    was filed as. The two CPU backends now agree.
+    constructor with zeroed payloads. The nullary preference is not an aesthetic
+    choice: it is what [Sarek_native_helpers.default_value_for_type] does
+    ([List.find_opt] over the constructors for one with no argument), so for a
+    variant that HAS a nullary constructor the two CPU backends put the same
+    constructor in the slot — and a CPU-backend disagreement about the contents
+    of a freshly declared shared array is the exact shape of divergence
+    backlog-206 was filed as. Measured for [type c2 = A of float32 | B]:
+    Interpreter x2 and Native all answer [B].
+
+    The FALLBACK is where they stop agreeing, and it is one-sided rather than
+    divergent. With no nullary constructor Native takes the first one and
+    recurses on its argument type, which has no arm for a TUPLE argument — so
+    [C of float32 * float32] as the only shape reaches
+    [failwith "Cannot create default value for this type"] and the kernel does
+    not initialise at all on Native, where this function zeroes each payload
+    component and carries on. The interpreter is strictly more defined there;
+    that is not two answers to one question, and it is NOT asserted as
+    agreement. Nothing here changes the Native side.
 
     None of this is a promise that reading an unwritten slot is DEFINED.
     [__local]/[shared] memory is uninitialised storage on every device, so any
