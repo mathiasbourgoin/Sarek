@@ -10,13 +10,13 @@
 
 ## Scoreboard
 
-| Metric | Value |
-|---|---|
-| Theorems proven | 90 (78 headline + 12 auxiliary, all Qed/Defined) |
-| — checked against production, by random differential sampling, NOT exhaustive (backlog-201) | 44 (TypeSafetySpec via `Sarek_typer.infer`, 2000 cases; UnifySpec via `Sarek_types.unify`, 1000 cases) | `production-link.json` + `scripts/check-production-link.py` — agreement on every input sampled, not a proof transported to the implementation |
-| — model-only (no mechanical production link) | 46 (ConstrSpec, ControlFlowSpec, FunSpec, GPUSpec, MutSpec, OperatorSpec, PatternSpec, RegistrySpec, SpecialSpec, VecSpec) |
-| Admits | 0 |
-| Axioms | 0 |
+| Metric | Value | Where it comes from |
+|---|---|---|
+| Theorems proven | 90 (78 headline + 12 auxiliary, all Qed/Defined) | `proof-ledger.json` → `counts.theorems` |
+| — checked against production, by random differential sampling, NOT exhaustive (backlog-201) | 44 (TypeSafetySpec via `Sarek_typer.infer`, 2000 cases; UnifySpec via `Sarek_types.unify`, 1000 cases) | `production-link.json` + `scripts/check-production-link.py` — agreement on every input sampled, not a proof transported to the implementation. **No anti-drift check**: unlike `codegen-ptx`'s `PtxLayout`, this project has no extraction driver for `TypeSafetyModel.ml`/`UnifyModel.ml` and no byte-compare against a from-scratch re-extraction — see `production-link.json`'s `no_anti_drift_check` |
+| — model-only (no mechanical production link) | 46 (ConstrSpec, ControlFlowSpec, FunSpec, GPUSpec, MutSpec, OperatorSpec, PatternSpec, RegistrySpec, SpecialSpec, VecSpec) | same |
+| Admits | 0 | no `Admitted`/`admit` under `theories/` |
+| Axioms | 0 | |
 | Definitions | infer_type, lookup_env, has_type, pre_type, follow, follow_pvar, occurs_in, unify_fun, apply_subst, infer_mem_type, sarek_type_eq_dec, has_mem_type, field_lookup, infer_rec_type, has_rec_type, infer_cf_type, has_cf_type, is_numeric, is_integer, infer_op_type, has_op_type, infer_fun_type, has_fun_type, is_mutable, infer_mut_type, has_mut_type, lookup_constr, branch_body_env, check_branches, infer_pat_type, has_pat_type, branches_have_type, check_fields, infer_constr_type, has_constr_type, fields_have_type, infer_special_type, has_special_type, infer_gpu_type, has_gpu_type |
 | Build | green (CoqMakefile, exit 0; dune build/test, exit 0) |
 | T1-CMBT harness | green -- differential QCheck 2000/2000 (0 errors, 0 fails) + 20/20 smoke |
