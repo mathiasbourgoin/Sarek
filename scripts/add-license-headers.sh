@@ -457,6 +457,8 @@ echo ""
 echo -e "${BLUE}Processing shell and Python scripts...${NC}"
 require_roots "Script" "${SCRIPT_ROOTS[@]}"
 SCRIPT_SEEN=0
+NO_SHEBANG_COUNT=0
+NO_SHEBANG_FILES=()
 while IFS= read -r -d '' file; do
     SCRIPT_SEEN=$((SCRIPT_SEEN + 1))
     # backlog-222: the find below also admits an extensionless executable, on
@@ -465,14 +467,21 @@ while IFS= read -r -d '' file; do
     # with no shebang is not a script this gate knows how to header, and a
     # silent skip here would recreate the exact blind spot backlog-222 closed,
     # one layer down.
+    #
+    # Count-and-continue rather than exit here: this loop is fed by a
+    # `< <(find ...)` process substitution, not a `find | while` pipe, so it
+    # runs in the current shell and NO_SHEBANG_COUNT survives past the loop
+    # (same reasoning as DUPLICATE_COUNT below). Aborting mid-stream would
+    # truncate the walk -- every remaining file would go unexamined -- and in
+    # fixer mode could leave the tree half-stamped from files already handled
+    # by add_shell_header before the abort.
     case "$file" in
         *.sh|*.py) ;;
         *)
             if ! head -c 2 "$file" 2>/dev/null | grep -q '^#!'; then
-                echo "ERROR: $file is an extensionless executable with no shebang." >&2
-                echo "       add-license-headers.sh cannot tell whether it is a script;" >&2
-                echo "       give it a shebang, or add it to EXEMPT_GLOBS with a reason." >&2
-                exit 2
+                NO_SHEBANG_COUNT=$((NO_SHEBANG_COUNT + 1))
+                NO_SHEBANG_FILES+=("$file")
+                continue
             fi
             ;;
     esac
@@ -482,6 +491,16 @@ done < <(find "${SCRIPT_ROOTS[@]}" \
     "${EXEMPT_ARGS[@]}" \
     -print0)
 require_nonempty "Shell/Python tooling" "$SCRIPT_SEEN"
+
+if [ $NO_SHEBANG_COUNT -gt 0 ]; then
+    echo "ERROR: $NO_SHEBANG_COUNT extensionless executable(s) with no shebang:" >&2
+    for file in "${NO_SHEBANG_FILES[@]}"; do
+        echo "       $file" >&2
+    done
+    echo "       add-license-headers.sh cannot tell whether these are scripts;" >&2
+    echo "       give them a shebang, or add them to EXEMPT_GLOBS with a reason." >&2
+    exit 2
+fi
 
 # Process dune files (optional - uncomment if needed)
 # echo ""
