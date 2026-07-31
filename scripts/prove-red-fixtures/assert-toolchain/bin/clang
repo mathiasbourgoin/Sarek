@@ -3,7 +3,8 @@
 # SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
 # STUB. Not clang. See run-with-stubs.sh for why the fixture is hermetic rather
 # than deferring to the host clang (backlog-176). Contracts the gate depends on,
-# recognised loosely (any argv naming a readable *.cl file) because this is not
+# recognised loosely (any argv naming an existing regular *.cl file -- `[ -f ]`,
+# which says nothing about readability) because this is not
 # an argument validator -- a malformed invocation the real clang would reject
 # still succeeds here; the fixture pins the gate's decision logic, not its
 # command lines:

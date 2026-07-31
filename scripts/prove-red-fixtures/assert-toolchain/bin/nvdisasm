@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: CECILL-B
 # SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
 # STUB. Not nvdisasm. See bin/ptxas for why these exist (backlog-176).
-# Contracts the gate depends on, recognised loosely (any argv naming a readable
-# file counts as the -c form) because this is not an argument validator:
+# Contracts the gate depends on, recognised loosely (any argv naming an existing
+# regular file counts as the -c form -- `[ -f ]`, which says nothing about
+# readability) because this is not an argument validator:
 #   --version   -> exit 0
 #   -c FILE     -> exit 0 AND print text containing the entry-point name, which
 #                  the gate greps for ('probe'). Printing nothing would fail the

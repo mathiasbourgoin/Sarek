@@ -26,8 +26,11 @@
 #      the one that has to agree.
 #   2. A PRESERVED HOST PATH DEFEATS THE MUTATIONS. `rm -f .../bin/ptxas` only
 #      makes ptxas absent if nothing else on PATH provides it. On any host with a
-#      CUDA toolkit the deletion is invisible and the gate stays green at 13/13
-#      (measured; CodeRabbit, PR #384). Being exact about which way that fails:
+#      CUDA toolkit the deletion is invisible; whether the gate then reaches 13/13
+#      depends on that host also having naga, glslangValidator and a loadable
+#      libnvrtc, which is what was observed here (CodeRabbit, PR #384). The
+#      invisibility is the general fact, the 13/13 was one machine. Being exact
+#      about which way that fails:
 #      prove-red.sh reads exit 0 as `DID NOT FAIL` and exits 1, so the symptom is
 #      a spurious red for the whole repository on a CUDA host rather than a
 #      credited red. Either way the mutation's verdict is a property of the
@@ -44,9 +47,11 @@
 # than leaving to be discovered. Absolute paths are not mediated by PATH and are
 # not isolated: the shebangs reach /usr/bin/env, the NVRTC probe bin/cc writes
 # runs /bin/sh, and the subject's own cuda_fp16.h search names /usr/local/cuda --
-# that last one is the reason for the refusal below. The wrapper also uses the
-# host's dirname, ln and mktemp before it rewrites PATH, deliberately: it has to
-# build the sandbox with something.
+# that last one is the reason for the refusal below. The wrapper itself also runs
+# host commands outside the sandbox, deliberately -- it has to build the sandbox
+# with something -- and the list is exhaustive because a partial one is the defect
+# this note exists to avoid: dirname and mktemp and ln while constructing it, find
+# and head in the refusal below, and rm on the way out.
 #
 # WHAT THIS DOES NOT CLAIM. A green run here says the gate's DECISION LOGIC is
 # sound: it counts checks, it accumulates failures, it trips on drift. It says
@@ -78,11 +83,15 @@ fi
 # mutation could not go red at all. PATH cannot hide an absolute path, so refuse
 # rather than produce a mutation that cannot fail.
 #
-# THE BLAST RADIUS IS THE WHOLE RUN, not this fixture. prove-red.sh dies on the
-# first non-green baseline, so on a developer machine with a toolkit at
-# /usr/local/cuda this refusal takes down all 7 subjects and 38 mutations. That
-# is the intended trade -- a loud stop beats one silently inert mutation -- but
-# it is stated here because a gate that stops everything is a gate people
+# THE BLAST RADIUS IS THE RUN'S VERDICT, not just this fixture. prove-red.sh
+# dies on the first non-green baseline, so on a developer machine with a toolkit
+# at /usr/local/cuda the whole run exits 2. Measured rather than assumed, because
+# an earlier revision of this comment claimed all 7 subjects and 38 mutations are
+# lost and that is not what happens: prove-red scans scripts/ before ci/, so the
+# six subjects ahead of this one have already run and printed their verdicts. What
+# is lost is this subject's baseline and its 5 mutations, plus the run's overall
+# verdict. That is the intended trade -- a loud stop beats one silently inert
+# mutation -- but it is stated because a gate that fails the run is a gate people
 # disable. CI is unaffected: the `build` job is ubuntu-latest only, which ships
 # no CUDA toolkit.
 if [ -n "$(find -L /usr/local/cuda -name cuda_fp16.h 2>/dev/null | head -1)" ]; then

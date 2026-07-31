@@ -438,8 +438,10 @@ echo "toolchain assertion OK: $checks/$EXPECTED_CHECKS checks passed."
 # no naga, no glslangValidator and no loadable libnvrtc — so the unstubbed
 # baseline is red on arrival exactly where the spec has to execute. Second, a
 # preserved host PATH defeats the mutations: `rm -f .../bin/ptxas` is invisible
-# on any host that has a real ptxas, so the gate stays green at 13/13 and the
-# mutation cannot go red at all (measured; CodeRabbit, PR #384). To be exact
+# on any host that has a real ptxas, so the mutation cannot go red at all. It was
+# observed reaching 13/13 here; that part needed this host to also have naga,
+# glslangValidator and a loadable libnvrtc, whereas the invisibility of the
+# deletion is general (CodeRabbit, PR #384). To be exact
 # about which way that fails, since an earlier revision of this comment was not:
 # prove-red.sh reads the resulting exit 0 as `DID NOT FAIL` and exits 1, so the
 # symptom is a spurious red for the whole repository on any CUDA host, not a
@@ -487,7 +489,7 @@ echo "toolchain assertion OK: $checks/$EXPECTED_CHECKS checks passed."
 #   expect-message: toolchain assertion FAILED: 2 of 12 checks failed
 #
 # mutation: nvdisasm-present-but-broken
-#   desc: nvdisasm stays on PATH and keeps exiting 0, but stops naming the entry point in its disassembly, so the gate's grep fails. Proves the CHAIN probe rather than mere presence — the script's own header says a present-but-broken binary "skips just as silently as an absent one", and this is the only mutation that tests that claim.
+#   desc: nvdisasm stays on PATH and keeps exiting 0, but stops naming the entry point in its disassembly, so the gate's grep fails. Proves the CHAIN probe rather than mere presence — the script's own header says a present-but-broken binary "skips just as silently as an absent one", and this is the only mutation that tests that claim for a binary that is functional in every respect the gate can see, including its own exit code. (clang-fp64-unsupported below is also a present-but-broken tool, so "only" would be too strong without that qualifier.)
 #   apply: python3 - <<'PYEOF'
 #   apply: p = "scripts/prove-red-fixtures/assert-toolchain/bin/nvdisasm"
 #   apply: s = open(p, encoding="utf-8").read()
