@@ -263,24 +263,29 @@ let get_device_buffer (type a b) (v : (a, b) Vector.t) (dev : Device.t) :
 
    [soa_abi] is the caller's statement that the kernel about to run was emitted
    by Sarek with [~soa_params] — i.e. that its signature really is N leaf
-   pointers plus one shared length. The two generated-JIT sites pass [true]
-   explicitly and everything else defaults to [false], because the dangerous
-   direction is an EXTERNAL kernel: [run_source] hands the backend a source
-   string Sarek did not emit, whose parameter block at the vector's position is
-   the packed [(ptr, len)] pair the kernel author wrote there, not the
-   N-pointer layout this module can produce. [run_source] does not expose
-   [~soa_abi] and always calls this with the default, so that mismatch cannot
-   occur through it today. The design point is what a future caller passing
-   [~soa_abi:true] for an externally-authored kernel would hit: [soa_dispatch]
-   only ever answers [Some] on CUDA/PTX, which binds through the same bare
-   pointer array as CUDA/C and HIP, with nothing checking the bound arguments
-   against the compiled signature — so the outcome is the same
-   shape-dependent shift {!Backend_error.reject_soa_params} analyses in detail,
-   where a trap is among the possibilities but so is silent corruption (a
-   record's Nth leaf landing in a valid pointer slot of the wrong buffer) or no
-   visible effect at all (the vector declared last), never uniformly "a crash"
-   or uniformly "silently wrong data." A default of [true] would make that
-   hazard the behaviour any new caller inherits by omission. *)
+   pointers plus one shared length. [run]'s [expand_to_run_source_args] and
+   [run_vectors]'s [transfer_vectors_to_device] pass [true] explicitly (and
+   [soa_param_names] hardcodes it, per its own comment); everything else
+   defaults to [false], because the dangerous direction is an EXTERNAL kernel:
+   [run_source] hands the backend a source string Sarek did not emit, whose
+   parameter block at the vector's position is, under [run_source]'s
+   [~inject_lengths] default, the packed [(ptr, len)] pair the kernel author
+   wrote there (a [~inject_lengths:false] caller declares a bare pointer
+   instead), not the N-pointer layout this module can produce. [run_source]
+   does not expose [~soa_abi] and always calls this with the default, so that
+   mismatch cannot occur through it today. The design point is what a future
+   caller passing [~soa_abi:true] for an externally-authored kernel would hit:
+   [soa_dispatch] only ever answers [Some] on CUDA/PTX, which binds through
+   the same bare pointer array as CUDA/C and HIP, with nothing checking the
+   bound arguments against the compiled signature — so the outcome is the
+   same shape-dependent shift {!Backend_error.reject_soa_params} analyses in
+   detail, where a trap is among the possibilities but so is silent
+   corruption (a record's Nth leaf landing in a valid pointer slot of the
+   wrong buffer) or, with the vector declared last, no shift into any
+   FOLLOWING pointer slot at all — though the vector's own (ptr, len) slots
+   still receive leaf pointers — never uniformly "a crash" or uniformly
+   "silently wrong data." A default of [true] would make that hazard the
+   behaviour any new caller inherits by omission. *)
 let soa_dispatch (type a b) ~(soa_abi : bool) (v : (a, b) Vector.t)
     (dev : Device.t) : Vector.soa_binding option =
   match v.Vector.soa with
@@ -951,9 +956,11 @@ let run ~(device : Device.t) ~(name : string)
                  bound arguments to disagree here, the outcome would be the
                  same shape-dependent shift {!Backend_error.reject_soa_params}
                  analyses for the external-kernel case: a trap is among the
-                 possible outcomes, but so is silent corruption or no visible
-                 effect at all depending on where the SoA vector sits in the
-                 parameter list — never uniformly "a crash" or uniformly
+                 possible outcomes, but so is silent corruption or, when the
+                 vector is declared last, no shift into any following
+                 pointer slot — the vector's own slots still mis-bind —
+                 depending on where the SoA vector sits in the parameter
+                 list — never uniformly "a crash" or uniformly
                  "silently wrong data." Empty list on every non-CUDA/PTX
                  backend, because soa_dispatch is what decides — and since
                  backlog-214 the source-generating ones among them REFUSE a
