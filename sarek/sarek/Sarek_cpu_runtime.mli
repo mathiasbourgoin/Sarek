@@ -91,9 +91,12 @@ val alloc_shared_int64 : shared_mem -> string -> int -> int64 -> int64 array
 
     For custom types not covered by typed allocators.
 
-    The last argument is a THUNK run once PER SLOT, not a value copied into
-    every slot (backlog-206). For a boxed element type the value form aliased
-    all slots, so a store through one index was visible through all of them. *)
+    The last argument is a THUNK, run once per slot ON THE ALLOCATING CALL, not
+    a value copied into every slot (backlog-206). For a boxed element type the
+    value form aliased all slots, so a store through one index was visible
+    through all of them. A call that finds [name] already allocated returns the
+    existing array and does NOT run the thunk at all — that is the reuse this
+    function exists for, and it is why the thunk must not carry side effects. *)
 
 val alloc_shared_with_key :
   shared_mem ->

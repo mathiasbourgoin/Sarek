@@ -139,7 +139,8 @@
   per-slot thunk and calls `Array.init`, and the identical `Array.make` in the
   `create_array n Local` path is fixed with it. (2) The interpreter mapped a
   record element type to `VUnit`, so there was nothing to store into — it now
-  builds a zeroed `VRecord` (or a constructor-0 `VVariant`) per slot in
+  builds a zeroed `VRecord` — or, for a variant with at least one
+  constructor, a constructor-0 `VVariant` — per slot in
   `Sarek_ir_interp_value.alloc_kernel_array`, which replaces four copies of the
   old init table. (3) OpenCL and Vulkan had no shared-memory gap at all:
   `register_types_from_typ` ran over PARAMETER types only, so a record named

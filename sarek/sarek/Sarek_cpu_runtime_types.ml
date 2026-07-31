@@ -135,10 +135,13 @@ let alloc_shared_int64 (shared : shared_mem) name size (default : int64) :
     [7; 7; 7; 7] where the wanted answer is [7; 0; 0; 0].
 
     [Array.init] calls [mk] once per slot, so the slots are independent
-    allocations. A thunk rather than a value because nothing here can copy an
-    ['a]: the caller (the PPX, {!Sarek_native_gen_expr.gen_parallel_construct})
-    is the only place that knows how to build one, and passing a value would put
-    the aliasing back no matter what this function did with it.
+    allocations — on the ALLOCATING call. A call that finds [name] already
+    allocated returns the stored array and never runs [mk], which is the reuse
+    the [Hashtbl] lookup below is for. A thunk rather than a value because
+    nothing here can copy an ['a]: the caller (the PPX,
+    {!Sarek_native_gen_expr.gen_parallel_construct}) is the only place that
+    knows how to build one, and passing a value would put the aliasing back no
+    matter what this function did with it.
 
     Unchanged for immediate element types ([char], and the four typed allocators
     above): they cannot alias, so this costs them one extra closure call per

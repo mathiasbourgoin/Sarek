@@ -42,12 +42,10 @@ let refuse_aggregate_state_space_array ~what ~(name : string) (elt : elttype) :
             PTX has no struct type and this backend addresses aggregates only \
             in global vectors, so an aggregate %s array cannot be declared. \
             Pass the data as a vector parameter, or declare one scalar %s \
-            array per field. (The same kernel runs on the Interpreter, Native, \
-            OpenCL and Vulkan backends, which do have an aggregate %s array.)"
+            array per field."
            what
            name
            tyname
-           what
            what
            what)
   | TInt32 | TInt64 | TFloat16 | TFloat32 | TFloat64 | TUint8 | TBool | TUnit
