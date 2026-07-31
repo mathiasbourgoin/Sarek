@@ -327,6 +327,33 @@ See [a phantom page](Nowhere.html).
 # while the local run was green. A fixture builder that can silently produce an
 # inert fixture is the same failure this gate exists to prevent, so `checksha`
 # below now asserts the substitution actually happened.
+# An abbreviation the SUBJECT will actually treat as a sha.
+#
+# `rev-parse --short=8` returns eight hex characters, and roughly one time in
+# forty-three every one of them is a DIGIT. The subject skips an all-digit token
+# on purpose -- `tok.isdigit()` in check-cited-paths-exist.sh, the rule that
+# stops a line count or a byte size being read as a commit -- so a fixture that
+# happens to draw such a sha cites nothing the subject can see, and EVERY
+# red-path case built on that fixture reports exit 0 and fails. Measured: a doc
+# citing `12345678` makes the subject print "0 cited commit sha(s)" and exit 0;
+# and this suite failed once in eight local runs before this helper, on a
+# different case each time, which is what a per-fixture 2.3% draw looks like
+# across four fixtures.
+#
+# Widening the abbreviation keeps the sha REAL (the subject accepts 7..40 hex)
+# and costs the test nothing. Falls back to the full 40 characters, which cannot
+# be all digits for any commit this fixture will ever produce.
+abbrev_sha() {
+  local repo="$1" rev="$2" tok
+  for width in 8 10 12; do
+    tok="$(git -C "$repo" rev-parse --short="$width" "$rev" 2>/dev/null)"
+    case "$tok" in
+      *[a-f]*) printf '%s' "$tok"; return 0 ;;
+    esac
+  done
+  git -C "$repo" rev-parse "$rev" 2>/dev/null
+}
+
 mkshafixture() {
   local d ok orphan br
   d="$(mktemp -d)"
@@ -340,7 +367,7 @@ mkshafixture() {
   printf '# Index\n\nNothing cited here.\n' >"$d/docs/Index.md"
   git -C "$d" add -A >/dev/null 2>&1
   git -C "$d" commit --quiet -m reachable >/dev/null 2>&1 || return 1
-  ok="$(git -C "$d" rev-parse --short=8 HEAD 2>/dev/null)"
+  ok="$(abbrev_sha "$d" HEAD)"
   # The initial branch name is whatever this git's init.defaultBranch says, so
   # ask rather than assume: `git init -b main` is not portable to every runner,
   # and a failed init is how the first version of this fixture went inert.
@@ -352,7 +379,7 @@ mkshafixture() {
   printf 'let y = 2\n' >>"$d/sub/Thing.ml"
   git -C "$d" add -A >/dev/null 2>&1
   git -C "$d" commit --quiet -m orphan >/dev/null 2>&1 || return 1
-  orphan="$(git -C "$d" rev-parse --short=8 HEAD 2>/dev/null)"
+  orphan="$(abbrev_sha "$d" HEAD)"
   git -C "$d" checkout --quiet "$br" >/dev/null 2>&1 || return 1
   # A remote-tracking ref: reachability is measured against refs/remotes/*, and
   # this is the only ref the reachable sha needs to be contained in.
@@ -379,7 +406,21 @@ usable_fixture() {
   shift
   [ -n "$d" ] && [ -d "$d/.git" ] || return 1
   for s in "$@"; do
-    [ ${#s} -eq 8 ] || return 1
+    # Each sha must be one the SUBJECT can see, which is what this guard is
+    # actually for. It used to demand exactly 8 characters -- a magic width that
+    # was true only of `rev-parse --short=8` and that `abbrev_sha` legitimately
+    # exceeds when it has to widen past an all-digit draw. So check the three
+    # properties the subject cares about instead: lowercase hex, a length inside
+    # the subject's 7..40 window, and at least one letter (an all-digit token is
+    # skipped by `tok.isdigit()`, so a fixture citing one cites nothing).
+    case "$s" in
+      "" | *[!0-9a-f]*) return 1 ;;
+    esac
+    [ ${#s} -ge 7 ] && [ ${#s} -le 40 ] || return 1
+    case "$s" in
+      *[a-f]*) ;;
+      *) return 1 ;;
+    esac
   done
   return 0
 }
@@ -614,6 +655,25 @@ fi
 metafx="$(mkshafixture)"
 metad="${metafx%% *}"
 metasha="$(printf '%s' "$metafx" | cut -d' ' -f3)"
+# Both shas the fixture hands out must be ones the SUBJECT can SEE. An
+# all-digit abbreviation is skipped by the subject on purpose, so a fixture that
+# draws one cites nothing and turns every red-path case built on it green --
+# which is how this suite failed one run in eight before `abbrev_sha`. Checking
+# the property here means a regression in `abbrev_sha` fails deterministically,
+# instead of once every eleven runs on a random case.
+metaok="$(printf '%s' "$metafx" | cut -d' ' -f2)"
+case "$metaok$metasha" in
+  *[a-f]*)
+    echo "PASS meta: the fixture's shas are visible to the subject (not all-digit)"
+    pass=$((pass + 1))
+    ;;
+  *)
+    echo "FAIL meta: fixture shas '$metaok'/'$metasha' are all digits;" \
+      "the subject skips those, so every sha case would pass vacuously"
+    fail=$((fail + 1))
+    ;;
+esac
+
 if usable_fixture "$metad" "$metasha"; then
   echo "PASS meta: usable_fixture accepts a real fixture (exit 0)"
   pass=$((pass + 1))
