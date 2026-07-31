@@ -21,11 +21,22 @@
     applies quietly.
 
     WHY THE TABLES BELOW HAVE NO WILDCARD ARM. Each [*_refusal] function matches
-    every arm of its Parsetree variant explicitly. That is the mechanism, not
-    style: with [-w +8] a wildcard-free match makes the OCaml compiler the thing
-    that notices when ppxlib grows a constructor. The next Parsetree arm cannot
-    reach a user as silence, because the build stops until somebody writes down
-    what it is. A [| _ ->] here would hand that guarantee back.
+    every arm of its Parsetree variant explicitly, so the OCaml compiler is what
+    notices when ppxlib grows a constructor: the build stops until somebody
+    writes down what the new arm is, instead of it reaching a user as silence. A
+    [| _ ->] here would hand that back.
+
+    What makes the build actually stop is [-warn-error +8] in [sarek/ppx/dune],
+    on this library. Measured 2026-07-31 by deleting the [Pexp_try] arm below:
+    dune's dev [:standard] already turns warning 8 into an error (exit 1), but
+    [--profile=release] left it a plain warning and the build SUCCEEDED at exit
+    0 until that flag was added; with it, release fails at exit 1 too and the
+    unmutated tree builds at 0 in both profiles. [-w +8], which was the flag
+    this comment used to credit, changes nothing in either profile — [:standard]
+    supplies the dev error and supplies nothing in release. The guarantee is
+    scoped to [sarek_frontend], the library this module is in: none of the PPX's
+    other libraries carries the flag, and one test directory
+    (sarek/tests/codegen_golden) already carried it before this change.
 
     WHAT THESE FUNCTIONS ARE NOT. They are not a claim that everything they name
     is refused THROUGH THEM. Several arms below are partially implemented — the
@@ -74,26 +85,34 @@ let expression_refusal (d : expression_desc) : string =
        simultaneous bindings would need a temporaries pass the lowering does \
        not have."
   | Pexp_function _ ->
-      "a function expression cannot appear here. Kernel-local functions must \
-       be let-bound (`let f x = ... in ...`) so the monomorphiser and the \
-       defunctionaliser can see a name to specialise."
+      "UNREACHABLE: a `fun` expression is caught by parse_expression's `_ when \
+       is_function_expression expr` arm, which refuses it with its own \
+       let-bound-function advice. Note that this one is a GUARDED arm, not a \
+       constructor match, so the unreachability rests on that guard holding \
+       for every Pexp_function. This arm exists to keep the table \
+       wildcard-free."
   | Pexp_apply _ ->
-      "this application shape is not supported in a kernel. Applications are \
-       read as a callee applied to positional arguments; labelled (`~x:e`) and \
-       optional (`?x:e`) arguments are refused separately, with their own \
-       message."
+      "UNREACHABLE: an application is parsed by an arm of its own that matches \
+       the constructor totally, and a sub-node the parser cannot build raises \
+       THAT sub-node's refusal rather than falling through to here. This arm \
+       exists to keep the table wildcard-free; seeing this text in a real \
+       diagnostic means the parser lost an arm."
   | Pexp_match _ ->
-      "this `match` shape is not supported in a kernel (the arms themselves \
-       are parsed by the `match` arm of the parser; reaching this text means \
-       the scrutinee or the case list had a shape that arm does not build)."
+      "UNREACHABLE: a `match` is parsed by an arm of its own that matches the \
+       constructor totally, and a sub-node the parser cannot build raises THAT \
+       sub-node's refusal rather than falling through to here. This arm exists \
+       to keep the table wildcard-free; seeing this text in a real diagnostic \
+       means the parser lost an arm."
   | Pexp_try _ ->
       "`try ... with` is not supported in kernels: there are no exceptions on \
        a device, and no unwinding mechanism to lower a handler onto. Return a \
        sentinel value and test it in the caller."
   | Pexp_tuple _ ->
-      "this tuple shape is not supported in a kernel. Tuples of scalars are \
-       supported as local values and as `match` destructuring targets; a tuple \
-       reaching this text is one the tuple arm did not build."
+      "UNREACHABLE: a tuple is parsed by an arm of its own that matches the \
+       constructor totally, and a sub-node the parser cannot build raises THAT \
+       sub-node's refusal rather than falling through to here. This arm exists \
+       to keep the table wildcard-free; seeing this text in a real diagnostic \
+       means the parser lost an arm."
   | Pexp_construct _ ->
       "this constructor is not usable in a kernel: only an unqualified \
        constructor of a type declared with [@@sarek.type] is resolved, so `M.C \
@@ -105,10 +124,11 @@ let expression_refusal (d : expression_desc) : string =
        variant is its declaration order. Declare a normal variant type with \
        [@@sarek.type] instead."
   | Pexp_record _ ->
-      "this record shape is not supported in a kernel. A record literal must \
-       name every field of a type declared with [@@sarek.type]; functional \
-       update (`{ r with f = e }`) is refused separately, with its own \
-       message."
+      "UNREACHABLE: a record literal is parsed by an arm of its own that \
+       matches the constructor totally, and a sub-node the parser cannot build \
+       raises THAT sub-node's refusal rather than falling through to here. \
+       This arm exists to keep the table wildcard-free; seeing this text in a \
+       real diagnostic means the parser lost an arm."
   | Pexp_field _ ->
       "a qualified field access (`r.M.f`) is not supported in a kernel: field \
        names are resolved against the record type, not against a module path. \
@@ -123,23 +143,33 @@ let expression_refusal (d : expression_desc) : string =
        literal form. Use `create_array n Local` (or `Shared`, or `Global`) and \
        assign the elements."
   | Pexp_ifthenelse _ ->
-      "this `if` shape is not supported in a kernel (reaching this text means \
-       the condition or a branch had a shape the `if` arm did not build)."
+      "UNREACHABLE: an `if` is parsed by an arm of its own that matches the \
+       constructor totally, and a sub-node the parser cannot build raises THAT \
+       sub-node's refusal rather than falling through to here. This arm exists \
+       to keep the table wildcard-free; seeing this text in a real diagnostic \
+       means the parser lost an arm."
   | Pexp_sequence _ ->
-      "this sequence shape is not supported in a kernel (reaching this text \
-       means one side had a shape the sequence arm did not build)."
+      "UNREACHABLE: a sequence is parsed by an arm of its own that matches the \
+       constructor totally, and a sub-node the parser cannot build raises THAT \
+       sub-node's refusal rather than falling through to here. This arm exists \
+       to keep the table wildcard-free; seeing this text in a real diagnostic \
+       means the parser lost an arm."
   | Pexp_while _ ->
-      "this `while` shape is not supported in a kernel (reaching this text \
-       means the condition or the body had a shape the `while` arm did not \
-       build)."
+      "UNREACHABLE: a `while` is parsed by an arm of its own that matches the \
+       constructor totally, and a sub-node the parser cannot build raises THAT \
+       sub-node's refusal rather than falling through to here. This arm exists \
+       to keep the table wildcard-free; seeing this text in a real diagnostic \
+       means the parser lost an arm."
   | Pexp_for _ ->
       "a `for` loop must bind a variable: `for i = lo to hi do ... done`. A \
        wildcard binder (`for _ = ...`) is not supported, because the lowered \
        loop emits its induction variable by name."
   | Pexp_constraint _ ->
-      "this type annotation is not supported in a kernel (reaching this text \
-       means the annotated expression, not the annotation, had a shape the \
-       annotation arm did not build)."
+      "UNREACHABLE: an annotated expression is parsed by an arm of its own \
+       that matches the constructor totally, and a sub-node the parser cannot \
+       build raises THAT sub-node's refusal rather than falling through to \
+       here. This arm exists to keep the table wildcard-free; seeing this text \
+       in a real diagnostic means the parser lost an arm."
   | Pexp_coerce _ ->
       "a coercion (`(e :> t)`) is not supported in a kernel: there is no \
        subtyping in the kernel type system, so a coercion has no meaning to \
@@ -187,10 +217,11 @@ let expression_refusal (d : expression_desc) : string =
       "a first-class module (`(module M)`) is not supported in a kernel: a \
        module is not a value the device code has anywhere to put."
   | Pexp_open _ ->
-      "only `let open M in e` and `let open M.N in e` are supported in a \
-       kernel, with `M` a plain module path. A functor application (`let open \
-       F(X) in`) or a structure (`let open struct ... end in`) is not \
-       resolved."
+      "`let open M in e` is accepted in a kernel for any plain module path, at \
+       any depth. What is not resolved is an open of something that is not a \
+       path: a functor application (`let open F(X) in`) or a structure (`let \
+       open struct ... end in`). Alias it outside the kernel (`module M = \
+       F(X)`) and open the alias."
   | Pexp_letop _ ->
       "a binding operator (`let* x = ...`, `let+ x = ...`) is not supported in \
        a kernel: it desugars to an application of a user-defined `let*`, which \
@@ -212,8 +243,11 @@ let expression_refusal (d : expression_desc) : string =
 let pattern_refusal (d : pattern_desc) : string =
   match d with
   | Ppat_any | Ppat_var _ | Ppat_tuple _ ->
-      "this pattern shape is not supported in a kernel (reaching this text \
-       means a sub-pattern had a shape the parser does not build)."
+      "UNREACHABLE: a wildcard, variable or tuple pattern is parsed by an arm \
+       of its own that matches the constructor totally, and a sub-node the \
+       parser cannot build raises THAT sub-node's refusal rather than falling \
+       through to here. This arm exists to keep the table wildcard-free; \
+       seeing this text in a real diagnostic means the parser lost an arm."
   | Ppat_alias _ ->
       "an `as` alias in a pattern (`p as x`) is not supported in a kernel: the \
        lowering binds either the whole scrutinee or its fields, not both. Bind \
@@ -248,9 +282,11 @@ let pattern_refusal (d : pattern_desc) : string =
        to one tag test with one binding set, and an or-pattern has several. \
        Write one arm per constructor."
   | Ppat_constraint _ ->
-      "this annotated pattern is not supported in a kernel (reaching this text \
-       means the pattern under the annotation had a shape the parser does not \
-       build)."
+      "UNREACHABLE: an annotated pattern is parsed by an arm of its own that \
+       matches the constructor totally, and a sub-node the parser cannot build \
+       raises THAT sub-node's refusal rather than falling through to here. \
+       This arm exists to keep the table wildcard-free; seeing this text in a \
+       real diagnostic means the parser lost an arm."
   | Ppat_type _ -> "a type-directed pattern (`#t`) is not supported in kernels."
   | Ppat_lazy _ ->
       "a `lazy` pattern is not supported in a kernel: there are no thunks on a \
@@ -284,8 +320,12 @@ let core_type_refusal (d : core_type_desc) : string =
        generated from it. Write the type, or leave the annotation off entirely \
        and let inference run."
   | Ptyp_var _ | Ptyp_arrow _ | Ptyp_tuple _ | Ptyp_constr _ ->
-      "this type shape is not supported in a kernel (reaching this text means \
-       a component of the type had a shape the parser does not build)."
+      "UNREACHABLE: a type variable, arrow, tuple or constructor is parsed by \
+       an arm of its own that matches the constructor totally, and a sub-node \
+       the parser cannot build raises THAT sub-node's refusal rather than \
+       falling through to here. This arm exists to keep the table \
+       wildcard-free; seeing this text in a real diagnostic means the parser \
+       lost an arm."
   | Ptyp_object _ | Ptyp_class _ ->
       "an object or class type is not supported in a kernel: objects have no \
        device representation."
@@ -299,9 +339,11 @@ let core_type_refusal (d : core_type_desc) : string =
        polymorphic variant declares none. Declare a normal variant type with \
        [@@sarek.type] instead."
   | Ptyp_poly _ ->
-      "this quantified type is not supported in a kernel (reaching this text \
-       means the type under the quantifier had a shape the parser does not \
-       build)."
+      "UNREACHABLE, and not unsupported either: `parse_type` looks THROUGH a \
+       quantifier on purpose (the quantified variables are the ones `Ptyp_var` \
+       already carries by name), so a quantified type is accepted and a bad \
+       type under it raises that type's own refusal. This arm keeps the table \
+       wildcard-free."
   | Ptyp_package _ ->
       "a first-class module type (`(module S)`) is not supported in a kernel: \
        a module is not a value the device code has anywhere to put."
@@ -325,9 +367,11 @@ let core_type_refusal (d : core_type_desc) : string =
 let structure_item_refusal (d : structure_item_desc) : string =
   match d with
   | Pstr_type _ | Pstr_value _ ->
-      "this shape is not supported in a kernel module (reaching this text \
-       means a declaration the fold recognises had a component it does not \
-       build)."
+      "UNREACHABLE: a type or value declaration is parsed by an arm of its own \
+       that matches the constructor totally, and a sub-node the parser cannot \
+       build raises THAT sub-node's refusal rather than falling through to \
+       here. This arm exists to keep the table wildcard-free; seeing this text \
+       in a real diagnostic means the parser lost an arm."
   | Pstr_eval _ ->
       "a bare expression in a kernel module has no effect and is not evaluated \
        anywhere: a kernel module contributes type declarations, helper \

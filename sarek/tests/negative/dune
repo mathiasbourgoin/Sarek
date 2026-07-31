@@ -63,6 +63,7 @@
 ; - test_superstep_attribute: "on a superstep binding is not interpreted" (backlog-192)
 ; - test_local_annotation_read: "Cannot unify types" (backlog-192)
 ; - test_helper_return_read: "Cannot unify types" (backlog-192)
+; - test_nested_fun_return_read: "Cannot unify types" (backlog-192)
 ; - test_module_helper_return_read: "Cannot unify types" (backlog-192)
 ; - test_expr_table_try: "try ... with` is not supported in kernels" (backlog-192)
 ; - test_pattern_table_or: "or-pattern" (backlog-192)
@@ -749,6 +750,17 @@
 (library
  (name neg_test_pattern_table_or)
  (modules test_pattern_table_or)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_nested_fun_return_read)
+ (modules test_nested_fun_return_read)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))

@@ -598,9 +598,12 @@ let test_parse_record_field_lapply_refused () =
        \"field\""
   with Parse_error_exn (msg, _) ->
     Alcotest.(check bool)
-      "names the functor application"
+      "is the record-field refusal, not one of the three other messages that \
+       also say \"functor application\""
       true
-      (contains msg "functor application")
+      (contains
+         msg
+         "record field cannot be named through a functor application")
 
 (* [let open F(X) in e] parses to Pexp_open over a Pmod_APPLY, not over a
    Pmod_ident carrying a Lapply longident (checked the same way), so this arm is
@@ -623,9 +626,10 @@ let test_parse_open_lapply_refused () =
     Alcotest.fail "a Lapply module path in let-open must be refused"
   with Parse_error_exn (msg, _) ->
     Alcotest.(check bool)
-      "names the functor application"
+      "is the let-open refusal, not one of the three other messages that also \
+       say \"functor application\""
       true
-      (contains msg "functor application")
+      (contains msg "functor application in `let open ... in`")
 
 (* The reachable half of the same site. A path DEEPER than [M.N] used to flatten
    to the EMPTY path, and an empty path is not inert: Sarek_native_gen_expr's

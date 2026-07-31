@@ -75,9 +75,14 @@ type definitions, classified, with every drop turned into a located refusal.
 Three mechanisms hold the boundary now, and only the first is a matter of style:
 
 1. `Sarek_unsupported.ml` holds one refusal table per Parsetree variant, and
-   **none of them has a wildcard arm**. Under `-w +8` the OCaml compiler is what
-   notices when ppxlib grows a constructor, so the next Parsetree arm stops the
-   build rather than reaching a user as silence.
+   **none of them has a wildcard arm**, so the OCaml compiler is what notices
+   when ppxlib grows a constructor: the next Parsetree arm stops the build rather
+   than reaching a user as silence. What makes it stop is `-warn-error +8` in
+   `sarek/ppx/dune`, on `sarek_frontend` only. Measured 2026-07-31 by deleting
+   one arm: dune's dev `:standard` already errors on warning 8, but
+   `--profile=release` only warned and built at exit 0 until that flag was added.
+   `-w +8`, which an earlier revision of this section credited, changes nothing
+   in either profile.
 2. Each refusal that a source file can reach has a negative-compile case in
    `sarek/tests/negative` asserting on the compiler's real stderr, wired into
    `make test_negative` (and `scripts/check-negative-case-coverage.sh` refuses a
@@ -148,7 +153,7 @@ Class-comparable arms the OCaml *parser* cannot produce are marked
 | `Pexp_letmodule` (inside a body) | final arm | refused, generic | refused, says it is read only at the payload top |
 | `Pexp_letexception`, `Pexp_assert`, `Pexp_lazy`, `Pexp_poly`, `Pexp_newtype`, `Pexp_pack`, `Pexp_letop`, `Pexp_unreachable` | final arm | refused, generic | refused, each named with its reason |
 | `Pexp_open` `M` / `M.N` | `parse_expression` | implemented | implemented |
-| `Pexp_open` **deeper than `M.N`** | `parse_expression` | **SILENTLY DROPPED** to the EMPTY path — which `Sarek_native_gen_expr` turns into `failwith "empty module path in TEOpen"` and `Sarek_env.open_module` treats as a no-op. Measured: `Sarek internal error: Failure("empty module path in TEOpen")` | **implemented** (flattened at any depth), `test_parse.ml` |
+| `Pexp_open` **deeper than `M.N`** | `parse_expression` | **SILENTLY DROPPED** to the EMPTY path — which `Sarek_native_gen_expr` turns into `failwith "empty module path in TEOpen"` and `Sarek_env.open_module` treats as a no-op. Measured: `Sarek internal error: Failure("empty module path in TEOpen")` | **implemented**: the path is preserved at any depth by the parser and re-emitted in full by the native backend (`test_parse.ml`). Intrinsic RESOLUTION is unchanged and keys on the last segment only (`Sarek_env.short_module_name`), exactly as it did at depth 2 — no e2e case exercises a 3-deep open end to end |
 | `Pexp_open` with a `Lapply` module path | `parse_expression` | dropped to the empty path | **refused** — **unreachable** (`let open F(X) in` parses to `Pmod_apply`, not `Pmod_ident` + `Lapply`; checked with `-stop-after parsing`), asserted on the AST node in `test_parse.ml` |
 | `Pexp_open` with a non-`Pmod_ident` module expr | final arm | refused, generic | refused, names functor application and `struct` |
 | `open_infos.popen_override` (`open!`) | `parse_expression` | not read | **residual, documented**: `open!` differs from `open` only in whether OCaml warns about shadowing, and that is settled before the kernel is parsed |
@@ -175,6 +180,7 @@ Class-comparable arms the OCaml *parser* cannot produce are marked
 | `let (x : t) = e` (annotation in the pattern) | `extract_type_from_pattern` | implemented | implemented |
 | `let x : t = e` (`pvb_constraint`, the spelling this tree uses) | `parse_let_form`, both payload folds | **SILENTLY DROPPED** — nothing read `pvb_constraint`. A kernel-local `let sum : float = …` was typed by inference with the declared width ignored; an annotated module constant hit "must have type annotations", a message false of the code in front of it | **implemented** (`binding_type`), `test_local_annotation_read` |
 | `let f x : t = e` (`Pexp_function`'s `type_constraint`) | `collect_fun_params` | **SILENTLY DROPPED** — every kernel helper's declared result type discarded | **implemented** (`fun_return_type` → `ELetRec`'s result slot), `test_helper_return_read` |
+| the same constraint on a NESTED `fun` (`let f x = fun y : t -> e`) | `fun_return_type` | **SILENTLY DROPPED**, and the first version of this branch's fix kept dropping it while asserting the drop was correct. `collect_fun_params` flattens the inner `fun` into the binding's parameter list, so after flattening there is no inner function for the annotation to belong to. Measured: the nested spelling compiled at exit 0, the flattened spelling of the same function failed to unify | **implemented** — every `Pexp_function` on the descent is inspected, the last constraint wins, peeled by the parameters collected after it |
 | same, on a payload module item (`MFun` has no type field) | both payload folds | **SILENTLY DROPPED** | **implemented** as an `ETyped` constraint on the body, `test_module_helper_return_read` |
 | whole-binding annotation on a function, arrow arity | `parse_named_let_form` | put in the RESULT slot **unpeeled**, unifying an arrow against the body's type | one arrow peeled per parameter; too few arrows is **refused**, `test_annotation_arity` |
 | annotation on a tuple-pattern `let` | `parse_let_form` | dropped (`EMatch` has no type slot) | **refused**, `test_tuple_let_annotation` |
@@ -248,7 +254,7 @@ field nobody reads here is a field nobody reads at all.
   and the 2+-binding payload `let`. All seven were **executed by hand** during
   the sweep through a scratch negative stanza and each printed its own message at
   exit 1 (the outputs are in the PR discussion), so this is not a
-  by-inspection claim — but only the 24 listed cases are wired into
+  by-inspection claim — but only the 25 committed cases are wired into
   `make test_negative`, and an unasserted refusal is one that can rot.
 * Two refusals are **unreachable from OCaml source** and are asserted on AST
   nodes in `test_parse.ml` instead, each with the check that establishes the

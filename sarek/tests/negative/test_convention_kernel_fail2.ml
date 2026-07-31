@@ -3,8 +3,10 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(* backlog-208: this case used to carry `open Spoc` while its dune stanza
-   declared only `sarek sarek.stdlib sarek.ppx.lib`. There is no `Spoc` module in
+(* backlog-208: this case used to carry `open Spoc`, which its dune stanza does
+   not provide (it declares `sarek sarek.stdlib sarek.ppx.lib sarek_geometry` --
+   one library more than the seven sibling cases, and still no `Spoc`). There is
+   no `Spoc` module in
    this tree at all (nor a `Kirc` one -- both are SPOC-v1 vestige), so the file
    only ever compiled as far as the PPX: the refusal below fired before
    type-checking reached the `open`, and `-w -33` hid the unused-open hint. The
