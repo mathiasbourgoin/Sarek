@@ -323,6 +323,53 @@ else
   pass=$((pass + 1))
 fi
 
+# --- Case 14: an extensionless executable script IS covered (backlog-222) ---
+# Selection used to be by extension only (*.sh, *.py), so a shebang script
+# with no extension -- exactly the shape of the assert-toolchain fixture stubs
+# under scripts/prove-red-fixtures/assert-toolchain/bin/ -- was invisible to
+# this gate regardless of what it contained. Positive control first: a
+# correctly-headered extensionless executable must stay GREEN.
+d="$(make_project case14)"
+printf '#!/usr/bin/env bash\necho stub\n' > "$d/scripts/stub-tool"
+chmod +x "$d/scripts/stub-tool"
+( cd "$d" && ./scripts/add-license-headers.sh ) >/dev/null 2>&1
+expect "case14: freshly-stamped extensionless executable stays GREEN" "$d" 0 "up-to-date"
+
+# --- Case 15: that same file losing its header is RED and named -------------
+# The actual regression backlog-222 measured: PR #384 failed because
+# run-with-stubs.sh (a .sh) was checked while its sibling stub binaries
+# (no extension) were not.
+d="$(make_project case15)"
+printf '#!/usr/bin/env bash\necho stub\n' > "$d/scripts/stub-tool"
+chmod +x "$d/scripts/stub-tool"
+( cd "$d" && ./scripts/add-license-headers.sh ) >/dev/null 2>&1
+grep -v 'SPDX-' "$d/scripts/stub-tool" > "$d/scripts/stub-tool.tmp" && mv "$d/scripts/stub-tool.tmp" "$d/scripts/stub-tool"
+chmod +x "$d/scripts/stub-tool"
+expect "case15: stripped header on an extensionless executable is RED and names the file" \
+  "$d" 1 "scripts/stub-tool"
+
+# --- Case 16: an extensionless NON-executable file stays out of scope -------
+# This is the DECISION half of backlog-222: build config such as `dune`,
+# `Makefile`, `Dockerfile`, `sarek/sarek/META` and CoqMakefile/_CoqProject
+# carry no shebang and no exec bit, and widening the selector to executables
+# must not have swept those in as an accidental side effect. Header-less and
+# GREEN is the correct, decided answer for this shape, not an oversight.
+d="$(make_project case16)"
+printf '(rule (target x) (action (progn)))\n' > "$d/scripts/dune"
+expect "case16: header-less non-executable extensionless file stays GREEN" "$d" 0 "up-to-date"
+
+# --- Case 17: an extensionless executable with NO shebang is refused loudly -
+# `-perm -u+x` alone cannot tell a script from an arbitrary committed binary;
+# the shebang check in the loop is what makes that call, and if it can't, the
+# gate must say so (exit 2) rather than silently skip the file -- silently
+# skipping it would be the same blind spot backlog-222 closed, recreated one
+# layer down for anything that happens to have no shebang.
+d="$(make_project case17)"
+printf 'not a script\n' > "$d/scripts/mystery-binary"
+chmod +x "$d/scripts/mystery-binary"
+expect "case17: extensionless executable with no shebang is exit 2, not a silent skip" \
+  "$d" 2 "no shebang"
+
 echo ""
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
