@@ -13,6 +13,47 @@ open Sarek_ir_ptx_types
 open Sarek_ir_ptx_mem
 open Sarek_ir_ptx_expr
 
+(** Refuse a [.shared]/[.local] array whose element type is a record or a
+    variant, BY NAME (backlog-206).
+
+    The refusal itself is not new and is not being lifted here: PTX has no
+    struct type, so an aggregate element would need byte-offset addressing in
+    the state space, which {!Sarek_ir_ptx_mem.emit_agg_elem_addr} refuses on
+    purpose ("aggregate elements are supported in global vectors only"). What
+    was wrong is what the user saw. The declaration path reached
+    [ptx_btype_of_elttype], whose refusal read "PTX codegen: unsupported
+    construct: btype of custom type" — no array, no type, no mention of shared
+    memory, and identical for the two unrelated call sites that reach it.
+    Measured verbatim on two ZLUDA devices for [let%shared (s : tri) = 4l].
+    Since the same program COMPILES AND RUNS on the Interpreter, Native, OpenCL
+    and Vulkan after this branch's fixes, "PTX cannot do this one" is the single
+    thing the message has to convey, and it did not.
+
+    [what] is the state-space word used in the message ("shared" / "local") and
+    must match the declaration being emitted; it is passed rather than derived
+    so the two call sites below cannot both say "shared". *)
+let refuse_aggregate_state_space_array ~what ~(name : string) (elt : elttype) :
+    unit =
+  match elt with
+  | TRecord (tyname, _) | TVariant (tyname, _) ->
+      unsupported
+        (Printf.sprintf
+           "%s-memory array '%s' has element type '%s', a record or variant. \
+            PTX has no struct type and this backend addresses aggregates only \
+            in global vectors, so an aggregate %s array cannot be declared. \
+            Pass the data as a vector parameter, or declare one scalar %s \
+            array per field. (The same kernel runs on the Interpreter, Native, \
+            OpenCL and Vulkan backends, which do have an aggregate %s array.)"
+           what
+           name
+           tyname
+           what
+           what
+           what)
+  | TInt32 | TInt64 | TFloat16 | TFloat32 | TFloat64 | TUint8 | TBool | TUnit
+  | TArray _ | TVec _ ->
+      ()
+
 (** {1 Statement emitter} *)
 
 let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
@@ -22,6 +63,7 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
   | SLet (v, EArrayCreate (elt, size_e, Shared), body) ->
       (* let%shared lowers to this shape (the PPX never emits DShared decls).
          Declare the array in .shared space and bind its base address. *)
+      refuse_aggregate_state_space_array ~what:"shared" ~name:v.var_name elt ;
       let n =
         match size_e with
         | EConst (CInt32 n) when Int32.compare n 0l > 0 -> Int32.to_int n
@@ -62,6 +104,7 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
          Small constant-indexed arrays would be faster fully promoted to
          registers; that optimization pass is future work — this is the
          baseline. *)
+      refuse_aggregate_state_space_array ~what:"local" ~name:v.var_name elt ;
       let n =
         match size_e with
         | EConst (CInt32 n) when Int32.compare n 0l > 0 -> Int32.to_int n

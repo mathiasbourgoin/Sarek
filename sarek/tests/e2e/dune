@@ -1873,3 +1873,40 @@
    LD_LIBRARY_PATH
    %{env:HOME=}/opt/zluda
    (run %{dep:test_record_variant_decl_order.exe}))))
+
+; backlog-206: shared/local array of a record type, across every enumerable
+; device. LD_LIBRARY_PATH is set for the same reason as the
+; test_record_field_store rule above: this file makes a measured claim ABOUT
+; CUDA/PTX (that the aggregate shared array is refused with a message naming
+; the array and its type), and without ZLUDA on the loader path no CUDA/PTX
+; device enumerates, so the claim goes unreproduced. The test prints a named
+; NOT-MEASURED-HERE line where the device is genuinely absent.
+
+(executable
+ (name test_shared_record_slots)
+ (modules test_shared_record_slots)
+ (libraries
+  sarek
+  spoc_framework_registry
+  sarek.stdlib
+  sarek_ir
+  sarek.codegen
+  spoc_core
+  sarek_native
+  sarek_interpreter
+  sarek_cuda
+  sarek_opencl
+  sarek_vulkan
+  sarek_backend_error)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (setenv
+   LD_LIBRARY_PATH
+   %{env:HOME=}/opt/zluda
+   (run %{dep:test_shared_record_slots.exe}))))

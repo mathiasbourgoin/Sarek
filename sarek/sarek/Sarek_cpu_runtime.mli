@@ -89,10 +89,19 @@ val alloc_shared_int64 : shared_mem -> string -> int -> int64 -> int64 array
 
 (** {2 Generic Allocator}
 
-    For custom types not covered by typed allocators. *)
+    For custom types not covered by typed allocators.
+
+    The last argument is a THUNK run once PER SLOT, not a value copied into
+    every slot (backlog-206). For a boxed element type the value form aliased
+    all slots, so a store through one index was visible through all of them. *)
 
 val alloc_shared_with_key :
-  shared_mem -> 'a Sarek_ir_types.Type_id.t -> string -> int -> 'a -> 'a array
+  shared_mem ->
+  'a Sarek_ir_types.Type_id.t ->
+  string ->
+  int ->
+  (unit -> 'a) ->
+  'a array
 
 (** {1 Execution Modes} *)
 

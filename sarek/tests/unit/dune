@@ -106,6 +106,14 @@
  (modules test_interp_field_store_resolution)
  (libraries sarek.interp sarek_ir alcotest))
 
+; backlog-206: the interpreter's kernel-array allocator, with no device and no
+; PPX. The e2e evidence enumerates devices; this holds on a CI host too.
+
+(test
+ (name test_interp_shared_array_slots)
+ (modules test_interp_shared_array_slots)
+ (libraries sarek.interp sarek_ir alcotest))
+
 ; Fusion tests use sarek library directly (no ppx needed).
 ;
 ; sarek.codegen and str are for the backlog-153 cases: the defect there was
