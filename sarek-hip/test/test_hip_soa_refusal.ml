@@ -11,18 +11,20 @@
  * source: one pointer plus one length per vector parameter. The launch side
  * expands an SoA-dispatched vector into N [RSA_Buffer]s plus one
  * [RSA_Vector_Length], so AoS source under an SoA argument list is never a
- * compile error. Nothing then compares the list against the compiled kernel's
- * signature: the array reaches [hipModuleLaunchKernel] positionally, and
- * [Execute.check_launch_args] checks arity against the CALLER's vector list
- * before expansion, so it cannot see this. At two or more leaves the expanded
- * list is LONGER than the AoS signature and every declared slot from the vector
- * onward is fed a value of the wrong kind. WHICH wrong kind depends on the
- * parameter list: a length slot reading a pointer yields a garbage length, and
- * where a pointer parameter follows the vector it reads 8 bytes out of a 4-byte
- * length cell. So the general claim is only that the mapping is wrong from the
- * vector onward and that this can misinterpret data and can trap - neither "a
- * crash" nor "silently wrong data" describes it on its own. See
- * [Backend_error.reject_soa_params] and [Execute.expand_to_run_source_args].
+ * compile error. The general consequence, and the only part that holds for
+ * every kernel shape, is that every parameter declared AFTER the vector
+ * receives the wrong entry. Nothing here catches that: [hipModuleLaunchKernel]
+ * takes the array positionally, and [Execute.check_launch_args] checks arity
+ * against the CALLER's vector list before expansion, so it cannot see it. What
+ * the shift MEANS is a property of the parameter list and not of SoA - at N =
+ * 2 with a pointer parameter following the vector (this file's probe shape) a
+ * length slot receives a pointer and the pointer slot reads 8 bytes out of a
+ * 4-byte cell; at N = 3 the third leaf lands in that pointer slot instead, a
+ * VALID pointer to the wrong buffer with nothing to trap on; with the vector
+ * declared last, nothing after it shifts into a pointer slot at all. Because
+ * this backend passes a bare pointer array, a caller-supplied value can reach
+ * the device as an address, so a trap is among the outcomes - but only among
+ * them. See [Backend_error.reject_soa_params] for the full enumeration.
  *
  * HIP reuses the CUDA-C generator verbatim ([Sarek_ir_cuda]), which has no SoA
  * lowering to select, so it is refused (single-leaf records included - see

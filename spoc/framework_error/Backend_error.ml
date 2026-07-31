@@ -296,23 +296,46 @@ let raise_error err = raise (Backend_error err)
     it fails is per backend rather than uniform, which is why the refusal is
     stated here in terms of the mismatch and not of its symptom:
 
-    - CUDA/C, HIP and Metal bind POSITIONALLY with nothing comparing the list
-      against the compiled kernel's signature ([Cuda_shared.bind_args],
-      [Hip_shared.bind_args] into the bare pointer array
-      [cuLaunchKernel]/[hipModuleLaunchKernel] take; [Metal_plugin_base] by list
-      position via [atIndex:], its [expected_count] being [Kernel_args.count]
-      and so caller-derived). [Execute.check_launch_args] does check arity, but
-      against the CALLER's vector list before expansion, so it cannot see this.
-      At two or more leaves the expanded list is LONGER than the AoS signature,
-      so every declared slot from the vector onward is fed a value of the wrong
-      kind — exactly the shift [Execute.expand_to_run_source_args] warns about
-      for a leaf-count disagreement. WHICH wrong kind depends on the parameter
-      list and is not fixed: a length slot reading a pointer value yields a
-      garbage length; where a pointer parameter follows the vector, it reads its
-      8 bytes out of a 4-byte length cell. The general statement is only that
-      the mapping is wrong from the vector onward, and that this can
-      misinterpret data and can trap. "Not a crash" and "silently wrong data"
-      are each too narrow;
+    THE GENERAL FORM, and the only part that holds for every kernel shape: every
+    parameter declared AFTER the vector receives the wrong entry. Nothing
+    catches it on three of the five: [Execute.check_launch_args] checks arity,
+    but against the CALLER's vector list before expansion, so it cannot see
+    this, and it is the shift [Execute.expand_to_run_source_args] warns about
+    for a leaf-count disagreement. What that shift then MEANS is a property of
+    the parameter list, not of SoA, and the three cases below are examples
+    rather than the consequence:
+
+    - at N = 2 with a pointer parameter declared after the vector (the shape the
+      probe kernels in this repository's five refusal tests happen to have), a
+      length slot receives a pointer value and the pointer slot reads its 8
+      bytes out of a 4-byte length cell;
+    - at N = 3, the third leaf lands in the following pointer slot — a VALID
+      device pointer to the wrong buffer. Silent corruption, nothing to trap on;
+    - with the SoA vector declared LAST, nothing after it shifts into a pointer
+      slot at all.
+
+    So "not a crash" and "silently wrong data" are each too narrow, and so is
+    any single mechanism.
+
+    - CUDA/C and HIP bind into the bare pointer array
+      [cuLaunchKernel]/[hipModuleLaunchKernel] take ([Cuda_shared.bind_args],
+      [Hip_shared.bind_args]) with nothing comparing it against the compiled
+      kernel's signature, so a caller-supplied value can reach the device as an
+      address and a trap IS among the outcomes;
+    - Metal binds positionally too ([Metal_plugin_base] by list position via
+      [atIndex:], its [expected_count] being [Kernel_args.count] and so
+      caller-derived), but no caller-supplied ADDRESS ever crosses: buffers go
+      through [setBuffer] as MTLBuffer objects and scalars through [setBytes] as
+      a driver-allocated inline copy ([Metal_api], the [Buffer]/[Int32] arms),
+      against parameters declared
+      [device T* x [[buffer(k)]], constant int &sarek_x_length [[buffer(k+1)]]]
+      ([Sarek_ir_metal.gen_buffer_param]). Under the shift a length index
+      receives a buffer whose first 4 bytes are read as the length, and a
+      pointer index receives inline [setBytes] data (a valid 4-byte allocation
+      indexed out of bounds) or another buffer (valid address, wrong buffer).
+      Wrong data, out-of-bounds reads within valid allocations, or an encode
+      Metal's own API validation rejects — but nothing that traps in the CUDA
+      sense, so this backend does NOT inherit that half of the claim;
     - OpenCL shares that caller-derived preflight count, but has a late check it
       did not put there: binding goes through the checked [clSetKernelArg]
       funnel ([Opencl_api.Kernel.set_arg_mem]), which raises on
