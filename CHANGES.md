@@ -73,6 +73,12 @@
   numerically clean — which a numeric-only audit would have mis-reported as
   unaffected. See `docs/optimization/amdgpu-f16-fusion-shape-audit.md`.
 - ZLUDA/AMD support for the CUDA/PTX backend (PTX launch ABI fix)
+- `SAREK_REQUIRE_PTX` for `test_soa_emitter_equiv`: set it and the test fails
+  when no enumerated device reports the `CUDA/PTX` framework, instead of
+  skipping every SoA-ABI case and still exiting 0. Nothing in the repository
+  sets it, and unset nothing changes, so an absent device still reads as
+  skipped rather than as a pass or a failure. It asserts enumeration only — whether
+  the SoA cases pass on that device is what the per-case rows say.
 - T3-SEMANTIC milestone lock for both formal projects; conformance +
   mutation tests wired into `dune runtest`
 
