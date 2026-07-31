@@ -97,9 +97,12 @@ let leaf_ptrs t = Array.map (fun (Leaf v) -> Vector.to_ctypes_ptr v) t.leaves
    this SoA vector's leaves (and anything transferred from them to a device)
    is now wrong, with nothing in the return type or the logs to say so.
 
-   [CPU]/[GPU]/[Both]/[Stale_GPU] are unaffected: the host buffer already IS
-   the fresh data (or, for pure [GPU], scatter never claimed to fix that
-   pre-existing gap — see [Vector_transfer.ensure_cpu_sync]'s own doc). Only
+   [CPU]/[Both]/[Stale_GPU] are unaffected because the host buffer there
+   already IS the fresh data. Pure [GPU] (no host buffer written yet) is a
+   pre-existing gap [ensure_cpu_sync] never covered even with auto-sync on —
+   nothing constructs that state for an AoS vector in this codebase today, and
+   this refusal does not attempt to cover it either, so it is excluded from
+   the match rather than silently folded into the same message. Only
    [Stale_CPU] means "a device holds newer data than what scatter is about to
    read", so only that state is refused. *)
 let scatter t =
@@ -108,10 +111,10 @@ let scatter t =
       raise
         (Soa.Unsupported
            "Soa_vector.scatter: this vector's host data is out of date and \
-            auto-sync is off, so scattering now would silently copy stale \
-            values to the device buffers instead of refusing. Before \
+            auto-sync is off, so scattering now would copy stale values into \
+            this vector's per-leaf host buffers with no error. Before \
             scattering, either call Transfer.to_cpu on its AoS vector \
-            (Soa_vector.aos_vector t) to refresh the host copy, or call \
+            (Soa_vector.aos_vector) to refresh the host copy, or call \
             Vector.set_auto_sync on it to turn auto-sync back on.")
   | (Vector.CPU | Vector.GPU _ | Vector.Both _ | Vector.Stale_GPU _), _
   | Vector.Stale_CPU _, true ->

@@ -50,9 +50,9 @@ let make_device id =
 
 let refusal_message =
   "Soa_vector.scatter: this vector's host data is out of date and auto-sync \
-   is off, so scattering now would silently copy stale values to the device \
-   buffers instead of refusing. Before scattering, either call \
-   Transfer.to_cpu on its AoS vector (Soa_vector.aos_vector t) to refresh the \
+   is off, so scattering now would copy stale values into this vector's \
+   per-leaf host buffers with no error. Before scattering, either call \
+   Transfer.to_cpu on its AoS vector (Soa_vector.aos_vector) to refresh the \
    host copy, or call Vector.set_auto_sync on it to turn auto-sync back on."
 
 let make_soa_vector () =
@@ -91,8 +91,10 @@ let test_does_not_refuse_on_cpu_with_auto_sync_off () =
   (match aos.Spoc_core.Vector_types.location with
   | Spoc_core.Vector_types.CPU -> ()
   | _ -> Alcotest.fail "expected a fresh vector to start at location CPU") ;
-  Soa_vector.scatter sv ;
-  Alcotest.(check pass) "scatter did not raise on CPU + auto-sync off" () ()
+  (* The assertion IS the absence of a raise here: an uncaught exception from
+     [scatter] fails this test case on its own; there is nothing further to
+     check once control reaches the end of the function. *)
+  Soa_vector.scatter sv
 
 (* [Stale_GPU]: the HOST copy is the fresh one and the device is behind. That
    is the opposite of the hazard scatter guards against, so auto-sync off
@@ -103,11 +105,38 @@ let test_does_not_refuse_on_stale_gpu_with_auto_sync_off () =
   Vector.set_auto_sync aos false ;
   aos.Spoc_core.Vector_types.location <-
     Spoc_core.Vector_types.Stale_GPU (make_device 0) ;
-  Soa_vector.scatter sv ;
-  Alcotest.(check pass)
-    "scatter did not raise on Stale_GPU + auto-sync off"
-    ()
-    ()
+  Soa_vector.scatter sv
+
+(* [Both]: host and device agree, so there is nothing stale to refuse either —
+   auto-sync off is irrelevant here for the same reason as [CPU]. *)
+let test_does_not_refuse_on_both_with_auto_sync_off () =
+  let sv = make_soa_vector () in
+  let aos = Soa_vector.aos_vector sv in
+  Vector.set_auto_sync aos false ;
+  aos.Spoc_core.Vector_types.location <-
+    Spoc_core.Vector_types.Both (make_device 0) ;
+  Soa_vector.scatter sv
+
+(* The other half of the guard: [Stale_CPU] with auto-sync back ON must NOT
+   refuse. Pins that the predicate is conjunctive (stale AND auto-sync-off),
+   not "stale" alone — the exact regression an over-eager tightening of this
+   check would introduce.
+
+   With auto-sync on, [ensure_cpu_sync] actually invokes the registered sync
+   callback (unlike every other case above, where auto-sync off or a
+   non-stale location means it never gets that far). Linking [sarek] pulls in
+   the real callback, which drives a real device transfer this test's fake
+   [Device.t] has no backing buffer for — so this test registers its own
+   trivial callback first, to exercise scatter's OWN refusal-or-not decision
+   in isolation from that unrelated machinery. *)
+let test_does_not_refuse_on_stale_cpu_with_auto_sync_on () =
+  Vector.register_sync_callback {Vector.sync = (fun _ -> true)} ;
+  let sv = make_soa_vector () in
+  let aos = Soa_vector.aos_vector sv in
+  Vector.set_auto_sync aos true ;
+  aos.Spoc_core.Vector_types.location <-
+    Spoc_core.Vector_types.Stale_CPU (make_device 0) ;
+  Soa_vector.scatter sv
 
 let () =
   Alcotest.run
@@ -127,5 +156,13 @@ let () =
             "does not refuse on Stale_GPU"
             `Quick
             test_does_not_refuse_on_stale_gpu_with_auto_sync_off;
+          Alcotest.test_case
+            "does not refuse on Both"
+            `Quick
+            test_does_not_refuse_on_both_with_auto_sync_off;
+          Alcotest.test_case
+            "does not refuse on Stale_CPU + auto-sync on"
+            `Quick
+            test_does_not_refuse_on_stale_cpu_with_auto_sync_on;
         ] );
     ]

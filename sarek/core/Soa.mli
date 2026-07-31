@@ -37,8 +37,13 @@ type leaf = {
     element size in bytes (the stride between consecutive elements in AoS). *)
 type plan = {name : string; leaves : leaf list; aos_stride : int}
 
-(** Raised when a type is not a v1-supported SoA target (non-record, or a record
-    with a nested-record / variant / array field — flat records only for v1). *)
+(** Raised to refuse an operation this module cannot do without either
+    corrupting data or misrepresenting what happened. Two distinct causes
+    share it: a type is not a v1-supported SoA target (non-record, or a
+    record with a nested-record / variant / array field — flat records only
+    for v1), raised by {!plan}/{!plan_of_elttype}; or, raised by
+    {!Soa_vector.scatter}, a vector's host data is out of date and auto-sync
+    is disabled, so the transpose cannot be done correctly and silently. *)
 exception Unsupported of string
 
 (** Build a SoA plan from a record's named fields. Reuses
