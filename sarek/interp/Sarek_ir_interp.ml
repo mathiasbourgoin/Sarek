@@ -275,13 +275,10 @@ let run_kernel (k : kernel) ~block:(bx, by, bz) ~grid:(gx, gy, gz)
             }
           in
           let size = to_int (eval_expr dummy_state env size_expr) in
-          let init =
-            match ty with
-            | TInt32 -> VInt32 0l
-            | TFloat32 -> VFloat32 0.0
-            | _ -> VUnit
-          in
-          Hashtbl.add env.shared name (Array.make size init)
+          Hashtbl.add
+            env.shared
+            name
+            (Sarek_ir_interp_value.alloc_kernel_array ty size)
       | _ -> ())
     k.kern_params
     args ;

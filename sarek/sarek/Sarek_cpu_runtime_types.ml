@@ -124,16 +124,34 @@ let alloc_shared_int64 (shared : shared_mem) name size (default : int64) :
       arr
 
 (** Generic allocator for custom types. The caller must ensure they use
-    consistent types for each name. *)
+    consistent types for each name.
+
+    [mk] is a THUNK, not a value, and that is the whole of backlog-206's Native
+    half. This used to take an [a] and call [Array.make size default]; for a
+    boxed element type — every record, and every variant with a payload —
+    [Array.make] puts the SAME allocation in every slot, so
+    [let%shared (s : tri) = 4l] followed by [s.(0).a <- 7.0] was visible through
+    every index. Measured on 4 threads before the change: Native read back
+    [7; 7; 7; 7] where the wanted answer is [7; 0; 0; 0].
+
+    [Array.init] calls [mk] once per slot, so the slots are independent
+    allocations. A thunk rather than a value because nothing here can copy an
+    ['a]: the caller (the PPX, {!Sarek_native_gen_expr.gen_parallel_construct})
+    is the only place that knows how to build one, and passing a value would put
+    the aliasing back no matter what this function did with it.
+
+    Unchanged for immediate element types ([char], and the four typed allocators
+    above): they cannot alias, so this costs them one extra closure call per
+    slot at allocation and nothing else. *)
 let alloc_shared_with_key (type a) (shared : shared_mem)
-    (key : a Sarek_ir_types.Type_id.t) name size (default : a) : a array =
+    (key : a Sarek_ir_types.Type_id.t) name size (mk : unit -> a) : a array =
   match Hashtbl.find_opt shared.custom_arrays name with
   | Some (AnyArray (stored_key, arr)) -> (
       match Sarek_ir_types.Type_id.equal key stored_key with
       | Some Sarek_ir_types.Type_id.Refl -> arr
       | None -> invalid_arg ("alloc_shared: type mismatch for " ^ name))
   | None ->
-      let arr = Array.make size default in
+      let arr = Array.init size (fun _ -> mk ()) in
       Hashtbl.add shared.custom_arrays name (AnyArray (key, arr)) ;
       arr
 

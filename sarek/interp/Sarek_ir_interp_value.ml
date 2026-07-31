@@ -332,6 +332,65 @@ let detach_record (v : value) : value =
   in
   go 0 v
 
+(** {1 Array allocation — backlog-206}
+
+    Zero value of an element type, used to fill a freshly declared kernel array
+    ([EArrayCreate] / [DShared]).
+
+    Records and variants used to fall through to [VUnit] here, which is why
+    [let%shared (s : tri) = 4l] followed by [s.(i).a <- e] raised "assignment
+    target of .a (got unit)" on the Interpreter while Native accepted the same
+    store — the divergence backlog-206 is about. A record element type now gets
+    a [VRecord] whose fields are themselves zeroed, and a variant gets its FIRST
+    constructor with zeroed payloads.
+
+    Choosing constructor 0 is a choice, not a neutral default: an uninitialised
+    slot of a variant array reads back as that constructor rather than as
+    "nothing". No device backend offers anything better — [__local]/[shared]
+    memory is uninitialised storage on all of them, so ANY value read before a
+    write is arbitrary — and constructor 0 is what the tag byte of zeroed
+    storage decodes to, so it is the closest the interpreter can get to what the
+    device does. It is not a promise that reading an unwritten slot is defined.
+
+    [TArray] and [TVec] elements stay [VUnit]: an array of arrays is not
+    expressible as a kernel array element type on any backend, and inventing a
+    nested [VArray] of an unknown length here would be a guess.
+
+    Plain recursion, no depth guard, unlike {!detach_record}. The argument is
+    different in kind: this walks an [elttype], a finite tree the PPX builds
+    bottom-up, where {!detach_record} walks a [value], which the interpreter's
+    in-place field store can shape at run time. *)
+let rec default_value_of_elttype (ty : elttype) : value =
+  match ty with
+  | TInt32 -> VInt32 0l
+  | TInt64 -> VInt64 0L
+  | TFloat16 | TFloat32 -> VFloat32 0.0
+  | TFloat64 -> VFloat64 0.0
+  | TUint8 -> VInt32 0l
+  | TBool -> VBool false
+  | TUnit -> VUnit
+  | TRecord (name, fields) ->
+      VRecord
+        ( name,
+          Array.of_list
+            (List.map (fun (_, fty) -> default_value_of_elttype fty) fields) )
+  | TVariant (name, constrs) -> (
+      match constrs with
+      | (_, payload) :: _ ->
+          VVariant (name, 0, List.map default_value_of_elttype payload)
+      | [] -> VUnit)
+  | TArray _ | TVec _ -> VUnit
+
+(** Allocate a kernel array of [size] elements of type [ty].
+
+    [Array.init], never [Array.make]: for a boxed element type (a record, or a
+    variant with a payload) [Array.make] stores ONE value in every slot, so
+    [s.(0).f <- e] is visible through every index. That is exactly the Native
+    half of backlog-206, whose CPU-runtime allocator had the same
+    [Array.make size default] shape. Slots must be independent allocations. *)
+let alloc_kernel_array (ty : elttype) (size : int) : value array =
+  Array.init size (fun _ -> default_value_of_elttype ty)
+
 (** Bind a variable in the environment (both by id and name).
 
     Records are detached on the way in (see {!detach_record}): binding is what

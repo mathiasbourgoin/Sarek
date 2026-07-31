@@ -320,7 +320,7 @@ let other_record_key : other_record Sarek_ir_types.Type_id.t =
 
 let test_alloc_shared_custom () =
   let shared = create_shared () in
-  let default = {x = 0; y = 0.0} in
+  let default () = {x = 0; y = 0.0} in
   let arr = alloc_shared_with_key shared custom_record_key "custom" 4 default in
   check int "array length" 4 (Array.length arr) ;
   check int "default x" 0 arr.(0).x ;
@@ -330,7 +330,7 @@ let test_alloc_shared_custom () =
 
 let test_alloc_shared_custom_reuse () =
   let shared = create_shared () in
-  let default = {x = 0; y = 0.0} in
+  let default () = {x = 0; y = 0.0} in
   let arr1 =
     alloc_shared_with_key shared custom_record_key "custom" 4 default
   in
@@ -344,13 +344,60 @@ let test_alloc_shared_custom_reuse () =
 let test_alloc_shared_custom_type_mismatch () =
   let shared = create_shared () in
   let _ =
-    alloc_shared_with_key shared custom_record_key "custom" 4 {x = 0; y = 0.0}
+    alloc_shared_with_key shared custom_record_key "custom" 4 (fun () ->
+        {x = 0; y = 0.0})
   in
   check_raises
     "same shared name with different custom type"
     (Invalid_argument "alloc_shared: type mismatch for custom")
     (fun () ->
-      ignore (alloc_shared_with_key shared other_record_key "custom" 4 {z = 0l}))
+      ignore
+        (alloc_shared_with_key shared other_record_key "custom" 4 (fun () ->
+             {z = 0l})))
+
+(* backlog-206: the slots of a shared array of a BOXED element type must be
+   independent allocations.
+
+   [alloc_shared_with_key] used to take a VALUE and call [Array.make size v],
+   which stores the same allocation in every slot — so a store through one index
+   was visible through all of them, which is what [let%shared (s : tri) = 4l]
+   followed by [s.(0).a <- 7.0] did on Native (read back 7 7 7 7, want 7 0 0 0).
+
+   The record below is MUTABLE on purpose. The aliasing is only observable
+   through an in-place field store; a whole-slot replacement ([arr.(i) <- r])
+   writes a new pointer into that slot and looks correct either way, which is
+   exactly why [test_alloc_shared_custom] above — which does only that — passed
+   throughout the defect and cannot be the check.
+
+   Physical inequality of the slots is asserted TOO, and separately: it is the
+   direct statement of the property, where the value check is the consequence
+   users see. Either alone would pass under a plausible wrong fix — a deep-copy
+   on read would give distinct values with shared slots, and distinct slots
+   holding a shared sub-record would give [!=] with aliased writes. *)
+type mutable_record = {mutable mx : int} [@@warning "-69"]
+
+let mutable_record_key : mutable_record Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
+
+let test_alloc_shared_custom_slots_are_independent () =
+  let shared = create_shared () in
+  let arr =
+    alloc_shared_with_key shared mutable_record_key "slots" 4 (fun () ->
+        {mx = 0})
+  in
+  check int "array length" 4 (Array.length arr) ;
+  arr.(0).mx <- 7 ;
+  check int "slot 0 written" 7 arr.(0).mx ;
+  check int "slot 1 untouched" 0 arr.(1).mx ;
+  check int "slot 2 untouched" 0 arr.(2).mx ;
+  check int "slot 3 untouched" 0 arr.(3).mx ;
+  for i = 1 to 3 do
+    check
+      bool
+      (Printf.sprintf "slot 0 and slot %d are distinct allocations" i)
+      true
+      (arr.(0) != arr.(i))
+  done
 
 (** Test shared memory isolation between blocks *)
 let test_shared_memory_isolation () =
@@ -608,6 +655,9 @@ let shared_memory_tests =
     ("custom type", `Quick, test_alloc_shared_custom);
     ("custom reuse", `Quick, test_alloc_shared_custom_reuse);
     ("custom mismatch", `Quick, test_alloc_shared_custom_type_mismatch);
+    ( "custom slots are independent",
+      `Quick,
+      test_alloc_shared_custom_slots_are_independent );
     ("isolation", `Quick, test_shared_memory_isolation);
   ]
 

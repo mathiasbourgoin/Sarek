@@ -271,25 +271,24 @@ let gen_memory_access ~loc ~ctx ~gen_expr (te : texpr) : expression =
              vector base above needed the rebuild.
 
              This arm ALSO catches a shared-memory array element
-             ([let%shared (s : tri) = 4l] then [s.(i).a <- e]), and there the
-             setfield is emitted onto a record that is NOT this thread's own.
-             Measured, 4 threads, [if tid = 0l then s.(tid).a <- 7.0]:
+             ([let%shared (s : tri) = 4l] then [s.(i).a <- e]). That used to be
+             a silent wrong answer — measured, 4 threads,
+             [if tid = 0l then s.(tid).a <- 7.0]:
 
                Native      7 7 7 7   (want 7 0 0 0)
                Interpreter raises "assignment target of .a (got unit)"
 
-             The cause is upstream of this file and predates it:
-             [Sarek_cpu_runtime_types.alloc_shared_with_key] allocates with
-             [Array.make size default], so every slot of a shared array of a
-             boxed record type holds the SAME record, and a setfield through any
-             index is visible through all of them. Emitting a functional update
-             here would not fix it either — the slots would still alias.
+             The cause was never in this file, which is why the setfield here is
+             unchanged: [Sarek_cpu_runtime_types.alloc_shared_with_key]
+             allocated with [Array.make size default], so every slot of a shared
+             array of a boxed record held the SAME record. A functional update
+             here would not have fixed it — the slots would still have aliased.
 
-             Not fixed here: the fix is a per-slot allocation in the CPU shared
-             allocator, plus the Interpreter's own shared-array-of-record gap
-             (its [SLet]/[EArrayCreate Shared] arm initialises custom element
-             types to [VUnit]), and neither is a record-field-store change.
-             Tracked as backlog-206. *)
+             Fixed in backlog-206 at the two allocation sites instead: that
+             allocator now takes a per-slot THUNK and calls [Array.init], and the
+             Interpreter builds a real zeroed [VRecord] per slot instead of the
+             [VUnit] its [SLet]/[EArrayCreate Shared] arm used to store. The
+             setfield below is correct once the slots are distinct. *)
           let rec_e = gen_expr ~loc record in
           match field_access_of ~loc ~ctx record.ty field_name with
           | Field_lid lid ->
@@ -521,7 +520,14 @@ let gen_data_structure ~loc ~ctx ~gen_expr (te : texpr) : expression =
          OCaml int, so convert like the for-loop bounds do (see :196-208). *)
       let size_e = gen_expr ~loc size in
       let default_e = default_value_for_type ~loc elem_ty in
-      [%expr Array.make (Int32.to_int [%e size_e]) [%e default_e]]
+      (* [Array.init], not [Array.make]: the same per-slot-aliasing point as the
+         shared allocator (backlog-206, see
+         [Sarek_cpu_runtime_types.alloc_shared_with_key]). [Array.make] with a
+         boxed default puts ONE record in every slot of a
+         [create_array n Local] array too, so [a.(0).f <- e] would be visible
+         through every index. Covered by the local-array case of
+         sarek/tests/e2e/test_shared_record_slots.ml. *)
+      [%expr Array.init (Int32.to_int [%e size_e]) (fun _ -> [%e default_e])]
   | _ -> failwith "gen_data_structure: not a data structure expression"
 
 (** Generate special expressions (return, global ref, native, pragma, open) *)
@@ -614,7 +620,7 @@ let gen_parallel_construct ?current_module ?inline_types ~loc ~gen_expr
                 Spoc_core.Vector.char_type_id
                 [%e name_e]
                 [%e size_e]
-                '\000']
+                (fun () -> '\000')]
         | _ ->
             (* For custom types, generate proper default value *)
             let default_val = default_value_for_type ~loc elem_ty in
@@ -629,13 +635,17 @@ let gen_parallel_construct ?current_module ?inline_types ~loc ~gen_expr
                         .Spoc_core.Vector.type_id]
               | _ -> [%expr failwith "unsupported shared memory type identity"]
             in
+            (* A THUNK, so [alloc_shared_with_key] builds one record PER SLOT.
+               Passing [default_val] itself is what backlog-206 was: every slot
+               of a shared array of a boxed record held the same allocation, and
+               [s.(i).f <- e] wrote through all of them. *)
             [%expr
               Sarek.Sarek_cpu_runtime.alloc_shared_with_key
                 [%e shared]
                 [%e key_expr]
                 [%e name_e]
                 [%e size_e]
-                [%e default_val]]
+                (fun () -> [%e default_val])]
       in
       [%expr
         let [%p pat] = [%e alloc_expr] in

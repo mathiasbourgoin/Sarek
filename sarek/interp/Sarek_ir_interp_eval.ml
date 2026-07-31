@@ -98,16 +98,7 @@ and eval_array_expr state env = function
       VInt32 (Int32.of_int (Array.length a))
   | EArrayCreate (ty, size_expr, _memspace) ->
       let size = to_int (eval_expr state env size_expr) in
-      let init =
-        match ty with
-        | TInt32 -> VInt32 0l
-        | TInt64 -> VInt64 0L
-        | TFloat32 -> VFloat32 0.0
-        | TFloat64 -> VFloat64 0.0
-        | TBool -> VBool false
-        | _ -> VUnit
-      in
-      VArray (Array.make size init)
+      VArray (alloc_kernel_array ty size)
   | _ ->
       Interp_error.raise_error
         (Pattern_match_failure
@@ -424,16 +415,7 @@ and exec_stmt state env stmt =
           | Some arr -> bind_var env v (VArray arr)
           | None ->
               let size = to_int (eval_expr state env size_expr) in
-              let init =
-                match ty with
-                | TInt32 -> VInt32 0l
-                | TInt64 -> VInt64 0L
-                | TFloat32 -> VFloat32 0.0
-                | TFloat64 -> VFloat64 0.0
-                | TBool -> VBool false
-                | _ -> VUnit
-              in
-              let arr = Array.make size init in
+              let arr = alloc_kernel_array ty size in
               Hashtbl.add env.shared name arr ;
               bind_var env v (VArray arr)) ;
           exec_stmt state env body
@@ -841,16 +823,7 @@ and exec_stmt_for_return state env stmt =
           | Some arr -> bind_var env v (VArray arr)
           | None ->
               let size = to_int (eval_expr state env size_expr) in
-              let init =
-                match ty with
-                | TInt32 -> VInt32 0l
-                | TInt64 -> VInt64 0L
-                | TFloat32 -> VFloat32 0.0
-                | TFloat64 -> VFloat64 0.0
-                | TBool -> VBool false
-                | _ -> VUnit
-              in
-              let arr = Array.make size init in
+              let arr = alloc_kernel_array ty size in
               Hashtbl.add env.shared name arr ;
               bind_var env v (VArray arr)) ;
           exec_stmt_for_return state env body

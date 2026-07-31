@@ -585,6 +585,56 @@ let register_tuple_type (state : state) (ty : typ) : unit =
         Hashtbl.add state.types name fields
   | _ -> ()
 
+(** Register every record type reachable from [ty] in the codegen types table,
+    so the struct-emitting backends write out its [struct] definition.
+
+    Hoisted out of {!lower_kernel}, which applied it to PARAMETER types only.
+    That was the whole reason a shared array of a record failed to COMPILE on
+    OpenCL and Vulkan (backlog-206): in
+
+    {[
+      let%shared (s : tri) = 4l in
+      if tid = 0l then s.(tid).a <- 7.0
+    ]}
+
+    [tri] appears nowhere but the shared declaration — no parameter carries it,
+    and there is no record literal to route through [TERecord]'s registration —
+    so nothing put it in [state.types] and the emitted kernel said
+    [__local Test_tri s[4];] with no [Test_tri] anywhere above it. Measured:
+    OpenCL "error: unknown type name 'Test_shared_record_slots_tri'", Vulkan a
+    glslang syntax error at the declaration. The SAME kernel with a whole-slot
+    store ([s.(tid) <- {a = ...}]) compiled and ran, because the literal
+    registered the type — which is what made this look like a shared-memory gap
+    rather than the type-collection gap it is.
+
+    VARIANTS are deliberately NOT handled here. A shared array of a variant is
+    only useful if some constructor application appears in the kernel, and
+    [TEConstr] registers the type; a read-only variant array over never-written
+    shared memory has no defined contents on any backend. Adding a [TVariant]
+    arm would also change what gets emitted for ordinary variant PARAMETERS,
+    which this change has no measurement for. *)
+let rec register_types_from_typ (state : state) (ty : typ) : unit =
+  match repr ty with
+  | TRecord (name, fields) ->
+      if not (Hashtbl.mem state.types name) then begin
+        let field_types =
+          List.map (fun (n, t) -> (n, elttype_of_typ t)) fields
+        in
+        Hashtbl.add state.types name field_types
+      end ;
+      List.iter (fun (_, t) -> register_types_from_typ state t) fields
+  | TVec elem_ty -> register_types_from_typ state elem_ty
+  | TArr (elem_ty, _) -> register_types_from_typ state elem_ty
+  | TTuple tys ->
+      (* L13: register the synthesized record for a tuple aggregate so the
+         codegen types table knows its field layout, mirroring records.
+         Primitivity is checked on the SOURCE types (prim_component_elttype),
+         never via elttype_of_typ, whose TTuple/TFun placeholder would let a
+         nested tuple register as an int32 field. *)
+      register_tuple_type state ty ;
+      List.iter (register_types_from_typ state) tys
+  | _ -> ()
+
 (** Convert Sarek_ast.binop to Sarek_ir_ppx.binop *)
 let ir_binop (op : binop) (_ty : typ) : Ir.binop =
   match op with
@@ -1299,6 +1349,11 @@ and lower_stmt (state : state) (te : texpr) : Ir.stmt =
       (* Special case: create_array - need proper array declaration *)
       | TECreateArray (size, elem_ty, mem) ->
           let size_ir = lower_expr state size in
+          (* Same registration point as [TELetShared] below: the element type
+             may appear NOWHERE else in the kernel, and an unregistered record
+             element emits a declaration naming a struct that was never
+             defined. *)
+          register_types_from_typ state elem_ty ;
           let v = make_var name id (TArr (elem_ty, mem)) false in
           let body_ir = lower_stmt state body in
           Ir.SLet
@@ -1433,6 +1488,11 @@ and lower_stmt (state : state) (te : texpr) : Ir.stmt =
             ~loc:(Sarek_ast.loc_to_ppxlib te.te_loc)
             "Function-typed shared-memory arrays are not supported."
       | _ -> ()) ;
+      (* backlog-206. A record element type reaches the struct-emitting backends
+         ONLY if it is in [state.types]; the shared declaration is the one place
+         a type can appear with nothing else to register it. See
+         {!register_types_from_typ}. *)
+      register_types_from_typ state elem_ty ;
       let elem_ir = elttype_of_typ elem_ty in
       (* Use EArrayCreate with Shared memspace - codegen will emit proper declaration *)
       Ir.SLet
@@ -1609,44 +1669,13 @@ let lower_kernel (kernel : tkernel) : Ir.kernel =
     all_mod_items ;
   let state = create_state fun_map in
 
-  (* Register record types from parameter types (especially vector element types) *)
-  let rec register_types_from_typ ty =
-    match repr ty with
-    | TRecord (name, fields) ->
-        if not (Hashtbl.mem state.types name) then begin
-          let field_types =
-            List.map (fun (n, t) -> (n, elttype_of_typ t)) fields
-          in
-          Hashtbl.add state.types name field_types
-        end ;
-        List.iter (fun (_, t) -> register_types_from_typ t) fields
-    | TVec elem_ty -> register_types_from_typ elem_ty
-    | TArr (elem_ty, _) -> register_types_from_typ elem_ty
-    | TTuple tys ->
-        (* L13: register the synthesized record for a tuple aggregate so the
-           codegen types table knows its field layout, mirroring records.
-           Primitivity is checked on the SOURCE types (prim_component_elttype),
-           never via elttype_of_typ, whose TTuple/TFun placeholder would let a
-           nested tuple register as an int32 field. *)
-        (match
-           List.map prim_component_elttype tys |> fun opts ->
-           if List.for_all Option.is_some opts then
-             Some (List.map Option.get opts)
-           else None
-         with
-        | Some comps ->
-            let name = tuple_record_name comps in
-            if not (Hashtbl.mem state.types name) then
-              Hashtbl.add
-                state.types
-                name
-                (List.mapi (fun i e -> (tuple_field_name i, e)) comps)
-        | None -> ()) ;
-        List.iter register_types_from_typ tys
-    | _ -> ()
-  in
+  (* Register record types from parameter types (especially vector element
+     types). The traversal itself is top-level ({!register_types_from_typ}) so
+     that the kernel-array declaration sites can reach it too — see the note
+     there on the shared-array-of-record compile failure that came of it being
+     applied to parameters only. *)
   List.iter
-    (fun (p : tparam) -> register_types_from_typ p.tparam_type)
+    (fun (p : tparam) -> register_types_from_typ state p.tparam_type)
     kernel.tkern_params ;
 
   (* Lower module-level constants *)
