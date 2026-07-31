@@ -229,6 +229,7 @@ said how it was checked; that is true of two rows out of sixteen.
 | `Pexp_record` field list | `parse_expression` | implemented | implemented |
 | `Pexp_record` **`with` base** | `parse_expression` | **DROPPED**: `{r with x=e}` parsed as `{x=e}`, base gone. NOT silent, measured: OCaml rejects the re-emitted native literal with `Some record fields are undefined: y` on the user's `with` line, never mentioning the `with`. A bad diagnostic, not wrong device code | **refused**, `test_record_update` |
 | `Pexp_record` field longident `Lapply` | `parse_expression` | **DROPPED** to the invented field name `"field"` | **refused** — **unreachable** from source (`r.F(X).f` is a syntax error; `ocamlc -stop-after parsing` on `let f r = r.F(X).lbl` reports "Syntax error"), so asserted on the AST node in `test_parse.ml` |
+| `Pexp_record` field longident `Ldot` (`{ M.f = e }`) | `parse_expression` | qualifier discarded, field resolved by bare name | **residual, DROPPED and documented**, and it is the one place two sites state DIFFERENT boundaries for the same qualifier: the mirror shape `r.M.f` is REFUSED by `Sarek_unsupported.expression_refusal`'s `Pexp_field` arm, on reasoning ("field names resolve against the record type, not a module path") that is equally true here. Measured: a kernel writing `{ M.px = e; py = e }` compiles at exit 0 and the same kernel writing `p.M.px` fails at exit 1 with that refusal. Kept rather than refused because refusing narrows a subset that compiles today, which this branch has twice been caught doing. **NOT SETTLED**: whether the discarded qualifier can change which record type is selected. Unifying the two sites needs a decision about `r.M.f` as well, and is follow-up. Found by CodeRabbit on #398 |
 | `Pexp_field` `r.f` | `parse_expression` | implemented | implemented |
 | `Pexp_field` qualified `r.M.f` | final arm | refused, generic | refused, names it |
 | `Pexp_setfield` `r.f <- e` | `parse_expression` | implemented | implemented |
@@ -263,7 +264,7 @@ said how it was checked; that is true of two rows out of sixteen.
 | `Ppat_alias` in a `match` pattern | final arm | refused, "Unsupported pattern" | refused, names it |
 | `Ppat_alias` in a **binder** (`let (p as x) = e`, `fun (p as x) ->`) | `extract_name_from_pattern` | **SILENTLY DROPPED**: answered the alias name, discarded the inner pattern, so every name in `p` was absent and surfaced as an unbound variable at the USE | **refused**, `test_alias_binder` |
 | `Ppat_constant`, `Ppat_interval`, `Ppat_variant`, `Ppat_record`, `Ppat_array`, `Ppat_or`, `Ppat_type`, `Ppat_lazy`, `Ppat_unpack`, `Ppat_exception`, `Ppat_extension`, `Ppat_open` | final arm | refused, "Unsupported pattern" | refused, each named with its reason (`test_pattern_table_or`) |
-| `Ppat_constraint` in a pattern | `parse_pattern` | annotation looked through | **residual, documented**: a pattern's type is fixed by the scrutinee and by the constructor declaration, so the annotation cannot change what is lowered — and looking through it is what makes the documented `let ((a, b) : t) = e` spelling work |
+| `Ppat_constraint` in a pattern | `parse_pattern` | annotation looked through | **residual, documented**: a pattern's type is fixed by the scrutinee and by the constructor declaration, so the annotation cannot change what is lowered. An earlier revision of this row added "and looking through it is what makes the documented `let ((a, b) : t) = e` spelling work", which states the OPPOSITE of the code: that spelling is REFUSED (see the tuple-pattern-annotation row below). Looking through the constraint is why such a binding reaches the tuple branch at all — it is not what makes it succeed. The same wrong sentence was in the code comments at `sarek/ppx/Sarek_parse.ml` and `sarek/ppx/Sarek_parse_helpers.ml` and is corrected in both. Caught by CodeRabbit on #398 |
 | `Ppat_alias` arm of `extract_type_from_pattern` | helpers | live | **unreachable**: all three call sites call `extract_name_from_pattern` first, which now refuses an alias |
 
 ### `value_binding` / `value_constraint` / `function_body` — the three annotation spellings
@@ -335,7 +336,7 @@ field nobody reads here is a field nobody reads at all.
 | construct | site | before | after |
 |---|---|---|---|
 | `Pmod_structure` | `collect_mods` | implemented | implemented |
-| `Pmod_ident`, `Pmod_apply`, `Pmod_apply_unit`, `Pmod_functor`, `Pmod_constraint`, `Pmod_unpack`, `Pmod_extension` | `collect_mods` | **SILENTLY DROPPED** — contributed `([], [])` | **refused**, `test_module_not_structure`. NOTE: unlike the four variants above, `module_expr_desc` has NO table in `Sarek_unsupported.ml`. These arms are covered by a real wildcard (`Sarek_parse.ml:1082`, `| _ -> raise ... "only a literal structure is supported here"`). That is behaviourally safe — the default is a refusal, not a drop — but the "the compiler is what notices when ppxlib grows a constructor" guarantee does NOT extend here: a new `Pmod_*` would be absorbed into the generic message with no build failure. Found by the adversarial review of this PR |
+| `Pmod_ident`, `Pmod_apply`, `Pmod_apply_unit`, `Pmod_functor`, `Pmod_constraint`, `Pmod_unpack`, `Pmod_extension` | `collect_mods` | **SILENTLY DROPPED** — contributed `([], [])` | **refused**, `test_module_not_structure`. NOTE: unlike the four variants above, `module_expr_desc` has NO table in `Sarek_unsupported.ml`. These arms are covered by a real wildcard (`Sarek_parse.ml:1082`, `\| _ -> raise …` with the message `only a literal structure is supported here`). That is behaviourally safe — the default is a refusal, not a drop — but the "the compiler is what notices when ppxlib grows a constructor" guarantee does NOT extend here: a new `Pmod_*` would be absorbed into the generic message with no build failure. Found by the adversarial review of this PR |
 | `Pexp_letmodule` module NAME | `collect_mods` | not read (`tdecl_module = None`) | **residual, documented and deliberate**: `None` is what makes a payload-local module's types resolvable by their BARE name, since `Sarek_typer` qualifies the registered name when it is `Some`. Writing it in would make `M.t` required and `t` unresolvable |
 | `Pexp_letmodule` with `txt = None` (`let module _ =`) | `collect_mods` | fell through and failed later as "Kernel must be a function" | **refused**, named (no committed case) |
 | `Pexp_open` at the payload top | `collect_mods` | skipped, path dropped | **residual, documented, and the reason it stays.** The open scopes the kernel body, and stripping it means the body is resolved without it (cross-runtime review's point, and it is right). It cannot be closed by re-wrapping the body in an `EOpen`: the native backend re-emits `let open M in` into generated OCaml, so every payload using the form would then need `M` to resolve in the user's file — which is exactly the backlog-208 trap, and `test_inline_node_exhaustion.ml` (payload-top `let open Std in`, no `module Std` alias) would break. Names a kernel needs are in Sarek's own environment, which the open does not populate |
@@ -346,10 +347,14 @@ field nobody reads here is a field nobody reads at all.
 ### What is NOT covered, precisely
 
 * `Sarek_ppx.ml` was not walked (see scope, above).
-* **EIGHT** refusals added here have **no committed negative case**. Recount the
-  set from the tables with `grep -n 'no committed' kb/sarek/ppx/parser.md` —
-  every row that says so is one of these, and the grep is the check, not this
-  prose:
+* **EIGHT** refusals added here have **no committed negative case**. Recount with
+  `grep -c '^| .*no committed' kb/sarek/ppx/parser.md`, which is **8**. The
+  anchor `^| ` matters and the first version of this instruction lacked it: a
+  bare `grep -n 'no committed'` also matches these two prose lines and returns
+  **10**, so the recount command I advertised did not produce the number I
+  stated beside it. Found while re-verifying the counts against a repeated
+  CodeRabbit report — running the advertised command is what caught it, which is
+  the whole argument for advertising one.
   `ptype_cstrs`, `ptype_private`, manifest-plus-representation,
   `ptype_attributes`, `locally_abstract_univars`, the anonymous payload module,
   the 2+-binding payload `let`, and — added by the adversarial review of this PR
@@ -369,14 +374,28 @@ field nobody reads here is a field nobody reads at all.
 * Two refusals are **unreachable from OCaml source** and are asserted on AST
   nodes in `test_parse.ml` instead, each with the check that establishes the
   unreachability written at its definition.
-* **TEN** **residual drops** are documented rather than closed, in nine table
-  rows plus one item that has no row. The old count here was **seven**, and it
-  was wrong in two independent ways even before this PR's review touched it: it
-  enumerated seven and then named `pcd_attributes` and `pld_attributes` as also
-  staying, in the same paragraph, without counting them; and the review that
-  added `popen_attributes` to the tables did not update it either. Recount with
-  `grep -n 'residual' kb/sarek/ppx/parser.md` on the table rows — one hit at the
-  `Pstr_value` row is the phrase "residual error" and is not one of these.
+* **ELEVEN** **residual drops** are documented rather than closed. The item count
+  and the ROW count differ, and the arithmetic is written out here because every
+  previous version of this bullet got it wrong by conflating them.
+
+  `grep -c '^| .*residual' kb/sarek/ppx/parser.md` is **10**. Of those ten
+  matches, one is a false hit — the `Pstr_value` row, where the phrase is
+  "residual error" and does not describe a residual drop. That leaves **9
+  residual-drop rows**. One of those rows covers TWO fields (`pcd_attributes` and
+  `pld_attributes`, items 6 and 7), giving **10 items with a row**, and item 10
+  (`constrain_body`'s weakening) has **no row at all**. 10 + 1 = **11**.
+
+  (A bare `grep -c residual` returns 14: it also matches this paragraph and the
+  prose around it. The `^| ` anchor is what makes the command a recount rather
+  than a coincidence — the same trap the sibling bullet above fell into.)
+
+  The count has now moved three times, and each move was a different failure.
+  **Seven** was wrong in two independent ways before this PR's review touched
+  it: the paragraph enumerated seven and then named `pcd_attributes` and
+  `pld_attributes` as also staying, in the same breath, without counting them;
+  and the review that added `popen_attributes` to the tables did not update it.
+  **Ten** was correct for its content but was made stale in the same round by
+  the record-literal qualifier row below, found by CodeRabbit.
 
   1. `popen_override` — argued at its site to lose nothing.
   2. `popen_attributes` — added by the adversarial review of this PR; the same
@@ -396,12 +415,18 @@ field nobody reads here is a field nobody reads at all.
      `M.t` required and `t` unresolvable.
   9. the payload-top `open` — cannot be closed without breaking
      `test_inline_node_exhaustion`. This is the only ARM-level one; the other
-     nine are record fields or a semantic weakening.
+     ten are record fields, a longident component, or a semantic weakening.
   10. the type-variable weakening of a module-item result annotation
       (`constrain_body`) — cannot be refused without breaking
       `test_module_poly`. **This one has no table row**, only a code comment at
       its site and this entry; it is a weakening rather than a dropped field, so
       no table column fits it, but that also means no table records it.
+  11. the module qualifier on a **record-literal field** (`{ M.f = e }`) —
+      discarded, the field resolved by bare name, while the mirror shape `r.M.f`
+      is REFUSED for reasoning that applies equally here. The only residual where
+      two sites state different boundaries for the same construct. Measured both
+      ways; whether the discarded qualifier can change which record type is
+      selected is **not settled**. Found by CodeRabbit on #398.
 
   `Pstr_type`'s `rec_flag` was on this list and is now REFUSED instead.
 * **The invariant, stated no wider than it holds.** "Every arm is now read or
@@ -413,7 +438,8 @@ field nobody reads here is a field nobody reads at all.
     `structure_item_desc` is read or refused, with ONE exception — the
     payload-top `Pexp_open`, item 9 above, which is still dropped.
   * Every **record field** listed in the scope paragraph is read, refused, or
-    named in the residual list above. Nine of the ten residuals are fields.
+    named in the residual list above. Ten of the eleven residuals are fields, a
+    longident component, or a semantic weakening; one is an arm.
   * For `module_expr_desc` the claim is weaker again: the DEFAULT is a refusal
     rather than a drop, but the enumeration is not compiler-enforced there
     because that variant has no wildcard-free table (see that section's note).

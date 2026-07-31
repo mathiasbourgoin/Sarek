@@ -548,6 +548,28 @@ and parse_expression (expr : expression) : Sarek_ast.expr =
               let name =
                 match txt with
                 | Lident n -> n
+                (* RESIDUAL DROP, documented rather than closed: the module
+                   qualifier of [{ M.f = e }] is discarded and the field is
+                   resolved by its bare name. The MIRROR shape [r.M.f] is
+                   REFUSED, by [Sarek_unsupported.expression_refusal]'s
+                   [Pexp_field] arm, on the reasoning that field names resolve
+                   against the record type and not against a module path — which
+                   is equally true here. The two sites state different
+                   boundaries for the same qualifier and the asymmetry is
+                   historical, not principled.
+
+                   Measured on this tree: a kernel writing [{ M.px = e; py = e }]
+                   compiles at exit 0, and the same kernel writing [p.M.px]
+                   fails at exit 1 with the [Pexp_field] refusal.
+
+                   Kept rather than refused because refusing narrows a subset
+                   that compiles today, and this branch has twice been caught
+                   doing exactly that. What is NOT settled is whether the
+                   discarded qualifier can change which record type is selected;
+                   the row in kb/sarek/ppx/parser.md says so rather than
+                   asserting it cannot. Unifying the two sites needs a decision
+                   about [r.M.f] too, and is follow-up. Caught by CodeRabbit
+                   on #398. *)
                 | Ldot (_, n) -> n
                 | Lapply _ ->
                     raise (Parse_error_exn (record_field_path_msg, fld_loc))
@@ -721,8 +743,15 @@ and parse_let_form (vb : value_binding) (body : expression) :
      desugar it to the single-arm tuple [match] the lowering already handles as
      a positional-record destructure ([let ..], line ~800 of
      Sarek_lower_ir.ml). This is the [let]-pattern half of local tuple support;
-     [match] was already covered directly. Constraints on the pattern (e.g.
-     [let ((a, b) : t) = e]) unwrap to the inner tuple. *)
+     [match] was already covered directly.
+
+     A constraint ON the pattern is unwrapped by [is_tuple_pattern] below, so
+     [let ((a, b) : t) = e] reaches this branch rather than falling through as a
+     named binding — and is then REFUSED by the [binding_type] check a few lines
+     down, because [EMatch] has no type slot. An earlier revision of this
+     comment said such constraints "unwrap to the inner tuple", which reads as
+     though the spelling works; unwrapping is how it gets HERE, not how it
+     succeeds. Caught by CodeRabbit on #398. *)
   let rec is_tuple_pattern (p : pattern) =
     match p.ppat_desc with
     | Ppat_tuple _ -> true
@@ -961,7 +990,22 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
                         declared for this kernel, and has no way to mean \"the \
                         one from the enclosing scope instead\". Drop `nonrec`, \
                         or rename the type.",
-                       (List.hd decls).ptype_loc ))) ;
+                       (* [item.pstr_loc], not [(List.hd decls).ptype_loc]:
+                          [Pstr_type (Nonrecursive, [])] makes [List.hd] raise
+                          [Failure "hd"], which escapes this fold as an
+                          UNLOCATED exception and is reported as a Sarek
+                          internal error. A refusal that crashes instead of
+                          refusing is the same defect as a silent drop, in the
+                          other direction. The OCaml parser never produces an
+                          empty declaration list, but this fold also reads
+                          structures built by other PPXes and, in this tree, by
+                          sarek/tests/unit/test_parse.ml, which constructs
+                          [pstr_type] by hand — see
+                          [test_parse_payload_empty_type_decl_list]. The item's
+                          own location is always present and is a strictly
+                          better caret anyway when there is more than one
+                          declaration. Caught by CodeRabbit on #398. *)
+                       item.pstr_loc ))) ;
             let tdecls =
               List.map
                 (fun (td : type_declaration) ->

@@ -75,12 +75,29 @@ if [ "$dp_bound" != "$op_bound" ]; then
 fi
 
 # --- rule 2: the KB records the same floor ----------------------------------
-kb_bound=$(sed -nE 's/.*[Dd]eclared ppxlib floor: `([0-9][0-9.]*)`.*/\1/p' "$KB_FILE" | head -1)
-if [ -z "$kb_bound" ]; then
+# ALL matches, not the first. This used `| head -1`, which meant a KB carrying a
+# correct first floor and a stale second one satisfied the guard: the second
+# declaration was never looked at, so the tree could hold two contradictory
+# floors and this gate would report OK. That is the third gate-that-cannot-fail
+# found in this PR, and the second in this gate. Caught by CodeRabbit on #398.
+#
+# The `sort -V | head -1` inside version_ge below is NOT the same shape and must
+# not be "fixed": it is a min-of-exactly-two, where taking the first element is
+# the whole point.
+kb_bounds=$(sed -nE 's/.*[Dd]eclared ppxlib floor: `([0-9][0-9.]*)`.*/\1/p' "$KB_FILE")
+kb_count=$(printf '%s\n' "$kb_bounds" | grep -c . || true)
+if [ "$kb_count" -eq 0 ]; then
   bad "$KB_FILE records no floor. It must carry a line matching"
   bad "  'Declared ppxlib floor: \`<version>\`' so the measurement has a home."
-elif [ "$kb_bound" != "$dp_bound" ]; then
-  bad "$KB_FILE records a floor of $kb_bound but $DUNE_PROJECT declares $dp_bound."
+elif [ "$kb_count" -gt 1 ]; then
+  bad "$KB_FILE records $kb_count floors: $(printf '%s' "$kb_bounds" | tr '\n' ' ')."
+  bad "  Exactly one is allowed. Two declarations cannot both be the floor, and"
+  bad "  agreeing with whichever comes first is how a stale one survives."
+else
+  kb_bound="$kb_bounds"
+  if [ "$kb_bound" != "$dp_bound" ]; then
+    bad "$KB_FILE records a floor of $kb_bound but $DUNE_PROJECT declares $dp_bound."
+  fi
 fi
 
 # --- rule 3: the code must not have outgrown the floor ----------------------

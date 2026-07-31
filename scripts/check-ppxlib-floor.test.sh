@@ -18,6 +18,8 @@
 #   6  the code matches the parameterised Pexp_function, ditto -> 1
 #   7  no tabled constructor appears anywhere (vacuous rule 3) -> 2
 #   8  two ppxlib bounds in dune-project (parser refuses)      -> 2
+#   9  TWO floors recorded in the KB, first one correct          -> 1
+#  10  two identical floors recorded in the KB                   -> 1
 set -uo pipefail
 
 GUARD="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/check-ppxlib-floor.sh"
@@ -97,6 +99,21 @@ expect "7 no tabled constructor anywhere (rule 3 vacuous)" \
 t8="$(make_tree t8 "$DP37" "$OP37" "$KB37" "$SRC_BOTH")"
 printf '  (ppxlib (>= 0.38.0))\n' >> "$t8/dune-project"
 expect "8 two ppxlib bounds in dune-project (refuses to guess)" "$t8" 2
+
+# The rule 2 lookup used `| head -1`, so a KB carrying a CORRECT first floor and
+# a stale second one satisfied the guard: the second declaration was never read.
+# Case 9 is that exact shape -- correct first, stale second -- and would have
+# passed at exit 0 before the fix, which is the whole point of pinning it.
+t9="$(make_tree t9 "$DP37" "$OP37" "$KB37" "$SRC_BOTH")"
+printf '%s\n' "$KB22" >> "$t9/kb/sarek/ppx/parser.md"
+expect "9 two KB floors, first correct and second stale" "$t9" 1
+
+# Two IDENTICAL declarations are still refused. Agreeing on a value does not make
+# two floors one floor, and accepting duplicates is how the stale one in case 9
+# gets added in the first place.
+t10="$(make_tree t10 "$DP37" "$OP37" "$KB37" "$SRC_BOTH")"
+printf '%s\n' "$KB37" >> "$t10/kb/sarek/ppx/parser.md"
+expect "10 two identical KB floors (still refused)" "$t10" 1
 
 echo
 if [ "$fail" -ne 0 ]; then
