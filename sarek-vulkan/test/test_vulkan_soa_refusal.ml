@@ -19,19 +19,23 @@
  * What it IS on Vulkan specifically, stated rather than assumed: this backend
  * carries a second, source-derived count -
  * [Vulkan_api_kernel.validate_buffer_indices], whose [expected_count] is read
- * from the GLSL [binding = N] declarations - so N leaf buffers against
- * 1-binding AoS GLSL is caught late as "expected 1 buffer argument but got N",
- * a named rejection that says nothing about SoA. That is better than the
- * silently-wrong-data outcome CUDA/C and HIP would have, and it is still the
- * wrong diagnostic at the wrong layer. Refusing in the emitter makes it early
- * and named.
+ * from the GLSL [binding = N] declarations - so an SoA argument list against
+ * AoS GLSL is caught late, as a buffer-count rejection naming the count the
+ * shader declares and the count that arrived (the exact numbers depend on how
+ * many vector parameters the kernel has, so they are not quoted here). It is a
+ * named rejection that says nothing about SoA. That is a better outcome than
+ * CUDA/C, HIP and Metal have, where nothing checks the arity at all, and it is
+ * still the wrong diagnostic at the wrong layer. Refusing in the emitter makes
+ * it early and named.
  *
  * [Sarek_ir_glsl] has no SoA lowering to select, so it is refused. (A
  * single-leaf record would in fact bind correctly, N = 1 making the two
  * argument lists the same shape - it is refused anyway, because that is a
  * coincidence of the leaf count and not a property of the emitter. See
- * [Backend_error.reject_soa_params].) Both polarities are pinned here, because the refusal has its own
- * failure mode - refusing the EMPTY list would break every ordinary launch,
+ * [Backend_error.reject_soa_params].)
+ *
+ * Both polarities are pinned here, because the refusal has its own failure
+ * mode - refusing the EMPTY list would break every ordinary launch,
  * and the ["CUDA/PTX"] caller-side gate passes [[]] on this backend on every
  * single launch:
  *
@@ -122,15 +126,16 @@ let test_vulkan_refusal_renders_the_framework () =
         true
         (string_contains ~haystack:msg ~needle:"Vulkan")
 
-(* The refusal must precede codegen, not follow it. In all five backends that is
-   structural - it is the first statement of [generate_source] - but structure is
-   not evidence, so it is executed once, here, on the backend that already has a
-   known-unsupported intrinsic pinned by test_vulkan_error_observability.ml.
-   [warp_shuffle] has no GLSL lowering, so codegen on this kernel raises
-   [Codegen (Unknown_intrinsic _)]; getting the SoA refusal instead is what
-   proves nothing was generated before the request was rejected. Reachable only
-   here: the other four backends' unsupported-intrinsic sets are their own, and
-   duplicating this case five times would assert the same one ordering. *)
+(* The refusal must precede codegen, not follow it. In all five backends that
+   is structural - it is the first statement of [generate_source] - but
+   structure is not evidence, so it is executed once, here, on the backend that
+   already has a known-unsupported intrinsic pinned by
+   test_vulkan_error_observability.ml. [warp_shuffle] has no GLSL lowering, so
+   codegen on this kernel raises [Codegen (Unknown_intrinsic _)]; getting the
+   SoA refusal instead is what proves nothing was generated before the request
+   was rejected. Reachable only here: the other four backends'
+   unsupported-intrinsic sets are their own, and duplicating this case five
+   times would assert the same one ordering. *)
 let test_vulkan_refusal_precedes_codegen () =
   let a = make_var "a" (TVec TFloat32) in
   let c = make_var "c" (TVec TFloat32) in

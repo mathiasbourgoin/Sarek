@@ -11,16 +11,24 @@
  * source: one pointer plus one length per vector parameter. The launch side
  * expands an SoA-dispatched vector into N [RSA_Buffer]s plus one
  * [RSA_Vector_Length], so AoS source under an SoA argument list is never a
- * compile error. On this backend it is not reliably a crash either: the
- * argument array reaches [cuLaunchKernel] unchecked, so N pointers land in a
- * packed parameter block - silently wrong data.
+ * compile error. On this backend nothing checks the arity either: the argument
+ * array reaches [cuLaunchKernel] positionally and unchecked, so at two or more
+ * leaves the list is LONGER than the AoS signature and every parameter after
+ * the vector shifts. The declared length slot then reads a pointer value and
+ * the next declared POINTER parameter reads its 8 bytes out of the 4-byte
+ * length cell - which can misinterpret data and can equally trap on an illegal
+ * device address. Neither "a crash" nor "silently wrong data" describes it on
+ * its own; see [Backend_error.reject_soa_params] and
+ * [Execute.expand_to_run_source_args].
  *
  * [Sarek_ir_cuda] has no SoA lowering to select, so it is refused. (A
  * single-leaf record would in fact bind correctly, N = 1 making the two
  * argument lists the same shape - it is refused anyway, because that is a
  * coincidence of the leaf count and not a property of the emitter. See
- * [Backend_error.reject_soa_params].) Both polarities are pinned here, because the refusal has its own
- * failure mode - refusing the EMPTY list would break every ordinary launch,
+ * [Backend_error.reject_soa_params].)
+ *
+ * Both polarities are pinned here, because the refusal has its own failure
+ * mode - refusing the EMPTY list would break every ordinary launch,
  * and the ["CUDA/PTX"] caller-side gate passes [[]] on this backend on every
  * single launch:
  *

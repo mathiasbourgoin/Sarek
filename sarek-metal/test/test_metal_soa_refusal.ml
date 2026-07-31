@@ -11,18 +11,22 @@
  * source: one pointer plus one length per vector parameter. The launch side
  * expands an SoA-dispatched vector into N [RSA_Buffer]s plus one
  * [RSA_Vector_Length], so AoS source under an SoA argument list is never a
- * compile error. How badly it then fails is a property of this
- * backend's binding layer, not of codegen: [Metal_plugin_base]'s preflight count
- * comes from the indices the caller bound ([Kernel_args.count]), so that check
- * has no source-derived count to disagree with. This test does not claim which
- * symptom follows - it claims the emitter should not have accepted the request.
+ * compile error. Nothing on this backend checks the arity:
+ * [Metal_plugin_base]'s preflight count comes from the indices the caller bound
+ * ([Kernel_args.count]), and the args are then bound BY LIST POSITION
+ * ([atIndex:]) with nothing compared against the compiled function. So Metal
+ * sits with CUDA/C and HIP rather than with OpenCL and Vulkan: the shift can
+ * misinterpret data and can equally trap. See
+ * [Backend_error.reject_soa_params].
  *
  * [Sarek_ir_metal] has no SoA lowering to select, so it is refused. (A
  * single-leaf record would in fact bind correctly, N = 1 making the two
  * argument lists the same shape - it is refused anyway, because that is a
  * coincidence of the leaf count and not a property of the emitter. See
- * [Backend_error.reject_soa_params].) Both polarities are pinned here, because the refusal has its own
- * failure mode - refusing the EMPTY list would break every ordinary launch,
+ * [Backend_error.reject_soa_params].)
+ *
+ * Both polarities are pinned here, because the refusal has its own failure
+ * mode - refusing the EMPTY list would break every ordinary launch,
  * and the ["CUDA/PTX"] caller-side gate passes [[]] on this backend on every
  * single launch:
  *
