@@ -98,9 +98,23 @@ Walked: every arm of `expression_desc`, `pattern_desc`, `core_type_desc` and
 `value_constraint`, `type_declaration`, `type_kind`, `constructor_declaration`,
 `constructor_arguments`, `label_declaration`, `open_infos`, `module_expr_desc`,
 `function_param_desc`, `function_body`, `type_constraint`, `arg_label`,
-`constant` and `longident`, as declared in ppxlib 5.2.1's
+`constant` and `longident`, as declared in **ppxlib 0.38.0**'s
 `lib/ppxlib/ast/ast.ml` — the selected AST this PPX compiles against, not a
-list of constructs anybody thought of.
+list of constructs anybody thought of. (An earlier revision of this line said
+"ppxlib 5.2.1". There is no such ppxlib release; 5.2 is the OCaml version whose
+Parsetree shape that file carries, and the two were conflated. Re-check with
+`opam list --installed ppxlib` in `/home/mathias/dev/SPOC/_opam` and by diffing
+its constructor set against the switch's own `lib/ppxlib/astlib/ast_502.ml`,
+which is equal.)
+
+**This walk raised the ppxlib floor and the declared bound did not follow.**
+`dune-project:51` still says `(ppxlib (>= 0.22.0))`, which is now false of the
+code: the tables match `Ptyp_open` and the parameterised `Pexp_function`, both
+of which need the OCaml-5.2-shaped AST. Measured on the `octez-setup` switch
+(ppxlib 0.35.0, OCaml 5.3.0, dune 3.23.0): `987b0c30` builds `sarek_frontend`
+at exit 0 and this branch fails at exit 1 with `no constructor "Ptyp_open"` and
+an unmatched `Pexp_fun (_, _, _, _)`. Raising the bound is a maintainer's
+dependency-policy call, so it is recorded rather than changed.
 
 Reached from: `sarek/ppx/Sarek_parse.ml` and its callee
 `sarek/ppx/Sarek_parse_helpers.ml`.
@@ -112,7 +126,15 @@ handing a payload to the parser. Class-comparable drops may exist there and this
 PR did not look. Same for `Sarek_typer`, the lowering passes and the emitters.
 
 Class-comparable arms the OCaml *parser* cannot produce are marked
-**unreachable** and each says how that was checked.
+**unreachable**. TWO of them state a re-runnable check — the `Lapply` field path
+and the `Lapply` let-open, both settled with `ocamlc -stop-after parsing` quoted
+at their definition in `Sarek_parse.ml`, and both asserted on AST nodes in
+`test_parse.ml`. The other fourteen, all in `Sarek_unsupported.ml`, state a
+structural ARGUMENT instead ("parsed by an arm of its own that matches the
+constructor totally") and no check: nothing machine-verifies that those arms are
+total, so if a future guard narrows one, the arm becomes reachable and its text
+lies to the user. An earlier revision of this line claimed every unreachable row
+said how it was checked; that is true of two rows out of sixteen.
 
 ### `expression_desc` — `Sarek_parse.parse_expression`
 
@@ -157,6 +179,7 @@ Class-comparable arms the OCaml *parser* cannot produce are marked
 | `Pexp_open` with a `Lapply` module path | `parse_expression` | dropped to the empty path | **refused** — **unreachable** (`let open F(X) in` parses to `Pmod_apply`, not `Pmod_ident` + `Lapply`; checked with `-stop-after parsing`), asserted on the AST node in `test_parse.ml` |
 | `Pexp_open` with a non-`Pmod_ident` module expr | final arm | refused, generic | refused, names functor application and `struct` |
 | `open_infos.popen_override` (`open!`) | `parse_expression` | not read | **residual, documented**: `open!` differs from `open` only in whether OCaml warns about shadowing, and that is settled before the kernel is parsed |
+| `open_infos.popen_attributes` | `parse_expression` (`Sarek_parse.ml:576`, swallowed by the record's `_`) | not read | **residual, DROPPED and documented** — the same class as `pvb_attributes` on an ordinary kernel-body `let`, and it was missing from this table entirely while the scope line above claimed `open_infos` had been walked field by field. An attribute on a kernel-body `let open` is still discarded in silence. Found by the adversarial review of this PR |
 | `Pexp_extension` `global` / `native` / `shared` / `superstep` | `parse_expression` | implemented | implemented |
 | `Pexp_extension` any other | final arm | refused, generic | refused, **naming the extension** and listing the four |
 
@@ -242,7 +265,7 @@ field nobody reads here is a field nobody reads at all.
 | construct | site | before | after |
 |---|---|---|---|
 | `Pmod_structure` | `collect_mods` | implemented | implemented |
-| `Pmod_ident`, `Pmod_apply`, `Pmod_apply_unit`, `Pmod_functor`, `Pmod_constraint`, `Pmod_unpack`, `Pmod_extension` | `collect_mods` | **SILENTLY DROPPED** — contributed `([], [])` | **refused**, `test_module_not_structure` |
+| `Pmod_ident`, `Pmod_apply`, `Pmod_apply_unit`, `Pmod_functor`, `Pmod_constraint`, `Pmod_unpack`, `Pmod_extension` | `collect_mods` | **SILENTLY DROPPED** — contributed `([], [])` | **refused**, `test_module_not_structure`. NOTE: unlike the four variants above, `module_expr_desc` has NO table in `Sarek_unsupported.ml`. These arms are covered by a real wildcard (`Sarek_parse.ml:1082`, `| _ -> raise ... "only a literal structure is supported here"`). That is behaviourally safe — the default is a refusal, not a drop — but the "the compiler is what notices when ppxlib grows a constructor" guarantee does NOT extend here: a new `Pmod_*` would be absorbed into the generic message with no build failure. Found by the adversarial review of this PR |
 | `Pexp_letmodule` module NAME | `collect_mods` | not read (`tdecl_module = None`) | **residual, documented and deliberate**: `None` is what makes a payload-local module's types resolvable by their BARE name, since `Sarek_typer` qualifies the registered name when it is `Some`. Writing it in would make `M.t` required and `t` unresolvable |
 | `Pexp_letmodule` with `txt = None` (`let module _ =`) | `collect_mods` | fell through and failed later as "Kernel must be a function" | **refused**, named (no committed case) |
 | `Pexp_open` at the payload top | `collect_mods` | skipped, path dropped | **residual, documented, and the reason it stays.** The open scopes the kernel body, and stripping it means the body is resolved without it (cross-runtime review's point, and it is right). It cannot be closed by re-wrapping the body in an `EOpen`: the native backend re-emits `let open M in` into generated OCaml, so every payload using the form would then need `M` to resolve in the user's file — which is exactly the backlog-208 trap, and `test_inline_node_exhaustion.ml` (payload-top `let open Std in`, no `module Std` alias) would break. Names a kernel needs are in Sarek's own environment, which the open does not populate |
@@ -280,6 +303,8 @@ field nobody reads here is a field nobody reads at all.
   the top-level route where OCaml is entitled to the attributes.
 * The claim "every arm is now read or refused" holds for the four variants and
   the record fields listed at the top of this table, in
-  `Sarek_parse.ml` + `Sarek_parse_helpers.ml`, against ppxlib 5.2.1. It is not a
-  claim about the PPX as a whole.
+  `Sarek_parse.ml` + `Sarek_parse_helpers.ml`, against ppxlib 0.38.0. It is not a
+  claim about the PPX as a whole, and for `module_expr_desc` it is a claim about
+  the DEFAULT being a refusal rather than about the compiler enforcing the
+  enumeration (see that section's note).
 
