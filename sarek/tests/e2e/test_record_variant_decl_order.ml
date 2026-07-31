@@ -56,9 +56,18 @@
  * because CI legitimately has no GPU, but it does not claim a verification it
  * did not make.
  *
- * This host has OpenCL and Vulkan (two devices each) plus Interpreter/Native; it
- * has no NVIDIA, HIP or Metal hardware, and there is no WGSL device at all. The
- * emission ORDER for those families is pinned device-independently in
+ * This host has OpenCL and Vulkan (two devices each) plus Interpreter/Native,
+ * and CUDA/PTX x2 through ZLUDA, which the dune rule puts on the loader path.
+ * It has no NVIDIA, HIP or Metal hardware and no WGSL device at all.
+ *
+ * The CUDA/PTX devices RUN both shapes and are deliberately NOT counted as
+ * declaration-emitting, because the PTX emitter declares no struct types — so
+ * the summary reads 4, not 6, on a run that enumerated six GPU devices. That
+ * exclusion is the reason the ZLUDA rule is worth its runtime: it turns a
+ * sentence about PTX into something every run exercises.
+ *
+ * The emission ORDER for the families with no hardware here (CUDA/C, HIP,
+ * Metal) and for WGSL is pinned device-independently in
  * sarek/tests/codegen_golden/test_decl_order_all_backends.ml, which is where a
  * regression is caught on a machine with zero devices.
  ******************************************************************************)
@@ -248,11 +257,70 @@ let run_case ~dev ~name ~kirc ~expected =
     Printf.printf "FAILED (%s)\n%!" (Printexc.to_string e) ;
     false
 
-(* The frameworks whose generators emit struct declarations. Interpreter and
-   Native are absent on purpose: they carry values, so they cannot observe a
-   declaration order at all, and counting them as coverage is how this file would
-   report a pass it had not earned. *)
-let declaring_frameworks = ["CUDA"; "OpenCL"; "Vulkan"; "Metal"]
+(* The frameworks whose generators emit struct declarations, in the vocabulary
+   [Device.framework] actually REPORTS.
+
+   Interpreter and Native are absent on purpose: they carry values, so they
+   cannot observe a declaration order at all, and counting them as coverage is
+   how this file would report a pass it had not earned.
+
+   CUDA/PTX is absent for a different reason, and it is a real distinction
+   rather than an omission: [Sarek_ir_ptx_kernel.generate_with_types] ignores
+   [~types] and declares no struct types at all, so a PTX device runs both
+   shapes without exercising any declaration order. It is the one CUDA-family
+   backend that must NOT count.
+
+   The set mirrors the frameworks [devices] requests, minus the two that carry
+   values and minus CUDA/PTX. HIP is deliberately in NEITHER list: it would
+   count (it has no generator of its own and rides
+   [Sarek_ir_cuda.generate_with_types]), but this executable does not link
+   sarek_hip, so naming it here would be one more key no device could report.
+   Metal IS requested, and is inert on this host for the ordinary reason that
+   there is no Metal hardware.
+
+   THE ENTRIES MUST BE BACKEND NAMES, NOT FAMILY NAMES. This list previously
+   read ["CUDA"; ...], and "CUDA" is a family: [Device.init ~frameworks] accepts
+   it as a REQUEST and [Device.resolve_framework] expands it to the registered
+   backends "CUDA/PTX" and "CUDA/C", but [d.Device.framework] reports the
+   resolved backend, so "CUDA" on the left of the [List.mem] below could never
+   match. The counter it feeds would then read 0 on a CUDA-only host and this
+   file would print NOTHING VERIFIED for a run that had genuinely exercised the
+   ordering. The two vocabularies and this failure mode are set out at length in
+   sarek/tests/e2e/test_record_field_store.ml; the check below is that file's v3
+   test, which is the one that distinguishes them without overshooting. *)
+let declaring_frameworks = ["CUDA/C"; "OpenCL"; "Vulkan"; "Metal"]
+
+(* A family name is precisely one that is not itself a registered backend but is
+   the prefix before the '/' of one. Registration is hardware-dependent — with
+   no CUDA driver on the loader path nothing registers under "CUDA/*" — so this
+   can only fire where the family is actually registered, and a plain typo is
+   indistinguishable from a backend that legitimately did not enumerate. It
+   catches the vocabulary confusion, which is the mistake that was here. *)
+let check_declaring_frameworks_are_backend_names () =
+  let registered =
+    Spoc_framework_registry.Framework_registry.all_backend_names ()
+  in
+  let families =
+    List.filter
+      (fun fw ->
+        (not (List.mem fw registered))
+        && List.exists
+             (fun r -> String.starts_with ~prefix:(fw ^ "/") r)
+             registered)
+      declaring_frameworks
+  in
+  if families <> [] then begin
+    Printf.printf
+      "BROKEN PREDICATE: declaring_frameworks names %d FAMILY name(s) (%s) \
+       where a backend name is required. Device.framework reports the resolved \
+       backend, so these can never match and the declaration-emitting device \
+       count would silently read low. Registered backends: [%s].\n\
+       %!"
+      (List.length families)
+      (String.concat ", " families)
+      (String.concat "; " registered) ;
+    exit 1
+  end
 
 let () =
   print_endline
@@ -270,6 +338,7 @@ let () =
     ~direction:`Record_field_is_a_variant ;
   print_endline
     "  both cross-kind edges are present in the lowered IR (not erased)" ;
+  check_declaring_frameworks_are_backend_names () ;
   let devs = devices () in
   if Array.length devs = 0 then begin
     print_endline "No devices found - nothing to verify" ;

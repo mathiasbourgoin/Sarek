@@ -1760,7 +1760,17 @@
  (flags
   (:standard -w -32-33-34)))
 
+; Same ZLUDA path, and the same trade-offs, as the two rules above. This test
+; counts DECLARATION-EMITTING devices and deliberately excludes CUDA/PTX from
+; that count, because the PTX emitter declares no struct types. Without a CUDA
+; device present that exclusion is untested prose; with one it is exercised on
+; every run — measured here, CUDA/PTX x2 enumerate and PASS both shapes while
+; the summary still reports 4 declaration-emitting devices, not 6.
+
 (rule
  (alias runtest)
  (action
-  (run %{dep:test_record_variant_decl_order.exe})))
+  (setenv
+   LD_LIBRARY_PATH
+   %{env:HOME=}/opt/zluda
+   (run %{dep:test_record_variant_decl_order.exe}))))
