@@ -30,8 +30,12 @@ module Backend : Framework_sig.BACKEND = struct
   (* Codegen is reused verbatim from the CUDA-C generator. A located
      Backend_error (Codegen ...) is allowed to PROPAGATE rather than being
      swallowed as [None] (matches the CUDA/C backend, PR #259). *)
-  let generate_source ?block:_ ?soa_params:_ (ir : Sarek_ir_types.kernel) :
+  let generate_source ?block:_ ?(soa_params = []) (ir : Sarek_ir_types.kernel) :
       string option =
+    (* Refused rather than bound away (backlog-214). HIP reuses the CUDA-C
+       generator, which has no SoA lowering — so this backend inherits the AoS
+       signature and must not accept a request for the other ABI. *)
+    Sarek_backend_error.Backend_error.reject_soa_params ~backend:name soa_params ;
     Some
       (Sarek_codegen.Sarek_ir_cuda.generate_with_types ~types:ir.kern_types ir)
 

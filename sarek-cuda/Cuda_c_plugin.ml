@@ -33,8 +33,13 @@ module Backend : Framework_sig.BACKEND = struct
      node. That error is allowed to PROPAGATE so callers surface the name rather
      than the opaque "generate_source returned None" — catching it here and
      returning [None] hid it identically to the Vulkan swallow (PR #259). *)
-  let generate_source ?block:_ ?soa_params:_ (ir : Sarek_ir_types.kernel) :
+  let generate_source ?block:_ ?(soa_params = []) (ir : Sarek_ir_types.kernel) :
       string option =
+    (* Refused rather than bound away: this emitter has no SoA lowering, and
+       [name] is passed so the message says CUDA/C — the sibling CUDA/PTX
+       backend does honour it, and [Cuda_error]'s own backend string is "CUDA"
+       for both, which would not distinguish them (backlog-214). *)
+    Sarek_backend_error.Backend_error.reject_soa_params ~backend:name soa_params ;
     Some (Sarek_ir_cuda.generate_with_types ~types:ir.kern_types ir)
 
   let execute_direct ~native_fn:_ ~ir:_ ~block:_ ~grid:_ _args =

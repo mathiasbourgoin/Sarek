@@ -102,3 +102,22 @@
  (libraries sarek_cuda sarek.codegen spoc.ir alcotest str unix)
  (instrumentation
   (backend bisect_ppx)))
+
+; backlog-214 - the CUDA/C plugin refuses a non-empty ~soa_params instead of
+; answering an SoA argument list with AoS source. Pure codegen, no device.
+
+(test
+ (name test_cuda_c_soa_refusal)
+ (modules test_cuda_c_soa_refusal)
+ (libraries sarek_cuda sarek_ir sarek_backend_error alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
+
+; backlog-214, other polarity - CUDA/PTX must NOT have acquired that refusal.
+
+(test
+ (name test_ptx_soa_not_refused)
+ (modules test_ptx_soa_not_refused)
+ (libraries sarek_cuda sarek_ir sarek.codegen sarek_backend_error alcotest)
+ (instrumentation
+  (backend bisect_ppx)))

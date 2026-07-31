@@ -318,7 +318,11 @@ let run_soa ~(device : Device.t) ~(ir : Sarek_ir_types.kernel)
           param_names
       in
       (* Generate SoA-lowered source through the backend (keeps Execute
-         codegen-free; only the CUDA/PTX backend honours ~soa_params). *)
+         codegen-free; only the CUDA/PTX backend honours ~soa_params, and since
+         backlog-214 the source-generating backends that do not honour it raise
+         rather than answer with AoS source — so the gate above is a fast path
+         with a clearer message, not the only thing standing between an SoA
+         launch and a mismatched signature). *)
       let source =
         match B.generate_source ~block ~soa_params ir with
         | Some s -> s

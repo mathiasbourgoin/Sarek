@@ -352,9 +352,15 @@ module type BACKEND = sig
         Names of custom (record) vector parameters to lower as
         Structure-of-Arrays: each expands to N per-leaf base pointers + one
         shared length instead of a single packed AoS pointer (the #260 PTX
-        emitter ABI). Honoured only by the CUDA/PTX backend; every other backend
-        ignores it and emits its ordinary AoS code. Defaults to [[]] (all AoS),
-        so existing callers are byte-identical. *)
+        emitter ABI). Honoured only by the CUDA/PTX backend. A backend that
+        cannot honour it must REFUSE a non-empty list rather than ignore it —
+        see {!Sarek_backend_error.Backend_error.reject_soa_params}, which the
+        five source-generating backends without an SoA lowering (CUDA/C, HIP,
+        OpenCL, Vulkan, Metal) call — because emitting AoS source for an SoA
+        argument list is silently wrong data, not a crash (backlog-214). The
+        backends that return [None] unconditionally (Native, Interpreter,
+        WebGPU) generate no source at all and so do not carry that refusal.
+        Defaults to [[]] (all AoS), so existing callers are byte-identical. *)
   val generate_source :
     ?block:dims ->
     ?soa_params:string list ->

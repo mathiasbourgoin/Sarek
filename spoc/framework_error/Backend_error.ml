@@ -281,6 +281,52 @@ let () =
 (** Raise backend error as exception *)
 let raise_error err = raise (Backend_error err)
 
+(** {1 Shared refusals} *)
+
+(** Refuse a non-empty [~soa_params] on a backend whose emitter has no
+    Structure-of-Arrays lowering (backlog-214).
+
+    [Framework_sig.generate_source] offers [?soa_params] to every backend, but
+    only an emitter that actually lowers a named vector parameter to N per-leaf
+    base pointers plus one shared length can honour it. A backend without that
+    lowering used to bind the argument away as [?soa_params:_] and return its
+    ordinary packed-AoS source — a signature taking ONE pointer per vector,
+    while the launch side expands an SoA-dispatched vector into N [RSA_Buffer]s
+    plus one [RSA_Vector_Length]. That mismatch is not a compile error and not
+    reliably a crash: it is N pointers bound to a packed parameter block, i.e.
+    silently wrong data.
+
+    Today no such call is made — [Execute.soa_dispatch] restricts SoA to the
+    CUDA/PTX device and [Soa_launch] gates on [PTX] being in the backend's
+    [supported_source_langs] — so this is a boundary, not a live bug fix. What
+    it changes is where the guarantee lives: it was one caller-side predicate
+    and nothing else, and a backend that cannot honour the request now says so
+    instead of answering with the wrong ABI.
+
+    Scope of what this raises, stated narrowly on purpose: it says what THIS
+    backend does with vector parameters. It deliberately does not name which
+    other backend does support SoA — that set is expected to grow (backlog-215),
+    and a message enumerating it would go stale in a file that is not edited
+    when it does.
+
+    [[]] returns [()], so every existing caller and the caller-side fast path
+    are byte-for-byte unaffected. *)
+let reject_soa_params ~backend (soa_params : string list) : unit =
+  match soa_params with
+  | [] -> ()
+  | names ->
+      raise_error
+        (feature_not_supported
+           ~backend
+           (Printf.sprintf
+              "Structure-of-Arrays parameter lowering, requested for %s. This \
+               backend's emitter gives every vector parameter the packed \
+               Array-of-Structures signature (one pointer plus one length), so \
+               the N-leaf-pointer argument list an SoA launch binds would not \
+               match the source it generates. Pass the vector through the \
+               ordinary AoS launch path on this backend."
+              (String.concat ", " (List.map (Printf.sprintf "'%s'") names))))
+
 (** Print error to stderr *)
 let print_error err = Printf.eprintf "%s\n%!" (to_string err)
 
