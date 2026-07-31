@@ -452,6 +452,44 @@ let is_float t =
 (** Check if type is boolean *)
 let is_boolean t = match repr t with TPrim TBool -> true | _ -> false
 
+(** backlog-194. Is [t] a type whose values cannot be compared with [=] / [<>]
+    in a kernel?
+
+    Per member, each measured on this tree rather than reasoned about:
+
+    - [TTuple] — a primitive tuple lowers to the synthesized [_tup_*] record and
+      emitted [(_tup_float32_float32){...} == (...){...}]; a non-primitive one
+      emitted a bare brace list. clang -x cl rejects both ("invalid operands to
+      binary expression", "expected ';' after expression").
+    - [TRecord], [TVariant] — emitted [a == b] on a struct; same rejection.
+    - [TFun] — [let f x = ... in let g x = ... in if f = g] compiled, and
+      emitted [if ((f == g))] naming two identifiers that appear NOWHERE in the
+      emitted source: the helpers are inlined, not declared. clang -x cl fails
+      with "use of undeclared identifier 'f'". Unlike the three above there is
+      no backend on which this means anything, so refusing it removes nothing.
+
+    [TVec] and [TArr] are deliberately NOT here, and that boundary is measured
+    in BOTH directions. [if src = dst] on two vector parameters emits
+    [(src == dst)], which clang -x cl accepts (exit 0) and glslangValidator -V
+    accepts (exit 0) — refusing it would remove something that works. It is not
+    portable, though: the same kernel through the WGSL emitter compares two
+    [array<f32>] storage bindings and naga rejects it ("Incompatible operands:
+    Equal(Array ..., _)"). That is a real defect; it predates backlog-194, it is
+    a WGSL-emitter question rather than a frontend one — four backends emit
+    legal code for this construct — and it is recorded in
+    kb/sarek/ppx/lowering.md rather than silently folded in here. Widening this
+    set to [TVec] would refuse four working backends to fix one.
+
+    This is the single definition. Both refusal sites call it — the typer's
+    {!Sarek_typer.reject_aggregate_equality} at inference time and the
+    post-monomorphisation backstop in {!Sarek_lower_ir} — because two
+    hand-rolled copies of one constructor list is exactly how the two gates
+    would come to disagree about what they refuse. *)
+let is_uncomparable_operand_typ t =
+  match repr t with
+  | TTuple _ | TRecord _ | TVariant _ | TFun _ -> true
+  | _ -> false
+
 (** Check if type is an unbound type variable *)
 let is_tvar t =
   match repr t with TVar {contents = Unbound _} -> true | _ -> false

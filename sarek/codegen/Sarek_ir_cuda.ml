@@ -165,15 +165,24 @@ let rec gen_expr buf = function
       Buffer.add_string buf (cuda_type_of_elttype ty) ;
       Buffer.add_char buf ')' ;
       gen_expr buf e
-  | ETuple exprs ->
-      (* Tuples become struct literals in CUDA *)
-      Buffer.add_string buf "{" ;
-      List.iteri
-        (fun i e ->
-          if i > 0 then Buffer.add_string buf ", " ;
-          gen_expr buf e)
-        exprs ;
-      Buffer.add_string buf "}"
+  | ETuple _ ->
+      (* backlog-194. This arm used to print a bare brace list, which is
+         not an expression in CUDA: measured, clang -x cl rejected the
+         emitted `{a, b} == {a, b}` with "expected ';' after
+         expression". The frontend no longer produces [ETuple] at all, so
+         reaching here means the IR was built directly. Refusing is what
+         the PTX emitter already did; relying on the vendor compiler to
+         catch our own malformed output is the failure mode this
+         project has been removing. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "ETuple"
+           "a tuple value reached the emitter. A tuple has no device type of \
+            its own: the frontend lowers a scalar-component tuple to its \
+            synthesized _tup_* record and refuses every other tuple, so this \
+            node can only come from directly-constructed IR. Emitting it as a \
+            brace list produced source no device compiler accepts \
+            (backlog-194). Use a registered record type.")
   | EApp (fn, args) ->
       gen_expr buf fn ;
       Buffer.add_char buf '(' ;

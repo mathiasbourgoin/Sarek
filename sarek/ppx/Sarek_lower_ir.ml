@@ -177,16 +177,57 @@ let tuple_record_name (comps : Ir.elttype list) : string =
 
 (** The single located error raised for any tuple whose components are not all
     scalar primitives — shared by the vector-element path, the kernel-local slot
-    path ({!slot_elttype_of_typ}), and the match-scrutinee guard in
-    {!lower_stmt}. [loc] should be the offending source expression when known
-    ([Ppxlib.Location.none] otherwise). *)
+    path ({!slot_elttype_of_typ}), the match-scrutinee guard in {!lower_stmt},
+    and (backlog-194) the tuple-literal arm of {!lower_expr} itself. [loc]
+    should be the offending source expression when known ([Ppxlib.Location.none]
+    otherwise).
+
+    The message no longer enumerates POSITIONS. It used to, and the enumeration
+    was already wrong the moment backlog-194 added the {!lower_expr} arm: that
+    arm is the generic [TETuple] fall-through, so it also fires for a tuple used
+    as a constructor payload, a call argument or a record field value —
+    positions the list did not name, leaving the user reading a set of cases
+    that excluded theirs. A position-independent sentence is the one this file
+    can keep true. *)
 let raise_tuple_component_error ~loc : 'a =
   Ppxlib.Location.raise_errorf
     ~loc
     "Tuple values support only scalar components \
      (float32/float64/int32/int64/bool); nested tuples, records, vectors or \
-     functions as tuple components are not supported (applies to vector \
-     elements, kernel-local tuple bindings and tuple match scrutinees)."
+     functions as tuple components are not supported, in ANY position — as a \
+     vector element, a kernel-local binding, a match scrutinee, a constructor \
+     payload, a call argument or a bare tuple literal."
+
+(** Raise the aggregate-equality refusal (backlog-194) with the SAME body the
+    typer's [Aggregate_equality_operand] renders — {!Sarek_error} owns that text
+    and both sites call it, so the two cannot word it differently — plus one
+    sentence saying this site is the one that fired.
+
+    That sentence is not decoration. Without it the two gates are
+    indistinguishable in stderr, and the negative cases that exist to pin the
+    TYPER gate would keep passing with the typer gate deleted, because this
+    backstop catches the same kernels and prints the same words. A gate that
+    another gate can satisfy on its behalf is not pinned. [make test_negative]
+    therefore asserts BOTH polarities: the typer cases require the shared text
+    AND the absence of this sentence, and [test_poly_aggregate_eq] requires it.
+
+    The sentence states WHERE the refusal happened, not WHY. An earlier revision
+    said the operand type "only became known after monomorphisation", which this
+    arm's condition does not establish — it tests the operand types and nothing
+    else. The polymorphic-helper route is the known way to get here and is named
+    as an example, not as the diagnosis.
+
+    [%s] is used deliberately for the shared body: it is data, not a format
+    string. *)
+let raise_aggregate_equality_error ~loc ~what ~ty : 'a =
+  Ppxlib.Location.raise_errorf
+    ~loc
+    "%s %s Refused at lowering, after the typer's operator check: that check \
+     runs at inference time and did not see this operand type — a polymorphic \
+     module-level helper, whose parameters are still unresolved when its body \
+     is inferred, is the route that reaches here."
+    what
+    (Sarek_error.aggregate_equality_body ty)
 
 (** Synthesized record fields (positional [_0.._n]) for a tuple's component
     types. Raises if any component is not a scalar primitive. *)
@@ -775,6 +816,31 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
   | TEBinop (Or, a, b) ->
       (* Short-circuit || - see the && case above. *)
       Ir.EIf (lower_expr state a, Ir.EConst (Ir.CBool true), lower_expr state b)
+  | TEBinop (((Eq | Ne) as op), a, b)
+    when is_uncomparable_operand_typ a.ty || is_uncomparable_operand_typ b.ty ->
+      (* backlog-194, post-monomorphisation backstop. The typer refuses an
+         operand of [=]/[<>] at [infer_binop] — the same set, via the shared
+         {!Sarek_types.is_uncomparable_operand_typ}, so the two gates cannot come to
+         refuse different things — but it can only see the operand types it has
+         AT THAT POINT. In the body of a polymorphic module-level helper
+         (declared with the [sarek.module] attribute:
+         [same (a : 'a) (b : 'a) : bool = a = b]) both are an unresolved tvar,
+         and monomorphisation instantiates the body later without re-running
+         [infer_binop]. Measured before this arm existed:
+         calling that helper on two records compiled clean and emitted
+
+           int same__Ranon_record_Ranon_record(anon_record a, anon_record b) {
+             return (a == b);
+           }
+
+         which clang -x cl rejects ("invalid operands to binary expression").
+         Here every type is resolved, so this arm is what makes the refusal
+         total. It fires only for a shape the typer could not see; the ordinary
+         shapes are refused earlier and never reach it. *)
+      raise_aggregate_equality_error
+        ~loc:(Sarek_ast.loc_to_ppxlib te.te_loc)
+        ~what:(Sarek_error.binop_display_name op)
+        ~ty:(if is_uncomparable_operand_typ a.ty then repr a.ty else repr b.ty)
   | TEBinop (op, a, b) ->
       Ir.EBinop (ir_binop op te.ty, lower_expr state a, lower_expr state b)
   | TEUnop (op, a) -> Ir.EUnop (ir_unop op, lower_expr state a)
@@ -1095,7 +1161,24 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
          elements. This carries the nominal type name so struct-based backends
          (OpenCL/GLSL/CUDA/Metal) emit a typed compound literal rather than a
          bare, type-less brace initializer, and it matches what a tuple vector
-         slot stores. Non-primitive tuples keep the generic [Ir.ETuple]. *)
+         slot stores.
+
+         backlog-194: a NON-primitive tuple used to fall through to the generic
+         [Ir.ETuple], and every C-family emitter renders that node as a bare,
+         type-less brace list — measured on this tree, `(a, (b, c)) = (a, (b,
+         c))` inside an `if` emitted
+
+           if (({src[tid], (_tup_float32_float32){...}} == {src[tid], ...}))
+
+         which clang -x cl rejects with "expected ';' after expression". Every
+         OTHER consumer of a non-primitive tuple already raises the located
+         tuple-component error (the vector-element path, the kernel-local slot
+         path via {!slot_elttype_of_typ}/{!make_var}, and the match-scrutinee
+         guard in {!lower_stmt}); this arm was the one hole, so the invariant
+         "no non-primitive tuple reaches the IR" was not total. It is now:
+         raising here makes [Ir.ETuple] unproducible by this lowering. The node
+         itself stays in the IR type — the PTX and C emitters keep their arms,
+         and IR built directly (snapshots, unit tests) can still carry it. *)
       match repr te.ty with
       | TTuple tys
         when List.for_all (fun t -> prim_component_elttype t <> None) tys ->
@@ -1118,7 +1201,8 @@ let rec lower_expr (state : state) (te : texpr) : Ir.expr =
               List.mapi
                 (fun i e -> (tuple_field_name i, lower_expr state e))
                 exprs )
-      | _ -> Ir.ETuple (List.map (lower_expr state) exprs))
+      | _ ->
+          raise_tuple_component_error ~loc:(Sarek_ast.loc_to_ppxlib te.te_loc))
   | TEGlobalRef (name, ty) ->
       let v = make_var name 0 ty false in
       Ir.EVar v

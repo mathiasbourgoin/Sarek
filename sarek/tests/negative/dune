@@ -18,6 +18,20 @@
 ; - test_shared_tuple: "Tuple-typed shared-memory arrays are not supported"
 ; - test_tuple_local_nonprim: "Tuple values support only scalar components"
 ; - test_tuple_destructure_nonprim: "Tuple values support only scalar components"
+; - test_tuple_expr_nonprim: "Tuple values support only scalar components"
+;   (backlog-194: pins the TETuple lowering arm itself -- no equality involved)
+; - test_tuple_eq_nonprim: "cannot compare two values of type" (backlog-194)
+; - test_tuple_eq_prim: "cannot compare two values of type" (backlog-194)
+; - test_record_eq: "cannot compare two values of type" (backlog-194)
+; - test_variant_neq: "'<>' cannot compare two values of type" (backlog-194:
+;   the third member of the refused set, and the only <> case)
+; - test_fun_eq: "'=' cannot compare two function values" (backlog-194: the
+;   fourth member; a different diagnostic because the failure is different)
+; - test_poly_aggregate_eq: "cannot compare two values of type" AND "Refused at
+;   lowering" (backlog-194: the post-monomorphisation backstop, which the typer
+;   gate cannot reach). The three cases above assert the same text and the
+;   ABSENCE of that second string -- both gates print the shared sentence, so
+;   without the negative half they would pass with the typer gate deleted.
 ; - test_fun_param: "Function-typed kernel parameters are not supported"
 ; - test_fun_escape: "Function value escapes"
 ; - test_sarek_type_extension: "Uninterpreted extension 'sarek.type'"
@@ -809,6 +823,84 @@
 (library
  (name neg_test_payload_type_nonrec)
  (modules test_payload_type_nonrec)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_tuple_expr_nonprim)
+ (modules test_tuple_expr_nonprim)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_tuple_eq_nonprim)
+ (modules test_tuple_eq_nonprim)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_tuple_eq_prim)
+ (modules test_tuple_eq_prim)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_record_eq)
+ (modules test_record_eq)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_poly_aggregate_eq)
+ (wrapped false)
+ (modules test_poly_aggregate_eq_ty test_poly_aggregate_eq)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_variant_neq)
+ (modules test_variant_neq)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_fun_eq)
+ (modules test_fun_eq)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
