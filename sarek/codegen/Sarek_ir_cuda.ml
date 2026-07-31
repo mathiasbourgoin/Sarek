@@ -47,6 +47,23 @@ let bad_arity n e g =
     passes it to the ONE emitter it is generating with rather than assigning it
     into all four C-family emitters' globals.
 
+    KNOWN GAP — read before deleting this parameter. On every path that exists
+    today [framework] is INERT: {!Sarek_transpile} passes each backend its own
+    name, which is exactly the default [None] falls back to, and the one
+    consumer that tells [Some] from [None] — the [SNative] arm — is unreachable,
+    because [of_source] rejects [%native] upstream and no other caller supplies
+    a tag at all. So the fix for the bug that motivated backlog-185/200 is the
+    REMOVAL of [set_framework]; threading this parameter is preparation, not
+    part of that fix.
+
+    It is not ungated: [framework_parameter_is_wired] in
+    [sarek/tests/unit/test_codegen_generation_state.ml] passes a FOREIGN tag and
+    pins that the registry answered under it, so ignoring the argument here
+    turns four cases red. But that test pins the wiring only. It does not show
+    any caller benefits, and it would not be the test worth having if [SNative]
+    were reachable — the honest one would go through [SNative] instead. Making
+    it reachable is a separate item.
+
     [variants] is the kernel's own [kern_variants], read by the
     [SMatch]/[EMatch] arms to recover a constructor's payload types. Derived
     from the kernel, so it could be re-derived at each use site; it is carried
