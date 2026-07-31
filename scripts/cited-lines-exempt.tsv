@@ -1,0 +1,87 @@
+# Tier-1 line-number exemptions for scripts/check-cited-paths-exist.sh
+# (backlog-226). Format: <citing file>::<path>:<NNN[-MM]><TAB><reason>.
+#
+# This is a SEPARATE channel from cited-paths-exempt.tsv on purpose: a row
+# there says "this path is not tracked here and that is fine", which would
+# also silence a genuinely dangling path if reused for line checks. A row
+# here says "this file's cited line number is known and is not this change's
+# problem" -- the path itself still gets the ordinary tier-0 check. Every row
+# is scoped to one EXACT citation, never a bare path, because a bare
+# exemption would also wave through a future wrong line number for that path.
+#
+# THE SWEEP THAT PRODUCED THIS FILE (backlog-226, 2026-07-31): every tracked
+# .ml/.mli/.md `path:NNN` citation was enumerated and checked against the
+# cited file's current line count. 729 total citations carry a line number or
+# range; 39 named a line past the end of the cited file. Of those 39:
+#
+#   - 14 (9 distinct file/path pairs, rows below marked AUDIT) sit inside
+#     kb/research/obj-usage/, a dated point-in-time audit
+#     ("Audit date: 2026-05-05. Baseline: <sha>" in its README) that cites
+#     line numbers as they stood on that baseline commit, several of them
+#     under a heading explicitly marked "(former)". Fixing these to the
+#     PRESENT line numbers would corrupt the audit -- the whole point of a
+#     dated snapshot is that its citations do NOT track HEAD.
+#
+#   - 25 are live, undated documentation whose citations have genuinely
+#     drifted (rows below marked DRIFT). These are NOT fixed by this change:
+#     several point at content that moved when a backend/module was factored
+#     into a thin forwarding `include` (the same class of drift backlog-185
+#     exists to fix, one instance of which -- kb/backends/vulkan.md's
+#     Sarek_ir_codegen.ml:147 citation -- motivated this very ticket), and
+#     mechanically "correcting" a line number without confirming the cited
+#     CONTENT is still what the prose describes would risk manufacturing a
+#     new wrong citation with high confidence. Precedent for measuring and
+#     explicitly carving a backlog out of scope rather than guessing at a fix
+#     is backlog-402 (109 portable spellings measured and ruled out of
+#     scope). Follow-up: file a backlog item per doc family above to correct
+#     these against their current, real locations.
+#
+# Shipping tier 1 as a hard gate today, with this backlog unexempted, would
+# fail CI on 39 pre-existing citations this change did not introduce -- a
+# gate landing red like that is a gate someone disables. Exempting the KNOWN
+# backlog and enforcing everything else (including every NEW citation from
+# this point on) is the same rollout shape cited-paths-exempt.tsv already
+# uses for tier 0.
+
+# --- AUDIT: kb/research/obj-usage/, dated 2026-05-05, baseline 624246376973c586880dc933f6c7e113993604c8 ---
+kb/research/obj-usage/README.md::sarek/sarek/Execute.ml:53	dated audit citation, frozen to the stated baseline commit
+kb/research/obj-usage/README.md::sarek/sarek/Sarek_type_helpers.ml:65-66	dated audit citation, frozen to the stated baseline commit
+kb/research/obj-usage/README.md::sarek/sarek/Sarek_ir_interp.ml:239	dated audit citation, frozen to the stated baseline commit
+kb/research/obj-usage/README.md::sarek/sarek/Execute.ml:349-437	dated audit citation, frozen to the stated baseline commit
+kb/research/obj-usage/README.md::sarek/sarek/Sarek_type_helpers.ml:16-35	dated audit citation, frozen to the stated baseline commit
+kb/research/obj-usage/interpreter-fallback-kinds.md::sarek/sarek/Sarek_ir_interp.ml:239	explicitly headed "Obj Sites (former)" -- describes removed code by design
+kb/research/obj-usage/interpreter-fallback-kinds.md::sarek/sarek/Sarek_ir_interp.ml:274	explicitly headed "Obj Sites (former)" -- describes removed code by design
+kb/research/obj-usage/interpreter-fallback-kinds.md::sarek/sarek/Execute.ml:349-437	explicitly headed "Obj Sites (former)" -- describes removed code by design
+kb/research/obj-usage/plugin-bigarray-buffer-storage.md::sarek/core/Vector_types.ml:184-193	dated audit citation, frozen to the stated baseline commit
+kb/research/obj-usage/typed-exec-vector-boundary.md::sarek/sarek/Execute.ml:53	dated audit citation, frozen to the stated baseline commit
+kb/research/obj-usage/typed-exec-vector-boundary.md::sarek/core/Vector_types.ml:205-216	dated audit citation, frozen to the stated baseline commit
+kb/research/obj-usage/typed-helper-lookup.md::sarek/sarek/Sarek_type_helpers.ml:65	dated audit citation, frozen to the stated baseline commit
+kb/research/obj-usage/typed-helper-lookup.md::sarek/sarek/Sarek_type_helpers.ml:66	dated audit citation, frozen to the stated baseline commit
+kb/research/obj-usage/typed-helper-lookup.md::sarek/sarek/Sarek_type_helpers.ml:32-35	dated audit citation, frozen to the stated baseline commit
+
+# --- DRIFT: live docs, pre-existing wrong line numbers, not fixed by backlog-226 ---
+kb/backends/README.md::sarek-metal/Metal_plugin_base.ml:406-416	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/backends/vulkan.md::sarek-vulkan/Sarek_ir_glsl.ml:32	pre-existing drift found by backlog-226 corpus sweep; Sarek_ir_glsl.ml is now a 9-line forwarding alias, real content moved to sarek/codegen/Sarek_ir_glsl.ml
+kb/backends/vulkan.md::sarek-vulkan/Sarek_ir_glsl.ml:968-969	pre-existing drift found by backlog-226 corpus sweep; Sarek_ir_glsl.ml is now a 9-line forwarding alias, real content moved to sarek/codegen/Sarek_ir_glsl.ml
+kb/backends/vulkan.md::sarek-vulkan/Sarek_ir_glsl.ml:147-149	pre-existing drift found by backlog-226 corpus sweep; Sarek_ir_glsl.ml is now a 9-line forwarding alias, real content moved to sarek/codegen/Sarek_ir_glsl.ml
+kb/backends/vulkan.md::sarek-vulkan/Sarek_ir_glsl.ml:784-795	pre-existing drift found by backlog-226 corpus sweep; Sarek_ir_glsl.ml is now a 9-line forwarding alias, real content moved to sarek/codegen/Sarek_ir_glsl.ml
+kb/backends/vulkan.md::sarek-vulkan/Sarek_ir_glsl.ml:682-685	pre-existing drift found by backlog-226 corpus sweep; Sarek_ir_glsl.ml is now a 9-line forwarding alias, real content moved to sarek/codegen/Sarek_ir_glsl.ml
+kb/sarek/ppx/lowering.md::sarek/tests/unit/test_quote_ir.ml:719-831	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/sarek/ppx/quote.md::sarek/tests/unit/test_quote_ir.ml:719-831	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/sarek/runtime/execution.md::sarek/sarek/Sarek_type_helpers.ml:53-67	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/sarek/runtime/plugins.md::sarek/plugins/interpreter/Interpreter_plugin.ml:168-176	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/sarek/tests/unit.md::sarek/tests/unit/test_quote_ir.ml:719-831	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/spoc/framework.md::spoc/framework/Kernel_args.mli:1-57	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/spoc/framework.md::spoc/framework/Kernel_args.mli:20-57	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/spoc/tests.md::spoc/framework/test/test_typed_value.ml:16-250	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/spoc/tests.md::spoc/ir/test/test_sarek_ir_types.ml:16-502	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/spoc/tests.md::spoc/ir/test/test_sarek_ir_pp.ml:17-331	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/spoc/tests.md::spoc/registry/test/test_sarek_registry.ml:16-357	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/support/benchmarks.md::benchmarks/deduplicate_results.ml:297-308	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/support/benchmarks.md::scripts/coverage-benchmarks.sh:155-193	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/support/docs-site.md::.github/workflows/docs.yml:273-289	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/support/scripts-ci.md::scripts/coverage-e2e.sh:110-138	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/support/scripts-ci.md::scripts/coverage-benchmarks.sh:169-194	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/support/scripts-ci.md::.github/workflows/docs.yml:247-258	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/support/scripts-ci.md::.github/workflows/cleanup-pr-preview.yml:192-210	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
+kb/support/scripts-ci.md::scripts/coverage-e2e.sh:93-111	pre-existing drift found by backlog-226 corpus sweep; needs content-verified follow-up, not guessed here
