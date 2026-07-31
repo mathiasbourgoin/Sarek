@@ -423,6 +423,191 @@ let test_interp_feature_gate_can_refuse () =
       fail "device_verdict permitted a feature absent from the provided list"
   | _ -> ()
 
+(** {1 SoA arity-shift structural pinning (backlog-219)}
+
+    Backend_error.reject_soa_params's per-shape analysis (N=2 pointer-after, N=3
+    valid-pointer-into-the-wrong-buffer, vector-declared-last) is unreachable
+    end-to-end in this sandbox: [Execute.soa_dispatch] only ever answers [Some]
+    for a real CUDA/PTX device, and there is no GPU here to launch one, so
+    nothing below claims to have observed a trap. What these tests DO pin
+    without a device: the positional shift itself, in
+    [expand_to_run_source_args]'s output list, given a synthetic
+    [Vector.soa_binding]. That output is exactly what a real CUDA/PTX launch
+    would hand [Cuda_shared.bind_args] — so this is the shape Backend_error's
+    per-backend claims are ABOUT, even though none of those backends run here.
+    Case 2 (the 3-leaf shape) is the one Backend_error calls out as having no
+    crash signal to catch drift with, which is exactly why it gets a structural
+    pin here instead of nothing. *)
+
+let cuda_ptx_device : Device.t =
+  {
+    id = 0;
+    backend_id = 0;
+    name = "Fake CUDA/PTX Device";
+    framework = "CUDA/PTX";
+    capabilities = caps_with [];
+  }
+
+(* Stands in for a real device pointer: records the (index, tag) pair it was
+   bound at instead of touching any GPU. *)
+let fake_leaf_buffer (tag : string) (calls : (int * string) list ref) :
+    (module Vector.DEVICE_BUFFER) =
+  (module struct
+    let device = cuda_ptx_device
+
+    let size = 1
+
+    let elem_size = 4
+
+    let device_ptr = 0n
+
+    let host_ptr_to_device (_ : unit Ctypes.ptr) ~byte_size:(_ : int) : unit =
+      ()
+
+    let device_to_host_ptr (_ : unit Ctypes.ptr) ~byte_size:(_ : int) : unit =
+      ()
+
+    let bind_to_kargs (_ : Framework_sig.kargs) (idx : int) : unit =
+      calls := (idx, tag) :: !calls
+
+    let free () : unit = ()
+  end : Vector.DEVICE_BUFFER)
+
+(* A [point] vector whose [.soa] is a synthetic binding with [tags] leaves, in
+   declaration order — the same shape [Soa_vector.create_transparent] would
+   produce, built directly so the test needs neither Soa_vector's Ctypes
+   plumbing nor a real device. *)
+let soa_vector_with (tags : string list) (calls : (int * string) list ref) :
+    (point, unit) Vector.t =
+  let v = Vector.create_custom point_custom 4 in
+  v.Vector.soa <-
+    Some
+      {
+        Vector.soa_num_leaves = List.length tags;
+        soa_aos_stride = 8 * List.length tags;
+        soa_scatter = (fun () -> ());
+        soa_gather = (fun () -> ());
+        soa_to_device = (fun (_ : Device.t) -> ());
+        soa_leaf_bufs =
+          (fun (_ : Device.t) ->
+            List.map (fun t -> fake_leaf_buffer t calls) tags);
+        soa_from_device = (fun (_ : Device.t) -> ());
+        soa_free_leaves = (fun (_ : Device.t option) -> ());
+        soa_leaves_live = ref false;
+      } ;
+  v
+
+(* Mirrors the real bind_args pattern (Cuda_shared/Hip_shared): iterate the
+   run_source_arg list, invoke every buffer's binder at ITS position. *)
+let bind_all (args : Framework_sig.run_source_arg list) : unit =
+  List.iteri
+    (fun i arg ->
+      match arg with
+      | Framework_sig.RSA_Buffer {binder; _} -> binder Framework_sig.No_kargs i
+      | _ -> ())
+    args
+
+(* Case 1: N=2, a scalar param declared right after the SoA vector. The AoS
+   ABI would bind it at index 2 (buf, len, THIS); the SoA ABI shifts it to
+   index 3, because the vector now occupies 3 slots (2 leaves + length), not
+   2 — the shift a CUDA/C or HIP launch would bind straight into a bare
+   pointer array with no compiled-signature check. *)
+let test_soa_shift_n2_pointer_after () =
+  let calls = ref [] in
+  let v = soa_vector_with ["leafA"; "leafB"] calls in
+  let result =
+    expand_to_run_source_args ~soa_abi:true [Vec v; Int32 99l] cuda_ptx_device
+  in
+  check
+    int
+    "2 leaves + shared length + the shifted scalar = 4 args"
+    4
+    (List.length result) ;
+  bind_all result ;
+  check
+    (list (pair int string))
+    "leaves bound at 0,1 in declaration order"
+    [(0, "leafA"); (1, "leafB")]
+    (List.rev !calls) ;
+  (match List.nth result 2 with
+  | Framework_sig.RSA_Vector_Length n -> check int32 "shared length" 4l n
+  | _ -> fail "expected the shared SoA length at index 2") ;
+  match List.nth result 3 with
+  | Framework_sig.RSA_Int32 n ->
+      check
+        int32
+        "the following param is unmodified but now at index 3, not the AoS-ABI \
+         index 2"
+        99l
+        n
+  | _ -> fail "expected the following param, unshifted VALUE, at index 3"
+
+(* Case 2: N=3. Backend_error calls this "the case with literally no crash
+   signal": the third leaf is a valid device pointer, so wherever it lands it
+   faults nothing. Here that slot is a second vector's own buffer, declared
+   right after — so this pins that the second vector's buffer binder is
+   invoked two slots later than an AoS-unaware reader would expect (index 4,
+   not index 2), and that index 2 — where such a reader would look for its
+   own out-buffer pointer — holds the SoA vector's third leaf instead. *)
+let test_soa_shift_n3_valid_pointer_wrong_buffer () =
+  let calls = ref [] in
+  let v = soa_vector_with ["leafA"; "leafB"; "leafC"] calls in
+  let out_v = Vector.create_custom point_custom 4 in
+  Hashtbl.replace
+    out_v.Vector.device_buffers
+    cuda_ptx_device.Device.id
+    (fake_leaf_buffer "out_buffer" calls) ;
+  let result =
+    expand_to_run_source_args ~soa_abi:true [Vec v; Vec out_v] cuda_ptx_device
+  in
+  check
+    int
+    "3 leaves + shared length + the out vector's own (buf, len) = 6 args"
+    6
+    (List.length result) ;
+  bind_all result ;
+  check
+    (list (pair int string))
+    "3 leaves at 0,1,2; the out buffer displaced to index 4, not index 2"
+    [(0, "leafA"); (1, "leafB"); (2, "leafC"); (4, "out_buffer")]
+    (List.rev !calls) ;
+  match List.nth result 2 with
+  | Framework_sig.RSA_Buffer _ -> ()
+  | _ ->
+      fail
+        "backlog-219 case 2: index 2 must hold a real (leaf) buffer pointer — \
+         if this ever turns into a scalar, the leaf count silently changed and \
+         the case this test exists for (a valid pointer landing in the wrong \
+         buffer's slot, with no crash to catch it) can no longer happen this \
+         way"
+
+(* Case 3: the SoA vector declared LAST. Nothing follows it, so nothing can
+   shift into a pointer slot — the leading scalar param stays exactly where
+   an AoS ABI would have put it. *)
+let test_soa_shift_vector_last_nothing_shifts () =
+  let calls = ref [] in
+  let v = soa_vector_with ["leafA"; "leafB"] calls in
+  let result =
+    expand_to_run_source_args ~soa_abi:true [Int32 7l; Vec v] cuda_ptx_device
+  in
+  check
+    int
+    "leading scalar + 2 leaves + shared length = 4 args"
+    4
+    (List.length result) ;
+  (match List.nth result 0 with
+  | Framework_sig.RSA_Int32 n -> check int32 "leading scalar unshifted" 7l n
+  | _ -> fail "expected the leading scalar, unshifted, at index 0") ;
+  bind_all result ;
+  check
+    (list (pair int string))
+    "leaves bound at 1,2, after the untouched leading scalar"
+    [(1, "leafA"); (2, "leafB")]
+    (List.rev !calls) ;
+  match List.nth result 3 with
+  | Framework_sig.RSA_Vector_Length n -> check int32 "shared length" 4l n
+  | _ -> fail "expected the shared SoA length at index 3"
+
 (** {1 Test suite} *)
 
 let () =
@@ -501,5 +686,20 @@ let () =
             "custom_exec_vector_get_set"
             `Quick
             test_custom_exec_vector_get_set;
+        ] );
+      ( "soa_arity_shift",
+        [
+          test_case
+            "N=2 pointer-after param shifted"
+            `Quick
+            test_soa_shift_n2_pointer_after;
+          test_case
+            "N=3 leaf lands in wrong buffer's slot"
+            `Quick
+            test_soa_shift_n3_valid_pointer_wrong_buffer;
+          test_case
+            "vector last: nothing shifts"
+            `Quick
+            test_soa_shift_vector_last_nothing_shifts;
         ] );
     ]
