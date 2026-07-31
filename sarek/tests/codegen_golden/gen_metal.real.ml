@@ -9,9 +9,12 @@
 open Sarek_ir_types
 open Sarek_codegen
 
-let reset_state () =
-  Sarek_ir_metal.current_framework := None ;
-  Sarek_ir_metal.current_variants := []
+(* Nothing to reset: [Sarek_ir_metal] carries its per-generation framework and
+   variant table in the {!Sarek_ir_metal.state} value threaded through the emit
+   functions (backlog-185), so one generation cannot leak into the next and
+   there is no module-level ref to clear. Kept as a no-op because the golden
+   harness calls [reset] uniformly for all five backends. *)
+let reset_state () = ()
 
 let generate_with_types ~types (k : kernel) =
   Sarek_ir_metal.generate_with_types ~types k

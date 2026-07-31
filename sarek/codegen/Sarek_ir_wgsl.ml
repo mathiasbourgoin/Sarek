@@ -32,13 +32,53 @@ module Dispatch = Sarek_ir_intrinsic_dispatch
 let bad_arity n e g =
   Codegen_error.raise_error (Codegen_error.invalid_arg_count n e g)
 
-(** Current kernel's variant definitions (set during generate) *)
-let current_variants : (string * (string * elttype list) list) list ref = ref []
+(** Everything one run of {!generate_with_types} needs to know that is not
+    reachable from the IR node it is currently emitting. It is a VALUE threaded
+    through the emit functions, not module state, and that is the whole point of
+    backlog-185/200: the three fields below used to be module-level [ref]s, so a
+    second generation — on another domain, or simply a later one after
+    {!Sarek_transpile} had written [current_framework] — read the first one's
+    values.
 
-(** Current framework name — mirrors the other generators so [set_framework] in
-    Sarek_transpile can set it, and the pure registry resolves Float32 math with
-    framework="WGSL" (falls through to the generic [sin] spelling). *)
-let current_framework : string option ref = ref None
+    [framework] is the tag {!Sarek_pure_registry.fun_device_template} is queried
+    with, reached through the one [Dispatch.framework] thunk in {!wgsl_backend}
+    — and nowhere else in this emitter. In particular it does {e not} reach
+    [Sarek_registry], because the [post_hook] that would wire that registry is
+    deliberately inert here (see the comment on it), and it does {e not} gate
+    [SNative] the way the C-family emitters' field does: WGSL has no native-code
+    path, so the [SNative] arm emits a comment and continues whatever
+    [framework] holds. [None] means "no caller supplied one" and makes that one
+    query fall back to ["WGSL"] — the pre-backlog-185 behaviour, and what every
+    current in-tree caller gets, since none passes [?framework] yet.
+    {!Sarek_transpile} is the intended caller: it used to assign the framework
+    into all four C-family emitters' globals before generating with one of them.
+
+    [variants] is the kernel's own [kern_variants], read by the [SMatch] arm to
+    recover a constructor's payload types. Derived from the kernel, so it could
+    be re-derived at each use site; it is carried here because that is where the
+    ref it replaces was read from.
+
+    [scalar_params] is the raw (unescaped) names of the kernel's scalar params,
+    which live in the [Params] uniform and are therefore read as [params.<name>]
+    rather than as a bare identifier — the one thing {!gen_expr}'s [EVar] arm
+    cannot decide from the node alone. It is the only field that varies
+    {e within} one generation: {!gen_helper_func} emits each helper under a
+    smaller set, because the helper's own formals shadow like-named kernel
+    scalars lexically. That narrowing is now a rebind of this field for the
+    nested emit, so the enclosing generation's value is simply never touched. *)
+type state = {
+  framework : string option;
+  variants : (string * (string * elttype list) list) list;
+  scalar_params : string list;
+}
+
+(** The state for emitting [k]. [framework] is threaded from the caller.
+    [scalar_params] is a parameter rather than derived from [k] because the
+    authority on which params became [Params] fields is {!gen_bindings}, which
+    emits them; the sole caller passes its result, so the emitted struct and the
+    set [gen_expr] tests against are the same list. *)
+let state ?framework ~scalar_params (k : kernel) : state =
+  {framework; variants = k.kern_variants; scalar_params}
 
 (** {1 Type Mapping} *)
 
@@ -488,9 +528,6 @@ let wgsl_thread_intrinsic = function
 
 (** {1 Expression Generation} *)
 
-(** Names of scalar kernel params — accessed as [params.<name>] in WGSL. *)
-let scalar_param_names : string list ref = ref []
-
 (** Whole-value equality on a vector/array-typed operand — [TVec]/[TArray] in
     the IR — is NOT refused by the frontend (backlog-217; see
     {!Sarek_types.is_uncomparable_operand_typ}, which deliberately excludes them
@@ -509,7 +546,7 @@ let is_array_shaped_operand = function
   | EVar {var_type = TArray _ | TVec _; _} -> true
   | _ -> false
 
-let rec gen_expr buf = function
+let rec gen_expr st buf = function
   | EConst (CInt32 n) -> Buffer.add_string buf (Int32.to_string n ^ "i")
   | EConst (CInt64 _) ->
       Codegen_error.raise_error
@@ -532,7 +569,7 @@ let rec gen_expr buf = function
   | EConst CUnit -> Buffer.add_string buf "/* unit */"
   | EVar v ->
       let vn = escape_wgsl_name v.var_name in
-      if List.mem v.var_name !scalar_param_names then begin
+      if List.mem v.var_name st.scalar_params then begin
         Buffer.add_string buf "params." ;
         Buffer.add_string buf vn
       end
@@ -558,37 +595,37 @@ let rec gen_expr buf = function
             individual elements instead.")
   | EBinop (op, e1, e2) ->
       Buffer.add_char buf '(' ;
-      gen_expr buf e1 ;
+      gen_expr st buf e1 ;
       Buffer.add_string buf (gen_binop op) ;
-      gen_expr buf e2 ;
+      gen_expr st buf e2 ;
       Buffer.add_char buf ')'
   | EUnop (op, e) ->
       Buffer.add_char buf '(' ;
       Buffer.add_string buf (gen_unop op) ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_char buf ')'
   | EArrayRead (arr, idx) ->
       Buffer.add_string buf (escape_wgsl_name arr) ;
       Buffer.add_char buf '[' ;
-      gen_expr buf idx ;
+      gen_expr st buf idx ;
       Buffer.add_char buf ']'
   | EArrayReadExpr (base, idx) ->
       Buffer.add_char buf '(' ;
-      gen_expr buf base ;
+      gen_expr st buf base ;
       Buffer.add_char buf ')' ;
       Buffer.add_char buf '[' ;
-      gen_expr buf idx ;
+      gen_expr st buf idx ;
       Buffer.add_char buf ']'
   | ERecordField (e, field) ->
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_char buf '.' ;
       Buffer.add_string buf field
   | EIntrinsic (path, name, args) ->
-      Dispatch.gen_intrinsic wgsl_backend buf path name args
+      Dispatch.gen_intrinsic (wgsl_backend st) buf path name args
   | ECast (ty, e) ->
       Buffer.add_string buf (wgsl_type_of_elttype ty) ;
       Buffer.add_char buf '(' ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_char buf ')'
   | ETuple _ ->
       (* backlog-194. This arm used to print a bare brace list, which is
@@ -609,12 +646,12 @@ let rec gen_expr buf = function
             brace list produced source no device compiler accepts \
             (backlog-194). Use a registered record type.")
   | EApp (fn, args) ->
-      gen_expr buf fn ;
+      gen_expr st buf fn ;
       Buffer.add_char buf '(' ;
       List.iteri
         (fun i e ->
           if i > 0 then Buffer.add_string buf ", " ;
-          gen_expr buf e)
+          gen_expr st buf e)
         args ;
       Buffer.add_char buf ')'
   | ERecord (name, fields) ->
@@ -622,7 +659,7 @@ let rec gen_expr buf = function
       List.iteri
         (fun i (_, e) ->
           if i > 0 then Buffer.add_string buf ", " ;
-          gen_expr buf e)
+          gen_expr st buf e)
         fields ;
       Buffer.add_char buf ')'
   | EVariant (type_name, constr, args) ->
@@ -632,7 +669,7 @@ let rec gen_expr buf = function
       List.iteri
         (fun i e ->
           if i > 0 then Buffer.add_string buf ", " ;
-          gen_expr buf e)
+          gen_expr st buf e)
         args ;
       Buffer.add_char buf ')'
   | EArrayLen arr ->
@@ -645,11 +682,11 @@ let rec gen_expr buf = function
   | EIf (cond, then_, else_) ->
       (* WGSL has no ternary operator — use select(false_val, true_val, cond) *)
       Buffer.add_string buf "select(" ;
-      gen_expr buf else_ ;
+      gen_expr st buf else_ ;
       Buffer.add_string buf ", " ;
-      gen_expr buf then_ ;
+      gen_expr st buf then_ ;
       Buffer.add_string buf ", " ;
-      gen_expr buf cond ;
+      gen_expr st buf cond ;
       Buffer.add_char buf ')'
   | EMatch (scrut, cases) when Sarek_ir_codegen.ematch_binds_payload cases ->
       (* #75: a match EXPRESSION lowers to nested [select()] calls, which has nowhere to
@@ -658,6 +695,7 @@ let rec gen_expr buf = function
          (now binder-free) match. One shared, capture-avoiding pass for every
          backend; see {!Sarek_ir_codegen.subst_ematch_payloads}. *)
       gen_expr
+        st
         buf
         (EMatch
            ( scrut,
@@ -673,14 +711,14 @@ let rec gen_expr buf = function
   | EMatch (_, []) ->
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct "match" "empty match expression")
-  | EMatch (_, [(_, body)]) -> gen_expr buf body
+  | EMatch (_, [(_, body)]) -> gen_expr st buf body
   | EMatch (e, cases) ->
       (* Nest select() calls: select(else_result, then_result, condition) *)
       let rec gen_cases = function
         | [] ->
             Codegen_error.raise_error
               (Codegen_error.unsupported_construct "match" "empty match cases")
-        | [(_, body)] -> gen_expr buf body
+        | [(_, body)] -> gen_expr st buf body
         | (pat, body) :: rest ->
             Buffer.add_string buf "select(" ;
             (* false branch comes first in select() *)
@@ -688,12 +726,12 @@ let rec gen_expr buf = function
             gen_cases_into rest_buf rest ;
             Buffer.add_buffer buf rest_buf ;
             Buffer.add_string buf ", " ;
-            gen_expr buf body ;
+            gen_expr st buf body ;
             Buffer.add_string buf ", " ;
             (match pat with
             | PConstr (name, _) ->
                 Buffer.add_char buf '(' ;
-                gen_expr buf e ;
+                gen_expr st buf e ;
                 Buffer.add_string buf (".tag == " ^ name ^ ")")
             | PWild -> Buffer.add_string buf "true") ;
             Buffer.add_char buf ')'
@@ -701,19 +739,19 @@ let rec gen_expr buf = function
         | [] ->
             Codegen_error.raise_error
               (Codegen_error.unsupported_construct "match" "empty match cases")
-        | [(_, body)] -> gen_expr buf2 body
+        | [(_, body)] -> gen_expr st buf2 body
         | (pat, body) :: rest ->
             Buffer.add_string buf2 "select(" ;
             let rest_buf = Buffer.create 64 in
             gen_cases_into rest_buf rest ;
             Buffer.add_buffer buf2 rest_buf ;
             Buffer.add_string buf2 ", " ;
-            gen_expr buf2 body ;
+            gen_expr st buf2 body ;
             Buffer.add_string buf2 ", " ;
             (match pat with
             | PConstr (name, _) ->
                 Buffer.add_char buf2 '(' ;
-                gen_expr buf2 e ;
+                gen_expr st buf2 e ;
                 Buffer.add_string buf2 (".tag == " ^ name ^ ")")
             | PWild -> Buffer.add_string buf2 "true") ;
             Buffer.add_char buf2 ')'
@@ -742,11 +780,10 @@ and gen_binop = function
 
 and gen_unop = function Neg -> "-" | Not -> "!" | BitNot -> "~"
 
-and wgsl_backend =
+and wgsl_backend st =
   {
-    Dispatch.framework =
-      (fun () -> Option.value ~default:"WGSL" !current_framework);
-    gen_expr;
+    Dispatch.framework = (fun () -> Option.value ~default:"WGSL" st.framework);
+    gen_expr = gen_expr st;
     thread_intrinsic = wgsl_thread_intrinsic;
     pre_hook =
       (fun buf ~full_name:_ _path name args ->
@@ -754,9 +791,9 @@ and wgsl_backend =
           match args with
           | [x; y] ->
               Buffer.add_string buf "sarek_fmod(" ;
-              gen_expr buf x ;
+              gen_expr st buf x ;
               Buffer.add_string buf ", " ;
-              gen_expr buf y ;
+              gen_expr st buf y ;
               Buffer.add_char buf ')' ;
               true
           | _ ->
@@ -783,16 +820,20 @@ and wgsl_backend =
         | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh"
         | "tanh" | "exp" | "exp2" | "log" | "log2" | "sqrt" | "floor" | "ceil"
         | "round" | "trunc" | "abs" | "atan2" | "pow" | "min" | "max" | "fma" ->
-            Some (fun buf args -> Dispatch.emit_call ~gen_expr buf name args)
+            Some
+              (fun buf args ->
+                Dispatch.emit_call ~gen_expr:(gen_expr st) buf name args)
         | "fabs" ->
-            Some (fun buf args -> Dispatch.emit_call ~gen_expr buf "abs" args)
+            Some
+              (fun buf args ->
+                Dispatch.emit_call ~gen_expr:(gen_expr st) buf "abs" args)
         | "rsqrt" ->
             Some
               (fun buf args ->
                 (* Was: `| _ -> emit_args`, which on the wrong argument count
                    emitted `(1.0f / sqrt(a, b))` and returned Ok. *)
                 Dispatch.emit_unary
-                  ~gen_expr
+                  ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
                   ~prefix:"(1.0f / sqrt("
@@ -805,7 +846,7 @@ and wgsl_backend =
             Some
               (fun buf args ->
                 Dispatch.emit_atomic
-                  ~gen_expr
+                  ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
                   ~callee:"atomicAdd"
@@ -819,7 +860,7 @@ and wgsl_backend =
             Some
               (fun buf args ->
                 Dispatch.emit_atomic
-                  ~gen_expr
+                  ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
                   ~callee:"atomicMin"
@@ -833,7 +874,7 @@ and wgsl_backend =
             Some
               (fun buf args ->
                 Dispatch.emit_atomic
-                  ~gen_expr
+                  ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
                   ~callee:"atomicMax"
@@ -847,7 +888,7 @@ and wgsl_backend =
             Some
               (fun buf args ->
                 Dispatch.emit_unary
-                  ~gen_expr
+                  ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
                   ~prefix:"f32("
@@ -858,7 +899,7 @@ and wgsl_backend =
             Some
               (fun buf args ->
                 Dispatch.emit_unary
-                  ~gen_expr
+                  ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
                   ~prefix:"i32("
@@ -870,22 +911,22 @@ and wgsl_backend =
 
 (** {1 L-value Generation} *)
 
-let rec gen_lvalue buf = function
+let rec gen_lvalue st buf = function
   | LVar v -> Buffer.add_string buf (escape_wgsl_name v.var_name)
   | LArrayElem (arr, idx) ->
       Buffer.add_string buf (escape_wgsl_name arr) ;
       Buffer.add_char buf '[' ;
-      gen_expr buf idx ;
+      gen_expr st buf idx ;
       Buffer.add_char buf ']'
   | LArrayElemExpr (base, idx) ->
       Buffer.add_char buf '(' ;
-      gen_expr buf base ;
+      gen_expr st buf base ;
       Buffer.add_char buf ')' ;
       Buffer.add_char buf '[' ;
-      gen_expr buf idx ;
+      gen_expr st buf idx ;
       Buffer.add_char buf ']'
   | LRecordField (lv, field) ->
-      gen_lvalue buf lv ;
+      gen_lvalue st buf lv ;
       Buffer.add_char buf '.' ;
       Buffer.add_string buf field
 
@@ -940,7 +981,7 @@ and gen_match_pattern buf indent scrutinee cname bindings find_constr_types =
            "pattern"
            "mismatch between pattern bindings and constructor args")
 
-and gen_var_decl buf indent ~mutable_ v_name v_type init_expr =
+and gen_var_decl st buf indent ~mutable_ v_name v_type init_expr =
   let vn = escape_wgsl_name v_name in
   Buffer.add_string buf indent ;
   Buffer.add_string buf (if mutable_ then "var" else "let") ;
@@ -949,39 +990,39 @@ and gen_var_decl buf indent ~mutable_ v_name v_type init_expr =
   Buffer.add_string buf " : " ;
   Buffer.add_string buf (wgsl_type_of_elttype v_type) ;
   Buffer.add_string buf " = " ;
-  gen_expr buf init_expr ;
+  gen_expr st buf init_expr ;
   Buffer.add_string buf ";\n"
 
-let rec gen_stmt buf indent = function
+let rec gen_stmt st buf indent = function
   | SEmpty -> ()
-  | SSeq stmts -> List.iter (gen_stmt buf indent) stmts
+  | SSeq stmts -> List.iter (gen_stmt st buf indent) stmts
   | SAssign (lv, e) ->
       Buffer.add_string buf indent ;
-      gen_lvalue buf lv ;
+      gen_lvalue st buf lv ;
       Buffer.add_string buf " = " ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_string buf ";\n"
   | SIf (cond, then_, else_opt) -> (
       Buffer.add_string buf indent ;
       Buffer.add_string buf "if (" ;
-      gen_expr buf cond ;
+      gen_expr st buf cond ;
       Buffer.add_string buf ") {\n" ;
-      gen_stmt buf (indent_nested indent) then_ ;
+      gen_stmt st buf (indent_nested indent) then_ ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}" ;
       match else_opt with
       | None -> Buffer.add_char buf '\n'
       | Some else_ ->
           Buffer.add_string buf " else {\n" ;
-          gen_stmt buf (indent_nested indent) else_ ;
+          gen_stmt st buf (indent_nested indent) else_ ;
           Buffer.add_string buf indent ;
           Buffer.add_string buf "}\n")
   | SWhile (cond, body) ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "while (" ;
-      gen_expr buf cond ;
+      gen_expr st buf cond ;
       Buffer.add_string buf ") {\n" ;
-      gen_stmt buf (indent_nested indent) body ;
+      gen_stmt st buf (indent_nested indent) body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SFor (v, start, stop, dir, body) ->
@@ -999,21 +1040,21 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf " : " ;
       Buffer.add_string buf (wgsl_type_of_elttype v.var_type) ;
       Buffer.add_string buf " = " ;
-      gen_expr buf start ;
+      gen_expr st buf start ;
       Buffer.add_string buf "; " ;
       Buffer.add_string buf loop_var ;
       Buffer.add_string buf (" " ^ op ^ " ") ;
-      gen_expr buf stop ;
+      gen_expr st buf stop ;
       Buffer.add_string buf "; " ;
       Buffer.add_string buf loop_var ;
       Buffer.add_string buf step_expr ;
       Buffer.add_string buf ") {\n" ;
-      gen_stmt buf (indent_nested indent) body ;
+      gen_stmt st buf (indent_nested indent) body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SMatch (e, cases) ->
       let scrutinee_buf = Buffer.create 64 in
-      gen_expr scrutinee_buf e ;
+      gen_expr st scrutinee_buf e ;
       let scrutinee = Buffer.contents scrutinee_buf in
       let find_constr_types cname =
         List.find_map
@@ -1021,7 +1062,7 @@ let rec gen_stmt buf indent = function
             List.find_map
               (fun (cn, args) -> if cn = cname then Some args else None)
               constrs)
-          !current_variants
+          st.variants
       in
       Buffer.add_string buf indent ;
       Buffer.add_string buf "switch (" ;
@@ -1040,7 +1081,7 @@ let rec gen_stmt buf indent = function
                 bindings
                 find_constr_types
           | PWild -> Buffer.add_string buf "  default: {\n") ;
-          gen_stmt buf (indent ^ "    ") body ;
+          gen_stmt st buf (indent ^ "    ") body ;
           Buffer.add_string buf (indent ^ "  }\n"))
         cases ;
       (* WGSL requires EXACTLY ONE default clause in every switch (WGSL spec
@@ -1070,7 +1111,7 @@ let rec gen_stmt buf indent = function
   | SReturn e ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "return " ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_string buf ";\n"
   | SBarrier ->
       Buffer.add_string buf indent ;
@@ -1086,12 +1127,12 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf "/* native code not supported in WGSL */\n"
   | SExpr e ->
       Buffer.add_string buf indent ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_string buf ";\n"
   | SLet (_v, EArrayCreate (_, _, Shared), body) ->
       (* Shared arrays are hoisted to module scope by collect_workgroup_decls;
          only the body continuation needs to be emitted here. *)
-      gen_stmt buf indent body
+      gen_stmt st buf indent body
   | SLet (_v, EArrayCreate (_, _, Local), _) ->
       (* WGSL has no function-local dynamic arrays. Raise rather than emit
          invalid WGSL. Use Shared memspace for workgroup-scoped arrays. *)
@@ -1106,16 +1147,16 @@ let rec gen_stmt buf indent = function
            "EArrayCreate(Global)"
            "WGSL: global dynamic array creation not supported in kernel body")
   | SLet (v, e, body) ->
-      gen_var_decl buf indent ~mutable_:false v.var_name v.var_type e ;
-      gen_stmt buf indent body
+      gen_var_decl st buf indent ~mutable_:false v.var_name v.var_type e ;
+      gen_stmt st buf indent body
   | SLetMut (v, e, body) ->
-      gen_var_decl buf indent ~mutable_:true v.var_name v.var_type e ;
-      gen_stmt buf indent body
-  | SPragma (_hints, body) -> gen_stmt buf indent body
+      gen_var_decl st buf indent ~mutable_:true v.var_name v.var_type e ;
+      gen_stmt st buf indent body
+  | SPragma (_hints, body) -> gen_stmt st buf indent body
   | SBlock body ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "{\n" ;
-      gen_stmt buf (indent_nested indent) body ;
+      gen_stmt st buf (indent_nested indent) body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SCoopmat _ ->
@@ -1134,21 +1175,23 @@ let rec gen_stmt buf indent = function
     param.
 
     Scalar params are accessed in the body as [params.<name>]; {!gen_expr}
-    decides this per-[EVar] by checking the {e global} [scalar_param_names] ref,
-    which ignores local scope. A local [let width = …] (or [let mut width = …])
-    that shadows a scalar param [width] therefore has every body reference to
-    [width] wrongly emitted as [params.width] — reading the uniform instead of
-    the local. For an immutable self-binding local ([let width = params.width])
-    this is accidentally correct; for a {e mutated} shadowing local it is a
-    silent wrong result (valid WGSL, no error): the declaration uses the bare
-    name ([var width : i32 = params.width;]) so writes hit the local, but every
-    read is redirected to the immutable uniform.
+    decides this per-[EVar] by checking the emit state's [scalar_params] set,
+    which is per-generation but flat — it carries no scope, so it cannot
+    distinguish a reference to the param from a reference to a local of the same
+    name. A local [let width = …] (or [let mut width = …]) that shadows a scalar
+    param [width] therefore has every body reference to [width] wrongly emitted
+    as [params.width] — reading the uniform instead of the local. For an
+    immutable self-binding local ([let width = params.width]) this is
+    accidentally correct; for a {e mutated} shadowing local it is a silent wrong
+    result (valid WGSL, no error): the declaration uses the bare name
+    ([var width : i32 = params.width;]) so writes hit the local, but every read
+    is redirected to the immutable uniform.
 
     This mirrors the GLSL backend's {!Sarek_ir_glsl.rename_pc_shadowing_locals};
     both delegate the shared traversal to
     {!Sarek_ir_codegen.rename_shadowing_locals}. Each colliding binder (and its
     in-scope references) is rewritten to a fresh [sarek_scalar_shadow_*] name
-    that is not a scalar param, so [gen_expr]'s [scalar_param_names] check never
+    that is not a scalar param, so [gen_expr]'s [scalar_params] check never
     matches it. The initializer is evaluated in the outer scope, so it still
     expands to [params.<name>], preserving semantics. Unlike GLSL there is no
     vector-length collision: both spell the length [sarek_<arr>_length]
@@ -1160,8 +1203,9 @@ let rename_scalar_shadowing_locals ~scalar_names body =
   Sarek_ir_codegen.rename_shadowing_locals
     ~collides:(fun name ->
       (* A local collides if its name matches a scalar param — the exact check
-         [gen_expr] performs on [EVar] against [scalar_param_names] (raw
-         names). *)
+         [gen_expr] performs on [EVar] against the state's [scalar_params] (raw
+         names). Callers must pass the SAME list the emit state carries; see
+         [gen_helper_func], where both are narrowed together. *)
       List.mem name scalar_names)
     ~fresh_name:(fun orig n ->
       Printf.sprintf "sarek_scalar_shadow_%s_%d" (escape_wgsl_name orig) n)
@@ -1171,7 +1215,7 @@ let rename_scalar_shadowing_locals ~scalar_names body =
 
 (** {1 Helper Function Generation} *)
 
-let gen_helper_func ~scalar_names buf (hf : helper_func) =
+let gen_helper_func st buf (hf : helper_func) =
   (* Inside a helper, its own FORMALS shadow the kernel's scalars lexically, and
      a helper BODY LOCAL named like a kernel scalar is a collision to rename.
      Neither was handled, and both are SILENT on WGSL — there is no preprocessor
@@ -1180,25 +1224,33 @@ let gen_helper_func ~scalar_names buf (hf : helper_func) =
        - formal: [twice (n : int32) = n * 3l] under a kernel scalar [n] emitted
          [return (params.n * 3i)] — the argument is ignored and the uniform is
          read instead. Fixed by REMOVING the formals from the substitution set
-         for the duration of this helper, which is what lexical scoping means;
-         renaming them would be wrong, since the caller passes them positionally.
+         this helper's body is emitted under, which is what lexical scoping
+         means; renaming them would be wrong, since the caller passes them
+         positionally.
        - body local: [bump q = let n = q + 1 in n * 2] emitted a declaration
          nothing reads plus [return (params.n * 2i)]. Fixed by the existing
          rename pass, which until now ran over [kern_body] only.
 
      GLSL escapes the formal half because [gen_helper_func] there wraps each
      helper in [#undef]/[#define] for colliding PARAMETER names; that guard is
-     exactly what WGSL has no equivalent of. *)
+     exactly what WGSL has no equivalent of.
+
+     The narrowed set is used for BOTH halves and they must not diverge: it is
+     the set [rename_scalar_shadowing_locals] renames against, and the set
+     [gen_expr] rewrites [EVar] against while this body is emitted. Threading it
+     as one value is what keeps them the same set. This used to be one list
+     passed as [~scalar_names] plus a [Fun.protect] that assigned the narrowed
+     list into the [scalar_param_names] ref and restored it afterwards; with the
+     state threaded there is nothing to restore, because rebinding it here
+     cannot reach the caller's [st]. *)
   let formal_names = List.map (fun (v : var) -> v.var_name) hf.hf_params in
-  let shadowed = List.filter (fun n -> not (List.mem n formal_names)) in
-  let scalar_names = shadowed scalar_names in
+  let scalar_names =
+    List.filter (fun n -> not (List.mem n formal_names)) st.scalar_params
+  in
+  let st = {st with scalar_params = scalar_names} in
   let hf =
     {hf with hf_body = rename_scalar_shadowing_locals ~scalar_names hf.hf_body}
   in
-  let saved_scalars = !scalar_param_names in
-  scalar_param_names := shadowed saved_scalars ;
-  Fun.protect ~finally:(fun () -> scalar_param_names := saved_scalars)
-  @@ fun () ->
   let non_vec_params =
     List.filter
       (fun (v : var) -> match v.var_type with TVec _ -> false | _ -> true)
@@ -1223,7 +1275,7 @@ let gen_helper_func ~scalar_names buf (hf : helper_func) =
   Buffer.add_string buf ") -> " ;
   Buffer.add_string buf (wgsl_type_of_elttype hf.hf_ret_type) ;
   Buffer.add_string buf " {\n" ;
-  gen_stmt buf "  " hf.hf_body ;
+  gen_stmt st buf "  " hf.hf_body ;
   Buffer.add_string buf "}\n\n"
 
 (** Emit the [sarek_fmod] C-fmod helper (f32; WGSL has no f64) when the kernel
@@ -1381,7 +1433,7 @@ let rec collect_workgroup_decls (s : stmt) : (string * elttype * expr) list =
          keeps that refusal the one the user sees. *)
       []
 
-let gen_workgroup_module_decls buf (decls : (string * elttype * expr) list) =
+let gen_workgroup_module_decls st buf (decls : (string * elttype * expr) list) =
   if decls <> [] then begin
     Buffer.add_string buf "// Workgroup shared memory\n" ;
     List.iter
@@ -1391,7 +1443,7 @@ let gen_workgroup_module_decls buf (decls : (string * elttype * expr) list) =
         Buffer.add_string buf " : array<" ;
         Buffer.add_string buf (wgsl_type_of_elttype elem_ty) ;
         Buffer.add_string buf ", " ;
-        gen_expr buf size ;
+        gen_expr st buf size ;
         Buffer.add_string buf ">;\n")
       decls ;
     Buffer.add_char buf '\n'
@@ -1414,7 +1466,8 @@ let split_params params =
   (List.rev !vectors, List.rev !scalars)
 
 (** Emit storage buffer bindings and the Params uniform struct. Returns the list
-    of scalar param names (for [scalar_param_names] ref). *)
+    of scalar param names, which is what the emit state's [scalar_params] field
+    is built from (see {!state}). *)
 let gen_bindings buf params =
   let vectors, scalars = split_params params in
   let binding_idx = ref 0 in
@@ -1513,8 +1566,12 @@ let reject_coopmat_kernel (k : kernel) : unit =
           matrices and their uint8 operand buffers are emitted only by the \
           Vulkan backend (backlog-62)")
 
-(** Generate WGSL source with custom type definitions. *)
-let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
+(** Generate WGSL source with custom type definitions.
+
+    [?framework] is the target tag registry lookups are made with; see {!state}.
+    Omitting it is what every runtime caller does and reproduces the
+    pre-backlog-185 behaviour exactly. *)
+let generate_with_types ?framework ?block ?(log : string -> unit = fun _ -> ())
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
   reject_float16_kernel k ;
   reject_coopmat_kernel k ;
@@ -1526,8 +1583,6 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   (* Inline vector-parameter helpers (buffers cannot be passed as WGSL function
      arguments — see Sarek_ir_inline_vec). *)
   let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"WGSL" k in
-  scalar_param_names := [] ;
-  current_variants := k.kern_variants ;
   let buf = Buffer.create 1024 in
   (* Inner structs first: WGSL, like GLSL, requires a struct type to be declared
      before the field that names it (backlog-203) — records and variants in ONE
@@ -1540,16 +1595,21 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
     buf
     ~records:types
     ~variants:k.kern_variants ;
+  (* [gen_bindings] is what fixes the [Params] field names, so the scalar-param
+     set the rest of the emit reads is taken from its result rather than
+     recomputed. Nothing emitted above this point consults it, which is why the
+     state can be built here rather than at entry. *)
   let scalars = gen_bindings buf k.kern_params in
-  scalar_param_names := scalars ;
+  let st = state ?framework ~scalar_params:scalars k in
   let wg_decls = collect_workgroup_decls k.kern_body in
-  gen_workgroup_module_decls buf wg_decls ;
+  gen_workgroup_module_decls st buf wg_decls ;
   gen_fmod_helper buf k ;
-  List.iter (gen_helper_func ~scalar_names:scalars buf) k.kern_funcs ;
+  List.iter (gen_helper_func st buf) k.kern_funcs ;
   Buffer.add_string buf (wgsl_header ~kernel_name:k.kern_name ?block ()) ;
   (* Alpha-rename any body local that shadows a scalar param first (see
      rename_scalar_shadowing_locals). *)
   gen_stmt
+    st
     buf
     "  "
     (rename_scalar_shadowing_locals ~scalar_names:scalars k.kern_body) ;
@@ -1565,11 +1625,11 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
     [~types] has exactly the type of the [kern_types] field
     ([Sarek_ir_types.kernel]), so the parameter was redundant with the record it
     travels in. This used to be a separate 30-80 line copy of the emit sequence
-    that silently omitted record typedefs, variant typedefs and
-    [current_variants] — source referencing an undeclared struct, with no error.
+    that silently omitted record typedefs, variant typedefs and the kernel's
+    variants — source referencing an undeclared struct, with no error.
     Delegating keeps one emit path per backend. *)
-let generate ?block ?log (k : kernel) : string =
-  generate_with_types ?block ?log ~types:k.kern_types k
+let generate ?framework ?block ?log (k : kernel) : string =
+  generate_with_types ?framework ?block ?log ~types:k.kern_types k
 
 (** {1 ABI descriptor} *)
 

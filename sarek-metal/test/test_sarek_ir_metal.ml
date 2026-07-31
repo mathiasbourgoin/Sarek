@@ -10,20 +10,22 @@
 open Sarek_metal
 open Sarek_ir_types
 
+let st : Sarek_ir_metal.state = {framework = None; variants = []}
+
 let make_var name ty =
   {var_id = 0; var_name = name; var_type = ty; var_mutable = false}
 
 let test_basic_literals () =
   let buf = Buffer.create 64 in
-  Sarek_ir_metal.gen_expr buf (EConst (CInt32 42l)) ;
+  Sarek_ir_metal.gen_expr st buf (EConst (CInt32 42l)) ;
   Alcotest.(check string) "int32 literal" "42" (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_metal.gen_expr buf (EConst (CInt64 42L)) ;
+  Sarek_ir_metal.gen_expr st buf (EConst (CInt64 42L)) ;
   Alcotest.(check string) "int64 literal" "42L" (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_metal.gen_expr buf (EConst (CFloat32 3.14)) ;
+  Sarek_ir_metal.gen_expr st buf (EConst (CFloat32 3.14)) ;
   let result = Buffer.contents buf in
   Alcotest.(check bool)
     "float32 literal is numeric"
@@ -31,43 +33,44 @@ let test_basic_literals () =
     (String.length result > 0 && result.[0] >= '0' && result.[0] <= '9') ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_metal.gen_expr buf (EConst (CBool true)) ;
+  Sarek_ir_metal.gen_expr st buf (EConst (CBool true)) ;
   Alcotest.(check string) "bool true literal" "1" (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_metal.gen_expr buf (EConst (CBool false)) ;
+  Sarek_ir_metal.gen_expr st buf (EConst (CBool false)) ;
   Alcotest.(check string) "bool false literal" "0" (Buffer.contents buf)
 
 let test_operations () =
   let buf = Buffer.create 64 in
   let x = make_var "x" TInt32 in
   let y = make_var "y" TInt32 in
-  Sarek_ir_metal.gen_expr buf (EBinop (Add, EVar x, EVar y)) ;
+  Sarek_ir_metal.gen_expr st buf (EBinop (Add, EVar x, EVar y)) ;
   Alcotest.(check string) "addition" "(x + y)" (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_metal.gen_expr buf (EBinop (Sub, EVar x, EVar y)) ;
+  Sarek_ir_metal.gen_expr st buf (EBinop (Sub, EVar x, EVar y)) ;
   Alcotest.(check string) "subtraction" "(x - y)" (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_metal.gen_expr buf (EBinop (Mul, EVar x, EVar y)) ;
+  Sarek_ir_metal.gen_expr st buf (EBinop (Mul, EVar x, EVar y)) ;
   Alcotest.(check string) "multiplication" "(x * y)" (Buffer.contents buf)
 
 let test_basics () =
   let buf = Buffer.create 64 in
-  Sarek_ir_metal.gen_stmt buf "" SEmpty ;
+  Sarek_ir_metal.gen_stmt st buf "" SEmpty ;
   Alcotest.(check string) "empty statement" "" (Buffer.contents buf)
 
 let test_assignment () =
   let buf = Buffer.create 64 in
   let x = make_var "x" TInt32 in
-  Sarek_ir_metal.gen_stmt buf "" (SAssign (LVar x, EConst (CInt32 42l))) ;
+  Sarek_ir_metal.gen_stmt st buf "" (SAssign (LVar x, EConst (CInt32 42l))) ;
   Alcotest.(check string) "assignment" "x = 42;\n" (Buffer.contents buf)
 
 let test_if_statement () =
   let buf = Buffer.create 64 in
   let x = make_var "x" TInt32 in
   Sarek_ir_metal.gen_stmt
+    st
     buf
     ""
     (SIf
@@ -84,6 +87,7 @@ let test_while_loop () =
   let buf = Buffer.create 64 in
   let i = make_var "i" TInt32 in
   Sarek_ir_metal.gen_stmt
+    st
     buf
     ""
     (SWhile
@@ -99,6 +103,7 @@ let test_for_loop () =
   let buf = Buffer.create 64 in
   let i = make_var "i" TInt32 in
   Sarek_ir_metal.gen_stmt
+    st
     buf
     ""
     (SFor (i, EConst (CInt32 0l), EConst (CInt32 10l), Upto, SEmpty)) ;
@@ -114,7 +119,7 @@ let test_for_loop () =
 
 let test_barriers () =
   let buf = Buffer.create 64 in
-  Sarek_ir_metal.gen_stmt buf "  " SBarrier ;
+  Sarek_ir_metal.gen_stmt st buf "  " SBarrier ;
   let result = Buffer.contents buf in
   Alcotest.(check bool)
     "barrier generates threadgroup_barrier"
@@ -122,7 +127,7 @@ let test_barriers () =
     (Str.string_match (Str.regexp ".*threadgroup_barrier.*") result 0) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_metal.gen_stmt buf "  " SMemFence ;
+  Sarek_ir_metal.gen_stmt st buf "  " SMemFence ;
   let result = Buffer.contents buf in
   Alcotest.(check bool)
     "memfence generates threadgroup_barrier"
@@ -147,7 +152,7 @@ let test_atomics () =
   let addr = make_var "counter" TInt32 in
   let value = EConst (CInt32 1l) in
   Sarek_ir_metal.Dispatch.gen_intrinsic
-    Sarek_ir_metal.metal_backend
+    (Sarek_ir_metal.metal_backend st)
     buf
     []
     "atomic_add"
@@ -202,7 +207,13 @@ let test_type_mapping () =
 let test_var_decl () =
   let buf = Buffer.create 64 in
   let x = make_var "x" TInt32 in
-  Sarek_ir_metal.gen_var_decl buf "" x.var_name x.var_type (EConst (CInt32 42l)) ;
+  Sarek_ir_metal.gen_var_decl
+    st
+    buf
+    ""
+    x.var_name
+    x.var_type
+    (EConst (CInt32 42l)) ;
   Alcotest.(check string)
     "gen_var_decl produces type var = expr;"
     "int x = 42;\n"
@@ -210,7 +221,14 @@ let test_var_decl () =
 
 let test_array_decl () =
   let buf = Buffer.create 64 in
-  Sarek_ir_metal.gen_array_decl buf "" "arr" TFloat32 (EConst (CInt32 256l)) "" ;
+  Sarek_ir_metal.gen_array_decl
+    st
+    buf
+    ""
+    "arr"
+    TFloat32
+    (EConst (CInt32 256l))
+    "" ;
   Alcotest.(check string)
     "gen_array_decl produces type arr[size];"
     "float arr[256];\n"

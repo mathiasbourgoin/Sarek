@@ -14,18 +14,27 @@ open Sarek_ir_types
 let make_var name ty =
   {var_id = 0; var_name = name; var_type = ty; var_mutable = false}
 
+(** The per-generation emitter state these tests emit against (backlog-185:
+    [gen_expr]/[gen_stmt] take it explicitly instead of reading module-level
+    refs). Derived from the empty kernel, which is what the deleted refs held at
+    their initialisation values — so every expectation below is unchanged: no
+    variants to match against, and the default [sarek_smod]/[sarek_copysign]/
+    [sarek_fmod] helper names. Rebuilt per call so no test can see another's
+    writes to the vec-param table. *)
+let st () = Sarek_ir_glsl.state default_kernel
+
 (** Test basic expression generation *)
 let test_basic_literals () =
   let buf = Buffer.create 64 in
-  Sarek_ir_glsl.gen_expr buf (EConst (CInt32 42l)) ;
+  Sarek_ir_glsl.gen_expr (st ()) buf (EConst (CInt32 42l)) ;
   Alcotest.(check string) "int32 literal" "42" (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_glsl.gen_expr buf (EConst (CInt64 42L)) ;
+  Sarek_ir_glsl.gen_expr (st ()) buf (EConst (CInt64 42L)) ;
   Alcotest.(check string) "int64 literal" "42L" (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_glsl.gen_expr buf (EConst (CFloat32 3.14)) ;
+  Sarek_ir_glsl.gen_expr (st ()) buf (EConst (CFloat32 3.14)) ;
   let result = Buffer.contents buf in
   Alcotest.(check bool)
     "float32 literal is numeric"
@@ -33,11 +42,11 @@ let test_basic_literals () =
     (String.length result > 0 && result.[0] >= '0' && result.[0] <= '9') ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_glsl.gen_expr buf (EConst (CBool true)) ;
+  Sarek_ir_glsl.gen_expr (st ()) buf (EConst (CBool true)) ;
   Alcotest.(check string) "bool true literal" "true" (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_glsl.gen_expr buf (EConst (CBool false)) ;
+  Sarek_ir_glsl.gen_expr (st ()) buf (EConst (CBool false)) ;
   Alcotest.(check string) "bool false literal" "false" (Buffer.contents buf)
 
 (** Test operations *)
@@ -45,28 +54,28 @@ let test_operations () =
   let buf = Buffer.create 64 in
   let x = make_var "x" TInt32 in
   let y = make_var "y" TInt32 in
-  Sarek_ir_glsl.gen_expr buf (EBinop (Add, EVar x, EVar y)) ;
+  Sarek_ir_glsl.gen_expr (st ()) buf (EBinop (Add, EVar x, EVar y)) ;
   Alcotest.(check string) "addition" "(x + y)" (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_glsl.gen_expr buf (EBinop (Sub, EVar x, EVar y)) ;
+  Sarek_ir_glsl.gen_expr (st ()) buf (EBinop (Sub, EVar x, EVar y)) ;
   Alcotest.(check string) "subtraction" "(x - y)" (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_glsl.gen_expr buf (EBinop (Mul, EVar x, EVar y)) ;
+  Sarek_ir_glsl.gen_expr (st ()) buf (EBinop (Mul, EVar x, EVar y)) ;
   Alcotest.(check string) "multiplication" "(x * y)" (Buffer.contents buf)
 
 (** Test basic statements *)
 let test_basics () =
   let buf = Buffer.create 64 in
-  Sarek_ir_glsl.gen_stmt buf "" SEmpty ;
+  Sarek_ir_glsl.gen_stmt (st ()) buf "" SEmpty ;
   Alcotest.(check string) "empty statement" "" (Buffer.contents buf)
 
 (** Test assignment *)
 let test_assignment () =
   let buf = Buffer.create 64 in
   let x = make_var "x" TInt32 in
-  Sarek_ir_glsl.gen_stmt buf "" (SAssign (LVar x, EConst (CInt32 42l))) ;
+  Sarek_ir_glsl.gen_stmt (st ()) buf "" (SAssign (LVar x, EConst (CInt32 42l))) ;
   Alcotest.(check string) "assignment" "x = 42;\n" (Buffer.contents buf)
 
 (** Test if statement *)
@@ -74,6 +83,7 @@ let test_if_statement () =
   let buf = Buffer.create 64 in
   let x = make_var "x" TInt32 in
   Sarek_ir_glsl.gen_stmt
+    (st ())
     buf
     ""
     (SIf
@@ -91,6 +101,7 @@ let test_while_loop () =
   let buf = Buffer.create 64 in
   let i = make_var "i" TInt32 in
   Sarek_ir_glsl.gen_stmt
+    (st ())
     buf
     ""
     (SWhile
@@ -107,6 +118,7 @@ let test_for_loop () =
   let buf = Buffer.create 64 in
   let i = make_var "i" TInt32 in
   Sarek_ir_glsl.gen_stmt
+    (st ())
     buf
     ""
     (SFor (i, EConst (CInt32 0l), EConst (CInt32 10l), Upto, SEmpty)) ;
@@ -123,21 +135,21 @@ let test_for_loop () =
 (** Test barrier intrinsics *)
 let test_barriers () =
   let buf = Buffer.create 64 in
-  Sarek_ir_glsl.gen_stmt buf "  " SBarrier ;
+  Sarek_ir_glsl.gen_stmt (st ()) buf "  " SBarrier ;
   Alcotest.(check string)
     "barrier generates barrier()"
     "  barrier();\n"
     (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_glsl.gen_stmt buf "  " SWarpBarrier ;
+  Sarek_ir_glsl.gen_stmt (st ()) buf "  " SWarpBarrier ;
   Alcotest.(check string)
     "warp barrier generates subgroupBarrier()"
     "  subgroupBarrier();\n"
     (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_glsl.gen_stmt buf "  " SMemFence ;
+  Sarek_ir_glsl.gen_stmt (st ()) buf "  " SMemFence ;
   Alcotest.(check string)
     "memfence generates memoryBarrier()"
     "  memoryBarrier();\n"
@@ -163,7 +175,7 @@ let test_atomics () =
   let addr = make_var "counter" TInt32 in
   let value = EConst (CInt32 1l) in
   Sarek_ir_glsl.Dispatch.gen_intrinsic
-    Sarek_ir_glsl.glsl_backend
+    (Sarek_ir_glsl.glsl_backend (st ()))
     buf
     []
     "atomic_add"
@@ -201,7 +213,13 @@ let test_type_mapping () =
 let test_var_decl () =
   let buf = Buffer.create 64 in
   let x = make_var "x" TInt32 in
-  Sarek_ir_glsl.gen_var_decl buf "" x.var_name x.var_type (EConst (CInt32 42l)) ;
+  Sarek_ir_glsl.gen_var_decl
+    (st ())
+    buf
+    ""
+    x.var_name
+    x.var_type
+    (EConst (CInt32 42l)) ;
   Alcotest.(check string)
     "gen_var_decl produces type var = expr;"
     "int x = 42;\n"
@@ -210,7 +228,13 @@ let test_var_decl () =
 (** Test array declaration helper *)
 let test_array_decl () =
   let buf = Buffer.create 64 in
-  Sarek_ir_glsl.gen_array_decl buf "" "arr" TFloat32 (EConst (CInt32 256l)) ;
+  Sarek_ir_glsl.gen_array_decl
+    (st ())
+    buf
+    ""
+    "arr"
+    TFloat32
+    (EConst (CInt32 256l)) ;
   Alcotest.(check string)
     "gen_array_decl produces type arr[size];"
     "float arr[256];\n"

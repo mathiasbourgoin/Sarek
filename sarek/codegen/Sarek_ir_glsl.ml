@@ -32,61 +32,84 @@ module Dispatch = Sarek_ir_intrinsic_dispatch
 let bad_arity n e g =
   Codegen_error.raise_error (Codegen_error.invalid_arg_count n e g)
 
-(** Current kernel's variant definitions (set during generate) *)
-let current_variants : (string * (string * elttype list) list) list ref = ref []
+(** Everything one run of {!generate_with_types} needs to know that is not
+    reachable from the IR node it is currently emitting. It is a VALUE threaded
+    through the emit functions as their first argument, not module state, and
+    that is the whole point of backlog-185/200: these eight fields were seven
+    module-level [ref]s and one module-level [Hashtbl.t]. Being module-level
+    made the emitter non-reentrant in two ways. Two generations running at once
+    (two domains, or a nested call) interleaved their writes, so one read the
+    other's helper names, variants and vec-param indices. And any caller
+    entering below {!generate_with_types} — {!gen_expr} or {!gen_stmt} directly,
+    as the unit tests do — saw whatever the last full generation happened to
+    leave behind. Sequential whole-kernel generation was the one safe case, and
+    only because {!generate_with_types} overwrote all seven refs and cleared the
+    table on entry; that reset is what this record makes unnecessary.
 
-(** Name of the integer-remainder helper ([sarek_smod] by default) for the
-    current kernel, set per-kernel during generate by {!compute_smod_name} so it
-    cannot collide with a user identifier. Both the declaration
-    ({!gen_smod_helper}) and the call site ({!gen_expr}'s [Mod] arm) read this,
-    guaranteeing they agree. Mirrors the per-kernel {!current_variants} state.
-*)
-let current_smod_name = ref "sarek_smod"
+    Every field is per-generation. Seven are IMMUTABLE, computed once by
+    {!state} from the kernel before any byte is emitted:
 
-(** Name of the sign-copy helper ([sarek_copysign] by default) for the current
-    kernel, set per-kernel during generate by {!compute_copysign_name} so it
-    cannot collide with a user identifier. Both the declaration
-    ({!gen_copysign_helper}) and the call site ({!gen_intrinsic}'s [copysign]
-    arm) read this, guaranteeing they agree. Mirrors {!current_smod_name}. *)
-let current_copysign_name = ref "sarek_copysign"
+    - [variants] — the kernel's own [kern_variants]. Read at exactly one site:
+      the [find_constr_types] lookup in {!gen_stmt}'s [SMatch] arm, recovering a
+      constructor's payload types so the binders can be declared. The [EMatch]
+      arm needs no such lookup — it rewrites its binders through
+      {!Sarek_ir_codegen.subst_ematch_payloads}, which derives the payload field
+      names from the layout and never consults the variant table.
+    - [smod_name] — name of the integer-remainder helper ([sarek_smod] by
+      default), from {!compute_smod_name}, chosen so it cannot collide with a
+      user identifier. Both the declaration ({!gen_smod_helper}) and the call
+      site ({!gen_expr}'s [Mod] arm) read this one field, so they cannot
+      disagree.
+    - [copysign_name] — same for the sign-copy helper ([sarek_copysign]), from
+      {!compute_copysign_name}: declared by {!gen_copysign_helper}, called from
+      the [copysign] arm of {!glsl_backend}'s [pre_hook].
+    - [fmod_name] — same for the C-[fmod] helper ([sarek_fmod]), from
+      {!compute_fmod_name}. GLSL's [mod()] builtin is floor-based
+      (divisor-signed remainder), NOT the truncated C [fmod] the
+      [Float32.fmod]/[Float64.fmod] intrinsics contract for, and GLSL has no
+      [fmod] builtin — so both spellings lower to this helper, declared by
+      {!gen_fmod_helper} and called from the [fmod] arm of [pre_hook].
+    - [f64_helpers] — the software f64-transcendental helper family
+      ({!Sarek_ir_softmath}) this kernel needs, transitively closed over
+      cross-calls, from {!compute_f64_softmath}. GLSL core has no
+      double-precision overload for sin/cos/exp/log/pow/… so [Float64]
+      transcendentals lower to calls into this family, emitted forward-declared
+      in the preamble by {!gen_f64_softmath_helpers}. Empty for kernels with no
+      f64 transcendental.
+    - [needs_int64] — whether this generation needs 64-bit integers, gating the
+      [GL_ARB_gpu_shader_int64] extension line. Three independent triggers, all
+      ORed together by {!compute_f64_softmath}: a member of [f64_helpers] that
+      manipulates exponent/mantissa fields via [f64_bits]/[bits_f64], a
+      non-finite f64 constant (spelled [int64BitsToDouble]), or the user's own
+      [int64]. The pure-polynomial softmath members (sin, cos, tan, atan, atan2)
+      contribute nothing.
+    - [f64_needs_copysign] — whether any member of [f64_helpers] calls
+      [copysign] (sinh/tanh/atan/atan2/asin/acos). The kernel IR carries no
+      [copysign] node in that case, so {!Sarek_ir_analysis.kernel_uses_copysign}
+      would miss it; this field forces the helper to be emitted anyway so the
+      softmath bodies find it.
 
-(** Name of the C-[fmod] helper ([sarek_fmod] by default) for the current
-    kernel, set per-kernel during generate by {!compute_fmod_name} so it cannot
-    collide with a user identifier. GLSL's [mod()] builtin is floor-based
-    (divisor-signed remainder), NOT the truncated C [fmod] the
-    [Float32.fmod]/[Float64.fmod] intrinsics contract for, and GLSL has no
-    [fmod] builtin — so both spellings lower to this helper. Both the
-    declaration ({!gen_fmod_helper}) and the call site ({!gen_intrinsic}'s
-    [fmod] arm) read this ref, guaranteeing they agree. Mirrors
-    {!current_copysign_name}. *)
-let current_fmod_name = ref "sarek_fmod"
-
-(** Helper function vector parameter indices - maps function name to set of
-    parameter indices that are vectors. In GLSL, vectors cannot be passed as
-    function parameters, so these must be filtered out at call sites. *)
-let helper_vec_param_indices : (string, int list) Hashtbl.t = Hashtbl.create 16
-
-(** The software f64-transcendental helper family ({!Sarek_ir_softmath}) this
-    kernel needs, transitively closed over cross-calls, set per-kernel by
-    {!compute_f64_softmath}. GLSL core has no double-precision overload for
-    sin/cos/exp/log/pow/… so [Float64] transcendentals are lowered to calls into
-    this family, emitted as forward-declared top-level functions in the preamble
-    (mirroring {!current_smod_name}/{!current_copysign_name}). Empty for kernels
-    with no f64 transcendental. *)
-let current_f64_helpers : Sarek_ir_types.helper_func list ref = ref []
-
-(** Whether {!current_f64_helpers} needs 64-bit integers (exp/log/… manipulate
-    the exponent/mantissa fields via [f64_bits]/[bits_f64] and int64 ops). Gates
-    the [GL_ARB_gpu_shader_int64] extension. The pure-polynomial members (sin,
-    cos, tan, atan, atan2) need none. *)
-let current_needs_int64 = ref false
-
-(** Whether any member of {!current_f64_helpers} calls [copysign]
-    (sinh/tanh/atan/atan2/asin/acos). The original kernel IR carries no
-    [copysign] node in that case, so {!Sarek_ir_analysis.kernel_uses_copysign}
-    would miss it; this forces the [sarek_copysign] helper to be emitted so the
-    softmath bodies find it. *)
-let current_f64_needs_copysign = ref false
+    The eighth, [helper_vec_param_indices], is the one field that is still
+    MUTABLE, because it is not derivable up-front: it maps a helper's name to
+    the indices of its vector parameters, is written as each helper is emitted
+    ({!gen_helper_func}) and read later in the same generation at the [EApp]
+    call sites ({!gen_expr}) that must drop those arguments — in GLSL a buffer
+    array cannot be passed as a function parameter. It is a FRESH table
+    allocated per generation by {!state}, not one table shared by every
+    generation: nothing outside the [state] value that {!generate_with_types}
+    built can reach it, and it dies with that value. That is why there is no
+    [Hashtbl.clear] anywhere — there is never anything left over from a previous
+    kernel to clear. *)
+type state = {
+  variants : (string * (string * elttype list) list) list;
+  smod_name : string;
+  copysign_name : string;
+  fmod_name : string;
+  f64_helpers : Sarek_ir_types.helper_func list;
+  needs_int64 : bool;
+  f64_needs_copysign : bool;
+  helper_vec_param_indices : (string, int list) Hashtbl.t;
+}
 
 (** {1 Type Mapping} *)
 
@@ -366,7 +389,7 @@ let f64_lit v =
     [Sarek_ir_softmath.helper_name]; exp2/log2/cbrt have no dedicated helper and
     are lowered by composition over exp/log/pow, so their roots are those. This
     is the single source of truth shared by the call-site emission
-    ({!gen_f64_transcendental}) and the per-kernel family closure
+    ({!gen_f64_transcendental}) and the per-generation family closure
     ({!compute_f64_softmath}) — they must agree on which names are routed. *)
 let f64_root_helpers name =
   match Sarek_ir_softmath.helper_name name with
@@ -417,7 +440,7 @@ let gen_glsl_conversion buf ~gen_expr name args =
       Codegen_error.raise_error
         (Codegen_error.invalid_arg_count name 1 (List.length args))
 
-let rec gen_expr buf = function
+let rec gen_expr st buf = function
   | EConst (CInt32 n) -> Buffer.add_string buf (Int32.to_string n)
   | EConst (CInt64 n) -> Buffer.add_string buf (Int64.to_string n ^ "L")
   | EConst (CFloat32 f) ->
@@ -431,8 +454,9 @@ let rec gen_expr buf = function
          invalid source. Reconstruct the exact IEEE-754 value from its bit
          pattern via [int64BitsToDouble], which needs GL_ARB_gpu_shader_int64 —
          emitted by [glsl_header] whenever the kernel contains such a constant
-         ([compute_f64_softmath] ORs [kernel_uses_nonfinite_float64] into
-         [current_needs_int64], so this is covered even for a user-written
+         ([compute_f64_softmath] ORs [kernel_uses_nonfinite_float64] into the
+         [needs_int64] field of {!type:state}, so this is covered even for a
+         user-written
          non-finite literal with no transcendental, not only the software f64
          helpers). The decimal (possibly negative) bit literal avoids the
          >int64-max hex forms glslang rejects. Finite doubles keep the plain
@@ -462,45 +486,45 @@ let rec gen_expr buf = function
          operand twice and double any such effect. Float [mod] never reaches
          this arm (the frontend lowers it to the [fmod]/[mod] intrinsic, not
          [Ir.Mod]). *)
-      Buffer.add_string buf !current_smod_name ;
+      Buffer.add_string buf st.smod_name ;
       Buffer.add_char buf '(' ;
-      gen_expr buf e1 ;
+      gen_expr st buf e1 ;
       Buffer.add_string buf ", " ;
-      gen_expr buf e2 ;
+      gen_expr st buf e2 ;
       Buffer.add_char buf ')'
   | EBinop (op, e1, e2) ->
       Buffer.add_char buf '(' ;
-      gen_expr buf e1 ;
+      gen_expr st buf e1 ;
       Buffer.add_string buf (gen_binop op) ;
-      gen_expr buf e2 ;
+      gen_expr st buf e2 ;
       Buffer.add_char buf ')'
   | EUnop (op, e) ->
       Buffer.add_char buf '(' ;
       Buffer.add_string buf (gen_unop op) ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_char buf ')'
   | EArrayRead (arr, idx) ->
       Buffer.add_string buf (escape_glsl_name arr) ;
       Buffer.add_char buf '[' ;
-      gen_expr buf idx ;
+      gen_expr st buf idx ;
       Buffer.add_char buf ']'
   | EArrayReadExpr (base, idx) ->
       Buffer.add_char buf '(' ;
-      gen_expr buf base ;
+      gen_expr st buf base ;
       Buffer.add_char buf ')' ;
       Buffer.add_char buf '[' ;
-      gen_expr buf idx ;
+      gen_expr st buf idx ;
       Buffer.add_char buf ']'
   | ERecordField (e, field) ->
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_char buf '.' ;
       Buffer.add_string buf field
   | EIntrinsic (path, name, args) ->
-      Dispatch.gen_intrinsic glsl_backend buf path name args
+      Dispatch.gen_intrinsic (glsl_backend st) buf path name args
   | ECast (ty, e) ->
       Buffer.add_string buf (glsl_type_of_elttype ty) ;
       Buffer.add_char buf '(' ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_char buf ')'
   | ETuple _ ->
       (* backlog-194. This arm used to print a bare brace list, which is
@@ -525,10 +549,10 @@ let rec gen_expr buf = function
       let fn_name = match fn with EVar v -> Some v.var_name | _ -> None in
       let vec_indices =
         match fn_name with
-        | Some name -> Hashtbl.find_opt helper_vec_param_indices name
+        | Some name -> Hashtbl.find_opt st.helper_vec_param_indices name
         | None -> None
       in
-      gen_expr buf fn ;
+      gen_expr st buf fn ;
       Buffer.add_char buf '(' ;
       let filtered_args =
         match vec_indices with
@@ -542,7 +566,7 @@ let rec gen_expr buf = function
       List.iteri
         (fun i e ->
           if i > 0 then Buffer.add_string buf ", " ;
-          gen_expr buf e)
+          gen_expr st buf e)
         filtered_args ;
       Buffer.add_char buf ')'
   | ERecord (name, fields) ->
@@ -550,7 +574,7 @@ let rec gen_expr buf = function
       List.iteri
         (fun i (_, e) ->
           if i > 0 then Buffer.add_string buf ", " ;
-          gen_expr buf e)
+          gen_expr st buf e)
         fields ;
       Buffer.add_char buf ')'
   | EVariant (type_name, constr, args) ->
@@ -560,7 +584,7 @@ let rec gen_expr buf = function
       List.iteri
         (fun i e ->
           if i > 0 then Buffer.add_string buf ", " ;
-          gen_expr buf e)
+          gen_expr st buf e)
         args ;
       Buffer.add_char buf ')'
   | EArrayLen arr -> Buffer.add_string buf (glsl_array_length_name arr)
@@ -571,11 +595,11 @@ let rec gen_expr buf = function
            "should be handled in gen_stmt SLet")
   | EIf (cond, then_, else_) ->
       Buffer.add_char buf '(' ;
-      gen_expr buf cond ;
+      gen_expr st buf cond ;
       Buffer.add_string buf " ? " ;
-      gen_expr buf then_ ;
+      gen_expr st buf then_ ;
       Buffer.add_string buf " : " ;
-      gen_expr buf else_ ;
+      gen_expr st buf else_ ;
       Buffer.add_char buf ')'
   | EMatch (scrut, cases) when Sarek_ir_codegen.ematch_binds_payload cases ->
       (* #75: a match EXPRESSION lowers to a nested ternary, which has nowhere to
@@ -584,6 +608,7 @@ let rec gen_expr buf = function
          (now binder-free) match. One shared, capture-avoiding pass for every
          backend; see {!Sarek_ir_codegen.subst_ematch_payloads}. *)
       gen_expr
+        st
         buf
         (EMatch
            ( scrut,
@@ -599,23 +624,23 @@ let rec gen_expr buf = function
   | EMatch (_, []) ->
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct "match" "empty match expression")
-  | EMatch (_, [(_, body)]) -> gen_expr buf body
+  | EMatch (_, [(_, body)]) -> gen_expr st buf body
   | EMatch (e, cases) ->
       let rec gen_cases = function
         | [] ->
             Codegen_error.raise_error
               (Codegen_error.unsupported_construct "match" "empty match cases")
-        | [(_, body)] -> gen_expr buf body
+        | [(_, body)] -> gen_expr st buf body
         | (pat, body) :: rest ->
             Buffer.add_char buf '(' ;
             (match pat with
             | PConstr (name, _) ->
                 Buffer.add_char buf '(' ;
-                gen_expr buf e ;
+                gen_expr st buf e ;
                 Buffer.add_string buf (".tag == " ^ name ^ ")")
             | PWild -> Buffer.add_string buf "true") ;
             Buffer.add_string buf " ? " ;
-            gen_expr buf body ;
+            gen_expr st buf body ;
             Buffer.add_string buf " : " ;
             gen_cases rest ;
             Buffer.add_char buf ')'
@@ -679,38 +704,38 @@ and gen_unop = function Neg -> "-" | Not -> "!" | BitNot -> "~"
       exactly representable and promotes to [double] losslessly, and is never
       itself the argument of a builtin) are precision-safe as-is and left
       byte-for-byte unchanged so their existing goldens do not move. *)
-and gen_glsl_polyfill buf ~is_f64 name args =
+and gen_glsl_polyfill st buf ~is_f64 name args =
   let flit s = if is_f64 then s ^ "lf" else s in
   match (name, args) with
   | "log10", [x] ->
       Buffer.add_string buf "(log(" ;
-      gen_expr buf x ;
+      gen_expr st buf x ;
       Buffer.add_string buf (Printf.sprintf ") / log(%s))" (flit "10.0"))
   | "cbrt", [x] ->
       Buffer.add_string buf "(sign(" ;
-      gen_expr buf x ;
+      gen_expr st buf x ;
       Buffer.add_string buf ") * pow(abs(" ;
-      gen_expr buf x ;
+      gen_expr st buf x ;
       Buffer.add_string
         buf
         (Printf.sprintf "), %s / %s))" (flit "1.0") (flit "3.0"))
   | "hypot", [x; y] ->
       Buffer.add_string buf "sqrt((" ;
-      gen_expr buf x ;
+      gen_expr st buf x ;
       Buffer.add_string buf ") * (" ;
-      gen_expr buf x ;
+      gen_expr st buf x ;
       Buffer.add_string buf ") + (" ;
-      gen_expr buf y ;
+      gen_expr st buf y ;
       Buffer.add_string buf ") * (" ;
-      gen_expr buf y ;
+      gen_expr st buf y ;
       Buffer.add_string buf "))"
   | "expm1", [x] ->
       Buffer.add_string buf "(exp(" ;
-      gen_expr buf x ;
+      gen_expr st buf x ;
       Buffer.add_string buf ") - 1.0)"
   | "log1p", [x] ->
       Buffer.add_string buf "log(1.0 + (" ;
-      gen_expr buf x ;
+      gen_expr st buf x ;
       Buffer.add_string buf "))"
   | _ ->
       (* [gen_glsl_polyfill] is only ever entered for a KNOWN polyfill name
@@ -728,15 +753,16 @@ and gen_glsl_polyfill buf ~is_f64 name args =
     helper and are composed over exp/log/pow (matching PTX's own exp2/log2
     handling and the f32 [cbrt] polyfill shape, but with the f64 [pow]). The
     helper bodies themselves are emitted, forward-declared, in the preamble by
-    {!gen_f64_softmath_helpers}, gated on {!current_f64_helpers}. *)
-and gen_f64_transcendental buf name args =
+    {!gen_f64_softmath_helpers}, gated on this generation's [st.f64_helpers]
+    (see {!type:state}). *)
+and gen_f64_transcendental st buf name args =
   let emit_call fn =
     Buffer.add_string buf (mangle_softmath_ident fn) ;
     Buffer.add_char buf '(' ;
     List.iteri
       (fun i e ->
         if i > 0 then Buffer.add_string buf ", " ;
-        gen_expr buf e)
+        gen_expr st buf e)
       args ;
     Buffer.add_char buf ')'
   in
@@ -747,14 +773,14 @@ and gen_f64_transcendental buf name args =
       | "exp2", [x] ->
           (* 2^x = exp(x·ln2) *)
           Buffer.add_string buf "sarek_f64_exp((" ;
-          gen_expr buf x ;
+          gen_expr st buf x ;
           Buffer.add_string
             buf
             (Printf.sprintf ") * %s)" (f64_lit 0.6931471805599453))
       | "log2", [x] ->
           (* log2(x) = log(x)·log2(e) *)
           Buffer.add_string buf "(sarek_f64_log(" ;
-          gen_expr buf x ;
+          gen_expr st buf x ;
           Buffer.add_string
             buf
             (Printf.sprintf ") * %s)" (f64_lit 1.4426950408889634))
@@ -762,9 +788,9 @@ and gen_f64_transcendental buf name args =
           (* sign(x)·pow(|x|, 1/3): GLSL [pow] is undefined for a negative base,
              and here [pow] is the software f64 helper. *)
           Buffer.add_string buf "(sign(" ;
-          gen_expr buf x ;
+          gen_expr st buf x ;
           Buffer.add_string buf ") * sarek_f64_pow(abs(" ;
-          gen_expr buf x ;
+          gen_expr st buf x ;
           Buffer.add_string
             buf
             (Printf.sprintf "), %s / %s))" (f64_lit 1.0) (f64_lit 3.0))
@@ -773,28 +799,28 @@ and gen_f64_transcendental buf name args =
             (Codegen_error.unknown_intrinsic
                (Printf.sprintf "%s (wrong arity for f64 transcendental)" name)))
 
-and glsl_backend =
+and glsl_backend st =
   {
     Dispatch.framework = (fun () -> "GLSL");
-    gen_expr;
+    gen_expr = gen_expr st;
     thread_intrinsic = glsl_thread_intrinsic;
     pre_hook =
       (fun buf ~full_name:_ path name args ->
         let is_f64 = List.mem "Float64" path in
         if is_f64 && f64_root_helpers name <> None then (
-          gen_f64_transcendental buf name args ;
+          gen_f64_transcendental st buf name args ;
           true)
         else if List.mem name ["cbrt"; "hypot"; "expm1"; "log1p"; "log10"] then (
-          gen_glsl_polyfill buf ~is_f64 name args ;
+          gen_glsl_polyfill st buf ~is_f64 name args ;
           true)
         else if name = "copysign" then (
-          Dispatch.emit_call ~gen_expr buf !current_copysign_name args ;
+          Dispatch.emit_call ~gen_expr:(gen_expr st) buf st.copysign_name args ;
           true)
         else if name = "fmod" then (
-          Dispatch.emit_call ~gen_expr buf !current_fmod_name args ;
+          Dispatch.emit_call ~gen_expr:(gen_expr st) buf st.fmod_name args ;
           true)
         else if is_f64 && List.mem name glsl_conversions then (
-          gen_glsl_conversion buf ~gen_expr name args ;
+          gen_glsl_conversion buf ~gen_expr:(gen_expr st) name args ;
           true)
         else false);
     (* INERT ON PURPOSE (backlog-159), not an unfinished symmetry. The three
@@ -817,13 +843,21 @@ and glsl_backend =
         | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh"
         | "tanh" | "exp" | "exp2" | "log" | "log2" | "sqrt" | "floor" | "ceil"
         | "round" | "trunc" | "abs" | "atan2" | "pow" | "min" | "max" | "fma" ->
-            Some (fun buf args -> Dispatch.emit_call ~gen_expr buf name args)
+            Some
+              (fun buf args ->
+                Dispatch.emit_call ~gen_expr:(gen_expr st) buf name args)
         | "fabs" | "abs_float" ->
-            Some (fun buf args -> Dispatch.emit_call ~gen_expr buf "abs" args)
+            Some
+              (fun buf args ->
+                Dispatch.emit_call ~gen_expr:(gen_expr st) buf "abs" args)
         | "rsqrt" ->
             Some
               (fun buf args ->
-                Dispatch.emit_call ~gen_expr buf "inversesqrt" args)
+                Dispatch.emit_call
+                  ~gen_expr:(gen_expr st)
+                  buf
+                  "inversesqrt"
+                  args)
         | "f64_bits" | "bits_f64" ->
             Some
               (fun buf args ->
@@ -834,7 +868,7 @@ and glsl_backend =
                 Buffer.add_string buf fn ;
                 Buffer.add_char buf '(' ;
                 (match args with
-                | [e] -> gen_expr buf e
+                | [e] -> gen_expr st buf e
                 | _ ->
                     Codegen_error.raise_error
                       (Codegen_error.invalid_arg_count
@@ -848,7 +882,7 @@ and glsl_backend =
             Some
               (fun buf args ->
                 Dispatch.emit_atomic
-                  ~gen_expr
+                  ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
                   ~callee:"atomicAdd"
@@ -862,7 +896,7 @@ and glsl_backend =
             Some
               (fun buf args ->
                 Dispatch.emit_atomic
-                  ~gen_expr
+                  ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
                   ~callee:"atomicMin"
@@ -876,7 +910,7 @@ and glsl_backend =
             Some
               (fun buf args ->
                 Dispatch.emit_atomic
-                  ~gen_expr
+                  ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
                   ~callee:"atomicMax"
@@ -890,7 +924,7 @@ and glsl_backend =
             Some
               (fun buf args ->
                 Dispatch.emit_unary
-                  ~gen_expr
+                  ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
                   ~prefix:"float("
@@ -901,7 +935,7 @@ and glsl_backend =
             Some
               (fun buf args ->
                 Dispatch.emit_unary
-                  ~gen_expr
+                  ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
                   ~prefix:"int("
@@ -913,22 +947,22 @@ and glsl_backend =
 
 (** {1 L-value Generation} *)
 
-let rec gen_lvalue buf = function
+let rec gen_lvalue st buf = function
   | LVar v -> Buffer.add_string buf (escape_glsl_name v.var_name)
   | LArrayElem (arr, idx) ->
       Buffer.add_string buf (escape_glsl_name arr) ;
       Buffer.add_char buf '[' ;
-      gen_expr buf idx ;
+      gen_expr st buf idx ;
       Buffer.add_char buf ']'
   | LArrayElemExpr (base, idx) ->
       Buffer.add_char buf '(' ;
-      gen_expr buf base ;
+      gen_expr st buf base ;
       Buffer.add_char buf ')' ;
       Buffer.add_char buf '[' ;
-      gen_expr buf idx ;
+      gen_expr st buf idx ;
       Buffer.add_char buf ']'
   | LRecordField (lv, field) ->
-      gen_lvalue buf lv ;
+      gen_lvalue st buf lv ;
       Buffer.add_char buf '.' ;
       Buffer.add_string buf field
 
@@ -984,7 +1018,7 @@ and gen_match_pattern buf indent scrutinee cname bindings find_constr_types =
            "mismatch between pattern bindings and constructor args")
 
 (** Generate variable declaration with optional initialization *)
-and gen_var_decl buf indent v_name v_type init_expr =
+and gen_var_decl st buf indent v_name v_type init_expr =
   let vn = escape_glsl_name v_name in
   Buffer.add_string buf indent ;
   (* [precise] forbids contraction/reassociation on float locals (SPIR-V
@@ -1013,18 +1047,18 @@ and gen_var_decl buf indent v_name v_type init_expr =
   Buffer.add_char buf ' ' ;
   Buffer.add_string buf vn ;
   Buffer.add_string buf " = " ;
-  gen_expr buf init_expr ;
+  gen_expr st buf init_expr ;
   Buffer.add_string buf ";\n"
 
 (** Generate array declaration *)
-and gen_array_decl buf indent v_name elem_ty size =
+and gen_array_decl st buf indent v_name elem_ty size =
   let vn = escape_glsl_name v_name in
   Buffer.add_string buf indent ;
   Buffer.add_string buf (glsl_type_of_elttype elem_ty) ;
   Buffer.add_char buf ' ' ;
   Buffer.add_string buf vn ;
   Buffer.add_char buf '[' ;
-  gen_expr buf size ;
+  gen_expr st buf size ;
   Buffer.add_string buf "];\n"
 
 (** {1 Cooperative matrix — backlog-62 slice 3}
@@ -1119,10 +1153,10 @@ let glsl_coopmat_type (f : Sarek_coopmat_types.fragment) =
     cols
     (glsl_coopmat_use f.Sarek_coopmat_types.frag_use)
 
-let gen_coopmat_op op =
+let gen_coopmat_op st op =
   let expr_str e =
     let b = Buffer.create 32 in
-    gen_expr b e ;
+    gen_expr st b e ;
     Buffer.contents b
   in
   match op with
@@ -1168,36 +1202,36 @@ let gen_coopmat_op op =
         (escape_glsl_name c)
         sat
 
-let rec gen_stmt buf indent = function
+let rec gen_stmt st buf indent = function
   | SEmpty -> ()
-  | SSeq stmts -> List.iter (gen_stmt buf indent) stmts
+  | SSeq stmts -> List.iter (gen_stmt st buf indent) stmts
   | SAssign (lv, e) ->
       Buffer.add_string buf indent ;
-      gen_lvalue buf lv ;
+      gen_lvalue st buf lv ;
       Buffer.add_string buf " = " ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_string buf ";\n"
   | SIf (cond, then_, else_opt) -> (
       Buffer.add_string buf indent ;
       Buffer.add_string buf "if (" ;
-      gen_expr buf cond ;
+      gen_expr st buf cond ;
       Buffer.add_string buf ") {\n" ;
-      gen_stmt buf (indent_nested indent) then_ ;
+      gen_stmt st buf (indent_nested indent) then_ ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}" ;
       match else_opt with
       | None -> Buffer.add_char buf '\n'
       | Some else_ ->
           Buffer.add_string buf " else {\n" ;
-          gen_stmt buf (indent_nested indent) else_ ;
+          gen_stmt st buf (indent_nested indent) else_ ;
           Buffer.add_string buf indent ;
           Buffer.add_string buf "}\n")
   | SWhile (cond, body) ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "while (" ;
-      gen_expr buf cond ;
+      gen_expr st buf cond ;
       Buffer.add_string buf ") {\n" ;
-      gen_stmt buf (indent_nested indent) body ;
+      gen_stmt st buf (indent_nested indent) body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SFor (v, start, stop, dir, body) ->
@@ -1211,21 +1245,21 @@ let rec gen_stmt buf indent = function
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf loop_var ;
       Buffer.add_string buf " = " ;
-      gen_expr buf start ;
+      gen_expr st buf start ;
       Buffer.add_string buf "; " ;
       Buffer.add_string buf loop_var ;
       Buffer.add_string buf (" " ^ op ^ " ") ;
-      gen_expr buf stop ;
+      gen_expr st buf stop ;
       Buffer.add_string buf "; " ;
       Buffer.add_string buf loop_var ;
       Buffer.add_string buf incr ;
       Buffer.add_string buf ") {\n" ;
-      gen_stmt buf (indent_nested indent) body ;
+      gen_stmt st buf (indent_nested indent) body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SMatch (e, cases) ->
       let scrutinee_buf = Buffer.create 64 in
-      gen_expr scrutinee_buf e ;
+      gen_expr st scrutinee_buf e ;
       let scrutinee = Buffer.contents scrutinee_buf in
       let find_constr_types cname =
         List.find_map
@@ -1233,7 +1267,7 @@ let rec gen_stmt buf indent = function
             List.find_map
               (fun (cn, args) -> if cn = cname then Some args else None)
               constrs)
-          !current_variants
+          st.variants
       in
       Buffer.add_string buf indent ;
       Buffer.add_string buf "switch (" ;
@@ -1252,7 +1286,7 @@ let rec gen_stmt buf indent = function
                 bindings
                 find_constr_types
           | PWild -> Buffer.add_string buf "  default: {\n") ;
-          gen_stmt buf (indent ^ "    ") body ;
+          gen_stmt st buf (indent ^ "    ") body ;
           Buffer.add_string buf (indent ^ "    break;\n") ;
           Buffer.add_string buf (indent ^ "  }\n"))
         cases ;
@@ -1261,7 +1295,7 @@ let rec gen_stmt buf indent = function
   | SReturn e ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "return " ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_string buf ";\n"
   | SBarrier ->
       Buffer.add_string buf indent ;
@@ -1277,32 +1311,32 @@ let rec gen_stmt buf indent = function
       Buffer.add_string buf "/* native code not supported in GLSL */\n"
   | SExpr e ->
       Buffer.add_string buf indent ;
-      gen_expr buf e ;
+      gen_expr st buf e ;
       Buffer.add_string buf ";\n"
   | SLet (_v, EArrayCreate (_, _, Shared), body) ->
       (* Shared declarations are hoisted to module scope, so just emit the body *)
-      gen_stmt buf indent body
+      gen_stmt st buf indent body
   | SLet (v, EArrayCreate (elem_ty, size, _), body) ->
-      gen_array_decl buf indent v.var_name elem_ty size ;
-      gen_stmt buf indent body
+      gen_array_decl st buf indent v.var_name elem_ty size ;
+      gen_stmt st buf indent body
   | SLet (v, e, body) ->
-      gen_var_decl buf indent v.var_name v.var_type e ;
-      gen_stmt buf indent body
+      gen_var_decl st buf indent v.var_name v.var_type e ;
+      gen_stmt st buf indent body
   | SLetMut (v, e, body) ->
-      gen_var_decl buf indent v.var_name v.var_type e ;
-      gen_stmt buf indent body
+      gen_var_decl st buf indent v.var_name v.var_type e ;
+      gen_stmt st buf indent body
   | SPragma (_hints, body) ->
       (* GLSL doesn't have #pragma in the same way *)
-      gen_stmt buf indent body
+      gen_stmt st buf indent body
   | SBlock body ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "{\n" ;
-      gen_stmt buf (indent_nested indent) body ;
+      gen_stmt st buf (indent_nested indent) body ;
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SCoopmat op ->
       Buffer.add_string buf indent ;
-      Buffer.add_string buf (gen_coopmat_op op) ;
+      Buffer.add_string buf (gen_coopmat_op st op) ;
       Buffer.add_char buf '\n'
 
 (** {1 Helper Function Generation} *)
@@ -1350,7 +1384,7 @@ let rename_pc_shadowing_locals ~pc_names ~len_names body =
     otherwise expand function parameters with the same name, causing syntax
     errors.
     @param pc_names Set of push constant names that have macros defined *)
-let gen_helper_func ~pc_names ~len_names buf (hf : helper_func) =
+let gen_helper_func st ~pc_names ~len_names buf (hf : helper_func) =
   (* Body locals, not just parameters. [colliding_names] below is computed from
      parameter names, so before this a helper whose body declared a local named
      like a scalar kernel param emitted [int pc.n = ...] and glslang rejected
@@ -1370,8 +1404,10 @@ let gen_helper_func ~pc_names ~len_names buf (hf : helper_func) =
     |> List.filter_map (fun (i, v) ->
         match v.var_type with TVec _ -> Some i | _ -> None)
   in
-  (* Register vector param indices for call site filtering *)
-  Hashtbl.replace helper_vec_param_indices hf.hf_name vec_indices ;
+  (* Register vector param indices for call site filtering. The table belongs to
+     [st], so what is written here is visible only to the [EApp] arm of THIS
+     generation. *)
+  Hashtbl.replace st.helper_vec_param_indices hf.hf_name vec_indices ;
   let non_vec_params =
     List.filter
       (fun (v : var) -> match v.var_type with TVec _ -> false | _ -> true)
@@ -1408,7 +1444,7 @@ let gen_helper_func ~pc_names ~len_names buf (hf : helper_func) =
       Buffer.add_string buf (escape_glsl_name v.var_name))
     non_vec_params ;
   Buffer.add_string buf ") {\n" ;
-  gen_stmt buf "  " hf.hf_body ;
+  gen_stmt st buf "  " hf.hf_body ;
   Buffer.add_string buf "}\n" ;
   (* Re-#define the colliding macros after the function *)
   List.iter
@@ -1598,7 +1634,7 @@ let rec collect_shared_decls (s : stmt) : (string * elttype * expr) list =
       []
 
 (** Generate shared declarations at module scope *)
-let gen_shared_decls buf (decls : (string * elttype * expr) list) =
+let gen_shared_decls st buf (decls : (string * elttype * expr) list) =
   if decls <> [] then begin
     Buffer.add_string buf "// Shared memory\n" ;
     List.iter
@@ -1608,7 +1644,7 @@ let gen_shared_decls buf (decls : (string * elttype * expr) list) =
         Buffer.add_char buf ' ' ;
         Buffer.add_string buf name ;
         Buffer.add_char buf '[' ;
-        gen_expr buf size ;
+        gen_expr st buf size ;
         Buffer.add_string buf "];\n")
       decls ;
     Buffer.add_char buf '\n'
@@ -1634,15 +1670,16 @@ let gen_shared_decls buf (decls : (string * elttype * expr) list) =
     overload by argument type at the call site) and gate the extension on int64
     usage, mirroring the float64 path in [glsl_header].
 
-    The helper name is [!current_smod_name] (see {!compute_smod_name}), not a
-    literal, so it cannot collide with a user param or helper identifier. *)
-let gen_smod_helper buf (k : kernel) =
+    The helper name is this generation's [st.smod_name] field (see
+    {!compute_smod_name} and {!type:state}), not a literal, so it cannot collide
+    with a user param or helper identifier. *)
+let gen_smod_helper st buf (k : kernel) =
   if Sarek_ir_analysis.kernel_uses_int_mod k then
     Buffer.add_string
       buf
       (Printf.sprintf
          "int %s(int a, int b) { return a - b * (a / b); }\n\n"
-         !current_smod_name)
+         st.smod_name)
 
 (** Choose a collision-safe name for the integer-remainder helper of kernel [k].
 
@@ -1718,24 +1755,23 @@ let compute_fmod_name (k : kernel) : string =
       finds the double overload; the (then-unused) float overload is harmless
       dead code. A [Float32.copysign]-only kernel gets just the float overload.
 
-    The helper name is [!current_copysign_name] (see {!compute_copysign_name}),
-    not a literal, so it cannot collide with a user param or helper identifier.
-*)
-let gen_copysign_helper buf (k : kernel) =
+    The helper name is this generation's [st.copysign_name] field (see
+    {!compute_copysign_name} and {!type:state}), not a literal, so it cannot
+    collide with a user param or helper identifier. *)
+let gen_copysign_helper st buf (k : kernel) =
   (* Emitted when the kernel uses [copysign] directly, OR when a needed software
      f64 transcendental does (sinh/tanh/atan/atan2/asin/acos): those helpers call
      [copysign] internally, but the original kernel IR carries no [copysign]
      node, so [kernel_uses_copysign] alone would miss it and leave the softmath
      body referencing an undeclared [sarek_copysign]. *)
-  if Sarek_ir_analysis.kernel_uses_copysign k || !current_f64_needs_copysign
-  then begin
+  if Sarek_ir_analysis.kernel_uses_copysign k || st.f64_needs_copysign then begin
     Buffer.add_string
       buf
       (Printf.sprintf
          "float %s(float x, float y) { return \
           uintBitsToFloat((floatBitsToUint(x) & 0x7FFFFFFFu) | \
           (floatBitsToUint(y) & 0x80000000u)); }\n\n"
-         !current_copysign_name) ;
+         st.copysign_name) ;
     if Sarek_ir_analysis.kernel_uses_float64 k then
       Buffer.add_string
         buf
@@ -1743,7 +1779,7 @@ let gen_copysign_helper buf (k : kernel) =
            "double %s(double x, double y) { uvec2 ux = unpackDouble2x32(x); \
             uvec2 uy = unpackDouble2x32(y); ux.y = (ux.y & 0x7FFFFFFFu) | \
             (uy.y & 0x80000000u); return packDouble2x32(ux); }\n\n"
-           !current_copysign_name)
+           st.copysign_name)
   end
 
 (** Emit the [sarek_fmod] C-conformant [fmod] helper when the kernel uses
@@ -1783,9 +1819,10 @@ let gen_copysign_helper buf (k : kernel) =
       behind [GL_ARB_gpu_shader_fp64] (already emitted under the same
       [kernel_uses_float64] condition, as for {!gen_copysign_helper}).
 
-    The helper name is [!current_fmod_name] (see {!compute_fmod_name}), never a
-    literal, so it cannot collide with a user param or helper identifier. *)
-let gen_fmod_helper buf (k : kernel) =
+    The helper name is this generation's [st.fmod_name] field (see
+    {!compute_fmod_name} and {!type:state}), never a literal, so it cannot
+    collide with a user param or helper identifier. *)
+let gen_fmod_helper st buf (k : kernel) =
   if Sarek_ir_analysis.kernel_uses_intrinsic "fmod" k then begin
     Buffer.add_string
       buf
@@ -1803,7 +1840,7 @@ let gen_fmod_helper buf (k : kernel) =
          \  return uintBitsToFloat((floatBitsToUint(r) & 0x7fffffffu) | \
           (floatBitsToUint(x) & 0x80000000u));\n\
           }\n\n"
-         !current_fmod_name) ;
+         st.fmod_name) ;
     if Sarek_ir_analysis.kernel_uses_float64 k then
       Buffer.add_string
         buf
@@ -1823,19 +1860,20 @@ let gen_fmod_helper buf (k : kernel) =
            \  ur.y = (ur.y & 0x7fffffffu) | (ux.y & 0x80000000u);\n\
            \  return packDouble2x32(ur);\n\
             }\n\n"
-           !current_fmod_name)
+           st.fmod_name)
   end
 
-(** Resolve the software f64-transcendental helper family a kernel needs and set
-    the per-kernel emitter state ({!current_f64_helpers},
-    {!current_needs_int64}, {!current_f64_needs_copysign}). Collects the
-    [Float64] transcendental intrinsics the kernel invokes
+(** Resolve the software f64-transcendental helper family a kernel needs, as the
+    triple [(f64_helpers, needs_int64, f64_needs_copysign)] that {!state} stores
+    in the three same-named fields of the per-generation {!type:state}. Collects
+    the [Float64] transcendental intrinsics the kernel invokes
     ({!Sarek_ir_analysis.kernel_float64_intrinsics}), maps each to its root
     helper(s) ({!f64_root_helpers}), and closes the set over softmath
     cross-calls (tan→sin/cos, pow→exp/log, log10→log, …). The retained order is
     [Sarek_ir_softmath.all_helpers]'s stable family order, so the emitted
     preamble is deterministic across runs. *)
-let compute_f64_softmath (k : kernel) =
+let compute_f64_softmath (k : kernel) :
+    Sarek_ir_types.helper_func list * bool * bool =
   let roots =
     List.concat_map
       (fun n -> Option.value ~default:[] (f64_root_helpers n))
@@ -1856,7 +1894,6 @@ let compute_f64_softmath (k : kernel) =
       (fun (hf : helper_func) -> Hashtbl.mem needed hf.hf_name)
       (Sarek_ir_softmath.all_helpers ())
   in
-  current_f64_helpers := helpers ;
   (* int64 is needed by any helper that manipulates the exponent/mantissa
      fields AND, independently of the helpers, by any non-finite Float64
      constant (emitted via int64BitsToDouble in gen_expr — GLSL has no inf/nan
@@ -1877,22 +1914,40 @@ let compute_f64_softmath (k : kernel) =
      conditions stay because a kernel can need int64 OPS without an int64 TYPE
      (the softmath helpers bit-cast a double, and int64BitsToDouble spells a
      non-finite f64 literal). *)
-  current_needs_int64 :=
+  let needs_int64 =
     List.exists Sarek_ir_softmath.uses_int64 helpers
     || Sarek_ir_analysis.kernel_uses_nonfinite_float64 k
-    || Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Int64 k ;
-  current_f64_needs_copysign :=
+    || Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Int64 k
+  in
+  let f64_needs_copysign =
     List.exists Sarek_ir_softmath.uses_copysign helpers
+  in
+  (helpers, needs_int64, f64_needs_copysign)
 
-(** Emit the needed software f64-transcendental helpers
-    ({!current_f64_helpers}). The whole family is forward-declared first, so
-    cross-calls resolve regardless of definition order, then the bodies are
-    emitted via {!gen_helper_func} (which applies the same push-constant-macro
-    [#undef]/[#define] guarding as user helpers). Emitted after [sarek_copysign]
-    (which the bodies may call) and before user helpers (which may call these).
-*)
-let gen_f64_softmath_helpers ~pc_names ~len_names buf =
-  match !current_f64_helpers with
+(** The per-generation {!type:state} for emitting [k]: the seven derived fields,
+    plus a table for [helper_vec_param_indices] freshly allocated here, so no
+    two calls share one. *)
+let state (k : kernel) : state =
+  let f64_helpers, needs_int64, f64_needs_copysign = compute_f64_softmath k in
+  {
+    variants = k.kern_variants;
+    smod_name = compute_smod_name k;
+    copysign_name = compute_copysign_name k;
+    fmod_name = compute_fmod_name k;
+    f64_helpers;
+    needs_int64;
+    f64_needs_copysign;
+    helper_vec_param_indices = Hashtbl.create 16;
+  }
+
+(** Emit the needed software f64-transcendental helpers ([st.f64_helpers]). The
+    whole family is forward-declared first, so cross-calls resolve regardless of
+    definition order, then the bodies are emitted via {!gen_helper_func} (which
+    applies the same push-constant-macro [#undef]/[#define] guarding as user
+    helpers). Emitted after [sarek_copysign] (which the bodies may call) and
+    before user helpers (which may call these). *)
+let gen_f64_softmath_helpers st ~pc_names ~len_names buf =
+  match st.f64_helpers with
   | [] -> ()
   | helpers ->
       List.iter
@@ -1909,7 +1964,7 @@ let gen_f64_softmath_helpers ~pc_names ~len_names buf =
           Buffer.add_string buf ");\n")
         helpers ;
       Buffer.add_char buf '\n' ;
-      List.iter (gen_helper_func ~pc_names ~len_names buf) helpers
+      List.iter (gen_helper_func st ~pc_names ~len_names buf) helpers
 
 (** The two macro-name sets a kernel's parameter list induces, as one value:
     [(pc_names, len_names)].
@@ -2018,14 +2073,10 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   (* Inline vector-parameter helpers (buffers cannot be passed as GLSL function
      arguments — see Sarek_ir_inline_vec). *)
   let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"Vulkan" k in
-  (* Clear per-kernel state *)
-  Hashtbl.clear helper_vec_param_indices ;
-  current_smod_name := compute_smod_name k ;
-  current_copysign_name := compute_copysign_name k ;
-  current_fmod_name := compute_fmod_name k ;
-  compute_f64_softmath k ;
-  (* Use variant types directly from kernel IR *)
-  current_variants := k.kern_variants ;
+  (* Build this generation's state. Derived from [k] AFTER the vec-helper
+     inlining above, which rewrites [kern_funcs] and so changes the identifier
+     set the collision-safe helper names are chosen against. *)
+  let st = state k in
 
   let buf = Buffer.create 1024 in
   Buffer.add_string
@@ -2034,7 +2085,7 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
        ~kernel_name:k.kern_name
        ?block
        ~uses_float64:(Sarek_ir_analysis.kernel_uses_float64 k)
-       ~uses_int64:!current_needs_int64
+       ~uses_int64:st.needs_int64
        ~uses_coopmat:(Sarek_ir_analysis.kernel_has_coopmat_op k)
        ~uses_uint8:(Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k)
        ()) ;
@@ -2074,32 +2125,33 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
 
   (* Generate shared declarations at module scope (GLSL requirement) *)
   let shared_decls = collect_shared_decls k.kern_body in
-  gen_shared_decls buf shared_decls ;
+  gen_shared_decls st buf shared_decls ;
 
   (* Emit the integer-remainder helper (before user helpers, which may call
      it) when the kernel uses [mod]. *)
-  gen_smod_helper buf k ;
+  gen_smod_helper st buf k ;
 
   (* Emit the sign-copy helper (before user helpers, which may call it) when
      the kernel uses [copysign]. *)
-  gen_copysign_helper buf k ;
+  gen_copysign_helper st buf k ;
 
   (* Emit the C-fmod helper (before user helpers, which may call it) when the
      kernel uses [fmod]. *)
-  gen_fmod_helper buf k ;
+  gen_fmod_helper st buf k ;
 
   (* Emit the software f64-transcendental helper family (forward-declared,
      after copysign which they may call, before user helpers which may call
      them) when the kernel invokes a [Float64] transcendental. *)
-  gen_f64_softmath_helpers ~pc_names ~len_names buf ;
+  gen_f64_softmath_helpers st ~pc_names ~len_names buf ;
 
   (* Generate helper functions *)
-  List.iter (gen_helper_func ~pc_names ~len_names buf) k.kern_funcs ;
+  List.iter (gen_helper_func st ~pc_names ~len_names buf) k.kern_funcs ;
 
   (* Generate main function. Alpha-rename any body local that shadows a scalar
      push-constant macro first (see rename_pc_shadowing_locals). *)
   Buffer.add_string buf "void main() {\n" ;
   gen_stmt
+    st
     buf
     "  "
     (rename_pc_shadowing_locals ~pc_names ~len_names k.kern_body) ;
@@ -2116,8 +2168,8 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
     [~types] has exactly the type of the [kern_types] field
     ([Sarek_ir_types.kernel]), so the parameter was redundant with the record it
     travels in. This used to be a separate 30-80 line copy of the emit sequence
-    that silently omitted record typedefs, variant typedefs and
-    [current_variants] — source referencing an undeclared struct, with no error.
+    that silently omitted record typedefs, variant typedefs and the kernel's
+    variants — source referencing an undeclared struct, with no error.
     Delegating keeps one emit path per backend. *)
 let generate ?block ?log (k : kernel) : string =
   generate_with_types ?block ?log ~types:k.kern_types k
