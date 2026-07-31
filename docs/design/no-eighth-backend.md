@@ -53,25 +53,31 @@ a change must reach every emitter rather than one:
   emitter files end to end, not by a type error — nothing forces
   `Dispatch.framework` to be consistent across emitters, so the four correct
   ones and the one constant one type-checked identically.
-- **The SNative three-way split** (§4 below) is a match arm present, in some
+- **The SNative three-way split** (§3 below) is a match arm present, in some
   form, in all five codegen files with a `Dispatch.framework` field
   (`Sarek_ir_cuda.ml`, `Sarek_ir_opencl.ml`, `Sarek_ir_metal.ml`,
   `Sarek_ir_glsl.ml`, `Sarek_ir_wgsl.ml`) plus the separate PTX emitter
   (`Sarek_ir_ptx_stmt.ml`) — six sites, three different behaviors, and each
   one independently decided by whoever wrote that emitter's arm.
-- **The per-generation state-threading rework** now in progress in this
-  repository is organized, in practice, as one branch per backend
-  (`backlog/185-glsl`, `backlog/185-metal`, `backlog/185-opencl`,
-  `backlog/185-wgsl`, plus a `backlog/185-codegen-reentrancy` branch to
-  integrate them) — a single cross-cutting change decomposed along exactly
-  the backend boundary, because that is where the work does not share. This
-  is offered as organizational evidence, not a finished measurement: those
-  branches are not yet merged to `origin/main`, and are cited here by name,
-  not by commit, for that reason.
+- **The per-generation dispatch state is not shared machinery — it is five
+  independent copies.** Four of the five emitters each define their own
+  module-level `current_framework : string option ref = ref None`:
+  `Sarek_ir_cuda.ml:36`, `Sarek_ir_opencl.ml:47`, `Sarek_ir_metal.ml:36`,
+  `Sarek_ir_wgsl.ml:41` — four separate `ref` cells, four separate
+  definitions, not one shared module. The fifth, GLSL, has no such ref at
+  all (§3 below). Converting that pattern to a properly threaded
+  per-generation value — replacing a global mutable ref with a value passed
+  through the call chain — is therefore not one change; it is five,
+  because there is no single definition site whose fix reaches all five
+  emitters. It is the same shape as §2's headline number: a change that
+  must reach every target, done once per file because nothing forces it to
+  be done once at all.
 
 Seven backends is already seven columns for every change of this shape. An
-eighth is not a 1/7 increase in cost — every one of the last three bullets
-would gain a sixth, a seventh, or a fifth branch respectively.
+eighth is not a 1/7 increase in cost — an eighth emitter would add a sixth
+site to the dispatch-tag divergence, a seventh to the SNative split, and a
+sixth independent ref cell (or a sixth silent exception to the pattern) to
+the state-threading count.
 
 ## 3. The columns are not equivalent, so the cost is not even linear
 
@@ -199,10 +205,7 @@ which target might exercise it.
 
 ---
 
-*Every count in §1 and every code claim in §3 was read from the file and
-line cited, at the commit this record was written against
+*Every count in §1 and every code claim in §2 and §3 was read from the file
+and line cited, at the commit this record was written against
 (`ed245581`, `origin/main`). §2's width-addition numbers are reproduced from
-`docs/design/width-addition-cost.md`, not re-measured here. The
-`backlog/185-*` branches in §2 are cited by name only, because they are not
-yet merged to `origin/main` and this document does not assert their commit
-identity as durable.*
+`docs/design/width-addition-cost.md`, not re-measured here.*
