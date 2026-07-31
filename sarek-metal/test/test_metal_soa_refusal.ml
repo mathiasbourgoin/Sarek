@@ -11,17 +11,22 @@
  * source: one pointer plus one length per vector parameter. The launch side
  * expands an SoA-dispatched vector into N [RSA_Buffer]s plus one
  * [RSA_Vector_Length], so AoS source under an SoA argument list is never a
- * compile error. Nothing on this backend checks the arity:
- * [Metal_plugin_base]'s preflight count comes from the indices the caller bound
- * ([Kernel_args.count]), and the args are then bound BY LIST POSITION
- * ([atIndex:]) with nothing compared against the compiled function. So Metal
- * sits with CUDA/C and HIP rather than with OpenCL and Vulkan: the shift is
- * unchecked, and every declared slot from the vector onward is fed a value of
- * the wrong kind. What the Metal runtime then does with a buffer bound where
- * the function declares bytes, or the reverse, is NOT something this tree
- * establishes - unlike OpenCL, where the rejecting call is in this repository
- * ([Opencl_api.Kernel.set_arg_mem]) - so no symptom is claimed for Metal beyond
- * the mapping being wrong. See [Backend_error.reject_soa_params].
+ * compile error. Nothing here checks the arity either: [Metal_plugin_base]'s
+ * preflight count comes from the indices the caller bound
+ * ([Kernel_args.count]) and the args are then bound BY LIST POSITION
+ * ([atIndex:]) with nothing compared against the compiled function, so every
+ * parameter declared after the vector receives the wrong entry. Metal does NOT
+ * inherit the trap half of that, though, and this is where folding it in with
+ * CUDA/C and HIP would overclaim: no caller-supplied ADDRESS ever crosses.
+ * Buffers go through [setBuffer] as MTLBuffer objects and scalars through
+ * [setBytes] as a driver-allocated inline copy ([Metal_api]), against
+ * parameters declared [device T* x [[buffer(k)]], constant int &sarek_x_length
+ * [[buffer(k+1)]]] ([Sarek_ir_metal.gen_buffer_param]). So a length index
+ * receives a buffer whose first 4 bytes are read as the length, and a pointer
+ * index receives inline [setBytes] data indexed out of bounds or another
+ * buffer - wrong data and out-of-bounds reads within valid allocations, or an
+ * encode Metal's own API validation rejects. See
+ * [Backend_error.reject_soa_params].
  *
  * [Sarek_ir_metal] has no SoA lowering to select, so it is refused. (A
  * single-leaf record would in fact bind correctly, N = 1 making the two
