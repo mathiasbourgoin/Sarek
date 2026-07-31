@@ -335,16 +335,24 @@ val referenced_type_names : Sarek_ir_types.elttype -> string list
 
     {b Completeness (backlog-212).} Before any placement, every name any
     declaration's fields/payloads reference is checked against the declared set
-    (by mangled name, either kind); the self-reference case always passes,
-    because the declaration supplying the name is itself in that set. A name
-    that resolves to nothing raises {!Undeclared_type_ref} rather than being
-    silently dropped as "not an edge" — that used to surface only later, as
-    whichever backend compiler happened to run over the generated source
-    complaining about an unknown type name, or (Metal/PTX) not complaining at
-    all. This is reachable from ordinary [[@@sarek.type]] source: the PPX
-    registers a variant's constructor payload from the constructor's OWN
-    declared type, independent of whether the value passed to the constructor
-    ever separately registered its own record type.
+    (by mangled name, either kind — the same kind-blind resolution the edges
+    above already use, so a set this check accepts as complete can still name a
+    same-mangled, wrong-kind declaration; that residual is not what this check
+    closes); the self-reference case always passes, because the declaration
+    supplying the name is itself in that set. A name that resolves to nothing
+    raises {!Undeclared_type_ref} rather than being silently dropped as "not an
+    edge" — that used to surface only later, as whichever backend compiler
+    happened to run over the generated source complaining about an unknown type
+    name. Not every backend is in that "later" set: Metal goes through
+    {!gen_c_type_decls} like the rest of the C family and is fully covered here;
+    PTX declares no struct types at all (its [generate_with_types] never calls
+    {!gen_type_decls}), so an undeclared reference on the PTX path is exactly as
+    silent after this check as before it — this closes the gap for every
+    struct-DECLARING backend, not for the one backend that declares none. This
+    is reachable from ordinary [[@@sarek.type]] source: the PPX registers a
+    variant's constructor payload from the constructor's OWN declared type,
+    independent of whether the value passed to the constructor ever separately
+    registered its own record type.
 
     Exported for the tests; {!gen_type_decls} is the only production caller.
 
@@ -367,11 +375,14 @@ val sort_type_decls_by_dependency : type_decl list -> type_decl list
     or payload types name a record or variant that is not itself among the
     declarations it was given — a reference with nothing behind it, as opposed
     to {!Type_decl_cycle}'s reference to something present but unorderable. Each
-    string in the payload names the referencing declaration's kind and name, the
-    field or constructor site, and the missing type, e.g.
+    string in the payload names the referencing declaration's kind and MANGLED
+    name, the field or constructor site, and the missing (also mangled) type,
+    e.g.
     [{"variant \"probe2\"'s constructor \"At2\" references undeclared type
-     \"probe_pt\""}]. A [Printexc] printer is registered so the message reaches
-    the user instead of [Undeclared_type_ref(_)].
+     \"probe_pt\""}] — both names mangled consistently, never one dotted and the
+    other underscored for what is otherwise the same declaration. A [Printexc]
+    printer is registered so the message reaches the user instead of
+    [Undeclared_type_ref(_)].
 
     Reachable from ordinary [[@@sarek.type]] source: the PPX registers a
     variant's constructor payload type from the constructor's own declaration,
