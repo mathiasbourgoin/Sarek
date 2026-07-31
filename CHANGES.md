@@ -112,6 +112,19 @@
   cannot carry a default, and the index is not derivable from the rest of the
   signature.
 
+- **BREAKING (backlog-185/200): all five source-emitting backends now REFUSE a
+  `[%native]` block instead of emitting for it.** Before this change CUDA,
+  OpenCL and Metal raised on `SNative` while GLSL and WGSL silently emitted
+  `/* native code not supported in <lang> */` and continued, producing a
+  shader missing the operation the kernel asked for with no diagnostic. GLSL
+  and WGSL now raise the same shared `Sarek_ir_codegen.native_block_refusal`
+  the other three do, naming what the caller should do instead (express the
+  operation in Sarek, or route it through PTX, which is the one backend that
+  still serves `[%native]` directly). Along the way, the per-generation facts
+  each backend needs while emitting (the kernel's variant table) moved from a
+  module-level `ref` — shared and clobbered across generations, including
+  across domains — to a value threaded through the emit calls, closing a
+  cross-generation and cross-domain data race.
 - The CUDA branch of `sarek_f32_barrier` no longer emits
   `asm volatile("" : "+f"(x))`. At an f16 narrowing it contributes zero PTX
   instructions, so `ptxas` receives an identical instruction stream and the

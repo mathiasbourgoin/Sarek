@@ -31,8 +31,10 @@ let make_var name ty =
 let mk_kernel name params body =
   {default_kernel with kern_name = name; kern_params = params; kern_body = body}
 
-(* No state to reset before generating: since backlog-185/200 the framework tag
-   and the variant table are per-generation values, not module refs. *)
+(* No state to reset before generating: since backlog-185/200 the variant
+   table is a per-generation value, not a module ref. The framework tag is no
+   longer state at all — it is a compile-time literal each backend passes for
+   itself, not something threaded per generation. *)
 let gen k = Sarek_ir_cuda.generate_with_types ~types:k.kern_types k
 
 (** Substring search (no Str dependency in this test's library set). *)

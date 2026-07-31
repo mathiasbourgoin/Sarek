@@ -125,11 +125,14 @@ let glsl_float16_refusal =
 
     A [SNative] node carries a closure that produces device source for a named
     target. The five source generators have no target to name: they are reached
-    through [Sarek_transpile.of_source] and through each backend plugin's
-    [generate_source], and neither supplies one. Before backlog-185/200 the tag
-    came from a module-level ref that {!Sarek_transpile} wrote as a side effect
-    of an unrelated generation — which is the bug this work removes, not a
-    mechanism to preserve.
+    through [Sarek_transpile.of_source], through each backend plugin's
+    [generate_source], and directly via each backend's [generate]/
+    [generate_with_types] — the golden tests and roughly ten unit tests call
+    those entry points straight, bypassing both of the above — and none of these
+    callers supplies one. Before backlog-185/200 the tag came from a
+    module-level ref that {!Sarek_transpile} wrote as a side effect of an
+    unrelated generation — which is the bug this work removes, not a mechanism
+    to preserve.
 
     So the five disagreed about a construct none of them could actually serve:
     CUDA, OpenCL and Metal raised, while GLSL and WGSL emitted
@@ -148,8 +151,9 @@ let native_block_refusal =
   "a [%native] block cannot be emitted as device source here. Inline native \
    code is an opaque string this generator can neither translate nor check, \
    and it is written for one specific target — which this path has no way to \
-   identify. Express the operation in Sarek so it can be generated for every \
-   backend."
+   identify. The PTX backend can serve it directly, since it always knows its \
+   own target and passes it to the closure; the five source generators cannot. \
+   Express the operation in Sarek so it can be generated for every backend."
 
 (** Mangle OCaml type name to valid C/GLSL identifier (e.g., "Module.point" ->
     "Module_point") *)
