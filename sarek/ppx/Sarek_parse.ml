@@ -1054,6 +1054,29 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
                 vbs
             in
             (types_acc, mods)
+        (* A DOC COMMENT IS A FLOATING ATTRIBUTE. A `(** ... *)` paragraph
+           standing between two items of a payload module parses to
+           [Pstr_attribute] with the name [ocaml.text] (checked with
+           `ocamlc -dparsetree`), and [structure_item_refusal]'s
+           [Pstr_attribute] arm was therefore rejecting documentation and
+           telling the user their comment "would be silently discarded".
+           Measured: sarek/tests/probe corpus, a payload module carrying a
+           standalone `(** ... *)` between two type declarations compiled at
+           exit 0 on 987b0c30 and failed at exit 1 on this branch before this
+           arm existed.
+
+           This is the SAME predicate CodeRabbit caught one site earlier on this
+           branch, on [ptype_attributes] in [check_payload_type_decl] — the rule
+           was right and its predicate was wider. The fix was applied there and
+           not here; the two allow-lists are deliberately identical. Nothing
+           renders documentation out of a payload, but that is a property of
+           documentation, not a dropped semantic. Any OTHER floating attribute
+           still falls to the refusal below, because that one really is a
+           directive nothing here interprets. *)
+        | Pstr_attribute {attr_name = {txt; _}; _}
+          when txt = "ocaml.doc" || txt = "ocaml.text" || txt = "doc"
+               || txt = "text" ->
+            (types_acc, mods_acc)
         (* Everything else used to return the accumulator UNCHANGED, so a
            declaration written inside a kernel module was silently absent from
            the kernel environment (backlog-192). *)

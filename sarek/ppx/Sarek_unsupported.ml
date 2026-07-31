@@ -406,8 +406,16 @@ let structure_item_refusal (d : structure_item_desc) : string =
        included signature's items into the kernel environment, so they would \
        be silently absent."
   | Pstr_attribute _ ->
-      "a floating attribute is not supported in a kernel module: no attribute \
-       is interpreted at this position, so it would be silently discarded."
+      (* Reached only for a NON-documentation floating attribute: the caller in
+         [Sarek_parse.parse_module_items_from_structure] skips [ocaml.doc] /
+         [ocaml.text] / [doc] / [text] before falling through to here, because a
+         `(** ... *)` paragraph between two items parses to exactly this
+         constructor and refusing it rejected documentation. Same predicate, and
+         the same allow-list, as [check_payload_type_decl]'s. *)
+      "a floating attribute (`[@@@name]`) is not supported in a kernel module: \
+       apart from documentation comments, which are accepted and ignored, no \
+       attribute is interpreted at this position, so this one would be \
+       silently discarded."
   | Pstr_extension ((name, _), _) ->
       Printf.sprintf
         "the extension point `%s` is not interpreted inside a kernel module \
