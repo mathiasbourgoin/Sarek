@@ -11,20 +11,26 @@
     WGSL's scalar-parameter list. Two generations therefore shared one set of
     cells, and the second one to start won.
 
-    The two cases below are the two ways that was reachable, and each is the
+    The cases below cover the two ways that was reachable, and each is the
     executed version of a claim rather than a restatement of it.
 
     SEQUENTIALLY, WITH NO CONCURRENCY AT ALL. [Sarek_transpile.of_source] wrote
     the framework tag into FOUR emitters at once and never cleared any of them,
     so transpiling anything to OpenCL left [Sarek_ir_cuda]'s tag reading
-    ["OpenCL"] for the rest of the process. A later CUDA generation on the
-    runtime path — [Cuda_c_plugin.generate_source], which passes no framework —
-    then queried the registry under the wrong tag and emitted [sin(a[i])] for a
-    [float32] kernel where it had emitted [sinf(a[i])] moments before. That is
-    the double-precision function, in valid CUDA C, with no diagnostic anywhere:
-    the kernel keeps computing, more slowly and to a different result. Note what
-    the case does NOT assert: merely that the two outputs are equal would also
-    be satisfied by both being wrong, so the [sinf] spelling is pinned directly.
+    ["OpenCL"] for the rest of the process. A later generation on the runtime
+    path — e.g. [Cuda_c_plugin.generate_source], which calls
+    [generate_with_types] and passes no framework — then queried the registry
+    under the wrong tag. Note what these cases do NOT assert: merely that the
+    two outputs are equal would also be satisfied by both being wrong, so the
+    spelling is pinned directly in each.
+
+    The sharpest instances are the two that emit an identifier the target
+    language does not have — OpenCL given CUDA's [sinf], CUDA given GLSL's
+    [inversesqrt] — because the device compiler rejects that source outright.
+    See the section heading further down. The CUDA [sin]-vs-[sinf] case is kept
+    but is the weaker one: whether the emitted [sin] selects the
+    double-precision function is decided by nvcc's implicit preinclude, which no
+    host here can settle, so this file does not claim it does.
 
     CONCURRENTLY. Two domains generating two different kernels interleave their
     writes to the shared cells, and the observable is a kernel emitted with
