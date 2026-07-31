@@ -412,12 +412,18 @@ let expand_to_run_source_args ?(inject_lengths = true) ?(soa_abi = false)
     Framework_sig.run_source_arg list =
   List.concat_map
     (function
-      | Vec v when soa_dispatch ~soa_abi v dev <> None ->
+      | Vec v when Option.is_some (soa_dispatch ~soa_abi v dev) ->
           (* N leaf base pointers in leaf (record declaration) order, then ONE
              shared length — exactly the param block Sarek_ir_ptx.emit_params
              produces for a ~soa_params vector. The length is emitted even under
              ~inject_lengths:false: it is not an injected convenience here but a
              declared parameter of that ABI. *)
+          (* [Option.get] on a predicate the guard just evaluated: [soa_dispatch]
+             is pure (it reads [v.Vector.soa] and compares [dev]'s framework
+             string), so the second call cannot disagree with the first. Kept as
+             two calls rather than restructured into one [match] because the
+             packed arm below is shared with the non-dispatching [Vec] case and
+             merging them would duplicate it. *)
           let b = Option.get (soa_dispatch ~soa_abi v dev) in
           let len = Vector.length v in
           let bufs = b.Vector.soa_leaf_bufs dev in

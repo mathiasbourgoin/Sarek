@@ -458,9 +458,19 @@ let check_per_device_leaf_free (src : Device.t) (other : Device.t) =
       (leaves_bytes - (Gpu_memory.usage () - base)) ;
   (match Transfer.to_cpu ~force:true sv with
   | () ->
+      (* Per-LOOP first-mismatch flag, not the function-wide [ok]. The two byte
+         assertions above can already have cleared [ok], and gating the print on
+         it then reports FAILED for this case while printing no index evidence for
+         the data claim — the defect the sibling file
+         ([test_soa_emitter_equiv.ml], claim 2 of [check_free_buffer_coherent])
+         documents and fixes the same way. It was fixed there this round and not
+         carried across to here, which is the shape of a fix that stops at the
+         file it was reported in. *)
+      let first_mismatch = ref true in
       for i = 0 to n - 1 do
         let got = (Vector.get sv i).y and want = y0 i *. 2.0 in
-        if Float.abs (got -. want) > 1e-3 && !ok then
+        if Float.abs (got -. want) > 1e-3 && !first_mismatch then begin
+          first_mismatch := false ;
           fail
             "read-back after free_buffer on an unrelated device is wrong @%d: \
              got=%g want=%g (the pre-launch host value is %g)"
@@ -468,6 +478,7 @@ let check_per_device_leaf_free (src : Device.t) (other : Device.t) =
             got
             want
             (y0 i)
+        end
       done
   | exception e ->
       fail
@@ -610,18 +621,9 @@ let () =
              device boundary". It lives here because this is the only test with
              two devices in hand. *)
           let c = check_per_device_leaf_free src dst in
-          (* Also two-device-only: the free has to land on a device the leaves
-             are not on for the ownership flag to be resurrectable at all. But
-             unlike the three above it needs BOTH devices to be CUDA/PTX, because
-             its step 2 is a PACKED launch on [dst] through [run_source ~lang:PTX]
-             and [Execute.run_source] raises [Unsupported_argument] on a backend
-             whose [supported_source_langs] does not list PTX — which is every
-             backend but Cuda_ptx_plugin. A heterogeneous pair would make this
-             file exit 1 on an environment shortfall rather than on an assertion,
-             so it is a NAMED skip instead. *)
-          (* Both of the last two need a CUDA/PTX [dst]: this one because the SoA
-             ABI dispatches on no other backend, so a non-PTX [dst] would take
-             the packed path and the case would be a duplicate of [a] and [b]. *)
+          (* [e] needs a CUDA/PTX [dst] because the SoA ABI dispatches on no
+             other backend: a non-PTX [dst] would take the packed path and the
+             case would be a duplicate of [a] and [b]. *)
           let e =
             if is_ptx dst then check_soa_then_soa_other_device src dst
             else begin
@@ -635,6 +637,15 @@ let () =
               true
             end
           in
+          (* Also two-device-only: the free has to land on a device the leaves
+             are not on for the ownership flag to be resurrectable at all. And
+             [d] needs a CUDA/PTX [dst] for its own reason, not [e]'s — its step 2
+             is a PACKED launch on [dst] through [run_source ~lang:PTX], and
+             [Execute.run_source] raises [Unsupported_argument] on a backend whose
+             [supported_source_langs] does not list PTX, which is every backend
+             but Cuda_ptx_plugin. A heterogeneous pair would make this file exit 1
+             on an environment shortfall rather than on an assertion, so it is a
+             NAMED skip instead. *)
           let d =
             if is_ptx dst then check_free_does_not_resurrect_leaves src dst
             else begin

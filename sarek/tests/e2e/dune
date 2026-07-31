@@ -978,9 +978,15 @@
 ; the host enumerates, so a host that reaches its OpenCL ICD, Vulkan loader or
 ; Mesa drivers through an inherited LD_LIBRARY_PATH lost THOSE devices too — they
 ; simply stop enumerating, which costs real rows and fails nothing.
-; %{env:LD_LIBRARY_PATH=} expands to the empty string when the variable is unset,
-; leaving a trailing colon; the loader reads an empty entry as the current
-; directory, which under dune is the sandboxed build directory.
+; BOTH %{env:...} defaults are non-empty, and that is a loader-safety requirement
+; rather than tidiness. With an empty default for LD_LIBRARY_PATH the value ends
+; in a colon, and the dynamic loader reads a trailing empty entry as the CURRENT
+; DIRECTORY -- under dune the sandboxed build directory, so any stray .so written
+; there would be a candidate for loading ahead of the system copy. /usr/lib is the
+; harmless stand-in: it is already on the default search path, so naming it adds
+; no directory that was not being searched. With an empty default for HOME the
+; first entry becomes the absolute /opt/zluda, a path outside this checkout that
+; nothing here owns; /nonexistent keeps the entry inert instead.
 ; Same precedent as the RUSTICL_FEATURES=fp64 rule further down: set the variable
 ; that makes a leg actually exercised, rather than documenting it in a comment and
 ; letting the leg quietly not run.
@@ -990,7 +996,7 @@
  (action
   (setenv
    LD_LIBRARY_PATH
-   %{env:HOME=}/opt/zluda:%{env:LD_LIBRARY_PATH=}
+   %{env:HOME=/nonexistent}/opt/zluda:%{env:LD_LIBRARY_PATH=/usr/lib}
    (run %{dep:test_soa_emitter_equiv.exe}))))
 
 ; Cross-device migration of a transparent SoA vector: Transfer.to_device to a
@@ -1026,7 +1032,7 @@
  (action
   (setenv
    LD_LIBRARY_PATH
-   %{env:HOME=}/opt/zluda:%{env:LD_LIBRARY_PATH=}
+   %{env:HOME=/nonexistent}/opt/zluda:%{env:LD_LIBRARY_PATH=/usr/lib}
    (run %{dep:test_soa_cross_device_migration.exe}))))
 
 ; L17b polymorphic bare float literals: bare (unsuffixed) literals inferred as

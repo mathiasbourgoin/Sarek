@@ -65,8 +65,10 @@ existing enumeration — the STOP condition in the task did not fire).
   reference. **PASS** for `point3d` (3× f32) and `dpair` (2× f64) on RX 7900 XTX
   and CPU-as-CUDA under ZLUDA; `point3d`'s AoS leg also passes on
   OpenCL/Vulkan/Native/Interpreter. i32/i64 leaves are covered at the
-  PTX-instruction + ptxas-assembly level (device e2e for them is folded into
-  Tier 1c once the launch plumbing lands).
+  PTX-instruction + ptxas-assembly level AND on device — see the table below and
+  "Device e2e for the two integer combos: DONE" under it. The Tier 1c deferral
+  this bullet used to carry was discharged once ZLUDA supplied a CUDA/PTX
+  device.
 
 | Leaf type combo | PTX markers | ptxas | device e2e (ZLUDA) |
 |---|---|---|---|
@@ -198,7 +200,10 @@ codegen-level `~soa_params` knob:
 This is pure plumbing (no new coalescing) — the roadmap (§1.2c/e) rates it the
 bulk of the SoA cost; it was descoped here so the emitter could ship complete
 and proven. When it lands, extend `test_soa_emitter_equiv` to drive SoA through
-`Vector.create ~layout:SoA` + `run_vectors`, and add the i32/i64 device rows.
+the transparent constructor + `run_vectors`. The i32/i64 device rows this
+sentence used to also ask for are NOT outstanding: they landed with
+`check_mixed_widths` (see the table above), and leaving them listed here had a
+reader draw the opposite conclusion from the table.
 
 > **✅ CLOSED (2026-07-29) — was: PRECONDITION, generated param-name namespace.**
 > Option (a) shipped in `63ab6df1`: the emitter now mangles leaves as

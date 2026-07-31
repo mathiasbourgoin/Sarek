@@ -696,9 +696,12 @@ let check_gate dev =
    leaf back (D2H) and gather into the AoS vector, and check the AoS y values.
    Exercises the leaf-writeback + Soa_vector.gather path (no other shipped test
    writes an SoA leaf). CUDA/PTX only. *)
+(* No [is_ptx] early return: the caller routes this through [guarded], which
+   prints the named skip. Returning [true] silently here as well would be the
+   skip-as-pass shape twice over, and the guard would then be the only thing
+   keeping the row visible. *)
 let check_roundtrip dev n =
-  if not (is_ptx dev) then true
-  else begin
+  begin
     Printf.printf
       "SoA-roundtrip [%s] %s: %!"
       dev.Device.framework
@@ -1086,7 +1089,7 @@ let check_short_arg_list dev =
      from "the fallback was never exercised". It would catch a soa_dispatch
      predicate that fired on the wrong backend.
 
-     CORRECTED 2026-07-30 — this comment used to add "this machine has no NVIDIA
+     CORRECTED — this comment used to add "this machine has no NVIDIA
      device, so locally it is the fallback half that runs", which contradicted the
      header of the integer-combo cases in this same file ("it needs a CUDA/PTX
      device. ZLUDA provides one") and pointed a reader away from the arm that
@@ -1147,34 +1150,6 @@ let check_transparent dev n =
     (if !ok then "OK" else "FAILED") ;
   !ok
 
-(* Transparent OUTPUT round-trip: a kernel writes the y leaf and the host reads
-   the result back with a plain [Vector.get] — no leaf iteration, no explicit
-   gather. That is the whole claim of the transparent path, and it is a different
-   claim from {!check_roundtrip}, which does the D2H and the gather BY HAND
-   because [Soa_launch.run_soa] documents that as the caller's job.
-
-   Nothing covered it before, and the gap was not cosmetic: [check_transparent]
-   above writes its results into a separate plain [out] vector, so it holds the
-   SoA vector INPUT-only. With the SoA ABI selected, a launch writes the N leaf
-   buffers and leaves the packed AoS buffer untouched — which is precisely what
-   an ordinary [Transfer.to_cpu] downloads. Every assertion above would still
-   have passed while a kernel's output was silently discarded.
-
-   Runs on every device EXCEPT the two CPU backends — see
-   {!blocker_cpu_field_store}. The stronger test was always the wider one: the
-   same [Vector.get] should return the same answer through the packed AoS
-   fallback, and as of 2026-07-30 it is asserted there, on OpenCL x2 and Vulkan
-   x2 as well as on CUDA/PTX.
-
-   Until round 4 this was gated on [is_ptx], with the CPU-backend defect
-   (backlog-172) given as the reason. The defect is real — the Interpreter
-   REFUSES [pts.(tid).y <- …] (Sarek_ir_interp_eval.assign_lvalue's
-   [LRecordField] arm raises [Unsupported_operation "record field assignment"])
-   and Native accepts it and silently drops the store (measured: y unchanged at 1
-   where 2 was expected) — but it is a defect of those two backends only, and
-   using it to withhold the case from OpenCL and Vulkan withheld four real
-   assertions under a reason false of all four devices. When 172 lands, delete
-   the blocker; the assertion below needs no other change. *)
 (* TWO launches on ONE vector, with different host data in between (H5,
    backlog-181). This is the case no existing test constructs — every other one
    allocates a fresh vector — and that is exactly why the defect was invisible to
@@ -1251,6 +1226,34 @@ let check_relaunch dev n ~writer_name ~write ~y_expected ~stale_note =
     (if !ok then "OK" else "FAILED") ;
   !ok
 
+(* Transparent OUTPUT round-trip: a kernel writes the y leaf and the host reads
+   the result back with a plain [Vector.get] — no leaf iteration, no explicit
+   gather. That is the whole claim of the transparent path, and it is a different
+   claim from {!check_roundtrip}, which does the D2H and the gather BY HAND
+   because [Soa_launch.run_soa] documents that as the caller's job.
+
+   Nothing covered it before, and the gap was not cosmetic: [check_transparent]
+   above writes its results into a separate plain [out] vector, so it holds the
+   SoA vector INPUT-only. With the SoA ABI selected, a launch writes the N leaf
+   buffers and leaves the packed AoS buffer untouched — which is precisely what
+   an ordinary [Transfer.to_cpu] downloads. Every assertion above would still
+   have passed while a kernel's output was silently discarded.
+
+   Runs on every device EXCEPT the two CPU backends — see
+   {!blocker_cpu_field_store}. The stronger test was always the wider one: the
+   same [Vector.get] should return the same answer through the packed AoS
+   fallback, and as of 2026-07-30 it is asserted there, on OpenCL x2 and Vulkan
+   x2 as well as on CUDA/PTX.
+
+   Until round 4 this was gated on [is_ptx], with the CPU-backend defect
+   (backlog-172) given as the reason. The defect is real — the Interpreter
+   REFUSES [pts.(tid).y <- …] (Sarek_ir_interp_eval.assign_lvalue's
+   [LRecordField] arm raises [Unsupported_operation "record field assignment"])
+   and Native accepts it and silently drops the store (measured: y unchanged at 1
+   where 2 was expected) — but it is a defect of those two backends only, and
+   using it to withhold the case from OpenCL and Vulkan withheld four real
+   assertions under a reason false of all four devices. When 172 lands, delete
+   the blocker; the assertion below needs no other change. *)
 let check_transparent_roundtrip dev n =
   let threads = min 128 n in
   let block = dims threads and grid = dims ((n + threads - 1) / threads) in
@@ -1313,29 +1316,6 @@ let check_transparent_roundtrip dev n =
     (if !ok then "OK" else "FAILED") ;
   !ok
 
-(* SoA ABI, then PACKED AoS ABI, on ONE vector, with NO host read-back in
-   between.
-
-   [soa_leaves_live] was only ever set — nothing cleared it. So once a transparent
-   CUDA/PTX launch had run, EVERY later read-back on that vector followed the
-   leaves for the rest of its life, no matter which ABI the most recent launch
-   actually used. [Execute.run_source] deliberately keeps the packed ABI (it hands
-   the backend a source string Sarek did not emit), which makes this sequence
-   reachable through the public API with no unusual step.
-
-   The second launch is the assertion; the first would pass either way. And the
-   missing read-back in between is the whole point — inserting one would clear the
-   staleness by accident and the case would pass unfixed.
-
-   The packed source is the SAME IR compiled WITHOUT ~soa_params rather than
-   hand-written PTX, so this case cannot pass or fail for a PTX-authoring reason.
-
-   Both expectations are distinguishable: y0 = i+1, each launch doubles y, so the
-   correct answer is 4*(i+1) and following the stale leaves gives 2*(i+1) —
-   never equal. Pre-fix the failure is in fact LOUDER than that (the packed
-   launch has no buffer to bind, because the transparent path never allocates
-   one), which is why the exception is caught and reported rather than left to
-   abort the binary: a red state that is a crash is not an observation. *)
 (* A HOST WRITE between a transparent launch and a packed one must survive.
 
    Same two launches as {!check_soa_then_packed}, with one statement added
@@ -1459,6 +1439,66 @@ let check_host_write_survives_packed dev n =
    This is also the function's only coverage anywhere in the tree: nothing else in
    the repository calls it (it is public API reached only from user code), which
    is how a claim about it could stand unchecked for a whole review round. *)
+(* Does [Gpu_memory] track allocations on a NON-GPU device?
+
+   The migration suite's byte-split arm accepts any framework for its destination,
+   and review asked twice whether that holds — whether [Device.all ()] hands back
+   Native/Interpreter devices and whether their allocations are counted, because
+   if they are not, the byte delta there is 0 and the arm fails instead of
+   measuring anything. I refuted it by citation
+   ([Transfer.ensure_buffer] calls [Gpu_memory.track_alloc (B.size * B.elem_size)]
+   at Transfer.ml:232, on a wrapper whose [size]/[elem_size] come from the request
+   at Transfer.ml:150-152, with nothing backend-conditional between them).
+
+   A citation is not a measurement, and the measurement is cheap, so it is here
+   instead. Asserted for EVERY enumerated device rather than only the CPU
+   backends: "the accounting is framework-agnostic" is the claim, and checking it
+   only where it is doubted would leave the general form unchecked.
+
+   Exactly [length * elem_size], not merely "> 0": a tracker that counted
+   allocations rather than bytes would satisfy the weaker form, and the migration
+   arm compares deltas against each other, so the number has to be the right
+   one. *)
+let check_alloc_tracking_is_framework_agnostic dev =
+  let n = 64 in
+  let v = Vector.create_custom point3d_custom n in
+  let expect = n * point3d_custom.Vector.elem_size in
+  Gc.full_major () ;
+  let before = Gpu_memory.usage () in
+  let ok =
+    match Transfer.to_device v dev with
+    | () ->
+        let got = Gpu_memory.usage () - before in
+        if got = expect then true
+        else begin
+          Printf.printf
+            "  alloc tracking on [%s] %s: %d bytes tracked, want %d (%d elems \
+             x %d B)\n\
+             %!"
+            dev.Device.framework
+            dev.Device.name
+            got
+            expect
+            n
+            point3d_custom.Vector.elem_size ;
+          false
+        end
+    | exception e ->
+        Printf.printf
+          "  alloc tracking on [%s] %s: to_device raised: %s\n%!"
+          dev.Device.framework
+          dev.Device.name
+          (Printexc.to_string e) ;
+        false
+  in
+  Transfer.free_all_buffers v ;
+  ignore (Sys.opaque_identity v) ;
+  Printf.printf
+    "  %-56s %s\n%!"
+    "Gpu_memory tracks this device's bytes (any framework)"
+    (if ok then "OK" else "FAILED") ;
+  ok
+
 let check_sync_vectors_to_cpu_gathers dev n =
   let threads = min 128 n in
   let block = dims threads and grid = dims ((n + threads - 1) / threads) in
@@ -1531,7 +1571,19 @@ let check_sync_vectors_to_cpu_gathers dev n =
    Either refusal is accepted, but a LAUNCH is not: what must never happen is the
    call returning normally, because that is the short-argument-array case. The
    message is checked for the leaf-buffer wording so an unrelated failure cannot
-   satisfy it. *)
+   satisfy it.
+
+   WHAT THIS ROW CAN AND CANNOT REPORT. Its red state is a process CRASH, not a
+   FAILED line, and that is the finding rather than a shortcoming: with the guard
+   disabled AND [soa_leaf_bufs] changed to drop leaves that have no buffer instead
+   of raising, this call SIGSEGVs — measured, exit 139, immediately after the row
+   above it prints. So the mutation kills the binary before this row can print
+   anything, which is exactly the driver over-read the guard exists to prevent,
+   observed. The positive control for this case is therefore the exit code of the
+   whole run, and what the row itself asserts is the narrower thing: that on the
+   current code the call is REFUSED, by name, rather than reaching a launch. A
+   FAILED line here would mean [run] returned normally — the third outcome, and
+   the only one nothing else would catch. *)
 let check_direct_run_refuses_untransferred dev n =
   let threads = min 32 n in
   let block = dims threads and grid = dims ((n + threads - 1) / threads) in
@@ -1574,6 +1626,29 @@ let check_direct_run_refuses_untransferred dev n =
           msg ;
         false)
 
+(* SoA ABI, then PACKED AoS ABI, on ONE vector, with NO host read-back in
+   between.
+
+   [soa_leaves_live] was only ever set — nothing cleared it. So once a transparent
+   CUDA/PTX launch had run, EVERY later read-back on that vector followed the
+   leaves for the rest of its life, no matter which ABI the most recent launch
+   actually used. [Execute.run_source] deliberately keeps the packed ABI (it hands
+   the backend a source string Sarek did not emit), which makes this sequence
+   reachable through the public API with no unusual step.
+
+   The second launch is the assertion; the first would pass either way. And the
+   missing read-back in between is the whole point — inserting one would clear the
+   staleness by accident and the case would pass unfixed.
+
+   The packed source is the SAME IR compiled WITHOUT ~soa_params rather than
+   hand-written PTX, so this case cannot pass or fail for a PTX-authoring reason.
+
+   Both expectations are distinguishable: y0 = i+1, each launch doubles y, so the
+   correct answer is 4*(i+1) and following the stale leaves gives 2*(i+1) —
+   never equal. Pre-fix the failure is in fact LOUDER than that (the packed
+   launch has no buffer to bind, because the transparent path never allocates
+   one), which is why the exception is caught and reported rather than left to
+   abort the binary: a red state that is a crash is not an observation. *)
 let check_soa_then_packed dev n =
   let threads = min 128 n in
   let block = dims threads and grid = dims ((n + threads - 1) / threads) in
@@ -2110,7 +2185,7 @@ let () =
       (* dpair (f64) proves the 8-byte SoA leaf. Gated on the DEVICE's fp64
          capability, not on CUDA/PTX.
 
-         CORRECTED 2026-07-30 — the previous restriction to PTX was justified as
+         CORRECTED — the previous restriction to PTX was justified as
          "some non-PTX backends, e.g. OpenCL/radeonsi, have an unrelated f64
          custom-vector gap". That attribution is wrong. Measured: with
          RUSTICL_FEATURES=fp64 set, this row PASSES on OpenCL/radeonsi (both
@@ -2265,6 +2340,10 @@ let () =
           ( "free_buffer leaves the vector coherent (location/re-read/re-upload)",
             fun () -> check_free_buffer_coherent dev n );
         ] ;
+      (* Device-independent in the sense that matters: it asserts the SAME
+         property on every framework, which is what the migration suite's
+         any-framework destination rests on. *)
+      if not (check_alloc_tracking_is_framework_agnostic dev) then ok := false ;
       if not (check_mixed_widths dev n) then ok := false ;
       (* Item 3: SoA launch must be rejected (never wrong data) on non-PTX. *)
       if not (check_gate dev) then ok := false ;
@@ -2276,6 +2355,18 @@ let () =
          CUDA host. *)
       if not (check_short_arg_list dev) then ok := false ;
       (* Leaf-write round-trip (D2H + gather) on CUDA/PTX. *)
-      if is_ptx dev && not (check_roundtrip dev n) then ok := false)
+      (* Through [guarded] like the group above it, not a bare [if is_ptx]:
+         that conjunct printed nothing at all on a non-PTX device, which is the
+         last skip-as-pass row in this loop. The blocker is the SoA-ABI one — the
+         hand-written D2H + gather this case performs is only meaningful where
+         the leaf ABI was selected. *)
+      if
+        not
+          (guarded
+             dev
+             ~blockers:[blocker_needs_soa_abi]
+             ~label:"SoA leaf-write round trip"
+             (fun () -> check_roundtrip dev n))
+      then ok := false)
     devs ;
   if not (!ok && layout_ok) then exit 1
