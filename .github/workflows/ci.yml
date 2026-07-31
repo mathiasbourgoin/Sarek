@@ -368,6 +368,19 @@ jobs:
           # excludes and a correct single-sigil spelling that must NOT fire.
           # Case 0 is the positive control.
           ./scripts/check-ppx-construct-names.test.sh
+          # backlog-229. FORMAL_ALLOW_DIRTY=1 bypassed the pre-flight dirty
+          # check but the per-project restore_tree EXIT trap ran its
+          # `git checkout -- .` regardless, discarding a developer's
+          # uncommitted work under the exact flag that was supposed to
+          # tolerate it. No real Rocq toolchain needed -- a stub `rocq` gets
+          # the gate as far as the trap and no further, so this runs here
+          # rather than in the `formal-proofs` container job below. Three
+          # cases: flag=1 with pre-existing dirty work must not discard it;
+          # flag unset with a clean start must still restore build-induced
+          # drift (the trap's actual job, unchanged); flag unset with
+          # pre-existing dirty work must still refuse outright before ever
+          # reaching the trap.
+          ./scripts/check-formal-proofs.test.sh
 
       - name: Formal proofs admit gate
         run: |
