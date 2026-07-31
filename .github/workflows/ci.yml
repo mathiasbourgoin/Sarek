@@ -144,6 +144,16 @@ jobs:
       - name: KB properties (code-intel) gate
         run: ./scripts/check-kb-properties.sh
 
+      # backlog-218. The step above enforces that a `red_path` file exists and
+      # is carrier-invoked; it never looks at whether prove-red.sh would
+      # actually discover the block a `red_path: scripts/prove-red.sh` row
+      # claims, or notice a live block with no row at all. ci/assert-toolchain.sh
+      # sat in exactly that second state for months, past both checks, until
+      # PR #384 fixed it by hand. This closes both directions. Exit 2 means
+      # kb/properties.md itself is malformed, which is never a skip.
+      - name: Prove-red <-> KB linkage
+        run: ./scripts/check-provered-kb-link.sh
+
       # backlog-168. Three personal hostnames, with exact kernel versions, were
       # committed in 263 files -- in the FILENAMES as well as the payloads --
       # and served from the gh-pages dashboard. The producer no longer collects
@@ -164,9 +174,11 @@ jobs:
       # Measured 1.8s for 8 subjects and 53 mutations (2026-07-31, PR #399);
       # it never runs the test suite. PR #384 corrected this from a stale
       # "4 subjects and 13 mutations" to 7/38 and said the figure is corrected in
-      # the commit that raises the pin -- this is that commit, so it moves again
-      # to 8/53 (the eighth subject being check-dune-opam-portability.sh, whose
-      # 15 mutations are the largest single block in the suite).
+      # the commit that raises the pin -- this is that commit for that PR, so it
+      # moved to 8/53 (the eighth subject being check-dune-opam-portability.sh,
+      # whose 15 mutations are the largest single block in the suite). backlog-218
+      # adds a ninth, scripts/check-provered-kb-link.sh, with 5 mutations of its
+      # own: 9/58.
       - name: Prove-red (gates are mutated and observed to fail)
         run: ./scripts/prove-red.sh
 
