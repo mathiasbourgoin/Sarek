@@ -872,7 +872,20 @@ let check_payload_type_decl (td : type_declaration) : unit =
   List.iter
     (fun (attr : attribute) ->
       match attr.attr_name.txt with
+      (* Sarek's own two: inside a payload every type declaration is already a
+         Sarek type, so these are redundant rather than dropped. *)
       | "sarek.type" | "sarek.type_private" -> ()
+      (* A DOC COMMENT is an attribute. `(** ... *)` on a payload type parses to
+         [ocaml.doc] (checked with `ocamlc -dparsetree`), so the refusal below
+         rejected a comment — telling the user to delete their documentation
+         because "nothing interprets it". Nothing does render it from a payload,
+         but that is a property of documentation, not a dropped semantic, and the
+         refusal was wider than the rule it enforces. Caught by CodeRabbit on
+         PR #398; the accepting case is
+         [test_parse_payload_doc_comment_accepted] in
+         sarek/tests/unit/test_parse.ml, which was proven red by deleting this
+         very line. *)
+      | "ocaml.doc" | "ocaml.text" | "doc" | "text" -> ()
       | other ->
           raise
             (Parse_error_exn

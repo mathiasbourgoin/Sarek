@@ -664,6 +664,85 @@ let test_parse_expr_open_deep_path () =
         (String.concat "; " p)
   | _ -> Alcotest.fail "expected EOpen"
 
+(* A doc comment on a payload type declaration must be ACCEPTED (backlog-192,
+   caught by CodeRabbit on PR #398).
+
+   `(** ... *)` is not a comment by the time the PPX sees it: the OCaml parser
+   turns it into an `ocaml.doc` ATTRIBUTE on the declaration (checked with
+   `ocamlc -dparsetree`). backlog-192's `check_payload_type_decl` refuses
+   uninterpreted attributes on a payload type — correctly, since a payload never
+   reaches OCaml and an attribute there is read by nobody — but that rule was
+   wider than its intent and rejected documentation, telling the user to delete a
+   comment. Measured before the fix: a payload `let module M = struct (** A
+   documented kernel type. *) type box = {v : int32} end` failed with
+   "the attribute `ocaml.doc` ... is not interpreted by anything".
+
+   This case is at the AST level rather than in the negative suite because it
+   asserts ACCEPTANCE, which that suite (every case of which must fail to
+   compile) cannot express. *)
+let test_parse_payload_doc_comment_accepted () =
+  let loc = Location.none in
+  let open Ppxlib.Ast_builder.Default in
+  let doc_attr =
+    attribute
+      ~loc
+      ~name:{txt = "ocaml.doc"; loc}
+      ~payload:(PStr [pstr_eval ~loc (estring ~loc " A documented type. ") []])
+  in
+  let type_decl =
+    {
+      (type_declaration
+         ~loc
+         ~name:{txt = "box"; loc}
+         ~params:[]
+         ~cstrs:[]
+         ~kind:
+           (Ptype_record
+              [
+                label_declaration
+                  ~loc
+                  ~name:{txt = "v"; loc}
+                  ~mutable_:Immutable
+                  ~type_:(ptyp_constr ~loc {txt = Lident "int32"; loc} []);
+              ])
+         ~private_:Public
+         ~manifest:None)
+      with
+      ptype_attributes = [doc_attr];
+    }
+  in
+  let module_struct =
+    pmod_structure ~loc [pstr_type ~loc Recursive [type_decl]]
+  in
+  let param_pat =
+    ppat_constraint
+      ~loc
+      (ppat_var ~loc {txt = "v"; loc})
+      (ptyp_constr
+         ~loc
+         {txt = Lident "vector"; loc}
+         [ptyp_constr ~loc {txt = Lident "int32"; loc} []])
+  in
+  let fun_expr =
+    pexp_fun
+      ~loc
+      Nolabel
+      None
+      param_pat
+      (pexp_construct ~loc {txt = Lident "()"; loc} None)
+  in
+  let payload =
+    pexp_letmodule ~loc {txt = Some "M"; loc} module_struct fun_expr
+  in
+  match parse_payload payload with
+  | kern ->
+      Alcotest.(check int)
+        "the documented type is registered"
+        1
+        (List.length kern.Sarek_ast.kern_types)
+  | exception Parse_error_exn (msg, _) ->
+      Alcotest.failf "a doc comment must not be refused, but got: %s" msg
+
 (* Test suite *)
 let () =
   Alcotest.run
@@ -758,5 +837,9 @@ let () =
             "three-deep let-open keeps its whole path"
             `Quick
             test_parse_expr_open_deep_path;
+          Alcotest.test_case
+            "a doc comment on a payload type is accepted"
+            `Quick
+            test_parse_payload_doc_comment_accepted;
         ] );
     ]
