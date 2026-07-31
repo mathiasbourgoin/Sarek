@@ -11,15 +11,18 @@
  * source: one pointer plus one length per vector parameter. The launch side
  * expands an SoA-dispatched vector into N [RSA_Buffer]s plus one
  * [RSA_Vector_Length], so AoS source under an SoA argument list is never a
- * compile error. On this backend nothing checks the arity either: the argument
- * array reaches [cuLaunchKernel] positionally and unchecked, so at two or more
- * leaves the list is LONGER than the AoS signature and every parameter after
- * the vector shifts. The declared length slot then reads a pointer value and
- * the next declared POINTER parameter reads its 8 bytes out of the 4-byte
- * length cell - which can misinterpret data and can equally trap on an illegal
- * device address. Neither "a crash" nor "silently wrong data" describes it on
- * its own; see [Backend_error.reject_soa_params] and
- * [Execute.expand_to_run_source_args].
+ * compile error. Nothing then compares the list against the compiled kernel's
+ * signature: the array reaches [cuLaunchKernel] positionally, and
+ * [Execute.check_launch_args] checks arity against the CALLER's vector list
+ * before expansion, so it cannot see this. At two or more leaves the expanded
+ * list is LONGER than the AoS signature and every declared slot from the vector
+ * onward is fed a value of the wrong kind. WHICH wrong kind depends on the
+ * parameter list: a length slot reading a pointer yields a garbage length, and
+ * where a pointer parameter follows the vector it reads 8 bytes out of a 4-byte
+ * length cell. So the general claim is only that the mapping is wrong from the
+ * vector onward and that this can misinterpret data and can trap - neither "a
+ * crash" nor "silently wrong data" describes it on its own. See
+ * [Backend_error.reject_soa_params] and [Execute.expand_to_run_source_args].
  *
  * [Sarek_ir_cuda] has no SoA lowering to select, so it is refused. (A
  * single-leaf record would in fact bind correctly, N = 1 making the two

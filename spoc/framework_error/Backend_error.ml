@@ -296,18 +296,23 @@ let raise_error err = raise (Backend_error err)
     it fails is per backend rather than uniform, which is why the refusal is
     stated here in terms of the mismatch and not of its symptom:
 
-    - CUDA/C, HIP and Metal bind POSITIONALLY with no arity check against the
-      compiled kernel ([Cuda_shared.bind_args], [Hip_shared.bind_args] into the
-      bare pointer array [cuLaunchKernel]/[hipModuleLaunchKernel] take;
-      [Metal_plugin_base] by list position via [atIndex:], its [expected_count]
-      being [Kernel_args.count] and so caller-derived). At two or more leaves
-      the list is LONGER than the AoS signature, which shifts every parameter
-      after the vector — exactly what [Execute.expand_to_run_source_args] warns
-      about for a leaf-count disagreement. So the declared length slot reads a
-      pointer value and the next declared POINTER parameter reads its 8 bytes
-      out of the 4-byte length cell: this can misinterpret data, and it can
-      equally trap on an illegal device address. Not a crash and silently wrong
-      data are both too narrow a description of it;
+    - CUDA/C, HIP and Metal bind POSITIONALLY with nothing comparing the list
+      against the compiled kernel's signature ([Cuda_shared.bind_args],
+      [Hip_shared.bind_args] into the bare pointer array
+      [cuLaunchKernel]/[hipModuleLaunchKernel] take; [Metal_plugin_base] by list
+      position via [atIndex:], its [expected_count] being [Kernel_args.count]
+      and so caller-derived). [Execute.check_launch_args] does check arity, but
+      against the CALLER's vector list before expansion, so it cannot see this.
+      At two or more leaves the expanded list is LONGER than the AoS signature,
+      so every declared slot from the vector onward is fed a value of the wrong
+      kind — exactly the shift [Execute.expand_to_run_source_args] warns about
+      for a leaf-count disagreement. WHICH wrong kind depends on the parameter
+      list and is not fixed: a length slot reading a pointer value yields a
+      garbage length; where a pointer parameter follows the vector, it reads its
+      8 bytes out of a 4-byte length cell. The general statement is only that
+      the mapping is wrong from the vector onward, and that this can
+      misinterpret data and can trap. "Not a crash" and "silently wrong data"
+      are each too narrow;
     - OpenCL shares that caller-derived preflight count, but has a late check it
       did not put there: binding goes through the checked [clSetKernelArg]
       funnel ([Opencl_api.Kernel.set_arg_mem]), which raises on
