@@ -123,3 +123,8 @@ skills-meta/
 # Roster pipeline briefs are working notes, not repository content: they carry
 # local paths and machine state, and one was tracked by accident. Local only.
 /briefs/
+
+# Rocq per-file proof-timing side files (COQAUX1). Build artifacts: they embed
+# the ABSOLUTE path of the .v they were produced from, so committing them
+# publishes the producing machine and user (backlog-216).
+.*.aux

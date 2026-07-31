@@ -4,7 +4,7 @@
 F-02 is a T2 dataflow task; Phase 1a adds a formal assumption documenting the known
 false-negative rather than fixing it.
 
-**Target file**: `/home/mathias/dev/SPOC/formal/convergence-safety/theories/ConvergenceSpec.v`
+**Target file**: `formal/convergence-safety/theories/ConvergenceSpec.v`
 
 ---
 

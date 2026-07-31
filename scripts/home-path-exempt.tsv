@@ -1,0 +1,32 @@
+# Absolute home paths that a tracked file may legitimately contain (backlog-216).
+#
+# Format: <citing/file>::<home-root><TAB><reason>
+#
+# The token is the HOME ROOT -- the first two path components plus the trailing
+# slash, e.g. the container account a Dockerfile builds under -- not a whole
+# path. One row therefore covers every line in that file that reaches into the
+# same home, which is how these actually cluster (the Dockerfile has twelve).
+#
+# Rows are SCOPED ONLY: there is no bare form. Every legitimate case found by
+# the backlog-216 sweep was legitimate BECAUSE of the file it was in -- an image
+# build, a CI comment about a container, a gate documenting its own regex, a
+# captured tool log. None of them is a reason to wave the same home root through
+# a design document. A bare row would do exactly that, so the parser refuses one.
+#
+# A row without a TAB and a reason is exit 2, not a pass: an exemption whose
+# justification is missing is indistinguishable from a paste.
+#
+# This file is itself scanned. A home path here is skipped only when it is the
+# first field of a well-formed row; one in a comment, or in a row missing its
+# reason, is a finding like any other. That is deliberate -- the file whose job
+# is to list these paths is the easiest place for a real one to hide.
+
+Dockerfile::/home/opam/	the opam base image's own account; the path is fixed by the IMAGE, not by whoever runs the build, and OPAMROOT/WORKDIR must name it absolutely
+.github/workflows/ci.yml::/home/rocq/	prose in a comment explaining why a `container:` job fails: the rocq image's switch belongs to its own `rocq` user, which is the fact being recorded
+scripts/check-cited-paths-exist.sh::/home/mathias/	the worked example in the comment documenting what that gate's regex deliberately does NOT match; the path is the comment's subject, and a shell-pasted absolute path is what a reader needs to see
+scripts/check-cited-paths-exist.test.sh::/home/u/	fixture text for the case above, pinning that the citation gate ignores a shell-pasted absolute path
+scripts/prove-red-fixtures/dune-verbose-command-exit-log.txt::/home/user/	captured dune --verbose output kept byte-for-byte as a parser fixture; already anonymised at capture, and editing it would stop it being a capture
+scripts/prove-red-fixtures/dune-verbose-signal-log.txt::/home/user/	captured dune --verbose output kept byte-for-byte as a parser fixture; already anonymised at capture, and editing it would stop it being a capture
+scripts/check-no-machine-identifiers.test.sh::/home/fixture-user/	this gate's own red-path fixtures. Scoped to a home root that exists nowhere else, so a REAL absolute home path pasted into the harness is still a finding -- a file-level exemption here would have made the gate blind to its own test file
+scripts/check-no-machine-identifiers.test.sh::/Users/fixture-user/	same harness, macOS spelling. A separate row on purpose: the rule matches a home ROOT, so exempting the Linux spelling must not silently exempt the macOS one -- there is a Mac in this fleet and /Users/<user>/ is a real future shape, not a hypothetical
+scripts/check-no-machine-identifiers.test.sh::/home/fixture-user2/	a SECOND fixture root, needed because the reason-field and row-shaped-comment cases must carry a root the fixture's own exemption row does not cover -- reusing the first root would have made those two cases pass for the wrong reason

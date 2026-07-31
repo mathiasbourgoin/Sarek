@@ -31,12 +31,33 @@ export const meta = {
 }
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
-const SPOC         = '/home/mathias/dev/SPOC'
+// Absolute paths are taken from the environment, never hardcoded to one
+// developer's home directory: SPOC_ROOT defaults to the invoking cwd, which the
+// runner sets to the repository root, and the apparatus lives in the agent
+// harness under $HOME, not in this tree.
+// Fail closed rather than degrade: an unset HOME used to yield `/.claude/...`
+// and a wrong cwd yields a FORMAL that does not exist, and every prompt below
+// then instructs an agent to cd somewhere absent -- which the agent reports as
+// project state rather than as a broken configuration.
+// HOME is needed only to DEFAULT the apparatus root, so the throw is conditional
+// on that default actually being used. Throwing unconditionally while advising
+// the reader to set FORMAL_APPARATUS_ROOT made the advertised recovery
+// impossible -- the check ran before the override was consulted.
+const HOME = process.env.HOME || ''
+const SPOC         = process.env.SPOC_ROOT || process.cwd()
 const FORMAL       = `${SPOC}/formal/convergence-safety`
-const SKILL_ROOT   = '/home/mathias/.claude/skills/formal-apparatus'
+if (!process.env.FORMAL_APPARATUS_ROOT && !HOME) {
+  throw new Error('set FORMAL_APPARATUS_ROOT (HOME is unset, so it cannot be defaulted)')
+}
+const SKILL_ROOT   = process.env.FORMAL_APPARATUS_ROOT || `${HOME}/.claude/skills/formal-apparatus`
 const PLAN_FILE    = `${FORMAL}/PLAN.md`
 const FEEDBACK_LOG = `${FORMAL}/report/WORKFLOW_FEEDBACK.md`
-const METHODOLOGY_BACKLOG = '/home/mathias/.claude/projects/-home-mathias-dev-bounty-skills/memory/methodology-upgrade-sources.md'
+// No default: the only path that ever worked here encoded one developer's
+// username and workstation layout in a directory COMPONENT, which is the
+// disclosure this file was cleaned up for and which no path rule can see,
+// because it is not a home root. Required explicitly or the Evolve phase is
+// skipped -- see the guard at its call site.
+const METHODOLOGY_BACKLOG = process.env.METHODOLOGY_BACKLOG || null
 
 const tick       = (args && args.tick != null) ? args.tick : 0
 const scriptPath = (args && args.scriptPath) || null
@@ -531,7 +552,10 @@ if (gateVerdict === 'GO') {
 }
 
 // ── Commit: always on GO, always split by file class ─────────────────────────
-// Commit 1 — Rocq / spec files (theories/, extraction/*.v, *.vo, *.glob, *.aux)
+// Commit 1 — Rocq / spec files (theories/, extraction/*.v, *.vo, *.glob)
+// NOT *.aux: the COQAUX1 side files embed the absolute path of the .v they were
+// produced from, so staging them publishes the producing machine and user
+// (backlog-216). They are gitignored.
 // Commit 2 — CMBT bug fixes (OCaml checker, conformance model) — only if bugs found
 // Commit 3 — Docs / infra (STATUS.md, ASSUMPTIONS.md, PLAN.md, LaTeX, proof-ledger)
 // All three are always pushed at the end.
@@ -553,11 +577,11 @@ if (gateVerdict === 'GO') {
 
     ── COMMIT 1 — Rocq / spec files ──
     Stage ONLY: theories/ConvergenceSpec.v  theories/ConvergenceSpec.vo
-                theories/ConvergenceSpec.glob  theories/.ConvergenceSpec.aux
+                theories/ConvergenceSpec.glob
                 extraction/ConvergenceSafetyExtraction.v
                 extraction/ConvergenceSafetyExtraction.vo
-                extraction/.ConvergenceSafetyExtraction.aux
                 extraction/ConvergenceSafetyExtraction.glob
+    Do NOT stage any .aux file: it carries an absolute home path (backlog-216).
     Commit message: "${taskResult.commitMessage}"
     (append "\\n\\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>")
 
@@ -635,16 +659,20 @@ const evolveProposal = await safeAgent(
      feedback_rocq_proof_methodology.md, feedback_formal_project_docs.md,
      feedback_cmbt_methodology.md if relevant to this tick's issues)
   3. Read ${SKILL_ROOT}/STATUS.md (apparatus version + known gaps)
-  4. \`cat ${METHODOLOGY_BACKLOG}\` — the methodology upgrade backlog
-     (these are pre-approved upgrades waiting to be folded into the apparatus)
+  4. ${METHODOLOGY_BACKLOG
+       ? `\`cat ${METHODOLOGY_BACKLOG}\` — the methodology upgrade backlog
+     (these are pre-approved upgrades waiting to be folded into the apparatus)`
+       : 'METHODOLOGY_BACKLOG is not set, so there is NO backlog to read. Skip step A\n     of the decision logic below and say so in your proposal; do not invent a path.'}
   5. \`cat ${FEEDBACK_LOG} 2>/dev/null | tail -60\` — recent feedback trends
 
   DECISION LOGIC:
-  A. First check the methodology-upgrade-sources.md backlog.
+  ${METHODOLOGY_BACKLOG
+    ? `A. First check the methodology-upgrade-sources.md backlog.
      If ANY backlog item maps to this tick's friction (e.g. the tick hit an independence
      gap → item 3 "orchestrator+fresh-reviewer independence" is relevant), propose folding
      that item into the apparatus skill as a domain-neutral memory or policy update.
-     Mark the backlog item as folded in your proposal.
+     Mark the backlog item as folded in your proposal.`
+    : 'A. There is no backlog in this configuration (METHODOLOGY_BACKLOG unset). Skip\n     straight to B; never report an item as folded.'}
 
   B. If no backlog item maps, check if this tick's friction reveals a new gap not
      already covered by existing memories. If yes, propose a NEW memory file.
@@ -722,9 +750,11 @@ if (evolveProposal.verdict === 'CHANGE') {
         2. If it is a NEW file in ${SKILL_ROOT}/memory/ and a MEMORY.md index exists there,
            append one line: "- [Title](filename.md) — one-line description"
            to \`${SKILL_ROOT}/memory/MEMORY.md\` (if that file exists)
-        3. If changeType is "methodology-backlog", also append a note to
+        3. ${METHODOLOGY_BACKLOG
+             ? `If changeType is "methodology-backlog", also append a note to
            ${METHODOLOGY_BACKLOG} marking the folded item:
-           "**[FOLDED tick ${tick}]** — folded into ${evolveProposal.skillFile}"
+           "**[FOLDED tick ${tick}]** — folded into ${evolveProposal.skillFile}"`
+             : 'METHODOLOGY_BACKLOG is not set: there is nothing to annotate, so skip this step.'}
         4. Confirm all writes`,
         { phase: 'Evolve', label: 'evolve-apply' }
       )
