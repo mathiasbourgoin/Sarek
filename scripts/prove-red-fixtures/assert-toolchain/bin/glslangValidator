@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: CECILL-B
+# SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
+# STUB. Not glslangValidator. See run-with-stubs.sh (backlog-176). glslang-tools
+# is not installed on the ubuntu-latest runner where scripts/prove-red.sh runs,
+# so leaving it to the host made the baseline red on arrival there.
+# Contracts the gate depends on:
+#   --version                       -> exit 0
+#   -V -S comp -o OUT FILE.comp     -> exit 0 AND create OUT
+# OUT is written even though the gate only reads the exit code: a stub that
+# claimed to compile a shader and left no artifact would be a claim wider than
+# its code the moment the gate starts checking.
+set -uo pipefail
+
+case " $* " in
+  *" --version "*)
+    echo "Glslang Version: 0.0.0-STUB (prove-red fixture, backlog-176)"
+    exit 0
+    ;;
+esac
+
+out=""
+prev=""
+for a in "$@"; do
+  case "$prev" in
+    -o) out="$a" ;;
+  esac
+  prev="$a"
+done
+
+if [ -z "$out" ]; then
+  echo "glslangValidator stub: unrecognised invocation: $*" >&2
+  exit 1
+fi
+
+printf 'STUB-SPIRV\n' >"$out"
+exit 0

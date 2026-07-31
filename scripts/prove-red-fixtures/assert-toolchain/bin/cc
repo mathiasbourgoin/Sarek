@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: CECILL-B
+# SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
+# STUB. Not a C compiler. See run-with-stubs.sh (backlog-176).
+#
+# ci/assert-toolchain.sh's NVRTC check compiles a small dlopen probe with `cc`
+# and RUNS it, so faking the check needs both halves: exit 0 from the compile AND
+# an executable at -o that behaves like a successful probe. A bare ubuntu-latest
+# runner (where scripts/prove-red.sh actually runs) has no loadable libnvrtc, so
+# a real cc here would make the baseline red for a reason that has nothing to do
+# with the decision logic under test.
+#
+# Contract:
+#   -o OUT SRC ...  -> exit 0 AND write a runnable OUT that prints an NVRTC
+#                      version line and exits 0.
+set -uo pipefail
+
+out=""
+prev=""
+for a in "$@"; do
+  case "$prev" in
+    -o) out="$a" ;;
+  esac
+  prev="$a"
+done
+
+if [ -z "$out" ]; then
+  echo "cc stub: no -o in invocation: $*" >&2
+  exit 1
+fi
+
+cat >"$out" <<'PROBE'
+#!/bin/sh
+echo "libnvrtc.so -> NVRTC 12.6 (STUB for prove-red, backlog-176)"
+PROBE
+chmod +x "$out"
+exit 0

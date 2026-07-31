@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: CECILL-B
+# SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
+# STUB. Not naga. See run-with-stubs.sh (backlog-176). naga is a cargo install,
+# absent from the ubuntu-latest runner where scripts/prove-red.sh runs, so
+# leaving it to the host made the baseline red on arrival there.
+# Contracts the gate depends on:
+#   --version   -> exit 0
+#   FILE.wgsl   -> exit 0 (the gate reads only the exit code)
+set -uo pipefail
+
+case " $* " in
+  *" --version "*)
+    echo "naga 0.0.0-STUB (prove-red fixture, backlog-176)"
+    exit 0
+    ;;
+esac
+
+for a in "$@"; do
+  if [ -f "$a" ]; then
+    echo "STUB: accepted $a without validating it"
+    exit 0
+  fi
+done
+
+echo "naga stub: no readable input in: $*" >&2
+exit 1

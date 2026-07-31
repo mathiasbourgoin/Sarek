@@ -173,7 +173,7 @@ set -euo pipefail
 # How many subjects the scan must find. Pinned, not counted: a scan that
 # reports what it happened to find is complete about a set it chose. Raise it
 # in the same commit that adds a block.
-EXPECTED_SUBJECTS=6
+EXPECTED_SUBJECTS=7
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXPECT=""
