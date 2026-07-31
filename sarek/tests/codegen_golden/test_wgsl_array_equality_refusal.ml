@@ -5,14 +5,21 @@
 
 (******************************************************************************
  * backlog-217 — WGSL must refuse whole-value equality on a vector/array
- * operand; the four C-family emitters must keep accepting it.
+ * operand; the four C-family emitters (which compilers independently accept
+ * this construct for, see below) must keep emitting it unchanged.
  *
  * Context: backlog-194 refused aggregate `=`/`<>` (tuple, record, variant,
  * TFun) at the typer, in {!Sarek_typer.reject_aggregate_equality}. [TVec] and
  * [TArray] were deliberately left OUT of that refused set — measured, a
  * kernel-vector or local-array parameter is a pointer on the device, `src =
  * dst` emits `(src == dst)`, and clang -x cl / glslangValidator both accept
- * it at exit 0 (verified again below via [test_c_family_still_accepts]).
+ * it at exit 0. That compiler-acceptance claim was established by hand,
+ * OUTSIDE this test, by generating this exact kernel's OpenCL/GLSL output and
+ * feeding it to clang -x cl -cl-std=CL1.2 and glslangValidator -V (both exit
+ * 0) before this fix was written. [test_c_family_still_accepts] below does
+ * NOT invoke any compiler — it only pins that the four emitters still PRINT
+ * the operator, i.e. that this fix did not touch them; see that function's
+ * comment for the exact claim it checks.
  *
  * WGSL does not generalise. naga has no equality operator on `array<T>` (a
  * kernel-vector parameter) or `array<T, N>` (a local array) — both IR shapes
@@ -149,9 +156,14 @@ let test_wgsl_accepts_element_eq () =
       "WGSL/element: scalar element equality should still emit `==`, got: %s"
       out
 
-(** The four C-family emitters (plus Vulkan/GLSL) must keep accepting BOTH
-    shapes unchanged: this is what makes backlog-217 an asymmetry rather than a
-    generalisable refusal. Each must still print `==` and must NOT raise. *)
+(** Regression guard, NOT a compiler-acceptance check: this only asserts that
+    OpenCL/CUDA/Metal/GLSL still EMIT the operator (`==`/`!=`) unchanged and do
+    NOT raise — i.e. that the WGSL-only refusal above did not widen onto these
+    four emitters. It does not invoke clang, glslangValidator, or any other
+    validator; no Vulkan backend is exercised. The compiler-acceptance claim
+    (clang -x cl and glslangValidator -V both exit 0 on this exact kernel) was
+    established by hand before this fix, not by this test — see the file header.
+*)
 let c_family_cases =
   [
     ("OpenCL", fun k -> Sarek_ir_opencl.generate_with_types ~types:[] k);
@@ -198,7 +210,8 @@ let () =
             `Quick
             test_wgsl_accepts_element_eq;
           Alcotest.test_case
-            "C-family emitters (+ GLSL/Vulkan) still accept both shapes"
+            "C-family emitters (OpenCL/CUDA/Metal/GLSL) still emit both shapes \
+             unchanged"
             `Quick
             test_c_family_still_accepts;
         ] );
