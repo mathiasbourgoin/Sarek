@@ -266,10 +266,21 @@ let get_device_buffer (type a b) (v : (a, b) Vector.t) (dev : Device.t) :
    pointers plus one shared length. The two generated-JIT sites pass [true]
    explicitly and everything else defaults to [false], because the dangerous
    direction is an EXTERNAL kernel: [run_source] hands the backend a source
-   string Sarek did not emit, whose parameter block is the packed [(ptr, len)]
-   pair, and binding N leaf pointers to it is not a crash but silently wrong
-   data. A default of [true] would make that the behaviour any new caller
-   inherits by omission. *)
+   string Sarek did not emit, whose parameter block at the vector's position is
+   the packed [(ptr, len)] pair the kernel author wrote there, not the
+   N-pointer layout this module can produce. [run_source] does not expose
+   [~soa_abi] and always calls this with the default, so that mismatch cannot
+   occur through it today. The design point is what a future caller passing
+   [~soa_abi:true] for an externally-authored kernel would hit: [soa_dispatch]
+   only ever answers [Some] on CUDA/PTX, which binds through the same bare
+   pointer array as CUDA/C and HIP, with nothing checking the bound arguments
+   against the compiled signature — so the outcome is the same
+   shape-dependent shift {!Backend_error.reject_soa_params} analyses in detail,
+   where a trap is among the possibilities but so is silent corruption (a
+   record's Nth leaf landing in a valid pointer slot of the wrong buffer) or no
+   visible effect at all (the vector declared last), never uniformly "a crash"
+   or uniformly "silently wrong data." A default of [true] would make that
+   hazard the behaviour any new caller inherits by omission. *)
 let soa_dispatch (type a b) ~(soa_abi : bool) (v : (a, b) Vector.t)
     (dev : Device.t) : Vector.soa_binding option =
   match v.Vector.soa with
@@ -930,16 +941,27 @@ let run ~(device : Device.t) ~(name : string)
                  predicate the transfer and expansion use (backlog-54). The
                  emitted signature and the bound argument list are then two
                  consequences of one decision rather than two decisions that
-                 could disagree — a disagreement here is not a crash but N
-                 pointers bound to a packed-AoS param block, i.e. silently wrong
-                 data. Empty list on every non-CUDA/PTX backend, because
-                 soa_dispatch is what decides — and since backlog-214 the
-                 source-generating ones among them REFUSE a non-empty list
-                 rather than ignore it, so this gate is the fast path and no
-                 longer the only guarantee. Native, Interpreter and WebGPU
-                 return None unconditionally and carry no refusal; WebGPU is
-                 the one to watch, being a JIT backend whose WGSL codegen is
-                 not yet wired. *)
+                 could disagree — and because both derive from [soa_dispatch]
+                 applied to the same [args]/[device], they structurally cannot
+                 disagree today. This list is only ever non-empty on CUDA/PTX
+                 (the one framework [soa_dispatch] answers [Some] for), which
+                 binds through the same bare pointer array as CUDA/C and HIP,
+                 with nothing checking the bound arguments against the
+                 compiled signature. So WERE the emitted signature and the
+                 bound arguments to disagree here, the outcome would be the
+                 same shape-dependent shift {!Backend_error.reject_soa_params}
+                 analyses for the external-kernel case: a trap is among the
+                 possible outcomes, but so is silent corruption or no visible
+                 effect at all depending on where the SoA vector sits in the
+                 parameter list — never uniformly "a crash" or uniformly
+                 "silently wrong data." Empty list on every non-CUDA/PTX
+                 backend, because soa_dispatch is what decides — and since
+                 backlog-214 the source-generating ones among them REFUSE a
+                 non-empty list rather than ignore it, so this gate is the
+                 fast path and no longer the only guarantee. Native,
+                 Interpreter and WebGPU return None unconditionally and carry
+                 no refusal; WebGPU is the one to watch, being a JIT backend
+                 whose WGSL codegen is not yet wired. *)
               let soa_params = soa_param_names ir args device in
               match B.generate_source ~block ~soa_params ir with
               | None ->
