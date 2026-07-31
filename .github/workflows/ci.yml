@@ -263,6 +263,10 @@ jobs:
           # red-path coverage behind a 50-second container pull is how a gate
           # ends up untested.
           ./scripts/check-proof-ledger.test.sh
+          # backlog-201. Covering test for the shipped-artefact/model-only
+          # production-link gate, same reasoning as check-proof-ledger.test.sh
+          # immediately above: synthetic single-project fixture, no Rocq needed.
+          ./scripts/check-production-link.test.sh
           # backlog-188's two documentation gates and backlog-186's
           # workflow-structure gate. All three are git-aware -- two resolve
           # against `git ls-files` or the remote, the third locates the repo with

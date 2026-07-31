@@ -40,20 +40,29 @@ on every input tested" — exhaustively-for-a-bound in one case, by random
 sampling in the other. The other 186 are proven about the Rocq model only:
 real, machine-checked theorems, most independently QCheck/extraction-validated
 against the extracted model itself, but with no mechanical assertion that the
-model agrees with the code that ships. None of the three figures is hand-typed:
+model agrees with the code that ships. None of the three figures is hand-typed
+into this document — they are pasted below verbatim from a real run against
+the committed, drift-checked ledgers (`$ scripts/check-production-link.py`,
+per-module rows omitted for length; see the script for those):
 
 ```
-$ scripts/check-production-link.py
-...
-shipped-artefact theorems: 94
-model-only theorems:       186
+== shipped-artefact vs model-only theorem split (backlog-201)
+   ('shipped' is itself two different strengths of evidence — see below)
+  ...
+checked against production, TOTAL: 94
+  - exhaustive-for-a-bound + random:               50 theorems
+  - random sampling only, NOT exhaustive:          44 theorems
+model-only (no mechanical production link): 186
 total (== proof-ledger sum): 280
 ```
 
-runs against the committed, drift-checked `proof-ledger.json` files and the
-hand-authored `formal/<project>/production-link.json` declarations, each entry
-of which is verified against the named test file's actual content — a claim
-whose test regresses fails the gate rather than staying cited. See
+Re-running the command above is how to check these are still current; this
+file is not gate-covered, so treat it as a snapshot rather than a live source.
+The script itself runs against the committed, drift-checked `proof-ledger.json`
+files and the hand-authored `formal/<project>/production-link.json`
+declarations, each entry of which is verified against the named test file's
+actual content — a claim whose test regresses fails the gate rather than
+staying cited. See
 `scripts/check-production-link.py`'s module docstring for exactly what
 "shipped-linked" does and does not mean, and the per-module breakdown it
 prints. `formal/convergence-safety/production-link.json` documents its
@@ -497,11 +506,11 @@ plus one hand-authored `formal/<project>/production-link.json` per project
 close that gap the same way `formal/axiom-allowlist.txt` closed the axiom one:
 a human names the claim, the tool verifies it against the build and the named
 test file's real content, and a claim whose backing test regresses fails
-loudly rather than staying cited. Result: 94 checked against production (50
-exhaustively-for-a-bound via extraction, 44 by random differential sampling),
-186 model-only. The two kinds within the 94 are not equal-strength evidence —
-see the split above — and the split does not itself say the 94 theorems *hold*
-of the shipped code, only that shipped and model agreed on everything tested.
+loudly rather than staying cited. Result: the shipped-artefact/model-only
+split described at the top of this file — same command, same numbers, not
+retyped here to avoid a fourth copy of figures that already drift enough at
+three. That split does not itself say the shipped-artefact theorems *hold* of
+the shipped code, only that shipped and model agreed on everything tested.
 
 **Recorded as a null result** because no theorem's proof was found wrong and no
 implementation defect surfaced. What surfaced is a **scope gap**: `formal/type-safety`

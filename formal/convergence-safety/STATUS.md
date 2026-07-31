@@ -4,13 +4,14 @@
 > Every theorem here is proven about the Rocq model, or checked against the
 > *extracted* model, or checked against an abstract OCaml model — never against
 > the real `Sarek_convergence.ml` that ships. `test/test_convergence_live.ml`
-> does call the real `Sarek_convergence.check_expr`, and its 12/12 GREEN below is
+> does call the real `Sarek_convergence.check_expr`, and its 10/10 GREEN below is
 > real and worth having, but it is a fixed-pattern regression suite (positive
 > baseline + F-01/F-02 regressions + negative baseline) — it never runs the
 > extracted model on the same input and compares. A reader who sees "111
-> theorems" next to "conformance 18/18, extraction 7/7, semantics 4/4, live
-> 12/12 GREEN" should not conclude any theorem here says something checked
-> against the shipped checker: it doesn't, today. `scripts/check-production-link.py`
+> theorems" next to "conformance 17/17, extraction 7/7, semantics 4/4, live
+> 10/10 GREEN" (the current test-suite scoreboard below) should not conclude any
+> theorem here says something checked against the shipped checker: it doesn't,
+> today. `scripts/check-production-link.py`
 > enforces this — see `production-link.json`'s `known_gap`.
 
 **Grade**: A (apparatus-native)
