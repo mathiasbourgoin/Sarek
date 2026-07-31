@@ -4,8 +4,11 @@
 # STUB. Not ptxas. Exists only so ci/assert-toolchain.sh can reach a GREEN
 # baseline on a host with no CUDA toolkit, which is the precondition
 # scripts/prove-red.sh requires before any mutation proves anything
-# (backlog-176). It satisfies exactly the two contracts the gate depends on and
-# nothing else:
+# (backlog-176). It recognises the two shapes the gate uses, and recognises them
+# LOOSELY -- --version anywhere in argv, and otherwise any argv carrying -o. It
+# is not an argument validator, so a malformed invocation the real ptxas would
+# reject still succeeds here; the fixture pins the gate's decision logic, not the
+# gate's command lines:
 #   --version                                    -> exit 0
 #   --compile-only --gpu-name X -o OUT IN        -> exit 0 AND create OUT
 # The second half matters: the nvdisasm probe disassembles the cubin this

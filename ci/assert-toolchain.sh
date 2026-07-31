@@ -158,10 +158,28 @@ else
 }
 PTX
   checks=$((checks + 1))
-  if ptxas --compile-only --gpu-name sm_75 -o "$tmpdir/probe.cubin" \
-       "$tmpdir/probe.ptx" >/dev/null 2>&1 &&
-     out=$(nvdisasm -c "$tmpdir/probe.cubin" 2>&1) &&
-     printf '%s' "$out" | grep -q 'probe'; then
+  # THE PTXAS STEP IS SEPARATE, and it was not always. This used to be one `&&`
+  # chain beginning with ptxas, with `out=$(nvdisasm ...)` as its second element.
+  # When ptxas is absent and nvdisasm is present the chain short-circuits before
+  # that assignment, and the failure branch's `$out` then aborts the whole script
+  # under `set -u` (measured: "line 167: out: unbound variable"). That abort
+  # exits 1 having skipped every remaining check and the summary, so an exit-code
+  # assertion on this script was satisfied by a crash rather than by the verdict
+  # it promises. cuda-nvcc and cuda-nvdisasm are separate packages -- the comment
+  # above records nvdisasm absent while ptxas was present, and the mirror of that
+  # is just as reachable -- so this is a live configuration, not a fixture
+  # artefact. Naming nvdisasm in the failure would also be wrong here: nvdisasm
+  # is fine, its own --version check passed two lines up, and there is simply no
+  # cubin to hand it.
+  if ! ptxas --compile-only --gpu-name sm_75 -o "$tmpdir/probe.cubin" \
+         "$tmpdir/probe.ptx" >/dev/null 2>&1; then
+    fail "the ptxas -> nvdisasm chain cannot be walked: ptxas produced no probe \
+cubin, so nvdisasm was never exercised and the f16 SASS conformance gate has no \
+validated path. Fix the ptxas failure reported above first."
+  # `out` is assigned by the command substitution below whatever nvdisasm does
+  # -- including not existing -- so the failure branch can expand it safely.
+  elif out=$(nvdisasm -c "$tmpdir/probe.cubin" 2>&1) &&
+       printf '%s' "$out" | grep -q 'probe'; then
     ok "nvdisasm disassembled a probe cubin"
   else
     fail "nvdisasm is on PATH but cannot disassemble a freshly assembled cubin:
@@ -420,10 +438,16 @@ echo "toolchain assertion OK: $checks/$EXPECTED_CHECKS checks passed."
 # no naga, no glslangValidator and no loadable libnvrtc — so the unstubbed
 # baseline is red on arrival exactly where the spec has to execute. Second, a
 # preserved host PATH defeats the mutations: `rm -f .../bin/ptxas` is invisible
-# on any host that has a real ptxas, and the mutation collects a red it did not
-# earn (CodeRabbit, PR #384). The one host path PATH cannot hide is the literal
-# /usr/local/cuda in the cuda_fp16.h search below; the wrapper refuses to run
-# with exit 2 when a real header is there, rather than let that mutation go inert.
+# on any host that has a real ptxas, so the gate stays green at 13/13 and the
+# mutation cannot go red at all (measured; CodeRabbit, PR #384). To be exact
+# about which way that fails, since an earlier revision of this comment was not:
+# prove-red.sh reads the resulting exit 0 as `DID NOT FAIL` and exits 1, so the
+# symptom is a spurious red for the whole repository on any CUDA host, not a
+# credited red — the verdict becomes a property of the machine either way, which
+# is what disqualifies it as evidence. The one host path PATH cannot hide is the
+# literal /usr/local/cuda in the cuda_fp16.h search near the top of this file;
+# the wrapper refuses with exit 2 when a real header is there rather than let
+# that mutation go inert.
 #
 # The baseline reaches 13/13, which matters beyond being green: the
 # EXPECTED_CHECKS drift guard is only reachable when zero checks fail, so
@@ -435,9 +459,19 @@ echo "toolchain assertion OK: $checks/$EXPECTED_CHECKS checks passed."
 # ON fail() ACCOUNTING, stated rather than left as a gap: there is no
 # single-variable mutation that proves it in isolation, because from a green
 # baseline there is no failure for a miscounting fail() to lose. It is pinned
-# TRANSITIVELY instead — the four tool mutations below all reach exit 1 only via
-# fail() incrementing `failures`, so a fail() that stopped counting would turn
-# all four green and prove-red would report four DID NOT FAILs.
+# TRANSITIVELY instead, by THREE of the four tool mutations below —
+# nvdisasm-present-but-broken, cuda-header-tree-missing and
+# clang-fp64-unsupported reach exit 1 only via fail() incrementing `failures`,
+# and deleting that increment was measured to turn all three green, i.e. three
+# DID NOT FAILs from prove-red.
+#
+# `ptxas-absent` is the exception and is named rather than counted in, because
+# an earlier revision of this comment did count it in and was wrong: with the
+# increment deleted it still exits 1, via the EXPECTED_CHECKS drift guard.
+# Removing ptxas collapses two counted checks into one, so `checks` is 12 with
+# zero recorded failures, which is exactly the drift guard's case. That is a
+# second independent pin on the same mutation rather than a weakness — but it is
+# not fail() accounting, and saying it was made the claim wider than the code.
 #
 # BEGIN prove-red-spec
 # copy: ci/assert-toolchain.sh
@@ -447,10 +481,10 @@ echo "toolchain assertion OK: $checks/$EXPECTED_CHECKS checks passed."
 # baseline-message: toolchain assertion OK: 13/13 checks passed
 #
 # mutation: ptxas-absent
-#   desc: remove ptxas from PATH entirely. This is the historical disaster verbatim — the previous CI image carried none of these tools, every codegen gate printed SKIP, and CI was green having validated nothing. It is also how a generated #include <cuda_fp16.h> that NVRTC cannot resolve shipped.
+#   desc: remove ptxas from PATH entirely. This is the historical disaster verbatim — the previous CI image carried none of these tools, every codegen gate printed SKIP, and CI was green having validated nothing. It is also how a generated #include <cuda_fp16.h> that NVRTC cannot resolve shipped. The declared message is the SUMMARY line rather than "ptxas is not on PATH", and that is deliberate: the first revision of this mutation asserted the tool message and was satisfied by a CRASH — with ptxas absent and nvdisasm present the chain probe expanded an unassigned `out` under `set -u` and the script died at exit 1 having printed the tool message and skipped everything after it. Both a crash and a real verdict satisfy "exit 1 plus a message printed early"; only a run that reaches the end prints this one. "2 of 12" additionally pins the cascade — ptxas absence costs its own check AND the nvdisasm chain check, and 12 rather than 13 because the absent branch counts one check where the present branch counts two.
 #   apply: rm -f scripts/prove-red-fixtures/assert-toolchain/bin/ptxas
 #   expect-exit: 1
-#   expect-message: ptxas is not on PATH
+#   expect-message: toolchain assertion FAILED: 2 of 12 checks failed
 #
 # mutation: nvdisasm-present-but-broken
 #   desc: nvdisasm stays on PATH and keeps exiting 0, but stops naming the entry point in its disassembly, so the gate's grep fails. Proves the CHAIN probe rather than mere presence — the script's own header says a present-but-broken binary "skips just as silently as an absent one", and this is the only mutation that tests that claim.
