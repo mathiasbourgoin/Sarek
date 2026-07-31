@@ -150,6 +150,11 @@ jobs:
       # them; this refuses their return through any of the three surfaces they
       # actually used (payload, path, producer). Exit 2 outside a git work tree,
       # because a check that cannot read the tracked set has not cleared it.
+      #
+      # backlog-216 added a FOURTH surface: an absolute path under /home or
+      # /Users naming a user account, anywhere in tracked text. It is one
+      # lexical rule and nothing wider -- `~/` and `$HOME` are deliberately out
+      # of scope, and hostnames in prose are not read at all.
       - name: No machine identifiers in tracked files
         run: ./scripts/check-no-machine-identifiers.sh
 
@@ -320,13 +325,16 @@ jobs:
           # source -- and case 0 is the positive control without which every
           # red below it proves nothing.
           ./scripts/check-kb-properties.test.sh
-          # backlog-168. Five independent red shapes, one per surface the leak
-          # actually used, plus two fail-closed cases and three greens pinning
-          # what must NOT be refused (a correctly labelled path, and
+          # backlog-168, -216. Six independent red shapes, one per surface the
+          # leak actually used or later acquired, plus fail-closed cases and
+          # greens pinning what must NOT be refused (a correctly labelled path;
           # system_info.ml's own sanctioned hostname read -- if that were red
           # the gate would forbid the safety check that rejects an operator
-          # label equal to the hostname). Verified to fail against both an
-          # always-exit-0 and an always-exit-1 stub.
+          # label equal to the hostname; and, for the home-path rule, the
+          # portable `~/` and `$HOME` spellings plus a bare hostname in prose,
+          # both deliberately OUT of scope and pinned green so widening the rule
+          # has to turn a declared case red rather than drift). Verified to fail
+          # against both an always-exit-0 and an always-exit-1 stub.
           ./scripts/check-no-machine-identifiers.test.sh
           # backlog-151. prove-red.sh exists to catch checkers that cannot
           # fail, so "prove-red.sh cannot fail" is the most expensive thing

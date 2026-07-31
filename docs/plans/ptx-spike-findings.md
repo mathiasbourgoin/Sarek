@@ -25,7 +25,7 @@ verification project on the PTX semantics of Sarek-generated kernels.
 
 ## 2. IR Inventory
 
-All IR types are defined in `/home/mathias/dev/SPOC/spoc/ir/Sarek_ir_types.ml`.
+All IR types are defined in `spoc/ir/Sarek_ir_types.ml`.
 
 ### 2.1 Element types (elttype)
 
@@ -433,9 +433,10 @@ verification work must address to prove correctness of Sarek → PTX translation
 
 ## 10. Files Produced by This Spike
 
-- `/home/mathias/dev/SPOC/sarek/codegen/Sarek_ir_ptx.ml` — OCaml PTX emitter (untracked)
-- `/home/mathias/dev/SPOC/docs/plans/ptx-spike-findings.md` — this document (untracked)
+- `sarek/codegen/Sarek_ir_ptx.ml` — OCaml PTX emitter
+- `docs/plans/ptx-spike-findings.md` — this document
 
-Neither file is committed. `ptxas` was not available on the build system,
+Both were untracked when this spike was written and both are tracked now; the
+sentence claiming otherwise was left behind and is corrected here. `ptxas` was not available on the build system,
 so PTX output was not machine-validated. Structural correctness was verified
 by hand against the PTX ISA 8.x specification.

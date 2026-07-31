@@ -64,10 +64,14 @@ The bundle is **built in CI, never committed** (a generated artifact in git woul
 | Pages deploy clobbers existing site | docs.yml already deploys `_site` wholesale; we only ADD a page + asset |
 
 ## Quality gates
+
+Run from the repository root; `--switch=.` names the repo-local switch rather
+than one developer's home directory.
+
 ```bash
-opam exec --switch=/home/mathias/dev/SPOC -- dune build sarek/transpile/web/transpile_js.bc.js
+opam exec --switch=. -- dune build sarek/transpile/web/transpile_js.bc.js
 node _build/default/sarek/transpile/web/transpile_js.bc.js   # smoke (if it has a main) / or load in a test harness
-opam exec --switch=/home/mathias/dev/SPOC -- dune build @install   # unaffected, green
-opam exec --switch=/home/mathias/dev/SPOC -- dune build @sarek/tests/runtest  # goldens byte-identical
-opam exec --switch=/home/mathias/dev/SPOC -- dune build @fmt
+opam exec --switch=. -- dune build @install   # unaffected, green
+opam exec --switch=. -- dune build @sarek/tests/runtest  # goldens byte-identical
+opam exec --switch=. -- dune build @fmt
 ```

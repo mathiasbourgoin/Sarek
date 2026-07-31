@@ -13,10 +13,13 @@
 # three attempts because a bare exit code names no toolchain.
 #
 # WHAT WAS ACTUALLY MEASURED, and what was not. The generation divergence
-# reproduces exactly, on commit 97a062a2, with the two dune binaries named by
-# absolute path and no dependency resolution involved:
+# reproduces exactly, on commit 97a062a2, with each dune binary invoked by an
+# absolute path to its own switch -- no dependency resolution involved. The
+# switches are named rather than pathed (backlog-216): the ambient one here was
+# octez-setup, and a reader substitutes whichever of their own switches carries
+# 3.23.0.
 #
-#     $ /home/mathias/.opam/octez-setup/bin/dune build sarek.opam   # 3.23.0
+#     $ <ambient-switch>/bin/dune build sarek.opam                  # 3.23.0
 #     "dune" {>= "3.15"}
 #     $ <project>/_opam/bin/dune build sarek.opam                   # 3.24.1
 #     "dune" {>= "3.15" & >= "3.15"}
