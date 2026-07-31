@@ -235,7 +235,14 @@ let test_parse_payload_letmodule_with_type () =
       ~manifest:None
   in
   let module_struct =
-    pmod_structure ~loc [pstr_type ~loc Nonrecursive [type_decl]]
+    (* [Recursive], not [Nonrecursive]: that is what the OCaml parser produces
+       for a plain `type t = ...` (checked with `ocamlc -dparsetree`, which
+       prints `Pstr_type Rec`), and `Nonrecursive` is what it produces for
+       `type nonrec t`, which backlog-192 refuses because Sarek resolves a
+       field's type by name and cannot mean "the one from the enclosing scope".
+       This case previously built the `nonrec` flag by hand while meaning a
+       plain type declaration. *)
+    pmod_structure ~loc [pstr_type ~loc Recursive [type_decl]]
   in
   let vec_ty =
     ptyp_constr

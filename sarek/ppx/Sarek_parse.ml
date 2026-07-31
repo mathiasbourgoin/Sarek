@@ -214,7 +214,23 @@ let module_const_needs_type_msg =
     result type had nowhere to go and was dropped. [ETyped] carries it without
     changing any representation: [Sarek_typer]'s [ETyped] arm unifies and
     returns the INNER typed expression with the substituted type, so no node
-    reaches the IR and no lowering pass sees anything new. *)
+    reaches the IR and no lowering pass sees anything new.
+
+    HOW MUCH THIS CONSTRAINS, exactly. For a MONOMORPHIC annotation, the
+    declared type. For one containing a type VARIABLE it is weaker than the
+    source says, and that is a property of this route rather than of the
+    annotation: [Sarek_typer]'s [ETyped] arm converts with
+    [type_of_type_expr_env], which allocates a FRESH type-variable context,
+    while an [MFun]'s parameters are converted in the context built for the
+    item. So in [let f (x : 'a) : 'a = ...] the two ['a]s become different
+    variables, and the annotation constrains the SHAPE of the result rather than
+    its identity with the parameter. The [ELetRec] route (a kernel-BODY helper)
+    does not share the limitation: it converts the result type in the same
+    [tvar_ctx] as the parameters.
+
+    Not refused, because sarek/tests/e2e/test_module_poly.ml legitimately writes
+    [let[@sarek.module] identity (x : 'a) : 'a = x]. Recorded here and in
+    kb/sarek/ppx/parser.md instead. Found by the cross-runtime review. *)
 let constrain_body (ty : Sarek_ast.type_expr option) (body : Sarek_ast.expr) :
     Sarek_ast.expr =
   match ty with
@@ -233,21 +249,34 @@ let constrain_body (ty : Sarek_ast.type_expr option) (body : Sarek_ast.expr) :
     constraint slot — dropped). The second is the spelling nearly everything in
     this tree uses.
 
-    For a function the whole-binding annotation is the ARROW type, and every
-    slot that can hold it downstream holds a RESULT type, so one arrow is peeled
-    per parameter. An annotation with too few arrows is refused rather than
-    half-applied. *)
+    A whole-binding annotation on a FUNCTION is refused rather than peeled. An
+    earlier revision of this function peeled one arrow per parameter and used
+    the result — which silently discarded every DOMAIN the user had written:
+    [let (f : float32 -> int32) = fun (x : int32) -> x] was accepted as an
+    [int32 -> int32] helper, the declared [float32] read by nobody. That is the
+    same defect class the sweep exists to close, introduced by the sweep's own
+    first draft (found by the cross-runtime review). Refusing costs nothing,
+    because a kernel function's parameters must ALREADY carry their own
+    annotations — [extract_param_from_pattern] raises "Kernel parameters must
+    have type annotations" otherwise — so the domain half of a whole-binding
+    arrow is always redundant with them, and never checked against them. *)
 let binding_result_type (vb : value_binding) (nparams : int) :
     Sarek_ast.type_expr option =
   match (binding_type vb, nparams) with
   | None, 0 -> None
   | None, _ -> fun_return_type vb.pvb_expr
   | Some t, 0 -> Some t
-  | Some t, n -> (
-      match peel_arrows n t with
-      | Some r -> Some r
-      | None ->
-          raise (Parse_error_exn (annotation_arity_msg, vb.pvb_pat.ppat_loc)))
+  | Some _, _ ->
+      raise
+        (Parse_error_exn
+           ( "a whole-binding type annotation on a function (`let (f : a -> b) \
+              = fun x -> ...`, `let f : a -> b = fun x -> ...`) is not \
+              supported in a kernel: the parameters carry their own \
+              annotations, which a kernel requires anyway, and nothing checks \
+              the domain half of this one against them — it would be \
+              discarded. Annotate the result instead: `let f (x : a) : b = \
+              ...`.",
+             vb.pvb_pat.ppat_loc ))
 
 (** Parse let%shared: let%shared name : type [= size] in body Syntax: let%shared
     tile : float32 array in body let%shared tile : float32 array = 64 in body *)
@@ -900,18 +929,33 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
     List.fold_left
       (fun (types_acc, mods_acc) (item : structure_item) ->
         match item.pstr_desc with
-        | Pstr_type (_, decls) ->
+        | Pstr_type (rec_flag, decls) ->
+            (* [Pstr_type]'s rec_flag WAS dropped, and an earlier revision of
+               this comment excused it by saying a kernel type cannot refer to
+               another kernel type in its fields. That is false — nested records
+               are supported and exercised (sarek/tests/e2e/test_nested_types.ml)
+               — so `nonrec` is meaningful here and was being ignored: Sarek
+               resolves a field's type by NAME, which under `type nonrec t` is
+               the wrong binding. Refused rather than re-justified (found by the
+               cross-runtime review). *)
+            (match rec_flag with
+            | Recursive -> ()
+            | Nonrecursive ->
+                raise
+                  (Parse_error_exn
+                     ( "`type nonrec` is not supported in a kernel: Sarek \
+                        resolves a field's type by name against the types \
+                        declared for this kernel, and has no way to mean \"the \
+                        one from the enclosing scope instead\". Drop `nonrec`, \
+                        or rename the type.",
+                       (List.hd decls).ptype_loc ))) ;
             let tdecls =
               List.map
                 (fun (td : type_declaration) ->
                   let loc = td.ptype_loc in
                   (* Fields of [type_declaration] that had no reader at all: type
                      parameters, constraints, privacy, the manifest and the
-                     attributes were all dropped in silence (backlog-192).
-                     [Pstr_type]'s own rec_flag is deliberately not read: a kernel
-                     type cannot refer to another kernel type in its fields (the
-                     lowering has no recursive struct), so `nonrec` and the
-                     default describe the same set of accepted declarations. *)
+                     attributes were all dropped in silence (backlog-192). *)
                   check_payload_type_decl td ;
                   match td.ptype_kind with
                   | Ptype_record labels ->
