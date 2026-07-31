@@ -49,10 +49,10 @@ let format_float f = Printf.sprintf "%.17g" f
     second generation — on another domain, or simply a later one after
     {!Sarek_transpile} had written it — read the first one's value.
 
-    [variants] is the kernel's own [kern_variants], read by the
-    [SMatch]/[EMatch] arms to recover a constructor's payload types. Derived
-    from the kernel, so it could be re-derived at each use site; it is carried
-    here because that is where the ref it replaces was read from.
+    [variants] is the kernel's own [kern_variants], read by the [SMatch] arm to
+    recover a constructor's payload types. Derived from the kernel, so it could
+    be re-derived at each use site; it is carried here because that is where the
+    ref it replaces was read from.
 
     It is the ONLY field. A mid-refactor draft also carried the framework tag,
     threaded in as [?framework] so a caller could pick the registry spelling;

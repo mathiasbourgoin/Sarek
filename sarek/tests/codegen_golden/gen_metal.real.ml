@@ -10,7 +10,7 @@ open Sarek_ir_types
 open Sarek_codegen
 
 (* Metal's per-generation state (backlog-185) carries one field, [variants] —
-   see {!Sarek_ir_metal.state} — for SMatch/EMatch payload lookups. *)
+   see {!Sarek_ir_metal.state} — for SMatch payload lookups. *)
 let generate_with_types ~types (k : kernel) =
   Sarek_ir_metal.generate_with_types ~types k
 

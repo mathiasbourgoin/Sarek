@@ -127,7 +127,7 @@ let glsl_float16_refusal =
     target. The five source generators have no target to name: they are reached
     through [Sarek_transpile.of_source], through each backend plugin's
     [generate_source], and directly via each backend's [generate]/
-    [generate_with_types] — the golden tests and roughly ten unit tests call
+    [generate_with_types] — the golden tests and the backend unit tests call
     those entry points straight, bypassing both of the above — and none of these
     callers supplies one. Before backlog-185/200 the tag came from a
     module-level ref that {!Sarek_transpile} wrote as a side effect of an

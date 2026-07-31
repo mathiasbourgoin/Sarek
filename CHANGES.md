@@ -114,17 +114,23 @@
 
 - **BREAKING (backlog-185/200): all five source-emitting backends now REFUSE a
   `[%native]` block instead of emitting for it.** Before this change CUDA,
-  OpenCL and Metal raised on `SNative` while GLSL and WGSL silently emitted
+  OpenCL and Metal raised on `SNative` unless a prior transpile had left a tag
+  in `current_framework` — `Sarek_transpile.set_framework` wrote that
+  module-level ref for CUDA/OpenCL/Metal/WGSL, so after any earlier transpile a
+  later direct `generate` on a `[%native]` kernel injected with the leaked tag
+  instead of raising. GLSL and WGSL silently emitted
   `/* native code not supported in <lang> */` and continued, producing a
   shader missing the operation the kernel asked for with no diagnostic. GLSL
   and WGSL now raise the same shared `Sarek_ir_codegen.native_block_refusal`
   the other three do, naming what the caller should do instead (express the
   operation in Sarek, or route it through PTX, which is the one backend that
   still serves `[%native]` directly). Along the way, the per-generation facts
-  each backend needs while emitting (the kernel's variant table) moved from a
-  module-level `ref` — shared and clobbered across generations, including
-  across domains — to a value threaded through the emit calls, closing a
-  cross-generation and cross-domain data race.
+  each backend needs while emitting (the kernel's variant table and the
+  `current_framework` tag) moved from module-level `ref`s — shared and
+  clobbered across generations, including across domains — to a value threaded
+  through the emit calls, closing a cross-generation and cross-domain data
+  race pinned by `framework_tag_is_not_module_state`.
+
 - The CUDA branch of `sarek_f32_barrier` no longer emits
   `asm volatile("" : "+f"(x))`. At an f16 narrowing it contributes zero PTX
   instructions, so `ptxas` receives an identical instruction stream and the
