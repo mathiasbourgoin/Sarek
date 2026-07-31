@@ -743,6 +743,79 @@ let test_parse_payload_doc_comment_accepted () =
   | exception Parse_error_exn (msg, _) ->
       Alcotest.failf "a doc comment must not be refused, but got: %s" msg
 
+(* A STANDALONE doc paragraph between two items of a payload module is a
+   [Pstr_attribute] named [ocaml.text], not an attribute ON a declaration
+   ([ocaml.doc]) — a different site with the same predicate. The module-item
+   fold's catch-all refused it as "a floating attribute ... would be silently
+   discarded", so a payload module carrying documentation between its items
+   compiled at exit 0 on 987b0c30 and stopped compiling on this branch.
+
+   The sibling case above covers [ptype_attributes]; this one covers the
+   structure-item fold. Both were proven red by deleting the arm that skips
+   these four attribute names. *)
+let test_parse_payload_floating_doc_accepted () =
+  let loc = Location.none in
+  let open Ppxlib.Ast_builder.Default in
+  let text_attr =
+    attribute
+      ~loc
+      ~name:{txt = "ocaml.text"; loc}
+      ~payload:(PStr [pstr_eval ~loc (estring ~loc " A paragraph. ") []])
+  in
+  let type_decl =
+    type_declaration
+      ~loc
+      ~name:{txt = "box"; loc}
+      ~params:[]
+      ~cstrs:[]
+      ~kind:
+        (Ptype_record
+           [
+             label_declaration
+               ~loc
+               ~name:{txt = "v"; loc}
+               ~mutable_:Immutable
+               ~type_:(ptyp_constr ~loc {txt = Lident "int32"; loc} []);
+           ])
+      ~private_:Public
+      ~manifest:None
+  in
+  let module_struct =
+    pmod_structure
+      ~loc
+      [pstr_attribute ~loc text_attr; pstr_type ~loc Recursive [type_decl]]
+  in
+  let param_pat =
+    ppat_constraint
+      ~loc
+      (ppat_var ~loc {txt = "v"; loc})
+      (ptyp_constr
+         ~loc
+         {txt = Lident "vector"; loc}
+         [ptyp_constr ~loc {txt = Lident "int32"; loc} []])
+  in
+  let fun_expr =
+    pexp_fun
+      ~loc
+      Nolabel
+      None
+      param_pat
+      (pexp_construct ~loc {txt = Lident "()"; loc} None)
+  in
+  let payload =
+    pexp_letmodule ~loc {txt = Some "M"; loc} module_struct fun_expr
+  in
+  match parse_payload payload with
+  | kern ->
+      Alcotest.(check int)
+        "the type beside the paragraph is still registered"
+        1
+        (List.length kern.Sarek_ast.kern_types)
+  | exception Parse_error_exn (msg, _) ->
+      Alcotest.failf
+        "a floating doc paragraph must not be refused, but got: %s"
+        msg
+
 (* Test suite *)
 let () =
   Alcotest.run
@@ -841,5 +914,9 @@ let () =
             "a doc comment on a payload type is accepted"
             `Quick
             test_parse_payload_doc_comment_accepted;
+          Alcotest.test_case
+            "payload floating doc paragraph accepted"
+            `Quick
+            test_parse_payload_floating_doc_accepted;
         ] );
     ]
