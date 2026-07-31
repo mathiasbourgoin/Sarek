@@ -242,7 +242,10 @@ check "red: a switch directory says to name the switch" 1 \
   "docs/note.md" 'opam exec --switch=/home/fixture-user/dev/SPOC -- dune build @fmt'
 
 # Portable spellings are OUT of scope, by decision, and that decision is pinned
-# rather than left to the regex: 78 tracked occurrences exist and all are fine.
+# rather than left to the regex: the tracked tree carries over a hundred of them
+# and all are fine. The exact figure is NOT restated here -- three copies of it
+# drifted apart in one day, and it is re-measured below from the tree itself
+# rather than quoted, because a number in prose is a claim nobody re-checks.
 check "green: tilde and \$HOME spellings are not findings" 0 "no absolute home path" \
   "docs/note.md" 'Install to ~/.local/bin, or "$HOME/.opam" / "${HOME}/.cache".'
 
@@ -393,6 +396,91 @@ else
   fail=$((fail + 1))
 fi
 rm -rf "$tmp_gp"
+
+# --- 6p: the out-of-scope decision is RE-MEASURED, not quoted ----------------
+# Keeping `~/` and `$HOME` out of scope rests on one claim: the tracked tree is
+# full of them and every one is legitimate. That claim was written as a NUMBER in
+# three places and the three drifted apart within a day, so it is measured here
+# from the tree instead. Anti-vacuity is the point: if the tree carried none, the
+# gate's green would prove nothing about the decision, so a low count FAILS.
+portable_n=$(cd "$REPO_ROOT" && git grep -I -E '(^|[^A-Za-z0-9_/."'"'"'~-])~/[A-Za-z0-9._]' \
+               | wc -l)
+home_n=$(cd "$REPO_ROOT" && git grep -I -E '\$\{?HOME\}?' | wc -l)
+total_n=$((portable_n + home_n))
+real_out="$(cd "$REPO_ROOT" && bash scripts/check-no-machine-identifiers.sh 2>&1)"; real_got=$?
+if [ "$total_n" -ge 50 ] && [ "$real_got" -eq 0 ]; then
+  echo "PASS green: $total_n tracked portable spellings ($portable_n tilde, $home_n HOME), gate still 0"
+  pass=$((pass + 1))
+else
+  echo "FAIL green: portable-spelling decision unsupported -- measured $total_n (wanted >=50)"
+  echo "     and the real-tree gate exited $real_got (wanted 0):"
+  printf '%s\n' "$real_out" | sed 's/^/       /'
+  fail=$((fail + 1))
+fi
+
+# --- red 6m: `git ls-files` failing is not a clean result-path rule ----------
+# The listing was read through `done < <(git ls-files ...)`, which DISCARDS the
+# feeding command's status: a failing `git ls-files` left the loop reading
+# nothing, `bad_paths` empty, and rule 2 reporting a pass without having read
+# the tracked set. Neither existing shim reached this call -- the grep shim does
+# not affect it and both git shims fail other invocations -- so it needed its
+# own. The assertion is on the MESSAGE, because a vacuous pass and a real pass
+# differ only in output.
+tmp_ls="$(mktemp -d)" || exit 2
+mkdir -p "$tmp_ls/scripts" "$tmp_ls/shim" "$tmp_ls/benchmarks/results"
+cp "$GATE_SRC" "$tmp_ls/scripts/check-no-machine-identifiers.sh"
+cp "$DEIDENT_SRC" "$tmp_ls/scripts/deidentify-benchmark-results.py"
+cp "$SHAPE_SRC" "$tmp_ls/scripts/machine-label-shape.sh"
+printf '%s\n' "$CLEAN_PAYLOAD" > "$tmp_ls/$HOSTNAME_NAME"
+REAL_GIT_LS="$(command -v git)" || { echo "::error::no git on PATH" >&2; exit 2; }
+cat > "$tmp_ls/shim/git" <<'SHIMLS'
+#!/usr/bin/env bash
+[ "$1" = "ls-files" ] && exit 128
+exec __REAL_GIT__ "$@"
+SHIMLS
+sed -i "s|__REAL_GIT__|$REAL_GIT_LS|" "$tmp_ls/shim/git"
+chmod +x "$tmp_ls/shim/git"
+(cd "$tmp_ls" && git init -q . && git add -A) >/dev/null 2>&1 \
+  || { echo "::error::ls-files fixture setup failed" >&2; rm -rf "$tmp_ls"; exit 2; }
+out="$(cd "$tmp_ls" && PATH="$tmp_ls/shim:$PATH" bash scripts/check-no-machine-identifiers.sh 2>&1)"; got=$?
+if printf '%s' "$out" | grep -qF "cannot report a pass" \
+   && ! printf '%s' "$out" | grep -qF "no machine identifier"; then
+  echo "PASS red: a failing git ls-files says so instead of passing (exit $got)"
+  pass=$((pass + 1))
+else
+  echo "FAIL red: git ls-files fail-closed -- wanted the 'cannot report a pass' message"
+  echo "     and NO green line; got exit $got:"
+  printf '%s\n' "$out" | sed 's/^/       /'
+  fail=$((fail + 1))
+fi
+rm -rf "$tmp_ls"
+
+# --- red 6n: a CRLF blob must not hide a root at end of line -----------------
+# $HOME_SPLIT_IFS holds no `\r` and the token regex's `$` is end-of-STRING, so a
+# root ending a CRLF line became the token `/home/<acct>\r` and matched nothing.
+# The slashless shapes the rule was widened for are the ones at end of line, so
+# this was a whole class of input on which the rule could not fail. The fixture's
+# tracked CONTENT is CRLF, which check() cannot produce, so it is built here.
+tmp_crlf="$(mktemp -d)" || exit 2
+mkdir -p "$tmp_crlf/scripts" "$tmp_crlf/docs"
+cp "$GATE_SRC" "$tmp_crlf/scripts/check-no-machine-identifiers.sh"
+cp "$DEIDENT_SRC" "$tmp_crlf/scripts/deidentify-benchmark-results.py"
+cp "$SHAPE_SRC" "$tmp_crlf/scripts/machine-label-shape.sh"
+printf 'Ran chown -R x:x /home/fixture-user\r\nopam exec --switch=/home/fixture-user\r\n' \
+  > "$tmp_crlf/docs/note.md"
+(cd "$tmp_crlf" && git init -q . && git add -A) >/dev/null 2>&1 \
+  || { echo "::error::CRLF fixture setup failed" >&2; rm -rf "$tmp_crlf"; exit 2; }
+out="$(cd "$tmp_crlf" && bash scripts/check-no-machine-identifiers.sh 2>&1)"; got=$?
+if [ "$got" -eq 1 ] && printf '%s' "$out" | grep -qF "docs/note.md:1: /home/fixture-user/" \
+   && printf '%s' "$out" | grep -qF "docs/note.md:2: /home/fixture-user/"; then
+  echo "PASS red: a CRLF root at end of line is still a finding, on both lines (exit $got)"
+  pass=$((pass + 1))
+else
+  echo "FAIL red: CRLF end-of-line root -- wanted exit 1 naming both lines, got $got:"
+  printf '%s\n' "$out" | sed 's/^/       /'
+  fail=$((fail + 1))
+fi
+rm -rf "$tmp_crlf"
 
 # --- red 6l: the exit-2 paths must not leak a temp file ---------------------
 # The three malformed-row exits are `exit 2` and each ran before the cleanup
