@@ -826,19 +826,30 @@ let referenced_type_names (ty : Sarek_ir_types.elttype) : string list =
     not an error either", and that was the gap.) Only declared types can be
     ordered, so before any placement this function first checks that every name
     any declaration's fields/payloads reference resolves to SOME declaration in
-    the same list, by mangled name, either kind. A name that resolves to nothing
-    raises {!Undeclared_type_ref} naming the referencing declaration, the field
-    or constructor site, and the missing type — rather than silently falling
-    through to the backend's own "unknown type name" on whichever compiler the
-    generated source happens to reach, or a Metal/PTX generator that never runs
-    a C compiler over its output at all and would have said nothing. The hole
-    this closes is reachable from ordinary [[@@sarek.type]] source: the PPX
-    registers a variant's constructor payload from the constructor's own
-    declared type — independent of whether the record instance it is constructed
-    from was ever separately registered — so a record whose only occurrence in a
-    kernel is as a value extracted from a differently-typed source (never
-    literal-constructed, never a parameter type, never a local array element
-    type) never enters [kern_types] at all. See
+    the same list, by mangled name, either kind (a field/payload typed
+    [TVariant "t"] is satisfied by a [Record_decl "t"] and vice versa — the same
+    kind-blind resolution {!deps_of} already uses for ordering edges, kept for
+    consistency with the "a record's edge to a same-named variant is kept"
+    guarantee below; a set that is COMPLETE by this check can still emit a
+    struct whose member names a same-mangled-name declaration of the wrong kind,
+    which compiles but names the wrong type — a residual this check does not
+    close). A name that resolves to nothing raises {!Undeclared_type_ref} naming
+    the referencing declaration, the field or constructor site, and the missing
+    type — rather than silently falling through to the backend's own "unknown
+    type name" on whichever compiler the generated source happens to reach. (PTX
+    and Metal are NOT both examples of a silent generator: Metal goes through
+    {!gen_c_type_decls} like every other struct-emitting backend and is fully
+    covered by this check; PTX ([Sarek_ir_ptx_kernel.generate_with_types])
+    ignores its [~types] argument and never calls {!gen_type_decls} at all, so
+    it stays exactly as silent on an undeclared reference after this fix as
+    before — this closes the gap for every backend that DECLARES struct types,
+    not for the one that declares none.) The hole this closes is reachable from
+    ordinary [[@@sarek.type]] source: the PPX registers a variant's constructor
+    payload from the constructor's own declared type — independent of whether
+    the record instance it is constructed from was ever separately registered —
+    so a record whose only occurrence in a kernel is as a value extracted from a
+    differently-typed source (never literal-constructed, never a parameter type,
+    never a local array element type) never enters [kern_types] at all. See
     sarek/tests/e2e/test_undeclared_variant_payload_record.ml.
 
     {b Cycles.} A declaration cycle has no valid emission order, so it raises
@@ -915,11 +926,17 @@ let sort_type_decls_by_dependency (decls : type_decl list) : type_decl list =
           (fun (site, name) ->
             if List.mem name declared_mangled_names then None
             else
+              (* Both names in the message are MANGLED, including the
+                 referencing declaration's — [name] (from
+                 [referenced_type_names]) always is, and printing
+                 [type_decl_name d] unmangled beside it would pair a
+                 dotted source name with an underscored one, naming the
+                 same declaration two different ways in one sentence. *)
               Some
                 (Printf.sprintf
                    "%s %S's %s references undeclared type %S"
                    (type_decl_kind d)
-                   (type_decl_name d)
+                   (mangle_name (type_decl_name d))
                    site
                    name))
           (referenced_with_sites d))
