@@ -1,66 +1,61 @@
 # Spec — ptx-records-variants
 
-> ⚠️ **The layout rule in this spec is SUPERSEDED (noted 2026-07-30). Its
-> normative text is left unedited on purpose — it is the record of what was
-> validated on 2026-07-22 — but three of its requirements are now contradicted
-> by the shipped tree, so do not implement from them:**
+> **Revision history (backlog-205, 2026-07-31).** Validated 2026-07-22 against
+> a *packed* layout: record offsets = cumulative `field_byte_size` sums;
+> variant payload fixed at offset 4 with element size `4 + max_payload_bytes`;
+> any aggregate placing a scalar leaf at a non-naturally-aligned offset was
+> rejected. Campaign item **L8** (2026-07-30) migrated the host PPX,
+> `Sarek_ir_layout` and `formal/codegen-ptx/theories/PtxLayout.v` from PACKED to
+> **ALIGNED (C-ABI)**: each field/payload member is placed at the next offset
+> satisfying its own natural alignment (padding inserted), and the total size
+> is rounded up to the aggregate's maximum member alignment — the standard C
+> struct ABI, byte-for-byte identical to the `typedef struct {...}` the
+> C-family backends emit. `PtxLayout.v` now proves `record_always_accepted` /
+> `variant_always_accepted`: alignment holds unconditionally, so the old
+> rejection case cannot fire for well-formed input (`Misaligned_field` is kept
+> only as a defensive internal invariant — see `Sarek_ir_layout.mli`). What is
+> still rejected is unchanged in kind: variants nested below top level, and
+> array/vector-typed fields or payload members.
 >
-> - **FR-002** ("MUST reproduce the host *packed* layout: record offsets =
->   cumulative `field_byte_size` sums") — campaign item **L8** migrated the host
->   PPX, `Sarek_ir_layout` and `formal/codegen-ptx/theories/PtxLayout.v` from
->   PACKED to **ALIGNED (C-ABI)**: fields are placed at the next
->   naturally-aligned offset, padding is inserted, and the total is rounded up
->   to the struct's maximum member alignment.
-> - **FR-003** (variant element size `4 + max_payload_bytes`) — the payload now
->   sits at `P = max(4, max payload member alignment)` and the size is rounded
->   to the overall alignment, so `4 + max_payload_bytes` is only the special
->   case where nothing needs more than 4-byte alignment.
-> - **FR-004** and **C-2** ("MUST reject any aggregate placing a scalar leaf at
->   a non-naturally-aligned offset") — under aligned layout, alignment holds
->   *unconditionally*: `PtxLayout.v` proves `record_always_accepted` /
->   `variant_always_accepted`, and `spoc/ir/Sarek_ir_layout.mli` states that
->   `Misaligned_field` "is retained only as a defensive internal invariant (it
->   can no longer fire for well-formed input)" — `formal/codegen-ptx/STATUS.md`
->   calls it dead code on the record path. Mixed-alignment aggregates are now
->   **laid out correctly** rather than rejected, so AC-5 / CHECK-5, which assert
->   that such a codegen *fails*, are no longer satisfiable as written. (What is
->   still rejected: variants nested below top level, and array/vector fields.)
->
-> The authority for the current rule is the retraction block in
-> `formal/codegen-ptx/STATUS.md` ("Retraction — this model is no longer
-> packed") together with `PtxLayout.v` itself. This spec is flagged rather than
-> rewritten here because bringing it back into line is a **spec cycle**, not a
-> documentation correction: FR-002, FR-003, FR-004 and C-2 have to be revised to
-> the aligned rule, AC-5 / CHECK-5 have to be retired or replaced (they assert a
-> codegen *failure* that aligned layout no longer produces), and the result has
-> to be re-validated and re-dated. None of that is a docs edit, and none of it is
-> in scope for a sweep that only corrects sentences.
->
-> **Tracked as:** backlog-205
+> This revision brings the normative text into line with that migration:
+> **FR-002, FR-003, FR-004, C-2, EC-2**, the US-1/US-2 scope notes, and
+> **AC-5/CHECK-5** below are rewritten to state the aligned rule (each carries
+> an inline "(was: ...)" note recording the retracted packed wording so the
+> history is not lost). The authority for the current rule is the retraction
+> block in `formal/codegen-ptx/STATUS.md` ("Retraction — this model is no
+> longer packed") together with `PtxLayout.v` and
+> `spoc/ir/Sarek_ir_layout.mli`. **Not re-run in this pass:** the ZLUDA e2e
+> sweep (CHECK-1/CHECK-2/CHECK-7) and the Rocq/conformance build (CHECK-6) —
+> this is a documentation correction, not a fresh end-to-end validation cycle;
+> the PTX-generation-level checks (CHECK-3/4/5/8, no GPU required) were re-run
+> and pass against the rewritten text.
 
-**Status: SUPERSEDED (was VALIDATED 2026-07-22; the layout rule in FR-002/FR-003/FR-004/C-2 is contradicted by the shipped tree — see the banner above)**
+**Status: REVISED (aligned C-ABI layout, backlog-205; originally VALIDATED 2026-07-22 against the now-retracted packed layout — see Revision history above)**
 **Date:** 2026-07-22T19:20:00Z
 **Superseded:** 2026-07-30T00:00:00Z
+**Revised:** 2026-07-31T00:00:00Z
 **Source brief:** `ptx-records-variants-intake`, in the untracked workstation-local `briefs/` tree (VALIDATED, Type: feature, Trust boundary: no)
 
 ## Summary
 
 Implement aggregate (record / variant / tuple) support in the Sarek PTX direct emitter.
-Aggregates are lowered through a single pure **layout function** (packed byte offsets,
-host-ABI-compatible) with two representations: **SROA register sets** for local values and
-**field-wise global memory access** for elements of `t vector` parameters. Variants use the
-host tag encoding (`[tag:int32@0][payload@4]`, tag = constructor declaration index). The layout
-function is mirrored in Rocq (separate module, existing theorems untouched) with proved lemmas
-and a hand-mirror CMBT conformance test.
+Aggregates are lowered through a single pure **layout function** (aligned, host-C-ABI-compatible
+byte offsets — was: packed byte offsets) with two representations: **SROA register sets** for
+local values and **field-wise global memory access** for elements of `t vector` parameters.
+Variants use the host tag encoding (`[tag:int32@0][payload@P]`, `P = max(4, max payload member
+alignment)`, tag = constructor declaration index). The layout function is mirrored in Rocq
+(separate module, existing theorems untouched) with proved lemmas and a hand-mirror CMBT
+conformance test.
 
 ## Entities
 
-- **`Sarek_ir_layout`** (new pure OCaml module): `field_offsets : elttype -> (string * int) list`,
+- **`Sarek_ir_layout`** (pure OCaml module): `field_offsets : elttype -> (string * int) list`,
   `sizeof : elttype -> int`, `alignof_scalar : elttype -> int`, plus variant payload offsets.
-  Packed semantics identical to the host PPX (`Sarek_ppx.ml` `calc_offsets`:616-623 for records;
-  variant = `4 + max_payload`, payload region at fixed offset 4, `Sarek_ppx.ml:723-926`).
-  **Does not redefine** `ir_shared_decl`/`ptx_kern_shared`/`emit_kernel_correct` from
-  `specs/ptx-dshared-formal.md`.
+  Aligned (C-ABI) semantics identical to the host PPX (`sarek/ppx/Sarek_ppx.ml`
+  `aligned_record_offsets`:297-311 / `calc_type_size_early`:313-315 for records;
+  `variant_payload_offset`:348-350 / `calc_variant_size`:353-358 for variants — was: `calc_offsets`
+  packed cumulative sums, variant payload fixed at offset 4). **Does not redefine**
+  `ir_shared_decl`/`ptx_kern_shared`/`emit_kernel_correct` from `specs/ptx-dshared-formal.md`.
 - **Aggregate SROA value** (emitter-internal): a record value = one PTX register per scalar
   leaf field (nested records flattened recursively); a variant value = one u32 tag register +
   one register per (constructor, payload-arg). Env extended to bind names to scalar registers
@@ -76,8 +71,9 @@ As a Sarek user, I can run kernels that construct records, read fields, copy who
 between global vector elements, and read/write record elements of `t vector` params on the
 CUDA/PTX backend, with results equal (within each test's existing epsilon) to the native
 backend.
-**Scope excludes:** record kernel params by value (host marshalling), mixed-alignment records
-(rejected, US-5), tuples in global memory.
+**Scope excludes:** record kernel params by value (host marshalling), tuples in global memory.
+(Mixed-alignment records are laid out correctly, not rejected — was: rejected, US-5; see the
+Revision history banner and US-5 below for what is still rejected.)
 **Independent test:** `test_ktype_record` (GPU gate removed), `test_ktype_helper`,
 `test_registered_type`, `test_transpose` (point3d), `test_nbody_ppx`, `test_ray_ppx`,
 `test_complex_types` — all pass on the CUDA/PTX device.
@@ -89,8 +85,9 @@ backend.
 ### US-2: Variants + match on CUDA/PTX (P0)
 As a Sarek user, I can construct variants (incl. nullary) and `match` on them in expression and
 statement position with payload binding on CUDA/PTX; the byte layout is host-compatible.
-**Scope excludes:** variants with any 8-byte payload scalar (rejected — payload offset 4 is
-misaligned; US-5), guards/nested patterns (not in the IR).
+**Scope excludes:** guards/nested patterns (not in the IR). (Variants with an 8-byte payload
+scalar are laid out with the payload region at offset 8, not rejected — was: rejected, payload
+offset 4 misaligned; US-5.)
 **Independent test:** `test_registered_variant` passes on CUDA/PTX; unit snapshots cover the
 general shapes the e2e test doesn't (multi-arg payload, ≥3 constructors, nullary-only).
 **Acceptance scenarios:**
@@ -100,7 +97,8 @@ general shapes the e2e test doesn't (multi-arg payload, ≥3 constructors, nulla
 
 ### US-3: Tuples as anonymous aggregates (P1)
 Literal tuples and multi-arg variant constructor payloads lower through the same layout/SROA
-machinery (positional slots `_0/_1/…`; byte offsets = packed cumulative — matching the host's
+machinery (positional slots `_0/_1/…`; byte offsets = aligned cumulative, i.e. each slot at the
+next offset satisfying its own natural alignment — was: packed cumulative — matching the host's
 multi-field payload layout).
 **Scope excludes:** tuples stored in global vectors (no host tuple vector type — rejected with
 a clear error).
@@ -134,15 +132,26 @@ conformance test compares the Rocq hand-mirror and OCaml functions.
 Out-of-scope constructs fail at codegen with errors naming the construct AND the workaround.
 **Acceptance scenarios:**
 1. **Given** a bare record kernel param (`DParam` with `TRecord`, no arr_info), **When** codegen runs, **Then** the error names the param and suggests "pass fields as separate scalar params or use a 1-element `t vector`". A `TVec (TRecord …)` param with arr_info is NOT rejected (EC-11 discrimination).
-2. **Given** a record `{a: int32; b: float64}` (misaligned b at offset 4), **When** codegen runs, **Then** the error names the field, its offset, and the alignment rule.
-3. **Given** a variant with an f64 payload, **When** codegen runs, **Then** rejected with the same precise error class.
+2. **Given** a record `{a: int32; b: float64}` (`a` at 0, `b` at the 8-byte-aligned offset 8,
+   stride 16), **When** codegen runs, **Then** it COMPILES: `b` is laid out at its naturally
+   aligned offset, not rejected. (Was: rejected as misaligned — `test_mixed_align_record_param_accepted`,
+   `sarek/tests/unit/test_ptx_snapshot.ml:2072`.)
+3. **Given** a variant with an f64 payload, **When** codegen runs, **Then** it COMPILES: the
+   payload region sits at the 8-byte-aligned offset, not rejected. (Was: rejected —
+   `test_f64_variant_param_accepted`, `sarek/tests/unit/test_ptx_snapshot.ml:2108`.)
+4. **Given** a variant nested below top level (record field or variant payload), or an
+   array/vector-typed field or payload member, **When** the layout function runs, **Then** it is
+   rejected with a precise error (`Nested_variant` / `Unsupported_field` —
+   `sarek/tests/unit/test_ir_layout.ml:229` `test_reject_variant_in_record`,
+   `sarek/tests/unit/test_ir_layout.ml:248` `test_reject_vec_in_record`). This is unchanged by
+   the packed-to-aligned migration.
 
 ## Challenge Resolutions
 
 | C | Resolution |
 |---|---|
 | C-1 | Aggregate strides use general multiplication (`mul.wide.u32` for global 64-bit addressing; `mul.lo.u32` shared). Scalar pow-2 `shl` fast path unchanged. |
-| C-2, C-18, C-20 | **Reject** any aggregate whose packed layout places a scalar leaf at a non-naturally-aligned offset (incl. every 8-byte variant payload at offset 4). Precise error (US-5). Keeps ABI-match AND alignment soundness; no test uses mixed-alignment aggregates. Host-layout revision = flagged future work. |
+| C-2, C-18, C-20 | **Lay out** every aggregate on the aligned (C-ABI) rule: each field/payload member at the next offset satisfying its own natural alignment, total size rounded to the aggregate's max member alignment. This keeps ABI-match AND alignment soundness *unconditionally* — `PtxLayout.v` proves `record_always_accepted`/`variant_always_accepted`, so no aggregate is rejected for misalignment; `Misaligned_field` is a defensive internal invariant only (`Sarek_ir_layout.mli`). Still **rejected** with a precise error (US-5): variants nested below top level, and array/vector-typed fields or payload members. (Was: reject any aggregate whose *packed* layout placed a scalar leaf at a non-naturally-aligned offset, incl. every 8-byte variant payload at offset 4 — flagged as future work "if the host layout gains alignment"; that revision (campaign item L8) has since landed.) |
 | C-3 | Nested records IN scope (layout + SROA are recursive; host `gen_field_read` supports nested customs). Variants nested inside aggregates → rejected with a clear error (untested). |
 | C-4 | The blanket `<> "Native"` gate in test_ktype_record is removed; if a specific non-CUDA framework fails, it gets a named, commented gate (decided at implement; AC only requires CUDA/PTX OK). |
 | C-5 | Aggregate args/returns through EApp inlining ARE in scope and test-covered (ktype_helper/nbody/ray helpers). `callee_env` binds SROA sets; `inline_ret` supports aggregate result register sets. |
@@ -153,14 +162,14 @@ Out-of-scope constructs fail at codegen with errors naming the construct AND the
 | C-10, EC-4 | EMatch is always branch-based (it is already in `expr_needs_branch_guard`); all arms have one post-typing result type, writing one typed result register (set). selp never used for aggregates. |
 | C-11 | Tag = constructor declaration order everywhere (host `List.mapi`, IR `state.variants`, C enum all iterate the declaration list). US-4 scenario 3 conformance check guards drift. |
 | C-12 | US-3 gets dedicated unit snapshot tests (no e2e exists; creating one is optional at implement). |
-| C-13, EC-8 | EVariant payload lowers positionally through the layout function (offsets = 4 + packed cumulative of payload types) — same primitive as tuples, no ERecord rewrite. `_0/_1` is register-naming only, no byte-level counterpart needed. Host multi-field payload uses the same packed cumulative offsets. |
+| C-13, EC-8 | EVariant payload lowers positionally through the layout function (offsets = payload region offset + aligned cumulative of payload types — was: `4 + packed cumulative`) — same primitive as tuples, no ERecord rewrite. `_0/_1` is register-naming only, no byte-level counterpart needed. Host multi-field payload uses the same aligned cumulative offsets. |
 | C-14, EC-10 | Separate `PtxLayout.v` with its own inductive; `PtxTypes.v` `elttype` untouched; existing theorems compile unmodified. |
 | C-15 | Lemma set includes the natural-alignment side-condition over accepted layouts — the proof scope explicitly covers the alignment rule instead of silently implying safety. |
-| C-16, EC-9 | Option (b): independent Rocq re-implementation + conformance test (exhaustive small-shape enumeration + qcheck random), run in dune tests. `calc_offsets` (PPX/AST-level) stays; US-4 scenario 3 pins host agreement. |
+| C-16, EC-9 | Option (b): independent Rocq re-implementation + conformance test (exhaustive small-shape enumeration + qcheck random), run in dune tests. The host PPX's own aligned-layout functions (`aligned_record_offsets`/`variant_payload_offset`, PPX/AST-level — was: `calc_offsets`) stay; US-4 scenario 3 pins host agreement. |
 | C-17 | DParam rejection message: names the param + "pass fields as separate scalar params or use a 1-element `t vector`" (1-element custom vectors are host-supported). |
 | C-21 | ZLUDA execution IS the verification target: ACs run the 8 e2e tests under `LD_LIBRARY_PATH=~/opt/zluda` on the RX 7900 XTX and require per-device Status OK. |
 | EC-1 | Whole-record element copy emits ALL field loads before ANY store (read-then-write), preventing intra-record RAW clobber under aliasing. |
-| EC-2 | `Sarek_ir_layout` scalar sizes MUST equal host `field_byte_size` per type (source of truth; bool included). Any resulting misalignment falls under the C-2 rejection rule. |
+| EC-2 | `Sarek_ir_layout` scalar sizes MUST equal host `field_byte_size` per type (source of truth; bool included), and scalar alignments MUST equal the host's natural alignment per type. Placement follows the C-2 aligned-layout rule; no scalar-size/alignment combination it produces is rejected as misaligned (was: any resulting misalignment falls under the C-2 rejection rule). |
 | EC-6 | Payload bindings are lexically scoped to their arm; post-match code only sees pre-match registers. No merge machinery. |
 | EC-11 | Discrimination is structural: `DParam (v, Some arr_info)` with aggregate `arr_elttype` = accepted vector-of-aggregate; bare `DParam (v, None)` with `TRecord/TVariant` var_type = rejected. |
 
@@ -168,9 +177,34 @@ Out-of-scope constructs fail at codegen with errors naming the construct AND the
 
 ### Layout (US-1, US-2, US-4)
 - **FR-001** [US-1]: The emitter MUST compute all aggregate byte offsets/sizes exclusively via `Sarek_ir_layout`; no offset arithmetic may be duplicated at emission sites.
-- **FR-002** [US-1]: `Sarek_ir_layout` MUST reproduce the host packed layout: record offsets = cumulative `field_byte_size` sums; scalar sizes identical to host `field_byte_size`.
-- **FR-003** [US-2]: Variant layout MUST be `[tag:int32 at 0][payload region at 4]`, element size `4 + max_payload_bytes`, tag = constructor declaration index; multi-arg payload offsets = 4 + packed cumulative.
-- **FR-004** [US-5]: The layout function MUST reject (typed error) any aggregate placing a scalar leaf at a non-naturally-aligned offset; the error MUST name type, field, offset, and required alignment.
+- **FR-002** [US-1]: `Sarek_ir_layout` MUST reproduce the host **aligned (C-ABI)** record layout:
+  each field is placed at the next offset satisfying its own natural alignment (padding
+  inserted), the total record size is rounded up to the struct's maximum member alignment, and
+  scalar sizes/alignments are identical to the host `field_byte_size`/natural-alignment mapping.
+  Nested-record fields are flattened recursively on the same rule (`spoc/ir/Sarek_ir_layout.ml`
+  `record_layout`; mirrored by the host PPX `sarek/ppx/Sarek_ppx.ml` `aligned_record_offsets`,
+  lines 297-311, and `calc_type_size_early`, lines 313-315). *(Retracted 2026-07-30, campaign
+  item L8 — was: "MUST reproduce the host packed layout: record offsets = cumulative
+  `field_byte_size` sums; scalar sizes identical to host `field_byte_size`.")*
+- **FR-003** [US-2]: Variant layout MUST be `[tag:int32 at 0][payload region at P]` where
+  `P = max(4, max payload-member alignment)` over all constructors; each constructor's payload
+  args are laid out from the start of the payload region on the same aligned-cumulative rule as
+  a record; the element size is `round_up(P + max_payload_bytes, P)` (`4 + max_payload_bytes` is
+  the special case where no payload member needs more than 4-byte alignment); tag = constructor
+  declaration index (`spoc/ir/Sarek_ir_layout.ml` `variant_layout`; mirrored by the host PPX
+  `variant_payload_offset`, lines 348-350, and `calc_variant_size`, lines 353-358). *(Retracted
+  2026-07-30 — was: "Variant layout MUST be `[tag:int32 at 0][payload region at 4]`, element size
+  `4 + max_payload_bytes` ... multi-arg payload offsets = 4 + packed cumulative.")*
+- **FR-004** [US-5]: The layout function MUST reject (typed error) any aggregate containing a
+  variant nested below top level, or any array/vector-typed field or payload member; the error
+  MUST name the type and field/payload path and the reason (`Nested_variant` /
+  `Unsupported_field`, `spoc/ir/Sarek_ir_layout.mli`). Under the aligned rule, no well-formed
+  aggregate can place a scalar leaf at a non-naturally-aligned offset — `PtxLayout.v` proves this
+  unconditionally (`record_always_accepted`, `variant_always_accepted`); the `Misaligned_field`
+  error variant is retained only as a defensive internal invariant that MUST NOT fire for
+  well-formed input. *(Retracted 2026-07-30 — was: "The layout function MUST reject (typed
+  error) any aggregate placing a scalar leaf at a non-naturally-aligned offset; the error MUST
+  name type, field, offset, and required alignment.")*
 - **FR-005** [US-1]: Nested records MUST be supported by recursive flattening; aggregates containing variants below top level MUST be rejected with a precise error.
 
 ### Emission — global memory (US-1, US-2)
@@ -208,7 +242,12 @@ Out-of-scope constructs fail at codegen with errors naming the construct AND the
 - AC-2 [US-2 happy path]: `test_registered_variant` passes on CUDA/PTX under ZLUDA. ↔ CHECK-2
 - AC-3 [US-1, C-1]: PTX for a point3d copy kernel contains stride multiplication (no shl-only path) and three field ld/st pairs. ↔ CHECK-3
 - AC-4 [US-2, C-10]: PTX for an EMatch kernel contains a tag branch chain and no `selp` for the match result. ↔ CHECK-4
-- AC-5 [US-5, C-2]: Codegen of a mixed-alignment record and an f64-payload variant fails with errors naming field/offset/alignment. ↔ CHECK-5
+- AC-5 [US-5, C-2]: Codegen of a mixed-alignment record and an f64-payload variant COMPILES,
+  placing the misaligned-under-packed field/payload at its correct aligned offset; codegen of a
+  variant nested below top level, or an array/vector-typed field or payload member, still fails
+  with a precise error naming the type and field/payload path. ↔ CHECK-5 (was: "Codegen of a
+  mixed-alignment record and an f64-payload variant fails with errors naming
+  field/offset/alignment" — retracted 2026-07-30, campaign item L8.)
 - AC-6 [US-4]: `PtxLayout.v` lemmas compile with 0 admits; conformance test green; existing 3 theorems and 30 CMBT tests unchanged-green. ↔ CHECK-6
 - AC-7 [US-1..3, regression]: Full `dune runtest` green; 44-test ZLUDA e2e baseline preserved. ↔ CHECK-7
 - AC-8 [US-3]: Snapshot tests for tuples + multi-arg payload pass. ↔ CHECK-8
@@ -219,7 +258,13 @@ Out-of-scope constructs fail at codegen with errors naming the construct AND the
 - CHECK-2 [AC-2]: same for `test_registered_variant`.
 - CHECK-3 [AC-3]: `opam exec -- dune exec sarek/tests/unit/test_ptx_snapshot.exe` — marker asserts for stride-mul + field pairs.
 - CHECK-4 [AC-4]: snapshot marker asserts (branch labels + absence of selp on match result).
-- CHECK-5 [AC-5]: snapshot rejection tests assert the exact error strings.
+- CHECK-5 [AC-5]: `opam exec -- dune exec sarek/tests/unit/test_ptx_snapshot.exe` —
+  `test_mixed_align_record_param_accepted` and `test_f64_variant_param_accepted` assert the
+  aligned offsets/strides and that codegen succeeds; `opam exec -- dune exec
+  sarek/tests/unit/test_ir_layout.exe` — `test_reject_variant_in_record` and
+  `test_reject_vec_in_record` assert the still-rejected cases' exact error strings. (Was:
+  "snapshot rejection tests assert the exact error strings" for both cases — retracted
+  2026-07-30.)
 - CHECK-6 [AC-6]: `opam exec -- dune build formal/ && opam exec -- dune runtest formal/` (0 admits enforced by build; conformance suite green).
 - CHECK-7 [AC-7]: `opam exec -- dune runtest` + full ZLUDA e2e sweep script (intake Quality Gates).
 - CHECK-8 [AC-8]: included in the snapshot suite run (CHECK-3 binary).
@@ -228,13 +273,15 @@ Out-of-scope constructs fail at codegen with errors naming the construct AND the
 
 - EC-1 → FR-012 (loads-before-stores). EC-2 → FR-002 + FR-004. EC-3 → FR-010.
 - EC-4 → FR-022 (single post-typing result type). EC-5 → C-9 rule. EC-6 → arm-scoped bindings.
-- EC-7 → FR-023. EC-8 → C-13 (positional packed offsets both sides). EC-9 → FR-042 domain.
+- EC-7 → FR-023. EC-8 → C-13 (positional aligned-cumulative offsets both sides — was: packed offsets). EC-9 → FR-042 domain.
 - EC-10 → FR-040 (separate module). EC-11 → FR-030 (structural discrimination).
 
 ## Non-Goals (recorded)
 
-- Record/variant kernel params by value from host; mixed-alignment aggregates (both rejected
-  with precise errors — revisit if the host layout gains alignment).
+- Record/variant kernel params by value from host (rejected with a precise error). (Was also:
+  "mixed-alignment aggregates ... revisit if the host layout gains alignment" — the host layout
+  gained alignment, campaign item L8, 2026-07-30; mixed-alignment aggregates are laid out
+  correctly, not rejected, and are no longer a non-goal.)
 - `pragma sarek.inline` bounded recursion; f64 transcendentals (separate gaps).
 - Fixing the CUDA/OpenCL ERecord/nullary-EVariant reference divergences (flagged in intake).
 - Full Rocq emitter re-proof over aggregates (follow-up task; boundary documented in PtxLayout.v).
