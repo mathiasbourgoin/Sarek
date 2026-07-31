@@ -332,6 +332,21 @@ let detach_record (v : value) : value =
   in
   go 0 v
 
+(** The interpreter's variant tag for a constructor NAME.
+
+    THE definition, and the only one: {!Sarek_ir_interp_eval}'s [EVariant] arm
+    and both of its matchers ([EMatch], [SMatch]) call this rather than
+    repeating [Hashtbl.hash _ mod 256], so a value built here and an arm
+    selected there cannot drift apart. They were three separate copies of the
+    expression, which is how a fourth copy — a literal [0] — went unnoticed.
+
+    [mod 256] means the encoding is NOT injective: two constructors of the same
+    type whose names collide modulo 256 select each other's arms. That is a
+    pre-existing property of the interpreter's variant representation, not
+    something introduced here, and it is left alone; naming the function at
+    least gives it one place to be fixed. *)
+let variant_tag_of_ctor (ctor : string) : int = Hashtbl.hash ctor mod 256
+
 (** {1 Array allocation — backlog-206}
 
     Zero value of an element type, used to fill a freshly declared kernel array
@@ -342,19 +357,38 @@ let detach_record (v : value) : value =
     target of .a (got unit)" on the Interpreter while Native accepted the same
     store — the divergence backlog-206 is about. A record element type now gets
     a [VRecord] whose fields are themselves zeroed, and a variant with at least
-    one constructor gets its FIRST constructor with zeroed payloads. A
-    [TVariant] carrying an EMPTY constructor list still gives [VUnit]: there is
-    no first constructor to pick, the PPX produces no such type, and inventing a
-    tag for it would be worse than the [VUnit].
+    one constructor gets a real constructor with zeroed payloads. A [TVariant]
+    carrying an EMPTY constructor list still gives [VUnit]: there is no
+    constructor to pick, the PPX produces no such type, and inventing a tag for
+    it would be worse than the [VUnit].
 
-    Choosing constructor 0 is a choice, not a neutral default: an uninitialised
-    slot of a variant array reads back as that constructor rather than as
-    "nothing". No device backend offers anything better — [__local]/[shared]
-    memory is uninitialised storage on all of them, so ANY value read before a
-    write is arbitrary — and constructor 0 is what the zeroed tag field of
-    zeroed storage decodes to, so it is the closest the interpreter can get to
-    what the device does. It is not a promise that reading an unwritten slot is
-    defined.
+    WHICH constructor, and WHAT TAG, are both load-bearing, and the first
+    version of this got the tag wrong.
+
+    The tag is {b not} a positional index in this interpreter. [EVariant]
+    encodes [Hashtbl.hash ctor_name mod 256] ({!Sarek_ir_interp_eval}), and
+    [EMatch]/[SMatch] select an arm with exactly that predicate. A literal [0]
+    therefore matches the first constructor only if its name happens to hash to
+    zero — so a default slot matched NO arm and the interpreter raised "Pattern
+    match failure in SMatch". Measured on a registered
+    [type c2 = A of float32 | B] whose unwritten shared slot was read:
+    Interpreter x2 RAISED where Native answered [B]. The tag now goes through
+    {!variant_tag_of_ctor}, the same encoding the evaluator uses, so a default
+    slot decodes to the constructor this function chose.
+
+    The constructor is the first NULLARY one if there is one, else the first
+    constructor with zeroed payloads. That is not an aesthetic preference: it is
+    what the Native backend's {!Sarek_native_gen_expr} default does
+    ([Sarek_native_helpers.default_value_for_type] searches for a nullary
+    constructor first), and a CPU-backend disagreement about the contents of a
+    freshly declared shared array is the exact shape of divergence backlog-206
+    was filed as. The two CPU backends now agree.
+
+    None of this is a promise that reading an unwritten slot is DEFINED.
+    [__local]/[shared] memory is uninitialised storage on every device, so any
+    value read before a write is arbitrary there; what these two paragraphs buy
+    is that the two backends which do have to put something in the slot put the
+    same thing, and that the something is a value the interpreter can match.
 
     [TUint8] gets [VInt32 0l], and that is a GUESS rather than a convention:
     [TUint8] appears nowhere else in this interpreter, so unlike [TFloat16] —
@@ -389,10 +423,15 @@ let rec default_value_of_elttype (ty : elttype) : value =
           Array.of_list
             (List.map (fun (_, fty) -> default_value_of_elttype fty) fields) )
   | TVariant (name, constrs) -> (
-      match constrs with
-      | (_, payload) :: _ ->
-          VVariant (name, 0, List.map default_value_of_elttype payload)
-      | [] -> VUnit)
+      let nullary = List.find_opt (fun (_, payload) -> payload = []) constrs in
+      match (nullary, constrs) with
+      | Some (ctor, _), _ -> VVariant (name, variant_tag_of_ctor ctor, [])
+      | None, (ctor, payload) :: _ ->
+          VVariant
+            ( name,
+              variant_tag_of_ctor ctor,
+              List.map default_value_of_elttype payload )
+      | None, [] -> VUnit)
   | TArray _ | TVec _ -> VUnit
 
 (** Allocate a kernel array of [size] elements of type [ty].

@@ -13,7 +13,7 @@
     it needs no device, no PPX and no kernel, so it holds wherever the test
     suite runs.
 
-    Two properties, and they are not the same property.
+    Three properties, and they are not the same property.
 
     1. A record element type produces a [VRecord] with zeroed fields. Before the
     fix it produced [VUnit], which is why [s.(i).a <- e] raised "Expected
@@ -25,7 +25,14 @@
     in every slot and a field store through one index would be visible through
     all of them — exactly the Native defect, reproduced in the interpreter. Only
     [Array.init] avoids it, and only a mutation-then-read check can tell the two
-    apart: both spellings give a structurally equal array. *)
+    apart: both spellings give a structurally equal array.
+
+    3. A VARIANT element type produces a value the interpreter's own matcher can
+    select an arm for, carrying the same constructor Native puts there. The tag
+    is [Hashtbl.hash ctor mod 256], not a positional index, and the first
+    version of the fix stored a literal [0] — structurally a fine [VVariant],
+    and unmatchable. Pinned against [variant_tag_of_ctor] rather than a
+    hard-coded number. *)
 
 open Alcotest
 open Sarek_ir_types
@@ -59,14 +66,62 @@ let test_default_record_is_zeroed () =
         | VUnit -> "VUnit (the pre-fix behaviour)"
         | _ -> "some other value")
 
-let test_default_variant_is_first_constructor () =
+(* The tag a default variant slot carries must be the tag the interpreter's own
+   matcher looks for, NOT a positional index. [EMatch]/[SMatch] select an arm
+   with [variant_tag_of_ctor name = tag]; the first version of this default
+   stored a literal [0], which matches the chosen constructor only if its name
+   happens to hash to zero, so reading a default slot raised "Pattern match
+   failure in SMatch" (measured: Interpreter x2 raised where Native answered the
+   nullary constructor). Asserted as the MATCHER'S PREDICATE rather than as a
+   hard-coded number, so the two cannot drift apart. *)
+let test_default_variant_is_matchable () =
   match
     default_value_of_elttype (TVariant ("choice", [("Zero", []); ("One", [])]))
   with
   | VVariant (name, tag, args) ->
       check string "variant name" "choice" name ;
-      check int "tag" 0 tag ;
+      check
+        bool
+        "the matcher selects the chosen constructor's arm"
+        true
+        (variant_tag_of_ctor "Zero" = tag) ;
+      check
+        bool
+        "and does NOT select the other constructor's arm"
+        false
+        (variant_tag_of_ctor "One" = tag) ;
       check int "no payload" 0 (List.length args)
+  | _ -> fail "a variant element type must produce a VVariant"
+
+(* Which constructor: the first NULLARY one, matching what the Native backend's
+   [Sarek_native_helpers.default_value_for_type] puts in the same slot. A
+   CPU-backend disagreement about a freshly declared shared array is the shape
+   of divergence backlog-206 was filed as, so the agreement is pinned. *)
+let test_default_variant_prefers_nullary () =
+  match
+    default_value_of_elttype (TVariant ("c2", [("A", [TFloat32]); ("B", [])]))
+  with
+  | VVariant (_, tag, args) ->
+      check
+        bool
+        "B, the nullary constructor, not A which comes first"
+        true
+        (variant_tag_of_ctor "B" = tag) ;
+      check int "no payload" 0 (List.length args)
+  | _ -> fail "a variant element type must produce a VVariant"
+
+(* No nullary constructor anywhere: fall back to the first one, payload zeroed.
+   Native does the same. *)
+let test_default_variant_without_nullary () =
+  match
+    default_value_of_elttype
+      (TVariant ("pair", [("L", [TInt32]); ("R", [TFloat32])]))
+  with
+  | VVariant (_, tag, args) -> (
+      check bool "L, the first constructor" true (variant_tag_of_ctor "L" = tag) ;
+      match args with
+      | [VInt32 n] -> check int32 "payload zeroed" 0l n
+      | _ -> fail "payload is not a single zeroed VInt32")
   | _ -> fail "a variant element type must produce a VVariant"
 
 (* THE property. Mutate slot 0 in place and require the other slots to be
@@ -114,9 +169,17 @@ let () =
             `Quick
             test_default_record_is_zeroed;
           test_case
-            "variant default is constructor 0"
+            "variant default is matchable by the interpreter"
             `Quick
-            test_default_variant_is_first_constructor;
+            test_default_variant_is_matchable;
+          test_case
+            "variant default prefers the nullary constructor"
+            `Quick
+            test_default_variant_prefers_nullary;
+          test_case
+            "variant default without a nullary constructor"
+            `Quick
+            test_default_variant_without_nullary;
           test_case
             "slots are independent allocations"
             `Quick

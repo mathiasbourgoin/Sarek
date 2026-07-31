@@ -580,12 +580,40 @@ let register_tuple_type (state : state) (ty : typ) : unit =
     over a variant-element vector parameter, contains no [TEConstr], and the
     [TVec] arm below bottoms out at [| _ -> ()] for [TVariant] — so on the
     struct-emitting backends that is the same undeclared-type-name failure this
-    function fixes for records, still open for variants. It is NOT fixed here
-    because adding a [TVariant] arm changes what gets emitted for ordinary
-    variant PARAMETERS too, and this change has no measurement for that; the
-    shape above was reasoned about, not executed. The interpreter and PTX halves
-    of backlog-206 DO handle [TVariant], so the treatment is deliberately uneven
-    and this is where it is uneven. *)
+    function fixes for records, still open for variants.
+
+    Now MEASURED rather than reasoned, and the measurement moves the seam. The
+    shared array is not what makes that shape fail. A kernel whose ONLY variant
+    occurrence is a [color vector] PARAMETER, with no shared array anywhere and
+    no [TEConstr] —
+
+    {[
+      fun (v : color vector) (out : float32 vector) ->
+        match v.(tid) with Red -> out.(tid) <- 0.0 | Value x -> out.(tid) <- x
+    ]}
+
+    — already fails today, identically: [kern_types = []], OpenCL ×2 "unknown
+    type name 'M_color'" on the PARAMETER declaration, Vulkan ×2 a glslang
+    syntax error. So the gap is variant registration in general, not a
+    shared-memory seam; the shared-array shape above is one instance of it, and
+    it is one this function's records fix does not reach.
+
+    It is still NOT fixed here, but not for the reason first written. "Adding a
+    [TVariant] arm would change what gets emitted for ordinary variant
+    parameters, unmeasured" is wrong where it matters: for a parameter-only
+    variant there is nothing working to regress — that kernel does not compile.
+    The real obstacle is that this function writes [state.types], the RECORD
+    table, and a variant belongs in [state.variants]; a [TVariant] arm here
+    would declare a variant as a record struct. And registration alone is not
+    even sufficient: with the type unregistered the emitter also drops the
+    match-arm payload binder and emits [out[tid] = x;] with no [x] declared
+    (measured on the same kernel — the binder comes from [kern_variants], which
+    [TEConstr] fills and this traversal does not touch). Fixing variants means
+    routing to [state.variants], which is a change with its own evidence to
+    gather, not a one-line arm here.
+
+    The interpreter and PTX halves of backlog-206 DO handle [TVariant], so the
+    treatment is deliberately uneven and this is where it is uneven. *)
 let rec register_types_from_typ (state : state) (ty : typ) : unit =
   match repr ty with
   | TRecord (name, fields) ->
