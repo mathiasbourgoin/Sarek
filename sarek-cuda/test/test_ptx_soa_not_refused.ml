@@ -13,17 +13,29 @@
  * added there would delete working functionality, which is the overshoot a
  * narrowing correction invites.
  *
- * The check has to be indirect. Naming a SCALAR-element vector in
- * [~soa_params] is rejected by the PTX emitter itself (SoA v1 is flat records
- * only), so this kernel does raise - but it must raise
- * [Ptx_codegen_error], the emitter's OWN rejection, which is only reachable if
- * the plugin threaded [~soa_params] into codegen. If the plugin had grown the
- * backlog-214 refusal, the exception would be [Backend_error] and codegen
- * would never have been entered. Distinguishing those two exceptions is
- * therefore exactly the question "did the refusal land here too".
+ * Checked two ways, positively first, because a purely negative "did not
+ * raise the wrong exception" is satisfied by a plugin that does nothing at all:
  *
- * The record-typed SoA path itself is covered, positively and by execution, in
- * sarek/tests/unit/test_ptx_snapshot.ml; this file is not that test.
+ *   1. DIRECT. A record-typed ([point3d]) vector named in [~soa_params] must
+ *      come back as PTX carrying the SoA parameter block - three per-leaf base
+ *      pointers plus one shared length - and NOT the single packed AoS pointer.
+ *      No plugin-level refusal can satisfy that assertion.
+ *   2. INDIRECT, kept as a second belt. Naming a SCALAR-element vector is
+ *      rejected by the PTX emitter itself (SoA v1 is flat records only), so
+ *      that call does raise - but it must raise [Ptx_codegen_error], the
+ *      emitter's OWN rejection, reachable only if the plugin threaded
+ *      [~soa_params] into codegen. Had the plugin grown the backlog-214
+ *      refusal, the exception would be [Backend_error] and codegen would never
+ *      have been entered.
+ *
+ * Case 2's hook is the flat-records-only restriction, which is scheduled to be
+ * lifted; case 1 is why that does not leave this file's subject uncovered.
+ *
+ * The SoA lowering itself is covered far more thoroughly elsewhere, and this
+ * file is not that test: at PTX-text and ptxas-assembly level in
+ * sarek/tests/unit/test_ptx_snapshot.ml (declared CPU-only, no device, and the
+ * ptxas half skips when ptxas is off PATH), and by execution on a CUDA/PTX
+ * device in sarek/tests/e2e/test_soa_emitter_equiv.ml.
  ******************************************************************************)
 
 open Sarek_ir_types
@@ -49,6 +61,71 @@ let probe_kernel () =
         ( LArrayElem ("c", EConst (CInt32 0l)),
           EArrayRead ("a", EConst (CInt32 0l)) );
   }
+
+(* A flat record vector - the shape a real SoA launch actually names. *)
+let point3d_ty =
+  TRecord ("point3d", [("x", TFloat32); ("y", TFloat32); ("z", TFloat32)])
+
+let soa_field_sum_kernel () =
+  let pts = make_var "pts" (TVec point3d_ty) in
+  let out = make_var "out" (TVec TFloat32) in
+  let tid = make_var "tid" TInt32 in
+  let fld f = ERecordField (EArrayRead ("pts", EVar tid), f) in
+  {
+    default_kernel with
+    kern_name = "p3sum";
+    kern_params =
+      [
+        DParam (pts, Some {arr_elttype = point3d_ty; arr_memspace = Global});
+        DParam (out, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      ];
+    kern_body =
+      SLet
+        ( tid,
+          EIntrinsic ([], "global_thread_id", []),
+          SAssign
+            ( LArrayElem ("out", EVar tid),
+              EBinop (Add, EBinop (Add, fld "x", fld "y"), fld "z") ) );
+  }
+
+let string_contains ~haystack ~needle =
+  let hl = String.length haystack and nl = String.length needle in
+  let rec loop i =
+    if i + nl > hl then false
+    else if String.sub haystack i nl = needle then true
+    else loop (i + 1)
+  in
+  nl = 0 || loop 0
+
+let must_contain ptx needle =
+  Alcotest.(check bool)
+    (Printf.sprintf "generated PTX contains %S" needle)
+    true
+    (string_contains ~haystack:ptx ~needle)
+
+(* --- 1. direct: a record vector named in ~soa_params yields the SoA block --- *)
+
+let test_ptx_record_soa_params_lowers_to_leaves () =
+  match
+    Backend.generate_source ~soa_params:["pts"] (soa_field_sum_kernel ())
+  with
+  | None -> Alcotest.fail "generate_source returned None for an SoA request"
+  | Some ptx ->
+      must_contain ptx ".param .u64 param_sarek_soa_pts_x" ;
+      must_contain ptx ".param .u64 param_sarek_soa_pts_y" ;
+      must_contain ptx ".param .u64 param_sarek_soa_pts_z" ;
+      must_contain ptx ".param .u32 param_sarek_pts_length" ;
+      Alcotest.(check bool)
+        "the single packed AoS base pointer is gone"
+        false
+        (string_contains ~haystack:ptx ~needle:".param .u64 param_pts,")
+  | exception Backend_error.Backend_error err ->
+      Alcotest.failf
+        "CUDA/PTX raised a plugin-level refusal (%s) for a record vector it is \
+         supposed to lower"
+        (Backend_error.to_string err)
+
+(* --- 2. indirect: the emitter's own rejection, not the plugin's --- *)
 
 let test_ptx_soa_params_reaches_the_emitter () =
   match Backend.generate_source ~soa_params:["a"] (probe_kernel ()) with
@@ -86,6 +163,10 @@ let () =
     [
       ( "soa_params",
         [
+          Alcotest.test_case
+            "a record vector still lowers to per-leaf pointers plus a length"
+            `Quick
+            test_ptx_record_soa_params_lowers_to_leaves;
           Alcotest.test_case
             "~soa_params reaches the PTX emitter, unrefused by the plugin"
             `Quick

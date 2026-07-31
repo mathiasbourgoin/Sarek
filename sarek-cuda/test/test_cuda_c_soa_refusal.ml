@@ -10,14 +10,15 @@
  * one bound it away as [?soa_params:_] and returned its ordinary packed-AoS
  * source: one pointer plus one length per vector parameter. The launch side
  * expands an SoA-dispatched vector into N [RSA_Buffer]s plus one
- * [RSA_Vector_Length], so AoS source under an SoA argument list is not a
- * compile error and not reliably a crash - it is N pointers bound to a packed
- * parameter block, i.e. silently wrong data.
+ * [RSA_Vector_Length], so AoS source under an SoA argument list is never a
+ * compile error. On this backend it is not reliably a crash either: the
+ * argument array reaches [cuLaunchKernel] unchecked, so N pointers land in a
+ * packed parameter block - silently wrong data.
  *
  * [Sarek_ir_cuda] has no SoA lowering, so the request cannot be honoured and is
  * refused. Both polarities are pinned here, because the refusal has its own
  * failure mode - refusing the EMPTY list would break every ordinary launch,
- * and the [`"CUDA/PTX"`] caller-side gate passes [[]] on this backend on every
+ * and the ["CUDA/PTX"] caller-side gate passes [[]] on this backend on every
  * single launch:
  *
  *   1. a non-empty list raises, and the message names this framework and the
@@ -68,13 +69,11 @@ let test_cuda_c_refuses_nonempty_soa_params () =
   match Backend.generate_source ~soa_params:["a"] (probe_kernel ()) with
   | Some src ->
       Alcotest.failf
-        "expected a refusal; generate_source answered an SoA request with \
-         %d          bytes of AoS source"
+        "expected a refusal, got %d bytes of AoS source"
         (String.length src)
   | None ->
       Alcotest.fail
-        "expected a refusal; generate_source returned None (the request \
-         was          swallowed, not refused)"
+        "expected a refusal, got None (request swallowed, not refused)"
   | exception
       Backend_error.Backend_error
         (Backend_error.Plugin
@@ -124,9 +123,7 @@ let test_cuda_c_empty_soa_params_still_generates () =
         omitted
         explicit_empty
   | None, _ | _, None ->
-      Alcotest.fail
-        "generate_source returned None for an AoS kernel - the empty-list \
-         fast          path regressed"
+      Alcotest.fail "None for an AoS kernel: the empty-list fast path regressed"
 
 let () =
   Alcotest.run

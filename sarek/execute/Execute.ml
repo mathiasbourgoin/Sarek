@@ -933,9 +933,13 @@ let run ~(device : Device.t) ~(name : string)
                  could disagree — a disagreement here is not a crash but N
                  pointers bound to a packed-AoS param block, i.e. silently wrong
                  data. Empty list on every non-CUDA/PTX backend, because
-                 soa_dispatch is what decides — and since backlog-214 those
-                 backends REFUSE a non-empty list rather than ignore it, so
-                 this gate is the fast path and no longer the only guarantee. *)
+                 soa_dispatch is what decides — and since backlog-214 the
+                 source-generating ones among them REFUSE a non-empty list
+                 rather than ignore it, so this gate is the fast path and no
+                 longer the only guarantee. Native, Interpreter and WebGPU
+                 return None unconditionally and carry no refusal; WebGPU is
+                 the one to watch, being a JIT backend whose WGSL codegen is
+                 not yet wired. *)
               let soa_params = soa_param_names ir args device in
               match B.generate_source ~block ~soa_params ir with
               | None ->
