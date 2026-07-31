@@ -40,10 +40,13 @@
     the expensive compile runs outside its lock — but codegen sits BEFORE any
     cache on the launch path ([Sarek.Execute.run] calls [B.generate_source] and
     only then reaches [run_source]), so nothing serialized it. The case is
-    written as a loop because the pre-fix failure is a race: measured on the
-    unfixed tree it mismatched 94, 888 and 1136 times out of 4000 across three
-    runs — never zero, but not once per iteration either, which is exactly why
-    it is a loop and not a single call. *)
+    written as a loop because the pre-fix failure is a race: it does not
+    mismatch on every iteration, only on some fraction of them, which is exactly
+    why it is a loop and not a single call. (An earlier draft of this header
+    cited specific mismatch counts from an unfixed run; they were not
+    reproducible from a fresh checkout and have been dropped rather than
+    re-published unverified — see the sizing rationale further down for how the
+    iteration count is chosen without them.) *)
 
 open Sarek_ir_types
 
@@ -261,10 +264,12 @@ let native_kernel =
         };
   }
 
-(** The substring every backend's refusal must carry. Taken from the shared
-    constant rather than retyped, so rewording the message cannot leave this
-    test passing against text no backend emits any more — but kept to a
-    distinctive fragment so incidental rewrapping does not fail it. *)
+(** The substring every backend's refusal must carry. Retyped here rather than
+    read from {!Sarek_ir_codegen.native_block_refusal}: that is deliberate,
+    because a literal is what makes rewording the shared message turn this test
+    RED instead of silently staying green against text no backend emits any
+    more. Kept to a distinctive fragment so incidental rewrapping of the message
+    does not fail it for no reason. *)
 let refusal_fragment = "Express the operation in Sarek"
 
 let refuses_native_block ~emitter ~generate () =
@@ -322,10 +327,11 @@ let variant_kernel name payload =
               ] ) );
   }
 
-(** Iterations per domain. Sized from the measured pre-fix mismatch rate (see
-    the header): the smallest of three observed runs was 94 mismatches in 4000
-    generations, so a run of this size going green by luck is not a risk worth
-    trading more test time against. *)
+(** Iterations per domain. The pre-fix race mismatches on a visible fraction of
+    generations rather than all or none of them (see the header), so a run needs
+    enough iterations that going green by luck — both domains happening to
+    interleave without colliding — is not a real risk. 2000 per domain is sized
+    for that margin rather than for a specific measured count. *)
 let concurrent_iterations = 2000
 
 let generations_do_not_interleave (name, generate) () =

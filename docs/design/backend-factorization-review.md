@@ -240,7 +240,10 @@ over-abstraction is the classic mistake. **Be skeptical.** The honest measuremen
 - Declarations — `SLet`/`SLetMut`/`SFor` are C `type name = e;` vs WGSL `let/var name : T = e;`
   (`gen_var_decl`, `wgsl:593`): different token order + keyword, plus WGSL/GLSL Shared-array
   hoisting and error paths. **Load-bearing.**
-- `SNative` — real injection (C-family) vs `/* not supported */` stub (GLSL/WGSL).
+- `SNative` — all five source generators now refuse it outright (see
+  `spoc/ir/Sarek_ir_codegen.ml:147` `native_block_refusal`, shared since
+  backlog-185/200); the C-family real-injection vs GLSL/WGSL
+  `/* not supported */`-stub split described above no longer exists.
 
 **Recommendation.** A shared traversal-with-hooks is worthwhile **for the C-family trio
 (CUDA/OpenCL/Metal)** and reasonable to extend to GLSL. Provide named hooks: `~escape`,

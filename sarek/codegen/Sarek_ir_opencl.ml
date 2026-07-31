@@ -1144,8 +1144,8 @@ let generate_with_types ~(types : (string * (string * elttype) list) list)
   reject_float16_kernel k ;
   reject_coopmat_kernel k ;
   let k = resolve_recursive_helpers k in
-  (* Per-generation state, threaded into the emit calls below: the caller's
-     framework tag, and the kernel's variants for SMatch bindings. *)
+  (* Per-generation state, threaded into the emit calls below: the kernel's
+     variants for SMatch bindings. *)
   let st = state k in
   let buf = Buffer.create large_buffer_size in
 

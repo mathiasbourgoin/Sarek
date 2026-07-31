@@ -85,8 +85,10 @@ let f16_midround_kernel () =
 
 let generated_source () =
   let k = f16_midround_kernel () in
-  (* No state to reset before generating: since backlog-185/200 the framework
-     tag and the variant table are per-generation values, not module refs. *)
+  (* No state to reset before generating: since backlog-185/200 the variant
+     table is a per-generation value, not a module ref. The framework tag is
+     no longer state at all — it is a compile-time literal each backend
+     passes for itself, not something threaded per generation. *)
   Sarek_codegen.Sarek_ir_cuda.generate_with_types ~types:k.kern_types k
 
 (* ------------------------------------------------------------------ *)
