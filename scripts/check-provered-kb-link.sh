@@ -330,10 +330,10 @@ for tool, red_path in sorted(tool_red_path.items()):
     elif not subjects[tool]:
         violations.append(
             "kb/properties.md declares gate `%s` red_path: %s, but %s's "
-            "prove-red-spec block does not parse (not exactly one BEGIN/END "
-            "pair, a line that is not `key: value`, or no `invoke:` key) -- "
-            "prove-red.sh would refuse it too, so the KB's claim of "
-            "red-path coverage is currently false." % (tool, PROVE_RED, tool))
+            "prove-red-spec block does not parse -- prove-red.sh's own "
+            "parser (reused here, not reimplemented) refuses it too, so the "
+            "KB's claim of red-path coverage is currently false."
+            % (tool, PROVE_RED, tool))
 
 if violations:
     print("::error::%d prove-red <-> kb/properties.md linkage violation(s)."
