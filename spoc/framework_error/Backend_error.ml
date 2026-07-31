@@ -288,26 +288,42 @@ let raise_error err = raise (Backend_error err)
 
     [Framework_sig.generate_source] offers [?soa_params] to every backend, but
     only an emitter that actually lowers a named vector parameter to N per-leaf
-    base pointers plus one shared length can honour it. A backend without that
+    bindings plus one shared length can honour it. A backend without that
     lowering used to bind the argument away as [?soa_params:_] and return its
-    ordinary packed-AoS source — a signature taking ONE pointer per vector,
-    while the launch side expands an SoA-dispatched vector into N [RSA_Buffer]s
-    plus one [RSA_Vector_Length]. That mismatch is not a compile error and not
-    reliably a crash: it is N pointers bound to a packed parameter block, i.e.
-    silently wrong data.
+    ordinary packed-AoS source — ONE binding per vector — while the launch side
+    expands an SoA-dispatched vector into N [RSA_Buffer]s plus one
+    [RSA_Vector_Length]. That mismatch is never a compile error, and how badly
+    it fails is per backend rather than uniform, which is why the refusal is
+    stated here in terms of the mismatch and not of its symptom:
 
-    Today no such call is made — [Execute.soa_dispatch] restricts SoA to the
-    CUDA/PTX device and [Soa_launch] gates on [PTX] being in the backend's
-    [supported_source_langs] — so this is a boundary, not a live bug fix. What
-    it changes is where the guarantee lives: it was one caller-side predicate
-    and nothing else, and a backend that cannot honour the request now says so
-    instead of answering with the wrong ABI.
+    - CUDA/C and HIP bind positionally into an unchecked argument array
+      ([Cuda_shared.bind_args], [Hip_shared.bind_args]) handed to
+      [cuLaunchKernel]/[hipModuleLaunchKernel], so N pointers land in a packed
+      parameter block — not a crash, silently wrong data;
+    - Metal and OpenCL derive their expected argument count from the indices the
+      caller bound ([Kernel_args.count]), so they have no independent count to
+      disagree with either;
+    - Vulkan does have a second, source-derived count
+      ([Vulkan_api_kernel.validate_buffer_indices], whose [expected_count] is
+      read from the GLSL [binding = N] declarations), so there the mismatch
+      surfaces late as "expected 1 buffer argument but got N" — a named
+      rejection that says nothing about SoA.
+
+    As of backlog-214 no caller in this tree reaches any of that:
+    [Execute.soa_dispatch] restricts SoA to the CUDA/PTX device and [Soa_launch]
+    gates on [PTX] being in the backend's [supported_source_langs]. So this is a
+    boundary, not a live bug fix. What it changes is where the guarantee lives:
+    it was one caller-side predicate and nothing else, and a backend that cannot
+    honour the request now says so instead of answering with the wrong ABI.
 
     Scope of what this raises, stated narrowly on purpose: it says what THIS
     backend does with vector parameters. It deliberately does not name which
     other backend does support SoA — that set is expected to grow (backlog-215),
     and a message enumerating it would go stale in a file that is not edited
-    when it does.
+    when it does. It is also not re-exported through {!Make}: [Make] closes over
+    one backend string per error module, and [Cuda_error]'s is "CUDA" for both
+    the CUDA/PTX backend that implements SoA and the CUDA/C backend that refuses
+    it, so a [Make]-based version could not tell the caller which one answered.
 
     [[]] returns [()], so every existing caller and the caller-side fast path
     are byte-for-byte unaffected. *)
@@ -321,8 +337,8 @@ let reject_soa_params ~backend (soa_params : string list) : unit =
            (Printf.sprintf
               "Structure-of-Arrays parameter lowering, requested for %s. This \
                backend's emitter gives every vector parameter the packed \
-               Array-of-Structures signature (one pointer plus one length), so \
-               the N-leaf-pointer argument list an SoA launch binds would not \
+               Array-of-Structures form (one binding plus one length), so the \
+               N-leaf-binding argument list an SoA launch produces would not \
                match the source it generates. Pass the vector through the \
                ordinary AoS launch path on this backend."
               (String.concat ", " (List.map (Printf.sprintf "'%s'") names))))
