@@ -895,7 +895,10 @@ let () =
             test_parse_expr_lambda_rejected;
         ] );
       (* backlog-192: shapes the OCaml parser cannot produce, so no
-         negative-compile case can reach them. *)
+         negative-compile case can reach them. Exactly TWO cases belong here,
+         which is the number the PR claims; the group used to also hold three
+         cases that ARE reachable from source and are now grouped below, where
+         the name is true of them. *)
       ( "refusal boundary (unreachable from source)",
         [
           Alcotest.test_case
@@ -906,6 +909,12 @@ let () =
             "Lapply let-open refused"
             `Quick
             test_parse_open_lapply_refused;
+        ] );
+      (* backlog-192: reachable from source, and asserted on AST nodes anyway —
+         these are ACCEPTANCE cases, so a negative-compile stanza is the wrong
+         instrument for them. *)
+      ( "accepted at the refusal boundary",
+        [
           Alcotest.test_case
             "three-deep let-open keeps its whole path"
             `Quick
