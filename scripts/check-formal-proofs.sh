@@ -426,5 +426,15 @@ echo
 echo "== ledger, axioms, anchors"
 python3 "$ROOT/scripts/check-proof-ledger.py" --generated "$LEDGER_OUT"
 
+# Shipped-artefact vs model-only split (backlog-201). Runs against the SAME
+# freshly generated ledgers as the check above, so the split is derived from
+# this from-scratch rebuild rather than from whatever the committed
+# proof-ledger.json files happen to say (that equivalence is what the drift
+# check above already established, but this keeps the two gates independent
+# of each other rather than one trusting the other's output silently).
+echo
+echo "== shipped-artefact / model-only split"
+python3 "$ROOT/scripts/check-production-link.py" --generated "$LEDGER_OUT"
+
 echo
 echo "OK: $checked formal project(s) rebuilt from source and kernel-re-checked."
