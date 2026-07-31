@@ -77,8 +77,13 @@ val glsl_float16_refusal : string
 (** The [%native] refusal diagnostic, shared by all five source backends (CUDA,
     OpenCL, Metal, GLSL, WGSL). None of them can serve an [SNative] node: the
     closure it carries produces source for a named target, and no caller of
-    these generators supplies one. Before backlog-185/200 three raised and two
-    emitted a comment and continued; this is the one message they now agree on.
+    these generators supplies one. This is the one message they now agree on.
+
+    What each of the five did before backlog-185/200 is deliberately NOT
+    restated here: it is one paragraph, it has a conditional in it, and it had
+    already drifted between its copies once. The maintained explanation sits
+    beside the definition in Sarek_ir_codegen.ml; CHANGES.md carries the
+    release-note version of the same change.
 
     Not used by the PTX emitter, which passes the closure its own ["PTX"] tag
     and really does emit. *)

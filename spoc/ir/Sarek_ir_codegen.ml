@@ -134,11 +134,19 @@ let glsl_float16_refusal =
     unrelated generation — which is the bug this work removes, not a mechanism
     to preserve.
 
-    So the five disagreed about a construct none of them could actually serve:
-    CUDA, OpenCL and Metal raised, while GLSL and WGSL emitted
-    [/* native code not supported in <lang> */] and CONTINUED — a shader missing
-    the operation the kernel asked for, with no diagnostic. One refusal replaces
-    all five.
+    So the five disagreed about a construct none of them could actually serve.
+    GLSL and WGSL emitted [/* native code not supported in <lang> */] and
+    CONTINUED — a shader missing the operation the kernel asked for, with no
+    diagnostic. CUDA, OpenCL and Metal branched on that ref instead: they raised
+    while it held [None] and otherwise emitted with whatever it held. So "they
+    raised" is only half true. It took two calls to reach the other half,
+    because [Sarek_transpile.of_source] rejects [%native] in the frontend before
+    codegen and so never reaches these arms itself: an earlier transpile of some
+    other kernel to leave the tag, then a direct [generate] on a [%native] one
+    to read it. And because [set_framework] wrote the same name into the CUDA,
+    OpenCL, Metal and WGSL refs whichever backend was asked for, the tag it then
+    emitted under was that earlier call's backend — which need not be its own.
+    One refusal replaces all five.
 
     Deliberately NOT shared with PTX: [Sarek_ir_ptx_stmt] passes the closure its
     own ["PTX"] tag and emits the result, which is a real path and stays.
