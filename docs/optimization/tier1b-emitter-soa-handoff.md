@@ -205,8 +205,11 @@ codegen-level `~soa_params` knob:
 > whose consequence is per backend: rejected at bind or launch on OpenCL
 > (`clSetKernelArg` / `CL_INVALID_ARG_INDEX`) and Vulkan
 > (`validate_buffer_indices`, count read from the GLSL `binding = N`
-> declarations), silently misinterpreted data on CUDA/C and HIP, which bind
-> positionally into an unchecked argument array. They now raise
+> declarations); on CUDA/C, HIP and Metal, which all bind positionally with no
+> arity check against the compiled kernel, the shift can misinterpret data or
+> trap on an illegal address — `Backend_error.reject_soa_params` carries the
+> per-backend detail, and none of the three is described by "silently wrong
+> data" alone. They now raise
 > `Backend_error.reject_soa_params` instead. The `"CUDA/PTX"` gate is
 > unchanged and is still the thing that keeps the refusal unreached; what
 > changed is that it is no longer the only thing. Extending SoA to a further

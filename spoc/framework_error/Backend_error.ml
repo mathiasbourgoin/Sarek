@@ -296,21 +296,28 @@ let raise_error err = raise (Backend_error err)
     it fails is per backend rather than uniform, which is why the refusal is
     stated here in terms of the mismatch and not of its symptom:
 
-    - CUDA/C and HIP bind positionally into an unchecked argument array
-      ([Cuda_shared.bind_args], [Hip_shared.bind_args]) handed to
-      [cuLaunchKernel]/[hipModuleLaunchKernel], so N pointers land in a packed
-      parameter block — not a crash, silently wrong data;
-    - Metal and OpenCL derive their PREFLIGHT count from the indices the caller
-      bound ([Kernel_args.count]), so that check has no source-derived count to
-      disagree with. OpenCL still has a late one it did not put there: binding
-      goes through the checked [clSetKernelArg] funnel
-      ([Opencl_api.Kernel.set_arg_mem]), which raises on [CL_INVALID_ARG_INDEX]
-      once the index runs past the compiled kernel's argument list;
-    - Vulkan does have a second, source-derived count
+    - CUDA/C, HIP and Metal bind POSITIONALLY with no arity check against the
+      compiled kernel ([Cuda_shared.bind_args], [Hip_shared.bind_args] into the
+      bare pointer array [cuLaunchKernel]/[hipModuleLaunchKernel] take;
+      [Metal_plugin_base] by list position via [atIndex:], its [expected_count]
+      being [Kernel_args.count] and so caller-derived). At two or more leaves
+      the list is LONGER than the AoS signature, which shifts every parameter
+      after the vector — exactly what [Execute.expand_to_run_source_args] warns
+      about for a leaf-count disagreement. So the declared length slot reads a
+      pointer value and the next declared POINTER parameter reads its 8 bytes
+      out of the 4-byte length cell: this can misinterpret data, and it can
+      equally trap on an illegal device address. Not a crash and silently wrong
+      data are both too narrow a description of it;
+    - OpenCL shares that caller-derived preflight count, but has a late check it
+      did not put there: binding goes through the checked [clSetKernelArg]
+      funnel ([Opencl_api.Kernel.set_arg_mem]), which raises on
+      [CL_INVALID_ARG_INDEX] once the index runs past the compiled kernel's
+      argument list;
+    - Vulkan has a second, source-derived count
       ([Vulkan_api_kernel.validate_buffer_indices], whose [expected_count] is
       read from the GLSL [binding = N] declarations), so there the mismatch
-      surfaces late as "expected 1 buffer argument but got N" — a named
-      rejection that says nothing about SoA.
+      surfaces late as a buffer-count rejection naming the two numbers — and
+      saying nothing about SoA.
 
     As of backlog-214 no caller in this tree reaches any of that:
     [Execute.soa_dispatch] restricts SoA to the CUDA/PTX device and [Soa_launch]

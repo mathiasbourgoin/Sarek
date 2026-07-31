@@ -359,10 +359,13 @@ module type BACKEND = sig
         OpenCL, Vulkan, Metal) call — because emitting AoS source for an SoA
         argument list is an ABI mismatch that no compiler catches, and what
         happens next is per backend: rejected at bind or launch on OpenCL and
-        Vulkan, silently misinterpreted data on CUDA/C and HIP (backlog-214).
-        The backends that return [None] unconditionally (Native, Interpreter,
-        WebGPU) generate no source at all and so do not carry that refusal.
-        Defaults to [[]] (all AoS), so existing callers are byte-identical. *)
+        Vulkan; on CUDA/C, HIP and Metal nothing checks the arity, so the
+        positional shift can misinterpret data or trap on an illegal address
+        (backlog-214; {!Sarek_backend_error.Backend_error.reject_soa_params}
+        carries the per-backend detail). The backends that return [None]
+        unconditionally (Native, Interpreter, WebGPU) generate no source at all
+        and so do not carry that refusal. Defaults to [[]] (all AoS), so
+        existing callers are byte-identical. *)
   val generate_source :
     ?block:dims ->
     ?soa_params:string list ->

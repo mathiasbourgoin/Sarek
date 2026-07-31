@@ -103,7 +103,7 @@ let must_contain ptx needle =
     true
     (string_contains ~haystack:ptx ~needle)
 
-(* --- 1. direct: a record vector named in ~soa_params yields the SoA block --- *)
+(* --- 1. direct: a record vector in ~soa_params yields the SoA block --- *)
 
 let test_ptx_record_soa_params_lowers_to_leaves () =
   match
