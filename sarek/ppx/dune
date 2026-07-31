@@ -3,8 +3,16 @@
  (public_name sarek.frontend)
  (wrapped false)
  (libraries ppxlib sarek_ir)
+ ; -warn-error +8 is load-bearing, not decoration: Sarek_unsupported's refusal
+ ; tables are deliberately wildcard-free so the COMPILER is what notices when
+ ; ppxlib grows a Parsetree constructor. Measured 2026-07-31 with an arm deleted
+ ; from Sarek_unsupported.expression_refusal: dune's dev :standard already makes
+ ; warning 8 an error (exit 1), but --profile=release left it a plain warning and
+ ; the build succeeded at exit 0 -- so before this line the guarantee did not
+ ; hold in the profile a packaged build uses, and `-w +8` on its own changed
+ ; nothing in either profile.
  (flags
-  (:standard -w +8-4))
+  (:standard -w +8-4 -warn-error +8))
  (preprocess
   (pps ppxlib.metaquot))
  (modules

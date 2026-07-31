@@ -244,21 +244,10 @@ let binding_result_type (vb : value_binding) (nparams : int) :
   | None, _ -> fun_return_type vb.pvb_expr
   | Some t, 0 -> Some t
   | Some t, n -> (
-      let rec peel n t =
-        if n = 0 then Some t
-        else
-          match t with Sarek_ast.TEArrow (_, r) -> peel (n - 1) r | _ -> None
-      in
-      match peel n t with
+      match peel_arrows n t with
       | Some r -> Some r
       | None ->
-          raise
-            (Parse_error_exn
-               ( "this annotation has fewer arrows than the function has \
-                  parameters, so Sarek cannot tell which part of it is the \
-                  result type. Annotate the result instead (`let f x : t = \
-                  ...`), or give the full arrow type.",
-                 vb.pvb_pat.ppat_loc )))
+          raise (Parse_error_exn (annotation_arity_msg, vb.pvb_pat.ppat_loc)))
 
 (** Parse let%shared: let%shared name : type [= size] in body Syntax: let%shared
     tile : float32 array in body let%shared tile : float32 array = 64 in body *)
@@ -1109,9 +1098,10 @@ let parse_payload (payload : expression) : Sarek_ast.kernel =
         raise
           (Parse_error_exn
              ( "simultaneous bindings (`let a = ... and b = ... in`) are not \
-                supported at the top of a kernel payload: only the FIRST was \
-                ever looked at and the rest fell through as if they were the \
-                kernel function. Write them as separate `let`s.",
+                supported at the top of a kernel payload: the whole `let` used \
+                to fall through as if it were the kernel function — not one of \
+                the bindings was read — and failed later with the unrelated \
+                \"Kernel must be a function\". Write them as separate `let`s.",
                (List.nth vbs 1).pvb_loc ))
     | _ -> (List.rev types_acc, List.rev mods_acc, e)
   in

@@ -336,7 +336,19 @@ let return_coercion_msg =
    type system, so a coercion has nothing to mean. Use a type annotation (`: \
    t`)."
 
-(** The return-type annotation of a function expression, if it has one.
+(** An annotation with fewer arrows than the function has parameters. Shared
+    between the two places that put a declared type into a RESULT slot. *)
+let annotation_arity_msg =
+  "this annotation has fewer arrows than the function has parameters, so Sarek \
+   cannot tell which part of it is the result type. Annotate the result \
+   instead (`let f x : t = ...`), or give the full arrow type."
+
+(** Strip [n] leading arrows off a type, or [None] if it has fewer than [n]. *)
+let rec peel_arrows n (t : Sarek_ast.type_expr) : Sarek_ast.type_expr option =
+  if n = 0 then Some t
+  else match t with TEArrow (_, r) -> peel_arrows (n - 1) r | _ -> None
+
+(** The declared RESULT type of a function expression, if it has one.
 
     [Pexp_function]'s [type_constraint option] slot is where OCaml >= 5.1 puts
     the [: t] of [let f (x : int32) : int32 = ...] — NOT in the pattern. It was
@@ -344,22 +356,56 @@ let return_coercion_msg =
     return type was silently discarded and the helper's result type came from
     inference alone (backlog-192).
 
-    Only the OUTERMOST function's constraint is returned, which is the only one
-    a single-arrow-chain [let f a b : t = ...] can have: OCaml puts every
-    parameter of such a definition in ONE [Pexp_function], so a nested one comes
-    from an explicit inner [fun], whose return type belongs to that inner
-    function and not to the binding. *)
+    EVERY [Pexp_function] on the way down is inspected, not just the outermost.
+    An earlier revision of this function read only the outermost and justified
+    it by saying a nested one "belongs to that inner function and not to the
+    binding" — which is false, because [collect_fun_params] below DESCENDS
+    through [Pfunction_body] and merges the inner function's parameters into the
+    binding's list. After that flattening there is no inner function left for
+    the annotation to belong to, and
+    [let f (x : int32) = fun (y : int32) : float32 -> ...] had its [float32]
+    dropped while the flattened spelling of the same function had it honoured.
+    Measured: the two spellings compiled to different verdicts, exit 0 versus a
+    unification error.
+
+    The LAST constraint on the way down wins, and it is peeled by the number of
+    parameters collected AFTER it — because a constraint sitting above further
+    parameters describes a FUNCTION type, not the flattened result.
+    [let f (x : int32) : (int32 -> int32) = fun (y : int32) -> y] therefore
+    yields [int32], not the arrow. Too few arrows is refused rather than
+    half-applied. *)
 let fun_return_type (expr : expression) : Sarek_ast.type_expr option =
   let module P = Ast_502.Parsetree in
-  match (expression_to_502 expr).P.pexp_desc with
-  | P.Pexp_function (_, Some (P.Pconstraint ct), _) ->
-      Some
-        (parse_type
-           (From_502.copy_core_type ct |> Selected_ast.of_ocaml Core_type))
-  | P.Pexp_function (_, Some (P.Pcoerce _), _) ->
-      raise (Parse_error_exn (return_coercion_msg, expr.pexp_loc))
-  | P.Pexp_function (_, None, _) -> None
-  | _ -> None
+  (* [found] is the last constraint seen and how many parameters have been
+     collected since; it mirrors [collect_fun_params]'s descent exactly. *)
+  let rec loop found params_since e =
+    match e.P.pexp_desc with
+    | P.Pexp_function (params, ct, body) -> (
+        let params_since = params_since + List.length params in
+        let found, params_since =
+          match ct with
+          | None -> (found, params_since)
+          | Some (P.Pconstraint c) -> (Some c, 0)
+          | Some (P.Pcoerce _) ->
+              raise (Parse_error_exn (return_coercion_msg, expr.pexp_loc))
+        in
+        (* [Pfunction_cases] is refused by every caller through [Fun_cases]; it
+           collects no further parameters here. *)
+        match body with
+        | P.Pfunction_body b -> loop found params_since b
+        | P.Pfunction_cases _ -> (found, params_since))
+    | _ -> (found, params_since)
+  in
+  match loop None 0 (expression_to_502 expr) with
+  | None, _ -> None
+  | Some ct, params_since -> (
+      let ty =
+        parse_type
+          (From_502.copy_core_type ct |> Selected_ast.of_ocaml Core_type)
+      in
+      match peel_arrows params_since ty with
+      | Some r -> Some r
+      | None -> raise (Parse_error_exn (annotation_arity_msg, expr.pexp_loc)))
 
 let collect_fun_params (expr : expression) :
     Ppxlib.pattern list * fun_body option =
