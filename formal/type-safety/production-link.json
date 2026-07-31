@@ -5,12 +5,14 @@
     "TypeSafetySpec": {
       "test_file": "test/test_type_safety_conformance.ml",
       "production_call": "Sarek_typer.infer",
-      "note": "T1-CMBT differential property (QCheck, 2000 random cases): asserts the extracted TypeSafetyModel.infer_type and the real Sarek_typer.infer agree, over the ELit/EVar/ELet/ETuple fragment the model covers. F-TS-01 (ELet scope leak) was found this way and is resolved."
+      "evidence": "differential_sampled",
+      "note": "T1-CMBT differential property (QCheck, 2000 RANDOMLY SAMPLED cases, not exhaustive): asserts the extracted TypeSafetyModel.infer_type and the real Sarek_typer.infer agree, over the ELit/EVar/ELet/ETuple fragment the model covers. F-TS-01 (ELet scope leak) was found this way and is resolved. Sampling establishes agreement on the inputs generated, not universally — a counterexample outside the sampled space is exactly what this evidence cannot rule out."
     },
     "UnifySpec": {
       "test_file": "test/test_type_safety_conformance.ml",
       "production_call": "Sarek_types.unify",
-      "note": "T2-UNIFY differential property (QCheck, 1000 random cases): asserts the extracted unifier and the real Sarek_types.unify agree, over ground (non-type-variable) types."
+      "evidence": "differential_sampled",
+      "note": "T2-UNIFY differential property (QCheck, 1000 RANDOMLY SAMPLED cases, not exhaustive): asserts the extracted unifier and the real Sarek_types.unify agree, over ground (non-type-variable) types. Same sampling caveat as TypeSafetySpec above."
     }
   }
 }

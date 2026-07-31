@@ -15,14 +15,32 @@ counted.
 
 **"280 theorems" is not one claim, and headlining it unqualified would be the
 house defect this project keeps finding elsewhere: a number claiming a wider
-scope of guarantee than its code.** 94 of the 280 are checked, by a differential
-test, against the actual shipped OCaml — the model and the named production
-function are asserted to agree on the same generated inputs (or, for the PTX
-layout theory, the extracted model is run directly against production with no
-mirror in between). The other 186 are proven about the Rocq model only: real,
-machine-checked theorems, most independently QCheck/extraction-validated against
-the extracted model itself, but with no mechanical assertion that the model
-agrees with the code that ships. Neither figure is hand-typed:
+scope of guarantee than its code.** 94 of the 280 are checked to agree with the
+actual shipped OCaml, and those 94 are not one kind of evidence — flattening
+them into "94 hold about production" would reproduce the same defect one level
+down:
+
+- **50 (`PtxLayout`)** — the theory's own extraction runs directly against
+  `Sarek_ir_layout`, **exhaustively** for every record shape with 1–4 fields
+  and every variant shape with 1–3 constructors of 0–2 args (780 + 30 783
+  shapes), plus 500 seeded random deeper cases. No hand-written model stands
+  between the proof and what is executed against production.
+- **44 (`TypeSafetySpec`, `UnifySpec`)** — QCheck **differential** testing:
+  the extracted model and the real `Sarek_typer.infer` / `Sarek_types.unify`
+  are asserted to agree over 2000 / 1000 **randomly sampled** inputs. This is
+  sampling, not exhaustion — it establishes agreement on the inputs actually
+  generated, not universally. A counterexample outside the sampled space is
+  exactly what this evidence cannot rule out.
+
+Both are real, and both are stronger than "proven about the model with no link
+to production at all" (the 186 below) — but they are not the same claim, and
+neither licenses "these 94 theorems hold about the shipped code" without
+qualification: the honest statement is "checked to agree with the shipped code
+on every input tested" — exhaustively-for-a-bound in one case, by random
+sampling in the other. The other 186 are proven about the Rocq model only:
+real, machine-checked theorems, most independently QCheck/extraction-validated
+against the extracted model itself, but with no mechanical assertion that the
+model agrees with the code that ships. None of the three figures is hand-typed:
 
 ```
 $ scripts/check-production-link.py
@@ -479,7 +497,11 @@ plus one hand-authored `formal/<project>/production-link.json` per project
 close that gap the same way `formal/axiom-allowlist.txt` closed the axiom one:
 a human names the claim, the tool verifies it against the build and the named
 test file's real content, and a claim whose backing test regresses fails
-loudly rather than staying cited. Result: 94 shipped-artefact, 186 model-only.
+loudly rather than staying cited. Result: 94 checked against production (50
+exhaustively-for-a-bound via extraction, 44 by random differential sampling),
+186 model-only. The two kinds within the 94 are not equal-strength evidence —
+see the split above — and the split does not itself say the 94 theorems *hold*
+of the shipped code, only that shipped and model agreed on everything tested.
 
 **Recorded as a null result** because no theorem's proof was found wrong and no
 implementation defect surfaced. What surfaced is a **scope gap**: `formal/type-safety`
