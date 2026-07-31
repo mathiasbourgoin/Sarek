@@ -1438,6 +1438,142 @@ let check_host_write_survives_packed dev n =
     (if !ok then "OK" else "FAILED") ;
   !ok
 
+(* [Execute.sync_vectors_to_cpu] must bring a TRANSPARENT launch's output back.
+
+   Raised in review: that function is one line — [List.iter (function Vec v ->
+   Transfer.to_cpu v | _ -> ())] — with no [soa_from_device] anywhere in it, so it
+   "downloads the packed AoS buffer the SoA kernel never wrote". The premise about
+   the line is right and the conclusion does not follow: [Transfer.to_cpu] is not
+   the packed read. It is the dispatcher — it calls [Transfer.read_back_to_host]
+   (Transfer.ml:507), whose SoA arm calls [soa_from_device] when
+   [soa_leaves_live]. Selecting the arm at THIS call site instead would be a
+   second site answering "SoA or AoS?", which is the divergence the single
+   decision point exists to prevent.
+
+   Asserted rather than argued, and with auto-sync DISABLED on the vector, which
+   is what makes the observation about [sync_vectors_to_cpu] rather than about
+   [Vector.get]: with auto-sync on, [get] would gather through [ensure_cpu_sync]
+   and the row would pass whatever this function did. Off, the only thing between
+   the launch and the assertion is the call under test.
+
+   This is also the function's only coverage anywhere in the tree: nothing else in
+   the repository calls it (it is public API reached only from user code), which
+   is how a claim about it could stand unchecked for a whole review round. *)
+let check_sync_vectors_to_cpu_gathers dev n =
+  let threads = min 128 n in
+  let block = dims threads and grid = dims ((n + threads - 1) / threads) in
+  let sv = Soa_vector.create_transparent point3d_custom n in
+  let y0 i = float_of_int (i + 1) in
+  for i = 0 to n - 1 do
+    Vector.set sv i {x = float_of_int i; y = y0 i; z = float_of_int (n - i)}
+  done ;
+  (* AFTER the host writes, so the scatter inside the launch still sees them. *)
+  Vector.set_auto_sync sv false ;
+  let ok = ref true in
+  (match
+     Sarek.Execute.run_vectors
+       ~device:dev
+       ~ir:(ir_of p3_scale_y_kernel)
+       ~args:[Vec sv; Int n]
+       ~block
+       ~grid
+       () ;
+     Transfer.flush dev ;
+     (* THE CALL UNDER TEST, and the only read-back in this case. *)
+     Sarek.Execute.sync_vectors_to_cpu [Vec sv; Int n]
+   with
+  | exception e ->
+      Printf.printf
+        "  sync_vectors_to_cpu after a transparent launch raised: %s\n%!"
+        (Printexc.to_string e) ;
+      ok := false
+  | () ->
+      let first = ref true in
+      for i = 0 to n - 1 do
+        let got = (Vector.get sv i).y and want = y0 i *. 2.0 in
+        if Float.abs (got -. want) > 1e-3 && !first then begin
+          first := false ;
+          Printf.printf
+            "  sync_vectors_to_cpu did not gather @%d: got=%g want=%g (the \
+             un-gathered host value is %g)\n\
+             %!"
+            i
+            got
+            want
+            (y0 i) ;
+          ok := false
+        end
+      done) ;
+  Vector.set_auto_sync sv true ;
+  Printf.printf
+    "  %-56s %s\n%!"
+    "sync_vectors_to_cpu gathers a transparent launch's output"
+    (if !ok then "OK" else "FAILED") ;
+  !ok
+
+(* A direct [Execute.run] — not [run_vectors] — on a transparent vector whose
+   leaves were never uploaded must REFUSE, not bind a short argument list.
+
+   Raised in review: [run] can be called directly, in which case
+   [transfer_vectors_to_device] never ran and [soa_leaf_bufs dev] "may return
+   fewer buffers than the leaf count baked into the source", giving the driver a
+   short kernel-argument array — the over-read [check_launch_args] documents, on
+   the expansion side.
+
+   Two answers, and this case executes the first. [soa_leaf_bufs] does not return
+   a short list: [Soa_vector]'s [leaf_buf] raises [invalid_arg] for a leaf with no
+   buffer on [dev] (Soa_vector.ml:148-160), which is exactly the never-transferred
+   case. And the leaf-count guard added this round is INSIDE
+   [expand_to_run_source_args] (Execute.ml, the [Vec] arm), which [run] itself
+   calls on the generated-JIT path — so it is on a direct [run]'s path, not only
+   [run_vectors]'.
+
+   Either refusal is accepted, but a LAUNCH is not: what must never happen is the
+   call returning normally, because that is the short-argument-array case. The
+   message is checked for the leaf-buffer wording so an unrelated failure cannot
+   satisfy it. *)
+let check_direct_run_refuses_untransferred dev n =
+  let threads = min 32 n in
+  let block = dims threads and grid = dims ((n + threads - 1) / threads) in
+  let sv = Soa_vector.create_transparent point3d_custom n in
+  for i = 0 to n - 1 do
+    Vector.set sv i {x = float_of_int i; y = float_of_int i; z = 0.0}
+  done ;
+  let ir = ir_of p3_scale_y_kernel in
+  let label = "direct run without a transfer is refused, not launched" in
+  match
+    (* No transfer_vectors_to_device, deliberately: that is the whole case. *)
+    Sarek.Execute.run
+      ~device:dev
+      ~name:ir.Sarek_ir_types.kern_name
+      ~ir:(Some (lazy ir))
+      ~native_fn:None
+      ~block
+      ~grid
+      [Vec sv; Int n]
+  with
+  | () ->
+      Printf.printf
+        "  %-56s FAILED (it launched with no leaf buffers uploaded)\n%!"
+        label ;
+      false
+  | exception e ->
+      let msg = Printexc.to_string e in
+      let named =
+        contains msg "leaf buffer not allocated"
+        || contains msg "soa_to_device must run"
+        || contains msg "leaf buffer(s) on device"
+      in
+      if named then (
+        Printf.printf "  %-56s OK (refused)\n%!" label ;
+        true)
+      else (
+        Printf.printf
+          "  %-56s FAILED (raised, but not about the leaves: %s)\n%!"
+          label
+          msg ;
+        false)
+
 let check_soa_then_packed dev n =
   let threads = min 128 n in
   let block = dims threads and grid = dims ((n + threads - 1) / threads) in
@@ -2108,6 +2244,15 @@ let () =
              cases pin the two directions of one condition. *)
           ( "a host write between an SoA and a packed launch survives",
             fun () -> check_host_write_survives_packed dev n );
+          (* The two cases the round-5 review asked for by name: whether
+             [Execute.sync_vectors_to_cpu] reaches the leaves, and whether a
+             direct [Execute.run] can bind a short leaf-pointer list. Both are
+             about the SoA ABI itself, so they carry the same blocker as the rest
+             of this group. *)
+          ( "sync_vectors_to_cpu gathers a transparent launch's output",
+            fun () -> check_sync_vectors_to_cpu_gathers dev n );
+          ( "direct run without a transfer is refused, not launched",
+            fun () -> check_direct_run_refuses_untransferred dev n );
           ( "free_all_buffers preserves a transparent SoA result",
             fun () -> check_free_preserves_soa dev n );
           (* And the free must RELEASE, not merely preserve — a separate claim
