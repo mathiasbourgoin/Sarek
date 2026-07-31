@@ -21,13 +21,16 @@
  *
  * They did NOT agree. [generate] was a separate 34-84 line copy of the emit
  * sequence in each backend, and each copy omitted the type-declaration step:
- * no record typedefs, no variant typedefs, and (on four of the five) no
- * [current_variants] assignment either. A kernel with a record type emitted
+ * no record typedefs, no variant typedefs, and (on four of the five) the
+ * variant table the [SMatch] arms read was never populated either. (That table
+ * was a module-level [current_variants] ref at the time; backlog-185/200 has
+ * since made it a field of a per-generation value.) A kernel with a record
+ * type emitted
  * through [generate] therefore produced source that USES the struct and never
  * DECLARES it — the C-family backends emit `Point2 p = pts[idx];` against no
  * `typedef struct ... Point2`. That is not a diagnostic; it is source the device
- * compiler rejects, or worse on WGSL, where [generate] set [current_variants]
- * (arming SMatch payload extraction) for types it then never declared.
+ * compiler rejects, or worse on WGSL, where [generate] armed SMatch payload
+ * extraction with that variant table for types it then never declared.
  *
  * The public transpiler ([Sarek_transpile.emit_backend]) routes ALL FIVE
  * backends through the plain [generate], so `sarek-transpile` on any kernel

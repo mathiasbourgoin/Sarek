@@ -147,9 +147,12 @@ they bind the payload.
 
 **2b — Statement-position SMatch: the payload-binding handler is duplicated ×5 but correct.**
 All five backends emit a `switch(scrut.tag)` that *does* bind payloads via
-`data.<Ctor>_v[._N]` and a `find_constr_types` lookup over `current_variants`
+`data.<Ctor>_v[._N]` and a `find_constr_types` lookup over the kernel's variant table
 (CUDA `Sarek_ir_cuda.ml:505-549`; the same shape recurs in opencl/glsl/wgsl/metal — grep
-`find_constr_types`/`current_variants` hits 7–8 per file). This is real structural duplication.
+`find_constr_types` hits 7–8 per file). This is real structural duplication.
+(At the time of writing that table was a module-level `current_variants` ref in each
+emitter; backlog-185/200 replaced it with a field of a per-generation value, which
+changes where the lookup reads from but not the duplication this section is about.)
 
 **Proposed abstraction.**
 1. Move `case_binds_used_payload` + `expr_mentions` into `Sarek_ir_codegen.ml` **once**, and call

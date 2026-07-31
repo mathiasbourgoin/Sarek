@@ -24,8 +24,14 @@
 type 'e spec = {
   framework : unit -> string;
       (** Framework tag passed to [Sarek_pure_registry.fun_device_template]. A
-          thunk because most backends read a mutable [current_framework] ref set
-          per kernel. GLSL always yields the constant ["GLSL"]. *)
+          thunk for historical reasons rather than present necessity: it was one
+          when the tag lived in a mutable [current_framework] ref that a caller
+          could rewrite between generations. Since backlog-185/200 each backend
+          builds its whole spec from a per-generation state value, so every
+          implementation of this field is a constant thunk — the four C-family
+          ones close over that state's [framework], and GLSL yields the literal
+          ["GLSL"]. Left as a thunk because collapsing it to a [string] is a
+          separate, purely cosmetic change to five call sites. *)
   gen_expr : Buffer.t -> 'e -> unit;
       (** The backend's (recursive) expression generator, for call arguments. *)
   thread_intrinsic : string -> string;

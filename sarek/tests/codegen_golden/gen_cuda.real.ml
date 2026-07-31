@@ -8,9 +8,6 @@
 open Sarek_ir_types
 open Sarek_codegen
 
-let reset_state () =
-  Sarek_ir_cuda.current_framework := None ;
-  Sarek_ir_cuda.current_variants := []
 
 let generate_with_types ~types (k : kernel) =
   Sarek_ir_cuda.generate_with_types ~types k

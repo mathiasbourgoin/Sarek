@@ -130,7 +130,8 @@ let mangle_name name = String.map (fun c -> if c = '.' then '_' else c) name
 
     Backends expose scalar params to the body through a mechanism that keys on
     the {e name} (a GLSL [#define] macro, or WGSL's [gen_expr] check against the
-    global [scalar_param_names]); a local binder sharing that name is silently
+    scalar-param-name list its per-generation state carries); a local binder
+    sharing that name is silently
     captured — the GLSL macro rewrites the declared identifier to [pc....] (a
     syntax error), and WGSL redirects every read to the uniform. This pass
     rewrites each colliding binder (and its in-scope references) to a fresh name

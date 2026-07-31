@@ -10,6 +10,12 @@
 open Sarek_opencl
 open Sarek_ir_types
 
+(* backlog-185 scaffolding: these unit tests call the emit functions directly,
+   and those now take the per-generation state as their first argument. None of
+   them uses SNative or a variant pattern, so the empty state is what the old
+   module-level refs held. *)
+let st : Sarek_ir_opencl.state = {framework = None; variants = []}
+
 (** Helper: Create a variable record *)
 let make_var name ty =
   {var_id = 0; var_name = name; var_type = ty; var_mutable = false}
@@ -17,15 +23,15 @@ let make_var name ty =
 (** Test basic expression generation *)
 let test_basic_literals () =
   let buf = Buffer.create 64 in
-  Sarek_ir_opencl.gen_expr buf (EConst (CInt32 42l)) ;
+  Sarek_ir_opencl.gen_expr st buf (EConst (CInt32 42l)) ;
   Alcotest.(check string) "int32 literal" "42" (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_opencl.gen_expr buf (EConst (CInt64 42L)) ;
+  Sarek_ir_opencl.gen_expr st buf (EConst (CInt64 42L)) ;
   Alcotest.(check string) "int64 literal" "42L" (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_opencl.gen_expr buf (EConst (CFloat32 3.14)) ;
+  Sarek_ir_opencl.gen_expr st buf (EConst (CFloat32 3.14)) ;
   let result = Buffer.contents buf in
   Alcotest.(check bool)
     "float32 literal has 'f' suffix"
@@ -33,11 +39,11 @@ let test_basic_literals () =
     (String.length result > 0 && result.[String.length result - 1] = 'f') ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_opencl.gen_expr buf (EConst (CBool true)) ;
+  Sarek_ir_opencl.gen_expr st buf (EConst (CBool true)) ;
   Alcotest.(check string) "bool true literal" "1" (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_opencl.gen_expr buf (EConst (CBool false)) ;
+  Sarek_ir_opencl.gen_expr st buf (EConst (CBool false)) ;
   Alcotest.(check string) "bool false literal" "0" (Buffer.contents buf)
 
 (** Test operations *)
@@ -45,28 +51,28 @@ let test_operations () =
   let buf = Buffer.create 64 in
   let x = make_var "x" TInt32 in
   let y = make_var "y" TInt32 in
-  Sarek_ir_opencl.gen_expr buf (EBinop (Add, EVar x, EVar y)) ;
+  Sarek_ir_opencl.gen_expr st buf (EBinop (Add, EVar x, EVar y)) ;
   Alcotest.(check string) "addition" "(x + y)" (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_opencl.gen_expr buf (EBinop (Sub, EVar x, EVar y)) ;
+  Sarek_ir_opencl.gen_expr st buf (EBinop (Sub, EVar x, EVar y)) ;
   Alcotest.(check string) "subtraction" "(x - y)" (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
-  Sarek_ir_opencl.gen_expr buf (EBinop (Mul, EVar x, EVar y)) ;
+  Sarek_ir_opencl.gen_expr st buf (EBinop (Mul, EVar x, EVar y)) ;
   Alcotest.(check string) "multiplication" "(x * y)" (Buffer.contents buf)
 
 (** Test basic statements *)
 let test_basics () =
   let buf = Buffer.create 64 in
-  Sarek_ir_opencl.gen_stmt buf "" SEmpty ;
+  Sarek_ir_opencl.gen_stmt st buf "" SEmpty ;
   Alcotest.(check string) "empty statement" "" (Buffer.contents buf)
 
 (** Test assignment *)
 let test_assignment () =
   let buf = Buffer.create 64 in
   let x = make_var "x" TInt32 in
-  Sarek_ir_opencl.gen_stmt buf "" (SAssign (LVar x, EConst (CInt32 42l))) ;
+  Sarek_ir_opencl.gen_stmt st buf "" (SAssign (LVar x, EConst (CInt32 42l))) ;
   Alcotest.(check string) "assignment" "x = 42;\n" (Buffer.contents buf)
 
 (** Test if statement *)
@@ -74,6 +80,7 @@ let test_if_statement () =
   let buf = Buffer.create 64 in
   let x = make_var "x" TInt32 in
   Sarek_ir_opencl.gen_stmt
+    st
     buf
     ""
     (SIf
@@ -91,6 +98,7 @@ let test_while_loop () =
   let buf = Buffer.create 64 in
   let x = make_var "x" TInt32 in
   Sarek_ir_opencl.gen_stmt
+    st
     buf
     ""
     (SWhile
@@ -107,6 +115,7 @@ let test_for_loop () =
   let buf = Buffer.create 128 in
   let i = make_var "i" TInt32 in
   Sarek_ir_opencl.gen_stmt
+    st
     buf
     ""
     (SFor (i, EConst (CInt32 0l), EConst (CInt32 10l), Upto, SEmpty)) ;
@@ -123,7 +132,7 @@ let test_for_loop () =
 (** Test return statement *)
 let test_return () =
   let buf = Buffer.create 64 in
-  Sarek_ir_opencl.gen_stmt buf "" (SReturn (EConst (CInt32 42l))) ;
+  Sarek_ir_opencl.gen_stmt st buf "" (SReturn (EConst (CInt32 42l))) ;
   Alcotest.(check string)
     "return statement"
     "return 42;\n"
@@ -132,7 +141,7 @@ let test_return () =
 (** Test barrier *)
 let test_barriers () =
   let buf = Buffer.create 64 in
-  Sarek_ir_opencl.gen_stmt buf "" SBarrier ;
+  Sarek_ir_opencl.gen_stmt st buf "" SBarrier ;
   let result = Buffer.contents buf in
   Alcotest.(check bool)
     "barrier contains 'barrier'"
@@ -143,7 +152,7 @@ let test_barriers () =
 let test_let_binding () =
   let buf = Buffer.create 64 in
   let x = make_var "x" TInt32 in
-  Sarek_ir_opencl.gen_stmt buf "" (SLet (x, EConst (CInt32 42l), SEmpty)) ;
+  Sarek_ir_opencl.gen_stmt st buf "" (SLet (x, EConst (CInt32 42l), SEmpty)) ;
   let result = Buffer.contents buf in
   Alcotest.(check bool)
     "let binding contains variable declaration"
@@ -154,7 +163,7 @@ let test_let_binding () =
 let test_let_mut () =
   let buf = Buffer.create 64 in
   let x = make_var "x" TInt32 in
-  Sarek_ir_opencl.gen_stmt buf "" (SLetMut (x, EConst (CInt32 42l), SEmpty)) ;
+  Sarek_ir_opencl.gen_stmt st buf "" (SLetMut (x, EConst (CInt32 42l), SEmpty)) ;
   let result = Buffer.contents buf in
   Alcotest.(check bool)
     "let mut contains variable declaration"
@@ -164,7 +173,7 @@ let test_let_mut () =
 (** Test block *)
 let test_block () =
   let buf = Buffer.create 64 in
-  Sarek_ir_opencl.gen_stmt buf "" (SBlock SEmpty) ;
+  Sarek_ir_opencl.gen_stmt st buf "" (SBlock SEmpty) ;
   let result = Buffer.contents buf in
   Alcotest.(check bool)
     "block contains opening brace"
@@ -178,7 +187,7 @@ let test_block () =
 (** Test pragma *)
 let test_pragma () =
   let buf = Buffer.create 64 in
-  Sarek_ir_opencl.gen_stmt buf "" (SPragma (["unroll"], SEmpty)) ;
+  Sarek_ir_opencl.gen_stmt st buf "" (SPragma (["unroll"], SEmpty)) ;
   let result = Buffer.contents buf in
   Alcotest.(check bool)
     "pragma contains '#pragma'"
