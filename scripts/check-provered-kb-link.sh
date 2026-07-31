@@ -52,21 +52,29 @@
 # WHAT THIS DOES NOT DO
 #
 # It does not replicate prove-red.sh's MUTATION semantics (apply:/argv:/
-# stdin: execution) -- that duplication would be a second, divergence-prone
-# implementation of the same grammar. "Unparseable" here means only the
-# structural half prove-red.sh's own parser would refuse on before ever
-# running anything: not exactly one BEGIN/END pair, END before BEGIN, a line
-# between them that is not `key: value`, or no `invoke:` key anywhere in that
-# range. A block that parses but is otherwise broken (a `copy:` target that
-# does not exist, say) is prove-red.sh's own concern to report, the next time
-# it actually runs that subject.
+# stdin: execution) -- only that a subject's declaration is well-formed enough
+# for prove-red.sh to attempt running it at all. "Parses" is answered by
+# calling prove-red.sh's OWN `parse()` function, extracted verbatim from its
+# source at run time (see build_real_parser below) rather than reimplemented
+# here: a hand-rolled second copy of that grammar is exactly the
+# divergence-prone shape this whole file exists to avoid one level up, and a
+# first draft of this script that hand-rolled a partial version of it (no
+# unknown-key check, no required-field check, no `expect-exit` did-not-notice
+# check, no dune-alias-without-force check) would have called several things
+# "parseable" that prove-red.sh's REAL parser refuses. A block that parses but
+# is otherwise broken at RUN time (a `copy:` target that does not exist, say)
+# remains prove-red.sh's own concern to report, the next time it actually runs
+# that subject.
 #
-# A block that HAS a marker but fails this structural check is still reported
-# under "carries a `BEGIN prove-red-spec` block" for direction (a) if it also
-# has no matching row -- deliberately: an unparseable block is not a reason to
-# excuse the missing row. Only direction (b) -- a row that already claims
-# `red_path: scripts/prove-red.sh` -- distinguishes "no marker at all" from
-# "marker present but does not parse".
+# A file with no `BEGIN prove-red-spec` marker at all is not a subject
+# candidate in the first place -- same criterion prove-red.sh's own
+# discover() uses. A file whose marker(s) exist but do not form a valid block
+# (no marker pair, END before BEGIN, an unknown key, a missing required field,
+# and so on) IS a subject candidate, with `parses: False`, and direction (a)
+# still requires a matching non-null row for it: an unparseable block is not a
+# reason to excuse a missing row. Only direction (b) -- a row that already
+# claims `red_path: scripts/prove-red.sh` -- distinguishes "no marker at all"
+# from "marker present but does not parse".
 #
 # Exit codes:
 #   0  every discovered subject is named by a row whose red_path is not null,
@@ -95,6 +103,7 @@ ROOT="$(cd "$ROOT" && pwd)"
 cd "$ROOT"
 
 python3 - <<'PY'
+import ast
 import json
 import os
 import re
@@ -103,8 +112,6 @@ import sys
 ROOT = os.getcwd()
 PROPS = "kb/properties.md"
 SCAN_DIRS = ["scripts", "ci"]
-BEGIN = "BEGIN prove-red-spec"
-END = "END prove-red-spec"
 PROVE_RED = "scripts/prove-red.sh"
 
 
@@ -113,15 +120,95 @@ def fail(msg, code=2):
     sys.exit(code)
 
 
-def strip_comment(line):
-    s = line.strip()
-    for marker in ("#", "//"):
-        if s.startswith(marker):
-            s = s[len(marker):]
-            if s.startswith(" "):
-                s = s[1:]
-            return s
-    return s
+# ---------------------------------------------------------------------------
+# Reuse prove-red.sh's OWN spec parser, extracted verbatim from its source
+# rather than reimplemented here -- see "WHAT THIS DOES NOT DO" above for why.
+# ---------------------------------------------------------------------------
+class _ParseRefused(Exception):
+    """Raised in place of prove-red.sh's own `die()`, which calls sys.exit(2)
+    -- fine in prove-red.sh's own process, fatal to this checker's if called
+    directly here. This is the one deliberate seam between the extracted code
+    and its original: everything else runs unmodified."""
+
+
+# The exact names `parse()` and its own helpers need, extracted as an
+# ast.FunctionDef/ast.Assign body and re-executed in a private namespace.
+# `die` is excluded on purpose (see _ParseRefused above) and supplied by us
+# instead; if prove-red.sh ever renames or removes one of the others, the
+# `missing` check below refuses loudly rather than silently parsing less than
+# prove-red.sh actually would.
+_NEEDED = ("BEGIN", "END", "HEADER_KEYS", "MUT_KEYS", "strip_comment",
+           "DUNE_VALUE_FLAGS", "dune_alias_without_force", "parse")
+
+
+def _extract_pyprog(prove_red_path, text):
+    marker = "PYPROG=$(cat <<'PYEOF'\n"
+    try:
+        start = text.index(marker) + len(marker)
+        end = text.index("\nPYEOF\n)", start)
+    except ValueError:
+        fail("%s: could not locate its embedded PYPROG heredoc -- the shape "
+             "this cross-check depends on to reuse the real parser has "
+             "changed. Update _extract_pyprog in scripts/check-provered-kb-"
+             "link.sh to match." % prove_red_path)
+    return text[start:end]
+
+
+def build_real_parser(root):
+    """Returns prove-red.sh's own `parse` function, live and callable, its
+    `die` calls redirected to raise _ParseRefused instead of exiting."""
+    prove_red_path = os.path.join(root, PROVE_RED)
+    try:
+        with open(prove_red_path, encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError as exc:
+        fail("%s could not be read: %s. There is no real parser to reuse "
+             "without it." % (prove_red_path, exc))
+    pyprog_src = _extract_pyprog(prove_red_path, text)
+    try:
+        tree = ast.parse(pyprog_src)
+    except SyntaxError as exc:
+        fail("%s: its embedded PYPROG does not parse as Python: %s"
+             % (prove_red_path, exc))
+    segments, found = [], set()
+    for node in tree.body:
+        name = None
+        if isinstance(node, ast.FunctionDef):
+            name = node.name
+        elif isinstance(node, ast.Assign) and len(node.targets) == 1 \
+                and isinstance(node.targets[0], ast.Name):
+            name = node.targets[0].id
+        if name in _NEEDED:
+            seg = ast.get_source_segment(pyprog_src, node)
+            if seg is not None:
+                segments.append(seg)
+                found.add(name)
+    missing = set(_NEEDED) - found
+    if missing:
+        fail("%s: could not extract %s from its embedded PYPROG -- "
+             "prove-red.sh's parser shape changed in a way this cross-check "
+             "no longer understands." % (prove_red_path, ", ".join(sorted(missing))))
+    import shlex as _shlex
+    ns = {"die": lambda msg: (_ for _ in ()).throw(_ParseRefused(msg)),
+          "os": os, "shlex": _shlex}
+    try:
+        exec(compile("\n\n".join(segments), "<%s:PYPROG>" % PROVE_RED, "exec"), ns)
+    except Exception as exc:
+        fail("%s: the extracted parser failed to load: %s"
+             % (prove_red_path, exc))
+    return ns["parse"], ns["BEGIN"], ns["strip_comment"]
+
+
+REAL_PARSE, BEGIN, REAL_STRIP_COMMENT = build_real_parser(ROOT)
+
+
+def block_parses(rel, src):
+    """True if prove-red.sh's REAL parser would accept this file's block."""
+    try:
+        REAL_PARSE(rel, src)
+        return True
+    except _ParseRefused:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +255,13 @@ for n, ln in enumerate((l for l in blocks[0].split("\n") if l.strip()), 1):
 # structurally the shape prove-red.sh's own parser would accept.
 # ---------------------------------------------------------------------------
 def discover():
+    """Subject candidacy is decided the same way prove-red.sh's own
+    discover() decides it: the presence of a `BEGIN prove-red-spec` marker,
+    nothing about `END` or anything between them. Whether the block that
+    follows actually PARSES is a separate question, answered by
+    block_parses() above, and recorded per-file rather than used to exclude
+    the file from the result -- a file with a marker and an unparseable block
+    is still a subject candidate for direction (a)."""
     found = {}
     roots_present = 0
     for d in SCAN_DIRS:
@@ -186,27 +280,10 @@ def discover():
                     src = fh.read()
             except OSError:
                 continue
-            lines = src.split("\n")
-            starts = [i for i, l in enumerate(lines) if strip_comment(l) == BEGIN]
-            ends = [i for i, l in enumerate(lines) if strip_comment(l) == END]
-            if not starts and not ends:
+            if not any(REAL_STRIP_COMMENT(l) == BEGIN for l in src.split("\n")):
                 continue
             rel = os.path.join(d, name)
-            ok = len(starts) == 1 and len(ends) == 1 and ends[0] > starts[0]
-            if ok:
-                has_invoke = False
-                for i in range(starts[0] + 1, ends[0]):
-                    raw = strip_comment(lines[i])
-                    if not raw.strip():
-                        continue
-                    if ":" not in raw:
-                        ok = False
-                        break
-                    if raw.split(":", 1)[0].strip() == "invoke":
-                        has_invoke = True
-                if ok and not has_invoke:
-                    ok = False
-            found[rel] = ok
+            found[rel] = block_parses(rel, src)
     if roots_present == 0:
         fail("none of %s exists under %s, so this cross-check read nothing."
              % (", ".join(SCAN_DIRS), ROOT))
