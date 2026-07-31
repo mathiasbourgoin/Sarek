@@ -17,6 +17,10 @@ Negative tests live in `sarek/tests/negative/` and are configured by `sarek/test
 - `test_inline_node_exhaustion.ml`: pragma inlining node-budget failure.
 - `test_tuple_param.ml`: tuple-typed kernel parameter rejection (**added 2026-07-02, merged PRs #211/#213, commit `fdf53ac3`** — see `kb/sarek/ppx/lowering.md`).
 - `test_fun_param.ml`: function-typed kernel parameter rejection (**added 2026-07-02, merged PRs #211/#213, commit `fdf53ac3`** — see `kb/sarek/ppx/lowering.md`).
+- `test_tuple_expr_nonprim.ml`: a non-primitive tuple in plain expression position (backlog-194). Pins the `TETuple` arm of `Sarek_lower_ir.lower_expr`, which before the fix built `Ir.ETuple` and let the failure surface later as an OCaml type error on the generated native function.
+- `test_tuple_eq_nonprim.ml`, `test_tuple_eq_prim.ml`, `test_record_eq.ml`, `test_variant_neq.ml`: `=` (and, for the variant case, `<>`) on a device-struct type (backlog-194). One case per member of `Sarek_types.is_device_struct_typ`, so no member can be dropped from the predicate with the suite still green. All three compiled before the fix and emitted device source no C-family compiler accepts — a bare `{a, b} == {a, b}` for the first, `(T){...} == (T){...}` for the second, `a == b` on two structs for the third. Refused by `Sarek_typer.reject_aggregate_equality`.
+- `test_fun_eq.ml`: `=` on two kernel-local function values (backlog-194). The fourth member of the refused set and the one with a different diagnostic: a function is inlined at its call sites and never emitted, so the old output named undeclared identifiers rather than mis-comparing a struct. Added after the cross-runtime review pass measured it; the branch had excluded `TFun` on the grounds that no evidence existed.
+- `test_poly_aggregate_eq.ml` (+ its companion unit `test_poly_aggregate_eq_ty.ml`): the same comparison reached through a polymorphic `[@sarek.module]` helper, where both operands are an unresolved tvar at `infer_binop` time. Pins the post-monomorphisation backstop in `Sarek_lower_ir`, NOT the typer gate — the typer gate provably cannot see this shape.
 
 ## Features And APIs
 

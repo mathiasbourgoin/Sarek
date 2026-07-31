@@ -135,6 +135,45 @@ let reject_float16 ~what t loc =
       Ok ()
   | _ -> Ok ()
 
+(** backlog-194. Reject an AGGREGATE operand of [=] / [<>]. The comment that
+    used to sit at the [Eq | Ne] arm said equality "is legal on bool, records
+    and variants"; it was legal only in the sense that nothing stopped it.
+    Measured on this tree, all three aggregate shapes reached codegen and every
+    one produced source no device compiler accepts:
+
+    - [(a, (b, c)) = (a, (b, c))] — a non-primitive tuple, which lowered to
+      [Ir.ETuple] and emitted a bare brace list [{x, y} == {x, y}] ("expected
+      ';' after expression" from clang -x cl);
+    - [(a, b) = (a, b)] — a primitive tuple, which lowers to the synthesized
+      [_tup_*] record and emitted [(_tup_float32_float32){...} == (...){...}]
+      ("invalid operands to binary expression");
+    - [r1 = r2] on a [@@sarek.type] record, which emitted [a == b] ("invalid
+      operands to binary expression").
+
+    Only the C-family emitters print [==]; the native backend emits OCaml [=]
+    (Sarek_native_gen.ml:213), which is structural and answers correctly. So the
+    construct was not uniformly broken — it was silently non-portable, the worse
+    shape. Refused here rather than at the emitters, so the diagnostic names the
+    operator and the type at the source location.
+
+    NARROWNESS, stated: an operand still unresolved ([TVar]) is NOT refused here
+    — this runs at [infer_binop] time and nothing re-examines the operator after
+    unification binds it. The backstop for that is the [TEBinop (Eq | Ne, …)]
+    arm in {!Sarek_lower_ir}, which runs after monomorphisation and covers every
+    member of the set, record and variant included; [test_poly_aggregate_eq]
+    pins it on a record reached through a polymorphic helper.
+
+    The set is {!Sarek_types.is_uncomparable_operand_typ} and is NOT hand-rolled
+    here: the backstop calls the same predicate, because two copies of one
+    constructor list is how the two gates would come to disagree. It is
+    deliberately narrower than "aggregate": a vector or local-array operand is a
+    pointer on the device, [src = dst] emits [(src == dst)], and clang -x cl
+    accepts it — refusing that would be a removal with no evidence behind it. *)
+let reject_aggregate_equality ~what t loc =
+  if is_uncomparable_operand_typ t then
+    Error [Aggregate_equality_operand (what, repr t, loc)]
+  else Ok ()
+
 (** Check that a type is integer (int32, int64, int).
 
     @param t The type to check
@@ -214,27 +253,11 @@ let rec type_of_type_expr_ctx env (ctx : tvar_ctx) te =
 let type_of_type_expr_env env te =
   type_of_type_expr_ctx env (fresh_tvar_ctx ~level:env.current_level ()) te
 
-(** Human-readable operator name for diagnostics. *)
-let binop_name = function
-  | Add -> "'+' / '+.'"
-  | Sub -> "'-' / '-.'"
-  | Mul -> "'*' / '*.'"
-  | Div -> "'/' / '/.'"
-  | Mod -> "'mod'"
-  | And -> "'&&'"
-  | Or -> "'||'"
-  | Eq -> "'='"
-  | Ne -> "'<>'"
-  | Lt -> "'<'"
-  | Le -> "'<='"
-  | Gt -> "'>'"
-  | Ge -> "'>='"
-  | Land -> "'land'"
-  | Lor -> "'lor'"
-  | Lxor -> "'lxor'"
-  | Lsl -> "'lsl'"
-  | Lsr -> "'lsr'"
-  | Asr -> "'asr'"
+(** Human-readable operator name for diagnostics. Defined in {!Sarek_error}
+    (backlog-194) because the lowering's aggregate-equality backstop renders the
+    same operator into the same sentence; a second [match] over [binop] there
+    was two independent renderings of one name, and nothing compared them. *)
+let binop_name = Sarek_error.binop_display_name
 
 (** Infer type of a binary operation *)
 let infer_binop op t1 t2 loc =
@@ -253,12 +276,17 @@ let infer_binop op t1 t2 loc =
       Ok t1
   | Eq | Ne ->
       (* Equality: both same type, result bool.
-         No [check_numeric] here on purpose — equality is legal on bool, records
-         and variants. But it is NOT legal on f16, and skipping every check is
-         what let `a.(i) = b.(i)` on a float16 vector compile (MF4a). *)
+         No [check_numeric] here on purpose — equality IS legal on bool as well
+         as on the numeric types. It is not legal on f16 (skipping every check
+         is what let `a.(i) = b.(i)` on a float16 vector compile, MF4a), and it
+         is not legal on an aggregate either: see
+         {!reject_aggregate_equality} for the three shapes that were measured
+         emitting uncompilable device source (backlog-194). *)
       let* () = unify_or_error t1 t2 loc in
       let* () = reject_float16 ~what t1 loc in
       let* () = reject_float16 ~what t2 loc in
+      let* () = reject_aggregate_equality ~what t1 loc in
+      let* () = reject_aggregate_equality ~what t2 loc in
       Ok t_bool
   | Lt | Le | Gt | Ge ->
       (* Comparison: both same numeric type, result bool *)

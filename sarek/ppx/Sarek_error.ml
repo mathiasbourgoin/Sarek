@@ -56,6 +56,18 @@ type error =
           two type names and no indication of which function they came from —
           the reported failure mode of a polymorphic [@sarek.module] helper
           instantiated at a non-default element type (#97). *)
+  | Aggregate_equality_operand of string * typ * loc
+      (** backlog-194: a value with no comparable device representation reached
+          [=] or [<>] — a tuple, record or variant (a struct: no backend lowers
+          the comparison field-wise, and the C-family emitters print [a == b],
+          which those compilers reject), or a function (inlined at its call
+          sites and never emitted, so [f == g] named identifiers that do not
+          exist in the generated source). The set is
+          {!Sarek_types.is_uncomparable_operand_typ}; the [typ] is the operand
+          type, so the message can name what was compared. Pointer-shaped
+          operands (a vector, a local array) are NOT this error: [src = dst]
+          emits [(src == dst)], which clang -x cl and glslangValidator both
+          accept. *)
   | Float16_operand of string * loc
       (** An f16 value reached an operator. f16 is a storage-only type, so this
           is always a user error with a specific remedy; reporting it as
@@ -99,7 +111,83 @@ let error_loc = function
   | Invalid_lvalue loc -> loc
   | Function_value_escapes (_, _, loc) -> loc
   | Instantiation_mismatch {loc; _} -> loc
+  | Aggregate_equality_operand (_, _, loc) -> loc
   | Float16_operand (_, loc) -> loc
+
+(** Human-readable operator name for diagnostics, e.g. ['=' -> "'='"]. Lives
+    here rather than in {!Sarek_typer} because two modules render an operator
+    into a diagnostic — the typer's [infer_binop] and the aggregate-equality
+    backstop in {!Sarek_lower_ir} (backlog-194) — and a per-module [match] over
+    [binop] is two spellings of one name with nothing comparing them. *)
+let binop_display_name = function
+  | Add -> "'+' / '+.'"
+  | Sub -> "'-' / '-.'"
+  | Mul -> "'*' / '*.'"
+  | Div -> "'/' / '/.'"
+  | Mod -> "'mod'"
+  | And -> "'&&'"
+  | Or -> "'||'"
+  | Eq -> "'='"
+  | Ne -> "'<>'"
+  | Lt -> "'<'"
+  | Le -> "'<='"
+  | Gt -> "'>'"
+  | Ge -> "'>='"
+  | Land -> "'land'"
+  | Lor -> "'lor'"
+  | Lxor -> "'lxor'"
+  | Lsl -> "'lsl'"
+  | Lsr -> "'lsr'"
+  | Asr -> "'asr'"
+
+(** backlog-194. The body of the aggregate-equality refusal, WITHOUT the leading
+    operator name. It is a function rather than inline text in {!pp_error}
+    because two sites emit this refusal — the typer's, through
+    [Aggregate_equality_operand], and the post-monomorphisation backstop in
+    {!Sarek_lower_ir}, which raises a located Ppxlib error directly. An earlier
+    revision had the second site build an [Aggregate_equality_operand] with a
+    FAKE location purely to borrow this printer; sharing the body instead is
+    what lets the two agree on the wording without either lying about a loc.
+
+    What the text does and does not claim. It says no backend lowers the
+    comparison field-wise, which is true of all seven. It does NOT enumerate
+    what each backend prints: that was a standing claim about six modules with
+    nothing tying it to them, and it is the per-backend evidence, dated, that
+    belongs in the negative-test headers instead.
+
+    The remedy is given in SOURCE terms. It previously advised [a._0 = b._0] for
+    a tuple, which is not writable: [_0] is the synthesized field name of the
+    internal [_tup_*] record, and a field access on a tuple-typed value is
+    refused by the typer with [Not_a_record]. Destructuring is the spelling that
+    works. *)
+let aggregate_equality_body (ty : typ) : string =
+  match repr ty with
+  | TFun _ ->
+      (* A separate sentence, because the struct wording would be false here.
+         The struct members fail for want of a field-wise lowering; a function
+         operand fails earlier and harder — the emitted `f == g` names
+         identifiers that were inlined away and never declared, so clang -x cl
+         reports "use of undeclared identifier". There is also no remedy of the
+         "compare the parts" kind to offer. *)
+      Format.asprintf
+        "cannot compare two function values in a kernel (here: %a). A \
+         kernel-local function is inlined at its call sites and is never \
+         emitted as a device object, so there is nothing to compare: the \
+         generated code named two identifiers that do not exist in it. Compare \
+         the RESULTS of applying them, or use a variant tag to select \
+         behaviour."
+        pp_typ
+        ty
+  | _ ->
+      Format.asprintf
+        "cannot compare two values of type %a in a kernel: no backend lowers \
+         that comparison to a field-wise one, so it cannot be emitted. Compare \
+         the components explicitly — destructure a tuple first (`let a0, a1 = \
+         a in let b0, b1 = b in a0 = b0 && a1 = b1`), use the fields of a \
+         record (`a.x = b.x && a.y = b.y`), and match on both sides for a \
+         variant."
+        pp_typ
+        ty
 
 (** Pretty print an error *)
 let pp_error fmt = function
@@ -238,6 +326,8 @@ let pp_error fmt = function
         t1
         pp_typ
         t2
+  | Aggregate_equality_operand (what, ty, _) ->
+      Format.fprintf fmt "%s %s" what (aggregate_equality_body ty)
   | Float16_operand (what, _) ->
       Format.fprintf
         fmt
