@@ -7,6 +7,17 @@
 ;   SPOC_DISABLE_VULKAN=1  - Disable Vulkan backend
 ;   SPOC_DISABLE_METAL=1   - Disable Metal backend
 ;   SPOC_DISABLE_GPU=1     - Disable all GPU backends (CUDA, OpenCL, Vulkan, Metal)
+;
+;   SAREK_REQUIRE_PTX=1    - test_soa_emitter_equiv.ml only: fail instead of
+;                            silently skipping the SoA legs when no enumerated
+;                            device reports framework "CUDA/PTX". Opt-in-by-hand
+;                            only, deliberately NOT wired into the rule below:
+;                            this rule (and `dune runtest` generally) must stay
+;                            green on a host with no CUDA/PTX device, which is
+;                            most hosts, so the variable is not exported here.
+;                            Set it by hand on a ZLUDA-equipped host, e.g.:
+;                              SAREK_REQUIRE_PTX=1 LD_LIBRARY_PATH=$HOME/opt/zluda \
+;                                dune exec sarek/tests/e2e/test_soa_emitter_equiv.exe
 
 (library
  (name registered_defs)

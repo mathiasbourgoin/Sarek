@@ -73,12 +73,39 @@
   numerically clean — which a numeric-only audit would have mis-reported as
   unaffected. See `docs/optimization/amdgpu-f16-fusion-shape-audit.md`.
 - ZLUDA/AMD support for the CUDA/PTX backend (PTX launch ABI fix)
-- `SAREK_REQUIRE_PTX` for `test_soa_emitter_equiv`: set it and the test fails
-  when no enumerated device reports the `CUDA/PTX` framework, instead of
-  skipping every SoA-ABI case and still exiting 0. Nothing in the repository
-  sets it, and unset nothing changes, so an absent device still reads as
-  skipped rather than as a pass or a failure. It asserts enumeration only — whether
+- `SAREK_REQUIRE_PTX` for `test_soa_emitter_equiv`: set it to exactly `1` and
+  the test fails when no enumerated device reports the `CUDA/PTX` framework,
+  instead of exiting 0 with the SoA legs either skipped or reported as PASSED
+  with a `(SoA skipped: non-PTX)` note. Nothing in the repository's dune
+  rules, Makefile targets or CI jobs sets it, and unset (or any value other
+  than `1`) nothing changes, so an absent device still reads as skipped
+  rather than as a pass or a failure. It asserts enumeration only — whether
   the SoA cases pass on that device is what the per-case rows say.
+  Opt-in-by-hand; see `gh-pages/docs/device_selection.md`.
+- **KNOWN RESIDUAL (backlog-225, not fixed).** `test_soa_emitter_equiv`'s
+  `check_roundtrip` and the `Vector.fill` row of `check_relaunch` have each
+  been seen, once, to return `y` equal to the un-doubled host value on
+  ZLUDA's CUDA/PTX view of this host's devices — a leaf write that appears
+  not to have landed before read-back. 2 occurrences noticed over "some
+  2,500" executions of the test binary; a separate non-reproduction campaign
+  afterward ran 2,443 further executions (2,000 + 300 + 40 concurrent + 40 on
+  a cold ZLUDA cache + 3 under `dune runtest --force` + 60 isolated), all
+  zero, which does not reconcile arithmetically against the ~2,500 figure —
+  whether the 2 occurrences fall inside or outside that 2,443 cannot be
+  determined from the record. No root cause established; nothing here
+  claims a fix. `Transfer.flush` was added on the `check_roundtrip` leg as a
+  defensive measure, not offered as the fix — the `check_relaunch` occurrence
+  was on a leg that already synchronizes. Also found and filed but NOT
+  implicated as the cause (both failing legs already call
+  `Device.set_current` correctly via `Device.synchronize`): `Cuda_api.ml`'s
+  `Stream.synchronize` was the only function in its module omitting
+  `Device.set_current` before touching a stream/device (fixed here), and
+  `Cuda_plugin_base.ml`'s `current_device` is a plain global ref while
+  `Cuda_api.ml` underneath it deliberately uses a `Domain.DLS` key for the
+  same state (not fixed; filed). See the full comment at
+  `sarek/tests/e2e/test_soa_emitter_equiv.ml:703` and
+  `docs/optimization/tier1b-emitter-soa-handoff.md`'s backlog-225 status
+  block.
 - T3-SEMANTIC milestone lock for both formal projects; conformance +
   mutation tests wired into `dune runtest`
 
