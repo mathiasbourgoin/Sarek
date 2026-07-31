@@ -341,16 +341,20 @@ let detach_record (v : value) : value =
     [let%shared (s : tri) = 4l] followed by [s.(i).a <- e] raised "assignment
     target of .a (got unit)" on the Interpreter while Native accepted the same
     store — the divergence backlog-206 is about. A record element type now gets
-    a [VRecord] whose fields are themselves zeroed, and a variant gets its FIRST
-    constructor with zeroed payloads.
+    a [VRecord] whose fields are themselves zeroed, and a variant with at least
+    one constructor gets its FIRST constructor with zeroed payloads. A
+    [TVariant] carrying an EMPTY constructor list still gives [VUnit]: there is
+    no first constructor to pick, the PPX produces no such type, and inventing a
+    tag for it would be worse than the [VUnit].
 
     Choosing constructor 0 is a choice, not a neutral default: an uninitialised
     slot of a variant array reads back as that constructor rather than as
     "nothing". No device backend offers anything better — [__local]/[shared]
     memory is uninitialised storage on all of them, so ANY value read before a
-    write is arbitrary — and constructor 0 is what the tag byte of zeroed
-    storage decodes to, so it is the closest the interpreter can get to what the
-    device does. It is not a promise that reading an unwritten slot is defined.
+    write is arbitrary — and constructor 0 is what the zeroed tag field of
+    zeroed storage decodes to, so it is the closest the interpreter can get to
+    what the device does. It is not a promise that reading an unwritten slot is
+    defined.
 
     [TArray] and [TVec] elements stay [VUnit]: an array of arrays is not
     expressible as a kernel array element type on any backend, and inventing a

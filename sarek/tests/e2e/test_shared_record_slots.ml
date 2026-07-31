@@ -50,9 +50,15 @@
  * anonymous one, fails.
  *
  * WHAT THIS FILE DOES NOT COVER, stated rather than left to be found:
- *   - Metal, HIP and WGSL. There is no such device on this machine, nothing was
- *     measured on them, and nothing is claimed. A failure on any of them is a
- *     failure -- they are on the [Device.init] list and are not tolerated.
+ *   - Metal, HIP and WGSL. Nothing is measured and nothing is claimed, and the
+ *     reason is stronger than "no such hardware here": this file initialises
+ *     the Native, Interpreter, CUDA, OpenCL and Vulkan plugins ONLY, and WGSL
+ *     is not even on the [Device.init] list. So no Metal, HIP or WGSL device
+ *     can enumerate here on ANY host, and saying "a failure on those is a
+ *     failure" would be a promise about legs this file cannot run. Naming them
+ *     in [Device.init] is forward compatibility, not coverage. Covering them
+ *     means linking their plugins and initialising them, which is a change to
+ *     make when such hardware exists to check the result against.
  *   - Reading a shared slot that no thread wrote. Shared/__local/threadgroup
  *     memory is UNINITIALISED on every device, so an unwritten slot has no
  *     defined value. An earlier draft of this test asserted 0 for the untouched
@@ -177,17 +183,34 @@ let ir_of kirc =
   | Some ir -> ir
   | None -> failwith "kernel has no IR"
 
-(* The PTX refusal, asserted on CONTENT. Three independent substrings, because a
-   message that merely mentions PTX would also be produced by a dozen unrelated
+(* The PTX refusal, asserted on CONTENT. Three independent substrings — the
+   state space, the array name and the element type name — because a message
+   that merely mentions PTX would also be produced by a dozen unrelated
    failures, and because the point of the backlog-206 change to it is precisely
-   that it names the array and the type. *)
-let ptx_refusal_is_named (msg : string) : bool =
+   that it names those three things.
+
+   PARAMETERISED over the state space and the array name rather than fixed on
+   the shared case. The first version was fixed, and the local-array case
+   therefore accepted ANY CUDA/PTX exception: the named local-state-space
+   refusal could have regressed to the old anonymous "btype of custom type", or
+   to something unrelated, and the test would have stayed green. A refusal
+   expectation that accepts any exception is a check that cannot fail. *)
+let ptx_refusal_is_named ~(what : string) ~(arr : string) (msg : string) : bool
+    =
   let has sub =
     let n = String.length sub and m = String.length msg in
     let rec go i = i + n <= m && (String.sub msg i n = sub || go (i + 1)) in
     n = 0 || go 0
   in
-  has "shared-memory array" && has "'s'" && has "tri"
+  has (what ^ "-memory array") && has ("'" ^ arr ^ "'") && has "tri"
+
+(* [Float.abs (got -. want) > 1e-4] is FALSE when [got] is NaN, so a tolerance
+   comparison on its own accepts NaN — and NaN is exactly what a read of
+   uninitialised device memory can hand back, which is the failure mode this
+   file exists to catch. Every value check goes through here, so the guard
+   cannot be present at some call sites and missing at others. *)
+let close_enough ~(got : float) ~(want : float) : bool =
+  Float.is_finite got && Float.abs (got -. want) <= 1e-4
 
 let fail_count = ref 0
 
@@ -232,7 +255,7 @@ let run_field_case (dev : Device.t) =
   | exception e ->
       let msg = Printexc.to_string e in
       if expects_refusal dev then
-        if ptx_refusal_is_named msg then
+        if ptx_refusal_is_named ~what:"shared" ~arr:"s" msg then
           Printf.printf "refused, named (expected)\n%!"
         else begin
           Printf.printf "refused\n%!" ;
@@ -261,11 +284,11 @@ let run_field_case (dev : Device.t) =
           let want_own = float_of_int i in
           let got_nb = Vector.get out_nb i in
           let want_nb = float_of_int ((i + 1) mod n) +. 100.0 in
-          if Float.abs (got_own -. want_own) > 1e-4 then begin
+          if not (close_enough ~got:got_own ~want:want_own) then begin
             bad := true ;
             failf "@%d own slot .a: got %g want %g" i got_own want_own
           end ;
-          if Float.abs (got_nb -. want_nb) > 1e-4 then begin
+          if not (close_enough ~got:got_nb ~want:want_nb) then begin
             bad := true ;
             failf "@%d neighbour slot .b: got %g want %g" i got_nb want_nb
           end
@@ -295,7 +318,17 @@ let run_slot_case (dev : Device.t) =
   with
   | exception e ->
       let msg = Printexc.to_string e in
-      if expects_refusal dev then Printf.printf "refused (expected)\n%!"
+      if expects_refusal dev then
+        if ptx_refusal_is_named ~what:"shared" ~arr:"s" msg then
+          Printf.printf "refused, named (expected)\n%!"
+        else begin
+          Printf.printf "refused\n%!" ;
+          failf
+            "CUDA/PTX refused the slot-store shape, as expected, but the \
+             message does not name the shared array and its record type. Got: \
+             %s"
+            msg
+        end
       else begin
         Printf.printf "RAISED\n%!" ;
         failf "%s raised: %s" dev.Device.framework msg
@@ -311,7 +344,7 @@ let run_slot_case (dev : Device.t) =
         for i = 0 to n - 1 do
           let got = Vector.get out i in
           let want = float_of_int ((i + 1) mod n) in
-          if Float.abs (got -. want) > 1e-4 then begin
+          if not (close_enough ~got ~want) then begin
             bad := true ;
             failf "@%d neighbour slot .a: got %g want %g" i got want
           end
@@ -343,7 +376,19 @@ let run_local_case (dev : Device.t) =
   with
   | exception e ->
       let msg = Printexc.to_string e in
-      if expects_refusal dev then Printf.printf "refused (expected)\n%!"
+      if expects_refusal dev then
+        (* "local", not "shared": the local declaration site passes its own
+           state-space word, and a predicate that asked for "shared" here would
+           be a check that can never pass on a correct refusal. *)
+        if ptx_refusal_is_named ~what:"local" ~arr:"arr" msg then
+          Printf.printf "refused, named (expected)\n%!"
+        else begin
+          Printf.printf "refused\n%!" ;
+          failf
+            "CUDA/PTX refused the local array, as expected, but the message \
+             does not name the local array and its record type. Got: %s"
+            msg
+        end
       else begin
         Printf.printf "RAISED\n%!" ;
         failf "%s raised: %s" dev.Device.framework msg
@@ -359,11 +404,11 @@ let run_local_case (dev : Device.t) =
         for i = 0 to n - 1 do
           let g0 = Vector.get out0 i and g1 = Vector.get out1 i in
           let w0 = float_of_int i and w1 = float_of_int i +. 10.0 in
-          if Float.abs (g0 -. w0) > 1e-4 then begin
+          if not (close_enough ~got:g0 ~want:w0) then begin
             bad := true ;
             failf "@%d local slot 0 .a: got %g want %g" i g0 w0
           end ;
-          if Float.abs (g1 -. w1) > 1e-4 then begin
+          if not (close_enough ~got:g1 ~want:w1) then begin
             bad := true ;
             failf "@%d local slot 1 .a: got %g want %g" i g1 w1
           end
