@@ -48,7 +48,7 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
   (ocaml (>= 5.4.0))
   (dune (>= 3.15))
   (spoc (= :version))
-  (ppxlib (>= 0.22.0))
+  (ppxlib (>= 0.37.0))
   (ctypes (>= 0.24.0))
   (ctypes-foreign (>= 0.24.0))
   ; sarek.webgpu_runtime / sarek.transpile_web are public libraries, so they are
