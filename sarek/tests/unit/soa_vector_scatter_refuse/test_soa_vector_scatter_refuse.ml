@@ -5,12 +5,12 @@
 
 (** backlog-220: [Soa_vector.scatter] used to silently transpose stale host
     bytes into the leaves whenever auto-sync was off and the AoS vector's host
-    copy was behind a device's ([Stale_CPU]). It returned [unit], not an
-    error, so the caller had no way to tell a correct scatter from a corrupt
-    one. This pins that it now refuses instead — and, just as importantly,
-    that it does NOT refuse in the other states auto-sync-off can be in
-    ([CPU] and [Stale_GPU], where the host copy is already the fresh data, so
-    there is nothing stale to guard against). *)
+    copy was behind a device's ([Stale_CPU]). It returned [unit], not an error,
+    so the caller had no way to tell a correct scatter from a corrupt one. This
+    pins that it now refuses instead — and, just as importantly, that it does
+    NOT refuse in the other states auto-sync-off can be in ([CPU] and
+    [Stale_GPU], where the host copy is already the fresh data, so there is
+    nothing stale to guard against). *)
 
 module Soa = Spoc_core.Soa
 module Soa_vector = Spoc_core.Soa_vector
@@ -56,15 +56,15 @@ let make_device id =
    rather than a single generic phrase. *)
 let refusal_message_per_vector_off =
   "Soa_vector.scatter: this vector's host data is out of date and this \
-   vector's own auto-sync flag is off (call Vector.set_auto_sync on it to \
-   turn it back on), so nothing will refresh it, and scattering now would \
-   copy stale values into this vector's per-leaf host buffers with no error. \
-   Before scattering, call Transfer.to_cpu on its AoS vector \
-   (Soa_vector.aos_vector) to refresh the host copy directly."
+   vector's own auto-sync flag is off (call Vector.set_auto_sync on it to turn \
+   it back on), so nothing will refresh it, and scattering now would copy \
+   stale values into this vector's per-leaf host buffers with no error. Before \
+   scattering, call Transfer.to_cpu on its AoS vector (Soa_vector.aos_vector) \
+   to refresh the host copy directly."
 
 let refusal_message_global_off =
-  "Soa_vector.scatter: this vector's host data is out of date and auto-sync \
-   is off globally, for every vector, via Transfer.disable_auto (call \
+  "Soa_vector.scatter: this vector's host data is out of date and auto-sync is \
+   off globally, for every vector, via Transfer.disable_auto (call \
    Transfer.enable_auto to turn it back on), so nothing will refresh it, and \
    scattering now would copy stale values into this vector's per-leaf host \
    buffers with no error. Before scattering, call Transfer.to_cpu on its AoS \
@@ -171,8 +171,8 @@ let test_refuses_when_stale_and_global_auto_off () =
       aos.Spoc_core.Vector_types.location <-
         Spoc_core.Vector_types.Stale_CPU (make_device 0) ;
       Alcotest.check_raises
-        "scatter refuses on Stale_CPU + global auto-sync off (per-vector \
-         flag still true)"
+        "scatter refuses on Stale_CPU + global auto-sync off (per-vector flag \
+         still true)"
         (Soa.Unsupported refusal_message_global_off)
         (fun () -> Soa_vector.scatter sv))
 
@@ -180,8 +180,10 @@ let test_refuses_when_stale_and_global_auto_off () =
    refuse" branch above genuinely reaches [Vector.ensure_cpu_sync] and its
    registered sync callback, rather than "does not refuse" being true merely
    because nothing downstream would have exercised the bug either way. This
-   registers the SAME callback [Transfer.ml] registers at program start (real
-   [Transfer.to_cpu], gated on the global mode) rather than the trivial
+   registers a callback of the same SHAPE as the one [Transfer.ml] registers
+   at program start — a hand-written copy, not that callback itself, so drift
+   in [Transfer.ml]'s version will not fail this case — driving the real
+   [Transfer.to_cpu] and gated on the global mode, rather than the trivial
    always-succeeds stub the sibling test above uses, specifically so that
    letting [scatter] proceed drives a REAL device transfer attempt. The fake
    [Device.t] this suite builds has no backing buffer registered anywhere, so

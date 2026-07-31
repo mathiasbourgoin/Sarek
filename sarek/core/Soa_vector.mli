@@ -102,17 +102,29 @@ val get : 'a t -> int -> 'a
 
 (** [scatter t] transposes the AoS host buffer into the N per-leaf host buffers
     (call before transferring the leaves to a device). When the host copy is
-    behind a device's data ([Stale_CPU]) and auto-sync would actually rescue
-    it — both this vector's own flag ({!Vector.auto_sync}) AND the global mode
-    ({!Transfer.is_auto}) are on — attempts to bring it up to date first.
+    behind a device's data ([Stale_CPU]), [scatter] first reads two auto-sync
+    gates: this vector's own flag ({!Vector.auto_sync}) and the global mode
+    ({!Transfer.is_auto}).
 
-    When the host copy is [Stale_CPU] and EITHER auto-sync gate is off (this
-    vector's own flag via {!Vector.set_auto_sync}, or the global mode via
-    {!Transfer.disable_auto}), there is no way to bring it up to date silently,
-    so [scatter] raises {!Soa.Unsupported} instead of transposing the stale
-    host bytes; the message names whichever of the two is actually off. Every
-    other location ([CPU], [GPU], [Both], [Stale_GPU]) is unaffected either
-    way, since the host copy there is already the vector's freshest data. *)
+    With both on, [scatter] proceeds and calls {!Vector.ensure_cpu_sync} to
+    bring the host copy up to date first. Whether that actually refreshes
+    anything is up to the registered sync callback; [scatter] does not verify
+    that it did.
+
+    With EITHER gate off (this vector's own flag via {!Vector.set_auto_sync}, or
+    the global mode via {!Transfer.disable_auto} / {!Transfer.set_auto}),
+    [scatter] refuses: it raises {!Soa.Unsupported} rather than transpose host
+    bytes it cannot establish are current, and the message names whichever gate
+    is off. That is a deliberate over-refusal and not a claim that no rescue was
+    possible — a caller that installed its own callback through
+    {!Vector.register_sync_callback} may have a path [scatter] does not reason
+    about.
+
+    [CPU], [Both] and [Stale_GPU] are unaffected either way, since the host copy
+    there is already the vector's freshest data. Pure [GPU] is not refused
+    either, but for a weaker reason and not because the host copy is fresh:
+    nothing in this library puts an AoS vector into that state, so it is an
+    uncovered gap rather than a state this function has cleared. *)
 val scatter : 'a t -> unit
 
 (** [gather t] transposes the N per-leaf host buffers back into the AoS host

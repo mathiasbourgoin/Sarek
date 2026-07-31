@@ -37,13 +37,30 @@ type leaf = {
     element size in bytes (the stride between consecutive elements in AoS). *)
 type plan = {name : string; leaves : leaf list; aos_stride : int}
 
-(** Raised to refuse an operation this module cannot do without either
-    corrupting data or misrepresenting what happened. Two distinct causes
-    share it: a type is not a v1-supported SoA target (non-record, or a
-    record with a nested-record / variant / array field — flat records only
-    for v1), raised by {!plan}/{!plan_of_elttype}; or, raised by
-    {!Soa_vector.scatter}, a vector's host data is out of date and auto-sync
-    is disabled, so the transpose cannot be done correctly and silently. *)
+(** Raised to refuse an operation the SoA layer cannot do without either
+    corrupting data or misrepresenting what happened.
+
+    Below is the list of RAISERS, which is closed as of this comment
+    ([grep -rn "Unsupported" sarek/core/Soa.ml sarek/core/Soa_vector.ml] to
+    re-derive it). The reasons under each raiser are examples, not an
+    enumeration — read the message, not this list, to learn why a particular
+    call refused.
+
+    - {!plan} and {!plan_of_elttype}: the element type is not a v1-supported SoA
+      target. Reached by a non-record; by a nested-record, variant, array or
+      vector field; by an f16 or uint8 field; and by a
+      [Sarek_ir_layout.record_layout] failure such as a misaligned field.
+    - {!Soa_vector.create}, and therefore {!Soa_vector.create_transparent}: the
+      element type's [custom_type.ir_fields] is [None], so no flat-record layout
+      is derivable at all. Raised before {!plan} is reached.
+    - {!Soa_vector.scatter}: a vector's host data is out of date while auto-sync
+      is disabled, so the transpose cannot be done correctly and silently.
+
+    That last cause is unlike the others and callers must not conflate them: it
+    is a transient property of one VECTOR's state, not a permanent property of a
+    TYPE, and the same call succeeds once the host copy is refreshed. A handler
+    that reads {!Unsupported} as "this type can never be SoA" and installs a
+    permanent AoS fallback is wrong for it. *)
 exception Unsupported of string
 
 (** Build a SoA plan from a record's named fields. Reuses
