@@ -27,10 +27,17 @@
  * constructor on the core [host_storage] GADT. That much is unchanged; the
  * DEFERRAL this header used to describe is not.
  *
- * Generic [Execute.run] auto-dispatch is no longer deferred: {!create_transparent}
- * provides it, and a vector from it takes the N-leaf ABI through the ordinary
- * [Execute.run]/[run_vectors] with no SoA-specific entry point. Two earlier
- * halves are likewise closed — the leaf enumeration is derived from
+ * Auto-dispatch is no longer deferred: {!create_transparent} provides it, and a
+ * vector from it takes the N-leaf ABI through the ordinary
+ * {!Sarek.Execute.run_vectors} with no SoA-specific entry point. Named
+ * precisely, because bare [Execute.run] is NOT the same promise: [run_vectors]
+ * is what performs the leaf upload before dispatching. On CUDA/PTX — the only
+ * backend where the leaf ABI is selected at all — [run] called directly on a
+ * vector whose leaves were never transferred raises rather than launching, which
+ * is what [check_direct_run_refuses_untransferred] in test_soa_emitter_equiv.ml
+ * pins (and why that case carries the SoA-ABI blocker: on the CPU backends [run]
+ * executes against host vectors and there is no leaf upload to have skipped). Two earlier halves are likewise closed — the leaf
+ * enumeration is derived from
  * [custom_type.ir_fields] rather than supplied by the caller, and the launch
  * path threads the SoA param names itself.
  *
