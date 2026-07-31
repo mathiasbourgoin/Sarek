@@ -89,12 +89,21 @@ rm -f "$probe"
 # in progress, so on a dirty tree it would silently destroy a developer's
 # uncommitted edits. Refusing here is what makes the restore safe: after this
 # check, any drift observed later must have been produced by the build.
+#
+# FORMAL_ALLOW_DIRTY=1 bypasses this refusal, and by itself that would reopen
+# exactly the loss described above — this was filed as backlog #229 after it
+# happened. So the flag also disables the restore_tree trap's `git checkout`
+# below: with it set, the tree starts however the developer left it and ends
+# however the build left it, restored not at all rather than restored wrong.
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   dirty=$(git status --porcelain -- formal | grep -v '^?? ' || true)
   if [ -n "$dirty" ] && [ "${FORMAL_ALLOW_DIRTY:-0}" != "1" ]; then
     echo "::error::formal/ has uncommitted changes to tracked files. This \
 script rebuilds in place and restores the tree afterwards, which would discard \
-them. Commit or stash first, or set FORMAL_ALLOW_DIRTY=1 to accept the loss."
+them. Commit or stash first, or set FORMAL_ALLOW_DIRTY=1 to run anyway — with \
+the flag set, the per-project restore_tree trap (below) also skips its \
+'git checkout -- .' cleanup, so your uncommitted edits are left in place \
+rather than discarded at exit."
     printf '%s\n' "$dirty" | sed 's/^/    /'
     exit 1
   fi
@@ -178,11 +187,29 @@ cannot determine the logical path to check."
     # made. Restoring unconditionally keeps a failed run repeatable.
     #
     # Safe precisely because of the dirty-tree check above: the tree was clean
-    # when this started, so anything to restore was produced by this script.
-    # The lia/nia caches are untracked build residue the tactics drop next to
-    # the sources; they would otherwise be left behind.
+    # when this started (unless FORMAL_ALLOW_DIRTY=1, handled below), so
+    # anything to restore was produced by this script. The lia/nia caches are
+    # untracked build residue the tactics drop next to the sources; they would
+    # otherwise be left behind, and removing them is not destructive to any
+    # committed or uncommitted work either way, so it runs regardless of the
+    # flag.
+    #
+    # FORMAL_ALLOW_DIRTY=1 bypasses the pre-flight refusal above, which means
+    # this trap can no longer assume the tree started clean: `git status`
+    # here would report BOTH the build's own rewrites and whatever uncommitted
+    # edits the developer already had, and `git checkout -- .` cannot tell
+    # them apart. Discarding both is exactly the loss #229 was filed over — the
+    # flag says "tolerate a dirty tree", not "tolerate it at entry and destroy
+    # it at exit" — so with the flag set this trap restores nothing and
+    # leaves the tree exactly as the build left it.
     restore_tree() {
       rm -f .lia.cache .nia.cache
+      if [ "${FORMAL_ALLOW_DIRTY:-0}" = "1" ]; then
+        echo "  NOTE: FORMAL_ALLOW_DIRTY=1 — skipping the tree restore. Any" \
+             "build-time rewrites AND your own uncommitted edits are both" \
+             "left as they are; review 'git status -- $proj' yourself."
+        return 0
+      fi
       if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         drift=$(git status --porcelain -- . 2>/dev/null | grep -v '^?? ' || true)
         if [ -n "$drift" ]; then
