@@ -201,8 +201,13 @@ codegen-level `~soa_params` knob:
 > in exactly one place: the caller-side predicate. The five source-generating
 > backends without an SoA lowering (CUDA/C, HIP, OpenCL, Vulkan, Metal) bound
 > `?soa_params:_` away, so a caller that reached them with a non-empty list got
-> AoS source for an SoA argument list — silently wrong data, not a crash. They
-> now raise `Backend_error.reject_soa_params` instead. The `"CUDA/PTX"` gate is
+> AoS source for an SoA argument list — an ABI mismatch no compiler catches,
+> whose consequence is per backend: rejected at bind or launch on OpenCL
+> (`clSetKernelArg` / `CL_INVALID_ARG_INDEX`) and Vulkan
+> (`validate_buffer_indices`, count read from the GLSL `binding = N`
+> declarations), silently misinterpreted data on CUDA/C and HIP, which bind
+> positionally into an unchecked argument array. They now raise
+> `Backend_error.reject_soa_params` instead. The `"CUDA/PTX"` gate is
 > unchanged and is still the thing that keeps the refusal unreached; what
 > changed is that it is no longer the only thing. Extending SoA to a further
 > backend remains separate work (backlog-215): each such backend removes its own

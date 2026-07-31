@@ -357,8 +357,10 @@ module type BACKEND = sig
         see {!Sarek_backend_error.Backend_error.reject_soa_params}, which the
         five source-generating backends without an SoA lowering (CUDA/C, HIP,
         OpenCL, Vulkan, Metal) call — because emitting AoS source for an SoA
-        argument list is silently wrong data, not a crash (backlog-214). The
-        backends that return [None] unconditionally (Native, Interpreter,
+        argument list is an ABI mismatch that no compiler catches, and what
+        happens next is per backend: rejected at bind or launch on OpenCL and
+        Vulkan, silently misinterpreted data on CUDA/C and HIP (backlog-214).
+        The backends that return [None] unconditionally (Native, Interpreter,
         WebGPU) generate no source at all and so do not carry that refusal.
         Defaults to [[]] (all AoS), so existing callers are byte-identical. *)
   val generate_source :
