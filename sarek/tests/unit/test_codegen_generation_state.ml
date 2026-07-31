@@ -125,6 +125,103 @@ let transpile_does_not_leak backend name () =
     before
     after
 
+(** {1 Leaks that produce source the device compiler rejects}
+
+    The [sinf] case above is the WEAK instance of the leak: whether [sin(a[i])]
+    in the emitted CUDA actually selects the double-precision function is
+    decided by nvcc's implicit preinclude (the emitted source carries no math
+    header), and there is no CUDA toolchain on this host to settle it against.
+    Both cases below are unambiguous instead: each emits an identifier that DOES
+    NOT EXIST in the target language, so the device compiler rejects the source
+    outright. They are the two directions measured on the unfixed tree. *)
+
+(** [b.(i) <- Float32.rsqrt a.(i)]. [Float32.rsqrt] is registered as ["rsqrtf"]
+    on CUDA and ["rsqrt"] elsewhere, and {!Sarek_pure_registry} overrides GLSL
+    to the GLSL builtin ["inversesqrt"] — so this shape spells three ways and
+    tells the CUDA and GLSL tags apart. *)
+let rsqrt_kernel =
+  let a = make_var "a" (TVec TFloat32) in
+  let b = make_var "b" (TVec TFloat32) in
+  let i = make_var "i" TInt32 in
+  {
+    default_kernel with
+    kern_name = "rsqrt_kernel";
+    kern_params =
+      [
+        DParam (a, Some {arr_elttype = TFloat32; arr_memspace = Global});
+        DParam (b, Some {arr_elttype = TFloat32; arr_memspace = Global});
+      ];
+    kern_body =
+      SLet
+        ( i,
+          EIntrinsic ([], "global_thread_id", []),
+          SAssign
+            ( LArrayElem ("b", EVar i),
+              EIntrinsic (["Float32"], "rsqrt", [EArrayRead ("a", EVar i)]) ) );
+  }
+
+let rsqrt_kernel_src =
+  "fun (a : float32 vector) (b : float32 vector) ->\n\
+  \  let i = global_thread_id in\n\
+  \  b.(i) <- Float32.rsqrt a.(i)"
+
+(** A transpile to [via] must not change what a LATER, unrelated generation on
+    [emit] spells.
+
+    [expected] is the spelling that target legitimately uses; [foreign] is the
+    spelling belonging to [via]'s language, which does not exist in [emit]'s.
+    Both polarities are pinned: asserting only the absence of [foreign] would
+    also be satisfied by an emitter that stopped emitting the call at all, and
+    asserting only before = after would be satisfied by both being wrong. *)
+let foreign_identifier_does_not_leak ~emitter ~emit ~kernel_src ~via ~via_name
+    ~expected ~foreign () =
+  let describe when_ source =
+    Printf.sprintf
+      "%s: %s emission must spell this call %s — %s is %s's, and does not \
+       exist in %s. Emitted:\n\
+       %s"
+      when_
+      emitter
+      expected
+      foreign
+      via_name
+      emitter
+      source
+  in
+  let check when_ source =
+    Alcotest.check
+      Alcotest.bool
+      (describe when_ source)
+      true
+      (contains ~needle:expected source) ;
+    Alcotest.check
+      Alcotest.bool
+      (describe when_ source)
+      false
+      (contains ~needle:foreign source)
+  in
+  let before = emit () in
+  check "before any transpile" before ;
+  (match Sarek_transpile.of_source via kernel_src with
+  | Ok _ -> ()
+  | Error e ->
+      Alcotest.failf
+        "the transpile this case contaminates with must itself succeed, \
+         otherwise the case proves nothing; %s failed: %s"
+        via_name
+        (Sarek_transpile.string_of_error e)) ;
+  let after = emit () in
+  check ("after transpiling an unrelated kernel to " ^ via_name) after ;
+  Alcotest.check
+    Alcotest.string
+    (Printf.sprintf
+       "%s emission must be identical before and after an unrelated %s \
+        transpile; codegen kept the framework tag in module state"
+       emitter
+       via_name)
+    before
+    after
+
 (** {1 Concurrent generations} *)
 
 (** A kernel matching on a one-payload constructor of a variant named [t]. The
@@ -221,6 +318,30 @@ let () =
             "a GLSL transpile does not change later CUDA emission"
             `Quick
             (transpile_does_not_leak Sarek_transpile.GLSL "GLSL");
+          Alcotest.test_case
+            "a CUDA transpile does not put sinf into later OpenCL emission"
+            `Quick
+            (foreign_identifier_does_not_leak
+               ~emitter:"OpenCL"
+               ~emit:(fun () ->
+                 Sarek_codegen.Sarek_ir_opencl.generate sin_kernel)
+               ~kernel_src:sin_kernel_src
+               ~via:Sarek_transpile.CUDA
+               ~via_name:"CUDA"
+               ~expected:"sin("
+               ~foreign:"sinf(");
+          Alcotest.test_case
+            "a GLSL transpile does not put inversesqrt into later CUDA emission"
+            `Quick
+            (foreign_identifier_does_not_leak
+               ~emitter:"CUDA"
+               ~emit:(fun () ->
+                 Sarek_codegen.Sarek_ir_cuda.generate rsqrt_kernel)
+               ~kernel_src:rsqrt_kernel_src
+               ~via:Sarek_transpile.GLSL
+               ~via_name:"GLSL"
+               ~expected:"rsqrtf("
+               ~foreign:"inversesqrt(");
         ] );
       ( "generations_do_not_interleave",
         List.map
