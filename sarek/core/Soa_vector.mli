@@ -24,16 +24,24 @@
  * only. This module is pure host storage + transpose and is backend-agnostic.
  *
  * This is deliberately layered above {!Vector} + {!Soa} rather than being a new
- * constructor on the core [host_storage] GADT. A fully transparent
- * [Vector.create ~layout:SoA] + generic [Execute.run] auto-dispatch would
- * require threading SoA param names through every backend and generalising the
- * 1-buffer-per-device table — deferred (see
- * docs/optimization/tier1b-emitter-soa-handoff.md and the impl brief).
+ * constructor on the core [host_storage] GADT. That much is unchanged; the
+ * DEFERRAL this header used to describe is not.
  *
- * The layout half of that deferral is now closed: the leaf enumeration is
- * derived from [custom_type.ir_fields] rather than supplied by the caller, so
- * "the custom_type carries no record layout" is no longer a reason this cannot
- * be transparent. What remains is the backend threading and the buffer table.
+ * Generic [Execute.run] auto-dispatch is no longer deferred: {!create_transparent}
+ * provides it, and a vector from it takes the N-leaf ABI through the ordinary
+ * [Execute.run]/[run_vectors] with no SoA-specific entry point. Two earlier
+ * halves are likewise closed — the leaf enumeration is derived from
+ * [custom_type.ir_fields] rather than supplied by the caller, and the launch
+ * path threads the SoA param names itself.
+ *
+ * What is still deferred, and the only thing this header now claims: the
+ * dispatch is CUDA/PTX-only. No other backend's emitter lowers a record
+ * parameter to N base pointers, so everywhere else the same vector stays an
+ * ordinary packed AoS custom vector and takes the packed path — the documented
+ * "never wrong data" fallback, not a gap that produces different results. There
+ * is also still no [Vector.create ~layout:SoA]: the constructor lives here (see
+ * {!create_transparent} for why that is not the same question as transparency at
+ * the launch site).
  ******************************************************************************)
 
 (** A per-leaf host buffer, type-erased: a width-matched scalar vector used as a

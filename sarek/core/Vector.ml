@@ -111,10 +111,18 @@ let set : type a b. (a, b) t -> int -> a -> unit =
   (match vec.host with
   | Bigarray_storage ba -> Bigarray.Array1.set ba idx value
   | Custom_storage {ptr; custom; _} -> custom.set ptr idx value) ;
-  (* Mark GPU as stale if we had synced data. [Stale_CPU] is no longer reachable
-     here — [ensure_cpu_sync] above turns it into [Both] — so the remaining
-     no-op cases are the two with genuinely nothing to invalidate: [CPU] has no
-     device copy, and [Stale_GPU] is already marked. *)
+  (* Mark GPU as stale if we had synced data. [ensure_cpu_sync] above turns
+     [Stale_CPU] into [Both] on the DEFAULT path, so that arm is unreachable
+     there — but not unconditionally, which is what this comment used to claim:
+     [ensure_cpu_sync] returns immediately when [auto_sync] is cleared, and it
+     discards the callback's result, so a sync that did not happen or did not
+     succeed leaves [Stale_CPU] standing here.
+
+     The no-op is right in that case too, and for a reason worth stating: the
+     host buffer then holds one NEW element beside [length - 1] stale ones, so
+     the device copy is still the authoritative one and must not be marked
+     stale. The other two no-ops are the ones with nothing to invalidate:
+     [CPU] has no device copy and [Stale_GPU] is already marked. *)
   match vec.location with
   | Both d -> vec.location <- Stale_GPU d
   | GPU d -> vec.location <- Stale_GPU d
@@ -150,7 +158,9 @@ let unsafe_set : type a b. (a, b) t -> int -> a -> unit =
   (match vec.host with
   | Bigarray_storage ba -> Bigarray.Array1.unsafe_set ba idx value
   | Custom_storage {ptr; custom; _} -> custom.set ptr idx value) ;
-  (* [Stale_CPU] is unreachable after the sync above, exactly as in [set]. *)
+  (* Same three no-ops, and the same caveat as [set]: [Stale_CPU] is unreachable
+     here only on the default path — with [auto_sync] cleared it stands, and the
+     no-op remains correct because the device copy is still authoritative. *)
   match vec.location with
   | Both d -> vec.location <- Stale_GPU d
   | GPU d -> vec.location <- Stale_GPU d
@@ -176,6 +186,32 @@ let kernel_set : type a b. (a, b) t -> int -> a -> unit =
 
 (** {1 Auto-sync Control} *)
 
+(** Turn the implicit device->host read-back on [vec] on or off.
+
+    WHAT TURNING IT OFF MEANS, written here because this is where a caller
+    turning it off will look, and because until now it was written nowhere:
+    [Vector_transfer.ensure_cpu_sync] returns immediately when this is [false],
+    so every operation that relies on it stops pulling the device copy down. The
+    caller takes over that duty; the operations do not fail, they read whatever
+    host storage holds.
+
+    Three consequences that are not obvious from the flag's name:
+
+    - {!get} returns the HOST buffer on a [Stale_CPU] vector, i.e. the values
+      from before the launch, with no error;
+    - {!set}/{!unsafe_set} no longer read-modify-write against a current buffer,
+      so the element they write sits beside [length - 1] stale ones and the
+      location arm below correctly leaves the DEVICE copy authoritative;
+    - for a transparent SoA vector, [Soa_vector.scatter] transposes out of that
+      same host storage, so a launch result still sitting in the leaves is
+      overwritten by pre-launch bytes rather than gathered first. Raised in
+      review of PR #375; NOT changed there, because making the SoA path transfer
+      anyway would be this flag not meaning what it says. Drain explicitly
+      ([Transfer.to_cpu ~force:true]) before reusing such a vector.
+
+    [true] is the default and the state every test in this repository runs in
+    except where a case disables it deliberately to observe a specific transfer.
+*)
 let set_auto_sync (vec : ('a, 'b) t) (enabled : bool) : unit =
   vec.auto_sync <- enabled
 
