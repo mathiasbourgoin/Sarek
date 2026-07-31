@@ -5,6 +5,28 @@
 
 (generate_opam_files true)
 
+; NO PACKAGE BELOW DECLARES `dune` IN ITS `depends`, in any form, and none may
+; while this project stays below `(lang dune 3.23)`. Dune already injects
+; `"dune" {>= "3.15"}` into every generated .opam from the `(lang dune 3.15)`
+; stanza above, so an explicit entry is redundant -- and it makes the generated
+; output depend on WHICH dune generated it. Dune 3.23.0 deduplicated the
+; injected and declared bounds UNCONDITIONALLY (CHANGES.md 3.23.0 "Fixed",
+; #3916 #11106); 3.23.1 then gated that deduplication on `(lang dune 3.23)`,
+; "restoring 3.22 behaviour", so below that lang version it emits
+; `{>= "3.15" & >= "3.15"}` again (CHANGES.md 3.23.1 "Fixed", #14436;
+; src/dune_rules/opam_create.ml, `insert_dune_dep`). For a project at
+; `(lang dune 3.15)`, dune 3.23.0 is therefore the ONLY release that collapses
+; the pair -- everything before it and everything from 3.23.1 on emits two
+; bounds. Measured on 2026-07-31 with both binaries by absolute path:
+; `dune build sarek.opam` emits one bound under 3.23.0 and two under
+; 3.24.1, so scripts/check-opam-clean.sh went red on a clean tree for everyone
+; using the project's own switch -- and a gate that is red for everyone is
+; functionally off. Do NOT "fix" a recurrence by bumping the lang version to
+; make dune collapse the pair: that is a semantics change and it raises the
+; effective dune floor for consumers. Delete the entry instead. backlog-213;
+; scripts/check-dune-opam-portability.sh enforces this and its header carries
+; the rejected alternatives in full.
+
 ; ctypes >= 0.24.0: the f16 host path depends on ctypes INTERNALS that its
 ; public API does not cover — Ctypes_bigarray.unsafe_address (the kind GADT has
 ; no Float16 arm, so Ctypes.bigarray_start raises for it) and
@@ -30,7 +52,6 @@ IR types, and plugin registration interface.
 Install sarek for the full runtime and DSL.")
  (depends
   (ocaml (>= 5.4.0))
-  (dune (>= 3.15))
   (ctypes (>= 0.24.0))
   (bisect_ppx :with-test)))
 
@@ -46,7 +67,6 @@ and CPU backends (native, interpreter) for development and testing.
 Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (depends
   (ocaml (>= 5.4.0))
-  (dune (>= 3.15))
   (spoc (= :version))
   (ppxlib (>= 0.37.0))
   (ctypes (>= 0.24.0))
@@ -67,7 +87,6 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (description "Enables execution of Sarek kernels on NVIDIA GPUs via CUDA.")
  (depends
   (ocaml (>= 5.4.0))
-  (dune (>= 3.15))
   (sarek (= :version))
   (ctypes (>= 0.24.0))
   (ctypes-foreign (>= 0.24.0)))
@@ -81,7 +100,6 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (description "Enables native execution of Sarek kernels on AMD GPUs via ROCm/HIP (hiprtc JIT); RDNA3 rocWMMA tensor-core GEMM path.")
  (depends
   (ocaml (>= 5.4.0))
-  (dune (>= 3.15))
   (sarek (= :version))
   (ctypes (>= 0.24.0))
   (ctypes-foreign (>= 0.24.0))))
@@ -93,7 +111,6 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (description "Enables execution of Sarek kernels on GPUs and CPUs via OpenCL.")
  (depends
   (ocaml (>= 5.4.0))
-  (dune (>= 3.15))
   (sarek (= :version))
   (ctypes (>= 0.24.0))
   (ctypes-foreign (>= 0.24.0)))
@@ -107,7 +124,6 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (description "Enables execution of Sarek kernels on GPUs via Vulkan compute shaders.")
  (depends
   (ocaml (>= 5.4.0))
-  (dune (>= 3.15))
   (sarek (= :version))
   (ctypes (>= 0.24.0))
   (ctypes-foreign (>= 0.24.0)))
@@ -121,7 +137,6 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
  (description "Enables execution of Sarek kernels on Apple GPUs via Metal framework (macOS/iOS).")
  (depends
   (ocaml (>= 5.4.0))
-  (dune (>= 3.15))
   (sarek (= :version))
   (ctypes (>= 0.24.0))
   (ctypes-foreign (>= 0.24.0))))

@@ -173,7 +173,15 @@ set -euo pipefail
 # How many subjects the scan must find. Pinned, not counted: a scan that
 # reports what it happened to find is complete about a set it chose. Raise it
 # in the same commit that adds a block.
-EXPECTED_SUBJECTS=7
+#
+# 8 = 6 + ci/assert-toolchain.sh (backlog-176, PR #384) +
+# scripts/check-dune-opam-portability.sh (backlog-213, PR #399). Both PRs moved
+# this line 6 -> 7 for DIFFERENT subjects, so git merged the identical text
+# without reporting a conflict and left 7 -- a number that matched neither
+# branch's intent and would have refused every run with a count mismatch. If a
+# rebase ever silently leaves this line unchanged while the subject set grew,
+# that is the shape to look for.
+EXPECTED_SUBJECTS=8
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXPECT=""

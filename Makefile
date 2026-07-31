@@ -21,9 +21,34 @@ clean:
 opam:
 	dune build @install
 
-# Guard against a "make opam" regression (see scripts/check-opam-clean.sh)
-check-opam-clean:
+# Refuse an explicit `dune` dependency in dune-project, and a committed .opam
+# carrying more than one dune bound (backlog-213). Textual: no build, no second
+# toolchain. This is the CROSS-VERSION rule.
+check-dune-opam-portability:
+	./scripts/check-dune-opam-portability.sh
+
+# Guard against a "make opam" regression (see scripts/check-opam-clean.sh).
+# Its verdict is about ONE dune -- whichever is on PATH -- and it now says which
+# one.
+#
+# The prerequisite is primarily for ORDERING: check-opam-clean runs `make opam`,
+# which rewrites the .opam files check-dune-opam-portability reads. As
+# independent siblings of test-all they could run concurrently under `make -j`,
+# and the static gate would then be reading files mid-write -- a result that
+# looks like a finding and is not. Being a normal prerequisite rather than an
+# order-only one, it also means a failing portability gate stops this target;
+# that is wanted, and `|` would not change it anyway, since order-only
+# prerequisites propagate failure too.
+check-opam-clean: check-dune-opam-portability
 	./scripts/check-opam-clean.sh
+
+# All three are commands, not files. Without this, a stray directory or file of
+# the same name makes `make` report the target up to date and the recipe never
+# runs -- a green that means nothing happened. `opam` is included because
+# check-opam-clean's whole method is running it twice: a file named `opam` would
+# make both invocations no-ops, the two snapshots would compare equal, and the
+# gate would print PASS having generated nothing.
+.PHONY: opam check-opam-clean check-dune-opam-portability
 
 install: opam
 	dune install
@@ -273,6 +298,9 @@ test_sarek_core:
 	@echo "=== Sarek core tests passed ==="
 
 # Run all tests: unit tests, e2e tests, negative tests, and spoc tests
+# check-opam-clean pulls in check-dune-opam-portability as a prerequisite, which
+# orders them under `-j` whatever else lists them; naming both here would just
+# be redundant.
 test-all: test test_spoc test_sarek_core test_interpreter test_negative check-opam-clean
 	@echo "=== All tests passed ==="
 

@@ -12,4 +12,14 @@
 # owner is a usage error (exit 2), not an excuse — the silent skip is the thing
 # this file exists to prevent.
 #
-# Empty of entries on purpose: nothing has needed one yet.
+# PR #399 (backlog-213). scripts/check-opam-clean.test.sh was added in the same
+# PR and IS a test path, so this gate passes on it alone -- but its own ceiling
+# note says a touched test path is not per-finding attribution, and that test
+# covers exactly one of the five findings. The other four are recorded here so
+# the record says which is which instead of letting one file blanket all five.
+# (ac1b531a, the set -e dead-diagnostic finding, is the one the test covers and
+# is deliberately NOT listed.)
+76307663a9738106656e4840	Covered by an executable test, just not one this gate's path regex can see: the prove-red mutation `malformed-numeric-escape` in the subject's own prove-red-spec block, run by scripts/prove-red.sh in CI and asserted red at exit 2 with its exact message. A spec block beside the subject is the repo's stronger form (kb/properties.md, KB-GATE-PROVE-RED), not an absent test.	mathias
+3d8c30d1d8b03ca33c458105	Same: prove-red mutation `depends-field-with-no-bracket`, exit 2 with its exact message. Notably prove-red REFUSED the first attempt at this fix -- an unbounded find("[") that always latched onto the later `build: [` -- so the coverage is load-bearing, not decorative.	mathias
+c53533261e851a5a9063ad0a	No committed test, and the claim that "the step's own failure is the test" was then tested by reality: the first CI run of this guard went red on 826 dependency .opam files under OPAMROOT=/work/.opam-ci, because a bare `*.opam` pathspec is matched with FNM_PATHNAME off and means any depth. Fixed with `:(top,glob)*.opam` and both polarities measured locally against the exact assertion (a planted .opam-ci/.../dep.opam invisible; an uncommitted root .opam and a drifted tracked one both red). Still no unit test: the assertion only executes inside a `docker run` step, so a local harness could only check a copy of the line. The measurement is recorded in the step's comment instead.	mathias
+818429e8cd763768d5ac678d	Documentation correction: the KB row misattributed dune's dedup gating to 3.24.1 when CHANGES.md puts it in 3.23.1. No behaviour changed -- DEDUP_LANG = (3, 23) was already correct -- so there is nothing for a test to hold.	mathias
