@@ -1518,10 +1518,20 @@ let generate_interp_helpers ~loc (td : type_declaration) : structure_item list =
   | Ptype_variant constrs ->
       (* Interpreter value-model helper for a variant type: convert the native
          OCaml constructor to/from a [VVariant]. The interpreter tags a variant
-         by [Hashtbl.hash ctor mod 256] (Sarek_ir_interp_eval EVariant/EMatch/
-         SMatch), NOT by the declaration index the byte path uses; the tag is
-         emitted as a runtime [Hashtbl.hash "C" mod 256] expression so it
-         matches that convention byte-for-byte regardless of compile vs runtime.
+         by [Hashtbl.hash ctor mod 256] — [Sarek_ir_interp_value]'s
+         [variant_tag_of_ctor], which Sarek_ir_interp_eval's EVariant, EMatch
+         and SMatch all call — NOT by the declaration index the byte path uses;
+         the tag is emitted as a runtime [Hashtbl.hash "C" mod 256] expression
+         so it matches that convention byte-for-byte regardless of compile vs
+         runtime.
+
+         THIS IS THE ONE COPY OF THE ENCODING OUTSIDE THE INTERPRETER. It is a
+         duplication, not an impossibility: the generated code already reaches
+         [Sarek.Sarek_value] through a forwarding alias, so the same route could
+         expose [variant_tag_of_ctor] and make this a call. Left duplicated
+         because that widens [sarek]'s public surface for one expression, which
+         is a change with its own argument to make. Until then: if
+         [variant_tag_of_ctor] changes, change this line with it.
 
          This makes a variant field of a [@@sarek.type] record round-trip on the
          Interpreter/Native value path (the record helper delegates the field to
