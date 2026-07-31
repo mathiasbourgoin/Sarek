@@ -35,10 +35,11 @@ let bad_arity n e g =
 (** Everything one run of {!generate_with_types} needs to know that is not
     reachable from the IR node it is currently emitting. It is a VALUE threaded
     through the emit functions, not module state, and that is the whole point of
-    backlog-185/200: the three fields below used to be module-level [ref]s, so a
-    second generation — on another domain, or simply a later one after
+    backlog-185/200: three module-level [ref]s used to hold this kind of state,
+    so a second generation — on another domain, or simply a later one after
     {!Sarek_transpile} had written [current_framework] — read the first one's
-    values.
+    values. Only two of those three refs have a successor field below; the
+    third, [current_framework], was retired with no replacement field at all.
 
     The framework tag is NOT among them. It is the constant ["WGSL"], read at
     the one [Dispatch.framework] thunk in {!wgsl_backend} and nowhere else in
