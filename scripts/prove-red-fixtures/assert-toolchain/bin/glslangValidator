@@ -4,7 +4,8 @@
 # STUB. Not glslangValidator. See run-with-stubs.sh (backlog-176). glslang-tools
 # is not installed on the ubuntu-latest runner where scripts/prove-red.sh runs,
 # so leaving it to the host made the baseline red on arrival there.
-# Contracts the gate depends on:
+# Contracts the gate depends on, recognised loosely (any argv carrying -o counts
+# as the compile form) because this is not an argument validator:
 #   --version                       -> exit 0
 #   -V -S comp -o OUT FILE.comp     -> exit 0 AND create OUT
 # OUT is written even though the gate only reads the exit code: a stub that

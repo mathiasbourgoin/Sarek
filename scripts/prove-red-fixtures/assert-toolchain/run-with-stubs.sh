@@ -26,15 +26,27 @@
 #      the one that has to agree.
 #   2. A PRESERVED HOST PATH DEFEATS THE MUTATIONS. `rm -f .../bin/ptxas` only
 #      makes ptxas absent if nothing else on PATH provides it. On any host with a
-#      CUDA toolkit the deletion is invisible, the gate stays green, and the
-#      mutation is credited a red it did not earn -- the exact shape prove-red.sh
-#      exists to catch (CodeRabbit, PR #384).
+#      CUDA toolkit the deletion is invisible and the gate stays green at 13/13
+#      (measured; CodeRabbit, PR #384). Being exact about which way that fails:
+#      prove-red.sh reads exit 0 as `DID NOT FAIL` and exits 1, so the symptom is
+#      a spurious red for the whole repository on a CUDA host rather than a
+#      credited red. Either way the mutation's verdict is a property of the
+#      machine, which is what disqualifies it as evidence.
 #
 # So PATH is rebuilt from nothing: this fixture's bin/ first, then a private
-# directory holding symlinks to a FIXED allowlist of base utilities the subject
-# needs (bash, cat, chmod, find, grep, head, mktemp, rm). No tool under assertion
-# is in that allowlist, so this fixture is their only possible source and a
-# deleted stub is genuinely absent.
+# directory holding symlinks to a FIXED allowlist of base utilities -- bash, cat,
+# find, grep, head, mktemp and rm for ci/assert-toolchain.sh, plus chmod, which
+# this fixture's own bin/cc needs and the subject never calls. No tool under
+# assertion is in that allowlist, so this fixture is their only possible source
+# and a deleted stub is genuinely absent.
+#
+# "HERMETIC" HERE MEANS PATH-RESOLVED, and the difference is worth stating rather
+# than leaving to be discovered. Absolute paths are not mediated by PATH and are
+# not isolated: the shebangs reach /usr/bin/env, the NVRTC probe bin/cc writes
+# runs /bin/sh, and the subject's own cuda_fp16.h search names /usr/local/cuda --
+# that last one is the reason for the refusal below. The wrapper also uses the
+# host's dirname, ln and mktemp before it rewrites PATH, deliberately: it has to
+# build the sandbox with something.
 #
 # WHAT THIS DOES NOT CLAIM. A green run here says the gate's DECISION LOGIC is
 # sound: it counts checks, it accumulates failures, it trips on drift. It says
@@ -63,8 +75,16 @@ fi
 # cuda_fp16.h under BOTH "${CUDA_PATH:-/usr/local/cuda}" AND a literal
 # /usr/local/cuda, so on a host with a toolkit installed there, deleting this
 # fixture's header would leave that check green and the cuda-header-tree-missing
-# mutation would be credited a red it did not earn. PATH cannot hide an absolute
-# path, so refuse rather than produce a mutation that cannot fail.
+# mutation could not go red at all. PATH cannot hide an absolute path, so refuse
+# rather than produce a mutation that cannot fail.
+#
+# THE BLAST RADIUS IS THE WHOLE RUN, not this fixture. prove-red.sh dies on the
+# first non-green baseline, so on a developer machine with a toolkit at
+# /usr/local/cuda this refusal takes down all 7 subjects and 38 mutations. That
+# is the intended trade -- a loud stop beats one silently inert mutation -- but
+# it is stated here because a gate that stops everything is a gate people
+# disable. CI is unaffected: the `build` job is ubuntu-latest only, which ships
+# no CUDA toolkit.
 if [ -n "$(find -L /usr/local/cuda -name cuda_fp16.h 2>/dev/null | head -1)" ]; then
   echo "run-with-stubs: REFUSING to run. A real cuda_fp16.h exists under" >&2
   echo "/usr/local/cuda, which ci/assert-toolchain.sh searches unconditionally," >&2
@@ -74,10 +94,12 @@ fi
 
 sysbin=$(mktemp -d) || exit 2
 
-# The allowlist is exhaustive for the subject as written, and deliberately short.
-# A utility the subject starts using and that is not listed here makes the
-# BASELINE red on every host at once, which is loud and immediate; the
-# alternative -- inheriting the host PATH -- is what made the mutations inert.
+# Exhaustive for the PATH-resolved commands ci/assert-toolchain.sh runs (see the
+# note on what "hermetic" means above; absolute paths are a separate matter), and
+# deliberately short. A utility the subject starts using and that is not listed
+# here makes the BASELINE red on every host at once, which is loud and immediate;
+# the alternative -- inheriting the host PATH -- is what made the mutations inert.
+# chmod is here for this fixture's own bin/cc, not for the subject.
 missing=""
 for util in bash cat chmod find grep head mktemp rm; do
   p=$(type -P "$util" 2>/dev/null) || p=""

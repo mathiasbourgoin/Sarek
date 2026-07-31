@@ -144,7 +144,9 @@ jobs:
       # and "is always red" are otherwise the same observation. It is its own
       # subject (scripts/prove-red-fixtures/), so a version of it that credited
       # an immune checker would fail here rather than print a second green.
-      # ~0.5s for 4 subjects and 13 mutations; it never runs the test suite.
+      # Measured 1.4s for 7 subjects and 38 mutations (2026-07-31, PR #384);
+      # it never runs the test suite. The figure was stale at "4 subjects and 13
+      # mutations" and is corrected in the commit that raises the pin.
       - name: Prove-red (gates are mutated and observed to fail)
         run: ./scripts/prove-red.sh
 

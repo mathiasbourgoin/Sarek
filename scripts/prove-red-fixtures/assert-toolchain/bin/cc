@@ -10,7 +10,8 @@
 # a real cc here would make the baseline red for a reason that has nothing to do
 # with the decision logic under test.
 #
-# Contract:
+# Contract, recognised loosely (any argv carrying -o; the source is never read)
+# because this is not an argument validator:
 #   -o OUT SRC ...  -> exit 0 AND write a runnable OUT that prints an NVRTC
 #                      version line and exits 0.
 set -uo pipefail

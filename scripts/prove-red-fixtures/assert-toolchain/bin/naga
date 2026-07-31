@@ -4,7 +4,8 @@
 # STUB. Not naga. See run-with-stubs.sh (backlog-176). naga is a cargo install,
 # absent from the ubuntu-latest runner where scripts/prove-red.sh runs, so
 # leaving it to the host made the baseline red on arrival there.
-# Contracts the gate depends on:
+# Contracts the gate depends on, recognised loosely (any argv naming a readable
+# file) because this is not an argument validator:
 #   --version   -> exit 0
 #   FILE.wgsl   -> exit 0 (the gate reads only the exit code)
 set -uo pipefail
