@@ -425,8 +425,10 @@ let test_interp_feature_gate_can_refuse () =
 
 (** {1 SoA arity-shift structural pinning (backlog-219)}
 
-    Backend_error.reject_soa_params's per-shape analysis (N=2 pointer-after, N=3
-    valid-pointer-into-the-wrong-buffer, vector-declared-last) is unreachable
+    Three of the shapes Backend_error.reject_soa_params gives as EXAMPLES of the
+    general shift (N=2 pointer-after, N=3 valid-pointer-into-the-wrong-buffer,
+    vector-declared-last — it states the general form separately: every
+    parameter after the vector receives the wrong entry) are unreachable
     end-to-end in this sandbox: [Execute.soa_dispatch] only ever answers [Some]
     for a real CUDA/PTX device, and there is no GPU here to launch one, so
     nothing below claims to have observed a trap. What these tests DO pin
@@ -507,44 +509,62 @@ let bind_all (args : Framework_sig.run_source_arg list) : unit =
       | _ -> ())
     args
 
-(* Case 1: N=2, a scalar param declared right after the SoA vector. The AoS
-   ABI would bind it at index 2 (buf, len, THIS); the SoA ABI shifts it to
-   index 3, because the vector now occupies 3 slots (2 leaves + length), not
-   2 — the shift a CUDA/C or HIP launch would bind straight into a bare
-   pointer array with no compiled-signature check. *)
+(* Case 1: N=2, a POINTER param (a second vector) declared right after the SoA
+   vector — the only shape Backend_error identifies as trap-capable, and the
+   only one that needs a pointer successor rather than a scalar. A compiled
+   AoS-ABI kernel expects (ptr0, len0, ptr1, len1) at indices 0-3; the SoA ABI
+   expands the first vector into 2 leaves + 1 shared length (3 slots, not
+   AoS's 2), shifting everything after it right by one. So index 1 (len0, a
+   length slot) receives leafB — a real device pointer — and index 2 (ptr1, a
+   pointer slot the kernel will read 8 bytes from) receives the shared
+   length — a 4-byte int32. That is Backend_error's trap, verbatim: "a length
+   slot receives a pointer value and the pointer slot reads its 8 bytes out of
+   a 4-byte length cell." Reuses case 2's out_v/fake_leaf_buffer pattern for
+   the pointer successor, rather than inventing a new fixture idiom. *)
 let test_soa_shift_n2_pointer_after () =
   let calls = ref [] in
   let v = soa_vector_with ["leafA"; "leafB"] calls in
+  let out_v = Vector.create_custom point_custom 4 in
+  Hashtbl.replace
+    out_v.Vector.device_buffers
+    cuda_ptx_device.Device.id
+    (fake_leaf_buffer "out_buffer" calls) ;
   let result =
-    expand_to_run_source_args ~soa_abi:true [Vec v; Int32 99l] cuda_ptx_device
+    expand_to_run_source_args ~soa_abi:true [Vec v; Vec out_v] cuda_ptx_device
   in
   check
     int
-    "2 leaves + shared length + the shifted scalar = 4 args"
-    4
+    "2 leaves + shared length + the out vector's own (buf, len) = 5 args"
+    5
     (List.length result) ;
   bind_all result ;
   check
     (list (pair int string))
-    "leaves bound at 0,1 in declaration order"
-    [(0, "leafA"); (1, "leafB")]
+    "leaves bound at 0,1; the out vector's buffer displaced to index 3, not \
+     the AoS-ABI index 2"
+    [(0, "leafA"); (1, "leafB"); (3, "out_buffer")]
     (List.rev !calls) ;
+  (* index 2 is the trap Backend_error names: a compiled AoS-ABI kernel's
+     second pointer parameter expects a device pointer at what it thinks is
+     index 2 — instead it is this shared length, a 4-byte int32 the kernel's
+     pointer slot would read 8 bytes from. *)
   (match List.nth result 2 with
   | Framework_sig.RSA_Vector_Length n -> check int32 "shared length" 4l n
   | _ -> fail "expected the shared SoA length at index 2") ;
-  match List.nth result 3 with
-  | Framework_sig.RSA_Int32 n ->
+  match List.nth result 4 with
+  | Framework_sig.RSA_Vector_Length n ->
       check
         int32
-        "the following param is unmodified but now at index 3, not the AoS-ABI \
-         index 2"
-        99l
+        "the out vector's own length, unshifted in kind but now at index 4, \
+         not the AoS-ABI index 3"
+        4l
         n
-  | _ -> fail "expected the following param, unshifted VALUE, at index 3"
+  | _ -> fail "expected the out vector's own length at index 4"
 
-(* Case 2: N=3. Backend_error calls this "the case with literally no crash
-   signal": the third leaf is a valid device pointer, so wherever it lands it
-   faults nothing. Here that slot is a second vector's own buffer, declared
+(* Case 2: N=3. Backend_error calls this "Silent corruption, nothing to trap
+   on" (Backend_error.ml:313): the third leaf is a valid device pointer, so
+   wherever it lands it faults nothing. Here that slot is a second vector's
+   own buffer, declared
    right after — so this pins that the second vector's buffer binder is
    invoked two slots later than an AoS-unaware reader would expect (index 4,
    not index 2), and that index 2 — where such a reader would look for its
