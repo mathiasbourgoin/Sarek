@@ -228,16 +228,23 @@ let test_dependency_through_array_and_variant () =
     "dependency through an array field"
     ["triple"; "holder"]
     (sort_records input) ;
+  (* "opt" must be declared here too (backlog-212): a variant referenced by a
+     record field but absent from the decl set is no longer silently treated
+     as "not an edge" — it is a completeness violation, pinned separately
+     below. This case is purely about the ORIGINAL edge-through-variant-payload
+     behavior, so the fixture must be reference-complete. *)
   let input =
     [
-      ("wrapper", [("v", TVariant ("opt", [("None", []); ("Some", [leaf])]))]);
-      ("leaf", leaf_fields);
+      Sarek_ir_codegen.Record_decl
+        ("wrapper", [("v", TVariant ("opt", [("None", []); ("Some", [leaf])]))]);
+      Sarek_ir_codegen.Variant_decl ("opt", [("None", []); ("Some", [leaf])]);
+      Sarek_ir_codegen.Record_decl ("leaf", leaf_fields);
     ]
   in
   check_order
     "dependency through a variant payload"
-    ["leaf"; "wrapper"]
-    (sort_records input) ;
+    ["record:leaf"; "variant:opt"; "record:wrapper"]
+    (tagged_names (Sarek_ir_codegen.sort_type_decls_by_dependency input)) ;
   print_endline "  array and variant-payload field types count as deps: OK"
 
 (* ---------------------------------------------------------------------------
@@ -459,6 +466,110 @@ let test_self_reference_does_not_raise () =
   check_order "self reference" ["selfy"] (sort_records input) ;
   print_endline "  a self-referencing field is not reported as a cycle: OK"
 
+(* ---------------------------------------------------------------------------
+   backlog-212: a type referenced but never DECLARED.
+   --------------------------------------------------------------------------- *)
+
+(* A variant's payload names a record that is nowhere in the declaration set —
+   the exact shape the PPX produces when a variant constructor is applied to a
+   value whose record type was never separately registered (see
+   sarek/tests/e2e/test_undeclared_variant_payload_record.ml for the
+   ordinary-source reproducer). Before backlog-212 this silently fell through
+   [sort_type_decls_by_dependency] as "not an edge"; it must now raise
+   [Undeclared_type_ref] naming the variant, the constructor, and the missing
+   record — BEFORE any device or backend generator runs. *)
+let test_undeclared_record_in_variant_payload_is_refused () =
+  let input = [Sarek_ir_codegen.Variant_decl ("probe2", [("At2", [leaf])])] in
+  match Sarek_ir_codegen.sort_type_decls_by_dependency input with
+  | order ->
+      failwith
+        (Printf.sprintf
+           "undeclared record via variant payload: expected \
+            Undeclared_type_ref, got [%s]"
+           (String.concat "; " (tagged_names order)))
+  | exception Sarek_ir_codegen.Undeclared_type_ref msgs ->
+      let joined = String.concat "; " msgs in
+      let has substr =
+        let sl = String.length substr and jl = String.length joined in
+        let rec go i =
+          i + sl <= jl && (String.sub joined i sl = substr || go (i + 1))
+        in
+        go 0
+      in
+      if not (has {|"probe2"|} && has {|"At2"|} && has {|"leaf"|}) then
+        failwith
+          (Printf.sprintf
+             "undeclared record via variant payload: message must name the \
+              variant, the constructor, and the missing record; got [%s]"
+             joined) ;
+      print_endline
+        "  a variant payload naming an undeclared record raises \
+         Undeclared_type_ref, by name: OK"
+
+(* Mirror in the other direction: a record's field names a variant that is
+   nowhere in the declaration set. *)
+let test_undeclared_variant_in_record_field_is_refused () =
+  let input =
+    [
+      Sarek_ir_codegen.Record_decl
+        ( "gauge2",
+          [("gk", TVariant ("flagv2", [("Off", [])])); ("gv", TFloat32)] );
+    ]
+  in
+  match Sarek_ir_codegen.sort_type_decls_by_dependency input with
+  | order ->
+      failwith
+        (Printf.sprintf
+           "undeclared variant via record field: expected Undeclared_type_ref, \
+            got [%s]"
+           (String.concat "; " (tagged_names order)))
+  | exception Sarek_ir_codegen.Undeclared_type_ref msgs ->
+      let joined = String.concat "; " msgs in
+      let has substr =
+        let sl = String.length substr and jl = String.length joined in
+        let rec go i =
+          i + sl <= jl && (String.sub joined i sl = substr || go (i + 1))
+        in
+        go 0
+      in
+      if not (has {|"gauge2"|} && has {|"gk"|} && has {|"flagv2"|}) then
+        failwith
+          (Printf.sprintf
+             "undeclared variant via record field: message must name the \
+              record, the field, and the missing variant; got [%s]"
+             joined) ;
+      print_endline
+        "  a record field naming an undeclared variant raises \
+         Undeclared_type_ref, by name: OK"
+
+(* A completeness refusal is not a cycle refusal in disguise: the SAME missing
+   reference must never mimic [Type_decl_cycle] (whose payload identifies
+   declarations, not fields/constructors) nor silently sort as if the
+   reference did not exist. Also pins that a REFERENCE-COMPLETE set with no
+   cycle is unaffected — the two checks are independent — by reusing
+   [test_gen_type_decls_dispatch_and_order]'s already-complete fixtures
+   elsewhere in this file as the implicit negative case. *)
+let test_gen_type_decls_propagates_undeclared_ref () =
+  let emit_record buf (name, _) =
+    Buffer.add_string buf (Printf.sprintf "R(%s) " name)
+  in
+  let emit_variant buf (name, _) =
+    Buffer.add_string buf (Printf.sprintf "V(%s) " name)
+  in
+  match
+    Sarek_ir_codegen.gen_type_decls
+      ~emit_record
+      ~emit_variant
+      ~tie_break:Sarek_ir_codegen.Variants_first
+      (Buffer.create 16)
+      ~records:[]
+      ~variants:[("probe2", [("At2", [leaf])])]
+  with
+  | () -> failwith "gen_type_decls: expected Undeclared_type_ref, got ()"
+  | exception Sarek_ir_codegen.Undeclared_type_ref _ ->
+      print_endline
+        "  gen_type_decls propagates Undeclared_type_ref from the sort: OK"
+
 (* The generic emission driver, not just the sort: each entry must be handed to
    the emitter for its OWN kind, and in the sorted order. Both cross shapes are
    driven through it with stand-in emitters, so a dispatch that sent a variant
@@ -636,6 +747,9 @@ let () =
   test_variant_self_payload_does_not_raise () ;
   test_cycle_is_refused () ;
   test_self_reference_does_not_raise () ;
+  test_undeclared_record_in_variant_payload_is_refused () ;
+  test_undeclared_variant_in_record_field_is_refused () ;
+  test_gen_type_decls_propagates_undeclared_ref () ;
   test_gen_type_decls_dispatch_and_order () ;
   test_c_family_emission_order () ;
   test_referenced_names_terminates_on_cyclic_value () ;

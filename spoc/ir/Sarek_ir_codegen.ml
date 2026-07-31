@@ -704,6 +704,21 @@ let () =
              (String.concat "; " names))
     | _ -> None)
 
+exception Undeclared_type_ref of string list
+
+(* Same reasoning as {!Type_decl_cycle}'s printer: the payload IS the
+   diagnostic, and without a printer OCaml renders it
+   [Undeclared_type_ref(_)], losing the one thing that makes this refusal
+   useful — which declaration named which missing type. *)
+let () =
+  Printexc.register_printer (function
+    | Undeclared_type_ref msgs ->
+        Some
+          (Printf.sprintf
+             "Sarek_ir_codegen.Undeclared_type_ref: %s"
+             (String.concat "; " msgs))
+    | _ -> None)
+
 (** One record or variant type declaration. The two kinds are carried in a
     SINGLE list so that {!sort_type_decls_by_dependency} can order a record
     against a variant, which is the whole point of backlog-211: before it, each
@@ -806,13 +821,25 @@ let referenced_type_names (ty : Sarek_ir_types.elttype) : string list =
     record and a variant share a name, which is exactly the edge class this pass
     exists to order.
 
-    {b A reference to something not in the list is not an edge.} Only declared
-    types can be ordered, so a type referenced but never declared produces no
-    edge and no error here; it surfaces later as the backend's own "unknown type
-    name". That hole is reachable — the PPX registers a variant in
-    [kern_variants] without registering a record that appears only in its
-    payload — but it is a MISSING declaration, not a misordered one, and no
-    ordering pass can fix it.
+    {b A reference to something not in the list is not an edge — it is now a
+       refusal.} (backlog-212; before it, this paragraph read "not an edge and
+    not an error either", and that was the gap.) Only declared types can be
+    ordered, so before any placement this function first checks that every name
+    any declaration's fields/payloads reference resolves to SOME declaration in
+    the same list, by mangled name, either kind. A name that resolves to nothing
+    raises {!Undeclared_type_ref} naming the referencing declaration, the field
+    or constructor site, and the missing type — rather than silently falling
+    through to the backend's own "unknown type name" on whichever compiler the
+    generated source happens to reach, or a Metal/PTX generator that never runs
+    a C compiler over its output at all and would have said nothing. The hole
+    this closes is reachable from ordinary [[@@sarek.type]] source: the PPX
+    registers a variant's constructor payload from the constructor's own
+    declared type — independent of whether the record instance it is constructed
+    from was ever separately registered — so a record whose only occurrence in a
+    kernel is as a value extracted from a differently-typed source (never
+    literal-constructed, never a parameter type, never a local array element
+    type) never enters [kern_types] at all. See
+    sarek/tests/e2e/test_undeclared_variant_payload_record.ml.
 
     {b Cycles.} A declaration cycle has no valid emission order, so it raises
     {!Type_decl_cycle} with the names still unplaced rather than falling back to
@@ -841,6 +868,64 @@ let sort_type_decls_by_dependency (decls : type_decl list) : type_decl list =
           (fun (_, args) -> List.concat_map referenced_type_names args)
           constrs
   in
+  (* Same walk, but keeping the SITE a reference came from (a field name or a
+     constructor name) alongside the mangled name it names — the completeness
+     check below needs both: the name to look up, the site to name in the
+     diagnostic. *)
+  let referenced_with_sites = function
+    | Record_decl (_, fields) ->
+        List.concat_map
+          (fun (fname, fty) ->
+            List.map
+              (fun n -> (Printf.sprintf "field %S" fname, n))
+              (referenced_type_names fty))
+          fields
+    | Variant_decl (_, constrs) ->
+        List.concat_map
+          (fun (cname, args) ->
+            List.concat_map
+              (fun fty ->
+                List.map
+                  (fun n -> (Printf.sprintf "constructor %S" cname, n))
+                  (referenced_type_names fty))
+              args)
+          constrs
+  in
+  (* COMPLETENESS: every type name any declaration's own fields/payloads
+     reference must resolve to SOME declaration in this same list — a record
+     or a variant, either kind, matched by mangled name exactly as
+     [deps_of] below matches an edge. A name that resolves to nothing is not
+     an edge for the sort to place; it is a type the PPX (or fusion, or a
+     hand-built IR) referenced but never declared, and no ordering pass can
+     invent a declaration for it. Left unchecked, it silently reaches the
+     backend as a reference to a struct/union member type with no
+     [typedef]/[struct] above it, and the backend compiler is the one that
+     eventually complains, if it complains at all (see the doc comment on this
+     function). Checked before the topological placement loop, so a caller
+     gets this refusal rather than a superficially-successful order over an
+     incomplete set. A self-reference always passes: the declaration
+     supplying the name is itself in [declared_mangled_names]. *)
+  let declared_mangled_names =
+    List.map (fun (_, d) -> mangle_name (type_decl_name d)) indexed
+  in
+  let missing =
+    List.concat_map
+      (fun (_, d) ->
+        List.filter_map
+          (fun (site, name) ->
+            if List.mem name declared_mangled_names then None
+            else
+              Some
+                (Printf.sprintf
+                   "%s %S's %s references undeclared type %S"
+                   (type_decl_kind d)
+                   (type_decl_name d)
+                   site
+                   name))
+          (referenced_with_sites d))
+      indexed
+  in
+  if missing <> [] then raise (Undeclared_type_ref missing) ;
   (* Dependencies of one entry, as INCOMING INDICES: every OTHER declaration in
      the list whose name this one references. Dropping index [i] itself is what
      makes a self-referencing declaration emittable in place (a self-reference

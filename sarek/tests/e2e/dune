@@ -1910,3 +1910,23 @@
    LD_LIBRARY_PATH
    %{env:HOME=}/opt/zluda
    (run %{dep:test_shared_record_slots.exe}))))
+
+; backlog-212: a type referenced but never DECLARED is refused by name, not
+; silently forwarded to whichever backend compiler happens to run over the
+; generated source. Deliberately deviceless (see the file header): the
+; refusal lives in shared string-generation code in spoc/ir, so no device is
+; needed to observe it and CI (no GPU) still exercises it every run.
+
+(executable
+ (name test_undeclared_variant_payload_record)
+ (modules test_undeclared_variant_payload_record)
+ (libraries sarek sarek.stdlib sarek_ir sarek.codegen spoc_core sarek_native)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_undeclared_variant_payload_record.exe})))

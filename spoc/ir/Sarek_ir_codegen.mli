@@ -331,9 +331,20 @@ val referenced_type_names : Sarek_ir_types.elttype -> string list
     Node identity is the POSITION in the list. Two same-named declarations are
     therefore two nodes, and a record's edge to a same-named variant is kept — a
     name-keyed self-edge drop would lose exactly that edge. A reference to a
-    type that is in the list is an edge; a reference to one that is not is
-    neither an edge nor an error here, and surfaces later as the backend's own
-    "unknown type name".
+    type that is in the list is an edge to order.
+
+    {b Completeness (backlog-212).} Before any placement, every name any
+    declaration's fields/payloads reference is checked against the declared set
+    (by mangled name, either kind); the self-reference case always passes,
+    because the declaration supplying the name is itself in that set. A name
+    that resolves to nothing raises {!Undeclared_type_ref} rather than being
+    silently dropped as "not an edge" — that used to surface only later, as
+    whichever backend compiler happened to run over the generated source
+    complaining about an unknown type name, or (Metal/PTX) not complaining at
+    all. This is reachable from ordinary [[@@sarek.type]] source: the PPX
+    registers a variant's constructor payload from the constructor's OWN
+    declared type, independent of whether the value passed to the constructor
+    ever separately registered its own record type.
 
     Exported for the tests; {!gen_type_decls} is the only production caller.
 
@@ -344,8 +355,33 @@ val referenced_type_names : Sarek_ir_types.elttype -> string list
       field at alignment-resolution time, and fusion only concatenates two
       PPX-produced (hence acyclic) type lists. It is a backstop for hand-built
       IR — tests today, a future front end — where nothing else would notice,
-      not a guard anything presently depends on. *)
+      not a guard anything presently depends on.
+    @raise Undeclared_type_ref
+      if any declaration's own field or payload types name a record or variant
+      that is not itself in [decls] — checked, and reachable from ordinary
+      [[@@sarek.type]] source, not only from hand-built IR; see the completeness
+      paragraph above. *)
 val sort_type_decls_by_dependency : type_decl list -> type_decl list
+
+(** Raised by {!sort_type_decls_by_dependency} when some declaration's own field
+    or payload types name a record or variant that is not itself among the
+    declarations it was given — a reference with nothing behind it, as opposed
+    to {!Type_decl_cycle}'s reference to something present but unorderable. Each
+    string in the payload names the referencing declaration's kind and name, the
+    field or constructor site, and the missing type, e.g.
+    [{"variant \"probe2\"'s constructor \"At2\" references undeclared type
+     \"probe_pt\""}]. A [Printexc] printer is registered so the message reaches
+    the user instead of [Undeclared_type_ref(_)].
+
+    Reachable from ordinary [[@@sarek.type]] source: the PPX registers a
+    variant's constructor payload type from the constructor's own declaration,
+    independent of whether the value passed to the constructor ever separately
+    caused its record type to be registered (a record literal, a parameter of
+    that type, or a local array element of that type all register it; extracting
+    an existing value of that type from elsewhere — e.g. a differently-typed
+    source — does not). See
+    sarek/tests/e2e/test_undeclared_variant_payload_record.ml. *)
+exception Undeclared_type_ref of string list
 
 (** Emit a backend's record and variant declarations from ONE
     {!sort_type_decls_by_dependency} pass over both lists together, dispatching
@@ -360,10 +396,11 @@ val sort_type_decls_by_dependency : type_decl list -> type_decl list
     inside their own fields and payloads. It orders NOTHING ELSE the backend
     emits — headers, bindings and helper functions are the caller's sequencing —
     and it does not make an unorderable or incomplete input emittable: see
-    {!Type_decl_cycle} for a cycle, and {!sort_type_decls_by_dependency} for the
-    self-reference and undeclared-reference cases.
+    {!Type_decl_cycle} for a cycle, and {!Undeclared_type_ref} for a reference
+    to a type that is not in [records]/[variants] at all.
 
-    @raise Type_decl_cycle see {!sort_type_decls_by_dependency}. *)
+    @raise Type_decl_cycle see {!sort_type_decls_by_dependency}.
+    @raise Undeclared_type_ref see {!sort_type_decls_by_dependency}. *)
 val gen_type_decls :
   emit_record:
     (Buffer.t -> string * (string * Sarek_ir_types.elttype) list -> unit) ->
@@ -385,7 +422,8 @@ val gen_type_decls :
     is deliberately not exported on its own: a record loop with no sort in it is
     the shape backlog-203 fixed.
 
-    @raise Type_decl_cycle see {!sort_type_decls_by_dependency}. *)
+    @raise Type_decl_cycle see {!sort_type_decls_by_dependency}.
+    @raise Undeclared_type_ref see {!sort_type_decls_by_dependency}. *)
 val gen_c_type_decls :
   type_of_elttype:(Sarek_ir_types.elttype -> string) ->
   constructor_prefix:string ->
