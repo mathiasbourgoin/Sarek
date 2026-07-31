@@ -113,6 +113,13 @@ make_fixture() {
   printf -- '-R theories Test\n' > "$dir/formal/testproj/_CoqProject"
   printf 'committed\n' > "$dir/formal/testproj/driftfile.txt"
   printf 'committed\n' > "$dir/formal/testproj/extraction/model.ml"
+  # A TRACKED .lia.cache, standing in for the real repo's
+  # formal/convergence-safety/.lia.cache (backlog-229's second recurrence: the
+  # trap's own `rm -f .lia.cache .nia.cache` is unconditional and ran before
+  # this fix folded the two cache names into BUILD_OWNED_GLOBS, so a tracked
+  # cache was deleted every run and never restored, regardless of whether the
+  # stub build below touches it at all).
+  printf 'committed-lia-cache\n' > "$dir/formal/testproj/.lia.cache"
   ( cd "$dir" && git init -q . && git config user.email t@t.t && git config user.name t \
     && git add -A && git commit -q -m init ) >/dev/null 2>&1
   echo "$dir"
@@ -231,6 +238,56 @@ if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -qF '::error::formal/ has uncomm
 else
   echo "  FAIL: case-c: expected an outright refusal naming the dirty tree, got exit $rc"
   printf '%s\n' "$out" | sed 's/^/      /'
+  fail=$((fail + 1))
+fi
+
+
+# --- Case D: a TRACKED .lia.cache must survive the trap's own unconditional -
+# `rm -f .lia.cache .nia.cache`, and a clean tree after must not brick the
+# NEXT unflagged run. This is backlog-229's second recurrence: the same class
+# of gap ("restore everything the trap touches"), this time a 1-file door
+# instead of a 145-file one, and caused by an unchecked "untracked residue"
+# assumption rather than a wrong restore mechanism.
+d="$(make_fixture case-d)"
+require_nonempty "case-d dir" "$d"
+before_cache="$(cat "$d/formal/testproj/.lia.cache")"
+out1="$(run_gate "$d")"
+after_cache="$(cat "$d/formal/testproj/.lia.cache" 2>/dev/null || echo "<MISSING>")"
+status_after=""
+if [ -n "$d" ]; then
+  status_after="$(cd "$d" && git status --porcelain -- formal)"
+fi
+if [ "$after_cache" = "$before_cache" ]; then
+  echo "  PASS: case-d: the trap's own unconditional cache rm did not leave" \
+       "the tracked .lia.cache deleted -- it was restored"
+  pass=$((pass + 1))
+else
+  echo "  FAIL: case-d: tracked .lia.cache was not restored (got: $after_cache)"
+  fail=$((fail + 1))
+fi
+if ! printf '%s' "$status_after" | grep -q '^ D'; then
+  echo "  PASS: case-d: formal/ shows no lingering ' D' entry for the cache" \
+       "after the flagged run"
+  pass=$((pass + 1))
+else
+  echo "  FAIL: case-d: formal/ still shows a deleted-tracked-file entry:"
+  printf '%s\n' "$status_after" | sed 's/^/      /'
+  fail=$((fail + 1))
+fi
+# Second run, flag unset: the pre-flight's dirty check must NOT refuse. The
+# stub still fails the actual build (rocq makefile always exits 1), so a
+# nonzero exit is expected either way -- the thing under test is that the
+# refusal is never the dirty-tree one, which would mean case-d's own gate run
+# left drift the pre-flight has to react to.
+out2="$(run_gate "$d")"
+if ! printf '%s' "$out2" | grep -qF '::error::formal/ has uncommitted changes'; then
+  echo "  PASS: case-d: the following unflagged run is not refused for drift" \
+       "the previous run caused"
+  pass=$((pass + 1))
+else
+  echo "  FAIL: case-d: the next unflagged run was refused -- the cache" \
+       "restore left drift behind:"
+  printf '%s\n' "$out2" | sed 's/^/      /'
   fail=$((fail + 1))
 fi
 

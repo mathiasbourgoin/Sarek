@@ -231,8 +231,9 @@ cannot determine the logical path to check."
     #   * it never discards a developer's own edits, because those live
     #     outside the build-owned set and this restore never touches outside
     #     it;
-    #   * it never leaves the 145-artefact absorbing state behind, because the
-    #     build-owned set is exactly what gets restored, flag or no flag.
+    #   * it never leaves the build-owned set in an absorbing dirty state,
+    #     because the build-owned set is exactly what gets restored, flag or
+    #     no flag.
     #
     # BUILD_OWNED_GLOBS below must name the same suffixes as the `find` in
     # step 1 (kept as two lists rather than one shared array so that pathspec
@@ -247,15 +248,23 @@ cannot determine the logical path to check."
     # per pattern means an unmatched pattern (e.g. no `*.CoqMakefile.d` this
     # project) only skips itself.
     #
-    # The untracked .lia/.nia caches are unaffected either way: they are build
-    # residue the tactics drop next to the sources, not a build-owned TRACKED
-    # path, so deleting them is not destructive to any committed or
-    # uncommitted work and it runs unconditionally, same as before.
+    # The .lia/.nia caches the `lia`/`nia` tactics drop next to the sources
+    # are NOT always untracked residue: `git ls-files formal` shows
+    # formal/convergence-safety/.lia.cache committed and tracked (`.nia.cache`
+    # is untracked today — the same filename can be either, project to
+    # project). A bare unconditional `rm -f` on a tracked cache is exactly
+    # the #229 hazard in miniature: it deletes a tracked path and never
+    # restores it, so the next unflagged run refuses on drift nobody made.
+    # They are folded into BUILD_OWNED_GLOBS below instead, so a tracked
+    # cache is restored the same way as every other build-owned path, and
+    # deleting an untracked one is still a no-op restore (nothing tracked to
+    # check out, and each pattern's failure is independent of the rest).
     BUILD_OWNED_GLOBS=(
       ':(glob)**/*.vo' ':(glob)**/*.vok' ':(glob)**/*.vos' ':(glob)**/*.glob'
       ':(glob)**/*.CoqMakefile.d' ':(glob)**/CoqMakefile' \
       ':(glob)**/CoqMakefile.conf' \
-      ':(glob)**/extraction/*.ml' ':(glob)**/extraction/*.mli'
+      ':(glob)**/extraction/*.ml' ':(glob)**/extraction/*.mli' \
+      '.lia.cache' '.nia.cache'
     )
     restore_tree() {
       rm -f .lia.cache .nia.cache
@@ -267,8 +276,8 @@ cannot determine the logical path to check."
       if [ -n "$drift" ]; then
         n=$(printf '%s\n' "$drift" | wc -l)
         echo "  NOTE: the build rewrote $n build-owned tracked file(s)" \
-             "(.vo/.vok/.vos/.glob, CoqMakefile*, and/or extraction output);" \
-             "restoring them."
+             "(.vo/.vok/.vos/.glob, CoqMakefile*, extraction output, and/or" \
+             ".lia.cache/.nia.cache); restoring them."
         for pat in "${BUILD_OWNED_GLOBS[@]}"; do
           git checkout -- "$pat" 2>/dev/null || true
         done
