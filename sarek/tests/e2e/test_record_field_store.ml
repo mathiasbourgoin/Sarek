@@ -454,56 +454,70 @@ let () =
      the same defect as an assertion that cannot fail, and it is not detectable by
      reading the output — the line looks exactly like an honest skip.
 
-     HOW IT IS CHECKED, and the version of this check that was wrong. The first
-     attempt compared each key against
-     [Framework_registry.all_backend_names ()], on the assumption that
-     registration is independent of hardware. Measured: it is not.
+     HOW IT IS CHECKED, and the TWO versions of this check that were wrong.
+
+     v1 required every key to be in [Framework_registry.all_backend_names ()],
+     assuming registration is independent of hardware. Measured: it is not.
      [Cuda_plugin.init ()] registers nothing when no CUDA driver loads, so
      without ZLUDA on the loader path "CUDA/PTX" is absent from the registry and
-     that check turned this file's intended loud skip into a hard failure on
-     every driver-less host. It replaced a false green with a false red, which is
-     not an improvement.
+     the check turned this file's intended loud skip into a hard failure on every
+     driver-less host. It traded a false green for a false red.
 
-     So the comparison is against the devices actually enumerated, in the one
-     direction that carries information:
+     v2 compared against ENUMERATED devices: a key absent from [frameworks_seen]
+     whose FAMILY was enumerated was a failure. That catches "CUDA" against a
+     "CUDA/PTX" device, but it also rejects "CUDA/C" — a perfectly valid backend
+     name — whenever only "CUDA/PTX" happens to enumerate. Same overshoot, one
+     step further out: it fails on a correct sibling variant.
 
-       - a key that matches an enumerated framework exactly  -> fine;
-       - a key that matches NOTHING but whose FAMILY is enumerated -> FAIL, the
-         key is the wrong vocabulary for a device that is right here ("CUDA" when
-         the device reports "CUDA/PTX");
-       - a key that matches nothing and whose family is absent -> the honest loud
-         skip, which is the whole point of the list.
+     v3, below, asks the question that actually distinguishes the two
+     vocabularies: IS THIS KEY A FAMILY NAME? A family name is precisely one that
+     is not itself a registered backend but is the prefix before the '/' of one —
+     which is what [Device.resolve_framework] expands. So:
 
-     Stated plainly because it bounds the check: this can only fire on a host that
-     HAS the device. It cannot fire in CI, which enumerates none. It is a guard
-     against the vocabulary mistake being reintroduced on a developer machine or a
-     GPU runner, not a CI gate. *)
-  let family fw =
-    match String.index_opt fw '/' with
-    | Some i -> String.sub fw 0 i
-    | None -> fw
+       - key is a registered backend name              -> fine;
+       - key is not, but some registered backend is
+         "<key>/<variant>"                             -> FAIL, it is a family
+                                                          name where a backend
+                                                          name is required;
+       - neither                                       -> the honest loud skip.
+
+     "CUDA/C" is now fine whether or not it enumerates, because nothing is
+     registered as "CUDA/C/...". "CUDA" fails as soon as any CUDA backend is
+     registered.
+
+     WHAT IT STILL CANNOT SEE, stated rather than left to be discovered: a key
+     that is neither a backend name nor a family of a registered one — a plain
+     typo like "Vulkann", or "CUDA" on a host with no CUDA plugin registered at
+     all — is indistinguishable from a framework that legitimately did not
+     enumerate, and gets the skip. Nothing available at runtime separates those
+     two, so this catches the vocabulary CONFUSION (family vs backend) and not
+     misspelling. It also cannot fire in CI, which registers no GPU plugin. *)
+  let registered =
+    Spoc_framework_registry.Framework_registry.all_backend_names ()
+  in
+  let is_family_name fw =
+    (not (List.mem fw registered))
+    && List.exists (fun r -> String.starts_with ~prefix:(fw ^ "/") r) registered
   in
   let bad_keys =
-    List.filter
-      (fun (fw, _) ->
-        (not (List.mem fw frameworks_seen))
-        && List.exists
-             (fun seen -> String.equal (family seen) (family fw))
-             frameworks_seen)
-      claimed_frameworks
+    List.filter (fun (fw, _) -> is_family_name fw) claimed_frameworks
   in
   if bad_keys <> [] then begin
     List.iter
       (fun (fw, _) ->
         Printf.printf
-          "claimed_frameworks key %S matches no enumerated framework, but its \
-           family %S IS enumerated — the key is the wrong vocabulary (a device \
-           reports the BACKEND name, not the family name Device.init accepts). \
-           Enumerated: %s\n\
+          "claimed_frameworks key %S is a FAMILY name, not a backend name: it \
+           is not itself registered, but %s is. A device reports the backend \
+           name, so this key can never match and its NOT-MEASURED line would \
+           fire on a run that did execute. Registered: %s\n\
            %!"
           fw
-          (family fw)
-          (String.concat ", " (List.sort_uniq String.compare frameworks_seen)))
+          (String.concat
+             " and "
+             (List.filter
+                (fun r -> String.starts_with ~prefix:(fw ^ "/") r)
+                registered))
+          (String.concat ", " registered))
       bad_keys ;
     exit 1
   end ;

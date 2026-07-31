@@ -21,8 +21,14 @@
  * record asked for a field it does not have, whose name happens to look
  * positional, had that name READ as an error and WRITTEN into whatever field sits
  * at that position. A store that silently lands in the wrong field is a worse
- * failure than the dropped store the rest of backlog-172 removes: a dropped store
- * leaves correct data, and this one does not.
+ * failure than the dropped store the rest of backlog-172 removes — but not
+ * because a dropped store is harmless. Both produce a wrong program state: the
+ * dropped one leaves the TARGET holding its old value, which is already
+ * incorrect under the requested semantics. The difference is blast radius and
+ * detectability. A dropped store corrupts only the field the program was writing,
+ * and every other field still means what it says; a misdirected store corrupts a
+ * field nothing in the source mentions, so the damage shows up somewhere the
+ * reader has no reason to connect to this statement.
  *
  * The previous comment in that arm described the divergence and called it benign
  * because the name "cannot occur in practice". That is an argument about what the
@@ -41,15 +47,16 @@
  * and a `perl -0pi` for it hits [read_lvalue] first, which mutates the wrong path
  * and produces a red that means something else):
  *
- *   case 1  FAIL  slot 0 is untouched: expected 1.0, got 99.0
+ *   case 1  FAIL  "slot 0 is untouched ...": Expected `1', Received `99'
  *   case 2  OK    (positive control: a real field still stores)
- *   case 3  FAIL  read and write agree on whether "_0" resolves: expected true,
- *                 got false
+ *   case 3  FAIL  "read and write resolve \"_0\" to the same slot, or both
+ *                 refuse it": Expected `refused', Received `slot 0'
  *
  * Case 2 is what keeps "refuses" from being "refuses everything". Case 3 is
  * symmetric and catches the divergence from EITHER side: mutating [read_lvalue]
  * instead — which is what the first attempt at this proof actually did — leaves
- * cases 1 and 2 green and reddens only case 3.
+ * cases 1 and 2 green and reddens only case 3, with the two sides swapped
+ * (Expected `slot 0', Received `refused').
  ******************************************************************************)
 
 open Alcotest
@@ -174,31 +181,77 @@ let test_real_field_still_stores () =
   | V.VFloat32 x -> check (float 0.0001) "a untouched" 1.0 x
   | v -> failf "slot 0 changed shape: %s" (V.value_type_name v)
 
-(* Case 3 (positive control, the other end). The store path and the READ path
-   answer the same way for the same name — asserted rather than assumed, since
-   "they agree" is the whole claim and the two arms are separate code. *)
+(* Case 3. The store path and the READ path resolve the same name to the SAME
+   SLOT, or both refuse it.
+
+   Comparing only "did it raise" would be weaker than the sentence it is named
+   for: two resolvers that both succeed while landing on DIFFERENT slots agree on
+   every boolean and disagree on the only thing that matters. So the outcome
+   compared here is [Refused] or [Slot i], and the slot is recovered by
+   observation rather than by asking the resolver:
+
+     - read:  the value handed back is matched against the record's contents,
+              which are seeded DISTINCT ([1.] then [2.]) precisely so that a
+              value identifies its slot unambiguously;
+     - write: a sentinel no slot holds is stored, and the slot that changed is
+              the slot written.
+
+   Both run on their own freshly bound record, so neither observation disturbs
+   the other. *)
+type outcome = Refused | Slot of int
+
+let string_of_outcome = function
+  | Refused -> "refused"
+  | Slot i -> Printf.sprintf "slot %d" i
+
+let outcome = testable (fun ppf o -> Fmt.string ppf (string_of_outcome o)) ( = )
+
 let test_read_and_write_agree_on_the_same_name () =
-  let env, var, _ = bind_record () in
-  let read_raises field =
+  let read_outcome field =
+    let env, var, fields = bind_record () in
     match Eval.read_lvalue state env (T.LRecordField (T.LVar var, field)) with
-    | _ -> false
-    | exception Interp_error.Interpreter_error _ -> true
+    | exception Interp_error.Interpreter_error _ -> Refused
+    | v -> (
+        (* Distinct seeds make this an identification, not a guess. *)
+        let matches i =
+          match (fields.(i), v) with
+          | V.VFloat32 a, V.VFloat32 b -> Float.equal a b
+          | _ -> false
+        in
+        match List.find_opt matches [0; 1] with
+        | Some i -> Slot i
+        | None ->
+            failf
+              "read of %S returned a value matching no slot: %s"
+              field
+              (V.value_type_name v))
   in
-  let write_raises field =
-    let env, var, _ = bind_record () in
-    match store env var field (V.VFloat32 7.0) with
-    | () -> false
-    | exception Interp_error.Interpreter_error _ -> true
+  let write_outcome field =
+    let env, var, fields = bind_record () in
+    let before = Array.copy fields in
+    let sentinel = 99.0 in
+    match store env var field (V.VFloat32 sentinel) with
+    | exception Interp_error.Interpreter_error _ -> Refused
+    | () -> (
+        let changed i =
+          match (before.(i), fields.(i)) with
+          | V.VFloat32 a, V.VFloat32 b -> not (Float.equal a b)
+          | _ -> false
+        in
+        match List.filter changed [0; 1] with
+        | [i] -> Slot i
+        | [] -> failf "write of %S changed no slot and did not refuse" field
+        | many -> failf "write of %S changed %d slots" field (List.length many))
   in
   List.iter
     (fun field ->
       check
-        bool
+        outcome
         (Printf.sprintf
-           "read and write agree on whether %S resolves on a registered type"
+           "read and write resolve %S to the same slot, or both refuse it"
            field)
-        (read_raises field)
-        (write_raises field))
+        (read_outcome field)
+        (write_outcome field))
     ["_0"; "_1"; "b"; "a"; "nope"]
 
 let () =
