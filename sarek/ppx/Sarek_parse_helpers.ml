@@ -103,10 +103,15 @@ let parse_variant_constructors constrs =
   in
   List.map
     (fun (cd : constructor_declaration) ->
-      (* [pcd_attributes] is deliberately not read here: attributes on a
-         constructor are interpreted (if at all) by Sarek_ppx on the original
-         type declaration, which still holds them. [pcd_res]/[pcd_vars] are a
-         different case — nothing downstream reads them, so they are refused. *)
+      (* [pcd_attributes] is not read here, and that is a residual drop rather
+         than a justified omission. This helper is shared: for a TOP-LEVEL
+         [@@sarek.type] declaration the same constructor also reaches OCaml,
+         which is entitled to its attributes, so refusing here would break code
+         that compiles today; but for a PAYLOAD-LOCAL type (consumed by the PPX,
+         never seen by OCaml) nothing reads them at all. An earlier revision of
+         this comment claimed the first case covered both. [pcd_res]/[pcd_vars]
+         are a different matter — nothing reads them in either case, so they are
+         refused. *)
       if cd.pcd_res <> None || cd.pcd_vars <> [] then
         raise (Parse_error_exn (gadt_constructor_msg, cd.pcd_loc)) ;
       let name = cd.pcd_name.txt in
@@ -162,17 +167,30 @@ let binding_type (vb : Ppxlib.value_binding) : Sarek_ast.type_expr option =
     | Ppat_constraint (_, ct) -> Some (parse_type ct)
     | _ -> None
   in
-  match from_pattern with
-  | Some _ as t -> t
-  | None -> (
-      match vb.pvb_constraint with
-      | None -> None
-      | Some (Pvc_constraint {locally_abstract_univars = []; typ}) ->
-          Some (parse_type typ)
-      | Some (Pvc_constraint {locally_abstract_univars = _ :: _; _}) ->
-          raise (Parse_error_exn (binding_univars_msg, vb.pvb_loc))
-      | Some (Pvc_coercion _) ->
-          raise (Parse_error_exn (binding_coercion_msg, vb.pvb_loc)))
+  let from_constraint =
+    match vb.pvb_constraint with
+    | None -> None
+    | Some (Pvc_constraint {locally_abstract_univars = []; typ}) ->
+        Some (parse_type typ)
+    | Some (Pvc_constraint {locally_abstract_univars = _ :: _; _}) ->
+        raise (Parse_error_exn (binding_univars_msg, vb.pvb_loc))
+    | Some (Pvc_coercion _) ->
+        raise (Parse_error_exn (binding_coercion_msg, vb.pvb_loc))
+  in
+  match (from_pattern, from_constraint) with
+  | None, None -> None
+  | Some t, None | None, Some t -> Some t
+  | Some _, Some _ ->
+      (* [let (x : t1) : t2 = e] is legal OCaml and puts an annotation in BOTH
+         places (checked with `ocamlc -stop-after parsing`). Preferring one and
+         discarding the other is the defect this sweep is about, and nothing
+         here checks that they agree, so the shape is refused. *)
+      raise
+        (Parse_error_exn
+           ( "this binding is annotated twice (`let (x : t1) : t2 = e`), and \
+              Sarek reads one annotation per binding — the other would be \
+              discarded without being checked against it. Keep one.",
+             vb.pvb_loc ))
 
 (** Extract variable name from a Ppxlib pattern *)
 let rec extract_name_from_pattern (pat : Ppxlib.pattern) : string option =
@@ -383,10 +401,26 @@ let fun_return_type (expr : expression) : Sarek_ast.type_expr option =
     | P.Pexp_function (params, ct, body) -> (
         let params_since = params_since + List.length params in
         let found, params_since =
-          match ct with
-          | None -> (found, params_since)
-          | Some (P.Pconstraint c) -> (Some c, 0)
-          | Some (P.Pcoerce _) ->
+          match (ct, found) with
+          | None, _ -> (found, params_since)
+          | Some (P.Pconstraint c), None -> (Some c, 0)
+          | Some (P.Pconstraint _), Some _ ->
+              (* Two result annotations on one binding, e.g. [let f (x : 'a) :
+                 ('a -> 'a) = fun (y : 'b) : 'b -> y]. Only one can reach the
+                 single result slot, so keeping the inner one would discard the
+                 relationship the outer one states between the parameters and
+                 the result. Refuse instead of picking (found by the
+                 cross-runtime review of this branch's first version, which
+                 picked the inner one silently). *)
+              raise
+                (Parse_error_exn
+                   ( "this binding carries two result annotations (one on an \
+                      outer `fun` and one on an inner one). A kernel function \
+                      has a single result type, so only one of them could be \
+                      honoured and the other would be discarded without being \
+                      checked against it. Keep one.",
+                     expr.pexp_loc ))
+          | Some (P.Pcoerce _), _ ->
               raise (Parse_error_exn (return_coercion_msg, expr.pexp_loc))
         in
         (* [Pfunction_cases] is refused by every caller through [Fun_cases]; it

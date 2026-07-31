@@ -181,8 +181,11 @@ Class-comparable arms the OCaml *parser* cannot produce are marked
 | `let x : t = e` (`pvb_constraint`, the spelling this tree uses) | `parse_let_form`, both payload folds | **SILENTLY DROPPED** — nothing read `pvb_constraint`. A kernel-local `let sum : float = …` was typed by inference with the declared width ignored; an annotated module constant hit "must have type annotations", a message false of the code in front of it | **implemented** (`binding_type`), `test_local_annotation_read` |
 | `let f x : t = e` (`Pexp_function`'s `type_constraint`) | `collect_fun_params` | **SILENTLY DROPPED** — every kernel helper's declared result type discarded | **implemented** (`fun_return_type` → `ELetRec`'s result slot), `test_helper_return_read` |
 | the same constraint on a NESTED `fun` (`let f x = fun y : t -> e`) | `fun_return_type` | **SILENTLY DROPPED**, and the first version of this branch's fix kept dropping it while asserting the drop was correct. `collect_fun_params` flattens the inner `fun` into the binding's parameter list, so after flattening there is no inner function for the annotation to belong to. Measured: the nested spelling compiled at exit 0, the flattened spelling of the same function failed to unify | **implemented** — every `Pexp_function` on the descent is inspected, the last constraint wins, peeled by the parameters collected after it |
-| same, on a payload module item (`MFun` has no type field) | both payload folds | **SILENTLY DROPPED** | **implemented** as an `ETyped` constraint on the body, `test_module_helper_return_read` |
-| whole-binding annotation on a function, arrow arity | `parse_named_let_form` | put in the RESULT slot **unpeeled**, unifying an arrow against the body's type | one arrow peeled per parameter; too few arrows is **refused**, `test_annotation_arity` |
+| same, on a payload module item (`MFun` has no type field) | both payload folds | **SILENTLY DROPPED** | **implemented** as an `ETyped` constraint on the body, `test_module_helper_return_read` — but for an annotation containing a type VARIABLE the constraint is weaker than the source says: `Sarek_typer`'s `ETyped` arm converts in a FRESH type-variable context while `MFun`'s parameters use the item's, so the two `'a`s in `let f (x : 'a) : 'a = …` are different variables. The `ELetRec` route does not share this. Not refused (`test_module_poly.ml` writes exactly that shape); recorded, cross-runtime review |
+| whole-binding annotation on a FUNCTION (`let (f : a -> b) = fun x -> …`) | `binding_result_type` | put in the RESULT slot **unpeeled**, unifying an arrow against the body's type | **refused**. This branch's first draft peeled one arrow per parameter instead, which silently discarded every DOMAIN the user wrote — `let (f : float32 -> int32) = fun (x : int32) -> x` accepted as `int32 -> int32`. The cross-runtime review caught it. Refusing costs nothing: kernel parameters must carry their own annotations anyway. `test_whole_binding_annotation` |
+| a result annotation with fewer arrows than the parameters collected after it | `fun_return_type` | n/a (the whole slot was unread) | **refused**, `test_return_annotation_arity` |
+| a binding annotated in BOTH places (`let (x : t1) : t2 = e`) | `binding_type` | the pattern one won, the other was discarded unchecked | **refused**, `test_double_annotation` |
+| TWO result annotations on one binding (outer and inner `fun`) | `fun_return_type` | n/a | **refused** — the first draft took the inner one silently, discarding the relationship the outer one states. `test_two_result_annotations` |
 | annotation on a tuple-pattern `let` | `parse_let_form` | dropped (`EMatch` has no type slot) | **refused**, `test_tuple_let_annotation` |
 | `Pvc_coercion` (`let x :> t = e`) | `binding_type` | dropped | **refused**, `test_binding_coercion` |
 | `Pvc_constraint` with `locally_abstract_univars` | `binding_type` | dropped | **refused** (no committed case: see "what is not covered") |
@@ -218,7 +221,7 @@ field nobody reads here is a field nobody reads at all.
 | `ptype_manifest` with a representation (`type t = u = {…}`) | same | **SILENTLY DROPPED** | **refused** (no committed case) |
 | `Ptype_abstract` with no manifest, `Ptype_open` | same | refused, generic | refused, each named |
 | `ptype_attributes` | same | **SILENTLY DROPPED** | **refused**, except `sarek.type` / `sarek.type_private`, which are accepted and ignored because a payload type is registered unconditionally (no committed case) |
-| `Pstr_type`'s `rec_flag` | `parse_payload` | not read | **residual, documented**: a kernel type cannot refer to another kernel type in its fields (no recursive struct in the lowering), so `nonrec` and the default accept the same declarations |
+| `Pstr_type`'s `rec_flag` | `parse_payload` | **DROPPED** | **refused** for `nonrec`. This branch first documented the drop as harmless, on the false ground that a kernel type cannot refer to another kernel type in its fields — nested records are supported and exercised (`sarek/tests/e2e/test_nested_types.ml`), so `nonrec` is meaningful and was being ignored. Cross-runtime review. `test_payload_type_nonrec` |
 | `constructor_declaration.pcd_res` / `pcd_vars` (GADT) | `parse_variant_constructors` | **SILENTLY DROPPED**: `C : int -> t` recorded as `C of int` | **refused**, `test_payload_gadt` |
 | `Pcstr_tuple` with 2+ args, `Pcstr_record` | same | refused at `Location.none` — no caret | refused **at `pcd_loc`** |
 | `constructor_declaration.pcd_attributes`, `label_declaration.pld_attributes` | `parse_variant_constructors`, `parse_record_fields` | not read | **residual, documented**: these two helpers are shared with the TOP-LEVEL `[@@sarek.type]` route, where the same declaration also reaches OCaml and the attributes are its business. Refusing here would break code that compiles today. For a payload-local type they are genuinely dropped |
@@ -240,7 +243,7 @@ field nobody reads here is a field nobody reads at all.
 | `Pmod_ident`, `Pmod_apply`, `Pmod_apply_unit`, `Pmod_functor`, `Pmod_constraint`, `Pmod_unpack`, `Pmod_extension` | `collect_mods` | **SILENTLY DROPPED** — contributed `([], [])` | **refused**, `test_module_not_structure` |
 | `Pexp_letmodule` module NAME | `collect_mods` | not read (`tdecl_module = None`) | **residual, documented and deliberate**: `None` is what makes a payload-local module's types resolvable by their BARE name, since `Sarek_typer` qualifies the registered name when it is `Some`. Writing it in would make `M.t` required and `t` unresolvable |
 | `Pexp_letmodule` with `txt = None` (`let module _ =`) | `collect_mods` | fell through and failed later as "Kernel must be a function" | **refused**, named (no committed case) |
-| `Pexp_open` at the payload top | `collect_mods` | skipped, path dropped | **residual, documented**: payload names are resolved against Sarek's environment, which the open does not populate; the same construct inside the kernel BODY is kept, because the native backend re-emits it |
+| `Pexp_open` at the payload top | `collect_mods` | skipped, path dropped | **residual, documented, and the reason it stays.** The open scopes the kernel body, and stripping it means the body is resolved without it (cross-runtime review's point, and it is right). It cannot be closed by re-wrapping the body in an `EOpen`: the native backend re-emits `let open M in` into generated OCaml, so every payload using the form would then need `M` to resolve in the user's file — which is exactly the backlog-208 trap, and `test_inline_node_exhaustion.ml` (payload-top `let open Std in`, no `module Std` alias) would break. Names a kernel needs are in Sarek's own environment, which the open does not populate |
 | `Pexp_let` with 2+ bindings at the payload top | `collect_mods` | only the first was looked at, the rest fell through as if they were the kernel function | **refused**, named (no committed case) |
 | `function_param_desc.Pparam_val` labelled/optional, `Pparam_newtype` | `collect_fun_params` | refused | unchanged |
 | `Pfunction_cases` | `collect_fun_params` | refused at all four call sites | unchanged |
@@ -254,17 +257,25 @@ field nobody reads here is a field nobody reads at all.
   and the 2+-binding payload `let`. All seven were **executed by hand** during
   the sweep through a scratch negative stanza and each printed its own message at
   exit 1 (the outputs are in the PR discussion), so this is not a
-  by-inspection claim — but only the 25 committed cases are wired into
+  by-inspection claim — but only the 29 committed cases are wired into
   `make test_negative`, and an unasserted refusal is one that can rot.
 * Two refusals are **unreachable from OCaml source** and are asserted on AST
   nodes in `test_parse.ml` instead, each with the check that establishes the
   unreachability written at its definition.
 * **Seven** **residual drops** are documented rather than closed:
-  `popen_override`, `Ptyp_poly`'s quantifiers, a pattern's `Ppat_constraint`,
-  `Pstr_type`'s `rec_flag`, the payload module NAME, the payload-top `open`, and
-  `pvb_attributes` on an ordinary kernel-body `let`. The first six are argued at
-  their site to lose nothing. The last one is a real remaining silent drop, and
-  it is the one thing in this table that is a KNOWN HOLE rather than a decision.
+  `popen_override`, `Ptyp_poly`'s quantifiers, a pattern's `Ppat_constraint`, the
+  payload module NAME, the payload-top `open`, `pvb_attributes` on an ordinary
+  kernel-body `let`, and the type-variable weakening of a module-item result
+  annotation. The first three are argued at their site to lose nothing. The
+  payload module NAME is load-bearing as it is. The last three are real remaining
+  holes with a stated reason for staying: the payload-top `open` cannot be closed
+  without breaking `test_inline_node_exhaustion`, the type-variable weakening
+  cannot be refused without breaking `test_module_poly`, and `pvb_attributes` on
+  an ordinary `let` is simply not done — the same three lines as the superstep
+  one, deferred rather than justified. `Pstr_type`'s `rec_flag` was on this list
+  and is now REFUSED instead; `constructor_declaration.pcd_attributes` and
+  `label_declaration.pld_attributes` stay, because those helpers are shared with
+  the top-level route where OCaml is entitled to the attributes.
 * The claim "every arm is now read or refused" holds for the four variants and
   the record fields listed at the top of this table, in
   `Sarek_parse.ml` + `Sarek_parse_helpers.ml`, against ppxlib 5.2.1. It is not a

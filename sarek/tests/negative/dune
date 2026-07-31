@@ -43,10 +43,14 @@
 ; - test_inline_type_field_store: "cannot assign to field ... of a record type
 ;   declared inside the kernel" + "register it with [@@sarek.type]"
 ; - test_record_update: "functional record update" (backlog-192)
+; - test_whole_binding_annotation: "whole-binding type annotation on a function" (backlog-192)
+; - test_return_annotation_arity: "fewer arrows than the function has parameters" (backlog-192)
+; - test_double_annotation: "annotated twice" (backlog-192)
+; - test_two_result_annotations: "two result annotations" (backlog-192)
+; - test_payload_type_nonrec: "`type nonrec` is not supported" (backlog-192)
 ; - test_labelled_arg: "labelled or optional argument" (backlog-192)
 ; - test_kernel_return_type: "return-type annotation on a kernel" (backlog-192)
 ; - test_tuple_let_annotation: "type annotation on a tuple-pattern" (backlog-192)
-; - test_annotation_arity: "fewer arrows than the function has parameters" (backlog-192)
 ; - test_module_const_no_type: "needs a type annotation" (backlog-192)
 ; - test_module_item_dropped: "exception declaration is not supported in a kernel module" (backlog-192)
 ; - test_module_not_structure: "only a literal structure is supported here" (backlog-192)
@@ -539,17 +543,6 @@
   (= %{profile} "negative")))
 
 (library
- (name neg_test_annotation_arity)
- (modules test_annotation_arity)
- (libraries sarek sarek.stdlib sarek.ppx.lib)
- (preprocess
-  (pps sarek_ppx))
- (flags
-  (:standard -w -33))
- (enabled_if
-  (= %{profile} "negative")))
-
-(library
  (name neg_test_module_const_no_type)
  (modules test_module_const_no_type)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
@@ -761,6 +754,61 @@
 (library
  (name neg_test_nested_fun_return_read)
  (modules test_nested_fun_return_read)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_whole_binding_annotation)
+ (modules test_whole_binding_annotation)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_return_annotation_arity)
+ (modules test_return_annotation_arity)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_double_annotation)
+ (modules test_double_annotation)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_two_result_annotations)
+ (modules test_two_result_annotations)
+ (libraries sarek sarek.stdlib sarek.ppx.lib)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33))
+ (enabled_if
+  (= %{profile} "negative")))
+
+(library
+ (name neg_test_payload_type_nonrec)
+ (modules test_payload_type_nonrec)
  (libraries sarek sarek.stdlib sarek.ppx.lib)
  (preprocess
   (pps sarek_ppx))
