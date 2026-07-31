@@ -10,7 +10,7 @@
 open Sarek_metal
 open Sarek_ir_types
 
-let st : Sarek_ir_metal.state = {framework = None; variants = []}
+let st : Sarek_ir_metal.state = {variants = []}
 
 let make_var name ty =
   {var_id = 0; var_name = name; var_type = ty; var_mutable = false}

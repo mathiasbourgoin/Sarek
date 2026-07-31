@@ -1307,8 +1307,10 @@ let rec gen_stmt st buf indent = function
       Buffer.add_string buf indent ;
       Buffer.add_string buf "memoryBarrier();\n"
   | SNative _ ->
-      Buffer.add_string buf indent ;
-      Buffer.add_string buf "/* native code not supported in GLSL */\n"
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "[%native]"
+           Sarek_ir_codegen.native_block_refusal)
   | SExpr e ->
       Buffer.add_string buf indent ;
       gen_expr st buf e ;

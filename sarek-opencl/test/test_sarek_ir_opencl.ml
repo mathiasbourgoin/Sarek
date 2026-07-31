@@ -12,9 +12,9 @@ open Sarek_ir_types
 
 (* backlog-185 scaffolding: these unit tests call the emit functions directly,
    and those now take the per-generation state as their first argument. None of
-   them uses SNative or a variant pattern, so the empty state is what the old
-   module-level refs held. *)
-let st : Sarek_ir_opencl.state = {framework = None; variants = []}
+   them uses a variant pattern, so the empty state is what the old
+   module-level ref held. *)
+let st : Sarek_ir_opencl.state = {variants = []}
 
 (** Helper: Create a variable record *)
 let make_var name ty =

@@ -74,6 +74,16 @@ val opencl_float16_refusal : string
     [Sarek_ir_glsl.reject_float16_kernel]. *)
 val glsl_float16_refusal : string
 
+(** The [%native] refusal diagnostic, shared by all five source backends (CUDA,
+    OpenCL, Metal, GLSL, WGSL). None of them can serve an [SNative] node: the
+    closure it carries produces source for a named target, and no caller of
+    these generators supplies one. Before backlog-185/200 three raised and two
+    emitted a comment and continued; this is the one message they now agree on.
+
+    Not used by the PTX emitter, which passes the closure its own ["PTX"] tag
+    and really does emit. *)
+val native_block_refusal : string
+
 (** Mangle an OCaml type name into a valid C/GLSL identifier (e.g.
     "Module.point" -> "Module_point"). Replaces '.' with '_'. *)
 val mangle_name : string -> string

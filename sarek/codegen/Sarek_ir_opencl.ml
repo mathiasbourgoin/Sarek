@@ -45,31 +45,25 @@ let format_float f = Printf.sprintf "%.17g" f
 (** Everything one run of {!generate_with_types} needs to know that is not
     reachable from the IR node it is currently emitting. It is a VALUE threaded
     through the emit functions, not module state, and that is the whole point of
-    backlog-185/200: the two fields below used to be module-level [ref]s, so a
+    backlog-185/200: the field below used to be a module-level [ref], so a
     second generation — on another domain, or simply a later one after
-    {!Sarek_transpile} had written them — read the first one's values.
-
-    [framework] is the tag the pure/FFI registries are queried with and the
-    argument [SNative] passes to its source-producing closure. [None] means "no
-    caller supplied one": the registry queries then fall back to ["OpenCL"]
-    (unchanged behaviour, since that is what every runtime caller wants) and
-    [SNative] refuses, because a native block has no correct spelling to emit
-    without knowing the target. Only {!Sarek_transpile} passes it, and now
-    passes it to the ONE emitter it is generating with rather than assigning it
-    into all four C-family emitters' globals.
+    {!Sarek_transpile} had written it — read the first one's value.
 
     [variants] is the kernel's own [kern_variants], read by the
     [SMatch]/[EMatch] arms to recover a constructor's payload types. Derived
     from the kernel, so it could be re-derived at each use site; it is carried
-    here because that is where the ref it replaces was read from. *)
-type state = {
-  framework : string option;
-  variants : (string * (string * elttype list) list) list;
-}
+    here because that is where the ref it replaces was read from.
 
-(** The state for emitting [k]. [framework] is threaded from the caller. *)
-let state ?framework (k : kernel) : state =
-  {framework; variants = k.kern_variants}
+    It is the ONLY field. A mid-refactor draft also carried the framework tag,
+    threaded in as [?framework] so a caller could pick the registry spelling;
+    that was dropped once it was clear every caller passed this backend its own
+    name. The record survives the shrink deliberately — a one-field record is
+    the honest shape for "one run's state", and the next thing that needs
+    threading has somewhere to go. *)
+type state = {variants : (string * (string * elttype list) list) list}
+
+(** The state for emitting [k]. *)
+let state (k : kernel) : state = {variants = k.kern_variants}
 
 (** {1 Type Mapping} *)
 
@@ -369,7 +363,7 @@ and gen_unop = function Neg -> "-" | Not -> "!" | BitNot -> "~"
 
 and opencl_backend st =
   {
-    Dispatch.framework = (fun () -> Option.value ~default:"OpenCL" st.framework);
+    Dispatch.framework = (fun () -> "OpenCL");
     gen_expr = gen_expr st;
     thread_intrinsic = opencl_thread_intrinsic;
     pre_hook = (fun _ ~full_name:_ _ _ _ -> false);
@@ -377,10 +371,9 @@ and opencl_backend st =
       (fun buf path name args ->
         (* Same framework tag the pure-registry lookup uses: without it this
            fallback emitted the CUDA spelling on every backend. *)
-        let framework = Option.value ~default:"OpenCL" st.framework in
         Dispatch.emit_registry_template
           ~gen_expr:(gen_expr st)
-          ~framework
+          ~framework:"OpenCL"
           ~invalid_arg_count:bad_arity
           buf
           path
@@ -555,20 +548,11 @@ let rec gen_stmt st buf indent = function
   | SMemFence ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "mem_fence(CLK_GLOBAL_MEM_FENCE);\n"
-  | SNative {gpu; ocaml = _} -> (
-      match st.framework with
-      | Some framework ->
-          let code = gpu ~framework in
-          Buffer.add_string buf indent ;
-          Buffer.add_string buf code ;
-          if not (String.length code > 0 && code.[String.length code - 1] = '\n')
-          then Buffer.add_char buf '\n'
-      | None ->
-          Codegen_error.raise_error
-            (Codegen_error.unsupported_construct
-               "SNative"
-               "SNative requires a target framework: pass ~framework to \
-                generate/generate_with_types"))
+  | SNative _ ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "[%native]"
+           Sarek_ir_codegen.native_block_refusal)
   | SExpr e ->
       Buffer.add_string buf indent ;
       gen_expr st buf e ;
@@ -1149,17 +1133,20 @@ let resolve_recursive_helpers (k : kernel) : kernel =
 
 (** Generate OpenCL source with custom type definitions.
 
-    [?framework] is the target tag for registry lookups and [SNative]; see
-    {!state}. Omitting it is what every runtime caller does and reproduces the
-    pre-backlog-185 behaviour exactly. *)
-let generate_with_types ?framework
-    ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
+    Registry lookups are made under the constant tag ["OpenCL"]. An earlier
+    draft of backlog-185/200 threaded a [?framework] argument here so a caller
+    could override it; it was dropped, because every caller passed this backend
+    its own name — exactly the value the constant already is — and the one
+    consumer that would have distinguished them, [SNative], now refuses
+    outright. *)
+let generate_with_types ~(types : (string * (string * elttype) list) list)
+    (k : kernel) : string =
   reject_float16_kernel k ;
   reject_coopmat_kernel k ;
   let k = resolve_recursive_helpers k in
   (* Per-generation state, threaded into the emit calls below: the caller's
      framework tag, and the kernel's variants for SMatch bindings. *)
-  let st = state ?framework k in
+  let st = state k in
   let buf = Buffer.create large_buffer_size in
 
   (* Record and variant type definitions, ordered TOGETHER in one pass: a
@@ -1210,12 +1197,11 @@ let generate_with_types ?framework
     that silently omitted record typedefs, variant typedefs and the kernel's
     variants — source referencing an undeclared struct, with no error.
     Delegating keeps one emit path per backend. *)
-let generate ?framework (k : kernel) : string =
-  generate_with_types ?framework ~types:k.kern_types k
+let generate (k : kernel) : string = generate_with_types ~types:k.kern_types k
 
 (** Generate OpenCL source with double precision extension if needed *)
-let generate_with_fp64 ?framework (k : kernel) : string =
-  let source = generate ?framework k in
+let generate_with_fp64 (k : kernel) : string =
+  let source = generate k in
   if Sarek_ir_analysis.kernel_uses_float64 k then
     "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n\n" ^ source
   else source

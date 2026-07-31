@@ -34,34 +34,25 @@ let bad_arity n e g =
 (** Everything one run of {!generate_with_types} needs to know that is not
     reachable from the IR node it is currently emitting. It is a VALUE threaded
     through the emit functions, not module state, and that is the whole point of
-    backlog-185/200. Each field replaces a module-level [ref], and the two
-    leaked differently: [current_framework] was written by {!Sarek_transpile}
-    and never cleared, so a generation that never asked for a framework
-    inherited whichever one was set last (the golden harness had to assign
-    [None] back by hand before every snapshot); [current_variants] was assigned
-    at each entry to {!generate_with_types}, so two generations in flight at
-    once — two domains — resolved constructor payloads against each other's
-    variant table.
+    backlog-185/200: the field below used to be a module-level [ref], so a
+    second generation — on another domain, or simply a later one after
+    {!Sarek_transpile} had written it — read the first one's value.
 
-    [framework] is the tag the intrinsic registries ({!Sarek_pure_registry} and
-    {!Sarek_registry}) are queried with, and the argument [SNative] passes to
-    its source-producing closure. [None] means "no caller supplied one": the
-    registry queries then fall back to ["Metal"] — unchanged behaviour, and what
-    a caller of this backend means anyway — and [SNative] refuses, because a
-    native block has no correct spelling to emit without knowing the target.
+    [variants] is the kernel's own [kern_variants], read by the
+    [SMatch]/[EMatch] arms to recover a constructor's payload types. Derived
+    from the kernel, so it could be re-derived at each use site; it is carried
+    here because that is where the ref it replaces was read from.
 
-    [variants] is the kernel's own [kern_variants], read by the [SMatch] arm to
-    recover a constructor's payload types. Derived from the kernel, so it could
-    be re-derived at each use site; it is carried here because that is where the
-    ref it replaces was read from. *)
-type state = {
-  framework : string option;
-  variants : (string * (string * elttype list) list) list;
-}
+    It is the ONLY field. A mid-refactor draft also carried the framework tag,
+    threaded in as [?framework] so a caller could pick the registry spelling;
+    that was dropped once it was clear every caller passed this backend its own
+    name. The record survives the shrink deliberately — a one-field record is
+    the honest shape for "one run's state", and the next thing that needs
+    threading has somewhere to go. *)
+type state = {variants : (string * (string * elttype list) list) list}
 
-(** The state for emitting [k]. [framework] is threaded from the caller. *)
-let state ?framework (k : kernel) : state =
-  {framework; variants = k.kern_variants}
+(** The state for emitting [k]. *)
+let state (k : kernel) : state = {variants = k.kern_variants}
 
 (** {1 Type Mapping} *)
 
@@ -430,7 +421,7 @@ and gen_metal_polyfill st buf name args =
 
 and metal_backend st =
   {
-    Dispatch.framework = (fun () -> Option.value ~default:"Metal" st.framework);
+    Dispatch.framework = (fun () -> "Metal");
     gen_expr = gen_expr st;
     thread_intrinsic = metal_thread_intrinsic;
     pre_hook =
@@ -443,10 +434,9 @@ and metal_backend st =
       (fun buf path name args ->
         (* Same framework tag the pure-registry lookup uses: without it this
            fallback emitted the CUDA spelling on every backend. *)
-        let framework = Option.value ~default:"Metal" st.framework in
         Dispatch.emit_registry_template
           ~gen_expr:(gen_expr st)
-          ~framework
+          ~framework:"Metal"
           ~invalid_arg_count:bad_arity
           buf
           path
@@ -736,19 +726,11 @@ let rec gen_stmt st buf indent = function
   | SMemFence ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "threadgroup_barrier(mem_flags::mem_device);\n"
-  | SNative {gpu; ocaml = _} -> (
-      match st.framework with
-      | Some framework ->
-          let code = gpu ~framework in
-          Buffer.add_string buf indent ;
-          Buffer.add_string buf code ;
-          if not (String.length code > 0 && code.[String.length code - 1] = '\n')
-          then Buffer.add_char buf '\n'
-      | None ->
-          Codegen_error.raise_error
-            (Codegen_error.no_device_selected
-               "SNative requires a target framework: pass ~framework to \
-                generate/generate_with_types"))
+  | SNative _ ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "[%native]"
+           Sarek_ir_codegen.native_block_refusal)
   | SExpr e ->
       Buffer.add_string buf indent ;
       gen_expr st buf e ;
@@ -1220,15 +1202,17 @@ let metal_fp_contract_pragma = "#pragma METAL fp contract(off)\n"
 
 (** Generate Metal source with custom type definitions.
 
-    [?framework] is the target tag for registry lookups and [SNative]; see
-    {!state}. Omitting it is what every runtime caller does and reproduces the
-    pre-backlog-185 behaviour exactly. *)
-let generate_with_types ?framework
-    ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
+    Registry lookups are made under the constant tag ["Metal"]. An earlier draft
+    of backlog-185/200 threaded a [?framework] argument here so a caller could
+    override it; it was dropped, because every caller passed this backend its
+    own name — exactly the value the constant already is — and the one consumer
+    that would have distinguished them, [SNative], now refuses outright. *)
+let generate_with_types ~(types : (string * (string * elttype) list) list)
+    (k : kernel) : string =
   reject_float16_kernel k ;
   reject_float64_kernel k ;
   reject_coopmat_kernel k ;
-  let st = state ?framework k in
+  let st = state k in
   let buf = Buffer.create 4096 in
 
   (* Collect variables used with atomic operations *)
@@ -1306,5 +1290,4 @@ let generate_with_types ?framework
     that silently omitted record typedefs, variant typedefs and the kernel's
     variants — source referencing an undeclared struct, with no error.
     Delegating keeps one emit path per backend. *)
-let generate ?framework (k : kernel) : string =
-  generate_with_types ?framework ~types:k.kern_types k
+let generate (k : kernel) : string = generate_with_types ~types:k.kern_types k

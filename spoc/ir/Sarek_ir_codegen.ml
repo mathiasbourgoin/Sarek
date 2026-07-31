@@ -121,6 +121,36 @@ let glsl_float16_refusal =
    single narrowing, and `precise` does not prevent it. See \
    docs/fp-contraction-policy.md (#57 slice 2b)."
 
+(** {1 The [%native] refusal, shared by all five source backends}
+
+    A [SNative] node carries a closure that produces device source for a named
+    target. The five source generators have no target to name: they are reached
+    through [Sarek_transpile.of_source] and through each backend plugin's
+    [generate_source], and neither supplies one. Before backlog-185/200 the tag
+    came from a module-level ref that {!Sarek_transpile} wrote as a side effect
+    of an unrelated generation — which is the bug this work removes, not a
+    mechanism to preserve.
+
+    So the five disagreed about a construct none of them could actually serve:
+    CUDA, OpenCL and Metal raised, while GLSL and WGSL emitted
+    [/* native code not supported in <lang> */] and CONTINUED — a shader missing
+    the operation the kernel asked for, with no diagnostic. One refusal replaces
+    all five.
+
+    Deliberately NOT shared with PTX: [Sarek_ir_ptx_stmt] passes the closure its
+    own ["PTX"] tag and emits the result, which is a real path and stays.
+
+    Written for the person who hit it. It names no parameter, no backlog item
+    and no function they cannot call — the previous CUDA/OpenCL/Metal wording
+    ("pass ~framework to generate/generate_with_types") named a real argument
+    accurately and was still useless, because no reachable caller passes it. *)
+let native_block_refusal =
+  "a [%native] block cannot be emitted as device source here. Inline native \
+   code is an opaque string this generator can neither translate nor check, \
+   and it is written for one specific target — which this path has no way to \
+   identify. Express the operation in Sarek so it can be generated for every \
+   backend."
+
 (** Mangle OCaml type name to valid C/GLSL identifier (e.g., "Module.point" ->
     "Module_point") *)
 let mangle_name name = String.map (fun c -> if c = '.' then '_' else c) name
