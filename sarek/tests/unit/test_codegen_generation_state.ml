@@ -266,10 +266,11 @@ let native_kernel =
 
 (** The substring every backend's refusal must carry. Retyped here rather than
     read from {!Sarek_ir_codegen.native_block_refusal}: that is deliberate,
-    because a literal is what makes rewording the shared message turn this test
-    RED instead of silently staying green against text no backend emits any
-    more. Kept to a distinctive fragment so incidental rewrapping of the message
-    does not fail it for no reason. *)
+    because a literal is what makes a change to THIS fragment turn the test RED
+    instead of silently staying green against text no backend emits any more — a
+    rewording that leaves this fragment untouched, or only rewraps it, stays
+    green with no loss of coverage, since it is the fragment, not the rest of
+    the message, that this test pins. *)
 let refusal_fragment = "Express the operation in Sarek"
 
 let refuses_native_block ~emitter ~generate () =

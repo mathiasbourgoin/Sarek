@@ -241,7 +241,7 @@ over-abstraction is the classic mistake. **Be skeptical.** The honest measuremen
   (`gen_var_decl`, `wgsl:593`): different token order + keyword, plus WGSL/GLSL Shared-array
   hoisting and error paths. **Load-bearing.**
 - `SNative` — all five source generators now refuse it outright (see
-  `spoc/ir/Sarek_ir_codegen.ml:147` `native_block_refusal`, shared since
+  `spoc/ir/Sarek_ir_codegen.ml:150` `native_block_refusal`, shared since
   backlog-185/200); the C-family real-injection vs GLSL/WGSL
   `/* not supported */`-stub split described above no longer exists.
 
