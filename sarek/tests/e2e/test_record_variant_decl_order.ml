@@ -38,6 +38,14 @@
  * Every available device must PASS both shapes. There is no per-backend
  * tolerance: a device that fails makes the process exit non-zero.
  *
+ * TWO WAYS THIS FILE COULD PASS WITHOUT VERIFYING ANYTHING, both refused rather
+ * than documented. A run with no declaration-emitting device verifies nothing
+ * (see below), and a run whose kernels no longer CARRY the cross-kind edge
+ * verifies nothing either — tag erasure removes the edge outright if a
+ * constructor is written literally, and then every device passes on a kernel
+ * with no ordering problem in it. [require_cross_edge] checks the lowered IR
+ * for both edges before any device runs and exits 1 if either is gone.
+ *
  * DEVICE COVERAGE IS WHAT THE HOST HAS, AND THIS FILE SAYS SO OUT LOUD. Only a
  * backend that DECLARES struct types can observe this defect; Interpreter and
  * Native carry values and emit no declaration at all. So a host with only those
@@ -138,6 +146,72 @@ let ir_of name kirc =
   | Some ir -> ir
   | None -> failwith (name ^ ": kernel has no IR")
 
+(* THE EDGE UNDER TEST MUST BE IN THE LOWERED IR, and that is checked here
+   rather than assumed.
+
+   The two kernels above select their constructor behind an [if] for one reason
+   only: static tag erasure (Sarek_tag_erasure, L14 S1/S2) reduces a
+   variant-typed local or record field written by a LITERAL constructor
+   application, so the variant never reaches [kern_variants], no variant struct
+   is emitted, and there is no cross-kind edge in the generated source at all.
+   [n > 0] is invariantly true, so both [if]s read as dead code a later reader
+   would be right to simplify — and MEASURED, that simplification is silent:
+   with the interleaved sort removed AND the constructors written literally,
+   this file still prints "ALL PASSED on 4 declaration-emitting device(s)" and
+   exits 0 while covering nothing.
+
+   The device summary already refuses to claim a pass when no
+   declaration-emitting device ran. That guards the DEVICE dimension; this
+   guards the EDGE dimension, which is the one the header calls the trap. Both
+   ends are required: the referencing declaration must carry a field/payload of
+   the other kind, AND the declaration it names must be in the other list, or
+   there is nothing for the ordering pass to order. It runs BEFORE any device,
+   so a CPU-only host and CI catch the regression too. *)
+let require_cross_edge ~shape ~ir ~direction =
+  let open Sarek_ir_types in
+  let found =
+    match direction with
+    | `Variant_payload_is_a_record ->
+        (* Some emitted variant has a record payload whose record is declared. *)
+        List.exists
+          (fun (_, constrs) ->
+            List.exists
+              (fun (_, args) ->
+                List.exists
+                  (function
+                    | TRecord (rn, _) ->
+                        List.exists (fun (n, _) -> n = rn) ir.kern_types
+                    | _ -> false)
+                  args)
+              constrs)
+          ir.kern_variants
+    | `Record_field_is_a_variant ->
+        (* Some emitted record has a variant field whose variant is declared. *)
+        List.exists
+          (fun (_, fields) ->
+            List.exists
+              (function
+                | _, TVariant (vn, _) ->
+                    List.exists (fun (n, _) -> n = vn) ir.kern_variants
+                | _ -> false)
+              fields)
+          ir.kern_types
+  in
+  if not found then begin
+    Printf.printf
+      "NOTHING TO VERIFY in %s: the lowered IR carries no cross-kind \
+       declaration edge, so every device below would pass without exercising \
+       the ordering this file exists to test. The usual cause is static tag \
+       erasure reclaiming a LITERAL constructor application — the kernel's \
+       constructor must stay runtime-selected (see the comment on \
+       require_cross_edge). kern_types=[%s] kern_variants=[%s]\n\
+       %!"
+      shape
+      (String.concat "; " (List.map fst ir.kern_types))
+      (String.concat "; " (List.map fst ir.kern_variants)) ;
+    exit 1
+  end
+
 let run_case ~dev ~name ~kirc ~expected =
   Printf.printf "  [%s] %s / %s: %!" dev.Device.framework dev.Device.name name ;
   try
@@ -183,6 +257,19 @@ let declaring_frameworks = ["CUDA"; "OpenCL"; "Vulkan"; "Metal"]
 let () =
   print_endline
     "=== record/variant cross-kind declaration order (backlog-211) ===" ;
+  (* Before any device: the edge each shape exists to order must actually be in
+     the lowered IR. A device run cannot tell "ordered correctly" apart from
+     "nothing to order". *)
+  require_cross_edge
+    ~shape:"shape A: variant with a record payload"
+    ~ir:(ir_of "shape A" k_variant_payload)
+    ~direction:`Variant_payload_is_a_record ;
+  require_cross_edge
+    ~shape:"shape B: record with a variant field"
+    ~ir:(ir_of "shape B" k_record_variant_field)
+    ~direction:`Record_field_is_a_variant ;
+  print_endline
+    "  both cross-kind edges are present in the lowered IR (not erased)" ;
   let devs = devices () in
   if Array.length devs = 0 then begin
     print_endline "No devices found - nothing to verify" ;
