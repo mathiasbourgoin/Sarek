@@ -15,9 +15,13 @@
  * [Metal_plugin_base]'s preflight count comes from the indices the caller bound
  * ([Kernel_args.count]), and the args are then bound BY LIST POSITION
  * ([atIndex:]) with nothing compared against the compiled function. So Metal
- * sits with CUDA/C and HIP rather than with OpenCL and Vulkan: the shift can
- * misinterpret data and can equally trap. See
- * [Backend_error.reject_soa_params].
+ * sits with CUDA/C and HIP rather than with OpenCL and Vulkan: the shift is
+ * unchecked, and every declared slot from the vector onward is fed a value of
+ * the wrong kind. What the Metal runtime then does with a buffer bound where
+ * the function declares bytes, or the reverse, is NOT something this tree
+ * establishes - unlike OpenCL, where the rejecting call is in this repository
+ * ([Opencl_api.Kernel.set_arg_mem]) - so no symptom is claimed for Metal beyond
+ * the mapping being wrong. See [Backend_error.reject_soa_params].
  *
  * [Sarek_ir_metal] has no SoA lowering to select, so it is refused. (A
  * single-leaf record would in fact bind correctly, N = 1 making the two

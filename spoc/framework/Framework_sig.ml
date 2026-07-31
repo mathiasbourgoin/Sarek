@@ -359,8 +359,8 @@ module type BACKEND = sig
         OpenCL, Vulkan, Metal) call — because emitting AoS source for an SoA
         argument list is an ABI mismatch that no compiler catches, and what
         happens next is per backend: rejected at bind or launch on OpenCL and
-        Vulkan; on CUDA/C, HIP and Metal nothing checks the arity, so the
-        positional shift can misinterpret data or trap on an illegal address
+        Vulkan; on CUDA/C, HIP and Metal nothing compares the expanded list
+        against the compiled kernel, so the positional shift goes unchecked
         (backlog-214; {!Sarek_backend_error.Backend_error.reject_soa_params}
         carries the per-backend detail). The backends that return [None]
         unconditionally (Native, Interpreter, WebGPU) generate no source at all
