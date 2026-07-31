@@ -50,6 +50,7 @@ mkfixture() {
     mkdir -p sub scripts docs
     printf '%s' "$body" >sub/Thing.ml
     printf 'let real = 1\n' >sub/Existing.ml
+    printf 'let a = 1\nlet b = 2\nlet c = 3\nlet d = 4\nlet e = 5\n' >sub/Multi.ml
     printf '# Index\n\nNothing cited here.\n' >docs/Index.md
     printf '# Real\n\nA real document.\n' >docs/Real.md
     [ -n "$md" ] && printf '%s' "$md" >docs/Doc.md
@@ -60,11 +61,15 @@ mkfixture() {
 }
 
 # $1 = case name, $2 = expected exit, $3 = expected message substring
-# ("" = no message requirement), $4 = .ml body, $5 = optional docs/Doc.md body
+# ("" = no message requirement), $4 = .ml body, $5 = optional docs/Doc.md body,
+# $6 = optional scripts/cited-lines-exempt.tsv body (tier-1 exemption channel;
+# deliberately NOT populated from this repo's own file, so a fixture's
+# citations are judged only against what the case itself supplies)
 check() {
-  local name="$1" want="$2" msg="$3" body="$4" md="${5:-}" d out code
+  local name="$1" want="$2" msg="$3" body="$4" md="${5:-}" lex="${6:-}" d out code
   d="$(mkfixture "$body" "$md")"
   cp "$(dirname "$0")/cited-paths-exempt.tsv" "$d/scripts/" 2>/dev/null || true
+  [ -n "$lex" ] && printf '%s' "$lex" >"$d/scripts/cited-lines-exempt.tsv"
   out="$(cd "$d" && bash "$SUBJECT" 2>&1)"
   code=$?
   rm -rf "$d"
@@ -193,6 +198,71 @@ let x = 1
 '
 
 # ===========================================================================
+# TIER 1 (backlog-226). CITATION matched only the path -- "foo.ml:147" and
+# "foo.ml:150" were the same match to it, so a citation pointing at the wrong
+# line, or past the end of the file, passed at exit 0. sub/Multi.ml is a fixed
+# 5-line fixture so a citation's line number can be pinned against a known
+# length.
+# ===========================================================================
+
+# Positive control: a citation whose line number is genuinely in range.
+check "green: a cited line number within the file's length" 0 "OK" \
+  '(* See sub/Multi.ml:3 for the real thing. *)
+let x = 1
+'
+
+# The defect itself: the PATH resolves (unlike the roster/ cases above), but
+# the cited line does not exist. Before tier 1, this was indistinguishable
+# from the case above -- both exit 0.
+check "red: a cited line number past the end of the file" 1 \
+  "sub/Multi.ml has only 5 line(s)" \
+  '(* See sub/Multi.ml:9 for the real thing. *)
+let x = 1
+'
+
+# The other half of the pair: correcting the line number is what flips this
+# back to green -- proves the check is reading the NUMBER, not just noticing
+# "some citation of Multi.ml exists".
+check "green: the same citation with the line number corrected" 0 "OK" \
+  '(* See sub/Multi.ml:5 for the real thing. *)
+let x = 1
+'
+
+# A RANGE citation (":NNN-MM") is checked on its END, not just its start --
+# 565 of the 729 live citations counted in the backlog-226 corpus sweep were
+# ranges, so this is the dominant shape, not an edge case.
+check "red: a range citation whose END exceeds the file's length" 1 \
+  "sub/Multi.ml has only 5 line(s)" \
+  '(* See sub/Multi.ml:3-9 for the real thing. *)
+let x = 1
+'
+
+check "green: a range citation that fits entirely inside the file" 0 "OK" \
+  '(* See sub/Multi.ml:3-5 for the real thing. *)
+let x = 1
+'
+
+# The tier-1 exemption channel (cited-lines-exempt.tsv), scoped to the EXACT
+# citation. Without this a dated audit citing a line from a stated historical
+# baseline (the actual shape found under kb/research/obj-usage/ in the
+# backlog-226 sweep) would have no remedy but to falsify its own record.
+check "green: an exact tier-1 exemption is honoured" 0 "OK" \
+  '(* See sub/Multi.ml:9 for the real thing. *)
+let x = 1
+' "" "sub/Thing.ml::sub/Multi.ml:9	dated audit, frozen to a stated historical baseline
+"
+
+# ...and the same exemption does not blanket-cover a DIFFERENT wrong line
+# number for the same path -- otherwise one row would silence every future
+# defect against that path, which is the one thing tier 1 exists to catch.
+check "red: a tier-1 exemption does not cover a DIFFERENT wrong line" 1 \
+  "sub/Multi.ml has only 5 line(s)" \
+  '(* See sub/Multi.ml:11 for the real thing. *)
+let x = 1
+' "" "sub/Thing.ml::sub/Multi.ml:9	dated audit, frozen to a stated historical baseline
+"
+
+# ===========================================================================
 # MARKDOWN (backlog-210). The .ml source list left every tracked .md file
 # unscanned, and the pass message said "every repo-relative path cited in N
 # tracked .ml/.mli files" — a true sentence that reads like whole-repo coverage.
@@ -230,6 +300,35 @@ check "green: markdown backticked path that resolves" 0 "OK" \
   "$NOOP_ML" '# Doc
 
 The lowering lives in `sub/Existing.ml` these days.
+'
+
+# --- TIER 1, markdown half (backlog-226) ------------------------------------
+# The same defect, reached through a backticked `path:NNN` in prose instead of
+# an OCaml comment.
+check "red: markdown backticked citation with a line past the end" 1 \
+  "sub/Multi.ml has only 5 line(s)" \
+  "$NOOP_ML" '# Doc
+
+The lowering lives in `sub/Multi.ml:9` these days.
+'
+
+check "green: markdown backticked citation with a line in range" 0 "OK" \
+  "$NOOP_ML" '# Doc
+
+The lowering lives in `sub/Multi.ml:3` these days.
+'
+
+check "green: markdown range citation entirely inside the file" 0 "OK" \
+  "$NOOP_ML" '# Doc
+
+The lowering lives in `sub/Multi.ml:3-5` these days.
+'
+
+check "red: markdown range citation whose end exceeds the file" 1 \
+  "sub/Multi.ml has only 5 line(s)" \
+  "$NOOP_ML" '# Doc
+
+The lowering lives in `sub/Multi.ml:3-9` these days.
 '
 
 # An anchor is the READER'"'"'s problem; the file is the gate'"'"'s. Stripped, not

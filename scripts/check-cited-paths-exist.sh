@@ -140,6 +140,20 @@ CITATION = re.compile(
 )
 PLACEHOLDER = re.compile(r"(?:^|/)(?:path/to|\.\.\.)/")
 
+# TIER 1 (backlog-226). CITATION above matches only the path -- "foo.ml:147"
+# and "foo.ml:150" are the SAME match, and the ":147" is invisible to it. That
+# is the defect this regex exists to close: it captures the path AND the cited
+# line (or line range), so a citation can be checked against the file's actual
+# line count. This is the WHOLE of what tier 1 checks -- it does not look at
+# what is on that line, so a citation whose line number is technically in
+# range but points at the wrong DEFINITION (the drift case: the file grew or
+# shrank and the citation was never moved) passes here. That symbol-position
+# check is a distinct, unshipped tier -- see the corpus-sweep note in
+# scripts/cited-lines-exempt.tsv.
+CITATION_LINE = re.compile(
+    r"([A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+\.(?:ml|mli|v|md|sh|json|ya?ml)):(\d+)(?:-(\d+))?(?![A-Za-z0-9])"
+)
+
 
 def comments_only(src):
     """Blank everything that is not inside an OCaml (* ... *) comment.
@@ -437,6 +451,90 @@ def is_exempt(token, citing_file):
     return token in exempt or (citing_file, token) in exempt_scoped
 
 
+# TIER 1's OWN exemption channel (backlog-226) -- deliberately separate from
+# EXEMPT_FILE above rather than reusing it. The two exemptions mean different
+# things: a row in cited-paths-exempt.tsv says "this PATH is not tracked here
+# and that is fine", which would also (wrongly) silence a genuinely dangling
+# path if it were reused for line checks. A row here says "this file's cited
+# LINE NUMBER is known-wrong (or deliberately historical) and is not this
+# change's problem" -- the path itself still gets the ordinary tier-0 check.
+# Every row is scoped to one exact citation (`citing/file.md::path:NNN[-MM]`)
+# rather than bare, because a bare path exemption would also wave through a
+# FUTURE wrong line number for that same path -- the one thing tier 1 exists
+# to catch.
+LINE_EXEMPT_FILE = "scripts/cited-lines-exempt.tsv"
+line_exempt_scoped = set()
+try:
+    for line in open(LINE_EXEMPT_FILE, encoding="utf-8"):
+        line = line.rstrip("\n")
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 2 or not parts[1].strip():
+            print(
+                f"check-cited-paths-exist: {LINE_EXEMPT_FILE}: every exemption "
+                f"needs a TAB-separated reason -- {line!r}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        key = parts[0].strip()
+        if "::" not in key:
+            print(
+                f"check-cited-paths-exist: {LINE_EXEMPT_FILE}: every row must be "
+                f"scoped as citing/file.md::path:NNN -- {line!r}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        f_, _, tok = key.partition("::")
+        line_exempt_scoped.add((f_.strip(), tok.strip()))
+except FileNotFoundError:
+    pass
+
+
+def is_line_exempt(citing_file, cited_line_token):
+    return (citing_file, cited_line_token) in line_exempt_scoped
+
+
+def find_tracked(citation, citing_file):
+    """As `resolves`, but returns the MATCHED tracked path, not a bool.
+
+    Tier 1 needs the actual tracked path to open and count its lines; `resolves`
+    only answers whether one exists. Same resolution rule (repo root or any
+    ancestor of the citing file) so a citation that resolves for tier 0
+    resolves the identical way here.
+    """
+    if citation in tracked:
+        return citation
+    d = os.path.dirname(citing_file)
+    while True:
+        cand = os.path.normpath(os.path.join(d, citation))
+        if cand in tracked:
+            return cand
+        if not d:
+            return None
+        d = os.path.dirname(d)
+
+
+_line_count_cache = {}
+
+
+def line_count(path):
+    """Number of lines in a TRACKED file, or None if it cannot be read.
+
+    Counts newlines actually present rather than assuming a trailing one, so a
+    file with no trailing newline is not silently over-counted by one.
+    """
+    if path in _line_count_cache:
+        return _line_count_cache[path]
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            n = sum(1 for _ in fh)
+    except OSError:
+        n = None
+    _line_count_cache[path] = n
+    return n
+
+
 def read_source(f):
     try:
         return open(f, encoding="utf-8", errors="replace").read()
@@ -456,6 +554,7 @@ def lineno_of(raw, token):
 
 
 dangling = []
+bad_lines = []  # (citing_file, lineno_in_doc, "path:NNN[-MM]", resolved_path, nlines)
 for f in sources:
     try:
         raw = open(f, encoding="utf-8", errors="replace").read()
@@ -497,6 +596,33 @@ for f in sources:
         )
         dangling.append((f, lineno, c))
 
+    # TIER 1 (backlog-226): the path resolved (or its dangling-ness was already
+    # reported above) -- now check any cited LINE NUMBER against the file's
+    # actual line count. A citation whose path does not resolve is skipped
+    # here rather than double-reported: `find_tracked` returning None means
+    # tier 0 already flagged it.
+    for m in CITATION_LINE.finditer(text):
+        c, lo_s, hi_s = m.group(1), m.group(2), m.group(3)
+        if "://" in c or "github.com/" in c:
+            continue
+        if PLACEHOLDER.search(c) or c.startswith("..."):
+            continue
+        if is_exempt(c, f):
+            continue
+        tp = find_tracked(c, f)
+        if tp is None:
+            continue
+        token = f"{c}:{lo_s}" + (f"-{hi_s}" if hi_s else "")
+        if is_line_exempt(f, token):
+            continue
+        nlines = line_count(tp)
+        if nlines is None:
+            continue
+        lo, hi = int(lo_s), int(hi_s) if hi_s else int(lo_s)
+        if lo > nlines or hi > nlines:
+            lineno = lineno_of(raw, token) or lineno_of(raw, c)
+            bad_lines.append((f, lineno, token, tp, nlines))
+
 # --- markdown paths --------------------------------------------------------
 # Same resolution rule (tracked, not present), different extraction. Three
 # forms, in the order a reader meets them.
@@ -536,6 +662,38 @@ for f in md_sources:
             if cm.start() > 0 and span[cm.start() - 1] in "/$":
                 continue
             cited.append(("code", cm.group(0), m.start(1) + cm.start()))
+        # TIER 1 (backlog-226), markdown half. Same rule as the .ml/.mli loop
+        # above: a backticked `path/to/File.ml:NNN` is scanned for its line
+        # number and checked against the file's actual length. Restricted to
+        # backticked spans, same as the tier-0 "code" kind above -- a bare
+        # path:NNN in running prose (outside a code span or link) is not this
+        # repo's citation convention and every live instance found in the
+        # backlog-226 corpus sweep was backticked.
+        for cm in CITATION_LINE.finditer(span):
+            c, lo_s, hi_s = cm.group(1), cm.group(2), cm.group(3)
+            if cm.start() > 0 and span[cm.start() - 1] in "/$":
+                continue
+            if "://" in c or "github.com/" in c:
+                continue
+            if PLACEHOLDER.search(c) or c.startswith("..."):
+                continue
+            if is_exempt(c, f):
+                continue
+            tp = find_tracked(c, f)
+            if tp is None:
+                continue
+            token = f"{c}:{lo_s}" + (f"-{hi_s}" if hi_s else "")
+            if is_line_exempt(f, token):
+                continue
+            nlines = line_count(tp)
+            if nlines is None:
+                continue
+            lo, hi = int(lo_s), int(hi_s) if hi_s else int(lo_s)
+            if lo > nlines or hi > nlines:
+                off = m.start(1) + cm.start()
+                bad_lines.append(
+                    (f, prose.count("\n", 0, off) + 1, token, tp, nlines)
+                )
     for kind, c, off in sorted(set(cited)):
         if "://" in c or "github.com/" in c:
             continue
@@ -553,6 +711,12 @@ for f in md_sources:
 
 for f, lineno, c in dangling:
     print(f"{f}:{lineno if lineno else '?'}: cites '{c}', which is not a tracked file")
+
+for f, lineno, token, tp, nlines in bad_lines:
+    print(
+        f"{f}:{lineno if lineno else '?'}: cites '{token}', but {tp} has only "
+        f"{nlines} line(s)"
+    )
 
 # --- cited shas must be REACHABLE, not merely present ----------------------
 # The defect is not a missing object. `d72a2e6a`, `fbfb3656`, `f6c14c2a` and
@@ -659,13 +823,22 @@ for f, lineno, tok in sha_cites:
 for f, lineno, tok, why in unreachable:
     print(f"{f}:{lineno if lineno else '?'}: cites commit '{tok}': {why}")
 
-if dangling or unreachable:
+if dangling or bad_lines or unreachable:
     print()
     if dangling:
         print(f"{len(dangling)} citation(s) point at a path no reader can open.")
         print("Fix the path, reword so it is not a bare path, or add the path to")
         print(f"{EXEMPT_FILE} with a TAB and a reason if it legitimately")
         print("lives outside this repository.")
+    if bad_lines:
+        print(
+            f"{len(bad_lines)} citation(s) name a line past the end of the cited "
+            "file."
+        )
+        print("Fix the line number, or if the citation deliberately describes a PAST")
+        print("state of the file (a dated audit against a stated baseline), add the")
+        print(f"exact citation to {LINE_EXEMPT_FILE} as `<citing file>::<path>:<NNN>`")
+        print("with a TAB and that reason.")
     if unreachable:
         print(f"{len(unreachable)} cited commit(s) cannot be resolved in a fresh clone.")
         print("Cite a sha that is an ancestor of a pushed branch (check with")
@@ -677,7 +850,9 @@ if dangling or unreachable:
 print(
     "check-cited-paths-exist: OK — every repo-relative path cited in "
     f"{len(sources)} tracked .ml/.mli files and {len(md_sources)} tracked .md "
-    f"files resolves to a tracked file, and all {len(sha_cites)} cited commit "
-    "sha(s) are reachable from a remote branch"
+    f"files resolves to a tracked file; every cited `:NNN`/`:NNN-MM` line number "
+    "is within the cited file's current line count (NOT checked: whether the "
+    "named symbol still sits at that line -- see cited-lines-exempt.tsv); and "
+    f"all {len(sha_cites)} cited commit sha(s) are reachable from a remote branch"
 )
 PY
