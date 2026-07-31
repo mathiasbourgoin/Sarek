@@ -59,20 +59,24 @@ SHAPE="scripts/machine-label-shape.sh"
 [ -n "${MACHINE_LABEL_RESULT_TAIL:-}" ] \
   || { echo "::error::$SHAPE defined no MACHINE_LABEL_RESULT_TAIL" >&2; exit 2; }
 
-# A `git grep` whose output is taken with `|| true` cannot be distinguished from
-# a `git grep` that found nothing, so an operational failure reads as a clean
-# rule -- and the header above promises exit 2 when this check cannot run. Every
-# `git grep` goes through here. 0 = matches, 1 = none, anything else is git
-# failing and is not a verdict.
+# A git query whose output is taken with `|| true`, or read through a process
+# substitution, cannot be distinguished from a query that found nothing: an
+# operational failure reads as a clean rule, and the header above promises exit 2
+# when this check cannot run. EVERY git invocation in this file therefore goes
+# through one of the two helpers below, and there are exactly two because a NUL
+# -separated result cannot survive a bash variable.
 #
 # Filtering and matching are then done with bash's own `=~` and `case`, so there
-# is no other external command whose failure could empty a result: the only
-# processes this check spawns are git, python3 for the scrubber, and mktemp.
+# is no external command whose failure could empty a result: the only processes
+# this check spawns are git, python3 for the scrubber, and mktemp.
 #
-# The result comes back in $GG_OUT rather than on stdout, and that is the whole
-# point: called as `x=$(gg ...)` the function would run in a SUBSHELL, where its
+# `gg` returns in $GG_OUT rather than on stdout, and that is the whole point:
+# called as `x=$(gg ...)` the function would run in a SUBSHELL, where its
 # `exit 2` ends the subshell and the script carries on with an empty result --
 # the exact vacuous pass this exists to prevent, wearing a fail-closed comment.
+# `git_to_file` exists for the same reason: a `done < <(git ...)` process
+# substitution discards the status of the command feeding it, which is how the
+# result-path rule below came to report clean on a failing `git ls-files`.
 GG_OUT=""
 gg() {
   local st
@@ -83,6 +87,23 @@ gg() {
     exit 2
   fi
 }
+
+# git_to_file <dest> <max-ok-status> <git args...>
+# Not called in a subshell, for the reason above.
+git_to_file() {
+  local dest="$1" max="$2" st; shift 2
+  git "$@" >"$dest" 2>/dev/null
+  st=$?
+  if [ "$st" -gt "$max" ]; then
+    echo "::error::git $1 failed (exit $st) -- this check cannot report a pass" >&2
+    exit 2
+  fi
+}
+
+# Every temporary file this check makes, removed on ANY exit including the
+# fail-closed ones.
+rp_list="" ; hp_list="" ; hp_body="" ; hp_exempt_body=""
+trap 'rm -f "${rp_list:-}" "${hp_list:-}" "${hp_body:-}" "${hp_exempt_body:-}"' EXIT
 
 failed=0
 
@@ -120,13 +141,22 @@ fi
 # the first grep to fail made that pipeline yield an empty result and the whole
 # rule reported clean. An external filter that can fail is a way for this gate
 # to pass without looking, so there is no external filter here at all.
+#
+# `git ls-files` goes through git_to_file rather than a `done < <(git ...)`
+# process substitution: the substitution discards the feeding command's status,
+# so a failing `git ls-files` left the loop reading nothing, `bad_paths` empty,
+# and this rule reporting a pass WITHOUT HAVING READ THE TRACKED SET. That is
+# the same shape as the grep pipeline it replaced, one call site along.
 bad_paths=""
+rp_list="$(mktemp)" || { echo "::error::mktemp failed" >&2; exit 2; }
+git_to_file "$rp_list" 0 ls-files -- 'benchmarks/results/*'
 while IFS= read -r rp || [ -n "$rp" ]; do
   [ -n "$rp" ] || continue
   [[ "$rp" =~ /[^/]+${MACHINE_LABEL_RESULT_TAIL} ]] || continue
   [[ "$rp" =~ $MACHINE_LABEL_PATH_SHAPE ]] && continue
   bad_paths+="$rp"$'\n'
-done < <(git ls-files -- 'benchmarks/results/*' 2>/dev/null)
+done <"$rp_list"
+rm -f "$rp_list"; rp_list=""
 if [ -n "$bad_paths" ]; then
   echo "::error::tracked result path(s) are not named after a derived machine label:"
   printf '  %s\n' $bad_paths
@@ -195,9 +225,11 @@ fi
 #
 #  a. `~/`, `$HOME` and `${HOME}` are not findings. Both harms are absent --
 #     those spellings name no user and re-run correctly for everyone -- and the
-#     sweep behind this rule measured 106 tracked occurrences of them on
-#     2026-07-31 (48 tilde-slash, 58 $HOME/${HOME}), every one legitimate. A
-#     rule that lands with a hundred known failures gets switched off.
+#     tracked tree carries over a hundred of them, every one legitimate. A rule
+#     that lands with a hundred known failures gets switched off. The figure is
+#     deliberately NOT quoted here: three copies of it drifted apart in one day,
+#     so the red path RE-MEASURES it from the tree on every run and refuses a
+#     green it obtained from an empty measurement.
 #     So this rule cannot see a portable reach into a home directory, which is
 #     exactly the shape it wants people to write.
 #
@@ -271,9 +303,6 @@ declare -A home_exempt_row=()
 # exemption waived a STAGED home path -- the two halves of the rule disagreeing
 # about which version of the repository they are judging.
 hp_exempt_body="$(mktemp)" || { echo "::error::mktemp failed" >&2; exit 2; }
-# On a trap, not only on the happy path: the three malformed-row exits below are
-# `exit 2` and each one used to leave its temporary file behind.
-trap 'rm -f "${hp_exempt_body:-}" "${hp_list:-}" "${hp_body:-}"' EXIT
 if git show ":0:$HOME_EXEMPT" >"$hp_exempt_body" 2>/dev/null; then
   exempt_lineno=0
   while IFS= read -r line || [ -n "$line" ]; do
@@ -313,16 +342,11 @@ rm -f "$hp_exempt_body"
 # over-selecting a file costs a read, while under-selecting one is a miss, so
 # every boundary decision is made by the tokeniser and none of it here.
 HOME_CANDIDATE_RE="(/home|/Users)/[A-Za-z0-9_-]"
+# Through git_to_file, not an inline `$?`, so that "every git invocation in this
+# file is fail-closed" is a property of the code and not of a comment. 1 = no
+# matches and is fine; anything above it is git failing and is not a pass.
 hp_list="$(mktemp)" || { echo "::error::mktemp failed" >&2; exit 2; }
-git grep -lI --cached -z -E "$HOME_CANDIDATE_RE" -- . >"$hp_list" 2>/dev/null
-hp_status=$?
-# 0 = matches, 1 = none. Anything else is git failing, which is not a pass:
-# `|| true` here would turn every operational error into a clean rule.
-if [ "$hp_status" -gt 1 ]; then
-  echo "::error::git grep failed (exit $hp_status) -- this rule cannot report a pass" >&2
-  rm -f "$hp_list"
-  exit 2
-fi
+git_to_file "$hp_list" 1 grep -lI --cached -z -E "$HOME_CANDIDATE_RE" -- .
 
 home_hits=""
 while IFS= read -r -d '' hf; do
@@ -339,6 +363,12 @@ while IFS= read -r -d '' hf; do
   hl=0
   while IFS= read -r text || [ -n "$text" ]; do
     hl=$((hl + 1))
+    # $HOME_SPLIT_IFS holds no `\r` and the token regex's `$` is end-of-STRING,
+    # so on a blob committed with CRLF a root ending a line became the token
+    # `/home/<acct>\r`, matching neither `/` nor end-of-token -- and the finding
+    # was dropped silently. The slashless shapes this rule was widened for are
+    # exactly the ones that sit at end of line.
+    text="${text%$'\r'}"
     scan="$text"
     # The exemption file is scanned like any other file. On a WELL-FORMED ROW
     # only the first field is waived -- by scanning the reason alone -- so a

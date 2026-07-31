@@ -35,23 +35,24 @@ export const meta = {
 // developer's home directory: SPOC_ROOT defaults to the invoking cwd, which the
 // runner sets to the repository root, and the apparatus lives in the agent
 // harness under $HOME, not in this tree.
-// Fail closed rather than degrade: an unset HOME used to yield `/.claude/...`
-// and a wrong cwd yields a FORMAL that does not exist, and every prompt below
-// then instructs an agent to cd somewhere absent -- which the agent reports as
-// project state rather than as a broken configuration.
-// HOME is needed only to DEFAULT the apparatus root, so the throw is conditional
-// on that default actually being used. Throwing unconditionally while advising
-// the reader to set FORMAL_APPARATUS_ROOT made the advertised recovery
-// impossible -- the check ran before the override was consulted.
-const HOME = process.env.HOME || ''
+// These are STRING CONSTRUCTION ONLY -- no new imports, no top-level throw, no
+// filesystem access. This file is a CWR workflow BODY, not a module a runner
+// evaluates as ES code (it carries a top-level `return`), so there is no way to
+// test added runtime semantics here and none were added. The configuration is
+// instead VALIDATED IN THE FIRST PROMPT, where it is data and can be read.
+//
+// SPOC_ROOT's fallback is process.cwd(), which a launcher started outside the
+// repository makes WRONG rather than absent -- FORMAL and PLAN_FILE become
+// well-formed strings naming a tree that does not exist. HOME defaults only the
+// apparatus root, and an unset HOME used to yield `/.claude/...` silently. Both
+// are checked by the Adapt prompt's PRE-FLIGHT block below.
+const HOME         = process.env.HOME || ''
 const SPOC         = process.env.SPOC_ROOT || process.cwd()
 const FORMAL       = `${SPOC}/formal/convergence-safety`
-if (!process.env.FORMAL_APPARATUS_ROOT && !HOME) {
-  throw new Error('set FORMAL_APPARATUS_ROOT (HOME is unset, so it cannot be defaulted)')
-}
 const SKILL_ROOT   = process.env.FORMAL_APPARATUS_ROOT || `${HOME}/.claude/skills/formal-apparatus`
 const PLAN_FILE    = `${FORMAL}/PLAN.md`
 const FEEDBACK_LOG = `${FORMAL}/report/WORKFLOW_FEEDBACK.md`
+
 // No default: the only path that ever worked here encoded one developer's
 // username and workstation layout in a directory COMPONENT, which is the
 // disclosure this file was cleaned up for and which no path rule can see,
@@ -312,6 +313,20 @@ const planState = await safeAgent(
   - Top-level blockers[] = blockers for the SELECTED currentTask only
   - "HARD:" prefix = currentTask cannot execute this tick
   - T3-GATE always surfaces as a human gate (workflow stops)
+
+  PRE-FLIGHT, before anything else. These paths come from the environment
+  (SPOC_ROOT, FORMAL_APPARATUS_ROOT, HOME) with defaults that can be WRONG rather
+  than absent -- SPOC_ROOT falls back to the invoking cwd, and an unset HOME makes
+  the apparatus root start with a bare slash. A missing tree is a broken
+  configuration, NOT an empty project, and reporting it as project state is the
+  failure this block exists to stop.
+  - Check ${PLAN_FILE} exists. If it does not, STOP and report
+    "HARD: SPOC_ROOT resolved to ${SPOC}, which has no formal/convergence-safety
+    tree -- set SPOC_ROOT to the repository root". Do not create it, and do not
+    proceed with an empty plan.
+  - Check ${SKILL_ROOT} exists. If it does not, STOP and report
+    "HARD: apparatus root ${SKILL_ROOT} is absent -- set FORMAL_APPARATUS_ROOT".
+  - Report both checks explicitly, so a pass is visible rather than assumed.
 
   Pick currentTask = first task whose blockedBy has no "HARD:" entries.
   Write updated plan to ${PLAN_FILE}.`,
