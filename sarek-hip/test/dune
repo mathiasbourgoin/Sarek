@@ -129,3 +129,13 @@
  (alias e2e-hip)
  (action
   (run %{dep:test_hip_f16_shapes.exe})))
+
+; backlog-214 - the HIP plugin refuses a non-empty ~soa_params instead of
+; answering an SoA argument list with AoS source. Pure codegen: no HIP device
+; and no ROCm runtime, so unlike everything else in this directory it is a
+; (test) under the default runtest alias rather than an e2e-hip executable.
+
+(test
+ (name test_hip_soa_refusal)
+ (modules test_hip_soa_refusal)
+ (libraries sarek_hip sarek_ir sarek_backend_error alcotest))

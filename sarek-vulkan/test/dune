@@ -50,3 +50,11 @@
  (name test_vulkan_coopmat_integer)
  (modules test_vulkan_coopmat_integer)
  (libraries sarek_vulkan spoc_framework sarek_ir alcotest astring))
+
+; backlog-214 - the Vulkan plugin refuses a non-empty ~soa_params instead of
+; answering an SoA argument list with AoS source. Pure codegen, no device.
+
+(test
+ (name test_vulkan_soa_refusal)
+ (modules test_vulkan_soa_refusal)
+ (libraries sarek_vulkan sarek_ir sarek_backend_error alcotest))

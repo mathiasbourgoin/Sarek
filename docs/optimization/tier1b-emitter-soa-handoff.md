@@ -197,6 +197,17 @@ codegen-level `~soa_params` knob:
   documented fallback that guarantees "never wrong data". `of_ctypes_ptr` /
   `sub_vector` stay AoS-only.
 
+> **Update (backlog-214).** The sentence above described a guarantee that lived
+> in exactly one place: the caller-side predicate. The five source-generating
+> backends without an SoA lowering (CUDA/C, HIP, OpenCL, Vulkan, Metal) bound
+> `?soa_params:_` away, so a caller that reached them with a non-empty list got
+> AoS source for an SoA argument list — silently wrong data, not a crash. They
+> now raise `Backend_error.reject_soa_params` instead. The `"CUDA/PTX"` gate is
+> unchanged and is still the thing that keeps the refusal unreached; what
+> changed is that it is no longer the only thing. Extending SoA to a further
+> backend remains separate work (backlog-215): each such backend removes its own
+> refusal when its emitter gains the lowering.
+
 This is pure plumbing (no new coalescing) — the roadmap (§1.2c/e) rates it the
 bulk of the SoA cost; it was descoped here so the emitter could ship complete
 and proven. When it lands, extend `test_soa_emitter_equiv` to drive SoA through

@@ -932,8 +932,10 @@ let run ~(device : Device.t) ~(name : string)
                  consequences of one decision rather than two decisions that
                  could disagree — a disagreement here is not a crash but N
                  pointers bound to a packed-AoS param block, i.e. silently wrong
-                 data. Empty list on every non-CUDA/PTX backend, where
-                 generate_source ignores it anyway. *)
+                 data. Empty list on every non-CUDA/PTX backend, because
+                 soa_dispatch is what decides — and since backlog-214 those
+                 backends REFUSE a non-empty list rather than ignore it, so
+                 this gate is the fast path and no longer the only guarantee. *)
               let soa_params = soa_param_names ir args device in
               match B.generate_source ~block ~soa_params ir with
               | None ->

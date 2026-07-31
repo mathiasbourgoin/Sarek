@@ -14,3 +14,11 @@
  (name test_metal_compile_options)
  (modules test_metal_compile_options)
  (libraries sarek_metal alcotest))
+
+; backlog-214 - the Metal plugin refuses a non-empty ~soa_params instead of
+; answering an SoA argument list with AoS source. Pure codegen, no device.
+
+(test
+ (name test_metal_soa_refusal)
+ (modules test_metal_soa_refusal)
+ (libraries sarek_metal sarek_ir sarek_backend_error alcotest))

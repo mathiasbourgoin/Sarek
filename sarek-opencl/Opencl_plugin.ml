@@ -187,8 +187,12 @@ module Backend : Framework_sig.BACKEND = struct
       returned None" (PR #259 review); a blanket [try ... with _ -> None]
       previously swallowed it. Codegen never legitimately declines a kernel by
       returning [None]. *)
-  let generate_source ?block:_ ?soa_params:_ (ir : Sarek_ir_types.kernel) :
+  let generate_source ?block:_ ?(soa_params = []) (ir : Sarek_ir_types.kernel) :
       string option =
+    (* Refused rather than bound away (backlog-214): [Sarek_ir_opencl] emits the
+       packed AoS signature for every vector parameter and has no SoA lowering
+       to select. *)
+    Sarek_backend_error.Backend_error.reject_soa_params ~backend:name soa_params ;
     let source = Sarek_ir_opencl.generate_with_types ~types:ir.kern_types ir in
     (* Add FP64 pragma if kernel uses double precision *)
     let source =
