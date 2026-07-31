@@ -228,6 +228,54 @@ let foreign_identifier_does_not_leak ~emitter ~emit ~kernel_src ~via ~via_name
     before
     after
 
+(** {1 The [?framework] parameter is actually wired}
+
+    Everything above would still pass if [?framework] were deleted outright and
+    each emitter always used its own default: the fix for the headline bug is
+    the REMOVAL of [set_framework], and on every existing path the tag a caller
+    passes equals the default it would have fallen back to. That makes the new
+    parameter inert in production, and a reviewer mutating it away would see a
+    green suite.
+
+    These cases close that hole from the only direction available without making
+    [SNative] reachable (which is a separate item): they pass a tag that is NOT
+    the emitter's own and assert the registry answered under it. Discarding the
+    argument — [state ?framework k] to [state k] — turns every one of them red,
+    because the emitter then answers under its own default.
+
+    What they do NOT establish: that any production caller benefits. None does
+    today. They pin the wiring, not a user-visible behaviour. *)
+
+let framework_tag_reaches_the_registry ~emitter ~generate ~own_spelling
+    ~foreign_tag ~foreign_spelling () =
+  let default_source = generate ?framework:None sin_kernel in
+  Alcotest.check
+    Alcotest.bool
+    (Printf.sprintf
+       "%s with no ~framework must fall back to its own tag and spell \
+        Float32.sin %s. Emitted:\n\
+        %s"
+       emitter
+       own_spelling
+       default_source)
+    true
+    (contains ~needle:own_spelling default_source) ;
+  let tagged_source = generate ?framework:(Some foreign_tag) sin_kernel in
+  Alcotest.check
+    Alcotest.bool
+    (Printf.sprintf
+       "%s given ~framework:%S must query the registry under THAT tag and \
+        spell Float32.sin %s. If this reads %s instead, ~framework is being \
+        discarded and the whole parameter is dead. Emitted:\n\
+        %s"
+       emitter
+       foreign_tag
+       foreign_spelling
+       own_spelling
+       tagged_source)
+    true
+    (contains ~needle:foreign_spelling tagged_source)
+
 (** {1 Concurrent generations} *)
 
 (** A kernel matching on a one-payload constructor of a variant named [t]. The
@@ -348,6 +396,49 @@ let () =
                ~via_name:"GLSL"
                ~expected:"rsqrtf("
                ~foreign:"inversesqrt(");
+        ] );
+      ( "framework_parameter_is_wired",
+        [
+          Alcotest.test_case
+            "CUDA honours a foreign ~framework"
+            `Quick
+            (framework_tag_reaches_the_registry
+               ~emitter:"CUDA"
+               ~generate:(fun ?framework k ->
+                 Sarek_codegen.Sarek_ir_cuda.generate ?framework k)
+               ~own_spelling:"sinf("
+               ~foreign_tag:"OpenCL"
+               ~foreign_spelling:"sin(");
+          Alcotest.test_case
+            "OpenCL honours a foreign ~framework"
+            `Quick
+            (framework_tag_reaches_the_registry
+               ~emitter:"OpenCL"
+               ~generate:(fun ?framework k ->
+                 Sarek_codegen.Sarek_ir_opencl.generate ?framework k)
+               ~own_spelling:"sin("
+               ~foreign_tag:"CUDA"
+               ~foreign_spelling:"sinf(");
+          Alcotest.test_case
+            "Metal honours a foreign ~framework"
+            `Quick
+            (framework_tag_reaches_the_registry
+               ~emitter:"Metal"
+               ~generate:(fun ?framework k ->
+                 Sarek_codegen.Sarek_ir_metal.generate ?framework k)
+               ~own_spelling:"sin("
+               ~foreign_tag:"CUDA"
+               ~foreign_spelling:"sinf(");
+          Alcotest.test_case
+            "WGSL honours a foreign ~framework"
+            `Quick
+            (framework_tag_reaches_the_registry
+               ~emitter:"WGSL"
+               ~generate:(fun ?framework k ->
+                 Sarek_codegen.Sarek_ir_wgsl.generate ?framework k)
+               ~own_spelling:"sin("
+               ~foreign_tag:"CUDA"
+               ~foreign_spelling:"sinf(");
         ] );
       ( "generations_do_not_interleave",
         List.map
