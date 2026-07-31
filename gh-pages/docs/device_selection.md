@@ -54,6 +54,22 @@ SPOC_DISABLE_OPENCL=1 dune exec -- sarek-device-info
 SPOC_DISABLE_GPU=1 dune exec -- my_program.exe
 ```
 
+## Test-only strictness variable
+
+`SAREK_REQUIRE_PTX=1` is read by one test, `sarek/tests/e2e/test_soa_emitter_equiv.ml`,
+not by the library. Unset (the default everywhere, including CI), a host with no
+CUDA/PTX device silently skips that test's SoA legs and the binary still exits 0 —
+the normal, desired outcome on the vast majority of hosts. Set to exactly `1` on a
+host that is expected to have a CUDA/PTX device (e.g. a ZLUDA-equipped machine), it
+turns "no device reported framework `CUDA/PTX`" into a failure, so a regression that
+silently drops the device is caught instead of reading as a pass. It is opt-in-by-hand:
+no dune rule, Makefile target or CI job sets it today.
+
+```bash
+SAREK_REQUIRE_PTX=1 LD_LIBRARY_PATH=$HOME/opt/zluda \
+  dune exec sarek/tests/e2e/test_soa_emitter_equiv.exe
+```
+
 ## Select a device in the example / benchmark programs
 
 The bundled e2e examples and benchmarks accept backend/device flags:

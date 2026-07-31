@@ -12,6 +12,7 @@ Reviewed execution-facing files under `sarek/sarek/**` and, following the 2026-0
 - `sarek/sarek/BSP.md`: intended BSP/barrier semantics for CPU execution.
 - `sarek/execute/Execute.ml`: runtime dispatch, kernel argument conversion, vector transfer integration, native/interpreter/backend selection, and stale marking. (`sarek/sarek/Execute.ml` is now a 6-line forwarding shim.)
 - `sarek/execute/Execute_error.ml`: execution error variants and formatting. (`sarek/sarek/Execute_error.ml` is now a 6-line forwarding shim.)
+- `sarek/execute/Soa_launch.ml`: `run_soa` — executes a kernel with SoA-lowered custom-vector arguments (CUDA/PTX only). Two caller obligations, both on the caller and neither enforced by the type system: it never gathers automatically (a kernel that writes an SoA leaf requires the caller to `Transfer.to_cpu` each leaf, then `Soa_vector.gather`), and it never synchronizes (it returns once the launch is queued; a caller must drain the device, e.g. `Transfer.flush`, before reading results back rather than resting on same-stream ordering). See backlog-225 (`sarek/tests/e2e/test_soa_emitter_equiv.ml:703`) for an intermittent, unexplained round-trip mismatch observed on this path.
 - `sarek/sarek/Kirc_types.ml` and `Kirc_types.mli`: KIRC type, expression, statement, declaration, and kernel AST definitions.
 - `sarek/sarek/Sarek_ir.ml`: lower-level IR representation used by interpreter/fusion paths.
 - `sarek/sarek/Sarek_value.ml`: boxed runtime values and conversion helpers.

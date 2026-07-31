@@ -631,7 +631,17 @@ let check name dev n runner =
       | None -> ()
       | Some o ->
           let s = Vector.get o i in
-          if abs_float (s -. r) > 1e-3 || abs_float (s -. a) > 1e-4 then begin
+          (* A NaN read-back must not silently PASS: every [>] comparison
+             against NaN is false, so an uninitialised or garbage read-back
+             (the output vector is never host-initialised before the D2H) is
+             otherwise indistinguishable from a correct result — the same
+             failure mode this file's backlog-225 comment records for
+             [check_roundtrip]. Reject explicitly before the tolerance test. *)
+          if
+            (not (Float.is_finite s))
+            || abs_float (s -. r) > 1e-3
+            || abs_float (s -. a) > 1e-4
+          then begin
             ok := false ;
             if i < 5 then
               Printf.printf
@@ -647,7 +657,9 @@ let check name dev n runner =
     for i = 0 to n - 1 do
       let r = reference i in
       let a = Vector.get out_aos i in
-      if abs_float (a -. r) > 1e-3 then begin
+      (* Reject a non-finite read-back explicitly; see the comment in
+         [check_leg] above for why a bare tolerance test cannot. *)
+      if (not (Float.is_finite a)) || abs_float (a -. r) > 1e-3 then begin
         ok := false ;
         if i < 5 then
           Printf.printf "\n  AoS mismatch @%d: aos=%f ref=%f%!" i a r
@@ -705,19 +717,54 @@ let check_gate dev =
 
    This case and the [Vector.fill] row of [check_relaunch] have each been seen
    to fail once, both on ZLUDA's CUDA/PTX view of the AMD Ryzen 9 7950X
-   integrated GPU, and both with the same shape: every index wrong, x and z
-   right, and got.y equal to the value the host wrote — exactly half the
-   expected doubled value. Only y carries information. It is the one leaf the
-   kernel writes, so on x and z a read-back that returned pre-kernel bytes and a
-   store that never landed look the same; the shape does not distinguish them.
+   integrated GPU. What each instrument actually observed differs and is NOT
+   pooled into one shape:
+     - [check_roundtrip] (this case): at the failing run, indices 0-4 (the only
+       ones its printer reports) showed y equal to the value the host wrote —
+       exactly half the expected doubled value — with x and z right. The
+       printer only prints mismatching indices and caps at 5, so indices 5..
+       n-1 were not reported and are pass/fail-indistinguishable in that run.
+     - [check_relaunch]'s [Vector.fill] row: reads ONLY y (line 1247); x and z
+       are never read on that path, so "x and z right" was never observed
+       there. Its printer is guarded by [if !ok then], so exactly one index is
+       ever reported: the recorded evidence is the single line
+       [relaunch mismatch @0], with y again equal to the un-doubled value.
+   The two occurrences therefore agree on the one thing both instruments can
+   see — y stuck at the un-doubled value — which is consistent with, but does
+   not establish, a single shared shape across the whole vector. Confirming
+   that would need both legs reporting x, y and z at every index, which
+   neither did. Only y carries information in either instrument: it is the one
+   leaf the kernel writes, so on x and z (where read) a read-back that
+   returned pre-kernel bytes and a store that never landed would look the
+   same; the shape does not distinguish them.
 
-   Rare, and not deterministic: twice in some 2,500 executions of this test
-   binary, and never once in a loop driving this case alone. Both
-   occurrences were on the same host, hours apart, this one of them under an
-   unmodified [dune runtest]. The [Vector.fill]
-   occurrence was on a leg that already synchronizes after the
-   launch, so the [Transfer.flush] added below is not established as the cause
-   and is not offered as the fix. No root cause is known. *)
+   The two occurrences were noticed over an unspecified longer campaign of
+   "some 2,500" executions of this test binary; that ~2,500 is NOT a precise
+   denominator for the 2 occurrences and no combined rate is asserted from it.
+   Separately, and NOT claimed disjoint from the ~2,500 above, a deliberate
+   non-reproduction campaign afterward enumerated: 0/2,000 in one batch,
+   0/300 in another, 0/40 run concurrently, 0/40 on a cold ZLUDA cache, 0/3
+   under [dune runtest --force], and 0/60 in a loop driving this case alone —
+   2,443 runs total, every one of them zero. Whether the 2 original
+   occurrences fall inside or outside that 2,443 cannot be determined from
+   the record; the arithmetic does not reconcile a total near 2,500 against
+   2,443 enumerated zero-runs plus 2 known failures, and no attempt is made
+   here to force a reconciliation. Both occurrences were on the same host,
+   hours apart, this one of them under an unmodified [dune runtest]. Positive
+   control: every run counted toward the 2 occurrences was confirmed (T1,
+   code-reading of the counted stdout) to have printed a
+   [SoA-roundtrip [CUDA/PTX]] row for BOTH ZLUDA-visible CUDA/PTX devices on
+   this host — the AMD Radeon RX 7900 XTX and the AMD Ryzen 9 7950X
+   integrated GPU — so a zero on either device is not indistinguishable from a
+   skipped leg. No per-device pass/fail counts were kept, so device-specificity
+   is not ruled out and is not claimed either way. The 0/60 isolated-case
+   sample above is far too few to distinguish from the rate implied by 2
+   occurrences in ~2,500 (expected count in 60 runs at that rate is ~0.05); it
+   is recorded as an inconclusive negative, not as evidence that isolating the
+   case suppresses the defect. The [Vector.fill] occurrence was
+   on a leg that already synchronizes after the launch, so the [Transfer.flush]
+   added below is not established as the cause and is not offered as the fix.
+   No root cause is known. *)
 let check_roundtrip dev n =
   begin
     Printf.printf
@@ -746,23 +793,28 @@ let check_roundtrip dev n =
         ~block
         ~grid
         () ;
-      (* [run_soa] returns as soon as the launch is QUEUED — [Kernel.launch] is
-         a bare [cuLaunchKernel] and neither it nor [run_soa] synchronizes. This
-         case called [Soa_launch.run_soa] directly and went straight on to the
-         read-back with nothing in between; the two launch helpers this file
-         defines for its other cases, [run_soa] and [run_soa_via_api], each end
-         with [Transfer.flush]. (Not a claim about every other launch site in
-         the file — only about those two and this one.)
+      (* [Soa_launch.run_soa] returns as soon as the launch is QUEUED —
+         [Kernel.launch] is a bare [cuLaunchKernel] and neither it nor
+         [Soa_launch.run_soa] synchronizes. This case called
+         [Soa_launch.run_soa] directly and went straight on to the read-back
+         with nothing in between; this file's own [run_soa] (line 440) and
+         [run_soa_via_api] — the two launch helpers this file defines for its
+         other cases — each end with [Transfer.flush]. (Not a claim about
+         every other launch site in the file — only about those two and this
+         one.)
 
-         Under legacy null-stream semantics the blocking [cuMemcpyDtoH] inside
-         [to_cpu] is already ordered after the launch, so on a conforming driver
-         this line changes nothing. It is here so the case does not REST on that:
-         what it is meant to exercise is the leaf writeback and the gather, and a
-         read-back racing the kernel would report on the driver's stream
-         ordering instead, in the same shape (an unchanged y) as a genuine
-         writeback failure. Not offered as a fix for backlog-225 — see the note
-         at the head of this function; that shape has also been observed on a
-         leg that already flushed. *)
+         Today every backend issues the launch and the D2H on the same
+         (default) stream, so they are already ordered; this is ordinary
+         same-stream FIFO, which every driver promises, not the legacy-vs-
+         per-thread-default-stream distinction, and this contract does not
+         promise that placement will hold — see [Soa_launch.ml:199-203]. The
+         [Transfer.flush] call below is here so the case does not REST on
+         today's placement: what it is meant to exercise is the leaf
+         writeback and the gather, and a read-back racing the kernel would
+         report on the driver's stream ordering instead, in the same shape (an
+         unchanged y) as a genuine writeback failure. Not offered as a fix for
+         backlog-225 — see the note at the head of this function; that shape
+         has also been observed on a leg that already flushed. *)
       Transfer.flush dev ;
       (* Device wrote the y leaf; round-trip explicitly per the run_soa
          contract: D2H every leaf, then gather back into the AoS vector. *)
@@ -774,9 +826,18 @@ let check_roundtrip dev n =
       for i = 0 to n - 1 do
         let got = Soa_vector.get sv i in
         let o = orig i in
-        (* y doubled; x and z untouched. *)
+        (* y doubled; x and z untouched. Non-finite values are rejected
+           explicitly: [Vector.create] never host-initialises this vector
+           before the D2H, so a launch whose store never landed can return
+           uninitialised device memory, and every [>] comparison against NaN
+           is false — a garbage read-back would otherwise silently PASS,
+           which is exactly the failure mode this function's backlog-225
+           comment records. *)
         if
-          abs_float (got.y -. (o.y *. 2.0)) > 1e-3
+          (not (Float.is_finite got.y))
+          || (not (Float.is_finite got.x))
+          || (not (Float.is_finite got.z))
+          || abs_float (got.y -. (o.y *. 2.0)) > 1e-3
           || abs_float (got.x -. o.x) > 1e-3
           || abs_float (got.z -. o.z) > 1e-3
         then begin
@@ -2187,28 +2248,41 @@ let check_layout_wired dev =
         false)
 
 (* ── making the absence of a CUDA/PTX device DEMANDABLE ─────────────────────
-   Every SoA-ABI case in this file prints a named SKIP on a device that is not
+   Every SoA-ABI case in this file either prints a named SKIP or reports
+   PASSED with a "(SoA skipped: non-PTX)" note on a device that is not
    CUDA/PTX, and the whole binary then exits 0. That is right by default: a
-   device that is simply not present must read as skipped-because-absent, never
-   as a pass and never as a failure. But it also means that a caller reading
+   device that is simply not present must read as skipped-because-absent,
+   never as an unqualified pass and never as a failure. (This is a claim about
+   the SoA-ABI cases specifically, audited by reading their gates at the four
+   [if not (is_ptx dev) then None] sites and [check_leg]/[check]'s handling of
+   [None] — it is not a claim about every gate in this file; see [check_gate]
+   below, which is not audited here.) But it also means that a caller reading
    only the exit code cannot tell a host that exercised the SoA legs from one
-   that skipped every last one of them — which is how a defect in those legs can
-   sit unobserved behind a green run.
+   that skipped or no-op-passed every last one of them — which is how a defect
+   in those legs can sit unobserved behind a green run.
 
    [SAREK_REQUIRE_PTX] lets a caller that BELIEVES it has such a device say so,
-   and be told when it does not. Set to anything other than "" or "0" it turns
-   "no CUDA/PTX device was enumerated" into a failure.
+   and be told when it does not. Following this repository's env-var
+   convention (e.g. [sarek-cuda/Cuda_shared.ml], [sarek-hip/Hip_shared.ml],
+   [sarek-opencl/Opencl_plugin.ml], [test_df64.ml]), only the exact value "1"
+   turns "no CUDA/PTX device was enumerated" into a failure; every other
+   value, including "false", "no", "off" and "disabled", is a no-op exactly
+   like unset or "".
 
    The claim is exactly that: a device whose [Device.framework] is the string
    "CUDA/PTX" was ENUMERATED. Enumeration is all it can see from here. It does
    not assert that any SoA case passed, or that a kernel ran, or that the device
    is usable — the per-case rows below are what say those things, and they are
    unaffected by this variable. Nor does it make the PTX leg required: nothing
-   in this repository sets the variable, and unset nothing here changes. *)
+   in this repository's dune rules, Makefile targets or CI jobs sets the
+   variable, and unset nothing here changes. It is opt-in-by-hand only,
+   currently unreferenced by any automated run; see
+   [sarek/tests/e2e/dune]'s env-var comment block and
+   [gh-pages/docs/device_selection.md]. *)
 let ptx_required =
   match Sys.getenv_opt "SAREK_REQUIRE_PTX" with
-  | None | Some "" | Some "0" -> false
-  | Some _ -> true
+  | Some "1" -> true
+  | None | Some _ -> false
 
 let () =
   Benchmarks.init () ;
@@ -2226,6 +2300,17 @@ let () =
   let scope_ok = check_skip_reason_scope () in
   let layout_ok = check_layout_validation () && derive_ok && scope_ok in
   let devs = Device.all () in
+  (* The [ptx_required] arm below is currently UNREACHABLE on this host and,
+     as far as this file's tooling can tell, on any host reached by this
+     test's normal invocation: [Device.all ()] always includes Native and
+     Interpreter — [SPOC_DISABLE_GPU=1] gates only the GPU plugins
+     (Cuda_shared.ml, Opencl_plugin.ml, Vulkan_plugin.ml, Hip_shared.ml) and
+     leaves those two enumerated — so [Array.length devs = 0] does not occur
+     via any documented host control. Verified by execution:
+     [SPOC_DISABLE_GPU=1 SAREK_REQUIRE_PTX=1] (no ZLUDA) still enumerates
+     Native and Interpreter and falls through to the [any_ptx] branch below,
+     not this one. Kept for defence-in-depth against a future host that
+     truly enumerates nothing, not because it is exercised today. *)
   if Array.length devs = 0 then (
     print_endline
       "test_soa_emitter_equiv: no device - SKIPPED (layout validation still \
@@ -2426,10 +2511,15 @@ let () =
       if not (check_short_arg_list dev) then ok := false ;
       (* Leaf-write round-trip (D2H + gather) on CUDA/PTX. *)
       (* Through [guarded] like the group above it, not a bare [if is_ptx]:
-         that conjunct printed nothing at all on a non-PTX device, which is the
-         last skip-as-pass row in this loop. The blocker is the SoA-ABI one — the
-         hand-written D2H + gather this case performs is only meaningful where
-         the leaf ABI was selected. *)
+         that conjunct printed nothing at all on a non-PTX device. NOT the last
+         silent-pass row in this loop, though: [check_gate] above (line 678)
+         is [if is_ptx dev then true], which returns [true] with no printf on
+         every CUDA/PTX device — a silent pass on the very devices the SoA
+         legs run on. That row is pre-existing and out of scope for this
+         change; it is noted here only so this comment does not claim a
+         completeness it does not have. The blocker for THIS case is the
+         SoA-ABI one — the hand-written D2H + gather this case performs is
+         only meaningful where the leaf ABI was selected. *)
       if
         not
           (guarded

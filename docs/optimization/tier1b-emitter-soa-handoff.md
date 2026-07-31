@@ -62,7 +62,8 @@ existing enumeration — the STOP condition in the task did not fire).
   custom-vector `[%kernel]` IR compiled AoS (`run_vectors`) and SoA
   (`generate ~soa_params` + `run_source ~inject_lengths:false` with
   host-transposed leaf vectors) produce identical results to a pure-OCaml
-  reference. **PASS** for `point3d` (3× f32) and `dpair` (2× f64) on RX 7900 XTX
+  reference. **PASS, with a known intermittent exception recorded below
+  (backlog-225)** for `point3d` (3× f32) and `dpair` (2× f64) on RX 7900 XTX
   and CPU-as-CUDA under ZLUDA; `point3d`'s AoS leg also passes on
   OpenCL/Vulkan/Native/Interpreter. i32/i64 leaves are covered at the
   PTX-instruction + ptxas-assembly level AND on device — see the table below and
@@ -72,7 +73,7 @@ existing enumeration — the STOP condition in the task did not fire).
 
 | Leaf type combo | PTX markers | ptxas | device e2e (ZLUDA) |
 |---|---|---|---|
-| f32 × 3 (`point3d`) | ✓ | ✓ | ✓ |
+| f32 × 3 (`point3d`) | ✓ | ✓ | ✓ (see backlog-225 below: 2 intermittent failures observed) |
 | f64 × 2 (`dpair`) | ✓ | ✓ | ✓ |
 | i32 + f64 (`{i;d}`) | ✓ | ✓ (`soa_mixed`) | ✓ (2026-07-30, ZLUDA) |
 | i64 + i32 (`{p;q}`) | ✓ (`ld.global.s64`+`s32`) | ✓ (`soa_long`) | ✓ (2026-07-30, ZLUDA) |
@@ -90,6 +91,25 @@ the generic dispatch together. Each leaf is written to its own output array at
 its own width — deliberately no int<->float conversion, since a conversion folds
 both leaves into one number and a per-leaf stride error could then be masked by a
 compensating error in the other leaf.
+
+> **Update (backlog-225, not fixed).** The round-trip case (`check_roundtrip`)
+> and the `Vector.fill` row of `check_relaunch` (a different test, same file)
+> have each been seen, once, to return `y` equal to the un-doubled host value
+> — exactly half the expected result — on ZLUDA's CUDA/PTX view of the AMD
+> Ryzen 9 7950X integrated GPU. 2 occurrences over "some 2,500" executions of
+> the test binary; a separate non-reproduction campaign of 2,443 further runs
+> (2,000 + 300 + 40 concurrent + 40 cold-cache + 3 under `--force` + 60
+> isolated) all came back zero, and that count does not arithmetically
+> reconcile against ~2,500 — whether the 2 occurrences are inside or outside
+> the 2,443 cannot be determined from the record. **No root cause
+> established. Not fixed.** A `Transfer.flush` was added on the
+> `check_roundtrip` leg defensively, not as a fix — the `check_relaunch`
+> occurrence was already on a leg that synchronizes. Positive control: every
+> counted run was confirmed to have printed a `SoA-roundtrip [CUDA/PTX]` row
+> for both CUDA/PTX devices on this host. See the full record at
+> `sarek/tests/e2e/test_soa_emitter_equiv.ml:703` and the `SAREK_REQUIRE_PTX`
+> gate this investigation added (closes the "silently skipped, not
+> exercised" self-skip hole; does not touch this defect).
 
 Observed: both rows OK on the N-leaf PTX ABI (2 ZLUDA devices). On the AoS
 fallback the two rows differ and are counted separately — the earlier single "5

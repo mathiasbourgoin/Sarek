@@ -17,7 +17,18 @@ module Cuda : Framework_sig.PLUGIN_BASE = struct
 
   let version = (12, 0, 0)
 
-  (** Current device for kernel compilation/execution *)
+  (** Current device for kernel compilation/execution.
+
+      backlog-225 review (T1, code-reading only, not observed at runtime): this
+      is a plain global ref, while {!Cuda_api}, one layer below, deliberately
+      replaced the equivalent tracker with a [Domain.DLS] key because a CUDA
+      current context is per-OS-thread, so a shared ref lets one domain's
+      context switch mis-attribute another domain's launches (see Cuda_api.ml's
+      device-tracking comment). This layer and the one underneath it now
+      disagree about the threading model. Not implicated in backlog-225 itself:
+      the failing test is single-domain, where this ref and the DLS value
+      underneath cannot diverge. Filed, not fixed: see also Cuda_api.ml:435
+      (Stream.synchronize) for the sibling finding from the same review. *)
   let current_device : Cuda_api.Device.t option ref = ref None
 
   module Device = struct

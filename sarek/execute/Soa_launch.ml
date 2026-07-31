@@ -196,11 +196,20 @@ let rs_args_of_reg (a : Execute.vector_arg) (dev : Device.t) :
     this triggers a D2H copy) and then call {!Spoc_core.Soa_vector.gather}
     (per-leaf host -> AoS host). [run_soa] never gathers automatically.
 
-    It does not synchronize either: it returns once the launch is QUEUED. A
-    driver with legacy null-stream semantics already orders the blocking D2H
-    that [Spoc_core.Transfer.to_cpu] issues behind the launch, but this contract
-    does not promise that — drain the device (e.g. {!Spoc_core.Transfer.flush})
-    before the read-back rather than resting on it.
+    It does not synchronize either: it returns once the launch is QUEUED. Today
+    every backend issues the launch and the D2H that [Spoc_core.Transfer.to_cpu]
+    performs on the same (default) stream, so they are already ordered by
+    ordinary same-stream FIFO, which every driver promises; that is not a
+    legacy-vs-per-thread-default-stream distinction, and this contract does not
+    promise that placement will hold — drain the device (e.g.
+    {!Spoc_core.Transfer.flush}) before the read-back rather than resting on it.
+
+    This same hazard — a caller reading back before the device has actually
+    finished — is not specific to [run_soa]: {!Execute.run_vectors} and
+    {!Execute.run_source} reach the same CUDA path (a bare launch on the default
+    stream, no drain), and neither documents an obligation to synchronize before
+    reading results back. This docstring covers only [run_soa]'s contract; it
+    makes no claim about those two entry points one way or the other.
 
     @param device Target device (must be a CUDA/PTX backend)
     @param ir Sarek IR kernel definition

@@ -433,6 +433,19 @@ module Stream = struct
     check "cuStreamDestroy" (cuStreamDestroy stream.handle)
 
   let synchronize stream =
+    (* backlog-225 review: this was the only function in the module omitting
+       Device.set_current before touching the stream/device. [Stream.default]
+       is a NULL handle (the current context's null stream, not necessarily
+       [stream.device]'s), so without this call, with device A current and a
+       [Stream.default B] in hand, this would drain A and then retire B's
+       kernarg keepalives under (B, 0) below — a use-after-free once the GC
+       reclaims the argument CArray before B's kernel has actually launched.
+       Filed as a real hazard (T1, code-reading only, not observed at
+       runtime); see CHANGES.md and Cuda_plugin_base.ml:21 for the sibling
+       finding. Not implicated in backlog-225 itself: both of that
+       investigation's failing legs drain via [Device.synchronize], which
+       already calls [set_current] correctly. *)
+    Device.set_current stream.device ;
     check "cuStreamSynchronize" (cuStreamSynchronize stream.handle) ;
     (* Draining one stream retires only that stream's kernargs. *)
     retire_stream stream.device.id (stream_key_of_ptr stream.handle)
