@@ -60,6 +60,13 @@
   (backend bisect_ppx)))
 
 (test
+ (name test_wgsl_array_equality_refusal)
+ (modules test_wgsl_array_equality_refusal)
+ (libraries sarek_ir sarek_codegen sarek_backend_error alcotest)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(test
  (name test_glsl_name_collision)
  (modules test_glsl_name_collision)
  (libraries sarek_ir sarek_codegen alcotest)

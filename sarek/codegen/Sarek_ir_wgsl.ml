@@ -491,6 +491,24 @@ let wgsl_thread_intrinsic = function
 (** Names of scalar kernel params — accessed as [params.<name>] in WGSL. *)
 let scalar_param_names : string list ref = ref []
 
+(** Whole-value equality on a vector/array-typed operand — [TVec]/[TArray] in
+    the IR — is NOT refused by the frontend (backlog-217; see
+    {!Sarek_types.is_uncomparable_operand_typ}, which deliberately excludes them
+    because [src = dst] on a pointer-shaped C-family value emits [(src == dst)],
+    and clang and glslang both accept that). WGSL is the exception: measured,
+    naga rejects the identical shape with "Incompatible operands: Equal(Array …,
+    _)" — WGSL has no equality operator on the `array<T>`/`array<T, N>` type
+    naga assigns both a [vector] kernel parameter and a local [array] to, unlike
+    a C-family pointer. This predicate is deliberately narrow: it only matches
+    an operand that reaches [gen_expr] as the WHOLE vector/array value (a bare
+    [EVar] of [TVec]/[TArray] type). Indexing (`a.(i)`) lowers to
+    [EArrayRead]/[EArrayReadExpr], which yields a scalar element and is
+    unaffected — comparing two elements is ordinary scalar equality and WGSL
+    accepts it. *)
+let is_array_shaped_operand = function
+  | EVar {var_type = TArray _ | TVec _; _} -> true
+  | _ -> false
+
 let rec gen_expr buf = function
   | EConst (CInt32 n) -> Buffer.add_string buf (Int32.to_string n ^ "i")
   | EConst (CInt64 _) ->
@@ -519,6 +537,25 @@ let rec gen_expr buf = function
         Buffer.add_string buf vn
       end
       else Buffer.add_string buf vn
+  | EBinop ((Eq | Ne), e1, e2)
+    when is_array_shaped_operand e1 || is_array_shaped_operand e2 ->
+      (* backlog-217. The frontend permits this — [TVec]/[TArray] are outside
+         the refused set on purpose, because the C-family emitters print a
+         legal pointer comparison. WGSL has no equality operator on
+         `array<T>`/`array<T, N>`; naga rejects it with "Incompatible
+         operands: Equal(Array …, _)" (measured, naga 30.0.0). Refused here,
+         at the ONE emitter this is true for, rather than widening the
+         shared typer predicate and breaking the four backends where the
+         construct works. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct
+           "array equality"
+           "a vector or local-array value reached WGSL `==`/`!=` as a whole \
+            operand (backlog-217). WGSL has no equality operator on `array<T>` \
+            — naga rejects this with \"Incompatible operands: Equal(Array \
+            …)\", even though the same comparison is a legal pointer-equality \
+            check in the C-family emitters (clang, glslang). Compare \
+            individual elements instead.")
   | EBinop (op, e1, e2) ->
       Buffer.add_char buf '(' ;
       gen_expr buf e1 ;
