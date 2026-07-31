@@ -124,12 +124,16 @@
   and WGSL now raise the same shared `Sarek_ir_codegen.native_block_refusal`
   the other three do, naming what the caller should do instead (express the
   operation in Sarek, or route it through PTX, which is the one backend that
-  still serves `[%native]` directly). Along the way, the per-generation facts
-  each backend needs while emitting (the kernel's variant table and the
-  `current_framework` tag) moved from module-level `ref`s — shared and
-  clobbered across generations, including across domains — to a value threaded
-  through the emit calls, closing a cross-generation and cross-domain data
-  race pinned by `framework_tag_is_not_module_state`.
+  still serves `[%native]` directly). Along the way, the per-generation fact
+  each backend needs while emitting (the kernel's variant table) moved from a
+  module-level `ref` — shared and clobbered across generations, including
+  across domains — to a value threaded through the emit calls. The
+  `current_framework` tag was not threaded; it was removed outright and
+  replaced by a per-backend compile-time constant, so there is no longer a
+  module-level slot for it to leak through. The sequential half of this — a
+  later generation on the same domain reading an earlier one's leftover state —
+  is pinned by `framework_tag_is_not_module_state`; the cross-domain half, by
+  `generations_do_not_interleave`.
 
 - The CUDA branch of `sarek_f32_barrier` no longer emits
   `asm volatile("" : "+f"(x))`. At an f16 narrowing it contributes zero PTX
