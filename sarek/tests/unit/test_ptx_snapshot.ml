@@ -2068,7 +2068,8 @@ let test_bare_record_param_rejected () =
     mixed-alignment records {a:int32; b:float64} is now laid out with the
     aligned host ABI (b at the 8-aligned offset 8, element stride 16), so the
     kernel COMPILES and emits a natural [ld.global.f64] for the f64 field. This
-    previously raised Ptx_codegen_error (AC-5 / FR-004, now superseded). *)
+    previously raised Ptx_codegen_error (AC-5 / FR-004 in specs/ptx-records-variants.md,
+    retracted 2026-07-30 and rewritten for the aligned rule under backlog-205). *)
 let test_mixed_align_record_param_accepted () =
   let mixed_ty = TRecord ("mixed", [("a", TInt32); ("b", TFloat64)]) in
   let src = make_var "src" (TVec mixed_ty) in
