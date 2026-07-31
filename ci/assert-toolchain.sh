@@ -406,11 +406,24 @@ echo "toolchain assertion OK: $checks/$EXPECTED_CHECKS checks passed."
 # absent (measured: 3 of 11 checks fail). prove-red.sh refuses a subject whose
 # unmutated baseline is not green — "every red below it would prove nothing" —
 # so no spec was possible until something made green reachable off-image.
-# scripts/prove-red-fixtures/assert-toolchain/ is that: a wrapper that puts stub
-# ptxas/nvdisasm and a cuda_fp16.h marker on PATH/CUDA_PATH. clang,
-# glslangValidator and naga are genuinely present on a normal host and are
-# deliberately NOT stubbed — faking a tool that is really there would weaken the
-# baseline for nothing.
+# scripts/prove-red-fixtures/assert-toolchain/ is that: a wrapper that rebuilds
+# PATH from nothing — stub ptxas, nvdisasm, glslangValidator, naga, clang and cc,
+# a cuda_fp16.h marker under CUDA_PATH, and symlinks to a fixed allowlist of base
+# utilities — then runs this script against it.
+#
+# THE FIXTURE IS HERMETIC, AND THAT IS LOAD-BEARING TWICE OVER. An earlier
+# revision stubbed only ptxas/nvdisasm/cuda_fp16.h and prepended them to the host
+# PATH, leaving clang, glslangValidator, naga and libnvrtc to the host because
+# they are "genuinely present on a normal developer host". Two measured problems.
+# First, prove-red.sh runs in the `build` job of .github/workflows/ci.yml on a
+# bare ubuntu-latest runner and NOT in this script's image, and that runner has
+# no naga, no glslangValidator and no loadable libnvrtc — so the unstubbed
+# baseline is red on arrival exactly where the spec has to execute. Second, a
+# preserved host PATH defeats the mutations: `rm -f .../bin/ptxas` is invisible
+# on any host that has a real ptxas, and the mutation collects a red it did not
+# earn (CodeRabbit, PR #384). The one host path PATH cannot hide is the literal
+# /usr/local/cuda in the cuda_fp16.h search below; the wrapper refuses to run
+# with exit 2 when a real header is there, rather than let that mutation go inert.
 #
 # The baseline reaches 13/13, which matters beyond being green: the
 # EXPECTED_CHECKS drift guard is only reachable when zero checks fail, so
@@ -422,16 +435,13 @@ echo "toolchain assertion OK: $checks/$EXPECTED_CHECKS checks passed."
 # ON fail() ACCOUNTING, stated rather than left as a gap: there is no
 # single-variable mutation that proves it in isolation, because from a green
 # baseline there is no failure for a miscounting fail() to lose. It is pinned
-# TRANSITIVELY instead — the three tool mutations below all reach exit 1 only via
+# TRANSITIVELY instead — the four tool mutations below all reach exit 1 only via
 # fail() incrementing `failures`, so a fail() that stopped counting would turn
-# all three green and prove-red would report three DID NOT FAILs.
+# all four green and prove-red would report four DID NOT FAILs.
 #
 # BEGIN prove-red-spec
 # copy: ci/assert-toolchain.sh
-# copy: scripts/prove-red-fixtures/assert-toolchain/run-with-stubs.sh
-# copy: scripts/prove-red-fixtures/assert-toolchain/bin/ptxas
-# copy: scripts/prove-red-fixtures/assert-toolchain/bin/nvdisasm
-# copy: scripts/prove-red-fixtures/assert-toolchain/cuda/include/cuda_fp16.h
+# copy: scripts/prove-red-fixtures/assert-toolchain
 # invoke: scripts/prove-red-fixtures/assert-toolchain/run-with-stubs.sh
 # baseline-exit: 0
 # baseline-message: toolchain assertion OK: 13/13 checks passed
@@ -460,6 +470,19 @@ echo "toolchain assertion OK: $checks/$EXPECTED_CHECKS checks passed."
 #   apply: rm -f scripts/prove-red-fixtures/assert-toolchain/cuda/include/cuda_fp16.h
 #   expect-exit: 1
 #   expect-message: cuda_fp16.h not found
+#
+# mutation: clang-fp64-unsupported
+#   desc: the stub clang keeps compiling fp32 OpenCL and starts rejecting `double`, which is #140 verbatim — an Apple M4 where clang was on PATH, the fp32 probe passed, and seven float64 cases skipped with a stated reason while CI validated no float64 codegen at all. This is the fp64 positive control's first observed firing; it needs a stubbed clang, because a real clang on a Linux runner cannot be made to lack fp64 by one variable.
+#   apply: python3 - <<'PYEOF'
+#   apply: p = "scripts/prove-red-fixtures/assert-toolchain/bin/clang"
+#   apply: s = open(p, encoding="utf-8").read()
+#   apply: old = "\nsupports_fp64=yes\n"
+#   apply: assert s.count(old) == 1, ("anchor count %d" % s.count(old))
+#   apply: s = s.replace(old, "\nsupports_fp64=no\n")
+#   apply: open(p, "w", encoding="utf-8").write(s)
+#   apply: PYEOF
+#   expect-exit: 1
+#   expect-message: cannot compile an OpenCL kernel using
 #
 # mutation: check-vanished
 #   desc: delete one run_check so `checks` becomes 12 with ZERO failures. This is the drift guard, and this mutation is the first time it has been observed firing: off-image the failures>0 branch always exits first, so the guard was unreachable. Its own comment is the claim being tested — that "N of N" cannot report a gap on its own.

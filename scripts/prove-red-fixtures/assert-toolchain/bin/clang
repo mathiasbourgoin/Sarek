@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: CECILL-B
+# SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
+# STUB. Not clang. See run-with-stubs.sh for why the fixture is hermetic rather
+# than deferring to the host clang (backlog-176). Contracts the gate depends on:
+#   --version                                 -> exit 0
+#   -x cl ... -fsyntax-only FILE.cl           -> exit 0
+#   the same on a source using `double`       -> exit 0 ONLY if fp64 is supported
+#
+# The last line is the point of stubbing a tool that is usually present. #140 is
+# a clang that is on PATH, compiles fp32 OpenCL fine, and rejects `double` -- an
+# Apple M4, where the sweep skipped seven float64 cases with a stated reason and
+# CI would have validated no float64 codegen at all. That is not reproducible
+# with a real clang on a Linux runner, so the gate's fp64 positive control could
+# never be observed firing. Here it is one variable.
+set -uo pipefail
+
+# MUTATION ANCHOR (clang-fp64-unsupported). Flipping this to "no" is the whole
+# of that mutation: it reproduces #140 exactly -- fp32 still compiles.
+supports_fp64=yes
+
+case " $* " in
+  *" --version "*)
+    echo "clang version 0.0.0-STUB (prove-red fixture, backlog-176)"
+    exit 0
+    ;;
+esac
+
+src=""
+for a in "$@"; do
+  case "$a" in
+    *.cl) src="$a" ;;
+  esac
+done
+
+if [ -z "$src" ] || [ ! -f "$src" ]; then
+  echo "clang stub: unrecognised invocation: $*" >&2
+  exit 1
+fi
+
+# `-finclude-default-header` is what the gate's comment says makes get_global_id
+# resolve; a stub cannot check that, and pretending to would be a claim wider
+# than this file. What it CAN model faithfully is the fp64 capability split.
+if grep -q 'double' "$src" && [ "$supports_fp64" != "yes" ]; then
+  echo "$src: error: use of type 'double' requires cl_khr_fp64 support" >&2
+  exit 1
+fi
+
+exit 0

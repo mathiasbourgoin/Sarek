@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: CECILL-B
+# SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
 # STUB. Not ptxas. Exists only so ci/assert-toolchain.sh can reach a GREEN
 # baseline on a host with no CUDA toolkit, which is the precondition
 # scripts/prove-red.sh requires before any mutation proves anything

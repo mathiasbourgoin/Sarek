@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: CECILL-B
+# SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com>
 # STUB. Not nvdisasm. See bin/ptxas for why these exist (backlog-176).
 # Contracts the gate depends on:
 #   --version   -> exit 0
