@@ -14,8 +14,13 @@
 > `variant_always_accepted`: alignment holds unconditionally, so the old
 > rejection case cannot fire for well-formed input (`Misaligned_field` is kept
 > only as a defensive internal invariant — see `Sarek_ir_layout.mli`). What is
-> still rejected is unchanged in kind: variants nested below top level, and
-> array/vector-typed fields or payload members.
+> still rejected is unchanged in kind: variants nested below top level,
+> array/vector-typed fields or payload members, and `float16` fields or
+> payload members (the host PPX marshaller has no `read_float16`/
+> `write_float16`, `spoc/ir/Sarek_ir_layout.ml:220-227` — a cross-runtime
+> review pass on this revision caught the first draft omitting float16 from
+> that list; the rejection set below has been corrected and the AC-5/CHECK-5
+> coverage claim narrowed to what is actually tested).
 >
 > This revision brings the normative text into line with that migration:
 > **FR-002, FR-003, FR-004, C-2, EC-2**, the US-1/US-2 scope notes, and
@@ -139,19 +144,24 @@ Out-of-scope constructs fail at codegen with errors naming the construct AND the
 3. **Given** a variant with an f64 payload, **When** codegen runs, **Then** it COMPILES: the
    payload region sits at the 8-byte-aligned offset, not rejected. (Was: rejected —
    `test_f64_variant_param_accepted`, `sarek/tests/unit/test_ptx_snapshot.ml:2108`.)
-4. **Given** a variant nested below top level (record field or variant payload), or an
-   array/vector-typed field or payload member, **When** the layout function runs, **Then** it is
-   rejected with a precise error (`Nested_variant` / `Unsupported_field` —
-   `sarek/tests/unit/test_ir_layout.ml:229` `test_reject_variant_in_record`,
-   `sarek/tests/unit/test_ir_layout.ml:248` `test_reject_vec_in_record`). This is unchanged by
-   the packed-to-aligned migration.
+4. **Given** a variant nested below top level (record field or variant payload), an
+   array/vector-typed field or payload member, or a `float16` field or payload member (host PPX
+   has no `read_float16`/`write_float16` marshaller — `spoc/ir/Sarek_ir_layout.ml:220-227`),
+   **When** the layout function runs, **Then** it is rejected with a precise error
+   (`Nested_variant` / `Unsupported_field`). Covered by unit test for the record-field and
+   `TVec`-field cases (`sarek/tests/unit/test_ir_layout.ml:229` `test_reject_variant_in_record`,
+   `sarek/tests/unit/test_ir_layout.ml:248` `test_reject_vec_in_record`); **not independently
+   covered** by a dedicated test in this tree: `float16` as a field/payload member, and
+   array/vector or nested-variant payload members specifically (as opposed to record fields) —
+   open coverage gap, flagged rather than fixed in this documentation-only pass. This rejection
+   set is unchanged by the packed-to-aligned migration.
 
 ## Challenge Resolutions
 
 | C | Resolution |
 |---|---|
 | C-1 | Aggregate strides use general multiplication (`mul.wide.u32` for global 64-bit addressing; `mul.lo.u32` shared). Scalar pow-2 `shl` fast path unchanged. |
-| C-2, C-18, C-20 | **Lay out** every aggregate on the aligned (C-ABI) rule: each field/payload member at the next offset satisfying its own natural alignment, total size rounded to the aggregate's max member alignment. This keeps ABI-match AND alignment soundness *unconditionally* — `PtxLayout.v` proves `record_always_accepted`/`variant_always_accepted`, so no aggregate is rejected for misalignment; `Misaligned_field` is a defensive internal invariant only (`Sarek_ir_layout.mli`). Still **rejected** with a precise error (US-5): variants nested below top level, and array/vector-typed fields or payload members. (Was: reject any aggregate whose *packed* layout placed a scalar leaf at a non-naturally-aligned offset, incl. every 8-byte variant payload at offset 4 — flagged as future work "if the host layout gains alignment"; that revision (campaign item L8) has since landed.) |
+| C-2, C-18, C-20 | **Lay out** every aggregate on the aligned (C-ABI) rule: each field/payload member at the next offset satisfying its own natural alignment, total size rounded to the aggregate's max member alignment. This keeps ABI-match AND alignment soundness *unconditionally* — `PtxLayout.v` proves `record_always_accepted`/`variant_always_accepted`, so no aggregate is rejected for misalignment; `Misaligned_field` is a defensive internal invariant only (`Sarek_ir_layout.mli`). Still **rejected** with a precise error (US-5): variants nested below top level, array/vector-typed fields or payload members, and `float16` fields or payload members (no host marshaller — see FR-004). (Was: reject any aggregate whose *packed* layout placed a scalar leaf at a non-naturally-aligned offset, incl. every 8-byte variant payload at offset 4 — flagged as future work "if the host layout gains alignment"; that revision (campaign item L8) has since landed.) |
 | C-3 | Nested records IN scope (layout + SROA are recursive; host `gen_field_read` supports nested customs). Variants nested inside aggregates → rejected with a clear error (untested). |
 | C-4 | The blanket `<> "Native"` gate in test_ktype_record is removed; if a specific non-CUDA framework fails, it gets a named, commented gate (decided at implement; AC only requires CUDA/PTX OK). |
 | C-5 | Aggregate args/returns through EApp inlining ARE in scope and test-covered (ktype_helper/nbody/ray helpers). `callee_env` binds SROA sets; `inline_ret` supports aggregate result register sets. |
@@ -196,9 +206,11 @@ Out-of-scope constructs fail at codegen with errors naming the construct AND the
   2026-07-30 — was: "Variant layout MUST be `[tag:int32 at 0][payload region at 4]`, element size
   `4 + max_payload_bytes` ... multi-arg payload offsets = 4 + packed cumulative.")*
 - **FR-004** [US-5]: The layout function MUST reject (typed error) any aggregate containing a
-  variant nested below top level, or any array/vector-typed field or payload member; the error
-  MUST name the type and field/payload path and the reason (`Nested_variant` /
-  `Unsupported_field`, `spoc/ir/Sarek_ir_layout.mli`). Under the aligned rule, no well-formed
+  variant nested below top level, any array/vector-typed field or payload member, or a `float16`
+  field or payload member (the host PPX marshaller has no `read_float16`/`write_float16`,
+  `spoc/ir/Sarek_ir_layout.ml:220-227`); the error MUST name the type and field/payload path and
+  the reason (`Nested_variant` / `Unsupported_field`, `spoc/ir/Sarek_ir_layout.mli`). Under the
+  aligned rule, no well-formed
   aggregate can place a scalar leaf at a non-naturally-aligned offset — `PtxLayout.v` proves this
   unconditionally (`record_always_accepted`, `variant_always_accepted`); the `Misaligned_field`
   error variant is retained only as a defensive internal invariant that MUST NOT fire for
@@ -244,10 +256,13 @@ Out-of-scope constructs fail at codegen with errors naming the construct AND the
 - AC-4 [US-2, C-10]: PTX for an EMatch kernel contains a tag branch chain and no `selp` for the match result. ↔ CHECK-4
 - AC-5 [US-5, C-2]: Codegen of a mixed-alignment record and an f64-payload variant COMPILES,
   placing the misaligned-under-packed field/payload at its correct aligned offset; codegen of a
-  variant nested below top level, or an array/vector-typed field or payload member, still fails
-  with a precise error naming the type and field/payload path. ↔ CHECK-5 (was: "Codegen of a
-  mixed-alignment record and an f64-payload variant fails with errors naming
-  field/offset/alignment" — retracted 2026-07-30, campaign item L8.)
+  record containing a variant field, or a record containing a `TVec` field, still fails with a
+  precise error naming the type and field path. (The rejection rule also covers array-typed
+  fields, `float16` fields/payload members, and variants/arrays/vectors nested inside a *variant
+  payload* specifically — see FR-004 — but those shapes have no dedicated test in this tree; not
+  claimed as independently verified here.) ↔ CHECK-5 (was: "Codegen of a mixed-alignment record
+  and an f64-payload variant fails with errors naming field/offset/alignment" — retracted
+  2026-07-30, campaign item L8.)
 - AC-6 [US-4]: `PtxLayout.v` lemmas compile with 0 admits; conformance test green; existing 3 theorems and 30 CMBT tests unchanged-green. ↔ CHECK-6
 - AC-7 [US-1..3, regression]: Full `dune runtest` green; 44-test ZLUDA e2e baseline preserved. ↔ CHECK-7
 - AC-8 [US-3]: Snapshot tests for tuples + multi-arg payload pass. ↔ CHECK-8
