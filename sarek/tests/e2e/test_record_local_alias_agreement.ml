@@ -310,41 +310,37 @@ let () =
     Array.to_list devs |> List.map (fun (d : Device.t) -> d.Device.framework)
   in
   let claimed_frameworks = ["CUDA/PTX"] in
-  (* Same self-check as the sibling file, and see the long note there for the
-     version of it that was wrong. The key must be the name a device REPORTS
-     ("CUDA/PTX"), not the family name [Device.init ~frameworks] accepts as a
-     request ("CUDA"); a key no device can report makes the [List.mem] below
-     unconditionally false, so this loud named skip would fire on a run where the
-     CUDA leg executed and passed, indistinguishable in the log from an honest
-     skip. Checked against enumerated devices and only in the direction that
-     carries information — the family is present but the exact name is not — so a
-     host with no CUDA driver still gets the skip rather than a failure. It
-     therefore cannot fire in CI, which enumerates no device. *)
-  let family fw =
-    match String.index_opt fw '/' with
-    | Some i -> String.sub fw 0 i
-    | None -> fw
+  (* Same self-check as the sibling file, and see the long note there for the two
+     earlier versions of it that were wrong. The key must be the name a device
+     REPORTS ("CUDA/PTX"), not the family name [Device.init ~frameworks] accepts
+     as a request ("CUDA"); a family key can never match, so this loud named skip
+     would fire on a run where the CUDA leg executed and passed —
+     indistinguishable in the log from an honest skip. A key is a family name iff
+     it is not itself registered but some registered backend is "<key>/<variant>".
+     That leaves a valid sibling variant alone and cannot fire in CI, which
+     registers no GPU plugin; it does not catch a plain misspelling, which is
+     indistinguishable at runtime from a framework that did not enumerate. *)
+  let registered =
+    Spoc_framework_registry.Framework_registry.all_backend_names ()
   in
   let bad_keys =
     List.filter
       (fun fw ->
-        (not (List.mem fw frameworks_seen))
+        (not (List.mem fw registered))
         && List.exists
-             (fun s -> String.equal (family s) (family fw))
-             frameworks_seen)
+             (fun r -> String.starts_with ~prefix:(fw ^ "/") r)
+             registered)
       claimed_frameworks
   in
   if bad_keys <> [] then begin
     List.iter
       (fun fw ->
         Printf.printf
-          "claimed framework key %S matches no enumerated framework, but its \
-           family %S IS enumerated — the key is the wrong vocabulary. \
-           Enumerated: %s\n\
+          "claimed framework key %S is a FAMILY name, not a backend name, so \
+           it can never match an enumerated device. Registered: %s\n\
            %!"
           fw
-          (family fw)
-          (String.concat ", " (List.sort_uniq String.compare frameworks_seen)))
+          (String.concat ", " registered))
       bad_keys ;
     exit 1
   end ;
