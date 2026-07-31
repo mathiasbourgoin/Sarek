@@ -102,12 +102,15 @@ val get : 'a t -> int -> 'a
 
 (** [scatter t] transposes the AoS host buffer into the N per-leaf host buffers
     (call before transferring the leaves to a device). When the host copy is
-    behind a device's data ([Stale_CPU]) and auto-sync is enabled, attempts to
-    bring it up to date first.
+    behind a device's data ([Stale_CPU]) and auto-sync would actually rescue
+    it — both this vector's own flag ({!Vector.auto_sync}) AND the global mode
+    ({!Transfer.is_auto}) are on — attempts to bring it up to date first.
 
-    When the host copy is [Stale_CPU] and auto-sync is disabled, there is no
-    way to bring it up to date silently, so [scatter] raises
-    {!Soa.Unsupported} instead of transposing the stale host bytes. Every
+    When the host copy is [Stale_CPU] and EITHER auto-sync gate is off (this
+    vector's own flag via {!Vector.set_auto_sync}, or the global mode via
+    {!Transfer.disable_auto}), there is no way to bring it up to date silently,
+    so [scatter] raises {!Soa.Unsupported} instead of transposing the stale
+    host bytes; the message names whichever of the two is actually off. Every
     other location ([CPU], [GPU], [Both], [Stale_GPU]) is unaffected either
     way, since the host copy there is already the vector's freshest data. *)
 val scatter : 'a t -> unit
