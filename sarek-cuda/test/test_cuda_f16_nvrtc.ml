@@ -81,7 +81,8 @@ let f32_scale_kernel () =
 
 (* No state to reset before generating: since backlog-185/200 the framework tag
    and the variant table are per-generation values, not module refs. *)
-let gen k = Sarek_codegen.Sarek_ir_cuda.generate_with_types ~types:k.kern_types k
+let gen k =
+  Sarek_codegen.Sarek_ir_cuda.generate_with_types ~types:k.kern_types k
 
 let contains ~needle haystack =
   let nl = String.length needle and hl = String.length haystack in

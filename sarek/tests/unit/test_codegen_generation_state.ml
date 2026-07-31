@@ -36,8 +36,8 @@
     only then reaches [run_source]), so nothing serialized it. The case is
     written as a loop because the pre-fix failure is a race: measured on the
     unfixed tree it mismatched 94, 888 and 1136 times out of 4000 across three
-    runs — never zero, but not once per iteration either, which is exactly why it
-    is a loop and not a single call. *)
+    runs — never zero, but not once per iteration either, which is exactly why
+    it is a loop and not a single call. *)
 
 open Sarek_ir_types
 
@@ -78,7 +78,9 @@ let sin_kernel_src =
 
 let contains ~needle haystack =
   let nl = String.length needle and hl = String.length haystack in
-  let rec go i = i + nl <= hl && (String.sub haystack i nl = needle || go (i + 1)) in
+  let rec go i =
+    i + nl <= hl && (String.sub haystack i nl = needle || go (i + 1))
+  in
   nl = 0 || go 0
 
 (** CUDA emission of [sin_kernel] on the runtime path — no [~framework], which

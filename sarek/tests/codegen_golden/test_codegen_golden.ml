@@ -651,35 +651,16 @@ type backend = {
   generate : types:(string * (string * elttype) list) list -> kernel -> string;
 }
 
-let cuda_backend =
-  {
-    name = "cuda";
-    generate = Gen_cuda.generate_with_types;
-  }
+let cuda_backend = {name = "cuda"; generate = Gen_cuda.generate_with_types}
 
 let opencl_backend =
-  {
-    name = "opencl";
-    generate = Gen_opencl.generate_with_types;
-  }
+  {name = "opencl"; generate = Gen_opencl.generate_with_types}
 
-let metal_backend =
-  {
-    name = "metal";
-    generate = Gen_metal.generate_with_types;
-  }
+let metal_backend = {name = "metal"; generate = Gen_metal.generate_with_types}
 
-let glsl_backend =
-  {
-    name = "glsl";
-    generate = Gen_glsl.generate_with_types;
-  }
+let glsl_backend = {name = "glsl"; generate = Gen_glsl.generate_with_types}
 
-let wgsl_backend =
-  {
-    name = "wgsl";
-    generate = Gen_wgsl.generate_with_types;
-  }
+let wgsl_backend = {name = "wgsl"; generate = Gen_wgsl.generate_with_types}
 
 let all_backends =
   [cuda_backend; opencl_backend; metal_backend; glsl_backend; wgsl_backend]
@@ -1289,11 +1270,11 @@ let test_kernels () =
 (** Run backend on kernel twice and assert identical output.
 
     Until backlog-185/200 each of the two calls was preceded by a per-backend
-    [reset ()] that assigned the emitters' module-level state back to its initial
-    values, so what this checked was "deterministic GIVEN a hand-reset emitter" —
-    the interesting case, a second generation seeing what the first left behind,
-    was the one thing it could not see. The resets are gone because the state
-    they reset is gone, and the two calls now run back to back. *)
+    [reset ()] that assigned the emitters' module-level state back to its
+    initial values, so what this checked was "deterministic GIVEN a hand-reset
+    emitter" — the interesting case, a second generation seeing what the first
+    left behind, was the one thing it could not see. The resets are gone because
+    the state they reset is gone, and the two calls now run back to back. *)
 let check_determinism backend kernel_name k =
   let first = backend.generate ~types:k.kern_types k in
   let second = backend.generate ~types:k.kern_types k in
