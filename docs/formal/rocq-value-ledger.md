@@ -45,7 +45,7 @@ into this document — they are pasted below verbatim from a real run against
 the committed, drift-checked ledgers (`$ scripts/check-production-link.py`,
 per-module rows omitted for length; see the script for those):
 
-```
+```text
 == shipped-artefact vs model-only theorem split (backlog-201)
    ('shipped' is itself two different strengths of evidence — see below)
   ...
@@ -483,6 +483,7 @@ file: until 2026-07-27 the counts quoted in `STATUS.md`, in commit messages and 
 the ledgers were not derived from the toolchain, so any of them cited as evidence
 of coverage was citing a number nobody had checked.
 
+<a id="n-03"></a>
 ### N-03 — headlining the theorem count found no proof defect, and one scope gap
 
 | | |

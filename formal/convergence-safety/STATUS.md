@@ -11,8 +11,11 @@
 > theorems" next to "conformance 17/17, extraction 7/7, semantics 4/4, live
 > 10/10 GREEN" (the current test-suite scoreboard below) should not conclude any
 > theorem here says something checked against the shipped checker: it doesn't,
-> today. `scripts/check-production-link.py`
-> enforces this — see `production-link.json`'s `known_gap`.
+> today. `scripts/check-production-link.py` enforces the declared theorem
+> split only — it reads `production-link.json`'s `modules` field (empty here,
+> hence 0 shipped-linked) but does not read or validate `known_gap`, which is
+> documentary rather than gate-enforced. See `production-link.json`'s
+> `known_gap` for why no module is claimed shipped-linked.
 
 **Grade**: A (apparatus-native)
 **Apparatus version**: 1.2.1
