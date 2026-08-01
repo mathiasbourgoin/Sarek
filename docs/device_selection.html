@@ -122,6 +122,21 @@ particular backend.</p>
 <span class="nv">SPOC_DISABLE_GPU</span><span class="o">=</span>1 dune <span class="nb">exec</span> <span class="nt">--</span> my_program.exe
 </code></pre></div></div>
 
+<h2 id="test-only-strictness-variable">Test-only strictness variable</h2>
+
+<p><code class="language-plaintext highlighter-rouge">SAREK_REQUIRE_PTX=1</code> is read by one test, <code class="language-plaintext highlighter-rouge">sarek/tests/e2e/test_soa_emitter_equiv.ml</code>,
+not by the library. Unset (the default everywhere, including CI), a host with no
+CUDA/PTX device silently skips that test’s SoA legs and the binary still exits 0 —
+the normal, desired outcome on the vast majority of hosts. Set to exactly <code class="language-plaintext highlighter-rouge">1</code> on a
+host that is expected to have a CUDA/PTX device (e.g. a ZLUDA-equipped machine), it
+turns “no device reported framework <code class="language-plaintext highlighter-rouge">CUDA/PTX</code>” into a failure, so a regression that
+silently drops the device is caught instead of reading as a pass. It is opt-in-by-hand:
+no dune rule, Makefile target or CI job sets it today.</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">SAREK_REQUIRE_PTX</span><span class="o">=</span>1 <span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span><span class="nv">$HOME</span>/opt/zluda <span class="se">\</span>
+  dune <span class="nb">exec </span>sarek/tests/e2e/test_soa_emitter_equiv.exe
+</code></pre></div></div>
+
 <h2 id="select-a-device-in-the-example--benchmark-programs">Select a device in the example / benchmark programs</h2>
 
 <p>The bundled e2e examples and benchmarks accept backend/device flags:</p>
