@@ -187,6 +187,107 @@ expect "an inflated ledger count is NOT caught (documents current scope)" 0 \
   "checked against production, TOTAL: 5000"
 
 echo
+echo "== F-1 (CodeRabbit round 2): OCaml quoted-string literals must be"
+echo "   stripped like \"...\" strings, and the identifier boundary must not"
+echo "   accept a near-miss identifier that merely starts with the claimed name"
+reset_sandbox
+write_test_file 'let () = print_string {|Prod_mod.real_call|}
+'
+expect "a plain {|...|} quoted-string-only mention is caught" 1 \
+  "no live reference to it was found outside comments or string literals"
+
+reset_sandbox
+write_test_file 'let () = print_string {tag|Prod_mod.real_call|tag}
+'
+expect "a tagged {tag|...|tag} quoted-string-only mention is caught" 1 \
+  "no live reference to it was found outside comments or string literals"
+
+reset_sandbox
+write_test_file "let () = ignore (Prod_mod.real_call' 1 2)
+"
+expect "a near-miss identifier ending in an apostrophe is NOT a live reference" 1 \
+  "no live reference to it was found outside comments or string literals"
+
+reset_sandbox
+write_test_file 'let () = ignore (Prod_mod.real_call_extra 1 2)
+'
+expect "a near-miss identifier with a trailing underscore-suffix is NOT a live reference" 1 \
+  "no live reference to it was found outside comments or string literals"
+
+echo
+echo "== F-1 positive control: a genuine reference must still count in every"
+echo "   syntactic position it legitimately appears -- over-strict boundary"
+echo "   handling would silently reclassify a shipped module as model-only"
+reset_sandbox
+write_test_file 'let () =
+  ignore (Prod_mod.real_call 1 2);
+  let x = Prod_mod.real_call in
+  ignore x;
+  Prod_mod.real_call
+'
+expect "a live call before '(', before a space, before ';', and at end-of-line all still count" 0 \
+  "checked against production, TOTAL: 3"
+
+reset_sandbox
+write_test_file 'let () = print_string {|Prod_mod.real_call|};
+  ignore (Prod_mod.real_call 1 2)
+'
+expect "a quoted-string decoy plus a live call is still green" 0 \
+  "checked against production, TOTAL: 3"
+
+reset_sandbox
+write_test_file "let () = ignore (Prod_mod.real_call' 2 3);
+  ignore (Prod_mod.real_call 1 2)
+"
+expect "a near-miss decoy plus a live call is still green" 0 \
+  "checked against production, TOTAL: 3"
+
+echo
+echo "== F-2 (CodeRabbit): manifest schema must be validated before classifying"
+reset_sandbox
+edit_json "$WORK/repo/formal/proj1/production-link.json" 'd["schema"] = 2'
+expect "an unsupported schema is refused, not treated as an empty declaration" 2 \
+  "does not know how to read"
+
+reset_sandbox
+edit_json "$WORK/repo/formal/proj1/production-link.json" 'del d["schema"]'
+expect "a missing schema is refused the same way as an unsupported one" 2 \
+  "does not know how to read"
+
+reset_sandbox
+edit_json "$WORK/repo/formal/proj1/production-link.json" 'd["modules"] = ["not", "an", "object"]'
+expect "a non-object \"modules\" is refused, not an unhandled AttributeError" 2 \
+  "is a list, not a JSON object"
+
+echo
+echo "== F-3 (CodeRabbit): a ledger with two modules ending in the same bare"
+echo "   name must be refused, not silently collapsed onto one of them"
+reset_sandbox
+edit_json "$WORK/gen/proj1.json" 'd["modules"]["Other.Foo"] = {"counts": {"theorems": 7}}'
+expect "duplicate module_short_name across the ledger is refused as ambiguous" 2 \
+  "cannot unambiguously refer to one by its short name"
+
+echo
+echo "== F-4 (CodeRabbit): test_file must resolve inside the declaring"
+echo "   project's own formal/<project>/ directory"
+reset_sandbox
+mkdir -p "$WORK/repo/formal/proj1/test"
+printf '%s' 'let () = ignore (Prod_mod.real_call 1 2)
+' > "$WORK/repo/formal/secret.ml"
+edit_json "$WORK/repo/formal/proj1/production-link.json" \
+  'd["modules"]["Foo"]["test_file"] = "../secret.ml"'
+expect "a ../ path escaping the project directory is rejected" 1 \
+  "resolves outside"
+
+reset_sandbox
+printf '%s' 'let () = ignore (Prod_mod.real_call 1 2)
+' > "$WORK/outside.ml"
+edit_json "$WORK/repo/formal/proj1/production-link.json" \
+  "d[\"modules\"][\"Foo\"][\"test_file\"] = \"$WORK/outside.ml\""
+expect "an absolute path escaping the project directory is rejected" 1 \
+  "resolves outside"
+
+echo
 echo "== vacuity"
 reset_sandbox
 edit_json "$WORK/gen/proj1.json" \

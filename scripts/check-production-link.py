@@ -62,13 +62,21 @@ exercises the extracted model, that it exercises the named production
 function on the SAME inputs, or that it asserts agreement rather than merely
 calling both. What this script mechanically checks, per entry, is narrower:
 the named module exists (present in the freshly generated ledger — its
-theorem count is read from there, not separately declared or cross-checked),
-and the named `production_call` symbol appears as a live word-boundary
-reference in the named test file, outside `(* ... *)` comments and `"..."`
+theorem count is read from there, not separately declared or cross-checked,
+and it is looked up by a bare module name the ledger must not repeat, or the
+entry is refused as ambiguous rather than silently applied to whichever
+module happened to win a name collision), the named test file resolves to a
+real path inside the declaring project's own formal/<project>/ directory
+(never elsewhere, via "../" or an absolute path), and the named
+`production_call` symbol appears as a live reference — bounded on both sides
+as a complete OCaml identifier, so a longer identifier that merely starts or
+ends with the claimed name does not count — in that file, outside
+`(* ... *)` comments, `"..."` string literals, and `{tag|...|tag}` quoted
 string literals. That is a necessary condition for the claim above (a claim
-whose test no longer references production at all is definitely false) but
-not a sufficient one (a test could reference the symbol live without ever
-comparing it to the model). Treat a green run of this script as "the claim has
+whose test no longer references production at all, or references a
+different identifier, is definitely false) but not a sufficient one (a test
+could reference the symbol live without ever comparing it to the model).
+Treat a green run of this script as "the claim has
 not been falsified by the one thing we can check mechanically," not as
 independent proof the differential property holds — that proof is the
 differential test itself, which a human wrote and this script does not re-run.
@@ -90,11 +98,17 @@ USAGE
 
 Exit 0 and prints the two headline numbers plus a per-module table on success.
 Exit 1 on any unverifiable claim (claimed module doesn't exist in the freshly
-generated ledger, test file missing, or the production symbol not found as a
-live reference outside comments/strings). It does NOT independently verify a
-module's theorem count — there is no separately declared count to check it
-against; the count used in the totals is read straight from the ledger, which
-check-proof-ledger.py already guarantees is not stale.
+generated ledger, test file missing or resolving outside the declaring
+project, or the production symbol not found as a live reference outside
+comments/strings/quoted-string literals). Exit 2 when the input is not in a
+shape this script can classify at all, before any per-claim check runs:
+production-link.json declares an unsupported "schema", its "modules" is not a
+JSON object, or the ledger has two modules ending in the same bare name (so a
+production-link.json entry keyed by that bare name cannot unambiguously say
+which one it means). It does NOT independently verify a module's theorem
+count — there is no separately declared count to check it against; the count
+used in the totals is read straight from the ledger, which check-proof-
+ledger.py already guarantees is not stale.
 """
 
 import argparse
@@ -136,26 +150,64 @@ def fail(msg):
     print("FAIL: " + msg)
 
 
+def refuse(msg):
+    """For a malformed-input / precondition-failure case where the script
+    cannot safely proceed to classification at all — as opposed to fail(),
+    which records a specific claim as falsified and lets the run continue
+    to accumulate every other falsifiable claim before exiting 1. Exits 2,
+    never 1: this is not "a production-link claim was checked and found
+    false", it is "the input needed to check any claim at all is not in a
+    shape this script knows how to read", the same distinction check-opam-
+    clean.sh and check-dune-opam-portability.sh already draw."""
+    print("::error::" + msg.replace("\n", "%0A"), file=sys.stderr)
+    print("REFUSED: " + msg)
+
+
+# OCaml quoted-string-literal opening delimiter: "{" + a possibly-empty
+# lowercase-and-underscore tag + "|". The closing delimiter is "|" + the
+# SAME tag + "}"; the tag is not itself re-validated on close (an OCaml
+# lexer would reject a mismatched tag as a syntax error, but this script
+# only needs to find where the literal ends, and text.startswith(...) at
+# the tracked closing string already requires an exact match).
+_QUOTED_STRING_OPEN_RE = re.compile(r"\{([a-z_]*)\|")
+
+
 def strip_ocaml_comments_and_strings(text):
     """Remove (* ... *) comments, honouring nesting, and blank out "..."
-    string-literal contents, so a claim's production symbol cannot be
-    satisfied by text that merely mentions it without calling it. Two real
-    hazards motivate this: the header of test_type_safety_conformance.ml
-    contains the literal comment text "Sarek_typer.infer (the production
-    inference engine)", and — found by mutation, backlog-201 round 1 review —
-    a string literal alone (e.g. a disabled-test message quoting the symbol
-    name) previously kept this gate green with no live call anywhere in the
-    file. Escaped quotes (\\") inside a string do not end it. Comments are not
-    string-aware (a '"' inside a `(* ... *)` block is not tracked as opening a
-    string), which matches this script's only consumers — no test file under
-    formal/ nests a string literal inside a comment. A false failure here is
-    safe (it demands a human look), unlike a false pass."""
+    and {tag|...|tag} string-literal contents (including the plain {|...|}
+    form, tag == ""), so a claim's production symbol cannot be satisfied by
+    text that merely mentions it without calling it. Three real hazards
+    motivate this: the header of test_type_safety_conformance.ml contains
+    the literal comment text "Sarek_typer.infer (the production inference
+    engine)"; a string literal alone (e.g. a disabled-test message quoting
+    the symbol name) previously kept this gate green with no live call
+    anywhere in the file (found by mutation, backlog-201 round 1 review);
+    and an OCaml quoted string such as {|Sarek_typer.infer|} or
+    {tag|Sarek_typer.infer|tag} previously survived this stripper untouched,
+    which is the same false-pass shape in a different literal form (round
+    2, CodeRabbit). Escaped quotes (\\") inside a "..." string do not end
+    it; a {tag|...|tag} literal has no escape mechanism at all (that is
+    the point of the syntax) so its contents are copied verbatim until the
+    exact closing delimiter is seen. Comments are not string-aware (a '"'
+    or a '{tag|' inside a `(* ... *)` block is not tracked as opening a
+    string), which matches this script's only consumers — no test file
+    under formal/ nests a string or quoted-string literal inside a comment.
+    A false failure here is safe (it demands a human look), unlike a false
+    pass."""
     out = []
     depth = 0
     i = 0
     n = len(text)
     in_string = False
+    quoted_close = None  # None, or the literal closing delimiter to find
     while i < n:
+        if quoted_close is not None:
+            if text.startswith(quoted_close, i):
+                i += len(quoted_close)
+                quoted_close = None
+            else:
+                i += 1
+            continue
         if in_string:
             if text[i] == "\\" and i + 1 < n:
                 i += 2
@@ -168,6 +220,12 @@ def strip_ocaml_comments_and_strings(text):
             in_string = True
             i += 1
             continue
+        if depth == 0 and text[i] == "{":
+            m = _QUOTED_STRING_OPEN_RE.match(text, i)
+            if m:
+                quoted_close = "|" + m.group(1) + "}"
+                i = m.end()
+                continue
         if text[i : i + 2] == "(*":
             depth += 1
             i += 2
@@ -236,13 +294,74 @@ def main():
         if os.path.isfile(link_path):
             with open(link_path, encoding="utf-8") as fh:
                 link_doc = json.load(fh)
-            declared = link_doc.get("modules", {})
+            # This script understands exactly one manifest shape. An
+            # unsupported "schema" is refused rather than treated as an
+            # empty declaration (a future schema with no "modules" key
+            # would otherwise report every module in the project as
+            # model-only and exit 0 — a stronger and wrong claim than
+            # "this script cannot read this file"). "modules" is refused
+            # unless it is a JSON object: a string/list/number there
+            # previously reached declared.items() and raised an unhandled
+            # AttributeError, which is a crash, not an answer.
+            schema = link_doc.get("schema")
+            if schema != 1:
+                refuse(
+                    "%s/production-link.json declares schema=%r, which "
+                    "this script does not know how to read (supported: "
+                    "1 only). Refusing rather than treating an unknown "
+                    "schema as an empty declaration."
+                    % (project, schema)
+                )
+                return 2
+            modules_val = link_doc.get("modules", {})
+            if not isinstance(modules_val, dict):
+                refuse(
+                    '%s/production-link.json\'s "modules" is a %s, not '
+                    "a JSON object; refusing rather than crashing "
+                    "partway through classification."
+                    % (project, type(modules_val).__name__)
+                )
+                return 2
+            declared = modules_val
         # No production-link.json, or an empty "modules" object, both mean
         # zero shipped-linked modules for this project — a claim must be
         # affirmative, so absence is never silently inherited as a link.
 
         modules = ledger.get("modules", {})
-        short_to_full = {module_short_name(m): m for m in modules}
+        short_to_full = {}
+        short_dupes = {}
+        for full in modules:
+            short = module_short_name(full)
+            if short in short_to_full:
+                short_dupes.setdefault(short, [short_to_full[short]]).append(full)
+            else:
+                short_to_full[short] = full
+        if short_dupes:
+            # short_to_full above keeps only the LAST full name seen for a
+            # repeated short name — a production-link.json entry keyed by
+            # that short name would then be silently applied to whichever
+            # full module happened to win the overwrite, and its theorem
+            # count credited to production-link even if the verified test
+            # was written against an unrelated logical path. This is a
+            # precondition failure in the ledger, not a specific claim
+            # this script can evaluate as true or false, so it refuses for
+            # the whole project rather than guessing which full name a
+            # bare short name in production-link.json meant.
+            refuse(
+                "%s's ledger has more than one module ending in the same "
+                "bare name, so production-link.json cannot unambiguously "
+                "refer to one by its short name: %s. Use the full "
+                "logical-path module name in production-link.json, or "
+                "rename one of the modules."
+                % (
+                    project,
+                    "; ".join(
+                        "%r -> %s" % (short, sorted(full_names))
+                        for short, full_names in sorted(short_dupes.items())
+                    ),
+                )
+            )
+            return 2
 
         verified_shipped = {}  # module short name -> evidence kind
         for mod_short, spec in declared.items():
@@ -273,7 +392,30 @@ def main():
                     "figure." % (project, mod_short, evidence, sorted(EVIDENCE_KINDS))
                 )
                 continue
-            test_path = os.path.join(ROOT, "formal", project, test_rel)
+            project_dir = os.path.realpath(os.path.join(ROOT, "formal", project))
+            test_path = os.path.realpath(
+                os.path.join(ROOT, "formal", project, test_rel)
+            )
+            # test_rel is read from production-link.json, a file this script
+            # trusts for its CONTENT (the claim) but not for where it points:
+            # os.path.join discards the left-hand parts entirely when the
+            # right-hand one is absolute, and "../" segments walk out of
+            # project_dir either way, so an unconfined test_rel could satisfy
+            # a project's claim from a file that has nothing to do with it —
+            # a different project's test, or any file readable by this
+            # process. Confine to formal/<project>/ by real path, after
+            # resolving symlinks, before ever opening the file.
+            if (
+                os.path.commonpath([project_dir, test_path]) != project_dir
+            ):
+                fail(
+                    "%s/production-link.json claims module %r is checked "
+                    "against production in %r, which resolves outside "
+                    "formal/%s/ (to %r). A production-link test_file must "
+                    "stay within the project that declares it."
+                    % (project, mod_short, test_rel, project, test_path)
+                )
+                continue
             if not os.path.isfile(test_path):
                 fail(
                     "%s/production-link.json claims module %r is checked "
@@ -285,17 +427,31 @@ def main():
                 content = strip_ocaml_comments_and_strings(fh.read())
             # NOTE on what this actually checks (a claim narrower than an
             # earlier draft of this comment made it sound): this is a live-
-            # reference check, not a call-position check. `\b` after the
-            # escaped symbol matches the symbol as a whole word anywhere it
-            # is not inside a (* ... *) comment or a "..." string literal —
+            # reference check, not a call-position check. It matches the
+            # symbol anywhere it appears as a complete OCaml identifier,
+            # bounded on both sides so it cannot be satisfied by a DIFFERENT
+            # identifier that merely contains it as a substring — an OCaml
+            # identifier may contain letters, digits, '_' and "'", so
+            # `Sarek_typer.infer'` and `Sarek_typer.infer_x` are distinct
+            # identifiers from `Sarek_typer.infer` and must not satisfy a
+            # claim for it (regex `\b` alone treats "'" as a boundary and
+            # would accept both — round 2, CodeRabbit). It is not inside a
+            # (* ... *) comment or a "..."/{tag|...|tag} string literal —
             # including `open Sarek_typer`, a type annotation, or a bare
             # module-path mention with no application at all. It does not
             # require '(' to follow, and does not require the reference to
-            # be inside a call expression. That is enough to catch the two
+            # be inside a call expression. That is enough to catch the
             # false-pass shapes measured against this gate (a comment-only
-            # mention, a string-literal-only mention) but it is not proof
-            # the test actually calls the symbol as a function.
-            pattern = re.escape(call) + r"\b"
+            # mention, a string-literal-only mention, a quoted-string-only
+            # mention, a near-miss identifier that merely starts with the
+            # claimed name) but it is not proof the test actually calls the
+            # symbol as a function.
+            ident_chars = r"A-Za-z0-9_'"
+            pattern = r"(?<![%s])%s(?![%s])" % (
+                ident_chars,
+                re.escape(call),
+                ident_chars,
+            )
             if not re.search(pattern, content):
                 fail(
                     "%s/production-link.json claims module %r is checked "
