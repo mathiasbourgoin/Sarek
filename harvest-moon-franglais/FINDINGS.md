@@ -147,6 +147,56 @@ fiable et la datation par *événement* ne l'est pas, la progression doit se fai
 narrativement — Kai, le saisonnier de passage, peut parler anglais dès le
 départ.
 
+## Pilotage automatique du niveau : la date est accessible
+
+La date est un type de première classe dans la décompilation
+(`include/unknown_types.hh:172`) :
+
+```c
+struct PACKED GameDate
+{
+    /* bit 0 */ Season season : 2;   // SPRING, SUMMER, AUTUMN, WINTER
+    /* bit 2 */ u8     day    : 5;   // 0-30, 30 jours par saison
+};
+```
+
+L'heure est à côté (`clock_hour : 5`, `clock_minute : 6`) et l'année est un `u8`
+adjacent à la date dans la même structure (`u8 unk_00; /* year? */`,
+`src/code_0800E2E4.cc:41`).
+
+**Aucun compteur « jours joués » cumulé n'existe**, mais il se dérive
+exactement :
+
+```c
+u32 total_days = year * 120u + season * 30u + day;
+```
+
+Monotone, trois instructions, et un `u8` d'année couvre 255 ans (30 600 jours).
+
+Deux pièges : `day` repart à zéro à chaque saison, donc il n'est **pas** monotone
+seul ; et il est indexé à partir de 0, avec un cas particulier visible dans
+`func_0800E324` — avant 6 h du matin, la nuit est rattachée à la saison
+précédente.
+
+**Où le calculer** : `Farm::DayUpdate(int weather, GameDate const & date)`
+(`src/farm.cc:105`), déjà décompilée et qui reçoit la date. Le niveau se
+recalcule une fois par jour de jeu et se range dans un global que `GetString`
+lit ensuite. Coût par chaîne et par frame : nul.
+
+À confirmer sous émulateur (watch RAM) : l'année est annotée `/* year? */` donc
+non certifiée, et l'appelant de `Farm::DayUpdate` est encore en assembleur.
+
+**Les deux axes de progression sont donc disponibles et complémentaires** : le
+nombre de jours pilote le niveau global (le rythme, automatique), le personnage
+pilote quelles chaînes basculent à quel niveau (la granularité). Soit :
+
+```
+chaîne en anglais  <=>  niveau(total_days) >= seuil(personnage, chaîne)
+```
+
+Le réglage in-game devient un simple décalage appliqué au niveau automatique,
+pas un mode séparé à maintenir.
+
 ## Architecture retenue
 
 Point d'accroche unique, `src/script_engine.cc:605` :
