@@ -1,0 +1,6 @@
+# donnees de jeu sous copyright : jamais versionnees
+*.gba
+*.zip
+*.tsv
+*.json
+baserom*
