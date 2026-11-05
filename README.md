@@ -229,8 +229,14 @@ Formal models (Rocq):
   the refusal. Warp
   **shuffle**/vote/ballot are a separate, larger gap — not modelled in the IR
   and emitted by no backend.
-- **`f16` is refused by this emitter.** `Sarek_ir_ptx_types` has no `TFloat16`
-  register type; f16 codegen exists on the CUDA-C/HIP path only.
+- **`f16` is a storage type here too.** `float16` vectors, locals, shared arrays
+  and the two conversions (`float32_of_float16`, `float16_of_float32`) emit
+  `.b16` registers (`%h<N>`), `ld`/`st`/`mov`/`selp` on `.b16`, `cvt.f32.f16`
+  and `cvt.rn.f16.f32`; all arithmetic stays in f32 and no native `.f16`
+  instruction is emitted, so the module is valid below sm_53. Scalar `float16`
+  kernel parameters and `float16` fields of record vectors are refused. Executed
+  on ZLUDA/AMD only so far; the NVIDIA run is pending
+  (`docs/fp-contraction-policy.md`).
 
 **Intended purpose:** foundation for formal verification of the CUDA backend, developed in `formal/codegen-ptx/` alongside `specs/ptx-records-variants.md` and `specs/ptx-dshared-formal.md`.
 

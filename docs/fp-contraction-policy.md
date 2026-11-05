@@ -149,6 +149,7 @@ because the one non-Mesa stack that does fuse is AMD's own.
 | **Interpreter** | nothing — it is the oracle | it evaluates the IR directly | executed (any host) |
 | **HIP / AMDGPU** | `a*b+c`; **and**, below the FP flags, an f32 multiply or fma fused into an f32→f16 narrowing (`v_fma_mixlo_f16`), plus f32 add/sub/mul/negate demotion to binary16 (`v_add_f16`, `v_sub_f16`, `v_mul_f16`) | two mechanisms, both required: `-ffp-contract=off` forced **last** in the hiprtc option array (`Hip_rtc.base_options` / `hiprtc_options`), *and* the `asm volatile("" : "+v"(x))` opacity barrier on every narrowing's argument (`Sarek_ir_cuda.sarek_f32_barrier_decl`) except where one rounding provably equals two, or where the program opted in to single rounding ([`specs/f16-narrowing-barrier.md`](../specs/f16-narrowing-barrier.md)). One barrier covers every affected shape; none needs a different one | **executed + machine-code**, RX 7900 XTX / gfx1100 **and** Raphael iGPU / gfx1036, ROCm hiprtc: all 20 Sarek-emittable f16 expression shapes swept over all 63488 finite binary16 inputs, **0 disagreements as shipped**; removing the barrier breaks 9 of 20 (reproducing the original 620 exactly on the `f16_midround` shape), and disassembly shows demotion opcodes in 3 further shapes that are demoted yet numerically clean — see [`docs/optimization/amdgpu-f16-fusion-shape-audit.md`](optimization/amdgpu-f16-fusion-shape-audit.md) |
 | **CUDA / nvrtc (f16 narrowing)** | in principle the same fusion — but NVIDIA has no fused multiply-and-convert-to-f16 instruction to fuse *into* | **nothing Sarek emits.** `ptxas` simply declines to absorb `cvt.rn.f16.f32` | **executed**, GTX 1070 Max-Q / sm_61 / CUDA 12.9 / driver 580.119.02: exhaustive sweep of all 63488 finite binary16 inputs, 0 device/interpreter disagreements, with a liveness control proving the sweep can go red (§7). Also machine-code, CUDA 13.3 host tools, sm_75…sm_121 — see §4. Machine-checked by `test_cuda_f16_sass`, which until this change **self-skipped in CI** for want of `nvdisasm` (§7) |
+| **CUDA / PTX backend (f16 narrowing)** | the same as the CUDA/C row for NVIDIA (no fused multiply-and-convert-to-f16); on a PTX consumer that lowers through LLVM's AMDGPU backend, the `mul.f32` feeding a `cvt.rn.f16.f32` | **nothing Sarek emits, and nothing is added**: the PTX is the plain `mul.f32` + `cvt.rn.f16.f32`, with no counterpart of `sarek_f32_barrier` (PTX has no opacity barrier, and on NVIDIA the CUDA/C barrier is itself inert, §4). On NVIDIA the guarantee rests on `ptxas`, exactly as in the CUDA/C row. The emitter produces only `ld`/`st`/`mov`/`selp` on `.b16` and `cvt.f32.f16` / `cvt.rn.f16.f32`: no native `.f16` arithmetic, so the same module is valid at every target from sm_50 (native f16 arithmetic needs sm_53) | **executed on ZLUDA/AMD only; NVIDIA execution PENDING.** 2026-11-05, tartarus, AMD Radeon RX 7900 XTX [ZLUDA] (reported as CUDA/PTX): 63488 finite binary16 inputs; raw round trip, f16 → int32 → f16 and int32 → f16 are **0 disagreements** with the interpreter and the model. `f16(x*1.1)` differs on **2913 / 63488** and `f16(f16(x*1.1)+1000)` on **620 / 63488** — and that is **ZLUDA's AMDGPU lowering fusing the multiply into the narrowing, not the PTX**: the device output equals, on 63488 / 63488 inputs, the single-rounded exact product (`S_fuse_mul_into_narrowing`; the 2913th is `-0` becoming `+0`, the `a*b + 0` sign of §2.3 of the barrier spec) and, for the chain, the fused inner narrowing followed by the plain f32 add and narrowing. Both counts are those of the other AMD stacks (2912 / 620, rows above). Writing `mul.rn.f32` instead of `mul.f32` changes nothing (same counts), as with the `-ffp-contract=off` of the HIP row. Not a claim about NVIDIA. Machine-checked structure: `test_ptx_f16` (no native f16 instruction at any of sm_50…sm_90) and the `ptxas` gate of `test_ptx_snapshot` (assembles the f16 kernels at sm_52, sm_61, sm_75, sm_90; self-skips without `ptxas`, runs in CI). Reproducer: `sarek/tests/e2e/test_ptx_f16_e2e.ml` |
 | **CUDA / nvrtc + PTX (f32 `a*b+c`)** | yes, by default (`-fmad=true` is nvrtc's and ptxas's default, and it applies to PTX input too) | **no flag.** `Sarek_df64` denies the compiler a fusable multiply by routing products through `fma` (`mul_rn`) | executed, GTX 1070 Max-Q / sm_61 / CUDA 12.9 / driver 580.119.02: df64 mul 5.92e-08 → 9.07e-15, div 5.64e-08 → 5.08e-15 |
 | **CUDA — subnormal flushing** | `-use_fast_math` / `-ftz=true` would flush binary32 subnormals | `Cuda_nvrtc.check_fp_conformance` **rejects** those options at the only point an option array reaches `nvrtcCompileProgram` | machine-code + test, CUDA 13.3: the hazard is reproduced (`FMUL.FTZ`/`FADD.FTZ` at sm_90) and the guard is proved to fire — see §5 |
 | **OpenCL** | `FP_CONTRACT` is on by default in OpenCL C, and no build option turns it off | for contraction, **no flag** — same `mul_rn`-by-construction defence as CUDA. For div/sqrt, `Opencl_fp.conformance_options` requests `-cl-fp32-correctly-rounded-divide-sqrt`, **gated** on `CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT` in the device's `CL_DEVICE_SINGLE_FP_CONFIG`; `Opencl_fp.check_fp_conformance` **rejects** the relaxing `-cl-*` options at `Opencl_api.Program.build`, the single point an option string reaches `clBuildProgram` (§9) | executed, GTX 1070 Max-Q / NVIDIA OpenCL: mul 5.92e-08 → 9.07e-15, sqrt 2.88e-08 → 9.80e-15 with no OpenCL-specific change (quoted). Re-measured here on RX 7900 XTX / Mesa radeonsi: mul 9.07e-15, div 5.08e-15, sqrt 1.08e-14. **Executed 2026-10-12 (§14): rusticl/radeonsi (ACO) contracts `o[i] <- a[i]*b[i] + c[i]` on RX 7900 XTX: 1109 of 1109 sensitive elements equal `fma`, not the rounded result; the row's "no flag" is therefore a hazard that is real, not only possible.** |
@@ -174,9 +175,12 @@ because the one non-Mesa stack that does fuse is AMD's own.
 - **The f16 discipline agreeing with the interpreter on NVIDIA**, via the
   CUDA/C (nvrtc) path — executed, GTX 1070 Max-Q / sm_61 / CUDA 12.9 / driver
   580.119.02, exhaustive over all 63488 finite binary16 inputs, **0**
-  disagreements (§7). Note this is the **CUDA/C** path: the PTX backend
-  refuses kernel-level f16 by design (backlog-57 slice 2, a located
-  `Ptx_codegen_error`), so there is nothing to rely on there yet.
+  disagreements (§7). Note this is the **CUDA/C** path. The PTX backend now
+  implements f16 too (storage type, f32 compute: `ld`/`st` on `.b16`,
+  `cvt.f32.f16`, `cvt.rn.f16.f32`, nothing else), but it has been **executed on
+  ZLUDA/AMD only**, where the AMDGPU lowering fuses the multiply into the
+  narrowing (see the `CUDA / PTX backend (f16 narrowing)` row); the NVIDIA run
+  is pending, so there is no NVIDIA claim for PTX yet.
 - **`Sarek_df64` meeting its precision contract on CUDA/PTX and OpenCL on
   NVIDIA Pascal, and on OpenCL on AMD** — `sqrt` on CUDA/PTX is now included
   (measured worst-case 8.53e-15 over `test_df64`'s input set on GTX 1070 Max-Q
@@ -224,9 +228,13 @@ because the one non-Mesa stack that does fuse is AMD's own.
   guarantee, and it says nothing about ANV, AMDVLK, proprietary drivers, or a
   future Mesa. The decoration is emitted and correct — it has simply never been
   observed to change a result.
-- **f16 on NVIDIA through the PTX backend.** The CUDA/C path is now confirmed
-  by execution (above), but `Sarek_ir_ptx` still refuses kernel-level f16
-  outright, so "f16 works on CUDA" is true only of CUDA/C.
+- **f16 on NVIDIA through the PTX backend.** The CUDA/C path is confirmed by
+  execution (above). `Sarek_ir_ptx` now emits f16, validated structurally (no
+  native f16 instruction; assembled by `ptxas` in CI from sm_52) and executed on
+  ZLUDA/AMD, but **not yet executed on an NVIDIA device**, so "f16 works on
+  CUDA" is confirmed by execution for CUDA/C only. The command to run the PTX
+  check on a real NVIDIA GPU is in the header of
+  `sarek/tests/e2e/test_ptx_f16_e2e.ml`.
 - **f16 on OpenCL, on any AMD/Mesa stack.** Measured, not assumed: rusticl
   /radeonsi fuses the multiply into the narrowing and **620 of 63488** finite
   binary16 inputs disagree with the interpreter, on both the RX 7900 XTX and
@@ -684,8 +692,10 @@ this is where they are collected):
   supported**. Scope: **Xe-LPG only**, which is not the Gen9.5 UHD 630 the
   quoted ANV numbers came from (§11.0). **AMDVLK and the proprietary AMD Vulkan
   driver remain unmeasured** — different SPIR-V consumers on the very same GPU.
-- **f16 on the PTX backend.** `Sarek_ir_ptx` refuses kernel-level f16 (backlog-57
-  slice 2). Everything above is the **CUDA/C** path.
+- **f16 on the PTX backend on NVIDIA.** `Sarek_ir_ptx` emits f16 (executed on
+  ZLUDA/AMD only, see the `CUDA / PTX backend (f16 narrowing)` row). Everything
+  above this bullet is the **CUDA/C** path; the NVIDIA execution of the PTX path
+  is pending.
 - **One GPU, one architecture.** sm_61 has no tensor cores, no bf16 and no FP8,
   so nothing here constrains `mma`, bf16 or FP8 contraction, and no f16
   *performance* claim can be made from it (f16 runs at 1/64 f32 rate on GP104).

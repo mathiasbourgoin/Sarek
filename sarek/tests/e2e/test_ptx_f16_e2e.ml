@@ -35,6 +35,14 @@
  * generated PTX contains the conversions) always run. On a machine whose CUDA
  * driver is ZLUDA, put its directory first on LD_LIBRARY_PATH; the device name
  * printed below says which implementation ran.
+ *
+ * On a machine with an NVIDIA GPU and its driver (the line
+ * "=== f16 on CUDA/PTX: <device> (framework CUDA/PTX) ===" must appear):
+ *   dune build sarek/tests/e2e/test_ptx_f16_e2e.exe
+ *   ./_build/default/sarek/tests/e2e/test_ptx_f16_e2e.exe
+ * On NVIDIA every "CUDA/PTX = ..." line is expected to be OK. On ZLUDA/AMD the
+ * `mul` and `chain` lines differ (2913 and 620 inputs): the AMDGPU lowering
+ * fuses the multiply into the narrowing, see docs/fp-contraction-policy.md.
  ******************************************************************************)
 
 open Sarek

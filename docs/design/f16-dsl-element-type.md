@@ -572,6 +572,24 @@ pragma / `#extension` line. f16 adds a **parallel `kernel_uses_float16`** detect
   `cvt.rn.f16.f32` / `cvt.f32.f16` in every float arm — not a mechanical match-arm
   addition. This is the highest-risk single file.
 
+> **DONE (issue #529).** The PTX backend now implements f16. The register class
+> is `%h<N>`, declared `.reg .b16` (untyped bits, as nvcc declares the operands of
+> `cvt`/`ld`/`st` on halves) and moved with `mov.b16` / `selp.b16`. The prefix
+> sniffing is gone: `Sarek_ir_ptx_types.reg_class` is the only decoder, the
+> `is_*_reg` predicates are defined over it, and an unknown prefix raises instead
+> of defaulting to an integer class. Because f16 is a storage type (no
+> arithmetic, §0/§3.4/§6.2), the emitter never needs a native f16 instruction:
+> loads/stores are `ld/st .b16`, widening is `cvt.f32.f16` (exact), narrowing is
+> `cvt.rn.f16.f32` (round to nearest even, the interpreter's rounding), and an
+> f16 operand of an operator, intrinsic, index, or a width-mismatched store is a
+> located error. So the table row below ("`.f16`, `mov.f16`, default sm_86 >=
+> sm_53") is superseded: nothing needs sm_53 and the same module assembles for
+> sm_50 and up. Still refused: scalar f16 kernel parameters (the typer rejects
+> them too) and f16 fields of record vectors (no host layout). Evidence tier:
+> structural tests and `ptxas` assembly in CI; execution on ZLUDA/AMD (the
+> AMDGPU lowering there fuses the multiply into the narrowing,
+> `docs/fp-contraction-policy.md`); NVIDIA execution pending.
+
 > **HELD — and acted on.** The assessment was correct enough that slice 1 shipped
 > with **PTX rejecting f16 outright** rather than half-supporting it, via a shared
 > `Sarek_ir_codegen.reject_feature` (`spoc/ir/Sarek_ir_codegen.ml:49`) that every

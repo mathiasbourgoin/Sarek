@@ -468,7 +468,7 @@ verdict.**
 | **Vulkan / ANV** | Intel Arc Graphics (MTL), Mesa 26.1.2-arch3.1 | **0 / 63488** | n/a | executed | **strict**; refusal is currently over-broad here |
 | **Metal** | Apple M4, macOS 15.6.1 (24G90), Apple clang 17.0.0 (clang-1700.0.13.5), Metal.framework from the Command Line Tools SDK | **0 / 63488** on `f16(x*1.1)` **and 0 / 63488** on `f16(f16(x*1.1)+1000)`; unchanged under `#pragma METAL fp contract(off)`, `#pragma clang fp contract(off)`, a `volatile thread` barrier and an `as_type` bitcast barrier | n/a — no deviation to model. The `fusedctl` control, on the same source, compile options and dispatch, reproduces `S_fuse_mul_into_narrowing` on **63488 / 63488** and reports 2912 / 620 | executed, **element-wise** over the whole finite binary16 domain | **strict**; **lowered** (package H3, specs/coopmat-metal-simdgroup.md) |
 | **WGSL / naga** | — | **never probed** | — | none | **`Unknown` → refused** |
-| **PTX** | — | refuses kernel-level f16 by design (backlog-57 slice 2) | — | by-construction | nothing to relax |
+| **PTX** | ZLUDA/AMD: RX 7900 XTX (executed 2026-11-05); NVIDIA: not yet | NVIDIA: **not yet executed**. ZLUDA/AMD: 2913 / 63488 on `f16(x*1.1)`, 620 / 63488 on `f16(f16(x*1.1)+1000)`, the AMDGPU fusion, not the PTX | the ZLUDA figures equal the fused-model counts on 63488 / 63488 (`docs/fp-contraction-policy.md`, row `CUDA / PTX backend`) | executed on ZLUDA/AMD only | nothing to relax on NVIDIA by construction (no native f16 instruction is emitted); not assessed for the ZLUDA/AMD fusion |
 
 **Regime B rows — cooperative matrix (§5), Metal only.** These are the first
 numeric measurements of any cooperative-matrix implementation in this project;
