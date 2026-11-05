@@ -2531,3 +2531,34 @@
  (alias runtest)
  (action
   (run %{dep:test_native_typed_access_exact.exe})))
+
+; Scalar f16 on CUDA/PTX from Sarek-generated PTX over every finite binary16
+; value: shapes f16(x*1.1), f16(f16(x*1.1)+1000), a raw round trip, f16 -> int32
+; -> f16 and int32 -> f16, each bit-equal to the interpreter and to an
+; independent model, with positive controls. The host checks run everywhere; the
+; device part runs on each CUDA/PTX device and skips without one. To run it on
+; ZLUDA put its directory first on LD_LIBRARY_PATH (not done here: that would
+; send `dune test` to whatever GPU ZLUDA exposes).
+
+(executable
+ (name test_ptx_f16_e2e)
+ (modules test_ptx_f16_e2e)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.float64
+  sarek.interp
+  sarek.codegen
+  sarek.execute
+  sarek_ir
+  spoc_core
+  test_helpers)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_ptx_f16_e2e.exe})))
