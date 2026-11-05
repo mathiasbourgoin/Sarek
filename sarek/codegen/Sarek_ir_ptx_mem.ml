@@ -13,14 +13,15 @@ open Sarek_ir_ptx_types
 (** {1 Array load/store helpers}
 
     Emit a typed array read or write into [buf]. The element type determines the
-    stride (shift 2 = 4 bytes, shift 3 = 8 bytes) and the PTX load/store
-    qualifier. [~space] selects the state space: [Some SpaceShared] uses 32-bit
-    pointer arithmetic and [ld/st.shared.*]; [Some SpaceLocal] uses 64-bit
-    arithmetic and [ld/st.local.*] (per-thread stack memory); [None] (global)
-    uses 64-bit and [ld/st.global.*]. All other element types raise
+    stride (shift 1 = 2 bytes, shift 2 = 4 bytes, shift 3 = 8 bytes) and the PTX
+    load/store qualifier. [~space] selects the state space: [Some SpaceShared]
+    uses 32-bit pointer arithmetic and [ld/st.shared.*]; [Some SpaceLocal] uses
+    64-bit arithmetic and [ld/st.local.*] (per-thread stack memory); [None]
+    (global) uses 64-bit and [ld/st.global.*]. All other element types raise
     [unsupported]. *)
 
 let elt_shift = function
+  | TFloat16 -> 1
   | TFloat32 | TInt32 -> 2
   | TFloat64 | TInt64 -> 3
   | TRecord (n, _) | TVariant (n, _) ->
@@ -59,6 +60,12 @@ let emit_array_read buf alloc r_base r_idx elt_type ~space =
   let sp = space_qualifier space in
   let r_addr = emit_elt_addr buf alloc r_base r_idx elt_type ~space in
   match elt_type with
+  | TFloat16 ->
+      (* Raw 16-bit load into a [.b16] register; widening is an explicit
+         [cvt.f32.f16] cast, never implied by the load. *)
+      let r = new_f16 alloc in
+      emit buf "ld.%s.b16 %s, [%s];" sp r r_addr ;
+      r
   | TFloat32 ->
       let r = new_f32 alloc in
       emit buf "ld.%s.f32 %s, [%s];" sp r r_addr ;
@@ -77,10 +84,29 @@ let emit_array_read buf alloc r_base r_idx elt_type ~space =
       r
   | t -> unsupported (sp ^ " array read of element type " ^ ptx_reg_type_of t)
 
+(* The value register of a store must have the element's width: a 16-bit store
+   of a 32-bit register (or the reverse) is an operand-size mismatch that ptxas
+   reports without naming the Sarek construct. An f16 element takes only an f16
+   register, produced by [float16_of_float32]. *)
+let check_store_value_class sp elt_type r_val =
+  match elt_type with
+  | TFloat16 ->
+      if not (is_f16_reg r_val) then
+        fail
+          (Printf.sprintf
+             "PTX codegen: %s array write: value register %s is not a float16 \
+              value; narrow it with float16_of_float32 before storing it into \
+              a float16 array"
+             sp
+             r_val)
+  | _ -> reject_f16_operand (sp ^ " array write") r_val
+
 let emit_array_write buf alloc r_base r_idx r_val elt_type ~space =
   let sp = space_qualifier space in
+  check_store_value_class sp elt_type r_val ;
   let r_addr = emit_elt_addr buf alloc r_base r_idx elt_type ~space in
   match elt_type with
+  | TFloat16 -> emit buf "st.%s.b16 [%s], %s;" sp r_addr r_val
   | TFloat32 -> emit buf "st.%s.f32 [%s], %s;" sp r_addr r_val
   | TInt32 -> emit buf "st.%s.s32 [%s], %s;" sp r_addr r_val
   | TFloat64 -> emit buf "st.%s.f64 [%s], %s;" sp r_addr r_val

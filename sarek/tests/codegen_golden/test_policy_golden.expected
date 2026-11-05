@@ -63,7 +63,61 @@ EXN [Vulkan Codegen] Unsupported construct 'f16': GLSL: float16 is refused by me
 === S0 | t2_f16_sum | wgsl ===
 EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supported (#57 slice 2 — needs a module-top `enable f16;` directive)
 === S0 | t2_f16_sum | ptx (CUDA/PTX) ===
-EXN Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error("PTX codegen: unsupported construct: kernel-level float16 usage: float16 not supported by the PTX backend (#57 slice 2 \226\128\148 needs a new %h register class and an audit of the prefix-based class guards)")
+.version 8.0
+.target sm_86
+.address_size 64
+
+.entry t2_f16_sum(
+    .param .u64 param_out,
+    .param .u32 param_sarek_out_length,
+    .param .u64 param_h,
+    .param .u32 param_sarek_h_length,
+    .param .u64 param_g,
+    .param .u32 param_sarek_g_length,
+    .param .u64 param_q,
+    .param .u32 param_sarek_q_length,
+    .param .u64 param_x,
+    .param .u32 param_sarek_x_length
+)
+{
+    .reg .u32 %r<10>;
+    .reg .u64 %rd<14>;
+    .reg .f32 %f<3>;
+    .reg .b16 %h<3>;
+
+    ld.param.u64 %rd0, [param_out];
+    ld.param.u32 %r0, [param_sarek_out_length];
+    ld.param.u64 %rd1, [param_h];
+    ld.param.u32 %r1, [param_sarek_h_length];
+    ld.param.u64 %rd2, [param_g];
+    ld.param.u32 %r2, [param_sarek_g_length];
+    ld.param.u64 %rd3, [param_q];
+    ld.param.u32 %r3, [param_sarek_q_length];
+    ld.param.u64 %rd4, [param_x];
+    ld.param.u32 %r4, [param_sarek_x_length];
+    mov.u32 %r5, %tid.x;
+    mov.u32 %r6, %ctaid.x;
+    mov.u32 %r7, %ntid.x;
+    mul.lo.u32 %r8, %r6, %r7;
+    add.u32 %r9, %r5, %r8;
+    cvt.u64.u32 %rd5, %r9;
+    shl.b64 %rd6, %rd5, 1;
+    add.u64 %rd7, %rd1, %rd6;
+    ld.global.b16 %h0, [%rd7];
+    cvt.f32.f16 %f0, %h0;
+    cvt.u64.u32 %rd8, %r9;
+    shl.b64 %rd9, %rd8, 1;
+    add.u64 %rd10, %rd2, %rd9;
+    ld.global.b16 %h1, [%rd10];
+    cvt.f32.f16 %f1, %h1;
+    add.f32 %f2, %f0, %f1;
+    cvt.rn.f16.f32 %h2, %f2;
+    cvt.u64.u32 %rd11, %r9;
+    shl.b64 %rd12, %rd11, 1;
+    add.u64 %rd13, %rd0, %rd12;
+    st.global.b16 [%rd13], %h2;
+    ret;
+}
 === S0 | q4k_like | cuda-c (HIP, CUDA/C) ===
 #if !defined(__HIP__) && !defined(__HIP_PLATFORM_AMD__)
 #include <cuda_fp16.h>
@@ -121,7 +175,79 @@ EXN [Vulkan Codegen] Unsupported construct 'f16': GLSL: float16 is refused by me
 === S0 | q4k_like | wgsl ===
 EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supported (#57 slice 2 — needs a module-top `enable f16;` directive)
 === S0 | q4k_like | ptx (CUDA/PTX) ===
-EXN Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error("PTX codegen: unsupported construct: kernel-level float16 usage: float16 not supported by the PTX backend (#57 slice 2 \226\128\148 needs a new %h register class and an audit of the prefix-based class guards)")
+.version 8.0
+.target sm_86
+.address_size 64
+
+.entry q4k_like(
+    .param .u64 param_out,
+    .param .u32 param_sarek_out_length,
+    .param .u64 param_h,
+    .param .u32 param_sarek_h_length,
+    .param .u64 param_g,
+    .param .u32 param_sarek_g_length,
+    .param .u64 param_q,
+    .param .u32 param_sarek_q_length,
+    .param .u64 param_x,
+    .param .u32 param_sarek_x_length
+)
+{
+    .reg .u32 %r<18>;
+    .reg .u64 %rd<20>;
+    .reg .f32 %f<7>;
+    .reg .b16 %h<3>;
+
+    ld.param.u64 %rd0, [param_out];
+    ld.param.u32 %r0, [param_sarek_out_length];
+    ld.param.u64 %rd1, [param_h];
+    ld.param.u32 %r1, [param_sarek_h_length];
+    ld.param.u64 %rd2, [param_g];
+    ld.param.u32 %r2, [param_sarek_g_length];
+    ld.param.u64 %rd3, [param_q];
+    ld.param.u32 %r3, [param_sarek_q_length];
+    ld.param.u64 %rd4, [param_x];
+    ld.param.u32 %r4, [param_sarek_x_length];
+    mov.u32 %r5, %tid.x;
+    mov.u32 %r6, %ctaid.x;
+    mov.u32 %r7, %ntid.x;
+    mul.lo.u32 %r8, %r6, %r7;
+    add.u32 %r9, %r5, %r8;
+    cvt.u64.u32 %rd5, %r9;
+    shl.b64 %rd6, %rd5, 1;
+    add.u64 %rd7, %rd1, %rd6;
+    ld.global.b16 %h0, [%rd7];
+    cvt.f32.f16 %f0, %h0;
+    cvt.u64.u32 %rd8, %r9;
+    shl.b64 %rd9, %rd8, 2;
+    add.u64 %rd10, %rd3, %rd9;
+    ld.global.s32 %r10, [%rd10];
+    mov.u32 %r11, 15;
+    and.b32 %r12, %r10, %r11;
+    cvt.rn.f32.s32 %f1, %r12;
+    mul.f32 %f2, %f0, %f1;
+    cvt.u64.u32 %rd11, %r9;
+    shl.b64 %rd12, %rd11, 1;
+    add.u64 %rd13, %rd2, %rd12;
+    ld.global.b16 %h1, [%rd13];
+    cvt.f32.f16 %f3, %h1;
+    cvt.u64.u32 %rd14, %r9;
+    shl.b64 %rd15, %rd14, 2;
+    add.u64 %rd16, %rd3, %rd15;
+    ld.global.s32 %r13, [%rd16];
+    mov.u32 %r14, 4;
+    shr.s32 %r15, %r13, %r14;
+    mov.u32 %r16, 63;
+    and.b32 %r17, %r15, %r16;
+    cvt.rn.f32.s32 %f4, %r17;
+    mul.f32 %f5, %f3, %f4;
+    sub.f32 %f6, %f2, %f5;
+    cvt.rn.f16.f32 %h2, %f6;
+    cvt.u64.u32 %rd17, %r9;
+    shl.b64 %rd18, %rd17, 1;
+    add.u64 %rd19, %rd0, %rd18;
+    st.global.b16 [%rd19], %h2;
+    ret;
+}
 === S0 | inexact_const | cuda-c (HIP, CUDA/C) ===
 #if !defined(__HIP__) && !defined(__HIP_PLATFORM_AMD__)
 #include <cuda_fp16.h>
@@ -179,7 +305,57 @@ EXN [Vulkan Codegen] Unsupported construct 'f16': GLSL: float16 is refused by me
 === S0 | inexact_const | wgsl ===
 EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supported (#57 slice 2 — needs a module-top `enable f16;` directive)
 === S0 | inexact_const | ptx (CUDA/PTX) ===
-EXN Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error("PTX codegen: unsupported construct: kernel-level float16 usage: float16 not supported by the PTX backend (#57 slice 2 \226\128\148 needs a new %h register class and an audit of the prefix-based class guards)")
+.version 8.0
+.target sm_86
+.address_size 64
+
+.entry inexact_const(
+    .param .u64 param_out,
+    .param .u32 param_sarek_out_length,
+    .param .u64 param_h,
+    .param .u32 param_sarek_h_length,
+    .param .u64 param_g,
+    .param .u32 param_sarek_g_length,
+    .param .u64 param_q,
+    .param .u32 param_sarek_q_length,
+    .param .u64 param_x,
+    .param .u32 param_sarek_x_length
+)
+{
+    .reg .u32 %r<10>;
+    .reg .u64 %rd<11>;
+    .reg .f32 %f<3>;
+    .reg .b16 %h<2>;
+
+    ld.param.u64 %rd0, [param_out];
+    ld.param.u32 %r0, [param_sarek_out_length];
+    ld.param.u64 %rd1, [param_h];
+    ld.param.u32 %r1, [param_sarek_h_length];
+    ld.param.u64 %rd2, [param_g];
+    ld.param.u32 %r2, [param_sarek_g_length];
+    ld.param.u64 %rd3, [param_q];
+    ld.param.u32 %r3, [param_sarek_q_length];
+    ld.param.u64 %rd4, [param_x];
+    ld.param.u32 %r4, [param_sarek_x_length];
+    mov.u32 %r5, %tid.x;
+    mov.u32 %r6, %ctaid.x;
+    mov.u32 %r7, %ntid.x;
+    mul.lo.u32 %r8, %r6, %r7;
+    add.u32 %r9, %r5, %r8;
+    cvt.u64.u32 %rd5, %r9;
+    shl.b64 %rd6, %rd5, 1;
+    add.u64 %rd7, %rd1, %rd6;
+    ld.global.b16 %h0, [%rd7];
+    cvt.f32.f16 %f0, %h0;
+    mov.f32 %f1, 0F3F8CCCCD;
+    mul.f32 %f2, %f0, %f1;
+    cvt.rn.f16.f32 %h1, %f2;
+    cvt.u64.u32 %rd8, %r9;
+    shl.b64 %rd9, %rd8, 1;
+    add.u64 %rd10, %rd0, %rd9;
+    st.global.b16 [%rd10], %h1;
+    ret;
+}
 === S0 | unroll_loop | cuda-c (HIP, CUDA/C) ===
 
 extern "C" {
@@ -609,7 +785,7 @@ EXN [Vulkan Codegen] Unsupported construct 'f16': GLSL: float16 is refused by me
 === S0 | cm_f16 | wgsl ===
 EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supported (#57 slice 2 — needs a module-top `enable f16;` directive)
 === S0 | cm_f16 | ptx (CUDA/PTX) ===
-EXN Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error("PTX codegen: unsupported construct: kernel-level float16 usage: float16 not supported by the PTX backend (#57 slice 2 \226\128\148 needs a new %h register class and an audit of the prefix-based class guards)")
+EXN Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error("PTX codegen: unsupported construct: kernel-level cooperative-matrix usage: cooperative matrices and their uint8 operand buffers are emitted only by the Vulkan and CUDA/HIP backends (backlog-62)")
 === S0 | cm_i32 | cuda-c (HIP, CUDA/C) ===
 #if defined(__HIP_PLATFORM_AMD__)
 /* Sarek cooperative matrix, HIP: RDNA3 (gfx11) WMMA, wave32
@@ -851,7 +1027,7 @@ EXN [Vulkan Codegen] Unsupported construct 'f16': GLSL: float16 is refused by me
 === S0 | cm_f16_8x8 | wgsl ===
 EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supported (#57 slice 2 — needs a module-top `enable f16;` directive)
 === S0 | cm_f16_8x8 | ptx (CUDA/PTX) ===
-EXN Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error("PTX codegen: unsupported construct: kernel-level float16 usage: float16 not supported by the PTX backend (#57 slice 2 \226\128\148 needs a new %h register class and an audit of the prefix-based class guards)")
+EXN Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error("PTX codegen: unsupported construct: kernel-level cooperative-matrix usage: cooperative matrices and their uint8 operand buffers are emitted only by the Vulkan and CUDA/HIP backends (backlog-62)")
 verdict S0 | 16x16x16 f16*f16+f32->f32 subgroup | Unavailable [coopmat-relaxed-accumulation/policy] 16x16x16 f16*f16+f32->f32 subgroup accumulates in floating point in an order the hardware chooses, so its result is only BOUNDED (|D - exact| <= gamma_n * (sum|A*B| + |C|)), not bit-identical to the interpreter, and the program has not accepted that | remedy=Call Sarek_coopmat.accept_relaxed_accumulation ~reason:"..." once before launching, or use an integer configuration (exact).
 verdict S0 | 16x16x16 bf16*bf16+f32->f32 subgroup | Unavailable [coopmat-relaxed-accumulation/policy] 16x16x16 bf16*bf16+f32->f32 subgroup accumulates in floating point in an order the hardware chooses, so its result is only BOUNDED (|D - exact| <= gamma_n * (sum|A*B| + |C|)), not bit-identical to the interpreter, and the program has not accepted that | remedy=Call Sarek_coopmat.accept_relaxed_accumulation ~reason:"..." once before launching, or use an integer configuration (exact).
 verdict S0 | 16x16x16 u8*u8+s32->s32 subgroup | Available

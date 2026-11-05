@@ -21,28 +21,11 @@ val fail : string -> 'a
     construct named [what]. *)
 val unsupported : string -> 'a
 
-(** [unsupported_elttype ty what] raises {!Ptx_codegen_error} for an element
-    type this emitter cannot represent, at the site named [what]. Today only
-    [TFloat16] reaches it: f16 is deliberately out of scope for the PTX backend
-    in #57 slice 1, because this emitter derives a value's register class from
-    the register NAME's prefix ([%f] / [%fd] / [%rd]), so introducing a [%h]
-    class requires auditing every such guard first. Shared so the expression
-    emitter, the type mapping and the whole-kernel gate all report it
-    identically — and generic in [ty] so the next width does not need a second
-    feature-specific export next to {!fail}. *)
-val unsupported_elttype : Sarek_ir_types.elttype -> string -> 'a
-
 (** [unsupported_coopmat_elttype what] raises {!Ptx_codegen_error} for a
-    [TUint8] reaching the site named [what].
-
-    Kept apart from {!unsupported_elttype} because the two refusals rest on
-    different facts. f16 is blocked by an internal invariant of this emitter,
-    and its message points at the register-class audit that will lift it.
-    [TUint8] is not a general 8-bit integer at all: it is the element type of a
-    cooperative-matrix operand buffer, meaningful only with the [SCoopmat]
-    statements the Vulkan backend emits, so no amount of PTX register work makes
-    it representable here. Merging the two would attach the [%h] explanation to
-    a refusal it does not explain. *)
+    [TUint8] reaching the site named [what]. [TUint8] is not a general 8-bit
+    integer: it is the element type of a cooperative-matrix operand buffer,
+    meaningful only with the [SCoopmat] statements the Vulkan backend emits, so
+    no amount of PTX register work makes it representable here. *)
 val unsupported_coopmat_elttype : string -> 'a
 
 (** {1 Value bindings} *)
@@ -85,6 +68,7 @@ type reg_alloc = {
   mutable u32 : int;
   mutable u64 : int;
   mutable f32 : int;
+  mutable f16 : int;
   mutable f64 : int;
   mutable pred : int;
   mutable label : int;
@@ -148,6 +132,10 @@ val new_f32 : reg_alloc -> string
 
 (** Allocate a fresh [.f64] register and return its PTX name ([%fdN]). *)
 val new_f64 : reg_alloc -> string
+
+(** Allocate a fresh [.b16] register holding a binary16 value and return its PTX
+    name ([%hN]). *)
+val new_f16 : reg_alloc -> string
 
 (** Allocate a fresh [.pred] register and return its PTX name ([%pN]). *)
 val new_pred : reg_alloc -> string
@@ -215,11 +203,36 @@ val emit_label : Buffer.t -> string -> unit
 (** {1 Register-class helpers} *)
 
 (** Register class recovered from a PTX register name prefix ([%fdN] = f64,
-    [%fN] = f32, [%rdN] = u64, [%rN] = u32). *)
-type reg_class = RU32 | RU64 | RF32 | RF64
+    [%fN] = f32, [%hN] = f16, [%rdN] = u64, [%rN] = u32). *)
+type reg_class = RU32 | RU64 | RF16 | RF32 | RF64
 
-(** [reg_class r] is the class of register [r], from its name prefix. *)
+(** [reg_class r] is the class of register [r], from its name prefix. The single
+    decoder of the prefixes. Raises {!Ptx_codegen_error} on a name that is not a
+    value register ([%p] predicates included) rather than defaulting to [RU32].
+*)
 val reg_class : string -> reg_class
+
+(** Class predicates over {!reg_class}; each raises like it. *)
+val is_f64_reg : string -> bool
+
+val is_f32_reg : string -> bool
+
+val is_f16_reg : string -> bool
+
+val is_u64_reg : string -> bool
+
+(** [reject_f16_operand what r] raises {!Ptx_codegen_error} when [r] is an f16
+    register: f16 has no arithmetic, so an f16 value reaching an operator or
+    intrinsic would otherwise fall into an integer default branch. *)
+val reject_f16_operand : string -> string -> unit
+
+(** [emit_f16_widen buf alloc r_h] emits [cvt.f32.f16] (exact) into a fresh f32
+    register and returns it. *)
+val emit_f16_widen : Buffer.t -> reg_alloc -> string -> string
+
+(** [emit_f16_narrow buf alloc r_f] emits [cvt.rn.f16.f32] into a fresh f16
+    register and returns it. *)
+val emit_f16_narrow : Buffer.t -> reg_alloc -> string -> string
 
 (** [check_index_reg what r] raises [unsupported] unless [r] is a 32-bit integer
     register. Every element-address computation in this backend assumes a u32
