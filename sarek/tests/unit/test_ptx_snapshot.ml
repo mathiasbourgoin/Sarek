@@ -2755,23 +2755,49 @@ let test_ptxas_assembles () =
       kernels ;
     (* float16 kernels (ptx_f16_kernels, structurally tested in test_ptx_f16):
        assembled for targets BELOW sm_53 as well as above it. Native f16
-       arithmetic is invalid there, so a ptxas pass at sm_52 (the only target here below sm_53) proves
-       the emitted f16 code is cvt/ld/st/mov only, i.e. valid on every SM the
-       backend can target. *)
+       arithmetic is invalid there, so a ptxas pass at sm_52 (the only target
+       here below sm_53) proves the emitted f16 code is cvt/ld/st/mov only.
+       Each target is first probed with a minimal hand-written module: a newer
+       ptxas (CUDA 13 dropped offline compilation for Maxwell, Pascal and Volta)
+       rejects old targets for a toolchain reason, which must not fail the
+       suite. Such a target prints a SKIP line; the generated-kernel failures
+       stay fatal on every target the local ptxas accepts. CI's CUDA 12.6 ptxas
+       still covers sm_52. *)
+    let target_probe sm_target =
+      assemble_ok
+        (Printf.sprintf
+           ".version 8.0\n\
+            .target %s\n\
+            .address_size 64\n\
+            .entry probe()\n\
+            {\n\
+           \    ret;\n\
+            }\n"
+           sm_target)
+    in
     List.iter
       (fun sm_target ->
-        List.iter
-          (fun (name, k) ->
-            match assemble_ok (Sarek_ir_ptx.generate ~sm_target k) with
-            | Ok () -> Printf.printf "  ptxas OK: %s (%s)\n%!" name sm_target
-            | Error err ->
-                Alcotest.fail
-                  (Printf.sprintf
-                     "ptxas rejected f16 kernel %s at %s:\n%s"
-                     name
-                     sm_target
-                     err))
-          (Ptx_f16_kernels.all ()))
+        match target_probe sm_target with
+        | Error _ ->
+            Printf.printf
+              "  SKIP: local ptxas does not accept %s; f16 kernels not \
+               assembled there\n\
+               %!"
+              sm_target
+        | Ok () ->
+            List.iter
+              (fun (name, k) ->
+                match assemble_ok (Sarek_ir_ptx.generate ~sm_target k) with
+                | Ok () ->
+                    Printf.printf "  ptxas OK: %s (%s)\n%!" name sm_target
+                | Error err ->
+                    Alcotest.fail
+                      (Printf.sprintf
+                         "ptxas rejected f16 kernel %s at %s:\n%s"
+                         name
+                         sm_target
+                         err))
+              (Ptx_f16_kernels.all ()))
       ["sm_52"; "sm_61"; "sm_75"; "sm_90"] ;
     (* SoA-lowered custom-vector kernels: N per-leaf base pointers + coalesced
        scalar loads must also assemble, across every leaf width (f32/f64/i32/i64
